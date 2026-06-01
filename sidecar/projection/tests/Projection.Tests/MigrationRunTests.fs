@@ -132,6 +132,36 @@ let ``6.D.1: the full A->B loop — migrate, record, then reconstruct reproduces
         let reReconstructed = EpisodicLifecycle.reconstructLatestSchema reloaded |> mustOk
         Assert.True(CatalogDiff.isEmpty (CatalogDiff.between reshapedTarget reReconstructed |> mustOk)))
 
+// ===========================================================================
+// The live-execute rename channel — sp_rename for physical table renames
+// ===========================================================================
+
+let private physicalRenameTarget : Catalog =
+    let c' = { customer with Name = nm "Patron"; Physical = { customer.Physical with Table = "PATRON_TBL" } }
+    IRBuilders.mkCatalog [ { salesModule with Kinds = [ c'; order; country ] } ]
+
+[<Fact>]
+let ``live: renameStatements emits sp_rename + a logical-name re-bind for a physical table rename`` () =
+    let diff = CatalogDiff.between sampleCatalog physicalRenameTarget |> mustOk
+    let stmts = MigrationRun.renameStatements diff
+    Assert.Equal(2, List.length stmts)
+    // (1) the physical rename; (2) the V2.LogicalName re-bind to the new name.
+    Assert.Contains("sp_rename", stmts.[0])
+    Assert.Contains("PATRON_TBL", stmts.[0])
+    Assert.Contains("sp_updateextendedproperty", stmts.[1])
+    Assert.Contains("V2.LogicalName", stmts.[1])
+    Assert.Contains("Patron", stmts.[1])
+
+[<Fact>]
+let ``live: a logical-only rename re-binds the logical name without an sp_rename`` () =
+    // renamedTarget changes the logical Name but keeps customer's Physical.Table:
+    // the physical object stays, but its V2.LogicalName binding must still update.
+    let diff = CatalogDiff.between sampleCatalog renamedTarget |> mustOk
+    let one = List.exactlyOne (MigrationRun.renameStatements diff)
+    Assert.DoesNotContain("sp_rename", one)   // no physical rename
+    Assert.Contains("sp_updateextendedproperty", one)
+    Assert.Contains("Patron", one)
+
 [<Fact>]
 let ``6.D.1: record refuses a non-advancing version (NonMonotonic)`` () =
     withTempFile (fun path ->

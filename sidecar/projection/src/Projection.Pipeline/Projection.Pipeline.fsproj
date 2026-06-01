@@ -13,7 +13,6 @@
     <Compile Include="Config.fs" />
     <Compile Include="ApprovalStore.fs" />
     <Compile Include="LifecycleStore.fs" />
-    <Compile Include="MigrationRun.fs" />
     <Compile Include="RenameBinding.fs" />
     <Compile Include="TighteningBinding.fs" />
     <Compile Include="SpecialCircumstancesBinding.fs" />
@@ -28,6 +27,7 @@
     <Compile Include="PolicyDiff.fs" />
     <Compile Include="Bulk.fs" />
     <Compile Include="Deploy.fs" />
+    <Compile Include="MigrationRun.fs" />
     <Compile Include="BenchSink.fs" />
     <Compile Include="LogSink.fs" />
     <Compile Include="FullExportRun.fs" />

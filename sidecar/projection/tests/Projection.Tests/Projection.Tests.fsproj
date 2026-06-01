@@ -74,6 +74,7 @@
     <Compile Include="RefactorLogEmitterTests.fs" />
     <Compile Include="SchemaMigrationEmitterTests.fs" />
     <Compile Include="SchemaMigrationCanaryTests.fs" />
+    <Compile Include="MigrationCanaryTests.fs" />
     <Compile Include="RefactorLogRenderTests.fs" />
     <Compile Include="ScriptDomRoundTripTests.fs" />
     <Compile Include="TypesTests.fs" />

@@ -1,6 +1,8 @@
 namespace Projection.Pipeline
 
+open Microsoft.Data.SqlClient
 open Projection.Core
+open Projection.Adapters.Sql
 open Projection.Targets.SSDT
 
 /// The composed artifacts of a planned migration — the schema differential
@@ -27,6 +29,25 @@ type MigrationError =
     | RefusedBySchemaErrors of DiagnosticEntry list
     /// The RefactorLog emitter failed to project the rename channel.
     | EmitFailed of EmitError
+    /// Reading the source/target schema back from the live database failed.
+    | SchemaReadFailed of ValidationError list
+    /// Executing the migration SQL against the live database raised.
+    | ExecutionFailed of message: string
+    /// The migration executed but B' does not reproduce B at the physical level.
+    | VerificationFailed of PhysicalSchemaDiff
+
+/// The result of a **live** `migrate A B` execution: the plan + artifacts it
+/// ran, the schema read back from the database after execution (`B'`), and the
+/// verdict — `Verified` iff `B'` reproduces the target `B` at the physical
+/// level (the round-trip canary's empty `PhysicalSchema` diff). The master
+/// equation T16 realized against real SQL Server, not just in-memory.
+type MigrationOutcome =
+    {
+        Artifacts     : MigrationArtifacts
+        Reconstructed : Catalog
+        SchemaDiff    : PhysicalSchemaDiff
+        Verified      : bool
+    }
 
 /// The failure modes of recording a migration's episode into the durable store.
 type MigrationRecordError =
@@ -110,3 +131,121 @@ module MigrationRun =
             match LifecycleStore.save path chain with
             | Ok () -> Ok chain
             | Error e -> Error (StoreError e)
+
+    // -- the live-execute leg (direct execution against a deployed DB) --------
+
+    /// Executable rename statements for the **kind renames** in a displacement
+    /// (same `SsKey`, changed logical `Name`). This is the *direct-execution*
+    /// rename channel — the data-preserving, metadata-only counterpart to the
+    /// declarative `.refactorlog` (which drives the rename at DacFx publish,
+    /// 6.F.1). Per renamed kind it emits, in order:
+    ///   1. `sp_rename` of the physical table — **only if** `Physical.Table`
+    ///      changed (a logical-only rename leaves the table in place);
+    ///   2. `sp_updateextendedproperty` re-binding `V2.LogicalName` to the new
+    ///      `Name` on the (post-rename) physical table — **always**, because
+    ///      `sp_rename` renames the *object* but leaves the logical-name
+    ///      extended property (V2's A1 identity anchor) pointing at the old
+    ///      name. (Surfaced by the live A→B canary's PhysicalSchema diff.)
+    /// Renames run **before** the ALTERs so an `ALTER` against the target
+    /// physical name finds the table. Column renames defer (named-with-trigger).
+    let renameStatements (diff: CatalogDiff) : string list =
+        let byKey (c: Catalog) = Catalog.allKinds c |> List.map (fun k -> k.SsKey, k) |> Map.ofList
+        let src = byKey (CatalogDiff.source diff)
+        let tgt = byKey (CatalogDiff.target diff)
+        // LINT-ALLOW (whole function): `sp_rename` / `sp_updateextendedproperty`
+        // are system-procedure calls at a terminal text boundary; ScriptDom has
+        // no first-class node for them, and every interpolated value is a
+        // validated `TableId` component or `Name` (single-quotes doubled), not
+        // free operator text. Per the LINT-ALLOW substantive-rationale discipline.
+        let esc (s: string) : string = s.Replace("'", "''")
+        CatalogDiff.renamed diff
+        |> Map.toList
+        |> List.sortBy (fun (k, _) -> SsKey.rootOriginal k)
+        |> List.collect (fun (key, _) ->
+            match Map.tryFind key src, Map.tryFind key tgt with
+            | Some s, Some t ->
+                let schema = t.Physical.Schema
+                let newTable = t.Physical.Table
+                let spRename =
+                    if s.Physical.Table <> newTable then
+                        [ sprintf "EXEC sp_rename '%s.%s', '%s';" (esc s.Physical.Schema) (esc s.Physical.Table) (esc newTable) ]
+                    else []
+                let reBind =
+                    sprintf
+                        "EXEC sys.sp_updateextendedproperty @name=N'V2.LogicalName', @value=N'%s', @level0type=N'SCHEMA', @level0name=N'%s', @level1type=N'TABLE', @level1name=N'%s';"
+                        (esc (Name.value t.Name)) (esc schema) (esc newTable)
+                spRename @ [ reBind ]
+            | _ -> [])
+
+    /// **Live `migrate A B`** — the L3 bullseye realized against a deployed
+    /// database (the master equation T16 on real SQL Server). `cnn` is the
+    /// database at state **A**; `source` is the *known* prior schema (the prior
+    /// recorded `Episode`, or the authored A — not re-read, so the displacement
+    /// is noise-free); `target` is the desired **B**. Steps: plan + refuse
+    /// fail-loud **before any write** (drops / non-shape facets); execute the
+    /// minimum-viable differential — renames (`sp_rename`) then the `ALTER`
+    /// differential (never a re-CREATE) — in physical order; read **B'** back
+    /// (`ReadSide.read`) and verify it reproduces **B** at the `PhysicalSchema`
+    /// level. Idempotent + resumable **by construction**: re-running re-diffs the
+    /// now-current state against B, so a partial run completes on re-run and a
+    /// fully-migrated DB is a no-op (empty differential).
+    let execute
+        (allowDrops: bool)
+        (source: Catalog)
+        (target: Catalog)
+        (cnn: SqlConnection)
+        : System.Threading.Tasks.Task<Result<MigrationOutcome, MigrationError>> =
+        task {
+            match preview allowDrops source target with
+            | Error e -> return Error e
+            | Ok artifacts ->
+                let renameSql = renameStatements artifacts.Plan.Diff
+                let alterSql = artifacts.SchemaStatements |> Render.toText
+                let! executed =
+                    task {
+                        try
+                            for stmt in renameSql do
+                                do! Deploy.executeBatch cnn stmt
+                            if not (System.String.IsNullOrWhiteSpace alterSql) then
+                                do! Deploy.executeBatch cnn alterSql
+                            return Ok ()
+                        with ex -> return Error (ExecutionFailed ex.Message)
+                    }
+                match executed with
+                | Error e -> return Error e
+                | Ok () ->
+                    let! readBack = ReadSide.read cnn
+                    match readBack with
+                    | Error es -> return Error (SchemaReadFailed es)
+                    | Ok reconstructed ->
+                        let sdiff =
+                            PhysicalSchema.diff
+                                (PhysicalSchema.ofCatalog target)
+                                (PhysicalSchema.ofCatalog reconstructed)
+                        return
+                            Ok
+                                { Artifacts = artifacts
+                                  Reconstructed = reconstructed
+                                  SchemaDiff = sdiff
+                                  // Schema-structural verification: B' reproduces B's
+                                  // structure; the rows it carries are the preserved data
+                                  // (data preservation is asserted separately by the canary).
+                                  Verified = PhysicalSchema.isSchemaEqual sdiff }
+        }
+
+    /// `execute` for the bootstrap case where the prior schema is **not** known
+    /// from a recorded episode: read **A** from the live database first
+    /// (`ReadSide.read cnn`), then plan + execute against `target`. Carries the
+    /// `ReadSide`-fidelity caveat — the diff is computed from the *reconstructed*
+    /// A, so prefer `execute` with the recorded-episode schema when available.
+    let executeFromLive
+        (allowDrops: bool)
+        (target: Catalog)
+        (cnn: SqlConnection)
+        : System.Threading.Tasks.Task<Result<MigrationOutcome, MigrationError>> =
+        task {
+            let! readA = ReadSide.read cnn
+            match readA with
+            | Error es -> return Error (SchemaReadFailed es)
+            | Ok source -> return! execute allowDrops source target cnn
+        }

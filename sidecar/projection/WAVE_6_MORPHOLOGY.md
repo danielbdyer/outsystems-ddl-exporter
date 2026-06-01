@@ -84,6 +84,18 @@ live-execute leg deferred |`. Residual dark cell: the live-SQL `--execute` path 
 + transfer against real substrates) + its Docker A→B canary — the structural square commutes; the live square is
 the last confirmation.
 
+**Update (2026-06-01, the live square commutes — `migrate` runs on SQL Server).** The last residual is closed:
+`MigrationRun.execute A B cnn` evolves a **deployed** state-A database to B against real SQL Server — `sp_rename`
++ a `V2.LogicalName` extended-property re-bind (a fidelity gap the canary's PhysicalSchema diff caught — `sp_rename`
+renames the object but not the logical-name anchor), then the `ALTER`/`ADD` differential, then `ReadSide.read` for
+B' and verify B' reproduces B at the schema-structural level (`PhysicalSchema.isSchemaEqual` — new; rows are the
+*preserved data*, not the schema target). The **Docker A→B canary** is green across three channels at once (table
+rename + widen + add): B' reproduces B, the seeded row **survives**, the re-run is idempotent, and a drop refuses
+before touching the live DB. `projection migrate --from … --to …` is the operator dry-run surface. The whole
+calculus is no longer latent — it is **wired** (the production caller exists), **executed** (on real SQL Server),
+and **durable** (each run is a recorded episode). Remaining reach: the `--source-conn`/`--execute` CLI flag wiring
++ cross-table data transfer.
+
 **The synthesis:** the engine has built every *carrier* and proven every *law in isolation*, but the *proteins
 that would move concerns through emission space and across episodes are unbuilt.* The calculus is **correct and
 latent**; *activation* = wiring the differential leg + reifying the measurement verbs (where evidence now

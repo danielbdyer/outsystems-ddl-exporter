@@ -955,6 +955,11 @@ let ``T16: the Project square commutes (the master equation; migrate A B)`` () =
     citationOf
         "tests/Projection.Tests/MigrationRunTests.fs"
         "6.D.1: the full A->B loop — migrate, record, then reconstruct reproduces B (durable round-trip)"
+    // The LIVE square: migrate executes on real SQL Server (rename+widen+add),
+    // B' reproduces B's schema, data survives, the re-run is idempotent.
+    citationOf
+        "tests/Projection.Tests/MigrationCanaryTests.fs"
+        "migrate A B canary: one execute evolves A→B across three channels; B reproduces B, data survives, re-run is idempotent"
 
 [<Fact>]
 let ``A43: Identity is the conserved charge — Rename perturbs Designation, conserves SsKey, sp_rename (refactorlog) conserves data`` () =

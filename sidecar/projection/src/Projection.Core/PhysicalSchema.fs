@@ -710,6 +710,24 @@ module PhysicalSchema =
         && List.isEmpty d.MissingAnnotations
         && List.isEmpty d.ExtraAnnotations
 
+    /// Schema-structural equality: columns + FKs + logical-name bindings +
+    /// annotations match, **ignoring row data** (`Missing`/`ExtraRows` +
+    /// `*RowDigests`). The right predicate for a *schema* migration's
+    /// verification — `migrate A B` must make B' reproduce B's **structure**;
+    /// the rows B' carries are the **preserved/migrated data** (the whole point
+    /// of a differential over a drop+recreate), not part of the schema target B
+    /// (which is a definition, not a data set). The full `isEqual` (data
+    /// included) stays the predicate for the static-seed round-trip canaries.
+    let isSchemaEqual (d: PhysicalSchemaDiff) : bool =
+        List.isEmpty d.MissingColumns
+        && List.isEmpty d.ExtraColumns
+        && List.isEmpty d.MissingForeignKeys
+        && List.isEmpty d.ExtraForeignKeys
+        && List.isEmpty d.MissingLogicalNameBindings
+        && List.isEmpty d.ExtraLogicalNameBindings
+        && List.isEmpty d.MissingAnnotations
+        && List.isEmpty d.ExtraAnnotations
+
     /// Render a diff as a human-readable multi-line string. Used by
     /// canary failure messages so the operator sees exactly which
     /// columns / FKs mismatched, not just "they differ."

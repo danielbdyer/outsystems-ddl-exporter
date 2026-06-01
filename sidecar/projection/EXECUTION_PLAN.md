@@ -1045,24 +1045,31 @@ a structured diagnostic, or a fail-loud refusal — never a silent drop* (T-I fa
 
 #### 6.D — The composition: `migrate A B` (the L3 bullseye; Promise 8)
 
-##### 6.D.1 — `migrate` orchestrator (the L3 composition) — **LANDED 2026-06-01 (composition + durable loop; live-execute leg deferred)**
-- **Gap (closed at the composition):** there was no single orchestrator — the operator manually sequenced five
-  verbs, and renames never reached the rename channel. "Nearly one command" was five commands with a seam.
-- **Shipped:** `Migration` (`Projection.Core/Migration.fs`) + `MigrationRun` (`Projection.Pipeline/MigrationRun.fs`)
-  — the composition reified. `Migration.plan A B = emit(B ⊖ A)` (T16, the master equation): it observes the
-  displacement (`CatalogDiff.between`, 6.A.10), produces the **preview** (the change-manifest of δ at plan time —
-  what it will touch, by channel), and detects the **fail-loud violations** (destructive drops, refused unless
-  `allowDrops`). `MigrationRun.preview` composes the minimum-viable schema differential (`diff → ALTER`, 6.A.12 —
-  never a CREATE) + the data-preserving renames (RefactorLog) in one call, refusing before any write on drops or
-  on the emitter's non-shape-facet `Error`s. `Migration.applyTo (plan A B) A ≡ B` is the structural round-trip
-  (T16); `MigrationRun.record` closes the loop by recording the run as a durable `Episode` (6.H) whose FTC
-  reconstruction reproduces B across a disk reload. **T16 promoted Skip→Fact** (Bucket C → A).
-- **Deferred (named-with-trigger — the live-execute leg):** the `projection migrate --source-conn <A> --target
-  <B-config> --execute` CLI that reads A from a live deployed DB (`ReadSide`), runs the connection/permission
-  pre-flights (6.C.1), and executes the differential against real substrates (deploy + RefactorLog-aware transfer,
-  transactional 6.C.2) — composes existing `Deploy`/`Transfer` with the shipped plan, lands with the Docker A→B
-  canary. The *algebra* + the *durable provenance loop* are green now; the live SQL execution is the remaining leg.
-- **Acceptance (the headline):** `` ``T16: applyTo (plan A B) A = B — migrate A B reproduces the target (master equation)`` `` + `` ``6.D.1: the full A->B loop — migrate, record, then reconstruct reproduces B (durable round-trip)`` `` — **LANDED** (the structural L3 bullseye; 18 witnesses incl. minimum-viable-touches, fail-loud, and the durable loop). **~M.** ✅
+##### 6.D.1 — `migrate` orchestrator (the L3 bullseye) — **LANDED 2026-06-01 (composition + durable loop + LIVE execution on SQL Server)**
+- **Gap (closed):** there was no single orchestrator — the operator manually sequenced five verbs, and renames
+  never reached the rename channel. "Nearly one command" was five commands with a seam.
+- **Shipped — the composition:** `Migration` (`Projection.Core/Migration.fs`) + `MigrationRun`
+  (`Projection.Pipeline/MigrationRun.fs`). `Migration.plan A B = emit(B ⊖ A)` (T16, the master equation): observes
+  the displacement (`CatalogDiff.between`, 6.A.10), produces the **preview** (the change-manifest of δ at plan
+  time, by channel), and detects the **fail-loud violations** (destructive drops, refused unless `allowDrops`).
+  `MigrationRun.preview` composes the minimum-viable schema differential (`diff → ALTER`, 6.A.12 — never a CREATE)
+  + the data-preserving renames in one call, refusing before any write on drops or non-shape-facet `Error`s.
+- **Shipped — the LIVE execution:** `MigrationRun.execute allowDrops A B cnn` evolves a **deployed state-A
+  database to state B on real SQL Server**, in one call: refuse fail-loud → execute the differential in physical
+  order — renames (`sp_rename` + a `V2.LogicalName` extended-property re-bind, the latter caught by the canary's
+  PhysicalSchema diff) then the `ALTER`/`ADD` differential — → read **B'** back (`ReadSide.read`) → verify B'
+  reproduces B at the **schema-structural** level (`PhysicalSchema.isSchemaEqual` — new; ignores row data, since B
+  is a schema target and the rows are the *preserved data*). Idempotent + resumable **by construction** (re-running
+  re-diffs the current state → empty differential). The **Docker A→B canary** proves it across three channels at
+  once (table rename + widen + add): B' reproduces B, **data survives**, the re-run is a no-op, and a drop refuses
+  before touching the live DB. `MigrationRun.record` closes the durable loop (the run becomes an `Episode`, 6.H).
+- **Shipped — the operator surface:** `projection migrate --from <model-a.json> --to <model-b.json> [--allow-drops]`
+  prints the minimum-viable plan (dry-run, fail-loud on drops). **T16 promoted Skip→Fact** (Bucket C → A).
+- **Remaining reach (named-with-trigger):** the `--source-conn`/`--execute` CLI flags wiring `executeFromLive`
+  against a live connection (the algebra + the `executeFromLive` function exist; the CLI flag plumbing + the
+  connection/permission pre-flights 6.C.1 are the wiring); RefactorLog-aware *data* transfer for the cross-table
+  data-move case (the in-place schema evolution preserves data already); column renames (table renames ship).
+- **Acceptance (the headline):** `` ``migrate A B canary: one execute evolves A→B across three channels; B reproduces B, data survives, re-run is idempotent`` `` — **LANDED on SQL Server** (the live L3 bullseye), atop the structural `` ``T16: applyTo (plan A B) A = B`` `` + the durable `` ``6.D.1: the full A->B loop … reconstruct reproduces B`` ``. **~M.** ✅
 
 #### 6.E — The self-report: matrix reports the ladder level (T-IV extension)
 

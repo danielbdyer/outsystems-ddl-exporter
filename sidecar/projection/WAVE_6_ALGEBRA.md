@@ -328,14 +328,18 @@ is correct and latent.** Re-reading §9:
   carrier over the *realized* delta — the CDC capture series on the data plane (6.F.3-data), the move-count on
   the schema plane; the value-level `π`/`Delta` reify (concretely as `CatalogDiff`) only at the temporal
   multi-version schema use (6.H), **not** the data leg, whose δ is substrate-fused (§12.4).
-- **T16** — **activated (6.D.1, 2026-06-01).** The differential leg is lit: `Migration.plan A B = emit(B ⊖ A)` and
-  `MigrationRun.preview` is the production caller of the diff emitters (`SchemaMigrationEmitter` + `RefactorLog`),
-  composing the displacement into the minimum-viable ALTER + rename channels (T14 partition) under fail-loud
-  gating. The master equation `applyTo (plan A B) A ≡ B` (`run(emit(B⊖A), realize(A)) = realize(B)` modulo the
-  captured surface) is a live witness, and `MigrationRun.record` closes it into the durable substrate — the FTC
-  over the recorded chain reproduces B across a disk reload. T16 promoted Bucket C → A. *Remaining:* the live-SQL
-  `--execute` leg (read A from a deployed DB; deploy + transfer against real substrates) + the Docker A→B canary —
-  the *structural* square commutes; the *live* square is the last confirmation.
+- **T16** — **activated AND realized on SQL Server (6.D.1, 2026-06-01).** The differential leg is lit and
+  *executed*: `Migration.plan A B = emit(B ⊖ A)` and `MigrationRun.preview` are the production caller of the diff
+  emitters (`SchemaMigrationEmitter` + `RefactorLog`), composing the displacement into the minimum-viable ALTER +
+  rename channels (T14 partition) under fail-loud gating; the master equation `applyTo (plan A B) A ≡ B` is a
+  structural witness; `MigrationRun.record` closes it into the durable substrate (the FTC reproduces B across a
+  disk reload). And **`MigrationRun.execute` realizes the square against a live database** — `run(emit(B⊖A),
+  realize(A)) = realize(B)` where `realize` is real `Deploy` + `ReadSide` on SQL Server: it evolves a deployed
+  state-A DB to B (sp_rename + `V2.LogicalName` re-bind, then ALTER/ADD), reads B' back, and verifies B' reproduces
+  B at the **schema-structural** level (`isSchemaEqual` — rows are the preserved data, not the schema target).
+  The Docker A→B canary witnesses three channels at once with data preserved and an idempotent re-run. T16 promoted
+  Bucket C → A; both the structural *and* the live square commute. *Remaining reach:* the `--source-conn`/`--execute`
+  CLI flag wiring + cross-table data transfer (in-place schema evolution already preserves data).
 - **A43** — Identity survives an episode boundary (`V2.SsKey` round-trip), but only as a current value, not a
   chain; the `‖rename‖_data = 0` corollary is unwitnessed live. *Activation:* the change-manifest + the rename
   canary.
