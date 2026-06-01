@@ -1231,6 +1231,14 @@ concerns during multi-episodic recombination" (the §2 premise's lattice) is una
 gives the proven algebra a durable substrate to integrate over — the time-axis of the concern-movement field
 (`WAVE_6_ALGEBRA.md` §12.1's `∂κ/∂(episode)`). It reuses proven amino acids; none is research.*
 
+**Prerequisite — SHIPPED 2026-06-01: the `Catalog↔JSON` codec (`CatalogCodec`, `Projection.Targets.Json`).**
+The whole family integrates over durable episodes, but until 2026-06-01 nothing serialized the schema plane
+across a run boundary — the gap 6.H.2 named. `CatalogCodec.serialize`/`deserialize` close it: a **total**
+(every IR field + DU variant), **deterministic** (T1), **re-validating** (decode funnels through
+`Catalog.create`, A39) round-trip whose law `deserialize (serialize c) = Ok c` is the adjunction applied to
+durability. It is the schema-plane persistence primitive the `Episode` (6.H.1) and `LifecycleStore` (6.H.2)
+rest on; both are now unblocked. (`DECISIONS 2026-06-01 — the Catalog↔JSON codec`.)
+
 ##### 6.H.1 — The multi-plane `Episode` (the point of integration)
 - **Gap:** `CatalogSnapshot` (`Lifecycle.fs:45`) carries only a schema `Catalog` at a `Version` — no Profile, no
   rows/CDC, no environment, no clock. The schema and data planes are never co-recorded, so cross-concern
@@ -1241,11 +1249,18 @@ gives the proven algebra a durable substrate to integrate over — the time-axis
   count/handle.
 - **Acceptance:** `` ``episode: co-records schema + profile + refactorlog + cdc-handle at one Version`` ``. **~M.**
 
-##### 6.H.2 — The `LifecycleStore` (the persisted time-integral)
-- **Gap:** nothing serializes a `Lifecycle`/`Episode`; `reconstructLatest` folds only in-memory test values.
-- **First slice:** a durable JSON store modeled on `ApprovalStore.fs` (the codebase's *only* proven across-runs
-  persistence — deterministic `Utf8JsonWriter`, T1-stable order, structured `Read/Parse/Write` failures). Turns
-  the FTC into reconstruction over durable provenance: load genesis + the persisted δ-chain, `fold applyDiff`.
+##### 6.H.2 — The `LifecycleStore` (the persisted time-integral) — **UNBLOCKED 2026-06-01**
+- **Gap (codec leg closed):** nothing serialized a `Lifecycle`/`Episode`; `reconstructLatest` folds only
+  in-memory test values. The schema-plane half of that gap is now closed by `CatalogCodec` (above); the store's
+  remaining work is the *envelope* — the δ-chain framing + the non-`Catalog` planes (Profile, refactorlog
+  reference, CDC handle) per the `Episode` shape (6.H.1).
+- **First slice:** a durable JSON store modeled on `ApprovalStore.fs` (the codebase's proven across-runs
+  persistence pattern — deterministic `Utf8JsonWriter`, T1-stable order, structured `Read/Parse/Write` failures)
+  that composes `CatalogCodec` for each episode's schema plane. Turns the FTC into reconstruction over durable
+  provenance: load genesis + the persisted δ-chain, `fold applyDiff`. **Reuse the codec; do not re-encode the
+  `Catalog`** — and carry forward its totality discipline (the `{ X.create … with … }` default-substitution
+  hazard, `DECISIONS 2026-06-01 — totality-contract verification`) to every new IR-bearing record the envelope
+  serializes.
 - **Acceptance:** `` ``lifecycle store: reconstructLatest over the persisted chain reproduces the stored episode (FTC, durable)`` ``. **~M.**
 
 ##### 6.H.3 — `CatalogDiff.compose` (close the derivative algebra; T13/A-Lifecycle-4) — **SHIPPED 2026-06-01**
@@ -1266,8 +1281,9 @@ gives the proven algebra a durable substrate to integrate over — the time-axis
   `TransformKind`, not just the axis). A manifest-of-δ per episode is the change-manifest series.
 - **Acceptance:** `` ``change-manifest: the manifest records the displacement (move counts + refactorlog xref + cdc series), not just the target state`` ``. **~M.**
 
-**Sequencing within 6.H:** 6.H.3 (`compose`, pure, small) and 6.H.1 (`Episode`) are independent and first; 6.H.2
-(`LifecycleStore`) depends on 6.H.1; 6.H.4 (change-manifest) depends on the attribute-diff (6.A.10, shipped) and
+**Sequencing within 6.H:** the codec prerequisite is satisfied (shipped 2026-06-01). 6.H.3 (`compose`, pure,
+small) is shipped; 6.H.1 (`Episode`) is now the next slice (independent, unblocked); 6.H.2
+(`LifecycleStore`) depends on 6.H.1 and composes the codec; 6.H.4 (change-manifest) depends on the attribute-diff (6.A.10, shipped) and
 pairs with 6.F.1 (refactorlog-against-prior). The whole family is the activation of `∂κ/∂(episode)` and the
 durable side of the FTC; it is the substrate `migrate` (6.D.1) records each run into.
 

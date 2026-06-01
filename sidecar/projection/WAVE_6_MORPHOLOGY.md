@@ -49,6 +49,16 @@ so the schema-side measurement layer and the derivative algebra are no longer da
 live witness). The *remaining* latency is the durable substrate (no persisted `Episode`) and the wiring of the
 differential leg into `migrate`. The finding below stands as the research snapshot it was.
 
+**Update (2026-06-01, the persistence keystone landed).** The "no durable episode" finding's hardest
+prerequisite is now met: `CatalogCodec` (`Projection.Targets.Json`) is a **total / deterministic /
+re-validating** `Catalog↔JSON` round-trip (`deserialize (serialize c) = Ok c`) — the schema-plane persistence
+primitive the durable `Episode`/`LifecycleStore` rest on. "Schema-only, never serialized" is now "schema-only,
+*serializable*"; the residual is the multi-plane envelope (Profile + refactorlog reference + CDC handle) and the
+δ-chain framing (6.H.1/6.H.2, both unblocked). Two reusable takeaways from building it — *totality is verified
+against the IR inventory, not asserted* (the `{ X.create … with … }` default-substitution hazard), and *test
+inputs are declarative edits of the producer's own output, never hand-authored wire format* — are codified at
+`DECISIONS 2026-06-01` and apply to every remaining 6.H/6.D slice that reconstructs or round-trips the IR.
+
 **The synthesis:** the engine has built every *carrier* and proven every *law in isolation*, but the *proteins
 that would move concerns through emission space and across episodes are unbuilt.* The calculus is **correct and
 latent**; *activation* = wiring the differential leg + reifying the measurement verbs (where evidence now

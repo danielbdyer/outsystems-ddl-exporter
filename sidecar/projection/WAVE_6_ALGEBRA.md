@@ -317,8 +317,11 @@ is correct and latent.** Re-reading §9:
 - **T12** — activated (between/applyDiff wired into Lifecycle + the SchemaMigration/RefactorLog emitters exist).
 - **T13** — *partly activated (6.H.3)*: `CatalogDiff.compose` (the `+`) + `Lifecycle.netDiff` (the integral ∫δ)
   are SHIPPED, and A-Lifecycle-4 is promoted to Bucket A. **Remaining latent:** `reconstructLatest`/`netDiff`
-  still run only over in-memory values — *no durable episode*. *Activation:* the `Episode` + `LifecycleStore`
-  (`WAVE_6_MORPHOLOGY.md` §4 F1–F2; `EXECUTION_PLAN.md` 6.H.1–6.H.2).
+  still run only over in-memory values — *no durable episode*. **Persistence keystone landed (2026-06-01):** the
+  `CatalogCodec` `Catalog↔JSON` round-trip — the schema-plane half of the durable substrate — is shipped, total,
+  and re-validating (the round-trip law is the adjunction applied to durability, §12.4); the residual is the
+  multi-plane episode envelope. *Activation:* the `Episode` + `LifecycleStore` (both now unblocked —
+  `WAVE_6_MORPHOLOGY.md` §4 F1–F2; `EXECUTION_PLAN.md` 6.H.1–6.H.2).
 - **T14 / T15** — *schema side activated (6.H.3)*: the schema norm `‖·‖` and channel projection `π` now have a
   concrete carrier — `CatalogDiff.norm` / `channelCounts`. **Remaining:** the **data** norm reifies as a measurement
   carrier over the *realized* delta — the CDC capture series on the data plane (6.F.3-data), the move-count on
@@ -369,6 +372,34 @@ even though their moves and norm are analogous.**
    Insert/Update/Delete; ALTER-not-CREATE ∥ CDC-minimal), **not** at the delta-representation level. The "same
    shape one plane apart" is a statement about the generators and the measure, not about how each plane stores
    its displacement.
+
+### 12.5 The persistence-boundary adjunction (the codec, landed 2026-06-01)
+
+The same `realize`/`ingest` pair that names the schema↔database adjunction also instances at the **disk
+boundary**: `serialize : Catalog → JSON` and `deserialize : JSON → Result<Catalog>`, with the round-trip law
+
+  **`deserialize (serialize c) = Ok c`** — the adjunction's unit, applied to durability.
+
+Three properties make this the *durable substrate* the time-integral (T13) folds over, not merely a serializer:
+
+- **Total.** The round-trip holds for *every* `c` — every IR field and DU variant. Totality is the contract; it
+  is **verified against the IR inventory, not asserted** (an independent audit of every record + DU). A missed
+  variant would be a silent erasure — the very L1→L2 failure class Wave 6 exists to close (cf. 6.A.1/6.A.9). The
+  codec must not reintroduce one at the persistence boundary.
+- **Deterministic (T1).** `serialize` is byte-stable — fixed write order, InvariantCulture decimals, sorted `Map`
+  keys — so the persisted form is itself a normal form: `serialize (deserialize (serialize c)) = serialize c`.
+- **Re-validating (A39).** `deserialize` is `JSON → Result<Catalog>`, not `JSON → Catalog`: decode funnels
+  through `Catalog.create`, so a corrupt or stale document re-proves the aggregate invariants (disjoint keys, no
+  dangling FK) at the boundary. The persisted artifact is *evidence*, re-checked on ingest — never trusted blind.
+
+**Why it matters for the calculus.** A durable `Episode`/`Lifecycle` (6.H) is a chain of persisted states; the FTC
+`reconstructLatest = fold ⊕` is only meaningful if each state survives the disk round-trip *exactly* (totality)
+and *canonically* (determinism). The codec is therefore the schema-plane keystone of `∂κ/∂(episode)` — the
+time-axis the concern-movement field (§12.1) was dark along. The residual is the multi-plane envelope (Profile +
+refactorlog reference + CDC handle), which carries the **same totality discipline forward**: each new IR-bearing
+record the `LifecycleStore` serializes faces the `{ create … with … }` default-substitution hazard
+(`DECISIONS 2026-06-01 — totality-contract verification`), and its tests state the round-trip *law* over a
+constructed-valid generator rather than hand-authored wire format.
 
 ---
 
