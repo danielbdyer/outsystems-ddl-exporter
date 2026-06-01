@@ -288,6 +288,24 @@ let ``6.A.11: applyDiff (between A B) A = B — the evolution round-trip law`` (
         "tests/Projection.Tests/CatalogDiffTests.fs"
         "Time: applyDiff (between A B) A = B (evolution round-trip law)"
 
+// 6.A.12 (Time L3-precursor) — minimum-viable-touch emission. The diff
+// becomes an ALTER, not a full CREATE: SchemaMigrationEmitter turns the
+// attribute-level CatalogDiff into ALTER TABLE … ADD / ALTER COLUMN; renames
+// route to the RefactorLog channel (SqlSimpleColumn → sp_rename, data
+// preserved). The engine computes the delta itself (engine-level, not
+// DacFx-level).
+[<Fact>]
+let ``6.A.12: a column type change emits an ALTER, not a CREATE`` () =
+    citationOf
+        "tests/Projection.Tests/SchemaMigrationEmitterTests.fs"
+        "migration: a column type change emits an ALTER, not a CREATE"
+
+[<Fact>]
+let ``6.A.12: a column rename routes to the RefactorLog (SqlSimpleColumn, sp_rename not drop+add)`` () =
+    citationOf
+        "tests/Projection.Tests/RefactorLogEmitterTests.fs"
+        "RefactorLogEmitter: a column rename produces a SqlSimpleColumn entry"
+
 [<Fact(Skip = "A-Lifecycle-4: evolutionChain composition is associative — Bucket C. \
 NARROWED (6.A.11): CatalogDiff now has an `apply` peer (`applyDiff`) and the \
 diff-replay reconstruction form lands (`Lifecycle.reconstructLatest` = fold \

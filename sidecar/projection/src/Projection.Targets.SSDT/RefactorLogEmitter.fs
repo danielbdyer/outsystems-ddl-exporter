@@ -143,6 +143,67 @@ module RefactorLogEmitter =
                 utf8 (Name.value record.NewName)
             ]
 
+    /// Deterministic `OperationKey` for a column-level (physical) rename.
+    /// Keyed on the attribute's SsKey + the old/new physical column names
+    /// so two emit runs against the same physical rename agree (T1).
+    let private columnRenameOperationKey
+        (attrKey: SsKey)
+        (oldColumn: string)
+        (newColumn: string)
+        : System.Guid =
+        let utf8 (s: string) : byte[] = System.Text.Encoding.UTF8.GetBytes s
+        UuidV5.createFromSegments
+            namespaceGuid
+            (byte ':')
+            [
+                utf8 "rename:column"
+                utf8 (SsKey.rootOriginal attrKey)
+                utf8 oldColumn
+                utf8 newColumn
+            ]
+
+    /// 6.A.12 — the per-kind COLUMN-rename refactor entries. SSDT requires
+    /// a `SqlSimpleColumn` `.refactorlog` operation for every column rename,
+    /// or DacFx interprets the rename as DROP COLUMN + ADD COLUMN and the
+    /// data is lost (handbook §"The Silent Catastrophe").
+    ///
+    /// Detection mirrors the kind level: a **logical `Attribute.Name`**
+    /// change (`AttributeDiffs[k].Renamed`, the rename axis `CatalogDiff`
+    /// records). The refactorlog is computed over deployed-state-vs-emitted-
+    /// state catalogs, both of which carry logical names (V2 emits the
+    /// logical name as the physical object via `LogicalColumnEmission`), so
+    /// the rename is `oldLogical → newLogical` — `ElementName` carries the
+    /// old logical column name, `NewName` the new one. The caller (the
+    /// `migrate` orchestrator) is responsible for feeding the read-back
+    /// deployed catalog as source and the emitted catalog as target; this
+    /// emitter just projects the diff. Disjoint from `SchemaMigrationEmitter`
+    /// (shape changes → ALTER): a renamed column carries no shape facet, so
+    /// the two emission channels never double-emit the same attribute.
+    let private columnRefactorEntries
+        (diff: CatalogDiff)
+        (k: Kind)
+        : RefactorLogEntry list =
+        match CatalogDiff.attributeDiffOf k.SsKey diff with
+        | None -> []
+        | Some ad ->
+            let tableQualified : string =
+                Render.tableQualified { Schema = k.Physical.Schema; Table = k.Physical.Table; Catalog = None }
+            ad.Renamed
+            |> Map.toList
+            |> List.map (fun (attrKey, record) ->
+                let oldName = Name.value record.OldName
+                let newName = Name.value record.NewName
+                {
+                    OperationKey = columnRenameOperationKey attrKey oldName newName
+                    OperationKind = RenameRefactor
+                    ElementName = System.String.Join(".", [| tableQualified; Render.quote oldName |])
+                    ElementType = SqlSimpleColumn
+                    ParentElementName = tableQualified
+                    ParentElementType = SqlTable
+                    NewName = newName
+                    PassVersion = version
+                })
+
     /// Build the per-kind refactor-entry slice for one kind. Returns
     /// the empty list when the kind is not renamed in the diff
     /// (`Unchanged`, `Added`, or `Removed` partitions); a one-entry
@@ -194,8 +255,13 @@ module RefactorLogEmitter =
         use _ = Bench.scope "emit.refactorLog.emit"
         let target = CatalogDiff.target diff
         let renames = CatalogDiff.renamed diff
+        // Per kind: the table-level rename (logical Kind.Name) AND the
+        // column-level renames (logical Attribute.Name, 6.A.12). Both are
+        // RenameRefactor operations on the same kind's slice; a kind with
+        // neither carries the empty list (T11 keyset = target's kinds).
         let slices =
             Catalog.allKinds target
-            |> List.map (fun k -> k.SsKey, kindRefactorEntries renames k)
+            |> List.map (fun k ->
+                k.SsKey, kindRefactorEntries renames k @ columnRefactorEntries diff k)
             |> Map.ofList
         ArtifactByKind.create target slices

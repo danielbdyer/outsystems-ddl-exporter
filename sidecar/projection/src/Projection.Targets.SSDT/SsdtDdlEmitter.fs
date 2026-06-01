@@ -159,6 +159,14 @@ module SsdtDdlEmitter =
             Provenance   = ""
         }
 
+    /// 6.A.12 — the canonical `ColumnDef` for an attribute under no
+    /// tightening overlay. The `SchemaMigrationEmitter` reuses this so an
+    /// ALTER/ADD COLUMN's column shape is byte-identical to the same
+    /// column's CREATE TABLE declaration (a structural A→B diff carries no
+    /// tightening overlay — the target attribute's shape is authoritative).
+    let columnDefOfAttribute (a: Attribute) : ColumnDef =
+        columnDef DecisionOverlay.empty a
+
     /// Project a `Kind.ColumnChecks` entry to the SSDT realization
     /// layer's `ColumnCheckDef`. Slice 5.13.column-features-emit
     /// (chapter A.0' slice ε emit closure). The `Name` field maps

@@ -333,3 +333,21 @@ type Statement =
     /// IR record; `ScriptDomBuild.buildStatement` delegates to
     /// `buildCreateSequence`. H-020 (Cluster A — Close the loops).
     | CreateSequence of seq: Sequence
+    /// 6.A.12 — `ALTER TABLE <table> ADD <column>`. The additive
+    /// minimum-viable-touch for a new attribute on an existing kind
+    /// (`CatalogDiff.AttributeDiffs[k].Added`). ScriptDom builds via
+    /// `AlterTableAddTableElementStatement` carrying one
+    /// `ColumnDefinition`. Distinct from a full CREATE TABLE: the table
+    /// already exists; only the column is added.
+    | AlterTableAddColumn of table: TableId * column: ColumnDef
+    /// 6.A.12 — `ALTER TABLE <table> ALTER COLUMN <column> <type> NULL|NOT NULL`.
+    /// The minimum-viable-touch for a changed column SHAPE
+    /// (`CatalogDiff.AttributeDiffs[k].Changed` over DataType / Length /
+    /// Precision / Scale / Nullability). ScriptDom builds via
+    /// `AlterTableAlterColumnStatement` with `AlterTableAlterColumnOption
+    /// .Null | .NotNull` carrying nullability. NOT a rename (renames are
+    /// the RefactorLog channel — a column rename emitted as DROP+ADD
+    /// loses data; SSDT requires `sp_rename` via `.refactorlog`). NOT a
+    /// DEFAULT / computed / identity change (those need separate
+    /// constraint DDL; the migration emitter refuses them fail-loud).
+    | AlterTableAlterColumn of table: TableId * column: ColumnDef
