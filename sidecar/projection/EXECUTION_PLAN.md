@@ -1063,12 +1063,19 @@ a structured diagnostic, or a fail-loud refusal — never a silent drop* (T-I fa
   re-diffs the current state → empty differential). The **Docker A→B canary** proves it across three channels at
   once (table rename + widen + add): B' reproduces B, **data survives**, the re-run is a no-op, and a drop refuses
   before touching the live DB. `MigrationRun.record` closes the durable loop (the run becomes an `Episode`, 6.H).
+- **Shipped — column renames:** `renameStatements` now emits the **column** rename channel too
+  (`sp_rename … 'COLUMN'` + the column-level `V2.LogicalName` re-bind), table renames before column renames before
+  ALTERs. Live canary: a column rename executes and preserves data.
+- **Shipped — data transfer (the cross-substrate composition):** `MigrationRun.executeWithData` evolves the
+  **sink**'s schema to B then transfers rows from a data `source` into the sink over the agreed contract B
+  (reconciling for the Dev→UAT User re-key; the data leg runs only if the schema leg verified). It composes the
+  existing `Transfer` engine into the migrate vocabulary. Live canary: `executeWithData` migrates a sink A→B and
+  loads the source's rows into the migrated table.
 - **Shipped — the operator surface:** `projection migrate --from <model-a.json> --to <model-b.json> [--allow-drops]`
   prints the minimum-viable plan (dry-run, fail-loud on drops). **T16 promoted Skip→Fact** (Bucket C → A).
-- **Remaining reach (named-with-trigger):** the `--source-conn`/`--execute` CLI flags wiring `executeFromLive`
-  against a live connection (the algebra + the `executeFromLive` function exist; the CLI flag plumbing + the
-  connection/permission pre-flights 6.C.1 are the wiring); RefactorLog-aware *data* transfer for the cross-table
-  data-move case (the in-place schema evolution preserves data already); column renames (table renames ship).
+- **Remaining reach (named-with-trigger):** the `--source-conn`/`--execute`/`--sink-conn` CLI flags wiring
+  `executeFromLive` / `executeWithData` against live connections (the execution functions exist; the CLI flag
+  plumbing + the connection/permission pre-flights 6.C.1 are the wiring).
 - **Acceptance (the headline):** `` ``migrate A B canary: one execute evolves A→B across three channels; B reproduces B, data survives, re-run is idempotent`` `` — **LANDED on SQL Server** (the live L3 bullseye), atop the structural `` ``T16: applyTo (plan A B) A = B`` `` + the durable `` ``6.D.1: the full A->B loop … reconstruct reproduces B`` ``. **~M.** ✅
 
 #### 6.E — The self-report: matrix reports the ladder level (T-IV extension)

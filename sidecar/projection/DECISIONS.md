@@ -20495,3 +20495,20 @@ capability.
 **Verification.** Pure pool green (2625 passed / 207 skipped / 0 failed; +2); Docker A→B canary green (3/3); matrix gate PASS, L2 live 83, round-trip 5/5.
 
 **Cross-references:** `EXECUTION_PLAN.md` 6.D.1 (LANDED — composition + durable loop + live execution); `NORTH_STAR.md` Promise 8 + §1c (the live square commutes); `WAVE_6_ALGEBRA.md` §9 (T16 realized on SQL Server); `WAVE_6_MORPHOLOGY.md` §0 (the live square commutes — the calculus is wired, executed, durable); `src/Projection.Pipeline/MigrationRun.fs`; `src/Projection.Core/PhysicalSchema.fs` (`isSchemaEqual`); `tests/Projection.Tests/MigrationCanaryTests.fs`. The remaining apex reach is the `--execute` CLI wiring + cross-table data transfer.
+
+## 2026-06-01 — Wave 6: migrate column renames + cross-substrate data transfer (6.D.1 extension)
+
+**Resolved (code; the two named-with-trigger reaches the live-execute leg deferred).** `migrate A B` now moves **column renames** and **data** — both live on SQL Server.
+
+- **Column renames (the second rename channel).** `MigrationRun.renameStatements` now emits, in addition to table renames, the **column** rename channel from `AttributeDiff.Renamed` (already detected by `between`): per renamed attribute, `sp_rename '<schema>.<table>.<oldCol>', '<newCol>', 'COLUMN'` (only if the physical `ColumnName` changed) + a **column-level** `V2.LogicalName` re-bind (`@level2type=N'COLUMN'`). Ordering is **table renames → column renames → ALTERs**, so every later statement references the post-rename physical names. The column-level logical re-bind mirrors the table-level fix (the canary proved `sp_rename` leaves the logical anchor stale at every level). Live canary: a column rename (`EMAIL` → `CONTACT`) executes via `sp_rename … 'COLUMN'` and **preserves data**.
+- **Cross-substrate data transfer (the Dev→UAT composition).** `MigrationRun.executeWithData allowDrops mode allowCdc sinkSource target reconciliation dataSource sink` evolves the **sink**'s schema in place to B (the minimum-viable + fail-loud `execute`), then — **only if the schema leg verified** (never load into an unverified target) — transfers rows from the data `source` into the sink over the agreed contract B via the existing `Transfer` engine (`Transfer.run`, or `Transfer.runReconciling` for the User re-key). New `MigrationDataOutcome { Schema; Transfer }` carries both reports; new `MigrationError.DataTransferFailed`. This is the premise's "migrate Dev data up to UAT by producing a full-export whose users have been rekeyed" — schema + data composed into one operation. Live canary: `executeWithData` migrates a sink A→B and loads the source's rows into the migrated table.
+
+**Layering note.** `MigrationRun.fs` moved after `TransferRun.fs` in the Pipeline compile order (it now composes `Transfer`). The schema executor (`execute`/`renameStatements`) is unchanged; `executeWithData` is the new cross-substrate leg.
+
+**Witnesses.** `MigrationRunTests` (+1 pure: a column rename emits `sp_rename … 'COLUMN'` + the column-level logical re-bind). `MigrationCanaryTests` (+2 live: the column-rename canary; the `executeWithData` schema+data canary — both green on real SQL Server). AxiomTests: T16 extended to cite the `executeWithData` live witness.
+
+**Remaining reach (named-with-trigger).** The `--source-conn`/`--sink-conn`/`--execute` CLI flags wiring `executeFromLive` / `executeWithData` against live connections — the execution functions exist; the flag plumbing + the connection/permission pre-flights (6.C.1) are the wiring.
+
+**Verification.** Pure pool green (2626 passed / 207 skipped / 0 failed; +1); Docker migration canaries green (5/5 — A→B 3-channel, drop-refusal, column rename, data transfer); matrix gate PASS, L2 live 83, round-trip 5/5.
+
+**Cross-references:** `EXECUTION_PLAN.md` 6.D.1 (column renames + data transfer shipped); `WAVE_6_ALGEBRA.md` §9 (T16 — schema *and* data live); `WAVE_6_MORPHOLOGY.md` §0 (migrate moves schema and data); `src/Projection.Pipeline/MigrationRun.fs`; `tests/Projection.Tests/MigrationCanaryTests.fs`. The remaining apex reach is the live-connection CLI flag wiring.

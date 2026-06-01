@@ -337,9 +337,12 @@ is correct and latent.** Re-reading §9:
   realize(A)) = realize(B)` where `realize` is real `Deploy` + `ReadSide` on SQL Server: it evolves a deployed
   state-A DB to B (sp_rename + `V2.LogicalName` re-bind, then ALTER/ADD), reads B' back, and verifies B' reproduces
   B at the **schema-structural** level (`isSchemaEqual` — rows are the preserved data, not the schema target).
-  The Docker A→B canary witnesses three channels at once with data preserved and an idempotent re-run. T16 promoted
-  Bucket C → A; both the structural *and* the live square commute. *Remaining reach:* the `--source-conn`/`--execute`
-  CLI flag wiring + cross-table data transfer (in-place schema evolution already preserves data).
+  The Docker A→B canary witnesses three channels at once with data preserved and an idempotent re-run; a column
+  rename (`sp_rename … 'COLUMN'` + column-level logical re-bind) and the **cross-substrate data load**
+  (`executeWithData` — schema-migrate the sink, then transfer rows from a source over the contract B, reconciling
+  for the User re-key) also run live. T16 promoted Bucket C → A; both the structural *and* the live square commute,
+  schema *and* data. *Remaining reach:* the `--source-conn`/`--sink-conn`/`--execute` CLI flag wiring (the execution
+  functions `executeFromLive` / `executeWithData` exist; the flag plumbing + pre-flights 6.C.1 are the wiring).
 - **A43** — Identity survives an episode boundary (`V2.SsKey` round-trip), but only as a current value, not a
   chain; the `‖rename‖_data = 0` corollary is unwitnessed live. *Activation:* the change-manifest + the rename
   canary.

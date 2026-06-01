@@ -27,11 +27,11 @@
     <Compile Include="PolicyDiff.fs" />
     <Compile Include="Bulk.fs" />
     <Compile Include="Deploy.fs" />
-    <Compile Include="MigrationRun.fs" />
     <Compile Include="BenchSink.fs" />
     <Compile Include="LogSink.fs" />
     <Compile Include="FullExportRun.fs" />
     <Compile Include="TransferRun.fs" />
+    <Compile Include="MigrationRun.fs" />
     <Compile Include="TransferSpec.fs" />
     <Compile Include="RegisteredAllTransforms.fs" />
   </ItemGroup>

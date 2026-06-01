@@ -851,6 +851,7 @@ let private runMigratePreview (fromPath: string) (toPath: string) (allowDrops: b
                     printfn "    added kinds:          %d" p.Channels.AddedKinds
                     printfn "    removed kinds:        %d" p.Channels.RemovedKinds
                     printfn "    reshaped attributes:  %d" p.Channels.ChangedAttributes
+                    printfn "    renamed attributes:   %d" p.Channels.RenamedAttributes
                     printfn "    added attributes:     %d" p.Channels.AddedAttributes
                     printfn "    removed attributes:   %d" p.Channels.RemovedAttributes
                     for (_, fromN, toN) in p.RenamedKinds do

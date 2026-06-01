@@ -93,8 +93,11 @@ B' and verify B' reproduces B at the schema-structural level (`PhysicalSchema.is
 rename + widen + add): B' reproduces B, the seeded row **survives**, the re-run is idempotent, and a drop refuses
 before touching the live DB. `projection migrate --from … --to …` is the operator dry-run surface. The whole
 calculus is no longer latent — it is **wired** (the production caller exists), **executed** (on real SQL Server),
-and **durable** (each run is a recorded episode). Remaining reach: the `--source-conn`/`--execute` CLI flag wiring
-+ cross-table data transfer.
+and **durable** (each run is a recorded episode). Column renames (`sp_rename … 'COLUMN'` + column-level logical
+re-bind) and the **cross-substrate data load** (`executeWithData` — schema-migrate the sink, then transfer rows
+from a source over the contract B, reconciling for the Dev→UAT User re-key) now also run live: `migrate` moves
+*schema and data* in one composition. Remaining reach: the `--source-conn`/`--sink-conn`/`--execute` CLI flag
+wiring (the execution functions exist; the flag plumbing + pre-flights are the wiring).
 
 **The synthesis:** the engine has built every *carrier* and proven every *law in isolation*, but the *proteins
 that would move concerns through emission space and across episodes are unbuilt.* The calculus is **correct and

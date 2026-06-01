@@ -268,10 +268,12 @@ generated artifact, not a judgment.
    on SQL Server:** `MigrationRun.execute A B cnn` evolves a deployed state-A database to B in one
    command (`sp_rename` + logical re-bind, `ALTER`, `ADD` — minimum-viable, never a re-CREATE),
    fail-loud on drops, with **data preserved**; B' reproduces B at the schema-structural level and
-   the re-run is idempotent; the run records a durable episode whose FTC reproduces B. The **Docker
-   A→B canary** witnesses all of it across three channels at once. T16 (the master equation) is a
-   live witness. The remaining reach is the `--source-conn`/`--execute` CLI flag wiring + cross-table
-   data transfer — the live square commutes.*)
+   the re-run is idempotent; the run records a durable episode whose FTC reproduces B. **Column
+   renames** (`sp_rename … 'COLUMN'`) and the **cross-substrate data load** (`executeWithData` —
+   schema-migrate the sink, then transfer + re-key the rows) also run live: `migrate` moves schema
+   *and* data in one composition. The **Docker A→B canary** witnesses it. T16 (the master equation)
+   is a live witness. The remaining reach is the `--source-conn`/`--sink-conn`/`--execute` CLI flag
+   wiring — the live square commutes, schema and data.*)
 2. **The decision adjunction holds.** `Ingest(deploy(Project(C, overlay)))` reproduces `overlay`
    on the tightening axes — the engine's opinions survive the round-trip. (The "stronger than V1"
    theorem; today unbuilt.)

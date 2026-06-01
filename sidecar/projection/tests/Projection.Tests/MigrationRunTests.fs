@@ -152,6 +152,27 @@ let ``live: renameStatements emits sp_rename + a logical-name re-bind for a phys
     Assert.Contains("V2.LogicalName", stmts.[1])
     Assert.Contains("Patron", stmts.[1])
 
+let private columnRenameTarget : Catalog =
+    let c' =
+        { customer with
+            Attributes =
+                customer.Attributes
+                |> List.mapi (fun i a ->
+                    if i = 0 then { a with Name = nm "RenamedCol"; Column = { a.Column with ColumnName = "RENAMED_COL" } } else a) }
+    IRBuilders.mkCatalog [ { salesModule with Kinds = [ c'; order; country ] } ]
+
+[<Fact>]
+let ``live: a column rename emits sp_rename COLUMN + a column-level logical re-bind`` () =
+    let diff = CatalogDiff.between sampleCatalog columnRenameTarget |> mustOk
+    let stmts = MigrationRun.renameStatements diff
+    Assert.Equal(2, List.length stmts)
+    // (1) the physical column rename; (2) the column-level V2.LogicalName re-bind.
+    Assert.Contains("sp_rename", stmts.[0])
+    Assert.Contains("'COLUMN'", stmts.[0])
+    Assert.Contains("RENAMED_COL", stmts.[0])
+    Assert.Contains("@level2type=N'COLUMN'", stmts.[1])
+    Assert.Contains("RenamedCol", stmts.[1])
+
 [<Fact>]
 let ``live: a logical-only rename re-binds the logical name without an sp_rename`` () =
     // renamedTarget changes the logical Name but keeps customer's Physical.Table:

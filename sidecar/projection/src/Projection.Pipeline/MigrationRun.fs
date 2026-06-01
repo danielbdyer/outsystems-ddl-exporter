@@ -35,6 +35,8 @@ type MigrationError =
     | ExecutionFailed of message: string
     /// The migration executed but B' does not reproduce B at the physical level.
     | VerificationFailed of PhysicalSchemaDiff
+    /// The schema migrated but the data transfer (rows source → sink) failed.
+    | DataTransferFailed of ValidationError list
 
 /// The result of a **live** `migrate A B` execution: the plan + artifacts it
 /// ran, the schema read back from the database after execution (`B'`), and the
@@ -47,6 +49,16 @@ type MigrationOutcome =
         Reconstructed : Catalog
         SchemaDiff    : PhysicalSchemaDiff
         Verified      : bool
+    }
+
+/// The result of a **live, cross-substrate** `migrate A B` with a data load:
+/// the sink's schema migration to B (`Schema`) plus the row transfer from the
+/// data source into the sink over B (`Transfer`). The Dev→UAT case — schema +
+/// data composed into one operation.
+type MigrationDataOutcome =
+    {
+        Schema   : MigrationOutcome
+        Transfer : Transfer.TransferReport
     }
 
 /// The failure modes of recording a migration's episode into the durable store.
@@ -134,20 +146,21 @@ module MigrationRun =
 
     // -- the live-execute leg (direct execution against a deployed DB) --------
 
-    /// Executable rename statements for the **kind renames** in a displacement
-    /// (same `SsKey`, changed logical `Name`). This is the *direct-execution*
-    /// rename channel — the data-preserving, metadata-only counterpart to the
-    /// declarative `.refactorlog` (which drives the rename at DacFx publish,
-    /// 6.F.1). Per renamed kind it emits, in order:
-    ///   1. `sp_rename` of the physical table — **only if** `Physical.Table`
-    ///      changed (a logical-only rename leaves the table in place);
+    /// Executable rename statements for the renames in a displacement — both
+    /// **kind** renames (table; `Renamed`) and **column** renames
+    /// (`AttributeDiff.Renamed`). This is the *direct-execution* rename channel —
+    /// the data-preserving, metadata-only counterpart to the declarative
+    /// `.refactorlog` (which drives the rename at DacFx publish, 6.F.1). Each
+    /// rename emits, in order:
+    ///   1. `sp_rename` of the physical object — **only if** the physical name
+    ///      changed (a logical-only rename leaves the object in place);
     ///   2. `sp_updateextendedproperty` re-binding `V2.LogicalName` to the new
-    ///      `Name` on the (post-rename) physical table — **always**, because
-    ///      `sp_rename` renames the *object* but leaves the logical-name
-    ///      extended property (V2's A1 identity anchor) pointing at the old
-    ///      name. (Surfaced by the live A→B canary's PhysicalSchema diff.)
-    /// Renames run **before** the ALTERs so an `ALTER` against the target
-    /// physical name finds the table. Column renames defer (named-with-trigger).
+    ///      `Name` on the (post-rename) object — **always**, because `sp_rename`
+    ///      renames the *object* but leaves the logical-name extended property
+    ///      (V2's A1 identity anchor) pointing at the old name. (Surfaced by the
+    ///      live A→B canary's PhysicalSchema diff.)
+    /// **Table renames precede column renames**, and both precede the ALTERs, so
+    /// every later statement references the post-rename physical names.
     let renameStatements (diff: CatalogDiff) : string list =
         let byKey (c: Catalog) = Catalog.allKinds c |> List.map (fun k -> k.SsKey, k) |> Map.ofList
         let src = byKey (CatalogDiff.source diff)
@@ -155,27 +168,66 @@ module MigrationRun =
         // LINT-ALLOW (whole function): `sp_rename` / `sp_updateextendedproperty`
         // are system-procedure calls at a terminal text boundary; ScriptDom has
         // no first-class node for them, and every interpolated value is a
-        // validated `TableId` component or `Name` (single-quotes doubled), not
-        // free operator text. Per the LINT-ALLOW substantive-rationale discipline.
+        // validated `TableId` component / `ColumnName` / `Name` (single-quotes
+        // doubled), not free operator text. Per the LINT-ALLOW substantive-
+        // rationale discipline.
         let esc (s: string) : string = s.Replace("'", "''")
-        CatalogDiff.renamed diff
-        |> Map.toList
-        |> List.sortBy (fun (k, _) -> SsKey.rootOriginal k)
-        |> List.collect (fun (key, _) ->
-            match Map.tryFind key src, Map.tryFind key tgt with
-            | Some s, Some t ->
-                let schema = t.Physical.Schema
-                let newTable = t.Physical.Table
-                let spRename =
-                    if s.Physical.Table <> newTable then
-                        [ sprintf "EXEC sp_rename '%s.%s', '%s';" (esc s.Physical.Schema) (esc s.Physical.Table) (esc newTable) ]
-                    else []
-                let reBind =
-                    sprintf
-                        "EXEC sys.sp_updateextendedproperty @name=N'V2.LogicalName', @value=N'%s', @level0type=N'SCHEMA', @level0name=N'%s', @level1type=N'TABLE', @level1name=N'%s';"
-                        (esc (Name.value t.Name)) (esc schema) (esc newTable)
-                spRename @ [ reBind ]
-            | _ -> [])
+        let colOf (k: Kind) (attrKey: SsKey) : string option =
+            k.Attributes |> List.tryFind (fun a -> a.SsKey = attrKey) |> Option.map (fun a -> a.Column.ColumnName)
+        let nameOf (k: Kind) (attrKey: SsKey) : Name option =
+            k.Attributes |> List.tryFind (fun a -> a.SsKey = attrKey) |> Option.map (fun a -> a.Name)
+
+        // (1) Table renames — same SsKey, changed kind Name.
+        let tableRenames =
+            CatalogDiff.renamed diff
+            |> Map.toList
+            |> List.sortBy (fun (k, _) -> SsKey.rootOriginal k)
+            |> List.collect (fun (key, _) ->
+                match Map.tryFind key src, Map.tryFind key tgt with
+                | Some s, Some t ->
+                    let schema = t.Physical.Schema
+                    let newTable = t.Physical.Table
+                    let spRename =
+                        if s.Physical.Table <> newTable then
+                            [ sprintf "EXEC sp_rename '%s.%s', '%s';" (esc s.Physical.Schema) (esc s.Physical.Table) (esc newTable) ]
+                        else []
+                    let reBind =
+                        sprintf
+                            "EXEC sys.sp_updateextendedproperty @name=N'V2.LogicalName', @value=N'%s', @level0type=N'SCHEMA', @level0name=N'%s', @level1type=N'TABLE', @level1name=N'%s';"
+                            (esc (Name.value t.Name)) (esc schema) (esc newTable)
+                    spRename @ [ reBind ]
+                | _ -> [])
+
+        // (2) Column renames — same attribute SsKey, changed attribute Name —
+        // referenced against the post-(table-)rename physical table name.
+        let columnRenames =
+            CatalogDiff.attributeDiffs diff
+            |> Map.toList
+            |> List.sortBy (fun (k, _) -> SsKey.rootOriginal k)
+            |> List.collect (fun (kindKey, ad) ->
+                match Map.tryFind kindKey src, Map.tryFind kindKey tgt with
+                | Some sKind, Some tKind ->
+                    let schema = tKind.Physical.Schema
+                    let table = tKind.Physical.Table
+                    ad.Renamed
+                    |> Map.toList
+                    |> List.sortBy (fun (ak, _) -> SsKey.rootOriginal ak)
+                    |> List.collect (fun (attrKey, _) ->
+                        match colOf sKind attrKey, colOf tKind attrKey, nameOf tKind attrKey with
+                        | Some oldCol, Some newCol, Some newName ->
+                            let spRename =
+                                if oldCol <> newCol then
+                                    [ sprintf "EXEC sp_rename '%s.%s.%s', '%s', 'COLUMN';" (esc schema) (esc table) (esc oldCol) (esc newCol) ]
+                                else []
+                            let reBind =
+                                sprintf
+                                    "EXEC sys.sp_updateextendedproperty @name=N'V2.LogicalName', @value=N'%s', @level0type=N'SCHEMA', @level0name=N'%s', @level1type=N'TABLE', @level1name=N'%s', @level2type=N'COLUMN', @level2name=N'%s';"
+                                    (esc (Name.value newName)) (esc schema) (esc table) (esc newCol)
+                            spRename @ [ reBind ]
+                        | _ -> [])
+                | _ -> [])
+
+        tableRenames @ columnRenames
 
     /// **Live `migrate A B`** — the L3 bullseye realized against a deployed
     /// database (the master equation T16 on real SQL Server). `cnn` is the
@@ -248,4 +300,42 @@ module MigrationRun =
             match readA with
             | Error es -> return Error (SchemaReadFailed es)
             | Ok source -> return! execute allowDrops source target cnn
+        }
+
+    /// **`migrate A B` with a data load** — the cross-substrate composition (the
+    /// premise's Dev→UAT case: "produce a full-export whose users have been
+    /// rekeyed"). Evolves the **sink**'s schema in place from `sinkSource` (its
+    /// known prior schema A) to `target` B, then transfers rows from the
+    /// `dataSource` substrate into the sink over the agreed contract B —
+    /// reconciling per `reconciliation` (the User re-key; empty = a straight
+    /// load). Schema is minimum-viable + fail-loud; data is the existing
+    /// `Transfer` engine. The data leg runs **only if** the schema leg verified
+    /// (never load into an unverified target). Both substrates end at B; the data
+    /// source's rows must match the contract B.
+    let executeWithData
+        (allowDrops: bool)
+        (mode: Transfer.Mode)
+        (allowCdc: bool)
+        (sinkSource: Catalog)
+        (target: Catalog)
+        (reconciliation: Map<SsKey, ReconciliationStrategy>)
+        (dataSource: SqlConnection)
+        (sink: SqlConnection)
+        : System.Threading.Tasks.Task<Result<MigrationDataOutcome, MigrationError>> =
+        task {
+            let! schemaResult = execute allowDrops sinkSource target sink
+            match schemaResult with
+            | Error e -> return Error e
+            | Ok schema ->
+                if not schema.Verified then
+                    return Error (VerificationFailed schema.SchemaDiff)
+                else
+                    let! transferResult =
+                        if Map.isEmpty reconciliation then
+                            Transfer.run mode allowCdc dataSource sink target
+                        else
+                            Transfer.runReconciling mode allowCdc dataSource sink target reconciliation
+                    match transferResult with
+                    | Ok report -> return Ok { Schema = schema; Transfer = report }
+                    | Error es -> return Error (DataTransferFailed es)
         }
