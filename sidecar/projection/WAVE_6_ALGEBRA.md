@@ -41,7 +41,7 @@ emission functor's faithfulness ladder lives (§6).
 | Symbol | Native form | Code surface |
 |---|---|---|
 | `A, B, C : State` | **points** of the affine space | `Catalog` (schema plane) / `RowSet` keyed by reconciled identity (data plane) |
-| `δ : Delta` | **displacement vectors** (the group the torsor acts under) | `CatalogDiff` (schema) / the row-diff (data) |
+| `δ : Delta` | **displacement vectors** (the group the torsor acts under) | `CatalogDiff` (schema, a value); data δ is **substrate-fused** (the at-target MERGE) — observed via the CDC series, not a value (§12.4) |
 | `m : Move` | the **generators** of `Delta` (the alphabet of change) | Add/Remove/Rename/Reshape/Reidentify (schema) · Insert/Delete/Update/Reidentify (data) |
 | `‖·‖ : Delta → ℕ` | the **norm** (length) of a displacement | move-count; **physically: the CDC capture-row count** (data plane) |
 | `Identity` | the **conserved charge** | `SsKey` |
@@ -319,8 +319,10 @@ is correct and latent.** Re-reading §9:
   to integrate over**, and no `compose` (`+`) operator. *Activation:* the `Episode` + `LifecycleStore` +
   `CatalogDiff.compose` (`WAVE_6_MORPHOLOGY.md` §4 F1–F3; `EXECUTION_PLAN.md` 6.H).
 - **T14 / T15** — *latent at the type level*: the channel projection `π` and the norm `‖·‖` have **no code
-  carrier** (witnessed only by test assertions). *Activation:* the verbs reify at the **second consumer**
-  (§12.3) — the data `RowDiff` (6.F.3-data / F4).
+  carrier** (witnessed only by test assertions). *Activation:* the **norm** `‖·‖` reifies as a measurement
+  carrier over the *realized* delta — the CDC capture series on the data plane (6.F.3-data), the move-count on
+  the schema plane; the value-level `π`/`Delta` reify (concretely as `CatalogDiff`) only at the temporal
+  multi-version schema use (6.H), **not** the data leg, whose δ is substrate-fused (§12.4).
 - **T16** — dark differential leg: the engine ships `realize(B)`, not `emit(B ⊖ A)` (the diff emitters have zero
   production callers). *Activation:* `migrate A B` (6.D.1).
 - **A43** — Identity survives an episode boundary (`V2.SsKey` round-trip), but only as a current value, not a
@@ -336,11 +338,36 @@ two-consumer threshold), and the morphology research shows *why*: **the verbs ar
 consumer has not been built, not by oversight.** The principle, sharpened:
 
 > **Carriers reify eagerly; operator-verbs reify at the second consumer.** `Move` / abstract `Delta` / `‖·‖` /
-> `π` / `Torsor` earn a code home when the data leg becomes the second `comparison→apply→emit` (and `migrate`
-> composes the channels) — at `WAVE_6_MORPHOLOGY.md` §4 F4 — and **not before.** The **spine-breaker to refuse**
-> is the speculative torsor refactor (renaming `between`→`⊖`, a `Torsor` typeclass) ahead of F4. The algebra is
-> the *spec the witnesses check*, not a shape to force the code into; the engine must *behave* like the torsor
-> (proven by the discriminating witness), never be *named* like it on speculation.
+> `π` / `Torsor` earn a code home only when a genuine second consumer appears — and **not before.** The
+> **spine-breaker to refuse** is the speculative torsor refactor (renaming `between`→`⊖`, a `Torsor` typeclass).
+> The algebra is the *spec the witnesses check*, not a shape to force the code into; the engine must *behave*
+> like the torsor (proven by the discriminating witness), never be *named* like it on speculation.
+
+### 12.4 The schema/data delta-representation asymmetry (a refinement-pass correction)
+
+An earlier draft located the value-level torsor's "second consumer" in the data leg (a model-plane `RowDiff`).
+The morphology research corrects this: **the schema and data planes differ in how their delta is *represented*,
+even though their moves and norm are analogous.**
+
+- **Schema δ is a value.** `CatalogDiff = between(A, B)` is a model-plane value; `applyDiff` acts on it; the
+  emitters consume it (`EmitterOverDiff`). `between`/`apply`/`compose` are value-level operations.
+- **Data δ is substrate-fused.** Per the ontology's at-target-MERGE policy, the engine emits *the statement that
+  is the diff* (the change-detecting MERGE); SQL Server computes the delta at apply; the comparable-column set +
+  the null-safe predicate ARE the comparison and the tolerance. There is deliberately **no model-plane
+  `RowDiff` value** — building one is the speculative-abstraction trap. The data δ's *observable* form is the
+  **realized CDC capture series** (the post-hoc delta), which the change-manifest records.
+
+**Consequences (so the builder doesn't over-abstract):**
+1. The **data leg is not a value-level second consumer** of `between`/`apply`; it does not trigger a shared
+   `Delta`/`π` type. What it reifies is the **norm** `‖·‖` (the CDC capture count) — a measurement carrier over
+   the realized delta, the data analog of the schema move-count.
+2. The value-level verbs (`between`/`apply`/`compose`, and any abstract `Delta`/`π`) have their second consumer,
+   *if anywhere*, at the **temporal multi-version schema** use (6.H — composing `CatalogDiff`s across episodes),
+   and even there reification stays **concrete** (`CatalogDiff` + `compose`), not a generic `Torsor`.
+3. The schema∥data isomorphism (§3) holds at the **move** and **norm** level (Add/Reshape/Remove ∥
+   Insert/Update/Delete; ALTER-not-CREATE ∥ CDC-minimal), **not** at the delta-representation level. The "same
+   shape one plane apart" is a statement about the generators and the measure, not about how each plane stores
+   its displacement.
 
 ---
 

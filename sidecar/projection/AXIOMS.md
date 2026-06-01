@@ -1856,10 +1856,12 @@ minimum data diff is isometric emission; complete-replace is non-isometric
 `Slice γ: CDC-silence …` (the `=0` instance) + `Slice γ sensitivity …` (the
 norm is not vacuously zero). ⬚ the general `‖δ‖ = k` (6.F.3-data). **Latent at
 the type level (2026-06-01 morphology research):** the norm `‖·‖` and the
-channel projection `π` (T14) have **no code carrier** — they are witnessed only
-by test assertions; they reify at the *second consumer* (the data `RowDiff`,
-6.F.3-data / `WAVE_6_MORPHOLOGY.md` §4 F4), per the noun/verb reification
-principle (`WAVE_6_ALGEBRA.md` §12.3) — not before.
+channel projection `π` (T14) have **no code carrier** — witnessed only by test
+assertions. The **norm** reifies as a measurement carrier over the *realized*
+delta (the CDC capture series, 6.F.3-data); the value-level `π`/`Delta` reify
+(concretely as `CatalogDiff`) only at the temporal multi-version schema use
+(6.H), **not** the data leg, whose δ is substrate-fused (no `RowDiff` value;
+`WAVE_6_ALGEBRA.md` §12.4) — per the noun/verb reification principle (§12.3).
 
 **T16 — the Project square (the master equation; the adjunction lifted to
 displacements).** `run( emit(B ⊖ A), realize(A) ) = realize(B)` modulo

@@ -1174,13 +1174,14 @@ plausibly-named-but-wrong implementation breaks the equation — `WAVE_6_ONTOLOG
 
 **The activation discipline — hold the spine (read before building):**
 - **Behavioral now; structural only at the second consumer.** Most activation is *closing residuals with
-  witnesses* — not restructuring code. The **type-level torsor surface** (a shared `Delta` / `⊕` / `⊖` /
-  `‖·‖` / `π` / `emit`) is extracted **only when the data leg becomes the second consumer** of the
-  comparison→apply→emit pattern (the first is `CatalogDiff`/`applyDiff`/`SchemaMigrationEmitter`) — i.e. at
-  6.G.2 — per the two-consumer threshold + anticipation-vs-speculation **Position B** (structural alignment
-  when the shape is concrete). Not before.
+  witnesses* — not restructuring code. The **value-level torsor surface** (a shared `Delta` / `⊕` / `⊖` / `π`)
+  reifies, *if at all*, only at the **temporal multi-version schema** use (6.H — composing `CatalogDiff`s), and
+  even there stays **concrete** (`CatalogDiff` + `compose`), never a generic `Torsor`. **The data leg is NOT a
+  value-level second consumer** — its δ is substrate-fused (the at-target MERGE; no `RowDiff` value, per
+  `WAVE_6_MORPHOLOGY.md` §F4 / `WAVE_6_ALGEBRA.md` §12.4); what it reifies is the **norm** `‖·‖` as a measurement
+  carrier over the realized CDC series.
 - **The spine-breaker to refuse: the speculative torsor refactor.** Do **not** rename `between`→`⊖`, introduce
-  a `Delta` supertype, or instantiate a `Torsor`/`AffineSpace` abstraction *ahead of* the second consumer. The
+  a `Delta` supertype / `RowDiff` value, or instantiate a `Torsor`/`AffineSpace` abstraction on speculation. The
   algebra is the **spec the witnesses check**, not a shape to force the code into. Right-by-function: make the
   code *behave* like the torsor (proven by the discriminating witness), never *named* like it on speculation.
   This is the one place the calculus could seduce a scope-widening; the discipline forecloses it.
@@ -1204,10 +1205,10 @@ plausibly-named-but-wrong implementation breaks the equation — `WAVE_6_ONTOLOG
 **The activation critical path (premise-respecting order):**
 1. **6.F.1** — refactorlog-against-prior → activates **A43/T13** provenance (the Accumulate move made physical;
    the append-only history is the torsor's path-record).
-2. **6.F.3-data** — the row-diff + CDC-aware MERGE over arbitrary deltas, with the `‖δ‖=k` canary → activates
-   **T15** (data isometry, general). **This is the second consumer** of comparison→apply→emit → *here* the
-   shared `Delta`/`between`/`apply`/`emit` torsor surface earns its structural extraction (Position B), and not
-   before.
+2. **6.F.3-data** — the CDC-aware MERGE over arbitrary deltas, with the `‖δ‖=k` canary + reading back the
+   realized CDC capture series → activates **T15** (data isometry, general). The data δ stays substrate-fused
+   (no `RowDiff` value); what reifies is the **norm** `‖·‖` (the CDC count) — *not* a value-level
+   `between`/`apply` (`WAVE_6_ALGEBRA.md` §12.4).
 3. **6.A.4 + data P-DIFF** — the tolerance projection → activates the **intent-filter** (T16's residual summand).
 4. **6.G.3** — the `‖rename‖_data = 0` cross-plane canary → activates **A43**'s corollary (the refactorlog
    *derivation* made live: a faithful rename moves zero data).

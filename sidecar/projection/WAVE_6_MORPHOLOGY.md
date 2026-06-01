@@ -10,6 +10,11 @@
 > sharpened `WAVE_6_ALGEBRA.md` §12 (the concern-movement field; the latent/activated distinction) and the
 > `EXECUTION_PLAN.md` 6.G/6.H route. Sibling to the ontology (interpretation) and the algebra (equation); this is
 > the **territory** the map was drawn over.
+>
+> **On the vocabulary (pillar-8 guard).** "Amino acid" / "protein" / "morphology" are *expository* framing for
+> this document, not proposed type names — do **not** reify an `AminoAcid` or `Protein` type. The durable,
+> concept-shaped vocabulary is the calculus's: *carriers* and *operator-verbs*, `Episode`, `LifecycleStore`, the
+> *concern-movement field*. The biology is the lens; the algebra is the language.
 
 ---
 
@@ -176,10 +181,19 @@ proven amino acid.**
 - **F3 — `CatalogDiff.compose` (close the derivative algebra).** Add `compose : CatalogDiff → CatalogDiff →
   CatalogDiff` (the `+`, the cross-episode `δ₁ + δ₂`). Flips A-Lifecycle-4 from Bucket-C to operational; earns
   T13's `⬚ compose`; makes "a move in episode i recombining with episode j" a *fold* rather than a single diff.
-- **F4 — The data δ becomes a value (`RowDiff`), and the second consumer reifies the verbs.** First-class the
-  data-plane delta (Insert/Update/Delete/Reidentify by reconciled key) so it is the **second consumer** of the
-  `comparison→apply→emit` pattern — *here* the shared `Delta` / `‖·‖` / `π` torsor surface earns its structural
-  extraction (two-consumer threshold; Position B), and not before.
+- **F4 — The data δ stays substrate-fused; its observable form is the realized CDC series.** *Correction of an
+  earlier over-claim (this refinement pass): do **not** build a model-plane `RowDiff` value.* Per the ontology's
+  policy (§12.2 there) the data plane's **emission** is the at-target MERGE — the substrate computes the delta at
+  apply (the change-detection predicate IS the comparison; the tolerance is applied by the comparable-column
+  set). The data δ's **value-for-observability** is the **realized CDC capture series read back** (the post-hoc
+  delta), recorded into the change-manifest (F5) — not a pre-computed diff. **Consequence for reification:** the
+  data leg is therefore **not** a value-level second consumer of `between`/`apply`; the value-level torsor verbs
+  (`Move`/abstract `Delta`/`π`) reify, *if anywhere*, at the **temporal multi-version schema** use (6.H —
+  composing `CatalogDiff`s via `compose`), and even there reification stays **concrete** (`CatalogDiff` + a
+  measured norm), not a generic `Torsor`. What the data plane *does* reify is the **norm** `‖·‖` — as a
+  measurement carrier over the realized delta (the CDC capture count), the data analog of the schema move-count.
+  *(This sharpens, not weakens, the schema∥data isomorphism: the moves and the norm are analogous one plane
+  apart; the **delta-representation** is not — schema δ is a value, data δ is substrate-fused + CDC-observed.)*
 - **F5 — The change-manifest (the emission-integral of δ + the mixed partial).** Make the manifest integrate the
   **displacement**: per-move counts (`‖δ‖` by channel — added/removed/renamed/reshaped; the CDC capture series
   `k`), the refactorlog cross-reference, the per-run tolerance residual, the `AppliedTransforms` *outcome* (not
@@ -199,9 +213,10 @@ in the new **6.H — Multi-episodic observability substrate**):
 
 1. **6.F.1 / F6** — refactorlog against-prior + episode time → activates the schema time-integral (Accumulate /
    T13 / A43 provenance). *The only durable-provenance amino acid (`ApprovalStore`) is the template.*
-2. **6.F.3-data / F4** — the `RowDiff` + CDC-aware MERGE over arbitrary deltas + the `‖δ‖=k` canary → activates
-   T15 (data isometry, general). **The second consumer** — where the shared `Delta`/`‖·‖`/`π` verbs reify
-   structurally (Position B), and the data δ stops being substrate-only.
+2. **6.F.3-data / F4** — the CDC-aware MERGE over arbitrary deltas + the `‖δ‖=k` canary + reading the realized
+   CDC capture series → activates T15 (data isometry, general). The data δ stays substrate-fused (no model-plane
+   `RowDiff` value); what reifies here is the **norm** `‖·‖` as a measurement carrier over the CDC series — *not*
+   a value-level `between`/`apply` (that is the schema plane's, §12.4 of the algebra).
 3. **F5** — the change-manifest → the manifest integrates δ (not just state) + the per-run tolerance residual +
    the `AppliedTransforms` outcome → activates **∂κ/∂emission** observability for the displacement.
 4. **6.H / F1+F2+F3** — the `Episode` + `LifecycleStore` + `CatalogDiff.compose` → activates **∂κ/∂episode** and
@@ -211,8 +226,10 @@ in the new **6.H — Multi-episodic observability substrate**):
 
 **Holding the spine (the load-bearing discipline, grounded in the morphology):**
 - **The verbs reify at the second consumer, never on speculation.** The absence of `Move`/`Delta`/`‖·‖`/`π`/
-  `Torsor` types is *correct* until F4 makes the data leg the second consumer. **Refuse the speculative torsor
-  refactor** (renaming `between`→`⊖`, a `Torsor` typeclass) ahead of F4 — the algebra is the spec the witnesses
+  `Torsor` types is *correct*. The value-level `between`/`apply`/`compose` reify (if at all, and concretely as
+  `CatalogDiff`) only at the **temporal multi-version schema** use (6.H), not the data leg (whose δ is
+  substrate-fused, §F4). The data plane reifies only the **norm** (over the CDC series). **Refuse the speculative
+  torsor refactor** (renaming `between`→`⊖`, a `Torsor` typeclass) — the algebra is the spec the witnesses
   check, not a shape to force the code into.
 - **Persist, don't compute-anew.** The temporal gap is *persistence*, not algebra — the FTC is proven. Reuse
   `ApprovalStore` as the template; do not invent a parallel store.
@@ -236,7 +253,9 @@ This research sharpened three things now folded into the algebra:
    "latent" — T13/T15 are latent (no durable substrate / no norm carrier), not merely "⬚ trigger." → algebra §9
    status sharpened; AXIOMS T13/T15 status notes amended.
 3. **The noun/verb reification principle** (§1.2 here): carriers reify eagerly; operator-verbs (`Move`/`Delta`/
-   `‖·‖`/`π`/`Torsor`) reify at the second consumer (F4). → algebra §10/§11 + the §6.G spine rule, grounded.
+   `‖·‖`/`π`/`Torsor`) reify at the second consumer — which is the **temporal multi-version schema** use (6.H),
+   *not* the data leg (whose δ is substrate-fused; §F4 corrects the earlier over-claim). → algebra §12.3–§12.4 +
+   the §6.G spine rule, grounded.
 
 — Recorded for the receiving agent. The ontology is the interpretation; the algebra is the equation; **this is
 the territory** — the amino acids that exist, the proteins that don't yet, and the field of concern-movement that
