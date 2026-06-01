@@ -1159,6 +1159,66 @@ permission/atomicity. **Decisions owed** (resolve before the dependent slice ope
 deliverable the frozen state + full refactorlog history, or the state alone (decides P-PROV append-forever vs
 collapsible).
 
+#### 6.G — Activating the calculus (the algebra → the codebase), holding the spine
+
+*Source: `WAVE_6_ALGEBRA.md` + `AXIOMS.md` T12–T16 + A43. The calculus reified the domain as a torsor — `State`
+is an affine space over `Delta`; `⊖` = `between`, `⊕` = `applyDiff`; `‖·‖` (the CDC count) is the norm; `emit`
+is a norm-preserving functor; **T16 (the Project square) is the master equation.** This subsection weaves the
+algebra back into the route: it does not add a parallel plan — it **reframes the remaining Wave 6 slices as the
+activation of named theorem-residuals,** so every slice has a balanced equation it shrinks to zero.*
+
+**A theorem is *activated* when** its operations are first-class in code **and** its residual (the ⬚ in
+`WAVE_6_ALGEBRA.md` §9 / the AXIOMS T-table) is closed by its **discriminating witness** (the input where a
+plausibly-named-but-wrong implementation breaks the equation — `WAVE_6_ONTOLOGY.md` §8), at which point its
+`AxiomTests.fs` entry flips (Skip→Fact, or a new Fact lands).
+
+**The activation discipline — hold the spine (read before building):**
+- **Behavioral now; structural only at the second consumer.** Most activation is *closing residuals with
+  witnesses* — not restructuring code. The **type-level torsor surface** (a shared `Delta` / `⊕` / `⊖` /
+  `‖·‖` / `π` / `emit`) is extracted **only when the data leg becomes the second consumer** of the
+  comparison→apply→emit pattern (the first is `CatalogDiff`/`applyDiff`/`SchemaMigrationEmitter`) — i.e. at
+  6.G.2 — per the two-consumer threshold + anticipation-vs-speculation **Position B** (structural alignment
+  when the shape is concrete). Not before.
+- **The spine-breaker to refuse: the speculative torsor refactor.** Do **not** rename `between`→`⊖`, introduce
+  a `Delta` supertype, or instantiate a `Torsor`/`AffineSpace` abstraction *ahead of* the second consumer. The
+  algebra is the **spec the witnesses check**, not a shape to force the code into. Right-by-function: make the
+  code *behave* like the torsor (proven by the discriminating witness), never *named* like it on speculation.
+  This is the one place the calculus could seduce a scope-widening; the discipline forecloses it.
+- **Per-slice rent (non-negotiable):** the discriminating witness named to its matrix-greppable substring; the
+  `AxiomTests.fs` theorem entry flipped (and `scripts/matrix-status.sh` regenerated); a `DECISIONS` cash-out;
+  the load-bearing commitments held (A18 — emitters never consume `Policy`; pure Core; writer-fidelity; pillar
+  9). The premise re-prioritization holds: PROD-gates (6.C.*) stay deferred; provenance/data/publication lead.
+
+**The activation map (theorem → residual → slice → discriminating witness):**
+
+| Theorem | Residual to close | Activation slice | Discriminating witness (flips the AxiomTests entry) |
+|---|---|---|---|
+| **T12** (torsor axioms) | — *activated* | (shipped: 6.A.10/6.A.11) | round-trip + no-cheat + identity-diff (live) |
+| **T13** (evolution = fold ⊕) | the append-only history; the `compose` (diff∘diff) operator | **6.F.1** (refactorlog-against-prior — Accumulate physical); compose is deferred-OK (endpoint-diff suffices, names not reused) | `refactorlog: a re-emit appends only new renames…`; (compose ⬚ A-Lifecycle-4) |
+| **T14** (orthogonal direct sum) | the full multi-channel partition | **6.D.1** (all channels partition at the composition) | the migrate plan's channel coproduct (no double-emit, no gap) |
+| **T15** (CDC = norm; emit isometric) | the general `‖δ‖ = k` (only `=0` is live) | **6.F.3-data** (the CDC-aware MERGE over arbitrary deltas + the `k`-count canary) | `cdc ruler: the incremental MERGE captures exactly the changed rows (k)…` |
+| **T16** (the Project square) | the full square end-to-end | **6.D.1** (`migrate A B`) | `migrate A B: one command … B reproduces A modulo the declared changes…` |
+| **A43** (Identity conserved) | the cross-plane `‖rename‖_data = 0` | **6.G.3** (deploy a rename, assert zero data-CDC capture) | `A43: a schema rename induces zero data movements (sp_rename, not drop+add)` |
+| **intent filter** (T16 residual) | the tolerance summand `observe = intended ⊕ tolerated` | **6.A.4** + data P-DIFF | `cdc diff: an empty-string↔NULL artifact does not fire a capture (named tolerance)` |
+
+**The activation critical path (premise-respecting order):**
+1. **6.F.1** — refactorlog-against-prior → activates **A43/T13** provenance (the Accumulate move made physical;
+   the append-only history is the torsor's path-record).
+2. **6.F.3-data** — the row-diff + CDC-aware MERGE over arbitrary deltas, with the `‖δ‖=k` canary → activates
+   **T15** (data isometry, general). **This is the second consumer** of comparison→apply→emit → *here* the
+   shared `Delta`/`between`/`apply`/`emit` torsor surface earns its structural extraction (Position B), and not
+   before.
+3. **6.A.4 + data P-DIFF** — the tolerance projection → activates the **intent-filter** (T16's residual summand).
+4. **6.G.3** — the `‖rename‖_data = 0` cross-plane canary → activates **A43**'s corollary (the refactorlog
+   *derivation* made live: a faithful rename moves zero data).
+5. **6.D.1** — `migrate A B` → activates **T16** (the master equation) under **T14** partition + **T13**
+   ordering, gated by the *live* (Dev→UAT) data-compat (6.B.1), not PROD. The green migrate canary flips T16
+   Skip→Fact.
+
+**The end-state (when every residual is zero):** T16 is green — the one-command `migrate A B` canary passes; its
+`AxiomTests` entry flips Skip→Fact; `scripts/matrix-status.sh` reports the per-axis ladder at **L3**; the engine
+is structurally isomorphic to the shape of change (`NORTH_STAR` Promise 8). The calculus is then not documented
+but *enforced*: a regression that breaks any equation drops its AxiomTests entry and a matrix cell, loudly.
 
 ---
 
