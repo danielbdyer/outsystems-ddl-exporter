@@ -306,15 +306,14 @@ let ``6.A.12: a column rename routes to the RefactorLog (SqlSimpleColumn, sp_ren
         "tests/Projection.Tests/RefactorLogEmitterTests.fs"
         "RefactorLogEmitter: a column rename produces a SqlSimpleColumn entry"
 
-[<Fact(Skip = "A-Lifecycle-4: evolutionChain composition is associative — Bucket C. \
-NARROWED (6.A.11): CatalogDiff now has an `apply` peer (`applyDiff`) and the \
-diff-replay reconstruction form lands (`Lifecycle.reconstructLatest` = fold \
-applyDiff genesis); the evolution round-trip law `applyDiff (between A B) A = B` \
-is witnessed (`CatalogDiffTests`). What remains for THIS axiom is the `compose` \
-operator (diff∘diff : CatalogDiff -> CatalogDiff -> CatalogDiff) whose \
-associativity it asserts — not yet built (H-007 SchemaDelta category, the \
-delta-pass Kleisli closure). Promoted to Bucket A when `compose` lands.")>]
-let ``A-Lifecycle-4: evolutionChain composition is associative`` () = ()
+// A-Lifecycle-4 — PROMOTED to Bucket A (6.H.3 prework, 2026-06-01): `CatalogDiff
+// .compose` (the torsor `+`) now exists, so evolutionChain composition
+// associativity is expressible and witnessed.
+[<Fact>]
+let ``A-Lifecycle-4: evolutionChain composition is associative`` () =
+    citationOf
+        "tests/Projection.Tests/CatalogDiffTests.fs"
+        "compose: associativity — (d1+d2)+d3 reproduces the same state as d1+(d2+d3) (A-Lifecycle-4)"
 
 // ===========================================================================
 // Group F — Lineage (A23–A26)
@@ -869,6 +868,13 @@ let ``T13: evolution over time is composition — replay = fold ⊕ along the ti
     citationOf
         "tests/Projection.Tests/LifecycleTests.fs"
         "A-Lifecycle (6.A.11 / H-007): reconstructLatest derives the latest snapshot via fold applyDiff"
+    // 6.H.3 — the `+` operator (compose) + the integral (netDiff = fold compose).
+    citationOf
+        "tests/Projection.Tests/CatalogDiffTests.fs"
+        "compose: applyDiff (compose d1 d2) A = applyDiff d2 (applyDiff d1 A) (functor law)"
+    citationOf
+        "tests/Projection.Tests/LifecycleTests.fs"
+        "6.H.3: netDiff equals fold compose over the evolution chain (3 snapshots)"
 
 [<Fact>]
 let ``T14: orthogonality is a direct-sum decomposition — δ = ⊕_c π_c(δ) (subsumes A38)`` () =
@@ -881,6 +887,11 @@ let ``T14: orthogonality is a direct-sum decomposition — δ = ⊕_c π_c(δ) (
     citationOf
         "tests/Projection.Tests/SchemaMigrationEmitterTests.fs"
         "migration: a rename alone emits no ALTER (renames are the RefactorLog channel)"
+    // 6.H.3 — the concrete schema-side π/‖·‖: the norm is additive over the
+    // channel-count decomposition.
+    citationOf
+        "tests/Projection.Tests/CatalogDiffTests.fs"
+        "norm: equals the sum of the channel counts (additivity, T14/T15)"
 
 [<Fact>]
 let ``T15: CDC is the norm — emit is an isometry; ‖δ‖=0 ⟹ zero capture (CDC-silence)`` () =

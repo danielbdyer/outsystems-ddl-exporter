@@ -20380,3 +20380,23 @@ capability.
 **Holding the spine:** persistence is the gap, not algebra (the FTC is proven) — reuse `ApprovalStore` as the template, do not invent a parallel store; the verbs reify at the second consumer; each slice closes one named residual of one equation or lights one dark cell of the §2 field; per-slice rent unchanged.
 
 **Cross-references:** `WAVE_6_MORPHOLOGY.md` (the unification; the four-agent research); `WAVE_6_ALGEBRA.md` §12 (the concern-movement field; latent/activated; the reification principle); `EXECUTION_PLAN.md` §6.G + 6.H; `AXIOMS.md` T13/T15 status (latent, sharpened). Extends `DECISIONS 2026-06-01 — Wave 6 reified into the change algebra` and `… Activating the calculus (6.G)`. No production code or AxiomTests change this entry — docs + AXIOMS prose + the route.
+
+---
+
+## 2026-06-01 — Wave 6 prework code: CatalogDiff.compose + norm/channelCounts + Lifecycle.netDiff (6.H.3)
+
+**Resolved (code; the first activation prework, holding the spine).** The most foundational, evidence-justified, spine-respecting prework for both immediate success and the long-term calculus — three pure additions in `Projection.Core`, no new dependencies, concrete on `CatalogDiff`/`Lifecycle` (per `WAVE_6_ALGEBRA.md` §12.4 — the schema-side carriers, NOT a generic `Torsor`/`Delta`/`RowDiff`).
+
+- **`CatalogDiff.compose` (the torsor `+`; T13 / A-Lifecycle-4).** `compose d1 d2 : CatalogDiff option` = the net displacement `source d1 → target d2`, `Some` iff d1's target meets d2's source on the captured surface (the groupoid composition is *partial* — a non-adjacent pair is `None`, fail-loud). Implemented as `between (source d1) (target d2)` — provably the net delta (the functor law `applyDiff (compose d1 d2) (source d1) = applyDiff d2 (applyDiff d1 (source d1))`); associativity follows (both groupings recompute `between(source d1, target dₙ)`). **A-Lifecycle-4 promoted Skip→Fact** (Bucket C → A).
+- **`CatalogDiff.norm` + `ChannelCounts` + `channelCounts` (the concrete schema-side `‖·‖` / `π`; T14/T15).** The per-channel move counts (renamed/added/removed kinds + added/removed/renamed/changed attributes) and their sum. `norm (between A A) = 0`; `norm d = 0 ⟺ isEmpty d` (because `between` stores only non-empty attribute diffs); `norm = Σ channelCounts` (additivity, T14/T15). The foundation the change-manifest (6.H.4) and the `migrate` preview (6.D.1) consume.
+- **`Lifecycle.netDiff` (the integral ∫δ as a single delta; T13's FTC companion).** `= fold compose` over `evolutionChain` (composability holds by the monotone chain), collapsing to `between genesis latest`; `applyDiff (netDiff lc) genesis ≈ latest`.
+
+**Witnesses (all live):** `compose: applyDiff (compose d1 d2) A = applyDiff d2 (applyDiff d1 A) (functor law)`; `compose: a non-adjacent pair is None (fail-loud, partial groupoid)`; `compose: associativity — (d1+d2)+d3 …` (the A-Lifecycle-4 witness); `norm: between A A has norm 0`; `norm: a non-empty diff has norm > 0`; `norm: equals the sum of the channel counts (additivity, T14/T15)`; `6.H.3: netDiff applied to genesis reproduces latest`; `6.H.3: netDiff equals fold compose over the evolution chain (3 snapshots)`. AxiomTests: A-Lifecycle-4 flipped Skip→Fact; T13 + T15 citations extended.
+
+**Spine held (the deliberate non-builds).** Did NOT build: a generic `Torsor`/abstract `Delta`/`RowDiff` value (the verbs stay concrete on `CatalogDiff` per §12.4; the data δ stays substrate-fused); the multi-plane `Episode`/`LifecycleStore` (blocked on a round-trippable `Catalog↔JSON` codec that does not exist — that is a major slice, 6.H.1–6.H.2's prerequisite, not prework, and must not be scaffolded speculatively); the refactorlog-against-prior (gated on decision-owed #1). Each is named-with-trigger.
+
+**Status sharpened (docs kept honest):** `WAVE_6_ALGEBRA.md` §9 + §12.2 (T13 compose+netDiff shipped, remaining = durable episode; T14/T15 schema-side norm carrier shipped, data norm ⬚); `AXIOMS.md` T13/T15 status; `EXECUTION_PLAN.md` 6.H.3 → SHIPPED; `WAVE_6_MORPHOLOGY.md` §0 prework-landed note.
+
+**Verification.** Pure pool green (2555 passed / 208 skipped / 0 failed); matrix gate PASS, L2 live 79→80 (A-Lifecycle-4), C 8→7, round-trip 5/5.
+
+**Cross-references:** `WAVE_6_ALGEBRA.md` §9/§12 (the calculus this activates); `EXECUTION_PLAN.md` 6.H.3; `src/Projection.Core/{CatalogDiff,Lifecycle}.fs`; `tests/Projection.Tests/{CatalogDiffTests,LifecycleTests,AxiomTests}.fs`. The remaining 6.H prework prerequisite is the `Catalog↔JSON` round-trip codec (gates `LifecycleStore`).

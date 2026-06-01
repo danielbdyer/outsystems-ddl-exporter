@@ -343,3 +343,86 @@ let ``applyDiff: a dropped attribute is removed from the reconstruction`` () =
         |> List.map (fun at -> at.SsKey)
         |> Set.ofList
     Assert.DoesNotContain(customerTenantKey, customerAttrs)
+
+// ---------------------------------------------------------------------------
+// 6.H.3 prework — the norm ‖·‖, the channel projection π, and compose (the
+// derivative algebra's measurement + composition layer, concrete on the
+// CatalogDiff value; WAVE_6_ALGEBRA.md §12.4). The norm is the schema-side
+// `‖·‖`; compose is the torsor `+` (T13 / A-Lifecycle-4).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``norm: between A A has norm 0`` () =
+    let d = CatalogDiff.between sampleCatalog sampleCatalog |> mustOk
+    Assert.Equal(0, CatalogDiff.norm d)
+    Assert.True(CatalogDiff.isEmpty d)
+
+[<Fact>]
+let ``norm: a non-empty diff has norm > 0 (norm d = 0 iff isEmpty d)`` () =
+    let target = catalogWithCustomerName (fun a -> { a with Type = Integer })
+    let d = CatalogDiff.between sampleCatalog target |> mustOk
+    Assert.False(CatalogDiff.isEmpty d)
+    Assert.True(CatalogDiff.norm d > 0)
+
+[<Fact>]
+let ``norm: equals the sum of the channel counts (additivity, T14/T15)`` () =
+    // A mixed delta: a renamed kind + a dropped attribute + an added attribute
+    // + a column type change — exercises several channels at once.
+    let newAttrKey = attrKey ["Customer"; "Loyalty"]
+    let customer' =
+        { customer with
+            Name = nm "Client"
+            Attributes =
+                (customer.Attributes
+                 |> List.choose (fun at ->
+                     if at.SsKey = customerTenantKey then None
+                     elif at.SsKey = customerNameKey then Some { at with Type = Integer }
+                     else Some at))
+                @ [ { Attribute.create newAttrKey (nm "Loyalty") Integer with
+                        Column = { ColumnName = "LOYALTY"; IsNullable = true } } ] }
+    let target = catalogOfKinds [ customer'; order; country ]
+    let d = CatalogDiff.between sampleCatalog target |> mustOk
+    let c = CatalogDiff.channelCounts d
+    let sum =
+        c.RenamedKinds + c.AddedKinds + c.RemovedKinds
+        + c.AddedAttributes + c.RemovedAttributes + c.RenamedAttributes + c.ChangedAttributes
+    Assert.Equal(sum, CatalogDiff.norm d)
+    Assert.True(sum > 0)
+
+/// Cumulative A → B → C → D over Customer.Name's facets (each catalog distinct).
+let private custA = sampleCatalog
+let private custB = catalogWithCustomerName (fun a -> { a with Type = Integer })
+let private custC = catalogWithCustomerName (fun a -> { a with Type = Integer; Column = { a.Column with IsNullable = true } })
+let private custD = catalogWithCustomerName (fun a -> { a with Type = Integer; Column = { a.Column with IsNullable = true }; Length = Some 64 })
+
+[<Fact>]
+let ``compose: applyDiff (compose d1 d2) A = applyDiff d2 (applyDiff d1 A) (functor law)`` () =
+    let d1 = CatalogDiff.between custA custB |> mustOk
+    let d2 = CatalogDiff.between custB custC |> mustOk
+    let composed =
+        match CatalogDiff.compose d1 d2 with
+        | Some c -> c
+        | None -> Assert.Fail "expected composable"; Unchecked.defaultof<_>
+    let viaCompose = CatalogDiff.applyDiff custA composed
+    let viaSequence = CatalogDiff.applyDiff (CatalogDiff.applyDiff custA d1) d2
+    // Both reproduce C (over the captured surface).
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between custC viaCompose |> mustOk))
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between custC viaSequence |> mustOk))
+
+[<Fact>]
+let ``compose: a non-adjacent pair is None (fail-loud, partial groupoid)`` () =
+    let d_ab = CatalogDiff.between custA custB |> mustOk   // target = B
+    let d_ac = CatalogDiff.between custA custC |> mustOk   // source = A ≠ B
+    Assert.True((CatalogDiff.compose d_ab d_ac).IsNone)
+
+[<Fact>]
+let ``compose: associativity — (d1+d2)+d3 reproduces the same state as d1+(d2+d3) (A-Lifecycle-4)`` () =
+    let d1 = CatalogDiff.between custA custB |> mustOk
+    let d2 = CatalogDiff.between custB custC |> mustOk
+    let d3 = CatalogDiff.between custC custD |> mustOk
+    let some = function Some v -> v | None -> Assert.Fail "expected composable"; Unchecked.defaultof<_>
+    let left = some (CatalogDiff.compose (some (CatalogDiff.compose d1 d2)) d3)
+    let right = some (CatalogDiff.compose d1 (some (CatalogDiff.compose d2 d3)))
+    // Both are the A → D displacement: applying either to A reproduces D.
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between custD (CatalogDiff.applyDiff custA left) |> mustOk))
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between custD (CatalogDiff.applyDiff custA right) |> mustOk))

@@ -1248,12 +1248,12 @@ gives the proven algebra a durable substrate to integrate over — the time-axis
   the FTC into reconstruction over durable provenance: load genesis + the persisted δ-chain, `fold applyDiff`.
 - **Acceptance:** `` ``lifecycle store: reconstructLatest over the persisted chain reproduces the stored episode (FTC, durable)`` ``. **~M.**
 
-##### 6.H.3 — `CatalogDiff.compose` (close the derivative algebra; T13/A-Lifecycle-4)
+##### 6.H.3 — `CatalogDiff.compose` (close the derivative algebra; T13/A-Lifecycle-4) — **SHIPPED 2026-06-01**
 - **Gap:** `CatalogDiff` has `between` (⊖) and `applyDiff` (⊕) but **no `compose` (`+`)** — so `δ₁ + δ₂` (the
   cross-episode derivative) is inexpressible, and A-Lifecycle-4 (associativity) is Bucket-C (`AXIOMS.md`).
 - **First slice:** `compose : CatalogDiff → CatalogDiff → CatalogDiff` with `applyDiff (compose d₁ d₂) = applyDiff
   d₂ ∘ applyDiff d₁` (the functor law). Flips A-Lifecycle-4 Skip→Fact; earns T13's `⬚ compose`.
-- **Acceptance:** `` ``CatalogDiff.compose: applyDiff (compose d1 d2) A = applyDiff d2 (applyDiff d1 A)`` ``. **~M.**
+- **Acceptance:** `` ``compose: applyDiff (compose d1 d2) A = applyDiff d2 (applyDiff d1 A) (functor law)`` `` — **LANDED** with the associativity witness (A-Lifecycle-4 flipped Skip→Fact), `Lifecycle.netDiff` (the integral ∫δ = fold compose), and `CatalogDiff.norm`/`channelCounts` (the concrete schema-side ‖·‖/π). **~M.** ✅
 
 ##### 6.H.4 — The change-manifest (the emission-integral of δ; the mixed partial)
 - **Gap:** the `SsdtManifest` integrates *state* (`Coverage`/`PredicateCoverage`/`AppliedTransforms`) not

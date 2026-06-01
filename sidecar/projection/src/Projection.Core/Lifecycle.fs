@@ -155,3 +155,16 @@ module Lifecycle =
         match evolutionChain lifecycle with
         | Ok diffs -> Ok (List.fold CatalogDiff.applyDiff genesisCatalog diffs)
         | Error e  -> Error e
+
+    /// 6.H.3 — the net displacement from genesis to latest: the integral ∫δ as
+    /// a single delta (the FTC's companion to `reconstructLatest`'s fold-⊕).
+    /// Equal to `fold CatalogDiff.compose` over `evolutionChain` (composability
+    /// holds by the monotone chain — each edge's target IS the next edge's
+    /// source), which collapses to `between genesis latest`; computed directly
+    /// for totality. `applyDiff (netDiff lc) genesis ≈ latest` (modulo the
+    /// captured surface). Threads the Π-side `EmitError`.
+    let netDiff (lifecycle: Lifecycle) : Result<CatalogDiff, EmitError> =
+        let (Lifecycle data) = lifecycle
+        let genesisCatalog = (List.head data.Snapshots).Catalog
+        let latestCatalog = (List.last data.Snapshots).Catalog
+        CatalogDiff.between genesisCatalog latestCatalog

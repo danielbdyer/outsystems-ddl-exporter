@@ -429,3 +429,69 @@ module CatalogDiff =
                         mods @ [ { ownerModule with Kinds = [ kind ] } ])
                 baseModules
         { baseCatalog with Modules = modulesWithAdds }
+
+    // -- 6.H.3 (prework): the norm ‖·‖, the channel projection π, and compose
+    //    — the derivative algebra's measurement + composition layer, made
+    //    CONCRETE on the `CatalogDiff` value (per `WAVE_6_ALGEBRA.md` §12.4 —
+    //    the schema-side carrier; NOT a generic `Torsor`/`Delta`). Foundational
+    //    for the change-manifest (6.H.4), the `migrate` preview (6.D.1), and the
+    //    temporal substrate (6.H).
+
+    /// The per-channel move counts of a diff — the concrete schema-side channel
+    /// projection π. Each field counts one move-channel; their sum is the norm
+    /// ‖δ‖ (additive over the orthogonal channels, T14/T15).
+    type ChannelCounts =
+        {
+            RenamedKinds      : int
+            AddedKinds        : int
+            RemovedKinds      : int
+            AddedAttributes   : int
+            RemovedAttributes : int
+            RenamedAttributes : int
+            ChangedAttributes : int
+        }
+
+    let channelCounts (d: CatalogDiff) : ChannelCounts =
+        let (CatalogDiff data) = d
+        let sumAttr (f: AttributeDiff -> int) =
+            data.AttributeDiffs |> Map.toSeq |> Seq.sumBy (fun (_, ad) -> f ad)
+        {
+            RenamedKinds      = Map.count data.Renamed
+            AddedKinds        = Set.count data.Added
+            RemovedKinds      = Set.count data.Removed
+            AddedAttributes   = sumAttr (fun ad -> Set.count ad.Added)
+            RemovedAttributes = sumAttr (fun ad -> Set.count ad.Removed)
+            RenamedAttributes = sumAttr (fun ad -> Map.count ad.Renamed)
+            ChangedAttributes = sumAttr (fun ad -> List.length ad.Changed)
+        }
+
+    /// The norm ‖δ‖ — total move count, the sum of the channel counts (T15,
+    /// schema side). `norm (between A A) = 0`; `norm d = 0 ⟺ isEmpty d`
+    /// (because `between` stores only non-empty attribute diffs, so any stored
+    /// `AttributeDiff` contributes ≥ 1 to the norm).
+    let norm (d: CatalogDiff) : int =
+        let c = channelCounts d
+        c.RenamedKinds + c.AddedKinds + c.RemovedKinds
+        + c.AddedAttributes + c.RemovedAttributes + c.RenamedAttributes + c.ChangedAttributes
+
+    /// 6.H.3 — compose two consecutive diffs into their net displacement (the
+    /// torsor `+`; T13 / A-Lifecycle-4). `compose d1 d2` is the delta
+    /// `source d1 → target d2`, defined (`Some`) **iff** d1's target meets d2's
+    /// source on the captured surface — the groupoid composition is *partial*
+    /// (deltas are typed by their endpoints); a non-adjacent pair is `None`
+    /// (fail-loud, never a silently-wrong result). Implemented as
+    /// `between (source d1) (target d2)`, which is provably the net delta:
+    /// `applyDiff (compose d1 d2) (source d1) = target d2 = applyDiff d2
+    /// (applyDiff d1 (source d1))` (the functor law). **Associativity**
+    /// (A-Lifecycle-4) follows — both groupings recompute
+    /// `between (source d1) (target dₙ)`.
+    let compose (d1: CatalogDiff) (d2: CatalogDiff) : CatalogDiff option =
+        let composable =
+            match between (target d1) (source d2) with
+            | Ok bridge -> isEmpty bridge
+            | Error _   -> false
+        if not composable then None
+        else
+            match between (source d1) (target d2) with
+            | Ok net  -> Some net
+            | Error _ -> None

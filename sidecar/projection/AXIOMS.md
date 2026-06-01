@@ -1831,14 +1831,15 @@ B` + `applyDiff threads the passed-in catalog … (no-cheat)`.
 **T13 — evolution over time (Chasles along the timeline).**
 `replay(t) = genesis ⊕ (δ₀ + … + δ_t)` = `fold ⊕`. Composition of deltas IS
 the schema/data history. Witness: `Lifecycle.reconstructLatest` (fold
-applyDiff). The `compose : Delta → Delta → Delta` operator (diff∘diff) that
-would close A-Lifecycle-4's associativity is the remaining ⬚ (H-007).
+applyDiff). The `compose : Delta → Delta → Delta` operator (diff∘diff) is **SHIPPED**
+as `CatalogDiff.compose` (6.H.3, 2026-06-01); A-Lifecycle-4 promoted to Bucket A.
 **Latent (2026-06-01 morphology research):** `reconstructLatest` runs only over
 **in-memory values in tests** — there is **no durable episode** to integrate
 over (`CatalogSnapshot` is schema-only, single-plane, never serialized). The
-FTC is proven, the substrate absent. *Activation:* the multi-plane `Episode` +
-`LifecycleStore` + `CatalogDiff.compose` (`EXECUTION_PLAN.md` 6.H;
-`WAVE_6_MORPHOLOGY.md` §4 F1–F3).
+FTC is proven, the substrate absent. `CatalogDiff.compose` + `Lifecycle.netDiff`
+are SHIPPED (6.H.3); the **remaining** activation is the durable multi-plane
+`Episode` + `LifecycleStore` (`EXECUTION_PLAN.md` 6.H.1–6.H.2; `WAVE_6_MORPHOLOGY.md`
+§4 F1–F2).
 
 **T14 — channel decomposition (orthogonality as a direct sum).**
 `δ = ⊕_c π_c(δ)`, `π_c ∘ π_{c'} = 0` (c≠c'), `Σ_c π_c = id`, `‖δ‖ = Σ_c ‖π_c δ‖`.
@@ -1856,12 +1857,14 @@ minimum data diff is isometric emission; complete-replace is non-isometric
 `Slice γ: CDC-silence …` (the `=0` instance) + `Slice γ sensitivity …` (the
 norm is not vacuously zero). ⬚ the general `‖δ‖ = k` (6.F.3-data). **Latent at
 the type level (2026-06-01 morphology research):** the norm `‖·‖` and the
-channel projection `π` (T14) have **no code carrier** — witnessed only by test
-assertions. The **norm** reifies as a measurement carrier over the *realized*
-delta (the CDC capture series, 6.F.3-data); the value-level `π`/`Delta` reify
-(concretely as `CatalogDiff`) only at the temporal multi-version schema use
-(6.H), **not** the data leg, whose δ is substrate-fused (no `RowDiff` value;
-`WAVE_6_ALGEBRA.md` §12.4) — per the noun/verb reification principle (§12.3).
+channel projection `π` were witnessed only by test assertions. **Schema-side
+update (6.H.3, SHIPPED):** they now have a concrete carrier — `CatalogDiff.norm`
+/ `channelCounts` (the schema δ is a value, so its norm/projection are too). The
+**data** norm reifies as a measurement carrier over the *realized* delta (the
+CDC capture series, 6.F.3-data, ⬚); the value-level `π`/`Delta` stay concrete as
+`CatalogDiff` (temporal multi-version use, 6.H), **not** the data leg, whose δ is
+substrate-fused (no `RowDiff` value; `WAVE_6_ALGEBRA.md` §12.4) — per the
+noun/verb reification principle (§12.3).
 
 **T16 — the Project square (the master equation; the adjunction lifted to
 displacements).** `run( emit(B ⊖ A), realize(A) ) = realize(B)` modulo

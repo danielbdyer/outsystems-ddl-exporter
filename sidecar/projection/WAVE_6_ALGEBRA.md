@@ -241,9 +241,9 @@ tolerances." *Trigger:* the structured intent/tolerance projection (6.A.4 + the 
 | Thm | Statement (balanced equation) | Native reading | Witness / Trigger |
 |---|---|---|---|
 | **T12** | `A ⊕ (B ⊖ A) = B`; `A ⊕ 0 = A`; `(A⊕δ₁)⊕δ₂ = A⊕(δ₁+δ₂)` | the torsor (Weyl) axioms — round-trip, identity, composition are one | ✅ round-trip + no-cheat + identity-diff |
-| **T13** | `replay(t) = genesis ⊕ (δ₀ + … + δ_t)` = fold ⊕ | evolution over time = vector addition along the timeline (Chasles) | ✅ `reconstructLatest`; ⬚ `compose` operator |
-| **T14** | `δ = ⊕_c π_c(δ)`, `π_c π_{c'} = 0`, `‖δ‖ = Σ‖π_c δ‖` | orthogonality = direct-sum decomposition; subsumes A38 | ✅ A38 + rename⊥reshape; ⬚ full multi-channel |
-| **T15** | `‖emit(δ)‖ = ‖δ‖`; `‖δ‖_data = \|capture\|`; `‖0‖ = 0` | emission is an isometry; CDC is the norm; minimality = isometry | ✅ CDC-silence floor + sensitivity; ⬚ `‖δ‖ = k` |
+| **T13** | `replay(t) = genesis ⊕ (δ₀ + … + δ_t)` = fold ⊕ | evolution over time = vector addition along the timeline (Chasles) | ✅ `reconstructLatest` + **`compose`** + `netDiff` (6.H.3); ⬚ durable episode (6.H) |
+| **T14** | `δ = ⊕_c π_c(δ)`, `π_c π_{c'} = 0`, `‖δ‖ = Σ‖π_c δ‖` | orthogonality = direct-sum decomposition; subsumes A38 | ✅ A38 + rename⊥reshape + **`norm`/`channelCounts`** (concrete schema π/‖·‖, 6.H.3); ⬚ full multi-channel at `migrate` |
+| **T15** | `‖emit(δ)‖ = ‖δ‖`; `‖δ‖_data = \|capture\|`; `‖0‖ = 0` | emission is an isometry; CDC is the norm; minimality = isometry | ✅ CDC-silence floor + **schema-side `norm` carrier** (6.H.3); ⬚ data `‖δ‖ = k` (CDC series) |
 | **T16** | `run(emit(B⊖A), realize(A)) = realize(B)` mod (erasure ⊎ tolerance) | the Project square commutes — the adjunction lifted to displacements | ◑ sub-squares; ⬚ the `migrate` canary (6.D.1) |
 | **A43** | Identity conserved under all moves; Rename: `Designation` changes, `Identity` const, `‖rename‖_data = 0` | Identity is the conserved charge; the refactorlog is *derived* | ✅ column-rename + re-key; ⬚ `‖rename‖_data=0` canary |
 
@@ -315,11 +315,12 @@ its operations are **unwired** in production and/or its substrate is **not persi
 the operations are wired and the substrate durable, closing the residual. The research's finding: **the calculus
 is correct and latent.** Re-reading §9:
 - **T12** — activated (between/applyDiff wired into Lifecycle + the SchemaMigration/RefactorLog emitters exist).
-- **T13** — *latent*: `reconstructLatest` runs only over in-memory values in tests; **there is no durable episode
-  to integrate over**, and no `compose` (`+`) operator. *Activation:* the `Episode` + `LifecycleStore` +
-  `CatalogDiff.compose` (`WAVE_6_MORPHOLOGY.md` §4 F1–F3; `EXECUTION_PLAN.md` 6.H).
-- **T14 / T15** — *latent at the type level*: the channel projection `π` and the norm `‖·‖` have **no code
-  carrier** (witnessed only by test assertions). *Activation:* the **norm** `‖·‖` reifies as a measurement
+- **T13** — *partly activated (6.H.3)*: `CatalogDiff.compose` (the `+`) + `Lifecycle.netDiff` (the integral ∫δ)
+  are SHIPPED, and A-Lifecycle-4 is promoted to Bucket A. **Remaining latent:** `reconstructLatest`/`netDiff`
+  still run only over in-memory values — *no durable episode*. *Activation:* the `Episode` + `LifecycleStore`
+  (`WAVE_6_MORPHOLOGY.md` §4 F1–F2; `EXECUTION_PLAN.md` 6.H.1–6.H.2).
+- **T14 / T15** — *schema side activated (6.H.3)*: the schema norm `‖·‖` and channel projection `π` now have a
+  concrete carrier — `CatalogDiff.norm` / `channelCounts`. **Remaining:** the **data** norm reifies as a measurement
   carrier over the *realized* delta — the CDC capture series on the data plane (6.F.3-data), the move-count on
   the schema plane; the value-level `π`/`Delta` reify (concretely as `CatalogDiff`) only at the temporal
   multi-version schema use (6.H), **not** the data leg, whose δ is substrate-fused (§12.4).

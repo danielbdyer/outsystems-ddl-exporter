@@ -43,6 +43,12 @@ The four agents converge on one structural truth, in four projections:
   CDC log is **ephemeral**. The *only* concern that survives an episode boundary is **Identity** (`V2.SsKey`
   round-trips through the substrate) — and only as a current value, not a chain.
 
+**Update (2026-06-01, prework landed).** The first activation prework shipped: `CatalogDiff.compose` (the `+`),
+`CatalogDiff.norm`/`channelCounts` (the concrete schema-side ‖·‖/π), and `Lifecycle.netDiff` (the integral ∫δ) —
+so the schema-side measurement layer and the derivative algebra are no longer dark (A-Lifecycle-4 flipped to a
+live witness). The *remaining* latency is the durable substrate (no persisted `Episode`) and the wiring of the
+differential leg into `migrate`. The finding below stands as the research snapshot it was.
+
 **The synthesis:** the engine has built every *carrier* and proven every *law in isolation*, but the *proteins
 that would move concerns through emission space and across episodes are unbuilt.* The calculus is **correct and
 latent**; *activation* = wiring the differential leg + reifying the measurement verbs (where evidence now

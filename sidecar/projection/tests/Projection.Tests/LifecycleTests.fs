@@ -167,6 +167,37 @@ let ``reconstructLatest: a genesis-only lifecycle reconstructs C0`` () =
     let reconstructed = Lifecycle.reconstructLatest devGenesis |> mustOk
     Assert.True(CatalogDiff.isEmpty (CatalogDiff.between sampleCatalog reconstructed |> mustOk))
 
+// 6.H.3 — netDiff (the integral ∫δ as a single delta) + its equality to
+// fold-compose over the evolution chain (the FTC's companion). A 3-snapshot
+// chain genuinely exercises CatalogDiff.compose in the fold.
+[<Fact>]
+let ``6.H.3: netDiff applied to genesis reproduces latest (the integral)`` () =
+    let nd = Lifecycle.netDiff devChain |> mustOk
+    let reconstructed = CatalogDiff.applyDiff sampleCatalog nd
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between targetCatalog reconstructed |> mustOk))
+
+[<Fact>]
+let ``6.H.3: netDiff equals fold compose over the evolution chain (3 snapshots)`` () =
+    // genesis (sampleCatalog) → c1 (Customer renamed Patron) → c2 (back to sample).
+    let c2 : CatalogSnapshot = { Version = ver 2 "1.2.0"; Catalog = sampleCatalog }
+    let chainLc = Lifecycle.append c2 devChain |> mustResultOk
+    let edges = Lifecycle.evolutionChain chainLc |> mustOk
+    Assert.Equal(2, List.length edges)  // two edges → the fold actually composes
+    let folded =
+        match edges with
+        | d0 :: rest ->
+            rest |> List.fold (fun acc d ->
+                match CatalogDiff.compose acc d with
+                | Some c -> c
+                | None -> Assert.Fail "lifecycle edges must be composable"; Unchecked.defaultof<_>) d0
+        | [] -> Assert.Fail "expected edges"; Unchecked.defaultof<_>
+    let nd = Lifecycle.netDiff chainLc |> mustOk
+    let viaFold = CatalogDiff.applyDiff sampleCatalog folded
+    let viaNet = CatalogDiff.applyDiff sampleCatalog nd
+    // Both reproduce the latest (sampleCatalog again, here) over the captured surface.
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between viaFold viaNet |> mustOk))
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between sampleCatalog viaNet |> mustOk))
+
 [<Fact>]
 let ``A-Lifecycle-3 (L3-L3): timelines are independent histories`` () =
     let uat = Lifecycle.genesis (tl "uat") c0
