@@ -192,6 +192,16 @@ difference between a tool that is right and a tool that can **show** it is right
 That difference is the entire reason "replace V1" is a stronger claim than "trust V1" — and it is
 why the north star is not "verify the cutover" but "make verification self-sufficient."
 
+> **What the totalities quantify over.** The six totalities are predicates; the entities they range
+> over — State · Comparison · Intent-Filter · Plan · Channel · Gate · Execution, and the *core moves
+> of change* (Add / Remove / Rename / Reshape / Reidentify / Move / Accumulate) — are pinned in
+> `WAVE_6_ONTOLOGY.md` (the 2026-06-01 masterwork). T-I quantifies over the comparison + the emission
+> functor's partiality; **T-V** over the channels (partition + ordering); **T-VI** over the gates
+> (completeness *is* "spanning"). The ontology is *right-by-function* armor: each entity carries a
+> **discriminating predicate** (the input on which a plausibly-named-but-wrong implementation
+> diverges) so the engine is structurally isomorphic to the shape of change, not merely named after
+> it. Read it before opening any Wave 6.A.10+/6.B/6.C/6.D/6.F slice.
+
 ---
 
 ## 4. The operator's covenant — what the engine promises, for whom

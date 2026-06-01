@@ -37,6 +37,23 @@ slice — it carries every per-axis finding (file:line), the master severity
 table, and the complete acceptance-criteria catalog. Pairs with the
 `AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md` (the L1↔L2↔L3 bucket model).
 
+**`WAVE_6_ONTOLOGY.md`** (2026-06-01 masterwork) is the audit's **functional
+sibling**: where the audit established *that* the isomorphism is unproven, the
+ontology establishes *what the isomorphism is to* — the **core moves of change
+over time** (Add / Remove / Rename / Reshape / Reidentify / Move / Accumulate),
+grounded bottom-up from physical SQL-Server mechanics (pages / locks / CDC /
+identity) through the operator's concrete premise (a **publication-and-provenance
+engine** for an evolving relational model — external SSIS consumer; Dev→UAT
+rekey; PROD-empty; the eject — *not* a live-PROD deploy engine) up to the
+entities the totalities quantify over. Its discipline is **right-by-function,
+not by name**: every entity carries a *discriminating predicate* (the input on
+which a plausibly-named-but-wrong implementation diverges). It is the source for
+`EXECUTION_PLAN.md` Wave 6.F (publication & provenance) and the premise
+re-prioritization (PROD-gates 6.C.* deferred behind provenance; 6.A.12 explicit
+ALTER repositioned as a lens; DacFx owns the schema ALTER, the engine owns the
+data movement measured by CDC). Read it before any Wave 6.A.10+/6.B/6.C/6.D/6.F
+slice — alongside the audit.
+
 **`V2_DRIVER.md`** (codified 2026-05-10 chapter 3.7 sidebar; principal-PO
 discussion) is the destination-KPI document — the *why* the cutover
 ladder bends toward V2-driver mode, the per-axis correctness stakes,

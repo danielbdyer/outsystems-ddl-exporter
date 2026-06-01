@@ -1074,6 +1074,68 @@ orthogonality + spanning pre-flights (6.B, 6.C.1) and transactionality (6.C.2) a
 honest critical path to Promise 8: **6.A.10 → 6.A.12 → {6.B.1, 6.B.2, 6.C.1, 6.C.2} → 6.D.1**, with the per-axis
 L2 faithfulness slices (6.A.*) landing in parallel as confidence-builders and matrix-rung raisers.
 
+#### 6.F — Publication & Provenance (premise-driven; source: `WAVE_6_ONTOLOGY.md`)
+
+*The 2026-06-01 reasoning session pinned the operator's concrete premise (`WAVE_6_ONTOLOGY.md` §2): this is a
+**publication-and-provenance engine for an evolving relational model**, consumed by an external team's SSIS jobs
+and terminating in a schema-freeze **eject** — not a deployment engine for a live regulated PROD (PROD has no
+data yet). The deploy artifact is the **declarative SSDT triple** — adjusted CREATE TABLE + refactorlog
+appended-against-prior + pre/post-deployment data scripts — with DacFx computing the schema ALTER at publish
+(the `WAVE_6_ONTOLOGY.md` §4 DacFx seam). CDC is the operator's **ruler** for minimal data movement (§6). This
+sub-wave is the buildable projection of those moves (`WAVE_6_ONTOLOGY.md` §5).*
+
+##### 6.F.1 — RefactorLog appended-against-prior (the Accumulate move; provenance)
+- **Gap:** `RefactorLogEmitter.emit` produces the full rename set from a diff each run; it does not reconcile
+  against the *prior committed `.refactorlog`*. The operator's artifact requires "appended refactor logs that
+  compare themselves to the prior refactor log" — append only genuinely-new operations, never duplicate, never
+  delete (a fresh-environment deploy replays all of them; handbook §"Never Delete Entries").
+- **First slice:** read the prior `.refactorlog` (an emit-time input — see decision owed #1 below), compute this
+  version's rename operations, emit the union deduped by `OperationKey`. The accumulated log IS the physical
+  `Lifecycle.evolutionChain` (`WAVE_6_ONTOLOGY.md` P-PROV).
+- **Acceptance:** `` ``refactorlog: a re-emit appends only new renames and never duplicates a prior OperationKey`` ``. **~M.**
+
+##### 6.F.2 — Two-mode emission: fresh-replacement ⊕ incremental
+- **Gap:** the engine emits one shape; the operator needs *both* — **fresh replacement** (drop all schema+data,
+  load schema, load data; always correct, never minimal — the safety baseline) and **incremental** (CREATE +
+  refactorlog-against-prior + data scripts; minimal, CDC-measured). `WAVE_6_ONTOLOGY.md` §4.
+- **First slice:** an explicit operator-chosen `EmissionMode` (`FreshReplacement | Incremental`) threading the
+  compose/CLI surface; fresh-replacement composes the existing full CREATE + full data load; incremental
+  composes 6.F.1 + 6.A.12-lens + the data scripts (6.F.3).
+- **Acceptance:** `` ``emission mode: fresh-replacement reloads whole; incremental touches only the delta`` ``. **~M.**
+
+##### 6.F.3 — Data movement as post-deployment script + CDC-count enforcement (the Move move's ruler)
+- **Gap:** CDC-silence is witnessed at `|delta| = 0` (`CdcSilenceTests`). The operator *enforces* the general
+  property — *the capture-row count equals the true data delta* — to track "minimum viable data movements to
+  arrive at current-A from an earlier-A" (`WAVE_6_ONTOLOGY.md` §6, P-DM). The minimal data plan must also be
+  emitted as a **post-deployment script** (data changes as close to publish as possible).
+- **First slice:** generalize the silence canary to a known small delta `k`: deploy earlier-A, apply the
+  incremental data plan, assert `cdc.<table>_CT` captured exactly `k` rows (0 for unchanged). Route the data
+  plan into a post-deployment script artifact.
+- **Acceptance:** `` ``cdc ruler: applying the incremental data plan captures exactly the changed rows (k), zero for unchanged`` ``. **~M.** *builds on the shipped change-detecting MERGE.*
+
+##### 6.F.4 — The published-model + provenance surface (the SSIS consumer / the eject)
+- **Gap:** the external SSIS team consumes the *evolving relational model* to keep their legacy→our-shape
+  mappings current; the eject freezes it. There is no consumer-facing rendering of "the model now + what changed
+  this sprint" distinct from the deploy artifact (`WAVE_6_ONTOLOGY.md` P-IF / §2 / decision owed #2).
+- **First slice (gated on decision owed #2):** a consumer-facing projection of `CatalogDiff` — at minimum a
+  per-sprint changelog (the moves §5, human-readable) alongside the dacpac; optionally a machine-readable diff
+  the SSIS team can drive mappings from.
+- **Acceptance:** `` ``provenance: the published model + per-sprint move changelog regenerate from the diff`` ``. **~M.**
+
+**Premise re-prioritization (per `WAVE_6_ONTOLOGY.md` §10).** This premise reorders the audit's generic critical
+path. **Deferred-with-trigger** (PROD has no data): **6.C.2** (transactional/resumable) and **6.C.1**
+(permission/connection gates) — *trigger: PROD gains data, or a write-denied environment enters a real flow.*
+**Repositioned:** **6.A.12** explicit ALTER → a preview/verify/measure *lens*, not the deploy artifact (the
+deploy artifact is the declarative triple; DacFx computes the schema ALTER). **Held:** 6.B.1's live form is the
+**Dev→UAT user-rekey** compatibility (not PROD tightening); **6.D.1 `migrate`** remains the composition, gated by
+data-compat + rekey under the ordering/partition laws (`WAVE_6_ONTOLOGY.md` P-ORD/P-CH), *not* PROD
+permission/atomicity. **Decisions owed** (resolve before the dependent slice opens; full text in
+`WAVE_6_ONTOLOGY.md` §10): (1) is the prior `.refactorlog` an engine input or a repo-merge concern (gates 6.F.1);
+(2) what does the SSIS team consume — dacpac / changelog / machine-diff (gates 6.F.4); (3) at eject, is the
+deliverable the frozen state + full refactorlog history, or the state alone (decides P-PROV append-forever vs
+collapsible).
+
+
 ---
 
 ## IV. Dependency graph, critical path, sequencing
