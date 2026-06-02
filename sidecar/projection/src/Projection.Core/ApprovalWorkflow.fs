@@ -35,20 +35,21 @@ type ApprovalRecord = {
 module ApprovalWorkflow =
 
     /// Create a `Pending` approval record for the given policy version.
-    /// Records the current UTC time as the initiation timestamp.
-    let pending (policyVersion: string) : ApprovalRecord =
+    /// `at` is the initiation timestamp — boundary-supplied per the
+    /// `Episode.fs` canonical pattern; Core holds no clock.
+    let pending (at: DateTimeOffset) (policyVersion: string) : ApprovalRecord =
         { PolicyVersion = policyVersion
           Decision      = Pending
           ApprovedBy    = None
-          At            = DateTimeOffset.UtcNow
+          At            = at
           Rationale     = None }
 
     /// Create a `Pending` approval record for a `VersionedPolicy`. Uses
     /// the content `Digest` (stable identity) as the approval anchor; the
     /// `SemVer` is human-facing and may bump across rationale changes
     /// that do not move the digest.
-    let pendingFor (vp: VersionedPolicy) : ApprovalRecord =
-        pending vp.Digest
+    let pendingFor (at: DateTimeOffset) (vp: VersionedPolicy) : ApprovalRecord =
+        pending at vp.Digest
 
     /// Transition an approval record to `Approved`. Updates `ApprovedBy`,
     /// `Rationale`, and `At` (the decision timestamp). The original
@@ -65,15 +66,6 @@ module ApprovalWorkflow =
             At         = at
             Rationale  = rationale }
 
-    /// `approve` variant that captures `DateTimeOffset.UtcNow` as the
-    /// decision timestamp. Convenience for interactive / CLI use.
-    let approveNow
-        (approver: string)
-        (rationale: string option)
-        (record: ApprovalRecord)
-        : ApprovalRecord =
-        approve approver rationale DateTimeOffset.UtcNow record
-
     /// Transition an approval record to `Rejected`. Updates `ApprovedBy`,
     /// `Rationale`, and `At` (the rejection timestamp).
     let reject
@@ -88,13 +80,12 @@ module ApprovalWorkflow =
             At         = at
             Rationale  = rationale }
 
-    /// `reject` variant that captures `DateTimeOffset.UtcNow`.
-    let rejectNow
-        (approver: string)
-        (rationale: string option)
-        (record: ApprovalRecord)
-        : ApprovalRecord =
-        reject approver rationale DateTimeOffset.UtcNow record
+    // Slice 0 (2026-06-02): `approveNow` / `rejectNow` retired. They captured
+    // `DateTimeOffset.UtcNow` inside Core (analyzer gap pre-Slice-0). `pending`
+    // now takes `at` as a boundary-supplied parameter; CLI and Pipeline supply
+    // `DateTimeOffset.UtcNow` at the call site; tests pass a per-file
+    // `testTime` constant for determinism. Per the `Episode.fs` canonical
+    // shape — Core holds no clock.
 
     /// True iff the record carries an `Approved` decision.
     let isApproved (record: ApprovalRecord) : bool =

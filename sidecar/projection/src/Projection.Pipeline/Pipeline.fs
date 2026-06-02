@@ -245,7 +245,10 @@ module Compose =
     /// runs is a downstream consumer concern (the manifest captures the
     /// version of *this* projection, not the history).
     let private versionPolicy (policy: Policy) : VersionedPolicy =
-        VersionedPolicy.now policy None
+        // Slice 0 (2026-06-02): Core retired `VersionedPolicy.now`; Pipeline
+        // is the boundary that supplies the wall clock per the Episode.fs
+        // canonical "boundary-supplied at" pattern.
+        VersionedPolicy.create System.DateTimeOffset.UtcNow policy None
 
     let private projectFromChainWithState
         (chain: PassChainAdapter list)

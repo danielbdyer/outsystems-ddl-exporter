@@ -12,6 +12,12 @@ open Projection.Pipeline
 // first-run default); a malformed store is an error (never silently empty —
 // that would lose recorded approvals).
 
+/// Slice 0 (2026-06-02): Core retired the `*Now` wrappers; tests use a fixed
+/// `testTime` for determinism. Per the Episode.fs "boundary-supplied at"
+/// pattern — wall-clock impurity stays at the boundary.
+let private testTime : System.DateTimeOffset =
+    System.DateTimeOffset(2026, 1, 1, 0, 0, 0, System.TimeSpan.Zero)
+
 let private withTempFile (f: string -> 'a) : 'a =
     let path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), sprintf "approval-%s.json" (Guid.NewGuid().ToString("N")))
     try f path
@@ -20,7 +26,7 @@ let private withTempFile (f: string -> 'a) : 'a =
 let private at = DateTimeOffset(2026, 5, 30, 12, 0, 0, TimeSpan.Zero)
 
 let private approvedRecord (digest: string) (approver: string) (rationale: string option) : ApprovalRecord =
-    ApprovalWorkflow.pending digest
+    ApprovalWorkflow.pending testTime digest
     |> ApprovalWorkflow.approve approver rationale at
 
 [<Fact>]
@@ -47,7 +53,7 @@ let ``3.2: an approval record round-trips through save -> load -> tryFind`` () =
 [<Fact>]
 let ``3.2: None fields (pending record, no approver / rationale) round-trip`` () =
     withTempFile (fun path ->
-        let registry = ApprovalRegistry.empty |> ApprovalRegistry.record (ApprovalWorkflow.pending "digestP")
+        let registry = ApprovalRegistry.empty |> ApprovalRegistry.record (ApprovalWorkflow.pending testTime "digestP")
         ApprovalStore.save path registry |> ignore
         match ApprovalStore.load path with
         | Ok loaded ->

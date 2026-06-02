@@ -9,6 +9,12 @@ open Xunit
 open Projection.Core
 open Projection.Tests.Fixtures
 
+/// Slice 0 (2026-06-02): Core retired the `*Now` wrappers; tests use a fixed
+/// `testTime` for determinism. Per the Episode.fs "boundary-supplied at"
+/// pattern — wall-clock impurity stays at the boundary.
+let private testTime : System.DateTimeOffset =
+    System.DateTimeOffset(2026, 1, 1, 0, 0, 0, System.TimeSpan.Zero)
+
 // ---------------------------------------------------------------------------
 // digestOf — content addressing
 // ---------------------------------------------------------------------------
@@ -147,16 +153,16 @@ let ``H-085: create computes the expected digest`` () =
     Assert.Equal(VersionedPolicy.digestOf Policy.empty, vp.Digest)
 
 [<Fact>]
-let ``H-085: now produces a VersionedPolicy at the genesis version`` () =
-    let vp = VersionedPolicy.now Policy.empty None
+let ``H-085: create produces a VersionedPolicy at the genesis version`` () =
+    let vp = VersionedPolicy.create testTime Policy.empty None
     Assert.Equal(SemVer.genesis, vp.Version)
 
 [<Fact>]
 let ``H-085 evolve: adding a Tightening intervention bumps minor`` () =
     let cfg = NullabilityTighteningConfig.create 0.1m false [] |> Result.value
-    let predecessor = VersionedPolicy.now Policy.empty None
+    let predecessor = VersionedPolicy.create testTime Policy.empty None
     let after = { Policy.empty with Tightening = { Interventions = [Nullability ("n1", cfg)] } }
-    let next = VersionedPolicy.evolveNow predecessor after (Some "added n1")
+    let next = VersionedPolicy.evolve predecessor testTime after (Some "added n1")
     Assert.Equal({ Major = 1; Minor = 1; Patch = 0 }, next.Version)
 
 [<Fact>]
@@ -164,14 +170,14 @@ let ``H-085 evolve: removing a Tightening intervention bumps major`` () =
     let cfg = NullabilityTighteningConfig.create 0.1m false [] |> Result.value
     let withIntervention =
         { Policy.empty with Tightening = { Interventions = [Nullability ("n1", cfg)] } }
-    let predecessor = VersionedPolicy.now withIntervention None
-    let next = VersionedPolicy.evolveNow predecessor Policy.empty (Some "removed n1")
+    let predecessor = VersionedPolicy.create testTime withIntervention None
+    let next = VersionedPolicy.evolve predecessor testTime Policy.empty (Some "removed n1")
     Assert.Equal({ Major = 2; Minor = 0; Patch = 0 }, next.Version)
 
 [<Fact>]
 let ``H-085 evolve: structurally identical policies bump nothing`` () =
-    let predecessor = VersionedPolicy.now Policy.empty None
-    let next = VersionedPolicy.evolveNow predecessor Policy.empty None
+    let predecessor = VersionedPolicy.create testTime Policy.empty None
+    let next = VersionedPolicy.evolve predecessor testTime Policy.empty None
     Assert.Equal(predecessor.Version, next.Version)
 
 // ---------------------------------------------------------------------------
@@ -188,12 +194,12 @@ let ``H-085: sameContent is true for same policy at different times`` () =
 
 [<Fact>]
 let ``H-085: changed is true when policy axes differ`` () =
-    let vp1 = VersionedPolicy.now Policy.empty None
-    let vp2 = VersionedPolicy.now { Policy.empty with Insertion = Merge } None
+    let vp1 = VersionedPolicy.create testTime Policy.empty None
+    let vp2 = VersionedPolicy.create testTime { Policy.empty with Insertion = Merge } None
     Assert.True(VersionedPolicy.changed vp1 vp2)
 
 [<Fact>]
 let ``H-085: changed is false when policy is the same`` () =
-    let vp1 = VersionedPolicy.now Policy.empty None
-    let vp2 = VersionedPolicy.now Policy.empty (Some "log line")
+    let vp1 = VersionedPolicy.create testTime Policy.empty None
+    let vp2 = VersionedPolicy.create testTime Policy.empty (Some "log line")
     Assert.False(VersionedPolicy.changed vp1 vp2)

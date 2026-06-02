@@ -12,6 +12,12 @@ open Projection.Targets.OperationalDiagnostics
 // pre-gating output. The gating is policy-LEVEL (a SuggestedConfig carries no
 // policy-version identity, so per-suggestion suppression is not modeled).
 
+/// Slice 0 (2026-06-02): Core retired the `*Now` wrappers; tests use a fixed
+/// `testTime` for determinism. Per the Episode.fs "boundary-supplied at"
+/// pattern — wall-clock impurity stays at the boundary.
+let private testTime : System.DateTimeOffset =
+    System.DateTimeOffset(2026, 1, 1, 0, 0, 0, System.TimeSpan.Zero)
+
 let private suggestingDiagnostic () : DiagnosticEntry =
     let sc =
         match SuggestedConfig.create "tightening.nullBudget" "0.05" with
@@ -26,11 +32,11 @@ let private editCount (node: System.Text.Json.Nodes.JsonNode) : int =
 
 let private rejectedRegistry (digest: string) : ApprovalRegistry =
     ApprovalRegistry.empty
-    |> ApprovalRegistry.record (ApprovalWorkflow.pending digest |> ApprovalWorkflow.rejectNow "alice" (Some "no"))
+    |> ApprovalRegistry.record (ApprovalWorkflow.pending testTime digest |> ApprovalWorkflow.reject "alice" (Some "no") testTime)
 
 let private approvedRegistry (digest: string) : ApprovalRegistry =
     ApprovalRegistry.empty
-    |> ApprovalRegistry.record (ApprovalWorkflow.pending digest |> ApprovalWorkflow.approveNow "alice" (Some "ok"))
+    |> ApprovalRegistry.record (ApprovalWorkflow.pending testTime digest |> ApprovalWorkflow.approve "alice" (Some "ok") testTime)
 
 [<Fact>]
 let ``3.2: empty registry shows suggestions (no gating)`` () =

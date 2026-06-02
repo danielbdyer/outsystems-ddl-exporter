@@ -395,9 +395,14 @@ let private runApprove
     (rationale: string option)
     (store: string option)
     : int =
+    // Slice 0 (2026-06-02): Core retired `*Now` wrappers; CLI is the
+    // boundary that supplies `DateTimeOffset.UtcNow` per the Episode.fs
+    // canonical "boundary-supplied at" pattern. One reading of UtcNow
+    // shared across both transitions for a consistent record.
+    let now = System.DateTimeOffset.UtcNow
     let record =
-        ApprovalWorkflow.pending policyVersion
-        |> ApprovalWorkflow.approveNow approver rationale
+        ApprovalWorkflow.pending now policyVersion
+        |> ApprovalWorkflow.approve approver rationale now
     printfn "projection: approved policy version %s" policyVersion
     printfn "  approver  : %s" approver
     printfn "  decision  : Approved"
