@@ -1045,18 +1045,38 @@ a structured diagnostic, or a fail-loud refusal — never a silent drop* (T-I fa
 
 #### 6.D — The composition: `migrate A B` (the L3 bullseye; Promise 8)
 
-##### 6.D.1 — `migrate` orchestrator + the A→B canary — *depends 6.A.10, 6.A.12, 6.B.*, 6.C.1/6.C.2*
-- **Gap (red-team Composition #1):** there is no single orchestrator — the operator manually sequences five verbs,
-  and renames never reach Transfer. "Nearly one command" is today five commands with a seam.
-- **First slice:** `projection migrate --source-conn <A> --target <B-config> [--execute]` that chains, in one
-  call: (i) `CatalogDiff.between A B` (attribute-level, 6.A.10); (ii) the Decision↔Data + permission + connection
-  pre-flights (6.B.1, 6.C.1) — refuse before any write; (iii) `diff→ALTER` minimal-touch deploy, CDC-silent on the
-  empty delta (6.A.12/6.A.13); (iv) RefactorLog-aware sink-minted transfer (6.B.2), transactional (6.C.2); (v)
-  `verify-data` + the round-trip canary. Each stage is an existing capability; `migrate` is the *composition* + the
-  pre-flight gates that make it safe.
-- **Acceptance (the headline):** `` ``migrate A B: one command moves A→B with minimum viable touches; B reproduces A
-  modulo the declared changes (atomic-or-resumable, fail-loud on violation)`` `` — the operator's stated use case as
-  the L3 bullseye canary. **~M once its dependencies land** (the orchestration is wiring; the dependencies are the work).
+##### 6.D.1 — `migrate` orchestrator (the L3 bullseye) — **LANDED 2026-06-01 (composition + durable loop + LIVE execution on SQL Server)**
+- **Gap (closed):** there was no single orchestrator — the operator manually sequenced five verbs, and renames
+  never reached the rename channel. "Nearly one command" was five commands with a seam.
+- **Shipped — the composition:** `Migration` (`Projection.Core/Migration.fs`) + `MigrationRun`
+  (`Projection.Pipeline/MigrationRun.fs`). `Migration.plan A B = emit(B ⊖ A)` (T16, the master equation): observes
+  the displacement (`CatalogDiff.between`, 6.A.10), produces the **preview** (the change-manifest of δ at plan
+  time, by channel), and detects the **fail-loud violations** (destructive drops, refused unless `allowDrops`).
+  `MigrationRun.preview` composes the minimum-viable schema differential (`diff → ALTER`, 6.A.12 — never a CREATE)
+  + the data-preserving renames in one call, refusing before any write on drops or non-shape-facet `Error`s.
+- **Shipped — the LIVE execution:** `MigrationRun.execute allowDrops A B cnn` evolves a **deployed state-A
+  database to state B on real SQL Server**, in one call: refuse fail-loud → execute the differential in physical
+  order — renames (`sp_rename` + a `V2.LogicalName` extended-property re-bind, the latter caught by the canary's
+  PhysicalSchema diff) then the `ALTER`/`ADD` differential — → read **B'** back (`ReadSide.read`) → verify B'
+  reproduces B at the **schema-structural** level (`PhysicalSchema.isSchemaEqual` — new; ignores row data, since B
+  is a schema target and the rows are the *preserved data*). Idempotent + resumable **by construction** (re-running
+  re-diffs the current state → empty differential). The **Docker A→B canary** proves it across three channels at
+  once (table rename + widen + add): B' reproduces B, **data survives**, the re-run is a no-op, and a drop refuses
+  before touching the live DB. `MigrationRun.record` closes the durable loop (the run becomes an `Episode`, 6.H).
+- **Shipped — column renames:** `renameStatements` now emits the **column** rename channel too
+  (`sp_rename … 'COLUMN'` + the column-level `V2.LogicalName` re-bind), table renames before column renames before
+  ALTERs. Live canary: a column rename executes and preserves data.
+- **Shipped — data transfer (the cross-substrate composition):** `MigrationRun.executeWithData` evolves the
+  **sink**'s schema to B then transfers rows from a data `source` into the sink over the agreed contract B
+  (reconciling for the Dev→UAT User re-key; the data leg runs only if the schema leg verified). It composes the
+  existing `Transfer` engine into the migrate vocabulary. Live canary: `executeWithData` migrates a sink A→B and
+  loads the source's rows into the migrated table.
+- **Shipped — the operator surface:** `projection migrate --from <model-a.json> --to <model-b.json> [--allow-drops]`
+  prints the minimum-viable plan (dry-run, fail-loud on drops). **T16 promoted Skip→Fact** (Bucket C → A).
+- **Remaining reach (named-with-trigger):** the `--source-conn`/`--execute`/`--sink-conn` CLI flags wiring
+  `executeFromLive` / `executeWithData` against live connections (the execution functions exist; the CLI flag
+  plumbing + the connection/permission pre-flights 6.C.1 are the wiring).
+- **Acceptance (the headline):** `` ``migrate A B canary: one execute evolves A→B across three channels; B reproduces B, data survives, re-run is idempotent`` `` — **LANDED on SQL Server** (the live L3 bullseye), atop the structural `` ``T16: applyTo (plan A B) A = B`` `` + the durable `` ``6.D.1: the full A->B loop … reconstruct reproduces B`` ``. **~M.** ✅
 
 #### 6.E — The self-report: matrix reports the ladder level (T-IV extension)
 
@@ -1073,6 +1093,223 @@ critical-path keystone** — 6.A.11, 6.A.12, 6.A.13, 6.B.2, and 6.D.1 all depend
 orthogonality + spanning pre-flights (6.B, 6.C.1) and transactionality (6.C.2) are the safety floor for 6.D.1. The
 honest critical path to Promise 8: **6.A.10 → 6.A.12 → {6.B.1, 6.B.2, 6.C.1, 6.C.2} → 6.D.1**, with the per-axis
 L2 faithfulness slices (6.A.*) landing in parallel as confidence-builders and matrix-rung raisers.
+
+#### 6.F — Publication & Provenance (premise-driven; source: `WAVE_6_ONTOLOGY.md`)
+
+*The 2026-06-01 reasoning session pinned the operator's concrete premise (`WAVE_6_ONTOLOGY.md` §2): this is a
+**publication-and-provenance engine for an evolving relational model**, consumed by an external team's SSIS jobs
+and terminating in a schema-freeze **eject** — not a deployment engine for a live regulated PROD (PROD has no
+data yet). The deploy artifact is the **declarative SSDT triple** — adjusted CREATE TABLE + refactorlog
+appended-against-prior + pre/post-deployment data scripts — with DacFx computing the schema ALTER at publish
+(the `WAVE_6_ONTOLOGY.md` §4 DacFx seam). CDC is the operator's **ruler** for minimal data movement (§6). This
+sub-wave is the buildable projection of those moves (`WAVE_6_ONTOLOGY.md` §5).*
+
+##### 6.F.1 — RefactorLog appended-against-prior (the Accumulate move; provenance)
+- **Gap:** `RefactorLogEmitter.emit` produces the full rename set from a diff each run; it does not reconcile
+  against the *prior committed `.refactorlog`*. The operator's artifact requires "appended refactor logs that
+  compare themselves to the prior refactor log" — append only genuinely-new operations, never duplicate, never
+  delete (a fresh-environment deploy replays all of them; handbook §"Never Delete Entries").
+- **First slice:** read the prior `.refactorlog` (an emit-time input — see decision owed #1 below), compute this
+  version's rename operations, emit the union deduped by `OperationKey`. The accumulated log IS the physical
+  `Lifecycle.evolutionChain` (`WAVE_6_ONTOLOGY.md` P-PROV).
+- **Acceptance:** `` ``refactorlog: a re-emit appends only new renames and never duplicates a prior OperationKey`` ``. **~M.**
+
+##### 6.F.2 — Two-mode emission: fresh-replacement ⊕ incremental
+- **Gap:** the engine emits one shape; the operator needs *both* — **fresh replacement** (drop all schema+data,
+  load schema, load data; always correct, never minimal — the safety baseline) and **incremental** (CREATE +
+  refactorlog-against-prior + data scripts; minimal, CDC-measured). `WAVE_6_ONTOLOGY.md` §4.
+- **First slice:** an explicit operator-chosen `EmissionMode` (`FreshReplacement | Incremental`) threading the
+  compose/CLI surface; fresh-replacement composes the existing full CREATE + full data load; incremental
+  composes 6.F.1 + 6.A.12-lens + the data scripts (6.F.3).
+- **Acceptance:** `` ``emission mode: fresh-replacement reloads whole; incremental touches only the delta`` ``. **~M.**
+
+##### 6.F.3 — Data movement as post-deployment script + CDC-count enforcement (the Move move's ruler)
+- **Gap:** CDC-silence is witnessed at `|delta| = 0` (`CdcSilenceTests`). The operator *enforces* the general
+  property — *the capture-row count equals the true data delta* — to track "minimum viable data movements to
+  arrive at current-A from an earlier-A" (`WAVE_6_ONTOLOGY.md` §6, P-DM). The minimal data plan must also be
+  emitted as a **post-deployment script** (data changes as close to publish as possible).
+- **First slice:** generalize the silence canary to a known small delta `k`: deploy earlier-A, apply the
+  incremental data plan, assert `cdc.<table>_CT` captured exactly `k` rows (0 for unchanged). Route the data
+  plan into a post-deployment script artifact.
+- **Acceptance:** `` ``cdc ruler: applying the incremental data plan captures exactly the changed rows (k), zero for unchanged`` ``. **~M.** *builds on the shipped change-detecting MERGE.*
+
+##### 6.F.3-data — CDC-aware minimum-diff data leg (the data addendum; `WAVE_6_ONTOLOGY.md` §12)
+- **Frame:** the data leg is the *row-level analog* of the schema moves — Insert / Update / Unchanged(=silence)
+  / Delete / Reidentify (`WAVE_6_ONTOLOGY.md` §12.3). The deploy artifact (incremental mode) is a **CDC-aware
+  change-detecting MERGE** per table (the null-safe distinctness predicate; `ScriptDomBuild.changeDetectionPredicate`),
+  emitted as a **post-deployment script**. Unlike schema, the data plane is **100% engine-owned** (DacFx does
+  not move data) — so the data diff is the engine's hardest-owned correctness, and CDC is its only ruler.
+- **Built + witnessed:** the null-safe change-detection predicate; CDC-silence floor (`CdcSilenceTests` Slice γ
+  + sensitivity; `CdcSilenceCrossEmitterTests` C0–C4); reconciled re-key + two-phase FK + `DataLoadPlan`
+  ordering; drop fail-loud (6.A.1).
+- **⬚ slices (this addendum):**
+  - **(a) P-DM general case** — generalize the silence canary from `|delta|=0` to `|delta|=k`: deploy earlier-A,
+    apply the incremental MERGE, assert `cdc.<table>_CT` captured exactly the changed rows. *Acceptance:*
+    `` ``cdc ruler: the incremental MERGE captures exactly the changed rows (k), zero for unchanged`` ``.
+  - **(b) semantic-diff tolerance** — the comparable-column treatment must tolerate representation noise
+    (empty-string↔NULL — 6.A.4; ANSI-padding; decimal scale; collation) so a representation artifact is not a
+    spurious capture. *Acceptance:* `` ``cdc diff: an empty-string↔NULL representation artifact does not fire a capture (named tolerance)`` ``.
+  - **(c) DELETE-scope gate (P-DEL-SCOPE)** — `WHEN NOT MATCHED BY SOURCE THEN DELETE` fires only within a
+    declared scope, never silently table-wide. *Acceptance:* `` ``cdc merge: an out-of-scope row is not deleted unless the operator declared a full-refresh`` ``.
+  - **(d) data-provenance surface** — the CDC capture log as a consumable evolution record (parallel to the
+    refactorlog; the data analog of `reconstructLatest`).
+- **Decision owed (data leg):** is the incremental data plan a *post-deployment script* (SSIS-consumer/eject
+  publication flow) or a *transfer-verb execution* (Dev→UAT rekey)? Likely both; name the seam before (a) emits.
+  **~M each.**
+
+##### 6.F.4 — The published-model + provenance surface (the SSIS consumer / the eject)
+- **Gap:** the external SSIS team consumes the *evolving relational model* to keep their legacy→our-shape
+  mappings current; the eject freezes it. There is no consumer-facing rendering of "the model now + what changed
+  this sprint" distinct from the deploy artifact (`WAVE_6_ONTOLOGY.md` P-IF / §2 / decision owed #2).
+- **First slice (gated on decision owed #2):** a consumer-facing projection of `CatalogDiff` — at minimum a
+  per-sprint changelog (the moves §5, human-readable) alongside the dacpac; optionally a machine-readable diff
+  the SSIS team can drive mappings from.
+- **Acceptance:** `` ``provenance: the published model + per-sprint move changelog regenerate from the diff`` ``. **~M.**
+
+**Premise re-prioritization (per `WAVE_6_ONTOLOGY.md` §10).** This premise reorders the audit's generic critical
+path. **Deferred-with-trigger** (PROD has no data): **6.C.2** (transactional/resumable) and **6.C.1**
+(permission/connection gates) — *trigger: PROD gains data, or a write-denied environment enters a real flow.*
+**Repositioned:** **6.A.12** explicit ALTER → a preview/verify/measure *lens*, not the deploy artifact (the
+deploy artifact is the declarative triple; DacFx computes the schema ALTER). **Held:** 6.B.1's live form is the
+**Dev→UAT user-rekey** compatibility (not PROD tightening); **6.D.1 `migrate`** remains the composition, gated by
+data-compat + rekey under the ordering/partition laws (`WAVE_6_ONTOLOGY.md` P-ORD/P-CH), *not* PROD
+permission/atomicity. **Decisions owed** (resolve before the dependent slice opens; full text in
+`WAVE_6_ONTOLOGY.md` §10): (1) is the prior `.refactorlog` an engine input or a repo-merge concern (gates 6.F.1);
+(2) what does the SSIS team consume — dacpac / changelog / machine-diff (gates 6.F.4); (3) at eject, is the
+deliverable the frozen state + full refactorlog history, or the state alone (decides P-PROV append-forever vs
+collapsible).
+
+#### 6.G — Activating the calculus (the algebra → the codebase), holding the spine
+
+*Source: `WAVE_6_ALGEBRA.md` + `AXIOMS.md` T12–T16 + A43. The calculus reified the domain as a torsor — `State`
+is an affine space over `Delta`; `⊖` = `between`, `⊕` = `applyDiff`; `‖·‖` (the CDC count) is the norm; `emit`
+is a norm-preserving functor; **T16 (the Project square) is the master equation.** This subsection weaves the
+algebra back into the route: it does not add a parallel plan — it **reframes the remaining Wave 6 slices as the
+activation of named theorem-residuals,** so every slice has a balanced equation it shrinks to zero.*
+
+**A theorem is *activated* when** its operations are first-class in code **and** its residual (the ⬚ in
+`WAVE_6_ALGEBRA.md` §9 / the AXIOMS T-table) is closed by its **discriminating witness** (the input where a
+plausibly-named-but-wrong implementation breaks the equation — `WAVE_6_ONTOLOGY.md` §8), at which point its
+`AxiomTests.fs` entry flips (Skip→Fact, or a new Fact lands).
+
+**The activation discipline — hold the spine (read before building):**
+- **Behavioral now; structural only at the second consumer.** Most activation is *closing residuals with
+  witnesses* — not restructuring code. The **value-level torsor surface** (a shared `Delta` / `⊕` / `⊖` / `π`)
+  reifies, *if at all*, only at the **temporal multi-version schema** use (6.H — composing `CatalogDiff`s), and
+  even there stays **concrete** (`CatalogDiff` + `compose`), never a generic `Torsor`. **The data leg is NOT a
+  value-level second consumer** — its δ is substrate-fused (the at-target MERGE; no `RowDiff` value, per
+  `WAVE_6_MORPHOLOGY.md` §F4 / `WAVE_6_ALGEBRA.md` §12.4); what it reifies is the **norm** `‖·‖` as a measurement
+  carrier over the realized CDC series.
+- **The spine-breaker to refuse: the speculative torsor refactor.** Do **not** rename `between`→`⊖`, introduce
+  a `Delta` supertype / `RowDiff` value, or instantiate a `Torsor`/`AffineSpace` abstraction on speculation. The
+  algebra is the **spec the witnesses check**, not a shape to force the code into. Right-by-function: make the
+  code *behave* like the torsor (proven by the discriminating witness), never *named* like it on speculation.
+  This is the one place the calculus could seduce a scope-widening; the discipline forecloses it.
+- **Per-slice rent (non-negotiable):** the discriminating witness named to its matrix-greppable substring; the
+  `AxiomTests.fs` theorem entry flipped (and `scripts/matrix-status.sh` regenerated); a `DECISIONS` cash-out;
+  the load-bearing commitments held (A18 — emitters never consume `Policy`; pure Core; writer-fidelity; pillar
+  9). The premise re-prioritization holds: PROD-gates (6.C.*) stay deferred; provenance/data/publication lead.
+
+**The activation map (theorem → residual → slice → discriminating witness):**
+
+| Theorem | Residual to close | Activation slice | Discriminating witness (flips the AxiomTests entry) |
+|---|---|---|---|
+| **T12** (torsor axioms) | — *activated* | (shipped: 6.A.10/6.A.11) | round-trip + no-cheat + identity-diff (live) |
+| **T13** (evolution = fold ⊕) | the append-only history; the `compose` (diff∘diff) operator | **6.F.1** (refactorlog-against-prior — Accumulate physical); compose is deferred-OK (endpoint-diff suffices, names not reused) | `refactorlog: a re-emit appends only new renames…`; (compose ⬚ A-Lifecycle-4) |
+| **T14** (orthogonal direct sum) | the full multi-channel partition | **6.D.1** (all channels partition at the composition) | the migrate plan's channel coproduct (no double-emit, no gap) |
+| **T15** (CDC = norm; emit isometric) | the general `‖δ‖ = k` (only `=0` is live) | **6.F.3-data** (the CDC-aware MERGE over arbitrary deltas + the `k`-count canary) | `cdc ruler: the incremental MERGE captures exactly the changed rows (k)…` |
+| **T16** (the Project square) | the full square end-to-end | **6.D.1** (`migrate A B`) | `migrate A B: one command … B reproduces A modulo the declared changes…` |
+| **A43** (Identity conserved) | the cross-plane `‖rename‖_data = 0` | **6.G.3** (deploy a rename, assert zero data-CDC capture) | `A43: a schema rename induces zero data movements (sp_rename, not drop+add)` |
+| **intent filter** (T16 residual) | the tolerance summand `observe = intended ⊕ tolerated` | **6.A.4** + data P-DIFF | `cdc diff: an empty-string↔NULL artifact does not fire a capture (named tolerance)` |
+
+**The activation critical path (premise-respecting order):**
+1. **6.F.1** — refactorlog-against-prior → activates **A43/T13** provenance (the Accumulate move made physical;
+   the append-only history is the torsor's path-record).
+2. **6.F.3-data** — the CDC-aware MERGE over arbitrary deltas, with the `‖δ‖=k` canary + reading back the
+   realized CDC capture series → activates **T15** (data isometry, general). The data δ stays substrate-fused
+   (no `RowDiff` value); what reifies is the **norm** `‖·‖` (the CDC count) — *not* a value-level
+   `between`/`apply` (`WAVE_6_ALGEBRA.md` §12.4).
+3. **6.A.4 + data P-DIFF** — the tolerance projection → activates the **intent-filter** (T16's residual summand).
+4. **6.G.3** — the `‖rename‖_data = 0` cross-plane canary → activates **A43**'s corollary (the refactorlog
+   *derivation* made live: a faithful rename moves zero data).
+5. **6.D.1** — `migrate A B` → activates **T16** (the master equation) under **T14** partition + **T13**
+   ordering, gated by the *live* (Dev→UAT) data-compat (6.B.1), not PROD. The green migrate canary flips T16
+   Skip→Fact.
+
+**The end-state (when every residual is zero):** T16 is green — the one-command `migrate A B` canary passes; its
+`AxiomTests` entry flips Skip→Fact; `scripts/matrix-status.sh` reports the per-axis ladder at **L3**; the engine
+is structurally isomorphic to the shape of change (`NORTH_STAR` Promise 8). The calculus is then not documented
+but *enforced*: a regression that breaks any equation drops its AxiomTests entry and a matrix cell, loudly.
+
+#### 6.H — Multi-episodic observability substrate (the durable provenance the calculus integrates over)
+
+*Source: the 2026-06-01 four-agent structural research (`WAVE_6_MORPHOLOGY.md`). The research's load-bearing
+finding: the calculus is **latent** — `between`/`applyDiff`/`reconstructLatest` (the FTC `genesis ⊕ Σδ`) are
+proven only over **in-memory values in tests**; no episode is durable; `CatalogSnapshot` is schema-only,
+single-plane, time-erased, ephemeral; only `V2.SsKey` survives an episode boundary. So "observe the movement of
+concerns during multi-episodic recombination" (the §2 premise's lattice) is unanswerable today. This family
+gives the proven algebra a durable substrate to integrate over — the time-axis of the concern-movement field
+(`WAVE_6_ALGEBRA.md` §12.1's `∂κ/∂(episode)`). It reuses proven amino acids; none is research.*
+
+**Prerequisite — SHIPPED 2026-06-01: the `Catalog↔JSON` codec (`CatalogCodec`, `Projection.Targets.Json`).**
+The whole family integrates over durable episodes, but until 2026-06-01 nothing serialized the schema plane
+across a run boundary — the gap 6.H.2 named. `CatalogCodec.serialize`/`deserialize` close it: a **total**
+(every IR field + DU variant), **deterministic** (T1), **re-validating** (decode funnels through
+`Catalog.create`, A39) round-trip whose law `deserialize (serialize c) = Ok c` is the adjunction applied to
+durability. It is the schema-plane persistence primitive the `Episode` (6.H.1) and `LifecycleStore` (6.H.2)
+rest on; both are now unblocked. (`DECISIONS 2026-06-01 — the Catalog↔JSON codec`.)
+
+##### 6.H.1 — The multi-plane `Episode` (the point of integration) — **LANDED 2026-06-01**
+- **Gap (closed):** `CatalogSnapshot` (`Lifecycle.fs:45`) carries only a schema `Catalog` at a `Version` — no
+  Profile, no rows/CDC, no environment, no clock. The schema and data planes were never co-recorded.
+- **Shipped:** `Episode` (`Projection.Core/Episode.fs`) co-records, at one `EpisodeCoordinate`
+  (`Version × Environment × At` — the canonical `Environment` reused from `Transfer.fs`, **Dev→Qa→Uat** the
+  active rotation; `At` a boundary-supplied clock, Core stays clock-free): the schema `Catalog`, the `Profile`
+  (in-memory), the emitted refactorlog reference, and the `DataObservation` (CDC capture count + handle). The
+  `EpisodicLifecycle` is the monotone chain; its schema-plane FTC (`reconstructLatestSchema` / `netSchemaDiff` /
+  `schemaEvolutionChain`) is the same `CatalogDiff` algebra `Lifecycle` runs, projected onto `Episode.Schema`.
+- **Acceptance:** `` ``6.H.1: episode co-records schema + profile + refactorlog + cdc-handle at one Version`` `` — **LANDED** (+ monotone-append, schema-FTC, and `durableProjection` witnesses). **~M.** ✅
+
+##### 6.H.2 — The `LifecycleStore` (the persisted time-integral) — **LANDED 2026-06-01**
+- **Gap (closed):** nothing serialized a `Lifecycle`/`Episode`; `reconstructLatest` folded only in-memory test
+  values — the morphology's "no durable episode."
+- **Shipped:** `LifecycleStore` (`Projection.Pipeline/LifecycleStore.fs`, modeled on `ApprovalStore.fs` —
+  deterministic `Utf8JsonWriter`, T1-stable order, structured fail-closed `Read/Parse/Write`) **composes
+  `CatalogCodec`** (`jw.WriteRawValue` on save; `schemaEl.GetRawText() |> CatalogCodec.deserialize` on load) for
+  each episode's schema plane, framing the chain (timeline + per-episode coordinate + data observation +
+  refactorlog ref). The FTC now runs over durable provenance: `load` → `reconstructLatestSchema`. The statistical
+  `Profile` is **not persisted** (§12.4 — the data δ is substrate-fused; a loaded episode = its
+  `Episode.durableProjection`); codec re-validation (A39) reaches through the boundary (a corrupt embedded
+  catalog fails the load). A missing/malformed file is a fail-closed `ParseFailure` (no empty-lifecycle default —
+  a lifecycle always opens at genesis).
+- **Acceptance:** `` ``6.H.2: reconstructLatestSchema over the persisted chain reproduces the stored latest schema (FTC, durable)`` `` — **LANDED** (+ exact round-trip, byte-determinism, Named-env round-trip, Profile-drop, and three fail-closed witnesses). **~M.** ✅
+
+##### 6.H.3 — `CatalogDiff.compose` (close the derivative algebra; T13/A-Lifecycle-4) — **SHIPPED 2026-06-01**
+- **Gap:** `CatalogDiff` has `between` (⊖) and `applyDiff` (⊕) but **no `compose` (`+`)** — so `δ₁ + δ₂` (the
+  cross-episode derivative) is inexpressible, and A-Lifecycle-4 (associativity) is Bucket-C (`AXIOMS.md`).
+- **First slice:** `compose : CatalogDiff → CatalogDiff → CatalogDiff` with `applyDiff (compose d₁ d₂) = applyDiff
+  d₂ ∘ applyDiff d₁` (the functor law). Flips A-Lifecycle-4 Skip→Fact; earns T13's `⬚ compose`.
+- **Acceptance:** `` ``compose: applyDiff (compose d1 d2) A = applyDiff d2 (applyDiff d1 A) (functor law)`` `` — **LANDED** with the associativity witness (A-Lifecycle-4 flipped Skip→Fact), `Lifecycle.netDiff` (the integral ∫δ = fold compose), and `CatalogDiff.norm`/`channelCounts` (the concrete schema-side ‖·‖/π). **~M.** ✅
+
+##### 6.H.4 — The change-manifest of δ (the emission-integral; the mixed partial) — **LANDED 2026-06-01 (Core algebra)**
+- **Gap (closed at the algebra; SsdtManifest wiring deferred):** the `SsdtManifest` integrates *state*, not
+  *displacement* δ — no per-move counts, no `‖δ‖`, no refactorlog cross-reference, no CDC series. So the SSIS
+  consumer cannot read "what this sprint touched."
+- **Shipped:** `ChangeManifest` (`Projection.Core/ChangeManifest.fs`) — the per-edge displacement record:
+  `ChannelCounts` (the π channels) + `SchemaNorm` (`‖δ‖`) + the `To`-episode's refactorlog reference + the CDC
+  capture count (`‖data δ‖`). `ChangeManifest.between` computes it from two episodes (via `CatalogDiff.between`);
+  `series` is the per-edge manifest list over an `EpisodicLifecycle` (the sprint-by-sprint record); `pathLength`
+  (Σ edge norms) vs `netSchemaDiff |> norm` (net displacement) exposes a timeline's **churn**.
+- **Deferred (named-with-trigger):** wiring the change section into the *emitted* `SsdtManifest` (Pipeline) +
+  the tolerance-residual + `AppliedTransforms`-outcome — lands when a manifest consumer demands the on-disk form.
+- **Acceptance:** `` ``6.H.4: change-manifest records the displacement (move counts + refactorlog xref + cdc series)`` `` — **LANDED** (+ idempotent-edge, series-per-edge, and churn/path-length witnesses). **~M.** ✅
+
+**Sequencing within 6.H:** the codec prerequisite, 6.H.1 (`Episode`), 6.H.2 (`LifecycleStore`), 6.H.3
+(`compose`), and 6.H.4 (`ChangeManifest`, Core algebra) are all **shipped (2026-06-01)** — the durable
+provenance substrate is live: a chain persists, reloads, and the FTC reconstructs over it. Remaining 6.H reach:
+the SsdtManifest *emission* wiring of the change section (6.H.4 deferred leg) and the `migrate` orchestrator
+(6.D.1) that records each run into this substrate. The whole family is the activation of `∂κ/∂(episode)` and the
+durable side of the FTC; it is the substrate `migrate` (6.D.1) records each run into.
 
 ---
 

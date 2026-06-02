@@ -149,3 +149,280 @@ let ``CatalogDiff is invariant under module-list permutation``
     && Set.isEmpty (CatalogDiff.removed diff)
     && Map.isEmpty (CatalogDiff.renamed diff)
     && (kindKeys original) = (CatalogDiff.unchanged diff)
+
+// ---------------------------------------------------------------------------
+// 6.A.10 — attribute-level diff (the structural keystone). Kind-level
+// `CatalogDiff` was attribute-blind: a `Customer.Name` column change left
+// the kind in `Unchanged` with no signal, so the operator's "minimum viable
+// touches" was impossible (no diff → no ALTER → silent full-redeploy with a
+// possible type coercion). `between` now descends into attributes and names
+// the changed facet. The kind-level partitions are PRESERVED: a kind whose
+// name is stable stays in `Unchanged`; the attribute change rides the new
+// per-kind `AttributeDiffs` map.
+// ---------------------------------------------------------------------------
+
+/// Rebuild `sampleCatalog` with Customer's `Name` attribute transformed.
+let private catalogWithCustomerName (f: Attribute -> Attribute) : Catalog =
+    let customer' =
+        { customer with
+            Attributes =
+                customer.Attributes
+                |> List.map (fun a -> if a.SsKey = customerNameKey then f a else a) }
+    let m = { salesModule with Kinds = [ customer'; order; country ] }
+    Catalog.create [ m ] [] |> Result.value
+
+[<Fact>]
+let ``CatalogDiff: a column type change surfaces as an attribute-level Changed entry`` () =
+    // Customer.Name: Text -> Integer (a DataType facet change). The kind
+    // name is unchanged, so kind-level diffing alone reports nothing.
+    let target = catalogWithCustomerName (fun a -> { a with Type = Integer })
+    let diff = CatalogDiff.between sampleCatalog target |> mustOk
+
+    // Kind-level contract preserved: Customer stays in Unchanged.
+    Assert.Contains(customerKey, CatalogDiff.unchanged diff)
+    Assert.DoesNotContain(customerKey, CatalogDiff.added diff)
+    Assert.DoesNotContain(customerKey, CatalogDiff.removed diff)
+
+    // The attribute change is now visible — and isEmpty is honest.
+    Assert.False(CatalogDiff.isEmpty diff)
+    match CatalogDiff.attributeDiffOf customerKey diff with
+    | None -> Assert.Fail "expected an AttributeDiff for Customer"
+    | Some ad ->
+        Assert.Empty(ad.Added)
+        Assert.Empty(ad.Removed)
+        Assert.Empty(ad.Renamed)
+        Assert.Equal(1, List.length ad.Changed)
+        let change = List.head ad.Changed
+        Assert.Equal(customerNameKey, change.AttributeKey)
+        Assert.Contains(AttributeFacet.DataType, change.Facets)
+
+[<Fact>]
+let ``CatalogDiff: a column widening (length change) names the Length facet (TEXT -> NVARCHAR(256))`` () =
+    // The audit's headline scenario: type category stable, declared length
+    // changes. Length None -> Some 256 is the IR shape of TEXT -> NVARCHAR(256).
+    let target = catalogWithCustomerName (fun a -> { a with Length = Some 256 })
+    let diff = CatalogDiff.between sampleCatalog target |> mustOk
+    let ad = (CatalogDiff.attributeDiffOf customerKey diff).Value
+    let change = List.head ad.Changed
+    Assert.Contains(AttributeFacet.Length, change.Facets)
+    Assert.DoesNotContain(AttributeFacet.DataType, change.Facets)
+
+[<Fact>]
+let ``CatalogDiff: a nullability change names the Nullability facet`` () =
+    let target =
+        catalogWithCustomerName (fun a ->
+            { a with Column = { a.Column with IsNullable = true } })
+    let diff = CatalogDiff.between sampleCatalog target |> mustOk
+    let ad = (CatalogDiff.attributeDiffOf customerKey diff).Value
+    Assert.Contains(AttributeFacet.Nullability, (List.head ad.Changed).Facets)
+
+[<Fact>]
+let ``CatalogDiff: a dropped attribute surfaces in AttributeDiff.Removed`` () =
+    // Remove Customer.TenantId from the target.
+    let target =
+        let customer' =
+            { customer with
+                Attributes =
+                    customer.Attributes |> List.filter (fun a -> a.SsKey <> customerTenantKey) }
+        let m = { salesModule with Kinds = [ customer'; order; country ] }
+        Catalog.create [ m ] [] |> Result.value
+    let diff = CatalogDiff.between sampleCatalog target |> mustOk
+    let ad = (CatalogDiff.attributeDiffOf customerKey diff).Value
+    Assert.Contains(customerTenantKey, ad.Removed)
+    Assert.False(CatalogDiff.isEmpty diff)
+
+[<Fact>]
+let ``CatalogDiff: identical catalogs carry no AttributeDiffs (empty diff is honest)`` () =
+    let diff = CatalogDiff.between sampleCatalog sampleCatalog |> mustOk
+    Assert.True(Map.isEmpty (CatalogDiff.attributeDiffs diff))
+    Assert.True(CatalogDiff.isEmpty diff)
+
+[<Fact>]
+let ``T1: attribute-level diff is deterministic across repeat invocations`` () =
+    let target = catalogWithCustomerName (fun a -> { a with Type = Integer; Length = Some 64 })
+    let runs = [ for _ in 1 .. 10 -> CatalogDiff.attributeDiffs (CatalogDiff.between sampleCatalog target |> mustOk) ]
+    let head = List.head runs
+    Assert.All(runs, fun r -> Assert.Equal<Map<SsKey, AttributeDiff>>(head, r))
+
+// ---------------------------------------------------------------------------
+// 6.A.11 — applyDiff + the evolution round-trip law (H-007). `between` is the
+// observation; `applyDiff` is the action. The law `applyDiff (between A B) A =
+// B` (modulo the captured surface) makes the Time axis an evolution algebra,
+// not a snapshot store. The law is witnessed order-insensitively by the diff's
+// own equality notion: `between B (applyDiff (between A B) A) |> isEmpty`.
+// ---------------------------------------------------------------------------
+
+let private nm (s: string) : Name = Name.create s |> Result.value
+
+/// A single-module catalog over the given kinds (reusing the Sales module).
+let private catalogOfKinds (kinds: Kind list) : Catalog =
+    let m = { salesModule with Kinds = kinds }
+    Catalog.create [ m ] [] |> Result.value
+
+[<Fact>]
+let ``Time: applyDiff (between A B) A = B (evolution round-trip law)`` () =
+    // B is A evolved across the whole captured surface at once: a renamed
+    // kind, a column type change, a nullability change, a dropped attribute,
+    // and an added attribute.
+    let a = sampleCatalog
+    let newAttrKey = attrKey ["Customer"; "Loyalty"]
+    let customer' =
+        { customer with
+            Name = nm "Client"   // kind rename
+            Attributes =
+                (customer.Attributes
+                 |> List.choose (fun at ->
+                     if at.SsKey = customerTenantKey then None                 // drop TenantId
+                     elif at.SsKey = customerNameKey then
+                         Some { at with Type = Integer }                       // type change
+                     elif at.SsKey = customerIdAttrKey then
+                         Some { at with Column = { at.Column with IsNullable = true } } // nullability change
+                     else Some at))
+                @ [ { Attribute.create newAttrKey (nm "Loyalty") Integer with
+                        Column = { ColumnName = "LOYALTY"; IsNullable = true } } ] } // add column
+    let b = catalogOfKinds [ customer'; order; country ]
+
+    let diff = CatalogDiff.between a b |> mustOk
+    let reconstructed = CatalogDiff.applyDiff a diff
+
+    // The round-trip law: the reconstruction has NO diff against B over the
+    // captured surface (kinds + names + attribute presence/name/facets).
+    let residual = CatalogDiff.between b reconstructed |> mustOk
+    Assert.True(CatalogDiff.isEmpty residual, "applyDiff (between A B) A must reproduce B (residual diff was non-empty)")
+
+[<Fact>]
+let ``applyDiff (between A A) A = A — the identity diff is identity`` () =
+    let a = sampleCatalog
+    let diff = CatalogDiff.between a a |> mustOk
+    let reconstructed = CatalogDiff.applyDiff a diff
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between a reconstructed |> mustOk))
+
+[<Fact>]
+let ``applyDiff: an in-place column type change reconstructs the exact target attribute`` () =
+    // A direct structural check (no ordering ambiguity — same kinds, same
+    // order, one patched facet): the reconstructed Customer.Name attribute
+    // equals B's.
+    let a = sampleCatalog
+    let b = catalogWithCustomerName (fun at -> { at with Type = Integer })
+    let reconstructed = CatalogDiff.applyDiff a (CatalogDiff.between a b |> mustOk)
+    let nameAttr (c: Catalog) =
+        (Catalog.tryFindKind customerKey c).Value.Attributes
+        |> List.find (fun at -> at.SsKey = customerNameKey)
+    Assert.Equal(nameAttr b, nameAttr reconstructed)
+
+[<Fact>]
+let ``applyDiff threads the passed-in catalog, not the recorded target (no-cheat)`` () =
+    // A = {Customer, Order}; B = {Customer} (Order removed). The diff records
+    // Target = B. Applying it to a DIFFERENT base that also carries Country
+    // must keep Country — proving applyDiff transforms the argument, and is
+    // not `fun _ d -> target d` (which would have dropped Country).
+    let a = catalogOfKinds [ customer; order ]
+    let b = catalogOfKinds [ customer ]
+    let diff = CatalogDiff.between a b |> mustOk
+
+    let baseWithExtra = catalogOfKinds [ customer; order; country ]
+    let result = CatalogDiff.applyDiff baseWithExtra diff
+
+    // Order was removed; Country (only in the passed-in base) survives.
+    Assert.True((Catalog.tryFindKind orderKey result).IsNone)
+    Assert.True((Catalog.tryFindKind countryKey result).IsSome)
+    // The recorded target carries NO Country — so the result differs from it.
+    Assert.True((Catalog.tryFindKind countryKey (CatalogDiff.target diff)).IsNone)
+
+[<Fact>]
+let ``applyDiff: a dropped attribute is removed from the reconstruction`` () =
+    let a = sampleCatalog
+    let b =
+        let customer' =
+            { customer with
+                Attributes = customer.Attributes |> List.filter (fun at -> at.SsKey <> customerTenantKey) }
+        catalogOfKinds [ customer'; order; country ]
+    let reconstructed = CatalogDiff.applyDiff a (CatalogDiff.between a b |> mustOk)
+    let customerAttrs =
+        (Catalog.tryFindKind customerKey reconstructed).Value.Attributes
+        |> List.map (fun at -> at.SsKey)
+        |> Set.ofList
+    Assert.DoesNotContain(customerTenantKey, customerAttrs)
+
+// ---------------------------------------------------------------------------
+// 6.H.3 prework — the norm ‖·‖, the channel projection π, and compose (the
+// derivative algebra's measurement + composition layer, concrete on the
+// CatalogDiff value; WAVE_6_ALGEBRA.md §12.4). The norm is the schema-side
+// `‖·‖`; compose is the torsor `+` (T13 / A-Lifecycle-4).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``norm: between A A has norm 0`` () =
+    let d = CatalogDiff.between sampleCatalog sampleCatalog |> mustOk
+    Assert.Equal(0, CatalogDiff.norm d)
+    Assert.True(CatalogDiff.isEmpty d)
+
+[<Fact>]
+let ``norm: a non-empty diff has norm > 0 (norm d = 0 iff isEmpty d)`` () =
+    let target = catalogWithCustomerName (fun a -> { a with Type = Integer })
+    let d = CatalogDiff.between sampleCatalog target |> mustOk
+    Assert.False(CatalogDiff.isEmpty d)
+    Assert.True(CatalogDiff.norm d > 0)
+
+[<Fact>]
+let ``norm: equals the sum of the channel counts (additivity, T14/T15)`` () =
+    // A mixed delta: a renamed kind + a dropped attribute + an added attribute
+    // + a column type change — exercises several channels at once.
+    let newAttrKey = attrKey ["Customer"; "Loyalty"]
+    let customer' =
+        { customer with
+            Name = nm "Client"
+            Attributes =
+                (customer.Attributes
+                 |> List.choose (fun at ->
+                     if at.SsKey = customerTenantKey then None
+                     elif at.SsKey = customerNameKey then Some { at with Type = Integer }
+                     else Some at))
+                @ [ { Attribute.create newAttrKey (nm "Loyalty") Integer with
+                        Column = { ColumnName = "LOYALTY"; IsNullable = true } } ] }
+    let target = catalogOfKinds [ customer'; order; country ]
+    let d = CatalogDiff.between sampleCatalog target |> mustOk
+    let c = CatalogDiff.channelCounts d
+    let sum =
+        c.RenamedKinds + c.AddedKinds + c.RemovedKinds
+        + c.AddedAttributes + c.RemovedAttributes + c.RenamedAttributes + c.ChangedAttributes
+    Assert.Equal(sum, CatalogDiff.norm d)
+    Assert.True(sum > 0)
+
+/// Cumulative A → B → C → D over Customer.Name's facets (each catalog distinct).
+let private custA = sampleCatalog
+let private custB = catalogWithCustomerName (fun a -> { a with Type = Integer })
+let private custC = catalogWithCustomerName (fun a -> { a with Type = Integer; Column = { a.Column with IsNullable = true } })
+let private custD = catalogWithCustomerName (fun a -> { a with Type = Integer; Column = { a.Column with IsNullable = true }; Length = Some 64 })
+
+[<Fact>]
+let ``compose: applyDiff (compose d1 d2) A = applyDiff d2 (applyDiff d1 A) (functor law)`` () =
+    let d1 = CatalogDiff.between custA custB |> mustOk
+    let d2 = CatalogDiff.between custB custC |> mustOk
+    let composed =
+        match CatalogDiff.compose d1 d2 with
+        | Some c -> c
+        | None -> Assert.Fail "expected composable"; Unchecked.defaultof<_>
+    let viaCompose = CatalogDiff.applyDiff custA composed
+    let viaSequence = CatalogDiff.applyDiff (CatalogDiff.applyDiff custA d1) d2
+    // Both reproduce C (over the captured surface).
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between custC viaCompose |> mustOk))
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between custC viaSequence |> mustOk))
+
+[<Fact>]
+let ``compose: a non-adjacent pair is None (fail-loud, partial groupoid)`` () =
+    let d_ab = CatalogDiff.between custA custB |> mustOk   // target = B
+    let d_ac = CatalogDiff.between custA custC |> mustOk   // source = A ≠ B
+    Assert.True((CatalogDiff.compose d_ab d_ac).IsNone)
+
+[<Fact>]
+let ``compose: associativity — (d1+d2)+d3 reproduces the same state as d1+(d2+d3) (A-Lifecycle-4)`` () =
+    let d1 = CatalogDiff.between custA custB |> mustOk
+    let d2 = CatalogDiff.between custB custC |> mustOk
+    let d3 = CatalogDiff.between custC custD |> mustOk
+    let some = function Some v -> v | None -> Assert.Fail "expected composable"; Unchecked.defaultof<_>
+    let left = some (CatalogDiff.compose (some (CatalogDiff.compose d1 d2)) d3)
+    let right = some (CatalogDiff.compose d1 (some (CatalogDiff.compose d2 d3)))
+    // Both are the A → D displacement: applying either to A reproduces D.
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between custD (CatalogDiff.applyDiff custA left) |> mustOk))
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between custD (CatalogDiff.applyDiff custA right) |> mustOk))

@@ -62,7 +62,7 @@ The bullseye is the matrix at **L3 on every cell** — an **isomorphism ladder**
 | **Identity** | ✅ `reload preserves SsKey` | ◑ faithful for `OssysOriginal`; a first-import (`Synthesized`) + rename loses identity **silently** | ⬚ RefactorLog (rename) and Transfer (move) are unreconciled strategies |
 | **Time** | ✅ `replayTo genesis` | ◑ *trivial* — `replayTo` is a fetch; `applyDiff` (H-007) unshipped → `applyDiff (between A B) A = B` unproven | ⬚ no minimal-touch emission |
 | **Decision** | ✅ `reproduces the DecisionOverlay` (nullability) | ◑ iso on **1 of 3** sub-axes; uniqueness + FK-trust **not read back** | ⬚ tightening can break the Data load (no pre-flight) |
-| **— the operation —** | | | **`migrate A B`** — one command, minimum viable touches. **Does not yet exist** (five verbs, manually sequenced; renames never reach Transfer). |
+| **— the operation —** | | | **`migrate A B` — EXISTS and runs on SQL Server (2026-06-01, 6.D.1).** `MigrationRun.execute A B cnn` evolves a deployed state-A DB to B in one command — minimum-viable touches (`sp_rename` + logical re-bind, `ALTER`, `ADD`; never a re-CREATE), fail-loud on drops, **data survives**, B' reproduces B (schema-structural), re-run idempotent; records a durable episode whose FTC reproduces B. **Docker A→B canary green** across three channels. T16 (the master equation) is a live witness. Remaining: the `--source-conn`/`--execute` CLI flag wiring + cross-table data transfer. |
 | **— meta —** | | | **Self-verification:** the generator reports each cell's *ladder level*, not just witness-presence |
 
 > **This matrix is self-reported.** `scripts/matrix-status.sh` regenerates
@@ -192,6 +192,16 @@ difference between a tool that is right and a tool that can **show** it is right
 That difference is the entire reason "replace V1" is a stronger claim than "trust V1" — and it is
 why the north star is not "verify the cutover" but "make verification self-sufficient."
 
+> **What the totalities quantify over.** The six totalities are predicates; the entities they range
+> over — State · Comparison · Intent-Filter · Plan · Channel · Gate · Execution, and the *core moves
+> of change* (Add / Remove / Rename / Reshape / Reidentify / Move / Accumulate) — are pinned in
+> `WAVE_6_ONTOLOGY.md` (the 2026-06-01 masterwork). T-I quantifies over the comparison + the emission
+> functor's partiality; **T-V** over the channels (partition + ordering); **T-VI** over the gates
+> (completeness *is* "spanning"). The ontology is *right-by-function* armor: each entity carries a
+> **discriminating predicate** (the input on which a plausibly-named-but-wrong implementation
+> diverges) so the engine is structurally isomorphic to the shape of change, not merely named after
+> it. Read it before opening any Wave 6.A.10+/6.B/6.C/6.D/6.F slice.
+
 ---
 
 ## 4. The operator's covenant — what the engine promises, for whom
@@ -254,7 +264,16 @@ generated artifact, not a judgment.
 1c. **The composed operation exists and round-trips (L3).** `migrate A B` runs the full
    diff→rename→deploy→transfer→verify in one command with minimum-viable touches, atomic-or-
    resumable, and a green A→B canary witnesses that B reproduces A modulo the named, declared
-   changes. *(Promise 8; the L3 bullseye.)*
+   changes. *(Promise 8; the L3 bullseye.* **LANDED 2026-06-01, 6.D.1 — including live execution
+   on SQL Server:** `MigrationRun.execute A B cnn` evolves a deployed state-A database to B in one
+   command (`sp_rename` + logical re-bind, `ALTER`, `ADD` — minimum-viable, never a re-CREATE),
+   fail-loud on drops, with **data preserved**; B' reproduces B at the schema-structural level and
+   the re-run is idempotent; the run records a durable episode whose FTC reproduces B. **Column
+   renames** (`sp_rename … 'COLUMN'`) and the **cross-substrate data load** (`executeWithData` —
+   schema-migrate the sink, then transfer + re-key the rows) also run live: `migrate` moves schema
+   *and* data in one composition. The **Docker A→B canary** witnesses it. T16 (the master equation)
+   is a live witness. The remaining reach is the `--source-conn`/`--sink-conn`/`--execute` CLI flag
+   wiring — the live square commutes, schema and data.*)
 2. **The decision adjunction holds.** `Ingest(deploy(Project(C, overlay)))` reproduces `overlay`
    on the tightening axes — the engine's opinions survive the round-trip. (The "stronger than V1"
    theorem; today unbuilt.)

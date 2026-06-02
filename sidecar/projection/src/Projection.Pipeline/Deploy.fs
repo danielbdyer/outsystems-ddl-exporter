@@ -811,6 +811,13 @@ module Deploy =
                     // any stale bulk state before executing.
                     do! flushBulk ()
                     appendDdl s
+                | AlterTableAddColumn _ | AlterTableAlterColumn _ ->
+                    // 6.A.12: minimum-viable-touch migration DDL (ALTER TABLE
+                    // ADD / ALTER COLUMN); same realization shape as the
+                    // other DDL arms — flush pending bulk inserts, then route
+                    // through Render.toSql (ScriptDomGenerate).
+                    do! flushBulk ()
+                    appendDdl s
                 | InsertRow (table, values) ->
                     let shape = values |> List.map (fun v -> v.Column)
                     let canAppend =

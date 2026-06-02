@@ -268,6 +268,52 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                             })
                 }))
 
+    // 6.A.1 — the drop-set is fail-loud, not exit-0. The same Dev->UAT re-key
+    // fixture that drops ghost@x's referencing Order (SkippedReferences +
+    // UnmatchedIdentities) must map to a non-zero CLI exit, and --allow-drops
+    // must downgrade it. The exit-code policy is the pure `exitCodeForReport`
+    // that the CLI's runTransfer consumes, so this canary witnesses the same
+    // decision the operator's refresh script branches on.
+    [<Fact>]
+    member _.``data canary: transfer with an unmatched FK exits non-zero (drop is fail-loud, not exit-0)`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "XferDrops") then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "XferDropsSrc" (fun src _ ->
+                task {
+                    do! Deploy.executeBatch src TransferCanaryFixtures.reKeyDdl
+                    do! Deploy.executeBatch src TransferCanaryFixtures.reKeySourceSeed
+                    return!
+                        fixture.WithEphemeralDatabase "XferDropsSink" (fun sink _ ->
+                            task {
+                                do! Deploy.executeBatch sink TransferCanaryFixtures.reKeyDdl
+                                do! Deploy.executeBatch sink TransferCanaryFixtures.reKeySinkSeed
+
+                                let! contractR = ReadSide.read src
+                                let contract = TransferCanaryFixtures.value contractR
+                                let userKind =
+                                    Catalog.allModulesKinds contract |> List.map snd
+                                    |> List.find (fun k -> k.Physical.Table = "OSUSR_RC_USER")
+                                let emailName =
+                                    userKind.Attributes |> List.find (fun a -> a.Column.ColumnName = "EMAIL") |> (fun a -> a.Name)
+                                let reconciliation =
+                                    Map.ofList [ userKind.SsKey, ReconciliationStrategy.MatchByColumn emailName ]
+
+                                let! reportR = Transfer.runReconciling Transfer.Execute true src sink contract reconciliation
+                                let report = TransferCanaryFixtures.value reportR
+
+                                // The drop-set is non-empty (ghost@x's Order vanished).
+                                Assert.True(Transfer.hasDrops report)
+                                Assert.True(Transfer.droppedRowCount report > 0)
+
+                                // Fail-loud: a dropped run is a distinct non-zero exit, NOT 0.
+                                Assert.Equal(Transfer.DroppedReferencesExit, Transfer.exitCodeForReport false report)
+                                Assert.NotEqual(0, Transfer.exitCodeForReport false report)
+
+                                // --allow-drops downgrades the declared-acceptable loss to exit 0.
+                                Assert.Equal(0, Transfer.exitCodeForReport true report)
+                            })
+                }))
+
     // §5.2 Slice E — the data adjunction for AssignedBySink (sink-minted keys).
     // User has an IDENTITY PK, so the Sink mints fresh surrogates per row; the
     // capture (INSERT…OUTPUT) feeds a SurrogateRemapContext that re-points every

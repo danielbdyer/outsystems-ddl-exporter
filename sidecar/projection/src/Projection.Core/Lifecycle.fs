@@ -121,9 +121,11 @@ module Lifecycle =
 
     /// L3-L1 (replayability) in materialized form: recover the `Catalog`
     /// stored at a `Version`. Lookup is by ordinal (the position's
-    /// identity); an absent version fails. The diff-replay reconstruction
-    /// form (`fold (applyDiff) C₀`) lands when `CatalogDiff` gains an
-    /// `apply` peer to `between` (H-007).
+    /// identity); an absent version fails. This is the exact *fetch* — it
+    /// returns the stored snapshot byte-for-byte (including facets the diff
+    /// does not capture: references, indexes, sequences). Its diff-fold peer
+    /// is `reconstructLatest` (6.A.11 / H-007), which *derives* the catalog
+    /// from the deltas and agrees with the fetch modulo the captured surface.
     let replayTo (version: Version) (lifecycle: Lifecycle) : Result<Catalog> =
         let (Lifecycle data) = lifecycle
         let target = Version.ordinal version
@@ -135,3 +137,34 @@ module Lifecycle =
                     "lifecycle.version.notFound"
                     "No snapshot exists at the requested version."
                     (Map.ofList [ "ordinal", Some (string target) ]))
+
+    /// 6.A.11 (H-007) — L3-L1 replayability as a real *reconstruction*, not a
+    /// fetch: fold `CatalogDiff.applyDiff` over the evolution chain from
+    /// genesis (C₀), rebuilding the latest snapshot's `Catalog` from the
+    /// per-edge deltas. Where `replayTo` returns the stored snapshot,
+    /// `reconstructLatest` *derives* it — the evolution algebra in action
+    /// (`fold applyDiff C₀ [between C₀ C₁; …]`). The chain-level round-trip
+    /// law: the reconstruction agrees with the stored latest snapshot modulo
+    /// the diff's captured surface — `between (latest).Catalog
+    /// (reconstructLatest) |> CatalogDiff.isEmpty`. A genesis-only lifecycle
+    /// has no edges, so the fold reconstructs C₀ itself. Threads the Π-side
+    /// `EmitError` (`between`'s error type).
+    let reconstructLatest (lifecycle: Lifecycle) : Result<Catalog, EmitError> =
+        let (Lifecycle data) = lifecycle
+        let genesisCatalog = (List.head data.Snapshots).Catalog
+        match evolutionChain lifecycle with
+        | Ok diffs -> Ok (List.fold CatalogDiff.applyDiff genesisCatalog diffs)
+        | Error e  -> Error e
+
+    /// 6.H.3 — the net displacement from genesis to latest: the integral ∫δ as
+    /// a single delta (the FTC's companion to `reconstructLatest`'s fold-⊕).
+    /// Equal to `fold CatalogDiff.compose` over `evolutionChain` (composability
+    /// holds by the monotone chain — each edge's target IS the next edge's
+    /// source), which collapses to `between genesis latest`; computed directly
+    /// for totality. `applyDiff (netDiff lc) genesis ≈ latest` (modulo the
+    /// captured surface). Threads the Π-side `EmitError`.
+    let netDiff (lifecycle: Lifecycle) : Result<CatalogDiff, EmitError> =
+        let (Lifecycle data) = lifecycle
+        let genesisCatalog = (List.head data.Snapshots).Catalog
+        let latestCatalog = (List.last data.Snapshots).Catalog
+        CatalogDiff.between genesisCatalog latestCatalog

@@ -278,13 +278,42 @@ let ``A-Lifecycle-3 (L3-L3): per-timeline history is independent`` () =
         "tests/Projection.Tests/LifecycleTests.fs"
         "A-Lifecycle-3 (L3-L3): timelines are independent histories"
 
-[<Fact(Skip = "A-Lifecycle-4: evolutionChain composition is associative — Bucket C. \
-evolutionChain produces a per-edge CatalogDiff list, but CatalogDiff has no \
-compose operator (diff∘diff) today, so associativity of composition is not yet \
-expressible. Promoted to Bucket A when CatalogDiff gains an `apply`/`compose` \
-peer to `between` (H-007 SchemaDelta category) and replayTo's diff-replay form \
-lands.")>]
-let ``A-Lifecycle-4: evolutionChain composition is associative`` () = ()
+// 6.A.11 (H-007 apply-leg) — the evolution round-trip law. `applyDiff` is the
+// `between` peer; `applyDiff (between A B) A = B` (modulo the captured surface)
+// makes the Time axis an evolution algebra, not a snapshot store. Witnessed at
+// the CatalogDiff level and lifted to the Lifecycle chain via reconstructLatest.
+[<Fact>]
+let ``6.A.11: applyDiff (between A B) A = B — the evolution round-trip law`` () =
+    citationOf
+        "tests/Projection.Tests/CatalogDiffTests.fs"
+        "Time: applyDiff (between A B) A = B (evolution round-trip law)"
+
+// 6.A.12 (Time L3-precursor) — minimum-viable-touch emission. The diff
+// becomes an ALTER, not a full CREATE: SchemaMigrationEmitter turns the
+// attribute-level CatalogDiff into ALTER TABLE … ADD / ALTER COLUMN; renames
+// route to the RefactorLog channel (SqlSimpleColumn → sp_rename, data
+// preserved). The engine computes the delta itself (engine-level, not
+// DacFx-level).
+[<Fact>]
+let ``6.A.12: a column type change emits an ALTER, not a CREATE`` () =
+    citationOf
+        "tests/Projection.Tests/SchemaMigrationEmitterTests.fs"
+        "migration: a column type change emits an ALTER, not a CREATE"
+
+[<Fact>]
+let ``6.A.12: a column rename routes to the RefactorLog (SqlSimpleColumn, sp_rename not drop+add)`` () =
+    citationOf
+        "tests/Projection.Tests/RefactorLogEmitterTests.fs"
+        "RefactorLogEmitter: a column rename produces a SqlSimpleColumn entry"
+
+// A-Lifecycle-4 — PROMOTED to Bucket A (6.H.3 prework, 2026-06-01): `CatalogDiff
+// .compose` (the torsor `+`) now exists, so evolutionChain composition
+// associativity is expressible and witnessed.
+[<Fact>]
+let ``A-Lifecycle-4: evolutionChain composition is associative`` () =
+    citationOf
+        "tests/Projection.Tests/CatalogDiffTests.fs"
+        "compose: associativity — (d1+d2)+d3 reproduces the same state as d1+(d2+d3) (A-Lifecycle-4)"
 
 // ===========================================================================
 // Group F — Lineage (A23–A26)
@@ -810,6 +839,143 @@ let ``T11: sibling Π's commute on shared E-attached values — verified by Json
     ()
 
 // ===========================================================================
+// The Change Algebra — T12–T16 + A43 (Wave 6, 2026-06-01)
+// State is a torsor over Delta: ⊖ = between, ⊕ = applyDiff; round-trip /
+// identity / composition are the Weyl axioms; ‖·‖ (CDC count) is the norm;
+// emit is a norm-preserving functor; T16 (the Project square) is the master
+// equation. Full derivation: WAVE_6_ALGEBRA.md. Each entry is the theorem's
+// DISCRIMINATING witness (the input where a plausibly-named wrong version
+// breaks the equation), not a restatement of the name.
+// ===========================================================================
+
+[<Fact>]
+let ``T12: State is a torsor over Delta — A ⊕ (B ⊖ A) = B, and ⊕ is a genuine action (no-cheat)`` () =
+    // W3 round-trip + the forced state-dependence (apply must thread its base,
+    // else uniqueness collapses): applyDiff base d = target d is falsified.
+    citationOf
+        "tests/Projection.Tests/CatalogDiffTests.fs"
+        "Time: applyDiff (between A B) A = B (evolution round-trip law)"
+    citationOf
+        "tests/Projection.Tests/CatalogDiffTests.fs"
+        "applyDiff threads the passed-in catalog, not the recorded target (no-cheat)"
+    // W1 identity: A ⊕ 0 = A.
+    citationOf
+        "tests/Projection.Tests/CatalogDiffTests.fs"
+        "applyDiff (between A A) A = A — the identity diff is identity"
+
+[<Fact>]
+let ``T13: evolution over time is composition — replay = fold ⊕ along the timeline (Chasles)`` () =
+    citationOf
+        "tests/Projection.Tests/LifecycleTests.fs"
+        "A-Lifecycle (6.A.11 / H-007): reconstructLatest derives the latest snapshot via fold applyDiff"
+    // 6.H.3 — the `+` operator (compose) + the integral (netDiff = fold compose).
+    citationOf
+        "tests/Projection.Tests/CatalogDiffTests.fs"
+        "compose: applyDiff (compose d1 d2) A = applyDiff d2 (applyDiff d1 A) (functor law)"
+    citationOf
+        "tests/Projection.Tests/LifecycleTests.fs"
+        "6.H.3: netDiff equals fold compose over the evolution chain (3 snapshots)"
+    // 6.H.1/6.H.2 — the residual closed: the FTC now runs over a DURABLE chain.
+    // `EpisodicLifecycle.reconstructLatestSchema` over a chain loaded from the
+    // `LifecycleStore` reproduces the stored latest schema (fold ⊕ on disk).
+    citationOf
+        "tests/Projection.Tests/LifecycleStoreTests.fs"
+        "6.H.2: reconstructLatestSchema over the persisted chain reproduces the stored latest schema (FTC, durable)"
+
+// 6.H.1/6.H.2 — the durable provenance substrate (∂κ/∂episode). The Episode
+// co-records the five concerns at one coordinate; the LifecycleStore persists
+// the chain (composing CatalogCodec for the schema plane) so the time-integral
+// survives a run boundary — closing the morphology's "no durable episode" gap.
+[<Fact>]
+let ``6.H.1/6.H.2: the calculus integrates over a durable, multi-plane episode chain`` () =
+    citationOf
+        "tests/Projection.Tests/EpisodeTests.fs"
+        "6.H.1: episode co-records schema + profile + refactorlog + cdc-handle at one Version"
+    citationOf
+        "tests/Projection.Tests/LifecycleStoreTests.fs"
+        "6.H.2: save then load round-trips a durable-faithful chain exactly"
+
+// 6.H.4 — the change-manifest of δ (the emission-integral / mixed partial). The
+// manifest records the DISPLACEMENT an episode-edge made (move counts + ‖δ‖ +
+// refactorlog xref + CDC series), not the target state; the series is the
+// sprint-by-sprint record; path-length ≥ net-displacement exposes churn.
+[<Fact>]
+let ``6.H.4: the change-manifest records the displacement, not the target state`` () =
+    citationOf
+        "tests/Projection.Tests/ChangeManifestTests.fs"
+        "6.H.4: change-manifest records the displacement (move counts + refactorlog xref + cdc series)"
+    citationOf
+        "tests/Projection.Tests/ChangeManifestTests.fs"
+        "6.H.4: path length (sum of edge norms) exceeds net displacement under churn"
+
+[<Fact>]
+let ``T14: orthogonality is a direct-sum decomposition — δ = ⊕_c π_c(δ) (subsumes A38)`` () =
+    // A38 kind-level partition (the direct sum at the kind plane) + the
+    // Rename ⊥ Reshape channel disjointness (a renamed element carries no
+    // shape facet, so the channels never touch the same element).
+    citationOf
+        "tests/Projection.Tests/CatalogDiffTests.fs"
+        "CatalogDiff exhaustiveness: scope equals disjoint union of partitions"
+    citationOf
+        "tests/Projection.Tests/SchemaMigrationEmitterTests.fs"
+        "migration: a rename alone emits no ALTER (renames are the RefactorLog channel)"
+    // 6.H.3 — the concrete schema-side π/‖·‖: the norm is additive over the
+    // channel-count decomposition.
+    citationOf
+        "tests/Projection.Tests/CatalogDiffTests.fs"
+        "norm: equals the sum of the channel counts (additivity, T14/T15)"
+
+[<Fact>]
+let ``T15: CDC is the norm — emit is an isometry; ‖δ‖=0 ⟹ zero capture (CDC-silence)`` () =
+    // The ‖δ‖ = 0 instance (silence) + the sensitivity proving the norm is
+    // not vacuously zero (changed content DOES capture). The general ‖δ‖ = k
+    // is the ⬚ trigger (EXECUTION_PLAN 6.F.3-data).
+    citationOf
+        "tests/Projection.Tests/CdcSilenceTests.fs"
+        "Slice γ: CDC-silence — V2 change-detection predicate emits zero CDC capture rows on idempotent redeploy"
+    citationOf
+        "tests/Projection.Tests/CdcSilenceTests.fs"
+        "Slice γ sensitivity: changed-content redeploy DOES fire CDC capture rows — proves the canary mechanism is real (not silent for unrelated reasons)"
+
+// T16 — PROMOTED to Bucket A (6.D.1, 2026-06-01): the one-command `migrate A B`
+// composition exists and round-trips. `Migration.applyTo (plan A B) A ≡ B` is
+// the master equation `run(emit(B⊖A), realize(A)) = realize(B)` modulo the
+// captured surface; the orchestrator composes it under T14 (channel partition:
+// renames→RefactorLog, reshapes→ALTER) + fail-loud gating, and records the run
+// as a durable episode whose FTC reconstruction reproduces B (6.H loop). The
+// schema sub-square executes on SQL Server (the widening-ALTER canary); the
+// data sub-square is CdcSilence. The structural master equation is green.
+[<Fact>]
+let ``T16: the Project square commutes (the master equation; migrate A B)`` () =
+    citationOf
+        "tests/Projection.Tests/MigrationTests.fs"
+        "T16: applyTo (plan A B) A = B — migrate A B reproduces the target (master equation)"
+    // The composition realizes the displacement minimum-viably (ALTER not CREATE;
+    // renames route to RefactorLog) and records it durably (the A→B loop closes).
+    citationOf
+        "tests/Projection.Tests/MigrationRunTests.fs"
+        "6.D.1: the full A->B loop — migrate, record, then reconstruct reproduces B (durable round-trip)"
+    // The LIVE square: migrate executes on real SQL Server (rename+widen+add),
+    // B' reproduces B's schema, data survives, the re-run is idempotent. Column
+    // renames + the cross-substrate data load (schema + data) also run live.
+    citationOf
+        "tests/Projection.Tests/MigrationCanaryTests.fs"
+        "migrate A B canary: one execute evolves A→B across three channels; B reproduces B, data survives, re-run is idempotent"
+    citationOf
+        "tests/Projection.Tests/MigrationCanaryTests.fs"
+        "migrate canary: executeWithData migrates the sink schema then loads rows from the source"
+
+[<Fact>]
+let ``A43: Identity is the conserved charge — Rename perturbs Designation, conserves SsKey, sp_rename (refactorlog) conserves data`` () =
+    // Rename: Designation changes, Identity (SsKey) conserved, realized as a
+    // SqlSimpleColumn refactorlog entry (sp_rename) — the cross-plane
+    // corollary ‖rename‖_data = 0 (data conserved) is why the refactorlog is
+    // FORCED, not adopted. The ‖rename‖_data=0 live canary is the ⬚ trigger.
+    citationOf
+        "tests/Projection.Tests/RefactorLogEmitterTests.fs"
+        "RefactorLogEmitter: a column rename produces a SqlSimpleColumn entry"
+
+// ===========================================================================
 // Group L — HORIZON H-001/H-002/H-003 (Cluster B) lifts
 // ===========================================================================
 // Cluster B promotes the Kleisli / writer-monad algebra from "discipline"
@@ -959,12 +1125,13 @@ composition pays off when the level depth dominates the pass count.")>]
 let ``H-006: parallel pass composition full integration (static algebra shipped)`` () = ()
 
 [<Fact(Skip = "H-007 SchemaDelta type and delta pass category — large; \
-Cluster D prerequisite. Trigger: migration generation surface or breaking-change \
-detection consumer pulls the delta-pass category into existence. CatalogDiff.fs \
-provides the kind-level partitioning today (Added / Removed / Renamed / \
-Unchanged); the full SchemaDelta adds the `Modified` partition + a second \
-Kleisli category `SchemaDelta -> Lineage<Diagnostics<SchemaDelta>>` over delta \
-passes. Defer until a delta-pass consumer materializes.")>]
+Cluster D prerequisite. NARROWED (6.A.10 + 6.A.11): CatalogDiff now carries the \
+`Modified` partition (per-kind `AttributeDiffs` naming the changed facets, \
+6.A.10) AND the `apply` peer (`applyDiff` + the round-trip law `applyDiff \
+(between A B) A = B`, 6.A.11). What remains is the second Kleisli category \
+`SchemaDelta -> Lineage<Diagnostics<SchemaDelta>>` over delta passes (+ the \
+`compose` operator). Defer until a delta-PASS consumer (not just diff/apply) \
+materializes.")>]
 let ``H-007: SchemaDelta type (delta pass category; large)`` () = ()
 
 [<Fact>]
@@ -1057,15 +1224,20 @@ multi-source consumer materializes.")>]
 let ``H-042: Catalog set algebra (union/intersect/subtract)`` () = ()
 
 [<Fact>]
-let ``H-043: Catalog diff as first-class type — shipped via CatalogDiff.fs (Modified partition deferred)`` () =
-    // `CatalogDiff` already provides the typed diff surface
-    // (`src/Projection.Core/CatalogDiff.fs`, 161 LOC). Carries
-    // Added / Removed / Renamed / Unchanged partitions of the SsKey set
-    // — exactly the H-043 shape minus the `Modified` partition (kinds
-    // whose attributes/references changed but SsKey stayed). The
-    // `Modified` partition defers to H-007 (delta pass category)
-    // which would consume it. The smart constructor `CatalogDiff.between`
-    // already enforces exhaustiveness over the SsKey union.
+let ``H-043: Catalog diff as first-class type — shipped via CatalogDiff.fs (attribute-level Changed landed, 6.A.10)`` () =
+    // `CatalogDiff` provides the typed diff surface
+    // (`src/Projection.Core/CatalogDiff.fs`). Carries Added / Removed /
+    // Renamed / Unchanged partitions of the kind-level SsKey set AND — as
+    // of 6.A.10 — the attribute-level `Modified` surface: per-kind
+    // `AttributeDiffs : Map<SsKey, AttributeDiff>` naming Added / Removed /
+    // Renamed attributes + `Changed` (the facet that differs — DataType,
+    // Nullability, Length, …). Witnessed by
+    // `CatalogDiffTests`::``CatalogDiff: a column type change surfaces as an
+    // attribute-level Changed entry``. The remaining gap is the *consuming*
+    // delta category — `applyDiff` / `compose` (H-007 / 6.A.11) — not the
+    // diff surface. The smart constructor `CatalogDiff.between` enforces
+    // exhaustiveness over the kind SsKey union; the attribute diffs are
+    // sparse (only kinds with a difference).
     let sourceKindCount = 0
     let targetKindCount = 0
     Assert.Equal(sourceKindCount, targetKindCount)

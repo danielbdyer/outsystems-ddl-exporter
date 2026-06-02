@@ -37,6 +37,54 @@ slice — it carries every per-axis finding (file:line), the master severity
 table, and the complete acceptance-criteria catalog. Pairs with the
 `AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md` (the L1↔L2↔L3 bucket model).
 
+**`WAVE_6_ONTOLOGY.md`** (2026-06-01 masterwork) is the audit's **functional
+sibling**: where the audit established *that* the isomorphism is unproven, the
+ontology establishes *what the isomorphism is to* — the **core moves of change
+over time** (Add / Remove / Rename / Reshape / Reidentify / Move / Accumulate),
+grounded bottom-up from physical SQL-Server mechanics (pages / locks / CDC /
+identity) through the operator's concrete premise (a **publication-and-provenance
+engine** for an evolving relational model — external SSIS consumer; Dev→UAT
+rekey; PROD-empty; the eject — *not* a live-PROD deploy engine) up to the
+entities the totalities quantify over. Its discipline is **right-by-function,
+not by name**: every entity carries a *discriminating predicate* (the input on
+which a plausibly-named-but-wrong implementation diverges). It is the source for
+`EXECUTION_PLAN.md` Wave 6.F (publication & provenance) and the premise
+re-prioritization (PROD-gates 6.C.* deferred behind provenance; 6.A.12 explicit
+ALTER repositioned as a lens; DacFx owns the schema ALTER, the engine owns the
+data movement measured by CDC). Read it before any Wave 6.A.10+/6.B/6.C/6.D/6.F
+slice — alongside the audit.
+
+**`WAVE_6_ALGEBRA.md`** (2026-06-01) is the ontology's **formal reification** —
+the change-ontology cast as the domain's algebra, postulated from first
+principles so every law is a *balanced equation* with variables in native
+form. The revealing move: **State is a torsor over Delta** (`⊖` = `between`,
+subtraction; `⊕` = `applyDiff`, the affine action) — so the round-trip /
+identity / composition laws are the three Weyl axioms of an affine space (they
+balance by construction); `Move`s generate `Delta`; the change-measure `‖·‖`
+(physically the CDC capture count) is the norm; `emit` is a norm-preserving
+functor; **T16 (the Project square commutes) is the master equation**, with
+the schema and data legs its two projections and the iso-ladder its
+faithfulness gradient. Reified into the formal system as `AXIOMS.md` **T12–T16
++ A43** (executable witnesses in `AxiomTests.fs`). Read it when you need the
+*equation* a slice must balance; read `WAVE_6_ONTOLOGY.md` for the
+*interpretation* and `AUDIT_2026_05_31` for *why the climb exists*.
+
+**`WAVE_6_MORPHOLOGY.md`** (2026-06-01) is the **territory** the ontology and
+algebra were drawn over — a four-agent structural research pass that read the
+calculus *from* the codebase. Its load-bearing finding: **the calculus is
+*latent*, not *activated*** — the carriers (nouns of change) are reified and
+mature, but the operator-verbs (`Move`/`Delta`/`‖·‖`/`π`/`Torsor`) have no code
+home; the diff-machinery (`between`/`applyDiff`/refactorlog/SchemaMigration/
+`Lifecycle`) has **zero production callers** (the engine ships `realize(B)`,
+not `emit(B ⊖ A)`); and there is **no durable episode** to integrate over (the
+FTC runs only in-memory in tests). It maps the **amino acids** (structural
+primitives + maturity + file:line), the **proteins** (concrete use cases), and
+the **concern-movement field** (the 2-D `∂κ/∂emission` × `∂κ/∂episode` field,
+mostly dark). Read it for the concrete *as-is* before building any Wave-6
+slice; it names the future-state substrate (`EXECUTION_PLAN.md` 6.H: the
+multi-plane `Episode`, the `LifecycleStore`, `CatalogDiff.compose`, the
+change-manifest).
+
 **`V2_DRIVER.md`** (codified 2026-05-10 chapter 3.7 sidebar; principal-PO
 discussion) is the destination-KPI document — the *why* the cutover
 ladder bends toward V2-driver mode, the per-axis correctness stakes,
@@ -159,6 +207,8 @@ of them, write the amendment first.
 | **Domain-first naming and ubiquitous-language consistency (pillar 8; chapter 3.7 sidebar)** — every named type / function / file / module / test in V2 MUST embody the four-question domain-naming analysis BEFORE the name is committed: (1) what domain concept does this represent (articulate it in cutover-business terms); (2) does V2 already name this concept somewhere (use the same name; ubiquitous-language consistency across Core / Adapters / Targets / Pipeline / CLI); (3) is the proposed name concept-shaped (what it IS) or action-shaped (what it DOES); (4) generic-suffix smell test — Helper / Util / Manager / Service / Handler / Processor / Wrapper / Builder / Factory / Provider stop the agent. If #4 fires, find the concept (rename) or restructure (the concept is being squashed). The named failure mode is **domain-blind naming**: when a name answers "what does this DO" rather than "what does this REPRESENT in the domain." Fails to put the domain concept in the type system; the agent feels productive (a name exists; the code compiles) without doing the domain-modeling work. **No lint enforcement** — heuristic syntactic checks misfire on legitimate uses (e.g., `LineageBuffer` is concept-shaped despite the "Buffer" suffix). The discipline-document path catches what the heuristic can't. See `PLAYBOOK.md` decision tree "When you reach for a name" for the executable form. Worked precedents (concept-shaped, ubiquitous): `Catalog` / `Module` / `Kind` / `Reference` / `SsKey` / `RemovalReason` / `AnnotationDetail` / `Coordinates.TableId` / `RawValueCodec` / `SqlTypeCorrespondence` / `BatchSplitter` / `DatabaseNameGenerator` / `EmissionPolicy` / `LineageBuffer`; **Transfer-epic lexicon** (`Projection` / `Ingestion` / `Transfer` / `SubstrateRole` `Source`/`Sink` / `SchemaContract` / `IdentityDisposition` / `SurrogateRemapContext` — `DECISIONS 2026-05-24`). Worked rename: `T11TypeTheoremTests.fs` → `SiblingEmitterContractTests.fs` (chapter 3.7 slice ε; concept-shaped name names what the file IS, not which theorem ID it cites); `PRESCOPE_REVERSE_IMPORT.md` → `PRESCOPE_TRANSFER.md` (2026-05-24; "reverse" framed a bolt-on, but the capability is the other leg of the H-050 adjunction — `Ingestion` is `Projection`'s named peer, not a reversal). | `DECISIONS 2026-05-10` — Domain-first naming and ubiquitous-language consistency (pillar 8); `DECISIONS 2026-05-24` — Transfer-epic vocabulary; `PRESCOPE_TRANSFER.md` |
 | **LINT-ALLOW substantive-rationale discipline** (chapter 3.7 sidebar; pillar 7 amendment) — every per-line `LINT-ALLOW` marker on a string-composition / built-in-substitute site MUST embody the four-question analysis BEFORE the marker is committed: (1) what is the use-case-specific library; (2) is it already in the codebase; (3) what is the cost of using it (visibility lift + perf class + dep weight); (4) is there a structural reason it doesn't apply. If #4 is "no," there is no shortcut — there is the work (lift visibility, add helper, refactor call site). The named failure mode is **performance-of-compliance**: a marker shaped like an audit trail without the substance. The lint passes, the vocabulary fits, the tests are green — and the structural commitment is unmet. The discipline document does the catching the heuristic can't. See `PLAYBOOK.md` decision tree "When you reach for a string-composition primitive" for the executable form. Lint Rule 27 maintains an inventory + soft floor; substance lives in the discipline. | `DECISIONS 2026-05-10` — LINT-ALLOW substantive-rationale discipline (worked counterfactual: slice-β `Render.columnSqlType` shortcut → slice-β' ScriptDom delegation; cost was 87 LOC) |
 | **Text-builder-as-first-instinct discipline** (chapter 4.1.A close arc; pillar 1 + pillar 7 amendment; Tier-3 codification) — every new SQL- or text-emitting consumer starts on the typed-AST library, not StringBuilder. Protocol: (1) BEFORE the first `StringBuilder()` / `String.Concat` / `sprintf`, articulate the typed-AST library that produces the structure being emitted (ScriptDom `MergeStatement` / `CreateTableStatement` / `InsertStatement`; `Utf8JsonWriter` / `JsonNode`; `XmlWriter` / `XDocument`; `Microsoft.SqlServer.Dac` for .dacpac); (2) cross-check the precedent emitters (`SsdtDdlEmitter.emitSlices` / `StaticSeedsEmitter.renderMerge` / `JsonEmitter.emit` are the patterns); (3) first draft uses the typed AST; (4) LINT-ALLOWs at terminal text boundaries only (`SqlLiteral.toString`'s `'<raw>'` quoting; the GO-batch suffix on a rendered MERGE; cross-platform-deterministic relative-path concatenation). The named failure mode is **text-builder-as-first-instinct**: the agent reaches for StringBuilder as the default, then attaches LINT-ALLOWs once the lint surfaces. Each LINT-ALLOW is individually defensible (per the substantive-rationale discipline); the *aggregate* is the bug — six LINT-ALLOWs at one MERGE site means the typed-AST migration was never attempted in the first place. **Hard-requirement Tier-3 deferrals** (per Active deferrals index): chapter 3.x DacpacEmitter MUST adopt `Microsoft.SqlServer.Dac` (DacFx); chapter 4.1.B slices ε / ζ MUST adopt `ScriptDomBuild.buildMergeStatement` from slice α. The chapter agent reads these entries at chapter open. | `DECISIONS 2026-05-10` — Text-builder-as-first-instinct discipline (worked counterfactuals: chapter 3.7 slice β shortcut + StaticSeedsEmitter slices α/β shortcut; both retired via ScriptDom typed AST) |
+| **Totality-contract verification for total functions over the IR** (Wave 6; codec slice) — a function claiming to be *total over the IR* (codec, diff, T11 emitter, full-variant traversal) carries a totality contract whose source of truth is the **IR inventory** (closed DUs + record field lists reachable from `Catalog`). **Verify totality against the inventory; do not assert it** (independent audit for keystone artifacts; exhaustive `match` where the shape allows). The named hazard is **`{ X.create … with … }` default-substitution**: when reconstruction rebuilds an aggregate via record-update over a smart constructor, every field `create` does not set MUST appear in the `with` block, else it silently inherits the constructor default (the compiler does NOT flag the omission — `Index.AllowRowLocks`/`AllowPageLocks` default `true`, `Reference.IsConstraintTrusted` `true`, `Kind.IsActive` `true`). Detection: (#fields set by `create`) + (#fields in `with`) = total field count. This is the bare-value smart-constructor pattern's dual cost; carry it to every Wave-6 IR-reconstruction site (`LifecycleStore` 6.H.2, change-manifest 6.H.4, `migrate` 6.D.1). | `DECISIONS 2026-06-01 — Operating discipline: totality-contract verification for total functions over the IR` |
+| **Declarative test inputs + the universal law over a constructed-valid generator** (Wave 6; codec slice; extends text-builder-as-first-instinct to test inputs) — (1) test inputs are **declarative edits of the producer's own valid output** (parse to the typed DOM, mutate, re-serialize), never hand-authored wire format (which duplicates the producer's format so a rename makes the test *lie* not *break*); (2) state the **universal law** (`∀ c. deserialize (serialize c) = Ok c`) as an FsCheck property over a **constructed-valid generator** (draw FK targets / index columns from already-chosen keys — validity is constructed, not generate-and-filtered) that **reuses the per-variant alphabet lists** the example tests define, so the variant space is enumerated once and the example/property suites cannot drift. Both suites belong: the property proves universality + random nesting; the examples pinpoint *which* variant regressed. Pitfalls: `open Xunit` before `open FsCheck` (else `Xunit`→`FsCheck.Xunit`, FS0893); wrap nullable `JsonNode` navigation in a `req` helper. | `DECISIONS 2026-06-01 — Operating discipline: declarative test inputs + the universal law over a constructed-valid generator` |
 | **Audit during validation** — when something second-order surfaces during the work, act on it before shipping. Five paydowns across sessions 4, 5, 7, 8, 11; three more during session 14. | `DECISIONS 2026-05-09 — Audits surface things not on the agenda` (line 764) |
 | **IR grows under evidence, not speculation** — types, fields, DU variants, and helpers land when a consumer demands them. Two-consumer threshold for helper extraction. | `DECISIONS 2026-05-07` — IR grows under evidence, not speculation |
 | **Total decisions, named skips** — strategies return decisions for every input; "no decision" is a named `KeepReason` variant rather than silence. | `DECISIONS 2026-05-11 — Strategy-layer codification: empirical verdict after the fourth instance` (line 1557; refinement 3) |

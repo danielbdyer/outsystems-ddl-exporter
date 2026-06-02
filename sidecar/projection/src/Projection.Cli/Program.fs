@@ -28,6 +28,7 @@ let private usageLines : string list =
         "    projection deploy <input-osm-model.json>"
         "    projection canary <source-ddl-file>"
         "    projection policy-diff <config-a> <config-b>"
+        "    projection migrate --from <model-a.json> --to <model-b.json> [--allow-drops]"
         "    projection approve <policy-version> --approver <name> [--rationale <text>] [--store <path>]"
         "    projection transfer --source-conn <env|file:ref> --sink-conn <env|file:ref>"
         "                        [--reconcile <table>:<match-column>]... [--execute]"
@@ -540,7 +541,7 @@ let private parseEnvironment (defaultLabel: string) (label: string option) : Pro
     | Some s ->
         match s.Trim().ToUpperInvariant() with
         | "DEV"  -> Projection.Core.Environment.Dev
-        | "TEST" -> Projection.Core.Environment.Test
+        | "QA"   -> Projection.Core.Environment.Qa
         | "UAT"  -> Projection.Core.Environment.Uat
         | "PROD" -> Projection.Core.Environment.Prod
         | _      -> Projection.Core.Environment.Named (s.Trim())
@@ -554,6 +555,7 @@ let private runTransfer
     (userMapPath: string option)
     (executeRequested: bool)
     (allowCdc: bool)
+    (allowDrops: bool)
     : int =
     let collect = function Ok _ -> [] | Error es -> es
     let parsedSource    = TransferSpec.parseConnectionSpec sourceSpec
@@ -627,7 +629,24 @@ let private runTransfer
         match result with
         | Ok report ->
             narrateTransferReport report
-            0
+            // 6.A.1 — the drop-set is fail-loud, not exit-0. A successful
+            // write that dropped FK-orphan rows or left reconciled-kind
+            // sources unmatched surfaces a distinct non-zero exit unless the
+            // operator declared the drops acceptable via --allow-drops.
+            let dropCode = Transfer.exitCodeForReport allowDrops report
+            if dropCode <> 0 then
+                Console.Error.WriteLine
+                    (sprintf
+                        "projection transfer: %d row(s) dropped (transfer.droppedReferences) — refusing exit 0. Pass --allow-drops to accept the loss."
+                        (Transfer.droppedRowCount report))
+                let kindCount (label: string) (keys: SsKey seq) =
+                    keys
+                    |> Seq.countBy SsKey.rootOriginal
+                    |> Seq.iter (fun (k, n) ->
+                        Console.Error.WriteLine (sprintf "  %s %s: %d" label k n))
+                kindCount "SkippedReferences" (report.SkippedReferences |> List.map fst)
+                kindCount "UnmatchedIdentities" (report.UnmatchedIdentities |> List.map fst)
+            dropCode
         | Error errors ->
             Console.Error.WriteLine "projection transfer: failed:"
             printErrors Console.Error errors
@@ -649,7 +668,8 @@ let private dispatchTransfer (argv: string[]) : int =
         let userMap       = parsed.TryGetResult TransferArgs.User_Map
         let execute       = parsed.Contains TransferArgs.Execute
         let allowCdc      = parsed.Contains TransferArgs.Allow_Cdc
-        runTransfer sourceSpec sinkSpec sourceEnv sinkEnv reconcileList userMap execute allowCdc)
+        let allowDrops    = parsed.Contains TransferArgs.Allow_Drops
+        runTransfer sourceSpec sinkSpec sourceEnv sinkEnv reconcileList userMap execute allowCdc allowDrops)
 
 // ---------------------------------------------------------------------------
 // Slice 4.4 — `projection verify-data`: post-deploy data-integrity gate.
@@ -775,6 +795,73 @@ let private runPolicyDiff (configAPath: string) (configBPath: string) : int =
         dumpBench "policy-diff"
         exitCode
 
+/// `projection migrate --from <modelA.json> --to <modelB.json> [--allow-drops]`
+/// — the L3 bullseye's dry-run: diff the two states and print the
+/// minimum-viable migration plan (the change-manifest of δ) that `migrate A B`
+/// would execute. Fail-loud: a destructive drop (without `--allow-drops`) or a
+/// non-shape facet change is refused with a non-zero exit and an explanation,
+/// never a silent plan. The `--execute` leg (against a live deployed DB) is
+/// `MigrationRun.execute`; this surface previews what it would do.
+let private runMigratePreview (fromPath: string) (toPath: string) (allowDrops: bool) : int =
+    let loaded =
+        task {
+            let! a = Compose.read fromPath
+            let! b = Compose.read toPath
+            return a, b
+        }
+    let a, b = loaded.GetAwaiter().GetResult()
+    match a, b with
+    | Error errors, _ ->
+        Console.Error.WriteLine (sprintf "projection migrate: could not read --from %s:" fromPath)
+        printErrors Console.Error errors
+        6
+    | _, Error errors ->
+        Console.Error.WriteLine (sprintf "projection migrate: could not read --to %s:" toPath)
+        printErrors Console.Error errors
+        6
+    | Ok source, Ok target ->
+        let exitCode =
+            match MigrationRun.preview allowDrops source target with
+            | Error (RefusedByViolations violations) ->
+                Console.Error.WriteLine (
+                    sprintf "projection migrate: REFUSED — %d destructive change(s) require --allow-drops:" (List.length violations))
+                for v in violations do
+                    match v with
+                    | WouldDropKind (key, name) ->
+                        Console.Error.WriteLine (sprintf "    drop table %s (%s)" (Name.value name) (SsKey.rootOriginal key))
+                    | WouldDropAttribute (kind, attr) ->
+                        Console.Error.WriteLine (sprintf "    drop column %s on %s" (SsKey.rootOriginal attr) (SsKey.rootOriginal kind))
+                9
+            | Error (RefusedBySchemaErrors entries) ->
+                Console.Error.WriteLine "projection migrate: REFUSED — change(s) the engine cannot express as a single ALTER:"
+                for e in entries do
+                    Console.Error.WriteLine (sprintf "    [%s] %s" e.Code e.Message)
+                9
+            | Error other ->
+                Console.Error.WriteLine (sprintf "projection migrate: failed: %A" other)
+                2
+            | Ok artifacts ->
+                let p = artifacts.Plan.Preview
+                printfn "projection migrate %s -> %s  (dry-run)" fromPath toPath
+                if Migration.isIdempotent artifacts.Plan then
+                    printfn "  idempotent — nothing to do (zero minimum-viable touches)"
+                else
+                    printfn "  minimum-viable touches (norm): %d" p.Norm
+                    printfn "    renamed kinds:        %d" p.Channels.RenamedKinds
+                    printfn "    added kinds:          %d" p.Channels.AddedKinds
+                    printfn "    removed kinds:        %d" p.Channels.RemovedKinds
+                    printfn "    reshaped attributes:  %d" p.Channels.ChangedAttributes
+                    printfn "    renamed attributes:   %d" p.Channels.RenamedAttributes
+                    printfn "    added attributes:     %d" p.Channels.AddedAttributes
+                    printfn "    removed attributes:   %d" p.Channels.RemovedAttributes
+                    for (_, fromN, toN) in p.RenamedKinds do
+                        printfn "    rename: %s -> %s" (Name.value fromN) (Name.value toN)
+                    printfn "  emitted: %d ALTER/ADD statement(s), %d refactorlog rename(s)"
+                        (List.length artifacts.SchemaStatements) (List.length artifacts.RefactorLog)
+                0
+        dumpBench "migrate"
+        exitCode
+
 [<EntryPoint>]
 let main argv =
     match argv with
@@ -807,6 +894,10 @@ let main argv =
         runCanary sourceDdlPath
     | [| "policy-diff"; configAPath; configBPath |] ->
         runPolicyDiff configAPath configBPath
+    | [| "migrate"; "--from"; fromPath; "--to"; toPath |] ->
+        runMigratePreview fromPath toPath false
+    | [| "migrate"; "--from"; fromPath; "--to"; toPath; "--allow-drops" |] ->
+        runMigratePreview fromPath toPath true
     | [| "transfer" |] ->
         Console.Error.WriteLine "projection transfer: --source-conn and --sink-conn required"
         Console.Error.WriteLine ""

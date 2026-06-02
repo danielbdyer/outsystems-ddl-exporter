@@ -23,6 +23,7 @@
     <Compile Include="SsdtBundle.fs" />
     <Compile Include="RefactorLogEmitter.fs" />
     <Compile Include="RefactorLogRender.fs" />
+    <Compile Include="SchemaMigrationEmitter.fs" />
     <Compile Include="BatchSplitter.fs" />
   </ItemGroup>
 

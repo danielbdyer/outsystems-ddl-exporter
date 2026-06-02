@@ -1436,6 +1436,58 @@ module ScriptDomBuild =
         stmt.AlterIndexType <- AlterIndexType.Disable
         stmt
 
+    /// The `DataTypeReference` for a `ColumnDef` — concrete SqlStorage
+    /// evidence when present, else the `PrimitiveType` mapping. Mirrors
+    /// `columnDefinition`'s data-type branch exactly so an ALTER COLUMN's
+    /// rendered type is byte-identical to the same column's CREATE TABLE
+    /// declaration (SSDT consistency: the altered shape must equal the
+    /// declared shape, or DacFx re-diffs it forever).
+    let private columnDataType (c: ColumnDef) : DataTypeReference =
+        match c.SqlStorage with
+        | Some storage -> dataTypeReferenceFromStorage storage
+        | None         -> dataTypeReference c.Type c.Length c.Precision c.Scale
+
+    /// 6.A.12 — `ALTER TABLE <table> ADD <column>` via ScriptDom's
+    /// `AlterTableAddTableElementStatement` carrying one
+    /// `ColumnDefinition`. Reuses `columnDefinition` so the added
+    /// column's full shape (type, nullability, IDENTITY, DEFAULT)
+    /// matches a CREATE TABLE declaration of the same column.
+    let buildAlterTableAddColumn
+            (table: TableId)
+            (c: ColumnDef)
+            : AlterTableAddTableElementStatement =
+        use _ = Bench.scope "emit.scriptDom.build.alterTableAddColumn"
+        let stmt = AlterTableAddTableElementStatement()
+        stmt.SchemaObjectName <- schemaObjectFromTableId table
+        let def = TableDefinition()
+        def.ColumnDefinitions.Add(columnDefinition c)
+        stmt.Definition <- def
+        stmt
+
+    /// 6.A.12 — `ALTER TABLE <table> ALTER COLUMN <col> <type> NULL|NOT NULL`
+    /// via ScriptDom's `AlterTableAlterColumnStatement`. Nullability rides
+    /// the `AlterTableAlterColumnOption.Null | .NotNull` enum (verified
+    /// against `Sql160ScriptGenerator`). Scope: the column SHAPE facets
+    /// (type / length / precision / scale / nullability) — the
+    /// `SchemaMigrationEmitter` routes DEFAULT / computed / identity /
+    /// rename changes elsewhere (constraint DDL / RefactorLog), so this
+    /// builder never sees a computed-column `ColumnDef`.
+    let buildAlterTableAlterColumn
+            (table: TableId)
+            (c: ColumnDef)
+            : AlterTableAlterColumnStatement =
+        use _ = Bench.scope "emit.scriptDom.build.alterTableAlterColumn"
+        let stmt = AlterTableAlterColumnStatement()
+        stmt.SchemaObjectName <- schemaObjectFromTableId table
+        stmt.ColumnIdentifier <- bracketed c.Name
+        stmt.DataType <- columnDataType c
+        // ALTER COLUMN always restates nullability (matches DacFx); the
+        // option enum is the only place ScriptDom carries NULL/NOT NULL.
+        stmt.AlterTableAlterColumnOption <-
+            if c.Nullable then AlterTableAlterColumnOption.Null
+            else AlterTableAlterColumnOption.NotNull
+        stmt
+
     /// Canonical Diagnostics-bearing entry point (chapter 4.9 slice ζ).
     let buildSetExtendedProperty
             (owner: ExtendedPropertyOwner)
@@ -1584,3 +1636,7 @@ module ScriptDomBuild =
             Some (buildAlterTableDisableTrigger table triggerName :> TSqlStatement)
         | CreateSequence seqIR ->
             Some (buildCreateSequence seqIR :> TSqlStatement)
+        | AlterTableAddColumn (table, column) ->
+            Some (buildAlterTableAddColumn table column :> TSqlStatement)
+        | AlterTableAlterColumn (table, column) ->
+            Some (buildAlterTableAlterColumn table column :> TSqlStatement)

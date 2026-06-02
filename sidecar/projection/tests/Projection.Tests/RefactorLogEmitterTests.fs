@@ -43,6 +43,20 @@ let private renamedSalesModule : Module =
 let private targetCatalog : Catalog =
     IRBuilders.mkCatalog [ renamedSalesModule ]
 
+// 6.A.12 — a COLUMN rename: Customer's `Name` attribute's logical name
+// changes (Name → FullName) while the kind name stays stable. Mirrors the
+// kind-level rename (logical-name basis); SSDT needs a SqlSimpleColumn
+// refactorlog entry so DacFx does sp_rename, not DROP+ADD (data loss).
+let private columnRenamedCustomer : Kind =
+    { customer with
+        Attributes =
+            customer.Attributes
+            |> List.map (fun a ->
+                if a.SsKey = customerNameKey then { a with Name = nameOf "FullName" } else a) }
+
+let private columnRenameTarget : Catalog =
+    IRBuilders.mkCatalog [ { salesModule with Kinds = [ columnRenamedCustomer; order; country ] } ]
+
 // ---------------------------------------------------------------------------
 // Slice θ acceptance — RefactorLogEmitter realizes EmitterOverDiff
 // <RefactorLogEntry list>; T11 (sibling-Π commutativity, structural
@@ -156,3 +170,47 @@ let ``RefactorLogEmitter: Removed kind produces no artifact entry (target is emp
     let artifact = RefactorLogEmitter.emit diff |> mustOk
     // Target catalog is empty; artifact's keyset is empty per T11.
     Assert.Empty(ArtifactByKind.keys artifact)
+
+// ---------------------------------------------------------------------------
+// 6.A.12 — column-rename refactorlog entries (SqlSimpleColumn). The crucial
+// SSDT coupling: a column rename without a refactorlog entry is interpreted
+// by DacFx as DROP COLUMN + ADD COLUMN — data loss. Detection is the logical
+// `Attribute.Name` change (mirrors the kind-level logical rename), keyed by
+// attribute SsKey; NewName is the new logical name.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``RefactorLogEmitter: a column rename produces a SqlSimpleColumn entry`` () =
+    let diff = CatalogDiff.between sampleCatalog columnRenameTarget |> mustOk
+    let artifact = RefactorLogEmitter.emit diff |> mustOk
+    let customerEntries = Map.find customerKey (ArtifactByKind.toMap artifact)
+    let columnEntry =
+        customerEntries |> List.filter (fun e -> e.ElementType = SqlSimpleColumn)
+    Assert.Equal(1, List.length columnEntry)
+    let e = List.head columnEntry
+    Assert.Equal(RenameRefactor, e.OperationKind)
+    Assert.Equal(SqlTable, e.ParentElementType)
+    // ElementName carries the OLD logical column name; NewName the new one.
+    Assert.Equal("[dbo].[OSUSR_S1S_CUSTOMER].[Name]", e.ElementName)
+    Assert.Equal("[dbo].[OSUSR_S1S_CUSTOMER]", e.ParentElementName)
+    Assert.Equal("FullName", e.NewName)
+
+[<Fact>]
+let ``RefactorLogEmitter: a column rename's OperationKey is deterministic`` () =
+    let key () =
+        let diff = CatalogDiff.between sampleCatalog columnRenameTarget |> mustOk
+        let artifact = RefactorLogEmitter.emit diff |> mustOk
+        (Map.find customerKey (ArtifactByKind.toMap artifact)
+         |> List.find (fun e -> e.ElementType = SqlSimpleColumn)).OperationKey
+    Assert.Equal(key (), key ())
+
+[<Fact>]
+let ``RefactorLogEmitter: no column rename produces no SqlSimpleColumn entry`` () =
+    let diff = CatalogDiff.between sampleCatalog sampleCatalog |> mustOk
+    let artifact = RefactorLogEmitter.emit diff |> mustOk
+    let allColumnEntries =
+        ArtifactByKind.toMap artifact
+        |> Map.toSeq
+        |> Seq.collect snd
+        |> Seq.filter (fun e -> e.ElementType = SqlSimpleColumn)
+    Assert.Empty(allColumnEntries)

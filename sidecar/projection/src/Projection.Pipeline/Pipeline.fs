@@ -777,6 +777,12 @@ module Compose =
                         // the emitted catalog (slice-μ retired). Pure sibling of
                         // the emitter port; A18 holds.
                         @ SsdtDdlEmitter.foreignKeyDropDiagnostics finalState.Catalog
+                        // 6.A.9 — the DECISION-driven FK-drop audit trail. A
+                        // tightening Decision that drops an FK the source
+                        // enforced is a safety change; surface one Warning per
+                        // dropped decision so it is never silent at emission.
+                        @ SsdtDdlEmitter.foreignKeyDecisionDropDiagnostics
+                            (DecisionOverlay.ofComposeState finalState) finalState.Catalog
                     match write cfg.Output.Dir outputs with
                     | Ok paths    -> Result.success { Paths = paths; Diagnostics = diagnostics; Manifest = outputs.Manifest }
                     | Error errors -> Result.failure errors
