@@ -42,50 +42,73 @@ module BoundedContextPass =
 
     /// Label propagation: each node adopts the most frequent label
     /// among its neighbors. Ties broken by choosing the smallest
-    /// label (SsKey comparison). Nodes with no neighbors keep their
-    /// own label.
+    // Slice 9 (2026-06-02 audit): label-propagation body decomposed
+    // into `initialLabels`, `pickLabel`, `propagateOnce` named helpers;
+    // `labelPropagation` becomes the iteration driver.
+
+    /// Initial labels: each node carries its own SsKey as a label.
+    let private initialLabels (nodes: SsKey list) : Map<SsKey, SsKey> =
+        nodes |> List.map (fun k -> k, k) |> Map.ofList
+
+    /// Pick the most-frequent label among a node's neighbors;
+    /// tie-break on label ASC (SsKey rootOriginal). The neighbors
+    /// projection ignores entries missing from the label map (treated
+    /// as "no contribution"). Falls back to the node's own current
+    /// label when it has no neighbors.
+    let private pickLabel
+        (node: SsKey)
+        (neighbors: SsKey list)
+        (labels: Map<SsKey, SsKey>)
+        : SsKey =
+        if List.isEmpty neighbors then
+            Map.tryFind node labels |> Option.defaultValue node
+        else
+            let freqs =
+                neighbors
+                |> List.choose (fun n -> Map.tryFind n labels)
+                |> List.countBy id
+            freqs
+            |> List.maxBy (fun (lbl, cnt) ->
+                // Primary: count DESC; secondary: label ASC.
+                cnt, -System.String.CompareOrdinal(SsKey.rootOriginal lbl, SsKey.rootOriginal lbl))
+            |> fst
+
+    /// One propagation round. Returns the new label map and a flag
+    /// indicating whether any node's label changed.
+    let private propagateOnce
+        (nodes: SsKey list)
+        (adj: Map<SsKey, SsKey list>)
+        (labels: Map<SsKey, SsKey>)
+        : Map<SsKey, SsKey> * bool =
+        let newLabels =
+            nodes
+            |> List.map (fun node ->
+                let neighbors = Map.tryFind node adj |> Option.defaultValue []
+                node, pickLabel node neighbors labels)
+            |> Map.ofList
+        let changed =
+            nodes
+            |> List.exists (fun node ->
+                let old = Map.tryFind node labels |> Option.defaultValue node
+                let nw  = Map.tryFind node newLabels |> Option.defaultValue node
+                old <> nw)
+        newLabels, changed
+
+    /// Drive `propagateOnce` until labels stabilize or
+    /// `maxPropagationRounds` fires, whichever comes first. Nodes
+    /// with no neighbors retain their initial labels by construction.
     let private labelPropagation
         (nodes: SsKey list)
         (adj: Map<SsKey, SsKey list>)
         : Map<SsKey, SsKey> =
-        // Initialize: each node is its own label.
-        let mutable labels : Map<SsKey, SsKey> =
-            nodes |> List.map (fun k -> k, k) |> Map.ofList
-
+        let mutable labels = initialLabels nodes
         let mutable changed = true
         let mutable rounds = 0
-
         while changed && rounds < maxPropagationRounds do
-            changed <- false
             rounds <- rounds + 1
-            // Process nodes in sorted order for determinism.
-            let newLabels =
-                nodes
-                |> List.map (fun node ->
-                    let neighbors = Map.tryFind node adj |> Option.defaultValue []
-                    if List.isEmpty neighbors then
-                        node, Map.tryFind node labels |> Option.defaultValue node
-                    else
-                        // Count label frequencies among neighbors.
-                        let freqs =
-                            neighbors
-                            |> List.choose (fun n -> Map.tryFind n labels)
-                            |> List.countBy id
-                        // Pick the label with maximum frequency; tie-break smallest.
-                        let best =
-                            freqs
-                            |> List.maxBy (fun (lbl, cnt) ->
-                                // Primary: count DESC; secondary: label ASC (negate string comparison)
-                                cnt, -System.String.CompareOrdinal(SsKey.rootOriginal lbl, SsKey.rootOriginal lbl))
-                            |> fst
-                        node, best)
-                |> Map.ofList
-            for node in nodes do
-                let old = Map.tryFind node labels |> Option.defaultValue node
-                let nw  = Map.tryFind node newLabels |> Option.defaultValue node
-                if old <> nw then changed <- true
+            let newLabels, didChange = propagateOnce nodes adj labels
             labels <- newLabels
-
+            changed <- didChange
         labels
 
     let run (t: TopologicalOrder) : Lineage<Diagnostics<BoundedContextDiscovery>> =

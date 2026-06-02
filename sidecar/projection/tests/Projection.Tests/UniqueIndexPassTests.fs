@@ -266,13 +266,10 @@ let ``policy gates: single-column toggle off produces PolicyDisabled for non-uni
 // T1 determinism — same triple ⇒ identical output (decisions + trail).
 // ---------------------------------------------------------------------------
 
-[<Fact>]
-let ``T1: UniqueIndexPass is deterministic on the triple`` () =
-    let policy = policyWithIntervention "v1-style" (mkConfig true true)
-    let r1 = uiRun indexedCatalog policy Profile.empty
-    let r2 = uiRun indexedCatalog policy Profile.empty
-    Assert.Equal<UniqueIndexDecisionSet>(UniqueIndexPass.decisionsOf r1, UniqueIndexPass.decisionsOf r2)
-    Assert.Equal<LineageEvent list>(r1.Trail, r2.Trail)
+// Slice 11 (2026-06-02 audit): T1 example test pruned. `f(X) = f(X)`
+// is tautological in pure F#. The accompanying permutation-invariance
+// property below (`contract: UniqueIndexPass is invariant under input
+// permutation`) provides stronger T1 coverage over a swept seed space.
 
 // ---------------------------------------------------------------------------
 // Permutation invariance — sort/order discipline is structural. The pass

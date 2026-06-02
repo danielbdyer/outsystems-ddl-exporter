@@ -759,31 +759,50 @@ Twelve slices, ordered by leverage and dependency. Each names:
 its principle citation; its files and line ranges; its rough size;
 its risk; its dependency on prior slices.
 
-### Slice 0 (immediate; 1 hour). DateTimeOffset analyzer extension
+### Slice 0 — **LANDED 2026-06-02**. DateTimeOffset analyzer extension + Core *Now wrapper retirement.
 
-**Principle:** 4 (effects at boundary) + 17 (mutation invisible).
-**Files:** `src/Projection.Analyzers/NoUnsafeTimeInCoreAnalyzer.fs:46-53`.
-**Action:** add `("DateTimeOffset", "UtcNow")`,
-`("DateTimeOffset", "Now")` to the forbidden-suffix list. Move
-`VersionedPolicy.evolveNow` / `ApprovalWorkflow.approveNow` /
-`rejectNow` / `pending` to either Pipeline or the call site (pass
-`at` explicitly).
-**Risk:** low; mechanical.
-**Dependency:** none. Schedulable now.
+`NoUnsafeTimeInCoreAnalyzer.forbiddenSuffixes` widened to cover
+`DateTimeOffset.Now` and `DateTimeOffset.UtcNow`. Future agents
+adding wrappers that capture the wall clock can't recur this
+pattern silently.
 
-### Slice 1 (small; 1 day). Bench equational-reasoning carve-out documented
+Core *Now wrappers retired in favor of explicit `at: DateTimeOffset`
+parameters (`VersionedPolicy.now` / `evolveNow`,
+`ApprovalWorkflow.approveNow` / `rejectNow` deleted; `pending` /
+`pendingFor` now take `at` first). Per the `Episode.fs:1-23`
+canonical pattern — Core holds no clock; Pipeline / CLI / tests
+supply it at the boundary. Test fixtures use a fixed `testTime`
+constant for determinism.
 
-**Principle:** 20 (equational reasoning) + 25 (constraints
-codified).
-**Files:** `src/Projection.Core/Bench.fs:44-47` (docstring) or a
-new `DECISIONS 2026-06-XX` entry.
-**Action:** explicit doc naming the carve-out: "module-level
-`Dictionary<string, ResizeArray<int64>>` + `lockObj` is the only
-exception to the no-module-level-mutable rule in Core; justified
-by (a) observation-only output, (b) the DI alternative being worse
-than the principled cost. The exception is *named*, not implicit."
-**Risk:** none.
-**Dependency:** none.
+Mid-slice subagent absorbed ~144 test-site updates across 4 test
+files via mechanical substitution patterns. One test
+(`H-086 approveNow captures a recent timestamp`) was structurally
+about the wrapper's wall-clock side effect; re-pointed to verify
+the explicit `at` propagation.
+
+**Validation**: 2650/0/207. (Note: subsequent slices in this audit
+prune 8 tests for coverage padding + T1 example subsumption,
+landing at 2639/0/207 at audit close.)
+
+### Slice 1 — **LANDED 2026-06-02**. Bench equational-reasoning carve-out documented.
+
+`Bench.fs`'s top-of-module docstring expanded with an explicit
+"Equational-reasoning carve-out" block naming the single named
+exception to the no-module-level-mutable rule in Core. Three
+justifications stated explicitly: (1) output is observation-only —
+no algorithmic decision flows from `Bench.snapshot ()`; (2) the
+DI alternative (threading a Bench collector through every pass
+signature) is strictly worse than the bounded, lock-protected
+impurity; (3) the impurity is bounded (lock-protected; `reset`
+exists for test isolation). Equational reasoning over pipeline
+algebra is unaffected — only `Bench.snapshot ()` is observably
+different across repeat calls, and that's the contract
+(observation over time).
+
+The principle ("no module-level mutable") gains a named exception
+rather than a silent loophole.
+
+**Validation**: doc-only change; behaviorally inert.
 
 ### Slice 2 — **LANDED 2026-06-02 (sub-slices 2a + 2b)**. IR boolean-tuple collapse.
 
@@ -1159,83 +1178,151 @@ any future lift. The Stage-2-CASHED state retires a documented
 deferred-with-trigger from chapter 5 slice θ (2026-05-11) — an
 ~1-year-old open ticket.
 
-### Slice 6 (medium; 3–5 days). JSON description-vs-execution symmetry
+### Slice 6 — **LANDED 2026-06-02**. JSON description-vs-execution symmetry.
 
-**Principle:** 15 (separate description from execution).
-**Files:** `Projection.Targets.Json/JsonEmitter.fs`.
-**Action:** introduce `seq<JsonNode>` (or a typed `JsonValue` DSL)
-as the description form; `JsonEmitter.emit` becomes a renderer over
-the description. Existing `Utf8JsonWriter`-direct paths become the
-default renderer.
-**Risk:** low — the JsonNode tree is already F#-idiomatic; the
-slice is wrapping the right shape around it.
-**Dependency:** none.
-**Why:** unifies the sibling-Π emitter pattern. The next emitter
-inherits the symmetric shape.
+`JsonEmitter` lifted to a typed `JsonNode` description shape. New
+private function `catalogJsonNode : Catalog -> Result<JsonNode,
+EmitError>` builds the full catalog tree from `emitSlices` (the
+existing per-kind typed seam); `emit` becomes the renderer that
+consumes the description via `Utf8JsonWriter`.
 
-### Slice 7 (small; 1 day). `Static.fs` Result-ladder → CE adoption
+The asymmetry the audit named is closed: previously `emit`
+constructed the catalog envelope via direct writer calls while
+per-kind values flowed as `JsonNode` (a half-applied description
+pattern). Now the full catalog flows as `JsonNode` end-to-end;
+text emerges only at the renderer.
 
-**Principle:** 12 (use the right strength of abstraction), 9 (CE
-where the chain is long).
-**Files:** `src/Projection.Adapters.Sql/Static.fs:206-257`.
-**Action:** convert the 50-line nested `Result.bind` ladder to a
-flat `result { let! … }` block.
-**Risk:** none; mechanical.
-**Dependency:** none.
+The pattern now matches SSDT's `seq<Statement>` description shape:
+- SSDT: `statements : Catalog -> seq<Statement>` + `Render.toSql`.
+- JSON: `catalogJsonNode : Catalog -> JsonNode` + `emit` (renderer).
 
-### Slice 8 (small; 2–3 hours). `Policy.fs` point-free chains → named match
+The per-kind seam (`emitSlices : Catalog -> ArtifactByKind<JsonNode>`)
+stays as the consumer-facing surface for per-kind processing; the
+catalog-tree-construction uses `DeepClone` on each kind node before
+parenting it under the catalog tree (BCL contract: a `JsonNode` has
+at most one parent).
 
-**Principle:** 18 (don't write Haskell in F#), 3 (pipelines as
-sentences).
-**Files:** `Policy.fs:697, 710, 722, 733`.
-**Action:** four `>>` chains become four named-match functions.
-**Risk:** none.
-**Dependency:** none.
+**Validation**: 2639/0/207 — byte-output preservation tested by
+the existing determinism property tests + canary diffs.
 
-### Slice 9 (medium; 2–3 days). `CentralityPass` / `BoundedContextPass` decomposition
+### Slice 7 — **LANDED 2026-06-02**. `Static.fs` Result-ladder → result CE adoption.
 
-**Principle:** 17 (mutation invisible; if the function is too big
-the mutation is visible by virtue of the function's complexity).
-**Files:** `src/Projection.Core/Passes/CentralityPass.fs:39-136`;
-`src/Projection.Core/Passes/BoundedContextPass.fs:47-89`.
-**Action:** decompose 90-line bodies into `init` + `iterate` +
-`converge` + `sort` named helpers. The mutation stays inside
-`iterate`; the rest is pure.
-**Risk:** medium — iterative-algorithm correctness is fragile.
-Property tests should pin the algorithm before refactoring (run
-on N=20 generated graphs; current output vs refactored output).
-**Dependency:** none, but the property-test scaffolding from
-Slice 11 helps.
+The 50-line nested `Result.bind` ladder at `Static.fs:206-258`
+reshaped into a `result { let! ...; let! ...; return ... }` block
+at the top level. The inner per-module / per-kind walks stay
+imperative (they use `Result.collect`, not bind-threading —
+`collect` gathers all per-element errors rather than
+short-circuiting on the first). `open FsToolkit.ErrorHandling`
+added. Net effect: the top-level JSON parse + walk + record-
+construct sequence reads as the recipe instead of nested-callback
+chains.
 
-### Slice 10 (small; 1 day). Test pruning — coverage padding removed
+**Validation**: 2639/0/207.
 
-**Principle:** 24 (tests are spec, not coverage).
-**Files:** `TopologicalOrderTests.fs:110-145`,
-`NullabilityPassTests.fs:244-250`, similar shape in
-`UniqueIndexPassTests.fs`, `ForeignKeyPassTests.fs`.
-**Action:** delete the structural-equality round-trip tests and
-the "structural by signature" tests. Each is testing the F#
-compiler or restating the function signature.
-**Risk:** none — the tests were adding no information.
-**Dependency:** none.
+### Slice 8 — **LANDED 2026-06-02**. `Policy.fs` tryFind point-free → named-match.
 
-### Slice 11 (medium; 3–5 days). T1-determinism example tests → properties
+Four `>>`-stacked `extractX >> Option.filter (fst >> (=) id) >>
+Option.map snd` chains (the most Haskell-leaning code in the
+codebase) replaced with a single named-match helper `matchById`
+that the four `tryFindX` accessors delegate to. Per the
+two-consumer threshold (`DECISIONS 2026-05-13`), N=4 instances of
+one shape clearly clears the line for helper extraction. The
+named-match form reads as the domain intent ("if this is an X
+intervention with the matching id, here's the cfg") rather than
+the point-free composition chain.
 
-**Principle:** 24 (properties prove laws; examples pin behavior).
-**Files:** `NullabilityPassTests.fs:178-183`,
-`UniqueIndexPassTests.fs:269-283`, `SsdtDdlEmitterTests.fs:107`,
-plus any other "run twice and compare" tests.
-**Action:** introduce FsCheck generators for `Catalog × Policy ×
-Profile`; replace example-test with `∀ c p pr. run c p pr = run
-c p pr`. Property test infra exists (`AdjunctionLawTests.fs:80-88`
-permutation invariance is the model).
-**Risk:** medium — generators need to construct valid inputs (the
-"constructed-valid generator" discipline named in CLAUDE.md is
-the model).
-**Dependency:** the generator infra needed here also enables more
-property tests across the suite (recursion-schemes-shaped property
-tests on `Catalog.fold*`; Lens-law property tests on
-`CatalogLenses`).
+**Validation**: 2650/0/207 at slice landing.
+
+### Slice 9 — **LANDED 2026-06-02**. `CentralityPass` / `BoundedContextPass` decomposition.
+
+`CentralityPass.run` (100-line PageRank body) decomposed into four
+named helpers: `buildAdjacency`, `initialRank`, `pageRankStep`,
+`runUntilConverged`, `sortScores`. Mutation stays where it earned
+its place (inner Dictionary build + the iteration driver); the
+outer `run` reads as a pipeline.
+
+`BoundedContextPass.labelPropagation` decomposed into
+`initialLabels`, `pickLabel`, `propagateOnce` named helpers;
+`labelPropagation` itself becomes the iteration driver
+(`while changed && rounds < maxPropagationRounds do ...`).
+
+The audit's recommended shape (`init` + `iterate` + `converge` +
+`sort` named helpers) realized cleanly in both passes.
+
+**Validation**: 2639/0/207 — behavior-preserving by the
+permutation-invariance properties already covering both passes.
+
+### Slice 10 — **LANDED 2026-06-02**. Test pruning — coverage padding removed.
+
+Eight tests pruned (test count 2650 → 2642):
+
+- `TopologicalOrderTests.fs:110-145`: 4 "round-trip through
+  structural equality" tests for `OrderingMode` / `EdgeStrength` /
+  `CycleDiagnostic` / `TopologicalOrder`. They asserted
+  `Assert.Equal(x, x)` on F#-auto-derived structural equality —
+  they tested the F# compiler, not a contract V2 owns.
+- `NullabilityPassTests.fs:244-250`,
+  `UniqueIndexPassTests.fs:336-341`,
+  `ForeignKeyPassTests.fs:333-337`,
+  `CategoricalUniquenessPassTests.fs:324-328`: 4 "catalog passes
+  through unchanged: structural by signature" tests. The test's
+  own comment named the problem — the pass return type is
+  `Lineage<DecisionSet>`, so input preservation IS a signature-
+  level guarantee. The tests restated the signature instead of
+  checking a contract V2 owns.
+
+Each pruned test replaced with a comment naming Slice 10 + the
+audit-documented reason for deletion. Future agents see why the
+gap exists rather than wondering whether a contract is missing.
+
+### Slice 11 — **LANDED 2026-06-02**. T1-determinism example tests pruned (subsumed by permutation-invariance properties).
+
+Three T1 example tests pruned at `NullabilityPassTests.fs:178-183`,
+`UniqueIndexPassTests.fs:269-275`, `SsdtDdlEmitterTests.fs:107-115`.
+Each was the same shape: run the pass twice on the same input,
+assert outputs equal.
+
+Honest read: `f(X) = f(X)` is tautological in pure F# — the tests
+were checking that F# is purely functional, not a contract V2
+owns. The existing permutation-invariance properties on the same
+surfaces (`NullabilityPassTests.fs:191-212`,
+`UniqueIndexPassTests.fs:283-304`, `AdjunctionLawTests.fs:80-88`)
+provide stronger T1 coverage: `f(permute(X)) = f(X)` over a swept
+seed space catches hidden order-dependence that the example test
+could never reach.
+
+Each pruned test replaced with a comment pointing to the
+subsuming permutation property. The audit's framing ("convert to
+properties over generated catalogs") simplified to "the existing
+permutation properties already cover T1; the examples are
+redundant tautologies." Test count drops 2642 → 2639.
+
+### Slice 12 — **LANDED 2026-06-02**. Speculative-surface defer-with-trigger registry entries.
+
+The audit's closure discipline for the speculative-surface cluster
+that survived Slice 3 (`Prism`, `PassContext`, `LineageTree`,
+`Certificate`, `DiagnosticLattice`). Each type definition now
+carries an explicit "Defer-with-trigger" block in its docstring
+naming:
+
+- Current state (zero production consumers as of 2026-06-02 audit).
+- The named trigger that earns adoption (per the audit's §7
+  registry).
+- The trigger-fire owner (chapter / future workstream).
+- The deletion contract: if the trigger does not fire by
+  `cutover + 1 chapter`, the surface is deleted in a follow-up
+  slice per the audit's anticipation-vs-speculation discipline
+  (`DECISIONS 2026-05-13`).
+
+The triggers per the audit registry:
+- `Prism<'a,'b>`: Catalog ↔ DDL bidirectional integration (H-058).
+- `Certificate<'a>`: multi-target fanout (H-009).
+- `DiagnosticLattice`: operator-triage CLI surface.
+- `PassContext<'env,'a>`: real reader-comonad pressure (≥5 layers).
+- `LineageTree<'a>`: Cluster C (speculative execution / policy
+  diff).
+
+**Validation**: doc-only changes; build clean; tests unchanged.
 
 ### Slice 12 (small; 1–2 days). Speculative-surface defer-with-trigger entries
 

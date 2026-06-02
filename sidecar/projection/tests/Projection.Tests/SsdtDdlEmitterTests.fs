@@ -103,16 +103,11 @@ let ``SsdtDdlEmitter.emitSlices Body contains CREATE TABLE statement for every k
 // ScriptDom's pinned-options writer.
 // ---------------------------------------------------------------------------
 
-[<Fact>]
-let ``T1: SsdtDdlEmitter.emitSlices is byte-deterministic across repeat invocations`` () =
-    let enriched = enrich sampleCatalog
-    let r1 = SsdtDdlEmitter.emitSlices enriched |> mustOk |> ArtifactByKind.toMap
-    let r2 = SsdtDdlEmitter.emitSlices enriched |> mustOk |> ArtifactByKind.toMap
-    Assert.Equal (Map.count r1, Map.count r2)
-    for KeyValue(ssKey, file1) in r1 do
-        let file2 : SsdtDdlEmitter.SsdtFile = Map.find ssKey r2
-        Assert.Equal<string> (file1.RelativePath, file2.RelativePath)
-        Assert.Equal<string> (file1.Body, file2.Body)
+// Slice 11 (2026-06-02 audit): T1 example test pruned. `f(X) = f(X)`
+// is tautological in pure F#. `AdjunctionLawTests.fs:80-88` provides
+// the corresponding property-level T1 coverage for the SSDT emitter
+// (`SsdtDdlEmitter.statements` invariant under module permutation
+// over a swept seed space).
 
 // ---------------------------------------------------------------------------
 // T11 sibling-Π commutativity — SsdtDdlEmitter joins RawText / Json /

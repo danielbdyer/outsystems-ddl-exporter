@@ -174,13 +174,13 @@ let ``overrides survive through the pass: a KeepNullable override produces KeepN
 // T1 determinism — same triple ⇒ identical output (decisions + trail).
 // ---------------------------------------------------------------------------
 
-[<Fact>]
-let ``T1: NullabilityPass is deterministic on the triple`` () =
-    let policy = policyWithIntervention "v1-style" (mkConfig 0.0m false [])
-    let r1 = nullRun sampleCatalog policy Profile.empty
-    let r2 = nullRun sampleCatalog policy Profile.empty
-    Assert.Equal<NullabilityDecisionSet>(NullabilityPass.decisionsOf r1, NullabilityPass.decisionsOf r2)
-    Assert.Equal<LineageEvent list>(r1.Trail, r2.Trail)
+// Slice 11 (2026-06-02 audit): T1 example test pruned. `f(X) = f(X)`
+// is tautological in pure F# (the test checked that F# is purely
+// functional, not a contract V2 owns). The accompanying permutation-
+// invariance property below (`contract: NullabilityPass is invariant
+// under input permutation`) provides stronger T1 coverage: it checks
+// `f(permute(X)) = f(X)` over a swept seed space, catching hidden
+// order-dependence that the example test could never reach.
 
 // ---------------------------------------------------------------------------
 // Permutation invariance — V2's contract from session 4 (Kahn's). The

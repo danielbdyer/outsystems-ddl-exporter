@@ -36,86 +36,108 @@ module CentralityPass =
     ///
     /// Convergence: max |Δrank| < ε across all nodes, or
     /// `maxIterations` iterations reached.
+    // Slice 9 (2026-06-02 audit): the PageRank body decomposed into
+    // four named helpers — `buildAdjacency`, `initialRank`,
+    // `pageRankStep`, `runUntilConverged`, `sortScores`. Mutation
+    // stays where it earned its place (the inner Dictionary build +
+    // the iteration driver); the outer `run` reads as a pipeline.
+
+    /// Build the (out-degree, reverse-adjacency) pair used by the
+    /// PageRank update. Edge `(src, tgt)` in FK orientation: src cites
+    /// tgt as a dependency; in PageRank, src passes rank to tgt
+    /// through this citation edge, so the reversed adjacency is
+    /// `tgt → [srcs that point at tgt]`. Dictionary allocations are
+    /// function-local; the contract is pure (no observable state
+    /// escapes).
+    let private buildAdjacency (nodes: SsKey list) (edges: (SsKey * SsKey) list) =
+        let outDegree = System.Collections.Generic.Dictionary<SsKey, int>()
+        let revAdj = System.Collections.Generic.Dictionary<SsKey, SsKey list>()
+        for node in nodes do
+            if not (outDegree.ContainsKey node) then outDegree.[node] <- 0
+            if not (revAdj.ContainsKey node) then revAdj.[node] <- []
+        for (src, tgt) in edges do
+            outDegree.[src] <- (if outDegree.ContainsKey src then outDegree.[src] else 0) + 1
+            let existing = if revAdj.ContainsKey tgt then revAdj.[tgt] else []
+            revAdj.[tgt] <- src :: existing
+        outDegree, revAdj
+
+    /// Initial uniform rank: 1/n for every node.
+    let private initialRank (nodes: SsKey list) : Map<SsKey, decimal> =
+        let nDecimal = decimal (List.length nodes)
+        nodes |> List.map (fun k -> k, 1.0m / nDecimal) |> Map.ofList
+
+    /// One PageRank iteration. Returns the new rank vector and the
+    /// L∞ (max-delta) distance from the previous rank — the
+    /// convergence-test input. Dangling mass redistribution is the
+    /// standard PageRank formulation: rank held by nodes with no
+    /// out-links would otherwise leak between iterations.
+    let private pageRankStep (nodes: SsKey list) (outDegree: System.Collections.Generic.Dictionary<SsKey, int>) (revAdj: System.Collections.Generic.Dictionary<SsKey, SsKey list>) (rank: Map<SsKey, decimal>) =
+        let nDecimal = decimal (List.length nodes)
+        let danglingMass =
+            nodes
+            |> List.sumBy (fun u ->
+                let du = if outDegree.ContainsKey u then outDegree.[u] else 0
+                if du = 0 then
+                    Map.tryFind u rank |> Option.defaultValue 0.0m
+                else 0.0m)
+        let newRank =
+            nodes
+            |> List.map (fun v ->
+                let incomingSum =
+                    (if revAdj.ContainsKey v then revAdj.[v] else [])
+                    |> List.sumBy (fun u ->
+                        let ru = Map.tryFind u rank |> Option.defaultValue 0.0m
+                        let du = if outDegree.ContainsKey u then outDegree.[u] else 1
+                        ru / decimal (max 1 du))
+                let score =
+                    (1.0m - dampingFactor) / nDecimal
+                    + dampingFactor * (incomingSum + danglingMass / nDecimal)
+                v, score)
+            |> Map.ofList
+        let maxDelta =
+            nodes
+            |> List.map (fun k ->
+                let oldV = Map.tryFind k rank |> Option.defaultValue 0.0m
+                let newV = Map.tryFind k newRank |> Option.defaultValue 0.0m
+                abs (newV - oldV))
+            |> List.max
+        newRank, maxDelta
+
+    /// Drive `pageRankStep` to convergence (max-delta < `convergenceEps`)
+    /// or `maxIterations`, whichever fires first. Returns the converged
+    /// rank vector + the number of iterations actually run.
+    let private runUntilConverged (nodes: SsKey list) (outDegree: System.Collections.Generic.Dictionary<SsKey, int>) (revAdj: System.Collections.Generic.Dictionary<SsKey, SsKey list>) (initial: Map<SsKey, decimal>) =
+        let mutable rank = initial
+        let mutable iterations = 0
+        let mutable converged = false
+        while not converged && iterations < maxIterations do
+            let newRank, maxDelta = pageRankStep nodes outDegree revAdj rank
+            rank <- newRank
+            iterations <- iterations + 1
+            if maxDelta < convergenceEps then converged <- true
+        rank, iterations
+
+    /// Sort the converged rank vector into a deterministic score list:
+    /// DESC by score; ASC by SsKey for ties.
+    let private sortScores (rank: Map<SsKey, decimal>) : CentralityScore list =
+        rank
+        |> Map.toList
+        |> List.map (fun (k, s) -> { SsKey = k; Score = s })
+        |> List.sortWith (fun a b ->
+            let cmp = compare b.Score a.Score
+            if cmp <> 0 then cmp else compare a.SsKey b.SsKey)
+
     let run (t: TopologicalOrder) : Lineage<Diagnostics<CentralityRanking>> =
         use _ = Bench.scope "pass.centrality"
-
         let nodes = t.Order
         let n = List.length nodes
         if n = 0 then
-            let result = { Scores = []; Iterations = 0 }
-            Lineage.ofValue (Diagnostics.ofValue result)
+            Lineage.ofValue (Diagnostics.ofValue { Scores = []; Iterations = 0 })
         else
-            let nDecimal = decimal n
-
-            // Build out-degree map and reversed adjacency (tgt → sources
-            // that point at tgt) for the PageRank update.
-            // Edge (src, tgt) in FK orientation: src cites tgt as a
-            // dependency. In PageRank: src passes rank to tgt through
-            // this citation edge. So the reversed adjacency is
-            // tgt → [srcs that point at tgt].
-            let outDegree : System.Collections.Generic.Dictionary<SsKey, int> =
-                System.Collections.Generic.Dictionary()
-            let revAdj : System.Collections.Generic.Dictionary<SsKey, SsKey list> =
-                System.Collections.Generic.Dictionary()
-            for node in nodes do
-                if not (outDegree.ContainsKey node) then outDegree.[node] <- 0
-                if not (revAdj.ContainsKey node) then revAdj.[node] <- []
-            for (src, tgt) in t.Edges do
-                outDegree.[src] <- (if outDegree.ContainsKey src then outDegree.[src] else 0) + 1
-                let existing = if revAdj.ContainsKey tgt then revAdj.[tgt] else []
-                revAdj.[tgt] <- src :: existing
-
-            // Initialize rank vector uniformly.
-            let mutable rank : Map<SsKey, decimal> =
-                nodes |> List.map (fun k -> k, 1.0m / nDecimal) |> Map.ofList
-
-            let mutable iterations = 0
-            let mutable converged = false
-
-            while not converged && iterations < maxIterations do
-                // Dangling-mass: rank held by nodes with no out-links
-                // would otherwise leak between iterations. Per the
-                // standard PageRank formulation, redistribute uniformly.
-                let danglingMass =
-                    nodes
-                    |> List.sumBy (fun u ->
-                        let du = if outDegree.ContainsKey u then outDegree.[u] else 0
-                        if du = 0 then
-                            Map.tryFind u rank |> Option.defaultValue 0.0m
-                        else 0.0m)
-                let newRank =
-                    nodes
-                    |> List.map (fun v ->
-                        let incomingSum =
-                            (if revAdj.ContainsKey v then revAdj.[v] else [])
-                            |> List.sumBy (fun u ->
-                                let ru = Map.tryFind u rank |> Option.defaultValue 0.0m
-                                let du = if outDegree.ContainsKey u then outDegree.[u] else 1
-                                ru / decimal (max 1 du))
-                        let score =
-                            (1.0m - dampingFactor) / nDecimal
-                            + dampingFactor * (incomingSum + danglingMass / nDecimal)
-                        v, score)
-                    |> Map.ofList
-                let maxDelta =
-                    nodes
-                    |> List.map (fun k ->
-                        let oldV = Map.tryFind k rank |> Option.defaultValue 0.0m
-                        let newV = Map.tryFind k newRank |> Option.defaultValue 0.0m
-                        abs (newV - oldV))
-                    |> List.max
-                rank <- newRank
-                iterations <- iterations + 1
-                if maxDelta < convergenceEps then converged <- true
-
-            let scores =
-                rank
-                |> Map.toList
-                |> List.map (fun (k, s) -> { SsKey = k; Score = s })
-                |> List.sortWith (fun a b ->
-                    let cmp = compare b.Score a.Score   // DESC by score
-                    if cmp <> 0 then cmp else compare a.SsKey b.SsKey)  // ASC by key for ties
-
+            let outDegree, revAdj = buildAdjacency nodes t.Edges
+            let initial = initialRank nodes
+            let converged, iterations = runUntilConverged nodes outDegree revAdj initial
+            let scores = sortScores converged
             let result = { Scores = scores; Iterations = iterations }
 
             let entry =
