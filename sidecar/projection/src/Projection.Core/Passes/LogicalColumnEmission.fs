@@ -67,11 +67,16 @@ module LogicalColumnEmission =
         if System.String.IsNullOrWhiteSpace logical
            || logical.Length > CoordinatesLimits.SqlServerIdentifierMaxLength then
             a
-        elif logical = a.Column.ColumnName then
+        elif logical = ColumnRealization.columnNameText a.Column then
             a
         else
-            LineageBuffer.add (substitutedEvent a.SsKey kind a.Column.ColumnName logical) events
-            a |> Lens.over CatalogLenses.columnOf (fun col -> { col with ColumnName = logical })
+            // Pre-checks above (non-blank + length ≤ 128) match
+            // `ColumnName.create`'s validation exactly; the create
+            // call therefore cannot fail by construction. The
+            // `Result.value` unwrap is safe here.
+            let logicalColumnName = ColumnName.create logical |> Result.value
+            LineageBuffer.add (substitutedEvent a.SsKey kind (ColumnRealization.columnNameText a.Column) logical) events
+            a |> Lens.over CatalogLenses.columnOf (fun col -> { col with ColumnName = logicalColumnName })
 
     let private substituteKind (events: LineageBuffer.Buffer) (k: Kind) : Kind option =
         let attrs' = k.Attributes |> List.map (substituteAttribute events k.Physical)

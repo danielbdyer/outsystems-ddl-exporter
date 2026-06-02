@@ -5,6 +5,7 @@ open Xunit
 open Projection.Core
 open Projection.Targets.SSDT
 open Projection.Targets.Data
+open Projection.Tests.Fixtures
 
 // ---------------------------------------------------------------------------
 // Π_StaticPopulation tests — typed-Statement.InsertRow realization of
@@ -60,12 +61,12 @@ let private mkCountryKind () : Kind =
         Origin   = Native
         Modality = [ Static [ row "1" "United States"
                               row "2" "Canada" ] ]
-        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY"; Catalog = None }
+        Physical = mkTableId "dbo" "OSUSR_TEST_COUNTRY"
         Attributes =
             [
-                { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID";    IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
-                { Attribute.create codeKey (mkName "Code") Text with Column = { ColumnName = "CODE";  IsNullable = false }; IsMandatory = true }
-                { Attribute.create labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL"; IsNullable = false }; IsMandatory = true }
+                { Attribute.create idKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
+                { Attribute.create codeKey (mkName "Code") Text with Column = ColumnRealization.create ("CODE") (false) |> Result.value; IsMandatory = true }
+                { Attribute.create labelKey (mkName "Label") Text with Column = ColumnRealization.create ("LABEL") (false) |> Result.value; IsMandatory = true }
             ]
         References = []
         Indexes    = []
@@ -93,11 +94,11 @@ let private mkLanguageKind () : Kind =
         Name     = mkName "Language"
         Origin   = Native
         Modality = [ Static [ row "EN" "English"; row "FR" "French" ] ]
-        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_LANGUAGE"; Catalog = None }
+        Physical = mkTableId "dbo" "OSUSR_TEST_LANGUAGE"
         Attributes =
             [
-                { Attribute.create codeKey (mkName "Code") Text with Column = { ColumnName = "CODE"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
-                { Attribute.create nameKey (mkName "Name") Text with Column = { ColumnName = "NAME"; IsNullable = false }; IsMandatory = true }
+                { Attribute.create codeKey (mkName "Code") Text with Column = ColumnRealization.create ("CODE") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true }
+                { Attribute.create nameKey (mkName "Name") Text with Column = ColumnRealization.create ("NAME") (false) |> Result.value; IsMandatory = true }
             ]
         References = []
         Indexes    = []
@@ -118,11 +119,11 @@ let private mkRegularKind () : Kind =
         Name     = mkName "Customer"
         Origin   = Native
         Modality = []
-        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_CUSTOMER"; Catalog = None }
+        Physical = mkTableId "dbo" "OSUSR_TEST_CUSTOMER"
         Attributes =
             [
-                { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID";   IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
-                { Attribute.create nameKey (mkName "Name") Text with Column = { ColumnName = "NAME"; IsNullable = false }; IsMandatory = true }
+                { Attribute.create idKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
+                { Attribute.create nameKey (mkName "Name") Text with Column = ColumnRealization.create ("NAME") (false) |> Result.value; IsMandatory = true }
             ]
         References = []
         Indexes    = []
@@ -144,10 +145,10 @@ let private mkEmptyStaticKind () : Kind =
         Name     = mkName "Empty"
         Origin   = Native
         Modality = [ Static [] ]
-        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_EMPTY"; Catalog = None }
+        Physical = mkTableId "dbo" "OSUSR_TEST_EMPTY"
         Attributes =
             [
-                { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
+                { Attribute.create idKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
             ]
         References = []
         Indexes    = []
@@ -235,8 +236,8 @@ let ``StaticPopulationEmitter.statements TableId matches kind.Physical`` () =
     match firstTable with
     | None   -> Assert.Fail "expected at least one InsertRow"
     | Some t ->
-        Assert.Equal ("dbo", t.Schema)
-        Assert.Equal ("OSUSR_TEST_COUNTRY", t.Table)
+        Assert.Equal ("dbo", TableId.schemaText t)
+        Assert.Equal ("OSUSR_TEST_COUNTRY", TableId.tableText t)
 
 /// Composer property: `SsdtDdlEmitter.statements` and
 /// `StaticPopulationEmitter.statements` share `TopologicalOrderPass

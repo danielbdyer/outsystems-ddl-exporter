@@ -180,8 +180,8 @@ module CatalogCodec =
     let private wTableId (jw: Utf8JsonWriter) (t: TableId) : unit =
         jw.WriteStartObject()
         wOpt jw "catalog" wStrVal t.Catalog
-        jw.WriteString("schema", t.Schema)
-        jw.WriteString("table", t.Table)
+        jw.WriteString("schema", TableId.schemaText t)
+        jw.WriteString("table", TableId.tableText t)
         jw.WriteEndObject()
 
     let private wDataSpace (jw: Utf8JsonWriter) (d: DataSpace) : unit =
@@ -218,7 +218,7 @@ module CatalogCodec =
 
     let private wColumnRealization (jw: Utf8JsonWriter) (c: ColumnRealization) : unit =
         jw.WriteStartObject()
-        jw.WriteString("columnName", c.ColumnName)
+        jw.WriteString("columnName", ColumnRealization.columnNameText c)
         jw.WriteBoolean("isNullable", c.IsNullable)
         jw.WriteEndObject()
 
@@ -590,7 +590,9 @@ module CatalogCodec =
             let! catalog = optField el "catalog" asString
             let! schema = field el "schema" asString
             let! table = field el "table" asString
-            return { Catalog = catalog; Schema = schema; Table = table }
+            let! schemaName = SchemaName.create schema
+            let! tableName = TableName.create table
+            return { Catalog = catalog; Schema = schemaName; Table = tableName }
         }
 
     let private readDataSpace (el: JsonElement) : Result<DataSpace> =
@@ -635,7 +637,7 @@ module CatalogCodec =
         result {
             let! columnName = field el "columnName" asString
             let! isNullable = field el "isNullable" asBool
-            return { ColumnName = columnName; IsNullable = isNullable }
+            return! ColumnRealization.create columnName isNullable
         }
 
     let private readComputed (el: JsonElement) : Result<ComputedColumnConfig> =

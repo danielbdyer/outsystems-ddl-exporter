@@ -98,8 +98,8 @@ let ``Slice ε canary: OSSYS seed fixture preserves cross-schema BillingAccount 
             let billing =
                 appCore.Kinds
                 |> List.find (fun k -> Name.value k.Name = "BillingAccount")
-            Assert.Equal("billing", billing.Physical.Schema)
-            Assert.Equal("BILLING_ACCOUNT", billing.Physical.Table)
+            Assert.Equal("billing", TableId.schemaText billing.Physical)
+            Assert.Equal("BILLING_ACCOUNT", TableId.tableText billing.Physical)
 
 [<Fact>]
 let ``Slice ε canary: Customer entity carries six attributes including FK to City`` () =

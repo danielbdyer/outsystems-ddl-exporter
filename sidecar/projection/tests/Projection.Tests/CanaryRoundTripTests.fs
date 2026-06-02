@@ -69,14 +69,14 @@ let private nameSafe (s: string) : Name =
 let private programmaticUserCatalog : Catalog =
     let userKey = ssKeySafe "OS_KIND_M3_User"
     let mkAttr (column: string) (ptype: PrimitiveType) (nullable: bool) (isPk: bool) : Attribute =
-        { Attribute.create (ssKeySafe (sprintf "OS_ATTR_M3_User_%s" column)) (nameSafe column) ptype with Column = { ColumnName = column.ToUpperInvariant(); IsNullable = nullable }; IsPrimaryKey = isPk; IsMandatory = not nullable }
+        { Attribute.create (ssKeySafe (sprintf "OS_ATTR_M3_User_%s" column)) (nameSafe column) ptype with Column = ColumnRealization.create (column.ToUpperInvariant()) (nullable) |> Result.value; IsPrimaryKey = isPk; IsMandatory = not nullable }
     let userKind : Kind =
         {
             SsKey = userKey
             Name = nameSafe "User"
             Origin = Native
             Modality = []
-            Physical = { Schema = "dbo"; Table = "OSUSR_M3_USER"; Catalog = None }
+            Physical = mkTableId "dbo" "OSUSR_M3_USER"
             Attributes =
                 [
                     mkAttr "Id" Integer false true
@@ -303,7 +303,7 @@ let ``Slice 1.2: integer DEFAULT round-trips through emit / deploy / ReadSide wi
         let recoveredDefaults =
             Catalog.allKinds target
             |> List.collect (fun k -> k.Attributes)
-            |> List.choose (fun a -> a.DefaultValue |> Option.map (fun d -> a.Column.ColumnName, SqlLiteral.toString d))
+            |> List.choose (fun a -> a.DefaultValue |> Option.map (fun d -> ColumnRealization.columnNameText a.Column, SqlLiteral.toString d))
             |> List.sortBy fst
         Assert.True(
             (not (List.isEmpty recoveredDefaults)),
@@ -403,7 +403,7 @@ let ``Slice 1.3 / L3-S7: PERSISTED computed column round-trips through emit / de
         let recovered =
             Catalog.allKinds target
             |> List.collect (fun k -> k.Attributes)
-            |> List.choose (fun a -> a.Computed |> Option.map (fun c -> a.Column.ColumnName, c))
+            |> List.choose (fun a -> a.Computed |> Option.map (fun c -> ColumnRealization.columnNameText a.Column, c))
         Assert.True((not (List.isEmpty recovered)),
             "ReadSide recovered ZERO computed columns — the hollow-canary defect (L3-S7 real-SQL leg regressed).")
 
@@ -412,7 +412,7 @@ let ``Slice 1.3 / L3-S7: PERSISTED computed column round-trips through emit / de
         let sourceComputed =
             Catalog.allKinds source
             |> List.collect (fun k -> k.Attributes)
-            |> List.choose (fun a -> a.Computed |> Option.map (fun c -> a.Column.ColumnName, PhysicalSchema.encodeComputed c))
+            |> List.choose (fun a -> a.Computed |> Option.map (fun c -> ColumnRealization.columnNameText a.Column, PhysicalSchema.encodeComputed c))
             |> Map.ofList
         for (col, cc) in recovered do
             match Map.tryFind col sourceComputed with
@@ -444,11 +444,11 @@ let ``A42 (2.3 canary): EnforceNotNull tightening survives emit / deploy / ReadS
         let noteKey = ssKeySafe "OS_ATTR_DEC_Ticket_Note"
         let mkAttr (k: SsKey) (col: string) (isPk: bool) (nullable: bool) : Attribute =
             { Attribute.create k (nameSafe col) (if isPk then Integer else Text) with
-                Column = { ColumnName = col.ToUpperInvariant(); IsNullable = nullable }
+                Column = ColumnRealization.create (col.ToUpperInvariant()) (nullable) |> Result.value
                 IsPrimaryKey = isPk; IsMandatory = isPk }
         let kind =
             { Kind.create kindKeyV (nameSafe "Ticket")
-                { Schema = "dbo"; Table = "OSUSR_DEC_TICKET"; Catalog = None }
+                (mkTableId "dbo" "OSUSR_DEC_TICKET")
                 [ mkAttr (ssKeySafe "OS_ATTR_DEC_Ticket_Id") "Id" true false
                   mkAttr noteKey "Note" false true ] with Indexes = [] }
         let catalog =
@@ -463,7 +463,7 @@ let ``A42 (2.3 canary): EnforceNotNull tightening survives emit / deploy / ReadS
             match baseline.Reconstructed with
             | Some c ->
                 Catalog.allKinds c |> List.collect (fun k -> k.Attributes)
-                |> List.tryFind (fun a -> a.Column.ColumnName = "NOTE")
+                |> List.tryFind (fun a -> ColumnRealization.columnNameText a.Column = "NOTE")
             | None -> None
         match baselineNote with
         | Some a -> Assert.True(a.Column.IsNullable, "baseline: Note should round-trip NULLABLE")
@@ -478,7 +478,7 @@ let ``A42 (2.3 canary): EnforceNotNull tightening survives emit / deploy / ReadS
             match tightened.Reconstructed with
             | Some c ->
                 Catalog.allKinds c |> List.collect (fun k -> k.Attributes)
-                |> List.tryFind (fun a -> a.Column.ColumnName = "NOTE")
+                |> List.tryFind (fun a -> ColumnRealization.columnNameText a.Column = "NOTE")
             | None -> None
         match tightenedNote with
         | Some a -> Assert.False(a.Column.IsNullable, "EnforceNotNull(Note) must deploy + read back as NOT NULL")
@@ -504,15 +504,15 @@ let ``A42 (2.4 canary): a DoNotEnforce FK decision keeps the FK out of the deplo
         let refKeyV = ssKeySafe "OS_REF_DROP_Order_Customer"
         let mkAttr (k: SsKey) (col: string) (isPk: bool) : Attribute =
             { Attribute.create k (nameSafe col) Integer with
-                Column = { ColumnName = col.ToUpperInvariant(); IsNullable = not isPk }
+                Column = ColumnRealization.create (col.ToUpperInvariant()) (not isPk) |> Result.value
                 IsPrimaryKey = isPk; IsMandatory = isPk }
         let customer =
             Kind.create custKey (nameSafe "Customer")
-                { Schema = "dbo"; Table = "OSUSR_DROP_CUSTOMER"; Catalog = None }
+                (mkTableId "dbo" "OSUSR_DROP_CUSTOMER")
                 [ mkAttr custIdKey "Id" true ]
         let order =
             { Kind.create orderKey (nameSafe "Order")
-                { Schema = "dbo"; Table = "OSUSR_DROP_ORDER"; Catalog = None }
+                (mkTableId "dbo" "OSUSR_DROP_ORDER")
                 [ mkAttr orderIdKey "Id" true; mkAttr orderCustFkAttr "CustomerId" false ]
               with References = [ Reference.create refKeyV (nameSafe "Customer") orderCustFkAttr custKey ] }
         let catalog =
@@ -571,7 +571,7 @@ let ``6.A.5 (schema round-trip): a UNIQUE index + a NOCHECK FK survive deploy / 
         Assert.True(readback.Report.Ok, sprintf "deploy: %A" readback.Report.Errors)
         match readback.Reconstructed with
         | Some c ->
-            let kindByTable t = Catalog.allKinds c |> List.find (fun k -> k.Physical.Table = t)
+            let kindByTable t = Catalog.allKinds c |> List.find (fun k -> TableId.tableText k.Physical = t)
             // (a) The UNIQUE index survived — `Indexes` is no longer hollow.
             let parentBack = kindByTable "OSUSR_RT5_PARENT"
             match parentBack.Indexes |> List.tryFind (fun i -> i.IsUnique) with
@@ -580,7 +580,7 @@ let ``6.A.5 (schema round-trip): a UNIQUE index + a NOCHECK FK survive deploy / 
                 let cols =
                     i.Columns
                     |> List.choose (fun ic -> parentBack.Attributes |> List.tryFind (fun a -> a.SsKey = ic.Attribute))
-                    |> List.map (fun a -> a.Column.ColumnName)
+                    |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
                 Assert.Equal<string list>([ "CODE" ], cols)
             | None -> Assert.Fail "UNIQUE index on Parent did not survive ReadSide (Indexes still hollow?)"
             // (b) The NOCHECK FK survived as IsConstraintTrusted = false
@@ -616,17 +616,17 @@ let ``6.A.8 (decision adjunction): read-back reproduces EnforceUnique and DropFk
         let idxKey = ssKeySafe "OS_IDX_RT8_Parent_Code"
         let mkAttr (k: SsKey) (col: string) (isPk: bool) (ty: PrimitiveType) : Attribute =
             { Attribute.create k (nameSafe col) ty with
-                Column = { ColumnName = col.ToUpperInvariant(); IsNullable = not isPk }
+                Column = ColumnRealization.create (col.ToUpperInvariant()) (not isPk) |> Result.value
                 IsPrimaryKey = isPk; IsMandatory = isPk }
         let parent =
             { Kind.create parentKey (nameSafe "Parent")
-                { Schema = "dbo"; Table = "OSUSR_RT8_PARENT"; Catalog = None }
+                (mkTableId "dbo" "OSUSR_RT8_PARENT")
                 [ mkAttr parentIdKey "Id" true Integer
                   mkAttr codeKey "Code" false Integer ]
               with Indexes = [ Index.ofKeyColumns idxKey (nameSafe "IX_Rt8Parent_Code") [ codeKey ] ] }
         let child =
             { Kind.create childKey (nameSafe "Child")
-                { Schema = "dbo"; Table = "OSUSR_RT8_CHILD"; Catalog = None }
+                (mkTableId "dbo" "OSUSR_RT8_CHILD")
                 [ mkAttr childIdKey "Id" true Integer; mkAttr parentFkAttr "ParentId" false Integer ]
               with References = [ Reference.create refKeyV (nameSafe "Parent") parentFkAttr parentKey ] }
         let catalog =
@@ -635,7 +635,7 @@ let ``6.A.8 (decision adjunction): read-back reproduces EnforceUnique and DropFk
 
         let parentIndexUnique (cat: Catalog option) : bool option =
             cat
-            |> Option.bind (fun c -> Catalog.allKinds c |> List.tryFind (fun k -> k.Physical.Table = "OSUSR_RT8_PARENT"))
+            |> Option.bind (fun c -> Catalog.allKinds c |> List.tryFind (fun k -> TableId.tableText k.Physical = "OSUSR_RT8_PARENT"))
             |> Option.bind (fun k -> k.Indexes |> List.tryHead |> Option.map (fun i -> i.IsUnique))
         let childFkCount (cat: Catalog option) : int =
             match cat with
@@ -683,17 +683,17 @@ let ``6.A.6 (schema round-trip): an untrusted FK survives emit / deploy / ReadSi
         let refKeyV = ssKeySafe "OS_REF_RT6_Child_Parent"
         let mkAttr (k: SsKey) (col: string) (isPk: bool) : Attribute =
             { Attribute.create k (nameSafe col) Integer with
-                Column = { ColumnName = col.ToUpperInvariant(); IsNullable = not isPk }
+                Column = ColumnRealization.create (col.ToUpperInvariant()) (not isPk) |> Result.value
                 IsPrimaryKey = isPk; IsMandatory = isPk }
         let parent =
             Kind.create parentKey (nameSafe "Parent")
-                { Schema = "dbo"; Table = "OSUSR_RT6_PARENT"; Catalog = None }
+                (mkTableId "dbo" "OSUSR_RT6_PARENT")
                 [ mkAttr parentIdKey "Id" true ]
         // The source reference is NOT trusted (the deployed source carried a
         // WITH NOCHECK FK); the emitter must reproduce that on the target.
         let child =
             { Kind.create childKey (nameSafe "Child")
-                { Schema = "dbo"; Table = "OSUSR_RT6_CHILD"; Catalog = None }
+                (mkTableId "dbo" "OSUSR_RT6_CHILD")
                 [ mkAttr childIdKey "Id" true; mkAttr parentFkAttr "ParentId" false ]
               with References = [ { Reference.create refKeyV (nameSafe "Parent") parentFkAttr parentKey with IsConstraintTrusted = false } ] }
         let catalog =
@@ -705,7 +705,7 @@ let ``6.A.6 (schema round-trip): an untrusted FK survives emit / deploy / ReadSi
         Assert.True(readback.Report.Ok, sprintf "deploy: %A" readback.Report.Errors)
         match readback.Reconstructed with
         | Some c ->
-            let childBack = Catalog.allKinds c |> List.find (fun k -> k.Physical.Table = "OSUSR_RT6_CHILD")
+            let childBack = Catalog.allKinds c |> List.find (fun k -> TableId.tableText k.Physical = "OSUSR_RT6_CHILD")
             // The FK is still present (enabled) AND reads back untrusted —
             // the emit→deploy→ReadSide round-trip is now faithful on FK-trust.
             Assert.Equal(1, (PhysicalSchema.ofCatalog c).ForeignKeys |> Set.count)
@@ -734,9 +734,9 @@ let ``4.1: V2.SsKey persistence — ReadSide recovers OssysOriginal identities (
         let custIdKey = SsKey.ossysOriginal (System.Guid.Parse "22222222-2222-2222-2222-222222222222")
         let customer =
             Kind.create custKey (nameSafe "Customer")
-                { Schema = "dbo"; Table = "OSUSR_SSK_CUSTOMER"; Catalog = None }
+                (mkTableId "dbo" "OSUSR_SSK_CUSTOMER")
                 [ { Attribute.create custIdKey (nameSafe "Id") Integer with
-                      Column = { ColumnName = "ID"; IsNullable = false }
+                      Column = ColumnRealization.create ("ID") (false) |> Result.value
                       IsPrimaryKey = true; IsMandatory = true } ]
         let catalog =
             match Catalog.create [ { SsKey = ssKeySafe "OS_MOD_SSK"; Name = nameSafe "SskMod"; Kinds = [ customer ]; IsActive = true; ExtendedProperties = [] } ] [] with
@@ -750,7 +750,7 @@ let ``4.1: V2.SsKey persistence — ReadSide recovers OssysOriginal identities (
             let recovered =
                 reconstructed.Modules
                 |> List.collect (fun m -> m.Kinds)
-                |> List.tryFind (fun k -> k.Physical.Table = "OSUSR_SSK_CUSTOMER")
+                |> List.tryFind (fun k -> TableId.tableText k.Physical = "OSUSR_SSK_CUSTOMER")
             match recovered with
             | Some k ->
                 // Recovered identity is the persisted OssysOriginal GUID, not
@@ -773,9 +773,9 @@ let ``Identity round-trip: reload preserves SsKey across emit / deploy / ReadSid
         let acctIdKey = SsKey.ossysOriginal (System.Guid.Parse "44444444-4444-4444-4444-444444444444")
         let account =
             Kind.create acctKey (nameSafe "Account")
-                { Schema = "dbo"; Table = "OSUSR_RLD_ACCOUNT"; Catalog = None }
+                (mkTableId "dbo" "OSUSR_RLD_ACCOUNT")
                 [ { Attribute.create acctIdKey (nameSafe "Id") Integer with
-                      Column = { ColumnName = "ID"; IsNullable = false }
+                      Column = ColumnRealization.create ("ID") (false) |> Result.value
                       IsPrimaryKey = true; IsMandatory = true } ]
         let catalog =
             match Catalog.create [ { SsKey = ssKeySafe "OS_MOD_RLD"; Name = nameSafe "RldMod"; Kinds = [ account ]; IsActive = true; ExtendedProperties = [] } ] [] with
@@ -785,7 +785,7 @@ let ``Identity round-trip: reload preserves SsKey across emit / deploy / ReadSid
         Assert.True(readback.Report.Ok, sprintf "deploy: %A" readback.Report.Errors)
         match readback.Reconstructed with
         | Some reconstructed ->
-            match Catalog.allKinds reconstructed |> List.tryFind (fun k -> k.Physical.Table = "OSUSR_RLD_ACCOUNT") with
+            match Catalog.allKinds reconstructed |> List.tryFind (fun k -> TableId.tableText k.Physical = "OSUSR_RLD_ACCOUNT") with
             | Some k -> Assert.Equal<SsKey>(acctKey, k.SsKey)
             | None   -> Assert.Fail "OSUSR_RLD_ACCOUNT not found in reconstructed catalog"
         | None -> Assert.Fail "deploy produced no reconstructed catalog"
@@ -806,12 +806,12 @@ let ``decision adjunction: emitted-then-read-back schema reproduces the Decision
     if skipIfNoDocker "decision-adjunction-roundtrip" then
         let mkAttr (k: SsKey) (col: string) (isPk: bool) (nullable: bool) : Attribute =
             { Attribute.create k (nameSafe col) (if isPk then Integer else Text) with
-                Column = { ColumnName = col.ToUpperInvariant(); IsNullable = nullable }
+                Column = ColumnRealization.create (col.ToUpperInvariant()) (nullable) |> Result.value
                 IsPrimaryKey = isPk; IsMandatory = isPk }
         let enforcedKey = ssKeySafe "OS_ATTR_ADJ_Ticket_Note"
         let kind =
             { Kind.create (ssKeySafe "OS_KIND_ADJ_Ticket") (nameSafe "Ticket")
-                { Schema = "dbo"; Table = "OSUSR_ADJ_TICKET"; Catalog = None }
+                (mkTableId "dbo" "OSUSR_ADJ_TICKET")
                 [ mkAttr (ssKeySafe "OS_ATTR_ADJ_Ticket_Id") "Id" true false
                   mkAttr enforcedKey "Note" false true
                   mkAttr (ssKeySafe "OS_ATTR_ADJ_Ticket_Memo") "Memo" false true ] with Indexes = [] }
@@ -827,7 +827,7 @@ let ``decision adjunction: emitted-then-read-back schema reproduces the Decision
             match rt.Reconstructed with
             | Some c ->
                 Catalog.allKinds c |> List.collect (fun k -> k.Attributes)
-                |> List.tryFind (fun a -> a.Column.ColumnName = name)
+                |> List.tryFind (fun a -> ColumnRealization.columnNameText a.Column = name)
                 |> Option.map (fun a -> a.Column.IsNullable)
             | None -> None
         // Read-back reproduces the overlay: the decided column tightened, the

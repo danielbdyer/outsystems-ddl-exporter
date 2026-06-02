@@ -616,6 +616,9 @@ module ReadSide =
                 match Name.create nameSource with
                 | Error errors -> Result.failure errors
                 | Ok attrName ->
+                    match ColumnName.create row.Column with
+                    | Error errors -> Result.failure errors
+                    | Ok columnName ->
                     let coord = (row.Schema, row.Table, row.Column)
                     Result.success
                         {
@@ -624,7 +627,7 @@ module ReadSide =
                             Type = ptype
                             Column =
                                 {
-                                    ColumnName = row.Column
+                                    ColumnName = columnName
                                     IsNullable = row.Nullable
                                 }
                             IsPrimaryKey = primaryKeySet.Contains coord
@@ -798,12 +801,12 @@ module ReadSide =
         let encode = Microsoft.SqlServer.TransactSql.ScriptDom.Identifier.EncodeIdentifier
         let columns =
             kind.Attributes
-            |> List.map (fun a -> encode a.Column.ColumnName)
+            |> List.map (fun a -> encode (ColumnRealization.columnNameText a.Column))
             |> String.concat ", "  // LINT-ALLOW: terminal SQL-text-emission boundary; segments are typed (already encoded)
         let pkCol =
             kind.Attributes
             |> List.tryFind (fun a -> a.IsPrimaryKey)
-            |> Option.map (fun a -> a.Column.ColumnName)
+            |> Option.map (fun a -> ColumnRealization.columnNameText a.Column)
             |> Option.defaultWith (fun () ->
                 // Defensive against an attribute-less Kind (slice
                 // A.4.7'-prelude.defensive-hardening). The A39
@@ -813,7 +816,7 @@ module ReadSide =
                 // legible if a future code path bypasses the
                 // smart constructor.
                 match kind.Attributes with
-                | a :: _ -> a.Column.ColumnName
+                | a :: _ -> ColumnRealization.columnNameText a.Column
                 | [] ->
                     failwithf
                         "ReadSide.readRows: Kind %A has no attributes — A39 invariant violated"
@@ -821,7 +824,7 @@ module ReadSide =
         let qualified =
             System.String.Join(  // LINT-ALLOW: terminal SQL-text-emission boundary; segments are typed (each via Identifier.EncodeIdentifier)
                 ".",
-                [| encode kind.Physical.Schema; encode kind.Physical.Table |])
+                [| encode (TableId.schemaText kind.Physical); encode (TableId.tableText kind.Physical) |])
         let cmdText =
             System.String.Concat(  // LINT-ALLOW: terminal SQL-text-emission boundary; columns/qualified/encode results are typed safe segments
                 "SELECT ", columns,
@@ -875,8 +878,8 @@ module ReadSide =
                             let basis =
                                 sprintf
                                     "%s.%s.%d"
-                                    kind.Physical.Schema
-                                    kind.Physical.Table
+                                    (TableId.schemaText kind.Physical)
+                                    (TableId.tableText kind.Physical)
                                     rowIdx
                             rowIdx <- rowIdx + 1
                             match SsKey.synthesized "READSIDE_ROW" basis with
@@ -892,7 +895,7 @@ module ReadSide =
                         return raise ex
             }
         pull
-        |> AsyncStream.probe (sprintf "readside.readRowsStream.%s.%s" kind.Physical.Schema kind.Physical.Table)
+        |> AsyncStream.probe (sprintf "readside.readRowsStream.%s.%s" (TableId.schemaText kind.Physical) (TableId.tableText kind.Physical))
         |> AsyncStream.probe "readside.readRowsStream.all"
 
     /// Buffered wrapper: probe COUNT(*), and if ≤ `maxRows`, drain
@@ -915,7 +918,7 @@ module ReadSide =
             let qualified =
                 System.String.Join(  // LINT-ALLOW: terminal SQL-text-emission boundary; segments are typed (each via Identifier.EncodeIdentifier)
                     ".",
-                    [| encode kind.Physical.Schema; encode kind.Physical.Table |])
+                    [| encode (TableId.schemaText kind.Physical); encode (TableId.tableText kind.Physical) |])
             use countCmd = cnn.CreateCommand()
             countCmd.CommandText <-
                 System.String.Concat("SELECT COUNT(*) FROM ", qualified)  // LINT-ALLOW: terminal SQL-text-emission boundary; qualified is pre-encoded
@@ -984,13 +987,18 @@ module ReadSide =
                 Map.tryFind (schema, table) tableLogicalNames
                 |> Option.defaultValue table
             let! kName = Name.create nameSource
+            // Slice 5 (lens-after) — TableId is typed (SchemaName /
+            // TableName); construct via the smart constructor that
+            // validates and wraps. Errors aggregate into the result
+            // monad's first-failure.
+            let! physical = TableId.create schema table
             return
                 {
                     SsKey = kKey
                     Name = kName
                     Origin = Native
                     Modality = []
-                    Physical = { Schema = schema; Table = table; Catalog = None }
+                    Physical = physical
                     Attributes = attributes
                     References = []
                     Indexes = []
@@ -1074,7 +1082,7 @@ module ReadSide =
         (fkGroups: Map<string * string, FkRow list>)
         (k: Kind)
         : Result<Kind> =
-        match fkGroups.TryFind(k.Physical.Schema, k.Physical.Table) with
+        match fkGroups.TryFind(TableId.qualifiedParts k.Physical) with
         | None -> Result.success k
         | Some fks ->
             result {
@@ -1102,7 +1110,8 @@ module ReadSide =
             let attrs =
                 k.Attributes
                 |> List.map (fun a ->
-                    let coord = (k.Physical.Schema, k.Physical.Table, a.Column.ColumnName)
+                    let schemaStr, tableStr = TableId.qualifiedParts k.Physical
+                    let coord = (schemaStr, tableStr, ColumnRealization.columnNameText a.Column)
                     match Map.tryFind coord defaults with
                     | Some definition ->
                         let normalized = PhysicalSchema.normalizeDefault definition
@@ -1126,7 +1135,8 @@ module ReadSide =
             let attrs =
                 k.Attributes
                 |> List.map (fun a ->
-                    let coord = (k.Physical.Schema, k.Physical.Table, a.Column.ColumnName)
+                    let schemaStr, tableStr = TableId.qualifiedParts k.Physical
+                    let coord = (schemaStr, tableStr, ColumnRealization.columnNameText a.Column)
                     match Map.tryFind coord computed with
                     | Some (definition, isPersisted) ->
                         match ComputedColumnConfig.create definition isPersisted with
@@ -1149,7 +1159,7 @@ module ReadSide =
         (extProps: Map<string * string * string option, (string * string) list>)
         (k: Kind)
         : Kind =
-        let schema, table = k.Physical.Schema, k.Physical.Table
+        let schema, table = TableId.qualifiedParts k.Physical
         let recoveredTriggers =
             Map.tryFind (schema, table) triggers
             |> Option.defaultValue []
@@ -1182,7 +1192,7 @@ module ReadSide =
         let attrs =
             k.Attributes
             |> List.map (fun a ->
-                { a with ExtendedProperties = a.ExtendedProperties @ mkEps (Some a.Column.ColumnName) })
+                { a with ExtendedProperties = a.ExtendedProperties @ mkEps (Some (ColumnRealization.columnNameText a.Column)) })
         { k with
             Triggers = k.Triggers @ recoveredTriggers
             ColumnChecks = k.ColumnChecks @ recoveredChecks
@@ -1201,11 +1211,11 @@ module ReadSide =
         (indexes: Map<string * string, IndexColumnRow list>)
         (k: Kind)
         : Kind =
-        match Map.tryFind (k.Physical.Schema, k.Physical.Table) indexes with
+        match Map.tryFind (TableId.qualifiedParts k.Physical) indexes with
         | None -> k
         | Some rows ->
             let ssKeyByColumn =
-                k.Attributes |> List.map (fun a -> a.Column.ColumnName, a.SsKey) |> Map.ofList
+                k.Attributes |> List.map (fun a -> ColumnRealization.columnNameText a.Column, a.SsKey) |> Map.ofList
             let recovered =
                 rows
                 |> List.groupBy (fun r -> r.IndexName)
@@ -1221,7 +1231,7 @@ module ReadSide =
                     // doesn't carry) rather than emit a partial index.
                     if List.length keyColumns <> List.length cols then None
                     else
-                        match SsKey.synthesized "READSIDE_IDX" (sprintf "%s.%s.%s" k.Physical.Schema k.Physical.Table indexName),
+                        match SsKey.synthesized "READSIDE_IDX" (sprintf "%s.%s.%s" (TableId.schemaText k.Physical) (TableId.tableText k.Physical) indexName),
                               Name.create indexName with
                         | Ok sk, Ok nm ->
                             Some { Index.create sk nm keyColumns with IsUnique = (cols |> List.exists (fun r -> r.IsUnique)) }

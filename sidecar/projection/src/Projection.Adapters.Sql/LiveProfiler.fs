@@ -88,8 +88,13 @@ module LiveProfiler =
             use cmd = cnn.CreateCommand()
             cmd.CommandText <- nullabilityReflectionSql
             cmd.CommandTimeout <- CommandTimeoutPolicy.resolve ()
-            cmd.Parameters.AddWithValue("@schema", kind.Physical.Schema) |> ignore
-            cmd.Parameters.AddWithValue("@table",  kind.Physical.Table)  |> ignore
+            // Slice 5 (lift): unwrap typed VOs to raw strings — ADO.NET
+            // doesn't bind `SchemaName` / `TableName` to SqlParameter
+            // (runtime: "No mapping exists from object type
+            // Projection.Core.SchemaName to a known managed provider
+            // native type"). Both sites need the pre-unwrapped string.
+            cmd.Parameters.AddWithValue("@schema", TableId.schemaText kind.Physical) |> ignore
+            cmd.Parameters.AddWithValue("@table",  TableId.tableText kind.Physical)  |> ignore
             use! reader = cmd.ExecuteReaderAsync()
             let mutable acc : Map<string, bool> = Map.empty
             let mutable keepGoing = true
@@ -155,9 +160,9 @@ module LiveProfiler =
         let table =
             System.String.Join(  // LINT-ALLOW: terminal SQL-text-emission boundary; typed segments
                 ".",
-                [| encode kind.Physical.Schema; encode kind.Physical.Table |])
+                [| encode (TableId.schemaText kind.Physical); encode (TableId.tableText kind.Physical) |])
         let perColumnNullCount (idx: int) (attr: Attribute) : string =
-            let col = encode attr.Column.ColumnName
+            let col = encode (ColumnRealization.columnNameText attr.Column)
             System.String.Concat(  // LINT-ALLOW: typed encode + integer index
                 "COUNT_BIG(CASE WHEN ", col, " IS NULL THEN 1 END) AS [c", string idx, "]")
         let selectList =
@@ -183,10 +188,10 @@ module LiveProfiler =
         let table =
             System.String.Join(  // LINT-ALLOW: terminal SQL-text-emission boundary; typed segments
                 ".",
-                [| encode kind.Physical.Schema; encode kind.Physical.Table |])
+                [| encode (TableId.schemaText kind.Physical); encode (TableId.tableText kind.Physical) |])
         let columnList =
             kind.Attributes
-            |> List.map (fun a -> encode a.Column.ColumnName)
+            |> List.map (fun a -> encode (ColumnRealization.columnNameText a.Column))
             |> String.concat ", "  // LINT-ALLOW: positional comma joiner over typed encode segments
         let topClause =
             match maxRows with
@@ -197,7 +202,7 @@ module LiveProfiler =
             | Some _, [ pk ] ->
                 // Deterministic sampling: ORDER BY single-column PK
                 // (A1 — deterministic sampling under repeated probes).
-                System.String.Concat(" ORDER BY ", encode pk.Column.ColumnName)
+                System.String.Concat(" ORDER BY ", encode (ColumnRealization.columnNameText pk.Column))
             | _ -> ""
         System.String.Concat(  // LINT-ALLOW: terminal SQL-text-emission boundary; typed segments
             "SELECT ", topClause, columnList, " FROM ", table, orderClause)
@@ -262,7 +267,7 @@ module LiveProfiler =
                     kind.Attributes
                     |> List.mapi (fun idx attr ->
                         let isNullable =
-                            Map.tryFind attr.Column.ColumnName nullabilityMap
+                            Map.tryFind (ColumnRealization.columnNameText attr.Column) nullabilityMap
                             |> Option.defaultValue false
                         { AttributeKey         = attr.SsKey
                           IsNullableInDatabase = isNullable
@@ -894,8 +899,8 @@ module LiveProfiler =
                                         let baseEntries =
                                             [ "orphanCount", sortedOrphans.Length.ToString System.Globalization.CultureInfo.InvariantCulture
                                               "sampleSize",  sampled.Length.ToString System.Globalization.CultureInfo.InvariantCulture
-                                              "sourceColumn", srcAttr.Column.ColumnName
-                                              "targetColumn", tgtPkAttr.Column.ColumnName ]
+                                              "sourceColumn", ColumnRealization.columnNameText srcAttr.Column
+                                              "targetColumn", ColumnRealization.columnNameText tgtPkAttr.Column ]
                                         let perSample =
                                             sampled
                                             |> Array.mapi (fun i v ->

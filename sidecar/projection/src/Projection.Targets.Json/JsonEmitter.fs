@@ -72,7 +72,7 @@ module JsonEmitter =
         w.WriteString("ssKey",     SsKey.display a.SsKey)
         w.WriteString("name",      Name.value a.Name)
         w.WriteString("type",      primitiveString a.Type)
-        w.WriteString("column",    a.Column.ColumnName)
+        w.WriteString("column",    ColumnRealization.columnNameText a.Column)
         w.WriteBoolean("nullable", a.Column.IsNullable)
         w.WriteBoolean("primaryKey", a.IsPrimaryKey)
         w.WriteBoolean("mandatory", a.IsMandatory)
@@ -94,8 +94,8 @@ module JsonEmitter =
 
     let private writePhysical (w: Utf8JsonWriter) (p: PhysicalRealization) : unit =
         w.WriteStartObject()
-        w.WriteString("schema", p.Schema)
-        w.WriteString("table",  p.Table)
+        w.WriteString("schema", TableId.schemaText p)
+        w.WriteString("table",  TableId.tableText p)
         w.WriteEndObject()
 
     let private writeKind (w: Utf8JsonWriter) (k: Kind) : unit =

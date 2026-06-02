@@ -62,10 +62,10 @@ let private singleKindCatalog : Catalog =
         Name     = mkName "Widget"
         Origin   = Native
         Modality = []
-        Physical = { Schema = "dbo"; Table = "WIDGET"; Catalog = None }
+        Physical = mkTableId "dbo" "WIDGET"
         Attributes = [
-            { Attribute.create widgetIdKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
-            { Attribute.create widgetNameKey (mkName "Name") Text with Column = { ColumnName = "NAME"; IsNullable = false } }
+            { Attribute.create widgetIdKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true }
+            { Attribute.create widgetNameKey (mkName "Name") Text with Column = ColumnRealization.create ("NAME") (false) |> Result.value }
         ]
         References = []
         Indexes    = []
@@ -181,7 +181,7 @@ let ``T11: DacpacEmitter and SsdtDdlEmitter agree on kind-mention set`` () =
         |> Set.ofSeq
     let catalogPhysicals : Set<string * string> =
         Catalog.allKinds enriched
-        |> List.map (fun k -> k.Physical.Schema, k.Physical.Table)
+        |> List.map (fun k -> TableId.schemaText k.Physical, TableId.tableText k.Physical)
         |> Set.ofList
     Assert.Equal<Set<string * string>> (catalogPhysicals, dacpacPhysicals)
     // Sanity: keyset cardinality matches across siblings.
@@ -229,12 +229,12 @@ let private indexedCatalog : Catalog =
         Name     = mkName "IndexedWidget"
         Origin   = Native
         Modality = []
-        Physical = { Schema = "dbo"; Table = "INDEXED_WIDGET"; Catalog = None }
+        Physical = mkTableId "dbo" "INDEXED_WIDGET"
         Attributes = [
-            { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
-            { Attribute.create codeKey (mkName "Code") Text with Column = { ColumnName = "CODE"; IsNullable = false } }
-            { Attribute.create regionKey (mkName "Region") Text with Column = { ColumnName = "REGION"; IsNullable = false } }
-            { Attribute.create labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL"; IsNullable = true } }
+            { Attribute.create idKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true }
+            { Attribute.create codeKey (mkName "Code") Text with Column = ColumnRealization.create ("CODE") (false) |> Result.value }
+            { Attribute.create regionKey (mkName "Region") Text with Column = ColumnRealization.create ("REGION") (false) |> Result.value }
+            { Attribute.create labelKey (mkName "Label") Text with Column = ColumnRealization.create ("LABEL") (true) |> Result.value }
         ]
         References = []
         Indexes = [

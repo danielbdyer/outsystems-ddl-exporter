@@ -125,10 +125,10 @@ let ``T11: sibling Pi's agree on physical realization for every kind`` () =
         // formatted differently (SSDT uses [schema].[table]; JSON uses
         // structured fields). Substring-existence is enough to prove
         // correspondence at this layer.
-        Assert.Contains(k.Physical.Schema, ssdt)
-        Assert.Contains(k.Physical.Schema, json)
-        Assert.Contains(k.Physical.Table, ssdt)
-        Assert.Contains(k.Physical.Table, json)
+        Assert.Contains(TableId.schemaText k.Physical, ssdt)
+        Assert.Contains(TableId.schemaText k.Physical, json)
+        Assert.Contains(TableId.tableText k.Physical, ssdt)
+        Assert.Contains(TableId.tableText k.Physical, json)
 
 // ---------------------------------------------------------------------------
 // JSON-specific structural checks: nested arrays/objects render correctly,
@@ -169,7 +169,7 @@ let ``string escaping handles double quotes and backslashes`` () =
     // Build a tiny catalog with a name containing characters that must
     // be escaped. The emitter must produce parseable JSON.
     let troubleName = Name.create "with\"quote\\backslash" |> Result.value
-    let troubleKind : Kind = Kind.create (kindKey ["Trouble"]) troubleName { Schema = "dbo"; Table = "T"; Catalog = None } []
+    let troubleKind : Kind = Kind.create (kindKey ["Trouble"]) troubleName (mkTableId "dbo" "T") []
     let troubleModule : Module = IRBuilders.mkModule (modKey "Trouble") (Name.create "M" |> Result.value) [ troubleKind ]
     let trouble : Catalog = IRBuilders.mkCatalog [ troubleModule ]
     let output = JsonEmitter.emit trouble

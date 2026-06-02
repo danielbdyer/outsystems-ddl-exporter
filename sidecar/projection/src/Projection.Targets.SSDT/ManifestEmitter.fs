@@ -372,8 +372,8 @@ module PredicateCoverage =
                 |> List.map (fun k ->
                     {
                         Module     = Name.value m.Name
-                        Schema     = k.Physical.Schema
-                        Table      = k.Physical.Table
+                        Schema     = TableId.schemaText k.Physical
+                        Table      = TableId.tableText k.Physical
                         Predicates = satisfiedBy k
                     }))
         let counts =
@@ -626,10 +626,11 @@ module ManifestEmitter =
                         k.Indexes
                         |> List.filter (fun idx -> not idx.IsPrimaryKey)
                         |> List.length
+                    let schemaStr, tableStr = TableId.qualifiedParts k.Physical
                     {
                         Module = Name.value m.Name
-                        Schema = k.Physical.Schema
-                        Table = k.Physical.Table
+                        Schema = schemaStr
+                        Table = tableStr
                         // Same shape as SsdtDdlEmitter.relativePath (V1
                         // convention; forward slashes for cross-platform
                         // determinism per V2-driver KPI).
@@ -638,9 +639,9 @@ module ManifestEmitter =
                                 "Modules/",
                                 Name.value m.Name,
                                 "/",
-                                k.Physical.Schema,
+                                schemaStr,
                                 ".",
-                                k.Physical.Table,
+                                tableStr,
                                 ".sql")
                         IndexCount = nonPkIndexCount
                         ForeignKeyCount = List.length k.References
@@ -658,9 +659,10 @@ module ManifestEmitter =
                             match dist.Moments with
                             | None -> None
                             | Some moments ->
-                                Some { Schema = k.Physical.Schema
-                                       Table  = k.Physical.Table
-                                       Column = a.Column.ColumnName
+                                let schemaStr, tableStr = TableId.qualifiedParts k.Physical
+                                Some { Schema = schemaStr
+                                       Table  = tableStr
+                                       Column = ColumnRealization.columnNameText a.Column
                                        Mean   = moments.Mean
                                        StdDev = moments.StdDev })))
             |> List.sortBy (fun cp -> cp.Schema, cp.Table, cp.Column)

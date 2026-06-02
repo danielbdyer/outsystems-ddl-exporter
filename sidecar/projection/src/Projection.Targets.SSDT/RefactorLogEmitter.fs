@@ -109,7 +109,7 @@ module RefactorLogEmitter =
     /// `[schema]` — bracket-quoted schema name. SSDT's `SqlSchema`
     /// element-name convention.
     let private schemaQualified (table: TableId) : string =
-        Render.quote table.Schema
+        Render.quote (TableId.schemaText table)
 
     /// Derive a deterministic `OperationKey` for a kind-level rename.
     /// Same diff → same `(rootOriginal, OldName, NewName)` triple →

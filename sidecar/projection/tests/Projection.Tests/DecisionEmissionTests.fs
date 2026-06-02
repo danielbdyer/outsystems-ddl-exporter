@@ -32,7 +32,7 @@ let private ikey (s: string) : SsKey =
 let private sampleKind () : Kind =
     let mkAttr (k: SsKey) (col: string) (isPk: bool) (nullable: bool) : Attribute =
         { Attribute.create k (nm col) (if isPk then Integer else Text) with
-            Column = { ColumnName = col.ToUpperInvariant(); IsNullable = nullable }
+            Column = ColumnRealization.create (col.ToUpperInvariant()) (nullable) |> Result.value
             IsPrimaryKey = isPk
             IsMandatory = isPk }
     let idA = akey "Widget.Id"
@@ -40,7 +40,7 @@ let private sampleKind () : Kind =
     let betaA = akey "Widget.Beta"
     let idx = Index.ofKeyColumns (ikey "Widget.IX_Alpha") (nm "IX_Widget_Alpha") [ alphaA ]
     { Kind.create (kkey "Widget") (nm "Widget")
-        { Schema = "dbo"; Table = "OSUSR_DEC_WIDGET"; Catalog = None }
+        (mkTableId "dbo" "OSUSR_DEC_WIDGET")
         [ mkAttr idA "Id" true false
           mkAttr alphaA "Alpha" false true
           mkAttr betaA "Beta" false true ]
@@ -191,11 +191,11 @@ let ``L3-X7: an FK whose target kind has no PK emits the targetMissingPrimaryKey
     let refKeyV = akey "B.refToA"
     let mkAttr (k: SsKey) (col: string) (isPk: bool) : Attribute =
         { Attribute.create k (nm col) Integer with
-            Column = { ColumnName = col.ToUpperInvariant(); IsNullable = not isPk }
+            Column = ColumnRealization.create (col.ToUpperInvariant()) (not isPk) |> Result.value
             IsPrimaryKey = isPk; IsMandatory = isPk }
-    let a = Kind.create aKey (nm "A") { Schema = "dbo"; Table = "OSUSR_X7_A"; Catalog = None } [ mkAttr (akey "A.Val") "Val" false ]
+    let a = Kind.create aKey (nm "A") (mkTableId "dbo" "OSUSR_X7_A") [ mkAttr (akey "A.Val") "Val" false ]
     let b =
-        { Kind.create bKey (nm "B") { Schema = "dbo"; Table = "OSUSR_X7_B"; Catalog = None }
+        { Kind.create bKey (nm "B") (mkTableId "dbo" "OSUSR_X7_B")
             [ mkAttr (akey "B.Id") "Id" true; mkAttr (akey "B.AId") "AId" false ]
           with References = [ Reference.create refKeyV (nm "A") (akey "B.AId") aKey ] }
     let catalog =
@@ -218,10 +218,10 @@ let ``L3-X7: an FK to a target kind absent from the catalog emits the unresolved
     let refKeyV = akey "B.refToGhost"
     let mkAttr (k: SsKey) (col: string) (isPk: bool) : Attribute =
         { Attribute.create k (nm col) Integer with
-            Column = { ColumnName = col.ToUpperInvariant(); IsNullable = not isPk }
+            Column = ColumnRealization.create (col.ToUpperInvariant()) (not isPk) |> Result.value
             IsPrimaryKey = isPk; IsMandatory = isPk }
     let b =
-        { Kind.create bKey (nm "B") { Schema = "dbo"; Table = "OSUSR_X7_B"; Catalog = None }
+        { Kind.create bKey (nm "B") (mkTableId "dbo" "OSUSR_X7_B")
             [ mkAttr (akey "B.Id") "Id" true; mkAttr (akey "B.GId") "GId" false ]
           with References = [ Reference.create refKeyV (nm "Ghost") (akey "B.GId") ghostKey ] }
     // Direct record construction — NOT through Catalog.create.
@@ -283,13 +283,13 @@ let ``decision.fkDropped surfaces one Warning for every key in DropFk (no silent
     let refToA2 = akey "B.refToA2"
     let mkAttr (k: SsKey) (col: string) (isPk: bool) : Attribute =
         { Attribute.create k (nm col) Integer with
-            Column = { ColumnName = col.ToUpperInvariant(); IsNullable = not isPk }
+            Column = ColumnRealization.create (col.ToUpperInvariant()) (not isPk) |> Result.value
             IsPrimaryKey = isPk; IsMandatory = isPk }
     let a =
-        Kind.create aKey (nm "A") { Schema = "dbo"; Table = "OSUSR_FD_A"; Catalog = None }
+        Kind.create aKey (nm "A") (mkTableId "dbo" "OSUSR_FD_A")
             [ mkAttr (akey "A.Id") "Id" true ]
     let b =
-        { Kind.create bKey (nm "B") { Schema = "dbo"; Table = "OSUSR_FD_B"; Catalog = None }
+        { Kind.create bKey (nm "B") (mkTableId "dbo" "OSUSR_FD_B")
             [ mkAttr (akey "B.Id") "Id" true
               mkAttr (akey "B.AId") "AId" false
               mkAttr (akey "B.AId2") "AId2" false ]

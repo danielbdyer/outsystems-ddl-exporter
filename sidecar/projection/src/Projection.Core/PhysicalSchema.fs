@@ -330,10 +330,12 @@ module PhysicalSchema =
     /// emission shape (slice D.1.b) so the readside-recovered
     /// catalog and the in-memory catalog produce the same bindings.
     let private toLogicalNameBindings (k: Kind) : LogicalNameBinding list =
+        let schemaStr = SchemaName.value k.Physical.Schema
+        let tableStr = TableName.value k.Physical.Table
         let tableBinding =
             {
-                Schema = k.Physical.Schema
-                Table = k.Physical.Table
+                Schema = schemaStr
+                Table = tableStr
                 Column = None
                 LogicalName = Name.value k.Name
             }
@@ -341,9 +343,9 @@ module PhysicalSchema =
             k.Attributes
             |> List.map (fun a ->
                 {
-                    Schema = k.Physical.Schema
-                    Table = k.Physical.Table
-                    Column = Some a.Column.ColumnName
+                    Schema = schemaStr
+                    Table = tableStr
+                    Column = Some (ColumnRealization.columnNameText a.Column)
                     LogicalName = Name.value a.Name
                 })
         tableBinding :: columnBindings
@@ -388,12 +390,14 @@ module PhysicalSchema =
         if cc.IsPersisted then System.String.Concat(expr, "|persisted") else expr
 
     let private toPhysicalColumns (k: Kind) : PhysicalColumn list =
+        let schemaStr = SchemaName.value k.Physical.Schema
+        let tableStr = TableName.value k.Physical.Table
         k.Attributes
         |> Bench.iterMap "physicalSchema.attribute" (fun a ->
             {
-                Schema = k.Physical.Schema
-                Table = k.Physical.Table
-                Column = a.Column.ColumnName
+                Schema = schemaStr
+                Table = tableStr
+                Column = ColumnRealization.columnNameText a.Column
                 Type = a.Type
                 Nullable = a.Column.IsNullable
                 IsPrimaryKey = a.IsPrimaryKey
@@ -423,7 +427,7 @@ module PhysicalSchema =
         collapsed.ToLowerInvariant()
 
     let private toKindAnnotations (k: Kind) : PhysicalAnnotation list =
-        let owner = System.String.Concat("[", k.Physical.Schema, "].[", k.Physical.Table, "]")
+        let owner = System.String.Concat("[", TableId.schemaText k.Physical, "].[", TableId.tableText k.Physical, "]")
         let triggers =
             k.Triggers
             |> List.map (fun t ->
@@ -483,7 +487,7 @@ module PhysicalSchema =
     /// here would double-count and (worse) make the canary assert on the
     /// emitter's own round-trip scaffolding.
     let private toExtendedPropertyAnnotations (k: Kind) : PhysicalAnnotation list =
-        let tableOwner = System.String.Concat("[", k.Physical.Schema, "].[", k.Physical.Table, "]")
+        let tableOwner = System.String.Concat("[", TableId.schemaText k.Physical, "].[", TableId.tableText k.Physical, "]")
         let isLogicalName (ep: ExtendedProperty) = ep.Name = "V2.LogicalName"
         let kindEps =
             k.ExtendedProperties
@@ -503,7 +507,7 @@ module PhysicalSchema =
                 |> List.map (fun ep ->
                     {
                         Kind = ExtendedPropertyAnnotation
-                        Owner = System.String.Concat(tableOwner, ".[", a.Column.ColumnName, "]")
+                        Owner = System.String.Concat(tableOwner, ".[", ColumnRealization.columnNameText a.Column, "]")
                         Name = ep.Name
                         Payload = ep.Value |> Option.defaultValue ""
                     }))
@@ -556,13 +560,15 @@ module PhysicalSchema =
             match m with
             | Static rows when not (List.isEmpty rows) ->
                 use _ = Bench.scope "physicalSchema.rows.hash"
+                let schemaStr = SchemaName.value k.Physical.Schema
+                let tableStr = TableName.value k.Physical.Table
                 let arr = List.toArray rows
                 let hashed =
                     arr
                     |> Array.Parallel.map (fun r ->
                         {
-                            Schema = k.Physical.Schema
-                            Table = k.Physical.Table
+                            Schema = schemaStr
+                            Table = tableStr
                             Hash = hashStaticRow r
                         })
                 Bench.recordSample "physicalSchema.rows.hash.elements" (int64 arr.Length)
@@ -586,18 +592,18 @@ module PhysicalSchema =
             let sourceColumn =
                 k.Attributes
                 |> List.tryFind (fun a -> a.SsKey = r.SourceAttribute)
-                |> Option.map (fun a -> a.Column.ColumnName)
+                |> Option.map (fun a -> ColumnRealization.columnNameText a.Column)
             match sourceColumn,
                   Map.tryFind r.TargetKind kindByKey,
                   Map.tryFind r.TargetKind targetPkColumnByKey with
             | Some srcCol, Some tk, Some tgtCol ->
                 Some
                     {
-                        SourceSchema = k.Physical.Schema
-                        SourceTable = k.Physical.Table
+                        SourceSchema = SchemaName.value k.Physical.Schema
+                        SourceTable = TableName.value k.Physical.Table
                         SourceColumn = srcCol
-                        TargetSchema = tk.Physical.Schema
-                        TargetTable = tk.Physical.Table
+                        TargetSchema = SchemaName.value tk.Physical.Schema
+                        TargetTable = TableName.value tk.Physical.Table
                         TargetColumn = tgtCol
                     }
             | _ -> None)
@@ -625,7 +631,7 @@ module PhysicalSchema =
             |> List.choose (fun k ->
                 k.Attributes
                 |> List.tryFind (fun a -> a.IsPrimaryKey)
-                |> Option.map (fun pk -> k.SsKey, pk.Column.ColumnName))
+                |> Option.map (fun pk -> k.SsKey, ColumnRealization.columnNameText pk.Column))
             |> Map.ofList
         let columns =
             kinds

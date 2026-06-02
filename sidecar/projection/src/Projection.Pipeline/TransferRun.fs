@@ -69,7 +69,7 @@ module Transfer =
                 let raw =
                     if Set.contains a.Name deferred then ""
                     else Map.tryFind a.Name row.Values |> Option.defaultValue ""
-                { Column = a.Column.ColumnName; Type = a.Type; Raw = raw }))
+                { Column = ColumnRealization.columnNameText a.Column; Type = a.Type; Raw = raw }))
 
     /// Phase-2 UPDATE for one row: set the deferred FK columns to their
     /// (already remapped, plan-side) values, keyed by the kind's primary
@@ -84,7 +84,7 @@ module Transfer =
                 |> Option.defaultValue ""
                 |> SqlLiteral.ofRaw a.Type
                 |> SqlLiteral.toString
-            let clause (a: Attribute) = sprintf "%s = %s" (Render.quote a.Column.ColumnName) (lit a)
+            let clause (a: Attribute) = sprintf "%s = %s" (Render.quote (ColumnRealization.columnNameText a.Column)) (lit a)
             Some (
                 sprintf "UPDATE %s SET %s WHERE %s;"
                     (Render.tableQualified kind.Physical)
@@ -118,7 +118,7 @@ module Transfer =
                 else
                     sprintf "INSERT INTO %s (%s) OUTPUT inserted.%s VALUES (%s);"
                         (Render.tableQualified kind.Physical)
-                        (insertCols |> List.map (fun a -> Render.quote a.Column.ColumnName) |> String.concat ", ")
+                        (insertCols |> List.map (fun a -> Render.quote (ColumnRealization.columnNameText a.Column)) |> String.concat ", ")
                         (Render.quote identityColumn)
                         (insertCols |> List.map lit |> String.concat ", ")
             use cmd = sink.CreateCommand()
@@ -169,7 +169,7 @@ module Transfer =
                             match kind.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey && a.IsIdentity) with
                             | Some idAttr ->
                                 for row in remapped.Rows do
-                                    let! assigned = insertCaptureRow sink kind idAttr.Column.ColumnName row
+                                    let! assigned = insertCaptureRow sink kind (ColumnRealization.columnNameText idAttr.Column) row
                                     match Map.tryFind idAttr.Name row.Values, assigned with
                                     | Some srcVal, Some assignedVal when srcVal <> "" ->
                                         match SurrogateRemapContext.capture load.Kind (SourceKey.ofString srcVal) (AssignedKey.ofString assignedVal) remap with

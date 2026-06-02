@@ -28,12 +28,12 @@ let private kC = synthKey "Mod" "C"
 let private kD = synthKey "Mod" "D"
 
 let private physical (table: string) : PhysicalRealization =
-    { Schema = "dbo"; Table = table; Catalog = None }
+    TableId.create "dbo" table |> Result.value
 
 let private mkAttr (ownerRoot: string) (name: string) (isNullable: bool) : Attribute =
     let key = synthKey ownerRoot name
     { Attribute.create key (Name.create name |> Result.value) PrimitiveType.Integer with
-        Column = { ColumnName = name; IsNullable = isNullable } }
+        Column = ColumnRealization.create (name) (isNullable) |> Result.value }
 
 let private mkRefCascade (ownerKey: SsKey) (targetKey: SsKey) : Reference =
     let ownerRoot = SsKey.rootOriginal ownerKey

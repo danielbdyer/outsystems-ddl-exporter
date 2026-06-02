@@ -98,7 +98,7 @@ module Static =
     let private buildValues (kind: Kind) (row: JsonElement) : Map<Name, string> =
         kind.Attributes
         |> List.choose (fun a ->
-            match row.TryGetProperty(a.Column.ColumnName) with
+            match row.TryGetProperty(ColumnRealization.columnNameText a.Column) with
             | true, cell -> Some (a.Name, invariantString cell)
             | false, _   -> None)
         |> Map.ofList
@@ -119,14 +119,14 @@ module Static =
                 match remaining with
                 | [] -> Result.success (List.rev acc)
                 | (a: Attribute) :: rest ->
-                    match row.TryGetProperty(a.Column.ColumnName) with
+                    match row.TryGetProperty(ColumnRealization.columnNameText a.Column) with
                     | true, cell -> collectPkValues rest (invariantString cell :: acc)
                     | false, _ ->
                         Result.failureOf
                             (adapterError
                                 "staticAdapter.pk.missing"
                                 (sprintf "Row in kind '%s' missing PK column '%s'."
-                                    (Name.value kind.Name) a.Column.ColumnName))
+                                    (Name.value kind.Name) (ColumnRealization.columnNameText a.Column)))
             collectPkValues pkAttrs []
             |> Result.bind (fun pkValues ->
                 deriveRowIdentifier kind.SsKey pkValues
@@ -224,7 +224,7 @@ module Static =
                                 if not (hasStaticModality k) then
                                     Result.success k
                                 else
-                                    let key = (k.Physical.Schema, k.Physical.Table)
+                                    let key = TableId.qualifiedParts k.Physical
                                     match Map.tryFind key rowsByPhysical with
                                     | None ->
                                         // No matching JSON table; leave the

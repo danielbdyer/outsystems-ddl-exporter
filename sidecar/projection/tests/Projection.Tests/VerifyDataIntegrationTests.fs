@@ -76,7 +76,7 @@ type VerifyDataIntegrationTests(fixture: EphemeralContainerFixture) =
 
     let ssKeyOfTable (contract: Catalog) (physicalTable: string) : SsKey =
         Catalog.allKinds contract
-        |> List.find (fun k -> k.Physical.Table = physicalTable)
+        |> List.find (fun k -> TableId.tableText k.Physical = physicalTable)
         |> fun k -> k.SsKey
 
     interface IClassFixture<EphemeralContainerFixture>
@@ -121,7 +121,7 @@ type VerifyDataIntegrationTests(fixture: EphemeralContainerFixture) =
         let noteKey =
             Catalog.allKinds contract
             |> List.find (fun k -> k.SsKey = ordersKey)
-            |> fun k -> k.Attributes |> List.find (fun a -> a.Column.ColumnName = "NOTE")
+            |> fun k -> k.Attributes |> List.find (fun a -> ColumnRealization.columnNameText a.Column = "NOTE")
             |> fun a -> a.SsKey
         // The NOTE null count went 0 -> 1 on ORDERS.
         let nullDelta =

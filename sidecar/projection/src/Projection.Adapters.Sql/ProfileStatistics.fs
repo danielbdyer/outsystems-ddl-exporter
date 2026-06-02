@@ -130,9 +130,10 @@ module ProfileStatistics =
     let private buildAttributeIndex (catalog: Catalog) : Map<string * string * string, SsKey> =
         Catalog.allKinds catalog
         |> List.collect (fun k ->
+            let schemaStr, tableStr = TableId.qualifiedParts k.Physical
             k.Attributes
             |> List.map (fun a ->
-                (k.Physical.Schema, k.Physical.Table, a.Column.ColumnName), a.SsKey))
+                (schemaStr, tableStr, ColumnRealization.columnNameText a.Column), a.SsKey))
         |> Map.ofList
 
     // -----------------------------------------------------------------------

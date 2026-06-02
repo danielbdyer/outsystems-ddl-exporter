@@ -71,11 +71,11 @@ module private LogicalNameRoundtripFixtures =
     let divergentCatalog () : Catalog =
         let emailAttr =
             let a = Attribute.create (attrKey ["Sales"; "Customer"; "Email"]) (name "Email") PrimitiveType.Text
-            { a with Column = { ColumnName = "EMAIL"; IsNullable = false } }
+            { a with Column = ColumnRealization.create ("EMAIL") (false) |> Result.value }
         let idAttr =
             let a = Attribute.create (attrKey ["Sales"; "Customer"; "Id"]) (name "Id") PrimitiveType.Integer
             { a with
-                Column = { ColumnName = "ID"; IsNullable = false }
+                Column = ColumnRealization.create ("ID") (false) |> Result.value
                 IsPrimaryKey = true
                 IsMandatory = true }
         let customer =
@@ -202,10 +202,10 @@ type LogicalNameRoundtripIntegration(fixture: EphemeralContainerFixture) =
                     let kinds = Catalog.allKinds recovered
                     let customer =
                         kinds
-                        |> List.find (fun k -> k.Physical.Table = "OSUSR_ABC_CUSTOMER")
+                        |> List.find (fun k -> TableId.tableText k.Physical = "OSUSR_ABC_CUSTOMER")
                     Assert.Equal("Customer", Name.value customer.Name)
                     // Physical preserved (substitution disabled at emit).
-                    Assert.Equal("OSUSR_ABC_CUSTOMER", customer.Physical.Table)
+                    Assert.Equal("OSUSR_ABC_CUSTOMER", TableId.tableText customer.Physical)
                     return ()
             })
         task.GetAwaiter().GetResult()
@@ -224,19 +224,19 @@ type LogicalNameRoundtripIntegration(fixture: EphemeralContainerFixture) =
                 | Ok recovered ->
                     let customer =
                         Catalog.allKinds recovered
-                        |> List.find (fun k -> k.Physical.Table = "OSUSR_ABC_CUSTOMER")
+                        |> List.find (fun k -> TableId.tableText k.Physical = "OSUSR_ABC_CUSTOMER")
                     let emailAttr =
                         customer.Attributes
-                        |> List.find (fun a -> a.Column.ColumnName = "EMAIL")
+                        |> List.find (fun a -> ColumnRealization.columnNameText a.Column = "EMAIL")
                     // Logical recovered from extended property; physical
                     // preserved from the deployed column name.
                     Assert.Equal("Email", Name.value emailAttr.Name)
-                    Assert.Equal("EMAIL", emailAttr.Column.ColumnName)
+                    Assert.Equal("EMAIL", ColumnRealization.columnNameText emailAttr.Column)
                     let idAttr =
                         customer.Attributes
-                        |> List.find (fun a -> a.Column.ColumnName = "ID")
+                        |> List.find (fun a -> ColumnRealization.columnNameText a.Column = "ID")
                     Assert.Equal("Id", Name.value idAttr.Name)
-                    Assert.Equal("ID", idAttr.Column.ColumnName)
+                    Assert.Equal("ID", ColumnRealization.columnNameText idAttr.Column)
                     return ()
             })
         task.GetAwaiter().GetResult()
@@ -259,12 +259,12 @@ type LogicalNameRoundtripIntegration(fixture: EphemeralContainerFixture) =
                 | Ok recovered ->
                     let legacy =
                         Catalog.allKinds recovered
-                        |> List.find (fun k -> k.Physical.Table = "Legacy")
+                        |> List.find (fun k -> TableId.tableText k.Physical = "Legacy")
                     // No V2.LogicalName property → Kind.Name = deployed name.
                     Assert.Equal("Legacy", Name.value legacy.Name)
                     let valueAttr =
                         legacy.Attributes
-                        |> List.find (fun a -> a.Column.ColumnName = "Value")
+                        |> List.find (fun a -> ColumnRealization.columnNameText a.Column = "Value")
                     Assert.Equal("Value", Name.value valueAttr.Name)
                     return ()
             })

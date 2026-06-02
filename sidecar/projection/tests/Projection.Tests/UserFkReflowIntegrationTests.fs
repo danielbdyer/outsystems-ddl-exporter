@@ -64,11 +64,11 @@ let private mkOrderKind () : Kind =
         Name     = mkName "Order"
         Origin   = Native
         Modality = []
-        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_ORDER"; Catalog = None }
+        Physical = Projection.Tests.Fixtures.mkTableId "dbo" "OSUSR_TEST_ORDER"
         Attributes =
             [
-                { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID";        IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
-                { Attribute.create createdByKey (mkName "CreatedBy") Integer with Column = { ColumnName = "CREATEDBY"; IsNullable = false }; IsMandatory = true }
+                { Attribute.create idKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true }
+                { Attribute.create createdByKey (mkName "CreatedBy") Integer with Column = ColumnRealization.create ("CREATEDBY") (false) |> Result.value; IsMandatory = true }
             ]
         References =
             [ { Reference.create
@@ -172,10 +172,10 @@ let ``Slice η: kind with no User-FK references passes through unrewritten`` () 
           Name     = mkName "Country"
           Origin   = Native
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY"; Catalog = None }
+          Physical = Projection.Tests.Fixtures.mkTableId "dbo" "OSUSR_TEST_COUNTRY"
           Attributes =
-              [ { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID";    IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
-                { Attribute.create labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL"; IsNullable = false }; IsMandatory = true } ]
+              [ { Attribute.create idKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true }
+                { Attribute.create labelKey (mkName "Label") Text with Column = ColumnRealization.create ("LABEL") (false) |> Result.value; IsMandatory = true } ]
           References = []  // no User-FK
           Indexes    = []
           Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }

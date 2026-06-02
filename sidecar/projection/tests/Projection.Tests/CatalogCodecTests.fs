@@ -24,7 +24,7 @@ let private key (n: int) : SsKey =
     SsKey.ossysOriginal (System.Guid(n, 0s, 0s, 0uy, 0uy, 0uy, 0uy, 0uy, 0uy, 0uy, 0uy))
 
 let private tableId (schema: string) (table: string) : TableId =
-    { Catalog = None; Schema = schema; Table = table }
+    TableId.create schema table |> Result.value
 
 /// A minimal valid single-kind catalog wrapping a caller-supplied kind, so a
 /// focused worked example can vary one axis and round-trip the whole aggregate
@@ -177,7 +177,7 @@ let private richCatalog () : Catalog =
             DataSpace = Some (DataSpace.Filegroup "PRIMARY") }
 
     let patron =
-        { Kind.create patronKey (nm "Patron") { Catalog = Some "appdb"; Schema = "dbo"; Table = "Patron" } [ patronId; patronName; patronSelfFk ] with
+        { Kind.create patronKey (nm "Patron") (TableId.createWithCatalog "appdb" "dbo" "Patron" |> Result.value) [ patronId; patronName; patronSelfFk ] with
             Origin = Origin.ExternalIndirect
             Modality =
                 [ ModalityMark.Static [ staticPop ]
@@ -377,8 +377,8 @@ let ``all four SsKey variants round-trip (identity, designation, realization)`` 
 
 [<Fact>]
 let ``TableId with and without an explicit catalog round-trips`` () =
-    let withCat = { kindOfAttr (baseAttr ()) with Physical = { Catalog = Some "appdb"; Schema = "dbo"; Table = "K" } }
-    let noCat = { kindOfAttr (baseAttr ()) with Physical = { Catalog = None; Schema = "dbo"; Table = "K" } }
+    let withCat = { kindOfAttr (baseAttr ()) with Physical = (TableId.createWithCatalog "appdb" "dbo" "K" |> Result.value) }
+    let noCat = { kindOfAttr (baseAttr ()) with Physical = (TableId.create "dbo" "K" |> Result.value) }
     assertRoundTrips "TableId Some catalog" (catalogOf withCat)
     assertRoundTrips "TableId None catalog" (catalogOf noCat)
 

@@ -130,10 +130,10 @@ let private expectedCatalogSynthesized : Catalog =
           Name     = mkName "User"
           Origin   = Native
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_USER"; Catalog = None }
+          Physical = mkTableId "dbo" "OSUSR_APPCORE_USER"
           Attributes = [
-              { Attribute.create userIdAttrKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true; SqlStorage = Some SqlStorageType.BigInt }
-              { Attribute.create userEmailAttrKey (mkName "Email") Text with Column = { ColumnName = "EMAIL"; IsNullable = false }; IsMandatory = true; Length = Some 250; SqlStorage = Some (SqlStorageType.NVarChar (Bounded 250)) }
+              { Attribute.create userIdAttrKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true; SqlStorage = Some SqlStorageType.BigInt }
+              { Attribute.create userEmailAttrKey (mkName "Email") Text with Column = ColumnRealization.create ("EMAIL") (false) |> Result.value; IsMandatory = true; Length = Some 250; SqlStorage = Some (SqlStorageType.NVarChar (Bounded 250)) }
           ]
           References = []
           Indexes    = []
@@ -201,8 +201,8 @@ let ``SnapshotRowsets: bundle WITH SsKey Guids produces OssysOriginal SsKeys (A1
         Assert.Equal (1, List.length m.Kinds)
         let k = m.Kinds.[0]
         Assert.Equal<SsKey>(OssysOriginal userGuid, k.SsKey)
-        Assert.Equal<string>("OSUSR_APPCORE_USER", k.Physical.Table)
-        Assert.Equal<string>("dbo", k.Physical.Schema)
+        Assert.Equal<string>("OSUSR_APPCORE_USER", TableId.tableText k.Physical)
+        Assert.Equal<string>("dbo", TableId.schemaText k.Physical)
         Assert.Equal (2, List.length k.Attributes)
         let a0 = k.Attributes.[0]
         let a1 = k.Attributes.[1]

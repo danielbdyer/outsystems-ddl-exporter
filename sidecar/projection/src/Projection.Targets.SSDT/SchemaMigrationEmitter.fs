@@ -68,8 +68,8 @@ module SchemaMigrationEmitter =
             SsKey = Some attrKey
             Metadata =
                 Map.ofList
-                    [ "schema", kind.Physical.Schema
-                      "table", kind.Physical.Table ] }
+                    [ "schema", TableId.schemaText kind.Physical
+                      "table", TableId.tableText kind.Physical ] }
 
     let private attrByKey (kind: Kind) (key: SsKey) : Attribute option =
         kind.Attributes |> List.tryFind (fun a -> a.SsKey = key)

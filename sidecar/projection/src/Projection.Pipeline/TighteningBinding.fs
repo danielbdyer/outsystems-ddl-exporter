@@ -70,9 +70,9 @@ module TighteningBinding =
                     |> List.tryPick (fun m ->
                         m.Kinds
                         |> List.tryPick (fun k ->
-                            if k.Physical.Schema = target1 && k.Physical.Table = target2 then
+                            if TableId.schemaText k.Physical = target1 && TableId.tableText k.Physical = target2 then
                                 k.Attributes
-                                |> List.tryFind (fun a -> a.Column.ColumnName = target3)
+                                |> List.tryFind (fun a -> ColumnRealization.columnNameText a.Column = target3)
                             else None))
                 match physicalHit with
                 | Some attr -> Result.success attr.SsKey

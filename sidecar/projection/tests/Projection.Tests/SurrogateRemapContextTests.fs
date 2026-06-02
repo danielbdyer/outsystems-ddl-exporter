@@ -29,7 +29,7 @@ let private mkName (s: string) : Name =
     Name.create s |> mustOk
 
 let private physical (table: string) : PhysicalRealization =
-    { Schema = "dbo"; Table = table; Catalog = None }
+    TableId.create "dbo" table |> Result.value
 
 let private kindWithPk (table: string) (isPkIdentity: bool) : Kind =
     let pk =

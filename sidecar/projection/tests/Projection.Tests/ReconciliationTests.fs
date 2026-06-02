@@ -57,11 +57,11 @@ let private orderUserRef =
     { Reference.create (mkKey [ "Order"; "UserRef" ]) (mkName "UserRef") userIdKey userKey with
         HasDbConstraint = true }
 let private orderKind : Kind =
-    { Kind.create orderKey (mkName "Order") { Schema = "dbo"; Table = "OSUSR_ORDER"; Catalog = None }
+    { Kind.create orderKey (mkName "Order") (TableId.create "dbo" "OSUSR_ORDER" |> Result.value)
         [ { Attribute.create (mkKey [ "Order"; "ID" ]) (mkName "ID") Integer with
-              Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+              Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true }
           { Attribute.create userIdKey (mkName "USER_ID") Integer with
-              Column = { ColumnName = "USER_ID"; IsNullable = true } } ]
+              Column = ColumnRealization.create ("USER_ID") (true) |> Result.value } ]
       with References = [ orderUserRef ]; Indexes = []; ColumnChecks = [] }
 
 [<Fact>]

@@ -511,6 +511,24 @@ the canonical surface is the code itself, the pattern is named.
   (`Original of string | Derived of original × reason`); core code
   never holds a string in a place where identity belongs. Names
   (`Name`) are presentation-only.
+- **Schema coordinates are typed VOs (2026-06-02 lift slices 5a + 5b).**
+  `TableId.Schema : SchemaName`, `TableId.Table : TableName`,
+  `ColumnRealization.ColumnName : ColumnName` — the logical-IR
+  coordinate triad. Construction flows through `TableId.create` /
+  `ColumnRealization.create` (Result-returning, validating non-blank
+  + ≤128-char SQL identifier limit). Boundary code unwraps via
+  `TableId.schemaText` / `tableText` / `qualifiedParts` and
+  `ColumnRealization.columnNameText`. **Compiler gap to remember**:
+  `String.Concat` / `String.Join` / `SqlParameter.AddWithValue`
+  accept `object` so VO-leak bugs DON'T surface at compile time.
+  After every typed-VO field lift, grep
+  `String.Concat\|String.Join\|AddWithValue` for VO-bearing
+  arguments and unwrap each. Deliberate asymmetry:
+  `PhysicalSchema`'s `PhysicalColumn` / `LogicalNameBinding` /
+  `PhysicalForeignKey` and `Sequence` stay string-typed by design —
+  they're a separate IR domain (physical-comparison surface) where
+  string-as-comparison-key is defensible. See `Coordinates.fs`
+  top-of-file comment for the full cleavage rationale.
 - **Generic algebraic names in the core; domain-prescriptive names
   at the boundary.** `Kind`, `Module`, `Catalog`, `Reference` —
   not `Entity`, `Application`, `Model`, `FK`. The trunk's

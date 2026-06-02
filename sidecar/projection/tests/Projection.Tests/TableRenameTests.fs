@@ -254,8 +254,8 @@ module RenameBindingTests =
             Assert.Equal("Sales",    Name.value m)
             Assert.Equal("Customer", Name.value e)
         | _ -> failwith "Expected Logical key"
-        Assert.Equal("core",         specs.[0].Target.Schema)
-        Assert.Equal("CUSTOMER_NEW", specs.[0].Target.Table)
+        Assert.Equal("core",         TableId.schemaText specs.[0].Target)
+        Assert.Equal("CUSTOMER_NEW", TableId.tableText specs.[0].Target)
 
     [<Fact>]
     let ``physical rename round-trips through boundary`` () =
@@ -266,8 +266,8 @@ module RenameBindingTests =
         let specs = RenameBinding.fromConfig [ configRename ] |> mustOk
         match specs.[0].Key with
         | TableRename.Physical t ->
-            Assert.Equal("dbo",       t.Schema)
-            Assert.Equal("OSUSR_OLD", t.Table)
+            Assert.Equal("dbo",       TableId.schemaText t)
+            Assert.Equal("OSUSR_OLD", TableId.tableText t)
         | _ -> failwith "Expected Physical key"
 
     [<Fact>]

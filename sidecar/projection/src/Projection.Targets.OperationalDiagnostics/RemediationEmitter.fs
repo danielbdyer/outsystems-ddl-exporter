@@ -43,7 +43,7 @@ module RemediationEmitter =
         System.String.Concat("[", s, "]")  // LINT-ALLOW: terminal SQL-identifier bracket-quoting; segments are typed (literal brackets + Name.value / Physical.Schema / Physical.Table from V2 IR); BCL `String.Concat` IS the use-case-specific library for two-segment terminal-text composition
 
     let private qualifiedTable (kind: Kind) : string =
-        System.String.Concat(brackets kind.Physical.Schema, ".", brackets kind.Physical.Table)  // LINT-ALLOW: terminal SQL-qualified-name composition; segments are typed (bracket-quoted schema + literal dot + bracket-quoted table from V2 IR Physical); BCL `String.Concat` IS the use-case-specific library
+        System.String.Concat(brackets (TableId.schemaText kind.Physical), ".", brackets (TableId.tableText kind.Physical))  // LINT-ALLOW: terminal SQL-qualified-name composition; segments are typed (bracket-quoted schema + literal dot + bracket-quoted table from V2 IR Physical); BCL `String.Concat` IS the use-case-specific library
 
     /// Build the SsKey → Kind index ONCE up-front. Per Big-O audit
     /// discipline (`DECISIONS 2026-05-19 (slice B.3.6b)`): the
@@ -112,7 +112,7 @@ module RemediationEmitter =
         (budget: decimal)
         : unit =
         let table   = qualifiedTable kind
-        let column  = brackets attr.Column.ColumnName
+        let column  = brackets (ColumnRealization.columnNameText attr.Column)
         let subject = sprintf "%s.%s" (Name.value kind.Name) (Name.value attr.Name)
         let reason  =
             sprintf
@@ -142,7 +142,7 @@ module RemediationEmitter =
             | Some (_, a) -> a
             | None        ->
                 invalidOp (sprintf "RemediationEmitter: reference %A SourceAttribute not found" reference.SsKey)
-        let column  = brackets attr.Column.ColumnName
+        let column  = brackets (ColumnRealization.columnNameText attr.Column)
         let subject =
             sprintf "%s.%s (FK %s)"
                 (Name.value sourceKind.Name) (Name.value attr.Name) (Name.value reference.Name)
@@ -176,7 +176,7 @@ module RemediationEmitter =
             idx.Columns
             |> List.map (fun ic ->
                 match Map.tryFind ic.Attribute attrIndex with
-                | Some (_, a) -> brackets a.Column.ColumnName
+                | Some (_, a) -> brackets (ColumnRealization.columnNameText a.Column)
                 | None        ->
                     invalidOp (sprintf "RemediationEmitter: index column attribute %A not found" ic.Attribute))
             |> String.concat ", "

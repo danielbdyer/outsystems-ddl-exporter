@@ -58,8 +58,8 @@ module Render =
         System.String.Join(
             ".",
             [|
-                Microsoft.SqlServer.TransactSql.ScriptDom.Identifier.EncodeIdentifier t.Schema
-                Microsoft.SqlServer.TransactSql.ScriptDom.Identifier.EncodeIdentifier t.Table
+                Microsoft.SqlServer.TransactSql.ScriptDom.Identifier.EncodeIdentifier (TableId.schemaText t)
+                Microsoft.SqlServer.TransactSql.ScriptDom.Identifier.EncodeIdentifier (TableId.tableText t)
             |])
 
     /// Render one Statement into the StringBuilder. Per-statement

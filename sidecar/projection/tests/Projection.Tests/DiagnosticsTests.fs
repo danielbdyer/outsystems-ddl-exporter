@@ -1021,7 +1021,7 @@ let ``H-015 CatalogLenses.columnOf: get + set roundtrip`` () =
             PrimitiveType.Integer
     let originalColumn = attr.Column
     Assert.Equal(originalColumn, Lens.get CatalogLenses.columnOf attr)
-    let replacement = { ColumnName = "renamed"; IsNullable = true }
+    let replacement = ColumnRealization.create "renamed" true |> Result.value
     let updated = Lens.set CatalogLenses.columnOf replacement attr
     Assert.Equal(replacement, updated.Column)
     Assert.Equal(attr.SsKey, updated.SsKey)

@@ -386,9 +386,35 @@ type PhysicalRealization = TableId
 /// `Attribute` so that policy and unfold passes can rewrite physical
 /// metadata without touching logical structure.
 type ColumnRealization = {
-    ColumnName : string
+    ColumnName : ColumnName
     IsNullable : bool
 }
+
+/// Smart constructors and projections for `ColumnRealization`. Lifted
+/// 2026-06-02 (slice 5b) — `ColumnName` is now the typed VO; consumers
+/// reading the column-name string unwrap via `ColumnRealization.columnNameText`
+/// or `ColumnName.value`.
+[<RequireQualifiedAccess>]
+module ColumnRealization =
+
+    /// Boundary helper — pre-unwrapped column-name text. Use at adapter /
+    /// emitter / diagnostic-formatting boundaries (SQL identifier
+    /// encoding, sprintf "%s", map lookups keyed on string).
+    let columnNameText (c: ColumnRealization) : string = ColumnName.value c.ColumnName
+
+    /// Build a `ColumnRealization` from a raw column-name string.
+    /// Validates non-blank + ≤128-char identifier limit via
+    /// `ColumnName.create`; returns `Result`. Use at adapter
+    /// construction sites (SQL reads, JSON codec) where the input
+    /// is a raw string.
+    let create (columnName: string) (isNullable: bool) : Result<ColumnRealization> =
+        ColumnName.create columnName
+        |> Result.map (fun cn -> { ColumnName = cn; IsNullable = isNullable })
+
+    /// Build a `ColumnRealization` from an already-validated `ColumnName`.
+    /// Total — no validation needed since the input is already typed.
+    let fromTyped (columnName: ColumnName) (isNullable: bool) : ColumnRealization =
+        { ColumnName = columnName; IsNullable = isNullable }
 
 
 /// Reference action at the target side. Mirrored from the standard
@@ -940,7 +966,20 @@ module Attribute =
             SsKey                = ssKey
             Name                 = name
             Type                 = ptype
-            Column               = { ColumnName = Name.value name; IsNullable = false }
+            // Slice 5b (lift): default ColumnName synthesized from Name. Contract:
+            // the Name fits SQL Server's 128-char identifier limit. Callers with
+            // long Names (rare; `LogicalColumnEmission` guards the substitution
+            // path against the same case) must override Column via record-update
+            // before SQL emission. Failure surfaces loud here rather than as
+            // silent invalid SQL downstream.
+            Column               =
+                match ColumnName.create (Name.value name) with
+                | Ok cn -> { ColumnName = cn; IsNullable = false }
+                | Error _ ->
+                    failwithf
+                        "Attribute.create: Name %A (length %d) exceeds SQL Server's 128-char identifier limit. Override the default Column via record-update for long names."
+                        (Name.value name)
+                        (Name.value name).Length
             IsPrimaryKey         = false
             IsMandatory          = false
             Length               = None

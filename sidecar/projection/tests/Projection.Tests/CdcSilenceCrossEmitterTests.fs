@@ -49,6 +49,10 @@ module private CdcSilenceCrossEmitterFixtures =
     let mkName (s: string) : Name =
         Name.create s |> mustOk
 
+    /// Per slice-5 lift: force-unwrap fixture TableId constants.
+    let mkTableId (schema: string) (table: string) : TableId =
+        TableId.create schema table |> mustOk
+
     let mustOkEmit (r: Result<'a, EmitError>) : 'a =
         match r with
         | Ok v -> v
@@ -75,12 +79,12 @@ module private CdcSilenceCrossEmitterFixtures =
           Origin   = Native
           Modality = [ Static [ row "1" "United States"
                                 row "2" "Canada" ] ]
-          Physical = { Schema = "dbo"; Table = "CDCX_COUNTRY"; Catalog = None }
+          Physical = mkTableId "dbo" "CDCX_COUNTRY"
           Attributes =
               [
-                  { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID";    IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
-                  { Attribute.create codeKey (mkName "Code") Text with Column = { ColumnName = "CODE";  IsNullable = false }; IsMandatory = true }
-                  { Attribute.create labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL"; IsNullable = false }; IsMandatory = true }
+                  { Attribute.create idKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true }
+                  { Attribute.create codeKey (mkName "Code") Text with Column = ColumnRealization.create ("CODE") (false) |> Result.value; IsMandatory = true }
+                  { Attribute.create labelKey (mkName "Label") Text with Column = ColumnRealization.create ("LABEL") (false) |> Result.value; IsMandatory = true }
               ]
           References = []
           Indexes    = []
@@ -105,11 +109,11 @@ module private CdcSilenceCrossEmitterFixtures =
           Name     = mkName "LegacyOrder"
           Origin   = Native
           Modality = []
-          Physical = { Schema = "dbo"; Table = "CDCX_LEGACY_ORDER"; Catalog = None }
+          Physical = mkTableId "dbo" "CDCX_LEGACY_ORDER"
           Attributes =
               [
-                  { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
-                  { Attribute.create parentKey (mkName "ParentId") Integer with Column = { ColumnName = "PARENTID"; IsNullable = true } }
+                  { Attribute.create idKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true }
+                  { Attribute.create parentKey (mkName "ParentId") Integer with Column = ColumnRealization.create ("PARENTID") (true) |> Result.value }
               ]
           References = [ Reference.create refKey (mkName "RefSelf") parentKey legacyOrderKindKey ]
           Indexes    = []
@@ -174,8 +178,8 @@ module private CdcSilenceCrossEmitterFixtures =
     let cdcAwareTracked (kinds: Kind list) : CdcTrackedTable list =
         kinds
         |> List.map (fun k ->
-            { Schema = k.Physical.Schema
-              Table  = k.Physical.Table })
+            { Schema = TableId.schemaText k.Physical
+              Table  = TableId.tableText k.Physical })
 
     /// CDC-enable every tracked table inside one batch — issuing
     /// sys.sp_cdc_enable_table per pair after sys.sp_cdc_enable_db on

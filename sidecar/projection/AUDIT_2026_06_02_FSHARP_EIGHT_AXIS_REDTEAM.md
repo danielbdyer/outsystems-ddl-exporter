@@ -981,28 +981,119 @@ record-building* — not raw conciseness. For new pass drivers, the
 CE form is the documented default; existing function-form chains
 using only canonical primitives remain admissible.
 
-### Slice 5 (large; 1–2 weeks). Identity-typing field-adoption sweep
+### Slice 5 — **LANDED 2026-06-02 (sub-slices 5a + 5b; logical-IR coordinate triad complete; physical-comparison-domain deliberately deferred)**.
 
 **Principle:** 1 (illegal states), 11 (cardinality).
-**Files:** every site where `Schema`, `Table`, `Column` appear as
-`string`. Major sites: `Coordinates.TableId`, `ColumnRealization`,
-`PhysicalColumn`, `Sequence`, FK target/source references,
-`TighteningIntervention.id`, `passName` constants in 17 modules.
-**Action:** lift `Coordinates.SchemaName` / `TableName` /
-`ColumnName` into field positions. Compiler walks. Adapters and
-codecs absorb the unwrap/rewrap at the boundary.
-**Risk:** medium — codecs, JSON serialization, SQL adapter SQL
-generation will all need wrap/unwrap shims. Each is mechanical
-but adds up.
-**Dependency:** independent of others, but pairs with the
-boolean-tuple slice (§Slice 2) since both refactor the IR. Doing
-both in the same chapter lets one round of fixture rebuild absorb
-both.
-**Why this slice is big and worth it:** every site that today
-admits a type-mix-up bug becomes a compile error. The compiler
-walks every call site; the developer doesn't need to grep. The
-test of "did the slice land cleanly" is "does the project
-compile" — F#'s gift.
+
+**Mid-slice scope re-calibration**: the operator observed mid-execution
+that "we're most of the way through development" — the wizard's
+compounding-type-safety case for the audit's full schema-coordinate
+sweep shrinks late in development because the future-development
+amortization horizon is smaller than the audit assumed. The slice
+re-scoped to: complete the **logical IR coordinate identity triad**
+(the typed surface every pass touches) and **deliberately defer the
+physical-comparison surface** (`PhysicalSchema`'s `PhysicalColumn` /
+`LogicalNameBinding` / `PhysicalForeignKey`, `Sequence`) as a
+documented asymmetry rather than oversight. This re-calibration is
+operationally important — the wizard's bias should not override
+empirical cost-benefit at late-stage development. The slice
+remains valuable on the logical-IR side; the physical-surface side
+is a different domain ("what SQL Server reports back") where
+string-as-comparison-key is defensible.
+
+**Sub-slice 5a (TableId lift)**: `TableId.Schema : string → SchemaName`;
+`TableId.Table : string → TableName`. Construction site refactored
+to `TableId.create` (returns `Result<TableId>`); boundary helpers
+added (`TableId.schemaText`, `tableText`, `qualifiedParts`).
+Error-code translation preserves the boundary contract (`SchemaName.empty`
+→ `tableId.schema.empty`) so downstream consumers triaging errors by
+code see the outer-context vocabulary. Total: 1 type definition,
+2 smart constructors, 3 boundary helpers, 2 error-translation
+helpers, ~200 src/ + ~200 test/ consumer-site updates across ~40
+files. Two parallel subagents (one for src/, one for tests/)
+absorbed the mechanical walk.
+
+**Sub-slice 5b (ColumnRealization lift)**: `ColumnRealization.ColumnName
+: string → ColumnName`. Construction site is `Attribute.create`'s
+default-Column — uses bare-value pattern with a defensive `match`
+on `ColumnName.create` that fails loud at construction if the input
+`Name` exceeds the 128-char SQL identifier limit (rare but real;
+`LogicalColumnEmission` guards the same edge case in the
+substitution path). Companion module `ColumnRealization` added
+with `columnNameText` / `create` / `fromTyped` helpers. Total:
+~74 src/ + ~44 test/ consumer-site updates. Third subagent
+absorbed the walk + caught 2 runtime leaks via post-build grep.
+
+**Compile-time gap discovered**: the F# compiler catches type-mix-up
+errors at *typed* call sites but NOT at `String.Concat` /
+`String.Join` / `SqlParameter.AddWithValue` boundaries that accept
+`object`. These would silently call `ToString` on typed VOs and
+emit `SchemaName "dbo"` instead of `dbo` at runtime, OR fail SQL
+parameter binding with "No mapping exists from type
+Projection.Core.SchemaName to a known native type."
+
+Discovered runtime leaks (caught only by manual grep after the build
+turned green):
+- **Slice 5a**: 1 site (`LiveProfiler.fs` SQL parameter binding) +
+  4 sites of `String.Concat` with TableId fields in SSDT emitter
+  + `PhysicalSchema`.
+- **Slice 5b**: 2 sites (`PhysicalSchema.fs:510` String.Concat
+  with ColumnName, `CatalogDiff.fs:308` `Set<ColumnName>` instead
+  of `Set<string>`).
+
+**Validation**:
+- Full solution builds clean (0 warnings, 0 errors).
+- Fast pure test pool: 2650 passed / 207 skipped / 0 failed —
+  exact match to pre-slice baseline. Behavior-preserving by
+  construction.
+- Test failures intercepted and fixed during execution:
+  - 7 SSDT emission failures (DU-pretty-printer leaks via
+    `String.Concat`; 4 SsdtDdlEmitter sites + 2 PhysicalSchema
+    sites).
+  - 1 SQL parameter binding failure (LiveProfiler).
+  - 1 error-code regression (RenameBinding test asserted
+    `tableId.schema.empty`; the SchemaName.create-delegating
+    path produced `schemaName.empty` instead; resolved by
+    error-code translation in `TableId.create`).
+
+**Discipline updates landed in the same commit:**
+- `Coordinates.fs` top-of-file comment: Stage-2 marked CASHED
+  for the logical-IR coordinate triad; deliberate asymmetry
+  documented; runtime-leak grep protocol codified for future
+  typed-VO field lifts.
+- `CLAUDE.md` programming style "Types" section: new bullet
+  ("Schema coordinates are typed VOs") documenting the lift +
+  compiler-gap caveat + worked grep protocol.
+- This audit doc: 5a + 5b marked LANDED; 5b's late-stage
+  re-calibration explicitly named so future slices don't
+  re-litigate the same wizard-vs-late-stage tension.
+
+**Deferred-with-trigger (post-slice-5 state)**: `PhysicalSchema`'s
+`PhysicalColumn` / `LogicalNameBinding` / `PhysicalForeignKey`
+fields stay `Schema`/`Table`/`Column : string`; `Sequence.Schema`
+stays `string`. Per the documented asymmetry in `Coordinates.fs`,
+these stay deferred until either (a) a real cross-domain
+identifier-confusion bug surfaces, or (b) a major IR-shape pass
+touches these types and the wrap cost is co-located with other work.
+
+**Why the audit's original framing was right and what it missed**:
+The audit's "compiler-walks every site" framing was correct — F#'s
+compiler-walk discipline made the lift testable by construction.
+What the audit missed: F#'s compiler-walk doesn't cover `object`-accepting
+sites (`String.Concat`, `AddWithValue`), so a clean build is necessary
+but not sufficient. The post-build grep protocol is the codified
+discipline; future typed-VO field lifts inherit it via
+`Coordinates.fs`'s top-of-file comment.
+
+**Why the slice was worth completing despite the late-stage
+re-calibration**: ~30 src/ sites were active Wave-6 surfaces
+(MigrationRun, TransferSpec, TighteningBinding,
+SpecialCircumstancesBinding) where the type-safety lift helps
+ongoing iteration. The boundary helpers (`schemaText`, `tableText`,
+`qualifiedParts`, `columnNameText`) are reusable infrastructure for
+any future lift. The Stage-2-CASHED state retires a documented
+deferred-with-trigger from chapter 5 slice θ (2026-05-11) — an
+~1-year-old open ticket.
 
 ### Slice 6 (medium; 3–5 days). JSON description-vs-execution symmetry
 

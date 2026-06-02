@@ -198,7 +198,7 @@ module MigrationRun =
         // rationale discipline.
         let esc (s: string) : string = s.Replace("'", "''")
         let colOf (k: Kind) (attrKey: SsKey) : string option =
-            k.Attributes |> List.tryFind (fun a -> a.SsKey = attrKey) |> Option.map (fun a -> a.Column.ColumnName)
+            k.Attributes |> List.tryFind (fun a -> a.SsKey = attrKey) |> Option.map (fun a -> ColumnRealization.columnNameText a.Column)
         let nameOf (k: Kind) (attrKey: SsKey) : Name option =
             k.Attributes |> List.tryFind (fun a -> a.SsKey = attrKey) |> Option.map (fun a -> a.Name)
 
@@ -210,11 +210,13 @@ module MigrationRun =
             |> List.collect (fun (key, _) ->
                 match Map.tryFind key src, Map.tryFind key tgt with
                 | Some s, Some t ->
-                    let schema = t.Physical.Schema
-                    let newTable = t.Physical.Table
+                    let schema = TableId.schemaText t.Physical
+                    let newTable = TableId.tableText t.Physical
+                    let srcSchema = TableId.schemaText s.Physical
+                    let srcTable = TableId.tableText s.Physical
                     let spRename =
-                        if s.Physical.Table <> newTable then
-                            [ sprintf "EXEC sp_rename '%s.%s', '%s';" (esc s.Physical.Schema) (esc s.Physical.Table) (esc newTable) ]
+                        if srcTable <> newTable then
+                            [ sprintf "EXEC sp_rename '%s.%s', '%s';" (esc srcSchema) (esc srcTable) (esc newTable) ]
                         else []
                     let reBind =
                         sprintf
@@ -232,8 +234,8 @@ module MigrationRun =
             |> List.collect (fun (kindKey, ad) ->
                 match Map.tryFind kindKey src, Map.tryFind kindKey tgt with
                 | Some sKind, Some tKind ->
-                    let schema = tKind.Physical.Schema
-                    let table = tKind.Physical.Table
+                    let schema = TableId.schemaText tKind.Physical
+                    let table = TableId.tableText tKind.Physical
                     ad.Renamed
                     |> Map.toList
                     |> List.sortBy (fun (ak, _) -> SsKey.rootOriginal ak)

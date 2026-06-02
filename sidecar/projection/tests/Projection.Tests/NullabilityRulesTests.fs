@@ -91,7 +91,7 @@ let ``structural: a non-PK physically-NOT-NULL attribute is EnforceNotNull(Physi
 let ``structural: a physically-nullable non-PK attribute without overrides yields KeepNullable(NoTighteningSignal)`` () =
     // Synthesize a nullable, non-PK attribute.
     let nullable : Attribute =
-        { Attribute.create (attrKey ["Test"; "NullableNonPk"]) (Name.create "Optional" |> Result.value) Text with Column = { ColumnName = "OPTIONAL"; IsNullable = true } }
+        { Attribute.create (attrKey ["Test"; "NullableNonPk"]) (Name.create "Optional" |> Result.value) Text with Column = ColumnRealization.create ("OPTIONAL") (true) |> Result.value }
     let decision = decideOnFixture nullable (mkConfig 0.0m false [])
     Assert.Equal(NullabilityOutcome.KeepNullable NoTighteningSignal, decision.Outcome)
 
@@ -125,7 +125,7 @@ let ``decision: InterventionId is the id passed to evaluate`` () =
 let ``enforces: true for EnforceNotNull, false for KeepNullable`` () =
     let pkAttr = customer.Attributes |> List.find (fun a -> a.IsPrimaryKey)
     let nullable : Attribute =
-        { Attribute.create (attrKey ["T"]) (Name.create "T" |> Result.value) Text with Column = { ColumnName = "T"; IsNullable = true } }
+        { Attribute.create (attrKey ["T"]) (Name.create "T" |> Result.value) Text with Column = ColumnRealization.create ("T") (true) |> Result.value }
     let cfg = mkConfig 0.0m false []
     Assert.True (NullabilityRules.enforces (decideOnFixture pkAttr cfg))
     Assert.False(NullabilityRules.enforces (decideOnFixture nullable cfg))
@@ -218,7 +218,7 @@ let ``outcome: NullabilityOutcome variants round-trip`` () =
 // ---------------------------------------------------------------------------
 
 let private mkMandatoryAttr (key: string) (isNullable: bool) : Attribute =
-    { Attribute.create (testKey key) (Name.create "M" |> Result.value) Text with Column = { ColumnName = "M"; IsNullable = isNullable }; IsMandatory = true }
+    { Attribute.create (testKey key) (Name.create "M" |> Result.value) Text with Column = ColumnRealization.create ("M") (isNullable) |> Result.value; IsMandatory = true }
 
 let private mkColProfile (attrKey: SsKey) (rowCount: int64) (nullCount: int64) : ColumnProfile =
     let probe =

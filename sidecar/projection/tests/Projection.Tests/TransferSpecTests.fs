@@ -80,15 +80,15 @@ let ``parseReconcileSpec rejects an empty match-column`` () =
 
 let private pk (ownerParts: string list) (col: string) : Attribute =
     { Attribute.create (mkKey (ownerParts @ [col])) (mkName col) Integer with
-        Column = { ColumnName = col; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+        Column = ColumnRealization.create (col) (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true }
 
 let private attr (ownerParts: string list) (col: string) (typ: PrimitiveType) : Attribute =
     { Attribute.create (mkKey (ownerParts @ [col])) (mkName col) typ with
-        Column = { ColumnName = col; IsNullable = false }; IsMandatory = true }
+        Column = ColumnRealization.create (col) (false) |> Result.value; IsMandatory = true }
 
 let private kindOf (parts: string list) (table: string) (attrs: Attribute list) : Kind =
     { Kind.create (mkKey parts) (mkName (List.last parts))
-        { Schema = "dbo"; Table = table; Catalog = None }
+        (TableId.create "dbo" table |> Result.value)
         attrs
       with References = []; Indexes = []; ColumnChecks = [] }
 

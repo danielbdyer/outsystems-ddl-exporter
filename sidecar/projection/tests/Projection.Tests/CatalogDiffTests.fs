@@ -279,7 +279,7 @@ let ``Time: applyDiff (between A B) A = B (evolution round-trip law)`` () =
                          Some { at with Column = { at.Column with IsNullable = true } } // nullability change
                      else Some at))
                 @ [ { Attribute.create newAttrKey (nm "Loyalty") Integer with
-                        Column = { ColumnName = "LOYALTY"; IsNullable = true } } ] } // add column
+                        Column = ColumnRealization.create ("LOYALTY") (true) |> Result.value } ] } // add column
     let b = catalogOfKinds [ customer'; order; country ]
 
     let diff = CatalogDiff.between a b |> mustOk
@@ -379,7 +379,7 @@ let ``norm: equals the sum of the channel counts (additivity, T14/T15)`` () =
                      elif at.SsKey = customerNameKey then Some { at with Type = Integer }
                      else Some at))
                 @ [ { Attribute.create newAttrKey (nm "Loyalty") Integer with
-                        Column = { ColumnName = "LOYALTY"; IsNullable = true } } ] }
+                        Column = ColumnRealization.create ("LOYALTY") (true) |> Result.value } ] }
     let target = catalogOfKinds [ customer'; order; country ]
     let d = CatalogDiff.between sampleCatalog target |> mustOk
     let c = CatalogDiff.channelCounts d
@@ -443,10 +443,10 @@ let private rnSynthKey (parts: string list) : SsKey = SsKey.synthesizedComposite
 let private rnAttrKey (parts: string list) : SsKey = SsKey.synthesizedComposite "READSIDE_ATTR" parts |> Result.value
 let private rnAttr (key: SsKey) (col: string) (isPk: bool) : Attribute =
     { Attribute.create key (rnName col) Integer with
-        Column = { ColumnName = col; IsNullable = not isPk }
+        Column = ColumnRealization.create (col) (not isPk) |> Result.value
         IsPrimaryKey = isPk; IsMandatory = isPk }
 let private rnKind (key: SsKey) (table: string) (attrs: Attribute list) : Kind =
-    Kind.create key (rnName table) { Schema = "dbo"; Table = table; Catalog = None } attrs
+    Kind.create key (rnName table) (mkTableId "dbo" table) attrs
 let private rnCatalog (kinds: Kind list) : Catalog =
     Catalog.create
         [ { SsKey = rnSynthKey ["MODULE"]; Name = rnName "M"; Kinds = kinds; IsActive = true; ExtendedProperties = [] } ] []

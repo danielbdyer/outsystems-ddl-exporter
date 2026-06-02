@@ -3,6 +3,7 @@ module Projection.Tests.BootstrapEmitterTests
 open Xunit
 open Projection.Core
 open Projection.Targets.Data
+open Projection.Tests
 
 // ---------------------------------------------------------------------------
 // Chapter 4.1.B slice ζ — BootstrapEmitter v0 (UserRemapContext = empty
@@ -40,7 +41,7 @@ let private mustOkEmit (r: Result<'a, EmitError>) : 'a =
 let private mkKind (name: string) : Kind =
     let kindKey = mkKey ["TestModule"; name]
     let idKey = mkKey ["TestModule"; name; "Id"]
-    Kind.create kindKey (mkName name) { Schema = "dbo"; Table = sprintf "OSUSR_TEST_%s" (name.ToUpperInvariant()); Catalog = None } [ { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true } ]
+    Kind.create kindKey (mkName name) (Fixtures.mkTableId "dbo" (sprintf "OSUSR_TEST_%s" (name.ToUpperInvariant()))) [ { Attribute.create idKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true } ]
 
 let private mkCatalog (kinds: Kind list) : Catalog =
     let m : Module =

@@ -23,12 +23,12 @@ type SchemaMigrationCanaryTests(fixture: EphemeralContainerFixture) =
     static let customerKind (emailLength: int option) : Kind =
         let mkAttr key col typ len isPk nullable =
             { Attribute.create (mkKey key) (nm col) typ with
-                Column = { ColumnName = col; IsNullable = nullable }
+                Column = ColumnRealization.create (col) (nullable) |> Result.value
                 Length = len
                 IsPrimaryKey = isPk
                 IsMandatory = isPk }
         Kind.create (mkKey "Customer") (nm "Customer")
-            { Schema = "dbo"; Table = "MIG_CUSTOMER"; Catalog = None }
+            (TableId.create "dbo" "MIG_CUSTOMER" |> Result.value)
             [ mkAttr "Customer.Id" "ID" Integer None true false
               mkAttr "Customer.Email" "EMAIL" Text emailLength false true ]
 

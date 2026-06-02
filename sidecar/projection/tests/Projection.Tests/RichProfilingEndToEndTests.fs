@@ -86,9 +86,9 @@ let private parent : Kind =
       Name     = mkName "Parent"
       Origin   = Native
       Modality = []
-      Physical = { Schema = "dbo"; Table = "OSUSR_R9_PARENT"; Catalog = None }
+      Physical = mkTableId "dbo" "OSUSR_R9_PARENT"
       Attributes = [
-          { Attribute.create parentIdKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true } ]
+          { Attribute.create parentIdKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true } ]
       References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
 let private child : Kind =
@@ -96,10 +96,10 @@ let private child : Kind =
       Name     = mkName "Child"
       Origin   = Native
       Modality = []
-      Physical = { Schema = "dbo"; Table = "OSUSR_R9_CHILD"; Catalog = None }
+      Physical = mkTableId "dbo" "OSUSR_R9_CHILD"
       Attributes = [
-          { Attribute.create childIdKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
-          { Attribute.create childParentFkKey (mkName "ParentId") Integer with Column = { ColumnName = "PARENTID"; IsNullable = true } } ]
+          { Attribute.create childIdKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true }
+          { Attribute.create childParentFkKey (mkName "ParentId") Integer with Column = ColumnRealization.create ("PARENTID") (true) |> Result.value } ]
       References = [
           Reference.create childToParentRefKey (mkName "Parent") childParentFkKey parentKindKey ]
       Indexes = []
@@ -110,10 +110,10 @@ let private country : Kind =
       Name     = mkName "Country"
       Origin   = Native
       Modality = []
-      Physical = { Schema = "dbo"; Table = "OSUSR_R9_COUNTRY"; Catalog = None }
+      Physical = mkTableId "dbo" "OSUSR_R9_COUNTRY"
       Attributes = [
-          { Attribute.create countryIdKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
-          { Attribute.create countryNameKey (mkName "Name") Text with Column = { ColumnName = "NAME"; IsNullable = false } } ]
+          { Attribute.create countryIdKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true }
+          { Attribute.create countryNameKey (mkName "Name") Text with Column = ColumnRealization.create ("NAME") (false) |> Result.value } ]
       References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
 let private endToEndCatalog : Catalog =

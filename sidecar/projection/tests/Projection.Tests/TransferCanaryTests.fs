@@ -175,13 +175,13 @@ module private TransferCanaryFixtures =
     let private rpAKey (s: string) : SsKey = SsKey.synthesizedComposite "RP_XFER_ATTR" [ s ] |> Result.value
     let private rpAttr (key: SsKey) (logical: string) (col: string) (isPk: bool) : Attribute =
         { Attribute.create key (rpName logical) (if isPk then Integer else Text) with
-            Column = { ColumnName = col; IsNullable = not isPk }
+            Column = ColumnRealization.create (col) (not isPk) |> Result.value
             IsPrimaryKey = isPk
             IsMandatory = isPk }
     let private rpContract (emailName: string) (emailCol: string) : Catalog =
         let cust =
             Kind.create (rpKKey "Customer") (rpName "Customer")
-                { Schema = "dbo"; Table = "RP_XFER_CUSTOMER"; Catalog = None }
+                (TableId.create "dbo" "RP_XFER_CUSTOMER" |> Result.value)
                 [ rpAttr (rpAKey "Id") "Id" "ID" true
                   rpAttr (rpAKey "Email") emailName emailCol false ]
         Catalog.create
@@ -344,11 +344,11 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                                 let! contractR = ReadSide.read src
                                 let contract = TransferCanaryFixtures.value contractR
                                 let kindByTable (t: string) =
-                                    Catalog.allModulesKinds contract |> List.map snd |> List.find (fun k -> k.Physical.Table = t)
+                                    Catalog.allModulesKinds contract |> List.map snd |> List.find (fun k -> TableId.tableText k.Physical = t)
                                 let userKind = kindByTable "OSUSR_RC_USER"
                                 let orderKind = kindByTable "OSUSR_RC_ORDER"
                                 let emailName =
-                                    userKind.Attributes |> List.find (fun a -> a.Column.ColumnName = "EMAIL") |> (fun a -> a.Name)
+                                    userKind.Attributes |> List.find (fun a -> ColumnRealization.columnNameText a.Column = "EMAIL") |> (fun a -> a.Name)
 
                                 let reconciliation =
                                     Map.ofList [ userKind.SsKey, ReconciliationStrategy.MatchByColumn emailName ]
@@ -403,9 +403,9 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                                 let contract = TransferCanaryFixtures.value contractR
                                 let userKind =
                                     Catalog.allModulesKinds contract |> List.map snd
-                                    |> List.find (fun k -> k.Physical.Table = "OSUSR_RC_USER")
+                                    |> List.find (fun k -> TableId.tableText k.Physical = "OSUSR_RC_USER")
                                 let emailName =
-                                    userKind.Attributes |> List.find (fun a -> a.Column.ColumnName = "EMAIL") |> (fun a -> a.Name)
+                                    userKind.Attributes |> List.find (fun a -> ColumnRealization.columnNameText a.Column = "EMAIL") |> (fun a -> a.Name)
                                 let reconciliation =
                                     Map.ofList [ userKind.SsKey, ReconciliationStrategy.MatchByColumn emailName ]
 
@@ -448,7 +448,7 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                                 let contract = TransferCanaryFixtures.value contractR
                                 let empKind =
                                     Catalog.allModulesKinds contract |> List.map snd
-                                    |> List.find (fun k -> k.Physical.Table = "OSUSR_XF_EMPID")
+                                    |> List.find (fun k -> TableId.tableText k.Physical = "OSUSR_XF_EMPID")
                                 // Precondition: the round-tripped contract classifies the kind
                                 // AssignedBySink (its IDENTITY PK survives ReadSide).
                                 Assert.Equal(IdentityDisposition.AssignedBySink, IdentityDisposition.ofKind empKind)
@@ -494,7 +494,7 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                                 let contract = TransferCanaryFixtures.value contractR
                                 let cmpKind =
                                     Catalog.allModulesKinds contract |> List.map snd
-                                    |> List.find (fun k -> k.Physical.Table = "OSUSR_XF_CMP")
+                                    |> List.find (fun k -> TableId.tableText k.Physical = "OSUSR_XF_CMP")
                                 // Precondition: composite PK reconstructed (>1 IsPrimaryKey column)
                                 // AND classified AssignedBySink (the IDENTITY leg survives ReadSide).
                                 Assert.True((cmpKind.Attributes |> List.filter (fun a -> a.IsPrimaryKey) |> List.length) > 1)
@@ -567,10 +567,10 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                     let contract = TransferCanaryFixtures.value contractR
                     let ticketKind =
                         Catalog.allModulesKinds contract |> List.map snd
-                        |> List.find (fun k -> k.Physical.Table = "OSUSR_TG_TICKET")
+                        |> List.find (fun k -> TableId.tableText k.Physical = "OSUSR_TG_TICKET")
                     let noteKey =
                         ticketKind.Attributes
-                        |> List.find (fun a -> a.Column.ColumnName = "NOTE")
+                        |> List.find (fun a -> ColumnRealization.columnNameText a.Column = "NOTE")
                         |> (fun a -> a.SsKey)
 
                     // Clean (empty) overlay → the pre-flight passes.
@@ -648,7 +648,7 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                                 let contract = TransferCanaryFixtures.value contractR
                                 let userKind =
                                     Catalog.allModulesKinds contract |> List.map snd
-                                    |> List.find (fun k -> k.Physical.Table = "OSUSR_AS_USER")
+                                    |> List.find (fun k -> TableId.tableText k.Physical = "OSUSR_AS_USER")
                                 // Precondition: the reconstructed contract classifies User as
                                 // AssignedBySink (its IDENTITY PK survives the ReadSide round-trip).
                                 Assert.Equal(IdentityDisposition.AssignedBySink, IdentityDisposition.ofKind userKind)
@@ -743,7 +743,7 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                                     let! contractR = ReadSide.read src
                                     let contract = TransferCanaryFixtures.value contractR
                                     let kindByTable (t: string) =
-                                        Catalog.allModulesKinds contract |> List.map snd |> List.find (fun k -> k.Physical.Table = t)
+                                        Catalog.allModulesKinds contract |> List.map snd |> List.find (fun k -> TableId.tableText k.Physical = t)
                                     let userKind = kindByTable "OSUSR_RC_USER"
                                     let orderKind = kindByTable "OSUSR_RC_ORDER"
 

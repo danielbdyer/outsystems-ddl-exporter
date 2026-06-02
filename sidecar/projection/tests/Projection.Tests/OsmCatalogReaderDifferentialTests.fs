@@ -126,10 +126,10 @@ let private expectedCatalog : Catalog =
           Name     = mkName "User"
           Origin   = Native
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_USER"; Catalog = None }
+          Physical = mkTableId "dbo" "OSUSR_APPCORE_USER"
           Attributes = [
-              { Attribute.create userIdAttrKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true; SqlStorage = Some SqlStorageType.BigInt }
-              { Attribute.create userEmailAttrKey (mkName "Email") Text with Column = { ColumnName = "EMAIL"; IsNullable = false }; IsMandatory = true; Length = Some 250; SqlStorage = Some (SqlStorageType.NVarChar (Bounded 250)) }
+              { Attribute.create userIdAttrKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true; SqlStorage = Some SqlStorageType.BigInt }
+              { Attribute.create userEmailAttrKey (mkName "Email") Text with Column = ColumnRealization.create ("EMAIL") (false) |> Result.value; IsMandatory = true; Length = Some 250; SqlStorage = Some (SqlStorageType.NVarChar (Bounded 250)) }
           ]
           References = []
           Indexes    = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
@@ -330,9 +330,9 @@ let private expectedReferenceCatalog : Catalog =
           Name     = mkName "Account"
           Origin   = Native
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_ACCOUNT"; Catalog = None }
+          Physical = mkTableId "dbo" "OSUSR_APPCORE_ACCOUNT"
           Attributes = [
-              { Attribute.create accountIdAttrKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true; SqlStorage = Some SqlStorageType.BigInt }
+              { Attribute.create accountIdAttrKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true; SqlStorage = Some SqlStorageType.BigInt }
           ]
           References = []
           Indexes    = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
@@ -341,10 +341,10 @@ let private expectedReferenceCatalog : Catalog =
           Name     = mkName "User"
           Origin   = Native
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_USER"; Catalog = None }
+          Physical = mkTableId "dbo" "OSUSR_APPCORE_USER"
           Attributes = [
-              { Attribute.create userIdAttrKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true; SqlStorage = Some SqlStorageType.BigInt }
-              { Attribute.create userAccountIdAttrKey (mkName "AccountId") Integer with Column = { ColumnName = "ACCOUNTID"; IsNullable = false }; IsMandatory = true; SqlStorage = Some SqlStorageType.BigInt }
+              { Attribute.create userIdAttrKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true; SqlStorage = Some SqlStorageType.BigInt }
+              { Attribute.create userAccountIdAttrKey (mkName "AccountId") Integer with Column = ColumnRealization.create ("ACCOUNTID") (false) |> Result.value; IsMandatory = true; SqlStorage = Some SqlStorageType.BigInt }
           ]
           References = [
               { Reference.create userAccountReferenceKey (mkName "AccountId") userAccountIdAttrKey accountKindKey with HasDbConstraint = true }
@@ -469,12 +469,12 @@ let private expectedExternalCatalog : Catalog =
           Name     = mkName "BillingAccount"
           Origin   = ExternalIndirect
           Modality = []
-          Physical = { Schema = "billing"; Table = "BILLING_ACCOUNT"; Catalog = None }
+          Physical = mkTableId "billing" "BILLING_ACCOUNT"
           Attributes = [
               // `external_dbType = "int"` is present, but `Identifier`
               // forces the runtime mapping (v1 `TypeMappingPolicy`
               // priority), so the storage stays BIGINT, not the override.
-              { Attribute.create billingAccountIdAttrKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true; ExternalDatabaseType = Some "int"; SqlStorage = Some SqlStorageType.BigInt }
+              { Attribute.create billingAccountIdAttrKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true; ExternalDatabaseType = Some "int"; SqlStorage = Some SqlStorageType.BigInt }
           ]
           References = []
           Indexes    = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
@@ -650,10 +650,10 @@ let private expectedMixedActiveCatalog : Catalog =
           Name     = mkName "ActiveEntity"
           Origin   = Native
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_ACTIVE"; Catalog = None }
+          Physical = mkTableId "dbo" "OSUSR_APPCORE_ACTIVE"
           Attributes = [
-              { Attribute.create activeEntityIdAttrKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true; SqlStorage = Some SqlStorageType.BigInt }
-              { Attribute.create activeEntityDeprecatedAttrKey (mkName "DeprecatedField") Text with Column = { ColumnName = "DEPRECATEDFIELD"; IsNullable = true }; Length = Some 100; IsActive = false; SqlStorage = Some (SqlStorageType.NVarChar (Bounded 100)) }
+              { Attribute.create activeEntityIdAttrKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true; SqlStorage = Some SqlStorageType.BigInt }
+              { Attribute.create activeEntityDeprecatedAttrKey (mkName "DeprecatedField") Text with Column = ColumnRealization.create ("DEPRECATEDFIELD") (true) |> Result.value; Length = Some 100; IsActive = false; SqlStorage = Some (SqlStorageType.NVarChar (Bounded 100)) }
           ]
           References = []
           Indexes    = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
@@ -662,9 +662,9 @@ let private expectedMixedActiveCatalog : Catalog =
           Name     = mkName "RetiredEntity"
           Origin   = Native
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_RETIRED"; Catalog = None }
+          Physical = mkTableId "dbo" "OSUSR_APPCORE_RETIRED"
           Attributes = [
-              { Attribute.create retiredEntityIdAttrKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true; SqlStorage = Some SqlStorageType.BigInt }
+              { Attribute.create retiredEntityIdAttrKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true; SqlStorage = Some SqlStorageType.BigInt }
           ]
           References = []
           Indexes    = []; Description = None; IsActive = false; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
@@ -878,13 +878,13 @@ let private expectedIndexCatalog : Catalog =
           Name     = mkName "User"
           Origin   = Native
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_USER"; Catalog = None }
+          Physical = mkTableId "dbo" "OSUSR_APPCORE_USER"
           Attributes = [
-              { Attribute.create userIdAttrKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true; SqlStorage = Some SqlStorageType.BigInt }
-              { Attribute.create userEmailAttrKey (mkName "Email") Text with Column = { ColumnName = "EMAIL"; IsNullable = false }; IsMandatory = true; Length = Some 250; SqlStorage = Some (SqlStorageType.NVarChar (Bounded 250)) }
-              { Attribute.create userIndexLastNameAttrKey (mkName "LastName") Text with Column = { ColumnName = "LASTNAME"; IsNullable = false }; IsMandatory = true; Length = Some 100; SqlStorage = Some (SqlStorageType.NVarChar (Bounded 100)) }
-              { Attribute.create userIndexFirstNameAttrKey (mkName "FirstName") Text with Column = { ColumnName = "FIRSTNAME"; IsNullable = false }; IsMandatory = true; Length = Some 100; SqlStorage = Some (SqlStorageType.NVarChar (Bounded 100)) }
-              { Attribute.create userIndexEmailLowerAttrKey (mkName "EmailLower") Text with Column = { ColumnName = "EMAILLOWER"; IsNullable = true }; Length = Some 250; SqlStorage = Some (SqlStorageType.NVarChar (Bounded 250)) }
+              { Attribute.create userIdAttrKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true; SqlStorage = Some SqlStorageType.BigInt }
+              { Attribute.create userEmailAttrKey (mkName "Email") Text with Column = ColumnRealization.create ("EMAIL") (false) |> Result.value; IsMandatory = true; Length = Some 250; SqlStorage = Some (SqlStorageType.NVarChar (Bounded 250)) }
+              { Attribute.create userIndexLastNameAttrKey (mkName "LastName") Text with Column = ColumnRealization.create ("LASTNAME") (false) |> Result.value; IsMandatory = true; Length = Some 100; SqlStorage = Some (SqlStorageType.NVarChar (Bounded 100)) }
+              { Attribute.create userIndexFirstNameAttrKey (mkName "FirstName") Text with Column = ColumnRealization.create ("FIRSTNAME") (false) |> Result.value; IsMandatory = true; Length = Some 100; SqlStorage = Some (SqlStorageType.NVarChar (Bounded 100)) }
+              { Attribute.create userIndexEmailLowerAttrKey (mkName "EmailLower") Text with Column = ColumnRealization.create ("EMAILLOWER") (true) |> Result.value; Length = Some 250; SqlStorage = Some (SqlStorageType.NVarChar (Bounded 250)) }
           ]
           References = []
           Indexes = [
@@ -1009,10 +1009,10 @@ let private expectedStaticEntityCatalog : Catalog =
           // flow through `Projection.Adapters.Sql/Static.fs`
           // separately.
           Modality = [ Static [] ]
-          Physical = { Schema = "dbo"; Table = "OSUSR_APPCORE_COUNTRY"; Catalog = None }
+          Physical = mkTableId "dbo" "OSUSR_APPCORE_COUNTRY"
           Attributes = [
-              { Attribute.create countryIdAttrKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true; SqlStorage = Some SqlStorageType.BigInt }
-              { Attribute.create countryCodeAttrKey (mkName "Code") Text with Column = { ColumnName = "CODE"; IsNullable = false }; IsMandatory = true; Length = Some 8; SqlStorage = Some (SqlStorageType.NVarChar (Bounded 8)) }
+              { Attribute.create countryIdAttrKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true; SqlStorage = Some SqlStorageType.BigInt }
+              { Attribute.create countryCodeAttrKey (mkName "Code") Text with Column = ColumnRealization.create ("CODE") (false) |> Result.value; IsMandatory = true; Length = Some 8; SqlStorage = Some (SqlStorageType.NVarChar (Bounded 8)) }
           ]
           References = []
           Indexes    = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }

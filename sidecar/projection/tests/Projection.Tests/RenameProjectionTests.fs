@@ -23,7 +23,7 @@ let private aKey (s: string) : SsKey = SsKey.synthesizedComposite "OS_RP_ATTR" [
 
 let private attr (key: SsKey) (logical: string) (col: string) (isPk: bool) : Attribute =
     { Attribute.create key (nm logical) Text with
-        Column = { ColumnName = col; IsNullable = not isPk }
+        Column = ColumnRealization.create (col) (not isPk) |> Result.value
         IsPrimaryKey = isPk
         IsMandatory = isPk }
 
@@ -32,7 +32,7 @@ let private attr (key: SsKey) (logical: string) (col: string) (isPk: bool) : Att
 /// Contact/CONTACT under the SAME attribute SsKey — a rename).
 let private custKind (emailName: string) (emailCol: string) : Kind =
     Kind.create (kKey "Customer") (nm "Customer")
-        { Schema = "dbo"; Table = "RP_CUSTOMER"; Catalog = None }
+        (TableId.create "dbo" "RP_CUSTOMER" |> Result.value)
         [ attr (aKey "Id") "Id" "ID" true
           attr (aKey "Email") emailName emailCol false ]
 

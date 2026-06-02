@@ -305,7 +305,7 @@ module CatalogDiff =
     /// and added keys are iterated in `SsKey` sort order).
     let synthesizedRenameWarnings (CatalogDiff d) : SynthesizedRenameWarning list =
         let columnSet (k: Kind) =
-            k.Attributes |> List.map (fun a -> a.Column.ColumnName) |> Set.ofList
+            k.Attributes |> List.map (fun a -> ColumnRealization.columnNameText a.Column) |> Set.ofList
         let synthKinds (keys: Set<SsKey>) (catalog: Catalog) =
             keys
             |> Set.toList
@@ -326,8 +326,8 @@ module CatalogDiff =
                     if SsKey.synthesisSource aKey = rSrc && columnSet aKind = rCols then
                         Some
                             { SynthesisSource = (rSrc |> Option.defaultValue "")
-                              SourceTable = sprintf "%s.%s" rKind.Physical.Schema rKind.Physical.Table
-                              TargetTable = sprintf "%s.%s" aKind.Physical.Schema aKind.Physical.Table }
+                              SourceTable = sprintf "%s.%s" (SchemaName.value rKind.Physical.Schema) (TableName.value rKind.Physical.Table)
+                              TargetTable = sprintf "%s.%s" (SchemaName.value aKind.Physical.Schema) (TableName.value aKind.Physical.Table) }
                     else None))
 
     /// All SsKeys in scope of the diff — `source ∪ target`. Equal

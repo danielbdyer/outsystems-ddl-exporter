@@ -185,9 +185,9 @@ module PhysicalRename =
     /// `DECISIONS.md`.
     let toDiagnosticString (rename: PhysicalRename) : string =
         String.concat "" [  // LINT-ALLOW: terminal diagnostic projection; typed `PhysicalRename` record IS the structure
-            rename.Before.Schema; "."; rename.Before.Table
+            SchemaName.value rename.Before.Schema; "."; TableName.value rename.Before.Table
             " -> "
-            rename.After.Schema; "."; rename.After.Table
+            SchemaName.value rename.After.Schema; "."; TableName.value rename.After.Table
         ]
 
 /// Typed payload for `TransformKind.ColumnPhysicallyRenamed` — the
@@ -218,7 +218,7 @@ module ColumnRename =
     /// per the supreme operating discipline at the top of `DECISIONS.md`.
     let toDiagnosticString (rename: ColumnRename) : string =
         String.concat "" [  // LINT-ALLOW: terminal diagnostic projection; typed `ColumnRename` record IS the structure
-            rename.Kind.Schema; "."; rename.Kind.Table; "["
+            SchemaName.value rename.Kind.Schema; "."; TableName.value rename.Kind.Table; "["
             rename.Before; " -> "; rename.After; "]"
         ]
 

@@ -42,11 +42,12 @@ module PhysicalSchemaReader =
             match pk with
             | Some def -> Set.ofList def.Columns
             | None -> Set.empty
+        let schemaStr, tableStr = TableId.qualifiedParts table
         columns
         |> List.map (fun col ->
             {
-                Schema = table.Schema
-                Table = table.Table
+                Schema = schemaStr
+                Table = tableStr
                 Column = col.Name
                 Type = col.Type
                 Nullable = col.Nullable
@@ -65,14 +66,16 @@ module PhysicalSchemaReader =
             (table: TableId)
             (fks: ForeignKeyDef list)
             : PhysicalForeignKey list =
+        let srcSchemaStr, srcTableStr = TableId.qualifiedParts table
         fks
         |> List.map (fun fk ->
+            let tgtSchemaStr, tgtTableStr = TableId.qualifiedParts fk.Target
             {
-                SourceSchema = table.Schema
-                SourceTable = table.Table
+                SourceSchema = srcSchemaStr
+                SourceTable = srcTableStr
                 SourceColumn = fk.SourceColumn
-                TargetSchema = fk.Target.Schema
-                TargetTable = fk.Target.Table
+                TargetSchema = tgtSchemaStr
+                TargetTable = tgtTableStr
                 TargetColumn = fk.TargetColumn
             })
 
@@ -120,15 +123,17 @@ module PhysicalSchemaReader =
                 | SetExtendedProperty (owner, "V2.LogicalName", Some value) ->
                     match owner with
                     | TableProperty table ->
+                        let schemaStr, tableStr = TableId.qualifiedParts table
                         Some
-                            { Schema = table.Schema
-                              Table = table.Table
+                            { Schema = schemaStr
+                              Table = tableStr
                               Column = None
                               LogicalName = value }
                     | ColumnProperty (table, col) ->
+                        let schemaStr, tableStr = TableId.qualifiedParts table
                         Some
-                            { Schema = table.Schema
-                              Table = table.Table
+                            { Schema = schemaStr
+                              Table = tableStr
                               Column = Some col
                               LogicalName = value }
                     | _ -> None

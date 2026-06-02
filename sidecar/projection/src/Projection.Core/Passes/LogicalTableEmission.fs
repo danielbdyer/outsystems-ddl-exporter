@@ -83,10 +83,14 @@ module LogicalTableEmission =
         if System.String.IsNullOrWhiteSpace logical
            || logical.Length > CoordinatesLimits.SqlServerIdentifierMaxLength then
             Some k
-        elif logical = k.Physical.Table then
+        elif logical = TableName.value k.Physical.Table then
             Some k
         else
-            let after = { k.Physical with Table = logical }
+            // The pre-checks above (non-blank + length ≤ 128) match
+            // `TableName.create`'s validation exactly; the create call
+            // therefore cannot fail by construction. The `Result.value`
+            // unwrap is safe here.
+            let after = { k.Physical with Table = TableName.create logical |> Result.value }
             LineageBuffer.add (substitutedEvent k.SsKey k.Physical after) events
             Some { k with Physical = after }
 

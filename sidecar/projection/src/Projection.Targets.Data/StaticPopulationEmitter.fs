@@ -68,7 +68,7 @@ module StaticPopulationEmitter =
     /// `formatRawValue`) interprets the raw string per the column's
     /// `PrimitiveType`.
     let private cellValue (a: Attribute) (raw: string) : CellValue =
-        { Column = a.Column.ColumnName
+        { Column = ColumnRealization.columnNameText a.Column
           Type   = a.Type
           Raw    = raw }
 

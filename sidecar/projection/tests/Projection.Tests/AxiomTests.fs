@@ -598,7 +598,7 @@ let ``L3-Emission-Logical (slice D.1.a): the physical-realization slot adopts th
     // as the physical realization the SSDT emitter reads. The pass is
     // substitution (not rename — no new name authored); both axes
     // (`Kind.Name` / `Kind.Physical`, `Attribute.Name` /
-    // `Attribute.Column.ColumnName`) already exist in the catalog. The
+    // `ColumnRealization.columnNameText Attribute.Column`) already exist in the catalog. The
     // pass aligns physical with logical. Classified
     // `OperatorIntent Emission`; default-on; `Disabled` mode preserves
     // physical-emission for diagnostic / V1-parity fallback. Identity

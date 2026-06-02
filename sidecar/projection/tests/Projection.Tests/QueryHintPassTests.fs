@@ -13,7 +13,7 @@ let private synthKey (ns: string) (key: string) : SsKey =
     SsKey.synthesized ns key |> Result.value
 
 let private physical (table: string) : PhysicalRealization =
-    { Schema = "dbo"; Table = table; Catalog = None }
+    TableId.create "dbo" table |> Result.value
 
 // All keys derived from a single Kind use the Kind's `rootOriginal`
 // projection as their namespace to stay consistent with how

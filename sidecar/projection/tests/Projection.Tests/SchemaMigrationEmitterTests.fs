@@ -73,7 +73,7 @@ let ``migration: a new attribute emits ADD COLUMN`` () =
             Attributes =
                 customer.Attributes
                 @ [ { Attribute.create newKey (nm "Loyalty") Integer with
-                        Column = { ColumnName = "LOYALTY"; IsNullable = true } } ] }
+                        Column = ColumnRealization.create ("LOYALTY") (true) |> Result.value } ] }
     let stmts, _ = migrationOf (catalogWithCustomer c')
     let adds = addColumns stmts
     Assert.Equal(1, List.length adds)

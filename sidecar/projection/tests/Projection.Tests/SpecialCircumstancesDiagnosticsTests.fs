@@ -20,9 +20,9 @@ let private mkKindNoPk (kindName: string) (table: string) : Kind =
     { Kind.create
         kKey
         (mkName kindName)
-        { Schema = "dbo"; Table = table; Catalog = None }
+        (mkTableId "dbo" table)
         [ { Attribute.create aKey (mkName "Label") PrimitiveType.Text with
-              Column       = { ColumnName = "LABEL"; IsNullable = false }
+              Column       = ColumnRealization.create ("LABEL") (false) |> Result.value
               IsPrimaryKey = false } ]
         with References = [] }
 
@@ -34,13 +34,12 @@ let private mkKindWithRefTo (kindName: string) (table: string) (target: Kind) : 
     { Kind.create
         kKey
         (mkName kindName)
-        { Schema = "dbo"; Table = table; Catalog = None }
+        (mkTableId "dbo" table)
         [ { Attribute.create idKey (mkName "Id") PrimitiveType.Integer with
-              Column       = { ColumnName = "ID"; IsNullable = false }
+              Column       = ColumnRealization.create ("ID") (false) |> Result.value
               IsPrimaryKey = true }
           { Attribute.create fkKey (mkName (sprintf "%sId" (Name.value target.Name))) PrimitiveType.Integer with
-              Column       = { ColumnName = (sprintf "%s_ID" ((Name.value target.Name).ToUpperInvariant()))
-                               IsNullable = false }
+              Column       = ColumnRealization.create (sprintf "%s_ID" ((Name.value target.Name).ToUpperInvariant())) false |> Result.value
               IsPrimaryKey = false } ]
         with
         References =

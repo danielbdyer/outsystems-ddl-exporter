@@ -137,7 +137,7 @@ let ``6.D.1: the full A->B loop — migrate, record, then reconstruct reproduces
 // ===========================================================================
 
 let private physicalRenameTarget : Catalog =
-    let c' = { customer with Name = nm "Patron"; Physical = { customer.Physical with Table = "PATRON_TBL" } }
+    let c' = { customer with Name = nm "Patron"; Physical = mkTableId (TableId.schemaText customer.Physical) "PATRON_TBL" }
     IRBuilders.mkCatalog [ { salesModule with Kinds = [ c'; order; country ] } ]
 
 [<Fact>]
@@ -158,7 +158,7 @@ let private columnRenameTarget : Catalog =
             Attributes =
                 customer.Attributes
                 |> List.mapi (fun i a ->
-                    if i = 0 then { a with Name = nm "RenamedCol"; Column = { a.Column with ColumnName = "RENAMED_COL" } } else a) }
+                    if i = 0 then { a with Name = nm "RenamedCol"; Column = { a.Column with ColumnName = ColumnName.create "RENAMED_COL" |> Result.value } } else a) }
     IRBuilders.mkCatalog [ { salesModule with Kinds = [ c'; order; country ] } ]
 
 [<Fact>]
@@ -208,7 +208,7 @@ let ``6.A.7: migrate preview surfaces identity.synthesizedRenameUnstable for a S
     let attrK (parts: string list) : SsKey = SsKey.synthesizedComposite "READSIDE_ATTR" parts |> mustResultOk
     let at7 (k: SsKey) (col: string) (isPk: bool) : Attribute =
         { Attribute.create k (nm col) PrimitiveType.Integer with
-            Column = { ColumnName = col; IsNullable = not isPk }; IsPrimaryKey = isPk; IsMandatory = isPk }
+            Column = ColumnRealization.create (col) (not isPk) |> Result.value; IsPrimaryKey = isPk; IsMandatory = isPk }
     let kindOf7 (kKey: SsKey) (table: string) : Kind =
         Kind.create kKey (nm table) (TableId.create "dbo" table |> mustResultOk)
             [ at7 (attrK [table; "ID"]) "ID" true; at7 (attrK [table; "BODY"]) "BODY" false ]

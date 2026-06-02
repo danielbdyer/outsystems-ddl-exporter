@@ -167,7 +167,7 @@ let ``A.4.7 slice γ: CategoricalUniquenessPass.registered factory carries Opera
 let ``A.4.7 slice γ: TableRename.registered factory carries OperatorIntent Emission site`` () =
     let specs : TableRename.RenameSpec list = [
         { Key    = TableRename.Logical (mkName "Sales", mkName "Customer")
-          Target = { Catalog = None; Schema = "renamed"; Table = "customer_v2" } }
+          Target = mkTableId "renamed" "customer_v2" }
     ]
     let rt = TableRename.registered specs
     Assert.Equal(Schema, rt.Domain)
@@ -177,7 +177,7 @@ let ``A.4.7 slice γ: TableRename.registered factory carries OperatorIntent Emis
 let ``A.4.7 slice γ: TableRename.registered.Run on Ok wraps lineage with empty Diagnostics`` () =
     let specs : TableRename.RenameSpec list = [
         { Key    = TableRename.Logical (mkName "Sales", mkName "Customer")
-          Target = { Catalog = None; Schema = "renamed"; Table = "customer_v2" } }
+          Target = mkTableId "renamed" "customer_v2" }
     ]
     let result = TableRename.registered specs |> fun rt -> rt.Run sampleCatalog
     // Trail carries PhysicallyRenamed events; Diagnostics is empty.
@@ -189,7 +189,7 @@ let ``A.4.7 slice γ: TableRename.registered.Run on Error surfaces ValidationErr
     // Spec targets a kind that doesn't exist in the catalog.
     let specs : TableRename.RenameSpec list = [
         { Key    = TableRename.Logical (mkName "NotAModule", mkName "NotAKind")
-          Target = { Catalog = None; Schema = "x"; Table = "y" } }
+          Target = mkTableId "x" "y" }
     ]
     let result = TableRename.registered specs |> fun rt -> rt.Run sampleCatalog
     // Trail is empty (the pass short-circuited on validation); diagnostics

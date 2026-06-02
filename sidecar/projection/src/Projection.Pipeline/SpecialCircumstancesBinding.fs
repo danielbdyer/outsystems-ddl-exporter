@@ -93,7 +93,7 @@ module SpecialCircumstancesBinding =
             catalog.Modules
             |> List.tryPick (fun m ->
                 m.Kinds
-                |> List.tryFind (fun k -> k.Physical.Table = tableName))
+                |> List.tryFind (fun k -> TableId.tableText k.Physical = tableName))
         match hit with
         | Some k -> Result.success k.SsKey
         | None ->

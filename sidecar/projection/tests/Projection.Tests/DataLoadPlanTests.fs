@@ -17,19 +17,19 @@ let private mkName (s: string) : Name = Name.create s |> mustOk
 
 let private pk (ownerParts: string list) (col: string) (isIdentity: bool) : Attribute =
     { Attribute.create (mkKey (ownerParts @ [col])) (mkName col) Integer with
-        Column       = { ColumnName = col; IsNullable = false }
+        Column       = ColumnRealization.create col false |> Result.value
         IsPrimaryKey = true
         IsIdentity   = isIdentity
         IsMandatory  = true }
 
 let private fkAttr (ownerParts: string list) (col: string) (nullable: bool) : Attribute =
     { Attribute.create (mkKey (ownerParts @ [col])) (mkName col) Integer with
-        Column      = { ColumnName = col; IsNullable = nullable }
+        Column      = ColumnRealization.create col nullable |> Result.value
         IsMandatory = not nullable }
 
 let private kindOf (parts: string list) (table: string) (attrs: Attribute list) (refs: Reference list) : Kind =
     { Kind.create (mkKey parts) (mkName (List.last parts))
-        { Schema = "dbo"; Table = table; Catalog = None }
+        (TableId.create "dbo" table |> mustOk)
         attrs
       with References = refs; Indexes = []; ColumnChecks = [] }
 

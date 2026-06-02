@@ -83,19 +83,19 @@ let private schemaOfCatalog (c: Catalog) : DacSchema =
         |> List.map (fun k ->
             let cols =
                 k.Attributes
-                |> List.map (fun a -> norm a.Column.ColumnName, a.Column.IsNullable)
+                |> List.map (fun a -> norm (ColumnRealization.columnNameText a.Column), a.Column.IsNullable)
                 |> Set.ofList
-            (norm k.Physical.Schema, norm k.Physical.Table), cols)
+            (norm (TableId.schemaText k.Physical), norm (TableId.tableText k.Physical)), cols)
         |> Map.ofList
     // FK shape: referrer kind's physical table → referenced kind's physical table.
     let physicalOf (key: SsKey) =
         kinds
         |> List.tryFind (fun k -> k.SsKey = key)
-        |> Option.map (fun k -> norm k.Physical.Schema, norm k.Physical.Table)
+        |> Option.map (fun k -> norm (TableId.schemaText k.Physical), norm (TableId.tableText k.Physical))
     let fks =
         kinds
         |> List.collect (fun k ->
-            let referrer = norm k.Physical.Schema, norm k.Physical.Table
+            let referrer = norm (TableId.schemaText k.Physical), norm (TableId.tableText k.Physical)
             k.References
             |> List.choose (fun r ->
                 match physicalOf r.TargetKind with
