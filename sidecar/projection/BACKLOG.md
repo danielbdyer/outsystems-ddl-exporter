@@ -15,6 +15,24 @@
 
 See § VII Sequencing graph for the current fan-out and Phase 8 for the structured path.
 
+**Update 2026-06-02 — Wave-6 isomorphism climb: status reconciled; the debrief is the canonical L2/L3 backlog.** The Wave-6 frontier (the L1→L2→L3 climb toward the Total Projection) has advanced well past the 2026-05-31 five-axis red-team that most planning surfaces still describe. **`DEBRIEF_2026_06_02_ISOMORPHISM_CLIMB_AND_BACKLOG.md`** is the canonical state-and-backlog document — the matrix reconciled against HEAD cell by cell, a 20-row fidelity ledger (G1–G20 with file:line + ladder level), and a 10-cluster slice plan (A–J). This ledger summarizes; the debrief is authoritative.
+
+**Wave-6 LANDED (as of 2026-06-02):**
+- **Faithfulness (6.A):** transfer drops fail-loud (exit-9); cyclic/composite `AssignedBySink` refused at the execute-gate; empty-string↔NULL a named tolerance; `Synthesized`-key rename surfaced; `DropFk` audit trail; attribute-level `CatalogDiff` (6.A.10) + `applyDiff` + diff→ALTER (6.A.12) + schema CDC-silence (6.A.13); FK-trust recovered on readback.
+- **Orthogonality (6.B):** Decision↔Data tightening pre-flight (6.B.1); RefactorLog-aware Transfer re-point, wired end-to-end (6.B.2).
+- **L3 composition (6.D.1):** `migrate A B` — the live square commutes on SQL Server (T16); schema ALTER + cross-substrate data load in one command.
+- **Durable provenance (6.H):** `Episode` + `LifecycleStore` + `ChangeManifest` (6.H.1/6.H.2/6.H.4).
+- **F#-practices hygiene:** audit slices 0–12 (IR illegal-state collapses, lens/CE adoption, analyzer gap, test pruning).
+
+**Wave-6 OPEN frontier (the debrief clusters — co-equal #1 first):**
+- **A — T-VI spanning pre-flight suite** (extend `Preflight.fs`): connection (A1), permission (A2, grant-matrix survey-gated), transactional/resumable (A3, granularity survey-gated). *The only place a target is still silently corrupted.*
+- **C1 — `CatalogDiff` captured-surface widening** (`CatalogDiff.fs:380-388`): add Reference/Index/Sequence channels so `migrate A B` stops silently no-op'ing FK/index/sequence changes. *The only place the L3 claim overstates what it round-trips.*
+- **B1 — live `migrate --source-conn --execute` CLI wiring** (today plan-only; live square is test-driven). **Gate behind A + C1.**
+- **D — generated L2/L3 matrix** (`matrix-status.sh` reports L1 presence only; debrief D1/D2). *The keystone — makes the climb self-verifying.*
+- **Supporting:** E1 (reconstruct `Kind.Indexes`), E2 (surface the silent cross-schema FK filter), F1/F2 (FK-trust gate + 3-axis decision adjunction), G1-ref (`Reference` modeling), C2/C3/C4 (the time-integral), J1 (the all-51-label perf canary).
+
+**Gating:** most of the above is survey-independent (buildable now against the local Docker canary); the UAT capability survey (OPEN-2) gates only the A2 grant matrix, the A3 transaction granularity, and B1's live-UAT execution — see debrief §5. This file remains the cutover-era operational ledger; read the debrief for the L2/L3 path.
+
 **Update 2026-05-30 — apex vision + execution plan + self-verification seed** (branch `claude/sidecar-projection-v2-direction-V5CCP`).
 - `NORTH_STAR.md` authored — the **apex vision**, superseding `VISION.md`'s strategic frame. Bullseye = the **Total Projection**: the adjunction `Ingest ∘ Project = id` made *total* (schema/data/identity/time/decision), *executable*, and *self-describing*. Reading order rewired (`KICKOFF.md`, `CLAUDE.md`); `VISION.md` banner-marks itself as the cutover-era operational vision (the first ring).
 - `EXECUTION_PLAN.md` authored — six cross-thread waves, ~25 per-slice specs (files/signatures/acceptance/governance), dependency graph, critical path, and the endgame backlog (E1–E5).

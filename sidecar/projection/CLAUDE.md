@@ -85,6 +85,22 @@ slice; it names the future-state substrate (`EXECUTION_PLAN.md` 6.H: the
 multi-plane `Episode`, the `LifecycleStore`, `CatalogDiff.compose`, the
 change-manifest).
 
+**`DEBRIEF_2026_06_02_ISOMORPHISM_CLIMB_AND_BACKLOG.md`** (2026-06-02) is the
+**canonical current-state debrief + L2/L3 backlog** — the single reconciled
+surface for "where is the isomorphism climb *right now* and what's left." It
+supersedes the *status* (not the framing) of the planning docs above: most of
+them describe the pre-6.A state the codebase has since climbed past (6.A.* /
+6.B.1 / 6.B.2 / 6.D.1 / 6.H.* all landed). It carries (a) the matrix
+reconciled against HEAD, cell by cell; (b) a 20-row fidelity ledger (G1–G20)
+with file:line, ladder level, and the named refusal or silent erasure each is;
+(c) a 10-cluster slice backlog (A–J) with scope, signatures, acceptance
+witnesses, deps, and survey-gating; (d) the critical path and the
+survey-dependent split. **Read it before opening any Wave-6 slice** — it is the
+fastest path to the corrected current state. The other Wave-6 surfaces remain
+canonical for their *framing* (ontology / algebra / morphology); the debrief is
+canonical for the *state and the backlog*. When the climb advances, update the
+debrief first, then propagate.
+
 **`V2_DRIVER.md`** (codified 2026-05-10 chapter 3.7 sidebar; principal-PO
 discussion) is the destination-KPI document — the *why* the cutover
 ladder bends toward V2-driver mode, the per-axis correctness stakes,

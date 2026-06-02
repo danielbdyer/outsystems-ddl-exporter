@@ -1,3 +1,60 @@
+# Handoff letter — 2026-06-02 (the isomorphism-climb debrief is canonical; read it before you open a slice)
+
+To the next agent.
+
+You're picking up the Wave-6 climb with one new load-bearing surface in front of
+you: **`DEBRIEF_2026_06_02_ISOMORPHISM_CLIMB_AND_BACKLOG.md`**. Read it first.
+It exists because the planning docs had drifted from the code — most of them
+still describe the 2026-05-31 five-axis red-team state, and the codebase has
+climbed well past it (6.A.* faithfulness, 6.B.1/6.B.2 orthogonality pre-flights,
+6.D.1 `migrate A B` live, and 6.H.1/6.H.2/6.H.4 durable provenance all landed,
+plus the F#-practices audit slices 0–12). The debrief reconciles the North-Star
+matrix against HEAD cell by cell, then gives you a 20-row fidelity ledger
+(G1–G20, each with file:line + ladder level + the named refusal or silent
+erasure it is) and a 10-cluster slice backlog (A–J) with scope, signatures,
+acceptance witnesses, dependencies, and survey-gating. `EXECUTION_PLAN.md` Wave 6
+and `BACKLOG.md` are now reconciled to match it.
+
+**Where the open work actually is.** The data plane refuses loudly (exit-9 on
+drops; the execute-gate refuses cyclic/composite `AssignedBySink`). The deep
+L2 holes are on the **schema/diff plane** and in **T-VI spanning**:
+
+- **C1 — widen the `CatalogDiff` captured surface** (`CatalogDiff.fs:380-388`).
+  This is the centerpiece: `between`/`applyDiff` — and therefore `migrate A B` —
+  capture only kind + attribute column-shape. References, indexes, and sequences
+  ride through unchanged, so an A→B that adds an FK or changes a sequence is
+  *silently no-op'd*. The round-trip law holds only on the captured surface.
+- **A — the T-VI pre-flight suite** (extend `Preflight.fs`): connection,
+  permission, transactional/resumable. The only place a target can still be
+  *silently corrupted* (write-denied → 0 rows; mid-load crash → half-populated).
+- **B1 — wire `migrate --source-conn --execute`** (today the CLI verb is
+  plan-only; the live square is test-driven). Gate it behind A and C1.
+- **D — the generated L2/L3 matrix** (the old 6.E.1). `matrix-status.sh` reports
+  L1 presence only; it could not see that "6.A un-hollowed ReadSide" still left
+  `Indexes = []` at reconstruction (`ReadSide.fs:877`). Build the generator that
+  reports each cell's ladder level from the proof — the keystone that makes the
+  climb self-verifying.
+
+**The discipline that will bite hardest** is the smart-constructor
+default-substitution bomb (`{ Reference.create … with … }` silently inheriting
+`IsConstraintTrusted = true`; same for `Index.create`'s lock flags). C1, E1, and
+E3 all touch reconstruction sites — set every field the diff touches explicitly.
+The debrief §6 has the full list. Always `bash scripts/test.sh fast` before
+"done"; never run the pure + Docker pools as one `dotnet test`.
+
+**Reading order (~15 min):** the debrief §0→§2 (orientation + the fidelity
+ledger), then the §3 cluster you're about to build, then §4 (critical path) and
+§5 (what's survey-gated vs buildable now). When the climb advances, **update the
+debrief first**, then propagate to the other surfaces — it is now the canonical
+state-and-backlog document; the ontology/algebra/morphology remain canonical for
+their framing.
+
+Hold the spine. Complete the matrix.
+
+— The debrief author (2026-06-02).
+
+---
+
 # Handoff letter — 2026-05-31 (EXECUTION_PLAN Wave 4 CLOSED — 4.2–4.6 shipped)
 
 To the next agent.

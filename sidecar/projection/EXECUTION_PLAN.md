@@ -865,6 +865,17 @@ Bench-driven assessment against the operator-reality canary (150 tables × 6.25k
 
 ### Wave 6 — Substantiating the isomorphism (the A→B Total-Migration epic)
 
+> **Current state lives in the debrief.** This wave's slice *specs* are
+> canonical, but its *status markers* lag the code. For the reconciled
+> as-of-HEAD state — which 6.A/6.B/6.D/6.H slices have landed, the per-gap
+> fidelity ledger (G1–G20), and the re-ordered L2/L3 backlog (clusters A–J) —
+> read **`DEBRIEF_2026_06_02_ISOMORPHISM_CLIMB_AND_BACKLOG.md`**. As of
+> 2026-06-02: 6.A.* (faithfulness), 6.B.1/6.B.2 (orthogonality pre-flights),
+> 6.D.1 (`migrate A B`, live), and 6.H.1/6.H.2/6.H.4 (durable provenance) are
+> **landed**. The open frontier is the debrief's clusters: A (T-VI spanning
+> pre-flights), C1 (the `CatalogDiff` captured-surface widening), B1 (live
+> `migrate --execute` CLI wiring), and D (the generated L2/L3 matrix).
+
 *Source: the 2026-05-31 six-axis red-team — **full-fidelity record in `AUDIT_2026_05_31_FIVE_AXIS_REDTEAM.md`**
 (every per-axis finding, file:line, failure scenario, severity ranking, and the complete acceptance catalog §6);
 `DECISIONS 2026-05-31 — Five-axis red-team` is its summary. Read the audit before opening a slice. The NORTH_STAR matrix
@@ -879,6 +890,42 @@ does **not span** the migration (no Permissions / Transactionality / Connection 
 below names the gap, the first slice, the **acceptance witness** (a named test the matrix generator can see), and
 the **rung/totality** it raises. The governing discipline is unchanged: *every erasure becomes a `Tolerance` entry,
 a structured diagnostic, or a fail-loud refusal — never a silent drop* (T-I faithfulness).
+
+**Reconciliation as of 2026-06-02 (authoritative; the per-slice specs below are
+preserved for their detail).** The faithfulness arc and the L3 composition have
+largely landed; the open frontier is the T-VI spanning pre-flights, the diff
+captured-surface widening, the live `migrate` CLI wiring, and the self-reporting
+matrix. The debrief carries the full fidelity ledger (G-codes) and the re-ordered
+backlog (clusters A–J); the table below maps each Wave-6 slice to its state and,
+where the slice spec is now misleading, the residual gap.
+
+| Slice | State | Residual (→ debrief) |
+|---|---|---|
+| 6.A.1 transfer fail-loud drop-set | ✅ LANDED (exit-9 `DroppedReferencesExit`) | — |
+| 6.A.2 cyclic `AssignedBySink` refusal | ✅ LANDED (execute-gate refusal) | — |
+| 6.A.3 composite-identity refusal | ✅ LANDED (execute-gate refusal) | — |
+| 6.A.4 empty-string↔NULL | ✅ LANDED as **named tolerance** (`EmptyTextNormalizedToNull`) | faithful preservation deferred-with-trigger |
+| 6.A.5 un-hollow `ReadSide` | ◑ **PARTIAL** — FK-trust **recovered**; A42 fixed | FK-trust **not enforced** (G2 → F1); **indexes read but NOT reconstructed** into `Kind.Indexes` (G3 → E1, 3-part) |
+| 6.A.6 name remaining schema erasures | ◑ PARTIAL — NOCHECK-FK emit landed | user ext-props / IDENTITY-seed still to enumerate |
+| 6.A.7 `Synthesized`-key rename | ✅ LANDED (`synthesizedRenameWarnings`) | identity-threading on first import still operator-supplied |
+| 6.A.8 decision uniqueness + FK-trust readback | ◑ PARTIAL — readback un-hollowed | full **3-axis adjunction witness** open (G12 → F2) |
+| 6.A.9 `DropFk` audit trail | ✅ LANDED | — |
+| 6.A.10 attribute-level `CatalogDiff` | ✅ LANDED | column-shape only — see 6.A.11 residual |
+| 6.A.11 `applyDiff` + round-trip law | ◑ **PARTIAL** — law holds **on the captured surface only** | **captured surface excludes references / indexes / sequences** (`CatalogDiff.fs:380-388`; G1 → **C1, the centerpiece**) |
+| 6.A.12 diff→ALTER minimal-touch emitter | ✅ LANDED | extends to new channels with C1 |
+| 6.A.13 schema CDC-silence | ✅ LANDED (`MigrationRun` CDC gate) | — |
+| 6.B.1 Decision↔Data pre-flight | ✅ LANDED (`Preflight`) | — |
+| 6.B.2 RefactorLog-aware Transfer | ✅ LANDED (wired end-to-end) | — |
+| 6.C.1 connection + permission pre-flight | ⬚ **OPEN** | debrief **A1** (connection) + **A2** (permission); A2 grant-matrix survey-gated |
+| 6.C.2 transactional / resumable transfer | ⬚ **OPEN** | debrief **A3**; granularity survey-gated |
+| 6.C.3 cross-DB FK ordering | ⬚ deferred-with-trigger | unchanged |
+| 6.D.1 `migrate A B` | ✅ LANDED (live square; T16) | CLI verb **plan-only** — live `--execute` wiring is debrief **B1** (gate behind A + C1) |
+| 6.E.1 matrix reports the ladder | ⬚ **OPEN** | debrief **D1/D2** — the keystone; generator reports L1/L2/L3 per axis from the proof |
+
+Two new gaps the debrief surfaced that no Wave-6 slice named: **G4** — cross-schema
+FK rows whose `SCHEMA_NAME()` is NULL are **silently filtered** (`ReadSide.fs:580`;
+debrief **E2**); and **G14** — `Reference`'s boolean tuple has expressible illegal
+states (debrief **G1-ref**, a deliberate modeling pass deferred from F#-audit Slice 2).
 
 #### 6.A — Faithfulness: close the silent erasures (L1 → L2)
 
@@ -918,7 +965,12 @@ a structured diagnostic, or a fail-loud refusal — never a silent drop* (T-I fa
   erasure is *closed*, not silent. Trace `RawValueCodec` to confirm the read-side already distinguishes them.
 - **Acceptance:** `` ``data canary: empty-string Text round-trips faithfully (or names the tolerance)`` ``. **~M.**
 
-##### 6.A.5 — Un-hollow `ReadSide`: indexes + FK-trust (Schema + Decision → L2) — **keystone for Decision**
+##### 6.A.5 — Un-hollow `ReadSide`: indexes + FK-trust (Schema + Decision → L2) — **keystone for Decision** — ◑ PARTIAL (2026-06-02)
+> **Reconciled:** FK-trust is now *recovered* (`ReadSide.fs:1075`) and the A42 readback gap is fixed — but two
+> residuals remain: FK-trust is recovered yet **not enforced** (debrief G2 → cluster F1), and **indexes are read but
+> still not reconstructed** into `Kind.Indexes` (`ReadSide.fs:877, 1004` both effectively `[]`; `PhysicalSchema`
+> ignores them via `Tolerance.IndexesUnreflected`). Closing the index hole is the debrief's **E1** (a 3-part slice:
+> reconstruct `Kind.Indexes`, widen `PhysicalSchema`, retire the tolerance).
 - **Gap (red-team Decision #1a/1b, Schema):** `ReadSide` hardcodes `Indexes = []` (M3 MVP) → unique indexes never
   read back; FK recovery does not populate `IsConstraintTrusted` → a deployed `WITH NOCHECK` FK reads back trusted.
 - **First slice:** `ReadSide` reads `sys.indexes`/`sys.index_columns` → `Kind.Indexes`, and `sys.foreign_keys.is_not_trusted`
@@ -973,7 +1025,14 @@ a structured diagnostic, or a fail-loud refusal — never a silent drop* (T-I fa
 - **Acceptance:** `` ``CatalogDiff: a column type change surfaces as an attribute-level Changed entry`` ``. **~M.**
   **Unblocks 6.A.12 and 6.D.1 — nothing in the A→B story is real without it.**
 
-##### 6.A.11 — `applyDiff` + the evolution round-trip law (Time → L2; H-007)
+##### 6.A.11 — `applyDiff` + the evolution round-trip law (Time → L2; H-007) — ◑ PARTIAL (2026-06-02)
+> **Reconciled:** `applyDiff` exists and `applyDiff (between A B) A = B` is witnessed — **but only on the captured
+> surface.** `between`/`applyDiff` capture kind + attribute column-shape and **explicitly exclude references, FKs,
+> indexes, modality, module structure, and sequences** (`CatalogDiff.fs:380-388`); those ride through the base
+> unchanged. So `migrate A B` (which composes `between → emit`) **silently no-ops** any FK/index/sequence change
+> between A and B. Widening the captured surface is the debrief's **C1 — the centerpiece L2 lever** (new Reference /
+> Index / Sequence channels with `between`-side detection + `applyDiff`-side reconstruction; mind the
+> default-substitution bomb).
 - **Gap (red-team Time #1/2):** `replayTo` is a snapshot *fetch*, not a `fold applyDiff`; `applyDiff` does not exist;
   `applyDiff (between A B) A = B` is unproven. The Time axis is a store, not an evolution algebra.
 - **First slice:** define `CatalogDiff.applyDiff : Catalog -> CatalogDiff -> Catalog` (the `between` peer; H-007),
@@ -1021,7 +1080,7 @@ a structured diagnostic, or a fail-loud refusal — never a silent drop* (T-I fa
 
 #### 6.C — Spanning: the missing dimensions (T-VI)
 
-##### 6.C.1 — Connection + permission pre-flight (T-VI)
+##### 6.C.1 — Connection + permission pre-flight (T-VI) — ⬚ OPEN (debrief A1 + A2)
 - **Gap (red-team Spanning #1/#2):** no axis carries grants; a write-denied sink silently transfers zero rows; no
   "both endpoints live + credentialed" check before mutation.
 - **First slice:** a `migrate`/`transfer` pre-flight that probes source `SELECT` + sink `INSERT`/`CREATE` (a no-op
@@ -1029,7 +1088,7 @@ a structured diagnostic, or a fail-loud refusal — never a silent drop* (T-I fa
   write. Permissions as a full IR axis is the larger follow-on; the pre-flight gate is the T-VI floor.
 - **Acceptance:** `` ``migrate pre-flight: a write-denied sink refuses before transferring, not silently zero rows`` ``. **~M.**
 
-##### 6.C.2 — Transactional / resumable transfer (T-VI) — **production-critical**
+##### 6.C.2 — Transactional / resumable transfer (T-VI) — **production-critical** — ⬚ OPEN (debrief A3)
 - **Gap (red-team Spanning #4):** `transfer` has no transaction boundary, no idempotent upsert, no checkpoint; a
   mid-transfer failure leaves a half-populated target with no rollback or safe retry.
 - **First slice:** wrap the per-kind load in an explicit transaction with a checkpoint after each kind; make the
@@ -1080,7 +1139,7 @@ a structured diagnostic, or a fail-loud refusal — never a silent drop* (T-I fa
 
 #### 6.E — The self-report: matrix reports the ladder level (T-IV extension)
 
-##### 6.E.1 — `matrix-status.sh` emits L1/L2/L3 per axis
+##### 6.E.1 — `matrix-status.sh` emits L1/L2/L3 per axis — ⬚ OPEN (debrief D1/D2 — **the keystone**)
 - **Gap:** the generator reports witness-presence (L1) only; the red-team's L2/L3 distinction lives in prose.
 - **First slice:** extend the generator so each axis cell carries its rung — L1 (witness exists), L2 (a faithfulness
   witness exists + the axis's erasures are all named in `Tolerance`/`AxiomTests`), L3 (the axis participates in the
@@ -1088,11 +1147,29 @@ a structured diagnostic, or a fail-loud refusal — never a silent drop* (T-I fa
 - **Acceptance:** `NORTH_STAR.matrix.generated.md` shows a per-axis ladder column; a regression (a new silent
   erasure) drops a cell from L2 → L1 on regeneration. **~M.** *Closes the loop: the matrix self-reports the climb.*
 
-**Sequencing.** 6.A.1 / 6.A.9 are immediate quick wins (fail-loud + audit). **6.A.10 (attribute-level diff) is the
-critical-path keystone** — 6.A.11, 6.A.12, 6.A.13, 6.B.2, and 6.D.1 all depend on it. 6.A.5 unblocks 6.A.8. The
-orthogonality + spanning pre-flights (6.B, 6.C.1) and transactionality (6.C.2) are the safety floor for 6.D.1. The
-honest critical path to Promise 8: **6.A.10 → 6.A.12 → {6.B.1, 6.B.2, 6.C.1, 6.C.2} → 6.D.1**, with the per-axis
-L2 faithfulness slices (6.A.*) landing in parallel as confidence-builders and matrix-rung raisers.
+**Sequencing — reconciled 2026-06-02.** The original critical path
+(**6.A.10 → 6.A.12 → {6.B.1, 6.B.2, 6.C.1, 6.C.2} → 6.D.1**) is mostly walked:
+6.A.10/6.A.12 (attribute diff + diff→ALTER), 6.B.1/6.B.2 (orthogonality
+pre-flights), and 6.D.1 (`migrate A B`, live) have **landed**; 6.A.1/6.A.9 (the
+quick wins) and 6.A.4/6.A.7/6.A.13 are done. **The remaining critical path** —
+now tracked as the debrief's clusters — is:
+
+```
+G1-ref (Reference modeling) → E1 (reconstruct Kind.Indexes)
+        → C1 (widen the CatalogDiff captured surface; the 6.A.11 residual) ★
+        → {A1, A2, A3} (the 6.C.1/6.C.2 pre-flight suite) → B1 (live migrate --execute)
+   and, in parallel:  F1/F2 (the 6.A.8 decision-adjunction closure)
+                      C2/C3/C4 (the time-integral)
+                      D1/D2 (the 6.E.1 generated matrix) — build early; it makes every other slice's progress machine-visible
+```
+
+The two co-equal #1 levers are **A (the T-VI spanning pre-flights — the only place
+a target is still silently corrupted)** and **C1 (the captured-surface widening —
+the only place the L3 `migrate` claim overstates what it round-trips)**. **B1
+(live `migrate --execute`) must sit behind both** — shipping it earlier would let
+the engine claim Promise 8 while violating it. Full slice specs, signatures,
+acceptance witnesses, and survey-gating are in
+`DEBRIEF_2026_06_02_ISOMORPHISM_CLIMB_AND_BACKLOG.md` §3–§5.
 
 #### 6.F — Publication & Provenance (premise-driven; source: `WAVE_6_ONTOLOGY.md`)
 
