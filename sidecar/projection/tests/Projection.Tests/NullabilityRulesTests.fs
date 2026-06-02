@@ -63,7 +63,7 @@ let ``override: an unrelated override does NOT bypass other signals`` () =
         mkConfig 0.0m false
             [ { AttributeKey = unrelated; Action = OverrideAction.KeepNullable } ]
     let decision = decideOnFixture pkAttr cfg
-    Assert.Equal(NullabilityOutcome.EnforceNotNull PrimaryKey, decision.Outcome)
+    Assert.Equal(NullabilityOutcome.EnforceNotNull NullabilityEvidence.PrimaryKey, decision.Outcome)
 
 // ---------------------------------------------------------------------------
 // Structural signals — PK and PhysicallyNotNull fire regardless of mode /
@@ -74,7 +74,7 @@ let ``override: an unrelated override does NOT bypass other signals`` () =
 let ``structural: a PK attribute is always EnforceNotNull(PrimaryKey)`` () =
     let pkAttr = customer.Attributes |> List.find (fun a -> a.IsPrimaryKey)
     let decision = decideOnFixture pkAttr (mkConfig 0.0m false [])
-    Assert.Equal(NullabilityOutcome.EnforceNotNull PrimaryKey, decision.Outcome)
+    Assert.Equal(NullabilityOutcome.EnforceNotNull NullabilityEvidence.PrimaryKey, decision.Outcome)
 
 [<Fact>]
 let ``structural: a non-PK physically-NOT-NULL attribute is EnforceNotNull(PhysicallyNotNull)`` () =
@@ -175,7 +175,7 @@ let ``emptyDecisionSet contains zero decisions`` () =
 
 [<Fact>]
 let ``outcome: NullabilityEvidence variants round-trip`` () =
-    Assert.Equal<NullabilityEvidence>(PrimaryKey, PrimaryKey)
+    Assert.Equal<NullabilityEvidence>(NullabilityEvidence.PrimaryKey, NullabilityEvidence.PrimaryKey)
     Assert.Equal<NullabilityEvidence>(PhysicallyNotNull, PhysicallyNotNull)
     Assert.Equal<NullabilityEvidence>(LogicalMandatoryNoProfile, LogicalMandatoryNoProfile)
     Assert.Equal<NullabilityEvidence>(LogicalMandatoryNoNulls 100L, LogicalMandatoryNoNulls 100L)
@@ -200,8 +200,8 @@ let ``outcome: NullabilityConflict variants round-trip`` () =
 [<Fact>]
 let ``outcome: NullabilityOutcome variants round-trip`` () =
     Assert.Equal<NullabilityOutcome>(
-        NullabilityOutcome.EnforceNotNull PrimaryKey,
-        NullabilityOutcome.EnforceNotNull PrimaryKey)
+        NullabilityOutcome.EnforceNotNull NullabilityEvidence.PrimaryKey,
+        NullabilityOutcome.EnforceNotNull NullabilityEvidence.PrimaryKey)
     Assert.Equal<NullabilityOutcome>(
         NullabilityOutcome.KeepNullable OperatorOverride,
         NullabilityOutcome.KeepNullable OperatorOverride)
@@ -292,7 +292,7 @@ let ``mandatory: PK takes precedence over IsMandatory`` () =
             IsPrimaryKey = true }
     let cfg = mkConfig 0.0m false []
     let decision = NullabilityRules.evaluate "test" cfg attr Profile.empty
-    Assert.Equal(NullabilityOutcome.EnforceNotNull PrimaryKey, decision.Outcome)
+    Assert.Equal(NullabilityOutcome.EnforceNotNull NullabilityEvidence.PrimaryKey, decision.Outcome)
 
 [<Fact>]
 let ``mandatory: PhysicallyNotNull takes precedence over IsMandatory`` () =

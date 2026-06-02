@@ -165,7 +165,7 @@ let ``SalesOrder carries a unique composite (multi-column) index`` () =
         let order = kindNamed "SalesOrder" catalog
         let uniqueComposite =
             order.Indexes
-            |> List.exists (fun ix -> ix.IsUnique && List.length ix.Columns >= 2)
+            |> List.exists (fun ix -> IndexUniqueness.isUnique ix.Uniqueness && List.length ix.Columns >= 2)
         Assert.True(uniqueComposite, "expected a unique multi-column index on SalesOrder"))
 
 [<Fact>]

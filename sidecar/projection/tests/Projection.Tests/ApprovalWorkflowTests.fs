@@ -21,17 +21,17 @@ let private sampleVersion = VersionedPolicy.digestOf Policy.empty
 [<Fact>]
 let ``H-086: pending creates a Pending record`` () =
     let record = ApprovalWorkflow.pending testTime sampleVersion
-    Assert.Equal(Pending, record.Decision)
+    Assert.True(ApprovalWorkflow.isPending record)
     Assert.Equal(sampleVersion, record.PolicyVersion)
-    Assert.Equal(None, record.ApprovedBy)
-    Assert.Equal(None, record.Rationale)
+    Assert.Equal(None, ApprovalWorkflow.approvedBy record)
+    Assert.Equal(None, ApprovalWorkflow.rationale record)
 
 [<Fact>]
 let ``H-086: pendingFor uses the VersionedPolicy's content Digest as the approval anchor`` () =
     let vp = VersionedPolicy.create testTime Policy.empty None
     let record = ApprovalWorkflow.pendingFor testTime vp
     Assert.Equal(vp.Digest, record.PolicyVersion)
-    Assert.Equal(Pending, record.Decision)
+    Assert.True(ApprovalWorkflow.isPending record)
 
 // ---------------------------------------------------------------------------
 // approve
@@ -43,9 +43,9 @@ let ``H-086: approve transitions decision to Approved`` () =
     let record =
         ApprovalWorkflow.pending testTime sampleVersion
         |> ApprovalWorkflow.approve "alice@example.com" (Some "LGTM") at
-    Assert.Equal(Approved, record.Decision)
-    Assert.Equal(Some "alice@example.com", record.ApprovedBy)
-    Assert.Equal(Some "LGTM", record.Rationale)
+    Assert.True(ApprovalWorkflow.isApproved record)
+    Assert.Equal(Some "alice@example.com", ApprovalWorkflow.approvedBy record)
+    Assert.Equal(Some "LGTM", ApprovalWorkflow.rationale record)
     Assert.Equal(at, record.At)
 
 [<Fact>]
@@ -73,9 +73,9 @@ let ``H-086: reject transitions decision to Rejected`` () =
     let record =
         ApprovalWorkflow.pending testTime sampleVersion
         |> ApprovalWorkflow.reject "bob@example.com" (Some "needs rework") at
-    Assert.Equal(Rejected, record.Decision)
-    Assert.Equal(Some "bob@example.com", record.ApprovedBy)
-    Assert.Equal(Some "needs rework", record.Rationale)
+    Assert.True(ApprovalWorkflow.isRejected record)
+    Assert.Equal(Some "bob@example.com", ApprovalWorkflow.approvedBy record)
+    Assert.Equal(Some "needs rework", ApprovalWorkflow.rationale record)
 
 // ---------------------------------------------------------------------------
 // isApproved / isPending
@@ -114,8 +114,8 @@ let ``H-086: decision can be overridden from Approved to Rejected`` () =
         ApprovalWorkflow.pending testTime sampleVersion
         |> ApprovalWorkflow.approve "first-reviewer" None testTime
         |> ApprovalWorkflow.reject "second-reviewer" (Some "reverted") at
-    Assert.Equal(Rejected, record.Decision)
-    Assert.Equal(Some "second-reviewer", record.ApprovedBy)
+    Assert.True(ApprovalWorkflow.isRejected record)
+    Assert.Equal(Some "second-reviewer", ApprovalWorkflow.approvedBy record)
 
 // ---------------------------------------------------------------------------
 // H-086 audit remediation: ApprovalRegistry — indexed store of approval

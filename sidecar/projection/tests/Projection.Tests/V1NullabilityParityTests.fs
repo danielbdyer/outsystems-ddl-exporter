@@ -329,4 +329,4 @@ let ``V2 invariant (V1 implicit): PK + IsMandatory yields PrimaryKey, not Logica
     let idDecision = decisionFor idAttributeKey lineage
     // PK takes precedence; profile evidence is not consulted for PK
     // attributes (signal hierarchy short-circuits at step 2).
-    Assert.Equal(NullabilityOutcome.EnforceNotNull PrimaryKey, idDecision.Outcome)
+    Assert.Equal(NullabilityOutcome.EnforceNotNull NullabilityEvidence.PrimaryKey, idDecision.Outcome)

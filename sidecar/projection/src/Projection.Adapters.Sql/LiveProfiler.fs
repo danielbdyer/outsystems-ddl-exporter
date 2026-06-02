@@ -656,7 +656,7 @@ module LiveProfiler =
             : CompositeUniqueCandidateProfile list =
             use _ = Bench.scope "profile.cache.deriveCompositeUniqueCandidates"
             let isCompositeCandidate (index: Index) : bool =
-                not index.IsUnique && List.length index.Columns >= 2
+                not (IndexUniqueness.isUnique index.Uniqueness) && List.length index.Columns >= 2
             catalog
             |> Catalog.allKinds
             |> List.collect (fun kind ->

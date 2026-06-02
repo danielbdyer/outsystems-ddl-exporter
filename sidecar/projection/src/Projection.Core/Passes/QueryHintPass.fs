@@ -56,7 +56,7 @@ module QueryHintPass =
                     let idxOpt =
                         sourceKind.Indexes
                         |> List.tryFind (fun idx ->
-                            not idx.IsPrimaryKey &&
+                            not (IndexUniqueness.isPrimaryKey idx.Uniqueness) &&
                             Option.isNone idx.FillFactor &&
                             idx.Columns
                             |> List.exists (fun ic -> ic.Attribute = ref_.SourceAttribute))

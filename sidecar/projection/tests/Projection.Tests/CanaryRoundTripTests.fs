@@ -574,7 +574,7 @@ let ``6.A.5 (schema round-trip): a UNIQUE index + a NOCHECK FK survive deploy / 
             let kindByTable t = Catalog.allKinds c |> List.find (fun k -> TableId.tableText k.Physical = t)
             // (a) The UNIQUE index survived — `Indexes` is no longer hollow.
             let parentBack = kindByTable "OSUSR_RT5_PARENT"
-            match parentBack.Indexes |> List.tryFind (fun i -> i.IsUnique) with
+            match parentBack.Indexes |> List.tryFind (fun i -> IndexUniqueness.isUnique i.Uniqueness) with
             | Some i ->
                 // Its key column resolves to the deployed CODE column.
                 let cols =
@@ -636,7 +636,7 @@ let ``6.A.8 (decision adjunction): read-back reproduces EnforceUnique and DropFk
         let parentIndexUnique (cat: Catalog option) : bool option =
             cat
             |> Option.bind (fun c -> Catalog.allKinds c |> List.tryFind (fun k -> TableId.tableText k.Physical = "OSUSR_RT8_PARENT"))
-            |> Option.bind (fun k -> k.Indexes |> List.tryHead |> Option.map (fun i -> i.IsUnique))
+            |> Option.bind (fun k -> k.Indexes |> List.tryHead |> Option.map (fun i -> IndexUniqueness.isUnique i.Uniqueness))
         let childFkCount (cat: Catalog option) : int =
             match cat with
             | Some c -> (PhysicalSchema.ofCatalog c).ForeignKeys |> Set.count

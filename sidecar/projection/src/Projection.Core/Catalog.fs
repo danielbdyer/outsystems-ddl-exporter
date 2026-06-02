@@ -706,12 +706,66 @@ type DataSpace =
     | Filegroup of name: string
     | PartitionScheme of name: string * columns: string list
 
+/// Uniqueness discriminator for indexes (Slice 2a, 2026-06-02). Replaces
+/// the prior `(IsUnique : bool, IsPrimaryKey : bool)` boolean tuple, which
+/// was a 4-state space encoding a 3-state semantic reality: the
+/// `(IsUnique = false, IsPrimaryKey = true)` quadrant typechecked but is
+/// semantically impossible (a primary-key index is unique by definition).
+/// The DU forbids that quadrant by construction.
+///
+/// **Ordering carries semantics**: a PK is "stronger than" a unique
+/// index is "stronger than" a non-unique index. Strategy/diagnostic
+/// surfaces can pattern-match the variant directly; sites that just need
+/// the boolean projection use `IndexUniqueness.isUnique` /
+/// `isPrimaryKey` helpers.
+type IndexUniqueness =
+    /// Ordinary non-unique index — duplicates allowed.
+    | NotUnique
+    /// Uniqueness-enforcing index (not the primary key). Source treats
+    /// duplicates in the keyed columns as a constraint violation.
+    | Unique
+    /// The kind's primary-key index. V1 treats PK as a unique index;
+    /// V2 distinguishes them structurally because emission +
+    /// diagnostics differ (PK is implicitly unique; uniqueness is
+    /// expressed via the constraint shape).
+    | PrimaryKey
+
+[<RequireQualifiedAccess>]
+module IndexUniqueness =
+
+    /// True for `Unique` or `PrimaryKey` (PK is unique by definition).
+    /// Sites that only need the boolean "does this index enforce
+    /// uniqueness?" projection use this helper without pattern-matching.
+    let isUnique (u: IndexUniqueness) : bool =
+        match u with
+        | Unique | PrimaryKey -> true
+        | NotUnique -> false
+
+    /// True iff this is the kind's primary-key index.
+    let isPrimaryKey (u: IndexUniqueness) : bool =
+        match u with
+        | PrimaryKey -> true
+        | _ -> false
+
+    /// Build an `IndexUniqueness` from the legacy `(isUnique, isPrimaryKey)`
+    /// boolean pair. Adapters reading from external formats (V1 JSON, SQL
+    /// reflection rows) project their booleans through this helper to
+    /// reach the typed surface. The legacy "illegal" combination
+    /// `(isUnique = false, isPrimaryKey = true)` is treated as
+    /// `PrimaryKey` (PK is unique by definition; the legacy `IsUnique`
+    /// boolean was redundant when `IsPrimaryKey = true`).
+    let ofLegacyBooleans (isUnique: bool) (isPrimaryKey: bool) : IndexUniqueness =
+        match isUnique, isPrimaryKey with
+        | _,     true  -> PrimaryKey
+        | true,  false -> Unique
+        | false, false -> NotUnique
+
+
 /// A schema-level index on a kind. Carries identity, name, the
 /// participating attribute SsKeys (in declaration order; composite
-/// indexes have multiple), `IsUnique` (does the source treat this index
-/// as a uniqueness constraint), and `IsPrimaryKey` (is this the kind's
-/// primary-key index — V1 treats the PK as a unique index, but V2
-/// distinguishes them at the structural level).
+/// indexes have multiple), and `Uniqueness` (the 3-state
+/// `IndexUniqueness` DU — Slice 2a, 2026-06-02; replaces the prior
+/// `(IsUnique : bool, IsPrimaryKey : bool)` boolean tuple).
 ///
 /// Added under "IR grows under evidence" (DECISIONS.md, 2026-05-10):
 /// the V1 `UniqueIndexDecisionOrchestrator` admire (ADMIRE.md
@@ -732,8 +786,11 @@ type Index = {
     /// slice γ — record-modification from `SsKey list` to
     /// `IndexColumn list`.
     Columns      : IndexColumn list
-    IsUnique     : bool
-    IsPrimaryKey : bool
+    /// Uniqueness discriminator (Slice 2a, 2026-06-02): `NotUnique` /
+    /// `Unique` / `PrimaryKey`. Replaces the prior
+    /// `(IsUnique : bool, IsPrimaryKey : bool)` boolean tuple; see
+    /// `IndexUniqueness` for the rationale.
+    Uniqueness   : IndexUniqueness
     /// SQL Server `sys.extended_properties` annotations attached to
     /// this index. Empty when the source carries none. Chapter A.0'
     /// slice ζ — IR fidelity lift (L3-S9 extended-properties
@@ -1064,8 +1121,7 @@ module Index =
             SsKey                 = ssKey
             Name                  = name
             Columns               = columns
-            IsUnique              = false
-            IsPrimaryKey          = false
+            Uniqueness            = NotUnique
             ExtendedProperties    = []
             Filter                = None
             IncludedColumns       = []

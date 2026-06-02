@@ -337,8 +337,17 @@ module CatalogCodec =
         wField jw "ssKey" wSsKey i.SsKey
         wField jw "name" wName i.Name
         wList jw "columns" wIndexColumn i.Columns
-        jw.WriteBoolean("isUnique", i.IsUnique)
-        jw.WriteBoolean("isPrimaryKey", i.IsPrimaryKey)
+        // Slice 2a (2026-06-02): wire format preserves the legacy
+        // (isUnique, isPrimaryKey) boolean pair so existing serialized
+        // catalogs round-trip; project Uniqueness through to the booleans
+        // at the codec boundary.
+        let isUniqueBool, isPrimaryKeyBool =
+            match i.Uniqueness with
+            | PrimaryKey -> true,  true
+            | Unique     -> true,  false
+            | NotUnique  -> false, false
+        jw.WriteBoolean("isUnique", isUniqueBool)
+        jw.WriteBoolean("isPrimaryKey", isPrimaryKeyBool)
         wList jw "extendedProperties" wExtendedProperty i.ExtendedProperties
         wOpt jw "filter" wStrVal i.Filter
         wList jw "includedColumns" wSsKey i.IncludedColumns
@@ -802,8 +811,7 @@ module CatalogCodec =
             let! dataSpace = optField el "dataSpace" readDataSpace
             return
                 { Index.create ssKey name columns with
-                    IsUnique = isUnique
-                    IsPrimaryKey = isPrimaryKey
+                    Uniqueness = IndexUniqueness.ofLegacyBooleans isUnique isPrimaryKey
                     ExtendedProperties = extendedProperties
                     Filter = filter
                     IncludedColumns = includedColumns

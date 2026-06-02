@@ -888,8 +888,8 @@ let private expectedIndexCatalog : Catalog =
           ]
           References = []
           Indexes = [
-              { Index.ofKeyColumns pkUserIndexKey (mkName "PK_USER") [ userIdAttrKey ] with IsUnique = true; IsPrimaryKey = true }
-              { Index.ofKeyColumns uxUserEmailIndexKey (mkName "UX_USER_EMAIL") [ userEmailAttrKey ] with IsUnique = true }
+              { Index.ofKeyColumns pkUserIndexKey (mkName "PK_USER") [ userIdAttrKey ] with Uniqueness = PrimaryKey }
+              { Index.ofKeyColumns uxUserEmailIndexKey (mkName "UX_USER_EMAIL") [ userEmailAttrKey ] with Uniqueness = Unique }
               { Index.ofKeyColumns ixUserNameIndexKey (mkName "IX_USER_NAME") [ userIndexLastNameAttrKey; userIndexFirstNameAttrKey ] with IncludedColumns = [ userIndexEmailLowerAttrKey ]; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false; IgnoreDuplicateKey = false; IsDisabled = false; DataCompression = None }
           ]
           Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }

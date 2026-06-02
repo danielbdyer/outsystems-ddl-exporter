@@ -283,11 +283,17 @@ module PredicateName =
             || k.Indexes |> List.exists (fun i -> not (List.isEmpty i.ExtendedProperties))
         | PredicateName.HasUniqueIndex ->
             k.Indexes
-            |> List.exists (fun i -> i.IsUnique && not i.IsPrimaryKey)
+            |> List.exists (fun i ->
+                match i.Uniqueness with
+                | Unique -> true
+                | PrimaryKey | NotUnique -> false)
         | PredicateName.HasCompositeUniqueIndex ->
             k.Indexes
             |> List.exists (fun i ->
-                i.IsUnique && not i.IsPrimaryKey && List.length i.Columns > 1)
+                (match i.Uniqueness with
+                 | Unique -> true
+                 | PrimaryKey | NotUnique -> false)
+                && List.length i.Columns > 1)
         | PredicateName.HasFilteredIndex ->
             // Chapter 4.5 slice α — IR evidence lifted via
             // `Index.Filter : string option`. Kind has a filtered
@@ -447,7 +453,10 @@ module Coverage =
             else 0
         let uniqueIndexCount =
             k.Indexes
-            |> List.filter (fun i -> not i.IsPrimaryKey && i.IsUnique)
+            |> List.filter (fun i ->
+                match i.Uniqueness with
+                | Unique -> true
+                | PrimaryKey | NotUnique -> false)
             |> List.length
         let fkCount = List.length k.References
         let checkCount = List.length k.ColumnChecks
@@ -624,7 +633,7 @@ module ManifestEmitter =
                 |> List.map (fun k ->
                     let nonPkIndexCount =
                         k.Indexes
-                        |> List.filter (fun idx -> not idx.IsPrimaryKey)
+                        |> List.filter (fun idx -> not (IndexUniqueness.isPrimaryKey idx.Uniqueness))
                         |> List.length
                     let schemaStr, tableStr = TableId.qualifiedParts k.Physical
                     {

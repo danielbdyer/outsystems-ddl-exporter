@@ -50,7 +50,7 @@ let private indexFixture
     (columns: SsKey list)
     (isUnique: bool)
     : Index =
-    { Index.ofKeyColumns (ssKey key) (name "IX") columns with IsUnique = isUnique }
+    { Index.ofKeyColumns (ssKey key) (name "IX") columns with Uniqueness = (if isUnique then Unique else NotUnique) }
 
 /// Catalog with one already-unique single-column index (Customer.Name)
 /// plus three non-unique single-column indexes that will produce

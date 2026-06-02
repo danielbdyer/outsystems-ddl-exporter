@@ -202,11 +202,11 @@ let ``MILESTONE: three-input projection passes end-to-end through both adapters 
 
     // Parent.Id: PK → EnforceNotNull(PrimaryKey).
     Assert.Equal(
-        NullabilityOutcome.EnforceNotNull PrimaryKey,
+        NullabilityOutcome.EnforceNotNull NullabilityEvidence.PrimaryKey,
         (decisionFor parentIdKey).Outcome)
     // Child.Id: PK → EnforceNotNull(PrimaryKey).
     Assert.Equal(
-        NullabilityOutcome.EnforceNotNull PrimaryKey,
+        NullabilityOutcome.EnforceNotNull NullabilityEvidence.PrimaryKey,
         (decisionFor childIdKey).Outcome)
     // Child.ParentId: nullable, not-PK, no mandatory marker (V2 IR
     // doesn't carry it yet) → KeepNullable(NoTighteningSignal). Profile
@@ -217,7 +217,7 @@ let ``MILESTONE: three-input projection passes end-to-end through both adapters 
         (decisionFor childParentFkKey).Outcome)
     // Country.Id: PK → EnforceNotNull(PrimaryKey).
     Assert.Equal(
-        NullabilityOutcome.EnforceNotNull PrimaryKey,
+        NullabilityOutcome.EnforceNotNull NullabilityEvidence.PrimaryKey,
         (decisionFor countryIdKey).Outcome)
     // Country.Name: not-PK, physically NOT NULL → EnforceNotNull(PhysicallyNotNull).
     Assert.Equal(
@@ -294,7 +294,7 @@ let ``DIFFERENTIAL: V1 Cautious-mode equivalent produces same outcomes for V2-ex
     // lands on Attribute.
     Assert.All((LineageDiagnostics.payload lineage).Decisions, fun d ->
         match d.Outcome with
-        | NullabilityOutcome.EnforceNotNull PrimaryKey -> ()
+        | NullabilityOutcome.EnforceNotNull NullabilityEvidence.PrimaryKey -> ()
         | NullabilityOutcome.EnforceNotNull PhysicallyNotNull -> ()
         | NullabilityOutcome.KeepNullable NoTighteningSignal -> ()
         | other ->

@@ -21,28 +21,25 @@ module ApprovalStore =
     [<Literal>]
     let private isoFormat = "O"   // round-trippable ISO-8601 (DateTimeOffset)
 
-    let private decisionToken (d: ApprovalDecision) : string =
-        match d with
-        | Approved -> "Approved"
-        | Rejected -> "Rejected"
-        | Pending  -> "Pending"
-
-    let private parseDecision (s: string) : ApprovalDecision option =
-        match s with
-        | "Approved" -> Some Approved
-        | "Rejected" -> Some Rejected
-        | "Pending"  -> Some Pending
-        | _ -> None
-
+    /// Slice 2b lift (2026-06-02): the JSON wire format is preserved
+    /// (`decision` / `approvedBy` / `rationale` fields) so existing stored
+    /// approval files round-trip unchanged. Pattern-matching on the
+    /// `ApprovalState` DU projects the variant + conditional fields into
+    /// the legacy three-field shape at the boundary.
     let private writeRecord (jw: Utf8JsonWriter) (r: ApprovalRecord) : unit =
         jw.WriteStartObject()
         jw.WriteString("policyVersion", r.PolicyVersion)
-        jw.WriteString("decision", decisionToken r.Decision)
-        match r.ApprovedBy with
+        let decisionStr, approvedByOpt, rationaleOpt =
+            match r.State with
+            | Pending              -> "Pending",  None,           None
+            | Approved (by, rat)   -> "Approved", Some by,        rat
+            | Rejected (by, rat)   -> "Rejected", Some by,        rat
+        jw.WriteString("decision", decisionStr)
+        match approvedByOpt with
         | Some a -> jw.WriteString("approvedBy", a)
         | None -> jw.WriteNull("approvedBy")
         jw.WriteString("at", r.At.ToString(isoFormat, System.Globalization.CultureInfo.InvariantCulture))
-        match r.Rationale with
+        match rationaleOpt with
         | Some t -> jw.WriteString("rationale", t)
         | None -> jw.WriteNull("rationale")
         jw.WriteEndObject()
@@ -77,9 +74,24 @@ module ApprovalStore =
             | _ -> None
         match tryStr "policyVersion", tryStr "decision" with
         | Some pv, Some decStr ->
-            match parseDecision decStr with
-            | None -> Error (sprintf "unknown decision token '%s'" decStr)
-            | Some decision ->
+            // Slice 2b lift (2026-06-02): reassemble the typed `ApprovalState`
+            // DU from the legacy three-field wire format (`decision` +
+            // `approvedBy` + `rationale`). `Approved` / `Rejected` REQUIRE
+            // `approvedBy`; a malformed file missing the reviewer surfaces
+            // as a parse error rather than silently dropping to `None`.
+            let approvedByOpt = tryStr "approvedBy"
+            let rationaleOpt  = tryStr "rationale"
+            let stateResult : Result<ApprovalState, string> =
+                match decStr, approvedByOpt with
+                | "Pending",  _           -> Ok Pending
+                | "Approved", Some by     -> Ok (Approved (by, rationaleOpt))
+                | "Approved", None        -> Error "Approved record missing 'approvedBy'"
+                | "Rejected", Some by     -> Ok (Rejected (by, rationaleOpt))
+                | "Rejected", None        -> Error "Rejected record missing 'approvedBy'"
+                | _, _ -> Error (sprintf "unknown decision token '%s'" decStr)
+            match stateResult with
+            | Error e -> Error e
+            | Ok state ->
                 let at =
                     match tryStr "at" with
                     | Some s ->
@@ -89,10 +101,8 @@ module ApprovalStore =
                     | None -> DateTimeOffset.MinValue
                 Ok
                     { PolicyVersion = pv
-                      Decision      = decision
-                      ApprovedBy    = tryStr "approvedBy"
-                      At            = at
-                      Rationale     = tryStr "rationale" }
+                      State         = state
+                      At            = at }
         | _ -> Error "record missing required 'policyVersion' / 'decision' string fields"
 
     /// Load the registry from `path`. A **missing file is `Ok empty`** — a

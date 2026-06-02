@@ -61,8 +61,8 @@ let private dsKind (dataSpace: DataSpace option) : Kind =
     let idx =
         { Index.create dsIdxKey (mkName "IX_DataSpaceFixture_Name")
             (IndexColumn.ascendingList [ dsNameAttrKey ]) with
-            IsUnique  = false
-            DataSpace = dataSpace }
+            Uniqueness = NotUnique
+            DataSpace  = dataSpace }
     { Kind.create dsKindKey (mkName "DataSpaceFixture")
         (TableId.create "dbo" "OSUSR_DS_FIXTURE" |> Result.value)
         [ idAttr; nameAttr ]

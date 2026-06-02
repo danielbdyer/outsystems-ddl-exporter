@@ -193,8 +193,7 @@ let ``Chapter 4.5 slice β: HasIncludedIndexColumns returns true when any Index.
             SsKey = mkKey (sprintf "Idx:%d" (List.length included))
             Name = mkName "IX"
             Columns = [ { Attribute = mkKey "Attr.Id"; Direction = IndexColumnDirection.Ascending } ]
-            IsUnique = false
-            IsPrimaryKey = false
+            Uniqueness = NotUnique
             ExtendedProperties = []
             Filter = None
             IncludedColumns = included

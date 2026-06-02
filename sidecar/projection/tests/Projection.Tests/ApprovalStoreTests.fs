@@ -43,9 +43,9 @@ let ``3.2: an approval record round-trips through save -> load -> tryFind`` () =
             | Ok loaded ->
                 match ApprovalRegistry.tryFind "digestA" loaded with
                 | Some r ->
-                    Assert.Equal(Approved, r.Decision)
-                    Assert.Equal(Some "alice", r.ApprovedBy)
-                    Assert.Equal(Some "looks good", r.Rationale)
+                    Assert.True(ApprovalWorkflow.isApproved r)
+                    Assert.Equal(Some "alice", ApprovalWorkflow.approvedBy r)
+                    Assert.Equal(Some "looks good", ApprovalWorkflow.rationale r)
                     Assert.Equal("digestA", r.PolicyVersion)
                     Assert.Equal(at, r.At)
                 | None -> Assert.Fail("digestA not found after round-trip"))
@@ -59,9 +59,9 @@ let ``3.2: None fields (pending record, no approver / rationale) round-trip`` ()
         | Ok loaded ->
             match ApprovalRegistry.tryFind "digestP" loaded with
             | Some r ->
-                Assert.Equal(Pending, r.Decision)
-                Assert.Equal(None, r.ApprovedBy)
-                Assert.Equal(None, r.Rationale)
+                Assert.True(ApprovalWorkflow.isPending r)
+                Assert.Equal(None, ApprovalWorkflow.approvedBy r)
+                Assert.Equal(None, ApprovalWorkflow.rationale r)
             | None -> Assert.Fail("digestP not found")
         | Error e -> Assert.Fail(sprintf "%A" e))
 

@@ -163,7 +163,7 @@ let ``5.3.α.index: PK-marked indexes do not produce CREATE INDEX statements`` (
     let enriched = enrich sampleCatalog
     for kind in Catalog.allKinds enriched do
         let body = bodyOf kind.SsKey sampleCatalog
-        let pkIndexes = kind.Indexes |> List.filter (fun i -> i.IsPrimaryKey)
+        let pkIndexes = kind.Indexes |> List.filter (fun i -> IndexUniqueness.isPrimaryKey i.Uniqueness)
         for pkIndex in pkIndexes do
             // The PK constraint name typically isn't IX_*-style; just
             // assert we don't see a CREATE INDEX with the PK index's

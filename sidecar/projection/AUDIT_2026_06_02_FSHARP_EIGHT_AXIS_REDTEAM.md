@@ -785,32 +785,96 @@ than the principled cost. The exception is *named*, not implicit."
 **Risk:** none.
 **Dependency:** none.
 
-### Slice 2 (small; 1–2 days). IR boolean-tuple collapse
+### Slice 2 — **LANDED 2026-06-02 (sub-slices 2a + 2b)**. IR boolean-tuple collapse.
 
 **Principle:** 1 (illegal states), 11 (cardinality), 6 (closed sums).
-**Files:** `Catalog.fs:701-808` (`Index` → `IndexUniqueness`),
-`ApprovalWorkflow.fs:6-30` (`ApprovalRecord` → `ApprovalState`).
-Deliberately defer `Reference` (`Catalog.fs:549-595`) pending
-deliberate modeling.
-**Action:**
-```fsharp
-type IndexUniqueness =
-    | NotUnique
-    | Unique
-    | PrimaryKey
 
-type ApprovalState =
-    | Pending of at : DateTimeOffset
-    | Decided of decision : ApprovalDecision
-                 * by : Email
-                 * at : DateTimeOffset
-                 * rationale : string option
-```
-Update consumers (compiler will walk).
-**Risk:** medium — `Index` has many consumers; serialization codecs
-need to round-trip across the variant change.
-**Dependency:** none. Pairs naturally with the smart-constructor
-audit (§4.2.1's identity slice) but is independent.
+**Sub-slice 2b: `ApprovalState` lift** (ApprovalRecord boolean-tuple →
+closed DU). The prior `(Decision : ApprovalDecision, ApprovedBy :
+string option, Rationale : string option)` triple carried a convention
+"Pending → both `None`; Approved/Rejected → both `Some`" — the
+combination `{ Decision = Pending; ApprovedBy = Some "alice" }`
+typechecked but was semantically impossible.
+
+Final shape: `ApprovalState = Pending | Approved of by × rationale |
+Rejected of by × rationale`; the conditional fields are packaged inside
+the variants where they belong. `ApprovalDecision` retired (its three
+variants are now the discriminator of `ApprovalState`).
+`ApprovalRecord = { PolicyVersion; State; At }`.
+
+Companion accessors: `ApprovalWorkflow.isApproved` / `isPending` /
+`isRejected` (boolean projections); `approvedBy` / `rationale`
+(option projections). Consumers that previously did
+`record.Decision = Approved` now use `isApproved`; previously
+`record.ApprovedBy` becomes `approvedBy record`.
+
+JSON wire format preserved via `ApprovalStore.writeRecord` /
+`readRecord` projecting the typed `ApprovalState` to/from the legacy
+three-field shape (`decision` / `approvedBy` / `rationale`). A
+malformed record with `decision = "Approved"` but no `approvedBy`
+now surfaces as a parse error (was: silent `None`); the typed DU
+makes the invariant structural.
+
+**Sub-slice 2a: `IndexUniqueness` lift** (Index boolean-tuple → 3-state
+DU). The prior `(IsUnique : bool, IsPrimaryKey : bool)` was a 4-state
+space encoding a 3-state semantic reality — `(IsUnique = false,
+IsPrimaryKey = true)` typechecked but was impossible (PK is unique by
+definition).
+
+Final shape: `IndexUniqueness = NotUnique | Unique | PrimaryKey`.
+`Index.Uniqueness : IndexUniqueness` (the prior `IsUnique` +
+`IsPrimaryKey` fields retired). Companion module
+`IndexUniqueness.isUnique` / `isPrimaryKey` for sites needing the
+boolean projection; `IndexUniqueness.ofLegacyBooleans` for adapter
+boundaries reading from V1 JSON / SQL reflection where the source
+data carries the legacy booleans (handles the impossible-quadrant
+correctly: `(_, true) → PrimaryKey`).
+
+Boolean-projection pattern preferred at sites that genuinely only
+need "is unique" or "is PK" (most strategies / passes); pattern-match
+on `idx.Uniqueness` directly preferred at sites making the three-way
+discrimination explicit (e.g., ManifestEmitter's predicate-name
+evaluator). JSON wire format preserved via `CatalogCodec` projecting
+`Uniqueness` to/from the legacy two-boolean wire shape.
+
+**Walked surfaces (sub-slice totals):**
+- 2b: ~3 src/ files (ApprovalWorkflow, ApprovalStore, CLI) +
+  2 test files (~18 consumer-site updates).
+- 2a: 4 src/ files (SsdtDdlEmitter, ManifestEmitter, CatalogCodec,
+  + 3 already-clean adapters via earlier sweeps) +
+  ~18 test files (~112 consumer-site updates); subagent absorbed
+  the mechanical walk.
+
+**Discipline surface discovered**: `IndexUniqueness.PrimaryKey`
+collides with `NullabilityEvidence.PrimaryKey` at unqualified-access
+sites. The codebase's existing discipline (CLAUDE.md programming
+style "`[<RequireQualifiedAccess>]` when case names may collide")
+applies — for this slice, qualified `NullabilityEvidence.PrimaryKey`
+at the 12 affected test sites resolved the collision; promoting
+`IndexUniqueness` to `[<RequireQualifiedAccess>]` is a follow-up
+amendment if collisions multiply.
+
+**Validation**: full solution builds clean. Fast pure test pool:
+2650 passed / 207 skipped / 0 failed — exact match to baseline.
+Behavior preservation by construction (the lift retires structurally
+impossible quadrants that no production code constructed; JSON wire
+format unchanged; assertion semantics preserved via the boolean
+projection accessors).
+
+**Two illegal-state classes eliminated**:
+1. `ApprovalRecord` with `Pending` decision + `Some "alice"` reviewer
+   — typechecked but semantically impossible; now structurally
+   impossible.
+2. `Index` with `IsUnique = false` + `IsPrimaryKey = true` —
+   typechecked but semantically impossible (PK is unique); now
+   structurally impossible.
+
+**Deliberately deferred**: `Reference`'s boolean tuple
+(`IsConstraintTrusted = true + HasDbConstraint = false` etc.) per the
+audit's "needs more care" framing. Some of its boolean orthogonality
+is genuinely independent (FK constraint trust state vs. presence vs.
+direction); requires deliberate domain modeling not just mechanical
+collapse.
 
 ### Slice 3 — **LANDED 2026-06-02**. Lens adoption + Optics.fs extraction + broader Core sweep.
 

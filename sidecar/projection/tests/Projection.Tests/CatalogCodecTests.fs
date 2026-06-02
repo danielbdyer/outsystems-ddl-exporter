@@ -154,7 +154,7 @@ let private richCatalog () : Catalog =
 
     let richIndex =
         { Index.create (key 15) (nm "IX_Patron_Name") [ { Attribute = nameAttr; Direction = IndexColumnDirection.Descending } ] with
-            IsUnique = true
+            Uniqueness = Unique
             ExtendedProperties = [ { Name = "MS_Description"; Value = Some "name index" } ]
             Filter = Some "([FullName] IS NOT NULL)"
             IncludedColumns = [ idAttr ]
@@ -171,8 +171,7 @@ let private richCatalog () : Catalog =
 
     let pkIndex =
         { Index.create (key 16) (nm "PK_Patron") [ { Attribute = idAttr; Direction = IndexColumnDirection.Ascending } ] with
-            IsUnique = true
-            IsPrimaryKey = true
+            Uniqueness = PrimaryKey
             DataCompression = Some DataCompressionLevel.Row
             DataSpace = Some (DataSpace.Filegroup "PRIMARY") }
 
@@ -517,13 +516,13 @@ let private genKind (kindIx: int) (allKindKeys: SsKey list) : Gen<Kind> =
                 gen {
                     let! colKey = Gen.elements attrKeys
                     let! dir = Gen.elements [ IndexColumnDirection.Ascending; IndexColumnDirection.Descending ]
-                    let! uniq = genBool
+                    let! uniqueness = Gen.elements [ IndexUniqueness.NotUnique; IndexUniqueness.Unique; IndexUniqueness.PrimaryKey ]
                     let! comp = genOpt (Gen.elements [ DataCompressionLevel.None; DataCompressionLevel.Row; DataCompressionLevel.Page ])
                     let! space = genOpt (Gen.elements [ DataSpace.Filegroup "PRIMARY"; DataSpace.PartitionScheme ("ps", [ "a" ]) ])
                     let! filt = genOpt (Gen.constant "([x] IS NOT NULL)")
                     return
                         { Index.create (key (30000 + kindIx * 100 + ix)) (nm (sprintf "IX%d_%d" kindIx ix)) [ { Attribute = colKey; Direction = dir } ] with
-                            IsUnique = uniq; DataCompression = comp; DataSpace = space; Filter = filt } } ]
+                            Uniqueness = uniqueness; DataCompression = comp; DataSpace = space; Filter = filt } } ]
             |> genAll
 
         let! nMarks = Gen.choose (0, 3)

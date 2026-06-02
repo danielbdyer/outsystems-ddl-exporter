@@ -242,17 +242,17 @@ let private indexedCatalog : Catalog =
             { SsKey = idxKey ["IndexedWidget"; "UQ"; "Code"]
               Name = mkName "UQ_IndexedWidget_Code"
               Columns = IndexColumn.ascendingList [ codeKey ]
-              IsUnique = true; IsPrimaryKey = false; ExtendedProperties = []; Filter = None; IncludedColumns = []; IsPlatformAuto = false; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false; IgnoreDuplicateKey = false; IsDisabled = false; DataCompression = None; DataSpace = None }
+              Uniqueness = Unique; ExtendedProperties = []; Filter = None; IncludedColumns = []; IsPlatformAuto = false; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false; IgnoreDuplicateKey = false; IsDisabled = false; DataCompression = None; DataSpace = None }
             // Composite (non-unique) index on Region + Label.
             { SsKey = idxKey ["IndexedWidget"; "IX"; "RegionLabel"]
               Name = mkName "IX_IndexedWidget_RegionLabel"
               Columns = IndexColumn.ascendingList [ regionKey; labelKey ]
-              IsUnique = false; IsPrimaryKey = false; ExtendedProperties = []; Filter = None; IncludedColumns = []; IsPlatformAuto = false; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false; IgnoreDuplicateKey = false; IsDisabled = false; DataCompression = None; DataSpace = None }
+              Uniqueness = NotUnique; ExtendedProperties = []; Filter = None; IncludedColumns = []; IsPlatformAuto = false; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false; IgnoreDuplicateKey = false; IsDisabled = false; DataCompression = None; DataSpace = None }
             // Non-unique single-column index on Region.
             { SsKey = idxKey ["IndexedWidget"; "IX"; "Region"]
               Name = mkName "IX_IndexedWidget_Region"
               Columns = IndexColumn.ascendingList [ regionKey ]
-              IsUnique = false; IsPrimaryKey = false; ExtendedProperties = []; Filter = None; IncludedColumns = []; IsPlatformAuto = false; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false; IgnoreDuplicateKey = false; IsDisabled = false; DataCompression = None; DataSpace = None }
+              Uniqueness = NotUnique; ExtendedProperties = []; Filter = None; IncludedColumns = []; IsPlatformAuto = false; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false; IgnoreDuplicateKey = false; IsDisabled = false; DataCompression = None; DataSpace = None }
         ]
         Description = None
         IsActive = true
@@ -291,6 +291,6 @@ let ``Slice γ: Indexes round-trip through DacFx model`` () =
     let uniqueCatalog =
         Catalog.allKinds enriched
         |> List.collect (fun k -> k.Indexes)
-        |> List.filter (fun i -> i.IsUnique)
+        |> List.filter (fun i -> IndexUniqueness.isUnique i.Uniqueness)
         |> List.length
     Assert.Equal (uniqueCatalog, uniqueDacpac)

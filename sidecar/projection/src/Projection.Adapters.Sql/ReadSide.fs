@@ -1234,7 +1234,11 @@ module ReadSide =
                         match SsKey.synthesized "READSIDE_IDX" (sprintf "%s.%s.%s" (TableId.schemaText k.Physical) (TableId.tableText k.Physical) indexName),
                               Name.create indexName with
                         | Ok sk, Ok nm ->
-                            Some { Index.create sk nm keyColumns with IsUnique = (cols |> List.exists (fun r -> r.IsUnique)) }
+                            // ReadSide query at readIndexes excludes PKs (`is_primary_key = 0`),
+                            // so PrimaryKey is unreachable here; project IsUnique via
+                            // ofLegacyBooleans with isPK = false to reach the typed surface.
+                            let isU = cols |> List.exists (fun r -> r.IsUnique)
+                            Some { Index.create sk nm keyColumns with Uniqueness = IndexUniqueness.ofLegacyBooleans isU false }
                         | _ -> None)
             { k with Indexes = recovered }
 

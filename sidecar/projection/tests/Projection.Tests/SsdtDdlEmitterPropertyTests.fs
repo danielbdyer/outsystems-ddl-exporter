@@ -330,7 +330,7 @@ let private idxAxisKind
         { Index.create
             (idxKey ["PropIdx"; "IX_Name_A"]) (mkName "IX_PropIdx_NameA")
             (IndexColumn.ascendingList [ idxNameAttr ]) with
-            IsUnique           = true
+            Uniqueness         = Unique
             IgnoreDuplicateKey = ignoreDup
             IsDisabled         = disabled
             DataCompression    = compression }
@@ -338,7 +338,7 @@ let private idxAxisKind
         { Index.create
             (idxKey ["PropIdx"; "IX_Name_B"]) (mkName "IX_PropIdx_NameB")
             (IndexColumn.ascendingList [ idxNameAttr; idxIdAttr ]) with
-            IsUnique           = false
+            Uniqueness         = NotUnique
             IgnoreDuplicateKey = ignoreDup
             IsDisabled         = disabled
             DataCompression    = compression }

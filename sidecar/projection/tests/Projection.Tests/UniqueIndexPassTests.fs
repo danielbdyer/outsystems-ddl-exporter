@@ -36,7 +36,7 @@ let private indexFixture
     (columns: SsKey list)
     (isUnique: bool)
     : Index =
-    { Index.ofKeyColumns (ssKey key) (name "IX") columns with IsUnique = isUnique }
+    { Index.ofKeyColumns (ssKey key) (name "IX") columns with Uniqueness = (if isUnique then Unique else NotUnique) }
 
 let private mkConfig (single: bool) (composite: bool) : UniqueIndexTighteningConfig =
     UniqueIndexTighteningConfig.create single composite

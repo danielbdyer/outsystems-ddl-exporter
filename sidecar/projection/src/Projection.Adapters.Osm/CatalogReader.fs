@@ -1333,8 +1333,7 @@ module CatalogReader =
                 // defaults pending a rowset wiring slice.
                 Result.success
                     { Index.create k n cols with
-                        IsUnique       = isUnique
-                        IsPrimaryKey   = isPrimary
+                        Uniqueness     = IndexUniqueness.ofLegacyBooleans isUnique isPrimary
                         Filter         = filter
                         IncludedColumns = includedCols
                         IsPlatformAuto = isPlatformAuto }
@@ -2107,8 +2106,7 @@ module CatalogReader =
                     | _      -> None)
             Result.success
                 { Index.create k n keys with
-                    IsUnique              = row.IsUnique
-                    IsPrimaryKey          = row.IsPrimary
+                    Uniqueness            = IndexUniqueness.ofLegacyBooleans row.IsUnique row.IsPrimary
                     Filter                = filter
                     IncludedColumns       = included
                     FillFactor            = fillFactor

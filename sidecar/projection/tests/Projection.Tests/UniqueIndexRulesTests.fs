@@ -25,7 +25,7 @@ let private indexFixture
     (columns: SsKey list)
     (isUnique: bool)
     : Index =
-    { Index.ofKeyColumns (ssKey key) (name "IX") columns with IsUnique = isUnique }
+    { Index.ofKeyColumns (ssKey key) (name "IX") columns with Uniqueness = (if isUnique then Unique else NotUnique) }
 
 let private mkProbe (rowCount: int64) : ProbeStatus =
     ProbeStatus.create DateTimeOffset.UnixEpoch rowCount Succeeded

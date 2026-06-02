@@ -390,7 +390,7 @@ module SsdtDdlEmitter =
     // un-uniques a source-unique index.
     let private indexStatements (overlay: DecisionOverlay) (k: Kind) : Statement list =
         k.Indexes
-        |> List.filter (fun idx -> not idx.IsPrimaryKey)
+        |> List.filter (fun idx -> not (IndexUniqueness.isPrimaryKey idx.Uniqueness))
         |> List.sortBy (fun idx -> idx.SsKey)
         |> List.map (fun idx ->
             // Chapter 4.9 slice γ — Index.Columns now carries
@@ -430,7 +430,7 @@ module SsdtDdlEmitter =
                     Name     = Name.value idx.Name
                     Table    = toTableId k
                     Columns  = keyColumns
-                    IsUnique = idx.IsUnique || Set.contains idx.SsKey overlay.EnforceUnique
+                    IsUnique = IndexUniqueness.isUnique idx.Uniqueness || Set.contains idx.SsKey overlay.EnforceUnique
                     Filter   = idx.Filter
                     IncludedColumns = includedColumnNames
                     // Chapter 4.8 slice β — on-disk index options.
@@ -456,7 +456,7 @@ module SsdtDdlEmitter =
     /// (matrix row 55).
     let private disabledIndexAlters (k: Kind) : Statement list =
         k.Indexes
-        |> List.filter (fun idx -> not idx.IsPrimaryKey && idx.IsDisabled)
+        |> List.filter (fun idx -> not (IndexUniqueness.isPrimaryKey idx.Uniqueness) && idx.IsDisabled)
         |> List.sortBy (fun idx -> idx.SsKey)
         |> List.map (fun idx ->
             Statement.AlterIndexDisable (toTableId k, Name.value idx.Name))
