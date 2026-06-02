@@ -1506,6 +1506,22 @@ module ScriptDomBuild =
             else AlterTableAlterColumnOption.NotNull
         stmt
 
+    /// C1 emitter follow-on — `ALTER TABLE <table> ADD CONSTRAINT <fk>
+    /// FOREIGN KEY …` via ScriptDom's `AlterTableAddTableElementStatement`,
+    /// reusing `foreignKeyConstraint` so a standalone-added FK is byte-identical
+    /// to the same FK inlined in a CREATE TABLE.
+    let buildAlterTableAddForeignKey
+            (table: TableId)
+            (fk: ForeignKeyDef)
+            : AlterTableAddTableElementStatement =
+        use _ = Bench.scope "emit.scriptDom.build.alterTableAddForeignKey"
+        let stmt = AlterTableAddTableElementStatement()
+        stmt.SchemaObjectName <- schemaObjectFromTableId table
+        let def = TableDefinition()
+        def.TableConstraints.Add(foreignKeyConstraint fk)
+        stmt.Definition <- def
+        stmt
+
     /// Canonical Diagnostics-bearing entry point (chapter 4.9 slice ζ).
     let buildSetExtendedProperty
             (owner: ExtendedPropertyOwner)
@@ -1660,3 +1676,5 @@ module ScriptDomBuild =
             Some (buildAlterTableAddColumn table column :> TSqlStatement)
         | AlterTableAlterColumn (table, column) ->
             Some (buildAlterTableAlterColumn table column :> TSqlStatement)
+        | AlterTableAddForeignKey (table, fk) ->
+            Some (buildAlterTableAddForeignKey table fk :> TSqlStatement)

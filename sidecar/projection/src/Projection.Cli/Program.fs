@@ -867,6 +867,83 @@ let private runMigratePreview (fromPath: string) (toPath: string) (allowDrops: b
         dumpBench "migrate"
         exitCode
 
+/// `projection migrate --to <modelB.json> --conn <env|file:ref> --execute
+/// [--allow-drops] [--allow-cdc]` — B1, the LIVE L3 execution (Promise 8).
+/// Reads the deployed state A from the connected database, evolves it IN PLACE
+/// to B (minimum-viable ALTER/ADD; fail-loud on drops / unexpressible changes /
+/// CDC), reads B' back, and verifies B' reproduces B (the live square — T16).
+/// Gated by `PROJECTION_ALLOW_EXECUTE=1` (R6) AND the connection pre-flight (A1,
+/// before any mutation). The permission pre-flight (A2) wiring is the
+/// survey-gated follow-on — the gate exists in `Preflight`; its grant scope
+/// waits on the capability survey (OPEN-2 / P1).
+let private runMigrateExecute (toPath: string) (connSpec: string) (allowDrops: bool) (allowCdc: bool) : int =
+    if System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" <> "1" then
+        Console.Error.WriteLine
+            "projection migrate: --execute requires PROJECTION_ALLOW_EXECUTE=1 in the environment (R6 gate). Refusing."
+        dumpBench "migrate"
+        7
+    else
+    let work =
+        task {
+            let! bRead = Compose.read toPath
+            match bRead, TransferSpec.parseConnectionSpec connSpec with
+            | Error es, _ ->
+                Console.Error.WriteLine (sprintf "projection migrate: could not read --to %s:" toPath)
+                printErrors Console.Error es
+                return 6
+            | _, Error es ->
+                Console.Error.WriteLine "projection migrate: --conn argument error:"
+                printErrors Console.Error es
+                return 2
+            | Ok target, Ok connRef ->
+                let sub : Substrate =
+                    { Environment   = parseEnvironment "migrate-sink" None
+                      Role          = SubstrateRole.Sink
+                      ConnectionRef = connRef }
+                match! ConnectionResolver.openSubstrate sub with
+                | Error es ->
+                    Console.Error.WriteLine "projection migrate: could not open --conn:"
+                    printErrors Console.Error es
+                    return 3
+                | Ok cnn ->
+                    use cnn = cnn
+                    // A1 — connection pre-flight BEFORE any mutation.
+                    match! Preflight.connectionPreflight cnn cnn with
+                    | Error es ->
+                        Console.Error.WriteLine "projection migrate: connection pre-flight refused:"
+                        printErrors Console.Error es
+                        return 7
+                    | Ok () ->
+                        let! outcome = MigrationRun.executeFromLive allowCdc allowDrops target cnn
+                        match outcome with
+                        | Ok o when o.Verified ->
+                            printfn "projection migrate: executed and VERIFIED — B' reproduces B (%d statement(s))"
+                                (List.length o.Artifacts.SchemaStatements)
+                            return 0
+                        | Ok _ ->
+                            Console.Error.WriteLine
+                                "projection migrate: executed but verification FAILED — B' does not reproduce B."
+                            return 9
+                        | Error (RefusedByViolations violations) ->
+                            Console.Error.WriteLine (
+                                sprintf "projection migrate: REFUSED — %d destructive change(s) require --allow-drops." (List.length violations))
+                            return 9
+                        | Error (RefusedBySchemaErrors entries) ->
+                            Console.Error.WriteLine "projection migrate: REFUSED — change(s) the engine cannot express as a single ALTER:"
+                            for e in entries do Console.Error.WriteLine (sprintf "    [%s] %s" e.Code e.Message)
+                            return 9
+                        | Error (RefusedByCdc tracked) ->
+                            Console.Error.WriteLine (
+                                sprintf "projection migrate: REFUSED — schema DDL against a CDC-tracked DB (%d table(s)); pass --allow-cdc to proceed." (List.length tracked))
+                            return 9
+                        | Error other ->
+                            Console.Error.WriteLine (sprintf "projection migrate: failed: %A" other)
+                            return 2
+        }
+    let code = work.GetAwaiter().GetResult()
+    dumpBench "migrate"
+    code
+
 [<EntryPoint>]
 let main argv =
     match argv with
@@ -903,6 +980,20 @@ let main argv =
         runMigratePreview fromPath toPath false
     | [| "migrate"; "--from"; fromPath; "--to"; toPath; "--allow-drops" |] ->
         runMigratePreview fromPath toPath true
+    | arr when arr.Length >= 1 && arr.[0] = "migrate" && Array.contains "--execute" arr ->
+        // B1 — live execution: `migrate --to <modelB> --conn <ref> --execute
+        // [--allow-drops] [--allow-cdc]`. Flag-order-independent parse.
+        let valueOf (flag: string) =
+            arr
+            |> Array.tryFindIndex ((=) flag)
+            |> Option.bind (fun i -> if i + 1 < arr.Length then Some arr.[i + 1] else None)
+        match valueOf "--to", valueOf "--conn" with
+        | Some toPath, Some connSpec ->
+            runMigrateExecute toPath connSpec (Array.contains "--allow-drops" arr) (Array.contains "--allow-cdc" arr)
+        | _ ->
+            Console.Error.WriteLine
+                "projection migrate --execute: --to <modelB.json> and --conn <env|file:ref> are required."
+            2
     | [| "transfer" |] ->
         Console.Error.WriteLine "projection transfer: --source-conn and --sink-conn required"
         Console.Error.WriteLine ""

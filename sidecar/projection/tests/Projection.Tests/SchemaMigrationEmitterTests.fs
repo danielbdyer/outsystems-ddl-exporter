@@ -144,3 +144,80 @@ let ``migration: a rename alone emits no ALTER (renames are the RefactorLog chan
     Assert.Empty(alterColumns stmts)
     Assert.Empty(addColumns stmts)
     Assert.Empty(entries)
+
+// ---------------------------------------------------------------------------
+// C1 emitter follow-on — reference / index / sequence channel emission. Added
+// FK/index/sequence emit their minimum-viable DDL; a Trust-only FK change
+// emits the WITH NOCHECK two-step; destructive/unsupported changes refuse
+// fail-loud (named Error). Same discipline as the attribute channel above.
+// ---------------------------------------------------------------------------
+
+let private migrationBetween (source: Catalog) (target: Catalog) : Statement list * DiagnosticEntry list =
+    let m = SchemaMigrationEmitter.emit (CatalogDiff.between source target |> mustOk)
+    m.Value, m.Entries
+
+let private catalogOf (kinds: Kind list) (seqs: Sequence list) : Catalog =
+    Catalog.create [ { salesModule with Kinds = kinds } ] seqs |> Result.value
+
+let private orderNoRef : Kind = { order with References = [] }
+let private seqKey (s: string) : SsKey = kindKey [ "Seq"; s ]
+let private orderNumberSeq : Sequence =
+    Sequence.create (seqKey "OrderNumber") (nm "OrderNumber") "dbo" "bigint"
+        (Some 1m) (Some 1m) (Some 1m) (Some 9999999999m) false SequenceCacheMode.Unspecified None
+    |> Result.value
+let private customerNameIdx : Index =
+    { Index.create (idxKey [ "Customer"; "UX_Name" ]) (nm "UX_Customer_Name")
+        (IndexColumn.ascendingList [ customerNameKey ]) with Uniqueness = Unique }
+
+let private hasError (code: string) (entries: DiagnosticEntry list) =
+    entries |> List.exists (fun e -> e.Code = code && e.Severity = DiagnosticSeverity.Error)
+
+[<Fact>]
+let ``C1 emit: an added FK emits ALTER TABLE ADD CONSTRAINT FOREIGN KEY (not a CREATE)`` () =
+    let stmts, entries = migrationBetween (catalogOf [ customer; orderNoRef; country ] []) (catalogOf [ customer; order; country ] [])
+    Assert.False(stmts |> List.exists isCreateTable)
+    Assert.Equal(1, stmts |> List.filter (function Statement.AlterTableAddForeignKey _ -> true | _ -> false) |> List.length)
+    Assert.False(entries |> List.exists (fun e -> e.Severity = DiagnosticSeverity.Error))
+    // The new variant renders to real T-SQL through ScriptDom (the full path).
+    let sql = ScriptDomGenerate.toText (Seq.ofList stmts)
+    Assert.Contains("ALTER TABLE", sql)
+    Assert.Contains("FOREIGN KEY", sql)
+    Assert.Contains("REFERENCES", sql)
+
+[<Fact>]
+let ``C1 emit: an added UNIQUE index emits CREATE INDEX`` () =
+    let target = catalogOf [ { customer with Indexes = [ customerNameIdx ] }; order; country ] []
+    let stmts, entries = migrationBetween (catalogOf [ customer; order; country ] []) target
+    Assert.Equal(1, stmts |> List.filter (function Statement.CreateIndex _ -> true | _ -> false) |> List.length)
+    Assert.False(entries |> List.exists (fun e -> e.Severity = DiagnosticSeverity.Error))
+
+[<Fact>]
+let ``C1 emit: an added sequence emits CREATE SEQUENCE`` () =
+    let stmts, entries = migrationBetween (catalogOf [ customer; order; country ] []) (catalogOf [ customer; order; country ] [ orderNumberSeq ])
+    Assert.Equal(1, stmts |> List.filter (function Statement.CreateSequence _ -> true | _ -> false) |> List.length)
+    Assert.False(entries |> List.exists (fun e -> e.Severity = DiagnosticSeverity.Error))
+
+[<Fact>]
+let ``C1 emit: an FK trust change (trusted -> NOCHECK) emits the disable + nocheck two-step`` () =
+    let orderUntrusted =
+        { order with References = order.References |> List.map (fun r -> { r with IsConstraintTrusted = false }) }
+    let stmts, _ = migrationBetween (catalogOf [ customer; order; country ] []) (catalogOf [ customer; orderUntrusted; country ] [])
+    Assert.True(stmts |> List.exists (function Statement.AlterTableDisableConstraint _ -> true | _ -> false))
+    Assert.True(stmts |> List.exists (function Statement.AlterTableNoCheckConstraint _ -> true | _ -> false))
+
+[<Fact>]
+let ``C1 emit: a dropped FK refuses fail-loud (migration.destructiveReferenceDrop)`` () =
+    let _, entries = migrationBetween (catalogOf [ customer; order; country ] []) (catalogOf [ customer; orderNoRef; country ] [])
+    Assert.True(hasError "migration.destructiveReferenceDrop" entries)
+
+[<Fact>]
+let ``C1 emit: a changed index refuses fail-loud (migration.unsupportedIndexChange)`` () =
+    let a = catalogOf [ { customer with Indexes = [ { customerNameIdx with Uniqueness = NotUnique } ] }; order; country ] []
+    let b = catalogOf [ { customer with Indexes = [ customerNameIdx ] }; order; country ] []
+    let _, entries = migrationBetween a b
+    Assert.True(hasError "migration.unsupportedIndexChange" entries)
+
+[<Fact>]
+let ``C1 emit: a dropped sequence refuses fail-loud (migration.destructiveSequenceDrop)`` () =
+    let _, entries = migrationBetween (catalogOf [ customer; order; country ] [ orderNumberSeq ]) (catalogOf [ customer; order; country ] [])
+    Assert.True(hasError "migration.destructiveSequenceDrop" entries)

@@ -147,6 +147,127 @@ module SchemaMigrationEmitter =
                         key targetKind)
             adds @ alters, alterWarnings @ alterRefusals @ dropRefusals
 
+    // -- C1 follow-on: reference / index / sequence channel emission ---------
+    //
+    // Same "safe-additive first, destructive refused fail-loud" discipline as
+    // the attribute channel. Added FKs / indexes / sequences emit their
+    // minimum-viable DDL; a Trust-only FK change emits the WITH NOCHECK
+    // two-step (6.A.6); every other change/removal refuses with a named Error
+    // (no silent drop, no DROP+CREATE the operator didn't declare). The clean
+    // ALTER for those (DROP CONSTRAINT / DROP INDEX / ALTER SEQUENCE under an
+    // explicit allow-drops) is the next follow-on.
+
+    /// Per-kind reference (FK) channel emission.
+    let private kindReferenceMigration
+        (targetCatalog: Catalog)
+        (kindKey: SsKey)
+        (rd: ReferenceDiff)
+        : Statement list * DiagnosticEntry list =
+        match Catalog.tryFindKind kindKey targetCatalog with
+        | None -> [], []
+        | Some targetKind ->
+            let table = targetKind.Physical
+            let refByKey = targetKind.References |> List.map (fun r -> r.SsKey, r) |> Map.ofList
+            let nocheckSteps (fk: ForeignKeyDef) =
+                [ Statement.AlterTableDisableConstraint (table, fk.Name)
+                  Statement.AlterTableNoCheckConstraint (table, fk.Name) ]
+            // Added FKs — additive. Resolve via the public emitter surface;
+            // refuse fail-loud when the FK target/PK is not in the catalog.
+            let addStmts, addRefusals =
+                targetKind.References
+                |> List.filter (fun r -> Set.contains r.SsKey rd.Added)
+                |> List.fold
+                    (fun (stmts, refusals) r ->
+                        match SsdtDdlEmitter.foreignKeyDefOf targetCatalog targetKind r with
+                        | Some fk ->
+                            let trust = if not r.IsConstraintTrusted then nocheckSteps fk else []
+                            stmts @ (Statement.AlterTableAddForeignKey (table, fk) :: trust), refusals
+                        | None ->
+                            stmts,
+                            refusals @ [ diag DiagnosticSeverity.Error "migration.unresolvedReferenceAdd"
+                                            "Added FK's target kind / PK is not in the catalog (cross-catalog FK); refused — no ADD CONSTRAINT emitted."
+                                            r.SsKey targetKind ])
+                    ([], [])
+            // Changed: Trust-only → reproduce WITH NOCHECK; everything else refuses.
+            let changeStmts, changeRefusals =
+                rd.Changed
+                |> List.fold
+                    (fun (stmts, refusals) (change: ReferenceChange) ->
+                        match Map.tryFind change.ReferenceKey refByKey with
+                        | Some r when change.Facets = Set.singleton ReferenceFacet.Trust && not r.IsConstraintTrusted ->
+                            match SsdtDdlEmitter.foreignKeyDefOf targetCatalog targetKind r with
+                            | Some fk -> stmts @ nocheckSteps fk, refusals
+                            | None -> stmts, refusals
+                        | _ ->
+                            stmts,
+                            refusals @ [ diag DiagnosticSeverity.Error "migration.unsupportedReferenceChange"
+                                            "FK shape change needs DROP+ADD CONSTRAINT; refused — declare it explicitly to proceed."
+                                            change.ReferenceKey targetKind ])
+                    ([], [])
+            let removeRefusals =
+                rd.Removed
+                |> Set.toList
+                |> List.map (fun key ->
+                    diag DiagnosticSeverity.Error "migration.destructiveReferenceDrop"
+                        "FK drop changes referential integrity; refused — declare the drop explicitly to proceed."
+                        key targetKind)
+            addStmts @ changeStmts, addRefusals @ changeRefusals @ removeRefusals
+
+    /// Per-kind index channel emission.
+    let private kindIndexMigration
+        (targetCatalog: Catalog)
+        (kindKey: SsKey)
+        (idd: IndexDiff)
+        : Statement list * DiagnosticEntry list =
+        match Catalog.tryFindKind kindKey targetCatalog with
+        | None -> [], []
+        | Some targetKind ->
+            let addedIndexes = targetKind.Indexes |> List.filter (fun i -> Set.contains i.SsKey idd.Added)
+            // PK-backing indexes are inlined in CREATE TABLE; an added PK index
+            // on an existing table needs table-level DDL — refuse.
+            let pkRefusals =
+                addedIndexes
+                |> List.filter (fun i -> IndexUniqueness.isPrimaryKey i.Uniqueness)
+                |> List.map (fun i ->
+                    diag DiagnosticSeverity.Error "migration.unsupportedIndexChange"
+                        "PK-backing index add on an existing table needs table-level DDL; refused." i.SsKey targetKind)
+            let addStmts = SsdtDdlEmitter.createIndexStatements targetKind addedIndexes
+            let changeRefusals =
+                idd.Changed
+                |> List.map (fun (c: IndexChange) ->
+                    diag DiagnosticSeverity.Error "migration.unsupportedIndexChange"
+                        "Index change needs DROP+CREATE INDEX; refused — declare it explicitly to proceed." c.IndexKey targetKind)
+            let removeRefusals =
+                idd.Removed
+                |> Set.toList
+                |> List.map (fun key ->
+                    diag DiagnosticSeverity.Error "migration.destructiveIndexDrop"
+                        "Index drop is destructive; refused — declare the drop explicitly to proceed." key targetKind)
+            addStmts, pkRefusals @ changeRefusals @ removeRefusals
+
+    /// Catalog-level sequence channel emission (sequences are not kind-scoped).
+    let private sequenceMigration
+        (targetCatalog: Catalog)
+        (sd: SequenceDiff)
+        : Statement list * DiagnosticEntry list =
+        let seqDiag (code: string) (message: string) (key: SsKey) : DiagnosticEntry =
+            { DiagnosticEntry.create source DiagnosticSeverity.Error code message with SsKey = Some key }
+        let addStmts =
+            targetCatalog.Sequences
+            |> List.filter (fun s -> Set.contains s.SsKey sd.Added)
+            |> List.sortBy (fun s -> SsKey.rootOriginal s.SsKey)
+            |> List.map Statement.CreateSequence
+        let changeRefusals =
+            sd.Changed
+            |> List.map (fun (c: SequenceChange) ->
+                seqDiag "migration.unsupportedSequenceChange"
+                    "Sequence change needs ALTER SEQUENCE; refused (follow-on)." c.SequenceKey)
+        let removeRefusals =
+            sd.Removed
+            |> Set.toList
+            |> List.map (seqDiag "migration.destructiveSequenceDrop" "Sequence drop is destructive; refused.")
+        addStmts, changeRefusals @ removeRefusals
+
     /// Emit the schema migration's ALTER differential from a `CatalogDiff`.
     /// Kinds sorted by SsKey root for deterministic statement order. The
     /// `Diagnostics` channel carries `Warning` (narrowing — emitted) and
@@ -157,13 +278,23 @@ module SchemaMigrationEmitter =
         use _ = Bench.scope "emit.schemaMigration.emit"
         let sourceCatalog = CatalogDiff.source diff
         let targetCatalog = CatalogDiff.target diff
-        let statements, entries =
-            CatalogDiff.attributeDiffs diff
+        let foldByKind (diffs: Map<SsKey, 'd>) (f: SsKey -> 'd -> Statement list * DiagnosticEntry list) =
+            diffs
             |> Map.toList
             |> List.sortBy (fun (k, _) -> SsKey.rootOriginal k)
             |> List.fold
-                (fun (accStmts, accEntries) (kindKey, ad) ->
-                    let stmts, entries = kindMigration sourceCatalog targetCatalog kindKey ad
+                (fun (accStmts, accEntries) (kindKey, d) ->
+                    let stmts, entries = f kindKey d
                     accStmts @ stmts, accEntries @ entries)
                 ([], [])
+        // Deploy order: sequences (schema objects referenced by DEFAULTs) →
+        // column adds/alters → indexes → FKs (after their columns + target
+        // tables exist). Refusals from every channel aggregate so a consumer
+        // fails loud on any Error before deploying.
+        let seqStmts, seqEntries = sequenceMigration targetCatalog (CatalogDiff.sequenceDiff diff)
+        let attrStmts, attrEntries = foldByKind (CatalogDiff.attributeDiffs diff) (kindMigration sourceCatalog targetCatalog)
+        let idxStmts, idxEntries = foldByKind (CatalogDiff.indexDiffs diff) (kindIndexMigration targetCatalog)
+        let refStmts, refEntries = foldByKind (CatalogDiff.referenceDiffs diff) (kindReferenceMigration targetCatalog)
+        let statements = seqStmts @ attrStmts @ idxStmts @ refStmts
+        let entries = seqEntries @ attrEntries @ idxEntries @ refEntries
         Diagnostics.tellMany entries (Diagnostics.ofValue statements)

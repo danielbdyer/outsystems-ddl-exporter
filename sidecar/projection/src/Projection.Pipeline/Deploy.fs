@@ -813,11 +813,11 @@ module Deploy =
                     // any stale bulk state before executing.
                     do! flushBulk ()
                     appendDdl s
-                | AlterTableAddColumn _ | AlterTableAlterColumn _ ->
-                    // 6.A.12: minimum-viable-touch migration DDL (ALTER TABLE
-                    // ADD / ALTER COLUMN); same realization shape as the
-                    // other DDL arms — flush pending bulk inserts, then route
-                    // through Render.toSql (ScriptDomGenerate).
+                | AlterTableAddColumn _ | AlterTableAlterColumn _ | AlterTableAddForeignKey _ ->
+                    // 6.A.12 + C1: minimum-viable-touch migration DDL (ALTER
+                    // TABLE ADD / ALTER COLUMN; ADD CONSTRAINT FOREIGN KEY);
+                    // same realization shape as the other DDL arms — flush
+                    // pending bulk inserts, then route through Render.toSql.
                     do! flushBulk ()
                     appendDdl s
                 | InsertRow (table, values) ->

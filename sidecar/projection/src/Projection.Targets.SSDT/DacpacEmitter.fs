@@ -72,7 +72,7 @@ module DacpacEmitter =
         | CreateTable _ | CreateIndex _ | SetExtendedProperty _
         | AlterTableNoCheckConstraint _ | AlterTableDisableConstraint _ | AlterIndexDisable _
         | CreateTrigger _ | AlterTableDisableTrigger _ | CreateSequence _
-        | AlterTableAddColumn _ | AlterTableAlterColumn _ -> true
+        | AlterTableAddColumn _ | AlterTableAlterColumn _ | AlterTableAddForeignKey _ -> true
         | InsertRow _ | SetIdentityInsert _ | Comment _ | Blank | BatchSeparator -> false
 
     /// Render one DDL Statement into its standalone T-SQL form via

@@ -361,3 +361,11 @@ type Statement =
     /// DEFAULT / computed / identity change (those need separate
     /// constraint DDL; the migration emitter refuses them fail-loud).
     | AlterTableAlterColumn of table: TableId * column: ColumnDef
+    /// C1 emitter follow-on — `ALTER TABLE <table> ADD CONSTRAINT <fk>
+    /// FOREIGN KEY (<col>) REFERENCES <target> (<col>)`. The additive
+    /// minimum-viable-touch for a new reference on an existing kind
+    /// (`CatalogDiff.ReferenceDiffs[k].Added`). Distinct from the inline FK
+    /// in CREATE TABLE: the table already exists. ScriptDom builds via
+    /// `AlterTableAddTableElementStatement` carrying one
+    /// `ForeignKeyConstraintDefinition` (reusing `foreignKeyConstraint`).
+    | AlterTableAddForeignKey of table: TableId * fk: ForeignKeyDef

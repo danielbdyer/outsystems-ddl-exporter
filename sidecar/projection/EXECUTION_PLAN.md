@@ -1037,8 +1037,12 @@ states (debrief **G1-ref**, a deliberate modeling pass deferred from F#-audit Sl
 > indexes / sequences; `applyDiff (between A B) A = B` holds on the widened
 > surface (11 `` ``C1: …`` `` witnesses in `CatalogDiffTests.fs`). An FK/index/
 > sequence change is no longer invisible (`isEmpty` honest; `norm`/`channelCounts`
-> count it). Remaining: the emitter-side minimal-touch ALTER for the new channels
-> — until it lands, `migrate` fails loud at verify rather than silently no-op'ing.
+> count it). **Emitter-side LANDED 2026-06-02:** added FK → `ALTER TABLE ADD
+> CONSTRAINT FOREIGN KEY` (new `AlterTableAddForeignKey` variant), added index →
+> `CREATE INDEX`, added sequence → `CREATE SEQUENCE`, Trust-only FK change → the
+> WITH NOCHECK two-step; destructive/unsupported changes refuse fail-loud. So
+> `migrate` now emits a real minimum-viable ALTER for an added FK/index/sequence.
+> Remaining: the destructive cases under `--allow-drops` + `ALTER SEQUENCE`.
 - **Gap (red-team Time #1/2):** `replayTo` is a snapshot *fetch*, not a `fold applyDiff`; `applyDiff` does not exist;
   `applyDiff (between A B) A = B` is unproven. The Time axis is a store, not an evolution algebra.
 - **First slice:** define `CatalogDiff.applyDiff : Catalog -> CatalogDiff -> Catalog` (the `between` peer; H-007),
@@ -1117,6 +1121,13 @@ states (debrief **G1-ref**, a deliberate modeling pass deferred from F#-audit Sl
 #### 6.D — The composition: `migrate A B` (the L3 bullseye; Promise 8)
 
 ##### 6.D.1 — `migrate` orchestrator (the L3 bullseye) — **LANDED 2026-06-01 (composition + durable loop + LIVE execution on SQL Server)**
+> **B1 LANDED 2026-06-02 — the live verb is operator-reachable.**
+> `projection migrate --to <modelB.json> --conn <ref> --execute [--allow-drops]
+> [--allow-cdc]` (`runMigrateExecute`) drives `MigrationRun.executeFromLive`,
+> R6-gated (`PROJECTION_ALLOW_EXECUTE=1`) with the A1 connection pre-flight
+> before any mutation. The cross-substrate `--source-conn` data-load form
+> (`executeWithData`) + the A2 permission-pre-flight wiring are the survey-gated
+> follow-ons.
 - **Gap (closed):** there was no single orchestrator — the operator manually sequenced five verbs, and renames
   never reached the rename channel. "Nearly one command" was five commands with a seam.
 - **Shipped — the composition:** `Migration` (`Projection.Core/Migration.fs`) + `MigrationRun`

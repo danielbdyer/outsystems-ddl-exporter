@@ -329,14 +329,22 @@ This cluster is the structural heart of the L2/L3 climb. **C1 is the centerpiece
 > 11 tests in `CatalogDiffTests.fs` (`` ``C1: …`` `` — added/changed/dropped FK,
 > added/changed index incl. the `Options` default-substitution guard, added/
 > reshaped sequence, the integrative all-three round-trip, the isEmpty honesty
-> regression guard, and the norm channel counts). **Follow-on (not yet done):**
-> the *emitter-side* minimal-touch emission for the new channels
-> (`SchemaMigrationEmitter` → `ALTER TABLE ADD/DROP CONSTRAINT`, `CREATE/DROP
-> INDEX`, `ALTER SEQUENCE`, or DacFx delegation). Until it lands, `migrate A B`
-> now *detects* an FK/index/sequence change (`isEmpty` is honest, the preview
-> counts it) and fails **loud at verification** (B' ≠ B) instead of silently
-> no-op'ing — the silent erasure became a loud refusal; the clean ALTER is the
-> remaining reach.
+> regression guard, and the norm channel counts).
+>
+> **STATUS — emitter-side LANDED 2026-06-02 (safe-additive).** `SchemaMigrationEmitter`
+> now emits the new channels: an **added FK** → `ALTER TABLE ADD CONSTRAINT …
+> FOREIGN KEY` (new `Statement.AlterTableAddForeignKey` variant + ScriptDom
+> builder reusing `foreignKeyConstraint`; renders to real T-SQL); an **added
+> index** → `CREATE INDEX`; an **added sequence** → `CREATE SEQUENCE`; a
+> **Trust-only FK change** → the WITH NOCHECK two-step (6.A.6). Every other
+> change/removal **refuses fail-loud** with a named Error (`migration.destructive*`
+> / `migration.unsupported*`) — same add-vs-refuse discipline as the attribute
+> channel. 7 emitter witnesses in `SchemaMigrationEmitterTests.fs` (incl. a
+> render-to-T-SQL assertion on the FK-add path). `migrate A B` now produces a
+> real minimum-viable ALTER for an added FK/index/sequence instead of failing
+> at verify. **Remaining reach:** the destructive cases under an explicit
+> `--allow-drops` (DROP CONSTRAINT / DROP INDEX / DROP SEQUENCE) and `ALTER
+> SEQUENCE` for a reshaped sequence — the next follow-on.
 
 - **Totality:** T-I (round-trip faithfulness) on Schema + Time; the forcing
   instance for L3 `migrate`.
@@ -459,6 +467,22 @@ durable. This is the Schema + Time axes reaching L2-faithful and L3-composed.
 ### Cluster B — Make `migrate A B` operator-reachable (the L3 face)
 
 #### B1 — Wire `migrate --source-conn --sink-conn --execute` (G8)
+
+> **STATUS — LANDED 2026-06-02.** The CLI now carries
+> `projection migrate --to <modelB.json> --conn <env|file:ref> --execute
+> [--allow-drops] [--allow-cdc]` (`runMigrateExecute`, `Program.fs`):
+> flag-order-independent parse; **R6-gated** (`PROJECTION_ALLOW_EXECUTE=1` or
+> exit 7); the **A1 connection pre-flight runs before any mutation**; then
+> `MigrationRun.executeFromLive` reads the deployed state A live, evolves it in
+> place to B, reads B' back, and reports VERIFIED / refused (the live square,
+> T16). Smoke-verified without a DB: R6 refusal → exit 7, missing args → exit 2,
+> read-fail → exit 6, flag-order independence. Live execution is covered by the
+> existing Docker `MigrationCanaryTests` (`executeFromLive`). **Shape note:** in
+> place over one `--conn` (the sink at state A) — the cross-substrate
+> `--source-conn` data-load form maps to `executeWithData` and is a follow-on.
+> **A2 permission pre-flight wiring** into this path is the survey-gated
+> follow-on (the gate + grant probe exist in `Preflight`; threading planned
+> writes + the object-scope grant waits on survey P1).
 
 - **Scope.** Today `migrate --from --to [--allow-drops]` is a **dry-run plan
   emitter** from two JSON models (`Program.fs:803, 902-904`). The live square
