@@ -37,6 +37,13 @@ type MigrationError =
     | VerificationFailed of PhysicalSchemaDiff
     /// The schema migrated but the data transfer (rows source → sink) failed.
     | DataTransferFailed of ValidationError list
+    /// 6.A.13 — the migration would emit schema DDL against a CDC-tracked
+    /// database and `allowCdc` was not set. An UNCHANGED schema emits zero
+    /// DDL, so this never fires for an idempotent redeploy (engine-level
+    /// CDC-silence); it guards only a *real* schema change that would churn
+    /// CDC. Carries the tracked `[schema].[table]` names. Mirrors the
+    /// transfer-side `transfer.cdcTrackedSink` gate.
+    | RefusedByCdc of trackedTables: string list
 
 /// The result of a **live** `migrate A B` execution: the plan + artifacts it
 /// ran, the schema read back from the database after execution (`B'`), and the
@@ -104,10 +111,28 @@ module MigrationRun =
                     match RefactorLogEmitter.emit plan.Diff with
                     | Error e -> Error (EmitFailed e)
                     | Ok refactorArtifact ->
+                        // 6.A.7 — surface name-derived (Synthesized) renames the
+                        // SsKey-matching diff could not thread (drop + add, not a
+                        // Renamed record). For a non-V2 source identity cannot be
+                        // threaded across the rename without a reconciliation rule
+                        // or persisted V2 SsKeys; name it, don't silently re-key.
+                        let renameWarnings =
+                            CatalogDiff.synthesizedRenameWarnings plan.Diff
+                            |> List.map (fun w ->
+                                { DiagnosticEntry.create
+                                    "migrate" DiagnosticSeverity.Warning
+                                    "identity.synthesizedRenameUnstable"
+                                    "A name-derived (Synthesized) identity appears renamed but the diff classifies it as a drop + add, not a rename — identity is not threaded across the rename. Supply a reconciliation rule or persist V2 SsKeys on first import."
+                                  with
+                                    Metadata =
+                                        Map.ofList
+                                            [ "synthesisSource", w.SynthesisSource
+                                              "sourceTable", w.SourceTable
+                                              "targetTable", w.TargetTable ] })
                         Ok
                             { Plan = plan
                               SchemaStatements = schema.Value
-                              SchemaDiagnostics = schema.Entries
+                              SchemaDiagnostics = schema.Entries @ renameWarnings
                               RefactorLog = flattenRefactorLog refactorArtifact }
 
     /// Record a completed migration's episode onto the timeline persisted at
@@ -242,6 +267,7 @@ module MigrationRun =
     /// now-current state against B, so a partial run completes on re-run and a
     /// fully-migrated DB is a no-op (empty differential).
     let execute
+        (allowCdc: bool)
         (allowDrops: bool)
         (source: Catalog)
         (target: Catalog)
@@ -253,6 +279,26 @@ module MigrationRun =
             | Ok artifacts ->
                 let renameSql = renameStatements artifacts.Plan.Diff
                 let alterSql = artifacts.SchemaStatements |> Render.toText
+                // 6.A.13 — schema-side CDC pre-flight. Only a run that would
+                // emit DDL is at risk; an UNCHANGED schema (zero renames + no
+                // ALTER) skips the check entirely — that is engine-level
+                // CDC-silence (an idempotent redeploy churns no CDC). When
+                // there IS DDL and the DB is CDC-tracked, refuse unless
+                // `allowCdc` (mirrors the transfer-side gate).
+                let hasDdl =
+                    not (List.isEmpty renameSql)
+                    || not (System.String.IsNullOrWhiteSpace alterSql)
+                let! cdcGate =
+                    task {
+                        if hasDdl && not allowCdc then
+                            let! tracked = ReadSide.cdcTrackedTables cnn
+                            if List.isEmpty tracked then return Ok ()
+                            else return Error (RefusedByCdc tracked)
+                        else return Ok ()
+                    }
+                match cdcGate with
+                | Error e -> return Error e
+                | Ok () ->
                 let! executed =
                     task {
                         try
@@ -291,6 +337,7 @@ module MigrationRun =
     /// `ReadSide`-fidelity caveat — the diff is computed from the *reconstructed*
     /// A, so prefer `execute` with the recorded-episode schema when available.
     let executeFromLive
+        (allowCdc: bool)
         (allowDrops: bool)
         (target: Catalog)
         (cnn: SqlConnection)
@@ -299,7 +346,7 @@ module MigrationRun =
             let! readA = ReadSide.read cnn
             match readA with
             | Error es -> return Error (SchemaReadFailed es)
-            | Ok source -> return! execute allowDrops source target cnn
+            | Ok source -> return! execute allowCdc allowDrops source target cnn
         }
 
     /// **`migrate A B` with a data load** — the cross-substrate composition (the
@@ -323,7 +370,7 @@ module MigrationRun =
         (sink: SqlConnection)
         : System.Threading.Tasks.Task<Result<MigrationDataOutcome, MigrationError>> =
         task {
-            let! schemaResult = execute allowDrops sinkSource target sink
+            let! schemaResult = execute allowCdc allowDrops sinkSource target sink
             match schemaResult with
             | Error e -> return Error e
             | Ok schema ->

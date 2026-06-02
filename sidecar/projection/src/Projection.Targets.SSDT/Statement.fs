@@ -303,6 +303,16 @@ type Statement =
     /// statement of the owning kind, once per untrusted FK. Slice
     /// 5.13.fk-features-emit (matrix row 59).
     | AlterTableNoCheckConstraint of table: TableId * constraintName: string
+    /// `ALTER TABLE <table> NOCHECK CONSTRAINT <fk>` — disables an FK
+    /// constraint (`is_disabled = 1`, `is_not_trusted = 1`). 6.A.6 — the
+    /// first leg of reproducing an enabled-but-untrusted (`WITH NOCHECK`)
+    /// FK on emit: an inline CREATE TABLE FK is always created TRUSTED, and
+    /// `WITH NOCHECK CHECK CONSTRAINT` alone is a no-op for `is_not_trusted`
+    /// on a freshly-created constraint (verified against SQL Server). The
+    /// two-step `NOCHECK CONSTRAINT` (this; disable → untrusted) then
+    /// `AlterTableNoCheckConstraint` (re-enable skipping validation) lands
+    /// `is_not_trusted = 1, is_disabled = 0` — the round-trip-faithful state.
+    | AlterTableDisableConstraint of table: TableId * constraintName: string
     /// `ALTER INDEX <name> ON <table> DISABLE` — preserves a
     /// deployed target's index disable state when V1's
     /// `IndexOnDiskMetadata.IsDisabled = true`. Emitted by

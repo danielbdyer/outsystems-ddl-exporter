@@ -30,6 +30,8 @@
     <Compile Include="BenchSink.fs" />
     <Compile Include="LogSink.fs" />
     <Compile Include="FullExportRun.fs" />
+    <Compile Include="Preflight.fs" />
+    <Compile Include="RenameProjection.fs" />
     <Compile Include="TransferRun.fs" />
     <Compile Include="MigrationRun.fs" />
     <Compile Include="TransferSpec.fs" />

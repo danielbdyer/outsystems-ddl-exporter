@@ -104,6 +104,23 @@ and CatalogDiffData =
         AttributeDiffs : Map<SsKey, AttributeDiff>
     }
 
+/// 6.A.7 — evidence that a name-derived (`Synthesized`) identity was
+/// *probably renamed* but the SsKey-matching diff could not thread it. A
+/// `Synthesized` SsKey is derived from the entity's name, so a rename
+/// changes the key and the change lands in `Removed` + `Added` (not
+/// `Renamed`) — A1 identity is silently lost. This pairs a removed source
+/// kind with an added target kind that share a synthesis source and an
+/// identical physical column set (a strong rename signal). The migrate /
+/// transfer consumer renders it as the `identity.synthesizedRenameUnstable`
+/// Warning; stable-key sources (`OssysOriginal` / `V1Mapped`) thread renames
+/// natively and produce none.
+type SynthesizedRenameWarning =
+    {
+        SynthesisSource : string
+        SourceTable     : string
+        TargetTable     : string
+    }
+
 [<RequireQualifiedAccess>]
 module CatalogDiff =
 
@@ -273,6 +290,45 @@ module CatalogDiff =
     /// attributes are identical (or the kind is not present in both).
     let attributeDiffOf (key: SsKey) (CatalogDiff d) : AttributeDiff option =
         Map.tryFind key d.AttributeDiffs
+
+    /// 6.A.7 — the Synthesized-key renames the SsKey-matching diff could not
+    /// thread. A `Synthesized` SsKey is name-derived, so a rename changes the
+    /// key and the change appears as a `Removed` + `Added` pair, never a
+    /// `Renamed` record — A1 identity is silently lost. This pairs each
+    /// removed source kind whose key is `Synthesized`-rooted with an added
+    /// target kind that shares the same synthesis source AND the same
+    /// physical column-name set (a strong rename signal: the same shape under
+    /// a different name), emitting one warning per such pair so the rename is
+    /// *surfaced*, not silently re-keyed. Empty for a stable-key
+    /// (`OssysOriginal` / `V1Mapped`) source — those thread renames natively
+    /// via the `Renamed` map. Pure over the diff (T1 deterministic: removed
+    /// and added keys are iterated in `SsKey` sort order).
+    let synthesizedRenameWarnings (CatalogDiff d) : SynthesizedRenameWarning list =
+        let columnSet (k: Kind) =
+            k.Attributes |> List.map (fun a -> a.Column.ColumnName) |> Set.ofList
+        let synthKinds (keys: Set<SsKey>) (catalog: Catalog) =
+            keys
+            |> Set.toList
+            |> List.choose (fun key ->
+                if SsKey.isSynthesizedRoot key then
+                    Catalog.tryFindKind key catalog |> Option.map (fun k -> key, k)
+                else None)
+        let removedSynth = synthKinds d.Removed d.Source
+        let addedSynth = synthKinds d.Added d.Target
+        removedSynth
+        |> List.collect (fun (rKey, rKind) ->
+            let rCols = columnSet rKind
+            let rSrc = SsKey.synthesisSource rKey
+            if Set.isEmpty rCols then []
+            else
+                addedSynth
+                |> List.choose (fun (aKey, aKind) ->
+                    if SsKey.synthesisSource aKey = rSrc && columnSet aKind = rCols then
+                        Some
+                            { SynthesisSource = (rSrc |> Option.defaultValue "")
+                              SourceTable = sprintf "%s.%s" rKind.Physical.Schema rKind.Physical.Table
+                              TargetTable = sprintf "%s.%s" aKind.Physical.Schema aKind.Physical.Table }
+                    else None))
 
     /// All SsKeys in scope of the diff — `source ∪ target`. Equal
     /// (by exhaustiveness invariant) to the disjoint union of the

@@ -409,6 +409,7 @@ module Unsupported =
         | ToleratedDivergence.PostDeployForeignKeysSplit   -> "PostDeployForeignKeysSplit"
         | ToleratedDivergence.IndexesUnreflected           -> "IndexesUnreflected"
         | ToleratedDivergence.StaticPopulationsUnreflected -> "StaticPopulationsUnreflected"
+        | ToleratedDivergence.EmptyTextNormalizedToNull    -> "EmptyTextNormalizedToNull"
 
     /// Compute the manifest's `Unsupported` list. Renders every
     /// empirically-known `ToleratedDivergence` variant as a string

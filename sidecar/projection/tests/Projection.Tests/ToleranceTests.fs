@@ -53,7 +53,7 @@ let ``Tolerance.permissive is not strict`` () =
     Assert.False (Tolerance.isStrict Tolerance.permissive)
 
 [<Fact>]
-let ``Closed-DU coverage: ToleratedDivergence.allKnown contains four variants (CommentMetadataUnreflected retired at slice 8)`` () =
+let ``Closed-DU coverage: ToleratedDivergence.allKnown contains five variants (6.A.4 EmptyTextNormalizedToNull added)`` () =
     // Per the closed-DU expansion empirical-test discipline (`DECISIONS
     // 2026-05-13`): when a new ToleratedDivergence variant lands, this
     // count assertion fires until allKnown is extended. The companion
@@ -64,11 +64,10 @@ let ``Closed-DU coverage: ToleratedDivergence.allKnown contains four variants (C
     // **Chapter 4.1.A slice 8 retirement (2026-05-17).** Was 5
     // variants; CommentMetadataUnreflected retired when
     // SsdtDdlEmitter.extendedPropertyStatements began emitting
-    // sp_addextendedproperty calls (Kind.Description / Attribute.
-    // Description / Kind.ExtendedProperties / Attribute.
-    // ExtendedProperties / Index.ExtendedProperties consumers all
-    // landed). The deferral is closed.
-    Assert.Equal (4, Set.count ToleratedDivergence.allKnown)
+    // sp_addextendedproperty calls. **6.A.4 (2026-06-02):** back to 5 —
+    // EmptyTextNormalizedToNull names the empty-string-Text→NULL transfer
+    // normalization (closed, not silent).
+    Assert.Equal (5, Set.count ToleratedDivergence.allKnown)
 
 [<Fact>]
 let ``Tolerance.ofSet round-trips through divergences`` () =

@@ -196,6 +196,74 @@ module Transfer =
             return writeSkips
         }
 
+    // -- 6.A.2 / 6.A.3: surrogate-capture refusals (fail-loud, not silent) ---
+    //
+    // Two `AssignedBySink` shapes the per-row capture path cannot honor. Each
+    // is detected from the built plan + the schema contract and refused at
+    // Execute time rather than silently mis-keyed — *total decisions, named
+    // skips*. Both are pure decisions (no connection) so the data canary and
+    // the fast-pool unit test witness the SAME refusal (the 6.A.1 pattern).
+
+    /// 6.A.2 — `AssignedBySink` kinds that carry cycle-deferred FK columns.
+    /// `phase2UpdateSql` keys the Phase-2 re-point on the *source* PK value;
+    /// for an `AssignedBySink` kind the Sink minted a fresh surrogate, so the
+    /// source PK no longer exists and the UPDATE matches zero rows — the
+    /// deferred FK is left silently wrong. Refuse rather than emit a no-op
+    /// UPDATE. (The correct fix — re-point Phase-2 via the captured remap AND
+    /// key the WHERE on the assigned PK — is the named follow-on.)
+    let cyclicAssignedBySinkKinds (plan: DataLoadPlan) : SsKey list =
+        plan.Loads
+        |> List.choose (fun l ->
+            if l.Disposition = IdentityDisposition.AssignedBySink
+               && not (Set.isEmpty l.DeferredFkColumns)
+            then Some l.Kind
+            else None)
+
+    /// 6.A.3 — `AssignedBySink` kinds whose primary key spans more than one
+    /// column. `insertCaptureRow` captures a single `IsPrimaryKey && IsIdentity`
+    /// column and `SourceKey`/`AssignedKey` are single-string, so a composite
+    /// surrogate is silently truncated to one leg. Refuse. (Representing a
+    /// composite surrogate as a tuple key is the named follow-on.)
+    let compositeAssignedBySinkKinds (catalog: Catalog) (plan: DataLoadPlan) : SsKey list =
+        plan.Loads
+        |> List.choose (fun l ->
+            if l.Disposition <> IdentityDisposition.AssignedBySink then None
+            else
+                Catalog.tryFindKind l.Kind catalog
+                |> Option.bind (fun k ->
+                    let pkCount = k.Attributes |> List.filter (fun a -> a.IsPrimaryKey) |> List.length
+                    if pkCount > 1 then Some l.Kind else None))
+
+    /// The first Execute-time refusal a built plan triggers, or `None` when
+    /// the plan is cleanly executable. Folds the existing unsatisfiable-cycle
+    /// check together with the 6.A.2 / 6.A.3 surrogate-capture refusals so the
+    /// orchestrator has one pre-write gate and the order of precedence is
+    /// explicit (structural unsatisfiability first, then the capture shapes).
+    let executeGate (catalog: Catalog) (plan: DataLoadPlan) : ValidationError option =
+        if not (DataLoadPlan.isSatisfiable plan) then
+            Some (ValidationError.create
+                    "transfer.unbreakableCycleFk"
+                    (sprintf
+                        "%d non-deferrable cycle FK(s) — cannot execute a clean two-phase load"
+                        plan.UnbreakableCycleFks.Length))
+        else
+            match cyclicAssignedBySinkKinds plan with
+            | k :: _ ->
+                Some (ValidationError.create
+                        "transfer.cyclicAssignedBySink"
+                        (sprintf
+                            "Kind %s is AssignedBySink with cycle-deferred FK column(s); the Phase-2 re-point keys on the source PK the Sink replaced, so it would match zero rows. Refusing rather than emit a no-op UPDATE."
+                            (SsKey.rootOriginal k)))
+            | [] ->
+                match compositeAssignedBySinkKinds catalog plan with
+                | k :: _ ->
+                    Some (ValidationError.create
+                            "transfer.compositeSurrogateUnsupported"
+                            (sprintf
+                                "Kind %s is AssignedBySink with a multi-column primary key; surrogate capture is single-column and would truncate the composite key. Refusing rather than half-capture it."
+                                (SsKey.rootOriginal k)))
+                | [] -> None
+
     // -- reconciliation orchestration ---------------------------------------
 
     /// Reconcile each operator-chosen kind's Source surrogates to the
@@ -257,6 +325,7 @@ module Transfer =
         (sink: SqlConnection)
         (catalog: Catalog)
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
+        (ingestion: (Catalog * Map<Name, Name>) option)
         : Task<Result<TransferReport>> =
         task {
             // Wave-3 slice 3.1 — CDC pre-flight gate. Only an Execute run that
@@ -285,7 +354,19 @@ module Transfer =
             | Ok () ->
             let topoLineage : Lineage<TopologicalOrder> = TopologicalOrderPass.runWith TreatAsCycle catalog
             let topo = topoLineage.Value
-            let! rows = Ingestion.collectInOrder source catalog topo
+            // 6.B.2 — RefactorLog-aware ingestion. With a rename context,
+            // ingest with the SOURCE contract (old physical columns) and
+            // re-point each row's values onto the sink's names (by SsKey,
+            // A1-stable) before plan/write, which use `catalog` (the sink
+            // contract B). With no rename context, source and sink share the
+            // schema and ingestion uses `catalog` directly (byte-identical).
+            let ingestCatalog = match ingestion with Some (c, _) -> c | None -> catalog
+            let! rawRows = Ingestion.collectInOrder source ingestCatalog topo
+            let rows =
+                match ingestion with
+                | Some (_, renameMap) when not (Map.isEmpty renameMap) ->
+                    rawRows |> Map.map (fun _ rs -> RenameProjection.repointRows renameMap rs)
+                | _ -> rawRows
             let! reconciled = reconcileAgainstSink sink catalog reconciliation rows
             let reconciledKinds = reconciliation |> Map.toSeq |> Seq.map fst |> Set.ofSeq
             // The plan-build is the ONE OperatorIntent Insertion site —
@@ -294,15 +375,9 @@ module Transfer =
             let plan =
                 DataLoadPlan.build catalog topo rows reconciled.Remap
                 |> DataLoadPlan.reclassifyReconciled reconciledKinds
-            if mode = Execute && not (DataLoadPlan.isSatisfiable plan) then
-                return
-                    Result.failureOf
-                        (ValidationError.create
-                            "transfer.unbreakableCycleFk"
-                            (sprintf
-                                "%d non-deferrable cycle FK(s) — cannot execute a clean two-phase load"
-                                plan.UnbreakableCycleFks.Length))
-            else
+            match (if mode = Execute then executeGate catalog plan else None) with
+            | Some refusal -> return Result.failureOf refusal
+            | None ->
                 let! writeSkips =
                     task {
                         if mode = Execute then return! writePlan sink catalog plan
@@ -333,7 +408,34 @@ module Transfer =
         (sink: SqlConnection)
         (catalog: Catalog)
         : Task<Result<TransferReport>> =
-        runCore mode allowCdc source sink catalog Map.empty
+        runCore mode allowCdc source sink catalog Map.empty None
+
+    /// 6.B.2 — RefactorLog-aware Transfer. The source is at schema A
+    /// (`sourceContract`); the sink is at schema B (`sinkContract`). A rename
+    /// (table or column) means the two contracts differ on physical
+    /// coordinates while the SsKeys are stable (A1). This ingests with the
+    /// source contract, re-points every row's values onto the sink's names via
+    /// the A→B `CatalogDiff` attribute renames (identity-matched, never
+    /// ordinal), and writes against the sink contract. A no-rename pair (A = B
+    /// modulo renames) is byte-identical to `run`. Straight load (no
+    /// reconciliation); the reconcile + rename combination is the follow-on.
+    let runWithRenames
+        (mode: Mode)
+        (allowCdc: bool)
+        (source: SqlConnection)
+        (sink: SqlConnection)
+        (sourceContract: Catalog)
+        (sinkContract: Catalog)
+        : Task<Result<TransferReport>> =
+        task {
+            match CatalogDiff.between sourceContract sinkContract with
+            | Error e ->
+                return Result.failureOf (ValidationError.create "transfer.renameDiffFailed" (sprintf "%A" e))
+            | Ok diff ->
+                let renameMap =
+                    RenameProjection.renames diff |> RenameProjection.renameMap
+                return! runCore mode allowCdc source sink sinkContract Map.empty (Some (sourceContract, renameMap))
+        }
 
     /// Run a *reconciling* Transfer — the operator's headline case
     /// (Dev→UAT User re-key). `reconciliation` names, per kind, how its
@@ -350,7 +452,7 @@ module Transfer =
         (catalog: Catalog)
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
         : Task<Result<TransferReport>> =
-        runCore mode allowCdc source sink catalog reconciliation
+        runCore mode allowCdc source sink catalog reconciliation None
 
     /// Slice 4.2 — drive a Transfer through the `TransferConnections`
     /// apparatus instead of caller-opened connections. Opens both
@@ -388,7 +490,7 @@ module Transfer =
                         match resolveReconciliation contract with
                         | Error es -> return Result.failure es
                         | Ok reconciliation ->
-                            return! runCore mode allowCdc source sink contract reconciliation
+                            return! runCore mode allowCdc source sink contract reconciliation None
         }
 
     // -- 6.A.1: the drop-set is fail-loud, not exit-0 -----------------------

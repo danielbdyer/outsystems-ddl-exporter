@@ -43,13 +43,14 @@ let ``Unsupported.compute is deterministic (T1)`` () =
 
 [<Fact>]
 let ``Unsupported.compute names match current ToleratedDivergence variants`` () =
-    // The four empirically-grounded variants at chapter 4.4 close.
-    // When the DU widens or shrinks, this test surfaces it
-    // (closed-DU expansion empirical-test sibling).
+    // The empirically-grounded variants. When the DU widens or shrinks,
+    // this test surfaces it (closed-DU expansion empirical-test sibling).
+    // 6.A.4 (2026-06-02) added EmptyTextNormalizedToNull.
     let result = Unsupported.compute () |> Set.ofList
     let expected =
         Set.ofList
-            [ "HeaderCommentsOmitted"
+            [ "EmptyTextNormalizedToNull"
+              "HeaderCommentsOmitted"
               "IndexesUnreflected"
               "PostDeployForeignKeysSplit"
               "StaticPopulationsUnreflected" ]
