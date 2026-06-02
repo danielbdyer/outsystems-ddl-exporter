@@ -113,6 +113,7 @@
     <Compile Include="ReconciliationTests.fs" />
     <Compile Include="ConnectionResolverTests.fs" />
     <Compile Include="TransferSpecTests.fs" />
+    <Compile Include="TransferRefusalTests.fs" />
     <Compile Include="UserFkReflowPassTests.fs" />
     <Compile Include="UserFkReflowPropertyTests.fs" />
     <Compile Include="UserFkReflowIntegrationTests.fs" />

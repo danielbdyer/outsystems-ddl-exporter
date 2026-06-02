@@ -537,6 +537,130 @@ let ``A42 (2.4 canary): a DoNotEnforce FK decision keeps the FK out of the deplo
         Assert.True(dropped.Report.Ok, sprintf "dropped deploy: %A" dropped.Report.Errors)
         Assert.Equal(0, fkCount dropped.Reconstructed)
 
+// ---------------------------------------------------------------------
+// 6.A.5 — un-hollow ReadSide. A deployed UNIQUE index and a deployed
+// enabled-but-UNTRUSTED FK (`WITH NOCHECK`) SURVIVE deploy → ReadSide: the
+// index reads back in `Kind.Indexes` (no longer the hardcoded `[]`) with
+// `IsUnique = true`, and the FK reads back with `IsConstraintTrusted =
+// false` (no longer the silent `Reference.create` `true` default). Asserted
+// on the reconstructed Catalog directly — `PhysicalSchema.diff` deliberately
+// ignores indexes + FK-trust, so the schema-diff canary cannot witness this.
+//
+// The fixture is hand-authored DDL because this is the *ReadSide* fix: the
+// honest witness is "what is deployed reads back faithfully." (The emit-side
+// NOCHECK-FK reproduction is a separate, currently-incomplete seam —
+// `untrustedFkAlters` emits `WITH NOCHECK CHECK CONSTRAINT`, which is a no-op
+// for `is_not_trusted` on a freshly-created inline FK; producing an untrusted
+// FK requires `WITH NOCHECK ADD` or a disable. That emitter gap is a Schema-
+// axis erasure for 6.A.6, not part of 6.A.5's ReadSide un-hollowing.)
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``6.A.5 (schema round-trip): a UNIQUE index + a NOCHECK FK survive deploy / ReadSide`` () =
+    if skipIfNoDocker "readside-index-fktrust-roundtrip" then
+        // Parent (PK Id, Code) with a UNIQUE index on Code; Child (PK Id,
+        // FK ParentId → Parent) added WITH NOCHECK (enabled but untrusted:
+        // is_not_trusted = 1, is_disabled = 0).
+        let ddl =
+            "CREATE TABLE [dbo].[OSUSR_RT5_PARENT] ([ID] INT NOT NULL PRIMARY KEY, [CODE] INT NOT NULL); " +
+            "CREATE UNIQUE INDEX [UQ_Rt5Parent_Code] ON [dbo].[OSUSR_RT5_PARENT] ([CODE]); " +
+            "CREATE TABLE [dbo].[OSUSR_RT5_CHILD] ([ID] INT NOT NULL PRIMARY KEY, [PARENT_ID] INT NOT NULL); " +
+            "ALTER TABLE [dbo].[OSUSR_RT5_CHILD] WITH NOCHECK ADD CONSTRAINT [FK_Rt5Child_Parent] " +
+            "FOREIGN KEY ([PARENT_ID]) REFERENCES [dbo].[OSUSR_RT5_PARENT] ([ID]);"
+        let readback = (Deploy.runWithReadback ddl).GetAwaiter().GetResult()
+        Assert.True(readback.Report.Ok, sprintf "deploy: %A" readback.Report.Errors)
+        match readback.Reconstructed with
+        | Some c ->
+            let kindByTable t = Catalog.allKinds c |> List.find (fun k -> k.Physical.Table = t)
+            // (a) The UNIQUE index survived — `Indexes` is no longer hollow.
+            let parentBack = kindByTable "OSUSR_RT5_PARENT"
+            match parentBack.Indexes |> List.tryFind (fun i -> i.IsUnique) with
+            | Some i ->
+                // Its key column resolves to the deployed CODE column.
+                let cols =
+                    i.Columns
+                    |> List.choose (fun ic -> parentBack.Attributes |> List.tryFind (fun a -> a.SsKey = ic.Attribute))
+                    |> List.map (fun a -> a.Column.ColumnName)
+                Assert.Equal<string list>([ "CODE" ], cols)
+            | None -> Assert.Fail "UNIQUE index on Parent did not survive ReadSide (Indexes still hollow?)"
+            // (b) The NOCHECK FK survived as IsConstraintTrusted = false
+            //     (not the create-default true).
+            let childBack = kindByTable "OSUSR_RT5_CHILD"
+            match childBack.References with
+            | [ r ] -> Assert.False(r.IsConstraintTrusted, "NOCHECK FK must read back untrusted, not the create-default true")
+            | rs -> Assert.Fail(sprintf "expected exactly one reconstructed FK, got %d" (List.length rs))
+        | None -> Assert.Fail "deploy produced no reconstructed catalog"
+
+// ---------------------------------------------------------------------
+// 6.A.8 — the decision adjunction on the uniqueness + FK-drop sub-axes
+// (depends on 6.A.5's index/FK-trust readback). With 6.A.5 the index
+// reads back, so an `EnforceUnique` overlay on a non-unique source index
+// is now OBSERVABLE through the round-trip (baseline reads back
+// non-unique; tightened reads back unique), and `DropFk` removes the FK.
+// Together with the 2.3 nullability witness this lifts the Decision cell
+// from 1/3 to 3/3 sub-axes.
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``6.A.8 (decision adjunction): read-back reproduces EnforceUnique and DropFk`` () =
+    if skipIfNoDocker "decision-enforceunique-dropfk-roundtrip" then
+        // Parent (PK Id, Code) with a NON-unique index on Code; Child (PK Id,
+        // FK ParentId → Parent) with an ordinary (trusted) reference.
+        let parentKey = ssKeySafe "OS_KIND_RT8_Parent"
+        let childKey = ssKeySafe "OS_KIND_RT8_Child"
+        let parentIdKey = ssKeySafe "OS_ATTR_RT8_Parent_Id"
+        let codeKey = ssKeySafe "OS_ATTR_RT8_Parent_Code"
+        let childIdKey = ssKeySafe "OS_ATTR_RT8_Child_Id"
+        let parentFkAttr = ssKeySafe "OS_ATTR_RT8_Child_ParentId"
+        let refKeyV = ssKeySafe "OS_REF_RT8_Child_Parent"
+        let idxKey = ssKeySafe "OS_IDX_RT8_Parent_Code"
+        let mkAttr (k: SsKey) (col: string) (isPk: bool) (ty: PrimitiveType) : Attribute =
+            { Attribute.create k (nameSafe col) ty with
+                Column = { ColumnName = col.ToUpperInvariant(); IsNullable = not isPk }
+                IsPrimaryKey = isPk; IsMandatory = isPk }
+        let parent =
+            { Kind.create parentKey (nameSafe "Parent")
+                { Schema = "dbo"; Table = "OSUSR_RT8_PARENT"; Catalog = None }
+                [ mkAttr parentIdKey "Id" true Integer
+                  mkAttr codeKey "Code" false Integer ]
+              with Indexes = [ Index.ofKeyColumns idxKey (nameSafe "IX_Rt8Parent_Code") [ codeKey ] ] }
+        let child =
+            { Kind.create childKey (nameSafe "Child")
+                { Schema = "dbo"; Table = "OSUSR_RT8_CHILD"; Catalog = None }
+                [ mkAttr childIdKey "Id" true Integer; mkAttr parentFkAttr "ParentId" false Integer ]
+              with References = [ Reference.create refKeyV (nameSafe "Parent") parentFkAttr parentKey ] }
+        let catalog =
+            match Catalog.create [ { SsKey = ssKeySafe "OS_MOD_RT8"; Name = nameSafe "Rt8Mod"; Kinds = [ parent; child ]; IsActive = true; ExtendedProperties = [] } ] [] with
+            | Ok c -> c | Error e -> failwithf "catalog %A" e
+
+        let parentIndexUnique (cat: Catalog option) : bool option =
+            cat
+            |> Option.bind (fun c -> Catalog.allKinds c |> List.tryFind (fun k -> k.Physical.Table = "OSUSR_RT8_PARENT"))
+            |> Option.bind (fun k -> k.Indexes |> List.tryHead |> Option.map (fun i -> i.IsUnique))
+        let childFkCount (cat: Catalog option) : int =
+            match cat with
+            | Some c -> (PhysicalSchema.ofCatalog c).ForeignKeys |> Set.count
+            | None -> -1
+
+        // Baseline (empty overlay): the index reads back NON-unique; FK present.
+        let baseSql = SsdtDdlEmitter.statements catalog |> Render.toText
+        let baseline = (Deploy.runWithReadback baseSql).GetAwaiter().GetResult()
+        Assert.True(baseline.Report.Ok, sprintf "baseline deploy: %A" baseline.Report.Errors)
+        Assert.Equal(Some false, parentIndexUnique baseline.Reconstructed)
+        Assert.Equal(1, childFkCount baseline.Reconstructed)
+
+        // Tighten: EnforceUnique(index) + DropFk(ref) → emit → deploy → read.
+        // The index reads back UNIQUE; the FK is gone.
+        let overlay =
+            { DecisionOverlay.empty with
+                EnforceUnique = Set.singleton idxKey
+                DropFk = Set.singleton refKeyV }
+        let tightenedSql = SsdtDdlEmitter.statementsWith overlay catalog |> Render.toText
+        let tightened = (Deploy.runWithReadback tightenedSql).GetAwaiter().GetResult()
+        Assert.True(tightened.Report.Ok, sprintf "tightened deploy: %A" tightened.Report.Errors)
+        Assert.Equal(Some true, parentIndexUnique tightened.Reconstructed)
+        Assert.Equal(0, childFkCount tightened.Reconstructed)
+
 /// Wave 4.1 — V2.SsKey persistence round-trip. `sampleSourceCatalog`
 /// builds every kind/attribute with an `OssysOriginal` identity; after
 /// deploy → read the recovered SsKeys must still be `OssysOriginal`

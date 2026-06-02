@@ -153,6 +153,33 @@ scan_mutation() {
     done < <(grep "${GREP_FLAGS[@]}" "$pattern" "$SRC" 2>/dev/null || true)
 }
 
+scan_anon_tuple() {
+    # Wide-anonymous-tuple scan: same allowlist semantics as `scan`, plus
+    # an exemption for DU case declarations (`| Case of T1 * T2 * …`). The
+    # smell this rule names is a *flat anonymous tuple used as a collection
+    # / map element or a return shape* (`Map<…, a * b * c * d>`,
+    # `Task<(a * b * c * d) list>`) — that should be a named record so the
+    # axes read by name, not by position. A DU variant's `of`-tuple is a
+    # *named* shape already (the case name + typed components), so it is
+    # exempt. Args: rule-name pattern.
+    local rule="$1"
+    local pattern="$2"
+    while IFS= read -r hit; do
+        local file_part line_part rest content
+        file_part="${hit%%:*}"
+        rest="${hit#*:}"
+        line_part="${rest%%:*}"
+        content="${rest#*:}"
+        if file_has_allowlist_marker "$file_part"; then continue; fi
+        if printf '%s' "$content" | grep -q 'LINT-ALLOW'; then continue; fi
+        if is_comment_line "$content"; then continue; fi
+        # Exempt DU case declarations — the ` of ` keyword identifies a
+        # named variant, not an anonymous collection/map tuple.
+        if printf '%s' "$content" | grep -qE '\bof\b'; then continue; fi
+        report_violation "$rule" "$file_part" "$line_part" "$content"
+    done < <(grep "${GREP_FLAGS[@]}" "$pattern" "$SRC" 2>/dev/null || true)
+}
+
 # ---------------------------------------------------------------------------
 # Rule 1 — banned namespace: System.Text.RegularExpressions
 # ---------------------------------------------------------------------------
@@ -355,6 +382,25 @@ scan "string-join" "$SRC" 'System\.String\.Join\s*\(|\bString\.Join\s*\('
 # ---------------------------------------------------------------------------
 
 scan "big-o-list-append-singleton" "$SRC" '@ \[[a-zA-Z_]+\]'
+
+# ---------------------------------------------------------------------------
+# Rule 28 — wide anonymous tuples (prefer a named record).
+#
+# A flat anonymous tuple of **4+ components** (3+ ` * ` products with no
+# separating comma / bracket) used as a collection element, map key/value,
+# or return shape is opaque: readers index by position, and adding a field
+# widens the tuple at every call site (the `(string * string * string *
+# string * string * string * bool)` smell). The codebase's "records for
+# products" posture (CLAUDE.md → Types) wants a NAMED RECORD instead, so
+# each axis reads by name and field additions are localized. Coordinate
+# *triples* (`string * string * string`) are the tolerated idiom (2 `*`,
+# below the threshold) and DU variant `of`-tuples are exempt (a named
+# variant is already a named shape). Reified records earned their place
+# here: `ReadSide.FkRow` / `IndexColumnRow` / `SequenceRow`.
+# Per the operator's 2026-06-02 "named maps and lists whenever possible".
+# ---------------------------------------------------------------------------
+
+scan_anon_tuple "wide-anonymous-tuple" '\*[^,<>()|]*\*[^,<>()|]*\*'
 
 # ---------------------------------------------------------------------------
 # Rules 20 / 21 / 22 — Hexagonal-coupling rules.

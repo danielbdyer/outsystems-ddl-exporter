@@ -91,6 +91,37 @@ module private TransferCanaryFixtures =
         "SET IDENTITY_INSERT [dbo].[OSUSR_AS_USER] OFF; " +
         "INSERT INTO [dbo].[OSUSR_AS_ORDER] ([ID],[USER_ID],[AMOUNT]) VALUES (10,280,100),(11,281,200);"
 
+    /// 6.A.2 — a self-referential IDENTITY kind: PK is IDENTITY
+    /// (`AssignedBySink`) and MANAGER_ID is a NULLABLE self-FK, so the
+    /// two-phase load would *defer* it to Phase 2. But the Phase-2 re-point
+    /// keys on the source PK the Sink replaced — it would match zero rows.
+    /// The Transfer must refuse, not emit a no-op UPDATE.
+    let cyclicAssignedDdl =
+        "CREATE TABLE [dbo].[OSUSR_XF_EMPID] (" +
+        "[ID] INT IDENTITY(1,1) NOT NULL PRIMARY KEY, [NAME] NVARCHAR(50) NULL, [MANAGER_ID] INT NULL, " +
+        "CONSTRAINT [FK_XfEmpId_Mgr] FOREIGN KEY ([MANAGER_ID]) " +
+        "REFERENCES [dbo].[OSUSR_XF_EMPID] ([ID]));"
+
+    let cyclicAssignedSeed =
+        "SET IDENTITY_INSERT [dbo].[OSUSR_XF_EMPID] ON; " +
+        "INSERT INTO [dbo].[OSUSR_XF_EMPID] ([ID],[NAME],[MANAGER_ID]) VALUES " +
+        "(1,N'CEO',NULL),(2,N'VP',1),(3,N'Mgr',2); " +
+        "SET IDENTITY_INSERT [dbo].[OSUSR_XF_EMPID] OFF;"
+
+    /// 6.A.3 — a composite IDENTITY PK ([ID] IDENTITY + [TENANT]). `ofKind`
+    /// is `AssignedBySink` (the PK carries IDENTITY), but the per-row capture
+    /// is single-column and would truncate the composite surrogate. Refuse.
+    let compositeAssignedDdl =
+        "CREATE TABLE [dbo].[OSUSR_XF_CMP] (" +
+        "[ID] INT IDENTITY(1,1) NOT NULL, [TENANT] INT NOT NULL, [NAME] NVARCHAR(50) NULL, " +
+        "CONSTRAINT [PK_XfCmp] PRIMARY KEY ([ID],[TENANT]));"
+
+    let compositeAssignedSeed =
+        "SET IDENTITY_INSERT [dbo].[OSUSR_XF_CMP] ON; " +
+        "INSERT INTO [dbo].[OSUSR_XF_CMP] ([ID],[TENANT],[NAME]) VALUES " +
+        "(1,100,N'a'),(2,100,N'b'); " +
+        "SET IDENTITY_INSERT [dbo].[OSUSR_XF_CMP] OFF;"
+
     let value (r: Result<'a>) : 'a = Result.value r
 
     /// Count rows in a table on the given connection.
@@ -311,6 +342,94 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
 
                                 // --allow-drops downgrades the declared-acceptable loss to exit 0.
                                 Assert.Equal(0, Transfer.exitCodeForReport true report)
+                            })
+                }))
+
+    // 6.A.2 — a cyclic AssignedBySink load (self-ref IDENTITY kind with a
+    // nullable self-FK) is refused at Execute, not silently mis-keyed. The
+    // Phase-2 re-point would key on the source PK the Sink replaced. The
+    // refusal is the pure `executeGate` decision the fast-pool test also
+    // witnesses; here the full Transfer.run surfaces it end-to-end. DryRun
+    // (no write, no mis-key) proceeds.
+    [<Fact>]
+    member _.``data canary: cyclic AssignedBySink is refused, not silently mis-keyed`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "XferCyclicAssigned") then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "XferCyclicAssignedSrc" (fun src _ ->
+                task {
+                    do! Deploy.executeBatch src TransferCanaryFixtures.cyclicAssignedDdl
+                    do! Deploy.executeBatch src TransferCanaryFixtures.cyclicAssignedSeed
+                    return!
+                        fixture.WithEphemeralDatabase "XferCyclicAssignedSink" (fun sink _ ->
+                            task {
+                                do! Deploy.executeBatch sink TransferCanaryFixtures.cyclicAssignedDdl
+
+                                let! contractR = ReadSide.read src
+                                let contract = TransferCanaryFixtures.value contractR
+                                let empKind =
+                                    Catalog.allModulesKinds contract |> List.map snd
+                                    |> List.find (fun k -> k.Physical.Table = "OSUSR_XF_EMPID")
+                                // Precondition: the round-tripped contract classifies the kind
+                                // AssignedBySink (its IDENTITY PK survives ReadSide).
+                                Assert.Equal(IdentityDisposition.AssignedBySink, IdentityDisposition.ofKind empKind)
+
+                                // Execute refuses, fail-loud, with the named code.
+                                let! refusedR = Transfer.run Transfer.Execute true src sink contract
+                                match refusedR with
+                                | Error es ->
+                                    Assert.True(
+                                        es |> List.exists (fun e -> e.Code = "transfer.cyclicAssignedBySink"),
+                                        sprintf "expected transfer.cyclicAssignedBySink, got %A" (es |> List.map (fun e -> e.Code)))
+                                | Ok _ -> Assert.Fail("expected the cyclic-AssignedBySink refusal at Execute")
+
+                                // The Sink is untouched (the refusal preceded any write).
+                                let! rows = TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_XF_EMPID]"
+                                Assert.Equal(0, rows)
+
+                                // DryRun does not write, so it does not mis-key — it reports the plan.
+                                let! dryR = Transfer.run Transfer.DryRun true src sink contract
+                                match dryR with
+                                | Ok report -> Assert.Equal(Transfer.DryRun, report.Mode)
+                                | Error es -> Assert.Fail(sprintf "DryRun should not refuse; got %A" (es |> List.map (fun e -> e.Code)))
+                            })
+                }))
+
+    // 6.A.3 — a composite-IDENTITY AssignedBySink kind is refused, not
+    // half-captured: the per-row OUTPUT capture is single-column and would
+    // truncate the composite surrogate. The Sink stays empty.
+    [<Fact>]
+    member _.``data canary: composite-IDENTITY AssignedBySink is refused, not half-captured`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "XferCompositeAssigned") then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "XferCompositeAssignedSrc" (fun src _ ->
+                task {
+                    do! Deploy.executeBatch src TransferCanaryFixtures.compositeAssignedDdl
+                    do! Deploy.executeBatch src TransferCanaryFixtures.compositeAssignedSeed
+                    return!
+                        fixture.WithEphemeralDatabase "XferCompositeAssignedSink" (fun sink _ ->
+                            task {
+                                do! Deploy.executeBatch sink TransferCanaryFixtures.compositeAssignedDdl
+
+                                let! contractR = ReadSide.read src
+                                let contract = TransferCanaryFixtures.value contractR
+                                let cmpKind =
+                                    Catalog.allModulesKinds contract |> List.map snd
+                                    |> List.find (fun k -> k.Physical.Table = "OSUSR_XF_CMP")
+                                // Precondition: composite PK reconstructed (>1 IsPrimaryKey column)
+                                // AND classified AssignedBySink (the IDENTITY leg survives ReadSide).
+                                Assert.True((cmpKind.Attributes |> List.filter (fun a -> a.IsPrimaryKey) |> List.length) > 1)
+                                Assert.Equal(IdentityDisposition.AssignedBySink, IdentityDisposition.ofKind cmpKind)
+
+                                let! refusedR = Transfer.run Transfer.Execute true src sink contract
+                                match refusedR with
+                                | Error es ->
+                                    Assert.True(
+                                        es |> List.exists (fun e -> e.Code = "transfer.compositeSurrogateUnsupported"),
+                                        sprintf "expected transfer.compositeSurrogateUnsupported, got %A" (es |> List.map (fun e -> e.Code)))
+                                | Ok _ -> Assert.Fail("expected the composite-surrogate refusal at Execute")
+
+                                let! rows = TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_XF_CMP]"
+                                Assert.Equal(0, rows)
                             })
                 }))
 
