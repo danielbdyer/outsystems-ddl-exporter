@@ -1282,6 +1282,11 @@ module Catalog =
     /// preserved). Sibling to `CatalogTraversal.mapKinds` (which
     /// emits Lineage); this form is for callers that don't need
     /// trail emission.
+    // NB: hand-rolled rather than lensed because `module Catalog` lives
+    // inside `Catalog.fs`, which compiles BEFORE `Optics.fs` (the IR types
+    // it focuses must precede it). Lensifying this primitive would require
+    // splitting `module Catalog` operations into a separate post-Optics file
+    // — deferred to a future "Catalog traversal extraction" slice.
     let mapKinds (f: Kind -> Kind) (c: Catalog) : Catalog =
         { c with Modules = c.Modules |> List.map (fun m -> { m with Kinds = m.Kinds |> List.map f }) }
 

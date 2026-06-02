@@ -86,8 +86,7 @@ module CatalogTraversal =
         (c: Catalog)
         : Lineage<Catalog> =
         let events = LineageBuffer.create ()
-        let modules' =
-            c.Modules
-            |> List.map (fun m ->
-                { m with Kinds = m.Kinds |> List.choose (visit events) })
-        Lineage.ofValueAndEvents (LineageBuffer.toList events) { Modules = modules'; Sequences = c.Sequences }
+        let withVisitedKinds =
+            c |> Lens.over CatalogLenses.modules (
+                List.map (Lens.over CatalogLenses.kindsOf (List.choose (visit events))))
+        Lineage.ofValueAndEvents (LineageBuffer.toList events) withVisitedKinds

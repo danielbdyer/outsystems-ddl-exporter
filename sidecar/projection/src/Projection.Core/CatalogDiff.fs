@@ -394,7 +394,7 @@ module CatalogDiff =
     let private applyFacet (src: Attribute) (facet: AttributeFacet) (dest: Attribute) : Attribute =
         match facet with
         | AttributeFacet.DataType     -> { dest with Type = src.Type }
-        | AttributeFacet.Nullability  -> { dest with Column = { dest.Column with IsNullable = src.Column.IsNullable } }
+        | AttributeFacet.Nullability  -> dest |> Lens.over CatalogLenses.columnOf (fun col -> { col with IsNullable = src.Column.IsNullable })
         | AttributeFacet.PrimaryKey   -> { dest with IsPrimaryKey = src.IsPrimaryKey }
         | AttributeFacet.Length       -> { dest with Length = src.Length }
         | AttributeFacet.Precision    -> { dest with Precision = src.Precision }
@@ -480,7 +480,10 @@ module CatalogDiff =
             |> List.fold
                 (fun (mods: Module list) (ownerKey, ownerModule, kind) ->
                     if mods |> List.exists (fun m -> m.SsKey = ownerKey) then
-                        mods |> List.map (fun m -> if m.SsKey = ownerKey then { m with Kinds = m.Kinds @ [ kind ] } else m)
+                        mods |> List.map (fun m ->
+                            if m.SsKey = ownerKey then
+                                m |> Lens.over CatalogLenses.kindsOf (fun ks -> ks @ [ kind ])
+                            else m)
                     else
                         mods @ [ { ownerModule with Kinds = [ kind ] } ])
                 baseModules

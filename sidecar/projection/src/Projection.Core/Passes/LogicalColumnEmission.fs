@@ -71,11 +71,11 @@ module LogicalColumnEmission =
             a
         else
             LineageBuffer.add (substitutedEvent a.SsKey kind a.Column.ColumnName logical) events
-            { a with Column = { a.Column with ColumnName = logical } }
+            a |> Lens.over CatalogLenses.columnOf (fun col -> { col with ColumnName = logical })
 
     let private substituteKind (events: LineageBuffer.Buffer) (k: Kind) : Kind option =
         let attrs' = k.Attributes |> List.map (substituteAttribute events k.Physical)
-        Some { k with Attributes = attrs' }
+        Some (Lens.set CatalogLenses.attributesOf attrs' k)
 
     let private run (mode: Mode) (c: Catalog) : Lineage<Catalog> =
         use _ = Bench.scope "passes.logicalColumnEmission"

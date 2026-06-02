@@ -1012,6 +1012,21 @@ let ``H-015 CatalogLenses.sequences: get + set roundtrip`` () =
     let catalog = { Modules = []; Sequences = [] }
     Assert.Equal<Sequence list>([], Lens.get CatalogLenses.sequences catalog)
 
+[<Fact>]
+let ``H-015 CatalogLenses.columnOf: get + set roundtrip`` () =
+    let attr =
+        Attribute.create
+            (SsKey.synthesized "TEST" "attr" |> Result.value)
+            (Name.create "A" |> Result.value)
+            PrimitiveType.Integer
+    let originalColumn = attr.Column
+    Assert.Equal(originalColumn, Lens.get CatalogLenses.columnOf attr)
+    let replacement = { ColumnName = "renamed"; IsNullable = true }
+    let updated = Lens.set CatalogLenses.columnOf replacement attr
+    Assert.Equal(replacement, updated.Column)
+    Assert.Equal(attr.SsKey, updated.SsKey)
+    Assert.Equal(attr.Name, updated.Name)
+
 // ---------------------------------------------------------------------------
 // Validation.duplicateKeyErrors — chapter-Cluster-B algebraic compression
 // primitive. Replaces the recurring groupBy + filter > 1 + map error

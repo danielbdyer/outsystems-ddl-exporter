@@ -215,23 +215,21 @@ module SymmetricClosure =
                 initial
         let events = List.rev eventsRev
 
+        let attachInverses (k: Kind) : Kind =
+            match Map.tryFind k.SsKey inversesByTarget with
+            | None       -> k
+            | Some toAdd ->
+                // Reverse so inverses appear in the order they were
+                // discovered (the accumulator builds in reverse
+                // because of `inverse :: current`).
+                k
+                |> Lens.over CatalogLenses.referencesOf (fun refs ->
+                    refs @ List.rev toAdd)
+
         let withInverses =
-            { Modules =
-                c.Modules
-                |> List.map (fun m ->
-                    { m with
-                        Kinds =
-                            m.Kinds
-                            |> List.map (fun k ->
-                                match Map.tryFind k.SsKey inversesByTarget with
-                                | None       -> k
-                                | Some toAdd ->
-                                    // Reverse so inverses appear in the
-                                    // order they were discovered (the
-                                    // accumulator builds in reverse
-                                    // because of `inverse :: current`).
-                                    { k with References = k.References @ List.rev toAdd }) })
-              Sequences = c.Sequences }
+            c
+            |> Lens.over CatalogLenses.modules (
+                List.map (Lens.over CatalogLenses.kindsOf (List.map attachInverses)))
 
         Lineage.ofValueAndEvents events withInverses
 

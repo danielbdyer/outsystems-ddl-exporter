@@ -812,26 +812,93 @@ need to round-trip across the variant change.
 **Dependency:** none. Pairs naturally with the smart-constructor
 audit (§4.2.1's identity slice) but is independent.
 
-### Slice 3 (medium; 3–5 days). Lens adoption — the three convergent sites
+### Slice 3 — **LANDED 2026-06-02**. Lens adoption + Optics.fs extraction + broader Core sweep.
 
 **Principle:** 14 (optics when nested update recurs), 13 (monoids/
-optics named), the Tier-1 finding.
-**Files:**
-- `Passes/SymmetricClosure.fs:218-234` — adopt
-  `Lens.compose CatalogLenses.kindsOf CatalogLenses.referencesOf
-  |> Lens.over (...)`.
-- `Passes/LogicalColumnEmission.fs:74` — adopt
-  `Lens.over Column.columnName` (or compose).
-- `CatalogDiff.fs:341` — same axis (`Column.IsNullable`).
-**Action:** the lenses already exist (`Diagnostics.fs:802-986`,
-`CatalogLenses` module). The slice is just adopting them at the
-three named sites and adding the property test "lens-laws hold on
-the canonical lenses" to `AxiomTests.fs` if not already there.
-**Risk:** low; mechanical; behavior-preserving by lens-laws.
-**Dependency:** none.
-**Why now:** this is the convergent Tier-1 finding. Three agents
-flagged it; the codebase's own discipline names it as violation;
-the consumers are identified. The path to compliance is short.
+optics named), the Tier-1 finding. **Plus** the audit's own §4.3 "Optics
+file location is itself a smell" finding (resolved as part of this slice).
+**As-shipped surface:** the audit's narrow 3-site recommendation expanded
+mid-slice on the wizard's bias (with operator agreement) to a broader Core
+sweep that fits the lens idiom across every catalog-manipulating site, so
+the vocabulary is retained moving forwards as the default.
+
+**Sites landed:**
+1. `Passes/SymmetricClosure.fs:218-234` — `attachInverses` extracted
+   as a named helper using `referencesOf`; outer pipeline uses
+   `modules` + `kindsOf` traversal.
+2. `Passes/LogicalColumnEmission.fs:74` — `columnOf` (new lens).
+3. `Passes/LogicalColumnEmission.fs:78` — `attributesOf`.
+4. `CatalogDiff.fs:397` (was `:341` pre-merge) — `columnOf` for
+   the `Nullability` facet.
+5. `CatalogDiff.fs:483` — `kindsOf` in the conditional update branch.
+6. `LineageBuffer.fs:92` (`CatalogTraversal.mapKinds`) — `modules` +
+   `kindsOf`.
+7. `Policy.fs:413-417` (`Policy.filterCatalog`) — `modules` + `kindsOf`
+   with `List.filter` at the leaf.
+8. `ModuleFilter.fs:375` — `kindsOf` via `Lens.set`.
+9. `ModuleFilter.fs:419` — `kindsOf` via `Lens.set`.
+10. `Passes/NamingMorphism.fs:104` — `modules`.
+
+**Structural fix:** `Lens<'s, 'a>` + `module Lens` + `module CatalogLenses`
+extracted from `Diagnostics.fs` (compile-order ~73) to a new
+`src/Projection.Core/Optics.fs` (compile-order 36, immediately after
+`Catalog.fs`). This was forced by the build (the broader sweep
+*required* the lens vocabulary to be visible to every catalog-
+manipulating site) and simultaneously resolves the audit's own
+§4.3 "Optics file location is itself a smell" finding. The
+extraction is the principled wizard's move; the narrow-3-site
+slice would have left this smell untouched.
+
+**New lens added:** `CatalogLenses.columnOf : Lens<Attribute,
+ColumnRealization>` — two production consumers (LogicalColumnEmission +
+CatalogDiff) sharing the `Attribute.Column` navigation step. Inner
+`ColumnRealization` field-level lenses NOT added (each would be
+a one-consumer micro-extraction; the record-update at the call site
+covers the leaf update cleanly).
+
+**Sites deferred-with-trigger:**
+- `Catalog.fs:1286` (`Catalog.mapKinds`) — the traversal primitive
+  lives in `Catalog.fs` BEFORE `Optics.fs` in the compile order
+  and therefore can't reference the lenses. Lensifying it would
+  require splitting `module Catalog` operations into a post-Optics
+  file; deferred to a future "Catalog traversal extraction" slice.
+  A one-line comment at the site names the constraint so future
+  agents don't try to lensify it without doing the extraction first.
+- Adapter sites (`ReadSide.fs:1082, 1111, 1136, 1229`,
+  `DataIntegrityChecker.fs:136`, `Static.fs:252`) — adapter scope;
+  audit explicitly scoped Slice 3 to Core. Follow-up slice.
+
+**Discipline updates landed in the same commit:**
+- `CLAUDE.md` F# feature surface table: `Lens<'s, 'a>` entry updated
+  to point at `Optics.fs`, list new production consumers, and name
+  the compile-order rationale.
+- `CLAUDE.md` programming style "Functions" section: new bullet
+  codifying "lensed updates for nested IR substructures" as the
+  default idiom + worked-precedent list.
+
+**Property test added:** `H-015 CatalogLenses.columnOf: get + set
+roundtrip` in `DiagnosticsTests.fs`. Generic Lens laws were already
+property-tested at H-015 (line ~935); per-lens roundtrip tests
+follow the existing pattern for `modules` / `sequences`.
+
+**Validation:** full solution builds clean (0 warnings, 0 errors).
+Fast pure test pool: 2650 passed / 207 skipped / 0 failed (~70s).
+Behavior preservation by lens-laws; no test changes needed for
+the refactor itself.
+
+**Why broader than the audit's recommendation:** mid-slice the agent
+discovered the lens vocabulary's reach was much larger than the
+audit's three named sites suggested — `kindsOf` had 5+ potential
+consumers, `modules` had 3+, `attributesOf` had 1+ (plus the new
+`columnOf` at 2). The veteran's "narrow scope" call would have left
+the discipline as a curiosity used at 3 places; the wizard's
+"vocabulary value scales with ubiquity" argument carried with operator
+agreement, and the audit was deliberately overridden mid-slice per
+the codebase's own "audit during the work" discipline
+(`DECISIONS 2026-05-09`). The expansion paid for itself within the
+same slice: the build forced the Optics.fs extraction, which
+resolved a separate audit finding; the broader adoption made
+the lens form the default idiom (CLAUDE.md updated to match).
 
 ### Slice 4 (small; 2 days). CE machinery trial adoption
 
