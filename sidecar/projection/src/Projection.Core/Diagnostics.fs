@@ -396,6 +396,17 @@ module LineageDiagnostics =
     let writeDiagnostics (entries: DiagnosticEntry list) : Lineage<Diagnostics<unit>> =
         Lineage.ofValue { Value = (); Entries = entries }
 
+    /// Write several lineage events under the unit value. CE primitive:
+    /// `do! writeLineages events` — the multi-event sibling of
+    /// `writeLineage`. Symmetric to `writeDiagnostics` over the diagnostic
+    /// trail. Earned its place at 2026-06-02 CE-adoption sweep when seven
+    /// pass-driver sites (CentralityPass / BoundedContextPass /
+    /// SchemaComplexityPass / QueryHintPass / ProfileAnomalyPass /
+    /// TopologicalOrderPass ×2) all needed to drain a `LineageEvent list`
+    /// into the dual-writer at the pass tail.
+    let writeLineages (events: LineageEvent list) : Lineage<Diagnostics<unit>> =
+        Lineage.ofValueAndEvents events (Diagnostics.ofValue ())
+
 
 /// `lineageDiagnostics { ... }` CE for the dual writer. Same algebraic
 /// shape as `lineage { ... }`, over `Lineage<Diagnostics<'a>>`. The
@@ -421,6 +432,19 @@ type LineageDiagnosticsBuilder() =
           f: 'a -> Lineage<Diagnostics<'b>>)
         : Lineage<Diagnostics<'b>> =
         LineageDiagnostics.bind f m
+    /// Auto-lift overload (2026-06-02 CE-adoption sweep): a plain
+    /// `Lineage<'a>` lifts into the dual-writer via `ofLineage` so
+    /// pass-driver tails can chain a `Composition.fanOut`-shaped
+    /// `Lineage<DecisionSet>` directly into `do! writeDiagnostics`
+    /// without an explicit `let! v = LineageDiagnostics.ofLineage m`
+    /// step. Worked precedent: Nullability / UniqueIndex / ForeignKey
+    /// pass `run` tails (`let! value = lineage; do! writeDiagnostics
+    /// entries; return value`).
+    member _.Bind
+        ( m: Lineage<'a>,
+          f: 'a -> Lineage<Diagnostics<'b>>)
+        : Lineage<Diagnostics<'b>> =
+        LineageDiagnostics.bind f (LineageDiagnostics.ofLineage m)
     member _.Zero() : Lineage<Diagnostics<unit>> = LineageDiagnostics.ofValue ()
     member _.Combine
         ( m1: Lineage<Diagnostics<unit>>,

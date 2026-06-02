@@ -94,7 +94,11 @@ module QueryHintPass =
                   TransformKind  = Touched
                   Classification = DataIntent })
 
-        Lineage.ofValueAndEvents events { Value = report; Entries = diagnostics }
+        lineageDiagnostics {
+            do! LineageDiagnostics.writeLineages events
+            do! LineageDiagnostics.writeDiagnostics diagnostics
+            return report
+        }
 
     let registered (profile: Profile) : RegisteredTransform<Catalog, QueryHintReport> =
         { Name         = passName

@@ -151,7 +151,11 @@ module BoundedContextPass =
                   TransformKind  = Touched
                   Classification = DataIntent })
 
-        Lineage.ofValueAndEvents events { Value = result; Entries = [entry] }
+        lineageDiagnostics {
+            do! LineageDiagnostics.writeLineages events
+            do! LineageDiagnostics.writeDiagnostic entry
+            return result
+        }
 
     let registered : RegisteredTransform<TopologicalOrder, BoundedContextDiscovery> =
         { Name         = passName

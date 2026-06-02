@@ -133,7 +133,11 @@ module CentralityPass =
                       TransformKind  = Touched
                       Classification = DataIntent })
 
-            Lineage.ofValueAndEvents events { Value = result; Entries = [entry] }
+            lineageDiagnostics {
+                do! LineageDiagnostics.writeLineages events
+                do! LineageDiagnostics.writeDiagnostic entry
+                return result
+            }
 
     /// Registered transform metadata. Input type is `TopologicalOrder`.
     let registered : RegisteredTransform<TopologicalOrder, CentralityRanking> =

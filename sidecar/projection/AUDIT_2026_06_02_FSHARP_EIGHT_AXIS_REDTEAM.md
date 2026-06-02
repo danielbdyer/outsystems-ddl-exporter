@@ -900,36 +900,86 @@ same slice: the build forced the Optics.fs extraction, which
 resolved a separate audit finding; the broader adoption made
 the lens form the default idiom (CLAUDE.md updated to match).
 
-### Slice 4 (small; 2 days). CE machinery trial adoption
+### Slice 4 — **LANDED 2026-06-02**. CE machinery adoption + violation-fix sweep.
 
 **Principle:** 9 (CEs replace manual plumbing), the writer-fidelity
 discipline (CE form makes manual record-building syntactically
 impossible).
-**Files:** convert ~5 representative pass drivers from
-function-form to CE form (`NullabilityPass.run`, `UniqueIndexPass.run`,
-`ForeignKeyPass.run`, plus two more).
-**Action:**
-```fsharp
-// Before:
-lineage
-|> LineageDiagnostics.ofLineage
-|> LineageDiagnostics.tellDiagnostics entries
+**Action-gate verdict: PROCEED (with bigger payoff than expected).**
+The trial-form's question was "does CE materially improve readability
+or catch a violation?" The sweep surfaced seven Pattern B sites where
+pass drivers were hand-rolling `{ Value = result; Entries = [entry] }`
+record literals — *direct* writer-fidelity discipline violations the
+function-form had let slip. The CE form syntactically prevents this,
+turning seven discipline-fixes into a byproduct of the form-change.
+The bias upward (10 sites instead of ~5) followed the wizard's
+"fit the idiom into the codebase" mandate that vindicated itself
+during Slice 3.
 
-// After:
-lineageDiagnostics {
-    let! result = lineage
-    do! Diagnostics.writeMany entries
-    return result
-}
-```
-**Action gate:** if the trial materially improves readability or
-catches a writer-fidelity violation the function form missed,
-proceed to the full sweep in a follow-up. If not, *delete* the CE
-machinery in a follow-up (preserving the principle that
-defined-but-unused must resolve).
-**Risk:** low; reversible; the trial gives the principle a real
-test before commitment.
-**Dependency:** none.
+**Sites landed (10 total, two patterns):**
+
+Pattern B — direct violation fixes (7 sites; the CE form prevents the
+manual `{ Value = ...; Entries = ... }` record literals):
+1. `CentralityPass.fs:136`
+2. `BoundedContextPass.fs:154`
+3. `SchemaComplexityPass.fs:141`
+4. `QueryHintPass.fs:97`
+5. `ProfileAnomalyPass.fs:132`
+6. `TopologicalOrderPass.fs:691` (schema islands)
+7. `TopologicalOrderPass.fs:792` (cascade shock zones)
+
+Pattern C — canonical-primitive sites converted for consistency (3 sites):
+8. `NullabilityPass.fs:259-262`
+9. `UniqueIndexPass.fs:194-197`
+10. `ForeignKeyPass.fs:315-318`
+
+**New primitive:** `LineageDiagnostics.writeLineages : LineageEvent
+list -> Lineage<Diagnostics<unit>>` (multi-event sibling of
+`writeLineage`, symmetric to `writeDiagnostics`). Required by every
+Pattern B site to drain a `LineageEvent list` into the dual-writer
+without manual record building.
+
+**New CE Bind overload:** `LineageDiagnosticsBuilder.Bind` now carries
+a second overload accepting `Lineage<'a>` directly (auto-lifts via
+`ofLineage`). This lets pass drivers write `let! value = lineage`
+where `lineage : Lineage<DecisionSet>` came from `Composition.fanOut`,
+without an explicit `let! v = LineageDiagnostics.ofLineage lineage`
+step. Required by every Pattern C site for the CE form to read at
+least as cleanly as the function form.
+
+**Discipline updates landed in the same commit:**
+- `CLAUDE.md` F# feature surface: CE-builder entry updated to list new
+  production consumers (10 sites), name the auto-lift Bind overload,
+  document `writeLineages` as a CE primitive, and explicitly call out
+  the seven Pattern B violation fixes.
+- `CLAUDE.md` programming style "Functions" section: new bullet
+  codifying "CE form for pass-driver writer tails" as the default
+  for new pass drivers + worked-precedent list.
+
+**Validation:** full solution builds clean (0 warnings, 0 errors).
+Fast pure test pool: 2650 passed / 207 skipped / 0 failed.
+Behavior preservation by the writer monad laws (CE desugars to
+the equivalent bind chain).
+
+**Why broader than the audit's recommendation:** mid-slice the
+agent discovered that seven of the candidate sites weren't merely
+"function-form to CE-form" stylistic changes — they were *direct*
+discipline violations being silently committed. The audit's
+"action-gate" framing was vindicated empirically: the trial
+caught violations the function form had missed. Expanding from
+~5 to 10 sites in the same slice (per the codebase's "audit
+during the work" discipline + the wizard's "vocabulary value
+scales with ubiquity" argument from Slice 3) made the CE form
+the documented default for new pass drivers.
+
+**Note on Pattern C readability:** the function form
+(`lineage |> ofLineage |> tellDiagnostics entries`) is 3 lines vs
+the CE form's 4 (with `let! value = lineage; do! writeDiagnostics
+entries; return value`). The CE form's win at Pattern C sites is
+*consistency with Pattern B* and *structural impossibility of
+record-building* — not raw conciseness. For new pass drivers, the
+CE form is the documented default; existing function-form chains
+using only canonical primitives remain admissible.
 
 ### Slice 5 (large; 1–2 weeks). Identity-typing field-adoption sweep
 
