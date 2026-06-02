@@ -1399,6 +1399,24 @@ module ScriptDomBuild =
         stmt.ConstraintEnforcement <- ConstraintEnforcement.Check
         stmt
 
+    /// Build `ALTER TABLE <table> NOCHECK CONSTRAINT <fk>` via ScriptDom's
+    /// `AlterTableConstraintModificationStatement` with
+    /// `ConstraintEnforcement.NoCheck` (and no `WITH` prefix). Disables the
+    /// constraint — `is_disabled = 1`, `is_not_trusted = 1`. 6.A.6 — the
+    /// first leg of the two-step that reproduces an enabled-untrusted FK
+    /// (see `Statement.AlterTableDisableConstraint`); `buildAlterTableNoCheckConstraint`
+    /// is the second leg (re-enable skipping validation).
+    let buildAlterTableDisableConstraint
+            (table: TableId)
+            (constraintName: string)
+            : AlterTableConstraintModificationStatement =
+        use _ = Bench.scope "emit.scriptDom.build.alterTableDisableConstraint"
+        let stmt = AlterTableConstraintModificationStatement()
+        stmt.SchemaObjectName <- schemaObjectFromTableId table
+        stmt.ConstraintNames.Add(bracketed constraintName)
+        stmt.ConstraintEnforcement <- ConstraintEnforcement.NoCheck
+        stmt
+
     /// Build `ALTER TABLE <table> DISABLE TRIGGER <name>` via
     /// ScriptDom's `AlterTableTriggerModificationStatement` with
     /// `TriggerEnforcement.Disable`. Preserves the deployed target's
@@ -1628,6 +1646,8 @@ module ScriptDomBuild =
             Some ((buildSetExtendedProperty owner propName propValue).Value :> TSqlStatement)
         | AlterTableNoCheckConstraint (table, constraintName) ->
             Some (buildAlterTableNoCheckConstraint table constraintName :> TSqlStatement)
+        | AlterTableDisableConstraint (table, constraintName) ->
+            Some (buildAlterTableDisableConstraint table constraintName :> TSqlStatement)
         | AlterIndexDisable (table, indexName) ->
             Some (buildAlterIndexDisable table indexName :> TSqlStatement)
         | CreateTrigger definition ->

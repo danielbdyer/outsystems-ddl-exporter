@@ -774,13 +774,15 @@ module Deploy =
                 | SetIdentityInsert _ ->
                     do! flushBulk ()
                     appendDdl s
-                | AlterTableNoCheckConstraint _ ->
-                    // Slice 5.13.fk-features-emit (matrix row 59) —
-                    // ALTER TABLE ... WITH NOCHECK CHECK CONSTRAINT
-                    // is a DDL-class statement; same realization shape
-                    // as the other DDL arms (flush bulk inserts before
-                    // issuing DDL, then route through Render.toSql
-                    // which delegates to ScriptDomGenerate).
+                | AlterTableNoCheckConstraint _ | AlterTableDisableConstraint _ ->
+                    // Slice 5.13.fk-features-emit (matrix row 59) +
+                    // 6.A.6 — ALTER TABLE … NOCHECK CONSTRAINT (disable)
+                    // and ALTER TABLE … WITH NOCHECK CHECK CONSTRAINT
+                    // (re-enable skipping validation) are DDL-class
+                    // statements; same realization shape as the other DDL
+                    // arms (flush bulk inserts before issuing DDL, then
+                    // route through Render.toSql which delegates to
+                    // ScriptDomGenerate).
                     do! flushBulk ()
                     appendDdl s
                 | AlterIndexDisable _ ->

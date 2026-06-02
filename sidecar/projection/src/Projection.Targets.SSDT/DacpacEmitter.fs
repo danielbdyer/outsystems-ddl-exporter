@@ -70,7 +70,7 @@ module DacpacEmitter =
     let private isSchemaStatement (s: Statement) : bool =
         match s with
         | CreateTable _ | CreateIndex _ | SetExtendedProperty _
-        | AlterTableNoCheckConstraint _ | AlterIndexDisable _
+        | AlterTableNoCheckConstraint _ | AlterTableDisableConstraint _ | AlterIndexDisable _
         | CreateTrigger _ | AlterTableDisableTrigger _ | CreateSequence _
         | AlterTableAddColumn _ | AlterTableAlterColumn _ -> true
         | InsertRow _ | SetIdentityInsert _ | Comment _ | Blank | BatchSeparator -> false

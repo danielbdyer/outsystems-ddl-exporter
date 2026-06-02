@@ -661,6 +661,59 @@ let ``6.A.8 (decision adjunction): read-back reproduces EnforceUnique and DropFk
         Assert.Equal(Some true, parentIndexUnique tightened.Reconstructed)
         Assert.Equal(0, childFkCount tightened.Reconstructed)
 
+// ---------------------------------------------------------------------
+// 6.A.6 — emit-side NOCHECK-FK reproduction (the schema-erasure 6.A.5
+// surfaced). A source `Reference.IsConstraintTrusted = false` now SURVIVES
+// emit → deploy → ReadSide: the emitter reproduces the enabled-untrusted
+// state via the two-step (NOCHECK CONSTRAINT disable → WITH NOCHECK CHECK
+// CONSTRAINT re-enable), which lands `is_not_trusted = 1, is_disabled = 0`
+// (a bare `WITH NOCHECK CHECK CONSTRAINT` on a freshly-created inline FK is
+// a no-op for the trust bit). The 6.A.5 witness was deploy→ReadSide because
+// the emitter could not yet produce this; 6.A.6 closes the emit leg.
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``6.A.6 (schema round-trip): an untrusted FK survives emit / deploy / ReadSide`` () =
+    if skipIfNoDocker "emit-nocheck-fk-roundtrip" then
+        let parentKey = ssKeySafe "OS_KIND_RT6_Parent"
+        let childKey = ssKeySafe "OS_KIND_RT6_Child"
+        let parentIdKey = ssKeySafe "OS_ATTR_RT6_Parent_Id"
+        let childIdKey = ssKeySafe "OS_ATTR_RT6_Child_Id"
+        let parentFkAttr = ssKeySafe "OS_ATTR_RT6_Child_ParentId"
+        let refKeyV = ssKeySafe "OS_REF_RT6_Child_Parent"
+        let mkAttr (k: SsKey) (col: string) (isPk: bool) : Attribute =
+            { Attribute.create k (nameSafe col) Integer with
+                Column = { ColumnName = col.ToUpperInvariant(); IsNullable = not isPk }
+                IsPrimaryKey = isPk; IsMandatory = isPk }
+        let parent =
+            Kind.create parentKey (nameSafe "Parent")
+                { Schema = "dbo"; Table = "OSUSR_RT6_PARENT"; Catalog = None }
+                [ mkAttr parentIdKey "Id" true ]
+        // The source reference is NOT trusted (the deployed source carried a
+        // WITH NOCHECK FK); the emitter must reproduce that on the target.
+        let child =
+            { Kind.create childKey (nameSafe "Child")
+                { Schema = "dbo"; Table = "OSUSR_RT6_CHILD"; Catalog = None }
+                [ mkAttr childIdKey "Id" true; mkAttr parentFkAttr "ParentId" false ]
+              with References = [ { Reference.create refKeyV (nameSafe "Parent") parentFkAttr parentKey with IsConstraintTrusted = false } ] }
+        let catalog =
+            match Catalog.create [ { SsKey = ssKeySafe "OS_MOD_RT6"; Name = nameSafe "Rt6Mod"; Kinds = [ parent; child ]; IsActive = true; ExtendedProperties = [] } ] [] with
+            | Ok c -> c | Error e -> failwithf "catalog %A" e
+
+        let sql = SsdtDdlEmitter.statements catalog |> Render.toText
+        let readback = (Deploy.runWithReadback sql).GetAwaiter().GetResult()
+        Assert.True(readback.Report.Ok, sprintf "deploy: %A" readback.Report.Errors)
+        match readback.Reconstructed with
+        | Some c ->
+            let childBack = Catalog.allKinds c |> List.find (fun k -> k.Physical.Table = "OSUSR_RT6_CHILD")
+            // The FK is still present (enabled) AND reads back untrusted —
+            // the emit→deploy→ReadSide round-trip is now faithful on FK-trust.
+            Assert.Equal(1, (PhysicalSchema.ofCatalog c).ForeignKeys |> Set.count)
+            match childBack.References with
+            | [ r ] -> Assert.False(r.IsConstraintTrusted, "emitted FK must read back untrusted (WITH NOCHECK reproduced)")
+            | rs -> Assert.Fail(sprintf "expected exactly one reconstructed FK, got %d" (List.length rs))
+        | None -> Assert.Fail "deploy produced no reconstructed catalog"
+
 /// Wave 4.1 — V2.SsKey persistence round-trip. `sampleSourceCatalog`
 /// builds every kind/attribute with an `OssysOriginal` identity; after
 /// deploy → read the recovered SsKeys must still be `OssysOriginal`
