@@ -122,6 +122,36 @@ module private TransferCanaryFixtures =
         "(1,100,N'a'),(2,100,N'b'); " +
         "SET IDENTITY_INSERT [dbo].[OSUSR_XF_CMP] OFF;"
 
+    /// 6.A.4 — a Text column seeded with a genuine empty string, a NULL,
+    /// and a non-empty value. `ReadSide.formatRawValue` collapses both the
+    /// empty string and NULL to the raw `""`, and `Bulk.parseRaw` maps `""`
+    /// back to `DBNull`, so the empty string normalizes to NULL on the sink
+    /// (the named tolerance `EmptyTextNormalizedToNull`).
+    let emptyTextDdl =
+        "CREATE TABLE [dbo].[OSUSR_ET_NOTE] (" +
+        "[ID] INT NOT NULL PRIMARY KEY, [BODY] NVARCHAR(50) NULL);"
+
+    let emptyTextSeed =
+        "INSERT INTO [dbo].[OSUSR_ET_NOTE] ([ID],[BODY]) VALUES " +
+        "(1, N''), (2, NULL), (3, N'hello');"
+
+    /// Per-ID `(BODY value-or-marker, BODY IS NULL)` from a connection.
+    let noteBodies (cnn: Microsoft.Data.SqlClient.SqlConnection) : System.Threading.Tasks.Task<(int * bool) list> =
+        task {
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <-
+                "SELECT [ID], CASE WHEN [BODY] IS NULL THEN 1 ELSE 0 END " +
+                "FROM [dbo].[OSUSR_ET_NOTE] ORDER BY [ID];"
+            use! reader = cmd.ExecuteReaderAsync()
+            let acc = System.Collections.Generic.List<int * bool>()
+            let mutable go = true
+            while go do
+                let! has = reader.ReadAsync()
+                if has then acc.Add(reader.GetInt32 0, reader.GetInt32 1 = 1)
+                else go <- false
+            return List.ofSeq acc
+        }
+
     let value (r: Result<'a>) : 'a = Result.value r
 
     /// Count rows in a table on the given connection.
@@ -430,6 +460,43 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
 
                                 let! rows = TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_XF_CMP]"
                                 Assert.Equal(0, rows)
+                            })
+                }))
+
+    // 6.A.4 — empty-string Text ↔ NULL fidelity. The transfer IR cannot
+    // distinguish a genuine empty-string Text value from NULL (ReadSide
+    // collapses both to ""), so an empty string normalizes to NULL on the
+    // sink. This is the named, CLOSED tolerance `EmptyTextNormalizedToNull`
+    // (not a silent drop): the witness asserts the rule explicitly at the
+    // sink-DB level (the canary's row-hash can't see it — both sides read "").
+    [<Fact>]
+    member _.``data canary: empty-string Text normalizes to NULL on transfer (named tolerance)`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "XferEmptyText") then () else
+        // The behavior is a named, closed tolerance — not a silent erasure.
+        Assert.Contains(ToleratedDivergence.EmptyTextNormalizedToNull, ToleratedDivergence.allKnown)
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "XferEmptyTextSrc" (fun src _ ->
+                task {
+                    do! Deploy.executeBatch src TransferCanaryFixtures.emptyTextDdl
+                    do! Deploy.executeBatch src TransferCanaryFixtures.emptyTextSeed
+                    return!
+                        fixture.WithEphemeralDatabase "XferEmptyTextSink" (fun sink _ ->
+                            task {
+                                do! Deploy.executeBatch sink TransferCanaryFixtures.emptyTextDdl
+
+                                let! contractR = ReadSide.read src
+                                let contract = TransferCanaryFixtures.value contractR
+                                let! reportR = Transfer.run Transfer.Execute true src sink contract
+                                let _ = TransferCanaryFixtures.value reportR
+
+                                // Source: row 1 is '' (NOT NULL), row 2 NULL, row 3 'hello'.
+                                let! srcBodies = TransferCanaryFixtures.noteBodies src
+                                Assert.Equal<(int * bool) list>([ (1, false); (2, true); (3, false) ], srcBodies)
+
+                                // Sink: row 1's empty string normalized to NULL (the tolerance);
+                                // NULL stays NULL; 'hello' survives non-null.
+                                let! sinkBodies = TransferCanaryFixtures.noteBodies sink
+                                Assert.Equal<(int * bool) list>([ (1, true); (2, true); (3, false) ], sinkBodies)
                             })
                 }))
 

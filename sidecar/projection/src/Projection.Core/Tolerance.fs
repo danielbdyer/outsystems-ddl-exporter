@@ -55,6 +55,20 @@ type ToleratedDivergence =
     /// chapter 4.1.B will retire this variant for population kinds.
     | StaticPopulationsUnreflected
 
+    /// 6.A.4 — a genuine empty-string `Text` value and SQL `NULL` are
+    /// **indistinguishable** in the transfer IR: `ReadSide.formatRawValue`
+    /// maps both `DBNull` and `""` to the raw `""` (so even the canary's
+    /// row-hash cannot tell them apart), and `Bulk.parseRaw` maps `""` back
+    /// to `DBNull`. The net rule, made explicit: **an empty-string `Text`
+    /// value normalizes to `NULL` on transfer-write.** Named here so the
+    /// erasure is *closed* (documented + witnessed), not silent. Retiring it
+    /// requires a read-side sentinel that distinguishes absent from
+    /// empty-string end-to-end (an IR-grows-under-evidence slice; no fixture
+    /// forces faithful empty-string preservation today). NB: for a NOT-NULL
+    /// `Text` column an empty source value would instead fail the load —
+    /// that schema-vs-data compatibility check is 6.B.1, not this tolerance.
+    | EmptyTextNormalizedToNull
+
     // **CommentMetadataUnreflected — RETIRED at chapter 4.1.A slice 8
     // (2026-05-17).** Column / table / index descriptions and extended
     // properties now emit as `EXEC sys.sp_addextendedproperty` calls
@@ -87,6 +101,7 @@ module ToleratedDivergence =
         | ToleratedDivergence.PostDeployForeignKeysSplit     -> ToleratedDivergence.PostDeployForeignKeysSplit
         | ToleratedDivergence.IndexesUnreflected             -> ToleratedDivergence.IndexesUnreflected
         | ToleratedDivergence.StaticPopulationsUnreflected   -> ToleratedDivergence.StaticPopulationsUnreflected
+        | ToleratedDivergence.EmptyTextNormalizedToNull      -> ToleratedDivergence.EmptyTextNormalizedToNull
 
     /// Every empirically-grounded `ToleratedDivergence` variant.
     /// The closed-DU coverage test asserts this set has the same
@@ -106,6 +121,7 @@ module ToleratedDivergence =
                 coverage ToleratedDivergence.PostDeployForeignKeysSplit
                 coverage ToleratedDivergence.IndexesUnreflected
                 coverage ToleratedDivergence.StaticPopulationsUnreflected
+                coverage ToleratedDivergence.EmptyTextNormalizedToNull
             ]
 
     /// Canonical string name for a divergence — the operator-facing token a
@@ -119,6 +135,7 @@ module ToleratedDivergence =
         | ToleratedDivergence.PostDeployForeignKeysSplit   -> "PostDeployForeignKeysSplit"
         | ToleratedDivergence.IndexesUnreflected           -> "IndexesUnreflected"
         | ToleratedDivergence.StaticPopulationsUnreflected -> "StaticPopulationsUnreflected"
+        | ToleratedDivergence.EmptyTextNormalizedToNull    -> "EmptyTextNormalizedToNull"
 
     /// Parse a config token to its divergence, or `None` for an unrecognized
     /// token. Derived from `name` so the round-trip `name >> tryParse` is the

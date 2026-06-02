@@ -194,3 +194,30 @@ let ``6.D.1: record refuses a non-advancing version (NonMonotonic)`` () =
         match MigrationRun.record path (tl "dev") coord1 None (DataObservation.create 0 None) artifacts with
         | FsResult.Error (NonMonotonic _) -> ()
         | other -> Assert.Fail(sprintf "expected NonMonotonic, got %A" other))
+
+// ---------------------------------------------------------------------------
+// 6.A.7 — the migrate preview surfaces a Synthesized-key rename as a Warning
+// (identity.synthesizedRenameUnstable) instead of silently re-keying it. A
+// non-V2 (name-derived) source cannot thread identity across a rename; the
+// drop + add is allowed under --allow-drops but the operator is warned.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``6.A.7: migrate preview surfaces identity.synthesizedRenameUnstable for a Synthesized-key rename`` () =
+    let synthK (parts: string list) : SsKey = SsKey.synthesizedComposite "READSIDE_KIND" parts |> mustResultOk
+    let attrK (parts: string list) : SsKey = SsKey.synthesizedComposite "READSIDE_ATTR" parts |> mustResultOk
+    let at7 (k: SsKey) (col: string) (isPk: bool) : Attribute =
+        { Attribute.create k (nm col) PrimitiveType.Integer with
+            Column = { ColumnName = col; IsNullable = not isPk }; IsPrimaryKey = isPk; IsMandatory = isPk }
+    let kindOf7 (kKey: SsKey) (table: string) : Kind =
+        Kind.create kKey (nm table) (TableId.create "dbo" table |> mustResultOk)
+            [ at7 (attrK [table; "ID"]) "ID" true; at7 (attrK [table; "BODY"]) "BODY" false ]
+    let catOf7 (k: Kind) : Catalog =
+        IRBuilders.mkCatalog [ IRBuilders.mkModule (synthK ["MOD"]) (nm "M") [ k ] ]
+    let oldCat = catOf7 (kindOf7 (synthK ["dbo.T_OLD"]) "T_OLD")
+    let newCat = catOf7 (kindOf7 (synthK ["dbo.T_NEW"]) "T_NEW")
+    // allowDrops = true so the drop + add proceeds; the warning still surfaces.
+    let artifacts = MigrationRun.preview true oldCat newCat |> mustOk
+    Assert.Contains(
+        artifacts.SchemaDiagnostics,
+        fun (e: DiagnosticEntry) -> e.Code = "identity.synthesizedRenameUnstable" && e.Severity = DiagnosticSeverity.Warning)

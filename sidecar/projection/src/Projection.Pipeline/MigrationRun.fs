@@ -104,10 +104,28 @@ module MigrationRun =
                     match RefactorLogEmitter.emit plan.Diff with
                     | Error e -> Error (EmitFailed e)
                     | Ok refactorArtifact ->
+                        // 6.A.7 — surface name-derived (Synthesized) renames the
+                        // SsKey-matching diff could not thread (drop + add, not a
+                        // Renamed record). For a non-V2 source identity cannot be
+                        // threaded across the rename without a reconciliation rule
+                        // or persisted V2 SsKeys; name it, don't silently re-key.
+                        let renameWarnings =
+                            CatalogDiff.synthesizedRenameWarnings plan.Diff
+                            |> List.map (fun w ->
+                                { DiagnosticEntry.create
+                                    "migrate" DiagnosticSeverity.Warning
+                                    "identity.synthesizedRenameUnstable"
+                                    "A name-derived (Synthesized) identity appears renamed but the diff classifies it as a drop + add, not a rename — identity is not threaded across the rename. Supply a reconciliation rule or persist V2 SsKeys on first import."
+                                  with
+                                    Metadata =
+                                        Map.ofList
+                                            [ "synthesisSource", w.SynthesisSource
+                                              "sourceTable", w.SourceTable
+                                              "targetTable", w.TargetTable ] })
                         Ok
                             { Plan = plan
                               SchemaStatements = schema.Value
-                              SchemaDiagnostics = schema.Entries
+                              SchemaDiagnostics = schema.Entries @ renameWarnings
                               RefactorLog = flattenRefactorLog refactorArtifact }
 
     /// Record a completed migration's episode onto the timeline persisted at

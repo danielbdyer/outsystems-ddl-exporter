@@ -245,6 +245,35 @@ module SsKey =
         | Synthesized _
         | V1Mapped _ -> false
 
+    /// The root leaf identity — peel every `DerivedFrom` wrapper. The
+    /// stability of an identity under rename is the stability of its root:
+    /// a `DerivedFrom` rooted in a `Synthesized` key is as name-unstable as
+    /// the `Synthesized` root itself.
+    let rec rootKey (key: SsKey) : SsKey =
+        match key with
+        | DerivedFrom (parent, _) -> rootKey parent
+        | leaf -> leaf
+
+    /// True iff the identity's root is `Synthesized` — i.e. the key is
+    /// derived from the entity's *name* (`(schema, table)` / JSON path), so a
+    /// rename CHANGES the key and A1 identity cannot be threaded across it
+    /// without a reconciliation rule or a persisted V2 SsKey. `OssysOriginal`
+    /// / `V1Mapped` roots are GUID-stable; renames thread natively. 6.A.7.
+    let isSynthesizedRoot (key: SsKey) : bool =
+        match rootKey key with
+        | Synthesized _ -> true
+        | OssysOriginal _ | V1Mapped _ -> false
+        | DerivedFrom _ -> false  // unreachable: rootKey peels DerivedFrom
+
+    /// The synthesis convention (`source`) of a `Synthesized`-rooted key, or
+    /// `None` for a GUID-rooted identity. Two `Synthesized` keys with the
+    /// same `source` came from the same adapter convention — a precondition
+    /// for treating a Removed+Added pair as a plausible rename (6.A.7).
+    let synthesisSource (key: SsKey) : string option =
+        match rootKey key with
+        | Synthesized (source, _) -> Some source
+        | OssysOriginal _ | V1Mapped _ | DerivedFrom _ -> None
+
     /// Sequence of derivation reasons from the root outward, oldest first.
     /// Empty for leaf identities (`OssysOriginal`, `Synthesized`,
     /// `V1Mapped`).

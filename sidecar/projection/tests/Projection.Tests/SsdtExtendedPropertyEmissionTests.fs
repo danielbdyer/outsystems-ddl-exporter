@@ -183,4 +183,5 @@ let ``Chapter 4.1.A slice 8: Tolerance.CommentMetadataUnreflected variant retire
         | ToleratedDivergence.PostDeployForeignKeysSplit   -> ()
         | ToleratedDivergence.IndexesUnreflected           -> ()
         | ToleratedDivergence.StaticPopulationsUnreflected -> ()
-    Assert.Equal(4, Set.count ToleratedDivergence.allKnown)
+        | ToleratedDivergence.EmptyTextNormalizedToNull    -> ()
+    Assert.Equal(5, Set.count ToleratedDivergence.allKnown)
