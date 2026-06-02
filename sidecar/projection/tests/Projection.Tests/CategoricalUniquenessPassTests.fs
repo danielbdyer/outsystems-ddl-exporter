@@ -321,8 +321,8 @@ let ``A25: every emitted event references a real attribute SsKey`` () =
 // Catalog passes through unchanged.
 // ---------------------------------------------------------------------------
 
-[<Fact>]
-let ``catalog passes through unchanged: structural by signature`` () =
-    let policy = policyWithIntervention "v2-distrib" (mkConfig 2L)
-    let _ = cuRun sampleCatalog policy Profile.empty
-    Assert.Equal(3, (Catalog.allKinds sampleCatalog).Length)
+// Slice 10 (2026-06-02 audit): "catalog passes through unchanged"
+// test pruned. The pass return type is `Lineage<DecisionSet>` — the
+// signature does not return a transformed catalog, so input
+// preservation is a *signature-level* guarantee. The test restated
+// the signature rather than checking a contract V2 owns.

@@ -511,6 +511,24 @@ the canonical surface is the code itself, the pattern is named.
   (`Original of string | Derived of original × reason`); core code
   never holds a string in a place where identity belongs. Names
   (`Name`) are presentation-only.
+- **Schema coordinates are typed VOs (2026-06-02 lift slices 5a + 5b).**
+  `TableId.Schema : SchemaName`, `TableId.Table : TableName`,
+  `ColumnRealization.ColumnName : ColumnName` — the logical-IR
+  coordinate triad. Construction flows through `TableId.create` /
+  `ColumnRealization.create` (Result-returning, validating non-blank
+  + ≤128-char SQL identifier limit). Boundary code unwraps via
+  `TableId.schemaText` / `tableText` / `qualifiedParts` and
+  `ColumnRealization.columnNameText`. **Compiler gap to remember**:
+  `String.Concat` / `String.Join` / `SqlParameter.AddWithValue`
+  accept `object` so VO-leak bugs DON'T surface at compile time.
+  After every typed-VO field lift, grep
+  `String.Concat\|String.Join\|AddWithValue` for VO-bearing
+  arguments and unwrap each. Deliberate asymmetry:
+  `PhysicalSchema`'s `PhysicalColumn` / `LogicalNameBinding` /
+  `PhysicalForeignKey` and `Sequence` stay string-typed by design —
+  they're a separate IR domain (physical-comparison surface) where
+  string-as-comparison-key is defensible. See `Coordinates.fs`
+  top-of-file comment for the full cleavage rationale.
 - **Generic algebraic names in the core; domain-prescriptive names
   at the boundary.** `Kind`, `Module`, `Catalog`, `Reference` —
   not `Entity`, `Application`, `Model`, `FK`. The trunk's
@@ -564,6 +582,45 @@ the canonical surface is the code itself, the pattern is named.
   must count projections; `LineageDiagnostics.payload`,
   `LineageDiagnostics.entries`, and domain shortcuts like
   `UniqueIndexPass.decisionsOf` are the discipline.
+- **CE form for pass-driver writer tails (2026-06-02 CE-adoption sweep).**
+  When a pass-driver `run` function builds a `Lineage<Diagnostics<'a>>`
+  return value, prefer the `lineageDiagnostics { ... }` CE form over
+  hand-rolled record construction. The CE form makes manual
+  `{ Value = result; Entries = entries }` construction syntactically
+  impossible — every value flows through `do! writeLineages events` /
+  `do! writeDiagnostics entries` / `return value`, so writer-fidelity
+  is a type-level guarantee rather than a convention. Worked precedent
+  (CE-adoption sweep): `CentralityPass.run`, `BoundedContextPass.run`,
+  `SchemaComplexityPass.run`, `QueryHintPass.run`, `ProfileAnomalyPass.run`,
+  `TopologicalOrderPass` ×2, plus the canonical Pattern C
+  `NullabilityPass` / `UniqueIndexPass` / `ForeignKeyPass`. Seven of those
+  ten sites previously hand-built the `Diagnostics<'a>` record literal —
+  the CE migration fixed those discipline violations as a byproduct of
+  the form-change. The function-form chain
+  (`ofLineage |> tellDiagnostics entries`) is still admissible at sites
+  using only canonical primitives, but the CE form is the default for
+  new pass drivers and any site touching writer construction.
+- **Lensed updates for nested IR substructures (2026-06-02 lens-adoption
+  sweep).** When a function updates a substructure of a `Catalog`,
+  `Module`, `Kind`, or `Attribute`, prefer the lens form (`Lens.over` /
+  `Lens.set` with the canonical lenses in `module CatalogLenses` at
+  `src/Projection.Core/Optics.fs`) over `{ x with Foo = ... }`
+  record-spread. The lens form (a) names the access path so readers
+  see `kindsOf`, `referencesOf`, `columnOf` explicitly; (b) makes
+  `grep "Lens.over CatalogLenses.kindsOf"` a structural query that
+  surfaces every site updating that axis; (c) composes — deeper
+  navigation is `Lens.compose outer inner` rather than nested
+  `{ ... with ... = { ... with ... = ... } }`. The exception is
+  primitives that themselves define the traversal (`Catalog.mapKinds`),
+  which live in `Catalog.fs` BEFORE `Optics.fs` in the compile order
+  and therefore can't reference the lenses. New nested-update sites
+  in pre-Optics files (rare) keep record-spread with a one-line
+  comment naming the compile-order constraint; everywhere else, the
+  lens form is the default. **Worked precedent (slice that codified):**
+  `SymmetricClosure.attachInverses`, `LogicalColumnEmission.substituteAttribute`,
+  `CatalogDiff.applyFacet.Nullability`, `Policy.filterCatalog`,
+  `CatalogTraversal.mapKinds`, `ModuleFilter.filterModules` (×2),
+  `CatalogDiff.addKind`, `NamingMorphism.run`.
 
 ### Documentation in code
 
@@ -682,13 +739,13 @@ re-open the question. The general meta-rule:
 | **`Array.Parallel.map` for CPU-bound parallelism** | `PhysicalSchema.toPhysicalRows` (per-row SHA256). | Independent per-row work; deterministic output ordering preserved (Set-membership downstream). |
 | **`SHA256.HashData` (allocation-free)** | `PhysicalSchema.hashStaticRowBytes`; `RowDigester.hashRowBytes`. | Replaces `SHA256.Create() + ComputeHash` to drop instance allocations on the per-row hashing hot path. |
 | **`SqlBulkCopy` realization** (`Bulk.copyRows` + `Deploy.executeStream`) | `Projection.Pipeline.Bulk` + `Deploy.executeStream` folds consecutive `InsertRow` runs. | A36 realization. Bulk-vs-incremental is realization-layer policy; same algebra. |
-| **Computation-expression builders** for `Lineage`, `Diagnostics`, `LineageDiagnostics` (chapter-Cluster-B; H-001 / H-002; 2026-05-22) | `lineage { ... }` (writer over `(LineageEvent list, @, [])`); `diagnostics { ... }` (writer over `(DiagnosticEntry list, @, [])`); `lineageDiagnostics { ... }` (dual-writer / WriterT-stacked). Each builder carries `Bind` / `Return` / `ReturnFrom` / `Zero` / `Combine` / `Delay` / `Run`. CE primitives: `Lineage.write` / `writeMany`, `Diagnostics.write` / `writeMany`, `LineageDiagnostics.writeLineage` / `writeDiagnostic` / `writeDiagnostics`. | Writer-fidelity is enforced syntactically inside the CE (manual record-building is impossible). The discipline graduates from "pass drivers follow" to "type-level guarantee at adoption sites." Equivalence with the explicit `bind` chain is law-checked by H-001 + H-002 CE-equivalence property tests in `LineageTests.fs` + `DiagnosticsTests.fs`. |
+| **Computation-expression builders** for `Lineage`, `Diagnostics`, `LineageDiagnostics` (chapter-Cluster-B; H-001 / H-002; 2026-05-22; adopted broadly at 2026-06-02 CE-adoption sweep) | `lineage { ... }` (writer over `(LineageEvent list, @, [])`); `diagnostics { ... }` (writer over `(DiagnosticEntry list, @, [])`); `lineageDiagnostics { ... }` (dual-writer / WriterT-stacked). Each builder carries `Bind` / `Return` / `ReturnFrom` / `Zero` / `Combine` / `Delay` / `Run`. **Auto-lift overload (2026-06-02):** `LineageDiagnosticsBuilder.Bind` carries a second overload accepting `Lineage<'a>` directly (lifts via `ofLineage`), so a `Composition.fanOut`-shaped `Lineage<DecisionSet>` flows into `let! value = lineage` without an explicit lift step. CE primitives: `Lineage.write` / `writeMany`, `Diagnostics.write` / `writeMany`, `LineageDiagnostics.writeLineage` / `writeLineages` / `writeDiagnostic` / `writeDiagnostics`. **Production consumers (post-2026-06-02 sweep):** `NullabilityPass.run` / `UniqueIndexPass.run` / `ForeignKeyPass.run` (canonical Pattern C — `let! value = lineage; do! writeDiagnostics entries; return value`); `CentralityPass` / `BoundedContextPass` / `SchemaComplexityPass` / `QueryHintPass` / `ProfileAnomalyPass` / `TopologicalOrderPass` ×2 (Pattern B — sites that previously hand-built `{ Value = result; Entries = [entry] }` records, now `do! writeLineages events; do! writeDiagnostic entry; return result`). | Writer-fidelity is enforced syntactically inside the CE (manual record-building is impossible). The seven Pattern B sites were **direct violations** of the writer-fidelity discipline — the CE form caught what convention had let slip. The discipline graduates from "pass drivers follow" to "type-level guarantee at any adoption site." Equivalence with the explicit `bind` chain is law-checked by H-001 + H-002 CE-equivalence property tests in `LineageTests.fs` + `DiagnosticsTests.fs`. |
 | **`Pass<'a, 'b>` Kleisli arrow type** (chapter-Cluster-B; H-003; 2026-05-22) | `src/Projection.Core/Diagnostics.fs` (`type Pass<'a, 'b when 'b : equality> = 'a -> Lineage<Diagnostics<'b>>`); `module Pass` with `id` / `compose` / `composeAll` / `product` / `first` / `second`; `module PassOperators` with `>=>` and `&&&`; `PassChainAdapter.Apply` field typed as `Pass<ComposeState, ComposeState>`. | The pipeline IS a Kleisli category over the dual-writer monad. The fold in `PassChainAdapter.compose` IS `Pass.composeAll` modulo per-step `Bench.scope`. Kleisli laws (left/right identity, associativity) + monoidal-product algebra property-tested in `DiagnosticsTests.fs`. Unlocks H-007 (SchemaDelta category), H-063 (free-monad scheduling). |
 | **`LineageTree<'a>` branching writer monad** (chapter-Cluster-B finale; H-005; 2026-05-22) | `src/Projection.Core/Lineage.fs` — closed DU `Leaf of Lineage<'a>` + `Fork of LineageBranch<'a> list`; companion module with `ofLineage` / `branch` / `fork` / `bifurcate` / `leaves` / `paths` / `map` / `bind` / `commit` / `commitFirst` / `tryCommitByPath` / `isLinear` / `byValueAndStructure`. Plus `lineageTree { ... }` CE builder. | The **free monad over the labeled-list functor** applied to `Lineage<'a>` — speculative execution for policy diff (H-033), regression testing (H-035), Cluster C. Completes the writer-monad trinity (Lineage linear / LineageTree branching / Certificate terminal). 26 property + example tests in `LineageTests.fs`. |
 | **`Certificate<'a>` terminal-of-pipeline wrapper** (chapter-Cluster-B; H-004; 2026-05-22) | `src/Projection.Core/Diagnostics.fs` — `type Certificate<'a> = { Value : 'a; Trail : LineageEvent list; Diagnostics : DiagnosticEntry list }`; companion module with `create` / `ofLineageDiagnostics` / `toLineageDiagnostics` / `map` / `combine` / `ofValue`. | Structural isomorphism with `Lineage<Diagnostics<'a>>` — naming the role at the consumer boundary. Multi-target fanout (H-009) produces `Certificate<SsdtBundle> * Certificate<JsonBundle> * Certificate<DistributionsBundle>`. Tested in `DiagnosticsTests.fs`. |
 | **`DiagnosticLattice` partial order** (chapter-Cluster-B follow-on; H-008; 2026-05-22) | `src/Projection.Core/Diagnostics.fs` — `DiagnosticRelation` DU (`Subsumes` / `Precedes`) + `module DiagnosticLattice` with `subsumes` / `relations` / `isMinimal` / `minimal`. | Subsumption rule: code-prefix (separator-bounded) + SsKey-context compatibility. Operator-facing triage surface — `minimal` collapses subsumed entries to root cause. Properties: idempotence, containment, antichain. |
 | **`Prism<'a, 'b>` bidirectional partial accessor** (chapter-Cluster-B follow-on; H-010; 2026-05-22) | `src/Projection.Core/Diagnostics.fs` — `type Prism<'a, 'b> = { Get : 'a -> 'b; ReverseGet : 'b -> 'a option }` + `module Prism` with `get` / `reverseGet` / `roundtrips` / `partition` / `identity` / `compose`. | Bidirectional dual of unidirectional `Pass<'a, 'b>`. Round-trip law enforced via `partition` — lawful vs violating split. Catalog ↔ DDL integration defers; the algebraic surface ships. |
-| **`Lens<'s, 'a>` bidirectional total accessor** (chapter-Cluster-B follow-on; H-015; 2026-05-22) | `src/Projection.Core/Diagnostics.fs` — `type Lens<'s, 'a> = { Get : 's -> 'a; Set : 'a -> 's -> 's }` + `module Lens` with `get` / `set` / `over` / `identity` / `compose`; canonical Catalog lenses in `module CatalogLenses` (`modules`, `sequences`, `kindsOf`, `attributesOf`, `referencesOf`, `indexesOf`). | Total dual of `Prism<'a, 'b>` (partial). Together they form the optics duo. Three lens laws (get-set, set-get, set-set) property-tested. Deep-nested updates compose via `Lens.compose`; future sites use canonical lenses without re-deriving boilerplate. |
+| **`Lens<'s, 'a>` bidirectional total accessor** (chapter-Cluster-B follow-on; H-015; 2026-05-22; extracted to `Optics.fs` + adopted broadly at 2026-06-02 lens-adoption sweep) | `src/Projection.Core/Optics.fs` — `type Lens<'s, 'a> = { Get : 's -> 'a; Set : 'a -> 's -> 's }` + `module Lens` with `get` / `set` / `over` / `identity` / `compose`; canonical Catalog lenses in `module CatalogLenses` (`modules`, `sequences`, `kindsOf`, `attributesOf`, `referencesOf`, `indexesOf`, `columnOf`). Compile-order point: immediately after `Catalog.fs`, before every catalog-manipulating consumer — so the lens vocabulary is visible across the codebase. **Production consumers (post-2026-06-02 sweep):** `modules` — `SymmetricClosure`, `CatalogTraversal.mapKinds` (LineageBuffer), `Policy.filterCatalog`, `NamingMorphism`; `kindsOf` — `SymmetricClosure`, `CatalogTraversal.mapKinds`, `Policy.filterCatalog`, `ModuleFilter` (×2), `CatalogDiff.addKind`; `attributesOf` — `LogicalColumnEmission.substituteKind`; `referencesOf` — `SymmetricClosure.attachInverses`; `columnOf` — `LogicalColumnEmission.substituteAttribute` + `CatalogDiff.applyFacet.Nullability`. `sequences` and `indexesOf` have no production consumer yet (defer-with-trigger pending). | Total dual of `Prism<'a, 'b>` (partial). Together they form the optics duo. Three lens laws (get-set, set-get, set-set) property-tested. Deep-nested updates compose via `Lens.compose`; the lens form is the **default idiom** for nested IR updates — record-spread is reserved for sites that genuinely live before Optics.fs in the compile order (e.g., `Catalog.mapKinds` itself, which is the traversal primitive). |
 | **`Validation` combinators** (chapter-Cluster-B follow-on; 2026-05-22) | `src/Projection.Core/Result.fs` — `module Validation` with `duplicateKeyErrors : code -> msgOf -> keySelector -> items -> ValidationError list`. | Collapses the recurring `groupBy + filter > 1 + map error` boilerplate at aggregate-root smart constructors. Used in `Catalog.create` for module / kind / sequence duplicate-key checks; ~30 LOC saved at 3 sites. Stable order: keys appear in first-occurrence order. |
 | **`Catalog` traversal primitives** (chapter-Cluster-B follow-on; 2026-05-22) | `src/Projection.Core/Catalog.fs` — `Catalog.allModulesKinds` / `foldKinds` / `iterKinds` / `mapKinds` / `updateKindsWhere`. | Replaces inline `c.Modules \|> List.collect (fun m -> m.Kinds) \|> ...` boilerplate at 5+ sites. Pairs with the existing `CatalogTraversal.mapKinds` (Lineage-emitting variant). |
 | **`TighteningPolicy.filterIntervention`** (chapter-Cluster-B follow-on; 2026-05-22) | `src/Projection.Core/Policy.fs` — private `filterIntervention` / `tryFindIntervention` combinators + per-variant extractors (`extractNullability`, `extractUniqueIndex`, etc.). | Closed-DU filtering primitive collapsing the 8 site-identical `List.choose (fun i -> match i with \| Variant -> Some \| _ -> None)` accessors to one-liners. |

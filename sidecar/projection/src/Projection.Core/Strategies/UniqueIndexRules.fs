@@ -213,7 +213,7 @@ module UniqueIndexRules =
               InterventionId = interventionId }
 
         // 1. Already unique in the catalog — structural, trusted.
-        if index.IsUnique then
+        if IndexUniqueness.isUnique index.Uniqueness then
             mkDecision (UniqueIndexOutcome.EnforceUnique AlreadyUnique)
         // 2. Policy-disabled gate. Composite vs single-column toggle.
         else

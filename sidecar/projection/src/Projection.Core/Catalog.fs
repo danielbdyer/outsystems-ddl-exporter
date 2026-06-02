@@ -386,9 +386,35 @@ type PhysicalRealization = TableId
 /// `Attribute` so that policy and unfold passes can rewrite physical
 /// metadata without touching logical structure.
 type ColumnRealization = {
-    ColumnName : string
+    ColumnName : ColumnName
     IsNullable : bool
 }
+
+/// Smart constructors and projections for `ColumnRealization`. Lifted
+/// 2026-06-02 (slice 5b) — `ColumnName` is now the typed VO; consumers
+/// reading the column-name string unwrap via `ColumnRealization.columnNameText`
+/// or `ColumnName.value`.
+[<RequireQualifiedAccess>]
+module ColumnRealization =
+
+    /// Boundary helper — pre-unwrapped column-name text. Use at adapter /
+    /// emitter / diagnostic-formatting boundaries (SQL identifier
+    /// encoding, sprintf "%s", map lookups keyed on string).
+    let columnNameText (c: ColumnRealization) : string = ColumnName.value c.ColumnName
+
+    /// Build a `ColumnRealization` from a raw column-name string.
+    /// Validates non-blank + ≤128-char identifier limit via
+    /// `ColumnName.create`; returns `Result`. Use at adapter
+    /// construction sites (SQL reads, JSON codec) where the input
+    /// is a raw string.
+    let create (columnName: string) (isNullable: bool) : Result<ColumnRealization> =
+        ColumnName.create columnName
+        |> Result.map (fun cn -> { ColumnName = cn; IsNullable = isNullable })
+
+    /// Build a `ColumnRealization` from an already-validated `ColumnName`.
+    /// Total — no validation needed since the input is already typed.
+    let fromTyped (columnName: ColumnName) (isNullable: bool) : ColumnRealization =
+        { ColumnName = columnName; IsNullable = isNullable }
 
 
 /// Reference action at the target side. Mirrored from the standard
@@ -680,12 +706,66 @@ type DataSpace =
     | Filegroup of name: string
     | PartitionScheme of name: string * columns: string list
 
+/// Uniqueness discriminator for indexes (Slice 2a, 2026-06-02). Replaces
+/// the prior `(IsUnique : bool, IsPrimaryKey : bool)` boolean tuple, which
+/// was a 4-state space encoding a 3-state semantic reality: the
+/// `(IsUnique = false, IsPrimaryKey = true)` quadrant typechecked but is
+/// semantically impossible (a primary-key index is unique by definition).
+/// The DU forbids that quadrant by construction.
+///
+/// **Ordering carries semantics**: a PK is "stronger than" a unique
+/// index is "stronger than" a non-unique index. Strategy/diagnostic
+/// surfaces can pattern-match the variant directly; sites that just need
+/// the boolean projection use `IndexUniqueness.isUnique` /
+/// `isPrimaryKey` helpers.
+type IndexUniqueness =
+    /// Ordinary non-unique index — duplicates allowed.
+    | NotUnique
+    /// Uniqueness-enforcing index (not the primary key). Source treats
+    /// duplicates in the keyed columns as a constraint violation.
+    | Unique
+    /// The kind's primary-key index. V1 treats PK as a unique index;
+    /// V2 distinguishes them structurally because emission +
+    /// diagnostics differ (PK is implicitly unique; uniqueness is
+    /// expressed via the constraint shape).
+    | PrimaryKey
+
+[<RequireQualifiedAccess>]
+module IndexUniqueness =
+
+    /// True for `Unique` or `PrimaryKey` (PK is unique by definition).
+    /// Sites that only need the boolean "does this index enforce
+    /// uniqueness?" projection use this helper without pattern-matching.
+    let isUnique (u: IndexUniqueness) : bool =
+        match u with
+        | Unique | PrimaryKey -> true
+        | NotUnique -> false
+
+    /// True iff this is the kind's primary-key index.
+    let isPrimaryKey (u: IndexUniqueness) : bool =
+        match u with
+        | PrimaryKey -> true
+        | _ -> false
+
+    /// Build an `IndexUniqueness` from the legacy `(isUnique, isPrimaryKey)`
+    /// boolean pair. Adapters reading from external formats (V1 JSON, SQL
+    /// reflection rows) project their booleans through this helper to
+    /// reach the typed surface. The legacy "illegal" combination
+    /// `(isUnique = false, isPrimaryKey = true)` is treated as
+    /// `PrimaryKey` (PK is unique by definition; the legacy `IsUnique`
+    /// boolean was redundant when `IsPrimaryKey = true`).
+    let ofLegacyBooleans (isUnique: bool) (isPrimaryKey: bool) : IndexUniqueness =
+        match isUnique, isPrimaryKey with
+        | _,     true  -> PrimaryKey
+        | true,  false -> Unique
+        | false, false -> NotUnique
+
+
 /// A schema-level index on a kind. Carries identity, name, the
 /// participating attribute SsKeys (in declaration order; composite
-/// indexes have multiple), `IsUnique` (does the source treat this index
-/// as a uniqueness constraint), and `IsPrimaryKey` (is this the kind's
-/// primary-key index — V1 treats the PK as a unique index, but V2
-/// distinguishes them at the structural level).
+/// indexes have multiple), and `Uniqueness` (the 3-state
+/// `IndexUniqueness` DU — Slice 2a, 2026-06-02; replaces the prior
+/// `(IsUnique : bool, IsPrimaryKey : bool)` boolean tuple).
 ///
 /// Added under "IR grows under evidence" (DECISIONS.md, 2026-05-10):
 /// the V1 `UniqueIndexDecisionOrchestrator` admire (ADMIRE.md
@@ -706,8 +786,11 @@ type Index = {
     /// slice γ — record-modification from `SsKey list` to
     /// `IndexColumn list`.
     Columns      : IndexColumn list
-    IsUnique     : bool
-    IsPrimaryKey : bool
+    /// Uniqueness discriminator (Slice 2a, 2026-06-02): `NotUnique` /
+    /// `Unique` / `PrimaryKey`. Replaces the prior
+    /// `(IsUnique : bool, IsPrimaryKey : bool)` boolean tuple; see
+    /// `IndexUniqueness` for the rationale.
+    Uniqueness   : IndexUniqueness
     /// SQL Server `sys.extended_properties` annotations attached to
     /// this index. Empty when the source carries none. Chapter A.0'
     /// slice ζ — IR fidelity lift (L3-S9 extended-properties
@@ -940,7 +1023,20 @@ module Attribute =
             SsKey                = ssKey
             Name                 = name
             Type                 = ptype
-            Column               = { ColumnName = Name.value name; IsNullable = false }
+            // Slice 5b (lift): default ColumnName synthesized from Name. Contract:
+            // the Name fits SQL Server's 128-char identifier limit. Callers with
+            // long Names (rare; `LogicalColumnEmission` guards the substitution
+            // path against the same case) must override Column via record-update
+            // before SQL emission. Failure surfaces loud here rather than as
+            // silent invalid SQL downstream.
+            Column               =
+                match ColumnName.create (Name.value name) with
+                | Ok cn -> { ColumnName = cn; IsNullable = false }
+                | Error _ ->
+                    failwithf
+                        "Attribute.create: Name %A (length %d) exceeds SQL Server's 128-char identifier limit. Override the default Column via record-update for long names."
+                        (Name.value name)
+                        (Name.value name).Length
             IsPrimaryKey         = false
             IsMandatory          = false
             Length               = None
@@ -1025,8 +1121,7 @@ module Index =
             SsKey                 = ssKey
             Name                  = name
             Columns               = columns
-            IsUnique              = false
-            IsPrimaryKey          = false
+            Uniqueness            = NotUnique
             ExtendedProperties    = []
             Filter                = None
             IncludedColumns       = []
@@ -1282,6 +1377,11 @@ module Catalog =
     /// preserved). Sibling to `CatalogTraversal.mapKinds` (which
     /// emits Lineage); this form is for callers that don't need
     /// trail emission.
+    // NB: hand-rolled rather than lensed because `module Catalog` lives
+    // inside `Catalog.fs`, which compiles BEFORE `Optics.fs` (the IR types
+    // it focuses must precede it). Lensifying this primitive would require
+    // splitting `module Catalog` operations into a separate post-Optics file
+    // — deferred to a future "Catalog traversal extraction" slice.
     let mapKinds (f: Kind -> Kind) (c: Catalog) : Catalog =
         { c with Modules = c.Modules |> List.map (fun m -> { m with Kinds = m.Kinds |> List.map f }) }
 

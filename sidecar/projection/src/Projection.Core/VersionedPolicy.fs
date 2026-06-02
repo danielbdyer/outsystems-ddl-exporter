@@ -226,10 +226,6 @@ module VersionedPolicy =
           Policy    = policy
           ChangeLog = changeLog }
 
-    /// `create` variant that captures `DateTimeOffset.UtcNow`.
-    let now (policy: Policy) (changeLog: string option) : VersionedPolicy =
-        create DateTimeOffset.UtcNow policy changeLog
-
     /// Evolve a `VersionedPolicy` to a new policy, computing the next
     /// SemVer from the predecessor's version and the structural delta.
     /// `at` records the new snapshot's timestamp.
@@ -247,13 +243,12 @@ module VersionedPolicy =
           Policy    = newPolicy
           ChangeLog = changeLog }
 
-    /// `evolve` variant that captures `DateTimeOffset.UtcNow`.
-    let evolveNow
-        (predecessor: VersionedPolicy)
-        (newPolicy: Policy)
-        (changeLog: string option)
-        : VersionedPolicy =
-        evolve predecessor DateTimeOffset.UtcNow newPolicy changeLog
+    // Slice 0 (2026-06-02): `VersionedPolicy.now` and `evolveNow` retired.
+    // They captured `DateTimeOffset.UtcNow` inside Core (analyzer gap pre-Slice-0).
+    // The principled shape mirrors `Episode.fs` and `ApprovalRecord.At`:
+    // Core takes `at` as a boundary-supplied parameter; CLI and Pipeline
+    // supply `DateTimeOffset.UtcNow` at the call site. Tests use a
+    // per-file fixed `testTime` constant for determinism.
 
     /// True iff two versioned policies share the same content digest
     /// (structurally equal policies, regardless of version / timestamp).

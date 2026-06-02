@@ -380,10 +380,10 @@ let private kindWithFk (kindKey: string) (fkKey: string) (targetKey: SsKey) : Ki
       Name = mkName kindKey
       Origin = Native
       Modality = []
-      Physical = { Schema = "dbo"; Table = kindKey; Catalog = None }
+      Physical = mkTableId "dbo" kindKey
       Attributes = [
-          { Attribute.create attrId (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
-          { Attribute.create attrFk (mkName "Fk") Integer with Column = { ColumnName = "FK"; IsNullable = false } } ]
+          { Attribute.create attrId (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true }
+          { Attribute.create attrFk (mkName "Fk") Integer with Column = ColumnRealization.create ("FK") (false) |> Result.value } ]
       References = [
           Reference.create (mkKey fkKey) (mkName "ToOther") attrFk targetKey ]
       Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
@@ -426,10 +426,10 @@ let private kindWithRef
       Name = mkName kindKey
       Origin = Native
       Modality = []
-      Physical = { Schema = "dbo"; Table = kindKey; Catalog = None }
+      Physical = mkTableId "dbo" kindKey
       Attributes = [
-          { Attribute.create attrId (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
-          { Attribute.create attrFk (mkName "Fk") Integer with Column = { ColumnName = "FK"; IsNullable = sourceAttrNullable } } ]
+          { Attribute.create attrId (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true }
+          { Attribute.create attrFk (mkName "Fk") Integer with Column = ColumnRealization.create ("FK") (sourceAttrNullable) |> Result.value } ]
       References = [
           { Reference.create (mkKey refKey) (mkName "ToOther") attrFk targetKey with OnDelete = onDelete } ]
       Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
@@ -440,9 +440,9 @@ let private noRefKind (kindKey: string) : Kind =
       Name = mkName kindKey
       Origin = Native
       Modality = []
-      Physical = { Schema = "dbo"; Table = kindKey; Catalog = None }
+      Physical = mkTableId "dbo" kindKey
       Attributes = [
-          { Attribute.create attrId (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true } ]
+          { Attribute.create attrId (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true } ]
       References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
 // ---------------------------------------------------------------------------

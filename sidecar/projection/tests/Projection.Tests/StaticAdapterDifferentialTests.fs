@@ -64,11 +64,11 @@ let private cityKind : Kind =
       Name     = mkName "City"
       Origin   = Native
       Modality = [ Static [] ]   // empty populations; adapter fills these in
-      Physical = { Schema = "dbo"; Table = "OSUSR_DEF_CITY"; Catalog = None }
+      Physical = (TableId.create "dbo" "OSUSR_DEF_CITY" |> Result.value)
       Attributes = [
-          { Attribute.create cityIdKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
-          { Attribute.create cityNameKey (mkName "Name") Text with Column = { ColumnName = "NAME"; IsNullable = false } }
-          { Attribute.create cityActiveKey (mkName "IsActive") Boolean with Column = { ColumnName = "ISACTIVE"; IsNullable = false } }
+          { Attribute.create cityIdKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true }
+          { Attribute.create cityNameKey (mkName "Name") Text with Column = ColumnRealization.create ("NAME") (false) |> Result.value }
+          { Attribute.create cityActiveKey (mkName "IsActive") Boolean with Column = ColumnRealization.create ("ISACTIVE") (false) |> Result.value }
       ]
       References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 

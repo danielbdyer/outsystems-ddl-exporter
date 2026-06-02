@@ -410,11 +410,10 @@ module SelectionPolicy =
     /// continue to operate on the full catalog (per A33: sort/order
     /// passes see all kinds, emission filters afterwards).
     let filterCatalog (policy: SelectionPolicy) (c: Catalog) : Catalog =
-        { Modules =
-            c.Modules
-            |> List.map (fun m ->
-                { m with Kinds = m.Kinds |> List.filter (fun k -> isSelected k.SsKey policy) })
-          Sequences = c.Sequences }
+        c
+        |> Lens.over CatalogLenses.modules (
+            List.map (Lens.over CatalogLenses.kindsOf (
+                List.filter (fun k -> isSelected k.SsKey policy))))
 
 
 [<RequireQualifiedAccess>]
@@ -689,12 +688,30 @@ module TighteningPolicy =
     let private extractCategoricalUniqueness =
         function CategoricalUniqueness (id, cfg) -> Some (id, cfg) | _ -> None
 
+    // Slice 8 (2026-06-02): the four `tryFindX` accessors below share an
+    // identical "extract → filter by id → project cfg" shape. The
+    // function-composition (`>>`) form (`extractX >> Option.filter
+    // (fst >> (=) id) >> Option.map snd`) was the most Haskell-leaning
+    // code in the codebase; the named-match form below reads as the
+    // domain intent ("if this is an X intervention with the matching
+    // id, here's the cfg"). N=4 instances of the SAME shape earn the
+    // shared helper `matchById`; per the two-consumer threshold codified
+    // in `DECISIONS 2026-05-13`, four consumers of one shape is well
+    // above the line.
+    let private matchById
+        (extractor: TighteningIntervention -> (string * 'cfg) option)
+        (id: string)
+        (candidate: TighteningIntervention)
+        : 'cfg option =
+        match extractor candidate with
+        | Some (xid, cfg) when xid = id -> Some cfg
+        | _ -> None
+
     /// Find a Nullability intervention's config by intervention id.
     /// Returns `None` if no Nullability intervention has that id (or
     /// if no Nullability intervention is registered at all).
     let tryFindNullability (id: string) (policy: TighteningPolicy) : NullabilityTighteningConfig option =
-        policy
-        |> tryFindIntervention (extractNullability >> Option.filter (fst >> (=) id) >> Option.map snd)
+        policy |> tryFindIntervention (matchById extractNullability id)
 
     /// All registered Nullability interventions, paired with their ids,
     /// in registration order. Useful for passes that may apply more
@@ -706,8 +723,7 @@ module TighteningPolicy =
     /// Returns `None` if no UniqueIndex intervention has that id (or
     /// if no UniqueIndex intervention is registered at all).
     let tryFindUniqueIndex (id: string) (policy: TighteningPolicy) : UniqueIndexTighteningConfig option =
-        policy
-        |> tryFindIntervention (extractUniqueIndex >> Option.filter (fst >> (=) id) >> Option.map snd)
+        policy |> tryFindIntervention (matchById extractUniqueIndex id)
 
     /// All registered UniqueIndex interventions, paired with their ids,
     /// in registration order.
@@ -718,8 +734,7 @@ module TighteningPolicy =
     /// Returns `None` if no ForeignKey intervention has that id (or
     /// if no ForeignKey intervention is registered at all).
     let tryFindForeignKey (id: string) (policy: TighteningPolicy) : ForeignKeyTighteningConfig option =
-        policy
-        |> tryFindIntervention (extractForeignKey >> Option.filter (fst >> (=) id) >> Option.map snd)
+        policy |> tryFindIntervention (matchById extractForeignKey id)
 
     /// All registered ForeignKey interventions, paired with their ids,
     /// in registration order.
@@ -729,8 +744,7 @@ module TighteningPolicy =
     /// Find a CategoricalUniqueness intervention's config by id.
     /// Returns `None` if no matching intervention is registered.
     let tryFindCategoricalUniqueness (id: string) (policy: TighteningPolicy) : CategoricalUniquenessConfig option =
-        policy
-        |> tryFindIntervention (extractCategoricalUniqueness >> Option.filter (fst >> (=) id) >> Option.map snd)
+        policy |> tryFindIntervention (matchById extractCategoricalUniqueness id)
 
     /// All registered CategoricalUniqueness interventions, paired with
     /// their ids, in registration order.

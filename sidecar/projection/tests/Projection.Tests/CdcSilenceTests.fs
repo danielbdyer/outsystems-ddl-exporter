@@ -70,6 +70,10 @@ module private CdcSilenceFixtures =
     let mkKey (parts: string list) : SsKey =
         SsKey.synthesizedComposite "OS_TEST_CDC" parts |> mustOk
 
+    /// Per slice-5 lift: force-unwrap fixture TableId.
+    let mkTableId (schema: string) (table: string) : TableId =
+        TableId.create schema table |> mustOk
+
     let mkName (s: string) : Name =
         Name.create s |> mustOk
 
@@ -95,12 +99,12 @@ module private CdcSilenceFixtures =
               Origin   = Native
               Modality = [ Static [ row "1" "United States"
                                     row "2" "Canada" ] ]
-              Physical = { Schema = "dbo"; Table = "OSUSR_CDC_COUNTRY"; Catalog = None }
+              Physical = mkTableId "dbo" "OSUSR_CDC_COUNTRY"
               Attributes =
                   [
-                      { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID";    IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
-                      { Attribute.create codeKey (mkName "Code") Text with Column = { ColumnName = "CODE";  IsNullable = false }; IsMandatory = true }
-                      { Attribute.create labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL"; IsNullable = false }; IsMandatory = true }
+                      { Attribute.create idKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true }
+                      { Attribute.create codeKey (mkName "Code") Text with Column = ColumnRealization.create ("CODE") (false) |> Result.value; IsMandatory = true }
+                      { Attribute.create labelKey (mkName "Label") Text with Column = ColumnRealization.create ("LABEL") (false) |> Result.value; IsMandatory = true }
                   ]
               References = []
               Indexes    = []
@@ -169,12 +173,12 @@ module private CdcSilenceFixtures =
               Origin   = Native
               Modality = [ Static [ row "1" "USA"          // <-- changed
                                     row "2" "Canada" ] ]
-              Physical = { Schema = "dbo"; Table = "OSUSR_CDC_COUNTRY"; Catalog = None }
+              Physical = mkTableId "dbo" "OSUSR_CDC_COUNTRY"
               Attributes =
                   [
-                      { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID";    IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
-                      { Attribute.create codeKey (mkName "Code") Text with Column = { ColumnName = "CODE";  IsNullable = false }; IsMandatory = true }
-                      { Attribute.create labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL"; IsNullable = false }; IsMandatory = true }
+                      { Attribute.create idKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true }
+                      { Attribute.create codeKey (mkName "Code") Text with Column = ColumnRealization.create ("CODE") (false) |> Result.value; IsMandatory = true }
+                      { Attribute.create labelKey (mkName "Label") Text with Column = ColumnRealization.create ("LABEL") (false) |> Result.value; IsMandatory = true }
                   ]
               References = []
               Indexes    = []

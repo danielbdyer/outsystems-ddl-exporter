@@ -113,7 +113,7 @@ module DistributionsEmitter =
         w.WriteStartObject()
         w.WriteString("ssKey", SsKey.display a.SsKey)
         w.WriteString("name", Name.value a.Name)
-        w.WriteString("column", a.Column.ColumnName)
+        w.WriteString("column", ColumnRealization.columnNameText a.Column)
         // Variant-agnostic lookup; the emitter renders whatever
         // distribution variant the IR carries. The closed DU's
         // exhaustiveness on `writeDistribution` ensures every variant
@@ -135,8 +135,8 @@ module DistributionsEmitter =
         w.WriteStartObject()
         w.WriteString("ssKey", SsKey.display k.SsKey)
         w.WriteString("name", Name.value k.Name)
-        w.WriteString("schema", k.Physical.Schema)
-        w.WriteString("table", k.Physical.Table)
+        w.WriteString("schema", TableId.schemaText k.Physical)
+        w.WriteString("table", TableId.tableText k.Physical)
         w.WritePropertyName("attributes")
         w.WriteStartArray()
         // Sort attributes by SsKey for deterministic output regardless

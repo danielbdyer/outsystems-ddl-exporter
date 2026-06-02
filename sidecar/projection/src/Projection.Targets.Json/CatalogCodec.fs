@@ -180,8 +180,8 @@ module CatalogCodec =
     let private wTableId (jw: Utf8JsonWriter) (t: TableId) : unit =
         jw.WriteStartObject()
         wOpt jw "catalog" wStrVal t.Catalog
-        jw.WriteString("schema", t.Schema)
-        jw.WriteString("table", t.Table)
+        jw.WriteString("schema", TableId.schemaText t)
+        jw.WriteString("table", TableId.tableText t)
         jw.WriteEndObject()
 
     let private wDataSpace (jw: Utf8JsonWriter) (d: DataSpace) : unit =
@@ -218,7 +218,7 @@ module CatalogCodec =
 
     let private wColumnRealization (jw: Utf8JsonWriter) (c: ColumnRealization) : unit =
         jw.WriteStartObject()
-        jw.WriteString("columnName", c.ColumnName)
+        jw.WriteString("columnName", ColumnRealization.columnNameText c)
         jw.WriteBoolean("isNullable", c.IsNullable)
         jw.WriteEndObject()
 
@@ -337,8 +337,17 @@ module CatalogCodec =
         wField jw "ssKey" wSsKey i.SsKey
         wField jw "name" wName i.Name
         wList jw "columns" wIndexColumn i.Columns
-        jw.WriteBoolean("isUnique", i.IsUnique)
-        jw.WriteBoolean("isPrimaryKey", i.IsPrimaryKey)
+        // Slice 2a (2026-06-02): wire format preserves the legacy
+        // (isUnique, isPrimaryKey) boolean pair so existing serialized
+        // catalogs round-trip; project Uniqueness through to the booleans
+        // at the codec boundary.
+        let isUniqueBool, isPrimaryKeyBool =
+            match i.Uniqueness with
+            | PrimaryKey -> true,  true
+            | Unique     -> true,  false
+            | NotUnique  -> false, false
+        jw.WriteBoolean("isUnique", isUniqueBool)
+        jw.WriteBoolean("isPrimaryKey", isPrimaryKeyBool)
         wList jw "extendedProperties" wExtendedProperty i.ExtendedProperties
         wOpt jw "filter" wStrVal i.Filter
         wList jw "includedColumns" wSsKey i.IncludedColumns
@@ -590,7 +599,9 @@ module CatalogCodec =
             let! catalog = optField el "catalog" asString
             let! schema = field el "schema" asString
             let! table = field el "table" asString
-            return { Catalog = catalog; Schema = schema; Table = table }
+            let! schemaName = SchemaName.create schema
+            let! tableName = TableName.create table
+            return { Catalog = catalog; Schema = schemaName; Table = tableName }
         }
 
     let private readDataSpace (el: JsonElement) : Result<DataSpace> =
@@ -635,7 +646,7 @@ module CatalogCodec =
         result {
             let! columnName = field el "columnName" asString
             let! isNullable = field el "isNullable" asBool
-            return { ColumnName = columnName; IsNullable = isNullable }
+            return! ColumnRealization.create columnName isNullable
         }
 
     let private readComputed (el: JsonElement) : Result<ComputedColumnConfig> =
@@ -800,8 +811,7 @@ module CatalogCodec =
             let! dataSpace = optField el "dataSpace" readDataSpace
             return
                 { Index.create ssKey name columns with
-                    IsUnique = isUnique
-                    IsPrimaryKey = isPrimaryKey
+                    Uniqueness = IndexUniqueness.ofLegacyBooleans isUnique isPrimaryKey
                     ExtendedProperties = extendedProperties
                     Filter = filter
                     IncludedColumns = includedColumns

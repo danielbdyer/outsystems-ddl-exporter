@@ -29,21 +29,21 @@ module private IngestionFixtures =
     let itemsKind : Kind =
         let idAttr =
             { Attribute.create (mkKey ["Items"; "Id"]) (mkName "Id") Integer with
-                Column = { ColumnName = "ID"; IsNullable = false }
+                Column = ColumnRealization.create ("ID") (false) |> Result.value
                 IsPrimaryKey = true
                 IsMandatory  = true }
         let nameAttr =
             { Attribute.create (mkKey ["Items"; "Name"]) (mkName "Name") Text with
-                Column = { ColumnName = "NAME"; IsNullable = true }
+                Column = ColumnRealization.create ("NAME") (true) |> Result.value
                 Length = Some 50
                 IsMandatory = false }
         let codeAttr =
             { Attribute.create (mkKey ["Items"; "Code"]) (mkName "Code") Text with
-                Column = { ColumnName = "CODE"; IsNullable = false }
+                Column = ColumnRealization.create ("CODE") (false) |> Result.value
                 Length = Some 10
                 IsMandatory = true }
         { Kind.create itemsKey (mkName "Items")
-            { Schema = "dbo"; Table = "OSUSR_ING_ITEMS"; Catalog = None }
+            (TableId.create "dbo" "OSUSR_ING_ITEMS" |> Result.value)
             [ idAttr; nameAttr; codeAttr ]
           with References = []; Indexes = []; ColumnChecks = [] }
 

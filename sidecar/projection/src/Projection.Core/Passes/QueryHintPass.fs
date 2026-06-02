@@ -56,7 +56,7 @@ module QueryHintPass =
                     let idxOpt =
                         sourceKind.Indexes
                         |> List.tryFind (fun idx ->
-                            not idx.IsPrimaryKey &&
+                            not (IndexUniqueness.isPrimaryKey idx.Uniqueness) &&
                             Option.isNone idx.FillFactor &&
                             idx.Columns
                             |> List.exists (fun ic -> ic.Attribute = ref_.SourceAttribute))
@@ -94,7 +94,11 @@ module QueryHintPass =
                   TransformKind  = Touched
                   Classification = DataIntent })
 
-        Lineage.ofValueAndEvents events { Value = report; Entries = diagnostics }
+        lineageDiagnostics {
+            do! LineageDiagnostics.writeLineages events
+            do! LineageDiagnostics.writeDiagnostics diagnostics
+            return report
+        }
 
     let registered (profile: Profile) : RegisteredTransform<Catalog, QueryHintReport> =
         { Name         = passName

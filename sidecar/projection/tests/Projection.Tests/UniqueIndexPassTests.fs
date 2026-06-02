@@ -36,7 +36,7 @@ let private indexFixture
     (columns: SsKey list)
     (isUnique: bool)
     : Index =
-    { Index.ofKeyColumns (ssKey key) (name "IX") columns with IsUnique = isUnique }
+    { Index.ofKeyColumns (ssKey key) (name "IX") columns with Uniqueness = (if isUnique then Unique else NotUnique) }
 
 let private mkConfig (single: bool) (composite: bool) : UniqueIndexTighteningConfig =
     UniqueIndexTighteningConfig.create single composite
@@ -266,13 +266,10 @@ let ``policy gates: single-column toggle off produces PolicyDisabled for non-uni
 // T1 determinism — same triple ⇒ identical output (decisions + trail).
 // ---------------------------------------------------------------------------
 
-[<Fact>]
-let ``T1: UniqueIndexPass is deterministic on the triple`` () =
-    let policy = policyWithIntervention "v1-style" (mkConfig true true)
-    let r1 = uiRun indexedCatalog policy Profile.empty
-    let r2 = uiRun indexedCatalog policy Profile.empty
-    Assert.Equal<UniqueIndexDecisionSet>(UniqueIndexPass.decisionsOf r1, UniqueIndexPass.decisionsOf r2)
-    Assert.Equal<LineageEvent list>(r1.Trail, r2.Trail)
+// Slice 11 (2026-06-02 audit): T1 example test pruned. `f(X) = f(X)`
+// is tautological in pure F#. The accompanying permutation-invariance
+// property below (`contract: UniqueIndexPass is invariant under input
+// permutation`) provides stronger T1 coverage over a swept seed space.
 
 // ---------------------------------------------------------------------------
 // Permutation invariance — sort/order discipline is structural. The pass
@@ -333,13 +330,11 @@ let ``A25: every emitted event references a real index SsKey`` () =
 // (run : Catalog -> Policy -> Profile -> Lineage<UniqueIndexDecisionSet>).
 // ---------------------------------------------------------------------------
 
-[<Fact>]
-let ``catalog passes through unchanged: structural by signature`` () =
-    let policy = policyWithIntervention "v1-style" (mkConfig true true)
-    let _ = uiRun indexedCatalog policy Profile.empty
-    // Sanity: indexedCatalog still has its expected shape.
-    Assert.Equal(3, (Catalog.allKinds indexedCatalog).Length)
-    Assert.Equal(4, (allIndexes indexedCatalog).Length)
+// Slice 10 (2026-06-02 audit): "catalog passes through unchanged"
+// test pruned. The pass return type is `Lineage<DecisionSet>` — the
+// signature does not return a transformed catalog, so input
+// preservation is a *signature-level* guarantee. The test restated
+// the signature rather than checking a contract V2 owns.
 
 // ---------------------------------------------------------------------------
 // V1 divergences — explicit skip stubs naming intentional V2 differences

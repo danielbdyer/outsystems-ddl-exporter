@@ -185,9 +185,9 @@ module PhysicalRename =
     /// `DECISIONS.md`.
     let toDiagnosticString (rename: PhysicalRename) : string =
         String.concat "" [  // LINT-ALLOW: terminal diagnostic projection; typed `PhysicalRename` record IS the structure
-            rename.Before.Schema; "."; rename.Before.Table
+            SchemaName.value rename.Before.Schema; "."; TableName.value rename.Before.Table
             " -> "
-            rename.After.Schema; "."; rename.After.Table
+            SchemaName.value rename.After.Schema; "."; TableName.value rename.After.Table
         ]
 
 /// Typed payload for `TransformKind.ColumnPhysicallyRenamed` — the
@@ -218,7 +218,7 @@ module ColumnRename =
     /// per the supreme operating discipline at the top of `DECISIONS.md`.
     let toDiagnosticString (rename: ColumnRename) : string =
         String.concat "" [  // LINT-ALLOW: terminal diagnostic projection; typed `ColumnRename` record IS the structure
-            rename.Kind.Schema; "."; rename.Kind.Table; "["
+            SchemaName.value rename.Kind.Schema; "."; TableName.value rename.Kind.Table; "["
             rename.Before; " -> "; rename.After; "]"
         ]
 
@@ -516,6 +516,22 @@ module LineageOperators =
 /// where the string list is the label path from root to leaf. Two
 /// trees with the same label structure can be diffed leaf-by-leaf
 /// without alignment heuristics.
+///
+/// **Defer-with-trigger (audit 2026-06-02 Slice 12; codified
+/// 2026-06-02).** Zero production consumers as of audit; 26 property
+/// + example tests prove the free-monad shape; branching-writer
+/// adoption deferred.
+///   - **Trigger that earns adoption**: Cluster C (policy
+///     intelligence) — speculative execution where a single
+///     Catalog forks through multiple policies and both branches'
+///     lineages are retained for comparison (H-033 / H-035 in
+///     CLAUDE.md's hypothesis register).
+///   - **Trigger-fire owner**: Cluster C chapter.
+///   - **Deletion contract**: if the trigger does not fire by
+///     `cutover + 1 chapter`, the speculative surface is deleted
+///     in a follow-up slice. The writer-monad trinity (Lineage /
+///     LineageTree / Certificate) was framed as a coherent closure;
+///     deletion would scope to LineageTree only — Lineage stays.
 [<CustomEquality; NoComparison>]
 type LineageTree<'a when 'a : equality> =
     | Leaf of Lineage<'a>

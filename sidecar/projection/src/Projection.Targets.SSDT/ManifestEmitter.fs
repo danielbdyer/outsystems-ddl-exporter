@@ -283,11 +283,17 @@ module PredicateName =
             || k.Indexes |> List.exists (fun i -> not (List.isEmpty i.ExtendedProperties))
         | PredicateName.HasUniqueIndex ->
             k.Indexes
-            |> List.exists (fun i -> i.IsUnique && not i.IsPrimaryKey)
+            |> List.exists (fun i ->
+                match i.Uniqueness with
+                | Unique -> true
+                | PrimaryKey | NotUnique -> false)
         | PredicateName.HasCompositeUniqueIndex ->
             k.Indexes
             |> List.exists (fun i ->
-                i.IsUnique && not i.IsPrimaryKey && List.length i.Columns > 1)
+                (match i.Uniqueness with
+                 | Unique -> true
+                 | PrimaryKey | NotUnique -> false)
+                && List.length i.Columns > 1)
         | PredicateName.HasFilteredIndex ->
             // Chapter 4.5 slice α — IR evidence lifted via
             // `Index.Filter : string option`. Kind has a filtered
@@ -372,8 +378,8 @@ module PredicateCoverage =
                 |> List.map (fun k ->
                     {
                         Module     = Name.value m.Name
-                        Schema     = k.Physical.Schema
-                        Table      = k.Physical.Table
+                        Schema     = TableId.schemaText k.Physical
+                        Table      = TableId.tableText k.Physical
                         Predicates = satisfiedBy k
                     }))
         let counts =
@@ -447,7 +453,10 @@ module Coverage =
             else 0
         let uniqueIndexCount =
             k.Indexes
-            |> List.filter (fun i -> not i.IsPrimaryKey && i.IsUnique)
+            |> List.filter (fun i ->
+                match i.Uniqueness with
+                | Unique -> true
+                | PrimaryKey | NotUnique -> false)
             |> List.length
         let fkCount = List.length k.References
         let checkCount = List.length k.ColumnChecks
@@ -624,12 +633,13 @@ module ManifestEmitter =
                 |> List.map (fun k ->
                     let nonPkIndexCount =
                         k.Indexes
-                        |> List.filter (fun idx -> not idx.IsPrimaryKey)
+                        |> List.filter (fun idx -> not (IndexUniqueness.isPrimaryKey idx.Uniqueness))
                         |> List.length
+                    let schemaStr, tableStr = TableId.qualifiedParts k.Physical
                     {
                         Module = Name.value m.Name
-                        Schema = k.Physical.Schema
-                        Table = k.Physical.Table
+                        Schema = schemaStr
+                        Table = tableStr
                         // Same shape as SsdtDdlEmitter.relativePath (V1
                         // convention; forward slashes for cross-platform
                         // determinism per V2-driver KPI).
@@ -638,9 +648,9 @@ module ManifestEmitter =
                                 "Modules/",
                                 Name.value m.Name,
                                 "/",
-                                k.Physical.Schema,
+                                schemaStr,
                                 ".",
-                                k.Physical.Table,
+                                tableStr,
                                 ".sql")
                         IndexCount = nonPkIndexCount
                         ForeignKeyCount = List.length k.References
@@ -658,9 +668,10 @@ module ManifestEmitter =
                             match dist.Moments with
                             | None -> None
                             | Some moments ->
-                                Some { Schema = k.Physical.Schema
-                                       Table  = k.Physical.Table
-                                       Column = a.Column.ColumnName
+                                let schemaStr, tableStr = TableId.qualifiedParts k.Physical
+                                Some { Schema = schemaStr
+                                       Table  = tableStr
+                                       Column = ColumnRealization.columnNameText a.Column
                                        Mean   = moments.Mean
                                        StdDev = moments.StdDev })))
             |> List.sortBy (fun cp -> cp.Schema, cp.Table, cp.Column)

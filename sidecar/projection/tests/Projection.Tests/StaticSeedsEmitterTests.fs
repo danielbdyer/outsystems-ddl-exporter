@@ -3,6 +3,7 @@ module Projection.Tests.StaticSeedsEmitterTests
 open Xunit
 open Projection.Core
 open Projection.Targets.Data
+open Projection.Tests.Fixtures
 
 // ---------------------------------------------------------------------------
 // Chapter 4.1.B slice α — StaticSeedsEmitter v0 (V1-shape MERGE).
@@ -48,12 +49,12 @@ let private mkCountryKind () : Kind =
         Origin   = Native
         Modality = [ Static [ row "US" "United States"
                               row "CA" "Canada" ] ]
-        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_COUNTRY"; Catalog = None }
+        Physical = mkTableId "dbo" "OSUSR_TEST_COUNTRY"
         Attributes =
             [
-                { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID";    IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
-                { Attribute.create codeKey (mkName "Code") Text with Column = { ColumnName = "CODE";  IsNullable = false }; IsMandatory = true }
-                { Attribute.create labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL"; IsNullable = false }; IsMandatory = true }
+                { Attribute.create idKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true }
+                { Attribute.create codeKey (mkName "Code") Text with Column = ColumnRealization.create ("CODE") (false) |> Result.value; IsMandatory = true }
+                { Attribute.create labelKey (mkName "Label") Text with Column = ColumnRealization.create ("LABEL") (false) |> Result.value; IsMandatory = true }
             ]
         References = []
         Indexes    = []
@@ -75,11 +76,11 @@ let private mkRegularKind () : Kind =
         Name     = mkName "Customer"
         Origin   = Native
         Modality = []  // not static
-        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_CUSTOMER"; Catalog = None }
+        Physical = mkTableId "dbo" "OSUSR_TEST_CUSTOMER"
         Attributes =
             [
-                { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID";   IsNullable = false }; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
-                { Attribute.create nameKey (mkName "Name") Text with Column = { ColumnName = "NAME"; IsNullable = false }; IsMandatory = true }
+                { Attribute.create idKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
+                { Attribute.create nameKey (mkName "Name") Text with Column = ColumnRealization.create ("NAME") (false) |> Result.value; IsMandatory = true }
             ]
         References = []
         Indexes    = []
@@ -332,7 +333,7 @@ let ``Slice β: per-kind dispatch — only CDC-enabled kinds get the predicate``
         { country with
             SsKey    = regionKey
             Name     = mkName "Region"
-            Physical = { Schema = "dbo"; Table = "OSUSR_TEST_REGION"; Catalog = None } }
+            Physical = mkTableId "dbo" "OSUSR_TEST_REGION" }
     let catalog = mkCatalog [ country; region ]
     let cdc = CdcAwareness.create (Set.ofList [ country.SsKey ]) Map.empty
     let profile = { Profile.empty with CdcAwareness = cdc }
@@ -395,13 +396,13 @@ let private mkTreeKind () : Kind =
         Name     = mkName "Tree"
         Origin   = Native
         Modality = [ Static [ row ] ]
-        Physical = { Schema = "dbo"; Table = "OSUSR_TEST_TREE"; Catalog = None }
+        Physical = mkTableId "dbo" "OSUSR_TEST_TREE"
         Attributes =
             [
-                { Attribute.create idKey (mkName "Id") Integer with Column = { ColumnName = "ID";       IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
-                { Attribute.create labelKey (mkName "Label") Text with Column = { ColumnName = "LABEL";    IsNullable = false }; IsMandatory = true }
+                { Attribute.create idKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true }
+                { Attribute.create labelKey (mkName "Label") Text with Column = ColumnRealization.create ("LABEL") (false) |> Result.value; IsMandatory = true }
                 { Attribute.create parentKey (mkName "ParentId") Integer with
-                    Column = { ColumnName = "PARENTID"; IsNullable = true } }     // nullable → deferrable
+                    Column = ColumnRealization.create ("PARENTID") (true) |> Result.value }     // nullable → deferrable
             ]
         References =
             [
@@ -529,13 +530,13 @@ let ``Slice δ: 2-cycle with both FKs nullable defers FK column on each kind`` (
         { Identifier = mkKey ["TestModule"; "B"; "Row"; "1"]
           Values = Map.ofList [ mkName "Id", "1"; mkName "AId", "1" ] }
     let mkAttr ssk name typ col isPk isNull =
-        { Attribute.create ssk (mkName name) typ with Column = { ColumnName = col; IsNullable = isNull }; IsPrimaryKey = isPk; IsMandatory = not isNull }
+        { Attribute.create ssk (mkName name) typ with Column = ColumnRealization.create (col) (isNull) |> Result.value; IsPrimaryKey = isPk; IsMandatory = not isNull }
     let mkRef ssk name srcAttr tgt =
         Reference.create ssk (mkName name) srcAttr tgt
     let aKind : Kind =
         { SsKey = aKey; Name = mkName "A"; Origin = Native
           Modality = [ Static [ aRow ] ]
-          Physical = { Schema = "dbo"; Table = "OSUSR_A"; Catalog = None }
+          Physical = mkTableId "dbo" "OSUSR_A"
           Attributes = [ mkAttr aIdK "Id"  Integer "ID"  true false
                          mkAttr aFkK "BId" Integer "BID" false true ]
           References = [ mkRef aRefK "ToB" aFkK bKey ]
@@ -544,7 +545,7 @@ let ``Slice δ: 2-cycle with both FKs nullable defers FK column on each kind`` (
     let bKind : Kind =
         { SsKey = bKey; Name = mkName "B"; Origin = Native
           Modality = [ Static [ bRow ] ]
-          Physical = { Schema = "dbo"; Table = "OSUSR_B"; Catalog = None }
+          Physical = mkTableId "dbo" "OSUSR_B"
           Attributes = [ mkAttr bIdK "Id"  Integer "ID"  true false
                          mkAttr bFkK "AId" Integer "AID" false true ]
           References = [ mkRef bRefK "ToA" bFkK aKey ]

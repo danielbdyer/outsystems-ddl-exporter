@@ -24,7 +24,7 @@ let private key (n: int) : SsKey =
     SsKey.ossysOriginal (System.Guid(n, 0s, 0s, 0uy, 0uy, 0uy, 0uy, 0uy, 0uy, 0uy, 0uy))
 
 let private tableId (schema: string) (table: string) : TableId =
-    { Catalog = None; Schema = schema; Table = table }
+    TableId.create schema table |> Result.value
 
 /// A minimal valid single-kind catalog wrapping a caller-supplied kind, so a
 /// focused worked example can vary one axis and round-trip the whole aggregate
@@ -154,7 +154,7 @@ let private richCatalog () : Catalog =
 
     let richIndex =
         { Index.create (key 15) (nm "IX_Patron_Name") [ { Attribute = nameAttr; Direction = IndexColumnDirection.Descending } ] with
-            IsUnique = true
+            Uniqueness = Unique
             ExtendedProperties = [ { Name = "MS_Description"; Value = Some "name index" } ]
             Filter = Some "([FullName] IS NOT NULL)"
             IncludedColumns = [ idAttr ]
@@ -171,13 +171,12 @@ let private richCatalog () : Catalog =
 
     let pkIndex =
         { Index.create (key 16) (nm "PK_Patron") [ { Attribute = idAttr; Direction = IndexColumnDirection.Ascending } ] with
-            IsUnique = true
-            IsPrimaryKey = true
+            Uniqueness = PrimaryKey
             DataCompression = Some DataCompressionLevel.Row
             DataSpace = Some (DataSpace.Filegroup "PRIMARY") }
 
     let patron =
-        { Kind.create patronKey (nm "Patron") { Catalog = Some "appdb"; Schema = "dbo"; Table = "Patron" } [ patronId; patronName; patronSelfFk ] with
+        { Kind.create patronKey (nm "Patron") (TableId.createWithCatalog "appdb" "dbo" "Patron" |> Result.value) [ patronId; patronName; patronSelfFk ] with
             Origin = Origin.ExternalIndirect
             Modality =
                 [ ModalityMark.Static [ staticPop ]
@@ -377,8 +376,8 @@ let ``all four SsKey variants round-trip (identity, designation, realization)`` 
 
 [<Fact>]
 let ``TableId with and without an explicit catalog round-trips`` () =
-    let withCat = { kindOfAttr (baseAttr ()) with Physical = { Catalog = Some "appdb"; Schema = "dbo"; Table = "K" } }
-    let noCat = { kindOfAttr (baseAttr ()) with Physical = { Catalog = None; Schema = "dbo"; Table = "K" } }
+    let withCat = { kindOfAttr (baseAttr ()) with Physical = (TableId.createWithCatalog "appdb" "dbo" "K" |> Result.value) }
+    let noCat = { kindOfAttr (baseAttr ()) with Physical = (TableId.create "dbo" "K" |> Result.value) }
     assertRoundTrips "TableId Some catalog" (catalogOf withCat)
     assertRoundTrips "TableId None catalog" (catalogOf noCat)
 
@@ -517,13 +516,13 @@ let private genKind (kindIx: int) (allKindKeys: SsKey list) : Gen<Kind> =
                 gen {
                     let! colKey = Gen.elements attrKeys
                     let! dir = Gen.elements [ IndexColumnDirection.Ascending; IndexColumnDirection.Descending ]
-                    let! uniq = genBool
+                    let! uniqueness = Gen.elements [ IndexUniqueness.NotUnique; IndexUniqueness.Unique; IndexUniqueness.PrimaryKey ]
                     let! comp = genOpt (Gen.elements [ DataCompressionLevel.None; DataCompressionLevel.Row; DataCompressionLevel.Page ])
                     let! space = genOpt (Gen.elements [ DataSpace.Filegroup "PRIMARY"; DataSpace.PartitionScheme ("ps", [ "a" ]) ])
                     let! filt = genOpt (Gen.constant "([x] IS NOT NULL)")
                     return
                         { Index.create (key (30000 + kindIx * 100 + ix)) (nm (sprintf "IX%d_%d" kindIx ix)) [ { Attribute = colKey; Direction = dir } ] with
-                            IsUnique = uniq; DataCompression = comp; DataSpace = space; Filter = filt } } ]
+                            Uniqueness = uniqueness; DataCompression = comp; DataSpace = space; Filter = filt } } ]
             |> genAll
 
         let! nMarks = Gen.choose (0, 3)

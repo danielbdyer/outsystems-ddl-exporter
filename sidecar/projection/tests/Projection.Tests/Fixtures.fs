@@ -62,12 +62,21 @@ let rowKey (basis: string) : SsKey =
 let testKey (label: string) : SsKey =
     SsKey.synthesized "TEST" label |> mustOk
 
+/// Shared TableId builder for test fixtures. Names in tests are
+/// constants known to satisfy `SchemaName.create` / `TableName.create`
+/// (non-blank, <= 128 chars); force-unwrapping is the fixture pattern.
+/// Used wherever fixtures construct a `TableId` with no catalog
+/// (the common shape — explicit catalogs are tested via dedicated
+/// helpers).
+let mkTableId (schema: string) (table: string) : TableId =
+    TableId.create schema table |> mustOk
+
 /// Per-fixture helper: build an attribute with the column-name
 /// uppercased from the logical name. Override IsPrimaryKey via
 /// record-update at the call site.
 let private mkFixtureAttribute (key: SsKey) (logical: string) (ptype: PrimitiveType) (isPk: bool) : Attribute =
     { Attribute.create key (name logical) ptype with
-        Column       = { ColumnName = logical.ToUpperInvariant(); IsNullable = false }
+        Column       = ColumnRealization.create (logical.ToUpperInvariant()) false |> Result.value
         IsPrimaryKey = isPk }
 
 // ---------------------------------------------------------------------------
@@ -83,13 +92,13 @@ let customer : Kind =
     { Kind.create
         customerKey
         (name "Customer")
-        { Schema = "dbo"; Table = "OSUSR_S1S_CUSTOMER"; Catalog = None }
+        (mkTableId "dbo" "OSUSR_S1S_CUSTOMER")
         [ { mkFixtureAttribute customerIdAttrKey "Id" Integer true with
-              Column = { ColumnName = "ID"; IsNullable = false } }
+              Column = ColumnRealization.create "ID" false |> Result.value }
           { mkFixtureAttribute customerNameKey "Name" Text false with
-              Column = { ColumnName = "NAME"; IsNullable = false } }
+              Column = ColumnRealization.create "NAME" false |> Result.value }
           { mkFixtureAttribute customerTenantKey "TenantId" Integer false with
-              Column = { ColumnName = "TENANT_ID"; IsNullable = false } } ]
+              Column = ColumnRealization.create "TENANT_ID" false |> Result.value } ]
         with Modality = [ TenantScoped ] }
 
 // ---------------------------------------------------------------------------
@@ -105,11 +114,11 @@ let order : Kind =
     { Kind.create
         orderKey
         (name "Order")
-        { Schema = "dbo"; Table = "OSUSR_S1S_ORDER"; Catalog = None }
+        (mkTableId "dbo" "OSUSR_S1S_ORDER")
         [ { mkFixtureAttribute orderIdAttrKey "Id" Integer true with
-              Column = { ColumnName = "ID"; IsNullable = false } }
+              Column = ColumnRealization.create "ID" false |> Result.value }
           { mkFixtureAttribute orderCustomerFkKey "CustomerId" Integer false with
-              Column = { ColumnName = "CUSTOMER_ID"; IsNullable = false } } ]
+              Column = ColumnRealization.create "CUSTOMER_ID" false |> Result.value } ]
         with
         References =
             [ Reference.create orderRefToCustomer (name "Customer") orderCustomerFkKey customerKey ] }
@@ -145,13 +154,13 @@ let country : Kind =
     { Kind.create
         countryKey
         (name "Country")
-        { Schema = "dbo"; Table = "OSUSR_S1S_COUNTRY"; Catalog = None }
+        (mkTableId "dbo" "OSUSR_S1S_COUNTRY")
         [ { mkFixtureAttribute countryIdAttrKey "Id" Integer true with
-              Column = { ColumnName = "ID"; IsNullable = false } }
+              Column = ColumnRealization.create "ID" false |> Result.value }
           { mkFixtureAttribute countryCodeKey "Code" Text false with
-              Column = { ColumnName = "CODE"; IsNullable = false } }
+              Column = ColumnRealization.create "CODE" false |> Result.value }
           { mkFixtureAttribute countryLabelKey "Label" Text false with
-              Column = { ColumnName = "LABEL"; IsNullable = false } } ]
+              Column = ColumnRealization.create "LABEL" false |> Result.value } ]
         with Modality = [ Static countryPopulations ] }
 
 // ---------------------------------------------------------------------------
@@ -186,13 +195,13 @@ let sampleCatalog : Catalog =
 let defaultBearingCatalog : Catalog =
     let mkAttr (column: string) (isPk: bool) (def: SqlLiteral option) : Attribute =
         { mkFixtureAttribute (attrKey ["DefAccount"; column]) column Integer isPk with
-            Column = { ColumnName = column.ToUpperInvariant(); IsNullable = false }
+            Column = ColumnRealization.create (column.ToUpperInvariant()) false |> Result.value
             DefaultValue = def }
     let kind : Kind =
         { customer with
             SsKey = kindKey ["DefAccount"]
             Name = name "Account"
-            Physical = { Schema = "dbo"; Table = "OSUSR_DEF_ACCOUNT"; Catalog = None }
+            Physical = mkTableId "dbo" "OSUSR_DEF_ACCOUNT"
             Attributes =
                 [ mkAttr "Id" true None
                   mkAttr "Balance" false (Some (SqlLiteral.IntegerLit "0"))
@@ -212,7 +221,7 @@ let annotationBearingCatalog : Catalog =
     let mustOkLocal r = match r with | Ok v -> v | Error _ -> failwith "annotationBearingCatalog fixture"
     let mkAttr (column: string) (isPk: bool) (eps: ExtendedProperty list) : Attribute =
         { mkFixtureAttribute (attrKey ["AnnWidget"; column]) column Integer isPk with
-            Column = { ColumnName = column.ToUpperInvariant(); IsNullable = false }
+            Column = ColumnRealization.create (column.ToUpperInvariant()) false |> Result.value
             ExtendedProperties = eps }
     let custEp = ExtendedProperty.create "Widget.Classification" (Some "operational") |> mustOkLocal
     let chk =
@@ -226,7 +235,7 @@ let annotationBearingCatalog : Catalog =
         { customer with
             SsKey = kindKey ["AnnWidget"]
             Name = name "Widget"
-            Physical = { Schema = "dbo"; Table = "OSUSR_ANN_WIDGET"; Catalog = None }
+            Physical = mkTableId "dbo" "OSUSR_ANN_WIDGET"
             Attributes = [ mkAttr "Id" true []; mkAttr "Qty" false [ custEp ] ]
             References = []
             Indexes = []
@@ -249,14 +258,14 @@ let computedBearingCatalog : Catalog =
     let mustOkC r = match r with | Ok v -> v | Error _ -> failwith "computedBearingCatalog fixture"
     let mkAttr (column: string) (isPk: bool) (computed: ComputedColumnConfig option) : Attribute =
         { mkFixtureAttribute (attrKey ["Gadget"; column]) column Integer isPk with
-            Column = { ColumnName = column.ToUpperInvariant(); IsNullable = not isPk }
+            Column = ColumnRealization.create (column.ToUpperInvariant()) (not isPk) |> Result.value
             Computed = computed }
     let totalCents = ComputedColumnConfig.create "[QTY]*(100)" true |> mustOkC
     let kind : Kind =
         { customer with
             SsKey = kindKey ["Gadget"]
             Name = name "Gadget"
-            Physical = { Schema = "dbo"; Table = "OSUSR_CMP_GADGET"; Catalog = None }
+            Physical = mkTableId "dbo" "OSUSR_CMP_GADGET"
             Attributes =
                 [ mkAttr "Id" true None
                   mkAttr "Qty" false None

@@ -118,17 +118,17 @@ module MigrationDependenciesEmitter =
         |> Map.ofList
 
     let private orderedColumnNames (k: Kind) : string list =
-        k.Attributes |> List.map (fun a -> a.Column.ColumnName)
+        k.Attributes |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
 
     let private pkColumnNames (k: Kind) : string list =
         k.Attributes
         |> List.filter (fun a -> a.IsPrimaryKey)
-        |> List.map (fun a -> a.Column.ColumnName)
+        |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
 
     let private updatableColumnNames (k: Kind) : string list =
         k.Attributes
         |> List.filter (fun a -> not a.IsPrimaryKey)
-        |> List.map (fun a -> a.Column.ColumnName)
+        |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
 
     // Deferred-FK selection moved to `DataLoadPlan.build` — the plan's
     // `Loads[i].DeferredFkColumns` carries the result. The historical
@@ -201,7 +201,7 @@ module MigrationDependenciesEmitter =
             k.Attributes
             |> List.filter (fun a -> not a.IsPrimaryKey)
             |> List.filter (fun a -> not (Set.contains a.Name deferred))
-            |> List.map (fun a -> a.Column.ColumnName)
+            |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
         let args : ScriptDomBuild.MergeBuildArgs =
             {
                 Target     = table
@@ -234,7 +234,7 @@ module MigrationDependenciesEmitter =
             let lit =
                 Map.tryFind a.Name typedValues
                 |> Option.defaultValue SqlLiteral.NullLit
-            a.Column.ColumnName, lit
+            ColumnRealization.columnNameText a.Column, lit
         let setCells =
             k.Attributes
             |> List.filter (fun a -> Set.contains a.Name deferred)

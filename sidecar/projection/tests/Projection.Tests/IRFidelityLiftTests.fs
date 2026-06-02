@@ -354,7 +354,7 @@ let ``L3-S4 temporal: Infinite retention round-trips through ModalityMark`` () =
         Kind.create
             (mkSsKey "OS_KIND_M_K")
             (mkName' "K")
-            { Schema = "dbo"; Table = "T"; Catalog = None }
+            (TableId.create "dbo" "T" |> Result.value)
             []
     let kindWithTemporal = { kind with Modality = [ Temporal cfg ] }
     let extracted =
@@ -381,7 +381,7 @@ let ``IRBuilders: Kind.create defaults Triggers / ColumnChecks / ExtendedPropert
         Kind.create
             (mkSsKey "OS_KIND_M_K")
             (mkName' "K")
-            { Schema = "dbo"; Table = "T"; Catalog = None }
+            (TableId.create "dbo" "T" |> Result.value)
             []
     Assert.Empty(kind.Triggers)
     Assert.Empty(kind.ColumnChecks)
@@ -402,8 +402,8 @@ let ``L3-S10 catalog coordinate: TableId.create defaults Catalog to None`` () =
     | Error errors -> Assert.Fail(sprintf "Expected Ok; got: %A" errors)
     | Ok tid ->
         Assert.Equal<string option>(None, tid.Catalog)
-        Assert.Equal("dbo", tid.Schema)
-        Assert.Equal("T", tid.Table)
+        Assert.Equal("dbo", TableId.schemaText tid)
+        Assert.Equal("T", TableId.tableText tid)
 
 [<Fact>]
 let ``L3-S10 catalog coordinate: TableId.createWithCatalog carries explicit catalog`` () =

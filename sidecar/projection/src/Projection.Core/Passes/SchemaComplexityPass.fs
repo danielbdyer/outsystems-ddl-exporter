@@ -138,7 +138,11 @@ module SchemaComplexityPass =
                   TransformKind  = Touched
                   Classification = DataIntent })
 
-        Lineage.ofValueAndEvents events { Value = result; Entries = [entry] }
+        lineageDiagnostics {
+            do! LineageDiagnostics.writeLineages events
+            do! LineageDiagnostics.writeDiagnostic entry
+            return result
+        }
 
     let registered (topology: TopologicalOrder option) : RegisteredTransform<Catalog, SchemaComplexity> =
         let topoDefault = topology |> Option.defaultValue TopologicalOrder.empty

@@ -330,11 +330,11 @@ let ``A25: every emitted event references a real reference SsKey`` () =
 // The catalog is unchanged.
 // ---------------------------------------------------------------------------
 
-[<Fact>]
-let ``catalog passes through unchanged: structural by signature`` () =
-    let policy = policyWithIntervention "v1-style" (mkConfig true true true)
-    let _ = fkRun sampleCatalog policy Profile.empty
-    Assert.Equal(3, (Catalog.allKinds sampleCatalog).Length)
+// Slice 10 (2026-06-02 audit): "catalog passes through unchanged"
+// test pruned. The pass return type is `Lineage<DecisionSet>` — the
+// signature does not return a transformed catalog, so input
+// preservation is a *signature-level* guarantee. The test restated
+// the signature rather than checking a contract V2 owns.
 
 // ---------------------------------------------------------------------------
 // Activated V1 contract — V1 OpportunityBuilder's audit-trail concern for

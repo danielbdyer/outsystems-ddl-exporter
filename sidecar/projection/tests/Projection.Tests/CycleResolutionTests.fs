@@ -17,13 +17,13 @@ let ``classify: non-nullable + NoAction = Other`` () =
     Assert.Equal<EdgeStrength>(EdgeStrength.Other, result)
 
 let private mkAttr (key: string) (nullable: bool) : Attribute =
-    { Attribute.create (testKey key) (Name.create "Fk" |> Result.value) Integer with Column = { ColumnName = "FK"; IsNullable = nullable } }
+    { Attribute.create (testKey key) (Name.create "Fk" |> Result.value) Integer with Column = ColumnRealization.create ("FK") (nullable) |> Result.value }
 
 let private mkRef (sourceAttrKey: string) (action: ReferenceAction) : Reference =
     { Reference.create (refKey ["x"]) (Name.create "x" |> Result.value) (testKey sourceAttrKey) (kindKey ["target"]) with OnDelete = action }
 
 let private kindWith (a: Attribute) : Kind =
-    Kind.create (kindKey ["owner"]) (Name.create "owner" |> Result.value) { Schema = "dbo"; Table = "owner"; Catalog = None } [ a ]
+    Kind.create (kindKey ["owner"]) (Name.create "owner" |> Result.value) (mkTableId "dbo" "owner") [ a ]
 
 [<Fact>]
 let ``classify: nullable + NoAction = Weak`` () =

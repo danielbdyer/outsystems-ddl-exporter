@@ -97,7 +97,7 @@ let ``5.3.α.create-table: every emitted column appears in catalog kind's Attrib
     for kind in allKinds do
         let body = bodyOf kind.SsKey sampleCatalog
         for attr in kind.Attributes do
-            Assert.Contains ((sprintf "[%s]" attr.Column.ColumnName), body)
+            Assert.Contains ((sprintf "[%s]" (ColumnRealization.columnNameText attr.Column)), body)
 
 [<Fact>]
 let ``5.3.α.create-table: schema-qualified table identifier appears bracket-quoted`` () =
@@ -108,7 +108,7 @@ let ``5.3.α.create-table: schema-qualified table identifier appears bracket-quo
     let enriched = enrich sampleCatalog
     for kind in Catalog.allKinds enriched do
         let body = bodyOf kind.SsKey sampleCatalog
-        let expected = sprintf "[%s].[%s]" kind.Physical.Schema kind.Physical.Table
+        let expected = sprintf "[%s].[%s]" (TableId.schemaText kind.Physical) (TableId.tableText kind.Physical)
         Assert.Contains (expected, body)
 
 // ---------------------------------------------------------------------------
@@ -163,7 +163,7 @@ let ``5.3.α.index: PK-marked indexes do not produce CREATE INDEX statements`` (
     let enriched = enrich sampleCatalog
     for kind in Catalog.allKinds enriched do
         let body = bodyOf kind.SsKey sampleCatalog
-        let pkIndexes = kind.Indexes |> List.filter (fun i -> i.IsPrimaryKey)
+        let pkIndexes = kind.Indexes |> List.filter (fun i -> IndexUniqueness.isPrimaryKey i.Uniqueness)
         for pkIndex in pkIndexes do
             // The PK constraint name typically isn't IX_*-style; just
             // assert we don't see a CREATE INDEX with the PK index's
@@ -229,7 +229,7 @@ let ``5.3.α.identifier: emitted column references use bracket-quoting consisten
         // least once (in the column-definition list). Bare or
         // double-quoted forms would indicate a quote-strategy regression.
         for attr in kind.Attributes do
-            let col = attr.Column.ColumnName
+            let col = ColumnRealization.columnNameText attr.Column
             Assert.Contains ((sprintf "[%s]" col), body)
             // Negative assertion is conservative — double-quote could
             // appear inside a literal CHECK clause's text. The positive
@@ -370,21 +370,21 @@ let ``5.3.α.create-table LR4: computed columns emit AS (expression) clause`` ()
     let computedAttrKey = attrKey ["ComputedFixture"; "Doubled"]
     let pkAttr =
         { Attribute.create pkAttrKey (mkName "Id") Integer with
-            Column = { ColumnName = "ID"; IsNullable = false }
+            Column = ColumnRealization.create ("ID") (false) |> Result.value
             IsPrimaryKey = true
             IsMandatory  = true }
     let baseAttr =
         { Attribute.create baseAttrKey (mkName "Base") Integer with
-            Column = { ColumnName = "BASE"; IsNullable = false }
+            Column = ColumnRealization.create ("BASE") (false) |> Result.value
             IsMandatory = true }
     let computedConfig = ComputedColumnConfig.create "[BASE] * 2" false |> Result.value
     let computedAttr =
         { Attribute.create computedAttrKey (mkName "Doubled") Integer with
-            Column = { ColumnName = "DOUBLED"; IsNullable = true }
+            Column = ColumnRealization.create ("DOUBLED") (true) |> Result.value
             Computed = Some computedConfig }
     let kind =
         { Kind.create kindKey0 (mkName "ComputedFixture")
-            { Schema = "dbo"; Table = "OSUSR_CF_FIXTURE"; Catalog = None }
+            (mkTableId "dbo" "OSUSR_CF_FIXTURE")
             [ pkAttr; baseAttr; computedAttr ]
           with References = []; Indexes = []; ColumnChecks = [] }
     let cat : Catalog =
@@ -425,17 +425,17 @@ let ``5.3.α.create-table LR4: persisted computed columns emit PERSISTED keyword
     let computedAttrKey = attrKey ["PersistedComputed"; "Persisted"]
     let pkAttr =
         { Attribute.create pkAttrKey (mkName "Id") Integer with
-            Column = { ColumnName = "ID"; IsNullable = false }
+            Column = ColumnRealization.create ("ID") (false) |> Result.value
             IsPrimaryKey = true
             IsMandatory  = true }
     let persistedConfig = ComputedColumnConfig.create "1 + 1" true |> Result.value
     let computedAttr =
         { Attribute.create computedAttrKey (mkName "Persisted") Integer with
-            Column = { ColumnName = "PERSISTED_COL"; IsNullable = true }
+            Column = ColumnRealization.create ("PERSISTED_COL") (true) |> Result.value
             Computed = Some persistedConfig }
     let kind =
         { Kind.create kindKey0 (mkName "PersistedComputed")
-            { Schema = "dbo"; Table = "OSUSR_PC_PERSISTED"; Catalog = None }
+            (mkTableId "dbo" "OSUSR_PC_PERSISTED")
             [ pkAttr; computedAttr ]
           with References = []; Indexes = []; ColumnChecks = [] }
     let cat : Catalog =
@@ -463,18 +463,18 @@ let ``5.3.α.create-table row 53 partial: named DEFAULT constraint surfaces in C
     let constraintName = Name.create "DF_NamedDefault_Val" |> Result.toOption
     let pkAttr =
         { Attribute.create pkAttrKey (mkName "Id") Integer with
-            Column = { ColumnName = "ID"; IsNullable = false }
+            Column = ColumnRealization.create ("ID") (false) |> Result.value
             IsPrimaryKey = true
             IsMandatory  = true }
     let valAttr =
         { Attribute.create valAttrKey (mkName "Val") Integer with
-            Column = { ColumnName = "VAL"; IsNullable = false }
+            Column = ColumnRealization.create ("VAL") (false) |> Result.value
             DefaultValue = Some (SqlLiteral.ofRaw Integer "42")
             DefaultName  = constraintName
             IsMandatory  = true }
     let kind =
         { Kind.create kindKey0 (mkName "NamedDefault")
-            { Schema = "dbo"; Table = "OSUSR_ND_NAMED"; Catalog = None }
+            (mkTableId "dbo" "OSUSR_ND_NAMED")
             [ pkAttr; valAttr ]
           with References = []; Indexes = []; ColumnChecks = [] }
     let cat : Catalog =
@@ -510,7 +510,7 @@ let ``5.3.α.index LR7: filegroup and partition-scheme ON clauses emit`` () =
             |> Result.value
         let idAttr =
             { Attribute.create idAttrKey (mkName "Id") Integer with
-                Column       = { ColumnName = "ID"; IsNullable = false }
+                Column = ColumnRealization.create ("ID") (false) |> Result.value
                 IsPrimaryKey = true
                 IsMandatory  = true }
         let idx =
@@ -519,7 +519,7 @@ let ``5.3.α.index LR7: filegroup and partition-scheme ON clauses emit`` () =
                 DataSpace = Some (DataSpace.Filegroup "INDEX_FG") }
         let kind =
             { Kind.create kindKey0 (mkName "LR7Witness")
-                { Schema = "dbo"; Table = "OSUSR_LR7_IDX"; Catalog = None }
+                (mkTableId "dbo" "OSUSR_LR7_IDX")
                 [ idAttr ]
               with Indexes = [ idx ] }
         { Modules =

@@ -372,7 +372,7 @@ module ModuleFilter =
                     else
                         let activeKinds = m.Kinds |> List.filter (fun k -> k.IsActive)
                         if List.isEmpty activeKinds then None
-                        else Some { m with Kinds = activeKinds }
+                        else Some (Lens.set CatalogLenses.kindsOf activeKinds m)
                 else
                     Some m)
         if List.isEmpty filteredModules then
@@ -416,7 +416,7 @@ module ModuleFilter =
                                 (sprintf
                                     "Entity filter removed all entities from module '%s'."
                                     (Name.value m.Name)))
-                    { m with Kinds = kept })
+                    Lens.set CatalogLenses.kindsOf kept m)
         if entityErrors.Count > 0 then
             Result.failure (List.ofSeq entityErrors)
         else

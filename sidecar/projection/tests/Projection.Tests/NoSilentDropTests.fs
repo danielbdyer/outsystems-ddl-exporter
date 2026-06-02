@@ -60,7 +60,7 @@ let private findAttr name (k: Kind) =
 
 let private emptyKind () : Kind =
     let key = SsKey.synthesized "TEST" "K" |> Result.value
-    Kind.create key (mkName' "K") { Schema = "dbo"; Table = "T"; Catalog = None } []
+    Kind.create key (mkName' "K") (TableId.create "dbo" "T" |> Result.value) []
 
 let private emptyAttr () : Attribute =
     let key = SsKey.synthesized "TEST" "A" |> Result.value

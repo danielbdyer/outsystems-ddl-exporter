@@ -114,7 +114,7 @@ module SsdtDdlEmitter =
     let private columnDef (overlay: DecisionOverlay) (a: Attribute) : ColumnDef =
         let enforceNotNull = Set.contains a.SsKey overlay.EnforceNotNull
         {
-            Name         = a.Column.ColumnName
+            Name         = ColumnRealization.columnNameText a.Column
             Type         = a.Type
             // Concrete SQL storage evidence (BIGINT / DATETIME /
             // NVARCHAR(MAX)) when the OSSYS adapter resolved it from
@@ -188,7 +188,7 @@ module SsdtDdlEmitter =
         let pkColumns =
             k.Attributes
             |> List.filter (fun a -> a.IsPrimaryKey)
-            |> List.map (fun a -> a.Column.ColumnName)
+            |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
         if List.isEmpty pkColumns then None
         else
             Some
@@ -201,7 +201,7 @@ module SsdtDdlEmitter =
                     // k.Physical.Schema and k.Physical.Table are the
                     // canonical SchemaName/TableName strings from the
                     // Coordinates value object).
-                    Name = System.String.Concat("PK_", k.Physical.Schema, "_", k.Physical.Table)  // LINT-ALLOW: V1 naming-convention PK constraint name; ScriptDom has no helper for V1-specific naming; segments are typed (Coordinates.TableId fields)
+                    Name = System.String.Concat("PK_", TableId.schemaText k.Physical, "_", TableId.tableText k.Physical)  // LINT-ALLOW: V1 naming-convention PK constraint name; ScriptDom has no helper for V1-specific naming; segments are pre-unwrapped via TableId.schemaText/tableText (otherwise Concat would call ToString on the typed VOs and emit "SchemaName \"dbo\"")
                     Columns = pkColumns
                 }
 
@@ -241,7 +241,7 @@ module SsdtDdlEmitter =
         let sourceColumnOpt =
             k.Attributes
             |> List.tryFind (fun a -> a.SsKey = r.SourceAttribute)
-            |> Option.map (fun a -> a.Column.ColumnName)
+            |> Option.map (fun a -> ColumnRealization.columnNameText a.Column)
         match sourceColumnOpt,
               Map.tryFind r.TargetKind targetByKey,
               Map.tryFind r.TargetKind pkAttrByKey with
@@ -257,11 +257,11 @@ module SsdtDdlEmitter =
             // (k.Physical.Table from Coordinates.TableId; target.Physical
             // .Table likewise; sourceColumn from k.Attributes).
             let fkName =
-                System.String.Concat(  // LINT-ALLOW: V1 FK naming-convention mirror; V1 ForeignKeyNameFactory considered + cannot be referenced (cherry-pick discipline); segments are typed (Coordinates.TableId fields + Attribute.Column.ColumnName)
+                System.String.Concat(  // LINT-ALLOW: V1 FK naming-convention mirror; V1 ForeignKeyNameFactory considered + cannot be referenced (cherry-pick discipline); segments pre-unwrapped via TableId.tableText (otherwise Concat would call ToString on TableName VO and emit "TableName \"X\"")
                     "FK_",
-                    k.Physical.Table,
+                    TableId.tableText k.Physical,
                     "_",
-                    target.Physical.Table,
+                    TableId.tableText target.Physical,
                     "_",
                     sourceColumn)
             Some
@@ -269,7 +269,7 @@ module SsdtDdlEmitter =
                     Name         = fkName
                     SourceColumn = sourceColumn
                     Target       = toTableId target
-                    TargetColumn = pkAttr.Column.ColumnName
+                    TargetColumn = ColumnRealization.columnNameText pkAttr.Column
                     OnDelete     = toReferenceActionSql r.OnDelete
                     // Slice 5.13.fk-features-emit (matrix rows 58 + 59).
                     // OnUpdate threads through to ScriptDom's
@@ -369,7 +369,7 @@ module SsdtDdlEmitter =
     /// is the Attribute's physical `ColumnName`.
     let private resolveColumnName (k: Kind) (columnSsKey: SsKey) : string =
         match k.Attributes |> List.tryFind (fun a -> a.SsKey = columnSsKey) with
-        | Some a -> a.Column.ColumnName
+        | Some a -> ColumnRealization.columnNameText a.Column
         | None ->
             // Unreachable when Catalog.create has run (chapter 3.1
             // aggregate-root smart constructor enforces the
@@ -390,7 +390,7 @@ module SsdtDdlEmitter =
     // un-uniques a source-unique index.
     let private indexStatements (overlay: DecisionOverlay) (k: Kind) : Statement list =
         k.Indexes
-        |> List.filter (fun idx -> not idx.IsPrimaryKey)
+        |> List.filter (fun idx -> not (IndexUniqueness.isPrimaryKey idx.Uniqueness))
         |> List.sortBy (fun idx -> idx.SsKey)
         |> List.map (fun idx ->
             // Chapter 4.9 slice γ — Index.Columns now carries
@@ -430,7 +430,7 @@ module SsdtDdlEmitter =
                     Name     = Name.value idx.Name
                     Table    = toTableId k
                     Columns  = keyColumns
-                    IsUnique = idx.IsUnique || Set.contains idx.SsKey overlay.EnforceUnique
+                    IsUnique = IndexUniqueness.isUnique idx.Uniqueness || Set.contains idx.SsKey overlay.EnforceUnique
                     Filter   = idx.Filter
                     IncludedColumns = includedColumnNames
                     // Chapter 4.8 slice β — on-disk index options.
@@ -456,7 +456,7 @@ module SsdtDdlEmitter =
     /// (matrix row 55).
     let private disabledIndexAlters (k: Kind) : Statement list =
         k.Indexes
-        |> List.filter (fun idx -> not idx.IsPrimaryKey && idx.IsDisabled)
+        |> List.filter (fun idx -> not (IndexUniqueness.isPrimaryKey idx.Uniqueness) && idx.IsDisabled)
         |> List.sortBy (fun idx -> idx.SsKey)
         |> List.map (fun idx ->
             Statement.AlterIndexDisable (toTableId k, Name.value idx.Name))
@@ -516,13 +516,14 @@ module SsdtDdlEmitter =
     ///   `k.Physical.Schema`, `k.Physical.Table` are all typed values
     ///   from V2's IR).
     let private relativePath (m: Module) (k: Kind) : string =
-        System.String.Concat(  // LINT-ALLOW: cross-platform-deterministic relative path; Path.Combine considered + rejected (platform-specific separators violate T1 byte-determinism); segments are typed (m.Name + k.Physical.Schema + k.Physical.Table from Coordinates.TableId)
+        let schemaStr, tableStr = TableId.qualifiedParts k.Physical
+        System.String.Concat(  // LINT-ALLOW: cross-platform-deterministic relative path; Path.Combine considered + rejected (platform-specific separators violate T1 byte-determinism); segments are typed (m.Name + TableId.schemaText/tableText from Coordinates.TableId)
             "Modules/",
             Name.value m.Name,
             "/",
-            k.Physical.Schema,
+            schemaStr,
             ".",
-            k.Physical.Table,
+            tableStr,
             ".sql")
 
     /// Per-kind `SetExtendedProperty` statements (chapter 4.1.A slice 8).
@@ -580,7 +581,7 @@ module SsdtDdlEmitter =
                     TableProperty table, ep.Name, ep.Value)
 
             for attr in k.Attributes do
-                let columnName = attr.Column.ColumnName
+                let columnName = ColumnRealization.columnNameText attr.Column
                 match attr.Description with
                 | Some desc ->
                     yield Statement.SetExtendedProperty (
@@ -635,7 +636,7 @@ module SsdtDdlEmitter =
             | Some first when first.SsKey = k.SsKey ->
                 for ep in m.ExtendedProperties do
                     yield Statement.SetExtendedProperty (
-                        SchemaProperty schema, ep.Name, ep.Value)
+                        SchemaProperty (SchemaName.value schema), ep.Name, ep.Value)
             | _ -> ()
         }
 
@@ -871,8 +872,8 @@ module SsdtDdlEmitter =
                 SsKey = Some r.SsKey
                 Metadata =
                     Map.ofList
-                        [ "sourceSchema", k.Physical.Schema
-                          "sourceTable", k.Physical.Table
+                        [ "sourceSchema", TableId.schemaText k.Physical
+                          "sourceTable", TableId.tableText k.Physical
                           "reference", Name.value r.Name ] }
         allKinds
         |> List.collect (fun k ->
@@ -925,8 +926,8 @@ module SsdtDdlEmitter =
                             SsKey = Some r.SsKey
                             Metadata =
                                 Map.ofList
-                                    [ "sourceSchema", k.Physical.Schema
-                                      "sourceTable", k.Physical.Table
+                                    [ "sourceSchema", TableId.schemaText k.Physical
+                                      "sourceTable", TableId.tableText k.Physical
                                       "reference", Name.value r.Name ] }
                 else None))
 

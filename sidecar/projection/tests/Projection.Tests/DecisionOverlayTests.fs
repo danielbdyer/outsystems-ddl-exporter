@@ -87,7 +87,7 @@ let ``DecisionOverlay: EnforceNotNull outcomes populate EnforceNotNull; KeepNull
     let kept = key "ATTR_kept"
     let state =
         stateWith
-            [ nullDecision enforced (NullabilityOutcome.EnforceNotNull PrimaryKey)
+            [ nullDecision enforced (NullabilityOutcome.EnforceNotNull NullabilityEvidence.PrimaryKey)
               nullDecision kept (NullabilityOutcome.KeepNullable OperatorOverride) ]
             [] []
     let overlay = DecisionOverlay.ofComposeState state
@@ -145,7 +145,7 @@ let ``ofComposeState is total: every EnforceNotNull attribute key appears, and o
         distinct
         |> List.mapi (fun i s ->
             let k = key (sprintf "A_%d_%s" i (s.Replace(" ", "_")))
-            if i % 2 = 0 then k, nullDecision k (NullabilityOutcome.EnforceNotNull PrimaryKey), true
+            if i % 2 = 0 then k, nullDecision k (NullabilityOutcome.EnforceNotNull NullabilityEvidence.PrimaryKey), true
             else k, nullDecision k (NullabilityOutcome.KeepNullable OperatorOverride), false)
     let state = stateWith (decisions |> List.map (fun (_, d, _) -> d)) [] []
     let overlay = DecisionOverlay.ofComposeState state

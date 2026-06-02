@@ -101,12 +101,12 @@ let private wrap (kind: Kind) : Catalog =
     let sentinelKey = kindKey ["PropSentinel"]
     let sentinelIdAttr =
         { Attribute.create (attrKey ["PropSentinel"; "Id"]) (mkName "Id") Integer with
-            Column       = { ColumnName = "ID"; IsNullable = false }
+            Column       = ColumnRealization.create ("ID") (false) |> Result.value
             IsPrimaryKey = true
             IsMandatory  = true }
     let sentinel =
         { Kind.create sentinelKey (mkName "PropSentinel")
-            { Schema = "dbo"; Table = "OSUSR_PS_SENTINEL"; Catalog = None }
+            (mkTableId "dbo" "OSUSR_PS_SENTINEL")
             [ sentinelIdAttr ]
           with References = []; Indexes = []; ColumnChecks = [] }
     {
@@ -151,7 +151,7 @@ let private defaultAxisKey = kindKey ["PropDefault"]
 let private defaultAxisKind (axis: DefaultAxis) : Kind =
     let idAttr =
         { Attribute.create (attrKey ["PropDefault"; "Id"]) (mkName "Id") Integer with
-            Column       = { ColumnName = "ID"; IsNullable = false }
+            Column       = ColumnRealization.create ("ID") (false) |> Result.value
             IsPrimaryKey = true
             IsMandatory  = true }
     let valAttr =
@@ -159,18 +159,18 @@ let private defaultAxisKind (axis: DefaultAxis) : Kind =
         match axis with
         | DefaultAxis.IntLiteral n ->
             { baseAttr with
-                Column       = { ColumnName = "VAL"; IsNullable = false }
+                Column       = ColumnRealization.create ("VAL") (false) |> Result.value
                 DefaultValue = Some (SqlLiteral.ofRaw Integer (string n))
                 IsMandatory  = true }
         | DefaultAxis.TextLiteral s ->
             { baseAttr with
                 Type         = Text
                 Length       = Some 100
-                Column       = { ColumnName = "VAL"; IsNullable = false }
+                Column       = ColumnRealization.create ("VAL") (false) |> Result.value
                 DefaultValue = Some (SqlLiteral.ofRaw Text s)
                 IsMandatory  = true }
     { Kind.create defaultAxisKey (mkName "PropDefault")
-        { Schema = "dbo"; Table = "OSUSR_PD_DEFAULT"; Catalog = None }
+        (mkTableId "dbo" "OSUSR_PD_DEFAULT")
         [ idAttr; valAttr ]
       with References = []; Indexes = [] }
 
@@ -199,12 +199,12 @@ let private checkAxisKey = kindKey ["PropCheck"]
 let private checkAxisKind (axis: CheckAxis) : Kind =
     let idAttr =
         { Attribute.create (attrKey ["PropCheck"; "Id"]) (mkName "Id") Integer with
-            Column       = { ColumnName = "ID"; IsNullable = false }
+            Column       = ColumnRealization.create ("ID") (false) |> Result.value
             IsPrimaryKey = true
             IsMandatory  = true }
     let valAttr =
         { Attribute.create (attrKey ["PropCheck"; "Val"]) (mkName "Val") Integer with
-            Column      = { ColumnName = "VAL"; IsNullable = false }
+            Column      = ColumnRealization.create ("VAL") (false) |> Result.value
             IsMandatory = true }
     let constraintName, predicate =
         match axis with
@@ -221,7 +221,7 @@ let private checkAxisKind (axis: CheckAxis) : Kind =
             false
         |> Result.value
     { Kind.create checkAxisKey (mkName "PropCheck")
-        { Schema = "dbo"; Table = "OSUSR_PC_CHECK"; Catalog = None }
+        (mkTableId "dbo" "OSUSR_PC_CHECK")
         [ idAttr; valAttr ]
       with ColumnChecks = [ check ]; References = []; Indexes = [] }
 
@@ -245,9 +245,9 @@ let private fkRefKey      = refKey  ["PropFkChild"; "ParentId"]
 
 let private fkParentKind : Kind =
     { Kind.create fkParentKey (mkName "PropFkParent")
-        { Schema = "dbo"; Table = "OSUSR_PFP_PARENT"; Catalog = None }
+        (mkTableId "dbo" "OSUSR_PFP_PARENT")
         [ { Attribute.create fkParentPkKey (mkName "Id") Integer with
-                Column       = { ColumnName = "ID"; IsNullable = false }
+                Column       = ColumnRealization.create ("ID") (false) |> Result.value
                 IsPrimaryKey = true
                 IsMandatory  = true } ]
       with References = []; Indexes = [] }
@@ -260,13 +260,13 @@ let private fkChildKind (onUpdate: ReferenceAction option) (trusted: bool) : Kin
             OnUpdate            = onUpdate
             IsConstraintTrusted = trusted }
     { Kind.create fkChildKey (mkName "PropFkChild")
-        { Schema = "dbo"; Table = "OSUSR_PFC_CHILD"; Catalog = None }
+        (mkTableId "dbo" "OSUSR_PFC_CHILD")
         [ { Attribute.create fkChildPkKey (mkName "Id") Integer with
-                Column       = { ColumnName = "ID"; IsNullable = false }
+                Column       = ColumnRealization.create ("ID") (false) |> Result.value
                 IsPrimaryKey = true
                 IsMandatory  = true }
           { Attribute.create fkChildFkKey (mkName "ParentId") Integer with
-                Column      = { ColumnName = "PARENT_ID"; IsNullable = false }
+                Column      = ColumnRealization.create ("PARENT_ID") (false) |> Result.value
                 IsMandatory = true } ]
       with References = [ reference ]; Indexes = [] }
 
@@ -318,19 +318,19 @@ let private idxAxisKind
     : Kind =
     let idAttr =
         { Attribute.create idxIdAttr (mkName "Id") Integer with
-            Column       = { ColumnName = "ID"; IsNullable = false }
+            Column       = ColumnRealization.create ("ID") (false) |> Result.value
             IsPrimaryKey = true
             IsMandatory  = true }
     let nameAttr =
         { Attribute.create idxNameAttr (mkName "Name") Text with
-            Column      = { ColumnName = "NAME"; IsNullable = false }
+            Column      = ColumnRealization.create ("NAME") (false) |> Result.value
             Length      = Some 100
             IsMandatory = true }
     let idxA =
         { Index.create
             (idxKey ["PropIdx"; "IX_Name_A"]) (mkName "IX_PropIdx_NameA")
             (IndexColumn.ascendingList [ idxNameAttr ]) with
-            IsUnique           = true
+            Uniqueness         = Unique
             IgnoreDuplicateKey = ignoreDup
             IsDisabled         = disabled
             DataCompression    = compression }
@@ -338,12 +338,12 @@ let private idxAxisKind
         { Index.create
             (idxKey ["PropIdx"; "IX_Name_B"]) (mkName "IX_PropIdx_NameB")
             (IndexColumn.ascendingList [ idxNameAttr; idxIdAttr ]) with
-            IsUnique           = false
+            Uniqueness         = NotUnique
             IgnoreDuplicateKey = ignoreDup
             IsDisabled         = disabled
             DataCompression    = compression }
     { Kind.create idxAxisKey (mkName "PropIdx")
-        { Schema = "dbo"; Table = "OSUSR_PI_IDX"; Catalog = None }
+        (mkTableId "dbo" "OSUSR_PI_IDX")
         [ idAttr; nameAttr ]
       with Indexes = [ idxA; idxB ]; References = []; ColumnChecks = [] }
 

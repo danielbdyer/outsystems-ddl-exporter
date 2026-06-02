@@ -53,6 +53,11 @@ module private CdcSilencePropertyFixtures =
 
     let mkName (s: string) : Name = Name.create s |> mustOk
 
+    /// Per slice-5 lift: TableId is now `{ Schema: SchemaName; Table: TableName }`;
+    /// constants in fixtures force-unwrap via `Result.value` per the test-fixture pattern.
+    let mkTableId (schema: string) (table: string) : TableId =
+        TableId.create schema table |> mustOk
+
     let executeScalarInt (cnn: SqlConnection) (sql: string) : Task<int> =
         task {
             use cmd = cnn.CreateCommand()
@@ -114,14 +119,14 @@ module private CdcSilencePropertyFixtures =
               Name       = mkName "SingleRow"
               Origin     = Native
               Modality   = [ Static [ row ] ]
-              Physical   = { Schema = "dbo"; Table = "OSUSR_PCDC_ONE"; Catalog = None }
+              Physical   = mkTableId "dbo" "OSUSR_PCDC_ONE"
               Attributes =
                   [ { Attribute.create idKey (mkName "Id") Integer with
-                        Column = { ColumnName = "ID"; IsNullable = false }
+                        Column = ColumnRealization.create ("ID") (false) |> Result.value
                         IsPrimaryKey = true
                         IsMandatory  = true }
                     { Attribute.create valKey (mkName "Val") Text with
-                        Column = { ColumnName = "VAL"; IsNullable = false }
+                        Column = ColumnRealization.create ("VAL") (false) |> Result.value
                         Length = Some 50
                         IsMandatory = true } ]
               References = []; Indexes = []
@@ -160,21 +165,21 @@ module private CdcSilencePropertyFixtures =
                         [ row "10" "alpha" "true"  "1.50"
                           row "20" "beta"  "false" "2.75"
                           row "30" "gamma" "true"  "3.00" ] ]
-              Physical   = { Schema = "dbo"; Table = "OSUSR_PCDC_MULTITYPE"; Catalog = None }
+              Physical   = mkTableId "dbo" "OSUSR_PCDC_MULTITYPE"
               Attributes =
                   [ { Attribute.create idKey (mkName "Id") Integer with
-                        Column = { ColumnName = "ID"; IsNullable = false }
+                        Column = ColumnRealization.create ("ID") (false) |> Result.value
                         IsPrimaryKey = true
                         IsMandatory  = true }
                     { Attribute.create nameKey (mkName "Name") Text with
-                        Column = { ColumnName = "NAME"; IsNullable = false }
+                        Column = ColumnRealization.create ("NAME") (false) |> Result.value
                         Length = Some 100
                         IsMandatory = true }
                     { Attribute.create activeKey (mkName "Active") Boolean with
-                        Column = { ColumnName = "ACTIVE"; IsNullable = false }
+                        Column = ColumnRealization.create ("ACTIVE") (false) |> Result.value
                         IsMandatory = true }
                     { Attribute.create priceKey (mkName "Price") Decimal with
-                        Column = { ColumnName = "PRICE"; IsNullable = false }
+                        Column = ColumnRealization.create ("PRICE") (false) |> Result.value
                         Precision = Some 10
                         Scale     = Some 2
                         IsMandatory = true } ]
@@ -208,14 +213,14 @@ module private CdcSilencePropertyFixtures =
               Name       = mkName "ManyRows"
               Origin     = Native
               Modality   = [ Static rows ]
-              Physical   = { Schema = "dbo"; Table = "OSUSR_PCDC_MANY"; Catalog = None }
+              Physical   = mkTableId "dbo" "OSUSR_PCDC_MANY"
               Attributes =
                   [ { Attribute.create idKey (mkName "Id") Integer with
-                        Column = { ColumnName = "ID"; IsNullable = false }
+                        Column = ColumnRealization.create ("ID") (false) |> Result.value
                         IsPrimaryKey = true
                         IsMandatory  = true }
                     { Attribute.create labelKey (mkName "Label") Text with
-                        Column = { ColumnName = "LABEL"; IsNullable = false }
+                        Column = ColumnRealization.create ("LABEL") (false) |> Result.value
                         Length = Some 50
                         IsMandatory = true } ]
               References = []; Indexes = []
@@ -247,8 +252,8 @@ type CdcSilencePropertyTests(fixture: EphemeralContainerFixture) =
             let enableSql =
                 System.String.Concat(
                     "EXEC sys.sp_cdc_enable_table ",
-                    "@source_schema=N'", kind.Physical.Schema, "', ",
-                    "@source_name=N'", kind.Physical.Table, "', ",
+                    "@source_schema=N'", TableId.schemaText kind.Physical, "', ",
+                    "@source_name=N'", TableId.tableText kind.Physical, "', ",
                     "@role_name=NULL, ",
                     "@supports_net_changes=0;")
             do! Deploy.executeBatch cnn enableSql
@@ -256,8 +261,8 @@ type CdcSilencePropertyTests(fixture: EphemeralContainerFixture) =
             do! Deploy.executeBatch cnn "EXEC sys.sp_cdc_scan;"
             let captureTable =
                 System.String.Concat(
-                    "cdc.[", kind.Physical.Schema, "_",
-                    kind.Physical.Table, "_CT]")
+                    "cdc.[", TableId.schemaText kind.Physical, "_",
+                    TableId.tableText kind.Physical, "_CT]")
             let countSql =
                 System.String.Concat("SELECT COUNT(*) FROM ", captureTable, ";")
             let! baseline = executeScalarInt cnn countSql

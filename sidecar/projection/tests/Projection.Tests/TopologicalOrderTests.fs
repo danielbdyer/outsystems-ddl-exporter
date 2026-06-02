@@ -101,48 +101,14 @@ let ``isComplete is false when MissingEdges has any entry`` () =
             MissingEdges = [ orderKey, customerKey ] }
     Assert.False(TopologicalOrder.isComplete t)
 
-// ---------------------------------------------------------------------------
-// CycleDiagnostic + EdgeStrength + OrderingMode are values that round-trip
-// through structural equality. (Sanity that DUs / records compare correctly
-// for downstream emitters that build expected-vs-actual fixtures.)
-// ---------------------------------------------------------------------------
-
-[<Fact>]
-let ``OrderingMode values round-trip through structural equality`` () =
-    Assert.Equal<OrderingMode>(Topological,      Topological)
-    Assert.Equal<OrderingMode>(Alphabetical,     Alphabetical)
-    Assert.Equal<OrderingMode>(JunctionDeferred, JunctionDeferred)
-    Assert.NotEqual<OrderingMode>(Topological, Alphabetical)
-
-[<Fact>]
-let ``EdgeStrength values round-trip through structural equality`` () =
-    Assert.Equal<EdgeStrength>(EdgeStrength.Weak,    EdgeStrength.Weak)
-    Assert.Equal<EdgeStrength>(EdgeStrength.Cascade, EdgeStrength.Cascade)
-    Assert.Equal<EdgeStrength>(EdgeStrength.Other,   EdgeStrength.Other)
-    Assert.NotEqual<EdgeStrength>(EdgeStrength.Weak, EdgeStrength.Cascade)
-
-[<Fact>]
-let ``CycleDiagnostic round-trips through structural equality`` () =
-    let a =
-        { Members        = [ customerKey; orderKey ]
-          BreakableEdges = [ customerKey, orderKey ]
-          Reason         = "test cycle" }
-    let b =
-        { Members        = [ customerKey; orderKey ]
-          BreakableEdges = [ customerKey, orderKey ]
-          Reason         = "test cycle" }
-    Assert.Equal(a, b)
-
-[<Fact>]
-let ``TopologicalOrder round-trips through structural equality`` () =
-    let make () : TopologicalOrder =
-        { Mode         = Topological
-          Order        = [ customerKey; orderKey ]
-          Edges        = [ orderKey, customerKey ]
-          MissingEdges = []
-          Cycles       = []
-          Diagnostics  = [ "ran" ] }
-    Assert.Equal(make (), make ())
+// Slice 10 (2026-06-02 audit): four "round-trip through structural
+// equality" tests pruned. They asserted `Assert.Equal(x, x)` on
+// F#-auto-derived structural equality for `OrderingMode`,
+// `EdgeStrength`, `CycleDiagnostic`, `TopologicalOrder` — they tested
+// the F# compiler, not a contract V2 owns. Behavior preservation by
+// closed-DU + record structural equality is a language guarantee;
+// V2's own structural-commitment axioms (A4, A39) carry the
+// invariants the suite needs.
 
 // ---------------------------------------------------------------------------
 // A property: precedes is asymmetric on distinct keys (anti-symmetric).

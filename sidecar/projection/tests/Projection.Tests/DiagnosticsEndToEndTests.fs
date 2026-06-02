@@ -50,7 +50,7 @@ let private indexFixture
     (columns: SsKey list)
     (isUnique: bool)
     : Index =
-    { Index.ofKeyColumns (ssKey key) (name "IX") columns with IsUnique = isUnique }
+    { Index.ofKeyColumns (ssKey key) (name "IX") columns with Uniqueness = (if isUnique then Unique else NotUnique) }
 
 /// Catalog with one already-unique single-column index (Customer.Name)
 /// plus three non-unique single-column indexes that will produce
@@ -197,10 +197,10 @@ let private nullabilityCatalog : Catalog =
           Name     = name "Sample"
           Origin   = Native
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_DIAG_END_SAMPLE"; Catalog = None }
+          Physical = mkTableId "dbo" "OSUSR_DIAG_END_SAMPLE"
           Attributes = [
-              { Attribute.create idAttributeKey (name "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
-              { Attribute.create mandatoryAttributeKey (name "Mandatory") Text with Column = { ColumnName = "MANDATORY"; IsNullable = true }; IsMandatory = true } ]
+              { Attribute.create idAttributeKey (name "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true }
+              { Attribute.create mandatoryAttributeKey (name "Mandatory") Text with Column = ColumnRealization.create ("MANDATORY") (true) |> Result.value; IsMandatory = true } ]
           References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [
         { SsKey = ssKey "OS_MOD_DiagEnd"
@@ -339,19 +339,19 @@ let private fkCatalog : Catalog =
           Name     = name "FkTarget"
           Origin   = Native
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_FK_END_TARGET"; Catalog = None }
+          Physical = mkTableId "dbo" "OSUSR_FK_END_TARGET"
           Attributes = [
-              { Attribute.create fkTargetIdKey (name "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true } ]
+              { Attribute.create fkTargetIdKey (name "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true } ]
           References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let source : Kind =
         { SsKey    = fkSourceEntityKey
           Name     = name "FkSource"
           Origin   = Native
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_FK_END_SOURCE"; Catalog = None }
+          Physical = mkTableId "dbo" "OSUSR_FK_END_SOURCE"
           Attributes = [
-              { Attribute.create fkSourceIdKey (name "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
-              { Attribute.create fkSourceAttrKey (name "TargetId") Integer with Column = { ColumnName = "TARGET_ID"; IsNullable = true } } ]
+              { Attribute.create fkSourceIdKey (name "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true }
+              { Attribute.create fkSourceAttrKey (name "TargetId") Integer with Column = ColumnRealization.create ("TARGET_ID") (true) |> Result.value } ]
           References = [
               Reference.create fkRefKey (name "FkSource_Target") fkSourceAttrKey fkTargetEntityKey ]
           Indexes = []
@@ -477,7 +477,7 @@ let ``end-to-end: ForeignKey emits keep-reason and success-with-caveat entries s
     let strictReference : Reference =
         Reference.create secondRefKey (name "FkSource_StrictTarget") secondAttrKey fkTargetEntityKey
     let strictAttribute : Attribute =
-        { Attribute.create secondAttrKey (name "StrictTargetId") Integer with Column = { ColumnName = "STRICT_TARGET_ID"; IsNullable = true } }
+        { Attribute.create secondAttrKey (name "StrictTargetId") Integer with Column = ColumnRealization.create ("STRICT_TARGET_ID") (true) |> Result.value }
     let augmentedSource =
         match fkCatalog.Modules.[0].Kinds |> List.tryFind (fun k -> k.SsKey = fkSourceEntityKey) with
         | Some k ->

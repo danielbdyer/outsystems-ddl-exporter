@@ -2,14 +2,25 @@ namespace Projection.Core
 
 open System
 
-/// The outcome of a policy approval review (H-086).
-type ApprovalDecision =
-    /// The reviewer accepted this policy version for use in production.
-    | Approved
-    /// The reviewer explicitly rejected this policy version.
-    | Rejected
+/// The state of a policy approval review (H-086). Slice 2 (2026-06-02):
+/// formerly a triple of `(Decision : ApprovalDecision, ApprovedBy : string
+/// option, Rationale : string option)` carrying a convention "Pending → both
+/// `None`; Approved/Rejected → both `Some`". The convention made
+/// `{ Decision = Pending; ApprovedBy = Some "alice" }` a typecheck pass but a
+/// semantic impossibility. Lifted to a closed DU that packages the
+/// reviewer + rationale inside the `Approved` / `Rejected` variants where
+/// they belong; `Pending` carries no reviewer data by construction.
+///
+/// `Approved` / `Rejected` carry `by: string` (the reviewer's identifier —
+/// email, username, or any string the operator treats as an identity
+/// anchor) and `rationale: string option` (optional free-text justification).
+type ApprovalState =
     /// No decision has been recorded yet.
     | Pending
+    /// The reviewer accepted this policy version for use in production.
+    | Approved of by: string * rationale: string option
+    /// The reviewer explicitly rejected this policy version.
+    | Rejected of by: string * rationale: string option
 
 
 /// A stamped record of a reviewer's decision on a versioned policy (H-086).
@@ -18,15 +29,15 @@ type ApprovalDecision =
 /// of the policy under review. The link is by opaque string so `ApprovalRecord`
 /// can be stored and compared without carrying the full `Policy` value.
 ///
-/// `ApprovedBy` is `None` for `Pending` records (no reviewer yet). For
-/// `Approved` / `Rejected` records it carries the reviewer's identifier
-/// (email, username, or any string the operator treats as an identity anchor).
+/// `State` carries the workflow state (`Pending` / `Approved (by, rationale)`
+/// / `Rejected (by, rationale)`); reviewer identifier and rationale are
+/// packaged inside the Approved/Rejected variants per the slice-2 lift.
+/// `At` is the stamp's timestamp — boundary-supplied per the `Episode.fs`
+/// canonical pattern; Core holds no clock.
 type ApprovalRecord = {
     PolicyVersion : string
-    Decision      : ApprovalDecision
-    ApprovedBy    : string option
+    State         : ApprovalState
     At            : DateTimeOffset
-    Rationale     : string option
 }
 
 
@@ -35,24 +46,23 @@ type ApprovalRecord = {
 module ApprovalWorkflow =
 
     /// Create a `Pending` approval record for the given policy version.
-    /// Records the current UTC time as the initiation timestamp.
-    let pending (policyVersion: string) : ApprovalRecord =
+    /// `at` is the initiation timestamp — boundary-supplied per the
+    /// `Episode.fs` canonical pattern; Core holds no clock.
+    let pending (at: DateTimeOffset) (policyVersion: string) : ApprovalRecord =
         { PolicyVersion = policyVersion
-          Decision      = Pending
-          ApprovedBy    = None
-          At            = DateTimeOffset.UtcNow
-          Rationale     = None }
+          State         = Pending
+          At            = at }
 
     /// Create a `Pending` approval record for a `VersionedPolicy`. Uses
     /// the content `Digest` (stable identity) as the approval anchor; the
     /// `SemVer` is human-facing and may bump across rationale changes
     /// that do not move the digest.
-    let pendingFor (vp: VersionedPolicy) : ApprovalRecord =
-        pending vp.Digest
+    let pendingFor (at: DateTimeOffset) (vp: VersionedPolicy) : ApprovalRecord =
+        pending at vp.Digest
 
-    /// Transition an approval record to `Approved`. Updates `ApprovedBy`,
-    /// `Rationale`, and `At` (the decision timestamp). The original
-    /// `PolicyVersion` is preserved.
+    /// Transition an approval record to `Approved`. The `by` and `rationale`
+    /// are packaged inside the `Approved` variant of the new state; `at` is
+    /// the decision timestamp. The original `PolicyVersion` is preserved.
     let approve
         (approver: string)
         (rationale: string option)
@@ -60,22 +70,10 @@ module ApprovalWorkflow =
         (record: ApprovalRecord)
         : ApprovalRecord =
         { record with
-            Decision   = Approved
-            ApprovedBy = Some approver
-            At         = at
-            Rationale  = rationale }
+            State = Approved (approver, rationale)
+            At    = at }
 
-    /// `approve` variant that captures `DateTimeOffset.UtcNow` as the
-    /// decision timestamp. Convenience for interactive / CLI use.
-    let approveNow
-        (approver: string)
-        (rationale: string option)
-        (record: ApprovalRecord)
-        : ApprovalRecord =
-        approve approver rationale DateTimeOffset.UtcNow record
-
-    /// Transition an approval record to `Rejected`. Updates `ApprovedBy`,
-    /// `Rationale`, and `At` (the rejection timestamp).
+    /// Transition an approval record to `Rejected`. Same shape as `approve`.
     let reject
         (approver: string)
         (rationale: string option)
@@ -83,26 +81,49 @@ module ApprovalWorkflow =
         (record: ApprovalRecord)
         : ApprovalRecord =
         { record with
-            Decision   = Rejected
-            ApprovedBy = Some approver
-            At         = at
-            Rationale  = rationale }
+            State = Rejected (approver, rationale)
+            At    = at }
 
-    /// `reject` variant that captures `DateTimeOffset.UtcNow`.
-    let rejectNow
-        (approver: string)
-        (rationale: string option)
-        (record: ApprovalRecord)
-        : ApprovalRecord =
-        reject approver rationale DateTimeOffset.UtcNow record
+    // Slice 0 (2026-06-02): `approveNow` / `rejectNow` retired. They captured
+    // `DateTimeOffset.UtcNow` inside Core (analyzer gap pre-Slice-0). `pending`
+    // now takes `at` as a boundary-supplied parameter; CLI and Pipeline supply
+    // `DateTimeOffset.UtcNow` at the call site; tests pass a per-file
+    // `testTime` constant for determinism. Per the `Episode.fs` canonical
+    // shape — Core holds no clock.
 
-    /// True iff the record carries an `Approved` decision.
+    /// True iff the record's state is `Approved`.
     let isApproved (record: ApprovalRecord) : bool =
-        record.Decision = Approved
+        match record.State with
+        | Approved _ -> true
+        | _ -> false
 
-    /// True iff the record carries a `Pending` decision (no review yet).
+    /// True iff the record's state is `Pending` (no review yet).
     let isPending (record: ApprovalRecord) : bool =
-        record.Decision = Pending
+        match record.State with
+        | Pending -> true
+        | _ -> false
+
+    /// True iff the record's state is `Rejected`.
+    let isRejected (record: ApprovalRecord) : bool =
+        match record.State with
+        | Rejected _ -> true
+        | _ -> false
+
+    /// Extract the reviewer identifier from an `Approved` / `Rejected`
+    /// record; `None` for `Pending`. Convenience for boundary code (JSON
+    /// serialization, CLI display) that needs the reviewer text without
+    /// pattern-matching the whole state.
+    let approvedBy (record: ApprovalRecord) : string option =
+        match record.State with
+        | Approved (by, _) | Rejected (by, _) -> Some by
+        | Pending -> None
+
+    /// Extract the rationale text from an `Approved` / `Rejected` record;
+    /// `None` for `Pending` or for decisions made without rationale.
+    let rationale (record: ApprovalRecord) : string option =
+        match record.State with
+        | Approved (_, rat) | Rejected (_, rat) -> rat
+        | Pending -> None
 
 
 /// Indexed store of approval records, keyed by `PolicyVersion` (the
@@ -157,7 +178,7 @@ module ApprovalRegistry =
     /// for rejected suggestions).
     let isRejectedFor (policyDigest: string) (registry: ApprovalRegistry) : bool =
         match tryFind policyDigest registry with
-        | Some r -> r.Decision = Rejected
+        | Some r -> ApprovalWorkflow.isRejected r
         | None   -> false
 
     /// **The HORIZON `Skip`-equivalent gate.** True when downstream
@@ -182,6 +203,6 @@ module ApprovalRegistry =
     let rejectedRecords (registry: ApprovalRegistry) : ApprovalRecord list =
         registry.ByDigest
         |> Map.values
-        |> Seq.filter (fun r -> r.Decision = Rejected)
+        |> Seq.filter ApprovalWorkflow.isRejected
         |> Seq.sortBy (fun r -> r.At)
         |> Seq.toList

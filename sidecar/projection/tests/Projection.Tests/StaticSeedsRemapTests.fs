@@ -4,6 +4,7 @@ open Xunit
 open Projection.Core
 open Projection.Core.Passes
 open Projection.Targets.Data
+open Projection.Tests.Fixtures
 
 // The static-artifact emit path realized through the converged data-load
 // algebra. `DataLoadPlan.build` applies the operator-supplied
@@ -37,10 +38,10 @@ let private userKind : Kind =
         Name       = mkName "User"
         Origin     = Native
         Modality   = []
-        Physical   = { Schema = "dbo"; Table = "OSUSR_SR_USER"; Catalog = None }
+        Physical   = mkTableId "dbo" "OSUSR_SR_USER"
         Attributes =
             [ { Attribute.create (mkKey ["User"; "ID"]) (mkName "ID") Integer with
-                  Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true } ]
+                  Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true } ]
         References = []
         Indexes    = []
         Description = None
@@ -52,10 +53,10 @@ let private userKind : Kind =
 
 let private orderIdAttr =
     { Attribute.create (mkKey ["Order"; "ID"]) (mkName "ID") Integer with
-        Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+        Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true }
 let private orderUserIdAttr =
     { Attribute.create (mkKey ["Order"; "USER_ID"]) (mkName "USER_ID") Integer with
-        Column = { ColumnName = "USER_ID"; IsNullable = false }; IsMandatory = true }
+        Column = ColumnRealization.create ("USER_ID") (false) |> Result.value; IsMandatory = true }
 
 let private orderUserRef =
     { Reference.create (mkKey ["Order"; "UserRef"]) (mkName "UserRef") (mkKey ["Order"; "USER_ID"]) userKey with
@@ -71,7 +72,7 @@ let private mkOrderKind (rows: StaticRow list) : Kind =
         Name       = mkName "Order"
         Origin     = Native
         Modality   = [ Static rows ]
-        Physical   = { Schema = "dbo"; Table = "OSUSR_SR_ORDER"; Catalog = None }
+        Physical   = mkTableId "dbo" "OSUSR_SR_ORDER"
         Attributes = [ orderIdAttr; orderUserIdAttr ]
         References = [ orderUserRef ]
         Indexes    = []

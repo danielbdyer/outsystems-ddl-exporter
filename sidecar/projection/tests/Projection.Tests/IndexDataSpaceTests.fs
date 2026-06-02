@@ -50,21 +50,21 @@ let private dsIdxKey =
 let private dsKind (dataSpace: DataSpace option) : Kind =
     let idAttr =
         { Attribute.create dsIdAttrKey (mkName "Id") Integer with
-            Column       = { ColumnName = "ID"; IsNullable = false }
+            Column       = ColumnRealization.create "ID" false |> Result.value
             IsPrimaryKey = true
             IsMandatory  = true }
     let nameAttr =
         { Attribute.create dsNameAttrKey (mkName "Name") Text with
-            Column      = { ColumnName = "NAME"; IsNullable = false }
+            Column      = ColumnRealization.create "NAME" false |> Result.value
             Length      = Some 100
             IsMandatory = true }
     let idx =
         { Index.create dsIdxKey (mkName "IX_DataSpaceFixture_Name")
             (IndexColumn.ascendingList [ dsNameAttrKey ]) with
-            IsUnique  = false
-            DataSpace = dataSpace }
+            Uniqueness = NotUnique
+            DataSpace  = dataSpace }
     { Kind.create dsKindKey (mkName "DataSpaceFixture")
-        { Schema = "dbo"; Table = "OSUSR_DS_FIXTURE"; Catalog = None }
+        (TableId.create "dbo" "OSUSR_DS_FIXTURE" |> Result.value)
         [ idAttr; nameAttr ]
       with Indexes = [ idx ] }
 

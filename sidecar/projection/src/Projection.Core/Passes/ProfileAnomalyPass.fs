@@ -129,7 +129,11 @@ module ProfileAnomalyPass =
                   TransformKind  = Touched
                   Classification = DataIntent })
 
-        Lineage.ofValueAndEvents events { Value = report; Entries = allDiagnostics }
+        lineageDiagnostics {
+            do! LineageDiagnostics.writeLineages events
+            do! LineageDiagnostics.writeDiagnostics allDiagnostics
+            return report
+        }
 
     let registered (profile: Profile) : RegisteredTransform<Catalog, ProfileAnomalyReport> =
         { Name         = passName

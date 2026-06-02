@@ -70,8 +70,7 @@ let ``Chapter 4.5 slice α: HasFilteredIndex returns true when any Index.Filter 
             SsKey = SsKey.synthesized "test" (sprintf "Idx:%s" (defaultArg filterRaw "Unfiltered")) |> Result.value
             Name = Name.create "IX" |> Result.value
             Columns = []
-            IsUnique = false
-            IsPrimaryKey = false
+            Uniqueness = NotUnique
             ExtendedProperties = []
             Filter = filterRaw
             IncludedColumns = []; IsPlatformAuto = false; FillFactor = None; IsPadded = false; AllowRowLocks = true; AllowPageLocks = true; NoRecomputeStatistics = false; IgnoreDuplicateKey = false; IsDisabled = false; DataCompression = None; DataSpace = None }

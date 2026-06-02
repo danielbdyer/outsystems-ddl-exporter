@@ -73,7 +73,7 @@ let private appendUnderscoreV (n: Name) : Name =
     Name.create (System.String.Concat (Name.value n, "_v")) |> Result.value
 let private renameCustomerSpec : TableRename.RenameSpec =
     { Key    = TableRename.Logical (mkName "Sales", mkName "Customer")
-      Target = { Catalog = None; Schema = "renamed"; Table = "customer_v2" } }
+      Target = (TableId.create "renamed" "customer_v2" |> Result.value) }
 
 let private allRegistrations : RegisteredTransformMetadata list =
     [ CatalogReader.registeredMetadata

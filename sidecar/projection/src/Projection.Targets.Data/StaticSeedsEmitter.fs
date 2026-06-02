@@ -44,7 +44,7 @@ module StaticSeedsEmitter =
     /// kind's declared attribute order — which is itself canonical
     /// after `CanonicalizeIdentity`.
     let private orderedColumnNames (k: Kind) : string list =
-        k.Attributes |> List.map (fun a -> a.Column.ColumnName)
+        k.Attributes |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
 
     /// Primary-key column names in the kind's declared order. The
     /// MERGE's ON-clause joins on these; the WHEN-NOT-MATCHED INSERT
@@ -54,13 +54,13 @@ module StaticSeedsEmitter =
     let private pkColumnNames (k: Kind) : string list =
         k.Attributes
         |> List.filter (fun a -> a.IsPrimaryKey)
-        |> List.map (fun a -> a.Column.ColumnName)
+        |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
 
     /// Non-PK column names (the MERGE's UPDATE-target columns).
     let private updatableColumnNames (k: Kind) : string list =
         k.Attributes
         |> List.filter (fun a -> not a.IsPrimaryKey)
-        |> List.map (fun a -> a.Column.ColumnName)
+        |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
 
     // -------------------------------------------------------------------
     // Slice δ — cycle-membership detection + Phase-2 deferred-FK set.
@@ -161,7 +161,7 @@ module StaticSeedsEmitter =
             k.Attributes
             |> List.filter (fun a -> not a.IsPrimaryKey)
             |> List.filter (fun a -> not (Set.contains a.Name deferred))
-            |> List.map (fun a -> a.Column.ColumnName)
+            |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
         let args : ScriptDomBuild.MergeBuildArgs =
             {
                 Target     = table
@@ -205,7 +205,7 @@ module StaticSeedsEmitter =
             let lit =
                 Map.tryFind a.Name typedValues
                 |> Option.defaultValue SqlLiteral.NullLit
-            a.Column.ColumnName, lit
+            ColumnRealization.columnNameText a.Column, lit
         let setCells =
             k.Attributes
             |> List.filter (fun a -> Set.contains a.Name deferred)

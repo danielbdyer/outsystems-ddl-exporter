@@ -32,8 +32,7 @@ let private indexFixture (label: string) (filter: string option) : Index =
         SsKey              = mkKey (sprintf "Idx.%s" label)
         Name               = mkName (sprintf "IX_%s" label)
         Columns            = [ { Attribute = mkAttrK; Direction = IndexColumnDirection.Ascending } ]
-        IsUnique           = false
-        IsPrimaryKey       = false
+        Uniqueness         = NotUnique
         ExtendedProperties = []
         Filter             = filter
         IncludedColumns    = []

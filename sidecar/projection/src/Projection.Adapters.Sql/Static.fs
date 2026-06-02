@@ -6,6 +6,7 @@ namespace Projection.Adapters.Sql
 
 open System.Text.Json
 open Projection.Core
+open FsToolkit.ErrorHandling
 
 /// Boundary adapter — converts V1's static-data JSON shape into V2's
 /// `Static` modality populations on a target catalog.
@@ -98,7 +99,7 @@ module Static =
     let private buildValues (kind: Kind) (row: JsonElement) : Map<Name, string> =
         kind.Attributes
         |> List.choose (fun a ->
-            match row.TryGetProperty(a.Column.ColumnName) with
+            match row.TryGetProperty(ColumnRealization.columnNameText a.Column) with
             | true, cell -> Some (a.Name, invariantString cell)
             | false, _   -> None)
         |> Map.ofList
@@ -119,14 +120,14 @@ module Static =
                 match remaining with
                 | [] -> Result.success (List.rev acc)
                 | (a: Attribute) :: rest ->
-                    match row.TryGetProperty(a.Column.ColumnName) with
+                    match row.TryGetProperty(ColumnRealization.columnNameText a.Column) with
                     | true, cell -> collectPkValues rest (invariantString cell :: acc)
                     | false, _ ->
                         Result.failureOf
                             (adapterError
                                 "staticAdapter.pk.missing"
                                 (sprintf "Row in kind '%s' missing PK column '%s'."
-                                    (Name.value kind.Name) a.Column.ColumnName))
+                                    (Name.value kind.Name) (ColumnRealization.columnNameText a.Column)))
             collectPkValues pkAttrs []
             |> Result.bind (fun pkValues ->
                 deriveRowIdentifier kind.SsKey pkValues
@@ -207,15 +208,20 @@ module Static =
         let staticDataJson =
             match source with
             | StaticPopulationsJson json -> json
+        // Slice 7 (2026-06-02 audit): top-level Result-bind ladder
+        // replaced with `result {}` CE. The per-module / per-kind
+        // inner walks stay imperative (they use `Result.collect`,
+        // not bind-threading — `collect` gathers all per-element
+        // errors rather than short-circuiting on the first).
         try
             use doc = JsonDocument.Parse(staticDataJson)
-            indexTables doc.RootElement
-            |> Result.bind (fun rowsByPhysical ->
+            result {
+                let! rowsByPhysical = indexTables doc.RootElement
                 // Walk the catalog. For each Static-flagged kind whose
                 // (Schema, Table) appears in the JSON, convert rows and
                 // attach. Result composes via Result.collect so the
                 // first failure short-circuits.
-                let modulesResult : Result<Module list> =
+                let! modules =
                     catalog.Modules
                     |> List.map (fun m ->
                         let kindsResult : Result<Kind list> =
@@ -224,7 +230,7 @@ module Static =
                                 if not (hasStaticModality k) then
                                     Result.success k
                                 else
-                                    let key = (k.Physical.Schema, k.Physical.Table)
+                                    let key = TableId.qualifiedParts k.Physical
                                     match Map.tryFind key rowsByPhysical with
                                     | None ->
                                         // No matching JSON table; leave the
@@ -251,7 +257,8 @@ module Static =
                             |> Result.collect
                         Result.map (fun kinds -> { m with Kinds = kinds }) kindsResult)
                     |> Result.collect
-                Result.map (fun modules -> { catalog with Modules = modules }) modulesResult)
+                return { catalog with Modules = modules }
+            }
         with
         | :? JsonException as ex ->
             Result.failureOf (adapterError "staticAdapter.json.parse" ex.Message)

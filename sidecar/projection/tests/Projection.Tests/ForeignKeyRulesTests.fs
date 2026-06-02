@@ -176,7 +176,7 @@ let ``cross-schema: source and target in different schemas + AllowCrossSchema=fa
     // Synthesize a catalog where Order's target is in a different schema.
     let altCustomer =
         { customer with
-            Physical = { Schema = "alt"; Table = customer.Physical.Table; Catalog = None } }
+            Physical = mkTableId "alt" (TableId.tableText customer.Physical) }
     let altModule =
         { salesModule with Kinds = [ altCustomer; order; country ] }
     let altCatalog : Catalog = IRBuilders.mkCatalog [ altModule ]
@@ -206,7 +206,7 @@ let ``cross-schema: comparison is case-insensitive`` () =
     // V1's SchemaEquals uses OrdinalIgnoreCase; V2 mirrors.
     let altCustomer =
         { customer with
-            Physical = { Schema = "DBO"; Table = customer.Physical.Table; Catalog = None } }
+            Physical = mkTableId "DBO" (TableId.tableText customer.Physical) }
     let altModule =
         { salesModule with Kinds = [ altCustomer; order; country ] }
     let altCatalog : Catalog = IRBuilders.mkCatalog [ altModule ]

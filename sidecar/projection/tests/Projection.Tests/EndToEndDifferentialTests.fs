@@ -63,9 +63,9 @@ let private parentKind : Kind =
       Name     = mkName "Parent"
       Origin   = Native
       Modality = []
-      Physical = { Schema = "dbo"; Table = "OSUSR_P_PARENT"; Catalog = None }
+      Physical = mkTableId "dbo" "OSUSR_P_PARENT"
       Attributes = [
-          { Attribute.create parentIdKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true } ]
+          { Attribute.create parentIdKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true } ]
       References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
 let private childKind : Kind =
@@ -73,10 +73,10 @@ let private childKind : Kind =
       Name     = mkName "Child"
       Origin   = Native
       Modality = []
-      Physical = { Schema = "dbo"; Table = "OSUSR_C_CHILD"; Catalog = None }
+      Physical = mkTableId "dbo" "OSUSR_C_CHILD"
       Attributes = [
-          { Attribute.create childIdKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
-          { Attribute.create childParentFkKey (mkName "ParentId") Integer with Column = { ColumnName = "PARENTID"; IsNullable = true } } ]
+          { Attribute.create childIdKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true }
+          { Attribute.create childParentFkKey (mkName "ParentId") Integer with Column = ColumnRealization.create ("PARENTID") (true) |> Result.value } ]
       References = [
           Reference.create childToParentRefKey (mkName "Parent") childParentFkKey parentKindKey ]
       Indexes = []
@@ -89,10 +89,10 @@ let private countryKind : Kind =
       // Static modality with empty populations — the static adapter
       // will fill these in from V1 JSON.
       Modality = [ Static [] ]
-      Physical = { Schema = "dbo"; Table = "OSUSR_DEF_CITY"; Catalog = None }
+      Physical = mkTableId "dbo" "OSUSR_DEF_CITY"
       Attributes = [
-          { Attribute.create countryIdKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
-          { Attribute.create countryNameKey (mkName "Name") Text with Column = { ColumnName = "NAME"; IsNullable = false } } ]
+          { Attribute.create countryIdKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true }
+          { Attribute.create countryNameKey (mkName "Name") Text with Column = ColumnRealization.create ("NAME") (false) |> Result.value } ]
       References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
 let private endToEndCatalog : Catalog =
@@ -202,11 +202,11 @@ let ``MILESTONE: three-input projection passes end-to-end through both adapters 
 
     // Parent.Id: PK → EnforceNotNull(PrimaryKey).
     Assert.Equal(
-        NullabilityOutcome.EnforceNotNull PrimaryKey,
+        NullabilityOutcome.EnforceNotNull NullabilityEvidence.PrimaryKey,
         (decisionFor parentIdKey).Outcome)
     // Child.Id: PK → EnforceNotNull(PrimaryKey).
     Assert.Equal(
-        NullabilityOutcome.EnforceNotNull PrimaryKey,
+        NullabilityOutcome.EnforceNotNull NullabilityEvidence.PrimaryKey,
         (decisionFor childIdKey).Outcome)
     // Child.ParentId: nullable, not-PK, no mandatory marker (V2 IR
     // doesn't carry it yet) → KeepNullable(NoTighteningSignal). Profile
@@ -217,7 +217,7 @@ let ``MILESTONE: three-input projection passes end-to-end through both adapters 
         (decisionFor childParentFkKey).Outcome)
     // Country.Id: PK → EnforceNotNull(PrimaryKey).
     Assert.Equal(
-        NullabilityOutcome.EnforceNotNull PrimaryKey,
+        NullabilityOutcome.EnforceNotNull NullabilityEvidence.PrimaryKey,
         (decisionFor countryIdKey).Outcome)
     // Country.Name: not-PK, physically NOT NULL → EnforceNotNull(PhysicallyNotNull).
     Assert.Equal(
@@ -294,7 +294,7 @@ let ``DIFFERENTIAL: V1 Cautious-mode equivalent produces same outcomes for V2-ex
     // lands on Attribute.
     Assert.All((LineageDiagnostics.payload lineage).Decisions, fun d ->
         match d.Outcome with
-        | NullabilityOutcome.EnforceNotNull PrimaryKey -> ()
+        | NullabilityOutcome.EnforceNotNull NullabilityEvidence.PrimaryKey -> ()
         | NullabilityOutcome.EnforceNotNull PhysicallyNotNull -> ()
         | NullabilityOutcome.KeepNullable NoTighteningSignal -> ()
         | other ->

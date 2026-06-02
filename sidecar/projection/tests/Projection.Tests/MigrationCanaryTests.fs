@@ -4,6 +4,7 @@ open Xunit
 open Projection.Core
 open Projection.Targets.SSDT
 open Projection.Pipeline
+open Projection.Tests.Fixtures
 
 // 6.D.1 — the LIVE A→B canary: the master equation T16 realized on real SQL
 // Server (the operator's target). The pure tests prove the composition + the
@@ -23,7 +24,7 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
 
     static let mkAttr key col typ len isPk nullable : Attribute =
         { Attribute.create (mkKey key) (nm col) typ with
-            Column = { ColumnName = col; IsNullable = nullable }
+            Column = ColumnRealization.create (col) (nullable) |> Result.value
             Length = len
             IsPrimaryKey = isPk
             IsMandatory = isPk }
@@ -32,7 +33,7 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
     static let catalogA : Catalog =
         let customer =
             Kind.create (mkKey "Customer") (nm "Customer")
-                { Schema = "dbo"; Table = "MIGAB_CUSTOMER"; Catalog = None }
+                (mkTableId "dbo" "MIGAB_CUSTOMER")
                 [ mkAttr "Customer.Id" "ID" Integer None true false
                   mkAttr "Customer.Email" "EMAIL" Text (Some 50) false true ]
         Catalog.create
@@ -45,7 +46,7 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
     static let catalogB : Catalog =
         let patron =
             Kind.create (mkKey "Customer") (nm "Patron")
-                { Schema = "dbo"; Table = "MIGAB_PATRON"; Catalog = None }
+                (mkTableId "dbo" "MIGAB_PATRON")
                 [ mkAttr "Customer.Id" "ID" Integer None true false
                   mkAttr "Customer.Email" "EMAIL" Text (Some 256) false true
                   mkAttr "Customer.Loyalty" "LOYALTY" Integer None false true ]
@@ -59,7 +60,7 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
     static let catalogAcol : Catalog =
         let customer =
             Kind.create (mkKey "C2") (nm "Customer")
-                { Schema = "dbo"; Table = "MIGAB_COL"; Catalog = None }
+                (mkTableId "dbo" "MIGAB_COL")
                 [ mkAttr "C2.Id" "ID" Integer None true false
                   mkAttr "C2.Email" "EMAIL" Text (Some 100) false true ]
         Catalog.create [ { SsKey = mkKey "Mod2"; Name = nm "MigMod2"; Kinds = [ customer ]; IsActive = true; ExtendedProperties = [] } ] []
@@ -68,7 +69,7 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
     static let catalogBcol : Catalog =
         let customer =
             Kind.create (mkKey "C2") (nm "Customer")
-                { Schema = "dbo"; Table = "MIGAB_COL"; Catalog = None }
+                (mkTableId "dbo" "MIGAB_COL")
                 [ mkAttr "C2.Id" "ID" Integer None true false
                   { mkAttr "C2.Email" "CONTACT" Text (Some 100) false true with Name = nm "Contact" } ]
         Catalog.create [ { SsKey = mkKey "Mod2"; Name = nm "MigMod2"; Kinds = [ customer ]; IsActive = true; ExtendedProperties = [] } ] []

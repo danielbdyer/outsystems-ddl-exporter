@@ -688,7 +688,11 @@ module TopologicalOrderPass =
                         (i + 1) (List.length members) memberStr))
 
         let events = allKeys |> List.map touchedEvent
-        Lineage.ofValueAndEvents events { Value = report; Entries = diagnostics }
+        lineageDiagnostics {
+            do! LineageDiagnostics.writeLineages events
+            do! LineageDiagnostics.writeDiagnostics diagnostics
+            return report
+        }
 
     // -----------------------------------------------------------------------
     // H-039 — Cascade shock zone detection.
@@ -789,4 +793,8 @@ module TopologicalOrderPass =
                   with SsKey = Some z.Root })
 
         let events = allKeys |> List.map touchedEvent
-        Lineage.ofValueAndEvents events { Value = zones; Entries = diagnostics }
+        lineageDiagnostics {
+            do! LineageDiagnostics.writeLineages events
+            do! LineageDiagnostics.writeDiagnostics diagnostics
+            return zones
+        }

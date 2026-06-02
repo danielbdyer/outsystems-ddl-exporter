@@ -60,10 +60,10 @@ let private buildCatalog (mandatoryColumnIsNullable: bool) (mandatoryColumnIsMan
           Name     = mkName "SampleEntity"
           Origin   = Native
           Modality = []
-          Physical = { Schema = "dbo"; Table = "OSUSR_TEST_SAMPLE"; Catalog = None }
+          Physical = (TableId.create "dbo" "OSUSR_TEST_SAMPLE" |> Result.value)
           Attributes = [
-              { Attribute.create idAttributeKey (mkName "Id") Integer with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true }
-              { Attribute.create mandatoryAttributeKey (mkName "Mandatory") Text with Column = { ColumnName = "MANDATORY"; IsNullable = mandatoryColumnIsNullable }; IsMandatory = mandatoryColumnIsMandatory } ]
+              { Attribute.create idAttributeKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true }
+              { Attribute.create mandatoryAttributeKey (mkName "Mandatory") Text with Column = ColumnRealization.create ("MANDATORY") (mandatoryColumnIsNullable) |> Result.value; IsMandatory = mandatoryColumnIsMandatory } ]
           References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [
         { SsKey = mkKey "OS_MOD_Sample"
@@ -329,4 +329,4 @@ let ``V2 invariant (V1 implicit): PK + IsMandatory yields PrimaryKey, not Logica
     let idDecision = decisionFor idAttributeKey lineage
     // PK takes precedence; profile evidence is not consulted for PK
     // attributes (signal hierarchy short-circuits at step 2).
-    Assert.Equal(NullabilityOutcome.EnforceNotNull PrimaryKey, idDecision.Outcome)
+    Assert.Equal(NullabilityOutcome.EnforceNotNull NullabilityEvidence.PrimaryKey, idDecision.Outcome)

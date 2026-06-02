@@ -98,8 +98,8 @@ let ``Slice ε canary: OSSYS seed fixture preserves cross-schema BillingAccount 
             let billing =
                 appCore.Kinds
                 |> List.find (fun k -> Name.value k.Name = "BillingAccount")
-            Assert.Equal("billing", billing.Physical.Schema)
-            Assert.Equal("BILLING_ACCOUNT", billing.Physical.Table)
+            Assert.Equal("billing", TableId.schemaText billing.Physical)
+            Assert.Equal("BILLING_ACCOUNT", TableId.tableText billing.Physical)
 
 [<Fact>]
 let ``Slice ε canary: Customer entity carries six attributes including FK to City`` () =
@@ -248,8 +248,8 @@ let ``Slice 5.13.ossys-rowsets-cluster: indexes lift via rowset path (matrix row
             let emailIdx =
                 customer.Indexes
                 |> List.find (fun i -> Name.value i.Name = "IDX_CUSTOMER_EMAIL")
-            Assert.True(emailIdx.IsUnique)
-            Assert.False(emailIdx.IsPrimaryKey)
+            Assert.True(IndexUniqueness.isUnique emailIdx.Uniqueness)
+            Assert.False(IndexUniqueness.isPrimaryKey emailIdx.Uniqueness)
             match emailIdx.Filter with
             | Some _ -> ()
             | None -> Assert.Fail("IDX_CUSTOMER_EMAIL expected to carry a filter (rowset-path #AllIdx.FilterDefinition)")

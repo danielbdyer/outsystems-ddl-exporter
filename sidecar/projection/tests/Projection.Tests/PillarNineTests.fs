@@ -122,7 +122,7 @@ let ``H-052 overlay-exercise: Selection axis fires when VisibilityMask hides at 
 let ``H-052 overlay-exercise: Emission axis fires when TableRename has at least one spec`` () =
     let renameSpec : TableRename.RenameSpec =
         { Key    = TableRename.Logical (mkName "Sales", mkName "Customer")
-          Target = { Catalog = None; Schema = "renamed"; Table = "customer_v2" } }
+          Target = (TableId.create "renamed" "customer_v2" |> Result.value) }
     let rt = TableRename.registered [ renameSpec ]
     let result = rt.Run sampleCatalog
     let axes = axesPresent result.Trail

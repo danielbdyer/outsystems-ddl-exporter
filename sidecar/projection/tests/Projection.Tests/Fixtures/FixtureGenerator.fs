@@ -662,7 +662,7 @@ module FixtureGenerator =
             if not (List.isEmpty rows) then
                 bulkSeeds.Add
                     {
-                        Table = { Schema = "dbo"; Table = model.PhysicalTable; Catalog = None }
+                        Table = (TableId.create "dbo" model.PhysicalTable |> Result.value)
                         Rows = rows
                     }
             totalTables <- totalTables + 1

@@ -152,14 +152,15 @@ module ProfileSnapshot =
         let attributeByCoord =
             allKinds
             |> List.collect (fun k ->
+                let schemaStr, tableStr = TableId.qualifiedParts k.Physical
                 k.Attributes
                 |> List.map (fun a ->
-                    (k.Physical.Schema, k.Physical.Table, a.Column.ColumnName), a.SsKey))
+                    (schemaStr, tableStr, ColumnRealization.columnNameText a.Column), a.SsKey))
             |> Map.ofList
 
         let kindByPhysical =
             allKinds
-            |> List.map (fun k -> (k.Physical.Schema, k.Physical.Table), k.SsKey)
+            |> List.map (fun k -> TableId.qualifiedParts k.Physical, k.SsKey)
             |> Map.ofList
 
         let referenceByCoord =
@@ -172,7 +173,7 @@ module ProfileSnapshot =
                     let sourceAttrColumn =
                         k.Attributes
                         |> List.tryFind (fun a -> a.SsKey = r.SourceAttribute)
-                        |> Option.map (fun a -> a.Column.ColumnName)
+                        |> Option.map (fun a -> ColumnRealization.columnNameText a.Column)
                     // The target-side coordinate: the target kind's PK
                     // (synthetic-milestone — single-PK assumption; real
                     // composite-FK semantics arrive when fixtures surface
@@ -183,12 +184,14 @@ module ProfileSnapshot =
                         |> Option.bind (fun target ->
                             target.Attributes
                             |> List.tryFind (fun a -> a.IsPrimaryKey)
-                            |> Option.map (fun a -> a.Column.ColumnName))
+                            |> Option.map (fun a -> ColumnRealization.columnNameText a.Column))
                     match sourceAttrColumn, targetKindOpt, targetPkColumn with
                     | Some srcCol, Some target, Some tgtCol ->
+                        let srcSchemaStr, srcTableStr = TableId.qualifiedParts k.Physical
+                        let tgtSchemaStr, tgtTableStr = TableId.qualifiedParts target.Physical
                         let coord =
-                            (k.Physical.Schema, k.Physical.Table, srcCol),
-                            (target.Physical.Schema, target.Physical.Table, tgtCol)
+                            (srcSchemaStr, srcTableStr, srcCol),
+                            (tgtSchemaStr, tgtTableStr, tgtCol)
                         Some (coord, r.SsKey)
                     | _ -> None))
             |> Map.ofList

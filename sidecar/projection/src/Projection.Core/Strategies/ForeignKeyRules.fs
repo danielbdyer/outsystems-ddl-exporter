@@ -199,8 +199,8 @@ module ForeignKeyRules =
     /// equivalents (V1's `SchemaEquals`, ForeignKeyEvaluator.cs:231).
     let private crossesSchema (sourceKind: Kind) (targetKind: Kind) : bool =
         not (System.String.Equals(
-                sourceKind.Physical.Schema,
-                targetKind.Physical.Schema,
+                SchemaName.value sourceKind.Physical.Schema,
+                SchemaName.value targetKind.Physical.Schema,
                 System.StringComparison.OrdinalIgnoreCase))
 
     /// Decide a single (reference, intervention) pair.

@@ -22,12 +22,12 @@ let private bookKey     = synthKey "Lib" "Book"
 let private junctionKey = synthKey "Lib" "Author_Book"
 
 let private physical (table: string) : PhysicalRealization =
-    { Schema = "dbo"; Table = table; Catalog = None }
+    TableId.create "dbo" table |> Result.value
 
 let private mkAttr (root: string) (name: string) (isNullable: bool) : Attribute =
     let key = synthKey root name
     { Attribute.create key (Name.create name |> Result.value) PrimitiveType.Integer with
-        Column = { ColumnName = name; IsNullable = isNullable } }
+        Column = ColumnRealization.create (name) (isNullable) |> Result.value }
 
 let private mkRef (ownerKey: SsKey) (targetKey: SsKey) (name: string) : Reference =
     let attrKey = synthKey (SsKey.rootOriginal ownerKey) name

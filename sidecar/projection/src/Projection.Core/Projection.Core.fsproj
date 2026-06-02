@@ -33,6 +33,17 @@
     <Compile Include="SqlStorageType.fs" />
     <Compile Include="SqlLiteral.fs" />
     <Compile Include="Catalog.fs" />
+    <!--
+      Optics.fs: extracted from Diagnostics.fs at 2026-06-02 lens-adoption
+      sweep so Lens + CatalogLenses compile after the IR types (Catalog.fs)
+      but BEFORE every catalog-manipulating consumer (ModuleFilter.fs,
+      CatalogDiff.fs, Policy.fs, Passes/*, LineageBuffer.fs). Previously
+      housed in Diagnostics.fs (compile-order ~73), which left the lens
+      vocabulary unreachable from most Core sites; the audit named this
+      as a description-vs-naming smell. The new compile-order point
+      makes the lens idiom visible across the codebase.
+    -->
+    <Compile Include="Optics.fs" />
     <Compile Include="ModuleFilter.fs" />
     <Compile Include="ArtifactByKind.fs" />
     <Compile Include="CatalogDiff.fs" />

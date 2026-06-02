@@ -17,7 +17,7 @@ open Projection.Tests.Fixtures
 //
 // Disciplines under test:
 //   A1   — SsKey carries through unchanged (identity preserved).
-//   A18 amended — emitter consumes `Kind.Physical` + `Attribute.Column.ColumnName`;
+//   A18 amended — emitter consumes `Kind.Physical` + `ColumnRealization.columnNameText Attribute.Column`;
 //                 the pass writes there pre-emit. No Policy in the emitter.
 //   Pillar 9 — both passes classified `OperatorIntent of Emission`; events
 //             carry the classification.
@@ -43,10 +43,10 @@ let private divergentCatalog () : Catalog =
     let customerKey = kindKey ["Sales"; "Customer"]
     let emailAttr =
         let a = Attribute.create (attrKey ["Sales"; "Customer"; "Email"]) (name "Email") PrimitiveType.Text
-        { a with Column = { ColumnName = "EMAIL"; IsNullable = false } }
+        { a with Column = ColumnRealization.create ("EMAIL") (false) |> Result.value }
     let idAttr =
         let a = Attribute.create (attrKey ["Sales"; "Customer"; "Id"]) (name "Id") PrimitiveType.Integer
-        { a with Column = { ColumnName = "ID"; IsNullable = false }; IsPrimaryKey = true; IsMandatory = true }
+        { a with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true }
     let customer =
         Kind.create
             customerKey
@@ -74,8 +74,8 @@ let ``LogicalTableEmission Enabled: Kind.Physical.Table is substituted with Name
     let result = runTablePass LogicalTableEmission.Enabled catalog
     let after = result.Value.Value
     let customer = Catalog.allKinds after |> List.head
-    Assert.Equal("Customer", customer.Physical.Table)
-    Assert.Equal("dbo", customer.Physical.Schema)
+    Assert.Equal("Customer", TableId.tableText customer.Physical)
+    Assert.Equal("dbo", TableId.schemaText customer.Physical)
 
 [<Fact>]
 let ``LogicalTableEmission Enabled: Kind.SsKey is byte-identical post-substitution (A1)`` () =
@@ -105,8 +105,8 @@ let ``LogicalTableEmission Enabled: emits one PhysicallyRenamed event per substi
     Assert.Equal(1, List.length substEvents)
     match (List.head substEvents).TransformKind with
     | PhysicallyRenamed payload ->
-        Assert.Equal("OSUSR_ABC_CUSTOMER", payload.Before.Table)
-        Assert.Equal("Customer", payload.After.Table)
+        Assert.Equal("OSUSR_ABC_CUSTOMER", TableId.tableText payload.Before)
+        Assert.Equal("Customer", TableId.tableText payload.After)
     | other -> failwithf "Expected PhysicallyRenamed, got %A" other
 
 [<Fact>]
@@ -141,7 +141,7 @@ let ``LogicalTableEmission Disabled: pass-through; no rewrites and no events`` (
     Assert.Empty lineage.Trail
     let after = lineage.Value.Value
     let customer = Catalog.allKinds after |> List.head
-    Assert.Equal("OSUSR_ABC_CUSTOMER", customer.Physical.Table)
+    Assert.Equal("OSUSR_ABC_CUSTOMER", TableId.tableText customer.Physical)
 
 [<Fact>]
 let ``LogicalTableEmission registry: classification is OperatorIntent Emission`` () =
@@ -157,12 +157,12 @@ let private runColumnPass (mode: LogicalColumnEmission.Mode) (c: Catalog) : Line
     (LogicalColumnEmission.registered mode).Run c
 
 [<Fact>]
-let ``LogicalColumnEmission Enabled: Attribute.Column.ColumnName substituted with Name.value a.Name`` () =
+let ``LogicalColumnEmission Enabled: ColumnRealization.columnNameText Attribute.Column substituted with Name.value a.Name`` () =
     let catalog = divergentCatalog ()
     let after = (runColumnPass LogicalColumnEmission.Enabled catalog).Value.Value
     let customer = Catalog.allKinds after |> List.head
     let email = customer.Attributes |> List.find (fun a -> Name.value a.Name = "Email")
-    Assert.Equal("Email", email.Column.ColumnName)
+    Assert.Equal("Email", ColumnRealization.columnNameText email.Column)
 
 [<Fact>]
 let ``LogicalColumnEmission Enabled: Attribute.SsKey + Attribute.Name unchanged`` () =
@@ -203,7 +203,7 @@ let ``LogicalColumnEmission Enabled: event payload carries kind coordinate + bef
             match e.TransformKind with
             | ColumnPhysicallyRenamed payload when payload.Before = "EMAIL" -> Some payload
             | _ -> None)
-    Assert.Equal("OSUSR_ABC_CUSTOMER", emailEvent.Kind.Table)
+    Assert.Equal("OSUSR_ABC_CUSTOMER", TableId.tableText emailEvent.Kind)
     Assert.Equal("EMAIL", emailEvent.Before)
     Assert.Equal("Email", emailEvent.After)
 
@@ -224,7 +224,7 @@ let ``LogicalColumnEmission Disabled: pass-through; no rewrites and no events`` 
     let after = lineage.Value.Value
     let customer = Catalog.allKinds after |> List.head
     let email = customer.Attributes |> List.find (fun a -> Name.value a.Name = "Email")
-    Assert.Equal("EMAIL", email.Column.ColumnName)
+    Assert.Equal("EMAIL", ColumnRealization.columnNameText email.Column)
 
 [<Fact>]
 let ``LogicalColumnEmission registry: classification is OperatorIntent Emission`` () =
@@ -247,6 +247,6 @@ let ``Slice D.1.a end-to-end: after both passes, every Kind.Physical.Table and C
         |> LineageDiagnostics.bind (fun c -> (LogicalColumnEmission.registered LogicalColumnEmission.Enabled).Run c)
     let after = lineage.Value.Value
     for k in Catalog.allKinds after do
-        Assert.Equal(Name.value k.Name, k.Physical.Table)
+        Assert.Equal(Name.value k.Name, TableId.tableText k.Physical)
         for a in k.Attributes do
-            Assert.Equal(Name.value a.Name, a.Column.ColumnName)
+            Assert.Equal(Name.value a.Name, ColumnRealization.columnNameText a.Column)

@@ -266,7 +266,7 @@ let private norm (s: string) : string = s.Trim('[', ']').ToLowerInvariant()
 /// that recovers each emitted table's SsKey.
 let private physicalToSsKey (c: Catalog) : Map<string * string, SsKey> =
     Catalog.allKinds c
-    |> List.map (fun k -> (norm k.Physical.Schema, norm k.Physical.Table), k.SsKey)
+    |> List.map (fun k -> (norm (TableId.schemaText k.Physical), norm (TableId.tableText k.Physical)), k.SsKey)
     |> Map.ofList
 
 /// Emit the catalog to `.dacpac`, read the DacFx model back, and project its

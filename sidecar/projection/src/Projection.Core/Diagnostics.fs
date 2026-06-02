@@ -396,6 +396,17 @@ module LineageDiagnostics =
     let writeDiagnostics (entries: DiagnosticEntry list) : Lineage<Diagnostics<unit>> =
         Lineage.ofValue { Value = (); Entries = entries }
 
+    /// Write several lineage events under the unit value. CE primitive:
+    /// `do! writeLineages events` — the multi-event sibling of
+    /// `writeLineage`. Symmetric to `writeDiagnostics` over the diagnostic
+    /// trail. Earned its place at 2026-06-02 CE-adoption sweep when seven
+    /// pass-driver sites (CentralityPass / BoundedContextPass /
+    /// SchemaComplexityPass / QueryHintPass / ProfileAnomalyPass /
+    /// TopologicalOrderPass ×2) all needed to drain a `LineageEvent list`
+    /// into the dual-writer at the pass tail.
+    let writeLineages (events: LineageEvent list) : Lineage<Diagnostics<unit>> =
+        Lineage.ofValueAndEvents events (Diagnostics.ofValue ())
+
 
 /// `lineageDiagnostics { ... }` CE for the dual writer. Same algebraic
 /// shape as `lineage { ... }`, over `Lineage<Diagnostics<'a>>`. The
@@ -421,6 +432,19 @@ type LineageDiagnosticsBuilder() =
           f: 'a -> Lineage<Diagnostics<'b>>)
         : Lineage<Diagnostics<'b>> =
         LineageDiagnostics.bind f m
+    /// Auto-lift overload (2026-06-02 CE-adoption sweep): a plain
+    /// `Lineage<'a>` lifts into the dual-writer via `ofLineage` so
+    /// pass-driver tails can chain a `Composition.fanOut`-shaped
+    /// `Lineage<DecisionSet>` directly into `do! writeDiagnostics`
+    /// without an explicit `let! v = LineageDiagnostics.ofLineage m`
+    /// step. Worked precedent: Nullability / UniqueIndex / ForeignKey
+    /// pass `run` tails (`let! value = lineage; do! writeDiagnostics
+    /// entries; return value`).
+    member _.Bind
+        ( m: Lineage<'a>,
+          f: 'a -> Lineage<Diagnostics<'b>>)
+        : Lineage<Diagnostics<'b>> =
+        LineageDiagnostics.bind f (LineageDiagnostics.ofLineage m)
     member _.Zero() : Lineage<Diagnostics<unit>> = LineageDiagnostics.ofValue ()
     member _.Combine
         ( m1: Lineage<Diagnostics<unit>>,
@@ -612,6 +636,20 @@ module PassOperators =
 /// downstream-specific wrapper (e.g.,
 /// `type CertifiedBundle = { Certificate : Certificate<SsdtBundle>;
 /// Manifest : Manifest }`). The layering keeps Core pure.
+///
+/// **Defer-with-trigger (audit 2026-06-02 Slice 12; codified
+/// 2026-06-02).** Zero production consumers as of audit; structural
+/// isomorphism with `Lineage<Diagnostics<'a>>` is property-tested;
+/// terminal-wrapper-form adoption deferred.
+///   - **Trigger that earns adoption**: multi-target fanout (H-009)
+///     — when a single pass driver produces multiple sibling-Π
+///     bundles (`Certificate<SsdtBundle> × Certificate<JsonBundle>
+///     × Certificate<DistributionsBundle>`), the certificate naming
+///     pays for itself as the named terminal-of-pipeline shape.
+///   - **Trigger-fire owner**: H-009 (multi-target fanout chapter).
+///   - **Deletion contract**: if the trigger does not fire by
+///     `cutover + 1 chapter`, the speculative surface is deleted
+///     in a follow-up slice.
 type Certificate<'a when 'a : equality> = {
     Value : 'a
     Trail : LineageEvent list
@@ -710,6 +748,20 @@ type DiagnosticRelation =
     | Subsumes of subsumer: DiagnosticEntry * subsumed: DiagnosticEntry
     | Precedes of earlier: DiagnosticEntry * later: DiagnosticEntry
 
+/// **Defer-with-trigger (audit 2026-06-02 Slice 12; codified
+/// 2026-06-02).** Zero production consumers as of audit; subsumption
+/// + antichain properties are property-tested; operator-triage
+/// adoption deferred.
+///   - **Trigger that earns adoption**: the operator-triage CLI
+///     surface (`v2 diagnose` verb or equivalent) — when the
+///     operator-facing diagnostic display wants the "collapse
+///     subsumed entries to root-cause" projection, `minimal` is the
+///     canonical reduction.
+///   - **Trigger-fire owner**: CLI / chapter-Cluster-D adjacent;
+///     candidate for early adoption if a CLI consumer materializes.
+///   - **Deletion contract**: if the trigger does not fire by
+///     `cutover + 1 chapter`, the speculative surface is deleted
+///     in a follow-up slice.
 [<RequireQualifiedAccess>]
 module DiagnosticLattice =
 
@@ -799,6 +851,20 @@ module DiagnosticLattice =
 /// (manifest signing — the prism's lawful subset is the certifiably
 /// signable artifact), the canary's PhysicalSchema diff (which
 /// already operates the prism informally).
+///
+/// **Defer-with-trigger (audit 2026-06-02 Slice 12; codified
+/// 2026-06-02).** Zero production consumers as of audit; algebraic
+/// surface + property tests ship; field-adoption deferred.
+///   - **Trigger that earns adoption**: the Catalog ↔ DDL
+///     bidirectional integration (H-058) — when a real consumer
+///     needs the `(emit, parse)` pair with the round-trip law made
+///     structurally explicit, the prism is the typed seam.
+///   - **Trigger-fire owner**: chapter 5+ (likely the ReadSide
+///     full-fidelity work).
+///   - **Deletion contract**: if the trigger does not fire by
+///     `cutover + 1 chapter`, the speculative surface is deleted
+///     in a follow-up slice per the audit's anticipation-vs-
+///     speculation discipline (`DECISIONS 2026-05-13`).
 type Prism<'a, 'b> = {
     Get        : 'a -> 'b
     ReverseGet : 'b -> 'a option
@@ -861,131 +927,6 @@ module Prism =
     }
 
 
-/// **H-015: Lens (Cluster B follow-on; 2026-05-22).** A total
-/// bidirectional accessor: `Get` always succeeds; `Set` always
-/// succeeds. The categorical Lens — sibling to `Prism<'a, 'b>` (which
-/// is partial bidirectional) and completing the optics duo.
-///
-/// **Algebra.** Where `Prism` is the bidirectional partial dual of
-/// `Pass<'a, 'b>` (the unidirectional Kleisli arrow), `Lens<'s, 'a>`
-/// is the **total** bidirectional view of a substructure 'a within a
-/// supercatalog 's. Used for deep-nested record updates where the
-/// existing F# `{ x with Foo = { x.Foo with Bar = ... } }` shape
-/// gets verbose at 2+ levels of nesting.
-///
-/// **Lens laws (property-tested in `DiagnosticsTests.fs`):**
-///   - **Get-Set:** `set (get s) s = s` — setting back the gotten
-///     value yields the original.
-///   - **Set-Get:** `get (set a s) = a` — getting back the set value
-///     yields what was set.
-///   - **Set-Set:** `set a' (set a s) = set a' s` — the second set
-///     overwrites the first.
-///
-/// **Why a Lens, not a Prism?** A Lens is total — both `Get` and `Set`
-/// always succeed. A Prism's `ReverseGet` may fail (partial). For
-/// fields that always exist (e.g., `Catalog.Modules`, `Module.Kinds`),
-/// the Lens is the correct optic. For fields that may not exist
-/// (e.g., a specific SsKey within `Catalog.kindIndex`), use a
-/// `Prism<Catalog, Kind>`.
-///
-/// **Composition.** Lenses compose: `compose (outer : Lens<'s, 'a>)
-/// (inner : Lens<'a, 'b>) : Lens<'s, 'b>`. The composed Get/Set thread
-/// through both layers — `outerGet >> innerGet` and `innerSet >>
-/// outerSet`. The Lens laws hold under composition when they hold for
-/// each factor.
-///
-/// **Unlocks.** Deep-nested updates in passes (Policy.fs, SymmetricClosure.fs)
-/// compress massively when the Lens composition is named. Every future
-/// deep-update site uses the existing canonical lenses without
-/// reinventing the boilerplate.
-type Lens<'s, 'a> = {
-    Get : 's -> 'a
-    Set : 'a -> 's -> 's
-}
-
-[<RequireQualifiedAccess>]
-module Lens =
-
-    /// Apply the getter.
-    let get (lens: Lens<'s, 'a>) (s: 's) : 'a = lens.Get s
-
-    /// Apply the setter.
-    let set (lens: Lens<'s, 'a>) (a: 'a) (s: 's) : 's = lens.Set a s
-
-    /// Modify the focused substructure by applying a function — the
-    /// canonical "lens.over" operation. Equivalent to
-    /// `set lens (f (get lens s)) s` but with the get-modify-set
-    /// cycle named explicitly.
-    let over (lens: Lens<'s, 'a>) (f: 'a -> 'a) (s: 's) : 's =
-        lens.Set (f (lens.Get s)) s
-
-    /// Identity lens — `Get = id`, `Set = fun a _ -> a`. The unit of
-    /// lens composition; useful as a fixture and as the start of
-    /// `compose` chains.
-    let identity<'a> : Lens<'a, 'a> = {
-        Get = id
-        Set = fun a _ -> a
-    }
-
-    /// Compose two lenses to focus through both layers in sequence.
-    /// `compose outer inner` views a `Lens<'s, 'b>` by traversing
-    /// through `outer : Lens<'s, 'a>` then `inner : Lens<'a, 'b>`.
-    /// Read as "outer of inner."
-    let compose (outer: Lens<'s, 'a>) (inner: Lens<'a, 'b>) : Lens<'s, 'b> = {
-        Get = fun s -> inner.Get (outer.Get s)
-        Set = fun b s -> outer.Set (inner.Set b (outer.Get s)) s
-    }
-
-
-/// **Canonical lenses for the Catalog IR (chapter-Cluster-B follow-on;
-/// 2026-05-22).** Sites that compose deep updates over Catalog →
-/// Module → Kind / Attribute / Reference / Index land here as
-/// reusable optics; consumers compose them via `Lens.compose` to
-/// reach arbitrary depth without re-deriving the boilerplate.
-[<RequireQualifiedAccess>]
-module CatalogLenses =
-
-    /// `Catalog.Modules`. The outer layer; every deeper catalog lens
-    /// composes through this.
-    let modules : Lens<Catalog, Module list> = {
-        Get = fun c -> c.Modules
-        Set = fun ms c -> { c with Modules = ms }
-    }
-
-    /// `Catalog.Sequences`. Top-level sequences (separate from kinds).
-    let sequences : Lens<Catalog, Sequence list> = {
-        Get = fun c -> c.Sequences
-        Set = fun ss c -> { c with Sequences = ss }
-    }
-
-    /// `Module.Kinds`. Composes through `modules` to reach kind-level
-    /// updates in a single module; for "every kind across all modules"
-    /// patterns, use `Catalog.mapKinds` / `Catalog.foldKinds`
-    /// (the imperative-style traversal primitives).
-    let kindsOf : Lens<Module, Kind list> = {
-        Get = fun m -> m.Kinds
-        Set = fun ks m -> { m with Kinds = ks }
-    }
-
-    /// `Kind.Attributes`.
-    let attributesOf : Lens<Kind, Attribute list> = {
-        Get = fun k -> k.Attributes
-        Set = fun attrs k -> { k with Attributes = attrs }
-    }
-
-    /// `Kind.References`.
-    let referencesOf : Lens<Kind, Reference list> = {
-        Get = fun k -> k.References
-        Set = fun refs k -> { k with References = refs }
-    }
-
-    /// `Kind.Indexes`.
-    let indexesOf : Lens<Kind, Index list> = {
-        Get = fun k -> k.Indexes
-        Set = fun idxs k -> { k with Indexes = idxs }
-    }
-
-
 /// **H-062: PassContext (Reader comonad surface; Cluster B follow-on;
 /// 2026-05-22).** A value paired with an environment — the comonadic
 /// dual of `Pass<'a, 'b>`. Where `Pass` is the **Kleisli arrow**
@@ -1022,6 +963,22 @@ module CatalogLenses =
 /// for comonadic projection of a shared context. Future H-016 (PolicyExpr)
 /// adoption may use PassContext to thread the resolved policy through
 /// pass evaluation without re-threading at each call.
+///
+/// **Defer-with-trigger (audit 2026-06-02 Slice 12; codified
+/// 2026-06-02).** Zero production consumers as of audit; three
+/// comonad laws property-tested; pass-driver adoption deferred.
+///   - **Trigger that earns adoption**: a pass-driver chain whose
+///     parameter-passing form exceeds ~5 layers OR a real
+///     reader-comonad pull (e.g., a pass tree where every level
+///     needs read-only access to the same shared environment).
+///     F# parameter-passing is already fine at the codebase's
+///     current depth; the comonad earns its place only when the
+///     ceremony cost dominates.
+///   - **Trigger-fire owner**: TBD (would surface during a
+///     multi-layer pass refactor).
+///   - **Deletion contract**: if the trigger does not fire by
+///     `cutover + 1 chapter`, the speculative surface is deleted
+///     in a follow-up slice.
 type PassContext<'env, 'a> = {
     Environment : 'env
     Value : 'a

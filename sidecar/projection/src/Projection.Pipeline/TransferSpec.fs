@@ -80,11 +80,11 @@ module TransferSpec =
     let private findKindByTable (table: string) (catalog: Catalog) : Kind option =
         Catalog.allModulesKinds catalog
         |> List.map snd
-        |> List.tryFind (fun k -> k.Physical.Table.Equals(table, StringComparison.OrdinalIgnoreCase))
+        |> List.tryFind (fun k -> (TableId.tableText k.Physical).Equals(table, StringComparison.OrdinalIgnoreCase))
 
     let private findAttributeByColumn (column: string) (kind: Kind) : Attribute option =
         kind.Attributes
-        |> List.tryFind (fun a -> a.Column.ColumnName.Equals(column, StringComparison.OrdinalIgnoreCase))
+        |> List.tryFind (fun a -> (ColumnRealization.columnNameText a.Column).Equals(column, StringComparison.OrdinalIgnoreCase))
 
     /// Resolve parsed `ReconcileEntry`s against the reconstructed
     /// `Catalog` into the `Map<SsKey, ReconciliationStrategy>` that

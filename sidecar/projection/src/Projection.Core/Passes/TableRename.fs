@@ -58,10 +58,10 @@ module TableRename =
     let private describeKey (key: RenameKey) : string =
         match key with
         | Logical (m, e) -> sprintf "%s::%s" (Name.value m) (Name.value e)
-        | Physical t     -> sprintf "%s.%s" t.Schema t.Table
+        | Physical t     -> sprintf "%s.%s" (SchemaName.value t.Schema) (TableName.value t.Table)
 
     let private describeTarget (t: TableId) : string =
-        sprintf "%s.%s" t.Schema t.Table
+        sprintf "%s.%s" (SchemaName.value t.Schema) (TableName.value t.Table)
 
     // -----------------------------------------------------------------------
     // Resolution. Each RenameKey resolves to exactly one Kind's SsKey.

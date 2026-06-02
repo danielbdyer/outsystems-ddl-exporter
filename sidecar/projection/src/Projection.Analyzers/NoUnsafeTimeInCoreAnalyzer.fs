@@ -43,13 +43,23 @@ let internal MessageCode : string = "PRJ001"
 /// chain; the analyzer matches when the AST's last two parts equal the
 /// pair. Both qualified (`System.DateTime.Now`) and short
 /// (`DateTime.Now` under `open System`) forms match.
+///
+/// **DateTimeOffset added 2026-06-02 (Slice 0 — audit gap fix).** The
+/// `*Now`-suffixed wrappers in `VersionedPolicy` / `ApprovalWorkflow`
+/// were capturing the wall clock via `DateTimeOffset.UtcNow` and
+/// slipping through the analyzer's `DateTime`-only suffix list. The
+/// five sites were either moved out of Core or routed through an
+/// explicit clock parameter; the analyzer is widened so the same
+/// pattern can't recur.
 let private forbiddenSuffixes : (string * string) list =
     [
-        "DateTime", "Now"
-        "DateTime", "UtcNow"
-        "DateTime", "Today"
-        "Guid",     "NewGuid"
-        "Random",   "Shared"
+        "DateTime",        "Now"
+        "DateTime",        "UtcNow"
+        "DateTime",        "Today"
+        "DateTimeOffset",  "Now"
+        "DateTimeOffset",  "UtcNow"
+        "Guid",            "NewGuid"
+        "Random",          "Shared"
     ]
 
 let private matchesForbiddenSuffix (parts: string list) : (string * string) option =

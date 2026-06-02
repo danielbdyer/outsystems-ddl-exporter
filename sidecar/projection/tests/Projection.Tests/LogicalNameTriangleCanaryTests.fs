@@ -229,11 +229,11 @@ let ``Slice D.1.c triangle: source catalog from canary-gate fixture has divergen
     let sourceKinds = Catalog.allKinds report.Source
     let divergentKinds =
         sourceKinds
-        |> List.filter (fun k -> Name.value k.Name <> k.Physical.Table)
+        |> List.filter (fun k -> Name.value k.Name <> TableId.tableText k.Physical)
     Assert.NotEmpty divergentKinds
     // Smoke check on the expected fixture: User and Customer should both diverge.
-    let userKind = divergentKinds |> List.tryFind (fun k -> k.Physical.Table = "OSUSR_M3_USER")
-    let customerKind = divergentKinds |> List.tryFind (fun k -> k.Physical.Table = "OSUSR_M3_CUSTOMER")
+    let userKind = divergentKinds |> List.tryFind (fun k -> TableId.tableText k.Physical = "OSUSR_M3_USER")
+    let customerKind = divergentKinds |> List.tryFind (fun k -> TableId.tableText k.Physical = "OSUSR_M3_CUSTOMER")
     Assert.True(userKind.IsSome, "expected OSUSR_M3_USER to have a recovered logical Kind.Name")
     Assert.True(customerKind.IsSome, "expected OSUSR_M3_CUSTOMER to have a recovered logical Kind.Name")
     Assert.Equal("User", Name.value userKind.Value.Name)
@@ -261,4 +261,4 @@ let ``Slice D.1.c triangle: target catalog from pipeline-emit has Physical.Table
     Assert.NotEmpty targetKinds
     Assert.All(
         targetKinds,
-        fun k -> Assert.Equal(Name.value k.Name, k.Physical.Table))
+        fun k -> Assert.Equal(Name.value k.Name, TableId.tableText k.Physical))

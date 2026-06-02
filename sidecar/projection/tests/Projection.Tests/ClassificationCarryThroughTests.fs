@@ -253,7 +253,7 @@ let ``A.4.7 slice α: TableRename events carry OperatorIntent Emission`` () =
     // operator-supplied rename specs change the kind's physical form.
     let specs : TableRename.RenameSpec list = [
         { Key    = TableRename.Logical (mkName "Sales", mkName "Customer")
-          Target = { Catalog = None; Schema = "renamed_schema"; Table = "renamed_table" } }
+          Target = mkTableId "renamed_schema" "renamed_table" }
     ]
     match trRun specs sampleCatalog with
     | Error es ->

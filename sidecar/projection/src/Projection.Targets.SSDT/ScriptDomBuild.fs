@@ -97,11 +97,11 @@ module ScriptDomBuild =
         | Some catalog ->
             let n = SchemaObjectName()
             n.Identifiers.Add(bracketed catalog)
-            n.Identifiers.Add(bracketed t.Schema)
-            n.Identifiers.Add(bracketed t.Table)
+            n.Identifiers.Add(bracketed (TableId.schemaText t))
+            n.Identifiers.Add(bracketed (TableId.tableText t))
             n
         | None ->
-            schemaObjectName t.Schema t.Table
+            schemaObjectName (TableId.schemaText t) (TableId.tableText t)
 
     /// Map V2's `PrimitiveType` to ScriptDom's `SqlDataTypeOption`.
     /// Closed-DU dispatch — adding a new variant lights up an
@@ -639,8 +639,8 @@ module ScriptDomBuild =
         let spec = InsertSpecification()
         let target = NamedTableReference()
         let tableRef = SchemaObjectName()
-        tableRef.Identifiers.Add(bracketed table.Schema)
-        tableRef.Identifiers.Add(bracketed table.Table)
+        tableRef.Identifiers.Add(bracketed (TableId.schemaText table))
+        tableRef.Identifiers.Add(bracketed (TableId.tableText table))
         target.SchemaObject <- tableRef
         spec.Target <- target
         // Column list — `(col1, col2, …)`.
@@ -1349,21 +1349,21 @@ module ScriptDomBuild =
             exec.Parameters.Add(parameter "@level0name" (nText schema))
         | TableProperty table ->
             exec.Parameters.Add(parameter "@level0type" (nText "SCHEMA"))
-            exec.Parameters.Add(parameter "@level0name" (nText table.Schema))
+            exec.Parameters.Add(parameter "@level0name" (nText (TableId.schemaText table)))
             exec.Parameters.Add(parameter "@level1type" (nText "TABLE"))
-            exec.Parameters.Add(parameter "@level1name" (nText table.Table))
+            exec.Parameters.Add(parameter "@level1name" (nText (TableId.tableText table)))
         | ColumnProperty (table, col) ->
             exec.Parameters.Add(parameter "@level0type" (nText "SCHEMA"))
-            exec.Parameters.Add(parameter "@level0name" (nText table.Schema))
+            exec.Parameters.Add(parameter "@level0name" (nText (TableId.schemaText table)))
             exec.Parameters.Add(parameter "@level1type" (nText "TABLE"))
-            exec.Parameters.Add(parameter "@level1name" (nText table.Table))
+            exec.Parameters.Add(parameter "@level1name" (nText (TableId.tableText table)))
             exec.Parameters.Add(parameter "@level2type" (nText "COLUMN"))
             exec.Parameters.Add(parameter "@level2name" (nText col))
         | IndexProperty (table, idx) ->
             exec.Parameters.Add(parameter "@level0type" (nText "SCHEMA"))
-            exec.Parameters.Add(parameter "@level0name" (nText table.Schema))
+            exec.Parameters.Add(parameter "@level0name" (nText (TableId.schemaText table)))
             exec.Parameters.Add(parameter "@level1type" (nText "TABLE"))
-            exec.Parameters.Add(parameter "@level1name" (nText table.Table))
+            exec.Parameters.Add(parameter "@level1name" (nText (TableId.tableText table)))
             exec.Parameters.Add(parameter "@level2type" (nText "INDEX"))
             exec.Parameters.Add(parameter "@level2name" (nText idx))
 

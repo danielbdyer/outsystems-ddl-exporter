@@ -72,7 +72,7 @@ module JsonEmitter =
         w.WriteString("ssKey",     SsKey.display a.SsKey)
         w.WriteString("name",      Name.value a.Name)
         w.WriteString("type",      primitiveString a.Type)
-        w.WriteString("column",    a.Column.ColumnName)
+        w.WriteString("column",    ColumnRealization.columnNameText a.Column)
         w.WriteBoolean("nullable", a.Column.IsNullable)
         w.WriteBoolean("primaryKey", a.IsPrimaryKey)
         w.WriteBoolean("mandatory", a.IsMandatory)
@@ -94,8 +94,8 @@ module JsonEmitter =
 
     let private writePhysical (w: Utf8JsonWriter) (p: PhysicalRealization) : unit =
         w.WriteStartObject()
-        w.WriteString("schema", p.Schema)
-        w.WriteString("table",  p.Table)
+        w.WriteString("schema", TableId.schemaText p)
+        w.WriteString("table",  TableId.tableText p)
         w.WriteEndObject()
 
     let private writeKind (w: Utf8JsonWriter) (k: Kind) : unit =
@@ -188,52 +188,68 @@ module JsonEmitter =
             |> Map.ofList
         ArtifactByKind.create catalog slices
 
+    /// Slice 6 (2026-06-02 audit): typed catalog-envelope JsonNode
+    /// description. Mirrors the SSDT `statements : Catalog ->
+    /// seq<Statement>` description-vs-execution shape — Π's
+    /// description form is the typed `JsonNode` tree; `emit` is the
+    /// interpreter that serializes it. Per the audit's §4.2.4
+    /// finding: lifting the catalog envelope to typed-tree form
+    /// completes the description-vs-execution symmetry the per-kind
+    /// `emitSlices` already half-established.
+    ///
+    /// The per-kind `JsonNode` values come from `emitSlices` (the
+    /// existing typed seam); they're `DeepClone`d before being added
+    /// to the catalog tree because a JsonNode can have only one
+    /// parent at a time (BCL contract). The clone cost is bounded;
+    /// the symmetry win is structural — every sibling-Π emitter
+    /// now follows the same pattern (typed description first; text
+    /// rendering is the interpreter).
+    let private catalogJsonNode (catalog: Catalog) : Result<JsonNode, EmitError> =
+        use _ = Bench.scope "emit.json.catalogJsonNode"
+        match emitSlices catalog with
+        | Error err -> Error err
+        | Ok artifact ->
+            let slices = ArtifactByKind.toMap artifact
+            let modulesArr = JsonArray()
+            for m in catalog.Modules do
+                use _ = Bench.scope "emit.json.catalogModule"
+                let modObj = JsonObject()
+                modObj.Add("ssKey", JsonValue.Create(SsKey.display m.SsKey))
+                modObj.Add("name",  JsonValue.Create(Name.value m.Name))
+                let kindsArr = JsonArray()
+                for k in m.Kinds do
+                    use _ = Bench.scope "emit.json.moduleKind"
+                    match Map.tryFind k.SsKey slices with
+                    | Some node -> kindsArr.Add(node.DeepClone())
+                    | None      -> ()   // unreachable: T11 guarantees coverage
+                modObj.Add("kinds", kindsArr)
+                modulesArr.Add(modObj)
+            let root = JsonObject()
+            root.Add("emitter", JsonValue.Create("Projection.Targets.Json"))
+            root.Add("version", JsonValue.Create(version))
+            root.Add("modules", modulesArr)
+            Ok (root :> JsonNode)
+
     /// Emit the catalog as JSON text. Output is deterministic: byte-
-    /// identical for byte-identical input (T1). Composes through the
-    /// typed `emitSlices` port so the seam is exercised by the canonical
-    /// text realization. Per-kind `JsonNode` values write directly
-    /// through the indented document writer via `node.WriteTo(writer)`
-    /// — no `JsonNode.Parse(string)` round-trip (chapter-3.7 slice ε
-    /// retired the prior re-parse path; the typed JsonNode is the
-    /// canonical seam).
+    /// identical for byte-identical input (T1). The renderer/
+    /// interpreter — consumes the typed `catalogJsonNode` description
+    /// and writes it through `Utf8JsonWriter` with pinned indented
+    /// options. The typed-tree description is the seam shared with
+    /// sibling-Π emitters (SSDT's `seq<Statement>` is the analogous
+    /// description form).
     let emit (catalog: Catalog) : string =
         use _ = Bench.scope "emit.json.emit"
-        match emitSlices catalog with
+        match catalogJsonNode catalog with
         | Error err ->
             invalidOp
                 (sprintf
                     "JsonEmitter.emit: ArtifactByKind invariant breach: %A"
                     err)
-        | Ok artifact ->
-            let slices = ArtifactByKind.toMap artifact
+        | Ok node ->
             use stream = new MemoryStream()
             do
                 use writer = new Utf8JsonWriter(stream, (JsonOptions.indented ()))
-                writer.WriteStartObject()
-                writer.WriteString("emitter", "Projection.Targets.Json")
-                writer.WriteNumber("version", version)
-                writer.WritePropertyName("modules")
-                writer.WriteStartArray()
-                for m in catalog.Modules do
-                    use _ = Bench.scope "emit.json.catalogModule"
-                    writer.WriteStartObject()
-                    writer.WriteString("ssKey", SsKey.display m.SsKey)
-                    writer.WriteString("name",  Name.value m.Name)
-                    writer.WritePropertyName("kinds")
-                    writer.WriteStartArray()
-                    for k in m.Kinds do
-                        use _ = Bench.scope "emit.json.moduleKind"
-                        match Map.tryFind k.SsKey slices with
-                        | Some node ->
-                            // Typed JsonNode → writer directly; no
-                            // intermediate string. The BCL handles
-                            // depth-tracking internally.
-                            node.WriteTo(writer)
-                        | None -> ()  // unreachable: T11 guarantees coverage
-                    writer.WriteEndArray()
-                    writer.WriteEndObject()
-                writer.WriteEndArray()
-                writer.WriteEndObject()
+                node.WriteTo(writer)
                 writer.Flush()
             Encoding.UTF8.GetString(stream.ToArray())
 

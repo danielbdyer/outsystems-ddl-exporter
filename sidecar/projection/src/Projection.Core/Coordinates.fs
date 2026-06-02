@@ -19,13 +19,51 @@ namespace Projection.Core
 /// **Stage 2 (chapter 5 slice θ; partial cash-out 2026-05-11)**: the
 /// typed `SchemaName` / `TableName` / `ColumnName` value objects land
 /// as smart constructors below — distinct types the compiler refuses
-/// to confuse with one another (or with a raw string). The
-/// `PhysicalRealization` / `Column` record-field migration to the
-/// typed VOs stays **deferred-with-trigger** at this slice: the typed
-/// surface is opt-in for new code; existing `string`-field readers
-/// keep compiling. **Trigger for the full migration**: a real bug
-/// caught (schema-vs-table confusion at a boundary) OR adapter-ripple
-/// cost dominated by safety win at the next adapter.
+/// to confuse with one another (or with a raw string).
+///
+/// **Stage 2 — CASHED for the logical-IR coordinate triad (2026-06-02 lift
+/// slices 5a + 5b)**. `TableId.Schema` / `TableId.Table` /
+/// `ColumnRealization.ColumnName` are now `SchemaName` / `TableName` /
+/// `ColumnName` typed (the `string` fields retired). The logical-IR
+/// coordinate identity is type-complete: the compiler refuses any
+/// schema-vs-table-vs-column identifier confusion at every read-or-write
+/// site touching `kind.Physical` or `attribute.Column`. Trigger fired:
+/// the eight-axis F# best-practices audit
+/// (`AUDIT_2026_06_02_FSHARP_EIGHT_AXIS_REDTEAM.md`) classified the
+/// decorative-VOs-without-field-adoption pattern as the largest single
+/// principle-debt in the codebase (`§4.2.1`); the lift cleared it for
+/// the logical IR. Construction sites flow through `TableId.create` /
+/// `ColumnRealization.create` (Result-returning); boundary code
+/// unwraps via `TableId.schemaText` / `tableText` / `qualifiedParts` /
+/// `ColumnRealization.columnNameText` helpers.
+///
+/// **Lift discipline learned (2026-06-02; documented for future
+/// lifts)**: the F# compiler catches type-mix-up errors at *typed* call
+/// sites but NOT at `String.Concat` / `String.Join` / `SqlParameter`
+/// boundaries that accept `object` (these would silently call
+/// `ToString` and emit `SchemaName "dbo"` instead of `dbo` at runtime,
+/// or fail SQL parameter binding with "No mapping exists from type
+/// Projection.Core.SchemaName to a known native type"). After every
+/// future typed-VO field lift, **explicitly grep**:
+///   - `String.Concat\|String.Join` with VO-bearing expressions
+///   - `Parameters.AddWithValue` with VO-bearing arguments
+/// and unwrap each. Slice 5a found one such site; slice 5b found two.
+///
+/// **Deliberate asymmetry (documented as a scope choice, not an
+/// oversight)**: `PhysicalSchema`'s `PhysicalColumn` /
+/// `LogicalNameBinding` / `PhysicalForeignKey` types still carry
+/// `Schema`/`Table`/`Column` as `string`. Per the audit's late-stage
+/// re-prioritization (2026-06-02 — the user observed development is
+/// "most of the way through" so the compounding-type-safety case for
+/// further lifts has shrunk), these types stay string-typed by design:
+/// they're a *separate IR domain* (the physical-recovery comparison
+/// surface, not the logical IR), and string-as-comparison-key is a
+/// defensible boundary representation for "what SQL Server's catalog
+/// reports back." `Sequence.Schema`/`DataType` are similarly deferred
+/// (smaller, isolated, low symmetry payoff). The Stage 2 cash-out is
+/// **logical-IR-complete; physical-comparison-domain-deliberate-defer**.
+/// Trigger to revisit: an actual cross-domain identifier-confusion bug,
+/// or the next major IR-shape pass that touches these types.
 
 /// Shared constants for the typed schema-coordinate VOs. Kept in
 /// its own module so the `[<Literal>]` can be referenced from each
@@ -150,9 +188,15 @@ module ColumnName =
 /// implicit-current-database scope.
 type TableId =
     {
+        /// V1's `db_catalog` (3-part SQL identifier prefix). `None` for the
+        /// implicit-current-database scope. Not yet VO-typed: cross-database
+        /// catalog names are rare in V2's source and would require a
+        /// `CatalogName` VO (none currently defined). Defer-with-trigger:
+        /// a real cross-database FK landing in a fixture or a
+        /// schema/catalog-vs-other-name mix-up bug.
         Catalog : string option
-        Schema  : string
-        Table   : string
+        Schema  : SchemaName
+        Table   : TableName
     }
 
 /// Smart constructors and projections for `TableId`. Per the
@@ -163,18 +207,40 @@ type TableId =
 [<RequireQualifiedAccess>]
 module TableId =
 
-    /// Build a `TableId` from raw strings. Rejects blanks; aggregates
-    /// errors when fields are blank. `Catalog` defaults to `None`
-    /// (implicit-current-database scope; V1's
+    /// Boundary contract: translate SchemaName-level / TableName-level
+    /// error codes into TableId-level error codes so consumers triaging
+    /// errors by code (e.g., `RenameBinding.fromConfig` asserting
+    /// `tableId.schema.empty`) see the outer-context error vocabulary.
+    /// The inner-VO codes (`schemaName.empty` / `tableName.tooLong`) are
+    /// the structural truth at the SchemaName/TableName layer; the outer
+    /// codes name the TableId context the construction failed in.
+    let private translateSchemaErrors (es: ValidationError list) : ValidationError list =
+        es |> List.map (fun e ->
+            match e.Code with
+            | "schemaName.empty" -> { e with Code = "tableId.schema.empty"; Message = "TableId schema cannot be blank or whitespace." }
+            | "schemaName.tooLong" -> { e with Code = "tableId.schema.tooLong" }
+            | _ -> e)
+
+    let private translateTableErrors (es: ValidationError list) : ValidationError list =
+        es |> List.map (fun e ->
+            match e.Code with
+            | "tableName.empty" -> { e with Code = "tableId.table.empty"; Message = "TableId table cannot be blank or whitespace." }
+            | "tableName.tooLong" -> { e with Code = "tableId.table.tooLong" }
+            | _ -> e)
+
+    /// Build a `TableId` from raw strings. Aggregates validation errors
+    /// from `SchemaName.create` and `TableName.create` (blank /
+    /// over-length), re-coded into the TableId error vocabulary
+    /// (`tableId.schema.empty` / `tableId.table.empty` /
+    /// `tableId.schema.tooLong` / `tableId.table.tooLong`); `Catalog`
+    /// defaults to `None` (implicit-current-database scope; V1's
     /// `db_catalog: null` parity).
     let create (schema: string) (table: string) : Result<TableId> =
-        let errors =
-            Validation.nonBlank "tableId.schema.empty" "TableId schema cannot be blank or whitespace." schema
-            @ Validation.nonBlank "tableId.table.empty" "TableId table cannot be blank or whitespace." table
-        if List.isEmpty errors then
-            Result.success { Catalog = None; Schema = schema; Table = table }
-        else
-            Result.failure errors
+        match SchemaName.create schema, TableName.create table with
+        | Ok s, Ok t -> Result.success { Catalog = None; Schema = s; Table = t }
+        | Error es, Ok _ -> Result.failure (translateSchemaErrors es)
+        | Ok _, Error et -> Result.failure (translateTableErrors et)
+        | Error es, Error et -> Result.failure (translateSchemaErrors es @ translateTableErrors et)
 
     /// Build a `TableId` that carries an explicit catalog coordinate.
     /// Chapter A.0' slice θ — used by future adapters that surface
@@ -183,14 +249,48 @@ module TableId =
     /// whitespace `catalog` is rejected; pass `TableId.create` for
     /// the implicit-current-database scope instead.
     let createWithCatalog (catalog: string) (schema: string) (table: string) : Result<TableId> =
+        let catalogErrors =
+            Validation.nonBlank "tableId.catalog.empty" "TableId catalog, when present, cannot be blank or whitespace." catalog
+        match SchemaName.create schema, TableName.create table, catalogErrors with
+        | Ok s, Ok t, [] -> Result.success { Catalog = Some catalog; Schema = s; Table = t }
+        | sR, tR, cErrs ->
+            let sErrs = match sR with Error es -> translateSchemaErrors es | Ok _ -> []
+            let tErrs = match tR with Error et -> translateTableErrors et | Ok _ -> []
+            Result.failure (cErrs @ sErrs @ tErrs)
+
+    /// Build a `TableId` from already-validated `SchemaName` / `TableName`
+    /// values. Boundary helper for code that has already constructed the
+    /// typed names (avoids the round-trip-through-string that
+    /// `create` would force). Total — no validation needed since the
+    /// inputs are already typed.
+    let fromTyped (schema: SchemaName) (table: TableName) : TableId =
+        { Catalog = None; Schema = schema; Table = table }
+
+    /// Build a `TableId` with an explicit `Catalog` from already-validated
+    /// typed names + raw catalog string. Catalog still goes through
+    /// `Validation.nonBlank` (no `CatalogName` VO yet); returns `Result`
+    /// because the catalog string may fail validation.
+    let fromTypedWithCatalog (catalog: string) (schema: SchemaName) (table: TableName) : Result<TableId> =
         let errors =
             Validation.nonBlank "tableId.catalog.empty" "TableId catalog, when present, cannot be blank or whitespace." catalog
-            @ Validation.nonBlank "tableId.schema.empty" "TableId schema cannot be blank or whitespace." schema
-            @ Validation.nonBlank "tableId.table.empty" "TableId table cannot be blank or whitespace." table
         if List.isEmpty errors then
             Result.success { Catalog = Some catalog; Schema = schema; Table = table }
         else
             Result.failure errors
+
+    /// Boundary helper — pre-unwrapped schema text. Use at adapter /
+    /// emitter / diagnostic-formatting boundaries that need the raw
+    /// identifier string (SQL identifier encoding, sprintf "%s",
+    /// map lookups keyed on `(string, string)` tuples).
+    let schemaText (t: TableId) : string = SchemaName.value t.Schema
+
+    /// Boundary helper — pre-unwrapped table text. See `schemaText`.
+    let tableText (t: TableId) : string = TableName.value t.Table
+
+    /// Boundary helper — `(schema, table)` pair as raw strings for
+    /// adapter sites that need both at once (SQL identifier
+    /// encoding, qualified-name formatting, map lookups).
+    let qualifiedParts (t: TableId) : string * string = (schemaText t, tableText t)
 
     // Per chapter 3.5 deep audit (2026-05-09): the bracket-quoted
     // SQL identifier form `[schema].[table]` is a SQL-rendering

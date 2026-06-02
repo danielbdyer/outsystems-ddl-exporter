@@ -63,7 +63,7 @@ let ``override: an unrelated override does NOT bypass other signals`` () =
         mkConfig 0.0m false
             [ { AttributeKey = unrelated; Action = OverrideAction.KeepNullable } ]
     let decision = decideOnFixture pkAttr cfg
-    Assert.Equal(NullabilityOutcome.EnforceNotNull PrimaryKey, decision.Outcome)
+    Assert.Equal(NullabilityOutcome.EnforceNotNull NullabilityEvidence.PrimaryKey, decision.Outcome)
 
 // ---------------------------------------------------------------------------
 // Structural signals — PK and PhysicallyNotNull fire regardless of mode /
@@ -74,7 +74,7 @@ let ``override: an unrelated override does NOT bypass other signals`` () =
 let ``structural: a PK attribute is always EnforceNotNull(PrimaryKey)`` () =
     let pkAttr = customer.Attributes |> List.find (fun a -> a.IsPrimaryKey)
     let decision = decideOnFixture pkAttr (mkConfig 0.0m false [])
-    Assert.Equal(NullabilityOutcome.EnforceNotNull PrimaryKey, decision.Outcome)
+    Assert.Equal(NullabilityOutcome.EnforceNotNull NullabilityEvidence.PrimaryKey, decision.Outcome)
 
 [<Fact>]
 let ``structural: a non-PK physically-NOT-NULL attribute is EnforceNotNull(PhysicallyNotNull)`` () =
@@ -91,7 +91,7 @@ let ``structural: a non-PK physically-NOT-NULL attribute is EnforceNotNull(Physi
 let ``structural: a physically-nullable non-PK attribute without overrides yields KeepNullable(NoTighteningSignal)`` () =
     // Synthesize a nullable, non-PK attribute.
     let nullable : Attribute =
-        { Attribute.create (attrKey ["Test"; "NullableNonPk"]) (Name.create "Optional" |> Result.value) Text with Column = { ColumnName = "OPTIONAL"; IsNullable = true } }
+        { Attribute.create (attrKey ["Test"; "NullableNonPk"]) (Name.create "Optional" |> Result.value) Text with Column = ColumnRealization.create ("OPTIONAL") (true) |> Result.value }
     let decision = decideOnFixture nullable (mkConfig 0.0m false [])
     Assert.Equal(NullabilityOutcome.KeepNullable NoTighteningSignal, decision.Outcome)
 
@@ -125,7 +125,7 @@ let ``decision: InterventionId is the id passed to evaluate`` () =
 let ``enforces: true for EnforceNotNull, false for KeepNullable`` () =
     let pkAttr = customer.Attributes |> List.find (fun a -> a.IsPrimaryKey)
     let nullable : Attribute =
-        { Attribute.create (attrKey ["T"]) (Name.create "T" |> Result.value) Text with Column = { ColumnName = "T"; IsNullable = true } }
+        { Attribute.create (attrKey ["T"]) (Name.create "T" |> Result.value) Text with Column = ColumnRealization.create ("T") (true) |> Result.value }
     let cfg = mkConfig 0.0m false []
     Assert.True (NullabilityRules.enforces (decideOnFixture pkAttr cfg))
     Assert.False(NullabilityRules.enforces (decideOnFixture nullable cfg))
@@ -175,7 +175,7 @@ let ``emptyDecisionSet contains zero decisions`` () =
 
 [<Fact>]
 let ``outcome: NullabilityEvidence variants round-trip`` () =
-    Assert.Equal<NullabilityEvidence>(PrimaryKey, PrimaryKey)
+    Assert.Equal<NullabilityEvidence>(NullabilityEvidence.PrimaryKey, NullabilityEvidence.PrimaryKey)
     Assert.Equal<NullabilityEvidence>(PhysicallyNotNull, PhysicallyNotNull)
     Assert.Equal<NullabilityEvidence>(LogicalMandatoryNoProfile, LogicalMandatoryNoProfile)
     Assert.Equal<NullabilityEvidence>(LogicalMandatoryNoNulls 100L, LogicalMandatoryNoNulls 100L)
@@ -200,8 +200,8 @@ let ``outcome: NullabilityConflict variants round-trip`` () =
 [<Fact>]
 let ``outcome: NullabilityOutcome variants round-trip`` () =
     Assert.Equal<NullabilityOutcome>(
-        NullabilityOutcome.EnforceNotNull PrimaryKey,
-        NullabilityOutcome.EnforceNotNull PrimaryKey)
+        NullabilityOutcome.EnforceNotNull NullabilityEvidence.PrimaryKey,
+        NullabilityOutcome.EnforceNotNull NullabilityEvidence.PrimaryKey)
     Assert.Equal<NullabilityOutcome>(
         NullabilityOutcome.KeepNullable OperatorOverride,
         NullabilityOutcome.KeepNullable OperatorOverride)
@@ -218,7 +218,7 @@ let ``outcome: NullabilityOutcome variants round-trip`` () =
 // ---------------------------------------------------------------------------
 
 let private mkMandatoryAttr (key: string) (isNullable: bool) : Attribute =
-    { Attribute.create (testKey key) (Name.create "M" |> Result.value) Text with Column = { ColumnName = "M"; IsNullable = isNullable }; IsMandatory = true }
+    { Attribute.create (testKey key) (Name.create "M" |> Result.value) Text with Column = ColumnRealization.create ("M") (isNullable) |> Result.value; IsMandatory = true }
 
 let private mkColProfile (attrKey: SsKey) (rowCount: int64) (nullCount: int64) : ColumnProfile =
     let probe =
@@ -292,7 +292,7 @@ let ``mandatory: PK takes precedence over IsMandatory`` () =
             IsPrimaryKey = true }
     let cfg = mkConfig 0.0m false []
     let decision = NullabilityRules.evaluate "test" cfg attr Profile.empty
-    Assert.Equal(NullabilityOutcome.EnforceNotNull PrimaryKey, decision.Outcome)
+    Assert.Equal(NullabilityOutcome.EnforceNotNull NullabilityEvidence.PrimaryKey, decision.Outcome)
 
 [<Fact>]
 let ``mandatory: PhysicallyNotNull takes precedence over IsMandatory`` () =

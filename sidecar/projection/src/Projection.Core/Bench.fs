@@ -46,6 +46,35 @@ open System.Text
 /// lock granularity is per-record (insertion is O(1)), so contention
 /// is negligible relative to the actual work being timed.
 ///
+/// **Equational-reasoning carve-out (named exception; codified
+/// 2026-06-02 audit Slice 1).** The `storage : Dictionary<string,
+/// ResizeArray<int64>>` + `lockObj` at the top of `module Bench`
+/// below is the **only module-level mutable state in
+/// `Projection.Core`**. The load-bearing commitment ("Mutable state
+/// only function-local for performance-sensitive algorithms — never
+/// module-level") tolerates this single named exception because:
+///
+///   1. **Output is observation-only.** No decision in the pipeline
+///      flows from `Bench.snapshot ()` — the accumulator records
+///      per-label timing samples for operator-facing rollup tables
+///      and the canary perf-gate baseline. Algorithm correctness
+///      and T1 byte-determinism are independent of the bench state.
+///   2. **The DI alternative is strictly worse.** Threading a
+///      `Bench` collector through every function (CE-style or
+///      reader-style) cascades the timing surface into every pass
+///      driver's signature — the operator-friendliness "drop a
+///      `use _ = Bench.scope "..."` anywhere" affordance becomes
+///      "rewrite every signature in the codebase to thread bench
+///      state." The cost of the principled alternative exceeds the
+///      benefit of removing this single exception.
+///   3. **The impurity is bounded.** `record` is the only mutator;
+///      it's lock-protected; `reset` exists for test isolation.
+///      Equational reasoning over pipeline algebra is unaffected:
+///      `f (g x)` still equals `g x |> f` for every pass driver
+///      `f` / `g`. Only `Bench.snapshot ()` is observably different
+///      across repeat calls — and that's the contract (observation
+///      over time).
+///
 /// **Sample storage.** All samples are retained in memory for
 /// percentile calculation. At V2's scale (canary tests run dozens
 /// of operations per process, not millions), the memory cost is

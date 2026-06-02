@@ -256,9 +256,11 @@ module NullabilityPass =
             lineage.Value.Decisions
             |> Bench.iterMap "pass.nullability.attribute" (opportunityEntry profile)
             |> List.choose id
-        lineage
-        |> LineageDiagnostics.ofLineage
-        |> LineageDiagnostics.tellDiagnostics entries
+        lineageDiagnostics {
+            let! value = lineage
+            do! LineageDiagnostics.writeDiagnostics entries
+            return value
+        }
 
     /// Convenience accessor for tests and consumers that only care
     /// about the decision set (not the diagnostic stream). Domain-

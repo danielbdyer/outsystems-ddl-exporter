@@ -401,19 +401,17 @@ module ComprehensiveCanaryTests =
                             [ suppRow "1" "1" "self-ref"
                               suppRow "2" "1" "child" ] ]
                   Physical =
-                      { Schema = "dbo"
-                        Table = "CANARY_SUPP_CYCLIC"
-                        Catalog = None }
+                      (TableId.create "dbo" "CANARY_SUPP_CYCLIC" |> Result.value)
                   Attributes =
                       [ { Attribute.create idKey (mkSuppName "Id") Integer with
-                            Column = { ColumnName = "ID"; IsNullable = false }
+                            Column = ColumnRealization.create ("ID") (false) |> Result.value
                             IsPrimaryKey = true
                             IsMandatory  = true
                             IsIdentity   = true }
                         { Attribute.create parentKey (mkSuppName "ParentId") Integer with
-                            Column = { ColumnName = "PARENTID"; IsNullable = true } }
+                            Column = ColumnRealization.create ("PARENTID") (true) |> Result.value }
                         { Attribute.create labelKey (mkSuppName "Label") Text with
-                            Column = { ColumnName = "LABEL"; IsNullable = false }
+                            Column = ColumnRealization.create ("LABEL") (false) |> Result.value
                             Length = Some 50
                             IsMandatory = true } ]
                   References = [ Reference.create refKey (mkSuppName "RefSelf") parentKey cyclicKindKey ]
@@ -799,7 +797,7 @@ module ComprehensiveCanaryTests =
             |> Result.value
         let kindA =
             { Kind.create aKey (mkNm "A")
-                { Schema = "dbo"; Table = "OSUSR_CANARY_A"; Catalog = None }
+                (TableId.create "dbo" "OSUSR_CANARY_A" |> Result.value)
                 [ aIdAttr ]
                 with
                 ColumnChecks       = [ aCheck ]
@@ -827,7 +825,7 @@ module ComprehensiveCanaryTests =
                 HasDbConstraint = true }
         let kindB =
             { Kind.create bKey (mkNm "B")
-                { Schema = "dbo"; Table = "OSUSR_CANARY_B"; Catalog = None }
+                (TableId.create "dbo" "OSUSR_CANARY_B" |> Result.value)
                 [ bIdAttr; bAKey ]
                 with
                 References = [ bRefA; bSelfRef ] }

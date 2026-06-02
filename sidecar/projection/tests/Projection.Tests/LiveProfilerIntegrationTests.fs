@@ -79,21 +79,21 @@ module private LiveProfilerFixtures =
     let itemsKind : Kind =
         let idAttr =
             { Attribute.create idAttrKey (mkName "Id") Integer with
-                Column       = { ColumnName = "ID"; IsNullable = false }
+                Column       = ColumnRealization.create ("ID") (false) |> Result.value
                 IsPrimaryKey = true
                 IsMandatory  = true }
         let nameAttr =
             { Attribute.create nameAttrKey (mkName "Name") Text with
-                Column      = { ColumnName = "NAME"; IsNullable = true }
+                Column      = ColumnRealization.create ("NAME") (true) |> Result.value
                 Length      = Some 50
                 IsMandatory = false }
         let codeAttr =
             { Attribute.create codeAttrKey (mkName "Code") Text with
-                Column      = { ColumnName = "CODE"; IsNullable = false }
+                Column      = ColumnRealization.create ("CODE") (false) |> Result.value
                 Length      = Some 10
                 IsMandatory = true }
         { Kind.create itemsKindKey (mkName "Items")
-            { Schema = "dbo"; Table = "OSUSR_LP_ITEMS"; Catalog = None }
+            (TableId.create "dbo" "OSUSR_LP_ITEMS" |> Result.value)
             [ idAttr; nameAttr; codeAttr ]
           with References = []; Indexes = []; ColumnChecks = [] }
 
@@ -145,19 +145,19 @@ module private LiveProfilerFixtures =
     let childKind : Kind =
         let idAttr =
             { Attribute.create childIdAttrKey (mkName "Id") Integer with
-                Column       = { ColumnName = "ID"; IsNullable = false }
+                Column       = ColumnRealization.create ("ID") (false) |> Result.value
                 IsPrimaryKey = true
                 IsMandatory  = true }
         let parentAttr =
             { Attribute.create childParentAttrKey (mkName "ParentId") Integer with
-                Column       = { ColumnName = "PARENT_ID"; IsNullable = false }
+                Column       = ColumnRealization.create ("PARENT_ID") (false) |> Result.value
                 IsMandatory  = true }
         let fkReference =
             { Reference.create childFkKey (mkName "FK_Parent") childParentAttrKey itemsKindKey with
                 HasDbConstraint = true
                 IsConstraintTrusted = true }
         { Kind.create childKindKey (mkName "Children")
-            { Schema = "dbo"; Table = "OSUSR_LP_CHILDREN"; Catalog = None }
+            (TableId.create "dbo" "OSUSR_LP_CHILDREN" |> Result.value)
             [ idAttr; parentAttr ]
           with References = [ fkReference ]; Indexes = []; ColumnChecks = [] }
 
@@ -214,24 +214,24 @@ module private LiveProfilerFixtures =
     let productsKind : Kind =
         let idAttr =
             { Attribute.create prodIdAttrKey (mkName "Id") Integer with
-                Column       = { ColumnName = "ID"; IsNullable = false }
+                Column       = ColumnRealization.create ("ID") (false) |> Result.value
                 IsPrimaryKey = true
                 IsMandatory  = true }
         let nameAttr =
             { Attribute.create prodNameAttrKey (mkName "Name") Text with
-                Column      = { ColumnName = "NAME"; IsNullable = false }
+                Column      = ColumnRealization.create ("NAME") (false) |> Result.value
                 Length      = Some 50
                 IsMandatory = true }
         let codeAttr =
             { Attribute.create prodCodeAttrKey (mkName "Code") Text with
-                Column      = { ColumnName = "CODE"; IsNullable = false }
+                Column      = ColumnRealization.create ("CODE") (false) |> Result.value
                 Length      = Some 10
                 IsMandatory = true }
         let compositeIx =
             Index.ofKeyColumns prodCompositeIxKey (mkName "IX_Name_Code")
                 [ prodNameAttrKey; prodCodeAttrKey ]
         { Kind.create productsKindKey (mkName "Products")
-            { Schema = "dbo"; Table = "OSUSR_LP_PRODUCTS"; Catalog = None }
+            (TableId.create "dbo" "OSUSR_LP_PRODUCTS" |> Result.value)
             [ idAttr; nameAttr; codeAttr ]
           with References = []; Indexes = [ compositeIx ]; ColumnChecks = [] }
 

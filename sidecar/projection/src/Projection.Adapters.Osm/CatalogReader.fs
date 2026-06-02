@@ -983,13 +983,14 @@ module CatalogReader =
                             | _ -> None
                         rawOpt |> Option.map (SqlLiteral.ofRaw p)
                     | _ -> None
-            match nameDU, key, typeEvidence with
-            | Ok n, Ok k, Ok (p, storage) ->
+            let columnNameDU = ColumnName.create physicalName
+            match nameDU, key, typeEvidence, columnNameDU with
+            | Ok n, Ok k, Ok (p, storage), Ok physicalColumnName ->
                 Result.success
                     { SsKey        = k
                       Name         = n
                       Type         = p
-                      Column       = { ColumnName = physicalName; IsNullable = not mandatory }
+                      Column       = { ColumnName = physicalColumnName; IsNullable = not mandatory }
                       IsPrimaryKey = identifier
                       IsMandatory  = mandatory
                       Length       = lengthOpt
@@ -1020,7 +1021,8 @@ module CatalogReader =
                 propagateOrFallback
                     [ Result.errors nameDU
                       Result.errors key
-                      Result.errors typeEvidence ]
+                      Result.errors typeEvidence
+                      Result.errors columnNameDU ]
                     (fun () ->
                         adapterError
                             "attributeBuild"
@@ -1331,8 +1333,7 @@ module CatalogReader =
                 // defaults pending a rowset wiring slice.
                 Result.success
                     { Index.create k n cols with
-                        IsUnique       = isUnique
-                        IsPrimaryKey   = isPrimary
+                        Uniqueness     = IndexUniqueness.ofLegacyBooleans isUnique isPrimary
                         Filter         = filter
                         IncludedColumns = includedCols
                         IsPlatformAuto = isPlatformAuto }
@@ -1516,8 +1517,14 @@ module CatalogReader =
                     |> Bench.iterMap "adapter.osm.parse.extendedProperty" (parseExtendedProperty moduleName entityName)
                 | _ -> []
             let foldedEps = Result.aggregate epResults
-            match kindKey, kindName, foldedAttrs, foldedRefs, foldedIdx, foldedTriggers, foldedEps with
-            | Ok k, Ok n, Ok attrs, Ok refs, Ok idxs, Ok triggers, Ok eps ->
+            // Slice 5 — TableId is typed (SchemaName / TableName).
+            // Validate the raw schema/table strings via the smart
+            // constructors; aggregate failures into the kindBuild fan-in
+            // below.
+            let physicalSchemaResult = SchemaName.create schema
+            let physicalTableResult = TableName.create physicalName
+            match kindKey, kindName, foldedAttrs, foldedRefs, foldedIdx, foldedTriggers, foldedEps, physicalSchemaResult, physicalTableResult with
+            | Ok k, Ok n, Ok attrs, Ok refs, Ok idxs, Ok triggers, Ok eps, Ok schemaName, Ok tableName ->
                 let modality =
                     if isStatic then [ Static [] ] else []
                 Result.success
@@ -1526,8 +1533,8 @@ module CatalogReader =
                       Origin      = parseOrigin isExternal
                       Modality    = modality
                       Physical    =
-                        { Schema = schema
-                          Table = physicalName
+                        { Schema = schemaName
+                          Table = tableName
                           // Chapter A.0' slice θ — `db_catalog` carried
                           // through; `None` when V1 projects `null`
                           // (implicit-current-database scope).
@@ -1564,7 +1571,9 @@ module CatalogReader =
                       Result.errors foldedRefs
                       Result.errors foldedIdx
                       Result.errors foldedTriggers
-                      Result.errors foldedEps ]
+                      Result.errors foldedEps
+                      Result.errors physicalSchemaResult
+                      Result.errors physicalTableResult ]
                     (fun () ->
                         adapterError
                             "kindBuild"
@@ -1729,13 +1738,14 @@ module CatalogReader =
         let typeEvidence =
             resolveAttributeType
                 row.DataType row.Length row.Precision row.Scale row.ExternalDatabaseType
-        match nameDU, key, typeEvidence with
-        | Ok n, Ok k, Ok (p, storage) ->
+        let columnNameDU = ColumnName.create row.PhysicalCol
+        match nameDU, key, typeEvidence, columnNameDU with
+        | Ok n, Ok k, Ok (p, storage), Ok physicalColumnName ->
             Result.success
                 { SsKey        = k
                   Name         = n
                   Type         = p
-                  Column       = { ColumnName = row.PhysicalCol
+                  Column       = { ColumnName = physicalColumnName
                                    IsNullable = not row.IsMandatory }
                   IsPrimaryKey = row.IsIdentifier
                   IsMandatory  = row.IsMandatory
@@ -1793,7 +1803,8 @@ module CatalogReader =
             propagateOrFallback
                 [ Result.errors nameDU
                   Result.errors key
-                  Result.errors typeEvidence ]
+                  Result.errors typeEvidence
+                  Result.errors columnNameDU ]
                 (fun () ->
                     adapterError
                         "attributeRowBuild"
@@ -2095,8 +2106,7 @@ module CatalogReader =
                     | _      -> None)
             Result.success
                 { Index.create k n keys with
-                    IsUnique              = row.IsUnique
-                    IsPrimaryKey          = row.IsPrimary
+                    Uniqueness            = IndexUniqueness.ofLegacyBooleans row.IsUnique row.IsPrimary
                     Filter                = filter
                     IncludedColumns       = included
                     FillFactor            = fillFactor
@@ -2246,10 +2256,15 @@ module CatalogReader =
             |> List.distinctBy (fun row -> row.ConstraintName)
             |> Bench.iterMap "adapter.osm.parse.rowsetColumnCheck" (parseColumnCheckRowFor moduleName kindRow.EntityName)
         let foldedColumnChecks = Result.aggregate columnCheckResults
+        // Slice 5 — TableId is typed (SchemaName / TableName).
+        let physicalSchemaResult = SchemaName.create kindRow.DbSchema
+        let physicalTableResult = TableName.create kindRow.PhysicalTableName
         match kindKey, kindName, foldedAttrs, foldedRefs,
-              foldedIndexes, foldedTriggers, foldedColumnChecks with
+              foldedIndexes, foldedTriggers, foldedColumnChecks,
+              physicalSchemaResult, physicalTableResult with
         | Ok k, Ok n, Ok attrs, Ok refs,
-          Ok idx, Ok trigs, Ok checks ->
+          Ok idx, Ok trigs, Ok checks,
+          Ok schemaName, Ok tableName ->
             let modality =
                 [
                     if kindRow.IsStatic       then yield Static []
@@ -2260,8 +2275,8 @@ module CatalogReader =
                   Name        = n
                   Origin      = parseOriginFromRowset kindRow.IsExternal moduleEspaceKind
                   Modality    = modality
-                  Physical    = { Schema = kindRow.DbSchema
-                                  Table  = kindRow.PhysicalTableName; Catalog = None }
+                  Physical    = { Schema = schemaName
+                                  Table  = tableName; Catalog = None }
                   Attributes  = attrs
                   References  = refs
                   Indexes     = idx
@@ -2280,7 +2295,9 @@ module CatalogReader =
                   Result.errors foldedRefs
                   Result.errors foldedIndexes
                   Result.errors foldedTriggers
-                  Result.errors foldedColumnChecks ]
+                  Result.errors foldedColumnChecks
+                  Result.errors physicalSchemaResult
+                  Result.errors physicalTableResult ]
                 (fun () ->
                     adapterError
                         "kindRowBuild"
