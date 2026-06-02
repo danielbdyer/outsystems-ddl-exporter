@@ -152,6 +152,17 @@ module private TransferCanaryFixtures =
             return List.ofSeq acc
         }
 
+    /// 6.B.1 — a kind with a NULLABLE NOTE column carrying NULL rows. An
+    /// `EnforceNotNull` tightening on NOTE would make the two-phase load fail
+    /// mid-write; the pre-flight refuses first.
+    let tighteningDdl =
+        "CREATE TABLE [dbo].[OSUSR_TG_TICKET] (" +
+        "[ID] INT NOT NULL PRIMARY KEY, [NOTE] NVARCHAR(50) NULL);"
+
+    let tighteningSeed =
+        "INSERT INTO [dbo].[OSUSR_TG_TICKET] ([ID],[NOTE]) VALUES " +
+        "(1, N'hi'), (2, NULL), (3, NULL);"
+
     let value (r: Result<'a>) : 'a = Result.value r
 
     /// Count rows in a table on the given connection.
@@ -498,6 +509,46 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                                 let! sinkBodies = TransferCanaryFixtures.noteBodies sink
                                 Assert.Equal<(int * bool) list>([ (1, true); (2, true); (3, false) ], sinkBodies)
                             })
+                }))
+
+    // 6.B.1 — the Decision↔Data pre-flight. A tightening Decision
+    // (EnforceNotNull) on a column whose source data carries NULLs is refused
+    // (migrate.dataViolatesTightening) BEFORE any write — the coupling becomes
+    // a named gate, not a crash mid-load. A clean overlay passes.
+    [<Fact>]
+    member _.``migrate pre-flight: EnforceNotNull on a NULL-bearing column refuses before writing`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "TighteningPreflight") then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "TighteningPreflight" (fun src _ ->
+                task {
+                    do! Deploy.executeBatch src TransferCanaryFixtures.tighteningDdl
+                    do! Deploy.executeBatch src TransferCanaryFixtures.tighteningSeed
+
+                    let! contractR = ReadSide.read src
+                    let contract = TransferCanaryFixtures.value contractR
+                    let ticketKind =
+                        Catalog.allModulesKinds contract |> List.map snd
+                        |> List.find (fun k -> k.Physical.Table = "OSUSR_TG_TICKET")
+                    let noteKey =
+                        ticketKind.Attributes
+                        |> List.find (fun a -> a.Column.ColumnName = "NOTE")
+                        |> (fun a -> a.SsKey)
+
+                    // Clean (empty) overlay → the pre-flight passes.
+                    let! clean = Preflight.tighteningPreflight src contract DecisionOverlay.empty
+                    match clean with
+                    | Ok () -> ()
+                    | Error es -> Assert.Fail(sprintf "empty overlay should pass the pre-flight; got %A" (es |> List.map (fun e -> e.Code)))
+
+                    // EnforceNotNull on NOTE (which has NULL rows) → refuse before writing.
+                    let overlay = { DecisionOverlay.empty with EnforceNotNull = Set.singleton noteKey }
+                    let! refused = Preflight.tighteningPreflight src contract overlay
+                    match refused with
+                    | Error es ->
+                        Assert.True(
+                            es |> List.exists (fun e -> e.Code = "migrate.dataViolatesTightening"),
+                            sprintf "expected migrate.dataViolatesTightening, got %A" (es |> List.map (fun e -> e.Code)))
+                    | Ok () -> Assert.Fail("expected the tightening pre-flight to refuse a NULL-bearing EnforceNotNull")
                 }))
 
     // §5.2 Slice E — the data adjunction for AssignedBySink (sink-minted keys).

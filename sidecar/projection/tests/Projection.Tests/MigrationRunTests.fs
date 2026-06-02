@@ -221,3 +221,17 @@ let ``6.A.7: migrate preview surfaces identity.synthesizedRenameUnstable for a S
     Assert.Contains(
         artifacts.SchemaDiagnostics,
         fun (e: DiagnosticEntry) -> e.Code = "identity.synthesizedRenameUnstable" && e.Severity = DiagnosticSeverity.Warning)
+
+// ---------------------------------------------------------------------------
+// 6.A.13 — engine-level CDC-silence: an UNCHANGED schema emits zero DDL. The
+// empty CatalogDiff produces no ALTER statements AND no rename statements, so
+// `execute` issues nothing against the DB — an idempotent redeploy churns no
+// CDC. (This is V2's engine-level idempotence, not DacFx tool-level.)
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``6.A.13: redeploying an unchanged schema emits zero DDL (engine-level CDC-silence)`` () =
+    let artifacts = MigrationRun.preview false sampleCatalog sampleCatalog |> mustOk
+    Assert.Empty(artifacts.SchemaStatements)
+    Assert.Empty(MigrationRun.renameStatements artifacts.Plan.Diff)
+    Assert.True(Migration.isIdempotent artifacts.Plan)
