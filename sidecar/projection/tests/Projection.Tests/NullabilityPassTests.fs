@@ -241,10 +241,8 @@ let ``A25: every emitted event references a real attribute SsKey`` () =
 // but the test makes the property explicit.
 // ---------------------------------------------------------------------------
 
-[<Fact>]
-let ``catalog passes through unchanged: structural by signature`` () =
-    let policy = policyWithIntervention "v1-style" (mkConfig 0.0m false [])
-    let _ = nullRun sampleCatalog policy Profile.empty
-    // sampleCatalog is referenced from the global Fixtures module; if
-    // the pass mutated, the fixture would be corrupted across tests.
-    Assert.Equal(3, (Catalog.allKinds sampleCatalog).Length)
+// Slice 10 (2026-06-02 audit): "catalog passes through unchanged"
+// test pruned. The pass return type is `Lineage<DecisionSet>` — the
+// signature does not return a transformed catalog, so input
+// preservation is a *signature-level* guarantee. The test restated
+// the signature rather than checking a contract V2 owns.

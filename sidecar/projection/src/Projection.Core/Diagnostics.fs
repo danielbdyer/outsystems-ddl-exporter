@@ -636,6 +636,20 @@ module PassOperators =
 /// downstream-specific wrapper (e.g.,
 /// `type CertifiedBundle = { Certificate : Certificate<SsdtBundle>;
 /// Manifest : Manifest }`). The layering keeps Core pure.
+///
+/// **Defer-with-trigger (audit 2026-06-02 Slice 12; codified
+/// 2026-06-02).** Zero production consumers as of audit; structural
+/// isomorphism with `Lineage<Diagnostics<'a>>` is property-tested;
+/// terminal-wrapper-form adoption deferred.
+///   - **Trigger that earns adoption**: multi-target fanout (H-009)
+///     — when a single pass driver produces multiple sibling-Π
+///     bundles (`Certificate<SsdtBundle> × Certificate<JsonBundle>
+///     × Certificate<DistributionsBundle>`), the certificate naming
+///     pays for itself as the named terminal-of-pipeline shape.
+///   - **Trigger-fire owner**: H-009 (multi-target fanout chapter).
+///   - **Deletion contract**: if the trigger does not fire by
+///     `cutover + 1 chapter`, the speculative surface is deleted
+///     in a follow-up slice.
 type Certificate<'a when 'a : equality> = {
     Value : 'a
     Trail : LineageEvent list
@@ -734,6 +748,20 @@ type DiagnosticRelation =
     | Subsumes of subsumer: DiagnosticEntry * subsumed: DiagnosticEntry
     | Precedes of earlier: DiagnosticEntry * later: DiagnosticEntry
 
+/// **Defer-with-trigger (audit 2026-06-02 Slice 12; codified
+/// 2026-06-02).** Zero production consumers as of audit; subsumption
+/// + antichain properties are property-tested; operator-triage
+/// adoption deferred.
+///   - **Trigger that earns adoption**: the operator-triage CLI
+///     surface (`v2 diagnose` verb or equivalent) — when the
+///     operator-facing diagnostic display wants the "collapse
+///     subsumed entries to root-cause" projection, `minimal` is the
+///     canonical reduction.
+///   - **Trigger-fire owner**: CLI / chapter-Cluster-D adjacent;
+///     candidate for early adoption if a CLI consumer materializes.
+///   - **Deletion contract**: if the trigger does not fire by
+///     `cutover + 1 chapter`, the speculative surface is deleted
+///     in a follow-up slice.
 [<RequireQualifiedAccess>]
 module DiagnosticLattice =
 
@@ -823,6 +851,20 @@ module DiagnosticLattice =
 /// (manifest signing — the prism's lawful subset is the certifiably
 /// signable artifact), the canary's PhysicalSchema diff (which
 /// already operates the prism informally).
+///
+/// **Defer-with-trigger (audit 2026-06-02 Slice 12; codified
+/// 2026-06-02).** Zero production consumers as of audit; algebraic
+/// surface + property tests ship; field-adoption deferred.
+///   - **Trigger that earns adoption**: the Catalog ↔ DDL
+///     bidirectional integration (H-058) — when a real consumer
+///     needs the `(emit, parse)` pair with the round-trip law made
+///     structurally explicit, the prism is the typed seam.
+///   - **Trigger-fire owner**: chapter 5+ (likely the ReadSide
+///     full-fidelity work).
+///   - **Deletion contract**: if the trigger does not fire by
+///     `cutover + 1 chapter`, the speculative surface is deleted
+///     in a follow-up slice per the audit's anticipation-vs-
+///     speculation discipline (`DECISIONS 2026-05-13`).
 type Prism<'a, 'b> = {
     Get        : 'a -> 'b
     ReverseGet : 'b -> 'a option
@@ -921,6 +963,22 @@ module Prism =
 /// for comonadic projection of a shared context. Future H-016 (PolicyExpr)
 /// adoption may use PassContext to thread the resolved policy through
 /// pass evaluation without re-threading at each call.
+///
+/// **Defer-with-trigger (audit 2026-06-02 Slice 12; codified
+/// 2026-06-02).** Zero production consumers as of audit; three
+/// comonad laws property-tested; pass-driver adoption deferred.
+///   - **Trigger that earns adoption**: a pass-driver chain whose
+///     parameter-passing form exceeds ~5 layers OR a real
+///     reader-comonad pull (e.g., a pass tree where every level
+///     needs read-only access to the same shared environment).
+///     F# parameter-passing is already fine at the codebase's
+///     current depth; the comonad earns its place only when the
+///     ceremony cost dominates.
+///   - **Trigger-fire owner**: TBD (would surface during a
+///     multi-layer pass refactor).
+///   - **Deletion contract**: if the trigger does not fire by
+///     `cutover + 1 chapter`, the speculative surface is deleted
+///     in a follow-up slice.
 type PassContext<'env, 'a> = {
     Environment : 'env
     Value : 'a

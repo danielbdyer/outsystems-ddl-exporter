@@ -333,13 +333,11 @@ let ``A25: every emitted event references a real index SsKey`` () =
 // (run : Catalog -> Policy -> Profile -> Lineage<UniqueIndexDecisionSet>).
 // ---------------------------------------------------------------------------
 
-[<Fact>]
-let ``catalog passes through unchanged: structural by signature`` () =
-    let policy = policyWithIntervention "v1-style" (mkConfig true true)
-    let _ = uiRun indexedCatalog policy Profile.empty
-    // Sanity: indexedCatalog still has its expected shape.
-    Assert.Equal(3, (Catalog.allKinds indexedCatalog).Length)
-    Assert.Equal(4, (allIndexes indexedCatalog).Length)
+// Slice 10 (2026-06-02 audit): "catalog passes through unchanged"
+// test pruned. The pass return type is `Lineage<DecisionSet>` — the
+// signature does not return a transformed catalog, so input
+// preservation is a *signature-level* guarantee. The test restated
+// the signature rather than checking a contract V2 owns.
 
 // ---------------------------------------------------------------------------
 // V1 divergences — explicit skip stubs naming intentional V2 differences
