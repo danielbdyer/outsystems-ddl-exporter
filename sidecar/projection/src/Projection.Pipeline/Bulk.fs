@@ -42,6 +42,12 @@ module Bulk =
     /// All format rules (DateTime / Date / Boolean canonical, Hex
     /// prefix) flow through `RawValueCodec` so the V2 raw-form
     /// contract has a single source of truth.
+    ///
+    /// 6.A.4 — the `"" → DBNull` rule applies to `Text` too: `ReadSide`
+    /// already collapses both `DBNull` and a genuine empty string to `""`,
+    /// so the IR cannot distinguish them and an empty-string `Text` value
+    /// normalizes to `NULL` on write. This is the named, closed tolerance
+    /// `ToleratedDivergence.EmptyTextNormalizedToNull` — not a silent drop.
     let parseRaw (t: PrimitiveType) (raw: string) : obj | null =
         if raw = "" then box DBNull.Value
         else

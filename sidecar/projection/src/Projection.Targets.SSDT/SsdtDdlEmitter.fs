@@ -319,18 +319,26 @@ module SsdtDdlEmitter =
                 | _ -> None)
         Statement.CreateTable (toTableId k, columns, pk, fks, checks, temporal)
 
-    /// Yield one `AlterTableNoCheckConstraint` statement per
-    /// `IsConstraintTrusted = false` FK on this kind. Emitted AFTER
-    /// the kind's CREATE TABLE so the named constraint exists when the
-    /// ALTER references it. Slice 5.13.fk-features-emit (matrix row 59).
+    /// Yield the NOCHECK-FK alter pair per `IsConstraintTrusted = false` FK
+    /// on this kind. Emitted AFTER the kind's CREATE TABLE so the named
+    /// constraint exists when the ALTERs reference it. Slice
+    /// 5.13.fk-features-emit (matrix row 59); 6.A.6 — the two-step.
     ///
-    /// Same FK resolution path as `createTableStatement` (via
-    /// `fkDef`); a reference that doesn't resolve to a `ForeignKeyDef`
-    /// (cross-catalog target; missing PK on target) silently drops
-    /// here too — the corresponding CREATE TABLE inline FK is absent
-    /// by the same predicate, so the ALTER would be referencing a
-    /// non-existent constraint anyway.
-    // Wave-2 slice 2.4 — emit the NOCHECK alter for a reference decided
+    /// **The two-step (6.A.6).** An inline CREATE TABLE FK is always created
+    /// TRUSTED, and `WITH NOCHECK CHECK CONSTRAINT` alone is a no-op for
+    /// `is_not_trusted` on a freshly-created constraint (verified against SQL
+    /// Server). To reproduce the deployed `WITH NOCHECK` state
+    /// (`is_not_trusted = 1`, still enabled) the emitter DISABLES the
+    /// constraint (`NOCHECK CONSTRAINT` → untrusted + disabled) then RE-ENABLES
+    /// it skipping validation (`WITH NOCHECK CHECK CONSTRAINT` → enabled, still
+    /// untrusted). Order matters: disable precedes re-enable.
+    ///
+    /// Same FK resolution path as `createTableStatement` (via `fkDef`); a
+    /// reference that doesn't resolve to a `ForeignKeyDef` (cross-catalog
+    /// target; missing PK on target) silently drops here too — the
+    /// corresponding CREATE TABLE inline FK is absent by the same predicate,
+    /// so the ALTERs would reference a non-existent constraint anyway.
+    // Wave-2 slice 2.4 — emit the alter pair for a reference decided
     // `EnforceConstraint (ScriptWithNoCheck _)` (overlay.NoCheckFk), in
     // addition to the source's own `IsConstraintTrusted = false` state.
     // References decided `DoNotEnforce` (overlay.DropFk) are excluded — their
@@ -346,11 +354,12 @@ module SsdtDdlEmitter =
         : Statement list =
         k.References
         |> List.filter (fun r -> not (Set.contains r.SsKey overlay.DropFk))
-        |> List.choose (fun r ->
+        |> List.collect (fun r ->
             match fkDef targetByKey pkAttrByKey k r with
             | Some fk when not fk.IsConstraintTrusted || Set.contains r.SsKey overlay.NoCheckFk ->
-                Some (Statement.AlterTableNoCheckConstraint (toTableId k, fk.Name))
-            | _ -> None)
+                [ Statement.AlterTableDisableConstraint (toTableId k, fk.Name)
+                  Statement.AlterTableNoCheckConstraint (toTableId k, fk.Name) ]
+            | _ -> [])
 
     /// Resolve a column-SsKey to its physical column name within a
     /// kind. The IR's `Index.Columns` carries SsKey list (per

@@ -12,6 +12,7 @@ open Xunit
 open Projection.Core
 open Projection.Adapters.Sql
 open Projection.Pipeline
+open Projection.Targets.SSDT
 
 module private TransferCanaryFixtures =
 
@@ -90,6 +91,116 @@ module private TransferCanaryFixtures =
         "INSERT INTO [dbo].[OSUSR_AS_USER] ([ID],[EMAIL]) VALUES (280,N'alice@x'),(281,N'bob@x'); " +
         "SET IDENTITY_INSERT [dbo].[OSUSR_AS_USER] OFF; " +
         "INSERT INTO [dbo].[OSUSR_AS_ORDER] ([ID],[USER_ID],[AMOUNT]) VALUES (10,280,100),(11,281,200);"
+
+    /// 6.A.2 — a self-referential IDENTITY kind: PK is IDENTITY
+    /// (`AssignedBySink`) and MANAGER_ID is a NULLABLE self-FK, so the
+    /// two-phase load would *defer* it to Phase 2. But the Phase-2 re-point
+    /// keys on the source PK the Sink replaced — it would match zero rows.
+    /// The Transfer must refuse, not emit a no-op UPDATE.
+    let cyclicAssignedDdl =
+        "CREATE TABLE [dbo].[OSUSR_XF_EMPID] (" +
+        "[ID] INT IDENTITY(1,1) NOT NULL PRIMARY KEY, [NAME] NVARCHAR(50) NULL, [MANAGER_ID] INT NULL, " +
+        "CONSTRAINT [FK_XfEmpId_Mgr] FOREIGN KEY ([MANAGER_ID]) " +
+        "REFERENCES [dbo].[OSUSR_XF_EMPID] ([ID]));"
+
+    let cyclicAssignedSeed =
+        "SET IDENTITY_INSERT [dbo].[OSUSR_XF_EMPID] ON; " +
+        "INSERT INTO [dbo].[OSUSR_XF_EMPID] ([ID],[NAME],[MANAGER_ID]) VALUES " +
+        "(1,N'CEO',NULL),(2,N'VP',1),(3,N'Mgr',2); " +
+        "SET IDENTITY_INSERT [dbo].[OSUSR_XF_EMPID] OFF;"
+
+    /// 6.A.3 — a composite IDENTITY PK ([ID] IDENTITY + [TENANT]). `ofKind`
+    /// is `AssignedBySink` (the PK carries IDENTITY), but the per-row capture
+    /// is single-column and would truncate the composite surrogate. Refuse.
+    let compositeAssignedDdl =
+        "CREATE TABLE [dbo].[OSUSR_XF_CMP] (" +
+        "[ID] INT IDENTITY(1,1) NOT NULL, [TENANT] INT NOT NULL, [NAME] NVARCHAR(50) NULL, " +
+        "CONSTRAINT [PK_XfCmp] PRIMARY KEY ([ID],[TENANT]));"
+
+    let compositeAssignedSeed =
+        "SET IDENTITY_INSERT [dbo].[OSUSR_XF_CMP] ON; " +
+        "INSERT INTO [dbo].[OSUSR_XF_CMP] ([ID],[TENANT],[NAME]) VALUES " +
+        "(1,100,N'a'),(2,100,N'b'); " +
+        "SET IDENTITY_INSERT [dbo].[OSUSR_XF_CMP] OFF;"
+
+    /// 6.A.4 — a Text column seeded with a genuine empty string, a NULL,
+    /// and a non-empty value. `ReadSide.formatRawValue` collapses both the
+    /// empty string and NULL to the raw `""`, and `Bulk.parseRaw` maps `""`
+    /// back to `DBNull`, so the empty string normalizes to NULL on the sink
+    /// (the named tolerance `EmptyTextNormalizedToNull`).
+    let emptyTextDdl =
+        "CREATE TABLE [dbo].[OSUSR_ET_NOTE] (" +
+        "[ID] INT NOT NULL PRIMARY KEY, [BODY] NVARCHAR(50) NULL);"
+
+    let emptyTextSeed =
+        "INSERT INTO [dbo].[OSUSR_ET_NOTE] ([ID],[BODY]) VALUES " +
+        "(1, N''), (2, NULL), (3, N'hello');"
+
+    /// Per-ID `(BODY value-or-marker, BODY IS NULL)` from a connection.
+    let noteBodies (cnn: Microsoft.Data.SqlClient.SqlConnection) : System.Threading.Tasks.Task<(int * bool) list> =
+        task {
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <-
+                "SELECT [ID], CASE WHEN [BODY] IS NULL THEN 1 ELSE 0 END " +
+                "FROM [dbo].[OSUSR_ET_NOTE] ORDER BY [ID];"
+            use! reader = cmd.ExecuteReaderAsync()
+            let acc = System.Collections.Generic.List<int * bool>()
+            let mutable go = true
+            while go do
+                let! has = reader.ReadAsync()
+                if has then acc.Add(reader.GetInt32 0, reader.GetInt32 1 = 1)
+                else go <- false
+            return List.ofSeq acc
+        }
+
+    /// 6.B.1 — a kind with a NULLABLE NOTE column carrying NULL rows. An
+    /// `EnforceNotNull` tightening on NOTE would make the two-phase load fail
+    /// mid-write; the pre-flight refuses first.
+    let tighteningDdl =
+        "CREATE TABLE [dbo].[OSUSR_TG_TICKET] (" +
+        "[ID] INT NOT NULL PRIMARY KEY, [NOTE] NVARCHAR(50) NULL);"
+
+    let tighteningSeed =
+        "INSERT INTO [dbo].[OSUSR_TG_TICKET] ([ID],[NOTE]) VALUES " +
+        "(1, N'hi'), (2, NULL), (3, NULL);"
+
+    // 6.B.2 — authored source/sink contracts with STABLE, matching SsKeys so
+    // the A→B diff detects the column rename (Email → Contact). The physical
+    // column also moves (EMAIL → CONTACT), so a positional/source-name write
+    // would mis-map; the rename map re-points by identity. (Authored, not
+    // ReadSide-reconstructed: synthesized keys are name-derived and would not
+    // thread the rename — see 6.A.7.)
+    let private rpName (s: string) : Name = Name.create s |> Result.value
+    let private rpKKey (s: string) : SsKey = SsKey.synthesizedComposite "RP_XFER_KIND" [ s ] |> Result.value
+    let private rpAKey (s: string) : SsKey = SsKey.synthesizedComposite "RP_XFER_ATTR" [ s ] |> Result.value
+    let private rpAttr (key: SsKey) (logical: string) (col: string) (isPk: bool) : Attribute =
+        { Attribute.create key (rpName logical) (if isPk then Integer else Text) with
+            Column = { ColumnName = col; IsNullable = not isPk }
+            IsPrimaryKey = isPk
+            IsMandatory = isPk }
+    let private rpContract (emailName: string) (emailCol: string) : Catalog =
+        let cust =
+            Kind.create (rpKKey "Customer") (rpName "Customer")
+                { Schema = "dbo"; Table = "RP_XFER_CUSTOMER"; Catalog = None }
+                [ rpAttr (rpAKey "Id") "Id" "ID" true
+                  rpAttr (rpAKey "Email") emailName emailCol false ]
+        Catalog.create
+            [ { SsKey = rpKKey "Mod"; Name = rpName "M"; Kinds = [ cust ]; IsActive = true; ExtendedProperties = [] } ] []
+        |> Result.value
+
+    /// Source at schema A (Email/EMAIL); sink at schema B (Contact/CONTACT) —
+    /// the same kind + attribute SsKeys, so the diff sees a rename.
+    let renameSourceContract : Catalog = rpContract "Email" "EMAIL"
+    let renameSinkContract : Catalog = rpContract "Contact" "CONTACT"
+
+    /// Scalar string from a connection (for asserting a single cell).
+    let scalarStr (cnn: Microsoft.Data.SqlClient.SqlConnection) (sql: string) : System.Threading.Tasks.Task<string> =
+        task {
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <- sql
+            let! v = cmd.ExecuteScalarAsync()
+            return string v
+        }
 
     let value (r: Result<'a>) : 'a = Result.value r
 
@@ -311,6 +422,207 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
 
                                 // --allow-drops downgrades the declared-acceptable loss to exit 0.
                                 Assert.Equal(0, Transfer.exitCodeForReport true report)
+                            })
+                }))
+
+    // 6.A.2 — a cyclic AssignedBySink load (self-ref IDENTITY kind with a
+    // nullable self-FK) is refused at Execute, not silently mis-keyed. The
+    // Phase-2 re-point would key on the source PK the Sink replaced. The
+    // refusal is the pure `executeGate` decision the fast-pool test also
+    // witnesses; here the full Transfer.run surfaces it end-to-end. DryRun
+    // (no write, no mis-key) proceeds.
+    [<Fact>]
+    member _.``data canary: cyclic AssignedBySink is refused, not silently mis-keyed`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "XferCyclicAssigned") then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "XferCyclicAssignedSrc" (fun src _ ->
+                task {
+                    do! Deploy.executeBatch src TransferCanaryFixtures.cyclicAssignedDdl
+                    do! Deploy.executeBatch src TransferCanaryFixtures.cyclicAssignedSeed
+                    return!
+                        fixture.WithEphemeralDatabase "XferCyclicAssignedSink" (fun sink _ ->
+                            task {
+                                do! Deploy.executeBatch sink TransferCanaryFixtures.cyclicAssignedDdl
+
+                                let! contractR = ReadSide.read src
+                                let contract = TransferCanaryFixtures.value contractR
+                                let empKind =
+                                    Catalog.allModulesKinds contract |> List.map snd
+                                    |> List.find (fun k -> k.Physical.Table = "OSUSR_XF_EMPID")
+                                // Precondition: the round-tripped contract classifies the kind
+                                // AssignedBySink (its IDENTITY PK survives ReadSide).
+                                Assert.Equal(IdentityDisposition.AssignedBySink, IdentityDisposition.ofKind empKind)
+
+                                // Execute refuses, fail-loud, with the named code.
+                                let! refusedR = Transfer.run Transfer.Execute true src sink contract
+                                match refusedR with
+                                | Error es ->
+                                    Assert.True(
+                                        es |> List.exists (fun e -> e.Code = "transfer.cyclicAssignedBySink"),
+                                        sprintf "expected transfer.cyclicAssignedBySink, got %A" (es |> List.map (fun e -> e.Code)))
+                                | Ok _ -> Assert.Fail("expected the cyclic-AssignedBySink refusal at Execute")
+
+                                // The Sink is untouched (the refusal preceded any write).
+                                let! rows = TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_XF_EMPID]"
+                                Assert.Equal(0, rows)
+
+                                // DryRun does not write, so it does not mis-key — it reports the plan.
+                                let! dryR = Transfer.run Transfer.DryRun true src sink contract
+                                match dryR with
+                                | Ok report -> Assert.Equal(Transfer.DryRun, report.Mode)
+                                | Error es -> Assert.Fail(sprintf "DryRun should not refuse; got %A" (es |> List.map (fun e -> e.Code)))
+                            })
+                }))
+
+    // 6.A.3 — a composite-IDENTITY AssignedBySink kind is refused, not
+    // half-captured: the per-row OUTPUT capture is single-column and would
+    // truncate the composite surrogate. The Sink stays empty.
+    [<Fact>]
+    member _.``data canary: composite-IDENTITY AssignedBySink is refused, not half-captured`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "XferCompositeAssigned") then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "XferCompositeAssignedSrc" (fun src _ ->
+                task {
+                    do! Deploy.executeBatch src TransferCanaryFixtures.compositeAssignedDdl
+                    do! Deploy.executeBatch src TransferCanaryFixtures.compositeAssignedSeed
+                    return!
+                        fixture.WithEphemeralDatabase "XferCompositeAssignedSink" (fun sink _ ->
+                            task {
+                                do! Deploy.executeBatch sink TransferCanaryFixtures.compositeAssignedDdl
+
+                                let! contractR = ReadSide.read src
+                                let contract = TransferCanaryFixtures.value contractR
+                                let cmpKind =
+                                    Catalog.allModulesKinds contract |> List.map snd
+                                    |> List.find (fun k -> k.Physical.Table = "OSUSR_XF_CMP")
+                                // Precondition: composite PK reconstructed (>1 IsPrimaryKey column)
+                                // AND classified AssignedBySink (the IDENTITY leg survives ReadSide).
+                                Assert.True((cmpKind.Attributes |> List.filter (fun a -> a.IsPrimaryKey) |> List.length) > 1)
+                                Assert.Equal(IdentityDisposition.AssignedBySink, IdentityDisposition.ofKind cmpKind)
+
+                                let! refusedR = Transfer.run Transfer.Execute true src sink contract
+                                match refusedR with
+                                | Error es ->
+                                    Assert.True(
+                                        es |> List.exists (fun e -> e.Code = "transfer.compositeSurrogateUnsupported"),
+                                        sprintf "expected transfer.compositeSurrogateUnsupported, got %A" (es |> List.map (fun e -> e.Code)))
+                                | Ok _ -> Assert.Fail("expected the composite-surrogate refusal at Execute")
+
+                                let! rows = TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_XF_CMP]"
+                                Assert.Equal(0, rows)
+                            })
+                }))
+
+    // 6.A.4 — empty-string Text ↔ NULL fidelity. The transfer IR cannot
+    // distinguish a genuine empty-string Text value from NULL (ReadSide
+    // collapses both to ""), so an empty string normalizes to NULL on the
+    // sink. This is the named, CLOSED tolerance `EmptyTextNormalizedToNull`
+    // (not a silent drop): the witness asserts the rule explicitly at the
+    // sink-DB level (the canary's row-hash can't see it — both sides read "").
+    [<Fact>]
+    member _.``data canary: empty-string Text normalizes to NULL on transfer (named tolerance)`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "XferEmptyText") then () else
+        // The behavior is a named, closed tolerance — not a silent erasure.
+        Assert.Contains(ToleratedDivergence.EmptyTextNormalizedToNull, ToleratedDivergence.allKnown)
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "XferEmptyTextSrc" (fun src _ ->
+                task {
+                    do! Deploy.executeBatch src TransferCanaryFixtures.emptyTextDdl
+                    do! Deploy.executeBatch src TransferCanaryFixtures.emptyTextSeed
+                    return!
+                        fixture.WithEphemeralDatabase "XferEmptyTextSink" (fun sink _ ->
+                            task {
+                                do! Deploy.executeBatch sink TransferCanaryFixtures.emptyTextDdl
+
+                                let! contractR = ReadSide.read src
+                                let contract = TransferCanaryFixtures.value contractR
+                                let! reportR = Transfer.run Transfer.Execute true src sink contract
+                                let _ = TransferCanaryFixtures.value reportR
+
+                                // Source: row 1 is '' (NOT NULL), row 2 NULL, row 3 'hello'.
+                                let! srcBodies = TransferCanaryFixtures.noteBodies src
+                                Assert.Equal<(int * bool) list>([ (1, false); (2, true); (3, false) ], srcBodies)
+
+                                // Sink: row 1's empty string normalized to NULL (the tolerance);
+                                // NULL stays NULL; 'hello' survives non-null.
+                                let! sinkBodies = TransferCanaryFixtures.noteBodies sink
+                                Assert.Equal<(int * bool) list>([ (1, true); (2, true); (3, false) ], sinkBodies)
+                            })
+                }))
+
+    // 6.B.1 — the Decision↔Data pre-flight. A tightening Decision
+    // (EnforceNotNull) on a column whose source data carries NULLs is refused
+    // (migrate.dataViolatesTightening) BEFORE any write — the coupling becomes
+    // a named gate, not a crash mid-load. A clean overlay passes.
+    [<Fact>]
+    member _.``migrate pre-flight: EnforceNotNull on a NULL-bearing column refuses before writing`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "TighteningPreflight") then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "TighteningPreflight" (fun src _ ->
+                task {
+                    do! Deploy.executeBatch src TransferCanaryFixtures.tighteningDdl
+                    do! Deploy.executeBatch src TransferCanaryFixtures.tighteningSeed
+
+                    let! contractR = ReadSide.read src
+                    let contract = TransferCanaryFixtures.value contractR
+                    let ticketKind =
+                        Catalog.allModulesKinds contract |> List.map snd
+                        |> List.find (fun k -> k.Physical.Table = "OSUSR_TG_TICKET")
+                    let noteKey =
+                        ticketKind.Attributes
+                        |> List.find (fun a -> a.Column.ColumnName = "NOTE")
+                        |> (fun a -> a.SsKey)
+
+                    // Clean (empty) overlay → the pre-flight passes.
+                    let! clean = Preflight.tighteningPreflight src contract DecisionOverlay.empty
+                    match clean with
+                    | Ok () -> ()
+                    | Error es -> Assert.Fail(sprintf "empty overlay should pass the pre-flight; got %A" (es |> List.map (fun e -> e.Code)))
+
+                    // EnforceNotNull on NOTE (which has NULL rows) → refuse before writing.
+                    let overlay = { DecisionOverlay.empty with EnforceNotNull = Set.singleton noteKey }
+                    let! refused = Preflight.tighteningPreflight src contract overlay
+                    match refused with
+                    | Error es ->
+                        Assert.True(
+                            es |> List.exists (fun e -> e.Code = "migrate.dataViolatesTightening"),
+                            sprintf "expected migrate.dataViolatesTightening, got %A" (es |> List.map (fun e -> e.Code)))
+                    | Ok () -> Assert.Fail("expected the tightening pre-flight to refuse a NULL-bearing EnforceNotNull")
+                }))
+
+    // 6.B.2 — RefactorLog-aware Transfer end-to-end. The source is at schema A
+    // (EMAIL); the sink is at schema B (the column renamed to CONTACT). The
+    // rename map (from the A→B diff) re-points each source row's value onto the
+    // sink's name BY IDENTITY — so the renamed column carries the source data,
+    // not NULL (which a source-name or ordinal write would produce).
+    [<Fact>]
+    member _.``transfer: a renamed column is re-pointed by the rename map, not matched by ordinal`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "XferRename") then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "XferRenameSrc" (fun src _ ->
+                task {
+                    do! Deploy.executeBatch src (SsdtDdlEmitter.statements TransferCanaryFixtures.renameSourceContract |> Render.toText)
+                    do! Deploy.executeBatch src
+                            "INSERT INTO [dbo].[RP_XFER_CUSTOMER] ([ID],[EMAIL]) VALUES (1, N'alice@x'), (2, N'bob@x');"
+                    return!
+                        fixture.WithEphemeralDatabase "XferRenameSink" (fun sink _ ->
+                            task {
+                                do! Deploy.executeBatch sink (SsdtDdlEmitter.statements TransferCanaryFixtures.renameSinkContract |> Render.toText)
+
+                                let! reportR =
+                                    Transfer.runWithRenames Transfer.Execute true src sink
+                                        TransferCanaryFixtures.renameSourceContract
+                                        TransferCanaryFixtures.renameSinkContract
+                                let _ = TransferCanaryFixtures.value reportR
+
+                                // The renamed CONTACT column carries the source's EMAIL values —
+                                // re-pointed by the rename map (identity), not lost to NULL.
+                                let! c1 = TransferCanaryFixtures.scalarStr sink "SELECT [CONTACT] FROM [dbo].[RP_XFER_CUSTOMER] WHERE [ID]=1;"
+                                Assert.Equal("alice@x", c1)
+                                let! c2 = TransferCanaryFixtures.scalarStr sink "SELECT [CONTACT] FROM [dbo].[RP_XFER_CUSTOMER] WHERE [ID]=2;"
+                                Assert.Equal("bob@x", c2)
+                                let! n = TransferCanaryFixtures.countRows sink "[dbo].[RP_XFER_CUSTOMER]"
+                                Assert.Equal(2, n)
                             })
                 }))
 

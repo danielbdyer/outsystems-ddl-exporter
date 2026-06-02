@@ -92,6 +92,57 @@ module ReadSide =
             Scale : int option
         }
 
+    /// One foreign-key column reflected from `sys.foreign_keys ⋈
+    /// sys.foreign_key_columns`: the referencing (source) coordinate, the
+    /// referenced (target) coordinate, and whether the constraint is
+    /// untrusted (`WITH NOCHECK` — `sys.foreign_keys.is_not_trusted`). The
+    /// read-side's typed FK row; `buildReference` is its sole consumer.
+    /// 6.A.5 — `IsNotTrusted` lifted the prior anonymous 6-string tuple to
+    /// a named record so the FK-trust axis reads by name, not by position.
+    type private FkRow =
+        {
+            SourceSchema : string
+            SourceTable  : string
+            SourceColumn : string
+            TargetSchema : string
+            TargetTable  : string
+            TargetColumn : string
+            IsNotTrusted : bool
+        }
+
+    /// One key column of a reflected non-PK index (`sys.indexes ⋈
+    /// sys.index_columns`), within a `(schema, table)` group: the owning
+    /// index's name + uniqueness, the participating column, its sort
+    /// direction, and its 1-based position in the index key. 6.A.5 —
+    /// `attachIndexes` groups these by `IndexName` and rebuilds each
+    /// `Index` in `KeyOrdinal` order.
+    type private IndexColumnRow =
+        {
+            IndexName    : string
+            IsUnique     : bool
+            ColumnName   : string
+            IsDescending : bool
+            KeyOrdinal   : int
+        }
+
+    /// One reflected `sys.sequences` row: the full sequence shape recovered
+    /// from the deployed catalog. `buildSequences` reconstructs a
+    /// `Sequence` per row via the `Sequence.create` smart constructor.
+    /// A named record so the ten axes read by name, not by tuple position.
+    type private SequenceRow =
+        {
+            Schema       : string
+            Name         : string
+            DataType     : string
+            StartValue   : decimal option
+            Increment    : decimal option
+            MinimumValue : decimal option
+            MaximumValue : decimal option
+            IsCycling    : bool
+            IsCached     : bool
+            CacheSize    : int option
+        }
+
     /// Read the basic per-column metadata for every user table in
     /// the database. Excludes `sys` and `INFORMATION_SCHEMA` rows.
     /// Single round-trip; group client-side by `(schema, table)`.
@@ -366,11 +417,57 @@ module ReadSide =
             return acc |> Seq.map (fun kv -> kv.Key, List.ofSeq kv.Value) |> Map.ofSeq
         }
 
+    /// 6.A.5 — read non-PK indexes (`sys.indexes ⋈ sys.index_columns`),
+    /// keyed by `(schema, table)`. Each row is `(indexName, isUnique,
+    /// columnName, isDescending, keyOrdinal)`, ordered by index then key
+    /// ordinal so `attachIndexes` rebuilds each index's key-column list in
+    /// declaration order. PK-backing indexes (`is_primary_key = 1`) are
+    /// excluded — the PK is modeled on the attributes (`IsPrimaryKey`), not
+    /// as an `Index`. Heaps (`type = 0`) and INCLUDE (non-key) columns are
+    /// excluded (V2 `Index.Columns` is key-only). Single round-trip,
+    /// mirroring `readCheckConstraints`.
+    let private readIndexes (cnn: SqlConnection)
+        : Task<Map<string * string, IndexColumnRow list>> =
+        task {
+            use _ = Bench.scope "readside.readIndexes"
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <-
+                "SELECT SCHEMA_NAME(t.schema_id), t.name, i.name, i.is_unique, \
+                        c.name, ic.is_descending_key, ic.key_ordinal \
+                 FROM sys.indexes i \
+                 JOIN sys.tables t ON t.object_id = i.object_id \
+                 JOIN sys.index_columns ic \
+                   ON ic.object_id = i.object_id AND ic.index_id = i.index_id \
+                 JOIN sys.columns c \
+                   ON c.object_id = ic.object_id AND c.column_id = ic.column_id \
+                 WHERE i.is_primary_key = 0 AND i.type > 0 AND i.name IS NOT NULL \
+                   AND ic.is_included_column = 0 AND t.is_ms_shipped = 0 \
+                 ORDER BY SCHEMA_NAME(t.schema_id), t.name, i.name, ic.key_ordinal"
+            use! reader = cmd.ExecuteReaderAsync()
+            let acc = System.Collections.Generic.Dictionary<string * string, ResizeArray<IndexColumnRow>>()
+            let mutable hasMore = true
+            while hasMore do
+                let! more = reader.ReadAsync()
+                if more then
+                    let key = (reader.GetString 0, reader.GetString 1)
+                    let entry =
+                        { IndexName    = reader.GetString 2
+                          IsUnique     = reader.GetBoolean 3
+                          ColumnName   = reader.GetString 4
+                          IsDescending = reader.GetBoolean 5
+                          KeyOrdinal   = System.Convert.ToInt32(reader.GetValue 6) }
+                    match acc.TryGetValue key with
+                    | true, lst -> lst.Add entry
+                    | false, _ ->
+                        let lst = ResizeArray<_>() in lst.Add entry; acc.[key] <- lst
+                else hasMore <- false
+            return acc |> Seq.map (fun kv -> kv.Key, List.ofSeq kv.Value) |> Map.ofSeq
+        }
+
     /// Wave-1 slice 1.3 — read SEQUENCE objects from `sys.sequences`.
     /// Each row carries the full shape (type, start/increment/min/max,
     /// cycle, cache). Single round-trip; small result set.
-    let private readSequences (cnn: SqlConnection)
-        : Task<(string * string * string * decimal option * decimal option * decimal option * decimal option * bool * bool * int option) list> =
+    let private readSequences (cnn: SqlConnection) : Task<SequenceRow list> =
         task {
             use _ = Bench.scope "readside.readSequences"
             use cmd = cnn.CreateCommand()
@@ -384,15 +481,22 @@ module ReadSide =
                 if reader.IsDBNull i then None else Some (System.Convert.ToDecimal(reader.GetValue i))
             let optInt (i: int) : int option =
                 if reader.IsDBNull i then None else Some (System.Convert.ToInt32(reader.GetValue i))
-            let rows = ResizeArray<_>()
+            let rows = ResizeArray<SequenceRow>()
             let mutable hasMore = true
             while hasMore do
                 let! more = reader.ReadAsync()
                 if more then
                     rows.Add(
-                        reader.GetString 0, reader.GetString 1, reader.GetString 2,
-                        optDec 3, optDec 4, optDec 5, optDec 6,
-                        reader.GetBoolean 7, reader.GetBoolean 8, optInt 9)
+                        { Schema       = reader.GetString 0
+                          Name         = reader.GetString 1
+                          DataType     = reader.GetString 2
+                          StartValue   = optDec 3
+                          Increment    = optDec 4
+                          MinimumValue = optDec 5
+                          MaximumValue = optDec 6
+                          IsCycling    = reader.GetBoolean 7
+                          IsCached     = reader.GetBoolean 8
+                          CacheSize    = optInt 9 })
                 else hasMore <- false
             return List.ofSeq rows
         }
@@ -435,20 +539,22 @@ module ReadSide =
             return acc |> Seq.map (fun kv -> kv.Key, List.ofSeq kv.Value) |> Map.ofSeq
         }
 
-    /// Read the set of FK relationships across every user table.
-    /// Returns rows of `(srcSchema, srcTable, srcCol, tgtSchema, tgtTable,
-    /// tgtCol)`. Composite FKs surface as multiple rows. Uses sys.* directly;
-    /// REFERENTIAL_CONSTRAINTS / KEY_COLUMN_USAGE shape is awkward
-    /// for the source/target column-pair join we need.
-    let private readForeignKeys (cnn: SqlConnection)
-        : Task<list<string * string * string * string * string * string>> =
+    /// Read the set of FK relationships across every user table as typed
+    /// `FkRow`s (carrying the `WITH NOCHECK` trust state). Composite FKs
+    /// surface as multiple rows. Uses sys.* directly; REFERENTIAL_CONSTRAINTS
+    /// / KEY_COLUMN_USAGE shape is awkward for the source/target column-pair
+    /// join we need. The live readback path uses the combined `readSchemaCombined`
+    /// batch; this stand-alone reader mirrors that batch's FK SELECT for
+    /// out-of-band FK-metadata probing.
+    let private readForeignKeys (cnn: SqlConnection) : Task<FkRow list> =
         task {
             use _ = Bench.scope "readside.readForeignKeys"
             use cmd = cnn.CreateCommand()
             cmd.CommandText <-
                 "SELECT \
                     SCHEMA_NAME(t.schema_id), t.name, c.name, \
-                    SCHEMA_NAME(rt.schema_id), rt.name, rc.name \
+                    SCHEMA_NAME(rt.schema_id), rt.name, rc.name, \
+                    fk.is_not_trusted \
                  FROM sys.foreign_keys fk \
                  JOIN sys.foreign_key_columns fkc \
                    ON fkc.constraint_object_id = fk.object_id \
@@ -461,7 +567,7 @@ module ReadSide =
                  WHERE t.is_ms_shipped = 0 \
                  ORDER BY SCHEMA_NAME(t.schema_id), t.name, c.column_id"
             use! reader = cmd.ExecuteReaderAsync()
-            let rows = ResizeArray<string * string * string * string * string * string>()
+            let rows = ResizeArray<FkRow>()
             let mutable hasMore = true
             // Defensive DBNull guard (slice A.4.7'-prelude.defensive-
             // hardening): SCHEMA_NAME() returns NULL if the schema
@@ -476,12 +582,13 @@ module ReadSide =
                 let! more = reader.ReadAsync()
                 if more then
                     rows.Add(
-                        safeStr 0,
-                        safeStr 1,
-                        safeStr 2,
-                        safeStr 3,
-                        safeStr 4,
-                        safeStr 5)
+                        { SourceSchema = safeStr 0
+                          SourceTable  = safeStr 1
+                          SourceColumn = safeStr 2
+                          TargetSchema = safeStr 3
+                          TargetTable  = safeStr 4
+                          TargetColumn = safeStr 5
+                          IsNotTrusted = (not (reader.IsDBNull 6)) && reader.GetBoolean 6 })
                 else
                     hasMore <- false
             return List.ofSeq rows
@@ -824,6 +931,30 @@ module ReadSide =
                 return Some rows
         }
 
+    /// Recover a kind's SsKey from the persisted `V2.SsKey` extended
+    /// property when present (Wave 4.1; A1: identity survives rename), else
+    /// the `READSIDE_KIND` synthesis (pre-V2-emission / non-V2 schemas, or a
+    /// malformed stored value — a synthesized key is always valid, so a bad
+    /// value degrades gracefully rather than failing the read). Shared by
+    /// `buildKind` (a kind's own identity) and `buildReference` (an FK's
+    /// **target-kind** identity) so a reconstructed FK's `TargetKind`
+    /// MATCHES the reconstructed target Kind's `SsKey`. 6.A.5 — without this,
+    /// a kind reconstructed from its persisted SsKey but referenced by an
+    /// FK synthesizing `READSIDE_KIND` fails to resolve in
+    /// `PhysicalSchema.ForeignKeys` (`Map.tryFind r.TargetKind kindByKey`
+    /// misses) — the FK silently vanishes from the projection (the A42 gap).
+    let private recoverKindSsKey
+        (tableSsKeys: Map<string * string, string>)
+        (schema: string)
+        (table: string)
+        : Result<SsKey> =
+        match Map.tryFind (schema, table) tableSsKeys with
+        | Some serialized ->
+            match SsKey.deserialize serialized with
+            | Ok recovered -> Result.success recovered
+            | Error _ -> kindSsKey schema table
+        | None -> kindSsKey schema table
+
     let private buildKind
         (tableLogicalNames: Map<string * string, string>)
         (columnLogicalNames: Map<string * string * string, string>)
@@ -844,20 +975,8 @@ module ReadSide =
                 buildAttribute columnLogicalNames row primaryKeySet identitySet)
         result {
             let! attributes = Result.aggregate attrResults
-            // Wave 4.1 — recover the persisted SsKey from the `V2.SsKey`
-            // extended property when present (A1: identity survives rename);
-            // fall back to `READSIDE_KIND` synthesis when absent (schemas
-            // deployed before V2.SsKey emission, or non-V2 sources) or when
-            // the stored value is malformed (a synthesized key is always a
-            // valid identity, so a bad value degrades gracefully rather than
-            // failing the whole read).
-            let! kKey =
-                match Map.tryFind (schema, table) tableSsKeys with
-                | Some serialized ->
-                    match SsKey.deserialize serialized with
-                    | Ok recovered -> Result.success recovered
-                    | Error _ -> kindSsKey schema table
-                | None -> kindSsKey schema table
+            // Wave 4.1 — recover the persisted SsKey (see `recoverKindSsKey`).
+            let! kKey = recoverKindSsKey tableSsKeys schema table
             // Slice D.1.b — hydrate Kind.Name from the `V2.LogicalName`
             // extended property when present; backward-compat fallback
             // to the deployed table name.
@@ -896,8 +1015,10 @@ module ReadSide =
     ///
     /// **Best-effort fields.** `Origin = Native` and `Modality = []`
     /// for every reconstructed Kind (cannot be recovered from SQL).
-    /// `References = []` and `Indexes = []` for M3 MVP — FK and index
-    /// reconstruction defers to a follow-up slice.
+    /// `References` (incl. FK-trust state) are recovered via
+    /// `attachReferences`, and non-PK `Indexes` (incl. uniqueness) via
+    /// `attachIndexes` (6.A.5) — `buildKind` constructs both empty, the
+    /// attach helpers populate them from the reflected metadata.
     ///
     /// **Round-trip comparison.** The reconstructed Catalog uses the
     /// `READSIDE_*` synthesis source for SsKeys. Comparing to a
@@ -910,44 +1031,54 @@ module ReadSide =
     /// `kindSsKey` / `attributeSsKey` synthesis convention so the
     /// reconstructed Catalog's References resolve internally.
     let private buildReference
-        (srcSchema: string, srcTable: string, srcColumn: string,
-         tgtSchema: string, tgtTable: string, _tgtColumn: string)
+        (tableSsKeys: Map<string * string, string>)
+        (fk: FkRow)
         : Result<Reference> =
         // Chapter-3.6: `result { }` CE replaces the prior 4-deep
         // nested-match chain. Same short-circuit semantics; reads
         // as the algebraic spec.
         result {
-            let! srcAttrKey = attributeSsKey srcSchema srcTable srcColumn
-            let! tgtKindKey = kindSsKey tgtSchema tgtTable
+            let! srcAttrKey = attributeSsKey fk.SourceSchema fk.SourceTable fk.SourceColumn
+            // 6.A.5 — recover the target kind's SsKey the same way buildKind
+            // does (persisted V2.SsKey, else synthesis) so the FK resolves
+            // against the reconstructed target Kind in PhysicalSchema.
+            let! tgtKindKey = recoverKindSsKey tableSsKeys fk.TargetSchema fk.TargetTable
             let! refKey =
                 SsKey.synthesized
                     "READSIDE_REF"
-                    (sprintf "%s.%s.%s" srcSchema srcTable srcColumn)
-            let! refName = Name.create (sprintf "FK_%s_%s" srcTable srcColumn)
+                    (sprintf "%s.%s.%s" fk.SourceSchema fk.SourceTable fk.SourceColumn)
+            let! refName = Name.create (sprintf "FK_%s_%s" fk.SourceTable fk.SourceColumn)
             // Slice 5.13.fk-features-emit — smart-constructor migration.
             // ReadSide reconstructs Reference from `sys.foreign_keys`,
             // which by definition lists references backed by DB
-            // constraints (HasDbConstraint = true). The schema-only
-            // ReadSide surface today carries no OnDelete / OnUpdate /
-            // IsConstraintTrusted axes — defaults remain from
-            // `Reference.create` until a follow-up slice joins
-            // `sys.foreign_keys`'s referential-action + trust columns.
+            // constraints (HasDbConstraint = true). 6.A.5 — the FK batch
+            // now also carries `sys.foreign_keys.is_not_trusted`, so a
+            // deployed `WITH NOCHECK` FK reads back as
+            // `IsConstraintTrusted = false` instead of silently
+            // inheriting the `Reference.create` `true` default
+            // (the named smart-constructor default-substitution hazard:
+            // every axis that deviates from the constructor default MUST
+            // be set explicitly in the `with` block). OnDelete / OnUpdate
+            // referential-action axes remain defaulted until a follow-up
+            // slice joins `sys.foreign_keys`'s action columns.
             return
                 { Reference.create refKey refName srcAttrKey tgtKindKey with
-                    HasDbConstraint = true }
+                    HasDbConstraint    = true
+                    IsConstraintTrusted = not fk.IsNotTrusted }
         }
 
     /// Attach references to a Kind based on the FKs grouped by
     /// (schema, table) coordinates. Per session-31 Session B.
     let private attachReferences
-        (fkGroups: Map<string * string, list<string * string * string * string * string * string>>)
+        (tableSsKeys: Map<string * string, string>)
+        (fkGroups: Map<string * string, FkRow list>)
         (k: Kind)
         : Result<Kind> =
         match fkGroups.TryFind(k.Physical.Schema, k.Physical.Table) with
         | None -> Result.success k
         | Some fks ->
             result {
-                let! refs = fks |> List.map buildReference |> Result.aggregate
+                let! refs = fks |> List.map (buildReference tableSsKeys) |> Result.aggregate
                 return { k with References = refs }
             }
 
@@ -1058,21 +1189,58 @@ module ReadSide =
             ExtendedProperties = k.ExtendedProperties @ mkEps None
             Attributes = attrs }
 
+    /// 6.A.5 — attach recovered non-PK indexes to a Kind. Resolves each
+    /// index key column to the kind's `Attribute.SsKey` by column name (the
+    /// same coordinate `attachDefaults` keys on); an index whose key columns
+    /// don't all resolve is skipped (best-effort, mirroring the other attach
+    /// helpers). `IsUnique` survives the round-trip so a deployed UNIQUE
+    /// index reads back as `Index.IsUnique = true` instead of vanishing on
+    /// the hardcoded `Indexes = []`. SsKey synthesized from the deployed
+    /// coordinates (`READSIDE_IDX`).
+    let private attachIndexes
+        (indexes: Map<string * string, IndexColumnRow list>)
+        (k: Kind)
+        : Kind =
+        match Map.tryFind (k.Physical.Schema, k.Physical.Table) indexes with
+        | None -> k
+        | Some rows ->
+            let ssKeyByColumn =
+                k.Attributes |> List.map (fun a -> a.Column.ColumnName, a.SsKey) |> Map.ofList
+            let recovered =
+                rows
+                |> List.groupBy (fun r -> r.IndexName)
+                |> List.choose (fun (indexName, cols) ->
+                    let keyColumns =
+                        cols
+                        |> List.choose (fun r ->
+                            Map.tryFind r.ColumnName ssKeyByColumn
+                            |> Option.map (fun sk ->
+                                IndexColumn.create sk (if r.IsDescending then Descending else Ascending)))
+                    // Skip an index whose key columns don't all resolve (a
+                    // computed-column or partition key the attribute set
+                    // doesn't carry) rather than emit a partial index.
+                    if List.length keyColumns <> List.length cols then None
+                    else
+                        match SsKey.synthesized "READSIDE_IDX" (sprintf "%s.%s.%s" k.Physical.Schema k.Physical.Table indexName),
+                              Name.create indexName with
+                        | Ok sk, Ok nm ->
+                            Some { Index.create sk nm keyColumns with IsUnique = (cols |> List.exists (fun r -> r.IsUnique)) }
+                        | _ -> None)
+            { k with Indexes = recovered }
+
     /// Wave-1 slice 1.3 — reconstruct catalog-level `Sequence` values from
     /// the `sys.sequences` rows via the `Sequence.create` smart constructor.
-    let private buildSequences
-        (rows: (string * string * string * decimal option * decimal option * decimal option * decimal option * bool * bool * int option) list)
-        : Sequence list =
+    let private buildSequences (rows: SequenceRow list) : Sequence list =
         rows
-        |> List.choose (fun (schema, name, dataType, start, incr, minV, maxV, cycle, isCached, cacheSize) ->
+        |> List.choose (fun r ->
             let cacheMode =
-                if not isCached then NoCache
-                elif Option.isSome cacheSize then Cache
+                if not r.IsCached then NoCache
+                elif Option.isSome r.CacheSize then Cache
                 else Unspecified
-            match SsKey.synthesized "READSIDE_SEQUENCE" (sprintf "%s.%s" schema name),
-                  Name.create name with
+            match SsKey.synthesized "READSIDE_SEQUENCE" (sprintf "%s.%s" r.Schema r.Name),
+                  Name.create r.Name with
             | Ok sk, Ok nm ->
-                match Sequence.create sk nm schema dataType start incr minV maxV cycle cacheMode cacheSize with
+                match Sequence.create sk nm r.Schema r.DataType r.StartValue r.Increment r.MinimumValue r.MaximumValue r.IsCycling cacheMode r.CacheSize with
                 | Ok s -> Some s
                 | Error _ -> None
             | _ -> None)
@@ -1107,7 +1275,7 @@ module ReadSide =
         : Task<list<ColumnRow>
               * Set<string * string * string>
               * Set<string * string * string>
-              * list<string * string * string * string * string * string>
+              * list<FkRow>
               * Map<string * string, string>
               * Map<string * string * string, string>
               * Map<string * string, string>> =
@@ -1141,7 +1309,8 @@ module ReadSide =
                    AND t.is_ms_shipped = 0; \
                  SELECT \
                     SCHEMA_NAME(t.schema_id), t.name, c.name, \
-                    SCHEMA_NAME(rt.schema_id), rt.name, rc.name \
+                    SCHEMA_NAME(rt.schema_id), rt.name, rc.name, \
+                    fk.is_not_trusted \
                  FROM sys.foreign_keys fk \
                  JOIN sys.foreign_key_columns fkc \
                    ON fkc.constraint_object_id = fk.object_id \
@@ -1236,18 +1405,19 @@ module ReadSide =
 
             // Result set 4: foreign-key tuples.
             let! _ = reader.NextResultAsync()
-            let fkRows = ResizeArray<string * string * string * string * string * string>()
+            let fkRows = ResizeArray<FkRow>()
             let mutable hasMore4 = true
             while hasMore4 do
                 let! more = reader.ReadAsync()
                 if more then
                     fkRows.Add(
-                        reader.GetString 0,
-                        reader.GetString 1,
-                        reader.GetString 2,
-                        reader.GetString 3,
-                        reader.GetString 4,
-                        reader.GetString 5)
+                        { SourceSchema = reader.GetString 0
+                          SourceTable  = reader.GetString 1
+                          SourceColumn = reader.GetString 2
+                          TargetSchema = reader.GetString 3
+                          TargetTable  = reader.GetString 4
+                          TargetColumn = reader.GetString 5
+                          IsNotTrusted = reader.GetBoolean 6 })
                 else hasMore4 <- false
 
             // Result set 5: V2.LogicalName extended properties
@@ -1339,11 +1509,11 @@ module ReadSide =
                 | Ok kinds ->
                     let fkGroups =
                         fkRows
-                        |> List.groupBy (fun (s, t, _, _, _, _) -> s, t)
+                        |> List.groupBy (fun fk -> fk.SourceSchema, fk.SourceTable)
                         |> Map.ofList
                     let kindsWithRefsResults =
                         kinds
-                        |> Bench.iterMap "readside.attachReferences" (attachReferences fkGroups)
+                        |> Bench.iterMap "readside.attachReferences" (attachReferences tableSsKeys fkGroups)
                     match Result.aggregate kindsWithRefsResults with
                     | Error errors -> return Result.failure errors
                     | Ok kindsWithRefs0 ->
@@ -1362,6 +1532,10 @@ module ReadSide =
                         let! triggers = readTriggers cnn
                         let! checks = readCheckConstraints cnn
                         let! extProps = readExtendedProperties cnn
+                        // 6.A.5 — recover non-PK indexes (unique + ordinary)
+                        // so `Kind.Indexes` is no longer hardcoded `[]`; a
+                        // deployed UNIQUE index survives the round-trip.
+                        let! indexes = readIndexes cnn
                         let! sequenceRows = readSequences cnn
                         let recoveredSequences = buildSequences sequenceRows
                         let kindsWithRefs =
@@ -1369,6 +1543,7 @@ module ReadSide =
                             |> List.map (attachDefaults defaults)
                             |> List.map (attachComputed computed)
                             |> List.map (attachAnnotations triggers checks extProps)
+                            |> List.map (attachIndexes indexes)
                         // Per session-34 — threshold lifted to 100k.
                         // Below that, rows materialize into V2 IR
                         // (`Modality.Static`) for the per-row PhysicalSchema

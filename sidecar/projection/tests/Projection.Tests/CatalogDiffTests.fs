@@ -426,3 +426,82 @@ let ``compose: associativity — (d1+d2)+d3 reproduces the same state as d1+(d2+
     // Both are the A → D displacement: applying either to A reproduces D.
     Assert.True(CatalogDiff.isEmpty (CatalogDiff.between custD (CatalogDiff.applyDiff custA left) |> mustOk))
     Assert.True(CatalogDiff.isEmpty (CatalogDiff.between custD (CatalogDiff.applyDiff custA right) |> mustOk))
+
+// ---------------------------------------------------------------------------
+// 6.A.7 — Synthesized-key rename is surfaced, not silently re-keyed.
+//
+// A `Synthesized` SsKey is name-derived, so a rename CHANGES the key — the
+// change lands in Removed + Added (not Renamed) and A1 identity is silently
+// lost. `synthesizedRenameWarnings` pairs a removed + added Synthesized kind
+// that share a synthesis source and an identical column set, surfacing the
+// rename. A stable-key (`OssysOriginal`) source threads renames natively (a
+// `Renamed` record) and produces no warning.
+// ---------------------------------------------------------------------------
+
+let private rnName (s: string) : Name = Name.create s |> Result.value
+let private rnSynthKey (parts: string list) : SsKey = SsKey.synthesizedComposite "READSIDE_KIND" parts |> Result.value
+let private rnAttrKey (parts: string list) : SsKey = SsKey.synthesizedComposite "READSIDE_ATTR" parts |> Result.value
+let private rnAttr (key: SsKey) (col: string) (isPk: bool) : Attribute =
+    { Attribute.create key (rnName col) Integer with
+        Column = { ColumnName = col; IsNullable = not isPk }
+        IsPrimaryKey = isPk; IsMandatory = isPk }
+let private rnKind (key: SsKey) (table: string) (attrs: Attribute list) : Kind =
+    Kind.create key (rnName table) { Schema = "dbo"; Table = table; Catalog = None } attrs
+let private rnCatalog (kinds: Kind list) : Catalog =
+    Catalog.create
+        [ { SsKey = rnSynthKey ["MODULE"]; Name = rnName "M"; Kinds = kinds; IsActive = true; ExtendedProperties = [] } ] []
+    |> Result.value
+
+[<Fact>]
+let ``A1: a Synthesized-key rename is surfaced, not silently re-keyed`` () =
+    // T_OLD (synthesized key from its name) is renamed to T_NEW with the same
+    // [ID, BODY] column shape. The synthesized keys differ, so between sees a
+    // drop + add — but the warning surfaces the probable rename.
+    let oldKind =
+        rnKind (rnSynthKey ["dbo.T_OLD"]) "T_OLD"
+            [ rnAttr (rnAttrKey ["dbo.T_OLD.ID"]) "ID" true
+              rnAttr (rnAttrKey ["dbo.T_OLD.BODY"]) "BODY" false ]
+    let newKind =
+        rnKind (rnSynthKey ["dbo.T_NEW"]) "T_NEW"
+            [ rnAttr (rnAttrKey ["dbo.T_NEW.ID"]) "ID" true
+              rnAttr (rnAttrKey ["dbo.T_NEW.BODY"]) "BODY" false ]
+    let diff = CatalogDiff.between (rnCatalog [ oldKind ]) (rnCatalog [ newKind ]) |> mustOk
+    // The diff itself cannot thread the rename — it is a drop + add.
+    Assert.Equal(1, Set.count (CatalogDiff.removed diff))
+    Assert.Equal(1, Set.count (CatalogDiff.added diff))
+    Assert.Empty(CatalogDiff.renamed diff)
+    // …but the instability is SURFACED, not silent.
+    match CatalogDiff.synthesizedRenameWarnings diff with
+    | [ w ] ->
+        Assert.Equal("READSIDE_KIND", w.SynthesisSource)
+        Assert.Equal("dbo.T_OLD", w.SourceTable)
+        Assert.Equal("dbo.T_NEW", w.TargetTable)
+    | other -> Assert.Fail(sprintf "expected exactly one synthesized-rename warning, got %A" other)
+
+[<Fact>]
+let ``A1: a stable-key (OssysOriginal) rename threads natively — no instability warning`` () =
+    let g = System.Guid.Parse "33333333-3333-3333-3333-333333333333"
+    let idK = SsKey.ossysOriginal (System.Guid.Parse "44444444-4444-4444-4444-444444444444")
+    let bodyK = SsKey.ossysOriginal (System.Guid.Parse "55555555-5555-5555-5555-555555555555")
+    // Same kind identity (OssysOriginal g); only the Name + physical table change.
+    let before = rnKind (SsKey.ossysOriginal g) "T_OLD" [ rnAttr idK "ID" true; rnAttr bodyK "BODY" false ]
+    let after  = rnKind (SsKey.ossysOriginal g) "T_NEW" [ rnAttr idK "ID" true; rnAttr bodyK "BODY" false ]
+    let diff = CatalogDiff.between (rnCatalog [ before ]) (rnCatalog [ after ]) |> mustOk
+    // The rename threads natively as a Renamed record — no drop/add.
+    Assert.Equal(1, Map.count (CatalogDiff.renamed diff))
+    Assert.Empty(CatalogDiff.removed diff)
+    Assert.Empty(CatalogDiff.added diff)
+    Assert.Empty(CatalogDiff.synthesizedRenameWarnings diff)
+
+[<Fact>]
+let ``synthesizedRenameWarnings: a genuine drop + add with different shapes is not flagged as a rename`` () =
+    // A removed kind and an added kind whose column sets differ are NOT paired
+    // (the shape signal rules out a rename) — no false positive.
+    let dropped =
+        rnKind (rnSynthKey ["dbo.GONE"]) "GONE" [ rnAttr (rnAttrKey ["dbo.GONE.ID"]) "ID" true ]
+    let appeared =
+        rnKind (rnSynthKey ["dbo.FRESH"]) "FRESH"
+            [ rnAttr (rnAttrKey ["dbo.FRESH.ID"]) "ID" true
+              rnAttr (rnAttrKey ["dbo.FRESH.EXTRA"]) "EXTRA" false ]
+    let diff = CatalogDiff.between (rnCatalog [ dropped ]) (rnCatalog [ appeared ]) |> mustOk
+    Assert.Empty(CatalogDiff.synthesizedRenameWarnings diff)
