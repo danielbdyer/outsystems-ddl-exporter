@@ -222,6 +222,21 @@ climb self-verifying. **B (migrate wiring)** is the operator-facing payoff but
 
 ### Cluster A — Close T-VI spanning (the pre-flight gate suite)
 
+> **STATUS — A1 + A2 gates LANDED 2026-06-02 (as composable functions).** The
+> `Preflight` module now carries the connection gate (A1 —
+> `connectionViolations` / `connectionPreflight`, refusing
+> `migrate.connectionUnavailable`) and the permission gate (A2 —
+> `permissionViolations` / `permissionPreflight` / `captureGrantEvidence`,
+> refusing `migrate.insufficientGrant`), plus a `Preflight.all` short-circuiting
+> composition. 8 pure DB-free witnesses in `PreflightTests.fs` (`` ``A1: …`` `` /
+> `` ``A2: …`` ``). **Survey-gated residuals:** A2's grant capture probes
+> database-scope today; object-scope refinement waits on survey P1. **A3
+> (transactional)** is a documented scaffold only — the resumable-upsert
+> wrapper in `TransferRun.writePlan` needs the survey's granularity decision
+> (P6/P11) + a Docker witness. **Wiring the gates into `migrate --execute`** is
+> cluster **B1** (the gates exist and are tested; B1 threads `Preflight.all`
+> before any mutation).
+
 **Totality:** T-VI (spanning) + T-V (orthogonality). **Promise:** operator covenant
 #8 (atomic-or-resumable; refuses rather than corrupts). **Home:** extend
 `Preflight.fs` (today it holds only the 6.B.1 tightening check) into a
@@ -306,6 +321,22 @@ mandatory gate on every `--execute`. The North-Star T-VI counterexamples
 This cluster is the structural heart of the L2/L3 climb. **C1 is the centerpiece.**
 
 #### C1 — Widen the `CatalogDiff` captured surface (G1) ★ centerpiece
+
+> **STATUS — diff algebra LANDED 2026-06-02.** The Reference / Index / Sequence
+> channels are wired through `between` / `applyDiff` / `isEmpty` / `norm` /
+> `channelCounts` / `compose` (`CatalogDiff.fs`); the round-trip law
+> `applyDiff (between A B) A = B` now holds on the widened surface, witnessed by
+> 11 tests in `CatalogDiffTests.fs` (`` ``C1: …`` `` — added/changed/dropped FK,
+> added/changed index incl. the `Options` default-substitution guard, added/
+> reshaped sequence, the integrative all-three round-trip, the isEmpty honesty
+> regression guard, and the norm channel counts). **Follow-on (not yet done):**
+> the *emitter-side* minimal-touch emission for the new channels
+> (`SchemaMigrationEmitter` → `ALTER TABLE ADD/DROP CONSTRAINT`, `CREATE/DROP
+> INDEX`, `ALTER SEQUENCE`, or DacFx delegation). Until it lands, `migrate A B`
+> now *detects* an FK/index/sequence change (`isEmpty` is honest, the preview
+> counts it) and fails **loud at verification** (B' ≠ B) instead of silently
+> no-op'ing — the silent erasure became a loud refusal; the clean ALTER is the
+> remaining reach.
 
 - **Totality:** T-I (round-trip faithfulness) on Schema + Time; the forcing
   instance for L3 `migrate`.

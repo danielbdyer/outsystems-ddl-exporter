@@ -505,3 +505,163 @@ let ``synthesizedRenameWarnings: a genuine drop + add with different shapes is n
               rnAttr (rnAttrKey ["dbo.FRESH.EXTRA"]) "EXTRA" false ]
     let diff = CatalogDiff.between (rnCatalog [ dropped ]) (rnCatalog [ appeared ]) |> mustOk
     Assert.Empty(CatalogDiff.synthesizedRenameWarnings diff)
+
+// ---------------------------------------------------------------------------
+// C1 (2026-06-02) — the widened captured surface. Before C1, `between` /
+// `applyDiff` captured kind + attribute column-shape only; references,
+// indexes, and sequences rode through `applyDiff` unchanged, so `migrate A B`
+// silently no-op'd any FK / index / sequence change. These witness the
+// round-trip law `applyDiff (between A B) A = B` on the three new channels,
+// and that `isEmpty` / `norm` now see them.
+// ---------------------------------------------------------------------------
+
+/// `order` with its Customer reference stripped — the A-side for "an FK was added".
+let private orderNoRef : Kind = { order with References = [] }
+
+let private seqKey (s: string) : SsKey = kindKey [ "Seq"; s ]
+
+let private orderNumberSeq : Sequence =
+    Sequence.create (seqKey "OrderNumber") (nm "OrderNumber") "dbo" "bigint"
+        (Some 1m) (Some 1m) (Some 1m) (Some 9999999999m) false SequenceCacheMode.Unspecified None
+    |> Result.value
+
+// -- Reference channel ------------------------------------------------------
+
+[<Fact>]
+let ``C1: between/applyDiff round-trips an added FK (reference channel)`` () =
+    // A: Order has no FK; B: Order references Customer. Before C1 this diff
+    // reported isEmpty = true (the FK was invisible).
+    let a = catalogOfKinds [ customer; orderNoRef; country ]
+    let b = catalogOfKinds [ customer; order; country ]
+    let diff = CatalogDiff.between a b |> mustOk
+    Assert.False(CatalogDiff.isEmpty diff)
+    match CatalogDiff.referenceDiffOf orderKey diff with
+    | None -> Assert.Fail "expected a ReferenceDiff for Order"
+    | Some rd -> Assert.Contains(orderRefToCustomer, rd.Added)
+    let reconstructed = CatalogDiff.applyDiff a diff
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between b reconstructed |> mustOk),
+                "applyDiff must reproduce B's reference set")
+
+[<Fact>]
+let ``C1: an FK trust change (WITH NOCHECK) names the Trust facet and round-trips`` () =
+    // The Decision/Schema-coupled facet: a deployed FK flips to WITH NOCHECK.
+    let a = catalogOfKinds [ customer; order; country ]
+    let orderUntrusted =
+        { order with
+            References = order.References |> List.map (fun r -> { r with IsConstraintTrusted = false }) }
+    let b = catalogOfKinds [ customer; orderUntrusted; country ]
+    let diff = CatalogDiff.between a b |> mustOk
+    let rd = (CatalogDiff.referenceDiffOf orderKey diff).Value
+    let change = List.head rd.Changed
+    Assert.Equal(orderRefToCustomer, change.ReferenceKey)
+    Assert.Contains(ReferenceFacet.Trust, change.Facets)
+    let reconstructed = CatalogDiff.applyDiff a diff
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between b reconstructed |> mustOk))
+
+[<Fact>]
+let ``C1: a dropped FK round-trips (reference channel Removed)`` () =
+    let a = catalogOfKinds [ customer; order; country ]
+    let b = catalogOfKinds [ customer; orderNoRef; country ]
+    let diff = CatalogDiff.between a b |> mustOk
+    Assert.Contains(orderRefToCustomer, (CatalogDiff.referenceDiffOf orderKey diff).Value.Removed)
+    let reconstructed = CatalogDiff.applyDiff a diff
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between b reconstructed |> mustOk))
+
+// -- Index channel ----------------------------------------------------------
+
+let private customerEmailIdx : Index =
+    { Index.create (idxKey [ "Customer"; "UX_Name" ]) (nm "UX_Customer_Name")
+        (IndexColumn.ascendingList [ customerNameKey ]) with Uniqueness = Unique }
+
+[<Fact>]
+let ``C1: between/applyDiff round-trips an added UNIQUE index (index channel)`` () =
+    let a = catalogOfKinds [ customer; order; country ]
+    let customerIdx = { customer with Indexes = [ customerEmailIdx ] }
+    let b = catalogOfKinds [ customerIdx; order; country ]
+    let diff = CatalogDiff.between a b |> mustOk
+    Assert.False(CatalogDiff.isEmpty diff)
+    Assert.Contains(customerEmailIdx.SsKey, (CatalogDiff.indexDiffOf customerKey diff).Value.Added)
+    let reconstructed = CatalogDiff.applyDiff a diff
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between b reconstructed |> mustOk))
+
+[<Fact>]
+let ``C1: an index uniqueness change names the Uniqueness facet and round-trips`` () =
+    let a = catalogOfKinds [ { customer with Indexes = [ { customerEmailIdx with Uniqueness = NotUnique } ] }; order; country ]
+    let b = catalogOfKinds [ { customer with Indexes = [ customerEmailIdx ] }; order; country ]
+    let diff = CatalogDiff.between a b |> mustOk
+    let change = List.head (CatalogDiff.indexDiffOf customerKey diff).Value.Changed
+    Assert.Contains(IndexFacet.Uniqueness, change.Facets)
+    let reconstructed = CatalogDiff.applyDiff a diff
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between b reconstructed |> mustOk))
+
+[<Fact>]
+let ``C1: an index option change (ALLOW_PAGE_LOCKS) names the Options facet and round-trips`` () =
+    // Guards the default-substitution bomb: the Options facet must carry the
+    // flipped flag through applyDiff, not silently inherit Index.create's true.
+    let a = catalogOfKinds [ { customer with Indexes = [ customerEmailIdx ] }; order; country ]
+    let b = catalogOfKinds [ { customer with Indexes = [ { customerEmailIdx with AllowPageLocks = false } ] }; order; country ]
+    let diff = CatalogDiff.between a b |> mustOk
+    Assert.Contains(IndexFacet.Options, (List.head (CatalogDiff.indexDiffOf customerKey diff).Value.Changed).Facets)
+    let reconstructed = CatalogDiff.applyDiff a diff
+    let rebuiltIdx =
+        (Catalog.tryFindKind customerKey reconstructed).Value.Indexes
+        |> List.find (fun i -> i.SsKey = customerEmailIdx.SsKey)
+    Assert.False(rebuiltIdx.AllowPageLocks)   // the flag survived; no default-substitution
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between b reconstructed |> mustOk))
+
+// -- Sequence channel -------------------------------------------------------
+
+[<Fact>]
+let ``C1: between/applyDiff round-trips an added sequence (sequence channel)`` () =
+    let a = sampleCatalog
+    let b = Catalog.create [ salesModule ] [ orderNumberSeq ] |> Result.value
+    let diff = CatalogDiff.between a b |> mustOk
+    Assert.False(CatalogDiff.isEmpty diff)
+    Assert.Contains(orderNumberSeq.SsKey, (CatalogDiff.sequenceDiff diff).Added)
+    let reconstructed = CatalogDiff.applyDiff a diff
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between b reconstructed |> mustOk))
+
+[<Fact>]
+let ``C1: a reshaped sequence (increment change) names the Increment facet and round-trips`` () =
+    let a = Catalog.create [ salesModule ] [ orderNumberSeq ] |> Result.value
+    let b = Catalog.create [ salesModule ] [ { orderNumberSeq with Increment = Some 10m } ] |> Result.value
+    let diff = CatalogDiff.between a b |> mustOk
+    Assert.Contains(SequenceFacet.Increment, (List.head (CatalogDiff.sequenceDiff diff).Changed).Facets)
+    let reconstructed = CatalogDiff.applyDiff a diff
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between b reconstructed |> mustOk))
+
+// -- The integrative witness + isEmpty/norm honesty -------------------------
+
+[<Fact>]
+let ``C1: applyDiff (between A B) A = B on the widened surface (FK + index + sequence at once)`` () =
+    // B evolves A across all three new channels simultaneously, on top of an
+    // attribute change — the full captured surface in one round-trip.
+    let a = catalogOfKinds [ customer; orderNoRef; country ]
+    let customer' = { customer with Indexes = [ customerEmailIdx ] }                 // + index
+    let order'     = order                                                            // + FK (was stripped in A)
+    let b0 = Catalog.create [ { salesModule with Kinds = [ customer'; order'; country ] } ] [ orderNumberSeq ] |> Result.value // + sequence
+    let diff = CatalogDiff.between a b0 |> mustOk
+    let reconstructed = CatalogDiff.applyDiff a diff
+    let residual = CatalogDiff.between b0 reconstructed |> mustOk
+    Assert.True(CatalogDiff.isEmpty residual,
+                "applyDiff (between A B) A must reproduce B across references + indexes + sequences")
+
+[<Fact>]
+let ``C1: isEmpty is honest — an added FK alone makes the diff non-empty (regression guard)`` () =
+    // The exact pre-C1 bug: a kind whose name + attributes are stable but which
+    // gained an FK reported isEmpty = true → no ALTER → silent skip.
+    let a = catalogOfKinds [ customer; orderNoRef; country ]
+    let b = catalogOfKinds [ customer; order; country ]
+    Assert.False(CatalogDiff.isEmpty (CatalogDiff.between a b |> mustOk))
+
+[<Fact>]
+let ``C1: norm counts the reference / index / sequence channels`` () =
+    let a = catalogOfKinds [ customer; orderNoRef; country ]
+    let customer' = { customer with Indexes = [ customerEmailIdx ] }
+    let b = Catalog.create [ { salesModule with Kinds = [ customer'; order; country ] } ] [ orderNumberSeq ] |> Result.value
+    let c = CatalogDiff.channelCounts (CatalogDiff.between a b |> mustOk)
+    Assert.Equal(1, c.AddedReferences)
+    Assert.Equal(1, c.AddedIndexes)
+    Assert.Equal(1, c.AddedSequences)
+    // norm sums every channel including the three new ones (≥ 3 here).
+    Assert.True(CatalogDiff.norm (CatalogDiff.between a b |> mustOk) >= 3)

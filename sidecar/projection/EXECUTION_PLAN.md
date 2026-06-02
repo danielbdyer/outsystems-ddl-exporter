@@ -1033,6 +1033,12 @@ states (debrief **G1-ref**, a deliberate modeling pass deferred from F#-audit Sl
 > between A and B. Widening the captured surface is the debrief's **C1 — the centerpiece L2 lever** (new Reference /
 > Index / Sequence channels with `between`-side detection + `applyDiff`-side reconstruction; mind the
 > default-substitution bomb).
+> **✅ LANDED 2026-06-02 (diff algebra).** `CatalogDiff` now captures references /
+> indexes / sequences; `applyDiff (between A B) A = B` holds on the widened
+> surface (11 `` ``C1: …`` `` witnesses in `CatalogDiffTests.fs`). An FK/index/
+> sequence change is no longer invisible (`isEmpty` honest; `norm`/`channelCounts`
+> count it). Remaining: the emitter-side minimal-touch ALTER for the new channels
+> — until it lands, `migrate` fails loud at verify rather than silently no-op'ing.
 - **Gap (red-team Time #1/2):** `replayTo` is a snapshot *fetch*, not a `fold applyDiff`; `applyDiff` does not exist;
   `applyDiff (between A B) A = B` is unproven. The Time axis is a store, not an evolution algebra.
 - **First slice:** define `CatalogDiff.applyDiff : Catalog -> CatalogDiff -> Catalog` (the `between` peer; H-007),
@@ -1080,7 +1086,13 @@ states (debrief **G1-ref**, a deliberate modeling pass deferred from F#-audit Sl
 
 #### 6.C — Spanning: the missing dimensions (T-VI)
 
-##### 6.C.1 — Connection + permission pre-flight (T-VI) — ⬚ OPEN (debrief A1 + A2)
+##### 6.C.1 — Connection + permission pre-flight (T-VI) — ◑ PARTIAL (debrief A1 + A2 gates LANDED 2026-06-02)
+> **Reconciled:** the `Preflight` module now carries the connection gate (A1 —
+> `connectionPreflight`, `migrate.connectionUnavailable`) and the permission gate
+> (A2 — `permissionPreflight` / `captureGrantEvidence`, `migrate.insufficientGrant`),
+> plus a `Preflight.all` composition, with 8 pure witnesses in `PreflightTests.fs`.
+> Survey-gated residual: A2's object-scope grant capture (P1). Wiring the gates
+> into `migrate --execute` is **B1**.
 - **Gap (red-team Spanning #1/#2):** no axis carries grants; a write-denied sink silently transfers zero rows; no
   "both endpoints live + credentialed" check before mutation.
 - **First slice:** a `migrate`/`transfer` pre-flight that probes source `SELECT` + sink `INSERT`/`CREATE` (a no-op
