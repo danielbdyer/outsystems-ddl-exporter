@@ -12,6 +12,7 @@ open Xunit
 open Projection.Core
 open Projection.Adapters.Sql
 open Projection.Pipeline
+open Projection.Targets.SSDT
 
 module private TransferCanaryFixtures =
 
@@ -162,6 +163,44 @@ module private TransferCanaryFixtures =
     let tighteningSeed =
         "INSERT INTO [dbo].[OSUSR_TG_TICKET] ([ID],[NOTE]) VALUES " +
         "(1, N'hi'), (2, NULL), (3, NULL);"
+
+    // 6.B.2 — authored source/sink contracts with STABLE, matching SsKeys so
+    // the A→B diff detects the column rename (Email → Contact). The physical
+    // column also moves (EMAIL → CONTACT), so a positional/source-name write
+    // would mis-map; the rename map re-points by identity. (Authored, not
+    // ReadSide-reconstructed: synthesized keys are name-derived and would not
+    // thread the rename — see 6.A.7.)
+    let private rpName (s: string) : Name = Name.create s |> Result.value
+    let private rpKKey (s: string) : SsKey = SsKey.synthesizedComposite "RP_XFER_KIND" [ s ] |> Result.value
+    let private rpAKey (s: string) : SsKey = SsKey.synthesizedComposite "RP_XFER_ATTR" [ s ] |> Result.value
+    let private rpAttr (key: SsKey) (logical: string) (col: string) (isPk: bool) : Attribute =
+        { Attribute.create key (rpName logical) (if isPk then Integer else Text) with
+            Column = { ColumnName = col; IsNullable = not isPk }
+            IsPrimaryKey = isPk
+            IsMandatory = isPk }
+    let private rpContract (emailName: string) (emailCol: string) : Catalog =
+        let cust =
+            Kind.create (rpKKey "Customer") (rpName "Customer")
+                { Schema = "dbo"; Table = "RP_XFER_CUSTOMER"; Catalog = None }
+                [ rpAttr (rpAKey "Id") "Id" "ID" true
+                  rpAttr (rpAKey "Email") emailName emailCol false ]
+        Catalog.create
+            [ { SsKey = rpKKey "Mod"; Name = rpName "M"; Kinds = [ cust ]; IsActive = true; ExtendedProperties = [] } ] []
+        |> Result.value
+
+    /// Source at schema A (Email/EMAIL); sink at schema B (Contact/CONTACT) —
+    /// the same kind + attribute SsKeys, so the diff sees a rename.
+    let renameSourceContract : Catalog = rpContract "Email" "EMAIL"
+    let renameSinkContract : Catalog = rpContract "Contact" "CONTACT"
+
+    /// Scalar string from a connection (for asserting a single cell).
+    let scalarStr (cnn: Microsoft.Data.SqlClient.SqlConnection) (sql: string) : System.Threading.Tasks.Task<string> =
+        task {
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <- sql
+            let! v = cmd.ExecuteScalarAsync()
+            return string v
+        }
 
     let value (r: Result<'a>) : 'a = Result.value r
 
@@ -549,6 +588,42 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                             es |> List.exists (fun e -> e.Code = "migrate.dataViolatesTightening"),
                             sprintf "expected migrate.dataViolatesTightening, got %A" (es |> List.map (fun e -> e.Code)))
                     | Ok () -> Assert.Fail("expected the tightening pre-flight to refuse a NULL-bearing EnforceNotNull")
+                }))
+
+    // 6.B.2 — RefactorLog-aware Transfer end-to-end. The source is at schema A
+    // (EMAIL); the sink is at schema B (the column renamed to CONTACT). The
+    // rename map (from the A→B diff) re-points each source row's value onto the
+    // sink's name BY IDENTITY — so the renamed column carries the source data,
+    // not NULL (which a source-name or ordinal write would produce).
+    [<Fact>]
+    member _.``transfer: a renamed column is re-pointed by the rename map, not matched by ordinal`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "XferRename") then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "XferRenameSrc" (fun src _ ->
+                task {
+                    do! Deploy.executeBatch src (SsdtDdlEmitter.statements TransferCanaryFixtures.renameSourceContract |> Render.toText)
+                    do! Deploy.executeBatch src
+                            "INSERT INTO [dbo].[RP_XFER_CUSTOMER] ([ID],[EMAIL]) VALUES (1, N'alice@x'), (2, N'bob@x');"
+                    return!
+                        fixture.WithEphemeralDatabase "XferRenameSink" (fun sink _ ->
+                            task {
+                                do! Deploy.executeBatch sink (SsdtDdlEmitter.statements TransferCanaryFixtures.renameSinkContract |> Render.toText)
+
+                                let! reportR =
+                                    Transfer.runWithRenames Transfer.Execute true src sink
+                                        TransferCanaryFixtures.renameSourceContract
+                                        TransferCanaryFixtures.renameSinkContract
+                                let _ = TransferCanaryFixtures.value reportR
+
+                                // The renamed CONTACT column carries the source's EMAIL values —
+                                // re-pointed by the rename map (identity), not lost to NULL.
+                                let! c1 = TransferCanaryFixtures.scalarStr sink "SELECT [CONTACT] FROM [dbo].[RP_XFER_CUSTOMER] WHERE [ID]=1;"
+                                Assert.Equal("alice@x", c1)
+                                let! c2 = TransferCanaryFixtures.scalarStr sink "SELECT [CONTACT] FROM [dbo].[RP_XFER_CUSTOMER] WHERE [ID]=2;"
+                                Assert.Equal("bob@x", c2)
+                                let! n = TransferCanaryFixtures.countRows sink "[dbo].[RP_XFER_CUSTOMER]"
+                                Assert.Equal(2, n)
+                            })
                 }))
 
     // §5.2 Slice E — the data adjunction for AssignedBySink (sink-minted keys).

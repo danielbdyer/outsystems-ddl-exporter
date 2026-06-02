@@ -325,6 +325,7 @@ module Transfer =
         (sink: SqlConnection)
         (catalog: Catalog)
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
+        (ingestion: (Catalog * Map<Name, Name>) option)
         : Task<Result<TransferReport>> =
         task {
             // Wave-3 slice 3.1 — CDC pre-flight gate. Only an Execute run that
@@ -353,7 +354,19 @@ module Transfer =
             | Ok () ->
             let topoLineage : Lineage<TopologicalOrder> = TopologicalOrderPass.runWith TreatAsCycle catalog
             let topo = topoLineage.Value
-            let! rows = Ingestion.collectInOrder source catalog topo
+            // 6.B.2 — RefactorLog-aware ingestion. With a rename context,
+            // ingest with the SOURCE contract (old physical columns) and
+            // re-point each row's values onto the sink's names (by SsKey,
+            // A1-stable) before plan/write, which use `catalog` (the sink
+            // contract B). With no rename context, source and sink share the
+            // schema and ingestion uses `catalog` directly (byte-identical).
+            let ingestCatalog = match ingestion with Some (c, _) -> c | None -> catalog
+            let! rawRows = Ingestion.collectInOrder source ingestCatalog topo
+            let rows =
+                match ingestion with
+                | Some (_, renameMap) when not (Map.isEmpty renameMap) ->
+                    rawRows |> Map.map (fun _ rs -> RenameProjection.repointRows renameMap rs)
+                | _ -> rawRows
             let! reconciled = reconcileAgainstSink sink catalog reconciliation rows
             let reconciledKinds = reconciliation |> Map.toSeq |> Seq.map fst |> Set.ofSeq
             // The plan-build is the ONE OperatorIntent Insertion site —
@@ -395,7 +408,34 @@ module Transfer =
         (sink: SqlConnection)
         (catalog: Catalog)
         : Task<Result<TransferReport>> =
-        runCore mode allowCdc source sink catalog Map.empty
+        runCore mode allowCdc source sink catalog Map.empty None
+
+    /// 6.B.2 — RefactorLog-aware Transfer. The source is at schema A
+    /// (`sourceContract`); the sink is at schema B (`sinkContract`). A rename
+    /// (table or column) means the two contracts differ on physical
+    /// coordinates while the SsKeys are stable (A1). This ingests with the
+    /// source contract, re-points every row's values onto the sink's names via
+    /// the A→B `CatalogDiff` attribute renames (identity-matched, never
+    /// ordinal), and writes against the sink contract. A no-rename pair (A = B
+    /// modulo renames) is byte-identical to `run`. Straight load (no
+    /// reconciliation); the reconcile + rename combination is the follow-on.
+    let runWithRenames
+        (mode: Mode)
+        (allowCdc: bool)
+        (source: SqlConnection)
+        (sink: SqlConnection)
+        (sourceContract: Catalog)
+        (sinkContract: Catalog)
+        : Task<Result<TransferReport>> =
+        task {
+            match CatalogDiff.between sourceContract sinkContract with
+            | Error e ->
+                return Result.failureOf (ValidationError.create "transfer.renameDiffFailed" (sprintf "%A" e))
+            | Ok diff ->
+                let renameMap =
+                    RenameProjection.renames diff |> RenameProjection.renameMap
+                return! runCore mode allowCdc source sink sinkContract Map.empty (Some (sourceContract, renameMap))
+        }
 
     /// Run a *reconciling* Transfer — the operator's headline case
     /// (Dev→UAT User re-key). `reconciliation` names, per kind, how its
@@ -412,7 +452,7 @@ module Transfer =
         (catalog: Catalog)
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
         : Task<Result<TransferReport>> =
-        runCore mode allowCdc source sink catalog reconciliation
+        runCore mode allowCdc source sink catalog reconciliation None
 
     /// Slice 4.2 — drive a Transfer through the `TransferConnections`
     /// apparatus instead of caller-opened connections. Opens both
@@ -450,7 +490,7 @@ module Transfer =
                         match resolveReconciliation contract with
                         | Error es -> return Result.failure es
                         | Ok reconciliation ->
-                            return! runCore mode allowCdc source sink contract reconciliation
+                            return! runCore mode allowCdc source sink contract reconciliation None
         }
 
     // -- 6.A.1: the drop-set is fail-loud, not exit-0 -----------------------

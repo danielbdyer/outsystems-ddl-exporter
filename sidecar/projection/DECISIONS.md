@@ -20573,3 +20573,17 @@ capability.
 **Verification.** Fast pool green (2649 / 207 skipped / 0; +10). Migrate + transfer Docker canaries green (20/20). Lint Rule 28 = 0 violations.
 
 **Cross-references:** `EXECUTION_PLAN.md` §III Wave 6.A.13 / 6.B.1 / 6.B.2; `src/Projection.Pipeline/MigrationRun.fs` (CDC gate); `src/Projection.Pipeline/Preflight.fs`; `src/Projection.Pipeline/RenameProjection.fs`. The 6.B.2 `TransferConnections` wiring and 6.C (spanning: connection/permission pre-flight, transactional transfer) are the next survey-independent frontier.
+
+## 2026-06-02 — Wave 6.B.2 completed: RefactorLog-aware Transfer wired end-to-end
+
+**Resolved (code).** The 6.B.2 follow-on (the `TransferConnections`-style wiring named in the prior entry) is done — the rename re-point now threads through a real Transfer, not just the pure `RenameProjection` core.
+
+- **`Transfer.runWithRenames mode allowCdc source sink sourceContract sinkContract`.** The source is at schema A, the sink at schema B; a rename (table/column) means the two contracts differ on physical coordinates while the SsKeys are stable (A1). It computes the rename map from `CatalogDiff.between sourceContract sinkContract` (`RenameProjection.renames`), then drives the existing `runCore` with an **ingestion override**: `runCore` gained an optional `(ingestContract, renameMap)` parameter — when present, it ingests with the SOURCE contract (old physical columns, rows keyed by the source's logical names), re-points each row's values onto the sink's names via `RenameProjection.repointRows` (identity-matched, never ordinal), and builds/writes the plan against the sink contract (new physical columns). When absent (the three existing entry points pass `None`), behavior is byte-identical to before.
+- **Why authored contracts, not ReadSide round-trips.** The rename map requires a `CatalogDiff` whose attribute SsKeys are STABLE across the rename (so it's a `Renamed` record, not Removed+Added). `ReadSide` synthesizes name-derived SsKeys, which would not thread a rename (the 6.A.7 instability) — so the rename-aware path consumes the operator's authored / persisted-identity contracts (the migrate/refactorlog A and B), exactly where the rename is known.
+- **Scope.** Straight load (no reconciliation); the reconcile + rename combination remains the follow-on. Cyclic/deferred-FK loads thread the same re-point (the rows are re-keyed before plan-build).
+
+**Witnesses.** `TransferCanaryTests` (+1 Docker — `transfer: a renamed column is re-pointed by the rename map, not matched by ordinal`): deploy A (EMAIL) to the source, B (CONTACT) to the sink, seed source, `runWithRenames`, assert the sink's renamed CONTACT column carries the source EMAIL values (not NULL). Pairs with the 5 pure `RenameProjectionTests`.
+
+**Verification.** Fast pool green (2649 / 207 skipped / 0). All transfer Docker canaries green (15/15, incl. the existing ones under the `runCore` ingestion-param change). Lint Rule 28 = 0 violations.
+
+**Cross-references:** `EXECUTION_PLAN.md` §III Wave 6.B.2; `src/Projection.Pipeline/TransferRun.fs` (`runWithRenames` + `runCore` ingestion override); `src/Projection.Pipeline/RenameProjection.fs`. 6.B is now fully closed; 6.C (spanning: connection/permission pre-flight, transactional transfer) is the next frontier — though 6.C.1/6.C.2 lean survey/PROD-gated.
