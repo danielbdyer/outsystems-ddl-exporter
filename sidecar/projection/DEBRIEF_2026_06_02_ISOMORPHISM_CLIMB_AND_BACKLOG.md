@@ -342,9 +342,23 @@ This cluster is the structural heart of the L2/L3 climb. **C1 is the centerpiece
 > channel. 7 emitter witnesses in `SchemaMigrationEmitterTests.fs` (incl. a
 > render-to-T-SQL assertion on the FK-add path). `migrate A B` now produces a
 > real minimum-viable ALTER for an added FK/index/sequence instead of failing
-> at verify. **Remaining reach:** the destructive cases under an explicit
-> `--allow-drops` (DROP CONSTRAINT / DROP INDEX / DROP SEQUENCE) and `ALTER
-> SEQUENCE` for a reshaped sequence — the next follow-on.
+> at verify.
+>
+> **STATUS — destructive emission LANDED 2026-06-02 (under `--allow-drops`).**
+> `SchemaMigrationEmitter.emitWith allowDrops` now emits the destructive DDL the
+> operator accepted: **DROP COLUMN** (new `AlterTableDropColumn`), **DROP
+> CONSTRAINT** (new `AlterTableDropConstraint`, for a removed FK + the DROP leg
+> of an FK reshape), **DROP INDEX** (new `DropIndex`, for a removed index + the
+> DROP leg of an index reshape), **DROP SEQUENCE** (new `DropSequence`, removed +
+> reshape DROP leg). Reshapes are DROP-then-recreate (FK: drop+ADD; index:
+> drop+CREATE; sequence: drop+CREATE — value-preserving `ALTER SEQUENCE` is a
+> noted refinement). With `allowDrops=false` (the default) every drop still
+> refuses fail-loud (the gate holds). `MigrationRun.preview` threads `allowDrops`
+> into `emitWith` so `migrate --allow-drops` actually emits them. 7 destructive
+> witnesses in `SchemaMigrationEmitterTests.fs` (each render-asserted for DROP
+> COLUMN/CONSTRAINT/INDEX/SEQUENCE). The new-variant blast radius is the same 4
+> sites as `AlterTableAddColumn` (Statement / ScriptDomBuild / Deploy /
+> DacpacEmitter).
 
 - **Totality:** T-I (round-trip faithfulness) on Schema + Time; the forcing
   instance for L3 `migrate`.
@@ -477,12 +491,21 @@ durable. This is the Schema + Time axes reaching L2-faithful and L3-composed.
 > place to B, reads B' back, and reports VERIFIED / refused (the live square,
 > T16). Smoke-verified without a DB: R6 refusal → exit 7, missing args → exit 2,
 > read-fail → exit 6, flag-order independence. Live execution is covered by the
-> existing Docker `MigrationCanaryTests` (`executeFromLive`). **Shape note:** in
-> place over one `--conn` (the sink at state A) — the cross-substrate
-> `--source-conn` data-load form maps to `executeWithData` and is a follow-on.
-> **A2 permission pre-flight wiring** into this path is the survey-gated
-> follow-on (the gate + grant probe exist in `Preflight`; threading planned
-> writes + the object-scope grant waits on survey P1).
+> existing Docker `MigrationCanaryTests` (`execute` / `executeWithData`).
+>
+> **STATUS — A2 permission gate WIRED + cross-substrate form LANDED 2026-06-02.**
+> The in-place executor now reads state A live, **previews to derive the planned
+> writes** (`plannedWritesOf` maps each schema statement to its sink write), and
+> runs the **A1 connection + A2 permission pre-flights** (`migratePreflights`:
+> `captureGrantEvidence` + `permissionPreflight`) before any mutation, then
+> `MigrationRun.execute`. A2's grant capture is database-scope (object-scope is
+> the survey-gated P1 refinement). **The cross-substrate data-load form**
+> (`runMigrateWithData`) now exists: `migrate --to <modelB> --sink-conn <ref>
+> --source-conn <ref> --execute [--allow-drops] [--allow-cdc]` evolves the sink
+> A→B then transfers rows from the source over contract B via
+> `MigrationRun.executeWithData` (the data leg runs only if the schema verified).
+> Straight load today; the `--reconcile` / `--user-map` re-key forms are the
+> follow-on (the `transfer` verb already carries that machinery).
 
 - **Scope.** Today `migrate --from --to [--allow-drops]` is a **dry-run plan
   emitter** from two JSON models (`Program.fs:803, 902-904`). The live square

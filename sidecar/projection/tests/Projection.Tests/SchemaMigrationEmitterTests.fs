@@ -221,3 +221,74 @@ let ``C1 emit: a changed index refuses fail-loud (migration.unsupportedIndexChan
 let ``C1 emit: a dropped sequence refuses fail-loud (migration.destructiveSequenceDrop)`` () =
     let _, entries = migrationBetween (catalogOf [ customer; order; country ] [ orderNumberSeq ]) (catalogOf [ customer; order; country ] [])
     Assert.True(hasError "migration.destructiveSequenceDrop" entries)
+
+// ---------------------------------------------------------------------------
+// C1 destructive follow-on — under --allow-drops the emitter emits the
+// destructive DDL (DROP COLUMN/CONSTRAINT/INDEX/SEQUENCE + DROP-then-recreate
+// for FK/index/sequence reshapes) instead of refusing. Without the flag the
+// existing refusals stand (covered above).
+// ---------------------------------------------------------------------------
+
+let private dropsBetween (source: Catalog) (target: Catalog) : Statement list * DiagnosticEntry list =
+    let m = SchemaMigrationEmitter.emitWith true (CatalogDiff.between source target |> mustOk)
+    m.Value, m.Entries
+
+let private noError (entries: DiagnosticEntry list) =
+    Assert.False(entries |> List.exists (fun e -> e.Severity = DiagnosticSeverity.Error))
+
+[<Fact>]
+let ``C1 drops: a removed FK emits ALTER TABLE DROP CONSTRAINT (allow-drops)`` () =
+    let stmts, entries = dropsBetween (catalogOf [ customer; order; country ] []) (catalogOf [ customer; orderNoRef; country ] [])
+    Assert.True(stmts |> List.exists (function Statement.AlterTableDropConstraint _ -> true | _ -> false))
+    noError entries
+    let sql = ScriptDomGenerate.toText (Seq.ofList stmts)
+    Assert.Contains("DROP CONSTRAINT", sql)
+
+[<Fact>]
+let ``C1 drops: a removed index emits DROP INDEX (allow-drops)`` () =
+    let a = catalogOf [ { customer with Indexes = [ customerNameIdx ] }; order; country ] []
+    let b = catalogOf [ customer; order; country ] []
+    let stmts, entries = dropsBetween a b
+    Assert.True(stmts |> List.exists (function Statement.DropIndex _ -> true | _ -> false))
+    noError entries
+    let sql = ScriptDomGenerate.toText (Seq.ofList stmts)
+    Assert.Contains("DROP INDEX", sql)
+
+[<Fact>]
+let ``C1 drops: a removed sequence emits DROP SEQUENCE (allow-drops)`` () =
+    let stmts, entries = dropsBetween (catalogOf [ customer; order; country ] [ orderNumberSeq ]) (catalogOf [ customer; order; country ] [])
+    Assert.True(stmts |> List.exists (function Statement.DropSequence _ -> true | _ -> false))
+    noError entries
+    let sql = ScriptDomGenerate.toText (Seq.ofList stmts)
+    Assert.Contains("DROP SEQUENCE", sql)
+
+[<Fact>]
+let ``C1 drops: a dropped column emits ALTER TABLE DROP COLUMN (allow-drops)`` () =
+    let customerNoTenant =
+        { customer with Attributes = customer.Attributes |> List.filter (fun a -> a.SsKey <> customerTenantKey) }
+    let stmts, entries = dropsBetween (catalogOf [ customer; order; country ] []) (catalogOf [ customerNoTenant; order; country ] [])
+    Assert.True(stmts |> List.exists (function Statement.AlterTableDropColumn _ -> true | _ -> false))
+    noError entries
+    let sql = ScriptDomGenerate.toText (Seq.ofList stmts)
+    Assert.Contains("DROP COLUMN", sql)
+
+[<Fact>]
+let ``C1 drops: an index reshape emits DROP INDEX + CREATE INDEX (allow-drops)`` () =
+    let a = catalogOf [ { customer with Indexes = [ { customerNameIdx with Uniqueness = NotUnique } ] }; order; country ] []
+    let b = catalogOf [ { customer with Indexes = [ customerNameIdx ] }; order; country ] []
+    let stmts, _ = dropsBetween a b
+    Assert.True(stmts |> List.exists (function Statement.DropIndex _ -> true | _ -> false))
+    Assert.True(stmts |> List.exists (function Statement.CreateIndex _ -> true | _ -> false))
+
+[<Fact>]
+let ``C1 drops: a sequence reshape emits DROP SEQUENCE + CREATE SEQUENCE (allow-drops)`` () =
+    let a = catalogOf [ customer; order; country ] [ orderNumberSeq ]
+    let b = catalogOf [ customer; order; country ] [ { orderNumberSeq with Increment = Some 10m } ]
+    let stmts, _ = dropsBetween a b
+    Assert.True(stmts |> List.exists (function Statement.DropSequence _ -> true | _ -> false))
+    Assert.True(stmts |> List.exists (function Statement.CreateSequence _ -> true | _ -> false))
+
+[<Fact>]
+let ``C1 drops: without --allow-drops a removed FK still refuses (the gate holds)`` () =
+    let _, entries = migrationBetween (catalogOf [ customer; order; country ] []) (catalogOf [ customer; orderNoRef; country ] [])
+    Assert.True(hasError "migration.destructiveReferenceDrop" entries)

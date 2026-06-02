@@ -369,3 +369,22 @@ type Statement =
     /// `AlterTableAddTableElementStatement` carrying one
     /// `ForeignKeyConstraintDefinition` (reusing `foreignKeyConstraint`).
     | AlterTableAddForeignKey of table: TableId * fk: ForeignKeyDef
+    /// C1 destructive follow-on (gated by `migrate --allow-drops`) —
+    /// `ALTER TABLE <table> DROP COLUMN <col>`. ScriptDom builds via
+    /// `AlterTableDropTableElementStatement` with `TableElementType.Column`.
+    | AlterTableDropColumn of table: TableId * columnName: string
+    /// C1 destructive follow-on (gated by `migrate --allow-drops`) —
+    /// `ALTER TABLE <table> DROP CONSTRAINT <fk>`. ScriptDom builds via
+    /// `AlterTableDropTableElementStatement` with `TableElementType.Constraint`.
+    /// Used for a removed FK and (with a re-ADD) a non-trust FK reshape.
+    | AlterTableDropConstraint of table: TableId * constraintName: string
+    /// C1 destructive follow-on (gated by `migrate --allow-drops`) —
+    /// `DROP INDEX <name> ON <table>`. ScriptDom builds via `DropIndexStatement`.
+    /// Used for a removed index and (with a re-CREATE) an index reshape.
+    | DropIndex of table: TableId * indexName: string
+    /// C1 destructive follow-on (gated by `migrate --allow-drops`) —
+    /// `DROP SEQUENCE <schema>.<name>`. ScriptDom builds via
+    /// `DropSequenceStatement`. Used for a removed sequence and (with a
+    /// re-CREATE) a sequence reshape (value-preserving `ALTER SEQUENCE` is a
+    /// noted refinement).
+    | DropSequence of schema: string * name: string

@@ -103,7 +103,12 @@ module MigrationRun =
             if not (Migration.isSafe plan) then
                 Error (RefusedByViolations plan.Violations)
             else
-                let schema = SchemaMigrationEmitter.emit plan.Diff
+                // Thread `allowDrops` so the emitter emits the destructive DDL
+                // (DROP COLUMN/CONSTRAINT/INDEX/SEQUENCE + reshape DROP+recreate)
+                // the operator accepted — `Migration.plan` already cleared the
+                // matching violations, so without this the emitter would still
+                // refuse them and `migrate --allow-drops` could not proceed.
+                let schema = SchemaMigrationEmitter.emitWith allowDrops plan.Diff
                 let schemaErrors = Diagnostics.entriesAt DiagnosticSeverity.Error schema
                 if not (List.isEmpty schemaErrors) then
                     Error (RefusedBySchemaErrors schemaErrors)

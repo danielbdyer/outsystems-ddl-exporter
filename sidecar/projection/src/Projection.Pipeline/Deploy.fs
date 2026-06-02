@@ -813,11 +813,13 @@ module Deploy =
                     // any stale bulk state before executing.
                     do! flushBulk ()
                     appendDdl s
-                | AlterTableAddColumn _ | AlterTableAlterColumn _ | AlterTableAddForeignKey _ ->
+                | AlterTableAddColumn _ | AlterTableAlterColumn _ | AlterTableAddForeignKey _
+                | AlterTableDropColumn _ | AlterTableDropConstraint _ | DropIndex _ | DropSequence _ ->
                     // 6.A.12 + C1: minimum-viable-touch migration DDL (ALTER
-                    // TABLE ADD / ALTER COLUMN; ADD CONSTRAINT FOREIGN KEY);
-                    // same realization shape as the other DDL arms — flush
-                    // pending bulk inserts, then route through Render.toSql.
+                    // TABLE ADD / ALTER / DROP COLUMN; ADD / DROP CONSTRAINT;
+                    // DROP INDEX / SEQUENCE) — same realization shape as the
+                    // other DDL arms — flush pending bulk inserts, then route
+                    // through Render.toSql.
                     do! flushBulk ()
                     appendDdl s
                 | InsertRow (table, values) ->

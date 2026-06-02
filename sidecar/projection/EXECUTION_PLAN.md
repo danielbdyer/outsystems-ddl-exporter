@@ -1042,7 +1042,11 @@ states (debrief **G1-ref**, a deliberate modeling pass deferred from F#-audit Sl
 > `CREATE INDEX`, added sequence → `CREATE SEQUENCE`, Trust-only FK change → the
 > WITH NOCHECK two-step; destructive/unsupported changes refuse fail-loud. So
 > `migrate` now emits a real minimum-viable ALTER for an added FK/index/sequence.
-> Remaining: the destructive cases under `--allow-drops` + `ALTER SEQUENCE`.
+> **Destructive emission LANDED 2026-06-02 (under `--allow-drops`):** DROP COLUMN
+> / DROP CONSTRAINT / DROP INDEX / DROP SEQUENCE (new variants) + reshape
+> DROP-then-recreate; `MigrationRun.preview` threads `allowDrops` into
+> `emitWith`. With the flag off, every drop still refuses. Value-preserving
+> `ALTER SEQUENCE` (vs DROP+CREATE for a reshape) is the noted refinement.
 - **Gap (red-team Time #1/2):** `replayTo` is a snapshot *fetch*, not a `fold applyDiff`; `applyDiff` does not exist;
   `applyDiff (between A B) A = B` is unproven. The Time axis is a store, not an evolution algebra.
 - **First slice:** define `CatalogDiff.applyDiff : Catalog -> CatalogDiff -> Catalog` (the `between` peer; H-007),
@@ -1123,11 +1127,12 @@ states (debrief **G1-ref**, a deliberate modeling pass deferred from F#-audit Sl
 ##### 6.D.1 — `migrate` orchestrator (the L3 bullseye) — **LANDED 2026-06-01 (composition + durable loop + LIVE execution on SQL Server)**
 > **B1 LANDED 2026-06-02 — the live verb is operator-reachable.**
 > `projection migrate --to <modelB.json> --conn <ref> --execute [--allow-drops]
-> [--allow-cdc]` (`runMigrateExecute`) drives `MigrationRun.executeFromLive`,
-> R6-gated (`PROJECTION_ALLOW_EXECUTE=1`) with the A1 connection pre-flight
-> before any mutation. The cross-substrate `--source-conn` data-load form
-> (`executeWithData`) + the A2 permission-pre-flight wiring are the survey-gated
-> follow-ons.
+> [--allow-cdc]` (`runMigrateExecute`) drives `MigrationRun.execute`, R6-gated
+> (`PROJECTION_ALLOW_EXECUTE=1`) with the **A1 connection + A2 permission**
+> pre-flights before any mutation. **The cross-substrate data-load form**
+> (`runMigrateWithData`, `--sink-conn` + `--source-conn`) LANDED 2026-06-02 via
+> `executeWithData` (straight load; `--reconcile` re-key is the follow-on). A2's
+> object-scope grant refinement remains survey-gated (P1).
 - **Gap (closed):** there was no single orchestrator — the operator manually sequenced five verbs, and renames
   never reached the rename channel. "Nearly one command" was five commands with a seam.
 - **Shipped — the composition:** `Migration` (`Projection.Core/Migration.fs`) + `MigrationRun`
