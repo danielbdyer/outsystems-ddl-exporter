@@ -9,12 +9,21 @@
 > witnessed; G3 — residual narrowed to `IndexOptionsUnreflected`), and **F1+F2** (the
 > unified 3-axis decision adjunction witness — nullability + uniqueness + FK-trust in
 > one overlay round-trip; G2/G12). North-Star §5 criteria 2, 3, 5 are met. **What
-> remains** (each named, none on the silent-corruption path): **G14** (`Reference`
-> illegal-state modeling — hygiene; no illegal state is produced); **H1** (the
-> speculative-optics cluster — correctly parked at defer-with-trigger until
-> cutover+1); **J1** (51-label perf canary — low-priority enabler); **C2/C3** +
-> **A3** (Lifecycle operationalization / atomic-resumable — distinct clusters,
-> the latter survey-*dependent* / PROD-deferred). See each cluster's STATUS block.
+> remains** (each named, none on the silent-corruption path): **H1**/**G18** (the
+> speculative-optics cluster — parked at defer-with-trigger until cutover+1);
+> **J1**/**G20** (51-label perf canary — low-priority enabler); **A3**/**G6**
+> (atomic-resumable transfer — survey-*dependent* / PROD-deferred); **G19** (the
+> physical-comparison VO lift — deferred-with-trigger).
+>
+> **G-series sweep (G1–G20, reconciled to HEAD).** The fidelity ledger is now
+> almost entirely closed. **Closed this session:** G3 (E1), G4 (E2), G12 (F2), G13
+> (D1/D2), G14 (bounded guard). **Closed earlier but stale in the ledger (now
+> reconciled):** G1 (C1), G2/G5/G7/G8 (F1/F2 + the wired spanning pre-flights + B1
+> `--execute`), G9/G10/G11 (P6 real clock + 6.H.4 displacement-manifest + 6.H.3
+> compose-fold). **Already-closed refusals:** G15/G16/G17. **Deferred-by-design:**
+> G6 (A3, PROD-empty), G18 (optics, cutover+1), G19 (VO lift, trigger), G20 (J1).
+> Net: **17 of 20 closed; 3 deferred-with-trigger; 0 open on the survey-independent
+> faithfulness path.**
 >
 > **Status:** canonical for this moment (HEAD `307ef65`). A standalone debrief +
 > backlog for the L1→L2→L3 climb toward the Total Projection (`NORTH_STAR.md`).
@@ -167,19 +176,19 @@ the "closing slice" points into §3.
 | # | Gap | Location | Axis | Ladder today | Refusal / erasure | Closing slice |
 |---|---|---|---|---|---|---|
 | G1 | `CatalogDiff` captured surface **excludes references, FKs, indexes, modality, module structure, sequences** — they ride through `applyDiff` unchanged | `CatalogDiff.fs:380-388` | Schema, Time | L2 partial (column-shape only) | structural — round-trip law witnessed only on captured axes | **C1** (the widening) |
-| G2 | FK-trust (`IsNotTrusted`) is **carried faithfully** through the round-trip (recovered + reproduced as NOCHECK + witnessed by F2), per F1's option (b) — not gated, since no fixture demands the refusal | `ReadSide.fs:1075` | Schema, Decision | ✅ **CLOSED** (F1/F2) on the Decision plane — `Reference` illegal-state modeling (G14) is the remaining hygiene | none (carry, not gate) | **G1-ref** (modeling only) |
+| G2 | FK-trust (`IsNotTrusted`) is **carried faithfully** through the round-trip (recovered + reproduced as NOCHECK + witnessed by F2), per F1's option (b) — not gated, since no fixture demands the refusal | `ReadSide.fs:1075` | Schema, Decision | ✅ **CLOSED** (F1/F2 Decision plane; G14 illegal-state guard landed) | none (carry, not gate) | *(closed)* |
 | G3 | Non-PK index **structure** read, reconstructed (`attachIndexes`), and now **compared** (`PhysicalSchema.Indexes`: owner + name + uniqueness + ordered key columns) | `PhysicalSchema.fs` `PhysicalIndex`; `ReadSide.readIndexes` | Schema | ✅ **CLOSED** (E1) — round-trips emit/deploy/ReadSide (witness `IndexRoundtripTests`); the prior `IndexesUnreflected` retired | narrower residual: index *options* (filter / included / storage) → `IndexOptionsUnreflected` (OpenGap) | *(structure closed; options residual named)* |
 | G4 | Cross-schema FK rows whose `SCHEMA_NAME()` is NULL (dropped schema / missing `VIEW DEFINITION` grant) — was an opaque `GetString` cast failure (live `readSchemaCombined`) / blank-and-drop (`readForeignKeys`) | `ReadSide.fs` `ForeignKeyReadback` | Schema | ✅ **CLOSED** (E2) — both FK readers route through the pure `ForeignKeyReadback.classify`, which emits a NAMED diagnostic + skip on an unreadable coordinate | named diagnostic, not silent / opaque | *(closed)* |
-| G5 | T-VI **Permissions** — write-denied sink transfers **zero rows, exits clean** | (no axis) | spanning | unbuilt | none | **A2** |
-| G6 | T-VI **Transactionality** — mid-transfer failure leaves a **half-populated target**; no atomic boundary, idempotent retry, or rollback | (no axis) | spanning | unbuilt | none | **A3** |
-| G7 | T-VI **Connection pre-flight** — no "both endpoints live + credentialed" check before mutation | (no axis) | spanning | unbuilt | none | **A1** |
-| G8 | `migrate` CLI verb is **plan-only (dry-run)**; live `MigrationRun.execute` is test-driven only — Promise 8 not operator-reachable | `Program.fs:803, 902-904` vs `MigrationRun.fs:271-334` | L3 face | L3 in tests, not in CLI | n/a | **B1** |
-| G9 | Refactorlog `ChangeDateTime` **pinned to a constant**; episode clock not threaded; refactorlog not accumulated against prior | `WAVE_6_MORPHOLOGY.md:258-261` (F6) | Time | L2 partial | n/a | **C3** |
-| G10 | Change-manifest records **state + axis, not displacement** — no per-move `‖δ‖` by channel, no per-run tolerance residual, no `AppliedTransforms` outcome, no CDC capture series | `ChangeManifest.fs`; `WAVE_6_MORPHOLOGY.md:253-257` (F5) | Time, meta | L2 partial | n/a | **C4** |
-| G11 | No `CatalogDiff.compose` consumer — cross-episode `δ₁ + δ₂` fold exists (`CatalogDiff.fs:547`) but is **not wired** into multi-episode recombination | `CatalogDiff.fs:547`; `WAVE_6_MORPHOLOGY.md:237-239` (F3) | Time | L2 surface present, unconsumed | n/a | **C2** |
+| G5 | T-VI **Permissions** — a write-denied sink is refused before mutation | `Preflight.permissionPreflight`; `TransferRun.spanningPreflight`; `Program.fs:1222` | spanning | ✅ **CLOSED** (A2, wired into transfer + migrate `--execute`; refuses with `transfer.insufficientGrant`) — only the live grant-matrix probe vs a real least-privilege account is survey-gated | named refusal | *(closed; grant probe survey-gated)* |
+| G6 | T-VI **Transactionality** — mid-transfer failure leaves a **half-populated target**; no atomic boundary, idempotent retry, or rollback | (no axis) | spanning | ◑ **DEFERRED** (A3) — survey-dependent / PROD-empty per the premise re-prioritization (`WAVE_6_ONTOLOGY.md` §10); not on the survey-independent path | none yet | **A3** (trigger: PROD gains data) |
+| G7 | T-VI **Connection pre-flight** — "both endpoints live + credentialed" before mutation | `Preflight.connectionPreflight`; `TransferRun.spanningPreflight`; `Program.fs:1209/1440` | spanning | ✅ **CLOSED** (A1, wired into transfer + migrate `--execute`) | named refusal | *(closed)* |
+| G8 | `migrate` CLI verb live `--execute` leg (against a deployed DB) | `Program.fs:1051` (the `--execute` arm) | L3 face | ✅ **CLOSED** (B1) — the live square is operator-reachable, R6-gated | n/a | *(closed)* |
+| G9 | Refactorlog `ChangeDateTime` carries the **episode's real `At`** | `RefactorLogRender.fs:17-25` | Time | ✅ **CLOSED** (P6/C3) — the real-clock path threads the episode clock; the pinned `2000-01-01` is retired to a no-production-caller legacy overload | n/a | *(closed)* |
+| G10 | Change-manifest records **displacement** — per-channel move counts (`Channels`), schema norm (`SchemaNorm = CatalogDiff.norm`), refactorlog xref, CDC capture count | `ChangeManifest.fs:13-30` | Time, meta | ✅ **CLOSED** (6.H.4/C4) | n/a | *(closed)* |
+| G11 | `CatalogDiff.compose` consumer — cross-episode `δ₁ + δ₂` fold | `Episode.fs:239`; `Lifecycle.fs:194` | Time | ✅ **CLOSED** (6.H.3/C2) — both `Episode.netDiff` and `Lifecycle.netDiff` fold `CatalogDiff.compose` over the evolution chain | n/a | *(closed)* |
 | G12 | Decision adjunction — `Ingest(deploy(Project(C, overlay)))` reproduces the overlay on **all three** axes (nullability + uniqueness + FK-trust) | `CanaryRoundTripTests.fs` `E3:` | Decision | ✅ **CLOSED** (F2) — the unified compositional witness; per-axis proofs (A42 / 6.A.8 / readside-fktrust) now joined by one overlay round-trip carrying all three intents | n/a | *(closed)* |
-| G13 | Matrix generator reports **L1 presence, not L2/L3 level** — witness-present ≠ faithful drift is invisible to the machine surface | `scripts/matrix-status.sh` | meta | ✅ **CLOSED** (D1+D2, this round) — generator now reports the per-axis L1/L2/L3 ladder, derives L2 from `Tolerance.fs` `@ladder` tags (Schema=L2-partial names `IndexesUnreflected`), and is wired into CI (`verifiability-projection.yml`) with a byte-deterministic currency gate | n/a | *(closed)* |
-| G14 | `Reference` boolean tuple has **expressible illegal states** (`IsConstraintTrusted = true ∧ HasDbConstraint = false`) | `Catalog.fs:549-595` | Schema, Decision | modeling debt | typechecks-but-impossible | **G1-ref** |
+| G13 | Matrix generator reports **L1 presence, not L2/L3 level** — witness-present ≠ faithful drift is invisible to the machine surface | `scripts/matrix-status.sh` | meta | ✅ **CLOSED** (D1+D2, this round) — generator now reports the per-axis L1/L2/L3 ladder, derives L2 from `Tolerance.fs` `@ladder` tags (Schema=L2-partial names `IndexOptionsUnreflected`), and is wired into CI (`verifiability-projection.yml`) with a byte-deterministic currency gate | n/a | *(closed)* |
+| G14 | `Reference` boolean pair expressed the illegal quadrant `(HasDbConstraint=false ∧ IsConstraintTrusted=false)` (untrusted without a constraint) | `Catalog.fs` `Reference.withConstraintState` | Schema, Decision | ✅ **CLOSED** (bounded guard) — `isConstraintStateConsistent` + the normalizing `withConstraintState` (every producer routes through it); witness `ReferenceConstraintStateTests` | normalized to vacuous-trust | *(closed; full DU collapse deferred)* |
 | G15 | Phase-2 deferred-FK UPDATE keys on **source PK** — for `AssignedBySink` the sink minted a fresh surrogate, so the WHERE matches zero rows | `TransferRun.fs:77-92` | Data | L2 (refused at gate 6.A.2) | **named refusal** (`TransferRun.fs:250-256`) | *(closed — documented for completeness)* |
 | G16 | `AssignedKey` is single-string — composite surrogate truncated to first leg | `SurrogateRemap.fs:34`; `TransferRun.fs:227` | Data | L2 (refused at gate 6.A.3) | **named refusal** (`TransferRun.fs:258-264`) | *(closed — documented for completeness)* |
 | G17 | FK-orphan rows silently dropped at `remapRowFks`, **after the write executes** — skip-and-diagnose, no pre-write gate | `SurrogateRemap.fs:227-228`; `TransferRun.fs:166, 196` | Data | L2 (exit-9 surfaces the drop) | skip-and-diagnose + exit-9 | *(partially closed — see A3 for the pre-write atomic boundary)* |
