@@ -787,17 +787,19 @@ Scorecard below is post-Round-6b-Wave-1.
 | Gates (AC-G) | 10 | 0 | 0 | 1 | — |
 | Provenance (AC-P) | 9 | 0 | 0 | 0 | — |
 | Data/CDC (AC-D) | 9 | 0 | 0 | 1 | — |
-| Proteins (AC-X) | 1 | 0 | 5 | 2 | — |
-| **Total (57)** | **48** | **0** | **5** | **4** | **0** |
+| Proteins (AC-X) | 2 | 0 | 5 | 1 | — |
+| **Total (57)** | **49** | **0** | **5** | **3** | **0** |
 
-*(Baseline HELD 18 → B1 25 → B2 28 → B2b 31 → R4 38 → R5 42 → R6a 46 → R6b-W1 48 (84%). CODE-ONLY 15→0; HOLLOW 9→5; NEITHER 14→4.)*
+*(Baseline HELD 18 → B1 25 → B2 28 → B2b 31 → R4 38 → R5 42 → R6a 46 → R6b-W1 48 → +X3 49 (86%). CODE-ONLY 15→0; HOLLOW 9→5; NEITHER 14→3.)*
 
-**The reading (post-Round-6b-Wave-1).** Genuinely solid (HELD) = **48 of 57 (84%)**. CODE-ONLY is empty;
-**Schema, Identity, and Provenance are fully HELD**. The remaining 9 are: **5 HOLLOW** (the protein cluster
-X1/X4/X5/X7/X8) + **4 NEITHER** (G10, D10, X3, X6). Wave 1 closed X2 (the co-wrong re-key) + G0 (mandatory
-gate composition) and BUILT the CDC-measure + full-export-store seams; **Wave 1.5** (parent integration)
-wires those seams to the CLI to close X3 (full-export `--lifecycle-store` bundle), X4 + X8 (the
-`cdcCaptureCount` measure into the migrate verb + `runCanary`). Prior text below describes the pre-Round-5 framing —
+**The reading (post-Round-6b-Wave-1 + X3).** Genuinely solid (HELD) = **49 of 57 (86%)**. CODE-ONLY is
+empty; **Schema, Identity, and Provenance are fully HELD**. The remaining 8 are: **5 HOLLOW** (the protein
+cluster X1/X4/X5/X7/X8) + **3 NEITHER** (G10, D10, X6). Wave 1 closed X2 + G0 and built the CDC-measure +
+full-export-store seams; the parent wired the store seam to the CLI to close **X3** (`full-export
+--lifecycle-store` → the publication bundle). **Handed off (preflight follow-on):** wiring the
+`cdcCaptureCount` seam into the migrate verb + `runCanary` to close **X4 + X8** (CDC=0 measured on
+idempotent redeploy — both need Docker witnesses), then Wave 2 (X5/X7/X6/D10-type) and Wave 3 (G10 + D10
+live leg). Prior text below describes the pre-Round-5 framing —
 every "correct-but-unguarded" cell has a discriminating test. The remaining gap is **6 HOLLOW (the protein
 composition cluster) + 13 NEITHER** (unbuilt mechanisms). Up from 19 (33%) at the baseline; the test-first
 pass's ~24 PASS is now well behind.
@@ -815,7 +817,7 @@ unit/harness test exercises a function in isolation that the production path nev
 - **Gates:** HELD G1, G2, G3, **G4**, G5, G6, G7, G8, **G9**, **G0** · NEITHER G10. *(Batch 2b: G1/G2/G7 wired→HELD. R6a: G4 scoped-delete arm + G9 data-aware tightening pre-flight → HELD. R6b-W1: G0 mandatory `allReporting` composition + classify → HELD. Remaining: G10 resumable/idempotent.)*
 - **Provenance:** HELD P1–P9 (all). *(R4: P4 compose-consumer + P9 manifest-fields → HELD. R5: P6 refactorlog-accumulate + real clock → HELD. Plane complete.)*
 - **Data/CDC:** HELD D1, D2, D3, D4, D5, D6, **D7**, D8, D9 · NEITHER D10. *(R5: D5 computed-exclusion + D6 representation-tolerances → HELD. R6a: D7 scoped-delete arm → HELD. Remaining: D10 wipe-and-load → Round 6b.)*
-- **Proteins:** HELD **X2** · HOLLOW X1, X4, X5, X7, X8 · NEITHER X3, X6. *(R6b-W1: X2 UAT re-key composed at the CLI call sites + discriminating canary → HELD. Seams built for X1/X3/X4/X8 — `cdcCaptureCount` measure + full-export store leg — wired to the CLI in Wave 1.5.)*
+- **Proteins:** HELD **X2**, **X3** · HOLLOW X1, X4, X5, X7, X8 · NEITHER X6. *(R6b-W1: X2 UAT re-key composed at the CLI call sites + discriminating canary → HELD. W1.5: X3 — `full-export --lifecycle-store` wired to `executeWithStore` (the bundle: prior-store diff + accumulated refactorlog + ChangeManifest + recorded episode), CLI-surface witness discriminates diff-vs-prior + reconstruction → HELD. The `cdcCaptureCount` seam still awaits its CLI wiring for X4/X8 — handed off.)*
 
 ### The HOLLOW register (5 remaining) — green tests that don't establish the criterion (the protein cluster)
 

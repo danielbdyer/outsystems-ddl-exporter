@@ -335,3 +335,54 @@ let ``slice 7: eventCounts.info >= 3 on happy path (runStart + connectionResolve
         safeRm outDir
         File.Delete configPath
         File.Delete modelPath
+
+// ----------------------------------------------------------------------
+// AC-X3 — the publication bundle is reachable from the `full-export` CLI
+// surface (the `--lifecycle-store` routing the CLI's `runFullExport` does).
+// Drives `FullExportRun.executeWithStore` under the captured LogSink writer
+// EXACTLY as `runFullExport` calls it (Some store + Timeline + Environment +
+// clock), so the test asserts the CLI-surface bundle, not a re-implemented
+// mirror. The DISCRIMINATOR is the diff-vs-prior: a second store-backed
+// export of the SAME model shows an EMPTY displacement + a 2nd episode — a
+// genesis-every-run implementation (store not read) re-emits a full
+// displacement and fails the `CatalogDiff.isEmpty` assertion.
+// ----------------------------------------------------------------------
+
+[<Fact>]
+let ``AC-X3: full-export --lifecycle-store emits the bundle, records an episode, and a re-export reconstructs prior state`` () =
+    let modelPath = writeTempJson v1MinimalFixture
+    let outDir = tempOutputDir ()
+    let configPath = writeTempConfig modelPath outDir
+    let storePath =
+        Path.Combine(Path.GetTempPath(), sprintf "x3-store-%s.json" (Guid.NewGuid().ToString("N")))
+    let env = Projection.Core.Environment.Dev
+    let tl = Timeline.create (Projection.Core.Environment.name env) |> Result.value
+    let runStore () =
+        use captured = new StringWriter()
+        LogSink.withWriter captured (fun () ->
+            FullExportRun.executeWithStore configPath None LogSink.Verbosity.Quiet Set.empty
+                (Some storePath) tl env DateTimeOffset.UtcNow)
+    try
+        // Run 1 — genesis through the store-backed CLI surface: one episode,
+        // non-empty displacement (every kind is an Add).
+        let outcome1, leg1 = runStore ()
+        Assert.Equal(0, FullExportRun.exitCode outcome1)
+        Assert.True(leg1.IsSome, "store-backed full-export must produce the bundle (store leg)")
+        Assert.Equal(1, EpisodicLifecycle.episodes leg1.Value.Chain |> List.length)
+        Assert.False(CatalogDiff.isEmpty leg1.Value.Displacement, "genesis displacement is non-empty")
+        // Run 2 — SAME model + SAME store: the prior is read, so the displacement
+        // is EMPTY and a 2nd episode lands. (Store-not-read ⇒ full re-emit ⇒ fails.)
+        let outcome2, leg2 = runStore ()
+        Assert.Equal(0, FullExportRun.exitCode outcome2)
+        Assert.True(leg2.IsSome)
+        Assert.Equal(2, EpisodicLifecycle.episodes leg2.Value.Chain |> List.length)
+        Assert.True(CatalogDiff.isEmpty leg2.Value.Displacement, "re-export of the same model is an empty displacement (diff-vs-prior)")
+        // The bundle reconstructs the latest stored state from genesis.
+        match EpisodicLifecycle.reconstructLatestSchema leg2.Value.Chain with
+        | Ok _ -> ()
+        | Error e -> Assert.Fail(sprintf "X3 bundle must reconstruct latest from genesis: %A" e)
+    finally
+        safeRm outDir
+        File.Delete configPath
+        File.Delete modelPath
+        if File.Exists storePath then File.Delete storePath

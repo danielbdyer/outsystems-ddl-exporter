@@ -26,6 +26,8 @@ type FullExportArg =
     | Verbose
     | [<AltCommandLine("-d")>] Debug
     | MuteCategory of category: string
+    | [<AltCommandLine("--store")>] LifecycleStore of path: string
+    | Env of label: string
 
     interface IArgParserTemplate with
         member this.Usage =
@@ -52,3 +54,13 @@ type FullExportArg =
                 + "| canary | summary. May be specified multiple times to mute "
                 + "several categories. Muted envelopes don't contribute to the "
                 + "§11 rollup."
+            | LifecycleStore _ ->
+                "Path to the durable LifecycleStore (the prior-emission timeline). "
+                + "When supplied (alias --store), the run loads the prior emission, "
+                + "measures the displacement, accumulates the refactorlog, emits the "
+                + "ChangeManifest, and records one new episode — the X3 publication "
+                + "bundle a downstream consumer reconstructs prior state from. Absent: "
+                + "genesis emission (byte-identical to today; no episode persisted)."
+            | Env _ ->
+                "Environment label for the recorded episode's timeline (default DEV). "
+                + "Only consulted when --lifecycle-store is supplied."

@@ -166,13 +166,44 @@ let private dumpBench (tag: string) : unit =
 /// operator-facing console output and maps the `RunOutcome` to an exit
 /// code. Per §5: NDJSON to stderr (via LogSink, inside `execute`);
 /// artifact-path narration to stdout here.
+let private parseEnvironment (defaultLabel: string) (label: string option) : Projection.Core.Environment =
+    match label with
+    | None -> Projection.Core.Environment.Named defaultLabel
+    | Some s ->
+        match s.Trim().ToUpperInvariant() with
+        | "DEV"  -> Projection.Core.Environment.Dev
+        | "QA"   -> Projection.Core.Environment.Qa
+        | "UAT"  -> Projection.Core.Environment.Uat
+        | "PROD" -> Projection.Core.Environment.Prod
+        | _      -> Projection.Core.Environment.Named (s.Trim())
+
 let private runFullExport
     (configPath: string)
     (outputOverride: string option)
     (verbosity: LogSink.Verbosity)
     (mutedCategories: Set<LogSink.Category>)
+    (storePath: string option)
+    (envLabel: string option)
     : int =
-    let outcome = FullExportRun.execute configPath outputOverride verbosity mutedCategories
+    // AC-X3 — the publication bundle. With --lifecycle-store the run reads the
+    // prior emission, measures the displacement, accumulates the refactorlog,
+    // emits the ChangeManifest, and records one new episode (the bundle a
+    // downstream SSIS consumer reconstructs prior state from). Without a store
+    // it is the genesis emission — byte-identical to before (storeLeg = None).
+    let outcome, storeLeg =
+        match storePath with
+        | Some store when not (System.String.IsNullOrWhiteSpace store) ->
+            let env = parseEnvironment "DEV" envLabel
+            match Timeline.create (Projection.Core.Environment.name env) with
+            | Error _ ->
+                // A malformed timeline name falls back to the genesis path rather
+                // than aborting the emission; the store leg is simply absent.
+                FullExportRun.execute configPath outputOverride verbosity mutedCategories, None
+            | Ok tl ->
+                let at = System.DateTimeOffset.UtcNow
+                FullExportRun.executeWithStore configPath outputOverride verbosity mutedCategories (Some store) tl env at
+        | _ ->
+            FullExportRun.execute configPath outputOverride verbosity mutedCategories, None
     match outcome with
     | FullExportRun.RunOutcome.Succeeded (report, effectiveOutput) ->
         printfn "projection: wrote %d artifact(s) to %s" report.Paths.Length effectiveOutput
@@ -180,6 +211,12 @@ let private runFullExport
         |> List.iter (fun p ->
             let info = FileInfo p
             printfn "  %s (%d bytes)" p info.Length)
+        storeLeg
+        |> Option.iter (fun leg ->
+            printfn "projection: lifecycle bundle — recorded episode (%d on timeline %s); accumulated refactorlog %d entr(ies)"
+                (EpisodicLifecycle.episodes leg.Chain |> List.length)
+                (Timeline.name (EpisodicLifecycle.timeline leg.Chain))
+                (List.length leg.AccumulatedRefactorLog))
     | FullExportRun.RunOutcome.ConfigInvalid _ ->
         // config.validationFailed envelopes already emitted by `execute`.
         ()
@@ -473,7 +510,9 @@ let private dispatchFullExport (argv: string[]) : int =
                     muteResults
                     |> List.choose (function Ok c -> Some c | Error _ -> None)
                     |> Set.ofList
-                runFullExport configPath outputOverride verbosity mutedCategories)
+                let storePath = parsed.TryGetResult LifecycleStore
+                let envLabel = parsed.TryGetResult Env
+                runFullExport configPath outputOverride verbosity mutedCategories storePath envLabel)
 
 // ----------------------------------------------------------------------
 // `transfer` (Phase 11 Slice D) — bidirectional data-load CLI verb.
@@ -540,17 +579,6 @@ let private narrateTransferReport (report: Transfer.TransferReport) : unit =
 /// apparatus's `Environment`. The four named environments resolve
 /// case-insensitively; anything else is a `Named` escape hatch; absence
 /// keeps the default role-named label.
-let private parseEnvironment (defaultLabel: string) (label: string option) : Projection.Core.Environment =
-    match label with
-    | None -> Projection.Core.Environment.Named defaultLabel
-    | Some s ->
-        match s.Trim().ToUpperInvariant() with
-        | "DEV"  -> Projection.Core.Environment.Dev
-        | "QA"   -> Projection.Core.Environment.Qa
-        | "UAT"  -> Projection.Core.Environment.Uat
-        | "PROD" -> Projection.Core.Environment.Prod
-        | _      -> Projection.Core.Environment.Named (s.Trim())
-
 let private runTransfer
     (sourceSpec: string)
     (sinkSpec: string)
