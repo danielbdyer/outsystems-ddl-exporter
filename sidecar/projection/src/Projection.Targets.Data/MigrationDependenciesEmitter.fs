@@ -220,8 +220,9 @@ module MigrationDependenciesEmitter =
                 AllColumns = orderedColumnNames k
                 PkColumns  = pkColumnNames k
                 UpdColumns = updColumns
-                Rows       = typedRows |> List.map (typedValuesToSqlLiterals deferred (writableAttributes k))
-                CdcAware   = cdcAware
+                Rows        = typedRows |> List.map (typedValuesToSqlLiterals deferred (writableAttributes k))
+                CdcAware    = cdcAware
+                DeleteScope = None
             }
         let mergeStmt = (ScriptDomBuild.buildMergeStatement args).Value
         System.String.Concat(  // LINT-ALLOW: terminal MERGE statement-terminator + GO-batch suffix on the rendered MERGE (chapter 4.1.B slice ε); segments are typed (output of `ScriptDomGenerate.generateOne` from typed AST + SQL Server's required MERGE statement-terminator + V1 batch-separator literal); same architectural shape as StaticSeedsEmitter's terminal-text boundary

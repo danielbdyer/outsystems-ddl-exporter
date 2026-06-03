@@ -558,6 +558,40 @@ module Transfer =
         : Task<Result<TransferReport>> =
         runCore mode allowCdc allowDrops source sink catalog reconciliation None
 
+    /// AC-I7 — the composed Transfer: a sprint that carries BOTH a column
+    /// rename (the source is at schema A, the sink at schema B) AND a
+    /// Dev→UAT re-key (`reconciliation`). This threads both legs through the
+    /// SINGLE `runCore` path: it derives the A→B rename map from
+    /// `CatalogDiff.between sourceContract sinkContract` (as `runWithRenames`
+    /// does) and passes the `reconciliation` map (as `runReconciling` does),
+    /// so `runCore` re-points each ingested row's values onto the sink's
+    /// names by SsKey (A1-stable, never ordinal), THEN reconciles the
+    /// re-pointed rows against the sink and re-keys every FK through the
+    /// matched remap — in that order, in one run. The two prior entrypoints
+    /// are the degenerate corners: `runWithRenames` is this with
+    /// `reconciliation = Map.empty`; `runReconciling` is this with no rename
+    /// context (A = B). A no-rename pair AND empty reconciliation collapses
+    /// to `run`. This composition is what the `runWithRenames`/`runReconciling`
+    /// site named "the follow-on."
+    let runReconcilingWithRenames
+        (mode: Mode)
+        (allowCdc: bool)
+        (source: SqlConnection)
+        (sink: SqlConnection)
+        (sourceContract: Catalog)
+        (sinkContract: Catalog)
+        (reconciliation: Map<SsKey, ReconciliationStrategy>)
+        : Task<Result<TransferReport>> =
+        task {
+            match CatalogDiff.between sourceContract sinkContract with
+            | Error e ->
+                return Result.failureOf (ValidationError.create "transfer.renameDiffFailed" (sprintf "%A" e))
+            | Ok diff ->
+                let renameMap =
+                    RenameProjection.renames diff |> RenameProjection.renameMap
+                return! runCore mode allowCdc false source sink sinkContract reconciliation (Some (sourceContract, renameMap))
+        }
+
     /// Slice 4.2 — drive a Transfer through the `TransferConnections`
     /// apparatus instead of caller-opened connections. Opens both
     /// substrates via `ConnectionResolver.openSubstrate` (D9: credentials

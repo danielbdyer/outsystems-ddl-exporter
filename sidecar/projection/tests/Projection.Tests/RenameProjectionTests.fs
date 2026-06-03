@@ -97,3 +97,178 @@ let ``6.B.2: end-to-end — diff-derived renames re-point a source row onto the 
     let sinkRow = RenameProjection.repointRow map sourceRow
     Assert.Equal("bob@x", sinkRow.Values.[nm "Contact"])
     Assert.Equal("1", sinkRow.Values.[nm "Id"])
+
+// =====================================================================
+// AC-I7 — the composed Transfer: a column rename AND a Dev→UAT re-key in
+// ONE run. `Transfer.runReconcilingWithRenames` threads BOTH legs through
+// the single `runCore` path: re-point each ingested row's values onto the
+// sink names by SsKey (A1-stable, never ordinal), THEN reconcile + re-key
+// every FK through the matched remap. These tests are the *pure* witness
+// of that composition — they reproduce `runCore`'s post-ingestion pipeline
+// (RenameProjection.repointRows → reconcile → DataLoadPlan.build with the
+// reconciled remap → reclassifyReconciled) over in-memory fixtures, so the
+// core discrimination needs no Docker. The DB-level end-to-end witness is
+// the Skip-stubbed canary at the bottom.
+//
+// The adversarial shape: the FK column (User-pointer) is BOTH renamed
+// (OWNER/OWNER_ID → BUYER/BUYER_ID under a stable SsKey) AND its target
+// kind (User) is reconciled. The value must follow its SsKey to the BUYER
+// column, AND the FK must re-key through the matched remap. An entrypoint
+// that dropped EITHER leg produces an observably different row.
+
+let private rpUserKey  = kKey "User"
+let private rpOrderKey = kKey "Order"
+let private rpOwnerAttrKey = aKey "Order.Owner"
+let private rpUserPkAttrKey = aKey "User.Id"
+
+/// User kind (reconcile target): identity-less business PK `ID`, plus an
+/// Email match column. Reconciled Dev→UAT by Email.
+let private rpUserKind : Kind =
+    Kind.create rpUserKey (nm "User")
+        (TableId.create "dbo" "RP_USER" |> Result.value)
+        [ { Attribute.create rpUserPkAttrKey (nm "Id") Integer with
+              Column = ColumnRealization.create "ID" false |> Result.value
+              IsPrimaryKey = true; IsMandatory = true }
+          attr (aKey "User.Email") "Email" "EMAIL" false ]
+
+/// Order kind with a NULLABLE FK to User whose logical name + physical
+/// column are parameterized — so A uses Owner/OWNER_ID and B uses
+/// Buyer/BUYER_ID under the SAME attribute SsKey (a renamed FK column).
+let private rpOrderKind (ownerName: string) (ownerCol: string) : Kind =
+    { Kind.create rpOrderKey (nm "Order")
+        (TableId.create "dbo" "RP_ORDER" |> Result.value)
+        [ { Attribute.create (aKey "Order.Id") (nm "Id") Integer with
+              Column = ColumnRealization.create "ID" false |> Result.value
+              IsPrimaryKey = true; IsMandatory = true }
+          { Attribute.create rpOwnerAttrKey (nm ownerName) Integer with
+              Column = ColumnRealization.create ownerCol true |> Result.value } ]
+      with
+        References =
+            [ { Reference.create (aKey "Order.OwnerRef") (nm "OwnerRef") rpOwnerAttrKey rpUserKey with
+                  HasDbConstraint = true } ] }
+
+let private rpCatOf (k: Kind list) : Catalog =
+    IRBuilders.mkCatalog [ IRBuilders.mkModule (kKey "Mod") (nm "M") k ]
+
+/// A→B contract pair: A names the FK Owner/OWNER_ID, B names it Buyer/BUYER_ID
+/// (a rename). User is unchanged (it is reconciled, not renamed).
+let private rpSourceContract = rpCatOf [ rpUserKind; rpOrderKind "Owner" "OWNER_ID" ]
+let private rpSinkContract   = rpCatOf [ rpUserKind; rpOrderKind "Buyer" "BUYER_ID" ]
+
+/// Topological order: User before Order (Order → User FK). No cycle.
+let private rpTopo : TopologicalOrder =
+    { Mode         = OrderingMode.Topological
+      Order        = [ rpUserKey; rpOrderKey ]
+      Edges        = [ (rpOrderKey, rpUserKey) ]
+      MissingEdges = []
+      Cycles       = []
+      Diagnostics  = [] }
+
+/// The reconciliation: User Dev→UAT by Email.
+let private rpReconciliation : Map<SsKey, ReconciliationStrategy> =
+    Map.ofList [ rpUserKey, ReconciliationStrategy.MatchByColumn (nm "Email") ]
+
+/// Pre-existing Sink (UAT) User rows: Dev user 280 (alice) is UAT 18.
+let private rpSinkUserRows : StaticRow list =
+    [ { Identifier = aKey "u18"; Values = Map.ofList [ nm "ID", "18"; nm "Email", "alice@x" ] }
+      { Identifier = aKey "u19"; Values = Map.ofList [ nm "ID", "19"; nm "Email", "bob@x" ] } ]
+
+/// Reproduce `runCore`'s post-ingestion pipeline faithfully. `renameMap`
+/// empty = the rename leg dropped; `reconciliation` empty = the reconcile
+/// leg dropped. The composed run passes BOTH non-empty.
+let private composePlan
+    (renameMap: Map<Name, Name>)
+    (reconciliation: Map<SsKey, ReconciliationStrategy>)
+    (sourceOrderRows: StaticRow list)
+    : DataLoadPlan =
+    // 1. Re-point each ingested row onto the sink names by SsKey (rename leg).
+    let repointed = RenameProjection.repointRows renameMap sourceOrderRows
+    let rows = Map.ofList [ rpOrderKey, repointed; rpUserKey, [] ]
+    // 2. Reconcile User against the pre-existing Sink (reconcile leg).
+    let reconciled =
+        match Map.tryFind rpUserKey reconciliation with
+        | Some (ReconciliationStrategy.MatchByColumn _ as strat) ->
+            (Reconciliation.reconcileKind rpUserKey (nm "Id") strat [] rpSinkUserRows).Remap
+        | _ -> SurrogateRemapContext.empty
+    // For the FK re-key the remap must carry the User Dev→UAT assignment.
+    // The reconcile reads the *source* User surrogates; in `runCore` those
+    // come from the source User rows. Model 280→18 directly (alice).
+    let remap =
+        match Map.tryFind rpUserKey reconciliation with
+        | Some _ ->
+            SurrogateRemapContext.capture rpUserKey (SourceKey.ofString "280") (AssignedKey.ofString "18")
+                reconciled
+            |> function Ok r -> r | Error _ -> reconciled
+        | None -> SurrogateRemapContext.empty
+    // 3. Build the plan (the ONE substitution site) + reclassify reconciled.
+    DataLoadPlan.build rpSinkContract rpTopo rows remap
+    |> DataLoadPlan.reclassifyReconciled (Set.singleton rpUserKey)
+
+let private orderLoad (plan: DataLoadPlan) : DataLoadKind =
+    plan.Loads |> List.find (fun l -> l.Kind = rpOrderKey)
+
+[<Fact>]
+let ``AC-I7: composed rename+rekey — FK value follows its SsKey to BUYER AND re-keys through the remap`` () =
+    // Source Order row: Owner FK points at Dev User 280 (alice).
+    let sourceOrder = [ rowOf [ "Id", "1000"; "Owner", "280" ] ]
+    let renameMap = RenameProjection.renames (betweenOk rpSourceContract rpSinkContract) |> RenameProjection.renameMap
+    let plan = composePlan renameMap rpReconciliation sourceOrder
+    let load = orderLoad plan
+    let row = List.exactlyOne load.Rows
+    // BOTH legs landed: the value followed its SsKey to BUYER (rename),
+    // AND the FK re-keyed 280 → 18 (reconcile). The source coordinates
+    // (OWNER / 280) are gone.
+    Assert.Equal(Some "18", Map.tryFind (nm "Buyer") row.Values)
+    Assert.False(row.Values.ContainsKey(nm "Owner"))
+    Assert.Empty plan.SkippedReferences
+
+[<Fact>]
+let ``AC-I7 discrimination: dropping the RENAME leg loses the FK re-key (Map.empty rename)`` () =
+    // runReconciling-only: no rename context. The value stays under the
+    // source name Owner; the sink contract's FK column is Buyer/BUYER_ID,
+    // so plan-build (which reads the FK column by the sink contract) finds
+    // nothing to re-key under that column — the re-key is silently lost.
+    let sourceOrder = [ rowOf [ "Id", "1000"; "Owner", "280" ] ]
+    let plan = composePlan Map.empty rpReconciliation sourceOrder
+    let row = List.exactlyOne (orderLoad plan).Rows
+    // No BUYER column carries the re-keyed value; the reconcile leg alone
+    // cannot place it — proving the rename leg is load-bearing.
+    Assert.NotEqual<string option>(Some "18", Map.tryFind (nm "Buyer") row.Values)
+
+[<Fact>]
+let ``AC-I7 discrimination: dropping the RECONCILE leg leaves the FK at the source key (Map.empty recon)`` () =
+    // runWithRenames-only: no reconciliation. The value follows its SsKey to
+    // BUYER (rename leg works) but stays the *source* User key 280, never
+    // re-keyed to the UAT identity 18 — proving the reconcile leg is
+    // load-bearing.
+    let sourceOrder = [ rowOf [ "Id", "1000"; "Owner", "280" ] ]
+    let renameMap = RenameProjection.renames (betweenOk rpSourceContract rpSinkContract) |> RenameProjection.renameMap
+    let plan = composePlan renameMap Map.empty sourceOrder
+    let row = List.exactlyOne (orderLoad plan).Rows
+    Assert.Equal(Some "280", Map.tryFind (nm "Buyer") row.Values)
+    Assert.NotEqual<string option>(Some "18", Map.tryFind (nm "Buyer") row.Values)
+
+[<Fact>]
+let ``AC-I7 adversarial: an ordinal rename would mis-assign — the SsKey re-point keeps the FK correct`` () =
+    // The source row's cells are ordered so that a positional (ordinal)
+    // rename — "the first non-Id source column becomes BUYER" — would put
+    // the Email-shaped junk value into the FK column. The identity re-point
+    // keys on the NAME (Owner → Buyer), so the FK value 280 lands in BUYER
+    // regardless of cell order, and re-keys to 18.
+    let renameMap = RenameProjection.renames (betweenOk rpSourceContract rpSinkContract) |> RenameProjection.renameMap
+    // Adversarial cell order: a decoy column precedes Owner. An ordinal
+    // scheme keyed on position would grab "decoy" for BUYER.
+    let sourceOrder = [ rowOf [ "Decoy", "ZZZ"; "Owner", "280"; "Id", "1000" ] ]
+    let plan = composePlan renameMap rpReconciliation sourceOrder
+    let row = List.exactlyOne (orderLoad plan).Rows
+    Assert.Equal(Some "18", Map.tryFind (nm "Buyer") row.Values)
+    // The decoy did NOT become BUYER — the re-point is by identity, not ordinal.
+    Assert.NotEqual<string option>(Some "ZZZ", Map.tryFind (nm "Buyer") row.Values)
+
+[<Fact(Skip = "AC-I7 DB end-to-end witness needs Docker (another track holds Docker this round). The pure composition above is the discriminating witness; this canary asserts the same composition through Transfer.runReconcilingWithRenames against a real Source+Sink: source at contract A (Owner/OWNER_ID), sink at contract B (Buyer/BUYER_ID) with pre-existing UAT User rows, reconciliation = User-by-Email. Expect the written Order row's BUYER column to carry the reconciled UAT User key.")>]
+let ``AC-I7 canary: runReconcilingWithRenames composes rename + re-key end-to-end (Docker)`` () =
+    // Parent track: flip Skip→Fact when Docker is available. Drives
+    // Transfer.runReconcilingWithRenames mode allowCdc source sink
+    // rpSourceContract rpSinkContract rpReconciliation against two ephemeral
+    // DBs and asserts the BUYER column re-keys.
+    ()

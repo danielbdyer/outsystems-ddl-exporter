@@ -99,6 +99,28 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
         Catalog.create [ { SsKey = mkKey "RenMod"; Name = nm "RenMod"; Kinds = [ k ]; IsActive = true; ExtendedProperties = [] } ] []
         |> Result.value
 
+    /// G9 state A: table MIGAB_TIGHTEN, NOTES NVARCHAR(100) **nullable** —
+    /// carries NULL rows. State B tightens NOTES to **NOT NULL** (a pure
+    /// nullability tightening; same SsKey, same type/length). The G9 case: an
+    /// in-place `ALTER COLUMN … NOT NULL` against existing NULL data.
+    static let catalogTightenA : Catalog =
+        let entity =
+            Kind.create (mkKey "T3") (nm "Tightenable")
+                (mkTableId "dbo" "MIGAB_TIGHTEN")
+                [ mkAttr "T3.Id" "ID" Integer None true false
+                  mkAttr "T3.Notes" "NOTES" Text (Some 100) false true ]
+        Catalog.create [ { SsKey = mkKey "Mod3"; Name = nm "MigMod3"; Kinds = [ entity ]; IsActive = true; ExtendedProperties = [] } ] []
+        |> Result.value
+
+    static let catalogTightenB : Catalog =
+        let entity =
+            Kind.create (mkKey "T3") (nm "Tightenable")
+                (mkTableId "dbo" "MIGAB_TIGHTEN")
+                [ mkAttr "T3.Id" "ID" Integer None true false
+                  mkAttr "T3.Notes" "NOTES" Text (Some 100) false false ]
+        Catalog.create [ { SsKey = mkKey "Mod3"; Name = nm "MigMod3"; Kinds = [ entity ]; IsActive = true; ExtendedProperties = [] } ] []
+        |> Result.value
+
     static let scalarString (cnn: Microsoft.Data.SqlClient.SqlConnection) (sql: string) =
         task {
             use cmd = cnn.CreateCommand()
@@ -436,4 +458,80 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
                                 postUpdate > postRename,
                                 sprintf "expected the data UPDATE to fire CDC captures the rename did not; baseline=%d postRename=%d postUpdate=%d"
                                     baseline postRename postUpdate)
+                }))
+
+    // G9 (NEITHER→HELD) — the NOT-NULL tightening pre-flight. An in-place
+    // `ALTER COLUMN … NOT NULL` against a column that still carries NULL rows
+    // must be REFUSED by a PRE-FLIGHT (a `COUNT(*) WHERE col IS NULL` probe)
+    // BEFORE the ALTER is submitted — surfacing the NAMED `RefusedByTightening`
+    // refusal, NOT the post-facto `ExecutionFailed` the bare ALTER would raise.
+    // The test DISCRIMINATES the two: it asserts the named pre-flight error AND
+    // that NO DDL ran (the column stays nullable, the rows — NULL included —
+    // are intact). Uses `DeclareAll` so the schema-blind narrowing declared-loss
+    // gate (G8) is already SATISFIED — isolating G9's DATA-aware refusal as the
+    // sole remaining line: declaring you accept the narrowing does NOT let you
+    // apply NOT NULL while NULL rows physically remain.
+    [<Fact>]
+    member _.``G9: migrate refuses a NOT-NULL tightening on NULL-bearing data via a pre-flight, before any ALTER`` () =
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "MigrateTighten" (fun conn _ ->
+                task {
+                    // Deploy state A (NOTES nullable) and seed BOTH a non-NULL
+                    // row and a NULL-bearing row — the data that violates a
+                    // NOT-NULL tightening.
+                    do! Deploy.executeBatch conn (SsdtDdlEmitter.statements catalogTightenA |> Render.toText)
+                    do! Deploy.executeBatch conn
+                            "INSERT INTO [dbo].[MIGAB_TIGHTEN] ([ID],[NOTES]) VALUES (1, N'present');"
+                    do! Deploy.executeBatch conn
+                            "INSERT INTO [dbo].[MIGAB_TIGHTEN] ([ID],[NOTES]) VALUES (2, NULL);"
+
+                    // migrate A → B tightens NOTES to NOT NULL. The live data
+                    // carries a NULL → the pre-flight must REFUSE before the ALTER.
+                    let! outcome = MigrationRun.execute true DeclareAll catalogTightenA catalogTightenB conn
+                    match outcome with
+                    | Error (MigrationError.RefusedByTightening msg) ->
+                        // DISCRIMINATOR: the NAMED pre-flight refusal, carrying the
+                        // probe's `migrate.dataViolatesTightening` evidence — NOT a
+                        // generic `ExecutionFailed` from a submitted-then-rejected ALTER.
+                        Assert.Contains("NULL", msg)
+                    | Error (MigrationError.ExecutionFailed m) ->
+                        Assert.Fail(
+                            sprintf "G9 regression: the tightening was caught POST-FACTO as ExecutionFailed (%s), not refused by a PRE-FLIGHT before the ALTER." m)
+                    | other ->
+                        Assert.Fail(sprintf "expected RefusedByTightening (pre-flight), got %A" other)
+
+                    // NO DDL RAN — the column is STILL NULLABLE (the ALTER never
+                    // reached the live DB). A post-facto failure would have left
+                    // the schema in whatever state the rejected ALTER left it; a
+                    // true pre-flight leaves A untouched.
+                    let! isNullable =
+                        scalarString conn
+                            "SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS \
+                             WHERE TABLE_NAME = 'MIGAB_TIGHTEN' AND COLUMN_NAME = 'NOTES';"
+                    Assert.Equal("YES", isNullable)
+
+                    // The rows are intact, NULL included.
+                    let! count = scalarString conn "SELECT COUNT(*) FROM [dbo].[MIGAB_TIGHTEN];"
+                    Assert.Equal("2", count)
+                    let! nullCount =
+                        scalarString conn "SELECT COUNT(*) FROM [dbo].[MIGAB_TIGHTEN] WHERE [NOTES] IS NULL;"
+                    Assert.Equal("1", nullCount)
+
+                    // And the gate is DATA-driven, not blanket: with the NULL row
+                    // REMEDIATED, the same tightening proceeds and verifies. This
+                    // proves the refusal was the probe (NULL-count), not a refusal
+                    // of all tightenings.
+                    do! Deploy.executeBatch conn
+                            "UPDATE [dbo].[MIGAB_TIGHTEN] SET [NOTES] = N'backfilled' WHERE [NOTES] IS NULL;"
+                    let! afterFix = MigrationRun.execute true DeclareAll catalogTightenA catalogTightenB conn
+                    match afterFix with
+                    | Error e -> Assert.Fail(sprintf "remediated tightening should proceed, got %A" e)
+                    | Ok r ->
+                        Assert.True(r.Verified, sprintf "B' did not reproduce B after remediation:\n%s" (PhysicalSchema.renderDiff r.SchemaDiff))
+                        let! nowNullable =
+                            scalarString conn
+                                "SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS \
+                                 WHERE TABLE_NAME = 'MIGAB_TIGHTEN' AND COLUMN_NAME = 'NOTES';"
+                        Assert.Equal("NO", nowNullable)
                 }))

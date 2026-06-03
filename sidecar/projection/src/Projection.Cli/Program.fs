@@ -954,6 +954,10 @@ let private reportMigrationError (e: MigrationError) : int =
         Console.Error.WriteLine (
             sprintf "projection migrate: REFUSED — schema DDL against a CDC-tracked DB (%d table(s)); pass --allow-cdc to proceed." (List.length tracked))
         9
+    | RefusedByTightening msg ->
+        Console.Error.WriteLine (
+            sprintf "projection migrate: REFUSED — a column tightening (NULL → NOT NULL) would fail against existing NULL data; no DDL ran. %s" msg)
+        9
     | SchemaReadFailed es ->
         Console.Error.WriteLine "projection migrate: reading the deployed schema failed:"
         printErrors Console.Error es

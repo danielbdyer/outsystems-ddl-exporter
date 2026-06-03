@@ -34,6 +34,13 @@ type MigrationError =
     | SchemaReadFailed of ValidationError list
     /// Executing the migration SQL against the live database raised.
     | ExecutionFailed of message: string
+    /// G9 (NEITHER→HELD) — the in-place differential tightens a column to NOT
+    /// NULL but the live source data carries NULL rows. Refused by the
+    /// `Preflight.tighteningPreflight` probe (`migrate.dataViolatesTightening`)
+    /// **before** the `ALTER COLUMN … NOT NULL` is submitted — the named
+    /// pre-flight refusal, NOT the post-facto `ExecutionFailed` the bare ALTER
+    /// would have surfaced. No DDL runs; the column stays nullable.
+    | RefusedByTightening of message: string
     /// The migration executed but B' does not reproduce B at the physical level.
     | VerificationFailed of PhysicalSchemaDiff
     /// The schema migrated but the data transfer (rows source → sink) failed.
@@ -392,6 +399,35 @@ module MigrationRun =
                         else return Ok ()
                     }
                 match cdcGate with
+                | Error e -> return Error e
+                | Ok () ->
+                // G9 (NEITHER→HELD) — the NOT-NULL tightening pre-flight. The
+                // in-place `ALTER COLUMN … NOT NULL` against a column that still
+                // carries NULL rows is REFUSED *before* the ALTER is submitted,
+                // not caught post-facto as `ExecutionFailed`. This is the
+                // DATA-aware last line *after* the schema-blind narrowing
+                // declared-loss gate (G8): even an operator who has DECLARED the
+                // narrowing loss cannot apply NOT NULL while NULL rows remain —
+                // the data physically blocks it. The overlay (Track-F's
+                // `Preflight.tighteningOverlay`) names every nullable→NOT NULL
+                // column the A→B displacement tightens; the probe counts live
+                // NULLs on the SOURCE schema (the DB is at A, where the column is
+                // still nullable). A clean source (or no tightening at all)
+                // passes; a NULL-bearing tightening refuses with
+                // `migrate.dataViolatesTightening` — the column stays nullable,
+                // no DDL runs.
+                let overlay = Preflight.tighteningOverlay source target
+                let! tighteningGate =
+                    task {
+                        if Set.isEmpty overlay.EnforceNotNull then return Ok ()
+                        else
+                            match! Preflight.tighteningPreflight cnn source overlay with
+                            | Ok () -> return Ok ()
+                            | Error es ->
+                                let msg = es |> List.map (fun e -> e.Message) |> String.concat "; "
+                                return Error (RefusedByTightening msg)
+                    }
+                match tighteningGate with
                 | Error e -> return Error e
                 | Ok () ->
                 let! executed =

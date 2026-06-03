@@ -183,8 +183,9 @@ module StaticSeedsEmitter =
                 AllColumns = orderedColumnNames k
                 PkColumns  = pkColumnNames k
                 UpdColumns = updColumns
-                Rows       = typedRows |> List.map (typedValuesToSqlLiterals deferred (writableAttributes k))
-                CdcAware   = cdcAware
+                Rows        = typedRows |> List.map (typedValuesToSqlLiterals deferred (writableAttributes k))
+                CdcAware    = cdcAware
+                DeleteScope = None
             }
         let mergeStmt = (ScriptDomBuild.buildMergeStatement args).Value
         // ScriptDomGenerate.generateOne emits the MERGE without a
