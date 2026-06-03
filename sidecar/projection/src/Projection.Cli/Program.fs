@@ -228,6 +228,73 @@ let private runFullExport
     dumpBench "full-export"
     FullExportRun.exitCode outcome
 
+/// AC-X1 (part B) — `projection full-export --load --conn <ref> [--lifecycle-store
+/// <path>] [--env <label>] [--out <dir>]`. Publishes the bundle AND loads the
+/// idempotent seed into the (already-deployed) sink, measuring the data
+/// movement's CDC capture count; with a store, records the episode with the
+/// MEASURED `DataObservation`. The seed is a MERGE, so re-running is
+/// non-overwriting and CDC-silent.
+let private runFullExportLoad
+    (configPath: string)
+    (connSpec: string)
+    (outputOverride: string option)
+    (storePath: string option)
+    (envLabel: string option)
+    : int =
+    match TransferSpec.parseConnectionSpec connSpec with
+    | Error es ->
+        Console.Error.WriteLine "projection full-export --load: --conn argument error:"
+        printErrors Console.Error es
+        2
+    | Ok connRef ->
+        match ConnectionResolver.resolve "Sink" connRef with
+        | Error es ->
+            Console.Error.WriteLine "projection full-export --load: connection error:"
+            printErrors Console.Error es
+            6
+        | Ok connStr ->
+            match Config.fromFile configPath with
+            | Error es ->
+                Console.Error.WriteLine "projection full-export --load: config error:"
+                printErrors Console.Error es
+                6
+            | Ok cfg0 ->
+                let cfg =
+                    match outputOverride with
+                    | Some o -> { cfg0 with Output = { cfg0.Output with Dir = o } }
+                    | None   -> cfg0
+                let env = parseEnvironment "DEV" envLabel
+                match Timeline.create (Projection.Core.Environment.name env) with
+                | Error es ->
+                    Console.Error.WriteLine "projection full-export --load: --env timeline name error:"
+                    printErrors Console.Error es
+                    2
+                | Ok tl ->
+                    let at = System.DateTimeOffset.UtcNow
+                    let work =
+                        task {
+                            use sink = new Microsoft.Data.SqlClient.SqlConnection(connStr)
+                            do! sink.OpenAsync()
+                            return! Compose.runWithConfigAndLoad Deploy.cdcCaptureTotal Deploy.executeBatch cfg sink storePath tl env at
+                        }
+                    let code =
+                        match work.GetAwaiter().GetResult() with
+                        | Ok (report, legOpt, cdcDelta) ->
+                            printfn "projection: full-export published %d artifact(s); loaded the seed (%d CDC capture(s) measured)"
+                                report.Paths.Length cdcDelta
+                            legOpt
+                            |> Option.iter (fun leg ->
+                                printfn "  episode recorded (%d on timeline %s)"
+                                    (EpisodicLifecycle.episodes leg.Chain |> List.length)
+                                    (Timeline.name (EpisodicLifecycle.timeline leg.Chain)))
+                            0
+                        | Error es ->
+                            Console.Error.WriteLine "projection full-export --load: failed:"
+                            printErrors Console.Error es
+                            3
+                    dumpBench "full-export"
+                    code
+
 let private runEmit (inputPath: string) (outputDir: string) : int =
     if not (File.Exists inputPath) then
         die 1 (sprintf "projection: input file not found: %s" inputPath)
@@ -1452,6 +1519,22 @@ let main argv =
         Console.Error.WriteLine ""
         Console.Error.WriteLine "Run `projection full-export --help` for usage."
         1
+    | arr when arr.Length >= 1 && arr.[0] = "full-export" && Array.contains "--load" arr ->
+        // X1 part B — publish + live data-load (measure + record). Manual flag
+        // parse (the load path opens a connection; the normal full-export path
+        // below stays Argu-driven and unchanged).
+        let valueOf (flag: string) =
+            arr
+            |> Array.tryFindIndex ((=) flag)
+            |> Option.bind (fun i -> if i + 1 < arr.Length then Some arr.[i + 1] else None)
+        match valueOf "--config", valueOf "--conn" with
+        | Some configPath, Some connSpec ->
+            let storePath =
+                match valueOf "--lifecycle-store" with
+                | Some _ as s -> s
+                | None -> valueOf "--store"
+            runFullExportLoad configPath connSpec (valueOf "--out") storePath (valueOf "--env")
+        | _ -> die 2 "projection full-export --load: requires --config <path> --conn <ref>"
     | arr when arr.Length >= 1 && arr.[0] = "full-export" ->
         dispatchFullExport (Array.skip 1 arr)
     | [| "emit"; "--config"; configPath |] ->

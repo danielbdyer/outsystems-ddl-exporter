@@ -924,6 +924,33 @@ module Compose =
             return parsed |> Result.bind (applyRenames cfg)
         }
 
+    /// AC-X1 (part B) — the emitted catalog + the rendered data-seed script for
+    /// the live-load leg. Re-projects the config's model (genesis profile shape;
+    /// the seed rows are catalog-borne `Modality.Static`, profile-independent) so
+    /// the load consumes exactly the `Data/seed.sql` the bundle published. Empty
+    /// seed when data emission is off.
+    let private emittedSeed (cfg: Config.Config) : Task<Result<Catalog * string>> =
+        task {
+            let! parsed = read cfg.Model.Path
+            match parsed |> Result.bind (applyRenames cfg) with
+            | Error es -> return Result.failure es
+            | Ok catalog ->
+                match buildPolicyFromConfig cfg catalog,
+                      EmissionFoldersBinding.fromConfig catalog cfg,
+                      TransformGroupsBinding.fromConfig cfg with
+                | Ok policy, Ok folders, Ok groups ->
+                    let outputs, _ =
+                        projectWithState policy Profile.empty EmissionPolicy.empty folders groups catalog
+                    let seed = Map.tryFind "Data/seed.sql" outputs.DataBundle |> Option.defaultValue ""
+                    return Result.success (catalog, seed)
+                | p, f, g ->
+                    let errs =
+                        (match p with Error e -> e | _ -> [])
+                        @ (match f with Error e -> e | _ -> [])
+                        @ (match g with Error e -> e | _ -> [])
+                    return Result.failure errs
+        }
+
     /// State A — the prior emission's schema, reconstructed from the durable
     /// `EpisodicLifecycle` at `path` (the FTC fold over the chain). A **missing
     /// store is genesis**: A = ∅ (every kind `Add`, no `Remove`) — byte-faithful
@@ -1122,4 +1149,81 @@ module Compose =
                                 | RecordFailed m ->
                                     ValidationError.create "pipeline.fullExport.store.recordFailed" m
                             return Result.failureOf ve
+        }
+
+    /// AC-X1 (part B) — the **live data-load leg core**: load the idempotent
+    /// CDC-aware `seed` into the already-deployed `sink`, MEASURE the data
+    /// movement (the change-measure ‖·‖ via `Deploy.cdcCaptureTotal`, the
+    /// production reader), and — when a store is supplied — record an episode
+    /// (schema = `emitted`) with the **measured** `DataObservation` (not
+    /// `DataObservation.empty`). The seed is a MERGE, so the measure on a first
+    /// load = rows inserted; on an idempotent re-run = 0 (CDC-silent). Catalog +
+    /// seed are caller-supplied so this is unit-testable without a config file;
+    /// `runWithConfigAndLoad` is the config-driven wrapper.
+    let loadSeedAndRecord
+        (cdcCaptureTotal: SqlConnection -> Task<int>)
+        (executeBatch: SqlConnection -> string -> Task<unit>)
+        (emitted: Catalog)
+        (seed: string)
+        (sink: SqlConnection)
+        (storePath: string option)
+        (timeline: Timeline)
+        (environment: Environment)
+        (at: System.DateTimeOffset)
+        : Task<Result<FullExportStoreLeg option * int>> =
+        // `cdcCaptureTotal` / `executeBatch` are injected (the `Deploy` module
+        // compiles AFTER this one, so Compose cannot name it; callers pass
+        // `Deploy.cdcCaptureTotal` / `Deploy.executeBatch`).
+        task {
+            let! baseline = cdcCaptureTotal sink
+            if not (System.String.IsNullOrWhiteSpace seed) then
+                do! executeBatch sink seed
+            let! post = cdcCaptureTotal sink
+            let cdcDelta = post - baseline
+            let data = DataObservation.create cdcDelta None
+            match storePath with
+            | Some path when not (System.String.IsNullOrWhiteSpace path) ->
+                match runStoreLeg path timeline environment at None data emitted with
+                | Ok leg -> return Result.success (Some leg, cdcDelta)
+                | Error storeErr ->
+                    let ve =
+                        match storeErr with
+                        | StoreReadFailed m -> ValidationError.create "pipeline.fullExport.store.readFailed" m
+                        | DisplacementFailed e -> ValidationError.create "pipeline.fullExport.store.displacementFailed" (string e)
+                        | RecordFailed m -> ValidationError.create "pipeline.fullExport.store.recordFailed" m
+                    return Result.failureOf ve
+            | _ -> return Result.success (None, cdcDelta)
+        }
+
+    /// AC-X1 (part B) — `runWithConfig` PLUS the live data-load leg the W1-B
+    /// store leg deferred. After the bundle is published (unchanged), the
+    /// idempotent CDC-aware seed (`Data/seed.sql`) is loaded into the
+    /// already-deployed `sink`, the movement is measured, and (with a store) the
+    /// episode is recorded with the measured `DataObservation`. The schema is
+    /// assumed already deployed on the sink (the publication→deploy→load premise:
+    /// the operator deploys the published DDL + enables CDC for the SSIS consumer,
+    /// then the data lands).
+    let runWithConfigAndLoad
+        (cdcCaptureTotal: SqlConnection -> Task<int>)
+        (executeBatch: SqlConnection -> string -> Task<unit>)
+        (cfg: Config.Config)
+        (sink: SqlConnection)
+        (storePath: string option)
+        (timeline: Timeline)
+        (environment: Environment)
+        (at: System.DateTimeOffset)
+        : Task<Result<RunReport * FullExportStoreLeg option * int>> =
+        task {
+            let! reportResult = runWithConfig cfg
+            match reportResult with
+            | Error errors -> return Result.failure errors
+            | Ok report ->
+                let! seedR = emittedSeed cfg
+                match seedR with
+                | Error errors -> return Result.failure errors
+                | Ok (emitted, seed) ->
+                    let! loadR = loadSeedAndRecord cdcCaptureTotal executeBatch emitted seed sink storePath timeline environment at
+                    match loadR with
+                    | Ok (leg, cdcDelta) -> return Result.success (report, leg, cdcDelta)
+                    | Error es -> return Result.failure es
         }
