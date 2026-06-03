@@ -1,5 +1,21 @@
 # DEBRIEF 2026-06-02 — The Isomorphism Climb: Technical Debrief & Total-Projection Backlog
 
+> **UPDATE — round D→E→F (survey-independent L2 climb closed).** Since this debrief
+> was authored, the keystone and the schema/diff + decision L2 holes have closed:
+> **D1+D2** (the self-verification meta-cell — the matrix reports the L1/L2/L3 ladder
+> from `Tolerance.fs` `@ladder` tags + witnesses, wired into CI; G13), **E2** (the
+> cross-schema FK now a named diagnostic, not silent/opaque; G4), **E1** (non-PK
+> index structure reconstructed *and* compared in `PhysicalSchema.Indexes`, round-trip
+> witnessed; G3 — residual narrowed to `IndexOptionsUnreflected`), and **F1+F2** (the
+> unified 3-axis decision adjunction witness — nullability + uniqueness + FK-trust in
+> one overlay round-trip; G2/G12). North-Star §5 criteria 2, 3, 5 are met. **What
+> remains** (each named, none on the silent-corruption path): **G14** (`Reference`
+> illegal-state modeling — hygiene; no illegal state is produced); **H1** (the
+> speculative-optics cluster — correctly parked at defer-with-trigger until
+> cutover+1); **J1** (51-label perf canary — low-priority enabler); **C2/C3** +
+> **A3** (Lifecycle operationalization / atomic-resumable — distinct clusters,
+> the latter survey-*dependent* / PROD-deferred). See each cluster's STATUS block.
+>
 > **Status:** canonical for this moment (HEAD `307ef65`). A standalone debrief +
 > backlog for the L1→L2→L3 climb toward the Total Projection (`NORTH_STAR.md`).
 > Supersedes nothing; **integrates** the per-axis findings of
@@ -181,25 +197,29 @@ Read the table by **plane**, and the picture is clear:
   unsatisfiable cycles, cyclic `AssignedBySink`, and composite `AssignedBySink`
   all refuse *before* any write. This is the codebase's discipline working.
 
-- **The schema/diff plane has the deep L2 holes.** G1 (the captured-surface
-  boundary) is the structural heart: `migrate A B` today commutes only for
-  column-shape evolution; an A→B that adds an FK, changes an index, or alters a
-  sequence is **invisible to the diff** and silently no-ops those facets. G2
-  (unenforced FK-trust), G3 (unreconstructed indexes), and G4 (silent
-  cross-schema FK filter) are the read-leg's blind spots. These four are the
-  L2 climb's center of mass.
+- **The schema/diff plane was the deep L2 hole — now largely closed.** G1 (the
+  captured-surface boundary) landed with C1 (`migrate A B` now sees references /
+  indexes / sequences). The read-leg blind spots are closed: **G3** (index
+  structure reconstructed *and* compared — E1), **G4** (cross-schema FK now a named
+  diagnostic, not silent/opaque — E2), **G2/G12** (FK-trust carried + the 3-axis
+  decision adjunction witnessed — F1/F2). The remaining schema-plane items are
+  *hygiene*: **G14** (`Reference` illegal-state modeling — no illegal state is
+  actually produced, just expressible) and the narrowed **`IndexOptionsUnreflected`**
+  residual (index filter/included/storage options).
 
-- **T-VI spanning is the highest-stakes unbuilt surface.** G5/G6/G7 are the only
-  places the engine can still **silently corrupt or no-op a target**. A
-  write-denied sink, a mid-load crash, or a dead endpoint produces wrong results
-  with no refusal. This is the gravest faithfulness violation class remaining.
+- **The meta-cell (G13) — the keystone — landed (D1/D2).** The generated matrix now
+  reports each axis's L1/L2/L3 level (not just witness presence), derives L2 from
+  `Tolerance.fs`'s `@ladder` tags, and is wired into CI. The exact drift this
+  paragraph warned about ("6.A un-hollowed ReadSide" vs "indexes still dropped at
+  reconstruction") is now a *build-visible* artifact: Schema reports L2-partial
+  naming its open tolerance, and flips to L3 automatically when it retires.
 
-- **The meta-cell (G13) is the keystone.** The matrix generator reports L1
-  presence, not L2/L3 level. That is *exactly* why the drift between "6.A
-  un-hollowed ReadSide" and "indexes are still dropped at reconstruction" (G3)
-  was invisible until a manual file:line read surfaced it. A generated L2/L3
-  matrix would have caught it. This is the North-Star §1 warning —
-  witness-present ≠ faithful — made concrete.
+- **T-VI spanning remains the highest-stakes surface — but is survey-gated.** G5/G6/G7
+  (permissions / transactionality / connection) are where a write-denied sink, a
+  mid-load crash, or a dead endpoint could still corrupt a target. Per the premise
+  re-prioritization (`WAVE_6_ONTOLOGY.md` §10; PROD-empty), A3 (atomic/resumable)
+  is **deferred-with-trigger** until PROD gains data or a write-denied environment
+  enters a real flow — it is not on the survey-independent path.
 
 ---
 
