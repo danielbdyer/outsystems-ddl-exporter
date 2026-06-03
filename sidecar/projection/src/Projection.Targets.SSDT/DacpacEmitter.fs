@@ -62,18 +62,27 @@ module DacpacEmitter =
     let private DefaultPackageDescription : string =
         "Projection dev-tooling DACPAC (chapter 3.x; not production deploy)"
 
-    /// Filter the Π statement stream to DDL only — DacFx's schema
-    /// model accepts `CREATE TABLE` / `CREATE INDEX` etc., not row
-    /// inserts or `SET IDENTITY_INSERT`. `SsdtDdlEmitter.statements`
-    /// already produces DDL only today, but the filter is the
-    /// structural guarantee for future stream-extending slices.
+    /// Filter the Π statement stream to **declarative model objects** — the
+    /// only thing DacFx's `TSqlModel.AddObjects` accepts (`CREATE TABLE` /
+    /// `CREATE INDEX` / `CREATE SEQUENCE` + the post-CREATE state-reproduction
+    /// alters the declarative `SsdtDdlEmitter` stream emits). The **imperative
+    /// migration DDL** (`SchemaMigrationEmitter`'s `ALTER TABLE ADD/ALTER/DROP
+    /// COLUMN`, `ADD/DROP CONSTRAINT`, `DROP INDEX/SEQUENCE`) is NOT a
+    /// declarative model object — it belongs to the in-place `migrate --execute`
+    /// executor (`MigrationRun`/`Deploy.executeBatch`), never the `.dacpac`. Per
+    /// `WAVE_6_ONTOLOGY.md` §4: "the imperative schema ALTER is *not* the deploy
+    /// artifact" — DacFx computes the ALTER/DROP from the declarative target at
+    /// publish. Feeding a `DROP` to `AddObjects` would corrupt the model, so the
+    /// filter excludes the whole imperative-migration family by construction.
     let private isSchemaStatement (s: Statement) : bool =
         match s with
         | CreateTable _ | CreateIndex _ | SetExtendedProperty _
         | AlterTableNoCheckConstraint _ | AlterTableDisableConstraint _ | AlterIndexDisable _
-        | CreateTrigger _ | AlterTableDisableTrigger _ | CreateSequence _
+        | CreateTrigger _ | AlterTableDisableTrigger _ | CreateSequence _ -> true
+        // Imperative migration DDL — the in-place executor's, not the
+        // declarative .dacpac model's. DacFx owns the ALTER/DROP at publish.
         | AlterTableAddColumn _ | AlterTableAlterColumn _ | AlterTableAddForeignKey _
-        | AlterTableDropColumn _ | AlterTableDropConstraint _ | DropIndex _ | DropSequence _ -> true
+        | AlterTableDropColumn _ | AlterTableDropConstraint _ | DropIndex _ | DropSequence _ -> false
         | InsertRow _ | SetIdentityInsert _ | Comment _ | Blank | BatchSeparator -> false
 
     /// Render one DDL Statement into its standalone T-SQL form via

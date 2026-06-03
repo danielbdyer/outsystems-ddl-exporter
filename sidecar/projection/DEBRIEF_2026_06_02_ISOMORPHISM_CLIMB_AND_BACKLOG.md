@@ -359,6 +359,17 @@ This cluster is the structural heart of the L2/L3 climb. **C1 is the centerpiece
 > COLUMN/CONSTRAINT/INDEX/SEQUENCE). The new-variant blast radius is the same 4
 > sites as `AlterTableAddColumn` (Statement / ScriptDomBuild / Deploy /
 > DacpacEmitter).
+>
+> **Positioning (2026-06-02 clarification).** This whole emitter — additive and
+> destructive — is the IMPERATIVE `migrate --execute` executor's, NOT the
+> declarative SSDT deploy artifact. Per `WAVE_6_ONTOLOGY.md` §4, the declarative
+> path emits the target CREATE-TABLE model + `.refactorlog` and **DacFx computes
+> the ALTER/DROP at publish** (a drop is absence + DacFx's data-loss flags); the
+> emissions here are unnecessary for that path. They serve only the live-square
+> T16 in-place evolver + the verification lens, and they never feed the `.dacpac`
+> (`DacpacEmitter.isSchemaStatement` now excludes the imperative-migration
+> family by construction). See `DECISIONS 2026-06-02 — Clarification: …lens, not
+> the declarative deploy artifact`.
 
 - **Totality:** T-I (round-trip faithfulness) on Schema + Time; the forcing
   instance for L3 `migrate`.

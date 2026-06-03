@@ -9,6 +9,19 @@ open Projection.Core
 /// `ALTER TABLE … ADD` / `ALTER TABLE … ALTER COLUMN` the delta requires — so
 /// a column type change touches one column, not the whole table.
 ///
+/// **Positioning — this is the IMPERATIVE executor's emitter, NOT the
+/// declarative SSDT deploy artifact** (`WAVE_6_ONTOLOGY.md` §4). The canonical
+/// SSDT deploy is *declarative*: emit the target `CREATE TABLE` model + the
+/// `.refactorlog`, and **DacFx computes the ALTER/DROP at publish** (applying
+/// `BlockOnPossibleDataLoss` / `DropObjectsNotInSource`). This emitter's
+/// statements are consumed only by the in-place `migrate --execute` executor
+/// (`MigrationRun.execute` → `Deploy.executeBatch`, the live square / T16) and
+/// as a **preview + verification lens** (does DacFx's publish plan match what
+/// the engine predicted?). It never feeds the `.dacpac` (see
+/// `DacpacEmitter.isSchemaStatement`). The destructive emission below
+/// (`--allow-drops`) is therefore the *in-place evolver's* drop, distinct from
+/// the declarative path's drop-by-absence-then-DacFx.
+///
 /// **Clean-room separation (the operator's requirement).** `CatalogDiff.between`
 /// is the comparison; this emitter is the emission. They are distinct functions
 /// over distinct types — `between : Catalog → Catalog → CatalogDiff` observes;
