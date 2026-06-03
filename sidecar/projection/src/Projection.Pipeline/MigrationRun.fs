@@ -22,8 +22,9 @@ type MigrationArtifacts =
 type MigrationError =
     /// `CatalogDiff.between` could not observe the displacement.
     | DiffFailed of EmitError
-    /// The plan carries destructive drops and `allowDrops` was not set.
-    | RefusedByViolations of MigrationViolation list
+    /// The plan carries **undeclared** destructive removals — the declared-loss
+    /// gate refused (the operator has not accepted these losses by `lossId`).
+    | RefusedByViolations of SchemaLoss list
     /// The schema emitter raised `Error`-severity refusals (a non-shape facet
     /// change it cannot express as a single `ALTER`).
     | RefusedBySchemaErrors of DiagnosticEntry list
@@ -44,6 +45,10 @@ type MigrationError =
     /// CDC. Carries the tracked `[schema].[table]` names. Mirrors the
     /// transfer-side `transfer.cdcTrackedSink` gate.
     | RefusedByCdc of trackedTables: string list
+    /// The durable provenance store (the prior-emission snapshot, state A) could
+    /// not be loaded — a malformed/corrupt `LifecycleStore`. Fail-closed: a
+    /// snapshot⊖snapshot plan never proceeds on an unreadable prior.
+    | StoreReadFailed of message: string
 
 /// The result of a **live** `migrate A B` execution: the plan + artifacts it
 /// ran, the schema read back from the database after execution (`B'`), and the
@@ -96,19 +101,19 @@ module MigrationRun =
     /// operator reviews the returned artifacts; only `execute`/`record` touch a
     /// substrate. The empty-displacement case yields empty artifacts (an
     /// idempotent migration — minimum-viable touches = zero).
-    let preview (allowDrops: bool) (source: Catalog) (target: Catalog) : Result<MigrationArtifacts, MigrationError> =
-        match Migration.plan allowDrops source target with
+    let preview (declaration: LossDeclaration) (source: Catalog) (target: Catalog) : Result<MigrationArtifacts, MigrationError> =
+        match Migration.plan declaration source target with
         | Error e -> Error (DiffFailed e)
         | Ok plan ->
             if not (Migration.isSafe plan) then
                 Error (RefusedByViolations plan.Violations)
             else
-                // Thread `allowDrops` so the emitter emits the destructive DDL
-                // (DROP COLUMN/CONSTRAINT/INDEX/SEQUENCE + reshape DROP+recreate)
-                // the operator accepted — `Migration.plan` already cleared the
-                // matching violations, so without this the emitter would still
-                // refuse them and `migrate --allow-drops` could not proceed.
-                let schema = SchemaMigrationEmitter.emitWith allowDrops plan.Diff
+                // The declared-loss gate has cleared every *undeclared* loss (the
+                // plan is safe), so the destructive removals that remain are all
+                // sanctioned — `permitsDrops` tells the imperative emitter to emit
+                // the DROP DDL (DROP COLUMN/CONSTRAINT/INDEX/SEQUENCE + reshape
+                // DROP+recreate). With `DeclareNone` there are no drops to emit.
+                let schema = SchemaMigrationEmitter.emitWith (LossDeclaration.permitsDrops declaration) plan.Diff
                 let schemaErrors = Diagnostics.entriesAt DiagnosticSeverity.Error schema
                 if not (List.isEmpty schemaErrors) then
                     Error (RefusedBySchemaErrors schemaErrors)
@@ -139,6 +144,38 @@ module MigrationRun =
                               SchemaStatements = schema.Value
                               SchemaDiagnostics = schema.Entries @ renameWarnings
                               RefactorLog = flattenRefactorLog refactorArtifact }
+
+    /// **The snapshot⊖snapshot preview** — `migrate → target` against the *prior
+    /// emission's* schema, read from the durable `LifecycleStore` (6.H), not from
+    /// a live read-back or a second authored model. State A is
+    /// `reconstructLatestSchema` over the persisted chain (the FTC fold —
+    /// witnessed durable in `LifecycleStoreTests`); the displacement is `B ⊖ A`
+    /// for B = `target`. This closes the emission→snapshot→diff loop the
+    /// morphology flagged as latent: each emission persists a snapshot (`record`),
+    /// and the next reads it back here as the comparison basis. A **missing store
+    /// is genesis** — A = ∅, so every kind is `Add` and there are no losses (the
+    /// first emission of a timeline). Fail-closed on a malformed store.
+    let previewFromStore
+        (path: string)
+        (declaration: LossDeclaration)
+        (target: Catalog)
+        : Result<MigrationArtifacts, MigrationError> =
+        let priorSchema : Result<Catalog, MigrationError> =
+            if System.IO.File.Exists path then
+                match LifecycleStore.load path with
+                | Error e -> Error (StoreReadFailed (string e))
+                | Ok chain ->
+                    match EpisodicLifecycle.reconstructLatestSchema chain with
+                    | Ok a -> Ok a
+                    | Error e -> Error (DiffFailed e)
+            else
+                // Genesis: no prior emission. A = ∅ (all Add, no Remove).
+                match Catalog.create [] [] with
+                | Ok empty -> Ok empty
+                | Error es -> Error (StoreReadFailed (es |> List.map (fun e -> e.Message) |> String.concat "; "))
+        match priorSchema with
+        | Error e -> Error e
+        | Ok source -> preview declaration source target
 
     /// Record a completed migration's episode onto the timeline persisted at
     /// `path` (the durable substrate, 6.H.2). On the first migration of a
@@ -275,13 +312,13 @@ module MigrationRun =
     /// fully-migrated DB is a no-op (empty differential).
     let execute
         (allowCdc: bool)
-        (allowDrops: bool)
+        (declaration: LossDeclaration)
         (source: Catalog)
         (target: Catalog)
         (cnn: SqlConnection)
         : System.Threading.Tasks.Task<Result<MigrationOutcome, MigrationError>> =
         task {
-            match preview allowDrops source target with
+            match preview declaration source target with
             | Error e -> return Error e
             | Ok artifacts ->
                 let renameSql = renameStatements artifacts.Plan.Diff
@@ -345,7 +382,7 @@ module MigrationRun =
     /// A, so prefer `execute` with the recorded-episode schema when available.
     let executeFromLive
         (allowCdc: bool)
-        (allowDrops: bool)
+        (declaration: LossDeclaration)
         (target: Catalog)
         (cnn: SqlConnection)
         : System.Threading.Tasks.Task<Result<MigrationOutcome, MigrationError>> =
@@ -353,7 +390,7 @@ module MigrationRun =
             let! readA = ReadSide.read cnn
             match readA with
             | Error es -> return Error (SchemaReadFailed es)
-            | Ok source -> return! execute allowCdc allowDrops source target cnn
+            | Ok source -> return! execute allowCdc declaration source target cnn
         }
 
     /// **`migrate A B` with a data load** — the cross-substrate composition (the
@@ -367,7 +404,7 @@ module MigrationRun =
     /// (never load into an unverified target). Both substrates end at B; the data
     /// source's rows must match the contract B.
     let executeWithData
-        (allowDrops: bool)
+        (declaration: LossDeclaration)
         (mode: Transfer.Mode)
         (allowCdc: bool)
         (sinkSource: Catalog)
@@ -377,7 +414,7 @@ module MigrationRun =
         (sink: SqlConnection)
         : System.Threading.Tasks.Task<Result<MigrationDataOutcome, MigrationError>> =
         task {
-            let! schemaResult = execute allowCdc allowDrops sinkSource target sink
+            let! schemaResult = execute allowCdc declaration sinkSource target sink
             match schemaResult with
             | Error e -> return Error e
             | Ok schema ->

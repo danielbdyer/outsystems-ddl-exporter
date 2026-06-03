@@ -807,7 +807,66 @@ let private runPolicyDiff (configAPath: string) (configBPath: string) : int =
 /// non-shape facet change is refused with a non-zero exit and an explanation,
 /// never a silent plan. The `--execute` leg (against a live deployed DB) is
 /// `MigrationRun.execute`; this surface previews what it would do.
-let private runMigratePreview (fromPath: string) (toPath: string) (allowDrops: bool) : int =
+/// Parse the declared-loss gate's input from the raw argv: `--allow-drops`
+/// accepts everything (`DeclareAll`); each `--declare-drop <token>` (repeatable)
+/// names one accepted removal (`DeclareThese`); absent both, the safe default
+/// `DeclareNone` refuses every destructive removal. The tokens are the
+/// source-free `Migration.lossToken` form the refusal prints.
+let private parseLossDeclaration (arr: string[]) : LossDeclaration =
+    if Array.contains "--allow-drops" arr then DeclareAll
+    else
+        let tokens =
+            arr
+            |> Array.indexed
+            |> Array.choose (fun (i, a) ->
+                if a = "--declare-drop" && i + 1 < arr.Length then Some arr.[i + 1] else None)
+            |> Array.toList
+        match tokens with
+        | [] -> DeclareNone
+        | _  -> DeclareThese (Set.ofList tokens)
+
+/// Shared dry-run renderer for a `migrate` preview outcome — the change-manifest
+/// of δ, or a fail-loud refusal (undeclared losses / inexpressible change).
+let private reportPreviewOutcome (header: string) (result: Result<MigrationArtifacts, MigrationError>) : int =
+    let exitCode =
+        match result with
+        | Error (RefusedByViolations violations) ->
+            Console.Error.WriteLine (
+                sprintf "projection migrate: REFUSED — %d undeclared destructive change(s). Re-run with --allow-drops (accept all) or --declare-drop <token> for each:" (List.length violations))
+            for v in violations do
+                Console.Error.WriteLine (sprintf "    %s" (Migration.lossToken v))
+            9
+        | Error (RefusedBySchemaErrors entries) ->
+            Console.Error.WriteLine "projection migrate: REFUSED — change(s) the engine cannot express as a single ALTER:"
+            for e in entries do
+                Console.Error.WriteLine (sprintf "    [%s] %s" e.Code e.Message)
+            9
+        | Error other ->
+            Console.Error.WriteLine (sprintf "projection migrate: failed: %A" other)
+            2
+        | Ok artifacts ->
+            let p = artifacts.Plan.Preview
+            printfn "%s" header
+            if Migration.isIdempotent artifacts.Plan then
+                printfn "  idempotent — nothing to do (zero minimum-viable touches)"
+            else
+                printfn "  minimum-viable touches (norm): %d" p.Norm
+                printfn "    renamed kinds:        %d" p.Channels.RenamedKinds
+                printfn "    added kinds:          %d" p.Channels.AddedKinds
+                printfn "    removed kinds:        %d" p.Channels.RemovedKinds
+                printfn "    reshaped attributes:  %d" p.Channels.ChangedAttributes
+                printfn "    renamed attributes:   %d" p.Channels.RenamedAttributes
+                printfn "    added attributes:     %d" p.Channels.AddedAttributes
+                printfn "    removed attributes:   %d" p.Channels.RemovedAttributes
+                for (_, fromN, toN) in p.RenamedKinds do
+                    printfn "    rename: %s -> %s" (Name.value fromN) (Name.value toN)
+                printfn "  emitted: %d ALTER/ADD statement(s), %d refactorlog rename(s)"
+                    (List.length artifacts.SchemaStatements) (List.length artifacts.RefactorLog)
+            0
+    dumpBench "migrate"
+    exitCode
+
+let private runMigratePreview (fromPath: string) (toPath: string) (declaration: LossDeclaration) : int =
     let loaded =
         task {
             let! a = Compose.read fromPath
@@ -825,47 +884,27 @@ let private runMigratePreview (fromPath: string) (toPath: string) (allowDrops: b
         printErrors Console.Error errors
         6
     | Ok source, Ok target ->
-        let exitCode =
-            match MigrationRun.preview allowDrops source target with
-            | Error (RefusedByViolations violations) ->
-                Console.Error.WriteLine (
-                    sprintf "projection migrate: REFUSED — %d destructive change(s) require --allow-drops:" (List.length violations))
-                for v in violations do
-                    match v with
-                    | WouldDropKind (key, name) ->
-                        Console.Error.WriteLine (sprintf "    drop table %s (%s)" (Name.value name) (SsKey.rootOriginal key))
-                    | WouldDropAttribute (kind, attr) ->
-                        Console.Error.WriteLine (sprintf "    drop column %s on %s" (SsKey.rootOriginal attr) (SsKey.rootOriginal kind))
-                9
-            | Error (RefusedBySchemaErrors entries) ->
-                Console.Error.WriteLine "projection migrate: REFUSED — change(s) the engine cannot express as a single ALTER:"
-                for e in entries do
-                    Console.Error.WriteLine (sprintf "    [%s] %s" e.Code e.Message)
-                9
-            | Error other ->
-                Console.Error.WriteLine (sprintf "projection migrate: failed: %A" other)
-                2
-            | Ok artifacts ->
-                let p = artifacts.Plan.Preview
-                printfn "projection migrate %s -> %s  (dry-run)" fromPath toPath
-                if Migration.isIdempotent artifacts.Plan then
-                    printfn "  idempotent — nothing to do (zero minimum-viable touches)"
-                else
-                    printfn "  minimum-viable touches (norm): %d" p.Norm
-                    printfn "    renamed kinds:        %d" p.Channels.RenamedKinds
-                    printfn "    added kinds:          %d" p.Channels.AddedKinds
-                    printfn "    removed kinds:        %d" p.Channels.RemovedKinds
-                    printfn "    reshaped attributes:  %d" p.Channels.ChangedAttributes
-                    printfn "    renamed attributes:   %d" p.Channels.RenamedAttributes
-                    printfn "    added attributes:     %d" p.Channels.AddedAttributes
-                    printfn "    removed attributes:   %d" p.Channels.RemovedAttributes
-                    for (_, fromN, toN) in p.RenamedKinds do
-                        printfn "    rename: %s -> %s" (Name.value fromN) (Name.value toN)
-                    printfn "  emitted: %d ALTER/ADD statement(s), %d refactorlog rename(s)"
-                        (List.length artifacts.SchemaStatements) (List.length artifacts.RefactorLog)
-                0
-        dumpBench "migrate"
-        exitCode
+        reportPreviewOutcome
+            (sprintf "projection migrate %s -> %s  (dry-run)" fromPath toPath)
+            (MigrationRun.preview declaration source target)
+
+/// `projection migrate --to <modelB.json> --store <lifecycle.json> [--allow-drops
+/// | --declare-drop <token>...]` — the **snapshot⊖snapshot** dry-run (6.H). State
+/// A is the prior emission's schema, reconstructed from the durable
+/// `LifecycleStore`; B is the new authored model. Closes the emission→snapshot→
+/// diff loop: the diff basis is provenance, not a second hand-authored model. A
+/// missing store is genesis (A = ∅).
+let private runMigrateFromStore (storePath: string) (toPath: string) (declaration: LossDeclaration) : int =
+    let bRead = (Compose.read toPath).GetAwaiter().GetResult()
+    match bRead with
+    | Error errors ->
+        Console.Error.WriteLine (sprintf "projection migrate: could not read --to %s:" toPath)
+        printErrors Console.Error errors
+        6
+    | Ok target ->
+        reportPreviewOutcome
+            (sprintf "projection migrate (store:%s) -> %s  (dry-run, snapshot⊖snapshot)" storePath toPath)
+            (MigrationRun.previewFromStore storePath declaration target)
 
 /// Derive the A2 pre-flight's planned-writes from a migration's schema
 /// statements: every DDL statement maps to the write it performs at the sink
@@ -895,7 +934,8 @@ let private reportMigrationError (e: MigrationError) : int =
     match e with
     | RefusedByViolations violations ->
         Console.Error.WriteLine (
-            sprintf "projection migrate: REFUSED — %d destructive change(s) require --allow-drops." (List.length violations))
+            sprintf "projection migrate: REFUSED — %d undeclared destructive change(s). Re-run with --allow-drops (accept all) or --declare-drop <token> for each:" (List.length violations))
+        for v in violations do Console.Error.WriteLine (sprintf "    %s" (Migration.lossToken v))
         9
     | RefusedBySchemaErrors entries ->
         Console.Error.WriteLine "projection migrate: REFUSED — change(s) the engine cannot express:"
@@ -945,7 +985,7 @@ let private migratePreflights (label: string) (cnn: Microsoft.Data.SqlClient.Sql
 /// (Promise 8). Reads the deployed state A, runs the A1 connection + A2
 /// permission pre-flights before any mutation, evolves A→B in place, reads B'
 /// back, and verifies. Gated by `PROJECTION_ALLOW_EXECUTE=1` (R6).
-let private runMigrateExecute (toPath: string) (connSpec: string) (allowDrops: bool) (allowCdc: bool) : int =
+let private runMigrateExecute (toPath: string) (connSpec: string) (declaration: LossDeclaration) (allowCdc: bool) : int =
     if System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" <> "1" then
         Console.Error.WriteLine
             "projection migrate: --execute requires PROJECTION_ALLOW_EXECUTE=1 in the environment (R6 gate). Refusing."
@@ -979,13 +1019,13 @@ let private runMigrateExecute (toPath: string) (connSpec: string) (allowDrops: b
                     match readA with
                     | Error es -> return reportMigrationError (SchemaReadFailed es)
                     | Ok sourceA ->
-                        match MigrationRun.preview allowDrops sourceA target with
+                        match MigrationRun.preview declaration sourceA target with
                         | Error e -> return reportMigrationError e
                         | Ok artifacts ->
                             match! migratePreflights "sink" cnn (plannedWritesOf artifacts.SchemaStatements) with
                             | Error code -> return code
                             | Ok () ->
-                                let! outcome = MigrationRun.execute allowCdc allowDrops sourceA target cnn
+                                let! outcome = MigrationRun.execute allowCdc declaration sourceA target cnn
                                 match outcome with
                                 | Ok o when o.Verified ->
                                     printfn "projection migrate: executed and VERIFIED — B' reproduces B (%d statement(s))"
@@ -1006,7 +1046,7 @@ let private runMigrateExecute (toPath: string) (connSpec: string) (allowDrops: b
 /// substrate into the migrated sink over contract B (straight load — the
 /// `--reconcile` / `--user-map` re-key forms are the follow-on). Schema is
 /// fail-loud + minimum-viable; the data leg runs only if the schema verified.
-let private runMigrateWithData (toPath: string) (sinkSpec: string) (sourceSpec: string) (allowDrops: bool) (allowCdc: bool) : int =
+let private runMigrateWithData (toPath: string) (sinkSpec: string) (sourceSpec: string) (declaration: LossDeclaration) (allowCdc: bool) : int =
     if System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" <> "1" then
         Console.Error.WriteLine
             "projection migrate: --execute requires PROJECTION_ALLOW_EXECUTE=1 in the environment (R6 gate). Refusing."
@@ -1057,14 +1097,14 @@ let private runMigrateWithData (toPath: string) (sinkSpec: string) (sourceSpec: 
                                 printErrors Console.Error es
                                 return 7
                             | Ok () ->
-                                match MigrationRun.preview allowDrops sinkSourceA target with
+                                match MigrationRun.preview declaration sinkSourceA target with
                                 | Error e -> return reportMigrationError e
                                 | Ok artifacts ->
                                     match! migratePreflights "sink" sink (plannedWritesOf artifacts.SchemaStatements) with
                                     | Error code -> return code
                                     | Ok () ->
                                         let! outcome =
-                                            MigrationRun.executeWithData allowDrops Transfer.Execute allowCdc
+                                            MigrationRun.executeWithData declaration Transfer.Execute allowCdc
                                                 sinkSourceA target Map.empty dataSource sink
                                         match outcome with
                                         | Ok o when o.Schema.Verified ->
@@ -1112,10 +1152,19 @@ let main argv =
         runCanary sourceDdlPath
     | [| "policy-diff"; configAPath; configBPath |] ->
         runPolicyDiff configAPath configBPath
-    | [| "migrate"; "--from"; fromPath; "--to"; toPath |] ->
-        runMigratePreview fromPath toPath false
-    | [| "migrate"; "--from"; fromPath; "--to"; toPath; "--allow-drops" |] ->
-        runMigratePreview fromPath toPath true
+    | arr when arr.Length >= 1 && arr.[0] = "migrate" && not (Array.contains "--execute" arr) ->
+        let valueOf (flag: string) =
+            arr
+            |> Array.tryFindIndex ((=) flag)
+            |> Option.bind (fun i -> if i + 1 < arr.Length then Some arr.[i + 1] else None)
+        let declaration = parseLossDeclaration arr
+        match valueOf "--to", valueOf "--from", valueOf "--store" with
+        | Some toPath, Some fromPath, _ -> runMigratePreview fromPath toPath declaration
+        | Some toPath, None, Some storePath -> runMigrateFromStore storePath toPath declaration
+        | _ ->
+            Console.Error.WriteLine
+                "projection migrate (dry-run): needs --to <modelB.json> with either --from <modelA.json> (two-model) or --store <lifecycle.json> (snapshot⊖snapshot)."
+            2
     | arr when arr.Length >= 1 && arr.[0] = "migrate" && Array.contains "--execute" arr ->
         // B1 — live execution. In-place (`--conn`) or cross-substrate
         // (`--sink-conn` + `--source-conn`, the data-load form). Flag-order-
@@ -1124,13 +1173,13 @@ let main argv =
             arr
             |> Array.tryFindIndex ((=) flag)
             |> Option.bind (fun i -> if i + 1 < arr.Length then Some arr.[i + 1] else None)
-        let allowDrops = Array.contains "--allow-drops" arr
+        let declaration = parseLossDeclaration arr
         let allowCdc = Array.contains "--allow-cdc" arr
         match valueOf "--to", valueOf "--source-conn", valueOf "--sink-conn", valueOf "--conn" with
         | Some toPath, Some sourceSpec, Some sinkSpec, _ ->
-            runMigrateWithData toPath sinkSpec sourceSpec allowDrops allowCdc
+            runMigrateWithData toPath sinkSpec sourceSpec declaration allowCdc
         | Some toPath, None, None, Some connSpec ->
-            runMigrateExecute toPath connSpec allowDrops allowCdc
+            runMigrateExecute toPath connSpec declaration allowCdc
         | _ ->
             Console.Error.WriteLine
                 "projection migrate --execute: in-place needs --to <modelB.json> --conn <ref>; cross-substrate needs --to --sink-conn --source-conn."

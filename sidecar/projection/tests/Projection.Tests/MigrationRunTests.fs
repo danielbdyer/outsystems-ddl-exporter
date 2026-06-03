@@ -59,21 +59,21 @@ let private withTempFile (f: string -> unit) : unit =
 
 [<Fact>]
 let ``6.D.1: a reshape previews an ALTER differential (not a CREATE), one statement`` () =
-    let artifacts = MigrationRun.preview false sampleCatalog reshapedTarget |> mustOk
+    let artifacts = MigrationRun.preview DeclareNone sampleCatalog reshapedTarget |> mustOk
     Assert.Equal(1, artifacts.SchemaStatements |> List.filter isAlter |> List.length)
     Assert.True(artifacts.SchemaStatements |> List.forall isAlter)   // no CREATE TABLE — minimum-viable
     Assert.Empty(artifacts.RefactorLog)
 
 [<Fact>]
 let ``6.D.1: a rename previews a RefactorLog entry (data-preserving), no ALTER`` () =
-    let artifacts = MigrationRun.preview false sampleCatalog renamedTarget |> mustOk
+    let artifacts = MigrationRun.preview DeclareNone sampleCatalog renamedTarget |> mustOk
     Assert.Empty(artifacts.SchemaStatements)
     Assert.Equal(1, List.length artifacts.RefactorLog)
     Assert.Equal("Patron", (List.exactlyOne artifacts.RefactorLog).NewName)
 
 [<Fact>]
 let ``6.D.1: an idempotent migrate previews empty artifacts (CDC-silent, zero touches)`` () =
-    let artifacts = MigrationRun.preview false sampleCatalog sampleCatalog |> mustOk
+    let artifacts = MigrationRun.preview DeclareNone sampleCatalog sampleCatalog |> mustOk
     Assert.Empty(artifacts.SchemaStatements)
     Assert.Empty(artifacts.RefactorLog)
     Assert.True(Migration.isIdempotent artifacts.Plan)
@@ -84,18 +84,18 @@ let ``6.D.1: an idempotent migrate previews empty artifacts (CDC-silent, zero to
 
 [<Fact>]
 let ``6.D.1: a destructive drop refuses (RefusedByViolations) before any write`` () =
-    match MigrationRun.preview false (withExtraKind sampleCatalog) sampleCatalog with
-    | FsResult.Error (RefusedByViolations [ WouldDropKind _ ]) -> ()
+    match MigrationRun.preview DeclareNone (withExtraKind sampleCatalog) sampleCatalog with
+    | FsResult.Error (RefusedByViolations [ SchemaLoss.DropKind _ ]) -> ()
     | other -> Assert.Fail(sprintf "expected RefusedByViolations, got %A" other)
 
 [<Fact>]
 let ``6.D.1: allowDrops lets the drop through`` () =
-    let artifacts = MigrationRun.preview true (withExtraKind sampleCatalog) sampleCatalog |> mustOk
+    let artifacts = MigrationRun.preview DeclareAll (withExtraKind sampleCatalog) sampleCatalog |> mustOk
     Assert.Equal(1, artifacts.Plan.Preview.Channels.RemovedKinds)
 
 [<Fact>]
 let ``6.D.1: a non-shape facet change refuses (RefusedBySchemaErrors)`` () =
-    match MigrationRun.preview false sampleCatalog nonShapeTarget with
+    match MigrationRun.preview DeclareNone sampleCatalog nonShapeTarget with
     | FsResult.Error (RefusedBySchemaErrors errs) -> Assert.NotEmpty(errs)
     | other -> Assert.Fail(sprintf "expected RefusedBySchemaErrors, got %A" other)
 
@@ -107,7 +107,7 @@ let ``6.D.1: a non-shape facet change refuses (RefusedBySchemaErrors)`` () =
 [<Fact>]
 let ``6.D.1: record opens a timeline at genesis on the first migration`` () =
     withTempFile (fun path ->
-        let artifacts = MigrationRun.preview true sampleCatalog renamedTarget |> mustOk
+        let artifacts = MigrationRun.preview DeclareAll sampleCatalog renamedTarget |> mustOk
         let coord = EpisodeCoordinate.create (ver 0 "1.0.0") Environment.Dev (at "2026-06-01T09:00:00+00:00")
         let chain = MigrationRun.record path (tl "dev") coord (Some "reflog#1") (DataObservation.create 0 None) artifacts |> mustOk
         Assert.Equal(1, EpisodicLifecycle.episodes chain |> List.length)
@@ -121,7 +121,7 @@ let ``6.D.1: the full A->B loop — migrate, record, then reconstruct reproduces
         LifecycleStore.save path (EpisodicLifecycle.genesis (tl "dev") (Episode.ofSchema genesisCoord sampleCatalog))
         |> (function FsResult.Ok () -> () | FsResult.Error e -> Assert.Fail(sprintf "%A" e))
         // Episode 1: migrate sampleCatalog → reshapedTarget, recorded.
-        let artifacts = MigrationRun.preview false sampleCatalog reshapedTarget |> mustOk
+        let artifacts = MigrationRun.preview DeclareNone sampleCatalog reshapedTarget |> mustOk
         let coord = EpisodeCoordinate.create (ver 1 "1.1.0") Environment.Dev (at "2026-06-08T09:00:00+00:00")
         let chain = MigrationRun.record path (tl "dev") coord (Some "reflog#1") (DataObservation.create 12 (Some "lsn:0x0C")) artifacts |> mustOk
         // The FTC over the recorded chain reproduces B (genesis ⊕ δ = target).
@@ -131,6 +131,36 @@ let ``6.D.1: the full A->B loop — migrate, record, then reconstruct reproduces
         let reloaded = LifecycleStore.load path |> mustOk
         let reReconstructed = EpisodicLifecycle.reconstructLatestSchema reloaded |> mustOk
         Assert.True(CatalogDiff.isEmpty (CatalogDiff.between reshapedTarget reReconstructed |> mustOk)))
+
+// ===========================================================================
+// The snapshot⊖snapshot loop — previewFromStore sources state A from the
+// durable LifecycleStore (closes the latent emission→snapshot→diff calculus)
+// ===========================================================================
+
+[<Fact>]
+let ``6.H: previewFromStore on a missing store is genesis — B is all Add, no losses`` () =
+    withTempFile (fun path ->
+        // No store at `path` → genesis: A = ∅, so every kind is Added, nothing
+        // dropped — safe even under DeclareNone (the safe default).
+        let artifacts = MigrationRun.previewFromStore path DeclareNone sampleCatalog |> mustOk
+        Assert.True(Migration.isSafe artifacts.Plan)
+        Assert.Equal(0, artifacts.Plan.Preview.Channels.RemovedKinds)
+        Assert.True(artifacts.Plan.Preview.Channels.AddedKinds > 0))
+
+[<Fact>]
+let ``6.H: previewFromStore diffs B against the reconstructed prior snapshot (same δ as the two-model preview)`` () =
+    withTempFile (fun path ->
+        // Prior emission persisted: genesis at sampleCatalog (state A on disk).
+        let coord = EpisodeCoordinate.create (ver 0 "1.0.0") Environment.Dev (at "2026-06-01T09:00:00+00:00")
+        LifecycleStore.save path (EpisodicLifecycle.genesis (tl "dev") (Episode.ofSchema coord sampleCatalog))
+        |> (function FsResult.Ok () -> () | FsResult.Error e -> Assert.Fail(sprintf "%A" e))
+        // Preview the evolved model against the STORED prior — no hand-authored A.
+        let fromStore = MigrationRun.previewFromStore path DeclareAll renamedTarget |> mustOk
+        // It equals the two-model preview against the same A (the stored prior
+        // reconstructs to sampleCatalog): the loop is faithful.
+        let direct = MigrationRun.preview DeclareAll sampleCatalog renamedTarget |> mustOk
+        Assert.Equal(direct.Plan.Preview.Norm, fromStore.Plan.Preview.Norm)
+        Assert.Equal(1, fromStore.Plan.Preview.Channels.RenamedKinds))
 
 // ===========================================================================
 // The live-execute rename channel — sp_rename for physical table renames
@@ -186,7 +216,7 @@ let ``live: a logical-only rename re-binds the logical name without an sp_rename
 [<Fact>]
 let ``6.D.1: record refuses a non-advancing version (NonMonotonic)`` () =
     withTempFile (fun path ->
-        let artifacts = MigrationRun.preview true sampleCatalog renamedTarget |> mustOk
+        let artifacts = MigrationRun.preview DeclareAll sampleCatalog renamedTarget |> mustOk
         let coord0 = EpisodeCoordinate.create (ver 5 "1.5.0") Environment.Dev (at "2026-06-01T09:00:00+00:00")
         MigrationRun.record path (tl "dev") coord0 None (DataObservation.create 0 None) artifacts |> mustOk |> ignore
         // A second record at a NON-advancing ordinal must refuse.
@@ -217,7 +247,7 @@ let ``6.A.7: migrate preview surfaces identity.synthesizedRenameUnstable for a S
     let oldCat = catOf7 (kindOf7 (synthK ["dbo.T_OLD"]) "T_OLD")
     let newCat = catOf7 (kindOf7 (synthK ["dbo.T_NEW"]) "T_NEW")
     // allowDrops = true so the drop + add proceeds; the warning still surfaces.
-    let artifacts = MigrationRun.preview true oldCat newCat |> mustOk
+    let artifacts = MigrationRun.preview DeclareAll oldCat newCat |> mustOk
     Assert.Contains(
         artifacts.SchemaDiagnostics,
         fun (e: DiagnosticEntry) -> e.Code = "identity.synthesizedRenameUnstable" && e.Severity = DiagnosticSeverity.Warning)
@@ -231,7 +261,7 @@ let ``6.A.7: migrate preview surfaces identity.synthesizedRenameUnstable for a S
 
 [<Fact>]
 let ``6.A.13: redeploying an unchanged schema emits zero DDL (engine-level CDC-silence)`` () =
-    let artifacts = MigrationRun.preview false sampleCatalog sampleCatalog |> mustOk
+    let artifacts = MigrationRun.preview DeclareNone sampleCatalog sampleCatalog |> mustOk
     Assert.Empty(artifacts.SchemaStatements)
     Assert.Empty(MigrationRun.renameStatements artifacts.Plan.Diff)
     Assert.True(Migration.isIdempotent artifacts.Plan)
