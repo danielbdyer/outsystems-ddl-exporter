@@ -779,7 +779,12 @@ over.
 
 Which moves each protein folds. `●` = central to the protein; `○` = present when the sprint's delta
 contains it; `—` = not exercised. This is the matrix's "every protein decomposes into listed amino
-acids" face (§7).
+acids" face (§7). **Reconciliation with the §3 chains:** the structural moves (Add…Accumulate) and
+the salient verbs are the numbered steps of each protein's §3 chain; the cross-cutting *guarantee*
+verbs (**Gate · Measure · Verify · Tolerate · Record**) are marked wherever the protein relies on the
+guarantee, which may be a cross-cutting invariant (e.g., every protein gates *something*; every
+mutating protein measures the norm) rather than a separately-numbered chain step. So a `●`/`○` here
+without an identically-named bullet in §3 is intended, not a drift.
 
 | Move \ Protein | P-1 Dev | P-2 QA | P-3 UAT-rekey | P-4 SSIS pub | P-5 redeploy | P-6 migrate | P-7 eject | P-8 drift | P-9 canary |
 |---|---|---|---|---|---|---|---|---|---|
@@ -811,6 +816,31 @@ acids" face (§7).
 
 The cross-cutting predicates that must hold across *all* cells. Each is the *discriminating* law (the
 input where a plausibly-named-but-wrong version breaks the equation), not a restatement of a name.
+
+### 5.0 Predicate legend (every `P-*` code, resolved in one place)
+
+Each discriminating predicate used in §3–§4, with its canonical one-line statement. The deep cells
+and laws below elaborate; this table is the index so any `P-*` reference resolves without hunting.
+
+| Code | Plane | Canonical statement (the discriminating law) |
+|---|---|---|
+| **P-CMP** | schema/data | `isEmpty(between A B) ⟺ A ≈ B over *every* declared facet` — a facet the diff forgets to compare is silent blindness (the `isEmpty` trap). |
+| **P-RT₁** | any | `apply(between(A,B), A) ≈ B` modulo the captured surface — the round-trip law (stated order-insensitively). |
+| **P-RT₂** | any | **No-cheat:** `∃ A' ≠ source. apply(d, A') ≠ target(d)` — `apply` is a genuine action of its argument, not a stored result (§5.2). |
+| **P-RN** | schema/identity | Rename iff, for the same `SsKey`, `deployed.Realization ≠ emitted.Realization` (under `Realization := Designation`, `deployed.Name ≠ emitted.Name`) — detect in the Designation name-space, not the physical (§5.8). |
+| **P-CH** | schema/data | **Partition:** every `CatalogDiff` element is realized by exactly one move — disjoint + covering; `π_c ∘ π_{c'} = 0`, `Σ π_c = id` (§5.5). |
+| **P-ORD** | schema | Rename precedes reshape-on-the-new-name; create precedes insert; schema precedes data — the plan is a partial order (§5.5). |
+| **P-ORD-DATA** | data | Inserts precede their FK referrers; deferred/cyclic FKs go two-phase; deletes follow referrer removal. |
+| **P-ID** | identity | Comparison matches by `SsKey` before comparing anything; physical names never reused; provenance compares engine-emitted snapshots carrying true SsKeys (§5.8). |
+| **P-REKEY** | identity/data | Rows match by reconciled identity and compare by *semantic* value; a re-keyed row is an **Update**, not Delete+Insert; the `ON` clause keys on the business key, not the raw surrogate. |
+| **P-DM** | data | **Data-minimality:** `‖emit(δ)‖_data = |capture| = |true row delta|`; idempotent ⇒ 0 captures (the CDC-silence floor); general case capture = k (§5.6). |
+| **P-NOOP** | data | The `WHEN MATCHED` UPDATE fires only on a genuine null-safe column difference — an unconditional `WHEN MATCHED` captures `|matched|`, not `|changed|`. |
+| **P-DEL-SCOPE** | data | `WHEN NOT MATCHED BY SOURCE THEN DELETE` is emitted only within a declared scope `S` and fires only on `r ∈ S` — never silently table-wide. |
+| **P-DROP** | data | A dropped row (orphaned FK, unmatched reconciliation) is **fail-loud** (non-zero exit), never exit-0. |
+| **P-PROV** | provenance | The accumulated record (snapshots + append-only refactorlog) replays to reconstruct any state from its earlier provenance; entries never deleted; deduped against prior (§5.9). |
+| **P-IF** | any | **Intent filter:** every observed difference is operator-intended (emit) or substrate-noise (tolerate) — silence on neither (§5.4). |
+| **P-GATE** | any | **Gate completeness:** for every execution-time failure mode, some pre-flight refuses *first* when its precondition is violated (§4.6) — what T-VI spanning quantifies over. |
+| **P-EXE** | data | Applying the plan is atomic-or-resumable; partial application is impossible or precisely resumable (`∀ mid-load failure: state(sink) ∈ {clean, deterministic-resume-point}`). |
 
 ### 5.1 The torsor — State is a point, Delta is a displacement (T12)
 

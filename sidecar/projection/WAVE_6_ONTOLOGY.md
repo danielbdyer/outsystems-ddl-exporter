@@ -1,5 +1,11 @@
 # WAVE 6 ONTOLOGY — The Shape of Change Over Time
 
+> **Indexed by `THE_USE_CASE_ONTOLOGY.md` (the masterwork, 2026-06-03).** The masterwork is the single
+> index of the target; it carries this document's change-ontology forward (the seven schema + five
+> data moves, the premise, the discriminating-predicate discipline) into a complete amino-acid × protein
+> matrix. This file remains canonical **provenance** for the change-ontology and the premise
+> re-prioritization. Read the masterwork first; read this for the depth.
+
 > **What this is.** The masterwork that grounds Wave 6's L2/L3 climb in the operator's *physical, operational
 > premise*, so the engine becomes **structurally isomorphic to the core moves of change over time**. It is the
 > full-fidelity source for the premise and the change-ontology; `EXECUTION_PLAN.md` Wave 6 (the buildable route)

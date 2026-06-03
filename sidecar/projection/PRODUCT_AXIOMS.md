@@ -1,5 +1,11 @@
 # PRODUCT AXIOMS — What V2 Must Verifiably Guarantee End-to-End
 
+> **Indexed by `THE_USE_CASE_ONTOLOGY.md` (the masterwork, 2026-06-03), NOT superseded.** The masterwork
+> is the single index of the target and points here for the operator-facing L3 contract. This file
+> remains the **live L3 axiom registry** — the canonical home for the falsifiable operator guarantees
+> (L3-S/D/I/X/C/CC). The masterwork's laws (§5) and matrix cite these axioms; they are not duplicated
+> there. Read the masterwork for orientation; this for the full operator contract.
+
 The L3 product-axiom layer. Sibling to `AXIOMS.md` (the L2 formal system) and `V2_PRODUCTION_CUTOVER.md` (the cutover plan). Code and tests cite this document by axiom ID (`L3-S1`, `L3-D1`, etc.) when verifying operator-facing properties.
 
 This document is the canonical home for what V2 commits to *for the operator*. `AXIOMS.md` is the canonical home for the formal-system axioms that underwrite these commitments at the algebra level. The two documents are intentionally separate: `AXIOMS.md` proves V2 is internally consistent; this document proves V2 satisfies the operator's contract.

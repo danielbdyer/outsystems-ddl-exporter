@@ -1,5 +1,11 @@
 # AUDIT 2026-05-31 — Five-Axis Red-Team: Substantiating the Isomorphism
 
+> **Indexed by `THE_USE_CASE_ONTOLOGY.md` (the masterwork, 2026-06-03).** The masterwork is the single
+> index of the target; this audit is the empirical forcing function behind its gate set (§4.6) and the
+> orthogonality/spanning laws (T-V/T-VI). This file remains canonical **provenance** for the per-axis
+> silent-erasure findings (file:line), the two couplings, and the three missing spanning dimensions.
+> For *current* status against the matrix, read `DEBRIEF_2026_06_02_ISOMORPHISM_CLIMB_AND_BACKLOG.md`.
+
 > **What this is.** The exhaustive, durable record of the six-agent adversarial red-team that tested the
 > NORTH_STAR five-axis basis to destruction against the operator's one-command A→B migration. It is the
 > *full-fidelity* source; `NORTH_STAR.md` (the iso-ladder + T-V/T-VI + Promise 8), `EXECUTION_PLAN.md`

@@ -1,5 +1,11 @@
 # V2 — The Spine at Multiple Levels
 
+> **Indexed by `THE_USE_CASE_ONTOLOGY.md` (the masterwork, 2026-06-03).** The masterwork is the single
+> index of the target; it carries the structural shape forward through its matrix and laws. This file
+> remains canonical **provenance** for the categorical rendering — the seven primitives, the seven
+> tessellating patterns, and the six structural inferences (sheaf / adjunction / Hom-set / quotient /
+> continuation / tessellation). Read the masterwork first; read this for the categorical depth.
+
 **Date:** 2026-05-08; **chapter-3.1-close update:** 2026-05-30
 **Purpose:** Render the deeper structural shape of the V2 system — the primitives that recur, the patterns that tessellate, the inferences that only become visible once all the chapter pre-scopes, the backlog, and the algebraic foundation are in view simultaneously. The PLAYBOOK names *what* and *how*; this document names the *why-it-fits-together*.
 

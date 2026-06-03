@@ -1,5 +1,11 @@
 # WAVE 6 MORPHOLOGY — Amino Acids, Proteins, and the Concern-Movement Field
 
+> **Indexed by `THE_USE_CASE_ONTOLOGY.md` (the masterwork, 2026-06-03).** The masterwork adopts this
+> document's expository "amino acid / protein" framing and completes it into a closed alphabet and a
+> full protein catalog (target-first). This file remains canonical **provenance** for the as-is
+> structural research (the latent-vs-activated finding; the carrier/verb inventory with file:line).
+> Read the masterwork for the target; read this for the territory the map was drawn over.
+
 > **What this is.** The *concrete grounding* the ontology and algebra were missing. `WAVE_6_ONTOLOGY.md` named the
 > entities, `WAVE_6_ALGEBRA.md` cast them as a torsor calculus — both written **over** the codebase. This document
 > is written **from** it: a four-agent structural research pass (2026-06-01) that maps (a) the **amino acids** —
