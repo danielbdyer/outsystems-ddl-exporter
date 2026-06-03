@@ -660,6 +660,74 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
                         })
                 }))
 
+    // -- AC-X1 (part A, live) — the full-export seed bundle deployed to a
+    //    FRESH-BLANK database is non-overwriting / CDC-silent on re-run --------
+    //
+    // THE STANDARD (obligations §0): the operator-resolved premise — full-export
+    // emits the static-entity INSERT scripts for a from-fresh-blank-database
+    // deploy, and they are idempotent (a MERGE), so a re-run lands the same state
+    // and is CDC-silent. This drives the PRODUCTION bundle end-to-end: project
+    // (EmitData) → deploy the DDL + `Data/seed.sql` to a fresh DB → enable CDC →
+    // re-run the SAME seed → assert rows present AND the re-run fired ZERO CDC
+    // captures. A bare-INSERT impostor would PK-collide/duplicate on the re-run;
+    // an over-writing MERGE would fire captures.
+    [<Fact>]
+    member _.``AC-X1: the full-export seed bundle is non-overwriting and CDC-silent on a fresh-blank-DB re-run`` () =
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        let mkKey (parts: string list) = SsKey.synthesizedComposite "OS_X1L" parts |> Result.value
+        let nmx (s: string) = Name.create s |> Result.value
+        let kindKey = mkKey ["Mod"; "Country"]
+        let row code label =
+            { Identifier = mkKey ["Mod"; "Country"; "Row"; code]
+              Values = Map.ofList [ nmx "Id", code; nmx "Code", code; nmx "Label", label ] }
+        let country =
+            { SsKey = kindKey; Name = nmx "Country"; Origin = Native
+              Modality = [ Static [ row "1" "United States"; row "2" "Canada" ] ]
+              Physical = mkTableId "dbo" "Country"
+              Attributes =
+                [ { Attribute.create (mkKey ["Mod";"Country";"Id"]) (nmx "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true }
+                  { Attribute.create (mkKey ["Mod";"Country";"Code"]) (nmx "Code") Text with Column = ColumnRealization.create ("CODE") (false) |> Result.value; IsMandatory = true }
+                  { Attribute.create (mkKey ["Mod";"Country";"Label"]) (nmx "Label") Text with Column = ColumnRealization.create ("LABEL") (false) |> Result.value; IsMandatory = true } ]
+              References = []; Indexes = []; Description = None; IsActive = true
+              Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
+        let catalog =
+            Catalog.create [ { SsKey = mkKey ["Mod"]; Name = nmx "Mod"; Kinds = [ country ]; IsActive = true; ExtendedProperties = [] } ] []
+            |> Result.value
+        let policy =
+            { Policy.empty with Emission = { Policy.empty.Emission with EmitData = true; DataComposition = AllRemaining } }
+        let outputs =
+            Compose.projectWithState policy Profile.empty EmissionPolicy.empty EmissionFolders.empty TransformGroups.empty catalog
+            |> fst
+        let ddl = Compose.aggregateSsdt outputs.SsdtBundle
+        let seed = Map.find "Data/seed.sql" outputs.DataBundle
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "X1FreshSeed" (fun conn _ ->
+                task {
+                    // Fresh-blank DB: deploy schema, run the seed (first load).
+                    do! Deploy.executeBatch conn ddl
+                    do! Deploy.executeBatch conn seed
+                    let! loaded = scalarInt conn "SELECT COUNT(*) FROM [dbo].[Country];"
+                    Assert.Equal(2, loaded)   // the static rows landed on the fresh DB.
+                    let! enabled =
+                        task {
+                            try
+                                do! Deploy.executeBatch conn "EXEC sys.sp_cdc_enable_db;"
+                                do! Deploy.executeBatch conn "EXEC sys.sp_cdc_enable_table @source_schema=N'dbo', @source_name=N'Country', @role_name=NULL, @supports_net_changes=0;"
+                                let! c = scalarInt conn "SELECT COUNT(*) FROM sys.tables WHERE is_tracked_by_cdc = 1 AND name = N'Country';"
+                                return c > 0
+                            with _ -> return false
+                        }
+                    if not enabled then
+                        printfn "SKIP AC-X1 (live): container did not enable CDC"
+                    else
+                        let! baseline = Deploy.cdcCaptureTotal conn
+                        do! Deploy.executeBatch conn seed   // re-run the SAME seed script
+                        let! post = Deploy.cdcCaptureTotal conn
+                        let! after = scalarInt conn "SELECT COUNT(*) FROM [dbo].[Country];"
+                        Assert.Equal(2, after)            // still 2 — non-overwriting, no dupes.
+                        Assert.Equal(baseline, post)     // zero CDC captures on the idempotent re-run.
+                }))
+
     // -- AC-S8 — RENAME is CDC-transparent (‖rename‖_data = 0) ----------------
     //
     // THE STANDARD (obligations §0): a discriminating LIVE witness. A RENAME via

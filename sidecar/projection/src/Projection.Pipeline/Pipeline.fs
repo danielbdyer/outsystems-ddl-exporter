@@ -47,6 +47,16 @@ module Compose =
             /// contents. Iterate to write to disk; consumers needing
             /// a single concatenated SQL string call `aggregateSsdt`.
             SsdtBundle : Map<string, string>
+            /// AC-X1 — the data/seed bundle. When the operator opts into data
+            /// emission (`emission.staticSeeds` / `migrationDependencies` /
+            /// `bootstrap` in config → `EmissionPolicy.EmitData = true`), this
+            /// carries the idempotent, CDC-aware, cycle-ordered MERGE seed
+            /// scripts (`DataEmissionComposer`) keyed by relative path
+            /// (`Data/seed.sql`). Re-running a script against a fresh-blank /
+            /// already-loaded DB is non-overwriting and CDC-silent on unchanged
+            /// rows (the PROD-empty premise). Empty when data emission is off
+            /// (byte-identical to the schema-only bundle).
+            DataBundle : Map<string, string>
             /// V2 IR JSON from `JsonEmitter`, typed as `JsonNode` so
             /// consumers (drift detection, structural diff, post-write
             /// enrichment) query the doc tree without a `JsonNode
@@ -385,6 +395,7 @@ module Compose =
              SuggestConfigEmitter.emit passEntries)
         let outputs = {
             SsdtBundle        = bundle
+            DataBundle        = Map.empty   // populated by projectWithState when EmitData (AC-X1)
             Json              = json
             Distributions     = distributions
             RemediationSql    = remediationSql
@@ -465,14 +476,35 @@ module Compose =
         let versionedPolicy =
             if fullPolicy = Policy.empty then None
             else Some (versionPolicy fullPolicy)
-        projectFromChainWithState
-            chain
-            profile
-            emissionPolicy
-            folders
-            groups
-            versionedPolicy
-            catalog
+        let outputs, finalState =
+            projectFromChainWithState
+                chain
+                profile
+                emissionPolicy
+                folders
+                groups
+                versionedPolicy
+                catalog
+        // AC-X1 — the data leg of the publication bundle. When the operator
+        // opts into data emission, render the idempotent CDC-aware seed scripts
+        // (static-entity populations + bootstrap) over the emitted catalog and
+        // add them to the bundle as `Data/seed.sql`. The scripts are MERGE
+        // (non-overwriting, CDC-silent on unchanged rows) so a fresh-blank DB or
+        // a re-run lands the same state. Off ⇒ `DataBundle` stays empty and the
+        // result is byte-identical to the schema-only bundle.
+        let decorated =
+            if not fullPolicy.Emission.EmitData then outputs
+            else
+                use _ = Bench.scope "emit.dataBundle.compose"
+                match Projection.Targets.Data.DataEmissionComposer.composeRendered fullPolicy finalState.Catalog profile with
+                | Ok sql when not (System.String.IsNullOrWhiteSpace sql) ->
+                    { outputs with DataBundle = Map.ofList [ "Data/seed.sql", sql ] }
+                | Ok _ -> outputs   // no static/bootstrap rows in scope ⇒ nothing to emit
+                | Error err ->
+                    // Mirrors the SSDT-bundle invariant: a valid catalog never
+                    // fails the composer (the keyset is `Catalog.allKinds`).
+                    invalidOp (sprintf "Compose.projectWithState: DataEmissionComposer.composeRendered: %A" err)
+        decorated, finalState
 
     /// Skeleton-shape project: routes through
     /// `RegisteredTransforms.skeletonChainSteps` (per chapter A.4.7'
@@ -564,6 +596,20 @@ module Compose =
                 | parent -> Directory.CreateDirectory parent |> ignore
                 writeFile stagingPath body
                 Path.Combine(outputDir, relPath))
+        // AC-X1 — the data/seed bundle (idempotent CDC-aware MERGE scripts).
+        // Empty unless the operator opted into data emission; same per-path
+        // staging + directory-creation discipline as the SSDT bundle.
+        let dataFinalPaths =
+            outputs.DataBundle
+            |> Map.toList
+            |> List.map (fun (relPath, body) ->
+                let stagingPath = Path.Combine(stagingDir, relPath)
+                match Path.GetDirectoryName stagingPath with
+                | null -> ()
+                | parent when System.String.IsNullOrEmpty parent -> ()
+                | parent -> Directory.CreateDirectory parent |> ignore
+                writeFile stagingPath body
+                Path.Combine(outputDir, relPath))
         // V2 IR JSON
         let jsonOpts = System.Text.Json.JsonSerializerOptions(WriteIndented = true)
         let jsonStaging = Path.Combine(stagingDir, ArtifactPath.json)
@@ -588,7 +634,7 @@ module Compose =
         let remediationFinal   = Path.Combine(outputDir, ArtifactPath.remediation)
         let summaryFinal       = Path.Combine(outputDir, ArtifactPath.summary)
         let suggestConfigFinal = Path.Combine(outputDir, ArtifactPath.suggestConfig)
-        bundleFinalPaths @ [ jsonFinal; distributionsFinal; remediationFinal; summaryFinal; suggestConfigFinal ]
+        bundleFinalPaths @ dataFinalPaths @ [ jsonFinal; distributionsFinal; remediationFinal; summaryFinal; suggestConfigFinal ]
 
     let private safeCleanupStaging (stagingDir: string) : unit =
         if Directory.Exists stagingDir then
@@ -723,10 +769,22 @@ module Compose =
         let insertionR  = InsertionPolicyBinding.fromConfig cfg
         match tighteningR, insertionR with
         | Ok tightening, Ok insertion ->
+            // AC-X1 — translate the config's data-emission toggles into the
+            // EmissionPolicy. `staticSeeds` / `migrationDependencies` /
+            // `bootstrap` turning on enables `EmitData`; `DataComposition`
+            // selects which data emitters fire (Static included ⇒ AllRemaining;
+            // Static off but Migration/Bootstrap on ⇒ AllExceptStatic).
+            let emitData =
+                cfg.Emission.StaticSeeds
+                || cfg.Emission.MigrationDependencies
+                || cfg.Emission.Bootstrap
+            let dataComposition =
+                if cfg.Emission.StaticSeeds then AllRemaining else AllExceptStatic
             Result.success {
                 Policy.empty with
                     Tightening = tightening
                     Insertion  = insertion
+                    Emission   = { Policy.empty.Emission with EmitData = emitData; DataComposition = dataComposition }
             }
         | _ ->
             let tighteningErrs = match tighteningR with Ok _ -> [] | Error es -> es

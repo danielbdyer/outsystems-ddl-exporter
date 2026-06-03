@@ -50,6 +50,7 @@
     <Compile Include="JointDependencyDiagnosticsTests.fs" />
     <Compile Include="EmissionFoldersBindingTests.fs" />
     <Compile Include="EmissionFoldersOverlayTests.fs" />
+    <Compile Include="FullExportDataBundleTests.fs" />
     <Compile Include="TransformGroupsBindingTests.fs" />
     <Compile Include="TransformGroupsFilterTests.fs" />
     <Compile Include="InsertionPolicyBindingTests.fs" />
