@@ -19,6 +19,56 @@
 
 ---
 
+## 0 — The discernment discipline (read before any grade below)
+
+§§1–6 were graded **test-first**: "a discriminating test is cited → COVERED." That makes the *test*
+the authority and silently inherits two failure classes we have now hit in the wild:
+- **HOLLOW** — the cited test is green but does not actually discriminate the criterion (the
+  phantom-green: e.g. `post > baseline` where the criterion needs exact `= baseline + 2`).
+- **silently RED** — the cited test does not even pass at HEAD (the 2026-06-02 VO-leak that red-ed the
+  whole `CdcSilenceTests` class while it was cited as COVERED).
+
+**The corrected unit of judgment is the acceptance criterion, not the test.** The criterion is the
+subject on trial; it is discerned against **two independent legs of evidence**:
+1. **Implemented reality** — does a real production code path do what the criterion demands? (read the
+   code, judge it against the criterion's discriminating predicate, *independent of any test*)
+2. **Implemented test** — does a test that *runs green at HEAD* actually *assert* that predicate?
+
+**Direction is load-bearing: criterion → {reality, test}, never the other way around.** Do not read a
+test and infer what the criterion must be; do not let the implementation define "correct." The
+criterion is fixed; code and test are each measured against it. **Two *independent* legs guard against
+co-wrongness** — a test written to match the implementation rather than the criterion. Checking
+test-against-code (or trusting the test as the criterion's proxy) lets co-wrong code+test agree and
+look green; only judging *each leg against the criterion* catches it.
+
+### The grade (supersedes bare COVERED/UNCOVERED)
+
+| Grade | Reality leg (criterion vs code) | Test leg (criterion vs live test) |
+|---|---|---|
+| **HELD** | satisfies | live-green AND discriminates |
+| **CODE-ONLY** | satisfies | none / non-discriminating / not-live → *silent-regression risk* |
+| **HOLLOW** | does NOT satisfy (or only weakly) | green but does not truly discriminate → *phantom-green* |
+| **NEITHER** | gap | gap |
+| **STRUCTURAL** | satisfied by construction (closed DU / smart ctor / type) | no runtime test possible (liveness N-A) |
+
+**Liveness is the test-leg's currency check — necessary, subordinate, and it decays.** A green test
+that doesn't discriminate is still HOLLOW; an implementation that passes a test without meeting the
+criterion is still HOLLOW. Liveness must be *re-measured* — Docker tests no-op when the daemon is down;
+typed-VO lifts introduce `String.Concat` leaks the build cannot catch — so this document carries a
+stamp and a re-measure trigger. **The metric is the quality of the discernment, not the count:** the
+aggregate % is an inspection upper bound; a cell is only as true as the two-leg judgment behind it.
+
+### Liveness stamp — this refresh
+
+Full suite at HEAD `3c2c854`: **pure 2679 passed / 0 failed / 207 deliberate Skip-stubs; Docker 121
+passed / 0 failed / 0 skipped.** No matrix-cited class is in the skip set → **the test leg is verified
+live for every cited mark.** The sole silent-RED (`CdcSilenceTests` VO-leak) is fixed. What §§1–6's
+COVERED marks have NOT established is the **reality leg** and **discrimination** — supplied by the
+criterion-anchored two-leg regrade in §7 below. **Re-measure trigger:** any typed-VO lift, IR change,
+Docker-state change, or touch to a cited code path or test.
+
+---
+
 ## 1 — The global obligation scorecard (the count)
 
 422 atomic obligations across the 57 acceptance criteria. ~220 COVERED (52%). Coverage is **not**
