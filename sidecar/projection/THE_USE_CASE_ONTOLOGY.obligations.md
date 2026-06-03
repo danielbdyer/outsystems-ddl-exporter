@@ -708,24 +708,35 @@ diff-vs-prior).
 columns set `Column.IsNullable=true`, not `IsMandatory`). Track E — narrowing promoted from Warning to a
 declared-loss refusal (gated on the existing `allowDrops`) closed **G8 HOLLOW→HELD** and **S11
 CODE-ONLY→HELD**. Integration caught real cross-batch blast radius: E's gate refused a narrowing in
-Track C's AC-P8 fixture (`verifiedOutcome` now uses `DeclareAll`). Scorecard below is post-Batch-2.
+Track C's AC-P8 fixture (`verifiedOutcome` now uses `DeclareAll`).
+
+**Batch 2b landed (Track F; HEAD after this commit):** +3 to HELD. Gate wiring — **G7 CODE-ONLY→HELD**
+(`tighteningPreflight` wired into `migrate --execute` MC + MX, guarded by an empty-overlay short-circuit,
+with a diff-derived `tightenedToNotNull` overlay), **G1 + G2 CODE-ONLY→HELD** (a `spanningPreflight`
+connection + permission gate wired into the transfer execute path before any write). **G0 deferred**
+(stays NEITHER): routing all verbs through `Preflight.all` is a reporting refactor that would risk
+regressing the per-gate exit codes — the obligation ("refuse before write") is already met by the
+per-gate seams; G0 is a composition convenience, queued as its own slice with a `code→(exit,label)`
+mapping. Integrated via git 3-way cherry-pick (F's worktree base far-drifted); the AC-I5/Track-C edits
+in `Program.fs`/`TransferRun.fs` were preserved (G7 wraps the record-wiring; `validateUserMap` and
+`spanningPreflight` coexist). Scorecard below is post-Batch-2b.
 
 | Plane | HELD | CODE-ONLY | HOLLOW | NEITHER | STRUCTURAL |
 |---|---|---|---|---|---|
 | Schema (AC-S) | 10 | 0 | 0 | 2 | 0 |
 | Identity (AC-I) | 5 | 1 | 0 | 1 | — |
-| Gates (AC-G) | 4 | 3 | 0 | 4 | — |
+| Gates (AC-G) | 7 | 0 | 0 | 4 | — |
 | Provenance (AC-P) | 6 | 1 | 1 | 1 | — |
 | Data/CDC (AC-D) | 3 | 3 | 0 | 4 | — |
 | Proteins (AC-X) | 0 | 0 | 6 | 2 | — |
-| **Total (57)** | **28** | **8** | **7** | **14** | **0** |
+| **Total (57)** | **31** | **5** | **7** | **14** | **0** |
 
-*(Baseline HELD 18 → Batch 1 → 25 → Batch 2 → 28 (49%). CODE-ONLY 15→10→8; HOLLOW 9→8→7.)*
+*(Baseline HELD 18 → B1 → 25 → B2 → 28 → B2b → 31 (54%). CODE-ONLY 15→10→8→5; HOLLOW 9→8→7.)*
 
-**The reading (post-Batch-2).** Genuinely solid (HELD) = **28 of 57 (49%)** — up from 19 (33%) at the
+**The reading (post-Batch-2b).** Genuinely solid (HELD) = **31 of 57 (54%)** — up from 19 (33%) at the
 baseline, *still not* the ~24 PASS the test-first pass implied (those were generous in the wrong cells).
-**8 cells (14%) are HOLLOW** — green tests that do not establish the criterion (the phantom-greens).
-**10 (18%) are CODE-ONLY** — the code is correct but no test discriminates the criterion's adversarial
+**7 cells (12%) are HOLLOW** — green tests that do not establish the criterion (the phantom-greens).
+**5 (9%) are CODE-ONLY** — the code is correct but no test discriminates the criterion's adversarial
 input, so a plausible wrong refactor passes the whole suite. **14 (25%) are NEITHER** — genuine gaps.
 The HOLLOW mass concentrates exactly where the criteria demand *composed,
 operator-reachable* behavior (proteins) or *wired* behavior (gates/provenance) — the places a green
@@ -735,7 +746,7 @@ unit/harness test exercises a function in isolation that the production path nev
 
 - **Schema:** HELD S1, S2, S3, S4, S5, S6, S9, S10, S11, S12 · NEITHER S7, S8. *(Batch 1: S1, S6, S9, S12→HELD. Batch 2: S11 CODE-ONLY→HELD.)*
 - **Identity:** HELD I1, I3, I4, **I5** (fixed this session — now genuinely HELD), I6 · CODE-ONLY I2 · NEITHER I7.
-- **Gates:** HELD G3, G5, G6, G8 · CODE-ONLY G1, G2, G7 · NEITHER G0, G4, G9, G10. *(Batch 2: G8 HOLLOW→HELD — narrowing now refuses unless declared.)*
+- **Gates:** HELD G1, G2, G3, G5, G6, G7, G8 · NEITHER G0, G4, G9, G10. *(Batch 2: G8→HELD. Batch 2b: G1/G2/G7 wired→HELD; G0 deferred — `Preflight.all` reporting refactor, obligation already met by per-gate seams.)*
 - **Provenance:** HELD P1, P2, P3, P5, P7, P8 · CODE-ONLY P4 · HOLLOW P9 · NEITHER P6. *(Batch 1: P1, P2 CODE-ONLY→HELD; P8 HOLLOW→HELD.)*
 - **Data/CDC:** HELD D1, D8, D9 · CODE-ONLY D2, D3, D4 · NEITHER D5, D6, D7, D10. *(Batch 2: D1 CODE-ONLY→HELD — 8 types × null-state, exact ±2/0. D2/D3 retain only the MigrationDependencies-emitter live witness; D4 the k>1 exact-count.)*
 - **Proteins:** HOLLOW X1, X2, X4, X5, X7, X8 · NEITHER X3, X6.
@@ -758,14 +769,13 @@ The protein HOLLOWs are **not 6 independent problems** — they collapse onto fo
 **record-not-wired** (P8 → X1, X5), **no-CDC-count-in-any-CLI-verb** (X1, X4, X5, X8), **re-key-not-
 composed** (X2), **no-diff-vs-prior / vs-model** (X1, X3, X7). Fix the seam, lift several cells.
 
-### The CODE-ONLY register (8) — correct but unguarded (a wrong refactor passes the suite)
+### The CODE-ONLY register (5) — correct but unguarded (a wrong refactor passes the suite)
 
-*Batch 1 closed S1, S6, S9, P1, P2; Batch 2 closed S11 (with G8) and D1.* Remaining — pure-test closers
-(no production code): **D2/D3** (only the MigrationDependencies-emitter live witness now missing — the
-nullable null-state gaps D2.4/D3.3 closed in Batch 2), **D4** (k>1 exact-count). Wiring/consumer
-closers: **G1/G2** (connection/permission on `transfer`), **G7** (tightening on all verbs), **I2**
-(ByEmail/BySsKey/Fallback never reach `runReconciling` — a *reality* gap), **P4** (compose has zero
-production callers).
+*Batch 1 closed S1/S6/S9/P1/P2; Batch 2 closed S11/D1; Batch 2b wired G1/G2/G7.* Remaining — pure-test
+closers (no production code): **D2/D3** (only the MigrationDependencies-emitter live witness now missing —
+the nullable null-state gaps D2.4/D3.3 closed in Batch 2), **D4** (k>1 exact-count). Wiring/consumer
+closers: **I2** (ByEmail/BySsKey/Fallback never reach `runReconciling` — a *reality* gap), **P4**
+(compose has zero production callers). All five fall to **Round 4**.
 
 ---
 

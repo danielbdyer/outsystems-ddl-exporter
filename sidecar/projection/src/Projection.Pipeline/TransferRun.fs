@@ -289,6 +289,59 @@ module Transfer =
                         "%d Source identit(ies) have no Sink match in the user-map (kind(s): %s); refusing --execute before any write. Remediate the user-map or pass --allow-drops to accept the loss."
                         reconciled.Unmatched.Length kinds))
 
+    // -- G1 / G2: connection + permission pre-flight (T-VI spanning) ---------
+    //
+    // The transfer write path opened both endpoints and ran straight into the
+    // load with no liveness/credential or grant check (only the in-pipeline CDC
+    // gate). A dead/unreachable endpoint surfaced as a mid-load failure; a
+    // write-denied sink transferred zero rows and exited clean. These two gates
+    // refuse BEFORE any write — G1 (both endpoints live + credentialed,
+    // `transfer.connectionUnavailable`) and G2 (the sink grant covers the
+    // planned INSERTs, `transfer.insufficientGrant`).
+
+    /// The writes a straight load performs at the sink: one INSERT per kind
+    /// (the FK-repoint Phase 2 is an UPDATE on the same tables INSERT covers, so
+    /// INSERT is the grant the gate requires). Deterministic — catalog order.
+    let private plannedTransferWrites (catalog: Catalog) : Preflight.PlannedWrite list =
+        Catalog.allKinds catalog
+        |> List.map (fun k ->
+            { Preflight.Schema = TableId.schemaText k.Physical
+              Preflight.Table  = TableId.tableText k.Physical
+              Preflight.Action = Preflight.Insert })
+        |> List.distinct
+
+    /// G1 + G2 for an Execute transfer: probe both endpoints (connection
+    /// liveness/credential) and the sink grant against the planned INSERTs,
+    /// refusing before any write. Re-codes the migrate-named refusals under the
+    /// `transfer.*` namespace so the CLI can map them to the connection/
+    /// permission exit codes. A grant-probe failure is itself a refusal (a sink
+    /// we cannot survey is a sink we will not write to blind).
+    let spanningPreflight
+        (source: SqlConnection)
+        (sink: SqlConnection)
+        (catalog: Catalog)
+        : Task<Result<unit>> =
+        task {
+            match! Preflight.connectionPreflight source sink with
+            | Error es ->
+                return
+                    Result.failure
+                        (es |> List.map (fun e -> ValidationError.create "transfer.connectionUnavailable" e.Message))
+            | Ok () ->
+                match! Preflight.captureGrantEvidence sink with
+                | Error es ->
+                    return
+                        Result.failure
+                            (es |> List.map (fun e -> ValidationError.create "transfer.grantProbeFailed" e.Message))
+                | Ok grant ->
+                    match Preflight.permissionPreflight grant (plannedTransferWrites catalog) with
+                    | Ok () -> return Ok ()
+                    | Error es ->
+                        return
+                            Result.failure
+                                (es |> List.map (fun e -> ValidationError.create "transfer.insufficientGrant" e.Message))
+        }
+
     // -- reconciliation orchestration ---------------------------------------
 
     /// Reconcile each operator-chosen kind's Source surrogates to the
@@ -377,6 +430,18 @@ module Transfer =
                 }
             match cdcGate with
             | Error e -> return Result.failure e
+            | Ok () ->
+            // G1 / G2 — both endpoints live + credentialed, and the sink grant
+            // covers the planned INSERTs, BEFORE any write. Only an Execute run
+            // mutates the sink; DryRun previews without writing, so it skips the
+            // gate (no blind grant probe on a preview).
+            let! spanningGate =
+                task {
+                    if mode = Execute then return! spanningPreflight source sink catalog
+                    else return Ok ()
+                }
+            match spanningGate with
+            | Error es -> return Result.failure es
             | Ok () ->
             let topoLineage : Lineage<TopologicalOrder> = TopologicalOrderPass.runWith TreatAsCycle catalog
             let topo = topoLineage.Value

@@ -74,6 +74,35 @@ module Preflight =
                 (SsKey.rootOriginal first.KindKey)
                 first.NullCount
 
+    /// Pure: the attribute `SsKey`s whose Nullability facet *narrows* (source
+    /// nullable → target NOT NULL) between two catalogs. This is the tightened
+    /// set the migrate verbs gate on: a `Changed` survivor whose nullability
+    /// went `true → false`, NOT a newly-`Added` NOT-NULL column (an Added column
+    /// has no source rows to violate the tightening). Match is by attribute
+    /// `SsKey` across the two catalogs (A1-stable identity), so a renamed kind
+    /// or column still pairs. Deterministic — returns a `Set`.
+    let tightenedToNotNull (source: Catalog) (target: Catalog) : Set<SsKey> =
+        let srcAttrs =
+            Catalog.allKinds source
+            |> List.collect (fun k -> k.Attributes)
+            |> List.map (fun a -> a.SsKey, a.Column.IsNullable)
+            |> Map.ofList
+        Catalog.allKinds target
+        |> List.collect (fun k -> k.Attributes)
+        |> List.choose (fun t ->
+            match Map.tryFind t.SsKey srcAttrs with
+            | Some srcNullable when srcNullable && not t.Column.IsNullable -> Some t.SsKey
+            | _ -> None)
+        |> Set.ofList
+
+    /// The tightening overlay derived from a migration's A→B displacement: the
+    /// attributes that narrow to NOT NULL become `EnforceNotNull`. An *empty*
+    /// overlay (no narrowing) is the signal the verb uses to skip the
+    /// self-probing pre-flight entirely (a non-tightening migration must not pay
+    /// the LiveProfiler null-count survey cost).
+    let tighteningOverlay (source: Catalog) (target: Catalog) : DecisionOverlay =
+        { DecisionOverlay.empty with EnforceNotNull = tightenedToNotNull source target }
+
     /// Run the pre-flight against a live source: capture the per-attribute
     /// null-count evidence (read-only — safe before any write) and refuse with
     /// `migrate.dataViolatesTightening` if the overlay tightens any NULL-bearing

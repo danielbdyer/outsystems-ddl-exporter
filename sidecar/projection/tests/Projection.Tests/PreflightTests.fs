@@ -143,3 +143,100 @@ let ``A2: permissionPreflight passes when every planned write is covered`` () =
     match Preflight.permissionPreflight grant planned with
     | Ok () -> ()
     | Error errs -> Assert.Fail(sprintf "expected Ok, got %A" errs)
+
+// ---------------------------------------------------------------------------
+// G7 — `tightenedToNotNull` derives the EnforceNotNull set from the A→B
+// displacement. The discriminating predicate: a `Changed` survivor whose
+// nullability narrows true→false IS in the set; a widening (false→true), a
+// no-op, and a newly-`Added` NOT-NULL column are NOT (an Added column has no
+// source rows to violate, and a widening relaxes rather than tightens). A
+// plausibly-named-but-wrong implementation (e.g. "every target NOT-NULL
+// column", or "every column whose nullability changed in either direction")
+// diverges on exactly these inputs.
+// ---------------------------------------------------------------------------
+
+let private tnnAttrKey (s: string) : SsKey = SsKey.synthesizedComposite "OS_TNN_ATTR" [ s ] |> mustOk
+let private tnnKindKey (s: string) : SsKey = SsKey.synthesizedComposite "OS_TNN_KIND" [ s ] |> mustOk
+
+/// One-attribute kind: the attribute carries `key` and the given nullability.
+let private tnnCatalog (attrKey: SsKey) (col: string) (isNullable: bool) : Catalog =
+    let attr =
+        { Attribute.create attrKey (Name.create "Note" |> mustOk) Text with
+            Column = ColumnRealization.create col isNullable |> mustOk }
+    let kind =
+        Kind.create (tnnKindKey "Ticket") (Name.create "Ticket" |> mustOk)
+            (TableId.create "dbo" "OSUSR_TNN_TICKET" |> mustOk)
+            [ attr ]
+    let modKey = tnnKindKey "Mod"
+    Catalog.create
+        [ { SsKey = modKey; Name = Name.create "M" |> mustOk; Kinds = [ kind ]
+            IsActive = true; ExtendedProperties = [] } ] []
+    |> mustOk
+
+[<Fact>]
+let ``G7: a column narrowing nullable→NOT NULL is in the tightened set`` () =
+    let noteK = tnnAttrKey "Note"
+    let source = tnnCatalog noteK "NOTE" true    // A: nullable
+    let target = tnnCatalog noteK "NOTE" false   // B: NOT NULL
+    Assert.Equal<Set<SsKey>>(Set.singleton noteK, Preflight.tightenedToNotNull source target)
+
+[<Fact>]
+let ``G7: a column widening NOT NULL→nullable is NOT in the tightened set`` () =
+    let noteK = tnnAttrKey "Note"
+    let source = tnnCatalog noteK "NOTE" false   // A: NOT NULL
+    let target = tnnCatalog noteK "NOTE" true    // B: nullable (widening)
+    Assert.Empty(Preflight.tightenedToNotNull source target)
+
+[<Fact>]
+let ``G7: an unchanged-nullability column is NOT in the tightened set`` () =
+    let noteK = tnnAttrKey "Note"
+    let source = tnnCatalog noteK "NOTE" true
+    let target = tnnCatalog noteK "NOTE" true    // no-op
+    Assert.Empty(Preflight.tightenedToNotNull source target)
+
+[<Fact>]
+let ``G7: a newly-Added NOT NULL column is NOT in the tightened set (no source rows)`` () =
+    let existingK = tnnAttrKey "Note"
+    let addedK = tnnAttrKey "Added"
+    // Source has only the existing nullable column.
+    let source = tnnCatalog existingK "NOTE" true
+    // Target adds a NOT-NULL column with a NEW SsKey alongside the existing one.
+    let target =
+        let attrs =
+            [ { Attribute.create existingK (Name.create "Note" |> mustOk) Text with
+                  Column = ColumnRealization.create "NOTE" true |> mustOk }
+              { Attribute.create addedK (Name.create "Added" |> mustOk) Text with
+                  Column = ColumnRealization.create "ADDED" false |> mustOk } ]
+        let kind =
+            Kind.create (tnnKindKey "Ticket") (Name.create "Ticket" |> mustOk)
+                (TableId.create "dbo" "OSUSR_TNN_TICKET" |> mustOk) attrs
+        Catalog.create
+            [ { SsKey = tnnKindKey "Mod"; Name = Name.create "M" |> mustOk; Kinds = [ kind ]
+                IsActive = true; ExtendedProperties = [] } ] []
+        |> mustOk
+    // The Added column must NOT appear; the existing one is unchanged → empty.
+    Assert.Empty(Preflight.tightenedToNotNull source target)
+
+[<Fact>]
+let ``G7: tighteningOverlay carries the narrowed set as EnforceNotNull, empty otherwise`` () =
+    let noteK = tnnAttrKey "Note"
+    let tightening = Preflight.tighteningOverlay (tnnCatalog noteK "NOTE" true) (tnnCatalog noteK "NOTE" false)
+    Assert.Equal<Set<SsKey>>(Set.singleton noteK, tightening.EnforceNotNull)
+    let nonTightening = Preflight.tighteningOverlay (tnnCatalog noteK "NOTE" true) (tnnCatalog noteK "NOTE" true)
+    Assert.True(Set.isEmpty nonTightening.EnforceNotNull)
+
+// ---------------------------------------------------------------------------
+// G2 (transfer) — `plannedTransferWrites` is private to the Transfer module,
+// so the pure decision the transfer gate consumes is `permissionViolations`
+// over an INSERT on a sink table. The discriminating input: a sink that grants
+// SELECT but not INSERT must surface a violation (the silent-zero-rows erasure
+// the gate replaces). Witnessed end-to-end (G1 + G2) by the Docker test below.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``G2: a transfer INSERT against a read-only sink grant is a permission violation`` () =
+    let planned = [ { Preflight.Schema = "dbo"; Preflight.Table = "OSUSR_XF_ORDER"; Preflight.Action = Preflight.Insert } ]
+    let grant = granted [ ("dbo.OSUSR_XF_ORDER", "SELECT") ]   // read-only sink
+    match Preflight.permissionPreflight grant planned with
+    | Ok () -> Assert.Fail "expected a refusal: a read-only sink would transfer zero rows and exit clean"
+    | Error errs -> Assert.Contains(errs, fun (e: ValidationError) -> e.Code = "migrate.insufficientGrant")

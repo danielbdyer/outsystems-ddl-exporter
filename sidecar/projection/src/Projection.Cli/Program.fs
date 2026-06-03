@@ -657,7 +657,11 @@ let private runTransfer
             printErrors Console.Error errors
             let anyCode (prefix: string) =
                 errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith prefix)
-            if anyCode "transfer.connection." then 6
+            // G1 — a dead/unreachable endpoint refuses with exit 6 (connection).
+            // G2 — an insufficient sink grant (or a failed grant probe) refuses
+            // with exit 7 (permission), mirroring the migrate verb's mapping.
+            if anyCode "transfer.connection" then 6
+            elif anyCode "transfer.insufficientGrant" || anyCode "transfer.grantProbeFailed" then 7
             elif anyCode "transfer.reconcile." || anyCode "transfer.userMap." then 2
             // AC-I5 — a pre-write validate-user-map halt maps to the SAME exit
             // as a post-write drop (9), so an orphan returns the same code
@@ -985,6 +989,32 @@ let private migratePreflights (label: string) (cnn: Microsoft.Data.SqlClient.Sql
                 | Ok () -> return Ok ()
     }
 
+/// G7 — the Decision↔Data tightening pre-flight, wired into the migrate verbs.
+/// Derives the narrowing-to-NOT-NULL overlay from the A→B displacement and, when
+/// it is NON-EMPTY, probes the live data source's null counts via
+/// `Preflight.tighteningPreflight`, refusing (exit 9 / migrate.dataViolatesTightening)
+/// before any write when a tightened column carries NULLs. When the overlay is
+/// empty (a non-tightening migration) the probe is SKIPPED entirely — the
+/// self-probing pre-flight surveys every kind, a cost a non-tightening migration
+/// must not pay. `dataCnn` is the connection whose data is at risk: the in-place
+/// `cnn` for MC (state A lives in the sink), the SOURCE for MX.
+let private tighteningPreflight
+    (sourceA: Catalog)
+    (target: Catalog)
+    (dataCnn: Microsoft.Data.SqlClient.SqlConnection)
+    : System.Threading.Tasks.Task<Result<unit, int>> =
+    task {
+        let overlay = Preflight.tighteningOverlay sourceA target
+        if Set.isEmpty overlay.EnforceNotNull then return Ok ()
+        else
+            match! Preflight.tighteningPreflight dataCnn sourceA overlay with
+            | Ok () -> return Ok ()
+            | Error es ->
+                Console.Error.WriteLine "projection migrate: tightening pre-flight refused (NOT-NULL on NULL-bearing data):"
+                printErrors Console.Error es
+                return Error 9
+    }
+
 /// `projection migrate --to <modelB.json> --conn <env|file:ref> --execute
 /// [--allow-drops] [--allow-cdc] [--lifecycle-store <path>] [--env <label>]` —
 /// B1, the LIVE in-place L3 execution (Promise 8). Reads the deployed state A,
@@ -1034,46 +1064,51 @@ let private runMigrateExecute (toPath: string) (connSpec: string) (declaration: 
                             match! migratePreflights "sink" cnn (plannedWritesOf artifacts.SchemaStatements) with
                             | Error code -> return code
                             | Ok () ->
-                                match storePath with
-                                | Some store ->
-                                    // AC-P8 — durable provenance. After a verified
-                                    // execute, persist the episode onto the timeline
-                                    // so the next sprint's diff loads it as the prior
-                                    // (the emission→snapshot→diff loop closes here).
-                                    let env = parseEnvironment "DEV" envLabel
-                                    let timeline = Timeline.create (Projection.Core.Environment.name env)
-                                    match timeline with
-                                    | Error es ->
-                                        Console.Error.WriteLine "projection migrate: --lifecycle-store timeline name error:"
-                                        printErrors Console.Error es
-                                        return 2
-                                    | Ok tl ->
-                                        let at = System.DateTimeOffset.UtcNow
-                                        let! recorded =
-                                            MigrationRun.executeAndRecord
-                                                allowCdc declaration sourceA target store tl env at None cnn
-                                        match recorded with
-                                        | Ok (o, Some chain) ->
-                                            printfn "projection migrate: executed and VERIFIED — B' reproduces B (%d statement(s)); episode recorded to %s (%d episode(s) on timeline %s)"
-                                                (List.length o.Artifacts.SchemaStatements) store
-                                                (EpisodicLifecycle.episodes chain |> List.length) (Timeline.name tl)
+                                // G7 — refuse a narrowing-to-NOT-NULL on NULL-bearing
+                                // data before any write (probe the in-place cnn).
+                                match! tighteningPreflight sourceA target cnn with
+                                | Error code -> return code
+                                | Ok () ->
+                                    match storePath with
+                                    | Some store ->
+                                        // AC-P8 — durable provenance. After a verified
+                                        // execute, persist the episode onto the timeline
+                                        // so the next sprint's diff loads it as the prior
+                                        // (the emission→snapshot→diff loop closes here).
+                                        let env = parseEnvironment "DEV" envLabel
+                                        let timeline = Timeline.create (Projection.Core.Environment.name env)
+                                        match timeline with
+                                        | Error es ->
+                                            Console.Error.WriteLine "projection migrate: --lifecycle-store timeline name error:"
+                                            printErrors Console.Error es
+                                            return 2
+                                        | Ok tl ->
+                                            let at = System.DateTimeOffset.UtcNow
+                                            let! recorded =
+                                                MigrationRun.executeAndRecord
+                                                    allowCdc declaration sourceA target store tl env at None cnn
+                                            match recorded with
+                                            | Ok (o, Some chain) ->
+                                                printfn "projection migrate: executed and VERIFIED — B' reproduces B (%d statement(s)); episode recorded to %s (%d episode(s) on timeline %s)"
+                                                    (List.length o.Artifacts.SchemaStatements) store
+                                                    (EpisodicLifecycle.episodes chain |> List.length) (Timeline.name tl)
+                                                return 0
+                                            | Ok (_, None) ->
+                                                Console.Error.WriteLine "projection migrate: executed but verification FAILED — B' does not reproduce B. No episode recorded."
+                                                return 9
+                                            | Error e -> return reportMigrationError e
+                                    | None ->
+                                        let! outcome = MigrationRun.execute allowCdc declaration sourceA target cnn
+                                        match outcome with
+                                        | Ok o when o.Verified ->
+                                            printfn "projection migrate: executed and VERIFIED — B' reproduces B (%d statement(s))"
+                                                (List.length o.Artifacts.SchemaStatements)
+                                            eprintfn "projection migrate: note — no --lifecycle-store supplied; no episode persisted (the next diff has no prior to load)."
                                             return 0
-                                        | Ok (_, None) ->
-                                            Console.Error.WriteLine "projection migrate: executed but verification FAILED — B' does not reproduce B. No episode recorded."
+                                        | Ok _ ->
+                                            Console.Error.WriteLine "projection migrate: executed but verification FAILED — B' does not reproduce B."
                                             return 9
                                         | Error e -> return reportMigrationError e
-                                | None ->
-                                    let! outcome = MigrationRun.execute allowCdc declaration sourceA target cnn
-                                    match outcome with
-                                    | Ok o when o.Verified ->
-                                        printfn "projection migrate: executed and VERIFIED — B' reproduces B (%d statement(s))"
-                                            (List.length o.Artifacts.SchemaStatements)
-                                        eprintfn "projection migrate: note — no --lifecycle-store supplied; no episode persisted (the next diff has no prior to load)."
-                                        return 0
-                                    | Ok _ ->
-                                        Console.Error.WriteLine "projection migrate: executed but verification FAILED — B' does not reproduce B."
-                                        return 9
-                                    | Error e -> return reportMigrationError e
         }
     let code = work.GetAwaiter().GetResult()
     dumpBench "migrate"
@@ -1140,6 +1175,12 @@ let private runMigrateWithData (toPath: string) (sinkSpec: string) (sourceSpec: 
                                 | Error e -> return reportMigrationError e
                                 | Ok artifacts ->
                                     match! migratePreflights "sink" sink (plannedWritesOf artifacts.SchemaStatements) with
+                                    | Error code -> return code
+                                    | Ok () ->
+                                    // G7 — the rows loaded from the SOURCE must
+                                    // satisfy any column the sink schema narrows to
+                                    // NOT NULL. Probe the data source before any write.
+                                    match! tighteningPreflight sinkSourceA target dataSource with
                                     | Error code -> return code
                                     | Ok () ->
                                         let! outcome =
