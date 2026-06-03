@@ -789,6 +789,24 @@ model X1/X3/X7) + remaining NEITHER mechanisms + the two remaining HOLLOWs (P9 m
 protein cells). **Integration discipline (learned Batch 1–2):** worktree subagents must report
 diffs/snippets to apply onto HEAD — wholesale file copies revert recent work when the worktree base drifts.
 
+**Round 5–6 forks — RESOLVED (operator, this session):**
+- **Eject (X6): append-forever.** The terminal bundle preserves every episode + the full accumulated
+  refactorlog; any prior state is reconstructable (a downstream consumer may DacFx-publish an
+  intermediate pre-freeze state). No collapse at freeze.
+- **Refactorlog accumulation (P6 + X3): engine-input.** The engine reads the prior committed
+  `.refactorlog` at emit time and accumulates/dedups against it by `OperationKey`, and threads the
+  *real* episode clock (retire the pinned `2000-01-01` constant). The engine owns the merged log
+  (not repo-merge-time).
+- **Crash safety (G10): resumable/idempotent.** A mid-load failure is recoverable by re-running the
+  same command (idempotent upsert + phase tracking) — not a single all-or-nothing transaction
+  envelope, not document-only.
+- **Wipe-and-load (D10): explicit named mode.** Build a named `EmissionMode` the operator selects;
+  document the `2·|table|` CDC cost; gate it like other destructive ops. Incremental MERGE stays the
+  default. (Not the PROD-empty default; not deferred.)
+- **Protein composition (X1/X2/X4/X5/X7/X8), G9, I7 — build per the criteria** by *extending existing
+  verbs* (migrate grows measure+record legs; full-export grows diff-vs-prior; a deployed-vs-model
+  drift check), not new verbs, unless the operator redirects.
+
 **Tier A — convert HOLLOW→HELD with a small wiring fix (highest ROI):**
 1. **P8 — wire `MigrationRun.record` into `runMigrateExecute`** (+ a test asserting the CLI persists the
    episode). Same shape as this session's AC-I5 fix (function exists & is tested; one call site). Lifts
