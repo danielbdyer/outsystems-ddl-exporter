@@ -576,6 +576,90 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
         | Ok diff ->
             Assert.False(PhysicalSchema.isEqual diff, "deployed A vs model B must surface drift")
 
+    // -- AC-G10 — the resumable/idempotent transfer (crash-safety fork) --------
+    //
+    // THE STANDARD (obligations §0): a mid-load failure is recoverable by
+    // re-running the SAME command — phase-tracked + idempotent, NOT a single
+    // all-or-nothing transaction envelope. We simulate a CRASHED partial prior
+    // attempt by seeding stale rows into the sink with NO completion marker (the
+    // state a crash leaves). `Transfer.runResumable` clears that partial state
+    // FK-first and reloads, then marks complete. Two legs:
+    //   1. recovery: the stale rows are gone and exactly the source rows remain
+    //      (no duplicates, complete state) — a non-resumable `run` would leave
+    //      the stale rows behind (count > source);
+    //   2. idempotence: a second identical run is a NO-OP (the marker is
+    //      present) — counts unchanged, and the phase-marker row exists (a
+    //      transaction-only impl with no phase tracking would have none).
+    [<Fact>]
+    member _.``AC-G10: a resumable transfer recovers a partial prior attempt with no duplicate rows`` () =
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "G10Src" (fun source _ ->
+                task {
+                    do! Deploy.executeBatch source (SsdtDdlEmitter.statements catalogA |> Render.toText)
+                    do! Deploy.executeBatch source
+                            "INSERT INTO [dbo].[MIGAB_CUSTOMER] ([ID],[EMAIL]) VALUES (1,N'a@x'),(2,N'b@x'),(3,N'c@x');"
+                    do! fixture.WithEphemeralDatabase "G10Sink" (fun sink _ ->
+                        task {
+                            do! Deploy.executeBatch sink (SsdtDdlEmitter.statements catalogA |> Render.toText)
+                            // A crashed partial prior attempt: rows present, NO marker.
+                            do! Deploy.executeBatch sink
+                                    "INSERT INTO [dbo].[MIGAB_CUSTOMER] ([ID],[EMAIL]) VALUES (98,N'stale@x'),(99,N'stale@x');"
+                            // LEG 1 — resume: clear the partial state, load, mark.
+                            let! r1 = Transfer.runResumable Transfer.Execute true source sink catalogA
+                            match r1 with
+                            | Error es -> Assert.Fail(sprintf "resumable run failed: %A" es)
+                            | Ok _ ->
+                                let! c1 = scalarInt sink "SELECT COUNT(*) FROM [dbo].[MIGAB_CUSTOMER];"
+                                Assert.Equal(3, c1)   // stale 98/99 wiped; exactly the 3 source rows. No dupes.
+                                let! marks = scalarInt sink "SELECT COUNT(*) FROM dbo.__projection_transfer_progress;"
+                                Assert.Equal(1, marks)   // phase-marker written (resumability mechanism, not just a txn).
+                                // LEG 2 — idempotent re-run: marker present ⇒ no-op.
+                                let! r2 = Transfer.runResumable Transfer.Execute true source sink catalogA
+                                match r2 with
+                                | Error es -> Assert.Fail(sprintf "resumable re-run failed: %A" es)
+                                | Ok _ ->
+                                    let! c2 = scalarInt sink "SELECT COUNT(*) FROM [dbo].[MIGAB_CUSTOMER];"
+                                    Assert.Equal(3, c2)   // unchanged — re-running the same command duplicates nothing.
+                        })
+                }))
+
+    // -- AC-D10 — wipe-and-load (the explicit destructive EmissionMode) --------
+    //
+    // THE STANDARD (obligations §0): WipeAndLoad is the operator-selected full
+    // refresh — it CLEARS the sink's existing rows (FK-ordered) and reloads. The
+    // discriminator: a sink pre-populated with a row whose value DIFFERS from
+    // the source. Incremental (`run`) would PK-collide on that row (the
+    // PROD-empty premise); WipeAndLoad wipes it first, so the reload succeeds and
+    // the row carries the SOURCE value — proving the wipe actually replaced the
+    // pre-existing state rather than appending to it.
+    [<Fact>]
+    member _.``AC-D10: WipeAndLoad clears pre-existing sink rows and reloads from source`` () =
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "D10Src" (fun source _ ->
+                task {
+                    do! Deploy.executeBatch source (SsdtDdlEmitter.statements catalogA |> Render.toText)
+                    do! Deploy.executeBatch source
+                            "INSERT INTO [dbo].[MIGAB_CUSTOMER] ([ID],[EMAIL]) VALUES (1,N'fresh@x'),(2,N'b@x'),(3,N'c@x');"
+                    do! fixture.WithEphemeralDatabase "D10Sink" (fun sink _ ->
+                        task {
+                            do! Deploy.executeBatch sink (SsdtDdlEmitter.statements catalogA |> Render.toText)
+                            // Pre-existing sink state: ID 1 with a STALE value (would
+                            // PK-collide an incremental load).
+                            do! Deploy.executeBatch sink
+                                    "INSERT INTO [dbo].[MIGAB_CUSTOMER] ([ID],[EMAIL]) VALUES (1,N'stale@x');"
+                            let! r = Transfer.runWithEmissionMode Transfer.Execute WipeAndLoad true source sink catalogA
+                            match r with
+                            | Error es -> Assert.Fail(sprintf "wipe-and-load failed: %A" es)
+                            | Ok _ ->
+                                let! c = scalarInt sink "SELECT COUNT(*) FROM [dbo].[MIGAB_CUSTOMER];"
+                                Assert.Equal(3, c)   // exactly the source rows (the stale row was wiped, not duplicated).
+                                let! v = scalarString sink "SELECT [EMAIL] FROM [dbo].[MIGAB_CUSTOMER] WHERE [ID]=1;"
+                                Assert.Equal("fresh@x", v)   // ID 1 carries the SOURCE value ⇒ wipe replaced the stale state.
+                        })
+                }))
+
     // -- AC-S8 — RENAME is CDC-transparent (‖rename‖_data = 0) ----------------
     //
     // THE STANDARD (obligations §0): a discriminating LIVE witness. A RENAME via

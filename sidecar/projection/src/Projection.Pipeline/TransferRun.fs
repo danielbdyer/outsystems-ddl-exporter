@@ -196,6 +196,87 @@ module Transfer =
             return writeSkips
         }
 
+    // -- D10 / G10 (Wave 3) — the wipe-and-load + resumable write envelopes ---
+    //
+    // Both wrap the unchanged `writePlan` (the hardened two-phase realization);
+    // neither rewrites it. D10 is the operator-selected full refresh; G10 is the
+    // crash-safe resumable/idempotent load (phase-tracked, NOT a single
+    // all-or-nothing transaction envelope).
+
+    /// FK-ordered wipe: DELETE every target table CHILD-FIRST (reverse
+    /// topological order) so a foreign-key constraint never blocks the clear.
+    /// (`TRUNCATE` is refused by SQL Server on an FK-referenced table regardless
+    /// of order, so the child-first DELETE is the FK-safe realization of the
+    /// wipe — same end state, the `2·|rows|` CDC cost `EmissionMode` documents.)
+    let private wipeFkOrdered (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) (topo: TopologicalOrder) : Task<unit> =
+        task {
+            let loaded = plan.Loads |> List.map (fun l -> l.Kind) |> Set.ofList
+            let childFirst = List.rev topo.Order |> List.filter (fun k -> Set.contains k loaded)
+            for k in childFirst do
+                match Catalog.tryFindKind k catalog with
+                | None      -> ()
+                | Some kind ->
+                    do! Deploy.executeBatch sink
+                            (System.String.Concat("DELETE FROM ", Render.tableQualified kind.Physical, ";"))  // LINT-ALLOW: terminal SQL-text boundary; table name is a validated TableId via Render.tableQualified
+        }
+
+    /// The durable phase-marker table — records which transfers completed, so a
+    /// re-run of an already-finished transfer is a no-op (idempotent).
+    let private progressTableSql : string =
+        "IF OBJECT_ID('dbo.__projection_transfer_progress') IS NULL \
+           CREATE TABLE dbo.__projection_transfer_progress \
+             ( Marker NVARCHAR(450) NOT NULL PRIMARY KEY, \
+               CompletedAt DATETIME2 NOT NULL CONSTRAINT DF___ptp_at DEFAULT SYSUTCDATETIME() );"
+
+    /// A deterministic signature of a plan — the sorted set of target tables it
+    /// loads. Two re-runs of the same transfer share it; a different transfer
+    /// (different tables) does not.
+    let private planMarker (catalog: Catalog) (plan: DataLoadPlan) : string =
+        plan.Loads
+        |> List.choose (fun l -> Catalog.tryFindKind l.Kind catalog)
+        |> List.map (fun k -> Render.tableQualified k.Physical)
+        |> List.sort
+        |> String.concat "|"
+
+    let private isMarked (sink: SqlConnection) (marker: string) : Task<bool> =
+        task {
+            use cmd = sink.CreateCommand()
+            cmd.CommandText <- "SELECT COUNT(*) FROM dbo.__projection_transfer_progress WHERE Marker = @m;"
+            cmd.Parameters.AddWithValue("@m", marker) |> ignore
+            let! c = cmd.ExecuteScalarAsync()
+            return System.Convert.ToInt32 c > 0
+        }
+
+    let private markComplete (sink: SqlConnection) (marker: string) : Task<unit> =
+        task {
+            use cmd = sink.CreateCommand()
+            cmd.CommandText <- "INSERT INTO dbo.__projection_transfer_progress (Marker) VALUES (@m);"
+            cmd.Parameters.AddWithValue("@m", marker) |> ignore
+            let! _ = cmd.ExecuteNonQueryAsync()
+            return ()
+        }
+
+    /// **G10 — the resumable/idempotent envelope around `writePlan`.** A
+    /// completed transfer (its marker present) is a NO-OP on re-run. Otherwise
+    /// the plan's tables are cleared FK-first — so a partial prior attempt
+    /// leaves NO duplicates — and reloaded via the unchanged `writePlan`, then
+    /// the completion marker is written. A mid-load failure leaves the marker
+    /// UNSET, so re-running the same command resumes to a complete,
+    /// duplicate-free state. Phase-tracked + idempotent (the resolved fork),
+    /// not a single all-or-nothing transaction envelope.
+    let private writePlanResumable (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) (topo: TopologicalOrder) : Task<(SsKey * UnresolvedReference) list> =
+        task {
+            do! Deploy.executeBatch sink progressTableSql
+            let marker = planMarker catalog plan
+            let! already = isMarked sink marker
+            if already then return []
+            else
+                do! wipeFkOrdered sink catalog plan topo
+                let! skips = writePlan sink catalog plan
+                do! markComplete sink marker
+                return skips
+        }
+
     // -- 6.A.2 / 6.A.3: surrogate-capture refusals (fail-loud, not silent) ---
     //
     // Two `AssignedBySink` shapes the per-row capture path cannot honor. Each
@@ -396,6 +477,19 @@ module Transfer =
               DeferredFkColumns = l.DeferredFkColumns
               RowsWritten       = (match mode with Execute -> l.Rows.Length | DryRun -> 0) })
 
+    /// The write-seam policy (Wave 3): the D10 `EmissionMode` (incremental MERGE
+    /// vs operator-selected wipe-and-load) and the G10 resumability flag. The
+    /// default is incremental + non-resumable — byte-identical to the pre-Wave-3
+    /// write path, so every existing caller is unaffected.
+    type WriteOptions =
+        { Emission : EmissionMode; Resumable : bool }
+
+    [<RequireQualifiedAccess>]
+    module WriteOptions =
+        let def : WriteOptions = { Emission = EmissionMode.Incremental; Resumable = false }
+        let resumable : WriteOptions = { def with Resumable = true }
+        let ofEmission (mode: EmissionMode) : WriteOptions = { def with Emission = mode }
+
     let private runCore
         (mode: Mode)
         (allowCdc: bool)
@@ -405,6 +499,7 @@ module Transfer =
         (catalog: Catalog)
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
         (ingestion: (Catalog * Map<Name, Name>) option)
+        (writeOpts: WriteOptions)
         : Task<Result<TransferReport>> =
         task {
             // Wave-3 slice 3.1 — CDC pre-flight gate. Only an Execute run that
@@ -481,8 +576,19 @@ module Transfer =
             | None ->
                 let! writeSkips =
                     task {
-                        if mode = Execute then return! writePlan sink catalog plan
-                        else return []
+                        if mode <> Execute then return []
+                        else
+                            match writeOpts.Emission, writeOpts.Resumable with
+                            | EmissionMode.WipeAndLoad, _ ->
+                                // D10 — operator-selected full refresh: FK-ordered
+                                // wipe of the plan's tables, then the standard load.
+                                do! wipeFkOrdered sink catalog plan topo
+                                return! writePlan sink catalog plan
+                            | EmissionMode.Incremental, true ->
+                                // G10 — resumable/idempotent envelope.
+                                return! writePlanResumable sink catalog plan topo
+                            | EmissionMode.Incremental, false ->
+                                return! writePlan sink catalog plan
                     }
                 return
                     Result.success
@@ -511,7 +617,35 @@ module Transfer =
         : Task<Result<TransferReport>> =
         // Non-reconciling: `Unmatched` is always empty, so the validate-user-map
         // gate never fires — `allowDrops = false` is the safe, inert default.
-        runCore mode allowCdc false source sink catalog Map.empty None
+        runCore mode allowCdc false source sink catalog Map.empty None WriteOptions.def
+
+    /// **G10 — a resumable/idempotent Transfer.** Same as `run`, but the write
+    /// seam is phase-tracked: a mid-load failure is recoverable by re-running
+    /// the same command — the plan's tables are cleared FK-first then reloaded,
+    /// and a completion marker makes a finished transfer a no-op. No duplicate
+    /// rows on re-run; resumes to complete, duplicate-free state.
+    let runResumable
+        (mode: Mode)
+        (allowCdc: bool)
+        (source: SqlConnection)
+        (sink: SqlConnection)
+        (catalog: Catalog)
+        : Task<Result<TransferReport>> =
+        runCore mode allowCdc false source sink catalog Map.empty None WriteOptions.resumable
+
+    /// **D10 — a Transfer under an explicit `EmissionMode`.** `Incremental` is
+    /// exactly `run`; `WipeAndLoad` FK-ordered-clears the plan's tables before
+    /// the load — the operator-selected full refresh (the `2·|rows|` CDC cost
+    /// `EmissionMode` documents). Incremental stays the default everywhere else.
+    let runWithEmissionMode
+        (mode: Mode)
+        (emission: EmissionMode)
+        (allowCdc: bool)
+        (source: SqlConnection)
+        (sink: SqlConnection)
+        (catalog: Catalog)
+        : Task<Result<TransferReport>> =
+        runCore mode allowCdc false source sink catalog Map.empty None (WriteOptions.ofEmission emission)
 
     /// 6.B.2 — RefactorLog-aware Transfer. The source is at schema A
     /// (`sourceContract`); the sink is at schema B (`sinkContract`). A rename
@@ -537,7 +671,7 @@ module Transfer =
             | Ok diff ->
                 let renameMap =
                     RenameProjection.renames diff |> RenameProjection.renameMap
-                return! runCore mode allowCdc false source sink sinkContract Map.empty (Some (sourceContract, renameMap))
+                return! runCore mode allowCdc false source sink sinkContract Map.empty (Some (sourceContract, renameMap)) WriteOptions.def
         }
 
     /// Run a *reconciling* Transfer — the operator's headline case
@@ -556,7 +690,7 @@ module Transfer =
         (catalog: Catalog)
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
         : Task<Result<TransferReport>> =
-        runCore mode allowCdc allowDrops source sink catalog reconciliation None
+        runCore mode allowCdc allowDrops source sink catalog reconciliation None WriteOptions.def
 
     /// AC-I7 — the composed Transfer: a sprint that carries BOTH a column
     /// rename (the source is at schema A, the sink at schema B) AND a
@@ -589,7 +723,7 @@ module Transfer =
             | Ok diff ->
                 let renameMap =
                     RenameProjection.renames diff |> RenameProjection.renameMap
-                return! runCore mode allowCdc false source sink sinkContract reconciliation (Some (sourceContract, renameMap))
+                return! runCore mode allowCdc false source sink sinkContract reconciliation (Some (sourceContract, renameMap)) WriteOptions.def
         }
 
     /// Slice 4.2 — drive a Transfer through the `TransferConnections`
@@ -629,7 +763,7 @@ module Transfer =
                         match resolveReconciliation contract with
                         | Error es -> return Result.failure es
                         | Ok reconciliation ->
-                            return! runCore mode allowCdc allowDrops source sink contract reconciliation None
+                            return! runCore mode allowCdc allowDrops source sink contract reconciliation None WriteOptions.def
         }
 
     // -- 6.A.1: the drop-set is fail-loud, not exit-0 -----------------------
