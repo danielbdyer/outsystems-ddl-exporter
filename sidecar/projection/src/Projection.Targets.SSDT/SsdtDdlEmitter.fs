@@ -722,6 +722,22 @@ module SsdtDdlEmitter =
             |> Map.ofList
         allKinds, targetByKey, pkAttrByKey
 
+    /// C1 emitter follow-on — resolve one `Reference` on `k` to a
+    /// `ForeignKeyDef` against `catalog` (the public surface over the private
+    /// `fkDef` + `buildLookups`). `None` when the target kind / its PK is not
+    /// in the catalog (cross-catalog FK) — the migration emitter then refuses
+    /// the add fail-loud rather than emitting a dangling constraint.
+    let foreignKeyDefOf (catalog: Catalog) (k: Kind) (r: Reference) : ForeignKeyDef option =
+        let _, targetByKey, pkAttrByKey = buildLookups catalog
+        fkDef targetByKey pkAttrByKey k r
+
+    /// C1 emitter follow-on — the `CreateIndex` statements for the given
+    /// indexes of `k`, with NO operator overlay (the migration emitter is
+    /// A18-pure: it reproduces each index's own uniqueness, never a tightening
+    /// decision). PK-backing indexes are skipped (inlined in CREATE TABLE).
+    let createIndexStatements (k: Kind) (indexes: Index list) : Statement list =
+        indexStatements DecisionOverlay.empty { k with Indexes = indexes }
+
     /// Catalog-wide typed statement stream. Per A35 (Π's canonical
     /// output is a typed deterministic statement stream): the same
     /// CREATE TABLE + CREATE INDEX statements that `emitSlices`

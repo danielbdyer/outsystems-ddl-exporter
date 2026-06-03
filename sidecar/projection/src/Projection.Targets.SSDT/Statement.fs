@@ -361,3 +361,30 @@ type Statement =
     /// DEFAULT / computed / identity change (those need separate
     /// constraint DDL; the migration emitter refuses them fail-loud).
     | AlterTableAlterColumn of table: TableId * column: ColumnDef
+    /// C1 emitter follow-on — `ALTER TABLE <table> ADD CONSTRAINT <fk>
+    /// FOREIGN KEY (<col>) REFERENCES <target> (<col>)`. The additive
+    /// minimum-viable-touch for a new reference on an existing kind
+    /// (`CatalogDiff.ReferenceDiffs[k].Added`). Distinct from the inline FK
+    /// in CREATE TABLE: the table already exists. ScriptDom builds via
+    /// `AlterTableAddTableElementStatement` carrying one
+    /// `ForeignKeyConstraintDefinition` (reusing `foreignKeyConstraint`).
+    | AlterTableAddForeignKey of table: TableId * fk: ForeignKeyDef
+    /// C1 destructive follow-on (gated by `migrate --allow-drops`) —
+    /// `ALTER TABLE <table> DROP COLUMN <col>`. ScriptDom builds via
+    /// `AlterTableDropTableElementStatement` with `TableElementType.Column`.
+    | AlterTableDropColumn of table: TableId * columnName: string
+    /// C1 destructive follow-on (gated by `migrate --allow-drops`) —
+    /// `ALTER TABLE <table> DROP CONSTRAINT <fk>`. ScriptDom builds via
+    /// `AlterTableDropTableElementStatement` with `TableElementType.Constraint`.
+    /// Used for a removed FK and (with a re-ADD) a non-trust FK reshape.
+    | AlterTableDropConstraint of table: TableId * constraintName: string
+    /// C1 destructive follow-on (gated by `migrate --allow-drops`) —
+    /// `DROP INDEX <name> ON <table>`. ScriptDom builds via `DropIndexStatement`.
+    /// Used for a removed index and (with a re-CREATE) an index reshape.
+    | DropIndex of table: TableId * indexName: string
+    /// C1 destructive follow-on (gated by `migrate --allow-drops`) —
+    /// `DROP SEQUENCE <schema>.<name>`. ScriptDom builds via
+    /// `DropSequenceStatement`. Used for a removed sequence and (with a
+    /// re-CREATE) a sequence reshape (value-preserving `ALTER SEQUENCE` is a
+    /// noted refinement).
+    | DropSequence of schema: string * name: string

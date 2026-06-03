@@ -1506,6 +1506,63 @@ module ScriptDomBuild =
             else AlterTableAlterColumnOption.NotNull
         stmt
 
+    /// C1 emitter follow-on — `ALTER TABLE <table> ADD CONSTRAINT <fk>
+    /// FOREIGN KEY …` via ScriptDom's `AlterTableAddTableElementStatement`,
+    /// reusing `foreignKeyConstraint` so a standalone-added FK is byte-identical
+    /// to the same FK inlined in a CREATE TABLE.
+    let buildAlterTableAddForeignKey
+            (table: TableId)
+            (fk: ForeignKeyDef)
+            : AlterTableAddTableElementStatement =
+        use _ = Bench.scope "emit.scriptDom.build.alterTableAddForeignKey"
+        let stmt = AlterTableAddTableElementStatement()
+        stmt.SchemaObjectName <- schemaObjectFromTableId table
+        let def = TableDefinition()
+        def.TableConstraints.Add(foreignKeyConstraint fk)
+        stmt.Definition <- def
+        stmt
+
+    /// C1 destructive follow-on — `ALTER TABLE <table> DROP COLUMN|CONSTRAINT
+    /// <name>` via ScriptDom's `AlterTableDropTableElementStatement`.
+    let private buildAlterTableDropElement
+            (table: TableId)
+            (elementType: TableElementType)
+            (name: string)
+            : AlterTableDropTableElementStatement =
+        use _ = Bench.scope "emit.scriptDom.build.alterTableDropElement"
+        let stmt = AlterTableDropTableElementStatement()
+        stmt.SchemaObjectName <- schemaObjectFromTableId table
+        let element = AlterTableDropTableElement()
+        element.TableElementType <- elementType
+        element.Name <- bracketed name
+        stmt.AlterTableDropTableElements.Add(element)
+        stmt
+
+    let buildAlterTableDropColumn (table: TableId) (columnName: string) : AlterTableDropTableElementStatement =
+        buildAlterTableDropElement table TableElementType.Column columnName
+
+    let buildAlterTableDropConstraint (table: TableId) (constraintName: string) : AlterTableDropTableElementStatement =
+        buildAlterTableDropElement table TableElementType.Constraint constraintName
+
+    /// C1 destructive follow-on — `DROP INDEX <name> ON <table>` via ScriptDom's
+    /// `DropIndexStatement` + `DropIndexClause`.
+    let buildDropIndex (table: TableId) (indexName: string) : DropIndexStatement =
+        use _ = Bench.scope "emit.scriptDom.build.dropIndex"
+        let stmt = DropIndexStatement()
+        let clause = DropIndexClause()
+        clause.Index <- bracketed indexName
+        clause.Object <- schemaObjectFromTableId table
+        stmt.DropIndexClauses.Add(clause)
+        stmt
+
+    /// C1 destructive follow-on — `DROP SEQUENCE <schema>.<name>` via ScriptDom's
+    /// `DropSequenceStatement`.
+    let buildDropSequence (schema: string) (name: string) : DropSequenceStatement =
+        use _ = Bench.scope "emit.scriptDom.build.dropSequence"
+        let stmt = DropSequenceStatement()
+        stmt.Objects.Add(schemaObjectName schema name)
+        stmt
+
     /// Canonical Diagnostics-bearing entry point (chapter 4.9 slice ζ).
     let buildSetExtendedProperty
             (owner: ExtendedPropertyOwner)
@@ -1660,3 +1717,13 @@ module ScriptDomBuild =
             Some (buildAlterTableAddColumn table column :> TSqlStatement)
         | AlterTableAlterColumn (table, column) ->
             Some (buildAlterTableAlterColumn table column :> TSqlStatement)
+        | AlterTableAddForeignKey (table, fk) ->
+            Some (buildAlterTableAddForeignKey table fk :> TSqlStatement)
+        | AlterTableDropColumn (table, columnName) ->
+            Some (buildAlterTableDropColumn table columnName :> TSqlStatement)
+        | AlterTableDropConstraint (table, constraintName) ->
+            Some (buildAlterTableDropConstraint table constraintName :> TSqlStatement)
+        | DropIndex (table, indexName) ->
+            Some (buildDropIndex table indexName :> TSqlStatement)
+        | DropSequence (schema, name) ->
+            Some (buildDropSequence schema name :> TSqlStatement)

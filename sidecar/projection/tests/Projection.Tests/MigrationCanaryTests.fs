@@ -97,7 +97,7 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
                             "INSERT INTO [dbo].[MIGAB_CUSTOMER] ([ID],[EMAIL]) VALUES (1, N'alice@example.com');"
 
                     // One command: migrate A → B against the live deployed DB.
-                    let! outcome = MigrationRun.execute true false catalogA catalogB conn
+                    let! outcome = MigrationRun.execute true DeclareNone catalogA catalogB conn
                     match outcome with
                     | Error e -> Assert.Fail(sprintf "migrate execute failed: %A" e)
                     | Ok result ->
@@ -139,7 +139,7 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
                         // (6) Idempotent + resumable by construction: re-running migrate
                         // A→B against the now-migrated DB is a no-op (empty differential).
                         // We re-plan from B (the new current state) → B: zero touches.
-                        let! rerun = MigrationRun.execute true false catalogB catalogB conn
+                        let! rerun = MigrationRun.execute true DeclareNone catalogB catalogB conn
                         match rerun with
                         | Error e -> Assert.Fail(sprintf "idempotent re-run failed: %A" e)
                         | Ok r2 ->
@@ -161,7 +161,7 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
 
                     // migrate B → A would DROP the Loyalty column (and rename back).
                     // Without allowDrops it must refuse BEFORE any write.
-                    let! outcome = MigrationRun.execute true false catalogB catalogA conn
+                    let! outcome = MigrationRun.execute true DeclareNone catalogB catalogA conn
                     match outcome with
                     | Error (RefusedByViolations _) -> ()
                     | other -> Assert.Fail(sprintf "expected RefusedByViolations, got %A" other)
@@ -188,7 +188,7 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
                     do! Deploy.executeBatch conn
                             "INSERT INTO [dbo].[MIGAB_COL] ([ID],[EMAIL]) VALUES (1, N'carol@example.com');"
 
-                    let! outcome = MigrationRun.execute true false catalogAcol catalogBcol conn
+                    let! outcome = MigrationRun.execute true DeclareNone catalogAcol catalogBcol conn
                     match outcome with
                     | Error e -> Assert.Fail(sprintf "column-rename migrate failed: %A" e)
                     | Ok result ->
@@ -225,7 +225,7 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
 
                             // One call: migrate the sink A→B, THEN transfer the rows source→sink.
                             let! outcome =
-                                MigrationRun.executeWithData false Transfer.Execute true catalogA catalogB Map.empty source sink
+                                MigrationRun.executeWithData DeclareNone Transfer.Execute true catalogA catalogB Map.empty source sink
                             match outcome with
                             | Error e -> Assert.Fail(sprintf "executeWithData failed: %A" e)
                             | Ok result ->
@@ -266,13 +266,13 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
                         printfn "SKIP 6.A.13: container did not enable CDC (flag not set)"
                     else
                         // Unchanged schema (A→A): zero DDL → CDC-silent, proceeds even with allowCdc=false.
-                        let! silent = MigrationRun.execute false false catalogA catalogA conn
+                        let! silent = MigrationRun.execute false DeclareNone catalogA catalogA conn
                         match silent with
                         | Ok r -> Assert.Empty(r.Artifacts.SchemaStatements)
                         | Error e -> Assert.Fail(sprintf "unchanged schema should be CDC-silent (no DDL), got %A" e)
 
                         // A real change (A→B) against the CDC-tracked DB refuses unless allow-cdc.
-                        let! refused = MigrationRun.execute false false catalogA catalogB conn
+                        let! refused = MigrationRun.execute false DeclareNone catalogA catalogB conn
                         match refused with
                         | Error (MigrationError.RefusedByCdc tracked) ->
                             Assert.Contains("dbo.MIGAB_CUSTOMER", tracked)
@@ -282,7 +282,7 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
                         // (DDL against a CDC-tracked table may still fail at the
                         // SQL level — that is the unsafe operation the gate guards
                         // — but that is not a RefusedByCdc refusal.)
-                        let! allowed = MigrationRun.execute true false catalogA catalogB conn
+                        let! allowed = MigrationRun.execute true DeclareNone catalogA catalogB conn
                         match allowed with
                         | Error (MigrationError.RefusedByCdc _) ->
                             Assert.Fail("allow-cdc must bypass the CDC gate, not refuse")

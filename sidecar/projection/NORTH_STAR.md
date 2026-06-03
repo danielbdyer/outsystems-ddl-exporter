@@ -349,6 +349,13 @@ then.
 - **Consult it when** a slice's purpose feels unmoored: ask which matrix cell it advances, or which
   totality (T-I…T-VI) it closes, or which rung of the isomorphism ladder (L1→L2→L3) it raises. If
   it advances none, it is probably not on the path.
+- **For the current reconciled state, read the debrief.** This document is the
+  *bullseye* (the destination); `DEBRIEF_2026_06_02_ISOMORPHISM_CLIMB_AND_BACKLOG.md`
+  is *where we stand on it right now* — the matrix reconciled against HEAD (the §1
+  matrix here still records the 2026-05-31 silent-erasure state, most of which has
+  since closed: 6.A.* / 6.B.1 / 6.B.2 / 6.D.1 / 6.H.* landed), the per-gap fidelity
+  ledger, and the ordered L2/L3 backlog. The vision does not move when the climb
+  advances; the debrief does. Hold this against the debrief, not against memory.
 - **Extend it only** when a new structural truth earns its place — a new axis the engine genuinely
   owns, or a new corollary whose forcing function has fired. Append; preserve; never inflate.
 - **Hold it against itself.** This document's own legitimacy is criterion 5: when the coverage

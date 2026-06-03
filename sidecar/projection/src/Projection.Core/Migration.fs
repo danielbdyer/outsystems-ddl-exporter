@@ -1,15 +1,53 @@
 namespace Projection.Core
 
-/// A fail-loud reason `migrate A B` must refuse **before any write** — the
-/// safety gate of the L3 composition. The migration computes the displacement
-/// `B ⊖ A` and emits only the *minimum-viable* touches; a **destructive** touch
-/// (dropping a kind or attribute) is data loss the displacement cannot undo, so
-/// it is refused unless the operator opts in (`allowDrops`). A rename is *not* a
-/// violation — it is the data-preserving RefactorLog channel (`‖rename‖_data = 0`,
-/// A43), never a drop+add.
-type MigrationViolation =
-    | WouldDropKind of key: SsKey * name: Name
-    | WouldDropAttribute of kind: SsKey * attribute: SsKey
+/// A single **destructive removal** a displacement `B ⊖ A` would perform — the
+/// `Remove` move (`WAVE_6_ONTOLOGY.md` §5). Each is data loss the displacement
+/// cannot undo. The **complete** enumeration across every `CatalogDiff` channel
+/// (P-GATE — the gate set must span every way the plan loses): dropped kinds,
+/// attributes, references (FK), indexes, and sequences. A rename is *not* a loss
+/// — it is the data-preserving RefactorLog channel (`‖rename‖_data = 0`, A43),
+/// never a drop+add. (Reshape that narrows is a *warning*, not a loss — the
+/// rows survive; only `Remove` deallocates.)
+/// `[<RequireQualifiedAccess>]` — `DropIndex` / `DropSequence` collide with the
+/// `Statement` DU's imperative-DDL variants of the same name (C1).
+[<RequireQualifiedAccess>]
+type SchemaLoss =
+    | DropKind of kind: SsKey
+    | DropAttribute of kind: SsKey * attribute: SsKey
+    | DropReference of kind: SsKey * reference: SsKey
+    | DropIndex of kind: SsKey * index: SsKey
+    | DropSequence of sequence: SsKey
+
+/// The operator's **declared-loss gate** input (`WAVE_6_ONTOLOGY.md` §5 Remove
+/// cell — "destructive → refuse (declared-loss gate)"). The default refuses
+/// every destructive removal; the operator *declares* the losses they accept,
+/// by their rendered handle (`Migration.lossToken`), and an **undeclared** removal
+/// refuses fail-loud. Granular + auditable — the "prove it / PR-reviewed"
+/// premise (§2), not a blanket toggle.
+///   - `DeclareNone` — accept no loss (the safe default; refuse every removal).
+///   - `DeclareAll` — accept every loss (the prior blanket `allowDrops = true`).
+///   - `DeclareThese ids` — accept exactly the removals whose `lossId` is in
+///     `ids`; any other removal refuses.
+type LossDeclaration =
+    | DeclareNone
+    | DeclareAll
+    | DeclareThese of Set<string>
+
+[<RequireQualifiedAccess>]
+module LossDeclaration =
+
+    /// The two extremes of the prior boolean gate: `true` accepts every loss
+    /// (`DeclareAll`), `false` accepts none (`DeclareNone`). The bridge for
+    /// callers that still carry a blanket `allowDrops` flag.
+    let ofAllowDrops (allow: bool) : LossDeclaration = if allow then DeclareAll else DeclareNone
+
+    /// Whether the declaration permits *any* destructive emission. Once the gate
+    /// has cleared every undeclared loss (the plan is safe), this is the signal
+    /// to the imperative emitter that the remaining drops are sanctioned.
+    let permitsDrops (declaration: LossDeclaration) : bool =
+        match declaration with
+        | DeclareNone -> false
+        | DeclareAll | DeclareThese _ -> true
 
 /// The pre-execution view of `migrate A B` — *what the migration will touch*,
 /// derived purely from the displacement. It is the change-manifest of δ at
@@ -41,7 +79,7 @@ type MigrationPlan =
     {
         Diff       : CatalogDiff
         Preview    : MigrationPreview
-        Violations : MigrationViolation list
+        Violations : SchemaLoss list
     }
 
 [<RequireQualifiedAccess>]
@@ -68,39 +106,94 @@ module Migration =
           RemovedKinds = CatalogDiff.removed diff |> Set.toList
           ReshapedAttributes = reshaped }
 
-    /// The destructive touches in a displacement — dropped kinds (named from the
-    /// source catalog) and dropped attributes. These are the gate `allowDrops`
-    /// opens; with it closed, a plan carrying any of them is unsafe and refuses.
-    let private violationsOf (source: Catalog) (diff: CatalogDiff) : MigrationViolation list =
-        // A removed kind is present in the source by definition (Removed = in
-        // source, not in target), so we map over source kinds — no lookup miss.
-        let removedSet = CatalogDiff.removed diff
+    /// The **complete** destructive-removal enumeration of a displacement — every
+    /// `Remove` move across every `CatalogDiff` channel (P-GATE: the gate set must
+    /// span every way the plan loses). Dropped kinds, attributes, references (FK),
+    /// indexes, and sequences. Sorted deterministically (T1). This is the set the
+    /// declared-loss gate ranges over; `undeclaredLosses` filters it by the
+    /// operator's `LossDeclaration`.
+    /// Deterministic total order over losses (T1): channel rank, then the
+    /// `SsKey` roots. Keeps the kind / attribute / reference / index / sequence
+    /// families grouped and stable across runs.
+    let private lossSortKey (loss: SchemaLoss) : int * string * string =
+        match loss with
+        | SchemaLoss.DropKind k           -> 0, SsKey.rootOriginal k, ""
+        | SchemaLoss.DropAttribute (k, a) -> 1, SsKey.rootOriginal k, SsKey.rootOriginal a
+        | SchemaLoss.DropReference (k, r) -> 2, SsKey.rootOriginal k, SsKey.rootOriginal r
+        | SchemaLoss.DropIndex (k, i)     -> 3, SsKey.rootOriginal k, SsKey.rootOriginal i
+        | SchemaLoss.DropSequence s       -> 4, SsKey.rootOriginal s, ""
+
+    let destructiveLosses (diff: CatalogDiff) : SchemaLoss list =
+        let bySs sel = List.sortBy sel
         let kindDrops =
-            Catalog.allKinds source
-            |> List.filter (fun k -> Set.contains k.SsKey removedSet)
-            |> List.sortBy (fun k -> SsKey.rootOriginal k.SsKey)
-            |> List.map (fun k -> WouldDropKind (k.SsKey, k.Name))
+            CatalogDiff.removed diff
+            |> Set.toList
+            |> List.map SchemaLoss.DropKind
         let attributeDrops =
             CatalogDiff.attributeDiffs diff
             |> Map.toList
-            |> List.sortBy (fun (k, _) -> SsKey.rootOriginal k)
             |> List.collect (fun (kindKey, ad) ->
-                ad.Removed |> Set.toList |> List.map (fun attrKey -> WouldDropAttribute (kindKey, attrKey)))
-        kindDrops @ attributeDrops
+                ad.Removed |> Set.toList |> List.map (fun a -> SchemaLoss.DropAttribute (kindKey, a)))
+        let referenceDrops =
+            CatalogDiff.referenceDiffs diff
+            |> Map.toList
+            |> List.collect (fun (kindKey, rd) ->
+                rd.Removed |> Set.toList |> List.map (fun r -> SchemaLoss.DropReference (kindKey, r)))
+        let indexDrops =
+            CatalogDiff.indexDiffs diff
+            |> Map.toList
+            |> List.collect (fun (kindKey, idx) ->
+                idx.Removed |> Set.toList |> List.map (fun i -> SchemaLoss.DropIndex (kindKey, i)))
+        let sequenceDrops =
+            (CatalogDiff.sequenceDiff diff).Removed
+            |> Set.toList
+            |> List.map SchemaLoss.DropSequence
+        kindDrops @ attributeDrops @ referenceDrops @ indexDrops @ sequenceDrops
+        |> bySs lossSortKey
+
+    /// The copy-pasteable handle for a loss — the form the refusal prints and
+    /// `--declare-drop` matches. **Identity-based** (the `SsKey` roots), so it is
+    /// source-independent: the same token renders from a diff, a refusal, or a
+    /// CLI flag without a catalog in hand (P-ID — identity is the match key, never
+    /// the name). `kind:<k>` / `attr:<k>.<a>` / `fk:<k>.<r>` / `index:<k>.<i>` /
+    /// `seq:<s>`.
+    let lossToken (loss: SchemaLoss) : string =
+        match loss with
+        | SchemaLoss.DropKind k           -> sprintf "kind:%s" (SsKey.rootOriginal k)
+        | SchemaLoss.DropAttribute (k, a) -> sprintf "attr:%s.%s" (SsKey.rootOriginal k) (SsKey.rootOriginal a)
+        | SchemaLoss.DropReference (k, r) -> sprintf "fk:%s.%s" (SsKey.rootOriginal k) (SsKey.rootOriginal r)
+        | SchemaLoss.DropIndex (k, i)     -> sprintf "index:%s.%s" (SsKey.rootOriginal k) (SsKey.rootOriginal i)
+        | SchemaLoss.DropSequence s       -> sprintf "seq:%s" (SsKey.rootOriginal s)
+
+    /// The declared-loss gate (`WAVE_6_ONTOLOGY.md` §5 Remove cell). The
+    /// **undeclared** destructive removals — the losses the operator has *not*
+    /// accepted. A plan carrying any of them is unsafe and refuses fail-loud; the
+    /// operator declares them (by `lossToken`) to proceed. Granularity is enforced
+    /// here, engine-side: with `DeclareThese`, a removal not in the declared set
+    /// stays undeclared (refuses), so the declarative deploy's coarse drop levers
+    /// are only ever authorized once *every* actual drop is covered.
+    let undeclaredLosses (declaration: LossDeclaration) (diff: CatalogDiff) : SchemaLoss list =
+        match declaration with
+        | DeclareAll -> []
+        | DeclareNone -> destructiveLosses diff
+        | DeclareThese declared ->
+            destructiveLosses diff
+            |> List.filter (fun loss -> not (Set.contains (lossToken loss) declared))
 
     /// Plan the migration `A → B`: compute the displacement, the preview (what it
-    /// will touch), and the violations (what it refuses). Pure — no I/O, no
-    /// write. With `allowDrops = false` the plan carries every destructive touch
-    /// as a violation; with `true` the violation list is empty (the operator
-    /// accepts the data loss). Threads the Π-side `EmitError` (`between`'s error).
-    let plan (allowDrops: bool) (source: Catalog) (target: Catalog) : Result<MigrationPlan, EmitError> =
+    /// will touch), and the violations (the **undeclared** destructive removals it
+    /// refuses). Pure — no I/O, no write. The `declaration` is the declared-loss
+    /// gate's input: `DeclareNone` (the safe default) carries every destructive
+    /// removal as a violation; `DeclareAll` carries none; `DeclareThese` carries
+    /// exactly the removals the operator did not name. Threads the Π-side
+    /// `EmitError` (`between`'s error).
+    let plan (declaration: LossDeclaration) (source: Catalog) (target: Catalog) : Result<MigrationPlan, EmitError> =
         match CatalogDiff.between source target with
         | Error e -> Error e
         | Ok diff ->
-            let violations = if allowDrops then [] else violationsOf source diff
-            Ok { Diff = diff; Preview = previewOf diff; Violations = violations }
+            Ok { Diff = diff; Preview = previewOf diff; Violations = undeclaredLosses declaration diff }
 
-    /// True iff the plan carries no fail-loud violations — safe to execute.
+    /// True iff the plan carries no undeclared losses — safe to execute / publish.
     let isSafe (p: MigrationPlan) : bool = List.isEmpty p.Violations
 
     /// True iff the displacement is empty — an **idempotent** migration (zero

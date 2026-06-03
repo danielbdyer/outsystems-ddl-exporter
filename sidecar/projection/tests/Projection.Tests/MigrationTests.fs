@@ -58,14 +58,14 @@ let private withExtraKind (c: Catalog) : Catalog =
 [<Fact>]
 let ``T16: applyTo (plan A B) A = B — migrate A B reproduces the target (master equation)`` () =
     for target in [ renamedTarget; reshapedTarget; withExtraKind sampleCatalog ] do
-        let plan = Migration.plan true sampleCatalog target |> mustOk
+        let plan = Migration.plan DeclareAll sampleCatalog target |> mustOk
         let reproduced = Migration.applyTo plan sampleCatalog
         // B reproduced modulo the diff's captured surface.
         Assert.True(CatalogDiff.isEmpty (CatalogDiff.between target reproduced |> mustOk))
 
 [<Fact>]
 let ``T16: migrate A A is idempotent — zero minimum-viable touches`` () =
-    let plan = Migration.plan false sampleCatalog sampleCatalog |> mustOk
+    let plan = Migration.plan DeclareNone sampleCatalog sampleCatalog |> mustOk
     Assert.True(Migration.isIdempotent plan)
     Assert.Equal(0, plan.Preview.Norm)
     Assert.True(Migration.isSafe plan)
@@ -76,7 +76,7 @@ let ``T16: migrate A A is idempotent — zero minimum-viable touches`` () =
 
 [<Fact>]
 let ``migrate: a rename is the RefactorLog channel (one renamed kind, norm 1), not a drop+add`` () =
-    let plan = Migration.plan false sampleCatalog renamedTarget |> mustOk
+    let plan = Migration.plan DeclareNone sampleCatalog renamedTarget |> mustOk
     Assert.Equal(1, plan.Preview.Channels.RenamedKinds)
     Assert.Equal(0, plan.Preview.Channels.AddedKinds)
     Assert.Equal(0, plan.Preview.Channels.RemovedKinds)
@@ -89,7 +89,7 @@ let ``migrate: a rename is the RefactorLog channel (one renamed kind, norm 1), n
 
 [<Fact>]
 let ``migrate: a reshape is the ALTER channel (one changed attribute), touching only the changed facet`` () =
-    let plan = Migration.plan false sampleCatalog reshapedTarget |> mustOk
+    let plan = Migration.plan DeclareNone sampleCatalog reshapedTarget |> mustOk
     Assert.Equal(1, plan.Preview.Channels.ChangedAttributes)
     Assert.Equal(0, plan.Preview.Channels.RenamedKinds)
     let (_, _, facets) = List.exactlyOne plan.Preview.ReshapedAttributes
@@ -97,7 +97,7 @@ let ``migrate: a reshape is the ALTER channel (one changed attribute), touching 
 
 [<Fact>]
 let ``migrate: an added kind is the Added channel`` () =
-    let plan = Migration.plan false sampleCatalog (withExtraKind sampleCatalog) |> mustOk
+    let plan = Migration.plan DeclareNone sampleCatalog (withExtraKind sampleCatalog) |> mustOk
     Assert.Equal(1, plan.Preview.Channels.AddedKinds)
     Assert.Equal<SsKey list>([ key 9001 ], plan.Preview.AddedKinds)
     Assert.True(Migration.isSafe plan)
@@ -110,18 +110,19 @@ let ``migrate: an added kind is the Added channel`` () =
 let ``migrate: a dropped kind is a fail-loud violation unless allowDrops`` () =
     let sourceWithExtra = withExtraKind sampleCatalog
     // source has Extra, target does not → Extra is dropped.
-    let plan = Migration.plan false sourceWithExtra sampleCatalog |> mustOk
+    let plan = Migration.plan DeclareNone sourceWithExtra sampleCatalog |> mustOk
     Assert.False(Migration.isSafe plan)
     match plan.Violations with
-    | [ WouldDropKind (k, n) ] ->
+    | [ SchemaLoss.DropKind k ] ->
         Assert.Equal(key 9001, k)
-        Assert.Equal("Extra", Name.value n)
-    | other -> Assert.Fail(sprintf "expected one WouldDropKind, got %A" other)
+        // The declarable handle the operator copies into --declare-drop.
+        Assert.Equal(sprintf "kind:%s" (SsKey.rootOriginal k), Migration.lossToken (SchemaLoss.DropKind k))
+    | other -> Assert.Fail(sprintf "expected one SchemaLoss.DropKind, got %A" other)
 
 [<Fact>]
 let ``migrate: allowDrops clears the violation (operator accepts the data loss)`` () =
     let sourceWithExtra = withExtraKind sampleCatalog
-    let plan = Migration.plan true sourceWithExtra sampleCatalog |> mustOk
+    let plan = Migration.plan DeclareAll sourceWithExtra sampleCatalog |> mustOk
     Assert.True(Migration.isSafe plan)
     Assert.Empty(plan.Violations)
     // The displacement still records the removal (the preview is honest).
@@ -133,9 +134,45 @@ let ``migrate: a dropped attribute is a fail-loud violation unless allowDrops`` 
     let dropAttrTarget =
         let c' = { customer with Attributes = List.tail customer.Attributes }
         IRBuilders.mkCatalog [ { salesModule with Kinds = [ c'; order; country ] } ]
-    let plan = Migration.plan false sampleCatalog dropAttrTarget |> mustOk
+    let plan = Migration.plan DeclareNone sampleCatalog dropAttrTarget |> mustOk
     Assert.False(Migration.isSafe plan)
-    Assert.Contains(plan.Violations, fun v -> match v with WouldDropAttribute _ -> true | _ -> false)
+    Assert.Contains(plan.Violations, fun v -> match v with SchemaLoss.DropAttribute _ -> true | _ -> false)
+
+[<Fact>]
+let ``migrate: destructiveLosses spans the FK channel (P-GATE completeness) — the prior kind+attr gate missed references/indexes/sequences`` () =
+    // Target = sample but `order` loses its FK to customer. The OLD violationsOf
+    // (kinds + attributes only) returned [] here — a silent gap; the complete
+    // enumeration surfaces it as a DropReference.
+    let droppedFkTarget =
+        let order' = { order with References = [] }
+        IRBuilders.mkCatalog [ { salesModule with Kinds = [ customer; order'; country ] } ]
+    let plan = Migration.plan DeclareNone sampleCatalog droppedFkTarget |> mustOk
+    Assert.False(Migration.isSafe plan)
+    Assert.Contains(plan.Violations, fun v -> match v with SchemaLoss.DropReference _ -> true | _ -> false)
+
+[<Fact>]
+let ``migrate: DeclareThese clears the named loss but still refuses an undeclared sibling (granular gate, engine-side)`` () =
+    // Source carries two extra leaf kinds; the target drops both.
+    let extra2 =
+        Kind.create (key 9101) (nm "Extra2") (TableId.create "dbo" "Extra2" |> mustResultOk)
+            [ Attribute.create (key 9102) (nm "Id") PrimitiveType.Integer ]
+    let withTwoExtras (c: Catalog) =
+        let m0 = List.head c.Modules
+        Catalog.create ({ m0 with Kinds = m0.Kinds @ [ extraKind; extra2 ] } :: List.tail c.Modules) c.Sequences
+        |> mustResultOk
+    let source = withTwoExtras sampleCatalog
+    // Declare ONLY the first extra's token; the second stays undeclared.
+    let declared = Set.singleton (Migration.lossToken (SchemaLoss.DropKind (key 9001)))
+    let plan = Migration.plan (DeclareThese declared) source sampleCatalog |> mustOk
+    Assert.False(Migration.isSafe plan)
+    match plan.Violations with
+    | [ SchemaLoss.DropKind k ] -> Assert.Equal(key 9101, k)   // only the undeclared Extra2 remains
+    | other -> Assert.Fail(sprintf "expected only the undeclared Extra2 drop, got %A" other)
+    // Declaring BOTH tokens makes the plan safe.
+    let bothDeclared =
+        [ key 9001; key 9101 ] |> List.map (fun k -> Migration.lossToken (SchemaLoss.DropKind k)) |> Set.ofList
+    let plan2 = Migration.plan (DeclareThese bothDeclared) source sampleCatalog |> mustOk
+    Assert.True(Migration.isSafe plan2)
 
 // ===========================================================================
 // Recording — a migration becomes a durable episode (6.H provenance)
@@ -143,7 +180,7 @@ let ``migrate: a dropped attribute is a fail-loud violation unless allowDrops`` 
 
 [<Fact>]
 let ``migrate: toEpisode records the target as the new schema plane`` () =
-    let plan = Migration.plan true sampleCatalog renamedTarget |> mustOk
+    let plan = Migration.plan DeclareAll sampleCatalog renamedTarget |> mustOk
     let coord = EpisodeCoordinate.create (Version.create 1 "1.1.0" |> mustResultOk) Environment.Dev (DateTimeOffset.Parse "2026-06-08T09:00:00+00:00")
     let episode = Migration.toEpisode coord (Some "reflog#1") (DataObservation.create 30 (Some "lsn:0x05")) plan
     Assert.Equal<Catalog>(renamedTarget, episode.Schema)
