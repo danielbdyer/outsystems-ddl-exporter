@@ -41,13 +41,24 @@ module Ingestion =
         (catalog: Catalog)
         (topo: TopologicalOrder)
         : Task<Map<SsKey, StaticRow list>> =
-        task {
-            let mutable acc = Map.empty
-            for (key, stream) in streamsInOrder cnn catalog topo do
-                let! rows = AsyncStream.toList stream
-                acc <- Map.add key rows acc
-            return acc
-        }
+        // Tail-recursive task continuation rather than `for … do let! …` over a
+        // mutable accumulator: the loop-with-`let!` shape is not statically
+        // compilable under Release optimization (FS3511 → the dynamic, slower
+        // state machine), so it is restructured into the statically-compilable
+        // recursive form (the codebase's standing posture on FS3511; cf.
+        // `Pipeline.runWithConfigCore` / `Preflight`).
+        let rec loop
+            (acc: Map<SsKey, StaticRow list>)
+            (remaining: (SsKey * AsyncStream<StaticRow>) list)
+            : Task<Map<SsKey, StaticRow list>> =
+            task {
+                match remaining with
+                | [] -> return acc
+                | (key, stream) :: rest ->
+                    let! rows = AsyncStream.toList stream
+                    return! loop (Map.add key rows acc) rest
+            }
+        loop Map.empty (streamsInOrder cnn catalog topo)
 
     /// Registry metadata (pillar 9). The ingestion adapter leg classifies
     /// entirely as `DataIntent` — lifting a substrate's rows is observation,
