@@ -49,6 +49,7 @@ type RefactorOperationKind =
 type RefactorElementType =
     | SqlTable
     | SqlSimpleColumn
+    | SqlForeignKey
     | SqlSchema
 
 /// One record's worth of refactor evidence — exactly what becomes
@@ -162,6 +163,65 @@ module RefactorLogEmitter =
                 utf8 newColumn
             ]
 
+    /// Deterministic `OperationKey` for a FOREIGN-KEY rename (gap N1).
+    /// Keyed on the reference's SsKey + the old/new logical FK names so two
+    /// emit runs against the same FK rename agree (T1). A distinct
+    /// `"rename:foreignkey"` discriminator keeps the key space disjoint from
+    /// the kind ("rename") and column ("rename:column") rename axes so a
+    /// table, column, and FK that happen to share an old→new name never
+    /// collide on `OperationKey`.
+    let private referenceRenameOperationKey
+        (referenceKey: SsKey)
+        (oldName: string)
+        (newName: string)
+        : System.Guid =
+        let utf8 (s: string) : byte[] = System.Text.Encoding.UTF8.GetBytes s
+        UuidV5.createFromSegments
+            namespaceGuid
+            (byte ':')
+            [
+                utf8 "rename:foreignkey"
+                utf8 (SsKey.rootOriginal referenceKey)
+                utf8 oldName
+                utf8 newName
+            ]
+
+    /// N1 — the per-kind FOREIGN-KEY-rename refactor entries. SSDT requires a
+    /// `SqlForeignKeyConstraint` `.refactorlog` operation for every FK rename,
+    /// or DacFx interprets the rename as DROP CONSTRAINT + ADD CONSTRAINT.
+    ///
+    /// Detection mirrors the kind/column levels: a **logical `Reference.Name`**
+    /// change (`ReferenceDiffs[k].Renamed`, the rename axis `CatalogDiff`
+    /// records). The FK is a child of its source table, so `ParentElementType`
+    /// is `SqlTable`; `ElementName` carries the old logical FK name qualified
+    /// by the table, `NewName` the new logical FK name. Disjoint from the
+    /// kind/column rename channels (different SsKey space, different element
+    /// type), so the three channels never double-emit the same slice.
+    let private referenceRefactorEntries
+        (diff: CatalogDiff)
+        (k: Kind)
+        : RefactorLogEntry list =
+        match CatalogDiff.referenceDiffOf k.SsKey diff with
+        | None -> []
+        | Some rd ->
+            let tableQualified : string =
+                Render.tableQualified { Schema = k.Physical.Schema; Table = k.Physical.Table; Catalog = None }
+            rd.Renamed
+            |> Map.toList
+            |> List.map (fun (referenceKey, record) ->
+                let oldName = Name.value record.OldName
+                let newName = Name.value record.NewName
+                {
+                    OperationKey = referenceRenameOperationKey referenceKey oldName newName
+                    OperationKind = RenameRefactor
+                    ElementName = System.String.Join(".", [| tableQualified; Render.quote oldName |])
+                    ElementType = SqlForeignKey
+                    ParentElementName = tableQualified
+                    ParentElementType = SqlTable
+                    NewName = newName
+                    PassVersion = version
+                })
+
     /// 6.A.12 — the per-kind COLUMN-rename refactor entries. SSDT requires
     /// a `SqlSimpleColumn` `.refactorlog` operation for every column rename,
     /// or DacFx interprets the rename as DROP COLUMN + ADD COLUMN and the
@@ -255,13 +315,17 @@ module RefactorLogEmitter =
         use _ = Bench.scope "emit.refactorLog.emit"
         let target = CatalogDiff.target diff
         let renames = CatalogDiff.renamed diff
-        // Per kind: the table-level rename (logical Kind.Name) AND the
-        // column-level renames (logical Attribute.Name, 6.A.12). Both are
+        // Per kind: the table-level rename (logical Kind.Name), the
+        // column-level renames (logical Attribute.Name, 6.A.12), AND the
+        // foreign-key renames (logical Reference.Name, N1). All are
         // RenameRefactor operations on the same kind's slice; a kind with
-        // neither carries the empty list (T11 keyset = target's kinds).
+        // none carries the empty list (T11 keyset = target's kinds).
         let slices =
             Catalog.allKinds target
             |> List.map (fun k ->
-                k.SsKey, kindRefactorEntries renames k @ columnRefactorEntries diff k)
+                k.SsKey,
+                kindRefactorEntries renames k
+                @ columnRefactorEntries diff k
+                @ referenceRefactorEntries diff k)
             |> Map.ofList
         ArtifactByKind.create target slices

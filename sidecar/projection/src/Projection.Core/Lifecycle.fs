@@ -158,13 +158,41 @@ module Lifecycle =
 
     /// 6.H.3 — the net displacement from genesis to latest: the integral ∫δ as
     /// a single delta (the FTC's companion to `reconstructLatest`'s fold-⊕).
-    /// Equal to `fold CatalogDiff.compose` over `evolutionChain` (composability
-    /// holds by the monotone chain — each edge's target IS the next edge's
-    /// source), which collapses to `between genesis latest`; computed directly
-    /// for totality. `applyDiff (netDiff lc) genesis ≈ latest` (modulo the
-    /// captured surface). Threads the Π-side `EmitError`.
+    /// Computed by **folding `CatalogDiff.compose` over the `evolutionChain`**
+    /// (`P4`: the production consumer of the groupoid composition `⊕`). The
+    /// functor law (`CatalogDiff.compose` docstring) guarantees the fold equals
+    /// the direct `between genesis latest`: composability holds along a monotone
+    /// chain (each edge's target IS the next edge's source), and both groupings
+    /// recompute `between genesis latest`. A genesis-only lifecycle (empty
+    /// chain) has no edges to compose, so the net displacement is the self-diff
+    /// at genesis (`between C₀ C₀`, the empty delta). The `None` branch of the
+    /// fold is structurally unreachable for a well-formed monotone chain (each
+    /// edge meets the next on the captured surface by construction); it falls
+    /// back to the direct `between` — observably identical by the functor law —
+    /// rather than fabricating an `EmitError` variant for an impossible state.
+    /// `applyDiff (netDiff lc) genesis ≈ latest` (modulo the captured surface).
+    /// Threads the Π-side `EmitError`.
     let netDiff (lifecycle: Lifecycle) : Result<CatalogDiff, EmitError> =
         let (Lifecycle data) = lifecycle
         let genesisCatalog = (List.head data.Snapshots).Catalog
         let latestCatalog = (List.last data.Snapshots).Catalog
-        CatalogDiff.between genesisCatalog latestCatalog
+        let directNetDiff () = CatalogDiff.between genesisCatalog latestCatalog
+        match evolutionChain lifecycle with
+        | Error e -> Error e
+        | Ok []   -> directNetDiff ()
+        | Ok (d0 :: rest) ->
+            // Fold the groupoid composition across the chain — the production
+            // exercise of CatalogDiff.compose. By the functor law the folded
+            // delta equals `between genesis latest`; `None` is unreachable on a
+            // monotone chain and falls back to the (equal) direct diff.
+            let composed =
+                rest
+                |> List.fold
+                    (fun acc d ->
+                        match acc with
+                        | None      -> None
+                        | Some accD -> CatalogDiff.compose accD d)
+                    (Some d0)
+            match composed with
+            | Some net -> Ok net
+            | None     -> directNetDiff ()

@@ -269,6 +269,114 @@ module private CdcSilenceFixtures =
           Binary,   "CAFEBABE",                             "DEADBEEF"
           Text,     "alpha",                                "beta" ]
 
+    // -----------------------------------------------------------------------
+    // Track G (Round 4) — k>1 exact-count + MigrationDependencies live-CDC.
+    // -----------------------------------------------------------------------
+
+    /// n-row Delta fixture; `labelOf i` supplies row i's Label (so a base
+    /// and a mutated variant differ only on the chosen rows).
+    let buildDeltaFixture (n: int) (labelOf: int -> string) : Catalog * Kind =
+        let kindKey = mkKey ["Delta"]
+        let idKey   = mkKey ["Delta"; "Id"]
+        let codeKey = mkKey ["Delta"; "Code"]
+        let labelKey = mkKey ["Delta"; "Label"]
+        let row i =
+            { Identifier = mkKey ["Delta"; "Row"; string i]
+              Values =
+                  Map.ofList
+                      [ mkName "Id",    string i
+                        mkName "Code",  sprintf "C%02d" i
+                        mkName "Label", labelOf i ] }
+        let kind : Kind =
+            { SsKey    = kindKey
+              Name     = mkName "Delta"
+              Origin   = Native
+              Modality = [ Static [ for i in 1 .. n -> row i ] ]
+              Physical = mkTableId "dbo" "OSUSR_CDC_DELTA"
+              Attributes =
+                  [
+                      { Attribute.create idKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true }
+                      { Attribute.create codeKey (mkName "Code") Text with Column = ColumnRealization.create ("CODE") (false) |> Result.value; IsMandatory = true }
+                      { Attribute.create labelKey (mkName "Label") Text with Column = ColumnRealization.create ("LABEL") (false) |> Result.value; IsMandatory = true }
+                  ]
+              References = []
+              Indexes    = []
+              Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
+        let m : Module =
+            { SsKey = mkKey ["Module"; "Delta"]
+              Name  = mkName "DeltaModule"
+              Kinds = [ kind ]; IsActive = true; ExtendedProperties = [] }
+        { Modules = [ m ]; Sequences = [] }, kind
+
+    /// Country kind with no Static modality (Migration-channel populated) —
+    /// the MigrationDependenciesEmitter live-CDC witness fixture.
+    let mkMigCountryKind () : Kind =
+        let kindKey = mkKey ["MigCountry"]
+        let idKey   = mkKey ["MigCountry"; "Id"]
+        let codeKey = mkKey ["MigCountry"; "Code"]
+        let labelKey = mkKey ["MigCountry"; "Label"]
+        { SsKey    = kindKey
+          Name     = mkName "MigCountry"
+          Origin   = Native
+          Modality = []   // NOT static — Migration channel supplies rows
+          Physical = mkTableId "dbo" "OSUSR_CDC_MIGCOUNTRY"
+          Attributes =
+              [
+                  { Attribute.create idKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true }
+                  { Attribute.create codeKey (mkName "Code") Text with Column = ColumnRealization.create ("CODE") (false) |> Result.value; IsMandatory = true }
+                  { Attribute.create labelKey (mkName "Label") Text with Column = ColumnRealization.create ("LABEL") (false) |> Result.value; IsMandatory = true }
+              ]
+          References = []
+          Indexes    = []
+          Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
+
+    let migCatalog (kind: Kind) : Catalog =
+        let m : Module =
+            { SsKey = mkKey ["Module"; "Mig"]
+              Name  = mkName "MigModule"
+              Kinds = [ kind ]; IsActive = true; ExtendedProperties = [] }
+        { Modules = [ m ]; Sequences = [] }
+
+    let migRow (kindKey: SsKey) (id: string) (code: string) (label: string) : MigrationDependencyRow =
+        { KindKey    = kindKey
+          Identifier = mkKey ["MigCountry"; "Row"; id]
+          Values =
+              Map.ofList
+                  [ mkName "Id",    id
+                    mkName "Code",  code
+                    mkName "Label", label ] }
+
+    /// Render schema-SQL + MigrationDependencies-emitted seed-SQL — the mirror
+    /// of `renderArtifacts` driving `MigrationDependenciesEmitter.emit`.
+    let renderMigrationArtifacts
+        (catalog: Catalog)
+        (kind: Kind)
+        (rows: MigrationDependencyRow list)
+        (cdcAwareness: CdcAwareness)
+        : string * string =
+        let schemaArtifact =
+            match SsdtDdlEmitter.emitSlices catalog with
+            | Ok a -> a
+            | Error e -> failwithf "SsdtDdlEmitter.emitSlices: %A" e
+        let schemaSql =
+            schemaArtifact
+            |> ArtifactByKind.toMap
+            |> Map.toList
+            |> List.map (fun (_, file) -> file.Body)
+            |> String.concat "\nGO\n"  // LINT-ALLOW: terminal SQL-batch joiner; mirror of renderArtifacts; segments are typed rendered DDL
+        let profile = { Profile.empty with CdcAwareness = cdcAwareness }
+        let context : MigrationDependencyContext = { Rows = rows }
+        let seedArtifact =
+            match MigrationDependenciesEmitter.emit catalog profile context with
+            | Ok a -> a
+            | Error e -> failwithf "MigrationDependenciesEmitter.emit: %A" e
+        let seedSql =
+            seedArtifact
+            |> ArtifactByKind.toMap
+            |> Map.find kind.SsKey
+            |> fun s -> s.Rendered
+        schemaSql, seedSql
+
 open CdcSilenceFixtures
 
 [<Xunit.Collection("Docker-SqlServer")>]
@@ -491,3 +599,99 @@ type CdcSilenceTests(fixture: EphemeralContainerFixture) =
             (runScenario nullSeed nullSeed kind schemaSql).GetAwaiter().GetResult()
         Assert.True (baseline >= 1, sprintf "expected baseline ≥ 1 INSERT capture; got %d (type %A)" baseline typ)
         Assert.Equal (baseline, post)
+
+    // =====================================================================
+    // Track G (Round 4) — k>1 EXACT-count CDC arithmetic (D4.3/4.4/4.5) +
+    // the MigrationDependenciesEmitter live-CDC witness (D2.5/D3.4).
+    // @supports_net_changes=0: INSERT=+1, UPDATE=+2 (before+after image).
+    // Exact `Assert.Equal(baseline + N, post)`, never an inequality — a
+    // "fire UPDATE for every matched row" impl yields +2n, failing D4.3.
+    // =====================================================================
+
+    [<Fact>]
+    member _.``OB-D4.3 exact-count: k=3 of 5 changed rows fires exactly +6 CDC captures (2 per changed row)`` () =
+        if not (skipIfNoDocker "cdc-d4.3") then () else
+        let n = 5
+        let k = 3
+        let baseLabel i = sprintf "base-%02d" i
+        let mutLabel i = if i <= k then sprintf "chg-%02d" i else sprintf "base-%02d" i
+        let baseCatalog, kind = buildDeltaFixture n baseLabel
+        let mutCatalog, _ = buildDeltaFixture n mutLabel
+        let cdcAware = CdcAwareness.create (Set.ofList [ kind.SsKey ]) Map.empty
+        let schemaSql, baseSeed = renderArtifacts baseCatalog kind cdcAware
+        let _, mutSeed = renderArtifacts mutCatalog kind cdcAware
+        Assert.Contains ("WHEN MATCHED AND (", baseSeed)
+        Assert.NotEqual<string> (baseSeed, mutSeed)
+        let baseline, post =
+            (runScenario baseSeed mutSeed kind schemaSql).GetAwaiter().GetResult()
+        Assert.Equal (n, baseline)
+        Assert.Equal (baseline + (2 * k), post)   // exactly 2k, never 2n.
+
+    [<Fact>]
+    member _.``OB-D4.4 exact-count: all-n changed rows fires exactly +2n CDC captures`` () =
+        if not (skipIfNoDocker "cdc-d4.4") then () else
+        let n = 4
+        let baseLabel i = sprintf "base-%02d" i
+        let mutLabel i = sprintf "chg-%02d" i
+        let baseCatalog, kind = buildDeltaFixture n baseLabel
+        let mutCatalog, _ = buildDeltaFixture n mutLabel
+        let cdcAware = CdcAwareness.create (Set.ofList [ kind.SsKey ]) Map.empty
+        let schemaSql, baseSeed = renderArtifacts baseCatalog kind cdcAware
+        let _, mutSeed = renderArtifacts mutCatalog kind cdcAware
+        Assert.Contains ("WHEN MATCHED AND (", baseSeed)
+        let baseline, post =
+            (runScenario baseSeed mutSeed kind schemaSql).GetAwaiter().GetResult()
+        Assert.Equal (n, baseline)
+        Assert.Equal (baseline + (2 * n), post)   // exactly 2n.
+
+    [<Fact>]
+    member _.``OB-D4.5 exact-count: k=2 fresh inserts fire exactly +2 CDC captures (one per insert; unchanged rows silent)`` () =
+        if not (skipIfNoDocker "cdc-d4.5") then () else
+        let baseLabel i = sprintf "base-%02d" i
+        let baseCatalog, kind = buildDeltaFixture 4 baseLabel
+        let grownCatalog, _ = buildDeltaFixture 6 baseLabel
+        let cdcAware = CdcAwareness.create (Set.ofList [ kind.SsKey ]) Map.empty
+        let schemaSql, baseSeed = renderArtifacts baseCatalog kind cdcAware
+        let _, grownSeed = renderArtifacts grownCatalog kind cdcAware
+        Assert.Contains ("WHEN MATCHED AND (", baseSeed)
+        Assert.NotEqual<string> (baseSeed, grownSeed)
+        let baseline, post =
+            (runScenario baseSeed grownSeed kind schemaSql).GetAwaiter().GetResult()
+        Assert.Equal (4, baseline)
+        Assert.Equal (baseline + 2, post)   // exactly +2: one per fresh insert.
+
+    [<Fact>]
+    member _.``OB-D2.5 MigrationDependencies live-CDC: idempotent redeploy fires zero net CDC captures`` () =
+        if not (skipIfNoDocker "cdc-d2.5") then () else
+        let kind = mkMigCountryKind ()
+        let catalog = migCatalog kind
+        let rows =
+            [ migRow kind.SsKey "1" "US" "United States"
+              migRow kind.SsKey "2" "CA" "Canada" ]
+        let cdcAware = CdcAwareness.create (Set.ofList [ kind.SsKey ]) Map.empty
+        let schemaSql, seedSql = renderMigrationArtifacts catalog kind rows cdcAware
+        Assert.Contains ("WHEN MATCHED AND (", seedSql)
+        let baseline, post =
+            (runScenario seedSql seedSql kind schemaSql).GetAwaiter().GetResult()
+        Assert.Equal (2, baseline)
+        Assert.Equal (baseline, post)     // zero net on idempotent redeploy.
+
+    [<Fact>]
+    member _.``OB-D3.4 MigrationDependencies live-CDC: one-row change fires exactly +2 CDC captures`` () =
+        if not (skipIfNoDocker "cdc-d3.4") then () else
+        let kind = mkMigCountryKind ()
+        let catalog = migCatalog kind
+        let baseRows =
+            [ migRow kind.SsKey "1" "US" "United States"
+              migRow kind.SsKey "2" "CA" "Canada" ]
+        let changedRows =
+            [ migRow kind.SsKey "1" "US" "USA"
+              migRow kind.SsKey "2" "CA" "Canada" ]
+        let cdcAware = CdcAwareness.create (Set.ofList [ kind.SsKey ]) Map.empty
+        let schemaSql, baseSeed = renderMigrationArtifacts catalog kind baseRows cdcAware
+        let _, changedSeed = renderMigrationArtifacts catalog kind changedRows cdcAware
+        Assert.NotEqual<string> (baseSeed, changedSeed)
+        let baseline, post =
+            (runScenario baseSeed changedSeed kind schemaSql).GetAwaiter().GetResult()
+        Assert.Equal (2, baseline)
+        Assert.Equal (baseline + 2, post)   // exactly +2 for the one change.

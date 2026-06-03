@@ -82,6 +82,56 @@ let ``6.H.4: a genesis-only lifecycle has an empty change-manifest series`` () =
     let genesisOnly = EpisodicLifecycle.genesis (tl "dev") e0
     Assert.Empty(ChangeManifest.series genesisOnly |> mustOk)
 
+// ===========================================================================
+// 6.H.4 — the tolerance residual + applied-transforms outcome (the two
+// provenance planes the change-manifest surfaces alongside the displacement).
+// ===========================================================================
+
+// E1 enriched with a per-run tolerance residual (two accepted divergences) and
+// an applied-transforms outcome (one operator-intent overlay + one skeleton
+// row). The manifest built TO this episode must surface both; the manifest
+// built to a bare episode must surface neither.
+let private tolerances : Tolerance =
+    Tolerance.strict
+    |> Tolerance.withDivergence ToleratedDivergence.HeaderCommentsOmitted
+    |> Tolerance.withDivergence ToleratedDivergence.IndexesUnreflected
+
+let private appliedTransforms : (SsKey * OverlayAxis option) list =
+    [ customerKey, Some Tightening
+      orderKey,    None ]
+
+let private e1WithProvenance : Episode =
+    e1 |> Episode.withProvenance tolerances appliedTransforms
+
+[<Fact>]
+let ``6.H.4: the manifest surfaces the To-episode tolerance residual (named, sorted)`` () =
+    let m = ChangeManifest.between e0 e1WithProvenance |> mustOk
+    // The residual is the To-episode's accepted-divergence set as a name-sorted
+    // list — the equivalence under which this edge's displacement was faithful.
+    Assert.Equal<ToleratedDivergence list>(
+        [ ToleratedDivergence.HeaderCommentsOmitted; ToleratedDivergence.IndexesUnreflected ],
+        m.ToleranceResidual)
+
+[<Fact>]
+let ``6.H.4: the manifest surfaces the To-episode applied-transforms outcome`` () =
+    let m = ChangeManifest.between e0 e1WithProvenance |> mustOk
+    Assert.Equal<(SsKey * OverlayAxis option) list>(appliedTransforms, m.AppliedTransforms)
+
+[<Fact>]
+let ``6.H.4: a bare episode surfaces an empty residual and empty applied-transforms`` () =
+    // E1 with no provenance threaded (strict tolerance, no overlay) → both empty.
+    let m = ChangeManifest.between e0 e1 |> mustOk
+    Assert.Empty(m.ToleranceResidual)
+    Assert.Empty(m.AppliedTransforms)
+
+[<Fact>]
+let ``6.H.4: the provenance planes are read off the To-episode, not the From-episode`` () =
+    // From-episode carries provenance, To-episode does not: the manifest reads
+    // the To side (the displacement's destination), so both surface empty.
+    let m = ChangeManifest.between e1WithProvenance e2 |> mustOk
+    Assert.Empty(m.ToleranceResidual)
+    Assert.Empty(m.AppliedTransforms)
+
 [<Fact>]
 let ``6.H.4: path length (sum of edge norms) exceeds net displacement under churn`` () =
     // Path length counts every move: rename + rename-back = 2.

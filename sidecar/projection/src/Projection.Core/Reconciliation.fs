@@ -1,5 +1,14 @@
 namespace Projection.Core
 
+// LINT-ALLOW-FILE: `Reconciliation.ofUserMatching` projects the User
+// kind's typed `SourceUserId` / `TargetUserId` integers into the
+// `RawValueCodec` raw-string surrogate form via `sprintf "%d"`. This is
+// the SAME integer-to-raw projection `UserRemapContext.toSurrogate` uses
+// (per `UserRemap.fs`'s LINT-ALLOW-FILE block) — the two acquisition
+// surfaces must agree byte-for-byte on the surrogate raw form, so the
+// codec convention is shared, not duplicated divergently. Same allowed-
+// exception class as `UserRemap.fs` / `SurrogateRemap.fs`.
+
 /// Reconciliation is one *acquisition* of a `SurrogateRemapContext` —
 /// the sink-row-matching method specialized for Transfer flows where
 /// Source surrogates reconcile to pre-existing Sink identities. The
@@ -24,11 +33,21 @@ type ReconciledIdentity =
 /// User kind's `UserMatchingStrategy`. `MatchByColumn` is the structural
 /// form of `ByEmail` / `BySsKey` (match on a designated column's value);
 /// `ManualOverride` is the explicit operator map (V1's `UserMapLoader`
-/// CSV). Recursive `FallbackToSystemUser`-style composition is deferred.
+/// CSV); `FallbackToAssigned` is the structural form of
+/// `FallbackToSystemUser` — try the `primary` ruleset, and on miss attribute
+/// to a fixed `fallback` surrogate (the safety net catches every Source
+/// surrogate, structurally guaranteeing an empty `Unmatched` set).
+///
+/// These four variants are the surjective image of `UserMatchingStrategy`
+/// (`ByEmail` / `BySsKey` → `MatchByColumn`; `ManualOverride` →
+/// `ManualOverride`; `FallbackToSystemUser` → `FallbackToAssigned`), so
+/// every user-match strategy the operator can choose reaches the Transfer
+/// re-key path through `Reconciliation.ofUserMatching`.
 [<RequireQualifiedAccess>]
 type ReconciliationStrategy =
     | MatchByColumn of column: Name
     | ManualOverride of map: Map<SourceKey, AssignedKey>
+    | FallbackToAssigned of fallback: AssignedKey * primary: ReconciliationStrategy
 
 [<RequireQualifiedAccess>]
 module Reconciliation =
@@ -51,8 +70,12 @@ module Reconciliation =
             Map.tryFind pkColumn row.Values |> Option.map SourceKey.ofString
 
         // `resolve src row` → the matched Sink surrogate for a Source row.
-        let resolve : SourceKey -> StaticRow -> AssignedKey option =
-            match strategy with
+        // Recursive on `FallbackToAssigned`'s `primary` arm so nested fallback
+        // chains compose; the fallback arm always returns `Some`, so any
+        // strategy whose outermost variant is `FallbackToAssigned` produces an
+        // empty `Unmatched` set (the safety net catches every Source surrogate).
+        let rec resolveBy (s: ReconciliationStrategy) : SourceKey -> StaticRow -> AssignedKey option =
+            match s with
             | ReconciliationStrategy.ManualOverride overrides ->
                 fun src _ -> Map.tryFind src overrides
             | ReconciliationStrategy.MatchByColumn col ->
@@ -66,6 +89,14 @@ module Reconciliation =
                     |> Map.ofList
                 fun _ row ->
                     Map.tryFind col row.Values |> Option.bind (fun mv -> Map.tryFind mv sinkIndex)
+            | ReconciliationStrategy.FallbackToAssigned (fallback, primary) ->
+                let resolvePrimary = resolveBy primary
+                fun src row ->
+                    match resolvePrimary src row with
+                    | Some assigned -> Some assigned
+                    | None          -> Some fallback
+
+        let resolve = resolveBy strategy
 
         let mutable remap = SurrogateRemapContext.empty
         let mutable unmatched : (SsKey * SourceKey) list = []
@@ -82,6 +113,47 @@ module Reconciliation =
 
         { Remap     = remap
           Unmatched = unmatched |> List.sortBy (fun (_, SourceKey s) -> s) }
+
+    /// Translate the User kind's `UserMatchingStrategy` into the generic
+    /// `ReconciliationStrategy` so all four operator-chosen user-match
+    /// strategies reach the Transfer re-key path (`runReconciling`) through
+    /// the same `reconcileKind` machinery. `ByEmail` / `BySsKey` are
+    /// column-match variants in disguise — `ByEmail` matches on the
+    /// `emailColumn`'s value, `BySsKey` on the `ssKeyColumn`'s value (the
+    /// row column that carries the OSSYS-origin SsKey identity). The two
+    /// columns are supplied because the User-kind's physical schema names
+    /// them; the structural strategy is column-agnostic.
+    ///
+    /// `ManualOverride`'s typed `SourceUserId → TargetUserId` map projects
+    /// into the raw `SourceKey → AssignedKey` shape via the `RawValueCodec`
+    /// integer-to-raw convention (`sprintf "%d"`), the same projection
+    /// `UserRemapContext.toSurrogate` uses, so the two acquisition surfaces
+    /// agree byte-for-byte on the surrogate raw form.
+    ///
+    /// `FallbackToSystemUser (fallback, primary)` becomes
+    /// `FallbackToAssigned (fallback's raw assigned key, translate primary)`,
+    /// recursively — preserving the structural guarantee that a fallback
+    /// strategy's `Unmatched` set is always empty.
+    let rec ofUserMatching
+        (emailColumn: Name)
+        (ssKeyColumn: Name)
+        (strategy: UserMatchingStrategy)
+        : ReconciliationStrategy =
+        match strategy with
+        | ByEmail -> ReconciliationStrategy.MatchByColumn emailColumn
+        | BySsKey -> ReconciliationStrategy.MatchByColumn ssKeyColumn
+        | ManualOverride overrideMap ->
+            overrideMap
+            |> Map.toList
+            |> List.map (fun (source, target) ->
+                SourceKey.ofString (sprintf "%d" (SourceUserId.value source)),
+                AssignedKey.ofString (sprintf "%d" (TargetUserId.value target)))
+            |> Map.ofList
+            |> ReconciliationStrategy.ManualOverride
+        | FallbackToSystemUser (fallback, primary) ->
+            ReconciliationStrategy.FallbackToAssigned
+                (AssignedKey.ofString (sprintf "%d" (TargetUserId.value fallback)),
+                 ofUserMatching emailColumn ssKeyColumn primary)
 
     /// Registry metadata (pillar 9). The reconciliation ruleset is operator
     /// intent — which Source identities reconcile to which pre-existing Sink

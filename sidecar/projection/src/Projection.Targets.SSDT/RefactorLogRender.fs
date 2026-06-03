@@ -67,6 +67,7 @@ module RefactorLogRender =
         match t with
         | SqlTable        -> "SqlTable"
         | SqlSimpleColumn -> "SqlSimpleColumn"
+        | SqlForeignKey   -> "SqlForeignKeyConstraint"
         | SqlSchema       -> "SqlSchema"
 
     /// Write one `<Property Name="…" Value="…" />` element through

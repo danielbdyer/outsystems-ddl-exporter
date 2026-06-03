@@ -57,6 +57,22 @@ let private columnRenamedCustomer : Kind =
 let private columnRenameTarget : Catalog =
     IRBuilders.mkCatalog [ { salesModule with Kinds = [ columnRenamedCustomer; order; country ] } ]
 
+// N1 — a FOREIGN-KEY rename: Order's reference to Customer keeps its
+// `SsKey` (orderRefToCustomer) while its logical `Name` changes
+// (Customer → Patron). Mirrors the kind/column logical-rename basis;
+// SSDT needs a SqlForeignKey refactorlog entry so DacFx does sp_rename
+// rather than DROP CONSTRAINT + ADD CONSTRAINT (gap N1: a renamed FK
+// silently dropped its refactorlog entry).
+let private fkRenamedOrder : Kind =
+    { order with
+        References =
+            order.References
+            |> List.map (fun r ->
+                if r.SsKey = orderRefToCustomer then { r with Name = nameOf "Patron" } else r) }
+
+let private fkRenameTarget : Catalog =
+    IRBuilders.mkCatalog [ { salesModule with Kinds = [ customer; fkRenamedOrder; country ] } ]
+
 // ---------------------------------------------------------------------------
 // Slice θ acceptance — RefactorLogEmitter realizes EmitterOverDiff
 // <RefactorLogEntry list>; T11 (sibling-Π commutativity, structural
@@ -214,3 +230,49 @@ let ``RefactorLogEmitter: no column rename produces no SqlSimpleColumn entry`` (
         |> Seq.collect snd
         |> Seq.filter (fun e -> e.ElementType = SqlSimpleColumn)
     Assert.Empty(allColumnEntries)
+
+// ---------------------------------------------------------------------------
+// N1 — FOREIGN-KEY-rename refactorlog entries (SqlForeignKey). A renamed FK
+// without a refactorlog entry is interpreted by DacFx as DROP CONSTRAINT +
+// ADD CONSTRAINT. Detection is the logical `Reference.Name` change (mirrors
+// the kind/column logical rename), keyed by reference SsKey; NewName is the
+// new logical FK name. The discriminating check: a renamed FK MUST produce
+// exactly one entry (the un-extended emitter produced none — gap N1).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``RefactorLogEmitter: a foreign-key rename produces a SqlForeignKey entry`` () =
+    let diff = CatalogDiff.between sampleCatalog fkRenameTarget |> mustOk
+    let artifact = RefactorLogEmitter.emit diff |> mustOk
+    let orderEntries = Map.find orderKey (ArtifactByKind.toMap artifact)
+    let fkEntry =
+        orderEntries |> List.filter (fun e -> e.ElementType = SqlForeignKey)
+    Assert.Equal(1, List.length fkEntry)
+    let e = List.head fkEntry
+    Assert.Equal(RenameRefactor, e.OperationKind)
+    Assert.Equal(SqlTable, e.ParentElementType)
+    // ElementName carries the OLD logical FK name; NewName the new one.
+    Assert.Equal("[dbo].[OSUSR_S1S_ORDER].[Customer]", e.ElementName)
+    Assert.Equal("[dbo].[OSUSR_S1S_ORDER]", e.ParentElementName)
+    Assert.Equal("Patron", e.NewName)
+    Assert.Equal(RefactorLogEmitter.version, e.PassVersion)
+
+[<Fact>]
+let ``RefactorLogEmitter: a foreign-key rename's OperationKey is deterministic`` () =
+    let key () =
+        let diff = CatalogDiff.between sampleCatalog fkRenameTarget |> mustOk
+        let artifact = RefactorLogEmitter.emit diff |> mustOk
+        (Map.find orderKey (ArtifactByKind.toMap artifact)
+         |> List.find (fun e -> e.ElementType = SqlForeignKey)).OperationKey
+    Assert.Equal(key (), key ())
+
+[<Fact>]
+let ``RefactorLogEmitter: no foreign-key rename produces no SqlForeignKey entry`` () =
+    let diff = CatalogDiff.between sampleCatalog sampleCatalog |> mustOk
+    let artifact = RefactorLogEmitter.emit diff |> mustOk
+    let allFkEntries =
+        ArtifactByKind.toMap artifact
+        |> Map.toSeq
+        |> Seq.collect snd
+        |> Seq.filter (fun e -> e.ElementType = SqlForeignKey)
+    Assert.Empty(allFkEntries)

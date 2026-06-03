@@ -198,6 +198,54 @@ let ``6.H.3: netDiff equals fold compose over the evolution chain (3 snapshots)`
     Assert.True(CatalogDiff.isEmpty (CatalogDiff.between viaFold viaNet |> mustOk))
     Assert.True(CatalogDiff.isEmpty (CatalogDiff.between sampleCatalog viaNet |> mustOk))
 
+// P4 — CatalogDiff.compose now has a PRODUCTION caller: Lifecycle.netDiff folds
+// it over the evolution chain. This test asserts the production net-diff (the
+// compose fold) equals the direct between(genesis, latest) over a ≥3-snapshot
+// chain — the functor law exercised in production, not just the unit test.
+[<Fact>]
+let ``P4 (6.H.3): production netDiff (compose fold) equals direct between(genesis, latest) over a 3-snapshot chain`` () =
+    // genesis (sampleCatalog) → c1 (Customer renamed Patron) → c2 (back to sample).
+    // Three snapshots, two edges → the netDiff fold genuinely composes.
+    let c2 : CatalogSnapshot = { Version = ver 2 "1.2.0"; Catalog = sampleCatalog }
+    let chainLc = Lifecycle.append c2 devChain |> mustResultOk
+    Assert.Equal(2, List.length (Lifecycle.evolutionChain chainLc |> mustOk))
+    // The production netDiff routes through CatalogDiff.compose (P4 consumer).
+    let viaCompose = Lifecycle.netDiff chainLc |> mustOk
+    // The direct between(genesis, latest) — the diff the fold must equal by the
+    // functor law.
+    let genesis = (Lifecycle.head chainLc).Catalog
+    let latest = (Lifecycle.latest chainLc).Catalog
+    let direct = CatalogDiff.between genesis latest |> mustOk
+    // The composed net-diff equals the direct diff on the captured surface.
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between
+                                        (CatalogDiff.applyDiff genesis viaCompose)
+                                        (CatalogDiff.applyDiff genesis direct) |> mustOk))
+    // And the channel norms agree (round-trip churn cancels; net is empty here).
+    Assert.Equal(CatalogDiff.norm direct, CatalogDiff.norm viaCompose)
+
+[<Fact>]
+let ``P4 (6.H.3): production netDiff over a non-trivial-net 3-snapshot chain equals direct between`` () =
+    // genesis (sampleCatalog) → c1 (Customer renamed Patron) → c2 (stays Patron).
+    // Net displacement E0→E2 is a genuine rename (NOT empty) — discriminates a
+    // compose fold that silently dropped the middle edge.
+    let c2 : CatalogSnapshot = { Version = ver 2 "1.2.0"; Catalog = targetCatalog }
+    let chainLc = Lifecycle.append c2 devChain |> mustResultOk
+    let viaCompose = Lifecycle.netDiff chainLc |> mustOk
+    let genesis = (Lifecycle.head chainLc).Catalog
+    let direct = CatalogDiff.between genesis (Lifecycle.latest chainLc).Catalog |> mustOk
+    // Both reconstruct the latest (Patron) from genesis.
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between
+                                        (CatalogDiff.applyDiff genesis viaCompose)
+                                        targetCatalog |> mustOk))
+    Assert.Equal(CatalogDiff.norm direct, CatalogDiff.norm viaCompose)
+    // The net is genuinely non-empty (the rename survived the fold).
+    Assert.False(CatalogDiff.isEmpty viaCompose)
+
+[<Fact>]
+let ``P4 (6.H.3): production netDiff on a genesis-only lifecycle is the empty delta`` () =
+    let nd = Lifecycle.netDiff devGenesis |> mustOk
+    Assert.True(CatalogDiff.isEmpty nd)
+
 [<Fact>]
 let ``A-Lifecycle-3 (L3-L3): timelines are independent histories`` () =
     let uat = Lifecycle.genesis (tl "uat") c0
