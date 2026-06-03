@@ -241,3 +241,59 @@ let ``compose AllData: Migration is skipped (only Static fires)`` () =
     // Country has no Static modality; AllData skips Migration; Bootstrap
     // is still a stub today → script is empty.
     Assert.Empty script.Phase1Merges
+
+// ---------------------------------------------------------------------------
+// AC-D5 (gap N2): a persisted computed column must NEVER appear in the
+// CDC-aware MERGE's updatable-column set (UPDATE SET / change-detection
+// predicate) nor the INSERT/USING column list. Mirrors the
+// StaticSeedsEmitter AC-D5 test.
+// ---------------------------------------------------------------------------
+
+/// Country fixture with a fourth attribute (`Display`) that is a PERSISTED
+/// computed column. `Code` is a non-computed sibling so the discrimination
+/// is sharp.
+let private mkComputedColumnKind () : Kind =
+    let kindKey = mkKey ["TestModule"; "Country"]
+    let idKey = mkKey ["TestModule"; "Country"; "Id"]
+    let codeKey = mkKey ["TestModule"; "Country"; "Code"]
+    let labelKey = mkKey ["TestModule"; "Country"; "Label"]
+    let displayKey = mkKey ["TestModule"; "Country"; "Display"]
+    let computedCfg = ComputedColumnConfig.create "[CODE] + N' - ' + [LABEL]" true |> mustOk
+    {
+        SsKey    = kindKey
+        Name     = mkName "Country"
+        Origin   = Native
+        Modality = []
+        Physical = Projection.Tests.Fixtures.mkTableId "dbo" "OSUSR_TEST_COUNTRY"
+        Attributes =
+            [
+                { Attribute.create idKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true }
+                { Attribute.create codeKey (mkName "Code") Text with Column = ColumnRealization.create ("CODE") (false) |> Result.value; IsMandatory = true }
+                { Attribute.create labelKey (mkName "Label") Text with Column = ColumnRealization.create ("LABEL") (false) |> Result.value; IsMandatory = true }
+                { Attribute.create displayKey (mkName "Display") Text with Column = ColumnRealization.create ("DISPLAY") (false) |> Result.value; Computed = Some computedCfg }
+            ]
+        References = []
+        Indexes    = []
+        Description = None
+        IsActive = true
+        Triggers = []
+        ColumnChecks = []
+        ExtendedProperties = []
+        }
+
+[<Fact>]
+let ``AC-D5: computed column is excluded from CDC-aware MERGE UPDATE SET + predicate (discriminating)`` () =
+    let country = mkComputedColumnKind ()
+    let catalog = mkCatalog [ country ]
+    let context = { Rows = [ mkMigrationRow country.SsKey "1" "US" "United States" ] }
+    let cdc = CdcAwareness.create (Set.ofList [ country.SsKey ]) Map.empty
+    let profile = { Profile.empty with CdcAwareness = cdc }
+    let artifact = MigrationDependenciesEmitter.emit catalog profile context |> mustOkEmit
+    let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
+    let r = normWs script.Rendered
+    Assert.Contains ("WHEN MATCHED AND (", r)
+    // The persisted computed column DISPLAY must NOT appear anywhere (gap N2).
+    Assert.DoesNotContain ("[DISPLAY]", r)
+    // The non-computed sibling CODE IS updatable + in the predicate.
+    Assert.Contains ("[Target].[CODE] = [Source].[CODE]", r)
+    Assert.Contains ("[Target].[CODE] <> [Source].[CODE]", r)

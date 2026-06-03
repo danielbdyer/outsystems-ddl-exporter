@@ -117,8 +117,15 @@ module MigrationDependenciesEmitter =
         |> List.map (fun a -> a.Name, a.Type)
         |> Map.ofList
 
+    /// Writable attributes — persisted/computed columns (gap N2;
+    /// `Computed = Some _`) are SQL-Server-computed and never written
+    /// (no INSERT column, no UPDATE SET, no USING source). Mirrors
+    /// `StaticSeedsEmitter.writableAttributes`.
+    let private writableAttributes (k: Kind) : Attribute list =
+        k.Attributes |> List.filter (fun a -> a.Computed = None)
+
     let private orderedColumnNames (k: Kind) : string list =
-        k.Attributes |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
+        writableAttributes k |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
 
     let private pkColumnNames (k: Kind) : string list =
         k.Attributes
@@ -197,10 +204,15 @@ module MigrationDependenciesEmitter =
         // target column with the Phase-1 NULL, then Phase-2 sets it
         // back. Filtering deferred from UpdColumns makes Phase-1
         // structurally silent on the deferred-FK axis.
+        // Gap N2: exclude persisted computed columns (`Computed = Some _`)
+        // — UPDATE SET <computed> = ... is a hard SQL error, and the
+        // column must not enter the change-detection predicate. Mirrors
+        // `StaticSeedsEmitter.renderMerge`.
         let updColumns =
             k.Attributes
             |> List.filter (fun a -> not a.IsPrimaryKey)
             |> List.filter (fun a -> not (Set.contains a.Name deferred))
+            |> List.filter (fun a -> a.Computed = None)
             |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
         let args : ScriptDomBuild.MergeBuildArgs =
             {
@@ -208,7 +220,7 @@ module MigrationDependenciesEmitter =
                 AllColumns = orderedColumnNames k
                 PkColumns  = pkColumnNames k
                 UpdColumns = updColumns
-                Rows       = typedRows |> List.map (typedValuesToSqlLiterals deferred k.Attributes)
+                Rows       = typedRows |> List.map (typedValuesToSqlLiterals deferred (writableAttributes k))
                 CdcAware   = cdcAware
             }
         let mergeStmt = (ScriptDomBuild.buildMergeStatement args).Value

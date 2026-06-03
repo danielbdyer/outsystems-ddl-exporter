@@ -69,6 +69,37 @@ type ToleratedDivergence =
     /// that schema-vs-data compatibility check is 6.B.1, not this tolerance.
     | EmptyTextNormalizedToNull
 
+    /// AC-D6 — a `char(n)` / `nchar(n)` column's stored value is ANSI
+    /// **trailing-blank-padded** to its declared width, so `'foo  '` and
+    /// `'foo'` are the **same stored value** under SQL Server's comparison
+    /// semantics (the ANSI `<>` operator pads the shorter operand before
+    /// comparing — `'foo  ' <> 'foo'` is `FALSE`). The CDC change-detection
+    /// predicate (`ScriptDomBuild.perColumnChangeDetection`) compares
+    /// `Target.[c] <> Source.[c]` **column-to-column** (both operands are
+    /// the stored typed values, not rendered literals), so a representation-
+    /// only padding difference does **not** fire CDC. Named here so the
+    /// equivalence is *closed* (documented + witnessed at the literal/
+    /// predicate level), not silently assumed. This is a **representation-
+    /// only** tolerance: it absorbs no data difference — only the textual
+    /// shape of an otherwise-equal value. Retiring it is not anticipated;
+    /// it is a property of SQL Server's ANSI char semantics, not a V2 gap.
+    | CharAnsiPaddingTolerated
+
+    /// AC-D6 — a `decimal(p,s)` / `numeric(p,s)` column's stored value is a
+    /// **numeric** quantity, so `1.0` and `1.00` are the **same stored
+    /// value** (scale is a display/declaration concern, not a value concern;
+    /// `1.0 <> 1.00` is `FALSE` under SQL Server's numeric `<>`). The CDC
+    /// change-detection predicate compares `Target.[c] <> Source.[c]`
+    /// column-to-column on the stored numeric values, so a representation-
+    /// only scale difference (`SqlLiteral.DecimalLit "1.0"` vs `"1.00"` —
+    /// which render to *different* literal TEXT) does **not** fire CDC once
+    /// both literals are stored into the same `decimal` column. Named here
+    /// so the equivalence is *closed* at the literal/predicate level. A
+    /// **representation-only** tolerance: it absorbs no numeric difference —
+    /// only the trailing-zero scale shape. Retiring it is not anticipated;
+    /// it is a property of SQL Server's numeric comparison, not a V2 gap.
+    | DecimalScaleTolerated
+
     // **CommentMetadataUnreflected — RETIRED at chapter 4.1.A slice 8
     // (2026-05-17).** Column / table / index descriptions and extended
     // properties now emit as `EXEC sys.sp_addextendedproperty` calls
@@ -102,6 +133,8 @@ module ToleratedDivergence =
         | ToleratedDivergence.IndexesUnreflected             -> ToleratedDivergence.IndexesUnreflected
         | ToleratedDivergence.StaticPopulationsUnreflected   -> ToleratedDivergence.StaticPopulationsUnreflected
         | ToleratedDivergence.EmptyTextNormalizedToNull      -> ToleratedDivergence.EmptyTextNormalizedToNull
+        | ToleratedDivergence.CharAnsiPaddingTolerated       -> ToleratedDivergence.CharAnsiPaddingTolerated
+        | ToleratedDivergence.DecimalScaleTolerated          -> ToleratedDivergence.DecimalScaleTolerated
 
     /// Every empirically-grounded `ToleratedDivergence` variant.
     /// The closed-DU coverage test asserts this set has the same
@@ -122,6 +155,8 @@ module ToleratedDivergence =
                 coverage ToleratedDivergence.IndexesUnreflected
                 coverage ToleratedDivergence.StaticPopulationsUnreflected
                 coverage ToleratedDivergence.EmptyTextNormalizedToNull
+                coverage ToleratedDivergence.CharAnsiPaddingTolerated
+                coverage ToleratedDivergence.DecimalScaleTolerated
             ]
 
     /// Canonical string name for a divergence — the operator-facing token a
@@ -136,6 +171,8 @@ module ToleratedDivergence =
         | ToleratedDivergence.IndexesUnreflected           -> "IndexesUnreflected"
         | ToleratedDivergence.StaticPopulationsUnreflected -> "StaticPopulationsUnreflected"
         | ToleratedDivergence.EmptyTextNormalizedToNull    -> "EmptyTextNormalizedToNull"
+        | ToleratedDivergence.CharAnsiPaddingTolerated     -> "CharAnsiPaddingTolerated"
+        | ToleratedDivergence.DecimalScaleTolerated        -> "DecimalScaleTolerated"
 
     /// Parse a config token to its divergence, or `None` for an unrecognized
     /// token. Derived from `name` so the round-trip `name >> tryParse` is the

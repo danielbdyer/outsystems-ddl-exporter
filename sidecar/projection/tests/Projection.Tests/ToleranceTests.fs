@@ -35,6 +35,9 @@ type ToleratedDivergenceGen =
                 ToleratedDivergence.PostDeployForeignKeysSplit
                 ToleratedDivergence.IndexesUnreflected
                 ToleratedDivergence.StaticPopulationsUnreflected
+                ToleratedDivergence.EmptyTextNormalizedToNull
+                ToleratedDivergence.CharAnsiPaddingTolerated
+                ToleratedDivergence.DecimalScaleTolerated
             ]
         |> Arb.fromGen
 
@@ -53,7 +56,7 @@ let ``Tolerance.permissive is not strict`` () =
     Assert.False (Tolerance.isStrict Tolerance.permissive)
 
 [<Fact>]
-let ``Closed-DU coverage: ToleratedDivergence.allKnown contains five variants (6.A.4 EmptyTextNormalizedToNull added)`` () =
+let ``Closed-DU coverage: ToleratedDivergence.allKnown contains seven variants (AC-D6 Char/Decimal representation tolerances added)`` () =
     // Per the closed-DU expansion empirical-test discipline (`DECISIONS
     // 2026-05-13`): when a new ToleratedDivergence variant lands, this
     // count assertion fires until allKnown is extended. The companion
@@ -66,8 +69,11 @@ let ``Closed-DU coverage: ToleratedDivergence.allKnown contains five variants (6
     // SsdtDdlEmitter.extendedPropertyStatements began emitting
     // sp_addextendedproperty calls. **6.A.4 (2026-06-02):** back to 5 —
     // EmptyTextNormalizedToNull names the empty-string-Text→NULL transfer
-    // normalization (closed, not silent).
-    Assert.Equal (5, Set.count ToleratedDivergence.allKnown)
+    // normalization (closed, not silent). **AC-D6 (NEITHER→HELD):** 7 —
+    // CharAnsiPaddingTolerated + DecimalScaleTolerated name the
+    // representation-only differences ('foo  '≈'foo', 1.0≈1.00) that do
+    // NOT fire CDC under SQL Server's ANSI-pad / numeric comparison.
+    Assert.Equal (7, Set.count ToleratedDivergence.allKnown)
 
 [<Fact>]
 let ``Tolerance.ofSet round-trips through divergences`` () =
@@ -171,3 +177,60 @@ let ``3.4: DEV tolerating HeaderCommentsOmitted passes the divergence; PROD stri
     // DEV accepts the divergence (does not block); PROD strict does not.
     Assert.True(Tolerance.tolerates ToleratedDivergence.HeaderCommentsOmitted dev)
     Assert.False(Tolerance.tolerates ToleratedDivergence.HeaderCommentsOmitted prod)
+
+// ---------------------------------------------------------------------------
+// AC-D6 (NEITHER→HELD) — representation-only differences are NAMED tolerances
+// that do NOT fire CDC.
+//
+// **The recon finding: SQL-native, not normalization-needed.** The CDC
+// change-detection predicate (`ScriptDomBuild.perColumnChangeDetection`,
+// line 763) emits `Target.[c] <> Source.[c]` where BOTH operands are
+// **column references** — the stored typed values in the target table vs the
+// source table — NOT rendered SQL literals. SQL Server's `<>` on those
+// columns therefore applies the column-type's native comparison semantics:
+//   - For `char(n)` / `nchar(n)`: ANSI trailing-blank padding — the shorter
+//     operand is space-padded to the declared width before comparison, so
+//     `'foo  ' <> 'foo'` is FALSE. The padding difference is representation-
+//     only; the predicate does not fire.
+//   - For `decimal(p,s)` / `numeric(p,s)`: numeric comparison — scale is a
+//     declaration concern, not a value concern, so `1.0 <> 1.00` is FALSE.
+//     The trailing-zero difference is representation-only; the predicate does
+//     not fire.
+// `SqlLiteral` renders literals only for DEFAULT clauses / static-seed VALUES
+// tuples (the INSERT side), never for the column-vs-column CDC comparison.
+// So D6 is "name the tolerances + a discriminating test", NOT "normalize the
+// literal rendering". These tests anchor the two named tolerances to that SQL
+// semantics; the literal-level discriminating witnesses live in
+// `SqlLiteralTests.fs` (Decimal `"1.0"`/`"1.00"` render to DIFFERENT TEXT yet
+// store to the SAME numeric column value; char-typed padded/unpadded raw
+// render equivalently up to the trailing blanks the column re-pads).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``AC-D6: CharAnsiPaddingTolerated and DecimalScaleTolerated are named, parseable tolerances`` () =
+    // The two representation-only tolerances exist as named DU variants with
+    // config tokens (the operator-facing surface), so a per-environment
+    // Tolerance can name them explicitly and the canary's R6 gate absorbs the
+    // representation-only difference rather than failing on it.
+    Assert.Equal("CharAnsiPaddingTolerated", ToleratedDivergence.name ToleratedDivergence.CharAnsiPaddingTolerated)
+    Assert.Equal("DecimalScaleTolerated", ToleratedDivergence.name ToleratedDivergence.DecimalScaleTolerated)
+    Assert.Equal(Some ToleratedDivergence.CharAnsiPaddingTolerated, ToleratedDivergence.tryParse "CharAnsiPaddingTolerated")
+    Assert.Equal(Some ToleratedDivergence.DecimalScaleTolerated, ToleratedDivergence.tryParse "DecimalScaleTolerated")
+
+[<Fact>]
+let ``AC-D6: a representation-tolerant environment passes Char/Decimal divergences; strict does not`` () =
+    // DISCRIMINATING: the tolerance is a real gate decision, not a no-op. An
+    // environment that names the two representation tolerances passes them
+    // (does not block the canary); a strict environment (PROD) does not. A
+    // mislabeled-but-wrong implementation that dropped the tolerance from
+    // `allKnown` would fail `parse` (fail-closed UnknownDivergence) here.
+    let tolerant =
+        match Tolerance.parse [ "CharAnsiPaddingTolerated"; "DecimalScaleTolerated" ] with
+        | Ok t -> t | Error e -> failwithf "%A" e
+    let strict =
+        match Tolerance.parse [] with
+        | Ok t -> t | Error e -> failwithf "%A" e
+    Assert.True(Tolerance.tolerates ToleratedDivergence.CharAnsiPaddingTolerated tolerant)
+    Assert.True(Tolerance.tolerates ToleratedDivergence.DecimalScaleTolerated tolerant)
+    Assert.False(Tolerance.tolerates ToleratedDivergence.CharAnsiPaddingTolerated strict)
+    Assert.False(Tolerance.tolerates ToleratedDivergence.DecimalScaleTolerated strict)

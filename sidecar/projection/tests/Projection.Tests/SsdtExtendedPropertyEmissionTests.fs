@@ -184,4 +184,7 @@ let ``Chapter 4.1.A slice 8: Tolerance.CommentMetadataUnreflected variant retire
         | ToleratedDivergence.IndexesUnreflected           -> ()
         | ToleratedDivergence.StaticPopulationsUnreflected -> ()
         | ToleratedDivergence.EmptyTextNormalizedToNull    -> ()
-    Assert.Equal(5, Set.count ToleratedDivergence.allKnown)
+        | ToleratedDivergence.CharAnsiPaddingTolerated     -> ()
+        | ToleratedDivergence.DecimalScaleTolerated        -> ()
+    // AC-D6 (NEITHER→HELD) added the two representation-only tolerances.
+    Assert.Equal(7, Set.count ToleratedDivergence.allKnown)

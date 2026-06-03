@@ -727,22 +727,33 @@ exact-count, +2k not +2n); Track H closed **S7** (reference-rename refactorlog �
 a `SqlForeignKey` element type); Track I closed **P4** (`compose` now has production callers via
 `Lifecycle.netDiff`) + **P9** (manifest `ToleranceResidual`/`AppliedTransforms` fields added); Track J
 closed **I2** (the `ByEmail`/`BySsKey`/`Fallback` strategies bridged into `runReconciling`). Integrated by
-cherry-pick (H/I/J clean; G's CDC file hand-merged onto HEAD's VO-fix + Track-D theory). Scorecard
-below is post-Round-4.
+cherry-pick (H/I/J clean; G's CDC file hand-merged onto HEAD's VO-fix + Track-D theory).
+
+**Round 5 landed (4 parallel tracks; HEAD after this commit):** +4 to HELD — **Schema and Provenance now
+fully HELD.** Track K closed **D5** (computed-column exclusion from the MERGE UpdColumns/predicate/INSERT,
+gap N2); Track L closed **D6** (representation tolerances — recon found they are SQL-native: the predicate
+compares column refs so ANSI-char padding + decimal scale already don't fire; added `CharAnsiPadding`/
+`DecimalScale` named tolerances + pure witnesses); Track N closed **P6** (engine-input refactorlog
+accumulate-against-prior dedup by `OperationKey` + the real episode clock, retiring the pinned constant);
+Track O closed **S8** (rename-CDC-zero canary — empirically: CDC *blocks* a column rename, so a *table*
+rename is the CDC-transparent witness; 0 captures vs a data UPDATE's +2). All four cherry-picked clean.
+Scorecard below is post-Round-5.
 
 | Plane | HELD | CODE-ONLY | HOLLOW | NEITHER | STRUCTURAL |
 |---|---|---|---|---|---|
-| Schema (AC-S) | 11 | 0 | 0 | 1 | 0 |
+| Schema (AC-S) | 12 | 0 | 0 | 0 | 0 |
 | Identity (AC-I) | 6 | 0 | 0 | 1 | — |
 | Gates (AC-G) | 7 | 0 | 0 | 4 | — |
-| Provenance (AC-P) | 8 | 0 | 0 | 1 | — |
-| Data/CDC (AC-D) | 6 | 0 | 0 | 4 | — |
+| Provenance (AC-P) | 9 | 0 | 0 | 0 | — |
+| Data/CDC (AC-D) | 8 | 0 | 0 | 2 | — |
 | Proteins (AC-X) | 0 | 0 | 6 | 2 | — |
-| **Total (57)** | **38** | **0** | **6** | **13** | **0** |
+| **Total (57)** | **42** | **0** | **6** | **9** | **0** |
 
-*(Baseline HELD 18 → B1 25 → B2 28 → B2b 31 → R4 38 (67%). CODE-ONLY 15→10→8→5→**0**; HOLLOW 9→8→7→6.)*
+*(Baseline HELD 18 → B1 25 → B2 28 → B2b 31 → R4 38 → R5 42 (74%). CODE-ONLY 15→0; HOLLOW 9→6; NEITHER 14→9.)*
 
-**The reading (post-Round-4).** Genuinely solid (HELD) = **38 of 57 (67%)**. **CODE-ONLY is now empty** —
+**The reading (post-Round-5).** Genuinely solid (HELD) = **42 of 57 (74%)**. CODE-ONLY is empty; **Schema
+and Provenance are fully HELD**. The remaining 15 are all **Round 6**: **6 HOLLOW** (the protein-composition
+cluster X1/X2/X4/X5/X7/X8) + **9 NEITHER** (I7, G0, G4, G9, G10, D7, D10, X3, X6 — unbuilt mechanisms). Prior text below describes the pre-Round-5 framing —
 every "correct-but-unguarded" cell has a discriminating test. The remaining gap is **6 HOLLOW (the protein
 composition cluster) + 13 NEITHER** (unbuilt mechanisms). Up from 19 (33%) at the baseline; the test-first
 pass's ~24 PASS is now well behind.
@@ -755,11 +766,11 @@ unit/harness test exercises a function in isolation that the production path nev
 
 ### Per-AC grades
 
-- **Schema:** HELD S1, S2, S3, S4, S5, S6, S9, S10, S11, S12 · NEITHER S7~~, S8~~ → **S7→HELD (R4)** · NEITHER S8. HELD = S1–S7, S9–S12; NEITHER S8.
+- **Schema:** HELD S1–S12 (all). *(R4: S7→HELD. R5: S8→HELD via the rename-CDC canary. Plane complete.)*
 - **Identity:** HELD I1, I3, I4, **I5**, I6, **I2** (R4 — strategies bridged) · NEITHER I7.
 - **Gates:** HELD G1, G2, G3, G5, G6, G7, G8 · NEITHER G0, G4, G9, G10. *(Batch 2b: G1/G2/G7 wired→HELD; G0 deferred.)*
-- **Provenance:** HELD P1, P2, P3, P5, P7, P8, **P4, P9** (R4) · NEITHER P6. *(R4: P4 compose-consumer→HELD; P9 manifest-fields→HELD.)*
-- **Data/CDC:** HELD D1, D8, D9, **D2, D3, D4** (R4) · NEITHER D5, D6, D7, D10. *(R4: D2/D3 MigrationDependencies live witness; D4 k>1 exact-count → HELD.)*
+- **Provenance:** HELD P1–P9 (all). *(R4: P4 compose-consumer + P9 manifest-fields → HELD. R5: P6 refactorlog-accumulate + real clock → HELD. Plane complete.)*
+- **Data/CDC:** HELD D1, D2, D3, D4, D5, D6, D8, D9 · NEITHER D7, D10. *(R5: D5 computed-exclusion + D6 representation-tolerances → HELD. Remaining: D7 delete-scope, D10 wipe-and-load → Round 6.)*
 - **Proteins:** HOLLOW X1, X2, X4, X5, X7, X8 · NEITHER X3, X6.
 
 ### The HOLLOW register (6) — green tests that don't establish the criterion (the protein cluster)
@@ -806,12 +817,20 @@ caught + fixed (E's gate vs Track C's AC-P8 narrowing fixture → `DeclareAll`).
 register cleared to 0.** Integrated by cherry-pick (G's CDC file hand-merged onto HEAD's Track-D content);
 full suite green (pure exit 0 / Docker 152).
 
-**Next — Round 5** (the tractable NEITHER mechanisms, parallel): **K** D5 computed-column exclusion · **L**
-D6 representation tolerances · **M** D7+G4 delete-scope gate · **N** P6 refactorlog accumulate (engine-input
-+ real clock) · **O** S8 rename-CDC-zero canary. Then **Round 6** (the heavy features, all decision-unblocked
-per the resolved forks below): the 6 protein HOLLOWs (X1/X2/X4/X5/X7/X8 — by extending existing verbs) +
-G9/G10/I7/D10/X3 + X6 (append-forever eject). **Integration discipline:** cherry-pick worktree commits onto
-HEAD (bases drift far behind); resolve the keep-both conflicts where a track meets recent session work.
+**✅ Round 5 complete:** Tracks K/L/N/O — D5, D6, P6, S8 → HELD. **HELD → 42 (74%); Schema + Provenance
+fully HELD.** All four cherry-picked clean; full suite green (pure exit 0 / Docker 153).
+
+**Next — Round 6 (the heavy features; 15 cells; all decision-unblocked per the resolved forks below).**
+The **6 protein HOLLOWs** collapse onto shared CLI-composition seams (build by *extending existing verbs*):
+CDC-measure-in-CLI (lifts X4, X8, X1, X5), re-key compose in `executeWithData` (X2), diff-vs-prior in
+`full-export` (X1, X3) + diff-vs-model drift check (X7), record on the data path (X1, X5). Plus the **9
+NEITHER mechanisms**: G0 (`Preflight.all` mandatory — the `code→(exit,label)` reporting refactor), D7+G4
+(delete-scope gate + `WHEN NOT MATCHED BY SOURCE` arm), G9 (on-disk null-probe before in-place ALTER NOT
+NULL), G10 (resumable/idempotent envelope), I7 (rename+reconcile compose), D10 (explicit wipe-and-load
+`EmissionMode`), X3 (SSIS publication bundle), X6 (append-forever eject). These are real multi-file features
+(several touch the central `Program.fs`/`TransferRun.fs`/`MigrationRun.fs`), so Round 6 runs in smaller
+file-disjoint sub-batches rather than one wide fan-out. **Integration discipline:** cherry-pick worktree
+commits onto HEAD; resolve keep-both where a track meets recent session work.
 
 **Round 5–6 forks — RESOLVED (operator, this session):**
 - **Eject (X6): append-forever.** The terminal bundle preserves every episode + the full accumulated

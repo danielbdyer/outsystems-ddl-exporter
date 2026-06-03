@@ -587,3 +587,72 @@ let ``Slice δ: slice α/β rows pre-existing carry empty DeferredFkSet (acyclic
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     Assert.All (script.Phase1Merges, fun row -> Assert.Empty row.DeferredFkSet)
     Assert.Empty script.Phase2Updates
+
+// ---------------------------------------------------------------------------
+// AC-D5 (gap N2): persisted computed columns are SQL-Server-computed and
+// must NEVER appear in the CDC-aware MERGE's updatable-column set — an
+// `UPDATE SET <computed> = ...` is a hard SQL error, and the column must
+// not enter the change-detection predicate or the INSERT column list.
+// ---------------------------------------------------------------------------
+
+/// Country fixture with a fourth attribute (`Display`) that is a PERSISTED
+/// computed column (`Computed = Some _`). A non-computed sibling (`Code`)
+/// is present so the discrimination is sharp: Code IS updatable, Display
+/// is NOT.
+let private mkComputedColumnKind () : Kind =
+    let kindKey = mkKey ["TestModule"; "Country"]
+    let idKey = mkKey ["TestModule"; "Country"; "Id"]
+    let codeKey = mkKey ["TestModule"; "Country"; "Code"]
+    let labelKey = mkKey ["TestModule"; "Country"; "Label"]
+    let displayKey = mkKey ["TestModule"; "Country"; "Display"]
+    let computedCfg = ComputedColumnConfig.create "[CODE] + N' - ' + [LABEL]" true |> mustOk
+    let row code label =
+        { Identifier = mkKey ["TestModule"; "Country"; "Row"; code]
+          Values =
+              Map.ofList
+                  [ mkName "Id",    code
+                    mkName "Code",  code
+                    mkName "Label", label ] }
+    {
+        SsKey    = kindKey
+        Name     = mkName "Country"
+        Origin   = Native
+        Modality = [ Static [ row "US" "United States"
+                              row "CA" "Canada" ] ]
+        Physical = mkTableId "dbo" "OSUSR_TEST_COUNTRY"
+        Attributes =
+            [
+                { Attribute.create idKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true }
+                { Attribute.create codeKey (mkName "Code") Text with Column = ColumnRealization.create ("CODE") (false) |> Result.value; IsMandatory = true }
+                { Attribute.create labelKey (mkName "Label") Text with Column = ColumnRealization.create ("LABEL") (false) |> Result.value; IsMandatory = true }
+                { Attribute.create displayKey (mkName "Display") Text with Column = ColumnRealization.create ("DISPLAY") (false) |> Result.value; Computed = Some computedCfg }
+            ]
+        References = []
+        Indexes    = []
+        Description = None
+        IsActive = true
+        Triggers = []
+        ColumnChecks = []
+        ExtendedProperties = []
+        }
+
+[<Fact>]
+let ``AC-D5: computed column is excluded from CDC-aware MERGE UPDATE SET + predicate (discriminating)`` () =
+    let country = mkComputedColumnKind ()
+    let catalog = mkCatalog [ country ]
+    let cdc = CdcAwareness.create (Set.ofList [ country.SsKey ]) Map.empty
+    let profile = { Profile.empty with CdcAwareness = cdc }
+    let artifact = StaticSeedsEmitter.emit catalog profile |> mustOkEmit
+    let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
+    let r = normWs script.Rendered
+    // CDC-aware: WHEN MATCHED AND ( ... ) THEN UPDATE SET.
+    Assert.Contains ("WHEN MATCHED AND (", r)
+    // The persisted computed column DISPLAY must NOT appear anywhere in
+    // the MERGE — not in UPDATE SET, not in the change-detection
+    // predicate, not in the INSERT/USING column list (gap N2).
+    Assert.DoesNotContain ("[DISPLAY]", r)
+    // The non-computed sibling CODE IS updatable: it appears in UPDATE SET
+    // and in the change-detection predicate. (Discrimination: current
+    // pre-fix code emits DISPLAY in both places — this is the red→green.)
+    Assert.Contains ("[Target].[CODE] = [Source].[CODE]", r)
+    Assert.Contains ("[Target].[CODE] <> [Source].[CODE]", r)

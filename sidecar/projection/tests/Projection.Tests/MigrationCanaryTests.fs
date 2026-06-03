@@ -75,12 +75,45 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
         Catalog.create [ { SsKey = mkKey "Mod2"; Name = nm "MigMod2"; Kinds = [ customer ]; IsActive = true; ExtendedProperties = [] } ] []
         |> Result.value
 
+    /// AC-S8 state A: table MIGAB_RENSRC with ID + EMAIL. State B: SAME
+    /// columns, table renamed to MIGAB_RENDST — a PURE table rename (no
+    /// reshape, no add), so the only differential is one `sp_rename` of the
+    /// table object. Kept column-stable on purpose: an ALTER on a CDC-tracked
+    /// (replicated) column is blocked by SQL Server, so the table-rename case
+    /// is the one that executes cleanly under CDC.
+    static let catalogRenA : Catalog =
+        let k =
+            Kind.create (mkKey "Ren") (nm "Source")
+                (mkTableId "dbo" "MIGAB_RENSRC")
+                [ mkAttr "Ren.Id" "ID" Integer None true false
+                  mkAttr "Ren.Email" "EMAIL" Text (Some 100) false true ]
+        Catalog.create [ { SsKey = mkKey "RenMod"; Name = nm "RenMod"; Kinds = [ k ]; IsActive = true; ExtendedProperties = [] } ] []
+        |> Result.value
+
+    static let catalogRenB : Catalog =
+        let k =
+            Kind.create (mkKey "Ren") (nm "Sink")
+                (mkTableId "dbo" "MIGAB_RENDST")
+                [ mkAttr "Ren.Id" "ID" Integer None true false
+                  mkAttr "Ren.Email" "EMAIL" Text (Some 100) false true ]
+        Catalog.create [ { SsKey = mkKey "RenMod"; Name = nm "RenMod"; Kinds = [ k ]; IsActive = true; ExtendedProperties = [] } ] []
+        |> Result.value
+
     static let scalarString (cnn: Microsoft.Data.SqlClient.SqlConnection) (sql: string) =
         task {
             use cmd = cnn.CreateCommand()
             cmd.CommandText <- sql
             let! v = cmd.ExecuteScalarAsync()
             return string v
+        }
+
+    static let scalarInt (cnn: Microsoft.Data.SqlClient.SqlConnection) (sql: string) =
+        task {
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <- sql
+            cmd.CommandTimeout <- 0
+            let! v = cmd.ExecuteScalarAsync()
+            return System.Convert.ToInt32 v
         }
 
     interface IClassFixture<EphemeralContainerFixture>
@@ -287,4 +320,120 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
                         | Error (MigrationError.RefusedByCdc _) ->
                             Assert.Fail("allow-cdc must bypass the CDC gate, not refuse")
                         | _ -> ()
+                }))
+
+    // -- AC-S8 — RENAME is CDC-transparent (‖rename‖_data = 0) ----------------
+    //
+    // THE STANDARD (obligations §0): a discriminating LIVE witness. A RENAME via
+    // `sp_rename` (the V2 rename path — `MigrationRun.execute`'s
+    // `renameStatements`) is a metadata-only operation: it relabels the object
+    // in the catalog and touches NO data pages, so SQL Server's CDC log-scan
+    // (`sys.sp_cdc_scan`) finds zero data-change records to capture. A data
+    // UPDATE on the same CDC-tracked table, by contrast, writes a row version
+    // the log-scan captures. The canary distinguishes the two: rename ⇒ 0 net
+    // captures; update ⇒ > 0.
+    //
+    // WRONG IMPL THIS CATCHES: a "rename" implemented as DROP + re-CREATE (or,
+    // for the column case, DROP COLUMN + ADD COLUMN) — the lossy reshape an
+    // emitter reaches for when it can't carry the same SsKey across A→B. That
+    // rewrites every row (and, for a table re-CREATE, re-keys the CDC capture
+    // instance), firing CDC captures and losing data. The
+    // `renameStatements`/`sp_rename` path is CDC-transparent; the
+    // drop+recreate impostor is not.
+    //
+    // CDC-AFTER-RENAME CAVEAT (empirically established against the live
+    // container, NOT assumed): under CDC, SQL Server BLOCKS a *column* rename —
+    // `sp_rename '…','…','COLUMN'` raises "Cannot alter column … because it is
+    // 'REPLICATED'" (CDC marks every captured column as replicated). So the
+    // column-rename case cannot be a "0 captures" witness — it errors before
+    // capturing anything. The *table* rename, however, executes cleanly and IS
+    // CDC-transparent: the capture instance (`cdc.dbo_<table>_CT`) is bound to
+    // the object_id + the enable-time name, so the table object renames while
+    // the capture instance keeps its original name and zero rows are captured.
+    // We therefore witness AC-S8 with the TABLE rename (the executable rename
+    // under CDC) and seed/UPDATE through a column that is unchanged by the
+    // rename, so the sensitivity half exercises real capture on the live
+    // instance. (The capture instance survives the table rename — verified by
+    // the UPDATE leg firing > 0.)
+    [<Fact>]
+    member _.``AC-S8: a table rename via sp_rename is CDC-transparent (0 net captures) while a data UPDATE fires`` () =
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "RenameCdc" (fun conn _ ->
+                task {
+                    // Deploy state A (MIGAB_RENSRC with ID + EMAIL) and seed a row.
+                    do! Deploy.executeBatch conn (SsdtDdlEmitter.statements catalogRenA |> Render.toText)
+                    do! Deploy.executeBatch conn
+                            "INSERT INTO [dbo].[MIGAB_RENSRC] ([ID],[EMAIL]) VALUES (1, N'carol@example.com');"
+
+                    // Enable CDC on the database + the seeded table. Skip if the
+                    // container image can't (mirrors 6.A.13's graceful skip).
+                    let! enabled =
+                        task {
+                            try
+                                do! Deploy.executeBatch conn "EXEC sys.sp_cdc_enable_db;"
+                                do! Deploy.executeBatch conn
+                                        "EXEC sys.sp_cdc_enable_table @source_schema=N'dbo', @source_name=N'MIGAB_RENSRC', @role_name=NULL, @supports_net_changes=0;"
+                                let! c =
+                                    scalarInt conn
+                                        "SELECT COUNT(*) FROM sys.tables WHERE is_tracked_by_cdc = 1 AND name = N'MIGAB_RENSRC';"
+                                return c > 0
+                            with _ -> return false
+                        }
+                    if not enabled then
+                        printfn "SKIP AC-S8: container did not enable CDC (flag not set)"
+                    else
+                        // The capture-instance name is bound at enable-time and
+                        // survives the table rename — so we count the SAME capture
+                        // table (`cdc.dbo_MIGAB_RENSRC_CT`) across all three phases.
+                        let captureCountSql =
+                            "SELECT COUNT(*) FROM cdc.[dbo_MIGAB_RENSRC_CT];"
+
+                        // Force the synchronous log-scan and capture the baseline.
+                        do! Deploy.executeBatch conn "EXEC sys.sp_cdc_scan;"
+                        let! baseline = scalarInt conn captureCountSql
+
+                        // === RENAME LEG: the V2 rename path (sp_rename of the
+                        // table object) on the CDC-tracked table. allowCdc=true
+                        // bypasses the schema-side CDC GATE (6.A.13) — the gate
+                        // guards unsafe DDL; the point here is that the rename,
+                        // once executed, is CDC-TRANSPARENT at the data-capture
+                        // level.
+                        let! outcome = MigrationRun.execute true DeclareNone catalogRenA catalogRenB conn
+                        match outcome with
+                        | Error e -> Assert.Fail(sprintf "table-rename migrate failed: %A" e)
+                        | Ok _ ->
+                            // The rename actually happened: old object gone, new present.
+                            let! oldExists =
+                                scalarInt conn
+                                    "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME='MIGAB_RENSRC';"
+                            Assert.Equal(0, oldExists)
+                            let! newExists =
+                                scalarInt conn
+                                    "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME='MIGAB_RENDST';"
+                            Assert.Equal(1, newExists)
+
+                            // Scan again: the rename fired ZERO data captures.
+                            do! Deploy.executeBatch conn "EXEC sys.sp_cdc_scan;"
+                            let! postRename = scalarInt conn captureCountSql
+
+                            // THE LOAD-BEARING ASSERTION: ‖rename‖_data = 0.
+                            Assert.Equal(baseline, postRename)
+
+                            // === SENSITIVITY (UPDATE) LEG: a data UPDATE on the
+                            // (now-renamed) CDC-tracked table DOES fire — proving
+                            // the canary isn't trivially silent (CDC plumbing IS
+                            // live and the capture instance survived the rename).
+                            do! Deploy.executeBatch conn
+                                    "UPDATE [dbo].[MIGAB_RENDST] SET [EMAIL] = N'carol+changed@example.com' WHERE [ID] = 1;"
+                            do! Deploy.executeBatch conn "EXEC sys.sp_cdc_scan;"
+                            let! postUpdate = scalarInt conn captureCountSql
+
+                            // THE SENSITIVITY ASSERTION: the UPDATE fired capture
+                            // rows the rename did not. Discriminates: rename == 0
+                            // net; update > baseline.
+                            Assert.True(
+                                postUpdate > postRename,
+                                sprintf "expected the data UPDATE to fire CDC captures the rename did not; baseline=%d postRename=%d postUpdate=%d"
+                                    baseline postRename postUpdate)
                 }))

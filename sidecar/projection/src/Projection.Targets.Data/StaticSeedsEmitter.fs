@@ -39,12 +39,22 @@ module StaticSeedsEmitter =
         |> List.map (fun a -> a.Name, a.Type)
         |> Map.ofList
 
+    /// Writable attributes for a kind — the columns the MERGE may
+    /// INSERT into and SELECT from `Source`. Persisted/computed columns
+    /// (gap N2; `Computed = Some _`) are SQL-Server-computed at write
+    /// time and can never appear in an INSERT column list, an UPDATE SET,
+    /// or a USING source; including one is a hard SQL error. Filtering
+    /// here keeps `AllColumns` and the per-row VALUES projection aligned.
+    let private writableAttributes (k: Kind) : Attribute list =
+        k.Attributes |> List.filter (fun a -> a.Computed = None)
+
     /// Order columns deterministically (matches V1 + the SSDT emitter).
     /// Per A33 (deterministic-ordered schema emission), sort by the
     /// kind's declared attribute order — which is itself canonical
-    /// after `CanonicalizeIdentity`.
+    /// after `CanonicalizeIdentity`. Computed columns are excluded (never
+    /// written).
     let private orderedColumnNames (k: Kind) : string list =
-        k.Attributes |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
+        writableAttributes k |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
 
     /// Primary-key column names in the kind's declared order. The
     /// MERGE's ON-clause joins on these; the WHEN-NOT-MATCHED INSERT
@@ -157,10 +167,15 @@ module StaticSeedsEmitter =
         // deferred from UpdColumns makes Phase-1 silent on the
         // deferred-FK axis; Phase-2 owns the cycle-resolution
         // emission alone.
+        // Gap N2: a persisted computed column (`Computed = Some _`) is
+        // SQL-Server-computed, so it is never an UPDATE-target (UPDATE SET
+        // <computed> = ... is a hard SQL error) and never enters the
+        // change-detection predicate. Exclude it alongside PK + deferred.
         let updColumns =
             k.Attributes
             |> List.filter (fun a -> not a.IsPrimaryKey)
             |> List.filter (fun a -> not (Set.contains a.Name deferred))
+            |> List.filter (fun a -> a.Computed = None)
             |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
         let args : ScriptDomBuild.MergeBuildArgs =
             {
@@ -168,7 +183,7 @@ module StaticSeedsEmitter =
                 AllColumns = orderedColumnNames k
                 PkColumns  = pkColumnNames k
                 UpdColumns = updColumns
-                Rows       = typedRows |> List.map (typedValuesToSqlLiterals deferred k.Attributes)
+                Rows       = typedRows |> List.map (typedValuesToSqlLiterals deferred (writableAttributes k))
                 CdcAware   = cdcAware
             }
         let mergeStmt = (ScriptDomBuild.buildMergeStatement args).Value
