@@ -686,3 +686,115 @@ the matrix can state not just which promises are made, but which are adversarial
 green-but-unproven (the phantom-greens), and which are unbuilt — as a count. Build down §5, refresh
 §1's numbers as obligations go green, and the engine's fidelity becomes a measured quantity rather than
 an assertion.
+
+---
+
+## 7 — The criterion-anchored two-leg regrade (measured, supersedes the §1 count)
+
+Per the §0 discipline, each of the 57 acceptance criteria was judged **criterion-first** against two
+independent legs — implemented reality (the code path, read independent of any test) and the live test
+(does the green test actually discriminate). Liveness was verified (full suite green at HEAD `3c2c854`).
+This is the measured truth; §1's 52% was an inspection upper bound.
+
+### Global grade scorecard
+
+| Plane | HELD | CODE-ONLY | HOLLOW | NEITHER | STRUCTURAL |
+|---|---|---|---|---|---|
+| Schema (AC-S) | 5 | 4 | 0 | 2 | 1 |
+| Identity (AC-I) | 5 | 1 | 0 | 1 | — |
+| Gates (AC-G) | 3 | 3 | 1 | 4 | — |
+| Provenance (AC-P) | 3 | 3 | 2 | 1 | — |
+| Data/CDC (AC-D) | 2 | 4 | 0 | 4 | — |
+| Proteins (AC-X) | 0 | 0 | 6 | 2 | — |
+| **Total (57)** | **18** | **15** | **9** | **14** | **1** |
+
+**The reading.** Genuinely solid (HELD + STRUCTURAL) = **19 of 57 (33%)** — *not* the ~24 PASS the
+test-first pass implied. **9 cells (16%) are HOLLOW** — green tests that do not establish the criterion
+(the phantom-greens). **15 (26%) are CODE-ONLY** — the code is correct but no test discriminates the
+criterion's adversarial input, so a plausible wrong refactor passes the whole suite. **14 (25%) are
+NEITHER** — genuine gaps. The HOLLOW mass concentrates exactly where the criteria demand *composed,
+operator-reachable* behavior (proteins) or *wired* behavior (gates/provenance) — the places a green
+unit/harness test exercises a function in isolation that the production path never composes.
+
+### Per-AC grades
+
+- **Schema:** HELD S2, S3, S4, S5, S10 · CODE-ONLY S1, S6, S9, S11 · NEITHER S7, S8 · STRUCTURAL S12.
+- **Identity:** HELD I1, I3, I4, **I5** (fixed this session — now genuinely HELD), I6 · CODE-ONLY I2 · NEITHER I7.
+- **Gates:** HELD G3, G5, G6 · CODE-ONLY G1, G2, G7 · HOLLOW G8 · NEITHER G0, G4, G9, G10.
+- **Provenance:** HELD P3, P5, P7 · CODE-ONLY P1, P2, P4 · HOLLOW P8, P9 · NEITHER P6.
+- **Data/CDC:** HELD D8, D9 · CODE-ONLY D1, D2, D3, D4 · NEITHER D5, D6, D7, D10.
+- **Proteins:** HOLLOW X1, X2, X4, X5, X7, X8 · NEITHER X3, X6.
+
+### The HOLLOW register (9) — green tests that don't establish the criterion (top priority)
+
+| AC | Why hollow | Shared root cause |
+|---|---|---|
+| **G8** narrowing | criterion needs *refusal*; code emits *Warning + proceeds*; test asserts the warning → co-wrong | gate emits wrong severity |
+| **P8** migrate-records-episode | `MigrationRun.record` correct & tested in isolation; `runMigrateExecute` **never calls it** | **record-not-wired** |
+| **P9** change-manifest | type is *missing* `ToleranceResidual` + `AppliedTransforms`; tests assert only what exists | incomplete type + no consumer |
+| **X1** P-1/P-2 load | `full-export` halts at publish; record + CDC-measure tested via harness only | record-not-wired · no-CDC-in-CLI · no-diff-vs-prior |
+| **X2** P-3 UAT re-key | `executeWithData` passes `Map.empty`; the canary passes `Map.empty` too — **co-wrong** | **re-key-not-composed** |
+| **X4** P-5 redeploy | schema idempotence reachable; CDC=0 measure is harness-only | no-CDC-in-CLI |
+| **X5** P-6 in-place migrate | 7/12 schema steps reachable; Move-data + Measure-CDC + Record harness-only | record-not-wired · no-CDC-in-CLI · no-data-leg |
+| **X7** P-8 drift | `verify-data` compares two substrates, not deployed-vs-model; test asserts the weaker behavior | no-diff-vs-model |
+| **X8** P-9 canary | PhysicalSchema round-trip HELD; CDC-silence measure harness-only | no-CDC-in-CLI |
+
+The protein HOLLOWs are **not 6 independent problems** — they collapse onto four shared seams:
+**record-not-wired** (P8 → X1, X5), **no-CDC-count-in-any-CLI-verb** (X1, X4, X5, X8), **re-key-not-
+composed** (X2), **no-diff-vs-prior / vs-model** (X1, X3, X7). Fix the seam, lift several cells.
+
+### The CODE-ONLY register (15) — correct but unguarded (a wrong refactor passes the suite)
+
+Pure-test closers (no production code): **S1** (name-collision), **S6** (rename+widen disjointness —
+medium-high risk: the obvious "skip ALTER if renamed" optimization passes today), **S9** (DECIMAL
+precision+scale), **S11** (length-narrow), **P1** (no-cheat on reference/index/sequence channels —
+only the kind channel is witnessed), **P2** (DECIMAL round-trip), **D1** (type×null-state — 9 types
+untested), **D2/D3/D4** (nullable-stays-NULL, nullable-fires, k>1 exact count). Wiring/consumer
+closers: **G1/G2** (connection/permission on `transfer`), **G7** (tightening on all verbs), **I2**
+(ByEmail/BySsKey/Fallback never reach `runReconciling` — a *reality* gap), **P4** (compose has zero
+production callers).
+
+---
+
+## 8 — The re-ranked queue (HOLLOW-first, by leverage)
+
+Recovering falsely-claimed value (HOLLOW) and guarding correct-but-unverified code (CODE-ONLY) beats
+greenfield (NEITHER). Ordered by ROI = (criterion impact × shared-seam leverage) ÷ (cost × risk).
+
+**Tier A — convert HOLLOW→HELD with a small wiring fix (highest ROI):**
+1. **P8 — wire `MigrationRun.record` into `runMigrateExecute`** (+ a test asserting the CLI persists the
+   episode). Same shape as this session's AC-I5 fix (function exists & is tested; one call site). Lifts
+   P8 *and* the record-leg of proteins X1/X5. (Recon caveat: confirm the store-path argument/convention.)
+2. **G8 — promote the narrowing `Warning` to a declared-loss refusal** (mirror the G3 gate). Converts the
+   one gate HOLLOW to HELD; small.
+
+**Tier B — close CODE-ONLY with pure/Docker tests (no production code; `runScenario` now fixed):**
+3. Schema adversarial pure tests: **S6.3** (rename+widen disjoint — do first, highest refactor-risk),
+   **S9.19** (DECIMAL), **S1.2** (name-collision), **S12.6** (mixed-stream), **S10.3/4** (PK/Computed).
+4. **P1** no-cheat tests on the reference/index/sequence channels; **P2.8** DECIMAL round-trip.
+5. **D1** type×null-state CDC sweep (the 9 untested types) + **D4** k>1 exact-count — now unblocked.
+
+**Tier C — wire built-not-wired gates (small–medium code):**
+6. **G7** tightening into `migrate --execute` (recon already scoped); then **G1/G2** connection/permission
+   into `runTransfer`; then **G0** make `Preflight.all` the mandatory entry on all three verbs.
+7. **I2** route the three user-match strategies through `runReconciling`; **P4** land a compose consumer.
+
+**Tier D — build new mechanism / compose the protein chains (larger; shared-seam order):**
+8. **no-CDC-count-in-CLI** seam → lifts X4, X8, and the measure-leg of X1/X5. **re-key compose** (X2:
+   thread a non-empty reconciliation through `executeWithData`). **diff-vs-prior/model** (X1, X3, X7).
+9. The remaining NEITHER mechanisms: S7 (reference-rename refactorlog), S8 (rename-CDC canary), D5
+   (computed exclusion), D6 (representation tolerances), D7/G4 (delete-scope), D10 (wipe-and-load), G9
+   (on-disk probe), G10 (transactional), P6 (refactorlog accumulate + real clock), I7 (rename+reconcile
+   compose), X6 (eject — after the append-vs-collapse fork is resolved).
+
+**The single highest-leverage next move:** Tier A #1 (wire `record`) — it is a one-call-site fix that
+flips a HOLLOW to HELD and simultaneously advances two protein cells, exactly the shared-seam leverage
+the regrade exposed.
+
+---
+
+— Five passes now compose: **target** (masterwork) → **distance** (fitness) → **falsifiable test of the
+distance** (acceptance) → **obligation census** (§§1–6) → **criterion-anchored two-leg grade** (§§0,7).
+The instrument no longer asserts coverage; it measures it, against the criterion, on two independent
+legs, with a liveness stamp that must be re-earned. Refresh §7's grades whenever a code path or test
+changes; re-run the liveness stamp after any typed-VO lift, IR change, or Docker-state change.
