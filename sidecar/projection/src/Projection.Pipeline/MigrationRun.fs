@@ -211,6 +211,57 @@ module MigrationRun =
             | Ok () -> Ok chain
             | Error e -> Error (StoreError e)
 
+    /// The next monotonic `EpisodeCoordinate` for the timeline persisted at
+    /// `path`: ordinal 0 for a genesis (no file / unreadable-as-genesis), else
+    /// the latest episode's ordinal + 1. The CLI supplies `environment` + `at`
+    /// (Core holds no clock); the label is the ordinal's SemVer-ish stamp. This
+    /// is the seam that lets the executor record without the operator hand-
+    /// authoring a version — the timeline's own head dictates the next ordinal.
+    let nextCoordinate
+        (path: string)
+        (environment: Environment)
+        (at: System.DateTimeOffset)
+        : Result<EpisodeCoordinate, MigrationRecordError> =
+        let ordinalResult : Result<int, MigrationRecordError> =
+            if System.IO.File.Exists path then
+                match LifecycleStore.load path with
+                | Error e -> Error (StoreError e)
+                | Ok existing ->
+                    Ok (Version.ordinal (Episode.version (EpisodicLifecycle.latest existing)) + 1)
+            else
+                Ok 0
+        match ordinalResult with
+        | Error e -> Error e
+        | Ok ordinal ->
+            match Version.create ordinal (sprintf "v%d" ordinal) with
+            | Ok version -> Ok (EpisodeCoordinate.create version environment at)
+            | Error errs -> Error (NonMonotonic (errs |> List.map (fun e -> e.Message) |> String.concat "; "))
+
+    /// **The record-leg of the composed CLI execute** — persist a *verified*
+    /// migration `outcome`'s episode onto the timeline at `path`, deriving the
+    /// next monotonic coordinate from the store itself (`nextCoordinate`). Pure
+    /// w.r.t. the DB (it takes the already-computed `MigrationOutcome`, no
+    /// `SqlConnection`), so it is unit-testable: after it runs against a store
+    /// path, the store reloads and `reconstructLatestSchema` reproduces B. An
+    /// **unverified** outcome is never recorded — the timeline only carries
+    /// episodes whose B' reproduced B. `timeline` opens the store at genesis on
+    /// the first record; thereafter it loads-and-appends.
+    let recordVerified
+        (path: string)
+        (timeline: Timeline)
+        (environment: Environment)
+        (at: System.DateTimeOffset)
+        (refactorLogRef: string option)
+        (data: DataObservation)
+        (outcome: MigrationOutcome)
+        : Result<EpisodicLifecycle, MigrationRecordError> =
+        if not outcome.Verified then
+            Error (NonMonotonic "refusing to record an unverified migration outcome (B' did not reproduce B)")
+        else
+            match nextCoordinate path environment at with
+            | Error e -> Error e
+            | Ok coordinate -> record path timeline coordinate refactorLogRef data outcome.Artifacts
+
     // -- the live-execute leg (direct execution against a deployed DB) --------
 
     /// Executable rename statements for the renames in a displacement — both
@@ -375,6 +426,42 @@ module MigrationRun =
                                   Verified = PhysicalSchema.isSchemaEqual sdiff }
         }
 
+    /// **The composed live execute → record** — the L3 CLI bullseye made
+    /// durable (AC-P8). Runs `execute` against the deployed DB; on a **verified**
+    /// outcome, persists the episode onto the timeline at `path` via
+    /// `recordVerified` (next monotonic coordinate derived from the store). The
+    /// returned `chain` is `None` when the outcome did not verify (nothing
+    /// recorded — the timeline only carries episodes whose B' reproduced B). A
+    /// schema-only in-place execute moves no rows, so the durable
+    /// `DataObservation` is `empty` (CDC count 0); the cross-substrate data-load
+    /// path records its CDC series separately. A record-leg failure surfaces as
+    /// `ExecutionFailed` (the write landed but provenance did not — fail-loud so
+    /// the operator knows the episode is unpersisted).
+    let executeAndRecord
+        (allowCdc: bool)
+        (declaration: LossDeclaration)
+        (source: Catalog)
+        (target: Catalog)
+        (path: string)
+        (timeline: Timeline)
+        (environment: Environment)
+        (at: System.DateTimeOffset)
+        (refactorLogRef: string option)
+        (cnn: SqlConnection)
+        : System.Threading.Tasks.Task<Result<MigrationOutcome * EpisodicLifecycle option, MigrationError>> =
+        task {
+            let! result = execute allowCdc declaration source target cnn
+            match result with
+            | Error e -> return Error e
+            | Ok outcome ->
+                if not outcome.Verified then
+                    return Ok (outcome, None)
+                else
+                    match recordVerified path timeline environment at refactorLogRef DataObservation.empty outcome with
+                    | Ok chain -> return Ok (outcome, Some chain)
+                    | Error e -> return Error (ExecutionFailed (sprintf "execute verified but recording the episode failed: %A" e))
+        }
+
     /// `execute` for the bootstrap case where the prior schema is **not** known
     /// from a recorded episode: read **A** from the live database first
     /// (`ReadSide.read cnn`), then plan + execute against `target`. Carries the
@@ -426,10 +513,8 @@ module MigrationRun =
                             Transfer.run mode allowCdc dataSource sink target
                         else
                             // allowDrops = false: enforce the AC-I5 pre-write validate-user-map
-                            // halt on the reconciling migrate-with-data path. (Currently unreached
-                            // — both callers pass an empty reconciliation; the operator's
-                            // --allow-drops flows here when the reconcile+migrate composition,
-                            // AC-I7, is wired as the follow-on.)
+                            // halt on the reconciling migrate-with-data path (the reconcile+migrate
+                            // composition, AC-I7, is the follow-on; --allow-drops flows here then).
                             Transfer.runReconciling mode allowCdc false dataSource sink target reconciliation
                     match transferResult with
                     | Ok report -> return Ok { Schema = schema; Transfer = report }

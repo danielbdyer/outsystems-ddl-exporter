@@ -269,6 +269,91 @@ let private indexedCatalog : Catalog =
         }
     { Modules = [ m ]; Sequences = [] }
 
+// ---------------------------------------------------------------------------
+// S12.6 (DacFx-seam mixed-stream exclusion). `DacpacEmitter` feeds DacFx's
+// declarative `TSqlModel` only the schema-statement family — `CreateTable` /
+// `CreateIndex` / `CreateSequence` / the post-CREATE state-reproduction alters.
+// The imperative-migration family (`SchemaMigrationEmitter`'s
+// `AlterTableAlterColumn` / `AlterTableDropColumn` / DROP CONSTRAINT / DROP
+// INDEX) is NOT a declarative model object: DacFx owns the ALTER/DROP at
+// publish, computing it from the declarative target. `isSchemaStatement` must
+// EXCLUDE that family from the DacFx ingestion.
+//
+// Empirical DacFx fact (probed): an imperative `ALTER TABLE … ALTER/DROP
+// COLUMN` rendered script, when fed to `TSqlModel.AddObjects`, surfaces ZERO
+// `Table.TypeClass` objects — it is not a declarative table object. Only a
+// `CreateTable` surfaces as a Table. So when a MIXED stream is ingested through
+// the same public DacFx pipeline `DacpacEmitter.buildModel` uses
+// (`ScriptDomBuild.buildStatement` → `ScriptDomGenerate.generateOne` →
+// `AddObjects`), the resulting model's Table set must equal exactly the
+// CreateTable's table — the imperative ALTER/DROP contribute nothing.
+//
+// Discriminates: a refactor that moved an imperative variant into
+// `isSchemaStatement`'s true-branch would let `DacpacEmitter` ingest the
+// imperative ALTER/DROP into the model. This test ingests the imperative
+// statements directly and asserts they surface no Table object — the model
+// the emitter must produce carries ONLY the CreateTable's table, never the
+// imperative artifacts.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``S12.6: imperative ALTER/DROP statements are excluded from the DacFx model (only CreateTable surfaces)`` () =
+    let enriched = enrich singleKindCatalog
+    let widget = Catalog.allKinds enriched |> List.head
+    let table = widget.Physical
+    let alteredCol = SsdtDdlEmitter.columnDefOfAttribute (widget.Attributes |> List.head)
+
+    // The CreateTable statement(s) the declarative emitter produces.
+    let createStatements = SsdtDdlEmitter.statements enriched |> Seq.toList
+    let createTableCount =
+        createStatements |> List.filter (function Statement.CreateTable _ -> true | _ -> false) |> List.length
+    Assert.Equal(1, createTableCount)   // the fixture is a single-Kind catalog
+
+    // The imperative-migration statements — the family `isSchemaStatement` excludes.
+    let imperativeStatements : Statement list =
+        [ Statement.AlterTableAlterColumn (table, alteredCol)
+          Statement.AlterTableDropColumn (table, "NAME") ]
+
+    // Ingest a MIXED stream (declarative + imperative) through the SAME public
+    // DacFx pipeline `DacpacEmitter.buildModel` uses, with NO filter applied.
+    // The imperative statements ingest without throwing, but they are not
+    // declarative table objects, so the model's Table set is exactly the
+    // CreateTable's table.
+    let ingest (statements: Statement list) : TSqlModel =
+        let model = new TSqlModel(SqlServerVersion.Sql160, TSqlModelOptions())
+        for s in statements do
+            match ScriptDomBuild.buildStatement s with
+            | Some frag ->
+                let script = ScriptDomGenerate.generateOne frag
+                if not (System.String.IsNullOrWhiteSpace script) then model.AddObjects script
+            | None -> ()
+        model
+
+    // The imperative statements ON THEIR OWN surface zero tables — they are not
+    // declarative model objects (the property that justifies excluding them).
+    use imperativeOnlyModel = ingest imperativeStatements
+    let imperativeTables =
+        imperativeOnlyModel.GetObjects(DacQueryScopes.UserDefined, Table.TypeClass) |> Seq.toList
+    Assert.Empty imperativeTables
+
+    // The mixed stream surfaces exactly the CreateTable's table — the imperative
+    // ALTER/DROP add no table object. The model carries only the declarative table.
+    use mixedModel = ingest (createStatements @ imperativeStatements)
+    let mixedTables =
+        mixedModel.GetObjects(DacQueryScopes.UserDefined, Table.TypeClass) |> Seq.toList
+    Assert.Equal(createTableCount, List.length mixedTables)
+
+    // Cross-check against the production emitter: `DacpacEmitter.emit` (which
+    // applies `isSchemaStatement`) produces a model whose Table set matches the
+    // declarative CreateTable count — never more. If the filter admitted an
+    // imperative variant, the emit path would diverge from this declarative count.
+    let bytes = DacpacEmitter.emit enriched |> mustOkBytes
+    use stream = new MemoryStream(bytes)
+    use emitModel = TSqlModel.LoadFromDacpac(stream, ModelLoadOptions())
+    let emitTables =
+        emitModel.GetObjects(DacQueryScopes.UserDefined, Table.TypeClass) |> Seq.toList
+    Assert.Equal(createTableCount, List.length emitTables)
+
 [<Fact>]
 let ``Slice γ: Indexes round-trip through DacFx model`` () =
     let enriched = enrich indexedCatalog

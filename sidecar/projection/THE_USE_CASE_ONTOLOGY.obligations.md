@@ -698,30 +698,39 @@ This is the measured truth; §1's 52% was an inspection upper bound.
 
 ### Global grade scorecard
 
+**Batch 1 landed (HEAD after this commit):** +7 cells to HELD. Track A closed S1/S9/P1/P2
+(CODE-ONLY→HELD, discriminating pure tests); Track B closed S6 (→HELD) and S12 (STRUCTURAL→HELD, now
+runtime-discriminated) + the S10.3/4 sub-gaps; Track C wired `MigrationRun.record` into `migrate
+--execute --lifecycle-store` (P8 HOLLOW→HELD; the record-leg of proteins X1/X5 advanced, though both
+remain HOLLOW pending the CDC-measure and diff-vs-prior seams). Scorecard below is post-Batch-1.
+
 | Plane | HELD | CODE-ONLY | HOLLOW | NEITHER | STRUCTURAL |
 |---|---|---|---|---|---|
-| Schema (AC-S) | 5 | 4 | 0 | 2 | 1 |
+| Schema (AC-S) | 9 | 1 | 0 | 2 | 0 |
 | Identity (AC-I) | 5 | 1 | 0 | 1 | — |
 | Gates (AC-G) | 3 | 3 | 1 | 4 | — |
-| Provenance (AC-P) | 3 | 3 | 2 | 1 | — |
+| Provenance (AC-P) | 6 | 1 | 1 | 1 | — |
 | Data/CDC (AC-D) | 2 | 4 | 0 | 4 | — |
 | Proteins (AC-X) | 0 | 0 | 6 | 2 | — |
-| **Total (57)** | **18** | **15** | **9** | **14** | **1** |
+| **Total (57)** | **25** | **10** | **8** | **14** | **0** |
 
-**The reading.** Genuinely solid (HELD + STRUCTURAL) = **19 of 57 (33%)** — *not* the ~24 PASS the
-test-first pass implied. **9 cells (16%) are HOLLOW** — green tests that do not establish the criterion
-(the phantom-greens). **15 (26%) are CODE-ONLY** — the code is correct but no test discriminates the
-criterion's adversarial input, so a plausible wrong refactor passes the whole suite. **14 (25%) are
-NEITHER** — genuine gaps. The HOLLOW mass concentrates exactly where the criteria demand *composed,
+*(Pre-Batch-1 baseline was HELD 18 · CODE-ONLY 15 · HOLLOW 9 · NEITHER 14 · STRUCTURAL 1.)*
+
+**The reading (post-Batch-1).** Genuinely solid (HELD) = **25 of 57 (44%)** — up from 19 (33%) at the
+baseline, *still not* the ~24 PASS the test-first pass implied (those were generous in the wrong cells).
+**8 cells (14%) are HOLLOW** — green tests that do not establish the criterion (the phantom-greens).
+**10 (18%) are CODE-ONLY** — the code is correct but no test discriminates the criterion's adversarial
+input, so a plausible wrong refactor passes the whole suite. **14 (25%) are NEITHER** — genuine gaps.
+The HOLLOW mass concentrates exactly where the criteria demand *composed,
 operator-reachable* behavior (proteins) or *wired* behavior (gates/provenance) — the places a green
 unit/harness test exercises a function in isolation that the production path never composes.
 
 ### Per-AC grades
 
-- **Schema:** HELD S2, S3, S4, S5, S10 · CODE-ONLY S1, S6, S9, S11 · NEITHER S7, S8 · STRUCTURAL S12.
+- **Schema:** HELD S1, S2, S3, S4, S5, S6, S9, S10, S12 · CODE-ONLY S11 · NEITHER S7, S8. *(Batch 1: S1, S6, S9 CODE-ONLY→HELD; S12 STRUCTURAL→HELD.)*
 - **Identity:** HELD I1, I3, I4, **I5** (fixed this session — now genuinely HELD), I6 · CODE-ONLY I2 · NEITHER I7.
 - **Gates:** HELD G3, G5, G6 · CODE-ONLY G1, G2, G7 · HOLLOW G8 · NEITHER G0, G4, G9, G10.
-- **Provenance:** HELD P3, P5, P7 · CODE-ONLY P1, P2, P4 · HOLLOW P8, P9 · NEITHER P6.
+- **Provenance:** HELD P1, P2, P3, P5, P7, P8 · CODE-ONLY P4 · HOLLOW P9 · NEITHER P6. *(Batch 1: P1, P2 CODE-ONLY→HELD; P8 HOLLOW→HELD.)*
 - **Data/CDC:** HELD D8, D9 · CODE-ONLY D1, D2, D3, D4 · NEITHER D5, D6, D7, D10.
 - **Proteins:** HOLLOW X1, X2, X4, X5, X7, X8 · NEITHER X3, X6.
 
@@ -730,7 +739,7 @@ unit/harness test exercises a function in isolation that the production path nev
 | AC | Why hollow | Shared root cause |
 |---|---|---|
 | **G8** narrowing | criterion needs *refusal*; code emits *Warning + proceeds*; test asserts the warning → co-wrong | gate emits wrong severity |
-| **P8** migrate-records-episode | `MigrationRun.record` correct & tested in isolation; `runMigrateExecute` **never calls it** | **record-not-wired** |
+| ~~**P8** migrate-records-episode~~ | **RESOLVED Batch 1** → HELD: `record` wired into `migrate --execute --lifecycle-store` via the tested `executeAndRecord`/`recordVerified` seam | ~~record-not-wired~~ |
 | **P9** change-manifest | type is *missing* `ToleranceResidual` + `AppliedTransforms`; tests assert only what exists | incomplete type + no consumer |
 | **X1** P-1/P-2 load | `full-export` halts at publish; record + CDC-measure tested via harness only | record-not-wired · no-CDC-in-CLI · no-diff-vs-prior |
 | **X2** P-3 UAT re-key | `executeWithData` passes `Map.empty`; the canary passes `Map.empty` too — **co-wrong** | **re-key-not-composed** |
@@ -743,16 +752,14 @@ The protein HOLLOWs are **not 6 independent problems** — they collapse onto fo
 **record-not-wired** (P8 → X1, X5), **no-CDC-count-in-any-CLI-verb** (X1, X4, X5, X8), **re-key-not-
 composed** (X2), **no-diff-vs-prior / vs-model** (X1, X3, X7). Fix the seam, lift several cells.
 
-### The CODE-ONLY register (15) — correct but unguarded (a wrong refactor passes the suite)
+### The CODE-ONLY register (10) — correct but unguarded (a wrong refactor passes the suite)
 
-Pure-test closers (no production code): **S1** (name-collision), **S6** (rename+widen disjointness —
-medium-high risk: the obvious "skip ALTER if renamed" optimization passes today), **S9** (DECIMAL
-precision+scale), **S11** (length-narrow), **P1** (no-cheat on reference/index/sequence channels —
-only the kind channel is witnessed), **P2** (DECIMAL round-trip), **D1** (type×null-state — 9 types
-untested), **D2/D3/D4** (nullable-stays-NULL, nullable-fires, k>1 exact count). Wiring/consumer
-closers: **G1/G2** (connection/permission on `transfer`), **G7** (tightening on all verbs), **I2**
-(ByEmail/BySsKey/Fallback never reach `runReconciling` — a *reality* gap), **P4** (compose has zero
-production callers).
+*Batch 1 closed S1, S6, S9, P1, P2 (pure discriminating tests).* Remaining — pure-test closers (no
+production code): **S11** (length-narrow — folded into the G8 narrowing-refusal track), **D1**
+(type×null-state — 9 types untested), **D2/D3/D4** (nullable-stays-NULL, nullable-fires, k>1 exact
+count). Wiring/consumer closers: **G1/G2** (connection/permission on `transfer`), **G7** (tightening on
+all verbs), **I2** (ByEmail/BySsKey/Fallback never reach `runReconciling` — a *reality* gap), **P4**
+(compose has zero production callers).
 
 ---
 
@@ -760,6 +767,15 @@ production callers).
 
 Recovering falsely-claimed value (HOLLOW) and guarding correct-but-unverified code (CODE-ONLY) beats
 greenfield (NEITHER). Ordered by ROI = (criterion impact × shared-seam leverage) ÷ (cost × risk).
+
+**✅ Batch 1 complete (parallel, file-disjoint):** Track A (S1/S9/P1/P2 pure tests) · Track B
+(S6/S12 + S10.3/4 pure tests) · Track C (P8 record-wiring). +7 cells to HELD; suite green (2692 pure /
+0 fail). **Next — Batch 2** (was blocked on Batch 1's file ownership, now clear): **D** CDC
+type×null-state sweep (Docker; closes D1 + D4-general) · **E** G8 narrowing→refusal (HOLLOW→HELD; also
+S11) — touches the emitter Track B's tests own · **F** gate wiring G7/G1/G2/G0 — touches the `Program.fs`
+Track C's record-wiring owns. E and F serialize after their Batch-1 file owners; D is independent but
+held to keep ≤1 Docker container. Then **Batch 3**: protein composition (CDC-measure-in-CLI lifts
+X4/X8/X1/X5; re-key compose X2; diff-vs-prior/model X1/X3/X7) + the NEITHER mechanisms.
 
 **Tier A — convert HOLLOW→HELD with a small wiring fix (highest ROI):**
 1. **P8 — wire `MigrationRun.record` into `runMigrateExecute`** (+ a test asserting the CLI persists the

@@ -986,11 +986,15 @@ let private migratePreflights (label: string) (cnn: Microsoft.Data.SqlClient.Sql
     }
 
 /// `projection migrate --to <modelB.json> --conn <env|file:ref> --execute
-/// [--allow-drops] [--allow-cdc]` — B1, the LIVE in-place L3 execution
-/// (Promise 8). Reads the deployed state A, runs the A1 connection + A2
-/// permission pre-flights before any mutation, evolves A→B in place, reads B'
-/// back, and verifies. Gated by `PROJECTION_ALLOW_EXECUTE=1` (R6).
-let private runMigrateExecute (toPath: string) (connSpec: string) (declaration: LossDeclaration) (allowCdc: bool) : int =
+/// [--allow-drops] [--allow-cdc] [--lifecycle-store <path>] [--env <label>]` —
+/// B1, the LIVE in-place L3 execution (Promise 8). Reads the deployed state A,
+/// runs the A1 connection + A2 permission pre-flights before any mutation,
+/// evolves A→B in place, reads B' back, and verifies. Gated by
+/// `PROJECTION_ALLOW_EXECUTE=1` (R6). When `--lifecycle-store` (alias `--store`)
+/// is supplied, a verified execute durably records the episode onto the timeline
+/// (AC-P8) so the next sprint's diff loads it as the prior; absent, behavior is
+/// unchanged and a one-line note says no episode was persisted.
+let private runMigrateExecute (toPath: string) (connSpec: string) (declaration: LossDeclaration) (allowCdc: bool) (storePath: string option) (envLabel: string option) : int =
     if System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" <> "1" then
         Console.Error.WriteLine
             "projection migrate: --execute requires PROJECTION_ALLOW_EXECUTE=1 in the environment (R6 gate). Refusing."
@@ -1030,16 +1034,46 @@ let private runMigrateExecute (toPath: string) (connSpec: string) (declaration: 
                             match! migratePreflights "sink" cnn (plannedWritesOf artifacts.SchemaStatements) with
                             | Error code -> return code
                             | Ok () ->
-                                let! outcome = MigrationRun.execute allowCdc declaration sourceA target cnn
-                                match outcome with
-                                | Ok o when o.Verified ->
-                                    printfn "projection migrate: executed and VERIFIED — B' reproduces B (%d statement(s))"
-                                        (List.length o.Artifacts.SchemaStatements)
-                                    return 0
-                                | Ok _ ->
-                                    Console.Error.WriteLine "projection migrate: executed but verification FAILED — B' does not reproduce B."
-                                    return 9
-                                | Error e -> return reportMigrationError e
+                                match storePath with
+                                | Some store ->
+                                    // AC-P8 — durable provenance. After a verified
+                                    // execute, persist the episode onto the timeline
+                                    // so the next sprint's diff loads it as the prior
+                                    // (the emission→snapshot→diff loop closes here).
+                                    let env = parseEnvironment "DEV" envLabel
+                                    let timeline = Timeline.create (Projection.Core.Environment.name env)
+                                    match timeline with
+                                    | Error es ->
+                                        Console.Error.WriteLine "projection migrate: --lifecycle-store timeline name error:"
+                                        printErrors Console.Error es
+                                        return 2
+                                    | Ok tl ->
+                                        let at = System.DateTimeOffset.UtcNow
+                                        let! recorded =
+                                            MigrationRun.executeAndRecord
+                                                allowCdc declaration sourceA target store tl env at None cnn
+                                        match recorded with
+                                        | Ok (o, Some chain) ->
+                                            printfn "projection migrate: executed and VERIFIED — B' reproduces B (%d statement(s)); episode recorded to %s (%d episode(s) on timeline %s)"
+                                                (List.length o.Artifacts.SchemaStatements) store
+                                                (EpisodicLifecycle.episodes chain |> List.length) (Timeline.name tl)
+                                            return 0
+                                        | Ok (_, None) ->
+                                            Console.Error.WriteLine "projection migrate: executed but verification FAILED — B' does not reproduce B. No episode recorded."
+                                            return 9
+                                        | Error e -> return reportMigrationError e
+                                | None ->
+                                    let! outcome = MigrationRun.execute allowCdc declaration sourceA target cnn
+                                    match outcome with
+                                    | Ok o when o.Verified ->
+                                        printfn "projection migrate: executed and VERIFIED — B' reproduces B (%d statement(s))"
+                                            (List.length o.Artifacts.SchemaStatements)
+                                        eprintfn "projection migrate: note — no --lifecycle-store supplied; no episode persisted (the next diff has no prior to load)."
+                                        return 0
+                                    | Ok _ ->
+                                        Console.Error.WriteLine "projection migrate: executed but verification FAILED — B' does not reproduce B."
+                                        return 9
+                                    | Error e -> return reportMigrationError e
         }
     let code = work.GetAwaiter().GetResult()
     dumpBench "migrate"
@@ -1184,7 +1218,15 @@ let main argv =
         | Some toPath, Some sourceSpec, Some sinkSpec, _ ->
             runMigrateWithData toPath sinkSpec sourceSpec declaration allowCdc
         | Some toPath, None, None, Some connSpec ->
-            runMigrateExecute toPath connSpec declaration allowCdc
+            // AC-P8 — optional durable provenance. `--lifecycle-store` (alias
+            // `--store`) persists the episode after a verified execute; absent,
+            // behavior is unchanged (a one-line note tells the operator nothing
+            // was persisted). `--env` stamps the timeline / episode environment.
+            let storePath =
+                match valueOf "--lifecycle-store" with
+                | Some _ as s -> s
+                | None -> valueOf "--store"
+            runMigrateExecute toPath connSpec declaration allowCdc storePath (valueOf "--env")
         | _ ->
             Console.Error.WriteLine
                 "projection migrate --execute: in-place needs --to <modelB.json> --conn <ref>; cross-substrate needs --to --sink-conn --source-conn."

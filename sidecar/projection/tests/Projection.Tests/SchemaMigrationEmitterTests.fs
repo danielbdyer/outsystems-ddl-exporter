@@ -146,6 +146,93 @@ let ``migration: a rename alone emits no ALTER (renames are the RefactorLog chan
     Assert.Empty(entries)
 
 // ---------------------------------------------------------------------------
+// S6.3 (rename ⊥ reshape — the adversarial simultaneous case). One attribute
+// is BOTH renamed (logical Name change → RefactorLog channel) AND reshaped (a
+// Length shape facet → ALTER COLUMN channel) in the same diff. The two
+// emission channels are disjoint by axis (RefactorLogEmitter reads
+// `AttributeDiff.Renamed`; SchemaMigrationEmitter reads `AttributeDiff.Changed`),
+// so the rename must ride the RefactorLog ONLY and the reshape the ALTER ONLY —
+// neither channel carries the other's content. A "skip the ALTER if the column
+// is also renamed" (or vice-versa) coupling would FAIL this test (the
+// medium-high-risk co-wrongness the regrade flagged).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``S6.3: a simultaneously renamed AND reshaped attribute splits cleanly across the two channels`` () =
+    // Customer.Name: logical Name changes (Name → FullName) AND declared length
+    // is set (None → Some 256). One attribute, two orthogonal moves, one diff.
+    let target =
+        withCustomerName (fun a -> { a with Name = nm "FullName"; Length = Some 256 })
+    let diff = CatalogDiff.between sampleCatalog target |> mustOk
+
+    // The diff itself records BOTH moves on the same attribute key.
+    let ad = CatalogDiff.attributeDiffOf customerKey diff |> Option.get
+    Assert.True(ad.Renamed |> Map.containsKey customerNameKey)
+    Assert.True(ad.Changed |> List.exists (fun c ->
+        c.AttributeKey = customerNameKey && Set.contains AttributeFacet.Length c.Facets))
+
+    // SchemaMigration channel: exactly the ALTER COLUMN for the shape change,
+    // and NOTHING else — no ADD/DROP, no statement carrying the rename.
+    let m = SchemaMigrationEmitter.emit diff
+    let alters = alterColumns m.Value
+    Assert.Equal(1, List.length alters)
+    Assert.Equal("NAME", (List.head alters).Name)   // physical column unchanged by a logical rename
+    Assert.Empty(addColumns m.Value)
+    Assert.False(m.Value |> List.exists (function Statement.AlterTableDropColumn _ -> true | _ -> false))
+    Assert.Equal(1, List.length m.Value)             // the ALTER is the whole emission
+    Assert.False(m.Value |> List.exists isCreateTable)
+    // The migration channel never renders the new logical name (that's RefactorLog's).
+    let migrationSql = ScriptDomGenerate.toText (Seq.ofList m.Value)
+    Assert.DoesNotContain("FullName", migrationSql)
+
+    // RefactorLog channel: exactly the rename entry (old → new), and NO ALTER /
+    // shape content — the refactor entry carries only the rename evidence.
+    let refactor = RefactorLogEmitter.emit diff |> mustOk
+    let entries = ArtifactByKind.tryFind customerKey refactor |> Option.defaultValue []
+    Assert.Equal(1, List.length entries)
+    let entry = List.head entries
+    Assert.Equal(RenameRefactor, entry.OperationKind)
+    Assert.Equal(SqlSimpleColumn, entry.ElementType)
+    Assert.Equal("FullName", entry.NewName)
+    Assert.Contains("Name", entry.ElementName)       // old logical name on the element reference
+    // No OTHER kind's refactor slice picked up a rename (the rename is local).
+    let allEntries =
+        ArtifactByKind.toMap refactor |> Map.toList |> List.collect snd
+    Assert.Equal(1, List.length allEntries)
+
+// ---------------------------------------------------------------------------
+// S10.3 / S10.4 — the non-alterable facets (PrimaryKey / Computed) refuse
+// fail-loud. `ALTER TABLE … ALTER COLUMN` cannot express a PK toggle or a
+// computed-column conversion in one statement; the emitter refuses with a
+// named Error and emits NO ALTER. A body that silently emitted a naive ALTER
+// for these facets would produce a non-empty statement list — these tests
+// discriminate it.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``S10.3: a PrimaryKey facet change is refused fail-loud (no ALTER emitted)`` () =
+    // Customer.Name gains PK membership (false → true) — a PrimaryKey facet a
+    // single ALTER COLUMN cannot express; refused, no statement.
+    let target = withCustomerName (fun a -> { a with IsPrimaryKey = true })
+    let stmts, entries = migrationOf target
+    Assert.Empty(alterColumns stmts)
+    Assert.Empty(stmts)
+    Assert.Contains(entries, fun e ->
+        e.Code = "migration.unsupportedFacetChange" && e.Severity = DiagnosticSeverity.Error)
+
+[<Fact>]
+let ``S10.4: a Computed facet change is refused fail-loud (no ALTER emitted)`` () =
+    // Customer.Name becomes a computed column — a Computed facet a single
+    // ALTER COLUMN cannot express; refused, no statement.
+    let computed = ComputedColumnConfig.create "UPPER([NAME])" false |> Result.value
+    let target = withCustomerName (fun a -> { a with Computed = Some computed })
+    let stmts, entries = migrationOf target
+    Assert.Empty(alterColumns stmts)
+    Assert.Empty(stmts)
+    Assert.Contains(entries, fun e ->
+        e.Code = "migration.unsupportedFacetChange" && e.Severity = DiagnosticSeverity.Error)
+
+// ---------------------------------------------------------------------------
 // C1 emitter follow-on — reference / index / sequence channel emission. Added
 // FK/index/sequence emit their minimum-viable DDL; a Trust-only FK change
 // emits the WITH NOCHECK two-step; destructive/unsupported changes refuse
