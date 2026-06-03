@@ -1385,6 +1385,68 @@ module Deploy =
         : Task<Result<WideCanaryReport>> =
         runWideCanaryWithLoader (fun cnn -> executeBatch cnn sourceDdl) emit
 
+    /// **X8 — the canary's CDC-silence leg.** The wide canary proves the
+    /// PhysicalSchema round-trip (source ≈ target); X8's criterion adds the
+    /// SECOND assertion the protein P-9 canary demands — that an *idempotent
+    /// redeploy* of the deployed target fires ZERO CDC captures (the
+    /// `V2_DRIVER.md` highest-leverage property). After the target is deployed
+    /// and read back, this enables CDC on it (`enableCdc`), brackets a
+    /// caller-supplied idempotent `redeploy` with the change-measure ‖·‖
+    /// (`cdcCaptureTotal`, the PRODUCTION reader), and returns the report
+    /// alongside the measured capture delta. `redeploy` is parameterized (as
+    /// `loadSource` is) so the migrate machinery — which compiles *after*
+    /// Deploy — is threaded in by the caller: an idempotent
+    /// `MigrationRun.execute tgt tgt` measures 0; a data-churning redeploy
+    /// measures > 0 (the discriminator that proves the meter is live).
+    let runWideCanaryWithCdcSilence
+        (loadSource: SqlConnection -> Task<unit>)
+        (emit: Catalog -> seq<Statement>)
+        (enableCdc: SqlConnection -> Catalog -> Task<unit>)
+        (redeploy: SqlConnection -> Catalog -> Task<unit>)
+        : Task<Result<WideCanaryReport * int>> =
+        task {
+            use _ = Bench.scope "deploy.runWideCanaryCdcSilence"
+            return!
+                useContainer (fun masterConn ->
+                    task {
+                        let sourceDbName = uniqueDatabaseName DatabaseNameGenerator.guidBased "Source"
+                        let targetDbName = uniqueDatabaseName DatabaseNameGenerator.guidBased "Target"
+                        do! createDatabase masterConn sourceDbName
+                        let sourceConn = buildPerDbConnectionString masterConn sourceDbName
+                        let! sourceOutcome = runSourcePhase sourceConn loadSource
+                        match sourceOutcome.Catalog with
+                        | None ->
+                            return aggregateFailure "wideCanary.source.failed" sourceOutcome.Errors
+                        | Some src ->
+                            let sourceReport =
+                                { Ok = true; Database = sourceDbName; TablesCreated = sourceOutcome.Tables; Errors = sourceOutcome.Errors }
+                            let stmts = emit src
+                            do! createDatabase masterConn targetDbName
+                            let targetConn = buildPerDbConnectionString masterConn targetDbName
+                            let! targetOutcome = runTargetPhase targetConn stmts
+                            match targetOutcome.Catalog with
+                            | None ->
+                                return aggregateFailure "wideCanary.target.failed" targetOutcome.Errors
+                            | Some tgt ->
+                                let targetReport =
+                                    { Ok = true; Database = targetDbName; TablesCreated = targetOutcome.Tables; Errors = targetOutcome.Errors }
+                                let diff =
+                                    PhysicalSchema.diff (PhysicalSchema.ofCatalog src) (PhysicalSchema.ofCatalog tgt)
+                                let report =
+                                    { Source = src; Target = tgt; Diff = diff; SourceReport = sourceReport; TargetReport = targetReport }
+                                // CDC-silence phase on the deployed target: enable
+                                // CDC, then bracket the idempotent redeploy with the
+                                // change-measure ‖·‖. delta == 0 ⇒ CDC-silent.
+                                use cdcConn = new SqlConnection(targetConn)
+                                do! cdcConn.OpenAsync()
+                                do! enableCdc cdcConn tgt
+                                let! baseline = cdcCaptureTotal cdcConn
+                                do! redeploy cdcConn tgt
+                                let! post = cdcCaptureTotal cdcConn
+                                return Result.success (report, post - baseline)
+                    })
+        }
+
     /// End-to-end: parse a V1 `osm_model.json` from disk, project
     /// through the three sibling Π's, and deploy the SSDT. Returns
     /// the `Report` from `runEphemeral` along with the artifact

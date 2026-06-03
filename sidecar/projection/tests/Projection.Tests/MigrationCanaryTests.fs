@@ -410,6 +410,62 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
                         Assert.Equal(baseline + 1, post)
                 }))
 
+    // -- AC-X8 — the canary protein: assert CDC-silence on idempotent redeploy --
+    //
+    // THE STANDARD (obligations §0): the wide canary already proves the
+    // PhysicalSchema round-trip; X8 demands it ALSO surface protein P-9 — an
+    // idempotent redeploy of the deployed target fires ZERO CDC captures — via
+    // the PRODUCTION reader, not a harness. The SAME canary path
+    // (`Deploy.runWideCanaryWithCdcSilence`, parameterized by the redeploy)
+    // discriminates two legs:
+    //   1. idempotent redeploy (`MigrationRun.execute tgt tgt`, empty
+    //      differential) ⇒ diff empty AND measured CDC delta == 0.
+    //   2. a data-churning redeploy (one INSERT) ⇒ measured CDC delta == +1,
+    //      proving the canary's CDC meter is LIVE. A hard-wired-0 meter — the
+    //      impostor that makes leg 1 green for free — turns this RED.
+    [<Fact>]
+    member _.``AC-X8: the canary measures CDC-silence on an idempotent redeploy (meter proven live)`` () =
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        let sourceDdl =
+            "CREATE TABLE [dbo].[X8_WIDGET] ( [ID] INT NOT NULL PRIMARY KEY, [LABEL] NVARCHAR(50) NOT NULL );"
+        let enableCdc cnn (cat: Catalog) =
+            task {
+                do! Deploy.executeBatch cnn "EXEC sys.sp_cdc_enable_db;"
+                for k in Catalog.allKinds cat do
+                    do! Deploy.executeBatch cnn
+                            (System.String.Concat(
+                                "EXEC sys.sp_cdc_enable_table @source_schema=N'", TableId.schemaText k.Physical,
+                                "', @source_name=N'", TableId.tableText k.Physical,
+                                "', @role_name=NULL, @supports_net_changes=0;"))
+            }
+        let idempotentRedeploy cnn (cat: Catalog) =
+            task { let! _ = MigrationRun.execute true DeclareNone cat cat cnn in return () }
+        let churningRedeploy cnn (_cat: Catalog) =
+            task {
+                do! Deploy.executeBatch cnn
+                        "INSERT INTO [dbo].[X8_WIDGET] ([ID],[LABEL]) VALUES (1, N'a');"
+            }
+        // LEG 1 — idempotent redeploy is CDC-silent.
+        let silent =
+            TaskSync.run (fun () ->
+                Deploy.runWideCanaryWithCdcSilence
+                    (fun cnn -> Deploy.executeBatch cnn sourceDdl)
+                    SsdtDdlEmitter.statements enableCdc idempotentRedeploy)
+        match silent with
+        | Error es -> Assert.Fail(sprintf "X8 idempotent canary failed: %A" es)
+        | Ok (report, delta) ->
+            Assert.True(PhysicalSchema.isEqual report.Diff, "wide canary PhysicalSchema diff must be empty")
+            Assert.Equal(0, delta)
+        // LEG 2 — a data-churning redeploy fires CDC; the meter is live.
+        let churned =
+            TaskSync.run (fun () ->
+                Deploy.runWideCanaryWithCdcSilence
+                    (fun cnn -> Deploy.executeBatch cnn sourceDdl)
+                    SsdtDdlEmitter.statements enableCdc churningRedeploy)
+        match churned with
+        | Error es -> Assert.Fail(sprintf "X8 churning canary failed: %A" es)
+        | Ok (_, delta) -> Assert.Equal(1, delta)
+
     // -- AC-S8 — RENAME is CDC-transparent (‖rename‖_data = 0) ----------------
     //
     // THE STANDARD (obligations §0): a discriminating LIVE witness. A RENAME via

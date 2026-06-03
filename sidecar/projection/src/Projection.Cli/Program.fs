@@ -412,6 +412,74 @@ let private runCanary (sourceDdlPath: string) : int =
         dumpBench "canary"
         exitCode
 
+/// AC-X8 — `projection canary <source.sql> --cdc-silence`. The wide canary
+/// PLUS the protein P-9 assertion: after the source≈target round-trip, enable
+/// CDC on the deployed target and measure an *idempotent redeploy*
+/// (`MigrationRun.execute tgt tgt`, an empty differential) with the production
+/// reader. Green iff the PhysicalSchema diff is empty AND the redeploy fired
+/// ZERO CDC captures — the `V2_DRIVER.md` highest-leverage property surfaced by
+/// the canary itself, not a harness.
+let private runCanaryCdcSilence (sourceDdlPath: string) : int =
+    if not (File.Exists sourceDdlPath) then
+        die 1 (sprintf "projection: source DDL not found: %s" sourceDdlPath)
+    elif not (Deploy.Docker.isAvailable ()) then
+        die
+            4
+            "projection: Docker daemon not reachable. Set DOCKER_HOST or start the daemon to run `canary`."
+    else
+        let sourceDdl = File.ReadAllText sourceDdlPath
+        let enableCdc cnn (cat: Catalog) =
+            task {
+                do! Deploy.executeBatch cnn "EXEC sys.sp_cdc_enable_db;"
+                for k in Catalog.allKinds cat do
+                    do! Deploy.executeBatch cnn
+                            (String.Concat(   // LINT-ALLOW: terminal SQL-text boundary; sp_cdc_enable_table takes schema/table as N'...' literals
+                                "EXEC sys.sp_cdc_enable_table @source_schema=N'", TableId.schemaText k.Physical,
+                                "', @source_name=N'", TableId.tableText k.Physical,
+                                "', @role_name=NULL, @supports_net_changes=0;"))
+            }
+        let redeploy cnn (cat: Catalog) =
+            task {
+                // The idempotent redeploy: migrate the deployed schema against
+                // itself — an empty differential, so zero DDL and zero DML.
+                let! _ = MigrationRun.execute true DeclareNone cat cat cnn
+                return ()
+            }
+        printfn "projection: spinning up ephemeral SQL Server for the CDC-silence canary..."
+        let work =
+            Deploy.runWideCanaryWithCdcSilence
+                (fun cnn -> Deploy.executeBatch cnn sourceDdl)
+                SsdtDdlEmitter.statements
+                enableCdc
+                redeploy
+        let result = work.GetAwaiter().GetResult()
+        let exitCode =
+            match result with
+            | Ok (report, cdcDelta) ->
+                printfn
+                    "projection: source deployed %d table(s); target deployed %d table(s)"
+                    report.SourceReport.TablesCreated
+                    report.TargetReport.TablesCreated
+                let schemaOk = PhysicalSchema.isEqual report.Diff
+                if not schemaOk then
+                    eprintfn
+                        "projection: canary RED — PhysicalSchema diff non-empty:\n%s"
+                        (PhysicalSchema.renderDiff report.Diff)
+                if cdcDelta <> 0 then
+                    eprintfn
+                        "projection: canary RED — idempotent redeploy fired %d CDC capture(s) (expected 0)"
+                        cdcDelta
+                if schemaOk && cdcDelta = 0 then
+                    printfn "projection: canary green — PhysicalSchema diff empty AND idempotent redeploy CDC-silent (0 captures measured)"
+                    0
+                else 5
+            | Error errors ->
+                Console.Error.WriteLine "projection: canary failed:"
+                printErrors Console.Error errors
+                2
+        dumpBench "canary"
+        exitCode
+
 /// H-036: `projection skeleton <input> <output>` top-level verb. Identical
 /// semantics to `emit --skeleton-only`; the top-level verb is the ergonomic
 /// form for operator automation (H-036, Cluster C policy intelligence).
@@ -1305,6 +1373,8 @@ let main argv =
         runApprove policyVersion approver (Some rationale) (Some store)
     | [| "deploy"; inputPath |] ->
         runDeploy inputPath
+    | [| "canary"; sourceDdlPath; "--cdc-silence" |] ->
+        runCanaryCdcSilence sourceDdlPath
     | [| "canary"; sourceDdlPath |] ->
         runCanary sourceDdlPath
     | [| "policy-diff"; configAPath; configBPath |] ->
