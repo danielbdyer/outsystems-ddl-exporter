@@ -54,14 +54,16 @@ let private rowFor (axis: string) : string =
         | None -> failwithf "no ladder row for axis %s in the generated matrix" axis
 
 [<Fact>]
-let ``D1: the generated matrix reports Schema=L2-partial because IndexesUnreflected is an open tolerance`` () =
-    // The IndexesUnreflected variant is a live, open fidelity gap (G3): indexes
-    // are read but not reconstructed/compared, so the Schema round-trip is not
-    // yet faithful. The generator must surface this, by name, at the ladder.
-    Assert.Contains(ToleratedDivergence.IndexesUnreflected, ToleratedDivergence.allKnown)
+let ``D1: the generated matrix reports Schema=L2-partial because IndexOptionsUnreflected is an open tolerance`` () =
+    // IndexOptionsUnreflected is a live, open fidelity gap: after E1 the index
+    // *structure* round-trips (compared in PhysicalSchema.Indexes), but index
+    // *options* (filter / included columns / storage flags) are recovered by
+    // neither side, so the Schema round-trip is not yet fully faithful. The
+    // generator must surface this residual, by name, at the ladder.
+    Assert.Contains(ToleratedDivergence.IndexOptionsUnreflected, ToleratedDivergence.allKnown)
     let schema = rowFor "Schema"
     Assert.Contains("L2-partial", schema)
-    Assert.Contains("IndexesUnreflected", schema)
+    Assert.Contains("IndexOptionsUnreflected", schema)
 
 [<Fact>]
 let ``D1: an axis with only accepted tolerances reaches L3 (the generator discriminates)`` () =
@@ -77,7 +79,7 @@ let ``D1: an axis with only accepted tolerances reaches L3 (the generator discri
 [<Fact>]
 let ``D1: exactly one tolerance is an open fidelity gap today`` () =
     // The matrix's open-gap count is the codebase's named schema-fidelity debt.
-    // Pinning it to 1 (IndexesUnreflected) makes a silently-added OpenGap — or a
+    // Pinning it to 1 (IndexOptionsUnreflected) makes a silently-added OpenGap — or a
     // silently-retired one without regenerating — fail here. Retiring G3 (E1)
     // legitimately flips this to 0 and the assertion updates in the same commit.
     Assert.Contains("1 open", generatedMatrix)

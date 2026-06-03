@@ -42,11 +42,13 @@ namespace Projection.Core
 ///     tgtSchema, tgtTable, tgtCol)` tuples (Session B addition).
 ///
 /// **What's NOT compared.** SsKey identity, Module structure,
-/// Origin / Modality marks, Indexes (non-PK), static populations,
-/// comment metadata. These are V2-IR-only axes that SQL Server's
-/// catalog cannot recover. M4's Tolerance taxonomy will name
-/// additional comparison flags (e.g., column length / precision;
-/// indexes; FK delete-rule semantics).
+/// Origin / Modality marks, static populations. Non-PK index
+/// *structure* IS compared as of E1 (see `PhysicalIndex` / the
+/// `Indexes` axis); index *options* (filter / included columns /
+/// storage flags) remain a named residual
+/// (`ToleratedDivergence.IndexOptionsUnreflected`). These excluded
+/// axes are V2-IR-only or option-level details SQL Server's catalog
+/// does not recover symmetrically.
 type PhysicalColumn =
     {
         Schema : string
@@ -112,6 +114,30 @@ type PhysicalAnnotation =
         Owner : string
         Name : string
         Payload : string
+    }
+
+/// A non-PK index in physical-schema coordinates (E1 / debrief G3).
+/// Compares the index's *structural identity* — owner, name, uniqueness,
+/// and ordered key columns — which is exactly the surface `ReadSide`
+/// reconstructs (`readIndexes`: `i.name`, `i.is_unique`, key columns +
+/// `is_descending_key` in `key_ordinal` order; PKs excluded). Both halves
+/// of the canary read back through the same `ReadSide`, so this axis stays
+/// symmetric and surfaces a *genuine* index drop/reshape (a UNIQUE index V2
+/// failed to emit, a key-column reorder) without false positives.
+///
+/// **Deliberately NOT compared:** included columns, the filter predicate,
+/// and the storage options (FILLFACTOR / lock flags / compression) — these
+/// are recovered by neither side today, so they're a named residual
+/// (`ToleratedDivergence.IndexOptionsUnreflected`), not a silent drop.
+type PhysicalIndex =
+    {
+        Schema : string
+        Table : string
+        Name : string
+        IsUnique : bool
+        /// Ordered key columns, encoded `[col:ASC][col2:DESC]`. Order is
+        /// load-bearing — a different key order is a different index.
+        KeyColumns : string
     }
 
 /// A foreign-key relationship in physical-schema coordinates. Per
@@ -228,6 +254,13 @@ type PhysicalSchema =
         /// in `ofCatalog`; recovered from `sys.triggers` / `sys.check_constraints`
         /// / `sys.sequences` / `sys.extended_properties` by ReadSide.
         Annotations : Set<PhysicalAnnotation>
+        /// E1 (debrief G3) — non-PK indexes (owner + name + uniqueness +
+        /// ordered key columns). Populated from `Kind.Indexes` in `ofCatalog`;
+        /// recovered from `sys.indexes` ⋈ `sys.index_columns` by ReadSide's
+        /// `readIndexes` + `attachIndexes`. Retires the prior
+        /// `Tolerance.IndexOptionsUnreflected` (index *structure* is now compared;
+        /// index *options* remain a named residual).
+        Indexes : Set<PhysicalIndex>
     }
 
 /// The diff between two `PhysicalSchema` values. All ten fields
@@ -256,6 +289,11 @@ type PhysicalSchemaDiff =
         /// target-not-source (Extra).
         MissingAnnotations : PhysicalAnnotation list
         ExtraAnnotations : PhysicalAnnotation list
+        /// E1 — non-PK indexes in source-not-target (Missing) /
+        /// target-not-source (Extra). A populated entry is a genuine index
+        /// drop / reshape on the round-trip.
+        MissingIndexes : PhysicalIndex list
+        ExtraIndexes : PhysicalIndex list
     }
 
 /// Streaming aggregate row-hash builder. Per session-35 — folds an
@@ -453,6 +491,34 @@ module PhysicalSchema =
                     Payload = normalizeDefault c.Definition
                 })
         triggers @ checks
+
+    /// E1 (debrief G3) — project a Kind's non-PK indexes into the index
+    /// axis. Resolves each `IndexColumn`'s attribute SsKey to its physical
+    /// column name (the same coordinate `toPhysicalColumns` keys on) and
+    /// encodes the ordered key list so a reorder surfaces as a divergence.
+    let private toPhysicalIndexes (k: Kind) : PhysicalIndex list =
+        let schemaStr = SchemaName.value k.Physical.Schema
+        let tableStr = TableName.value k.Physical.Table
+        let colNameByKey =
+            k.Attributes
+            |> List.map (fun a -> a.SsKey, ColumnRealization.columnNameText a.Column)
+            |> Map.ofList
+        k.Indexes
+        |> List.map (fun idx ->
+            let keyColumns =
+                idx.Columns
+                |> List.map (fun ic ->
+                    let colName = Map.tryFind ic.Attribute colNameByKey |> Option.defaultValue "<unresolved>"
+                    let dir = match ic.Direction with | Ascending -> "ASC" | Descending -> "DESC"
+                    System.String.Concat("[", colName, ":", dir, "]"))
+                |> String.concat ""
+            {
+                Schema = schemaStr
+                Table = tableStr
+                Name = Name.value idx.Name
+                IsUnique = IndexUniqueness.isUnique idx.Uniqueness
+                KeyColumns = keyColumns
+            })
 
     /// Project the Catalog's sequences into annotations. Sequence shape
     /// (start / increment / min / max / cycle / cache) rides the payload
@@ -655,6 +721,10 @@ module PhysicalSchema =
             @ (kinds |> List.collect toExtendedPropertyAnnotations)
             @ toSequenceAnnotations c
             |> Set.ofList
+        let indexes =
+            kinds
+            |> List.collect toPhysicalIndexes
+            |> Set.ofList
         {
             Columns = columns
             ForeignKeys = foreignKeys
@@ -662,6 +732,7 @@ module PhysicalSchema =
             RowDigests = Set.empty
             LogicalNameBindings = logicalNameBindings
             Annotations = annotations
+            Indexes = indexes
         }
 
     /// Layer per-table aggregate row digests onto an existing
@@ -699,6 +770,8 @@ module PhysicalSchema =
             ExtraLogicalNameBindings   = setDifference target.LogicalNameBindings source.LogicalNameBindings
             MissingAnnotations         = setDifference source.Annotations         target.Annotations
             ExtraAnnotations           = setDifference target.Annotations         source.Annotations
+            MissingIndexes             = setDifference source.Indexes             target.Indexes
+            ExtraIndexes               = setDifference target.Indexes             source.Indexes
         }
 
     /// True iff the diff is empty across all ten axes.
@@ -715,6 +788,8 @@ module PhysicalSchema =
         && List.isEmpty d.ExtraLogicalNameBindings
         && List.isEmpty d.MissingAnnotations
         && List.isEmpty d.ExtraAnnotations
+        && List.isEmpty d.MissingIndexes
+        && List.isEmpty d.ExtraIndexes
 
     /// Schema-structural equality: columns + FKs + logical-name bindings +
     /// annotations match, **ignoring row data** (`Missing`/`ExtraRows` +
@@ -733,6 +808,8 @@ module PhysicalSchema =
         && List.isEmpty d.ExtraLogicalNameBindings
         && List.isEmpty d.MissingAnnotations
         && List.isEmpty d.ExtraAnnotations
+        && List.isEmpty d.MissingIndexes
+        && List.isEmpty d.ExtraIndexes
 
     /// Render a diff as a human-readable multi-line string. Used by
     /// canary failure messages so the operator sees exactly which
@@ -800,6 +877,9 @@ module PhysicalSchema =
                 | ExtendedPropertyAnnotation -> "extprop"
             sprintf "  %s %s on %s = %s" kind a.Name a.Owner
                 (a.Payload.Substring(0, min 60 a.Payload.Length))
+        let renderIndex (i: PhysicalIndex) : string =
+            sprintf "  %sindex %s on [%s].[%s] %s"
+                (if i.IsUnique then "unique " else "") i.Name i.Schema i.Table i.KeyColumns
         let block (label: string) (renderer: 'a -> string) (xs: 'a list) : string =
             if List.isEmpty xs then sprintf "%s:\n  (none)" label
             else
@@ -846,4 +926,6 @@ module PhysicalSchema =
                 truncatedBlock "Extra logical-name bindings in target (target has, source did not)" renderBinding d.ExtraLogicalNameBindings
                 truncatedBlock "Missing annotations in target (triggers/checks/sequences/extprops source had, target lost)" renderAnnotation d.MissingAnnotations
                 truncatedBlock "Extra annotations in target (target has, source did not)" renderAnnotation d.ExtraAnnotations
+                truncatedBlock "Missing indexes in target (source had, target lost)" renderIndex d.MissingIndexes
+                truncatedBlock "Extra indexes in target (target has, source did not)" renderIndex d.ExtraIndexes
             ]

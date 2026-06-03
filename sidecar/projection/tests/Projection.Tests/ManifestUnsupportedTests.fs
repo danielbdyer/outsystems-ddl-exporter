@@ -54,7 +54,7 @@ let ``Unsupported.compute names match current ToleratedDivergence variants`` () 
               "DecimalScaleTolerated"
               "EmptyTextNormalizedToNull"
               "HeaderCommentsOmitted"
-              "IndexesUnreflected"
+              "IndexOptionsUnreflected"
               "PostDeployForeignKeysSplit"
               "StaticPopulationsUnreflected" ]
     Assert.Equal<Set<string>> (expected, result)

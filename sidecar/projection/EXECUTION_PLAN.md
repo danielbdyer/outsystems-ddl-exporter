@@ -905,7 +905,7 @@ where the slice spec is now misleading, the residual gap.
 | 6.A.2 cyclic `AssignedBySink` refusal | ✅ LANDED (execute-gate refusal) | — |
 | 6.A.3 composite-identity refusal | ✅ LANDED (execute-gate refusal) | — |
 | 6.A.4 empty-string↔NULL | ✅ LANDED as **named tolerance** (`EmptyTextNormalizedToNull`) | faithful preservation deferred-with-trigger |
-| 6.A.5 un-hollow `ReadSide` | ◑ **PARTIAL** — FK-trust **recovered**; A42 fixed | FK-trust **not enforced** (G2 → F1); **indexes read but NOT reconstructed** into `Kind.Indexes` (G3 → E1, 3-part) |
+| 6.A.5 un-hollow `ReadSide` | ◑ **PARTIAL** — FK-trust **recovered**; A42 fixed; **indexes reconstructed AND compared** (E1: `PhysicalSchema.Indexes`, structure round-trips) | FK-trust **not enforced** (G2 → F1); index *options* residual (`IndexOptionsUnreflected`) |
 | 6.A.6 name remaining schema erasures | ◑ PARTIAL — NOCHECK-FK emit landed | user ext-props / IDENTITY-seed still to enumerate |
 | 6.A.7 `Synthesized`-key rename | ✅ LANDED (`synthesizedRenameWarnings`) | identity-threading on first import still operator-supplied |
 | 6.A.8 decision uniqueness + FK-trust readback | ◑ PARTIAL — readback un-hollowed | full **3-axis adjunction witness** open (G12 → F2) |

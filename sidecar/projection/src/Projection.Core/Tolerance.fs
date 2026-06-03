@@ -29,7 +29,7 @@ namespace Projection.Core
 /// faithfulness rung in `NORTH_STAR.matrix.generated.md`. `Axis` is one
 /// of the five round-trip axes (Schema / Data / Identity / Time /
 /// Decision); `Disposition` is `OpenGap` (a closeable fidelity debt that
-/// caps the axis at L2-partial — e.g. `IndexesUnreflected`, retired when
+/// caps the axis at L2-partial — e.g. `IndexOptionsUnreflected`, retired when
 /// the round-trip preserves it) or `AcceptedFaithful` (a representation-
 /// only equivalence or an erasure covered by a separate witness, which
 /// does not reduce faithfulness). The honesty mechanism: retiring a
@@ -58,14 +58,21 @@ type ToleratedDivergence =
     /// @ladder PostDeployForeignKeysSplit Schema AcceptedFaithful
     | PostDeployForeignKeysSplit
 
-    /// Non-PK indexes are not reflected in `PhysicalSchema`'s
-    /// comparison surface per the docstring at `PhysicalSchema.fs:
-    /// 44` ("What's NOT compared. ... Indexes (non-PK), ..."). A
-    /// future `PhysicalSchema.Indexes` set will retire this
-    /// variant when ReadSide reconstructs them and V2 emit
-    /// preserves them round-trip.
-    /// @ladder IndexesUnreflected Schema OpenGap
-    | IndexesUnreflected
+    /// E1 (debrief G3) — non-PK index *structure* (owner + name +
+    /// uniqueness + ordered key columns) IS now reflected in
+    /// `PhysicalSchema.Indexes` and compared on the round-trip (retiring the
+    /// prior `IndexOptionsUnreflected`, which said indexes were invisible
+    /// entirely). What remains unreflected is the index *options*: the
+    /// filter predicate (filtered indexes), INCLUDE columns (covering
+    /// indexes), and the storage options (FILLFACTOR / PAD_INDEX / lock
+    /// flags / DATA_COMPRESSION). `ReadSide.readIndexes` recovers none of
+    /// these (it excludes `is_included_column` and reads no option columns),
+    /// so they are symmetric-but-lost on both halves of the canary. Named
+    /// here so the residual is *closed* (documented), not silent. Retiring
+    /// it: extend `readIndexes` to recover the options + widen
+    /// `PhysicalIndex` + ensure V2 emit preserves them round-trip.
+    /// @ladder IndexOptionsUnreflected Schema OpenGap
+    | IndexOptionsUnreflected
 
     /// Static-entity populations (INSERT statements) are absent
     /// from `PhysicalSchema`'s comparison surface (same docstring).
@@ -153,7 +160,7 @@ module ToleratedDivergence =
         function
         | ToleratedDivergence.HeaderCommentsOmitted          -> ToleratedDivergence.HeaderCommentsOmitted
         | ToleratedDivergence.PostDeployForeignKeysSplit     -> ToleratedDivergence.PostDeployForeignKeysSplit
-        | ToleratedDivergence.IndexesUnreflected             -> ToleratedDivergence.IndexesUnreflected
+        | ToleratedDivergence.IndexOptionsUnreflected             -> ToleratedDivergence.IndexOptionsUnreflected
         | ToleratedDivergence.StaticPopulationsUnreflected   -> ToleratedDivergence.StaticPopulationsUnreflected
         | ToleratedDivergence.EmptyTextNormalizedToNull      -> ToleratedDivergence.EmptyTextNormalizedToNull
         | ToleratedDivergence.CharAnsiPaddingTolerated       -> ToleratedDivergence.CharAnsiPaddingTolerated
@@ -175,7 +182,7 @@ module ToleratedDivergence =
             [
                 coverage ToleratedDivergence.HeaderCommentsOmitted
                 coverage ToleratedDivergence.PostDeployForeignKeysSplit
-                coverage ToleratedDivergence.IndexesUnreflected
+                coverage ToleratedDivergence.IndexOptionsUnreflected
                 coverage ToleratedDivergence.StaticPopulationsUnreflected
                 coverage ToleratedDivergence.EmptyTextNormalizedToNull
                 coverage ToleratedDivergence.CharAnsiPaddingTolerated
@@ -191,7 +198,7 @@ module ToleratedDivergence =
         match d with
         | ToleratedDivergence.HeaderCommentsOmitted        -> "HeaderCommentsOmitted"
         | ToleratedDivergence.PostDeployForeignKeysSplit   -> "PostDeployForeignKeysSplit"
-        | ToleratedDivergence.IndexesUnreflected           -> "IndexesUnreflected"
+        | ToleratedDivergence.IndexOptionsUnreflected           -> "IndexOptionsUnreflected"
         | ToleratedDivergence.StaticPopulationsUnreflected -> "StaticPopulationsUnreflected"
         | ToleratedDivergence.EmptyTextNormalizedToNull    -> "EmptyTextNormalizedToNull"
         | ToleratedDivergence.CharAnsiPaddingTolerated     -> "CharAnsiPaddingTolerated"
@@ -252,8 +259,8 @@ module Tolerance =
 
     /// Construct from an explicit set. Use when a per-environment
     /// configuration carries its own subset (e.g., DEV accepts
-    /// HeaderCommentsOmitted + IndexesUnreflected; STAGING accepts
-    /// only IndexesUnreflected; PROD accepts none).
+    /// HeaderCommentsOmitted + IndexOptionsUnreflected; STAGING accepts
+    /// only IndexOptionsUnreflected; PROD accepts none).
     let ofSet (divergences: Set<ToleratedDivergence>) : Tolerance =
         Tolerance divergences
 

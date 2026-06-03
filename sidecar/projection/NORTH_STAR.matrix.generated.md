@@ -27,7 +27,7 @@ witness covers the axis. The **Ladder** column is the honest weakest-rung summar
 
 | Axis | L1 witness | L2 faithful | L3 composed | Open tolerances | Ladder |
 |---|:--:|:--:|:--:|---|---|
-| **Schema** | ✅ | ◑ L2-partial | ✅ | `IndexesUnreflected` | ◑ L2-partial |
+| **Schema** | ✅ | ◑ L2-partial | ✅ | `IndexOptionsUnreflected` | ◑ L2-partial |
 | **Data** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |
 | **Identity** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |
 | **Time** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |
