@@ -912,6 +912,27 @@ let private runDrift (toPath: string) (connSpec: string) : int =
     dumpBench "drift"
     code
 
+/// AC-X6 — `projection eject --store <path>`. Reads the durable timeline and
+/// assembles the append-forever provenance package: every episode is preserved
+/// (no collapse at freeze), the full refactorlog reference chain is accumulated,
+/// and the package self-verifies (the FTC reconstruction from genesis reproduces
+/// the frozen state). Exit 0 = ejected + self-verified; 5 = reconstruction does
+/// not reproduce the frozen state; 2 = store error.
+let private runEject (storePath: string) : int =
+    match EjectRun.fromStore storePath with
+    | Error msg ->
+        Console.Error.WriteLine (sprintf "projection eject: %s" msg)
+        2
+    | Ok pkg ->
+        printfn "projection eject: timeline %s — %d episode(s) preserved (append-forever), %d refactorlog reference(s)"
+            (Timeline.name pkg.Timeline) (List.length pkg.Episodes) (List.length pkg.RefactorLogRefs)
+        if EjectRun.isFaithful pkg then
+            printfn "projection eject: package self-verified — FTC reconstruction from genesis reproduces the frozen state"
+            0
+        else
+            Console.Error.WriteLine "projection eject: package FAILED self-verification — the reconstruction does not reproduce the frozen state."
+            5
+
 let private dispatchVerifyData (argv: string[]) : int =
     argv |> VerbArgs.parse<VerifyDataArgs.VerifyDataArg> "projection verify-data" (fun parsed ->
         let beforeSpec = parsed.GetResult VerifyDataArgs.Before_Conn
@@ -1457,6 +1478,8 @@ let main argv =
         runCanary sourceDdlPath
     | [| "policy-diff"; configAPath; configBPath |] ->
         runPolicyDiff configAPath configBPath
+    | [| "eject"; "--store"; storePath |] ->
+        runEject storePath
     | arr when arr.Length >= 1 && arr.[0] = "drift" ->
         let valueOf (flag: string) =
             arr

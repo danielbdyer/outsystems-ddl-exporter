@@ -35,6 +35,7 @@
     <Compile Include="TransferRun.fs" />
     <Compile Include="MigrationRun.fs" />
     <Compile Include="DriftRun.fs" />
+    <Compile Include="EjectRun.fs" />
     <Compile Include="TransferSpec.fs" />
     <Compile Include="RegisteredAllTransforms.fs" />
   </ItemGroup>
