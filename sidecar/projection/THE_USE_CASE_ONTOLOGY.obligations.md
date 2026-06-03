@@ -757,24 +757,47 @@ satisfy G8 first and isolate G9's refusal. R cherry-picked clean (one `runCore` 
 `allowDrops` param); P's two `MergeBuildArgs` sites keep-both-merged with Track-K's `writableAttributes`;
 Q hand-applied onto HEAD's post-Track-C `MigrationRun.fs`. Full suite green (pure exit 0 / Docker exit 0).
 
-Scorecard below is post-Round-6a.
+**Round 6b Wave 1 landed (4 file-disjoint seam tracks; HEAD after this commit):** +2 to HELD, plus two
+shared seams built that Wave-1.5 wires to close X3/X4/X8. **X2 HOLLOW→HELD** (the co-wrong UAT re-key):
+`runMigrateWithData` no longer hardcodes `Map.empty` — it parses `--reconcile`/`--user-map` and threads the
+resolved map (via `TransferSpec.resolveAllReconciliation`) into `executeWithData`, and the canary was
+replaced with two discriminating Docker witnesses (a source user that collides-by-ID with one sink entity
+but matches-by-email a *third* — the FK must re-point to the email match, which fails for `Map.empty`; plus
+a `validate-user-map` pre-write orphan halt). **G0 NEITHER→HELD** (mandatory gate composition): a closed
+`GateLabel` DU + total `classify : code → (exit, label)` + `allReporting` (the single entry point composing
+the suite, short-circuiting on first refusal while PRESERVING the distinct exits 2/3/6/7/9); the witness
+pins no-bypass + exit-preservation + totality. **Two seams built (cells await Wave-1.5 CLI wiring):**
+`ReadSide.cdcCaptureCount` (the production CDC capture-count reader — the "Measure" leg X1/X4/X5/X8 need,
+with an exact-count Docker witness) and the full-export diff-vs-prior **store leg** (`Compose.runWithConfigAndStore`
+/ `FullExportRun.executeWithStore` — reads the prior `LifecycleStore`, computes the displacement, accumulates
+the P6 refactorlog, emits the `ChangeManifest`, records the episode; 6 pure witnesses including X3 bundle
+reconstruction). **Process note:** Wave 1 ran in the *shared* main worktree (no isolation), so the four
+tracks' commits tangled (one agent swept siblings' work into a combined commit) and the build corrupted
+under concurrency — a first gate showed 3 phantom Docker failures (incl. a co-wrong AC-X2 canary committed
+build-only, and a buggy hot-task G0 witness another track then fixed); a clean `obj/bin` flush + rebuild +
+re-gate from the frozen tip was **fully green** (pure exit 0 / Docker exit 0). The five tangled commits were
+collapsed into this one. **Lesson recorded:** dispatch parallel tracks with `isolation: worktree`, never the
+shared tree.
+
+Scorecard below is post-Round-6b-Wave-1.
 | Plane | HELD | CODE-ONLY | HOLLOW | NEITHER | STRUCTURAL |
 |---|---|---|---|---|---|
 | Schema (AC-S) | 12 | 0 | 0 | 0 | 0 |
 | Identity (AC-I) | 7 | 0 | 0 | 0 | — |
-| Gates (AC-G) | 9 | 0 | 0 | 2 | — |
+| Gates (AC-G) | 10 | 0 | 0 | 1 | — |
 | Provenance (AC-P) | 9 | 0 | 0 | 0 | — |
 | Data/CDC (AC-D) | 9 | 0 | 0 | 1 | — |
-| Proteins (AC-X) | 0 | 0 | 6 | 2 | — |
-| **Total (57)** | **46** | **0** | **6** | **5** | **0** |
+| Proteins (AC-X) | 1 | 0 | 5 | 2 | — |
+| **Total (57)** | **48** | **0** | **5** | **4** | **0** |
 
-*(Baseline HELD 18 → B1 25 → B2 28 → B2b 31 → R4 38 → R5 42 → R6a 46 (81%). CODE-ONLY 15→0; HOLLOW 9→6; NEITHER 14→5.)*
+*(Baseline HELD 18 → B1 25 → B2 28 → B2b 31 → R4 38 → R5 42 → R6a 46 → R6b-W1 48 (84%). CODE-ONLY 15→0; HOLLOW 9→5; NEITHER 14→4.)*
 
-**The reading (post-Round-6a).** Genuinely solid (HELD) = **46 of 57 (81%)**. CODE-ONLY is empty; **Schema,
-Identity, and Provenance are fully HELD**. The remaining 11 are: **6 HOLLOW** (the protein-composition
-cluster X1/X2/X4/X5/X7/X8) + **5 NEITHER** (G0, G10, D10, X3, X6 — unbuilt mechanisms). Round 6a closed the
-first NEITHER-mechanism batch (D7+G4 delete-scope, I7 rename+reconcile compose, G9 data-aware tightening
-pre-flight). Prior text below describes the pre-Round-5 framing —
+**The reading (post-Round-6b-Wave-1).** Genuinely solid (HELD) = **48 of 57 (84%)**. CODE-ONLY is empty;
+**Schema, Identity, and Provenance are fully HELD**. The remaining 9 are: **5 HOLLOW** (the protein cluster
+X1/X4/X5/X7/X8) + **4 NEITHER** (G10, D10, X3, X6). Wave 1 closed X2 (the co-wrong re-key) + G0 (mandatory
+gate composition) and BUILT the CDC-measure + full-export-store seams; **Wave 1.5** (parent integration)
+wires those seams to the CLI to close X3 (full-export `--lifecycle-store` bundle), X4 + X8 (the
+`cdcCaptureCount` measure into the migrate verb + `runCanary`). Prior text below describes the pre-Round-5 framing —
 every "correct-but-unguarded" cell has a discriminating test. The remaining gap is **6 HOLLOW (the protein
 composition cluster) + 13 NEITHER** (unbuilt mechanisms). Up from 19 (33%) at the baseline; the test-first
 pass's ~24 PASS is now well behind.
@@ -789,20 +812,20 @@ unit/harness test exercises a function in isolation that the production path nev
 
 - **Schema:** HELD S1–S12 (all). *(R4: S7→HELD. R5: S8→HELD via the rename-CDC canary. Plane complete.)*
 - **Identity:** HELD I1, I2, I3, I4, **I5**, I6, **I7**. *(R4: I2 strategies bridged. R6a: I7 rename+reconcile compose → HELD. Plane complete.)*
-- **Gates:** HELD G1, G2, G3, **G4**, G5, G6, G7, G8, **G9** · NEITHER G0, G10. *(Batch 2b: G1/G2/G7 wired→HELD; G0 deferred. R6a: G4 scoped-delete arm + G9 data-aware tightening pre-flight → HELD.)*
+- **Gates:** HELD G1, G2, G3, **G4**, G5, G6, G7, G8, **G9**, **G0** · NEITHER G10. *(Batch 2b: G1/G2/G7 wired→HELD. R6a: G4 scoped-delete arm + G9 data-aware tightening pre-flight → HELD. R6b-W1: G0 mandatory `allReporting` composition + classify → HELD. Remaining: G10 resumable/idempotent.)*
 - **Provenance:** HELD P1–P9 (all). *(R4: P4 compose-consumer + P9 manifest-fields → HELD. R5: P6 refactorlog-accumulate + real clock → HELD. Plane complete.)*
 - **Data/CDC:** HELD D1, D2, D3, D4, D5, D6, **D7**, D8, D9 · NEITHER D10. *(R5: D5 computed-exclusion + D6 representation-tolerances → HELD. R6a: D7 scoped-delete arm → HELD. Remaining: D10 wipe-and-load → Round 6b.)*
-- **Proteins:** HOLLOW X1, X2, X4, X5, X7, X8 · NEITHER X3, X6.
+- **Proteins:** HELD **X2** · HOLLOW X1, X4, X5, X7, X8 · NEITHER X3, X6. *(R6b-W1: X2 UAT re-key composed at the CLI call sites + discriminating canary → HELD. Seams built for X1/X3/X4/X8 — `cdcCaptureCount` measure + full-export store leg — wired to the CLI in Wave 1.5.)*
 
-### The HOLLOW register (6) — green tests that don't establish the criterion (the protein cluster)
+### The HOLLOW register (5 remaining) — green tests that don't establish the criterion (the protein cluster)
 
-*Resolved: G8 (B2), P8 (B1), **P9 (R4 — manifest fields added)**. The 6 remaining are ALL proteins.*
+*Resolved: G8 (B2), P8 (B1), **P9 (R4)**, **X2 (R6b-W1 — re-key composed at the CLI call sites + discriminating canary)**. The 5 remaining are ALL proteins.*
 
 | AC | Why hollow | Shared root cause |
 |---|---|---|
 | **X1** P-1/P-2 load | `full-export` halts at publish; record + CDC-measure tested via harness only | record-not-wired · no-CDC-in-CLI · no-diff-vs-prior |
-| **X2** P-3 UAT re-key | `executeWithData` passes `Map.empty`; the canary passes `Map.empty` too — **co-wrong** | **re-key-not-composed** |
-| **X4** P-5 redeploy | schema idempotence reachable; CDC=0 measure is harness-only | no-CDC-in-CLI |
+| ~~**X2** P-3 UAT re-key~~ | **CLOSED (R6b-W1):** `runMigrateWithData` threads the resolved `--reconcile`/`--user-map` map (was `Map.empty`); canary re-points an FK to the email match, fails for `Map.empty` | ~~re-key-not-composed~~ |
+| **X4** P-5 redeploy | schema idempotence reachable; CDC=0 measure is harness-only — **seam built (`cdcCaptureCount`), awaits CLI wiring (W1.5)** | no-CDC-in-CLI |
 | **X5** P-6 in-place migrate | 7/12 schema steps reachable; Move-data + Measure-CDC + Record harness-only | record-not-wired · no-CDC-in-CLI · no-data-leg |
 | **X7** P-8 drift | `verify-data` compares two substrates, not deployed-vs-model; test asserts the weaker behavior | no-diff-vs-model |
 | **X8** P-9 canary | PhysicalSchema round-trip HELD; CDC-silence measure harness-only | no-CDC-in-CLI |
@@ -848,7 +871,23 @@ data-aware G9 pre-flight is shadowed by Track-E's schema-blind G8 narrowing refu
 the G9 witness uses `DeclareAll` to satisfy G8 first; G9 reuses Track-F's `Preflight.tighteningOverlay`
 rather than a redundant diff-walk). Full suite green (pure exit 0 / Docker exit 0).
 
-**Next — Round 6b (the remaining heavy features; 11 cells; all decision-unblocked per the resolved forks
+**✅ Round 6b Wave 1 complete:** Tracks W1-A/B/C/D — **X2 + G0 → HELD**; CDC-measure (`cdcCaptureCount`) +
+full-export-store (`executeWithStore`) seams built. **HELD → 48 (84%).** Ran (by parent error) in the
+*shared* main worktree instead of isolated worktrees → commit-tangle + concurrent-build corruption; a clean
+`obj/bin` flush + rebuild + re-gate from the frozen tip was fully green, and the five tangled commits were
+collapsed into one. **Discipline reinforced: parallel tracks MUST use `isolation: worktree`.** The G0 witness
+caught its own hollowness mid-flight (one track committed a hot-task short-circuit test build-only; the next
+track found 3 RED on running it and fixed it to cold `Pending` gates) — the two-leg "run the test, don't
+trust build-only" discipline working as designed.
+
+**Next — Round 6b Wave 1.5 (parent CLI integration) + Wave 2/3.** Wave 1.5 wires the two built seams to the
+CLI to close **X3** (full-export `--lifecycle-store` → emit the accumulated bundle + record), **X4** + **X8**
+(thread `cdcCaptureCount` into the migrate verb + `runCanary` → surface CDC=0 on idempotent redeploy, with
+Docker witnesses). Then Wave 2 (X5 record-on-data-path, X7 deployed-vs-model drift, X6 append-forever eject,
+D10 EmissionMode type) and Wave 3 (G10 resumable + D10 wipe live leg — both edit `TransferRun.fs`'s write
+seam, so serialized). **Remaining after Wave 1: 5 HOLLOW (X1/X4/X5/X7/X8) + 4 NEITHER (G10/D10/X3/X6).**
+
+**Superseded plan — Round 6b (the remaining heavy features; decision-unblocked per the resolved forks
 below).** The **6 protein HOLLOWs** collapse onto shared CLI-composition seams (build by *extending existing
 verbs*): CDC-measure-in-CLI (lifts X4, X8, X1, X5), re-key compose in `executeWithData` (X2), diff-vs-prior
 in `full-export` (X1, X3) + diff-vs-model drift check (X7), record on the data path (X1, X5). Plus the **5

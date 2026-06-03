@@ -535,3 +535,189 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
                                  WHERE TABLE_NAME = 'MIGAB_TIGHTEN' AND COLUMN_NAME = 'NOTES';"
                         Assert.Equal("NO", nowNullable)
                 }))
+
+    // -- AC-X2 — the one-command UAT re-key composition. THE STANDARD
+    //    (obligations §0): a witness that FAILS for the co-wrong `Map.empty`
+    //    implementation. The criterion (acceptance ~136): "One command:
+    //    schema-migrate UAT AND re-key user FKs by email. Pass iff
+    //    schema+data+re-key compose with `validate-user-map` gating first."
+    //
+    //    These two tests pass a NON-EMPTY reconciliation map through the SAME
+    //    `MigrationRun.executeWithData` the CLI verb now drives, with an
+    //    ADVERSARIAL identity layout: the Source surrogate IDs DIFFER from the
+    //    pre-existing Sink (UAT) identities, and a Source user's PK collides with
+    //    a DIFFERENT Sink entity by ID while matching a THIRD Sink entity by
+    //    EMAIL. A `Map.empty` composition re-keys nothing: it straight-loads the
+    //    USER kind and collides on the engineered id-clash (the run cannot
+    //    complete) and, even where it could, the Order FK would land on the
+    //    id-collision identity, never the email match. The real map reconciles the
+    //    colliding IDs away (USER ⇒ ReconciledByRule, no insert) and re-points
+    //    every Order FK to the Sink's email-matched identity. The load-bearing
+    //    assertion is the re-pointed FK; it is unreachable for `Map.empty`. The
+    //    second test witnesses the `validate-user-map` halt firing PRE-WRITE on an
+    //    orphan (the gate composes first — the Sink data write never happens).
+    //
+    //    Schema A (USER.EMAIL NVARCHAR(50)) → B (widened to NVARCHAR(256)); USER
+    //    reconciled by EMAIL, ORDER carries a NOT-NULL FK to USER. The EMAIL
+    //    widening is the real schema touch the data leg composes WITH. Contracts
+    //    are reconstructed (ReadSide.read) so the FK + kind SsKeys come for free
+    //    and the A→B diff is a pure widening (same kind SsKeys, same names).
+
+    [<Fact>]
+    member _.``AC-X2: one-command migrate-with-data re-keys Order FKs to the Sink's email-matched identity (fails for Map.empty)`` () =
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        let reKeyDdlA =
+            "CREATE TABLE [dbo].[MIGAB_RK_USER] ([ID] INT NOT NULL PRIMARY KEY, [EMAIL] NVARCHAR(50) NULL); \
+             CREATE TABLE [dbo].[MIGAB_RK_ORDER] ([ID] INT NOT NULL PRIMARY KEY, [USER_ID] INT NOT NULL, [AMOUNT] INT NULL, \
+             CONSTRAINT [FK_RkOrder_User] FOREIGN KEY ([USER_ID]) REFERENCES [dbo].[MIGAB_RK_USER] ([ID]));"
+        let reKeyDdlB =
+            "CREATE TABLE [dbo].[MIGAB_RK_USER] ([ID] INT NOT NULL PRIMARY KEY, [EMAIL] NVARCHAR(256) NULL); \
+             CREATE TABLE [dbo].[MIGAB_RK_ORDER] ([ID] INT NOT NULL PRIMARY KEY, [USER_ID] INT NOT NULL, [AMOUNT] INT NULL, \
+             CONSTRAINT [FK_RkOrder_User] FOREIGN KEY ([USER_ID]) REFERENCES [dbo].[MIGAB_RK_USER] ([ID]));"
+        TaskSync.run (fun () ->
+            // SOURCE (Dev) at schema B; SINK (UAT) at schema A — executeWithData
+            // migrates the sink A→B (widening EMAIL), then re-keys.
+            fixture.WithEphemeralDatabase "MigrateReKeySrc" (fun source _ ->
+                task {
+                    do! Deploy.executeBatch source reKeyDdlB
+                    // Dev users 7/8 — surrogates that DIFFER from UAT's. Source user
+                    // 7 (alice) collides BY ID with the UAT entity at 7 (carol@x),
+                    // but matches the UAT alice (at id 1) BY EMAIL — the adversary.
+                    do! Deploy.executeBatch source
+                            "INSERT INTO [dbo].[MIGAB_RK_USER] ([ID],[EMAIL]) VALUES (7,N'alice@x'),(8,N'bob@x'); \
+                             INSERT INTO [dbo].[MIGAB_RK_ORDER] ([ID],[USER_ID],[AMOUNT]) VALUES (100,7,500),(101,8,600);"
+                    return!
+                        fixture.WithEphemeralDatabase "MigrateReKeySink" (fun sink _ ->
+                            task {
+                                do! Deploy.executeBatch sink reKeyDdlA
+                                // Pre-existing UAT users — SAME emails, DIFFERENT surrogates,
+                                // PLUS a decoy (carol@x) occupying id 7 so the Source PK 7
+                                // collides with a DIFFERENT Sink entity by id.
+                                do! Deploy.executeBatch sink
+                                        "INSERT INTO [dbo].[MIGAB_RK_USER] ([ID],[EMAIL]) VALUES (1,N'alice@x'),(2,N'bob@x'),(7,N'carol@x');"
+
+                                let! sinkAR = Projection.Adapters.Sql.ReadSide.read sink
+                                let sinkA = Result.value sinkAR
+                                let! targetBR = Projection.Adapters.Sql.ReadSide.read source
+                                let targetB = Result.value targetBR
+
+                                let userKind =
+                                    Catalog.allModulesKinds targetB |> List.map snd
+                                    |> List.find (fun k -> TableId.tableText k.Physical = "MIGAB_RK_USER")
+                                let emailName =
+                                    userKind.Attributes
+                                    |> List.find (fun a -> ColumnRealization.columnNameText a.Column = "EMAIL")
+                                    |> fun a -> a.Name
+                                // NON-EMPTY map: reconcile USER by EMAIL — the re-key.
+                                let reconciliation =
+                                    Map.ofList [ userKind.SsKey, ReconciliationStrategy.MatchByColumn emailName ]
+
+                                // One command: schema-migrate the sink A→B AND re-key.
+                                let! outcome =
+                                    MigrationRun.executeWithData DeclareNone Transfer.Execute true sinkA targetB reconciliation source sink
+                                match outcome with
+                                | Error e -> Assert.Fail(sprintf "AC-X2 composed run failed: %A" e)
+                                | Ok result ->
+                                    // (compose) The schema leg landed — EMAIL widened to 256.
+                                    Assert.True(result.Schema.Verified, sprintf "sink schema not at B:\n%s" (PhysicalSchema.renderDiff result.Schema.SchemaDiff))
+                                    let! widened =
+                                        scalarString sink
+                                            "SELECT CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS \
+                                             WHERE TABLE_NAME='MIGAB_RK_USER' AND COLUMN_NAME='EMAIL';"
+                                    Assert.Equal("256", widened)
+
+                                    // (re-key) USER is ReconciledByRule — its rows are the
+                                    // pre-existing UAT identities, NOT re-inserted.
+                                    let userOutcome = result.Transfer.Kinds |> List.find (fun k -> k.Kind = userKind.SsKey)
+                                    Assert.Equal(IdentityDisposition.ReconciledByRule, userOutcome.Disposition)
+                                    Assert.Equal(0, userOutcome.RowsWritten)
+
+                                    // No UAT user was added by the load — the 3 pre-existing stay.
+                                    let! users = scalarString sink "SELECT COUNT(*) FROM [dbo].[MIGAB_RK_USER];"
+                                    Assert.Equal("3", users)
+
+                                    // THE DISCRIMINATOR: Order 100 (Source USER_ID=7) re-points to
+                                    // the Sink's EMAIL-matched alice@x (id 1) — NOT the id-collision
+                                    // entity carol@x (id 7). A Map.empty load re-keys nothing: it
+                                    // collides on the USER insert at id 7 (never completing) or, absent
+                                    // the collision, lands the FK on carol@x. Either way it CANNOT make
+                                    // this assertion true.
+                                    let! email100 =
+                                        scalarString sink
+                                            "SELECT u.[EMAIL] FROM [dbo].[MIGAB_RK_ORDER] o \
+                                             JOIN [dbo].[MIGAB_RK_USER] u ON o.[USER_ID] = u.[ID] WHERE o.[ID] = 100;"
+                                    Assert.Equal("alice@x", email100)
+                                    let! email101 =
+                                        scalarString sink
+                                            "SELECT u.[EMAIL] FROM [dbo].[MIGAB_RK_ORDER] o \
+                                             JOIN [dbo].[MIGAB_RK_USER] u ON o.[USER_ID] = u.[ID] WHERE o.[ID] = 101;"
+                                    Assert.Equal("bob@x", email101)
+
+                                    // No Order carries a Source surrogate — every FK was re-pointed.
+                                    let! sourceValued =
+                                        scalarString sink "SELECT COUNT(*) FROM [dbo].[MIGAB_RK_ORDER] WHERE [USER_ID] IN (7,8);"
+                                    Assert.Equal("0", sourceValued)
+                            })
+                }))
+
+    [<Fact>]
+    member _.``AC-X2: validate-user-map halts the composed run PRE-WRITE on an orphan (the gate composes first)`` () =
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        let reKeyDdlA =
+            "CREATE TABLE [dbo].[MIGAB_RK_USER] ([ID] INT NOT NULL PRIMARY KEY, [EMAIL] NVARCHAR(50) NULL); \
+             CREATE TABLE [dbo].[MIGAB_RK_ORDER] ([ID] INT NOT NULL PRIMARY KEY, [USER_ID] INT NOT NULL, [AMOUNT] INT NULL, \
+             CONSTRAINT [FK_RkOrder_User] FOREIGN KEY ([USER_ID]) REFERENCES [dbo].[MIGAB_RK_USER] ([ID]));"
+        let reKeyDdlB =
+            "CREATE TABLE [dbo].[MIGAB_RK_USER] ([ID] INT NOT NULL PRIMARY KEY, [EMAIL] NVARCHAR(256) NULL); \
+             CREATE TABLE [dbo].[MIGAB_RK_ORDER] ([ID] INT NOT NULL PRIMARY KEY, [USER_ID] INT NOT NULL, [AMOUNT] INT NULL, \
+             CONSTRAINT [FK_RkOrder_User] FOREIGN KEY ([USER_ID]) REFERENCES [dbo].[MIGAB_RK_USER] ([ID]));"
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "MigrateOrphanSrc" (fun source _ ->
+                task {
+                    do! Deploy.executeBatch source reKeyDdlB
+                    // Source carries an ORPHAN (ghost@x, id 9) with no UAT email match.
+                    do! Deploy.executeBatch source
+                            "INSERT INTO [dbo].[MIGAB_RK_USER] ([ID],[EMAIL]) VALUES (8,N'bob@x'),(9,N'ghost@x'); \
+                             INSERT INTO [dbo].[MIGAB_RK_ORDER] ([ID],[USER_ID],[AMOUNT]) VALUES (101,8,600),(102,9,700);"
+                    return!
+                        fixture.WithEphemeralDatabase "MigrateOrphanSink" (fun sink _ ->
+                            task {
+                                do! Deploy.executeBatch sink reKeyDdlA
+                                do! Deploy.executeBatch sink
+                                        "INSERT INTO [dbo].[MIGAB_RK_USER] ([ID],[EMAIL]) VALUES (2,N'bob@x');"
+
+                                let! sinkAR = Projection.Adapters.Sql.ReadSide.read sink
+                                let sinkA = Result.value sinkAR
+                                let! targetBR = Projection.Adapters.Sql.ReadSide.read source
+                                let targetB = Result.value targetBR
+                                let userKind =
+                                    Catalog.allModulesKinds targetB |> List.map snd
+                                    |> List.find (fun k -> TableId.tableText k.Physical = "MIGAB_RK_USER")
+                                let emailName =
+                                    userKind.Attributes
+                                    |> List.find (fun a -> ColumnRealization.columnNameText a.Column = "EMAIL")
+                                    |> fun a -> a.Name
+                                let reconciliation =
+                                    Map.ofList [ userKind.SsKey, ReconciliationStrategy.MatchByColumn emailName ]
+
+                                // executeWithData runs the reconciling load with allowDrops=false,
+                                // so the AC-I5 validate-user-map gate fires BEFORE any data write.
+                                let! outcome =
+                                    MigrationRun.executeWithData DeclareNone Transfer.Execute true sinkA targetB reconciliation source sink
+                                match outcome with
+                                | Error (MigrationError.DataTransferFailed es) ->
+                                    // The PRE-WRITE halt: the unmapped-identities refusal.
+                                    Assert.Contains(es, fun (e: ValidationError) -> e.Code = "transfer.unmappedIdentities")
+                                | other ->
+                                    Assert.Fail(sprintf "expected a pre-write validate-user-map halt (DataTransferFailed transfer.unmappedIdentities), got %A" other)
+
+                                // GATE COMPOSES FIRST: no Order rows were loaded (the data leg
+                                // never ran) and no UAT user was added — the Sink data write
+                                // never happened. (The schema leg precedes the data leg, so the
+                                // EMAIL widening did run; the load-bearing fact is the untouched data.)
+                                let! orders = scalarString sink "SELECT COUNT(*) FROM [dbo].[MIGAB_RK_ORDER];"
+                                Assert.Equal("0", orders)
+                                let! users = scalarString sink "SELECT COUNT(*) FROM [dbo].[MIGAB_RK_USER];"
+                                Assert.Equal("1", users)
+                            })
+                }))

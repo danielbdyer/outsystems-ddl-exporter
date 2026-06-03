@@ -135,17 +135,26 @@ module FullExportRun =
     /// event). Synchronous (drives the `runWithConfig` task to completion)
     /// to keep the resumable-state-machine surface minimal. Console
     /// narration + bench dump are the caller's (CLI's) concern.
-    let execute
+    /// The shared run core, parameterized by the composition runner. The runner
+    /// drives the (genesis or store-leg) composition to completion and returns
+    /// the `RunReport` plus the optional `FullExportStoreLeg` (always `None` for
+    /// the genesis runner). Factored so the genesis `execute` and the
+    /// Track-W1-B `executeWithStore` share one LogSink envelope contract — the
+    /// §7/§10/§11 NDJSON surface has no second, drift-prone copy.
+    let private executeCore
         (configPath: string)
         (outputOverride: string option)
         (verbosity: LogSink.Verbosity)
         (mutedCategories: Set<LogSink.Category>)
-        : RunOutcome =
+        (runComposition:
+            Config.Config -> Result<Compose.RunReport * Compose.FullExportStoreLeg option>)
+        : RunOutcome * Compose.FullExportStoreLeg option =
         LogSink.reset ()
         LogSink.setVerbosity verbosity
         LogSink.setMutedCategories mutedCategories
         Bench.reset ()
         let mutable outcome : LogSink.Outcome = LogSink.Succeeded
+        let mutable storeLeg : Compose.FullExportStoreLeg option = None
         try
             try
                 match Config.fromFile configPath with
@@ -158,10 +167,11 @@ module FullExportRun =
                     let cfgForRun = { cfg with Output = { Dir = effectiveOutput } }
                     emitConfigSnapshot cfgForRun configPath effectiveOutput
                     let sw = Stopwatch.StartNew()
-                    let result = (Compose.runWithConfig cfgForRun).GetAwaiter().GetResult()
+                    let result = runComposition cfgForRun
                     sw.Stop()
                     match result with
-                    | Ok report ->
+                    | Ok (report, leg) ->
+                        storeLeg <- leg
                         recordStage "pipeline" LogSink.Succeeded sw.ElapsedMilliseconds
                         emitSpecialCircumstancesDiagnostics report.Diagnostics
                         report.Paths
@@ -193,3 +203,42 @@ module FullExportRun =
         finally
             let benchStats = Bench.snapshot ()
             LogSink.runComplete outcome "projection full-export" benchStats |> ignore
+        |> fun runOutcome -> runOutcome, storeLeg
+
+    let execute
+        (configPath: string)
+        (outputOverride: string option)
+        (verbosity: LogSink.Verbosity)
+        (mutedCategories: Set<LogSink.Category>)
+        : RunOutcome =
+        // The genesis composition: byte-identical to the pre-W1-B path (no store
+        // read, no diff-vs-prior, no episode record). The store leg is `None`.
+        executeCore configPath outputOverride verbosity mutedCategories
+            (fun cfgForRun ->
+                (Compose.runWithConfig cfgForRun).GetAwaiter().GetResult()
+                |> Result.map (fun report -> report, None))
+        |> fst
+
+    /// Track W1-B (seam T2) — `execute` with the optional diff-vs-prior store
+    /// leg. When `storePath` is `None` / empty the composition is byte-identical
+    /// to `execute` (and the returned `FullExportStoreLeg option` is `None`);
+    /// when a store is supplied, the genesis emission lands first, then the run
+    /// loads the prior emission, measures the displacement, accumulates the
+    /// refactorlog, builds the `ChangeManifest`, and records exactly one new
+    /// episode. The boundary supplies `timeline` / `environment` / `at` (Core
+    /// holds no clock). Returns the `RunOutcome` plus the store leg for the
+    /// caller (the X3 publication bundle).
+    let executeWithStore
+        (configPath: string)
+        (outputOverride: string option)
+        (verbosity: LogSink.Verbosity)
+        (mutedCategories: Set<LogSink.Category>)
+        (storePath: string option)
+        (timeline: Timeline)
+        (environment: Environment)
+        (at: System.DateTimeOffset)
+        : RunOutcome * Compose.FullExportStoreLeg option =
+        executeCore configPath outputOverride verbosity mutedCategories
+            (fun cfgForRun ->
+                (Compose.runWithConfigAndStore cfgForRun storePath timeline environment at)
+                    .GetAwaiter().GetResult())
