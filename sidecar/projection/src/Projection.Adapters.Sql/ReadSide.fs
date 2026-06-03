@@ -1502,6 +1502,40 @@ module ReadSide =
             return List.ofSeq names
         }
 
+    /// W1-A seam T1 — the production CDC capture-count reader the
+    /// "Measure" leg of the change-over-time proteins (X1/X4/X5/X8)
+    /// needs (the change-measure `‖·‖`; physically the CDC capture
+    /// count per `WAVE_6_ALGEBRA.md`). Sums `cdc.[<schema>_<table>_CT]`
+    /// row counts across the tracked tables.
+    ///
+    /// `tracked` is the discovery shape `cdcTrackedTables` returns —
+    /// `schema.table` names (`SCHEMA_NAME(...) + '.' + name`). The CT
+    /// capture-table name is derived exactly as SQL Server names it:
+    /// `cdc.<schema>_<table>_CT`. Additive only; `cdcTrackedTables` is
+    /// unchanged. The no-CDC case (empty `tracked`) returns 0 by the
+    /// empty fold. The caller controls scope by passing the table list,
+    /// so a sum over a subset (one kind's "Measure" leg) is expressible.
+    let cdcCaptureCount (cnn: SqlConnection) (tracked: string list) : Task<int> =
+        task {
+            let mutable total = 0
+            for name in tracked do
+                // `cdcTrackedTables` returns unbracketed `schema.table`;
+                // split on the first '.' so a table whose name carries a
+                // '.' (unusual but legal) still resolves its schema.
+                let schema, table =
+                    match name.IndexOf '.' with
+                    | i when i >= 0 -> name.Substring(0, i), name.Substring(i + 1)
+                    | _ -> "dbo", name
+                let captureTable =
+                    System.String.Concat("cdc.[", schema, "_", table, "_CT]")  // LINT-ALLOW: terminal SQL-text-emission boundary; CT-table name mirrors SQL Server's cdc.<schema>_<table>_CT naming
+                use cmd = cnn.CreateCommand()
+                cmd.CommandText <-
+                    System.String.Concat("SELECT COUNT(*) FROM ", captureTable, ";")  // LINT-ALLOW: terminal SQL-text-emission boundary; captureTable is the CDC capture relation name
+                let! countObj = cmd.ExecuteScalarAsync()
+                total <- total + System.Convert.ToInt32 countObj
+            return total
+        }
+
     let read (cnn: SqlConnection) : Task<Result<Catalog>> =
         task {
             use _ = Bench.scope "readside.read"

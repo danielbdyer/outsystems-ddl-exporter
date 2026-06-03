@@ -685,14 +685,39 @@ module ScriptDomBuild =
     ///   - `cdcAware`: when true, emit the WHEN MATCHED AND
     ///     <change-detection-predicate> form per chapter 4.1.B slice β;
     ///     when false, the unconditional V1-shape WHEN MATCHED.
+    ///   - `deleteScope`: see `DeleteScope`. `None` (default) emits NO
+    ///     `WHEN NOT MATCHED BY SOURCE` arm — the safe default that
+    ///     leaves target rows absent from the source untouched. `Some`
+    ///     declares a delete-scope, gating which target rows are
+    ///     eligible for deletion.
+
+    /// Declares the scope within which a `WHEN NOT MATCHED BY SOURCE
+    /// THEN DELETE` arm is permitted to delete. AC-D7 / AC-G4: an
+    /// unscoped delete cannot happen — the ONLY way to get a DELETE arm
+    /// is to pass a `DeleteScope`. The scope predicate gates eligibility:
+    /// a target row not matched by any source row is deleted ONLY when
+    /// it ALSO satisfies the scope predicate; rows outside the scope
+    /// (in T−S but not in the scope) survive.
+    ///
+    /// `Terms` is a non-empty list of `(column, value)` equality terms
+    /// over the MERGE target (e.g. a tenant / partition gate), folded
+    /// left-to-right with `AND` into the predicate
+    /// `Target.[col1] = <v1> [AND Target.[col2] = <v2> …]`. Decoupled
+    /// from ScriptDom so the scope is expressible from domain code.
+    type DeleteScope =
+        {
+            Terms : (string * SqlLiteral) list
+        }
+
     type MergeBuildArgs =
         {
-            Target     : TableId
-            AllColumns : string list
-            PkColumns  : string list
-            UpdColumns : string list
-            Rows       : SqlLiteral list list
-            CdcAware   : bool
+            Target      : TableId
+            AllColumns  : string list
+            PkColumns   : string list
+            UpdColumns  : string list
+            Rows        : SqlLiteral list list
+            CdcAware    : bool
+            DeleteScope : DeleteScope option
         }
 
     /// Build a `[Target|Source].[col]` qualified column reference.
@@ -788,6 +813,20 @@ module ScriptDomBuild =
         |> foldBool BooleanBinaryExpressionType.Or
         |> boolParen
 
+    /// The delete-scope predicate (AC-D7 / AC-G4): each `(col, value)`
+    /// term renders `Target.[col] = <value>`; the terms fold with `AND`.
+    /// Gates which target rows the `WHEN NOT MATCHED BY SOURCE` arm may
+    /// delete — rows outside the scope survive.
+    let private deleteScopePredicate (scope: DeleteScope) : BooleanExpression =
+        scope.Terms
+        |> List.map (fun (col, value) ->
+            let cmp = BooleanComparisonExpression()
+            cmp.ComparisonType <- BooleanComparisonType.Equals
+            cmp.FirstExpression <- qualifiedColumnRef "Target" col :> ScalarExpression
+            cmp.SecondExpression <- buildSqlLiteral value
+            cmp :> BooleanExpression)
+        |> foldBool BooleanBinaryExpressionType.And
+
     /// Build the `MergeStatement` for the supplied args. Per Tier-1 #1:
     /// the entire MERGE flows through ScriptDom's typed AST; rendering
     /// happens at `Sql160ScriptGenerator.GenerateScript` (no
@@ -860,6 +899,21 @@ module ScriptDomBuild =
         notMatchedClause.Condition <- MergeCondition.NotMatched
         notMatchedClause.Action <- insertAction
         spec.ActionClauses.Add(notMatchedClause)
+
+        // WHEN NOT MATCHED BY SOURCE AND <scope-predicate> THEN DELETE.
+        // AC-D7 / AC-G4: emitted ONLY when a delete-scope is declared.
+        // `None` → no arm (the safe default; target rows in T−S survive,
+        // byte-identical to the pre-scope output). `Some` → exactly one
+        // scoped DELETE arm; rows outside the scope still survive.
+        match args.DeleteScope with
+        | None -> ()
+        | Some scope ->
+            let deleteAction = DeleteMergeAction()
+            let deleteClause = MergeActionClause()
+            deleteClause.Condition <- MergeCondition.NotMatchedBySource
+            deleteClause.SearchCondition <- deleteScopePredicate scope
+            deleteClause.Action <- deleteAction
+            spec.ActionClauses.Add(deleteClause)
 
         stmt.MergeSpecification <- spec
         stmt

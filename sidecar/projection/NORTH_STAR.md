@@ -1,5 +1,11 @@
 # NORTH STAR — Fidelity as a Theorem (the Total Projection)
 
+> **Indexed by `THE_USE_CASE_ONTOLOGY.md` (the masterwork, 2026-06-03).** That document is the single
+> index of the target and subsumes this one's contribution (it carries the bullseye, the six
+> totalities, and the operator covenant inside its laws + matrix; see its §6.2). This file remains
+> canonical **provenance** for where the bullseye and the totalities T-I…T-VI were first named. Read
+> the masterwork first for orientation; read this for the depth on that fragment.
+
 > **This is the apex document.** It supersedes the *strategic frame* of `VISION.md`
 > (revision 2 — "V1 ships the cutover; V2 makes it verifiable, reversible, repeatable").
 > That frame is not wrong; it is a **means statement** written when the canary was unbuilt

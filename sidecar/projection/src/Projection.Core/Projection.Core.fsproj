@@ -56,6 +56,13 @@
     <Compile Include="SurrogateRemap.fs" />
     <Compile Include="UserRemap.fs" />
     <Compile Include="Transfer.fs" />
+    <!-- Classification (OverlayAxis / Classification / Harvest dichotomy) is
+         a self-contained DU module with no dependencies on later files; it is
+         compiled here (ahead of Episode.fs / ChangeManifest.fs) so the episodic
+         provenance plane can carry the §5.5 AppliedTransforms overlay
+         enumeration (SsKey × OverlayAxis option) — the same outcome shape the
+         SSDT ManifestEmitter records — at the change-manifest level. -->
+    <Compile Include="Classification.fs" />
     <Compile Include="Episode.fs" />
     <Compile Include="ChangeManifest.fs" />
     <Compile Include="Migration.fs" />
@@ -75,7 +82,6 @@
     <Compile Include="QueryHints.fs" />
     <Compile Include="ComposeState.fs" />
     <Compile Include="DecisionOverlay.fs" />
-    <Compile Include="Classification.fs" />
     <Compile Include="PolicyExpr.fs" />
     <Compile Include="VersionedPolicy.fs" />
     <Compile Include="ApprovalWorkflow.fs" />

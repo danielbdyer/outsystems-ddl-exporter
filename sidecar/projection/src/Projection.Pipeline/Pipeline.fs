@@ -111,6 +111,42 @@ module Compose =
         Manifest    : ManifestEmitter.Manifest
     }
 
+    /// Track W1-B (seam T2) — the **diff-vs-prior store leg** of `full-export`.
+    /// When the operator threads a `--lifecycle-store`, a full-export is no
+    /// longer treated as a genesis emission: the prior emission's schema (state
+    /// A, reconstructed from the durable `EpisodicLifecycle`) is loaded and the
+    /// run's emitted schema (state B) is diffed against it. This value carries
+    /// the displacement `B ⊖ A` the run measured — the four protein-X1/X3
+    /// pieces the morphology flagged as `no-diff-vs-prior`:
+    ///   * `Displacement` — `CatalogDiff.between prior current` (empty ⟺ an
+    ///     idempotent re-export of the same model);
+    ///   * `Manifest` — the `ChangeManifest` of the displacement (channel
+    ///     counts, norm, refactorlog ref, CDC count) the SSIS consumer reads to
+    ///     answer "what did this sprint change?";
+    ///   * `AccumulatedRefactorLog` — the cumulative `.refactorlog` (prior ⊕
+    ///     current, deduped by `OperationKey` per AC-P6), so DacFx applies
+    ///     `sp_rename` (not DROP+ADD) for any source older than the latest;
+    ///   * `Chain` — the `EpisodicLifecycle` after recording exactly ONE new
+    ///     episode (the run's emitted schema becomes the new schema plane).
+    ///
+    /// Absent / empty store ⇒ this leg does not run (byte-identical genesis
+    /// emission); present store ⇒ `Some` after the emission lands and the
+    /// episode is recorded.
+    type FullExportStoreLeg = {
+        Displacement           : CatalogDiff
+        Manifest               : ChangeManifest
+        AccumulatedRefactorLog : RefactorLogEntry list
+        Chain                  : EpisodicLifecycle
+    }
+
+    /// Fail-loud refusals of the diff-vs-prior store leg (seam T2). Distinct
+    /// from the genesis emission's errors: a malformed store, an unobservable
+    /// displacement, or a non-monotone record are all named, never silent.
+    type FullExportStoreError =
+        | StoreReadFailed of message: string
+        | DisplacementFailed of EmitError
+        | RecordFailed of message: string
+
     /// Per-artifact relative path. Centralized so tests and the CLI
     /// agree on naming.
     [<RequireQualifiedAccess>]
@@ -814,4 +850,218 @@ module Compose =
             | Ok catalog ->
                 let! profileResult = acquireProfile cfg catalog
                 return profileResult |> Result.bind (runWithConfigCore cfg (Ok catalog))
+        }
+
+    // -- Track W1-B (seam T2): the diff-vs-prior store leg -------------------
+
+    /// The emitted schema plane of a full-export run — `cfg.Model.Path`'s
+    /// catalog after the config-driven rewrites (`applyRenames`). This is the
+    /// **same** catalog `runWithConfigCore` projects to the CREATE files, so the
+    /// displacement the store leg measures is the displacement the bundle
+    /// publishes (B in `B ⊖ A`). Pure; no Profile dependence (the schema plane
+    /// is profile-invariant — profiling only annotates the manifest).
+    let private emittedSchema (cfg: Config.Config) : Task<Result<Catalog>> =
+        task {
+            let! parsed = read cfg.Model.Path
+            return parsed |> Result.bind (applyRenames cfg)
+        }
+
+    /// State A — the prior emission's schema, reconstructed from the durable
+    /// `EpisodicLifecycle` at `path` (the FTC fold over the chain). A **missing
+    /// store is genesis**: A = ∅ (every kind `Add`, no `Remove`) — byte-faithful
+    /// to today's first-emission behavior. A malformed store is fail-closed
+    /// (`StoreReadFailed`), never silently treated as genesis.
+    let private priorSchemaFromStore (path: string) : Result<Catalog, FullExportStoreError> =
+        if System.IO.File.Exists path then
+            match LifecycleStore.load path with
+            | Error e -> Error (StoreReadFailed (string e))
+            | Ok chain ->
+                match EpisodicLifecycle.reconstructLatestSchema chain with
+                | Ok a    -> Ok a
+                | Error e -> Error (DisplacementFailed e)
+        else
+            match Catalog.create [] [] with
+            | Ok empty   -> Ok empty
+            | Error errs -> Error (StoreReadFailed (errs |> List.map (fun e -> e.Message) |> String.concat "; "))
+
+    /// The prior chain's **accumulated** `.refactorlog` — every rename the
+    /// timeline has ever performed, folded over its per-edge schema diffs via
+    /// `RefactorLogEmitter.emit` + `accumulate` (AC-P6, the cumulative document).
+    /// Genesis (no file / genesis-only chain) ⇒ empty. This is the prior the new
+    /// displacement's refactorlog accumulates against, so a rename already
+    /// committed is not re-emitted (deduped by `OperationKey`).
+    let private priorAccumulatedRefactorLog (path: string) : Result<RefactorLogEntry list, FullExportStoreError> =
+        if not (System.IO.File.Exists path) then Ok []
+        else
+            match LifecycleStore.load path with
+            | Error e -> Error (StoreReadFailed (string e))
+            | Ok chain ->
+                match EpisodicLifecycle.schemaEvolutionChain chain with
+                | Error e -> Error (DisplacementFailed e)
+                | Ok edgeDiffs ->
+                    // Fold each edge's refactorlog into the cumulative log, in
+                    // timeline order, deduping by OperationKey (prior wins).
+                    let rec loop acc remaining =
+                        match remaining with
+                        | [] -> Ok (acc : RefactorLogEntry list)
+                        | edge :: rest ->
+                            match RefactorLogEmitter.emit edge with
+                            | Error e -> Error (DisplacementFailed e)
+                            | Ok artifact ->
+                                loop (RefactorLogEmitter.accumulateArtifact acc artifact) rest
+                    loop [] edgeDiffs
+
+    /// The next monotone `EpisodeCoordinate` for the timeline at `path` — ordinal
+    /// 0 for a genesis (no file), else the latest episode's ordinal + 1. Mirrors
+    /// the migrate path's coordinate derivation; the boundary supplies
+    /// `environment` + `at` (Core holds no clock).
+    let private nextStoreCoordinate
+        (path: string)
+        (environment: Environment)
+        (at: System.DateTimeOffset)
+        : Result<EpisodeCoordinate, FullExportStoreError> =
+        let ordinalR : Result<int, FullExportStoreError> =
+            if System.IO.File.Exists path then
+                match LifecycleStore.load path with
+                | Error e -> Error (StoreReadFailed (string e))
+                | Ok chain -> Ok (Version.ordinal (Episode.version (EpisodicLifecycle.latest chain)) + 1)
+            else Ok 0
+        match ordinalR with
+        | Error e -> Error e
+        | Ok ordinal ->
+            match Version.create ordinal (sprintf "v%d" ordinal) with
+            | Ok version -> Ok (EpisodeCoordinate.create version environment at)
+            | Error errs -> Error (RecordFailed (errs |> List.map (fun e -> e.Message) |> String.concat "; "))
+
+    /// Record exactly ONE new episode (the run's emitted schema as the new
+    /// schema plane) onto the timeline at `path`. Genesis-opens on the first
+    /// run; load-and-appends thereafter. Fail-closed on a malformed store or a
+    /// non-monotone append. Reuses `LifecycleStore.load/save` + the
+    /// `EpisodicLifecycle` monotone-history invariant.
+    let private recordEpisode
+        (path: string)
+        (timeline: Timeline)
+        (episode: Episode)
+        : Result<EpisodicLifecycle, FullExportStoreError> =
+        let chainR : Result<EpisodicLifecycle, FullExportStoreError> =
+            if System.IO.File.Exists path then
+                match LifecycleStore.load path with
+                | Error e -> Error (StoreReadFailed (string e))
+                | Ok existing ->
+                    match EpisodicLifecycle.append episode existing with
+                    | Ok chain  -> Ok chain
+                    | Error errs -> Error (RecordFailed (errs |> List.map (fun e -> e.Message) |> String.concat "; "))
+            else Ok (EpisodicLifecycle.genesis timeline episode)
+        match chainR with
+        | Error e -> Error e
+        | Ok chain ->
+            match LifecycleStore.save path chain with
+            | Ok ()   -> Ok chain
+            | Error e -> Error (StoreReadFailed (string e))
+
+    /// The diff-vs-prior store leg for one full-export run (seam T2). Given the
+    /// run's emitted schema (state B) and the timeline at `path`: load the prior
+    /// emission's schema (state A), measure `B ⊖ A`, accumulate the
+    /// displacement's refactorlog against the prior committed log, build the
+    /// `ChangeManifest` for the edge, and record exactly one new episode. Pure
+    /// w.r.t. the genesis emission (it runs *after* the bundle lands and never
+    /// alters it); the only side effect is the durable store write.
+    let private runStoreLeg
+        (path: string)
+        (timeline: Timeline)
+        (environment: Environment)
+        (at: System.DateTimeOffset)
+        (refactorLogRef: string option)
+        (data: DataObservation)
+        (emitted: Catalog)
+        : Result<FullExportStoreLeg, FullExportStoreError> =
+        match priorSchemaFromStore path with
+        | Error e -> Error e
+        | Ok prior ->
+            match CatalogDiff.between prior emitted with
+            | Error e -> Error (DisplacementFailed e)
+            | Ok displacement ->
+                match priorAccumulatedRefactorLog path with
+                | Error e -> Error e
+                | Ok priorLog ->
+                    match RefactorLogEmitter.emit displacement with
+                    | Error e -> Error (DisplacementFailed e)
+                    | Ok currentArtifact ->
+                        let accumulated =
+                            RefactorLogEmitter.accumulateArtifact priorLog currentArtifact
+                        match nextStoreCoordinate path environment at with
+                        | Error e -> Error e
+                        | Ok coordinate ->
+                            // The emitted schema is the new episode's schema plane
+                            // (the same `Catalog` the bundle published).
+                            let episode = Episode.create coordinate emitted Profile.empty refactorLogRef data
+                            match recordEpisode path timeline episode with
+                            | Error e -> Error e
+                            | Ok chain ->
+                                // The ChangeManifest of the edge prior → emitted.
+                                // We build the `From` episode from the prior schema
+                                // at a genesis coordinate; `ChangeManifest.between`
+                                // reads only the schemas + the To-episode's planes.
+                                let priorCoordinate =
+                                    match Version.create 0 "v0" with
+                                    | Ok v -> EpisodeCoordinate.create v environment at
+                                    | Error _ -> coordinate
+                                let fromEpisode = Episode.create priorCoordinate prior Profile.empty None DataObservation.empty
+                                match ChangeManifest.between fromEpisode episode with
+                                | Error e -> Error (DisplacementFailed e)
+                                | Ok manifest ->
+                                    Ok { Displacement = displacement
+                                         Manifest = manifest
+                                         AccumulatedRefactorLog = accumulated
+                                         Chain = chain }
+
+    /// Track W1-B (seam T2) — `runWithConfig` with the **optional diff-vs-prior
+    /// store leg**. Additive over the genesis path: when `storePath` is `None`
+    /// or empty, this is byte-identical to `runWithConfig` (the genesis emission
+    /// alone, `snd = None`); when a store is supplied, the CREATE files are
+    /// emitted first (unchanged), then the store leg loads the prior emission,
+    /// measures the displacement, accumulates the refactorlog, builds the
+    /// `ChangeManifest`, and records exactly one new episode.
+    ///
+    /// **Scope (W1-B leg 1):** diff-vs-prior + `ChangeManifest` +
+    /// refactorlog-accumulate + `record`. NO data-merge / data-load leg (a
+    /// larger feature, out of scope for 6b); `DataObservation.empty` is recorded
+    /// (the CDC-measure leg is a sibling track the parent joins).
+    ///
+    /// The store write is fail-loud: a malformed store, an unobservable
+    /// displacement, or a non-monotone record surface as `Error` on the run,
+    /// *after* the bundle has landed (the operator knows the emission succeeded
+    /// but provenance did not).
+    let runWithConfigAndStore
+        (cfg: Config.Config)
+        (storePath: string option)
+        (timeline: Timeline)
+        (environment: Environment)
+        (at: System.DateTimeOffset)
+        : Task<Result<RunReport * FullExportStoreLeg option>> =
+        task {
+            let! reportResult = runWithConfig cfg
+            match reportResult with
+            | Error errors -> return Result.failure errors
+            | Ok report ->
+                match storePath with
+                | None -> return Result.success (report, None)
+                | Some p when System.String.IsNullOrWhiteSpace p -> return Result.success (report, None)
+                | Some path ->
+                    let! emittedR = emittedSchema cfg
+                    match emittedR with
+                    | Error errors -> return Result.failure errors
+                    | Ok emitted ->
+                        match runStoreLeg path timeline environment at None DataObservation.empty emitted with
+                        | Ok leg -> return Result.success (report, Some leg)
+                        | Error storeErr ->
+                            let ve =
+                                match storeErr with
+                                | StoreReadFailed m ->
+                                    ValidationError.create "pipeline.fullExport.store.readFailed" m
+                                | DisplacementFailed e ->
+                                    ValidationError.create "pipeline.fullExport.store.displacementFailed" (string e)
+                                | RecordFailed m ->
+                                    ValidationError.create "pipeline.fullExport.store.recordFailed" m
+                            return Result.failureOf ve
         }

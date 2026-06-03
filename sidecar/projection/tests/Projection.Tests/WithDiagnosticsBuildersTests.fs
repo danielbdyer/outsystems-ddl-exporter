@@ -62,6 +62,7 @@ let ``Slice ζ: buildMergeStatement returns Diagnostics with empty entries today
             UpdColumns = []
             Rows = [ [ pkLit ] ]
             CdcAware = false
+            DeleteScope = None
         }
     let result = ScriptDomBuild.buildMergeStatement args
     Assert.Empty result.Entries
@@ -82,3 +83,83 @@ let ``Slice ζ: buildUpdateStatement returns Diagnostics with empty entries toda
     let result = ScriptDomBuild.buildUpdateStatement args
     Assert.Empty result.Entries
     Assert.NotNull result.Value
+
+// ---------------------------------------------------------------------------
+// AC-D7 + AC-G4 — the MERGE's `WHEN NOT MATCHED BY SOURCE THEN DELETE` arm is
+// ABSENT unless a delete-scope is declared, and when declared it deletes only
+// within the scope. The gate ("no unscoped delete") is structural: the only
+// way to get a DELETE arm is to pass a `DeleteScope`.
+//
+// Discriminating: an always-on DELETE arm fails the `None` case (T−S rows
+// would be deleted); a never-on arm fails the `Some` case.
+// ---------------------------------------------------------------------------
+
+let private renderMerge (args: ScriptDomBuild.MergeBuildArgs) : string =
+    let stmt = (ScriptDomBuild.buildMergeStatement args).Value
+    ScriptDomGenerate.generateOne (stmt :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement)
+
+let private mergeArgs (deleteScope: ScriptDomBuild.DeleteScope option) : ScriptDomBuild.MergeBuildArgs =
+    {
+        Target      = mkTable "dbo" "Widget"
+        AllColumns  = [ "Id"; "Tenant"; "Name" ]
+        PkColumns   = [ "Id" ]
+        UpdColumns  = [ "Tenant"; "Name" ]
+        Rows        =
+            [ [ SqlLiteral.ofRaw Integer "1"
+                SqlLiteral.ofRaw Integer "7"
+                SqlLiteral.ofRaw Text    "a" ] ]
+        CdcAware    = false
+        DeleteScope = deleteScope
+    }
+
+[<Fact>]
+let ``AC-D7/AC-G4: DeleteScope=None emits NO WHEN NOT MATCHED BY SOURCE arm`` () =
+    let rendered = renderMerge (mergeArgs None)
+    Assert.DoesNotContain("NOT MATCHED BY SOURCE", rendered)
+    Assert.DoesNotContain("DELETE", rendered)
+
+[<Fact>]
+let ``AC-D7/AC-G4: DeleteScope=None is byte-identical to the pre-scope MERGE output`` () =
+    // The pre-scope MERGE shape: ON-clause + WHEN MATCHED UPDATE +
+    // WHEN NOT MATCHED INSERT, with no delete arm. Pinned literally so a
+    // regression that quietly added an always-on DELETE arm would break here.
+    let rendered = renderMerge (mergeArgs None)
+    let expected =
+        "MERGE INTO [dbo].[Widget]\n"
+        + " AS [Target]\n"
+        + "USING (VALUES (1, 7, N'a')) AS [Source]([Id], [Tenant], [Name]) ON [Target].[Id] = [Source].[Id]\n"
+        + "WHEN MATCHED THEN UPDATE \n"
+        + "    SET [Target].[Tenant] = [Source].[Tenant],\n"
+        + "        [Target].[Name]   = [Source].[Name]\n"
+        + "WHEN NOT MATCHED THEN INSERT ([Id], [Tenant], [Name]) VALUES ([Source].[Id], [Source].[Tenant], [Source].[Name])"
+    Assert.Equal(expected, rendered)
+
+[<Fact>]
+let ``AC-D7/AC-G4: a declared DeleteScope emits exactly one scoped WHEN NOT MATCHED BY SOURCE THEN DELETE arm`` () =
+    let scope : ScriptDomBuild.DeleteScope =
+        { Terms = [ ("Tenant", SqlLiteral.ofRaw Integer "7") ] }
+    let rendered = renderMerge (mergeArgs (Some scope))
+    // Exactly one DELETE arm.
+    let occurrences =
+        rendered.Split([| "NOT MATCHED BY SOURCE" |], System.StringSplitOptions.None).Length - 1
+    Assert.Equal(1, occurrences)
+    // The arm carries the scope predicate and the DELETE action.
+    Assert.Contains("WHEN NOT MATCHED BY SOURCE AND [Target].[Tenant] = 7 THEN DELETE", rendered)
+    // The non-delete arms remain (the scope arm is additive).
+    Assert.Contains("WHEN MATCHED THEN UPDATE", rendered)
+    Assert.Contains("WHEN NOT MATCHED THEN INSERT", rendered)
+
+[<Fact>]
+let ``AC-D7/AC-G4: a multi-term DeleteScope folds its terms with AND`` () =
+    let scope : ScriptDomBuild.DeleteScope =
+        { Terms =
+            [ ("Tenant", SqlLiteral.ofRaw Integer "7")
+              ("Name",   SqlLiteral.ofRaw Text    "a") ] }
+    let rendered = renderMerge (mergeArgs (Some scope))
+    // The generator wraps long predicates with continuation-indentation;
+    // normalize whitespace to assert the folded AND content regardless of
+    // line-wrapping.
+    let normalized = System.Text.RegularExpressions.Regex.Replace(rendered, "\\s+", " ")
+    Assert.Contains(
+        "WHEN NOT MATCHED BY SOURCE AND [Target].[Tenant] = 7 AND [Target].[Name] = N'a' THEN DELETE",
+        normalized)

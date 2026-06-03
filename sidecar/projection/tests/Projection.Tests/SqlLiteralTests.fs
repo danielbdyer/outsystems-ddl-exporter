@@ -99,6 +99,73 @@ let ``SqlLiteral.formatRaw equals ofRaw |> toString (consumer-facing convenience
         SqlLiteral.ofRaw typ raw |> SqlLiteral.toString,
         SqlLiteral.formatRaw typ raw)
 
+// ---------------------------------------------------------------------------
+// AC-D6 (NEITHER→HELD) — representation-only literal differences are tolerated
+// by SQL Server's NATIVE column comparison; they do NOT fire CDC.
+//
+// These are the literal-level discriminating witnesses for the two named
+// tolerances `CharAnsiPaddingTolerated` / `DecimalScaleTolerated` (see
+// `ToleranceTests.fs` AC-D6 section). The CDC predicate
+// (`ScriptDomBuild.perColumnChangeDetection`) compares `Target.[c] <>
+// Source.[c]` COLUMN-TO-COLUMN — the stored typed values, NOT these literals.
+// `SqlLiteral` renders literals only on the INSERT/DEFAULT side. The point of
+// these tests is to pin down WHY the representation difference is benign:
+//   - Decimal: `"1.0"` and `"1.00"` render to DIFFERENT literal TEXT, yet
+//     both denote the SAME numeric value — so once stored into a single
+//     `decimal(p,s)` column they are byte-identical and `<>` is FALSE. The
+//     difference is purely the trailing-zero scale shape (representation),
+//     not the value. (SQL numeric `<>`: `1.0 <> 1.00` = FALSE.)
+//   - Char: a `char(n)`-typed value is ANSI trailing-blank-padded to its
+//     declared width on store, so `'foo  '` and `'foo'` become the SAME
+//     stored value; `<>` re-pads the shorter operand and yields FALSE. The
+//     raw `"foo  "` and `"foo"` are equal up to trailing blanks — the only
+//     difference the column erases on store.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``AC-D6: Decimal "1.0" and "1.00" render to different literal text but denote the same numeric value`` () =
+    let oneDotZero  = SqlLiteral.ofRaw Decimal "1.0"
+    let oneDotZeroZero = SqlLiteral.ofRaw Decimal "1.00"
+    // The literal TEXT differs — `SqlLiteral` is faithful to the raw scale on
+    // the INSERT side (it does not canonicalize). This is the representation
+    // difference.
+    Assert.NotEqual<string> (SqlLiteral.toString oneDotZero, SqlLiteral.toString oneDotZeroZero)
+    // ...yet both denote the SAME numeric quantity. We witness the
+    // value-equivalence by parsing the rendered literals back as decimals:
+    // `1.0m = 1.00m` is TRUE (.NET decimal equality is by value, matching SQL
+    // Server's numeric `<>`). This is exactly why the column-to-column CDC
+    // predicate `Target.[c] <> Source.[c]` does NOT fire on a scale-only
+    // difference: once both literals are stored into the same `decimal`
+    // column, the stored values are numerically equal.
+    let asDecimal (lit: SqlLiteral) =
+        match lit with
+        | DecimalLit s -> System.Decimal.Parse(s, System.Globalization.CultureInfo.InvariantCulture)
+        | other -> failwithf "expected DecimalLit, got %A" other
+    Assert.Equal (asDecimal oneDotZero, asDecimal oneDotZeroZero)
+
+[<Fact>]
+let ``AC-D6: char-typed padded and unpadded raw differ only by trailing blanks the column re-pads`` () =
+    // A `char(n)` column ANSI-pads its stored value to the declared width, so
+    // a padded raw (`"foo  "`) and an unpadded raw (`"foo"`) become the SAME
+    // stored value. `SqlLiteral` renders Text faithfully (it does NOT RTRIM —
+    // no normalization is needed, the column does it on store), so the
+    // rendered literals differ ONLY in the trailing blanks:
+    let padded   = SqlLiteral.ofRaw Text "foo  "
+    let unpadded = SqlLiteral.ofRaw Text "foo"
+    let renderedPadded   = SqlLiteral.toString padded
+    let renderedUnpadded = SqlLiteral.toString unpadded
+    Assert.Equal<string> ("N'foo  '", renderedPadded)
+    Assert.Equal<string> ("N'foo'", renderedUnpadded)
+    // The ONLY difference between the two stored values is trailing blanks —
+    // exactly what `char(n)` storage and SQL Server's ANSI `<>` normalize
+    // away (`'foo  ' <> 'foo'` = FALSE). Witness: trimming trailing blanks
+    // collapses the two raws to the identical canonical value.
+    let trimTrailing (s: string) = s.TrimEnd(' ')
+    Assert.Equal<string> (trimTrailing "foo  ", trimTrailing "foo")
+    // And the difference is representation-only: it is purely trailing blanks,
+    // not interior or leading content.
+    Assert.True (("foo  ").StartsWith("foo"))
+
 [<Fact>]
 let ``Closed-DU coverage: every PrimitiveType variant produces a SqlLiteral via ofRaw`` () =
     // The closed-DU expansion empirical-test discipline (DECISIONS

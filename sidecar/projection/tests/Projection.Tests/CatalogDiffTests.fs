@@ -244,6 +244,28 @@ let ``T1: attribute-level diff is deterministic across repeat invocations`` () =
     let head = List.head runs
     Assert.All(runs, fun r -> Assert.Equal<Map<SsKey, AttributeDiff>>(head, r))
 
+[<Fact>]
+let ``S9.19: a DECIMAL(10,2) -> DECIMAL(18,4) change names BOTH the Precision and Scale facets`` () =
+    // A DECIMAL widening moves two facets at once: Precision 10 -> 18 AND
+    // Scale 2 -> 4, with DataType unchanged. The facet set must carry BOTH —
+    // a body that compares only DataType yields an empty facet set (so the
+    // attribute would be Unchanged, never Changed), and a body that conflates
+    // precision and scale into one comparison would name only one of them.
+    let target =
+        catalogWithCustomerName (fun a ->
+            { a with Precision = Some 18; Scale = Some 4 })
+    let source =
+        catalogWithCustomerName (fun a ->
+            { a with Precision = Some 10; Scale = Some 2 })
+    let diff = CatalogDiff.between source target |> mustOk
+    let ad = (CatalogDiff.attributeDiffOf customerKey diff).Value
+    let change = List.head ad.Changed
+    Assert.Equal(customerNameKey, change.AttributeKey)
+    Assert.Contains(AttributeFacet.Precision, change.Facets)
+    Assert.Contains(AttributeFacet.Scale, change.Facets)
+    Assert.False(Set.isEmpty change.Facets)   // discriminates a DataType-only body
+    Assert.DoesNotContain(AttributeFacet.DataType, change.Facets)
+
 // ---------------------------------------------------------------------------
 // 6.A.11 — applyDiff + the evolution round-trip law (H-007). `between` is the
 // observation; `applyDiff` is the action. The law `applyDiff (between A B) A =
@@ -507,6 +529,33 @@ let ``synthesizedRenameWarnings: a genuine drop + add with different shapes is n
     Assert.Empty(CatalogDiff.synthesizedRenameWarnings diff)
 
 // ---------------------------------------------------------------------------
+// S1.2 — a name collision across distinct SsKeys is a drop + add, NOT a
+// rename. `between` matches kinds by SsKey, never by Name; a removed K1 and an
+// added K2 that happen to share the human Name "Foo" must land in Removed +
+// Added with an empty Renamed. (Renamed is reserved for a SAME-SsKey Name
+// change — the orthogonal case.)
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``S1.2: a Name collision across distinct SsKeys is drop + add, not a rename`` () =
+    // A: kind K1 named "Foo"; B drops K1 and adds K2 (a DIFFERENT SsKey) also
+    // named "Foo". A Name-matching rename-detector would pair K1/K2 into Renamed
+    // and leave Removed/Added empty — exactly the bug this discriminates.
+    let k1Key = kindKey [ "Foo1" ]
+    let k2Key = kindKey [ "Foo2" ]
+    let mkFoo (key: SsKey) (table: string) : Kind =
+        Kind.create key (nm "Foo") (mkTableId "dbo" table)
+            [ { Attribute.create (attrKey [ table; "Id" ]) (nm "Id") Integer with
+                  Column = ColumnRealization.create "ID" false |> Result.value
+                  IsPrimaryKey = true } ]
+    let a = catalogOfKinds [ mkFoo k1Key "T_FOO1" ]
+    let b = catalogOfKinds [ mkFoo k2Key "T_FOO2" ]
+    let diff = CatalogDiff.between a b |> mustOk
+    Assert.Contains(k1Key, CatalogDiff.removed diff)
+    Assert.Contains(k2Key, CatalogDiff.added diff)
+    Assert.Empty(CatalogDiff.renamed diff)
+
+// ---------------------------------------------------------------------------
 // C1 (2026-06-02) — the widened captured surface. Before C1, `between` /
 // `applyDiff` captured kind + attribute column-shape only; references,
 // indexes, and sequences rode through `applyDiff` unchanged, so `migrate A B`
@@ -665,3 +714,106 @@ let ``C1: norm counts the reference / index / sequence channels`` () =
     Assert.Equal(1, c.AddedSequences)
     // norm sums every channel including the three new ones (≥ 3 here).
     Assert.True(CatalogDiff.norm (CatalogDiff.between a b |> mustOk) >= 3)
+
+// ---------------------------------------------------------------------------
+// P1.4 / P1.5 / P1.6 — the no-cheat property on the three C1 channels. Each
+// mirrors the kind-channel no-cheat test (~line 314): applyDiff must THREAD
+// the passed-in base, not source the channel from `target(d)`. We build a diff
+// A→B that touches one channel, then apply it to a base equal to A except it
+// carries an EXTRA reference / index / sequence the diff never mentions; the
+// extra element must SURVIVE. A body that sourced the channel from the recorded
+// target would drop it (the target carries no such extra), so each test FAILS
+// the `fun _ d -> target d` impl on its channel.
+// ---------------------------------------------------------------------------
+
+/// An extra FK on Customer (Customer → Country) the reference diff never names.
+let private customerExtraRef : Reference =
+    Reference.create (refKey [ "Customer"; "Country" ]) (nm "Country") customerNameKey countryKey
+
+/// An extra index on Country the index diff never names.
+let private countryExtraIdx : Index =
+    { Index.create (idxKey [ "Country"; "UX_Code" ]) (nm "UX_Country_Code")
+        (IndexColumn.ascendingList [ countryCodeKey ]) with Uniqueness = Unique }
+
+/// An extra catalog-level sequence the sequence diff never names.
+let private extraSeq : Sequence =
+    Sequence.create (seqKey "Audit") (nm "AuditSeq") "dbo" "bigint"
+        (Some 1m) (Some 1m) (Some 1m) (Some 9999999999m) false SequenceCacheMode.Unspecified None
+    |> Result.value
+
+[<Fact>]
+let ``P1.4: applyDiff threads the passed-in base's references, not the recorded target (reference no-cheat)`` () =
+    // Diff adds an FK on Order. Base carries an EXTRA FK on Customer (a kind the
+    // reference diff never mentions) — it must survive the apply.
+    let a = catalogOfKinds [ customer; orderNoRef; country ]
+    let b = catalogOfKinds [ customer; order; country ]
+    let diff = CatalogDiff.between a b |> mustOk
+
+    let customerWithExtra = { customer with References = [ customerExtraRef ] }
+    let baseWithExtra = catalogOfKinds [ customerWithExtra; orderNoRef; country ]
+    let result = CatalogDiff.applyDiff baseWithExtra diff
+
+    let customerRefs =
+        (Catalog.tryFindKind customerKey result).Value.References
+        |> List.map (fun r -> r.SsKey) |> Set.ofList
+    Assert.Contains(customerExtraRef.SsKey, customerRefs)
+    // The recorded target carries NO such ref — proves the result is threaded, not copied.
+    let tgtCustomerRefs =
+        (Catalog.tryFindKind customerKey (CatalogDiff.target diff)).Value.References
+        |> List.map (fun r -> r.SsKey) |> Set.ofList
+    Assert.DoesNotContain(customerExtraRef.SsKey, tgtCustomerRefs)
+
+[<Fact>]
+let ``P1.5: applyDiff threads the passed-in base's indexes, not the recorded target (index no-cheat)`` () =
+    // Diff adds a UNIQUE index on Customer. Base carries an EXTRA index on
+    // Country (a kind the index diff never mentions) — it must survive.
+    let a = catalogOfKinds [ customer; order; country ]
+    let b = catalogOfKinds [ { customer with Indexes = [ customerEmailIdx ] }; order; country ]
+    let diff = CatalogDiff.between a b |> mustOk
+
+    let countryWithExtra = { country with Indexes = [ countryExtraIdx ] }
+    let baseWithExtra = catalogOfKinds [ customer; order; countryWithExtra ]
+    let result = CatalogDiff.applyDiff baseWithExtra diff
+
+    let countryIdxs =
+        (Catalog.tryFindKind countryKey result).Value.Indexes
+        |> List.map (fun i -> i.SsKey) |> Set.ofList
+    Assert.Contains(countryExtraIdx.SsKey, countryIdxs)
+    let tgtCountryIdxs =
+        (Catalog.tryFindKind countryKey (CatalogDiff.target diff)).Value.Indexes
+        |> List.map (fun i -> i.SsKey) |> Set.ofList
+    Assert.DoesNotContain(countryExtraIdx.SsKey, tgtCountryIdxs)
+
+[<Fact>]
+let ``P1.6: applyDiff threads the passed-in base's sequences, not the recorded target (sequence no-cheat)`` () =
+    // Diff adds a sequence. Base carries an EXTRA sequence the diff never
+    // mentions — it must survive (sequences are catalog-level).
+    let a = sampleCatalog
+    let b = Catalog.create [ salesModule ] [ orderNumberSeq ] |> Result.value
+    let diff = CatalogDiff.between a b |> mustOk
+
+    let baseWithExtra = Catalog.create [ salesModule ] [ extraSeq ] |> Result.value
+    let result = CatalogDiff.applyDiff baseWithExtra diff
+
+    let seqKeys = result.Sequences |> List.map (fun s -> s.SsKey) |> Set.ofList
+    Assert.Contains(extraSeq.SsKey, seqKeys)
+    // The recorded target carries only orderNumberSeq, not the extra one.
+    let tgtSeqKeys =
+        (CatalogDiff.target diff).Sequences |> List.map (fun s -> s.SsKey) |> Set.ofList
+    Assert.DoesNotContain(extraSeq.SsKey, tgtSeqKeys)
+
+// ---------------------------------------------------------------------------
+// P2.8 — the DECIMAL round-trip on the attribute facet channel. A→B is the
+// DECIMAL(10,2) -> DECIMAL(18,4) change (Precision AND Scale move together);
+// the round-trip residual `between B (applyDiff (between A B) A)` must be empty,
+// witnessing that applyFacet threads BOTH facets end-to-end. A body that
+// patched only one of the two facets would leave a residual diff (non-empty).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``P2.8: a DECIMAL(10,2) -> DECIMAL(18,4) change round-trips (precision + scale end-to-end)`` () =
+    let a = catalogWithCustomerName (fun at -> { at with Precision = Some 10; Scale = Some 2 })
+    let b = catalogWithCustomerName (fun at -> { at with Precision = Some 18; Scale = Some 4 })
+    let residual = CatalogDiff.between b (CatalogDiff.applyDiff a (CatalogDiff.between a b |> mustOk)) |> mustOk
+    Assert.True(CatalogDiff.isEmpty residual,
+                "applyDiff must reproduce B's DECIMAL precision + scale (round-trip residual was non-empty)")

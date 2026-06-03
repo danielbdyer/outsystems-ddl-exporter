@@ -30,6 +30,7 @@
     <Compile Include="BenchTests.fs" />
     <Compile Include="LogSinkTests.fs" />
     <Compile Include="FullExportCliTests.fs" />
+    <Compile Include="FullExportStoreTests.fs" />
     <Compile Include="SsKeyTests.fs" />
     <Compile Include="UuidV5Tests.fs" />
     <Compile Include="IRBuilders.fs" />
@@ -76,6 +77,7 @@
     <Compile Include="SchemaMigrationCanaryTests.fs" />
     <Compile Include="MigrationCanaryTests.fs" />
     <Compile Include="RefactorLogRenderTests.fs" />
+    <Compile Include="RefactorLogAccumulateTests.fs" />
     <Compile Include="ScriptDomRoundTripTests.fs" />
     <Compile Include="TypesTests.fs" />
     <Compile Include="ToleranceTests.fs" />
@@ -88,6 +90,7 @@
     <Compile Include="CdcSilenceTests.fs" />
     <Compile Include="CdcSilenceCrossEmitterTests.fs" />
     <Compile Include="CdcSilencePropertyTests.fs" />
+    <Compile Include="CdcMeasureTests.fs" />
     <Compile Include="CanonicalizeIdentityTests.fs" />
     <Compile Include="ProfileFixtures.fs" />
     <Compile Include="ProfileTests.fs" />
@@ -115,6 +118,7 @@
     <Compile Include="TransferSpecTests.fs" />
     <Compile Include="TransferRefusalTests.fs" />
     <Compile Include="PreflightTests.fs" />
+    <Compile Include="PreflightAllTests.fs" />
     <Compile Include="RenameProjectionTests.fs" />
     <Compile Include="UserFkReflowPassTests.fs" />
     <Compile Include="UserFkReflowPropertyTests.fs" />

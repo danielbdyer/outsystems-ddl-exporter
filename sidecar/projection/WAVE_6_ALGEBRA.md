@@ -1,5 +1,10 @@
 # WAVE 6 ALGEBRA — The Change Calculus (the domain reified)
 
+> **Indexed by `THE_USE_CASE_ONTOLOGY.md` (the masterwork, 2026-06-03).** The masterwork carries this
+> calculus forward as its laws (§5): State-as-torsor, W1/W2/W3, the norm, T12–T16, A43, the commuting
+> square. This file remains canonical **provenance** for the balanced equations in their fullest
+> derivation. Read the masterwork first; read this for the equation.
+
 > **What this is.** The reification of `WAVE_6_ONTOLOGY.md` (entities · moves · predicates) into the **algebra of
 > the domain** — postulated from first principles so every law is a *balanced equation* (`LHS = RHS`, both sides
 > in the carrier's native operations), with the variables in their **most revealing native form.** It is the

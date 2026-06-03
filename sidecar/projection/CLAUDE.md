@@ -15,7 +15,27 @@ substantive surfaces are unchanged.
 
 `KICKOFF.md` is the fresh-agent first-message brief — read it first as a
 5-minute orientation that points at the canonical surfaces in the order
-below. **`NORTH_STAR.md` is the apex vision — read it before `VISION.md`.**
+below.
+
+**`THE_USE_CASE_ONTOLOGY.md` is the single index of the target — read it
+first of the substantive surfaces.** It is the masterwork that synthesizes
+the scattered north-star corpus into one document: the closed amino-acid
+alphabet (the atomic moves of change-over-time), the protein catalog (every
+operator workflow as an ordered amino-acid chain), the master matrix (every
+move × context cell, across all ten axes), the laws (the torsor T12–T16/A43,
+the faithfulness ladder, the intent filter, CDC-as-norm minimality), the
+glossary, and a completeness checklist. It is **target-first** (the ideal
+end state, in full complexity) and declares itself the index that subsumes
+the sprawl: `NORTH_STAR.md`, `WAVE_6_ONTOLOGY/_ALGEBRA/_MORPHOLOGY.md`,
+`VISION.md`, `PRODUCT_AXIOMS.md`, `SPINE.md`, and the audits each become
+**provenance**, indexed in its §6.2. Read it to be oriented; consult the
+others for the depth on the fragment they originated. For *where the code
+actually stands against this matrix* (the gaps), read
+`DEBRIEF_2026_06_02_ISOMORPHISM_CLIMB_AND_BACKLOG.md` (the current-state
+ledger): the masterwork is the target, the debrief is the distance to it.
+
+**`NORTH_STAR.md` is the apex vision (now indexed by the masterwork above) —
+read it before `VISION.md`.**
 It states the bullseye (the Total Projection: the adjunction made total,
 executable, and self-describing — fidelity as a theorem the engine proves
 about itself) and **supersedes `VISION.md`'s strategic frame**; `VISION.md`

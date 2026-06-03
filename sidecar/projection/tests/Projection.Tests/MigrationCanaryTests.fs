@@ -75,12 +75,67 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
         Catalog.create [ { SsKey = mkKey "Mod2"; Name = nm "MigMod2"; Kinds = [ customer ]; IsActive = true; ExtendedProperties = [] } ] []
         |> Result.value
 
+    /// AC-S8 state A: table MIGAB_RENSRC with ID + EMAIL. State B: SAME
+    /// columns, table renamed to MIGAB_RENDST — a PURE table rename (no
+    /// reshape, no add), so the only differential is one `sp_rename` of the
+    /// table object. Kept column-stable on purpose: an ALTER on a CDC-tracked
+    /// (replicated) column is blocked by SQL Server, so the table-rename case
+    /// is the one that executes cleanly under CDC.
+    static let catalogRenA : Catalog =
+        let k =
+            Kind.create (mkKey "Ren") (nm "Source")
+                (mkTableId "dbo" "MIGAB_RENSRC")
+                [ mkAttr "Ren.Id" "ID" Integer None true false
+                  mkAttr "Ren.Email" "EMAIL" Text (Some 100) false true ]
+        Catalog.create [ { SsKey = mkKey "RenMod"; Name = nm "RenMod"; Kinds = [ k ]; IsActive = true; ExtendedProperties = [] } ] []
+        |> Result.value
+
+    static let catalogRenB : Catalog =
+        let k =
+            Kind.create (mkKey "Ren") (nm "Sink")
+                (mkTableId "dbo" "MIGAB_RENDST")
+                [ mkAttr "Ren.Id" "ID" Integer None true false
+                  mkAttr "Ren.Email" "EMAIL" Text (Some 100) false true ]
+        Catalog.create [ { SsKey = mkKey "RenMod"; Name = nm "RenMod"; Kinds = [ k ]; IsActive = true; ExtendedProperties = [] } ] []
+        |> Result.value
+
+    /// G9 state A: table MIGAB_TIGHTEN, NOTES NVARCHAR(100) **nullable** —
+    /// carries NULL rows. State B tightens NOTES to **NOT NULL** (a pure
+    /// nullability tightening; same SsKey, same type/length). The G9 case: an
+    /// in-place `ALTER COLUMN … NOT NULL` against existing NULL data.
+    static let catalogTightenA : Catalog =
+        let entity =
+            Kind.create (mkKey "T3") (nm "Tightenable")
+                (mkTableId "dbo" "MIGAB_TIGHTEN")
+                [ mkAttr "T3.Id" "ID" Integer None true false
+                  mkAttr "T3.Notes" "NOTES" Text (Some 100) false true ]
+        Catalog.create [ { SsKey = mkKey "Mod3"; Name = nm "MigMod3"; Kinds = [ entity ]; IsActive = true; ExtendedProperties = [] } ] []
+        |> Result.value
+
+    static let catalogTightenB : Catalog =
+        let entity =
+            Kind.create (mkKey "T3") (nm "Tightenable")
+                (mkTableId "dbo" "MIGAB_TIGHTEN")
+                [ mkAttr "T3.Id" "ID" Integer None true false
+                  mkAttr "T3.Notes" "NOTES" Text (Some 100) false false ]
+        Catalog.create [ { SsKey = mkKey "Mod3"; Name = nm "MigMod3"; Kinds = [ entity ]; IsActive = true; ExtendedProperties = [] } ] []
+        |> Result.value
+
     static let scalarString (cnn: Microsoft.Data.SqlClient.SqlConnection) (sql: string) =
         task {
             use cmd = cnn.CreateCommand()
             cmd.CommandText <- sql
             let! v = cmd.ExecuteScalarAsync()
             return string v
+        }
+
+    static let scalarInt (cnn: Microsoft.Data.SqlClient.SqlConnection) (sql: string) =
+        task {
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <- sql
+            cmd.CommandTimeout <- 0
+            let! v = cmd.ExecuteScalarAsync()
+            return System.Convert.ToInt32 v
         }
 
     interface IClassFixture<EphemeralContainerFixture>
@@ -287,4 +342,382 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
                         | Error (MigrationError.RefusedByCdc _) ->
                             Assert.Fail("allow-cdc must bypass the CDC gate, not refuse")
                         | _ -> ()
+                }))
+
+    // -- AC-S8 — RENAME is CDC-transparent (‖rename‖_data = 0) ----------------
+    //
+    // THE STANDARD (obligations §0): a discriminating LIVE witness. A RENAME via
+    // `sp_rename` (the V2 rename path — `MigrationRun.execute`'s
+    // `renameStatements`) is a metadata-only operation: it relabels the object
+    // in the catalog and touches NO data pages, so SQL Server's CDC log-scan
+    // (`sys.sp_cdc_scan`) finds zero data-change records to capture. A data
+    // UPDATE on the same CDC-tracked table, by contrast, writes a row version
+    // the log-scan captures. The canary distinguishes the two: rename ⇒ 0 net
+    // captures; update ⇒ > 0.
+    //
+    // WRONG IMPL THIS CATCHES: a "rename" implemented as DROP + re-CREATE (or,
+    // for the column case, DROP COLUMN + ADD COLUMN) — the lossy reshape an
+    // emitter reaches for when it can't carry the same SsKey across A→B. That
+    // rewrites every row (and, for a table re-CREATE, re-keys the CDC capture
+    // instance), firing CDC captures and losing data. The
+    // `renameStatements`/`sp_rename` path is CDC-transparent; the
+    // drop+recreate impostor is not.
+    //
+    // CDC-AFTER-RENAME CAVEAT (empirically established against the live
+    // container, NOT assumed): under CDC, SQL Server BLOCKS a *column* rename —
+    // `sp_rename '…','…','COLUMN'` raises "Cannot alter column … because it is
+    // 'REPLICATED'" (CDC marks every captured column as replicated). So the
+    // column-rename case cannot be a "0 captures" witness — it errors before
+    // capturing anything. The *table* rename, however, executes cleanly and IS
+    // CDC-transparent: the capture instance (`cdc.dbo_<table>_CT`) is bound to
+    // the object_id + the enable-time name, so the table object renames while
+    // the capture instance keeps its original name and zero rows are captured.
+    // We therefore witness AC-S8 with the TABLE rename (the executable rename
+    // under CDC) and seed/UPDATE through a column that is unchanged by the
+    // rename, so the sensitivity half exercises real capture on the live
+    // instance. (The capture instance survives the table rename — verified by
+    // the UPDATE leg firing > 0.)
+    [<Fact>]
+    member _.``AC-S8: a table rename via sp_rename is CDC-transparent (0 net captures) while a data UPDATE fires`` () =
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "RenameCdc" (fun conn _ ->
+                task {
+                    // Deploy state A (MIGAB_RENSRC with ID + EMAIL) and seed a row.
+                    do! Deploy.executeBatch conn (SsdtDdlEmitter.statements catalogRenA |> Render.toText)
+                    do! Deploy.executeBatch conn
+                            "INSERT INTO [dbo].[MIGAB_RENSRC] ([ID],[EMAIL]) VALUES (1, N'carol@example.com');"
+
+                    // Enable CDC on the database + the seeded table. Skip if the
+                    // container image can't (mirrors 6.A.13's graceful skip).
+                    let! enabled =
+                        task {
+                            try
+                                do! Deploy.executeBatch conn "EXEC sys.sp_cdc_enable_db;"
+                                do! Deploy.executeBatch conn
+                                        "EXEC sys.sp_cdc_enable_table @source_schema=N'dbo', @source_name=N'MIGAB_RENSRC', @role_name=NULL, @supports_net_changes=0;"
+                                let! c =
+                                    scalarInt conn
+                                        "SELECT COUNT(*) FROM sys.tables WHERE is_tracked_by_cdc = 1 AND name = N'MIGAB_RENSRC';"
+                                return c > 0
+                            with _ -> return false
+                        }
+                    if not enabled then
+                        printfn "SKIP AC-S8: container did not enable CDC (flag not set)"
+                    else
+                        // The capture-instance name is bound at enable-time and
+                        // survives the table rename — so we count the SAME capture
+                        // table (`cdc.dbo_MIGAB_RENSRC_CT`) across all three phases.
+                        let captureCountSql =
+                            "SELECT COUNT(*) FROM cdc.[dbo_MIGAB_RENSRC_CT];"
+
+                        // Force the synchronous log-scan and capture the baseline.
+                        do! Deploy.executeBatch conn "EXEC sys.sp_cdc_scan;"
+                        let! baseline = scalarInt conn captureCountSql
+
+                        // === RENAME LEG: the V2 rename path (sp_rename of the
+                        // table object) on the CDC-tracked table. allowCdc=true
+                        // bypasses the schema-side CDC GATE (6.A.13) — the gate
+                        // guards unsafe DDL; the point here is that the rename,
+                        // once executed, is CDC-TRANSPARENT at the data-capture
+                        // level.
+                        let! outcome = MigrationRun.execute true DeclareNone catalogRenA catalogRenB conn
+                        match outcome with
+                        | Error e -> Assert.Fail(sprintf "table-rename migrate failed: %A" e)
+                        | Ok _ ->
+                            // The rename actually happened: old object gone, new present.
+                            let! oldExists =
+                                scalarInt conn
+                                    "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME='MIGAB_RENSRC';"
+                            Assert.Equal(0, oldExists)
+                            let! newExists =
+                                scalarInt conn
+                                    "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME='MIGAB_RENDST';"
+                            Assert.Equal(1, newExists)
+
+                            // Scan again: the rename fired ZERO data captures.
+                            do! Deploy.executeBatch conn "EXEC sys.sp_cdc_scan;"
+                            let! postRename = scalarInt conn captureCountSql
+
+                            // THE LOAD-BEARING ASSERTION: ‖rename‖_data = 0.
+                            Assert.Equal(baseline, postRename)
+
+                            // === SENSITIVITY (UPDATE) LEG: a data UPDATE on the
+                            // (now-renamed) CDC-tracked table DOES fire — proving
+                            // the canary isn't trivially silent (CDC plumbing IS
+                            // live and the capture instance survived the rename).
+                            do! Deploy.executeBatch conn
+                                    "UPDATE [dbo].[MIGAB_RENDST] SET [EMAIL] = N'carol+changed@example.com' WHERE [ID] = 1;"
+                            do! Deploy.executeBatch conn "EXEC sys.sp_cdc_scan;"
+                            let! postUpdate = scalarInt conn captureCountSql
+
+                            // THE SENSITIVITY ASSERTION: the UPDATE fired capture
+                            // rows the rename did not. Discriminates: rename == 0
+                            // net; update > baseline.
+                            Assert.True(
+                                postUpdate > postRename,
+                                sprintf "expected the data UPDATE to fire CDC captures the rename did not; baseline=%d postRename=%d postUpdate=%d"
+                                    baseline postRename postUpdate)
+                }))
+
+    // G9 (NEITHER→HELD) — the NOT-NULL tightening pre-flight. An in-place
+    // `ALTER COLUMN … NOT NULL` against a column that still carries NULL rows
+    // must be REFUSED by a PRE-FLIGHT (a `COUNT(*) WHERE col IS NULL` probe)
+    // BEFORE the ALTER is submitted — surfacing the NAMED `RefusedByTightening`
+    // refusal, NOT the post-facto `ExecutionFailed` the bare ALTER would raise.
+    // The test DISCRIMINATES the two: it asserts the named pre-flight error AND
+    // that NO DDL ran (the column stays nullable, the rows — NULL included —
+    // are intact). Uses `DeclareAll` so the schema-blind narrowing declared-loss
+    // gate (G8) is already SATISFIED — isolating G9's DATA-aware refusal as the
+    // sole remaining line: declaring you accept the narrowing does NOT let you
+    // apply NOT NULL while NULL rows physically remain.
+    [<Fact>]
+    member _.``G9: migrate refuses a NOT-NULL tightening on NULL-bearing data via a pre-flight, before any ALTER`` () =
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "MigrateTighten" (fun conn _ ->
+                task {
+                    // Deploy state A (NOTES nullable) and seed BOTH a non-NULL
+                    // row and a NULL-bearing row — the data that violates a
+                    // NOT-NULL tightening.
+                    do! Deploy.executeBatch conn (SsdtDdlEmitter.statements catalogTightenA |> Render.toText)
+                    do! Deploy.executeBatch conn
+                            "INSERT INTO [dbo].[MIGAB_TIGHTEN] ([ID],[NOTES]) VALUES (1, N'present');"
+                    do! Deploy.executeBatch conn
+                            "INSERT INTO [dbo].[MIGAB_TIGHTEN] ([ID],[NOTES]) VALUES (2, NULL);"
+
+                    // migrate A → B tightens NOTES to NOT NULL. The live data
+                    // carries a NULL → the pre-flight must REFUSE before the ALTER.
+                    let! outcome = MigrationRun.execute true DeclareAll catalogTightenA catalogTightenB conn
+                    match outcome with
+                    | Error (MigrationError.RefusedByTightening msg) ->
+                        // DISCRIMINATOR: the NAMED pre-flight refusal, carrying the
+                        // probe's `migrate.dataViolatesTightening` evidence — NOT a
+                        // generic `ExecutionFailed` from a submitted-then-rejected ALTER.
+                        Assert.Contains("NULL", msg)
+                    | Error (MigrationError.ExecutionFailed m) ->
+                        Assert.Fail(
+                            sprintf "G9 regression: the tightening was caught POST-FACTO as ExecutionFailed (%s), not refused by a PRE-FLIGHT before the ALTER." m)
+                    | other ->
+                        Assert.Fail(sprintf "expected RefusedByTightening (pre-flight), got %A" other)
+
+                    // NO DDL RAN — the column is STILL NULLABLE (the ALTER never
+                    // reached the live DB). A post-facto failure would have left
+                    // the schema in whatever state the rejected ALTER left it; a
+                    // true pre-flight leaves A untouched.
+                    let! isNullable =
+                        scalarString conn
+                            "SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS \
+                             WHERE TABLE_NAME = 'MIGAB_TIGHTEN' AND COLUMN_NAME = 'NOTES';"
+                    Assert.Equal("YES", isNullable)
+
+                    // The rows are intact, NULL included.
+                    let! count = scalarString conn "SELECT COUNT(*) FROM [dbo].[MIGAB_TIGHTEN];"
+                    Assert.Equal("2", count)
+                    let! nullCount =
+                        scalarString conn "SELECT COUNT(*) FROM [dbo].[MIGAB_TIGHTEN] WHERE [NOTES] IS NULL;"
+                    Assert.Equal("1", nullCount)
+
+                    // And the gate is DATA-driven, not blanket: with the NULL row
+                    // REMEDIATED, the same tightening proceeds and verifies. This
+                    // proves the refusal was the probe (NULL-count), not a refusal
+                    // of all tightenings.
+                    do! Deploy.executeBatch conn
+                            "UPDATE [dbo].[MIGAB_TIGHTEN] SET [NOTES] = N'backfilled' WHERE [NOTES] IS NULL;"
+                    let! afterFix = MigrationRun.execute true DeclareAll catalogTightenA catalogTightenB conn
+                    match afterFix with
+                    | Error e -> Assert.Fail(sprintf "remediated tightening should proceed, got %A" e)
+                    | Ok r ->
+                        Assert.True(r.Verified, sprintf "B' did not reproduce B after remediation:\n%s" (PhysicalSchema.renderDiff r.SchemaDiff))
+                        let! nowNullable =
+                            scalarString conn
+                                "SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS \
+                                 WHERE TABLE_NAME = 'MIGAB_TIGHTEN' AND COLUMN_NAME = 'NOTES';"
+                        Assert.Equal("NO", nowNullable)
+                }))
+
+    // -- AC-X2 — the one-command UAT re-key composition. THE STANDARD
+    //    (obligations §0): a witness that FAILS for the co-wrong `Map.empty`
+    //    implementation. The criterion (acceptance ~136): "One command:
+    //    schema-migrate UAT AND re-key user FKs by email. Pass iff
+    //    schema+data+re-key compose with `validate-user-map` gating first."
+    //
+    //    These two tests pass a NON-EMPTY reconciliation map through the SAME
+    //    `MigrationRun.executeWithData` the CLI verb now drives, with an
+    //    ADVERSARIAL identity layout: the Source surrogate IDs DIFFER from the
+    //    pre-existing Sink (UAT) identities, and a Source user's PK collides with
+    //    a DIFFERENT Sink entity by ID while matching a THIRD Sink entity by
+    //    EMAIL. A `Map.empty` composition re-keys nothing: it straight-loads the
+    //    USER kind and collides on the engineered id-clash (the run cannot
+    //    complete) and, even where it could, the Order FK would land on the
+    //    id-collision identity, never the email match. The real map reconciles the
+    //    colliding IDs away (USER ⇒ ReconciledByRule, no insert) and re-points
+    //    every Order FK to the Sink's email-matched identity. The load-bearing
+    //    assertion is the re-pointed FK; it is unreachable for `Map.empty`. The
+    //    second test witnesses the `validate-user-map` halt firing PRE-WRITE on an
+    //    orphan (the gate composes first — the Sink data write never happens).
+    //
+    //    Schema A (USER.EMAIL NVARCHAR(50)) → B (widened to NVARCHAR(256)); USER
+    //    reconciled by EMAIL, ORDER carries a NOT-NULL FK to USER. The EMAIL
+    //    widening is the real schema touch the data leg composes WITH. Contracts
+    //    are reconstructed (ReadSide.read) so the FK + kind SsKeys come for free
+    //    and the A→B diff is a pure widening (same kind SsKeys, same names).
+
+    [<Fact>]
+    member _.``AC-X2: one-command migrate-with-data re-keys Order FKs to the Sink's email-matched identity (fails for Map.empty)`` () =
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        let reKeyDdlA =
+            "CREATE TABLE [dbo].[MIGAB_RK_USER] ([ID] INT NOT NULL PRIMARY KEY, [EMAIL] NVARCHAR(50) NULL); \
+             CREATE TABLE [dbo].[MIGAB_RK_ORDER] ([ID] INT NOT NULL PRIMARY KEY, [USER_ID] INT NOT NULL, [AMOUNT] INT NULL, \
+             CONSTRAINT [FK_RkOrder_User] FOREIGN KEY ([USER_ID]) REFERENCES [dbo].[MIGAB_RK_USER] ([ID]));"
+        let reKeyDdlB =
+            "CREATE TABLE [dbo].[MIGAB_RK_USER] ([ID] INT NOT NULL PRIMARY KEY, [EMAIL] NVARCHAR(256) NULL); \
+             CREATE TABLE [dbo].[MIGAB_RK_ORDER] ([ID] INT NOT NULL PRIMARY KEY, [USER_ID] INT NOT NULL, [AMOUNT] INT NULL, \
+             CONSTRAINT [FK_RkOrder_User] FOREIGN KEY ([USER_ID]) REFERENCES [dbo].[MIGAB_RK_USER] ([ID]));"
+        TaskSync.run (fun () ->
+            // SOURCE (Dev) at schema B; SINK (UAT) at schema A — executeWithData
+            // migrates the sink A→B (widening EMAIL), then re-keys.
+            fixture.WithEphemeralDatabase "MigrateReKeySrc" (fun source _ ->
+                task {
+                    do! Deploy.executeBatch source reKeyDdlB
+                    // Dev users 7/8 — surrogates that DIFFER from UAT's. Source user
+                    // 7 (alice) collides BY ID with the UAT entity at 7 (carol@x),
+                    // but matches the UAT alice (at id 1) BY EMAIL — the adversary.
+                    do! Deploy.executeBatch source
+                            "INSERT INTO [dbo].[MIGAB_RK_USER] ([ID],[EMAIL]) VALUES (7,N'alice@x'),(8,N'bob@x'); \
+                             INSERT INTO [dbo].[MIGAB_RK_ORDER] ([ID],[USER_ID],[AMOUNT]) VALUES (100,7,500),(101,8,600);"
+                    return!
+                        fixture.WithEphemeralDatabase "MigrateReKeySink" (fun sink _ ->
+                            task {
+                                do! Deploy.executeBatch sink reKeyDdlA
+                                // Pre-existing UAT users — SAME emails, DIFFERENT surrogates,
+                                // PLUS a decoy (carol@x) occupying id 7 so the Source PK 7
+                                // collides with a DIFFERENT Sink entity by id.
+                                do! Deploy.executeBatch sink
+                                        "INSERT INTO [dbo].[MIGAB_RK_USER] ([ID],[EMAIL]) VALUES (1,N'alice@x'),(2,N'bob@x'),(7,N'carol@x');"
+
+                                let! sinkAR = Projection.Adapters.Sql.ReadSide.read sink
+                                let sinkA = Result.value sinkAR
+                                let! targetBR = Projection.Adapters.Sql.ReadSide.read source
+                                let targetB = Result.value targetBR
+
+                                let userKind =
+                                    Catalog.allModulesKinds targetB |> List.map snd
+                                    |> List.find (fun k -> TableId.tableText k.Physical = "MIGAB_RK_USER")
+                                let emailName =
+                                    userKind.Attributes
+                                    |> List.find (fun a -> ColumnRealization.columnNameText a.Column = "EMAIL")
+                                    |> fun a -> a.Name
+                                // NON-EMPTY map: reconcile USER by EMAIL — the re-key.
+                                let reconciliation =
+                                    Map.ofList [ userKind.SsKey, ReconciliationStrategy.MatchByColumn emailName ]
+
+                                // One command: schema-migrate the sink A→B AND re-key.
+                                let! outcome =
+                                    MigrationRun.executeWithData DeclareNone Transfer.Execute true sinkA targetB reconciliation source sink
+                                match outcome with
+                                | Error e -> Assert.Fail(sprintf "AC-X2 composed run failed: %A" e)
+                                | Ok result ->
+                                    // (compose) The schema leg landed — EMAIL widened to 256.
+                                    Assert.True(result.Schema.Verified, sprintf "sink schema not at B:\n%s" (PhysicalSchema.renderDiff result.Schema.SchemaDiff))
+                                    let! widened =
+                                        scalarString sink
+                                            "SELECT CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS \
+                                             WHERE TABLE_NAME='MIGAB_RK_USER' AND COLUMN_NAME='EMAIL';"
+                                    Assert.Equal("256", widened)
+
+                                    // (re-key) USER is ReconciledByRule — its rows are the
+                                    // pre-existing UAT identities, NOT re-inserted.
+                                    let userOutcome = result.Transfer.Kinds |> List.find (fun k -> k.Kind = userKind.SsKey)
+                                    Assert.Equal(IdentityDisposition.ReconciledByRule, userOutcome.Disposition)
+                                    Assert.Equal(0, userOutcome.RowsWritten)
+
+                                    // No UAT user was added by the load — the 3 pre-existing stay.
+                                    let! users = scalarString sink "SELECT COUNT(*) FROM [dbo].[MIGAB_RK_USER];"
+                                    Assert.Equal("3", users)
+
+                                    // THE DISCRIMINATOR: Order 100 (Source USER_ID=7) re-points to
+                                    // the Sink's EMAIL-matched alice@x (id 1) — NOT the id-collision
+                                    // entity carol@x (id 7). A Map.empty load re-keys nothing: it
+                                    // collides on the USER insert at id 7 (never completing) or, absent
+                                    // the collision, lands the FK on carol@x. Either way it CANNOT make
+                                    // this assertion true.
+                                    let! email100 =
+                                        scalarString sink
+                                            "SELECT u.[EMAIL] FROM [dbo].[MIGAB_RK_ORDER] o \
+                                             JOIN [dbo].[MIGAB_RK_USER] u ON o.[USER_ID] = u.[ID] WHERE o.[ID] = 100;"
+                                    Assert.Equal("alice@x", email100)
+                                    let! email101 =
+                                        scalarString sink
+                                            "SELECT u.[EMAIL] FROM [dbo].[MIGAB_RK_ORDER] o \
+                                             JOIN [dbo].[MIGAB_RK_USER] u ON o.[USER_ID] = u.[ID] WHERE o.[ID] = 101;"
+                                    Assert.Equal("bob@x", email101)
+
+                                    // No Order carries a Source surrogate — every FK was re-pointed.
+                                    let! sourceValued =
+                                        scalarString sink "SELECT COUNT(*) FROM [dbo].[MIGAB_RK_ORDER] WHERE [USER_ID] IN (7,8);"
+                                    Assert.Equal("0", sourceValued)
+                            })
+                }))
+
+    [<Fact>]
+    member _.``AC-X2: validate-user-map halts the composed run PRE-WRITE on an orphan (the gate composes first)`` () =
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        let reKeyDdlA =
+            "CREATE TABLE [dbo].[MIGAB_RK_USER] ([ID] INT NOT NULL PRIMARY KEY, [EMAIL] NVARCHAR(50) NULL); \
+             CREATE TABLE [dbo].[MIGAB_RK_ORDER] ([ID] INT NOT NULL PRIMARY KEY, [USER_ID] INT NOT NULL, [AMOUNT] INT NULL, \
+             CONSTRAINT [FK_RkOrder_User] FOREIGN KEY ([USER_ID]) REFERENCES [dbo].[MIGAB_RK_USER] ([ID]));"
+        let reKeyDdlB =
+            "CREATE TABLE [dbo].[MIGAB_RK_USER] ([ID] INT NOT NULL PRIMARY KEY, [EMAIL] NVARCHAR(256) NULL); \
+             CREATE TABLE [dbo].[MIGAB_RK_ORDER] ([ID] INT NOT NULL PRIMARY KEY, [USER_ID] INT NOT NULL, [AMOUNT] INT NULL, \
+             CONSTRAINT [FK_RkOrder_User] FOREIGN KEY ([USER_ID]) REFERENCES [dbo].[MIGAB_RK_USER] ([ID]));"
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "MigrateOrphanSrc" (fun source _ ->
+                task {
+                    do! Deploy.executeBatch source reKeyDdlB
+                    // Source carries an ORPHAN (ghost@x, id 9) with no UAT email match.
+                    do! Deploy.executeBatch source
+                            "INSERT INTO [dbo].[MIGAB_RK_USER] ([ID],[EMAIL]) VALUES (8,N'bob@x'),(9,N'ghost@x'); \
+                             INSERT INTO [dbo].[MIGAB_RK_ORDER] ([ID],[USER_ID],[AMOUNT]) VALUES (101,8,600),(102,9,700);"
+                    return!
+                        fixture.WithEphemeralDatabase "MigrateOrphanSink" (fun sink _ ->
+                            task {
+                                do! Deploy.executeBatch sink reKeyDdlA
+                                do! Deploy.executeBatch sink
+                                        "INSERT INTO [dbo].[MIGAB_RK_USER] ([ID],[EMAIL]) VALUES (2,N'bob@x');"
+
+                                let! sinkAR = Projection.Adapters.Sql.ReadSide.read sink
+                                let sinkA = Result.value sinkAR
+                                let! targetBR = Projection.Adapters.Sql.ReadSide.read source
+                                let targetB = Result.value targetBR
+                                let userKind =
+                                    Catalog.allModulesKinds targetB |> List.map snd
+                                    |> List.find (fun k -> TableId.tableText k.Physical = "MIGAB_RK_USER")
+                                let emailName =
+                                    userKind.Attributes
+                                    |> List.find (fun a -> ColumnRealization.columnNameText a.Column = "EMAIL")
+                                    |> fun a -> a.Name
+                                let reconciliation =
+                                    Map.ofList [ userKind.SsKey, ReconciliationStrategy.MatchByColumn emailName ]
+
+                                // executeWithData runs the reconciling load with allowDrops=false,
+                                // so the AC-I5 validate-user-map gate fires BEFORE any data write.
+                                let! outcome =
+                                    MigrationRun.executeWithData DeclareNone Transfer.Execute true sinkA targetB reconciliation source sink
+                                match outcome with
+                                | Error (MigrationError.DataTransferFailed es) ->
+                                    // The PRE-WRITE halt: the unmapped-identities refusal.
+                                    Assert.Contains(es, fun (e: ValidationError) -> e.Code = "transfer.unmappedIdentities")
+                                | other ->
+                                    Assert.Fail(sprintf "expected a pre-write validate-user-map halt (DataTransferFailed transfer.unmappedIdentities), got %A" other)
+
+                                // GATE COMPOSES FIRST: no Order rows were loaded (the data leg
+                                // never ran) and no UAT user was added — the Sink data write
+                                // never happened. (The schema leg precedes the data leg, so the
+                                // EMAIL widening did run; the load-bearing fact is the untouched data.)
+                                let! orders = scalarString sink "SELECT COUNT(*) FROM [dbo].[MIGAB_RK_ORDER];"
+                                Assert.Equal("0", orders)
+                                let! users = scalarString sink "SELECT COUNT(*) FROM [dbo].[MIGAB_RK_USER];"
+                                Assert.Equal("1", users)
+                            })
                 }))

@@ -47,6 +47,73 @@ let ``reconcileKind ManualOverride maps explicit Source->Sink; sources outside t
     Assert.Equal(Some (AssignedKey.ofString "18"), SurrogateRemapContext.tryFindAssigned userKey (SourceKey.ofString "280") result.Remap)
     Assert.Equal<(SsKey * SourceKey) list>([ userKey, SourceKey.ofString "281" ], result.Unmatched)
 
+// -- AC-I2 bridge: every UserMatchingStrategy reaches the Transfer re-key ---
+//
+// `Reconciliation.ofUserMatching` translates the User kind's
+// `UserMatchingStrategy` into the generic `ReconciliationStrategy` that
+// `runReconciling` consumes, so ByEmail / BySsKey / ManualOverride /
+// FallbackToSystemUser all re-key as an Update through the SAME
+// `reconcileKind` machinery — closing the AC-I2 reality gap (the three
+// user-match variants previously dead-ended in `UserFkReflowPass`'s
+// `UserRemapContext`, which never flowed into `runReconciling`).
+
+let private emailCol = mkName "Email"
+let private ssKeyCol = mkName "SSKEY"
+
+[<Fact>]
+let ``ofUserMatching ByEmail re-keys through reconcileKind as a column match on the email column`` () =
+    // Dev 280 (alice) → UAT 18; Dev 999 (ghost) has no Sink home.
+    let source = [ row "280" [ "Email", "alice@x" ]; row "999" [ "Email", "ghost@x" ] ]
+    let sink   = [ row "18" [ "Email", "alice@x" ]; row "19" [ "Email", "bob@x" ] ]
+    let strategy = Reconciliation.ofUserMatching emailCol ssKeyCol ByEmail
+    let result = Reconciliation.reconcileKind userKey idCol strategy source sink
+    Assert.Equal(Some (AssignedKey.ofString "18"), SurrogateRemapContext.tryFindAssigned userKey (SourceKey.ofString "280") result.Remap)
+    // Discriminates a bridge that dropped ByEmail (no remap) OR matched on
+    // the wrong column: the email-less ghost is the named skip.
+    Assert.Equal<(SsKey * SourceKey) list>([ userKey, SourceKey.ofString "999" ], result.Unmatched)
+
+[<Fact>]
+let ``ofUserMatching BySsKey re-keys on the SsKey column, NOT the email column`` () =
+    // Source + Sink share a SSKEY value but DIFFER on Email. A bridge that
+    // mistranslated BySsKey to the email column would match the wrong row
+    // (or fail to match); only matching on SSKEY produces the remap.
+    let source = [ row "280" [ "Email", "alice-dev@x"; "SSKEY", "guid-alice" ] ]
+    let sink   = [ row "18" [ "Email", "alice-uat@x"; "SSKEY", "guid-alice" ]
+                   row "19" [ "Email", "alice-dev@x"; "SSKEY", "guid-other" ] ]
+    let strategy = Reconciliation.ofUserMatching emailCol ssKeyCol BySsKey
+    let result = Reconciliation.reconcileKind userKey idCol strategy source sink
+    Assert.Empty result.Unmatched
+    // 18 (matched by SSKEY), not 19 (matched by Email) — discriminates the column.
+    Assert.Equal(Some (AssignedKey.ofString "18"), SurrogateRemapContext.tryFindAssigned userKey (SourceKey.ofString "280") result.Remap)
+
+[<Fact>]
+let ``ofUserMatching FallbackToSystemUser re-keys every Source surrogate; Unmatched is always empty`` () =
+    // Primary ByEmail matches 280 (alice); 999 (ghost) misses the primary and
+    // falls to the system user (UAT 7). The fallback's structural guarantee:
+    // NO Source surrogate survives unmatched.
+    let source = [ row "280" [ "Email", "alice@x" ]; row "999" [ "Email", "ghost@x" ] ]
+    let sink   = [ row "18" [ "Email", "alice@x" ] ]
+    let fallbackStrategy = FallbackToSystemUser (TargetUserId.ofInt 7, ByEmail)
+    let strategy = Reconciliation.ofUserMatching emailCol ssKeyCol fallbackStrategy
+    let result = Reconciliation.reconcileKind userKey idCol strategy source sink
+    // The fallback guarantee: empty Unmatched. A bridge that dropped the
+    // Fallback variant (or routed the miss to Unmatched) fails here.
+    Assert.Empty result.Unmatched
+    Assert.Equal(Some (AssignedKey.ofString "18"), SurrogateRemapContext.tryFindAssigned userKey (SourceKey.ofString "280") result.Remap)
+    // The ghost re-keys to the system user 7, not dropped — no source surrogate survives.
+    Assert.Equal(Some (AssignedKey.ofString "7"), SurrogateRemapContext.tryFindAssigned userKey (SourceKey.ofString "999") result.Remap)
+
+[<Fact>]
+let ``ofUserMatching ManualOverride projects the typed user map through the RawValueCodec convention`` () =
+    // SourceUserId 280 → TargetUserId 18; the raw surrogate form is "280"/"18"
+    // (sprintf "%d"), agreeing with UserRemapContext.toSurrogate.
+    let source = [ row "280" []; row "281" [] ]
+    let overrideMap = Map.ofList [ SourceUserId.ofInt 280, TargetUserId.ofInt 18 ]
+    let strategy = Reconciliation.ofUserMatching emailCol ssKeyCol (ManualOverride overrideMap)
+    let result = Reconciliation.reconcileKind userKey idCol strategy source []
+    Assert.Equal(Some (AssignedKey.ofString "18"), SurrogateRemapContext.tryFindAssigned userKey (SourceKey.ofString "280") result.Remap)
+    Assert.Equal<(SsKey * SourceKey) list>([ userKey, SourceKey.ofString "281" ], result.Unmatched)
+
 // -- FK re-pointing through the remap --------------------------------------
 
 /// An Order kind with a nullable USER_ID FK to the User kind, so a Transfer

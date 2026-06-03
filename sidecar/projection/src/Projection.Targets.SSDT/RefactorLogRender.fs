@@ -1,5 +1,6 @@
 namespace Projection.Targets.SSDT
 
+open System
 open System.IO
 open System.Text
 open System.Xml
@@ -13,10 +14,18 @@ open Projection.Core
 ///
 ///   - Operations sorted by `OperationKey` (deterministic UUIDv5;
 ///     stable lexicographic sort over the dashed Guid form).
-///   - `ChangeDateTime` pinned to `2000-01-01T00:00:00Z` (DacFx
-///     ignores `ChangeDateTime` for refactor application; pinning
-///     a constant avoids threading `Lifecycle` for what is audit
-///     metadata only — chapter 3.5 prescope §6 option 1).
+///   - `ChangeDateTime` carries the **episode's real `At`** (a
+///     boundary-supplied `DateTimeOffset`, threaded through from the
+///     `EpisodeCoordinate`). DacFx ignores `ChangeDateTime` for
+///     refactor application, so this is audit metadata only — but the
+///     audit metadata is now *truthful* (it records when the episode
+///     actually emitted) rather than a fictional pinned constant.
+///     T1 determinism holds because `At` is an *input* (deterministic
+///     given the episode), not a clock read inside Core / the
+///     renderer. The legacy no-clock overload pins `2000-01-01` for
+///     callers that have no episode in hand (gap N6: the pinned
+///     constant is retired from the threading path, retained only as
+///     the explicit no-episode default).
 ///   - `XmlWriterSettings` pinned at every formatting axis (UTF-8
 ///     no-BOM encoding, two-space indentation, `\n` newlines,
 ///     namespace declaration emitted by the writer).
@@ -47,12 +56,23 @@ module RefactorLogRender =
     [<Literal>]
     let private operationsVersion : string = "1.0"
 
-    /// `ChangeDateTime` pinned constant. DacFx ignores this attribute
-    /// for refactor application; pinning a constant avoids a
-    /// Lifecycle-input plumbing cost that earns nothing operationally.
-    /// Chapter 3.5 prescope §6 option 1.
-    [<Literal>]
-    let private pinnedChangeDateTime : string = "2000-01-01T00:00:00Z"
+    /// `ChangeDateTime` no-episode default. Retained only for the
+    /// legacy `toRefactorLogXml` overload (callers with no episode in
+    /// hand); the episode-threaded `toRefactorLogXmlAt` path no longer
+    /// uses it (gap N6 — the pinned `2000-01-01` constant is retired
+    /// from the real-clock threading path).
+    let private pinnedChangeDateTime : DateTimeOffset =
+        DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero)
+
+    /// Render a `DateTimeOffset` to the `ChangeDateTime` wire form —
+    /// UTC, ISO-8601, second precision, `Z` suffix. Pinned at every
+    /// formatting axis (invariant culture, fixed format string) so the
+    /// bytes are deterministic given the input instant. SSDT's GUI
+    /// writes this same shape; DacFx parses it loosely but ignores the
+    /// value for refactor application.
+    let private changeDateTimeString (at: DateTimeOffset) : string =
+        at.ToUniversalTime()
+            .ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture)
 
     /// Map operation kind to the SSDT-native string. Closed-DU
     /// dispatch — adding a new variant lights up an exhaustiveness
@@ -67,6 +87,7 @@ module RefactorLogRender =
         match t with
         | SqlTable        -> "SqlTable"
         | SqlSimpleColumn -> "SqlSimpleColumn"
+        | SqlForeignKey   -> "SqlForeignKeyConstraint"
         | SqlSchema       -> "SqlSchema"
 
     /// Write one `<Property Name="…" Value="…" />` element through
@@ -85,14 +106,17 @@ module RefactorLogRender =
     /// Write one `<Operation>` element with its five `<Property>`
     /// children. The Guid uses the `"D"` format specifier (lowercase
     /// dashed form, the .NET default) — pinned for byte-determinism.
+    /// `changeDateTime` is the pre-rendered episode-`At` string (one
+    /// value for the whole document, threaded in by the caller).
     let private writeOperation
         (w: XmlWriter)
+        (changeDateTime: string)
         (entry: RefactorLogEntry)
         : unit =
         w.WriteStartElement("Operation")
         w.WriteAttributeString("Name", operationKindString entry.OperationKind)
         w.WriteAttributeString("Key", entry.OperationKey.ToString("D"))
-        w.WriteAttributeString("ChangeDateTime", pinnedChangeDateTime)
+        w.WriteAttributeString("ChangeDateTime", changeDateTime)
         writeProperty w "ElementName"        entry.ElementName
         writeProperty w "ElementType"        (elementTypeString entry.ElementType)
         writeProperty w "ParentElementName"  entry.ParentElementName
@@ -106,31 +130,56 @@ module RefactorLogRender =
     // (per the FP strict-mode discipline). `XmlWriter.Create` takes
     // a fresh instance per call; the helper returns one.
 
-    /// Compose per-key entries into one `.refactorlog` XML document.
-    /// Entries sorted by `OperationKey` (deterministic UUIDv5
-    /// derivation; stable sort over the typed Guid). Per A35, every
-    /// emit run produces byte-identical output for byte-identical
-    /// input — verified by the golden-file test.
-    let toRefactorLogXml
-        (artifact: ArtifactByKind<RefactorLogEntry list>)
+    /// The byte-determinism core — render an entry list into one
+    /// `.refactorlog` XML document at a given `ChangeDateTime`. Entries
+    /// sorted by `OperationKey` (deterministic UUIDv5 derivation; stable
+    /// sort over the typed Guid). Per A35, every render produces
+    /// byte-identical output for byte-identical input — the timestamp is
+    /// one such input, so two episodes with different `At` produce
+    /// different (but each deterministic) bytes.
+    let private renderEntries
+        (at: DateTimeOffset)
+        (entries: RefactorLogEntry list)
         : string =
-        use _ = Bench.scope "render.refactorLog.toXml"
-        let entries =
-            artifact
-            |> ArtifactByKind.toMap
-            |> Map.toSeq
-            |> Seq.collect snd
-            |> Seq.sortBy (fun e -> e.OperationKey)
-            |> Seq.toList
+        let changeDateTime = changeDateTimeString at
+        let sorted = entries |> List.sortBy (fun e -> e.OperationKey)
         use stream = new MemoryStream()
         do
             use writer = XmlWriter.Create(stream, XmlSettings.indentedUtf8NoBom ())
             writer.WriteStartDocument()
             writer.WriteStartElement("Operations", xmlNamespace)
             writer.WriteAttributeString("Version", operationsVersion)
-            for entry in entries do
-                writeOperation writer entry
+            for entry in sorted do
+                writeOperation writer changeDateTime entry
             writer.WriteEndElement()
             writer.WriteEndDocument()
             writer.Flush()
         Encoding.UTF8.GetString(stream.ToArray())
+
+    /// Compose per-key entries into one `.refactorlog` XML document at
+    /// the **episode's real `At`** (the boundary-supplied
+    /// `DateTimeOffset` from the `EpisodeCoordinate`). This is the
+    /// real-clock path (gap N6): `ChangeDateTime` records when the
+    /// episode actually emitted. T1 holds — `at` is an input,
+    /// deterministic given the episode, never a clock read here.
+    let toRefactorLogXmlAt
+        (at: DateTimeOffset)
+        (artifact: ArtifactByKind<RefactorLogEntry list>)
+        : string =
+        use _ = Bench.scope "render.refactorLog.toXml"
+        artifact
+        |> ArtifactByKind.toMap
+        |> Map.toSeq
+        |> Seq.collect snd
+        |> Seq.toList
+        |> renderEntries at
+
+    /// Legacy no-episode overload — renders at the pinned
+    /// `2000-01-01` constant. Retained for callers that have no episode
+    /// in hand (and for the byte-determinism golden tests that pin the
+    /// constant). New callers thread the episode's `At` via
+    /// `toRefactorLogXmlAt`.
+    let toRefactorLogXml
+        (artifact: ArtifactByKind<RefactorLogEntry list>)
+        : string =
+        toRefactorLogXmlAt pinnedChangeDateTime artifact

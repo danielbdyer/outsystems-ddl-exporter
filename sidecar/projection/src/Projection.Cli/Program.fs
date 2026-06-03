@@ -166,13 +166,44 @@ let private dumpBench (tag: string) : unit =
 /// operator-facing console output and maps the `RunOutcome` to an exit
 /// code. Per §5: NDJSON to stderr (via LogSink, inside `execute`);
 /// artifact-path narration to stdout here.
+let private parseEnvironment (defaultLabel: string) (label: string option) : Projection.Core.Environment =
+    match label with
+    | None -> Projection.Core.Environment.Named defaultLabel
+    | Some s ->
+        match s.Trim().ToUpperInvariant() with
+        | "DEV"  -> Projection.Core.Environment.Dev
+        | "QA"   -> Projection.Core.Environment.Qa
+        | "UAT"  -> Projection.Core.Environment.Uat
+        | "PROD" -> Projection.Core.Environment.Prod
+        | _      -> Projection.Core.Environment.Named (s.Trim())
+
 let private runFullExport
     (configPath: string)
     (outputOverride: string option)
     (verbosity: LogSink.Verbosity)
     (mutedCategories: Set<LogSink.Category>)
+    (storePath: string option)
+    (envLabel: string option)
     : int =
-    let outcome = FullExportRun.execute configPath outputOverride verbosity mutedCategories
+    // AC-X3 — the publication bundle. With --lifecycle-store the run reads the
+    // prior emission, measures the displacement, accumulates the refactorlog,
+    // emits the ChangeManifest, and records one new episode (the bundle a
+    // downstream SSIS consumer reconstructs prior state from). Without a store
+    // it is the genesis emission — byte-identical to before (storeLeg = None).
+    let outcome, storeLeg =
+        match storePath with
+        | Some store when not (System.String.IsNullOrWhiteSpace store) ->
+            let env = parseEnvironment "DEV" envLabel
+            match Timeline.create (Projection.Core.Environment.name env) with
+            | Error _ ->
+                // A malformed timeline name falls back to the genesis path rather
+                // than aborting the emission; the store leg is simply absent.
+                FullExportRun.execute configPath outputOverride verbosity mutedCategories, None
+            | Ok tl ->
+                let at = System.DateTimeOffset.UtcNow
+                FullExportRun.executeWithStore configPath outputOverride verbosity mutedCategories (Some store) tl env at
+        | _ ->
+            FullExportRun.execute configPath outputOverride verbosity mutedCategories, None
     match outcome with
     | FullExportRun.RunOutcome.Succeeded (report, effectiveOutput) ->
         printfn "projection: wrote %d artifact(s) to %s" report.Paths.Length effectiveOutput
@@ -180,6 +211,12 @@ let private runFullExport
         |> List.iter (fun p ->
             let info = FileInfo p
             printfn "  %s (%d bytes)" p info.Length)
+        storeLeg
+        |> Option.iter (fun leg ->
+            printfn "projection: lifecycle bundle — recorded episode (%d on timeline %s); accumulated refactorlog %d entr(ies)"
+                (EpisodicLifecycle.episodes leg.Chain |> List.length)
+                (Timeline.name (EpisodicLifecycle.timeline leg.Chain))
+                (List.length leg.AccumulatedRefactorLog))
     | FullExportRun.RunOutcome.ConfigInvalid _ ->
         // config.validationFailed envelopes already emitted by `execute`.
         ()
@@ -473,7 +510,9 @@ let private dispatchFullExport (argv: string[]) : int =
                     muteResults
                     |> List.choose (function Ok c -> Some c | Error _ -> None)
                     |> Set.ofList
-                runFullExport configPath outputOverride verbosity mutedCategories)
+                let storePath = parsed.TryGetResult LifecycleStore
+                let envLabel = parsed.TryGetResult Env
+                runFullExport configPath outputOverride verbosity mutedCategories storePath envLabel)
 
 // ----------------------------------------------------------------------
 // `transfer` (Phase 11 Slice D) — bidirectional data-load CLI verb.
@@ -540,17 +579,6 @@ let private narrateTransferReport (report: Transfer.TransferReport) : unit =
 /// apparatus's `Environment`. The four named environments resolve
 /// case-insensitively; anything else is a `Named` escape hatch; absence
 /// keeps the default role-named label.
-let private parseEnvironment (defaultLabel: string) (label: string option) : Projection.Core.Environment =
-    match label with
-    | None -> Projection.Core.Environment.Named defaultLabel
-    | Some s ->
-        match s.Trim().ToUpperInvariant() with
-        | "DEV"  -> Projection.Core.Environment.Dev
-        | "QA"   -> Projection.Core.Environment.Qa
-        | "UAT"  -> Projection.Core.Environment.Uat
-        | "PROD" -> Projection.Core.Environment.Prod
-        | _      -> Projection.Core.Environment.Named (s.Trim())
-
 let private runTransfer
     (sourceSpec: string)
     (sinkSpec: string)
@@ -628,7 +656,7 @@ let private runTransfer
     let resolveReconciliation (contract: Catalog) =
         TransferSpec.resolveAllReconciliation contract entries userMapEntries
     let result =
-        (Transfer.runThroughConnections mode allowCdc connections resolveReconciliation)
+        (Transfer.runThroughConnections mode allowCdc allowDrops connections resolveReconciliation)
             .GetAwaiter().GetResult()
     let exitCode =
         match result with
@@ -657,8 +685,17 @@ let private runTransfer
             printErrors Console.Error errors
             let anyCode (prefix: string) =
                 errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith prefix)
-            if anyCode "transfer.connection." then 6
+            // G1 — a dead/unreachable endpoint refuses with exit 6 (connection).
+            // G2 — an insufficient sink grant (or a failed grant probe) refuses
+            // with exit 7 (permission), mirroring the migrate verb's mapping.
+            if anyCode "transfer.connection" then 6
+            elif anyCode "transfer.insufficientGrant" || anyCode "transfer.grantProbeFailed" then 7
             elif anyCode "transfer.reconcile." || anyCode "transfer.userMap." then 2
+            // AC-I5 — a pre-write validate-user-map halt maps to the SAME exit
+            // as a post-write drop (9), so an orphan returns the same code
+            // whether refused before the write or reported after it; only the
+            // timing (and the untouched Sink) changes.
+            elif anyCode "transfer.unmappedIdentities" then Transfer.DroppedReferencesExit
             else 3
     dumpBench "transfer"
     exitCode
@@ -945,6 +982,10 @@ let private reportMigrationError (e: MigrationError) : int =
         Console.Error.WriteLine (
             sprintf "projection migrate: REFUSED — schema DDL against a CDC-tracked DB (%d table(s)); pass --allow-cdc to proceed." (List.length tracked))
         9
+    | RefusedByTightening msg ->
+        Console.Error.WriteLine (
+            sprintf "projection migrate: REFUSED — a column tightening (NULL → NOT NULL) would fail against existing NULL data; no DDL ran. %s" msg)
+        9
     | SchemaReadFailed es ->
         Console.Error.WriteLine "projection migrate: reading the deployed schema failed:"
         printErrors Console.Error es
@@ -980,12 +1021,42 @@ let private migratePreflights (label: string) (cnn: Microsoft.Data.SqlClient.Sql
                 | Ok () -> return Ok ()
     }
 
+/// G7 — the Decision↔Data tightening pre-flight, wired into the migrate verbs.
+/// Derives the narrowing-to-NOT-NULL overlay from the A→B displacement and, when
+/// it is NON-EMPTY, probes the live data source's null counts via
+/// `Preflight.tighteningPreflight`, refusing (exit 9 / migrate.dataViolatesTightening)
+/// before any write when a tightened column carries NULLs. When the overlay is
+/// empty (a non-tightening migration) the probe is SKIPPED entirely — the
+/// self-probing pre-flight surveys every kind, a cost a non-tightening migration
+/// must not pay. `dataCnn` is the connection whose data is at risk: the in-place
+/// `cnn` for MC (state A lives in the sink), the SOURCE for MX.
+let private tighteningPreflight
+    (sourceA: Catalog)
+    (target: Catalog)
+    (dataCnn: Microsoft.Data.SqlClient.SqlConnection)
+    : System.Threading.Tasks.Task<Result<unit, int>> =
+    task {
+        let overlay = Preflight.tighteningOverlay sourceA target
+        if Set.isEmpty overlay.EnforceNotNull then return Ok ()
+        else
+            match! Preflight.tighteningPreflight dataCnn sourceA overlay with
+            | Ok () -> return Ok ()
+            | Error es ->
+                Console.Error.WriteLine "projection migrate: tightening pre-flight refused (NOT-NULL on NULL-bearing data):"
+                printErrors Console.Error es
+                return Error 9
+    }
+
 /// `projection migrate --to <modelB.json> --conn <env|file:ref> --execute
-/// [--allow-drops] [--allow-cdc]` — B1, the LIVE in-place L3 execution
-/// (Promise 8). Reads the deployed state A, runs the A1 connection + A2
-/// permission pre-flights before any mutation, evolves A→B in place, reads B'
-/// back, and verifies. Gated by `PROJECTION_ALLOW_EXECUTE=1` (R6).
-let private runMigrateExecute (toPath: string) (connSpec: string) (declaration: LossDeclaration) (allowCdc: bool) : int =
+/// [--allow-drops] [--allow-cdc] [--lifecycle-store <path>] [--env <label>]` —
+/// B1, the LIVE in-place L3 execution (Promise 8). Reads the deployed state A,
+/// runs the A1 connection + A2 permission pre-flights before any mutation,
+/// evolves A→B in place, reads B' back, and verifies. Gated by
+/// `PROJECTION_ALLOW_EXECUTE=1` (R6). When `--lifecycle-store` (alias `--store`)
+/// is supplied, a verified execute durably records the episode onto the timeline
+/// (AC-P8) so the next sprint's diff loads it as the prior; absent, behavior is
+/// unchanged and a one-line note says no episode was persisted.
+let private runMigrateExecute (toPath: string) (connSpec: string) (declaration: LossDeclaration) (allowCdc: bool) (storePath: string option) (envLabel: string option) : int =
     if System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" <> "1" then
         Console.Error.WriteLine
             "projection migrate: --execute requires PROJECTION_ALLOW_EXECUTE=1 in the environment (R6 gate). Refusing."
@@ -1025,34 +1096,98 @@ let private runMigrateExecute (toPath: string) (connSpec: string) (declaration: 
                             match! migratePreflights "sink" cnn (plannedWritesOf artifacts.SchemaStatements) with
                             | Error code -> return code
                             | Ok () ->
-                                let! outcome = MigrationRun.execute allowCdc declaration sourceA target cnn
-                                match outcome with
-                                | Ok o when o.Verified ->
-                                    printfn "projection migrate: executed and VERIFIED — B' reproduces B (%d statement(s))"
-                                        (List.length o.Artifacts.SchemaStatements)
-                                    return 0
-                                | Ok _ ->
-                                    Console.Error.WriteLine "projection migrate: executed but verification FAILED — B' does not reproduce B."
-                                    return 9
-                                | Error e -> return reportMigrationError e
+                                // G7 — refuse a narrowing-to-NOT-NULL on NULL-bearing
+                                // data before any write (probe the in-place cnn).
+                                match! tighteningPreflight sourceA target cnn with
+                                | Error code -> return code
+                                | Ok () ->
+                                    match storePath with
+                                    | Some store ->
+                                        // AC-P8 — durable provenance. After a verified
+                                        // execute, persist the episode onto the timeline
+                                        // so the next sprint's diff loads it as the prior
+                                        // (the emission→snapshot→diff loop closes here).
+                                        let env = parseEnvironment "DEV" envLabel
+                                        let timeline = Timeline.create (Projection.Core.Environment.name env)
+                                        match timeline with
+                                        | Error es ->
+                                            Console.Error.WriteLine "projection migrate: --lifecycle-store timeline name error:"
+                                            printErrors Console.Error es
+                                            return 2
+                                        | Ok tl ->
+                                            let at = System.DateTimeOffset.UtcNow
+                                            let! recorded =
+                                                MigrationRun.executeAndRecord
+                                                    allowCdc declaration sourceA target store tl env at None cnn
+                                            match recorded with
+                                            | Ok (o, Some chain) ->
+                                                printfn "projection migrate: executed and VERIFIED — B' reproduces B (%d statement(s)); episode recorded to %s (%d episode(s) on timeline %s)"
+                                                    (List.length o.Artifacts.SchemaStatements) store
+                                                    (EpisodicLifecycle.episodes chain |> List.length) (Timeline.name tl)
+                                                return 0
+                                            | Ok (_, None) ->
+                                                Console.Error.WriteLine "projection migrate: executed but verification FAILED — B' does not reproduce B. No episode recorded."
+                                                return 9
+                                            | Error e -> return reportMigrationError e
+                                    | None ->
+                                        let! outcome = MigrationRun.execute allowCdc declaration sourceA target cnn
+                                        match outcome with
+                                        | Ok o when o.Verified ->
+                                            printfn "projection migrate: executed and VERIFIED — B' reproduces B (%d statement(s))"
+                                                (List.length o.Artifacts.SchemaStatements)
+                                            eprintfn "projection migrate: note — no --lifecycle-store supplied; no episode persisted (the next diff has no prior to load)."
+                                            return 0
+                                        | Ok _ ->
+                                            Console.Error.WriteLine "projection migrate: executed but verification FAILED — B' does not reproduce B."
+                                            return 9
+                                        | Error e -> return reportMigrationError e
         }
     let code = work.GetAwaiter().GetResult()
     dumpBench "migrate"
     code
 
 /// `projection migrate --to <modelB.json> --sink-conn <ref> --source-conn <ref>
-/// --execute [--allow-drops] [--allow-cdc]` — the cross-substrate composition:
+/// --execute [--reconcile <table>:<match-column>]... [--user-map <csv>]
+/// [--allow-drops] [--allow-cdc]` — the cross-substrate composition (AC-X2):
 /// evolve the SINK's schema A→B in place, then transfer rows from the SOURCE
-/// substrate into the migrated sink over contract B (straight load — the
-/// `--reconcile` / `--user-map` re-key forms are the follow-on). Schema is
-/// fail-loud + minimum-viable; the data leg runs only if the schema verified.
-let private runMigrateWithData (toPath: string) (sinkSpec: string) (sourceSpec: string) (declaration: LossDeclaration) (allowCdc: bool) : int =
+/// substrate into the migrated sink over contract B. When `--reconcile` /
+/// `--user-map` entries are present the data leg RE-KEYS user FKs (the
+/// Dev→UAT re-key), resolved against contract B via the same
+/// `TransferSpec.resolveAllReconciliation` the `transfer` verb uses, and the
+/// AC-I5 `validate-user-map` pre-write halt gates first; absent, it is a
+/// straight load. Schema is fail-loud + minimum-viable; the data leg runs
+/// only if the schema verified.
+let private runMigrateWithData (toPath: string) (sinkSpec: string) (sourceSpec: string) (reconcileSpecs: string list) (userMapPath: string option) (declaration: LossDeclaration) (allowCdc: bool) : int =
     if System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" <> "1" then
         Console.Error.WriteLine
             "projection migrate: --execute requires PROJECTION_ALLOW_EXECUTE=1 in the environment (R6 gate). Refusing."
         dumpBench "migrate"
         7
     else
+    // AC-X2 re-key — parse `--reconcile` (repeatable, MatchByColumn) + the
+    // optional `--user-map` CSV (ManualOverride), mirroring the `transfer`
+    // verb's parsing. The resolved map is threaded to `executeWithData`
+    // (non-empty ⇒ `runReconciling` with the AC-I5 pre-write gate).
+    let collectErrs = function Ok _ -> [] | Error es -> es
+    let parsedReconciles = reconcileSpecs |> List.map TransferSpec.parseReconcileSpec
+    let parsedUserMap : Result<TransferSpec.UserMapEntry list> =
+        match userMapPath with
+        | None -> Result.success []
+        | Some path ->
+            if not (System.IO.File.Exists path) then
+                Result.failureOf
+                    (ValidationError.create "transfer.userMap.fileMissing"
+                        (sprintf "user-map file '%s' not found." path))
+            else TransferSpec.parseUserMapCsv (System.IO.File.ReadAllText path)
+    let specErrors = (parsedReconciles |> List.collect collectErrs) @ collectErrs parsedUserMap
+    if not (List.isEmpty specErrors) then
+        Console.Error.WriteLine "projection migrate: --reconcile / --user-map argument error:"
+        printErrors Console.Error specErrors
+        dumpBench "migrate"
+        2
+    else
+    let reconcileEntries = parsedReconciles |> List.choose (function Ok e -> Some e | _ -> None)
+    let userMapEntries   = match parsedUserMap with Ok es -> es | _ -> []
     let work =
         task {
             let! bRead = Compose.read toPath
@@ -1103,9 +1238,26 @@ let private runMigrateWithData (toPath: string) (sinkSpec: string) (sourceSpec: 
                                     match! migratePreflights "sink" sink (plannedWritesOf artifacts.SchemaStatements) with
                                     | Error code -> return code
                                     | Ok () ->
+                                    // G7 — the rows loaded from the SOURCE must
+                                    // satisfy any column the sink schema narrows to
+                                    // NOT NULL. Probe the data source before any write.
+                                    match! tighteningPreflight sinkSourceA target dataSource with
+                                    | Error code -> return code
+                                    | Ok () ->
+                                      // AC-X2 — resolve the re-key map against
+                                      // contract B (reuse the transfer verb's
+                                      // resolver). Non-empty ⇒ executeWithData
+                                      // runs the reconciling load whose AC-I5
+                                      // pre-write gate composes first.
+                                      match TransferSpec.resolveAllReconciliation target reconcileEntries userMapEntries with
+                                      | Error es ->
+                                          Console.Error.WriteLine "projection migrate: --reconcile / --user-map could not be resolved against contract B:"
+                                          printErrors Console.Error es
+                                          return 2
+                                      | Ok reconciliation ->
                                         let! outcome =
                                             MigrationRun.executeWithData declaration Transfer.Execute allowCdc
-                                                sinkSourceA target Map.empty dataSource sink
+                                                sinkSourceA target reconciliation dataSource sink
                                         match outcome with
                                         | Ok o when o.Schema.Verified ->
                                             printfn "projection migrate: schema VERIFIED + data loaded — %d kind(s) transferred"
@@ -1173,13 +1325,28 @@ let main argv =
             arr
             |> Array.tryFindIndex ((=) flag)
             |> Option.bind (fun i -> if i + 1 < arr.Length then Some arr.[i + 1] else None)
+        // AC-X2 — `--reconcile` is repeatable; collect every <flag value> pair.
+        let multiValueOf (flag: string) =
+            arr
+            |> Array.indexed
+            |> Array.choose (fun (i, a) ->
+                if a = flag && i + 1 < arr.Length then Some arr.[i + 1] else None)
+            |> Array.toList
         let declaration = parseLossDeclaration arr
         let allowCdc = Array.contains "--allow-cdc" arr
         match valueOf "--to", valueOf "--source-conn", valueOf "--sink-conn", valueOf "--conn" with
         | Some toPath, Some sourceSpec, Some sinkSpec, _ ->
-            runMigrateWithData toPath sinkSpec sourceSpec declaration allowCdc
+            runMigrateWithData toPath sinkSpec sourceSpec (multiValueOf "--reconcile") (valueOf "--user-map") declaration allowCdc
         | Some toPath, None, None, Some connSpec ->
-            runMigrateExecute toPath connSpec declaration allowCdc
+            // AC-P8 — optional durable provenance. `--lifecycle-store` (alias
+            // `--store`) persists the episode after a verified execute; absent,
+            // behavior is unchanged (a one-line note tells the operator nothing
+            // was persisted). `--env` stamps the timeline / episode environment.
+            let storePath =
+                match valueOf "--lifecycle-store" with
+                | Some _ as s -> s
+                | None -> valueOf "--store"
+            runMigrateExecute toPath connSpec declaration allowCdc storePath (valueOf "--env")
         | _ ->
             Console.Error.WriteLine
                 "projection migrate --execute: in-place needs --to <modelB.json> --conn <ref>; cross-substrate needs --to --sink-conn --source-conn."

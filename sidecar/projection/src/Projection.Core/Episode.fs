@@ -65,6 +65,23 @@ type Episode =
         Profile        : Profile
         RefactorLogRef : string option
         Data           : DataObservation
+        /// The per-run **tolerance residual** (S0.E / `DECISIONS 2026-05-22 —
+        /// R6`): the named divergences this run's canary accepted between the
+        /// source-deploy and target-deploy halves of its round-trip. It is the
+        /// run's equivalence-up-to-quotient witness — empty (`Tolerance.strict`)
+        /// for a genesis or a fully-faithful run, populated when the run's
+        /// per-environment config admitted divergences. The change-manifest
+        /// surfaces this so a consumer reading "what did this sprint change?"
+        /// also sees "under what equivalence was the change accepted?".
+        Tolerances     : Tolerance
+        /// The §5.5 **applied-transforms outcome** (pillar 9; same
+        /// `(SsKey × OverlayAxis option)` shape the SSDT `ManifestEmitter`
+        /// records): per artifact, the distinct `OperatorIntent` overlay axes
+        /// that touched it (`Some axis`) or a single `None` row when only
+        /// `DataIntent` (skeleton) evidence touched it. Empty for a genesis or
+        /// a skeleton-only run; populated when the Pipeline threads the
+        /// composed run's overlay enumeration onto the episode.
+        AppliedTransforms : (SsKey * OverlayAxis option) list
     }
 
 [<RequireQualifiedAccess>]
@@ -72,6 +89,10 @@ module Episode =
 
     /// Co-record an episode at one coordinate. The minimal-evidence form
     /// (`Profile.empty`, no refactorlog, no data movement) is `ofSchema`.
+    /// The provenance planes default to their empties — `Tolerance.strict`
+    /// (no accepted divergence) and `[]` (no applied overlay); use
+    /// `withProvenance` to thread a run's tolerance residual + applied-transform
+    /// outcome from the Pipeline.
     let create
         (coordinate: EpisodeCoordinate)
         (schema: Catalog)
@@ -83,12 +104,27 @@ module Episode =
           Schema = schema
           Profile = profile
           RefactorLogRef = refactorLogRef
-          Data = data }
+          Data = data
+          Tolerances = Tolerance.strict
+          AppliedTransforms = [] }
 
-    /// A schema-only episode (no profiling, no data movement, no refactorlog) —
-    /// the genesis shape and the durable-faithful shape (see `durableProjection`).
+    /// A schema-only episode (no profiling, no data movement, no refactorlog,
+    /// no accepted divergence, no applied overlay) — the genesis shape and the
+    /// durable-faithful shape (see `durableProjection`).
     let ofSchema (coordinate: EpisodeCoordinate) (schema: Catalog) : Episode =
         create coordinate schema Profile.empty None DataObservation.empty
+
+    /// Thread the provenance planes onto an episode — the per-run tolerance
+    /// residual (the canary's accepted-divergence set) and the §5.5
+    /// applied-transforms outcome (per-artifact overlay enumeration). The
+    /// Pipeline populates these from the composed run; Core stamps them onto
+    /// the value (it never computes them — they are run inputs, like `At`).
+    let withProvenance
+        (tolerances: Tolerance)
+        (appliedTransforms: (SsKey * OverlayAxis option) list)
+        (episode: Episode)
+        : Episode =
+        { episode with Tolerances = tolerances; AppliedTransforms = appliedTransforms }
 
     let schema (e: Episode) : Catalog = e.Schema
     let profile (e: Episode) : Profile = e.Profile
@@ -179,7 +215,29 @@ module EpisodicLifecycle =
         | Error e  -> Error e
 
     /// The net schema displacement genesis → latest (the integral ∫δ as a single
-    /// delta; `Lifecycle.netDiff`'s episodic peer). `between E₀.Schema Eₙ.Schema`.
+    /// delta; `Lifecycle.netDiff`'s episodic peer). `P4`: computed by **folding
+    /// `CatalogDiff.compose` over the `schemaEvolutionChain`** — the production
+    /// consumer of the groupoid composition `⊕` on the episodic plane. The
+    /// functor law guarantees the fold equals the direct `between E₀.Schema
+    /// Eₙ.Schema`; a genesis-only lifecycle (empty chain) and the structurally-
+    /// unreachable non-composable fold both fall back to the (equal) direct diff.
     let netSchemaDiff (lifecycle: EpisodicLifecycle) : Result<CatalogDiff, EmitError> =
         let (EpisodicLifecycle data) = lifecycle
-        CatalogDiff.between (List.head data.Episodes).Schema (List.last data.Episodes).Schema
+        let genesisSchema = (List.head data.Episodes).Schema
+        let latestSchema = (List.last data.Episodes).Schema
+        let directNetDiff () = CatalogDiff.between genesisSchema latestSchema
+        match schemaEvolutionChain lifecycle with
+        | Error e -> Error e
+        | Ok []   -> directNetDiff ()
+        | Ok (d0 :: rest) ->
+            let composed =
+                rest
+                |> List.fold
+                    (fun acc d ->
+                        match acc with
+                        | None      -> None
+                        | Some accD -> CatalogDiff.compose accD d)
+                    (Some d0)
+            match composed with
+            | Some net -> Ok net
+            | None     -> directNetDiff ()

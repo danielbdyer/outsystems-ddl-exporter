@@ -74,6 +74,35 @@ module Preflight =
                 (SsKey.rootOriginal first.KindKey)
                 first.NullCount
 
+    /// Pure: the attribute `SsKey`s whose Nullability facet *narrows* (source
+    /// nullable → target NOT NULL) between two catalogs. This is the tightened
+    /// set the migrate verbs gate on: a `Changed` survivor whose nullability
+    /// went `true → false`, NOT a newly-`Added` NOT-NULL column (an Added column
+    /// has no source rows to violate the tightening). Match is by attribute
+    /// `SsKey` across the two catalogs (A1-stable identity), so a renamed kind
+    /// or column still pairs. Deterministic — returns a `Set`.
+    let tightenedToNotNull (source: Catalog) (target: Catalog) : Set<SsKey> =
+        let srcAttrs =
+            Catalog.allKinds source
+            |> List.collect (fun k -> k.Attributes)
+            |> List.map (fun a -> a.SsKey, a.Column.IsNullable)
+            |> Map.ofList
+        Catalog.allKinds target
+        |> List.collect (fun k -> k.Attributes)
+        |> List.choose (fun t ->
+            match Map.tryFind t.SsKey srcAttrs with
+            | Some srcNullable when srcNullable && not t.Column.IsNullable -> Some t.SsKey
+            | _ -> None)
+        |> Set.ofList
+
+    /// The tightening overlay derived from a migration's A→B displacement: the
+    /// attributes that narrow to NOT NULL become `EnforceNotNull`. An *empty*
+    /// overlay (no narrowing) is the signal the verb uses to skip the
+    /// self-probing pre-flight entirely (a non-tightening migration must not pay
+    /// the LiveProfiler null-count survey cost).
+    let tighteningOverlay (source: Catalog) (target: Catalog) : DecisionOverlay =
+        { DecisionOverlay.empty with EnforceNotNull = tightenedToNotNull source target }
+
     /// Run the pre-flight against a live source: capture the per-attribute
     /// null-count evidence (read-only — safe before any write) and refuse with
     /// `migrate.dataViolatesTightening` if the overlay tightens any NULL-bearing
@@ -315,4 +344,134 @@ module Preflight =
                 match! gate with
                 | Ok () -> return! all rest
                 | Error e -> return Error e
+        }
+
+    // -- G0: the reporting surface (`code → (exit, label)`) -------------------
+    //
+    // G0's criterion (THE_USE_CASE_ONTOLOGY.obligations.md §6, AC-G0): a SINGLE
+    // mandatory `Preflight.all` composes the full gate suite so no caller can
+    // skip a gate. §8 names the HAZARD: the composition is a `code→(exit,label)`
+    // reporting refactor that RISKS regressing the distinct per-gate exit codes
+    // the verbs produce today (each gate's refusal currently maps to its own CLI
+    // exit). This surface is the discriminator against that regression: it pins
+    // the `ValidationError.Code → (exit, label)` mapping to the EXISTING per-verb
+    // exits so the composition collapses the ENTRY POINT (one mandatory `all`)
+    // WITHOUT collapsing the exit-code SEMANTICS.
+    //
+    // The mapping is grounded in the verbs' reality (the parent wires the verbs
+    // to consume it):
+    //   - connection-unreachable    → exit 6  (transfer Program.fs G1)
+    //   - permission / grant-probe   → exit 7  (migrate `migratePreflights`;
+    //                                            transfer Program.fs G2)
+    //   - reconcile / user-map       → exit 2  (transfer Program.fs)
+    //   - dropped/unmapped identities,
+    //     data-violates-tightening   → exit 9  (transfer DroppedReferencesExit;
+    //                                            migrate RefusedByTightening)
+    //   - schema-read failed         → exit 6  (migrate SchemaReadFailed)
+    //   - any other refusal          → exit 3  (transfer generic; the named
+    //                                            default — UnclassifiedRefusal)
+
+    /// The operator-facing classification of a gate refusal — a CLOSED DU so the
+    /// mapping is total over the gate vocabulary and a fresh gate code MUST be
+    /// placed (or it falls to the named `UnclassifiedRefusal` default, never a
+    /// silent miss). The label is the human-facing name of WHICH spanning/data
+    /// axis refused; the paired exit is the CLI's distinct code for that axis.
+    type GateLabel =
+        | ConnectionUnavailable
+        | InsufficientGrant
+        | ReconciliationMismatch
+        | UnmappedIdentities
+        | DataViolatesTightening
+        | CdcTrackedSink
+        | SchemaReadFailed
+        | UndeclaredDestructiveChange
+        /// The named default for a code outside the known gate vocabulary — a
+        /// generic refusal. NOT a silent pass: it still carries the generic
+        /// non-zero refusal exit (3), so an unmapped gate fails loud.
+        | UnclassifiedRefusal
+
+    /// Render a `GateLabel` as the operator-facing axis name.
+    let labelText (label: GateLabel) : string =
+        match label with
+        | ConnectionUnavailable       -> "connection unavailable"
+        | InsufficientGrant           -> "insufficient grant"
+        | ReconciliationMismatch      -> "reconciliation mismatch"
+        | UnmappedIdentities          -> "unmapped identities"
+        | DataViolatesTightening      -> "data violates tightening"
+        | CdcTrackedSink              -> "CDC-tracked sink"
+        | SchemaReadFailed            -> "schema read failed"
+        | UndeclaredDestructiveChange -> "undeclared destructive change"
+        | UnclassifiedRefusal         -> "unclassified refusal"
+
+    /// The closed `code → (exit, label)` mapping. TOTAL over the gate code
+    /// vocabulary: every known refusal maps to its DISTINCT per-verb exit code +
+    /// operator label; any code outside the vocabulary falls to the named
+    /// `(3, UnclassifiedRefusal)` default (a generic non-zero refusal — fail
+    /// loud, never a silent exit 0). Matches on the `category.subject.problem`
+    /// stem so both the `migrate.*` and `transfer.*` namespaces of the same axis
+    /// classify identically (the transfer verb re-codes the migrate-named
+    /// refusals under `transfer.*`; they are the SAME axis, SAME exit).
+    let classify (code: string) : int * GateLabel =
+        // Connection — exit 6 on transfer; the migrate verb's connection
+        // pre-flight surfaces under exit 7 (permission/credential class), so the
+        // connection axis is reported on its own (6) and the grant axis on (7).
+        if code.StartsWith "transfer.connection" || code = "migrate.connectionUnavailable" then
+            6, ConnectionUnavailable
+        elif code = "transfer.insufficientGrant" || code = "transfer.grantProbeFailed"
+             || code = "migrate.insufficientGrant" || code = "migrate.grantProbeFailed" then
+            7, InsufficientGrant
+        elif code.StartsWith "transfer.reconcile." || code.StartsWith "transfer.userMap." then
+            2, ReconciliationMismatch
+        elif code = "transfer.unmappedIdentities" then
+            9, UnmappedIdentities
+        elif code = "migrate.dataViolatesTightening" then
+            9, DataViolatesTightening
+        elif code = "transfer.cdcTrackedSink" then
+            9, CdcTrackedSink
+        elif code = "migrate.schemaReadFailed" then
+            6, SchemaReadFailed
+        elif code.StartsWith "migrate.undeclaredDestructive" then
+            9, UndeclaredDestructiveChange
+        else
+            3, UnclassifiedRefusal
+
+    /// A gate refusal as the composition reports it: the structured first-failure
+    /// `ValidationError` together with its `(exit, label)` classification. The
+    /// composition surfaces THIS (not a bare `Result<unit>`) so the caller has the
+    /// distinct exit + operator label without re-deriving them — the single seam
+    /// the verbs route through.
+    type GateRefusal =
+        {
+            Error    : ValidationError
+            ExitCode : int
+            Label    : GateLabel
+        }
+
+    /// Classify the FIRST error of a refusal (the gate's primary code) into a
+    /// `GateRefusal`. A refusal always carries at least one error; an empty list
+    /// (which `Result.failure` forbids) classifies as the named default rather
+    /// than throwing — total by construction.
+    let refusalOf (errors: ValidationError list) : GateRefusal =
+        let primary =
+            match errors with
+            | e :: _ -> e
+            | []     -> ValidationError.create "preflight.emptyRefusal" "a gate refused with no error"
+        let exit, label = classify primary.Code
+        { Error = primary; ExitCode = exit; Label = label }
+
+    /// G0's mandatory entry point WITH reporting: run the gate suite in order,
+    /// short-circuiting on the FIRST refusal (identical composition semantics to
+    /// `all`), and report that refusal as a `GateRefusal` carrying its distinct
+    /// `(exit, label)`. This is the sibling the verbs route through so the
+    /// composition collapses to ONE entry point while PRESERVING the per-gate
+    /// exit codes. `all` is preserved unchanged for callers that only need the
+    /// `Result<unit>`.
+    let rec allReporting (gates: Task<Result<unit>> list) : Task<Result<unit, GateRefusal>> =
+        task {
+            match gates with
+            | [] -> return Ok ()
+            | gate :: rest ->
+                match! gate with
+                | Ok () -> return! allReporting rest
+                | Error errors -> return Error (refusalOf errors)
         }

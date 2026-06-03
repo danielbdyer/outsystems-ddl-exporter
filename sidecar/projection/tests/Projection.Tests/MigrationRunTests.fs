@@ -225,6 +225,78 @@ let ``6.D.1: record refuses a non-advancing version (NonMonotonic)`` () =
         | FsResult.Error (NonMonotonic _) -> ()
         | other -> Assert.Fail(sprintf "expected NonMonotonic, got %A" other))
 
+// ===========================================================================
+// AC-P8 (P8.4) — the CLI's composed execute→record persists the episode. The
+// record-leg seam (`recordVerified`) is what `runMigrateExecute` calls after a
+// verified execute; here we exercise it directly (DB-free, since it takes the
+// already-computed `MigrationOutcome`) and assert the store is durably written
+// and reloads to B. This DISCRIMINATES: an execute that never records leaves
+// the store absent, so `reconstructLatestSchema` cannot reproduce B.
+// ===========================================================================
+
+let private verifiedOutcome (source: Catalog) (target: Catalog) : MigrationOutcome =
+    // DeclareAll: this helper records provenance for an *already-decided* verified
+    // migration, so it declares every loss — a transition may narrow a column
+    // (AC-G8 now refuses an undeclared narrowing), which is a valid declared
+    // migration to record. The AC-P8 tests assert ordinal/FTC behavior, not the
+    // loss-declaration gate (that is AC-G8/S11's job in SchemaMigrationEmitterTests).
+    let artifacts = MigrationRun.preview DeclareAll source target |> mustOk
+    // A Verified outcome: B' (Reconstructed) is the target B, so the
+    // PhysicalSchema diff is empty (the execute round-trip succeeded).
+    let sdiff = PhysicalSchema.diff (PhysicalSchema.ofCatalog target) (PhysicalSchema.ofCatalog target)
+    { Artifacts = artifacts
+      Reconstructed = target
+      SchemaDiff = sdiff
+      Verified = PhysicalSchema.isSchemaEqual sdiff }
+
+[<Fact>]
+let ``AC-P8: recordVerified persists a verified execute; the store reloads and reconstructs B`` () =
+    withTempFile (fun path ->
+        // The composed execute→record leg: a verified outcome is recorded, the
+        // store is written to disk, and the FTC over the reloaded chain
+        // reproduces B (the durable provenance the CLI's --lifecycle-store gives).
+        let outcome = verifiedOutcome sampleCatalog reshapedTarget
+        let chain =
+            MigrationRun.recordVerified path (tl "dev") Environment.Dev
+                (at "2026-06-08T09:00:00+00:00") (Some "reflog#1") (DataObservation.create 0 None) outcome
+            |> mustOk
+        Assert.Equal(1, EpisodicLifecycle.episodes chain |> List.length)
+        // The file exists on disk — durable, not just in-memory.
+        Assert.True(System.IO.File.Exists path)
+        // Reload from disk and reconstruct: B' reproduces B (T16 through 6.H).
+        let reloaded = LifecycleStore.load path |> mustOk
+        let reReconstructed = EpisodicLifecycle.reconstructLatestSchema reloaded |> mustOk
+        Assert.True(CatalogDiff.isEmpty (CatalogDiff.between reshapedTarget reReconstructed |> mustOk)))
+
+[<Fact>]
+let ``AC-P8: a second recordVerified appends at the next monotonic ordinal (timeline advances)`` () =
+    withTempFile (fun path ->
+        // First episode: genesis at sampleCatalog → reshapedTarget.
+        MigrationRun.recordVerified path (tl "dev") Environment.Dev
+            (at "2026-06-08T09:00:00+00:00") None (DataObservation.create 0 None)
+            (verifiedOutcome sampleCatalog reshapedTarget)
+        |> mustOk |> ignore
+        // Second episode: reshapedTarget → renamedTarget. nextCoordinate derives
+        // ordinal 1 from the store's head (ordinal 0); the append is monotone.
+        let chain =
+            MigrationRun.recordVerified path (tl "dev") Environment.Dev
+                (at "2026-06-15T09:00:00+00:00") None (DataObservation.create 0 None)
+                (verifiedOutcome reshapedTarget renamedTarget)
+            |> mustOk
+        Assert.Equal(2, EpisodicLifecycle.episodes chain |> List.length)
+        Assert.Equal(1, Version.ordinal (Episode.version (EpisodicLifecycle.latest chain))))
+
+[<Fact>]
+let ``AC-P8: recordVerified refuses an UNVERIFIED outcome (the timeline only carries B'=B episodes)`` () =
+    withTempFile (fun path ->
+        let outcome = { verifiedOutcome sampleCatalog reshapedTarget with Verified = false }
+        match MigrationRun.recordVerified path (tl "dev") Environment.Dev
+                (at "2026-06-08T09:00:00+00:00") None (DataObservation.create 0 None) outcome with
+        | FsResult.Error (NonMonotonic _) -> ()
+        | other -> Assert.Fail(sprintf "expected refusal of an unverified outcome, got %A" other)
+        // And nothing was written — an unverified run leaves no provenance.
+        Assert.False(System.IO.File.Exists path))
+
 // ---------------------------------------------------------------------------
 // 6.A.7 — the migrate preview surfaces a Synthesized-key rename as a Warning
 // (identity.synthesizedRenameUnstable) instead of silently re-keying it. A

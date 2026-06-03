@@ -353,7 +353,11 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                                 let reconciliation =
                                     Map.ofList [ userKind.SsKey, ReconciliationStrategy.MatchByColumn emailName ]
 
-                                let! reportR = Transfer.runReconciling Transfer.Execute true src sink contract reconciliation
+                                // allowDrops = true: this canary observes the POST-write drop
+                                // set (the orphan re-key behavior), so it runs the --allow-drops
+                                // path past the AC-I5 pre-write gate. The pre-write halt itself is
+                                // witnessed by the pure `validateUserMap` test (fast pool).
+                                let! reportR = Transfer.runReconciling Transfer.Execute true true src sink contract reconciliation
                                 let report = TransferCanaryFixtures.value reportR
 
                                 // The reconciled kind skips its insert (its rows are already in the Sink).
@@ -409,7 +413,11 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                                 let reconciliation =
                                     Map.ofList [ userKind.SsKey, ReconciliationStrategy.MatchByColumn emailName ]
 
-                                let! reportR = Transfer.runReconciling Transfer.Execute true src sink contract reconciliation
+                                // allowDrops = true: this witnesses the POST-write exit-code policy
+                                // (AC-D8 drop fail-loud + the --allow-drops downgrade). The AC-I5
+                                // pre-write halt (allowDrops = false) is witnessed separately by the
+                                // pure `validateUserMap` test.
+                                let! reportR = Transfer.runReconciling Transfer.Execute true true src sink contract reconciliation
                                 let report = TransferCanaryFixtures.value reportR
 
                                 // The drop-set is non-empty (ghost@x's Order vanished).
@@ -590,6 +598,99 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                     | Ok () -> Assert.Fail("expected the tightening pre-flight to refuse a NULL-bearing EnforceNotNull")
                 }))
 
+    // G7 — the WIRED migrate seam: the overlay is DERIVED from an A→B catalog
+    // displacement (`tighteningOverlay` = the verb's exact composition), not
+    // hand-built. A target B that narrows NOTE (nullable, NULL-bearing) to NOT
+    // NULL refuses BEFORE any DDL; the table is read back UNCHANGED (NOTE still
+    // nullable, all three rows intact). Discrimination: against the un-wired
+    // code the verb would run the ALTER and crash mid-write on the NULL rows;
+    // here the derived overlay is non-empty and the probe refuses first.
+    [<Fact>]
+    member _.``G7 witness: a migrate narrowing NOTE to NOT NULL on NULL data refuses before any DDL; table unchanged`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "G7Tightening") then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "G7Tightening" (fun cnn _ ->
+                task {
+                    do! Deploy.executeBatch cnn TransferCanaryFixtures.tighteningDdl
+                    do! Deploy.executeBatch cnn TransferCanaryFixtures.tighteningSeed
+
+                    // State A — the deployed (NOTE nullable) contract, read live.
+                    let! sourceAR = ReadSide.read cnn
+                    let sourceA = TransferCanaryFixtures.value sourceAR
+
+                    // State B — the SAME catalog with NOTE narrowed to NOT NULL.
+                    let narrowNote (a: Attribute) : Attribute =
+                        if ColumnRealization.columnNameText a.Column = "NOTE"
+                        then { a with Column = ColumnRealization.create "NOTE" false |> Result.value }
+                        else a
+                    let target =
+                        let mods =
+                            sourceA.Modules
+                            |> List.map (fun m ->
+                                { m with Kinds = m.Kinds |> List.map (fun k -> { k with Attributes = k.Attributes |> List.map narrowNote }) })
+                        Catalog.create mods [] |> Result.value
+
+                    // The verb's exact derivation: overlay from the displacement.
+                    let overlay = Preflight.tighteningOverlay sourceA target
+                    Assert.False(Set.isEmpty overlay.EnforceNotNull, "the A→B displacement must narrow NOTE to NOT NULL")
+
+                    // Wired refusal — probe the live data, refuse before any write.
+                    let! refused = Preflight.tighteningPreflight cnn sourceA overlay
+                    match refused with
+                    | Error es ->
+                        Assert.True(
+                            es |> List.exists (fun e -> e.Code = "migrate.dataViolatesTightening"),
+                            sprintf "expected migrate.dataViolatesTightening, got %A" (es |> List.map (fun e -> e.Code)))
+                    | Ok () -> Assert.Fail("the derived overlay must refuse the NULL-bearing tightening before any DDL")
+
+                    // Read back — NO DDL ran: NOTE is still nullable, rows intact.
+                    let! isNullable =
+                        TransferCanaryFixtures.scalarStr cnn
+                            "SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='OSUSR_TG_TICKET' AND COLUMN_NAME='NOTE';"
+                    Assert.Equal("YES", isNullable)
+                    let! rowCount = TransferCanaryFixtures.countRows cnn "[dbo].[OSUSR_TG_TICKET]"
+                    Assert.Equal(3, rowCount)
+                }))
+
+    // G1 — the transfer spanning pre-flight (connection), WIRED into the
+    // Execute path. Driving `Transfer.run Execute` against a dead/unreachable
+    // sink refuses with `transfer.connectionUnavailable` BEFORE any write.
+    // Discrimination: against the un-wired `runCore` (which opened both
+    // endpoints and ran straight into ingest/plan/write), the dead sink would
+    // surface as a *mid-load* failure carrying some other code — not the named
+    // connection refusal. Asserting the SPECIFIC code is what fails the
+    // un-wired behavior. The source is read back untouched.
+    [<Fact>]
+    member _.``G1 witness: Transfer.run Execute refuses a dead sink endpoint with the connection code before any write`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "G1Connection") then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "G1Connection" (fun src _ ->
+                task {
+                    do! Deploy.executeBatch src TransferCanaryFixtures.twoTableDdl
+                    do! Deploy.executeBatch src TransferCanaryFixtures.twoTableSeed
+                    let! contractR = ReadSide.read src
+                    let contract = TransferCanaryFixtures.value contractR
+
+                    // A sink pointed at an unreachable endpoint (a port nothing
+                    // listens on), short login timeout so the probe fails fast.
+                    use deadSink =
+                        new Microsoft.Data.SqlClient.SqlConnection(
+                            "Server=127.0.0.1,1;Database=nope;User Id=sa;Password=nope;TrustServerCertificate=true;Connect Timeout=3")
+                    // allowCdc=true so the CDC gate is not what fires; the
+                    // spanning gate is the one under test.
+                    let! result = Transfer.run Transfer.Execute true src deadSink contract
+                    match result with
+                    | Error es ->
+                        Assert.True(
+                            es |> List.exists (fun e -> e.Code = "transfer.connectionUnavailable"),
+                            sprintf "expected transfer.connectionUnavailable (the wired G1 refusal), got %A" (es |> List.map (fun e -> e.Code)))
+                    | Ok _ -> Assert.Fail("Transfer.run Execute must refuse a dead sink endpoint before any write")
+
+                    // The source is unchanged — the gate ran before any mutation.
+                    let! custRows = TransferCanaryFixtures.countRows src "[dbo].[OSUSR_XF_CUSTOMER]"
+                    Assert.Equal(2, custRows)
+                }))
+
     // 6.B.2 — RefactorLog-aware Transfer end-to-end. The source is at schema A
     // (EMAIL); the sink is at schema B (the column renamed to CONTACT). The
     // rename map (from the A→B diff) re-points each source row's value onto the
@@ -735,8 +836,10 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                                         | Error es -> Error es
                                         | Ok entries -> TransferSpec.resolveAllReconciliation contract [] entries
 
+                                    // allowDrops = true: observe the post-write drop set (999 is
+                                    // outside the override map) past the AC-I5 pre-write gate.
                                     let! reportR =
-                                        Transfer.runThroughConnections Transfer.Execute true connections resolveReconciliation
+                                        Transfer.runThroughConnections Transfer.Execute true true connections resolveReconciliation
                                     let report = TransferCanaryFixtures.value reportR
 
                                     // Map tables → reconstructed SsKeys for the assertions.

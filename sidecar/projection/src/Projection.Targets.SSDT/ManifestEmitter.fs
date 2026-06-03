@@ -408,14 +408,12 @@ module Unsupported =
 
     /// Render `ToleratedDivergence` as its V1-vocabulary
     /// discriminator name (matches the F# DU case name; preserves
-    /// V1 ubiquitous language per pillar 8).
+    /// V1 ubiquitous language per pillar 8). Delegates to
+    /// `ToleratedDivergence.name` — the single source of truth for
+    /// the config-token spelling — so a new variant lands its token
+    /// once (and this emitter inherits it without a parallel match).
     let private toName (d: ToleratedDivergence) : string =
-        match d with
-        | ToleratedDivergence.HeaderCommentsOmitted        -> "HeaderCommentsOmitted"
-        | ToleratedDivergence.PostDeployForeignKeysSplit   -> "PostDeployForeignKeysSplit"
-        | ToleratedDivergence.IndexesUnreflected           -> "IndexesUnreflected"
-        | ToleratedDivergence.StaticPopulationsUnreflected -> "StaticPopulationsUnreflected"
-        | ToleratedDivergence.EmptyTextNormalizedToNull    -> "EmptyTextNormalizedToNull"
+        ToleratedDivergence.name d
 
     /// Compute the manifest's `Unsupported` list. Renders every
     /// empirically-known `ToleratedDivergence` variant as a string
