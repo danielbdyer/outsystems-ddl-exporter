@@ -1,5 +1,9 @@
 namespace Projection.Targets.SSDT
 
+// LINT-ALLOW-FILE: terminal SQL migration-script text emission; segments are typed ScriptDom-
+//   rendered output, `String.concat` is the BCL primitive at this terminal
+//   text boundary.
+
 open Projection.Core
 
 /// Π_SchemaMigration — 6.A.12. The **implied emission differential**: turns a

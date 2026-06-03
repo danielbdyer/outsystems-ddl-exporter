@@ -1,5 +1,9 @@
 module Projection.Cli.Program
 
+// LINT-ALLOW-FILE: CLI dispatcher operator-facing prose. Help/usage and terminal SQL-text at
+//   the CLI boundary use string composition; the structural argument surface is
+//   the typed Argu DU. Terminal operator-facing text is the allowed exception.
+
 open System
 open System.Diagnostics
 open System.IO

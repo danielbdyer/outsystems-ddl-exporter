@@ -1,5 +1,11 @@
 namespace Projection.Adapters.Sql
 
+// LINT-ALLOW-FILE: live SQL-profiling adapter at the boundary — terminal SQL-text emission
+//   (String.Concat/Join/concat over typed encode-quoted segments), operator-
+//   facing diagnostic prose, function-local mutables, and a mutable result
+//   accumulator. Sibling of ProfileSnapshot.fs / ProfileStatistics.fs / Static.fs
+//   (all file-marked); the SQL probes emit terminal text at the DB boundary.
+
 open System
 open System.Threading.Tasks
 open Microsoft.Data.SqlClient
@@ -163,12 +169,12 @@ module LiveProfiler =
                 [| encode (TableId.schemaText kind.Physical); encode (TableId.tableText kind.Physical) |])
         let perColumnNullCount (idx: int) (attr: Attribute) : string =
             let col = encode (ColumnRealization.columnNameText attr.Column)
-            System.String.Concat(  // LINT-ALLOW: typed encode + integer index
+            System.String.Concat(  // LINT-ALLOW: terminal SQL-text boundary; segments are typed (encode-quoted column name + integer column index); BCL String.Concat IS the use-case-specific primitive
                 "COUNT_BIG(CASE WHEN ", col, " IS NULL THEN 1 END) AS [c", string idx, "]")
         let selectList =
             kind.Attributes
             |> List.mapi perColumnNullCount
-            |> String.concat ", "  // LINT-ALLOW: positional comma joiner
+            |> String.concat ", "  // LINT-ALLOW: terminal SQL select-list comma joiner over typed per-column segments; String.concat IS the BCL primitive at this terminal-text boundary
         System.String.Concat(  // LINT-ALLOW: terminal SQL-text-emission boundary; typed segments
             "SELECT COUNT_BIG(*) AS [c_rows], ", selectList, " FROM ", table)
 
@@ -904,7 +910,7 @@ module LiveProfiler =
                                         let perSample =
                                             sampled
                                             |> Array.mapi (fun i v ->
-                                                System.String.Concat("sample.", string i), v)  // LINT-ALLOW: structured metadata key
+                                                System.String.Concat("sample.", string i), v)  // LINT-ALLOW: terminal structured-metadata key; segments are typed (literal prefix + integer sample index); BCL primitive at the diagnostic-metadata boundary
                                             |> List.ofArray
                                         let metadata = Map.ofList (baseEntries @ perSample)
                                         Some

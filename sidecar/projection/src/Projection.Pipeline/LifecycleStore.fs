@@ -1,5 +1,9 @@
 namespace Projection.Pipeline
 
+// LINT-ALLOW-FILE: terminal text composition at the lifecycle-store persistence boundary;
+//   segments are typed and the persisted shape is JSON. `String.concat` is the
+//   BCL primitive at this terminal boundary.
+
 open System
 open System.Text.Json
 open Projection.Core

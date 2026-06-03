@@ -1,5 +1,9 @@
 namespace Projection.Pipeline
 
+// LINT-ALLOW-FILE: operator-facing special-circumstances diagnostic prose; segments are typed
+//   and the emitted diagnostic value is immutable. `String.concat` is the BCL
+//   primitive at this terminal-text boundary.
+
 open Projection.Core
 
 /// Chapter C slice C.2 — operator-visible diagnostic surface for

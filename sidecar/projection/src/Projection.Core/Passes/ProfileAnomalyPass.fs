@@ -1,5 +1,11 @@
 namespace Projection.Core.Passes
 
+// LINT-ALLOW-FILE: pass-driver lineage diagnostic prose. The anomaly-detection pass emits
+//   operator-facing messages (null-rate / CV vs mean+2σ) via `sprintf` and uses
+//   function-local mutables for the statistical accumulation. Structural output
+//   is typed; only the diagnostic prose surface uses sprintf, per
+//   `DECISIONS 2026-05-09 — Built-in obligation`.
+
 open Projection.Core
 
 /// H-073 — Anomaly detection in Profile. Flags columns whose null

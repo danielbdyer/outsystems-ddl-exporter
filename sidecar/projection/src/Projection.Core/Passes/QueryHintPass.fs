@@ -1,5 +1,10 @@
 namespace Projection.Core.Passes
 
+// LINT-ALLOW-FILE: pass-driver lineage diagnostic prose. The query-hint pass emits operator-
+//   facing fill-factor recommendations via `sprintf`; the structural annotation
+//   output is fully typed. Only the human-readable message text uses sprintf,
+//   per `DECISIONS 2026-05-09 — Built-in obligation`.
+
 open Projection.Core
 
 /// H-076 — Query plan hint annotation emission. For FK references

@@ -1,5 +1,10 @@
 namespace Projection.Core.Passes
 
+// LINT-ALLOW-FILE: pass-driver lineage diagnostic prose. The schema-complexity pass emits a
+//   human-readable composite-score breakdown via `sprintf`; the structural
+//   score output is fully typed. Only the diagnostic message uses sprintf, per
+//   `DECISIONS 2026-05-09 — Built-in obligation`.
+
 open Projection.Core
 
 /// H-075 — Schema complexity scoring. Derives a composite complexity

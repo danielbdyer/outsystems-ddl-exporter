@@ -1,5 +1,11 @@
 namespace Projection.Core.Passes
 
+// LINT-ALLOW-FILE: pass-driver diagnostic prose + structured key projection. The table-rename
+//   pass renders operator-facing validation messages and `schema.table` /
+//   `module::entity` rename keys via `sprintf`; the structural rename output
+//   is fully typed. Only the message/key text surface uses sprintf, per
+//   `DECISIONS 2026-05-09 — Built-in obligation`.
+
 open Projection.Core
 
 /// Operator-supplied physical-realization rewrites applied as a

@@ -1,5 +1,9 @@
 namespace Projection.Targets.SSDT
 
+// LINT-ALLOW-FILE: terminal XML/refactorlog text emission; `String.Join` composes typed
+//   operation segments at the absolute terminal text boundary, the use-case-
+//   specific primitive for this multi-segment join.
+
 open Projection.Core
 
 /// Π_RefactorLog — chapter 3.5 substantive deliverable. The fourth

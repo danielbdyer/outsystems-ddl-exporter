@@ -1,5 +1,12 @@
 namespace Projection.Pipeline
 
+// LINT-ALLOW-FILE: structured-logging substrate at the egress boundary. `DateTime.UtcNow` is
+//   the wall-clock event-timestamp source for operator-facing log events (the
+//   logging-sink sibling of Bench.fs's time boundary); the process-scoped
+//   RunAccumulator uses function-local mutables behind a single lock (documented
+//   in the module header) and `box` at the System.Text.Json value boundary.
+//   Log events are boundary I/O, not deterministic artifacts.
+
 open System
 open System.Collections.Generic
 open System.IO
@@ -322,7 +329,7 @@ module LogSink =
     let private freshState () : RunState =
         {
             RunId                = generateRunId ()
-            StartedAt            = DateTime.UtcNow
+            StartedAt            = DateTime.UtcNow  // LINT-ALLOW: wall-clock event timestamp at the logging egress boundary — operator-facing log events are boundary I/O, not deterministic artifacts (LogSink is the logging-sink sibling of Bench.fs's time boundary)
             Verbosity            = Verbosity.Quiet
             MutedCategories      = Set.empty
             Envelopes            = ResizeArray()
@@ -429,7 +436,7 @@ module LogSink =
         : Envelope =
         {
             RunId    = lock lockObj (fun () -> state.Value.RunId)
-            Ts       = DateTime.UtcNow
+            Ts       = DateTime.UtcNow  // LINT-ALLOW: wall-clock event timestamp at the logging egress boundary — operator-facing log events are boundary I/O, not deterministic artifacts (LogSink is the logging-sink sibling of Bench.fs's time boundary)
             Level    = level
             Category = category
             Code     = code
@@ -766,7 +773,7 @@ module LogSink =
         : Envelope =
         lock lockObj (fun () ->
             let s = state.Value
-            let now = DateTime.UtcNow
+            let now = DateTime.UtcNow  // LINT-ALLOW: wall-clock event timestamp at the logging egress boundary — operator-facing log events are boundary I/O, not deterministic artifacts (LogSink is the logging-sink sibling of Bench.fs's time boundary)
             let durationMs =
                 let span = now - s.StartedAt
                 int64 span.TotalMilliseconds

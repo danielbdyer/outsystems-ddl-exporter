@@ -1,5 +1,10 @@
 namespace Projection.Core
 
+// LINT-ALLOW-FILE: the documented type-erasure boundary (chapter A.4.7' axis 2) that makes the
+//   registry-driven fold well-typed; the `String.Concat` here is terminal
+//   composition of typed registry identifiers at that boundary. The structural
+//   registry surface is fully typed.
+
 /// Pass-chain adapter wrapping a typed `RegisteredTransform` into a
 /// uniform `Pass<ComposeState, ComposeState>` step. Per chapter A.4.7'
 /// axis 2 (`CHAPTER_A_4_7_PRIME_OPEN.md`): this is the type-erasure

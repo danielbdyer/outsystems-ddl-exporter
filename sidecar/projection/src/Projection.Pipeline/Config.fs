@@ -1,5 +1,9 @@
 namespace Projection.Pipeline
 
+// LINT-ALLOW-FILE-MUTATION: function-local accumulators while parsing the JSON config DOM + scalar
+//   decimal/int parsing into the immutable typed Config record; the mutation is
+//   sealed at each parse function's exit.
+
 open System
 open System.Text.Json
 open Projection.Core

@@ -1,5 +1,10 @@
 namespace Projection.Targets.OperationalDiagnostics
 
+// LINT-ALLOW-FILE: terminal SQL-identifier text emission. Bracket-quoted `[schema].[table]`
+//   names are composed from typed V2 IR (Name.value / Physical.Schema/Table) at
+//   the absolute terminal SQL-text boundary, with function-local StringBuilder
+//   accumulation; `String.concat` IS the use-case-specific primitive here.
+
 open System.Text
 open Projection.Core
 

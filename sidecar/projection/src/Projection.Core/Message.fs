@@ -1,5 +1,12 @@
 namespace Projection.Core
 
+// LINT-ALLOW-FILE: operator-facing diagnostic-prose templates. This module's entire purpose is
+//   to centralize recurring human-readable message framings; the constant prose
+//   frames the message and per-variant detail flows in as a typed parameter.
+//   Diagnostic prose is the discipline's allowed exception (no typed BCL
+//   alternative produces equivalent message text), per
+//   `DECISIONS 2026-05-09 — Built-in obligation`.
+
 /// Operator-facing diagnostic prose templates. Each combinator names
 /// the *shape* of a recurring message — the constant framing the
 /// codebase repeats across many sites, with per-variant detail flowing
