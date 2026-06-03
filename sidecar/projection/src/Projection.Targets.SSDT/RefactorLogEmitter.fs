@@ -329,3 +329,56 @@ module RefactorLogEmitter =
                 @ referenceRefactorEntries diff k)
             |> Map.ofList
         ArtifactByKind.create target slices
+
+
+    /// Flatten an `ArtifactByKind<RefactorLogEntry list>` into a single
+    /// `OperationKey`-sorted entry list. The per-kind keyset is discarded;
+    /// what carries forward across episodes is the flat operation log (the
+    /// `.refactorlog` document is a flat `<Operations>` list, not a
+    /// per-kind structure). Sorted by `OperationKey` for T1 determinism.
+    let flatten (artifact: ArtifactByKind<RefactorLogEntry list>) : RefactorLogEntry list =
+        artifact
+        |> ArtifactByKind.toMap
+        |> Map.toSeq
+        |> Seq.collect snd
+        |> Seq.sortBy (fun e -> e.OperationKey)
+        |> Seq.toList
+
+    /// **Accumulate-against-prior** (gap N6 / AC-P6). The `.refactorlog`
+    /// is a *cumulative* document — every rename a timeline has ever
+    /// performed stays in the log so DacFx applies `sp_rename` (not
+    /// DROP+ADD) for any source older than the latest. So an episode's
+    /// emitted log is `prior ⊕ current`, deduped by `OperationKey`: a
+    /// rename already present in the prior committed log is **not**
+    /// re-emitted (its `OperationKey` already names that operation); a
+    /// genuinely new rename is appended. Works uniformly across all three
+    /// channels — table (`SqlTable`), column (`SqlSimpleColumn`), and FK
+    /// (`SqlForeignKey`) renames — because the identity is the
+    /// `OperationKey`, not the element type.
+    ///
+    /// `OperationKey` is the identity (deterministic UUIDv5 over the
+    /// rename triple), so dedup-by-key is dedup-by-operation. The prior
+    /// entry **wins** on a key collision — the prior committed log is the
+    /// source of truth for an operation already recorded (its shape is
+    /// what DacFx already saw); re-emitting would only churn the audit
+    /// metadata. Result is sorted by `OperationKey` for T1 determinism
+    /// (order-independent of how the two inputs were ordered).
+    let accumulate
+        (prior: RefactorLogEntry list)
+        (current: RefactorLogEntry list)
+        : RefactorLogEntry list =
+        let priorKeys = prior |> List.map (fun e -> e.OperationKey) |> Set.ofList
+        let novel =
+            current
+            |> List.filter (fun e -> not (Set.contains e.OperationKey priorKeys))
+        prior @ novel
+        |> List.sortBy (fun e -> e.OperationKey)
+
+    /// `accumulate` taking the current emission as the typed artifact
+    /// (the common caller shape — `emit diff` produces an `ArtifactByKind`).
+    /// Flattens then accumulates against the prior committed entries.
+    let accumulateArtifact
+        (prior: RefactorLogEntry list)
+        (current: ArtifactByKind<RefactorLogEntry list>)
+        : RefactorLogEntry list =
+        accumulate prior (flatten current)
