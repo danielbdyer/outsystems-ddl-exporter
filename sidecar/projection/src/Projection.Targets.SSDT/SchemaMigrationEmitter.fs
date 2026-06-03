@@ -38,9 +38,11 @@ open Projection.Core
 /// refactorlog rename first, then the ALTER, which references the new name.
 ///
 /// **Safe-additive first slice (T-I faithfulness — no silent destructive
-/// emission).** Emitted: column ADD (additive) and column-SHAPE ALTER
-/// (type / length / precision / scale / nullability). Narrowing / NULL-
-/// tightening is emitted with a `Warning` (tolerance-gated, surfaced).
+/// emission).** Emitted: column ADD (additive) and *widening* column-SHAPE
+/// ALTER (type / length / precision / scale / nullability). A **narrowing**
+/// (NULL→NOT NULL tightening, or length / precision / scale shrink) is a
+/// declared-loss: refused fail-loud (`migration.narrowingColumn`, no ALTER)
+/// unless the operator declares it via the same `allowDrops` gate as a DROP.
 /// Refused fail-loud (`Error` diagnostic, no statement): a dropped column
 /// (`migration.destructiveColumnDrop`) and a facet ALTER COLUMN cannot express
 /// — DEFAULT / computed / identity / primary-key (`migration.unsupportedFacetChange`),
@@ -87,16 +89,20 @@ module SchemaMigrationEmitter =
     let private attrByKey (kind: Kind) (key: SsKey) : Attribute option =
         kind.Attributes |> List.tryFind (fun a -> a.SsKey = key)
 
-    /// Is the shape change potentially destructive at deploy? NULL→NOT NULL
-    /// (existing NULL rows violate) or a declared-length / precision shrink
-    /// (truncation). Surfaced as a `Warning` — emitted, but never silently.
-    let private narrowingWarning (src: Attribute) (tgt: Attribute) : string option =
+    /// Is the shape change a **narrowing** — destructive at deploy? NULL→NOT NULL
+    /// (existing NULL rows violate), a declared-length / precision / scale shrink
+    /// (truncation / precision loss). A narrowing is a declared-loss, gated by the
+    /// SAME `allowDrops` declaration as a destructive DROP: refused fail-loud
+    /// unless the operator has declared it, never emitted silently. (Mirrors the
+    /// `migration.destructiveColumnDrop` gate — `WAVE_6_ONTOLOGY.md` §5.)
+    let private narrowing (src: Attribute) (tgt: Attribute) : string option =
         let nullTightened = src.Column.IsNullable && not tgt.Column.IsNullable
         let shrank (s: int option) (t: int option) =
             match s, t with Some a, Some b -> b < a | _ -> false
         if nullTightened then Some "nullability tightened (NULL → NOT NULL); existing NULL rows would violate the new constraint."
         elif shrank src.Length tgt.Length then Some "declared length narrowed; existing values may be truncated."
         elif shrank src.Precision tgt.Precision then Some "declared precision narrowed; existing values may lose precision."
+        elif shrank src.Scale tgt.Scale then Some "declared scale narrowed; existing values may lose precision."
         else None
 
     /// Per-kind emission. Accumulates ALTER statements + diagnostics for one
@@ -140,16 +146,22 @@ module SchemaMigrationEmitter =
                                             "Changed attribute absent from target kind (unreachable)." change.AttributeKey targetKind)
                         | Some tgtAttr ->
                             let stmt = Statement.AlterTableAlterColumn (table, SsdtDdlEmitter.columnDefOfAttribute tgtAttr)
-                            // Narrowing → emit + Warning (tolerance-gated).
-                            let warn =
+                            // Narrowing (NULL→NOT NULL / length / precision / scale
+                            // shrink) is a declared-loss — refuse fail-loud unless
+                            // the operator has declared it (the same `allowDrops`
+                            // gate as a destructive DROP). Without the declaration:
+                            // Error + NO ALTER. With it: emit the ALTER.
+                            let narrowed =
                                 sourceKind
                                 |> Option.bind (fun sk -> attrByKey sk change.AttributeKey)
-                                |> Option.bind (fun srcAttr -> narrowingWarning srcAttr tgtAttr)
-                                |> Option.map (fun msg ->
-                                    diag DiagnosticSeverity.Warning "migration.narrowingColumn" msg change.AttributeKey targetKind)
-                            Ok (stmt, warn))
-            let alters = alterResults |> List.choose (function Ok (s, _) -> Some s | Error _ -> None)
-            let alterWarnings = alterResults |> List.choose (function Ok (_, Some w) -> Some w | _ -> None)
+                                |> Option.bind (fun srcAttr -> narrowing srcAttr tgtAttr)
+                            match narrowed with
+                            | Some msg when not allowDrops ->
+                                Error (diag DiagnosticSeverity.Error "migration.narrowingColumn"
+                                            (sprintf "Column narrowing is destructive (%s); refused — pass --allow-drops to emit the ALTER COLUMN." msg)
+                                            change.AttributeKey targetKind)
+                            | _ -> Ok stmt)
+            let alters = alterResults |> List.choose (function Ok s -> Some s | Error _ -> None)
             let alterRefusals = alterResults |> List.choose (function Error e -> Some e | Ok _ -> None)
             // Dropped columns — destructive: emit DROP COLUMN under --allow-drops,
             // else refuse fail-loud. The column name comes from the SOURCE kind
@@ -174,7 +186,7 @@ module SchemaMigrationEmitter =
                         diag DiagnosticSeverity.Error "migration.destructiveColumnDrop"
                             "Column drop is destructive; refused — pass --allow-drops to emit DROP COLUMN."
                             key targetKind))
-            adds @ alters @ dropStmts, alterWarnings @ alterRefusals @ dropRefusals
+            adds @ alters @ dropStmts, alterRefusals @ dropRefusals
 
     // -- C1 follow-on: reference / index / sequence channel emission ---------
     //
@@ -383,16 +395,17 @@ module SchemaMigrationEmitter =
 
     /// Emit the schema migration's ALTER differential from a `CatalogDiff`.
     /// Kinds sorted by SsKey root for deterministic statement order. The
-    /// `Diagnostics` channel carries `Warning` (narrowing — emitted) and
-    /// `Error` (refusals — not emitted) so a consumer fails loud on any
-    /// `Error` before deploying. A18 holds — the emitter consumes the diff
-    /// (evidence), never `Policy`.
-    /// `allowDrops` gates the destructive emission (DROP COLUMN / DROP
+    /// `Diagnostics` channel carries `Error` refusals (not emitted) so a
+    /// consumer fails loud on any `Error` before deploying. A18 holds — the
+    /// emitter consumes the diff (evidence), never `Policy`.
+    /// `allowDrops` gates the destructive emission — DROP COLUMN / DROP
     /// CONSTRAINT / DROP INDEX / DROP SEQUENCE + the DROP-then-recreate for FK /
-    /// index / sequence reshapes). With it `false` (the default), every
-    /// destructive touch refuses fail-loud with a named Error — `migrate`'s
-    /// `RefusedBySchemaErrors`. With it `true` the operator has accepted the
-    /// data/integrity loss (the same gate as `Migration.plan`'s violations).
+    /// index / sequence reshapes, AND a column **narrowing** (NULL→NOT NULL /
+    /// length / precision / scale shrink — destructive at deploy). With it
+    /// `false` (the default), every destructive touch refuses fail-loud with a
+    /// named Error — `migrate`'s `RefusedBySchemaErrors`. With it `true` the
+    /// operator has accepted the data/integrity loss (the same gate as
+    /// `Migration.plan`'s violations).
     let emitWith (allowDrops: bool) (diff: CatalogDiff) : Diagnostics<Statement list> =
         use _ = Bench.scope "emit.schemaMigration.emit"
         let sourceCatalog = CatalogDiff.source diff

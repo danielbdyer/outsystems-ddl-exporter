@@ -189,6 +189,86 @@ module private CdcSilenceFixtures =
               Kinds = [ kind ]; IsActive = true; ExtendedProperties = [] }
         { Modules = [ m ]; Sequences = [] }, kind
 
+    // -----------------------------------------------------------------------
+    // Track D (AC-D1 / D2.4 / D3.3) — per-type null-state-transition witnesses.
+    // The null-safe MERGE predicate is type-agnostic in production but only
+    // nvarchar/Text is exercised above; these fixtures add a NULLABLE column of
+    // each PrimitiveType. SPIKE finding: the SSDT emitter reads
+    // `Column.IsNullable` (not `IsMandatory`), so a nullable column MUST set
+    // `ColumnRealization.create (...) (true)`. `SqlLiteral.ofRaw`'s `"" → NullLit`
+    // sentinel is the single per-type NULL encoding each case discriminates.
+    // -----------------------------------------------------------------------
+
+    let buildNullableFixture (typ: PrimitiveType) (nullableRaw: string) : Catalog * Kind =
+        let typeTag =
+            match typ with
+            | Integer  -> "INT"
+            | Decimal  -> "DEC"
+            | Boolean  -> "BIT"
+            | DateTime -> "DTM"
+            | Date     -> "DAT"
+            | Time     -> "TIM"
+            | Guid     -> "GUID"
+            | Binary   -> "BIN"
+            | Text     -> "TXT"
+        let kindKey = mkKey ["Nullable"; typeTag]
+        let idKey   = mkKey ["Nullable"; typeTag; "Id"]
+        let valKey  = mkKey ["Nullable"; typeTag; "Val"]
+        let row =
+            { Identifier = mkKey ["Nullable"; typeTag; "Row"; "1"]
+              Values =
+                  Map.ofList
+                      [ mkName "Id",  "1"
+                        mkName "Val", nullableRaw ] }
+        let valAttr =
+            match typ with
+            | Decimal ->
+                { Attribute.create valKey (mkName "Val") Decimal with
+                    Column = ColumnRealization.create ("VAL") (true) |> Result.value
+                    Precision = Some 18; Scale = Some 4
+                    IsMandatory = false }
+            | Text ->
+                { Attribute.create valKey (mkName "Val") Text with
+                    Column = ColumnRealization.create ("VAL") (true) |> Result.value
+                    Length = Some 100
+                    IsMandatory = false }
+            | _ ->
+                { Attribute.create valKey (mkName "Val") typ with
+                    Column = ColumnRealization.create ("VAL") (true) |> Result.value
+                    IsMandatory = false }
+        let kind : Kind =
+            { SsKey    = kindKey
+              Name     = mkName (System.String.Concat("Nullable_", typeTag))
+              Origin   = Native
+              Modality = [ Static [ row ] ]
+              Physical = mkTableId "dbo" (System.String.Concat("OSUSR_CDC_NULLABLE_", typeTag))
+              Attributes =
+                  [
+                      { Attribute.create idKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true }
+                      valAttr
+                  ]
+              References = []
+              Indexes    = []
+              Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
+        let m : Module =
+            { SsKey = mkKey ["Module"; typeTag]
+              Name  = mkName (System.String.Concat("TestModule_", typeTag))
+              Kinds = [ kind ]; IsActive = true; ExtendedProperties = [] }
+        { Modules = [ m ]; Sequences = [] }, kind
+
+    /// `(PrimitiveType, value1, value2)` — two distinct non-NULL raw forms
+    /// (canonical `RawValueCodec`) bracketing a NULL. `Time` excluded (no V2
+    /// Time witness; bare-Time SSDT realization out of scope).
+    let nullableTypeMatrix : (PrimitiveType * string * string) list =
+        [ Integer,  "42",                                   "99"
+          Decimal,  "1.5000",                               "2.7500"
+          Boolean,  "true",                                 "false"
+          DateTime, "2026-06-03 12:30:00.0000000",          "2026-06-04 09:15:00.0000000"
+          Date,     "2026-06-03",                           "2026-06-04"
+          Guid,     "11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"
+          Binary,   "CAFEBABE",                             "DEADBEEF"
+          Text,     "alpha",                                "beta" ]
+
 open CdcSilenceFixtures
 
 [<Xunit.Collection("Docker-SqlServer")>]
@@ -353,3 +433,61 @@ type CdcSilenceTests(fixture: EphemeralContainerFixture) =
         // "Equal(baseline, post)" assertion above is uninformative.
         Assert.True (post > baseline,
             sprintf "expected CDC entries to fire on changed-content redeploy; baseline=%d post=%d (canary mechanism may be broken)" baseline post)
+
+    // -----------------------------------------------------------------------
+    // Track D — per-type null-state-transition witnesses (AC-D1, D2.4, D3.3).
+    // [<MemberData>] over nullableTypeMatrix. Exact-count contract (OB-D4.2):
+    // under @supports_net_changes=0, one updated row ⇒ exactly +2 captures
+    // (delete-image + insert-image); a suppressed no-op UPDATE ⇒ +0.
+    // -----------------------------------------------------------------------
+
+    static member NullableTypeMatrix : seq<objnull[]> =
+        CdcSilenceFixtures.nullableTypeMatrix
+        |> List.map (fun (typ, v1, v2) -> [| box typ; box v1; box v2 |])
+        |> List.toSeq
+
+    [<Theory>]
+    [<MemberData("NullableTypeMatrix")>]
+    member _.``Track D / AC-D1 left-null arm: NULL -> value on a nullable column fires exactly +2 CDC captures`` (typ: PrimitiveType) (value1: string) (_value2: string) =
+        if not (skipIfNoDocker (sprintf "cdc-nullable-null-to-value-%A" typ)) then () else
+        let nullCatalog,  kind = buildNullableFixture typ ""
+        let valueCatalog, _    = buildNullableFixture typ value1
+        let cdcAware = CdcAwareness.create (Set.ofList [ kind.SsKey ]) Map.empty
+        let schemaSql,     nullSeed  = renderArtifacts nullCatalog  kind cdcAware
+        let _,             valueSeed = renderArtifacts valueCatalog kind cdcAware
+        Assert.Contains ("WHEN MATCHED AND (", valueSeed)
+        Assert.Contains ("NULL", nullSeed)
+        let baseline, post =
+            (runScenario nullSeed valueSeed kind schemaSql).GetAwaiter().GetResult()
+        Assert.True (baseline >= 1, sprintf "expected baseline ≥ 1 INSERT capture; got %d (type %A)" baseline typ)
+        Assert.Equal (baseline + 2, post)
+
+    [<Theory>]
+    [<MemberData("NullableTypeMatrix")>]
+    member _.``Track D / AC-D1 right-null arm: value -> NULL on a nullable column fires exactly +2 CDC captures`` (typ: PrimitiveType) (value1: string) (_value2: string) =
+        if not (skipIfNoDocker (sprintf "cdc-nullable-value-to-null-%A" typ)) then () else
+        let valueCatalog, kind = buildNullableFixture typ value1
+        let nullCatalog,  _    = buildNullableFixture typ ""
+        let cdcAware = CdcAwareness.create (Set.ofList [ kind.SsKey ]) Map.empty
+        let schemaSql,     valueSeed = renderArtifacts valueCatalog kind cdcAware
+        let _,             nullSeed  = renderArtifacts nullCatalog  kind cdcAware
+        Assert.Contains ("WHEN MATCHED AND (", nullSeed)
+        Assert.Contains ("NULL", nullSeed)
+        let baseline, post =
+            (runScenario valueSeed nullSeed kind schemaSql).GetAwaiter().GetResult()
+        Assert.True (baseline >= 1, sprintf "expected baseline ≥ 1 INSERT capture; got %d (type %A)" baseline typ)
+        Assert.Equal (baseline + 2, post)
+
+    [<Theory>]
+    [<MemberData("NullableTypeMatrix")>]
+    member _.``Track D / D2.4 nullable-stays-NULL: NULL -> NULL redeploy on a nullable column is CDC-silent (zero new captures)`` (typ: PrimitiveType) (_value1: string) (_value2: string) =
+        if not (skipIfNoDocker (sprintf "cdc-nullable-null-to-null-%A" typ)) then () else
+        let nullCatalog, kind = buildNullableFixture typ ""
+        let cdcAware = CdcAwareness.create (Set.ofList [ kind.SsKey ]) Map.empty
+        let schemaSql, nullSeed = renderArtifacts nullCatalog kind cdcAware
+        Assert.Contains ("WHEN MATCHED AND (", nullSeed)
+        Assert.Contains ("NULL", nullSeed)
+        let baseline, post =
+            (runScenario nullSeed nullSeed kind schemaSql).GetAwaiter().GetResult()
+        Assert.True (baseline >= 1, sprintf "expected baseline ≥ 1 INSERT capture; got %d (type %A)" baseline typ)
+        Assert.Equal (baseline, post)

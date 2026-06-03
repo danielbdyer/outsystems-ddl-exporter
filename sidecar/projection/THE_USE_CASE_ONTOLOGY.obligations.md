@@ -698,25 +698,31 @@ This is the measured truth; §1's 52% was an inspection upper bound.
 
 ### Global grade scorecard
 
-**Batch 1 landed (HEAD after this commit):** +7 cells to HELD. Track A closed S1/S9/P1/P2
-(CODE-ONLY→HELD, discriminating pure tests); Track B closed S6 (→HELD) and S12 (STRUCTURAL→HELD, now
-runtime-discriminated) + the S10.3/4 sub-gaps; Track C wired `MigrationRun.record` into `migrate
---execute --lifecycle-store` (P8 HOLLOW→HELD; the record-leg of proteins X1/X5 advanced, though both
-remain HOLLOW pending the CDC-measure and diff-vs-prior seams). Scorecard below is post-Batch-1.
+**Batch 1 landed:** +7 to HELD. Track A closed S1/S9/P1/P2; Track B closed S6 + S12 (STRUCTURAL→HELD)
++ the S10.3/4 sub-gaps; Track C wired `MigrationRun.record` into `migrate --execute --lifecycle-store`
+(P8 HOLLOW→HELD; record-leg of proteins X1/X5 advanced, both still HOLLOW pending CDC-measure +
+diff-vs-prior).
+
+**Batch 2 landed (HEAD after this commit):** +3 to HELD. Track D — CDC type×null-state sweep (8 types ×
+{NULL→value, value→NULL, NULL→NULL}, exact ±2/0) closed **D1 CODE-ONLY→HELD** (spike correction: nullable
+columns set `Column.IsNullable=true`, not `IsMandatory`). Track E — narrowing promoted from Warning to a
+declared-loss refusal (gated on the existing `allowDrops`) closed **G8 HOLLOW→HELD** and **S11
+CODE-ONLY→HELD**. Integration caught real cross-batch blast radius: E's gate refused a narrowing in
+Track C's AC-P8 fixture (`verifiedOutcome` now uses `DeclareAll`). Scorecard below is post-Batch-2.
 
 | Plane | HELD | CODE-ONLY | HOLLOW | NEITHER | STRUCTURAL |
 |---|---|---|---|---|---|
-| Schema (AC-S) | 9 | 1 | 0 | 2 | 0 |
+| Schema (AC-S) | 10 | 0 | 0 | 2 | 0 |
 | Identity (AC-I) | 5 | 1 | 0 | 1 | — |
-| Gates (AC-G) | 3 | 3 | 1 | 4 | — |
+| Gates (AC-G) | 4 | 3 | 0 | 4 | — |
 | Provenance (AC-P) | 6 | 1 | 1 | 1 | — |
-| Data/CDC (AC-D) | 2 | 4 | 0 | 4 | — |
+| Data/CDC (AC-D) | 3 | 3 | 0 | 4 | — |
 | Proteins (AC-X) | 0 | 0 | 6 | 2 | — |
-| **Total (57)** | **25** | **10** | **8** | **14** | **0** |
+| **Total (57)** | **28** | **8** | **7** | **14** | **0** |
 
-*(Pre-Batch-1 baseline was HELD 18 · CODE-ONLY 15 · HOLLOW 9 · NEITHER 14 · STRUCTURAL 1.)*
+*(Baseline HELD 18 → Batch 1 → 25 → Batch 2 → 28 (49%). CODE-ONLY 15→10→8; HOLLOW 9→8→7.)*
 
-**The reading (post-Batch-1).** Genuinely solid (HELD) = **25 of 57 (44%)** — up from 19 (33%) at the
+**The reading (post-Batch-2).** Genuinely solid (HELD) = **28 of 57 (49%)** — up from 19 (33%) at the
 baseline, *still not* the ~24 PASS the test-first pass implied (those were generous in the wrong cells).
 **8 cells (14%) are HOLLOW** — green tests that do not establish the criterion (the phantom-greens).
 **10 (18%) are CODE-ONLY** — the code is correct but no test discriminates the criterion's adversarial
@@ -727,18 +733,18 @@ unit/harness test exercises a function in isolation that the production path nev
 
 ### Per-AC grades
 
-- **Schema:** HELD S1, S2, S3, S4, S5, S6, S9, S10, S12 · CODE-ONLY S11 · NEITHER S7, S8. *(Batch 1: S1, S6, S9 CODE-ONLY→HELD; S12 STRUCTURAL→HELD.)*
+- **Schema:** HELD S1, S2, S3, S4, S5, S6, S9, S10, S11, S12 · NEITHER S7, S8. *(Batch 1: S1, S6, S9, S12→HELD. Batch 2: S11 CODE-ONLY→HELD.)*
 - **Identity:** HELD I1, I3, I4, **I5** (fixed this session — now genuinely HELD), I6 · CODE-ONLY I2 · NEITHER I7.
-- **Gates:** HELD G3, G5, G6 · CODE-ONLY G1, G2, G7 · HOLLOW G8 · NEITHER G0, G4, G9, G10.
+- **Gates:** HELD G3, G5, G6, G8 · CODE-ONLY G1, G2, G7 · NEITHER G0, G4, G9, G10. *(Batch 2: G8 HOLLOW→HELD — narrowing now refuses unless declared.)*
 - **Provenance:** HELD P1, P2, P3, P5, P7, P8 · CODE-ONLY P4 · HOLLOW P9 · NEITHER P6. *(Batch 1: P1, P2 CODE-ONLY→HELD; P8 HOLLOW→HELD.)*
-- **Data/CDC:** HELD D8, D9 · CODE-ONLY D1, D2, D3, D4 · NEITHER D5, D6, D7, D10.
+- **Data/CDC:** HELD D1, D8, D9 · CODE-ONLY D2, D3, D4 · NEITHER D5, D6, D7, D10. *(Batch 2: D1 CODE-ONLY→HELD — 8 types × null-state, exact ±2/0. D2/D3 retain only the MigrationDependencies-emitter live witness; D4 the k>1 exact-count.)*
 - **Proteins:** HOLLOW X1, X2, X4, X5, X7, X8 · NEITHER X3, X6.
 
-### The HOLLOW register (9) — green tests that don't establish the criterion (top priority)
+### The HOLLOW register (7) — green tests that don't establish the criterion (top priority)
 
 | AC | Why hollow | Shared root cause |
 |---|---|---|
-| **G8** narrowing | criterion needs *refusal*; code emits *Warning + proceeds*; test asserts the warning → co-wrong | gate emits wrong severity |
+| ~~**G8** narrowing~~ | **RESOLVED Batch 2** → HELD: narrowing promoted from Warning to a declared-loss refusal (gated on `allowDrops`) | ~~gate emits wrong severity~~ |
 | ~~**P8** migrate-records-episode~~ | **RESOLVED Batch 1** → HELD: `record` wired into `migrate --execute --lifecycle-store` via the tested `executeAndRecord`/`recordVerified` seam | ~~record-not-wired~~ |
 | **P9** change-manifest | type is *missing* `ToleranceResidual` + `AppliedTransforms`; tests assert only what exists | incomplete type + no consumer |
 | **X1** P-1/P-2 load | `full-export` halts at publish; record + CDC-measure tested via harness only | record-not-wired · no-CDC-in-CLI · no-diff-vs-prior |
@@ -752,14 +758,14 @@ The protein HOLLOWs are **not 6 independent problems** — they collapse onto fo
 **record-not-wired** (P8 → X1, X5), **no-CDC-count-in-any-CLI-verb** (X1, X4, X5, X8), **re-key-not-
 composed** (X2), **no-diff-vs-prior / vs-model** (X1, X3, X7). Fix the seam, lift several cells.
 
-### The CODE-ONLY register (10) — correct but unguarded (a wrong refactor passes the suite)
+### The CODE-ONLY register (8) — correct but unguarded (a wrong refactor passes the suite)
 
-*Batch 1 closed S1, S6, S9, P1, P2 (pure discriminating tests).* Remaining — pure-test closers (no
-production code): **S11** (length-narrow — folded into the G8 narrowing-refusal track), **D1**
-(type×null-state — 9 types untested), **D2/D3/D4** (nullable-stays-NULL, nullable-fires, k>1 exact
-count). Wiring/consumer closers: **G1/G2** (connection/permission on `transfer`), **G7** (tightening on
-all verbs), **I2** (ByEmail/BySsKey/Fallback never reach `runReconciling` — a *reality* gap), **P4**
-(compose has zero production callers).
+*Batch 1 closed S1, S6, S9, P1, P2; Batch 2 closed S11 (with G8) and D1.* Remaining — pure-test closers
+(no production code): **D2/D3** (only the MigrationDependencies-emitter live witness now missing — the
+nullable null-state gaps D2.4/D3.3 closed in Batch 2), **D4** (k>1 exact-count). Wiring/consumer
+closers: **G1/G2** (connection/permission on `transfer`), **G7** (tightening on all verbs), **I2**
+(ByEmail/BySsKey/Fallback never reach `runReconciling` — a *reality* gap), **P4** (compose has zero
+production callers).
 
 ---
 
@@ -768,14 +774,20 @@ all verbs), **I2** (ByEmail/BySsKey/Fallback never reach `runReconciling` — a 
 Recovering falsely-claimed value (HOLLOW) and guarding correct-but-unverified code (CODE-ONLY) beats
 greenfield (NEITHER). Ordered by ROI = (criterion impact × shared-seam leverage) ÷ (cost × risk).
 
-**✅ Batch 1 complete (parallel, file-disjoint):** Track A (S1/S9/P1/P2 pure tests) · Track B
-(S6/S12 + S10.3/4 pure tests) · Track C (P8 record-wiring). +7 cells to HELD; suite green (2692 pure /
-0 fail). **Next — Batch 2** (was blocked on Batch 1's file ownership, now clear): **D** CDC
-type×null-state sweep (Docker; closes D1 + D4-general) · **E** G8 narrowing→refusal (HOLLOW→HELD; also
-S11) — touches the emitter Track B's tests own · **F** gate wiring G7/G1/G2/G0 — touches the `Program.fs`
-Track C's record-wiring owns. E and F serialize after their Batch-1 file owners; D is independent but
-held to keep ≤1 Docker container. Then **Batch 3**: protein composition (CDC-measure-in-CLI lifts
-X4/X8/X1/X5; re-key compose X2; diff-vs-prior/model X1/X3/X7) + the NEITHER mechanisms.
+**✅ Batch 1 complete:** Track A (S1/S9/P1/P2) · Track B (S6/S12 + S10.3/4) · Track C (P8 record-wiring).
++7 to HELD.
+
+**✅ Batch 2 complete:** Track D (CDC type×null-state sweep → D1) · Track E (narrowing declared-loss
+refusal → G8 + S11). +3 to HELD; suite green (2694 pure / 145 Docker / 0 fail). Cross-batch blast radius
+caught + fixed (E's gate vs Track C's AC-P8 narrowing fixture → `DeclareAll`).
+
+**Next — Batch 2b: Track F** gate wiring (G7 tightening on the execute verbs; G1/G2 connection/permission
+on `transfer`; G0 `Preflight.all` mandatory) — Docker-witness-heavy + touches `Program.fs`/`Preflight.fs`/
+`TransferRun.fs`, so it runs **solo** (Docker free now that D is done). Then **Batch 3**: protein
+composition (the shared seams — CDC-measure-in-CLI lifts X4/X8/X1/X5; re-key compose X2; diff-vs-prior/
+model X1/X3/X7) + remaining NEITHER mechanisms + the two remaining HOLLOWs (P9 manifest fields; the
+protein cells). **Integration discipline (learned Batch 1–2):** worktree subagents must report
+diffs/snippets to apply onto HEAD — wholesale file copies revert recent work when the worktree base drifts.
 
 **Tier A — convert HOLLOW→HELD with a small wiring fix (highest ROI):**
 1. **P8 — wire `MigrationRun.record` into `runMigrateExecute`** (+ a test asserting the CLI persists the

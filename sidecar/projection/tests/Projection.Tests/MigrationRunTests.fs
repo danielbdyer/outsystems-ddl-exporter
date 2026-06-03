@@ -235,7 +235,12 @@ let ``6.D.1: record refuses a non-advancing version (NonMonotonic)`` () =
 // ===========================================================================
 
 let private verifiedOutcome (source: Catalog) (target: Catalog) : MigrationOutcome =
-    let artifacts = MigrationRun.preview DeclareNone source target |> mustOk
+    // DeclareAll: this helper records provenance for an *already-decided* verified
+    // migration, so it declares every loss — a transition may narrow a column
+    // (AC-G8 now refuses an undeclared narrowing), which is a valid declared
+    // migration to record. The AC-P8 tests assert ordinal/FTC behavior, not the
+    // loss-declaration gate (that is AC-G8/S11's job in SchemaMigrationEmitterTests).
+    let artifacts = MigrationRun.preview DeclareAll source target |> mustOk
     // A Verified outcome: B' (Reconstructed) is the target B, so the
     // PhysicalSchema diff is empty (the execute round-trip succeeded).
     let sdiff = PhysicalSchema.diff (PhysicalSchema.ofCatalog target) (PhysicalSchema.ofCatalog target)
