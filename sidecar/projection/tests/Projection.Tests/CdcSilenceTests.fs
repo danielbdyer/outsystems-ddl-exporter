@@ -200,13 +200,21 @@ type CdcSilenceTests(fixture: EphemeralContainerFixture) =
     /// `(baselineCount, postCount)`.
     let runScenario (firstSeedSql: string) (secondSeedSql: string) (kind: Kind) (schemaSql: string) : Task<int * int> =
         fixture.WithEphemeralDatabase "CdcSilence" (fun cnn _ -> task {
+            // Unwrap the typed coordinate VOs to their raw identifier text.
+            // `System.String.Concat` takes `object`, so concatenating the
+            // `SchemaName` / `TableName` VOs directly leaks their ToString()
+            // form (`SchemaName "dbo"`) into the SQL — `TableId.schemaText` /
+            // `tableText` are the boundary-unwrap accessors (per the typed-VO
+            // lift 2026-06-02; same pattern as CdcSilenceCrossEmitterTests).
+            let schemaText = TableId.schemaText kind.Physical
+            let tableText  = TableId.tableText kind.Physical
             do! Deploy.executeBatch cnn schemaSql
             do! Deploy.executeBatch cnn "EXEC sys.sp_cdc_enable_db;"
             let enableTableSql =
                 System.String.Concat(
                     "EXEC sys.sp_cdc_enable_table ",
-                    "@source_schema=N'", kind.Physical.Schema, "', ",
-                    "@source_name=N'", kind.Physical.Table, "', ",
+                    "@source_schema=N'", schemaText, "', ",
+                    "@source_name=N'", tableText, "', ",
                     "@role_name=NULL, ",
                     "@supports_net_changes=0;")
             do! Deploy.executeBatch cnn enableTableSql
@@ -218,7 +226,7 @@ type CdcSilenceTests(fixture: EphemeralContainerFixture) =
             let captureTable =
                 System.String.Concat(
                     "cdc.[",
-                    kind.Physical.Schema, "_", kind.Physical.Table,
+                    schemaText, "_", tableText,
                     "_CT]")
             let countSql =
                 System.String.Concat("SELECT COUNT(*) FROM ", captureTable, ";")
@@ -269,6 +277,36 @@ type CdcSilenceTests(fixture: EphemeralContainerFixture) =
         //      changes that optimization or the cutover targets older
         //      SQL Server versions where it doesn't hold.
         Assert.Equal (baseline, post)
+
+    [<Fact>]
+    member _.``OB-D4.2: exactly one changed row produces exactly +2 CDC capture rows`` () =
+        if not (skipIfNoDocker "cdc-exact-count") then () else
+
+        // WHY EXACT (not the `post > baseline` inequality of the sensitivity
+        // test above): the inequality is *also* satisfied by a V1-shape
+        // unconditional `WHEN MATCHED THEN UPDATE SET ...` MERGE, which
+        // over-captures by re-UPDATEing rows that didn't change. The
+        // inequality therefore cannot tell V2's change-detection predicate
+        // apart from V1 over-capture — it stays green under the regression.
+        // This exact pin closes that phantom-green: the table is enabled
+        // with @supports_net_changes=0, so CDC logs a single-row UPDATE as a
+        // delete+insert PAIR = exactly 2 capture rows. One changed row ⇒
+        // post = baseline + 2. An over-capturing WHEN MATCHED would touch
+        // BOTH rows (4 capture rows) and turn this assertion RED.
+        let initialCatalog, kind = buildFixture ()
+        let changedCatalog, _ = buildChangedFixture ()
+        let cdcAware = CdcAwareness.create (Set.ofList [ kind.SsKey ]) Map.empty
+        let schemaSql, initialSeedSql = renderArtifacts initialCatalog kind cdcAware
+        let _, changedSeedSql = renderArtifacts changedCatalog kind cdcAware
+
+        let baseline, post =
+            (runScenario initialSeedSql changedSeedSql kind schemaSql).GetAwaiter().GetResult()
+
+        // THE LOAD-BEARING EXACT ASSERTION: exactly one changed row ⇒
+        // exactly +2 CDC capture rows (the delete+insert pair under
+        // @supports_net_changes=0). The unconditional-WHEN-MATCHED
+        // regression makes this RED.
+        Assert.Equal (baseline + 2, post)
 
     [<Fact>]
     member _.``Slice γ sensitivity: changed-content redeploy DOES fire CDC capture rows — proves the canary mechanism is real (not silent for unrelated reasons)`` () =
