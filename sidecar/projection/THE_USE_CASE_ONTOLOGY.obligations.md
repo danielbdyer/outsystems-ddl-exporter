@@ -60,11 +60,11 @@ aggregate % is an inspection upper bound; a cell is only as true as the two-leg 
 
 ### Liveness stamp — this refresh
 
-Full suite re-measured after Round 6b Wave 2/3 (clean rebuild): **pure 2777 passed / 0 failed / 208
-deliberate Skip-stubs; Docker 164 passed / 0 failed / 0 skipped.** No matrix-cited class is in the skip
-set → **the test leg is verified live for every cited mark**, including the seven new Round-6b-W2/3
-witnesses (X4/X5/X6/X7/X8 + D10 + G10). What §§1–6's COVERED marks have NOT established is the **reality
-leg** and **discrimination** — supplied by the criterion-anchored two-leg regrade in §7 below.
+Full suite re-measured after Round 6b (clean rebuild, all legs): **pure 2779 passed / 0 failed / 208
+deliberate Skip-stubs; Docker 166 passed / 0 failed / 0 skipped; operator-reality perf-gate clean; full
+solution builds clean in Release.** No matrix-cited class is in the skip set → **the test leg is verified
+live for every cited mark**, including all Round-6b witnesses (X1/X4/X5/X6/X7/X8 + D10 + G10). The
+reality leg + discrimination are supplied by the criterion-anchored two-leg regrade in §7 below.
 **Re-measure trigger:** any typed-VO lift, IR change, Docker-state change, or touch to a cited code path
 or test.
 
@@ -797,7 +797,23 @@ five existing callers are byte-identical). **Discipline held:** done serially in
 Docker witnesses run one-at-a-time; no concurrent SQL), each cell committed with its own witness, full
 clean-rebuild gate at the end.
 
-Scorecard below is post-Round-6b-Wave-2/3.
+**Round 6b X1 landed (HEAD after this push; full suite green — pure 2779/0, Docker 166/0, perf-gate clean,
+Release build clean).** +1 to HELD — **the matrix is COMPLETE: 57/57.** The full-export *load* protein
+closed in two parts per the operator's resolution of the publication-vs-load fork. **Part A** wires the
+idempotent CDC-aware seed scripts (`DataEmissionComposer`, already structurally ready) into the
+publication bundle as `Data/seed.sql` (gated on the config's `staticSeeds`/`migrationDependencies`/
+`bootstrap` toggles → `EmissionPolicy.EmitData`); the from-fresh-blank-DB premise is witnessed — the seed
+is a non-overwriting MERGE, byte-identical bundle when off, and a fresh-DB deploy + re-run is CDC-silent.
+**Part B** adds the live data-load leg (`Compose.loadSeedAndRecord` / `runWithConfigAndLoad`, CLI
+`full-export --load --conn`): the seed loads into the deployed + CDC-tracked sink, the movement is
+MEASURED (the change-measure ‖·‖), and the episode is recorded with the measured `DataObservation` (not
+the X3 store leg's empty one). Witness: first load measures the 2 rows + records `CdcCaptureCount = 2`;
+the idempotent re-load measures 0 (CDC-silent, non-overwriting). **Pre-existing issues cleared in the
+same pass:** the Release build was FS3511-broken (`Ingestion.collectInOrder` + `runWithConfigAndStore`,
+masked by build order) — all restructured to statically-compilable shapes (no `#nowarn`), unblocking the
+perf gate, which now runs clean.
+
+Scorecard below is post-Round-6b (COMPLETE).
 | Plane | HELD | CODE-ONLY | HOLLOW | NEITHER | STRUCTURAL |
 |---|---|---|---|---|---|
 | Schema (AC-S) | 12 | 0 | 0 | 0 | 0 |
@@ -805,21 +821,20 @@ Scorecard below is post-Round-6b-Wave-2/3.
 | Gates (AC-G) | 11 | 0 | 0 | 0 | — |
 | Provenance (AC-P) | 9 | 0 | 0 | 0 | — |
 | Data/CDC (AC-D) | 10 | 0 | 0 | 0 | — |
-| Proteins (AC-X) | 7 | 0 | 1 | 0 | — |
-| **Total (57)** | **56** | **0** | **1** | **0** | **0** |
+| Proteins (AC-X) | 8 | 0 | 0 | 0 | — |
+| **Total (57)** | **57** | **0** | **0** | **0** | **0** |
 
-*(Baseline HELD 18 → B1 25 → B2 28 → B2b 31 → R4 38 → R5 42 → R6a 46 → R6b-W1 48 → +X3 49 → R6b-W2/3 56 (98%). CODE-ONLY 15→0; HOLLOW 9→1; NEITHER 14→0.)*
+*(Baseline HELD 18 → B1 25 → B2 28 → B2b 31 → R4 38 → R5 42 → R6a 46 → R6b-W1 48 → +X3 49 → R6b-W2/3 56 → +X1 57 (100%). CODE-ONLY 15→0; HOLLOW 9→0; NEITHER 14→0.)*
 
-**The reading (post-Round-6b-Wave-2/3).** Genuinely solid (HELD) = **56 of 57 (98%)**. CODE-ONLY and
-NEITHER are both empty; **Schema, Identity, Gates, Provenance, and Data/CDC are all fully HELD**. The lone
-remaining cell is **X1** (the full-export *load* protein), still HOLLOW: its diff-vs-prior and record legs
-are reachable via the X3 store leg, but the chain's **data leg** (X1.8 CDC-aware MERGE against a deployed
-substrate → X1.9 Measure/Verify/Record → X1.T1 CDC-silent re-run) has no production path — `full-export`
-publishes the SSDT bundle but does not itself load data. Closing X1 is a substantial new feature, NOT a
-wiring fix, and it carries an unresolved premise question (the engine is a *publication* engine for an
-external SSIS consumer under a PROD-empty premise — whether `full-export` should grow a data-load leg, or
-that is SSIS's job, is a fork the operator has not resolved). It is therefore left for an explicit
-decision rather than rushed into a phantom-green. Prior text below describes the pre-Round-5 framing —
+**The reading (post-Round-6b, COMPLETE).** Genuinely solid (HELD) = **57 of 57 (100%)**. CODE-ONLY,
+HOLLOW, and NEITHER are all empty — **every plane is fully HELD**, each cell carrying a discriminating
+two-leg judgment (criterion → {reality, test}). The last cell, **X1**, closed once the operator resolved
+the publication-vs-load fork (full-export grows a data leg AND keeps the idempotent from-fresh-blank-DB
+seed-script emission): part A publishes the idempotent CDC-aware seed bundle, part B loads + measures +
+records the live data leg, both with discriminating Docker witnesses. The instrument's own standard is now
+satisfied across the board — but per §0, HELD is a *live* judgment that decays: any typed-VO lift, IR
+change, Docker-state change, or touch to a cited code path re-opens the two-leg re-measure. Prior text
+below describes the pre-Round-5 framing —
 every "correct-but-unguarded" cell has a discriminating test. The remaining gap is **6 HOLLOW (the protein
 composition cluster) + 13 NEITHER** (unbuilt mechanisms). Up from 19 (33%) at the baseline; the test-first
 pass's ~24 PASS is now well behind.
@@ -837,23 +852,13 @@ unit/harness test exercises a function in isolation that the production path nev
 - **Gates:** HELD G1, G2, G3, **G4**, G5, G6, G7, G8, **G9**, **G0**, **G10** (all). *(R6a: G4 + G9 → HELD. R6b-W1: G0 → HELD. R6b-W3: G10 resumable/idempotent envelope — phase-marker + FK-first idempotent wrap of `writePlan` (`Transfer.runResumable`); a crashed partial attempt recovers to exactly the source rows with no dupes, re-run is a no-op → HELD. Plane complete.)*
 - **Provenance:** HELD P1–P9 (all). *(R4: P4 compose-consumer + P9 manifest-fields → HELD. R5: P6 refactorlog-accumulate + real clock → HELD. Plane complete.)*
 - **Data/CDC:** HELD D1, D2, D3, D4, D5, D6, **D7**, D8, D9, **D10** (all). *(R5: D5 + D6 → HELD. R6a: D7 scoped-delete arm → HELD. R6b-W2/3: D10 explicit named `EmissionMode` (type leg) + FK-ordered `WipeAndLoad` realization (`Transfer.runWithEmissionMode`); the wipe replaces a stale sink row with the source value → HELD. Plane complete.)*
-- **Proteins:** HELD **X2**, **X3**, **X4**, **X5**, **X7**, **X8**, **X6** · HOLLOW X1. *(R6b-W2/3: X4 redeploy CDC-measure + X8 canary CDC-silence (same path: 0 idempotent / +1 churning) → HELD; X5 migrate-with-data measures + records the CDC delta → HELD; X7 `DriftRun.detect` diffs deployed-vs-model → HELD; X6 `EjectRun` append-forever package self-verifies the FTC reconstruction → HELD. Remaining: **X1** full-export load protein — the data leg (CDC-aware MERGE + measure + verify + record + CDC-silent re-run) has no production path; closing it is a substantial feature gated on the publication-vs-load premise fork.)*
+- **Proteins:** HELD X1–X8 (all). *(R6b-W2/3: X4 redeploy CDC-measure + X8 canary CDC-silence (same path: 0 idempotent / +1 churning); X5 migrate-with-data measures + records the CDC delta; X7 `DriftRun.detect` diffs deployed-vs-model; X6 `EjectRun` append-forever package self-verifies the FTC reconstruction. X1: part A wires the idempotent CDC-aware seed bundle into `full-export` (`Data/seed.sql`, non-overwriting, CDC-silent re-run on a fresh DB); part B (`Compose.loadSeedAndRecord` / `full-export --load --conn`) loads the seed into the deployed sink, MEASURES the data movement, and records the episode with the measured `DataObservation` — first load records `CdcCaptureCount = 2`, re-load is CDC-silent. Plane complete.)*
 
-### The HOLLOW register (1 remaining) — green tests that don't establish the criterion
+### The HOLLOW register — CLEARED (0)
 
-*Resolved: G8 (B2), P8 (B1), **P9 (R4)**, **X2 (R6b-W1)**, **X4 / X8 / X5 / X7 (R6b-W2/3 — CDC-measure +
-record + drift seams wired, each with a discriminating Docker witness)**. The 1 remaining is the heaviest
-protein.*
-
-| AC | Why still hollow | Root cause |
-|---|---|---|
-| **X1** P-1/P-2 load | `full-export` publishes the SSDT bundle but has no **data leg**: the chain's Insert/Update/Unchanged (CDC-aware MERGE) → Measure → Verify → Record → CDC-silent-re-run steps have no production path. The diff-vs-prior + record legs ARE reachable now (via the X3 store leg), but the load itself is unbuilt. | no-data-leg-in-full-export (+ unresolved publication-vs-load premise fork) |
-
-X1 is the lone survivor. Its shared seams (CDC-measure, record, diff-vs-prior) all exist now — what is
-missing is the full-export **data load** itself, which is a substantial new feature, not a wiring fix, and
-which turns on a premise decision the operator has not made (does the *publication* engine also load data,
-or is that SSIS's job under the PROD-empty premise?). Left for an explicit decision rather than forced
-into a phantom-green.
+*Resolved: G8 (B2), P8 (B1), **P9 (R4)**, **X2 (R6b-W1)**, **X4 / X8 / X5 / X7 (R6b-W2/3)**, **X1 (R6b — the
+full-export load protein, publication seed-bundle + live measure-and-record data leg)**. Every protein now
+carries a discriminating witness; the phantom-green register is empty.*
 
 ### The CODE-ONLY register — CLEARED (0)
 
@@ -912,12 +917,21 @@ clean-rebuild authoritative gate green (pure 2777/0, Docker 164/0). Wave 3's two
 `TransferRun.fs`'s write seam — threaded through `runCore` via a defaulted `WriteOptions` so the five
 existing callers are byte-identical (the hardened gate chain + `writePlan` were *wrapped*, never rewritten).
 
-**Remaining — X1 only (the full-export load protein).** Its diff-vs-prior + record seams now exist; the
-unbuilt piece is the **data leg** (CDC-aware MERGE against a deployed substrate → Measure → Verify → Record
-→ CDC-silent re-run terminal). This is a substantial feature, NOT a wiring fix, and it turns on a premise
-fork the operator has not resolved: does the *publication* engine (`full-export`) grow a data-load leg, or
-is loading SSIS's job under the PROD-empty premise? **Gate this on an operator decision before building —
-do not force a phantom-green.**
+**✅ Round 6b X1 complete (the matrix is DONE — 57/57).** The operator resolved the publication-vs-load
+fork: full-export grows a data leg AND keeps the from-fresh-blank-DB idempotent seed-script emission.
+**Part A** — `DataEmissionComposer` wired into the publication bundle (`Data/seed.sql`, behind the config's
+`EmitData` toggles); the seed is a non-overwriting CDC-aware MERGE. **Part B** — `Compose.loadSeedAndRecord`
+/ `runWithConfigAndLoad` (CLI `full-export --load --conn`) loads the seed into the deployed sink, measures
+the CDC movement, and records the episode with the measured `DataObservation`. **Pre-existing Release-build
+breakage cleared** (FS3511 in `Ingestion.collectInOrder` + `runWithConfigAndStore`, masked by build order)
+so `scripts/perf-gate.sh` runs again — clean. Full gate: pure 2779/0, Docker 166/0, perf-gate clean,
+Release clean.
+
+**Nothing remains in the queue — every acceptance criterion is HELD with a discriminating two-leg witness.**
+The instrument's standard (§0) is satisfied across all 57 cells. The work now is *maintenance of the
+judgment*: HELD decays (§0 liveness), so re-measure on any typed-VO lift, IR change, Docker-state change,
+or touch to a cited code path or test. Future capability work (new criteria) extends the matrix; it does
+not re-open the closed cells unless their cited surfaces move.
 
 **Superseded plan — Round 6b (the remaining heavy features; decision-unblocked per the resolved forks
 below).** The **6 protein HOLLOWs** collapse onto shared CLI-composition seams (build by *extending existing
