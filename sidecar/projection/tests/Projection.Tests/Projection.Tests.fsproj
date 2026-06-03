@@ -85,6 +85,7 @@
     <Compile Include="MatrixLadderTests.fs" />
     <Compile Include="ForeignKeyReadbackTests.fs" />
     <Compile Include="IndexRoundtripTests.fs" />
+    <Compile Include="ReferenceConstraintStateTests.fs" />
     <Compile Include="StaticSeedsEmitterTests.fs" />
     <Compile Include="StaticSeedsRemapTests.fs" />
     <Compile Include="MigrationDependenciesEmitterTests.fs" />

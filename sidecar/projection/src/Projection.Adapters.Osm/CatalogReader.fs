@@ -1878,12 +1878,14 @@ module CatalogReader =
             // path's `#FkReality` JOIN at `toBundle`. Cross-catalog +
             // JSON-path references default to `(None, true)` per the
             // smart-constructor defaults.
+            // G14 — normalize the constraint-state pair through the guard so a
+            // V1 rowset carrying the illegal `(hasFK=0 ∧ isNoCheck=1)` quadrant
+            // (untrusted without a constraint) canonicalizes to vacuous-trust.
             Result.success
-                { Reference.create rKey rName srcKey tgtKey with
-                    OnDelete            = rule
-                    HasDbConstraint     = refRow.HasDbConstraint
-                    OnUpdate            = onUpdateRule
-                    IsConstraintTrusted = refRow.IsConstraintTrusted }
+                ({ Reference.create rKey rName srcKey tgtKey with
+                     OnDelete = rule
+                     OnUpdate = onUpdateRule }
+                 |> Reference.withConstraintState refRow.HasDbConstraint refRow.IsConstraintTrusted)
         | _ ->
             // Propagate underlying errors via `propagateOrFallback` —
             // uniform with parseReference on the JSON path.

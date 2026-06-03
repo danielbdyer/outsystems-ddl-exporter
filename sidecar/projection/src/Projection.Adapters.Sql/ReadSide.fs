@@ -1136,10 +1136,12 @@ module ReadSide =
             // be set explicitly in the `with` block). OnDelete / OnUpdate
             // referential-action axes remain defaulted until a follow-up
             // slice joins `sys.foreign_keys`'s action columns.
+            // G14 — route the constraint-state pair through the guard (FKs from
+            // sys.foreign_keys always have a real constraint, so this is the
+            // consistent `(true, trusted)` case; uniform with the V1 producer).
             return
-                { Reference.create refKey refName srcAttrKey tgtKindKey with
-                    HasDbConstraint    = true
-                    IsConstraintTrusted = not fk.IsNotTrusted }
+                Reference.create refKey refName srcAttrKey tgtKindKey
+                |> Reference.withConstraintState true (not fk.IsNotTrusted)
         }
 
     /// Attach references to a Kind based on the FKs grouped by
