@@ -162,7 +162,7 @@ the "closing slice" points into §3.
 | G10 | Change-manifest records **state + axis, not displacement** — no per-move `‖δ‖` by channel, no per-run tolerance residual, no `AppliedTransforms` outcome, no CDC capture series | `ChangeManifest.fs`; `WAVE_6_MORPHOLOGY.md:253-257` (F5) | Time, meta | L2 partial | n/a | **C4** |
 | G11 | No `CatalogDiff.compose` consumer — cross-episode `δ₁ + δ₂` fold exists (`CatalogDiff.fs:547`) but is **not wired** into multi-episode recombination | `CatalogDiff.fs:547`; `WAVE_6_MORPHOLOGY.md:237-239` (F3) | Time | L2 surface present, unconsumed | n/a | **C2** |
 | G12 | Decision adjunction (E3) **unwitnessed** — `Ingest(deploy(Project(C, overlay)))` reproducing `overlay` on **all three** tightening sub-axes (nullability + uniqueness + FK-trust) is not a property test | `AxiomTests.fs` (no entry) | Decision | L2 partial (1/3 witnessed) | n/a | **F2** |
-| G13 | Matrix generator reports **L1 presence, not L2/L3 level** — witness-present ≠ faithful drift is invisible to the machine surface | `scripts/matrix-status.sh` | meta | unbuilt | n/a | **D1**, **D2** |
+| G13 | Matrix generator reports **L1 presence, not L2/L3 level** — witness-present ≠ faithful drift is invisible to the machine surface | `scripts/matrix-status.sh` | meta | ✅ **CLOSED** (D1+D2, this round) — generator now reports the per-axis L1/L2/L3 ladder, derives L2 from `Tolerance.fs` `@ladder` tags (Schema=L2-partial names `IndexesUnreflected`), and is wired into CI (`verifiability-projection.yml`) with a byte-deterministic currency gate | n/a | *(closed)* |
 | G14 | `Reference` boolean tuple has **expressible illegal states** (`IsConstraintTrusted = true ∧ HasDbConstraint = false`) | `Catalog.fs:549-595` | Schema, Decision | modeling debt | typechecks-but-impossible | **G1-ref** |
 | G15 | Phase-2 deferred-FK UPDATE keys on **source PK** — for `AssignedBySink` the sink minted a fresh surrogate, so the WHERE matches zero rows | `TransferRun.fs:77-92` | Data | L2 (refused at gate 6.A.2) | **named refusal** (`TransferRun.fs:250-256`) | *(closed — documented for completeness)* |
 | G16 | `AssignedKey` is single-string — composite surrogate truncated to first leg | `SurrogateRemap.fs:34`; `TransferRun.fs:227` | Data | L2 (refused at gate 6.A.3) | **named refusal** (`TransferRun.fs:258-264`) | *(closed — documented for completeness)* |
@@ -544,6 +544,21 @@ the exact silent-fidelity-illusion the North Star forbids.
 ---
 
 ### Cluster D — The self-verification meta-cell (the keystone)
+
+> **STATUS — D1 + D2 LANDED (round D→E).** `scripts/matrix-status.sh` now emits
+> the per-axis **L1/L2/L3 ladder** into `NORTH_STAR.matrix.generated.md`: **L1**
+> from round-trip witness presence, **L2** from `Tolerance.fs`'s machine-readable
+> `@ladder <Variant> <Axis> <Disposition>` tags (an `OpenGap` variant caps its
+> axis at L2-partial and is named — Schema reports `IndexesUnreflected`), **L3**
+> from `migrate A B` witness presence. The generator cross-checks that every live
+> `ToleratedDivergence` (per the `name` single-source-of-truth) carries exactly
+> one tag (exit 3 on drift) and is **byte-deterministic** (no wall-clock stamp).
+> D2 wired `verifiability-gate.sh` + a matrix-currency diff gate into CI
+> (`.github/workflows/verifiability-projection.yml`). Witnesses:
+> `tests/Projection.Tests/MatrixLadderTests.fs` (3, green). The honesty
+> mechanism: retiring an `OpenGap` variant auto-flips its axis — L2 cannot be
+> hand-marked. **E1 retiring `IndexesUnreflected` will flip Schema to L3
+> automatically** — the matrix now *measures* the rest of this cluster's progress.
 
 #### D1 — Generated per-axis L2/L3 matrix (G13)
 

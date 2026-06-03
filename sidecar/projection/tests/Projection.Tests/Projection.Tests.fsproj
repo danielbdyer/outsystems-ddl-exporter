@@ -82,6 +82,7 @@
     <Compile Include="ScriptDomRoundTripTests.fs" />
     <Compile Include="TypesTests.fs" />
     <Compile Include="ToleranceTests.fs" />
+    <Compile Include="MatrixLadderTests.fs" />
     <Compile Include="StaticSeedsEmitterTests.fs" />
     <Compile Include="StaticSeedsRemapTests.fs" />
     <Compile Include="MigrationDependenciesEmitterTests.fs" />

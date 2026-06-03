@@ -1,0 +1,61 @@
+name: verifiability-projection
+
+# The self-verification meta-cell guardrail for the V2 sidecar (EXECUTION_PLAN
+# 6.E.1 / debrief cluster D). Two pure-bash checks, no dotnet required:
+#
+#   D2 — verifiability gate. `scripts/verifiability-gate.sh` enforces that no
+#        entry in `AxiomTests.fs` claims a coverage bucket its evidence does not
+#        support (the phantom-Bucket-A defect): a deferral (Skip) that claims
+#        "Bucket A/B" fails the build. The local pre-commit path is best-effort;
+#        this re-runs on PRs so a phantom claim cannot merge.
+#
+#   D1 — matrix currency. `scripts/matrix-status.sh` regenerates
+#        `NORTH_STAR.matrix.generated.md` (the round-trip ladder, derived from
+#        the test tree + `Tolerance.fs`'s `@ladder` tags). The committed file
+#        must match the generator's output — a non-empty diff means a coverage
+#        shift (a witness landed, a tolerance was retired) was not committed.
+#        The generator also fails (exit 3) if a live `ToleratedDivergence`
+#        variant carries no `@ladder` tag, so a new tolerance cannot land
+#        untagged and silently escape the ladder.
+#
+# Together these make the engine's distance-to-bullseye a build-visible
+# artifact: you cannot merge a phantom coverage claim, an untagged tolerance, or
+# a stale matrix.
+
+on:
+  pull_request:
+    paths:
+      - 'sidecar/projection/**'
+      - '.github/workflows/verifiability-projection.yml'
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'sidecar/projection/**'
+
+jobs:
+  verifiability-gate:
+    name: verifiability + matrix-ladder guardrail
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run verifiability-gate.sh (D2 — no phantom Bucket-A/B)
+        run: |
+          chmod +x sidecar/projection/scripts/verifiability-gate.sh
+          sidecar/projection/scripts/verifiability-gate.sh
+
+      - name: Regenerate the ladder matrix (D1 — @ladder cross-check)
+        run: |
+          chmod +x sidecar/projection/scripts/matrix-status.sh
+          sidecar/projection/scripts/matrix-status.sh
+
+      - name: Assert the committed matrix is current (D1 — no coverage drift)
+        run: |
+          if ! git diff --exit-code -- sidecar/projection/NORTH_STAR.matrix.generated.md; then
+            echo "::error::NORTH_STAR.matrix.generated.md is stale — a coverage shift was not committed."
+            echo "Regenerate locally and commit: sidecar/projection/scripts/matrix-status.sh"
+            exit 1
+          fi

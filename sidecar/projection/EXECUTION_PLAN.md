@@ -920,7 +920,7 @@ where the slice spec is now misleading, the residual gap.
 | 6.C.2 transactional / resumable transfer | ⬚ **OPEN** | debrief **A3**; granularity survey-gated |
 | 6.C.3 cross-DB FK ordering | ⬚ deferred-with-trigger | unchanged |
 | 6.D.1 `migrate A B` | ✅ LANDED (live square; T16) | CLI verb **plan-only** — live `--execute` wiring is debrief **B1** (gate behind A + C1) |
-| 6.E.1 matrix reports the ladder | ⬚ **OPEN** | debrief **D1/D2** — the keystone; generator reports L1/L2/L3 per axis from the proof |
+| 6.E.1 matrix reports the ladder | ✅ **LANDED** (D1+D2) | generator reports L1/L2/L3 per axis from the proof (`Tolerance.fs` `@ladder` tags + witness presence); Schema=L2-partial names `IndexesUnreflected`; wired into CI with a deterministic currency gate (`verifiability-projection.yml`); witnesses `MatrixLadderTests.fs` |
 
 Two new gaps the debrief surfaced that no Wave-6 slice named: **G4** — cross-schema
 FK rows whose `SCHEMA_NAME()` is NULL are **silently filtered** (`ReadSide.fs:580`;
