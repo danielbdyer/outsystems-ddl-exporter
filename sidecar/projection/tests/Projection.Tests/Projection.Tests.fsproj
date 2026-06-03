@@ -102,6 +102,7 @@
     <Compile Include="ApprovalStoreTests.fs" />
     <Compile Include="LifecycleStoreTests.fs" />
     <Compile Include="EjectRunTests.fs" />
+    <Compile Include="EmissionModeTests.fs" />
     <Compile Include="MigrationRunTests.fs" />
     <Compile Include="SuggestConfigGatingTests.fs" />
     <Compile Include="PolicyDiffTests.fs" />
