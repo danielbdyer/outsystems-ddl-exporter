@@ -462,6 +462,32 @@ module MigrationRun =
                                   Verified = PhysicalSchema.isSchemaEqual sdiff }
         }
 
+    /// **X4 — the in-place migrate's CDC-measure leg.** The criterion
+    /// ("redeploy an unchanged model: zero ALTERs AND zero CDC captures, BOTH
+    /// measured") asks the engine to *measure* CDC-silence, not merely assert
+    /// that no DDL ran. Brackets `execute` with the change-measure ‖·‖
+    /// (`Deploy.cdcCaptureTotal`): baseline before, post after; the returned
+    /// delta is the captures the migrate produced. An idempotent redeploy
+    /// (empty differential, no DML) yields `(outcome, 0)` — both legs of the
+    /// criterion measured; the meter is proven live by any interleaved DML
+    /// showing nonzero. Additive — `execute` (and its G9 gate) is untouched.
+    let executeAndMeasureCdc
+        (allowCdc: bool)
+        (declaration: LossDeclaration)
+        (source: Catalog)
+        (target: Catalog)
+        (cnn: SqlConnection)
+        : System.Threading.Tasks.Task<Result<MigrationOutcome * int, MigrationError>> =
+        task {
+            let! baseline = Deploy.cdcCaptureTotal cnn
+            let! result = execute allowCdc declaration source target cnn
+            match result with
+            | Error e -> return Error e
+            | Ok outcome ->
+                let! post = Deploy.cdcCaptureTotal cnn
+                return Ok (outcome, post - baseline)
+        }
+
     /// **The composed live execute → record** — the L3 CLI bullseye made
     /// durable (AC-P8). Runs `execute` against the deployed DB; on a **verified**
     /// outcome, persists the episode onto the timeline at `path` via

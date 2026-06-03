@@ -344,6 +344,72 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
                         | _ -> ()
                 }))
 
+    // -- AC-X4 — the redeploy protein: redeploy an unchanged model; pass iff
+    //    zero ALTERs AND zero CDC captures, BOTH MEASURED ----------------------
+    //
+    // THE STANDARD (obligations §0): the prior 6.A.13 cell proved the migrate
+    // emits zero DDL on an unchanged schema — but it never MEASURED CDC; it
+    // *assumed* "no DDL ⇒ CDC-silent." X4's criterion demands the engine
+    // surface the CDC capture count, not infer it. `executeAndMeasureCdc`
+    // brackets the (no-op) execute with the change-measure ‖·‖
+    // (`Deploy.cdcCaptureTotal`, the PRODUCTION reader) and returns the delta.
+    //
+    // TWO LEGS, criterion-first:
+    //   1. Idempotent redeploy (A→A): zero statements (ALTERs measured) AND
+    //      delta == 0 (captures MEASURED, not assumed).
+    //   2. Meter-liveness discriminator: the SAME production primitive the
+    //      migrate uses, bracketing one real INSERT, returns exactly +1. A
+    //      reader hard-wired to 0 (the impostor that makes leg 1 look green for
+    //      free) turns this RED; an over-counting reader overshoots.
+    [<Fact>]
+    member _.``AC-X4: redeploy of an unchanged model measures zero ALTERs and zero CDC captures (meter proven live)`` () =
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "RedeployCdcMeasure" (fun conn _ ->
+                task {
+                    do! Deploy.executeBatch conn (SsdtDdlEmitter.statements catalogA |> Render.toText)
+                    let! enabled =
+                        task {
+                            try
+                                do! Deploy.executeBatch conn "EXEC sys.sp_cdc_enable_db;"
+                                do! Deploy.executeBatch conn "EXEC sys.sp_cdc_enable_table @source_schema = N'dbo', @source_name = N'MIGAB_CUSTOMER', @role_name = NULL, @supports_net_changes = 0;"
+                                let! c =
+                                    scalarInt conn
+                                        "SELECT COUNT(*) FROM sys.tables WHERE is_tracked_by_cdc = 1 AND name = N'MIGAB_CUSTOMER';"
+                                return c > 0
+                            with _ -> return false
+                        }
+                    if not enabled then
+                        printfn "SKIP AC-X4: container did not enable CDC (flag not set)"
+                    else
+                        // Seed rows so the tracked substrate carries real, prior
+                        // CDC traffic (proves the meter isn't counting an empty CT).
+                        do! Deploy.executeBatch conn
+                                "INSERT INTO [dbo].[MIGAB_CUSTOMER] ([ID],[EMAIL]) VALUES (1, N'a@x.com'), (2, N'b@x.com');"
+
+                        // LEG 1 — idempotent redeploy (A→A) measures BOTH legs zero.
+                        let! measured = MigrationRun.executeAndMeasureCdc false DeclareNone catalogA catalogA conn
+                        match measured with
+                        | Error e -> Assert.Fail(sprintf "idempotent redeploy should succeed, got %A" e)
+                        | Ok (o, cdcDelta) ->
+                            // Zero ALTERs: the differential plan is empty — the
+                            // engine emits no DDL for an unchanged model. (NB: B'
+                            // verification is deliberately NOT asserted here — CDC
+                            // enable adds `cdc`-schema objects the readback sees, so
+                            // Verified is confounded under CDC; the *plan* emptiness
+                            // is the faithful "zero ALTERs" measure.)
+                            Assert.Empty(o.Artifacts.SchemaStatements)   // zero ALTERs, measured
+                            Assert.Equal(0, cdcDelta)                    // zero CDC captures, measured
+
+                        // LEG 2 — meter-liveness: the SAME production primitive,
+                        // bracketing one INSERT, reads exactly +1.
+                        let! baseline = Deploy.cdcCaptureTotal conn
+                        do! Deploy.executeBatch conn
+                                "INSERT INTO [dbo].[MIGAB_CUSTOMER] ([ID],[EMAIL]) VALUES (3, N'c@x.com');"
+                        let! post = Deploy.cdcCaptureTotal conn
+                        Assert.Equal(baseline + 1, post)
+                }))
+
     // -- AC-S8 — RENAME is CDC-transparent (‖rename‖_data = 0) ----------------
     //
     // THE STANDARD (obligations §0): a discriminating LIVE witness. A RENAME via

@@ -1130,11 +1130,16 @@ let private runMigrateExecute (toPath: string) (connSpec: string) (declaration: 
                                                 return 9
                                             | Error e -> return reportMigrationError e
                                     | None ->
-                                        let! outcome = MigrationRun.execute allowCdc declaration sourceA target cnn
+                                        // X4 — measure CDC-silence, don't just
+                                        // assert no DDL ran. `executeAndMeasureCdc`
+                                        // brackets the execute with the change-
+                                        // measure ‖·‖; an idempotent redeploy
+                                        // surfaces zero statements AND zero captures.
+                                        let! outcome = MigrationRun.executeAndMeasureCdc allowCdc declaration sourceA target cnn
                                         match outcome with
-                                        | Ok o when o.Verified ->
-                                            printfn "projection migrate: executed and VERIFIED — B' reproduces B (%d statement(s))"
-                                                (List.length o.Artifacts.SchemaStatements)
+                                        | Ok (o, cdcDelta) when o.Verified ->
+                                            printfn "projection migrate: executed and VERIFIED — B' reproduces B (%d statement(s); %d CDC capture(s) measured)"
+                                                (List.length o.Artifacts.SchemaStatements) cdcDelta
                                             eprintfn "projection migrate: note — no --lifecycle-store supplied; no episode persisted (the next diff has no prior to load)."
                                             return 0
                                         | Ok _ ->
