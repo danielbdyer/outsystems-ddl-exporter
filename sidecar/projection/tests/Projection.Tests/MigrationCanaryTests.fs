@@ -536,6 +536,46 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
         finally
             if System.IO.File.Exists storePath then System.IO.File.Delete storePath
 
+    // -- AC-X7 — the drift protein: diff the DEPLOYED substrate vs THE MODEL ----
+    //
+    // THE STANDARD (obligations §0): the criterion is "diff deployed vs **the
+    // model**". `verify-data` compares two DEPLOYED substrates and so cannot
+    // detect that the single deployment has drifted from the authored intent.
+    // `DriftRun.detect` reads the live schema and diffs it against the in-memory
+    // model `Catalog`. Two legs discriminate:
+    //   - deployed == model ⇒ no drift (empty PhysicalSchema diff);
+    //   - deployed (A) ≠ model (B) ⇒ drift detected (non-empty diff).
+    // A drift-blind impl that always reports clean turns leg 2 RED; the
+    // deployed-vs-deployed impostor cannot even be expressed (one connection,
+    // compared against intent).
+    [<Fact>]
+    member _.``AC-X7: drift detection diffs the deployed schema against the model (not a second deployment)`` () =
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        // LEG A — deployed == model ⇒ no drift.
+        let noDrift =
+            TaskSync.run (fun () ->
+                fixture.WithEphemeralDatabase "X7Match" (fun conn _ ->
+                    task {
+                        do! Deploy.executeBatch conn (SsdtDdlEmitter.statements catalogB |> Render.toText)
+                        return! DriftRun.detect catalogB conn
+                    }))
+        match noDrift with
+        | Error es -> Assert.Fail(sprintf "X7 no-drift read failed: %A" es)
+        | Ok diff ->
+            Assert.True(PhysicalSchema.isEqual diff, sprintf "deployed==model must show no drift:\n%s" (PhysicalSchema.renderDiff diff))
+        // LEG B — deployed (A) differs from the model (B) ⇒ drift detected.
+        let drift =
+            TaskSync.run (fun () ->
+                fixture.WithEphemeralDatabase "X7Drift" (fun conn _ ->
+                    task {
+                        do! Deploy.executeBatch conn (SsdtDdlEmitter.statements catalogA |> Render.toText)
+                        return! DriftRun.detect catalogB conn
+                    }))
+        match drift with
+        | Error es -> Assert.Fail(sprintf "X7 drift read failed: %A" es)
+        | Ok diff ->
+            Assert.False(PhysicalSchema.isEqual diff, "deployed A vs model B must surface drift")
+
     // -- AC-S8 — RENAME is CDC-transparent (‖rename‖_data = 0) ----------------
     //
     // THE STANDARD (obligations §0): a discriminating LIVE witness. A RENAME via

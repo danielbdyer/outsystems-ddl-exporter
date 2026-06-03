@@ -862,6 +862,56 @@ let private runVerifyData (beforeSpec: string) (afterSpec: string) : int =
     dumpBench "verify-data"
     exitCode
 
+/// AC-X7 — `projection drift --to <model.json> --conn <ref>`. Reads the
+/// deployed schema and diffs it against THE MODEL (the authored Catalog), not
+/// a second deployed substrate. Exit 0 = no drift; 5 = drift detected (the diff
+/// is rendered). This is the deployed-vs-model check `verify-data`
+/// (deployed-vs-deployed) structurally cannot perform.
+let private runDrift (toPath: string) (connSpec: string) : int =
+    let collect = function Ok _ -> [] | Error es -> es
+    let parsedConn = TransferSpec.parseConnectionSpec connSpec
+    if not (List.isEmpty (collect parsedConn)) then
+        Console.Error.WriteLine "projection drift: --conn argument error:"
+        printErrors Console.Error (collect parsedConn)
+        dumpBench "drift"
+        2
+    else
+    let connStrR = ConnectionResolver.resolve "Deployed" (Result.value parsedConn)
+    if not (List.isEmpty (collect connStrR)) then
+        Console.Error.WriteLine "projection drift: connection error:"
+        printErrors Console.Error (collect connStrR)
+        dumpBench "drift"
+        6
+    else
+    let work =
+        task {
+            let! modelR = Compose.read toPath
+            match modelR with
+            | Error es ->
+                Console.Error.WriteLine (sprintf "projection drift: could not read --to %s:" toPath)
+                printErrors Console.Error es
+                return 6
+            | Ok model ->
+                use cnn = new Microsoft.Data.SqlClient.SqlConnection(Result.value connStrR)
+                do! cnn.OpenAsync()
+                match! DriftRun.detect model cnn with
+                | Error es ->
+                    Console.Error.WriteLine "projection drift: could not read the deployed schema:"
+                    printErrors Console.Error es
+                    return 3
+                | Ok diff ->
+                    if PhysicalSchema.isEqual diff then
+                        printfn "projection drift: no drift — the deployed schema matches the model"
+                        return 0
+                    else
+                        eprintfn "projection drift: DRIFT DETECTED — the deployed schema differs from the model:\n%s"
+                            (PhysicalSchema.renderDiff diff)
+                        return 5
+        }
+    let code = work.GetAwaiter().GetResult()
+    dumpBench "drift"
+    code
+
 let private dispatchVerifyData (argv: string[]) : int =
     argv |> VerbArgs.parse<VerifyDataArgs.VerifyDataArg> "projection verify-data" (fun parsed ->
         let beforeSpec = parsed.GetResult VerifyDataArgs.Before_Conn
@@ -1407,6 +1457,14 @@ let main argv =
         runCanary sourceDdlPath
     | [| "policy-diff"; configAPath; configBPath |] ->
         runPolicyDiff configAPath configBPath
+    | arr when arr.Length >= 1 && arr.[0] = "drift" ->
+        let valueOf (flag: string) =
+            arr
+            |> Array.tryFindIndex ((=) flag)
+            |> Option.bind (fun i -> if i + 1 < arr.Length then Some arr.[i + 1] else None)
+        match valueOf "--to", valueOf "--conn" with
+        | Some toPath, Some connSpec -> runDrift toPath connSpec
+        | _ -> die 2 "projection drift: requires --to <model.json> --conn <ref>"
     | arr when arr.Length >= 1 && arr.[0] = "migrate" && not (Array.contains "--execute" arr) ->
         let valueOf (flag: string) =
             arr
