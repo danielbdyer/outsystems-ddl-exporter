@@ -1230,7 +1230,7 @@ let private runMigrateExecute (toPath: string) (connSpec: string) (declaration: 
 /// AC-I5 `validate-user-map` pre-write halt gates first; absent, it is a
 /// straight load. Schema is fail-loud + minimum-viable; the data leg runs
 /// only if the schema verified.
-let private runMigrateWithData (toPath: string) (sinkSpec: string) (sourceSpec: string) (reconcileSpecs: string list) (userMapPath: string option) (declaration: LossDeclaration) (allowCdc: bool) : int =
+let private runMigrateWithData (toPath: string) (sinkSpec: string) (sourceSpec: string) (reconcileSpecs: string list) (userMapPath: string option) (declaration: LossDeclaration) (allowCdc: bool) (storePath: string option) (envLabel: string option) : int =
     if System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" <> "1" then
         Console.Error.WriteLine
             "projection migrate: --execute requires PROJECTION_ALLOW_EXECUTE=1 in the environment (R6 gate). Refusing."
@@ -1328,6 +1328,34 @@ let private runMigrateWithData (toPath: string) (sinkSpec: string) (sourceSpec: 
                                           printErrors Console.Error es
                                           return 2
                                       | Ok reconciliation ->
+                                        match storePath with
+                                        | Some store ->
+                                            // X5 — measure the data movement (CDC ‖·‖)
+                                            // and RECORD the episode durably. A
+                                            // CDC-tracked sink confounds the schema
+                                            // Verified flag, so the record gates on
+                                            // schema-applied + transfer-OK and carries
+                                            // the measured capture count.
+                                            let env = parseEnvironment "DEV" envLabel
+                                            match Timeline.create (Projection.Core.Environment.name env) with
+                                            | Error es ->
+                                                Console.Error.WriteLine "projection migrate: --lifecycle-store timeline name error:"
+                                                printErrors Console.Error es
+                                                return 2
+                                            | Ok tl ->
+                                                let at = System.DateTimeOffset.UtcNow
+                                                let! recorded =
+                                                    MigrationRun.executeWithDataAndRecord declaration Transfer.Execute allowCdc
+                                                        sinkSourceA target reconciliation store tl env at None dataSource sink
+                                                match recorded with
+                                                | Ok (o, chain) ->
+                                                    printfn "projection migrate: schema executed + data loaded — %d kind(s) transferred; episode recorded to %s (%d CDC capture(s) measured; %d episode(s) on timeline %s)"
+                                                        (List.length o.Transfer.Kinds) store
+                                                        (EpisodicLifecycle.latest chain).Data.CdcCaptureCount
+                                                        (EpisodicLifecycle.episodes chain |> List.length) (Timeline.name tl)
+                                                    return 0
+                                                | Error e -> return reportMigrationError e
+                                        | None ->
                                         let! outcome =
                                             MigrationRun.executeWithData declaration Transfer.Execute allowCdc
                                                 sinkSourceA target reconciliation dataSource sink
@@ -1411,7 +1439,14 @@ let main argv =
         let allowCdc = Array.contains "--allow-cdc" arr
         match valueOf "--to", valueOf "--source-conn", valueOf "--sink-conn", valueOf "--conn" with
         | Some toPath, Some sourceSpec, Some sinkSpec, _ ->
-            runMigrateWithData toPath sinkSpec sourceSpec (multiValueOf "--reconcile") (valueOf "--user-map") declaration allowCdc
+            // X5 — `--lifecycle-store` (alias `--store`) records the episode with
+            // the MEASURED CDC capture count of the data load; absent, the data
+            // load runs without recording (unchanged).
+            let storePath =
+                match valueOf "--lifecycle-store" with
+                | Some _ as s -> s
+                | None -> valueOf "--store"
+            runMigrateWithData toPath sinkSpec sourceSpec (multiValueOf "--reconcile") (valueOf "--user-map") declaration allowCdc storePath (valueOf "--env")
         | Some toPath, None, None, Some connSpec ->
             // AC-P8 — optional durable provenance. `--lifecycle-store` (alias
             // `--store`) persists the episode after a verified execute; absent,

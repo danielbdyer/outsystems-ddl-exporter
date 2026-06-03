@@ -466,6 +466,76 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
         | Error es -> Assert.Fail(sprintf "X8 churning canary failed: %A" es)
         | Ok (_, delta) -> Assert.Equal(1, delta)
 
+    // -- AC-X5 — the in-place migrate-with-data protein: Move-data + Measure-CDC
+    //    + Record. The recorded episode carries the MEASURED capture count ------
+    //
+    // THE STANDARD (obligations §0): the prior executeWithData cell proved
+    // schema-migrate + data-move; X5 demands the chain's last two links —
+    // MEASURE the data movement (the change-measure ‖·‖) and RECORD it durably.
+    // `executeWithDataAndRecord` brackets the transfer with the production
+    // reader and persists an episode whose `DataObservation` carries the
+    // measured capture count. The witness:
+    //   - moves 3 rows into a CDC-tracked sink ⇒ the recorded episode's
+    //     CdcCaptureCount == 3 (non-empty observation; the measure is real, not
+    //     the hard-wired-empty DataObservation the schema-only record uses);
+    //   - that count round-trips through the durable store.
+    [<Fact>]
+    member _.``AC-X5: migrate-with-data measures the data movement and records the CDC count on the episode`` () =
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        let storePath =
+            System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(),
+                System.String.Concat("x5-", System.Guid.NewGuid().ToString("N"), ".lifecycle.json"))
+        try
+            TaskSync.run (fun () ->
+                // Source at B with 3 rows; sink at B and CDC-tracked — the data
+                // load moves rows into the tracked sink, firing 3 captures.
+                fixture.WithEphemeralDatabase "X5Src" (fun source _ ->
+                    task {
+                        do! Deploy.executeBatch source (SsdtDdlEmitter.statements catalogB |> Render.toText)
+                        do! Deploy.executeBatch source
+                                "INSERT INTO [dbo].[MIGAB_PATRON] ([ID],[EMAIL],[LOYALTY]) VALUES (1, N'a@x.com', 1), (2, N'b@x.com', 2), (3, N'c@x.com', 3);"
+                        do! fixture.WithEphemeralDatabase "X5Sink" (fun sink _ ->
+                            task {
+                                do! Deploy.executeBatch sink (SsdtDdlEmitter.statements catalogB |> Render.toText)
+                                let! enabled =
+                                    task {
+                                        try
+                                            do! Deploy.executeBatch sink "EXEC sys.sp_cdc_enable_db;"
+                                            do! Deploy.executeBatch sink "EXEC sys.sp_cdc_enable_table @source_schema=N'dbo', @source_name=N'MIGAB_PATRON', @role_name=NULL, @supports_net_changes=0;"
+                                            let! c = scalarInt sink "SELECT COUNT(*) FROM sys.tables WHERE is_tracked_by_cdc = 1 AND name = N'MIGAB_PATRON';"
+                                            return c > 0
+                                        with _ -> return false
+                                    }
+                                if not enabled then
+                                    printfn "SKIP AC-X5: container did not enable CDC (flag not set)"
+                                else
+                                    let tl = Timeline.create "x5" |> Result.value
+                                    let at = System.DateTimeOffset.UtcNow
+                                    let! outcome =
+                                        MigrationRun.executeWithDataAndRecord
+                                            DeclareNone Transfer.Execute true catalogB catalogB Map.empty
+                                            storePath tl Environment.Dev at None source sink
+                                    match outcome with
+                                    | Error e -> Assert.Fail(sprintf "executeWithDataAndRecord failed: %A" e)
+                                    | Ok (_, chain) ->
+                                        // The 3 source rows landed in the tracked sink.
+                                        let! count = scalarString sink "SELECT COUNT(*) FROM [dbo].[MIGAB_PATRON];"
+                                        Assert.Equal("3", count)
+                                        // The recorded episode carries the MEASURED capture count.
+                                        let recorded = EpisodicLifecycle.latest chain
+                                        Assert.True(recorded.Data.CdcCaptureCount > 0, "the recorded observation must be non-empty (data moved)")
+                                        Assert.Equal(3, recorded.Data.CdcCaptureCount)
+                                        // …and it round-trips through the durable store.
+                                        match LifecycleStore.load storePath with
+                                        | Error e -> Assert.Fail(sprintf "store reload failed: %A" e)
+                                        | Ok reloaded ->
+                                            Assert.Equal(3, (EpisodicLifecycle.latest reloaded).Data.CdcCaptureCount)
+                            })
+                    }))
+        finally
+            if System.IO.File.Exists storePath then System.IO.File.Delete storePath
+
     // -- AC-S8 — RENAME is CDC-transparent (‖rename‖_data = 0) ----------------
     //
     // THE STANDARD (obligations §0): a discriminating LIVE witness. A RENAME via
