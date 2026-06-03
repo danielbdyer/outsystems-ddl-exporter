@@ -151,7 +151,7 @@ the "closing slice" points into §3.
 | # | Gap | Location | Axis | Ladder today | Refusal / erasure | Closing slice |
 |---|---|---|---|---|---|---|
 | G1 | `CatalogDiff` captured surface **excludes references, FKs, indexes, modality, module structure, sequences** — they ride through `applyDiff` unchanged | `CatalogDiff.fs:380-388` | Schema, Time | L2 partial (column-shape only) | structural — round-trip law witnessed only on captured axes | **C1** (the widening) |
-| G2 | FK-trust (`IsNotTrusted`) **read but not gated** — no fail-loud if a FK is untrusted; the flag rides the `Reference` but planner/executor never acts on it | `ReadSide.fs:110, 1075` | Schema, Decision | L1.5 (recovered, unenforced) | none | **F1**, **G1-ref** |
+| G2 | FK-trust (`IsNotTrusted`) is **carried faithfully** through the round-trip (recovered + reproduced as NOCHECK + witnessed by F2), per F1's option (b) — not gated, since no fixture demands the refusal | `ReadSide.fs:1075` | Schema, Decision | ✅ **CLOSED** (F1/F2) on the Decision plane — `Reference` illegal-state modeling (G14) is the remaining hygiene | none (carry, not gate) | **G1-ref** (modeling only) |
 | G3 | Non-PK index **structure** read, reconstructed (`attachIndexes`), and now **compared** (`PhysicalSchema.Indexes`: owner + name + uniqueness + ordered key columns) | `PhysicalSchema.fs` `PhysicalIndex`; `ReadSide.readIndexes` | Schema | ✅ **CLOSED** (E1) — round-trips emit/deploy/ReadSide (witness `IndexRoundtripTests`); the prior `IndexesUnreflected` retired | narrower residual: index *options* (filter / included / storage) → `IndexOptionsUnreflected` (OpenGap) | *(structure closed; options residual named)* |
 | G4 | Cross-schema FK rows whose `SCHEMA_NAME()` is NULL (dropped schema / missing `VIEW DEFINITION` grant) — was an opaque `GetString` cast failure (live `readSchemaCombined`) / blank-and-drop (`readForeignKeys`) | `ReadSide.fs` `ForeignKeyReadback` | Schema | ✅ **CLOSED** (E2) — both FK readers route through the pure `ForeignKeyReadback.classify`, which emits a NAMED diagnostic + skip on an unreadable coordinate | named diagnostic, not silent / opaque | *(closed)* |
 | G5 | T-VI **Permissions** — write-denied sink transfers **zero rows, exits clean** | (no axis) | spanning | unbuilt | none | **A2** |
@@ -161,7 +161,7 @@ the "closing slice" points into §3.
 | G9 | Refactorlog `ChangeDateTime` **pinned to a constant**; episode clock not threaded; refactorlog not accumulated against prior | `WAVE_6_MORPHOLOGY.md:258-261` (F6) | Time | L2 partial | n/a | **C3** |
 | G10 | Change-manifest records **state + axis, not displacement** — no per-move `‖δ‖` by channel, no per-run tolerance residual, no `AppliedTransforms` outcome, no CDC capture series | `ChangeManifest.fs`; `WAVE_6_MORPHOLOGY.md:253-257` (F5) | Time, meta | L2 partial | n/a | **C4** |
 | G11 | No `CatalogDiff.compose` consumer — cross-episode `δ₁ + δ₂` fold exists (`CatalogDiff.fs:547`) but is **not wired** into multi-episode recombination | `CatalogDiff.fs:547`; `WAVE_6_MORPHOLOGY.md:237-239` (F3) | Time | L2 surface present, unconsumed | n/a | **C2** |
-| G12 | Decision adjunction (E3) **unwitnessed** — `Ingest(deploy(Project(C, overlay)))` reproducing `overlay` on **all three** tightening sub-axes (nullability + uniqueness + FK-trust) is not a property test | `AxiomTests.fs` (no entry) | Decision | L2 partial (1/3 witnessed) | n/a | **F2** |
+| G12 | Decision adjunction — `Ingest(deploy(Project(C, overlay)))` reproduces the overlay on **all three** axes (nullability + uniqueness + FK-trust) | `CanaryRoundTripTests.fs` `E3:` | Decision | ✅ **CLOSED** (F2) — the unified compositional witness; per-axis proofs (A42 / 6.A.8 / readside-fktrust) now joined by one overlay round-trip carrying all three intents | n/a | *(closed)* |
 | G13 | Matrix generator reports **L1 presence, not L2/L3 level** — witness-present ≠ faithful drift is invisible to the machine surface | `scripts/matrix-status.sh` | meta | ✅ **CLOSED** (D1+D2, this round) — generator now reports the per-axis L1/L2/L3 ladder, derives L2 from `Tolerance.fs` `@ladder` tags (Schema=L2-partial names `IndexesUnreflected`), and is wired into CI (`verifiability-projection.yml`) with a byte-deterministic currency gate | n/a | *(closed)* |
 | G14 | `Reference` boolean tuple has **expressible illegal states** (`IsConstraintTrusted = true ∧ HasDbConstraint = false`) | `Catalog.fs:549-595` | Schema, Decision | modeling debt | typechecks-but-impossible | **G1-ref** |
 | G15 | Phase-2 deferred-FK UPDATE keys on **source PK** — for `AssignedBySink` the sink minted a fresh surrogate, so the WHERE matches zero rows | `TransferRun.fs:77-92` | Data | L2 (refused at gate 6.A.2) | **named refusal** (`TransferRun.fs:250-256`) | *(closed — documented for completeness)* |
@@ -677,6 +677,17 @@ bullseye.
 ---
 
 ### Cluster F — The Decision adjunction (the "stronger than V1" theorem)
+
+> **STATUS — CLOSED (round D→E).** F1 took the recommended option (b): FK-trust is
+> *carried faithfully* through the round-trip (`IsConstraintTrusted` recovered at
+> `ReadSide`; a NOCHECK FK reads back untrusted, witnessed) rather than gated — no
+> fixture demands the refusal. F2 (G12) landed the **unified 3-axis adjunction
+> witness** `E3: Ingest(deploy(Project(C, overlay))) reproduces the decision
+> overlay on all three axes (nullability + uniqueness + FK-trust)` in
+> `CanaryRoundTripTests.fs` (Docker, green) — one overlay carrying all three
+> intents survives emit→deploy→ReadSide at once, proving the axes compose. This
+> was unblocked by E1 (uniqueness became readable via the index axis). The Decision
+> cell is 3/3 sub-axes. North-Star §5 criterion 2 is met.
 
 #### F1 — Gate FK-trust on readback (G2)
 

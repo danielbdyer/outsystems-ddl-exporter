@@ -662,6 +662,83 @@ let ``6.A.8 (decision adjunction): read-back reproduces EnforceUnique and DropFk
         Assert.Equal(0, childFkCount tightened.Reconstructed)
 
 // ---------------------------------------------------------------------
+// F2 (debrief G12) — the UNIFIED decision adjunction. The per-axis
+// proofs exist separately (A42 nullability; 6.A.8 uniqueness + FK-drop;
+// the readside-index-fktrust witness for FK-trust). North-Star §5
+// criterion 2 asks for the COMPOSITIONAL witness: one overlay carrying
+// all three decision intents simultaneously survives the round-trip —
+// `Ingest(deploy(Project(C, overlay)))` reproduces every opinion at once,
+// proving the axes compose (no decision shadows another at emit). This is
+// the theorem that makes "replace V1" stronger than "trust V1": the
+// engine's opinions are provably recoverable from the substrate.
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``E3: Ingest(deploy(Project(C, overlay))) reproduces the decision overlay on all three axes (nullability + uniqueness + FK-trust)`` () =
+    if skipIfNoDocker "decision-adjunction-3axis" then
+        let parentKey = ssKeySafe "OS_KIND_F2_Parent"
+        let childKey = ssKeySafe "OS_KIND_F2_Child"
+        let parentIdKey = ssKeySafe "OS_ATTR_F2_Parent_Id"
+        let codeKey = ssKeySafe "OS_ATTR_F2_Parent_Code"
+        let noteKey = ssKeySafe "OS_ATTR_F2_Parent_Note"
+        let childIdKey = ssKeySafe "OS_ATTR_F2_Child_Id"
+        let parentFkAttr = ssKeySafe "OS_ATTR_F2_Child_ParentId"
+        let refKeyV = ssKeySafe "OS_REF_F2_Child_Parent"
+        let idxKey = ssKeySafe "OS_IDX_F2_Parent_Code"
+        let mkAttr (k: SsKey) (col: string) (isPk: bool) (nullable: bool) (ty: PrimitiveType) : Attribute =
+            { Attribute.create k (nameSafe col) ty with
+                Column = ColumnRealization.create (col.ToUpperInvariant()) nullable |> Result.value
+                IsPrimaryKey = isPk; IsMandatory = isPk }
+        let parent =
+            { Kind.create parentKey (nameSafe "Parent")
+                (mkTableId "dbo" "OSUSR_F2_PARENT")
+                [ mkAttr parentIdKey "Id" true false Integer
+                  mkAttr codeKey "Code" false false Integer
+                  // Source-nullable column — the nullability axis.
+                  mkAttr noteKey "Note" false true Integer ]
+              with Indexes = [ Index.ofKeyColumns idxKey (nameSafe "IX_F2Parent_Code") [ codeKey ] ] }
+        // Source FK is NOCHECK / untrusted — the FK-trust axis (preserved,
+        // not dropped: it must read back untrusted, not the create-default).
+        let child =
+            { Kind.create childKey (nameSafe "Child")
+                (mkTableId "dbo" "OSUSR_F2_CHILD")
+                [ mkAttr childIdKey "Id" true false Integer
+                  mkAttr parentFkAttr "ParentId" false false Integer ]
+              with References =
+                    [ { Reference.create refKeyV (nameSafe "Parent") parentFkAttr parentKey with
+                          HasDbConstraint = true; IsConstraintTrusted = false } ] }
+        let catalog =
+            match Catalog.create [ { SsKey = ssKeySafe "OS_MOD_F2"; Name = nameSafe "F2Mod"; Kinds = [ parent; child ]; IsActive = true; ExtendedProperties = [] } ] [] with
+            | Ok c -> c | Error e -> failwithf "catalog %A" e
+
+        // One overlay, two tightening intents (nullability + uniqueness);
+        // FK-trust rides the source Reference. Project → deploy → read back.
+        let overlay =
+            { DecisionOverlay.empty with
+                EnforceNotNull = Set.singleton noteKey
+                EnforceUnique = Set.singleton idxKey }
+        let sql = SsdtDdlEmitter.statementsWith overlay catalog |> Render.toText
+        let result = (Deploy.runWithReadback sql).GetAwaiter().GetResult()
+        Assert.True(result.Report.Ok, sprintf "deploy: %A" result.Report.Errors)
+        match result.Reconstructed with
+        | Some c ->
+            let kindByTable t = Catalog.allKinds c |> List.find (fun k -> TableId.tableText k.Physical = t)
+            let parentBack = kindByTable "OSUSR_F2_PARENT"
+            // (1) Nullability: the EnforceNotNull column reads back NOT NULL.
+            let noteBack = parentBack.Attributes |> List.find (fun a -> ColumnRealization.columnNameText a.Column = "NOTE")
+            Assert.False(noteBack.Column.IsNullable, "EnforceNotNull(Note) must read back NOT NULL")
+            // (2) Uniqueness: the EnforceUnique index reads back UNIQUE.
+            match parentBack.Indexes |> List.tryFind (fun i -> IndexUniqueness.isUnique i.Uniqueness) with
+            | Some _ -> ()
+            | None -> Assert.Fail "EnforceUnique(index) must read back as a UNIQUE index"
+            // (3) FK-trust: the NOCHECK source FK reads back untrusted.
+            let childBack = kindByTable "OSUSR_F2_CHILD"
+            match childBack.References with
+            | [ r ] -> Assert.False(r.IsConstraintTrusted, "NOCHECK FK must read back untrusted, not the create-default true")
+            | rs -> Assert.Fail(sprintf "expected exactly one reconstructed FK, got %d" (List.length rs))
+        | None -> Assert.Fail "deploy produced no reconstructed catalog"
+
+// ---------------------------------------------------------------------
 // 6.A.6 — emit-side NOCHECK-FK reproduction (the schema-erasure 6.A.5
 // surfaced). A source `Reference.IsConstraintTrusted = false` now SURVIVES
 // emit → deploy → ReadSide: the emitter reproduces the enabled-untrusted
