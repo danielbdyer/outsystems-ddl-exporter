@@ -462,6 +462,32 @@ module MigrationRun =
                                   Verified = PhysicalSchema.isSchemaEqual sdiff }
         }
 
+    /// **X4 — the in-place migrate's CDC-measure leg.** The criterion
+    /// ("redeploy an unchanged model: zero ALTERs AND zero CDC captures, BOTH
+    /// measured") asks the engine to *measure* CDC-silence, not merely assert
+    /// that no DDL ran. Brackets `execute` with the change-measure ‖·‖
+    /// (`Deploy.cdcCaptureTotal`): baseline before, post after; the returned
+    /// delta is the captures the migrate produced. An idempotent redeploy
+    /// (empty differential, no DML) yields `(outcome, 0)` — both legs of the
+    /// criterion measured; the meter is proven live by any interleaved DML
+    /// showing nonzero. Additive — `execute` (and its G9 gate) is untouched.
+    let executeAndMeasureCdc
+        (allowCdc: bool)
+        (declaration: LossDeclaration)
+        (source: Catalog)
+        (target: Catalog)
+        (cnn: SqlConnection)
+        : System.Threading.Tasks.Task<Result<MigrationOutcome * int, MigrationError>> =
+        task {
+            let! baseline = Deploy.cdcCaptureTotal cnn
+            let! result = execute allowCdc declaration source target cnn
+            match result with
+            | Error e -> return Error e
+            | Ok outcome ->
+                let! post = Deploy.cdcCaptureTotal cnn
+                return Ok (outcome, post - baseline)
+        }
+
     /// **The composed live execute → record** — the L3 CLI bullseye made
     /// durable (AC-P8). Runs `execute` against the deployed DB; on a **verified**
     /// outcome, persists the episode onto the timeline at `path` via
@@ -555,4 +581,62 @@ module MigrationRun =
                     match transferResult with
                     | Ok report -> return Ok { Schema = schema; Transfer = report }
                     | Error es -> return Error (DataTransferFailed es)
+        }
+
+    /// **X5 — the in-place migrate-with-data, MEASURED and RECORDED.** The
+    /// protein P-6 chain is `migrate-schema → Move-data → Measure-CDC →
+    /// Record`. `executeWithData` covers the first two; this composes the last
+    /// two: it brackets the data transfer with the change-measure ‖·‖
+    /// (`Deploy.cdcCaptureTotal`, the production reader) and persists an episode
+    /// whose `DataObservation` carries the **measured** capture count — the
+    /// durable record of how much data actually moved.
+    ///
+    /// **Verification under CDC.** A CDC-tracked sink (the UAT the SSIS
+    /// consumer reads) puts `cdc.*` objects in the read-back, so the schema
+    /// leg's `Verified` round-trip is confounded (it sees tables that aren't in
+    /// B). The episode is therefore gated on the schema leg applying without
+    /// error (`execute` already refuses schema-error displacements) and the
+    /// transfer succeeding — not on the confounded readback flag. Recorded via
+    /// `record` (coordinate from `nextCoordinate`), so the timeline carries the
+    /// data-plane observation. Additive — `execute` (and its G9 gate) and
+    /// `executeWithData` are untouched.
+    let executeWithDataAndRecord
+        (declaration: LossDeclaration)
+        (mode: Transfer.Mode)
+        (allowCdc: bool)
+        (sinkSource: Catalog)
+        (target: Catalog)
+        (reconciliation: Map<SsKey, ReconciliationStrategy>)
+        (path: string)
+        (timeline: Timeline)
+        (environment: Environment)
+        (at: System.DateTimeOffset)
+        (refactorLogRef: string option)
+        (dataSource: SqlConnection)
+        (sink: SqlConnection)
+        : System.Threading.Tasks.Task<Result<MigrationDataOutcome * EpisodicLifecycle, MigrationError>> =
+        task {
+            let! schemaResult = execute allowCdc declaration sinkSource target sink
+            match schemaResult with
+            | Error e -> return Error e
+            | Ok schema ->
+                // Measure the data movement: baseline before the load, post
+                // after; the delta is the CDC capture count of the transfer.
+                let! baseline = Deploy.cdcCaptureTotal sink
+                let! transferResult =
+                    if Map.isEmpty reconciliation then
+                        Transfer.run mode allowCdc dataSource sink target
+                    else
+                        Transfer.runReconciling mode allowCdc false dataSource sink target reconciliation
+                match transferResult with
+                | Error es -> return Error (DataTransferFailed es)
+                | Ok report ->
+                    let! post = Deploy.cdcCaptureTotal sink
+                    let data = DataObservation.create (post - baseline) None
+                    match nextCoordinate path environment at with
+                    | Error e -> return Error (ExecutionFailed (sprintf "data load succeeded but deriving the episode coordinate failed: %A" e))
+                    | Ok coordinate ->
+                        match record path timeline coordinate refactorLogRef data schema.Artifacts with
+                        | Ok chain -> return Ok ({ Schema = schema; Transfer = report }, chain)
+                        | Error e -> return Error (ExecutionFailed (sprintf "data load succeeded but recording the episode failed: %A" e))
         }

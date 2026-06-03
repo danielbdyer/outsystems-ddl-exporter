@@ -344,6 +344,480 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
                         | _ -> ()
                 }))
 
+    // -- AC-X4 — the redeploy protein: redeploy an unchanged model; pass iff
+    //    zero ALTERs AND zero CDC captures, BOTH MEASURED ----------------------
+    //
+    // THE STANDARD (obligations §0): the prior 6.A.13 cell proved the migrate
+    // emits zero DDL on an unchanged schema — but it never MEASURED CDC; it
+    // *assumed* "no DDL ⇒ CDC-silent." X4's criterion demands the engine
+    // surface the CDC capture count, not infer it. `executeAndMeasureCdc`
+    // brackets the (no-op) execute with the change-measure ‖·‖
+    // (`Deploy.cdcCaptureTotal`, the PRODUCTION reader) and returns the delta.
+    //
+    // TWO LEGS, criterion-first:
+    //   1. Idempotent redeploy (A→A): zero statements (ALTERs measured) AND
+    //      delta == 0 (captures MEASURED, not assumed).
+    //   2. Meter-liveness discriminator: the SAME production primitive the
+    //      migrate uses, bracketing one real INSERT, returns exactly +1. A
+    //      reader hard-wired to 0 (the impostor that makes leg 1 look green for
+    //      free) turns this RED; an over-counting reader overshoots.
+    [<Fact>]
+    member _.``AC-X4: redeploy of an unchanged model measures zero ALTERs and zero CDC captures (meter proven live)`` () =
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "RedeployCdcMeasure" (fun conn _ ->
+                task {
+                    do! Deploy.executeBatch conn (SsdtDdlEmitter.statements catalogA |> Render.toText)
+                    let! enabled =
+                        task {
+                            try
+                                do! Deploy.executeBatch conn "EXEC sys.sp_cdc_enable_db;"
+                                do! Deploy.executeBatch conn "EXEC sys.sp_cdc_enable_table @source_schema = N'dbo', @source_name = N'MIGAB_CUSTOMER', @role_name = NULL, @supports_net_changes = 0;"
+                                let! c =
+                                    scalarInt conn
+                                        "SELECT COUNT(*) FROM sys.tables WHERE is_tracked_by_cdc = 1 AND name = N'MIGAB_CUSTOMER';"
+                                return c > 0
+                            with _ -> return false
+                        }
+                    if not enabled then
+                        printfn "SKIP AC-X4: container did not enable CDC (flag not set)"
+                    else
+                        // Seed rows so the tracked substrate carries real, prior
+                        // CDC traffic (proves the meter isn't counting an empty CT).
+                        do! Deploy.executeBatch conn
+                                "INSERT INTO [dbo].[MIGAB_CUSTOMER] ([ID],[EMAIL]) VALUES (1, N'a@x.com'), (2, N'b@x.com');"
+
+                        // LEG 1 — idempotent redeploy (A→A) measures BOTH legs zero.
+                        let! measured = MigrationRun.executeAndMeasureCdc false DeclareNone catalogA catalogA conn
+                        match measured with
+                        | Error e -> Assert.Fail(sprintf "idempotent redeploy should succeed, got %A" e)
+                        | Ok (o, cdcDelta) ->
+                            // Zero ALTERs: the differential plan is empty — the
+                            // engine emits no DDL for an unchanged model. (NB: B'
+                            // verification is deliberately NOT asserted here — CDC
+                            // enable adds `cdc`-schema objects the readback sees, so
+                            // Verified is confounded under CDC; the *plan* emptiness
+                            // is the faithful "zero ALTERs" measure.)
+                            Assert.Empty(o.Artifacts.SchemaStatements)   // zero ALTERs, measured
+                            Assert.Equal(0, cdcDelta)                    // zero CDC captures, measured
+
+                        // LEG 2 — meter-liveness: the SAME production primitive,
+                        // bracketing one INSERT, reads exactly +1.
+                        let! baseline = Deploy.cdcCaptureTotal conn
+                        do! Deploy.executeBatch conn
+                                "INSERT INTO [dbo].[MIGAB_CUSTOMER] ([ID],[EMAIL]) VALUES (3, N'c@x.com');"
+                        let! post = Deploy.cdcCaptureTotal conn
+                        Assert.Equal(baseline + 1, post)
+                }))
+
+    // -- AC-X8 — the canary protein: assert CDC-silence on idempotent redeploy --
+    //
+    // THE STANDARD (obligations §0): the wide canary already proves the
+    // PhysicalSchema round-trip; X8 demands it ALSO surface protein P-9 — an
+    // idempotent redeploy of the deployed target fires ZERO CDC captures — via
+    // the PRODUCTION reader, not a harness. The SAME canary path
+    // (`Deploy.runWideCanaryWithCdcSilence`, parameterized by the redeploy)
+    // discriminates two legs:
+    //   1. idempotent redeploy (`MigrationRun.execute tgt tgt`, empty
+    //      differential) ⇒ diff empty AND measured CDC delta == 0.
+    //   2. a data-churning redeploy (one INSERT) ⇒ measured CDC delta == +1,
+    //      proving the canary's CDC meter is LIVE. A hard-wired-0 meter — the
+    //      impostor that makes leg 1 green for free — turns this RED.
+    [<Fact>]
+    member _.``AC-X8: the canary measures CDC-silence on an idempotent redeploy (meter proven live)`` () =
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        let sourceDdl =
+            "CREATE TABLE [dbo].[X8_WIDGET] ( [ID] INT NOT NULL PRIMARY KEY, [LABEL] NVARCHAR(50) NOT NULL );"
+        let enableCdc cnn (cat: Catalog) =
+            task {
+                do! Deploy.executeBatch cnn "EXEC sys.sp_cdc_enable_db;"
+                for k in Catalog.allKinds cat do
+                    do! Deploy.executeBatch cnn
+                            (System.String.Concat(
+                                "EXEC sys.sp_cdc_enable_table @source_schema=N'", TableId.schemaText k.Physical,
+                                "', @source_name=N'", TableId.tableText k.Physical,
+                                "', @role_name=NULL, @supports_net_changes=0;"))
+            }
+        let idempotentRedeploy cnn (cat: Catalog) =
+            task { let! _ = MigrationRun.execute true DeclareNone cat cat cnn in return () }
+        let churningRedeploy cnn (_cat: Catalog) =
+            task {
+                do! Deploy.executeBatch cnn
+                        "INSERT INTO [dbo].[X8_WIDGET] ([ID],[LABEL]) VALUES (1, N'a');"
+            }
+        // LEG 1 — idempotent redeploy is CDC-silent.
+        let silent =
+            TaskSync.run (fun () ->
+                Deploy.runWideCanaryWithCdcSilence
+                    (fun cnn -> Deploy.executeBatch cnn sourceDdl)
+                    SsdtDdlEmitter.statements enableCdc idempotentRedeploy)
+        match silent with
+        | Error es -> Assert.Fail(sprintf "X8 idempotent canary failed: %A" es)
+        | Ok (report, delta) ->
+            Assert.True(PhysicalSchema.isEqual report.Diff, "wide canary PhysicalSchema diff must be empty")
+            Assert.Equal(0, delta)
+        // LEG 2 — a data-churning redeploy fires CDC; the meter is live.
+        let churned =
+            TaskSync.run (fun () ->
+                Deploy.runWideCanaryWithCdcSilence
+                    (fun cnn -> Deploy.executeBatch cnn sourceDdl)
+                    SsdtDdlEmitter.statements enableCdc churningRedeploy)
+        match churned with
+        | Error es -> Assert.Fail(sprintf "X8 churning canary failed: %A" es)
+        | Ok (_, delta) -> Assert.Equal(1, delta)
+
+    // -- AC-X5 — the in-place migrate-with-data protein: Move-data + Measure-CDC
+    //    + Record. The recorded episode carries the MEASURED capture count ------
+    //
+    // THE STANDARD (obligations §0): the prior executeWithData cell proved
+    // schema-migrate + data-move; X5 demands the chain's last two links —
+    // MEASURE the data movement (the change-measure ‖·‖) and RECORD it durably.
+    // `executeWithDataAndRecord` brackets the transfer with the production
+    // reader and persists an episode whose `DataObservation` carries the
+    // measured capture count. The witness:
+    //   - moves 3 rows into a CDC-tracked sink ⇒ the recorded episode's
+    //     CdcCaptureCount == 3 (non-empty observation; the measure is real, not
+    //     the hard-wired-empty DataObservation the schema-only record uses);
+    //   - that count round-trips through the durable store.
+    [<Fact>]
+    member _.``AC-X5: migrate-with-data measures the data movement and records the CDC count on the episode`` () =
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        let storePath =
+            System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(),
+                System.String.Concat("x5-", System.Guid.NewGuid().ToString("N"), ".lifecycle.json"))
+        try
+            TaskSync.run (fun () ->
+                // Source at B with 3 rows; sink at B and CDC-tracked — the data
+                // load moves rows into the tracked sink, firing 3 captures.
+                fixture.WithEphemeralDatabase "X5Src" (fun source _ ->
+                    task {
+                        do! Deploy.executeBatch source (SsdtDdlEmitter.statements catalogB |> Render.toText)
+                        do! Deploy.executeBatch source
+                                "INSERT INTO [dbo].[MIGAB_PATRON] ([ID],[EMAIL],[LOYALTY]) VALUES (1, N'a@x.com', 1), (2, N'b@x.com', 2), (3, N'c@x.com', 3);"
+                        do! fixture.WithEphemeralDatabase "X5Sink" (fun sink _ ->
+                            task {
+                                do! Deploy.executeBatch sink (SsdtDdlEmitter.statements catalogB |> Render.toText)
+                                let! enabled =
+                                    task {
+                                        try
+                                            do! Deploy.executeBatch sink "EXEC sys.sp_cdc_enable_db;"
+                                            do! Deploy.executeBatch sink "EXEC sys.sp_cdc_enable_table @source_schema=N'dbo', @source_name=N'MIGAB_PATRON', @role_name=NULL, @supports_net_changes=0;"
+                                            let! c = scalarInt sink "SELECT COUNT(*) FROM sys.tables WHERE is_tracked_by_cdc = 1 AND name = N'MIGAB_PATRON';"
+                                            return c > 0
+                                        with _ -> return false
+                                    }
+                                if not enabled then
+                                    printfn "SKIP AC-X5: container did not enable CDC (flag not set)"
+                                else
+                                    let tl = Timeline.create "x5" |> Result.value
+                                    let at = System.DateTimeOffset.UtcNow
+                                    let! outcome =
+                                        MigrationRun.executeWithDataAndRecord
+                                            DeclareNone Transfer.Execute true catalogB catalogB Map.empty
+                                            storePath tl Environment.Dev at None source sink
+                                    match outcome with
+                                    | Error e -> Assert.Fail(sprintf "executeWithDataAndRecord failed: %A" e)
+                                    | Ok (_, chain) ->
+                                        // The 3 source rows landed in the tracked sink.
+                                        let! count = scalarString sink "SELECT COUNT(*) FROM [dbo].[MIGAB_PATRON];"
+                                        Assert.Equal("3", count)
+                                        // The recorded episode carries the MEASURED capture count.
+                                        let recorded = EpisodicLifecycle.latest chain
+                                        Assert.True(recorded.Data.CdcCaptureCount > 0, "the recorded observation must be non-empty (data moved)")
+                                        Assert.Equal(3, recorded.Data.CdcCaptureCount)
+                                        // …and it round-trips through the durable store.
+                                        match LifecycleStore.load storePath with
+                                        | Error e -> Assert.Fail(sprintf "store reload failed: %A" e)
+                                        | Ok reloaded ->
+                                            Assert.Equal(3, (EpisodicLifecycle.latest reloaded).Data.CdcCaptureCount)
+                            })
+                    }))
+        finally
+            if System.IO.File.Exists storePath then System.IO.File.Delete storePath
+
+    // -- AC-X7 — the drift protein: diff the DEPLOYED substrate vs THE MODEL ----
+    //
+    // THE STANDARD (obligations §0): the criterion is "diff deployed vs **the
+    // model**". `verify-data` compares two DEPLOYED substrates and so cannot
+    // detect that the single deployment has drifted from the authored intent.
+    // `DriftRun.detect` reads the live schema and diffs it against the in-memory
+    // model `Catalog`. Two legs discriminate:
+    //   - deployed == model ⇒ no drift (empty PhysicalSchema diff);
+    //   - deployed (A) ≠ model (B) ⇒ drift detected (non-empty diff).
+    // A drift-blind impl that always reports clean turns leg 2 RED; the
+    // deployed-vs-deployed impostor cannot even be expressed (one connection,
+    // compared against intent).
+    [<Fact>]
+    member _.``AC-X7: drift detection diffs the deployed schema against the model (not a second deployment)`` () =
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        // LEG A — deployed == model ⇒ no drift.
+        let noDrift =
+            TaskSync.run (fun () ->
+                fixture.WithEphemeralDatabase "X7Match" (fun conn _ ->
+                    task {
+                        do! Deploy.executeBatch conn (SsdtDdlEmitter.statements catalogB |> Render.toText)
+                        return! DriftRun.detect catalogB conn
+                    }))
+        match noDrift with
+        | Error es -> Assert.Fail(sprintf "X7 no-drift read failed: %A" es)
+        | Ok diff ->
+            Assert.True(PhysicalSchema.isEqual diff, sprintf "deployed==model must show no drift:\n%s" (PhysicalSchema.renderDiff diff))
+        // LEG B — deployed (A) differs from the model (B) ⇒ drift detected.
+        let drift =
+            TaskSync.run (fun () ->
+                fixture.WithEphemeralDatabase "X7Drift" (fun conn _ ->
+                    task {
+                        do! Deploy.executeBatch conn (SsdtDdlEmitter.statements catalogA |> Render.toText)
+                        return! DriftRun.detect catalogB conn
+                    }))
+        match drift with
+        | Error es -> Assert.Fail(sprintf "X7 drift read failed: %A" es)
+        | Ok diff ->
+            Assert.False(PhysicalSchema.isEqual diff, "deployed A vs model B must surface drift")
+
+    // -- AC-G10 — the resumable/idempotent transfer (crash-safety fork) --------
+    //
+    // THE STANDARD (obligations §0): a mid-load failure is recoverable by
+    // re-running the SAME command — phase-tracked + idempotent, NOT a single
+    // all-or-nothing transaction envelope. We simulate a CRASHED partial prior
+    // attempt by seeding stale rows into the sink with NO completion marker (the
+    // state a crash leaves). `Transfer.runResumable` clears that partial state
+    // FK-first and reloads, then marks complete. Two legs:
+    //   1. recovery: the stale rows are gone and exactly the source rows remain
+    //      (no duplicates, complete state) — a non-resumable `run` would leave
+    //      the stale rows behind (count > source);
+    //   2. idempotence: a second identical run is a NO-OP (the marker is
+    //      present) — counts unchanged, and the phase-marker row exists (a
+    //      transaction-only impl with no phase tracking would have none).
+    [<Fact>]
+    member _.``AC-G10: a resumable transfer recovers a partial prior attempt with no duplicate rows`` () =
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "G10Src" (fun source _ ->
+                task {
+                    do! Deploy.executeBatch source (SsdtDdlEmitter.statements catalogA |> Render.toText)
+                    do! Deploy.executeBatch source
+                            "INSERT INTO [dbo].[MIGAB_CUSTOMER] ([ID],[EMAIL]) VALUES (1,N'a@x'),(2,N'b@x'),(3,N'c@x');"
+                    do! fixture.WithEphemeralDatabase "G10Sink" (fun sink _ ->
+                        task {
+                            do! Deploy.executeBatch sink (SsdtDdlEmitter.statements catalogA |> Render.toText)
+                            // A crashed partial prior attempt: rows present, NO marker.
+                            do! Deploy.executeBatch sink
+                                    "INSERT INTO [dbo].[MIGAB_CUSTOMER] ([ID],[EMAIL]) VALUES (98,N'stale@x'),(99,N'stale@x');"
+                            // LEG 1 — resume: clear the partial state, load, mark.
+                            let! r1 = Transfer.runResumable Transfer.Execute true source sink catalogA
+                            match r1 with
+                            | Error es -> Assert.Fail(sprintf "resumable run failed: %A" es)
+                            | Ok _ ->
+                                let! c1 = scalarInt sink "SELECT COUNT(*) FROM [dbo].[MIGAB_CUSTOMER];"
+                                Assert.Equal(3, c1)   // stale 98/99 wiped; exactly the 3 source rows. No dupes.
+                                let! marks = scalarInt sink "SELECT COUNT(*) FROM dbo.__projection_transfer_progress;"
+                                Assert.Equal(1, marks)   // phase-marker written (resumability mechanism, not just a txn).
+                                // LEG 2 — idempotent re-run: marker present ⇒ no-op.
+                                let! r2 = Transfer.runResumable Transfer.Execute true source sink catalogA
+                                match r2 with
+                                | Error es -> Assert.Fail(sprintf "resumable re-run failed: %A" es)
+                                | Ok _ ->
+                                    let! c2 = scalarInt sink "SELECT COUNT(*) FROM [dbo].[MIGAB_CUSTOMER];"
+                                    Assert.Equal(3, c2)   // unchanged — re-running the same command duplicates nothing.
+                        })
+                }))
+
+    // -- AC-D10 — wipe-and-load (the explicit destructive EmissionMode) --------
+    //
+    // THE STANDARD (obligations §0): WipeAndLoad is the operator-selected full
+    // refresh — it CLEARS the sink's existing rows (FK-ordered) and reloads. The
+    // discriminator: a sink pre-populated with a row whose value DIFFERS from
+    // the source. Incremental (`run`) would PK-collide on that row (the
+    // PROD-empty premise); WipeAndLoad wipes it first, so the reload succeeds and
+    // the row carries the SOURCE value — proving the wipe actually replaced the
+    // pre-existing state rather than appending to it.
+    [<Fact>]
+    member _.``AC-D10: WipeAndLoad clears pre-existing sink rows and reloads from source`` () =
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "D10Src" (fun source _ ->
+                task {
+                    do! Deploy.executeBatch source (SsdtDdlEmitter.statements catalogA |> Render.toText)
+                    do! Deploy.executeBatch source
+                            "INSERT INTO [dbo].[MIGAB_CUSTOMER] ([ID],[EMAIL]) VALUES (1,N'fresh@x'),(2,N'b@x'),(3,N'c@x');"
+                    do! fixture.WithEphemeralDatabase "D10Sink" (fun sink _ ->
+                        task {
+                            do! Deploy.executeBatch sink (SsdtDdlEmitter.statements catalogA |> Render.toText)
+                            // Pre-existing sink state: ID 1 with a STALE value (would
+                            // PK-collide an incremental load).
+                            do! Deploy.executeBatch sink
+                                    "INSERT INTO [dbo].[MIGAB_CUSTOMER] ([ID],[EMAIL]) VALUES (1,N'stale@x');"
+                            let! r = Transfer.runWithEmissionMode Transfer.Execute WipeAndLoad true source sink catalogA
+                            match r with
+                            | Error es -> Assert.Fail(sprintf "wipe-and-load failed: %A" es)
+                            | Ok _ ->
+                                let! c = scalarInt sink "SELECT COUNT(*) FROM [dbo].[MIGAB_CUSTOMER];"
+                                Assert.Equal(3, c)   // exactly the source rows (the stale row was wiped, not duplicated).
+                                let! v = scalarString sink "SELECT [EMAIL] FROM [dbo].[MIGAB_CUSTOMER] WHERE [ID]=1;"
+                                Assert.Equal("fresh@x", v)   // ID 1 carries the SOURCE value ⇒ wipe replaced the stale state.
+                        })
+                }))
+
+    // -- AC-X1 (part A, live) — the full-export seed bundle deployed to a
+    //    FRESH-BLANK database is non-overwriting / CDC-silent on re-run --------
+    //
+    // THE STANDARD (obligations §0): the operator-resolved premise — full-export
+    // emits the static-entity INSERT scripts for a from-fresh-blank-database
+    // deploy, and they are idempotent (a MERGE), so a re-run lands the same state
+    // and is CDC-silent. This drives the PRODUCTION bundle end-to-end: project
+    // (EmitData) → deploy the DDL + `Data/seed.sql` to a fresh DB → enable CDC →
+    // re-run the SAME seed → assert rows present AND the re-run fired ZERO CDC
+    // captures. A bare-INSERT impostor would PK-collide/duplicate on the re-run;
+    // an over-writing MERGE would fire captures.
+    [<Fact>]
+    member _.``AC-X1: the full-export seed bundle is non-overwriting and CDC-silent on a fresh-blank-DB re-run`` () =
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        let mkKey (parts: string list) = SsKey.synthesizedComposite "OS_X1L" parts |> Result.value
+        let nmx (s: string) = Name.create s |> Result.value
+        let kindKey = mkKey ["Mod"; "Country"]
+        let row code label =
+            { Identifier = mkKey ["Mod"; "Country"; "Row"; code]
+              Values = Map.ofList [ nmx "Id", code; nmx "Code", code; nmx "Label", label ] }
+        let country =
+            { SsKey = kindKey; Name = nmx "Country"; Origin = Native
+              Modality = [ Static [ row "1" "United States"; row "2" "Canada" ] ]
+              Physical = mkTableId "dbo" "Country"
+              Attributes =
+                [ { Attribute.create (mkKey ["Mod";"Country";"Id"]) (nmx "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true }
+                  { Attribute.create (mkKey ["Mod";"Country";"Code"]) (nmx "Code") Text with Column = ColumnRealization.create ("CODE") (false) |> Result.value; IsMandatory = true }
+                  { Attribute.create (mkKey ["Mod";"Country";"Label"]) (nmx "Label") Text with Column = ColumnRealization.create ("LABEL") (false) |> Result.value; IsMandatory = true } ]
+              References = []; Indexes = []; Description = None; IsActive = true
+              Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
+        let catalog =
+            Catalog.create [ { SsKey = mkKey ["Mod"]; Name = nmx "Mod"; Kinds = [ country ]; IsActive = true; ExtendedProperties = [] } ] []
+            |> Result.value
+        let policy =
+            { Policy.empty with Emission = { Policy.empty.Emission with EmitData = true; DataComposition = AllRemaining } }
+        let outputs =
+            Compose.projectWithState policy Profile.empty EmissionPolicy.empty EmissionFolders.empty TransformGroups.empty catalog
+            |> fst
+        let ddl = Compose.aggregateSsdt outputs.SsdtBundle
+        let seed = Map.find "Data/seed.sql" outputs.DataBundle
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "X1FreshSeed" (fun conn _ ->
+                task {
+                    // Fresh-blank DB: deploy schema, run the seed (first load).
+                    do! Deploy.executeBatch conn ddl
+                    do! Deploy.executeBatch conn seed
+                    let! loaded = scalarInt conn "SELECT COUNT(*) FROM [dbo].[Country];"
+                    Assert.Equal(2, loaded)   // the static rows landed on the fresh DB.
+                    let! enabled =
+                        task {
+                            try
+                                do! Deploy.executeBatch conn "EXEC sys.sp_cdc_enable_db;"
+                                do! Deploy.executeBatch conn "EXEC sys.sp_cdc_enable_table @source_schema=N'dbo', @source_name=N'Country', @role_name=NULL, @supports_net_changes=0;"
+                                let! c = scalarInt conn "SELECT COUNT(*) FROM sys.tables WHERE is_tracked_by_cdc = 1 AND name = N'Country';"
+                                return c > 0
+                            with _ -> return false
+                        }
+                    if not enabled then
+                        printfn "SKIP AC-X1 (live): container did not enable CDC"
+                    else
+                        let! baseline = Deploy.cdcCaptureTotal conn
+                        do! Deploy.executeBatch conn seed   // re-run the SAME seed script
+                        let! post = Deploy.cdcCaptureTotal conn
+                        let! after = scalarInt conn "SELECT COUNT(*) FROM [dbo].[Country];"
+                        Assert.Equal(2, after)            // still 2 — non-overwriting, no dupes.
+                        Assert.Equal(baseline, post)     // zero CDC captures on the idempotent re-run.
+                }))
+
+    // -- AC-X1 (part B, live) — the full-export DATA-LOAD leg: load + MEASURE +
+    //    RECORD, CDC-silent on the idempotent re-run --------------------------
+    //
+    // THE STANDARD (obligations §0): the load protein's last links — Move-data
+    // (the seed MERGE) → Measure-CDC (the ‖·‖) → Record (the episode carries the
+    // MEASURED DataObservation, not the X3 store leg's empty one). `loadSeedAndRecord`
+    // loads the published seed into a deployed + CDC-tracked sink, measures the
+    // capture count, and records the episode. Two legs:
+    //   1. first load ⇒ the measured delta == the rows inserted (2), and the
+    //      recorded episode's CdcCaptureCount == 2 (an empty-observation impostor
+    //      — the X3 behavior — records 0 and turns this RED);
+    //   2. idempotent re-load ⇒ delta == 0 (CDC-silent) and the rows are
+    //      unchanged (non-overwriting; a bare-INSERT impostor would PK-collide /
+    //      duplicate).
+    [<Fact>]
+    member _.``AC-X1: the full-export load leg measures the data movement and records it; the re-load is CDC-silent`` () =
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        let mkKey (parts: string list) = SsKey.synthesizedComposite "OS_X1B" parts |> Result.value
+        let nmx (s: string) = Name.create s |> Result.value
+        let row code label =
+            { Identifier = mkKey ["Mod"; "Country"; "Row"; code]
+              Values = Map.ofList [ nmx "Id", code; nmx "Code", code; nmx "Label", label ] }
+        let country =
+            { SsKey = mkKey ["Mod"; "Country"]; Name = nmx "Country"; Origin = Native
+              Modality = [ Static [ row "1" "United States"; row "2" "Canada" ] ]
+              Physical = mkTableId "dbo" "Country"
+              Attributes =
+                [ { Attribute.create (mkKey ["Mod";"Country";"Id"]) (nmx "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true }
+                  { Attribute.create (mkKey ["Mod";"Country";"Code"]) (nmx "Code") Text with Column = ColumnRealization.create ("CODE") (false) |> Result.value; IsMandatory = true }
+                  { Attribute.create (mkKey ["Mod";"Country";"Label"]) (nmx "Label") Text with Column = ColumnRealization.create ("LABEL") (false) |> Result.value; IsMandatory = true } ]
+              References = []; Indexes = []; Description = None; IsActive = true
+              Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
+        let catalog =
+            Catalog.create [ { SsKey = mkKey ["Mod"]; Name = nmx "Mod"; Kinds = [ country ]; IsActive = true; ExtendedProperties = [] } ] []
+            |> Result.value
+        let policy =
+            { Policy.empty with Emission = { Policy.empty.Emission with EmitData = true; DataComposition = AllRemaining } }
+        let outputs =
+            Compose.projectWithState policy Profile.empty EmissionPolicy.empty EmissionFolders.empty TransformGroups.empty catalog
+            |> fst
+        let ddl = Compose.aggregateSsdt outputs.SsdtBundle
+        let seed = Map.find "Data/seed.sql" outputs.DataBundle
+        let storePath =
+            System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(),
+                System.String.Concat("x1b-", System.Guid.NewGuid().ToString("N"), ".lifecycle.json"))
+        try
+            TaskSync.run (fun () ->
+                fixture.WithEphemeralDatabase "X1LoadLeg" (fun conn _ ->
+                    task {
+                        // The schema is deployed + CDC-tracked (the publish→deploy→load
+                        // premise) BEFORE the data lands, so the load's captures are real.
+                        do! Deploy.executeBatch conn ddl
+                        let! enabled =
+                            task {
+                                try
+                                    do! Deploy.executeBatch conn "EXEC sys.sp_cdc_enable_db;"
+                                    do! Deploy.executeBatch conn "EXEC sys.sp_cdc_enable_table @source_schema=N'dbo', @source_name=N'Country', @role_name=NULL, @supports_net_changes=0;"
+                                    let! c = scalarInt conn "SELECT COUNT(*) FROM sys.tables WHERE is_tracked_by_cdc = 1 AND name = N'Country';"
+                                    return c > 0
+                                with _ -> return false
+                            }
+                        if not enabled then
+                            printfn "SKIP AC-X1 (load leg): container did not enable CDC"
+                        else
+                            let tl = Timeline.create "x1load" |> Result.value
+                            let at = System.DateTimeOffset.UtcNow
+                            // LEG 1 — first load: measure + record.
+                            let! first = Compose.loadSeedAndRecord Deploy.cdcCaptureTotal Deploy.executeBatch catalog seed conn (Some storePath) tl Environment.Dev at
+                            match first with
+                            | Error es -> Assert.Fail(sprintf "load leg failed: %A" es)
+                            | Ok (legOpt, delta1) ->
+                                Assert.Equal(2, delta1)   // the 2 static rows were captured (measured).
+                                match legOpt with
+                                | None -> Assert.Fail("a store was supplied; an episode must be recorded")
+                                | Some leg ->
+                                    let recorded = EpisodicLifecycle.latest leg.Chain
+                                    Assert.Equal(2, recorded.Data.CdcCaptureCount)   // the episode carries the MEASURED count.
+                            // LEG 2 — idempotent re-load: CDC-silent, non-overwriting.
+                            let! second = Compose.loadSeedAndRecord Deploy.cdcCaptureTotal Deploy.executeBatch catalog seed conn None tl Environment.Dev at
+                            match second with
+                            | Error es -> Assert.Fail(sprintf "re-load failed: %A" es)
+                            | Ok (_, delta2) ->
+                                Assert.Equal(0, delta2)   // CDC-silent on the idempotent re-load.
+                                let! rows = scalarInt conn "SELECT COUNT(*) FROM [dbo].[Country];"
+                                Assert.Equal(2, rows)     // non-overwriting — still 2, no dupes.
+                    }))
+        finally
+            if System.IO.File.Exists storePath then System.IO.File.Delete storePath
+
     // -- AC-S8 — RENAME is CDC-transparent (‖rename‖_data = 0) ----------------
     //
     // THE STANDARD (obligations §0): a discriminating LIVE witness. A RENAME via

@@ -47,6 +47,16 @@ module Compose =
             /// contents. Iterate to write to disk; consumers needing
             /// a single concatenated SQL string call `aggregateSsdt`.
             SsdtBundle : Map<string, string>
+            /// AC-X1 — the data/seed bundle. When the operator opts into data
+            /// emission (`emission.staticSeeds` / `migrationDependencies` /
+            /// `bootstrap` in config → `EmissionPolicy.EmitData = true`), this
+            /// carries the idempotent, CDC-aware, cycle-ordered MERGE seed
+            /// scripts (`DataEmissionComposer`) keyed by relative path
+            /// (`Data/seed.sql`). Re-running a script against a fresh-blank /
+            /// already-loaded DB is non-overwriting and CDC-silent on unchanged
+            /// rows (the PROD-empty premise). Empty when data emission is off
+            /// (byte-identical to the schema-only bundle).
+            DataBundle : Map<string, string>
             /// V2 IR JSON from `JsonEmitter`, typed as `JsonNode` so
             /// consumers (drift detection, structural diff, post-write
             /// enrichment) query the doc tree without a `JsonNode
@@ -385,6 +395,7 @@ module Compose =
              SuggestConfigEmitter.emit passEntries)
         let outputs = {
             SsdtBundle        = bundle
+            DataBundle        = Map.empty   // populated by projectWithState when EmitData (AC-X1)
             Json              = json
             Distributions     = distributions
             RemediationSql    = remediationSql
@@ -465,14 +476,35 @@ module Compose =
         let versionedPolicy =
             if fullPolicy = Policy.empty then None
             else Some (versionPolicy fullPolicy)
-        projectFromChainWithState
-            chain
-            profile
-            emissionPolicy
-            folders
-            groups
-            versionedPolicy
-            catalog
+        let outputs, finalState =
+            projectFromChainWithState
+                chain
+                profile
+                emissionPolicy
+                folders
+                groups
+                versionedPolicy
+                catalog
+        // AC-X1 — the data leg of the publication bundle. When the operator
+        // opts into data emission, render the idempotent CDC-aware seed scripts
+        // (static-entity populations + bootstrap) over the emitted catalog and
+        // add them to the bundle as `Data/seed.sql`. The scripts are MERGE
+        // (non-overwriting, CDC-silent on unchanged rows) so a fresh-blank DB or
+        // a re-run lands the same state. Off ⇒ `DataBundle` stays empty and the
+        // result is byte-identical to the schema-only bundle.
+        let decorated =
+            if not fullPolicy.Emission.EmitData then outputs
+            else
+                use _ = Bench.scope "emit.dataBundle.compose"
+                match Projection.Targets.Data.DataEmissionComposer.composeRendered fullPolicy finalState.Catalog profile with
+                | Ok sql when not (System.String.IsNullOrWhiteSpace sql) ->
+                    { outputs with DataBundle = Map.ofList [ "Data/seed.sql", sql ] }
+                | Ok _ -> outputs   // no static/bootstrap rows in scope ⇒ nothing to emit
+                | Error err ->
+                    // Mirrors the SSDT-bundle invariant: a valid catalog never
+                    // fails the composer (the keyset is `Catalog.allKinds`).
+                    invalidOp (sprintf "Compose.projectWithState: DataEmissionComposer.composeRendered: %A" err)
+        decorated, finalState
 
     /// Skeleton-shape project: routes through
     /// `RegisteredTransforms.skeletonChainSteps` (per chapter A.4.7'
@@ -564,6 +596,20 @@ module Compose =
                 | parent -> Directory.CreateDirectory parent |> ignore
                 writeFile stagingPath body
                 Path.Combine(outputDir, relPath))
+        // AC-X1 — the data/seed bundle (idempotent CDC-aware MERGE scripts).
+        // Empty unless the operator opted into data emission; same per-path
+        // staging + directory-creation discipline as the SSDT bundle.
+        let dataFinalPaths =
+            outputs.DataBundle
+            |> Map.toList
+            |> List.map (fun (relPath, body) ->
+                let stagingPath = Path.Combine(stagingDir, relPath)
+                match Path.GetDirectoryName stagingPath with
+                | null -> ()
+                | parent when System.String.IsNullOrEmpty parent -> ()
+                | parent -> Directory.CreateDirectory parent |> ignore
+                writeFile stagingPath body
+                Path.Combine(outputDir, relPath))
         // V2 IR JSON
         let jsonOpts = System.Text.Json.JsonSerializerOptions(WriteIndented = true)
         let jsonStaging = Path.Combine(stagingDir, ArtifactPath.json)
@@ -588,7 +634,7 @@ module Compose =
         let remediationFinal   = Path.Combine(outputDir, ArtifactPath.remediation)
         let summaryFinal       = Path.Combine(outputDir, ArtifactPath.summary)
         let suggestConfigFinal = Path.Combine(outputDir, ArtifactPath.suggestConfig)
-        bundleFinalPaths @ [ jsonFinal; distributionsFinal; remediationFinal; summaryFinal; suggestConfigFinal ]
+        bundleFinalPaths @ dataFinalPaths @ [ jsonFinal; distributionsFinal; remediationFinal; summaryFinal; suggestConfigFinal ]
 
     let private safeCleanupStaging (stagingDir: string) : unit =
         if Directory.Exists stagingDir then
@@ -723,10 +769,22 @@ module Compose =
         let insertionR  = InsertionPolicyBinding.fromConfig cfg
         match tighteningR, insertionR with
         | Ok tightening, Ok insertion ->
+            // AC-X1 — translate the config's data-emission toggles into the
+            // EmissionPolicy. `staticSeeds` / `migrationDependencies` /
+            // `bootstrap` turning on enables `EmitData`; `DataComposition`
+            // selects which data emitters fire (Static included ⇒ AllRemaining;
+            // Static off but Migration/Bootstrap on ⇒ AllExceptStatic).
+            let emitData =
+                cfg.Emission.StaticSeeds
+                || cfg.Emission.MigrationDependencies
+                || cfg.Emission.Bootstrap
+            let dataComposition =
+                if cfg.Emission.StaticSeeds then AllRemaining else AllExceptStatic
             Result.success {
                 Policy.empty with
                     Tightening = tightening
                     Insertion  = insertion
+                    Emission   = { Policy.empty.Emission with EmitData = emitData; DataComposition = dataComposition }
             }
         | _ ->
             let tighteningErrs = match tighteningR with Ok _ -> [] | Error es -> es
@@ -864,6 +922,38 @@ module Compose =
         task {
             let! parsed = read cfg.Model.Path
             return parsed |> Result.bind (applyRenames cfg)
+        }
+
+    /// AC-X1 (part B) — the emitted catalog + the rendered data-seed script for
+    /// the live-load leg. Re-projects the config's model (genesis profile shape;
+    /// the seed rows are catalog-borne `Modality.Static`, profile-independent) so
+    /// the load consumes exactly the `Data/seed.sql` the bundle published. Empty
+    /// seed when data emission is off.
+    /// Synchronous core of `emittedSeed` (extracted so the task surface is a
+    /// single `let!` + `return`, statically compilable in Release — FS3511).
+    let private projectSeed (cfg: Config.Config) (parsed: Result<Catalog>) : Result<Catalog * string> =
+        match parsed |> Result.bind (applyRenames cfg) with
+        | Error es -> Result.failure es
+        | Ok catalog ->
+            match buildPolicyFromConfig cfg catalog,
+                  EmissionFoldersBinding.fromConfig catalog cfg,
+                  TransformGroupsBinding.fromConfig cfg with
+            | Ok policy, Ok folders, Ok groups ->
+                let outputs, _ =
+                    projectWithState policy Profile.empty EmissionPolicy.empty folders groups catalog
+                let seed = Map.tryFind "Data/seed.sql" outputs.DataBundle |> Option.defaultValue ""
+                Result.success (catalog, seed)
+            | p, f, g ->
+                let errs =
+                    (match p with Error e -> e | _ -> [])
+                    @ (match f with Error e -> e | _ -> [])
+                    @ (match g with Error e -> e | _ -> [])
+                Result.failure errs
+
+    let private emittedSeed (cfg: Config.Config) : Task<Result<Catalog * string>> =
+        task {
+            let! parsed = read cfg.Model.Path
+            return projectSeed cfg parsed
         }
 
     /// State A — the prior emission's schema, reconstructed from the durable
@@ -1015,6 +1105,38 @@ module Compose =
                                          AccumulatedRefactorLog = accumulated
                                          Chain = chain }
 
+    let private mapStoreErr (storeErr: FullExportStoreError) : ValidationError =
+        match storeErr with
+        | StoreReadFailed m -> ValidationError.create "pipeline.fullExport.store.readFailed" m
+        | DisplacementFailed e -> ValidationError.create "pipeline.fullExport.store.displacementFailed" (string e)
+        | RecordFailed m -> ValidationError.create "pipeline.fullExport.store.recordFailed" m
+
+    /// The diff-vs-prior store leg for a config, or `Ok None` when no store is
+    /// supplied. Extracted so `runWithConfigAndStore` keeps a two-level await
+    /// depth (the three-level `let!`-in-match nesting is not statically
+    /// compilable under Release — FS3511).
+    let private storeLegFromConfig
+        (cfg: Config.Config)
+        (storePath: string option)
+        (timeline: Timeline)
+        (environment: Environment)
+        (at: System.DateTimeOffset)
+        : Task<Result<FullExportStoreLeg option>> =
+        match storePath with
+        | None -> Task.FromResult (Result.success None)
+        | Some p when System.String.IsNullOrWhiteSpace p -> Task.FromResult (Result.success None)
+        | Some path ->
+            task {
+                let! emittedR = emittedSchema cfg
+                return
+                    match emittedR with
+                    | Error errors -> Result.failure errors
+                    | Ok emitted ->
+                        match runStoreLeg path timeline environment at None DataObservation.empty emitted with
+                        | Ok leg -> Result.success (Some leg)
+                        | Error storeErr -> Result.failureOf (mapStoreErr storeErr)
+            }
+
     /// Track W1-B (seam T2) — `runWithConfig` with the **optional diff-vs-prior
     /// store leg**. Additive over the genesis path: when `storePath` is `None`
     /// or empty, this is byte-identical to `runWithConfig` (the genesis emission
@@ -1044,24 +1166,108 @@ module Compose =
             match reportResult with
             | Error errors -> return Result.failure errors
             | Ok report ->
-                match storePath with
-                | None -> return Result.success (report, None)
-                | Some p when System.String.IsNullOrWhiteSpace p -> return Result.success (report, None)
-                | Some path ->
-                    let! emittedR = emittedSchema cfg
-                    match emittedR with
-                    | Error errors -> return Result.failure errors
-                    | Ok emitted ->
-                        match runStoreLeg path timeline environment at None DataObservation.empty emitted with
-                        | Ok leg -> return Result.success (report, Some leg)
-                        | Error storeErr ->
-                            let ve =
-                                match storeErr with
-                                | StoreReadFailed m ->
-                                    ValidationError.create "pipeline.fullExport.store.readFailed" m
-                                | DisplacementFailed e ->
-                                    ValidationError.create "pipeline.fullExport.store.displacementFailed" (string e)
-                                | RecordFailed m ->
-                                    ValidationError.create "pipeline.fullExport.store.recordFailed" m
-                            return Result.failureOf ve
+                let! legResult = storeLegFromConfig cfg storePath timeline environment at
+                return legResult |> Result.map (fun legOpt -> report, legOpt)
+        }
+
+    /// AC-X1 (part B) — the **live data-load leg core**: load the idempotent
+    /// CDC-aware `seed` into the already-deployed `sink`, MEASURE the data
+    /// movement (the change-measure ‖·‖ via `Deploy.cdcCaptureTotal`, the
+    /// production reader), and — when a store is supplied — record an episode
+    /// (schema = `emitted`) with the **measured** `DataObservation` (not
+    /// `DataObservation.empty`). The seed is a MERGE, so the measure on a first
+    /// load = rows inserted; on an idempotent re-run = 0 (CDC-silent). Catalog +
+    /// seed are caller-supplied so this is unit-testable without a config file;
+    /// `runWithConfigAndLoad` is the config-driven wrapper.
+    /// Synchronous record tail of `loadSeedAndRecord` (keeps the task surface a
+    /// flat `let!`/`do!` sequence + `return` — FS3511-safe).
+    let private recordLoad
+        (emitted: Catalog)
+        (cdcDelta: int)
+        (storePath: string option)
+        (timeline: Timeline)
+        (environment: Environment)
+        (at: System.DateTimeOffset)
+        : Result<FullExportStoreLeg option * int> =
+        match storePath with
+        | Some path when not (System.String.IsNullOrWhiteSpace path) ->
+            let data = DataObservation.create cdcDelta None
+            match runStoreLeg path timeline environment at None data emitted with
+            | Ok leg -> Result.success (Some leg, cdcDelta)
+            | Error storeErr -> Result.failureOf (mapStoreErr storeErr)
+        | _ -> Result.success (None, cdcDelta)
+
+    let loadSeedAndRecord
+        (cdcCaptureTotal: SqlConnection -> Task<int>)
+        (executeBatch: SqlConnection -> string -> Task<unit>)
+        (emitted: Catalog)
+        (seed: string)
+        (sink: SqlConnection)
+        (storePath: string option)
+        (timeline: Timeline)
+        (environment: Environment)
+        (at: System.DateTimeOffset)
+        : Task<Result<FullExportStoreLeg option * int>> =
+        // `cdcCaptureTotal` / `executeBatch` are injected (the `Deploy` module
+        // compiles AFTER this one, so Compose cannot name it; callers pass
+        // `Deploy.cdcCaptureTotal` / `Deploy.executeBatch`).
+        task {
+            let! baseline = cdcCaptureTotal sink
+            // Unconditional `do!` of a synchronously-selected Task (a *conditional*
+            // `do!` is the FS3511 trigger): an empty seed loads nothing.
+            let execSeed =
+                if System.String.IsNullOrWhiteSpace seed then Task.FromResult ()
+                else executeBatch sink seed
+            do! execSeed
+            let! post = cdcCaptureTotal sink
+            return recordLoad emitted (post - baseline) storePath timeline environment at
+        }
+
+    /// AC-X1 (part B) — `runWithConfig` PLUS the live data-load leg the W1-B
+    /// store leg deferred. After the bundle is published (unchanged), the
+    /// idempotent CDC-aware seed (`Data/seed.sql`) is loaded into the
+    /// already-deployed `sink`, the movement is measured, and (with a store) the
+    /// episode is recorded with the measured `DataObservation`. The schema is
+    /// assumed already deployed on the sink (the publication→deploy→load premise:
+    /// the operator deploys the published DDL + enables CDC for the SSIS consumer,
+    /// then the data lands).
+    /// Emit-then-load for a config: re-project the seed and load it. Extracted
+    /// so `runWithConfigAndLoad` keeps a two-level await depth (FS3511-safe;
+    /// the three-level `let!`-in-match nesting does not statically compile).
+    let private loadFromConfig
+        (cdcCaptureTotal: SqlConnection -> Task<int>)
+        (executeBatch: SqlConnection -> string -> Task<unit>)
+        (cfg: Config.Config)
+        (sink: SqlConnection)
+        (storePath: string option)
+        (timeline: Timeline)
+        (environment: Environment)
+        (at: System.DateTimeOffset)
+        : Task<Result<FullExportStoreLeg option * int>> =
+        task {
+            let! seedR = emittedSeed cfg
+            return!
+                match seedR with
+                | Error errors -> Task.FromResult (Result.failure errors)
+                | Ok (emitted, seed) ->
+                    loadSeedAndRecord cdcCaptureTotal executeBatch emitted seed sink storePath timeline environment at
+        }
+
+    let runWithConfigAndLoad
+        (cdcCaptureTotal: SqlConnection -> Task<int>)
+        (executeBatch: SqlConnection -> string -> Task<unit>)
+        (cfg: Config.Config)
+        (sink: SqlConnection)
+        (storePath: string option)
+        (timeline: Timeline)
+        (environment: Environment)
+        (at: System.DateTimeOffset)
+        : Task<Result<RunReport * FullExportStoreLeg option * int>> =
+        task {
+            let! reportResult = runWithConfig cfg
+            match reportResult with
+            | Error errors -> return Result.failure errors
+            | Ok report ->
+                let! loadResult = loadFromConfig cdcCaptureTotal executeBatch cfg sink storePath timeline environment at
+                return loadResult |> Result.map (fun (leg, cdcDelta) -> report, leg, cdcDelta)
         }

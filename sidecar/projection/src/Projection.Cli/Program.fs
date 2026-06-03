@@ -228,6 +228,73 @@ let private runFullExport
     dumpBench "full-export"
     FullExportRun.exitCode outcome
 
+/// AC-X1 (part B) — `projection full-export --load --conn <ref> [--lifecycle-store
+/// <path>] [--env <label>] [--out <dir>]`. Publishes the bundle AND loads the
+/// idempotent seed into the (already-deployed) sink, measuring the data
+/// movement's CDC capture count; with a store, records the episode with the
+/// MEASURED `DataObservation`. The seed is a MERGE, so re-running is
+/// non-overwriting and CDC-silent.
+let private runFullExportLoad
+    (configPath: string)
+    (connSpec: string)
+    (outputOverride: string option)
+    (storePath: string option)
+    (envLabel: string option)
+    : int =
+    match TransferSpec.parseConnectionSpec connSpec with
+    | Error es ->
+        Console.Error.WriteLine "projection full-export --load: --conn argument error:"
+        printErrors Console.Error es
+        2
+    | Ok connRef ->
+        match ConnectionResolver.resolve "Sink" connRef with
+        | Error es ->
+            Console.Error.WriteLine "projection full-export --load: connection error:"
+            printErrors Console.Error es
+            6
+        | Ok connStr ->
+            match Config.fromFile configPath with
+            | Error es ->
+                Console.Error.WriteLine "projection full-export --load: config error:"
+                printErrors Console.Error es
+                6
+            | Ok cfg0 ->
+                let cfg =
+                    match outputOverride with
+                    | Some o -> { cfg0 with Output = { cfg0.Output with Dir = o } }
+                    | None   -> cfg0
+                let env = parseEnvironment "DEV" envLabel
+                match Timeline.create (Projection.Core.Environment.name env) with
+                | Error es ->
+                    Console.Error.WriteLine "projection full-export --load: --env timeline name error:"
+                    printErrors Console.Error es
+                    2
+                | Ok tl ->
+                    let at = System.DateTimeOffset.UtcNow
+                    let work =
+                        task {
+                            use sink = new Microsoft.Data.SqlClient.SqlConnection(connStr)
+                            do! sink.OpenAsync()
+                            return! Compose.runWithConfigAndLoad Deploy.cdcCaptureTotal Deploy.executeBatch cfg sink storePath tl env at
+                        }
+                    let code =
+                        match work.GetAwaiter().GetResult() with
+                        | Ok (report, legOpt, cdcDelta) ->
+                            printfn "projection: full-export published %d artifact(s); loaded the seed (%d CDC capture(s) measured)"
+                                report.Paths.Length cdcDelta
+                            legOpt
+                            |> Option.iter (fun leg ->
+                                printfn "  episode recorded (%d on timeline %s)"
+                                    (EpisodicLifecycle.episodes leg.Chain |> List.length)
+                                    (Timeline.name (EpisodicLifecycle.timeline leg.Chain)))
+                            0
+                        | Error es ->
+                            Console.Error.WriteLine "projection full-export --load: failed:"
+                            printErrors Console.Error es
+                            3
+                    dumpBench "full-export"
+                    code
+
 let private runEmit (inputPath: string) (outputDir: string) : int =
     if not (File.Exists inputPath) then
         die 1 (sprintf "projection: input file not found: %s" inputPath)
@@ -409,6 +476,74 @@ let private runCanary (sourceDdlPath: string) : int =
                     printErrors Console.Error errors
                     2
                 )
+        dumpBench "canary"
+        exitCode
+
+/// AC-X8 — `projection canary <source.sql> --cdc-silence`. The wide canary
+/// PLUS the protein P-9 assertion: after the source≈target round-trip, enable
+/// CDC on the deployed target and measure an *idempotent redeploy*
+/// (`MigrationRun.execute tgt tgt`, an empty differential) with the production
+/// reader. Green iff the PhysicalSchema diff is empty AND the redeploy fired
+/// ZERO CDC captures — the `V2_DRIVER.md` highest-leverage property surfaced by
+/// the canary itself, not a harness.
+let private runCanaryCdcSilence (sourceDdlPath: string) : int =
+    if not (File.Exists sourceDdlPath) then
+        die 1 (sprintf "projection: source DDL not found: %s" sourceDdlPath)
+    elif not (Deploy.Docker.isAvailable ()) then
+        die
+            4
+            "projection: Docker daemon not reachable. Set DOCKER_HOST or start the daemon to run `canary`."
+    else
+        let sourceDdl = File.ReadAllText sourceDdlPath
+        let enableCdc cnn (cat: Catalog) =
+            task {
+                do! Deploy.executeBatch cnn "EXEC sys.sp_cdc_enable_db;"
+                for k in Catalog.allKinds cat do
+                    do! Deploy.executeBatch cnn
+                            (String.Concat(   // LINT-ALLOW: terminal SQL-text boundary; sp_cdc_enable_table takes schema/table as N'...' literals
+                                "EXEC sys.sp_cdc_enable_table @source_schema=N'", TableId.schemaText k.Physical,
+                                "', @source_name=N'", TableId.tableText k.Physical,
+                                "', @role_name=NULL, @supports_net_changes=0;"))
+            }
+        let redeploy cnn (cat: Catalog) =
+            task {
+                // The idempotent redeploy: migrate the deployed schema against
+                // itself — an empty differential, so zero DDL and zero DML.
+                let! _ = MigrationRun.execute true DeclareNone cat cat cnn
+                return ()
+            }
+        printfn "projection: spinning up ephemeral SQL Server for the CDC-silence canary..."
+        let work =
+            Deploy.runWideCanaryWithCdcSilence
+                (fun cnn -> Deploy.executeBatch cnn sourceDdl)
+                SsdtDdlEmitter.statements
+                enableCdc
+                redeploy
+        let result = work.GetAwaiter().GetResult()
+        let exitCode =
+            match result with
+            | Ok (report, cdcDelta) ->
+                printfn
+                    "projection: source deployed %d table(s); target deployed %d table(s)"
+                    report.SourceReport.TablesCreated
+                    report.TargetReport.TablesCreated
+                let schemaOk = PhysicalSchema.isEqual report.Diff
+                if not schemaOk then
+                    eprintfn
+                        "projection: canary RED — PhysicalSchema diff non-empty:\n%s"
+                        (PhysicalSchema.renderDiff report.Diff)
+                if cdcDelta <> 0 then
+                    eprintfn
+                        "projection: canary RED — idempotent redeploy fired %d CDC capture(s) (expected 0)"
+                        cdcDelta
+                if schemaOk && cdcDelta = 0 then
+                    printfn "projection: canary green — PhysicalSchema diff empty AND idempotent redeploy CDC-silent (0 captures measured)"
+                    0
+                else 5
+            | Error errors ->
+                Console.Error.WriteLine "projection: canary failed:"
+                printErrors Console.Error errors
+                2
         dumpBench "canary"
         exitCode
 
@@ -794,6 +929,77 @@ let private runVerifyData (beforeSpec: string) (afterSpec: string) : int =
     dumpBench "verify-data"
     exitCode
 
+/// AC-X7 — `projection drift --to <model.json> --conn <ref>`. Reads the
+/// deployed schema and diffs it against THE MODEL (the authored Catalog), not
+/// a second deployed substrate. Exit 0 = no drift; 5 = drift detected (the diff
+/// is rendered). This is the deployed-vs-model check `verify-data`
+/// (deployed-vs-deployed) structurally cannot perform.
+let private runDrift (toPath: string) (connSpec: string) : int =
+    let collect = function Ok _ -> [] | Error es -> es
+    let parsedConn = TransferSpec.parseConnectionSpec connSpec
+    if not (List.isEmpty (collect parsedConn)) then
+        Console.Error.WriteLine "projection drift: --conn argument error:"
+        printErrors Console.Error (collect parsedConn)
+        dumpBench "drift"
+        2
+    else
+    let connStrR = ConnectionResolver.resolve "Deployed" (Result.value parsedConn)
+    if not (List.isEmpty (collect connStrR)) then
+        Console.Error.WriteLine "projection drift: connection error:"
+        printErrors Console.Error (collect connStrR)
+        dumpBench "drift"
+        6
+    else
+    let work =
+        task {
+            let! modelR = Compose.read toPath
+            match modelR with
+            | Error es ->
+                Console.Error.WriteLine (sprintf "projection drift: could not read --to %s:" toPath)
+                printErrors Console.Error es
+                return 6
+            | Ok model ->
+                use cnn = new Microsoft.Data.SqlClient.SqlConnection(Result.value connStrR)
+                do! cnn.OpenAsync()
+                match! DriftRun.detect model cnn with
+                | Error es ->
+                    Console.Error.WriteLine "projection drift: could not read the deployed schema:"
+                    printErrors Console.Error es
+                    return 3
+                | Ok diff ->
+                    if PhysicalSchema.isEqual diff then
+                        printfn "projection drift: no drift — the deployed schema matches the model"
+                        return 0
+                    else
+                        eprintfn "projection drift: DRIFT DETECTED — the deployed schema differs from the model:\n%s"
+                            (PhysicalSchema.renderDiff diff)
+                        return 5
+        }
+    let code = work.GetAwaiter().GetResult()
+    dumpBench "drift"
+    code
+
+/// AC-X6 — `projection eject --store <path>`. Reads the durable timeline and
+/// assembles the append-forever provenance package: every episode is preserved
+/// (no collapse at freeze), the full refactorlog reference chain is accumulated,
+/// and the package self-verifies (the FTC reconstruction from genesis reproduces
+/// the frozen state). Exit 0 = ejected + self-verified; 5 = reconstruction does
+/// not reproduce the frozen state; 2 = store error.
+let private runEject (storePath: string) : int =
+    match EjectRun.fromStore storePath with
+    | Error msg ->
+        Console.Error.WriteLine (sprintf "projection eject: %s" msg)
+        2
+    | Ok pkg ->
+        printfn "projection eject: timeline %s — %d episode(s) preserved (append-forever), %d refactorlog reference(s)"
+            (Timeline.name pkg.Timeline) (List.length pkg.Episodes) (List.length pkg.RefactorLogRefs)
+        if EjectRun.isFaithful pkg then
+            printfn "projection eject: package self-verified — FTC reconstruction from genesis reproduces the frozen state"
+            0
+        else
+            Console.Error.WriteLine "projection eject: package FAILED self-verification — the reconstruction does not reproduce the frozen state."
+            5
+
 let private dispatchVerifyData (argv: string[]) : int =
     argv |> VerbArgs.parse<VerifyDataArgs.VerifyDataArg> "projection verify-data" (fun parsed ->
         let beforeSpec = parsed.GetResult VerifyDataArgs.Before_Conn
@@ -1130,11 +1336,16 @@ let private runMigrateExecute (toPath: string) (connSpec: string) (declaration: 
                                                 return 9
                                             | Error e -> return reportMigrationError e
                                     | None ->
-                                        let! outcome = MigrationRun.execute allowCdc declaration sourceA target cnn
+                                        // X4 — measure CDC-silence, don't just
+                                        // assert no DDL ran. `executeAndMeasureCdc`
+                                        // brackets the execute with the change-
+                                        // measure ‖·‖; an idempotent redeploy
+                                        // surfaces zero statements AND zero captures.
+                                        let! outcome = MigrationRun.executeAndMeasureCdc allowCdc declaration sourceA target cnn
                                         match outcome with
-                                        | Ok o when o.Verified ->
-                                            printfn "projection migrate: executed and VERIFIED — B' reproduces B (%d statement(s))"
-                                                (List.length o.Artifacts.SchemaStatements)
+                                        | Ok (o, cdcDelta) when o.Verified ->
+                                            printfn "projection migrate: executed and VERIFIED — B' reproduces B (%d statement(s); %d CDC capture(s) measured)"
+                                                (List.length o.Artifacts.SchemaStatements) cdcDelta
                                             eprintfn "projection migrate: note — no --lifecycle-store supplied; no episode persisted (the next diff has no prior to load)."
                                             return 0
                                         | Ok _ ->
@@ -1157,7 +1368,7 @@ let private runMigrateExecute (toPath: string) (connSpec: string) (declaration: 
 /// AC-I5 `validate-user-map` pre-write halt gates first; absent, it is a
 /// straight load. Schema is fail-loud + minimum-viable; the data leg runs
 /// only if the schema verified.
-let private runMigrateWithData (toPath: string) (sinkSpec: string) (sourceSpec: string) (reconcileSpecs: string list) (userMapPath: string option) (declaration: LossDeclaration) (allowCdc: bool) : int =
+let private runMigrateWithData (toPath: string) (sinkSpec: string) (sourceSpec: string) (reconcileSpecs: string list) (userMapPath: string option) (declaration: LossDeclaration) (allowCdc: bool) (storePath: string option) (envLabel: string option) : int =
     if System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" <> "1" then
         Console.Error.WriteLine
             "projection migrate: --execute requires PROJECTION_ALLOW_EXECUTE=1 in the environment (R6 gate). Refusing."
@@ -1255,6 +1466,34 @@ let private runMigrateWithData (toPath: string) (sinkSpec: string) (sourceSpec: 
                                           printErrors Console.Error es
                                           return 2
                                       | Ok reconciliation ->
+                                        match storePath with
+                                        | Some store ->
+                                            // X5 — measure the data movement (CDC ‖·‖)
+                                            // and RECORD the episode durably. A
+                                            // CDC-tracked sink confounds the schema
+                                            // Verified flag, so the record gates on
+                                            // schema-applied + transfer-OK and carries
+                                            // the measured capture count.
+                                            let env = parseEnvironment "DEV" envLabel
+                                            match Timeline.create (Projection.Core.Environment.name env) with
+                                            | Error es ->
+                                                Console.Error.WriteLine "projection migrate: --lifecycle-store timeline name error:"
+                                                printErrors Console.Error es
+                                                return 2
+                                            | Ok tl ->
+                                                let at = System.DateTimeOffset.UtcNow
+                                                let! recorded =
+                                                    MigrationRun.executeWithDataAndRecord declaration Transfer.Execute allowCdc
+                                                        sinkSourceA target reconciliation store tl env at None dataSource sink
+                                                match recorded with
+                                                | Ok (o, chain) ->
+                                                    printfn "projection migrate: schema executed + data loaded — %d kind(s) transferred; episode recorded to %s (%d CDC capture(s) measured; %d episode(s) on timeline %s)"
+                                                        (List.length o.Transfer.Kinds) store
+                                                        (EpisodicLifecycle.latest chain).Data.CdcCaptureCount
+                                                        (EpisodicLifecycle.episodes chain |> List.length) (Timeline.name tl)
+                                                    return 0
+                                                | Error e -> return reportMigrationError e
+                                        | None ->
                                         let! outcome =
                                             MigrationRun.executeWithData declaration Transfer.Execute allowCdc
                                                 sinkSourceA target reconciliation dataSource sink
@@ -1280,6 +1519,22 @@ let main argv =
         Console.Error.WriteLine ""
         Console.Error.WriteLine "Run `projection full-export --help` for usage."
         1
+    | arr when arr.Length >= 1 && arr.[0] = "full-export" && Array.contains "--load" arr ->
+        // X1 part B — publish + live data-load (measure + record). Manual flag
+        // parse (the load path opens a connection; the normal full-export path
+        // below stays Argu-driven and unchanged).
+        let valueOf (flag: string) =
+            arr
+            |> Array.tryFindIndex ((=) flag)
+            |> Option.bind (fun i -> if i + 1 < arr.Length then Some arr.[i + 1] else None)
+        match valueOf "--config", valueOf "--conn" with
+        | Some configPath, Some connSpec ->
+            let storePath =
+                match valueOf "--lifecycle-store" with
+                | Some _ as s -> s
+                | None -> valueOf "--store"
+            runFullExportLoad configPath connSpec (valueOf "--out") storePath (valueOf "--env")
+        | _ -> die 2 "projection full-export --load: requires --config <path> --conn <ref>"
     | arr when arr.Length >= 1 && arr.[0] = "full-export" ->
         dispatchFullExport (Array.skip 1 arr)
     | [| "emit"; "--config"; configPath |] ->
@@ -1300,10 +1555,22 @@ let main argv =
         runApprove policyVersion approver (Some rationale) (Some store)
     | [| "deploy"; inputPath |] ->
         runDeploy inputPath
+    | [| "canary"; sourceDdlPath; "--cdc-silence" |] ->
+        runCanaryCdcSilence sourceDdlPath
     | [| "canary"; sourceDdlPath |] ->
         runCanary sourceDdlPath
     | [| "policy-diff"; configAPath; configBPath |] ->
         runPolicyDiff configAPath configBPath
+    | [| "eject"; "--store"; storePath |] ->
+        runEject storePath
+    | arr when arr.Length >= 1 && arr.[0] = "drift" ->
+        let valueOf (flag: string) =
+            arr
+            |> Array.tryFindIndex ((=) flag)
+            |> Option.bind (fun i -> if i + 1 < arr.Length then Some arr.[i + 1] else None)
+        match valueOf "--to", valueOf "--conn" with
+        | Some toPath, Some connSpec -> runDrift toPath connSpec
+        | _ -> die 2 "projection drift: requires --to <model.json> --conn <ref>"
     | arr when arr.Length >= 1 && arr.[0] = "migrate" && not (Array.contains "--execute" arr) ->
         let valueOf (flag: string) =
             arr
@@ -1336,7 +1603,14 @@ let main argv =
         let allowCdc = Array.contains "--allow-cdc" arr
         match valueOf "--to", valueOf "--source-conn", valueOf "--sink-conn", valueOf "--conn" with
         | Some toPath, Some sourceSpec, Some sinkSpec, _ ->
-            runMigrateWithData toPath sinkSpec sourceSpec (multiValueOf "--reconcile") (valueOf "--user-map") declaration allowCdc
+            // X5 — `--lifecycle-store` (alias `--store`) records the episode with
+            // the MEASURED CDC capture count of the data load; absent, the data
+            // load runs without recording (unchanged).
+            let storePath =
+                match valueOf "--lifecycle-store" with
+                | Some _ as s -> s
+                | None -> valueOf "--store"
+            runMigrateWithData toPath sinkSpec sourceSpec (multiValueOf "--reconcile") (valueOf "--user-map") declaration allowCdc storePath (valueOf "--env")
         | Some toPath, None, None, Some connSpec ->
             // AC-P8 — optional durable provenance. `--lifecycle-store` (alias
             // `--store`) persists the episode after a verified execute; absent,

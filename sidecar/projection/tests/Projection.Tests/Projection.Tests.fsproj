@@ -50,6 +50,7 @@
     <Compile Include="JointDependencyDiagnosticsTests.fs" />
     <Compile Include="EmissionFoldersBindingTests.fs" />
     <Compile Include="EmissionFoldersOverlayTests.fs" />
+    <Compile Include="FullExportDataBundleTests.fs" />
     <Compile Include="TransformGroupsBindingTests.fs" />
     <Compile Include="TransformGroupsFilterTests.fs" />
     <Compile Include="InsertionPolicyBindingTests.fs" />
@@ -101,6 +102,8 @@
     <Compile Include="ApprovalWorkflowTests.fs" />
     <Compile Include="ApprovalStoreTests.fs" />
     <Compile Include="LifecycleStoreTests.fs" />
+    <Compile Include="EjectRunTests.fs" />
+    <Compile Include="EmissionModeTests.fs" />
     <Compile Include="MigrationRunTests.fs" />
     <Compile Include="SuggestConfigGatingTests.fs" />
     <Compile Include="PolicyDiffTests.fs" />
