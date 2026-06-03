@@ -115,3 +115,30 @@ let ``executeGate: composite-identity AssignedBySink refuses with transfer.compo
 let ``executeGate: a clean single-PK AssignedBySink plan passes`` () =
     let plan = planOf [ load singleKey IdentityDisposition.AssignedBySink [] ]
     Assert.True((Transfer.executeGate catalog plan).IsNone)
+
+// --- AC-I5: validate-user-map pre-write halt ------------------------------
+//
+// The orphan drop-set is fully resolved post-reconcile but PRE-write
+// (`reconcileAgainstSink` is read-only). `validateUserMap` refuses at Execute
+// time so an unmapped identity is a pre-write halt (the Sink stays untouched),
+// not a post-write exit-9. These pure witnesses pin the gate the data canary
+// runs through with `--allow-drops` (the 6.A.1 same-decision pattern).
+
+let private reconciledWith (unmatched: (SsKey * SourceKey) list) : ReconciledIdentity =
+    { Remap = SurrogateRemapContext.empty; Unmatched = unmatched }
+
+[<Fact>]
+let ``AC-I5: an unmatched Source identity refuses pre-write with transfer.unmappedIdentities`` () =
+    let reconciled = reconciledWith [ singleKey, SourceKey.ofString "999" ]
+    match Transfer.validateUserMap false reconciled with
+    | Some e -> Assert.Equal("transfer.unmappedIdentities", e.Code)
+    | None   -> Assert.Fail("expected the validate-user-map pre-write halt")
+
+[<Fact>]
+let ``AC-I5: a fully-mapped user-map passes the pre-write gate`` () =
+    Assert.True((Transfer.validateUserMap false (reconciledWith [])).IsNone)
+
+[<Fact>]
+let ``AC-I5: --allow-drops downgrades the orphan to the post-write reported-drop path`` () =
+    let reconciled = reconciledWith [ singleKey, SourceKey.ofString "999" ]
+    Assert.True((Transfer.validateUserMap true reconciled).IsNone)

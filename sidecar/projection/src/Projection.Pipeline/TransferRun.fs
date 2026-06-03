@@ -264,6 +264,31 @@ module Transfer =
                                 (SsKey.rootOriginal k)))
                 | [] -> None
 
+    /// AC-I5 — pre-write validate-user-map. A reconciling Transfer whose
+    /// user-map leaves Source identities unmatched would, post-write, surface
+    /// them via `exitCodeForReport` (exit 9) — *after* the rows landed. This
+    /// refuses at Execute time, before any write, so an unmapped orphan is a
+    /// pre-write halt (the Sink stays untouched), not a post-write exit. The
+    /// gate reads the SAME `reconciled.Unmatched` set the post-write exit reads
+    /// (6.A.1), so the two cannot disagree. `allowDrops` (the operator's
+    /// `--allow-drops`) downgrades to the existing post-write reported-drop path
+    /// — a non-reconciling run has an empty `Unmatched`, so this never fires for
+    /// `run`/`runWithRenames`.
+    let validateUserMap (allowDrops: bool) (reconciled: ReconciledIdentity) : ValidationError option =
+        if allowDrops || List.isEmpty reconciled.Unmatched then None
+        else
+            let kinds =
+                reconciled.Unmatched
+                |> List.map (fun (k, _) -> SsKey.rootOriginal k)
+                |> List.distinct
+                |> List.truncate 3
+                |> String.concat ", "
+            Some (ValidationError.create
+                    "transfer.unmappedIdentities"
+                    (sprintf
+                        "%d Source identit(ies) have no Sink match in the user-map (kind(s): %s); refusing --execute before any write. Remediate the user-map or pass --allow-drops to accept the loss."
+                        reconciled.Unmatched.Length kinds))
+
     // -- reconciliation orchestration ---------------------------------------
 
     /// Reconcile each operator-chosen kind's Source surrogates to the
@@ -321,6 +346,7 @@ module Transfer =
     let private runCore
         (mode: Mode)
         (allowCdc: bool)
+        (allowDrops: bool)
         (source: SqlConnection)
         (sink: SqlConnection)
         (catalog: Catalog)
@@ -375,7 +401,17 @@ module Transfer =
             let plan =
                 DataLoadPlan.build catalog topo rows reconciled.Remap
                 |> DataLoadPlan.reclassifyReconciled reconciledKinds
-            match (if mode = Execute then executeGate catalog plan else None) with
+            // Pre-write gate, precedence-ordered: structural unsatisfiability /
+            // surrogate-capture shapes first (executeGate), then the
+            // validate-user-map orphan halt (AC-I5). Both fire only at Execute,
+            // before any write.
+            let preWrite =
+                if mode = Execute then
+                    match executeGate catalog plan with
+                    | Some refusal -> Some refusal
+                    | None         -> validateUserMap allowDrops reconciled
+                else None
+            match preWrite with
             | Some refusal -> return Result.failureOf refusal
             | None ->
                 let! writeSkips =
@@ -408,7 +444,9 @@ module Transfer =
         (sink: SqlConnection)
         (catalog: Catalog)
         : Task<Result<TransferReport>> =
-        runCore mode allowCdc source sink catalog Map.empty None
+        // Non-reconciling: `Unmatched` is always empty, so the validate-user-map
+        // gate never fires — `allowDrops = false` is the safe, inert default.
+        runCore mode allowCdc false source sink catalog Map.empty None
 
     /// 6.B.2 — RefactorLog-aware Transfer. The source is at schema A
     /// (`sourceContract`); the sink is at schema B (`sinkContract`). A rename
@@ -434,7 +472,7 @@ module Transfer =
             | Ok diff ->
                 let renameMap =
                     RenameProjection.renames diff |> RenameProjection.renameMap
-                return! runCore mode allowCdc source sink sinkContract Map.empty (Some (sourceContract, renameMap))
+                return! runCore mode allowCdc false source sink sinkContract Map.empty (Some (sourceContract, renameMap))
         }
 
     /// Run a *reconciling* Transfer — the operator's headline case
@@ -447,12 +485,13 @@ module Transfer =
     let runReconciling
         (mode: Mode)
         (allowCdc: bool)
+        (allowDrops: bool)
         (source: SqlConnection)
         (sink: SqlConnection)
         (catalog: Catalog)
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
         : Task<Result<TransferReport>> =
-        runCore mode allowCdc source sink catalog reconciliation None
+        runCore mode allowCdc allowDrops source sink catalog reconciliation None
 
     /// Slice 4.2 — drive a Transfer through the `TransferConnections`
     /// apparatus instead of caller-opened connections. Opens both
@@ -472,6 +511,7 @@ module Transfer =
     let runThroughConnections
         (mode: Mode)
         (allowCdc: bool)
+        (allowDrops: bool)
         (connections: TransferConnections)
         (resolveReconciliation: Catalog -> Result<Map<SsKey, ReconciliationStrategy>>)
         : Task<Result<TransferReport>> =
@@ -490,7 +530,7 @@ module Transfer =
                         match resolveReconciliation contract with
                         | Error es -> return Result.failure es
                         | Ok reconciliation ->
-                            return! runCore mode allowCdc source sink contract reconciliation None
+                            return! runCore mode allowCdc allowDrops source sink contract reconciliation None
         }
 
     // -- 6.A.1: the drop-set is fail-loud, not exit-0 -----------------------

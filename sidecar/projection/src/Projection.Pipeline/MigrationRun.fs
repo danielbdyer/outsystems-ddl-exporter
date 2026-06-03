@@ -425,7 +425,12 @@ module MigrationRun =
                         if Map.isEmpty reconciliation then
                             Transfer.run mode allowCdc dataSource sink target
                         else
-                            Transfer.runReconciling mode allowCdc dataSource sink target reconciliation
+                            // allowDrops = false: enforce the AC-I5 pre-write validate-user-map
+                            // halt on the reconciling migrate-with-data path. (Currently unreached
+                            // — both callers pass an empty reconciliation; the operator's
+                            // --allow-drops flows here when the reconcile+migrate composition,
+                            // AC-I7, is wired as the follow-on.)
+                            Transfer.runReconciling mode allowCdc false dataSource sink target reconciliation
                     match transferResult with
                     | Ok report -> return Ok { Schema = schema; Transfer = report }
                     | Error es -> return Error (DataTransferFailed es)

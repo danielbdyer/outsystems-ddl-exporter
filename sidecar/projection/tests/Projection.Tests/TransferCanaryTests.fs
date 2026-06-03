@@ -353,7 +353,11 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                                 let reconciliation =
                                     Map.ofList [ userKind.SsKey, ReconciliationStrategy.MatchByColumn emailName ]
 
-                                let! reportR = Transfer.runReconciling Transfer.Execute true src sink contract reconciliation
+                                // allowDrops = true: this canary observes the POST-write drop
+                                // set (the orphan re-key behavior), so it runs the --allow-drops
+                                // path past the AC-I5 pre-write gate. The pre-write halt itself is
+                                // witnessed by the pure `validateUserMap` test (fast pool).
+                                let! reportR = Transfer.runReconciling Transfer.Execute true true src sink contract reconciliation
                                 let report = TransferCanaryFixtures.value reportR
 
                                 // The reconciled kind skips its insert (its rows are already in the Sink).
@@ -409,7 +413,11 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                                 let reconciliation =
                                     Map.ofList [ userKind.SsKey, ReconciliationStrategy.MatchByColumn emailName ]
 
-                                let! reportR = Transfer.runReconciling Transfer.Execute true src sink contract reconciliation
+                                // allowDrops = true: this witnesses the POST-write exit-code policy
+                                // (AC-D8 drop fail-loud + the --allow-drops downgrade). The AC-I5
+                                // pre-write halt (allowDrops = false) is witnessed separately by the
+                                // pure `validateUserMap` test.
+                                let! reportR = Transfer.runReconciling Transfer.Execute true true src sink contract reconciliation
                                 let report = TransferCanaryFixtures.value reportR
 
                                 // The drop-set is non-empty (ghost@x's Order vanished).
@@ -735,8 +743,10 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                                         | Error es -> Error es
                                         | Ok entries -> TransferSpec.resolveAllReconciliation contract [] entries
 
+                                    // allowDrops = true: observe the post-write drop set (999 is
+                                    // outside the override map) past the AC-I5 pre-write gate.
                                     let! reportR =
-                                        Transfer.runThroughConnections Transfer.Execute true connections resolveReconciliation
+                                        Transfer.runThroughConnections Transfer.Execute true true connections resolveReconciliation
                                     let report = TransferCanaryFixtures.value reportR
 
                                     // Map tables → reconstructed SsKeys for the assertions.

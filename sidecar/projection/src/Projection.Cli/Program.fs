@@ -628,7 +628,7 @@ let private runTransfer
     let resolveReconciliation (contract: Catalog) =
         TransferSpec.resolveAllReconciliation contract entries userMapEntries
     let result =
-        (Transfer.runThroughConnections mode allowCdc connections resolveReconciliation)
+        (Transfer.runThroughConnections mode allowCdc allowDrops connections resolveReconciliation)
             .GetAwaiter().GetResult()
     let exitCode =
         match result with
@@ -659,6 +659,11 @@ let private runTransfer
                 errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith prefix)
             if anyCode "transfer.connection." then 6
             elif anyCode "transfer.reconcile." || anyCode "transfer.userMap." then 2
+            // AC-I5 — a pre-write validate-user-map halt maps to the SAME exit
+            // as a post-write drop (9), so an orphan returns the same code
+            // whether refused before the write or reported after it; only the
+            // timing (and the untouched Sink) changes.
+            elif anyCode "transfer.unmappedIdentities" then Transfer.DroppedReferencesExit
             else 3
     dumpBench "transfer"
     exitCode
