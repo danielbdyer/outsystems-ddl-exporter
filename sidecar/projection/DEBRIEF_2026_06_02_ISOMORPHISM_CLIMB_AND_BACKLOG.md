@@ -153,7 +153,7 @@ the "closing slice" points into §3.
 | G1 | `CatalogDiff` captured surface **excludes references, FKs, indexes, modality, module structure, sequences** — they ride through `applyDiff` unchanged | `CatalogDiff.fs:380-388` | Schema, Time | L2 partial (column-shape only) | structural — round-trip law witnessed only on captured axes | **C1** (the widening) |
 | G2 | FK-trust (`IsNotTrusted`) **read but not gated** — no fail-loud if a FK is untrusted; the flag rides the `Reference` but planner/executor never acts on it | `ReadSide.fs:110, 1075` | Schema, Decision | L1.5 (recovered, unenforced) | none | **F1**, **G1-ref** |
 | G3 | Non-PK indexes **read but not reconstructed** into `Kind.Indexes` (hardcoded `[]`); `PhysicalSchema` comparison ignores them | `ReadSide.fs:877, 1004`; `Tolerance.fs:43-49` | Schema | L1 + named tolerance | `Tolerance.IndexesUnreflected` (named, not silent — but permanently open) | **E1** (3-part) |
-| G4 | Cross-schema FK rows whose `SCHEMA_NAME()` is NULL (dropped schema / missing `VIEW DEFINITION` grant) are **silently filtered** | `ReadSide.fs:580` | Schema | L1-not-L2 (**silent**) | silent filter — violates no-silent-drop boundary axiom | **E2** |
+| G4 | Cross-schema FK rows whose `SCHEMA_NAME()` is NULL (dropped schema / missing `VIEW DEFINITION` grant) — was an opaque `GetString` cast failure (live `readSchemaCombined`) / blank-and-drop (`readForeignKeys`) | `ReadSide.fs` `ForeignKeyReadback` | Schema | ✅ **CLOSED** (E2) — both FK readers route through the pure `ForeignKeyReadback.classify`, which emits a NAMED diagnostic + skip on an unreadable coordinate | named diagnostic, not silent / opaque | *(closed)* |
 | G5 | T-VI **Permissions** — write-denied sink transfers **zero rows, exits clean** | (no axis) | spanning | unbuilt | none | **A2** |
 | G6 | T-VI **Transactionality** — mid-transfer failure leaves a **half-populated target**; no atomic boundary, idempotent retry, or rollback | (no axis) | spanning | unbuilt | none | **A3** |
 | G7 | T-VI **Connection pre-flight** — no "both endpoints live + credentialed" check before mutation | (no axis) | spanning | unbuilt | none | **A1** |
@@ -597,6 +597,35 @@ bullseye.
 ---
 
 ### Cluster E — Close the silent-erasure residuals
+
+> **STATUS — reconnaissance + E2 landed (round D→E).** Three corrections to this
+> cluster's recorded state, found by a file:line re-read at HEAD:
+> - **E2 — LANDED.** Both FK readers (`readSchemaCombined` live + `readForeignKeys`
+>   out-of-band) route through the pure, public `ReadSide.ForeignKeyReadback.classify`,
+>   which classifies a NULL/blank `SCHEMA_NAME()` as `Unreadable` and surfaces a
+>   NAMED diagnostic + skip. (Correction: today's behaviour was an *opaque
+>   `GetString` cast failure* on the live path, not the recorded "silent filter" —
+>   E2 still closes G4 honestly: opaque/silent → named.) Witnesses:
+>   `tests/Projection.Tests/ForeignKeyReadbackTests.fs` (5, green).
+> - **E3 — durable substrate already guarded.** The `CatalogCodec` reconstruction
+>   arms (`readIndex`/`readReference`/`readKind`) set every persisted field
+>   explicitly, and `CatalogCodecTests.fs` exercises the bomb-prone defaults
+>   (`AllowRowLocks=false`, `AllowPageLocks=false`, `NoRecomputeStatistics=true`,
+>   `IgnoreDuplicateKey=true`, `IsConstraintTrusted=false`) under the round-trip
+>   law. The LifecycleStore folds over the codec, so its substrate is covered. The
+>   remaining E3 surface (ReadSide's index field-fidelity) is **interlocked with E1**
+>   and best done there.
+> - **E1 — de-risked, but witness-coupled to D1.** Part 1 (index reconstruction) is
+>   already live (`attachIndexes` is wired into `read`), and V2 *does* emit
+>   `CREATE INDEX` (chapter 4.1.A slice 3), so the round-trip is faithful and adding
+>   an `Indexes` axis to `PhysicalSchema` (mirroring the `Annotations` axis
+>   precedent) should keep the canary green. **Caution:** retiring
+>   `Tolerance.IndexesUnreflected` auto-flips the matrix Schema rung L2-partial→L3
+>   (the keystone working) — which *invalidates D1's acceptance witness*
+>   (`Schema=L2-partial because IndexesUnreflected`). When E1 lands, rewrite the D1
+>   test in `MatrixLadderTests.fs` to pin the classification mechanism over a
+>   different open example (or assert 0-open with the cross-check intact) in the
+>   same commit. The matrix now **measures** E1: it flips automatically on retirement.
 
 #### E1 — Reconstruct `Kind.Indexes` (G3) — 3-part
 
