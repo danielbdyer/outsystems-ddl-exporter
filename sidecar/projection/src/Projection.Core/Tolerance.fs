@@ -21,6 +21,22 @@ namespace Projection.Core
 /// comparator DOES with it (action-shaped). The accepted pattern is
 /// `<Subject><Disposition>` (e.g., `HeaderCommentsOmitted` — the
 /// header comments ARE omitted; the divergence IS that omission).
+///
+/// **`@ladder` machine tag (D1 — the self-verification meta-cell).**
+/// Each variant's doc block ends with a machine-readable
+/// `@ladder <VariantName> <Axis> <Disposition>` line that
+/// `scripts/matrix-status.sh` parses to report each round-trip axis's
+/// faithfulness rung in `NORTH_STAR.matrix.generated.md`. `Axis` is one
+/// of the five round-trip axes (Schema / Data / Identity / Time /
+/// Decision); `Disposition` is `OpenGap` (a closeable fidelity debt that
+/// caps the axis at L2-partial — e.g. `IndexOptionsUnreflected`, retired when
+/// the round-trip preserves it) or `AcceptedFaithful` (a representation-
+/// only equivalence or an erasure covered by a separate witness, which
+/// does not reduce faithfulness). The honesty mechanism: retiring a
+/// variant deletes its tag, so the generator auto-flips the axis — no one
+/// can hand-mark an axis faithful while its open tolerance still exists.
+/// The generator FAILS if any live variant (per `name`) lacks a tag, so a
+/// new variant cannot land untagged.
 [<RequireQualifiedAccess>]
 type ToleratedDivergence =
     /// V2 emits without the `/* Source: ... */` header block per
@@ -28,6 +44,7 @@ type ToleratedDivergence =
     /// true initially, V2 omits"). The omission is deliberate; an
     /// `EmissionPolicyPass` may surface an equivalent header in a
     /// later chapter, retiring this variant.
+    /// @ladder HeaderCommentsOmitted Schema AcceptedFaithful
     | HeaderCommentsOmitted
 
     /// Cross-module FKs split into a `Scripts/PostDeploy/Cross
@@ -38,21 +55,31 @@ type ToleratedDivergence =
     /// flips to the PostDeploy split. Layout differs (file count +
     /// content placement) but `PhysicalSchema` equivalence holds
     /// (FKs deploy either way).
+    /// @ladder PostDeployForeignKeysSplit Schema AcceptedFaithful
     | PostDeployForeignKeysSplit
 
-    /// Non-PK indexes are not reflected in `PhysicalSchema`'s
-    /// comparison surface per the docstring at `PhysicalSchema.fs:
-    /// 44` ("What's NOT compared. ... Indexes (non-PK), ..."). A
-    /// future `PhysicalSchema.Indexes` set will retire this
-    /// variant when ReadSide reconstructs them and V2 emit
-    /// preserves them round-trip.
-    | IndexesUnreflected
+    /// E1 (debrief G3) — non-PK index *structure* (owner + name +
+    /// uniqueness + ordered key columns) IS now reflected in
+    /// `PhysicalSchema.Indexes` and compared on the round-trip (retiring the
+    /// prior `IndexOptionsUnreflected`, which said indexes were invisible
+    /// entirely). What remains unreflected is the index *options*: the
+    /// filter predicate (filtered indexes), INCLUDE columns (covering
+    /// indexes), and the storage options (FILLFACTOR / PAD_INDEX / lock
+    /// flags / DATA_COMPRESSION). `ReadSide.readIndexes` recovers none of
+    /// these (it excludes `is_included_column` and reads no option columns),
+    /// so they are symmetric-but-lost on both halves of the canary. Named
+    /// here so the residual is *closed* (documented), not silent. Retiring
+    /// it: extend `readIndexes` to recover the options + widen
+    /// `PhysicalIndex` + ensure V2 emit preserves them round-trip.
+    /// @ladder IndexOptionsUnreflected Schema OpenGap
+    | IndexOptionsUnreflected
 
     /// Static-entity populations (INSERT statements) are absent
     /// from `PhysicalSchema`'s comparison surface (same docstring).
     /// The data-plane axis is covered by `PhysicalSchema.Rows` /
     /// `RowDigests` when the canary opts into the data round-trip;
     /// chapter 4.1.B will retire this variant for population kinds.
+    /// @ladder StaticPopulationsUnreflected Data AcceptedFaithful
     | StaticPopulationsUnreflected
 
     /// 6.A.4 — a genuine empty-string `Text` value and SQL `NULL` are
@@ -67,6 +94,7 @@ type ToleratedDivergence =
     /// forces faithful empty-string preservation today). NB: for a NOT-NULL
     /// `Text` column an empty source value would instead fail the load —
     /// that schema-vs-data compatibility check is 6.B.1, not this tolerance.
+    /// @ladder EmptyTextNormalizedToNull Data AcceptedFaithful
     | EmptyTextNormalizedToNull
 
     /// AC-D6 — a `char(n)` / `nchar(n)` column's stored value is ANSI
@@ -83,6 +111,7 @@ type ToleratedDivergence =
     /// only** tolerance: it absorbs no data difference — only the textual
     /// shape of an otherwise-equal value. Retiring it is not anticipated;
     /// it is a property of SQL Server's ANSI char semantics, not a V2 gap.
+    /// @ladder CharAnsiPaddingTolerated Data AcceptedFaithful
     | CharAnsiPaddingTolerated
 
     /// AC-D6 — a `decimal(p,s)` / `numeric(p,s)` column's stored value is a
@@ -98,6 +127,7 @@ type ToleratedDivergence =
     /// **representation-only** tolerance: it absorbs no numeric difference —
     /// only the trailing-zero scale shape. Retiring it is not anticipated;
     /// it is a property of SQL Server's numeric comparison, not a V2 gap.
+    /// @ladder DecimalScaleTolerated Data AcceptedFaithful
     | DecimalScaleTolerated
 
     // **CommentMetadataUnreflected — RETIRED at chapter 4.1.A slice 8
@@ -130,7 +160,7 @@ module ToleratedDivergence =
         function
         | ToleratedDivergence.HeaderCommentsOmitted          -> ToleratedDivergence.HeaderCommentsOmitted
         | ToleratedDivergence.PostDeployForeignKeysSplit     -> ToleratedDivergence.PostDeployForeignKeysSplit
-        | ToleratedDivergence.IndexesUnreflected             -> ToleratedDivergence.IndexesUnreflected
+        | ToleratedDivergence.IndexOptionsUnreflected             -> ToleratedDivergence.IndexOptionsUnreflected
         | ToleratedDivergence.StaticPopulationsUnreflected   -> ToleratedDivergence.StaticPopulationsUnreflected
         | ToleratedDivergence.EmptyTextNormalizedToNull      -> ToleratedDivergence.EmptyTextNormalizedToNull
         | ToleratedDivergence.CharAnsiPaddingTolerated       -> ToleratedDivergence.CharAnsiPaddingTolerated
@@ -152,7 +182,7 @@ module ToleratedDivergence =
             [
                 coverage ToleratedDivergence.HeaderCommentsOmitted
                 coverage ToleratedDivergence.PostDeployForeignKeysSplit
-                coverage ToleratedDivergence.IndexesUnreflected
+                coverage ToleratedDivergence.IndexOptionsUnreflected
                 coverage ToleratedDivergence.StaticPopulationsUnreflected
                 coverage ToleratedDivergence.EmptyTextNormalizedToNull
                 coverage ToleratedDivergence.CharAnsiPaddingTolerated
@@ -168,7 +198,7 @@ module ToleratedDivergence =
         match d with
         | ToleratedDivergence.HeaderCommentsOmitted        -> "HeaderCommentsOmitted"
         | ToleratedDivergence.PostDeployForeignKeysSplit   -> "PostDeployForeignKeysSplit"
-        | ToleratedDivergence.IndexesUnreflected           -> "IndexesUnreflected"
+        | ToleratedDivergence.IndexOptionsUnreflected           -> "IndexOptionsUnreflected"
         | ToleratedDivergence.StaticPopulationsUnreflected -> "StaticPopulationsUnreflected"
         | ToleratedDivergence.EmptyTextNormalizedToNull    -> "EmptyTextNormalizedToNull"
         | ToleratedDivergence.CharAnsiPaddingTolerated     -> "CharAnsiPaddingTolerated"
@@ -229,8 +259,8 @@ module Tolerance =
 
     /// Construct from an explicit set. Use when a per-environment
     /// configuration carries its own subset (e.g., DEV accepts
-    /// HeaderCommentsOmitted + IndexesUnreflected; STAGING accepts
-    /// only IndexesUnreflected; PROD accepts none).
+    /// HeaderCommentsOmitted + IndexOptionsUnreflected; STAGING accepts
+    /// only IndexOptionsUnreflected; PROD accepts none).
     let ofSet (divergences: Set<ToleratedDivergence>) : Tolerance =
         Tolerance divergences
 

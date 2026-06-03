@@ -110,6 +110,70 @@ module ReadSide =
             IsNotTrusted : bool
         }
 
+    /// E2 (debrief G4) — classify an FK metadata row before it becomes a
+    /// `Reference`. `SCHEMA_NAME()` returns NULL when a referenced/parent
+    /// schema was dropped between the metadata read and the FK probe, or
+    /// when the account lacks `VIEW DEFINITION` on that schema. Such a row
+    /// cannot be faithfully reconstructed; per the no-silent-drop boundary
+    /// axiom it must surface a NAMED diagnostic — not a silent skip, not an
+    /// opaque `GetString` cast failure that aborts the whole readback. Pure +
+    /// public so the classification is unit-witnessed without a live
+    /// substrate (`tests/Projection.Tests/ForeignKeyReadbackTests.fs`).
+    [<RequireQualifiedAccess>]
+    module ForeignKeyReadback =
+
+        /// All coordinates resolved non-blank — the row reconstructs.
+        type FkCoordinates =
+            {
+                SourceSchema : string
+                SourceTable  : string
+                SourceColumn : string
+                TargetSchema : string
+                TargetTable  : string
+                TargetColumn : string
+                IsNotTrusted : bool
+            }
+
+        type Classification =
+            | Reconstructable of FkCoordinates
+            | Unreadable of reason: string
+
+        let private norm (o: string option) : string option =
+            o |> Option.map (fun (s: string) -> s.Trim()) |> Option.filter (fun s -> s <> "")
+
+        /// Classify a raw FK row. `None` models a NULL read (`SCHEMA_NAME()`
+        /// or a NULL column); a blank/whitespace string is treated
+        /// identically. On an unreadable coordinate the reason names the
+        /// visible endpoints and which side's schema was lost, plus the two
+        /// likely causes, so an operator can locate and fix the grant.
+        let classify
+            (sourceSchema: string option) (sourceTable: string option) (sourceColumn: string option)
+            (targetSchema: string option) (targetTable: string option) (targetColumn: string option)
+            (isNotTrusted: bool)
+            : Classification =
+            match norm sourceSchema, norm sourceTable, norm sourceColumn,
+                  norm targetSchema, norm targetTable, norm targetColumn with
+            | Some ss, Some st, Some sc, Some ts, Some tt, Some tc ->
+                Reconstructable
+                    { SourceSchema = ss; SourceTable = st; SourceColumn = sc
+                      TargetSchema = ts; TargetTable = tt; TargetColumn = tc
+                      IsNotTrusted = isNotTrusted }
+            | nSrcSchema, _, _, nTgtSchema, _, _ ->
+                let show (o: string option) = norm o |> Option.defaultValue "<unreadable>"
+                let src = System.String.Concat(show sourceSchema, ".", show sourceTable, ".", show sourceColumn)
+                let tgt = System.String.Concat(show targetSchema, ".", show targetTable, ".", show targetColumn)
+                let which =
+                    match nSrcSchema, nTgtSchema with
+                    | None, None -> "both endpoints' schemas"
+                    | None, _ -> "the parent schema"
+                    | _, None -> "the referenced schema"
+                    | _ -> "a coordinate"
+                Unreadable
+                    (System.String.Concat(
+                        "readside.foreignKeys: cross-schema FK ", src, " -> ", tgt,
+                        " skipped — ", which,
+                        " unreadable (NULL SCHEMA_NAME: dropped schema, or missing VIEW DEFINITION grant on a least-privilege account)"))
+
     /// One key column of a reflected non-PK index (`sys.indexes ⋈
     /// sys.index_columns`), within a `(schema, table)` group: the owning
     /// index's name + uniqueness, the participating column, its sort
@@ -569,26 +633,29 @@ module ReadSide =
             use! reader = cmd.ExecuteReaderAsync()
             let rows = ResizeArray<FkRow>()
             let mutable hasMore = true
-            // Defensive DBNull guard (slice A.4.7'-prelude.defensive-
-            // hardening): SCHEMA_NAME() returns NULL if the schema
-            // was dropped between metadata read and FK probe (rare
-            // race), or if the user lacks VIEW DEFINITION on the
-            // referenced schema. `reader.GetString` throws
-            // `InvalidCastException` on NULL; treat-as-empty filters
-            // the row out at the downstream consumer (which checks
-            // for non-empty schema/table).
-            let safeStr i = if reader.IsDBNull i then "" else reader.GetString i
+            // E2 (debrief G4): a NULL SCHEMA_NAME() (dropped schema /
+            // missing VIEW DEFINITION grant) is classified Unreadable and
+            // surfaces a NAMED diagnostic + skip — never a silent drop nor
+            // an opaque GetString cast failure.
+            let rawOpt i = if reader.IsDBNull i then None else Some (reader.GetString i)
             while hasMore do
                 let! more = reader.ReadAsync()
                 if more then
-                    rows.Add(
-                        { SourceSchema = safeStr 0
-                          SourceTable  = safeStr 1
-                          SourceColumn = safeStr 2
-                          TargetSchema = safeStr 3
-                          TargetTable  = safeStr 4
-                          TargetColumn = safeStr 5
-                          IsNotTrusted = (not (reader.IsDBNull 6)) && reader.GetBoolean 6 })
+                    let isNotTrusted = (not (reader.IsDBNull 6)) && reader.GetBoolean 6
+                    match
+                        ForeignKeyReadback.classify
+                            (rawOpt 0) (rawOpt 1) (rawOpt 2) (rawOpt 3) (rawOpt 4) (rawOpt 5) isNotTrusted
+                        with
+                    | ForeignKeyReadback.Reconstructable c ->
+                        rows.Add(
+                            { SourceSchema = c.SourceSchema
+                              SourceTable  = c.SourceTable
+                              SourceColumn = c.SourceColumn
+                              TargetSchema = c.TargetSchema
+                              TargetTable  = c.TargetTable
+                              TargetColumn = c.TargetColumn
+                              IsNotTrusted = c.IsNotTrusted })
+                    | ForeignKeyReadback.Unreadable reason -> eprintfn "%s" reason
                 else
                     hasMore <- false
             return List.ofSeq rows
@@ -1069,10 +1136,12 @@ module ReadSide =
             // be set explicitly in the `with` block). OnDelete / OnUpdate
             // referential-action axes remain defaulted until a follow-up
             // slice joins `sys.foreign_keys`'s action columns.
+            // G14 — route the constraint-state pair through the guard (FKs from
+            // sys.foreign_keys always have a real constraint, so this is the
+            // consistent `(true, trusted)` case; uniform with the V1 producer).
             return
-                { Reference.create refKey refName srcAttrKey tgtKindKey with
-                    HasDbConstraint    = true
-                    IsConstraintTrusted = not fk.IsNotTrusted }
+                Reference.create refKey refName srcAttrKey tgtKindKey
+                |> Reference.withConstraintState true (not fk.IsNotTrusted)
         }
 
     /// Attach references to a Kind based on the FKs grouped by
@@ -1421,17 +1490,28 @@ module ReadSide =
             let! _ = reader.NextResultAsync()
             let fkRows = ResizeArray<FkRow>()
             let mutable hasMore4 = true
+            // E2 (debrief G4): classify each FK row's coordinates; a NULL
+            // SCHEMA_NAME() yields a NAMED diagnostic + skip instead of an
+            // opaque `GetString` cast failure that would abort the readback.
+            let rawOpt4 i = if reader.IsDBNull i then None else Some (reader.GetString i)
             while hasMore4 do
                 let! more = reader.ReadAsync()
                 if more then
-                    fkRows.Add(
-                        { SourceSchema = reader.GetString 0
-                          SourceTable  = reader.GetString 1
-                          SourceColumn = reader.GetString 2
-                          TargetSchema = reader.GetString 3
-                          TargetTable  = reader.GetString 4
-                          TargetColumn = reader.GetString 5
-                          IsNotTrusted = reader.GetBoolean 6 })
+                    let isNotTrusted = (not (reader.IsDBNull 6)) && reader.GetBoolean 6
+                    match
+                        ForeignKeyReadback.classify
+                            (rawOpt4 0) (rawOpt4 1) (rawOpt4 2) (rawOpt4 3) (rawOpt4 4) (rawOpt4 5) isNotTrusted
+                        with
+                    | ForeignKeyReadback.Reconstructable c ->
+                        fkRows.Add(
+                            { SourceSchema = c.SourceSchema
+                              SourceTable  = c.SourceTable
+                              SourceColumn = c.SourceColumn
+                              TargetSchema = c.TargetSchema
+                              TargetTable  = c.TargetTable
+                              TargetColumn = c.TargetColumn
+                              IsNotTrusted = c.IsNotTrusted })
+                    | ForeignKeyReadback.Unreadable reason -> eprintfn "%s" reason
                 else hasMore4 <- false
 
             // Result set 5: V2.LogicalName extended properties

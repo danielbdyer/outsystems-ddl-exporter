@@ -33,7 +33,7 @@ type ToleratedDivergenceGen =
             [
                 ToleratedDivergence.HeaderCommentsOmitted
                 ToleratedDivergence.PostDeployForeignKeysSplit
-                ToleratedDivergence.IndexesUnreflected
+                ToleratedDivergence.IndexOptionsUnreflected
                 ToleratedDivergence.StaticPopulationsUnreflected
                 ToleratedDivergence.EmptyTextNormalizedToNull
                 ToleratedDivergence.CharAnsiPaddingTolerated
@@ -77,7 +77,7 @@ let ``Closed-DU coverage: ToleratedDivergence.allKnown contains seven variants (
 
 [<Fact>]
 let ``Tolerance.ofSet round-trips through divergences`` () =
-    let s = Set.ofList [ ToleratedDivergence.HeaderCommentsOmitted; ToleratedDivergence.IndexesUnreflected ]
+    let s = Set.ofList [ ToleratedDivergence.HeaderCommentsOmitted; ToleratedDivergence.IndexOptionsUnreflected ]
     let t = Tolerance.ofSet s
     Assert.Equal<Set<ToleratedDivergence>> (s, Tolerance.divergences t)
 
@@ -85,7 +85,7 @@ let ``Tolerance.ofSet round-trips through divergences`` () =
 let ``Tolerance.withDivergence on strict yields a singleton tolerance`` () =
     let t = Tolerance.strict |> Tolerance.withDivergence ToleratedDivergence.HeaderCommentsOmitted
     Assert.True (Tolerance.tolerates ToleratedDivergence.HeaderCommentsOmitted t)
-    Assert.False (Tolerance.tolerates ToleratedDivergence.IndexesUnreflected t)
+    Assert.False (Tolerance.tolerates ToleratedDivergence.IndexOptionsUnreflected t)
     Assert.Equal (1, Set.count (Tolerance.divergences t))
 
 [<Fact>]
@@ -160,9 +160,9 @@ let ``3.4: empty config parses to strict (safe default); blank tokens are skippe
     match Tolerance.parse [] with
     | Ok t -> Assert.True(Tolerance.isStrict t)
     | Error e -> Assert.Fail(sprintf "%A" e)
-    match Tolerance.parse [ "  "; "IndexesUnreflected"; "" ] with
+    match Tolerance.parse [ "  "; "IndexOptionsUnreflected"; "" ] with
     | Ok t ->
-        Assert.True(Tolerance.tolerates ToleratedDivergence.IndexesUnreflected t)
+        Assert.True(Tolerance.tolerates ToleratedDivergence.IndexOptionsUnreflected t)
         Assert.Equal(1, Set.count (Tolerance.divergences t))
     | Error e -> Assert.Fail(sprintf "%A" e)
 

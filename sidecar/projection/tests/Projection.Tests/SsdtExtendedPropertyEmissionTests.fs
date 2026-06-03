@@ -181,7 +181,7 @@ let ``Chapter 4.1.A slice 8: Tolerance.CommentMetadataUnreflected variant retire
         match variant with
         | ToleratedDivergence.HeaderCommentsOmitted        -> ()
         | ToleratedDivergence.PostDeployForeignKeysSplit   -> ()
-        | ToleratedDivergence.IndexesUnreflected           -> ()
+        | ToleratedDivergence.IndexOptionsUnreflected           -> ()
         | ToleratedDivergence.StaticPopulationsUnreflected -> ()
         | ToleratedDivergence.EmptyTextNormalizedToNull    -> ()
         | ToleratedDivergence.CharAnsiPaddingTolerated     -> ()

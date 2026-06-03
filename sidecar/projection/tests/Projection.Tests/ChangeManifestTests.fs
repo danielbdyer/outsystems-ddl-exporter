@@ -94,7 +94,7 @@ let ``6.H.4: a genesis-only lifecycle has an empty change-manifest series`` () =
 let private tolerances : Tolerance =
     Tolerance.strict
     |> Tolerance.withDivergence ToleratedDivergence.HeaderCommentsOmitted
-    |> Tolerance.withDivergence ToleratedDivergence.IndexesUnreflected
+    |> Tolerance.withDivergence ToleratedDivergence.IndexOptionsUnreflected
 
 let private appliedTransforms : (SsKey * OverlayAxis option) list =
     [ customerKey, Some Tightening
@@ -109,7 +109,7 @@ let ``6.H.4: the manifest surfaces the To-episode tolerance residual (named, sor
     // The residual is the To-episode's accepted-divergence set as a name-sorted
     // list — the equivalence under which this edge's displacement was faithful.
     Assert.Equal<ToleratedDivergence list>(
-        [ ToleratedDivergence.HeaderCommentsOmitted; ToleratedDivergence.IndexesUnreflected ],
+        [ ToleratedDivergence.HeaderCommentsOmitted; ToleratedDivergence.IndexOptionsUnreflected ],
         m.ToleranceResidual)
 
 [<Fact>]

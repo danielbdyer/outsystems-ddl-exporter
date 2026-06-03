@@ -156,4 +156,10 @@ module PhysicalSchemaReader =
             // today — the two-consumer threshold gates it). Empty here keeps
             // the H-050 in-process adjunction green on the axes it owns.
             Annotations = Set.empty
+            // E1 — same rationale as Annotations: the index axis is verified
+            // through the REAL SQL Server canary (ReadSide path), the
+            // authoritative round-trip. AST-side index recovery is deferred
+            // (no consumer needs the in-process index diff; the adjunction
+            // test asserts only Columns + FKs).
+            Indexes = Set.empty
         }

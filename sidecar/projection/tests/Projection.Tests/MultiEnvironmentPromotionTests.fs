@@ -72,13 +72,13 @@ let ``R4: Dev environment may be permissive during dual-track (every known diver
 let ``R4: canonical monotonic chain Dev=permissive ⊇ QA ⊇ UAT ⊇ PROD=strict holds`` () =
     // Worked example of the cutover ladder per DECISIONS 2026-05-22:
     // - Dev:  permissive (every known divergence accepted)
-    // - QA:   accepts IndexesUnreflected + StaticPopulationsUnreflected
+    // - QA:   accepts IndexOptionsUnreflected + StaticPopulationsUnreflected
     // - UAT:  accepts only StaticPopulationsUnreflected
     // - PROD: strict
     let ladder =
         { Dev  = Tolerance.permissive
           Qa   = Tolerance.ofSet (Set.ofList
-                    [ ToleratedDivergence.IndexesUnreflected
+                    [ ToleratedDivergence.IndexOptionsUnreflected
                       ToleratedDivergence.StaticPopulationsUnreflected ])
           Uat  = Tolerance.ofSet (Set.ofList
                     [ ToleratedDivergence.StaticPopulationsUnreflected ])
@@ -130,11 +130,11 @@ let ``R4 property: every monotonic chain (Dev ⊇ QA ⊇ UAT ⊇ PROD=strict) sa
 
 [<Fact>]
 let ``R4 negative: non-monotonic chain (QA accepts something Dev does not) violates isMonotonicallyTightening`` () =
-    // Counterexample: QA permits IndexesUnreflected but Dev does
+    // Counterexample: QA permits IndexOptionsUnreflected but Dev does
     // not. The chain Dev ⊇ QA fails.
     let ladder =
         { Dev  = Tolerance.strict
-          Qa   = Tolerance.ofSet (Set.ofList [ ToleratedDivergence.IndexesUnreflected ])
+          Qa   = Tolerance.ofSet (Set.ofList [ ToleratedDivergence.IndexOptionsUnreflected ])
           Uat  = Tolerance.strict
           Prod = Tolerance.strict }
     Assert.False (isMonotonicallyTightening ladder)
@@ -167,7 +167,7 @@ let ``R4 composition: PROD-strict gate ∧ monotonic chain define the cutover-la
     let ladder =
         { Dev  = Tolerance.permissive
           Qa   = Tolerance.ofSet (Set.ofList
-                    [ ToleratedDivergence.IndexesUnreflected
+                    [ ToleratedDivergence.IndexOptionsUnreflected
                       ToleratedDivergence.StaticPopulationsUnreflected ])
           Uat  = Tolerance.ofSet (Set.ofList
                     [ ToleratedDivergence.StaticPopulationsUnreflected ])
@@ -188,7 +188,7 @@ let ``R4 composition: PROD-strict gate ∧ monotonic chain define the cutover-la
 let ``R4 property: adding a divergence to Dev preserves monotonic tightening`` (toAdd: ToleratedDivergence) =
     let baseLadder =
         { Dev  = Tolerance.ofSet (Set.ofList
-                    [ ToleratedDivergence.IndexesUnreflected
+                    [ ToleratedDivergence.IndexOptionsUnreflected
                       ToleratedDivergence.StaticPopulationsUnreflected ])
           Qa   = Tolerance.ofSet (Set.ofList
                     [ ToleratedDivergence.StaticPopulationsUnreflected ])

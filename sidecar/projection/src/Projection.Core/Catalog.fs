@@ -1091,6 +1091,32 @@ module Reference =
             IsConstraintTrusted = true
         }
 
+    /// G14 — the constraint-state invariant. Trust is only meaningful when a
+    /// DB constraint exists: an *untrusted* (`WITH NOCHECK`) reference must be
+    /// backed by a real constraint, since the emitter's NOCHECK alter
+    /// (`SsdtDdlEmitter.untrustedFkAlters`) fires on `not IsConstraintTrusted`
+    /// and would otherwise target a non-existent constraint. Formally
+    /// `¬IsConstraintTrusted ⟹ HasDbConstraint`. The illegal quadrant the
+    /// debrief (G14) names is `(HasDbConstraint=false ∧ IsConstraintTrusted=false)`
+    /// — "untrusted without a constraint." (The `(false, true)` default is the
+    /// canonical *vacuous-trust* no-constraint state, the boolean projection of
+    /// a `NoDbConstraint` variant — consistent.)
+    let isConstraintStateConsistent (r: Reference) : bool =
+        r.IsConstraintTrusted || r.HasDbConstraint
+
+    /// The sanctioned way to set the `(HasDbConstraint, IsConstraintTrusted)`
+    /// pair from external evidence (V1 JSON / ReadSide / codec). Normalizes the
+    /// illegal quadrant to the canonical vacuous-trust state: a reference with
+    /// no DB constraint is `IsConstraintTrusted = true` (trust is N/A), never
+    /// independently untrusted. Routing every producer through this makes the
+    /// illegal quadrant unreachable in practice (witnessed in
+    /// `ReferenceConstraintStateTests`).
+    let withConstraintState (hasDbConstraint: bool) (isConstraintTrusted: bool) (r: Reference) : Reference =
+        if hasDbConstraint then
+            { r with HasDbConstraint = true; IsConstraintTrusted = isConstraintTrusted }
+        else
+            { r with HasDbConstraint = false; IsConstraintTrusted = true }
+
 
 [<RequireQualifiedAccess>]
 module Index =

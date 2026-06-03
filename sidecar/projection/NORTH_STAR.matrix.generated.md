@@ -4,7 +4,7 @@
 
 # NORTH STAR — Matrix Status (generated)
 
-_Derived from `tests/Projection.Tests/AxiomTests.fs` + the test tree. The §1 bullseye, self-reported._
+_Derived from `tests/Projection.Tests/AxiomTests.fs` + `src/Projection.Core/Tolerance.fs` (the `@ladder` tags) + the test tree. The §1 bullseye, self-reported at the **ladder level**._
 
 ## T-II — Executable-axiom totality (L2 formal axioms)
 
@@ -15,25 +15,35 @@ _Derived from `tests/Projection.Tests/AxiomTests.fs` + the test tree. The §1 bu
 | Deferred D | unnamed/unbacked — `[<Fact(Skip … Bucket D …)>]` | 1 |
 | **total axiom entries** | | **117** |
 
-**Verifiability gate (E1): `PASS`** — no deferral claims verified (no phantom Bucket-A/B); every deferral names its bucket.
+**Verifiability gate: `PASS`** — no deferral claims verified (no phantom Bucket-A/B); every deferral names its bucket.
 
-## T-I — Round-trip totality (the §1 bullseye matrix)
+## T-I — Round-trip ladder (the §1 bullseye matrix)
 
-| Axis | Operation | Witness test (must exist) | Path | Status |
-|---|---|---|---|---|
-| **Schema** | round-trip (canary) | `PhysicalSchema diff` | Wave 1 (1.2/1.3 un-hollow) | ✅ verified |
-| **Data** | round-trip (data canary) | `data canary` | Transfer (shipped) | ✅ verified |
-| **Identity** | round-trip (SsKey reload) | `reload preserves SsKey` | Wave 4.1 | ✅ verified |
-| **Time** | round-trip (replay) | `replayTo genesis` | E4 / 5.3 | ✅ verified |
-| **Decision** | round-trip (overlay) | `reproduces the DecisionOverlay` | E3 / Wave 2 | ✅ verified |
+Each axis carries three rungs, each derived from the proof — never hand-asserted.
+**L1** = a round-trip witness test exists. **L2** = no *open* named tolerance sits
+on the axis (an `@ladder … OpenGap` variant in `Tolerance.fs` caps the axis at
+L2-partial; retiring the variant in code auto-flips it). **L3** = a `migrate A B`
+witness covers the axis. The **Ladder** column is the honest weakest-rung summary.
 
-**Round-trip cells with a live witness: 5 / 5.** A cell goes green only when a test
-by its witness name exists in the tree — it cannot be asserted by hand. `⬚ open` cells are the
-remaining bullseye distance; they flip automatically as the named slices land their witnesses.
+| Axis | L1 witness | L2 faithful | L3 composed | Open tolerances | Ladder |
+|---|:--:|:--:|:--:|---|---|
+| **Schema** | ✅ | ◑ L2-partial | ✅ | `IndexOptionsUnreflected` | ◑ L2-partial |
+| **Data** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |
+| **Identity** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |
+| **Time** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |
+| **Decision** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |
 
-> **Witness-present ≠ feature-complete.** This generated view proves a round-trip *witness exists*.
-> Per-feature totality (e.g. the Schema canary is still hollow for triggers/sequences/defaults/
-> computed/checks/ext-props until Wave 1) lives in NORTH_STAR.md §1 prose; the full E2 generator
-> will track per-feature. Today this is the coarse, honest, machine-derived floor.
+**Rungs reached: L1 5/5 · L2 4/5 · L3 5/5.** Tolerance set:
+7 named, of which **1 open** (`OpenGap`). A cell cannot be
+hand-marked: L1/L3 require the witness test to exist; L2 requires the open tolerance
+to be retired from `Tolerance.fs`. The generator under-claims; it never over-claims.
 
-_Generated 2026-06-01T11:54Z · gate=PASS · L2 live/C/D=83/6/1 · round-trip=5/5_
+> **Witness/tolerance-present ≠ feature-complete.** L2 here is "no open *named*
+> tolerance on the axis." Silent drops with no named surface (the cross-schema FK
+> filter, debrief G4) and unwitnessed sub-axes (the 3-axis Decision adjunction,
+> debrief G12) are NOT auto-detected — they have no machine surface yet, and are
+> tracked in `DEBRIEF_2026_06_02` until E2/F2 give them a named diagnostic/witness.
+> L3 here is "a composition witness exists for the axis," not "faithful under every
+> spanning axis" (T-VI atomicity/permissions ride the debrief until cluster A names them).
+
+_Self-reported · gate=PASS · L2 axioms live/C/D=83/6/1 · rungs L1/L2/L3=5/4/5 of 5 · tolerances 7 (1 open)_
