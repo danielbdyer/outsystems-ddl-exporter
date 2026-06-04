@@ -313,17 +313,17 @@ let ``Origin audit (JSON path): isExternal=true → ExternalIndirect (placeholde
 // Rowset-path mappings exercise the three-way real driven by
 // `ModuleRow.EspaceKind`. Reuses the existing OssyRowsetReaderTests
 // fixture builders.
-let private rowsetWith (isExternal: bool) (espaceKind: string option) : CatalogReader.RowsetBundle =
-    let moduleRow : CatalogReader.ModuleRow =
+let private rowsetWith (isExternal: bool) (espaceKind: string option) : OssysRowsetTypes.RowsetBundle =
+    let moduleRow : OssysRowsetTypes.ModuleRow =
         { EspaceId = 1; EspaceName = "M"; IsSystemModule = false
           IsActive = true; EspaceKind = espaceKind; EspaceSsKey = None }
-    let kindRow : CatalogReader.KindRow =
+    let kindRow : OssysRowsetTypes.KindRow =
         { EntityId = 11; EspaceId = 1; EntityName = "E"
           PhysicalTableName = "OSUSR_M_E"; DbSchema = "dbo"
           IsStatic = false; IsExternal = isExternal; IsSystemEntity = false
           IsActive = true; EntitySsKey = None; PrimaryKeySsKey = None
           Description = None }
-    let idRow : CatalogReader.AttributeRow =
+    let idRow : OssysRowsetTypes.AttributeRow =
         { AttrId = 111; EntityId = 11; AttrName = "Id"; PhysicalCol = "ID"
           DataType = "Identifier"; IsMandatory = true; IsIdentifier = true
           IsAutoNumber = true; Length = None; Precision = None; Scale = None

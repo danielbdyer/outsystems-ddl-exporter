@@ -28,7 +28,7 @@ let private mustOk r =
     | Ok v -> v
     | Error es -> invalidOp (sprintf "fixture: %A" es)
 
-let private moduleRow : CatalogReader.ModuleRow =
+let private moduleRow : OssysRowsetTypes.ModuleRow =
     { EspaceId       = 1
       EspaceName     = "AppCore"
       IsSystemModule = false
@@ -36,7 +36,7 @@ let private moduleRow : CatalogReader.ModuleRow =
       EspaceKind     = None
       EspaceSsKey    = None }
 
-let private kindRow : CatalogReader.KindRow =
+let private kindRow : OssysRowsetTypes.KindRow =
     { EntityId          = 11
       EspaceId          = 1
       EntityName        = "Customer"
@@ -57,7 +57,7 @@ let private attrRow
     (isComputed: bool)
     (computedDef: string option)
     (defaultConstraintName: string option)
-    : CatalogReader.AttributeRow =
+    : OssysRowsetTypes.AttributeRow =
     { AttrId               = attrId
       EntityId             = 11
       AttrName             = name
@@ -78,13 +78,13 @@ let private attrRow
       ComputedDefinition   = computedDef
       DefaultConstraintName = defaultConstraintName }
 
-let private buildBundle (attrs: CatalogReader.AttributeRow list) : CatalogReader.RowsetBundle =
-    { CatalogReader.RowsetBundle.empty with
+let private buildBundle (attrs: OssysRowsetTypes.AttributeRow list) : OssysRowsetTypes.RowsetBundle =
+    { OssysRowsetTypes.RowsetBundle.empty with
         Modules    = [ moduleRow ]
         Kinds      = [ kindRow ]
         Attributes = attrs }
 
-let private parseToCatalog (bundle: CatalogReader.RowsetBundle) : Catalog =
+let private parseToCatalog (bundle: OssysRowsetTypes.RowsetBundle) : Catalog =
     let task () = CatalogReader.parse (CatalogReader.SnapshotRowsets bundle)
     let result = TaskSync.run task
     mustOk result

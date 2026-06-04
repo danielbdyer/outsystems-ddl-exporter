@@ -166,7 +166,7 @@ let ``Slice β: JSON path defaults Attribute.ExternalDatabaseType to None when s
 // `AttributeRow.ExternalDatabaseType`.
 // ---------------------------------------------------------------------------
 
-let private moduleRow : CatalogReader.ModuleRow =
+let private moduleRow : OssysRowsetTypes.ModuleRow =
     { EspaceId       = 1
       EspaceName     = "AppCore"
       IsSystemModule = false
@@ -174,7 +174,7 @@ let private moduleRow : CatalogReader.ModuleRow =
       EspaceKind     = None
       EspaceSsKey    = None }
 
-let private accountKindRow : CatalogReader.KindRow =
+let private accountKindRow : OssysRowsetTypes.KindRow =
     { EntityId          = 11
       EspaceId          = 1
       EntityName        = "Account"
@@ -193,7 +193,7 @@ let private mkAttrRow
         (attrName: string)
         (originalName: string option)
         (externalDbType: string option)
-        : CatalogReader.AttributeRow =
+        : OssysRowsetTypes.AttributeRow =
     {
         AttrId              = attrId
         EntityId            = 11
@@ -218,7 +218,7 @@ let private mkAttrRow
 
 [<Fact>]
 let ``Slice β: rowset path carries Attribute.OriginalName from AttributeRow`` () =
-    let bundle : CatalogReader.RowsetBundle =
+    let bundle : OssysRowsetTypes.RowsetBundle =
         { Modules    = [ moduleRow ]
           Kinds      = [ accountKindRow ]
           Attributes = [ mkAttrRow 111 "EmailAddress" (Some "Email") None ]
@@ -232,7 +232,7 @@ let ``Slice β: rowset path carries Attribute.OriginalName from AttributeRow`` (
 
 [<Fact>]
 let ``Slice β: rowset path carries Attribute.ExternalDatabaseType from AttributeRow`` () =
-    let bundle : CatalogReader.RowsetBundle =
+    let bundle : OssysRowsetTypes.RowsetBundle =
         { Modules    = [ moduleRow ]
           Kinds      = [ accountKindRow ]
           Attributes = [ mkAttrRow 112 "LegacyKey" None (Some "NVARCHAR(50)") ]
@@ -246,7 +246,7 @@ let ``Slice β: rowset path carries Attribute.ExternalDatabaseType from Attribut
 
 [<Fact>]
 let ``Slice β: rowset path defaults both fields to None when source omits`` () =
-    let bundle : CatalogReader.RowsetBundle =
+    let bundle : OssysRowsetTypes.RowsetBundle =
         { Modules    = [ moduleRow ]
           Kinds      = [ accountKindRow ]
           Attributes = [ mkAttrRow 113 "Id" None None ]

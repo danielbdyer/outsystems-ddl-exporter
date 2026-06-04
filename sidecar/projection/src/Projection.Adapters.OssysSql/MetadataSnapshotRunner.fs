@@ -11,7 +11,7 @@ open System.Data
 open System.Threading.Tasks
 open Microsoft.Data.SqlClient
 open Projection.Core
-open Projection.Adapters.Osm  // LINT-ALLOW: intentional adapter composition — the OssysSql extraction adapter assembles a `CatalogReader.RowsetBundle` (Osm's integration contract) for `CatalogReader.parse`; the SQL-extraction adapter feeds the projection adapter, a documented one-way dependency per the chapter-5.0 slice-γ bootstrap+extract flow
+open Projection.Adapters.Osm  // LINT-ALLOW: intentional adapter composition — the OssysSql extraction adapter assembles a `OssysRowsetTypes.RowsetBundle` (Osm's integration contract) for `CatalogReader.parse`; the SQL-extraction adapter feeds the projection adapter, a documented one-way dependency per the chapter-5.0 slice-γ bootstrap+extract flow
 
 /// V2's metadata-snapshot runner. Carbon-copies V1's `MetadataSnapshotRunner`
 /// (`Osm.Pipeline.SqlExtraction.MetadataSnapshotRunner`) at a much smaller
@@ -20,7 +20,7 @@ open Projection.Adapters.Osm  // LINT-ALLOW: intentional adapter composition —
 /// a direct `SqlConnection`-receiving function because V2's runner is the
 /// canary's offline-extraction surface — it walks the carbon-copied SQL's
 /// 22 result sets, parses the first 5 into typed F# records mirroring V1's
-/// DTOs, and assembles a `CatalogReader.RowsetBundle` consumable by V2's
+/// DTOs, and assembles a `OssysRowsetTypes.RowsetBundle` consumable by V2's
 /// existing `CatalogReader.parse` JSON / rowset adapter.
 ///
 /// **Chapter 5.0 slice γ.** The canary's bootstrap+extract flow:
@@ -36,7 +36,7 @@ open Projection.Adapters.Osm  // LINT-ALLOW: intentional adapter composition —
 ///      References / PhysicalTables) parse into typed F# records; the
 ///      remaining 17 are skipped (the SQL still emits them but V2's
 ///      current consumption surface is the narrow 4-rowset
-///      `CatalogReader.RowsetBundle`).
+///      `OssysRowsetTypes.RowsetBundle`).
 ///   5. Slice δ composes the typed records into the `RowsetBundle` via
 ///      JOIN logic (PhysicalTables → KindRow.DbSchema; ForeignKey reality
 ///      → ReferenceRow.DeleteRuleCode / HasDbConstraint).
@@ -140,7 +140,7 @@ module MetadataSnapshotRunner =
 
     /// V1-shaped typed rowsets parsed from the first 5 result sets.
     /// These mirror V1's `Outsystems*Row` DTOs at the columns V2's
-    /// `CatalogReader.RowsetBundle` consumes (with the JOIN composition
+    /// `OssysRowsetTypes.RowsetBundle` consumes (with the JOIN composition
     /// happening in slice δ).
     type OssysModuleRow =
         { EspaceId       : int
@@ -324,7 +324,7 @@ module MetadataSnapshotRunner =
 
     /// Aggregate snapshot — the 5 originally-lifted rowsets plus the 8
     /// new physical-reflection rowsets (slice 5.13.ossys-rowsets-cluster).
-    /// `toBundle` projects this into V2's `CatalogReader.RowsetBundle`,
+    /// `toBundle` projects this into V2's `OssysRowsetTypes.RowsetBundle`,
     /// applying JOIN logic for the index / trigger / column-check axes
     /// that have V2 IR consumers ready.
     type MetadataSnapshot =
@@ -854,7 +854,7 @@ module MetadataSnapshotRunner =
             : Task<Result<MetadataSnapshot>> =
         runAsyncWithOptions cnn parameters defaultOptions
 
-    /// Compose the typed snapshot into V2's `CatalogReader.RowsetBundle`.
+    /// Compose the typed snapshot into V2's `OssysRowsetTypes.RowsetBundle`.
     /// JOIN logic:
     ///   - Each `OssysEntityRow` produces one `KindRow` joined against the
     ///     `OssysPhysicalTableRow` by EntityId for the `DbSchema` value.
@@ -951,7 +951,7 @@ module MetadataSnapshotRunner =
             | _ -> None
         | _ -> None
 
-    let toBundle (snapshot: MetadataSnapshot) : CatalogReader.RowsetBundle =
+    let toBundle (snapshot: MetadataSnapshot) : OssysRowsetTypes.RowsetBundle =
         use _ = Bench.scope "adapter.osm.extract.toBundle"
         let physicalByEntity =
             snapshot.PhysicalTables
@@ -972,7 +972,7 @@ module MetadataSnapshotRunner =
                     IsActive       = m.IsActive
                     EspaceKind     = m.EspaceKind
                     EspaceSsKey    = m.EspaceSsKey
-                } : CatalogReader.ModuleRow)
+                } : OssysRowsetTypes.ModuleRow)
 
         let kinds =
             snapshot.Entities
@@ -1006,7 +1006,7 @@ module MetadataSnapshotRunner =
                     EntitySsKey       = e.EntitySsKey
                     PrimaryKeySsKey   = e.PrimaryKeySsKey
                     Description       = e.Description
-                } : CatalogReader.KindRow)
+                } : OssysRowsetTypes.KindRow)
 
         // Slice A.4.7'-prelude.row53-source-side — join
         // `OssysColumnRealityRow` by AttrId so each AttributeRow
@@ -1049,7 +1049,7 @@ module MetadataSnapshotRunner =
                     IsComputed            = realityIsComputed
                     ComputedDefinition    = realityComputedDef
                     DefaultConstraintName = realityDefaultName
-                } : CatalogReader.AttributeRow)
+                } : OssysRowsetTypes.AttributeRow)
 
         // Slice 5.13.fk-reality-join — JOIN OssysReferenceRow with
         // OssysFkRealityRow via OssysFkColumnRow's parent-attribute
@@ -1101,7 +1101,7 @@ module MetadataSnapshotRunner =
                             HasDbConstraint     = true
                             OnUpdate            = onUpdate
                             IsConstraintTrusted = isTrusted
-                        } : CatalogReader.ReferenceRow)
+                        } : OssysRowsetTypes.ReferenceRow)
                 | _ -> None)
 
         // Slice 5.13.ossys-rowsets-cluster — JOIN logic for the new
@@ -1149,7 +1149,7 @@ module MetadataSnapshotRunner =
                     IgnoreDupKey     = i.IgnoreDupKey
                     DataCompression  = dataCompression
                     DataSpace        = dataSpace
-                } : CatalogReader.IndexRow)
+                } : OssysRowsetTypes.IndexRow)
 
         let indexColumns =
             snapshot.IndexColumns
@@ -1162,7 +1162,7 @@ module MetadataSnapshotRunner =
                     PhysicalColumn = c.PhysicalColumn
                     IsIncluded     = c.IsIncluded
                     Direction      = c.Direction
-                } : CatalogReader.IndexColumnRow)
+                } : OssysRowsetTypes.IndexColumnRow)
 
         let triggers =
             snapshot.Triggers
@@ -1172,7 +1172,7 @@ module MetadataSnapshotRunner =
                     TriggerName = t.TriggerName
                     IsDisabled  = t.IsDisabled
                     Definition  = t.TriggerDefinition
-                } : CatalogReader.TriggerRow)
+                } : OssysRowsetTypes.TriggerRow)
 
         let columnChecks =
             snapshot.ColumnChecks
@@ -1182,7 +1182,7 @@ module MetadataSnapshotRunner =
                     ConstraintName = c.ConstraintName
                     Definition     = c.Definition
                     IsNotTrusted   = c.IsNotTrusted
-                } : CatalogReader.ColumnCheckRow)
+                } : OssysRowsetTypes.ColumnCheckRow)
 
         {
             Modules      = modules

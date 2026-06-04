@@ -227,7 +227,7 @@ let ``L3-S9: JSON path Email attribute without description stays None on a mixed
 // Rowset path — descriptions on DTO rows.
 // ---------------------------------------------------------------------------
 
-let private moduleRow : CatalogReader.ModuleRow =
+let private moduleRow : OssysRowsetTypes.ModuleRow =
     {
         EspaceId       = 1
         EspaceName     = "AppCore"
@@ -237,7 +237,7 @@ let private moduleRow : CatalogReader.ModuleRow =
         EspaceSsKey    = None
     }
 
-let private kindRowWith (description: string option) : CatalogReader.KindRow =
+let private kindRowWith (description: string option) : OssysRowsetTypes.KindRow =
     {
         EntityId          = 11
         EspaceId          = 1
@@ -253,7 +253,7 @@ let private kindRowWith (description: string option) : CatalogReader.KindRow =
         Description       = description
     }
 
-let private idAttrRowWith (description: string option) : CatalogReader.AttributeRow =
+let private idAttrRowWith (description: string option) : OssysRowsetTypes.AttributeRow =
     {
         AttrId       = 111
         EntityId     = 11
@@ -278,7 +278,7 @@ let private idAttrRowWith (description: string option) : CatalogReader.Attribute
 
 [<Fact>]
 let ``L3-S9: rowset path carries Kind.Description from KindRow`` () =
-    let bundle : CatalogReader.RowsetBundle =
+    let bundle : OssysRowsetTypes.RowsetBundle =
         { Modules    = [ moduleRow ]
           Kinds      = [ kindRowWith (Some "Carried through the rowset path.") ]
           Attributes = [ idAttrRowWith None ]
@@ -292,7 +292,7 @@ let ``L3-S9: rowset path carries Kind.Description from KindRow`` () =
 
 [<Fact>]
 let ``L3-S9: rowset path carries Attribute.Description from AttributeRow`` () =
-    let bundle : CatalogReader.RowsetBundle =
+    let bundle : OssysRowsetTypes.RowsetBundle =
         { Modules    = [ moduleRow ]
           Kinds      = [ kindRowWith None ]
           Attributes = [ idAttrRowWith (Some "Surrogate primary key (rowset).") ]
@@ -307,7 +307,7 @@ let ``L3-S9: rowset path carries Attribute.Description from AttributeRow`` () =
 
 [<Fact>]
 let ``L3-S9: rowset path None Description survives roundtrip`` () =
-    let bundle : CatalogReader.RowsetBundle =
+    let bundle : OssysRowsetTypes.RowsetBundle =
         { Modules    = [ moduleRow ]
           Kinds      = [ kindRowWith None ]
           Attributes = [ idAttrRowWith None ]

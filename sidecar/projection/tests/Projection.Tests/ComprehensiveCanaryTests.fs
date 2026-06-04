@@ -467,18 +467,18 @@ module ComprehensiveCanaryTests =
             let suppEspaceId = 99
             let suppEntityId = 999
             let suppAttrId   = 9999
-            let modRow : CatalogReader.ModuleRow =
+            let modRow : OssysRowsetTypes.ModuleRow =
                 { EspaceId = suppEspaceId; EspaceName = "SuppEspace"
                   IsSystemModule = false; IsActive = true
                   EspaceKind = None; EspaceSsKey = None }
-            let kindRow : CatalogReader.KindRow =
+            let kindRow : OssysRowsetTypes.KindRow =
                 { EntityId = suppEntityId; EspaceId = suppEspaceId
                   EntityName = "SuppKind"; PhysicalTableName = "SUPP_KIND"
                   DbSchema = "dbo"; IsStatic = false; IsExternal = false
                   IsSystemEntity = false; IsActive = true
                   EntitySsKey = None; PrimaryKeySsKey = None
                   Description = None }
-            let attrRow : CatalogReader.AttributeRow =
+            let attrRow : OssysRowsetTypes.AttributeRow =
                 { AttrId = suppAttrId; EntityId = suppEntityId
                   AttrName = "Id"; PhysicalCol = "ID"
                   DataType = "Integer"; IsMandatory = true
@@ -489,13 +489,13 @@ module ComprehensiveCanaryTests =
                   ExternalDatabaseType = None
                   IsComputed = false; ComputedDefinition = None
                   DefaultConstraintName = None }
-            let checkRow : CatalogReader.ColumnCheckRow =
+            let checkRow : OssysRowsetTypes.ColumnCheckRow =
                 { AttrId = suppAttrId
                   ConstraintName = "CHK_SUPP"
                   Definition = "[ID] > 0"
                   IsNotTrusted = false }
-            let suppBundle : CatalogReader.RowsetBundle =
-                { CatalogReader.RowsetBundle.empty with
+            let suppBundle : OssysRowsetTypes.RowsetBundle =
+                { OssysRowsetTypes.RowsetBundle.empty with
                     Modules      = [ modRow ]
                     Kinds        = [ kindRow ]
                     Attributes   = [ attrRow ]

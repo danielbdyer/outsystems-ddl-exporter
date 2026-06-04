@@ -280,7 +280,7 @@ let ``L3-S9 IsActive: JSON path defaults to true when source omits the property 
 // ---------------------------------------------------------------------------
 
 let private moduleRowWith (isActive: bool) (espaceId: int) (espaceName: string)
-        : CatalogReader.ModuleRow =
+        : OssysRowsetTypes.ModuleRow =
     {
         EspaceId       = espaceId
         EspaceName     = espaceName
@@ -291,7 +291,7 @@ let private moduleRowWith (isActive: bool) (espaceId: int) (espaceName: string)
     }
 
 let private kindRowWith (isActive: bool) (entityId: int) (espaceId: int) (entityName: string)
-        : CatalogReader.KindRow =
+        : OssysRowsetTypes.KindRow =
     {
         EntityId          = entityId
         EspaceId          = espaceId
@@ -308,7 +308,7 @@ let private kindRowWith (isActive: bool) (entityId: int) (espaceId: int) (entity
     }
 
 let private attrRowWith (isActive: bool) (attrId: int) (entityId: int) (attrName: string)
-        : CatalogReader.AttributeRow =
+        : OssysRowsetTypes.AttributeRow =
     {
         AttrId       = attrId
         EntityId     = entityId
@@ -333,7 +333,7 @@ let private attrRowWith (isActive: bool) (attrId: int) (entityId: int) (attrName
 
 [<Fact>]
 let ``L3-S9 IsActive: rowset path carries inactive Module into the IR`` () =
-    let bundle : CatalogReader.RowsetBundle =
+    let bundle : OssysRowsetTypes.RowsetBundle =
         { Modules    = [ moduleRowWith false 1 "Legacy" ]
           Kinds      = [ kindRowWith true 11 1 "Retired" ]
           Attributes = [ attrRowWith true 111 11 "Id" ]
@@ -345,7 +345,7 @@ let ``L3-S9 IsActive: rowset path carries inactive Module into the IR`` () =
 
 [<Fact>]
 let ``L3-S9 IsActive: rowset path carries inactive Kind into the IR`` () =
-    let bundle : CatalogReader.RowsetBundle =
+    let bundle : OssysRowsetTypes.RowsetBundle =
         { Modules    = [ moduleRowWith true 1 "AppCore" ]
           Kinds      = [ kindRowWith false 11 1 "Retired" ]
           Attributes = [ attrRowWith true 111 11 "Id" ]
@@ -357,7 +357,7 @@ let ``L3-S9 IsActive: rowset path carries inactive Kind into the IR`` () =
 
 [<Fact>]
 let ``L3-S9 IsActive: rowset path carries inactive Attribute into the IR`` () =
-    let bundle : CatalogReader.RowsetBundle =
+    let bundle : OssysRowsetTypes.RowsetBundle =
         { Modules    = [ moduleRowWith true 1 "AppCore" ]
           Kinds      = [ kindRowWith true 11 1 "User" ]
           Attributes = [ attrRowWith true 111 11 "Id"
@@ -377,7 +377,7 @@ let ``L3-S9 IsActive: cross-source parity — same V1 values produce identical I
     // structurally-equivalent rowset and JSON inputs produce
     // structurally-equivalent catalogs. For slice β the load-bearing
     // axis is `IsActive` carriage at all three levels.
-    let bundle : CatalogReader.RowsetBundle =
+    let bundle : OssysRowsetTypes.RowsetBundle =
         { Modules    = [ moduleRowWith true 1 "AppCore" ]
           Kinds      = [ kindRowWith true 11 1 "User" ]
           Attributes = [ attrRowWith true 111 11 "Id" ]
