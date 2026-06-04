@@ -159,9 +159,19 @@ let private dumpBench (tag: string) : unit =
 /// verb's middle is sparse. `full-export` is NOT wrapped here — it
 /// self-brackets via `FullExportRun`. NDJSON goes to stderr (channel 1);
 /// the verb's human narration stays on stdout (the §5 split).
+/// Tier-3 — `--pretty` is a global channel-2 flag, stripped from argv in
+/// `main` and recorded here. When set (and stderr is a real TTY), `withRun`
+/// suppresses the NDJSON stream and renders a Spectre verdict panel instead.
+let private prettyMode = ref false
+
 let private withRun (command: string) (body: unit -> int) : int =
     LogSink.beginRun () |> ignore
     Bench.reset ()
+    // Tier-3 channel 2 (§15.1) — when --pretty + a real TTY, the panel
+    // REPLACES the NDJSON on stderr (never both on the same TTY); route
+    // channel 1 to the null sink for this run.
+    let pretty = TtyRenderer.shouldRender prettyMode.Value
+    if pretty then LogSink.setWriter System.IO.TextWriter.Null
     LogSink.emit
         { LogSink.envelope LogSink.Info LogSink.Config "config.runStart"
             (Map.ofList [ "command", box command ]) with
@@ -190,6 +200,7 @@ let private withRun (command: string) (body: unit -> int) : int =
                    Declined   = declined }
          with ex -> eprintfn "  WARNING: failed to append ledger record: %s" ex.Message
      | None -> ())
+    if pretty then TtyRenderer.renderSummary command code
     code
 
 // ----------------------------------------------------------------------
@@ -1604,6 +1615,10 @@ let private runMigrateWithData (toPath: string) (sinkSpec: string) (sourceSpec: 
 
 [<EntryPoint>]
 let main argv =
+    // Tier-3 — `--pretty` is a global channel-2 flag; record it and strip it
+    // before verb dispatch so the per-verb argv shapes are unchanged.
+    prettyMode := Array.contains "--pretty" argv
+    let argv = argv |> Array.filter (fun a -> a <> "--pretty")
     match argv with
     | [| "full-export" |] ->
         Console.Error.WriteLine "projection full-export: --config <path> required"

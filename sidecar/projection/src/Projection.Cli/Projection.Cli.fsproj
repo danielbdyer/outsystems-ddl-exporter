@@ -15,12 +15,14 @@
     <Compile Include="TransferArgs.fs" />
     <Compile Include="VerifyDataArgs.fs" />
     <Compile Include="VerbArgs.fs" />
+    <Compile Include="TtyRenderer.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Argu" Version="6.2.5" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
+    <PackageReference Include="Spectre.Console" Version="0.54.0" />
   </ItemGroup>
 
   <ItemGroup>

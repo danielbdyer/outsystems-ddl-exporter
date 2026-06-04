@@ -30,6 +30,7 @@
     <Compile Include="BenchTests.fs" />
     <Compile Include="LogSinkTests.fs" />
     <Compile Include="RunLedgerTests.fs" />
+    <Compile Include="TtyRendererTests.fs" />
     <Compile Include="FullExportCliTests.fs" />
     <Compile Include="FullExportStoreTests.fs" />
     <Compile Include="SsKeyTests.fs" />
@@ -289,6 +290,7 @@
     <ProjectReference Include="..\..\src\Projection.Adapters.Osm\Projection.Adapters.Osm.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Adapters.OssysSql\Projection.Adapters.OssysSql.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Pipeline\Projection.Pipeline.fsproj" />
+    <ProjectReference Include="..\..\src\Projection.Cli\Projection.Cli.fsproj" />
   </ItemGroup>
 
 </Project>
