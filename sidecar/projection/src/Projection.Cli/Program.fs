@@ -172,6 +172,24 @@ let private withRun (command: string) (body: unit -> int) : int =
     let code = body ()
     let outcome = if code = 0 then LogSink.Succeeded else LogSink.Failed
     LogSink.runComplete outcome command (Bench.snapshot ()) |> ignore
+    // Tier-4 reporting — append this run to the cross-run ledger when one is
+    // configured (`PROJECTION_LEDGER_DIR`), so the readiness gauge can read
+    // the canary streak. Opt-in: default runs don't accumulate.
+    (match RunLedger.configuredDir () with
+     | Some dir ->
+         let registered, applied, declined = LogSink.transformCounts ()
+         try
+             RunLedger.append dir
+                 { RunId      = LogSink.runId ()
+                   Ts         = System.DateTime.UtcNow.ToString("o")
+                   Command    = command
+                   Outcome    = (if code = 0 then "succeeded" else "failed")
+                   Canary     = LogSink.canaryVerdict ()
+                   Registered = registered
+                   Applied    = applied
+                   Declined   = declined }
+         with ex -> eprintfn "  WARNING: failed to append ledger record: %s" ex.Message
+     | None -> ())
     code
 
 // ----------------------------------------------------------------------
@@ -1049,6 +1067,36 @@ let private dispatchVerifyData (argv: string[]) : int =
         let afterSpec  = parsed.GetResult VerifyDataArgs.After_Conn
         runVerifyData beforeSpec afterSpec)
 
+/// Tier-4 reporting — `readiness`. Read the cross-run ledger
+/// (`PROJECTION_LEDGER_DIR`) and report the R6 cutover gauge: how many
+/// consecutive green canaries, and whether the gate is eligible. Human
+/// gauge to stdout; one structured `summary.readiness` event to stderr so
+/// CI can branch on it. Read-only (no ledger append for the query itself).
+let private runReadiness () : int =
+    match RunLedger.configuredDir () with
+    | None ->
+        eprintfn "projection: no run ledger configured. Set PROJECTION_LEDGER_DIR to accumulate run history."
+        4
+    | Some dir ->
+        let r = RunLedger.read dir |> RunLedger.readiness
+        printfn "projection: run ledger at %s" (RunLedger.ledgerPath dir)
+        printfn "  runs: %d (%d with a canary leg)" r.TotalRuns r.CanaryRuns
+        printfn "  consecutive green canaries: %d / %d (R6 threshold)" r.ConsecutiveGreen r.Threshold
+        printfn "  last canary: %s" (match r.LastCanary with Some c -> c | None -> "(none yet)")
+        printfn "  R6 cutover gate: %s" (if r.Eligible then "ELIGIBLE" else "NOT YET")
+        LogSink.beginRun () |> ignore
+        LogSink.emit
+            { LogSink.envelope LogSink.Info LogSink.Summary "summary.readiness"
+                (Map.ofList [
+                    "totalRuns",        box r.TotalRuns
+                    "canaryRuns",       box r.CanaryRuns
+                    "consecutiveGreen", box r.ConsecutiveGreen
+                    "threshold",        box r.Threshold
+                    "lastCanary",       (match r.LastCanary with Some c -> box c | None -> null)
+                    "eligible",         box r.Eligible ]) with
+                Phase = LogSink.End }
+        0
+
 /// §5.6 — `policy-diff <config-a> <config-b>`. Diff what two configs would
 /// project over the shared Catalog (read from config-a's Model.Path). Renders
 /// the five-axis structural delta + the changed-kind set. Pure/structural —
@@ -1602,6 +1650,8 @@ let main argv =
         withRun "projection canary --cdc-silence" (fun () -> runCanaryCdcSilence sourceDdlPath)
     | [| "canary"; sourceDdlPath |] ->
         withRun "projection canary" (fun () -> runCanary sourceDdlPath)
+    | [| "readiness" |] ->
+        runReadiness ()
     | [| "policy-diff"; configAPath; configBPath |] ->
         runPolicyDiff configAPath configBPath
     | [| "eject"; "--store"; storePath |] ->

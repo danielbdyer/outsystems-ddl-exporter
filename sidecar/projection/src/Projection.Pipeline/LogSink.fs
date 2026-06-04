@@ -667,6 +667,24 @@ module LogSink =
     let suggestedConfigEdits () : int =
         lock lockObj (fun () -> state.Value.SuggestedConfigEdits)
 
+    /// Tier-4 ledger — the run's canary verdict derived from the accumulated
+    /// `canary.*` events: `Some "red"` if any `canary.divergence` fired,
+    /// else `Some "green"` if a `canary.diffEmpty` fired, else `None` (the
+    /// run had no canary leg). Both codes are Info/Error → always accumulated.
+    let canaryVerdict () : string option =
+        lock lockObj (fun () ->
+            let s = state.Value
+            if s.Envelopes |> Seq.exists (fun e -> e.Code = "canary.divergence") then Some "red"
+            elif s.Envelopes |> Seq.exists (fun e -> e.Code = "canary.diffEmpty") then Some "green"
+            else None)
+
+    /// Tier-4 ledger — `(registered, applied, declined)` transform counts
+    /// (verbosity-independent; see the §10 transformSummary counters).
+    let transformCounts () : int * int * int =
+        lock lockObj (fun () ->
+            let s = state.Value
+            s.TransformRegistered, s.TransformApplied, s.TransformDeclined)
+
     // -----------------------------------------------------------------
     // §11 — bench-stat surfacing under category=summary, code=bench.label
     // -----------------------------------------------------------------
