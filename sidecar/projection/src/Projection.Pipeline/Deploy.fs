@@ -207,6 +207,18 @@ module Deploy =
         let private memoLock : obj = obj ()
         let mutable private memoResult : bool option = None
 
+        // A warm external SQL Server (`PROJECTION_MSSQL_CONN_STR` — the
+        // dev-loop warm container or any reachable instance) needs no
+        // *local* Docker daemon: the tests connect over TCP and create
+        // per-test databases on it. Short-circuit the daemon probe in
+        // that case so the warm-reuse loop runs even where `dockerd`
+        // can't be brought up. The literal is inlined (the canonical
+        // `WarmConnStringEnvVar` is defined after this nested module in
+        // the compile order); kept in sync by the single call site.
+        let private warmConfigured () : bool =
+            not (String.IsNullOrWhiteSpace
+                    (Environment.GetEnvironmentVariable "PROJECTION_MSSQL_CONN_STR"))
+
         let private probeOnce () : bool =
             // Per the chapter-3.1 sandbox finding (codified
             // 2026-05-10 — Docker probe efficiency): the dominant
@@ -216,7 +228,8 @@ module Deploy =
             // unavailable to us. `BringupBudgetMs` is the ceiling
             // for that loop; memoization (above) keeps the cost
             // suite-wide constant.
-            if not (isAvailable ()) then false
+            if warmConfigured () then true
+            elif not (isAvailable ()) then false
             elif isResponding () then true
             else startDaemon ()
 
@@ -1016,6 +1029,29 @@ module Deploy =
                         } :> Task
                 }
         }
+
+    /// Warm-honoring handle acquisition — the per-test-class fixture's
+    /// container source. When `PROJECTION_MSSQL_CONN_STR` is set (the
+    /// dev-loop warm container or any reachable SQL Server), returns a
+    /// handle wrapping that master connection with a **no-op
+    /// `DisposeAsync`** (the warm container outlives the test process —
+    /// per-test isolation still holds because callers create
+    /// `<prefix>_<guid>` databases on it); otherwise falls back to
+    /// `acquireEphemeralContainer ()` (a fresh Testcontainers SQL
+    /// Server reaped on dispose). Handle-shaped sibling to
+    /// `useContainer` — same warm-or-ephemeral choice, for
+    /// `IClassFixture` lifetimes. **CDC / instance-wide-state fixtures
+    /// must call `acquireEphemeralContainer ()` directly** to stay
+    /// isolated from the shared warm instance.
+    let acquireContainer () : Task<EphemeralContainerHandle> =
+        match warmConnectionString () with
+        | Some warmConn ->
+            task {
+                return
+                    { MasterConnectionString = warmConn
+                      DisposeAsync = fun () -> Task.CompletedTask }
+            }
+        | None -> acquireEphemeralContainer ()
 
     let useEphemeralContainer (body: string -> Task<'a>) : Task<'a> =
         task {

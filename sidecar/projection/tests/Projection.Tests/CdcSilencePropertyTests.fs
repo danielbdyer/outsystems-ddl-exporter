@@ -20,7 +20,7 @@ namespace Projection.Tests
 // CDC change events.
 //
 // **Fixture-lift (slice A.4.7'-prelude.test-fixture-lift, 2026-05-19).**
-// xUnit `IClassFixture<EphemeralContainerFixture>` shares one
+// xUnit `IClassFixture<IsolatedContainerFixture>` shares one
 // ephemeral container across all 3 shape-sweep tests; per-test
 // `WithEphemeralDatabase` lifecycle preserves the per-scenario CDC
 // isolation. Sibling `CdcSilenceTests` + `CdcSilenceCrossEmitterTests`
@@ -235,7 +235,7 @@ module private CdcSilencePropertyFixtures =
 open CdcSilencePropertyFixtures
 
 [<Xunit.Collection("Docker-SqlServer")>]
-type CdcSilencePropertyTests(fixture: EphemeralContainerFixture) =
+type CdcSilencePropertyTests(fixture: IsolatedContainerFixture) =
 
     /// Deploy `schemaSql` + `seedSql` to an ephemeral CDC-enabled DB
     /// twice; return (baseline-capture-count, post-redeploy-capture-count)
@@ -272,7 +272,7 @@ type CdcSilencePropertyTests(fixture: EphemeralContainerFixture) =
             return baseline, post
         })
 
-    interface IClassFixture<EphemeralContainerFixture>
+    interface IClassFixture<IsolatedContainerFixture>
 
     [<Fact>]
     member _.``A.4.7'-prelude CDC-silence sweep (single-row variant): idempotent redeploy adds zero CDC capture rows`` () =

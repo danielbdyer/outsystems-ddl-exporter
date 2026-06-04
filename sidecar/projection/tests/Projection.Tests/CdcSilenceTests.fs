@@ -45,7 +45,7 @@ open Projection.Pipeline
 // shape on second invocation.
 //
 // **Fixture-lift (slice A.4.7'-prelude.test-fixture-lift, 2026-05-19).**
-// xUnit `IClassFixture<EphemeralContainerFixture>` shares one
+// xUnit `IClassFixture<IsolatedContainerFixture>` shares one
 // ephemeral CDC-suitable container across both tests in this class;
 // per-test `WithEphemeralDatabase` lifecycle preserves the per-
 // scenario CDC isolation (CDC infrastructure stays at the database
@@ -380,7 +380,7 @@ module private CdcSilenceFixtures =
 open CdcSilenceFixtures
 
 [<Xunit.Collection("Docker-SqlServer")>]
-type CdcSilenceTests(fixture: EphemeralContainerFixture) =
+type CdcSilenceTests(fixture: IsolatedContainerFixture) =
 
     /// Shared scenario runner. Deploys schema, enables CDC, runs the
     /// `firstSeedSql` to populate (the baseline), then runs the
@@ -429,7 +429,7 @@ type CdcSilenceTests(fixture: EphemeralContainerFixture) =
             return baselineCount, postCount
         })
 
-    interface IClassFixture<EphemeralContainerFixture>
+    interface IClassFixture<IsolatedContainerFixture>
 
     [<Fact>]
     member _.``Slice γ: CDC-silence — V2 change-detection predicate emits zero CDC capture rows on idempotent redeploy`` () =
