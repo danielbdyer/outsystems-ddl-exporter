@@ -81,7 +81,23 @@ load-bearing falsehoods and unblock doc archival.
 
 ---
 
-## Tranche 3 — Dead-algebra deletion ⊘ GOVERNANCE-GATED
+## Tranche 3 — Dead-algebra deletion ☑ DONE (2026-06-04)
+
+[Executed 2026-06-04 — `DECISIONS 2026-06-04 — Retire the speculative
+writer-trinity / optics-duo / Kleisli-product algebra`. Removed `LineageTree`+CE,
+`Certificate`, `Prism`, `PassContext`, `Pass.product`/`&&&`/`first`/`second`,
+`DiagnosticRelation`+`relations`/`isMinimal`/`minimal`, and the dead
+`CatalogLenses.sequences`/`indexesOf` — keeping `DiagnosticLattice.subsumes`.
+Updated CLAUDE.md (load-bearing writer-trinity block + F#-feature table + Kleisli
+commitment), DECISIONS (amendment), AxiomTests (5 Facts removed, H-008 repointed
+to subsumes, 4 Skip stubs de-claimed), and the Diagnostics/Optics doc-comments.
+Rewrote the H-015 Lens-law tests from a `PassContext` carrier to a tuple
+(preserving lens coverage since Optics.fs is otherwise untested). Core + tests
+build 0-warning; pure pool green. ~716 Core LOC + ~2.5K test LOC removed.
+**`SqlStorageType.to/ofPrimitiveType` excluded** — ambiguous (delete-as-dead vs
+promote-as-canonical); deferred to the AR1/`ColumnType` slice.]
+
+### (original plan, for the record)
 
 The single largest defensible Core reclaim (~716 Core LOC + ~2,300-2,800 test
 LOC). **Confirmed worthwhile by the trajectory steelman** (`PERIPHERY_ADVERSARIAL.md` §8):
