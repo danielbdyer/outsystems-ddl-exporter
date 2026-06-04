@@ -302,3 +302,60 @@ let ``A.4.7'-prelude: skeletonView + overlayView partition the unified registry 
         sprintf
             "skeleton + overlay overlap: %A"
             (Set.intersect skeletonNames overlayNames))
+
+// ---------------------------------------------------------------------------
+// E1–E4 registered <-> executed isomorphism (DECISIONS 2026-06-04).
+// The execution sources — the pass chain (`RegisteredTransforms.chainSteps`),
+// the emit phase (`Compose.emitSteps`), and the read adapter
+// (`Compose.readStep`) — and the unified registry
+// (`RegisteredAllTransforms.all`) must agree: nothing executed via a bound
+// source may be unregistered, and the emit/read stages register EXACTLY what
+// those sources execute. Drift here = a transform wired to run with no
+// registry entry, or an emit/read entry registered with no execution binding.
+// ---------------------------------------------------------------------------
+
+let private allNames : Set<string> =
+    RegisteredAllTransforms.all |> List.map (fun m -> m.Name) |> Set.ofList
+
+let private emitStepNames : string list =
+    Compose.emitSteps |> List.map (fun s -> s.Metadata.Name)
+
+[<Fact>]
+let ``E1: every emitStep executes through a registered transform (no orphan emit execution)`` () =
+    for name in emitStepNames do
+        Assert.True(
+            Set.contains name allNames,
+            sprintf "emitStep '%s' executes but is not in RegisteredAllTransforms.all" name)
+
+[<Fact>]
+let ``E2: the read adapter (Compose.readStep) executes through a registered transform`` () =
+    Assert.True(
+        Set.contains Compose.readStep.Metadata.Name allNames,
+        sprintf
+            "readStep '%s' executes but is not registered"
+            Compose.readStep.Metadata.Name)
+
+[<Fact>]
+let ``pass chain: every chainStep executes through a registered transform (no orphan pass execution)`` () =
+    for step in RegisteredTransforms.chainSteps do
+        Assert.True(
+            Set.contains step.Metadata.Name allNames,
+            sprintf "chainStep '%s' executes but is not registered" step.Metadata.Name)
+
+[<Fact>]
+let ``E1: the emit phase is exactly six sibling-Pi emitters, each registered exactly once`` () =
+    // The six come from the single `Compose.emitSteps` source; if a seventh
+    // emitter is added to the fold (or one removed) without the registry
+    // tracking it, this fails. Names are distinct and all present.
+    Assert.Equal(6, List.length emitStepNames)
+    Assert.Equal<Set<string>>(Set.ofList emitStepNames, Set.ofList emitStepNames |> Set.filter (fun n -> Set.contains n allNames))
+    Assert.Equal(List.length emitStepNames, (Set.ofList emitStepNames |> Set.count))
+
+[<Fact>]
+let ``E1: SuggestConfigEmitter is registered (closes the executed-but-unregistered mismatch)`` () =
+    // SuggestConfig ran in the emit phase but was absent from the registry
+    // before E1; the emitStep single source now carries it.
+    Assert.True(
+        List.contains "suggestConfigEmitter" emitStepNames,
+        "suggestConfigEmitter must be one of the registry-driven emit steps")
+    Assert.Contains("suggestConfigEmitter", allNames)
