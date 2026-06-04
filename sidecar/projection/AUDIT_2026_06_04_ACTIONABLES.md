@@ -19,7 +19,10 @@ survey estimates. Where wave 2 falsified a wave-1 collapse, the item is in the
 Zero code risk; pure correctness edits; should land first because they remove
 load-bearing falsehoods and unblock doc archival.
 
-- **D1 ☐ — "zero production callers" stale claim.** The diff/`Lifecycle`
+- **D1 ☑ — "zero production callers" stale claim.** [done 2026-06-04 — added a
+  superseded-flag at `CLAUDE.md:98`; left the append-only `DECISIONS.md:20369`
+  (already superseded by `:20464`), the dated `WAVE_6_MORPHOLOGY` snapshot, and
+  the finer-grained `THE_USE_CASE_ONTOLOGY.*` per-symbol claims untouched.] The diff/`Lifecycle`
   machinery is now wired into production. Fix the false assertions at
   `CLAUDE.md:98` and `DECISIONS.md:20369`; point to the resolution at
   `DECISIONS.md:20049/20464` + `EXECUTION_PLAN.md:775`.
@@ -28,13 +31,20 @@ load-bearing falsehoods and unblock doc archival.
   grep-verified def-only (true claim, different referent).
   *Verify:* grep the phrase; confirm only the two false sites changed.
 
-- **D2 ☐ — axiom-count drift.** Source of truth `AXIOMS.md` = **A43 / T16**, but
+- **D2 ☑ — axiom-count drift.** [done 2026-06-04 — fixed AXIOMS.md:24 self-count
+  (A1–A43 / T1–T16, confirmed against the body's `## The Change Algebra` §1809),
+  README.md:111+645, PRODUCT_AXIOMS.md:474, CLAUDE.md:287.] Source of truth `AXIOMS.md` = **A43 / T16**, but
   `AXIOMS.md:24` self-states "A1-A42" (fix it first), then propagate:
   `README.md:111/627/645` ("A40"), `PRODUCT_AXIOMS.md:474` ("A40"),
   `CLAUDE.md:283/287` ("A41"/"A40"). Cite the count, don't restate it.
   *Verify:* `grep -rn "A1[–-]A4[0-2]\b"` returns only intended historical contexts.
 
-- **D3 ☐ — stale test counts.** `882/790/631/588/1128` are frozen snapshots
+- **D3 ☑ — stale test counts.** [done 2026-06-04 — replaced the 4 KICKOFF.md
+  "882" as-current claims with "see `scripts/test.sh`" pointers. Left the
+  historical baselines frozen (CLAUDE.md:460 / STAGING.md:112 / PLAYBOOK.md:602 /
+  VISION_REVIEW.md:230 / V2_PATTERNS_COMPENDIUM.md:392 are dated Stage-0 / past-
+  slice context, not current-state claims). Actual pure pool at execution: 2,794
+  passing / 208 skipped.] `882/790/631/588/1128` are frozen snapshots
   (actual ~2,729). Ban absolute counts from live nav docs: `KICKOFF.md` (×4),
   `CLAUDE.md:460`, `STAGING.md:112`, `PLAYBOOK.md:602`, `VISION_REVIEW.md:230`,
   `V2_PRODUCTION_CUTOVER.md:1128`, `V2_PATTERNS_COMPENDIUM.md:392`. Replace with
@@ -44,7 +54,11 @@ load-bearing falsehoods and unblock doc archival.
 
 ## Tranche 2 — Correctness bugs (code; verifiable against the suite)
 
-- **C1 ◐ — `SchemaComplexityPass` computes FK metrics over an EMPTY topology.**
+- **C1 ☑ — `SchemaComplexityPass` computes FK metrics over an EMPTY topology.**
+  [done 2026-06-04 — added `PassChainAdapter.liftCatalogTopologyPass`, exposed
+  `SchemaComplexityPass.name`, rewired both chain sites, added a chain-level
+  regression test. Core builds 0-warning; targeted 18/18 + full pure pool
+  2,794/0-fail green.]
   `RegisteredTransforms.fs:124` (`allChainSteps`) and `:190` (`allChainStepsFor`)
   wire it as `liftDecisionPass (SchemaComplexityPass.registered None)`, baking in
   `TopologicalOrder.empty`. Fix: add `PassChainAdapter.liftCatalogTopologyPass`
@@ -55,7 +69,9 @@ load-bearing falsehoods and unblock doc archival.
   (which carries an order→customer FK) — fails pre-fix, passes post-fix +
   `scripts/test.sh fast`.
 
-- **C2 ◐ — `BoundedContextPass.pickLabel` tie-break is a self-comparison no-op.**
+- **C2 ☑ — `BoundedContextPass.pickLabel` tie-break is a self-comparison no-op.**
+  [done 2026-06-04 — replaced the `maxBy` self-compare with
+  `sortBy (fun (lbl,cnt) -> -cnt, rootOriginal lbl) |> List.head`. Pure pool green.]
   `BoundedContextPass.fs:80`:
   `-CompareOrdinal(rootOriginal lbl, rootOriginal lbl)` is always 0. Fix: replace
   the `List.maxBy` with `List.sortBy (fun (lbl,cnt) -> -cnt, rootOriginal lbl) |> List.head`

@@ -75,9 +75,12 @@ module BoundedContextPass =
                 |> List.choose (fun n -> Map.tryFind n labels)
                 |> List.countBy id
             freqs
-            |> List.maxBy (fun (lbl, cnt) ->
-                // Primary: count DESC; secondary: label ASC.
-                cnt, -System.String.CompareOrdinal(SsKey.rootOriginal lbl, SsKey.rootOriginal lbl))
+            // Primary: count DESC; secondary: label ASC (ordinal). The
+            // sort key sorts ascending, so negate the count (highest count
+            // first) and use the label text directly (smallest label wins
+            // the tie). `List.head` is then the deterministic winner.
+            |> List.sortBy (fun (lbl, cnt) -> -cnt, SsKey.rootOriginal lbl)
+            |> List.head
             |> fst
 
     /// One propagation round. Returns the new label map and a flag

@@ -471,7 +471,7 @@ A fourth axiom — **A-Lifecycle-4** (evolutionChain composition is associative)
 
 ## Cross-references
 
-- `AXIOMS.md` — L2 formal-system axioms (A1–A40 + T1–T11) that underwrite this surface.
+- `AXIOMS.md` — L2 formal-system axioms (A1–A43 + T1–T16) that underwrite this surface.
 - `AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md` — coverage map (which L3 axioms are Bucket A/B/C/D), campaigns to address Bucket D, methodology.
 - `V2_PRODUCTION_CUTOVER.md` — cutover plan; campaigns from the audit operationalize as Phase A workstreams here.
 - `VISION.md` — strategic frame; the *why* of the cutover.
