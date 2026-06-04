@@ -1,5 +1,11 @@
 namespace Projection.Core
 
+// LINT-ALLOW-FILE: diagnostic identity projection. `describeKey` renders an operator-facing
+//   `<root> [derived]` string via `sprintf`/concat for diagnostic surfaces; the
+//   typed `SsKey` variant DU remains the structural identity (consumers query
+//   via `isDerived` / `rootOriginal`). Only the human-readable projection uses
+//   string composition, per `DECISIONS 2026-05-09 — Built-in obligation`.
+
 /// Stable identity for catalog nodes (A1, A2, A4). The four-variant DU
 /// stratifies the JSON-projection-lossiness bound documented at the
 /// bottom of `AXIOMS.md` A1 (session 23 amendment). Per `CHAPTER_3_PRESCOPE_

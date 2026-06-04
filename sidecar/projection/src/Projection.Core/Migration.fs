@@ -1,5 +1,10 @@
 namespace Projection.Core
 
+// LINT-ALLOW-FILE: destructive-removal diagnostic key projection. `describe` renders structured
+//   `kind:` / `attr:` / `fk:` / `index:` / `seq:` keys via `sprintf` for the
+//   operator-facing schema-loss gate; the `SchemaLoss` DU is the typed structure.
+//   Per `DECISIONS 2026-05-09 — Built-in obligation`.
+
 /// A single **destructive removal** a displacement `B ⊖ A` would perform — the
 /// `Remove` move (`WAVE_6_ONTOLOGY.md` §5). Each is data loss the displacement
 /// cannot undo. The **complete** enumeration across every `CatalogDiff` channel

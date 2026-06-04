@@ -1,5 +1,12 @@
 namespace Projection.Core.Passes
 
+// LINT-ALLOW-FILE: pass-driver lineage diagnostic prose. The bounded-context pass emits
+//   human-readable status strings (community-candidate counts) via `sprintf`
+//   and uses function-local mutables for the community-detection algorithm
+//   (performance-sensitive graph traversal, per the style guide's carve-out).
+//   Structural pass output is fully typed; only the diagnostic-string surface
+//   uses sprintf, per `DECISIONS 2026-05-09 — Built-in obligation`.
+
 open Projection.Core
 
 /// H-072 — Subgraph extraction for bounded context discovery. Groups

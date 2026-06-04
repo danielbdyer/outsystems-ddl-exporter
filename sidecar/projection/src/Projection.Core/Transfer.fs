@@ -1,5 +1,10 @@
 namespace Projection.Core
 
+// LINT-ALLOW-FILE: boundary-validation diagnostic prose. The substrate-role guard renders an
+//   operator-facing `must carry SubstrateRole.X` message via `sprintf`; the
+//   structural Transfer vocabulary is fully typed. Per
+//   `DECISIONS 2026-05-09 — Built-in obligation`.
+
 /// Vocabulary of the bidirectional control plane (Transfer prescope —
 /// `PRESCOPE_TRANSFER.md`). The pipeline mediates between a logical
 /// `Catalog` (the schema contract) and physical database substrates.

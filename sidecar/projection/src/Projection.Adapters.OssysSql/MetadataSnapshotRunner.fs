@@ -1,11 +1,17 @@
 namespace Projection.Adapters.OssysSql
 
+// LINT-ALLOW-FILE: OSSYS metadata-extraction adapter at the boundary — terminal text over typed
+//   segments, function-local result-set accumulators, and `box`/`unbox` at the
+//   DbDataReader value boundary (BCL reader returns `obj` columns). The
+//   intentional `open Projection.Adapters.Osm` composition carries its own
+//   per-line marker; this file marker covers the boundary mutation + text.
+
 open System
 open System.Data
 open System.Threading.Tasks
 open Microsoft.Data.SqlClient
 open Projection.Core
-open Projection.Adapters.Osm
+open Projection.Adapters.Osm  // LINT-ALLOW: intentional adapter composition — the OssysSql extraction adapter assembles a `CatalogReader.RowsetBundle` (Osm's integration contract) for `CatalogReader.parse`; the SQL-extraction adapter feeds the projection adapter, a documented one-way dependency per the chapter-5.0 slice-γ bootstrap+extract flow
 
 /// V2's metadata-snapshot runner. Carbon-copies V1's `MetadataSnapshotRunner`
 /// (`Osm.Pipeline.SqlExtraction.MetadataSnapshotRunner`) at a much smaller

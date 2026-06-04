@@ -1,5 +1,9 @@
 namespace Projection.Pipeline
 
+// LINT-ALLOW-FILE: preflight diagnostic prose + function-local accumulators at the boundary;
+//   operator-facing preflight messages compose typed segments, the check output
+//   is immutable. Terminal operator-facing text is the allowed exception.
+
 open System.Threading.Tasks
 open Microsoft.Data.SqlClient
 open Projection.Core

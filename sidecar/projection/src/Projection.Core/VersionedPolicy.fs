@@ -1,5 +1,10 @@
 namespace Projection.Core
 
+// LINT-ALLOW-FILE: terminal version-string + policy-digest projection. `%d.%d.%d` semantic-
+//   version rendering and the `%A` policy representation feed the content hash;
+//   the typed version + policy records remain the structure. Per
+//   `DECISIONS 2026-05-09 — Built-in obligation`.
+
 open System
 open System.Security.Cryptography
 open System.Text

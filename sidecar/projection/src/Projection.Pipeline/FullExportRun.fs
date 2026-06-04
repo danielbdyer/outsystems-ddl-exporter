@@ -1,5 +1,10 @@
 namespace Projection.Pipeline
 
+// LINT-ALLOW-FILE: pipeline orchestration at the boundary — function-local mutables for the
+//   full-export run state and `box`/`unbox` at the SqlParameter / JSON-payload
+//   boundary (BCL APIs that take `obj`). No module-level mutable state; the
+//   run output is immutable.
+
 open System
 open System.IO
 open System.Diagnostics

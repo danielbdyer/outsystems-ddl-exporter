@@ -86,22 +86,25 @@ module PolicyDiff =
     /// Group lineage events by `SsKey`. Preserves chronological order
     /// within each group.
     let private eventsByKey (events: LineageEvent list) : Map<SsKey, LineageEvent list> =
+        // `List.groupBy` is O(N) and preserves both key first-occurrence
+        // order and within-group chronological order — the per-key
+        // accumulator `existing @ [e]` fold was O(N²) (Big-O Tier-1).
         events
-        |> List.fold (fun (acc: Map<SsKey, LineageEvent list>) e ->
-            let existing = Map.tryFind e.SsKey acc |> Option.defaultValue []
-            Map.add e.SsKey (existing @ [e]) acc) Map.empty
+        |> List.groupBy (fun e -> e.SsKey)
+        |> Map.ofList
 
     /// Group diagnostics by their carried `SsKey`. Diagnostics with no
     /// SsKey are dropped (they are catalog-level observations, not per-
     /// Kind observations).
     let private diagnosticsByKey (entries: DiagnosticEntry list) : Map<SsKey, DiagnosticEntry list> =
+        // Keep only SsKey-carrying entries, then O(N) `List.groupBy`
+        // (preserves chronological order) — the prior per-key
+        // `existing @ [d]` fold was the O(N²) Big-O Tier-1 anti-pattern.
         entries
-        |> List.fold (fun (acc: Map<SsKey, DiagnosticEntry list>) d ->
-            match d.SsKey with
-            | None -> acc
-            | Some k ->
-                let existing = Map.tryFind k acc |> Option.defaultValue []
-                Map.add k (existing @ [d]) acc) Map.empty
+        |> List.choose (fun d -> d.SsKey |> Option.map (fun k -> k, d))
+        |> List.groupBy fst
+        |> List.map (fun (k, pairs) -> k, pairs |> List.map snd)
+        |> Map.ofList
 
     /// Compute the per-Kind deltas between two pipeline runs.
     ///

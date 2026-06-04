@@ -1,5 +1,10 @@
 namespace Projection.Adapters.OssysSql
 
+// LINT-ALLOW-FILE-MUTATION: bounded exponential-backoff retry policy at the SQL-connection boundary —
+//   the `<-` assignments configure the Polly ResiliencePipelineBuilder's mutable
+//   options object (BCL builder API); the mutation never escapes the retry
+//   combinator, the output is an immutable pipeline.
+
 open System
 open System.Threading
 open System.Threading.Tasks

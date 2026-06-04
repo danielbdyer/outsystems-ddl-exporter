@@ -1,7 +1,7 @@
 namespace Projection.Adapters.OssysSql
 
 open System.IO
-open System.Reflection
+open System.Reflection  // LINT-ALLOW: embedded-resource manifest loading at the adapter boundary (Assembly.GetManifestResourceStream for the carbon-copied OSSYS rowsets SQL); reflection is deferred from Core, not from boundary adapters; no type-scanning / attribute-discovery — resource access only
 
 /// V2's offline-doable inheritance from V1's metadata-extraction chain.
 ///

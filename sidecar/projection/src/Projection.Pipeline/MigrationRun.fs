@@ -1,5 +1,9 @@
 namespace Projection.Pipeline
 
+// LINT-ALLOW-FILE: terminal SQL/diagnostic text composition at the migration-run boundary;
+//   segments are typed and the run output is immutable. `String.concat` is the
+//   BCL primitive at this terminal boundary.
+
 open Microsoft.Data.SqlClient
 open Projection.Core
 open Projection.Adapters.Sql

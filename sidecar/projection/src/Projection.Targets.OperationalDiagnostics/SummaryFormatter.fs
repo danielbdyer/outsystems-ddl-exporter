@@ -1,5 +1,9 @@
 namespace Projection.Targets.OperationalDiagnostics
 
+// LINT-ALLOW-FILE: terminal operator-facing summary text; segments are typed and the formatted
+//   value is immutable. `String.concat` is the BCL primitive at this terminal
+//   text boundary.
+
 open System.Text
 open Projection.Core
 

@@ -1,5 +1,10 @@
 namespace Projection.Pipeline
 
+// LINT-ALLOW-FILE: transfer-run orchestration at the boundary — terminal SQL text over
+//   validated TableIds, function-local run-state mutables, and `box`/`unbox` at
+//   the SqlParameter boundary (BCL APIs that take `obj`). The run output is
+//   immutable.
+
 open System.Threading.Tasks
 open Microsoft.Data.SqlClient
 open Projection.Core

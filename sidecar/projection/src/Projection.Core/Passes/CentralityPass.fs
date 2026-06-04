@@ -1,5 +1,12 @@
 namespace Projection.Core.Passes
 
+// LINT-ALLOW-FILE: pass-driver lineage diagnostic prose. The PageRank centrality pass emits
+//   human-readable convergence status via `sprintf` and uses function-local
+//   mutables + a Dictionary for the iterative PageRank computation (performance-
+//   sensitive numeric algorithm, per the style guide's Tarjan/ResizeArray
+//   carve-out). Structural output is fully typed; only the diagnostic prose and
+//   the local algorithm state fall under the allowed exceptions.
+
 open Projection.Core
 
 /// H-071 — Schema centrality metrics. Computes personalized PageRank

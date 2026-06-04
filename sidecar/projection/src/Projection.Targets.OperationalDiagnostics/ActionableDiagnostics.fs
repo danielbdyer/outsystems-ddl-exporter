@@ -1,5 +1,9 @@
 namespace Projection.Targets.OperationalDiagnostics
 
+// LINT-ALLOW-FILE-MUTATION: function-local ResizeArray / Dictionary accumulators while clustering the
+//   operator-facing suggestedConfig payload by axis; the emitted diagnostic
+//   value is immutable.
+
 open Projection.Core
 
 /// Chapter B.4 slice 6 — operationalize logging-format contract §12

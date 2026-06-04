@@ -1,5 +1,10 @@
 namespace Projection.Core
 
+// LINT-ALLOW-FILE-MUTATION: function-local performance mutation in statistical-evidence aggregation (per
+//   the style guide's Tarjan/ResizeArray carve-out — "mutable state only
+//   function-local for performance-sensitive algorithms"); no module-level
+//   mutable state, every Profile value is immutable once constructed.
+
 open System
 
 /// How a profiling probe executed. `TrustedConstraint` means the probe was

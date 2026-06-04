@@ -1,5 +1,9 @@
 namespace Projection.Pipeline
 
+// LINT-ALLOW-FILE: pipeline orchestration at the boundary — terminal SQL/path text composition
+//   across typed segments (the per-line Guid staging-suffix carries its own
+//   marker). `String.concat` is the BCL primitive at the terminal-text boundary.
+
 open System.IO
 open System.Text.Json.Nodes
 open System.Threading.Tasks
@@ -575,7 +579,7 @@ module Compose =
             | null -> "out"
             | "" -> "out"
             | n -> n
-        let suffix = System.Guid.NewGuid().ToString("N").Substring(0, 12)
+        let suffix = System.Guid.NewGuid().ToString("N").Substring(0, 12)  // LINT-ALLOW: transient staging-dir suffix for the atomic publish-rename; never appears in any emitted artifact (the staging dir is renamed to the deterministic outputDir, so T1 byte-determinism holds); not a DatabaseNameGenerator site (filesystem path, not a DB name)
         Path.Combine(parent, sprintf ".%s.staging-%s" baseName suffix)
 
     let private writeAllToStaging

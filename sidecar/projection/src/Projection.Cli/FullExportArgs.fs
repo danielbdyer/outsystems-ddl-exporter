@@ -1,5 +1,9 @@
 module Projection.Cli.FullExportArgs
 
+// LINT-ALLOW-FILE: Argu CLI help-text prose. Multi-line operator-facing `--flag` descriptions
+//   are composed with string-`+` across continuation lines; help text is
+//   terminal operator-facing prose, the discipline's allowed exception.
+
 open Argu
 
 /// Argu closed-DU surface for `projection full-export` (chapter B.4

@@ -1,5 +1,9 @@
 namespace Projection.Core
 
+// LINT-ALLOW-FILE: terminal-text composition at the emission-mode parse/format boundary; the
+//   EmissionMode DU is the typed structure, the string surface is the terminal
+//   round-trip projection. Per `DECISIONS 2026-05-09 — Built-in obligation`.
+
 /// **D10 — the emission mode (the wipe-and-load fork, RESOLVED to an explicit
 /// named mode; `DECISIONS`/handoff).** How a data realization lands rows into an
 /// existing sink:

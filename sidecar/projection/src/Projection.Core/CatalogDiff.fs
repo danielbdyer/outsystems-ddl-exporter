@@ -1,5 +1,10 @@
 namespace Projection.Core
 
+// LINT-ALLOW-FILE: rename-evidence terminal-text projection. The `SourceTable` / `TargetTable`
+//   string fields are `schema.table` qualified-name projections rendered via
+//   `sprintf` at the diff boundary; the structural diff output is fully typed.
+//   Per `DECISIONS 2026-05-09 — Built-in obligation`.
+
 /// Per-rename evidence carried inside `CatalogDiff`. The `PassVersion`
 /// mirrors the pass-version literal that other lineage events carry
 /// (see `NamingMorphism.fs:23` for the canonical pattern). It documents
