@@ -20,9 +20,10 @@ chapter-close amendments.
 The original V1 algebraic spec stated thirty-one axioms (A1–A31)
 generating ten theorems (T1–T10). V2 has extended the system: A6, A12,
 A17, A18, A24, and T1 carry amendments (recorded under "V2 Amendments"
-below); A32, A33, A34, A35, A36, A39, A40, A41, A42, and T11 are new.
-The current count is **A1–A42 generating T1–T11** with six amended
-originals. The axioms are grouped into eight thematic clusters; the
+below); A32, A33, A34, A35, A36, A39, A40, A41, A42, and T11 are new;
+the Wave-6 Change Algebra (2026-06-01) added theorems T12–T16 and axiom
+A43 (see "The Change Algebra — T12–T16 + A43"). The current count is
+**A1–A43 generating T1–T16** with six amended originals. The axioms are grouped into eight thematic clusters; the
 theorems cluster by what falls out of the construction. Code and tests
 cite the **amended** form when both exist; the original form is the
 historical lineage of the amendment.

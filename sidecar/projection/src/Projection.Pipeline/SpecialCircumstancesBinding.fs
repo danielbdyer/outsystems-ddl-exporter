@@ -60,15 +60,8 @@ module SpecialCircumstancesBinding =
         (catalog: Catalog)
         (ref: Config.LogicalName)
         : Result<SsKey> =
-        let hit =
-            catalog.Modules
-            |> List.tryPick (fun m ->
-                if Name.value m.Name = ref.Module then
-                    m.Kinds
-                    |> List.tryFind (fun k -> Name.value k.Name = ref.Entity)
-                else None)
-        match hit with
-        | Some k -> Result.success k.SsKey
+        match CatalogResolution.tryKindByLogical catalog ref.Module ref.Entity with
+        | Some key -> Result.success key
         | None ->
             Result.failureOf (
                 bindError

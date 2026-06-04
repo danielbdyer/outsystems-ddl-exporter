@@ -541,167 +541,6 @@ let ``H-003 Kleisli: composeAll [f; g; h] threads chronologically`` () =
     Assert.Equal<DiagnosticEntry list>([d1; d2; d3], LineageDiagnostics.entries result)
 
 // ---------------------------------------------------------------------------
-// H-004: Certificate<'a> as terminal-of-pipeline wrapper. The certificate
-// is structurally isomorphic to Lineage<Diagnostics<'a>>; these tests
-// assert the isomorphism + the functor/combine laws.
-// ---------------------------------------------------------------------------
-
-[<Property>]
-let ``H-004 Certificate: ofLineageDiagnostics ∘ toLineageDiagnostics = id`` (x: int) =
-    let cert =
-        Certificate.create x
-            [ dualEvent customerKey ]
-            [ entry "P" DiagnosticSeverity.Info "c" "m" ]
-    let roundTripped = cert |> Certificate.toLineageDiagnostics |> Certificate.ofLineageDiagnostics
-    cert = roundTripped
-
-[<Property>]
-let ``H-004 Certificate: toLineageDiagnostics ∘ ofLineageDiagnostics preserves both writers`` (x: int) =
-    let e = dualEvent customerKey
-    let d = entry "P" DiagnosticSeverity.Info "c" "m"
-    let m =
-        LineageDiagnostics.ofValue x
-        |> LineageDiagnostics.tellLineage e
-        |> LineageDiagnostics.tellDiagnostic d
-    let roundTripped = m |> Certificate.ofLineageDiagnostics |> Certificate.toLineageDiagnostics
-    byValueAndBothTrails m roundTripped
-
-[<Property>]
-let ``H-004 Certificate: functor identity (map id = id)`` (x: int) =
-    let cert =
-        Certificate.create x
-            [ dualEvent customerKey ]
-            [ entry "P" DiagnosticSeverity.Info "c" "m" ]
-    Certificate.map id cert = cert
-
-[<Property>]
-let ``H-004 Certificate: functor composition (map (g << f) = map g << map f)`` (x: int) =
-    let cert =
-        Certificate.create x
-            [ dualEvent customerKey ]
-            [ entry "P" DiagnosticSeverity.Info "c" "m" ]
-    let f (y: int) = y + 1
-    let g (y: int) = y * 3
-    Certificate.map (g << f) cert = (cert |> Certificate.map f |> Certificate.map g)
-
-[<Fact>]
-let ``H-004 Certificate: combine concatenates trails + diagnostics chronologically`` () =
-    let e1 = dualEvent customerKey
-    let e2 = dualEvent orderKey
-    let d1 = entry "P1" DiagnosticSeverity.Info "c1" "m1"
-    let d2 = entry "P2" DiagnosticSeverity.Warning "c2" "m2"
-    let a = Certificate.create 10 [e1] [d1]
-    let b = Certificate.create "ssdt" [e2] [d2]
-    let combined = Certificate.combine a b
-    Assert.Equal((10, "ssdt"), combined.Value)
-    Assert.Equal<LineageEvent list>([e1; e2], combined.Trail)
-    Assert.Equal<DiagnosticEntry list>([d1; d2], combined.Diagnostics)
-
-[<Fact>]
-let ``H-004 Certificate: combine left-identity (Certificate.ofValue ∘ combine = identity-ish)`` () =
-    // For any Certificate<'a> a, combine (ofValue ()) a produces a
-    // certificate carrying the tupled value (() , a.Value) with the
-    // original trail + diagnostics. The unit at the value level is
-    // not literal identity (it changes the type) but the trail/diag
-    // identity holds.
-    let e = dualEvent customerKey
-    let d = entry "P" DiagnosticSeverity.Info "c" "m"
-    let a = Certificate.create 42 [e] [d]
-    let combined = Certificate.combine (Certificate.ofValue ()) a
-    Assert.Equal(((), 42), combined.Value)
-    Assert.Equal<LineageEvent list>([e], combined.Trail)
-    Assert.Equal<DiagnosticEntry list>([d], combined.Diagnostics)
-
-[<Fact>]
-let ``H-004 Certificate: ofValue produces empty trail + diagnostics`` () =
-    let cert = Certificate.ofValue 7
-    Assert.Equal(7, cert.Value)
-    Assert.Empty(cert.Trail)
-    Assert.Empty(cert.Diagnostics)
-
-[<Fact>]
-let ``H-004 Certificate: empty ofValue is the unit of Pass.id at the boundary`` () =
-    // Pass.id state |> ofLineageDiagnostics = Certificate.ofValue state.
-    // The terminal form of the identity arrow IS the empty certificate.
-    let state = 42
-    let viaIdArrow = Pass.id state |> Certificate.ofLineageDiagnostics
-    let viaOfValue = Certificate.ofValue state
-    Assert.Equal(viaIdArrow, viaOfValue)
-
-// ---------------------------------------------------------------------------
-// H-006 (partial; Cluster B follow-on) — `Pass.product` (monoidal product /
-// arrow notation `&&&`). Companion to `compose` (which is `>=>`). The static
-// algebra ships; the dynamic SsKey-disjointness check for parallel pass
-// scheduling defers to a dedicated H-006 slice.
-// ---------------------------------------------------------------------------
-
-[<Fact>]
-let ``H-006 Pass.product: pairs outputs from a shared input`` () =
-    let e1 = dualEvent customerKey
-    let e2 = dualEvent orderKey
-    let d1 = entry "P1" DiagnosticSeverity.Info "c1" "m1"
-    let d2 = entry "P2" DiagnosticSeverity.Warning "c2" "m2"
-    let f = wrapPass e1 d1 1
-    let g = wrapPass e2 d2 10
-    let combined = Pass.product f g
-    let result = combined 0
-    Assert.Equal((1, 10), LineageDiagnostics.payload result)
-    Assert.Equal<LineageEvent list>([e1; e2], result.Trail)
-    Assert.Equal<DiagnosticEntry list>([d1; d2], LineageDiagnostics.entries result)
-
-[<Property>]
-let ``H-006 Pass.product: left bias on trails (f's trail comes first)`` (x: int) =
-    let e1 = dualEvent customerKey
-    let e2 = dualEvent orderKey
-    let d1 = entry "P1" DiagnosticSeverity.Info "c" "m"
-    let d2 = entry "P2" DiagnosticSeverity.Info "c" "m"
-    let f = wrapPass e1 d1 1
-    let g = wrapPass e2 d2 2
-    let result = (Pass.product f g) x
-    result.Trail = [e1; e2]
-    && LineageDiagnostics.entries result = [d1; d2]
-
-[<Fact>]
-let ``H-006 Pass.product operator (&&&) equals Pass.product`` () =
-    let f = wrapPass (dualEvent customerKey) (entry "f" DiagnosticSeverity.Info "c" "m") 1
-    let g = wrapPass (dualEvent orderKey) (entry "g" DiagnosticSeverity.Info "c" "m") 10
-    let viaProduct = Pass.product f g 0
-    let viaOperator = (f &&& g) 0
-    byValueAndBothTrails viaProduct viaOperator |> Assert.True
-
-[<Property>]
-let ``H-006 Pass.first: lifts f to left of pair, leaves right unchanged`` (x: int) (c: int) =
-    let e = dualEvent customerKey
-    let d = entry "f" DiagnosticSeverity.Info "c" "m"
-    let f = wrapPass e d 1
-    let lifted = Pass.first<int, int, int> f
-    let result = lifted (x, c)
-    LineageDiagnostics.payload result = (x + 1, c)
-    && result.Trail = [e]
-    && LineageDiagnostics.entries result = [d]
-
-[<Property>]
-let ``H-006 Pass.second: lifts g to right of pair, leaves left unchanged`` (c: int) (x: int) =
-    let e = dualEvent orderKey
-    let d = entry "g" DiagnosticSeverity.Info "c" "m"
-    let g = wrapPass e d 1
-    let lifted = Pass.second<int, int, int> g
-    let result = lifted (c, x)
-    LineageDiagnostics.payload result = (c, x + 1)
-    && result.Trail = [e]
-    && LineageDiagnostics.entries result = [d]
-
-[<Fact>]
-let ``H-006 Pass.product + Pass.id: product with identity is value-injection`` () =
-    let f = wrapPass (dualEvent customerKey) (entry "f" DiagnosticSeverity.Info "c" "m") 1
-    let withId = Pass.product f Pass.id  // Pass.id : Pass<'a, 'a>
-    let result = withId 5
-    Assert.Equal((6, 5), LineageDiagnostics.payload result)
-    // f's trail comes first; Pass.id contributes nothing
-    Assert.Equal(1, result.Trail.Length)
-    Assert.Equal(1, (LineageDiagnostics.entries result).Length)
-
-// ---------------------------------------------------------------------------
 // H-008: DiagnosticLattice — subsumption + minimal reduction.
 // ---------------------------------------------------------------------------
 
@@ -747,177 +586,6 @@ let ``H-008 DiagnosticLattice: prefix without dot separator is NOT subsumption``
     let b = entryFor key "P" DiagnosticSeverity.Warning "tightening.nullability" "b"
     Assert.False(DiagnosticLattice.subsumes a b)
 
-[<Fact>]
-let ``H-008 DiagnosticLattice: minimal drops subsumed entries (single-level)`` () =
-    let key = mkKey "K"
-    let parent = entryFor key "P" DiagnosticSeverity.Warning "tightening.nullability" "parent"
-    let child = entryFor key "P" DiagnosticSeverity.Warning "tightening.nullability.mandatory" "child"
-    let m = Diagnostics.ofValue () |> Diagnostics.tellMany [parent; child]
-    let reduced = DiagnosticLattice.minimal m
-    Assert.Equal<DiagnosticEntry list>([parent], reduced.Entries)
-
-[<Fact>]
-let ``H-008 DiagnosticLattice: minimal preserves antichains (no subsumption)`` () =
-    let key1 = mkKey "K1"
-    let key2 = mkKey "K2"
-    let a = entryFor key1 "P" DiagnosticSeverity.Warning "tightening.nullability" "a"
-    let b = entryFor key2 "P" DiagnosticSeverity.Warning "tightening.uniqueIndex" "b"
-    let m = Diagnostics.ofValue () |> Diagnostics.tellMany [a; b]
-    let reduced = DiagnosticLattice.minimal m
-    Assert.Equal<DiagnosticEntry list>([a; b], reduced.Entries)
-
-[<Property>]
-let ``H-008 DiagnosticLattice: minimal is idempotent`` (codes: NonEmptyArray<NonEmptyString>) =
-    let key = mkKey "K"
-    let entries =
-        codes.Get
-        |> Array.toList
-        |> List.map (fun (NonEmptyString c) ->
-            entryFor key "P" DiagnosticSeverity.Info c c)
-    let m = Diagnostics.ofValue () |> Diagnostics.tellMany entries
-    let once = DiagnosticLattice.minimal m
-    let twice = DiagnosticLattice.minimal once
-    once.Entries = twice.Entries
-
-[<Property>]
-let ``H-008 DiagnosticLattice: minimal output is contained in input`` (codes: NonEmptyArray<NonEmptyString>) =
-    let key = mkKey "K"
-    let entries =
-        codes.Get
-        |> Array.toList
-        |> List.map (fun (NonEmptyString c) ->
-            entryFor key "P" DiagnosticSeverity.Info c c)
-    let m = Diagnostics.ofValue () |> Diagnostics.tellMany entries
-    let reduced = DiagnosticLattice.minimal m
-    reduced.Entries |> List.forall (fun e -> List.contains e m.Entries)
-
-[<Fact>]
-let ``H-008 DiagnosticLattice: relations include Subsumes + Precedes correctly`` () =
-    let key = mkKey "K"
-    let parent = entryFor key "P" DiagnosticSeverity.Warning "a" "parent"
-    let child = entryFor key "P" DiagnosticSeverity.Warning "a.b" "child"
-    let m = Diagnostics.ofValue () |> Diagnostics.tellMany [parent; child]
-    let rels = DiagnosticLattice.relations m
-    Assert.Contains(Subsumes (parent, child), rels)
-    Assert.Contains(Precedes (parent, child), rels)
-
-// ---------------------------------------------------------------------------
-// H-010: Prism — bidirectional accessor with round-trip law.
-// ---------------------------------------------------------------------------
-
-[<Fact>]
-let ``H-010 Prism.identity: round-trip law holds for every input`` () =
-    let p = Prism.identity<int>
-    Assert.True(Prism.roundtrips p (=) 42)
-    Assert.True(Prism.roundtrips p (=) -7)
-
-[<Fact>]
-let ``H-010 Prism: get applies the forward direction`` () =
-    let p : Prism<int, string> = {
-        Get = string
-        ReverseGet = fun s ->
-            match System.Int32.TryParse s with
-            | true, n -> Some n
-            | _ -> None
-    }
-    Assert.Equal("42", Prism.get p 42)
-
-[<Fact>]
-let ``H-010 Prism: reverseGet may fail (partial backward)`` () =
-    let p : Prism<int, string> = {
-        Get = string
-        ReverseGet = fun s ->
-            match System.Int32.TryParse s with
-            | true, n -> Some n
-            | _ -> None
-    }
-    Assert.Equal(Some 42, Prism.reverseGet p "42")
-    Assert.Equal<int option>(None, Prism.reverseGet p "not-a-number")
-
-[<Property>]
-let ``H-010 Prism (int↔string): round-trip law holds on all integers`` (n: int) =
-    let p : Prism<int, string> = {
-        Get = string
-        ReverseGet = fun s ->
-            match System.Int32.TryParse s with
-            | true, x -> Some x
-            | _ -> None
-    }
-    Prism.roundtrips p (=) n
-
-[<Fact>]
-let ``H-010 Prism.partition: splits lawful from violating`` () =
-    // Construct a prism that ALWAYS fails on negative numbers.
-    let p : Prism<int, string> = {
-        Get = string
-        ReverseGet = fun s ->
-            match System.Int32.TryParse s with
-            | true, n when n >= 0 -> Some n
-            | _ -> None
-    }
-    let lawful, violating = Prism.partition p (=) [-2; -1; 0; 1; 2]
-    Assert.Equal<int list>([0; 1; 2], lawful)
-    Assert.Equal<int list>([-2; -1], violating)
-
-[<Property>]
-let ``H-010 Prism.compose: composes round-trip law (identity ∘ p = p modulo wrapping)`` (n: int) =
-    let inner = Prism.identity<int>
-    let composed = Prism.compose inner inner
-    Prism.roundtrips composed (=) n
-
-// ---------------------------------------------------------------------------
-// H-062: PassContext — reader comonad. Comonad laws.
-//
-//   left identity   : extend extract ctx = ctx
-//   right identity  : extract (extend f ctx) = f ctx
-//   associativity   : extend f (extend g ctx) = extend (fun c -> f (extend g c)) ctx
-// ---------------------------------------------------------------------------
-
-[<Property>]
-let ``H-062 PassContext comonad: left identity (extend extract = id)`` (env: int) (v: int) =
-    let ctx = PassContext.ofValue env v
-    PassContext.extend PassContext.extract ctx = ctx
-
-[<Property>]
-let ``H-062 PassContext comonad: right identity (extract ∘ extend f = f)`` (env: int) (v: int) =
-    let ctx = PassContext.ofValue env v
-    let f (c: PassContext<int, int>) = c.Value + c.Environment
-    PassContext.extract (PassContext.extend f ctx) = f ctx
-
-[<Property>]
-let ``H-062 PassContext comonad: associativity`` (env: int) (v: int) =
-    let ctx = PassContext.ofValue env v
-    let f (c: PassContext<int, int>) = c.Value + 1
-    let g (c: PassContext<int, int>) = c.Value * 2
-    let lhs = PassContext.extend f (PassContext.extend g ctx)
-    let rhs = PassContext.extend (fun c -> f (PassContext.extend g c)) ctx
-    lhs = rhs
-
-[<Property>]
-let ``H-062 PassContext: ask reads environment without consuming context`` (env: int) (v: int) =
-    let ctx = PassContext.ofValue env v
-    PassContext.ask ctx = env
-    && PassContext.extract ctx = v
-
-[<Property>]
-let ``H-062 PassContext functor: map identity = id`` (env: int) (v: int) =
-    let ctx = PassContext.ofValue env v
-    PassContext.map id ctx = ctx
-
-[<Property>]
-let ``H-062 PassContext functor: composition (map (g ∘ f) = map g ∘ map f)`` (env: int) (v: int) =
-    let ctx = PassContext.ofValue env v
-    let f (x: int) = x + 7
-    let g (x: int) = x * 11
-    PassContext.map (g << f) ctx = (ctx |> PassContext.map f |> PassContext.map g)
-
-[<Fact>]
-let ``H-062 PassContext.applyEnv: applies environment-aware function`` () =
-    let ctx = PassContext.ofValue 10 5
-    let result = PassContext.applyEnv (fun env v -> env + v) ctx
-    Assert.Equal(15, result.Value)
-    Assert.Equal(10, result.Environment)
-
 // ---------------------------------------------------------------------------
 // H-015: Lens — total bidirectional accessor. Three lens laws + composition.
 // ---------------------------------------------------------------------------
@@ -927,38 +595,38 @@ let private testRecord (a: int) (b: int) =
 
 [<Property>]
 let ``H-015 Lens law: get-set (set (get s) s = s)`` (env: int) (v: int) =
-    let lens : Lens<PassContext<int, int>, int> = {
-        Get = fun ctx -> ctx.Value
-        Set = fun a ctx -> { ctx with Value = a }
+    let lens : Lens<int * int, int> = {
+        Get = snd
+        Set = fun a (e, _) -> (e, a)
     }
-    let s = PassContext.ofValue env v
+    let s = (env, v)
     Lens.set lens (Lens.get lens s) s = s
 
 [<Property>]
 let ``H-015 Lens law: set-get (get (set a s) = a)`` (env: int) (v: int) (a: int) =
-    let lens : Lens<PassContext<int, int>, int> = {
-        Get = fun ctx -> ctx.Value
-        Set = fun x ctx -> { ctx with Value = x }
+    let lens : Lens<int * int, int> = {
+        Get = snd
+        Set = fun x (e, _) -> (e, x)
     }
-    let s = PassContext.ofValue env v
+    let s = (env, v)
     Lens.get lens (Lens.set lens a s) = a
 
 [<Property>]
 let ``H-015 Lens law: set-set (set a' (set a s) = set a' s)`` (env: int) (v: int) (a: int) (a': int) =
-    let lens : Lens<PassContext<int, int>, int> = {
-        Get = fun ctx -> ctx.Value
-        Set = fun x ctx -> { ctx with Value = x }
+    let lens : Lens<int * int, int> = {
+        Get = snd
+        Set = fun x (e, _) -> (e, x)
     }
-    let s = PassContext.ofValue env v
+    let s = (env, v)
     Lens.set lens a' (Lens.set lens a s) = Lens.set lens a' s
 
 [<Property>]
 let ``H-015 Lens.over: modify equals get-modify-set`` (env: int) (v: int) =
-    let lens : Lens<PassContext<int, int>, int> = {
-        Get = fun ctx -> ctx.Value
-        Set = fun x ctx -> { ctx with Value = x }
+    let lens : Lens<int * int, int> = {
+        Get = snd
+        Set = fun x (e, _) -> (e, x)
     }
-    let s = PassContext.ofValue env v
+    let s = (env, v)
     let f x = x + 7
     Lens.over lens f s = Lens.set lens (f (Lens.get lens s)) s
 
@@ -969,21 +637,21 @@ let ``H-015 Lens.identity: get s = s and set a _ = a`` (v: int) =
 
 [<Fact>]
 let ``H-015 Lens.compose: outer ∘ inner reaches the inner substructure`` () =
-    // Compose: PassContext<int, (int, int)>.Value.fst
-    let outer : Lens<PassContext<int, (int * int)>, (int * int)> = {
-        Get = fun ctx -> ctx.Value
-        Set = fun pair ctx -> { ctx with Value = pair }
+    // Compose over (env, (a, b)): outer reaches .snd, inner reaches .fst
+    let outer : Lens<int * (int * int), (int * int)> = {
+        Get = snd
+        Set = fun pair (e, _) -> (e, pair)
     }
     let inner : Lens<int * int, int> = {
         Get = fst
         Set = fun a (_, b) -> (a, b)
     }
     let composed = Lens.compose outer inner
-    let s = PassContext.ofValue 0 (10, 20)
+    let s = (0, (10, 20))
     Assert.Equal(10, Lens.get composed s)
     let updated = Lens.set composed 99 s
-    Assert.Equal((99, 20), updated.Value)
-    Assert.Equal(0, updated.Environment)
+    Assert.Equal((99, 20), snd updated)
+    Assert.Equal(0, fst updated)
 
 [<Property>]
 let ``H-015 Lens.compose: laws preserve through composition`` (a: int) (b: int) (a': int) =
@@ -1007,10 +675,6 @@ let ``H-015 CatalogLenses.modules: get + set roundtrip`` () =
     let result = Lens.set CatalogLenses.modules [] catalog
     Assert.Equal(catalog, result)
 
-[<Fact>]
-let ``H-015 CatalogLenses.sequences: get + set roundtrip`` () =
-    let catalog = { Modules = []; Sequences = [] }
-    Assert.Equal<Sequence list>([], Lens.get CatalogLenses.sequences catalog)
 
 [<Fact>]
 let ``H-015 CatalogLenses.columnOf: get + set roundtrip`` () =

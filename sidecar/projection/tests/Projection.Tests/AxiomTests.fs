@@ -1008,38 +1008,6 @@ let ``H-003 Kleisli: Pass<'a, 'b> names the pipeline's category structure`` () =
     ()
 
 [<Fact>]
-let ``H-004 Certificate<'a>: terminal-of-pipeline wrapper (Cluster B follow-on)`` () =
-    citationOf
-        "tests/Projection.Tests/DiagnosticsTests.fs"
-        "H-004 Certificate: ofLineageDiagnostics ∘ toLineageDiagnostics = id"
-    citationOf
-        "tests/Projection.Tests/DiagnosticsTests.fs"
-        "H-004 Certificate: combine concatenates trails + diagnostics chronologically"
-    // `Certificate<'a> = { Value : 'a; Trail : LineageEvent list;
-    // Diagnostics : DiagnosticEntry list }` — terminal-of-pipeline form
-    // of `Lineage<Diagnostics<'a>>`. Structural isomorphism via
-    // `ofLineageDiagnostics` / `toLineageDiagnostics`. Unlocks H-009
-    // (multi-target fanout) — sibling Π's produce Certificate values
-    // that combine via Certificate.combine with shared trail prefix.
-    ()
-
-[<Fact>]
-let ``H-006 Pass.product: monoidal product on Kleisli arrows (partial; Cluster B follow-on)`` () =
-    citationOf
-        "tests/Projection.Tests/DiagnosticsTests.fs"
-        "H-006 Pass.product: pairs outputs from a shared input"
-    citationOf
-        "tests/Projection.Tests/DiagnosticsTests.fs"
-        "H-006 Pass.product operator (&&&) equals Pass.product"
-    // `Pass.product : Pass<'a, 'b> -> Pass<'a, 'c> -> Pass<'a, 'b * 'c>`
-    // is the categorical fan-out (arrow notation `&&&`). Companion to
-    // `Pass.compose` (sequential `>=>`). The static algebra ships;
-    // dynamic SsKey-disjointness check for parallel pass scheduling
-    // defers to a dedicated H-006 slice when a consumer demands it.
-    // `Pass.first` / `Pass.second` cover the asymmetric pair-lift cases.
-    ()
-
-[<Fact>]
 let ``H-051 Kleisli law tests: shipped via H-003 in DiagnosticsTests`` () =
     citationOf
         "tests/Projection.Tests/DiagnosticsTests.fs"
@@ -1080,49 +1048,22 @@ let ``H-013: units of measure on Profile numeric fields (trigger unfired)`` () =
 // Group M — Cluster B follow-on: deferred-with-trigger algebra/F# items
 // ===========================================================================
 // Items that resonate with the Cluster B algebra surface (Kleisli arrows /
-// dual-writer monad / CE builders / Certificate / Pass.product) but require
+// dual-writer monad / CE builders) but require
 // a triggering consumer, prerequisite work, or design that isn't tractable
 // in the Cluster B window. Each Skip stub names the bucket, the prerequisite,
 // and the trigger that would promote it.
 
 // --- Group I — Kernel: categorical structure (remaining tail) ---
 
-[<Fact>]
-let ``H-005 LineageTree: branching writer monad (Cluster B finale; 2026-05-22)`` () =
-    citationOf
-        "tests/Projection.Tests/LineageTests.fs"
-        "H-005 LineageTree monad: left identity"
-    citationOf
-        "tests/Projection.Tests/LineageTests.fs"
-        "H-005 LineageTree monad: right identity (bind ofLineage tree = tree)"
-    citationOf
-        "tests/Projection.Tests/LineageTests.fs"
-        "H-005 LineageTree monad: associativity"
-    citationOf
-        "tests/Projection.Tests/LineageTests.fs"
-        "H-005 LineageTree.bind: leaf trail prepends to continuation (A24 chronological)"
-    citationOf
-        "tests/Projection.Tests/LineageTests.fs"
-        "H-005 LineageTree worked example: bifurcate retains both branches' lineages"
-    // `LineageTree<'a>` is the **free monad over the labeled-list
-    // functor** applied to `Lineage<'a>`. Completes the writer-monad
-    // trinity (Lineage linear / LineageTree branching / Certificate
-    // terminal). A24-amended (chronological-bind) holds within each
-    // leaf AND across the substitution boundary (existing leaf's trail
-    // prepends to every continuation leaf). Monad laws + functor laws
-    // property-tested. Unlocks Cluster C (policy intelligence) — H-033
-    // (policy diff), H-035 (regression testing) consume the bifurcated
-    // tree's `paths` for branch-by-branch comparison.
-    ()
-
 [<Fact(Skip = "H-006 Parallel pass composition (full SsKey-disjoint scheduling) \
-— Cluster B shipped the static algebra (Pass.product / Pass.first / Pass.second \
-+ `&&&` operator); the dynamic SsKey-disjointness check defers. Trigger: a \
-pass-chain wall-clock measurement at operator-reality canary scale shows a \
-specific pass takes >50% of wall time AND is decomposable into disjoint SsKey \
-partitions via TopologicalOrder.levels. Per HORIZON cross-cutting note, parallel \
-composition pays off when the level depth dominates the pass count.")>]
-let ``H-006: parallel pass composition full integration (static algebra shipped)`` () = ()
+— the speculative static product algebra (Pass.product / first / second / `&&&`) \
+was retired 2026-06-04 (zero consumers); rebuild it together with the dynamic \
+SsKey-disjointness check when a real consumer demands it. Trigger: a pass-chain \
+wall-clock measurement at operator-reality canary scale shows a specific pass \
+takes >50% of wall time AND is decomposable into disjoint SsKey partitions via \
+TopologicalOrder.levels. Per HORIZON cross-cutting note, parallel composition \
+pays off when the level depth dominates the pass count.")>]
+let ``H-006: parallel pass composition full integration (product algebra retired; rebuild on demand)`` () = ()
 
 [<Fact(Skip = "H-007 SchemaDelta type and delta pass category — large; \
 Cluster D prerequisite. NARROWED (6.A.10 + 6.A.11): CatalogDiff now carries the \
@@ -1135,45 +1076,29 @@ materializes.")>]
 let ``H-007: SchemaDelta type (delta pass category; large)`` () = ()
 
 [<Fact>]
-let ``H-008 DiagnosticLattice: partial order over diagnostic entries (shipped)`` () =
+let ``H-008 DiagnosticLattice.subsumes: subsumption predicate over diagnostic entries (shipped)`` () =
     citationOf
         "tests/Projection.Tests/DiagnosticsTests.fs"
-        "H-008 DiagnosticLattice: minimal drops subsumed entries (single-level)"
+        "H-008 DiagnosticLattice: code-prefix with same SsKey subsumes"
     citationOf
         "tests/Projection.Tests/DiagnosticsTests.fs"
-        "H-008 DiagnosticLattice: minimal is idempotent"
+        "H-008 DiagnosticLattice: catalog-level (SsKey=None) subsumes per-kind"
     // Subsumption rule: code-prefix (separator-bounded) + SsKey-context
-    // compatibility. `DiagnosticLattice.minimal` collapses subsumed
-    // entries to their root cause — the operator-facing triage surface.
-    // Pairs with Cluster D / operator-report consumers when they
-    // surface.
+    // compatibility. `DiagnosticLattice.subsumes` is the kept predicate;
+    // the `relations` / `minimal` antichain reduction was retired
+    // 2026-06-04 (zero production consumers — the dead-algebra deletion).
+    // Rebuild the minimal-set reduction with the operator `diagnose`
+    // verb, likely as rollup-with-counts rather than antichain-deletion.
     ()
 
-[<Fact(Skip = "H-009 Multi-target fanout with shared lineage trail — H-004 \
-Certificate shipped (the wrapper type that fanout produces). Trigger: full \
-fanout implementation requires Pipeline-layer surface that runs the pass chain \
-once, then forks into SSDT / JSON / Distribution emitters, each producing \
-Certificate<TargetBundle>. The static composition primitive is Pass.product \
-(now shipped); the operational machinery (shared-prefix lineage; Compose \
-fanout function) defers until a multi-target consumer demands it.")>]
-let ``H-009: multi-target fanout (Certificate shipped; fanout machinery deferred)`` () = ()
-
-[<Fact>]
-let ``H-010 Prism: bidirectional partial accessor (type shipped; consumer integration deferred)`` () =
-    citationOf
-        "tests/Projection.Tests/DiagnosticsTests.fs"
-        "H-010 Prism (int↔string): round-trip law holds on all integers"
-    citationOf
-        "tests/Projection.Tests/DiagnosticsTests.fs"
-        "H-010 Prism.partition: splits lawful from violating"
-    // `Prism<'a, 'b>` ships as a small algebraic type with `get` /
-    // `reverseGet` / `roundtrips` / `partition` / `identity` /
-    // `compose`. The Catalog ↔ DDL prism integration (where
-    // `manifest.Unsupported` becomes the violating-partition output)
-    // defers — the canary's PhysicalSchema diff already operates the
-    // round-trip property informally; promoting to typed Prism enforcement
-    // happens when a consumer demands the PrismViolation surface.
-    ()
+[<Fact(Skip = "H-009 Multi-target fanout with shared lineage trail — deferred. \
+Trigger: a Pipeline-layer surface runs the pass chain once, then forks into \
+SSDT / JSON / Distribution emitters, each producing a value + its proof. The \
+speculative Certificate / Pass.product primitives that once anticipated this \
+were retired 2026-06-04 (the consumer never materialized); rebuild the wrapper \
++ fanout machinery on demand, using Lineage<Diagnostics<'a>> directly (which is \
+exactly what Certificate aliased).")>]
+let ``H-009: multi-target fanout (deferred; speculative wrappers retired)`` () = ()
 
 [<Fact(Skip = "H-011 Incremental computation through pass graph — large. \
 Trigger: pass-chain re-execution time at operator-reality canary scale becomes \
@@ -1265,32 +1190,13 @@ families that share an algorithm modulo input/output projections. Defer \
 until a consumer surfaces a concrete dimap target.")>]
 let ``H-061: Profunctor on Pass<'a, 'b> (no consumer)`` () = ()
 
-[<Fact>]
-let ``H-062 PassContext: reader comonad surface (type shipped; pass-driver adoption deferred)`` () =
-    citationOf
-        "tests/Projection.Tests/DiagnosticsTests.fs"
-        "H-062 PassContext comonad: left identity (extend extract = id)"
-    citationOf
-        "tests/Projection.Tests/DiagnosticsTests.fs"
-        "H-062 PassContext comonad: right identity (extract ∘ extend f = f)"
-    citationOf
-        "tests/Projection.Tests/DiagnosticsTests.fs"
-        "H-062 PassContext comonad: associativity"
-    // `PassContext<'env, 'a>` ships as the comonadic dual of
-    // `Pass<'a, 'b>` — the Kleisli arrow's reader-comonad sibling.
-    // Three comonad laws property-tested (left/right identity,
-    // associativity). The integration with existing pass drivers
-    // (using PassContext<Policy × Profile, Catalog> to thread context)
-    // defers until parameter-threading at registration sites becomes
-    // operator-visible noise.
-    ()
-
-[<Fact(Skip = "H-063 Free monad for pass scheduling — large; depends on H-005 \
-(branching lineage). The free monad would let pass scheduling be expressed \
-as a program tree (sequential / parallel / dependency-ordered) without \
-executing it. Pre-condition for cluster meta-scheduling (parallel + \
-incremental + speculative).")>]
-let ``H-063: Free monad for pass scheduling (depends on H-005; large)`` () = ()
+[<Fact(Skip = "H-063 Free monad for pass scheduling — large. The H-005 \
+branching-lineage (LineageTree) prereq was retired 2026-06-04 (unused); rebuild \
+it with this feature if pursued. The free monad would let pass scheduling be \
+expressed as a program tree (sequential / parallel / dependency-ordered) without \
+executing it. Pre-condition for cluster meta-scheduling (parallel + incremental \
++ speculative).")>]
+let ``H-063: Free monad for pass scheduling (LineageTree prereq retired; large)`` () = ()
 
 [<Fact(Skip = "H-064 Colimits in the schema category (coproduct / pushout) — \
 large; theoretical depth. Depends on H-042 (set algebra). The category- \
@@ -1524,9 +1430,9 @@ Explicit perf-driven trigger per HORIZON: bench data shows a specific pass \
 takes >50% of pipeline wall time at operator-reality canary scale AND the \
 pass is embarrassingly parallelizable across independent SsKey sets. \
 Trigger remains unfired at operator-reality canary scale (150 tables, \
-6.25k rows; ~5-6s warm wall — no single pass dominates). The static \
-algebra primitive (Pass.product / `&&&`) shipped at Cluster B (H-006) for \
-when the trigger eventually fires.")>]
+6.25k rows; ~5-6s warm wall — no single pass dominates). The speculative \
+static product algebra (Pass.product / `&&&`) once anticipated this but was \
+retired 2026-06-04 (unused); rebuild it when the trigger eventually fires.")>]
 let ``H-099: remote pass execution (perf trigger unfired)`` () = ()
 
 // ===========================================================================

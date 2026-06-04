@@ -75,6 +75,30 @@ module PassChainAdapter =
                 |> LineageDiagnostics.map (fun decision ->
                     writeBack decision state) }
 
+    /// Lift a pass that consumes BOTH `state.Catalog` and the
+    /// pre-computed `state.TopologicalOrder` from ComposeState (e.g.
+    /// SchemaComplexityPass, whose metrics span the FK graph *and* IR
+    /// attribute statistics). Falls back to `TopologicalOrder.empty`
+    /// when topology has not yet been computed. Unlike `liftDecisionPass`,
+    /// the topology is read from ComposeState at apply-time rather than
+    /// baked in at registration — so the pass sees the chain's real
+    /// topology (the prior `registered None` wiring computed every metric
+    /// over zero edges).
+    let liftCatalogTopologyPass
+        (name: string)
+        (run: Catalog -> TopologicalOrder -> Lineage<Diagnostics<'Decision>>)
+        (writeBack: 'Decision -> ComposeState -> ComposeState)
+        : PassChainAdapter =
+        { Name = name
+          Apply =
+            fun state ->
+                let topo =
+                    state.TopologicalOrder
+                    |> Option.defaultValue TopologicalOrder.empty
+                run state.Catalog topo
+                |> LineageDiagnostics.map (fun decision ->
+                    writeBack decision state) }
+
     /// Chapter A.4.7' slice γ — fold a `PassChainAdapter list` into
     /// one composed Apply step.
     ///

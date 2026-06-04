@@ -17,7 +17,7 @@ open Projection.Adapters.OssysSql
 //   2. Execute the carbon-copied rowsets-SQL script against the seeded
 //      source via `MetadataSnapshotRunner.runAsync`.
 //   3. Compose the resulting typed snapshot into a
-//      `CatalogReader.RowsetBundle` via `MetadataSnapshotRunner.toBundle`.
+//      `OssysRowsetTypes.RowsetBundle` via `MetadataSnapshotRunner.toBundle`.
 //   4. Parse the bundle into a V2 `Catalog` via `CatalogReader.parse`.
 //   5. Assert structural invariants on the produced Catalog: the
 //      expected modules / entities / attributes from the fixture

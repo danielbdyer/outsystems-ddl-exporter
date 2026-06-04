@@ -44,7 +44,7 @@ let private mustOk r =
     | Ok v -> v
     | Error es -> invalidOp (sprintf "fixture: %A" es)
 
-let private moduleRow : CatalogReader.ModuleRow =
+let private moduleRow : OssysRowsetTypes.ModuleRow =
     { EspaceId       = 1
       EspaceName     = "AppCore"
       IsSystemModule = false
@@ -52,7 +52,7 @@ let private moduleRow : CatalogReader.ModuleRow =
       EspaceKind     = None
       EspaceSsKey    = None }
 
-let private customerKindRow : CatalogReader.KindRow =
+let private customerKindRow : OssysRowsetTypes.KindRow =
     { EntityId          = 10
       EspaceId          = 1
       EntityName        = "Customer"
@@ -66,7 +66,7 @@ let private customerKindRow : CatalogReader.KindRow =
       PrimaryKeySsKey   = None
       Description       = None }
 
-let private orderKindRow : CatalogReader.KindRow =
+let private orderKindRow : OssysRowsetTypes.KindRow =
     { EntityId          = 11
       EspaceId          = 1
       EntityName        = "Order"
@@ -80,7 +80,7 @@ let private orderKindRow : CatalogReader.KindRow =
       PrimaryKeySsKey   = None
       Description       = None }
 
-let private customerIdAttrRow : CatalogReader.AttributeRow =
+let private customerIdAttrRow : OssysRowsetTypes.AttributeRow =
     { AttrId               = 100
       EntityId             = 10
       AttrName             = "Id"
@@ -101,12 +101,12 @@ let private customerIdAttrRow : CatalogReader.AttributeRow =
       ComputedDefinition   = None
       DefaultConstraintName = None }
 
-let private orderIdAttrRow : CatalogReader.AttributeRow =
+let private orderIdAttrRow : OssysRowsetTypes.AttributeRow =
     { customerIdAttrRow with
         AttrId   = 200
         EntityId = 11 }
 
-let private orderCustomerFkAttrRow : CatalogReader.AttributeRow =
+let private orderCustomerFkAttrRow : OssysRowsetTypes.AttributeRow =
     { AttrId               = 201
       EntityId             = 11
       AttrName             = "CustomerId"
@@ -130,7 +130,7 @@ let private orderCustomerFkAttrRow : CatalogReader.AttributeRow =
 let private fkReferenceRow
     (onUpdate: string option)
     (isConstraintTrusted: bool)
-    : CatalogReader.ReferenceRow =
+    : OssysRowsetTypes.ReferenceRow =
     { AttrId              = 201
       RefEntityName       = "Customer"
       RefEntityId         = Some 10
@@ -139,14 +139,14 @@ let private fkReferenceRow
       OnUpdate            = onUpdate
       IsConstraintTrusted = isConstraintTrusted }
 
-let private buildBundle (refRow: CatalogReader.ReferenceRow) : CatalogReader.RowsetBundle =
-    { CatalogReader.RowsetBundle.empty with
+let private buildBundle (refRow: OssysRowsetTypes.ReferenceRow) : OssysRowsetTypes.RowsetBundle =
+    { OssysRowsetTypes.RowsetBundle.empty with
         Modules    = [ moduleRow ]
         Kinds      = [ customerKindRow; orderKindRow ]
         Attributes = [ customerIdAttrRow; orderIdAttrRow; orderCustomerFkAttrRow ]
         References = [ refRow ] }
 
-let private parseToCatalog (bundle: CatalogReader.RowsetBundle) : Catalog =
+let private parseToCatalog (bundle: OssysRowsetTypes.RowsetBundle) : Catalog =
     let task () = CatalogReader.parse (CatalogReader.SnapshotRowsets bundle)
     let result = TaskSync.run task
     mustOk result

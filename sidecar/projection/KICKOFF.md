@@ -46,7 +46,7 @@ You're picking up V2 work mid-stream. This brief gets you oriented in 5 minutes;
 
 ## What this is
 
-You're working on the **F# sidecar (V2) of an OutSystems DDL exporter** at `/home/user/outsystems-ddl-exporter`. V1 is the C# trunk (~78K LOC at `src/`, fully shipping). V2 lives at `sidecar/projection/` — pure F# core plus C# adapters at the boundary, **882 passing non-canary tests + ~16 Docker-dependent canary tests, 0 skipped**, lint clean across 27 rules. **DECISIONS.md supreme operating discipline carries 8 pillars** (data-structure-oriented; no string-concat; built-in obligation; FP-promised-land; coding-style; no-V2-back-compat; gold-standard-library-precedence + perf-clause; domain-first naming).
+You're working on the **F# sidecar (V2) of an OutSystems DDL exporter** at `/home/user/outsystems-ddl-exporter`. V1 is the C# trunk (~78K LOC at `src/`, fully shipping). V2 lives at `sidecar/projection/` — pure F# core plus C# adapters at the boundary, **a green pure test pool + Docker-dependent canary tests, 0 skipped** (run `scripts/test.sh`; absolute counts in prose drift — the run is the source of truth), lint clean across 27 rules. **DECISIONS.md supreme operating discipline carries 8 pillars** (data-structure-oriented; no string-concat; built-in obligation; FP-promised-land; coding-style; no-V2-back-compat; gold-standard-library-precedence + perf-clause; domain-first naming).
 
 V2's purpose: make a high-stakes database cutover **verifiable, reversible, and repeatable** through a sibling chorus of synchronized projections (SSDT DDL, CDC-aware data inserts, DACPAC, refactor log, distributions, diagnostics) emitted from a single algebraic core. **V1 ships the cutover; V2 makes it trustworthy.**
 
@@ -117,7 +117,7 @@ Plus **`VISION_REVIEW.md`** for review evidence and the eight subagent reports t
 
 ## Where you are picking up — current state (post-this-session)
 
-**Branch:** `claude/review-ddl-exporter-zB3LF`. **Test baseline:** 882 passing non-canary tests + ~16 Docker-dependent canary tests, 0 skipped, 0 build warnings under `TreatWarningsAsErrors=true` everywhere. **Lint:** clean across 27 rules. **Perf-gate:** clean against operator-reality baseline.
+**Branch:** `claude/review-ddl-exporter-zB3LF`. **Test baseline:** pure pool green + Docker-dependent canary tests, 0 skipped, 0 build warnings under `TreatWarningsAsErrors=true` everywhere (run `scripts/test.sh`; the run is the source of truth, not a prose count). **Lint:** clean across 27 rules. **Perf-gate:** clean against operator-reality baseline.
 
 The most recent working session (chapter 3.2 close arc + chapter-3 cross-cutting close polish) shipped:
 
@@ -195,7 +195,7 @@ Open with a chapter-open document naming the strategic-frame axes (`DECISIONS 20
 
 ### How chapter 3 ended (joint close arc, 2026-05-10)
 
-**Test count:** 882 passing, 0 skipped, 0 build warnings under `TreatWarningsAsErrors=true` everywhere (production AND tests). Lint clean across 27 rules.
+**Test count:** see `scripts/test.sh` (the run is the source of truth; prose counts drift), 0 skipped, 0 build warnings under `TreatWarningsAsErrors=true` everywhere (production AND tests). Lint clean across 27 rules.
 
 The chapter-3 cross-cutting close discharged the eight-item ritual for chapter 3.2 specifically (see `CHAPTER_3_2_CLOSE.md`) and jointly across 3.5 / 3.6 / 3.7 / 4.1.A / 4.1.B-in-flight (see `CHAPTER_4_1_A_CLOSE.md` and `CHAPTER_3_5_CLOSE.md`). Post-close polish (`36d1cd1`) cleaned cross-document drift surfaced by an audit subagent: AXIOMS scheduled-amendments list aligned with shipped T11×2 + A38 bodies; CLAUDE.md retired-code pointers fixed; README baseline updated to 882; AUDIT_2026_05 Tier-1 dispositions refreshed (#1 BenchSink ✅, #4 paired ✅, #8 SqlTypeCorrespondence ✅); cross-module FK + ICatalogReader deferral framings sharpened.
 
@@ -326,7 +326,7 @@ When tempted to shortcut: trace V1 before writing tests; wait for the second con
 
 ## What success looks like
 
-**End of first session (chapter-decision):** chapter-open document for the picked next chapter (4.1.B slice δ / 4.1.A slices 6/7/8 / 4.2 / 3.x DacpacEmitter) with strategic-frame axes named. Existing 882 tests green; 0 skipped; lint clean across 27 rules. The audit-deferred items routed to the picked chapter sketched as concrete first-slice plans.
+**End of first session (chapter-decision):** chapter-open document for the picked next chapter (4.1.B slice δ / 4.1.A slices 6/7/8 / 4.2 / 3.x DacpacEmitter) with strategic-frame axes named. Existing suite green (`scripts/test.sh`); 0 skipped; lint clean across 27 rules. The audit-deferred items routed to the picked chapter sketched as concrete first-slice plans.
 
 **End of next sub-chapter (~5-10 sessions):** the picked chapter's substantive deliverable shipped. AXIOMS amendments filled at close. Chapter-close ritual operated (eight items + five-agent audit if architectural-frame chapter). Forward signals cluster identified for the chapter after that.
 

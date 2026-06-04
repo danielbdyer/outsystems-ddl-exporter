@@ -2,16 +2,14 @@ namespace Projection.Core
 
 /// **H-015: Lens (Cluster B follow-on; 2026-05-22).** A total
 /// bidirectional accessor: `Get` always succeeds; `Set` always
-/// succeeds. The categorical Lens — sibling to `Prism<'a, 'b>` (which
-/// is partial bidirectional; defined alongside the diagnostic surface
-/// in `Diagnostics.fs`) and completing the optics duo.
-///
-/// **Algebra.** Where `Prism` is the bidirectional partial dual of
-/// `Pass<'a, 'b>` (the unidirectional Kleisli arrow), `Lens<'s, 'a>`
-/// is the **total** bidirectional view of a substructure 'a within a
-/// supercatalog 's. Used for deep-nested record updates where the
-/// existing F# `{ x with Foo = { x.Foo with Bar = ... } }` shape
+/// succeeds — the **total** bidirectional view of a substructure 'a
+/// within a supercatalog 's. Used for deep-nested record updates where
+/// the existing F# `{ x with Foo = { x.Foo with Bar = ... } }` shape
 /// gets verbose at 2+ levels of nesting.
+///
+/// (The partial dual — a `Prism` over a may-fail `ReverseGet` — was
+/// retired 2026-06-04 as unused speculative algebra; rebuild it if a
+/// real partial-accessor consumer ever lands.)
 ///
 /// **Lens laws (property-tested in `DiagnosticsTests.fs`):**
 ///   - **Get-Set:** `set (get s) s = s` — setting back the gotten
@@ -21,12 +19,11 @@ namespace Projection.Core
 ///   - **Set-Set:** `set a' (set a s) = set a' s` — the second set
 ///     overwrites the first.
 ///
-/// **Why a Lens, not a Prism?** A Lens is total — both `Get` and `Set`
-/// always succeed. A Prism's `ReverseGet` may fail (partial). For
-/// fields that always exist (e.g., `Catalog.Modules`, `Module.Kinds`),
-/// the Lens is the correct optic. For fields that may not exist
-/// (e.g., a specific SsKey within `Catalog.kindIndex`), use a
-/// `Prism<Catalog, Kind>`.
+/// **Totality.** A Lens is total — both `Get` and `Set` always succeed
+/// — so it fits fields that always exist (`Catalog.Modules`,
+/// `Module.Kinds`, `Kind.Attributes`). A partial accessor (over a
+/// may-not-exist target) would need the retired `Prism`; reintroduce
+/// one only under a concrete consumer.
 ///
 /// **Composition.** Lenses compose: `compose (outer : Lens<'s, 'a>)
 /// (inner : Lens<'a, 'b>) : Lens<'s, 'b>`. The composed Get/Set thread
@@ -95,9 +92,7 @@ module Lens =
 ///     Policy.filterBySelection, CatalogDiff.addKind
 ///   - `attributesOf`: LogicalColumnEmission.substituteKind
 ///   - `referencesOf`: SymmetricClosure
-///   - `indexesOf`: (no production consumer yet; defer-with-trigger pending)
 ///   - `columnOf`: LogicalColumnEmission.substituteAttribute, CatalogDiff.applyFacet
-///   - `sequences`: (no production consumer yet; defer-with-trigger pending)
 [<RequireQualifiedAccess>]
 module CatalogLenses =
 
@@ -108,11 +103,6 @@ module CatalogLenses =
         Set = fun ms c -> { c with Modules = ms }
     }
 
-    /// `Catalog.Sequences`. Top-level sequences (separate from kinds).
-    let sequences : Lens<Catalog, Sequence list> = {
-        Get = fun c -> c.Sequences
-        Set = fun ss c -> { c with Sequences = ss }
-    }
 
     /// `Module.Kinds`. Composes through `modules` to reach kind-level
     /// updates in a single module; for "every kind across all modules"
@@ -135,11 +125,6 @@ module CatalogLenses =
         Set = fun refs k -> { k with References = refs }
     }
 
-    /// `Kind.Indexes`.
-    let indexesOf : Lens<Kind, Index list> = {
-        Get = fun k -> k.Indexes
-        Set = fun idxs k -> { k with Indexes = idxs }
-    }
 
     /// `Attribute.Column`. Two production consumers
     /// (`Passes.LogicalColumnEmission.substituteAttribute` +

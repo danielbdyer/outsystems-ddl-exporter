@@ -26,6 +26,11 @@ module SchemaComplexityPass =
     [<Literal>]
     let private passName : string = "schemaComplexity"
 
+    /// Public mirror of `passName` so the chain wiring
+    /// (`PassChainAdapter.liftCatalogTopologyPass`) can name the step
+    /// without constructing a throwaway `registered` metadata value.
+    let name : string = passName
+
     // Composite score weights — NOT [<Literal>] on decimal per
     // cctor-bomb discipline.
     let private weightCyclomatic  : decimal = 0.20m

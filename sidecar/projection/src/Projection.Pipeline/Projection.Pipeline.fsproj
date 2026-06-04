@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <Compile Include="Config.fs" />
+    <Compile Include="CatalogResolution.fs" />
     <Compile Include="ApprovalStore.fs" />
     <Compile Include="LifecycleStore.fs" />
     <Compile Include="RenameBinding.fs" />

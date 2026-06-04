@@ -101,6 +101,29 @@ let ``A.4.7' slice γ: compose RegisteredTransforms.allChainSteps populates ever
     Assert.True(final.UserRemap.IsSome, "UserRemap must be populated")
 
 // ---------------------------------------------------------------------------
+// Regression — SchemaComplexityPass must consume the chain's REAL topology.
+//
+// It was wired as `liftDecisionPass (SchemaComplexityPass.registered None)`,
+// baking in `TopologicalOrder.empty` at registration so every FK metric was
+// computed over zero edges (cyclomatic/coupling/cohesion/depth all degenerate).
+// The fix threads `ComposeState.TopologicalOrder` via
+// `PassChainAdapter.liftCatalogTopologyPass`. `sampleCatalog` carries an
+// order→customer FK, so the threaded topology has ≥1 edge ⇒ cyclomatic > 0.
+// Pre-fix this assertion fails (cyclomatic = 0); post-fix it passes.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``SchemaComplexityPass consumes the chain's real topology, not TopologicalOrder.empty`` () =
+    let final =
+        PassChainAdapter.compose
+            RegisteredTransforms.allChainSteps
+            (ComposeState.initial exerciseCatalog)
+        |> LineageDiagnostics.payload
+    Assert.True(final.SchemaComplexity.IsSome, "SchemaComplexity must be populated after chain run")
+    Assert.True(final.SchemaComplexity.Value.CyclomaticComplexity > 0,
+        "SchemaComplexityPass must see the chain's real topology (≥1 FK edge), not TopologicalOrder.empty")
+
+// ---------------------------------------------------------------------------
 // T1 (compose): same input → byte-identical output (referential trail
 // + value equality). Operates on the populated allChainSteps to cover
 // the production-shape fold.

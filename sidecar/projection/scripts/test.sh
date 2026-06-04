@@ -30,15 +30,26 @@
 # Usage:
 #   scripts/test.sh                # fast (pure pool) — the default loop
 #   scripts/test.sh fast           # pure pool only (~25s)
-#   scripts/test.sh docker         # Docker-SqlServer collection (serial, ~4m)
+#   scripts/test.sh docker         # Docker-SqlServer collection (serial)
 #   scripts/test.sh canary         # round-trip canaries only (Docker subset)
+#   scripts/test.sh focus <pat>    # one class/method by FullyQualifiedName~<pat>
 #   scripts/test.sh all            # fast THEN docker, sequential (crash-safe)
 #   scripts/test.sh list           # show the derived pool filters and exit
 #   scripts/test.sh fast -- <args> # pass extra args through to dotnet test
 #
+# WARM CONTAINER (Docker-pool dev loop). `docker` / `canary` / `focus` /
+# `all` auto-detect a running `projection-mssql-warm` container
+# (scripts/warm-sql.sh) and point the fixture classes at it via
+# PROJECTION_MSSQL_CONN_STR — every non-CDC class reuses ONE instance
+# instead of cold-starting per class. Start it once per session:
+#   eval "$(scripts/warm-sql.sh start)"
+# then iterate, e.g.: scripts/test.sh focus MigrationCanaryTests
+# CDC classes (IsolatedContainerFixture) cold-start regardless.
+#
 # Env:
 #   TEST_NO_BUILD=1   skip the build step (DLL already current)
 #   TEST_CONFIG=Release   build/run Release instead of Debug
+#   PROJECTION_MSSQL_CONN_STR   explicit warm master conn (overrides autodetect)
 
 set -uo pipefail
 
@@ -73,6 +84,30 @@ docker_filter() {
 # `FullyQualifiedName!~A&FullyQualifiedName!~B&...` — selects the pure pool.
 pure_filter() {
     docker_classes | sed 's/^/FullyQualifiedName!~/' | paste -sd '&' -
+}
+
+# If PROJECTION_MSSQL_CONN_STR is unset but the warm container
+# (scripts/warm-sql.sh) is running, point the Docker pool at it so the
+# fixture classes reuse one instance instead of cold-starting per class.
+# CDC classes (IsolatedContainerFixture) bypass this and cold-start
+# regardless. No-op for the pure pool.
+warm_autodetect() {
+    if [[ -n "${PROJECTION_MSSQL_CONN_STR:-}" ]]; then
+        log "warm: using PROJECTION_MSSQL_CONN_STR from env"
+        return 0
+    fi
+    local name="${WARM_SQL_NAME:-projection-mssql-warm}"
+    if [[ "$(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null)" == "true" ]]; then
+        local conn
+        conn="$(WARM_SQL_NAME="$name" "$SCRIPT_DIR/warm-sql.sh" conn 2>/dev/null \
+                | sed "s/^export PROJECTION_MSSQL_CONN_STR=//")"
+        # warm-sql.sh prints a %q-quoted value; strip one layer of quoting.
+        eval "export PROJECTION_MSSQL_CONN_STR=$conn"
+        log "warm: auto-detected container '$name' → reusing it"
+    else
+        log "warm: no warm container running; classes cold-start per class"
+        log "      (eval \"\$(scripts/warm-sql.sh start)\" to speed up the Docker pool)"
+    fi
 }
 
 build_once() {
@@ -151,6 +186,12 @@ run_pool() {
 
 CMD="${1:-fast}"
 shift || true
+# `focus <pattern>` takes a positional filter pattern before any `-- <args>`.
+FOCUS_ARG=""
+if [[ "$CMD" == "focus" ]]; then
+    FOCUS_ARG="${1:-}"
+    shift || true
+fi
 # Everything after a literal `--` is forwarded to dotnet test.
 EXTRA_ARGS=()
 if [[ "${1:-}" == "--" ]]; then
@@ -165,22 +206,39 @@ case "$CMD" in
         echo; bold "docker filter:"; docker_filter
         exit 0
         ;;
+    focus)
+        # Single-class / single-method iteration against the warm
+        # container. Pattern is a FullyQualifiedName substring, e.g.
+        #   scripts/test.sh focus MigrationCanaryTests
+        #   scripts/test.sh focus 'MigrationCanaryTests.migrate A to B'
+        if [[ -z "$FOCUS_ARG" ]]; then
+            err "focus needs a pattern: test.sh focus <FullyQualifiedName-substring>"
+            exit 2
+        fi
+        warm_autodetect
+        build_once
+        run_pool focus "FullyQualifiedName~$FOCUS_ARG"
+        exit $?
+        ;;
     fast)
         build_once
         run_pool fast "$(pure_filter)"
         exit $?
         ;;
     docker)
+        warm_autodetect
         build_once
         run_pool docker "$(docker_filter)"
         exit $?
         ;;
     canary)
+        warm_autodetect
         build_once
         run_pool canary "FullyQualifiedName~Canary"
         exit $?
         ;;
     all)
+        warm_autodetect
         build_once
         # Sequential, separate processes — pools never run concurrently, so
         # the host is never over-subscribed (the OOM-crash fix).
@@ -195,6 +253,7 @@ case "$CMD" in
     *)
         err "unknown command: $CMD"
         err "usage: test.sh [fast|docker|canary|all|list] [-- <dotnet test args>]"
+        err "       test.sh focus <FullyQualifiedName-substring> [-- <dotnet test args>]"
         exit 2
         ;;
 esac

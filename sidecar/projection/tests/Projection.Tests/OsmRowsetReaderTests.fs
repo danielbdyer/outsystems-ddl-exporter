@@ -38,7 +38,7 @@ let private parseSync (source: CatalogReader.SnapshotSource) : Result<Catalog> =
 // entity (`User`); two attributes (`Id` PK + IDENTITY, `Email`).
 // ---------------------------------------------------------------------------
 
-let private moduleRow (sskey: System.Guid option) : CatalogReader.ModuleRow =
+let private moduleRow (sskey: System.Guid option) : OssysRowsetTypes.ModuleRow =
     {
         EspaceId       = 1
         EspaceName     = "AppCore"
@@ -50,7 +50,7 @@ let private moduleRow (sskey: System.Guid option) : CatalogReader.ModuleRow =
         EspaceSsKey    = sskey
     }
 
-let private userKindRow (sskey: System.Guid option) : CatalogReader.KindRow =
+let private userKindRow (sskey: System.Guid option) : OssysRowsetTypes.KindRow =
     {
         EntityId          = 11
         EspaceId          = 1
@@ -66,7 +66,7 @@ let private userKindRow (sskey: System.Guid option) : CatalogReader.KindRow =
         Description       = None
     }
 
-let private idAttrRow (sskey: System.Guid option) : CatalogReader.AttributeRow =
+let private idAttrRow (sskey: System.Guid option) : OssysRowsetTypes.AttributeRow =
     {
         AttrId       = 111
         EntityId     = 11
@@ -89,7 +89,7 @@ let private idAttrRow (sskey: System.Guid option) : CatalogReader.AttributeRow =
         DefaultConstraintName = None
     }
 
-let private emailAttrRow (sskey: System.Guid option) : CatalogReader.AttributeRow =
+let private emailAttrRow (sskey: System.Guid option) : OssysRowsetTypes.AttributeRow =
     {
         AttrId       = 112
         EntityId     = 11
@@ -145,7 +145,7 @@ let private expectedCatalogSynthesized : Catalog =
 
 [<Fact>]
 let ``SnapshotRowsets: bundle without SsKey Guids parses with synthesized-form SsKeys (JSON-path parity)`` () =
-    let bundle : CatalogReader.RowsetBundle =
+    let bundle : OssysRowsetTypes.RowsetBundle =
         {
             Modules    = [ moduleRow None ]
             Kinds      = [ userKindRow None ]
@@ -179,7 +179,7 @@ let private emailGuid   = System.Guid.Parse("44444444-4444-4444-8444-44444444444
 
 [<Fact>]
 let ``SnapshotRowsets: bundle WITH SsKey Guids produces OssysOriginal SsKeys (A1 bound resolved)`` () =
-    let bundle : CatalogReader.RowsetBundle =
+    let bundle : OssysRowsetTypes.RowsetBundle =
         {
             Modules    = [ moduleRow (Some appCoreGuid) ]
             Kinds      = [ userKindRow (Some userGuid) ]
@@ -221,7 +221,7 @@ let ``SnapshotRowsets: bundle WITH SsKey Guids produces OssysOriginal SsKeys (A1
 
 [<Fact>]
 let ``A1 unbounded: rowset Catalog with Guid SsKeys mirrors JSON Catalog on every non-SsKey axis`` () =
-    let bundle : CatalogReader.RowsetBundle =
+    let bundle : OssysRowsetTypes.RowsetBundle =
         {
             Modules    = [ moduleRow (Some appCoreGuid) ]
             Kinds      = [ userKindRow (Some userGuid) ]
@@ -266,7 +266,7 @@ let ``A1 unbounded: rowset Catalog with Guid SsKeys mirrors JSON Catalog on ever
 let ``SnapshotRowsets: inactive modules carry through with IsActive=false (slice β)`` () =
     let inactive = { moduleRow None with EspaceId = 2; EspaceName = "Inactive"; IsActive = false }
     let inactiveKind = { userKindRow None with EntityId = 21; EspaceId = 2; EntityName = "InactiveUser" }
-    let bundle : CatalogReader.RowsetBundle =
+    let bundle : OssysRowsetTypes.RowsetBundle =
         {
             Modules    = [ moduleRow None; inactive ]
             Kinds      = [ userKindRow None; inactiveKind ]
@@ -289,7 +289,7 @@ let ``SnapshotRowsets: inactive modules carry through with IsActive=false (slice
 let ``SnapshotRowsets: inactive kinds carry through with IsActive=false (slice β)`` () =
     let inactiveKind =
         { userKindRow None with EntityId = 12; EntityName = "Archived"; IsActive = false }
-    let bundle : CatalogReader.RowsetBundle =
+    let bundle : OssysRowsetTypes.RowsetBundle =
         {
             Modules    = [ moduleRow None ]
             Kinds      = [ userKindRow None; inactiveKind ]
@@ -312,7 +312,7 @@ let ``SnapshotRowsets: inactive kinds carry through with IsActive=false (slice �
 [<Fact>]
 let ``SnapshotRowsets: inactive attributes carry through with IsActive=false (slice β)`` () =
     let inactiveAttr = { emailAttrRow None with AttrId = 113; AttrName = "Deleted"; IsActive = false }
-    let bundle : CatalogReader.RowsetBundle =
+    let bundle : OssysRowsetTypes.RowsetBundle =
         {
             Modules    = [ moduleRow None ]
             Kinds      = [ userKindRow None ]
@@ -360,7 +360,7 @@ let ``Closed-DU expansion: SnapshotJson + SnapshotRowsets coexist; both paths us
                                     "dataType": "Integer", "isMandatory": true,
                                     "isIdentifier": true, "isAutoNumber": true,
                                     "isActive": true, "isReference": false } ] } ] } ] }"""
-    let bundle : CatalogReader.RowsetBundle =
+    let bundle : OssysRowsetTypes.RowsetBundle =
         {
             Modules    = [ moduleRow None ]
             Kinds      = [ userKindRow None ]
@@ -402,7 +402,7 @@ let ``Closed-DU expansion: SnapshotJson + SnapshotRowsets coexist; both paths us
 //     JSON path's expectedReferenceCatalog structurally.
 // ===========================================================================
 
-let private accountKindRow (sskey: System.Guid option) : CatalogReader.KindRow =
+let private accountKindRow (sskey: System.Guid option) : OssysRowsetTypes.KindRow =
     {
         EntityId          = 21
         EspaceId          = 1
@@ -418,7 +418,7 @@ let private accountKindRow (sskey: System.Guid option) : CatalogReader.KindRow =
         Description       = None
     }
 
-let private accountIdRow (sskey: System.Guid option) : CatalogReader.AttributeRow =
+let private accountIdRow (sskey: System.Guid option) : OssysRowsetTypes.AttributeRow =
     {
         AttrId       = 211
         EntityId     = 21
@@ -443,11 +443,11 @@ let private accountIdRow (sskey: System.Guid option) : CatalogReader.AttributeRo
 
 /// User has Id (PK + IDENTITY) and AccountId (FK to Account); the
 /// AccountId attribute is the source of the reference.
-let private userKindRowForRef : CatalogReader.KindRow = userKindRow None
+let private userKindRowForRef : OssysRowsetTypes.KindRow = userKindRow None
 
-let private userIdRow : CatalogReader.AttributeRow = idAttrRow None
+let private userIdRow : OssysRowsetTypes.AttributeRow = idAttrRow None
 
-let private userAccountIdRow : CatalogReader.AttributeRow =
+let private userAccountIdRow : OssysRowsetTypes.AttributeRow =
     {
         AttrId       = 113
         EntityId     = 11
@@ -470,7 +470,7 @@ let private userAccountIdRow : CatalogReader.AttributeRow =
         DefaultConstraintName = None
     }
 
-let private userAccountRefRow : CatalogReader.ReferenceRow =
+let private userAccountRefRow : OssysRowsetTypes.ReferenceRow =
     {
         AttrId              = 113
         RefEntityName       = "Account"
@@ -486,7 +486,7 @@ let private accountIdAttrKey          = attrKey ["AppCore"; "Account"; "Id"]
 let private userAccountIdAttrKey      = attrKey ["AppCore"; "User"; "AccountId"]
 let private userAccountReferenceKey   = refKey  ["AppCore"; "User"; "AccountId"]
 
-let private referenceBundle : CatalogReader.RowsetBundle =
+let private referenceBundle : OssysRowsetTypes.RowsetBundle =
     {
         Modules    = [ moduleRow None ]
         Kinds      = [ accountKindRow None; userKindRowForRef ]
@@ -530,10 +530,10 @@ let ``slice 2: rule 16 same-module assumption — TargetKind synthesized within 
 
 [<Fact>]
 let ``slice 2: OnDelete mapping — Protect → NoAction; Delete → Cascade; SetNull → SetNull`` () =
-    let mkRefBundle (code: string option) : CatalogReader.RowsetBundle =
+    let mkRefBundle (code: string option) : OssysRowsetTypes.RowsetBundle =
         { referenceBundle with
             References = [ { userAccountRefRow with DeleteRuleCode = code } ] }
-    let parseAndPickRule (b: CatalogReader.RowsetBundle) : ReferenceAction =
+    let parseAndPickRule (b: OssysRowsetTypes.RowsetBundle) : ReferenceAction =
         match parseSync (CatalogReader.SnapshotRowsets b) with
         | Error es -> Assert.Fail (sprintf "%A" es); NoAction
         | Ok c     ->
@@ -588,7 +588,7 @@ let ``slice 2: Reference SsKey is always synthesized (rowsets carry no per-refer
     // the Reference is a derived entity in V2's algebra.
     let guidUserAccountId =
         System.Guid.Parse("55555555-5555-4555-8555-555555555555")
-    let bundle : CatalogReader.RowsetBundle =
+    let bundle : OssysRowsetTypes.RowsetBundle =
         {
             Modules    = [ moduleRow None ]
             Kinds      = [ accountKindRow None; userKindRowForRef ]
@@ -664,7 +664,7 @@ let ``slice 2: cross-source parity — rowset path mirrors JSON path's expectedR
 //     the empirical evidence that the rowset path refines rule 17.
 // ===========================================================================
 
-let private externalModuleRow (espaceKind: string option) : CatalogReader.ModuleRow =
+let private externalModuleRow (espaceKind: string option) : OssysRowsetTypes.ModuleRow =
     {
         EspaceId       = 2
         EspaceName     = "ExtBilling"
@@ -674,7 +674,7 @@ let private externalModuleRow (espaceKind: string option) : CatalogReader.Module
         EspaceSsKey    = None
     }
 
-let private billingAccountKindRow : CatalogReader.KindRow =
+let private billingAccountKindRow : OssysRowsetTypes.KindRow =
     {
         EntityId          = 31
         EspaceId          = 2
@@ -690,7 +690,7 @@ let private billingAccountKindRow : CatalogReader.KindRow =
         Description       = None
     }
 
-let private billingAccountIdRow : CatalogReader.AttributeRow =
+let private billingAccountIdRow : OssysRowsetTypes.AttributeRow =
     {
         AttrId       = 311
         EntityId     = 31
@@ -713,7 +713,7 @@ let private billingAccountIdRow : CatalogReader.AttributeRow =
         DefaultConstraintName = None
     }
 
-let private externalBundle (espaceKind: string option) : CatalogReader.RowsetBundle =
+let private externalBundle (espaceKind: string option) : OssysRowsetTypes.RowsetBundle =
     {
         Modules    = [ externalModuleRow espaceKind ]
         Kinds      = [ billingAccountKindRow ]
@@ -725,7 +725,7 @@ let private externalBundle (espaceKind: string option) : CatalogReader.RowsetBun
         ColumnChecks = []
     }
 
-let private originOf (bundle: CatalogReader.RowsetBundle) : Origin =
+let private originOf (bundle: OssysRowsetTypes.RowsetBundle) : Origin =
     match parseSync (CatalogReader.SnapshotRowsets bundle) with
     | Error es -> Assert.Fail (sprintf "%A" es); Native
     | Ok c     ->
@@ -758,7 +758,7 @@ let ``slice 3: isExternal=false → Native regardless of EspaceKind`` () =
     // moduleRow helper sets EspaceKind = Some "eSpace"; the slice-1
     // fixture's User entity has isExternal = false; Origin must
     // remain Native. Belt-and-suspenders check on the matrix.
-    let bundle : CatalogReader.RowsetBundle =
+    let bundle : OssysRowsetTypes.RowsetBundle =
         {
             Modules    = [ { externalModuleRow (Some "Extension") with EspaceName = "AppCore" } ]
             Kinds      = [ { billingAccountKindRow with EntityName = "User"
@@ -849,7 +849,7 @@ let ``slice 3: refinement evidence — rowset path diverges from JSON path on Es
 let private hasSystemOwnedMark (k: Kind) : bool =
     k.Modality |> List.contains SystemOwned
 
-let private systemKindRow : CatalogReader.KindRow =
+let private systemKindRow : OssysRowsetTypes.KindRow =
     {
         EntityId          = 41
         EspaceId          = 1
@@ -865,7 +865,7 @@ let private systemKindRow : CatalogReader.KindRow =
         Description       = None
     }
 
-let private systemAuditIdRow : CatalogReader.AttributeRow =
+let private systemAuditIdRow : OssysRowsetTypes.AttributeRow =
     {
         AttrId       = 411
         EntityId     = 41
@@ -888,7 +888,7 @@ let private systemAuditIdRow : CatalogReader.AttributeRow =
         DefaultConstraintName = None
     }
 
-let private systemBundle : CatalogReader.RowsetBundle =
+let private systemBundle : OssysRowsetTypes.RowsetBundle =
     {
         Modules    = [ moduleRow None ]
         Kinds      = [ systemKindRow ]
@@ -914,7 +914,7 @@ let ``slice 4: IsSystemEntity=false → Modality omits SystemOwned (matches V1 d
     // The slice-1 minimal-fixture bundle has IsSystemEntity=false on
     // the User kind (per the moduleRow helper default). Its Modality
     // must NOT contain SystemOwned.
-    let bundle : CatalogReader.RowsetBundle =
+    let bundle : OssysRowsetTypes.RowsetBundle =
         {
             Modules    = [ moduleRow None ]
             Kinds      = [ userKindRow None ]
@@ -939,9 +939,9 @@ let ``slice 4: SystemOwned coexists with Static (composite-modality case)`` () =
     // ModalityMark list shape carries both marks; declaration order
     // is Static-first, SystemOwned-second per parseKindRow's list
     // construction order.
-    let staticSystemKindRow : CatalogReader.KindRow =
+    let staticSystemKindRow : OssysRowsetTypes.KindRow =
         { systemKindRow with IsStatic = true; EntityName = "SystemEnum" }
-    let bundle : CatalogReader.RowsetBundle =
+    let bundle : OssysRowsetTypes.RowsetBundle =
         {
             Modules    = [ moduleRow None ]
             Kinds      = [ staticSystemKindRow ]
@@ -966,9 +966,9 @@ let ``slice 4: SystemOwned is orthogonal to Origin axis`` () =
     // the orthogonality empirically — a system entity that is also
     // marked isExternal carries BOTH Origin=ExternalIndirect
     // AND Modality=[SystemOwned], without conflict.
-    let externalSystemKind : CatalogReader.KindRow =
+    let externalSystemKind : OssysRowsetTypes.KindRow =
         { systemKindRow with IsExternal = true }
-    let bundle : CatalogReader.RowsetBundle =
+    let bundle : OssysRowsetTypes.RowsetBundle =
         {
             Modules    = [ { externalModuleRow (Some "Extension") with EspaceId = 1 } ]
             Kinds      = [ externalSystemKind ]
@@ -993,7 +993,7 @@ let ``slice 4: mixed catalog — system and non-system kinds coexist`` () =
     // test exercises that shape directly — mixed catalog with two
     // kinds (User non-system; SystemAudit system); the filter
     // discriminates exactly the two.
-    let bundle : CatalogReader.RowsetBundle =
+    let bundle : OssysRowsetTypes.RowsetBundle =
         {
             Modules    = [ moduleRow None ]
             Kinds      = [ userKindRow None; systemKindRow ]
@@ -1181,7 +1181,7 @@ let private minimalJsonFixture =
   ]
 }"""
 
-let private minimalRowsetBundleNoGuids : CatalogReader.RowsetBundle =
+let private minimalRowsetBundleNoGuids : OssysRowsetTypes.RowsetBundle =
     {
         Modules    = [ moduleRow None ]
         Kinds      = [ userKindRow None ]
@@ -1266,12 +1266,12 @@ let private externalParityJsonFixture =
 // External bundle aligned to JSON's Origin: EspaceKind="Extension"
 // produces ExternalIndirect under the rowset path,
 // matching the JSON path's two-way collapse for isExternal=true.
-let private externalParityRowsetBundle : CatalogReader.RowsetBundle =
+let private externalParityRowsetBundle : OssysRowsetTypes.RowsetBundle =
     externalBundle (Some "Extension")
 
 // --- Parity assertion helper ----------------------------------------------
 
-let private assertCatalogsTotallyEqual (jsonSource: string) (bundle: CatalogReader.RowsetBundle) =
+let private assertCatalogsTotallyEqual (jsonSource: string) (bundle: OssysRowsetTypes.RowsetBundle) =
     let jsonResult   = parseSync (CatalogReader.SnapshotJson jsonSource)
     let rowsetResult = parseSync (CatalogReader.SnapshotRowsets bundle)
     match jsonResult, rowsetResult with
@@ -1282,7 +1282,7 @@ let private assertCatalogsTotallyEqual (jsonSource: string) (bundle: CatalogRead
             sprintf "Expected Ok from both paths; JSON=%A, Rowset=%A"
                 jsonResult rowsetResult)
 
-let private assertCatalogsShapeEqual (jsonSource: string) (bundle: CatalogReader.RowsetBundle) =
+let private assertCatalogsShapeEqual (jsonSource: string) (bundle: OssysRowsetTypes.RowsetBundle) =
     let jsonResult   = parseSync (CatalogReader.SnapshotJson jsonSource)
     let rowsetResult = parseSync (CatalogReader.SnapshotRowsets bundle)
     match jsonResult, rowsetResult with
@@ -1303,7 +1303,7 @@ let ``slice 5 parity: minimal fixture — JSON ≡ Rowset (no Guids; total equal
 
 [<Fact>]
 let ``slice 5 parity: reference-bearing fixture — JSON ≡ Rowset (no Guids; total equality)`` () =
-    let bundle : CatalogReader.RowsetBundle =
+    let bundle : OssysRowsetTypes.RowsetBundle =
         {
             Modules    = [ moduleRow None ]
             Kinds      = [ accountKindRow None; userKindRowForRef ]
@@ -1322,7 +1322,7 @@ let ``slice 5 parity: external fixture aligned at Extension — JSON ≡ Rowset 
 
 [<Fact>]
 let ``slice 5 parity: minimal fixture WITH Guids — shape parity holds modulo SsKey divergence`` () =
-    let bundle : CatalogReader.RowsetBundle =
+    let bundle : OssysRowsetTypes.RowsetBundle =
         {
             Modules    = [ moduleRow (Some appCoreGuid) ]
             Kinds      = [ userKindRow (Some userGuid) ]
@@ -1343,7 +1343,7 @@ let ``slice 5 parity: SsKey divergence axis — Guids change identity but not sh
     // Direct evidence that the SsKey divergence is the ONLY axis on
     // which the two parses differ for a Guid-carrying bundle. Total
     // equality FAILS (Catalog SsKeys differ); shape equality PASSES.
-    let bundle : CatalogReader.RowsetBundle =
+    let bundle : OssysRowsetTypes.RowsetBundle =
         {
             Modules    = [ moduleRow (Some appCoreGuid) ]
             Kinds      = [ userKindRow (Some userGuid) ]

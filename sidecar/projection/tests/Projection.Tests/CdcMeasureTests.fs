@@ -21,7 +21,7 @@ namespace Projection.Tests
 //     delete-image + insert-image PAIR ⇒ delta == +2. An under-counting
 //     reader (e.g. counting DISTINCT keys, or net-changes) turns this RED.
 //
-// Docker test: `Docker-SqlServer` collection + `EphemeralContainerFixture`
+// Docker test: `Docker-SqlServer` collection + `IsolatedContainerFixture`
 // (one ephemeral CDC-suitable container per class) + `TaskSync.run` for
 // the sync-over-async boundary (per the tiered-test-runner discipline).
 // CDC capture is forced synchronously via `sys.sp_cdc_scan` (Agent-free,
@@ -71,9 +71,9 @@ module private CdcMeasureFixtures =
 open CdcMeasureFixtures
 
 [<Xunit.Collection("Docker-SqlServer")>]
-type CdcMeasureTests(fixture: EphemeralContainerFixture) =
+type CdcMeasureTests(fixture: IsolatedContainerFixture) =
 
-    interface IClassFixture<EphemeralContainerFixture>
+    interface IClassFixture<IsolatedContainerFixture>
 
     [<Fact>]
     member _.``W1-A seam T1: cdcCaptureCount no-op leg — idempotent redeploy with no data change yields delta 0`` () =

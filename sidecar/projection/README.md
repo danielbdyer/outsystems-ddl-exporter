@@ -108,7 +108,7 @@ chapter B.3 close letter for the actually-pending shortlist):
       CHAPTER_4_1_B_OPEN.md     - chapter-4.1.B open document (strategic-frame eight-axis; CDC-silence highest-stakes)
       AUDIT_2026_05_DDD_HEXAGONAL_FP.md - five-agent audit at chapter-3.1 close
       AUDIT_2026_05_12_VERIFIABILITY_TRIANGLE.md - L1↔L2↔L3 coverage map + 3 proposed campaigns
-      AXIOMS.md                 - formal system; A1-A40 with amendments (L2 layer)
+      AXIOMS.md                 - formal system; A1-A43 / T1-T16 with amendments (L2 layer)
       PRODUCT_AXIOMS.md         - operator-facing product axioms (L3 layer; sibling to AXIOMS.md)
       DECISIONS.md              - append-only log of resolved questions (Active deferrals index at top)
       ADMIRE.md                 - append-only log of V1 admirations and V2 placements
@@ -642,8 +642,8 @@ For the next-chapter agent, read in this order:
 6. `CHAPTER_2_CLOSE.md` — chapter-2 close synthesis (OSSYS adapter; 25
    translation rules; three-class typology).
 7. `CHAPTER_1_CLOSE.md` — chapter-1 close synthesis; historical context.
-8. `AXIOMS.md` — formal system; A1–A40. A35/A36/A39/A40 are chapter-3.1
-   contributions.
+8. `AXIOMS.md` — formal system; A1–A43 / T1–T16. A35/A36/A39/A40 are
+   chapter-3.1 contributions; T12–T16 + A43 are the Wave-6 Change Algebra.
 9. `DECISIONS.md` — append-only resolution log. The most recent entries
    cover the OSSYS adapter implementation chapter; older entries remain
    in force unless explicitly superseded. An "Active deferrals" index

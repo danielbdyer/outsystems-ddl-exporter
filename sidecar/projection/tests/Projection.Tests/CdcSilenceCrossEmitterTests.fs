@@ -14,7 +14,7 @@ namespace Projection.Tests
 //
 // **Fixture-lift (slice A.4.7'-prelude.test-fixture-lift, 2026-05-19).**
 // The 4 Docker-gated tests (C1-C4) share one ephemeral container via
-// `IClassFixture<EphemeralContainerFixture>`. C0 (pure-structural;
+// `IClassFixture<IsolatedContainerFixture>`. C0 (pure-structural;
 // no Docker) stays in a separate non-fixture module so the no-Docker
 // path doesn't trigger container init.
 
@@ -298,7 +298,7 @@ module CdcSilenceCrossEmitterStructural =
 // ----------------------------------------------------------------
 
 [<Xunit.Collection("Docker-SqlServer")>]
-type CdcSilenceCrossEmitterTests(fixture: EphemeralContainerFixture) =
+type CdcSilenceCrossEmitterTests(fixture: IsolatedContainerFixture) =
 
     let runScenarioMulti
             (firstSeedSql: string)
@@ -318,7 +318,7 @@ type CdcSilenceCrossEmitterTests(fixture: EphemeralContainerFixture) =
             return baseline, post
         })
 
-    interface IClassFixture<EphemeralContainerFixture>
+    interface IClassFixture<IsolatedContainerFixture>
 
     // ----------------------------------------------------------------
     // C1 — single-emitter redeploy via composer. Country only, Static

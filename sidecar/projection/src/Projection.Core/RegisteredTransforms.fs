@@ -120,8 +120,9 @@ module RegisteredTransforms =
           PassChainAdapter.liftDecisionPass
             (ProfileAnomalyPass.registered Profile.empty)
             ComposeState.withProfileAnomalies
-          PassChainAdapter.liftDecisionPass
-            (SchemaComplexityPass.registered None)
+          PassChainAdapter.liftCatalogTopologyPass
+            SchemaComplexityPass.name
+            SchemaComplexityPass.run
             ComposeState.withSchemaComplexity
           PassChainAdapter.liftDecisionPass
             (QueryHintPass.registered Profile.empty)
@@ -186,8 +187,9 @@ module RegisteredTransforms =
           PassChainAdapter.liftDecisionPass
             (ProfileAnomalyPass.registered profile)
             ComposeState.withProfileAnomalies
-          PassChainAdapter.liftDecisionPass
-            (SchemaComplexityPass.registered None)
+          PassChainAdapter.liftCatalogTopologyPass
+            SchemaComplexityPass.name
+            SchemaComplexityPass.run
             ComposeState.withSchemaComplexity
           PassChainAdapter.liftDecisionPass
             (QueryHintPass.registered profile)
