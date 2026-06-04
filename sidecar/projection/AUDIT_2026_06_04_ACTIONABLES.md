@@ -177,11 +177,16 @@ Each is a genuine shared-type-and-function dup or a 2+-consumer collapse —
   abstract-ahead-of-evidence the audit criticized. Defer per IR-grows-under-
   evidence; revisit when a genuine 4th per-kind consumer of the folding shape
   appears.
-- **E4 ⊘ — DEFERRED (Docker-gated).** `readGrouped<'K,'T>` kernel for the 4
-  `Dictionary<K,ResizeArray<_>>` loops (`:438/469/511/589`) is a behavior-changing
-  loop restructure whose only runtime verification is ReadSide's Docker-pool tests
-  (degraded this session). Defer until the Docker pool is confirmed healthy so the
-  restructure can be test-verified, not just compile-verified.
+- **E4 ☑ — `readGrouped<'K,'T>` kernel extracted (DONE 2026-06-04).** The 4
+  byte-identical `TryGetValue`/else-create-`ResizeArray` group-append loops
+  (`readTriggers` / `readCheckConstraints` / `readIndexes` /
+  `readExtendedProperties`) now delegate to one `readGrouped keyOf entryOf reader`
+  kernel (`ReadSide.fs`, before `readTriggers`); each call site is the two
+  per-loop projections (key + entry). Behavior-preserving (same Dictionary fold,
+  same `Map.ofSeq`); the "behavior-changing" caution was conservative. Unblocked
+  by the now-healthy Docker pool (warm container, this session). **Docker-verified**
+  warm: CanaryRoundTripTests + IndexRoundtripTests + LogicalNameRoundtripTests
+  22/22 (real deploy→readback exercising all 4 functions). Build 0-warning.
 
 ---
 

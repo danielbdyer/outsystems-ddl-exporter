@@ -422,6 +422,35 @@ module ReadSide =
             return result |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
         }
 
+    /// Drain a SQL reader into `Map<'K, 'T list>`, grouping each row under
+    /// `keyOf reader` with `entryOf reader` as the value and preserving the
+    /// reader's row order within each group. Collapses the
+    /// `TryGetValue`/else-create-`ResizeArray` group-append loop shared by
+    /// `readTriggers` / `readCheckConstraints` / `readIndexes` /
+    /// `readExtendedProperties` (E4, 2026-06-04 — 4-consumer kernel).
+    /// Single forward pass; callers that need a specific in-group order
+    /// `ORDER BY` in SQL (see `readIndexes`).
+    let private readGrouped
+            (keyOf: SqlDataReader -> 'K)
+            (entryOf: SqlDataReader -> 'T)
+            (reader: SqlDataReader)
+            : Task<Map<'K, 'T list>> =
+        task {
+            let acc = System.Collections.Generic.Dictionary<'K, ResizeArray<'T>>()
+            let mutable hasMore = true
+            while hasMore do
+                let! more = reader.ReadAsync()
+                if more then
+                    let key = keyOf reader
+                    let entry = entryOf reader
+                    match acc.TryGetValue key with
+                    | true, lst -> lst.Add entry
+                    | false, _ ->
+                        let lst = ResizeArray<_>() in lst.Add entry; acc.[key] <- lst
+                else hasMore <- false
+            return acc |> Seq.map (fun kv -> kv.Key, List.ofSeq kv.Value) |> Map.ofSeq
+        }
+
     /// Wave-1 slice 1.3 — read DML triggers from `sys.triggers`, keyed by
     /// `(schema, table)`. Each value is `(triggerName, isDisabled, body)`;
     /// the body is the `OBJECT_DEFINITION` text (PhysicalSchema normalizes
@@ -438,20 +467,13 @@ module ReadSide =
                  JOIN sys.tables t ON t.object_id = tr.parent_id \
                  WHERE tr.is_ms_shipped = 0 AND t.is_ms_shipped = 0"
             use! reader = cmd.ExecuteReaderAsync()
-            let acc = System.Collections.Generic.Dictionary<string * string, ResizeArray<string * bool * string>>()
-            let mutable hasMore = true
-            while hasMore do
-                let! more = reader.ReadAsync()
-                if more then
-                    let key = (reader.GetString 0, reader.GetString 1)
-                    let body = if reader.IsDBNull 4 then "" else reader.GetString 4
-                    let entry = (reader.GetString 2, reader.GetBoolean 3, body)
-                    match acc.TryGetValue key with
-                    | true, lst -> lst.Add entry
-                    | false, _ ->
-                        let lst = ResizeArray<_>() in lst.Add entry; acc.[key] <- lst
-                else hasMore <- false
-            return acc |> Seq.map (fun kv -> kv.Key, List.ofSeq kv.Value) |> Map.ofSeq
+            return!
+                readGrouped
+                    (fun r -> (r.GetString 0, r.GetString 1))
+                    (fun r ->
+                        let body = if r.IsDBNull 4 then "" else r.GetString 4
+                        (r.GetString 2, r.GetBoolean 3, body))
+                    reader
         }
 
     /// Wave-1 slice 1.3 — read CHECK constraints from `sys.check_constraints`,
@@ -469,19 +491,11 @@ module ReadSide =
                  JOIN sys.tables t ON t.object_id = cc.parent_object_id \
                  WHERE t.is_ms_shipped = 0"
             use! reader = cmd.ExecuteReaderAsync()
-            let acc = System.Collections.Generic.Dictionary<string * string, ResizeArray<string * string * bool>>()
-            let mutable hasMore = true
-            while hasMore do
-                let! more = reader.ReadAsync()
-                if more then
-                    let key = (reader.GetString 0, reader.GetString 1)
-                    let entry = (reader.GetString 2, reader.GetString 3, reader.GetBoolean 4)
-                    match acc.TryGetValue key with
-                    | true, lst -> lst.Add entry
-                    | false, _ ->
-                        let lst = ResizeArray<_>() in lst.Add entry; acc.[key] <- lst
-                else hasMore <- false
-            return acc |> Seq.map (fun kv -> kv.Key, List.ofSeq kv.Value) |> Map.ofSeq
+            return!
+                readGrouped
+                    (fun r -> (r.GetString 0, r.GetString 1))
+                    (fun r -> (r.GetString 2, r.GetString 3, r.GetBoolean 4))
+                    reader
         }
 
     /// 6.A.5 — read non-PK indexes (`sys.indexes ⋈ sys.index_columns`),
@@ -511,24 +525,16 @@ module ReadSide =
                    AND ic.is_included_column = 0 AND t.is_ms_shipped = 0 \
                  ORDER BY SCHEMA_NAME(t.schema_id), t.name, i.name, ic.key_ordinal"
             use! reader = cmd.ExecuteReaderAsync()
-            let acc = System.Collections.Generic.Dictionary<string * string, ResizeArray<IndexColumnRow>>()
-            let mutable hasMore = true
-            while hasMore do
-                let! more = reader.ReadAsync()
-                if more then
-                    let key = (reader.GetString 0, reader.GetString 1)
-                    let entry =
-                        { IndexName    = reader.GetString 2
-                          IsUnique     = reader.GetBoolean 3
-                          ColumnName   = reader.GetString 4
-                          IsDescending = reader.GetBoolean 5
-                          KeyOrdinal   = System.Convert.ToInt32(reader.GetValue 6) }
-                    match acc.TryGetValue key with
-                    | true, lst -> lst.Add entry
-                    | false, _ ->
-                        let lst = ResizeArray<_>() in lst.Add entry; acc.[key] <- lst
-                else hasMore <- false
-            return acc |> Seq.map (fun kv -> kv.Key, List.ofSeq kv.Value) |> Map.ofSeq
+            return!
+                readGrouped
+                    (fun r -> (r.GetString 0, r.GetString 1))
+                    (fun r ->
+                        { IndexName    = r.GetString 2
+                          IsUnique     = r.GetBoolean 3
+                          ColumnName   = r.GetString 4
+                          IsDescending = r.GetBoolean 5
+                          KeyOrdinal   = System.Convert.ToInt32(r.GetValue 6) })
+                    reader
         }
 
     /// Wave-1 slice 1.3 — read SEQUENCE objects from `sys.sequences`.
@@ -589,21 +595,15 @@ module ReadSide =
                    AND ep.name <> N'V2.LogicalName' \
                    AND ep.name <> N'V2.SsKey'"
             use! reader = cmd.ExecuteReaderAsync()
-            let acc = System.Collections.Generic.Dictionary<string * string * string option, ResizeArray<string * string>>()
-            let mutable hasMore = true
-            while hasMore do
-                let! more = reader.ReadAsync()
-                if more then
-                    let col = if reader.IsDBNull 2 then None else Some (reader.GetString 2)
-                    let key = (reader.GetString 0, reader.GetString 1, col)
-                    let value = if reader.IsDBNull 4 then "" else reader.GetString 4
-                    let entry = (reader.GetString 3, value)
-                    match acc.TryGetValue key with
-                    | true, lst -> lst.Add entry
-                    | false, _ ->
-                        let lst = ResizeArray<_>() in lst.Add entry; acc.[key] <- lst
-                else hasMore <- false
-            return acc |> Seq.map (fun kv -> kv.Key, List.ofSeq kv.Value) |> Map.ofSeq
+            return!
+                readGrouped
+                    (fun r ->
+                        let col = if r.IsDBNull 2 then None else Some (r.GetString 2)
+                        (r.GetString 0, r.GetString 1, col))
+                    (fun r ->
+                        let value = if r.IsDBNull 4 then "" else r.GetString 4
+                        (r.GetString 3, value))
+                    reader
         }
 
     /// Read the set of FK relationships across every user table as typed
