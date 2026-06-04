@@ -60,13 +60,15 @@ module RegisteredAllTransforms =
         // (SuggestConfig was previously executed-but-unregistered — E1 closes
         // that mismatch.)
         (Compose.emitSteps |> List.map (fun step -> step.Metadata))
-        // Registered as metadata but executed via direct calls at their own
-        // sites (not yet registry-driven): the read adapter (E2 follow-up) and
-        // the conditional render-mode / dacpac / data-bundle emitters (E4
-        // follow-up). `ConstraintFormatter` is `OperatorIntent Emission`
-        // (Slice D.3.b — the rendered-text-boundary overlay sibling to the
-        // SSDT emitter); the others classify DataIntent.
-        @ [ CatalogReader.registeredMetadata
+        // E2 (`DECISIONS 2026-06-04`) — the read adapter projects its metadata
+        // from the SAME `Compose.readStep` that `Compose.read` / `readJson`
+        // dispatch through, so `registered ⇔ executed` holds for the read
+        // stage. Still registered-as-metadata, executed at their own sites
+        // (the E4 follow-up): the conditional render-mode / dacpac /
+        // data-bundle emitters. `ConstraintFormatter` is `OperatorIntent
+        // Emission` (Slice D.3.b — the rendered-text-boundary overlay sibling
+        // to the SSDT emitter); the others classify DataIntent.
+        @ [ Compose.readStep.Metadata
             ConstraintFormatter.registeredMetadata
             DacpacEmitter.registeredMetadata
             StaticPopulationEmitter.registeredMetadata ]

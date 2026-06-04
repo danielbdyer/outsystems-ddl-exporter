@@ -611,10 +611,25 @@ module Compose =
     /// Read a V1 `osm_model.json` from disk and parse it into a V2
     /// Catalog. Errors are surfaced via the codebase's single-arity
     /// `Result<'a>` (see `Result.fs` arity-coexistence note).
+    /// E2 (`DECISIONS 2026-06-04`) — the read adapter as a registry entry:
+    /// its metadata (what `RegisteredAllTransforms` reads) paired with its
+    /// `Read` function (what `Compose.read` / `readJson` dispatch through),
+    /// so `registered ⇔ executed` holds for the read stage from one source.
+    type ReadStep = {
+        Metadata : RegisteredTransformMetadata
+        Read     : CatalogReader.SnapshotSource -> Task<Result<Catalog>>
+    }
+
+    /// The single read-adapter entry. The execution path (`read` / `readJson`)
+    /// and the registry (`RegisteredAllTransforms`) both consume this.
+    let readStep : ReadStep =
+        { Metadata = CatalogReader.registeredMetadata
+          Read     = CatalogReader.parse }
+
     let read (jsonPath: string) : Task<Result<Catalog>> =
         task {
             use _ = Bench.scope "compose.read"
-            return! CatalogReader.parse (CatalogReader.SnapshotFile jsonPath)
+            return! readStep.Read (CatalogReader.SnapshotFile jsonPath)
         }
 
     /// Read a V1 `osm_model.json` from an in-memory string and parse
@@ -623,7 +638,7 @@ module Compose =
     let readJson (json: string) : Task<Result<Catalog>> =
         task {
             use _ = Bench.scope "compose.readJson"
-            return! CatalogReader.parse (CatalogReader.SnapshotJson json)
+            return! readStep.Read (CatalogReader.SnapshotJson json)
         }
 
     /// Write a single file at `absPath`, creating parent directories as needed.
