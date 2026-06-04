@@ -818,6 +818,44 @@ module LogSink =
             rationale, (box entry : objnull))
         |> Map.ofSeq
 
+    /// §12 `suggestedConfigDigest` (Tier-2 reporting) — the actionable digest
+    /// surfaced in the verdict. Every event carrying a `payload.suggestedConfig`
+    /// (`{ path, value, note }`) is merged by `path` (dedup), collecting the
+    /// occurrence count + up to five sample SsKeys per path. This is the §12
+    /// "single merged config patch" computed at the run boundary, so the
+    /// operator reads the to-do list in the terminal rollup without a separate
+    /// pass. Empty when no suggestions fired.
+    let private buildSuggestedConfigDigest (envelopes: ResizeArray<Envelope>) : Map<string, objnull> =
+        envelopes
+        |> Seq.choose (fun e ->
+            match Map.tryFind "suggestedConfig" e.Payload with
+            | Some v ->
+                match v with
+                | :? Map<string, objnull> as cfg ->
+                    match Map.tryFind "path" cfg with
+                    | Some p when not (isNull p) -> Some (string p, cfg, e)
+                    | _ -> None
+                | _ -> None
+            | None -> None)
+        |> Seq.groupBy (fun (path, _, _) -> path)
+        |> Seq.map (fun (path, group) ->
+            let items = group |> Seq.toList
+            let (_, firstCfg, _) = List.head items
+            let pick k : objnull = match Map.tryFind k firstCfg with | Some x -> x | None -> null
+            let ssKeys =
+                items
+                |> List.truncate 5
+                |> List.choose (fun (_, _, e) -> e.SsKey |> Option.map renderSsKey)
+            let entry : Map<string, objnull> =
+                Map.ofList [
+                    "value",  pick "value"
+                    "note",   pick "note"
+                    "count",  box (List.length items)
+                    "ssKeys", box ssKeys
+                ]
+            path, (box entry : objnull))
+        |> Map.ofSeq
+
     /// Emit the terminal `summary.runComplete` event per §10. Pulls
     /// the current accumulator + an optional `Bench.Stats` snapshot
     /// (caller-supplied so the CLI controls when the bench surface
@@ -876,6 +914,7 @@ module LogSink =
                     "transformSummary",     box transformSummary
                     "rationaleHistogram",   box rationaleHistogram
                     "suggestedConfigEdits", box s.SuggestedConfigEdits
+                    "suggestedConfigDigest",box (buildSuggestedConfigDigest s.Envelopes)
                     "artifacts",            box artifactsPayload
                     "aggregates",           box aggregatePayload
                 ]

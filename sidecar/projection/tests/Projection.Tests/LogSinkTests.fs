@@ -510,3 +510,38 @@ let ``Tier-1 §10: rationaleHistogram is empty when no declines fired`` () =
     let hist = prop (prop (findRunComplete lines) "payload") "rationaleHistogram"
     Assert.Equal(JsonValueKind.Object, hist.ValueKind)
     Assert.Equal(0, hist.EnumerateObject() |> Seq.length)
+
+// ----------------------------------------------------------------------
+// Tier-2 reporting — §12 suggestedConfigDigest (the actionable digest)
+// ----------------------------------------------------------------------
+
+[<Fact>]
+let ``Tier-2 §12: suggestedConfigDigest merges suggestions by path with counts + samples`` () =
+    let withSuggestion path value basis =
+        let cfg : Map<string, objnull> = Map.ofList [ "path", box path; "value", box value ]
+        { LogSink.envelope LogSink.Warn LogSink.Transform "transform.diagnostic"
+            (Map.ofList [ "suggestedConfig", box cfg ]) with SsKey = Some (fixtureKey basis) }
+    let lines =
+        captureLines (fun () ->
+            LogSink.emit (withSuggestion "$.profiling.samplingCap" "100000" "a")
+            LogSink.emit (withSuggestion "$.profiling.samplingCap" "100000" "b")
+            LogSink.emit (withSuggestion "$.tightening.nullBudget" "0.02" "c")
+            LogSink.runComplete LogSink.Succeeded "test" [] |> ignore)
+    let payload = prop (findRunComplete lines) "payload"
+    // The dedup-by-path merge is the §12 "single merged config patch".
+    Assert.Equal(3, (prop payload "suggestedConfigEdits").GetInt32())
+    let digest = prop payload "suggestedConfigDigest"
+    let capEntry = prop digest "$.profiling.samplingCap"
+    Assert.Equal(2, (prop capEntry "count").GetInt32())
+    Assert.Equal("100000", getStr (prop capEntry "value"))
+    Assert.Equal(2, (prop capEntry "ssKeys").GetArrayLength())
+    Assert.Equal(1, (prop (prop digest "$.tightening.nullBudget") "count").GetInt32())
+
+[<Fact>]
+let ``Tier-2 §12: suggestedConfigDigest is empty when no suggestions fired`` () =
+    let lines =
+        captureLines (fun () ->
+            LogSink.emit (LogSink.envelope LogSink.Info LogSink.Transform "transform.applied" Map.empty)
+            LogSink.runComplete LogSink.Succeeded "test" [] |> ignore)
+    let digest = prop (prop (findRunComplete lines) "payload") "suggestedConfigDigest"
+    Assert.Equal(0, digest.EnumerateObject() |> Seq.length)
