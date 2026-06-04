@@ -46,17 +46,12 @@ module FullExportRun =
     /// runSummary stage table is populated alongside the per-stage end
     /// event).
     let private recordStage (stageName: string) (outcome: LogSink.Outcome) (durationMs: int64) : unit =
-        LogSink.recordStage stageName durationMs outcome
-        let payload : Map<string, objnull> =
-            Map.ofList [
-                "stage",      box stageName
-                "durationMs", box durationMs
-                "outcome",    box (LogSink.outcomeToString outcome)
-            ]
-        LogSink.emit
-            { LogSink.envelope LogSink.Info LogSink.Summary "summary.stageCompleted" payload with
-                Phase  = LogSink.End
-                StepId = Some stageName }
+        // The "pipeline" umbrella stage. The granular extract / profile /
+        // emit sub-stages are emitted inside `Compose.runWithConfig`
+        // (Slice 2); this records the end-to-end envelope (which also
+        // covers the store-leg path that doesn't route through
+        // `runWithConfig`).
+        LogSink.recordStageEvent stageName durationMs outcome
 
     /// One `config.validationFailed` envelope per config ValidationError
     /// (§7.1) so the operator can grep / jq each independently.
@@ -171,6 +166,11 @@ module FullExportRun =
                     let effectiveOutput = resolveOutputDir cfg outputOverride
                     let cfgForRun = { cfg with Output = { Dir = effectiveOutput } }
                     emitConfigSnapshot cfgForRun configPath effectiveOutput
+                    // §7.4 transform.registered — the run's complete classified
+                    // transform inventory (pillar-9 totality surface), emitted at
+                    // start from the same registry that drives the run. Debug
+                    // level: default-hidden, surfaces under --verbose / --debug.
+                    EventProjection.ofRegistry RegisteredAllTransforms.all |> List.iter LogSink.emit
                     let sw = Stopwatch.StartNew()
                     let result = runComposition cfgForRun
                     sw.Stop()
@@ -179,6 +179,14 @@ module FullExportRun =
                         storeLeg <- leg
                         recordStage "pipeline" LogSink.Succeeded sw.ElapsedMilliseconds
                         emitSpecialCircumstancesDiagnostics report.Diagnostics
+                        // §16 egress projection — surface the pass chain's
+                        // accumulated writers as `transform.*` events. The
+                        // trail projects to `transform.applied` / `.declined`
+                        // (info) + `transform.lineage` (debug); the chain's
+                        // full diagnostics project to `transform.diagnostic`
+                        // (disjoint from the curated set emitted above).
+                        EventProjection.ofLineageTrail report.Trail |> List.iter LogSink.emit
+                        EventProjection.ofDiagnostics report.PassDiagnostics |> List.iter LogSink.emit
                         report.Paths
                         |> List.iter (fun p ->
                             let info = FileInfo p

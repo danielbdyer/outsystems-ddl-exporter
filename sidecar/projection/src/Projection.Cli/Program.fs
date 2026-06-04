@@ -152,6 +152,28 @@ let private dumpBench (tag: string) : unit =
         with ex ->
             eprintfn "  WARNING: failed to persist bench snapshot: %s" ex.Message
 
+/// Slice 4 (verb coverage) — bracket a verb body in the structured
+/// LogSink run envelope so EVERY emitting verb (not just `full-export`)
+/// produces a conforming NDJSON stream: a `config.runStart` first event
+/// and the mandatory terminal `summary.runComplete` (§10), even when the
+/// verb's middle is sparse. `full-export` is NOT wrapped here — it
+/// self-brackets via `FullExportRun`. NDJSON goes to stderr (channel 1);
+/// the verb's human narration stays on stdout (the §5 split).
+let private withRun (command: string) (body: unit -> int) : int =
+    LogSink.beginRun () |> ignore
+    Bench.reset ()
+    LogSink.emit
+        { LogSink.envelope LogSink.Info LogSink.Config "config.runStart"
+            (Map.ofList [ "command", box command ]) with
+            Phase = LogSink.Start }
+    // §7.4 — every run publishes its classified transform inventory
+    // (the registry that drives the pass chain), not just full-export.
+    EventProjection.ofRegistry RegisteredAllTransforms.all |> List.iter LogSink.emit
+    let code = body ()
+    let outcome = if code = 0 then LogSink.Succeeded else LogSink.Failed
+    LogSink.runComplete outcome command (Bench.snapshot ()) |> ignore
+    code
+
 // ----------------------------------------------------------------------
 // `full-export` (chapter B.4 slice 7) — Phase B structural-exit
 // subcommand. Per chapter B.4 mid-rescope + `DECISIONS 2026-05-19
@@ -1542,13 +1564,13 @@ let main argv =
     | arr when arr.Length >= 1 && arr.[0] = "full-export" ->
         dispatchFullExport (Array.skip 1 arr)
     | [| "emit"; "--config"; configPath |] ->
-        runEmitFromConfig configPath
+        withRun "projection emit --config" (fun () -> runEmitFromConfig configPath)
     | [| "emit"; "--skeleton-only"; inputPath; outputDir |] ->
-        runEmitSkeletonOnly inputPath outputDir
+        withRun "projection emit --skeleton-only" (fun () -> runEmitSkeletonOnly inputPath outputDir)
     | [| "emit"; inputPath; outputDir |] ->
-        runEmit inputPath outputDir
+        withRun "projection emit" (fun () -> runEmit inputPath outputDir)
     | [| "skeleton"; inputPath; outputDir |] ->
-        runSkeleton inputPath outputDir
+        withRun "projection skeleton" (fun () -> runSkeleton inputPath outputDir)
     | [| "approve"; policyVersion; "--approver"; approver |] ->
         runApprove policyVersion approver None None
     | [| "approve"; policyVersion; "--approver"; approver; "--rationale"; rationale |] ->
@@ -1558,11 +1580,11 @@ let main argv =
     | [| "approve"; policyVersion; "--approver"; approver; "--rationale"; rationale; "--store"; store |] ->
         runApprove policyVersion approver (Some rationale) (Some store)
     | [| "deploy"; inputPath |] ->
-        runDeploy inputPath
+        withRun "projection deploy" (fun () -> runDeploy inputPath)
     | [| "canary"; sourceDdlPath; "--cdc-silence" |] ->
-        runCanaryCdcSilence sourceDdlPath
+        withRun "projection canary --cdc-silence" (fun () -> runCanaryCdcSilence sourceDdlPath)
     | [| "canary"; sourceDdlPath |] ->
-        runCanary sourceDdlPath
+        withRun "projection canary" (fun () -> runCanary sourceDdlPath)
     | [| "policy-diff"; configAPath; configBPath |] ->
         runPolicyDiff configAPath configBPath
     | [| "eject"; "--store"; storePath |] ->

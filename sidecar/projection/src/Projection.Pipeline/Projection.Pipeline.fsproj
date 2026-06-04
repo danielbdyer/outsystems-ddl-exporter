@@ -12,6 +12,8 @@
   <ItemGroup>
     <Compile Include="Config.fs" />
     <Compile Include="CatalogResolution.fs" />
+    <Compile Include="LogSink.fs" />
+    <Compile Include="EventProjection.fs" />
     <Compile Include="ApprovalStore.fs" />
     <Compile Include="LifecycleStore.fs" />
     <Compile Include="RenameBinding.fs" />
@@ -29,8 +31,6 @@
     <Compile Include="Bulk.fs" />
     <Compile Include="Deploy.fs" />
     <Compile Include="BenchSink.fs" />
-    <Compile Include="LogSink.fs" />
-    <Compile Include="FullExportRun.fs" />
     <Compile Include="Preflight.fs" />
     <Compile Include="RenameProjection.fs" />
     <Compile Include="TransferRun.fs" />
@@ -39,6 +39,7 @@
     <Compile Include="EjectRun.fs" />
     <Compile Include="TransferSpec.fs" />
     <Compile Include="RegisteredAllTransforms.fs" />
+    <Compile Include="FullExportRun.fs" />
   </ItemGroup>
 
   <ItemGroup>

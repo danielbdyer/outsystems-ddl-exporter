@@ -104,6 +104,20 @@ module Compose =
             /// the serialized JSON. `ColumnProfiles` is non-empty exactly
             /// when the acquired `Profile` carries numeric moments.
             Manifest : ManifestEmitter.Manifest
+            /// §16 conduit — the pass chain's full Lineage trail
+            /// (`composed.Trail`). Carried here so the run boundary
+            /// (`projectFrom` → `RunReport`) can project it onto
+            /// `transform.lineage` / `.applied` / `.declined` envelopes at
+            /// egress without Core touching `LogSink` (no I/O in Core; Core
+            /// compiles before `LogSink`). The `Manifest` above already
+            /// embeds the trail, so this bundle is provenance-bearing by
+            /// precedent. Not serialized into any artifact file.
+            Trail : LineageEvent list
+            /// §16 conduit — the chain's full `Diagnostics` stream
+            /// (`LineageDiagnostics.entries composed`), for the same
+            /// `transform.diagnostic` egress projection. Disjoint from the
+            /// curated operational `RunReport.Diagnostics` set.
+            PassEntries : DiagnosticEntry list
         }
 
     /// Chapter C slice C.2 — run-shape value returned by
@@ -123,6 +137,19 @@ module Compose =
         /// via the out-of-band connection); empty for the `Profile.empty`
         /// base case.
         Manifest    : ManifestEmitter.Manifest
+        /// The pass chain's full Lineage trail (`composed.Trail`), surfaced
+        /// at the run boundary so the structured-logging layer can project
+        /// it onto `transform.lineage` / `transform.applied` / `.declined`
+        /// envelopes per `docs/logging-format.md` §7.4 + §16 (project from
+        /// the accumulated writer at egress; Core stays I/O-free). Distinct
+        /// from `Diagnostics` (the curated operational findings).
+        Trail          : LineageEvent list
+        /// The pass chain's full `Diagnostics` stream
+        /// (`LineageDiagnostics.entries composed`), surfaced for the same
+        /// `transform.diagnostic` egress projection. Disjoint from the
+        /// curated `Diagnostics` set (special-circumstances / inactive /
+        /// FK-selectivity / joint-dependency / FK-drop witnesses).
+        PassDiagnostics : DiagnosticEntry list
     }
 
     /// Track W1-B (seam T2) — the **diff-vs-prior store leg** of `full-export`.
@@ -406,6 +433,14 @@ module Compose =
             SummaryText       = summaryText
             SuggestConfigJson = suggestConfigJson
             Manifest          = manifest
+            // §16 — the chain's accumulated writers, carried on the
+            // projection bundle so the run boundary can project them onto
+            // `transform.*` envelopes (Core stays I/O-free, and compiles
+            // before `LogSink`). Conduit for `RunReport.Trail` /
+            // `.PassDiagnostics`; the `Manifest` above already embeds the
+            // trail, so the bundle is provenance-bearing by precedent.
+            Trail             = composed.Trail
+            PassEntries       = passEntries
         }
         outputs, composedState
 
@@ -885,7 +920,7 @@ module Compose =
                         @ SsdtDdlEmitter.foreignKeyDecisionDropDiagnostics
                             (DecisionOverlay.ofComposeState finalState) finalState.Catalog
                     match write cfg.Output.Dir outputs with
-                    | Ok paths    -> Result.success { Paths = paths; Diagnostics = diagnostics; Manifest = outputs.Manifest }
+                    | Ok paths    -> Result.success { Paths = paths; Diagnostics = diagnostics; Manifest = outputs.Manifest; Trail = outputs.Trail; PassDiagnostics = outputs.PassEntries }
                     | Error errors -> Result.failure errors
                 | _ ->
                     let policyErrs    = match policyR    with Ok _ -> [] | Error es -> es
@@ -904,14 +939,53 @@ module Compose =
     /// the post-chain `ComposeState`, emits special-circumstances and
     /// inactive-attribute diagnostics, writes to `Output.Dir`, returns
     /// the paths + diagnostic stream as a `RunReport`.
+    /// Emit one orchestration stage marker (info-level start / end
+    /// category event) per `docs/logging-format.md` §7.2-§7.5. The
+    /// matching `summary.stageCompleted` + §10 stage-table entry is
+    /// `LogSink.recordStageEvent`. Slice 2 (stage-boundary events).
+    let private emitStageMarker
+        (category: LogSink.Category)
+        (code: string)
+        (phase: LogSink.Phase)
+        (payload: Map<string, objnull>)
+        : unit =
+        LogSink.emit { LogSink.envelope LogSink.Info category code payload with Phase = phase }
+
     let runWithConfig (cfg: Config.Config) : Task<Result<RunReport>> =
         task {
+            // §7.2 extract — OSSYS catalog read.
+            let swExtract = System.Diagnostics.Stopwatch.StartNew()
+            emitStageMarker LogSink.Extract "extract.started" LogSink.Start Map.empty
             let! parsed = read cfg.Model.Path
+            swExtract.Stop()
             match parsed with
-            | Error errors -> return Result.failure errors
+            | Error errors ->
+                LogSink.recordStageEvent "extract" swExtract.ElapsedMilliseconds LogSink.Failed
+                return Result.failure errors
             | Ok catalog ->
+                emitStageMarker LogSink.Extract "extract.completed" LogSink.End
+                    (Map.ofList [ "moduleCount", box (List.length catalog.Modules) ])
+                LogSink.recordStageEvent "extract" swExtract.ElapsedMilliseconds LogSink.Succeeded
+                // §7.3 profile — live SQL probing (Profile.empty for the
+                // SnapshotJson path; a real probe for the live provider).
+                let swProfile = System.Diagnostics.Stopwatch.StartNew()
+                emitStageMarker LogSink.Profile "profile.started" LogSink.Start Map.empty
                 let! profileResult = acquireProfile cfg catalog
-                return profileResult |> Result.bind (runWithConfigCore cfg (Ok catalog))
+                swProfile.Stop()
+                let profileOutcome =
+                    match profileResult with Ok _ -> LogSink.Succeeded | Error _ -> LogSink.Failed
+                emitStageMarker LogSink.Profile "profile.completed" LogSink.End Map.empty
+                LogSink.recordStageEvent "profile" swProfile.ElapsedMilliseconds profileOutcome
+                // §7.5 emit — pass chain + sibling-Π emission + artifact write.
+                let swEmit = System.Diagnostics.Stopwatch.StartNew()
+                emitStageMarker LogSink.Emit "emit.started" LogSink.Start Map.empty
+                let result = profileResult |> Result.bind (runWithConfigCore cfg (Ok catalog))
+                swEmit.Stop()
+                let emitOutcome =
+                    match result with Ok _ -> LogSink.Succeeded | Error _ -> LogSink.Failed
+                emitStageMarker LogSink.Emit "emit.completed" LogSink.End Map.empty
+                LogSink.recordStageEvent "emit" swEmit.ElapsedMilliseconds emitOutcome
+                return result
         }
 
     // -- Track W1-B (seam T2): the diff-vs-prior store leg -------------------

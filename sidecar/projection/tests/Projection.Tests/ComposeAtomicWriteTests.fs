@@ -57,6 +57,8 @@ let private trivialOutputs () : Compose.Outputs =
             SummaryText       = "Tightening decision summary\n(empty fixture)"
             SuggestConfigJson = sc
             Manifest          = Projection.Targets.SSDT.ManifestEmitter.build Fixtures.sampleCatalog
+            Trail             = []
+            PassEntries       = []
         }
 
 let private listAllFiles (dir: string) : string list =

@@ -7,229 +7,165 @@ open Projection.Core.Passes
 /// (`CHAPTER_A_4_7_PRIME_OPEN.md`): this is the substantive
 /// populated form that consumers traverse.
 ///
+/// **Single definition site — the registry drives the run
+/// (`DECISIONS 2026-06-04`).** The Core pass chain is defined ONCE, as
+/// `chainSteps : ChainStep list`. Each `ChainStep` pairs a pass's
+/// metadata (the pillar-9 classification surface) with how it plugs
+/// into the run (`Build` — the lift strategy + `ComposeState` writeback
+/// + `Policy` / `Profile` threading). The metadata registry (`all`) and
+/// the execution chain (`allChainSteps` / `allChainStepsFor`) are both
+/// **projections of `chainSteps`** — they can no longer drift, and
+/// `transform.registered` describes exactly what executes. (The prior
+/// design hand-maintained three parallel lists in the same order; they
+/// had already drifted on `TableRename`'s position.)
+///
 /// **Compile-order rationale.** `TransformRegistry.fs` compiles
 /// before any pass module (the registry types must be in scope
 /// when pass modules declare their `.registered` exports). The
-/// populated `all` / `allChainSteps` therefore cannot live in
+/// populated `chainSteps` / derivations therefore cannot live in
 /// `TransformRegistry.fs`; this file lives at the end of the Core
 /// compile order, where every pass module's `.registered` is in
 /// scope.
 ///
 /// **Project-boundary note.** The OSSYS adapter's
 /// `CatalogReader.registeredMetadata` lives in
-/// `Projection.Adapters.Osm` — outside Core. The full 18-entry
-/// production registry (per A41 totality) assembles at the
-/// Pipeline / consumer level by prepending the adapter metadata to
+/// `Projection.Adapters.Osm` — outside Core. The full production
+/// registry (per A41 totality) assembles at the Pipeline / consumer
+/// level by prepending the adapter + emitter metadata to
 /// `RegisteredTransforms.all`.
 ///
 /// **Skeleton-friendly defaults.** Config-taking pass factories
 /// (`VisibilityMask.registered mask`, `NamingMorphism.registered
-/// morphism`, `TableRename.registered specs`, plus the four
-/// `Policy × Profile` decision-set passes) consume empty / identity
-/// defaults here. Metadata is invariant of config (Sites / Name /
-/// Domain / Status); the Apply closure captures the config, so
-/// non-default-config consumers (Compose.project at slice δ) call
-/// the factories directly. Slice γ / δ may add a factory variant
-/// of `allChainSteps` if two consumers demand it.
+/// morphism`, `TableRename.registered specs`, plus the `Policy ×
+/// Profile` decision-set passes) take empty / identity defaults for
+/// the metadata projection (metadata is config-invariant — Sites /
+/// Name / Domain / Status); the `Build` closure captures the caller's
+/// real config at run time.
 ///
 /// **Slice D.1.a exception — logical-name emission ships Enabled.**
 /// `LogicalTableEmission.registered Enabled` + `LogicalColumnEmission.registered Enabled`
 /// are the production defaults (V2 emits logical names — `Customer`
-/// not `OSUSR_ABC_CUSTOMER` — out of the box). Operators that want
-/// physical-name emission for diagnostic / V1-parity reasons wire
-/// `Disabled` mode explicitly. Both modes carry `OperatorIntent Emission`
-/// (the operator chose either way; default-on IS the operator's intent).
+/// not `OSUSR_ABC_CUSTOMER` — out of the box). Both carry
+/// `OperatorIntent Emission` (the operator chose either way; default-on
+/// IS the operator's intent).
 [<RequireQualifiedAccess>]
 module RegisteredTransforms =
 
     let private emptyMask : VisibilityMask.Mask = { Hide = [] }
     let private identityMorphism : NamingMorphism.Morphism = NamingMorphism.identity
 
-    /// 24 Core-resident `RegisteredTransformMetadata` entries — 19
-    /// pass + 5 strategy. Validates through `TransformRegistry.create`
-    /// (uniqueness of Name; non-empty Site.Rationale; substantive
-    /// `NotImplementedInV2` rationale where applicable) per A41.
-    /// Cluster D adds 5 graph-analytics passes (H-071 through H-076,
-    /// H-073 through H-075 share a single pass count with H-073/H-076).
-    /// Slice D.1.a adds `LogicalTableEmission` + `LogicalColumnEmission`
-    /// (default-on emission-axis logical-name substitution passes).
+    // ------------------------------------------------------------------
+    // ChainStep builders — one per pass *shape* (how it reads from /
+    // writes back to ComposeState). The metadata projection and the
+    // execution lift both flow from the same pass `.registered` factory,
+    // so a pass is defined ONCE.
+    // ------------------------------------------------------------------
+
+    /// Config-invariant catalog-rewriting pass (output replaces
+    /// `state.Catalog`).
+    let private catalogStep (rt: RegisteredTransform<Catalog, Catalog>) : ChainStep =
+        { Metadata = RegisteredTransform.toMetadata rt
+          Build    = fun _ _ -> PassChainAdapter.liftCatalogPass rt }
+
+    /// Config-invariant decision pass reading `state.Catalog`.
+    let private decisionStep
+        (rt: RegisteredTransform<Catalog, 'D>)
+        (writeBack: 'D -> ComposeState -> ComposeState)
+        : ChainStep =
+        { Metadata = RegisteredTransform.toMetadata rt
+          Build    = fun _ _ -> PassChainAdapter.liftDecisionPass rt writeBack }
+
+    /// Config-invariant decision pass reading the pre-computed topology.
+    let private topologyStep
+        (rt: RegisteredTransform<TopologicalOrder, 'D>)
+        (writeBack: 'D -> ComposeState -> ComposeState)
+        : ChainStep =
+        { Metadata = RegisteredTransform.toMetadata rt
+          Build    = fun _ _ -> PassChainAdapter.liftTopologyPass rt writeBack }
+
+    /// Profile-aware decision pass — metadata projects from the
+    /// `Profile.empty` factory (config-invariant); `Build` threads the
+    /// caller's profile.
+    let private profileDecisionStep
+        (registeredFor: Profile -> RegisteredTransform<Catalog, 'D>)
+        (writeBack: 'D -> ComposeState -> ComposeState)
+        : ChainStep =
+        { Metadata = RegisteredTransform.toMetadata (registeredFor Profile.empty)
+          Build    = fun _ profile -> PassChainAdapter.liftDecisionPass (registeredFor profile) writeBack }
+
+    /// Policy + Profile-aware decision pass (the four tightening passes +
+    /// `UserFkReflowPass`) — metadata projects from the empty-config
+    /// factory; `Build` threads the caller's policy + profile.
+    let private tighteningStep
+        (registeredFor: Policy -> Profile -> RegisteredTransform<Catalog, 'D>)
+        (writeBack: 'D -> ComposeState -> ComposeState)
+        : ChainStep =
+        { Metadata = RegisteredTransform.toMetadata (registeredFor Policy.empty Profile.empty)
+          Build    = fun policy profile -> PassChainAdapter.liftDecisionPass (registeredFor policy profile) writeBack }
+
+    /// **The single source of truth for the Core pass chain**, in
+    /// EXECUTION order (canonical). Both the metadata registry (`all`)
+    /// and the execution chain project from this list. Order: 5 catalog-
+    /// rewriting passes → 2 default-on logical-name emission passes
+    /// (BEFORE `TableRename` so operator pins dominate) → `TableRename`
+    /// → `TopologicalOrderPass` → 2 graph-analytics passes (after
+    /// topology is populated) → `ProfileAnomalyPass` → `SchemaComplexityPass`
+    /// → `QueryHintPass` → 4 tightening decision passes → `UserFkReflowPass`.
+    let chainSteps : ChainStep list =
+        [ catalogStep CanonicalizeIdentity.registered
+          catalogStep (VisibilityMask.registered emptyMask)
+          catalogStep (NamingMorphism.registered identityMorphism)
+          catalogStep NormalizeStaticPopulations.registered
+          catalogStep SymmetricClosure.registered
+          catalogStep (LogicalTableEmission.registered LogicalTableEmission.Enabled)
+          catalogStep (LogicalColumnEmission.registered LogicalColumnEmission.Enabled)
+          catalogStep (TableRename.registered [])
+          decisionStep TopologicalOrderPass.registered ComposeState.withTopologicalOrder
+          topologyStep CentralityPass.registered ComposeState.withCentralityRanking
+          topologyStep BoundedContextPass.registered ComposeState.withBoundedContexts
+          profileDecisionStep ProfileAnomalyPass.registered ComposeState.withProfileAnomalies
+          // SchemaComplexityPass reads BOTH Catalog and the pre-computed
+          // topology from ComposeState at apply-time (not baked at
+          // registration), so it uses the catalog-topology lift directly.
+          { Metadata = RegisteredTransform.toMetadata (SchemaComplexityPass.registered None)
+            Build    =
+                fun _ _ ->
+                    PassChainAdapter.liftCatalogTopologyPass
+                        SchemaComplexityPass.name
+                        SchemaComplexityPass.run
+                        ComposeState.withSchemaComplexity }
+          profileDecisionStep QueryHintPass.registered ComposeState.withQueryHints
+          tighteningStep NullabilityPass.registered ComposeState.withNullabilityDecisions
+          tighteningStep UniqueIndexPass.registered ComposeState.withUniqueIndexDecisions
+          tighteningStep ForeignKeyPass.registered ComposeState.withForeignKeyDecisions
+          tighteningStep CategoricalUniquenessPass.registered ComposeState.withCategoricalUniquenessDecisions
+          tighteningStep UserFkReflowPass.registered ComposeState.withUserRemap ]
+
+    /// The full Core metadata registry — every chain step's metadata
+    /// (projected from `chainSteps`) plus the strategy registrations.
+    /// `transform.registered`, the manifest emitter, and the A41 totality
+    /// property tests read this; it cannot drift from what runs.
     let all : RegisteredTransformMetadata list =
-        [ RegisteredTransform.toMetadata CanonicalizeIdentity.registered
-          RegisteredTransform.toMetadata (VisibilityMask.registered emptyMask)
-          RegisteredTransform.toMetadata (NamingMorphism.registered identityMorphism)
-          RegisteredTransform.toMetadata NormalizeStaticPopulations.registered
-          RegisteredTransform.toMetadata SymmetricClosure.registered
-          RegisteredTransform.toMetadata (TableRename.registered [])
-          RegisteredTransform.toMetadata (LogicalTableEmission.registered LogicalTableEmission.Enabled)
-          RegisteredTransform.toMetadata (LogicalColumnEmission.registered LogicalColumnEmission.Enabled)
-          RegisteredTransform.toMetadata TopologicalOrderPass.registered
-          RegisteredTransform.toMetadata CentralityPass.registered
-          RegisteredTransform.toMetadata BoundedContextPass.registered
-          RegisteredTransform.toMetadata (ProfileAnomalyPass.registered Profile.empty)
-          RegisteredTransform.toMetadata (SchemaComplexityPass.registered None)
-          RegisteredTransform.toMetadata (QueryHintPass.registered Profile.empty)
-          RegisteredTransform.toMetadata (NullabilityPass.registered Policy.empty Profile.empty)
-          RegisteredTransform.toMetadata (UniqueIndexPass.registered Policy.empty Profile.empty)
-          RegisteredTransform.toMetadata (ForeignKeyPass.registered Policy.empty Profile.empty)
-          RegisteredTransform.toMetadata (CategoricalUniquenessPass.registered Policy.empty Profile.empty)
-          RegisteredTransform.toMetadata (UserFkReflowPass.registered Policy.empty Profile.empty) ]
-        @ StrategyRegistrations.all
+        (chainSteps |> List.map ChainStep.metadata) @ StrategyRegistrations.all
 
-    /// 19 `PassChainAdapter` entries — the typed execution surface
-    /// for slice γ's `runChain` kernel. Order: 6 catalog-rewriting
-    /// passes (CanonicalizeIdentity / VisibilityMask / NamingMorphism /
-    /// NormalizeStaticPopulations / SymmetricClosure / TableRename),
-    /// then 2 default-on logical-name emission-axis substitutions
-    /// (LogicalTableEmission / LogicalColumnEmission; slice D.1.a),
-    /// then the topological-order pass, then 5 Cluster D graph-
-    /// analytics passes (H-071 through H-076), then 6 decision-set
-    /// passes. Each analytics and decision-set pass writes back via
-    /// the matching `ComposeState.with*` setter.
-    ///
-    /// Cluster D analytics passes run after TopologicalOrderPass so
-    /// CentralityPass and BoundedContextPass have topology available
-    /// in ComposeState. The H-073 / H-076 profile-driven passes use
-    /// `Profile.empty` as default; supply a non-empty profile via
-    /// `allChainStepsFor` for LiveProfiler-enabled paths.
-    let allChainSteps : PassChainAdapter list =
-        [ PassChainAdapter.liftCatalogPass CanonicalizeIdentity.registered
-          PassChainAdapter.liftCatalogPass (VisibilityMask.registered emptyMask)
-          PassChainAdapter.liftCatalogPass (NamingMorphism.registered identityMorphism)
-          PassChainAdapter.liftCatalogPass NormalizeStaticPopulations.registered
-          PassChainAdapter.liftCatalogPass SymmetricClosure.registered
-          // Slice D.1.a — logical-name emission as default. Both run
-          // BEFORE TableRename so operator-supplied physical pinnings
-          // dominate (TableRename writes to Kind.Physical last; the
-          // logical substitution runs first and TableRename overrides
-          // when an operator pins). Both classified
-          // OperatorIntent Emission.
-          PassChainAdapter.liftCatalogPass (LogicalTableEmission.registered LogicalTableEmission.Enabled)
-          PassChainAdapter.liftCatalogPass (LogicalColumnEmission.registered LogicalColumnEmission.Enabled)
-          PassChainAdapter.liftCatalogPass (TableRename.registered [])
-          PassChainAdapter.liftDecisionPass
-            TopologicalOrderPass.registered
-            ComposeState.withTopologicalOrder
-          // Cluster D graph-analytics passes — run after topology is
-          // populated in ComposeState.
-          PassChainAdapter.liftTopologyPass
-            CentralityPass.registered
-            ComposeState.withCentralityRanking
-          PassChainAdapter.liftTopologyPass
-            BoundedContextPass.registered
-            ComposeState.withBoundedContexts
-          PassChainAdapter.liftDecisionPass
-            (ProfileAnomalyPass.registered Profile.empty)
-            ComposeState.withProfileAnomalies
-          PassChainAdapter.liftCatalogTopologyPass
-            SchemaComplexityPass.name
-            SchemaComplexityPass.run
-            ComposeState.withSchemaComplexity
-          PassChainAdapter.liftDecisionPass
-            (QueryHintPass.registered Profile.empty)
-            ComposeState.withQueryHints
-          PassChainAdapter.liftDecisionPass
-            (NullabilityPass.registered Policy.empty Profile.empty)
-            ComposeState.withNullabilityDecisions
-          PassChainAdapter.liftDecisionPass
-            (UniqueIndexPass.registered Policy.empty Profile.empty)
-            ComposeState.withUniqueIndexDecisions
-          PassChainAdapter.liftDecisionPass
-            (ForeignKeyPass.registered Policy.empty Profile.empty)
-            ComposeState.withForeignKeyDecisions
-          PassChainAdapter.liftDecisionPass
-            (CategoricalUniquenessPass.registered Policy.empty Profile.empty)
-            ComposeState.withCategoricalUniquenessDecisions
-          PassChainAdapter.liftDecisionPass
-            (UserFkReflowPass.registered Policy.empty Profile.empty)
-            ComposeState.withUserRemap ]
-
-    /// Chapter C slice C.1 — factory variant of `allChainSteps` that
-    /// threads a caller-supplied `Policy` + `Profile` through the
-    /// four decision-set passes (NullabilityPass / UniqueIndexPass /
-    /// ForeignKeyPass / CategoricalUniquenessPass) instead of baking
-    /// `Policy.empty` + `Profile.empty` at module init.
-    ///
-    /// Used by `Compose.projectWith` (Pipeline.fs) — the slice-C.1
-    /// cash-out routes operator-supplied tightening interventions
-    /// through the existing pass chain by registering them per-call.
-    /// `allChainSteps` (the static version above) stays for the
-    /// skeleton-only / no-policy paths.
-    ///
-    /// Catalog-rewriting passes (entries 0-6 in the chain) are
-    /// policy-invariant; they reuse the same closures as the static
-    /// version. Only the 6 decision-set passes (TopologicalOrderPass
-    /// + 4 tightening passes + UserFkReflowPass) re-construct with the
-    /// caller's policy.
+    /// The execution chain threaded with a caller-supplied `Policy` +
+    /// `Profile` through every step's `Build`. Catalog-rewriting +
+    /// config-invariant steps ignore both; the profile / tightening
+    /// steps capture them.
     let allChainStepsFor (policy: Policy) (profile: Profile) : PassChainAdapter list =
-        [ PassChainAdapter.liftCatalogPass CanonicalizeIdentity.registered
-          PassChainAdapter.liftCatalogPass (VisibilityMask.registered emptyMask)
-          PassChainAdapter.liftCatalogPass (NamingMorphism.registered identityMorphism)
-          PassChainAdapter.liftCatalogPass NormalizeStaticPopulations.registered
-          PassChainAdapter.liftCatalogPass SymmetricClosure.registered
-          // Slice D.1.a — logical-name emission as default; same wiring
-          // as allChainSteps (the policy/profile axis doesn't gate the
-          // logical-emission default). Runs BEFORE TableRename so
-          // operator pins dominate.
-          PassChainAdapter.liftCatalogPass (LogicalTableEmission.registered LogicalTableEmission.Enabled)
-          PassChainAdapter.liftCatalogPass (LogicalColumnEmission.registered LogicalColumnEmission.Enabled)
-          PassChainAdapter.liftCatalogPass (TableRename.registered [])
-          PassChainAdapter.liftDecisionPass
-            TopologicalOrderPass.registered
-            ComposeState.withTopologicalOrder
-          // Cluster D analytics passes — profile-aware variants use the
-          // caller-supplied profile rather than Profile.empty.
-          PassChainAdapter.liftTopologyPass
-            CentralityPass.registered
-            ComposeState.withCentralityRanking
-          PassChainAdapter.liftTopologyPass
-            BoundedContextPass.registered
-            ComposeState.withBoundedContexts
-          PassChainAdapter.liftDecisionPass
-            (ProfileAnomalyPass.registered profile)
-            ComposeState.withProfileAnomalies
-          PassChainAdapter.liftCatalogTopologyPass
-            SchemaComplexityPass.name
-            SchemaComplexityPass.run
-            ComposeState.withSchemaComplexity
-          PassChainAdapter.liftDecisionPass
-            (QueryHintPass.registered profile)
-            ComposeState.withQueryHints
-          PassChainAdapter.liftDecisionPass
-            (NullabilityPass.registered policy profile)
-            ComposeState.withNullabilityDecisions
-          PassChainAdapter.liftDecisionPass
-            (UniqueIndexPass.registered policy profile)
-            ComposeState.withUniqueIndexDecisions
-          PassChainAdapter.liftDecisionPass
-            (ForeignKeyPass.registered policy profile)
-            ComposeState.withForeignKeyDecisions
-          PassChainAdapter.liftDecisionPass
-            (CategoricalUniquenessPass.registered policy profile)
-            ComposeState.withCategoricalUniquenessDecisions
-          PassChainAdapter.liftDecisionPass
-            (UserFkReflowPass.registered policy profile)
-            ComposeState.withUserRemap ]
+        chainSteps |> List.map (ChainStep.build policy profile)
 
-    /// Chapter A.4.7' slice ε — `allChainSteps` filtered to entries
-    /// whose corresponding metadata is in `TransformRegistry.skeletonView`
-    /// (every Site classifies as `DataIntent`). Consumed by
-    /// `Compose.runSkeleton` (Pipeline.fs) to produce the baseline
-    /// reachable from `Project(catalog, Policy.empty, profile)`
-    /// without operator opinion.
-    ///
-    /// Join key is Name: each `PassChainAdapter.Name` mirrors the
-    /// wrapped `RegisteredTransform.Name`. The filter excludes passes
-    /// whose Sites contain at least one `OperatorIntent _` —
-    /// `TopologicalOrderPass` (selfLoopHandling = OperatorIntent
-    /// Ordering); the four Tightening-axis decision-set passes
-    /// (NullabilityPass / UniqueIndexPass / ForeignKeyPass /
-    /// CategoricalUniquenessPass — each Sites carries an
-    /// OperatorIntent Tightening); `VisibilityMask` (hideOrigin /
-    /// hideKeys / hideModality = OperatorIntent Selection);
-    /// `NamingMorphism` (presentation-name rewrite = OperatorIntent
-    /// Emission); `TableRename` (physical-name rewrite =
-    /// OperatorIntent Emission); `UserFkReflowPass` (UserRemap =
-    /// OperatorIntent Insertion).
+    /// The execution chain with skeleton-friendly empty defaults —
+    /// byte-identical to the prior hand-written `allChainSteps`
+    /// (`allChainStepsFor Policy.empty Profile.empty`).
+    let allChainSteps : PassChainAdapter list =
+        allChainStepsFor Policy.empty Profile.empty
+
+    /// `allChainSteps` filtered to entries whose metadata is in
+    /// `TransformRegistry.skeletonView` (every Site classifies as
+    /// `DataIntent`). Consumed by `Compose.runSkeleton` to produce the
+    /// baseline reachable from `Project(catalog, Policy.empty, profile)`
+    /// without operator opinion. Join key is `Name`.
     let skeletonChainSteps : PassChainAdapter list =
         let skeletonPassNames =
             TransformRegistry.skeletonView all

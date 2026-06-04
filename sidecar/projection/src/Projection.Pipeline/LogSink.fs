@@ -591,6 +591,25 @@ module LogSink =
         lock lockObj (fun () ->
             state.Value.Artifacts.Add artifact)
 
+    /// Record a stage timing AND emit its `summary.stageCompleted`
+    /// envelope (§7.8 — info / `end` phase, `stepId = stage`). The
+    /// shared primitive for the orchestration's per-stage instrumentation
+    /// (extract / profile / emit / deploy / canary) so the §10
+    /// `runComplete` stage table and the live `summary.stageCompleted`
+    /// stream stay in lock-step from one call site.
+    let recordStageEvent (stage: string) (durationMs: int64) (outcome: Outcome) : unit =
+        recordStage stage durationMs outcome
+        let payload : Map<string, objnull> =
+            Map.ofList [
+                "stage",      box stage
+                "durationMs", box durationMs
+                "outcome",    box (outcomeToString outcome)
+            ]
+        emit
+            { envelope Info Summary "summary.stageCompleted" payload with
+                Phase  = End
+                StepId = Some stage }
+
     // -----------------------------------------------------------------
     // §11 — rollup snapshot (read-only; built ONCE during emission)
     // -----------------------------------------------------------------

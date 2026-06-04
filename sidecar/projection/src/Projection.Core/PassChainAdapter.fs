@@ -132,3 +132,29 @@ module PassChainAdapter =
                     adapter.Apply s
                 LineageDiagnostics.bind timedApply acc)
             (LineageDiagnostics.ofValue state)
+
+
+/// A single registered pass-chain step — the **single definition site**
+/// the "registry drives the run" refactor (`DECISIONS 2026-06-04`)
+/// establishes. Each step pairs the pillar-9 classification surface
+/// (`Metadata` — what `transform.registered`, the manifest, and the
+/// totality property tests read) with how the step plugs into the run
+/// (`Build` captures the lift strategy + `ComposeState` writeback + the
+/// per-call `Policy` / `Profile` threading). The metadata and the
+/// execution can no longer drift, because both project from the same
+/// value: the `RegisteredTransform.Run` carried inside the `.registered`
+/// the `Build` closure lifts IS what runs, and `Metadata` is the
+/// `RegisteredTransform.toMetadata` of the same pass factory. One
+/// `ChainStep` per pass; adding a pass is one entry, not three.
+type ChainStep = {
+    Metadata : RegisteredTransformMetadata
+    Build    : Policy -> Profile -> PassChainAdapter
+}
+
+[<RequireQualifiedAccess>]
+module ChainStep =
+
+    let metadata (step: ChainStep) : RegisteredTransformMetadata = step.Metadata
+
+    let build (policy: Policy) (profile: Profile) (step: ChainStep) : PassChainAdapter =
+        step.Build policy profile
