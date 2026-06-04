@@ -12,6 +12,8 @@
   <ItemGroup>
     <Compile Include="OssysRowsetTypes.fs" />
     <Compile Include="OssysTranslation.fs" />
+    <Compile Include="OssysJsonReader.fs" />
+    <Compile Include="OssysRowsetReader.fs" />
     <Compile Include="CatalogReader.fs" />
   </ItemGroup>
 

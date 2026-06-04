@@ -130,12 +130,19 @@ requires a DECISIONS amendment *before* deletion.
 
 Pure structural splits; no semantics change. **Must NOT merge forked code.**
 
-- **R1 ☐ — `CatalogReader.fs` 2518 → 5 files** in compile order:
-  `OssysRowsetTypes.fs` (~344, DTOs) → `OssysTranslation.fs` (~257, shared leaf
-  layer) → `OssysJsonReader.fs` (~791) → `OssysRowsetReader.fs` (~728) →
-  `CatalogReader.fs` (~80, public `parse`). Ship types + translation first.
-  **DO NOT merge the JSON and rowset readers** (N1). *Verify:* build + full
-  suite; `CatalogReader.parse` callers untouched (re-export namespace).
+- **R1 ☑ — `CatalogReader.fs` decomposed (DONE 2026-06-04).** 2,518 → **168 LOC
+  facade**, split into `OssysRowsetTypes.fs` (361, DTOs) → `OssysTranslation.fs`
+  (534, shared leaf layer — verified by call-graph) → `OssysJsonReader.fs` (763,
+  JSON path) → `OssysRowsetReader.fs` (749, rowset path) → `CatalogReader.fs`
+  (168, `SnapshotSource` + `parse` + `registeredMetadata`). Shipped in 3 green
+  commits (types / translation / readers+facade). `SnapshotSource` kept in the
+  facade (its DU cases are the public entry, 89× refs); external `CatalogReader.*`
+  record-type refs rerouted to `OssysRowsetTypes.*`. Confirmed the JSON/rowset
+  paths have **zero** code cross-dependencies (all apparent cross-refs were
+  doc-comments + `parseAttribute`⊂`parseAttributeRow` substring false positives) —
+  so **NOT merged** (N1 honored). Pure relocation; solution builds 0-warning; pure
+  pool 2732/0-fail (CatalogReader is pure parsing — pure pool is complete
+  verification, no canary needed).
 - **R2 ☐ — `Deploy.fs` 1470 → 5 modules**:
   `Deploy.{Container,Connection,Execution,Parallelism,Canary}`. `parallelismCache`
   stays private inside Parallelism (it's a leaf, not a shared spine). *Verify:*
