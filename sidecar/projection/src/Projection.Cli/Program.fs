@@ -478,7 +478,11 @@ let private runCanary (sourceDdlPath: string) : int =
     else
         let sourceDdl = File.ReadAllText sourceDdlPath
         printfn "projection: spinning up ephemeral SQL Server for the wide canary..."
-        let task = Deploy.runWideCanary sourceDdl SsdtDdlEmitter.statements
+        // E4 — the production canary deploys the canonical schema-then-data
+        // form (DDL + StaticPopulationEmitter's InsertRow realization into the
+        // fresh-empty target). Schema-only when the source carries no static
+        // populations. See `Deploy.schemaWithStaticPopulation`.
+        let task = Deploy.runWideCanary sourceDdl Deploy.schemaWithStaticPopulation
         let result = task.GetAwaiter().GetResult()
         let exitCode =
             match result with
