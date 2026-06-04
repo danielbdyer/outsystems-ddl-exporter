@@ -327,6 +327,118 @@ module Compose =
         // canonical "boundary-supplied at" pattern.
         VersionedPolicy.create System.DateTimeOffset.UtcNow policy None
 
+    // ------------------------------------------------------------------
+    // E1 — registry-driven emit phase (`DECISIONS 2026-06-04`).
+    // The sibling-Π emit phase is ONE `emitSteps : EmitStep list` source,
+    // from which both the execution (the fold in `projectFromChainWithState`)
+    // and the registry's emit-metadata (`RegisteredAllTransforms`) project —
+    // so `registered ⇔ executed` holds for the emit stage by construction.
+    // Each `Emit` wraps its emitter verbatim and writes its one `Outputs`
+    // field; the steps are independent (no cross-reads), so the fold over
+    // `seedOutputs` reproduces the prior hand-assembled `Outputs` byte-for-byte.
+    // ------------------------------------------------------------------
+
+    /// The emit phase's read-only inputs — the final `ComposeState` plus the
+    /// emission-policy-filtered catalog and the run's profile / folders /
+    /// versioned-policy / writers. Everything the six emitters consume.
+    type EmitContext = {
+        EmittedCatalog  : Catalog
+        ComposedState   : ComposeState
+        Profile         : Profile
+        Folders         : EmissionFolders
+        VersionedPolicy : VersionedPolicy option
+        Trail           : LineageEvent list
+        PassEntries     : DiagnosticEntry list
+    }
+
+    /// One registered emit step: its metadata (the pillar-9 classification
+    /// surface `RegisteredAllTransforms` reads) paired with how it runs
+    /// (`Emit` — writes its one `Outputs` field from the `EmitContext`).
+    type EmitStep = {
+        Metadata : RegisteredTransformMetadata
+        Emit     : EmitContext -> Outputs -> Outputs
+    }
+
+    /// The three tightening DecisionSets pulled from the post-chain
+    /// `ComposeState`, with empty defaults when an axis registered no
+    /// interventions.
+    let private decisionSetsOf (state: ComposeState)
+        : NullabilityDecisionSet * UniqueIndexDecisionSet * ForeignKeyDecisionSet =
+        state.NullabilityDecisions |> Option.defaultValue NullabilityRules.emptyDecisionSet,
+        state.UniqueIndexDecisions |> Option.defaultValue UniqueIndexRules.emptyDecisionSet,
+        state.ForeignKeyDecisions  |> Option.defaultValue ForeignKeyRules.emptyDecisionSet
+
+    let private emptyJsonNode () : JsonNode =
+        match JsonNode.Parse "{}" with
+        | null -> invalidOp "Compose.seedOutputs: '{}' did not parse (unreachable)"
+        | n    -> n
+
+    /// The fold seed. Every artifact field is a placeholder the matching
+    /// `EmitStep` overwrites (the `registered ⇔ executed` invariant
+    /// guarantees every step runs); `Trail` / `PassEntries` carry through
+    /// as the §16 egress conduits, `DataBundle` is populated downstream
+    /// (AC-X1) when data emission is on.
+    let private seedOutputs (ctx: EmitContext) : Outputs =
+        { SsdtBundle        = Map.empty
+          DataBundle        = Map.empty
+          Json              = emptyJsonNode ()
+          Distributions     = emptyJsonNode ()
+          RemediationSql    = ""
+          SummaryText       = ""
+          SuggestConfigJson = emptyJsonNode ()
+          Manifest          = ManifestEmitter.build ctx.EmittedCatalog
+          Trail             = ctx.Trail
+          PassEntries       = ctx.PassEntries }
+
+    /// The single source for the sibling-Π emit phase, in emission order.
+    let emitSteps : EmitStep list =
+        [ { Metadata = SsdtDdlEmitter.registeredMetadata
+            Emit =
+              fun ctx outputs ->
+                use _ = Bench.scope "emit.ssdtBundle.compose"
+                let decisionOverlay = DecisionOverlay.ofComposeState ctx.ComposedState
+                match SsdtDdlEmitter.emitSlicesWith decisionOverlay ctx.EmittedCatalog with
+                | Ok ssdtFiles ->
+                    let rewritten = applyEmissionFolderOverrides ctx.Folders ctx.EmittedCatalog ssdtFiles
+                    let policyConflicts = ConflictDetector.detectConflicts ctx.Trail ctx.PassEntries
+                    let registry = SsdtDdlEmitter.registeredMetadata :: RegisteredTransforms.all
+                    let manifest =
+                        ManifestEmitter.buildFull
+                            ctx.Profile registry ctx.ComposedState.TopologicalOrder
+                            ctx.VersionedPolicy policyConflicts ctx.Trail ctx.EmittedCatalog
+                    { outputs with SsdtBundle = SsdtBundle.compose rewritten manifest; Manifest = manifest }
+                | Error err ->
+                    invalidOp (sprintf "Compose.project: SsdtDdlEmitter.emitSlices: %A" err) }
+          { Metadata = JsonEmitter.registeredMetadata
+            Emit =
+              fun ctx outputs ->
+                use _ = Bench.scope "emit.json"
+                match JsonNode.Parse(JsonEmitter.emit ctx.EmittedCatalog) with
+                | null -> invalidOp "Compose.project: JsonEmitter.emit produced unparseable text (unreachable)"
+                | n    -> { outputs with Json = n } }
+          { Metadata = DistributionsEmitter.registeredMetadata
+            Emit =
+              fun ctx outputs ->
+                use _ = Bench.scope "emit.distributions"
+                match JsonNode.Parse(DistributionsEmitter.emit ctx.EmittedCatalog ctx.Profile) with
+                | null -> invalidOp "Compose.project: DistributionsEmitter.emit produced unparseable text (unreachable)"
+                | n    -> { outputs with Distributions = n } }
+          { Metadata = RemediationEmitter.registeredMetadata
+            Emit =
+              fun ctx outputs ->
+                let n, u, f = decisionSetsOf ctx.ComposedState
+                { outputs with RemediationSql = RemediationEmitter.emit ctx.ComposedState.Catalog n u f } }
+          { Metadata = SummaryFormatter.registeredMetadata
+            Emit =
+              fun ctx outputs ->
+                let n, u, f = decisionSetsOf ctx.ComposedState
+                { outputs with SummaryText = SummaryFormatter.formatText n u f } }
+          { Metadata = SuggestConfigEmitter.registeredMetadata
+            Emit =
+              fun ctx outputs ->
+                use _ = Bench.scope "emit.suggestConfig"
+                { outputs with SuggestConfigJson = SuggestConfigEmitter.emit ctx.PassEntries } } ]
+
     let private projectFromChainWithState
         (chain: PassChainAdapter list)
         (profile: Profile)
@@ -343,105 +455,30 @@ module Compose =
             PassChainAdapter.compose filteredChain (ComposeState.initial catalog)
         let composedState   = LineageDiagnostics.payload composed
         let passEntries     = LineageDiagnostics.entries composed
-        // H-034 — detect policy conflicts from the chain's lineage trail
-        // and diagnostics. The detector gates on Selection-removal
-        // evidence; normal `tightening.*` outcomes on visible kinds are
-        // NOT flagged (per the post-audit fix).
-        let policyConflicts =
-            use _ = Bench.scope "compose.conflictDetect"
-            ConflictDetector.detectConflicts composed.Trail passEntries
         // Chapter 4.9 slice δ — apply EmissionPolicy.filterPlatformAutoIndexes
         // at the post-chain seam. The filter is `OperatorIntent of Emission`
         // per pillar 9; lives outside the registered pass chain because
         // its evidence is policy, not catalog-derived. Identity when
         // `IncludePlatformAutoIndexes = true` (V1 parity default).
         let emittedCatalog = EmissionPolicy.filterPlatformAutoIndexes policy composedState.Catalog
-        // Wave-2 slice 2.2 — thread the tightening decisions through the
-        // emitter seam. `DecisionOverlay.ofComposeState` projects the
-        // chain's NullabilityDecisions / UniqueIndexDecisions /
-        // ForeignKeyDecisions into emitter-consumable `Set<SsKey>` lookups.
-        // Byte-identical to pre-overlay emission in 2.2 (the emitter threads
-        // the prefix arg unused); slices 2.3 / 2.4 begin consuming it. A18
-        // holds — the overlay carries decisions (evidence), never Policy.
-        let decisionOverlay = DecisionOverlay.ofComposeState composedState
-        let bundle, manifest =
-            (use _ = Bench.scope "emit.ssdtBundle.compose"
-             match SsdtDdlEmitter.emitSlicesWith decisionOverlay emittedCatalog with
-             | Ok ssdtFiles ->
-                 let rewritten = applyEmissionFolderOverrides folders emittedCatalog ssdtFiles
-                 let manifest =
-                     let registry = SsdtDdlEmitter.registeredMetadata :: RegisteredTransforms.all
-                     ManifestEmitter.buildFull
-                         profile
-                         registry
-                         composedState.TopologicalOrder
-                         versionedPolicy
-                         policyConflicts
-                         composed.Trail
-                         emittedCatalog
-                 SsdtBundle.compose rewritten manifest, manifest
-             | Error err ->
-                 // Unreachable in production paths: Catalog.allKinds is
-                 // the keyset by construction; SsdtDdlEmitter.emitSlices
-                 // produces one slice per kind (smart-constructor
-                 // strict-equality); error states surface only on
-                 // pathological catalogs that bypass smart constructors.
-                 invalidOp (sprintf "Compose.project: SsdtDdlEmitter.emitSlices: %A" err))
-        let json =
-            (use _ = Bench.scope "emit.json"
-             // Per Tier-1 #3: parse once at project time so the
-             // Outputs seam is JsonNode-typed. Downstream consumers
-             // query the tree without re-parse.
-             match JsonNode.Parse(JsonEmitter.emit emittedCatalog) with
-             | null -> invalidOp "Compose.project: JsonEmitter.emit produced unparseable text (unreachable)"
-             | n    -> n)
-        let distributions =
-            (use _ = Bench.scope "emit.distributions"
-             match JsonNode.Parse(DistributionsEmitter.emit emittedCatalog profile) with
-             | null -> invalidOp "Compose.project: DistributionsEmitter.emit produced unparseable text (unreachable)"
-             | n    -> n)
-        // Chapter 5+ slices 5.13.remediation-emitter +
-        // 5.13.summary-formatter — per-decision remediation SQL +
-        // 6-bucket summary prose. Pull DecisionSets from the
-        // post-chain ComposeState; empty defaults when a decision
-        // set wasn't produced (no interventions registered for the
-        // axis). Bench-scoped at each emitter's boundary.
-        let nullabilityDecisions =
-            composedState.NullabilityDecisions
-            |> Option.defaultValue NullabilityRules.emptyDecisionSet
-        let uniqueIndexDecisions =
-            composedState.UniqueIndexDecisions
-            |> Option.defaultValue UniqueIndexRules.emptyDecisionSet
-        let foreignKeyDecisions =
-            composedState.ForeignKeyDecisions
-            |> Option.defaultValue ForeignKeyRules.emptyDecisionSet
-        let remediationSql =
-            RemediationEmitter.emit
-                composedState.Catalog nullabilityDecisions uniqueIndexDecisions foreignKeyDecisions
-        let summaryText =
-            SummaryFormatter.formatText
-                nullabilityDecisions uniqueIndexDecisions foreignKeyDecisions
-        let suggestConfigJson =
-            (use _ = Bench.scope "emit.suggestConfig"
-             SuggestConfigEmitter.emit passEntries)
-        let outputs = {
-            SsdtBundle        = bundle
-            DataBundle        = Map.empty   // populated by projectWithState when EmitData (AC-X1)
-            Json              = json
-            Distributions     = distributions
-            RemediationSql    = remediationSql
-            SummaryText       = summaryText
-            SuggestConfigJson = suggestConfigJson
-            Manifest          = manifest
-            // §16 — the chain's accumulated writers, carried on the
-            // projection bundle so the run boundary can project them onto
-            // `transform.*` envelopes (Core stays I/O-free, and compiles
-            // before `LogSink`). Conduit for `RunReport.Trail` /
-            // `.PassDiagnostics`; the `Manifest` above already embeds the
-            // trail, so the bundle is provenance-bearing by precedent.
-            Trail             = composed.Trail
-            PassEntries       = passEntries
-        }
+        // E1 (`DECISIONS 2026-06-04`) — the sibling-Π emit phase is the
+        // registry-driven `emitSteps` fold over a seed `Outputs`. Each step
+        // writes its one field; the SSDT step computes `decisionOverlay`
+        // (Wave-2 2.2 — decisions, never Policy; A18 holds) + `policyConflicts`
+        // (H-034) internally from the context. `registered ⇔ executed` for the
+        // emit stage holds because `RegisteredAllTransforms` reads the same
+        // `emitSteps`. Byte-identical to the prior hand-assembled `Outputs`.
+        let emitContext : EmitContext =
+            { EmittedCatalog  = emittedCatalog
+              ComposedState   = composedState
+              Profile         = profile
+              Folders         = folders
+              VersionedPolicy = versionedPolicy
+              Trail           = composed.Trail
+              PassEntries     = passEntries }
+        let outputs =
+            emitSteps
+            |> List.fold (fun acc step -> step.Emit emitContext acc) (seedOutputs emitContext)
         outputs, composedState
 
     let private projectFromChain

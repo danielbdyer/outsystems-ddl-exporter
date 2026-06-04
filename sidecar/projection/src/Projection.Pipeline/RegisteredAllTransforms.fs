@@ -52,28 +52,24 @@ module RegisteredAllTransforms =
     /// consumers** use `TransformRegistry.overlayView` for the
     /// complementary set. Both views project from this single source.
     let all : RegisteredTransformMetadata list =
-        [ CatalogReader.registeredMetadata
-          SsdtDdlEmitter.registeredMetadata
-          // Slice D.3.b — `ConstraintFormatter.registeredMetadata`
-          // is the realization-layer overlay sibling to the SSDT
-          // emitter. Classified `OperatorIntent Emission` per pillar
-          // 9; pairs with `LogicalTableEmission` / `LogicalColumnEmission`
-          // (catalog-level) on the same Emission axis but operates at
-          // the rendered-text boundary (Mode parameter at `Render.toText`
-          // call site; default-on production wiring).
-          ConstraintFormatter.registeredMetadata
-          DacpacEmitter.registeredMetadata
-          JsonEmitter.registeredMetadata
-          DistributionsEmitter.registeredMetadata
-          StaticPopulationEmitter.registeredMetadata
-          // Chapter 5+ slices 5.13.remediation-emitter +
-          // 5.13.summary-formatter — operator-UX projections under
-          // Projection.Targets.OperationalDiagnostics; both classify
-          // as DataIntent (the projections derive from DecisionSet
-          // outcomes carrying observed evidence; no operator opinion
-          // enters the projection).
-          RemediationEmitter.registeredMetadata
-          SummaryFormatter.registeredMetadata ]
+        // E1 (`DECISIONS 2026-06-04`) — the full-export emit phase's six
+        // sibling-Π emitters (SSDT / Json / Distributions / Remediation /
+        // Summary / SuggestConfig) project their metadata from the SAME
+        // `Compose.emitSteps` that drives their execution, so
+        // `registered ⇔ executed` holds for the emit stage by construction.
+        // (SuggestConfig was previously executed-but-unregistered — E1 closes
+        // that mismatch.)
+        (Compose.emitSteps |> List.map (fun step -> step.Metadata))
+        // Registered as metadata but executed via direct calls at their own
+        // sites (not yet registry-driven): the read adapter (E2 follow-up) and
+        // the conditional render-mode / dacpac / data-bundle emitters (E4
+        // follow-up). `ConstraintFormatter` is `OperatorIntent Emission`
+        // (Slice D.3.b — the rendered-text-boundary overlay sibling to the
+        // SSDT emitter); the others classify DataIntent.
+        @ [ CatalogReader.registeredMetadata
+            ConstraintFormatter.registeredMetadata
+            DacpacEmitter.registeredMetadata
+            StaticPopulationEmitter.registeredMetadata ]
         @ RegisteredDataTransforms.all
         @ RegisteredTransforms.all
         // Transfer epic (bidirectional data load) — the reader leg
