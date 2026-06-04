@@ -4,6 +4,25 @@
 **Status:** Vision document, adversarially hardened. Companion to
 `AUDIT_2026_06_04_BLINDSPOT_COMPRESSION.md` (the empirical basis) — read that
 first for the findings; read this for the shape they imply.
+
+> **Correction (2026-06-04, wave 2 — `AUDIT_2026_06_04_PERIPHERY_ADVERSARIAL.md`):**
+> A second adversarial wave on the periphery (adapters / pipeline / targets /
+> tests / docs) plus an algebra-trajectory steelman **corrected this document's
+> reclaim numbers downward.** The §5 claim "the test suite is 3× Core because
+> invariants are convention-enforced" is overstated — ~39% of the suite is
+> hard-irreducible, the typed-AST migration is largely already done, and
+> deletable convention-debt is ~13%, not the bulk. The periphery duplication is
+> *also* mostly false symmetry (binder/diagnostic/perKind families don't
+> collapse; CatalogReader's JSON↔rowset paths fork on identity derivation exactly
+> as `Attribute`/`PhysicalColumn` did). **Core is ~95% crystalline; periphery
+> code reclaim is small; the genuine wins are god-file decomposition, dead-algebra
+> deletion (~716 Core LOC + ~2,500 test LOC, confirmed worthwhile by the
+> trajectory steelman — the two surfaces whose consumers shipped both *declined*
+> the prebuilt structure), ~13% test-debt, and ~35% doc compression.** This
+> document's Intent-vs-Quotient spine and its do/do-not collapse table are
+> *strengthened* by wave 2; only the size story shrank. See the wave-2 doc §9
+> for the precise corrections (and the one "zero callers" claim at line 184 that
+> is correct and must NOT be "fixed").
 **Method:** The naive "crystalline" claims (one IR, one writer, derived codec)
 were each handed to an adversarial agent tasked with *falsifying* them by
 finding a discriminating input. Two of three were substantially falsified. The
