@@ -1,9 +1,20 @@
 # REPORTING_HORIZON — the operator's data-reporting roadmap
 
-**Status:** composed 2026-06-04 (operator planning pass). This document
-governs **how V2 reports data to an operator** — the experience of
-running an export and trusting the result. It sits between two existing
-surfaces:
+**Status:** composed 2026-06-04 (operator planning pass); **all four tiers'
+cores shipped 2026-06-04** (commits: T1 after-verdict; T2 actionable digest;
+T4 ledger + R6 gauge; T3 Spectre `--pretty` panel). Each tier carries a
+documented follow-on (the deeper leg) — see its section. This document
+governs **how V2 reports data to an operator** — the experience of running
+an export and trusting the result. It sits between two existing surfaces:
+
+**What shipped (2026-06-04):** structured `canary.*` verdict events + a rich
+`runComplete` rollup (`transformSummary` / `rationaleHistogram`); the
+`suggestedConfigDigest` (merged-by-path actionable to-do list in the verdict);
+the `RunLedger` + `readiness` verb computing the R6 consecutive-green-canary
+cutover gauge; and the Spectre channel-2 `--pretty` verdict panel (a derived
+consumer, never a second emit surface). **Follow-ons:** `profile.probe.*` +
+declined→knob suggestion *sources* (T2); the live progress-bar leg (T3);
+per-environment ledgers + the `diff <runA> <runB>` verb (T4).
 
 - **`docs/logging-format.md`** is the *contract* — the event envelope,
   the §7 code taxonomy, the §10 `runComplete` rollup, the §12
@@ -97,7 +108,7 @@ verdict is prose, and nothing is actionable yet.
 
 ## §3 The four tiers (the plan)
 
-### Tier 1 — Make the run legible (the "after" verdict) · `proposed`
+### Tier 1 — Make the run legible (the "after" verdict) · `shipped` (2026-06-04)
 
 **Why.** This is the highest leverage for the lowest effort: it turns
 every run's *result* from prose into a structured verdict, serving both
@@ -137,7 +148,7 @@ exactly one `runComplete`; `transformSummary.registered` equals
 
 ---
 
-### Tier 2 — Make the run actionable (the "what do I do") · `proposed`
+### Tier 2 — Make the run actionable (the "what do I do") · `shipped (core)` (2026-06-04)
 
 **Why.** A verdict tells you *that* something needs attention; this tier
 tells you *exactly what to change.* It elevates V1's single
@@ -174,7 +185,7 @@ merge from). The actionable digest is the payoff that makes the verdict
 
 ---
 
-### Tier 3 — Make the run comfortable (the "during") · `proposed`
+### Tier 3 — Make the run comfortable (the "during") · `shipped (core)` (2026-06-04)
 
 **Why.** The only tier that's pure quality-of-life — but on a 300-table
 profile or a bulk row-load, a live progress surface with ETA is the
@@ -209,7 +220,7 @@ parallel once Tier 1's stage/summary events are rich.
 
 ---
 
-### Tier 4 — Make runs compound (the "across") · `proposed`
+### Tier 4 — Make runs compound (the "across") · `shipped (core)` (2026-06-04)
 
 **Why.** This is the tier closest to **your cutover decision** and the
 only one that's genuinely new design. A single run is a snapshot; cutover
