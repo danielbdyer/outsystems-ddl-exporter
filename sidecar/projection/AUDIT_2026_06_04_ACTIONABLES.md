@@ -132,19 +132,33 @@ Pure structural splits; no semantics change. **Must NOT merge forked code.**
 Each is a genuine shared-type-and-function dup or a 2+-consumer collapse —
 *not* a false-symmetry family.
 
-- **E1 ☐ — `ReaderColumns` helper** (`readString`/`readInt`/`readBool`/
-  `readGuidOpt` + dedup the verbatim `optInt` at `ReadSide.fs:238` ≡ `:1431`).
-  ~25-35 LOC. The only true verbatim dup in adapters.
-- **E2 ☐ — `CatalogResolution.kindByLogical`** (dedup
-  `SpecialCircumstancesBinding.fs:59` ≡ `EmissionFoldersBinding.fs:146`; the
-  latter's docstring already admits the mirror). ~20 LOC, 2 consumers. Leave
-  `kindByPhysicalTable`/`attributeRef` as siblings (different functions).
-- **E3 ☐ — `Emitter.perKindFolding`** from the proven `DiagnosticDocument.buildArtifact`
-  triplet (3 live consumers: DecisionLog/Opportunities/Validation). Let the
-  Json/Distributions/RefactorLog arity variants follow as evidence accrues —
-  **do not sweep perKind onto all 6 sites** (fits only 4, across 3 arities).
-- **E4 ☐ — `readGrouped<'K,'T>` kernel** for the 4 `Dictionary<K,ResizeArray<_>>`
-  accumulation loops in ReadSide (`:438/469/511/589`). ~30-40 LOC. ReadSide-internal.
+- **E1 ◐ — `optInt` verbatim dedup done; cross-project `ReaderColumns` deferred.**
+  [done 2026-06-04 — extracted the byte-identical `optInt` (`ReadSide.fs:238` ≡
+  `:1431`) to a module-level `ReadSide.optIntOf reader`; full solution builds
+  0-warning. **Build-verified only** — ReadSide's runtime tests are Docker-gated
+  (pool degraded this session). The larger cross-project `ReaderColumns` module
+  (sharing `readString`/`readInt`/… with `MetadataSnapshotRunner` in a different
+  project) is deferred: it needs a project-structure decision + Docker
+  verification, and is anticipatory beyond the one verbatim dup.]
+- **E2 ☑ — `CatalogResolution.tryKindByLogical`.** [done 2026-06-04 — new
+  `src/Projection.Pipeline/CatalogResolution.fs` with the pure lookup (returns
+  `SsKey option`; takes `string×string`, no `Config` dep); rewired both verbatim
+  copies (`SpecialCircumstancesBinding`/`EmissionFoldersBinding`) to it, each
+  keeping its own error wrapping. Left `kindByPhysicalTable`/`attributeRef` as
+  siblings. Build 0-warning; pure pool green.]
+- **E3 ⊘ — DEFERRED (would be speculative).** `DiagnosticDocument.buildArtifact`
+  is *already* deduplicated (one function, 3 live consumers). Promoting it to a
+  Core `Emitter.perKindFolding` combinator now is anticipatory — the other
+  emitters (Json/Distributions/SSDT) have different arities and don't need it.
+  Building the combinator family ahead of a 4th consumer is exactly the
+  abstract-ahead-of-evidence the audit criticized. Defer per IR-grows-under-
+  evidence; revisit when a genuine 4th per-kind consumer of the folding shape
+  appears.
+- **E4 ⊘ — DEFERRED (Docker-gated).** `readGrouped<'K,'T>` kernel for the 4
+  `Dictionary<K,ResizeArray<_>>` loops (`:438/469/511/589`) is a behavior-changing
+  loop restructure whose only runtime verification is ReadSide's Docker-pool tests
+  (degraded this session). Defer until the Docker pool is confirmed healthy so the
+  restructure can be test-verified, not just compile-verified.
 
 ---
 

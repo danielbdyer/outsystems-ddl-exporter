@@ -222,6 +222,19 @@ module ReadSide =
     /// Per session-32 — extended to read CHARACTER_MAXIMUM_LENGTH,
     /// NUMERIC_PRECISION, NUMERIC_SCALE so the V2 IR carries
     /// byte-faithful type declarations through the round-trip.
+    /// Read a nullable integer column as `int option`, coercing the
+    /// common SQL integer CLR types. The body was previously duplicated
+    /// verbatim in `readColumnRows` and `readSchemaCombined`.
+    let private optIntOf (reader: SqlDataReader) (idx: int) : int option =
+        if reader.IsDBNull idx then None
+        else
+            match reader.GetValue idx with
+            | :? int32 as i32 -> Some (int i32)
+            | :? int16 as i16 -> Some (int i16)
+            | :? int64 as i64 -> Some (int i64)
+            | :? byte as b -> Some (int b)
+            | _ -> None
+
     let private readColumnRows (cnn: SqlConnection)
         : Task<list<ColumnRow>> =
         task {
@@ -235,17 +248,7 @@ module ReadSide =
                  ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION"
             use! reader = cmd.ExecuteReaderAsync()
             let rows = ResizeArray<ColumnRow>()
-            let optInt (idx: int) : int option =
-                if reader.IsDBNull idx then
-                    None
-                else
-                    let raw = reader.GetValue idx
-                    match raw with
-                    | :? int32 as i32 -> Some (int i32)
-                    | :? int16 as i16 -> Some (int i16)
-                    | :? int64 as i64 -> Some (int i64)
-                    | :? byte as b -> Some (int b)
-                    | _ -> None
+            let optInt = optIntOf reader
             let mutable hasMore = true
             while hasMore do
                 let! more = reader.ReadAsync()
@@ -1428,16 +1431,7 @@ module ReadSide =
 
             // Result set 1: column rows (matches readColumnRows shape).
             let columnRows = ResizeArray<ColumnRow>()
-            let optInt (idx: int) : int option =
-                if reader.IsDBNull idx then None
-                else
-                    let raw = reader.GetValue idx
-                    match raw with
-                    | :? int32 as i32 -> Some (int i32)
-                    | :? int16 as i16 -> Some (int i16)
-                    | :? int64 as i64 -> Some (int i64)
-                    | :? byte as b -> Some (int b)
-                    | _ -> None
+            let optInt = optIntOf reader
             let mutable hasMore1 = true
             while hasMore1 do
                 let! more = reader.ReadAsync()
