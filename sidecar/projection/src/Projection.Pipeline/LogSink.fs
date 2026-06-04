@@ -324,6 +324,13 @@ module LogSink =
             Stages                      : ResizeArray<StageTiming>
             Artifacts                   : ResizeArray<Artifact>
             mutable SuggestedConfigEdits: int
+            // §10 transformSummary counters — incremented BEFORE the
+            // verbosity filter so the rollup reflects the run, not the
+            // display (`transform.registered` is Debug, suppressed under
+            // Quiet; the summary must still count it).
+            mutable TransformRegistered : int
+            mutable TransformApplied    : int
+            mutable TransformDeclined   : int
         }
 
     let private freshState () : RunState =
@@ -338,6 +345,9 @@ module LogSink =
             Stages               = ResizeArray()
             Artifacts            = ResizeArray()
             SuggestedConfigEdits = 0
+            TransformRegistered  = 0
+            TransformApplied     = 0
+            TransformDeclined    = 0
         }
 
     let private state : RunState ref = ref (freshState ())
@@ -565,9 +575,17 @@ module LogSink =
     /// `MutedCategories` are dropped at this boundary.
     let emit (env: Envelope) : unit =
         lock lockObj (fun () ->
-            if not (isLevelVisible state.Value.Verbosity env.Level) then
+            let s = state.Value
+            // §10 transformSummary — count before the verbosity/mute filter so
+            // the rollup reflects what ran, not what was displayed.
+            (match env.Code with
+             | "transform.registered" -> s.TransformRegistered <- s.TransformRegistered + 1
+             | "transform.applied"    -> s.TransformApplied    <- s.TransformApplied + 1
+             | "transform.declined"   -> s.TransformDeclined   <- s.TransformDeclined + 1
+             | _ -> ())
+            if not (isLevelVisible s.Verbosity env.Level) then
                 ()
-            elif Set.contains env.Category state.Value.MutedCategories then
+            elif Set.contains env.Category s.MutedCategories then
                 ()
             else
                 updateAccumulator env
@@ -776,6 +794,30 @@ module LogSink =
             levelToString lv, box n)
         |> Map.ofList
 
+    /// §10 `rationaleHistogram` — group every `transform.declined` event by
+    /// its payload `rationale` (the §8.1 closed enum), carrying the count +
+    /// the first three SsKey samples per rationale. The operator scans this
+    /// to know which knob turns which non-tightened axis. Empty map when no
+    /// declines fired. Derived from the accumulated Info-level envelopes.
+    let private buildRationaleHistogram (envelopes: ResizeArray<Envelope>) : Map<string, objnull> =
+        envelopes
+        |> Seq.filter (fun e -> e.Code = "transform.declined")
+        |> Seq.choose (fun e ->
+            match Map.tryFind "rationale" e.Payload with
+            | Some r when not (isNull r) -> Some (string r, e)
+            | _ -> None)
+        |> Seq.groupBy fst
+        |> Seq.map (fun (rationale, group) ->
+            let items = group |> Seq.map snd |> Seq.toList
+            let samples =
+                items
+                |> List.truncate 3
+                |> List.choose (fun e -> e.SsKey |> Option.map renderSsKey)
+            let entry : Map<string, objnull> =
+                Map.ofList [ "count", box (List.length items); "samples", box samples ]
+            rationale, (box entry : objnull))
+        |> Map.ofSeq
+
     /// Emit the terminal `summary.runComplete` event per §10. Pulls
     /// the current accumulator + an optional `Bench.Stats` snapshot
     /// (caller-supplied so the CLI controls when the bench surface
@@ -814,6 +856,13 @@ module LogSink =
                     else compare a.FirstTs b.FirstTs)
                 |> Seq.map renderAggregateEntry
                 |> Seq.toList
+            let transformSummary : Map<string, objnull> =
+                Map.ofList [
+                    "registered", box s.TransformRegistered
+                    "applied",    box s.TransformApplied
+                    "declined",   box s.TransformDeclined
+                ]
+            let rationaleHistogram = buildRationaleHistogram s.Envelopes
             let payload : Map<string, objnull> =
                 Map.ofList [
                     "outcome",              box (outcomeToString outcome)
@@ -824,6 +873,8 @@ module LogSink =
                                                 s.EventCounts
                                                 |> Seq.map (fun kv -> kv.Key, kv.Value)
                                                 |> Map.ofSeq))
+                    "transformSummary",     box transformSummary
+                    "rationaleHistogram",   box rationaleHistogram
                     "suggestedConfigEdits", box s.SuggestedConfigEdits
                     "artifacts",            box artifactsPayload
                     "aggregates",           box aggregatePayload

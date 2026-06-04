@@ -220,3 +220,37 @@ module EventProjection =
     /// classified transform inventory.
     let ofRegistry (registry: RegisteredTransformMetadata list) : LogSink.Envelope list =
         registry |> List.map ofRegisteredTransform
+
+    /// Tier-1 reporting (§7.7) — project a wide-canary `PhysicalSchemaDiff`
+    /// into structured `canary.*` events: `canary.diffEmpty` (green; info /
+    /// end) or `canary.divergence` (red; error — **fails the run**) carrying
+    /// the per-axis divergence breakdown + the rendered human diff. The CLI
+    /// canary verb emits these alongside the operator-facing prose, so the
+    /// fidelity verdict is machine-readable + ledger-able, not just printed.
+    let canaryEnvelopes (tableCount: int) (diff: PhysicalSchemaDiff) : LogSink.Envelope list =
+        if PhysicalSchema.isEqual diff then
+            [ { LogSink.envelope LogSink.Info LogSink.Canary "canary.diffEmpty"
+                  (Map.ofList [ "tableCount", box tableCount ]) with
+                  Phase = LogSink.End } ]
+        else
+            let axisCounts : Map<string, objnull> =
+                Map.ofList [
+                    "missingColumns",             box (List.length diff.MissingColumns)
+                    "extraColumns",               box (List.length diff.ExtraColumns)
+                    "missingForeignKeys",         box (List.length diff.MissingForeignKeys)
+                    "extraForeignKeys",           box (List.length diff.ExtraForeignKeys)
+                    "missingIndexes",             box (List.length diff.MissingIndexes)
+                    "extraIndexes",               box (List.length diff.ExtraIndexes)
+                    "missingRows",                box (List.length diff.MissingRows)
+                    "extraRows",                  box (List.length diff.ExtraRows)
+                    "missingRowDigests",          box (List.length diff.MissingRowDigests)
+                    "extraRowDigests",            box (List.length diff.ExtraRowDigests)
+                    "missingAnnotations",         box (List.length diff.MissingAnnotations)
+                    "extraAnnotations",           box (List.length diff.ExtraAnnotations)
+                    "missingLogicalNameBindings", box (List.length diff.MissingLogicalNameBindings)
+                    "extraLogicalNameBindings",   box (List.length diff.ExtraLogicalNameBindings)
+                ]
+            [ { LogSink.envelope LogSink.Error LogSink.Canary "canary.divergence"
+                  (Map.ofList [ "axisCounts",   box axisCounts
+                                "renderedDiff", box (PhysicalSchema.renderDiff diff) ]) with
+                  Phase = LogSink.ErrorPhase } ]

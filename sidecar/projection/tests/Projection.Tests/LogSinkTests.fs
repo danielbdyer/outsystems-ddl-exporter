@@ -458,3 +458,55 @@ let ``§10 runComplete: eventCounts payload includes all five levels with zero f
     Assert.True((prop counts "info").GetInt32() >= 1)
     Assert.Equal(0, (prop counts "warn").GetInt32())
     Assert.Equal(0, (prop counts "error").GetInt32())
+
+// ----------------------------------------------------------------------
+// Tier-1 reporting — §10 transformSummary + rationaleHistogram
+// ----------------------------------------------------------------------
+
+let private findRunComplete (lines: string list) : JsonElement =
+    lines
+    |> List.map parse
+    |> List.find (fun e -> getStr (prop e "code") = "summary.runComplete")
+
+[<Fact>]
+let ``Tier-1 §10: transformSummary counts registered/applied/declined and survives Quiet suppression`` () =
+    // `transform.registered` is Debug — suppressed from DISPLAY under the
+    // default Quiet verbosity, but the §10 summary must still count it.
+    let lines =
+        captureLines (fun () ->
+            LogSink.emit (LogSink.envelope LogSink.Debug LogSink.Transform "transform.registered" Map.empty)
+            LogSink.emit (LogSink.envelope LogSink.Debug LogSink.Transform "transform.registered" Map.empty)
+            LogSink.emit (LogSink.envelope LogSink.Info LogSink.Transform "transform.applied" Map.empty)
+            LogSink.emit (LogSink.envelope LogSink.Info LogSink.Transform "transform.declined" Map.empty)
+            LogSink.emit (LogSink.envelope LogSink.Info LogSink.Transform "transform.declined" Map.empty)
+            LogSink.emit (LogSink.envelope LogSink.Info LogSink.Transform "transform.declined" Map.empty)
+            LogSink.runComplete LogSink.Succeeded "test" [] |> ignore)
+    let ts = prop (prop (findRunComplete lines) "payload") "transformSummary"
+    Assert.Equal(2, (prop ts "registered").GetInt32())   // counted despite Debug suppression
+    Assert.Equal(1, (prop ts "applied").GetInt32())
+    Assert.Equal(3, (prop ts "declined").GetInt32())
+
+[<Fact>]
+let ``Tier-1 §10: rationaleHistogram groups transform.declined by rationale`` () =
+    let declined rationale basis =
+        { LogSink.envelope LogSink.Info LogSink.Transform "transform.declined"
+            (Map.ofList [ "rationale", box rationale ]) with SsKey = Some (fixtureKey basis) }
+    let lines =
+        captureLines (fun () ->
+            LogSink.emit (declined "DataHasNulls" "a")
+            LogSink.emit (declined "DataHasNulls" "b")
+            LogSink.emit (declined "NullBudgetEpsilon" "c")
+            LogSink.runComplete LogSink.Succeeded "test" [] |> ignore)
+    let hist = prop (prop (findRunComplete lines) "payload") "rationaleHistogram"
+    Assert.Equal(2, (prop (prop hist "DataHasNulls") "count").GetInt32())
+    Assert.Equal(1, (prop (prop hist "NullBudgetEpsilon") "count").GetInt32())
+
+[<Fact>]
+let ``Tier-1 §10: rationaleHistogram is empty when no declines fired`` () =
+    let lines =
+        captureLines (fun () ->
+            LogSink.emit (LogSink.envelope LogSink.Info LogSink.Transform "transform.applied" Map.empty)
+            LogSink.runComplete LogSink.Succeeded "test" [] |> ignore)
+    let hist = prop (prop (findRunComplete lines) "payload") "rationaleHistogram"
+    Assert.Equal(JsonValueKind.Object, hist.ValueKind)
+    Assert.Equal(0, hist.EnumerateObject() |> Seq.length)

@@ -482,8 +482,16 @@ let private runCanary (sourceDdlPath: string) : int =
         // form (DDL + StaticPopulationEmitter's InsertRow realization into the
         // fresh-empty target). Schema-only when the source carries no static
         // populations. See `Deploy.schemaWithStaticPopulation`.
+        let stageTimer = System.Diagnostics.Stopwatch.StartNew()
         let task = Deploy.runWideCanary sourceDdl Deploy.schemaWithStaticPopulation
         let result = task.GetAwaiter().GetResult()
+        stageTimer.Stop()
+        // Tier-1 reporting — the canary stage feeds the §10 runComplete stages
+        // table (the canary verb is single-stage; full-export records its own).
+        LogSink.recordStage "canary" stageTimer.ElapsedMilliseconds
+            (match result with
+             | Ok r when PhysicalSchema.isEqual r.Diff -> LogSink.Succeeded
+             | _ -> LogSink.Failed)
         let exitCode =
             match result with
             | Ok report ->
@@ -491,6 +499,11 @@ let private runCanary (sourceDdlPath: string) : int =
                     "projection: source deployed %d table(s); target deployed %d table(s)"
                     report.SourceReport.TablesCreated
                     report.TargetReport.TablesCreated
+                // Tier-1 reporting (§7.7) — emit the structured fidelity verdict
+                // (canary.diffEmpty / canary.divergence) alongside the prose, so
+                // CI can gate on it and the run ledger can record it.
+                EventProjection.canaryEnvelopes report.TargetReport.TablesCreated report.Diff
+                |> List.iter LogSink.emit
                 if PhysicalSchema.isEqual report.Diff then
                     printfn "projection: canary green — PhysicalSchema diff empty"
                     0
