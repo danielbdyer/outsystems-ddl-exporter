@@ -29,6 +29,7 @@
     <Compile Include="ResultTests.fs" />
     <Compile Include="BenchTests.fs" />
     <Compile Include="LogSinkTests.fs" />
+    <Compile Include="LogSinkSubscriberTests.fs" />
     <Compile Include="RunLedgerTests.fs" />
     <Compile Include="RunTests.fs" />
     <Compile Include="SourceTests.fs" />
