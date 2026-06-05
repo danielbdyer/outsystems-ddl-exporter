@@ -1095,12 +1095,14 @@ let private runReadiness () : int =
         eprintfn "projection: no run ledger configured. Set PROJECTION_LEDGER_DIR to accumulate run history."
         4
     | Some dir ->
-        let r = RunLedger.read dir |> RunLedger.readiness
-        printfn "projection: run ledger at %s" (RunLedger.ledgerPath dir)
-        printfn "  runs: %d (%d with a canary leg)" r.TotalRuns r.CanaryRuns
-        printfn "  consecutive green canaries: %d / %d (R6 threshold)" r.ConsecutiveGreen r.Threshold
-        printfn "  last canary: %s" (match r.LastCanary with Some c -> c | None -> "(none yet)")
-        printfn "  R6 cutover gate: %s" (if r.Eligible then "ELIGIBLE" else "NOT YET")
+        let records = RunLedger.read dir
+        let r = RunLedger.readiness records
+        let recent =
+            records |> List.choose (fun e -> e.Canary) |> List.rev |> List.truncate 16 |> List.rev
+        // Human channel — the themed cutover board (color on a TTY, plain piped).
+        TtyRenderer.renderReadinessBoard r recent (RunLedger.ledgerPath dir)
+        // Machine channel — one structured summary.readiness event (CI gates
+        // on `eligible`).
         LogSink.beginRun () |> ignore
         LogSink.emit
             { LogSink.envelope LogSink.Info LogSink.Summary "summary.readiness"
@@ -1110,6 +1112,7 @@ let private runReadiness () : int =
                     "consecutiveGreen", box r.ConsecutiveGreen
                     "threshold",        box r.Threshold
                     "lastCanary",       (match r.LastCanary with Some c -> box c | None -> null)
+                    "recentCanaries",   box recent
                     "eligible",         box r.Eligible ]) with
                 Phase = LogSink.End }
         0

@@ -55,3 +55,35 @@ let ``Tier-3: verdict panel shows a red canary on divergence`` () =
 [<Fact>]
 let ``Tier-3: shouldRender is false when --pretty not requested`` () =
     Assert.False(TtyRenderer.shouldRender false)
+
+let private renderBoard (r: RunLedger.Readiness) (recent: string list) : string =
+    use sw = new StringWriter()
+    let console =
+        AnsiConsole.Create(
+            AnsiConsoleSettings(
+                Ansi = AnsiSupport.No,
+                ColorSystem = ColorSystemSupport.NoColors,
+                Out = AnsiConsoleOutput(sw)))
+    console.Profile.Width <- 200
+    TtyRenderer.renderReadinessBoardTo console r recent "/x/runs.jsonl"
+    sw.ToString()
+
+[<Fact>]
+let ``Tier-4 board: leads with ELIGIBLE + full meter + history dots`` () =
+    let r : RunLedger.Readiness =
+        { TotalRuns = 12; CanaryRuns = 12; ConsecutiveGreen = 10
+          LastCanary = Some "green"; Threshold = 10; Eligible = true }
+    let text = renderBoard r [ "green"; "green"; "red"; "green" ]
+    Assert.Contains("ELIGIBLE", text)
+    Assert.Contains("10 / 10 green", text)
+    Assert.Contains("▇", text)   // the cutover meter
+    Assert.Contains("●", text)   // history dots
+
+[<Fact>]
+let ``Tier-4 board: NOT YET names the runs-to-go`` () =
+    let r : RunLedger.Readiness =
+        { TotalRuns = 8; CanaryRuns = 8; ConsecutiveGreen = 7
+          LastCanary = Some "green"; Threshold = 10; Eligible = false }
+    let text = renderBoard r [ "green"; "red"; "green" ]
+    Assert.Contains("NOT YET", text)
+    Assert.Contains("3 green run", text)   // 10 - 7 = 3 to go

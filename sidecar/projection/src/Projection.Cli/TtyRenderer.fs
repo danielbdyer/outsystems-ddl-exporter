@@ -73,3 +73,47 @@ let renderSummary (command: string) (code: int) : unit =
     let console =
         AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(Console.Error)))
     renderSummaryTo console command code
+
+/// Tier-4 / polish — the cutover-readiness board (`readiness` verb). Leads
+/// with the hero answer (eligible / how many to go), then the R6 meter, the
+/// canary-history dots, and the run totals. Rendered to the given console so
+/// it's testable; the production wrapper targets the default console (Spectre
+/// auto-colors on a TTY, strips when piped).
+let renderReadinessBoardTo
+    (console: IAnsiConsole)
+    (r: RunLedger.Readiness)
+    (recent: string list)
+    (ledgerPath: string)
+    : unit =
+    let toGo = max 0 (r.Threshold - r.ConsecutiveGreen)
+    console.WriteLine()
+    if r.Eligible then
+        console.MarkupLine(
+            sprintf "  %s  %s %s %d consecutive green canaries"
+                (Theme.green Theme.ok) (Theme.green (Theme.bold "ELIGIBLE")) Theme.dot r.ConsecutiveGreen)
+    else
+        console.MarkupLine(
+            sprintf "  %s  %s %s %d green run(s) to cutover-ready"
+                (Theme.yellow Theme.pending) (Theme.bold "NOT YET") Theme.dot toGo)
+    console.WriteLine()
+    console.MarkupLine(
+        sprintf "  %s   %s   %d / %d green"
+            (Theme.muted "cutover") (Theme.meter r.ConsecutiveGreen r.Threshold) r.ConsecutiveGreen r.Threshold)
+    if not (List.isEmpty recent) then
+        console.MarkupLine(sprintf "  %s   %s" (Theme.muted "history") (Theme.canaryDotsMarkup recent))
+    console.MarkupLine(
+        sprintf "  %s      %d total %s %d with a canary %s last %s"
+            (Theme.muted "runs") r.TotalRuns Theme.dot r.CanaryRuns Theme.dot
+            (Markup.Escape (match r.LastCanary with Some c -> c | None -> "—")))
+    console.WriteLine()
+    console.MarkupLine(sprintf "  %s    %s" (Theme.muted "ledger") (Theme.muted (Markup.Escape ledgerPath)))
+
+let renderReadinessBoard (r: RunLedger.Readiness) (recent: string list) (ledgerPath: string) : unit =
+    // The board renders on every `readiness` (not just on a TTY). Build the
+    // console over stdout explicitly; when piped, Spectre's auto-width is too
+    // small and lines collapse — pin a sensible width (it still strips color
+    // for the non-terminal sink). On a real TTY, color + true width apply.
+    let console =
+        AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(Console.Out)))
+    if Console.IsOutputRedirected then console.Profile.Width <- 100
+    renderReadinessBoardTo console r recent ledgerPath
