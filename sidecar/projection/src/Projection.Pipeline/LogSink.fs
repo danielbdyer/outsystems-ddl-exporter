@@ -639,6 +639,11 @@ module LogSink =
         lock lockObj (fun () ->
             state.Value.Envelopes |> List.ofSeq)
 
+    /// The run's accumulated envelopes, serialized to their NDJSON wire form
+    /// — the faithful, opaque event trail a `Run` captures (masterful base #2).
+    let serializedEnvelopes () : string list =
+        snapshot () |> List.map serializeEnvelope
+
     /// Snapshot the accumulator groups, sorted descending by `Count`
     /// then ascending by `FirstTs` (the §11 output ordering). Pure
     /// read — does not rebuild the dictionary.

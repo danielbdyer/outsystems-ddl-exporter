@@ -1,8 +1,10 @@
+[<Xunit.Collection("Global-MutableState")>]
 module Projection.Tests.RunTests
 
 open System
 open System.IO
 open Xunit
+open Projection.Core
 open Projection.Pipeline
 
 /// Masterful base #2 — the addressable run aggregate. Discriminating
@@ -12,7 +14,8 @@ let private sample : Run.Run =
     { RunId = "01ABCDEF"; Ts = "2026-06-05T00:00:00Z"; Command = "projection canary"
       InputDigest = "deadbeef"; Outcome = "succeeded"; Canary = Some "green"
       Registered = 42; Applied = 3; Declined = 1
-      Events = [ """{"code":"config.runStart"}"""; """{"code":"summary.runComplete"}""" ] }
+      Events = [ """{"code":"config.runStart"}"""; """{"code":"summary.runComplete"}""" ]
+      Artifacts = Map.ofList [ "catalog.json", """{"modules":[]}"""; "summary.txt", "all green" ] }
 
 [<Fact>]
 let ``Run: inputDigest is stable across calls and sensitive to inputs (content-addressed)`` () =
@@ -52,3 +55,22 @@ let ``Run: toLedgerEntry projects the index row (subsumes LedgerRecord)`` () =
     Assert.Equal(sample.Canary, e.Canary)
     Assert.Equal(sample.Registered, e.Registered)
     Assert.Equal(sample.Outcome, e.Outcome)
+
+[<Fact>]
+let ``Run: capture builds a Run from the live LogSink state + the artifact tree`` () =
+    use sw = new StringWriter()
+    LogSink.reset ()
+    LogSink.withWriter sw (fun () ->
+        // registered is Debug (suppressed from display, still counted);
+        // applied is Info (displayed + accumulated into the event trail).
+        LogSink.emit (LogSink.envelope LogSink.Debug LogSink.Transform "transform.registered" Map.empty)
+        LogSink.emit (LogSink.envelope LogSink.Info LogSink.Transform "transform.applied" Map.empty))
+    let artifacts = Map.ofList [ "catalog.json", "{}" ]
+    let run = Run.capture "projection emit" 0 "digest123" artifacts
+    Assert.Equal("succeeded", run.Outcome)
+    Assert.Equal("digest123", run.InputDigest)
+    Assert.Equal(1, run.Registered)                 // counted despite Debug suppression
+    Assert.Equal(1, run.Applied)
+    Assert.Equal<Map<string, string>>(artifacts, run.Artifacts)   // the tree is carried
+    Assert.NotEmpty(run.RunId)
+    Assert.NotEmpty(run.Events)                     // the Info event is in the trail
