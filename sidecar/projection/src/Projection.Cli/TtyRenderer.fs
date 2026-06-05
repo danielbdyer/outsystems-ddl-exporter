@@ -116,43 +116,51 @@ let renderReadinessBoard (r: RunLedger.Readiness) (recent: string list) (ledgerP
 
 /// Render any `View` to stdout — the "answer" surface (stdout carries the answer;
 /// structured events stay on stderr). Pretty (color) on a TTY; plain when piped
-/// (width pinned so lines don't collapse); `--format json` emits the same
-/// document as structure (`View.toJson`), so the human and machine lenses are
-/// the one value.
-let renderAnswer (asJson: bool) (v: View.View) : unit =
+/// (width pinned so lines don't collapse); the dig is revealed to `depth` levels.
+/// `--format json` emits the same document as structure (`View.toJson`) — always
+/// the full tree — so the human and machine lenses are the one value.
+let renderAnswer (asJson: bool) (depth: int) (v: View.View) : unit =
     if asJson then
         Console.Out.WriteLine((View.toJson v).ToJsonString())
     else
         let console =
             AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(Console.Out)))
         if Console.IsOutputRedirected then console.Profile.Width <- 100
-        View.write console v
+        View.writeToDepth console depth v
 
 // --- the Gate surface — a refusal as a stop-and-confirm (INSTRUMENT slice 3) -
 
-/// Build the Gate `View` — the stop-and-confirm a refusal renders. Essence-first:
-/// a plain Hero names the danger (Bad for a destructive change the operator must
-/// declare; Warn for a blocking pre-flight refusal); the dig carries the gate
-/// axis (the `GateLabel`), the specific detail, and the distinct exit code; the
-/// next action names how to proceed. Binds `Preflight.GateRefusal` — the
-/// structured refusal that otherwise collapses to a single error string.
-let buildGateView (command: string) (refusal: Preflight.GateRefusal) : View.View =
+/// The Gate as a `Surface` (INSTRUMENT slice 3) — the stop-and-confirm a refusal
+/// renders. Essence-first: a Hero names the danger in plain words (Bad for a
+/// destructive change the operator must declare; Warn for a blocking pre-flight
+/// refusal); the dig is a `Disclosure` carrying the formal proof — the gate
+/// label, the specific detail, and the distinct exit code — open by default but
+/// collapsible for the operator who already knows the drop; the next action
+/// names how to proceed. Binds `Preflight.GateRefusal` — the structured refusal
+/// that otherwise collapses to a single error string.
+let buildGateSurface (command: string) (refusal: Preflight.GateRefusal) : Surface.Surface =
     let label = Preflight.labelText refusal.Label
     let destructive = (refusal.Label = Preflight.UndeclaredDestructiveChange)
-    let hero =
+    let st = if destructive then View.Bad else View.Warn
+    let essence =
         if destructive then View.Hero(View.Bad, sprintf "%s refused — this change destroys structure" command)
         else View.Hero(View.Warn, sprintf "%s refused — %s" command label)
-    let nextAction =
+    let action =
         if destructive then
-            [ View.Action "declare the loss to proceed: --declare-loss <name> (or --declare-all), or abort" ]
-        else []
-    View.Doc
-        ([ View.Blank
-           hero
-           View.Field("gate", label, (if destructive then View.Bad else View.Warn))
-           View.Field("detail", refusal.Error.Message, View.Neutral)
-           View.Field("exit", string refusal.ExitCode, View.Neutral) ]
-         @ nextAction)
+            Some (View.Action "declare the loss to proceed: --declare-loss <name> (or --declare-all), or abort")
+        else None
+    { Essence = essence
+      Dig =
+        [ View.Disclosure(
+            "Details", View.Neutral,
+            [ View.Field("gate", label, st)
+              View.Field("detail", refusal.Error.Message, View.Neutral)
+              View.Field("exit", string refusal.ExitCode, View.Neutral) ]) ]
+      Action = action }
+
+/// The Gate `View`.
+let buildGateView (command: string) (refusal: Preflight.GateRefusal) : View.View =
+    Surface.render (buildGateSurface command refusal)
 
 /// Render the Gate to stderr (a refusal is an event surface; stdout stays the
 /// answer/narration surface).

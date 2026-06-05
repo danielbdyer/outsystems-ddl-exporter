@@ -65,8 +65,18 @@ fi
 # (the perf-awareness forcing function is unchanged). The hook now just follows
 # the logging contract's own discipline (§13.12 — emit nothing when there is
 # nothing to say), speaking only when the result is actionable.
-if grep -qE 'REGRESSION|SKIP|FATAL|did not become ready' "$LOG_FILE"; then
-    SUMMARY=$(grep -E "perf-gate|SKIP|REGRESSION|FATAL|history depth" "$LOG_FILE" | tail -n 8 | sed 's/"/\\"/g; s/\t/  /g')
+#
+# ACTIONABLE means the AGENT can do something about it: a perf REGRESSION (it
+# changed code) or a FATAL (the gate itself broke — likely a code fault). A
+# SKIP ("docker daemon not reachable") or "did not become ready" are PURELY
+# ENVIRONMENTAL — the agent cannot make Docker appear — so surfacing them is
+# the same self-feeding loop as the unconditional case, just gated on an
+# always-true condition in a Docker-less container (the gate SKIPs on EVERY
+# stop, re-injecting forever, forcing the agent to disclaim/defer). They are
+# now SILENT: the gate still runs and logs to $LOG_FILE for inspection, but a
+# non-actionable outcome closes the turn instead of re-prompting.
+if grep -qE 'REGRESSION|FATAL' "$LOG_FILE"; then
+    SUMMARY=$(grep -E "perf-gate|REGRESSION|FATAL|history depth" "$LOG_FILE" | tail -n 8 | sed 's/"/\\"/g; s/\t/  /g')
     CONTEXT="Stop hook (perf-gate) fired (exit ${GATE_EXIT}):\n${SUMMARY}"
     CONTEXT_JSON=$(printf '%s' "$CONTEXT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))' 2>/dev/null || printf '"perf-gate-stop output (see %s)"' "$LOG_FILE")
     cat <<EOF

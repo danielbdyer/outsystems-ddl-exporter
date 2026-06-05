@@ -41,8 +41,17 @@ type View =
     | Trail of label: string * steps: (string * string option) list
     /// A move-lane: a glyph + label + a status badge (the move's reversibility),
     /// over indented item rows (one move's changes). The changeset groups into
-    /// lanes — one per move (`INSTRUMENT` slice 2).
+    /// lanes — one per move (`INSTRUMENT` slice 2). Progressively disclosed: the
+    /// summary line always shows; the items reveal at render-depth ≥ 1.
     | Lane of glyph: string * label: string * Status * items: string list
+    /// A progressive-disclosure node — a one-line status-glyphed `headline` that
+    /// OPENS into `detail`, one depth-level per step (Apple-HIG disclosure; the
+    /// substrate of the dig — `DYNAMIC_DISPLAY` progressive revealing). Rendered
+    /// shallow it shows the headline + a `▸ N more` affordance; rendered deeper
+    /// it reveals the detail, each child one level further in. `toJson` ALWAYS
+    /// carries the full detail + count — the machine lens never loses the tree
+    /// the human collapsed.
+    | Disclosure of headline: string * Status * detail: View list
     /// A muted footer note.
     | Note of string
     /// The next-action line (principle #5).
@@ -95,38 +104,70 @@ let private writePanel (console: IAnsiConsole) (title: string) (fields: View lis
     panel.Border <- BoxBorder.Rounded
     console.Write(panel)
 
-let rec private writeBlock (console: IAnsiConsole) (v: View) : unit =
+/// The calm default render depth — "one level open" (the essence + the first
+/// level of the dig; deeper levels collapsed behind their affordance). The
+/// operator opens further with `--depth` (or `→` in Explore).
+[<Literal>]
+let defaultDepth = 1
+
+/// The disclosure marker for a node with children: open (`▾`) when this level
+/// is being revealed, closed (`▸`) when it is collapsed, blank when childless.
+let private marker (depth: int) (hasChildren: bool) : string =
+    if not hasChildren then " "
+    elif depth >= 1 then Theme.expanded
+    else Theme.collapsed
+
+let rec private writeBlock (console: IAnsiConsole) (depth: int) (indent: string) (v: View) : unit =
     match v with
-    | Doc blocks -> for b in blocks do writeBlock console b
+    | Doc blocks -> for b in blocks do writeBlock console depth indent b
     | Blank -> console.WriteLine()
     | Panel (title, fields) -> writePanel console title fields
     | Hero (st, text) ->
-        console.MarkupLine(sprintf "  %s  %s" (colorOf st (glyphOf st)) (Theme.bold (Markup.Escape text)))
+        console.MarkupLine(sprintf "%s%s  %s" indent (colorOf st (glyphOf st)) (Theme.bold (Markup.Escape text)))
     | Field (label, value, st) ->
-        console.MarkupLine(sprintf "  %s   %s" (Theme.muted (Markup.Escape label)) (styled st value))
+        console.MarkupLine(sprintf "%s%s   %s" indent (Theme.muted (Markup.Escape label)) (styled st value))
     | Meter (label, filled, total, suffix) ->
         console.MarkupLine(
-            sprintf "  %s   %s   %s"
-                (Theme.muted (Markup.Escape label)) (Theme.meter filled total) (Markup.Escape suffix))
+            sprintf "%s%s   %s   %s"
+                indent (Theme.muted (Markup.Escape label)) (Theme.meter filled total) (Markup.Escape suffix))
     | Dots (label, verdicts) ->
-        console.MarkupLine(sprintf "  %s   %s" (Theme.muted (Markup.Escape label)) (Theme.canaryDotsMarkup verdicts))
+        console.MarkupLine(sprintf "%s%s   %s" indent (Theme.muted (Markup.Escape label)) (Theme.canaryDotsMarkup verdicts))
     | Trail (label, steps) ->
-        console.MarkupLine(sprintf "  %s" (Theme.muted (Markup.Escape label)))
+        console.MarkupLine(sprintf "%s%s" indent (Theme.muted (Markup.Escape label)))
         for (step, detail) in steps do
             match detail with
-            | Some d -> console.MarkupLine(sprintf "  %s %s %s %s" Theme.arrow (Markup.Escape step) Theme.dot (Markup.Escape d))
-            | None   -> console.MarkupLine(sprintf "  %s %s" Theme.arrow (Markup.Escape step))
+            | Some d -> console.MarkupLine(sprintf "%s%s %s %s %s" indent Theme.arrow (Markup.Escape step) Theme.dot (Markup.Escape d))
+            | None   -> console.MarkupLine(sprintf "%s%s %s" indent Theme.arrow (Markup.Escape step))
     | Lane (glyph, label, st, items) ->
+        // A lane is a pre-baked disclosure of one move: the summary line always
+        // shows; the items reveal at depth ≥ 1, collapse to an affordance below.
+        let m = marker depth (not (List.isEmpty items))
         console.MarkupLine(
-            sprintf "  %s" (colorOf st (Markup.Escape (sprintf "%s %s  %d" glyph label (List.length items)))))
-        for item in items do
-            console.MarkupLine(sprintf "     %s %s" (Theme.muted Theme.dot) (Markup.Escape item))
-    | Note text -> console.MarkupLine(sprintf "  %s" (Theme.muted (Markup.Escape text)))
-    | Action text -> console.MarkupLine(sprintf "  %s %s" Theme.arrow (Theme.accent (Markup.Escape text)))
+            sprintf "%s%s %s" indent m (colorOf st (Markup.Escape (sprintf "%s %s  %d" glyph label (List.length items)))))
+        if depth >= 1 then
+            for item in items do
+                console.MarkupLine(sprintf "%s   %s %s" indent (Theme.muted Theme.dot) (Markup.Escape item))
+    | Disclosure (headline, st, detail) ->
+        let m = marker depth (not (List.isEmpty detail))
+        console.MarkupLine(sprintf "%s%s %s" indent m (styled st headline))
+        if depth >= 1 then
+            for child in detail do writeBlock console (depth - 1) (indent + "  ") child
+        elif not (List.isEmpty detail) then
+            console.MarkupLine(
+                sprintf "%s  %s %s" indent (Theme.muted Theme.collapsed)
+                    (Theme.muted (sprintf "%d more" (List.length detail))))
+    | Note text -> console.MarkupLine(sprintf "%s%s" indent (Theme.muted (Markup.Escape text)))
+    | Action text -> console.MarkupLine(sprintf "%s%s %s" indent Theme.arrow (Theme.accent (Markup.Escape text)))
 
-/// Render to the given console — a colored console is the pretty lens, a
+/// Render to a chosen disclosure depth — the dig revealed `depth` levels down,
+/// deeper nodes collapsed behind their `▸ N more` affordance. The interactive
+/// `→`/`←` of Explore and the `--depth` flag both ride this.
+let writeToDepth (console: IAnsiConsole) (depth: int) (v: View) : unit =
+    writeBlock console depth "  " v
+
+/// Render at the calm default depth — a colored console is the pretty lens, a
 /// `NoColors` console is the plain lens. One renderer, two outputs.
-let write (console: IAnsiConsole) (v: View) : unit = writeBlock console v
+let write (console: IAnsiConsole) (v: View) : unit = writeToDepth console defaultDepth v
 
 // --- The structured lens (toJson; a --query walks this) --------------------
 
@@ -167,6 +208,13 @@ let rec toJson (v: View) : JsonNode =
         let a = JsonArray()
         for x in items do a.Add(s x)
         obj [ "kind", s "lane"; "glyph", s glyph; "label", s label; "status", s (statusTag st); "items", a ]
+    | Disclosure (headline, st, detail) ->
+        // The full detail rides the structure regardless of render depth — the
+        // machine lens never loses the tree the human collapsed.
+        let a = JsonArray()
+        for x in detail do a.Add(toJson x)
+        obj [ "kind", s "disclosure"; "headline", s headline; "status", s (statusTag st)
+              "detail", a; "count", i (List.length detail) ]
     | Note text -> obj [ "kind", s "note"; "text", s text ]
     | Action text -> obj [ "kind", s "action"; "text", s text ]
     | Blank -> obj [ "kind", s "blank" ]

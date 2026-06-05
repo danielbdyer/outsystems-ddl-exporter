@@ -17,6 +17,7 @@
     <Compile Include="VerbArgs.fs" />
     <Compile Include="Theme.fs" />
     <Compile Include="View.fs" />
+    <Compile Include="Surface.fs" />
     <Compile Include="Comparison.fs" />
     <Compile Include="TtyRenderer.fs" />
     <Compile Include="Program.fs" />

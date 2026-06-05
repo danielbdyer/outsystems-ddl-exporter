@@ -18,6 +18,11 @@ let pending = "○"
 let arrow   = "→"
 let dot     = "·"
 let dotFilled = "●"
+// Progressive-disclosure affordances (Apple-HIG disclosure triangles): a closed
+// node still has depth beneath it; an open node is showing it. Glyph-paired, so
+// the affordance survives `NO_COLOR`.
+let collapsed = "▸"
+let expanded  = "▾"
 
 // --- Semantic Spectre markup (pretty channel) ------------------------------
 let green  (s: string) : string = "[green]"  + s + "[/]"
