@@ -18,6 +18,7 @@
     <Compile Include="Run.fs" />
     <Compile Include="Source.fs" />
     <Compile Include="Ref.fs" />
+    <Compile Include="RunHistory.fs" />
     <Compile Include="ApprovalStore.fs" />
     <Compile Include="LifecycleStore.fs" />
     <Compile Include="RenameBinding.fs" />
