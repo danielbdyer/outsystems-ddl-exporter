@@ -1,6 +1,7 @@
 module Projection.Tests.ComparisonTests
 
 open Xunit
+open Projection.Core
 open Projection.Cli
 open Projection.Tests.Fixtures
 
@@ -123,4 +124,25 @@ let ``Comparison: renderCatalogChange dig carries the move lanes`` () =
                 blocks |> List.exists (function View.Lane(_, "remove", _, _) -> true | _ -> false),
                 "expected a remove lane in the dig")
         | other -> Assert.Fail(sprintf "expected a Doc, got %A" other)
+    | Error e -> Assert.Fail e
+
+/// Reshape fixture (slice 2b): a Customer.Name facet change, mirroring the
+/// CatalogDiff attribute-Changed fixture, built from the shared Fixtures.
+let private reshapeTarget (f: Attribute -> Attribute) : Catalog =
+    let customer' =
+        { customer with
+            Attributes = customer.Attributes |> List.map (fun a -> if a.SsKey = customerNameKey then f a else a) }
+    Catalog.create [ { salesModule with Kinds = [ customer'; order; country ] } ] [] |> Result.value
+
+[<Fact>]
+let ``Comparison lanes: a changed attribute facet lands in a reshape lane badged Warn`` () =
+    let target = reshapeTarget (fun a -> { a with Type = Integer })
+    match Comparison.catalog.Between sampleCatalog target with
+    | Ok d ->
+        let reshape =
+            Comparison.renderCatalogLanes d
+            |> List.tryPick (function View.Lane(_, "reshape", st, items) -> Some(st, items) | _ -> None)
+        match reshape with
+        | Some (View.Warn, items) -> Assert.NotEmpty items
+        | other -> Assert.Fail(sprintf "expected a Warn reshape lane, got %A" other)
     | Error e -> Assert.Fail e

@@ -64,18 +64,42 @@ let catalogEssence (d: CatalogDiff) : View.View =
     else
         View.Hero(View.Ok, sprintf "%d changes · nothing destroyed" n)
 
-/// The move-typed lanes of a catalog change — kind-level rename / add / remove,
-/// each a `View.Lane` badged by reversibility (rename + add are reversible-safe
-/// → Ok; remove destroys structure → Bad). The rename lane carries `old → new`.
-/// (Attribute-level reshape lanes are the next slice.)
+/// One attribute facet, in plain words (for the reshape lane).
+let private facetText (f: AttributeFacet) : string =
+    match f with
+    | AttributeFacet.DataType     -> "type"
+    | AttributeFacet.Nullability  -> "nullability"
+    | AttributeFacet.PrimaryKey   -> "primary key"
+    | AttributeFacet.Length       -> "length"
+    | AttributeFacet.Precision    -> "precision"
+    | AttributeFacet.Scale        -> "scale"
+    | AttributeFacet.Identity     -> "identity"
+    | AttributeFacet.DefaultValue -> "default"
+    | AttributeFacet.Computed     -> "computed"
+
+let private facetsText (facets: Set<AttributeFacet>) : string =
+    facets |> Set.toList |> List.map facetText |> String.concat ", "
+
+/// The move-typed lanes of a catalog change — rename / reshape / add / remove,
+/// each a `View.Lane` badged by reversibility: rename + add are reversible-safe
+/// (Ok); reshape may rewrite data (Warn — review); remove destroys structure
+/// (Bad). The rename lane carries `old → new`; the reshape lane carries the
+/// changed attribute + which facets changed.
 let renderCatalogLanes (d: CatalogDiff) : View.View list =
     let renamed = CatalogDiff.renamed d |> Map.toList
     let added   = CatalogDiff.added d   |> Set.toList
     let removed = CatalogDiff.removed d  |> Set.toList
+    let reshaped =
+        CatalogDiff.attributeDiffs d
+        |> Map.toList
+        |> List.collect (fun (_, ad) ->
+            ad.Changed
+            |> List.map (fun c -> sprintf "%s · %s" (SsKey.rootOriginal c.AttributeKey) (facetsText c.Facets)))
     let lane glyph label st items =
         if List.isEmpty items then [] else [ View.Lane(glyph, label, st, items) ]
     lane "⟲" "rename" View.Ok
         (renamed |> List.map (fun (_, r) -> sprintf "%s → %s" (Name.value r.OldName) (Name.value r.NewName)))
+    @ lane "~" "reshape" View.Warn reshaped
     @ lane "+" "add" View.Ok (added |> List.map SsKey.rootOriginal)
     @ lane "−" "remove" View.Bad (removed |> List.map SsKey.rootOriginal)
 
