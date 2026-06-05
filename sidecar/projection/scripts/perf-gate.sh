@@ -5,6 +5,16 @@
 # captures the resulting bench JSON, and gates per-label TotalMs
 # against a tracked μ+σ statistical baseline.
 #
+# Two tiers (first-principles fix, 2026-06-05). The HARD gate (can fail the
+# run) covers what V2's CODE controls: the deterministic count/size labels
+# (`.elements` / `.batchSize` / `.bytes` — a count change is a real volume
+# regression) and CPU-bound times. The SOFT tier (reported, never fails) covers
+# I/O-bound wall-times (Docker container acquisition, SQL deploy / read
+# round-trips — `PERF_GATE_IO_TIME_PREFIXES`): on a shared / no-swap host these
+# vary >2× with load and were false-tripping the gate while the canary itself
+# stayed GREEN. The canary's GREEN/RED fidelity verdict is untouched — only the
+# per-label TIMING gate is tiered.
+#
 # Operator decision (2026-05-09): schema-only canary-gate.sql is
 # inappropriate for the production-use-case baseline. The Stop hook +
 # pre-commit gate must exercise the production envelope (150 tables,
@@ -63,6 +73,13 @@ MIN_MS="${BENCH_MIN_MS:-5}"
 # Default 0.20 (20% relative σ floor); tighten when many samples
 # accumulate and σ_observed is trustworthy.
 MIN_RELATIVE_STDEV="${BENCH_MIN_RELATIVE_STDEV:-0.20}"
+# I/O-bound TIME-label prefixes (first-principles tiering, 2026-06-05). Wall-time
+# labels under these prefixes (Docker container acquisition, SQL deploy / read
+# round-trips) are dominated by host I/O load, not V2 code — on a shared /
+# no-swap host they vary >2× and false-trip the gate. They are REPORTED but do
+# NOT fail it. Count/size labels (`.elements`/`.batchSize`/`.bytes`) under these
+# same prefixes stay HARD-gated — a count change is a real volume regression.
+IO_TIME_PREFIXES="${PERF_GATE_IO_TIME_PREFIXES:-deploy.,readside.read,fixture.bulkLoader}"
 
 log() { printf '[perf-gate] %s\n' "$*" >&2; }
 
@@ -228,14 +245,29 @@ if [[ ! -f "$BASELINE_PATH" ]]; then
     exit 0
 fi
 
-python3 - "$LATEST_SNAPSHOT" "$BASELINE_PATH" "$K_SIGMA" "$MIN_MS" "$MIN_RELATIVE_STDEV" <<'PYEOF'
+python3 - "$LATEST_SNAPSHOT" "$BASELINE_PATH" "$K_SIGMA" "$MIN_MS" "$MIN_RELATIVE_STDEV" "$IO_TIME_PREFIXES" <<'PYEOF'
 import json
 import sys
 
-(latest_path, baseline_path, k_sigma_str, min_ms_str, min_rel_stdev_str) = sys.argv[1:]
+(latest_path, baseline_path, k_sigma_str, min_ms_str, min_rel_stdev_str, io_prefixes_str) = sys.argv[1:]
 k_sigma = float(k_sigma_str)
 min_ms = float(min_ms_str)
 min_rel_stdev = float(min_rel_stdev_str)
+
+# Tiering: I/O-bound TIME labels are reported but never fail the gate (host-load
+# noise). Count/size labels (deterministic) and CPU-bound times keep the hard
+# gate. A count label under an I/O prefix (e.g. deploy.*.elements) is still a
+# COUNT, so it stays hard-gated — the suffix check wins.
+IO_TIME_PREFIXES = tuple(p for p in io_prefixes_str.split(",") if p)
+COUNT_SUFFIXES = (".elements", ".batchSize", ".bytes")
+
+
+def is_count(label):
+    return label.endswith(COUNT_SUFFIXES)
+
+
+def is_io_time(label):
+    return (not is_count(label)) and label.startswith(IO_TIME_PREFIXES)
 
 
 def load_run(path):
@@ -255,15 +287,15 @@ def load_baseline(path):
 
 def effective_stdev(mean: float, stdev_observed: float, min_rel: float) -> float:
     """Bayesian floor on σ. At N=5, σ_observed often underestimates
-    true population σ (especially for I/O-bound labels). Treat σ as
-    at least `mean × min_rel` (default 20% relative σ)."""
+    true population σ. Treat σ as at least `mean × min_rel` (default 20%)."""
     return max(stdev_observed, mean * min_rel)
 
 
 latest = load_run(latest_path)
 baseline = load_baseline(baseline_path)
 
-regressions = []
+regressions = []   # hard — V2 code controls these (counts + CPU times)
+io_overruns = []   # soft — Docker/SQL wall-time, host-load-variable
 new_labels = []
 checked = 0
 
@@ -278,14 +310,28 @@ for label, latest_ms in sorted(latest.items()):
     threshold = mean + k_sigma * stdev
     checked += 1
     if latest_ms > threshold:
-        regressions.append((label, mean, stdev_obs, stdev, n, latest_ms, threshold))
+        row = (label, mean, stdev_obs, stdev, n, latest_ms, threshold)
+        (io_overruns if is_io_time(label) else regressions).append(row)
+
+
+def print_table(rows):
+    print(f"  {'Label':50s} {'N':>3s} {'Mean':>9s} {'σ(obs)':>8s} {'σ(eff)':>8s} {'Threshold':>10s} {'Latest':>10s}")
+    for label, mean, stdev_obs, stdev_eff, n, latest_ms, threshold in rows:
+        print(f"  {label:50s} {n:>3d} {mean:>9.1f} {stdev_obs:>8.1f} {stdev_eff:>8.1f} {threshold:>10.1f} {latest_ms:>10.1f}")
+
+
+# I/O-bound overruns: reported, never failing (host-load noise, not a code regression).
+if io_overruns:
+    print()
+    print(f"I/O-bound over threshold in {len(io_overruns)} label(s) — reported, NOT gated "
+          f"(Docker/SQL wall-time varies with host load):")
+    print_table(io_overruns)
 
 if regressions:
     print()
-    print(f"REGRESSION in {len(regressions)} label(s) (gate = μ + {k_sigma}σ_effective; σ_effective = max(σ, μ×{min_rel_stdev})):")
-    print(f"  {'Label':50s} {'N':>3s} {'Mean':>9s} {'σ(obs)':>8s} {'σ(eff)':>8s} {'Threshold':>10s} {'Latest':>10s}")
-    for label, mean, stdev_obs, stdev_eff, n, latest_ms, threshold in regressions:
-        print(f"  {label:50s} {n:>3d} {mean:>9.1f} {stdev_obs:>8.1f} {stdev_eff:>8.1f} {threshold:>10.1f} {latest_ms:>10.1f}")
+    print(f"REGRESSION in {len(regressions)} code-controlled label(s) (gate = μ + {k_sigma}σ_effective; "
+          f"σ_effective = max(σ, μ×{min_rel_stdev})):")
+    print_table(regressions)
     print()
     print("If this is an intended floor shift, re-record the baseline:")
     print("  PERF_GATE_RECORD=1 sidecar/projection/scripts/perf-gate.sh")
@@ -293,7 +339,7 @@ if regressions:
     sys.exit(1)
 
 print(f"perf-gate: clean — {checked} labels gated against μ+{k_sigma}σ_eff baseline (σ floor = μ×{min_rel_stdev}); "
-      f"{len(new_labels)} new label(s) (will join baseline on next record cycle)")
+      f"{len(io_overruns)} I/O-bound over threshold (reported, not gated); {len(new_labels)} new label(s)")
 if new_labels:
     print("  new this run:")
     for label, ms in new_labels[:5]:
