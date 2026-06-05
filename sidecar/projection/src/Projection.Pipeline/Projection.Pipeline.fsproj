@@ -15,6 +15,7 @@
     <Compile Include="LogSink.fs" />
     <Compile Include="EventProjection.fs" />
     <Compile Include="RunLedger.fs" />
+    <Compile Include="Run.fs" />
     <Compile Include="ApprovalStore.fs" />
     <Compile Include="LifecycleStore.fs" />
     <Compile Include="RenameBinding.fs" />
