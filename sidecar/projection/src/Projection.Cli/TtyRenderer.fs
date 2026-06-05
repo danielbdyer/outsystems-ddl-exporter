@@ -4,12 +4,12 @@ open System
 open Spectre.Console
 open Projection.Pipeline
 
-/// Tier-3 reporting (`REPORTING_HORIZON.md` §3; `docs/logging-format.md`
-/// §15.3) — the Spectre.Console "channel 2" renderer. It is a **derived
-/// consumer** of the same run state the NDJSON stream projects (it reads
-/// `LogSink` accessors + the ledger), never a second emit surface. Gated on
-/// `--pretty` AND a real TTY by the caller. The live progress-bar leg (during
-/// a run) is the documented follow-on; this renders the "after" verdict panel.
+/// Tier-3 reporting (`REPORTING_HORIZON.md`; `docs/logging-format.md` §15.3) —
+/// the Spectre.Console "channel 2" surface. Now a **consumer of the `View`
+/// primitive**: each `build…View` produces a typed document; `View.write`
+/// renders it (pretty on a colored console, plain on a `NoColors` one) and
+/// `View.toJson` is the same document as structure. The renderers are derived
+/// consumers of `LogSink` + the ledger, never a second emit surface.
 
 /// True iff a pretty render is warranted: the operator asked for it AND
 /// stderr is a real terminal (not a pipe / file). Per §15.1 — never draw
@@ -17,114 +17,96 @@ open Projection.Pipeline
 let shouldRender (prettyRequested: bool) : bool =
     prettyRequested && not Console.IsErrorRedirected
 
-/// Build + write the terminal verdict panel to the given console. Pulls the
-/// run's outcome / canary verdict / transform counts / actionable-edit count
-/// from the `LogSink` accumulator, plus the R6 readiness gauge when a ledger
-/// is configured. Parameterized on the console so tests render to a
-/// `StringWriter` and assert the panel content (the production wrapper
-/// targets stderr).
-let renderSummaryTo (console: IAnsiConsole) (command: string) (code: int) : unit =
+// --- the verdict panel as a View -------------------------------------------
+
+/// Build the terminal verdict panel `View` from the run's `LogSink` state +
+/// the ledger. Pure data — `View.write` / `View.toJson` are the lenses.
+let buildSummaryView (command: string) (code: int) : View.View =
     let registered, applied, declined = LogSink.transformCounts ()
     let outcome =
-        if code = 0 then Theme.green (Theme.ok + " SUCCEEDED")
-        else Theme.red (Theme.bad + " FAILED")
+        if code = 0 then View.Field("outcome", "SUCCEEDED", View.Ok)
+        else View.Field("outcome", "FAILED", View.Bad)
     let canary =
         match LogSink.canaryVerdict () with
-        | Some "green" -> Theme.green (Theme.ok + " green — diff empty")
-        | Some "red"   -> Theme.red (Theme.bad + " RED — divergence")
-        | Some other   -> Markup.Escape other
-        | None         -> Theme.muted (Theme.dot + " no canary leg")
+        | Some "green" -> View.Field("canary", "green — diff empty", View.Ok)
+        | Some "red"   -> View.Field("canary", "RED — divergence", View.Bad)
+        | Some other   -> View.Field("canary", other, View.Neutral)
+        | None         -> View.Field("canary", "no canary leg", View.Neutral)
+    let transforms =
+        View.Field(
+            "transforms",
+            sprintf "%d registered %s %d applied %s %d declined" registered Theme.dot applied Theme.dot declined,
+            View.Neutral)
     let edits = LogSink.suggestedConfigEdits ()
-    let editsCell =
-        if edits = 0 then Theme.muted (Theme.ok + " none")
+    let actionable =
+        if edits = 0 then View.Field("actionable", "none", View.Ok)
         else
-            // Impact-ranked — name the single biggest lever (the path most
-            // events suggest) so the operator's eye lands on it first.
+            // Impact-ranked — name the single biggest lever first.
             match LogSink.topSuggestion () with
             | Some (path, count) ->
-                Theme.yellow (sprintf "%s %d edit(s) %s top: %s (%d)"
-                    Theme.warn edits Theme.dot (Markup.Escape path) count)
-            | None -> Theme.yellow (sprintf "%s %d edit(s) suggested" Theme.warn edits)
+                View.Field("actionable", sprintf "%d edit(s) %s top: %s (%d)" edits Theme.dot path count, View.Warn)
+            | None -> View.Field("actionable", sprintf "%d edit(s) suggested" edits, View.Warn)
+    // Principle #5 — end with the next action.
+    let nextAction = if edits > 0 then [ View.Action "projection suggest-config --apply" ] else []
+    let cutover =
+        match RunLedger.configuredDir () with
+        | Some dir ->
+            let r = RunLedger.read dir |> RunLedger.readiness
+            let gate = if r.Eligible then "ELIGIBLE" else "not yet"
+            [ View.Meter(
+                "cutover", r.ConsecutiveGreen, r.Threshold,
+                sprintf "%d / %d green %s %s" r.ConsecutiveGreen r.Threshold Theme.arrow gate) ]
+        | None -> []
+    View.Panel(command, [ outcome; canary; transforms; actionable ] @ nextAction @ cutover)
 
-    let grid = Grid()
-    grid.AddColumn() |> ignore
-    grid.AddColumn() |> ignore
-    grid.AddRow(Theme.muted "outcome", outcome) |> ignore
-    grid.AddRow(Theme.muted "canary", canary) |> ignore
-    grid.AddRow(
-        Theme.muted "transforms",
-        sprintf "%d registered %s %d applied %s %d declined" registered Theme.dot applied Theme.dot declined) |> ignore
-    grid.AddRow(Theme.muted "actionable", editsCell) |> ignore
-    // Principle #5 — end with the next action, never just the state.
-    if edits > 0 then
-        grid.AddRow(
-            Theme.muted "next",
-            Theme.accent (sprintf "%s projection suggest-config --apply" Theme.arrow)) |> ignore
+let renderSummaryTo (console: IAnsiConsole) (command: string) (code: int) : unit =
+    View.write console (buildSummaryView command code)
 
-    (match RunLedger.configuredDir () with
-     | Some dir ->
-         let r = RunLedger.read dir |> RunLedger.readiness
-         let gate =
-             if r.Eligible then Theme.green (Theme.ok + " ELIGIBLE") else Theme.yellow "not yet"
-         grid.AddRow(
-             Theme.muted "cutover",
-             sprintf "%s  %d / %d green %s %s"
-                 (Theme.meter r.ConsecutiveGreen r.Threshold)
-                 r.ConsecutiveGreen r.Threshold Theme.arrow gate) |> ignore
-     | None -> ())
-
-    let panel = Panel(grid)
-    panel.Header <- PanelHeader(sprintf " %s " (Markup.Escape command))
-    panel.Border <- BoxBorder.Rounded
-    console.Write(panel)
-
-/// Render the verdict panel to stderr (channel 2 — §5: stderr is the events
-/// surface; the panel is a rendering of events, stdout stays the narration
-/// surface).
+/// Render the verdict panel to stderr (channel 2 — the panel is a rendering
+/// of events; stdout stays the narration surface).
 let renderSummary (command: string) (code: int) : unit =
     let console =
         AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(Console.Error)))
     renderSummaryTo console command code
 
-/// Tier-4 / polish — the cutover-readiness board (`readiness` verb). Leads
-/// with the hero answer (eligible / how many to go), then the R6 meter, the
-/// canary-history dots, and the run totals. Rendered to the given console so
-/// it's testable; the production wrapper targets the default console (Spectre
-/// auto-colors on a TTY, strips when piped).
+// --- the readiness board as a View -----------------------------------------
+
+/// Build the cutover-readiness board `View` — hero answer first, then the R6
+/// meter, the canary-history dots, the run totals, the ledger note.
+let buildReadinessView (r: RunLedger.Readiness) (recent: string list) (ledgerPath: string) : View.View =
+    let toGo = max 0 (r.Threshold - r.ConsecutiveGreen)
+    let hero =
+        if r.Eligible then
+            View.Hero(View.Ok, sprintf "ELIGIBLE %s %d consecutive green canaries" Theme.dot r.ConsecutiveGreen)
+        else
+            View.Hero(View.Pending, sprintf "NOT YET %s %d green run(s) to cutover-ready" Theme.dot toGo)
+    let history = if List.isEmpty recent then [] else [ View.Dots("history", recent) ]
+    let lastCanary = match r.LastCanary with Some c -> c | None -> "—"
+    View.Doc(
+        [ View.Blank
+          hero
+          View.Blank
+          View.Meter("cutover", r.ConsecutiveGreen, r.Threshold, sprintf "%d / %d green" r.ConsecutiveGreen r.Threshold) ]
+        @ history
+        @ [ View.Field(
+              "runs",
+              sprintf "%d total %s %d with a canary %s last %s" r.TotalRuns Theme.dot r.CanaryRuns Theme.dot lastCanary,
+              View.Neutral)
+            View.Blank
+            View.Note(sprintf "ledger    %s" ledgerPath) ])
+
 let renderReadinessBoardTo
     (console: IAnsiConsole)
     (r: RunLedger.Readiness)
     (recent: string list)
     (ledgerPath: string)
     : unit =
-    let toGo = max 0 (r.Threshold - r.ConsecutiveGreen)
-    console.WriteLine()
-    if r.Eligible then
-        console.MarkupLine(
-            sprintf "  %s  %s %s %d consecutive green canaries"
-                (Theme.green Theme.ok) (Theme.green (Theme.bold "ELIGIBLE")) Theme.dot r.ConsecutiveGreen)
-    else
-        console.MarkupLine(
-            sprintf "  %s  %s %s %d green run(s) to cutover-ready"
-                (Theme.yellow Theme.pending) (Theme.bold "NOT YET") Theme.dot toGo)
-    console.WriteLine()
-    console.MarkupLine(
-        sprintf "  %s   %s   %d / %d green"
-            (Theme.muted "cutover") (Theme.meter r.ConsecutiveGreen r.Threshold) r.ConsecutiveGreen r.Threshold)
-    if not (List.isEmpty recent) then
-        console.MarkupLine(sprintf "  %s   %s" (Theme.muted "history") (Theme.canaryDotsMarkup recent))
-    console.MarkupLine(
-        sprintf "  %s      %d total %s %d with a canary %s last %s"
-            (Theme.muted "runs") r.TotalRuns Theme.dot r.CanaryRuns Theme.dot
-            (Markup.Escape (match r.LastCanary with Some c -> c | None -> "—")))
-    console.WriteLine()
-    console.MarkupLine(sprintf "  %s    %s" (Theme.muted "ledger") (Theme.muted (Markup.Escape ledgerPath)))
+    View.write console (buildReadinessView r recent ledgerPath)
 
 let renderReadinessBoard (r: RunLedger.Readiness) (recent: string list) (ledgerPath: string) : unit =
-    // The board renders on every `readiness` (not just on a TTY). Build the
-    // console over stdout explicitly; when piped, Spectre's auto-width is too
-    // small and lines collapse — pin a sensible width (it still strips color
-    // for the non-terminal sink). On a real TTY, color + true width apply.
+    // The board renders on every `readiness` (not just on a TTY). Pin a width
+    // when piped (Spectre's auto-width collapses lines on a non-TTY); it still
+    // strips color for the non-terminal sink.
     let console =
         AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(Console.Out)))
     if Console.IsOutputRedirected then console.Profile.Width <- 100

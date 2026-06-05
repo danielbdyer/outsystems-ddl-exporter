@@ -31,6 +31,7 @@
     <Compile Include="LogSinkTests.fs" />
     <Compile Include="RunLedgerTests.fs" />
     <Compile Include="ThemeTests.fs" />
+    <Compile Include="ViewTests.fs" />
     <Compile Include="TtyRendererTests.fs" />
     <Compile Include="FullExportCliTests.fs" />
     <Compile Include="FullExportStoreTests.fs" />
