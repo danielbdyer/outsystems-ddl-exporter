@@ -233,65 +233,28 @@ if command -v docker >/dev/null 2>&1; then
     # creates a fresh `Source_<guid>` / `Target_<guid>` /
     # `Projection_<guid>` database in the warm container, so the
     # run-level idempotency contract from M2 still holds.
-    WARM_NAME="projection-mssql-warm"
-    WARM_PORT=14333
-    SA_PASSWORD='yourStrong(!)Password'
-    WARM_CONN_STR="Server=localhost,${WARM_PORT};User Id=SA;Password=${SA_PASSWORD};TrustServerCertificate=true;Encrypt=False"
-
-    if docker info >/dev/null 2>&1 && docker image inspect "$SQL_IMAGE" >/dev/null 2>&1; then
-        if docker ps --filter "name=^${WARM_NAME}$" --format "{{.Names}}" 2>/dev/null \
-            | grep -qx "$WARM_NAME"; then
-            log "warm SQL Server container already running"
+    # Single source of truth: scripts/warm-sql.sh owns the warm container's
+    # config (name / port / password / MEMORY CAPS) and creates it idempotently.
+    # The hook delegates rather than duplicating `docker run` — so the caps and
+    # creds can't drift between the dev script and this hook (a past drift left
+    # two definitions of the container with different ports/passwords, surfacing
+    # as "Login failed for user 'sa'"). The memory cap is the stability fix:
+    # uncapped SQL 2022 balloons its buffer pool and the no-swap host OOM-kills
+    # sqlservr, leaving the container "Up" but a zombie.
+    WARM_SH="$REPO/sidecar/projection/scripts/warm-sql.sh"
+    if docker info >/dev/null 2>&1 && [ -x "$WARM_SH" ]; then
+        if WARM_CONN_LINE="$(bash "$WARM_SH" start 2>>/tmp/warm-sql-hook.log)"; then
+            # warm-sql.sh prints `export PROJECTION_MSSQL_CONN_STR=<%q-quoted>`.
+            eval "$WARM_CONN_LINE"
             WARM_STATE="ready"
-        else
-            # Defensive: prune any stopped container with the same name
-            # so `docker run` doesn't conflict.
-            docker rm -f "$WARM_NAME" >/dev/null 2>&1 || true
-            log "starting warm SQL Server container ($WARM_NAME on port $WARM_PORT)..."
-            if docker run -d \
-                --name "$WARM_NAME" \
-                --rm \
-                -e ACCEPT_EULA=Y \
-                -e MSSQL_SA_PASSWORD="$SA_PASSWORD" \
-                -p "${WARM_PORT}:1433" \
-                "$SQL_IMAGE" >/dev/null 2>&1; then
-                # Wait up to 60s for SQL Server to accept connections.
-                WARM_READY=0
-                for _ in $(seq 1 60); do
-                    if docker exec "$WARM_NAME" \
-                        /opt/mssql-tools18/bin/sqlcmd -C \
-                        -U SA -P "$SA_PASSWORD" \
-                        -Q 'SELECT 1' >/dev/null 2>&1; then
-                        WARM_READY=1
-                        break
-                    fi
-                    sleep 1
-                done
-                if [ "$WARM_READY" -eq 1 ]; then
-                    log "warm SQL Server container ready"
-                    WARM_STATE="ready"
-                else
-                    log "WARNING: warm SQL Server container did not become ready within 60s"
-                    log "         canaries will fall back to ephemeral container per call"
-                    WARM_STATE="not-ready"
-                fi
-            else
-                log "WARNING: failed to start warm SQL Server container"
-                log "         canaries will fall back to ephemeral container per call"
-                WARM_STATE="failed"
-            fi
-        fi
-
-        # Set the env var if the warm container is up. F# canary code
-        # reads PROJECTION_MSSQL_CONN_STR; if set, all deploys reuse
-        # this container instead of spinning a fresh ephemeral.
-        if docker ps --filter "name=^${WARM_NAME}$" --format "{{.Names}}" 2>/dev/null \
-            | grep -qx "$WARM_NAME"; then
             if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
-                echo "export PROJECTION_MSSQL_CONN_STR=\"$WARM_CONN_STR\"" >> "$CLAUDE_ENV_FILE"
+                echo "$WARM_CONN_LINE" >> "$CLAUDE_ENV_FILE"
             fi
-            export PROJECTION_MSSQL_CONN_STR="$WARM_CONN_STR"
-            log "PROJECTION_MSSQL_CONN_STR exported (canaries will reuse warm container)"
+            log "warm SQL Server ready (via warm-sql.sh; PROJECTION_MSSQL_CONN_STR exported)"
+        else
+            log "WARNING: warm-sql.sh could not start the warm container (see /tmp/warm-sql-hook.log)"
+            log "         canaries will fall back to ephemeral container per call"
+            WARM_STATE="failed"
         fi
     fi
 else

@@ -26,10 +26,18 @@
 #   scripts/warm-sql.sh restart           # stop + start (clean instance)
 #
 # Env overrides:
-#   WARM_SQL_NAME  (default projection-mssql-warm)
-#   WARM_SQL_PORT  (default 11433)
-#   WARM_SQL_PW    (default Projection@Strong1 — meets SQL complexity)
-#   WARM_SQL_IMAGE (default mcr.microsoft.com/mssql/server:2022-latest)
+#   WARM_SQL_NAME   (default projection-mssql-warm)
+#   WARM_SQL_PORT   (default 11433)
+#   WARM_SQL_PW     (default Projection@Strong1 — meets SQL complexity)
+#   WARM_SQL_IMAGE  (default mcr.microsoft.com/mssql/server:2022-latest)
+#   WARM_SQL_MEM_MB (default 3072 — SQL Server buffer-pool cap)
+#   WARM_SQL_MEM    (default 4g — Docker container memory cap, above the SQL cap)
+#
+# This script is the SINGLE SOURCE OF TRUTH for the warm container's config
+# (name / port / password / memory caps). The SessionStart hook delegates here
+# rather than duplicating `docker run` — so the config can't drift (a past drift
+# left two definitions of `projection-mssql-warm` with different ports/passwords,
+# surfacing as "Login failed for user 'sa'").
 
 set -uo pipefail
 
@@ -37,6 +45,16 @@ NAME="${WARM_SQL_NAME:-projection-mssql-warm}"
 PORT="${WARM_SQL_PORT:-11433}"
 PW="${WARM_SQL_PW:-Projection@Strong1}"
 IMAGE="${WARM_SQL_IMAGE:-mcr.microsoft.com/mssql/server:2022-latest}"
+# Memory caps (first-principles stability fix, 2026-06-05). SQL Server 2022
+# without MSSQL_MEMORY_LIMIT_MB grows its buffer pool toward ~80% of host RAM; on
+# a no-swap host it then starves builds + the test pool and the kernel OOM-kills
+# sqlservr, leaving the container "Up" but SQL a zombie (the recurring "could not
+# open a connection to SQL Server"). The SQL cap sits BELOW the Docker container
+# cap so SQL stays bounded and Docker contains any overrun to the container, not
+# the host. 3 GB buffer pool is ample for the 150-table / 6.25k-row
+# operator-reality envelope (<1M small rows).
+MEM_MB="${WARM_SQL_MEM_MB:-3072}"
+MEM="${WARM_SQL_MEM:-4g}"
 CONN="Server=localhost,${PORT};User Id=sa;Password=${PW};TrustServerCertificate=True;Encrypt=False"
 
 log() { printf '\033[36m[warm-sql]\033[0m %s\n' "$1" >&2; }
@@ -77,9 +95,11 @@ cmd_start() {
             log "pulling $IMAGE (first run only)..."
             docker pull "$IMAGE" >/dev/null 2>&1 || { err "image pull failed"; return 1; }
         fi
-        log "starting $NAME ($IMAGE) on :$PORT..."
+        log "starting $NAME ($IMAGE) on :$PORT (SQL cap ${MEM_MB}MB / container $MEM)..."
         docker run -d --name "$NAME" \
+            --memory="$MEM" --memory-swap="$MEM" \
             -e ACCEPT_EULA=Y -e "MSSQL_SA_PASSWORD=$PW" \
+            -e "MSSQL_MEMORY_LIMIT_MB=$MEM_MB" \
             -p "${PORT}:1433" "$IMAGE" >/dev/null || { err "docker run failed"; return 1; }
         wait_ready || return 1
     fi
