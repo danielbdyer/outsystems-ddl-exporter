@@ -46,6 +46,30 @@ let renderCatalogDiff (d: CatalogDiff) : View.View =
           View.Field("indexes", chan c.AddedIndexes c.RemovedIndexes c.RenamedIndexes c.ChangedIndexes, View.Neutral)
           View.Field("sequences", chan c.AddedSequences c.RemovedSequences c.RenamedSequences c.ChangedSequences, View.Neutral) ])
 
+// --- the essence: the plain lead line of a change (INSTRUMENT slice 1) ------
+
+/// The essence of a catalog change — the one plain line that leads the surface
+/// (`THE_INSTRUMENT` — essence first, the dig beneath). A destructive change
+/// leads amber ("review first"); an additive / no-op change leads calm. The dig
+/// (the per-channel ‖δ‖ panel, the proof) is `renderCatalogDiff`, shown beneath.
+let catalogEssence (d: CatalogDiff) : View.View =
+    let c = CatalogDiff.channelCounts d
+    let removed =
+        c.RemovedKinds + c.RemovedAttributes + c.RemovedReferences
+        + c.RemovedIndexes + c.RemovedSequences
+    let n = CatalogDiff.norm d
+    if n = 0 then View.Hero(View.Ok, "no changes — identical")
+    elif removed > 0 then
+        View.Hero(View.Warn, sprintf "%d changes · %d destroy structure — review first" n removed)
+    else
+        View.Hero(View.Ok, sprintf "%d changes · nothing destroyed" n)
+
+/// A catalog change rendered essence-first: the plain verdict, then the dig (the
+/// ‖δ‖ panel). The first instance of the essence/dig surface every later surface
+/// reuses (`INSTRUMENT_BACKLOG` slice 1).
+let renderCatalogChange (d: CatalogDiff) : View.View =
+    View.Doc [ catalogEssence d; View.Blank; renderCatalogDiff d ]
+
 /// Render a `PhysicalSchemaDiff` summary: identical / diverged, plus per-axis
 /// −missing / +extra counts.
 let renderPhysicalDiff (d: PhysicalSchemaDiff) : View.View =

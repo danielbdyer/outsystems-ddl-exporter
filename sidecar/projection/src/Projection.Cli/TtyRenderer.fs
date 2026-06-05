@@ -111,3 +111,19 @@ let renderReadinessBoard (r: RunLedger.Readiness) (recent: string list) (ledgerP
         AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(Console.Out)))
     if Console.IsOutputRedirected then console.Profile.Width <- 100
     renderReadinessBoardTo console r recent ledgerPath
+
+// --- the answer surface — render any View to stdout (INSTRUMENT slice 1) ----
+
+/// Render any `View` to stdout — the "answer" surface (stdout carries the answer;
+/// structured events stay on stderr). Pretty (color) on a TTY; plain when piped
+/// (width pinned so lines don't collapse); `--format json` emits the same
+/// document as structure (`View.toJson`), so the human and machine lenses are
+/// the one value.
+let renderAnswer (asJson: bool) (v: View.View) : unit =
+    if asJson then
+        Console.Out.WriteLine((View.toJson v).ToJsonString())
+    else
+        let console =
+            AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(Console.Out)))
+        if Console.IsOutputRedirected then console.Profile.Width <- 100
+        View.write console v

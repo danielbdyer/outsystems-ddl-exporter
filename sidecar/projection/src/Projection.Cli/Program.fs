@@ -1117,6 +1117,33 @@ let private runReadiness () : int =
                 Phase = LogSink.End }
         0
 
+/// `diff <refA> <refB>` — change, rendered essence-first (INSTRUMENT slice 1,
+/// the first surface of the instrument). Resolves both refs through `Ref`
+/// (file / `@runId` / `json:` / `live:`) and renders the catalog change: the
+/// plain verdict that leads, then the per-channel dig beneath. `--format json`
+/// emits the same `View` as structure.
+let private runDiff (refAText: string) (refBText: string) (asJson: bool) : int =
+    let resolve (s: string) = (Ref.resolveCatalog (Ref.parse s)).GetAwaiter().GetResult()
+    match resolve refAText with
+    | Error errs ->
+        Console.Error.WriteLine "projection diff: could not resolve the first reference:"
+        printErrors Console.Error errs
+        2
+    | Ok a ->
+        match resolve refBText with
+        | Error errs ->
+            Console.Error.WriteLine "projection diff: could not resolve the second reference:"
+            printErrors Console.Error errs
+            2
+        | Ok b ->
+            match Comparison.catalog.Between a b with
+            | Error e ->
+                Console.Error.WriteLine(sprintf "projection diff: %s" e)
+                2
+            | Ok d ->
+                TtyRenderer.renderAnswer asJson (Comparison.renderCatalogChange d)
+                0
+
 /// P3 (REPORTING_HORIZON polish) — `explain <config> <ssKey>`. The drill-down
 /// doorway: run the projection, then tell the full story for ONE node — every
 /// transform that touched it (with the decision + rationale, rendered through
@@ -1807,6 +1834,10 @@ let main argv =
         withRun "projection canary" (fun () -> runCanary sourceDdlPath)
     | [| "readiness" |] ->
         runReadiness ()
+    | [| "diff"; refA; refB |] ->
+        runDiff refA refB false
+    | [| "diff"; refA; refB; "--format"; "json" |] ->
+        runDiff refA refB true
     | [| "explain"; configPath; ssKey |] ->
         runExplain configPath ssKey
     | [| "suggest-config"; configPath |] ->
