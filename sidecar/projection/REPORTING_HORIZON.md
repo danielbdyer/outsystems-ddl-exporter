@@ -350,10 +350,21 @@ drift = `status`, regression = `log -p`, rollback = `revert` via the torsor,
 the build-cache = unchanged `inputDigest` ⇒ skip work) are thin: e.g.
 `diff = resolveCatalog ×2 → Comparison.summary → View.write`.
 
-**The remaining frontier primitive:** **`Episode`** — the temporal integral
-`fold apply between` over the run history; trends + migrate-history fall out.
-It composes `Run` + `Comparison` + `Ref`, so it earns its place now that they
-all exist.
+**The temporal base — `RunHistory`** (`src/Projection.Pipeline/RunHistory.fs`,
+`shipped 2026-06-05`) — the durable operator timeline: the chronological
+sequence of persisted `Run`s. `trend` / `canaryHistory` / `readiness` all fall
+out as `fold`/`map` over the one sequence — the history *is* the integral. It
+is the durable realization the morphology named as missing (the FTC ran only
+in-memory); distinct from `Core.Episode` (a single state-at-coordinate);
+subsumes `RunLedger` (its index). With it the substrate is complete: the
+forward use cases (evolve / migrate / investigate / promote) are all temporal,
+and the navigational metaphor is a **timeline** — runs as points, the R6
+streak as the trajectory toward eligible, trends as the shape of the path.
+
+**What remains is the harvest, not the foundation:** the verbs
+(`diff <ref> <ref>` · `migrate <ref> <ref>` · `explain @run <ssKey>` ·
+`promote` · `certify`) and the dynamic display (the live progress leg + the
+`inspect <runId>` TUI), each a thin `verb <ref>` on the substrate.
 
 ---
 
