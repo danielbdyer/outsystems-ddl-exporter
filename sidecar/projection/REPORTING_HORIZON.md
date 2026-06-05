@@ -291,6 +291,42 @@ patch); the `diff <runA> <runB>` verb; per-environment ledgers.
 
 ---
 
+## §3.5 Masterful base primitives — the substrate under the outcomes · `shipped` (2026-06-04)
+
+The five outcomes aren't five features — they're **projections of three
+primitives**: a **Run** (the unit), a **Comparison** (the relation between
+units), and a **View** (the lens onto either). Each was built as an *enriched
+base that supports the outcomes without completing them*, with a
+**discriminating predicate** (the input on which a naive version diverges) and
+≥2 real consumers (so none is speculative). They also **compose** — and they
+are the *activation of the codebase's own latent algebra* (the WAVE-6 torsor,
+"one substrate, many lenses"), not new inventions.
+
+- **`View`** (`src/Projection.Cli/View.fs`) — the renderable + queryable
+  document. *Discriminator:* pretty / plain / json are projections of ONE
+  value (the human and machine lenses can't drift). *Consumers:* the panel +
+  board refactored onto it (output preserved); `--format`/`--query` fall out.
+- **`Run`** (`src/Projection.Pipeline/Run.fs`) — the addressable,
+  content-addressed run aggregate (verdict + the event stream as opaque NDJSON
+  envelopes). *Discriminator:* `load (save run) = run`, and `inputDigest`
+  depends only on inputs, not wall-clock. *Consumers:* persist / diff-of-runs /
+  query / migrate-inputs; subsumes `RunLedger.LedgerRecord`.
+- **`Comparison`** (`src/Projection.Cli/Comparison.fs`) — diff as a capability,
+  unifying `CatalogDiff` (a torsor) and `PhysicalSchemaDiff` (a quotient).
+  *Discriminator (in the type):* `Apply` is present iff the delta is replayable
+  (`Some` for Catalog — Weyl-proven; `None` for PhysicalSchema). `Render`
+  projects onto `View` (composes #3 with #1). *Consumers:* diff / drift /
+  migrate.
+
+**The frontier primitives** (earn their place once needed, build ON the
+trilogy): **`Source`** — a capability-typed boundary port (asking a snapshot
+source to profile fails at construction, not runtime); unlocks live OSSYS.
+**`Episode`** — the temporal integral `fold apply between` over Runs; trends +
+migrate-history fall out. `Episode` composes `Run` + `Comparison`, so it can't
+precede them.
+
+---
+
 ## §4 The dual-audience contract
 
 Every deliverable serves **both** consumers; neither is an afterthought:
