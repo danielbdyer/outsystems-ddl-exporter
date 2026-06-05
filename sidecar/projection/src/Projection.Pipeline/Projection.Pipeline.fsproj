@@ -17,6 +17,7 @@
     <Compile Include="RunLedger.fs" />
     <Compile Include="Run.fs" />
     <Compile Include="Source.fs" />
+    <Compile Include="Ref.fs" />
     <Compile Include="ApprovalStore.fs" />
     <Compile Include="LifecycleStore.fs" />
     <Compile Include="RenameBinding.fs" />

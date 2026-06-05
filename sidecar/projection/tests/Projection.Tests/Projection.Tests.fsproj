@@ -32,6 +32,7 @@
     <Compile Include="RunLedgerTests.fs" />
     <Compile Include="RunTests.fs" />
     <Compile Include="SourceTests.fs" />
+    <Compile Include="RefTests.fs" />
     <Compile Include="ThemeTests.fs" />
     <Compile Include="ViewTests.fs" />
     <Compile Include="TtyRendererTests.fs" />
