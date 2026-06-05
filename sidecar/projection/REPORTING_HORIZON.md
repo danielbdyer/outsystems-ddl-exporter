@@ -366,6 +366,14 @@ streak as the trajectory toward eligible, trends as the shape of the path.
 `promote` · `certify`) and the dynamic display (the live progress leg + the
 `inspect <runId>` TUI), each a thin `verb <ref>` on the substrate.
 
+**The dynamic display is now designed** — see **`DYNAMIC_DISPLAY.md`** (the
+operator-led pass, 2026-06-05): the three modes (Glance / Watch / Explore) as
+projections of the `View` ADT, the four substrate decisions taken with the
+operator (hand-rolled Spectre `Live` + `ReadKey`; the horizontal timeline strip;
+shallow-default drill; the unified walkable changeset), and the build sequence.
+Its foundation piece — `LogSink.addSubscriber`, the live-display push the
+"watch" leg was missing — **shipped 2026-06-05**.
+
 ---
 
 ## §4 The dual-audience contract
