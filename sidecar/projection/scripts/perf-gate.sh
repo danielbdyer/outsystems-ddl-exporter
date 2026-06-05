@@ -74,12 +74,22 @@ MIN_MS="${BENCH_MIN_MS:-5}"
 # accumulate and σ_observed is trustworthy.
 MIN_RELATIVE_STDEV="${BENCH_MIN_RELATIVE_STDEV:-0.20}"
 # I/O-bound TIME-label prefixes (first-principles tiering, 2026-06-05). Wall-time
-# labels under these prefixes (Docker container acquisition, SQL deploy / read
-# round-trips) are dominated by host I/O load, not V2 code — on a shared /
-# no-swap host they vary >2× and false-trip the gate. They are REPORTED but do
-# NOT fail it. Count/size labels (`.elements`/`.batchSize`/`.bytes`) under these
-# same prefixes stay HARD-gated — a count change is a real volume regression.
-IO_TIME_PREFIXES="${PERF_GATE_IO_TIME_PREFIXES:-deploy.,readside.read,fixture.bulkLoader}"
+# labels under these prefixes are dominated by host I/O load, not V2 code — on a
+# shared / no-swap host they vary >2× and false-trip the gate. REPORTED, not
+# gated. `deploy.` = Docker container acquisition + SQL deploy; `readside.` = the
+# WHOLE SQL read-back adapter (all its timing is round-trip-bound); `fixture
+# .bulkLoader` = the bulk seed insert. Count/size labels (`.elements`/`.batchSize`
+# /`.bytes`) under these prefixes stay HARD-gated — a count change is a real
+# volume regression.
+IO_TIME_PREFIXES="${PERF_GATE_IO_TIME_PREFIXES:-deploy.,readside.,fixture.bulkLoader}"
+# Small TIME labels (μ below this) are dominated by host CPU-SCHEDULING jitter on
+# a contended box — a 5 ms op routinely measures 20 ms when 4 cores run builds +
+# tests + SQL + the canary at once (I/O or not). REPORTED, not gated. Count/size
+# labels ignore this floor (deterministic); substantial-time labels keep the hard
+# gate. A perf gate can only reliably catch regressions on work measurable above
+# the host's noise floor. (Distinct from MIN_MS, which drops sub-MIN_MS labels
+# from the baseline entirely.)
+HARD_MIN_MS="${PERF_GATE_HARD_MIN_MS:-50}"
 
 log() { printf '[perf-gate] %s\n' "$*" >&2; }
 
@@ -245,14 +255,15 @@ if [[ ! -f "$BASELINE_PATH" ]]; then
     exit 0
 fi
 
-python3 - "$LATEST_SNAPSHOT" "$BASELINE_PATH" "$K_SIGMA" "$MIN_MS" "$MIN_RELATIVE_STDEV" "$IO_TIME_PREFIXES" <<'PYEOF'
+python3 - "$LATEST_SNAPSHOT" "$BASELINE_PATH" "$K_SIGMA" "$MIN_MS" "$MIN_RELATIVE_STDEV" "$IO_TIME_PREFIXES" "$HARD_MIN_MS" <<'PYEOF'
 import json
 import sys
 
-(latest_path, baseline_path, k_sigma_str, min_ms_str, min_rel_stdev_str, io_prefixes_str) = sys.argv[1:]
+(latest_path, baseline_path, k_sigma_str, min_ms_str, min_rel_stdev_str, io_prefixes_str, hard_min_ms_str) = sys.argv[1:]
 k_sigma = float(k_sigma_str)
 min_ms = float(min_ms_str)
 min_rel_stdev = float(min_rel_stdev_str)
+hard_min_ms = float(hard_min_ms_str)
 
 # Tiering: I/O-bound TIME labels are reported but never fail the gate (host-load
 # noise). Count/size labels (deterministic) and CPU-bound times keep the hard
@@ -311,7 +322,10 @@ for label, latest_ms in sorted(latest.items()):
     checked += 1
     if latest_ms > threshold:
         row = (label, mean, stdev_obs, stdev, n, latest_ms, threshold)
-        (io_overruns if is_io_time(label) else regressions).append(row)
+        # Soft (reported, not gated) iff a TIME label that is either I/O-bound or
+        # small enough to be host-contention noise. Counts are never soft.
+        soft = (not is_count(label)) and (is_io_time(label) or mean < hard_min_ms)
+        (io_overruns if soft else regressions).append(row)
 
 
 def print_table(rows):
@@ -323,8 +337,8 @@ def print_table(rows):
 # I/O-bound overruns: reported, never failing (host-load noise, not a code regression).
 if io_overruns:
     print()
-    print(f"I/O-bound over threshold in {len(io_overruns)} label(s) — reported, NOT gated "
-          f"(Docker/SQL wall-time varies with host load):")
+    print(f"{len(io_overruns)} label(s) over threshold but NOT gated "
+          f"(I/O wall-time or sub-{hard_min_ms:.0f}ms — host I/O / CPU-contention noise):")
     print_table(io_overruns)
 
 if regressions:
@@ -339,7 +353,7 @@ if regressions:
     sys.exit(1)
 
 print(f"perf-gate: clean — {checked} labels gated against μ+{k_sigma}σ_eff baseline (σ floor = μ×{min_rel_stdev}); "
-      f"{len(io_overruns)} I/O-bound over threshold (reported, not gated); {len(new_labels)} new label(s)")
+      f"{len(io_overruns)} over-threshold-but-soft (I/O / small-op noise); {len(new_labels)} new label(s)")
 if new_labels:
     print("  new this run:")
     for label, ms in new_labels[:5]:
