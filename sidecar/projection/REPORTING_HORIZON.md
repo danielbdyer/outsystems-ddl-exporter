@@ -258,6 +258,39 @@ anchor. Highest design content; build after the per-run surfaces (Tiers
 
 ---
 
+### Tier 5 — Polish: the Apple layer · `shipped (core)` (2026-06-04)
+
+**Why.** The four tiers gave the plumbing; this gives the *soul*. The thesis:
+**calm by default, infinite on demand** — a single-glance answer where every
+glyph is a doorway to the full, machine-readable truth beneath. Seven
+principles govern it: (1) the verdict is the interface; (2) color is meaning,
+never decoration (a glyph always rides with color, so the signal survives a
+colorblind reader / `NO_COLOR`); (3) every number is a doorway; (4) one
+substrate, many lenses — auto-selected; (5) end with the next action;
+(6) sensible by default, scriptable to the core; (7) subtract.
+
+**Shipped (the high-leverage five).**
+- **`Theme`** — the design-system module (glyphs, semantic color, the R6
+  `meter`, `sparkline`s, canary-history dots). One visual language, every
+  surface inherits it.
+- **Calm by default** — auto-detect the channel (TTY → Spectre panel, pipe →
+  NDJSON, no flag); the bench table demoted behind `-v` (still persisted).
+- **The readiness board** — `readiness` leads with the hero answer, then the
+  cutover meter + history dots + run totals.
+- **Impact-ranked suggestions + `suggest-config --apply`** — the actionable
+  to-do list, highest-leverage first; the panel names the single biggest
+  lever and ends with the next action.
+- **`explain <ssKey>`** — the drill-down: one node's full provenance
+  (every transform + decision + finding + fix), rendered through the same
+  projection the event stream uses.
+
+**Follow-ons (the deeper legs).** The live progress-bar leg during a run
+(Spectre live-display); a full-screen TUI (`inspect <runId>`); `--apply`
+merging into the config *structure* (today it writes a flat `{path: value}`
+patch); the `diff <runA> <runB>` verb; per-environment ledgers.
+
+---
+
 ## §4 The dual-audience contract
 
 Every deliverable serves **both** consumers; neither is an afterthought:
