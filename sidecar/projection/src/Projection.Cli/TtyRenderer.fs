@@ -127,3 +127,37 @@ let renderAnswer (asJson: bool) (v: View.View) : unit =
             AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(Console.Out)))
         if Console.IsOutputRedirected then console.Profile.Width <- 100
         View.write console v
+
+// --- the Gate surface — a refusal as a stop-and-confirm (INSTRUMENT slice 3) -
+
+/// Build the Gate `View` — the stop-and-confirm a refusal renders. Essence-first:
+/// a plain Hero names the danger (Bad for a destructive change the operator must
+/// declare; Warn for a blocking pre-flight refusal); the dig carries the gate
+/// axis (the `GateLabel`), the specific detail, and the distinct exit code; the
+/// next action names how to proceed. Binds `Preflight.GateRefusal` — the
+/// structured refusal that otherwise collapses to a single error string.
+let buildGateView (command: string) (refusal: Preflight.GateRefusal) : View.View =
+    let label = Preflight.labelText refusal.Label
+    let destructive = (refusal.Label = Preflight.UndeclaredDestructiveChange)
+    let hero =
+        if destructive then View.Hero(View.Bad, sprintf "%s refused — this change destroys structure" command)
+        else View.Hero(View.Warn, sprintf "%s refused — %s" command label)
+    let nextAction =
+        if destructive then
+            [ View.Action "declare the loss to proceed: --declare-loss <name> (or --declare-all), or abort" ]
+        else []
+    View.Doc
+        ([ View.Blank
+           hero
+           View.Field("gate", label, (if destructive then View.Bad else View.Warn))
+           View.Field("detail", refusal.Error.Message, View.Neutral)
+           View.Field("exit", string refusal.ExitCode, View.Neutral) ]
+         @ nextAction)
+
+/// Render the Gate to stderr (a refusal is an event surface; stdout stays the
+/// answer/narration surface).
+let renderGate (command: string) (refusal: Preflight.GateRefusal) : unit =
+    let console =
+        AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(Console.Error)))
+    if Console.IsErrorRedirected then console.Profile.Width <- 100
+    View.write console (buildGateView command refusal)
