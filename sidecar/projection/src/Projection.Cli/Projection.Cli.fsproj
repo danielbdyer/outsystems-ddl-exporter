@@ -15,6 +15,7 @@
     <Compile Include="TransferArgs.fs" />
     <Compile Include="VerifyDataArgs.fs" />
     <Compile Include="VerbArgs.fs" />
+    <Compile Include="Theme.fs" />
     <Compile Include="TtyRenderer.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

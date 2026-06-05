@@ -26,36 +26,39 @@ let shouldRender (prettyRequested: bool) : bool =
 let renderSummaryTo (console: IAnsiConsole) (command: string) (code: int) : unit =
     let registered, applied, declined = LogSink.transformCounts ()
     let outcome =
-        if code = 0 then "[green]SUCCEEDED[/]" else "[red]FAILED[/]"
+        if code = 0 then Theme.green (Theme.ok + " SUCCEEDED")
+        else Theme.red (Theme.bad + " FAILED")
     let canary =
         match LogSink.canaryVerdict () with
-        | Some "green" -> "[green]green — diff empty[/]"
-        | Some "red"   -> "[red]RED — divergence[/]"
+        | Some "green" -> Theme.green (Theme.ok + " green — diff empty")
+        | Some "red"   -> Theme.red (Theme.bad + " RED — divergence")
         | Some other   -> Markup.Escape other
-        | None         -> "[grey](no canary leg)[/]"
+        | None         -> Theme.muted (Theme.dot + " no canary leg")
     let edits = LogSink.suggestedConfigEdits ()
     let editsCell =
-        if edits = 0 then "[grey]0[/]"
-        else sprintf "[yellow]%d[/] config edit(s) suggested" edits
+        if edits = 0 then Theme.muted (Theme.ok + " none")
+        else Theme.yellow (sprintf "%s %d config edit(s) suggested" Theme.warn edits)
 
     let grid = Grid()
     grid.AddColumn() |> ignore
     grid.AddColumn() |> ignore
-    grid.AddRow("outcome", outcome) |> ignore
-    grid.AddRow("canary", canary) |> ignore
+    grid.AddRow(Theme.muted "outcome", outcome) |> ignore
+    grid.AddRow(Theme.muted "canary", canary) |> ignore
     grid.AddRow(
-        "transforms",
-        sprintf "%d registered · %d applied · %d declined" registered applied declined) |> ignore
-    grid.AddRow("actionable", editsCell) |> ignore
+        Theme.muted "transforms",
+        sprintf "%d registered %s %d applied %s %d declined" registered Theme.dot applied Theme.dot declined) |> ignore
+    grid.AddRow(Theme.muted "actionable", editsCell) |> ignore
 
     (match RunLedger.configuredDir () with
      | Some dir ->
          let r = RunLedger.read dir |> RunLedger.readiness
          let gate =
-             if r.Eligible then "[green]ELIGIBLE[/]" else "[yellow]not yet[/]"
+             if r.Eligible then Theme.green (Theme.ok + " ELIGIBLE") else Theme.yellow "not yet"
          grid.AddRow(
-             "R6 gate",
-             sprintf "%d/%d consecutive green — %s" r.ConsecutiveGreen r.Threshold gate) |> ignore
+             Theme.muted "cutover",
+             sprintf "%s  %d / %d green %s %s"
+                 (Theme.meter r.ConsecutiveGreen r.Threshold)
+                 r.ConsecutiveGreen r.Threshold Theme.arrow gate) |> ignore
      | None -> ())
 
     let panel = Panel(grid)

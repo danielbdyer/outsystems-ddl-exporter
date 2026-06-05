@@ -138,19 +138,25 @@ let private printErrors (writer: TextWriter) (errors: ValidationError list) : un
 /// Print the bench table to stdout AND persist a JSON snapshot.
 /// Called at the tail of every successful subcommand so the perf
 /// surface is in the operator's attention.
+/// Polish — `-v` / `--verbose` surfaces the per-label bench table (and other
+/// depth); set in `main`. Default is calm: the bench snapshot persists for the
+/// perf gate + rides the `runComplete` aggregates, but the table is opt-in.
+let private verboseMode = ref false
+
 let private dumpBench (tag: string) : unit =
     let stats = Bench.snapshot ()
     if not (List.isEmpty stats) then
-        printfn ""
-        printfn "Bench (sorted by total time):"
-        printfn "%s" (Bench.renderTable stats)
         let path = BenchSink.defaultPath (Directory.GetCurrentDirectory()) tag
-        try
-            BenchSink.persistJson path tag stats
+        try BenchSink.persistJson path tag stats
+        with ex -> eprintfn "  WARNING: failed to persist bench snapshot: %s" ex.Message
+        // Calm by default (REPORTING_HORIZON polish) — the table is depth,
+        // shown only under -v. The snapshot is always persisted.
+        if verboseMode.Value then
+            printfn ""
+            printfn "Bench (sorted by total time):"
+            printfn "%s" (Bench.renderTable stats)
             printfn ""
             printfn "  bench snapshot: %s" path
-        with ex ->
-            eprintfn "  WARNING: failed to persist bench snapshot: %s" ex.Message
 
 /// Slice 4 (verb coverage) — bracket a verb body in the structured
 /// LogSink run envelope so EVERY emitting verb (not just `full-export`)
@@ -1615,10 +1621,22 @@ let private runMigrateWithData (toPath: string) (sinkSpec: string) (sourceSpec: 
 
 [<EntryPoint>]
 let main argv =
-    // Tier-3 — `--pretty` is a global channel-2 flag; record it and strip it
-    // before verb dispatch so the per-verb argv shapes are unchanged.
-    prettyMode := Array.contains "--pretty" argv
-    let argv = argv |> Array.filter (fun a -> a <> "--pretty")
+    // Polish (REPORTING_HORIZON) — global flags, parsed + stripped before
+    // verb dispatch so per-verb argv shapes are unchanged.
+    //   --pretty / --json / --no-pretty : force the channel; default AUTO
+    //     (a real TTY gets the Spectre panel, a pipe gets clean NDJSON — the
+    //     operator never thinks about format).
+    //   -v / --verbose : surface depth (the bench table, etc.).
+    let has flag = Array.contains flag argv
+    verboseMode := has "-v" || has "--verbose"
+    let forceJson = has "--json" || has "--no-pretty"
+    let forcePretty = has "--pretty"
+    // "operator wants pretty" — explicit, or auto when stderr is a real TTY
+    // and NDJSON wasn't forced. `TtyRenderer.shouldRender` re-checks the TTY
+    // so a forced --pretty into a pipe still won't spray ANSI.
+    prettyMode := forcePretty || (not forceJson && not Console.IsErrorRedirected)
+    let globalFlags = set [ "--pretty"; "--json"; "--no-pretty"; "-v"; "--verbose" ]
+    let argv = argv |> Array.filter (fun a -> not (Set.contains a globalFlags))
     match argv with
     | [| "full-export" |] ->
         Console.Error.WriteLine "projection full-export: --config <path> required"
