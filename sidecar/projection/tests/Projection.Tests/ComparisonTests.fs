@@ -83,3 +83,44 @@ let ``Comparison: renderCatalogChange leads with the essence, then the dig`` () 
         | View.Doc (View.Hero _ :: _) -> ()        // essence first, dig beneath
         | other -> Assert.Fail(sprintf "expected a Doc led by a Hero, got %A" other)
     | Error e -> Assert.Fail e
+
+// --- move-typed lanes (INSTRUMENT slice 2) ---------------------------------
+// Discriminating predicate: changes group into move-lanes, each badged by
+// reversibility — a remove lane is Bad (destroys structure), an add lane is Ok
+// (safe). A naive renderer shows one undifferentiated list with no move/badge.
+
+[<Fact>]
+let ``Comparison lanes: a removed kind lands in a remove lane badged Bad`` () =
+    match Comparison.catalog.Between sampleCatalog emptyCatalog with
+    | Ok d ->
+        let remove =
+            Comparison.renderCatalogLanes d
+            |> List.tryPick (function View.Lane(_, "remove", st, items) -> Some(st, items) | _ -> None)
+        match remove with
+        | Some (View.Bad, items) -> Assert.NotEmpty items
+        | other -> Assert.Fail(sprintf "expected a Bad remove lane, got %A" other)
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``Comparison lanes: an added kind lands in an add lane badged Ok`` () =
+    match Comparison.catalog.Between emptyCatalog sampleCatalog with
+    | Ok d ->
+        let add =
+            Comparison.renderCatalogLanes d
+            |> List.tryPick (function View.Lane(_, "add", st, items) -> Some(st, items) | _ -> None)
+        match add with
+        | Some (View.Ok, items) -> Assert.NotEmpty items
+        | other -> Assert.Fail(sprintf "expected an Ok add lane, got %A" other)
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``Comparison: renderCatalogChange dig carries the move lanes`` () =
+    match Comparison.catalog.Between sampleCatalog emptyCatalog with
+    | Ok d ->
+        match Comparison.renderCatalogChange d with
+        | View.Doc blocks ->
+            Assert.True(
+                blocks |> List.exists (function View.Lane(_, "remove", _, _) -> true | _ -> false),
+                "expected a remove lane in the dig")
+        | other -> Assert.Fail(sprintf "expected a Doc, got %A" other)
+    | Error e -> Assert.Fail e

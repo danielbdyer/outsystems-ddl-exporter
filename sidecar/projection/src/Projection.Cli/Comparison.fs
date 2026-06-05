@@ -64,11 +64,28 @@ let catalogEssence (d: CatalogDiff) : View.View =
     else
         View.Hero(View.Ok, sprintf "%d changes · nothing destroyed" n)
 
-/// A catalog change rendered essence-first: the plain verdict, then the dig (the
-/// ‖δ‖ panel). The first instance of the essence/dig surface every later surface
-/// reuses (`INSTRUMENT_BACKLOG` slice 1).
+/// The move-typed lanes of a catalog change — kind-level rename / add / remove,
+/// each a `View.Lane` badged by reversibility (rename + add are reversible-safe
+/// → Ok; remove destroys structure → Bad). The rename lane carries `old → new`.
+/// (Attribute-level reshape lanes are the next slice.)
+let renderCatalogLanes (d: CatalogDiff) : View.View list =
+    let renamed = CatalogDiff.renamed d |> Map.toList
+    let added   = CatalogDiff.added d   |> Set.toList
+    let removed = CatalogDiff.removed d  |> Set.toList
+    let lane glyph label st items =
+        if List.isEmpty items then [] else [ View.Lane(glyph, label, st, items) ]
+    lane "⟲" "rename" View.Ok
+        (renamed |> List.map (fun (_, r) -> sprintf "%s → %s" (Name.value r.OldName) (Name.value r.NewName)))
+    @ lane "+" "add" View.Ok (added |> List.map SsKey.rootOriginal)
+    @ lane "−" "remove" View.Bad (removed |> List.map SsKey.rootOriginal)
+
+/// A catalog change rendered essence-first: the plain verdict, then the dig —
+/// the move-typed lanes (kind moves: rename / add / remove, each badged by
+/// reversibility), with the per-channel ‖δ‖ panel beneath for the full picture
+/// (attributes / references / indexes). The essence/dig surface every later
+/// surface reuses (`INSTRUMENT_BACKLOG` slices 1–2).
 let renderCatalogChange (d: CatalogDiff) : View.View =
-    View.Doc [ catalogEssence d; View.Blank; renderCatalogDiff d ]
+    View.Doc ([ catalogEssence d; View.Blank ] @ renderCatalogLanes d @ [ View.Blank; renderCatalogDiff d ])
 
 /// Render a `PhysicalSchemaDiff` summary: identical / diverged, plus per-axis
 /// −missing / +extra counts.
