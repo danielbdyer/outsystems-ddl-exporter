@@ -38,6 +38,37 @@ stays calm while the depth stays infinite.
 
 ---
 
+## Two readings — confidence without the vocabulary
+
+The deepest thing about the instrument is *who it is for*. It rests on a serious
+architecture — a change calculus, an algebra of fidelity, a pure functional core
+— and **the developer using it needs to know none of that.** They do not need to
+know why it's F#, what a torsor is, or what the faithfulness ladder measures.
+They need to know three things: *Is it safe? Did it work? What do I do next?* —
+and they need to feel **confident** going in and **satisfied** coming out.
+
+So every surface speaks two languages at once, over the same truth:
+
+- **The plain reading** — for the developer who just wants to ship. *"Your
+  rename kept all 2.1M rows. Nothing else changed. Safe to ship."* Human words,
+  human stakes. No vocabulary required, ever.
+- **The deep reading** — one keypress beneath it, for whoever wants it. The same
+  fact in the language of the calculus: `‖rename‖_data = 0`, CDC captures 0, the
+  commuting square holds, residual ∅.
+
+They are the *same truth*: the deep reading is what makes the plain reading true,
+and the plain reading is the deep reading made kind. The newcomer never needs the
+second to trust the first. The expert never finds the first a lie. And a
+developer who arrives uninitiated and grows curious becomes initiated **on their
+own terms, one keypress at a time** — the architecture rewards understanding
+without ever demanding it.
+
+The measure of success is emotional, not technical: *a developer who does not
+understand the engine ships a schema change, and feels safe doing it.* The whole
+apparatus exists to earn that feeling — and then to get out of the way.
+
+---
+
 ## The space — three axes the operator moves through
 
 The operator is always *somewhere* inside the schema's truth, and moving is
@@ -293,6 +324,95 @@ Illustrative sketches (glyphs are the `Theme` tokens — `✓ ▲ ✕ ○ → ·
   the gate will not clear — and no SQL runs — until every orphan is mapped.
   ↑↓ walk · → FK re-point trail · m manual-map · f fallback · g clear gate
 ```
+
+---
+
+## Storyboard — a first change, by someone who's never seen this
+
+Meet a developer who has never opened this, doesn't know it's written in F#, and
+has a schema change to ship. She is a little nervous. Watch the instrument carry
+her — plain words, the depth waiting quietly underneath.
+
+**1 · It starts, and it talks like a person.**
+```
+  Working on your change…
+    ✓ Read your model — 312 tables
+    ✓ Compared it to what's live
+    ⣷ Working out what's safe to change…
+```
+
+**2 · The verdict, in one breath — plain confidence.**
+```
+  ✓  Safe to ship
+     14 changes · 13 easily reversible · 1 worth a look · no data lost
+     → look at the 1, or ship now
+```
+No jargon. She knows exactly where she stands and what to do next.
+
+**3 · The one risky thing warns her — kindly, without assuming.**
+```
+  ▲  One change removes something
+     You're dropping an index, "IX_Order_Stale".
+       · it holds no data — nothing of yours is lost
+       · but it can't be auto-undone, so I'm asking first
+     ship it?   [y] yes   [n] skip it   [?] what's an index — and is this ok?
+```
+She doesn't know what an index is. `?` will tell her, plainly. The instrument
+never makes her feel small for not knowing.
+
+**4 · She ships, watches it happen — and it double-checks itself.**
+```
+  Shipping…
+    ✓ Renamed 2 things        your data stayed exactly where it was
+    ✓ Widened 3 columns       instant — no rewrite
+    ✓ Added 6 new things
+    ✓ Moved 4,210 rows
+  ✓ Done — and I checked: your database now matches your model exactly.
+```
+It worked. It told her clearly. It *verified itself.* That is the satisfaction —
+the quiet *"…huh, that was nice."*
+
+**5 · Curiosity, rewarded on her terms (entirely optional).** She wonders *how do
+you know it matches?* and presses `→`.
+```
+  I deployed your model to a clean copy, read it back, and compared them.
+  Identical.                                    the proof ↓  (or leave it — your call)
+  ‖δ‖ verified · commuting square holds · residual ∅ · CDC 4,210 = exactly the rows that changed
+```
+The depth was always there. She never needed it to trust the result — but now
+she's a half-step more initiated, because she chose to be.
+
+That arc — **nervous → clear → consenting → satisfied → a little curious** — is
+the design target. Everything deep in the architecture exists to produce it for
+someone who will never read this document.
+
+---
+
+## How it stays theirs to shape — the Voice layer
+
+Built so it can be refined forever without disturbing the truth beneath. Three
+layers, cleanly separable — the structural reason the Apple-edition polish can
+keep going indefinitely:
+
+- **Structure** (`View`) — *what* is shown: the verdict, the changeset, the gate,
+  the timeline. One ADT; every surface a projection of it; the human and machine
+  lenses can't drift because they're the same value.
+- **Style** (`Theme`) — *how it looks*: glyphs, semantic color, meters, dots.
+  Re-themeable wholesale; every signal survives a colorblind reader or `NO_COLOR`
+  because color always rides a glyph.
+- **Voice** — *how it speaks*: the register that turns the deep truth into the
+  plain reading. "Your rename kept all your rows" and `‖rename‖_data = 0` are one
+  structure, two voices.
+
+Because the three are separate, the instrument is **tuned, not rebuilt**: dial
+the Voice from *plain* to *expert* without touching the structure; re-theme for a
+new house style; add a surface as a new `View` projection; re-word for a
+different audience entirely — all without going near the engine that computes the
+truth. The depth is fixed and proven; the **presentation stays soft** — the
+operator's to shape as the product grows and new developers, of every level,
+arrive. The surface can be refined a thousand times, and the truth underneath
+never moves. *Scalable and adjustable* is not a hope here; it is the shape of the
+three layers.
 
 ---
 
