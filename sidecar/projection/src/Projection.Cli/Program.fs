@@ -1117,6 +1117,64 @@ let private runReadiness () : int =
                 Phase = LogSink.End }
         0
 
+/// P3 (REPORTING_HORIZON polish) — `explain <config> <ssKey>`. The drill-down
+/// doorway: run the projection, then tell the full story for ONE node — every
+/// transform that touched it (with the decision + rationale, rendered through
+/// the SAME `EventProjection.transformKindRender` the event stream uses) and
+/// every finding (with its suggested fix). "Every number is a doorway."
+/// `ssKey` matches by exact root or substring, so `CustomerId` finds
+/// `OSUSR_FOO.OrderHeader.CustomerId`.
+let private runExplain (configPath: string) (ssKeyText: string) : int =
+    match Config.fromFile configPath with
+    | Error errs ->
+        Console.Error.WriteLine "projection explain: config invalid:"
+        printErrors Console.Error errs
+        2
+    | Ok config ->
+        match (Compose.runWithConfig config).GetAwaiter().GetResult() with
+        | Error errs ->
+            Console.Error.WriteLine "projection explain: run failed:"
+            printErrors Console.Error errs
+            2
+        | Ok report ->
+            let matchesKey (k: SsKey) =
+                let s = SsKey.rootOriginal k
+                s = ssKeyText || s.Contains(ssKeyText)
+            let trail = report.Trail |> List.filter (fun e -> matchesKey e.SsKey)
+            let diags =
+                (report.Diagnostics @ report.PassDiagnostics)
+                |> List.filter (fun d -> match d.SsKey with Some k -> matchesKey k | None -> false)
+            printfn ""
+            printfn "  explain  %s" ssKeyText
+            printfn ""
+            if List.isEmpty trail && List.isEmpty diags then
+                printfn "  %s no transforms or findings matched" Theme.warn
+                printfn "      %s try a fuller SsKey, or a model/profile that exercises this node" Theme.dot
+                1
+            else
+                if not (List.isEmpty trail) then
+                    printfn "  transforms"
+                    for e in trail do
+                        let tag, detail = EventProjection.transformKindRender e.TransformKind
+                        match detail with
+                        | Some d -> printfn "  %s %s %s %s %s %s" Theme.arrow e.PassName Theme.dot tag Theme.dot d
+                        | None   -> printfn "  %s %s %s %s" Theme.arrow e.PassName Theme.dot tag
+                    printfn ""
+                if not (List.isEmpty diags) then
+                    printfn "  findings"
+                    for d in diags do
+                        let g =
+                            match d.Severity with
+                            | DiagnosticSeverity.Error   -> Theme.bad
+                            | DiagnosticSeverity.Warning -> Theme.warn
+                            | _                          -> Theme.dot
+                        printfn "  %s %s %s %s" g d.Code Theme.dot d.Message
+                        match d.SuggestedConfig with
+                        | Some c -> printfn "      %s fix: %s = %s" Theme.arrow c.Path c.Value
+                        | None   -> ()
+                    printfn ""
+                0
+
 /// P4 (REPORTING_HORIZON polish) — `suggest-config <config> [--apply <out>]`.
 /// Run the projection, collect every actionable `SuggestedConfig` from the
 /// diagnostic streams, merge by path (dedup), **rank by impact** (how many
@@ -1749,6 +1807,8 @@ let main argv =
         withRun "projection canary" (fun () -> runCanary sourceDdlPath)
     | [| "readiness" |] ->
         runReadiness ()
+    | [| "explain"; configPath; ssKey |] ->
+        runExplain configPath ssKey
     | [| "suggest-config"; configPath |] ->
         runSuggestConfig configPath None
     | [| "suggest-config"; configPath; "--apply"; out |] ->

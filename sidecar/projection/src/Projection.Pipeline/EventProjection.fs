@@ -40,8 +40,10 @@ module EventProjection =
     /// `transform.lineage` tag + optional typed-payload rendering for one
     /// `TransformKind`. The detail string reuses Core's existing
     /// `toDiagnosticString` projections — strings emerge only at this
-    /// rendering boundary (the typed DU IS the structure).
-    let private transformKindRender (kind: TransformKind) : string * string option =
+    /// rendering boundary (the typed DU IS the structure). Public so the
+    /// `explain` drill-down (P3) renders the same decision text the event
+    /// stream does — one rendering, two surfaces.
+    let transformKindRender (kind: TransformKind) : string * string option =
         match kind with
         | Touched                       -> "touched", None
         | Renamed                       -> "renamed", None
