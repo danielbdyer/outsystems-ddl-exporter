@@ -29,6 +29,10 @@
     <Compile Include="ResultTests.fs" />
     <Compile Include="BenchTests.fs" />
     <Compile Include="LogSinkTests.fs" />
+    <Compile Include="RunLedgerTests.fs" />
+    <Compile Include="ThemeTests.fs" />
+    <Compile Include="ViewTests.fs" />
+    <Compile Include="TtyRendererTests.fs" />
     <Compile Include="FullExportCliTests.fs" />
     <Compile Include="FullExportStoreTests.fs" />
     <Compile Include="SsKeyTests.fs" />
@@ -55,6 +59,7 @@
     <Compile Include="TransformGroupsFilterTests.fs" />
     <Compile Include="InsertionPolicyBindingTests.fs" />
     <Compile Include="LogSinkVerbosityTests.fs" />
+    <Compile Include="EventProjectionTests.fs" />
     <Compile Include="RemediationEmitterTests.fs" />
     <Compile Include="SummaryFormatterTests.fs" />
     <Compile Include="ComposeAtomicWriteTests.fs" />
@@ -66,6 +71,7 @@
     <Compile Include="AxiomTests.fs" />
     <Compile Include="ArtifactByKindTests.fs" />
     <Compile Include="CatalogDiffTests.fs" />
+    <Compile Include="ComparisonTests.fs" />
     <Compile Include="LifecycleTests.fs" />
     <Compile Include="EpisodeTests.fs" />
     <Compile Include="ChangeManifestTests.fs" />
@@ -287,6 +293,7 @@
     <ProjectReference Include="..\..\src\Projection.Adapters.Osm\Projection.Adapters.Osm.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Adapters.OssysSql\Projection.Adapters.OssysSql.fsproj" />
     <ProjectReference Include="..\..\src\Projection.Pipeline\Projection.Pipeline.fsproj" />
+    <ProjectReference Include="..\..\src\Projection.Cli\Projection.Cli.fsproj" />
   </ItemGroup>
 
 </Project>

@@ -17,6 +17,14 @@ sketch, and the formal or craft property it unlocks. Status vocabulary
 is the same as `BACKLOG.md` (`proposed` / `scheduled` / `in-flight` /
 `shipped` / `canceled`). All items open here as `proposed`.
 
+**Companion — `REPORTING_HORIZON.md`** (2026-06-04): the operator
+data-reporting roadmap *sequences* several atoms from this backlog
+(`H-031` SuggestedConfig population, `H-032` `suggest-config` verb,
+`H-033` policy diff, `H-059` operator report, Group VIII observability)
+into a four-tier operator experience (after-verdict → actionable digest →
+pretty TTY → cross-run ledger), set against `docs/logging-format.md` (the
+event contract). Read it for the *assembly*; the items below are the *parts*.
+
 ---
 
 ## Table of contents

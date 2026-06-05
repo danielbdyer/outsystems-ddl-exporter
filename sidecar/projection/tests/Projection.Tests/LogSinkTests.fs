@@ -458,3 +458,107 @@ let ``§10 runComplete: eventCounts payload includes all five levels with zero f
     Assert.True((prop counts "info").GetInt32() >= 1)
     Assert.Equal(0, (prop counts "warn").GetInt32())
     Assert.Equal(0, (prop counts "error").GetInt32())
+
+// ----------------------------------------------------------------------
+// Tier-1 reporting — §10 transformSummary + rationaleHistogram
+// ----------------------------------------------------------------------
+
+let private findRunComplete (lines: string list) : JsonElement =
+    lines
+    |> List.map parse
+    |> List.find (fun e -> getStr (prop e "code") = "summary.runComplete")
+
+[<Fact>]
+let ``Tier-1 §10: transformSummary counts registered/applied/declined and survives Quiet suppression`` () =
+    // `transform.registered` is Debug — suppressed from DISPLAY under the
+    // default Quiet verbosity, but the §10 summary must still count it.
+    let lines =
+        captureLines (fun () ->
+            LogSink.emit (LogSink.envelope LogSink.Debug LogSink.Transform "transform.registered" Map.empty)
+            LogSink.emit (LogSink.envelope LogSink.Debug LogSink.Transform "transform.registered" Map.empty)
+            LogSink.emit (LogSink.envelope LogSink.Info LogSink.Transform "transform.applied" Map.empty)
+            LogSink.emit (LogSink.envelope LogSink.Info LogSink.Transform "transform.declined" Map.empty)
+            LogSink.emit (LogSink.envelope LogSink.Info LogSink.Transform "transform.declined" Map.empty)
+            LogSink.emit (LogSink.envelope LogSink.Info LogSink.Transform "transform.declined" Map.empty)
+            LogSink.runComplete LogSink.Succeeded "test" [] |> ignore)
+    let ts = prop (prop (findRunComplete lines) "payload") "transformSummary"
+    Assert.Equal(2, (prop ts "registered").GetInt32())   // counted despite Debug suppression
+    Assert.Equal(1, (prop ts "applied").GetInt32())
+    Assert.Equal(3, (prop ts "declined").GetInt32())
+
+[<Fact>]
+let ``Tier-1 §10: rationaleHistogram groups transform.declined by rationale`` () =
+    let declined rationale basis =
+        { LogSink.envelope LogSink.Info LogSink.Transform "transform.declined"
+            (Map.ofList [ "rationale", box rationale ]) with SsKey = Some (fixtureKey basis) }
+    let lines =
+        captureLines (fun () ->
+            LogSink.emit (declined "DataHasNulls" "a")
+            LogSink.emit (declined "DataHasNulls" "b")
+            LogSink.emit (declined "NullBudgetEpsilon" "c")
+            LogSink.runComplete LogSink.Succeeded "test" [] |> ignore)
+    let hist = prop (prop (findRunComplete lines) "payload") "rationaleHistogram"
+    Assert.Equal(2, (prop (prop hist "DataHasNulls") "count").GetInt32())
+    Assert.Equal(1, (prop (prop hist "NullBudgetEpsilon") "count").GetInt32())
+
+[<Fact>]
+let ``Tier-1 §10: rationaleHistogram is empty when no declines fired`` () =
+    let lines =
+        captureLines (fun () ->
+            LogSink.emit (LogSink.envelope LogSink.Info LogSink.Transform "transform.applied" Map.empty)
+            LogSink.runComplete LogSink.Succeeded "test" [] |> ignore)
+    let hist = prop (prop (findRunComplete lines) "payload") "rationaleHistogram"
+    Assert.Equal(JsonValueKind.Object, hist.ValueKind)
+    Assert.Equal(0, hist.EnumerateObject() |> Seq.length)
+
+// ----------------------------------------------------------------------
+// Tier-2 reporting — §12 suggestedConfigDigest (the actionable digest)
+// ----------------------------------------------------------------------
+
+[<Fact>]
+let ``Tier-2 §12: suggestedConfigDigest merges suggestions by path with counts + samples`` () =
+    let withSuggestion path value basis =
+        let cfg : Map<string, objnull> = Map.ofList [ "path", box path; "value", box value ]
+        { LogSink.envelope LogSink.Warn LogSink.Transform "transform.diagnostic"
+            (Map.ofList [ "suggestedConfig", box cfg ]) with SsKey = Some (fixtureKey basis) }
+    let lines =
+        captureLines (fun () ->
+            LogSink.emit (withSuggestion "$.profiling.samplingCap" "100000" "a")
+            LogSink.emit (withSuggestion "$.profiling.samplingCap" "100000" "b")
+            LogSink.emit (withSuggestion "$.tightening.nullBudget" "0.02" "c")
+            LogSink.runComplete LogSink.Succeeded "test" [] |> ignore)
+    let payload = prop (findRunComplete lines) "payload"
+    // The dedup-by-path merge is the §12 "single merged config patch".
+    Assert.Equal(3, (prop payload "suggestedConfigEdits").GetInt32())
+    let digest = prop payload "suggestedConfigDigest"
+    let capEntry = prop digest "$.profiling.samplingCap"
+    Assert.Equal(2, (prop capEntry "count").GetInt32())
+    Assert.Equal("100000", getStr (prop capEntry "value"))
+    Assert.Equal(2, (prop capEntry "ssKeys").GetArrayLength())
+    Assert.Equal(1, (prop (prop digest "$.tightening.nullBudget") "count").GetInt32())
+
+[<Fact>]
+let ``Tier-2 §12: suggestedConfigDigest is empty when no suggestions fired`` () =
+    let lines =
+        captureLines (fun () ->
+            LogSink.emit (LogSink.envelope LogSink.Info LogSink.Transform "transform.applied" Map.empty)
+            LogSink.runComplete LogSink.Succeeded "test" [] |> ignore)
+    let digest = prop (prop (findRunComplete lines) "payload") "suggestedConfigDigest"
+    Assert.Equal(0, digest.EnumerateObject() |> Seq.length)
+
+[<Fact>]
+let ``P4: topSuggestion returns the most-suggested path with its count`` () =
+    let withSuggestion path basis =
+        let cfg : Map<string, objnull> = Map.ofList [ "path", box path; "value", box "x" ]
+        { LogSink.envelope LogSink.Warn LogSink.Transform "transform.diagnostic"
+            (Map.ofList [ "suggestedConfig", box cfg ]) with SsKey = Some (fixtureKey basis) }
+    captureLines (fun () ->
+        LogSink.emit (withSuggestion "$.a" "1")
+        LogSink.emit (withSuggestion "$.a" "2")
+        LogSink.emit (withSuggestion "$.a" "3")
+        LogSink.emit (withSuggestion "$.b" "4")) |> ignore
+    match LogSink.topSuggestion () with
+    | Some (path, count) ->
+        Assert.Equal("$.a", path)   // 3 beats 1 — impact rank
+        Assert.Equal(3, count)
+    | None -> Assert.Fail "expected a top suggestion"

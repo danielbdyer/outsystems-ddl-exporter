@@ -324,6 +324,13 @@ module LogSink =
             Stages                      : ResizeArray<StageTiming>
             Artifacts                   : ResizeArray<Artifact>
             mutable SuggestedConfigEdits: int
+            // §10 transformSummary counters — incremented BEFORE the
+            // verbosity filter so the rollup reflects the run, not the
+            // display (`transform.registered` is Debug, suppressed under
+            // Quiet; the summary must still count it).
+            mutable TransformRegistered : int
+            mutable TransformApplied    : int
+            mutable TransformDeclined   : int
         }
 
     let private freshState () : RunState =
@@ -338,6 +345,9 @@ module LogSink =
             Stages               = ResizeArray()
             Artifacts            = ResizeArray()
             SuggestedConfigEdits = 0
+            TransformRegistered  = 0
+            TransformApplied     = 0
+            TransformDeclined    = 0
         }
 
     let private state : RunState ref = ref (freshState ())
@@ -565,9 +575,17 @@ module LogSink =
     /// `MutedCategories` are dropped at this boundary.
     let emit (env: Envelope) : unit =
         lock lockObj (fun () ->
-            if not (isLevelVisible state.Value.Verbosity env.Level) then
+            let s = state.Value
+            // §10 transformSummary — count before the verbosity/mute filter so
+            // the rollup reflects what ran, not what was displayed.
+            (match env.Code with
+             | "transform.registered" -> s.TransformRegistered <- s.TransformRegistered + 1
+             | "transform.applied"    -> s.TransformApplied    <- s.TransformApplied + 1
+             | "transform.declined"   -> s.TransformDeclined   <- s.TransformDeclined + 1
+             | _ -> ())
+            if not (isLevelVisible s.Verbosity env.Level) then
                 ()
-            elif Set.contains env.Category state.Value.MutedCategories then
+            elif Set.contains env.Category s.MutedCategories then
                 ()
             else
                 updateAccumulator env
@@ -590,6 +608,25 @@ module LogSink =
     let recordArtifact (artifact: Artifact) : unit =
         lock lockObj (fun () ->
             state.Value.Artifacts.Add artifact)
+
+    /// Record a stage timing AND emit its `summary.stageCompleted`
+    /// envelope (§7.8 — info / `end` phase, `stepId = stage`). The
+    /// shared primitive for the orchestration's per-stage instrumentation
+    /// (extract / profile / emit / deploy / canary) so the §10
+    /// `runComplete` stage table and the live `summary.stageCompleted`
+    /// stream stay in lock-step from one call site.
+    let recordStageEvent (stage: string) (durationMs: int64) (outcome: Outcome) : unit =
+        recordStage stage durationMs outcome
+        let payload : Map<string, objnull> =
+            Map.ofList [
+                "stage",      box stage
+                "durationMs", box durationMs
+                "outcome",    box (outcomeToString outcome)
+            ]
+        emit
+            { envelope Info Summary "summary.stageCompleted" payload with
+                Phase  = End
+                StepId = Some stage }
 
     // -----------------------------------------------------------------
     // §11 — rollup snapshot (read-only; built ONCE during emission)
@@ -629,6 +666,44 @@ module LogSink =
 
     let suggestedConfigEdits () : int =
         lock lockObj (fun () -> state.Value.SuggestedConfigEdits)
+
+    /// Tier-4 ledger — the run's canary verdict derived from the accumulated
+    /// `canary.*` events: `Some "red"` if any `canary.divergence` fired,
+    /// else `Some "green"` if a `canary.diffEmpty` fired, else `None` (the
+    /// run had no canary leg). Both codes are Info/Error → always accumulated.
+    let canaryVerdict () : string option =
+        lock lockObj (fun () ->
+            let s = state.Value
+            if s.Envelopes |> Seq.exists (fun e -> e.Code = "canary.divergence") then Some "red"
+            elif s.Envelopes |> Seq.exists (fun e -> e.Code = "canary.diffEmpty") then Some "green"
+            else None)
+
+    /// Tier-4 ledger — `(registered, applied, declined)` transform counts
+    /// (verbosity-independent; see the §10 transformSummary counters).
+    let transformCounts () : int * int * int =
+        lock lockObj (fun () ->
+            let s = state.Value
+            s.TransformRegistered, s.TransformApplied, s.TransformDeclined)
+
+    /// Polish (P4) — the highest-impact suggested config edit: the `path`
+    /// suggested by the most events, with its count. The verdict panel shows
+    /// it so the operator sees the single biggest lever at a glance.
+    let topSuggestion () : (string * int) option =
+        lock lockObj (fun () ->
+            state.Value.Envelopes
+            |> Seq.choose (fun e ->
+                match Map.tryFind "suggestedConfig" e.Payload with
+                | Some v ->
+                    match v with
+                    | :? Map<string, objnull> as cfg ->
+                        match Map.tryFind "path" cfg with
+                        | Some p when not (isNull p) -> Some (string p)
+                        | _ -> None
+                    | _ -> None
+                | None -> None)
+            |> Seq.countBy id
+            |> Seq.sortByDescending snd
+            |> Seq.tryHead)
 
     // -----------------------------------------------------------------
     // §11 — bench-stat surfacing under category=summary, code=bench.label
@@ -757,6 +832,68 @@ module LogSink =
             levelToString lv, box n)
         |> Map.ofList
 
+    /// §10 `rationaleHistogram` — group every `transform.declined` event by
+    /// its payload `rationale` (the §8.1 closed enum), carrying the count +
+    /// the first three SsKey samples per rationale. The operator scans this
+    /// to know which knob turns which non-tightened axis. Empty map when no
+    /// declines fired. Derived from the accumulated Info-level envelopes.
+    let private buildRationaleHistogram (envelopes: ResizeArray<Envelope>) : Map<string, objnull> =
+        envelopes
+        |> Seq.filter (fun e -> e.Code = "transform.declined")
+        |> Seq.choose (fun e ->
+            match Map.tryFind "rationale" e.Payload with
+            | Some r when not (isNull r) -> Some (string r, e)
+            | _ -> None)
+        |> Seq.groupBy fst
+        |> Seq.map (fun (rationale, group) ->
+            let items = group |> Seq.map snd |> Seq.toList
+            let samples =
+                items
+                |> List.truncate 3
+                |> List.choose (fun e -> e.SsKey |> Option.map renderSsKey)
+            let entry : Map<string, objnull> =
+                Map.ofList [ "count", box (List.length items); "samples", box samples ]
+            rationale, (box entry : objnull))
+        |> Map.ofSeq
+
+    /// §12 `suggestedConfigDigest` (Tier-2 reporting) — the actionable digest
+    /// surfaced in the verdict. Every event carrying a `payload.suggestedConfig`
+    /// (`{ path, value, note }`) is merged by `path` (dedup), collecting the
+    /// occurrence count + up to five sample SsKeys per path. This is the §12
+    /// "single merged config patch" computed at the run boundary, so the
+    /// operator reads the to-do list in the terminal rollup without a separate
+    /// pass. Empty when no suggestions fired.
+    let private buildSuggestedConfigDigest (envelopes: ResizeArray<Envelope>) : Map<string, objnull> =
+        envelopes
+        |> Seq.choose (fun e ->
+            match Map.tryFind "suggestedConfig" e.Payload with
+            | Some v ->
+                match v with
+                | :? Map<string, objnull> as cfg ->
+                    match Map.tryFind "path" cfg with
+                    | Some p when not (isNull p) -> Some (string p, cfg, e)
+                    | _ -> None
+                | _ -> None
+            | None -> None)
+        |> Seq.groupBy (fun (path, _, _) -> path)
+        |> Seq.map (fun (path, group) ->
+            let items = group |> Seq.toList
+            let (_, firstCfg, _) = List.head items
+            let pick k : objnull = match Map.tryFind k firstCfg with | Some x -> x | None -> null
+            let ssKeys =
+                items
+                |> List.truncate 5
+                |> List.choose (fun (_, _, e) -> e.SsKey |> Option.map renderSsKey)
+            let entry : Map<string, objnull> =
+                Map.ofList [
+                    "value",  pick "value"
+                    "note",   pick "note"
+                    "count",  box (List.length items)
+                    "ssKeys", box ssKeys
+                ]
+            path, (box entry : objnull))
+        |> Map.ofSeq
+
     /// Emit the terminal `summary.runComplete` event per §10. Pulls
     /// the current accumulator + an optional `Bench.Stats` snapshot
     /// (caller-supplied so the CLI controls when the bench surface
@@ -795,6 +932,13 @@ module LogSink =
                     else compare a.FirstTs b.FirstTs)
                 |> Seq.map renderAggregateEntry
                 |> Seq.toList
+            let transformSummary : Map<string, objnull> =
+                Map.ofList [
+                    "registered", box s.TransformRegistered
+                    "applied",    box s.TransformApplied
+                    "declined",   box s.TransformDeclined
+                ]
+            let rationaleHistogram = buildRationaleHistogram s.Envelopes
             let payload : Map<string, objnull> =
                 Map.ofList [
                     "outcome",              box (outcomeToString outcome)
@@ -805,7 +949,10 @@ module LogSink =
                                                 s.EventCounts
                                                 |> Seq.map (fun kv -> kv.Key, kv.Value)
                                                 |> Map.ofSeq))
+                    "transformSummary",     box transformSummary
+                    "rationaleHistogram",   box rationaleHistogram
                     "suggestedConfigEdits", box s.SuggestedConfigEdits
+                    "suggestedConfigDigest",box (buildSuggestedConfigDigest s.Envelopes)
                     "artifacts",            box artifactsPayload
                     "aggregates",           box aggregatePayload
                 ]

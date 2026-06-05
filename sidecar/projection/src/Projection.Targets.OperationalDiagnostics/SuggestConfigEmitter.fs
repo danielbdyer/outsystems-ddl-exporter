@@ -149,3 +149,17 @@ module SuggestConfigEmitter =
     /// pre-Wave-3 output). See `emitWith`.
     let emit (diagnostics: DiagnosticEntry list) : JsonNode =
         emitWith ApprovalRegistry.empty "" diagnostics
+
+    /// `RegisteredTransform` metadata view per the pillar 9 +
+    /// L3-CC-Transform-Totality discipline. Classifies as `DataIntent` —
+    /// the suggestions derive entirely from the finding's statistical
+    /// evidence (`SuggestedConfig.Value`); no operator opinion enters the
+    /// projection (the operator decides which suggestions to apply).
+    /// Registered as part of the E1 emit-phase isomorphism (the emitter
+    /// runs in `Compose.project`'s emit phase; it must be registered so
+    /// `registered ⇔ executed` holds).
+    let registeredMetadata : RegisteredTransformMetadata =
+        RegisteredTransformMetadata.emitter "suggestConfigEmitter" Diagnostics
+            [ TransformSite.dataIntent "suggestedEdits"
+                "Materialize SuggestedConfig payloads from the pass-chain diagnostic stream into a deduplicated operator-facing JSON config-patch (max-Value per Path; sources collected per path). DataIntent: suggestions derive from each finding's statistical evidence; the operator reviews + applies. R6 approval-gated via emitWith (suppressed when the source policy was rejected)." ]
+

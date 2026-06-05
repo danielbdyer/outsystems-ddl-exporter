@@ -1421,6 +1421,21 @@ module Deploy =
         : Task<Result<WideCanaryReport>> =
         runWideCanaryWithLoader (fun cnn -> executeBatch cnn sourceDdl) emit
 
+    /// E4 (`DECISIONS 2026-06-04`) — the canonical schema-then-data deploy
+    /// form: `SsdtDdlEmitter.statements` (DDL) followed by
+    /// `StaticPopulationEmitter.statements` (the typed `InsertRow` realization
+    /// of `Modality.Static` populations). This is the production wiring of
+    /// `StaticPopulationEmitter` per its module header — the wide canary's
+    /// target is a fresh-empty database, so the InsertRow realization (no
+    /// idempotency / no CDC) is the right data lane. Identity to the prior
+    /// schema-only canary when the source carries no static populations (the
+    /// `InsertRow` stream is then empty). Closes the registered-but-unexecuted
+    /// mismatch the E1–E4 isomorphism surfaced.
+    let schemaWithStaticPopulation (catalog: Catalog) : seq<Statement> =
+        Seq.append
+            (SsdtDdlEmitter.statements catalog)
+            (Projection.Targets.Data.StaticPopulationEmitter.statements catalog)
+
     /// **X8 — the canary's CDC-silence leg.** The wide canary proves the
     /// PhysicalSchema round-trip (source ≈ target); X8's criterion adds the
     /// SECOND assertion the protein P-9 canary demands — that an *idempotent

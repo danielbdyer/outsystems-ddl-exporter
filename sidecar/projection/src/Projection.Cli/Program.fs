@@ -138,19 +138,76 @@ let private printErrors (writer: TextWriter) (errors: ValidationError list) : un
 /// Print the bench table to stdout AND persist a JSON snapshot.
 /// Called at the tail of every successful subcommand so the perf
 /// surface is in the operator's attention.
+/// Polish — `-v` / `--verbose` surfaces the per-label bench table (and other
+/// depth); set in `main`. Default is calm: the bench snapshot persists for the
+/// perf gate + rides the `runComplete` aggregates, but the table is opt-in.
+let private verboseMode = ref false
+
 let private dumpBench (tag: string) : unit =
     let stats = Bench.snapshot ()
     if not (List.isEmpty stats) then
-        printfn ""
-        printfn "Bench (sorted by total time):"
-        printfn "%s" (Bench.renderTable stats)
         let path = BenchSink.defaultPath (Directory.GetCurrentDirectory()) tag
-        try
-            BenchSink.persistJson path tag stats
+        try BenchSink.persistJson path tag stats
+        with ex -> eprintfn "  WARNING: failed to persist bench snapshot: %s" ex.Message
+        // Calm by default (REPORTING_HORIZON polish) — the table is depth,
+        // shown only under -v. The snapshot is always persisted.
+        if verboseMode.Value then
+            printfn ""
+            printfn "Bench (sorted by total time):"
+            printfn "%s" (Bench.renderTable stats)
             printfn ""
             printfn "  bench snapshot: %s" path
-        with ex ->
-            eprintfn "  WARNING: failed to persist bench snapshot: %s" ex.Message
+
+/// Slice 4 (verb coverage) — bracket a verb body in the structured
+/// LogSink run envelope so EVERY emitting verb (not just `full-export`)
+/// produces a conforming NDJSON stream: a `config.runStart` first event
+/// and the mandatory terminal `summary.runComplete` (§10), even when the
+/// verb's middle is sparse. `full-export` is NOT wrapped here — it
+/// self-brackets via `FullExportRun`. NDJSON goes to stderr (channel 1);
+/// the verb's human narration stays on stdout (the §5 split).
+/// Tier-3 — `--pretty` is a global channel-2 flag, stripped from argv in
+/// `main` and recorded here. When set (and stderr is a real TTY), `withRun`
+/// suppresses the NDJSON stream and renders a Spectre verdict panel instead.
+let private prettyMode = ref false
+
+let private withRun (command: string) (body: unit -> int) : int =
+    LogSink.beginRun () |> ignore
+    Bench.reset ()
+    // Tier-3 channel 2 (§15.1) — when --pretty + a real TTY, the panel
+    // REPLACES the NDJSON on stderr (never both on the same TTY); route
+    // channel 1 to the null sink for this run.
+    let pretty = TtyRenderer.shouldRender prettyMode.Value
+    if pretty then LogSink.setWriter System.IO.TextWriter.Null
+    LogSink.emit
+        { LogSink.envelope LogSink.Info LogSink.Config "config.runStart"
+            (Map.ofList [ "command", box command ]) with
+            Phase = LogSink.Start }
+    // §7.4 — every run publishes its classified transform inventory
+    // (the registry that drives the pass chain), not just full-export.
+    EventProjection.ofRegistry RegisteredAllTransforms.all |> List.iter LogSink.emit
+    let code = body ()
+    let outcome = if code = 0 then LogSink.Succeeded else LogSink.Failed
+    LogSink.runComplete outcome command (Bench.snapshot ()) |> ignore
+    // Tier-4 reporting — append this run to the cross-run ledger when one is
+    // configured (`PROJECTION_LEDGER_DIR`), so the readiness gauge can read
+    // the canary streak. Opt-in: default runs don't accumulate.
+    (match RunLedger.configuredDir () with
+     | Some dir ->
+         let registered, applied, declined = LogSink.transformCounts ()
+         try
+             RunLedger.append dir
+                 { RunId      = LogSink.runId ()
+                   Ts         = System.DateTime.UtcNow.ToString("o")
+                   Command    = command
+                   Outcome    = (if code = 0 then "succeeded" else "failed")
+                   Canary     = LogSink.canaryVerdict ()
+                   Registered = registered
+                   Applied    = applied
+                   Declined   = declined }
+         with ex -> eprintfn "  WARNING: failed to append ledger record: %s" ex.Message
+     | None -> ())
+    if pretty then TtyRenderer.renderSummary command code
+    code
 
 // ----------------------------------------------------------------------
 // `full-export` (chapter B.4 slice 7) — Phase B structural-exit
@@ -456,8 +513,20 @@ let private runCanary (sourceDdlPath: string) : int =
     else
         let sourceDdl = File.ReadAllText sourceDdlPath
         printfn "projection: spinning up ephemeral SQL Server for the wide canary..."
-        let task = Deploy.runWideCanary sourceDdl SsdtDdlEmitter.statements
+        // E4 — the production canary deploys the canonical schema-then-data
+        // form (DDL + StaticPopulationEmitter's InsertRow realization into the
+        // fresh-empty target). Schema-only when the source carries no static
+        // populations. See `Deploy.schemaWithStaticPopulation`.
+        let stageTimer = System.Diagnostics.Stopwatch.StartNew()
+        let task = Deploy.runWideCanary sourceDdl Deploy.schemaWithStaticPopulation
         let result = task.GetAwaiter().GetResult()
+        stageTimer.Stop()
+        // Tier-1 reporting — the canary stage feeds the §10 runComplete stages
+        // table (the canary verb is single-stage; full-export records its own).
+        LogSink.recordStage "canary" stageTimer.ElapsedMilliseconds
+            (match result with
+             | Ok r when PhysicalSchema.isEqual r.Diff -> LogSink.Succeeded
+             | _ -> LogSink.Failed)
         let exitCode =
             match result with
             | Ok report ->
@@ -465,6 +534,11 @@ let private runCanary (sourceDdlPath: string) : int =
                     "projection: source deployed %d table(s); target deployed %d table(s)"
                     report.SourceReport.TablesCreated
                     report.TargetReport.TablesCreated
+                // Tier-1 reporting (§7.7) — emit the structured fidelity verdict
+                // (canary.diffEmpty / canary.divergence) alongside the prose, so
+                // CI can gate on it and the run ledger can record it.
+                EventProjection.canaryEnvelopes report.TargetReport.TablesCreated report.Diff
+                |> List.iter LogSink.emit
                 if PhysicalSchema.isEqual report.Diff then
                     printfn "projection: canary green — PhysicalSchema diff empty"
                     0
@@ -1010,6 +1084,158 @@ let private dispatchVerifyData (argv: string[]) : int =
         let afterSpec  = parsed.GetResult VerifyDataArgs.After_Conn
         runVerifyData beforeSpec afterSpec)
 
+/// Tier-4 reporting — `readiness`. Read the cross-run ledger
+/// (`PROJECTION_LEDGER_DIR`) and report the R6 cutover gauge: how many
+/// consecutive green canaries, and whether the gate is eligible. Human
+/// gauge to stdout; one structured `summary.readiness` event to stderr so
+/// CI can branch on it. Read-only (no ledger append for the query itself).
+let private runReadiness () : int =
+    match RunLedger.configuredDir () with
+    | None ->
+        eprintfn "projection: no run ledger configured. Set PROJECTION_LEDGER_DIR to accumulate run history."
+        4
+    | Some dir ->
+        let records = RunLedger.read dir
+        let r = RunLedger.readiness records
+        let recent =
+            records |> List.choose (fun e -> e.Canary) |> List.rev |> List.truncate 16 |> List.rev
+        // Human channel — the themed cutover board (color on a TTY, plain piped).
+        TtyRenderer.renderReadinessBoard r recent (RunLedger.ledgerPath dir)
+        // Machine channel — one structured summary.readiness event (CI gates
+        // on `eligible`).
+        LogSink.beginRun () |> ignore
+        LogSink.emit
+            { LogSink.envelope LogSink.Info LogSink.Summary "summary.readiness"
+                (Map.ofList [
+                    "totalRuns",        box r.TotalRuns
+                    "canaryRuns",       box r.CanaryRuns
+                    "consecutiveGreen", box r.ConsecutiveGreen
+                    "threshold",        box r.Threshold
+                    "lastCanary",       (match r.LastCanary with Some c -> box c | None -> null)
+                    "recentCanaries",   box recent
+                    "eligible",         box r.Eligible ]) with
+                Phase = LogSink.End }
+        0
+
+/// P3 (REPORTING_HORIZON polish) — `explain <config> <ssKey>`. The drill-down
+/// doorway: run the projection, then tell the full story for ONE node — every
+/// transform that touched it (with the decision + rationale, rendered through
+/// the SAME `EventProjection.transformKindRender` the event stream uses) and
+/// every finding (with its suggested fix). "Every number is a doorway."
+/// `ssKey` matches by exact root or substring, so `CustomerId` finds
+/// `OSUSR_FOO.OrderHeader.CustomerId`.
+let private runExplain (configPath: string) (ssKeyText: string) : int =
+    match Config.fromFile configPath with
+    | Error errs ->
+        Console.Error.WriteLine "projection explain: config invalid:"
+        printErrors Console.Error errs
+        2
+    | Ok config ->
+        match (Compose.runWithConfig config).GetAwaiter().GetResult() with
+        | Error errs ->
+            Console.Error.WriteLine "projection explain: run failed:"
+            printErrors Console.Error errs
+            2
+        | Ok report ->
+            let matchesKey (k: SsKey) =
+                let s = SsKey.rootOriginal k
+                s = ssKeyText || s.Contains(ssKeyText)
+            let trail = report.Trail |> List.filter (fun e -> matchesKey e.SsKey)
+            let diags =
+                (report.Diagnostics @ report.PassDiagnostics)
+                |> List.filter (fun d -> match d.SsKey with Some k -> matchesKey k | None -> false)
+            printfn ""
+            printfn "  explain  %s" ssKeyText
+            printfn ""
+            if List.isEmpty trail && List.isEmpty diags then
+                printfn "  %s no transforms or findings matched" Theme.warn
+                printfn "      %s try a fuller SsKey, or a model/profile that exercises this node" Theme.dot
+                1
+            else
+                if not (List.isEmpty trail) then
+                    printfn "  transforms"
+                    for e in trail do
+                        let tag, detail = EventProjection.transformKindRender e.TransformKind
+                        match detail with
+                        | Some d -> printfn "  %s %s %s %s %s %s" Theme.arrow e.PassName Theme.dot tag Theme.dot d
+                        | None   -> printfn "  %s %s %s %s" Theme.arrow e.PassName Theme.dot tag
+                    printfn ""
+                if not (List.isEmpty diags) then
+                    printfn "  findings"
+                    for d in diags do
+                        let g =
+                            match d.Severity with
+                            | DiagnosticSeverity.Error   -> Theme.bad
+                            | DiagnosticSeverity.Warning -> Theme.warn
+                            | _                          -> Theme.dot
+                        printfn "  %s %s %s %s" g d.Code Theme.dot d.Message
+                        match d.SuggestedConfig with
+                        | Some c -> printfn "      %s fix: %s = %s" Theme.arrow c.Path c.Value
+                        | None   -> ()
+                    printfn ""
+                0
+
+/// P4 (REPORTING_HORIZON polish) — `suggest-config <config> [--apply <out>]`.
+/// Run the projection, collect every actionable `SuggestedConfig` from the
+/// diagnostic streams, merge by path (dedup), **rank by impact** (how many
+/// nodes each edit touches), and present the to-do list highest-leverage
+/// first. `--apply` writes the merged patch JSON. This is principle #5 made
+/// concrete: don't just describe — recommend, ranked, and hand over the patch.
+let private runSuggestConfig (configPath: string) (applyTo: string option) : int =
+    match Config.fromFile configPath with
+    | Error errs ->
+        Console.Error.WriteLine "projection suggest-config: config invalid:"
+        printErrors Console.Error errs
+        2
+    | Ok config ->
+        let task = Compose.runWithConfig config
+        match task.GetAwaiter().GetResult() with
+        | Error errs ->
+            Console.Error.WriteLine "projection suggest-config: run failed:"
+            printErrors Console.Error errs
+            2
+        | Ok report ->
+            let merged =
+                (report.Diagnostics @ report.PassDiagnostics)
+                |> List.choose (fun e -> e.SuggestedConfig |> Option.map (fun c -> c, e.SsKey))
+                |> List.groupBy (fun (c, _) -> c.Path)
+                |> List.map (fun (path, items) ->
+                    let c0 = fst (List.head items)
+                    let ssKeys =
+                        items
+                        |> List.choose (fun (_, k) -> k |> Option.map SsKey.rootOriginal)
+                        |> List.distinct
+                    {| Path = path; Value = c0.Value; Note = c0.Note
+                       Count = List.length items; SsKeys = ssKeys |})
+                |> List.sortByDescending (fun s -> s.Count)
+            printfn ""
+            if List.isEmpty merged then
+                printfn "  %s no actionable config edits — nothing to apply" Theme.ok
+                0
+            else
+                printfn "  %d config edit(s) suggested, by impact:" (List.length merged)
+                printfn ""
+                for s in merged do
+                    printfn "  %s %s = %s   (%d node%s)"
+                        Theme.arrow s.Path s.Value s.Count (if s.Count = 1 then "" else "s")
+                    match s.Note with
+                    | Some n -> printfn "      %s %s" Theme.dot n
+                    | None   -> ()
+                printfn ""
+                match applyTo with
+                | Some out ->
+                    let patch = System.Text.Json.Nodes.JsonObject()
+                    for s in merged do
+                        patch.[s.Path] <- System.Text.Json.Nodes.JsonValue.Create(s.Value)
+                    let json =
+                        patch.ToJsonString(
+                            System.Text.Json.JsonSerializerOptions(WriteIndented = true))
+                    File.WriteAllText(out, json)
+                    printfn "  %s wrote merged patch (%d edits) to %s" Theme.ok (List.length merged) out
+                | None ->
+                    printfn "  %s --apply <out.json> to write the merged patch" Theme.dot
+                0
+
 /// §5.6 — `policy-diff <config-a> <config-b>`. Diff what two configs would
 /// project over the shared Catalog (read from config-a's Model.Path). Renders
 /// the five-axis structural delta + the changed-kind set. Pure/structural —
@@ -1517,6 +1743,22 @@ let private runMigrateWithData (toPath: string) (sinkSpec: string) (sourceSpec: 
 
 [<EntryPoint>]
 let main argv =
+    // Polish (REPORTING_HORIZON) — global flags, parsed + stripped before
+    // verb dispatch so per-verb argv shapes are unchanged.
+    //   --pretty / --json / --no-pretty : force the channel; default AUTO
+    //     (a real TTY gets the Spectre panel, a pipe gets clean NDJSON — the
+    //     operator never thinks about format).
+    //   -v / --verbose : surface depth (the bench table, etc.).
+    let has flag = Array.contains flag argv
+    verboseMode := has "-v" || has "--verbose"
+    let forceJson = has "--json" || has "--no-pretty"
+    let forcePretty = has "--pretty"
+    // "operator wants pretty" — explicit, or auto when stderr is a real TTY
+    // and NDJSON wasn't forced. `TtyRenderer.shouldRender` re-checks the TTY
+    // so a forced --pretty into a pipe still won't spray ANSI.
+    prettyMode := forcePretty || (not forceJson && not Console.IsErrorRedirected)
+    let globalFlags = set [ "--pretty"; "--json"; "--no-pretty"; "-v"; "--verbose" ]
+    let argv = argv |> Array.filter (fun a -> not (Set.contains a globalFlags))
     match argv with
     | [| "full-export" |] ->
         Console.Error.WriteLine "projection full-export: --config <path> required"
@@ -1542,13 +1784,13 @@ let main argv =
     | arr when arr.Length >= 1 && arr.[0] = "full-export" ->
         dispatchFullExport (Array.skip 1 arr)
     | [| "emit"; "--config"; configPath |] ->
-        runEmitFromConfig configPath
+        withRun "projection emit --config" (fun () -> runEmitFromConfig configPath)
     | [| "emit"; "--skeleton-only"; inputPath; outputDir |] ->
-        runEmitSkeletonOnly inputPath outputDir
+        withRun "projection emit --skeleton-only" (fun () -> runEmitSkeletonOnly inputPath outputDir)
     | [| "emit"; inputPath; outputDir |] ->
-        runEmit inputPath outputDir
+        withRun "projection emit" (fun () -> runEmit inputPath outputDir)
     | [| "skeleton"; inputPath; outputDir |] ->
-        runSkeleton inputPath outputDir
+        withRun "projection skeleton" (fun () -> runSkeleton inputPath outputDir)
     | [| "approve"; policyVersion; "--approver"; approver |] ->
         runApprove policyVersion approver None None
     | [| "approve"; policyVersion; "--approver"; approver; "--rationale"; rationale |] ->
@@ -1558,11 +1800,19 @@ let main argv =
     | [| "approve"; policyVersion; "--approver"; approver; "--rationale"; rationale; "--store"; store |] ->
         runApprove policyVersion approver (Some rationale) (Some store)
     | [| "deploy"; inputPath |] ->
-        runDeploy inputPath
+        withRun "projection deploy" (fun () -> runDeploy inputPath)
     | [| "canary"; sourceDdlPath; "--cdc-silence" |] ->
-        runCanaryCdcSilence sourceDdlPath
+        withRun "projection canary --cdc-silence" (fun () -> runCanaryCdcSilence sourceDdlPath)
     | [| "canary"; sourceDdlPath |] ->
-        runCanary sourceDdlPath
+        withRun "projection canary" (fun () -> runCanary sourceDdlPath)
+    | [| "readiness" |] ->
+        runReadiness ()
+    | [| "explain"; configPath; ssKey |] ->
+        runExplain configPath ssKey
+    | [| "suggest-config"; configPath |] ->
+        runSuggestConfig configPath None
+    | [| "suggest-config"; configPath; "--apply"; out |] ->
+        runSuggestConfig configPath (Some out)
     | [| "policy-diff"; configAPath; configBPath |] ->
         runPolicyDiff configAPath configBPath
     | [| "eject"; "--store"; storePath |] ->
