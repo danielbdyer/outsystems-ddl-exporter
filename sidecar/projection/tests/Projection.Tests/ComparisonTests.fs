@@ -1,6 +1,7 @@
 module Projection.Tests.ComparisonTests
 
 open Xunit
+open Projection.Core
 open Projection.Cli
 open Projection.Tests.Fixtures
 
@@ -39,4 +40,109 @@ let ``Comparison: render projects a diff onto the View substrate (norm visible i
         let j = (View.toJson v).ToJsonString()
         Assert.Contains("catalog", j)   // the panel title "catalog Δ"
         Assert.Contains("norm", j)
+    | Error e -> Assert.Fail e
+
+// --- essence-first surface (INSTRUMENT slice 1) ----------------------------
+// Discriminating predicate: the lead verdict READS the change — a destructive
+// change leads amber ("review first"), an additive / no-op change leads calm.
+// A naive renderer shows the same panel with no verdict at all.
+
+let private emptyCatalog = IRBuilders.mkCatalog []
+
+[<Fact>]
+let ``Comparison essence: an identical pair leads with a calm identical verdict`` () =
+    match Comparison.catalog.Between sampleCatalog sampleCatalog with
+    | Ok d ->
+        match Comparison.catalogEssence d with
+        | View.Hero(View.Ok, text) -> Assert.Contains("identical", text)
+        | other -> Assert.Fail(sprintf "expected a calm Ok hero, got %A" other)
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``Comparison essence: a destructive change leads amber — review first`` () =
+    match Comparison.catalog.Between sampleCatalog emptyCatalog with
+    | Ok d ->
+        match Comparison.catalogEssence d with
+        | View.Hero(View.Warn, text) -> Assert.Contains("destroy", text)
+        | other -> Assert.Fail(sprintf "expected a Warn hero, got %A" other)
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``Comparison essence: an additive change leads calm — nothing destroyed`` () =
+    match Comparison.catalog.Between emptyCatalog sampleCatalog with
+    | Ok d ->
+        match Comparison.catalogEssence d with
+        | View.Hero(View.Ok, text) -> Assert.Contains("nothing destroyed", text)
+        | other -> Assert.Fail(sprintf "expected a calm Ok hero, got %A" other)
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``Comparison: renderCatalogChange leads with the essence, then the dig`` () =
+    match Comparison.catalog.Between sampleCatalog sampleCatalog with
+    | Ok d ->
+        match Comparison.renderCatalogChange d with
+        | View.Doc (View.Hero _ :: _) -> ()        // essence first, dig beneath
+        | other -> Assert.Fail(sprintf "expected a Doc led by a Hero, got %A" other)
+    | Error e -> Assert.Fail e
+
+// --- move-typed lanes (INSTRUMENT slice 2) ---------------------------------
+// Discriminating predicate: changes group into move-lanes, each badged by
+// reversibility — a remove lane is Bad (destroys structure), an add lane is Ok
+// (safe). A naive renderer shows one undifferentiated list with no move/badge.
+
+[<Fact>]
+let ``Comparison lanes: a removed kind lands in a remove lane badged Bad`` () =
+    match Comparison.catalog.Between sampleCatalog emptyCatalog with
+    | Ok d ->
+        let remove =
+            Comparison.renderCatalogLanes d
+            |> List.tryPick (function View.Lane(_, "remove", st, items) -> Some(st, items) | _ -> None)
+        match remove with
+        | Some (View.Bad, items) -> Assert.NotEmpty items
+        | other -> Assert.Fail(sprintf "expected a Bad remove lane, got %A" other)
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``Comparison lanes: an added kind lands in an add lane badged Ok`` () =
+    match Comparison.catalog.Between emptyCatalog sampleCatalog with
+    | Ok d ->
+        let add =
+            Comparison.renderCatalogLanes d
+            |> List.tryPick (function View.Lane(_, "add", st, items) -> Some(st, items) | _ -> None)
+        match add with
+        | Some (View.Ok, items) -> Assert.NotEmpty items
+        | other -> Assert.Fail(sprintf "expected an Ok add lane, got %A" other)
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``Comparison: renderCatalogChange dig carries the move lanes`` () =
+    match Comparison.catalog.Between sampleCatalog emptyCatalog with
+    | Ok d ->
+        match Comparison.renderCatalogChange d with
+        | View.Doc blocks ->
+            Assert.True(
+                blocks |> List.exists (function View.Lane(_, "remove", _, _) -> true | _ -> false),
+                "expected a remove lane in the dig")
+        | other -> Assert.Fail(sprintf "expected a Doc, got %A" other)
+    | Error e -> Assert.Fail e
+
+/// Reshape fixture (slice 2b): a Customer.Name facet change, mirroring the
+/// CatalogDiff attribute-Changed fixture, built from the shared Fixtures.
+let private reshapeTarget (f: Attribute -> Attribute) : Catalog =
+    let customer' =
+        { customer with
+            Attributes = customer.Attributes |> List.map (fun a -> if a.SsKey = customerNameKey then f a else a) }
+    Catalog.create [ { salesModule with Kinds = [ customer'; order; country ] } ] [] |> Result.value
+
+[<Fact>]
+let ``Comparison lanes: a changed attribute facet lands in a reshape lane badged Warn`` () =
+    let target = reshapeTarget (fun a -> { a with Type = Integer })
+    match Comparison.catalog.Between sampleCatalog target with
+    | Ok d ->
+        let reshape =
+            Comparison.renderCatalogLanes d
+            |> List.tryPick (function View.Lane(_, "reshape", st, items) -> Some(st, items) | _ -> None)
+        match reshape with
+        | Some (View.Warn, items) -> Assert.NotEmpty items
+        | other -> Assert.Fail(sprintf "expected a Warn reshape lane, got %A" other)
     | Error e -> Assert.Fail e

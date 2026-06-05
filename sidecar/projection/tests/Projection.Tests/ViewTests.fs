@@ -66,3 +66,20 @@ let ``View: the board build carries its data into json (consumer round-trip)`` (
     Assert.Contains("hero", kinds)
     Assert.Contains("meter", kinds)
     Assert.Contains("dots", kinds)
+
+[<Fact>]
+let ``View: a Lane renders its items (plain) and carries glyph/status/items (json)`` () =
+    let v = View.Lane("⟲", "rename", View.Ok, [ "OrderHeader → SalesOrder"; "OrderDetail → SalesOrderLine" ])
+    // pretty/plain lens — the label + both items
+    let p = plain v
+    Assert.Contains("rename", p)
+    Assert.Contains("OrderHeader → SalesOrder", p)
+    Assert.Contains("OrderDetail → SalesOrderLine", p)
+    // json lens — SAME value, structured
+    let j = json v
+    Assert.Equal("lane", j.GetProperty("kind").GetString())
+    Assert.Equal("rename", j.GetProperty("label").GetString())
+    Assert.Equal("ok", j.GetProperty("status").GetString())
+    let items =
+        j.GetProperty("items").EnumerateArray() |> Seq.map (fun e -> nonNull (e.GetString())) |> Seq.toList
+    Assert.Equal<string list>([ "OrderHeader → SalesOrder"; "OrderDetail → SalesOrderLine" ], items)

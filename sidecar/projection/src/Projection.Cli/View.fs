@@ -39,6 +39,10 @@ type View =
     | Dots of label: string * verdicts: string list
     /// A label over an ordered step list (explain's transform trail).
     | Trail of label: string * steps: (string * string option) list
+    /// A move-lane: a glyph + label + a status badge (the move's reversibility),
+    /// over indented item rows (one move's changes). The changeset groups into
+    /// lanes — one per move (`INSTRUMENT` slice 2).
+    | Lane of glyph: string * label: string * Status * items: string list
     /// A muted footer note.
     | Note of string
     /// The next-action line (principle #5).
@@ -112,6 +116,11 @@ let rec private writeBlock (console: IAnsiConsole) (v: View) : unit =
             match detail with
             | Some d -> console.MarkupLine(sprintf "  %s %s %s %s" Theme.arrow (Markup.Escape step) Theme.dot (Markup.Escape d))
             | None   -> console.MarkupLine(sprintf "  %s %s" Theme.arrow (Markup.Escape step))
+    | Lane (glyph, label, st, items) ->
+        console.MarkupLine(
+            sprintf "  %s" (colorOf st (Markup.Escape (sprintf "%s %s  %d" glyph label (List.length items)))))
+        for item in items do
+            console.MarkupLine(sprintf "     %s %s" (Theme.muted Theme.dot) (Markup.Escape item))
     | Note text -> console.MarkupLine(sprintf "  %s" (Theme.muted (Markup.Escape text)))
     | Action text -> console.MarkupLine(sprintf "  %s %s" Theme.arrow (Theme.accent (Markup.Escape text)))
 
@@ -154,6 +163,10 @@ let rec toJson (v: View) : JsonNode =
             | None   -> ()
             a.Add(stepObj :> JsonNode)
         obj [ "kind", s "trail"; "label", s label; "steps", a ]
+    | Lane (glyph, label, st, items) ->
+        let a = JsonArray()
+        for x in items do a.Add(s x)
+        obj [ "kind", s "lane"; "glyph", s glyph; "label", s label; "status", s (statusTag st); "items", a ]
     | Note text -> obj [ "kind", s "note"; "text", s text ]
     | Action text -> obj [ "kind", s "action"; "text", s text ]
     | Blank -> obj [ "kind", s "blank" ]

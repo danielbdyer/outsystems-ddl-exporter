@@ -4,6 +4,7 @@ module Projection.Tests.TtyRendererTests
 open System.IO
 open Xunit
 open Spectre.Console
+open Projection.Core
 open Projection.Pipeline
 open Projection.Cli
 
@@ -87,3 +88,42 @@ let ``Tier-4 board: NOT YET names the runs-to-go`` () =
     let text = renderBoard r [ "green"; "red"; "green" ]
     Assert.Contains("NOT YET", text)
     Assert.Contains("3 green run", text)   // 10 - 7 = 3 to go
+
+// --- the Gate surface (INSTRUMENT slice 3) ---------------------------------
+// Discriminating predicate: a destructive refusal leads Bad and names the
+// declare-loss next action; a blocking pre-flight refusal leads Warn with none.
+// Both carry the gate axis, the detail, and the distinct exit code — not one
+// flat error string.
+
+let private renderGateText (command: string) (refusal: Preflight.GateRefusal) : string =
+    use sw = new StringWriter()
+    let console =
+        AnsiConsole.Create(
+            AnsiConsoleSettings(
+                Ansi = AnsiSupport.No, ColorSystem = ColorSystemSupport.NoColors,
+                Out = AnsiConsoleOutput(sw)))
+    console.Profile.Width <- 200
+    View.write console (TtyRenderer.buildGateView command refusal)
+    sw.ToString()
+
+[<Fact>]
+let ``Gate: a destructive refusal stops with the loss, the exit, and the declare-loss action`` () =
+    let refusal =
+        Preflight.refusalOf [ ValidationError.create "migrate.undeclaredDestructiveChange" "dropping index IX_Order_Stale" ]
+    let text = renderGateText "projection migrate" refusal
+    Assert.Contains("destroys structure", text)            // the essence (Bad hero)
+    Assert.Contains("undeclared destructive change", text) // the gate axis
+    Assert.Contains("dropping index IX_Order_Stale", text) // the detail
+    Assert.Contains("9", text)                             // the distinct exit code
+    Assert.Contains("--declare-loss", text)                // the next action
+    Assert.Contains("✕", text)                             // Bad glyph — survives NO_COLOR
+
+[<Fact>]
+let ``Gate: a blocking pre-flight refusal leads Warn, with no declare-loss action`` () =
+    let refusal =
+        Preflight.refusalOf [ ValidationError.create "migrate.connectionUnavailable" "could not reach UAT" ]
+    let text = renderGateText "projection migrate" refusal
+    Assert.Contains("connection unavailable", text)   // the gate axis
+    Assert.Contains("could not reach UAT", text)      // the detail
+    Assert.DoesNotContain("--declare-loss", text)     // not a declared-loss refusal
+    Assert.Contains("▲", text)                        // Warn glyph

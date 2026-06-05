@@ -27,6 +27,17 @@ REPO="${CLAUDE_PROJECT_DIR:-/home/user/outsystems-ddl-exporter}"
 PERF_GATE="$REPO/sidecar/projection/scripts/perf-gate.sh"
 LOG_FILE="/tmp/claude-perf-gate-stop.log"
 
+# Reuse the warm SQL container if it's up (capped + ready) instead of letting the
+# canary cold-start an uncapped ephemeral every fire — slow, and flaky under
+# load (a transient login failure surfaces as a canary FATAL). A normal session
+# inherits PROJECTION_MSSQL_CONN_STR from the SessionStart hook; this is the
+# fallback when it isn't in the hook's environment.
+WARM_SH="$REPO/sidecar/projection/scripts/warm-sql.sh"
+if [ -z "${PROJECTION_MSSQL_CONN_STR:-}" ] && [ -x "$WARM_SH" ] \
+   && [ "$(docker inspect -f '{{.State.Running}}' projection-mssql-warm 2>/dev/null)" = "true" ]; then
+    eval "$(bash "$WARM_SH" conn 2>/dev/null)"
+fi
+
 # Capture full output to a tmp log; emit summary to context.
 if [ -x "$PERF_GATE" ]; then
     "$PERF_GATE" >"$LOG_FILE" 2>&1
@@ -36,20 +47,29 @@ else
     GATE_EXIT=0
 fi
 
-# Extract the last two non-empty lines (the summary + status).
-# perf-gate emits its own structured one-liner on success/failure;
-# we surface that as the additionalContext. Tail keeps the payload
-# small — the agent doesn't need the full deploy log.
-SUMMARY=$(grep -E "perf-gate|SKIP|REGRESSION|history depth" "$LOG_FILE" | tail -n 8 | sed 's/"/\\"/g; s/\t/  /g')
-
-# Build the additionalContext payload. Use printf so newlines
-# are preserved as escaped \n inside the JSON string.
-CONTEXT="Stop hook (perf-gate) fired (exit ${GATE_EXIT}):\n${SUMMARY}"
-
-# Escape newlines for JSON.
-CONTEXT_JSON=$(printf '%s' "$CONTEXT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))' 2>/dev/null || printf '"perf-gate-stop output (see %s)"' "$LOG_FILE")
-
-cat <<EOF
+# Surface the result to the agent ONLY when it is ACTIONABLE — a real
+# regression, a skip (the gate couldn't run), or a fatal. On a CLEAN run there
+# is nothing to say, so emit NO output: the Stop completes and the thread closes
+# instead of re-prompting the agent.
+#
+# WHY (the "Standing by" loop, diagnosed 2026-06-05). The hook fires on EVERY
+# stop. When it emitted `additionalContext` UNCONDITIONALLY, that context was
+# delivered to the agent as a fresh turn ("narrate the perf result"); the agent
+# answered, which is itself a stop, which re-fired the hook, which re-injected
+# context — an unbounded loop the agent could only break by going silent. A
+# normal local session has a human as the next actor, so it surfaces once and
+# waits; here nothing sits between the agent's answer and the next stop, so the
+# unconditional injection feeds itself.
+#
+# The lifecycle enablement is PRESERVED: the canary STILL RUNS on every stop
+# (the perf-awareness forcing function is unchanged). The hook now just follows
+# the logging contract's own discipline (§13.12 — emit nothing when there is
+# nothing to say), speaking only when the result is actionable.
+if grep -qE 'REGRESSION|SKIP|FATAL|did not become ready' "$LOG_FILE"; then
+    SUMMARY=$(grep -E "perf-gate|SKIP|REGRESSION|FATAL|history depth" "$LOG_FILE" | tail -n 8 | sed 's/"/\\"/g; s/\t/  /g')
+    CONTEXT="Stop hook (perf-gate) fired (exit ${GATE_EXIT}):\n${SUMMARY}"
+    CONTEXT_JSON=$(printf '%s' "$CONTEXT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))' 2>/dev/null || printf '"perf-gate-stop output (see %s)"' "$LOG_FILE")
+    cat <<EOF
 {
   "hookSpecificOutput": {
     "hookEventName": "Stop",
@@ -57,9 +77,8 @@ cat <<EOF
   }
 }
 EOF
+fi
 
-# Always exit 0 so a perf regression doesn't block the agent
-# from completing its turn — the regression is surfaced as
-# context, the agent decides whether to act.
+# Always exit 0 — a regression is surfaced as context (above), never a hard
+# block; a clean run is silent so the turn can close normally.
 exit 0
-</content>

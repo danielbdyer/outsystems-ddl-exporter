@@ -400,6 +400,49 @@ module LogSink =
         finally
             setWriter prior
 
+    // -----------------------------------------------------------------
+    // Channel-2 subscribers — the live-display push (`REPORTING_HORIZON`
+    // dynamic-display "watch" leg)
+    // -----------------------------------------------------------------
+
+    /// Live consumers of the **visible** event stream — the push the
+    /// dynamic display's "watch" mode needs. Until a subscriber attaches,
+    /// nothing below the CLI can react to envelopes as they emit (the
+    /// accumulator is read after the fact; the writer is fire-and-forget).
+    /// A subscriber is invoked inside `emit` / `runComplete`, in stream
+    /// order, for exactly the envelopes channel 1 writes — i.e. AFTER the
+    /// verbosity + mute filter — so a Spectre renderer mirrors the machine
+    /// stream rather than a parallel one (the "one substrate, many lenses"
+    /// discipline carried to the live surface). Channel 1 is the contract,
+    /// so its write happens first; a subscriber is a derived rendering,
+    /// never a gate on the NDJSON line.
+    ///
+    /// Process-scoped + run-lifecycle-independent: `beginRun` does NOT
+    /// clear subscribers (the renderer attaches once, before the run
+    /// starts), so `clearSubscribers` is the explicit detach (renderer
+    /// teardown + test isolation).
+    let private subscribers : ResizeArray<Envelope -> unit> = ResizeArray()
+
+    /// Register a live subscriber. Returns `unit` (the keystone shape);
+    /// `clearSubscribers` is the detach. Adding the same function twice
+    /// delivers twice — registration is a list, not a set.
+    let addSubscriber (f: Envelope -> unit) : unit =
+        lock lockObj (fun () -> subscribers.Add f)
+
+    /// Detach every subscriber (renderer teardown; test isolation).
+    let clearSubscribers () : unit =
+        lock lockObj (fun () -> subscribers.Clear())
+
+    /// Deliver one envelope to every subscriber, in registration order.
+    /// PRECONDITION: the caller holds `lockObj` — only `emit` / `runComplete`
+    /// call this, both already inside the lock (`Monitor` is reentrant). The
+    /// count is captured up front so a subscriber that registers another
+    /// subscriber mid-delivery can't reshape the current iteration; the new
+    /// one takes effect on the next envelope, as a subscriber should.
+    let private notifySubscribers (env: Envelope) : unit =
+        let n = subscribers.Count
+        for i in 0 .. n - 1 do subscribers.[i] env
+
     /// Enable Trace/Debug emission. Off by default per §4.
     ///
     /// **Back-compat shim** (Chapter C slice C.6): mapped to the
@@ -589,7 +632,9 @@ module LogSink =
                 ()
             else
                 updateAccumulator env
-                writer.Value.WriteLine(serializeEnvelope env))
+                writer.Value.WriteLine(serializeEnvelope env)
+                // Channel 2 sees exactly what channel 1 wrote, in order.
+                notifySubscribers env)
 
     // -----------------------------------------------------------------
     // §10 — stage timings + artifact registration
@@ -980,4 +1025,7 @@ module LogSink =
             | true, n -> s.EventCounts.[Info] <- n + 1
             | false, _ -> s.EventCounts.[Info] <- 1
             writer.Value.WriteLine(serializeEnvelope env)
+            // The terminal envelope reaches subscribers too — the "watch"
+            // renderer draws its final verdict panel off this event.
+            notifySubscribers env
             env)
