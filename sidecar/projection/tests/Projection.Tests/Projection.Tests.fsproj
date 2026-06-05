@@ -71,6 +71,7 @@
     <Compile Include="AxiomTests.fs" />
     <Compile Include="ArtifactByKindTests.fs" />
     <Compile Include="CatalogDiffTests.fs" />
+    <Compile Include="ComparisonTests.fs" />
     <Compile Include="LifecycleTests.fs" />
     <Compile Include="EpisodeTests.fs" />
     <Compile Include="ChangeManifestTests.fs" />
