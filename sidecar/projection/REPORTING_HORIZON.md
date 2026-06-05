@@ -318,12 +318,53 @@ are the *activation of the codebase's own latent algebra* (the WAVE-6 torsor,
   projects onto `View` (composes #3 with #1). *Consumers:* diff / drift /
   migrate.
 
-**The frontier primitives** (earn their place once needed, build ON the
-trilogy): **`Source`** — a capability-typed boundary port (asking a snapshot
-source to profile fails at construction, not runtime); unlocks live OSSYS.
-**`Episode`** — the temporal integral `fold apply between` over Runs; trends +
-migrate-history fall out. `Episode` composes `Run` + `Comparison`, so it can't
-precede them.
+---
+
+## §3.6 The connector layer — Source / complete-Run / Ref · `shipped` (2026-06-05)
+
+Working backwards from the five features revealed they're **a version-control
+system for projections**: `Run` = a *commit*, `inputDigest` = the *SHA*,
+`Comparison` = `diff`/`apply`, the ledger = `git log`, the canary = CI status.
+The reframe names exactly what's missing to make it composable — the wires git
+has and we didn't:
+
+- **`Source`** (`src/Projection.Pipeline/Source.fs`) — the capability-typed
+  input boundary (the *remote / working tree*). Resolves a Catalog from {file,
+  json, live} and declares what it can do; a capability *is* the presence of
+  its function (`AcquireProfile = Some` iff profilable — the same shape as
+  `Comparison.Apply`), so asking a static model to profile fails at
+  construction, not runtime. Unlocks live OSSYS.
+- **complete-`Run`** — `Run` gained its *tree*: an `Artifacts` map (the output
+  blobs, round-tripped) and `Run.capture` (the producer bridge from a live
+  execution). A `runId` now resolves to *artifacts*, not just events — so it
+  can be diffed/migrated-from offline, not only explained.
+- **`Ref`** (`src/Projection.Pipeline/Ref.fs`) — **the keystone, the
+  revision algebra**. A typed reference (`@runId` / file / `live:` / `json:`)
+  that resolves to an operand, dispatching through `Source` (external) or the
+  `Run`-store (`@runId`). A runId resolves to the *same* Catalog type as a
+  file — that uniformity is the point: every future verb becomes `verb <ref>…`
+  and they compose (`diff model.json @run-9`).
+
+With the connector layer in place the five features (and their git-siblings —
+drift = `status`, regression = `log -p`, rollback = `revert` via the torsor,
+the build-cache = unchanged `inputDigest` ⇒ skip work) are thin: e.g.
+`diff = resolveCatalog ×2 → Comparison.summary → View.write`.
+
+**The temporal base — `RunHistory`** (`src/Projection.Pipeline/RunHistory.fs`,
+`shipped 2026-06-05`) — the durable operator timeline: the chronological
+sequence of persisted `Run`s. `trend` / `canaryHistory` / `readiness` all fall
+out as `fold`/`map` over the one sequence — the history *is* the integral. It
+is the durable realization the morphology named as missing (the FTC ran only
+in-memory); distinct from `Core.Episode` (a single state-at-coordinate);
+subsumes `RunLedger` (its index). With it the substrate is complete: the
+forward use cases (evolve / migrate / investigate / promote) are all temporal,
+and the navigational metaphor is a **timeline** — runs as points, the R6
+streak as the trajectory toward eligible, trends as the shape of the path.
+
+**What remains is the harvest, not the foundation:** the verbs
+(`diff <ref> <ref>` · `migrate <ref> <ref>` · `explain @run <ssKey>` ·
+`promote` · `certify`) and the dynamic display (the live progress leg + the
+`inspect <runId>` TUI), each a thin `verb <ref>` on the substrate.
 
 ---
 

@@ -37,6 +37,11 @@ module Run =
         Declined    : int
         /// The run's NDJSON envelopes, verbatim — the faithful, opaque trail.
         Events      : string list
+        /// The run's tree — its output artifacts keyed by name (catalog JSON,
+        /// SSDT bundle, manifest, …) as opaque content blobs. This is what
+        /// makes a `runId` resolve to *artifacts* (so diff / migrate / explain
+        /// can operate offline from a stored run), not just events.
+        Artifacts   : Map<string, string>
     }
 
     /// Content-address the run by its inputs. Two runs with the same config +
@@ -64,6 +69,9 @@ module Run =
         let a = JsonArray()
         for e in r.Events do a.Add(JsonValue.Create e)
         o.["events"] <- a
+        let art = JsonObject()
+        for KeyValue(k, v) in r.Artifacts do art.[k] <- JsonValue.Create v
+        o.["artifacts"] <- art
         o.ToJsonString(JsonSerializerOptions(WriteIndented = true))
 
     let private parse (json: string) : Run option =
@@ -84,11 +92,16 @@ module Run =
                 let mutable v = Unchecked.defaultof<JsonElement>
                 if root.TryGetProperty("events", &v) && v.ValueKind = JsonValueKind.Array
                 then [ for e in v.EnumerateArray() -> nz (e.GetString()) ] else []
+            let artifacts =
+                let mutable v = Unchecked.defaultof<JsonElement>
+                if root.TryGetProperty("artifacts", &v) && v.ValueKind = JsonValueKind.Object
+                then [ for p in v.EnumerateObject() -> (p.Name, nz (p.Value.GetString())) ] |> Map.ofList
+                else Map.empty
             Some {
                 RunId = str "runId"; Ts = str "ts"; Command = str "command"
                 InputDigest = str "inputDigest"; Outcome = str "outcome"; Canary = canary
                 Registered = i "registered"; Applied = i "applied"; Declined = i "declined"
-                Events = events
+                Events = events; Artifacts = artifacts
             }
         with _ -> None
 
@@ -125,3 +138,31 @@ module Run =
     let toLedgerEntry (r: Run) : RunLedger.LedgerRecord =
         { RunId = r.RunId; Ts = r.Ts; Command = r.Command; Outcome = r.Outcome
           Canary = r.Canary; Registered = r.Registered; Applied = r.Applied; Declined = r.Declined }
+
+    /// Capture a Run from a live execution — the bridge from the running
+    /// pipeline to the aggregate. Reads the verdict + the serialized event
+    /// stream from the `LogSink` accumulator; the caller supplies the input
+    /// digest (config + source catalog) and the output artifacts (the tree).
+    /// This is the producer a `persist` verb would call; building it completes
+    /// the Run into a genuine hub — a `runId` now resolves to a full record
+    /// (verdict + events + artifacts), persistable + diffable offline. It
+    /// SUPPORTS persist without completing it (nothing here is wired into a
+    /// verb).
+    let capture
+        (command: string)
+        (code: int)
+        (inputDigest: string)
+        (artifacts: Map<string, string>)
+        : Run =
+        let registered, applied, declined = LogSink.transformCounts ()
+        { RunId       = LogSink.runId ()
+          Ts          = DateTime.UtcNow.ToString("o")
+          Command     = command
+          InputDigest = inputDigest
+          Outcome     = (if code = 0 then "succeeded" else "failed")
+          Canary      = LogSink.canaryVerdict ()
+          Registered  = registered
+          Applied     = applied
+          Declined    = declined
+          Events      = LogSink.serializedEnvelopes ()
+          Artifacts   = artifacts }
