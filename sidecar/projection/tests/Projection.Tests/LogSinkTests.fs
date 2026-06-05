@@ -545,3 +545,20 @@ let ``Tier-2 §12: suggestedConfigDigest is empty when no suggestions fired`` ()
             LogSink.runComplete LogSink.Succeeded "test" [] |> ignore)
     let digest = prop (prop (findRunComplete lines) "payload") "suggestedConfigDigest"
     Assert.Equal(0, digest.EnumerateObject() |> Seq.length)
+
+[<Fact>]
+let ``P4: topSuggestion returns the most-suggested path with its count`` () =
+    let withSuggestion path basis =
+        let cfg : Map<string, objnull> = Map.ofList [ "path", box path; "value", box "x" ]
+        { LogSink.envelope LogSink.Warn LogSink.Transform "transform.diagnostic"
+            (Map.ofList [ "suggestedConfig", box cfg ]) with SsKey = Some (fixtureKey basis) }
+    captureLines (fun () ->
+        LogSink.emit (withSuggestion "$.a" "1")
+        LogSink.emit (withSuggestion "$.a" "2")
+        LogSink.emit (withSuggestion "$.a" "3")
+        LogSink.emit (withSuggestion "$.b" "4")) |> ignore
+    match LogSink.topSuggestion () with
+    | Some (path, count) ->
+        Assert.Equal("$.a", path)   // 3 beats 1 — impact rank
+        Assert.Equal(3, count)
+    | None -> Assert.Fail "expected a top suggestion"

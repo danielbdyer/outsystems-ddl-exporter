@@ -37,7 +37,14 @@ let renderSummaryTo (console: IAnsiConsole) (command: string) (code: int) : unit
     let edits = LogSink.suggestedConfigEdits ()
     let editsCell =
         if edits = 0 then Theme.muted (Theme.ok + " none")
-        else Theme.yellow (sprintf "%s %d config edit(s) suggested" Theme.warn edits)
+        else
+            // Impact-ranked — name the single biggest lever (the path most
+            // events suggest) so the operator's eye lands on it first.
+            match LogSink.topSuggestion () with
+            | Some (path, count) ->
+                Theme.yellow (sprintf "%s %d edit(s) %s top: %s (%d)"
+                    Theme.warn edits Theme.dot (Markup.Escape path) count)
+            | None -> Theme.yellow (sprintf "%s %d edit(s) suggested" Theme.warn edits)
 
     let grid = Grid()
     grid.AddColumn() |> ignore
@@ -48,6 +55,11 @@ let renderSummaryTo (console: IAnsiConsole) (command: string) (code: int) : unit
         Theme.muted "transforms",
         sprintf "%d registered %s %d applied %s %d declined" registered Theme.dot applied Theme.dot declined) |> ignore
     grid.AddRow(Theme.muted "actionable", editsCell) |> ignore
+    // Principle #5 — end with the next action, never just the state.
+    if edits > 0 then
+        grid.AddRow(
+            Theme.muted "next",
+            Theme.accent (sprintf "%s projection suggest-config --apply" Theme.arrow)) |> ignore
 
     (match RunLedger.configuredDir () with
      | Some dir ->

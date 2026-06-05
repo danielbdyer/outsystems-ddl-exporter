@@ -1117,6 +1117,67 @@ let private runReadiness () : int =
                 Phase = LogSink.End }
         0
 
+/// P4 (REPORTING_HORIZON polish) — `suggest-config <config> [--apply <out>]`.
+/// Run the projection, collect every actionable `SuggestedConfig` from the
+/// diagnostic streams, merge by path (dedup), **rank by impact** (how many
+/// nodes each edit touches), and present the to-do list highest-leverage
+/// first. `--apply` writes the merged patch JSON. This is principle #5 made
+/// concrete: don't just describe — recommend, ranked, and hand over the patch.
+let private runSuggestConfig (configPath: string) (applyTo: string option) : int =
+    match Config.fromFile configPath with
+    | Error errs ->
+        Console.Error.WriteLine "projection suggest-config: config invalid:"
+        printErrors Console.Error errs
+        2
+    | Ok config ->
+        let task = Compose.runWithConfig config
+        match task.GetAwaiter().GetResult() with
+        | Error errs ->
+            Console.Error.WriteLine "projection suggest-config: run failed:"
+            printErrors Console.Error errs
+            2
+        | Ok report ->
+            let merged =
+                (report.Diagnostics @ report.PassDiagnostics)
+                |> List.choose (fun e -> e.SuggestedConfig |> Option.map (fun c -> c, e.SsKey))
+                |> List.groupBy (fun (c, _) -> c.Path)
+                |> List.map (fun (path, items) ->
+                    let c0 = fst (List.head items)
+                    let ssKeys =
+                        items
+                        |> List.choose (fun (_, k) -> k |> Option.map SsKey.rootOriginal)
+                        |> List.distinct
+                    {| Path = path; Value = c0.Value; Note = c0.Note
+                       Count = List.length items; SsKeys = ssKeys |})
+                |> List.sortByDescending (fun s -> s.Count)
+            printfn ""
+            if List.isEmpty merged then
+                printfn "  %s no actionable config edits — nothing to apply" Theme.ok
+                0
+            else
+                printfn "  %d config edit(s) suggested, by impact:" (List.length merged)
+                printfn ""
+                for s in merged do
+                    printfn "  %s %s = %s   (%d node%s)"
+                        Theme.arrow s.Path s.Value s.Count (if s.Count = 1 then "" else "s")
+                    match s.Note with
+                    | Some n -> printfn "      %s %s" Theme.dot n
+                    | None   -> ()
+                printfn ""
+                match applyTo with
+                | Some out ->
+                    let patch = System.Text.Json.Nodes.JsonObject()
+                    for s in merged do
+                        patch.[s.Path] <- System.Text.Json.Nodes.JsonValue.Create(s.Value)
+                    let json =
+                        patch.ToJsonString(
+                            System.Text.Json.JsonSerializerOptions(WriteIndented = true))
+                    File.WriteAllText(out, json)
+                    printfn "  %s wrote merged patch (%d edits) to %s" Theme.ok (List.length merged) out
+                | None ->
+                    printfn "  %s --apply <out.json> to write the merged patch" Theme.dot
+                0
+
 /// §5.6 — `policy-diff <config-a> <config-b>`. Diff what two configs would
 /// project over the shared Catalog (read from config-a's Model.Path). Renders
 /// the five-axis structural delta + the changed-kind set. Pure/structural —
@@ -1688,6 +1749,10 @@ let main argv =
         withRun "projection canary" (fun () -> runCanary sourceDdlPath)
     | [| "readiness" |] ->
         runReadiness ()
+    | [| "suggest-config"; configPath |] ->
+        runSuggestConfig configPath None
+    | [| "suggest-config"; configPath; "--apply"; out |] ->
+        runSuggestConfig configPath (Some out)
     | [| "policy-diff"; configAPath; configBPath |] ->
         runPolicyDiff configAPath configBPath
     | [| "eject"; "--store"; storePath |] ->

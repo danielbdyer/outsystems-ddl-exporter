@@ -685,6 +685,26 @@ module LogSink =
             let s = state.Value
             s.TransformRegistered, s.TransformApplied, s.TransformDeclined)
 
+    /// Polish (P4) — the highest-impact suggested config edit: the `path`
+    /// suggested by the most events, with its count. The verdict panel shows
+    /// it so the operator sees the single biggest lever at a glance.
+    let topSuggestion () : (string * int) option =
+        lock lockObj (fun () ->
+            state.Value.Envelopes
+            |> Seq.choose (fun e ->
+                match Map.tryFind "suggestedConfig" e.Payload with
+                | Some v ->
+                    match v with
+                    | :? Map<string, objnull> as cfg ->
+                        match Map.tryFind "path" cfg with
+                        | Some p when not (isNull p) -> Some (string p)
+                        | _ -> None
+                    | _ -> None
+                | None -> None)
+            |> Seq.countBy id
+            |> Seq.sortByDescending snd
+            |> Seq.tryHead)
+
     // -----------------------------------------------------------------
     // §11 — bench-stat surfacing under category=summary, code=bench.label
     // -----------------------------------------------------------------
