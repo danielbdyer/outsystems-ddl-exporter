@@ -42,7 +42,7 @@ let ``Comparison: render projects a diff onto the View substrate (norm visible i
         Assert.Contains("norm", j)
     | Error e -> Assert.Fail e
 
-// --- essence-first surface (INSTRUMENT slice 1) ----------------------------
+// --- statement-first surface (INSTRUMENT slice 1) --------------------------
 // Discriminating predicate: the lead verdict READS the change — a destructive
 // change leads amber ("review first"), an additive / no-op change leads calm.
 // A naive renderer shows the same panel with no verdict at all.
@@ -50,38 +50,38 @@ let ``Comparison: render projects a diff onto the View substrate (norm visible i
 let private emptyCatalog = IRBuilders.mkCatalog []
 
 [<Fact>]
-let ``Comparison essence: an identical pair leads with a calm identical verdict`` () =
+let ``Comparison statement: an identical pair leads with a calm identical verdict`` () =
     match Comparison.catalog.Between sampleCatalog sampleCatalog with
     | Ok d ->
-        match Comparison.catalogEssence d with
+        match Comparison.catalogStatement d with
         | View.Hero(View.Ok, text) -> Assert.Contains("identical", text)
         | other -> Assert.Fail(sprintf "expected a calm Ok hero, got %A" other)
     | Error e -> Assert.Fail e
 
 [<Fact>]
-let ``Comparison essence: a destructive change leads amber — review first`` () =
+let ``Comparison statement: a destructive change leads amber — review first`` () =
     match Comparison.catalog.Between sampleCatalog emptyCatalog with
     | Ok d ->
-        match Comparison.catalogEssence d with
+        match Comparison.catalogStatement d with
         | View.Hero(View.Warn, text) -> Assert.Contains("destroy", text)
         | other -> Assert.Fail(sprintf "expected a Warn hero, got %A" other)
     | Error e -> Assert.Fail e
 
 [<Fact>]
-let ``Comparison essence: an additive change leads calm — nothing destroyed`` () =
+let ``Comparison statement: an additive change leads calm — nothing destroyed`` () =
     match Comparison.catalog.Between emptyCatalog sampleCatalog with
     | Ok d ->
-        match Comparison.catalogEssence d with
+        match Comparison.catalogStatement d with
         | View.Hero(View.Ok, text) -> Assert.Contains("nothing destroyed", text)
         | other -> Assert.Fail(sprintf "expected a calm Ok hero, got %A" other)
     | Error e -> Assert.Fail e
 
 [<Fact>]
-let ``Comparison: renderCatalogChange leads with the essence, then the dig`` () =
+let ``Comparison: renderCatalogChange leads with the statement, then the substantiation`` () =
     match Comparison.catalog.Between sampleCatalog sampleCatalog with
     | Ok d ->
         match Comparison.renderCatalogChange d with
-        | View.Doc (View.Hero _ :: _) -> ()        // essence first, dig beneath
+        | View.Doc (View.Hero _ :: _) -> ()        // statement first, substantiation beneath
         | other -> Assert.Fail(sprintf "expected a Doc led by a Hero, got %A" other)
     | Error e -> Assert.Fail e
 
@@ -122,7 +122,7 @@ let ``Comparison: renderCatalogChange dig carries the move lanes`` () =
         | View.Doc blocks ->
             Assert.True(
                 blocks |> List.exists (function View.Lane(_, "remove", _, _) -> true | _ -> false),
-                "expected a remove lane in the dig")
+                "expected a remove lane in the substantiation")
         | other -> Assert.Fail(sprintf "expected a Doc, got %A" other)
     | Error e -> Assert.Fail e
 
