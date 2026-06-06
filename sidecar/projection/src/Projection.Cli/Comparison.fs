@@ -51,7 +51,8 @@ let renderCatalogDiff (d: CatalogDiff) : View.View =
 /// The essence of a catalog change — the one plain line that leads the surface
 /// (`THE_INSTRUMENT` — essence first, the dig beneath). A destructive change
 /// leads amber ("review first"); an additive / no-op change leads calm. The dig
-/// (the per-channel ‖δ‖ panel, the proof) is `renderCatalogDiff`, shown beneath.
+/// (the move-lanes + the per-channel ‖δ‖ panel, progressively disclosed) is
+/// shown beneath.
 let catalogEssence (d: CatalogDiff) : View.View =
     let c = CatalogDiff.channelCounts d
     let removed =
@@ -103,13 +104,19 @@ let renderCatalogLanes (d: CatalogDiff) : View.View list =
     @ lane "+" "add" View.Ok (added |> List.map SsKey.rootOriginal)
     @ lane "−" "remove" View.Bad (removed |> List.map SsKey.rootOriginal)
 
+/// A catalog change as a `Surface` — the essence over the dig: the move-typed
+/// lanes (kind moves: rename / add / remove, each badged by reversibility,
+/// progressively disclosed) with the per-channel ‖δ‖ panel beneath. The
+/// essence/dig shape every later surface reuses (`INSTRUMENT_BACKLOG` §3/§4).
+let changeSurface (d: CatalogDiff) : Surface.Surface =
+    { Essence = catalogEssence d
+      Dig     = renderCatalogLanes d @ [ View.Blank; renderCatalogDiff d ]
+      Action  = None }
+
 /// A catalog change rendered essence-first: the plain verdict, then the dig —
-/// the move-typed lanes (kind moves: rename / add / remove, each badged by
-/// reversibility), with the per-channel ‖δ‖ panel beneath for the full picture
-/// (attributes / references / indexes). The essence/dig surface every later
-/// surface reuses (`INSTRUMENT_BACKLOG` slices 1–2).
+/// the move-typed lanes and the per-channel ‖δ‖ panel, revealed on demand.
 let renderCatalogChange (d: CatalogDiff) : View.View =
-    View.Doc ([ catalogEssence d; View.Blank ] @ renderCatalogLanes d @ [ View.Blank; renderCatalogDiff d ])
+    Surface.render (changeSurface d)
 
 /// Render a `PhysicalSchemaDiff` summary: identical / diverged, plus per-axis
 /// −missing / +extra counts.

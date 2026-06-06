@@ -1,0 +1,83 @@
+# Handoff — the operator-facing voice & the storyboard (2026-06-06)
+
+*To the next agent picking up the dynamic-display / voice work.*
+
+You're inheriting a **complete, locked anchor set** for how the instrument speaks and what it shows —
+and an **un-started build**. Everything here lives on the `claude/dynamic-display-surface-voice-…`
+branch; none of it is in the engine yet. Your job is to execute the build the anchor set specifies, in
+the order it specifies, *without re-litigating the register* — it was settled with the operator one
+rule at a time, including several corrections you would otherwise re-introduce by instinct.
+
+## Where you are in the spine
+
+The estate has a target (`THE_USE_CASE_ONTOLOGY.md`), a proven engine (per the 2026-06-02 debrief,
+`migrate` / `transfer` / verify are LIVE — the engine already *proves* a migration end to end), and
+now a **settled voice and surface design**. What is unbuilt is almost entirely **the voice and the
+surfaces**: the words themselves, the streaming Watch, the record line, the timeline / ladder, and the
+depth layer. That gap is your work. `THE_STORYBOARD.md` §7 is the map of exactly what's LIVE vs LATENT.
+
+## Read these, in this order (≈30–40 min)
+
+1. **`THE_VOICE.md`** — the register. The **twelve rules (§1)** are non-negotiable and were settled
+   word by word; do not soften them. Internalize §1 + the banned list (§2.2) before writing a single
+   string. The verdicts (§3), moves (§4), gates (§5), proofs (§6), errors (§10), config (§14) are your
+   worked examples — *derive, don't invent*.
+2. **`THE_STORYBOARD.md`** — the surface, scene by scene. Nine acts × six streams × positive/negative/
+   edge (§3); the per-verb call sheets (§4); the concern-movement field (§1); the **build-readiness
+   map** (§7 — LIVE/PARTIAL/LATENT, so you build the LATENT); the **P-6 worked proof** (§8 — the
+   granularity target, frame by frame).
+3. **`THE_VOICE_INTEGRATION.md`** — the build plan. The slice sequence (§7) and the locked decisions
+   (§8).
+
+Then skim `DECISIONS 2026-06-06` (the resolved-questions record) and the new `CLAUDE.md` operating-
+disciplines row ("Operator-facing voice register").
+
+## What's decided — do not re-open without the operator
+
+- **The register** — authoritative / scientific / mature / humble, under *evidential literalism*; the
+  twelve rules; **rule 12 (stative, agentless)** — report states and events, never actions performed
+  ("Model read complete", not "Read the model"), gerunds-in-progress excepted. "self-check" was
+  renamed **"round-trip verification"** (the "self" reintroduced a subject).
+- **Catalog shape** — hybrid (typed `toView` for payload-shaped moves/gates/proofs; a code-keyed
+  declarative catalog for flat lifecycle/error/config codes).
+- **Placement** — sites carry words via **declare-at-site / harvest-centrally** (the `TransformRegistry`
+  pattern), *not* prose welded to control flow. Voice is concern-shaped; it has **no runtime write
+  side**.
+- **Live surface** — streaming Watch from the start (this raises slice-2 scope).
+- **Defer** — the Diagnostics lift (a typed `DiagnosticPayload` DU) behind a real consumer (slice 5).
+- **"dig"** retired from the voice vocabulary → "the statement" / "the substantiation" / "Show detail".
+  The vision thesis ("one essence, infinitely diggable") is kept.
+
+## Your first action
+
+**Slice 0 is already recorded.** The Event / Aggregate / Voice separation discipline landed this
+session in `DECISIONS 2026-06-06` + the `CLAUDE.md` row. **Start at slice 1** (`THE_VOICE_INTEGRATION.md`
+§7): stand up the `Voice` seam keyed by the codes that **already exist** (`config.runStart`,
+`summary.*`, the `pipeline.config.*` errors), wire `TtyRenderer` to look copy up by code, and add the
+`code ⇔ copy` totality test. No new events yet — just voice what's already emitted, derived from
+`THE_VOICE.md`. Use `THE_STORYBOARD.md` §7 to know which codes are LIVE (so the totality test has real
+events to cover) and which surfaces are LATENT (so you don't author copy for events that don't fire
+yet — IR grows under evidence).
+
+## What's NOT decided — yours to resolve, then record
+
+- **The Core-purity sub-call** (`THE_VOICE_INTEGRATION.md` §8 decision 2): may the per-site copy
+  declarations live *literally* inside the Core pass modules, or in a 1:1 projection-layer companion?
+  The recommendation is the companion (keeps `Projection.Core` free of polished prose); flipping it is
+  one line, weighed only against the F#-pure-core commitment. Settle this in slice 1 — it sets the
+  pattern — and write it into `DECISIONS` when you do.
+- **The `Surface.fs` code rename** (`essence` / `dig` → `statement` / `substantiation`): the voice docs
+  use the new names; the code still uses the old. A small code change — land it when you next touch
+  `Surface`.
+
+## Disciplines to hold while you build
+
+- **The twelve rules over every string** — run §1 + §2.2 before any line lands. The discipline *is* the
+  product here; a line that breaks a rule isn't done. (The operator will notice. A pronoun, a "your", a
+  euphemism, or an agentive verb each got caught and corrected this session.)
+- **Declare-at-site, harvest-centrally** — the `registered ⇔ executed` registry is your model; the
+  `code ⇔ copy` totality test is its sibling.
+- **IR grows under evidence** — voice what's emitted; don't author copy for latent surfaces ahead of
+  the events that would carry it.
+
+The anchor is solid. Build inside it, and keep the voice exact.

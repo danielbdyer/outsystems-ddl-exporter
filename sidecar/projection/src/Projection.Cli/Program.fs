@@ -1122,7 +1122,7 @@ let private runReadiness () : int =
 /// (file / `@runId` / `json:` / `live:`) and renders the catalog change: the
 /// plain verdict that leads, then the per-channel dig beneath. `--format json`
 /// emits the same `View` as structure.
-let private runDiff (refAText: string) (refBText: string) (asJson: bool) : int =
+let private runDiff (refAText: string) (refBText: string) (asJson: bool) (depth: int) : int =
     let resolve (s: string) = (Ref.resolveCatalog (Ref.parse s)).GetAwaiter().GetResult()
     match resolve refAText with
     | Error errs ->
@@ -1141,7 +1141,7 @@ let private runDiff (refAText: string) (refBText: string) (asJson: bool) : int =
                 Console.Error.WriteLine(sprintf "projection diff: %s" e)
                 2
             | Ok d ->
-                TtyRenderer.renderAnswer asJson (Comparison.renderCatalogChange d)
+                TtyRenderer.renderAnswer asJson depth (Comparison.renderCatalogChange d)
                 0
 
 /// P3 (REPORTING_HORIZON polish) — `explain <config> <ssKey>`. The drill-down
@@ -1834,10 +1834,21 @@ let main argv =
         withRun "projection canary" (fun () -> runCanary sourceDdlPath)
     | [| "readiness" |] ->
         runReadiness ()
-    | [| "diff"; refA; refB |] ->
-        runDiff refA refB false
-    | [| "diff"; refA; refB; "--format"; "json" |] ->
-        runDiff refA refB true
+    | arr when arr.Length >= 3 && arr.[0] = "diff" ->
+        // Flags are order-independent: `--format json` selects the structured
+        // lens (the full tree); `--depth N` opens the dig N levels (the calm
+        // default is one level; `--depth all` reveals everything).
+        let valueOf (flag: string) =
+            arr
+            |> Array.tryFindIndex ((=) flag)
+            |> Option.bind (fun i -> if i + 1 < arr.Length then Some arr.[i + 1] else None)
+        let asJson = (valueOf "--format" = Some "json")
+        let depth =
+            match valueOf "--depth" with
+            | Some "all" -> System.Int32.MaxValue
+            | Some d -> match System.Int32.TryParse d with | true, n -> max 0 n | _ -> View.defaultDepth
+            | None -> View.defaultDepth
+        runDiff arr.[1] arr.[2] asJson depth
     | [| "explain"; configPath; ssKey |] ->
         runExplain configPath ssKey
     | [| "suggest-config"; configPath |] ->

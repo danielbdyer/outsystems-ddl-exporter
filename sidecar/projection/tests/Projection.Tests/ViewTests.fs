@@ -11,7 +11,7 @@ open Projection.Cli
 /// predicate: pretty/plain and json are projections of ONE value, so the
 /// human and machine lenses cannot drift.
 
-let private plain (v: View.View) : string =
+let private plainToDepth (depth: int) (v: View.View) : string =
     use sw = new StringWriter()
     let console =
         AnsiConsole.Create(
@@ -19,8 +19,10 @@ let private plain (v: View.View) : string =
                 Ansi = AnsiSupport.No, ColorSystem = ColorSystemSupport.NoColors,
                 Out = AnsiConsoleOutput(sw)))
     console.Profile.Width <- 200
-    View.write console v
+    View.writeToDepth console depth v
     sw.ToString()
+
+let private plain (v: View.View) : string = plainToDepth View.defaultDepth v
 
 let private json (v: View.View) : JsonElement =
     JsonDocument.Parse((View.toJson v).ToJsonString()).RootElement.Clone()
@@ -66,6 +68,41 @@ let ``View: the board build carries its data into json (consumer round-trip)`` (
     Assert.Contains("hero", kinds)
     Assert.Contains("meter", kinds)
     Assert.Contains("dots", kinds)
+
+// --- progressive disclosure (the dig substrate) ----------------------------
+// Discriminating predicate: a Disclosure HIDES its detail when collapsed and
+// REVEALS it one level deeper when open — but `toJson` carries the full detail
+// REGARDLESS of render depth, so the machine lens never loses the tree the human
+// collapsed. A naive "json mirrors the screen" drops the collapsed detail and
+// fails the last assertion; a naive "render everything" fails the collapse.
+
+[<Fact>]
+let ``View: a Disclosure collapses its detail shallow, reveals it deep — json carries it either way`` () =
+    let v =
+        View.Disclosure(
+            "Details", View.Neutral,
+            [ View.Field("exit", "9", View.Neutral)
+              View.Field("detail", "dropping index IX_Order_Stale", View.Bad) ])
+    // collapsed (depth 0): the headline shows, the detail is hidden, the
+    // affordance hints at what's inside.
+    let shallow = plainToDepth 0 v
+    Assert.Contains("Details", shallow)
+    Assert.DoesNotContain("dropping index IX_Order_Stale", shallow)
+    Assert.Contains("2 more", shallow)
+    // open (depth 1): the detail is revealed.
+    let deep = plainToDepth 1 v
+    Assert.Contains("dropping index IX_Order_Stale", deep)
+    // json — the full detail rides the structure no matter the render depth.
+    let j = json v
+    Assert.Equal("disclosure", j.GetProperty("kind").GetString())
+    Assert.Equal(2, j.GetProperty("count").GetInt32())
+    Assert.Equal(2, j.GetProperty("detail").EnumerateArray() |> Seq.length)
+
+[<Fact>]
+let ``View: a Lane collapses its items shallow, shows them one level deep`` () =
+    let v = View.Lane("⟲", "rename", View.Ok, [ "OrderHeader → SalesOrder" ])
+    Assert.DoesNotContain("OrderHeader → SalesOrder", plainToDepth 0 v)
+    Assert.Contains("OrderHeader → SalesOrder", plainToDepth 1 v)
 
 [<Fact>]
 let ``View: a Lane renders its items (plain) and carries glyph/status/items (json)`` () =

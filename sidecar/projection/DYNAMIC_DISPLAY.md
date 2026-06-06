@@ -190,6 +190,8 @@ operator; each is load-bearing for what gets built.
 | **Timeline form** | **Horizontal strip** `●●●●✕●●●●▸` | One Theme token + a `View.Timeline` case serves all three modes (Glance spine, Watch axis, Explore cursor). Glyph-paired (survives `NO_COLOR`). Sparklines already cover *metric* trends (`Theme.sparkline` + `RunHistory.trend`); a calendar is wrong (runs are event-driven, not daily). |
 | **Drill depth** | **Shallow default** (verdict + module rollup); one level per keypress | "Calm by default, infinite on demand." Never the full tree at once — the wall-of-1000-lines failure the §slice-6 cluster-cap discipline already guards against. |
 | **Diff layout** | **Unified, walkable changeset** | Projects cleanly through `Comparison → View`; reads like `git diff`; walks/drills naturally in Explore. Side-by-side fights terminal width + the linear `View` ADT; admissible later as a lens if asked. |
+| **Voice register** (2026-06-05) | **Dropped — progressive disclosure replaces it** | The slice-4 "plain ↔ expert words" register was a mis-derivation. The newcomer/expert collapse is served by *depth velocity*, not vocabulary (THE_INSTRUMENT: *"Power is not a denser interface — it is fluency at the dig"*). The expert is a **human operator**, not the agent — owed the *same* Apple-style ease. The substrate is `View.Disclosure` (a depth-bearing node; calm default = one level open; `--depth N\|all`; `toJson` carries the full tree regardless of render depth). `Surface` (essence + dig) is kept as the node's seed; `Voice` + `--voice` removed. |
+| **Diction** (2026-06-05) | **Apple-clear microcopy is a discipline** (§7.8) | Every operator-facing word is content-team gold: targeted, concrete, simple, calm. The formal proof/notation is the dig, never the essence. See §7 discipline 8. |
 
 ---
 
@@ -287,6 +289,19 @@ tightens:
    lenses cannot drift because they are the same document.
 7. **Subtract.** Every glyph earns its place as a doorway; nothing renders that
    the operator's question at that tempo doesn't ask for.
+8. **Apple-clear diction — every operator-facing word is content-team gold**
+   (operator standard, 2026-06-05). Verdicts, affordances, actions, disclosure
+   headlines: **targeted, concrete, simple, calm — as if a content team dwelled
+   on the exact right words.** Banned: opaque / mystical wording (the operator's
+   worked counterexamples — *"needs your nod"*, *"open a lane"*), drama
+   (*"destroys structure"*), negation-framing (*"nothing destroyed"*), and
+   **leaked internal identifiers** (a human reads `Country`, never
+   `OS_KIND_Country`). The formal proof / notation (`‖δ‖`, exit codes, gate
+   labels) is **the dig** — the essence made rigorous, reachable by anyone — and
+   never the essence itself. The newcomer and the master read the same plain
+   surface; the master simply digs faster. **Progressive disclosure is how the
+   expert is served — depth velocity, not a denser vocabulary** (there is no
+   "expert mode"; *"Power is not a denser interface — it is fluency at the dig"*).
 
 ---
 
