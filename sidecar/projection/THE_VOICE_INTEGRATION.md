@@ -96,7 +96,7 @@ enum — the stages are implicit in the call order):
 | **Compose** (`Pipeline.fs`) | `RunReport` (`:131‑153`) | pure IR: extract → passes → emitters → outputs |
 
 These stage names *are* §13 of `THE_VOICE.md` ("Reading the model / Checking
-the data / Building the changes / Self-checking"). The mapping is direct.
+the data / Building the changes / Verifying the round-trip"). The mapping is direct.
 
 ### 3.2 How runs report today — two channels
 

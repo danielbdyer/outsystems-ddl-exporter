@@ -27,9 +27,9 @@ Everything below is that sentence, made specific.
 
 ---
 
-## 1 — The register: eleven rules
+## 1 — The register: twelve rules
 
-The voice is a precise measurement report a newcomer can read aloud. Eleven rules make it operable. A
+The voice is a precise measurement report a newcomer can read aloud. Twelve rules make it operable. A
 line that breaks one is not finished.
 
 1. **No pronouns.** No first person (*I / we*), no second person (*you / your*). The instrument never
@@ -59,6 +59,13 @@ line that breaks one is not finished.
     `every identified user mapped across both environments`) — never a loose paraphrase.
 11. **Concrete definite subjects.** Every assertion names what it is about; never a headless quantity
     (`No changes` → `The database is provably unchanged`).
+12. **Stative, agentless voice.** Report states and events, never actions performed. No agent, stated
+    or implied: remove the pronoun (rule 1) *and* the active-voice verb whose subject would be the
+    instrument. Lead with the subject or result; predicate with a passive or resultative participle;
+    nominalize a completed process. `Read the model — 300 tables` → `Model read complete — 300 tables`;
+    `Widened the Email column` → `Email column widened`. *Exception:* a gerund naming a live activity
+    in progress is a state, not a deed — `Reading the model`, `Checking the data`, `Building the
+    changes` are kept.
 
 **What carries from the prior register, unchanged:**
 
@@ -158,53 +165,53 @@ level beneath. The schema and data legs are the same shape one plane apart, so t
 ### Schema plane
 
 **Add** — *a new object, safely.*
-- statement: `Added 6 tables, including Country. No existing object is altered.`
+- statement: `6 tables added, including Country. No existing object is altered.`
 - beneath: `new identity minted · nothing else touched`
 
 **Remove** — *a deletion, named exactly.*
-- statement: `Drops the IX_Order_Stale index. No data is lost.`
+- statement: `The IX_Order_Stale index will be dropped. No data is lost.`
 - beneath: `the removal is not auto‑reversible · approval required`
 - A removal is never silent and never dramatized. Name the one object, state whether data is affected,
   and route to approval (§5).
 
 **Rename** — *renamed; rows preserved.*
-- statement: `Renamed OrderHeader to SalesOrder. No rows are rewritten.`
+- statement: `OrderHeader renamed to SalesOrder. No rows are rewritten.`
 - beneath: `old → new · ‖rename‖_data = 0 · pages preserved`
 - The proof (`‖rename‖_data = 0`) is beneath. The statement is the plain finding: no rows moved. A
   rename that touched data would say so plainly — `This rebuilds the table.` — because then it is not a
   rename.
 
 **Reshape** — *a column changed; instant or validated.*
-- statement (widen): `Widened the Email column from 50 to 100 characters. The change is instant; no rows are rewritten.`
-- statement (narrow): `Narrows the Status column from 50 to 20 characters. The existing data has been validated against the new limit, and so the change applies without loss.`
-- statement (unsafe): `Cannot narrow the Amount column to a smaller type without losing data.`
+- statement (widen): `Email column widened from 50 to 100 characters. The change is instant; no rows are rewritten.`
+- statement (narrow): `Status column narrowed from 50 to 20 characters. The existing data has been validated against the new limit, and so the change applies without loss.`
+- statement (unsafe): `The Amount column cannot be narrowed to a smaller type without losing data.`
 - beneath: `before → after · faithfulness class · data validated before apply`
 
 ### Data plane
 
 **Insert** — *new rows loaded.*
-- statement: `Inserted 4,210 rows into Country.`
+- statement: `4,210 rows inserted into Country.`
 - beneath: `+4,210 · exactly the rows that were new`
 
 **Update** — *changed rows only.*
-- statement: `Updated 312 rows — exactly those that differ.`
+- statement: `312 rows updated — exactly those that differ.`
 - beneath: `312 captured · unchanged rows left untouched`
 
 **Unchanged** — (this is the *silence* — see §6, the idempotent proof). Never a row‑by‑row line; the
 absence is the finding.
 
 **Delete** — *rows removed, within scope.*
-- statement: `Deleted 18 rows that are absent from the source, within the declared scope.`
+- statement: `18 rows deleted — absent from the source, within the declared scope.`
 - beneath: `−18 · scope <where> · approval required`
 
 ### Cross‑plane
 
 **Reidentify** — *the same records, re‑keyed for the new environment; relationships preserved.*
-- statement: `Re‑keyed 138 of 142 records to the UAT environment; every relationship is preserved.`
+- statement: `138 of 142 records re‑keyed to the UAT environment; every relationship is preserved.`
 - beneath: `the re‑key is an update keyed on the business key (email) · the FK re‑point is recorded`
 
 **Move** — *rows moved, in dependency order.*
-- statement: `Moved 4,210 rows from Dev to UAT, in dependency order.`
+- statement: `4,210 rows moved from Dev to UAT, in dependency order.`
 - beneath: `the load plan · the two‑phase boundary · ‖move‖ = rows touched`
 
 **Accumulate** — *the changes since the last run.*
@@ -221,14 +228,14 @@ question a person can answer.
 
 | Gate | The plain statement | The next move |
 |---|---|---|
-| **Declared‑loss** (a drop / scoped delete) | `Drops the IX_Order_Stale index. No data is lost, but the drop is not auto‑reversible.` | `Approve the removal, or halt.` |
+| **Declared‑loss** (a drop / scoped delete) | `The IX_Order_Stale index will be dropped. No data is lost, but the drop is not auto‑reversible.` | `Approve the removal, or halt.` |
 | **Validate‑user‑map** (re‑key, pre‑write) | `User remapping cannot run until every identified user is mapped across both environments. 3 of 142 remain.` | `Map the 3 users, assign the system user, or halt.` |
-| **Declare‑every‑drop** (publication) | `This changelog drops 2 objects the SSIS team depends on.` | `Confirm each, so the change replays cleanly downstream.` |
+| **Declare‑every‑drop** (publication) | `2 objects the SSIS team depends on are dropped in this changelog.` | `Confirm each, so the change replays cleanly downstream.` |
 | **Intent‑filter‑complete** (idempotent) | `14 real changes. 3 differences are excluded by named tolerances; each is listed.` | `Review the 3, or apply.` |
-| **Data‑compat** (narrowing) | `Narrows the Status column to 20 characters. 4 rows currently exceed that length.` | `Trim the 4 rows, widen the target, or halt.` |
+| **Data‑compat** (narrowing) | `The Status column will be narrowed to 20 characters. 4 rows currently exceed that length.` | `Trim the 4 rows, widen the target, or halt.` |
 | **Provenance‑completeness** (eject) | `The history has one gap: run 7 was never recorded.` | `Record it, or freeze with the gap noted.` |
 | **Drift** (deployed differs) | `The server holds 2 objects the model does not.` | `Accept them, remediate, or escalate.` |
-| **Self‑check** (canary) | `The round‑trip returned one difference.` | `The difference is shown below; it blocks the commit.` |
+| **Round‑trip verification** (canary) | `The round‑trip returned one difference.` | `The difference is shown below; it blocks the commit.` |
 
 The verb on the move line is always **plain, active, imperative**: *Approve · Map · Confirm · Trim ·
 Record · Accept · Remediate · Halt.* Never *Declare loss* (jargon), never *Override* (reckless), never
@@ -246,10 +253,10 @@ sentence and the proof stands behind it; the master reads the proof and *confirm
 |---|---|---|
 | **Commuting square** (it matches) | `Verified. The deployed database now matches the model.` | `residual ∅ · Ingest ∘ Project = id` |
 | **CDC‑silence** (real no‑op) | `Confirmed idempotent: zero rows captured, zero schema changes issued.` | `CDC = 0 · zero ALTERs` |
-| **Rename fidelity** (rows preserved) | `The rename preserved every row.` | `‖rename‖_data = 0` |
+| **Rename fidelity** (rows preserved) | `Every row preserved through the rename.` | `‖rename‖_data = 0` |
 | **The ladder** (readiness) | `Seven of ten checks pass. Three remain before cutover. The one outstanding item: a user‑fallback on 3 accounts.` | `schema ✓✓✓ · data ✓✓✓ · identity ✓✓▲` |
 | **The intent filter** (honest diff) | `14 real changes; 3 differences excluded by named tolerances, each listed.` | `each tolerance named · neither emitted nor dropped` |
-| **Minimality** (the touch was minimal) | `Changed exactly the 312 rows that differed, and no others.` | `‖δ‖ = 312 = CDC capture count` |
+| **Minimality** (the touch was minimal) | `312 rows changed — exactly those that differed, and no others.` | `‖δ‖ = 312 = CDC capture count` |
 
 The rule across all of them: **the statement is the proof made legible; the proof is the statement
 made rigorous.** No reader is asked to take on faith what they would rather see.
@@ -272,7 +279,7 @@ are illustrative.
 | **P‑6 · In‑place migrate** | `14 changes, 1 to confirm.` | alert → consenting → verified → trusting |
 | **P‑7 · Eject / freeze** | `Frozen. Provenance complete from genesis to freeze, verified.` | deliberate → certain → terminal |
 | **P‑8 · Drift** | `The server diverges in 2 places.` | watchful → informed → decisive |
-| **P‑9 · Self‑check canary** | `Fidelity holds: the round‑trip is identical.` | quiet confidence, or one clear divergence |
+| **P‑9 · Round‑trip verification** | `Fidelity holds: the round‑trip is identical.` | quiet confidence, or one clear divergence |
 
 The storyboard test for all nine: a developer on a *first* run and on a *hundredth* read the **same
 verdict line** — the first as orientation, the hundredth as a glance already past.
@@ -337,7 +344,7 @@ the surface; never blame.
 | Missing permission | `ALTER permission is denied on dbo.Order. Grant ALTER, then retry.` |
 | Invalid input / model | `The model failed to load: line 12 is missing a name. Correct it and rerun.` |
 | Could not verify | `The change was applied, but the read‑back is unavailable, so the result is unverified. Re‑verify when the endpoint is reachable.` |
-| Self‑check failed | `The round‑trip returned one difference. It is shown below and must be resolved before shipping.` |
+| Round‑trip verification failed | `The round‑trip returned one difference. It is shown below and must be resolved before shipping.` |
 
 The exit code, the gate label, the stack — all real, all in the substantiation (`exit 9 ·
 gate=connection‑unavailable`), none on the statement. A reader who reads only the first line still
@@ -355,11 +362,11 @@ the prior conversational register, now retired); right is the gold standard.
 | `3 changes · 3 destroy structure` | `3 changes · 3 drops · review before applying` |
 | `· OS_KIND_Country` | `· Country` |
 | `‖δ‖ norm  ▲ 3` | `Total changes: 3` |
-| `migrate refused — undeclared destructive change · exit 9` | `Cannot migrate yet: this drops a database index. Approve the removal to continue.` |
+| `migrate refused — undeclared destructive change · exit 9` | `Cannot migrate yet: a database index would be dropped. Approve the removal to continue.` |
 | `nothing destroyed` | `no removals` |
 | `Nothing changed — and that's real.` | `Verified. The database is provably unchanged.` |
 | `Your data stayed put.` | `No rows were rewritten.` |
-| `I touched exactly the 312 rows that changed.` | `Changed exactly the 312 rows that differed, and no others.` |
+| `I touched exactly the 312 rows that changed.` | `312 rows changed — exactly those that differed, and no others.` |
 | `7/10 L1–L3 axes green; identity axis at L2` | `7 of 10 checks pass. One item remains: 3 accounts to map.` |
 | `It ran, but I couldn't read it back to confirm.` | `The change was applied; the read‑back is unavailable, so the result is unverified.` |
 | `needs your okay` / `open a lane` | `approval required` / `Show detail` |
@@ -386,7 +393,7 @@ not a function of how much changed.
   is the failure guarded against at every level.
 - **Find, don't scroll.** At scale, navigation is search‑first: `Find a table` · `Show only removals`
   · `Jump to Country`.
-- **The proof scales by summary, not enumeration.** `Changed exactly the 4,210 rows that differed
+- **The proof scales by summary, not enumeration.** `4,210 rows changed — exactly those that differed
   across 300 tables, and no others.` One sentence, any size.
 
 The test: a 3‑change run and a 3,000‑change run **open on the same calm screen** — same verdict shape,
@@ -405,14 +412,14 @@ changeset.
     Reading the model      ✓  1.2s
     Checking the data      ⣷  142 of 300 tables · ~8s remaining
     Building the changes    ○
-    Self‑checking           ○
+    Verifying the round‑trip ○
   ```
   Stage names are what they *do for the operator* — `Reading the model`, `Checking the data`,
-  `Building the changes`, `Self‑checking` — never the internal verb (`Snapshot`, `Profile`, `emit`,
-  `canary`). The estimate degrades honestly: when none can be computed, none is shown — never a
-  progress bar that misstates.
+  `Building the changes`, `Verifying the round‑trip` — never the internal verb (`Snapshot`, `Profile`,
+  `emit`, `canary`). The gerund names a live activity in progress (rule 12 exception); the estimate
+  degrades honestly: when none can be computed, none is shown — never a progress bar that misstates.
 - **The episode (a run, recorded).** Each completed run is a line in the history: `run 11 · 2 min ago
-  · 14 changes · ✓ verified`. Recording is stated plainly: `Saved this run to the history.`
+  · 14 changes · ✓ verified`. Recording is stated plainly: `This run recorded to the history.`
 - **The history (the record).** The accumulation reads as a sequence, not a log: `11 runs · last 3
   verified · 3 remain to cutover.` The record is live — opening a past run re‑proves it — never a dead
   audit trail.
@@ -453,12 +460,12 @@ switches.** It assumes a first meeting and states what to set.
 
 - **Building a surface?** Find its move / verb / gate / proof above and *derive* the copy from the
   example — keep the register, fit the specifics. Do not invent a new tone.
-- **Writing a new string?** Run the eleven rules (§1) and the banned list (§2.2) over it before it
+- **Writing a new string?** Run the twelve rules (§1) and the banned list (§2.2) over it before it
   lands. If it fails one, it is not finished.
 - **Unsure of a word?** Reach for the lexicon (§2.1). If the operator's word is not there yet, add it
   here first, then use it — this doc is the source of the operator's plain language, the boundary‑side
   sibling of the engine's ubiquitous language.
-- **A surface not yet imagined?** The eleven rules still hold. State the finding; precision of the
+- **A surface not yet imagined?** The twelve rules still hold. State the finding; precision of the
   string can come when the surface does. That is what an anchor is for.
 
 *The instrument disappears. What remains is the schema's truth and the operator's hand on it — stated

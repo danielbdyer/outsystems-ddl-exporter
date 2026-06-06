@@ -63,7 +63,7 @@ they do for the operator**, never the engine verb (`THE_VOICE.md` §13).
 | **3** | **The one decision** | Gate | *a stop, to ask* — consent (the intervention act) |
 | **4** | **Making it real** | realize (the moves) | *the changes, applied live* — motion (Watch) |
 | **5** | **The touch** | Measure | *the exact extent of the change* — minimality, proven |
-| **6** | **The self-check** | Verify | *the result, confirmed against the model* — fidelity, proven |
+| **6** | **Verification** | Verify | *the result, confirmed against the model* — fidelity, proven |
 | **7** | **Recorded** | Record | *the run, saved* — continuity |
 | **8** | **Where it stands** | (timeline + ladder) | *the run takes its place; the distance to cutover* — the arc |
 
@@ -122,7 +122,7 @@ unchanged.`), never as an antithesis.
 
 ### 2.5 Interventions — the act where the instrument stops and names a lever
 *What.* The gates (`THE_VOICE.md` §5; ontology §4.6): declared-loss · validate-user-map ·
-declare-every-drop · intent-filter · data-compat · provenance-completeness · drift · self-check — plus
+declare-every-drop · intent-filter · data-compat · provenance-completeness · drift · round-trip verification — plus
 the pre-flight gates at arrival (connection · permission · CDC-tracking).
 *Rendering law (`THE_VOICE.md` §5).* State the consequence **as meaning**; name the **one** lever;
 hand over a **plain active imperative** (Approve · Map · Confirm · Trim · Record · Accept · Remediate ·
@@ -187,7 +187,7 @@ each gets a verdict line and a statement.
   In Watch, the first live stage: `Reading the model ✓ 1.2s`.
 - **Intervention.** None (read-only).
 - **Outcomes.**
-  - **Positive** — `✓` `Read the model — 300 tables.` (Often folded into the next act's statement.)
+  - **Positive** — `✓` `Model read complete — 300 tables.` (Often folded into the next act's statement.)
   - **Negative** — read failed: `The model failed to load: line 12 is missing a name. Correct it and
     rerun.` / `UAT is unreachable. Check the connection and retry.` (`THE_VOICE.md` §10.)
   - **Edge** — read completes but the profile is empty (no data evidence): proceed, and let downstream
@@ -209,8 +209,8 @@ each gets a verdict line and a statement.
   named and excluded.
 - **Streams in frame.** *Counts* (`‖δ‖`, per-channel move counts, `N drops`, `N narrowings`).
   *Spectrums* (each change's faithfulness class — safe / validated / approval-required). *Forecasts*
-  (`Widened the Email column from 50 to 100 characters. The change is instant.` / `Narrows the Status
-  column … the existing data has been validated … and so the change applies without loss.`). *Signals*
+  (`Email column widened from 50 to 100 characters. The change is instant.` / `Status column
+  narrowed; the existing data has been validated … and so the change applies without loss.`). *Signals*
   (the verdict line).
 - **Intervention.** None *here* — a detected drop / narrowing routes forward to Act 3. The diff names
   it; the gate asks it.
@@ -241,12 +241,12 @@ each gets a verdict line and a statement.
   142 users`).
 - **Intervention.** This *is* the intervention. The eight operator-facing gates (`THE_VOICE.md` §5):
   declared-loss · validate-user-map · declare-every-drop · intent-filter · data-compat ·
-  provenance-completeness · drift · self-check. Each: *consequence as meaning · one lever · imperative
+  provenance-completeness · drift · round-trip verification. Each: *consequence as meaning · one lever · imperative
   · wait.*
 - **Outcomes.**
   - **Positive** — **the act is empty**, a designed outcome, not a missing screen: nothing to consent
     → it elides silently to Act 4. (Most idempotent and additive runs.)
-  - **Negative** — a gate fires: `▲ Drops the IX_Order_Stale index. No data is lost, but the drop is
+  - **Negative** — a gate fires: `▲ The IX_Order_Stale index will be dropped. No data is lost, but the drop is
     not auto-reversible.` → `Approve the removal, or halt.` The verb is always plain, active,
     imperative (Approve · Map · Confirm · Trim · Record · Accept · Remediate · Halt).
   - **Edge** — *multiple* gates could fire → the **most honest, least overwhelming** single lever is
@@ -298,10 +298,10 @@ each gets a verdict line and a statement.
   (the confirmed-idempotent state: `CDC = 0`).
 - **Intervention.** None.
 - **Outcomes.**
-  - **Positive** — `✓ Changed exactly the 312 rows that differed, and no others.`
+  - **Positive** — `✓ 312 rows changed — exactly those that differed, and no others.`
     beneath: `‖δ‖ = 312 = CDC capture count` (`THE_VOICE.md` §6 minimality).
   - **Negative** — the honest fallback: a fresh wipe-and-load moved `2×|table|` rows. **Named as the
-    fallback, not hidden**: `Reloaded the full table (the safe path); more rows were touched than
+    fallback, not hidden**: `The full table was reloaded (the safe path); more rows were touched than
     strictly differed.` (ontology §5.6 — norm-inflating is *why* it is the fallback.)
   - **Edge** — **CDC = 0**: the silence *is* the proof — `Confirmed idempotent: zero rows captured,
     zero schema changes issued.` (`THE_VOICE.md` §6 CDC-silence.) **Unmeasurable** (CDC not tracked):
@@ -312,7 +312,7 @@ each gets a verdict line and a statement.
 
 ---
 
-### ACT 6 — The self-check *(Verify — fidelity proven)*
+### ACT 6 — Verification *(Verify — fidelity proven)*
 
 - **Moment.** The result, confirmed against the model — the read-back asserts `Ingest ∘ Project = id`
   modulo named tolerances.
@@ -322,7 +322,7 @@ each gets a verdict line and a statement.
   residual).
 - **Streams in frame.** *Signals* (`the database matches the model` / `one difference`). *Spectrums*
   (the ladder → readiness). *Counts* (residual size; named tolerances).
-- **Intervention.** A *failed* self-check fires the self-check gate (`THE_VOICE.md` §5): the failure
+- **Intervention.** A *failed* round-trip verification fires the round-trip verification gate (`THE_VOICE.md` §5): the failure
   blocks the commit.
 - **Outcomes.**
   - **Positive** — `✓ Verified. The deployed database now matches the model.`
@@ -349,7 +349,7 @@ each gets a verdict line and a statement.
 - **Intervention.** At eject only: the provenance-completeness gate (`THE_VOICE.md` §5) — *the history
   has one gap.*
 - **Outcomes.**
-  - **Positive** — `Saved this run to the history.` → episode line:
+  - **Positive** — `This run recorded to the history.` → episode line:
     `run 11 · 2 min ago · 14 changes · ✓ verified` (`THE_VOICE.md` §13).
   - **Negative** — recording failed / the chain is inconsistent: surfaced, not swallowed — a
     recorded-but-broken episode would corrupt the next diff (ontology §3 "Record last"), so a failure
@@ -401,7 +401,7 @@ when the sprint's delta contains it; `·` = elided. The **felt arc** and the **l
 | **P-6 · In-place migrate** | ● | ●● *(both)* | ● | ● confirm | ● | ● | ● | ● | ● | `14 changes, 1 to confirm.` · alert→consenting→verified→trusting |
 | **P-7 · Eject / freeze** | · | ● | ● *(genesis→frozen)* | ● provenance | ● publish | · | ● | ● *(chain closed)* | ● *(finish)* | `Frozen. Provenance complete from genesis to freeze, verified.` · deliberate→certain→terminal |
 | **P-8 · Drift** | ○ | ●● *(both)* | ● | ● accept/remediate/escalate | *(remediate=P-6)* | ● size | · | ○ | ○ | `The server diverges in 2 places.` · watchful→informed→decisive |
-| **P-9 · Self-check canary** | · | ● | ● *(round-trip)* | ● self-check | ● ephemeral | ● `=0` | ● | · | · | `Fidelity holds: the round-trip is identical.` · quiet confidence, or one clear divergence |
+| **P-9 · Round-trip verification** | · | ● | ● *(round-trip)* | ● round-trip | ● ephemeral | ● `=0` | ● | · | · | `Fidelity holds: the round-trip is identical.` · quiet confidence, or one clear divergence |
 
 **The storyboard test (`THE_VOICE.md` §7):** a developer on a *first* run and on a *hundredth* read the
 **same lead verdict** — the first as orientation, the hundredth as a glance already past. Every call
@@ -435,7 +435,7 @@ reads *down* from "which stream, which outcome" to the words.
 |---|---|---|---|
 | **Counts (2.1)** | `4,210 rows` · `312 rows changed` · `2,124 additive changes` · `and 1,847 more` | `‖δ‖ = 312` · `+4,210` · per-channel breakdown | `2140` (un-grouped) · `‖δ‖` · `norm` |
 | **Spectrums (2.2)** | `7 of 10 green` · `3 green checks remain` · `the one outstanding item` · `safe / validated / approval-required` | `schema ✓✓✓ · identity ✓✓▲` · `L1/L2/L3` · faithfulness-class names | `L1/L2/L3` · `faithfulness ladder` · `lossy` |
-| **Forecasts (2.3)** | `Widened the Email column from 50 to 100 characters. The change is instant.` · `The existing data has been validated … and so the change applies without loss.` · `~8s remaining` · (no bar when uncomputable) | `before → after · faithfulness class · data validated before apply` | a progress bar that misstates · `would throw` raw |
+| **Forecasts (2.3)** | `Email column widened from 50 to 100 characters. The change is instant.` · `The existing data has been validated … and so the change applies without loss.` · `~8s remaining` · (no bar when uncomputable) | `before → after · faithfulness class · data validated before apply` | a progress bar that misstates · `would throw` raw |
 | **Signals (2.4)** | the 7 verdicts + glyph (`✓ ▲ ✕`) · `the database matches the model` · `no removals` · `The database is provably unchanged.` | `residual ∅ · Ingest ∘ Project = id` · `exit 9 · gate=…` | `ERROR/FAILED/REFUSED` as a lead · `nothing destroyed` · `and that's real` |
 | **Interventions (2.5)** | consequence-as-meaning + one lever + active imperative (`Approve · Map · Confirm · Trim · Record · Accept · Remediate · Halt`) | `gate=declared-loss · --allow-drops` | `Declare loss` · `Override` · `Proceed (Y/N)` |
 | **Intentions (2.6)** | carried by tone + what is surfaced: calm, concrete, authoritative, humble | — | warmth-performance · drama · figurative metaphor |
@@ -446,8 +446,7 @@ reads *down* from "which stream, which outcome" to the words.
   (`THE_VOICE.md` §4). `Safe to apply: fully reversible, with no data loss.` / `Verified. The database
   matches the model.` The master glances; the newcomer reads the finding; one statement.
 - **Negative.** *Candid, never dramatic* (`THE_VOICE.md` §10). The shape is fixed: **what happened
-  (concrete) · why (plain) · the next move (imperative)**. A refusal is `Cannot migrate yet: this drops
-  a database index.`, never `REFUSED`. A failure names the next move and the safe state (`No partial
+  (concrete) · why (plain) · the next move (imperative)**. A refusal is `Cannot migrate yet: a database index would be dropped.`, never `REFUSED`. A failure names the next move and the safe state (`No partial
   write remains`). The exit code and stack are real — and in the substantiation.
 - **Edge.** The hardest design and the clearest tell of quality. The **no-op is a designed line**
   (`Nothing to apply. The database is provably unchanged.`), not an empty screen. The **unset thing is
