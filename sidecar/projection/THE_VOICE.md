@@ -13,7 +13,7 @@ When a real surface lands, its copy is *derived from this voice*, not invented f
 The register is **authoritative, scientific, mature, and humble**, governed by one principle —
 **evidential literalism**: every sentence asserts a proposition grounded in its evidence, about a
 concretely‑named subject, ordered by its true structure, with no rhetorical figure standing in for
-that precision. §1 makes it operable as eleven rules.
+that precision. §1 makes it operable as twelve rules.
 
 ---
 
