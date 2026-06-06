@@ -71,7 +71,7 @@ This is the whole idea, in one line:
 |---|---|---|
 | **Event** | A typed fact — *what happened* — with a stable `Code` and structured payload, no prose. | `LogSink.Envelope` (`Code`/`Category`/`Phase`/`SsKey`/`Payload` — `LogSink.fs:129‑141`); `LineageEvent` (`Lineage.fs:287`); `DiagnosticEntry.Code` (`Diagnostics.fs:70`); `ValidationError.Code` (`Result.fs:10`). |
 | **Aggregate** | A run-scoped collector that folds many events into a reportable whole — the *domain aggregate*. | `GroupAccumulator` / `RunAccumulator` ((category,code,ssKey) → count + samples, `LogSink.fs:619‑656`); `Compose.RunReport` (`Pipeline.fs:131‑153`); `RunLedger` (cross-run series); **`Episode`** (`Episode.fs:61‑128`) + `LifecycleStore` (`LifecycleStore.fs:29‑96`) — the durable one. |
-| **Voice** | The projection `Code → operator copy`, keyed centrally. **`THE_VOICE.md` is this layer's spec.** | `View` DU (`View.fs:19‑60`); `Surface` essence/dig (`Surface.fs:8‑16`); `TtyRenderer.buildSummaryView` reading LogSink+Ledger (`TtyRenderer.fs:24‑96`); `Comparison.Render` — the one existing *keyed* domain→View renderer (`Comparison.fs`). |
+| **Voice** | The projection `Code → operator copy`, keyed centrally. **`THE_VOICE.md` is this layer's spec.** | `View` DU (`View.fs:19‑60`); `Surface` statement/substantiation (`Surface.fs:8‑16`); `TtyRenderer.buildSummaryView` reading LogSink+Ledger (`TtyRenderer.fs:24‑96`); `Comparison.Render` — the one existing *keyed* domain→View renderer (`Comparison.fs`). |
 
 The triangle is whole *structurally*. The defects are: (a) the Voice layer is
 thin and partly inline; (b) some Events carry prose instead of just a code; (c)
@@ -95,7 +95,7 @@ enum — the stages are implicit in the call order):
 | **DriftRun** (`DriftRun.fs`) | — | **stub** 🔴 (the P‑8 surface is unbuilt) |
 | **Compose** (`Pipeline.fs`) | `RunReport` (`:131‑153`) | pure IR: extract → passes → emitters → outputs |
 
-These stage names *are* §13 of `THE_VOICE.md` ("Reading your model / Checking
+These stage names *are* §13 of `THE_VOICE.md` ("Reading the model / Checking
 the data / Building the changes / Self-checking"). The mapping is direct.
 
 ### 3.2 How runs report today — two channels
@@ -182,7 +182,7 @@ recommendation and the trade:
 
 2. **Code-keyed catalog, for flat codes.** For the *many* flat codes (config
    errors, stage events, setup), a single `Voice` module in the CLI layer maps
-   `Code → copy template` (essence + dig + action), filled from the envelope's
+   `Code → copy template` (statement + substantiation + action), filled from the envelope's
    `Payload`/`Metadata`. **Best for §10/§13/§14** — high-volume, low-variance
    strings that want one catalog, not one function each.
 
