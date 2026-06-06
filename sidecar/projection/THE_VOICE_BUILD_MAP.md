@@ -43,8 +43,9 @@ five-agent research pass (2026-06-06) run while the understanding was fresh.
 |---|---|---|
 | **0** | The discipline (Event/Aggregate/Voice separation) | **RECORDED** (`DECISIONS 2026-06-06`; `CLAUDE.md` operating-disciplines row) |
 | **1** | The Voice seam + `code ⇔ copy` totality test + verdict wiring | **LANDED** (commit `dab7b22`; `DECISIONS 2026-06-06 (later)`) |
-| **2** | Stage-code vocabulary | **SCAFFOLDED** (the §13 stage codes are voiced in `Voice.all`; the streaming render + run-unification are pending) |
-| **2** | Streaming Watch render path + run unification | **PENDING** (this doc §4) |
+| **2** | Stage-code vocabulary | **SCAFFOLDED** (the §13 stage codes are voiced in `Voice.all`) |
+| **2** | Streaming Watch render path (full-export) + dwell floor | **LANDED** (`Watch.fs`; `--watch`; `DECISIONS 2026-06-06 (later, slice 2)`) |
+| **2** | Run unification (Migration/Transfer/Eject onto the spine) + intra-stage ETA | **PENDING** (this doc §4.2/§4.4) |
 | **3** | Aggregate-at-scale + timeline/ladder | **PENDING** (this doc §5) |
 | **4** | Errors & config as voice + mechanism-1 toViews | **PENDING** (this doc §6) |
 | **5** | Typed `DiagnosticPayload` lift | **DEFERRED** behind a real consumer (this doc §7) |
@@ -193,8 +194,19 @@ Wiring it is slice 4 (§6.1).
 
 ## 4 — Slice 2 — lifecycle events + streaming Watch
 
-> **Goal.** Per-stage live progress + honest ETA (`THE_VOICE.md` §13; `THE_STORYBOARD.md` Act 4),
-> with `MigrationRun`/`TransferRun`/`EjectRun` unified onto the `LogSink` envelope spine.
+> **LANDED (first increment).** The streaming Watch render path over the already-emitted
+> `full-export` stage stream shipped as `src/Projection.Cli/Watch.fs` (opt-in `--watch`), with the
+> **minimum-dwell floor** (`Watch.dwellMs`, default 120 ms / `PROJECTION_WATCH_DWELL_MS`) — a minimum
+> inter-frame interval that holds each stage frame ≥ the floor before the next, adding only the
+> remainder below the floor (a stage already past the floor is never delayed). The board subscribes to
+> `LogSink` (a rendering, never a second emit surface) and reuses the §13 stage copy in `Voice.all`.
+> Tested pure (board transitions + dwell + voiced lines + banned-list) in `WatchTests`. **Still PENDING
+> below:** §4.2 (run unification — Migration/Transfer/Eject onto the spine) and §4.4 (intra-stage
+> progress + ETA), which need new emit sites.
+
+> **Goal (the remainder).** Per-stage live progress + honest ETA (`THE_VOICE.md` §13;
+> `THE_STORYBOARD.md` Act 4), with `MigrationRun`/`TransferRun`/`EjectRun` unified onto the `LogSink`
+> envelope spine.
 > *Less greenfield than it reads:* `FullExportRun` → `Compose.runWithConfig` already emits a
 > per-stage stream, `LogSink` already has the subscriber spine, and `Voice.stageName` already maps
 > the stage names. The work is (a) **propagating** the pattern to the runs that bypass it, (b) adding
