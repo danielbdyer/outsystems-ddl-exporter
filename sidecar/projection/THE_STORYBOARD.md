@@ -1,6 +1,6 @@
 # THE STORYBOARD — the surface, scene by scene, across every verb
 
-**The missing middle.** `THE_VOICE.md` is the *register* (how the instrument speaks, under eleven
+**The missing middle.** `THE_VOICE.md` is the *register* (how the instrument speaks, under twelve
 rules); `THE_VOICE_INTEGRATION.md` is the *build* (how the copy becomes structural). This document is
 what sits between them: the **shot list** — the major stages of every run, the streams of information
 that enter and exit each frame, the subjects that take the stage, and the positive / negative / edge
@@ -11,11 +11,11 @@ Grounded in two canonical surfaces, cited throughout:
 - **`THE_USE_CASE_ONTOLOGY.md`** — the amino-acid alphabet (§2, the *cast*), the protein catalog (§3,
   the *scene sequences*), the master matrix (§4, the *streams per subject*), the laws (§5, the *counts
   and spectrums*).
-- **`THE_VOICE.md`** — the eleven-rule register (§1), the verdict set (§3), the moves (§4), the gates
+- **`THE_VOICE.md`** — the twelve-rule register (§1), the verdict set (§3), the moves (§4), the gates
   (§5), the proofs (§6), the scale discipline (§12), Watch (§13), setup (§14).
 
 Copy here is **illustrative**, per `THE_VOICE.md`'s anchor discipline — read for the stream and the
-register, not the exact string. Every line obeys the eleven rules (no pronouns; legible statement,
+register, not the exact string. Every line obeys the twelve rules (no pronouns; legible statement,
 formal substantiation beneath; verdicts asserted; the true verb; evidential grounding).
 
 ---
@@ -37,7 +37,11 @@ A film is **acts** (the arc), **a cast** (who can appear), **streams** (what the
 Then, and only then:
 
 5. **The diction inventory (§5)** — the vocabulary, bound to each stream-type and each outcome
-   register, under the eleven rules. Where the voice becomes specific.
+   register, under the twelve rules. Where the voice becomes specific.
+
+Two appendices ground it: **§7** the build-readiness map (each surface live vs latent, from the
+current-state debrief) and **§8** the worked proof — **P-6 migrate, frame by frame** at per-string
+fidelity.
 
 **The quality claim, stated up front.** Quality is not the polish of the happy path. It is that the
 **negative and the edge get the identical care as the positive** — the refusal is as calm and as
@@ -79,6 +83,19 @@ Three things to hold:
   faithful — is stated as a grounded finding, the formal proof one level beneath (`THE_VOICE.md` §6).
   They are the soul of the surface, not a footer.
 
+**The two axes the surface navigates (the concern-movement field).** Beneath the nine acts run two
+orthogonal axes the operator moves along — named in `WAVE_6_MORPHOLOGY.md` §2 as the field
+`∂κ/∂emission × ∂κ/∂episode`:
+- **The emission axis** — *how a change distributes across the estate within one run*, integrated by
+  the `ChangeManifest`. Acts 1–6 trace it: this run's breadth, table by table, channel by channel.
+- **The episode axis** — *how the estate changes across runs over time*, integrated by the provenance
+  / `LifecycleStore` (the FTC `reconstructLatest = genesis ⊕ Σδ`). Acts 7–8 trace it: the history, the
+  streak, the distance to cutover.
+
+Depth (statement → substantiation) is the third axis — *into* any one cell. The field is **mostly dark
+today** (the morphology's finding): the data exists, the calm rendering does not. Lighting it is the
+build (§7).
+
 ---
 
 ## 2 — The six streams (the taxonomy of what flows)
@@ -92,6 +109,13 @@ inventoried precisely (§5): each stream-type has its own rendering law.
 *Rendering law (`THE_VOICE.md` §12).* Humane numerals (`2,140`, not `2140`); named units (`4,210
 rows`); **big rocks first**, impact-ranked never alphabetical; **cap-and-name** the tail (`and 1,847
 more`, searchable, never a scroll). The number scales; the sentence does not.
+Counts come in two kinds that must never be conflated (`WAVE_6_ALGEBRA.md` §4–5): **net** — the
+distance moved (`net-displacement`) — and **churn** — the work done (`pathLength`). Adding a column
+then backfilling it is net 1, churn 2; a busy-but-stationary sprint (add then remove) is net 0,
+churn 2. The `ChangeManifest` carries both; **Accumulate** (§4) surfaces churn beside net so honest
+effort reads, not just net change. The norm `‖δ‖` is additive across channels (`‖δ‖ = Σ_c ‖π_c δ‖`)
+and, on the data plane, *is* the CDC capture count — so Act 5's count is the physical norm, not an
+estimate.
 
 ### 2.2 Spectrums — a graded position on a named scale
 *What.* Faithfulness *class* (`faithful` / `lossy-with-warning` / `refuse-unless-declared`; ontology
@@ -424,7 +448,7 @@ Three castings worth reading closely, because they stress the design:
 ## 5 — The diction inventory (vocabulary bound to streams and outcomes)
 
 With the surfaces named, the diction can be inventoried precisely. The voice is **one register** under
-**eleven rules** (`THE_VOICE.md` §1 — no pronouns; legible statement with the formal substantiation
+**twelve rules** (`THE_VOICE.md` §1 — no pronouns; legible statement with the formal substantiation
 beneath; verdicts asserted; the true verb; evidential grounding; no antithesis). This section binds
 that register to each stream-type (§2) and each outcome (positive / negative / edge), so a builder
 reads *down* from "which stream, which outcome" to the words.
@@ -454,13 +478,14 @@ reads *down* from "which stream, which outcome" to the words.
   unavailable, so the result is unverified`). The **at-scale** opens on the *same calm screen* as the
   3-change run (`THE_VOICE.md` §12). The **failed run in history** is named, never hidden.
 
-### 5.3 The always-rules (the eleven, as a checklist over every string)
+### 5.3 The always-rules (the twelve, as a checklist over every string)
 
 Before any line lands, it passes `THE_VOICE.md` §1 + §2.2: no pronouns · direction by imperative ·
 legible statement with formal substantiation beneath · verdicts asserted · the true verb · gentle and
 direct, never colloquial · neutral reference to the estate · every claim grounded in its evidence ·
-ordered by real structure · the exact referent · concrete definite subjects. And it clears the banned
-list (no antithesis tic, no euphemism, no drama, no system-shout, no jargon on the statement, no
+ordered by real structure · the exact referent · concrete definite subjects · stative, agentless voice
+(report states and events, never actions performed; gerunds-in-progress excepted). And it clears the
+banned list (no antithesis tic, no euphemism, no drama, no system-shout, no jargon on the statement, no
 figurative terms, no leaked internals). If a line fails one, it is not finished.
 
 ### 5.4 What this unlocks for the build
@@ -469,7 +494,7 @@ With §3 (streams per act) and §5 (diction per stream) in hand, the per-site Vo
 (`THE_VOICE_INTEGRATION.md` decision 2 — declare-at-site, harvest-centrally) has a *complete target*:
 each emission site knows which act it speaks in, which streams it carries, and therefore which diction
 rows apply — and the `code ⇔ copy` totality test can assert that **every act × stream × outcome cell a
-verb reaches carries a line that passes the eleven rules**. The storyboard is the coverage map the
+verb reaches carries a line that passes the twelve rules**. The storyboard is the coverage map the
 totality test checks against.
 
 ---
@@ -477,10 +502,10 @@ totality test checks against.
 ## 6 — How to read / bless this
 
 - **Building a surface?** Find its act (§3) and its verb's call sheet (§4); read the streams in frame
-  and the three outcomes; derive the copy from §5 + `THE_VOICE.md`, under the eleven rules. Do not
+  and the three outcomes; derive the copy from §5 + `THE_VOICE.md`, under the twelve rules. Do not
   invent a tone.
 - **Unsure it is complete?** The completeness test is **act × stream × outcome**: every act a verb
-  reaches carries its positive, negative, *and* edge line, in the right streams, passing the eleven
+  reaches carries its positive, negative, *and* edge line, in the right streams, passing the twelve
   rules. A blank edge cell is the bug.
 - **Blessing this doc.** Three things to react to: (1) the **nine-act spine** (§1) — the right
   decomposition of every run; (2) the **six streams** (§2) — they name everything that flows; (3) the
@@ -490,3 +515,113 @@ totality test checks against.
 *The instrument disappears. The storyboard is how it disappears the same way in every scene — the calm
 of the success, the candor of the refusal, and the designed quiet of the no-op, all stated in one
 exact, humble voice.*
+
+---
+
+## 7 — The build-readiness map (live vs latent)
+
+The storyboard doubles as a build map. The proofs the engine makes about itself are largely **live
+today**; the calm operator-facing *surfaces* that render them are largely **latent**. Status is from
+the canonical current-state ledger (`DEBRIEF_2026_06_02_ISOMORPHISM_CLIMB_AND_BACKLOG.md`): **LIVE** =
+built and tested · **PARTIAL** = the data exists, the surface is unbuilt · **LATENT** = designed, not
+built.
+
+**By the two axes (§1).** The **emission axis** (acts 1–6 — this run) is mostly lit: the diff, the
+measure, and the verify are real engines. The **episode axis** (acts 7–8 — across runs) is **half-lit**:
+the durable `Episode` / `LifecycleStore` landed (the data persists), but the operator-facing timeline
+and readiness ladder are unbuilt. **Depth** (statement → substantiation) is unbuilt everywhere — the
+`View.Disclosure` substrate exists; the per-surface authored copy does not.
+
+| Surface (act) | Status | Basis (debrief) |
+|---|---|---|
+| Diff / what changed (2) | **PARTIAL** | `CatalogDiff.between` — schema L2; Reference/Index/Sequence channels landed (C1); `IndexOptionsUnreflected` residual named. |
+| Declared-loss · data-compat · drift gates (3) | **LIVE** | `Preflight.*` + `MigrationRun` CDC pre-flight refuse before any write (6.A.13 / 6.B.1). |
+| Validate-user-map gate (3) | **LIVE** | Transfer consumes the refactorlog-aware remap; gate halts pre-SQL (6.B.2). |
+| Connection · permission pre-flights (0) | **LIVE** | `Preflight.connectionPreflight` / `permissionPreflight` wired (A1 / A2). |
+| Provenance-completeness gate (7, eject) | **LATENT** | Episode substrate landed; the eject consumer is unbuilt (PROD-data-gated). |
+| Live run / Watch streaming (4) | **LATENT** | `ChangeManifest` records per-stage displacement; no streaming terminal surface yet. |
+| Measure / CDC count + silence (5) | **LIVE** | `ChangeManifest` integrates the CDC capture series; CDC-silence witnessed (G10 / 6.A.13). |
+| Verify / round-trip (6) | **LIVE** | `MigrationRun` reads B′ back; `CanaryRoundTripTests` — the T16 live square. |
+| Record / Episode (7) | **PARTIAL** | Durable `LifecycleStore` + FTC landed (6.H.1–4); no operator-facing record line yet. |
+| Timeline + ladder (8) | **PARTIAL** | The matrix/ladder data is generated (D1/D2); the calm visual surface is unbuilt. |
+| migrate (P-6) | **LIVE** | `MigrationRun.executeFromLive` — A live → evolve → B′ verified (6.D.1 / B1). |
+| transfer (P-3) | **LIVE** | `TransferRun` cross-substrate load + remap + drop exit-9. |
+| eject (P-7) · publish (P-4) | **LATENT / PARTIAL** | `EjectRun` signature exists, consumer unbuilt; refactorlog/`ChangeManifest` accumulate, SSIS consumer unwired (C3/C4). |
+| Config / setup readback (0) | **PARTIAL** | `Preflight` validates endpoints; an `osm config status` readback is unbuilt. |
+
+**The reading.** The instrument can already *prove* a migration end to end — diff, refuse, apply,
+measure the minimal touch, verify B′ against the model. What is unbuilt is almost entirely the **voice
+and the surfaces**: the streaming Watch (act 4), the record line (act 7), the timeline/ladder (act 8),
+and the depth layer everywhere. The storyboard is the map of that remaining work; `THE_VOICE.md` is its
+register.
+
+---
+
+## 8 — The worked proof: P-6 migrate, frame by frame
+
+P-6 is the full film — the only verb that reads both Snapshots and plays all nine acts (§4).
+Storyboarded to per-string fidelity, in the locked register, it shows the granularity land and doubles
+as the build map. Tag: **[LIVE]** the engine does this and a surface could render it today; **[LATENT]**
+the data exists, the surface does not.
+
+**Act 0 — Arrival** · *[LIVE — connection / permission pre-flights]*
+- *Streams:* signals (reachable / granted) · forecasts (a missing requirement).
+- **+** (silent proceed) — on request: `Source: UAT (reachable) · Target: UAT (reachable) · ALTER: granted.`
+- **−** `ALTER permission is denied on dbo.Order. Grant ALTER, then retry.`
+- **edge** `Run history is not being retained. To keep a record of runs over time, set PROJECTION_LEDGER_DIR.`
+
+**Act 1 — Reading** · *[LIVE — `MigrationRun.executeFromLive` reads A live; the model is read]*
+- *Streams:* two Snapshots (deployed A + model B) · counts · signals.
+- **+** `Model read complete — 300 tables. Deployed schema read from UAT.`
+- **−** `The model failed to load: line 12 is missing a name. Correct it and rerun.`
+- **edge** the deployed schema reads clean, but 12 tables are not CDC-tracked — carried to Act 5.
+
+**Act 2 — What changed** · *[PARTIAL — `CatalogDiff.between`, schema L2; index-options residual named]*
+- *Streams:* counts (`‖δ‖`, per-channel; churn vs net) · spectrums (faithfulness class) · forecasts.
+- **+** `Safe to apply: 14 changes, all additive and reversible.`
+- **−** `Paused. Approval required before removal. The IX_Order_Stale index will be dropped. No data is lost.` (→ Act 3)
+- **edge** `No differences found.` (degrades to P-5) · at scale `2,140 changes across 300 tables · 4 drops · review before applying.` + `3 differences excluded by a named tolerance (IndexOptionsUnreflected).`
+
+**Act 3 — The one decision** · *[LIVE — declared-loss + data-compat gates]*
+- *Streams:* interventions (one lever) · forecasts (the consequence) · counts (the scope).
+- **+** (empty — an additive run elides straight to Act 4).
+- **−** `The Status column will be narrowed to 20 characters. 4 rows currently exceed that length.` → `Trim the 4 rows, widen the target, or halt.`
+- **edge** two gates eligible → the most-honest single lever is named; the rest wait beneath.
+
+**Act 4 — Making it real** · *[LATENT — `MigrationRun.execute` applies in-place; the streaming Watch surface is unbuilt]*
+- *Streams:* forecasts (estimate) · counts (rows / statements) · signals (per-stage).
+- **+** `Reading the model ✓ 1.2s · Checking the data ✓ · Building the changes ⣷ 142 of 300 · ~8s remaining` — gerund stage labels per rule 12; this live stream is the latent surface (today the run completes, then reports).
+- **−** `Stopped before any change was completed. ALTER permission is denied on dbo.Order. Grant ALTER, then retry.` + `No partial write remains; safe to retry.`
+- **edge** no-op → a single calm line; estimate uncomputable → none shown.
+
+**Act 5 — The touch** · *[LIVE — `ChangeManifest` CDC capture; CDC-silence]*
+- *Streams:* counts (CDC capture = |Δ|; churn beside net) · spectrums (isometric vs norm-inflating) · signals (silence).
+- **+** `312 rows changed — exactly those that differed, and no others.` · substantiation `‖δ‖ = 312 = CDC capture count · churn 312, net 312`.
+- **−** (fallback) `The full table was reloaded (the safe path); more rows were touched than strictly differed.` · `churn 12,000, net 312`.
+- **edge** `Confirmed idempotent: zero rows captured, zero schema changes issued.` · or not CDC-tracked → `Applied. This table is not CDC-tracked, so the row count cannot be proven; the expected count is shown.`
+
+**Act 6 — Verification** · *[LIVE — `MigrationRun` reads B′ back; the T16 live square; canary]*
+- *Streams:* signals (matches / one difference) · spectrums (readiness) · counts (residual).
+- **+** `Verified. The deployed database now matches the model.` · substantiation `residual ∅ · Ingest ∘ Project = id · the seeded row survived`.
+- **−** `The round-trip returned one difference. It is shown below and must be resolved before shipping.`
+- **edge** `The change was applied, but the read-back is unavailable, so the result is unverified. Re-verify when the endpoint is reachable.`
+
+**Act 7 — Recorded** · *[PARTIAL — durable `Episode` / `LifecycleStore` landed; the record line is latent]*
+- *Streams:* counts (run, changes) · signals (verified).
+- **+** `This run recorded to the history.` → `run 11 · 2 min ago · 14 changes · ✓ verified` — the episode persists today; the operator-facing line is the latent surface.
+- **−** chain inconsistent → surfaced loudly (a recorded-but-broken episode would corrupt the next diff).
+- **edge** genesis (first run) — stated as a beginning, not an absence.
+
+**Act 8 — Where it stands** · *[PARTIAL — the matrix/ladder data is generated; the calm surface is latent]*
+- *Streams:* spectrums (readiness, per-axis) · counts (runs, distance) · signals (a failed run, named).
+- **+** `Cutover ███████░░░ 7 of 10 green · 3 green checks remain. ▸ run 11, just now.`
+- **−** `run 5 failed.` · `The lever: a user-fallback on 3 accounts.`
+- **edge** genesis → folds back to Act 0's recommendation.
+
+**What the full film shows.** Today the engine *proves* P-6 end to end — it reads both states, refuses
+the unsafe, applies the minimum touch, measures it against the CDC ruler, and verifies B′ against the
+model (acts 0–3, 5, 6 are LIVE). What remains is almost entirely **voice and surface**: the streaming
+Watch (act 4), the record line (act 7), and the timeline / ladder (act 8) — the data exists; the calm
+rendering, in the twelve-rule register, is the build. P-6's storyboard is therefore both the
+granularity proof and the work map: the proofs are real; the words and the live and historical surfaces
+are what we build, derived from `THE_VOICE.md`.
