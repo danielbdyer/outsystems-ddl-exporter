@@ -4,7 +4,8 @@
 decomposes the concerns around making `THE_VOICE.md` a structural part of the
 engine — *so the copy reads as if it had always been there* — and sequences the
 work. It is grounded in the codebase as it stands today (file:line throughout),
-so the plan lands inside the existing grain rather than beside it.
+so the plan lands inside the existing grain rather than beside it. **The five
+design forks were resolved with the operator on 2026-06-06 — see §8.**
 
 Read `THE_VOICE.md` first (the copy itself) and `THE_INSTRUMENT.md` (the why).
 This is the *how it attaches*.
@@ -185,13 +186,16 @@ recommendation and the trade:
    `Payload`/`Metadata`. **Best for §10/§13/§14** — high-volume, low-variance
    strings that want one catalog, not one function each.
 
-3. **Hybrid (recommended).** Use (1) for the move/gate/proof surfaces where copy
-   is payload-shaped, and (2) for the lifecycle/error/config codes where copy is
-   template-shaped. Both live in the **CLI/Voice layer, never in Core** — which
-   is what keeps the conflation gone: Core emits codes and payloads; the words
-   are a `Projection.Cli` concern, downstream of all logic. (Note: the
-   move/gate/proof DUs live in Core, but their *`toView`* functions live in the
-   CLI projection layer, the way `Comparison.renderCatalogDiff` already does.)
+3. **Hybrid — CHOSEN (see §8, decision 1).** Use (1) for the move/gate/proof
+   surfaces where copy is payload-shaped, and (2) for the lifecycle/error/config
+   codes where copy is template-shaped. **Placement (decision 2): sites *declare*
+   their copy, *harvested* centrally** — the `TransformRegistry` pattern. The
+   declaration is owned by and adjacent to the site, but a **separable
+   declarative value**, never `sprintf` in control flow. It lives as close as the
+   F#-pure-core commitment allows: in-module at boundary/pipeline/CLI sites; a 1:1
+   projection-layer companion (`Voice.NullabilityPass ↔ NullabilityPass`) for
+   pure-Core passes. The typed move/gate `toView`s may sit beside their Core DUs
+   under the `RemovalReason.toDiagnosticString` terminal-projection precedent.
 
 **The totality guarantee.** The `TransformRegistry` is already the canonical
 enumeration of transformation sites (`TransformRegistry.fs:25‑115`, with
@@ -237,20 +241,24 @@ what makes the copy feel native: it can't drift from the events, by construction
 
 Ordered so each slice ships value and nothing waits on a grand refactor:
 
-- **Slice 0 — name the discipline.** A `DECISIONS.md` entry: *Event / Aggregate
-  / Voice separation — a site emits a coded event; copy is a projection keyed by
-  code at the CLI layer; prose at an emission site is forbidden.* Add the
-  Operating-disciplines table row in `CLAUDE.md`. *This is the move that makes it
-  "always have been there"* — the rule exists before the code does, like every
-  other load-bearing commitment. (Doc-only.)
+- **Slice 0 — name the discipline.** A `DECISIONS.md` entry: *Event / Aggregate /
+  Voice separation — a site emits a coded event **and declares its copy as a
+  separable, harvested value** (the registry pattern); inline prose welded to
+  control flow is forbidden; the renderer consumes the harvested catalog keyed by
+  code; `code ⇔ copy` totality holds.* Add the Operating-disciplines table row in
+  `CLAUDE.md` (Voice as the concern-shaped, write-side-free sibling of
+  Lineage/Diagnostics/Bench/Registry). *This is the move that makes it "always
+  have been there"* — the rule exists before the code does, like every other
+  load-bearing commitment. (Doc-only.)
 - **Slice 1 — the Voice seam + the totality test.** Stand up the `Voice` module
   (hybrid §5) keyed by the codes that **already** exist (`config.runStart`,
   `summary.*`, the `pipeline.config.*` errors). Wire `TtyRenderer` to look copy
   up by code. Add the `code ⇔ copy` coverage test. No new events yet — just
   voice what's already emitted, derived from `THE_VOICE.md`.
-- **Slice 2 — lifecycle events.** Give each stage a code; unify Migration /
-  Transfer / Eject onto the `LogSink` envelope spine; render the live stage list
-  (§13). Surfaces P‑5/P‑6 verdicts.
+- **Slice 2 — lifecycle events (streaming; scope raised by decision 3).** Give
+  each stage a code; unify Migration / Transfer / Eject onto the `LogSink`
+  envelope spine; add the **streaming render path** for live per-stage progress +
+  ETA (§13) — not just a terminal summary. Surfaces P‑5/P‑6 verdicts.
 - **Slice 3 — aggregate-at-scale.** Render `RunAccumulator`'s clusters as the §12
   surface (big-rocks-first, cluster-by-table, cap-and-name); read `Episode`/Ledger
   into the timeline + ladder (§8). Surfaces the readiness story.
@@ -265,23 +273,52 @@ must match a section of the doc.
 
 ---
 
-## 8 — Open forks (decisions you own)
+## 8 — Decisions (locked 2026-06-06)
 
-1. **Voice catalog shape** — confirm the hybrid (§5), or prefer one uniform
-   mechanism. (Recommendation: hybrid.)
-2. **Is Voice a fifth cross-cutting concern, or a projection?** It can sit beside
-   Lineage/Diagnostics/Bench/Registry as a peer, *or* be defined purely as a
-   read-only projection of them. (Recommendation: projection — it has no write
-   side; it only renders. That keeps Core untouched.)
-3. **How live is "live"?** Streaming per-stage Watch (§13) vs. terminal summary
-   only. Streaming touches the run orchestrators; the summary doesn't. (Sequence
-   lets you defer this — slice 2 can ship summary-first.)
-4. **Diagnostics lift now or later?** (Recommendation: later, behind a consumer —
-   slice 5.)
-5. **Where does the catalog physically live?** One `Voice.fs` in `Projection.Cli`,
-   or split per surface (`Voice.Lifecycle`, `Voice.Errors`, `Voice.Moves`)?
-   (Recommendation: split by surface, mirroring `THE_VOICE.md`'s sections, so the
-   doc and the code are isomorphic — which is itself part of "feels native.")
+All five forks resolved with the operator. These supersede the recommendations in
+§5/§7 where they differ.
+
+1. **Catalog shape — Hybrid.** Typed `toView` projections for the payload-shaped
+   surfaces (the eleven moves, the gates, the proofs — copy varies with the
+   payload); a code-keyed declarative catalog for the flat high-volume codes
+   (lifecycle / errors / config). Each mechanism where it fits.
+
+2. **Placement — sites carry words, via *declare-at-site / harvest-centrally*.**
+   The operator's standing hunch ("declare the text near its site") wins — in the
+   disciplined form the codebase already runs for the `TransformRegistry`: each
+   site **declares** its copy as a *separable declarative value* (deletable
+   without touching control flow), a `Voice.all` **harvests** them into one
+   catalog, the renderer consumes the harvest, and a `code ⇔ copy` totality test
+   keeps it complete. This is **not** prose welded into control flow (`sprintf`
+   mid-fold) — that stays forbidden. So Voice is concern-*shaped* (declared at
+   sites, harvested, totality-tested — a sibling of Lineage / Diagnostics / Bench
+   / Registry) yet has **no runtime write side**: the declarations are static copy
+   data, projected at render. It is the registry pattern applied to words.
+   - **Core-purity consequence + recommendation (reversible).** The *event* (code
+     + typed payload) is emitted at the site, pure. The *copy declaration* lives
+     as close as the F#-pure-core commitment allows — **in-module** for boundary /
+     pipeline / CLI sites; a **1:1 projection-layer companion** for each pure-Core
+     pass (`Voice.NullabilityPass ↔ NullabilityPass`), so it stays owned +
+     adjacent + harvested without polished operator prose entering
+     `Projection.Core`. Typed move/gate `toView`s may sit beside their Core DUs
+     under the `RemovalReason.toDiagnosticString` terminal-projection precedent.
+     *If the operator prefers the declarations literally inside the Core pass
+     modules, this rule flips in one line — F#-pure-core is the only thing weighing
+     against it.*
+
+3. **Live surface — streaming Watch from the start.** Per-stage live progress +
+   ETA (`THE_VOICE.md` §13) is in scope for the first build, not deferred. This
+   *raises slice-2 scope*: unify Migration / Transfer / Eject onto the `LogSink`
+   envelope spine, add stage-identity codes, and add a streaming render path —
+   not just a terminal summary.
+
+4. **Diagnostics lift — deferred** behind a real consumer (slice 5, optional), per
+   IR-grows-under-evidence.
+
+5. **Catalog location — distributed, not central** (resolved by decision 2). The
+   catalog is per-site declarations harvested into one logical surface, organized
+   1:1 with sites and mirroring `THE_VOICE.md`'s sections at the aggregate — the
+   doc and the harvested catalog stay isomorphic.
 
 ---
 
@@ -296,7 +333,7 @@ must match a section of the doc.
   commitment in this codebase was — so future code is born compliant.
 - It is **held honest by a totality test** (`code ⇔ copy`), the same device that
   keeps `registered ⇔ executed` true — so the copy can't drift from the events.
-- The catalog is **isomorphic to `THE_VOICE.md`** (fork 5), so the doc is the
+- The catalog is **isomorphic to `THE_VOICE.md`** (decision 5), so the doc is the
   map of the code and vice-versa.
 
 The result: the words stop being something we *add* to the engine and become
