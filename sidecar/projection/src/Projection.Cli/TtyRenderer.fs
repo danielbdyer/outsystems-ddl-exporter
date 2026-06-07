@@ -23,15 +23,26 @@ let shouldRender (prettyRequested: bool) : bool =
 /// the ledger. Pure data — `View.write` / `View.toJson` are the lenses.
 let buildSummaryView (command: string) (code: int) : View.View =
     let registered, applied, declined = LogSink.transformCounts ()
-    let outcome =
-        if code = 0 then View.Field("outcome", "SUCCEEDED", View.Ok)
-        else View.Field("outcome", "FAILED", View.Bad)
-    let canary =
-        match LogSink.canaryVerdict () with
-        | Some "green" -> View.Field("canary", "green — diff empty", View.Ok)
-        | Some "red"   -> View.Field("canary", "RED — divergence", View.Bad)
-        | Some other   -> View.Field("canary", other, View.Neutral)
-        | None         -> View.Field("canary", "no canary leg", View.Neutral)
+    // The verdict line is voiced by `Voice`, keyed by the code the run earned:
+    // the round-trip-verification proof (`canary.*`, §6) when a canary leg ran,
+    // else the terminal outcome (`summary.runComplete`, §3). The copy is no longer
+    // authored here — `TtyRenderer` looks it up by code (`THE_VOICE_INTEGRATION.md`
+    // slice 1; the `code ⇔ copy` totality test holds it honest).
+    let verdict =
+        let codeForVerdict, payload : string * Voice.Payload =
+            match LogSink.canaryVerdict () with
+            | Some "green" -> "canary.diffEmpty", Map.empty
+            | Some "red"   -> "canary.divergence", Map.empty
+            | _ ->
+                "summary.runComplete",
+                Map.ofList [ "outcome", box (if code = 0 then "succeeded" else "failed") ]
+        match Voice.verdict codeForVerdict payload with
+        | Some (st, t) -> View.Field("verdict", t, st)
+        | None ->
+            View.Field(
+                "verdict",
+                (if code = 0 then "The run completed without error." else "Stopped before completion."),
+                (if code = 0 then View.Ok else View.Bad))
     let transforms =
         View.Field(
             "transforms",
@@ -57,7 +68,7 @@ let buildSummaryView (command: string) (code: int) : View.View =
                 "cutover", r.ConsecutiveGreen, r.Threshold,
                 sprintf "%d / %d green %s %s" r.ConsecutiveGreen r.Threshold Theme.arrow gate) ]
         | None -> []
-    View.Panel(command, [ outcome; canary; transforms; actionable ] @ nextAction @ cutover)
+    View.Panel(command, [ verdict; transforms; actionable ] @ nextAction @ cutover)
 
 let renderSummaryTo (console: IAnsiConsole) (command: string) (code: int) : unit =
     View.write console (buildSummaryView command code)
@@ -131,26 +142,26 @@ let renderAnswer (asJson: bool) (depth: int) (v: View.View) : unit =
 // --- the Gate surface — a refusal as a stop-and-confirm (INSTRUMENT slice 3) -
 
 /// The Gate as a `Surface` (INSTRUMENT slice 3) — the stop-and-confirm a refusal
-/// renders. Essence-first: a Hero names the danger in plain words (Bad for a
+/// renders. Statement-first: a Hero names the danger in plain words (Bad for a
 /// destructive change the operator must declare; Warn for a blocking pre-flight
-/// refusal); the dig is a `Disclosure` carrying the formal proof — the gate
-/// label, the specific detail, and the distinct exit code — open by default but
-/// collapsible for the operator who already knows the drop; the next action
-/// names how to proceed. Binds `Preflight.GateRefusal` — the structured refusal
-/// that otherwise collapses to a single error string.
+/// refusal); the substantiation is a `Disclosure` carrying the formal proof —
+/// the gate label, the specific detail, and the distinct exit code — open by
+/// default but collapsible for the operator who already knows the drop; the next
+/// action names how to proceed. Binds `Preflight.GateRefusal` — the structured
+/// refusal that otherwise collapses to a single error string.
 let buildGateSurface (command: string) (refusal: Preflight.GateRefusal) : Surface.Surface =
     let label = Preflight.labelText refusal.Label
     let destructive = (refusal.Label = Preflight.UndeclaredDestructiveChange)
     let st = if destructive then View.Bad else View.Warn
-    let essence =
+    let statement =
         if destructive then View.Hero(View.Bad, sprintf "%s refused — this change destroys structure" command)
         else View.Hero(View.Warn, sprintf "%s refused — %s" command label)
     let action =
         if destructive then
             Some (View.Action "declare the loss to proceed: --declare-loss <name> (or --declare-all), or abort")
         else None
-    { Essence = essence
-      Dig =
+    { Statement = statement
+      Substantiation =
         [ View.Disclosure(
             "Details", View.Neutral,
             [ View.Field("gate", label, st)

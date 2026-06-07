@@ -46,14 +46,16 @@ let renderCatalogDiff (d: CatalogDiff) : View.View =
           View.Field("indexes", chan c.AddedIndexes c.RemovedIndexes c.RenamedIndexes c.ChangedIndexes, View.Neutral)
           View.Field("sequences", chan c.AddedSequences c.RemovedSequences c.RenamedSequences c.ChangedSequences, View.Neutral) ])
 
-// --- the essence: the plain lead line of a change (INSTRUMENT slice 1) ------
+// --- the statement: the plain lead line of a change (INSTRUMENT slice 1) ----
 
-/// The essence of a catalog change — the one plain line that leads the surface
-/// (`THE_INSTRUMENT` — essence first, the dig beneath). A destructive change
-/// leads amber ("review first"); an additive / no-op change leads calm. The dig
-/// (the move-lanes + the per-channel ‖δ‖ panel, progressively disclosed) is
-/// shown beneath.
-let catalogEssence (d: CatalogDiff) : View.View =
+/// The statement of a catalog change — the one plain line that leads the surface
+/// (`THE_VOICE.md` §1 rule 3 — statement first, the substantiation beneath). A
+/// destructive change leads amber ("review first"); an additive / no-op change
+/// leads calm. The substantiation (the move-lanes + the per-channel ‖δ‖ panel,
+/// progressively disclosed) is shown beneath. (Copy itself is the Act-2 diff
+/// surface — payload-shaped, voiced to the twelve-rule register in a later
+/// slice; this rename only aligns the field vocabulary, per `DECISIONS 2026-06-06`.)
+let catalogStatement (d: CatalogDiff) : View.View =
     let c = CatalogDiff.channelCounts d
     let removed =
         c.RemovedKinds + c.RemovedAttributes + c.RemovedReferences
@@ -104,17 +106,19 @@ let renderCatalogLanes (d: CatalogDiff) : View.View list =
     @ lane "+" "add" View.Ok (added |> List.map SsKey.rootOriginal)
     @ lane "−" "remove" View.Bad (removed |> List.map SsKey.rootOriginal)
 
-/// A catalog change as a `Surface` — the essence over the dig: the move-typed
-/// lanes (kind moves: rename / add / remove, each badged by reversibility,
-/// progressively disclosed) with the per-channel ‖δ‖ panel beneath. The
-/// essence/dig shape every later surface reuses (`INSTRUMENT_BACKLOG` §3/§4).
+/// A catalog change as a `Surface` — the statement over the substantiation: the
+/// move-typed lanes (kind moves: rename / add / remove, each badged by
+/// reversibility, progressively disclosed) with the per-channel ‖δ‖ panel
+/// beneath. The statement/substantiation shape every later surface reuses
+/// (`THE_VOICE.md` §1 rule 3).
 let changeSurface (d: CatalogDiff) : Surface.Surface =
-    { Essence = catalogEssence d
-      Dig     = renderCatalogLanes d @ [ View.Blank; renderCatalogDiff d ]
-      Action  = None }
+    { Statement      = catalogStatement d
+      Substantiation = renderCatalogLanes d @ [ View.Blank; renderCatalogDiff d ]
+      Action         = None }
 
-/// A catalog change rendered essence-first: the plain verdict, then the dig —
-/// the move-typed lanes and the per-channel ‖δ‖ panel, revealed on demand.
+/// A catalog change rendered statement-first: the plain verdict, then the
+/// substantiation — the move-typed lanes and the per-channel ‖δ‖ panel, revealed
+/// on demand.
 let renderCatalogChange (d: CatalogDiff) : View.View =
     Surface.render (changeSurface d)
 
