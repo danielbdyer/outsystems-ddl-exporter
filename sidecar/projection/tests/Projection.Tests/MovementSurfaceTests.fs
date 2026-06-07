@@ -55,41 +55,41 @@ let ``TargetConfig.parse on empty text is the empty config`` () =
     let cfg = TargetConfig.parse "" |> mustOk
     Assert.True(Map.isEmpty cfg.Targets)
 
-// -- Surface.resolveTarget -------------------------------------------------
+// -- Command.resolveTarget -------------------------------------------------
 
 let private cfg = TargetConfig.parse sampleJson |> mustOk
 
 [<Fact>]
 let ``resolveTarget reserves docker`` () =
-    let r = Surface.resolveTarget cfg "docker" |> mustOk
+    let r = Command.resolveTarget cfg "docker" |> mustOk
     Assert.Equal(Destination.Docker, r.Destination)
 
 [<Fact>]
 let ``resolveTarget resolves a named live target to Live`` () =
-    let r = Surface.resolveTarget cfg "dev" |> mustOk
+    let r = Command.resolveTarget cfg "dev" |> mustOk
     Assert.Equal(Destination.Live (ConnectionRef.EnvVar "DEV_CONN"), r.Destination)
     Assert.Equal(Some "lifecycle/dev.json", r.Store)
 
 [<Fact>]
 let ``resolveTarget honors the dir scheme prefix over a same-named target`` () =
     // a folder literally named "dev" is reachable via dir: even though "dev" is a target
-    let r = Surface.resolveTarget cfg "dir:dev" |> mustOk
+    let r = Command.resolveTarget cfg "dir:dev" |> mustOk
     Assert.Equal(Destination.Folder "dev", r.Destination)
 
 [<Fact>]
 let ``resolveTarget treats a path-shaped value as a folder`` () =
-    let r = Surface.resolveTarget cfg "./out" |> mustOk
+    let r = Command.resolveTarget cfg "./out" |> mustOk
     Assert.Equal(Destination.Folder "./out", r.Destination)
 
 [<Fact>]
 let ``resolveTarget refuses an unknown bare name`` () =
-    Assert.Contains("cli.to.unknownTarget", errCodes (Surface.resolveTarget cfg "staging"))
+    Assert.Contains("cli.to.unknownTarget", errCodes (Command.resolveTarget cfg "staging"))
 
-// -- Surface.parse (argv -> Intent) ----------------------------------------
+// -- Command.parse (argv -> Intent) ----------------------------------------
 
 [<Fact>]
 let ``parse project --to dev defaults to all+merge, preview (not committed)`` () =
-    match Surface.parse cfg [ "project"; "--to"; "dev" ] |> mustOk with
+    match Command.parse cfg [ "project"; "--to"; "dev" ] |> mustOk with
     | Intent.Project spec ->
         Assert.Equal(Destination.Live (ConnectionRef.EnvVar "DEV_CONN"), spec.Destination)
         Assert.Equal(Scope.All, spec.Scope)
@@ -100,7 +100,7 @@ let ``parse project --to dev defaults to all+merge, preview (not committed)`` ()
 
 [<Fact>]
 let ``parse project --to dev --go is a live write`` () =
-    match Surface.parse cfg [ "project"; "--to"; "dev"; "--go" ] |> mustOk with
+    match Command.parse cfg [ "project"; "--to"; "dev"; "--go" ] |> mustOk with
     | Intent.Project spec ->
         Assert.True spec.Commit
         Assert.True(MovementSpec.isLiveWrite spec)
@@ -108,7 +108,7 @@ let ``parse project --to dev --go is a live write`` () =
 
 [<Fact>]
 let ``parse project folds --data alias into a transfer ingest`` () =
-    match Surface.parse cfg [ "project"; "--to"; "uat-or-path/x"; "--data"; "qa"; "--rekey"; "users.csv" ] |> mustOk with
+    match Command.parse cfg [ "project"; "--to"; "uat-or-path/x"; "--data"; "qa"; "--rekey"; "users.csv" ] |> mustOk with
     | Intent.Project spec ->
         Assert.Equal(DataOrigin.FromTarget "qa", spec.Data)
         Assert.Equal(Some "users.csv", spec.Rekey)
@@ -116,13 +116,13 @@ let ``parse project folds --data alias into a transfer ingest`` () =
 
 [<Fact>]
 let ``parse project collects repeated --reconcile entries`` () =
-    match Surface.parse cfg [ "project"; "--to"; "dev"; "--data"; "qa"; "--reconcile"; "User:Email"; "--reconcile"; "Team:Code"; "--go" ] |> mustOk with
+    match Command.parse cfg [ "project"; "--to"; "dev"; "--data"; "qa"; "--reconcile"; "User:Email"; "--reconcile"; "Team:Code"; "--go" ] |> mustOk with
     | Intent.Project spec -> Assert.Equal<string list>([ "User:Email"; "Team:Code" ], spec.Reconcile)
     | other -> Assert.Fail(sprintf "expected Project, got %A" other)
 
 [<Fact>]
 let ``parse project --scope data is carried for the DML-only route`` () =
-    match Surface.parse cfg [ "project"; "--to"; "dev"; "--scope"; "data"; "--data"; "qa"; "--go" ] |> mustOk with
+    match Command.parse cfg [ "project"; "--to"; "dev"; "--scope"; "data"; "--data"; "qa"; "--go" ] |> mustOk with
     | Intent.Project spec ->
         Assert.Equal(Scope.Data, spec.Scope)
         Assert.Equal(DataOrigin.FromTarget "qa", spec.Data)
@@ -130,36 +130,36 @@ let ``parse project --scope data is carried for the DML-only route`` () =
 
 [<Fact>]
 let ``parse project --shape skeleton selects the pre-overlay shape`` () =
-    match Surface.parse cfg [ "project"; "--to"; "./out"; "--shape"; "skeleton" ] |> mustOk with
+    match Command.parse cfg [ "project"; "--to"; "./out"; "--shape"; "skeleton" ] |> mustOk with
     | Intent.Project spec -> Assert.Equal(Shape.Skeleton, spec.Shape)
     | other -> Assert.Fail(sprintf "expected Project, got %A" other)
 
 [<Fact>]
 let ``parse project rejects an unknown --how`` () =
-    Assert.Contains("cli.strategy.unknown", errCodes (Surface.parse cfg [ "project"; "--to"; "dev"; "--how"; "upsert" ]))
+    Assert.Contains("cli.strategy.unknown", errCodes (Command.parse cfg [ "project"; "--to"; "dev"; "--how"; "upsert" ]))
 
 [<Fact>]
 let ``CLI --how overrides a target's configured strategy`` () =
     // publish has strategy=fresh in config; an explicit --how merge wins
-    match Surface.parse cfg [ "project"; "--to"; "publish"; "--how"; "merge" ] |> mustOk with
+    match Command.parse cfg [ "project"; "--to"; "publish"; "--how"; "merge" ] |> mustOk with
     | Intent.Project spec -> Assert.Equal(Strategy.Merge, spec.Strategy)
     | other -> Assert.Fail(sprintf "expected Project, got %A" other)
 
 [<Fact>]
 let ``a target's configured strategy fills when the CLI is silent`` () =
-    match Surface.parse cfg [ "project"; "--to"; "publish" ] |> mustOk with
+    match Command.parse cfg [ "project"; "--to"; "publish" ] |> mustOk with
     | Intent.Project spec -> Assert.Equal(Strategy.Fresh, spec.Strategy)
     | other -> Assert.Fail(sprintf "expected Project, got %A" other)
 
 [<Fact>]
 let ``parse routes check to the proof plane carrying its tail`` () =
-    match Surface.parse cfg [ "check"; "drift"; "--to"; "dev" ] |> mustOk with
+    match Command.parse cfg [ "check"; "drift"; "--to"; "dev" ] |> mustOk with
     | Intent.Check args -> Assert.Equal<string list>([ "drift"; "--to"; "dev" ], args)
     | other -> Assert.Fail(sprintf "expected Check, got %A" other)
 
 [<Fact>]
 let ``parse refuses an unknown verb`` () =
-    Assert.Contains("cli.verb.unknown", errCodes (Surface.parse cfg [ "deploy"; "model.json" ]))
+    Assert.Contains("cli.verb.unknown", errCodes (Command.parse cfg [ "deploy"; "model.json" ]))
 
 // -- proteins parse (THE_CLI.md §8 — the documented one-liners stay honest) ---
 
@@ -177,7 +177,7 @@ let private proteinCfg =
     """ |> mustOk
 
 let private proteinProject (argv: string list) : MovementSpec =
-    match Surface.parse proteinCfg argv |> mustOk with
+    match Command.parse proteinCfg argv |> mustOk with
     | Intent.Project spec -> spec
     | other -> failwithf "expected Project, got %A" other
 
@@ -233,14 +233,17 @@ let ``protein (Skeleton): project --to ./out --shape skeleton`` () =
 
 // -- planProject routing (THE_CLI fidelity #1 — the pure surface→engine map) --
 
-let private planOf (spec: MovementSpec) : PlanAction = (Surface.planProject proteinCfg spec).Action
+let private planOf (spec: MovementSpec) : PlanAction = (Command.planProject proteinCfg spec).Action
 let private liveDev = Destination.Live (ConnectionRef.EnvVar "DEV_CONN")
 let private baseLive = MovementSpec.forDestination liveDev
+// The LoadOpts a default spec (no --allow-drops/--rekey/--reconcile/...) carries.
+let private defaultOpts : LoadOpts =
+    { Declaration = DeclareNone; Reconcile = []; Rekey = None; AllowCdc = false; Store = None; Env = None }
 
 [<Fact>]
 let ``planProject: folder + config → PublishBundle`` () =
     let s = { MovementSpec.forDestination (Destination.Folder "./o") with Model = ModelSource.ConfigFile "c.json" }
-    Assert.Equal(PlanAction.PublishBundle ("c.json", "./o"), planOf s)
+    Assert.Equal(PlanAction.PublishBundle ("c.json", "./o", None, None), planOf s)
 
 [<Fact>]
 let ``planProject: folder + model + shape routes Skeleton vs Bundle`` () =
@@ -258,20 +261,20 @@ let ``planProject: docker + model → DeployDocker; no model → Refused`` () =
 
 [<Fact>]
 let ``planProject: live preview (no --go) → schema plan, or data plan with --data`` () =
-    Assert.Equal(PlanAction.PreviewSchema (ModelSource.ModelFile "model.json", "env:DEV_CONN"),
+    Assert.Equal(PlanAction.PreviewSchema (ModelSource.ModelFile "model.json", "env:DEV_CONN", DeclareNone),
                  planOf { baseLive with Model = ModelSource.ModelFile "model.json" })
-    Assert.Equal(PlanAction.PreviewData ("env:QA_CONN", "env:DEV_CONN"),
+    Assert.Equal(PlanAction.Transfer ("env:QA_CONN", "env:DEV_CONN", defaultOpts, false),
                  planOf { baseLive with Data = DataOrigin.FromTarget "qa" })
 
 [<Fact>]
 let ``planProject: live --go routes migrate / migrate-with-data / transfer / publish-load`` () =
     let go = { baseLive with Commit = true; Model = ModelSource.ModelFile "model.json" }
-    Assert.Equal(PlanAction.Migrate (ModelSource.ModelFile "model.json", "env:DEV_CONN"), planOf go)
-    Assert.Equal(PlanAction.MigrateWithData (ModelSource.ModelFile "model.json", "env:DEV_CONN", "env:QA_CONN"),
+    Assert.Equal(PlanAction.Migrate (ModelSource.ModelFile "model.json", "env:DEV_CONN", defaultOpts), planOf go)
+    Assert.Equal(PlanAction.MigrateWithData (ModelSource.ModelFile "model.json", "env:DEV_CONN", "env:QA_CONN", defaultOpts),
                  planOf { go with Data = DataOrigin.FromTarget "qa" })
-    Assert.Equal(PlanAction.TransferData ("env:QA_CONN", "env:DEV_CONN"),
+    Assert.Equal(PlanAction.Transfer ("env:QA_CONN", "env:DEV_CONN", defaultOpts, true),
                  planOf { go with Data = DataOrigin.FromTarget "qa"; Scope = Scope.Data })
-    Assert.Equal(PlanAction.PublishAndLoad ("c.json", "env:DEV_CONN"),
+    Assert.Equal(PlanAction.PublishAndLoad ("c.json", "env:DEV_CONN", None, None),
                  planOf { go with Model = ModelSource.ConfigFile "c.json" })
 
 [<Fact>]
@@ -288,10 +291,11 @@ let ``planProject: a --data alias that is not a live target is Refused`` () =
     | other -> Assert.Fail(sprintf "expected Refused 6, got %A" other)
 
 [<Fact>]
-let ``planProject is TOTAL: every axis combination yields a well-formed plan`` () =
+let ``plan is TOTAL: every project axis combination yields a well-formed plan`` () =
     // The whole product of the routing axes. The match is exhaustive (compile-
     // time), so this proves no combination throws and every Refused is named
-    // with a known exit code — the registered⇔executed discipline for the CLI.
+    // with a known exit code + a coded error — the registered⇔executed
+    // discipline for the CLI.
     let destinations = [ Destination.Folder "./o"; Destination.Docker; liveDev ]
     let scopes       = [ Scope.All; Scope.Schema; Scope.Data ]
     let datas        = [ DataOrigin.Model; DataOrigin.Synthetic; DataOrigin.NoData; DataOrigin.FromTarget "qa"; DataOrigin.FromTarget "publish" ]
@@ -304,11 +308,30 @@ let ``planProject is TOTAL: every axis combination yields a well-formed plan`` (
           for model in models do
             for commit in commits do
                 let spec = { MovementSpec.forDestination dest with Scope = scope; Data = data; Model = model; Commit = commit }
-                let plan = Surface.planProject proteinCfg spec
+                let plan = Command.plan proteinCfg (Intent.Project spec)
                 n <- n + 1
                 match plan.Action with
-                | PlanAction.Refused (code, msg) ->
+                | PlanAction.Refused (code, error) ->
                     Assert.Contains(code, [ 1; 2; 6 ])
-                    Assert.False(System.String.IsNullOrWhiteSpace msg)
+                    Assert.False(System.String.IsNullOrWhiteSpace error.Message)
+                    Assert.False(System.String.IsNullOrWhiteSpace error.Code)
                 | _ -> ()  // any engine action is well-formed by construction
     Assert.Equal(3 * 3 * 5 * 3 * 2, n)
+
+[<Fact>]
+let ``plan is TOTAL across check / explain / seal verb tails`` () =
+    // The generalization (fidelity #1 spans all four verbs): every tail routes
+    // to a defined action or a coded Refused — never a throw, never silence.
+    let tails =
+        [ Intent.Check []; Intent.Check [ "drift" ]; Intent.Check [ "drift"; "--model"; "m"; "--to"; "dev" ]
+          Intent.Check [ "data"; "--before"; "dev"; "--after"; "publish" ]; Intent.Check [ "ready" ]; Intent.Check [ "x.sql"; "--cdc-silence" ]
+          Intent.Explain []; Intent.Explain [ "diff"; "a"; "b" ]; Intent.Explain [ "policy"; "a"; "b" ]
+          Intent.Explain [ "node"; "c"; "k" ]; Intent.Explain [ "suggest"; "c" ]; Intent.Explain [ "registry" ]
+          Intent.Explain [ "migrate"; "--to"; "b"; "--from"; "a" ]; Intent.Explain [ "bogus" ]
+          Intent.Seal []; Intent.Seal [ "--store"; "s" ]; Intent.Seal [ "approve"; "v"; "--approver"; "me" ]; Intent.Seal [ "approve"; "v" ] ]
+    for intent in tails do
+        match (Command.plan proteinCfg intent).Action with
+        | PlanAction.Refused (code, error) ->
+            Assert.Contains(code, [ 1; 2; 6 ])
+            Assert.False(System.String.IsNullOrWhiteSpace error.Message)
+        | _ -> ()

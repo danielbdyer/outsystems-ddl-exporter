@@ -1166,23 +1166,6 @@ let private runPolicyDiff (configAPath: string) (configBPath: string) : int =
 /// non-shape facet change is refused with a non-zero exit and an explanation,
 /// never a silent plan. The `--execute` leg (against a live deployed DB) is
 /// `MigrationRun.execute`; this surface previews what it would do.
-/// Parse the declared-loss gate's input from the raw argv: `--allow-drops`
-/// accepts everything (`DeclareAll`); each `--declare-drop <token>` (repeatable)
-/// names one accepted removal (`DeclareThese`); absent both, the safe default
-/// `DeclareNone` refuses every destructive removal. The tokens are the
-/// source-free `Migration.lossToken` form the refusal prints.
-let private parseLossDeclaration (arr: string[]) : LossDeclaration =
-    if Array.contains "--allow-drops" arr then DeclareAll
-    else
-        let tokens =
-            arr
-            |> Array.indexed
-            |> Array.choose (fun (i, a) ->
-                if a = "--declare-drop" && i + 1 < arr.Length then Some arr.[i + 1] else None)
-            |> Array.toList
-        match tokens with
-        | [] -> DeclareNone
-        | _  -> DeclareThese (Set.ofList tokens)
 
 /// Shared dry-run renderer for a `migrate` preview outcome — the change-manifest
 /// of δ, or a fail-loud refusal (undeclared losses / inexpressible change).
@@ -1637,13 +1620,6 @@ let private runMigrateWithData (toPath: string) (sinkSpec: string) (sourceSpec: 
 // auto-read baseline A.
 // ----------------------------------------------------------------------
 
-/// Reconstruct the out-of-band connection spec string from a resolved
-/// `ConnectionRef` so the (string-taking) migrate runners receive it.
-let private connSpecOf (r: ConnectionRef) : string =
-    match r with
-    | ConnectionRef.EnvVar n -> "env:" + n
-    | ConnectionRef.File p   -> "file:" + p
-
 /// Resolve the source of B to a concrete model path. A `ConfigFile` yields the
 /// config's `Model.Path`; a bare `ModelFile` is itself; `Unspecified` refuses.
 let private modelPathOf (model: ModelSource) : Result<string> =
@@ -1693,94 +1669,48 @@ let private runProjectLivePreview (toPath: string) (connSpec: string) (declarati
         }
     work.GetAwaiter().GetResult()
 
-/// Execute `project` by running the pure `Surface.planProject` routing (fidelity
-/// #1). Planning is pure + totality-tested; this runner just executes the chosen
-/// `PlanAction` against the proven `run*` faces and surfaces the unhonored-axis
-/// notes (fidelity #2 — no silent drop).
-let private executeProject (cfg: TargetConfig) (spec: MovementSpec) : int =
-    let plan = Surface.planProject cfg spec
+/// Execute a planned `Intent` against the proven `run*` engine faces. Planning
+/// is pure + totality-tested (`Command.plan`); this is the single effectful
+/// seam — it voices every refusal through `Voice.errorSurface` to stderr
+/// (fidelity #1 + #3) and surfaces the unhonored-axis notes (#2 — no silent drop).
+let private runPlan (plan: ExecutionPlan) : int =
     for n in plan.Notes do eprintfn "projection project: note — %s" n
-    let declaration = if spec.AllowDrops then DeclareAll else DeclareNone
     let needModel (model: ModelSource) (run: string -> int) : int =
         match modelPathOf model with
         | Ok m     -> run m
-        | Error es -> Console.Error.WriteLine "projection project:"; printErrors Console.Error es; 6
+        | Error es ->
+            for e in es do TtyRenderer.renderVoicedError e
+            6
     match plan.Action with
-    | PlanAction.PublishBundle (c, dir) ->
+    // project ------------------------------------------------------------
+    | PlanAction.PublishBundle (c, dir, store, env) ->
         let verbosity = if verboseMode.Value then LogSink.Verbosity.Verbose else LogSink.Verbosity.Quiet
-        let run () = runFullExport c (Some dir) verbosity Set.empty spec.Store spec.Env
-        // --watch + a real TTY → the live stage board (§13); the board renders
-        // the same LogSink stage stream this run already emits.
+        let run () = runFullExport c (Some dir) verbosity Set.empty store env
+        // --watch + a real TTY → the live stage board (§13).
         if Watch.shouldWatch watchMode.Value then Watch.renderWatch (Watch.resolveDwellMs ()) run
         else run ()
     | PlanAction.EmitSkeleton (m, dir) -> withRun "projection project" (fun () -> runEmitSkeletonOnly m dir)
     | PlanAction.EmitBundle (m, dir)   -> withRun "projection project" (fun () -> runEmit m dir)
     | PlanAction.DeployDocker model    -> needModel model (fun m -> withRun "projection project" (fun () -> runDeploy m))
-    | PlanAction.PreviewSchema (model, conn) -> needModel model (fun m -> runProjectLivePreview m conn declaration)
-    | PlanAction.PreviewData (src, sink) ->
-        runTransfer src sink None None spec.Reconcile spec.Rekey false spec.AllowCdc spec.AllowDrops
-    | PlanAction.TransferData (src, sink) ->
-        runTransfer src sink None None spec.Reconcile spec.Rekey true spec.AllowCdc spec.AllowDrops
-    | PlanAction.MigrateWithData (model, sink, src) ->
-        needModel model (fun m -> runMigrateWithData m sink src spec.Reconcile spec.Rekey declaration spec.AllowCdc spec.Store spec.Env)
-    | PlanAction.PublishAndLoad (c, conn) -> runFullExportLoad c conn None spec.Store spec.Env
-    | PlanAction.Migrate (model, conn) -> needModel model (fun m -> runMigrateExecute m conn declaration spec.AllowCdc spec.Store spec.Env)
-    | PlanAction.Refused (code, msg) -> die code msg
-
-/// Execute `check` — the proof plane (canary / drift / data / ready).
-let private executeCheck (cfg: TargetConfig) (args: string list) : int =
-    let arr = List.toArray args
-    let valueOf flag = arr |> Array.tryFindIndex ((=) flag) |> Option.bind (fun i -> if i + 1 < arr.Length then Some arr.[i + 1] else None)
-    let connOf (raw: string) : Result<string> =
-        match Surface.resolveTarget cfg raw with
-        | Ok rt ->
-            match rt.Destination with
-            | Destination.Live r -> Result.success (connSpecOf r)
-            | _ -> Result.failureOf (ValidationError.create "cli.check.notLive" (sprintf "'%s' is not a live target." raw))
-        | Error es -> Result.failure es
-    match args with
-    | "drift" :: _ ->
-        match valueOf "--model", valueOf "--to" with
-        | Some m, Some toRaw ->
-            match connOf toRaw with
-            | Ok c     -> runDrift m c
-            | Error es -> Console.Error.WriteLine "projection check drift:"; printErrors Console.Error es; 6
-        | _ -> die 2 "projection check drift: requires --model <model.json> --to <target>."
-    | "data" :: _ ->
-        match valueOf "--before", valueOf "--after" with
-        | Some b, Some a ->
-            match connOf b, connOf a with
-            | Ok bc, Ok ac -> runVerifyData bc ac
-            | _ -> die 6 "projection check data: could not resolve --before / --after to live targets."
-        | _ -> die 2 "projection check data: requires --before <target> --after <target>."
-    | "ready" :: _ -> runReadiness ()
-    | _ ->
-        let ddl = args |> List.tryFind (fun a -> not (a.StartsWith "--") && a <> "fidelity")
-        match ddl with
-        | Some path ->
-            if List.contains "--cdc-silence" args
-            then withRun "projection check --cdc-silence" (fun () -> runCanaryCdcSilence path)
-            else withRun "projection check" (fun () -> runCanary path)
-        | None -> die 1 "projection check: the fidelity canary needs a source DDL path (check <source.sql>)."
-
-/// Execute `explain` — understand before shipping (diff / policy / node /
-/// suggest / migrate-preview).
-let private executeExplain (args: string list) : int =
-    let arr = List.toArray args
-    let valueOf flag = arr |> Array.tryFindIndex ((=) flag) |> Option.bind (fun i -> if i + 1 < arr.Length then Some arr.[i + 1] else None)
-    match args with
-    | "diff" :: a :: b :: _ ->
-        let asJson = (valueOf "--format" = Some "json")
-        let depth =
-            match valueOf "--depth" with
-            | Some "all" -> System.Int32.MaxValue
-            | Some d -> (match System.Int32.TryParse d with | true, n -> max 0 n | _ -> View.defaultDepth)
-            | None -> View.defaultDepth
-        runDiff a b asJson depth
-    | "policy" :: a :: b :: _ -> runPolicyDiff a b
-    | "node" :: c :: k :: _   -> runExplain c k
-    | "suggest" :: c :: _     -> runSuggestConfig c (valueOf "--apply")
-    | "registry" :: _ ->
+    | PlanAction.PreviewSchema (model, conn, decl) -> needModel model (fun m -> runProjectLivePreview m conn decl)
+    | PlanAction.Transfer (src, sink, opts, execute) ->
+        runTransfer src sink None None opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll)
+    | PlanAction.MigrateWithData (model, sink, src, opts) ->
+        needModel model (fun m -> runMigrateWithData m sink src opts.Reconcile opts.Rekey opts.Declaration opts.AllowCdc opts.Store opts.Env)
+    | PlanAction.PublishAndLoad (c, conn, store, env) -> runFullExportLoad c conn None store env
+    | PlanAction.Migrate (model, conn, opts) -> needModel model (fun m -> runMigrateExecute m conn opts.Declaration opts.AllowCdc opts.Store opts.Env)
+    // check --------------------------------------------------------------
+    | PlanAction.CheckCanary (ddl, false) -> withRun "projection check" (fun () -> runCanary ddl)
+    | PlanAction.CheckCanary (ddl, true)  -> withRun "projection check --cdc-silence" (fun () -> runCanaryCdcSilence ddl)
+    | PlanAction.CheckDrift (m, conn)      -> runDrift m conn
+    | PlanAction.CheckData (before, after) -> runVerifyData before after
+    | PlanAction.CheckReady                -> runReadiness ()
+    // explain ------------------------------------------------------------
+    | PlanAction.ExplainDiff (a, b, asJson, depthOpt) -> runDiff a b asJson (defaultArg depthOpt View.defaultDepth)
+    | PlanAction.ExplainPolicy (a, b)        -> runPolicyDiff a b
+    | PlanAction.ExplainNode (c, k)          -> runExplain c k
+    | PlanAction.ExplainSuggest (c, applyTo) -> runSuggestConfig c applyTo
+    | PlanAction.ExplainRegistry ->
         // Self-description (NORTH_STAR "self-describing" leg) — the engine names
         // its own registered transforms (the `registered ⇔ executed` registry).
         let all = RegisteredAllTransforms.all
@@ -1788,27 +1718,13 @@ let private executeExplain (args: string list) : int =
         for rt in all |> List.sortBy (fun r -> sprintf "%A" r.StageBinding, r.Name) do
             printfn "  %-12s %s" (sprintf "%A" rt.StageBinding) rt.Name
         0
-    | "migrate" :: _ ->
-        let declaration = parseLossDeclaration arr
-        match valueOf "--to", valueOf "--from", valueOf "--store" with
-        | Some toP, Some fromP, _      -> runMigratePreview fromP toP declaration
-        | Some toP, None, Some store   -> runMigrateFromStore store toP declaration
-        | _ -> die 2 "projection explain migrate: needs --to <modelB> with --from <modelA> or --store <lifecycle>."
-    | _ -> die 2 "projection explain: expected diff | policy | node | suggest | registry | migrate."
-
-/// Execute `seal` — provenance (eject / approve).
-let private executeSeal (args: string list) : int =
-    let arr = List.toArray args
-    let valueOf flag = arr |> Array.tryFindIndex ((=) flag) |> Option.bind (fun i -> if i + 1 < arr.Length then Some arr.[i + 1] else None)
-    match args with
-    | "approve" :: version :: _ ->
-        match valueOf "--approver" with
-        | Some approver -> runApprove version approver (valueOf "--rationale") (valueOf "--store")
-        | None -> die 2 "projection seal approve: requires --approver <name>."
-    | _ ->
-        match valueOf "--store" with
-        | Some store -> runEject store
-        | None -> die 2 "projection seal: requires --store <path> (the durable timeline)."
+    | PlanAction.ExplainMigratePreview (fromP, toP, decl)   -> runMigratePreview fromP toP decl
+    | PlanAction.ExplainMigrateFromStore (store, toP, decl) -> runMigrateFromStore store toP decl
+    // seal ---------------------------------------------------------------
+    | PlanAction.SealEject store -> runEject store
+    | PlanAction.SealApprove (version, approver, rationale, store) -> runApprove version approver rationale store
+    // refused ------------------------------------------------------------
+    | PlanAction.Refused (exit, error) -> TtyRenderer.renderVoicedError error; exit
 
 /// `projection init` — scaffold a `projection.json` so the operator starts from
 /// a working surface (first-run ergonomics). Refuses to overwrite an existing
@@ -1875,16 +1791,13 @@ let main argv =
             printErrors Console.Error es
             6
         | Ok cfg ->
-            match Surface.parse cfg (List.ofArray argv) with
+            match Command.parse cfg (List.ofArray argv) with
             | Error es ->
-                Console.Error.WriteLine "projection: could not read the command:"
-                printErrors Console.Error es
+                for e in es do TtyRenderer.renderVoicedError e
                 Console.Error.WriteLine ""
                 printLines Console.Error usageLines
                 1
             | Ok intent ->
-                match intent with
-                | Intent.Project spec -> executeProject cfg spec
-                | Intent.Check args   -> executeCheck cfg args
-                | Intent.Explain args -> executeExplain args
-                | Intent.Seal args    -> executeSeal args
+                // Pure routing → effectful runner. The surface→engine map is
+                // totality-tested (`Command.plan`); `runPlan` executes + voices.
+                runPlan (Command.plan cfg intent)

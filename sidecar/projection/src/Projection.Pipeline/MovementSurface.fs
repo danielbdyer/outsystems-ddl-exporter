@@ -176,7 +176,7 @@ module TargetConfig =
             with ex -> Result.failureOf (err "cli.config.readFailed" (sprintf "could not read '%s': %s" path ex.Message))
 
 [<RequireQualifiedAccess>]
-module Surface =
+module Command =
 
     let private err (code: string) (message: string) : ValidationError =
         ValidationError.create code message
@@ -394,10 +394,35 @@ module Surface =
           | DataOrigin.NoData    -> "--data none accepted; the engine emits model data (model data applied)."
           | _ -> () ]
 
-    /// Route a `project` `MovementSpec` to its engine face — purely. The runner
-    /// (`runProjectPlan`) matches on the result, so the surface→engine mapping
-    /// is totality-tested rather than trusted.
+    let private optsOf (spec: MovementSpec) : LoadOpts =
+        { Declaration = (if spec.AllowDrops then DeclareAll else DeclareNone)
+          Reconcile   = spec.Reconcile
+          Rekey       = spec.Rekey
+          AllowCdc    = spec.AllowCdc
+          Store       = spec.Store
+          Env         = spec.Env }
+
+    /// `--allow-drops` (accept all) / repeated `--declare-drop <token>` (accept
+    /// each) / else refuse all destructive removals — the loss-declaration gate,
+    /// parsed purely from the verb tail.
+    let parseLossDeclaration (args: string list) : LossDeclaration =
+        if List.contains "--allow-drops" args then DeclareAll
+        else
+            let arr = List.toArray args
+            let tokens =
+                arr |> Array.indexed
+                |> Array.choose (fun (i, a) -> if a = "--declare-drop" && i + 1 < arr.Length then Some arr.[i + 1] else None)
+                |> Array.toList
+            match tokens with [] -> DeclareNone | _ -> DeclareThese (Set.ofList tokens)
+
+    let private flagValue (args: string list) (flag: string) : string option =
+        let arr = List.toArray args
+        arr |> Array.tryFindIndex ((=) flag) |> Option.bind (fun i -> if i + 1 < arr.Length then Some arr.[i + 1] else None)
+
+    /// Route a `project` `MovementSpec` to its engine face — purely.
     let planProject (cfg: TargetConfig) (spec: MovementSpec) : ExecutionPlan =
+        let opts = optsOf spec
+        let modelMissing prefix = PlanAction.Refused (1, err "cli.project.modelMissing" (prefix + noModel))
         let dataConn (alias: string) : Result<string> =
             match resolveTarget cfg alias with
             | Ok rt ->
@@ -409,15 +434,15 @@ module Surface =
             match spec.Destination with
             | Destination.Folder dir ->
                 match spec.Model with
-                | ModelSource.ConfigFile c -> PlanAction.PublishBundle (c, dir)
+                | ModelSource.ConfigFile c -> PlanAction.PublishBundle (c, dir, spec.Store, spec.Env)
                 | ModelSource.ModelFile m ->
                     match spec.Shape with
                     | Shape.Skeleton            -> PlanAction.EmitSkeleton (m, dir)
                     | Shape.Bundle | Shape.Ssdt -> PlanAction.EmitBundle (m, dir)
-                | ModelSource.Unspecified -> PlanAction.Refused (1, "projection project: " + noModel)
+                | ModelSource.Unspecified -> modelMissing "projection project: "
             | Destination.Docker ->
                 match spec.Model with
-                | ModelSource.Unspecified -> PlanAction.Refused (1, "projection project --to docker: " + noModel)
+                | ModelSource.Unspecified -> modelMissing "projection project --to docker: "
                 | m -> PlanAction.DeployDocker m
             | Destination.Live connRef ->
                 let conn = connSpecOf connRef
@@ -427,28 +452,100 @@ module Surface =
                     match spec.Data with
                     | DataOrigin.FromTarget alias when not schemaOnly ->
                         match dataConn alias with
-                        | Ok src -> PlanAction.PreviewData (src, conn)
-                        | Error es -> PlanAction.Refused (6, "projection project: " + (es |> List.map (fun e -> e.Message) |> String.concat "; "))
+                        | Ok src -> PlanAction.Transfer (src, conn, opts, false)
+                        | Error es -> PlanAction.Refused (6, List.head es)
                     | _ ->
                         match spec.Model with
-                        | ModelSource.Unspecified -> PlanAction.Refused (1, "projection project: " + noModel)
-                        | m -> PlanAction.PreviewSchema (m, conn)
+                        | ModelSource.Unspecified -> modelMissing "projection project: "
+                        | m -> PlanAction.PreviewSchema (m, conn, opts.Declaration)
                 else
                     match spec.Data with
                     | DataOrigin.FromTarget alias when not schemaOnly ->
                         match dataConn alias with
-                        | Error es -> PlanAction.Refused (6, "projection project: " + (es |> List.map (fun e -> e.Message) |> String.concat "; "))
+                        | Error es -> PlanAction.Refused (6, List.head es)
                         | Ok src ->
-                            if dataOnly then PlanAction.TransferData (src, conn)
+                            if dataOnly then PlanAction.Transfer (src, conn, opts, true)
                             else
                                 match spec.Model with
-                                | ModelSource.Unspecified -> PlanAction.Refused (1, "projection project: " + noModel)
-                                | m -> PlanAction.MigrateWithData (m, conn, src)
+                                | ModelSource.Unspecified -> modelMissing "projection project: "
+                                | m -> PlanAction.MigrateWithData (m, conn, src, opts)
                     | _ when dataOnly ->
-                        PlanAction.Refused (2, "projection project --scope data: a DML-only load needs --data <target>.")
+                        PlanAction.Refused (2, err "cli.project.scopeDataNoSource" "projection project --scope data: a DML-only load needs --data <target>.")
                     | _ ->
                         match spec.Model with
-                        | ModelSource.ConfigFile c -> PlanAction.PublishAndLoad (c, conn)
-                        | ModelSource.ModelFile _  -> PlanAction.Migrate (spec.Model, conn)
-                        | ModelSource.Unspecified  -> PlanAction.Refused (1, "projection project: " + noModel)
+                        | ModelSource.ConfigFile c -> PlanAction.PublishAndLoad (c, conn, spec.Store, spec.Env)
+                        | ModelSource.ModelFile _  -> PlanAction.Migrate (spec.Model, conn, opts)
+                        | ModelSource.Unspecified  -> modelMissing "projection project: "
         { Notes = unhonoredNotes spec; Action = action }
+
+    /// Route a `check` verb tail to its proof-plane action — purely.
+    let planCheck (cfg: TargetConfig) (args: string list) : ExecutionPlan =
+        let valueOf = flagValue args
+        let connOf (raw: string) : Result<string> =
+            match resolveTarget cfg raw with
+            | Ok rt -> (match rt.Destination with Destination.Live r -> Result.success (connSpecOf r) | _ -> Result.failureOf (err "cli.check.notLive" (sprintf "'%s' is not a live target." raw)))
+            | Error es -> Result.failure es
+        let action =
+            match args with
+            | "drift" :: _ ->
+                match valueOf "--model", valueOf "--to" with
+                | Some m, Some toRaw -> (match connOf toRaw with Ok c -> PlanAction.CheckDrift (m, c) | Error es -> PlanAction.Refused (6, List.head es))
+                | _ -> PlanAction.Refused (2, err "cli.check.driftArgs" "projection check drift: requires --model <model.json> --to <target>.")
+            | "data" :: _ ->
+                match valueOf "--before", valueOf "--after" with
+                | Some b, Some a -> (match connOf b, connOf a with | Ok bc, Ok ac -> PlanAction.CheckData (bc, ac) | (Error es, _) | (_, Error es) -> PlanAction.Refused (6, List.head es))
+                | _ -> PlanAction.Refused (2, err "cli.check.dataArgs" "projection check data: requires --before <target> --after <target>.")
+            | "ready" :: _ -> PlanAction.CheckReady
+            | _ ->
+                match args |> List.tryFind (fun a -> not (a.StartsWith "--") && a <> "fidelity") with
+                | Some path -> PlanAction.CheckCanary (path, List.contains "--cdc-silence" args)
+                | None -> PlanAction.Refused (1, err "cli.check.noDdl" "projection check: the fidelity canary needs a source DDL path (check <source.sql>).")
+        { Notes = []; Action = action }
+
+    /// Route an `explain` verb tail to its understanding action — purely.
+    let planExplain (args: string list) : ExecutionPlan =
+        let valueOf = flagValue args
+        let depthOpt =
+            match valueOf "--depth" with
+            | Some "all" -> Some System.Int32.MaxValue
+            | Some d -> (match System.Int32.TryParse d with | true, n -> Some (max 0 n) | _ -> None)
+            | None -> None
+        let action =
+            match args with
+            | "diff" :: a :: b :: _ -> PlanAction.ExplainDiff (a, b, (valueOf "--format" = Some "json"), depthOpt)
+            | "policy" :: a :: b :: _ -> PlanAction.ExplainPolicy (a, b)
+            | "node" :: c :: k :: _   -> PlanAction.ExplainNode (c, k)
+            | "suggest" :: c :: _     -> PlanAction.ExplainSuggest (c, valueOf "--apply")
+            | "registry" :: _         -> PlanAction.ExplainRegistry
+            | "migrate" :: _ ->
+                let decl = parseLossDeclaration args
+                match valueOf "--to", valueOf "--from", valueOf "--store" with
+                | Some toP, Some fromP, _    -> PlanAction.ExplainMigratePreview (fromP, toP, decl)
+                | Some toP, None, Some store -> PlanAction.ExplainMigrateFromStore (store, toP, decl)
+                | _ -> PlanAction.Refused (2, err "cli.explain.migrateArgs" "projection explain migrate: needs --to <modelB> with --from <modelA> or --store <lifecycle>.")
+            | _ -> PlanAction.Refused (2, err "cli.explain.unknown" "projection explain: expected diff | policy | node | suggest | registry | migrate.")
+        { Notes = []; Action = action }
+
+    /// Route a `seal` verb tail to its provenance action — purely.
+    let planSeal (args: string list) : ExecutionPlan =
+        let valueOf = flagValue args
+        let action =
+            match args with
+            | "approve" :: version :: _ ->
+                match valueOf "--approver" with
+                | Some approver -> PlanAction.SealApprove (version, approver, valueOf "--rationale", valueOf "--store")
+                | None -> PlanAction.Refused (2, err "cli.seal.approveArgs" "projection seal approve: requires --approver <name>.")
+            | _ ->
+                match valueOf "--store" with
+                | Some store -> PlanAction.SealEject store
+                | None -> PlanAction.Refused (2, err "cli.seal.ejectArgs" "projection seal: requires --store <path> (the durable timeline).")
+        { Notes = []; Action = action }
+
+    /// The one pure routing for the whole surface — every `Intent` to its
+    /// `ExecutionPlan`. The runner executes it; the totality test sweeps it.
+    let plan (cfg: TargetConfig) (intent: Intent) : ExecutionPlan =
+        match intent with
+        | Intent.Project spec -> planProject cfg spec
+        | Intent.Check args   -> planCheck cfg args
+        | Intent.Explain args -> planExplain args
+        | Intent.Seal args    -> planSeal args

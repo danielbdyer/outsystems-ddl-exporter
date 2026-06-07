@@ -110,14 +110,17 @@ surface↔engine alignment:
 - **#5 — self-description + first-run `[x]`.** `explain registry` names the
   engine's registered transforms; `projection init` scaffolds a `projection.json`
   (refuses to overwrite; D9-safe conn references).
-- **#3 — route CLI copy through Voice `[~]`.** The merged `Voice.fs` mechanism
-  (`code ⇔ copy` totality) is the home for this; voicing the new surface's
-  refusals/notes through `Voice.errorSurface` is exactly
-  `THE_VOICE_INTEGRATION.md` **slice 4** (route `printErrors` through
-  `Voice.errorSurface`; voice config/error copy), which must preserve the §5
-  stderr/stdout channel split and the `View` render path. Carried under that
-  slice rather than bolted on, so the new surface and the rest of the CLI voice
-  together.
+- **#3 — route CLI copy through Voice `[x]`.** Slice A (2026-06-07). The four
+  verbs now share one pure plan (`Command.plan : TargetConfig -> Intent ->
+  ExecutionPlan`, the `PlanAction` DU spanning project/check/explain/seal) with
+  **coded refusals** (`Refused of exit * ValidationError`); the single runner
+  (`runPlan`) voices every refusal through `Voice.errorSurface` to **stderr**
+  (channel split preserved via `TtyRenderer.renderVoicedError`). The cross-verb
+  totality test sweeps it; the voice-clean test covers the new `cli.*` codes.
+  The colliding `Projection.Pipeline.Surface` module was renamed to `Command`
+  (the CLI's `Surface` is the voice surface). This is `THE_VOICE_INTEGRATION.md`
+  slice 4 for the new surface; the legacy `printErrors` sites in the engine
+  `run*` functions remain on the plain path (their voicing is the rest of slice 4).
 
 ## Engine-wiring follow-ups (evidence-gated)
 

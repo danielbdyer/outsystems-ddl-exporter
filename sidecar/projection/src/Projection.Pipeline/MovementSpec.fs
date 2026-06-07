@@ -145,18 +145,30 @@ type Intent =
     | Explain of args: string list
     | Seal of args: string list
 
-/// The engine face a `project` `MovementSpec` routes to, named with the
-/// cfg-resolved arguments (connection specs, model source) it needs — the
-/// **pure, testable seam** between the surface and the effectful `run*` faces
-/// (THE_CLI fidelity #1). Planning is pure (no I/O — a `ConfigFile` carries its
-/// path; the runner resolves it), so the surface→engine routing is
-/// totality-tested: every spec yields exactly one action, `Refused` included
-/// (total decisions, named skips). Spec-derived flags the runner reads directly
-/// (declaration / rekey / reconcile / cdc / store / env) are not duplicated here.
+/// The spec-derived options a live load/migrate carries, bundled so the plan
+/// is self-contained (the runner needs nothing but the plan).
+type LoadOpts =
+    {
+        Declaration : LossDeclaration
+        Reconcile   : string list
+        Rekey       : string option
+        AllowCdc    : bool
+        Store       : string option
+        Env         : string option
+    }
+
+/// The engine face a parsed `Intent` routes to, named with the cfg-resolved
+/// arguments it needs — the **pure, testable seam** spanning all four verbs
+/// (the CLI's `registered ⇔ executed`). Planning is pure (a `ConfigFile`
+/// carries its path; the runner resolves it); the routing is totality-tested,
+/// `Refused` (a coded `ValidationError` + exit) included — total decisions,
+/// named skips. The runner (`runPlan`) executes the action against the proven
+/// `run*` faces and voices every `Refused` through `Voice.errorSurface`.
 [<RequireQualifiedAccess>]
 type PlanAction =
+    // project ------------------------------------------------------------
     /// folder + config → the full-export bundle (richer than a bare emit).
-    | PublishBundle of config: string * dir: string
+    | PublishBundle of config: string * dir: string * store: string option * env: string option
     /// folder + model + skeleton shape → the pre-overlay emit.
     | EmitSkeleton of model: string * dir: string
     /// folder + model + bundle/ssdt shape → the full pass-chain emit.
@@ -164,22 +176,38 @@ type PlanAction =
     /// docker → one-touch ephemeral deploy (runner resolves the model).
     | DeployDocker of model: ModelSource
     /// live, no --go, no data source → the schema plan preview (B ⊖ A).
-    | PreviewSchema of model: ModelSource * conn: string
-    /// live, no --go, data source → the transfer data-plan DryRun.
-    | PreviewData of source: string * sink: string
-    /// live, --go, --scope data → DML-only transfer onto existing schema.
-    | TransferData of source: string * sink: string
+    | PreviewSchema of model: ModelSource * conn: string * declaration: LossDeclaration
+    /// live + data source → transfer (DryRun preview when execute=false; the
+    /// DML-only load when execute=true under --scope data).
+    | Transfer of source: string * sink: string * opts: LoadOpts * execute: bool
     /// live, --go, data source → cross-substrate migrate-with-data.
-    | MigrateWithData of model: ModelSource * sink: string * source: string
+    | MigrateWithData of model: ModelSource * sink: string * source: string * opts: LoadOpts
     /// live, --go, config model → publish bundle + load the seed.
-    | PublishAndLoad of config: string * conn: string
+    | PublishAndLoad of config: string * conn: string * store: string option * env: string option
     /// live, --go, bare model → in-place schema migrate.
-    | Migrate of model: ModelSource * conn: string
-    /// a named refusal with its exit code (no silent fall-through).
-    | Refused of exit: int * message: string
+    | Migrate of model: ModelSource * conn: string * opts: LoadOpts
+    // check --------------------------------------------------------------
+    | CheckCanary of ddl: string * cdcSilence: bool
+    | CheckDrift of model: string * conn: string
+    | CheckData of before: string * after: string
+    | CheckReady
+    // explain ------------------------------------------------------------
+    | ExplainDiff of refA: string * refB: string * asJson: bool * depth: int option
+    | ExplainPolicy of configA: string * configB: string
+    | ExplainNode of config: string * ssKey: string
+    | ExplainSuggest of config: string * applyTo: string option
+    | ExplainRegistry
+    | ExplainMigratePreview of fromPath: string * toPath: string * declaration: LossDeclaration
+    | ExplainMigrateFromStore of store: string * toPath: string * declaration: LossDeclaration
+    // seal ---------------------------------------------------------------
+    | SealEject of store: string
+    | SealApprove of version: string * approver: string * rationale: string option * store: string option
+    // shared -------------------------------------------------------------
+    /// a named refusal — a coded `ValidationError` (voiced) + its exit code.
+    | Refused of exit: int * error: ValidationError
 
-/// A planned `project` execution: the unhonored-axis notes (surfaced, never
-/// dropped — fidelity #2) plus the routed action.
+/// A planned execution: the unhonored-axis notes (surfaced, never dropped —
+/// fidelity #2) plus the routed action.
 type ExecutionPlan =
     {
         Notes  : string list
