@@ -140,6 +140,12 @@ let private dumpBench (tag: string) : unit =
 /// suppresses the NDJSON stream and renders a Spectre verdict panel instead.
 let private prettyMode = ref false
 
+/// Tier-3 — `--watch` opts into the live stage board (`Watch`, the §13 Watch
+/// surface). Opt-in (default behavior unchanged), stripped from argv in `main`.
+/// When set + a real TTY, `dispatchFullExport` runs the export under a live board
+/// on stderr instead of the terminal-summary-only path.
+let private watchMode = ref false
+
 let private withRun (command: string) (body: unit -> int) : int =
     LogSink.beginRun () |> ignore
     Bench.reset ()
@@ -1722,7 +1728,11 @@ let private executeProject (cfg: TargetConfig) (spec: MovementSpec) : int =
         match spec.Model with
         | ModelSource.ConfigFile c ->
             let verbosity = if verboseMode.Value then LogSink.Verbosity.Verbose else LogSink.Verbosity.Quiet
-            runFullExport c (Some dir) verbosity Set.empty spec.Store spec.Env
+            let run () = runFullExport c (Some dir) verbosity Set.empty spec.Store spec.Env
+            // --watch + a real TTY → the live stage board (§13); the board renders
+            // the same LogSink stage stream this run already emits.
+            if Watch.shouldWatch watchMode.Value then Watch.renderWatch (Watch.resolveDwellMs ()) run
+            else run ()
         | ModelSource.ModelFile m ->
             match spec.Shape with
             | Shape.Skeleton           -> withRun "projection project" (fun () -> runEmitSkeletonOnly m dir)
@@ -1870,13 +1880,14 @@ let main argv =
     //   -v / --verbose : surface depth (the bench table, etc.).
     let has flag = Array.contains flag argv
     verboseMode := has "-v" || has "--verbose"
+    watchMode := has "--watch"
     let forceJson = has "--json" || has "--no-pretty"
     let forcePretty = has "--pretty"
     // "operator wants pretty" — explicit, or auto when stderr is a real TTY
     // and NDJSON wasn't forced. `TtyRenderer.shouldRender` re-checks the TTY
     // so a forced --pretty into a pipe still won't spray ANSI.
     prettyMode := forcePretty || (not forceJson && not Console.IsErrorRedirected)
-    let globalFlags = set [ "--pretty"; "--json"; "--no-pretty"; "-v"; "--verbose" ]
+    let globalFlags = set [ "--pretty"; "--json"; "--no-pretty"; "-v"; "--verbose"; "--watch" ]
     let argv = argv |> Array.filter (fun a -> not (Set.contains a globalFlags))
     match argv with
     | [||] | [| "--help" |] | [| "-h" |] ->

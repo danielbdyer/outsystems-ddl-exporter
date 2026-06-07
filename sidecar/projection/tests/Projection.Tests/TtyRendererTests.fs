@@ -38,8 +38,9 @@ let ``Tier-3: verdict panel shows outcome + green canary + transform counts`` ()
             LogSink.emit
                 { LogSink.envelope LogSink.Info LogSink.Canary "canary.diffEmpty"
                     (Map.ofList [ "tableCount", box 4 ]) with Phase = LogSink.End })
-    Assert.Contains("SUCCEEDED", text)
-    Assert.Contains("green", text)
+    // The verdict line is voiced by `Voice` keyed by code: a green canary leg →
+    // the §6 round-trip-verification proof (`canary.diffEmpty`).
+    Assert.Contains("matches the model", text)
     Assert.Contains("projection canary", text)
     Assert.Contains("registered", text)
 
@@ -50,8 +51,8 @@ let ``Tier-3: verdict panel shows a red canary on divergence`` () =
             LogSink.emit
                 { LogSink.envelope LogSink.Error LogSink.Canary "canary.divergence"
                     (Map.ofList [ "renderedDiff", box "x" ]) with Phase = LogSink.ErrorPhase })
-    Assert.Contains("FAILED", text)
-    Assert.Contains("RED", text)
+    // A red canary leg → the §10 round-trip-verification-failed verdict.
+    Assert.Contains("diverged", text)
 
 [<Fact>]
 let ``Tier-3: shouldRender is false when --pretty not requested`` () =
@@ -111,7 +112,7 @@ let ``Gate: a destructive refusal stops with the loss, the exit, and the declare
     let refusal =
         Preflight.refusalOf [ ValidationError.create "migrate.undeclaredDestructiveChange" "dropping index IX_Order_Stale" ]
     let text = renderGateText "projection migrate" refusal
-    Assert.Contains("destroys structure", text)            // the essence (Bad hero)
+    Assert.Contains("destroys structure", text)            // the statement (Bad hero)
     Assert.Contains("undeclared destructive change", text) // the gate axis
     Assert.Contains("dropping index IX_Order_Stale", text) // the detail
     Assert.Contains("9", text)                             // the distinct exit code

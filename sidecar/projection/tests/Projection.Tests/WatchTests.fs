@@ -1,0 +1,135 @@
+module Projection.Tests.WatchTests
+
+open Xunit
+open Projection.Cli
+
+/// THE VOICE — the live run (Watch), slice 2. The board is a *rendering* of the
+/// LogSink stage stream; these tests pin the pure core — the dwell floor, the
+/// board transitions, and the voiced stage lines (under the twelve-rule banned
+/// list) — without a TTY or a real sleep.
+
+let private payload (pairs: (string * objnull) list) : Map<string, objnull> =
+    Map.ofList pairs
+
+// ---------------------------------------------------------------------------
+// the dwell floor (the operator-named perceptual minimum)
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Watch dwell: a sub-floor frame is held for the remainder`` () =
+    // 50ms elapsed since the last frame, floor 120 → hold the remaining 70ms.
+    Assert.Equal(70L, Watch.dwellMs 120L 0L 50L)
+
+[<Fact>]
+let ``Watch dwell: a frame already past the floor is never delayed`` () =
+    Assert.Equal(0L, Watch.dwellMs 120L 0L 200L)
+
+[<Fact>]
+let ``Watch dwell: exactly at the floor yields no delay`` () =
+    Assert.Equal(0L, Watch.dwellMs 120L 0L 120L)
+
+[<Fact>]
+let ``Watch dwell: the correction is never negative`` () =
+    Assert.True(Watch.dwellMs 120L 100L 1000L >= 0L)
+
+[<Fact>]
+let ``Watch dwell: the floor is the bound on added latency per frame`` () =
+    // The most a single frame can ever be delayed is the floor itself (when no
+    // time has elapsed since the last frame) — the minimal correction.
+    Assert.Equal(120L, Watch.dwellMs 120L 500L 500L)
+
+// ---------------------------------------------------------------------------
+// the board transitions (the stage stream → the board)
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Watch board: a stage start opens an Active line`` () =
+    let board, changed = Watch.apply Watch.empty "extract.started" Map.empty
+    Assert.True changed
+    match board.Stages with
+    | [ { Key = "extract"; State = Watch.Active } ] -> ()
+    | other -> Assert.Fail(sprintf "expected one Active extract line, got %A" other)
+
+[<Fact>]
+let ``Watch board: a repeated start is not a renderable change`` () =
+    let board, _ = Watch.apply Watch.empty "extract.started" Map.empty
+    let board', changed = Watch.apply board "extract.started" Map.empty
+    Assert.False changed
+    Assert.Equal(1, List.length board'.Stages)
+
+[<Fact>]
+let ``Watch board: stageCompleted flips the line to Done with its duration`` () =
+    let board, _ = Watch.apply Watch.empty "extract.started" Map.empty
+    let board', changed =
+        Watch.apply board "summary.stageCompleted" (payload [ "stage", box "extract"; "durationMs", box 1200L ])
+    Assert.True changed
+    match board'.Stages with
+    | [ { Key = "extract"; State = Watch.Done(Some 1200L) } ] -> ()
+    | other -> Assert.Fail(sprintf "expected extract Done 1200, got %A" other)
+
+[<Fact>]
+let ``Watch board: the pipeline umbrella stage is elided`` () =
+    let board, changed =
+        Watch.apply Watch.empty "summary.stageCompleted" (payload [ "stage", box "pipeline"; "durationMs", box 5L ])
+    Assert.False changed
+    Assert.Empty board.Stages
+
+[<Fact>]
+let ``Watch board: an unrelated envelope is not a renderable change`` () =
+    let _, changed = Watch.apply Watch.empty "transform.lineage" Map.empty
+    Assert.False changed
+
+[<Fact>]
+let ``Watch board: stages hold their first-seen order`` () =
+    let b1, _ = Watch.apply Watch.empty "extract.started" Map.empty
+    let b2, _ = Watch.apply b1 "summary.stageCompleted" (payload [ "stage", box "extract"; "durationMs", box 1L ])
+    let b3, _ = Watch.apply b2 "profile.started" Map.empty
+    let keys = b3.Stages |> List.map (fun s -> s.Key)
+    Assert.Equal<string list>([ "extract"; "profile" ], keys)
+
+// ---------------------------------------------------------------------------
+// the voiced stage lines (§13 — gerund active, resultative done)
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Watch line: an active stage reads the in-progress gerund`` () =
+    let text = Watch.lineText { Key = "extract"; State = Watch.Active }
+    Assert.Contains("Reading the model", text)
+
+[<Fact>]
+let ``Watch line: a completed stage reads the resultative with its duration`` () =
+    let text = Watch.lineText { Key = "extract"; State = Watch.Done(Some 1200L) }
+    Assert.Contains("Model read complete", text)
+    Assert.Contains("1.2s", text)
+
+[<Fact>]
+let ``Watch line: a completed stage with no duration omits the time`` () =
+    let text = Watch.lineText { Key = "profile"; State = Watch.Done None }
+    Assert.Contains("Data check complete", text)
+    Assert.DoesNotContain("s ·", text)
+
+[<Fact>]
+let ``Watch line: every stage line clears the twelve-rule banned list`` () =
+    let banned =
+        [ "your"; "you "; " i "; " we "; "that's real"; ", not "
+          "destroy"; "cleaned up"; "dig"; "oops"; "let's"; "refused" ]
+    let lines =
+        [ Watch.lineText { Key = "extract"; State = Watch.Active }
+          Watch.lineText { Key = "profile"; State = Watch.Active }
+          Watch.lineText { Key = "emit";    State = Watch.Active }
+          Watch.lineText { Key = "extract"; State = Watch.Done(Some 1200L) }
+          Watch.lineText { Key = "profile"; State = Watch.Done None }
+          Watch.lineText { Key = "emit";    State = Watch.Done(Some 800L) } ]
+    for line in lines do
+        let lowered = line.ToLowerInvariant()
+        for b in banned do
+            Assert.False(lowered.Contains b, sprintf "stage line '%s' breaks the banned list: contains '%s'" line b)
+
+[<Fact>]
+let ``Watch line: the board renders one line per stage`` () =
+    let b1, _ = Watch.apply Watch.empty "extract.started" Map.empty
+    let b2, _ = Watch.apply b1 "profile.started" Map.empty
+    let renderable = Watch.toRenderable b2
+    // The renderable is built without throwing; the board carries two stages.
+    Assert.NotNull(box renderable)
+    Assert.Equal(2, List.length b2.Stages)
