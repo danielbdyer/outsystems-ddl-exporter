@@ -87,8 +87,41 @@ trees collapse into the one parameterized path (the latent calculus, activated).
 - `transfer` `--source-env` / `--sink-env` and `--reconcile` on `project`
   (re-key flows through `--rekey` user-map; named `--reconcile` is a follow-up).
 
-## Follow-ups (small, evidence-gated)
+## Fidelity pass (2026-06-07) — alignment hardening
 
-- `--reconcile <table>:<col>` on `project` (today: `--rekey <csv>`).
-- `--scope` / `--how` / `--from` engine plumbing (today: accepted + noted).
-- A `DECISIONS.md` entry recording the four-verb re-envisioning.
+After the four-verb surface shipped, a fidelity pass tightened the
+surface↔engine alignment:
+
+- **#1 — pure, totality-tested executor `[x]`.** `Surface.planProject :
+  TargetConfig -> MovementSpec -> ExecutionPlan` (a `PlanAction` DU) is the
+  pure routing; `executeProject` is a thin runner over it. A totality test
+  sweeps the full axis product (3×3×5×3×2) — no combination throws, every
+  `Refused` is a named exit code; routing-table example tests pin each variant.
+  The surface→engine map is *proven*, not trusted.
+- **#2 — axes honored or named `[x]`.** `--scope data` routes to the DML-only
+  transfer; `--scope schema` skips the data leg; `--reconcile` threads to the
+  re-key. The still-unhonored axes (`--how` / `--from` / `--data synthetic|none`)
+  are a pure, tested `ExecutionPlan.Notes` list — surfaced, never silently
+  dropped. (Engine-wiring those knobs — TransferRun emission-mode, MigrationRun
+  genesis-force, a Faker source — remains the deeper follow-up.)
+- **#4 — docs honest `[x]`.** A proteins-parse test suite (THE_CLI.md §8
+  one-liners → asserted `MovementSpec`) locks the documented surface to the
+  parser.
+- **#5 — self-description + first-run `[x]`.** `explain registry` names the
+  engine's registered transforms; `projection init` scaffolds a `projection.json`
+  (refuses to overwrite; D9-safe conn references).
+- **#3 — route CLI copy through Voice `[~]`.** The merged `Voice.fs` mechanism
+  (`code ⇔ copy` totality) is the home for this; voicing the new surface's
+  refusals/notes through `Voice.errorSurface` is exactly
+  `THE_VOICE_INTEGRATION.md` **slice 4** (route `printErrors` through
+  `Voice.errorSurface`; voice config/error copy), which must preserve the §5
+  stderr/stdout channel split and the `View` render path. Carried under that
+  slice rather than bolted on, so the new surface and the rest of the CLI voice
+  together.
+
+## Engine-wiring follow-ups (evidence-gated)
+
+- `--how replace|fresh` → thread the emission-mode through `TransferRun`.
+- `--from empty` → genesis-force in `MigrationRun`.
+- `--data synthetic [--rows N]` → a Faker data source.
+- A typed `ExitCode` DU (one definition) replacing the scattered exit ints.
