@@ -1,5 +1,16 @@
 # THE VOICE — wiring it into the codebase (a decomposition & plan)
 
+> **Update (2026-06-07) — the operator surface shipped under `THE_CLI.md`.** Slices 0/1/2/4 of
+> this plan have landed (the `Voice` seam + `code ⇔ copy` totality, the streaming Watch + dwell
+> floor, errors/§5-gates as voice), and the CLI was **re-envisioned to four verbs**
+> (`project` / `check` / `explain` / `seal` over one `MovementSpec` — `THE_CLI.md`, shipped
+> 2026-06-07). The run-type framing below (§3.1 — `FullExportRun` / `MigrationRun` / …) now
+> describes **engine faces behind the one `MovementSpec` executor**, not the dispatch surface; the
+> voice machinery and the event spine are unchanged. For the current execution detail and the old
+> verb → new face mapping, read **`THE_VOICE_BUILD_MAP.md` §0.5** (the reconciliation) +
+> `THE_CLI.md` §7/§13. This document stays canonical for the *decomposition and the locked
+> decisions* (§8).
+
 **Status: a plan, not a change.** Nothing here is built yet. This document
 decomposes the concerns around making `THE_VOICE.md` a structural part of the
 engine — *so the copy reads as if it had always been there* — and sequences the
