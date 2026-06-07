@@ -124,7 +124,10 @@ surface↔engine alignment:
 
 ## Engine-wiring follow-ups (evidence-gated)
 
-- `--how replace|fresh` → thread the emission-mode through `TransferRun`.
+- `--how replace|fresh` → **DONE (Slice B partial, 2026-06-07)** — threads the
+  `EmissionMode` through `Transfer.runThroughConnectionsWithEmission` for the
+  pure-transfer data load (`project --to <sink> --data <src> [--scope data]`).
+  On a combined schema+data migrate it stays the migrate's incremental MERGE
+  (noted). Extending it to the migrate-with-data leg is the remainder.
 - `--from empty` → genesis-force in `MigrationRun`.
 - `--data synthetic [--rows N]` → a Faker data source.
-- A typed `ExitCode` DU (one definition) replacing the scattered exit ints.

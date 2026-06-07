@@ -384,8 +384,6 @@ module Command =
           | (Scope.Schema | Scope.Data), (Destination.Folder _ | Destination.Docker) ->
               "--scope accepted; the file/docker bundle carries all legs (all applied)."
           | _ -> ()
-          if spec.Strategy <> Strategy.Merge then
-              "--how accepted; the engine uses its default realization (merge applied)."
           match spec.Baseline with
           | Baseline.Auto -> ()
           | _ -> "--from accepted; the engine reads the prior state automatically (auto applied)."
@@ -394,8 +392,16 @@ module Command =
           | DataOrigin.NoData    -> "--data none accepted; the engine emits model data (model data applied)."
           | _ -> () ]
 
+    /// `--how` → the data-plane `EmissionMode`: merge is the incremental MERGE
+    /// (the norm-minimal default); replace / fresh are the wipe-and-load.
+    let private emissionOf (strategy: Strategy) : EmissionMode =
+        match strategy with
+        | Strategy.Merge -> EmissionMode.Incremental
+        | Strategy.Replace | Strategy.Fresh -> EmissionMode.WipeAndLoad
+
     let private optsOf (spec: MovementSpec) : LoadOpts =
         { Declaration = (if spec.AllowDrops then DeclareAll else DeclareNone)
+          Emission    = emissionOf spec.Strategy
           Reconcile   = spec.Reconcile
           Rekey       = spec.Rekey
           AllowCdc    = spec.AllowCdc
@@ -476,7 +482,14 @@ module Command =
                         | ModelSource.ConfigFile c -> PlanAction.PublishAndLoad (c, conn, spec.Store, spec.Env)
                         | ModelSource.ModelFile _  -> PlanAction.Migrate (spec.Model, conn, opts)
                         | ModelSource.Unspecified  -> modelMissing "projection project: "
-        { Notes = unhonoredNotes spec; Action = action }
+        // --how is honored only on the pure-transfer data load (→ EmissionMode);
+        // any other action ignores the strategy, so note it (no silent drop).
+        let howNote =
+            match spec.Strategy, action with
+            | Strategy.Merge, _ -> []
+            | _, PlanAction.Transfer _ -> []
+            | _ -> [ "--how accepted; this action has no selectable data-load strategy (default applied)." ]
+        { Notes = unhonoredNotes spec @ howNote; Action = action }
 
     /// Route a `check` verb tail to its proof-plane action — purely.
     let planCheck (cfg: TargetConfig) (args: string list) : ExecutionPlan =

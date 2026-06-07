@@ -150,6 +150,7 @@ type Intent =
 type LoadOpts =
     {
         Declaration : LossDeclaration
+        Emission    : EmissionMode
         Reconcile   : string list
         Rekey       : string option
         AllowCdc    : bool

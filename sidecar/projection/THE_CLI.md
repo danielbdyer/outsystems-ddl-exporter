@@ -296,11 +296,13 @@ one-liner is there when it is not. No flag-bag; no god-command.
 1. **The hero verb is `project`** — the domain's own word (the Total Projection).
 2. **Readiness is `check ready`** (gate-shaped); a `seal history` / `explain history`
    episode browser is deferred until it earns its place.
-3. **Axes accepted-but-not-yet-honored surface a named note, never a silent drop.**
-   `--scope` / `--how` / `--from` and `--data synthetic|none` are parsed and
-   acknowledged; the current engine emits its default and `noteUnhonored` says so.
-   Wiring these knobs (and `--data synthetic --rows N`) into the engine is an
-   evidence-gated follow-up (THE_CLI_BACKLOG.md).
+3. **Axes are honored or named, never silently dropped.** `--scope` (live) and
+   `--how` (the data-load `EmissionMode`: `replace`/`fresh` → wipe-and-load on the
+   transfer path) are honored; where an axis cannot apply to the chosen action
+   (`--how` on a non-transfer action; `--from`; `--data synthetic|none`) the plan
+   carries a named note. Wiring the remaining knobs (`--from empty`; a Faker
+   `--data synthetic` source) into the engine is an evidence-gated follow-up
+   (THE_CLI_BACKLOG.md).
 4. **`project` consolidations** — `emit --config` folds into `project --to <folder>
    --config` (the richer `full-export` bundle); `full-export --load` into `project
    --to <live> --config --go`; `transfer` into `project --to <sink> --data <source>`

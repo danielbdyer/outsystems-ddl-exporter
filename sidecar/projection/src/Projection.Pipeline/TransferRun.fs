@@ -746,8 +746,9 @@ module Transfer =
     /// `resolveReconciliation` is a function of the reconstructed contract
     /// so the contract is read exactly once (the Source open is not
     /// duplicated to resolve reconciliation specs).
-    let runThroughConnections
+    let runThroughConnectionsWithEmission
         (mode: Mode)
+        (emission: EmissionMode)
         (allowCdc: bool)
         (allowDrops: bool)
         (connections: TransferConnections)
@@ -768,8 +769,21 @@ module Transfer =
                         match resolveReconciliation contract with
                         | Error es -> return Result.failure es
                         | Ok reconciliation ->
-                            return! runCore mode allowCdc allowDrops source sink contract reconciliation None WriteOptions.def
+                            return! runCore mode allowCdc allowDrops source sink contract reconciliation None (WriteOptions.ofEmission emission)
         }
+
+    /// The incremental-MERGE default (the existing callers' behavior); the
+    /// `--how` CLI surface selects `WipeAndLoad` via the `WithEmission` form.
+    /// (Sibling-wrapper discipline: the wrapper supplies the default the caller
+    /// did not name.)
+    let runThroughConnections
+        (mode: Mode)
+        (allowCdc: bool)
+        (allowDrops: bool)
+        (connections: TransferConnections)
+        (resolveReconciliation: Catalog -> Result<Map<SsKey, ReconciliationStrategy>>)
+        : Task<Result<TransferReport>> =
+        runThroughConnectionsWithEmission mode EmissionMode.Incremental allowCdc allowDrops connections resolveReconciliation
 
     // -- 6.A.1: the drop-set is fail-loud, not exit-0 -----------------------
     //

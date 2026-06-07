@@ -238,7 +238,19 @@ let private liveDev = Destination.Live (ConnectionRef.EnvVar "DEV_CONN")
 let private baseLive = MovementSpec.forDestination liveDev
 // The LoadOpts a default spec (no --allow-drops/--rekey/--reconcile/...) carries.
 let private defaultOpts : LoadOpts =
-    { Declaration = DeclareNone; Reconcile = []; Rekey = None; AllowCdc = false; Store = None; Env = None }
+    { Declaration = DeclareNone; Emission = EmissionMode.Incremental
+      Reconcile = []; Rekey = None; AllowCdc = false; Store = None; Env = None }
+
+[<Fact>]
+let ``planProject: --how replace selects WipeAndLoad on the transfer path`` () =
+    match planOf { baseLive with Commit = true; Scope = Scope.Data; Data = DataOrigin.FromTarget "qa"; Strategy = Strategy.Replace } with
+    | PlanAction.Transfer (_, _, opts, true) -> Assert.Equal(EmissionMode.WipeAndLoad, opts.Emission)
+    | other -> Assert.Fail(sprintf "expected Transfer, got %A" other)
+
+[<Fact>]
+let ``planProject: --how on a non-transfer action is noted, never silently ignored`` () =
+    let p = Command.planProject proteinCfg { baseLive with Commit = true; Model = ModelSource.ModelFile "m.json"; Strategy = Strategy.Replace }
+    Assert.Contains(p.Notes, fun (n: string) -> n.Contains "--how")
 
 [<Fact>]
 let ``planProject: folder + config → PublishBundle`` () =

@@ -680,6 +680,7 @@ let private runTransfer
     (executeRequested: bool)
     (allowCdc: bool)
     (allowDrops: bool)
+    (emission: EmissionMode)
     : int =
     let collect = function Ok _ -> [] | Error es -> es
     let parsedSource    = TransferSpec.parseConnectionSpec sourceSpec
@@ -747,7 +748,7 @@ let private runTransfer
     let resolveReconciliation (contract: Catalog) =
         TransferSpec.resolveAllReconciliation contract entries userMapEntries
     let result =
-        (Transfer.runThroughConnections mode allowCdc allowDrops connections resolveReconciliation)
+        (Transfer.runThroughConnectionsWithEmission mode emission allowCdc allowDrops connections resolveReconciliation)
             .GetAwaiter().GetResult()
     let exitCode =
         match result with
@@ -1694,7 +1695,7 @@ let private runPlan (plan: ExecutionPlan) : int =
     | PlanAction.DeployDocker model    -> needModel model (fun m -> withRun "projection project" (fun () -> runDeploy m))
     | PlanAction.PreviewSchema (model, conn, decl) -> needModel model (fun m -> runProjectLivePreview m conn decl)
     | PlanAction.Transfer (src, sink, opts, execute) ->
-        runTransfer src sink None None opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll)
+        runTransfer src sink None None opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission
     | PlanAction.MigrateWithData (model, sink, src, opts) ->
         needModel model (fun m -> runMigrateWithData m sink src opts.Reconcile opts.Rekey opts.Declaration opts.AllowCdc opts.Store opts.Env)
     | PlanAction.PublishAndLoad (c, conn, store, env) -> runFullExportLoad c conn None store env
