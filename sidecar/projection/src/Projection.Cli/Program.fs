@@ -29,10 +29,11 @@ let private usageLines : string list =
         "    projection check  ( <source.sql> [--cdc-silence] | drift --model <m> --to <t>"
         "                      | data --before <t> --after <t> | ready )"
         "    projection explain ( diff <a> <b> [--format json] [--depth N] | policy <a> <b>"
-        "                       | node <config> <ssKey> | suggest <config> [--apply <out>]"
+        "                       | node <config> <ssKey> | suggest <config> [--apply <out>] | registry"
         "                       | migrate --to <b> ( --from <a> | --store <s> ) [--allow-drops] )"
         "    projection seal ( --store <path> | approve <version> --approver <name>"
         "                    [--rationale <text>] [--store <path>] )"
+        "    projection init                 scaffold a projection.json"
         ""
         "PROJECT — the hero. Produce the model at a destination; the destination decides the form."
         "  --to <dest>   a folder (the file bundle) · docker (one-touch ephemeral DB) · a named"
@@ -63,7 +64,7 @@ let private usageLines : string list =
         ""
         "Every verb persists a bench snapshot to bench/<verb>/<utc-iso>.json; -v surfaces the"
         "table. --pretty / --json force the channel (default AUTO: a TTY gets the panel, a pipe"
-        "gets NDJSON)."
+        "gets NDJSON). --watch shows the live stage board on a project --to <folder> --config run."
         ""
         "Exit codes:"
         "    0  succeeded"
@@ -1839,13 +1840,21 @@ let private executeExplain (args: string list) : int =
     | "policy" :: a :: b :: _ -> runPolicyDiff a b
     | "node" :: c :: k :: _   -> runExplain c k
     | "suggest" :: c :: _     -> runSuggestConfig c (valueOf "--apply")
+    | "registry" :: _ ->
+        // Self-description (NORTH_STAR "self-describing" leg) — the engine names
+        // its own registered transforms (the `registered ⇔ executed` registry).
+        let all = RegisteredAllTransforms.all
+        printfn "projection: %d registered transform(s)" (List.length all)
+        for rt in all |> List.sortBy (fun r -> sprintf "%A" r.StageBinding, r.Name) do
+            printfn "  %-12s %s" (sprintf "%A" rt.StageBinding) rt.Name
+        0
     | "migrate" :: _ ->
         let declaration = parseLossDeclaration arr
         match valueOf "--to", valueOf "--from", valueOf "--store" with
         | Some toP, Some fromP, _      -> runMigratePreview fromP toP declaration
         | Some toP, None, Some store   -> runMigrateFromStore store toP declaration
         | _ -> die 2 "projection explain migrate: needs --to <modelB> with --from <modelA> or --store <lifecycle>."
-    | _ -> die 2 "projection explain: expected diff | policy | node | suggest | migrate."
+    | _ -> die 2 "projection explain: expected diff | policy | node | suggest | registry | migrate."
 
 /// Execute `seal` — provenance (eject / approve).
 let private executeSeal (args: string list) : int =
@@ -1860,6 +1869,31 @@ let private executeSeal (args: string list) : int =
         match valueOf "--store" with
         | Some store -> runEject store
         | None -> die 2 "projection seal: requires --store <path> (the durable timeline)."
+
+/// `projection init` — scaffold a `projection.json` so the operator starts from
+/// a working surface (first-run ergonomics). Refuses to overwrite an existing
+/// file (look-before-overwrite); the conn is a `env:`/`file:` reference (D9).
+let private runInit () : int =
+    let path = "projection.json"
+    if File.Exists path then
+        Console.Error.WriteLine (sprintf "projection init: %s already exists; not overwriting." path)
+        1
+    else
+        // LINT-ALLOW: terminal operator-facing scaffold text at the CLI boundary.
+        let scaffold =
+            "{\n" +
+            "  \"model\": \"model.json\",\n" +
+            "  \"targets\": {\n" +
+            "    \"dev\":     { \"conn\": \"env:DEV_CONN\", \"store\": \"lifecycle/dev.json\" },\n" +
+            "    \"qa\":      { \"conn\": \"env:QA_CONN\",  \"store\": \"lifecycle/qa.json\" },\n" +
+            "    \"uat\":     { \"conn\": \"env:UAT_CONN\", \"store\": \"lifecycle/uat.json\" },\n" +
+            "    \"publish\": { \"dir\": \"./publish\" }\n" +
+            "  },\n" +
+            "  \"defaults\": { \"how\": \"merge\", \"data\": \"model\" }\n" +
+            "}\n"
+        File.WriteAllText(path, scaffold)
+        printfn "projection init: wrote %s — name the model and targets (a conn is an env:/file: reference, never a literal string)." path
+        0
 
 /// Discover `projection.json` (or `PROJECTION_CONFIG`) — absent is the empty
 /// config (aliasing is opt-in).
@@ -1893,6 +1927,7 @@ let main argv =
     | [||] | [| "--help" |] | [| "-h" |] ->
         printLines Console.Out usageLines
         0
+    | [| "init" |] -> runInit ()
     | _ ->
         match discoverConfig () with
         | Error es ->

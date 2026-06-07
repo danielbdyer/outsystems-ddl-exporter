@@ -160,3 +160,73 @@ let ``parse routes check to the proof plane carrying its tail`` () =
 [<Fact>]
 let ``parse refuses an unknown verb`` () =
     Assert.Contains("cli.verb.unknown", errCodes (Surface.parse cfg [ "deploy"; "model.json" ]))
+
+// -- proteins parse (THE_CLI.md §8 — the documented one-liners stay honest) ---
+
+// A config with the four named targets the proteins use + a default model, so
+// `project --to dev` needs no model path (THE_CLI.md §8 / §4).
+let private proteinCfg =
+    TargetConfig.parse """
+    {
+      "targets": {
+        "dev": { "conn": "env:DEV_CONN" }, "qa": { "conn": "env:QA_CONN" },
+        "uat": { "conn": "env:UAT_CONN" }, "publish": { "dir": "./publish" }
+      },
+      "model": "model.json"
+    }
+    """ |> mustOk
+
+let private proteinProject (argv: string list) : MovementSpec =
+    match Surface.parse proteinCfg argv |> mustOk with
+    | Intent.Project spec -> spec
+    | other -> failwithf "expected Project, got %A" other
+
+[<Fact>]
+let ``protein P-1 (Dev load): project --to dev --go`` () =
+    let s = proteinProject [ "project"; "--to"; "dev"; "--go" ]
+    Assert.Equal(Destination.Live (ConnectionRef.EnvVar "DEV_CONN"), s.Destination)
+    Assert.Equal(ModelSource.ModelFile "model.json", s.Model)
+    Assert.True s.Commit
+
+[<Fact>]
+let ``protein P-3 (UAT re-key): project --to uat --rekey users.csv --go`` () =
+    let s = proteinProject [ "project"; "--to"; "uat"; "--rekey"; "users.csv"; "--go" ]
+    Assert.Equal(Destination.Live (ConnectionRef.EnvVar "UAT_CONN"), s.Destination)
+    Assert.Equal(Some "users.csv", s.Rekey)
+    Assert.True s.Commit
+
+[<Fact>]
+let ``protein P-4 (SSIS publication): project --to publish`` () =
+    let s = proteinProject [ "project"; "--to"; "publish" ]
+    Assert.Equal(Destination.Folder "./publish", s.Destination)
+    Assert.False s.Commit
+
+[<Fact>]
+let ``protein P-5/P-6 (idempotent redeploy / in-place migrate) = the P-1 command`` () =
+    Assert.Equal(
+        proteinProject [ "project"; "--to"; "dev"; "--go" ],
+        proteinProject [ "project"; "--to"; "dev"; "--go" ])
+
+[<Fact>]
+let ``protein (Docker one-touch): project --to docker`` () =
+    Assert.Equal(Destination.Docker, (proteinProject [ "project"; "--to"; "docker" ]).Destination)
+
+[<Fact>]
+let ``protein (Faker schema): project --to docker --data synthetic`` () =
+    let s = proteinProject [ "project"; "--to"; "docker"; "--data"; "synthetic" ]
+    Assert.Equal(Destination.Docker, s.Destination)
+    Assert.Equal(DataOrigin.Synthetic, s.Data)
+
+[<Fact>]
+let ``protein (DB to DB transfer): project --to uat --data qa --rekey users.csv --go`` () =
+    let s = proteinProject [ "project"; "--to"; "uat"; "--data"; "qa"; "--rekey"; "users.csv"; "--go" ]
+    Assert.Equal(Destination.Live (ConnectionRef.EnvVar "UAT_CONN"), s.Destination)
+    Assert.Equal(DataOrigin.FromTarget "qa", s.Data)
+    Assert.Equal(Some "users.csv", s.Rekey)
+    Assert.True s.Commit
+
+[<Fact>]
+let ``protein (Skeleton): project --to ./out --shape skeleton`` () =
+    let s = proteinProject [ "project"; "--to"; "./out"; "--shape"; "skeleton" ]
+    Assert.Equal(Destination.Folder "./out", s.Destination)
+    Assert.Equal(Shape.Skeleton, s.Shape)
