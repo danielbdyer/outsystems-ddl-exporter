@@ -291,22 +291,33 @@ one-liner is there when it is not. No flag-bag; no god-command.
 
 ---
 
-## 12. Open decisions
+## 12. Decisions — resolved (2026-06-07, shipped)
 
-1. **The hero verb's name.** `project` is the domain's own word (the Total Projection)
-   and is the committed choice here; `ship` / `deliver` read more like operator intent.
-   The one true bikeshed.
-2. **`check ready` vs `seal history`** — readiness reads as a gate here (`check`); an
-   episode-history browser, if it earns its place, would be `explain history`.
-3. **Synthetic volume control** (`--data synthetic --rows N` / a named profile) — deferred
-   until the Faker use case is exercised.
+1. **The hero verb is `project`** — the domain's own word (the Total Projection).
+2. **Readiness is `check ready`** (gate-shaped); a `seal history` / `explain history`
+   episode browser is deferred until it earns its place.
+3. **Axes accepted-but-not-yet-honored surface a named note, never a silent drop.**
+   `--scope` / `--how` / `--from` and `--data synthetic|none` are parsed and
+   acknowledged; the current engine emits its default and `noteUnhonored` says so.
+   Wiring these knobs (and `--data synthetic --rows N`) into the engine is an
+   evidence-gated follow-up (THE_CLI_BACKLOG.md).
+4. **`project` consolidations** — `emit --config` folds into `project --to <folder>
+   --config` (the richer `full-export` bundle); `full-export --load` into `project
+   --to <live> --config --go`; `transfer` into `project --to <sink> --data <source>`
+   (DryRun without `--go`). Niche flags dropped (named, not silent) are listed in
+   THE_CLI_BACKLOG.md.
 
 ---
 
-## 13. What this is not
+## 13. What this became
 
-It is not a migration of `Program.fs`. It is the **target the dispatcher projects onto**:
-one `MovementSpec` (source *A* × destination × legs × strategy × data-origin × identity
-× shape × mode), one engine, four thin faces. When the surface is built, the per-verb
-conditional trees documented in the 2026-06-07 verb audit collapse into one parameterized
-pipeline — the activation of the "latent" calculus the morphology named.
+Shipped 2026-06-07. `main` discovers `projection.json`, parses argv via
+`Surface.parse` into a typed `Intent`, and routes to executors that delegate to
+the proven engine faces — one `MovementSpec` (source *A* × destination × legs ×
+strategy × data-origin × identity × shape × mode), one engine, four thin faces
+(`project` / `check` / `explain` / `seal`). The 16-verb dispatch and its Argu
+glue are removed; the per-verb conditional trees documented in the 2026-06-07
+verb audit collapsed into the one parameterized path — the activation of the
+"latent" calculus the morphology named. Surface types live in
+`src/Projection.Pipeline/MovementSpec.fs` + `MovementSurface.fs`; the executors
+in `src/Projection.Cli/Program.fs`; tests in `MovementSurfaceTests.fs`.
