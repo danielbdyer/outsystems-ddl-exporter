@@ -1693,99 +1693,39 @@ let private runProjectLivePreview (toPath: string) (connSpec: string) (declarati
         }
     work.GetAwaiter().GetResult()
 
-/// Surface a non-default axis the current engine does not yet honor — a named
-/// note, never a silent drop (THE_VOICE no-silent-drop; THE_CLI.md §5).
-let private noteUnhonored (spec: MovementSpec) : unit =
-    let note (m: string) = eprintfn "projection project: note — %s" m
-    // --scope is honored for live destinations (data -> transfer, schema -> migrate);
-    // for folder/docker the bundle carries all legs, so note it there.
-    if spec.Scope <> Scope.All then
-        match spec.Destination with
-        | Destination.Live _ -> ()
-        | _ -> note "--scope accepted; the file/docker bundle carries all legs (all applied)."
-    if spec.Strategy <> Strategy.Merge then note "--how accepted; the engine uses its default realization (merge applied)."
-    match spec.Baseline with
-    | Baseline.Auto -> ()
-    | _ -> note "--from accepted; the engine reads the prior state automatically (auto applied)."
-    match spec.Data with
-    | DataOrigin.Synthetic -> note "--data synthetic accepted; synthetic generation is pending (model data applied)."
-    | DataOrigin.NoData    -> note "--data none accepted; the engine emits model data (model data applied)."
-    | _ -> ()
-
-/// Execute `project` by translating the `MovementSpec` to an engine face.
+/// Execute `project` by running the pure `Surface.planProject` routing (fidelity
+/// #1). Planning is pure + totality-tested; this runner just executes the chosen
+/// `PlanAction` against the proven `run*` faces and surfaces the unhonored-axis
+/// notes (fidelity #2 — no silent drop).
 let private executeProject (cfg: TargetConfig) (spec: MovementSpec) : int =
-    noteUnhonored spec
+    let plan = Surface.planProject cfg spec
+    for n in plan.Notes do eprintfn "projection project: note — %s" n
     let declaration = if spec.AllowDrops then DeclareAll else DeclareNone
-    // Resolve a `--data <alias>` source to its out-of-band connection spec.
-    let dataSourceConn (alias: string) : Result<string> =
-        match Surface.resolveTarget cfg alias with
-        | Ok rt ->
-            match rt.Destination with
-            | Destination.Live r -> Result.success (connSpecOf r)
-            | _ -> Result.failureOf (ValidationError.create "cli.project.dataNotLive" (sprintf "--data %s: a data source must be a live target." alias))
-        | Error es -> Result.failure es
-    match spec.Destination with
-    | Destination.Folder dir ->
-        match spec.Model with
-        | ModelSource.ConfigFile c ->
-            let verbosity = if verboseMode.Value then LogSink.Verbosity.Verbose else LogSink.Verbosity.Quiet
-            let run () = runFullExport c (Some dir) verbosity Set.empty spec.Store spec.Env
-            // --watch + a real TTY → the live stage board (§13); the board renders
-            // the same LogSink stage stream this run already emits.
-            if Watch.shouldWatch watchMode.Value then Watch.renderWatch (Watch.resolveDwellMs ()) run
-            else run ()
-        | ModelSource.ModelFile m ->
-            match spec.Shape with
-            | Shape.Skeleton           -> withRun "projection project" (fun () -> runEmitSkeletonOnly m dir)
-            | Shape.Bundle | Shape.Ssdt -> withRun "projection project" (fun () -> runEmit m dir)
-        | ModelSource.Unspecified ->
-            die 1 "projection project: no model — pass --model <model.json>, --config <config.json>, or set \"model\" in projection.json."
-    | Destination.Docker ->
-        match modelPathOf spec.Model with
-        | Ok m     -> withRun "projection project" (fun () -> runDeploy m)
-        | Error es -> Console.Error.WriteLine "projection project --to docker:"; printErrors Console.Error es; 1
-    | Destination.Live connRef ->
-        let connSpec = connSpecOf connRef
-        let schemaOnly = (spec.Scope = Scope.Schema)   // --scope schema: skip the data leg
-        let dataOnly = (spec.Scope = Scope.Data)        // --scope data: DML-only, onto existing schema
-        let printErr es = Console.Error.WriteLine "projection project:"; printErrors Console.Error es; 6
-        if not spec.Commit then
-            // Preview by default (THE_CLI.md §5). A `--data` source (unless
-            // schema-scoped) previews the data plan (transfer DryRun); otherwise
-            // the schema plan (B ⊖ A).
-            match spec.Data with
-            | DataOrigin.FromTarget alias when not schemaOnly ->
-                match dataSourceConn alias with
-                | Ok srcConn -> runTransfer srcConn connSpec None None spec.Reconcile spec.Rekey false spec.AllowCdc spec.AllowDrops
-                | Error es -> printErr es
-            | _ ->
-                match modelPathOf spec.Model with
-                | Ok m     -> runProjectLivePreview m connSpec declaration
-                | Error es -> printErr es
-        else
-            // --go: commit. `--scope data` is a DML-only transfer onto the
-            // existing schema; `--scope schema` skips the data leg; otherwise a
-            // `--data` source is a cross-substrate migrate-with-data, a config
-            // model publishes + loads its seed, and a bare model is schema-only.
-            match spec.Data with
-            | DataOrigin.FromTarget alias when not schemaOnly ->
-                match dataSourceConn alias with
-                | Error es -> printErr es
-                | Ok srcConn ->
-                    if dataOnly then
-                        runTransfer srcConn connSpec None None spec.Reconcile spec.Rekey true spec.AllowCdc spec.AllowDrops
-                    else
-                        match modelPathOf spec.Model with
-                        | Ok m     -> runMigrateWithData m connSpec srcConn spec.Reconcile spec.Rekey declaration spec.AllowCdc spec.Store spec.Env
-                        | Error es -> printErr es
-            | _ when dataOnly ->
-                die 2 "projection project --scope data: a DML-only load needs --data <target>."
-            | _ ->
-                match spec.Model with
-                | ModelSource.ConfigFile c -> runFullExportLoad c connSpec None spec.Store spec.Env
-                | ModelSource.ModelFile m  -> runMigrateExecute m connSpec declaration spec.AllowCdc spec.Store spec.Env
-                | ModelSource.Unspecified  ->
-                    die 1 "projection project: no model — pass --model <model.json>, --config <config.json>, or set \"model\" in projection.json."
+    let needModel (model: ModelSource) (run: string -> int) : int =
+        match modelPathOf model with
+        | Ok m     -> run m
+        | Error es -> Console.Error.WriteLine "projection project:"; printErrors Console.Error es; 6
+    match plan.Action with
+    | PlanAction.PublishBundle (c, dir) ->
+        let verbosity = if verboseMode.Value then LogSink.Verbosity.Verbose else LogSink.Verbosity.Quiet
+        let run () = runFullExport c (Some dir) verbosity Set.empty spec.Store spec.Env
+        // --watch + a real TTY → the live stage board (§13); the board renders
+        // the same LogSink stage stream this run already emits.
+        if Watch.shouldWatch watchMode.Value then Watch.renderWatch (Watch.resolveDwellMs ()) run
+        else run ()
+    | PlanAction.EmitSkeleton (m, dir) -> withRun "projection project" (fun () -> runEmitSkeletonOnly m dir)
+    | PlanAction.EmitBundle (m, dir)   -> withRun "projection project" (fun () -> runEmit m dir)
+    | PlanAction.DeployDocker model    -> needModel model (fun m -> withRun "projection project" (fun () -> runDeploy m))
+    | PlanAction.PreviewSchema (model, conn) -> needModel model (fun m -> runProjectLivePreview m conn declaration)
+    | PlanAction.PreviewData (src, sink) ->
+        runTransfer src sink None None spec.Reconcile spec.Rekey false spec.AllowCdc spec.AllowDrops
+    | PlanAction.TransferData (src, sink) ->
+        runTransfer src sink None None spec.Reconcile spec.Rekey true spec.AllowCdc spec.AllowDrops
+    | PlanAction.MigrateWithData (model, sink, src) ->
+        needModel model (fun m -> runMigrateWithData m sink src spec.Reconcile spec.Rekey declaration spec.AllowCdc spec.Store spec.Env)
+    | PlanAction.PublishAndLoad (c, conn) -> runFullExportLoad c conn None spec.Store spec.Env
+    | PlanAction.Migrate (model, conn) -> needModel model (fun m -> runMigrateExecute m conn declaration spec.AllowCdc spec.Store spec.Env)
+    | PlanAction.Refused (code, msg) -> die code msg
 
 /// Execute `check` — the proof plane (canary / drift / data / ready).
 let private executeCheck (cfg: TargetConfig) (args: string list) : int =

@@ -230,3 +230,85 @@ let ``protein (Skeleton): project --to ./out --shape skeleton`` () =
     let s = proteinProject [ "project"; "--to"; "./out"; "--shape"; "skeleton" ]
     Assert.Equal(Destination.Folder "./out", s.Destination)
     Assert.Equal(Shape.Skeleton, s.Shape)
+
+// -- planProject routing (THE_CLI fidelity #1 — the pure surface→engine map) --
+
+let private planOf (spec: MovementSpec) : PlanAction = (Surface.planProject proteinCfg spec).Action
+let private liveDev = Destination.Live (ConnectionRef.EnvVar "DEV_CONN")
+let private baseLive = MovementSpec.forDestination liveDev
+
+[<Fact>]
+let ``planProject: folder + config → PublishBundle`` () =
+    let s = { MovementSpec.forDestination (Destination.Folder "./o") with Model = ModelSource.ConfigFile "c.json" }
+    Assert.Equal(PlanAction.PublishBundle ("c.json", "./o"), planOf s)
+
+[<Fact>]
+let ``planProject: folder + model + shape routes Skeleton vs Bundle`` () =
+    let folderModel shape = { MovementSpec.forDestination (Destination.Folder "./o") with Model = ModelSource.ModelFile "m.json"; Shape = shape }
+    Assert.Equal(PlanAction.EmitSkeleton ("m.json", "./o"), planOf (folderModel Shape.Skeleton))
+    Assert.Equal(PlanAction.EmitBundle ("m.json", "./o"), planOf (folderModel Shape.Bundle))
+
+[<Fact>]
+let ``planProject: docker + model → DeployDocker; no model → Refused`` () =
+    Assert.Equal(PlanAction.DeployDocker (ModelSource.ModelFile "m.json"),
+                 planOf { MovementSpec.forDestination Destination.Docker with Model = ModelSource.ModelFile "m.json" })
+    match planOf (MovementSpec.forDestination Destination.Docker) with
+    | PlanAction.Refused (1, _) -> ()
+    | other -> Assert.Fail(sprintf "expected Refused 1, got %A" other)
+
+[<Fact>]
+let ``planProject: live preview (no --go) → schema plan, or data plan with --data`` () =
+    Assert.Equal(PlanAction.PreviewSchema (ModelSource.ModelFile "model.json", "env:DEV_CONN"),
+                 planOf { baseLive with Model = ModelSource.ModelFile "model.json" })
+    Assert.Equal(PlanAction.PreviewData ("env:QA_CONN", "env:DEV_CONN"),
+                 planOf { baseLive with Data = DataOrigin.FromTarget "qa" })
+
+[<Fact>]
+let ``planProject: live --go routes migrate / migrate-with-data / transfer / publish-load`` () =
+    let go = { baseLive with Commit = true; Model = ModelSource.ModelFile "model.json" }
+    Assert.Equal(PlanAction.Migrate (ModelSource.ModelFile "model.json", "env:DEV_CONN"), planOf go)
+    Assert.Equal(PlanAction.MigrateWithData (ModelSource.ModelFile "model.json", "env:DEV_CONN", "env:QA_CONN"),
+                 planOf { go with Data = DataOrigin.FromTarget "qa" })
+    Assert.Equal(PlanAction.TransferData ("env:QA_CONN", "env:DEV_CONN"),
+                 planOf { go with Data = DataOrigin.FromTarget "qa"; Scope = Scope.Data })
+    Assert.Equal(PlanAction.PublishAndLoad ("c.json", "env:DEV_CONN"),
+                 planOf { go with Model = ModelSource.ConfigFile "c.json" })
+
+[<Fact>]
+let ``planProject: --scope data --go without a data source is Refused`` () =
+    match planOf { baseLive with Commit = true; Scope = Scope.Data; Model = ModelSource.ModelFile "m.json" } with
+    | PlanAction.Refused (2, _) -> ()
+    | other -> Assert.Fail(sprintf "expected Refused 2, got %A" other)
+
+[<Fact>]
+let ``planProject: a --data alias that is not a live target is Refused`` () =
+    // "publish" is a folder target, not live → cannot be a data source.
+    match planOf { baseLive with Commit = true; Data = DataOrigin.FromTarget "publish" } with
+    | PlanAction.Refused (6, _) -> ()
+    | other -> Assert.Fail(sprintf "expected Refused 6, got %A" other)
+
+[<Fact>]
+let ``planProject is TOTAL: every axis combination yields a well-formed plan`` () =
+    // The whole product of the routing axes. The match is exhaustive (compile-
+    // time), so this proves no combination throws and every Refused is named
+    // with a known exit code — the registered⇔executed discipline for the CLI.
+    let destinations = [ Destination.Folder "./o"; Destination.Docker; liveDev ]
+    let scopes       = [ Scope.All; Scope.Schema; Scope.Data ]
+    let datas        = [ DataOrigin.Model; DataOrigin.Synthetic; DataOrigin.NoData; DataOrigin.FromTarget "qa"; DataOrigin.FromTarget "publish" ]
+    let models       = [ ModelSource.ModelFile "m.json"; ModelSource.ConfigFile "c.json"; ModelSource.Unspecified ]
+    let commits      = [ true; false ]
+    let mutable n = 0
+    for dest in destinations do
+      for scope in scopes do
+        for data in datas do
+          for model in models do
+            for commit in commits do
+                let spec = { MovementSpec.forDestination dest with Scope = scope; Data = data; Model = model; Commit = commit }
+                let plan = Surface.planProject proteinCfg spec
+                n <- n + 1
+                match plan.Action with
+                | PlanAction.Refused (code, msg) ->
+                    Assert.Contains(code, [ 1; 2; 6 ])
+                    Assert.False(System.String.IsNullOrWhiteSpace msg)
+                | _ -> ()  // any engine action is well-formed by construction
+    Assert.Equal(3 * 3 * 5 * 3 * 2, n)

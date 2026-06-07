@@ -364,3 +364,91 @@ module Surface =
             Result.failureOf (err "cli.verb.unknown" (sprintf "unknown verb '%s'; expected project | check | explain | seal." verb))
         | [] ->
             Result.failureOf (err "cli.verb.missing" "no verb given; expected project | check | explain | seal.")
+
+    // --- the pure project routing (THE_CLI fidelity #1) --------------------
+
+    /// Reconstruct the out-of-band connection spec from a resolved ref.
+    let connSpecOf (r: ConnectionRef) : string =
+        match r with
+        | ConnectionRef.EnvVar n -> "env:" + n
+        | ConnectionRef.File p   -> "file:" + p
+
+    let private noModel = "no model — pass --model <model.json>, --config <config.json>, or set \"model\" in projection.json."
+
+    /// Notes for axes the current engine does not yet honor — surfaced, never
+    /// silently dropped (fidelity #2; THE_VOICE no-silent-drop).
+    let unhonoredNotes (spec: MovementSpec) : string list =
+        [ // --scope is honored for live destinations (data→transfer, schema→migrate);
+          // for folder/docker the bundle carries all legs.
+          match spec.Scope, spec.Destination with
+          | (Scope.Schema | Scope.Data), (Destination.Folder _ | Destination.Docker) ->
+              "--scope accepted; the file/docker bundle carries all legs (all applied)."
+          | _ -> ()
+          if spec.Strategy <> Strategy.Merge then
+              "--how accepted; the engine uses its default realization (merge applied)."
+          match spec.Baseline with
+          | Baseline.Auto -> ()
+          | _ -> "--from accepted; the engine reads the prior state automatically (auto applied)."
+          match spec.Data with
+          | DataOrigin.Synthetic -> "--data synthetic accepted; synthetic generation is pending (model data applied)."
+          | DataOrigin.NoData    -> "--data none accepted; the engine emits model data (model data applied)."
+          | _ -> () ]
+
+    /// Route a `project` `MovementSpec` to its engine face — purely. The runner
+    /// (`runProjectPlan`) matches on the result, so the surface→engine mapping
+    /// is totality-tested rather than trusted.
+    let planProject (cfg: TargetConfig) (spec: MovementSpec) : ExecutionPlan =
+        let dataConn (alias: string) : Result<string> =
+            match resolveTarget cfg alias with
+            | Ok rt ->
+                match rt.Destination with
+                | Destination.Live r -> Result.success (connSpecOf r)
+                | _ -> Result.failureOf (err "cli.project.dataNotLive" (sprintf "--data %s: a data source must be a live target." alias))
+            | Error es -> Result.failure es
+        let action =
+            match spec.Destination with
+            | Destination.Folder dir ->
+                match spec.Model with
+                | ModelSource.ConfigFile c -> PlanAction.PublishBundle (c, dir)
+                | ModelSource.ModelFile m ->
+                    match spec.Shape with
+                    | Shape.Skeleton            -> PlanAction.EmitSkeleton (m, dir)
+                    | Shape.Bundle | Shape.Ssdt -> PlanAction.EmitBundle (m, dir)
+                | ModelSource.Unspecified -> PlanAction.Refused (1, "projection project: " + noModel)
+            | Destination.Docker ->
+                match spec.Model with
+                | ModelSource.Unspecified -> PlanAction.Refused (1, "projection project --to docker: " + noModel)
+                | m -> PlanAction.DeployDocker m
+            | Destination.Live connRef ->
+                let conn = connSpecOf connRef
+                let schemaOnly = (spec.Scope = Scope.Schema)
+                let dataOnly = (spec.Scope = Scope.Data)
+                if not spec.Commit then
+                    match spec.Data with
+                    | DataOrigin.FromTarget alias when not schemaOnly ->
+                        match dataConn alias with
+                        | Ok src -> PlanAction.PreviewData (src, conn)
+                        | Error es -> PlanAction.Refused (6, "projection project: " + (es |> List.map (fun e -> e.Message) |> String.concat "; "))
+                    | _ ->
+                        match spec.Model with
+                        | ModelSource.Unspecified -> PlanAction.Refused (1, "projection project: " + noModel)
+                        | m -> PlanAction.PreviewSchema (m, conn)
+                else
+                    match spec.Data with
+                    | DataOrigin.FromTarget alias when not schemaOnly ->
+                        match dataConn alias with
+                        | Error es -> PlanAction.Refused (6, "projection project: " + (es |> List.map (fun e -> e.Message) |> String.concat "; "))
+                        | Ok src ->
+                            if dataOnly then PlanAction.TransferData (src, conn)
+                            else
+                                match spec.Model with
+                                | ModelSource.Unspecified -> PlanAction.Refused (1, "projection project: " + noModel)
+                                | m -> PlanAction.MigrateWithData (m, conn, src)
+                    | _ when dataOnly ->
+                        PlanAction.Refused (2, "projection project --scope data: a DML-only load needs --data <target>.")
+                    | _ ->
+                        match spec.Model with
+                        | ModelSource.ConfigFile c -> PlanAction.PublishAndLoad (c, conn)
+                        | ModelSource.ModelFile _  -> PlanAction.Migrate (spec.Model, conn)
+                        | ModelSource.Unspecified  -> PlanAction.Refused (1, "projection project: " + noModel)
+        { Notes = unhonoredNotes spec; Action = action }

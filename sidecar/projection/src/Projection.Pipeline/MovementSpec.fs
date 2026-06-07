@@ -144,3 +144,44 @@ type Intent =
     | Check of args: string list
     | Explain of args: string list
     | Seal of args: string list
+
+/// The engine face a `project` `MovementSpec` routes to, named with the
+/// cfg-resolved arguments (connection specs, model source) it needs — the
+/// **pure, testable seam** between the surface and the effectful `run*` faces
+/// (THE_CLI fidelity #1). Planning is pure (no I/O — a `ConfigFile` carries its
+/// path; the runner resolves it), so the surface→engine routing is
+/// totality-tested: every spec yields exactly one action, `Refused` included
+/// (total decisions, named skips). Spec-derived flags the runner reads directly
+/// (declaration / rekey / reconcile / cdc / store / env) are not duplicated here.
+[<RequireQualifiedAccess>]
+type PlanAction =
+    /// folder + config → the full-export bundle (richer than a bare emit).
+    | PublishBundle of config: string * dir: string
+    /// folder + model + skeleton shape → the pre-overlay emit.
+    | EmitSkeleton of model: string * dir: string
+    /// folder + model + bundle/ssdt shape → the full pass-chain emit.
+    | EmitBundle of model: string * dir: string
+    /// docker → one-touch ephemeral deploy (runner resolves the model).
+    | DeployDocker of model: ModelSource
+    /// live, no --go, no data source → the schema plan preview (B ⊖ A).
+    | PreviewSchema of model: ModelSource * conn: string
+    /// live, no --go, data source → the transfer data-plan DryRun.
+    | PreviewData of source: string * sink: string
+    /// live, --go, --scope data → DML-only transfer onto existing schema.
+    | TransferData of source: string * sink: string
+    /// live, --go, data source → cross-substrate migrate-with-data.
+    | MigrateWithData of model: ModelSource * sink: string * source: string
+    /// live, --go, config model → publish bundle + load the seed.
+    | PublishAndLoad of config: string * conn: string
+    /// live, --go, bare model → in-place schema migrate.
+    | Migrate of model: ModelSource * conn: string
+    /// a named refusal with its exit code (no silent fall-through).
+    | Refused of exit: int * message: string
+
+/// A planned `project` execution: the unhonored-axis notes (surfaced, never
+/// dropped — fidelity #2) plus the routed action.
+type ExecutionPlan =
+    {
+        Notes  : string list
+        Action : PlanAction
+    }
