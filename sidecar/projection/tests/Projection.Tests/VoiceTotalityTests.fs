@@ -2,6 +2,7 @@ module Projection.Tests.VoiceTotalityTests
 
 open Xunit
 open Projection.Core
+open Projection.Pipeline
 open Projection.Cli
 
 /// THE VOICE — the `code ⇔ copy` totality test (`THE_VOICE_INTEGRATION.md` §5/§7
@@ -192,3 +193,49 @@ let ``Voice errorFrame: a connection code routes to the §10 unreachable frame``
     match Voice.errorFrame "migrate.connectionUnavailable" with
     | View.Hero(_, text), Some _ -> Assert.Contains("unreachable", text)
     | other -> Assert.Fail(sprintf "unexpected connection frame: %A" other)
+
+// ---------------------------------------------------------------------------
+// the gate ⇔ copy totality (the §5 mechanism-1 projection over the closed
+// Preflight.GateLabel DU — the closed-DU analog of code ⇔ copy)
+// ---------------------------------------------------------------------------
+
+// Every gate label the engine can refuse on — the closed DU, enumerated so the
+// test fails if a variant is added without §5 copy.
+let private allGateLabels : Preflight.GateLabel list =
+    [ Preflight.ConnectionUnavailable
+      Preflight.InsufficientGrant
+      Preflight.ReconciliationMismatch
+      Preflight.UnmappedIdentities
+      Preflight.DataViolatesTightening
+      Preflight.CdcTrackedSink
+      Preflight.SchemaReadFailed
+      Preflight.UndeclaredDestructiveChange
+      Preflight.UnclassifiedRefusal ]
+
+[<Fact>]
+let ``Voice gate: every gate label has a non-empty §5 statement`` () =
+    for label in allGateLabels do
+        let _, statement, _ = Voice.gateStatement label
+        Assert.False(System.String.IsNullOrWhiteSpace statement, sprintf "%A has no statement" label)
+
+[<Fact>]
+let ``Voice gate: every actionable gate names a plain imperative next move`` () =
+    // Every gate except the generic UnclassifiedRefusal (whose cause is shown
+    // below) hands over a plain active imperative — the §5 lever.
+    for label in allGateLabels do
+        let _, _, action = Voice.gateStatement label
+        match label with
+        | Preflight.UnclassifiedRefusal -> ()  // ends on the verdict; cause shown below
+        | _ ->
+            match action with
+            | Some (View.Action _) -> ()
+            | other -> Assert.Fail(sprintf "%A has no imperative next move: %A" label other)
+
+[<Fact>]
+let ``Voice gate: every gate surface clears the banned list`` () =
+    for label in allGateLabels do
+        let refusal : Preflight.GateRefusal =
+            { Error = ValidationError.create "migrate.test" "a located cause"
+              ExitCode = 9
+              Label = label }
+        assertClean (sprintf "gateSurface %A" label) (Surface.render (Voice.gateSurface "projection migrate" refusal))

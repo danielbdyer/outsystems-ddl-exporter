@@ -284,12 +284,13 @@ let private runFullExport
                 (EpisodicLifecycle.episodes leg.Chain |> List.length)
                 (Timeline.name (EpisodicLifecycle.timeline leg.Chain))
                 (List.length leg.AccumulatedRefactorLog))
-    | FullExportRun.RunOutcome.ConfigInvalid _ ->
-        // config.validationFailed envelopes already emitted by `execute`.
-        ()
+    | FullExportRun.RunOutcome.ConfigInvalid errors ->
+        // The structured config.validationFailed envelopes are already emitted by
+        // `execute` (the machine channel); the operator reads the voiced §10/§14
+        // surface (statement-first, the located causes beneath).
+        TtyRenderer.renderErrors errors
     | FullExportRun.RunOutcome.RunFailed errors ->
-        Console.Error.WriteLine "projection: full-export failed:"
-        printErrors Console.Error errors
+        TtyRenderer.renderErrors errors
     | FullExportRun.RunOutcome.Aborted ex ->
         Console.Error.WriteLine ("projection: full-export aborted: " + ex.Message)
     dumpBench "full-export"

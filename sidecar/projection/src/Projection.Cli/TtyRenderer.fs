@@ -2,6 +2,7 @@ module Projection.Cli.TtyRenderer
 
 open System
 open Spectre.Console
+open Projection.Core
 open Projection.Pipeline
 
 /// Tier-3 reporting (`REPORTING_HORIZON.md`; `docs/logging-format.md` §15.3) —
@@ -150,24 +151,10 @@ let renderAnswer (asJson: bool) (depth: int) (v: View.View) : unit =
 /// action names how to proceed. Binds `Preflight.GateRefusal` — the structured
 /// refusal that otherwise collapses to a single error string.
 let buildGateSurface (command: string) (refusal: Preflight.GateRefusal) : Surface.Surface =
-    let label = Preflight.labelText refusal.Label
-    let destructive = (refusal.Label = Preflight.UndeclaredDestructiveChange)
-    let st = if destructive then View.Bad else View.Warn
-    let statement =
-        if destructive then View.Hero(View.Bad, sprintf "%s refused — this change destroys structure" command)
-        else View.Hero(View.Warn, sprintf "%s refused — %s" command label)
-    let action =
-        if destructive then
-            Some (View.Action "declare the loss to proceed: --declare-loss <name> (or --declare-all), or abort")
-        else None
-    { Statement = statement
-      Substantiation =
-        [ View.Disclosure(
-            "Details", View.Neutral,
-            [ View.Field("gate", label, st)
-              View.Field("detail", refusal.Error.Message, View.Neutral)
-              View.Field("exit", string refusal.ExitCode, View.Neutral) ]) ]
-      Action = action }
+    // The §5 gate copy is voiced centrally by `Voice.gateSurface`, keyed by the
+    // closed `Preflight.GateLabel` DU (the gate⇔copy totality) — `TtyRenderer`
+    // no longer authors the refusal prose.
+    Voice.gateSurface command refusal
 
 /// The Gate `View`.
 let buildGateView (command: string) (refusal: Preflight.GateRefusal) : View.View =
@@ -180,3 +167,21 @@ let renderGate (command: string) (refusal: Preflight.GateRefusal) : unit =
         AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(Console.Error)))
     if Console.IsErrorRedirected then console.Profile.Width <- 100
     View.write console (buildGateView command refusal)
+
+// --- the error surface — refusals & errors as voice (slice 4) ---------------
+
+/// Build the `View` for a `ValidationError list` — the §10/§14 frame voiced by
+/// `Voice.errorsSurface` (statement-first; the located causes + codes beneath).
+let buildErrorsView (errors: ValidationError list) : View.View =
+    Surface.render (Voice.errorsSurface errors)
+
+/// Render a `ValidationError list` to stderr as the voiced §10/§14 surface — the
+/// operator reads a plain statement and the next move; the codes ride in the
+/// substantiation, never on the statement line. The structured NDJSON
+/// (`config.validationFailed` etc.) remains the machine channel, unchanged.
+let renderErrors (errors: ValidationError list) : unit =
+    if not (List.isEmpty errors) then
+        let console =
+            AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(Console.Error)))
+        if Console.IsErrorRedirected then console.Profile.Width <- 100
+        View.write console (buildErrorsView errors)

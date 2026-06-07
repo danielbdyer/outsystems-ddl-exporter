@@ -47,7 +47,10 @@ five-agent research pass (2026-06-06) run while the understanding was fresh.
 | **2** | Streaming Watch render path (full-export) + dwell floor | **LANDED** (`Watch.fs`; `--watch`; `DECISIONS 2026-06-06 (later, slice 2)`) |
 | **2** | Run unification (Migration/Transfer/Eject onto the spine) + intra-stage ETA | **PENDING** (this doc §4.2/§4.4) |
 | **3** | Aggregate-at-scale + timeline/ladder | **PENDING** (this doc §5) |
-| **4** | Errors & config as voice + mechanism-1 toViews | **PENDING** (this doc §6) |
+| **4** | Errors as voice (`renderErrors` / `errorsSurface`; full-export error paths) | **LANDED** (`DECISIONS 2026-06-07`) |
+| **4** | configError message lift + 48 printErrors sites + Argu `Usage` | **PENDING** (this doc §6.1) |
+| **mech-1** | §5 gates voiced over all 8 `GateLabel`s (`Voice.gateStatement`/`gateSurface`) | **LANDED** (`DECISIONS 2026-06-07`) |
+| **mech-1** | §4 moves / §6 proofs typed `toView` (EventProjection) | **PENDING** (this doc §6.2) |
 | **5** | Typed `DiagnosticPayload` lift | **DEFERRED** behind a real consumer (this doc §7) |
 
 **Locked sub-decisions** (`DECISIONS 2026-06-06 (later)`): Core-purity → **1:1 projection-layer

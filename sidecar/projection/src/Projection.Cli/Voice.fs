@@ -1,6 +1,7 @@
 namespace Projection.Cli
 
 open Projection.Core
+open Projection.Pipeline
 
 /// THE VOICE — the operator-facing copy of the instrument, made structural
 /// (`THE_VOICE.md` is this layer's spec; `THE_VOICE_INTEGRATION.md` §5/§8 is the
@@ -383,4 +384,84 @@ module Voice =
           Substantiation =
             [ View.Field("problem", error.Message, View.Neutral)
               View.Field("code", error.Code, View.Neutral) ]
+          Action         = action }
+
+    /// Voice a `ValidationError list` as one §10/§14 `Surface` — the frame is
+    /// chosen by the first (dominant) error; every located cause lists beneath
+    /// (rule 3 — the statement is legible, the causes are the substantiation). An
+    /// empty list cannot reach here (`Result.failure` forbids it); it degrades to
+    /// the generic §10 frame rather than throwing.
+    let errorsSurface (errors: ValidationError list) : Surface.Surface =
+        match errors with
+        | [] ->
+            let statement, action = errorFrame ""
+            { Statement = statement; Substantiation = []; Action = action }
+        | primary :: _ ->
+            let statement, action = errorFrame primary.Code
+            { Statement      = statement
+              Substantiation =
+                errors
+                |> List.collect (fun e ->
+                    [ View.Field("problem", e.Message, View.Neutral)
+                      View.Field("code", e.Code, View.Neutral) ])
+              Action         = action }
+
+    // ------------------------------------------------------------------
+    // The gates — §5 (consent, in plain words). Mechanism 1: a typed
+    // projection keyed by the closed `Preflight.GateLabel` DU (the gate⇔copy
+    // totality is the closed-DU analog of code⇔copy). The copy law: state the
+    // consequence as meaning, name the one lever, hand over a plain active
+    // imperative — never a wall of error.
+    // ------------------------------------------------------------------
+
+    /// The §5 gate copy for a `Preflight.GateLabel` — the statement (status +
+    /// consequence-as-meaning) and the next move (a plain active imperative).
+    /// Total over the closed DU; the verb is plain (`Approve · Grant · Map ·
+    /// Check · Correct · Allow`), never `Override` / `Declare loss` / `Proceed`.
+    let gateStatement (label: Preflight.GateLabel) : View.Status * string * View.View option =
+        match label with
+        | Preflight.UndeclaredDestructiveChange ->
+            View.Bad, "This change drops a database object. Approve the removal, or halt.",
+            Some(View.Action "Approve the removal: --declare-loss <name> (or --declare-all), or halt.")
+        | Preflight.DataViolatesTightening ->
+            View.Bad, "The existing data violates the tightening. Correct the data, relax the constraint, or halt.",
+            Some(View.Action "Correct the data, relax the constraint, or halt.")
+        | Preflight.SchemaReadFailed ->
+            View.Bad, "The deployed schema could not be read. Check the connection and retry.",
+            Some(View.Action "Check the connection and retry.")
+        | Preflight.ConnectionUnavailable ->
+            View.Warn, "The target is unreachable. Check the connection and retry.",
+            Some(View.Action "Check the connection and retry.")
+        | Preflight.InsufficientGrant ->
+            View.Warn, "A required permission is denied. Grant it, then retry.",
+            Some(View.Action "Grant the permission, then retry.")
+        | Preflight.ReconciliationMismatch ->
+            View.Warn, "The source and the sink do not reconcile. Resolve the mismatch, then retry.",
+            Some(View.Action "Resolve the mismatch, then retry.")
+        | Preflight.UnmappedIdentities ->
+            View.Warn, "Some identities are unmapped. Map them, assign the system user, or halt.",
+            Some(View.Action "Map the remaining identities, assign the system user, or halt.")
+        | Preflight.CdcTrackedSink ->
+            View.Warn, "The sink is CDC-tracked. Allow the capture, or halt.",
+            Some(View.Action "Allow CDC capture, or halt.")
+        | Preflight.UnclassifiedRefusal ->
+            View.Bad, "Stopped before any change was applied. The cause is shown below.", None
+
+    /// Voice a `Preflight.GateRefusal` as a §5 `Surface` — the statement names the
+    /// consequence + the lever; the substantiation (the gate axis, the located
+    /// detail, the distinct exit code) is one level beneath; the action is the
+    /// plain imperative. The structural refusal that otherwise collapses to a flat
+    /// error string.
+    let gateSurface (_command: string) (refusal: Preflight.GateRefusal) : Surface.Surface =
+        // Lead with the consequence as meaning (§5), not "<command> refused —" —
+        // a gate *stops to ask*, never a system-shout. The command context is in
+        // the surrounding CLI narration; the gate axis is in the substantiation.
+        let status, statement, action = gateStatement refusal.Label
+        { Statement      = View.Hero(status, statement)
+          Substantiation =
+            [ View.Disclosure(
+                "Details", View.Neutral,
+                [ View.Field("gate", Preflight.labelText refusal.Label, status)
+                  View.Field("detail", refusal.Error.Message, View.Neutral)
+                  View.Field("exit", string refusal.ExitCode, View.Neutral) ]) ]
           Action         = action }
