@@ -138,11 +138,9 @@ let ``a target's configured strategy fills when the CLI is silent`` () =
     | other -> Assert.Fail(sprintf "expected Project, got %A" other)
 
 [<Fact>]
-let ``parse routes check to the proof plane`` () =
+let ``parse routes check to the proof plane carrying its tail`` () =
     match Surface.parse cfg [ "check"; "drift"; "--to"; "dev" ] |> mustOk with
-    | Intent.Check (kind, dest) ->
-        Assert.Equal("drift", kind)
-        Assert.Equal(Some "dev", dest)
+    | Intent.Check args -> Assert.Equal<string list>([ "drift"; "--to"; "dev" ], args)
     | other -> Assert.Fail(sprintf "expected Check, got %A" other)
 
 [<Fact>]

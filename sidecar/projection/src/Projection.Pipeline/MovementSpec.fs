@@ -64,6 +64,16 @@ type Shape =
     | Ssdt
     | Skeleton
 
+/// Where the projected state B is authored. A bare model file (the authored
+/// `Catalog`), the unified config (which carries the model path plus the
+/// operator overlays), or unspecified — resolved from `projection.json`'s
+/// `model` field, else refused. THE_CLI.md §3: "one input — the model."
+[<RequireQualifiedAccess>]
+type ModelSource =
+    | ModelFile of path: string
+    | ConfigFile of path: string
+    | Unspecified
+
 /// The fully-resolved movement — what the one engine consumes. Every
 /// today-verb is a point in this space (THE_CLI.md §7). `Commit` is the
 /// operator's intent (`--go`); the `PROJECTION_ALLOW_EXECUTE` env var is
@@ -71,6 +81,7 @@ type Shape =
 type MovementSpec =
     {
         Destination : Destination
+        Model       : ModelSource
         Baseline    : Baseline
         Scope       : Scope
         Strategy    : Strategy
@@ -78,6 +89,14 @@ type MovementSpec =
         Shape       : Shape
         /// Path to the user-map CSV (Reidentify); `None` is no re-key.
         Rekey       : string option
+        /// Accept declared loss (drops) — never sourced from config (§4).
+        AllowDrops  : bool
+        /// Permit schema DDL against a CDC-tracked sink.
+        AllowCdc    : bool
+        /// Durable provenance store; fills from the target's config or `--store`.
+        Store       : string option
+        /// Environment label for the timeline / episode.
+        Env         : string option
         Commit      : bool
     }
 
@@ -89,12 +108,17 @@ module MovementSpec =
     let forDestination (destination: Destination) : MovementSpec =
         {
             Destination = destination
+            Model       = ModelSource.Unspecified
             Baseline    = Baseline.Auto
             Scope       = Scope.All
             Strategy    = Strategy.Merge
             Data        = DataOrigin.Model
             Shape       = Shape.Bundle
             Rekey       = None
+            AllowDrops  = false
+            AllowCdc    = false
+            Store       = None
+            Env         = None
             Commit      = false
         }
 
@@ -114,6 +138,6 @@ module MovementSpec =
 [<RequireQualifiedAccess>]
 type Intent =
     | Project of MovementSpec
-    | Check of kind: string * destination: string option
-    | Explain of kind: string * args: string list
-    | Seal of action: string * args: string list
+    | Check of args: string list
+    | Explain of args: string list
+    | Seal of args: string list

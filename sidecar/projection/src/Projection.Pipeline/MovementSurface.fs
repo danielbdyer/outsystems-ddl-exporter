@@ -33,10 +33,12 @@ type Target =
         Strategy : Strategy option
     }
 
-/// The parsed `projection.json`: named targets plus a global defaults block.
+/// The parsed `projection.json`: named targets, the default authored model
+/// (so `project --to dev` needs no model path), plus a global defaults block.
 type TargetConfig =
     {
         Targets  : Map<string, Target>
+        Model    : string option
         Defaults : Map<string, string>
     }
 
@@ -53,7 +55,7 @@ type ResolvedTarget =
 [<RequireQualifiedAccess>]
 module TargetConfig =
 
-    let empty : TargetConfig = { Targets = Map.empty; Defaults = Map.empty }
+    let empty : TargetConfig = { Targets = Map.empty; Model = None; Defaults = Map.empty }
 
     let private err (code: string) (message: string) : ValidationError =
         ValidationError.create code message
@@ -161,7 +163,7 @@ module TargetConfig =
                                 | None -> () ]
                             |> Map.ofList
                         | _ -> Map.empty
-                    Result.success { Targets = targets; Defaults = defaults }
+                    Result.success { Targets = targets; Model = getString root "model"; Defaults = defaults }
         with ex ->
             Result.failureOf (err "cli.config.parseFailed" (sprintf "projection.json did not parse: %s" ex.Message))
 
@@ -267,6 +269,21 @@ module Surface =
         | "empty" -> Baseline.Empty
         | _ -> if raw.StartsWith "@" then Baseline.FromTarget (raw.Substring 1) else Baseline.FromModel raw
 
+    /// Resolve the source of B (THE_CLI.md §3): `--config` (the unified config
+    /// carrying model + overlays) wins, then `--model` (a bare authored model),
+    /// then `projection.json`'s `model` field; absent all three, Unspecified
+    /// (the executor refuses with a named message naming the three ways to set it).
+    let private resolveModel (cfg: TargetConfig) (argv: string list) : ModelSource =
+        match readFlag "--config" argv with
+        | Some c -> ModelSource.ConfigFile c
+        | None ->
+            match readFlag "--model" argv with
+            | Some m -> ModelSource.ModelFile m
+            | None ->
+                match cfg.Model with
+                | Some m -> ModelSource.ModelFile m
+                | None -> ModelSource.Unspecified
+
     /// Build a `project` `MovementSpec` from the `--to` value and modifier
     /// flags, applying target defaults beneath CLI-set values.
     let buildProject (cfg: TargetConfig) (argv: string list) : Result<MovementSpec> =
@@ -307,12 +324,17 @@ module Surface =
                         | Some f -> parseBaseline f
                     let spec =
                         { baseSpec with
+                            Model = resolveModel cfg argv
                             Scope = (match scopeR with Ok v -> v | _ -> baseSpec.Scope)
                             Strategy = (match strategyR with Ok v -> v | _ -> baseSpec.Strategy)
                             Shape = (match shapeR with Ok v -> v | _ -> baseSpec.Shape)
                             Data = data
                             Baseline = baseline
                             Rekey = readFlag "--rekey" argv
+                            AllowDrops = hasFlag "--allow-drops" argv
+                            AllowCdc = hasFlag "--allow-cdc" argv
+                            Store = (match readFlag "--store" argv with Some s -> Some s | None -> resolved.Store)
+                            Env = readFlag "--env" argv
                             Commit = hasFlag "--go" argv }
                     Result.success (withTargetDefaults resolved (Option.isSome scopeFlag) (Option.isSome strategyFlag) spec)
 
@@ -326,14 +348,9 @@ module Surface =
             match buildProject cfg rest with
             | Ok spec -> Result.success (Intent.Project spec)
             | Error e -> Result.failure e
-        | "check" :: rest ->
-            let kind = match rest with k :: _ when not (k.StartsWith "--") -> k | _ -> "fidelity"
-            Result.success (Intent.Check (kind, readFlag "--to" rest))
-        | "explain" :: kind :: rest ->
-            Result.success (Intent.Explain (kind, rest))
-        | "seal" :: rest ->
-            let action = match rest with a :: _ when not (a.StartsWith "--") -> a | _ -> "eject"
-            Result.success (Intent.Seal (action, rest))
+        | "check" :: rest   -> Result.success (Intent.Check rest)
+        | "explain" :: rest -> Result.success (Intent.Explain rest)
+        | "seal" :: rest    -> Result.success (Intent.Seal rest)
         | verb :: _ ->
             Result.failureOf (err "cli.verb.unknown" (sprintf "unknown verb '%s'; expected project | check | explain | seal." verb))
         | [] ->

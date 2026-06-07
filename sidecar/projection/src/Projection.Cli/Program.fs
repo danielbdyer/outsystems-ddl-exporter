@@ -1768,6 +1768,213 @@ let private runMigrateWithData (toPath: string) (sinkSpec: string) (sourceSpec: 
     dumpBench "migrate"
     code
 
+// ----------------------------------------------------------------------
+// THE_CLI.md — the four-verb operator surface. `Surface.parse` (Pipeline)
+// turns argv into a typed `Intent`; these executors translate the `Intent`
+// to the proven engine faces above (the run* functions), so exit codes and
+// behavior are preserved by construction. `project` is the hero — every
+// emission-family verb is one `MovementSpec` point; deploy / migrate / load /
+// export collapse into it, distinguished only by the destination and the
+// auto-read baseline A.
+// ----------------------------------------------------------------------
+
+/// Reconstruct the out-of-band connection spec string from a resolved
+/// `ConnectionRef` so the (string-taking) migrate runners receive it.
+let private connSpecOf (r: ConnectionRef) : string =
+    match r with
+    | ConnectionRef.EnvVar n -> "env:" + n
+    | ConnectionRef.File p   -> "file:" + p
+
+/// Resolve the source of B to a concrete model path. A `ConfigFile` yields the
+/// config's `Model.Path`; a bare `ModelFile` is itself; `Unspecified` refuses.
+let private modelPathOf (model: ModelSource) : Result<string> =
+    match model with
+    | ModelSource.ModelFile m -> Result.success m
+    | ModelSource.ConfigFile c ->
+        match Config.fromFile c with
+        | Ok cfg    -> Result.success cfg.Model.Path
+        | Error es  -> Result.failure es
+    | ModelSource.Unspecified ->
+        Result.failureOf
+            (ValidationError.create "cli.project.modelMissing"
+                "no model — pass --model <model.json>, --config <config.json>, or set \"model\" in projection.json.")
+
+/// project --to <live> with no --go — preview the minimal change against the
+/// deployed state A, never writing (THE_CLI.md §5). Reads A live, previews
+/// B ⊖ A, renders the plan via the shared migrate renderer.
+let private runProjectLivePreview (toPath: string) (connSpec: string) (declaration: LossDeclaration) : int =
+    let work =
+        task {
+            let! bRead = Compose.read toPath
+            match bRead, TransferSpec.parseConnectionSpec connSpec with
+            | Error es, _ ->
+                Console.Error.WriteLine (sprintf "projection project: could not read the model %s:" toPath)
+                printErrors Console.Error es
+                return 6
+            | _, Error es ->
+                Console.Error.WriteLine "projection project: connection reference error:"
+                printErrors Console.Error es
+                return 6
+            | Ok target, Ok connRef ->
+                let sub : Substrate =
+                    { Environment = parseEnvironment "preview" None; Role = SubstrateRole.Sink; ConnectionRef = connRef }
+                match! ConnectionResolver.openSubstrate sub with
+                | Error es ->
+                    Console.Error.WriteLine "projection project: could not open the destination:"
+                    printErrors Console.Error es
+                    return 3
+                | Ok cnn ->
+                    use cnn = cnn
+                    match! ReadSide.read cnn with
+                    | Error es -> return reportMigrationError (SchemaReadFailed es)
+                    | Ok sourceA ->
+                        return reportPreviewOutcome
+                            (sprintf "projection project -> %s  (preview; re-run with --go to apply)" connSpec)
+                            (MigrationRun.preview declaration sourceA target)
+        }
+    work.GetAwaiter().GetResult()
+
+/// Surface a non-default axis the current engine does not yet honor — a named
+/// note, never a silent drop (THE_VOICE no-silent-drop; THE_CLI.md §5).
+let private noteUnhonored (spec: MovementSpec) : unit =
+    let note (m: string) = eprintfn "projection project: note — %s" m
+    if spec.Scope <> Scope.All then note "--scope accepted; the engine emits all legs (all applied)."
+    if spec.Strategy <> Strategy.Merge then note "--how accepted; the engine uses its default realization (merge applied)."
+    match spec.Baseline with
+    | Baseline.Auto -> ()
+    | _ -> note "--from accepted; the engine reads the prior state automatically (auto applied)."
+    match spec.Data with
+    | DataOrigin.Synthetic -> note "--data synthetic accepted; synthetic generation is pending (model data applied)."
+    | DataOrigin.NoData    -> note "--data none accepted; the engine emits model data (model data applied)."
+    | _ -> ()
+
+/// Execute `project` by translating the `MovementSpec` to an engine face.
+let private executeProject (cfg: TargetConfig) (spec: MovementSpec) : int =
+    noteUnhonored spec
+    let declaration = if spec.AllowDrops then DeclareAll else DeclareNone
+    match spec.Destination with
+    | Destination.Folder dir ->
+        match spec.Model with
+        | ModelSource.ConfigFile c ->
+            runFullExport c (Some dir) LogSink.Verbosity.Quiet Set.empty spec.Store spec.Env
+        | ModelSource.ModelFile m ->
+            match spec.Shape with
+            | Shape.Skeleton           -> withRun "projection project" (fun () -> runEmitSkeletonOnly m dir)
+            | Shape.Bundle | Shape.Ssdt -> withRun "projection project" (fun () -> runEmit m dir)
+        | ModelSource.Unspecified ->
+            die 1 "projection project: no model — pass --model <model.json>, --config <config.json>, or set \"model\" in projection.json."
+    | Destination.Docker ->
+        match modelPathOf spec.Model with
+        | Ok m     -> withRun "projection project" (fun () -> runDeploy m)
+        | Error es -> Console.Error.WriteLine "projection project --to docker:"; printErrors Console.Error es; 1
+    | Destination.Live connRef ->
+        match modelPathOf spec.Model with
+        | Error es -> Console.Error.WriteLine "projection project:"; printErrors Console.Error es; 6
+        | Ok m ->
+            let connSpec = connSpecOf connRef
+            if not spec.Commit then
+                runProjectLivePreview m connSpec declaration
+            else
+                match spec.Data with
+                | DataOrigin.FromTarget alias ->
+                    match Surface.resolveTarget cfg alias with
+                    | Error es ->
+                        Console.Error.WriteLine (sprintf "projection project --data %s:" alias)
+                        printErrors Console.Error es
+                        6
+                    | Ok rt ->
+                        match rt.Destination with
+                        | Destination.Live srcRef ->
+                            runMigrateWithData m connSpec (connSpecOf srcRef) [] spec.Rekey declaration spec.AllowCdc spec.Store spec.Env
+                        | _ ->
+                            die 2 (sprintf "projection project --data %s: a data source must be a live target." alias)
+                | DataOrigin.Model | DataOrigin.Synthetic | DataOrigin.NoData ->
+                    runMigrateExecute m connSpec declaration spec.AllowCdc spec.Store spec.Env
+
+/// Execute `check` — the proof plane (canary / drift / data / ready).
+let private executeCheck (cfg: TargetConfig) (args: string list) : int =
+    let arr = List.toArray args
+    let valueOf flag = arr |> Array.tryFindIndex ((=) flag) |> Option.bind (fun i -> if i + 1 < arr.Length then Some arr.[i + 1] else None)
+    let connOf (raw: string) : Result<string> =
+        match Surface.resolveTarget cfg raw with
+        | Ok rt ->
+            match rt.Destination with
+            | Destination.Live r -> Result.success (connSpecOf r)
+            | _ -> Result.failureOf (ValidationError.create "cli.check.notLive" (sprintf "'%s' is not a live target." raw))
+        | Error es -> Result.failure es
+    match args with
+    | "drift" :: _ ->
+        match valueOf "--model", valueOf "--to" with
+        | Some m, Some toRaw ->
+            match connOf toRaw with
+            | Ok c     -> runDrift m c
+            | Error es -> Console.Error.WriteLine "projection check drift:"; printErrors Console.Error es; 6
+        | _ -> die 2 "projection check drift: requires --model <model.json> --to <target>."
+    | "data" :: _ ->
+        match valueOf "--before", valueOf "--after" with
+        | Some b, Some a ->
+            match connOf b, connOf a with
+            | Ok bc, Ok ac -> runVerifyData bc ac
+            | _ -> die 6 "projection check data: could not resolve --before / --after to live targets."
+        | _ -> die 2 "projection check data: requires --before <target> --after <target>."
+    | "ready" :: _ -> runReadiness ()
+    | _ ->
+        let ddl = args |> List.tryFind (fun a -> not (a.StartsWith "--") && a <> "fidelity")
+        match ddl with
+        | Some path ->
+            if List.contains "--cdc-silence" args
+            then withRun "projection check --cdc-silence" (fun () -> runCanaryCdcSilence path)
+            else withRun "projection check" (fun () -> runCanary path)
+        | None -> die 1 "projection check: the fidelity canary needs a source DDL path (check <source.sql>)."
+
+/// Execute `explain` — understand before shipping (diff / policy / node /
+/// suggest / migrate-preview).
+let private executeExplain (args: string list) : int =
+    let arr = List.toArray args
+    let valueOf flag = arr |> Array.tryFindIndex ((=) flag) |> Option.bind (fun i -> if i + 1 < arr.Length then Some arr.[i + 1] else None)
+    match args with
+    | "diff" :: a :: b :: _ ->
+        let asJson = (valueOf "--format" = Some "json")
+        let depth =
+            match valueOf "--depth" with
+            | Some "all" -> System.Int32.MaxValue
+            | Some d -> (match System.Int32.TryParse d with | true, n -> max 0 n | _ -> View.defaultDepth)
+            | None -> View.defaultDepth
+        runDiff a b asJson depth
+    | "policy" :: a :: b :: _ -> runPolicyDiff a b
+    | "node" :: c :: k :: _   -> runExplain c k
+    | "suggest" :: c :: _     -> runSuggestConfig c (valueOf "--apply")
+    | "migrate" :: _ ->
+        let declaration = parseLossDeclaration arr
+        match valueOf "--to", valueOf "--from", valueOf "--store" with
+        | Some toP, Some fromP, _      -> runMigratePreview fromP toP declaration
+        | Some toP, None, Some store   -> runMigrateFromStore store toP declaration
+        | _ -> die 2 "projection explain migrate: needs --to <modelB> with --from <modelA> or --store <lifecycle>."
+    | _ -> die 2 "projection explain: expected diff | policy | node | suggest | migrate."
+
+/// Execute `seal` — provenance (eject / approve).
+let private executeSeal (args: string list) : int =
+    let arr = List.toArray args
+    let valueOf flag = arr |> Array.tryFindIndex ((=) flag) |> Option.bind (fun i -> if i + 1 < arr.Length then Some arr.[i + 1] else None)
+    match args with
+    | "approve" :: version :: _ ->
+        match valueOf "--approver" with
+        | Some approver -> runApprove version approver (valueOf "--rationale") (valueOf "--store")
+        | None -> die 2 "projection seal approve: requires --approver <name>."
+    | _ ->
+        match valueOf "--store" with
+        | Some store -> runEject store
+        | None -> die 2 "projection seal: requires --store <path> (the durable timeline)."
+
+/// Discover `projection.json` (or `PROJECTION_CONFIG`) — absent is the empty
+/// config (aliasing is opt-in).
+let private discoverConfig () : Result<TargetConfig> =
+    let path =
+        match System.Environment.GetEnvironmentVariable "PROJECTION_CONFIG" with
+        | null | "" -> "projection.json"
+        | p -> p
+    TargetConfig.fromFile path
+
 [<EntryPoint>]
 let main argv =
     // Polish (REPORTING_HORIZON) — global flags, parsed + stripped before
@@ -1787,165 +1994,26 @@ let main argv =
     let globalFlags = set [ "--pretty"; "--json"; "--no-pretty"; "-v"; "--verbose" ]
     let argv = argv |> Array.filter (fun a -> not (Set.contains a globalFlags))
     match argv with
-    | [| "full-export" |] ->
-        Console.Error.WriteLine "projection full-export: --config <path> required"
-        Console.Error.WriteLine ""
-        Console.Error.WriteLine "Run `projection full-export --help` for usage."
-        1
-    | arr when arr.Length >= 1 && arr.[0] = "full-export" && Array.contains "--load" arr ->
-        // X1 part B — publish + live data-load (measure + record). Manual flag
-        // parse (the load path opens a connection; the normal full-export path
-        // below stays Argu-driven and unchanged).
-        let valueOf (flag: string) =
-            arr
-            |> Array.tryFindIndex ((=) flag)
-            |> Option.bind (fun i -> if i + 1 < arr.Length then Some arr.[i + 1] else None)
-        match valueOf "--config", valueOf "--conn" with
-        | Some configPath, Some connSpec ->
-            let storePath =
-                match valueOf "--lifecycle-store" with
-                | Some _ as s -> s
-                | None -> valueOf "--store"
-            runFullExportLoad configPath connSpec (valueOf "--out") storePath (valueOf "--env")
-        | _ -> die 2 "projection full-export --load: requires --config <path> --conn <ref>"
-    | arr when arr.Length >= 1 && arr.[0] = "full-export" ->
-        dispatchFullExport (Array.skip 1 arr)
-    | [| "emit"; "--config"; configPath |] ->
-        withRun "projection emit --config" (fun () -> runEmitFromConfig configPath)
-    | [| "emit"; "--skeleton-only"; inputPath; outputDir |] ->
-        withRun "projection emit --skeleton-only" (fun () -> runEmitSkeletonOnly inputPath outputDir)
-    | [| "emit"; inputPath; outputDir |] ->
-        withRun "projection emit" (fun () -> runEmit inputPath outputDir)
-    | [| "skeleton"; inputPath; outputDir |] ->
-        withRun "projection skeleton" (fun () -> runSkeleton inputPath outputDir)
-    | [| "approve"; policyVersion; "--approver"; approver |] ->
-        runApprove policyVersion approver None None
-    | [| "approve"; policyVersion; "--approver"; approver; "--rationale"; rationale |] ->
-        runApprove policyVersion approver (Some rationale) None
-    | [| "approve"; policyVersion; "--approver"; approver; "--store"; store |] ->
-        runApprove policyVersion approver None (Some store)
-    | [| "approve"; policyVersion; "--approver"; approver; "--rationale"; rationale; "--store"; store |] ->
-        runApprove policyVersion approver (Some rationale) (Some store)
-    | [| "deploy"; inputPath |] ->
-        withRun "projection deploy" (fun () -> runDeploy inputPath)
-    | [| "canary"; sourceDdlPath; "--cdc-silence" |] ->
-        withRun "projection canary --cdc-silence" (fun () -> runCanaryCdcSilence sourceDdlPath)
-    | [| "canary"; sourceDdlPath |] ->
-        withRun "projection canary" (fun () -> runCanary sourceDdlPath)
-    | [| "readiness" |] ->
-        runReadiness ()
-    | arr when arr.Length >= 3 && arr.[0] = "diff" ->
-        // Flags are order-independent: `--format json` selects the structured
-        // lens (the full tree); `--depth N` opens the dig N levels (the calm
-        // default is one level; `--depth all` reveals everything).
-        let valueOf (flag: string) =
-            arr
-            |> Array.tryFindIndex ((=) flag)
-            |> Option.bind (fun i -> if i + 1 < arr.Length then Some arr.[i + 1] else None)
-        let asJson = (valueOf "--format" = Some "json")
-        let depth =
-            match valueOf "--depth" with
-            | Some "all" -> System.Int32.MaxValue
-            | Some d -> match System.Int32.TryParse d with | true, n -> max 0 n | _ -> View.defaultDepth
-            | None -> View.defaultDepth
-        runDiff arr.[1] arr.[2] asJson depth
-    | [| "explain"; configPath; ssKey |] ->
-        runExplain configPath ssKey
-    | [| "suggest-config"; configPath |] ->
-        runSuggestConfig configPath None
-    | [| "suggest-config"; configPath; "--apply"; out |] ->
-        runSuggestConfig configPath (Some out)
-    | [| "policy-diff"; configAPath; configBPath |] ->
-        runPolicyDiff configAPath configBPath
-    | [| "eject"; "--store"; storePath |] ->
-        runEject storePath
-    | arr when arr.Length >= 1 && arr.[0] = "drift" ->
-        let valueOf (flag: string) =
-            arr
-            |> Array.tryFindIndex ((=) flag)
-            |> Option.bind (fun i -> if i + 1 < arr.Length then Some arr.[i + 1] else None)
-        match valueOf "--to", valueOf "--conn" with
-        | Some toPath, Some connSpec -> runDrift toPath connSpec
-        | _ -> die 2 "projection drift: requires --to <model.json> --conn <ref>"
-    | arr when arr.Length >= 1 && arr.[0] = "migrate" && not (Array.contains "--execute" arr) ->
-        let valueOf (flag: string) =
-            arr
-            |> Array.tryFindIndex ((=) flag)
-            |> Option.bind (fun i -> if i + 1 < arr.Length then Some arr.[i + 1] else None)
-        let declaration = parseLossDeclaration arr
-        match valueOf "--to", valueOf "--from", valueOf "--store" with
-        | Some toPath, Some fromPath, _ -> runMigratePreview fromPath toPath declaration
-        | Some toPath, None, Some storePath -> runMigrateFromStore storePath toPath declaration
-        | _ ->
-            Console.Error.WriteLine
-                "projection migrate (dry-run): needs --to <modelB.json> with either --from <modelA.json> (two-model) or --store <lifecycle.json> (snapshot⊖snapshot)."
-            2
-    | arr when arr.Length >= 1 && arr.[0] = "migrate" && Array.contains "--execute" arr ->
-        // B1 — live execution. In-place (`--conn`) or cross-substrate
-        // (`--sink-conn` + `--source-conn`, the data-load form). Flag-order-
-        // independent parse.
-        let valueOf (flag: string) =
-            arr
-            |> Array.tryFindIndex ((=) flag)
-            |> Option.bind (fun i -> if i + 1 < arr.Length then Some arr.[i + 1] else None)
-        // AC-X2 — `--reconcile` is repeatable; collect every <flag value> pair.
-        let multiValueOf (flag: string) =
-            arr
-            |> Array.indexed
-            |> Array.choose (fun (i, a) ->
-                if a = flag && i + 1 < arr.Length then Some arr.[i + 1] else None)
-            |> Array.toList
-        let declaration = parseLossDeclaration arr
-        let allowCdc = Array.contains "--allow-cdc" arr
-        match valueOf "--to", valueOf "--source-conn", valueOf "--sink-conn", valueOf "--conn" with
-        | Some toPath, Some sourceSpec, Some sinkSpec, _ ->
-            // X5 — `--lifecycle-store` (alias `--store`) records the episode with
-            // the MEASURED CDC capture count of the data load; absent, the data
-            // load runs without recording (unchanged).
-            let storePath =
-                match valueOf "--lifecycle-store" with
-                | Some _ as s -> s
-                | None -> valueOf "--store"
-            runMigrateWithData toPath sinkSpec sourceSpec (multiValueOf "--reconcile") (valueOf "--user-map") declaration allowCdc storePath (valueOf "--env")
-        | Some toPath, None, None, Some connSpec ->
-            // AC-P8 — optional durable provenance. `--lifecycle-store` (alias
-            // `--store`) persists the episode after a verified execute; absent,
-            // behavior is unchanged (a one-line note tells the operator nothing
-            // was persisted). `--env` stamps the timeline / episode environment.
-            let storePath =
-                match valueOf "--lifecycle-store" with
-                | Some _ as s -> s
-                | None -> valueOf "--store"
-            runMigrateExecute toPath connSpec declaration allowCdc storePath (valueOf "--env")
-        | _ ->
-            Console.Error.WriteLine
-                "projection migrate --execute: in-place needs --to <modelB.json> --conn <ref>; cross-substrate needs --to --sink-conn --source-conn."
-            2
-    | [| "transfer" |] ->
-        Console.Error.WriteLine "projection transfer: --source-conn and --sink-conn required"
-        Console.Error.WriteLine ""
-        Console.Error.WriteLine "Run `projection transfer --help` for usage."
-        1
-    | arr when arr.Length >= 1 && arr.[0] = "transfer" ->
-        dispatchTransfer (Array.skip 1 arr)
-    | [| "verify-data" |] ->
-        Console.Error.WriteLine "projection verify-data: --before-conn and --after-conn required"
-        Console.Error.WriteLine ""
-        Console.Error.WriteLine "Run `projection verify-data --help` for usage."
-        1
-    | arr when arr.Length >= 1 && arr.[0] = "verify-data" ->
-        dispatchVerifyData (Array.skip 1 arr)
-    | [||]
-    | [| "--help" |]
-    | [| "-h" |] ->
-        // Per chapter 3.5 deep audit (2026-05-09): help-page emission
-        // via per-line `Console.Out.WriteLine`. Typed list flows in;
-        // per-line writes flow out; no intermediate concatenated
-        // multi-line string.
+    | [||] | [| "--help" |] | [| "-h" |] ->
         printLines Console.Out usageLines
         0
     | _ ->
-        Console.Error.WriteLine "projection: invalid arguments"
-        Console.Error.WriteLine ""
-        printLines Console.Error usageLines
-        1
+        match discoverConfig () with
+        | Error es ->
+            Console.Error.WriteLine "projection: projection.json is invalid:"
+            printErrors Console.Error es
+            6
+        | Ok cfg ->
+            match Surface.parse cfg (List.ofArray argv) with
+            | Error es ->
+                Console.Error.WriteLine "projection: could not read the command:"
+                printErrors Console.Error es
+                Console.Error.WriteLine ""
+                printLines Console.Error usageLines
+                1
+            | Ok intent ->
+                match intent with
+                | Intent.Project spec -> executeProject cfg spec
+                | Intent.Check args   -> executeCheck cfg args
+                | Intent.Explain args -> executeExplain args
+                | Intent.Seal args    -> executeSeal args
