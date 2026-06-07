@@ -175,13 +175,21 @@ let renderGate (command: string) (refusal: Preflight.GateRefusal) : unit =
 let buildErrorsView (errors: ValidationError list) : View.View =
     Surface.render (Voice.errorsSurface errors)
 
-/// Render a `ValidationError list` to stderr as the voiced §10/§14 surface — the
-/// operator reads a plain statement and the next move; the codes ride in the
-/// substantiation, never on the statement line. The structured NDJSON
-/// (`config.validationFailed` etc.) remains the machine channel, unchanged.
-let renderErrors (errors: ValidationError list) : unit =
+/// Render a `ValidationError list` to a chosen writer as the voiced §10/§14
+/// surface — the operator reads a plain statement and the next move; the codes
+/// ride in the substantiation, never on the statement line. The structured
+/// NDJSON (`config.validationFailed` etc.) remains the machine channel, unchanged.
+let renderErrorsTo (writer: System.IO.TextWriter) (errors: ValidationError list) : unit =
     if not (List.isEmpty errors) then
         let console =
-            AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(Console.Error)))
-        if Console.IsErrorRedirected then console.Profile.Width <- 100
+            AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(writer)))
+        // Pin a width when the sink is not a real terminal (piped / file) so the
+        // grid cells don't collapse; color is stripped for the non-terminal sink.
+        let isStderr = System.Object.ReferenceEquals(writer, Console.Error)
+        if (not isStderr) || Console.IsErrorRedirected then
+            console.Profile.Width <- 100
         View.write console (buildErrorsView errors)
+
+/// Render a `ValidationError list` to stderr (the common case).
+let renderErrors (errors: ValidationError list) : unit =
+    renderErrorsTo Console.Error errors

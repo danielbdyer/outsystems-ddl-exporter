@@ -105,9 +105,9 @@ from sixteen verbs to four.
 | **2** | Run unification onto the spine | **SUBSUMED** by the CLI re-envisioning (one `MovementSpec` executor; §0.5). Remaining: per-stage stream across the `project`/`check` faces |
 | **2** | Intra-stage ETA | **PENDING** (this doc §4.4) |
 | **3** | Aggregate-at-scale + timeline/ladder | **PENDING** (this doc §5; renders on `project` + `check ready`) |
-| **4** | Errors as voice (`Voice.errorsSurface` / `TtyRenderer.renderErrors`) | **BUILT, not wired** — surfaces exist + tested; wiring into the four executors is deliberate follow-up (§0.5) |
-| **4** | configError message lift + the new `printErrors` sites + the hand-rolled usage | **PENDING** (this doc §6.1; Argu `Usage` is obsolete — files deleted, §0.5) |
-| **mech-1** | §5 gates voiced over all 8 `GateLabel`s (`Voice.gateStatement`/`gateSurface`) | **BUILT, not wired** — `gateSurface` exists + tested; wire into the `--go`/pre-flight refusal path (§0.5) |
+| **4** | Errors as voice (`Voice.errorsSurface` / `TtyRenderer.renderErrors`) | **WIRED** — `printErrors` (every executor's error path) now renders the voiced §10/§14 surface (`DECISIONS 2026-06-07 (errors wired)`); the six `migrate` `REFUSED` shouts revoiced |
+| **4** | configError message lift + the hand-rolled usage | **PENDING** (this doc §6.1; Argu `Usage` is obsolete — files deleted, §0.5) |
+| **mech-1** | §5 gates voiced over all 8 `GateLabel`s (`Voice.gateStatement`/`gateSurface`) | **BUILT, not wired** — `gateSurface` exists + tested; wire into the `reportPreviewOutcome`/pre-flight refusal renderers (§0.5; the §5 safety surface — deliberate) |
 | **mech-1** | §4 moves (→ `explain`) / §6 proofs (→ `check`) typed `toView` | **PENDING** (this doc §6.2) |
 | **5** | Typed `DiagnosticPayload` lift | **DEFERRED** behind a real consumer (this doc §7) |
 

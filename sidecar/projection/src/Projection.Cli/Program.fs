@@ -90,21 +90,16 @@ let private die (code: int) (message: string) : int =
     Console.Error.WriteLine message
     code
 
-/// Print one validation-error line directly via per-segment BCL
-/// `Write` / `WriteLine` calls. Per chapter 3.5 deep audit
-/// (2026-05-09): the prior implementation joined `"  [<code>]
-/// <message>"` via `sprintf` + `String.concat "\n"`. Defensive:
-/// `Console.Write` writes each typed segment independently;
-/// `WriteLine` appends the line terminator. No intermediate
-/// concatenated string.
-let private printErrorLine (writer: TextWriter) (e: ValidationError) : unit =
-    writer.Write "  ["
-    writer.Write e.Code
-    writer.Write "] "
-    writer.WriteLine e.Message
-
+/// Render a `ValidationError list` to the writer as the **voiced** §10/§14
+/// surface (`THE_VOICE.md`; `THE_CLI.md` §5) — a plain statement, the located
+/// cause + code in the substantiation (never the code on the lead line), and the
+/// next move. Delegates to `TtyRenderer.renderErrorsTo` (the `Voice.errorsSurface`
+/// projection). The structured `config.validationFailed` / `transfer.*` NDJSON
+/// stays the machine channel, unchanged — only the operator copy moves to the
+/// register. (Replaces the prior `  [<code>] <message>` form, which led with the
+/// code — a §10 violation.)
 let private printErrors (writer: TextWriter) (errors: ValidationError list) : unit =
-    for e in errors do printErrorLine writer e
+    TtyRenderer.renderErrorsTo writer errors
 
 /// Print the bench table to stdout AND persist a JSON snapshot.
 /// Called at the tail of every successful subcommand so the perf
@@ -1191,12 +1186,12 @@ let private reportPreviewOutcome (header: string) (result: Result<MigrationArtif
         match result with
         | Error (RefusedByViolations violations) ->
             Console.Error.WriteLine (
-                sprintf "projection migrate: REFUSED — %d undeclared destructive change(s). Re-run with --allow-drops (accept all) or --declare-drop <token> for each:" (List.length violations))
+                sprintf "projection migrate: %d destructive change(s) are undeclared. Re-run with --allow-drops (accept all) or --declare-drop <token> for each:" (List.length violations))
             for v in violations do
                 Console.Error.WriteLine (sprintf "    %s" (Migration.lossToken v))
             9
         | Error (RefusedBySchemaErrors entries) ->
-            Console.Error.WriteLine "projection migrate: REFUSED — change(s) the engine cannot express as a single ALTER:"
+            Console.Error.WriteLine "projection migrate: these change(s) cannot be expressed as a single ALTER:"
             for e in entries do
                 Console.Error.WriteLine (sprintf "    [%s] %s" e.Code e.Message)
             9
@@ -1293,20 +1288,20 @@ let private reportMigrationError (e: MigrationError) : int =
     match e with
     | RefusedByViolations violations ->
         Console.Error.WriteLine (
-            sprintf "projection migrate: REFUSED — %d undeclared destructive change(s). Re-run with --allow-drops (accept all) or --declare-drop <token> for each:" (List.length violations))
+            sprintf "projection migrate: %d destructive change(s) are undeclared. Re-run with --allow-drops (accept all) or --declare-drop <token> for each:" (List.length violations))
         for v in violations do Console.Error.WriteLine (sprintf "    %s" (Migration.lossToken v))
         9
     | RefusedBySchemaErrors entries ->
-        Console.Error.WriteLine "projection migrate: REFUSED — change(s) the engine cannot express:"
+        Console.Error.WriteLine "projection migrate: these change(s) cannot be expressed:"
         for e in entries do Console.Error.WriteLine (sprintf "    [%s] %s" e.Code e.Message)
         9
     | RefusedByCdc tracked ->
         Console.Error.WriteLine (
-            sprintf "projection migrate: REFUSED — schema DDL against a CDC-tracked DB (%d table(s)); pass --allow-cdc to proceed." (List.length tracked))
+            sprintf "projection migrate: schema DDL against a CDC-tracked database (%d table(s)). Pass --allow-cdc to proceed." (List.length tracked))
         9
     | RefusedByTightening msg ->
         Console.Error.WriteLine (
-            sprintf "projection migrate: REFUSED — a column tightening (NULL → NOT NULL) would fail against existing NULL data; no DDL ran. %s" msg)
+            sprintf "projection migrate: a column tightening (NULL → NOT NULL) would fail against existing NULL data; no DDL ran. %s" msg)
         9
     | SchemaReadFailed es ->
         Console.Error.WriteLine "projection migrate: reading the deployed schema failed:"

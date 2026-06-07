@@ -20919,3 +20919,17 @@ The CLI was re-envisioned on `main` (`THE_CLI.md`, PR #583) — the ~16 verbs co
 5. **Docs refactored toward the new surface.** `THE_VOICE_BUILD_MAP.md` gains a **§0.5 reconciliation** (the old verb → new face map; what's superseded — every `Program.fs` file:line ref, the run-type dispatch framing, the now-obsolete "voice Argu `Usage`" since the Argu files are deleted — vs. what stays accurate — every Pipeline/Core file:line, since main didn't touch them); the status table is updated (run-unification **subsumed** by `MovementSpec`; the §6 proofs now home on `check`, the §4 moves on `explain`). `THE_VOICE_INTEGRATION.md` gains a forward-pointer noting its §3.1 run types are now engine faces behind `MovementSpec`.
 
 The CLI moved from sixteen verbs to four; the voice's substance (the seam, the `code ⇔ copy` totality, the dwell floor, the §12/§8 rendering, the mechanism-1 `toView`s) is unchanged — only the dispatch surface it renders on moved.
+
+---
+
+**`DECISIONS 2026-06-07 (errors wired)` — The voice error surface is wired into the four-verb CLI: `printErrors` renders the §10/§14 register; the `migrate` `REFUSED` shouts are revoiced.**
+
+Following the reconciliation (`2026-06-07 (later)`), the voice error surface is now live on the new surface — the convergence `THE_CLI.md` §5 asked for:
+
+1. **`printErrors` → the voiced §10/§14 surface (one change, total coverage).** `Program.fs`'s `printErrors` (the ~30-call-site helper every executor's error path routes through) now delegates to `TtyRenderer.renderErrorsTo` (the `Voice.errorsSurface` projection): a plain statement, the located cause + the code in the **substantiation** (never the code on the lead line), and the next move. This fixes the §10 violation (`  [<code>] <message>` led with the code) across `project` / `check` / `explain` / `seal` in one edit, no per-site churn. The prior `printErrorLine` is retired. **Codes unchanged** — the `config.validationFailed` / `transfer.*` NDJSON is the machine channel, untouched; only the operator copy moved to the register. Smoke-tested end-to-end (a `pipeline.config.fileNotFound` renders `✕ The configuration has a problem…` / `problem …` / `code …` / `→ Correct…`).
+
+2. **The six `migrate` `REFUSED` system-shouts revoiced (§2.2 banned-word fix).** `reportPreviewOutcome` + `reportMigrationError` led their refusals with `REFUSED —` (a system-shout, banned). Each now leads with the consequence as meaning and keeps the imperative next move (e.g. `%d destructive change(s) are undeclared. Re-run with --allow-drops …`), per §5. Surgical string fixes; no structural change to the refusal renderers.
+
+3. **Still deliberate-follow-up (the §5 safety surface).** Routing `reportPreviewOutcome` (the migrate/project preview), `reportMigrationError`, and the connection/permission/tightening pre-flight renderers through `Voice.gateSurface`/a voiced preview footer is **not** done here — those are payload-shaped (`MigrationError` / `GateRefusal` / `MigrationPreview`) and load-bearing for `THE_CLI.md` §5's preview-by-default safety model; rewiring them is the mechanism-1 §5 step, done carefully rather than via a blanket helper. The `Voice.gateSurface` projection (all 8 `GateLabel`s) is built + tested, ready to wire.
+
+Pure pool green (2878 passed). No test asserts on the CLI's human error/refusal prose (verified), so the register change is test-safe.
