@@ -1,18 +1,16 @@
 module Projection.Cli.Program
 
 // LINT-ALLOW-FILE: CLI dispatcher operator-facing prose. Help/usage and terminal SQL-text at
-//   the CLI boundary use string composition; the structural argument surface is
-//   the typed Argu DU. Terminal operator-facing text is the allowed exception.
+//   the CLI boundary use string composition; the structural argument surface is the typed
+//   MovementSpec / Intent (Projection.Pipeline). Terminal operator-facing text is the allowed exception.
 
 open System
 open System.Diagnostics
 open System.IO
-open Argu
 open Projection.Core
 open Projection.Adapters.Sql
 open Projection.Pipeline
 open Projection.Targets.SSDT
-open Projection.Cli.FullExportArgs
 
 /// Usage lines. Per chapter 3.5 deep audit (2026-05-09): the lines
 /// are a typed `string list` carrying the structured help-page
@@ -22,90 +20,62 @@ open Projection.Cli.FullExportArgs
 /// emitted independently; no intermediate concatenation.
 let private usageLines : string list =
     [
-        "projection — V2 sidecar end-to-end pipeline."
+        "projection — produce the model at a destination, check it, understand it, seal it."
+        "  One engine, four verbs (THE_CLI.md). Targets and the default model are named in"
+        "  projection.json (or PROJECTION_CONFIG); a target's conn is an env:/file: reference (D9)."
         ""
         "USAGE:"
-        "    projection full-export --config <path> [--output <dir>] [--verbose]"
-        "    projection emit --config <path>"
-        "    projection emit [--skeleton-only] <input-osm-model.json> <output-dir>"
-        "    projection skeleton <input-osm-model.json> <output-dir>"
-        "    projection deploy <input-osm-model.json>"
-        "    projection canary <source-ddl-file>"
-        "    projection policy-diff <config-a> <config-b>"
-        "    projection migrate --from <model-a.json> --to <model-b.json> [--allow-drops]"
-        "    projection approve <policy-version> --approver <name> [--rationale <text>] [--store <path>]"
-        "    projection transfer --source-conn <env|file:ref> --sink-conn <env|file:ref>"
-        "                        [--reconcile <table>:<match-column>]... [--execute]"
+        "    projection project --to <dest> [options]"
+        "    projection check  ( <source.sql> [--cdc-silence] | drift --model <m> --to <t>"
+        "                      | data --before <t> --after <t> | ready )"
+        "    projection explain ( diff <a> <b> [--format json] [--depth N] | policy <a> <b>"
+        "                       | node <config> <ssKey> | suggest <config> [--apply <out>]"
+        "                       | migrate --to <b> ( --from <a> | --store <s> ) [--allow-drops] )"
+        "    projection seal ( --store <path> | approve <version> --approver <name>"
+        "                    [--rationale <text>] [--store <path>] )"
         ""
-        "SUBCOMMANDS:"
-        "    full-export   Phase B structural-exit subcommand (chapter B.4 slice 7)."
-        "                  Reads a unified config, projects through V2's pass chain,"
-        "                  writes SSDT + JSON + Distributions + actionable diagnostic"
-        "                  artifacts, and emits a structured NDJSON event stream to"
-        "                  stderr conforming to docs/logging-format.md. Wraps today's"
-        "                  three live config consumers (Model.Path; Overrides"
-        "                  .TableRenames; Output.Dir); other config sections parse-"
-        "                  but-ignore (Chapter C wires them). Runs against SnapshotJson"
-        "                  / SnapshotRowsets connectivity only — LiveOssysConnection"
-        "                  is a follow-up chapter."
+        "PROJECT — the hero. Produce the model at a destination; the destination decides the form."
+        "  --to <dest>   a folder (the file bundle) · docker (one-touch ephemeral DB) · a named"
+        "                target or env:/file: ref (a live database; reads the prior state and"
+        "                applies the minimal change). dir: forces a folder."
+        "  Model source: --config <unified.json> (model + overlays) · --model <model.json> ·"
+        "                projection.json \"model\". "
+        "  --shape bundle|ssdt|skeleton   file-bundle composition (folder destinations)."
+        "  --scope all|schema|data        which legs to emit (DDL+DML / DML-only)."
+        "  --how merge|replace|fresh      the data replacement strategy."
+        "  --data model|synthetic|none|<target>   data origin; <target> ingests rows (transfer)."
+        "  --rekey <users.csv>            re-key identities (Reidentify) on a data load."
+        "  --from auto|empty|<model>|@<target>   the baseline A (default auto)."
+        "  --go                           commit a live write (preview by default). The live write"
+        "                                 also needs PROJECTION_ALLOW_EXECUTE=1 (R6)."
+        "  --allow-drops                  accept declared destructive loss."
         ""
-        "    emit    Parse V1 JSON, project through three sibling Π's,"
-        "            and write SSDT / JSON / Distributions artifacts."
-        "            Three argument forms:"
-        "              --config <path>     read unified config JSON (V2_PRODUCTION_CUTOVER §5.1)."
-        "              --skeleton-only <input> <out>  project through skeletonChainSteps"
-        "                                  only (the four pure-DataIntent passes; per"
-        "                                  chapter A.4.7' slice ζ)."
-        "              <input> <out>       legacy positional form (kept during A.1 transition)."
+        "CHECK — assert fidelity.  fidelity canary (default; --cdc-silence adds the redeploy"
+        "  silence assertion) · drift (deployed vs model) · data (row/null counts) · ready"
+        "  (the run-ledger readiness gauge; needs PROJECTION_LEDGER_DIR)."
         ""
-        "    skeleton  Project through skeletonChainSteps only (the four pure-"
-        "              DataIntent passes). Equivalent to `emit --skeleton-only`."
-        "              Top-level verb for operator convenience (H-036)."
+        "EXPLAIN — understand before shipping.  diff (two refs) · policy (two configs) · node"
+        "  (one SsKey's transforms + findings) · suggest (ranked config edits) · migrate"
+        "  (the dry-run plan: two-model or snapshot⊖snapshot)."
         ""
-        "    approve   Record an approval decision for a policy version (H-086)."
-        "              Prints the `ApprovalRecord` JSON to stdout. The policy"
-        "              version is the hex SHA-256 digest produced by"
-        "              `VersionedPolicy.digestOf`. Exit 0 on success."
+        "SEAL — provenance.  eject (the append-forever package; default) · approve (record a"
+        "  policy-version decision)."
         ""
-        "    deploy  Parse V1 JSON, project SSDT, spin up an ephemeral"
-        "            SQL Server container, deploy the SSDT, count tables,"
-        "            and tear down. Run-level idempotent."
-        ""
-        "    canary  Run the wide canary against a SQL DDL file. Deploy"
-        "            source to one ephemeral DB, read it back, run V2's"
-        "            emitter on the reconstruction, deploy that to a"
-        "            second DB, read back, compare on the PhysicalSchema"
-        "            axis. Per DECISIONS 2026-05-23, this is V2's primary"
-        "            wide integration surface."
-        ""
-        "    transfer  Bidirectional data-load — ingest rows from a Source"
-        "              substrate and project them onto a Sink over one shared"
-        "              schema (the Source's reconstructed catalog). Default"
-        "              is a safe DryRun preview reporting the plan + the"
-        "              skip-and-diagnose; `--execute` writes to the Sink and"
-        "              is gated behind PROJECTION_ALLOW_EXECUTE=1 (R6 — V2"
-        "              owns no production write path until the gate is lowered)."
-        "              Per `--reconcile` entry: the named kind's rows are NOT"
-        "              re-inserted (already in the Sink) and FKs targeting it"
-        "              are re-pointed via the matched Sink surrogate; rows that"
-        "              reference an unmatched identity are dropped + reported."
-        ""
-        "All commands print a Bench table at exit and persist a JSON"
-        "snapshot to bench/<command>/<utc-iso>.json under the current"
-        "working directory. Per session-29 framing, this puts the perf"
-        "surface in the operator's daily attention so regressions"
-        "surface naturally."
+        "Every verb persists a bench snapshot to bench/<verb>/<utc-iso>.json; -v surfaces the"
+        "table. --pretty / --json force the channel (default AUTO: a TTY gets the panel, a pipe"
+        "gets NDJSON)."
         ""
         "Exit codes:"
-        "    0  command succeeded"
-        "    1  argv error (wrong arg count, missing input)"
-        "    2  parse error (V1 JSON did not satisfy V2's adapter contract; transfer spec error)"
-        "    3  deploy / transfer-execution error (SQL Server rejected the SSDT; unbreakable cycle)"
-        "    4  Docker unavailable (deploy/canary requires a running daemon)"
-        "    5  canary divergence (PhysicalSchema diff non-empty)"
-        "    6  config error (config file missing / unparseable / D9 violation; transfer connection ref)"
-        "    7  R6 gate refusal (transfer --execute without PROJECTION_ALLOW_EXECUTE=1)"
-        "    8  verify-data divergence (row-count / null-count diff non-empty)"
+        "    0  succeeded"
+        "    1  argv error (missing input / unknown target)"
+        "    2  parse error (model JSON / spec / config-parse)"
+        "    3  execution error (SQL rejected the change; connection open; unbreakable cycle)"
+        "    4  Docker unavailable (project --to docker; check fidelity)"
+        "    5  fidelity divergence (check canary / check drift)"
+        "    6  config error (file missing / unparseable / D9; connection-ref resolve)"
+        "    7  gate refusal (--go without PROJECTION_ALLOW_EXECUTE=1; permission pre-flight)"
+        "    8  data divergence (check data row / null)"
+        "    9  refused, fail-loud (undeclared drop; inexpressible ALTER; tightening; verify-failed)"
     ]
 
 /// Print each usage line directly to the writer via the BCL
@@ -414,48 +384,6 @@ let private runEmitSkeletonOnly (inputPath: string) (outputDir: string) : int =
         dumpBench "emit-skeleton-only"
         exitCode
 
-/// `emit --config <path>` entry. Reads the unified config JSON, surfaces
-/// structured errors (file-not-found / parse / D9) at exit code 6, then
-/// delegates to `Compose.runWithConfig` which threads the parsed config
-/// through read → rename → project → write. Today the wired config
-/// sections drive `Model.Path`, `Overrides.TableRenames`, and `Output.Dir`;
-/// other sections are validated but unused, so operators can hand-write
-/// a full config without runtime surprises.
-let private runEmitFromConfig (configPath: string) : int =
-    match Config.fromFile configPath with
-    | Error errors ->
-        Console.Error.WriteLine "projection: config error:"
-        printErrors Console.Error errors
-        6
-    | Ok config ->
-        let task = Compose.runWithConfig config
-        let result = task.GetAwaiter().GetResult()
-        let exitCode =
-            match result with
-            | Ok report ->
-                printfn "projection: wrote %d artifact(s) to %s" report.Paths.Length config.Output.Dir
-                report.Paths
-                |> List.iter (fun p ->
-                    let info = FileInfo p
-                    printfn "  %s (%d bytes)" p info.Length)
-                // Chapter C slice C.2 — surface special-circumstances
-                // findings to stderr (the legacy `emit --config` surface
-                // pre-dates LogSink and uses Console for narration).
-                for entry in report.Diagnostics do
-                    let accepted =
-                        if Map.containsKey "acceptedVia" entry.Metadata then " [accepted]"
-                        else ""
-                    Console.Error.WriteLine (
-                        sprintf "  diagnostic [%s] %s: %s%s"
-                            (string entry.Severity) entry.Code entry.Message accepted)
-                0
-            | Error errors ->
-                Console.Error.WriteLine "projection: emit failed:"
-                printErrors Console.Error errors
-                2
-        dumpBench "emit"
-        exitCode
-
 let private runDeploy (inputPath: string) : int =
     if not (File.Exists inputPath) then
         die 1 (sprintf "projection: input file not found: %s" inputPath)
@@ -625,12 +553,6 @@ let private runCanaryCdcSilence (sourceDdlPath: string) : int =
         dumpBench "canary"
         exitCode
 
-/// H-036: `projection skeleton <input> <output>` top-level verb. Identical
-/// semantics to `emit --skeleton-only`; the top-level verb is the ergonomic
-/// form for operator automation (H-036, Cluster C policy intelligence).
-let private runSkeleton (inputPath: string) (outputDir: string) : int =
-    runEmitSkeletonOnly inputPath outputDir
-
 /// H-086 / Wave-3 slice 3.2: `projection approve <policyVersion> --approver
 /// <name> [--rationale <text>] [--store <path>]`. Creates an `ApprovalRecord`
 /// for the given policy version and prints it. When `--store <path>` is given,
@@ -675,57 +597,6 @@ let private runApprove
     | Error msg ->
         Console.Error.WriteLine(sprintf "projection approve: store failed: %s" msg)
         6
-
-/// Dispatch `full-export` via the Argu surface (`FullExportArgs`).
-/// Argument-parse failures surface as exit code 1 with a usage hint;
-/// successful parses route to `runFullExport`.
-let private parseCategoryName (raw: string) : Result<LogSink.Category, string> =
-    match raw.ToLowerInvariant() with
-    | "config"    -> Ok LogSink.Config
-    | "extract"   -> Ok LogSink.Extract
-    | "profile"   -> Ok LogSink.Profile
-    | "transform" -> Ok LogSink.Transform
-    | "emit"      -> Ok LogSink.Emit
-    | "deploy"    -> Ok LogSink.Deploy
-    | "canary"    -> Ok LogSink.Canary
-    | "summary"   -> Ok LogSink.Summary
-    | other       ->
-        Error (
-            sprintf
-                "projection: --mute-category '%s' is not a recognized category. Known: config | extract | profile | transform | emit | deploy | canary | summary."
-                other)
-
-let private dispatchFullExport (argv: string[]) : int =
-    argv |> VerbArgs.parse<FullExportArg> "projection full-export" (fun parsed ->
-            let configPath = parsed.GetResult Config
-            let outputOverride = parsed.TryGetResult Output
-            let verbose = parsed.Contains Verbose
-            let debug = parsed.Contains Debug
-            // Chapter C slice C.6 — verbosity DU resolution. --debug
-            // takes precedence over --verbose (the union maximum).
-            let verbosity =
-                if debug then LogSink.Verbosity.Debug
-                elif verbose then LogSink.Verbosity.Verbose
-                else LogSink.Verbosity.Quiet
-            // Resolve --mute-category arguments to a Set<Category>.
-            // Aggregates per-argument errors so the operator sees
-            // every malformed name in one pass.
-            let muteResults =
-                parsed.GetResults MuteCategory
-                |> List.map parseCategoryName
-            let muteErrors =
-                muteResults |> List.choose (function Error e -> Some e | Ok _ -> None)
-            if not (List.isEmpty muteErrors) then
-                for err in muteErrors do Console.Error.WriteLine err
-                1
-            else
-                let mutedCategories =
-                    muteResults
-                    |> List.choose (function Ok c -> Some c | Error _ -> None)
-                    |> Set.ofList
-                let storePath = parsed.TryGetResult LifecycleStore
-                let envLabel = parsed.TryGetResult Env
-                runFullExport configPath outputOverride verbosity mutedCategories storePath envLabel)
 
 // ----------------------------------------------------------------------
 // `transfer` (Phase 11 Slice D) — bidirectional data-load CLI verb.
@@ -913,19 +784,6 @@ let private runTransfer
     dumpBench "transfer"
     exitCode
 
-let private dispatchTransfer (argv: string[]) : int =
-    argv |> VerbArgs.parse<TransferArgs.TransferArg> "projection transfer" (fun parsed ->
-        let sourceSpec    = parsed.GetResult TransferArgs.Source_Conn
-        let sinkSpec      = parsed.GetResult TransferArgs.Sink_Conn
-        let sourceEnv     = parsed.TryGetResult TransferArgs.Source_Env
-        let sinkEnv       = parsed.TryGetResult TransferArgs.Sink_Env
-        let reconcileList = parsed.GetResults TransferArgs.Reconcile
-        let userMap       = parsed.TryGetResult TransferArgs.User_Map
-        let execute       = parsed.Contains TransferArgs.Execute
-        let allowCdc      = parsed.Contains TransferArgs.Allow_Cdc
-        let allowDrops    = parsed.Contains TransferArgs.Allow_Drops
-        runTransfer sourceSpec sinkSpec sourceEnv sinkEnv reconcileList userMap execute allowCdc allowDrops)
-
 // ---------------------------------------------------------------------------
 // Slice 4.4 — `projection verify-data`: post-deploy data-integrity gate.
 // Compares two deployments of the same schema contract on exact per-table
@@ -1077,12 +935,6 @@ let private runEject (storePath: string) : int =
         else
             Console.Error.WriteLine "projection eject: package FAILED self-verification — the reconstruction does not reproduce the frozen state."
             5
-
-let private dispatchVerifyData (argv: string[]) : int =
-    argv |> VerbArgs.parse<VerifyDataArgs.VerifyDataArg> "projection verify-data" (fun parsed ->
-        let beforeSpec = parsed.GetResult VerifyDataArgs.Before_Conn
-        let afterSpec  = parsed.GetResult VerifyDataArgs.After_Conn
-        runVerifyData beforeSpec afterSpec)
 
 /// Tier-4 reporting — `readiness`. Read the cross-run ledger
 /// (`PROJECTION_LEDGER_DIR`) and report the R6 cutover gauge: how many
@@ -1852,11 +1704,20 @@ let private noteUnhonored (spec: MovementSpec) : unit =
 let private executeProject (cfg: TargetConfig) (spec: MovementSpec) : int =
     noteUnhonored spec
     let declaration = if spec.AllowDrops then DeclareAll else DeclareNone
+    // Resolve a `--data <alias>` source to its out-of-band connection spec.
+    let dataSourceConn (alias: string) : Result<string> =
+        match Surface.resolveTarget cfg alias with
+        | Ok rt ->
+            match rt.Destination with
+            | Destination.Live r -> Result.success (connSpecOf r)
+            | _ -> Result.failureOf (ValidationError.create "cli.project.dataNotLive" (sprintf "--data %s: a data source must be a live target." alias))
+        | Error es -> Result.failure es
     match spec.Destination with
     | Destination.Folder dir ->
         match spec.Model with
         | ModelSource.ConfigFile c ->
-            runFullExport c (Some dir) LogSink.Verbosity.Quiet Set.empty spec.Store spec.Env
+            let verbosity = if verboseMode.Value then LogSink.Verbosity.Verbose else LogSink.Verbosity.Quiet
+            runFullExport c (Some dir) verbosity Set.empty spec.Store spec.Env
         | ModelSource.ModelFile m ->
             match spec.Shape with
             | Shape.Skeleton           -> withRun "projection project" (fun () -> runEmitSkeletonOnly m dir)
@@ -1868,28 +1729,33 @@ let private executeProject (cfg: TargetConfig) (spec: MovementSpec) : int =
         | Ok m     -> withRun "projection project" (fun () -> runDeploy m)
         | Error es -> Console.Error.WriteLine "projection project --to docker:"; printErrors Console.Error es; 1
     | Destination.Live connRef ->
-        match modelPathOf spec.Model with
-        | Error es -> Console.Error.WriteLine "projection project:"; printErrors Console.Error es; 6
-        | Ok m ->
-            let connSpec = connSpecOf connRef
-            if not spec.Commit then
-                runProjectLivePreview m connSpec declaration
-            else
-                match spec.Data with
-                | DataOrigin.FromTarget alias ->
-                    match Surface.resolveTarget cfg alias with
-                    | Error es ->
-                        Console.Error.WriteLine (sprintf "projection project --data %s:" alias)
-                        printErrors Console.Error es
-                        6
-                    | Ok rt ->
-                        match rt.Destination with
-                        | Destination.Live srcRef ->
-                            runMigrateWithData m connSpec (connSpecOf srcRef) [] spec.Rekey declaration spec.AllowCdc spec.Store spec.Env
-                        | _ ->
-                            die 2 (sprintf "projection project --data %s: a data source must be a live target." alias)
-                | DataOrigin.Model | DataOrigin.Synthetic | DataOrigin.NoData ->
-                    runMigrateExecute m connSpec declaration spec.AllowCdc spec.Store spec.Env
+        let connSpec = connSpecOf connRef
+        if not spec.Commit then
+            // Preview by default (THE_CLI.md §5). A `--data` source previews the
+            // data plan (transfer DryRun); otherwise the schema plan (B ⊖ A).
+            match spec.Data with
+            | DataOrigin.FromTarget alias ->
+                match dataSourceConn alias with
+                | Ok srcConn -> runTransfer srcConn connSpec None None [] spec.Rekey false spec.AllowCdc spec.AllowDrops
+                | Error es -> Console.Error.WriteLine "projection project:"; printErrors Console.Error es; 6
+            | _ ->
+                match modelPathOf spec.Model with
+                | Ok m     -> runProjectLivePreview m connSpec declaration
+                | Error es -> Console.Error.WriteLine "projection project:"; printErrors Console.Error es; 6
+        else
+            // --go: commit. A `--data` source is a cross-substrate migrate-with-
+            // data; a config model publishes + loads its seed; else schema-only.
+            match spec.Data with
+            | DataOrigin.FromTarget alias ->
+                match modelPathOf spec.Model, dataSourceConn alias with
+                | Ok m, Ok srcConn -> runMigrateWithData m connSpec srcConn [] spec.Rekey declaration spec.AllowCdc spec.Store spec.Env
+                | (Error es, _) | (_, Error es) -> Console.Error.WriteLine "projection project:"; printErrors Console.Error es; 6
+            | _ ->
+                match spec.Model with
+                | ModelSource.ConfigFile c -> runFullExportLoad c connSpec None spec.Store spec.Env
+                | ModelSource.ModelFile m  -> runMigrateExecute m connSpec declaration spec.AllowCdc spec.Store spec.Env
+                | ModelSource.Unspecified  ->
+                    die 1 "projection project: no model — pass --model <model.json>, --config <config.json>, or set \"model\" in projection.json."
 
 /// Execute `check` — the proof plane (canary / drift / data / ready).
 let private executeCheck (cfg: TargetConfig) (args: string list) : int =
