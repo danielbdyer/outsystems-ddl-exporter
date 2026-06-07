@@ -1690,7 +1690,12 @@ let private runProjectLivePreview (toPath: string) (connSpec: string) (declarati
 /// note, never a silent drop (THE_VOICE no-silent-drop; THE_CLI.md §5).
 let private noteUnhonored (spec: MovementSpec) : unit =
     let note (m: string) = eprintfn "projection project: note — %s" m
-    if spec.Scope <> Scope.All then note "--scope accepted; the engine emits all legs (all applied)."
+    // --scope is honored for live destinations (data -> transfer, schema -> migrate);
+    // for folder/docker the bundle carries all legs, so note it there.
+    if spec.Scope <> Scope.All then
+        match spec.Destination with
+        | Destination.Live _ -> ()
+        | _ -> note "--scope accepted; the file/docker bundle carries all legs (all applied)."
     if spec.Strategy <> Strategy.Merge then note "--how accepted; the engine uses its default realization (merge applied)."
     match spec.Baseline with
     | Baseline.Auto -> ()
@@ -1730,26 +1735,40 @@ let private executeProject (cfg: TargetConfig) (spec: MovementSpec) : int =
         | Error es -> Console.Error.WriteLine "projection project --to docker:"; printErrors Console.Error es; 1
     | Destination.Live connRef ->
         let connSpec = connSpecOf connRef
+        let schemaOnly = (spec.Scope = Scope.Schema)   // --scope schema: skip the data leg
+        let dataOnly = (spec.Scope = Scope.Data)        // --scope data: DML-only, onto existing schema
+        let printErr es = Console.Error.WriteLine "projection project:"; printErrors Console.Error es; 6
         if not spec.Commit then
-            // Preview by default (THE_CLI.md §5). A `--data` source previews the
-            // data plan (transfer DryRun); otherwise the schema plan (B ⊖ A).
+            // Preview by default (THE_CLI.md §5). A `--data` source (unless
+            // schema-scoped) previews the data plan (transfer DryRun); otherwise
+            // the schema plan (B ⊖ A).
             match spec.Data with
-            | DataOrigin.FromTarget alias ->
+            | DataOrigin.FromTarget alias when not schemaOnly ->
                 match dataSourceConn alias with
-                | Ok srcConn -> runTransfer srcConn connSpec None None [] spec.Rekey false spec.AllowCdc spec.AllowDrops
-                | Error es -> Console.Error.WriteLine "projection project:"; printErrors Console.Error es; 6
+                | Ok srcConn -> runTransfer srcConn connSpec None None spec.Reconcile spec.Rekey false spec.AllowCdc spec.AllowDrops
+                | Error es -> printErr es
             | _ ->
                 match modelPathOf spec.Model with
                 | Ok m     -> runProjectLivePreview m connSpec declaration
-                | Error es -> Console.Error.WriteLine "projection project:"; printErrors Console.Error es; 6
+                | Error es -> printErr es
         else
-            // --go: commit. A `--data` source is a cross-substrate migrate-with-
-            // data; a config model publishes + loads its seed; else schema-only.
+            // --go: commit. `--scope data` is a DML-only transfer onto the
+            // existing schema; `--scope schema` skips the data leg; otherwise a
+            // `--data` source is a cross-substrate migrate-with-data, a config
+            // model publishes + loads its seed, and a bare model is schema-only.
             match spec.Data with
-            | DataOrigin.FromTarget alias ->
-                match modelPathOf spec.Model, dataSourceConn alias with
-                | Ok m, Ok srcConn -> runMigrateWithData m connSpec srcConn [] spec.Rekey declaration spec.AllowCdc spec.Store spec.Env
-                | (Error es, _) | (_, Error es) -> Console.Error.WriteLine "projection project:"; printErrors Console.Error es; 6
+            | DataOrigin.FromTarget alias when not schemaOnly ->
+                match dataSourceConn alias with
+                | Error es -> printErr es
+                | Ok srcConn ->
+                    if dataOnly then
+                        runTransfer srcConn connSpec None None spec.Reconcile spec.Rekey true spec.AllowCdc spec.AllowDrops
+                    else
+                        match modelPathOf spec.Model with
+                        | Ok m     -> runMigrateWithData m connSpec srcConn spec.Reconcile spec.Rekey declaration spec.AllowCdc spec.Store spec.Env
+                        | Error es -> printErr es
+            | _ when dataOnly ->
+                die 2 "projection project --scope data: a DML-only load needs --data <target>."
             | _ ->
                 match spec.Model with
                 | ModelSource.ConfigFile c -> runFullExportLoad c connSpec None spec.Store spec.Env

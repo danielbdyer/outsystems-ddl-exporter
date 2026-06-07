@@ -115,6 +115,20 @@ let ``parse project folds --data alias into a transfer ingest`` () =
     | other -> Assert.Fail(sprintf "expected Project, got %A" other)
 
 [<Fact>]
+let ``parse project collects repeated --reconcile entries`` () =
+    match Surface.parse cfg [ "project"; "--to"; "dev"; "--data"; "qa"; "--reconcile"; "User:Email"; "--reconcile"; "Team:Code"; "--go" ] |> mustOk with
+    | Intent.Project spec -> Assert.Equal<string list>([ "User:Email"; "Team:Code" ], spec.Reconcile)
+    | other -> Assert.Fail(sprintf "expected Project, got %A" other)
+
+[<Fact>]
+let ``parse project --scope data is carried for the DML-only route`` () =
+    match Surface.parse cfg [ "project"; "--to"; "dev"; "--scope"; "data"; "--data"; "qa"; "--go" ] |> mustOk with
+    | Intent.Project spec ->
+        Assert.Equal(Scope.Data, spec.Scope)
+        Assert.Equal(DataOrigin.FromTarget "qa", spec.Data)
+    | other -> Assert.Fail(sprintf "expected Project, got %A" other)
+
+[<Fact>]
 let ``parse project --shape skeleton selects the pre-overlay shape`` () =
     match Surface.parse cfg [ "project"; "--to"; "./out"; "--shape"; "skeleton" ] |> mustOk with
     | Intent.Project spec -> Assert.Equal(Shape.Skeleton, spec.Shape)

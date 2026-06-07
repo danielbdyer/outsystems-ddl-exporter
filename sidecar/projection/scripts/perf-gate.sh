@@ -113,6 +113,34 @@ if ! command -v dotnet >/dev/null 2>&1; then
 fi
 
 # ---------------------------------------------------------------------
+# Warm-only precondition (2026-06-07 — docker-flakiness fix)
+# ---------------------------------------------------------------------
+# The committed baseline is recorded against the WARM container
+# (scripts/warm-sql.sh). A cold-start run — an ephemeral Testcontainers
+# instance, plus the ~2GB image pull on first use — inflates every timing
+# label 2-10x under the cold start + host contention, false-tripping the gate
+# while the canary itself stays GREEN. Root cause (diagnosed 2026-06-07): when
+# session-start.sh runs before Docker is ready it skips the warm container, and
+# the docker-probe auto-repair brings up only the daemon — so the gate ran COLD
+# and false-tripped on borderline CPU-time labels. Fix: gate ONLY when a warm
+# SQL Server is reachable (the named warm container is running, or
+# PROJECTION_MSSQL_CONN_STR points at one). Otherwise soft-skip — cold timings
+# are not comparable to the warm baseline. Fidelity is untouched (the Docker
+# test pool still produces the canary's RED/GREEN verdict); only the TIMING
+# gate is conditioned on a comparable measurement. The docker-probe hook lazily
+# establishes the warm container once Docker is up, so steady-state runs ARE
+# warm and DO gate. RECORD mode is exempt (it warms its own runs).
+WARM_NAME="${WARM_SQL_NAME:-projection-mssql-warm}"
+if [[ "$RECORD" != "1" ]] \
+   && [[ -z "${PROJECTION_MSSQL_CONN_STR:-}" ]] \
+   && [[ "$(docker inspect -f '{{.State.Running}}' "$WARM_NAME" 2>/dev/null)" != "true" ]]; then
+    log "SKIP: no warm SQL container ($WARM_NAME) and PROJECTION_MSSQL_CONN_STR unset."
+    log "      The perf gate only runs warm — cold-start timings aren't comparable to"
+    log "      the warm-recorded baseline. Start it: sidecar/projection/scripts/warm-sql.sh start"
+    exit 0
+fi
+
+# ---------------------------------------------------------------------
 # Build the test project if needed
 # ---------------------------------------------------------------------
 

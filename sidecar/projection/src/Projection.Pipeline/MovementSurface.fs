@@ -235,6 +235,14 @@ module Surface =
     let private hasFlag (name: string) (argv: string list) : bool =
         argv |> List.contains name
 
+    /// Every `<value>` immediately following a repeated `name` flag.
+    let private readMany (name: string) (argv: string list) : string list =
+        let rec loop acc = function
+            | a :: v :: rest when a = name -> loop (v :: acc) rest
+            | _ :: rest -> loop acc rest
+            | [] -> List.rev acc
+        loop [] argv
+
     let private parseData (raw: string) : DataOrigin =
         match raw.ToLowerInvariant() with
         | "model"     -> DataOrigin.Model
@@ -331,6 +339,7 @@ module Surface =
                             Data = data
                             Baseline = baseline
                             Rekey = readFlag "--rekey" argv
+                            Reconcile = readMany "--reconcile" argv
                             AllowDrops = hasFlag "--allow-drops" argv
                             AllowCdc = hasFlag "--allow-cdc" argv
                             Store = (match readFlag "--store" argv with Some s -> Some s | None -> resolved.Store)

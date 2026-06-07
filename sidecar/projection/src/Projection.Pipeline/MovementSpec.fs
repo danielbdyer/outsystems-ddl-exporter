@@ -89,6 +89,8 @@ type MovementSpec =
         Shape       : Shape
         /// Path to the user-map CSV (Reidentify); `None` is no re-key.
         Rekey       : string option
+        /// `--reconcile <table>:<col>` entries (MatchByColumn re-key rules).
+        Reconcile   : string list
         /// Accept declared loss (drops) — never sourced from config (§4).
         AllowDrops  : bool
         /// Permit schema DDL against a CDC-tracked sink.
@@ -115,6 +117,7 @@ module MovementSpec =
             Data        = DataOrigin.Model
             Shape       = Shape.Bundle
             Rekey       = None
+            Reconcile   = []
             AllowDrops  = false
             AllowCdc    = false
             Store       = None
