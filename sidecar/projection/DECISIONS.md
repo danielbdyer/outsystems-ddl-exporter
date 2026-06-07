@@ -20781,6 +20781,93 @@ Resolved across an operator-led session on the dynamic-display / voice branch. T
 
 ---
 
+## 2026-06-07 — The CLI is four verbs over one `MovementSpec` (project / check / explain / seal)
+
+**Decision.** The operator surface is re-envisioned from ~16 flat verbs (at
+mixed altitudes — `skeleton` was a sub-mode sitting beside `transfer`, a whole
+protein) to **four intents over one engine**: `project` (all data movement),
+`check` (fidelity — canary / drift / data / ready), `explain` (understand —
+diff / policy / node / suggest / migrate-preview), `seal` (provenance — eject /
+approve). The emission-family verbs collapse into one typed `MovementSpec`
+(`Destination × ModelSource × Scope × Strategy × DataOrigin × Baseline × Shape ×
+Rekey × Reconcile × …`); `deploy` / `migrate` / `load` / `export` are one act —
+`emit(B ⊖ A)` — distinguished only by the destination and the **auto-read
+baseline A** (the engine reads the live state itself, so the operator never picks
+deploy-vs-migrate; idempotent redeploy falls out as `‖B ⊖ A‖ = 0`).
+
+**Why.** The verb sprawl was the morphology's "latent calculus" symptom — because
+the delta-functor was never the *organizing principle of the surface*, each
+protein grew its own verb with its own conditional tree. The interface question
+is a **namespace of outcomes over the same input** (the protein catalog IS the
+namespace), not the engine's algebra exposed; the orthogonality matrix is a red
+herring at the interface (a namespace names only the wanted points). See
+`THE_CLI.md` (the target design) + `THE_CLI_BACKLOG.md` (the shipped slices).
+
+**Shape.** `Surface.parse` (Pipeline) turns argv into a typed `Intent`; the CLI
+executors **delegate to the existing proven `run*` engine faces** (`Compose` /
+`Deploy` / `MigrationRun` / `TransferRun` / `DriftRun` / `EjectRun` /
+`DataIntegrityChecker` / `PolicyDiff` / `FullExportRun`), so exit codes and
+behavior are preserved *by construction*. Targets + the default model are named
+in `projection.json` (or `PROJECTION_CONFIG`); a target's `conn` is a `env:` /
+`file:` **reference**, never a literal string (D9 holds in config). Config holds
+addressing + benign defaults only; intent/danger (`--go`, `--allow-drops`,
+`--rekey`) stay on the command line. The legacy 16-verb dispatch + the Argu DUs
+(`FullExportArgs` / `TransferArgs` / `VerifyDataArgs` / `VerbArgs`) + the Argu
+package are **removed** (deprecate, don't shim).
+
+**Honored vs noted.** `--scope data` routes to the DML-only transfer; `--scope
+schema` skips the data leg; `--reconcile` threads to the re-key. `--how` /
+`--from` / `--data synthetic|none` are **accepted but surfaced as a named note**
+(`noteUnhonored`) — the current engine emits its default; wiring those knobs is
+an evidence-gated follow-up (no silent drop). Consciously dropped (named):
+`full-export --mute-category` / `--debug`; the `emit --config` `[accepted]`
+console narration (the data rides the NDJSON stream).
+
+**Witness.** `MovementSurfaceTests` (21 pure tests); pure pool 2829 / 0;
+runtime smoke (help, routing, aliasing, D9 refusal, exit codes). Surface types:
+`src/Projection.Pipeline/MovementSpec.fs` + `MovementSurface.fs`; executors:
+`src/Projection.Cli/Program.fs`.
+
+---
+
+## 2026-06-07 — The perf gate runs warm-only; auto-warming from the docker-probe is rejected (zombie risk)
+
+**Decision.** `scripts/perf-gate.sh` gains a **warm-only precondition**: it gates
+only when a warm SQL Server is reachable (the `projection-mssql-warm` container
+is running, or `PROJECTION_MSSQL_CONN_STR` is set); otherwise it soft-skips
+(exit 0). The baseline is recorded warm; a cold-start run (ephemeral container +
+~2GB image pull) inflates every timing label 2-10× and **false-trips the gate
+while the canary stays GREEN** — the recurring "REGRESSION in N labels" the
+operator kept seeing.
+
+**Root cause (diagnosed).** `session-start.sh` warms the container only if Docker
+is ready inside its 20s window; when Docker comes up later (the `docker-probe.sh`
+auto-repair brings up only the *daemon*), the warm container is never
+established, so the Stop-hook gate ran the canary cold. The hard gate's trippers
+were borderline CPU-time labels (≥50ms) under cold-start + 4-core contention —
+**no count/volume label ever regressed** (those are deterministic), confirming
+it was never a code regression.
+
+**Rejected alternative — lazy warm-kick from `docker-probe.sh`.** An attempt to
+have the probe kick `warm-sql.sh start` in the background once Docker is up was
+**reverted**: on the no-swap host the capped SQL container still OOM-died
+(`Exited 255`), leaving a **zombie warm container** that poisons the
+warm-honoring test runs (`test.sh docker/canary/focus` + `EphemeralContainer
+Fixture` trust `PROJECTION_MSSQL_CONN_STR` / a running `projection-mssql-warm`)
+— it manifested as 30 `SqlException` failures in the pure pool. Forcing a warm
+container on a host that can't keep one alive is net-negative; warm
+establishment stays owned by `session-start.sh` + `warm-sql.sh` (which
+health-check + memory-cap), and the gate now **degrades gracefully** (skip, not
+false-trip) when warm isn't available. Re-baselining was also rejected — the
+baseline is machine-shared; recording this container's variable cold timings
+would be wrong for CI/dev.
+
+**Witness.** Offline replay of the latest canary snapshot against the baseline:
+0 hard regressions (the only over-threshold labels are `readside.*`, already
+I/O-soft). Pure pool returned to 2829 / 0 after removing the zombie container.
+
+---
+
 **`DECISIONS 2026-06-06 (later)` — Voice slice 1 landed: the Voice seam + the `code ⇔ copy` totality test; the two open sub-calls resolved (Core-purity → 1:1 projection-layer companion; the `Surface.fs` rename).**
 
 Slice 1 of `THE_VOICE_INTEGRATION.md` §7 is built (plus the slice-2 stage scaffold), green on the full pure pool. What landed and what is now settled:
