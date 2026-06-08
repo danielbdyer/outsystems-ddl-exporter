@@ -51,11 +51,13 @@ module Config =
     }
 
     type ModelSection = {
-        Path                   : string
+        /// The authored `osm_model.json` path — the model **fallback**. `None`
+        /// when only `Ossys` is configured (live OSSYS is the primary source).
+        Path                   : string option
         /// A live OSSYS connection (`env:<var>` / `file:<path>`) — the V1-free
         /// **primary** model source for the full-export path. When set the
         /// model is read live from OSSYS (`LiveModelRead`); `Path` is the
-        /// `osm_model.json` **fallback**. `None` ⇒ read `Path`.
+        /// fallback. At least one of `Path` / `Ossys` must be present.
         Ossys                  : string option
         Modules                : ModuleSelector list
         IncludeSystemModules   : bool
@@ -616,7 +618,7 @@ module Config =
         match getProperty root "model" with
         | Error es -> Error es
         | Ok element ->
-            match getString element "path" with
+            match getOptionalString element "path" with
             | Error es -> Error es
             | Ok path ->
                 match parseModulesList element with
@@ -637,15 +639,22 @@ module Config =
                                 match getOptionalString element "ossys" with
                                 | Error es -> Error es
                                 | Ok ossys ->
-                                    Result.success {
-                                        Path                   = path
-                                        Ossys                  = ossys
-                                        Modules                = modules
-                                        IncludeSystemModules   = inclSys
-                                        IncludeInactiveModules = inclInactive
-                                        OnlyActiveAttributes   = onlyActive
-                                        ValidationOverrides    = vo
-                                    }
+                                    // At least one model source is required (path or ossys).
+                                    match path, ossys with
+                                    | None, None ->
+                                        Result.failureOf (
+                                            configError "modelNoSource"
+                                                "model needs `path` (osm_model.json) or `ossys` (live OSSYS connection).")
+                                    | _ ->
+                                        Result.success {
+                                            Path                   = path
+                                            Ossys                  = ossys
+                                            Modules                = modules
+                                            IncludeSystemModules   = inclSys
+                                            IncludeInactiveModules = inclInactive
+                                            OnlyActiveAttributes   = onlyActive
+                                            ValidationOverrides    = vo
+                                        }
 
     let private parseProfile (root: JsonElement) : Result<ProfileSection> =
         match tryGetProperty root "profile" with

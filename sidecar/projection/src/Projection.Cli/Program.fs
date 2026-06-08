@@ -1595,19 +1595,6 @@ let private runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec:
 // auto-read baseline A.
 // ----------------------------------------------------------------------
 
-/// Resolve the source of B to a concrete model path. A `ConfigFile` yields the
-/// config's `Model.Path`; a bare `ModelFile` is itself; `Unspecified` refuses.
-let private modelPathOf (model: ModelSource) : Result<string> =
-    match model with
-    | ModelSource.ModelFile m -> Result.success m
-    | ModelSource.ConfigFile c ->
-        match Config.fromFile c with
-        | Ok cfg    -> Result.success cfg.Model.Path
-        | Error es  -> Result.failure es
-    | ModelSource.Unspecified ->
-        Result.failureOf
-            (ValidationError.create "cli.project.modelMissing"
-                "no model — pass --model <model.json>, --config <config.json>, or set \"model\" in projection.json.")
 
 /// project --to <live> with no --go — preview the minimal change against the
 /// deployed state A, never writing (THE_CLI.md §5). Reads A live, previews
@@ -1713,12 +1700,6 @@ let private runCaptureProfile (connSpec: string) (outPath: string) : int =
 
 let private runPlan (plan: ExecutionPlan) : int =
     for n in plan.Notes do eprintfn "projection project: note — %s" n
-    let needModel (model: ModelSource) (run: string -> int) : int =
-        match modelPathOf model with
-        | Ok m     -> run m
-        | Error es ->
-            for e in es do TtyRenderer.renderVoicedError e
-            6
     // Resolve the model to a Catalog under the live-OSSYS-primary / file-
     // fallback policy (ModelResolution), then run the Catalog-accepting face.
     let needCatalog (modelOssys: string option) (model: ModelSource) (run: Catalog -> int) : int =
@@ -1731,7 +1712,6 @@ let private runPlan (plan: ExecutionPlan) : int =
         | Error es ->
             for e in es do TtyRenderer.renderVoicedError e
             6
-    ignore needModel
     match plan.Action with
     // project ------------------------------------------------------------
     | PlanAction.PublishBundle (c, dir, store, env) ->

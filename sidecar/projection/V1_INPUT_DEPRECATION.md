@@ -83,9 +83,12 @@ applies the policy at the three full-export read sites (`runWithConfig`,
 model-read surface — flow + full-export — is live-OSSYS-primary with the file
 fallback.
 
-**Remaining (minor):** the full-export rich config still requires `model.path`
-(used as the fallback) even when `model.ossys` is set; making it optional is a
-small follow-on. The flow surface already treats the file as optional.
+**`model.path` is optional (2026-06-08).** The rich full-export config now
+accepts `model.ossys` alone (no `model.path`) — `Config.ModelSection.Path` is
+`string option`, and `parseModel` requires *at least one* of `path` / `ossys`
+(neither is a named `pipeline.config.modelNoSource` refusal). So a fully
+V1-free full-export config carries only `model.ossys`; the file is a genuine
+optional fallback at both the flow and full-export surfaces.
 
 ---
 

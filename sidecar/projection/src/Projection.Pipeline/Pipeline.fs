@@ -1018,10 +1018,16 @@ module Compose =
     /// from OSSYS (`LiveModelRead`, V1-free); else read `cfg.Model.Path` (the
     /// `osm_model.json` fallback). Byte-identical to the prior `read
     /// cfg.Model.Path` when `Ossys = None`.
-    let private readConfigModel (cfg: Config.Config) : Task<Result<Catalog>> =
-        match cfg.Model.Ossys with
-        | Some connSpec -> LiveModelRead.fromConnSpec connSpec
-        | None -> read cfg.Model.Path
+    let readConfigModel (cfg: Config.Config) : Task<Result<Catalog>> =
+        match cfg.Model.Ossys, cfg.Model.Path with
+        | Some connSpec, _ -> LiveModelRead.fromConnSpec connSpec
+        | None, Some path -> read path
+        | None, None ->
+            Task.FromResult
+                (Result.failureOf
+                    (ValidationError.create
+                        "pipeline.config.modelNoSource"
+                        "model needs `path` (osm_model.json) or `ossys` (live OSSYS connection)."))
 
     let runWithConfig (cfg: Config.Config) : Task<Result<RunReport>> =
         task {

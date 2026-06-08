@@ -207,18 +207,19 @@ module PolicyDiff =
           Trail = runBefore.Trail @ runAfter.Trail }
 
     /// §5.6 — diff what two configs would project over a shared Catalog. The
-    /// Catalog is read once from `cfgA.Model.Path` (the diff is over the two
-    /// configs' `Policy` axes against one schema contract); each config binds
-    /// its `Policy` via `Compose.buildPolicyFromConfig`. The per-kind deltas
-    /// come from `diffFullProjection` against `Profile.empty` — a structural +
-    /// lineage diff that needs no live evidence (the headline "diff policy A
-    /// vs B" operator question). Catalog-load + bind failures aggregate.
+    /// Catalog is read once from `cfgA`'s model source (`Compose.readConfigModel`
+    /// — live OSSYS when `model.ossys` is set, else the `model.path` file); the
+    /// diff is over the two configs' `Policy` axes against one schema contract;
+    /// each config binds its `Policy` via `Compose.buildPolicyFromConfig`. The
+    /// per-kind deltas come from `diffFullProjection` against `Profile.empty` — a
+    /// structural + lineage diff that needs no live evidence (the headline "diff
+    /// policy A vs B" operator question). Catalog-load + bind failures aggregate.
     let diffConfigs
         (cfgA: Config.Config)
         (cfgB: Config.Config)
         : System.Threading.Tasks.Task<Result<FullProjectionDiff>> =
         task {
-            match! Compose.read cfgA.Model.Path with
+            match! Compose.readConfigModel cfgA with
             | Error errors -> return Result.failure errors
             | Ok catalog ->
                 match Compose.buildPolicyFromConfig cfgA catalog, Compose.buildPolicyFromConfig cfgB catalog with
