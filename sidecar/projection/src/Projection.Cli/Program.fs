@@ -1711,6 +1711,27 @@ let private runSyntheticLoad (modelPath: string) (profileRef: string) (connSpec:
     dumpBench "synthetic"
     exitCode
 
+/// `projection profile <env> --out <path>` — capture the durable Profile
+/// artifact (THE_SYNTHETIC_DATA_DESIGN §2.2). Read-only (no execute gate);
+/// reads the deployed catalog, profiles it, and writes the serialized form.
+let private runCaptureProfile (connSpec: string) (outPath: string) : int =
+    let result = (ProfileCaptureRun.captureToFile connSpec outPath).GetAwaiter().GetResult()
+    let exitCode =
+        match result with
+        | Ok () ->
+            eprintfn "projection profile: profile written to %s" outPath
+            0
+        | Error errors ->
+            Console.Error.WriteLine "projection profile: capture failed:"
+            printErrors Console.Error errors
+            let anyCode (prefix: string) =
+                errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith prefix)
+            if anyCode "profile.writeFailed" then 1
+            elif anyCode "connectionSpec" || anyCode "connection" then 6
+            else 3
+    dumpBench "profile"
+    exitCode
+
 let private runPlan (plan: ExecutionPlan) : int =
     for n in plan.Notes do eprintfn "projection project: note — %s" n
     let needModel (model: ModelSource) (run: string -> int) : int =
@@ -1737,6 +1758,7 @@ let private runPlan (plan: ExecutionPlan) : int =
         needModel model (fun m -> runMigrateWithData m sink src opts.Reconcile opts.Rekey opts.Declaration opts.AllowCdc opts.Store opts.Env)
     | PlanAction.SynthesizeAndLoad (model, profile, conn, opts, execute) ->
         needModel model (fun m -> runSyntheticLoad m profile conn opts execute)
+    | PlanAction.CaptureProfile (conn, out) -> runCaptureProfile conn out
     | PlanAction.PublishAndLoad (c, conn, store, env) -> runFullExportLoad c conn None store env
     | PlanAction.Migrate (model, conn, opts) -> needModel model (fun m -> runMigrateExecute m conn opts.Declaration opts.AllowCdc opts.Store opts.Env)
     // check --------------------------------------------------------------

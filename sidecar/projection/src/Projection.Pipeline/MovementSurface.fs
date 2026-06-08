@@ -554,9 +554,32 @@ module Command =
         | Ok store -> { Notes = []; Action = PlanAction.ReportBundle store }
         | Error es -> { Notes = []; Action = PlanAction.Refused (6, List.head es) }
 
+    /// Route a `profile` verb tail (THE_SYNTHETIC_DATA_DESIGN §2.2):
+    /// `profile <env> --out <path>` captures the durable Profile artifact from
+    /// a live environment. The env resolves to its live connection; the
+    /// `--out` path is the durable file the synthetic flow later replays.
+    let planProfile (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
+        let valueOf = flagValue args
+        // The env is positional-first (`profile <env> --out <path>`); a leading
+        // flag means no env was named (avoids mistaking `--out`'s value for it).
+        let envArg = match args with | first :: _ when not (first.StartsWith "--") -> Some first | _ -> None
+        let action =
+            match envArg with
+            | None ->
+                PlanAction.Refused (2, err "cli.profile.noEnv" "projection profile: name a source environment (profile <env> --out <path>).")
+            | Some envRaw ->
+                match valueOf "--out" with
+                | None ->
+                    PlanAction.Refused (2, err "cli.profile.noOut" "projection profile: requires --out <path> (the durable profile file to write).")
+                | Some out ->
+                    match resolveLiveConn cfg envRaw with
+                    | Ok conn  -> PlanAction.CaptureProfile (conn, out)
+                    | Error es -> PlanAction.Refused (6, List.head es)
+        { Notes = []; Action = action }
+
     /// The closed secondary-verb set (THE_CLI.md §3). A first token outside
     /// this set is read as a flow name; an unknown one is refused, naming both.
-    let private secondaryVerbs = set [ "check"; "explain"; "seal"; "report"; "init" ]
+    let private secondaryVerbs = set [ "check"; "explain"; "seal"; "report"; "profile"; "init" ]
 
     /// Map an argv to an `Intent` (THE_CLI.md §3): the daily surface
     /// `projection <flow> [--go] [--fresh] [--allow-drops]` (the verb is
@@ -568,6 +591,7 @@ module Command =
         | "explain" :: rest -> Result.success (Intent.Explain rest)
         | "seal" :: rest    -> Result.success (Intent.Seal rest)
         | "report" :: rest  -> Result.success (Intent.Report rest)
+        | "profile" :: rest -> Result.success (Intent.Profile rest)
         | first :: rest when Map.containsKey first cfg.Flows ->
             let opts =
                 { Go         = List.contains "--go" rest
@@ -584,7 +608,7 @@ module Command =
             let suffix = if flows = "" then "no flows configured." else sprintf "known flows: %s." flows
             Result.failureOf (err "cli.verb.unknown" (sprintf "unknown flow or verb '%s'; %s" first suffix))
         | [] ->
-            Result.failureOf (err "cli.verb.missing" "no flow or verb given; expected <flow> | check | explain | seal | report.")
+            Result.failureOf (err "cli.verb.missing" "no flow or verb given; expected <flow> | check | explain | seal | report | profile.")
 
     /// The one pure routing for the whole surface — every `Intent` to its
     /// `ExecutionPlan`. The runner executes it; the totality test sweeps it.
@@ -595,3 +619,4 @@ module Command =
         | Intent.Explain args      -> planExplain cfg args
         | Intent.Seal args         -> planSeal args
         | Intent.Report args       -> planReport cfg args
+        | Intent.Profile args      -> planProfile cfg args

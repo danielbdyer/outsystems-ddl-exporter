@@ -379,6 +379,34 @@ let ``synthetic flow preview works under all-scope; --go to a non-data target is
     | PlanAction.Refused (2, e) -> Assert.Equal("cli.move.syntheticScope", e.Code)
     | other -> Assert.Fail(sprintf "expected synthetic-scope refusal, got %A" other)
 
+// -- profile capture verb (THE_SYNTHETIC_DATA_DESIGN §2.2) -------------------
+
+let private planArgs cfg argv = (Command.plan cfg (Command.parse cfg argv |> mustOk)).Action
+
+[<Fact>]
+let ``profile <env> --out routes to CaptureProfile`` () =
+    match planArgs synthCfg [ "profile"; "cloud-uat"; "--out"; "legacy.profile.json" ] with
+    | PlanAction.CaptureProfile ("env:CLOUD_UAT_CONN", "legacy.profile.json") -> ()
+    | other -> Assert.Fail(sprintf "expected CaptureProfile, got %A" other)
+
+[<Fact>]
+let ``profile without --out is Refused (named)`` () =
+    match planArgs synthCfg [ "profile"; "cloud-uat" ] with
+    | PlanAction.Refused (2, e) -> Assert.Equal("cli.profile.noOut", e.Code)
+    | other -> Assert.Fail(sprintf "expected --out refusal, got %A" other)
+
+[<Fact>]
+let ``profile without an environment is Refused (named)`` () =
+    match planArgs synthCfg [ "profile"; "--out"; "x.json" ] with
+    | PlanAction.Refused (2, e) -> Assert.Equal("cli.profile.noEnv", e.Code)
+    | other -> Assert.Fail(sprintf "expected no-env refusal, got %A" other)
+
+[<Fact>]
+let ``profile against an unknown environment is Refused`` () =
+    match planArgs synthCfg [ "profile"; "nope"; "--out"; "x.json" ] with
+    | PlanAction.Refused (6, _) -> ()
+    | other -> Assert.Fail(sprintf "expected unknown-env refusal, got %A" other)
+
 // -- dispatch (THE_CLI.md 2026-06-08; slice F3) -----------------------------
 
 let private parseFlowIntent argv =

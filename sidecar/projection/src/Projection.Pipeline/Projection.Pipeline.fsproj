@@ -45,6 +45,7 @@
     <Compile Include="ReportRun.fs" />
     <Compile Include="TransferSpec.fs" />
     <Compile Include="SyntheticLoadRun.fs" />
+    <Compile Include="ProfileCaptureRun.fs" />
     <Compile Include="MovementSpec.fs" />
     <Compile Include="MovementSurface.fs" />
     <Compile Include="RegisteredAllTransforms.fs" />

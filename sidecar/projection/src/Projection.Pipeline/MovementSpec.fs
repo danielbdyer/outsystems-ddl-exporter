@@ -185,6 +185,10 @@ type Intent =
     | Explain of args: string list
     | Seal of args: string list
     | Report of args: string list
+    /// `profile <env> --out <path>` — capture the durable Profile artifact
+    /// (THE_SYNTHETIC_DATA_DESIGN §2.2). The capture step the synthetic flow
+    /// replays from.
+    | Profile of args: string list
 
 /// The spec-derived options a live load/migrate carries, bundled so the plan
 /// is self-contained (the runner needs nothing but the plan).
@@ -255,6 +259,10 @@ type PlanAction =
     /// the migration-team change bundle: the ChangeManifest series read from
     /// the flow's target durable timeline (THE_CLI.md §8 / F4).
     | ReportBundle of store: string
+    // profile ------------------------------------------------------------
+    /// capture the durable Profile from a live environment to a file
+    /// (THE_SYNTHETIC_DATA_DESIGN §2.2): read → profile → serialize.
+    | CaptureProfile of conn: string * out: string
     // shared -------------------------------------------------------------
     /// a named refusal — a coded `ValidationError` (voiced) + its exit code.
     | Refused of exit: int * error: ValidationError
