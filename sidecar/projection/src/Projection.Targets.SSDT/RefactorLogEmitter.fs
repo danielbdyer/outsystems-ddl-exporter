@@ -241,8 +241,13 @@ module RefactorLogEmitter =
     /// `migrate` orchestrator) is responsible for feeding the read-back
     /// deployed catalog as source and the emitted catalog as target; this
     /// emitter just projects the diff. Disjoint from `SchemaMigrationEmitter`
-    /// (shape changes → ALTER): a renamed column carries no shape facet, so
-    /// the two emission channels never double-emit the same attribute.
+    /// (shape changes → ALTER) by *operation*, not by attribute: rename
+    /// (logical `Name`) and reshape (shape facets) are independent axes
+    /// (`AttributeDiff.Renamed` vs `.Changed`), so one column may be both.
+    /// The two channels still never double-emit the *same operation* — this
+    /// emits the sp_rename; `SchemaMigrationEmitter` emits the ALTER COLUMN
+    /// against the target attribute. (Tested: RefactorLogEmitterTests
+    /// "rename → one SqlSimpleColumn AND reshape → one ALTER COLUMN, disjoint".)
     let private columnRefactorEntries
         (diff: CatalogDiff)
         (k: Kind)
