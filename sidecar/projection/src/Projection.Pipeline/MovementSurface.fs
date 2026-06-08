@@ -333,6 +333,15 @@ module TargetConfig =
             try parse (File.ReadAllText path)
             with ex -> Result.failureOf (err "cli.config.readFailed" (sprintf "could not read '%s': %s" path ex.Message))
 
+/// The per-run intent that finishes a resolved flow (THE_CLI.md §3) — the
+/// only words that vary at the moment of action and never live in config.
+type FlowRunOpts =
+    {
+        Go         : bool
+        Fresh      : bool
+        AllowDrops : bool
+    }
+
 [<RequireQualifiedAccess>]
 module Command =
 
@@ -711,6 +720,80 @@ module Command =
                 | Some store -> PlanAction.SealEject store
                 | None -> PlanAction.Refused (2, err "cli.seal.ejectArgs" "projection seal: requires --store <path> (the durable timeline).")
         { Notes = []; Action = action }
+
+    // --- flow resolution (THE_CLI.md 2026-06-08; slice F2) -----------------
+
+    /// A `to` environment's reach → the `Destination` the engine lands at.
+    let private destinationOfAccess (access: Access) : Destination =
+        match access with
+        | Access.Bundle out -> Destination.Folder out
+        | Access.Direct r   -> Destination.Live r
+        | Access.Docker     -> Destination.Docker
+
+    /// A flow's `from` → the `DataOrigin`. A source environment must be
+    /// `direct` (a live place to read rows from); the scheme-prefixed ref
+    /// flows on as the transfer source `planProject` resolves.
+    let private dataOriginOfSource (cfg: TargetConfig) (source: FlowSource) : Result<DataOrigin> =
+        match source with
+        | FlowSource.Model       -> Result.success DataOrigin.Model
+        | FlowSource.NoData      -> Result.success DataOrigin.NoData
+        | FlowSource.Synthetic _ -> Result.success DataOrigin.Synthetic
+        | FlowSource.Env e ->
+            match Map.tryFind e cfg.Environments with
+            | None ->
+                Result.failureOf (err "cli.flow.fromUnknown" (sprintf "flow source environment '%s' is not defined." e))
+            | Some env ->
+                match env.Access with
+                | Access.Direct r -> Result.success (DataOrigin.FromTarget (connSpecOf r))
+                | _ -> Result.failureOf (err "cli.flow.fromNotDirect" (sprintf "flow source '%s' must be access:direct (a live place to read rows from)." e))
+
+    /// Resolve a named flow to a full `MovementSpec`, reading its `to`/`from`
+    /// environments; the per-run intent finishes it. Pure; env-resolution
+    /// failures are `Error` (the grant gate is a `planFlow` refusal).
+    let resolveFlowSpec (cfg: TargetConfig) (flow: Flow) (opts: FlowRunOpts) : Result<MovementSpec> =
+        match Map.tryFind flow.To cfg.Environments with
+        | None ->
+            Result.failureOf (err "cli.flow.toUnknown" (sprintf "flow '%s' target environment '%s' is not defined." flow.Name flow.To))
+        | Some toEnv ->
+            match dataOriginOfSource cfg flow.From with
+            | Error es -> Result.failure es
+            | Ok data ->
+                let baseSpec = MovementSpec.forDestination (destinationOfAccess toEnv.Access)
+                Result.success
+                    { baseSpec with
+                        Model    = (match cfg.Model with Some m -> ModelSource.ModelFile m | None -> ModelSource.Unspecified)
+                        Scope    = (match toEnv.Grant with Some Grant.DataOnly -> Scope.Data | _ -> Scope.All)
+                        Strategy = (if opts.Fresh then Strategy.Fresh else Strategy.Merge)
+                        Data     = data
+                        Baseline = (if opts.Fresh then Baseline.Empty else Baseline.Auto)
+                        Rekey    = flow.Rekey
+                        AllowDrops = opts.AllowDrops
+                        Commit   = opts.Go }
+
+    /// Route a named flow to its `ExecutionPlan`. The grant gate refuses a
+    /// schema-bearing flow (content from the authored model) against a
+    /// data-only target — a type mismatch, refused loud (exit 9), never a
+    /// silent scope-narrowing. Otherwise the resolved spec rides the
+    /// totality-tested `planProject` routing.
+    let planFlow (cfg: TargetConfig) (flow: Flow) (opts: FlowRunOpts) : ExecutionPlan =
+        match Map.tryFind flow.To cfg.Environments with
+        | None ->
+            { Notes = []
+              Action = PlanAction.Refused (1, err "cli.flow.toUnknown" (sprintf "flow '%s' target environment '%s' is not defined." flow.Name flow.To)) }
+        | Some toEnv ->
+            match toEnv.Grant, flow.From with
+            | Some Grant.DataOnly, FlowSource.Model ->
+                { Notes = []
+                  Action = PlanAction.Refused (9, err "cli.flow.grantSchemaRefused" (sprintf "flow '%s' publishes schema from the model, but target '%s' grants data only; the schema must already agree." flow.Name flow.To)) }
+            | _ ->
+                match resolveFlowSpec cfg flow opts with
+                | Error es -> { Notes = []; Action = PlanAction.Refused (6, List.head es) }
+                | Ok spec ->
+                    let plan = planProject cfg spec
+                    let tableNote =
+                        if List.isEmpty flow.Tables then []
+                        else [ sprintf "flow tables (%s) accepted; subset selection is pending (all tables applied)." (String.concat ", " flow.Tables) ]
+                    { plan with Notes = plan.Notes @ tableNote }
 
     /// The one pure routing for the whole surface — every `Intent` to its
     /// `ExecutionPlan`. The runner executes it; the totality test sweeps it.

@@ -443,3 +443,104 @@ let ``plan is TOTAL across check / explain / seal verb tails`` () =
             Assert.Contains(code, [ 1; 2; 6 ])
             Assert.False(System.String.IsNullOrWhiteSpace error.Message)
         | _ -> ()
+
+// -- flow resolution (THE_CLI.md 2026-06-08; slice F2) ----------------------
+
+// Environments + flows covering the operator's real flavors: lift-and-shift
+// to a bundle (schema+data) target, golden data into a direct data-only
+// target, the legacy preview, plus a docker flow.
+let private flowCfg =
+    TargetConfig.parse """
+    {
+      "environments": {
+        "cloud-dev":  { "access": "direct", "conn": "env:CLOUD_DEV_CONN" },
+        "cloud-qa":   { "access": "direct", "conn": "env:CLOUD_QA_CONN" },
+        "onprem-uat": { "access": "bundle", "out": "dist/onprem-uat", "grant": "schema+data" },
+        "cloud-uat":  { "access": "direct", "conn": "env:CLOUD_UAT_CONN", "grant": "data" },
+        "lab":        { "access": "docker", "grant": "schema+data" }
+      },
+      "flows": {
+        "uat":     { "from": "cloud-dev", "to": "onprem-uat", "rekey": "file:users.csv" },
+        "golden":  { "from": "cloud-qa",  "to": "cloud-uat",  "tables": ["Customer"] },
+        "badsrc":  { "from": "onprem-uat","to": "cloud-uat" },
+        "lift-uat":{ "from": "model",     "to": "cloud-uat" },
+        "spin":    { "from": "model",     "to": "lab" }
+      },
+      "model": "model.json"
+    }
+    """ |> mustOk
+
+let private preview = { Go = false; Fresh = false; AllowDrops = false }
+let private commit  = { preview with Go = true }
+let private flowOf name = Map.find name flowCfg.Flows
+let private specOf name opts = Command.resolveFlowSpec flowCfg (flowOf name) opts
+let private actionOf name opts = (Command.planFlow flowCfg (flowOf name) opts).Action
+
+[<Fact>]
+let ``flow lift-and-shift to a bundle target resolves schema+data → folder bundle`` () =
+    match specOf "uat" preview with
+    | Ok s ->
+        Assert.Equal(Destination.Folder "dist/onprem-uat", s.Destination)
+        Assert.Equal(Scope.All, s.Scope)
+        Assert.Equal(Strategy.Merge, s.Strategy)
+        Assert.Equal(Some "file:users.csv", s.Rekey)
+    | Error es -> Assert.Fail(sprintf "%A" es)
+    Assert.Equal(PlanAction.EmitBundle ("model.json", "dist/onprem-uat"), actionOf "uat" preview)
+
+[<Fact>]
+let ``flow golden (data-only target, from env) → transfer; --go executes`` () =
+    // data-only grant forces Scope.Data; the source env's conn rides on.
+    match actionOf "golden" preview with
+    | PlanAction.Transfer ("env:CLOUD_QA_CONN", "env:CLOUD_UAT_CONN", _, false) -> ()
+    | other -> Assert.Fail(sprintf "expected preview Transfer, got %A" other)
+    match actionOf "golden" commit with
+    | PlanAction.Transfer ("env:CLOUD_QA_CONN", "env:CLOUD_UAT_CONN", _, true) -> ()
+    | other -> Assert.Fail(sprintf "expected executing Transfer, got %A" other)
+
+[<Fact>]
+let ``flow golden surfaces a table-subset note (pending, never silently dropped)`` () =
+    let plan = Command.planFlow flowCfg (flowOf "golden") preview
+    Assert.Contains(plan.Notes, fun (n: string) -> n.Contains "tables" && n.Contains "Customer")
+
+[<Fact>]
+let ``flow grant gate: schema-from-model against a data-only target is Refused (9)`` () =
+    match actionOf "lift-uat" commit with
+    | PlanAction.Refused (9, e) -> Assert.Equal("cli.flow.grantSchemaRefused", e.Code)
+    | other -> Assert.Fail(sprintf "expected grant refusal, got %A" other)
+
+[<Fact>]
+let ``flow with a non-direct source is refused`` () =
+    Assert.Contains("cli.flow.fromNotDirect", errCodes (specOf "badsrc" preview))
+
+[<Fact>]
+let ``flow --fresh selects the wipe-and-load posture and an empty baseline`` () =
+    match specOf "spin" { preview with Fresh = true } with
+    | Ok s ->
+        Assert.Equal(Strategy.Fresh, s.Strategy)
+        Assert.Equal(Baseline.Empty, s.Baseline)
+    | Error es -> Assert.Fail(sprintf "%A" es)
+
+[<Fact>]
+let ``flow to a docker environment → DeployDocker`` () =
+    Assert.Equal(PlanAction.DeployDocker (ModelSource.ModelFile "model.json"), actionOf "spin" preview)
+
+[<Fact>]
+let ``flow --allow-drops threads the declared-loss acceptance`` () =
+    match specOf "spin" { preview with AllowDrops = true } with
+    | Ok s -> Assert.True s.AllowDrops
+    | Error es -> Assert.Fail(sprintf "%A" es)
+
+[<Fact>]
+let ``planFlow is TOTAL across the flows × per-run intents`` () =
+    let opts = [ preview; commit; { preview with Fresh = true }; { commit with AllowDrops = true } ]
+    let mutable n = 0
+    for name in (flowCfg.Flows |> Map.toList |> List.map fst) do
+      for o in opts do
+        match (Command.planFlow flowCfg (flowOf name) o).Action with
+        | PlanAction.Refused (code, error) ->
+            Assert.Contains(code, [ 1; 6; 9 ])
+            Assert.False(System.String.IsNullOrWhiteSpace error.Message)
+            Assert.False(System.String.IsNullOrWhiteSpace error.Code)
+        | _ -> ()
+        n <- n + 1
+    Assert.Equal(5 * 4, n)
