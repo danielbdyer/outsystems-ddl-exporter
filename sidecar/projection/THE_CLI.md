@@ -351,17 +351,22 @@ This document does not over-promise — the split is:
 
 - **Fully backed today.** Lift-and-shift (schema+data via the SSDT bundle); `--fresh`
   (`realize(B)`); data-only `golden`/`preview` transfer; `check` (canary / drift / data /
-  ready); `seal` eject; the two-gate safety model; `grant` refusal.
+  ready); `seal` eject; the two-gate safety model; `grant` refusal; **attribute-level
+  `CatalogDiff` + column-rename RefactorLog** (6.A.10 / 6.A.12, incl. the rename ⊥ reshape
+  composition); **`report <flow>`** — the migration-team change bundle, rendering the
+  recorded `ChangeManifest` series from the target's durable episode store (`LifecycleStore`
+  + `ChangeManifest`), with a live `--go` recording into it.
 - **Leans on in-flight engine work** (build behind the surface as the ladder climbs):
   - **Exact-diff-with-rename composition** — RefactorLog ⇄ Transfer wiring (the combined
     rename + data-move in one flow); audit §2.3 / §3.
-  - **Attribute-level `CatalogDiff` + ALTER emission** — kind-level diff is the current
-    floor; audit 6.A.10 / 6.A.12.
-  - **`report --since` over a durable episode** — the `LifecycleStore` / change-manifest
-    (6.H); today the FTC is in-memory. `seal` writes the first durable episode.
+  - **`report` against a freshly-projected B** — today `report` renders the *recorded*
+    episode series; diffing a live re-projected `B ⊖ A_prior` (not just the stored edges)
+    is the deeper rung.
   - **The pre-flight gates as named refusals** — data-compat (NOT-NULL tightening on
     populated columns), CDC-tracking — surface as exit-9 refusals (axis 9 completion).
   - **`from: synthetic --profile`** — the Faker source seeded from a profiled environment.
+  - **The declared `tables` subset** — surfaced as a note today; the partial-set selection
+    on the data leg is the follow-up.
 
 The discipline: **the surface ships whole; the flows that depend on a ladder rung are
 named here and refuse cleanly until the rung lands** (total decisions, named skips — never
