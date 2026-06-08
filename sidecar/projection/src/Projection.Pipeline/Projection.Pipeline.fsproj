@@ -31,6 +31,7 @@
     <Compile Include="EmissionFoldersBinding.fs" />
     <Compile Include="TransformGroupsBinding.fs" />
     <Compile Include="InsertionPolicyBinding.fs" />
+    <Compile Include="LiveModelRead.fs" />
     <Compile Include="Pipeline.fs" />
     <Compile Include="PolicyDiff.fs" />
     <Compile Include="Bulk.fs" />
@@ -44,6 +45,9 @@
     <Compile Include="EjectRun.fs" />
     <Compile Include="ReportRun.fs" />
     <Compile Include="TransferSpec.fs" />
+    <Compile Include="ModelResolution.fs" />
+    <Compile Include="SyntheticLoadRun.fs" />
+    <Compile Include="ProfileCaptureRun.fs" />
     <Compile Include="MovementSpec.fs" />
     <Compile Include="MovementSurface.fs" />
     <Compile Include="RegisteredAllTransforms.fs" />
@@ -58,6 +62,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Projection.Core\Projection.Core.fsproj" />
     <ProjectReference Include="..\Projection.Adapters.Osm\Projection.Adapters.Osm.fsproj" />
+    <ProjectReference Include="..\Projection.Adapters.OssysSql\Projection.Adapters.OssysSql.fsproj" />
     <ProjectReference Include="..\Projection.Adapters.Sql\Projection.Adapters.Sql.fsproj" />
     <ProjectReference Include="..\Projection.Targets.SSDT\Projection.Targets.SSDT.fsproj" />
     <ProjectReference Include="..\Projection.Targets.Json\Projection.Targets.Json.fsproj" />

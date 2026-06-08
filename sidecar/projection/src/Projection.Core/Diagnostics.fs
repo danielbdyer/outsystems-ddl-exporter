@@ -35,7 +35,7 @@ type DiagnosticSeverity =
 /// `Source` names the producer. Convention:
 ///   - `<PassName>` for V2 pass-produced entries
 ///   - `adapter:<adapter-name>` for boundary-produced entries (e.g.,
-///     `adapter:OSSYS`, `adapter:ProfileSnapshot`)
+///     `adapter:OSSYS`, `adapter:LiveProfiler`)
 ///   - `emitter:<emitter-name>` for Π-produced entries
 /// The Source is the audit-trail equivalent of `LineageEvent.PassName`;
 /// the same passes that emit lineage events also emit diagnostics, so

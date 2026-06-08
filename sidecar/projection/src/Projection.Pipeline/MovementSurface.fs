@@ -58,7 +58,13 @@ type ProjectionConfig =
         Environments : Map<string, Environment>
         /// THE_CLI.md §4.2 — named source→target Move recipes.
         Flows        : Map<string, Flow>
+        /// The authored `osm_model.json` file — the model **fallback** (kept
+        /// for cutover safety, not retired).
         Model        : string option
+        /// A live OSSYS connection (env/file ref) — the **primary** model
+        /// source (V1-free: read OutSystems metadata directly → native SsKey).
+        /// When set it wins over `Model`. See `ModelResolution`.
+        ModelOssys   : string option
         Defaults     : Map<string, string>
     }
 
@@ -66,7 +72,7 @@ type ProjectionConfig =
 module ProjectionConfig =
 
     let empty : ProjectionConfig =
-        { Environments = Map.empty; Flows = Map.empty; Model = None; Defaults = Map.empty }
+        { Environments = Map.empty; Flows = Map.empty; Model = None; ModelOssys = None; Defaults = Map.empty }
 
     let private err (code: string) (message: string) : ValidationError =
         ValidationError.create code message
@@ -206,7 +212,9 @@ module ProjectionConfig =
                         | _ -> Map.empty
                     Result.success
                         { Environments = environments; Flows = flows
-                          Model = getString root "model"; Defaults = defaults }
+                          Model = getString root "model"
+                          ModelOssys = getString root "modelOssys"
+                          Defaults = defaults }
         with ex ->
             Result.failureOf (err "cli.config.parseFailed" (sprintf "projection.json did not parse: %s" ex.Message))
 
@@ -279,9 +287,12 @@ module Command =
           match spec.Baseline with
           | Baseline.Auto -> ()
           | _ -> "baseline accepted; the engine reads the prior state automatically (auto applied)."
-          match spec.Data with
-          | DataOrigin.Synthetic -> "synthetic data accepted; synthetic generation is pending (model data applied)."
-          | DataOrigin.NoData    -> "data:none accepted; the engine emits model data (model data applied)."
+          match spec.Data, spec.Destination with
+          // Synthetic generation is honored only on a live data load; a
+          // file/docker bundle carries model data.
+          | DataOrigin.Synthetic _, (Destination.Folder _ | Destination.Docker) ->
+              "synthetic data accepted; the file/docker bundle carries model data (model data applied)."
+          | DataOrigin.NoData, _ -> "data:none accepted; the engine emits model data (model data applied)."
           | _ -> () ]
 
     /// `--fresh` → the data-plane `EmissionMode`: merge is the incremental MERGE
@@ -309,20 +320,23 @@ module Command =
         let opts = optsOf spec
         let modelMissing prefix = PlanAction.Refused (1, err "cli.move.modelMissing" (prefix + noModel))
         let dataConn (alias: string) : Result<string> = resolveLiveConn cfg alias
+        // Live OSSYS (primary) when configured; the model file (fallback) is
+        // optional then. `hasModel` is true when either source is available.
+        let modelOssys = cfg.ModelOssys
+        let hasModel = spec.Model <> ModelSource.Unspecified || Option.isSome modelOssys
         let action =
             match spec.Destination with
             | Destination.Folder dir ->
                 match spec.Model with
                 | ModelSource.ConfigFile c -> PlanAction.PublishBundle (c, dir, spec.Store, spec.Env)
-                | ModelSource.ModelFile m ->
+                | _ when hasModel ->
                     match spec.Shape with
-                    | Shape.Skeleton            -> PlanAction.EmitSkeleton (m, dir)
-                    | Shape.Bundle | Shape.Ssdt -> PlanAction.EmitBundle (m, dir)
-                | ModelSource.Unspecified -> modelMissing "projection: "
+                    | Shape.Skeleton            -> PlanAction.EmitSkeleton (spec.Model, modelOssys, dir)
+                    | Shape.Bundle | Shape.Ssdt -> PlanAction.EmitBundle (spec.Model, modelOssys, dir)
+                | _ -> modelMissing "projection: "
             | Destination.Docker ->
-                match spec.Model with
-                | ModelSource.Unspecified -> modelMissing "projection (docker): "
-                | m -> PlanAction.DeployDocker m
+                if hasModel then PlanAction.DeployDocker (spec.Model, modelOssys)
+                else modelMissing "projection (docker): "
             | Destination.Live connRef ->
                 let conn = connSpecOf connRef
                 let schemaOnly = (spec.Scope = Scope.Schema)
@@ -333,10 +347,11 @@ module Command =
                         match dataConn alias with
                         | Ok src -> PlanAction.Transfer (src, conn, opts, false)
                         | Error es -> PlanAction.Refused (6, List.head es)
+                    | DataOrigin.Synthetic profile when not schemaOnly ->
+                        PlanAction.SynthesizeAndLoad (spec.Model, cfg.ModelOssys, profile, conn, opts, false)
                     | _ ->
-                        match spec.Model with
-                        | ModelSource.Unspecified -> modelMissing "projection: "
-                        | m -> PlanAction.PreviewSchema (m, conn, opts.Declaration)
+                        if hasModel then PlanAction.PreviewSchema (spec.Model, modelOssys, conn, opts.Declaration)
+                        else modelMissing "projection: "
                 else
                     match spec.Data with
                     | DataOrigin.FromTarget alias when not schemaOnly ->
@@ -344,17 +359,18 @@ module Command =
                         | Error es -> PlanAction.Refused (6, List.head es)
                         | Ok src ->
                             if dataOnly then PlanAction.Transfer (src, conn, opts, true)
-                            else
-                                match spec.Model with
-                                | ModelSource.Unspecified -> modelMissing "projection: "
-                                | m -> PlanAction.MigrateWithData (m, conn, src, opts)
+                            elif hasModel then PlanAction.MigrateWithData (spec.Model, modelOssys, conn, src, opts)
+                            else modelMissing "projection: "
+                    | DataOrigin.Synthetic profile when not schemaOnly ->
+                        if dataOnly then PlanAction.SynthesizeAndLoad (spec.Model, cfg.ModelOssys, profile, conn, opts, true)
+                        else PlanAction.Refused (2, err "cli.move.syntheticScope" "a synthetic load moves data only; point the flow at a data-granting target (grant: data).")
                     | _ when dataOnly ->
                         PlanAction.Refused (2, err "cli.move.scopeDataNoSource" "a DML-only load needs a data source (a flow whose `from` is a live environment).")
                     | _ ->
                         match spec.Model with
                         | ModelSource.ConfigFile c -> PlanAction.PublishAndLoad (c, conn, spec.Store, spec.Env)
-                        | ModelSource.ModelFile _  -> PlanAction.Migrate (spec.Model, conn, opts)
-                        | ModelSource.Unspecified  -> modelMissing "projection: "
+                        | _ when hasModel -> PlanAction.Migrate (spec.Model, modelOssys, conn, opts)
+                        | _ -> modelMissing "projection: "
         // The wipe-and-load strategy is honored only on the pure-transfer data
         // load (→ EmissionMode); any other action keeps the incremental MERGE,
         // so note it (no silent drop).
@@ -362,6 +378,7 @@ module Command =
             match spec.Strategy, action with
             | Strategy.Merge, _ -> []
             | _, PlanAction.Transfer _ -> []
+            | _, PlanAction.SynthesizeAndLoad _ -> []
             | _ -> [ "--fresh accepted; this action has no selectable data-load strategy (incremental applied)." ]
         { Notes = unhonoredNotes spec @ freshNote; Action = action }
 
@@ -452,7 +469,9 @@ module Command =
         match source with
         | FlowSource.Model       -> Result.success DataOrigin.Model
         | FlowSource.NoData      -> Result.success DataOrigin.NoData
-        | FlowSource.Synthetic _ -> Result.success DataOrigin.Synthetic
+        | FlowSource.Synthetic (Some profile) -> Result.success (DataOrigin.Synthetic profile)
+        | FlowSource.Synthetic None ->
+            Result.failureOf (err "cli.flow.syntheticNoProfile" "flow source `synthetic` needs a `profile` (e.g. \"profile\": \"file:legacy.profile.json\") — the evidence the generator replays.")
         | FlowSource.Env e ->
             match Map.tryFind e cfg.Environments with
             | None ->
@@ -543,9 +562,32 @@ module Command =
         | Ok store -> { Notes = []; Action = PlanAction.ReportBundle store }
         | Error es -> { Notes = []; Action = PlanAction.Refused (6, List.head es) }
 
+    /// Route a `profile` verb tail (THE_SYNTHETIC_DATA_DESIGN §2.2):
+    /// `profile <env> --out <path>` captures the durable Profile artifact from
+    /// a live environment. The env resolves to its live connection; the
+    /// `--out` path is the durable file the synthetic flow later replays.
+    let planProfile (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
+        let valueOf = flagValue args
+        // The env is positional-first (`profile <env> --out <path>`); a leading
+        // flag means no env was named (avoids mistaking `--out`'s value for it).
+        let envArg = match args with | first :: _ when not (first.StartsWith "--") -> Some first | _ -> None
+        let action =
+            match envArg with
+            | None ->
+                PlanAction.Refused (2, err "cli.profile.noEnv" "projection profile: name a source environment (profile <env> --out <path>).")
+            | Some envRaw ->
+                match valueOf "--out" with
+                | None ->
+                    PlanAction.Refused (2, err "cli.profile.noOut" "projection profile: requires --out <path> (the durable profile file to write).")
+                | Some out ->
+                    match resolveLiveConn cfg envRaw with
+                    | Ok conn  -> PlanAction.CaptureProfile (conn, out)
+                    | Error es -> PlanAction.Refused (6, List.head es)
+        { Notes = []; Action = action }
+
     /// The closed secondary-verb set (THE_CLI.md §3). A first token outside
     /// this set is read as a flow name; an unknown one is refused, naming both.
-    let private secondaryVerbs = set [ "check"; "explain"; "seal"; "report"; "init" ]
+    let private secondaryVerbs = set [ "check"; "explain"; "seal"; "report"; "profile"; "init" ]
 
     /// Map an argv to an `Intent` (THE_CLI.md §3): the daily surface
     /// `projection <flow> [--go] [--fresh] [--allow-drops]` (the verb is
@@ -557,6 +599,7 @@ module Command =
         | "explain" :: rest -> Result.success (Intent.Explain rest)
         | "seal" :: rest    -> Result.success (Intent.Seal rest)
         | "report" :: rest  -> Result.success (Intent.Report rest)
+        | "profile" :: rest -> Result.success (Intent.Profile rest)
         | first :: rest when Map.containsKey first cfg.Flows ->
             let opts =
                 { Go         = List.contains "--go" rest
@@ -573,7 +616,7 @@ module Command =
             let suffix = if flows = "" then "no flows configured." else sprintf "known flows: %s." flows
             Result.failureOf (err "cli.verb.unknown" (sprintf "unknown flow or verb '%s'; %s" first suffix))
         | [] ->
-            Result.failureOf (err "cli.verb.missing" "no flow or verb given; expected <flow> | check | explain | seal | report.")
+            Result.failureOf (err "cli.verb.missing" "no flow or verb given; expected <flow> | check | explain | seal | report | profile.")
 
     /// The one pure routing for the whole surface — every `Intent` to its
     /// `ExecutionPlan`. The runner executes it; the totality test sweeps it.
@@ -584,3 +627,4 @@ module Command =
         | Intent.Explain args      -> planExplain cfg args
         | Intent.Seal args         -> planSeal args
         | Intent.Report args       -> planReport cfg args
+        | Intent.Profile args      -> planProfile cfg args

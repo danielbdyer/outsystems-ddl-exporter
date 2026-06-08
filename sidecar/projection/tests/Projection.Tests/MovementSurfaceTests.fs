@@ -154,12 +154,12 @@ let ``planMovement: folder + config → PublishBundle`` () =
 [<Fact>]
 let ``planMovement: folder + model + shape routes Skeleton vs Bundle`` () =
     let folderModel shape = { MovementSpec.forDestination (Destination.Folder "./o") with Model = ModelSource.ModelFile "m.json"; Shape = shape }
-    Assert.Equal(PlanAction.EmitSkeleton ("m.json", "./o"), planOf (folderModel Shape.Skeleton))
-    Assert.Equal(PlanAction.EmitBundle ("m.json", "./o"), planOf (folderModel Shape.Bundle))
+    Assert.Equal(PlanAction.EmitSkeleton (ModelSource.ModelFile "m.json", None, "./o"), planOf (folderModel Shape.Skeleton))
+    Assert.Equal(PlanAction.EmitBundle (ModelSource.ModelFile "m.json", None, "./o"), planOf (folderModel Shape.Bundle))
 
 [<Fact>]
 let ``planMovement: docker + model → DeployDocker; no model → Refused`` () =
-    Assert.Equal(PlanAction.DeployDocker (ModelSource.ModelFile "m.json"),
+    Assert.Equal(PlanAction.DeployDocker (ModelSource.ModelFile "m.json", None),
                  planOf { MovementSpec.forDestination Destination.Docker with Model = ModelSource.ModelFile "m.json" })
     match planOf (MovementSpec.forDestination Destination.Docker) with
     | PlanAction.Refused (1, _) -> ()
@@ -167,7 +167,7 @@ let ``planMovement: docker + model → DeployDocker; no model → Refused`` () =
 
 [<Fact>]
 let ``planMovement: live preview (no --go) → schema plan, or data plan with a source`` () =
-    Assert.Equal(PlanAction.PreviewSchema (ModelSource.ModelFile "model.json", "env:DEV_CONN", DeclareNone),
+    Assert.Equal(PlanAction.PreviewSchema (ModelSource.ModelFile "model.json", None, "env:DEV_CONN", DeclareNone),
                  planOf { baseLive with Model = ModelSource.ModelFile "model.json" })
     Assert.Equal(PlanAction.Transfer ("env:QA_CONN", "env:DEV_CONN", defaultOpts, false),
                  planOf { baseLive with Data = DataOrigin.FromTarget "qa" })
@@ -175,8 +175,8 @@ let ``planMovement: live preview (no --go) → schema plan, or data plan with a 
 [<Fact>]
 let ``planMovement: live --go routes migrate / migrate-with-data / transfer / publish-load`` () =
     let go = { baseLive with Commit = true; Model = ModelSource.ModelFile "model.json" }
-    Assert.Equal(PlanAction.Migrate (ModelSource.ModelFile "model.json", "env:DEV_CONN", defaultOpts), planOf go)
-    Assert.Equal(PlanAction.MigrateWithData (ModelSource.ModelFile "model.json", "env:DEV_CONN", "env:QA_CONN", defaultOpts),
+    Assert.Equal(PlanAction.Migrate (ModelSource.ModelFile "model.json", None, "env:DEV_CONN", defaultOpts), planOf go)
+    Assert.Equal(PlanAction.MigrateWithData (ModelSource.ModelFile "model.json", None, "env:DEV_CONN", "env:QA_CONN", defaultOpts),
                  planOf { go with Data = DataOrigin.FromTarget "qa" })
     Assert.Equal(PlanAction.Transfer ("env:QA_CONN", "env:DEV_CONN", defaultOpts, true),
                  planOf { go with Data = DataOrigin.FromTarget "qa"; Scope = Scope.Data })
@@ -201,7 +201,7 @@ let ``planMovement is TOTAL across the destination × scope × data × model × 
     // No combination throws; every Refused is a named exit code + coded error.
     let destinations = [ Destination.Folder "./o"; Destination.Docker; liveDev ]
     let scopes       = [ Scope.All; Scope.Schema; Scope.Data ]
-    let datas        = [ DataOrigin.Model; DataOrigin.Synthetic; DataOrigin.NoData; DataOrigin.FromTarget "qa"; DataOrigin.FromTarget "pub" ]
+    let datas        = [ DataOrigin.Model; DataOrigin.Synthetic "file:p.json"; DataOrigin.NoData; DataOrigin.FromTarget "qa"; DataOrigin.FromTarget "pub" ]
     let models       = [ ModelSource.ModelFile "m.json"; ModelSource.ConfigFile "c.json"; ModelSource.Unspecified ]
     let commits      = [ true; false ]
     let mutable n = 0
@@ -258,7 +258,7 @@ let ``flow lift-and-shift to a bundle target resolves schema+data → folder bun
         Assert.Equal(Strategy.Merge, s.Strategy)
         Assert.Equal(Some "file:users.csv", s.Rekey)
     | Error es -> Assert.Fail(sprintf "%A" es)
-    Assert.Equal(PlanAction.EmitBundle ("model.json", "dist/onprem-uat"), actionOf "uat" preview)
+    Assert.Equal(PlanAction.EmitBundle (ModelSource.ModelFile "model.json", None, "dist/onprem-uat"), actionOf "uat" preview)
 
 [<Fact>]
 let ``flow golden (data-only target, from env) → transfer; --go executes`` () =
@@ -305,7 +305,7 @@ let ``flow --fresh selects the wipe-and-load posture and an empty baseline`` () 
 
 [<Fact>]
 let ``flow to a docker environment → DeployDocker`` () =
-    Assert.Equal(PlanAction.DeployDocker (ModelSource.ModelFile "model.json"), actionOf "spin" preview)
+    Assert.Equal(PlanAction.DeployDocker (ModelSource.ModelFile "model.json", None), actionOf "spin" preview)
 
 [<Fact>]
 let ``flow --allow-drops threads the declared-loss acceptance`` () =
@@ -327,6 +327,149 @@ let ``planFlow is TOTAL across the flows × per-run intents`` () =
         | _ -> ()
         n <- n + 1
     Assert.Equal(5 * 4, n)
+
+// -- synthetic flow wiring (THE_SYNTHETIC_DATA_DESIGN §8 / §11) --------------
+
+let private synthCfg =
+    ProjectionConfig.parse """
+    {
+      "environments": {
+        "cloud-uat": { "access": "direct", "conn": "env:CLOUD_UAT_CONN", "grant": "data" },
+        "cloud-all": { "access": "direct", "conn": "env:CLOUD_ALL_CONN" }
+      },
+      "flows": {
+        "preview-synth": { "from": "synthetic", "profile": "file:legacy.profile.json", "to": "cloud-uat" },
+        "synth-all":     { "from": "synthetic", "profile": "file:legacy.profile.json", "to": "cloud-all" },
+        "synth-noprof":  { "from": "synthetic", "to": "cloud-uat" }
+      },
+      "model": "model.json"
+    }
+    """ |> mustOk
+
+let private synthAction name opts = (Command.planFlow synthCfg (Map.find name synthCfg.Flows) opts).Action
+let private specOfIn cfg name opts = Command.resolveFlowSpec cfg (Map.find name (cfg: ProjectionConfig).Flows) opts
+
+[<Fact>]
+let ``synthetic flow (data-only target) → SynthesizeAndLoad; preview vs --go`` () =
+    match synthAction "preview-synth" preview with
+    | PlanAction.SynthesizeAndLoad (ModelSource.ModelFile "model.json", None, "file:legacy.profile.json", "env:CLOUD_UAT_CONN", _, false) -> ()
+    | other -> Assert.Fail(sprintf "expected preview SynthesizeAndLoad, got %A" other)
+    match synthAction "preview-synth" commit with
+    | PlanAction.SynthesizeAndLoad (_, None, "file:legacy.profile.json", "env:CLOUD_UAT_CONN", _, true) -> ()
+    | other -> Assert.Fail(sprintf "expected executing SynthesizeAndLoad, got %A" other)
+
+[<Fact>]
+let ``synthetic flow carries the profile ref through resolveFlowSpec`` () =
+    match specOfIn synthCfg "preview-synth" preview with
+    | Ok s -> Assert.Equal(DataOrigin.Synthetic "file:legacy.profile.json", s.Data)
+    | Error es -> Assert.Fail(sprintf "%A" es)
+
+[<Fact>]
+let ``synthetic flow without a profile is Refused (named, not silent)`` () =
+    match synthAction "synth-noprof" preview with
+    | PlanAction.Refused (6, e) -> Assert.Equal("cli.flow.syntheticNoProfile", e.Code)
+    | other -> Assert.Fail(sprintf "expected synthetic-no-profile refusal, got %A" other)
+
+[<Fact>]
+let ``synthetic flow preview works under all-scope; --go to a non-data target is Refused`` () =
+    match synthAction "synth-all" preview with
+    | PlanAction.SynthesizeAndLoad (_, _, _, "env:CLOUD_ALL_CONN", _, false) -> ()
+    | other -> Assert.Fail(sprintf "expected all-scope preview SynthesizeAndLoad, got %A" other)
+    match synthAction "synth-all" commit with
+    | PlanAction.Refused (2, e) -> Assert.Equal("cli.move.syntheticScope", e.Code)
+    | other -> Assert.Fail(sprintf "expected synthetic-scope refusal, got %A" other)
+
+[<Fact>]
+let ``synthetic flow threads the live-OSSYS model source (primary) when configured`` () =
+    let cfg =
+        ProjectionConfig.parse """
+        {
+          "environments": { "cloud-uat": { "access": "direct", "conn": "env:CLOUD_UAT_CONN", "grant": "data" } },
+          "flows": { "preview-synth": { "from": "synthetic", "profile": "file:legacy.profile.json", "to": "cloud-uat" } },
+          "model": "model.json",
+          "modelOssys": "env:ONPREM_OSSYS_CONN"
+        }
+        """ |> mustOk
+    Assert.Equal(Some "env:ONPREM_OSSYS_CONN", cfg.ModelOssys)
+    match (Command.planFlow cfg (Map.find "preview-synth" cfg.Flows) preview).Action with
+    // modelOssys (primary) rides in the action; the model file remains the fallback.
+    | PlanAction.SynthesizeAndLoad (ModelSource.ModelFile "model.json", Some "env:ONPREM_OSSYS_CONN", _, _, _, false) -> ()
+    | other -> Assert.Fail(sprintf "expected SynthesizeAndLoad carrying the live-OSSYS primary, got %A" other)
+
+// -- live-OSSYS model primary across the whole flow surface -----------------
+
+let private ossysFlowCfg =
+    ProjectionConfig.parse """
+    {
+      "environments": {
+        "uat-bundle": { "access": "bundle", "out": "dist/uat", "grant": "schema+data" },
+        "lab":        { "access": "docker", "grant": "schema+data" },
+        "cloud-live": { "access": "direct", "conn": "env:CLOUD_LIVE_CONN" }
+      },
+      "flows": {
+        "emit":    { "from": "model", "to": "uat-bundle" },
+        "spin":    { "from": "model", "to": "lab" },
+        "preview": { "from": "model", "to": "cloud-live" }
+      },
+      "model": "model.json",
+      "modelOssys": "env:ONPREM_OSSYS_CONN"
+    }
+    """ |> mustOk
+let private ossysAction name opts = (Command.planFlow ossysFlowCfg (Map.find name ossysFlowCfg.Flows) opts).Action
+
+[<Fact>]
+let ``modelOssys (primary) threads into emit / docker / preview actions`` () =
+    match ossysAction "emit" preview with
+    | PlanAction.EmitBundle (ModelSource.ModelFile "model.json", Some "env:ONPREM_OSSYS_CONN", "dist/uat") -> ()
+    | other -> Assert.Fail(sprintf "expected EmitBundle carrying modelOssys, got %A" other)
+    match ossysAction "spin" preview with
+    | PlanAction.DeployDocker (ModelSource.ModelFile "model.json", Some "env:ONPREM_OSSYS_CONN") -> ()
+    | other -> Assert.Fail(sprintf "expected DeployDocker carrying modelOssys, got %A" other)
+    match ossysAction "preview" preview with
+    | PlanAction.PreviewSchema (ModelSource.ModelFile "model.json", Some "env:ONPREM_OSSYS_CONN", "env:CLOUD_LIVE_CONN", _) -> ()
+    | other -> Assert.Fail(sprintf "expected PreviewSchema carrying modelOssys, got %A" other)
+
+[<Fact>]
+let ``modelOssys-only (no model file) still routes — the file is optional`` () =
+    let cfg =
+        ProjectionConfig.parse """
+        {
+          "environments": { "uat-bundle": { "access": "bundle", "out": "dist/uat", "grant": "schema+data" } },
+          "flows": { "emit": { "from": "model", "to": "uat-bundle" } },
+          "modelOssys": "env:ONPREM_OSSYS_CONN"
+        }
+        """ |> mustOk
+    match (Command.planFlow cfg (Map.find "emit" cfg.Flows) preview).Action with
+    | PlanAction.EmitBundle (ModelSource.Unspecified, Some "env:ONPREM_OSSYS_CONN", "dist/uat") -> ()
+    | other -> Assert.Fail(sprintf "expected EmitBundle from ossys-only config, got %A" other)
+
+// -- profile capture verb (THE_SYNTHETIC_DATA_DESIGN §2.2) -------------------
+
+let private planArgs cfg argv = (Command.plan cfg (Command.parse cfg argv |> mustOk)).Action
+
+[<Fact>]
+let ``profile <env> --out routes to CaptureProfile`` () =
+    match planArgs synthCfg [ "profile"; "cloud-uat"; "--out"; "legacy.profile.json" ] with
+    | PlanAction.CaptureProfile ("env:CLOUD_UAT_CONN", "legacy.profile.json") -> ()
+    | other -> Assert.Fail(sprintf "expected CaptureProfile, got %A" other)
+
+[<Fact>]
+let ``profile without --out is Refused (named)`` () =
+    match planArgs synthCfg [ "profile"; "cloud-uat" ] with
+    | PlanAction.Refused (2, e) -> Assert.Equal("cli.profile.noOut", e.Code)
+    | other -> Assert.Fail(sprintf "expected --out refusal, got %A" other)
+
+[<Fact>]
+let ``profile without an environment is Refused (named)`` () =
+    match planArgs synthCfg [ "profile"; "--out"; "x.json" ] with
+    | PlanAction.Refused (2, e) -> Assert.Equal("cli.profile.noEnv", e.Code)
+    | other -> Assert.Fail(sprintf "expected no-env refusal, got %A" other)
+
+[<Fact>]
+let ``profile against an unknown environment is Refused`` () =
+    match planArgs synthCfg [ "profile"; "nope"; "--out"; "x.json" ] with
+    | PlanAction.Refused (6, _) -> ()
+    | other -> Assert.Fail(sprintf "expected unknown-env refusal, got %A" other)
 
 // -- dispatch (THE_CLI.md 2026-06-08; slice F3) -----------------------------
 
@@ -360,7 +503,7 @@ let ``flow --allow-cdc threads the CDC-gate override onto the spec (item 3)`` ()
 [<Fact>]
 let ``parse: a bare flow routes through plan to its engine face`` () =
     let plan = Command.plan flowCfg (Command.parse flowCfg [ "uat" ] |> mustOk)
-    Assert.Equal(PlanAction.EmitBundle ("model.json", "dist/onprem-uat"), plan.Action)
+    Assert.Equal(PlanAction.EmitBundle (ModelSource.ModelFile "model.json", None, "dist/onprem-uat"), plan.Action)
 
 [<Fact>]
 let ``parse: report dispatches to Intent.Report`` () =

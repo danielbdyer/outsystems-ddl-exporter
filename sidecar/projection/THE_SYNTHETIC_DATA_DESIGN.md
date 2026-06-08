@@ -1,9 +1,47 @@
 # THE_SYNTHETIC_DATA_DESIGN.md — profile-driven, FK-aware synthetic data
 
-**Status: DESIGN LOCKED, NOT YET BUILT (2026-06-08).** This is the first-principles
-design for the synthetic (`--data synthetic` / `from: synthetic`) data source — the one
-genuine net-new feature remaining from `THE_CLI.md` §12. The two design forks are decided
-(below). Build it in the three slices of §8. Nothing in this document is shipped yet.
+**Status: BUILT — engine, durable codec, and full CLI surface green (2026-06-08).**
+The CLI surface is wired end to end: `ProfileCodec` (durable round-trip),
+`SyntheticLoadRun` + `DataOrigin.Synthetic of profile` + `PlanAction
+.SynthesizeAndLoad` (the `from: synthetic, profile: file:<path>` flow), and the
+capture verb `projection profile <env> --out <path>` (`ProfileCaptureRun` +
+`Intent.Profile` + `PlanAction.CaptureProfile`). Remaining polish, not blocking:
+a `--seed` / `synthetic` config block (today a fixed default seed + the default
+hybrid-by-cardinality policy), and all-scope synthetic `--go` (refused-named;
+synthetic is a data-only load — point it at a data-granting target).
+This is the first-principles design for the synthetic (`--data synthetic` / `from: synthetic`)
+data source — the one genuine net-new feature remaining from `THE_CLI.md` §12. The two design
+forks are decided (below). The three slices of §8 are built and green:
+
+- **S1 — `SyntheticData.generate`** (pure Core): `src/Projection.Core/SyntheticData.fs`
+  (+ `SyntheticConfig`). Tests `tests/Projection.Tests/SyntheticDataTests.fs` (13; the L1 +
+  privacy floor — T1 byte-determinism, zero FK orphans, the privacy property, preserve /
+  forced-synthesize, null-rate within ε, volume/scale, PK uniqueness, PrimitiveType
+  exhaustion). PRNG is splitmix64 (F#'s default arithmetic is unchecked, so the wrapping mix
+  is well-defined — the design's "splitmix64-style").
+- **S2 — `Transfer.runSynthetic`** (Pipeline): in `src/Projection.Pipeline/TransferRun.fs`
+  (reuses `DataLoadPlan.build` → `writePlan` / `wipeFkOrdered`; no source endpoint, no
+  `runThroughConnections`). Docker proof `tests/Projection.Tests/SyntheticLoadTests.fs`
+  (load lands profiled volume with zero FK orphans through the IDENTITY/AssignedBySink
+  capture path; DryRun writes nothing).
+- **S3 — the synthetic canary** (`π ∘ σ ≈ id`, the forcing function):
+  `tests/Projection.Tests/SyntheticCanaryTests.fs` (warm Docker pool). Capture rode the
+  **existing** `LiveProfiler.attach` (the full-Profile assembler already present — §10 gap #1
+  resolved). One wrinkle baked into the test: `ReadSide.read` marks every read kind
+  `Modality=[Static rows]` and `LiveProfiler` skips static kinds, so the canary strips the
+  Static mark before profiling (the data is in the DB, not the catalog).
+
+**The operator surface (built):**
+- **Durable codec** — `src/Projection.Targets.Json/ProfileCodec.fs` (total, SsKey-stable,
+  re-validating; FsCheck round-trip law + a real-captured-profile Docker round-trip).
+- **Flow front-end** — `DataOrigin.Synthetic of profile` (was nullary), `PlanAction
+  .SynthesizeAndLoad`, `planMovement` routing (preview + data-only `--go`; all-scope `--go`
+  refused-named), `SyntheticLoadRun` (resolve `file:<path>` → read model → open sink →
+  `Transfer.runSynthetic`), CLI `runSyntheticLoad` (R6 execute gate, fail-loud on drops).
+- **Capture verb** — `projection profile <env> --out <path>`: `ProfileCaptureRun` (read →
+  strip Static → `LiveProfiler.attach` → `ProfileCodec.serialize`), `Intent.Profile`,
+  `PlanAction.CaptureProfile`. Tests in `MovementSurfaceTests` (routing) +
+  `SyntheticCanaryTests` (real capture round-trip).
 
 Provenance: derived from the operator's premise ("profile the on-prem legacy application
 data to create better synthetic data and start to iterate… preview the migrated legacy
@@ -216,17 +254,35 @@ write seam; **no source DB / no `runThroughConnections`**). New `PlanAction.Synt
 
 ## 10. Open anchors to confirm / likely-build
 
-1. **Full-`Profile` capture from `LiveProfiler`.** `captureEvidenceCache` yields an
-   `EvidenceCache`; assembling a complete `Profile` (Columns + CategoricalDistribution +
-   NumericDistribution) from it may need a thin "capture → Profile" assembler. Confirm
-   whether a full-Profile capture entry already exists; if not, build it in S3.
-2. **Profile serialize/deserialize round-trip (the durable artifact).** `DistributionsEmitter`
-   serializes; a **deserialize** (read `legacy.profile.json` back into a `Profile`) is
-   likely missing. Build a `ProfileCodec` (mirror `CatalogCodec`) with the universal
-   round-trip law (`∀ p. deserialize (serialize p) = Ok p`) per the codec discipline. This
-   is load-bearing for "capture once, replay pure."
-3. **`DataOrigin.Synthetic` payload.** Today nullary; must carry the profile reference
-   (and seed/scale, or thread those via `FlowRunOpts`/config). Decide the shape in S2/S3.
+1. **Full-`Profile` capture from `LiveProfiler`. — RESOLVED (2026-06-08).**
+   `LiveProfiler.attach cnn catalog Profile.empty` (`src/Projection.Adapters.Sql/LiveProfiler.fs:1231`)
+   IS the full-Profile assembler — it captures the `EvidenceCache` once and composes every
+   axis (Columns / Categorical / Numeric / FK realities + cardinalities + selectivities /
+   joints / composite-unique) via `attachFromCache`. The synthetic canary uses it directly.
+   **Caveat for the capture verb:** `LiveProfiler` skips static kinds, and `ReadSide.read`
+   marks read kinds `Modality=[Static rows]`; strip the Static mark before profiling (the
+   canary does this). The remaining I/O front-end is the capture *verb* (read env → strip
+   Static → `attach` → `ProfileCodec.serialize` → file), not the assembler.
+2. **Profile serialize/deserialize round-trip (the durable artifact). — RESOLVED (2026-06-08).**
+   Built `ProfileCodec` (`src/Projection.Targets.Json/ProfileCodec.fs`), mirroring
+   `CatalogCodec`: total over all 12 Profile axes, SsKey-serialized, re-validating on decode.
+   The universal law `∀ p. deserialize (serialize p) = Ok p` is FsCheck-tested over a
+   constructed-valid generator plus a totality example, and round-trips a real LiveProfiler
+   capture in the Docker pool. (`DistributionsEmitter` stays a one-way SSDT projection;
+   `ProfileSnapshot` stays the V1-inbound ACL — see the note below.)
+3. **`DataOrigin.Synthetic` payload. — RESOLVED (2026-06-08).** Now `Synthetic of profile:
+   string` (the `file:<path>` ref); `dataOriginOfSource` requires it (named refusal when
+   absent). Seed/scale are not yet on the surface — `SyntheticLoadRun` uses a fixed default
+   seed + the default hybrid-by-cardinality `SyntheticConfig`; a `--seed` / `synthetic`
+   config block is the next polish slice.
+
+**Note — `ProfileSnapshot` removed (2026-06-08).** `ProfileSnapshot` was the V1-inbound
+anti-corruption layer (V1 profile JSON, physical coordinates → `Profile`); `ProfileStatistics`
+its distribution-JSON sibling. Both had zero production callers and were superseded by
+`ReadSide` + `LiveProfiler` (V2 reads + profiles the live DB). Per the operator's "no V1
+inputs" intent they were **deleted**; `ProfileCodec` is V2's own durable profile format
+(bidirectional, SsKey-stable, total). The broader V1-input retirement (the `osm_model.json`
+model path → live OSSYS read) is tracked in `V1_INPUT_DEPRECATION.md`.
 
 ---
 

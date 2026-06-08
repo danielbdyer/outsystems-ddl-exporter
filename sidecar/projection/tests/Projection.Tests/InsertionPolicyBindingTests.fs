@@ -13,7 +13,8 @@ open Projection.Pipeline
 let private mkConfig (insertion: string) : Config.Config =
     {
         Model       = {
-            Path                   = "ignored.json"
+            Path                   = Some "ignored.json"
+            Ossys                  = None
             Modules                = []
             IncludeSystemModules   = false
             IncludeInactiveModules = false

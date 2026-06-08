@@ -815,6 +815,16 @@ module Compose =
                 return Result.failure errors
         }
 
+    /// The bundle / skeleton emit from an already-resolved `Catalog` — the
+    /// model-source-agnostic cores of `run` / `runSkeletonOnly`. The model may
+    /// have been read live from OSSYS (primary) or from the `osm_model.json`
+    /// file (fallback); both arrive here as a `Catalog`.
+    let runFromCatalog (catalog: Catalog) (outputDir: string) : Result<string list> =
+        write outputDir (project EmissionPolicy.empty catalog)
+
+    let runSkeletonOnlyFromCatalog (catalog: Catalog) (outputDir: string) : Result<string list> =
+        write outputDir (projectSkeleton catalog)
+
     /// Apply config-driven catalog rewrites (today: table renames).
     /// Empty overrides short-circuit to the input catalog unchanged.
     /// Errors aggregate from boundary-mapping (`RenameBinding.fromConfig`)
@@ -1003,12 +1013,28 @@ module Compose =
         : unit =
         LogSink.emit { LogSink.envelope LogSink.Info category code payload with Phase = phase }
 
+    /// The full-export model read under the live-OSSYS-primary / file-fallback
+    /// policy (V1_INPUT_DEPRECATION.md §3). `cfg.Model.Ossys` set ⇒ read live
+    /// from OSSYS (`LiveModelRead`, V1-free); else read `cfg.Model.Path` (the
+    /// `osm_model.json` fallback). Byte-identical to the prior `read
+    /// cfg.Model.Path` when `Ossys = None`.
+    let readConfigModel (cfg: Config.Config) : Task<Result<Catalog>> =
+        match cfg.Model.Ossys, cfg.Model.Path with
+        | Some connSpec, _ -> LiveModelRead.fromConnSpec connSpec
+        | None, Some path -> read path
+        | None, None ->
+            Task.FromResult
+                (Result.failureOf
+                    (ValidationError.create
+                        "pipeline.config.modelNoSource"
+                        "model needs `path` (osm_model.json) or `ossys` (live OSSYS connection)."))
+
     let runWithConfig (cfg: Config.Config) : Task<Result<RunReport>> =
         task {
             // §7.2 extract — OSSYS catalog read.
             let swExtract = System.Diagnostics.Stopwatch.StartNew()
             emitStageMarker LogSink.Extract "extract.started" LogSink.Start Map.empty
-            let! parsed = read cfg.Model.Path
+            let! parsed = readConfigModel cfg
             swExtract.Stop()
             match parsed with
             | Error errors ->
@@ -1050,7 +1076,7 @@ module Compose =
     /// is profile-invariant — profiling only annotates the manifest).
     let private emittedSchema (cfg: Config.Config) : Task<Result<Catalog>> =
         task {
-            let! parsed = read cfg.Model.Path
+            let! parsed = readConfigModel cfg
             return parsed |> Result.bind (applyRenames cfg)
         }
 
@@ -1082,7 +1108,7 @@ module Compose =
 
     let private emittedSeed (cfg: Config.Config) : Task<Result<Catalog * string>> =
         task {
-            let! parsed = read cfg.Model.Path
+            let! parsed = readConfigModel cfg
             return projectSeed cfg parsed
         }
 
