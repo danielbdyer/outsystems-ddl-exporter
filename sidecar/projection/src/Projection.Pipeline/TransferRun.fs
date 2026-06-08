@@ -665,6 +665,100 @@ module Transfer =
         : Task<Result<TransferReport>> =
         runCore mode allowCdc false source sink catalog Map.empty None (WriteOptions.ofEmission emission)
 
+    /// **Synthetic load (THE_SYNTHETIC_DATA_DESIGN §8, slice S2).** The
+    /// synthetic source has **no source DB**: rows are *generated* by the pure
+    /// Core `σ` (`SyntheticData.generate`) rather than ingested, then the
+    /// transfer's write seam realizes them. So this reuses `DataLoadPlan.build`
+    /// → `writePlan` / `wipeFkOrdered` exactly as `runCore` does, but replaces
+    /// the `Ingestion.collectInOrder` step with generation — it does **not** go
+    /// through `runCore` / `runThroughConnections` (no `source` endpoint, no
+    /// spanning two-endpoint preflight). The remap is empty (the generated rows
+    /// are already in target identity space). `DryRun` plans + reports without
+    /// writing; `Execute` runs the sink CDC gate, the sink grant preflight, and
+    /// the load.
+    let runSynthetic
+        (mode: Mode)
+        (emission: EmissionMode)
+        (allowCdc: bool)
+        (sink: SqlConnection)
+        (catalog: Catalog)
+        (profile: Profile)
+        (config: SyntheticConfig)
+        (seed: uint64)
+        : Task<Result<TransferReport>> =
+        task {
+            // CDC pre-flight (Execute only) — mirror runCore's sink gate.
+            let! cdcGate =
+                task {
+                    if mode = Execute && not allowCdc then
+                        let! tracked = ReadSide.cdcTrackedTables sink
+                        if List.isEmpty tracked then return Ok ()
+                        else
+                            return
+                                Result.failureOf
+                                    (ValidationError.create
+                                        "synthetic.cdcTrackedSink"
+                                        (sprintf
+                                            "Sink has %d CDC-tracked table(s) (e.g. %s); refusing --execute. Pass --allow-cdc to override."
+                                            (List.length tracked)
+                                            (tracked |> List.truncate 3 |> String.concat ", ")))
+                    else return Ok ()
+                }
+            match cdcGate with
+            | Error e -> return Result.failure e
+            | Ok () ->
+            // Sink-only grant preflight (Execute only). No source endpoint, so
+            // the spanning two-connection check does not apply — only the sink
+            // must carry the planned INSERT grant.
+            let! grantGate =
+                task {
+                    if mode = Execute then
+                        match! Preflight.captureGrantEvidence sink with
+                        | Error es ->
+                            return
+                                Result.failure
+                                    (es |> List.map (fun e -> ValidationError.create "synthetic.grantProbeFailed" e.Message))
+                        | Ok grant ->
+                            match Preflight.permissionPreflight grant (plannedTransferWrites catalog) with
+                            | Ok () -> return Ok ()
+                            | Error es ->
+                                return
+                                    Result.failure
+                                        (es |> List.map (fun e -> ValidationError.create "synthetic.insufficientGrant" e.Message))
+                    else return Ok ()
+                }
+            match grantGate with
+            | Error es -> return Result.failure es
+            | Ok () ->
+                let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
+                // σ — pure generation in place of ingestion. Rows are already in
+                // target identity space, so the remap is empty (identity).
+                let rows = SyntheticData.generate catalog profile config seed
+                let plan = DataLoadPlan.build catalog topo rows SurrogateRemapContext.empty
+                let preWrite = if mode = Execute then executeGate catalog plan else None
+                match preWrite with
+                | Some refusal -> return Result.failureOf refusal
+                | None ->
+                    let! writeSkips =
+                        task {
+                            if mode <> Execute then return []
+                            else
+                                match emission with
+                                | EmissionMode.WipeAndLoad ->
+                                    do! wipeFkOrdered sink catalog plan topo
+                                    return! writePlan sink catalog plan
+                                | EmissionMode.Incremental ->
+                                    return! writePlan sink catalog plan
+                        }
+                    return
+                        Result.success
+                            { Mode                = mode
+                              Kinds               = reportKinds mode plan
+                              UnbreakableCycleFks = plan.UnbreakableCycleFks
+                              UnmatchedIdentities = []
+                              SkippedReferences   = plan.SkippedReferences @ writeSkips }
+        }
+
     /// 6.B.2 — RefactorLog-aware Transfer. The source is at schema A
     /// (`sourceContract`); the sink is at schema B (`sinkContract`). A rename
     /// (table or column) means the two contracts differ on physical
