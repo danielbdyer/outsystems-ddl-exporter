@@ -282,6 +282,7 @@
     <Compile Include="ComprehensiveCanaryTests.fs" />
     <Compile Include="ExecuteBatchParallelTests.fs" />
     <Compile Include="SyntheticLoadTests.fs" />
+    <Compile Include="SyntheticCanaryTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
