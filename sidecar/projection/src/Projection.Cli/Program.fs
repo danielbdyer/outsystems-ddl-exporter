@@ -36,29 +36,15 @@ let private usageLines : string list =
         "    projection seal ( --store <path> | approve <version> --approver <name> ... )"
         "    projection report <flow>        the on-prem migration-team change bundle"
         "    projection init                 scaffold a projection.json"
-        "    projection project --to <dest>  [deprecated] the prior surface (removed in F5)"
         ""
         "FLOW — the hero. Move a model from `from` to `to`; the target decides the form."
-        "  An environment carries access (bundle → SSDT for Octopus | direct → live | docker)"
-        "  and grant (schema+data | data — a refusal gate). A bundle target produces files"
-        "  (always safe); a direct target previews until --go. --fresh wipes-and-loads; a"
-        "  schema-from-model flow against a data-only target is refused."
-        ""
-        "PROJECT — [deprecated] produce the model at a destination; the destination decides the form."
-        "  --to <dest>   a folder (the file bundle) · docker (one-touch ephemeral DB) · a named"
-        "                target or env:/file: ref (a live database; reads the prior state and"
-        "                applies the minimal change). dir: forces a folder."
-        "  Model source: --config <unified.json> (model + overlays) · --model <model.json> ·"
-        "                projection.json \"model\". "
-        "  --shape bundle|ssdt|skeleton   file-bundle composition (folder destinations)."
-        "  --scope all|schema|data        which legs to emit (DDL+DML / DML-only)."
-        "  --how merge|replace|fresh      the data replacement strategy."
-        "  --data model|synthetic|none|<target>   data origin; <target> ingests rows (transfer)."
-        "  --rekey <users.csv>            re-key identities (Reidentify) on a data load."
-        "  --from auto|empty|<model>|@<target>   the baseline A (default auto)."
-        "  --go                           commit a live write (preview by default). The live write"
-        "                                 also needs PROJECTION_ALLOW_EXECUTE=1 (R6)."
-        "  --allow-drops                  accept declared destructive loss."
+        "  Environments (places) carry access (bundle → SSDT for Octopus | direct → live |"
+        "  docker) and grant (schema+data | data — a refusal gate). Flows are named source→"
+        "  target recipes (from/to/rekey/tables). A bundle target produces files (always"
+        "  safe); a direct target previews until --go (which also needs"
+        "  PROJECTION_ALLOW_EXECUTE=1, R6). --fresh wipes-and-loads (the rare from-scratch);"
+        "  --allow-drops accepts declared loss; a schema-from-model flow against a data-only"
+        "  target is refused."
         ""
         "CHECK — assert fidelity.  fidelity canary (default; --cdc-silence adds the redeploy"
         "  silence assertion) · drift (deployed vs model) · data (row/null counts) · ready"
@@ -73,14 +59,14 @@ let private usageLines : string list =
         ""
         "Every verb persists a bench snapshot to bench/<verb>/<utc-iso>.json; -v surfaces the"
         "table. --pretty / --json force the channel (default AUTO: a TTY gets the panel, a pipe"
-        "gets NDJSON). --watch shows the live stage board on a project --to <folder> --config run."
+        "gets NDJSON). --watch shows the live stage board on a folder-bundle flow run."
         ""
         "Exit codes:"
         "    0  succeeded"
-        "    1  argv error (missing input / unknown target)"
+        "    1  argv error (missing input / unknown flow or environment)"
         "    2  parse error (model JSON / spec / config-parse)"
         "    3  execution error (SQL rejected the change; connection open; unbreakable cycle)"
-        "    4  Docker unavailable (project --to docker; check fidelity)"
+        "    4  Docker unavailable (a docker target; check fidelity)"
         "    5  fidelity divergence (check canary / check drift)"
         "    6  config error (file missing / unparseable / D9; connection-ref resolve)"
         "    7  gate refusal (--go without PROJECTION_ALLOW_EXECUTE=1; permission pre-flight)"
@@ -1763,12 +1749,12 @@ let private runInit () : int =
 
 /// Discover `projection.json` (or `PROJECTION_CONFIG`) — absent is the empty
 /// config (aliasing is opt-in).
-let private discoverConfig () : Result<TargetConfig> =
+let private discoverConfig () : Result<ProjectionConfig> =
     let path =
         match System.Environment.GetEnvironmentVariable "PROJECTION_CONFIG" with
         | null | "" -> "projection.json"
         | p -> p
-    TargetConfig.fromFile path
+    ProjectionConfig.fromFile path
 
 /// A flow's content origin, rendered for the menu (THE_CLI.md §4.4).
 let private flowSourceText (s: FlowSource) : string =

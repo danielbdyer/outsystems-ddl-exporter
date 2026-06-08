@@ -1,23 +1,19 @@
 namespace Projection.Pipeline
 
 // LINT-ALLOW-FILE-MUTATION: function-local accumulators while parsing the JSON
-//   target-config DOM into the immutable typed record; the mutation is sealed
-//   at each parse function's exit (mirrors Config.fs).
+//   projection-config DOM into the immutable typed record; the mutation is
+//   sealed at each parse function's exit (mirrors Config.fs).
 
 open System
 open System.IO
 open System.Text.Json
 open Projection.Core
 
-// THE_CLI.md §4 — the `projection.json` target-aliasing surface and the
-// `--to` resolver, plus the argv → `Intent` dispatch the four verbs share.
-// D9 holds in config: a target carries a connection *reference*
-// (`env:` / `file:`), never a literal connection string.
-//
-// THE_CLI.md (2026-06-08) re-grounds the surface onto two config layers —
-// `environments` (places, with `access`/`grant`) and `flows` (named Move
-// recipes). Slice F1 adds those types + their parse, additively, alongside
-// the existing `targets` block (deprecated in F5).
+// THE_CLI.md (2026-06-08) — the `projection.json` two-layer config
+// (`environments` + `flows`) and the `projection <flow>` dispatch. D9 holds:
+// an environment's connection is a *reference* (`env:` / `file:`), never a
+// literal connection string. The prior `targets` block + `project --to`
+// surface were removed at slice F5 — flows are the only entry.
 
 /// Permission facet — how a target environment is *reached* (THE_CLI.md §6).
 /// `Bundle` writes only files (an SSDT bundle for Octopus) and needs no live
@@ -50,31 +46,12 @@ type Environment =
 // `FlowSource`, `Flow`, and `FlowRunOpts` live in MovementSpec.fs (the types
 // file) — `Intent.Flow` carries them, so they precede it in compile order.
 
-/// How a named target is addressed: a live database (out-of-band ref) or
-/// a folder on disk. The two `Destination` shapes a target may resolve to.
-[<RequireQualifiedAccess>]
-type TargetAddress =
-    | LiveRef of ConnectionRef
-    | FolderPath of string
-
-/// One named target from `projection.json`. Carries addressing plus the
-/// benign defaults config may set (never intent or danger — `--go`,
-/// `--rekey`, `--allow-drops` stay on the command line).
-type Target =
+/// The parsed `projection.json`: named environments (places) and flows
+/// (source→target Move recipes), the default authored model (so a flow needs
+/// no model path), plus a global defaults block.
+type ProjectionConfig =
     {
-        Name     : string
-        Address  : TargetAddress
-        Store    : string option
-        Scope    : Scope option
-        Strategy : Strategy option
-    }
-
-/// The parsed `projection.json`: named targets, the default authored model
-/// (so `project --to dev` needs no model path), plus a global defaults block.
-type TargetConfig =
-    {
-        Targets      : Map<string, Target>
-        /// THE_CLI.md §4.1 — named places with access/grant (the re-grounded surface).
+        /// THE_CLI.md §4.1 — named places with access/grant.
         Environments : Map<string, Environment>
         /// THE_CLI.md §4.2 — named source→target Move recipes.
         Flows        : Map<string, Flow>
@@ -82,21 +59,11 @@ type TargetConfig =
         Defaults     : Map<string, string>
     }
 
-/// A resolved `--to` value: the destination plus the benign defaults the
-/// matched target contributes (empty for a scheme-prefixed or path form).
-type ResolvedTarget =
-    {
-        Destination : Destination
-        Store       : string option
-        Scope       : Scope option
-        Strategy    : Strategy option
-    }
-
 [<RequireQualifiedAccess>]
-module TargetConfig =
+module ProjectionConfig =
 
-    let empty : TargetConfig =
-        { Targets = Map.empty; Environments = Map.empty; Flows = Map.empty; Model = None; Defaults = Map.empty }
+    let empty : ProjectionConfig =
+        { Environments = Map.empty; Flows = Map.empty; Model = None; Defaults = Map.empty }
 
     let private err (code: string) (message: string) : ValidationError =
         ValidationError.create code message
@@ -115,22 +82,6 @@ module TargetConfig =
             | s when String.IsNullOrWhiteSpace s -> None
             | s -> Some (s.Trim())
         | _ -> None
-
-    let private parseScope (raw: string) : Result<Scope> =
-        match raw.ToLowerInvariant() with
-        | "all"    -> Result.success Scope.All
-        | "schema" -> Result.success Scope.Schema
-        | "data"   -> Result.success Scope.Data
-        | other    -> Result.failureOf (err "cli.config.scopeUnknown" (sprintf "scope '%s' is not all | schema | data." other))
-
-    let private parseStrategy (raw: string) : Result<Strategy> =
-        match raw.ToLowerInvariant() with
-        | "merge"   -> Result.success Strategy.Merge
-        | "replace" -> Result.success Strategy.Replace
-        | "fresh"   -> Result.success Strategy.Fresh
-        | other     -> Result.failureOf (err "cli.config.strategyUnknown" (sprintf "strategy '%s' is not merge | replace | fresh." other))
-
-    // --- environments / flows (THE_CLI.md 2026-06-08; slice F1) -----------
 
     /// The reach facet: `bundle` needs an `out` folder; `direct` needs a
     /// D9-safe `conn` reference; `docker` is bare.
@@ -209,51 +160,10 @@ module TargetConfig =
                 Result.success
                     { Name = name; From = parseFlowSource el; To = toEnv; Rekey = getString el "rekey"; Tables = tables }
 
-    let private parseTarget (name: string) (el: JsonElement) : Result<Target> =
-        if el.ValueKind <> JsonValueKind.Object then
-            Result.failureOf (err "cli.config.targetShape" (sprintf "target '%s' must be a JSON object." name))
-        else
-            let connRaw = getString el "conn"
-            let dirRaw  = getString el "dir"
-            let address : Result<TargetAddress> =
-                match connRaw, dirRaw with
-                | Some _, Some _ ->
-                    Result.failureOf (err "cli.config.targetAmbiguous" (sprintf "target '%s' sets both 'conn' and 'dir'; choose one." name))
-                | None, None ->
-                    Result.failureOf (err "cli.config.targetAddressMissing" (sprintf "target '%s' sets neither 'conn' nor 'dir'." name))
-                | Some conn, None ->
-                    if looksLikeSecret conn then
-                        Result.failureOf (err "cli.config.targetSecretInline" (sprintf "target '%s' conn looks like an inline secret; use env:<VAR> or file:<path> (D9)." name))
-                    else
-                        match TransferSpec.parseConnectionSpec conn with
-                        | Ok r    -> Result.success (TargetAddress.LiveRef r)
-                        | Error e -> Result.failure e
-                | None, Some dir ->
-                    Result.success (TargetAddress.FolderPath dir)
-            match address with
-            | Error e -> Result.failure e
-            | Ok addr ->
-                let scopeR =
-                    match getString el "scope" with
-                    | None -> Result.success None
-                    | Some s -> match parseScope s with Ok v -> Result.success (Some v) | Error e -> Result.failure e
-                let strategyR =
-                    match getString el "strategy" with
-                    | None -> Result.success None
-                    | Some s -> match parseStrategy s with Ok v -> Result.success (Some v) | Error e -> Result.failure e
-                match scopeR, strategyR with
-                | Ok scope, Ok strategy ->
-                    Result.success
-                        { Name = name; Address = addr; Store = getString el "store"; Scope = scope; Strategy = strategy }
-                | _ ->
-                    let es =
-                        (match scopeR with Error e -> e | _ -> [])
-                        @ (match strategyR with Error e -> e | _ -> [])
-                    Result.failure es
-
-    /// Parse the `projection.json` document text into a `TargetConfig`.
-    /// Aggregates every per-target error so the operator sees them all.
-    let parse (json: string) : Result<TargetConfig> =
+    /// Parse the `projection.json` document text into a `ProjectionConfig`.
+    /// Aggregates every per-environment / per-flow error so the operator
+    /// sees them all at once.
+    let parse (json: string) : Result<ProjectionConfig> =
         if String.IsNullOrWhiteSpace json then Result.success empty
         else
         try
@@ -262,11 +172,6 @@ module TargetConfig =
             if root.ValueKind <> JsonValueKind.Object then
                 Result.failureOf (err "cli.config.shape" "projection.json root must be a JSON object.")
             else
-                let targetResults =
-                    match root.TryGetProperty "targets" with
-                    | true, t when t.ValueKind = JsonValueKind.Object ->
-                        [ for p in t.EnumerateObject() -> parseTarget p.Name p.Value ]
-                    | _ -> []
                 let envResults =
                     match root.TryGetProperty "environments" with
                     | true, e when e.ValueKind = JsonValueKind.Object ->
@@ -278,15 +183,10 @@ module TargetConfig =
                         [ for p in f.EnumerateObject() -> parseFlow p.Name p.Value ]
                     | _ -> []
                 let errors =
-                    (targetResults |> List.collect (function Error e -> e | Ok _ -> []))
-                    @ (envResults |> List.collect (function Error e -> e | Ok _ -> []))
+                    (envResults |> List.collect (function Error e -> e | Ok _ -> []))
                     @ (flowResults |> List.collect (function Error e -> e | Ok _ -> []))
                 if not (List.isEmpty errors) then Result.failure errors
                 else
-                    let targets =
-                        targetResults
-                        |> List.choose (function Ok t -> Some (t.Name, t) | _ -> None)
-                        |> Map.ofList
                     let environments =
                         envResults |> List.choose (function Ok e -> Some (e.Name, e) | _ -> None) |> Map.ofList
                     let flows =
@@ -301,14 +201,14 @@ module TargetConfig =
                             |> Map.ofList
                         | _ -> Map.empty
                     Result.success
-                        { Targets = targets; Environments = environments; Flows = flows
+                        { Environments = environments; Flows = flows
                           Model = getString root "model"; Defaults = defaults }
         with ex ->
             Result.failureOf (err "cli.config.parseFailed" (sprintf "projection.json did not parse: %s" ex.Message))
 
     /// Read and parse `projection.json` from disk; an absent file is the
-    /// empty config (aliasing is opt-in, not required).
-    let fromFile (path: string) : Result<TargetConfig> =
+    /// empty config (configuration is opt-in, not required).
+    let fromFile (path: string) : Result<ProjectionConfig> =
         if not (File.Exists path) then Result.success empty
         else
             try parse (File.ReadAllText path)
@@ -320,238 +220,67 @@ module Command =
     let private err (code: string) (message: string) : ValidationError =
         ValidationError.create code message
 
-    let private looksLikePath (raw: string) : bool =
-        raw.Contains "/" || raw.Contains "\\" || raw.StartsWith "." || raw.EndsWith "/"
-
-    /// Resolve a `--to` value to a `ResolvedTarget` (THE_CLI.md §4.1):
-    /// reserved `docker`; a named config target; a scheme-prefixed ref
-    /// (`dir:` / `env:` / `file:`); a path-shaped folder; else refused
-    /// with the known targets named.
-    let resolveTarget (cfg: TargetConfig) (raw: string) : Result<ResolvedTarget> =
-        let plain dest = Result.success { Destination = dest; Store = None; Scope = None; Strategy = None }
-        if String.IsNullOrWhiteSpace raw then
-            Result.failureOf (err "cli.to.empty" "--to requires a destination.")
-        elif raw = "docker" then
-            plain Destination.Docker
-        elif raw.StartsWith "dir:" then
-            plain (Destination.Folder (raw.Substring(4)))
-        elif raw.StartsWith "env:" || raw.StartsWith "file:" then
-            match TransferSpec.parseConnectionSpec raw with
-            | Ok r    -> plain (Destination.Live r)
-            | Error e -> Result.failure e
-        else
-            match Map.tryFind raw cfg.Targets with
-            | Some t ->
-                let dest =
-                    match t.Address with
-                    | TargetAddress.LiveRef r    -> Destination.Live r
-                    | TargetAddress.FolderPath p -> Destination.Folder p
-                Result.success { Destination = dest; Store = t.Store; Scope = t.Scope; Strategy = t.Strategy }
-            | None ->
-                if looksLikePath raw then plain (Destination.Folder raw)
-                else
-                    let known = cfg.Targets |> Map.toList |> List.map fst |> String.concat ", "
-                    let suffix = if known = "" then "no targets configured." else sprintf "known targets: %s." known
-                    Result.failureOf (err "cli.to.unknownTarget" (sprintf "unknown destination '%s'; %s" raw suffix))
-
-    /// Apply a resolved target's benign defaults beneath an already-built
-    /// spec. Precedence (THE_CLI.md §4): the spec's values (from the CLI)
-    /// win; the target only fills what the CLI left at its built-in default.
-    let withTargetDefaults (resolved: ResolvedTarget) (cliSetScope: bool) (cliSetStrategy: bool) (spec: MovementSpec) : MovementSpec =
-        let scope = if cliSetScope then spec.Scope else (defaultArg resolved.Scope spec.Scope)
-        let strategy = if cliSetStrategy then spec.Strategy else (defaultArg resolved.Strategy spec.Strategy)
-        { spec with Scope = scope; Strategy = strategy }
-
-    // --- the project flag reader (THE_CLI.md §3.1) -------------------------
-
-    let private readFlag (name: string) (argv: string list) : string option =
-        let rec loop = function
-            | a :: v :: _ when a = name -> Some v
-            | _ :: rest -> loop rest
-            | [] -> None
-        loop argv
-
-    let private hasFlag (name: string) (argv: string list) : bool =
-        argv |> List.contains name
-
-    /// Every `<value>` immediately following a repeated `name` flag.
-    let private readMany (name: string) (argv: string list) : string list =
-        let rec loop acc = function
-            | a :: v :: rest when a = name -> loop (v :: acc) rest
-            | _ :: rest -> loop acc rest
-            | [] -> List.rev acc
-        loop [] argv
-
-    let private parseData (raw: string) : DataOrigin =
-        match raw.ToLowerInvariant() with
-        | "model"     -> DataOrigin.Model
-        | "synthetic" -> DataOrigin.Synthetic
-        | "none"      -> DataOrigin.NoData
-        | _           -> DataOrigin.FromTarget raw   // any other token is a target alias (the transfer)
-
-    let private parseShape (raw: string) : Result<Shape> =
-        match raw.ToLowerInvariant() with
-        | "bundle"   -> Result.success Shape.Bundle
-        | "ssdt"     -> Result.success Shape.Ssdt
-        | "skeleton" -> Result.success Shape.Skeleton
-        | other      -> Result.failureOf (err "cli.shape.unknown" (sprintf "shape '%s' is not bundle | ssdt | skeleton." other))
-
-    let private parseScopeFlag (raw: string) : Result<Scope> =
-        match raw.ToLowerInvariant() with
-        | "all" -> Result.success Scope.All
-        | "schema" -> Result.success Scope.Schema
-        | "data" -> Result.success Scope.Data
-        | other -> Result.failureOf (err "cli.scope.unknown" (sprintf "scope '%s' is not all | schema | data." other))
-
-    let private parseStrategyFlag (raw: string) : Result<Strategy> =
-        match raw.ToLowerInvariant() with
-        | "merge" -> Result.success Strategy.Merge
-        | "replace" -> Result.success Strategy.Replace
-        | "fresh" -> Result.success Strategy.Fresh
-        | other -> Result.failureOf (err "cli.strategy.unknown" (sprintf "strategy '%s' is not merge | replace | fresh." other))
-
-    let private parseBaseline (raw: string) : Baseline =
-        match raw.ToLowerInvariant() with
-        | "auto"  -> Baseline.Auto
-        | "empty" -> Baseline.Empty
-        | _ -> if raw.StartsWith "@" then Baseline.FromTarget (raw.Substring 1) else Baseline.FromModel raw
-
-    /// Resolve the source of B (THE_CLI.md §3): `--config` (the unified config
-    /// carrying model + overlays) wins, then `--model` (a bare authored model),
-    /// then `projection.json`'s `model` field; absent all three, Unspecified
-    /// (the executor refuses with a named message naming the three ways to set it).
-    let private resolveModel (cfg: TargetConfig) (argv: string list) : ModelSource =
-        match readFlag "--config" argv with
-        | Some c -> ModelSource.ConfigFile c
-        | None ->
-            match readFlag "--model" argv with
-            | Some m -> ModelSource.ModelFile m
-            | None ->
-                match cfg.Model with
-                | Some m -> ModelSource.ModelFile m
-                | None -> ModelSource.Unspecified
-
-    /// Build a `project` `MovementSpec` from the `--to` value and modifier
-    /// flags, applying target defaults beneath CLI-set values.
-    let buildProject (cfg: TargetConfig) (argv: string list) : Result<MovementSpec> =
-        match readFlag "--to" argv with
-        | None -> Result.failureOf (err "cli.project.toMissing" "project requires --to <destination>.")
-        | Some toRaw ->
-            match resolveTarget cfg toRaw with
-            | Error e -> Result.failure e
-            | Ok resolved ->
-                let baseSpec = MovementSpec.forDestination resolved.Destination
-                let scopeFlag = readFlag "--scope" argv
-                let strategyFlag = readFlag "--how" argv
-                let shapeR =
-                    match readFlag "--shape" argv with
-                    | None -> Result.success baseSpec.Shape
-                    | Some s -> parseShape s
-                let scopeR =
-                    match scopeFlag with
-                    | None -> Result.success baseSpec.Scope
-                    | Some s -> parseScopeFlag s
-                let strategyR =
-                    match strategyFlag with
-                    | None -> Result.success baseSpec.Strategy
-                    | Some s -> parseStrategyFlag s
-                let errors =
-                    (match shapeR with Error e -> e | _ -> [])
-                    @ (match scopeR with Error e -> e | _ -> [])
-                    @ (match strategyR with Error e -> e | _ -> [])
-                if not (List.isEmpty errors) then Result.failure errors
-                else
-                    let data =
-                        match readFlag "--data" argv with
-                        | None -> baseSpec.Data
-                        | Some d -> parseData d
-                    let baseline =
-                        match readFlag "--from" argv with
-                        | None -> baseSpec.Baseline
-                        | Some f -> parseBaseline f
-                    let spec =
-                        { baseSpec with
-                            Model = resolveModel cfg argv
-                            Scope = (match scopeR with Ok v -> v | _ -> baseSpec.Scope)
-                            Strategy = (match strategyR with Ok v -> v | _ -> baseSpec.Strategy)
-                            Shape = (match shapeR with Ok v -> v | _ -> baseSpec.Shape)
-                            Data = data
-                            Baseline = baseline
-                            Rekey = readFlag "--rekey" argv
-                            Reconcile = readMany "--reconcile" argv
-                            AllowDrops = hasFlag "--allow-drops" argv
-                            AllowCdc = hasFlag "--allow-cdc" argv
-                            Store = (match readFlag "--store" argv with Some s -> Some s | None -> resolved.Store)
-                            Env = readFlag "--env" argv
-                            Commit = hasFlag "--go" argv }
-                    Result.success (withTargetDefaults resolved (Option.isSome scopeFlag) (Option.isSome strategyFlag) spec)
-
-    /// Map an argv to an `Intent` (THE_CLI.md §2). `project` resolves to a
-    /// full `MovementSpec`; `check` / `explain` / `seal` capture their tail
-    /// for their build slices. Pure; the engine execution + the global-flag
-    /// strip are the wiring slice.
-    /// The closed secondary-verb set (THE_CLI.md §3). A first token outside
-    /// this set is read as a flow name; an unknown one is refused, naming both.
-    let private secondaryVerbs = set [ "project"; "check"; "explain"; "seal"; "report"; "init" ]
-
-    let parse (cfg: TargetConfig) (argv: string list) : Result<Intent> =
-        match argv with
-        | "project" :: rest ->
-            match buildProject cfg rest with
-            | Ok spec -> Result.success (Intent.Project spec)
-            | Error e -> Result.failure e
-        | "check" :: rest   -> Result.success (Intent.Check rest)
-        | "explain" :: rest -> Result.success (Intent.Explain rest)
-        | "seal" :: rest    -> Result.success (Intent.Seal rest)
-        | "report" :: rest  -> Result.success (Intent.Report rest)
-        | first :: rest when Map.containsKey first cfg.Flows ->
-            // THE_CLI.md §3 — the daily surface: `projection <flow> [--go]
-            // [--fresh] [--allow-drops]`. The verb is implied; the flow is the
-            // argument; only the per-run intent rides the tail.
-            let opts =
-                { Go         = List.contains "--go" rest
-                  Fresh      = List.contains "--fresh" rest
-                  AllowDrops = List.contains "--allow-drops" rest }
-            Result.success (Intent.Flow (Map.find first cfg.Flows, opts))
-        | first :: _ when secondaryVerbs.Contains first ->
-            // a known verb with a malformed tail falls through its own branch;
-            // this arm is unreachable for those, kept total for the type.
-            Result.failureOf (err "cli.verb.unknown" (sprintf "verb '%s' is not yet routed." first))
-        | first :: _ ->
-            let flows = cfg.Flows |> Map.toList |> List.map fst |> String.concat ", "
-            let suffix = if flows = "" then "no flows configured." else sprintf "known flows: %s." flows
-            Result.failureOf (err "cli.verb.unknown" (sprintf "unknown flow or verb '%s'; %s" first suffix))
-        | [] ->
-            Result.failureOf (err "cli.verb.missing" "no flow or verb given; expected <flow> | check | explain | seal | report.")
-
-    // --- the pure project routing (THE_CLI fidelity #1) --------------------
-
     /// Reconstruct the out-of-band connection spec from a resolved ref.
     let connSpecOf (r: ConnectionRef) : string =
         match r with
         | ConnectionRef.EnvVar n -> "env:" + n
         | ConnectionRef.File p   -> "file:" + p
 
-    let private noModel = "no model — pass --model <model.json>, --config <config.json>, or set \"model\" in projection.json."
+    /// Resolve a live-connection reference: a scheme-prefixed ref (env:/file:)
+    /// or a named `direct` environment → its out-of-band connection spec.
+    let private resolveLiveConn (cfg: ProjectionConfig) (raw: string) : Result<string> =
+        if raw.StartsWith "env:" || raw.StartsWith "file:" then
+            match TransferSpec.parseConnectionSpec raw with
+            | Ok r    -> Result.success (connSpecOf r)
+            | Error e -> Result.failure e
+        else
+            match Map.tryFind raw cfg.Environments with
+            | Some env ->
+                match env.Access with
+                | Access.Direct r -> Result.success (connSpecOf r)
+                | _ -> Result.failureOf (err "cli.env.notLive" (sprintf "environment '%s' is not access:direct (no live connection)." raw))
+            | None ->
+                let known = cfg.Environments |> Map.toList |> List.map fst |> String.concat ", "
+                let suffix = if known = "" then "no environments configured." else sprintf "known environments: %s." known
+                Result.failureOf (err "cli.env.unknown" (sprintf "unknown environment '%s'; %s" raw suffix))
 
-    /// Notes for axes the current engine does not yet honor — surfaced, never
-    /// silently dropped (fidelity #2; THE_VOICE no-silent-drop).
+    let private flagValue (args: string list) (flag: string) : string option =
+        let arr = List.toArray args
+        arr |> Array.tryFindIndex ((=) flag) |> Option.bind (fun i -> if i + 1 < arr.Length then Some arr.[i + 1] else None)
+
+    /// `--allow-drops` (accept all) / repeated `--declare-drop <token>` (accept
+    /// each) / else refuse all destructive removals — the loss-declaration gate,
+    /// parsed purely from the verb tail.
+    let parseLossDeclaration (args: string list) : LossDeclaration =
+        if List.contains "--allow-drops" args then DeclareAll
+        else
+            let arr = List.toArray args
+            let tokens =
+                arr |> Array.indexed
+                |> Array.choose (fun (i, a) -> if a = "--declare-drop" && i + 1 < arr.Length then Some arr.[i + 1] else None)
+                |> Array.toList
+            match tokens with [] -> DeclareNone | _ -> DeclareThese (Set.ofList tokens)
+
+    let private noModel = "no model — set \"model\" in projection.json."
+
+    /// Notes for spec axes the current engine does not yet honor — surfaced,
+    /// never silently dropped (THE_VOICE no-silent-drop; THE_CLI.md §12).
     let unhonoredNotes (spec: MovementSpec) : string list =
-        [ // --scope is honored for live destinations (data→transfer, schema→migrate);
-          // for folder/docker the bundle carries all legs.
+        [ // Scope is honored for live destinations (data→transfer, schema→migrate);
+          // a file/docker bundle carries all legs regardless.
           match spec.Scope, spec.Destination with
           | (Scope.Schema | Scope.Data), (Destination.Folder _ | Destination.Docker) ->
-              "--scope accepted; the file/docker bundle carries all legs (all applied)."
+              "scope accepted; the file/docker bundle carries all legs (all applied)."
           | _ -> ()
           match spec.Baseline with
           | Baseline.Auto -> ()
-          | _ -> "--from accepted; the engine reads the prior state automatically (auto applied)."
+          | _ -> "baseline accepted; the engine reads the prior state automatically (auto applied)."
           match spec.Data with
-          | DataOrigin.Synthetic -> "--data synthetic accepted; synthetic generation is pending (model data applied)."
-          | DataOrigin.NoData    -> "--data none accepted; the engine emits model data (model data applied)."
+          | DataOrigin.Synthetic -> "synthetic data accepted; synthetic generation is pending (model data applied)."
+          | DataOrigin.NoData    -> "data:none accepted; the engine emits model data (model data applied)."
           | _ -> () ]
 
-    /// `--how` → the data-plane `EmissionMode`: merge is the incremental MERGE
+    /// `--fresh` → the data-plane `EmissionMode`: merge is the incremental MERGE
     /// (the norm-minimal default); replace / fresh are the wipe-and-load.
     let private emissionOf (strategy: Strategy) : EmissionMode =
         match strategy with
@@ -567,34 +296,14 @@ module Command =
           Store       = spec.Store
           Env         = spec.Env }
 
-    /// `--allow-drops` (accept all) / repeated `--declare-drop <token>` (accept
-    /// each) / else refuse all destructive removals — the loss-declaration gate,
-    /// parsed purely from the verb tail.
-    let parseLossDeclaration (args: string list) : LossDeclaration =
-        if List.contains "--allow-drops" args then DeclareAll
-        else
-            let arr = List.toArray args
-            let tokens =
-                arr |> Array.indexed
-                |> Array.choose (fun (i, a) -> if a = "--declare-drop" && i + 1 < arr.Length then Some arr.[i + 1] else None)
-                |> Array.toList
-            match tokens with [] -> DeclareNone | _ -> DeclareThese (Set.ofList tokens)
+    // --- the pure movement routing (the surface→engine map) ----------------
 
-    let private flagValue (args: string list) (flag: string) : string option =
-        let arr = List.toArray args
-        arr |> Array.tryFindIndex ((=) flag) |> Option.bind (fun i -> if i + 1 < arr.Length then Some arr.[i + 1] else None)
-
-    /// Route a `project` `MovementSpec` to its engine face — purely.
-    let planProject (cfg: TargetConfig) (spec: MovementSpec) : ExecutionPlan =
+    /// Route a resolved `MovementSpec` to its engine face — purely. A flow
+    /// resolves to one of these specs; the totality test sweeps the space.
+    let planMovement (cfg: ProjectionConfig) (spec: MovementSpec) : ExecutionPlan =
         let opts = optsOf spec
-        let modelMissing prefix = PlanAction.Refused (1, err "cli.project.modelMissing" (prefix + noModel))
-        let dataConn (alias: string) : Result<string> =
-            match resolveTarget cfg alias with
-            | Ok rt ->
-                match rt.Destination with
-                | Destination.Live r -> Result.success (connSpecOf r)
-                | _ -> Result.failureOf (err "cli.project.dataNotLive" (sprintf "--data %s: a data source must be a live target." alias))
-            | Error es -> Result.failure es
+        let modelMissing prefix = PlanAction.Refused (1, err "cli.move.modelMissing" (prefix + noModel))
+        let dataConn (alias: string) : Result<string> = resolveLiveConn cfg alias
         let action =
             match spec.Destination with
             | Destination.Folder dir ->
@@ -604,10 +313,10 @@ module Command =
                     match spec.Shape with
                     | Shape.Skeleton            -> PlanAction.EmitSkeleton (m, dir)
                     | Shape.Bundle | Shape.Ssdt -> PlanAction.EmitBundle (m, dir)
-                | ModelSource.Unspecified -> modelMissing "projection project: "
+                | ModelSource.Unspecified -> modelMissing "projection: "
             | Destination.Docker ->
                 match spec.Model with
-                | ModelSource.Unspecified -> modelMissing "projection project --to docker: "
+                | ModelSource.Unspecified -> modelMissing "projection (docker): "
                 | m -> PlanAction.DeployDocker m
             | Destination.Live connRef ->
                 let conn = connSpecOf connRef
@@ -621,7 +330,7 @@ module Command =
                         | Error es -> PlanAction.Refused (6, List.head es)
                     | _ ->
                         match spec.Model with
-                        | ModelSource.Unspecified -> modelMissing "projection project: "
+                        | ModelSource.Unspecified -> modelMissing "projection: "
                         | m -> PlanAction.PreviewSchema (m, conn, opts.Declaration)
                 else
                     match spec.Data with
@@ -632,41 +341,39 @@ module Command =
                             if dataOnly then PlanAction.Transfer (src, conn, opts, true)
                             else
                                 match spec.Model with
-                                | ModelSource.Unspecified -> modelMissing "projection project: "
+                                | ModelSource.Unspecified -> modelMissing "projection: "
                                 | m -> PlanAction.MigrateWithData (m, conn, src, opts)
                     | _ when dataOnly ->
-                        PlanAction.Refused (2, err "cli.project.scopeDataNoSource" "projection project --scope data: a DML-only load needs --data <target>.")
+                        PlanAction.Refused (2, err "cli.move.scopeDataNoSource" "a DML-only load needs a data source (a flow whose `from` is a live environment).")
                     | _ ->
                         match spec.Model with
                         | ModelSource.ConfigFile c -> PlanAction.PublishAndLoad (c, conn, spec.Store, spec.Env)
                         | ModelSource.ModelFile _  -> PlanAction.Migrate (spec.Model, conn, opts)
-                        | ModelSource.Unspecified  -> modelMissing "projection project: "
-        // --how is honored only on the pure-transfer data load (→ EmissionMode);
-        // any other action ignores the strategy, so note it (no silent drop).
-        let howNote =
+                        | ModelSource.Unspecified  -> modelMissing "projection: "
+        // The wipe-and-load strategy is honored only on the pure-transfer data
+        // load (→ EmissionMode); any other action keeps the incremental MERGE,
+        // so note it (no silent drop).
+        let freshNote =
             match spec.Strategy, action with
             | Strategy.Merge, _ -> []
             | _, PlanAction.Transfer _ -> []
-            | _ -> [ "--how accepted; this action has no selectable data-load strategy (default applied)." ]
-        { Notes = unhonoredNotes spec @ howNote; Action = action }
+            | _ -> [ "--fresh accepted; this action has no selectable data-load strategy (incremental applied)." ]
+        { Notes = unhonoredNotes spec @ freshNote; Action = action }
 
     /// Route a `check` verb tail to its proof-plane action — purely.
-    let planCheck (cfg: TargetConfig) (args: string list) : ExecutionPlan =
+    let planCheck (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
         let valueOf = flagValue args
-        let connOf (raw: string) : Result<string> =
-            match resolveTarget cfg raw with
-            | Ok rt -> (match rt.Destination with Destination.Live r -> Result.success (connSpecOf r) | _ -> Result.failureOf (err "cli.check.notLive" (sprintf "'%s' is not a live target." raw)))
-            | Error es -> Result.failure es
+        let connOf (raw: string) : Result<string> = resolveLiveConn cfg raw
         let action =
             match args with
             | "drift" :: _ ->
                 match valueOf "--model", valueOf "--to" with
                 | Some m, Some toRaw -> (match connOf toRaw with Ok c -> PlanAction.CheckDrift (m, c) | Error es -> PlanAction.Refused (6, List.head es))
-                | _ -> PlanAction.Refused (2, err "cli.check.driftArgs" "projection check drift: requires --model <model.json> --to <target>.")
+                | _ -> PlanAction.Refused (2, err "cli.check.driftArgs" "projection check drift: requires --model <model.json> --to <environment>.")
             | "data" :: _ ->
                 match valueOf "--before", valueOf "--after" with
                 | Some b, Some a -> (match connOf b, connOf a with | Ok bc, Ok ac -> PlanAction.CheckData (bc, ac) | (Error es, _) | (_, Error es) -> PlanAction.Refused (6, List.head es))
-                | _ -> PlanAction.Refused (2, err "cli.check.dataArgs" "projection check data: requires --before <target> --after <target>.")
+                | _ -> PlanAction.Refused (2, err "cli.check.dataArgs" "projection check data: requires --before <environment> --after <environment>.")
             | "ready" :: _ -> PlanAction.CheckReady
             | _ ->
                 match args |> List.tryFind (fun a -> not (a.StartsWith "--") && a <> "fidelity") with
@@ -724,8 +431,8 @@ module Command =
 
     /// A flow's `from` → the `DataOrigin`. A source environment must be
     /// `direct` (a live place to read rows from); the scheme-prefixed ref
-    /// flows on as the transfer source `planProject` resolves.
-    let private dataOriginOfSource (cfg: TargetConfig) (source: FlowSource) : Result<DataOrigin> =
+    /// flows on as the transfer source `planMovement` resolves.
+    let private dataOriginOfSource (cfg: ProjectionConfig) (source: FlowSource) : Result<DataOrigin> =
         match source with
         | FlowSource.Model       -> Result.success DataOrigin.Model
         | FlowSource.NoData      -> Result.success DataOrigin.NoData
@@ -742,7 +449,7 @@ module Command =
     /// Resolve a named flow to a full `MovementSpec`, reading its `to`/`from`
     /// environments; the per-run intent finishes it. Pure; env-resolution
     /// failures are `Error` (the grant gate is a `planFlow` refusal).
-    let resolveFlowSpec (cfg: TargetConfig) (flow: Flow) (opts: FlowRunOpts) : Result<MovementSpec> =
+    let resolveFlowSpec (cfg: ProjectionConfig) (flow: Flow) (opts: FlowRunOpts) : Result<MovementSpec> =
         match Map.tryFind flow.To cfg.Environments with
         | None ->
             Result.failureOf (err "cli.flow.toUnknown" (sprintf "flow '%s' target environment '%s' is not defined." flow.Name flow.To))
@@ -766,8 +473,8 @@ module Command =
     /// schema-bearing flow (content from the authored model) against a
     /// data-only target — a type mismatch, refused loud (exit 9), never a
     /// silent scope-narrowing. Otherwise the resolved spec rides the
-    /// totality-tested `planProject` routing.
-    let planFlow (cfg: TargetConfig) (flow: Flow) (opts: FlowRunOpts) : ExecutionPlan =
+    /// totality-tested `planMovement` routing.
+    let planFlow (cfg: ProjectionConfig) (flow: Flow) (opts: FlowRunOpts) : ExecutionPlan =
         match Map.tryFind flow.To cfg.Environments with
         | None ->
             { Notes = []
@@ -781,7 +488,7 @@ module Command =
                 match resolveFlowSpec cfg flow opts with
                 | Error es -> { Notes = []; Action = PlanAction.Refused (6, List.head es) }
                 | Ok spec ->
-                    let plan = planProject cfg spec
+                    let plan = planMovement cfg spec
                     let tableNote =
                         if List.isEmpty flow.Tables then []
                         else [ sprintf "flow tables (%s) accepted; subset selection is pending (all tables applied)." (String.concat ", " flow.Tables) ]
@@ -795,12 +502,42 @@ module Command =
         { Notes = []
           Action = PlanAction.Refused (2, err "cli.report.pending" "report <flow> is pending the durable episode: run `seal <flow>` to record a baseline once the episode store lands (THE_CLI.md §12).") }
 
+    /// The closed secondary-verb set (THE_CLI.md §3). A first token outside
+    /// this set is read as a flow name; an unknown one is refused, naming both.
+    let private secondaryVerbs = set [ "check"; "explain"; "seal"; "report"; "init" ]
+
+    /// Map an argv to an `Intent` (THE_CLI.md §3): the daily surface
+    /// `projection <flow> [--go] [--fresh] [--allow-drops]` (the verb is
+    /// implied), or one of the closed secondary verbs. Pure; the engine
+    /// execution + the global-flag strip are the wiring slice.
+    let parse (cfg: ProjectionConfig) (argv: string list) : Result<Intent> =
+        match argv with
+        | "check" :: rest   -> Result.success (Intent.Check rest)
+        | "explain" :: rest -> Result.success (Intent.Explain rest)
+        | "seal" :: rest    -> Result.success (Intent.Seal rest)
+        | "report" :: rest  -> Result.success (Intent.Report rest)
+        | first :: rest when Map.containsKey first cfg.Flows ->
+            let opts =
+                { Go         = List.contains "--go" rest
+                  Fresh      = List.contains "--fresh" rest
+                  AllowDrops = List.contains "--allow-drops" rest }
+            Result.success (Intent.Flow (Map.find first cfg.Flows, opts))
+        | first :: _ when secondaryVerbs.Contains first ->
+            // a known verb with a malformed tail falls through its own branch;
+            // this arm is unreachable for those, kept total for the type.
+            Result.failureOf (err "cli.verb.unknown" (sprintf "verb '%s' is not yet routed." first))
+        | first :: _ ->
+            let flows = cfg.Flows |> Map.toList |> List.map fst |> String.concat ", "
+            let suffix = if flows = "" then "no flows configured." else sprintf "known flows: %s." flows
+            Result.failureOf (err "cli.verb.unknown" (sprintf "unknown flow or verb '%s'; %s" first suffix))
+        | [] ->
+            Result.failureOf (err "cli.verb.missing" "no flow or verb given; expected <flow> | check | explain | seal | report.")
+
     /// The one pure routing for the whole surface — every `Intent` to its
     /// `ExecutionPlan`. The runner executes it; the totality test sweeps it.
-    let plan (cfg: TargetConfig) (intent: Intent) : ExecutionPlan =
+    let plan (cfg: ProjectionConfig) (intent: Intent) : ExecutionPlan =
         match intent with
         | Intent.Flow (flow, opts) -> planFlow cfg flow opts
-        | Intent.Project spec      -> planProject cfg spec
         | Intent.Check args        -> planCheck cfg args
         | Intent.Explain args      -> planExplain args
         | Intent.Seal args         -> planSeal args

@@ -166,13 +166,13 @@ type FlowRunOpts =
     }
 
 /// The operator intents (THE_CLI.md §2). `Flow` is the hero — the daily
-/// `projection <flow>` act; `Project` is the deprecated `--to` surface (F5).
-/// Check/Explain/Seal/Report carry their raw tail; their typed sub-surfaces
-/// land in their build slices.
+/// `projection <flow>` act. Check/Explain/Seal/Report carry their raw tail;
+/// their typed sub-surfaces land in their build slices. (The `MovementSpec`
+/// a flow resolves to is routed by `Command.planMovement`; there is no raw
+/// `project --to` intent — that surface was removed at F5.)
 [<RequireQualifiedAccess>]
 type Intent =
     | Flow of flow: Flow * opts: FlowRunOpts
-    | Project of MovementSpec
     | Check of args: string list
     | Explain of args: string list
     | Seal of args: string list
