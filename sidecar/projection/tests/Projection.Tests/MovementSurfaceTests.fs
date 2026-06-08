@@ -133,7 +133,7 @@ let private liveDev = Destination.Live (ConnectionRef.EnvVar "DEV_CONN")
 let private baseLive = MovementSpec.forDestination liveDev
 let private defaultOpts : LoadOpts =
     { Declaration = DeclareNone; Emission = EmissionMode.Incremental
-      Reconcile = []; Rekey = None; AllowCdc = false; Store = None; Env = None }
+      Reconcile = []; Rekey = None; AllowCdc = false; Store = None; Env = None; Tables = [] }
 
 [<Fact>]
 let ``planMovement: --fresh selects WipeAndLoad on the transfer path`` () =
@@ -270,9 +270,20 @@ let ``flow golden (data-only target, from env) → transfer; --go executes`` () 
     | other -> Assert.Fail(sprintf "expected executing Transfer, got %A" other)
 
 [<Fact>]
-let ``flow golden surfaces a table-subset note (pending, never silently dropped)`` () =
-    let plan = Command.planFlow flowCfg (flowOf "golden") preview
-    Assert.Contains(plan.Notes, fun (n: string) -> n.Contains "tables" && n.Contains "Customer")
+let ``flow golden: the table subset is honored on the transfer opts (item 5)`` () =
+    match specOf "golden" preview with
+    | Ok s -> Assert.Equal<string list>([ "Customer" ], s.Tables)
+    | Error es -> Assert.Fail(sprintf "%A" es)
+    match actionOf "golden" commit with
+    | PlanAction.Transfer (_, _, opts, _) -> Assert.Equal<string list>([ "Customer" ], opts.Tables)
+    | other -> Assert.Fail(sprintf "expected Transfer, got %A" other)
+    // honored on the transfer leg → no pending note.
+    Assert.DoesNotContain((Command.planFlow flowCfg (flowOf "golden") commit).Notes, fun (n: string) -> n.Contains "tables")
+
+[<Fact>]
+let ``flow tables on a non-transfer action is noted (data-transfer leg only)`` () =
+    let bt = { Name = "bt"; From = FlowSource.Model; To = "onprem-uat"; Rekey = None; Tables = [ "Customer" ] }
+    Assert.Contains((Command.planFlow flowCfg bt preview).Notes, fun (n: string) -> n.Contains "data-transfer leg only")
 
 [<Fact>]
 let ``flow grant gate: schema-from-model against a data-only target is Refused (9)`` () =

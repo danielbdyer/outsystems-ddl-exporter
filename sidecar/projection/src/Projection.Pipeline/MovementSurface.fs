@@ -298,7 +298,8 @@ module Command =
           Rekey       = spec.Rekey
           AllowCdc    = spec.AllowCdc
           Store       = spec.Store
-          Env         = spec.Env }
+          Env         = spec.Env
+          Tables      = spec.Tables }
 
     // --- the pure movement routing (the surface→engine map) ----------------
 
@@ -481,6 +482,7 @@ module Command =
                         Data     = data
                         Baseline = (if opts.Fresh then Baseline.Empty else Baseline.Auto)
                         Rekey    = flow.Rekey
+                        Tables   = flow.Tables
                         AllowDrops = opts.AllowDrops
                         AllowCdc = opts.AllowCdc
                         // The target's durable timeline: a live --go records an
@@ -508,9 +510,14 @@ module Command =
                 | Error es -> { Notes = []; Action = PlanAction.Refused (6, List.head es) }
                 | Ok spec ->
                     let plan = planMovement cfg spec
+                    // The declared table subset is honored on the data-transfer
+                    // leg (golden data); on any other action it does not apply,
+                    // so note it (no silent drop).
                     let tableNote =
-                        if List.isEmpty flow.Tables then []
-                        else [ sprintf "flow tables (%s) accepted; subset selection is pending (all tables applied)." (String.concat ", " flow.Tables) ]
+                        match List.isEmpty flow.Tables, plan.Action with
+                        | true, _ -> []
+                        | false, PlanAction.Transfer _ -> []
+                        | false, _ -> [ sprintf "flow tables (%s) apply to the data-transfer leg only; this action moves the full model." (String.concat ", " flow.Tables) ]
                     { plan with Notes = plan.Notes @ tableNote }
 
     /// Route a `report` verb tail (THE_CLI.md §8): `report <flow>` reads the

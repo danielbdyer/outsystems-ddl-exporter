@@ -91,6 +91,8 @@ type MovementSpec =
         Rekey       : string option
         /// `--reconcile <table>:<col>` entries (MatchByColumn re-key rules).
         Reconcile   : string list
+        /// Declared table subset for the data leg (golden data); empty = all.
+        Tables      : string list
         /// Accept declared loss (drops) — never sourced from config (§4).
         AllowDrops  : bool
         /// Permit schema DDL against a CDC-tracked sink.
@@ -118,6 +120,7 @@ module MovementSpec =
             Shape       = Shape.Bundle
             Rekey       = None
             Reconcile   = []
+            Tables      = []
             AllowDrops  = false
             AllowCdc    = false
             Store       = None
@@ -192,6 +195,8 @@ type LoadOpts =
         AllowCdc    : bool
         Store       : string option
         Env         : string option
+        /// Declared table subset for the data leg (item 5); empty = all.
+        Tables      : string list
     }
 
 /// The engine face a parsed `Intent` routes to, named with the cfg-resolved

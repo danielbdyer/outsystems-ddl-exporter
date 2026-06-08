@@ -487,11 +487,17 @@ module Transfer =
     /// default is incremental + non-resumable — byte-identical to the pre-Wave-3
     /// write path, so every existing caller is unaffected.
     type WriteOptions =
-        { Emission : EmissionMode; Resumable : bool }
+        { Emission : EmissionMode
+          Resumable : bool
+          /// The declared load-set (item 5 — golden-data table subset). `None`
+          /// loads every kind; `Some s` loads only kinds in `s`, leaving the
+          /// rest of the sink untouched (the catalog stays whole for FK
+          /// context — only the per-kind row load is restricted).
+          LoadSet : Set<SsKey> option }
 
     [<RequireQualifiedAccess>]
     module WriteOptions =
-        let def : WriteOptions = { Emission = EmissionMode.Incremental; Resumable = false }
+        let def : WriteOptions = { Emission = EmissionMode.Incremental; Resumable = false; LoadSet = None }
         let resumable : WriteOptions = { def with Resumable = true }
         let ofEmission (mode: EmissionMode) : WriteOptions = { def with Emission = mode }
 
@@ -553,11 +559,18 @@ module Transfer =
             // schema and ingestion uses `catalog` directly (byte-identical).
             let ingestCatalog = match ingestion with Some (c, _) -> c | None -> catalog
             let! rawRows = Ingestion.collectInOrder source ingestCatalog topo
-            let rows =
+            let repointed =
                 match ingestion with
                 | Some (_, renameMap) when not (Map.isEmpty renameMap) ->
                     rawRows |> Map.map (fun _ rs -> RenameProjection.repointRows renameMap rs)
                 | _ -> rawRows
+            // Item 5 — the declared table subset (golden data). Restrict the
+            // load to the named kinds; the catalog stays whole (FK context),
+            // so non-listed sink tables are simply never written (untouched).
+            let rows =
+                match writeOpts.LoadSet with
+                | Some loadSet -> repointed |> Map.filter (fun k _ -> Set.contains k loadSet)
+                | None -> repointed
             let! reconciled = reconcileAgainstSink sink catalog reconciliation rows
             let reconciledKinds = reconciliation |> Map.toSeq |> Seq.map fst |> Set.ofSeq
             // The plan-build is the ONE OperatorIntent Insertion site —
@@ -746,11 +759,30 @@ module Transfer =
     /// `resolveReconciliation` is a function of the reconstructed contract
     /// so the contract is read exactly once (the Source open is not
     /// duplicated to resolve reconciliation specs).
+    /// Resolve the declared table subset (logical entity names) to a load-set
+    /// of `SsKey`s against the source contract — refusing any name the schema
+    /// does not carry (total decisions, named skips). Empty list → `None` (all).
+    let private resolveLoadSet (contract: Catalog) (tables: string list) : Result<Set<SsKey> option> =
+        if List.isEmpty tables then Result.success None
+        else
+            let byName =
+                Catalog.allKinds contract
+                |> List.map (fun k -> (Name.value k.Name).ToLowerInvariant(), k.SsKey)
+                |> Map.ofList
+            let resolved = tables |> List.map (fun t -> t, Map.tryFind (t.ToLowerInvariant()) byName)
+            match resolved |> List.choose (fun (t, o) -> if Option.isNone o then Some t else None) with
+            | [] -> Result.success (Some (resolved |> List.choose snd |> Set.ofList))
+            | missing ->
+                Result.failureOf
+                    (ValidationError.create "transfer.tablesUnknown"
+                        (sprintf "table subset names not found in the source schema: %s" (String.concat ", " missing)))
+
     let runThroughConnectionsWithEmission
         (mode: Mode)
         (emission: EmissionMode)
         (allowCdc: bool)
         (allowDrops: bool)
+        (tables: string list)
         (connections: TransferConnections)
         (resolveReconciliation: Catalog -> Result<Map<SsKey, ReconciliationStrategy>>)
         : Task<Result<TransferReport>> =
@@ -766,10 +798,13 @@ module Transfer =
                     match! ReadSide.read source with
                     | Error es -> return Result.failure es
                     | Ok contract ->
-                        match resolveReconciliation contract with
+                        match resolveLoadSet contract tables with
                         | Error es -> return Result.failure es
-                        | Ok reconciliation ->
-                            return! runCore mode allowCdc allowDrops source sink contract reconciliation None (WriteOptions.ofEmission emission)
+                        | Ok loadSet ->
+                            match resolveReconciliation contract with
+                            | Error es -> return Result.failure es
+                            | Ok reconciliation ->
+                                return! runCore mode allowCdc allowDrops source sink contract reconciliation None { WriteOptions.ofEmission emission with LoadSet = loadSet }
         }
 
     /// The incremental-MERGE default (the existing callers' behavior); the
@@ -783,7 +818,7 @@ module Transfer =
         (connections: TransferConnections)
         (resolveReconciliation: Catalog -> Result<Map<SsKey, ReconciliationStrategy>>)
         : Task<Result<TransferReport>> =
-        runThroughConnectionsWithEmission mode EmissionMode.Incremental allowCdc allowDrops connections resolveReconciliation
+        runThroughConnectionsWithEmission mode EmissionMode.Incremental allowCdc allowDrops [] connections resolveReconciliation
 
     // -- 6.A.1: the drop-set is fail-loud, not exit-0 -----------------------
     //
