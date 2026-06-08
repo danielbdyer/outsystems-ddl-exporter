@@ -350,23 +350,28 @@ isomorphism ladder (`AUDIT_2026_05_31_FIVE_AXIS_REDTEAM.md`; the Wave-6 L2/L3 ba
 This document does not over-promise — the split is:
 
 - **Fully backed today.** Lift-and-shift (schema+data via the SSDT bundle); `--fresh`
-  (`realize(B)`); data-only `golden`/`preview` transfer; `check` (canary / drift / data /
-  ready); `seal` eject; the two-gate safety model; `grant` refusal; **attribute-level
-  `CatalogDiff` + column-rename RefactorLog** (6.A.10 / 6.A.12, incl. the rename ⊥ reshape
-  composition); **`report <flow>`** — the migration-team change bundle, rendering the
-  recorded `ChangeManifest` series from the target's durable episode store (`LifecycleStore`
-  + `ChangeManifest`), with a live `--go` recording into it.
-- **Leans on in-flight engine work** (build behind the surface as the ladder climbs):
-  - **Exact-diff-with-rename composition** — RefactorLog ⇄ Transfer wiring (the combined
-    rename + data-move in one flow); audit §2.3 / §3.
-  - **`report` against a freshly-projected B** — today `report` renders the *recorded*
-    episode series; diffing a live re-projected `B ⊖ A_prior` (not just the stored edges)
-    is the deeper rung.
-  - **The pre-flight gates as named refusals** — data-compat (NOT-NULL tightening on
-    populated columns), CDC-tracking — surface as exit-9 refusals (axis 9 completion).
-  - **`from: synthetic --profile`** — the Faker source seeded from a profiled environment.
-  - **The declared `tables` subset** — surfaced as a note today; the partial-set selection
-    on the data leg is the follow-up.
+  (`realize(B)`); data-only `golden`/`preview` transfer; the **declared `tables` subset** on
+  the data leg (golden data — only listed kinds load, the rest of the sink untouched);
+  `check` (canary / drift / data / ready); the **`explain <flow>`** live preview (B vs the
+  target's last sealed episode); `seal` eject; the two-gate safety model; `grant` refusal;
+  the **pre-flight gates** (CDC-tracked sink + data-compat NOT-NULL tightening, refuse exit 9,
+  `--allow-cdc` / `--allow-drops` to override); **attribute-level `CatalogDiff` + column-rename
+  RefactorLog** (6.A.10 / 6.A.12, incl. the rename ⊥ reshape composition); **`report <flow>`**
+  — the migration-team change bundle (the recorded `ChangeManifest` series from the target's
+  durable store, a live `--go` recording into it).
+- **Remaining, by design:**
+  - **`from: synthetic --profile` (the Faker source)** — the one genuine net-new feature
+    left. Profile-driven, FK-aware generation needs three new parts: a pure generator
+    (`Profile` × `Catalog` × seed → `Map<SsKey, StaticRow list>`, FK keys drawn in topo
+    order, distributions + null-rates honored, deterministic), a **synthetic-load runner**
+    (synthetic has no source DB, so it cannot reuse `runThroughConnections` — it generates
+    rows then `DataLoadPlan.build` → write to sink), and the profile capture (`LiveProfiler`
+    against the `--profile` env). Scoped, not yet built.
+  - **Rename-aware migrate-with-data** — the pure rename-aware transfer exists
+    (`runWithRenames`, source-A → sink-B re-point); `MigrationRun.executeWithData` documents
+    its precondition (the data source is at contract B). The combined rename + migrate-with-
+    data re-point has no current flow consumer, so it is not built ahead of one (IR grows
+    under evidence, not speculation); `runWithRenames` is ready when a flow needs it.
 
 The discipline: **the surface ships whole; the flows that depend on a ladder rung are
 named here and refuse cleanly until the rung lands** (total decisions, named skips — never

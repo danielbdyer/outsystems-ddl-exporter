@@ -176,8 +176,30 @@ store. Full pure pool green throughout.
   `planProject` → `planMovement` over `resolveLiveConn`; `TargetConfig` →
   `ProjectionConfig`. `MovementSurfaceTests` rewritten to the flow surface.
 
-Remaining engine-gated refinements (THE_CLI.md §12; refuse cleanly until the
-Wave-6 rung lands): `report` against a *freshly-projected* B (today it renders
-the recorded series, not a live `B ⊖ A_prior` re-projection); `--fresh`
-genesis-force in `MigrationRun`; Faker `--data synthetic`; the data-compat /
-CDC-tracking pre-flight gates; the declared `tables` subset selection.
+## §12 follow-ups (2026-06-08) — status
+
+Worked the THE_CLI.md §12 list:
+
+- **`explain <flow>` (live preview) `[x]`** — B vs the target's last sealed
+  episode (the preview sibling to `report`'s history). `bbb9d60`.
+- **pre-flight gates `[x]`** — already engine-built (CDC-tracked sink +
+  data-compat NOT-NULL tightening, refuse exit 9); added `--allow-cdc` to the
+  flow surface so the CDC gate is overridable. `e5ddcb1`.
+- **`tables` subset `[x]`** — honored on the data-transfer leg (only listed
+  kinds load; the rest of the sink untouched; unknown names refused). `ebf0baa`.
+- **rename-aware migrate-with-data `[~]`** — the pure rename-aware transfer
+  (`runWithRenames`) exists; the migrate-with-data combination has no current
+  flow consumer, so it is documented as a precondition rather than built ahead
+  of evidence.
+- **`from: synthetic --profile` (Faker) `[ ]`** — the one net-new feature
+  left. Slice plan: (S1) a pure generator `SyntheticData.generate : Profile ×
+  Catalog × seed → Map<SsKey, StaticRow list>` (FK keys drawn in topo order;
+  categorical/numeric distributions + null-rates honored; deterministic) +
+  unit tests; (S2) a synthetic-load runner (generate → `DataLoadPlan.build` →
+  write to sink — synthetic has no source DB, so it does NOT reuse
+  `runThroughConnections`); (S3) profile capture via `LiveProfiler` against the
+  `--profile` env + CLI wiring of `DataOrigin.Synthetic`. Reuses the evidence
+  in `Profile` (`ColumnProfile`/`CategoricalDistribution`/`NumericDistribution`)
+  and the FK-aware approach proven in the test `FixtureGenerator`.
+
+Deferred (unchanged): `--fresh` genesis-force in `MigrationRun`.
