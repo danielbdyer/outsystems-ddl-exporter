@@ -13,6 +13,7 @@ open Xunit
 open Projection.Core
 open Projection.Adapters.Sql
 open Projection.Pipeline
+open Projection.Targets.Json
 
 module private SyntheticCanaryFixtures =
 
@@ -82,6 +83,30 @@ module private SyntheticCanaryFixtures =
 [<Xunit.Collection("Docker-SqlServer")>]
 type SyntheticCanaryTests(fixture: EphemeralContainerFixture) =
     interface IClassFixture<EphemeralContainerFixture>
+
+    [<Fact>]
+    member _.``the durable ProfileCodec round-trips a real captured profile``() =
+        // The capture verb / synthetic flow persist a LiveProfiler-captured
+        // profile through ProfileCodec; this proves the round-trip law on real
+        // captured evidence (not just hand-built / FsCheck-generated values).
+        let label = "syntheticCapture"
+        if not (SyntheticCanaryFixtures.skipIfNoDocker label) then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase label (fun source _ ->
+                task {
+                    do! Deploy.executeBatch source SyntheticCanaryFixtures.ddl
+                    do! Deploy.executeBatch source SyntheticCanaryFixtures.seed
+                    match! ReadSide.read source with
+                    | Error es -> Assert.True(false, sprintf "source read failed: %A" es)
+                    | Ok cat0 ->
+                        match! LiveProfiler.attach source (SyntheticCanaryFixtures.stripStatic cat0) Profile.empty with
+                        | Error es -> Assert.True(false, sprintf "capture failed: %A" es)
+                        | Ok captured ->
+                            Assert.False(Profile.isEmpty captured, "captured profile is empty")
+                            match ProfileCodec.deserialize (ProfileCodec.serialize captured) with
+                            | Ok restored -> Assert.Equal<Profile>(captured, restored)
+                            | Error es -> Assert.True(false, sprintf "codec round-trip failed: %A" es)
+                }))
 
     [<Fact>]
     member _.``canary: pi of sigma approximates id (counts match, zero orphans, categorical set preserved)``() =
