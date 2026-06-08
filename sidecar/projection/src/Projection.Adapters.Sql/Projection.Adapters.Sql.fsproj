@@ -14,8 +14,6 @@
     <Compile Include="ConnectionResolver.fs" />
     <Compile Include="AsyncStream.fs" />
     <Compile Include="Static.fs" />
-    <Compile Include="ProfileSnapshot.fs" />
-    <Compile Include="ProfileStatistics.fs" />
     <Compile Include="EvidenceCache.fs" />
     <Compile Include="LiveProfiler.fs" />
     <Compile Include="DataIntegrityChecker.fs" />

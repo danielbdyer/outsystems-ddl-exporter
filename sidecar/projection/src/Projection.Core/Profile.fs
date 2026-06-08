@@ -281,8 +281,7 @@ module ForeignKeyReality =
     /// 0L`. `ProbeStatus` is the no-probe-ran shape (CapturedAtUtc =
     /// MinValue; SampleSize = 0L; Outcome = Succeeded). The
     /// LiveProfiler adapter overrides via record-update once a real
-    /// probe completes; `ProfileSnapshot.attach` overrides from V1's
-    /// JSON snapshot. Mirrors the `AttributeReality.create` shape per
+    /// probe completes. Mirrors the `AttributeReality.create` shape per
     /// the chapter B.3 slice 1 cash-out.
     let create (referenceKey: SsKey) : ForeignKeyReality =
         {
@@ -664,8 +663,8 @@ module NumericDistribution =
 /// evidence (extract-model, schema-only) pass it as a no-op input.
 ///
 /// **Distributions field added session 9** (ADMIRE.md 2026-05-12) —
-/// rich-profiling evidence V1 does not collect. Empty by default;
-/// populated by the V2-only `ProfileStatistics` sibling adapter.
+/// rich-profiling evidence. Empty by default; populated by the
+/// `LiveProfiler` adapter (V2's live-probe path).
 ///
 /// **CdcAwareness field added at chapter 4.1.B slice β** — per
 /// `CHAPTER_4_PRESCOPE_DATA_TRIUMVIRATE.md` §4.2: CDC-enabled status

@@ -276,17 +276,13 @@ write seam; **no source DB / no `runThroughConnections`**). New `PlanAction.Synt
    seed + the default hybrid-by-cardinality `SyntheticConfig`; a `--seed` / `synthetic`
    config block is the next polish slice.
 
-**Note — `ProfileSnapshot` vs `ProfileCodec` (two roles, not one).** `ProfileSnapshot`
-(`src/Projection.Adapters.Sql/ProfileSnapshot.fs`) is the **V1-inbound anti-corruption
-layer**: it ingests V1's foreign `ProfileSnapshot` JSON (physical `(schema, table, column)`
-coordinates, produced by V1's `Osm.Json.ProfileSnapshotSerializer`) and resolves it to a V2
-`Profile` against a catalog — one-directional, catalog-dependent, lossy by design
-(unresolvable rows are dropped; identity is name-keyed, so it does not survive rename).
-`ProfileCodec` is V2's **own durable format**: bidirectional, catalog-free, SsKey-stable
-(A1), total, round-trip-law-bound — the capture/replay artifact. Making `ProfileSnapshot`
-"round-trippable" would conflate the two: its *input* is V1's wire shape, which can't carry
-V2 SsKeys. The honest architecture keeps both — and the bridge, when V1 snapshots must feed
-synthesis, is `ProfileSnapshot.attach catalog → Profile → ProfileCodec.serialize`.
+**Note — `ProfileSnapshot` removed (2026-06-08).** `ProfileSnapshot` was the V1-inbound
+anti-corruption layer (V1 profile JSON, physical coordinates → `Profile`); `ProfileStatistics`
+its distribution-JSON sibling. Both had zero production callers and were superseded by
+`ReadSide` + `LiveProfiler` (V2 reads + profiles the live DB). Per the operator's "no V1
+inputs" intent they were **deleted**; `ProfileCodec` is V2's own durable profile format
+(bidirectional, SsKey-stable, total). The broader V1-input retirement (the `osm_model.json`
+model path → live OSSYS read) is tracked in `V1_INPUT_DEPRECATION.md`.
 
 ---
 
