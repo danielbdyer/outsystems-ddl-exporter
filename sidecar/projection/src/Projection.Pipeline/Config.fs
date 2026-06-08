@@ -52,6 +52,11 @@ module Config =
 
     type ModelSection = {
         Path                   : string
+        /// A live OSSYS connection (`env:<var>` / `file:<path>`) — the V1-free
+        /// **primary** model source for the full-export path. When set the
+        /// model is read live from OSSYS (`LiveModelRead`); `Path` is the
+        /// `osm_model.json` **fallback**. `None` ⇒ read `Path`.
+        Ossys                  : string option
         Modules                : ModuleSelector list
         IncludeSystemModules   : bool
         IncludeInactiveModules : bool
@@ -629,8 +634,12 @@ module Config =
                                 match parseValidationOverrides element with
                                 | Error es -> Error es
                                 | Ok vo ->
+                                match getOptionalString element "ossys" with
+                                | Error es -> Error es
+                                | Ok ossys ->
                                     Result.success {
                                         Path                   = path
+                                        Ossys                  = ossys
                                         Modules                = modules
                                         IncludeSystemModules   = inclSys
                                         IncludeInactiveModules = inclInactive

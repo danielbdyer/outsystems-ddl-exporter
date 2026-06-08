@@ -34,6 +34,13 @@ let private hasCode (code: string) (errors: ValidationError list) : bool =
 // -----------------------------------------------------------------------
 
 [<Fact>]
+let ``Config.parse: model.ossys is read as the live-OSSYS primary; absent is None`` () =
+    let withOssys = Config.parse """{ "model": { "path": "model.json", "ossys": "env:ONPREM_OSSYS_CONN" } }""" |> mustOk
+    Assert.Equal(Some "env:ONPREM_OSSYS_CONN", withOssys.Model.Ossys)
+    let withoutOssys = Config.parse """{ "model": { "path": "model.json" } }""" |> mustOk
+    Assert.Equal(None, withoutOssys.Model.Ossys)
+
+[<Fact>]
 let ``Config.parse: minimal config with only model.path succeeds`` () =
     let json = """{ "model": { "path": "model.json" } }"""
     let cfg = Config.parse json |> mustOk

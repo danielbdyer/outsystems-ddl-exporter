@@ -31,6 +31,7 @@
     <Compile Include="EmissionFoldersBinding.fs" />
     <Compile Include="TransformGroupsBinding.fs" />
     <Compile Include="InsertionPolicyBinding.fs" />
+    <Compile Include="LiveModelRead.fs" />
     <Compile Include="Pipeline.fs" />
     <Compile Include="PolicyDiff.fs" />
     <Compile Include="Bulk.fs" />

@@ -28,7 +28,7 @@ module ModelResolutionDockerTests =
                 let seed = MetadataExtractionSql.readEdgeCaseSeed()
                 let! result =
                     Deploy.withBootstrappedDatabase label seed (fun cnn ->
-                        ModelResolution.resolveFromConnection cnn)
+                        LiveModelRead.fromConnection cnn)
                 match result with
                 | Error es -> Assert.True(false, sprintf "live OSSYS model read failed: %A" es)
                 | Ok catalog ->

@@ -13,6 +13,7 @@ let private mkConfig (entries: Config.TransformGroupEntry list) : Config.Config 
     {
         Model       = {
             Path                   = "ignored.json"
+            Ossys                  = None
             Modules                = []
             IncludeSystemModules   = false
             IncludeInactiveModules = false

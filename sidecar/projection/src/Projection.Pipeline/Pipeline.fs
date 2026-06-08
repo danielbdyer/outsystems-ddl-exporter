@@ -1013,12 +1013,22 @@ module Compose =
         : unit =
         LogSink.emit { LogSink.envelope LogSink.Info category code payload with Phase = phase }
 
+    /// The full-export model read under the live-OSSYS-primary / file-fallback
+    /// policy (V1_INPUT_DEPRECATION.md §3). `cfg.Model.Ossys` set ⇒ read live
+    /// from OSSYS (`LiveModelRead`, V1-free); else read `cfg.Model.Path` (the
+    /// `osm_model.json` fallback). Byte-identical to the prior `read
+    /// cfg.Model.Path` when `Ossys = None`.
+    let private readConfigModel (cfg: Config.Config) : Task<Result<Catalog>> =
+        match cfg.Model.Ossys with
+        | Some connSpec -> LiveModelRead.fromConnSpec connSpec
+        | None -> read cfg.Model.Path
+
     let runWithConfig (cfg: Config.Config) : Task<Result<RunReport>> =
         task {
             // §7.2 extract — OSSYS catalog read.
             let swExtract = System.Diagnostics.Stopwatch.StartNew()
             emitStageMarker LogSink.Extract "extract.started" LogSink.Start Map.empty
-            let! parsed = read cfg.Model.Path
+            let! parsed = readConfigModel cfg
             swExtract.Stop()
             match parsed with
             | Error errors ->
@@ -1060,7 +1070,7 @@ module Compose =
     /// is profile-invariant — profiling only annotates the manifest).
     let private emittedSchema (cfg: Config.Config) : Task<Result<Catalog>> =
         task {
-            let! parsed = read cfg.Model.Path
+            let! parsed = readConfigModel cfg
             return parsed |> Result.bind (applyRenames cfg)
         }
 
@@ -1092,7 +1102,7 @@ module Compose =
 
     let private emittedSeed (cfg: Config.Config) : Task<Result<Catalog * string>> =
         task {
-            let! parsed = read cfg.Model.Path
+            let! parsed = readConfigModel cfg
             return projectSeed cfg parsed
         }
 

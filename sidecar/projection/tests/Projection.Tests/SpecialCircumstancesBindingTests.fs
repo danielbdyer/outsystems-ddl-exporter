@@ -86,6 +86,7 @@ let private mkConfig (overrides: Config.OverridesSection) : Config.Config =
     {
         Model       = {
             Path                   = "ignored.json"
+            Ossys                  = None
             Modules                = []
             IncludeSystemModules   = false
             IncludeInactiveModules = false
