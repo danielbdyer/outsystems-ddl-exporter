@@ -134,16 +134,49 @@ module MovementSpec =
         | Destination.Live _ -> spec.Commit
         | Destination.Folder _ | Destination.Docker -> false
 
-/// The four operator intents (THE_CLI.md §2). `Project` is the hero
-/// (all data movement); the other three are the proof, the understanding,
-/// and the provenance planes. Check/Explain/Seal carry their raw tail in
-/// this skeleton — their typed sub-surfaces land in their build slices.
+/// Where a flow's content originates (THE_CLI.md §4.2): another environment
+/// (the cross-substrate Move), the authored model's own data, profiled
+/// synthetic data, or no data (schema only).
+[<RequireQualifiedAccess>]
+type FlowSource =
+    | Env of env: string
+    | Model
+    | Synthetic of profile: string option
+    | NoData
+
+/// A named movement (THE_CLI.md §4.2): a `Move` from a source to a target
+/// environment, with optional specialization (Reidentify re-key; a declared
+/// table subset). The named recipe the daily command runs.
+type Flow =
+    {
+        Name   : string
+        From   : FlowSource
+        To     : string
+        Rekey  : string option
+        Tables : string list
+    }
+
+/// The per-run intent that finishes a resolved flow (THE_CLI.md §3) — the
+/// only words that vary at the moment of action and never live in config.
+type FlowRunOpts =
+    {
+        Go         : bool
+        Fresh      : bool
+        AllowDrops : bool
+    }
+
+/// The operator intents (THE_CLI.md §2). `Flow` is the hero — the daily
+/// `projection <flow>` act; `Project` is the deprecated `--to` surface (F5).
+/// Check/Explain/Seal/Report carry their raw tail; their typed sub-surfaces
+/// land in their build slices.
 [<RequireQualifiedAccess>]
 type Intent =
+    | Flow of flow: Flow * opts: FlowRunOpts
     | Project of MovementSpec
     | Check of args: string list
     | Explain of args: string list
     | Seal of args: string list
+    | Report of args: string list
 
 /// The spec-derived options a live load/migrate carries, bundled so the plan
 /// is self-contained (the runner needs nothing but the plan).

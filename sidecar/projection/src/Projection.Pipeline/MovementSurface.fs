@@ -47,27 +47,8 @@ type Environment =
         Grant  : Grant option
     }
 
-/// Where a flow's content originates (THE_CLI.md §4.2): another environment
-/// (the cross-substrate Move), the authored model's own data, profiled
-/// synthetic data, or no data (schema only).
-[<RequireQualifiedAccess>]
-type FlowSource =
-    | Env of env: string
-    | Model
-    | Synthetic of profile: string option
-    | NoData
-
-/// A named movement (THE_CLI.md §4.2): a `Move` from a source to a target
-/// environment, with optional specialization (Reidentify re-key; a declared
-/// table subset).
-type Flow =
-    {
-        Name   : string
-        From   : FlowSource
-        To     : string
-        Rekey  : string option
-        Tables : string list
-    }
+// `FlowSource`, `Flow`, and `FlowRunOpts` live in MovementSpec.fs (the types
+// file) — `Intent.Flow` carries them, so they precede it in compile order.
 
 /// How a named target is addressed: a live database (out-of-band ref) or
 /// a folder on disk. The two `Destination` shapes a target may resolve to.
@@ -333,15 +314,6 @@ module TargetConfig =
             try parse (File.ReadAllText path)
             with ex -> Result.failureOf (err "cli.config.readFailed" (sprintf "could not read '%s': %s" path ex.Message))
 
-/// The per-run intent that finishes a resolved flow (THE_CLI.md §3) — the
-/// only words that vary at the moment of action and never live in config.
-type FlowRunOpts =
-    {
-        Go         : bool
-        Fresh      : bool
-        AllowDrops : bool
-    }
-
 [<RequireQualifiedAccess>]
 module Command =
 
@@ -518,6 +490,10 @@ module Command =
     /// full `MovementSpec`; `check` / `explain` / `seal` capture their tail
     /// for their build slices. Pure; the engine execution + the global-flag
     /// strip are the wiring slice.
+    /// The closed secondary-verb set (THE_CLI.md §3). A first token outside
+    /// this set is read as a flow name; an unknown one is refused, naming both.
+    let private secondaryVerbs = set [ "project"; "check"; "explain"; "seal"; "report"; "init" ]
+
     let parse (cfg: TargetConfig) (argv: string list) : Result<Intent> =
         match argv with
         | "project" :: rest ->
@@ -527,10 +503,26 @@ module Command =
         | "check" :: rest   -> Result.success (Intent.Check rest)
         | "explain" :: rest -> Result.success (Intent.Explain rest)
         | "seal" :: rest    -> Result.success (Intent.Seal rest)
-        | verb :: _ ->
-            Result.failureOf (err "cli.verb.unknown" (sprintf "unknown verb '%s'; expected project | check | explain | seal." verb))
+        | "report" :: rest  -> Result.success (Intent.Report rest)
+        | first :: rest when Map.containsKey first cfg.Flows ->
+            // THE_CLI.md §3 — the daily surface: `projection <flow> [--go]
+            // [--fresh] [--allow-drops]`. The verb is implied; the flow is the
+            // argument; only the per-run intent rides the tail.
+            let opts =
+                { Go         = List.contains "--go" rest
+                  Fresh      = List.contains "--fresh" rest
+                  AllowDrops = List.contains "--allow-drops" rest }
+            Result.success (Intent.Flow (Map.find first cfg.Flows, opts))
+        | first :: _ when secondaryVerbs.Contains first ->
+            // a known verb with a malformed tail falls through its own branch;
+            // this arm is unreachable for those, kept total for the type.
+            Result.failureOf (err "cli.verb.unknown" (sprintf "verb '%s' is not yet routed." first))
+        | first :: _ ->
+            let flows = cfg.Flows |> Map.toList |> List.map fst |> String.concat ", "
+            let suffix = if flows = "" then "no flows configured." else sprintf "known flows: %s." flows
+            Result.failureOf (err "cli.verb.unknown" (sprintf "unknown flow or verb '%s'; %s" first suffix))
         | [] ->
-            Result.failureOf (err "cli.verb.missing" "no verb given; expected project | check | explain | seal.")
+            Result.failureOf (err "cli.verb.missing" "no flow or verb given; expected <flow> | check | explain | seal | report.")
 
     // --- the pure project routing (THE_CLI fidelity #1) --------------------
 
@@ -795,11 +787,21 @@ module Command =
                         else [ sprintf "flow tables (%s) accepted; subset selection is pending (all tables applied)." (String.concat ", " flow.Tables) ]
                     { plan with Notes = plan.Notes @ tableNote }
 
+    /// Route a `report` verb tail. The migration-team change bundle diffs
+    /// `B ⊖ A_prior` against the last sealed episode — which leans on the
+    /// durable-episode engine rung (THE_CLI.md §12). Until that lands, refuse
+    /// cleanly (a named pending, never a silent no-op).
+    let planReport (_args: string list) : ExecutionPlan =
+        { Notes = []
+          Action = PlanAction.Refused (2, err "cli.report.pending" "report <flow> is pending the durable episode: run `seal <flow>` to record a baseline once the episode store lands (THE_CLI.md §12).") }
+
     /// The one pure routing for the whole surface — every `Intent` to its
     /// `ExecutionPlan`. The runner executes it; the totality test sweeps it.
     let plan (cfg: TargetConfig) (intent: Intent) : ExecutionPlan =
         match intent with
-        | Intent.Project spec -> planProject cfg spec
-        | Intent.Check args   -> planCheck cfg args
-        | Intent.Explain args -> planExplain args
-        | Intent.Seal args    -> planSeal args
+        | Intent.Flow (flow, opts) -> planFlow cfg flow opts
+        | Intent.Project spec      -> planProject cfg spec
+        | Intent.Check args        -> planCheck cfg args
+        | Intent.Explain args      -> planExplain args
+        | Intent.Seal args         -> planSeal args
+        | Intent.Report args       -> planReport args

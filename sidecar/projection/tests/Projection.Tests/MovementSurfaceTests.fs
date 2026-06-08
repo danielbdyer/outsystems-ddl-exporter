@@ -436,7 +436,8 @@ let ``plan is TOTAL across check / explain / seal verb tails`` () =
           Intent.Explain []; Intent.Explain [ "diff"; "a"; "b" ]; Intent.Explain [ "policy"; "a"; "b" ]
           Intent.Explain [ "node"; "c"; "k" ]; Intent.Explain [ "suggest"; "c" ]; Intent.Explain [ "registry" ]
           Intent.Explain [ "migrate"; "--to"; "b"; "--from"; "a" ]; Intent.Explain [ "bogus" ]
-          Intent.Seal []; Intent.Seal [ "--store"; "s" ]; Intent.Seal [ "approve"; "v"; "--approver"; "me" ]; Intent.Seal [ "approve"; "v" ] ]
+          Intent.Seal []; Intent.Seal [ "--store"; "s" ]; Intent.Seal [ "approve"; "v"; "--approver"; "me" ]; Intent.Seal [ "approve"; "v" ]
+          Intent.Report []; Intent.Report [ "uat" ] ]
     for intent in tails do
         match (Command.plan proteinCfg intent).Action with
         | PlanAction.Refused (code, error) ->
@@ -544,3 +545,49 @@ let ``planFlow is TOTAL across the flows × per-run intents`` () =
         | _ -> ()
         n <- n + 1
     Assert.Equal(5 * 4, n)
+
+// -- dispatch swap (THE_CLI.md 2026-06-08; slice F3) ------------------------
+
+let private parseFlowIntent argv =
+    match Command.parse flowCfg argv |> mustOk with
+    | Intent.Flow (f, o) -> (f, o)
+    | other -> failwithf "expected Flow, got %A" other
+
+[<Fact>]
+let ``parse: a bare flow name dispatches to Intent.Flow (verb implied)`` () =
+    let (f, o) = parseFlowIntent [ "uat" ]
+    Assert.Equal("uat", f.Name)
+    Assert.False o.Go
+    Assert.False o.Fresh
+    Assert.False o.AllowDrops
+
+[<Fact>]
+let ``parse: --go --fresh --allow-drops set the per-run intent`` () =
+    let (_, o) = parseFlowIntent [ "golden"; "--go"; "--fresh"; "--allow-drops" ]
+    Assert.True o.Go
+    Assert.True o.Fresh
+    Assert.True o.AllowDrops
+
+[<Fact>]
+let ``parse: a bare flow routes through plan to its engine face`` () =
+    let plan = Command.plan flowCfg (Command.parse flowCfg [ "uat" ] |> mustOk)
+    Assert.Equal(PlanAction.EmitBundle ("model.json", "dist/onprem-uat"), plan.Action)
+
+[<Fact>]
+let ``parse: report dispatches to Intent.Report; plan refuses pending the episode`` () =
+    match Command.parse flowCfg [ "report"; "uat" ] |> mustOk with
+    | Intent.Report _ -> ()
+    | other -> Assert.Fail(sprintf "expected Report, got %A" other)
+    match (Command.plan flowCfg (Intent.Report [ "uat" ])).Action with
+    | PlanAction.Refused (2, e) -> Assert.Equal("cli.report.pending", e.Code)
+    | other -> Assert.Fail(sprintf "expected pending refusal, got %A" other)
+
+[<Fact>]
+let ``parse: an unknown first token names the known flows`` () =
+    Assert.Contains("cli.verb.unknown", errCodes (Command.parse flowCfg [ "nope" ]))
+
+[<Fact>]
+let ``parse: a closed verb still wins over a flow lookup`` () =
+    match Command.parse flowCfg [ "check"; "ready" ] |> mustOk with
+    | Intent.Check _ -> ()
+    | other -> Assert.Fail(sprintf "expected Check, got %A" other)

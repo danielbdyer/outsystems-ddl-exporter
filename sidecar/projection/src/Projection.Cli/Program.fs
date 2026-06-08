@@ -20,22 +20,31 @@ open Projection.Targets.SSDT
 /// emitted independently; no intermediate concatenation.
 let private usageLines : string list =
     [
-        "projection — produce the model at a destination, check it, understand it, seal it."
-        "  One engine, four verbs (THE_CLI.md). Targets and the default model are named in"
-        "  projection.json (or PROJECTION_CONFIG); a target's conn is an env:/file: reference (D9)."
+        "projection — move a model from a source environment to a target (THE_CLI.md)."
+        "  The daily act is `projection <flow>`: a flow is a named source→target recipe in"
+        "  projection.json (environments + flows). Preview is the default; --go applies a live"
+        "  write (and needs PROJECTION_ALLOW_EXECUTE=1). Conn refs are env:/file: only (D9)."
         ""
         "USAGE:"
-        "    projection project --to <dest> [options]"
+        "    projection <flow> [--go] [--fresh] [--allow-drops]   the daily surface"
+        "    projection                                           list flows (name: from → to)"
         "    projection check  ( <source.sql> [--cdc-silence] | drift --model <m> --to <t>"
         "                      | data --before <t> --after <t> | ready )"
         "    projection explain ( diff <a> <b> [--format json] [--depth N] | policy <a> <b>"
         "                       | node <config> <ssKey> | suggest <config> [--apply <out>] | registry"
         "                       | migrate --to <b> ( --from <a> | --store <s> ) [--allow-drops] )"
-        "    projection seal ( --store <path> | approve <version> --approver <name>"
-        "                    [--rationale <text>] [--store <path>] )"
+        "    projection seal ( --store <path> | approve <version> --approver <name> ... )"
+        "    projection report <flow>        the on-prem migration-team change bundle"
         "    projection init                 scaffold a projection.json"
+        "    projection project --to <dest>  [deprecated] the prior surface (removed in F5)"
         ""
-        "PROJECT — the hero. Produce the model at a destination; the destination decides the form."
+        "FLOW — the hero. Move a model from `from` to `to`; the target decides the form."
+        "  An environment carries access (bundle → SSDT for Octopus | direct → live | docker)"
+        "  and grant (schema+data | data — a refusal gate). A bundle target produces files"
+        "  (always safe); a direct target previews until --go. --fresh wipes-and-loads; a"
+        "  schema-from-model flow against a data-only target is refused."
+        ""
+        "PROJECT — [deprecated] produce the model at a destination; the destination decides the form."
         "  --to <dest>   a folder (the file bundle) · docker (one-touch ephemeral DB) · a named"
         "                target or env:/file: ref (a live database; reads the prior state and"
         "                applies the minimal change). dir: forces a folder."
@@ -1761,6 +1770,35 @@ let private discoverConfig () : Result<TargetConfig> =
         | p -> p
     TargetConfig.fromFile path
 
+/// A flow's content origin, rendered for the menu (THE_CLI.md §4.4).
+let private flowSourceText (s: FlowSource) : string =
+    match s with
+    | FlowSource.Env e           -> e
+    | FlowSource.Model           -> "model"
+    | FlowSource.Synthetic None  -> "synthetic"
+    | FlowSource.Synthetic (Some p) -> sprintf "synthetic(%s)" p
+    | FlowSource.NoData          -> "none"
+
+/// `projection` with no args lists the flows as `name: from → to (spec)` —
+/// the config IS the menu (THE_CLI.md §4.4). No flows configured → the help.
+let private runList () : int =
+    match discoverConfig () with
+    | Error es ->
+        Console.Error.WriteLine "projection: projection.json is invalid:"
+        printErrors Console.Error es
+        6
+    | Ok cfg ->
+        if Map.isEmpty cfg.Flows then printLines Console.Out usageLines
+        else
+            Console.Out.WriteLine "Flows (projection <flow> [--go] [--fresh] [--allow-drops]):"
+            for KeyValue (name, f) in cfg.Flows do
+                let extra =
+                    [ if Option.isSome f.Rekey then yield "rekey"
+                      if not (List.isEmpty f.Tables) then yield sprintf "tables: %s" (String.concat "," f.Tables) ]
+                let suffix = if List.isEmpty extra then "" else sprintf "  (%s)" (String.concat "; " extra)
+                Console.Out.WriteLine(sprintf "  %-16s %s → %s%s" name (flowSourceText f.From) f.To suffix)
+        0
+
 [<EntryPoint>]
 let main argv =
     // Polish (REPORTING_HORIZON) — global flags, parsed + stripped before
@@ -1781,9 +1819,10 @@ let main argv =
     let globalFlags = set [ "--pretty"; "--json"; "--no-pretty"; "-v"; "--verbose"; "--watch" ]
     let argv = argv |> Array.filter (fun a -> not (Set.contains a globalFlags))
     match argv with
-    | [||] | [| "--help" |] | [| "-h" |] ->
+    | [| "--help" |] | [| "-h" |] ->
         printLines Console.Out usageLines
         0
+    | [||] -> runList ()
     | [| "init" |] -> runInit ()
     | _ ->
         match discoverConfig () with
