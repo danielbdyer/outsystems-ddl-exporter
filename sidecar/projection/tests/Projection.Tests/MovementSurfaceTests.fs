@@ -352,10 +352,10 @@ let private specOfIn cfg name opts = Command.resolveFlowSpec cfg (Map.find name 
 [<Fact>]
 let ``synthetic flow (data-only target) → SynthesizeAndLoad; preview vs --go`` () =
     match synthAction "preview-synth" preview with
-    | PlanAction.SynthesizeAndLoad (ModelSource.ModelFile "model.json", "file:legacy.profile.json", "env:CLOUD_UAT_CONN", _, false) -> ()
+    | PlanAction.SynthesizeAndLoad (ModelSource.ModelFile "model.json", None, "file:legacy.profile.json", "env:CLOUD_UAT_CONN", _, false) -> ()
     | other -> Assert.Fail(sprintf "expected preview SynthesizeAndLoad, got %A" other)
     match synthAction "preview-synth" commit with
-    | PlanAction.SynthesizeAndLoad (_, "file:legacy.profile.json", "env:CLOUD_UAT_CONN", _, true) -> ()
+    | PlanAction.SynthesizeAndLoad (_, None, "file:legacy.profile.json", "env:CLOUD_UAT_CONN", _, true) -> ()
     | other -> Assert.Fail(sprintf "expected executing SynthesizeAndLoad, got %A" other)
 
 [<Fact>]
@@ -373,11 +373,28 @@ let ``synthetic flow without a profile is Refused (named, not silent)`` () =
 [<Fact>]
 let ``synthetic flow preview works under all-scope; --go to a non-data target is Refused`` () =
     match synthAction "synth-all" preview with
-    | PlanAction.SynthesizeAndLoad (_, _, "env:CLOUD_ALL_CONN", _, false) -> ()
+    | PlanAction.SynthesizeAndLoad (_, _, _, "env:CLOUD_ALL_CONN", _, false) -> ()
     | other -> Assert.Fail(sprintf "expected all-scope preview SynthesizeAndLoad, got %A" other)
     match synthAction "synth-all" commit with
     | PlanAction.Refused (2, e) -> Assert.Equal("cli.move.syntheticScope", e.Code)
     | other -> Assert.Fail(sprintf "expected synthetic-scope refusal, got %A" other)
+
+[<Fact>]
+let ``synthetic flow threads the live-OSSYS model source (primary) when configured`` () =
+    let cfg =
+        ProjectionConfig.parse """
+        {
+          "environments": { "cloud-uat": { "access": "direct", "conn": "env:CLOUD_UAT_CONN", "grant": "data" } },
+          "flows": { "preview-synth": { "from": "synthetic", "profile": "file:legacy.profile.json", "to": "cloud-uat" } },
+          "model": "model.json",
+          "modelOssys": "env:ONPREM_OSSYS_CONN"
+        }
+        """ |> mustOk
+    Assert.Equal(Some "env:ONPREM_OSSYS_CONN", cfg.ModelOssys)
+    match (Command.planFlow cfg (Map.find "preview-synth" cfg.Flows) preview).Action with
+    // modelOssys (primary) rides in the action; the model file remains the fallback.
+    | PlanAction.SynthesizeAndLoad (ModelSource.ModelFile "model.json", Some "env:ONPREM_OSSYS_CONN", _, _, _, false) -> ()
+    | other -> Assert.Fail(sprintf "expected SynthesizeAndLoad carrying the live-OSSYS primary, got %A" other)
 
 // -- profile capture verb (THE_SYNTHETIC_DATA_DESIGN §2.2) -------------------
 

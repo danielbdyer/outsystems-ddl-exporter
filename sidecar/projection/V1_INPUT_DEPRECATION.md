@@ -42,7 +42,41 @@ convenience). Pure pool stayed green (2870 passed).
 
 ---
 
-## 3. The model — `osm_model.json` → live OSSYS read (a wiring slice, not a chapter)
+## 3. The model — live OSSYS is now **primary**, `osm_model.json` the **fallback**
+
+**Built (2026-06-08): live-OSSYS-primary with file-fallback, wired for the
+synthetic flow.** Per the operator decision ("switch it to primary, keep the
+file as an optional configuration fallback for now, don't retire it"):
+
+- **Config:** `projection.json` gains `"modelOssys": "<env-or-conn-ref>"` (a
+  live OSSYS connection). When set it is the **primary** model source; `"model"`
+  (the `osm_model.json` path) remains the **fallback**.
+- **`ModelResolution`** (`src/Projection.Pipeline/ModelResolution.fs`) is the
+  policy seam: `chooseOrigin` (pure — live wins when configured; else file;
+  neither is a named refusal) + `resolveFromConnection` (the V1-free live read:
+  `MetadataSnapshotRunner.runAsync` → `toBundle` → `CatalogReader.parse
+  (SnapshotRowsets …)` → `Catalog` with native GUID SsKey) + `resolveCatalog`
+  (applies the policy, opening the connection or reading the file).
+- **Wired** into the synthetic flow: `SynthesizeAndLoad` carries the
+  `modelOssys` ref (filled by `planMovement` from config); `SyntheticLoadRun`
+  resolves through `ModelResolution`. So `from: synthetic` reads the model live
+  from OSSYS when `modelOssys` is set — **no `osm_model.json` in the loop** —
+  and falls back to the file otherwise.
+- **Tests:** `ModelResolutionTests` (the pure primary/fallback law),
+  `MovementSurfaceTests` (the live ref threads into the action as primary),
+  `ModelResolutionDockerTests` (the live read resolves a non-empty Catalog with
+  native `OssysOriginal` identity against a bootstrapped OSSYS DB).
+
+**Remaining (the "for now" boundary):** the *other* flow actions
+(emit / deploy / migrate / preview) still resolve the model from the file path
+(`Compose.read`); only the synthetic flow honors `modelOssys` today. Extending
+them is mechanical — route their model read through `ModelResolution.resolveCatalog`
+the same way — and is the next slice. Until then, a flow whose action is not
+synthetic still needs the `model` file.
+
+---
+
+### Background — why this was a wiring slice, not a chapter
 
 **The capability already exists and is V1-free end to end:**
 

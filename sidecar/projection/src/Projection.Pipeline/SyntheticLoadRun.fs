@@ -42,11 +42,14 @@ module SyntheticLoadRun =
                 Result.failureOf (ValidationError.create "synthetic.profileRef.readFailed" ex.Message)
 
     /// Drive a synthetic load. `execute = false` previews (DryRun, no write);
-    /// `execute = true` generates and loads to the sink. The model supplies
-    /// the target schema B; `profileRef` the evidence; `connSpec` the sink.
-    /// Connection / grant / CDC gates ride `Transfer.runSynthetic`.
+    /// `execute = true` generates and loads to the sink. The target schema B is
+    /// resolved by `ModelResolution` — live OSSYS when `modelOssys` is set
+    /// (primary; V1-free), else the `osm_model.json` file (fallback);
+    /// `profileRef` the evidence; `connSpec` the sink. Connection / grant / CDC
+    /// gates ride `Transfer.runSynthetic`.
     let run
-        (modelPath: string)
+        (modelOssys: string option)
+        (modelFile: string option)
         (profileRef: string)
         (connSpec: string)
         (emission: EmissionMode)
@@ -60,7 +63,7 @@ module SyntheticLoadRun =
             | Error es, _ -> return Result.failure es
             | _, Error es -> return Result.failure es
             | Ok profile, Ok connRef ->
-                match! Compose.read modelPath with
+                match! ModelResolution.resolveCatalog modelOssys modelFile with
                 | Error es -> return Result.failure es
                 | Ok catalog ->
                     let sub : Substrate =

@@ -1674,7 +1674,7 @@ let private runProjectLivePreview (toPath: string) (connSpec: string) (declarati
 /// front-end). `execute = false` previews (DryRun); `execute = true` writes,
 /// gated by `PROJECTION_ALLOW_EXECUTE=1` (R6), and is fail-loud on dropped
 /// rows (mirrors `runTransfer`).
-let private runSyntheticLoad (modelPath: string) (profileRef: string) (connSpec: string) (opts: LoadOpts) (execute: bool) : int =
+let private runSyntheticLoad (model: ModelSource) (modelOssys: string option) (profileRef: string) (connSpec: string) (opts: LoadOpts) (execute: bool) : int =
     let executeGated =
         if execute then System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" = "1" else false
     if execute && not executeGated then
@@ -1684,9 +1684,15 @@ let private runSyntheticLoad (modelPath: string) (profileRef: string) (connSpec:
         7
     else
     let allowDrops = (opts.Declaration = DeclareAll)
+    // The model file is the fallback; `modelOssys` (when set) is the live-OSSYS
+    // primary. ModelResolution applies the policy.
+    let modelFile =
+        match model with
+        | ModelSource.ModelFile p | ModelSource.ConfigFile p -> Some p
+        | ModelSource.Unspecified -> None
     let result =
         (SyntheticLoadRun.run
-            modelPath profileRef connSpec opts.Emission opts.AllowCdc
+            modelOssys modelFile profileRef connSpec opts.Emission opts.AllowCdc
             SyntheticConfig.defaultConfig SyntheticLoadRun.defaultSeed executeGated)
             .GetAwaiter().GetResult()
     let exitCode =
@@ -1705,7 +1711,7 @@ let private runSyntheticLoad (modelPath: string) (profileRef: string) (connSpec:
             printErrors Console.Error errors
             let anyCode (prefix: string) =
                 errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith prefix)
-            if anyCode "synthetic.profileRef" then 2
+            if anyCode "synthetic.profileRef" || anyCode "model." then 2
             elif anyCode "synthetic.insufficientGrant" || anyCode "synthetic.grantProbeFailed" || anyCode "synthetic.cdcTrackedSink" then 7
             else 3
     dumpBench "synthetic"
@@ -1756,8 +1762,8 @@ let private runPlan (plan: ExecutionPlan) : int =
         runTransfer src sink None None opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Tables
     | PlanAction.MigrateWithData (model, sink, src, opts) ->
         needModel model (fun m -> runMigrateWithData m sink src opts.Reconcile opts.Rekey opts.Declaration opts.AllowCdc opts.Store opts.Env)
-    | PlanAction.SynthesizeAndLoad (model, profile, conn, opts, execute) ->
-        needModel model (fun m -> runSyntheticLoad m profile conn opts execute)
+    | PlanAction.SynthesizeAndLoad (model, modelOssys, profile, conn, opts, execute) ->
+        runSyntheticLoad model modelOssys profile conn opts execute
     | PlanAction.CaptureProfile (conn, out) -> runCaptureProfile conn out
     | PlanAction.PublishAndLoad (c, conn, store, env) -> runFullExportLoad c conn None store env
     | PlanAction.Migrate (model, conn, opts) -> needModel model (fun m -> runMigrateExecute m conn opts.Declaration opts.AllowCdc opts.Store opts.Env)

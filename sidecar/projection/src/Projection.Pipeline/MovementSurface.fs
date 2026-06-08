@@ -58,7 +58,13 @@ type ProjectionConfig =
         Environments : Map<string, Environment>
         /// THE_CLI.md §4.2 — named source→target Move recipes.
         Flows        : Map<string, Flow>
+        /// The authored `osm_model.json` file — the model **fallback** (kept
+        /// for cutover safety, not retired).
         Model        : string option
+        /// A live OSSYS connection (env/file ref) — the **primary** model
+        /// source (V1-free: read OutSystems metadata directly → native SsKey).
+        /// When set it wins over `Model`. See `ModelResolution`.
+        ModelOssys   : string option
         Defaults     : Map<string, string>
     }
 
@@ -66,7 +72,7 @@ type ProjectionConfig =
 module ProjectionConfig =
 
     let empty : ProjectionConfig =
-        { Environments = Map.empty; Flows = Map.empty; Model = None; Defaults = Map.empty }
+        { Environments = Map.empty; Flows = Map.empty; Model = None; ModelOssys = None; Defaults = Map.empty }
 
     let private err (code: string) (message: string) : ValidationError =
         ValidationError.create code message
@@ -206,7 +212,9 @@ module ProjectionConfig =
                         | _ -> Map.empty
                     Result.success
                         { Environments = environments; Flows = flows
-                          Model = getString root "model"; Defaults = defaults }
+                          Model = getString root "model"
+                          ModelOssys = getString root "modelOssys"
+                          Defaults = defaults }
         with ex ->
             Result.failureOf (err "cli.config.parseFailed" (sprintf "projection.json did not parse: %s" ex.Message))
 
@@ -337,7 +345,7 @@ module Command =
                         | Ok src -> PlanAction.Transfer (src, conn, opts, false)
                         | Error es -> PlanAction.Refused (6, List.head es)
                     | DataOrigin.Synthetic profile when not schemaOnly ->
-                        PlanAction.SynthesizeAndLoad (spec.Model, profile, conn, opts, false)
+                        PlanAction.SynthesizeAndLoad (spec.Model, cfg.ModelOssys, profile, conn, opts, false)
                     | _ ->
                         match spec.Model with
                         | ModelSource.Unspecified -> modelMissing "projection: "
@@ -354,7 +362,7 @@ module Command =
                                 | ModelSource.Unspecified -> modelMissing "projection: "
                                 | m -> PlanAction.MigrateWithData (m, conn, src, opts)
                     | DataOrigin.Synthetic profile when not schemaOnly ->
-                        if dataOnly then PlanAction.SynthesizeAndLoad (spec.Model, profile, conn, opts, true)
+                        if dataOnly then PlanAction.SynthesizeAndLoad (spec.Model, cfg.ModelOssys, profile, conn, opts, true)
                         else PlanAction.Refused (2, err "cli.move.syntheticScope" "a synthetic load moves data only; point the flow at a data-granting target (grant: data).")
                     | _ when dataOnly ->
                         PlanAction.Refused (2, err "cli.move.scopeDataNoSource" "a DML-only load needs a data source (a flow whose `from` is a live environment).")

@@ -137,6 +137,7 @@
     <Compile Include="ReconciliationTests.fs" />
     <Compile Include="ConnectionResolverTests.fs" />
     <Compile Include="TransferSpecTests.fs" />
+    <Compile Include="ModelResolutionTests.fs" />
     <Compile Include="MovementSurfaceTests.fs" />
     <Compile Include="TransferRefusalTests.fs" />
     <Compile Include="PreflightTests.fs" />
@@ -281,6 +282,7 @@
     <Compile Include="ExecuteBatchParallelTests.fs" />
     <Compile Include="SyntheticLoadTests.fs" />
     <Compile Include="SyntheticCanaryTests.fs" />
+    <Compile Include="ModelResolutionDockerTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

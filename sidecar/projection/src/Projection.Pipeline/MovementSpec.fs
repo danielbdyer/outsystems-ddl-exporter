@@ -230,9 +230,11 @@ type PlanAction =
     | Transfer of source: string * sink: string * opts: LoadOpts * execute: bool
     /// live + synthetic data source → generate from the durable profile and
     /// load (DryRun preview when execute=false; the DML-only load when
-    /// execute=true). The model supplies the target schema B; the profile ref
-    /// (`file:<path>`) supplies the evidence σ replays.
-    | SynthesizeAndLoad of model: ModelSource * profile: string * conn: string * opts: LoadOpts * execute: bool
+    /// execute=true). The model supplies the target schema B — read live from
+    /// OSSYS when `modelOssys` is set (primary; V1-free) else from the model
+    /// file (fallback); the profile ref (`file:<path>`) supplies the evidence σ
+    /// replays.
+    | SynthesizeAndLoad of model: ModelSource * modelOssys: string option * profile: string * conn: string * opts: LoadOpts * execute: bool
     /// live, --go, data source → cross-substrate migrate-with-data.
     | MigrateWithData of model: ModelSource * sink: string * source: string * opts: LoadOpts
     /// live, --go, config model → publish bundle + load the seed.
