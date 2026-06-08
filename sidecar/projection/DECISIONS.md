@@ -20947,3 +20947,19 @@ The voice machinery is built (slices 1/2/4 + the gate/error surfaces, all totali
 **One open sub-decision named, not yet resolved (recorded for the executing agent to settle in Wave 1):** the `--go`/`PROJECTION_ALLOW_EXECUTE` intent gate has no `Preflight.GateLabel` variant. Recommendation: voice it through a flat `gate.intent` `errorSurface` code (a CLI-surface concern, not an engine pre-flight) rather than adding a closed-DU variant — keeps the engine's gate DU about engine pre-flights. To be confirmed when Wave 1 lands.
 
 No code or events changed — this is documentation grounding the rendering work. Tree green (build + 2870 pure) at the prior merge (`9bae06e`).
+
+---
+
+**`DECISIONS 2026-06-08 (later)` — The voice backlog re-grounded against the North Star: vision first, mechanics subordinate.**
+
+The first cut of `THE_VOICE_BACKLOG.md` read as a mechanical punch list — file:line fixes with no North Star, the failure mode being that an agent initialized on it would produce banned-list-clean strings that miss the soul. Re-authored to lead with *why*, ingesting the supporting docs so they speak one language:
+
+1. **A new §0 "The North Star."** Frames the whole work against `NORTH_STAR.md` (the engine is one adjunction `Ingest ∘ Project = id`; fidelity is a *theorem the engine proves about itself*, not a property a human verifies) and `THE_INSTRUMENT.md` (the three layers Structure/Style/**Voice**; one essence infinitely diggable; the newcomer is the power user; *the instrument disappears*). The Voice is named as the **third layer** — the one that renders the theorem as plain human confidence. The load-bearing reframe: **every raw render site is a seam where the instrument fails to disappear** — the operator sees the apparatus (`%A`, `norm=`, `REFUSED`, a leaked exit code) instead of the truth. A `%A` at `:1167` is not a lint finding; it is the migration's *verdict* rendered as an internal DU dump.
+
+2. **A new §1 "What 'done' means (the bar the guard cannot see)."** The `VoiceTotalityTests` banned-list guard is necessary, not sufficient — it catches a pronoun/shout/`%A` but cannot tell whether a line is true, grounded, or kind. The bar: one register two velocities (§0); essence on top, proof one level beneath (§3/§6/§10); grounded authority (rule 4/8); ends on the move; the instrument disappears. **The felt arc (§7) is the target, not the string.** The acceptance question for every item is "would the newcomer trust it on sight, would the master read it as a glance, and does the instrument disappear behind it?" — not "does the guard pass?".
+
+3. **Each wave reframed by the felt-arc moment it restores**, not just the §2.2 break it fixes: Wave 1 (gates) is *the consent moment — trust earned in plain words*; Wave 2 (‖δ‖) is *the soul, said plain — minimality is the faithfulness proof, today rendered as `norm=`*; Wave 3 (proofs) is *"This is the soul"*; Wave 4 (§13) is *the rhythm names the next move*. The file:line mechanics are preserved in full beneath each — vision-led, mechanics-subordinate.
+
+4. **The handoff updated** with a "Read the *why* before you touch a string" section: the mandated reading order (`NORTH_STAR` → `THE_INSTRUMENT` → `THE_VOICE` §0/§6/§7/§11/§15) and the explicit warning that initializing on the file:line list alone produces guard-clean strings that miss the soul.
+
+No code changed — documentation grounding the rendering work in the vision. The mechanical inventory (the render-site classification, the renderer-per-gap, the wave order) is unchanged and intact; it now sits under the North Star rather than standing in for it.

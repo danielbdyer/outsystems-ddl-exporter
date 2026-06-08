@@ -129,13 +129,35 @@ Three things, none of which moves the register:
    `Preflight.GateLabel` DU, banned-list-tested — is **still uncalled**: every pre-flight
    refusal hand-writes its string beside the finished renderer.
 
+### Read the *why* before you touch a string
+
+This is the one warning worth shouting: **the work looks mechanical and is not.** Every raw
+render site in the backlog is a place the instrument fails to *disappear* — where the
+operator sees the apparatus (`%A`, `norm=`, `REFUSED`, a leaked exit code) instead of the
+truth the engine proves about itself. If you initialize on the file:line list alone, you will
+produce strings that pass the banned-list guard and miss the soul. So, in order, before any
+wave:
+
+1. **`NORTH_STAR.md`** — why the engine exists: fidelity as a *theorem the engine proves
+   about itself* (`Ingest ∘ Project = id`). This is what the Voice renders into words.
+2. **`THE_INSTRUMENT.md`** — what the operator experiences: the three layers
+   (Structure/Style/**Voice**), one essence infinitely diggable, *the newcomer is the power
+   user*, *the instrument disappears*. The Voice is the third layer; this is its job.
+3. **`THE_VOICE.md`** — the register, with §0 (the one sentence), §6 ("This is the soul"),
+   §7 (the felt arc), §11 (off → on), and §15 (how to derive) carrying the bar.
+
+The bar a finished line clears is **not** "the guard passes" — that is the floor. It is:
+*would the newcomer trust this on sight, would the master read it as a glance, and does the
+instrument disappear behind it?* `THE_VOICE_BACKLOG.md` §1 makes that operable; hold it over
+every string.
+
 ### Your map: `THE_VOICE_BACKLOG.md`
 
-The work is no longer "build the machinery" — it's **wire the register into the rendered
-TTY**, and it is fully inventoried. `THE_VOICE_BACKLOG.md` (new, the masterwork) is your
-execution doc: it classifies **every** operator-facing render site in `Program.fs` (1876
-lines) as voiced or raw, maps each raw site to its storyboard act + `THE_VOICE.md` section,
-names the renderer that voices it, and orders the work into seven waves. It supersedes
+`THE_VOICE_BACKLOG.md` (new, the masterwork) leads with the North Star (§0–§1: why a single
+raw line matters, and what "done" means above the guard), then classifies **every**
+operator-facing render site in `Program.fs` (1876 lines) as voiced or raw, frames each wave by
+the *felt-arc moment it restores*, maps each raw site to its storyboard act + `THE_VOICE.md`
+section, names the renderer that voices it, and orders the work into seven waves. It supersedes
 `THE_VOICE_BUILD_MAP.md` §6 (the execution layer — that map predates both CLI
 re-envisionings); the map's architecture (§1), code inventory (§2), and test blast-radius
 (§8) stay accurate and are referenced, not repeated.
