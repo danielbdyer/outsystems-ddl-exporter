@@ -215,16 +215,19 @@ type LoadOpts =
 [<RequireQualifiedAccess>]
 type PlanAction =
     // project ------------------------------------------------------------
+    // The model-bearing actions carry `model` (the osm_model.json fallback as a
+    // `ModelSource`) + `modelOssys` (the live-OSSYS primary, when configured);
+    // the runner resolves via `ModelResolution.resolveCatalog`.
     /// folder + config → the full-export bundle (richer than a bare emit).
     | PublishBundle of config: string * dir: string * store: string option * env: string option
     /// folder + model + skeleton shape → the pre-overlay emit.
-    | EmitSkeleton of model: string * dir: string
+    | EmitSkeleton of model: ModelSource * modelOssys: string option * dir: string
     /// folder + model + bundle/ssdt shape → the full pass-chain emit.
-    | EmitBundle of model: string * dir: string
-    /// docker → one-touch ephemeral deploy (runner resolves the model).
-    | DeployDocker of model: ModelSource
+    | EmitBundle of model: ModelSource * modelOssys: string option * dir: string
+    /// docker → one-touch ephemeral deploy.
+    | DeployDocker of model: ModelSource * modelOssys: string option
     /// live, no --go, no data source → the schema plan preview (B ⊖ A).
-    | PreviewSchema of model: ModelSource * conn: string * declaration: LossDeclaration
+    | PreviewSchema of model: ModelSource * modelOssys: string option * conn: string * declaration: LossDeclaration
     /// live + data source → transfer (DryRun preview when execute=false; the
     /// DML-only load when execute=true under --scope data).
     | Transfer of source: string * sink: string * opts: LoadOpts * execute: bool
@@ -236,11 +239,11 @@ type PlanAction =
     /// replays.
     | SynthesizeAndLoad of model: ModelSource * modelOssys: string option * profile: string * conn: string * opts: LoadOpts * execute: bool
     /// live, --go, data source → cross-substrate migrate-with-data.
-    | MigrateWithData of model: ModelSource * sink: string * source: string * opts: LoadOpts
+    | MigrateWithData of model: ModelSource * modelOssys: string option * sink: string * source: string * opts: LoadOpts
     /// live, --go, config model → publish bundle + load the seed.
     | PublishAndLoad of config: string * conn: string * store: string option * env: string option
     /// live, --go, bare model → in-place schema migrate.
-    | Migrate of model: ModelSource * conn: string * opts: LoadOpts
+    | Migrate of model: ModelSource * modelOssys: string option * conn: string * opts: LoadOpts
     // check --------------------------------------------------------------
     | CheckCanary of ddl: string * cdcSilence: bool
     | CheckDrift of model: string * conn: string

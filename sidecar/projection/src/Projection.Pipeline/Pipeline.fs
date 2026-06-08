@@ -815,6 +815,16 @@ module Compose =
                 return Result.failure errors
         }
 
+    /// The bundle / skeleton emit from an already-resolved `Catalog` — the
+    /// model-source-agnostic cores of `run` / `runSkeletonOnly`. The model may
+    /// have been read live from OSSYS (primary) or from the `osm_model.json`
+    /// file (fallback); both arrive here as a `Catalog`.
+    let runFromCatalog (catalog: Catalog) (outputDir: string) : Result<string list> =
+        write outputDir (project EmissionPolicy.empty catalog)
+
+    let runSkeletonOnlyFromCatalog (catalog: Catalog) (outputDir: string) : Result<string list> =
+        write outputDir (projectSkeleton catalog)
+
     /// Apply config-driven catalog rewrites (today: table renames).
     /// Empty overrides short-circuit to the input catalog unchanged.
     /// Errors aggregate from boundary-mapping (`RenameBinding.fromConfig`)

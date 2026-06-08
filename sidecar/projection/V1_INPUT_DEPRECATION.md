@@ -57,22 +57,29 @@ file as an optional configuration fallback for now, don't retire it"):
   `MetadataSnapshotRunner.runAsync` → `toBundle` → `CatalogReader.parse
   (SnapshotRowsets …)` → `Catalog` with native GUID SsKey) + `resolveCatalog`
   (applies the policy, opening the connection or reading the file).
-- **Wired** into the synthetic flow: `SynthesizeAndLoad` carries the
-  `modelOssys` ref (filled by `planMovement` from config); `SyntheticLoadRun`
-  resolves through `ModelResolution`. So `from: synthetic` reads the model live
-  from OSSYS when `modelOssys` is set — **no `osm_model.json` in the loop** —
-  and falls back to the file otherwise.
+- **Wired across the whole flow surface** (2026-06-08, comprehensive): every
+  model-bearing flow action — `EmitBundle` / `EmitSkeleton` (folder),
+  `DeployDocker` (docker), `PreviewSchema` / `Migrate` / `MigrateWithData`
+  (live), and `SynthesizeAndLoad` (synthetic) — carries the `modelOssys` ref
+  (filled by `planMovement` from config) and resolves its `Catalog` through the
+  CLI's `needCatalog` → `ModelResolution.resolveCatalog`. The runner cores were
+  factored to accept an already-resolved `Catalog` (`Compose.runFromCatalog` /
+  `runSkeletonOnlyFromCatalog`, `Deploy.runFromCatalog`), so the model arrives
+  resolved regardless of source. So **any flow** reads the model live from OSSYS
+  when `modelOssys` is set — no `osm_model.json` in the loop — and falls back to
+  the file otherwise. The model file is now **optional** when `modelOssys` is
+  set (`hasModel` gates the refusal; an ossys-only config routes cleanly).
 - **Tests:** `ModelResolutionTests` (the pure primary/fallback law),
-  `MovementSurfaceTests` (the live ref threads into the action as primary),
+  `MovementSurfaceTests` (the live ref threads into emit / docker / preview /
+  migrate / synthetic actions; ossys-only configs route without a file),
   `ModelResolutionDockerTests` (the live read resolves a non-empty Catalog with
   native `OssysOriginal` identity against a bootstrapped OSSYS DB).
 
-**Remaining (the "for now" boundary):** the *other* flow actions
-(emit / deploy / migrate / preview) still resolve the model from the file path
-(`Compose.read`); only the synthetic flow honors `modelOssys` today. Extending
-them is mechanical — route their model read through `ModelResolution.resolveCatalog`
-the same way — and is the next slice. Until then, a flow whose action is not
-synthetic still needs the `model` file.
+**Remaining:** the non-flow `project --config` full-export path
+(`PublishBundle` / `PublishAndLoad`) resolves its model from the rich config's
+`model.path` section (`Config.fs`), a separate resolver from the flow surface;
+wiring `modelOssys` there is a small follow-on. Static populations (§4) are the
+other residual. Neither is on the flow path.
 
 ---
 

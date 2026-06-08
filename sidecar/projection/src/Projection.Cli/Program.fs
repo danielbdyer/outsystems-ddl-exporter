@@ -328,29 +328,24 @@ let private runFullExportLoad
                     dumpBench "full-export"
                     code
 
-let private runEmit (inputPath: string) (outputDir: string) : int =
-    if not (File.Exists inputPath) then
-        die 1 (sprintf "projection: input file not found: %s" inputPath)
-    else
-        let task = Compose.run inputPath outputDir
-        let result = task.GetAwaiter().GetResult()
-        let exitCode =
-            match result with
-            | Ok paths ->
-                printfn "projection: wrote %d artifact(s) to %s" paths.Length outputDir
-                paths
-                |> List.iter (fun p ->
-                    let info = FileInfo p
-                    printfn "  %s (%d bytes)" p info.Length)
-                0
-            | Error errors ->
-                (
-                    Console.Error.WriteLine "projection: parse failed:"
-                    printErrors Console.Error errors
-                    2
-                )
-        dumpBench "emit"
-        exitCode
+let private runEmit (catalog: Catalog) (outputDir: string) : int =
+    let exitCode =
+        match Compose.runFromCatalog catalog outputDir with
+        | Ok paths ->
+            printfn "projection: wrote %d artifact(s) to %s" paths.Length outputDir
+            paths
+            |> List.iter (fun p ->
+                let info = FileInfo p
+                printfn "  %s (%d bytes)" p info.Length)
+            0
+        | Error errors ->
+            (
+                Console.Error.WriteLine "projection: emit failed:"
+                printErrors Console.Error errors
+                2
+            )
+    dumpBench "emit"
+    exitCode
 
 /// Chapter A.4.7' slice ζ — `emit --skeleton-only`. Reads V1 JSON,
 /// projects through `RegisteredTransforms.skeletonChainSteps` (the
@@ -359,43 +354,36 @@ let private runEmit (inputPath: string) (outputDir: string) : int =
 /// Tightening / Ordering overlays) are excluded from the emit; the
 /// resulting artifacts are the V2 baseline before any operator
 /// opinion lands.
-let private runEmitSkeletonOnly (inputPath: string) (outputDir: string) : int =
-    if not (File.Exists inputPath) then
-        die 1 (sprintf "projection: input file not found: %s" inputPath)
-    else
-        let task = Compose.runSkeletonOnly inputPath outputDir
-        let result = task.GetAwaiter().GetResult()
-        let exitCode =
-            match result with
-            | Ok paths ->
-                printfn
-                    "projection: wrote %d skeleton-only artifact(s) to %s"
-                    paths.Length
-                    outputDir
-                paths
-                |> List.iter (fun p ->
-                    let info = FileInfo p
-                    printfn "  %s (%d bytes)" p info.Length)
-                0
-            | Error errors ->
-                (
-                    Console.Error.WriteLine "projection: parse failed:"
-                    printErrors Console.Error errors
-                    2
-                )
-        dumpBench "emit-skeleton-only"
-        exitCode
+let private runEmitSkeletonOnly (catalog: Catalog) (outputDir: string) : int =
+    let exitCode =
+        match Compose.runSkeletonOnlyFromCatalog catalog outputDir with
+        | Ok paths ->
+            printfn
+                "projection: wrote %d skeleton-only artifact(s) to %s"
+                paths.Length
+                outputDir
+            paths
+            |> List.iter (fun p ->
+                let info = FileInfo p
+                printfn "  %s (%d bytes)" p info.Length)
+            0
+        | Error errors ->
+            (
+                Console.Error.WriteLine "projection: emit failed:"
+                printErrors Console.Error errors
+                2
+            )
+    dumpBench "emit-skeleton-only"
+    exitCode
 
-let private runDeploy (inputPath: string) : int =
-    if not (File.Exists inputPath) then
-        die 1 (sprintf "projection: input file not found: %s" inputPath)
-    elif not (Deploy.Docker.isAvailable ()) then
+let private runDeploy (catalog: Catalog) : int =
+    if not (Deploy.Docker.isAvailable ()) then
         die
             4
             "projection: Docker daemon not reachable. Set DOCKER_HOST or start the daemon to run `deploy`."
     else
         printfn "projection: spinning up an ephemeral SQL Server container..."
-        let task = Deploy.runFromV1Json inputPath
+        let task = Deploy.runFromCatalog catalog
         let result = task.GetAwaiter().GetResult()
         let exitCode =
             match result with
@@ -1358,7 +1346,7 @@ let private tighteningPreflight
 /// is supplied, a verified execute durably records the episode onto the timeline
 /// (AC-P8) so the next sprint's diff loads it as the prior; absent, behavior is
 /// unchanged and a one-line note says no episode was persisted.
-let private runMigrateExecute (toPath: string) (connSpec: string) (declaration: LossDeclaration) (allowCdc: bool) (storePath: string option) (envLabel: string option) : int =
+let private runMigrateExecute (target: Catalog) (connSpec: string) (declaration: LossDeclaration) (allowCdc: bool) (storePath: string option) (envLabel: string option) : int =
     if System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" <> "1" then
         Console.Error.WriteLine
             "projection migrate: --execute requires PROJECTION_ALLOW_EXECUTE=1 in the environment (R6 gate). Refusing."
@@ -1367,17 +1355,12 @@ let private runMigrateExecute (toPath: string) (connSpec: string) (declaration: 
     else
     let work =
         task {
-            let! bRead = Compose.read toPath
-            match bRead, TransferSpec.parseConnectionSpec connSpec with
-            | Error es, _ ->
-                Console.Error.WriteLine (sprintf "projection migrate: could not read --to %s:" toPath)
-                printErrors Console.Error es
-                return 6
-            | _, Error es ->
+            match TransferSpec.parseConnectionSpec connSpec with
+            | Error es ->
                 Console.Error.WriteLine "projection migrate: --conn argument error:"
                 printErrors Console.Error es
                 return 2
-            | Ok target, Ok connRef ->
+            | Ok connRef ->
                 let sub : Substrate =
                     { Environment = parseEnvironment "migrate-sink" None; Role = SubstrateRole.Sink; ConnectionRef = connRef }
                 match! ConnectionResolver.openSubstrate sub with
@@ -1464,7 +1447,7 @@ let private runMigrateExecute (toPath: string) (connSpec: string) (declaration: 
 /// AC-I5 `validate-user-map` pre-write halt gates first; absent, it is a
 /// straight load. Schema is fail-loud + minimum-viable; the data leg runs
 /// only if the schema verified.
-let private runMigrateWithData (toPath: string) (sinkSpec: string) (sourceSpec: string) (reconcileSpecs: string list) (userMapPath: string option) (declaration: LossDeclaration) (allowCdc: bool) (storePath: string option) (envLabel: string option) : int =
+let private runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec: string) (reconcileSpecs: string list) (userMapPath: string option) (declaration: LossDeclaration) (allowCdc: bool) (storePath: string option) (envLabel: string option) : int =
     if System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" <> "1" then
         Console.Error.WriteLine
             "projection migrate: --execute requires PROJECTION_ALLOW_EXECUTE=1 in the environment (R6 gate). Refusing."
@@ -1497,21 +1480,16 @@ let private runMigrateWithData (toPath: string) (sinkSpec: string) (sourceSpec: 
     let userMapEntries   = match parsedUserMap with Ok es -> es | _ -> []
     let work =
         task {
-            let! bRead = Compose.read toPath
-            match bRead, TransferSpec.parseConnectionSpec sinkSpec, TransferSpec.parseConnectionSpec sourceSpec with
-            | Error es, _, _ ->
-                Console.Error.WriteLine (sprintf "projection migrate: could not read --to %s:" toPath)
-                printErrors Console.Error es
-                return 6
-            | _, Error es, _ ->
+            match TransferSpec.parseConnectionSpec sinkSpec, TransferSpec.parseConnectionSpec sourceSpec with
+            | Error es, _ ->
                 Console.Error.WriteLine "projection migrate: --sink-conn argument error:"
                 printErrors Console.Error es
                 return 2
-            | _, _, Error es ->
+            | _, Error es ->
                 Console.Error.WriteLine "projection migrate: --source-conn argument error:"
                 printErrors Console.Error es
                 return 2
-            | Ok target, Ok sinkRef, Ok sourceRef ->
+            | Ok sinkRef, Ok sourceRef ->
                 let sinkSub : Substrate = { Environment = parseEnvironment "migrate-sink" None; Role = SubstrateRole.Sink; ConnectionRef = sinkRef }
                 let sourceSub : Substrate = { Environment = parseEnvironment "migrate-source" None; Role = SubstrateRole.Source; ConnectionRef = sourceRef }
                 match! ConnectionResolver.openSubstrate sinkSub with
@@ -1634,20 +1612,15 @@ let private modelPathOf (model: ModelSource) : Result<string> =
 /// project --to <live> with no --go — preview the minimal change against the
 /// deployed state A, never writing (THE_CLI.md §5). Reads A live, previews
 /// B ⊖ A, renders the plan via the shared migrate renderer.
-let private runProjectLivePreview (toPath: string) (connSpec: string) (declaration: LossDeclaration) : int =
+let private runProjectLivePreview (target: Catalog) (connSpec: string) (declaration: LossDeclaration) : int =
     let work =
         task {
-            let! bRead = Compose.read toPath
-            match bRead, TransferSpec.parseConnectionSpec connSpec with
-            | Error es, _ ->
-                Console.Error.WriteLine (sprintf "projection project: could not read the model %s:" toPath)
-                printErrors Console.Error es
-                return 6
-            | _, Error es ->
+            match TransferSpec.parseConnectionSpec connSpec with
+            | Error es ->
                 Console.Error.WriteLine "projection project: connection reference error:"
                 printErrors Console.Error es
                 return 6
-            | Ok target, Ok connRef ->
+            | Ok connRef ->
                 let sub : Substrate =
                     { Environment = parseEnvironment "preview" None; Role = SubstrateRole.Sink; ConnectionRef = connRef }
                 match! ConnectionResolver.openSubstrate sub with
@@ -1746,6 +1719,19 @@ let private runPlan (plan: ExecutionPlan) : int =
         | Error es ->
             for e in es do TtyRenderer.renderVoicedError e
             6
+    // Resolve the model to a Catalog under the live-OSSYS-primary / file-
+    // fallback policy (ModelResolution), then run the Catalog-accepting face.
+    let needCatalog (modelOssys: string option) (model: ModelSource) (run: Catalog -> int) : int =
+        let modelFile =
+            match model with
+            | ModelSource.ModelFile p | ModelSource.ConfigFile p -> Some p
+            | ModelSource.Unspecified -> None
+        match (ModelResolution.resolveCatalog modelOssys modelFile).GetAwaiter().GetResult() with
+        | Ok catalog -> run catalog
+        | Error es ->
+            for e in es do TtyRenderer.renderVoicedError e
+            6
+    ignore needModel
     match plan.Action with
     // project ------------------------------------------------------------
     | PlanAction.PublishBundle (c, dir, store, env) ->
@@ -1754,19 +1740,24 @@ let private runPlan (plan: ExecutionPlan) : int =
         // --watch + a real TTY → the live stage board (§13).
         if Watch.shouldWatch watchMode.Value then Watch.renderWatch (Watch.resolveDwellMs ()) run
         else run ()
-    | PlanAction.EmitSkeleton (m, dir) -> withRun "projection project" (fun () -> runEmitSkeletonOnly m dir)
-    | PlanAction.EmitBundle (m, dir)   -> withRun "projection project" (fun () -> runEmit m dir)
-    | PlanAction.DeployDocker model    -> needModel model (fun m -> withRun "projection project" (fun () -> runDeploy m))
-    | PlanAction.PreviewSchema (model, conn, decl) -> needModel model (fun m -> runProjectLivePreview m conn decl)
+    | PlanAction.EmitSkeleton (model, modelOssys, dir) ->
+        needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runEmitSkeletonOnly cat dir))
+    | PlanAction.EmitBundle (model, modelOssys, dir) ->
+        needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runEmit cat dir))
+    | PlanAction.DeployDocker (model, modelOssys) ->
+        needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runDeploy cat))
+    | PlanAction.PreviewSchema (model, modelOssys, conn, decl) ->
+        needCatalog modelOssys model (fun cat -> runProjectLivePreview cat conn decl)
     | PlanAction.Transfer (src, sink, opts, execute) ->
         runTransfer src sink None None opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Tables
-    | PlanAction.MigrateWithData (model, sink, src, opts) ->
-        needModel model (fun m -> runMigrateWithData m sink src opts.Reconcile opts.Rekey opts.Declaration opts.AllowCdc opts.Store opts.Env)
+    | PlanAction.MigrateWithData (model, modelOssys, sink, src, opts) ->
+        needCatalog modelOssys model (fun cat -> runMigrateWithData cat sink src opts.Reconcile opts.Rekey opts.Declaration opts.AllowCdc opts.Store opts.Env)
     | PlanAction.SynthesizeAndLoad (model, modelOssys, profile, conn, opts, execute) ->
         runSyntheticLoad model modelOssys profile conn opts execute
     | PlanAction.CaptureProfile (conn, out) -> runCaptureProfile conn out
     | PlanAction.PublishAndLoad (c, conn, store, env) -> runFullExportLoad c conn None store env
-    | PlanAction.Migrate (model, conn, opts) -> needModel model (fun m -> runMigrateExecute m conn opts.Declaration opts.AllowCdc opts.Store opts.Env)
+    | PlanAction.Migrate (model, modelOssys, conn, opts) ->
+        needCatalog modelOssys model (fun cat -> runMigrateExecute cat conn opts.Declaration opts.AllowCdc opts.Store opts.Env)
     // check --------------------------------------------------------------
     | PlanAction.CheckCanary (ddl, false) -> withRun "projection check" (fun () -> runCanary ddl)
     | PlanAction.CheckCanary (ddl, true)  -> withRun "projection check --cdc-silence" (fun () -> runCanaryCdcSilence ddl)

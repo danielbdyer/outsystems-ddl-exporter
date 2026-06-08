@@ -320,20 +320,23 @@ module Command =
         let opts = optsOf spec
         let modelMissing prefix = PlanAction.Refused (1, err "cli.move.modelMissing" (prefix + noModel))
         let dataConn (alias: string) : Result<string> = resolveLiveConn cfg alias
+        // Live OSSYS (primary) when configured; the model file (fallback) is
+        // optional then. `hasModel` is true when either source is available.
+        let modelOssys = cfg.ModelOssys
+        let hasModel = spec.Model <> ModelSource.Unspecified || Option.isSome modelOssys
         let action =
             match spec.Destination with
             | Destination.Folder dir ->
                 match spec.Model with
                 | ModelSource.ConfigFile c -> PlanAction.PublishBundle (c, dir, spec.Store, spec.Env)
-                | ModelSource.ModelFile m ->
+                | _ when hasModel ->
                     match spec.Shape with
-                    | Shape.Skeleton            -> PlanAction.EmitSkeleton (m, dir)
-                    | Shape.Bundle | Shape.Ssdt -> PlanAction.EmitBundle (m, dir)
-                | ModelSource.Unspecified -> modelMissing "projection: "
+                    | Shape.Skeleton            -> PlanAction.EmitSkeleton (spec.Model, modelOssys, dir)
+                    | Shape.Bundle | Shape.Ssdt -> PlanAction.EmitBundle (spec.Model, modelOssys, dir)
+                | _ -> modelMissing "projection: "
             | Destination.Docker ->
-                match spec.Model with
-                | ModelSource.Unspecified -> modelMissing "projection (docker): "
-                | m -> PlanAction.DeployDocker m
+                if hasModel then PlanAction.DeployDocker (spec.Model, modelOssys)
+                else modelMissing "projection (docker): "
             | Destination.Live connRef ->
                 let conn = connSpecOf connRef
                 let schemaOnly = (spec.Scope = Scope.Schema)
@@ -347,9 +350,8 @@ module Command =
                     | DataOrigin.Synthetic profile when not schemaOnly ->
                         PlanAction.SynthesizeAndLoad (spec.Model, cfg.ModelOssys, profile, conn, opts, false)
                     | _ ->
-                        match spec.Model with
-                        | ModelSource.Unspecified -> modelMissing "projection: "
-                        | m -> PlanAction.PreviewSchema (m, conn, opts.Declaration)
+                        if hasModel then PlanAction.PreviewSchema (spec.Model, modelOssys, conn, opts.Declaration)
+                        else modelMissing "projection: "
                 else
                     match spec.Data with
                     | DataOrigin.FromTarget alias when not schemaOnly ->
@@ -357,10 +359,8 @@ module Command =
                         | Error es -> PlanAction.Refused (6, List.head es)
                         | Ok src ->
                             if dataOnly then PlanAction.Transfer (src, conn, opts, true)
-                            else
-                                match spec.Model with
-                                | ModelSource.Unspecified -> modelMissing "projection: "
-                                | m -> PlanAction.MigrateWithData (m, conn, src, opts)
+                            elif hasModel then PlanAction.MigrateWithData (spec.Model, modelOssys, conn, src, opts)
+                            else modelMissing "projection: "
                     | DataOrigin.Synthetic profile when not schemaOnly ->
                         if dataOnly then PlanAction.SynthesizeAndLoad (spec.Model, cfg.ModelOssys, profile, conn, opts, true)
                         else PlanAction.Refused (2, err "cli.move.syntheticScope" "a synthetic load moves data only; point the flow at a data-granting target (grant: data).")
@@ -369,8 +369,8 @@ module Command =
                     | _ ->
                         match spec.Model with
                         | ModelSource.ConfigFile c -> PlanAction.PublishAndLoad (c, conn, spec.Store, spec.Env)
-                        | ModelSource.ModelFile _  -> PlanAction.Migrate (spec.Model, conn, opts)
-                        | ModelSource.Unspecified  -> modelMissing "projection: "
+                        | _ when hasModel -> PlanAction.Migrate (spec.Model, modelOssys, conn, opts)
+                        | _ -> modelMissing "projection: "
         // The wipe-and-load strategy is honored only on the pure-transfer data
         // load (→ EmissionMode); any other action keeps the incremental MERGE,
         // so note it (no silent drop).
