@@ -142,3 +142,40 @@ surface↔engine alignment:
   (noted). Extending it to the migrate-with-data leg is the remainder.
 - `--from empty` → genesis-force in `MigrationRun`.
 - `--data synthetic [--rows N]` → a Faker data source.
+
+---
+
+## Environments / flows build (2026-06-08) — the re-grounded surface
+
+Building the `THE_CLI.md` (2026-06-08) target: `projection <flow> [--go]
+[--fresh] [--allow-drops]` over a two-layer config (`environments` +
+`flows`). The four-verb work above is the foundation; these slices grow the
+config layer, then re-point the dispatch, then deprecate `targets` / `--to`.
+
+- **F1 — the config schema `[ ]`.** New types `Access` (Bundle/Direct/Docker)
+  × `Grant` (SchemaAndData/DataOnly), `Environment`, `FlowSource`
+  (Env/Model/Synthetic/NoData), `Flow` (from/to/rekey/tables). Extend the
+  parsed config to carry `Environments` + `Flows`; D9-guard `bundle.out` and
+  `direct.conn`. Pure parse tests (valid; D9 refusal; unknown access/grant;
+  flow from/to/profile). Additive — `targets` parsing untouched this slice.
+- **F2 — flow resolution `[ ]`.** `resolveFlow : config -> name ->
+  Result<MovementSpec>`: `to` env's `access` → `Destination`, `grant` →
+  `Scope` + the **grant refusal** (schema change vs a `DataOnly` target →
+  coded `Refused`); `from` → `DataOrigin`/`Baseline`; `rekey`/`tables`
+  threaded. Pure routing tests + the grant-refusal totality.
+- **F3 — the dispatch swap `[ ]`.** `Command.parse` reads a bare first token
+  as a flow (else the closed verb set check/explain/seal/report/init);
+  `--go`/`--fresh`/`--allow-drops` finish the spec. Re-point `Program.fs`;
+  migrate `MovementSurfaceTests`. `report` verb stub.
+- **F4 — baseline A + seal→report `[ ]`.** Baseline as one concept (now /
+  empty via `--fresh` / last-seal via `report`); `seal <flow>` writes the
+  episode; `report <flow>` diffs `B ⊖ A_prior`. (Leans on the durable-episode
+  engine rung — §12; refuses cleanly until it lands.)
+- **F5 — deprecate `targets` / `project --to` `[ ]`.** Once flows carry the
+  surface, remove the `targets` block + the `project` verb + `--to` resolver
+  (deprecate-don't-shim). Rename `TargetConfig` → `ProjectionConfig`.
+
+Honest status carried from THE_CLI.md §12: F1–F3 wire the surface over the
+already-backed engine faces; F4's `report --since` durable episode and the
+pre-flight gates lean on the Wave-6 L2/L3 rungs and refuse cleanly until they
+land.

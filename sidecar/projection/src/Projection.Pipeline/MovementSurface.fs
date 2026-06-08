@@ -13,6 +13,61 @@ open Projection.Core
 // `--to` resolver, plus the argv → `Intent` dispatch the four verbs share.
 // D9 holds in config: a target carries a connection *reference*
 // (`env:` / `file:`), never a literal connection string.
+//
+// THE_CLI.md (2026-06-08) re-grounds the surface onto two config layers —
+// `environments` (places, with `access`/`grant`) and `flows` (named Move
+// recipes). Slice F1 adds those types + their parse, additively, alongside
+// the existing `targets` block (deprecated in F5).
+
+/// Permission facet — how a target environment is *reached* (THE_CLI.md §6).
+/// `Bundle` writes only files (an SSDT bundle for Octopus) and needs no live
+/// gate; `Direct` is a live connection; `Docker` is the ephemeral one-touch.
+[<RequireQualifiedAccess>]
+type Access =
+    | Bundle of out: string
+    | Direct of ConnectionRef
+    | Docker
+
+/// Permission facet — what may *change* at a target (THE_CLI.md §6). A refusal
+/// gate, not a setting: a schema-changing flow against `DataOnly` is a type
+/// mismatch (resolved at flow time). An environment used only as a source
+/// (read) carries no grant.
+[<RequireQualifiedAccess>]
+type Grant =
+    | SchemaAndData
+    | DataOnly
+
+/// A named place (THE_CLI.md §4.1): its reach (`Access`) and, for a target,
+/// its permission (`Grant`). D9 holds — a `Direct`/`Bundle` address is a
+/// reference or a folder, never an inline secret.
+type Environment =
+    {
+        Name   : string
+        Access : Access
+        Grant  : Grant option
+    }
+
+/// Where a flow's content originates (THE_CLI.md §4.2): another environment
+/// (the cross-substrate Move), the authored model's own data, profiled
+/// synthetic data, or no data (schema only).
+[<RequireQualifiedAccess>]
+type FlowSource =
+    | Env of env: string
+    | Model
+    | Synthetic of profile: string option
+    | NoData
+
+/// A named movement (THE_CLI.md §4.2): a `Move` from a source to a target
+/// environment, with optional specialization (Reidentify re-key; a declared
+/// table subset).
+type Flow =
+    {
+        Name   : string
+        From   : FlowSource
+        To     : string
+        Rekey  : string option
+        Tables : string list
+    }
 
 /// How a named target is addressed: a live database (out-of-band ref) or
 /// a folder on disk. The two `Destination` shapes a target may resolve to.
@@ -37,9 +92,13 @@ type Target =
 /// (so `project --to dev` needs no model path), plus a global defaults block.
 type TargetConfig =
     {
-        Targets  : Map<string, Target>
-        Model    : string option
-        Defaults : Map<string, string>
+        Targets      : Map<string, Target>
+        /// THE_CLI.md §4.1 — named places with access/grant (the re-grounded surface).
+        Environments : Map<string, Environment>
+        /// THE_CLI.md §4.2 — named source→target Move recipes.
+        Flows        : Map<string, Flow>
+        Model        : string option
+        Defaults     : Map<string, string>
     }
 
 /// A resolved `--to` value: the destination plus the benign defaults the
@@ -55,7 +114,8 @@ type ResolvedTarget =
 [<RequireQualifiedAccess>]
 module TargetConfig =
 
-    let empty : TargetConfig = { Targets = Map.empty; Model = None; Defaults = Map.empty }
+    let empty : TargetConfig =
+        { Targets = Map.empty; Environments = Map.empty; Flows = Map.empty; Model = None; Defaults = Map.empty }
 
     let private err (code: string) (message: string) : ValidationError =
         ValidationError.create code message
@@ -88,6 +148,85 @@ module TargetConfig =
         | "replace" -> Result.success Strategy.Replace
         | "fresh"   -> Result.success Strategy.Fresh
         | other     -> Result.failureOf (err "cli.config.strategyUnknown" (sprintf "strategy '%s' is not merge | replace | fresh." other))
+
+    // --- environments / flows (THE_CLI.md 2026-06-08; slice F1) -----------
+
+    /// The reach facet: `bundle` needs an `out` folder; `direct` needs a
+    /// D9-safe `conn` reference; `docker` is bare.
+    let private parseAccess (envName: string) (el: JsonElement) : Result<Access> =
+        match getString el "access" with
+        | None ->
+            Result.failureOf (err "cli.config.envAccessMissing" (sprintf "environment '%s' sets no 'access' (bundle | direct | docker)." envName))
+        | Some a ->
+            match a.ToLowerInvariant() with
+            | "bundle" ->
+                match getString el "out" with
+                | Some out -> Result.success (Access.Bundle out)
+                | None -> Result.failureOf (err "cli.config.envBundleNoOut" (sprintf "environment '%s' is access:bundle but sets no 'out' folder." envName))
+            | "direct" ->
+                match getString el "conn" with
+                | None -> Result.failureOf (err "cli.config.envDirectNoConn" (sprintf "environment '%s' is access:direct but sets no 'conn'." envName))
+                | Some conn ->
+                    if looksLikeSecret conn then
+                        Result.failureOf (err "cli.config.envSecretInline" (sprintf "environment '%s' conn looks like an inline secret; use env:<VAR> or file:<path> (D9)." envName))
+                    else
+                        match TransferSpec.parseConnectionSpec conn with
+                        | Ok r    -> Result.success (Access.Direct r)
+                        | Error e -> Result.failure e
+            | "docker" -> Result.success Access.Docker
+            | other -> Result.failureOf (err "cli.config.envAccessUnknown" (sprintf "environment '%s' access '%s' is not bundle | direct | docker." envName other))
+
+    /// The permission facet (a refusal gate): schema+data | data.
+    let private parseGrant (envName: string) (raw: string) : Result<Grant> =
+        match raw.ToLowerInvariant() with
+        | "schema+data" | "schemaanddata" | "schema-and-data" -> Result.success Grant.SchemaAndData
+        | "data" | "dataonly" | "data-only"                   -> Result.success Grant.DataOnly
+        | other -> Result.failureOf (err "cli.config.envGrantUnknown" (sprintf "environment '%s' grant '%s' is not schema+data | data." envName other))
+
+    let private parseEnvironment (name: string) (el: JsonElement) : Result<Environment> =
+        if el.ValueKind <> JsonValueKind.Object then
+            Result.failureOf (err "cli.config.envShape" (sprintf "environment '%s' must be a JSON object." name))
+        else
+            match parseAccess name el with
+            | Error e -> Result.failure e
+            | Ok access ->
+                match getString el "grant" with
+                | None -> Result.success { Name = name; Access = access; Grant = None }
+                | Some g ->
+                    match parseGrant name g with
+                    | Ok grant -> Result.success { Name = name; Access = access; Grant = Some grant }
+                    | Error e  -> Result.failure e
+
+    /// The content origin: `from` names an environment (the Move), or one of
+    /// the keywords `model` / `synthetic` (with optional `profile`) / `none`.
+    let private parseFlowSource (el: JsonElement) : FlowSource =
+        match getString el "from" with
+        | None -> FlowSource.Model
+        | Some f ->
+            match f.ToLowerInvariant() with
+            | "model"     -> FlowSource.Model
+            | "synthetic" -> FlowSource.Synthetic (getString el "profile")
+            | "none"      -> FlowSource.NoData
+            | _           -> FlowSource.Env f
+
+    let private parseFlow (name: string) (el: JsonElement) : Result<Flow> =
+        if el.ValueKind <> JsonValueKind.Object then
+            Result.failureOf (err "cli.config.flowShape" (sprintf "flow '%s' must be a JSON object." name))
+        else
+            match getString el "to" with
+            | None -> Result.failureOf (err "cli.config.flowNoTo" (sprintf "flow '%s' sets no 'to' target environment." name))
+            | Some toEnv ->
+                let tables =
+                    match el.TryGetProperty "tables" with
+                    | true, t when t.ValueKind = JsonValueKind.Array ->
+                        [ for v in t.EnumerateArray() do
+                            if v.ValueKind = JsonValueKind.String then
+                                match Option.ofObj (v.GetString()) with
+                                | Some s when not (String.IsNullOrWhiteSpace s) -> yield s.Trim()
+                                | _ -> () ]
+                    | _ -> []
+                Result.success
+                    { Name = name; From = parseFlowSource el; To = toEnv; Rekey = getString el "rekey"; Tables = tables }
 
     let private parseTarget (name: string) (el: JsonElement) : Result<Target> =
         if el.ValueKind <> JsonValueKind.Object then
@@ -147,13 +286,30 @@ module TargetConfig =
                     | true, t when t.ValueKind = JsonValueKind.Object ->
                         [ for p in t.EnumerateObject() -> parseTarget p.Name p.Value ]
                     | _ -> []
-                let errors = targetResults |> List.collect (function Error e -> e | Ok _ -> [])
+                let envResults =
+                    match root.TryGetProperty "environments" with
+                    | true, e when e.ValueKind = JsonValueKind.Object ->
+                        [ for p in e.EnumerateObject() -> parseEnvironment p.Name p.Value ]
+                    | _ -> []
+                let flowResults =
+                    match root.TryGetProperty "flows" with
+                    | true, f when f.ValueKind = JsonValueKind.Object ->
+                        [ for p in f.EnumerateObject() -> parseFlow p.Name p.Value ]
+                    | _ -> []
+                let errors =
+                    (targetResults |> List.collect (function Error e -> e | Ok _ -> []))
+                    @ (envResults |> List.collect (function Error e -> e | Ok _ -> []))
+                    @ (flowResults |> List.collect (function Error e -> e | Ok _ -> []))
                 if not (List.isEmpty errors) then Result.failure errors
                 else
                     let targets =
                         targetResults
                         |> List.choose (function Ok t -> Some (t.Name, t) | _ -> None)
                         |> Map.ofList
+                    let environments =
+                        envResults |> List.choose (function Ok e -> Some (e.Name, e) | _ -> None) |> Map.ofList
+                    let flows =
+                        flowResults |> List.choose (function Ok f -> Some (f.Name, f) | _ -> None) |> Map.ofList
                     let defaults =
                         match root.TryGetProperty "defaults" with
                         | true, d when d.ValueKind = JsonValueKind.Object ->
@@ -163,7 +319,9 @@ module TargetConfig =
                                 | None -> () ]
                             |> Map.ofList
                         | _ -> Map.empty
-                    Result.success { Targets = targets; Model = getString root "model"; Defaults = defaults }
+                    Result.success
+                        { Targets = targets; Environments = environments; Flows = flows
+                          Model = getString root "model"; Defaults = defaults }
         with ex ->
             Result.failureOf (err "cli.config.parseFailed" (sprintf "projection.json did not parse: %s" ex.Message))
 

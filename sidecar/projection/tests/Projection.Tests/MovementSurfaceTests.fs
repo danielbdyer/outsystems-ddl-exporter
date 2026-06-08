@@ -54,6 +54,102 @@ let ``TargetConfig.parse rejects a target with neither conn nor dir`` () =
 let ``TargetConfig.parse on empty text is the empty config`` () =
     let cfg = TargetConfig.parse "" |> mustOk
     Assert.True(Map.isEmpty cfg.Targets)
+    Assert.True(Map.isEmpty cfg.Environments)
+    Assert.True(Map.isEmpty cfg.Flows)
+
+// -- environments / flows (THE_CLI.md 2026-06-08; slice F1) -----------------
+
+let private envFlowJson = """
+{
+  "environments": {
+    "cloud-dev":  { "access": "direct", "conn": "env:CLOUD_DEV_CONN" },
+    "onprem-uat": { "access": "bundle", "out": "dist/onprem-uat", "grant": "schema+data" },
+    "cloud-uat":  { "access": "direct", "conn": "env:CLOUD_UAT_CONN", "grant": "data" },
+    "docker":     { "access": "docker", "grant": "schema+data" }
+  },
+  "flows": {
+    "uat":    { "from": "cloud-dev", "to": "onprem-uat", "rekey": "file:users.csv" },
+    "golden": { "from": "cloud-qa",  "to": "cloud-uat",  "tables": ["Customer", "Order"] },
+    "synth":  { "from": "synthetic", "to": "cloud-uat",  "profile": "onprem-legacy" },
+    "plain":  { "to": "onprem-uat" }
+  }
+}
+"""
+
+[<Fact>]
+let ``config parses a direct source environment (no grant)`` () =
+    let cfg = TargetConfig.parse envFlowJson |> mustOk
+    let e = Map.find "cloud-dev" cfg.Environments
+    Assert.Equal(Access.Direct (ConnectionRef.EnvVar "CLOUD_DEV_CONN"), e.Access)
+    Assert.Equal(None, e.Grant)
+
+[<Fact>]
+let ``config parses a bundle target with schema+data grant`` () =
+    let e = Map.find "onprem-uat" (TargetConfig.parse envFlowJson |> mustOk).Environments
+    Assert.Equal(Access.Bundle "dist/onprem-uat", e.Access)
+    Assert.Equal(Some Grant.SchemaAndData, e.Grant)
+
+[<Fact>]
+let ``config parses a direct data-only target`` () =
+    let e = Map.find "cloud-uat" (TargetConfig.parse envFlowJson |> mustOk).Environments
+    Assert.Equal(Some Grant.DataOnly, e.Grant)
+
+[<Fact>]
+let ``config parses a docker environment`` () =
+    let e = Map.find "docker" (TargetConfig.parse envFlowJson |> mustOk).Environments
+    Assert.Equal(Access.Docker, e.Access)
+
+[<Fact>]
+let ``config refuses an inline secret in an environment conn (D9)`` () =
+    let json = """{ "environments": { "x": { "access": "direct", "conn": "Server=h;Password=p" } } }"""
+    Assert.Contains("cli.config.envSecretInline", errCodes (TargetConfig.parse json))
+
+[<Fact>]
+let ``config refuses a bundle environment without out`` () =
+    let json = """{ "environments": { "x": { "access": "bundle", "grant": "data" } } }"""
+    Assert.Contains("cli.config.envBundleNoOut", errCodes (TargetConfig.parse json))
+
+[<Fact>]
+let ``config refuses a direct environment without conn`` () =
+    let json = """{ "environments": { "x": { "access": "direct" } } }"""
+    Assert.Contains("cli.config.envDirectNoConn", errCodes (TargetConfig.parse json))
+
+[<Fact>]
+let ``config refuses an unknown access`` () =
+    let json = """{ "environments": { "x": { "access": "ftp", "out": "d" } } }"""
+    Assert.Contains("cli.config.envAccessUnknown", errCodes (TargetConfig.parse json))
+
+[<Fact>]
+let ``config refuses an unknown grant`` () =
+    let json = """{ "environments": { "x": { "access": "docker", "grant": "root" } } }"""
+    Assert.Contains("cli.config.envGrantUnknown", errCodes (TargetConfig.parse json))
+
+[<Fact>]
+let ``config parses a flow's source environment and rekey`` () =
+    let f = Map.find "uat" (TargetConfig.parse envFlowJson |> mustOk).Flows
+    Assert.Equal(FlowSource.Env "cloud-dev", f.From)
+    Assert.Equal("onprem-uat", f.To)
+    Assert.Equal(Some "file:users.csv", f.Rekey)
+
+[<Fact>]
+let ``config parses a flow's declared table subset`` () =
+    let f = Map.find "golden" (TargetConfig.parse envFlowJson |> mustOk).Flows
+    Assert.Equal<string list>([ "Customer"; "Order" ], f.Tables)
+
+[<Fact>]
+let ``config parses a synthetic flow with a profile`` () =
+    let f = Map.find "synth" (TargetConfig.parse envFlowJson |> mustOk).Flows
+    Assert.Equal(FlowSource.Synthetic (Some "onprem-legacy"), f.From)
+
+[<Fact>]
+let ``config defaults a flow with no from to the model`` () =
+    let f = Map.find "plain" (TargetConfig.parse envFlowJson |> mustOk).Flows
+    Assert.Equal(FlowSource.Model, f.From)
+
+[<Fact>]
+let ``config refuses a flow without a to`` () =
+    let json = """{ "flows": { "x": { "from": "dev" } } }"""
+    Assert.Contains("cli.config.flowNoTo", errCodes (TargetConfig.parse json))
 
 // -- Command.resolveTarget -------------------------------------------------
 
