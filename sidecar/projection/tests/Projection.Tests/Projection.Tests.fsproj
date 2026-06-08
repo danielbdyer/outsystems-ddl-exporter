@@ -164,7 +164,6 @@
     <Compile Include="SchemaComplexityPassTests.fs" />
     <Compile Include="QueryHintPassTests.fs" />
     <Compile Include="CycleResolutionTests.fs" />
-    <Compile Include="StaticAdapterDifferentialTests.fs" />
     <Compile Include="OsmCatalogReaderDifferentialTests.fs" />
     <Compile Include="OsmRowsetReaderTests.fs" />
     <Compile Include="ColumnRealitySourceSidePopulationTests.fs" />

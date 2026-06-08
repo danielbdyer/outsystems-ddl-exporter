@@ -18,8 +18,8 @@ isn't wired to the operator surface yet.
 | V1 input | Where consumed | Status |
 |---|---|---|
 | **Profile JSON** (`ProfileSnapshot`) + **distribution JSON** (`ProfileStatistics`) | `Adapters.Sql/ProfileSnapshot.fs`, `ProfileStatistics.fs` | **REMOVED 2026-06-08.** Zero production callers; superseded by `ReadSide` + `LiveProfiler` (V2 reads + profiles the live DB directly). |
-| **Model**: `osm_model.json` | `CatalogReader.parse (SnapshotFile/SnapshotJson)` ← `Compose.read` (the production model path for every flow) | **Replaceable now (wiring slice).** A live, V1-free reader already exists — see §3. |
-| **Static populations JSON** | `Static.attachStaticPopulations` (`Adapters.Sql/Static.fs`) | Smaller residual; live replacement is `ReadSide.readRowsStream` (reads the actual table rows). See §4. |
+| **Model**: `osm_model.json` | `CatalogReader.parse (SnapshotFile)` ← `ModelResolution` / `Compose.readConfigModel` | **DEMOTED to optional fallback (2026-06-08).** Live OSSYS is now the primary model source across the whole flow surface + the full-export path; `osm_model.json` is read only as the configured fallback (cutover safety, not retired). See §3. |
+| **Static populations JSON** | `Static.attachStaticPopulations` (`Adapters.Sql/Static.fs`) | **REMOVED 2026-06-08.** Zero production callers; static populations arrive via the model read (`Modality.Static`) / `ReadSide`. See §4. |
 
 V2-native formats (not V1 inputs): `CatalogCodec`, `ProfileCodec`, the lifecycle
 store / episodes / change manifests — all V2-produced, round-trip-bound.
@@ -75,11 +75,17 @@ file as an optional configuration fallback for now, don't retire it"):
   `ModelResolutionDockerTests` (the live read resolves a non-empty Catalog with
   native `OssysOriginal` identity against a bootstrapped OSSYS DB).
 
-**Remaining:** the non-flow `project --config` full-export path
-(`PublishBundle` / `PublishAndLoad`) resolves its model from the rich config's
-`model.path` section (`Config.fs`), a separate resolver from the flow surface;
-wiring `modelOssys` there is a small follow-on. Static populations (§4) are the
-other residual. Neither is on the flow path.
+**Full-export path also wired (2026-06-08).** The non-flow `project --config`
+full-export (`PublishBundle` / `PublishAndLoad`) honors `model.ossys` too:
+`Config.ModelSection` gained `Ossys : string option`, and `Compose.readConfigModel`
+applies the policy at the three full-export read sites (`runWithConfig`,
+`emittedSchema`, `emittedSeed`) via the shared `LiveModelRead` primitive. So every
+model-read surface — flow + full-export — is live-OSSYS-primary with the file
+fallback.
+
+**Remaining (minor):** the full-export rich config still requires `model.path`
+(used as the fallback) even when `model.ossys` is set; making it optional is a
+small follow-on. The flow surface already treats the file as optional.
 
 ---
 
@@ -102,24 +108,21 @@ MetadataSnapshotRunner.runAsync (SqlConnection, SnapshotParameters)   -- Adapter
 - `CatalogReader.SnapshotRowsets` already turns that bundle into a `Catalog`,
   carrying SsKey natively (better than the JSON path, which name-synthesizes
   SsKeys — so this also *improves* A1 identity stability under rename).
-- It is exercised today by the canary's bootstrap+extract flow; it is **not**
-  referenced by `Projection.Pipeline` / the CLI.
+- It was already exercised by the canary's bootstrap+extract flow before the
+  wiring landed.
 
-**What's missing is only the operator wiring** (mirrors the synthetic-flow slice
-just shipped):
+**The operator wiring landed (2026-06-08), all of it:**
 
-1. `Projection.Pipeline` references `Projection.Adapters.OssysSql` (today it does
-   not).
-2. A model-source variant — e.g. `ModelSource.LiveOssys of ConnectionRef` (or a
-   `from`/config field) — so a flow can name a live OSSYS environment as the
-   schema-B source instead of a `model.json` path.
-3. `Compose.read` grows a sibling (or `readStep` a second `Read`) that, for the
-   live variant, opens the connection → `MetadataSnapshotRunner.runAsync` →
-   `CatalogReader.parse (SnapshotRowsets …)`. `SnapshotParameters` (module/entity
-   filters) come from config; sensible defaults exist.
-4. CLI surface: `projection <flow>` resolves a `LiveOssys` model source the same
-   way it resolves a live sink; `projection profile <env>` already opens a live
-   connection, so the connection-resolution plumbing is shared.
+1. `Projection.Pipeline` references `Projection.Adapters.OssysSql`. ✓
+2. The model source is config-driven (`modelOssys` on the flow config;
+   `model.ossys` on the rich full-export config) — primary when set; the file is
+   the fallback. ✓
+3. The shared `LiveModelRead` primitive (compiled first in the Pipeline project)
+   opens the connection → `MetadataSnapshotRunner.runAsync` → `toBundle` →
+   `CatalogReader.parse (SnapshotRowsets …)`; both `ModelResolution` (flows) and
+   `Compose.readConfigModel` (full-export) delegate to it. ✓
+4. CLI: `needCatalog` resolves every model-bearing flow action through
+   `ModelResolution`; the full-export reads through `Compose.readConfigModel`. ✓
 
 **Cutover safety (R6).** During transition, a differential test asserts the
 live-OSSYS `Catalog` ≈ the `osm_model.json` `Catalog` for the same source
@@ -137,21 +140,25 @@ ephemeral one for the differential test).
 
 ---
 
-## 4. Static populations — `Static.attachStaticPopulations` → `ReadSide.readRowsStream`
+## 4. Static populations — removed (2026-06-08)
 
-Static entity data currently enters via V1's static-data JSON
-(`Static.attachStaticPopulations`). The V1-free replacement is already present:
-`ReadSide.readRowsStream` streams a table's actual rows as `StaticRow`s. Wiring a
-"read static populations from the live source" path (for the kinds the catalog
-marks `Static`) removes this input too. Smaller and independent of §3; do it in
-the same live-OSSYS slice or just after.
+`Static.attachStaticPopulations` (the V1 static-data JSON importer) had zero
+production callers and is **removed**, along with its dedicated
+`StaticAdapterDifferentialTests`. Static entity data reaches V2 through the model
+read (the rowset / JSON model carries `Modality.Static`) and through `ReadSide`
+(`readRowsStream` lifts live rows); the standalone V1-JSON importer was a
+Bridge-era ACL with no live consumer. `EndToEndDifferentialTests` builds its
+Country populations directly in the V2 IR.
 
 ---
 
-## 5. End state
+## 5. End state — reached (2026-06-08)
 
-When §3 and §4 land, a flow runs with **no V1 artifact in the loop**: the model
-comes from a live OSSYS connection (native SsKey), the data/profile from
-`ReadSide` + `LiveProfiler`, and every durable artifact is a V2-native codec
-(`CatalogCodec` / `ProfileCodec`). `osm_model.json`, the V1 profile/distribution
-JSON, and the V1 static-data JSON all retire. V2 stands alone.
+A flow (or full-export) now runs with **no V1 artifact in the loop**: the model
+comes from a live OSSYS connection (native SsKey) when `modelOssys` / `model.ossys`
+is configured, the data/profile from `ReadSide` + `LiveProfiler`, and every
+durable artifact is a V2-native codec (`CatalogCodec` / `ProfileCodec`). The V1
+profile/distribution JSON and the V1 static-data JSON importers are deleted; the
+`osm_model.json` reader remains only as the configured, cutover-safe **fallback**
+(per the operator's "switch to primary, keep the file as optional fallback"
+decision — not retired). V2 stands alone.

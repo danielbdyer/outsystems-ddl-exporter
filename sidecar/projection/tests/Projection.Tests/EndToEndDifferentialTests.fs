@@ -19,10 +19,10 @@ let private nullRun (catalog: Catalog) (policy: Policy) (profile: Profile) : Lin
 // Validates the three-input projection (Catalog, Policy, Profile)
 // passing through the full V1↔V2 boundary stack:
 //
-//   V1 static-data JSON + a V2-native (in-memory) Profile
+//   V2-native (in-memory) Catalog-with-populations + Profile
 //        │
 //        ▼
-//   F# static adapter (Static.attach); Profile built directly in IR
+//   (both built directly in the V2 IR — V1 JSON importers retired)
 //        │
 //        ▼
 //   V2 IR (Catalog with populations + Profile)
@@ -123,18 +123,19 @@ let private microFkProtectProfile : Profile =
             [ { ForeignKeyReality.create childToParentRefKey with
                   HasOrphan = false; IsNoCheck = false; ProbeStatus = probe 0L } ] }
 
-/// From tests/Fixtures/static-data/static-entities.edge-case.json (the
-/// static adapter's canonical V1 fixture). Renamed table column to match
-/// our endToEndCatalog.Country mapping.
-let private staticEntitiesJson = """{
-  "tables": [
-    { "schema": "dbo",
-      "table":  "OSUSR_DEF_CITY",
-      "rows": [
-        { "ID": 1, "NAME": "Lisbon" },
-        { "ID": 2, "NAME": "Porto" },
-        { "ID": 3, "NAME": "Madrid" } ] } ]
-}"""
+/// The Country (static) populations, built directly in the V2 IR — the V1
+/// static-data JSON importer (`Static.attachStaticPopulations`) was retired
+/// (no production callers; static populations arrive via the model read).
+let private cityRows : StaticRow list =
+    [ for (id, nm) in [ 1, "Lisbon"; 2, "Porto"; 3, "Madrid" ] ->
+        { Identifier = SsKey.synthesizedComposite "E2E_CITY_ROW" [ string id ] |> Result.value
+          Values = Map.ofList [ mkName "Id", string id; mkName "Name", nm ] } ]
+
+/// `endToEndCatalog` with the Country kind's `Static` modality populated.
+let private populatedCatalog : Catalog =
+    endToEndCatalog
+    |> Catalog.mapKinds (fun k ->
+        if k.SsKey = countryKindKey then { k with Modality = [ Static cityRows ] } else k)
 
 // ---------------------------------------------------------------------------
 // The milestone test — drive the full stack and assert.
@@ -145,8 +146,7 @@ let ``MILESTONE: three-input projection passes end-to-end through both adapters 
     // 1. Static adapter: ingest V1 city fixture into Country's Static
     //    populations.
     let catalogWithPopulations =
-        Static.attachStaticPopulations endToEndCatalog (Static.StaticPopulationsJson staticEntitiesJson)
-        |> Result.value
+        populatedCatalog
 
     // 2. Profile adapter: ingest V1 profile fixture into V2 Profile.
     let profile =
@@ -205,8 +205,7 @@ let ``MILESTONE: three-input projection passes end-to-end through both adapters 
 [<Fact>]
 let ``MILESTONE: static populations were attached by the static adapter`` () =
     let catalogWithPopulations =
-        Static.attachStaticPopulations endToEndCatalog (Static.StaticPopulationsJson staticEntitiesJson)
-        |> Result.value
+        populatedCatalog
     let country =
         Catalog.tryFindKind countryKindKey catalogWithPopulations
         |> Option.get
@@ -247,8 +246,7 @@ let ``DIFFERENTIAL: V1 Cautious-mode equivalent produces same outcomes for V2-ex
     // non-PK without an override. Run NullabilityPass with the
     // Cautious-equivalent intervention. Verify outcomes.
     let catalogWithPopulations =
-        Static.attachStaticPopulations endToEndCatalog (Static.StaticPopulationsJson staticEntitiesJson)
-        |> Result.value
+        populatedCatalog
     let profile =
         microFkProtectProfile
     let interventionConfig =
@@ -289,8 +287,7 @@ let ``DIFFERENTIAL: V1 Cautious-mode equivalent produces same outcomes for V2-ex
 let ``T1 extended: end-to-end pipeline is deterministic on the triple`` () =
     let runOnce () =
         let cat =
-            Static.attachStaticPopulations endToEndCatalog (Static.StaticPopulationsJson staticEntitiesJson)
-            |> Result.value
+            populatedCatalog
         let profile =
             microFkProtectProfile
         let cfg =
@@ -317,8 +314,7 @@ let ``T1 extended: end-to-end pipeline is deterministic on the triple`` () =
 [<Fact>]
 let ``structural commitment end-to-end: rich Catalog + Profile + empty Tightening yields no decisions`` () =
     let cat =
-        Static.attachStaticPopulations endToEndCatalog (Static.StaticPopulationsJson staticEntitiesJson)
-        |> Result.value
+        populatedCatalog
     let profile =
         microFkProtectProfile
     let lineage = nullRun cat Policy.empty profile

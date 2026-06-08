@@ -3,8 +3,7 @@ namespace Projection.Adapters.Sql
 // LINT-ALLOW-FILE: live SQL-profiling adapter at the boundary — terminal SQL-text emission
 //   (String.Concat/Join/concat over typed encode-quoted segments), operator-
 //   facing diagnostic prose, function-local mutables, and a mutable result
-//   accumulator. Sibling of Static.fs (file-marked); the SQL probes emit
-//   terminal text at the DB boundary.
+//   accumulator; the SQL probes emit terminal text at the DB boundary.
 
 open System
 open System.Threading.Tasks
