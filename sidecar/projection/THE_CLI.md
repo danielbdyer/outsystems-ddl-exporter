@@ -1,323 +1,425 @@
 # THE_CLI.md — the operator surface
 
 This document is the **target design of the `projection` command-line surface**: the
-Apple-clear re-envisioning that subsumes today's ~16 verbs into one engine wearing one
-coat with named pockets. It is a **vision surface**, sibling to `THE_VOICE.md` (the
-register), `THE_STORYBOARD.md` (the scene-by-scene), and `THE_VOICE_INTEGRATION.md`
-(the build plan). It is target-first; the current CLI (`src/Projection.Cli/Program.fs`)
-is the provenance, not the contradiction.
+collapse of today's verb sprawl into one act — *move a model from one environment to
+another* — whose every variation lives in **named config**, not in command variety. It is
+a **vision surface**, sibling to `THE_VOICE.md` (the register), `THE_STORYBOARD.md`
+(the scene-by-scene), and `THE_VOICE_INTEGRATION.md` (the build plan). It is target-first;
+the current CLI (`src/Projection.Cli/Program.fs`) is the provenance, not the contradiction.
 
-Provenance: derived 2026-06-07 from `THE_USE_CASE_ONTOLOGY.md` (the ten axes, the nine
-proteins, T16), `WAVE_6_ALGEBRA.md` (`emit(B ⊖ A)`, the torsor, the norm), and the
-`WAVE_6_MORPHOLOGY.md` "latent not activated" finding. The design resolves a
-meaning-space question: the interface is **not** the engine's algebra exposed — it is a
-**namespace of outcomes over the same input**.
+Provenance: re-derived 2026-06-08 from `THE_USE_CASE_ONTOLOGY.md` (the ten axes, the nine
+proteins, T16), `WAVE_6_ALGEBRA.md` (`emit(B ⊖ A)`, the torsor, the norm = CDC capture
+count), and `WAVE_6_ONTOLOGY.md` (the DacFx-owns-schema / engine-owns-data seam, the
+publication-and-provenance premise). This revision **supersedes** the 2026-06-07
+four-verb-plus-flags shape: a re-grounding against the operator's real workflows showed
+the variation does not belong in the *command* — it belongs in *named environments and
+flows*. The interface is **a namespace of outcomes over one act, and the namespace is the
+config file.**
 
 ---
 
 ## 1. The one idea
 
-There is one input — **the model** — and the operator names **where it should land**.
-Everything else is a default the engine is smart enough to choose.
+There is one act — **move a model from a source environment to a target environment** —
+and the engine computes the minimal correct change to make the target match.
 
-The current verbs are not sixteen things. They are one thing — `emit(B ⊖ A)` — seen from
-sixteen angles and altitudes. The design does not expose the angles. It exposes the
-**intent** and reads the rest.
+> **Deploy, migrate, load, transfer, and export are the same act.** They differ only in
+> *A* (the state already at the target) and in *where the content comes from*. The
+> operator never chooses "deploy or migrate." The direction is *put this there*; the
+> engine reads *A* and emits `B ⊖ A` — the minimal change, measured in CDC captures.
 
-The realization that collapses the sprawl:
+That sentence is simultaneously the Wave-6 algebra (`emit(B ⊖ A)`, *A* read from the
+substrate, the norm `‖·‖` the CDC capture count) and the design principle (it just works).
+The same statement is true in both meaning-spaces; that coincidence is how the cut is
+known to be right.
 
-> **Deploy, migrate, load, and export are the same act.** They differ only in *A* — the
-> state already at the destination — and the engine reads *A* itself. The operator never
-> chooses "deploy or migrate." The direction is *put this here*; the engine computes the
-> minimal correct change.
-
-This is simultaneously the Wave-6 algebra (`emit(B ⊖ A)`, *A* read from the substrate)
-and the design principle (it just works). The same sentence is true in both
-meaning-spaces. That coincidence is how the cut is known to be right.
-
----
-
-## 2. The mental model — one estate, four verbs
-
-```
-project   produce the model at a destination        (the hero — all data movement)
-check     assert it is faithful                      (canary · drift · data)
-explain   understand a change before it lands        (diff · policy · suggest)
-seal      freeze and govern the provenance           (eject · approve)
-```
-
-Four plain intents. No verb sits at a different altitude than its siblings. `skeleton` is
-not a peer of `transfer`; it is a *shape* of `project`. That re-leveling is the fix.
+The verb sprawl was never the engine's algebra. It was a *namespace of outcomes over one
+input* — and a namespace's natural home is **config**, not a tree of verbs or a matrix of
+flags. So the named outcomes (lift-and-shift dev, golden-data into UAT, legacy preview)
+become **named flows** the operator writes once and runs trivially.
 
 ---
 
-## 3. `project` — the hero
+## 2. The cost model — configure once, run rarely
 
-The operator names a **destination** first, because that is the real first question —
-*where does this go?* The destination decides the form:
+The operator changes things *few and far between*. That fixes the optimization axis: not
+expressiveness-per-invocation, but **configure-once, run-trivially**.
 
-```
-project --to ./out          # a folder   → the file bundle
-project --to docker         # ephemeral  → a one-touch database, deployed and verified
-project --to dev            # live target → read what is there, apply the minimal change
-```
+- **Configure once** (amortized over months): bear all the complexity here — the
+  environments, their permissions, the flows, the rekey map.
+- **Run rarely, trivially**: the information-theoretic floor per run is two bits —
+  *which flow*, and *preview or for-real*. Everything else is read from config.
 
-Everything past `--to` is optional and defaulted, so the everyday case is one line.
-
-### 3.1 The configuration surface
-
-| Modifier | The axis it names | Default | Reach for it when |
-|---|---|---|---|
-| `--from <A>` | the prior state in `B ⊖ A` | **auto** (∅ for files; read the target for live) | pin a baseline; force genesis with `--from empty` |
-| `--scope all\|schema\|data` | the two legs of T16 (DDL+DML / DML-only) | `all` | a DML-only load onto existing schema |
-| `--how merge\|replace\|fresh` | the norm / replacement strategy | `merge` (isometric, CDC-silent) | force a wipe-and-load fallback |
-| `--data model\|synthetic\|none\|<target>` | the data origin | `model` | synthetic (Faker), schema-only, or rows from another live target (the transfer) |
-| `--rekey <map>` | Reidentify (the user re-key) | off | Dev→UAT identity reconciliation |
-| `--shape bundle\|ssdt\|skeleton` | file-bundle composition | `bundle` | SSDT-only; the pre-overlay skeleton |
-| `--go` | commit a live write (intent) | off (preview) | apply, rather than preview |
-
-`--data <target>` folds the old `transfer` source in: `--data qa` ingests rows from the
-`qa` target into the destination. One flag; no `--source`/`--from` collision.
-
-### 3.2 Defaults that vanish — the auto-*A* principle
-
-For a **folder**, *A* is ∅: the genesis bundle.
-
-For a **live target**, the engine **reads the current deployed state as *A*** and emits
-`B ⊖ A` — the minimal change. The operator does not choose deploy-vs-migrate; on an empty
-database it is a full create, on an evolved one it is the differential, and on an
-unchanged one it is **nothing** (`‖B ⊖ A‖ = 0`, CDC-silent — idempotent redeploy falls
-out for free). `--from empty` overrides the auto-read to force a genesis create.
-
-The magic is safe because **live writes preview by default** (§5): the diff is seen
-before it is applied.
+So the daily command degenerates toward `projection <flow> [--go]`, and the design's job
+is to make that true without losing any capability.
 
 ---
 
-## 4. Targets and aliasing — the configuration file
+## 3. The daily surface
 
-Pasting connection references each run is friction. A repo-level `projection.json` names
-**targets** — an alias to a connection *reference* plus benign defaults and an optional
-provenance store.
+```
+projection <flow>                  # preview the flow (default; nothing is committed)
+projection <flow> --go             # apply it  (a live write also needs PROJECTION_ALLOW_EXECUTE=1)
+projection <flow> --fresh --go     # from-scratch wipe-and-load of this one target (rare, deliberate)
+projection <flow> --allow-drops    # accept a declared destructive loss (rare, deliberate)
+projection                         # list the flows and their resolved source → target
+```
 
-```json
+The verb is implied: the first token is a **flow name** unless it is one of the small,
+closed set of secondary verbs (`check` / `explain` / `seal` / `report` / `init`). An
+unknown first token is refused with the known flow + verb list named.
+
+Three per-run words, and only three, because they are the only decisions that genuinely
+vary at the moment of action and must never be persisted in a file:
+
+| Word | What it is | Why it is per-run, never config |
+|---|---|---|
+| `--go` | the operator's **intent** to apply a live write | a config that auto-commits is a footgun; intent is stated at the moment |
+| `--fresh` | the **wipe-and-load** posture (`realize(B)`, the non-minimal fallback) | "this target always wipes" is a footgun; the destructive posture is chosen each time |
+| `--allow-drops` | acceptance of a **declared loss** (drop / narrow / scoped delete) | the loss is affirmed at the moment, never defaulted out of a file |
+
+Everything else — where content comes from, the rekey map, the table subset, the target's
+permission and delivery mechanism — is a **fact about the flow or the environment**, and
+lives in config.
+
+---
+
+## 4. Two config layers — environments and flows
+
+`projection.json` (or `$PROJECTION_CONFIG`) has two blocks. **Environments** are the
+*places* (defined once, with their connection reference and permissions). **Flows** are
+the *movements* (named source→target recipes, each conceptually a `Move`).
+
+### 4.1 Environments — the places
+
+Each environment carries two permission facets and an address:
+
+- **`access`** — how the target is *reached*:
+  - `bundle` — no direct write. Produce an SSDT bundle (CREATE files + RefactorLog +
+    pre/post-deploy scripts + data scripts) into `out`, for **Octopus** to apply.
+  - `direct` — a live connection (`conn`) the engine writes to.
+  - `docker` — an ephemeral one-touch database, deployed and verified.
+- **`grant`** — what may *change* there (a refusal gate, ontology axis 9):
+  - `schema+data` — DDL+DML permitted; the full create/alter + data.
+  - `data` — DML-only; schema must already agree. A schema-changing flow against a
+    `data` target is a **type mismatch**, refused loudly (never half-applied).
+
+D9 holds: an environment carries a connection **reference** (`env:<VAR>` / `file:<path>`),
+**never a literal connection string**. Secrets stay out-of-band; only addressing lives in
+the committed file.
+
+### 4.2 Flows — the movements
+
+A flow is a named `Move`: rows (and optionally schema) flow from a `from` environment to a
+`to` environment, identity-reconciled, minimality CDC-measured. Fields:
+
+| Field | Meaning | Default |
+|---|---|---|
+| `from` | the source environment (where B's content originates) — or `model` / `synthetic` / `none` | the model |
+| `to` | the target environment (the destination) | required |
+| `rekey` | a user-map file → **Reidentify** (Dev-cloud → UAT identity reconciliation) | off |
+| `tables` | a declared subset (the partial golden-data refresh) | all |
+| `profile` | for `from: synthetic` — a source environment to profile for better synthetic data | off |
+
+### 4.3 Worked `projection.json`
+
+```jsonc
 {
-  "targets": {
-    "dev":     { "conn": "env:DEV_CONN", "store": "lifecycle/dev.json", "scope": "all" },
-    "qa":      { "conn": "env:QA_CONN",  "store": "lifecycle/qa.json" },
-    "uat":     { "conn": "env:UAT_CONN", "store": "lifecycle/uat.json" },
-    "publish": { "dir": "./publish", "shape": "bundle" }
+  "environments": {
+    "cloud-dev":     { "access": "direct", "conn": "env:CLOUD_DEV_CONN" },     // sources: read-only reach
+    "cloud-qa":      { "access": "direct", "conn": "env:CLOUD_QA_CONN"  },
+    "onprem-legacy": { "access": "direct", "conn": "env:ONPREM_LEGACY_CONN" },
+
+    "onprem-dev":    { "access": "bundle", "out": "dist/onprem-dev", "grant": "schema+data" },  // SSDT → Octopus
+    "onprem-qa":     { "access": "bundle", "out": "dist/onprem-qa",  "grant": "schema+data" },
+    "onprem-uat":    { "access": "bundle", "out": "dist/onprem-uat", "grant": "schema+data" },
+
+    "cloud-uat":     { "access": "direct", "conn": "env:CLOUD_UAT_CONN", "grant": "data" },     // direct, DML-only
+
+    "docker":        { "access": "docker", "grant": "schema+data" }
   },
-  "defaults": { "how": "merge", "data": "model" }
+  "flows": {
+    "dev":     { "from": "cloud-dev",     "to": "onprem-dev" },                            // lift-and-shift, unchanged
+    "qa":      { "from": "cloud-qa",      "to": "onprem-qa"  },
+    "uat":     { "from": "cloud-dev",     "to": "onprem-uat", "rekey": "file:users.csv" }, // dev-cloud → UAT, rekeyed
+    "golden":  { "from": "cloud-qa",      "to": "cloud-uat",  "tables": ["Customer","Order"] }, // cloud → cloud, subset
+    "preview": { "from": "onprem-legacy", "to": "cloud-uat" }                              // on-prem legacy → cloud
+  }
 }
 ```
 
-**Discipline, load-bearing:**
+```
+projection uat                   # cloud-dev → onprem-uat, rekeyed — preview the SSDT bundle
+projection uat --go              # produce the bundle (bundle = file production; see §7)
+projection dev --fresh --go      # from-scratch reset of onprem-dev (one target, deliberate)
+projection golden --go           # cloud-qa → cloud-uat, subset (a gated live write)
+projection preview               # onprem-legacy → cloud-uat — preview legacy data in UAT shape
+projection docker-spin           # a flow whose `to` is docker
+```
 
-- **D9 holds in config.** A target carries a connection *reference* (`env:<VAR>` /
-  `file:<path>`), **never a literal connection string**. The secret stays out-of-band;
-  only the addressing lives in the file (which is safe to commit).
-- **Config holds addressing and benign defaults only** — `conn` / `dir` / `store` /
-  `scope` / `how` / `data`. It does **not** hold intent or danger: `--go`,
-  `--allow-drops`, and `--rekey` are always explicit on the command line. A re-key or a
-  destructive accept is never defaulted out of a file.
-- **A target with a `store`** records an episode automatically on `--go`. No store, no
-  record. Provenance wiring lives in config; the command stays clean.
-- **Precedence:** CLI flag > target config > `defaults` block > built-in default.
-- **Override the config path** with `PROJECTION_CONFIG`.
+### 4.4 Discovery and precedence
 
-### 4.1 Resolving `--to`
-
-`--to <value>` resolves in order:
-
-1. `docker` — reserved (ephemeral one-touch).
-2. a named **target** in config.
-3. a **scheme-prefixed** ref — `dir:./out`, `env:DEV_CONN`, `file:secrets/dev.txt` — for
-   explicit intent (and to disambiguate a folder that shares a target's name).
-4. a path that looks like one (contains a separator or names an existing directory).
-5. otherwise: refused, with the known target list named.
+- The config path is `projection.json` at the repo root, or `$PROJECTION_CONFIG`.
+- A flow's specialization comes from the flow entry; the target's `access`/`grant`/`out`/
+  `conn` come from the environment it names.
+- `projection init` scaffolds a `projection.json` (refuses to overwrite; D9-safe refs).
+- `projection` with no args lists every flow as `name: from → to (specialization)` — the
+  config *is* the menu; discoverability is the listing, not a flag forest.
 
 ---
 
-## 5. The safety model
+## 5. The baseline *A* — first-class, one concept, three sources
 
-Two rules, in the register of `THE_VOICE.md` (stative, agentless, imperative direction):
+The torsor is `B ⊖ A`. A flow names where **B**'s content comes from (`from`) and where it
+goes (`to`); the **baseline A is the state already at the target**, and naming it is the
+refinement that closes the gap to the algebra. There is one concept — *the baseline* —
+with three sources, and they unify everything previously treated as separate:
 
-- **Live writes preview by default.** `project --to dev` states the plan and stops. The
-  preview footer names the next step: *"Preview only. Re-run with `--go` to apply."*
-  `--go` commits.
-- **Loss is declared, never silent.** A destructive move refuses with the exact token to
-  re-run: *"2 row(s) would drop (transfer.droppedReferences). Re-run with `--allow-drops`
-  to accept the loss."*
+| Surface | A is | Reduces to |
+|---|---|---|
+| default (minimal-churn) | the target's current deployed state (read back) | `emit(B ⊖ A_now)` — minimal, CDC-aware MERGE + RefactorLog |
+| `--fresh` | empty | `realize(B)` — wipe-and-load, the non-minimal `2·|table|` fallback |
+| `report` (since the last schema change) | the last **sealed episode** | `emit(B ⊖ A_prior)` — the change bundle (§8) |
 
-Two gates guard a live write, by design distinct:
-
-- `--go` is the operator's **intent**.
-- `PROJECTION_ALLOW_EXECUTE=1` is the environment's **authorization** (R6).
-
-A live write needs both. The refusal names which is absent.
-
-An irrelevant modifier for a destination is **noted, not silently ignored** (no
-silent-drop) and **not hard-failed** (usability): *"`--how` does not apply to a file
-destination; ignored."*
+This is the ontology's *comparison regime* axis (§5.10): which A. It costs no new daily
+surface — it is already latent in the verbs. On an empty target the default is a full
+create; on an evolved one it is the differential; on an unchanged one it is **nothing**
+(`‖B ⊖ A‖ = 0`, CDC-silent — idempotent redeploy falls out for free). The magic is safe
+because live writes preview by default (§7): the diff is seen before it is applied.
 
 ---
 
-## 6. The other three verbs
+## 6. `access` and `grant` — the permission axis
+
+This is the axis the operator led with ("direct connection or file production… different
+permission sets — DDL+DML, DML-only"). It is a property of the **environment**, and it
+*selects the engine's whole approach*:
+
+- **`access: bundle`** → the **declarative** path. The engine emits the adjusted
+  `CREATE TABLE` + the `.refactorlog`; **DacFx computes the schema ALTER at publish**. The
+  engine does not hand-emit ALTERs — it owns the *data* movement (pre/post-deploy scripts,
+  measured by CDC), DacFx owns the *schema* computation. The bundle is delivered to Octopus.
+- **`access: direct`** → a live write. Schema via the same declarative artifact path where
+  applicable; data via the CDC-aware MERGE (default) or wipe-and-load (`--fresh`).
+- **`access: docker`** → the ephemeral one-touch DB (deploy + verify), full control.
+
+`grant` is a **refusal gate, not a setting**:
+
+- `grant: data` against a flow that would change schema → **refused** with a named exit
+  code. Schema must already agree. For `golden`/`preview` into a `data` target, the engine
+  **verifies schema agreement first** and refuses on divergence — the operator's "so long
+  as the schemas agree" is a gate, not a hope.
+- `grant: schema+data` → schema changes permitted (via the declarative artifact DacFx
+  applies; `grant` is permission, never a claim that the engine emits ALTER).
+
+This corresponds to the ontology's **DacFx-owns-schema / engine-owns-data-measured-by-CDC**
+seam (`WAVE_6_ONTOLOGY.md` §4) and to gate axis 9 (`THE_USE_CASE_ONTOLOGY.md` §4.6).
+
+---
+
+## 7. The safety model
+
+In the register of `THE_VOICE.md` (stative, agentless, imperative direction):
+
+- **A `bundle` is always-safe file production.** Producing the SSDT bundle for Octopus
+  writes only files; it needs no gate. `projection uat` produces the bundle, full stop.
+- **A `direct` live write previews by default.** `projection golden` states the plan and
+  stops: *"Preview only. Re-run with `--go` to apply."* `--go` commits.
+- **Two gates guard a live write, by design distinct.** `--go` is the operator's
+  **intent**; `PROJECTION_ALLOW_EXECUTE=1` is the environment's **authorization** (R6). A
+  live write needs both; the refusal names which is absent. So the gate *attaches itself*
+  based on `access`: `bundle` needs neither, `direct` needs both, `--fresh`/`docker` are
+  governed the same way `direct` is.
+- **Loss is declared, never silent.** A destructive move (drop / narrow / scoped delete)
+  refuses with the exact token to re-run: *"2 row(s) would drop
+  (transfer.droppedReferences). Re-run with `--allow-drops` to accept the loss."*
+- **An irrelevant modifier is noted, not silently ignored and not hard-failed**
+  (no silent-drop; usability): *"`--fresh` does not apply to a bundle target; ignored."*
+
+---
+
+## 8. The secondary verbs — and the provenance pair
 
 ```
 check                         # canary: round-trip fidelity on an ephemeral pair (default)
-check drift --to dev          # the deployed schema vs the model
-check data  --to dev          # row-count + null-count integrity (deployed vs deployed)
-check ready                   # the readiness gauge (the run-ledger canary streak)
+check drift <flow>            # the deployed target vs the model
+check data  <flow>            # row-count + null-count integrity
+check ready                   # the run-ledger readiness gauge
 
-explain diff  <A> <B>         # the change between two models, before shipping
+explain <flow>                # the dry-run plan: what B ⊖ A would change, before it lands
+explain diff <a> <b>          # the change between two models
 explain policy <a> <b>        # how two policies project differently
-explain suggest <config>      # the suggested config from the evidence
 
-seal                          # eject / freeze: the append-forever provenance package
-seal approve <version>        # record an approval decision
+seal <flow>                   # eject / freeze: record this published state as a durable episode
+seal approve <version>        # record a policy-version approval decision
+
+report <flow>                 # the change bundle for the on-prem migration team
 ```
 
-`check` answers *is it right?* `explain` answers *what would change?* before anything
-moves. `seal` answers *make it permanent / sign it off.*
+`check` answers *is it right?* `explain` answers *what would change?* `seal` answers *make
+this permanent / sign it off.* `report` answers *what changed since last time, for the
+people downstream?*
+
+**`seal` → episode → `report` is the load-bearing pair.** `report`'s job — "what changed
+since the last time the schema changed," for the on-prem migration team — is computable
+only against a stored prior state. That state is exactly what `seal` records (a snapshot +
+appended refactorlog = an **episode**). So:
+
+- **`seal <flow>`** freezes "this is the published schema state now" as a durable episode.
+- **`report <flow>`** (default `--since` = the last seal) emits `B ⊖ A_prior` as the
+  hand-off bundle: the refactorlog deltas + the change-manifest + the move/CDC counts.
+
+This lights up the ontology's **provenance plane** (`Accumulate`) — the plane the prior
+design left dark — and gives `report` an anchor instead of leaving it floating.
 
 ---
 
-## 7. The namespace map (today → target)
+## 9. The change-norm, surfaced
 
-| Today | Target |
-|---|---|
-| `emit <in> <out>` | `project --to <out>` |
-| `emit --config` | `project` (config is the default home for the modifiers) |
-| `emit --skeleton-only` / `skeleton` | `project --to <out> --shape skeleton` |
-| `full-export` | `project --to <out> --shape bundle` |
-| `full-export --load` | `project --to <conn> --go` |
-| `deploy` | `project --to docker` |
-| `transfer` | `project --to <sink> --data <source> [--rekey]` |
-| `migrate` (all four forms) | `project --to <conn> [--from <A>] --go` |
-| `canary` (+ `--cdc-silence`) | `check` |
-| `drift` | `check drift --to <conn>` |
-| `verify-data` | `check data --to <conn>` |
-| `readiness` | `check ready` |
-| `diff` / `policy-diff` | `explain diff` / `explain policy` |
-| `suggest-config` | `explain suggest` |
-| `eject` | `seal` |
-| `approve` | `seal approve` |
-
-Sixteen surfaces → four verbs. **Nothing is deleted**; the machinery underneath is
-unchanged. The operator meets one engine wearing one coat with named pockets, instead of
-sixteen coats.
+Both the preview and `report` state the norm `‖δ‖` — *"this run captures N CDC rows /
+moves M rows / emits K DDL statements."* That is the **minimality proof** the operator can
+read directly: minimal-churn is not a claim, it is a measured number. It is free — the
+MERGE already produces the captures (`WAVE_6_ALGEBRA.md` §4: the CDC capture-row count
+*is* the norm). `--fresh` shows the inflated `2·|table|` figure, so the cost of the
+fallback is visible at the moment it is chosen.
 
 ---
 
-## 8. Every protein, as one line
-
-The proof the namespace is real — the nine canonical use cases (`THE_USE_CASE_ONTOLOGY.md`
-§3) plus the output forms, each a sentence:
-
-```
-P-1  Dev load                  project --to dev --go
-P-2  QA load                   project --to qa --go
-P-3  UAT with re-key           project --to uat --rekey users.csv --go
-P-4  SSIS publication          project --to publish
-P-5  Idempotent redeploy       project --to dev --go        (re-run; B⊖A = 0 ⇒ CDC-silent)
-P-6  In-place migrate          project --to dev --go        (same verb; A is non-empty)
-P-7  Eject / freeze            seal
-P-8  Drift detection           check drift --to dev
-P-9  Self-check canary         check
-     —
-     Docker one-touch          project --to docker
-     SSDT + static + bootstrap project --to publish --shape bundle
-     Faker schema              project --to docker --data synthetic
-     DB → DB transfer          project --to uat --data qa --rekey users.csv --go
-     Skeleton (pre-overlay)    project --to ./out --shape skeleton
-```
-
-P-5 and P-6 collapsing into the **identical** command as P-1 is the headline: the
-operator stopped needing to know the difference. The engine reads *A* and the difference
-disappears.
-
----
-
-## 9. Exit codes (carried forward, stable)
-
-A single verb returns many codes; the codes are stable and documented, and `check`
-separates fidelity from movement.
+## 10. Exit codes (carried forward, stable)
 
 | Code | Meaning |
 |---|---|
 | 0 | succeeded |
-| 1 | argv error (missing input, unknown target) |
+| 1 | argv error (unknown flow / verb; missing input) |
 | 2 | parse error (model JSON; spec; config-parse) |
 | 3 | execution error (SQL rejected the change; connection open; unbreakable cycle) |
-| 4 | Docker unavailable (`project --to docker`, `check`) |
+| 4 | Docker unavailable (`access: docker`; `check`) |
 | 5 | fidelity divergence (`check` canary / `check drift`) |
 | 6 | config error (file missing / unparseable / D9; connection-ref resolve) |
 | 7 | gate refusal (`--go` without `PROJECTION_ALLOW_EXECUTE=1`; permission pre-flight) |
 | 8 | data divergence (`check data` row / null) |
-| 9 | refused, fail-loud (undeclared drop; inexpressible ALTER; tightening; verify-failed) |
+| 9 | refused, fail-loud (undeclared drop; **`grant: data` vs a schema change**; schema-disagreement on a data flow; tightening; verify-failed) |
 
 ---
 
-## 10. How the red herrings dissolve
+## 11. The ontology mapping
 
-- **The orthogonality matrix never runs.** A namespace names only wanted points, so
-  `--how merge --to ./folder` is not a sentence anyone forms; if formed, it is noted in
-  one line at the boundary. The legal combinations are not something to *prove* — they
-  are the proteins, curated by the use-case analysis.
-- **"Illegal states unrepresentable"** is satisfied by **progressive disclosure** (each
-  destination surfaces only its relevant modifiers), not by a type lattice over a flag
-  product. The product is never built, so its illegal cells never exist.
-- **The plane-carving** (emission / episode / proof) is an engine fact, not an interface
-  fact. The operator sees `project` / `check` / `explain` / `seal`. The planes stay where
-  they belong — inside.
+Where each of the ten axes (`THE_USE_CASE_ONTOLOGY.md` §4.1) lands in this design:
 
----
+| Axis | Where it lives |
+|---|---|
+| 1. Move | a **flow** (`from` → `to`), identity-reconciled by `rekey` |
+| 2. Plane | schema + data via `grant`; identity via `rekey`; **provenance via `seal`/`report`** |
+| 3. Deploy mode | `access` (bundle = declarative / direct = in-place) × `--fresh` (wipe-and-load) |
+| 4. Temporal phase | genesis (`--fresh`) · steady-state (default) · eject (`seal`) |
+| 5. Comparison regime | the **baseline A** — target-now (default) / empty (`--fresh`) / last-seal (`report`) |
+| 6. Environment-lattice | the **environments** block (each a cell; substrate named in the name) |
+| 7. Consumer / terminus | `access`: bundle → Octopus · direct DB · docker; `report` → the migration team |
+| 8. Ordering | engine-internal (schema before data; FK two-phase; rename before reshape) |
+| 9. Gate / safety | `grant` refusal · `--go` × `PROJECTION_ALLOW_EXECUTE=1` · `--allow-drops` · pre-flight refusals |
+| 10. Measurement & proof | the norm `‖δ‖` surfaced (§9); `check`; `report` |
 
-## 11. The shape decision — resolved
+Proteins (`THE_USE_CASE_ONTOLOGY.md` §3), each a sentence:
 
-The interface is a **shallow coordinate space with named presets, collapsed by
-defaults**:
+```
+P-1  Dev lift-and-shift     projection dev --go
+P-2  QA  lift-and-shift     projection qa --go
+P-3  UAT with re-key        projection uat --go            (rekey lives in the flow)
+P-4  Migration-team bundle  report uat                     (the change since the last seal)
+P-5  Idempotent redeploy    projection dev --go            (re-run; B⊖A = 0 ⇒ CDC-silent)
+P-6  In-place migrate       projection dev --go            (same command; A is non-empty)
+P-7  Eject / freeze         seal dev
+P-8  Drift detection        check drift dev
+P-9  Self-check canary      check
+     —
+     Docker one-touch       projection <flow-to-docker>
+     Cloud golden data      projection golden --go
+     Legacy preview         projection preview
+     Synthetic (profiled)   a flow with from: synthetic, profile: onprem-legacy
+```
 
-- the *coordinates* are the modifier axes (`--scope` / `--how` / `--data` / `--rekey` /
-  `--shape`);
-- the *presets* are the named targets (`dev`, `qa`, `uat`, `publish`) and the default
-  coordinate points — which *are* the proteins;
-- the *defaults* make the everyday case one word past the destination.
-
-Recombination is available when needed (`--scope data --how fresh` is sayable); the
-one-liner is there when it is not. No flag-bag; no god-command.
-
----
-
-## 12. Decisions — resolved (2026-06-07, shipped)
-
-1. **The hero verb is `project`** — the domain's own word (the Total Projection).
-2. **Readiness is `check ready`** (gate-shaped); a `seal history` / `explain history`
-   episode browser is deferred until it earns its place.
-3. **Axes accepted-but-not-yet-honored surface a named note, never a silent drop.**
-   `--scope` / `--how` / `--from` and `--data synthetic|none` are parsed and
-   acknowledged; the current engine emits its default and `noteUnhonored` says so.
-   Wiring these knobs (and `--data synthetic --rows N`) into the engine is an
-   evidence-gated follow-up (THE_CLI_BACKLOG.md).
-4. **`project` consolidations** — `emit --config` folds into `project --to <folder>
-   --config` (the richer `full-export` bundle); `full-export --load` into `project
-   --to <live> --config --go`; `transfer` into `project --to <sink> --data <source>`
-   (DryRun without `--go`). Niche flags dropped (named, not silent) are listed in
-   THE_CLI_BACKLOG.md.
+P-5 and P-6 collapsing into the **identical** command as P-1 is the headline: the operator
+stopped needing to know the difference. The engine reads *A* and the difference disappears.
 
 ---
 
-## 13. What this became
+## 12. Fidelity status — backed today vs in-flight engine work
 
-Shipped 2026-06-07. `main` discovers `projection.json`, parses argv via
-`Surface.parse` into a typed `Intent`, and routes to executors that delegate to
-the proven engine faces — one `MovementSpec` (source *A* × destination × legs ×
-strategy × data-origin × identity × shape × mode), one engine, four thin faces
-(`project` / `check` / `explain` / `seal`). The 16-verb dispatch and its Argu
-glue are removed; the per-verb conditional trees documented in the 2026-06-07
-verb audit collapsed into the one parameterized path — the activation of the
-"latent" calculus the morphology named. Surface types live in
-`src/Projection.Pipeline/MovementSpec.fs` + `MovementSurface.fs`; the executors
-in `src/Projection.Cli/Program.fs`; tests in `MovementSurfaceTests.fs`.
+The CLI is the correct **surface**; some flows lean on engine work still climbing the
+isomorphism ladder (`AUDIT_2026_05_31_FIVE_AXIS_REDTEAM.md`; the Wave-6 L2/L3 backlog).
+This document does not over-promise — the split is:
+
+- **Fully backed today.** Lift-and-shift (schema+data via the SSDT bundle); `--fresh`
+  (`realize(B)`); data-only `golden`/`preview` transfer; the **declared `tables` subset** on
+  the data leg (golden data — only listed kinds load, the rest of the sink untouched);
+  `check` (canary / drift / data / ready); the **`explain <flow>`** live preview (B vs the
+  target's last sealed episode); `seal` eject; the two-gate safety model; `grant` refusal;
+  the **pre-flight gates** (CDC-tracked sink + data-compat NOT-NULL tightening, refuse exit 9,
+  `--allow-cdc` / `--allow-drops` to override); **attribute-level `CatalogDiff` + column-rename
+  RefactorLog** (6.A.10 / 6.A.12, incl. the rename ⊥ reshape composition); **`report <flow>`**
+  — the migration-team change bundle (the recorded `ChangeManifest` series from the target's
+  durable store, a live `--go` recording into it).
+- **Remaining, by design:**
+  - **`from: synthetic --profile` (the Faker source)** — the one genuine net-new feature
+    left. Profile-driven, FK-aware generation needs three new parts: a pure generator
+    (`Profile` × `Catalog` × seed → `Map<SsKey, StaticRow list>`, FK keys drawn in topo
+    order, distributions + null-rates honored, deterministic), a **synthetic-load runner**
+    (synthetic has no source DB, so it cannot reuse `runThroughConnections` — it generates
+    rows then `DataLoadPlan.build` → write to sink), and the profile capture (`LiveProfiler`
+    against the `--profile` env). Scoped, not yet built.
+  - **Rename-aware migrate-with-data** — the pure rename-aware transfer exists
+    (`runWithRenames`, source-A → sink-B re-point); `MigrationRun.executeWithData` documents
+    its precondition (the data source is at contract B). The combined rename + migrate-with-
+    data re-point has no current flow consumer, so it is not built ahead of one (IR grows
+    under evidence, not speculation); `runWithRenames` is ready when a flow needs it.
+
+The discipline: **the surface ships whole; the flows that depend on a ladder rung are
+named here and refuse cleanly until the rung lands** (total decisions, named skips — never
+a silent half-result).
+
+---
+
+## 13. Decisions — locked (2026-06-08)
+
+1. **The act is one: move a model from `from` to `to`.** The interface is a namespace of
+   outcomes, and the namespace lives in **config** (environments + flows), not in verbs or
+   a flag matrix.
+2. **The daily command is `projection <flow> [--go] [--fresh] [--allow-drops]`** — verb
+   implied; the first token is a flow unless it is a closed secondary verb.
+3. **Two config layers** — `environments` (places; `access` ∈ {bundle, direct, docker} ×
+   `grant` ∈ {schema+data, data}; D9 conn refs) and `flows` (named `Move` recipes:
+   `from`/`to`/`rekey`/`tables`/`profile`).
+4. **The baseline A is first-class — one concept, three sources** (target-now default /
+   empty via `--fresh` / last-seal via `report`).
+5. **Per-run words are exactly the dangerous/transient ones** — `--go` (intent), `--fresh`
+   (wipe-and-load), `--allow-drops` (declared loss). Everything else is config.
+6. **`access` selects the approach; `grant` is a refusal gate** — bundle = declarative
+   (DacFx computes the ALTER; engine owns data measured by CDC); `grant: data` vs a schema
+   change is a refused type mismatch.
+7. **`seal` → episode → `report`** is the provenance pair; `report` is the migration-team
+   change bundle, anchored on the last seal.
+8. **The norm `‖δ‖` is surfaced** in preview and report as the minimality proof.
+9. **The surface ships whole; ladder-dependent flows refuse cleanly** until their engine
+   rung lands (§12).
+
+---
+
+## 14. What this becomes in the code
+
+The engine is unchanged — `MovementSpec` is the serialized shape of a resolved flow (source
+*A* × destination × legs × strategy × data-origin × identity), and a flow is a
+partially-applied `MovementSpec` that `--go`/`--fresh`/`--allow-drops` finish. The build:
+
+- **Config** grows the two-layer `environments` + `flows` schema (extend `TargetConfig` /
+  `MovementSurface.fs`; D9-guarded), with `access`/`grant` on the environment.
+- **Parse** resolves `projection <flow>` → an `Intent` carrying the resolved
+  `MovementSpec` (most of the current flag-reading machinery moves into config parsing).
+- **Plan** (`Command.plan`, pure, totality-tested) routes to `PlanAction`, adding the
+  `grant` refusal and the schema-agreement gate as named `Refused` actions.
+- **Run** (`runPlan`) delegates to the proven engine faces; `bundle` → folder/SSDT,
+  `direct` → live (two-gate), `docker` → deploy. `seal` writes the episode; `report` diffs
+  against it.
+
+Surface types live in `src/Projection.Pipeline/MovementSpec.fs` + `MovementSurface.fs`;
+the runner in `src/Projection.Cli/Program.fs`; tests in `MovementSurfaceTests.fs`. The
+slice plan is `THE_CLI_BACKLOG.md`.

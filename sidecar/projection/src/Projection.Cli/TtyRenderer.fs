@@ -139,6 +139,17 @@ let renderAnswer (asJson: bool) (depth: int) (v: View.View) : unit =
         if Console.IsOutputRedirected then console.Profile.Width <- 100
         View.writeToDepth console depth v
 
+/// Voice a refusal to STDERR (the §5 channel split — errors never on stdout).
+/// The coded `ValidationError` becomes a register-correct `Surface` via
+/// `Voice.errorSurface`, rendered through the same `View` engine that draws the
+/// answer — so a refusal speaks in the operator register, not raw prose.
+let renderVoicedError (error: Projection.Core.ValidationError) : unit =
+    let view = Surface.render (Voice.errorSurface error)
+    let console =
+        AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(Console.Error)))
+    if Console.IsErrorRedirected then console.Profile.Width <- 100
+    View.writeToDepth console View.defaultDepth view
+
 // --- the Gate surface — a refusal as a stop-and-confirm (INSTRUMENT slice 3) -
 
 /// The Gate as a `Surface` (INSTRUMENT slice 3) — the stop-and-confirm a refusal

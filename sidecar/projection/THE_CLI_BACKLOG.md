@@ -1,5 +1,16 @@
 # THE_CLI_BACKLOG.md — building the operator surface
 
+> **SUPERSEDED IN PART (2026-06-08).** `THE_CLI.md` was re-derived against the
+> operator's real workflows: the surface collapses further to **`projection
+> <flow> [--go] [--fresh] [--allow-drops]`** over a two-layer config
+> (`environments` with `access`/`grant` + named `flows`), with the baseline *A*
+> first-class and a `seal`→episode→`report` provenance pair. The four-verb work
+> below (the `MovementSpec` engine seam, the pure totality-tested `Command.plan`,
+> the two-gate safety model, the voiced refusals) is the **foundation the new
+> surface builds on** — it is not discarded. A fresh slice plan for the
+> environments/flows layer lands here when that build opens; until then this
+> section records what shipped under the prior shape.
+
 The slice backlog that carried `THE_CLI.md` from vision to shipped. The target
 — four verbs (`project` / `check` / `explain` / `seal`) over one engine, with
 the emission-family verbs collapsed into one `MovementSpec` — is **landed**.
@@ -110,18 +121,85 @@ surface↔engine alignment:
 - **#5 — self-description + first-run `[x]`.** `explain registry` names the
   engine's registered transforms; `projection init` scaffolds a `projection.json`
   (refuses to overwrite; D9-safe conn references).
-- **#3 — route CLI copy through Voice `[~]`.** The merged `Voice.fs` mechanism
-  (`code ⇔ copy` totality) is the home for this; voicing the new surface's
-  refusals/notes through `Voice.errorSurface` is exactly
-  `THE_VOICE_INTEGRATION.md` **slice 4** (route `printErrors` through
-  `Voice.errorSurface`; voice config/error copy), which must preserve the §5
-  stderr/stdout channel split and the `View` render path. Carried under that
-  slice rather than bolted on, so the new surface and the rest of the CLI voice
-  together.
+- **#3 — route CLI copy through Voice `[x]`.** Slice A (2026-06-07). The four
+  verbs now share one pure plan (`Command.plan : TargetConfig -> Intent ->
+  ExecutionPlan`, the `PlanAction` DU spanning project/check/explain/seal) with
+  **coded refusals** (`Refused of exit * ValidationError`); the single runner
+  (`runPlan`) voices every refusal through `Voice.errorSurface` to **stderr**
+  (channel split preserved via `TtyRenderer.renderVoicedError`). The cross-verb
+  totality test sweeps it; the voice-clean test covers the new `cli.*` codes.
+  The colliding `Projection.Pipeline.Surface` module was renamed to `Command`
+  (the CLI's `Surface` is the voice surface). This is `THE_VOICE_INTEGRATION.md`
+  slice 4 for the new surface; the legacy `printErrors` sites in the engine
+  `run*` functions remain on the plain path (their voicing is the rest of slice 4).
 
 ## Engine-wiring follow-ups (evidence-gated)
 
-- `--how replace|fresh` → thread the emission-mode through `TransferRun`.
+- `--how replace|fresh` → **DONE (Slice B partial, 2026-06-07)** — threads the
+  `EmissionMode` through `Transfer.runThroughConnectionsWithEmission` for the
+  pure-transfer data load (`project --to <sink> --data <src> [--scope data]`).
+  On a combined schema+data migrate it stays the migrate's incremental MERGE
+  (noted). Extending it to the migrate-with-data leg is the remainder.
 - `--from empty` → genesis-force in `MigrationRun`.
 - `--data synthetic [--rows N]` → a Faker data source.
-- A typed `ExitCode` DU (one definition) replacing the scattered exit ints.
+
+---
+
+## Environments / flows build (2026-06-08) — the re-grounded surface  `[x]`
+
+**STATUS — COMPLETE (2026-06-08).** The `THE_CLI.md` (2026-06-08) target
+shipped: `projection <flow> [--go] [--fresh] [--allow-drops]` over a two-layer
+config (`environments` + `flows`), with `report` wired to the durable episode
+store. Full pure pool green throughout.
+
+- **F1 — the config schema `[x]`.** `Access` (Bundle/Direct/Docker) × `Grant`
+  (SchemaAndData/DataOnly), `Environment`, `FlowSource`
+  (Env/Model/Synthetic/NoData), `Flow` (from/to/rekey/tables); parse +
+  D9-guard. 14 pure tests.
+- **F2 — flow resolution `[x]`.** `resolveFlowSpec` (`to` access → Destination,
+  `grant` → Scope + the **grant refusal**, `from` → DataOrigin, `--fresh` →
+  Strategy/Baseline) riding the totality-tested `planMovement`; `planFlow` the
+  grant gate. 9 tests.
+- **F3 — the dispatch swap `[x]`.** `projection <flow>` (verb implied; closed
+  secondary verbs check/explain/seal/report/init); the no-arg flow menu; help
+  rewritten. 6 tests + runtime smoke.
+- **F4 — seal→episode→report `[x]`.** `Environment.store` (the durable
+  timeline); `report <flow>` reads it and renders the recorded
+  `ChangeManifest` series (per-edge `‖δ‖` surfaced); a live `--go` records an
+  episode into the target store (spec carries `toEnv.Store`). `ReportRun`
+  (fromChain/fromStore/render) composes the already-built `LifecycleStore` +
+  `ChangeManifest`. A storeless target refuses (cli.report.noStore). Tests:
+  `ReportRun` round-trip + the planReport routing.
+- **F5 — deprecate `targets` / `project --to` `[x]`.** Removed the `targets`
+  block, the `project` verb, `buildProject`, `resolveTarget`,
+  Target/TargetAddress/ResolvedTarget, and the project-only flag readers;
+  `planProject` → `planMovement` over `resolveLiveConn`; `TargetConfig` →
+  `ProjectionConfig`. `MovementSurfaceTests` rewritten to the flow surface.
+
+## §12 follow-ups (2026-06-08) — status
+
+Worked the THE_CLI.md §12 list:
+
+- **`explain <flow>` (live preview) `[x]`** — B vs the target's last sealed
+  episode (the preview sibling to `report`'s history). `bbb9d60`.
+- **pre-flight gates `[x]`** — already engine-built (CDC-tracked sink +
+  data-compat NOT-NULL tightening, refuse exit 9); added `--allow-cdc` to the
+  flow surface so the CDC gate is overridable. `e5ddcb1`.
+- **`tables` subset `[x]`** — honored on the data-transfer leg (only listed
+  kinds load; the rest of the sink untouched; unknown names refused). `ebf0baa`.
+- **rename-aware migrate-with-data `[~]`** — the pure rename-aware transfer
+  (`runWithRenames`) exists; the migrate-with-data combination has no current
+  flow consumer, so it is documented as a precondition rather than built ahead
+  of evidence.
+- **`from: synthetic --profile` (Faker) `[ ]`** — the one net-new feature
+  left. Slice plan: (S1) a pure generator `SyntheticData.generate : Profile ×
+  Catalog × seed → Map<SsKey, StaticRow list>` (FK keys drawn in topo order;
+  categorical/numeric distributions + null-rates honored; deterministic) +
+  unit tests; (S2) a synthetic-load runner (generate → `DataLoadPlan.build` →
+  write to sink — synthetic has no source DB, so it does NOT reuse
+  `runThroughConnections`); (S3) profile capture via `LiveProfiler` against the
+  `--profile` env + CLI wiring of `DataOrigin.Synthetic`. Reuses the evidence
+  in `Profile` (`ColumnProfile`/`CategoricalDistribution`/`NumericDistribution`)
+  and the FK-aware approach proven in the test `FixtureGenerator`.
+
+Deferred (unchanged): `--fresh` genesis-force in `MigrationRun`.
