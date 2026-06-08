@@ -41,6 +41,9 @@ type Environment =
         Name   : string
         Access : Access
         Grant  : Grant option
+        /// The durable timeline (the episode store) this place accumulates;
+        /// `seal` records into it and `report` diffs against it (THE_CLI.md §8).
+        Store  : string option
     }
 
 // `FlowSource`, `Flow`, and `FlowRunOpts` live in MovementSpec.fs (the types
@@ -122,11 +125,12 @@ module ProjectionConfig =
             match parseAccess name el with
             | Error e -> Result.failure e
             | Ok access ->
+                let store = getString el "store"
                 match getString el "grant" with
-                | None -> Result.success { Name = name; Access = access; Grant = None }
+                | None -> Result.success { Name = name; Access = access; Grant = None; Store = store }
                 | Some g ->
                     match parseGrant name g with
-                    | Ok grant -> Result.success { Name = name; Access = access; Grant = Some grant }
+                    | Ok grant -> Result.success { Name = name; Access = access; Grant = Some grant; Store = store }
                     | Error e  -> Result.failure e
 
     /// The content origin: `from` names an environment (the Move), or one of
@@ -467,6 +471,9 @@ module Command =
                         Baseline = (if opts.Fresh then Baseline.Empty else Baseline.Auto)
                         Rekey    = flow.Rekey
                         AllowDrops = opts.AllowDrops
+                        // The target's durable timeline: a live --go records an
+                        // episode into it (which `report` later diffs). F4.
+                        Store    = toEnv.Store
                         Commit   = opts.Go }
 
     /// Route a named flow to its `ExecutionPlan`. The grant gate refuses a
@@ -494,13 +501,28 @@ module Command =
                         else [ sprintf "flow tables (%s) accepted; subset selection is pending (all tables applied)." (String.concat ", " flow.Tables) ]
                     { plan with Notes = plan.Notes @ tableNote }
 
-    /// Route a `report` verb tail. The migration-team change bundle diffs
-    /// `B ⊖ A_prior` against the last sealed episode — which leans on the
-    /// durable-episode engine rung (THE_CLI.md §12). Until that lands, refuse
-    /// cleanly (a named pending, never a silent no-op).
-    let planReport (_args: string list) : ExecutionPlan =
-        { Notes = []
-          Action = PlanAction.Refused (2, err "cli.report.pending" "report <flow> is pending the durable episode: run `seal <flow>` to record a baseline once the episode store lands (THE_CLI.md §12).") }
+    /// Route a `report` verb tail (THE_CLI.md §8): `report <flow>` reads the
+    /// flow's target durable timeline (its `store`) and renders the recorded
+    /// ChangeManifest series — what changed since the last sealed episode. An
+    /// explicit `--store <path>` overrides; a target with no store is refused
+    /// (named, never silent). The bundle itself is built by the runner.
+    let planReport (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
+        let storeOf () : Result<string> =
+            match flagValue args "--store" with
+            | Some s -> Result.success s
+            | None ->
+                match args |> List.tryFind (fun a -> not (a.StartsWith "--")) with
+                | None -> Result.failureOf (err "cli.report.noFlow" "projection report: name a flow (report <flow>) or pass --store <path>.")
+                | Some flowName ->
+                    match Map.tryFind flowName cfg.Flows with
+                    | None -> Result.failureOf (err "cli.report.unknownFlow" (sprintf "report: unknown flow '%s'." flowName))
+                    | Some flow ->
+                        match Map.tryFind flow.To cfg.Environments |> Option.bind (fun e -> e.Store) with
+                        | Some store -> Result.success store
+                        | None -> Result.failureOf (err "cli.report.noStore" (sprintf "report '%s': target environment '%s' has no `store` (the durable timeline); add one or pass --store <path>." flowName flow.To))
+        match storeOf () with
+        | Ok store -> { Notes = []; Action = PlanAction.ReportBundle store }
+        | Error es -> { Notes = []; Action = PlanAction.Refused (6, List.head es) }
 
     /// The closed secondary-verb set (THE_CLI.md §3). A first token outside
     /// this set is read as a flow name; an unknown one is refused, naming both.
@@ -541,4 +563,4 @@ module Command =
         | Intent.Check args        -> planCheck cfg args
         | Intent.Explain args      -> planExplain args
         | Intent.Seal args         -> planSeal args
-        | Intent.Report args       -> planReport args
+        | Intent.Report args       -> planReport cfg args

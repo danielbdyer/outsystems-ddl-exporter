@@ -228,7 +228,7 @@ let private flowCfg =
       "environments": {
         "cloud-dev":  { "access": "direct", "conn": "env:CLOUD_DEV_CONN" },
         "cloud-qa":   { "access": "direct", "conn": "env:CLOUD_QA_CONN" },
-        "onprem-uat": { "access": "bundle", "out": "dist/onprem-uat", "grant": "schema+data" },
+        "onprem-uat": { "access": "bundle", "out": "dist/onprem-uat", "grant": "schema+data", "store": "lifecycle/uat.json" },
         "cloud-uat":  { "access": "direct", "conn": "env:CLOUD_UAT_CONN", "grant": "data" },
         "lab":        { "access": "docker", "grant": "schema+data" }
       },
@@ -345,13 +345,30 @@ let ``parse: a bare flow routes through plan to its engine face`` () =
     Assert.Equal(PlanAction.EmitBundle ("model.json", "dist/onprem-uat"), plan.Action)
 
 [<Fact>]
-let ``parse: report dispatches to Intent.Report; plan refuses pending the episode`` () =
+let ``parse: report dispatches to Intent.Report`` () =
     match Command.parse flowCfg [ "report"; "uat" ] |> mustOk with
     | Intent.Report _ -> ()
     | other -> Assert.Fail(sprintf "expected Report, got %A" other)
+
+[<Fact>]
+let ``report <flow>: resolves the target environment's store (F4)`` () =
+    // onprem-uat (flow uat's target) carries a store → ReportBundle on it.
     match (Command.plan flowCfg (Intent.Report [ "uat" ])).Action with
-    | PlanAction.Refused (2, e) -> Assert.Equal("cli.report.pending", e.Code)
-    | other -> Assert.Fail(sprintf "expected pending refusal, got %A" other)
+    | PlanAction.ReportBundle store -> Assert.Equal("lifecycle/uat.json", store)
+    | other -> Assert.Fail(sprintf "expected ReportBundle, got %A" other)
+
+[<Fact>]
+let ``report <flow>: a target with no store is refused (named, not silent)`` () =
+    // golden's target cloud-uat has no store.
+    match (Command.plan flowCfg (Intent.Report [ "golden" ])).Action with
+    | PlanAction.Refused (6, e) -> Assert.Equal("cli.report.noStore", e.Code)
+    | other -> Assert.Fail(sprintf "expected noStore refusal, got %A" other)
+
+[<Fact>]
+let ``report --store <path>: an explicit store overrides`` () =
+    match (Command.plan flowCfg (Intent.Report [ "--store"; "x.lifecycle.json" ])).Action with
+    | PlanAction.ReportBundle store -> Assert.Equal("x.lifecycle.json", store)
+    | other -> Assert.Fail(sprintf "expected ReportBundle, got %A" other)
 
 [<Fact>]
 let ``parse: an unknown first token names the known flows`` () =

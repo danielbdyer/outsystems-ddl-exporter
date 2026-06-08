@@ -42,6 +42,7 @@
     <Compile Include="MigrationRun.fs" />
     <Compile Include="DriftRun.fs" />
     <Compile Include="EjectRun.fs" />
+    <Compile Include="ReportRun.fs" />
     <Compile Include="TransferSpec.fs" />
     <Compile Include="MovementSpec.fs" />
     <Compile Include="MovementSurface.fs" />

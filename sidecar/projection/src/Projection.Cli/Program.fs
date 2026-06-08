@@ -1719,6 +1719,15 @@ let private runPlan (plan: ExecutionPlan) : int =
     // seal ---------------------------------------------------------------
     | PlanAction.SealEject store -> runEject store
     | PlanAction.SealApprove (version, approver, rationale, store) -> runApprove version approver rationale store
+    // report -------------------------------------------------------------
+    | PlanAction.ReportBundle store ->
+        match ReportRun.fromStore store with
+        | Ok bundle ->
+            printLines Console.Out (ReportRun.render bundle)
+            0
+        | Error msg ->
+            Console.Error.WriteLine (sprintf "projection report: %s" msg)
+            6
     // refused ------------------------------------------------------------
     | PlanAction.Refused (exit, error) -> TtyRenderer.renderVoicedError error; exit
 

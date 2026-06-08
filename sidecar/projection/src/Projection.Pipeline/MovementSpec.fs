@@ -236,6 +236,10 @@ type PlanAction =
     // seal ---------------------------------------------------------------
     | SealEject of store: string
     | SealApprove of version: string * approver: string * rationale: string option * store: string option
+    // report -------------------------------------------------------------
+    /// the migration-team change bundle: the ChangeManifest series read from
+    /// the flow's target durable timeline (THE_CLI.md §8 / F4).
+    | ReportBundle of store: string
     // shared -------------------------------------------------------------
     /// a named refusal — a coded `ValidationError` (voiced) + its exit code.
     | Refused of exit: int * error: ValidationError

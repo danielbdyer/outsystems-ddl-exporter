@@ -87,3 +87,63 @@ let ``AC-X6: eject round-trips through the durable store`` () =
                 Assert.True(EjectRun.isFaithful pkg)
     finally
         if System.IO.File.Exists path then System.IO.File.Delete path
+
+// -- ReportRun (THE_CLI.md §8 / F4) — the migration-team change bundle -------
+
+[<Fact>]
+let ``ReportRun: the change series is one manifest per recorded edge`` () =
+    match ReportRun.fromChain threeEpisodeChain with
+    | Error e -> Assert.Fail(sprintf "%A" e)
+    | Ok b ->
+        Assert.Equal("eject-dev", b.Timeline)
+        Assert.Equal(3, b.EpisodeCount)
+        // three episodes ⇒ two edges.
+        Assert.Equal(2, List.length b.Manifests)
+        let m0 = b.Manifests.[0]
+        // e0 (customer) → e1 (Patron): one kind rename ⇒ norm 1; CDC = e1's count.
+        Assert.Equal("1.0.0", Version.label m0.From.Version)
+        Assert.Equal("1.1.0", Version.label m0.To.Version)
+        Assert.Equal(1, m0.SchemaNorm)
+        Assert.Equal(1, m0.Channels.RenamedKinds)
+        Assert.Equal(10, m0.CdcCaptureCount)
+        // e1 → e2: same schema ⇒ zero-norm edge (CDC still recorded).
+        Assert.Equal(0, b.Manifests.[1].SchemaNorm)
+        Assert.Equal(20, b.Manifests.[1].CdcCaptureCount)
+        // path length = the summed per-edge norms (1 + 0).
+        Assert.Equal(1, b.PathLength)
+
+[<Fact>]
+let ``ReportRun: render surfaces the per-edge norm (the minimality proof)`` () =
+    match ReportRun.fromChain threeEpisodeChain with
+    | Error e -> Assert.Fail(sprintf "%A" e)
+    | Ok b ->
+        let lines = ReportRun.render b
+        Assert.Contains(lines, fun (l: string) -> l.Contains "eject-dev")
+        Assert.Contains(lines, fun (l: string) -> l.Contains "norm=1")
+        Assert.Contains(lines, fun (l: string) -> l.Contains "norm=0")
+
+[<Fact>]
+let ``ReportRun: a genesis-only timeline reports no change since genesis`` () =
+    let genesisOnly = EpisodicLifecycle.genesis (tl "fresh") e0
+    match ReportRun.fromChain genesisOnly with
+    | Error e -> Assert.Fail(sprintf "%A" e)
+    | Ok b ->
+        Assert.Equal(1, b.EpisodeCount)
+        Assert.Empty(b.Manifests)
+        Assert.Contains(ReportRun.render b, fun (l: string) -> l.Contains "No schema change recorded since genesis")
+
+[<Fact>]
+let ``ReportRun: round-trips through the durable store`` () =
+    let path =
+        System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(),
+            System.String.Concat("report-", System.Guid.NewGuid().ToString("N"), ".lifecycle.json"))
+    try
+        match LifecycleStore.save path threeEpisodeChain with
+        | Error e -> Assert.Fail(sprintf "store save failed: %A" e)
+        | Ok () ->
+            match ReportRun.fromStore path with
+            | Error e -> Assert.Fail e
+            | Ok b -> Assert.Equal(2, List.length b.Manifests)
+    finally
+        if System.IO.File.Exists path then System.IO.File.Delete path
