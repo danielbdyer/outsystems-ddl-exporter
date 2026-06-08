@@ -92,101 +92,57 @@ The anchor is solid. Build inside it, and keep the voice exact.
 
 ---
 
-## The 2026-06-08 addendum — what actually faces you
+## The 2026-06-08 addendum — boiled down
 
-*Written to the agent who picks this up next. The letter above is the register and the
-intent; this addendum is the ground truth of where the code is now, so you don't re-derive
-two re-envisionings' worth of context.*
+*The letter above is the register and the intent. This is the ground truth, distilled, so you
+start in the right place without re-deriving two CLI re-envisionings.*
 
-### What changed since the letter above
+### The whole thing in six lines
 
-Three things, none of which moves the register:
+1. **The machinery is built; the surface is unwired.** Your job is to wire the register into
+   the rendered TTY — no new engine, no new events. Pure rendering.
+2. **The map is `THE_VOICE_BACKLOG.md`.** It classifies every render site in `Program.fs`
+   (1876 lines) as voiced or raw and orders the work into seven waves with worked
+   before→after examples. Execute it in order.
+3. **The work looks mechanical and is not.** Every raw site is a place the instrument fails to
+   *disappear* — the operator sees the apparatus (`%A`, `norm=`, `REFUSED`) instead of the
+   truth the engine proves about itself. Initialize on the file:line list alone and you'll
+   ship guard-clean strings that miss the soul.
+4. **So read why first:** `NORTH_STAR.md` (fidelity is a theorem the engine proves about
+   itself — `Ingest ∘ Project = id`) → `THE_INSTRUMENT.md` (the Voice is the third layer;
+   *the newcomer is the power user*; *the instrument disappears*) → **`THE_VOICE.md` in full,
+   kept open while you work** (the twelve rules §1, the banned list §2.2, the soul §6, the
+   felt arc §7, off→on §11, how to derive §15). The backlog §2 distills the register; it is
+   not a substitute for the source.
+5. **The bar is not "the guard passes."** That's the floor. The bar: *would the newcomer trust
+   this on sight, would the master read it as a glance, and does the instrument disappear
+   behind it?* Backlog §1 makes it operable.
+6. **Start at Wave 0, then Wave 1.** Wave 0 kills the four `%A` dumps + four shout leads live
+   on the surface today (smallest fixes, highest integrity cost). Wave 1 wires the **idle**
+   `TtyRenderer.renderGate` / `Voice.gateSurface` (total over the closed `Preflight.GateLabel`
+   DU, tested, **uncalled**) into every refusal — zero new infra, the single highest-leverage
+   item.
 
-1. **The voice machinery got built.** Slices 1, 2, and 4 landed. `Voice.fs` (the catalog —
-   `all`/`lookup`/`toSurface`/`verdict`/`errorFrame`/`errorSurface`/`errorsSurface`/
-   `gateStatement`/`gateSurface`/`stageName`), `Watch.fs` (the streaming stage board with
-   the **minimum-dwell floor** — you asked for it; `PROJECTION_WATCH_DWELL_MS`, default
-   120 ms), `TtyRenderer.fs` (`renderSummary`/`renderReadinessBoard`/`renderAnswer`/
-   `renderVoicedError`/`renderErrorsTo`/`renderGate`), `Surface.fs` (renamed to
-   `Statement`/`Substantiation`/`Action`), and the `code ⇔ copy` + gate⇔copy totality tests
-   (`VoiceTotalityTests.fs`, with the **mechanical banned-list guard**) are all in and green.
-   The Core-purity sub-call resolved to the **1:1 projection-layer companion** (prose lives
-   in `Projection.Cli`, never `Projection.Core`).
+### What you're inheriting (the machinery, in one paragraph)
 
-2. **The CLI was re-envisioned twice.** First the ~16 verbs collapsed to four
-   (`project`/`check`/`explain`/`seal`); then those re-grounded into the **flows surface** —
-   `projection <flow> [--go] [--fresh] [--allow-drops]`, dispatched through one `runPlan`
-   over a `PlanAction` DU (`THE_CLI.md` is the current surface; read it). The voice machinery
-   survived both intact — the operator decision each time was "take main on the CLI surface,"
-   and the voice layer composed cleanly because it is a *rendering* of codes that did not
-   change. The synthetic-data path (`THE_SYNTHETIC_DATA_DESIGN.md`) and live-OSSYS-primary
-   model read (`V1_INPUT_DEPRECATION.md`) also landed in that window — both new flows you'll
-   eventually voice.
+`Voice.fs` (the catalog — `all`/`lookup`/`verdict`/`errorSurface`/`errorsSurface`/
+`gateStatement`/`gateSurface`/`stageName`), `Watch.fs` (streaming stage board + the
+minimum-dwell floor, `PROJECTION_WATCH_DWELL_MS`), `TtyRenderer.fs` (`renderSummary`/
+`renderReadinessBoard`/`renderAnswer`/`renderVoicedError`/`renderErrorsTo`/`renderGate`),
+`Surface.fs` (`Statement`/`Substantiation`/`Action`), and `VoiceTotalityTests.fs` (the
+`code ⇔ copy` + gate⇔copy totality + the mechanical banned-list guard) — all green. The CLI is
+now the **flows surface** (`projection <flow> [--go] [--fresh] [--allow-drops]`, dispatched via
+`runPlan` over `PlanAction`; read `THE_CLI.md`); `printErrors` already renders the voiced
+§10/§14 surface. The one open sub-decision, for Wave 1: the `--go`/`ALLOW_EXECUTE` intent gate
+has no `GateLabel` — recommend a flat `gate.intent` `errorSurface` code; record the choice in
+`DECISIONS`.
 
-3. **The error surface and the gates got partly wired.** `printErrors` now renders the
-   voiced §10/§14 surface across every executor (one edit, total coverage); the six `migrate`
-   `REFUSED` shouts were revoiced. But `Voice.gateSurface` — total over the closed
-   `Preflight.GateLabel` DU, banned-list-tested — is **still uncalled**: every pre-flight
-   refusal hand-writes its string beside the finished renderer.
+### The lines that bind
 
-### Read the *why* before you touch a string
-
-This is the one warning worth shouting: **the work looks mechanical and is not.** Every raw
-render site in the backlog is a place the instrument fails to *disappear* — where the
-operator sees the apparatus (`%A`, `norm=`, `REFUSED`, a leaked exit code) instead of the
-truth the engine proves about itself. If you initialize on the file:line list alone, you will
-produce strings that pass the banned-list guard and miss the soul. So, in order, before any
-wave:
-
-1. **`NORTH_STAR.md`** — why the engine exists: fidelity as a *theorem the engine proves
-   about itself* (`Ingest ∘ Project = id`). This is what the Voice renders into words.
-2. **`THE_INSTRUMENT.md`** — what the operator experiences: the three layers
-   (Structure/Style/**Voice**), one essence infinitely diggable, *the newcomer is the power
-   user*, *the instrument disappears*. The Voice is the third layer; this is its job.
-3. **`THE_VOICE.md`** — the register, with §0 (the one sentence), §6 ("This is the soul"),
-   §7 (the felt arc), §11 (off → on), and §15 (how to derive) carrying the bar.
-
-The bar a finished line clears is **not** "the guard passes" — that is the floor. It is:
-*would the newcomer trust this on sight, would the master read it as a glance, and does the
-instrument disappear behind it?* `THE_VOICE_BACKLOG.md` §1 makes that operable; hold it over
-every string.
-
-### Your map: `THE_VOICE_BACKLOG.md`
-
-`THE_VOICE_BACKLOG.md` (new, the masterwork) leads with the North Star (§0–§1: why a single
-raw line matters, and what "done" means above the guard), then classifies **every**
-operator-facing render site in `Program.fs` (1876 lines) as voiced or raw, frames each wave by
-the *felt-arc moment it restores*, maps each raw site to its storyboard act + `THE_VOICE.md`
-section, names the renderer that voices it, and orders the work into seven waves. It supersedes
-`THE_VOICE_BUILD_MAP.md` §6 (the execution layer — that map predates both CLI
-re-envisionings); the map's architecture (§1), code inventory (§2), and test blast-radius
-(§8) stay accurate and are referenced, not repeated.
-
-### Start here (the wave order, highest-value first)
-
-- **Wave 0 — stop the live breaches.** Four `%A` raw-DU dumps (`Program.fs:1167,1279,575/579,
-  1752`) and four system-shout leads (`"canary RED"`, `"DRIFT DETECTED"`, `"verification
-  FAILED"`, `"FAILED self-verification"`) are on the operator surface *today* and break §2.2.
-  Smallest fixes, highest integrity cost.
-- **Wave 1 — spend the renderer that's sitting idle.** Wire `TtyRenderer.renderGate` /
-  `Voice.gateSurface` into every migrate/transfer/synthetic pre-flight refusal. Zero new
-  infrastructure — the renderer is built, total, and tested; `Preflight.classify` already
-  maps code → `GateLabel`. This is the single highest-leverage item. (One sub-decision to
-  record: the `--go`/`ALLOW_EXECUTE` intent gate has no `GateLabel` yet — recommend voicing
-  it through a flat `gate.intent` `errorSurface` code rather than the engine's closed DU;
-  the backlog §2 explains.)
-- **Waves 2–6** — the §9 ‖δ‖ preview (reuse `Comparison.renderCatalogDiff`, proven by
-  `runDiff`), the §6 proofs, the §13 success narration + header cleanup, the §4 move
-  surfaces, the synthetic surface. All in the backlog with file:line anchors.
-
-### Disciplines that still bind (the operator will notice)
-
-Everything in "Disciplines to hold while you build" above still holds. Specifically: the
-twelve rules + banned list over **every** string (the `VoiceTotalityTests` guard fails the
-build on a violation — extend its scanned set as you add copy); **codes never change, only
-copy** (the NDJSON contract is the machine channel — this is a pure rendering project, no
-event moves); declare-at-site / harvest-centrally with `code ⇔ copy` totality; pure-Core
-holds. Commit to the `claude/handoff-voice-implementation-PzpiS` branch; the register was
-settled with the operator one rule at a time — render inside it, don't re-litigate it.
+Codes never change, only copy (the NDJSON contract is the machine channel). Derive every
+string from `THE_VOICE.md`, never invent. Extend the totality test's in-scope set as each code
+lands. Pure-Core holds (prose lives in `Projection.Cli`). Commit to
+`claude/handoff-voice-implementation-PzpiS`. The register was settled with the operator one
+rule at a time — render inside it, don't re-litigate it.
 
 The machinery is whole. The surface is the work, and it's mapped. Hold the voice exact.

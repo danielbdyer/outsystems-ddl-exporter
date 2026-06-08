@@ -20963,3 +20963,15 @@ The first cut of `THE_VOICE_BACKLOG.md` read as a mechanical punch list — file
 4. **The handoff updated** with a "Read the *why* before you touch a string" section: the mandated reading order (`NORTH_STAR` → `THE_INSTRUMENT` → `THE_VOICE` §0/§6/§7/§11/§15) and the explicit warning that initializing on the file:line list alone produces guard-clean strings that miss the soul.
 
 No code changed — documentation grounding the rendering work in the vision. The mechanical inventory (the render-site classification, the renderer-per-gap, the wave order) is unchanged and intact; it now sits under the North Star rather than standing in for it.
+
+---
+
+**`DECISIONS 2026-06-08 (register-grounded)` — THE_VOICE.md made operable in the backlog; the handoff boiled down.**
+
+Two refinements so an executing agent cannot drift, and orients fast:
+
+1. **The register is now in-doc and per-wave (`THE_VOICE_BACKLOG.md`).** A new §2 "The register in one screen" carries the twelve rules (§1), the banned list (§2.2), and the off→on calibration table (§11) inline — framed as "the corrections you will otherwise re-introduce by instinct" — with the standing instruction to keep `THE_VOICE.md` open, the distillation being no substitute for the source. Every wave (0–6) now carries a **Today → In register** worked example: the actual raw string at the site and the gold-standard voiced line derived from `THE_VOICE.md`, with the rule/section it satisfies (e.g. Wave 1's example is literally §11's worst case — `migrate refused — undeclared destructive change · exit 9` → `The IX_Order_Stale index will be dropped. No data is lost, but the drop is not auto-reversible. → Approve the removal, or halt.`). The target string shape is unambiguous at each site, so producing a guard-clean-but-soulless line is no longer the path of least resistance.
+
+2. **The handoff is distilled.** The verbose addendum is replaced by "The whole thing in six lines" (machinery built / map is the backlog / looks mechanical and isn't / read why first / the bar is not the guard / start Wave 0 then Wave 1), then a one-paragraph machinery inventory and a short "lines that bind." Same content, a fraction of the read.
+
+No code changed. The mechanical inventory is intact; it now sits under the North Star and inside the register, with worked examples making the register operable at every site.
