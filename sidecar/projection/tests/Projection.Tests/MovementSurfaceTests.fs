@@ -243,7 +243,7 @@ let private flowCfg =
     }
     """ |> mustOk
 
-let private preview = { Go = false; Fresh = false; AllowDrops = false }
+let private preview = { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false }
 let private commit  = { preview with Go = true }
 let private flowOf name = Map.find name flowCfg.Flows
 let private specOf name opts = Command.resolveFlowSpec flowCfg (flowOf name) opts
@@ -333,11 +333,18 @@ let ``parse: a bare flow name dispatches to Intent.Flow (verb implied)`` () =
     Assert.False o.AllowDrops
 
 [<Fact>]
-let ``parse: --go --fresh --allow-drops set the per-run intent`` () =
-    let (_, o) = parseFlowIntent [ "golden"; "--go"; "--fresh"; "--allow-drops" ]
+let ``parse: --go --fresh --allow-drops --allow-cdc set the per-run intent`` () =
+    let (_, o) = parseFlowIntent [ "golden"; "--go"; "--fresh"; "--allow-drops"; "--allow-cdc" ]
     Assert.True o.Go
     Assert.True o.Fresh
     Assert.True o.AllowDrops
+    Assert.True o.AllowCdc
+
+[<Fact>]
+let ``flow --allow-cdc threads the CDC-gate override onto the spec (item 3)`` () =
+    match specOf "spin" { preview with AllowCdc = true } with
+    | Ok s -> Assert.True s.AllowCdc
+    | Error es -> Assert.Fail(sprintf "%A" es)
 
 [<Fact>]
 let ``parse: a bare flow routes through plan to its engine face`` () =

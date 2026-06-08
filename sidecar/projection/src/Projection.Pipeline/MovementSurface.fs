@@ -482,6 +482,7 @@ module Command =
                         Baseline = (if opts.Fresh then Baseline.Empty else Baseline.Auto)
                         Rekey    = flow.Rekey
                         AllowDrops = opts.AllowDrops
+                        AllowCdc = opts.AllowCdc
                         // The target's durable timeline: a live --go records an
                         // episode into it (which `report` later diffs). F4.
                         Store    = toEnv.Store
@@ -553,7 +554,8 @@ module Command =
             let opts =
                 { Go         = List.contains "--go" rest
                   Fresh      = List.contains "--fresh" rest
-                  AllowDrops = List.contains "--allow-drops" rest }
+                  AllowDrops = List.contains "--allow-drops" rest
+                  AllowCdc   = List.contains "--allow-cdc" rest }
             Result.success (Intent.Flow (Map.find first cfg.Flows, opts))
         | first :: _ when secondaryVerbs.Contains first ->
             // a known verb with a malformed tail falls through its own branch;

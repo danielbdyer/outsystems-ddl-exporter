@@ -163,6 +163,9 @@ type FlowRunOpts =
         Go         : bool
         Fresh      : bool
         AllowDrops : bool
+        /// Override the CDC-tracked-sink pre-flight gate (the gate refuses a
+        /// live write into a CDC-tracked sink unless this is set — item 3).
+        AllowCdc   : bool
     }
 
 /// The operator intents (THE_CLI.md §2). `Flow` is the hero — the daily
