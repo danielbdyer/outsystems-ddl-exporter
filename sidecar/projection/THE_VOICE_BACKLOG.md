@@ -212,7 +212,9 @@ mostly hasn't been given the words at the render sites.
 
 Highest-value first; each independently shippable, pure pool green at each step. Every wave
 carries a **Today → In register** worked example — the raw string now, and the gold-standard
-line derived from `THE_VOICE.md` — so the target is unambiguous at the site.
+line derived from `THE_VOICE.md` — so the target is unambiguous at the site. For the *full*
+finished surfaces — multi-line, dug-in, at scale, all three outcomes — see **Appendix A**: the
+per-wave snippet is the line, the appendix is the whole screen.
 
 ### Wave 0 — Stop the live breaches (the apparatus showing through, today)
 
@@ -422,6 +424,223 @@ for each wave's copy — derive from it, do not invent.
 - **IR grows under evidence.** Voice what an executor actually emits; never ahead of its events.
 - **Pure-Core holds.** Operator prose never enters `Projection.Core`; `View`/`Surface`/`Voice`
   live in `Projection.Cli`.
+
+---
+
+## Appendix A — The finished surfaces, at full zoom
+
+The per-wave snippets above are *lines*. This is the **whole screen** — what the operator
+actually sees, multi-line, with the dig expanded and the three outcomes (positive · negative ·
+edge) each given equal care (`THE_STORYBOARD.md` §3's quality bar). These are the producer's
+reference for "what done looks like": build toward them, derive the exact strings under the
+register. They are **illustrative** (the anchor discipline — read for the structure and the
+register, not the literal string), and they obey the **legibility axiom** at every depth —
+where `THE_STORYBOARD.md` §8's illustrative substantiation still shows algebra (`‖δ‖ = 312`,
+`residual ∅`), these surfaces render the plain form the operator reads.
+
+Glyphs are the `Theme` tokens (`✓` safe · `▲` review/gate · `✕` stop · `○` pending · `⣷` in
+progress · `→` next move · `·` separator · `●` a run · `▇░` the meter · `▸` show detail). Color
+always rides a glyph (a `NO_COLOR` / colorblind reader loses nothing). One machine token rides
+beneath where a master greps it — the **exit code** or the diagnostic **code**; never algebra.
+
+### A.1 — The migrate preview (P-6, acts 2→3), at three zooms
+
+**Zoom 0 — the essence (what opens by default).** The verdict, the big rocks, the next move:
+
+```
+  ▲  Ready to apply — one item needs review.
+     14 changes to UAT · 13 safe and reversible · 1 awaits approval · no data lost
+
+     ⟲ rename     2   rows preserved                                   safe
+     ≈ reshape    3   2 instant · 1 validated before apply             safe
+     +  add       6   new tables and columns                           safe
+     −  remove    1   drops an index — approval required               ▲ gate
+     · tolerated  2   cosmetic, excluded by a named tolerance
+
+     → review the 1, or apply all
+     ↑↓ move · ▸ show detail · g the gate · ← earlier · later →
+```
+
+**Zoom 1 — `▸ show detail` on the one that matters (the dig stays plain).** Same surface, one
+node opened:
+
+```
+  −  remove     1   drops an index — approval required                ▲ gate
+       The IX_Order_Stale index will be dropped.
+       No data is lost, but the drop is not auto-reversible.
+       0 rows affected · the index is not referenced by another object
+       → Approve the removal, or halt.                          beneath: exit 9 if applied unapproved
+```
+
+**Zoom 2 — at scale (2,140 changes).** The *same one-line verdict*; the breadth clusters by
+table and caps the tail (`THE_VOICE.md` §12):
+
+```
+  ▲  Ready to apply — 4 items need review.
+     2,140 changes across 300 tables · 4 drops · 12 narrowings · 2,124 additive · 380 cosmetic
+
+     −  remove       4   drops 4 indexes — approval required           ▲ gate
+     ≈ reshape      12   narrowings — data validated before apply      review
+     +  add      2,124   additive and reversible                       safe
+     · tolerated   380   cosmetic, excluded by named tolerances
+
+     Sales · 412 changes ▸    Orders · 318 ▸    and 1,847 more
+     → review the 4 drops, or apply all
+     ↑↓ move · ▸ show detail · / find a table · g the gate
+```
+
+### A.2 — The gate, in full (act 3) — consent, in plain words
+
+**Declared-loss:**
+
+```
+  ▲  Approval required before removal.                          migrate → UAT
+       The IX_Order_Stale index will be dropped.
+       No data is lost, but the drop is not auto-reversible. The other 13 changes are safe.
+
+       → Approve the removal, or halt.
+       d  approve this drop      a  approve all declared      q  halt        beneath: exit 9
+```
+
+**Data-compat (a narrowing over live data):**
+
+```
+  ▲  Approval required before narrowing.                        migrate → UAT
+       The Status column will be narrowed to 20 characters.
+       4 rows currently exceed that length.
+
+       → Trim the 4 rows, widen the target, or halt.
+       t  show the 4 rows      w  widen the target      q  halt
+```
+
+### A.3 — The live run (act 4, Watch), frame by frame
+
+**In flight** — gerund stage names (rule 12), an honest estimate:
+
+```
+  Applying 14 changes to UAT
+
+    Reading the model         ✓  1.2s
+    Checking the data         ✓  300 tables
+    Building the changes      ⣷  142 of 300 · ~8s remaining
+    Verifying the round-trip  ○
+
+    → the changes are being applied; verification follows
+```
+
+**Done and verified** — each finished stage names what follows (nothing ends at "done"):
+
+```
+  ✓  Applied and verified — the database now matches the model.
+
+    Reading the model         ✓  1.2s
+    Checking the data         ✓  300 tables
+    Building the changes      ✓  14 changes · 3.4s
+    Verifying the round-trip  ✓  matches
+
+    → recorded as run 11 · review the timeline, or continue
+```
+
+**Edge — the no-op (P-5), a designed line, not an empty screen:**
+
+```
+  ✓  Nothing to apply. The database is provably unchanged.
+     no rows captured · no schema changes issued · the redeploy was idempotent
+```
+
+**Negative — a stage fails mid-run; the safe state is stated:**
+
+```
+  ✕  Stopped before any change was completed. The cause is shown below.
+
+    Building the changes      ✕  ALTER permission denied on dbo.Order
+
+       ALTER permission is denied on dbo.Order. Grant ALTER, then retry.
+       No partial write remains; safe to retry.                 beneath: exit 7
+```
+
+### A.4 — The proofs (acts 5–6) — the soul, essence then dig
+
+**Verified, essence:**
+
+```
+  ✓  Verified — the database now matches the model.
+       312 rows changed — exactly those that differed, and no others.
+       → recorded as run 11                                     ▸ show detail
+```
+
+**Same surface, `▸ show detail` — the dig is more plain detail, never notation:**
+
+```
+  ✓  Verified — the database now matches the model.
+       312 rows changed — exactly those that differed, and no others.
+         · the same 312 the database's change-tracking recorded as changed
+         · the read-back is identical to the model — nothing left over
+         · 4 tables added · 1 index dropped · 7 columns changed
+       → recorded as run 11
+```
+
+**Negative — the round-trip diverges (the single most important screen, P-9):**
+
+```
+  ✕  The round-trip returned one difference. It blocks the commit.
+       The Customer.Email column reads back as 50 characters; the model says 100.
+       → resolve the difference, then re-verify.                ▸ show the difference
+```
+
+### A.5 — Where it stands (act 8) — the timeline and the one lever
+
+```
+  Where it stands
+
+    ●●●●✕●●●●●●▸                                  run 11, just now
+    11 runs · run 5 failed · 10 verified
+
+    Cutover   ███████░░░   7 of 10 green   ·   3 green checks remain
+       One item remains: a user-fallback on 3 accounts.
+       → map the 3 accounts to clear it
+
+    ← earlier · later →
+```
+
+**Edge — genesis (the first run): a beginning, not an absence:**
+
+```
+  Where it stands
+    ▸ run 1, just now — the first recorded run.
+    Run history is being retained in ./runs. The streak to cutover begins here.
+```
+
+### A.6 — Arrival and setup (act 0) — a choice to make, never a scold
+
+**On request — the readback:**
+
+```
+  Setup
+    History      on   · ./runs
+    Connection   UAT  · reachable
+    ALTER        granted on dbo
+    Output       ./out
+```
+
+**Required and missing · optional and unset · set-but-invalid** — three registers, all calm:
+
+```
+  ✕  A connection to UAT is required for this.
+     Pass --conn <ref>, or set PROJECTION_CONN.
+
+  Run history is not being retained.
+  To keep a record of runs over time, set PROJECTION_LEDGER_DIR.
+
+  ✕  The configuration has a problem.
+     line 12: "threshold" must be a number, not "ten". Correct it and rerun.
+                                                          beneath: pipeline.config.typeMismatch
+```
+
+> **What every screen above shares** — the essence on the first line (the master's glance, the
+> newcomer's finding), the proof one plain level beneath (the dig), the next move named, and not
+> one symbol of algebra anywhere in what the operator reads. That is the instrument disappearing.
+> Build toward these; derive the strings from `THE_VOICE.md`; hold the register at every depth.
 
 ---
 

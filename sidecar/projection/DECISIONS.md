@@ -20987,3 +20987,18 @@ The governing bar, stated for execution: **every rendered string — statement a
 - **In (stays — sharpens, not obscures):** CDC, ALTER/ADD/DROP, idempotent, index, column, schema, the exit code. A DBA knows them; they are concrete and purposeful, not category theory.
 
 Captured in the backlog as: §1's bar sentence; a §2 "axiom, stated for execution" callout with an algebra→plain table and an explicit "stays" list; §1 rule-2 rewritten ("the proof is plain too"); every `beneath:` example purged of algebra (the §6 gold statements — including "Confirmed idempotent…" — restored, since idempotent/CDC/ALTER are permitted); and the one surviving formula (the §0 adjunction law) explicitly tagged "the one piece of algebra in this document… never rendered to the operator; the thing the Voice translates *from*." Verified mechanically: no algebra token appears in any rendered ✓ example or `beneath:` line. No code changed.
+
+---
+
+**`DECISIONS 2026-06-08 (full-zoom surfaces)` — Appendix A: the finished surfaces at whole-screen fidelity.**
+
+The per-wave examples were *lines*; the next agent needs to see the *whole screen*. Added Appendix A to `THE_VOICE_BACKLOG.md` — six fully-rendered operator surfaces at increasing zoom, grounded in `THE_STORYBOARD.md` §3 (the act cards) + §8 (the P-6 frame-by-frame), as the producer's reference for "what done looks like":
+
+1. **A.1 The migrate preview (acts 2→3) at three zooms** — the essence (verdict + big rocks + next move), the same surface with one node dug in (`▸ show detail`), and at scale (2,140 changes — same one-line verdict, cluster-by-table, cap-and-name).
+2. **A.2 The gate in full** (declared-loss + data-compat) — consequence as meaning, one lever, plain imperatives, the affordance keys.
+3. **A.3 The live run (Watch) frame by frame** — in-flight (gerund stages + honest ETA), done-and-verified, the no-op edge, and a mid-run failure with the safe-state line.
+4. **A.4 The proofs essence-then-dig** — verified (plain), the same surface dug in (the depth is *more plain detail*, never notation), and the divergence (the P-9 screen).
+5. **A.5 The timeline + ladder** — the streak, the named failed run, the one lever; plus the genesis edge.
+6. **A.6 Arrival/setup** — the readback, and the three config registers (required-missing / optional-unset / set-but-invalid), all calm.
+
+Two disciplines made explicit in the appendix: (a) every surface uses the `Theme` glyph tokens with color always riding a glyph (NO_COLOR-safe); (b) **the legibility axiom holds at every depth** — where `THE_STORYBOARD.md` §8's illustrative substantiation still shows algebra (`‖δ‖ = 312`, `residual ∅`), these surfaces render the plain form the operator reads (e.g. "the same 312 the database's change-tracking recorded as changed"; "the read-back is identical to the model — nothing left over"). Mechanically verified: no algebra token appears in any rendered surface line; the only machine token beneath is the exit code or the diagnostic code. No code changed.
