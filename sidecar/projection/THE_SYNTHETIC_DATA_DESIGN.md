@@ -1,9 +1,34 @@
 # THE_SYNTHETIC_DATA_DESIGN.md — profile-driven, FK-aware synthetic data
 
-**Status: DESIGN LOCKED, NOT YET BUILT (2026-06-08).** This is the first-principles
-design for the synthetic (`--data synthetic` / `from: synthetic`) data source — the one
-genuine net-new feature remaining from `THE_CLI.md` §12. The two design forks are decided
-(below). Build it in the three slices of §8. Nothing in this document is shipped yet.
+**Status: ENGINE BUILT — S1/S2/S3 green; CLI flow-wiring + durable codec remain (2026-06-08).**
+This is the first-principles design for the synthetic (`--data synthetic` / `from: synthetic`)
+data source — the one genuine net-new feature remaining from `THE_CLI.md` §12. The two design
+forks are decided (below). The three slices of §8 are built and green:
+
+- **S1 — `SyntheticData.generate`** (pure Core): `src/Projection.Core/SyntheticData.fs`
+  (+ `SyntheticConfig`). Tests `tests/Projection.Tests/SyntheticDataTests.fs` (13; the L1 +
+  privacy floor — T1 byte-determinism, zero FK orphans, the privacy property, preserve /
+  forced-synthesize, null-rate within ε, volume/scale, PK uniqueness, PrimitiveType
+  exhaustion). PRNG is splitmix64 (F#'s default arithmetic is unchecked, so the wrapping mix
+  is well-defined — the design's "splitmix64-style").
+- **S2 — `Transfer.runSynthetic`** (Pipeline): in `src/Projection.Pipeline/TransferRun.fs`
+  (reuses `DataLoadPlan.build` → `writePlan` / `wipeFkOrdered`; no source endpoint, no
+  `runThroughConnections`). Docker proof `tests/Projection.Tests/SyntheticLoadTests.fs`
+  (load lands profiled volume with zero FK orphans through the IDENTITY/AssignedBySink
+  capture path; DryRun writes nothing).
+- **S3 — the synthetic canary** (`π ∘ σ ≈ id`, the forcing function):
+  `tests/Projection.Tests/SyntheticCanaryTests.fs` (warm Docker pool). Capture rode the
+  **existing** `LiveProfiler.attach` (the full-Profile assembler already present — §10 gap #1
+  resolved). One wrinkle baked into the test: `ReadSide.read` marks every read kind
+  `Modality=[Static rows]` and `LiveProfiler` skips static kinds, so the canary strips the
+  Static mark before profiling (the data is in the DB, not the catalog).
+
+**Still to build (the operator surface):** the CLI flow-wiring (extend `DataOrigin.Synthetic`
+to carry the profile ref; new `PlanAction.SynthesizeAndLoad`; `dataOriginOfSource` /
+`planMovement` routing; `runPlan` execution opening the sink and reading the durable profile),
+the durable `ProfileCodec` (serialize/deserialize round-trip; §10 gap #2 — still open), and
+the capture verb `projection profile <env> --out` (§10 gap #1's I/O front-end —
+`LiveProfiler.attach` + `ProfileCodec.serialize`). See §10.
 
 Provenance: derived from the operator's premise ("profile the on-prem legacy application
 data to create better synthetic data and start to iterate… preview the migrated legacy
@@ -216,10 +241,15 @@ write seam; **no source DB / no `runThroughConnections`**). New `PlanAction.Synt
 
 ## 10. Open anchors to confirm / likely-build
 
-1. **Full-`Profile` capture from `LiveProfiler`.** `captureEvidenceCache` yields an
-   `EvidenceCache`; assembling a complete `Profile` (Columns + CategoricalDistribution +
-   NumericDistribution) from it may need a thin "capture → Profile" assembler. Confirm
-   whether a full-Profile capture entry already exists; if not, build it in S3.
+1. **Full-`Profile` capture from `LiveProfiler`. — RESOLVED (2026-06-08).**
+   `LiveProfiler.attach cnn catalog Profile.empty` (`src/Projection.Adapters.Sql/LiveProfiler.fs:1231`)
+   IS the full-Profile assembler — it captures the `EvidenceCache` once and composes every
+   axis (Columns / Categorical / Numeric / FK realities + cardinalities + selectivities /
+   joints / composite-unique) via `attachFromCache`. The synthetic canary uses it directly.
+   **Caveat for the capture verb:** `LiveProfiler` skips static kinds, and `ReadSide.read`
+   marks read kinds `Modality=[Static rows]`; strip the Static mark before profiling (the
+   canary does this). The remaining I/O front-end is the capture *verb* (read env → strip
+   Static → `attach` → `ProfileCodec.serialize` → file), not the assembler.
 2. **Profile serialize/deserialize round-trip (the durable artifact).** `DistributionsEmitter`
    serializes; a **deserialize** (read `legacy.profile.json` back into a `Profile`) is
    likely missing. Build a `ProfileCodec` (mirror `CatalogCodec`) with the universal
