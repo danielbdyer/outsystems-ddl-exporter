@@ -1,5 +1,16 @@
 # THE_CLI_BACKLOG.md — building the operator surface
 
+> **SUPERSEDED IN PART (2026-06-08).** `THE_CLI.md` was re-derived against the
+> operator's real workflows: the surface collapses further to **`projection
+> <flow> [--go] [--fresh] [--allow-drops]`** over a two-layer config
+> (`environments` with `access`/`grant` + named `flows`), with the baseline *A*
+> first-class and a `seal`→episode→`report` provenance pair. The four-verb work
+> below (the `MovementSpec` engine seam, the pure totality-tested `Command.plan`,
+> the two-gate safety model, the voiced refusals) is the **foundation the new
+> surface builds on** — it is not discarded. A fresh slice plan for the
+> environments/flows layer lands here when that build opens; until then this
+> section records what shipped under the prior shape.
+
 The slice backlog that carried `THE_CLI.md` from vision to shipped. The target
 — four verbs (`project` / `check` / `explain` / `seal`) over one engine, with
 the emission-family verbs collapsed into one `MovementSpec` — is **landed**.
