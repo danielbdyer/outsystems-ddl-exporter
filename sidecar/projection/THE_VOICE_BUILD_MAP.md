@@ -22,9 +22,66 @@ five-agent research pass (2026-06-06) run while the understanding was fresh.
 
 ---
 
+## 0.5 — Reconciliation with `THE_CLI.md` (the four-verb surface, shipped 2026-06-07)
+
+**The CLI was re-envisioned after this map was written.** `main` collapsed the ~16 verbs into
+**four** — `project` / `check` / `explain` / `seal` — over one `MovementSpec`
+(`src/Projection.Pipeline/MovementSpec.fs` + `MovementSurface.fs`; argv → typed `Intent` via
+`MovementSurface.parse`; four thin executors in `src/Projection.Cli/Program.fs`). See `THE_CLI.md`
+(the operator surface; §7 is the old-verb → new-verb namespace map, §13 the shipped shape) and
+`THE_CLI_BACKLOG.md`. **`THE_CLI.md` is a sibling of the voice docs and writes in the `THE_VOICE.md`
+register** — it is not a contradiction; it is the surface the voice now speaks on.
+
+**What this means for this map:**
+
+- **The voice machinery is UNCHANGED and still correct.** Main kept and rewired `Voice.fs`,
+  `Watch.fs`, `TtyRenderer.fs`, `View.fs`, `Surface.fs`, `Comparison.fs`, and the event spine
+  (`LogSink`, `EventProjection`, `Config`, `CatalogDiff`, `Episode`/`RunLedger`/`ChangeManifest`).
+  Every Pipeline-/Core-layer `file:line` below (anything **not** in `Program.fs` or the deleted
+  Argu files) remains accurate.
+- **SUPERSEDED by the four-verb surface** (read `THE_CLI.md`, not this map's old refs):
+  - **Every `Program.fs` `file:line` ref** — `Program.fs` was rewritten (~650 lines). The old
+    `dispatchFullExport` / `runFullExport` / per-verb dispatch trees are gone.
+  - **The run-type framing** — `FullExportRun` / `MigrationRun` / `TransferRun` / `EjectRun` /
+    `DriftRun` are no longer the dispatch surface; they are engine faces behind the **one**
+    `MovementSpec` executor (`THE_CLI.md` §13). The codes they emit are unchanged (the machinery
+    is the same); only *which command invokes them* changed (§7 namespace map).
+  - **"Run unification" (the slice-2 remainder, §4.2)** is **largely SUBSUMED** — the runs are
+    already unified into `MovementSpec`. What remains of slice 2 is narrower: confirm the unified
+    executor emits the per-stage `LogSink` stream across the `project`/`check` faces (so `--watch`
+    works beyond `project --to <folder> --config`), plus the intra-stage ETA (§4.4).
+  - **"Voice the Argu `Usage`" (the slice-4 tail, §6.1)** is obsolete in that form — the Argu arg
+    files (`FullExportArgs`/`TransferArgs`/`VerbArgs`/`VerifyDataArgs`) are **deleted**. The help is
+    now the hand-rolled `usageLines` in `Program.fs` + `MovementSurface.parse`'s refusal/preview
+    notes (which `THE_CLI.md` §5 already specifies in the voice register). Voicing target = those.
+- **Where the voice slices now land** (old verb → new face, `THE_CLI.md` §7):
+  - the **verdict panel** + **`--watch`** Watch board render on `project` (`--to <folder> --config`
+    today; extend to the other faces);
+  - **errors as voice** (`Voice.errorsSurface` / `TtyRenderer.renderErrors`) wires into the four
+    executors where they currently call `printErrors` / inline refusal prose — **available, not yet
+    wired into the new `Program.fs`** (the reconciliation kept main's `Program.fs` verbatim; the
+    voice surfaces stay ready to wire deliberately with the team's CLI direction);
+  - **§5 gates** (`Voice.gateSurface`) wire into the `--go` / pre-flight refusal path
+    (`THE_CLI.md` §5 — "loss is declared, never silent");
+  - **`check`** is the home of the §6 proofs (canary / drift / data — mechanism-1, §6.2);
+  - **`explain`** is the home of the §4 move surfaces (diff / policy / suggest — mechanism-1).
+
+The slice *substance* (the seam, the `code ⇔ copy` totality, the dwell floor, the §12/§8 rendering,
+the mechanism-1 typed `toView`s) is unchanged; only the **dispatch surface** it renders on moved
+from sixteen verbs to four.
+
+---
+
+> **Line-number caveat (restated).** Pipeline-/Core-layer `file:line` refs below are accurate
+> (a 2026-06-06 snapshot; treat as "look here"). **`Program.fs` refs are superseded** per §0.5 —
+> use `THE_CLI.md` §7/§13 for the new dispatch.
+
+---
+
 ## Table of contents
 
 0. [Status — what is built](#0--status--what-is-built)
+0.5. [Reconciliation with `THE_CLI.md` (the four-verb surface)](#05--reconciliation-with-the_climd-the-four-verb-surface-shipped-2026-06-07)
 1. [The architecture (the settled spine)](#1--the-architecture-the-settled-spine)
 2. [The emittable-code inventory (the canonical reference set)](#2--the-emittable-code-inventory-the-canonical-reference-set)
 3. [Slice 1 — the Voice seam + totality test (LANDED)](#3--slice-1--the-voice-seam--totality-test-landed)
@@ -44,10 +101,14 @@ five-agent research pass (2026-06-06) run while the understanding was fresh.
 | **0** | The discipline (Event/Aggregate/Voice separation) | **RECORDED** (`DECISIONS 2026-06-06`; `CLAUDE.md` operating-disciplines row) |
 | **1** | The Voice seam + `code ⇔ copy` totality test + verdict wiring | **LANDED** (commit `dab7b22`; `DECISIONS 2026-06-06 (later)`) |
 | **2** | Stage-code vocabulary | **SCAFFOLDED** (the §13 stage codes are voiced in `Voice.all`) |
-| **2** | Streaming Watch render path (full-export) + dwell floor | **LANDED** (`Watch.fs`; `--watch`; `DECISIONS 2026-06-06 (later, slice 2)`) |
-| **2** | Run unification (Migration/Transfer/Eject onto the spine) + intra-stage ETA | **PENDING** (this doc §4.2/§4.4) |
-| **3** | Aggregate-at-scale + timeline/ladder | **PENDING** (this doc §5) |
-| **4** | Errors & config as voice + mechanism-1 toViews | **PENDING** (this doc §6) |
+| **2** | Streaming Watch render path + dwell floor | **LANDED** (`Watch.fs`; `--watch` on `project --to <folder> --config`; `DECISIONS 2026-06-06 (later, slice 2)`) |
+| **2** | Run unification onto the spine | **SUBSUMED** by the CLI re-envisioning (one `MovementSpec` executor; §0.5). Remaining: per-stage stream across the `project`/`check` faces |
+| **2** | Intra-stage ETA | **PENDING** (this doc §4.4) |
+| **3** | Aggregate-at-scale + timeline/ladder | **PENDING** (this doc §5; renders on `project` + `check ready`) |
+| **4** | Errors as voice (`Voice.errorsSurface` / `TtyRenderer.renderErrors`) | **WIRED** — `printErrors` (every executor's error path) now renders the voiced §10/§14 surface (`DECISIONS 2026-06-07 (errors wired)`); the six `migrate` `REFUSED` shouts revoiced |
+| **4** | configError message lift + the hand-rolled usage | **PENDING** (this doc §6.1; Argu `Usage` is obsolete — files deleted, §0.5) |
+| **mech-1** | §5 gates voiced over all 8 `GateLabel`s (`Voice.gateStatement`/`gateSurface`) | **BUILT, not wired** — `gateSurface` exists + tested; wire into the `reportPreviewOutcome`/pre-flight refusal renderers (§0.5; the §5 safety surface — deliberate) |
+| **mech-1** | §4 moves (→ `explain`) / §6 proofs (→ `check`) typed `toView` | **PENDING** (this doc §6.2) |
 | **5** | Typed `DiagnosticPayload` lift | **DEFERRED** behind a real consumer (this doc §7) |
 
 **Locked sub-decisions** (`DECISIONS 2026-06-06 (later)`): Core-purity → **1:1 projection-layer

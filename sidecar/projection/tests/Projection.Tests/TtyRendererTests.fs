@@ -112,7 +112,7 @@ let ``Gate: a destructive refusal stops with the loss, the exit, and the declare
     let refusal =
         Preflight.refusalOf [ ValidationError.create "migrate.undeclaredDestructiveChange" "dropping index IX_Order_Stale" ]
     let text = renderGateText "projection migrate" refusal
-    Assert.Contains("destroys structure", text)            // the statement (Bad hero)
+    Assert.Contains("drops a database object", text)       // the statement (Bad hero; the true verb, §5)
     Assert.Contains("undeclared destructive change", text) // the gate axis
     Assert.Contains("dropping index IX_Order_Stale", text) // the detail
     Assert.Contains("9", text)                             // the distinct exit code
