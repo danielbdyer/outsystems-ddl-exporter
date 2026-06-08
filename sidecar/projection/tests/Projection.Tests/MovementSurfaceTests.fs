@@ -371,6 +371,21 @@ let ``report --store <path>: an explicit store overrides`` () =
     | other -> Assert.Fail(sprintf "expected ReportBundle, got %A" other)
 
 [<Fact>]
+let ``explain <flow>: previews B (the flow model) against A_prior (the target store)`` () =
+    // uat → onprem-uat (store "lifecycle/uat.json"); cfg model is "model.json".
+    match (Command.plan flowCfg (Intent.Explain [ "uat" ])).Action with
+    | PlanAction.ExplainMigrateFromStore (store, modelB, _) ->
+        Assert.Equal("lifecycle/uat.json", store)
+        Assert.Equal("model.json", modelB)
+    | other -> Assert.Fail(sprintf "expected ExplainMigrateFromStore, got %A" other)
+
+[<Fact>]
+let ``explain <flow>: a target with no store is refused (publish + seal once first)`` () =
+    match (Command.plan flowCfg (Intent.Explain [ "golden" ])).Action with
+    | PlanAction.Refused (6, e) -> Assert.Equal("cli.explain.flowNoStore", e.Code)
+    | other -> Assert.Fail(sprintf "expected flowNoStore refusal, got %A" other)
+
+[<Fact>]
 let ``parse: an unknown first token names the known flows`` () =
     Assert.Contains("cli.verb.unknown", errCodes (Command.parse flowCfg [ "nope" ]))
 

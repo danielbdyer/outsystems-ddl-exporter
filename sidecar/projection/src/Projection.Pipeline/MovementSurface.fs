@@ -386,7 +386,10 @@ module Command =
         { Notes = []; Action = action }
 
     /// Route an `explain` verb tail to its understanding action — purely.
-    let planExplain (args: string list) : ExecutionPlan =
+    /// `explain <flow>` is the live preview: what publishing the flow would
+    /// change against its target's last sealed episode (B = the flow's model,
+    /// A_prior = the target store) — the preview sibling to `report`'s history.
+    let planExplain (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
         let valueOf = flagValue args
         let depthOpt =
             match valueOf "--depth" with
@@ -406,7 +409,15 @@ module Command =
                 | Some toP, Some fromP, _    -> PlanAction.ExplainMigratePreview (fromP, toP, decl)
                 | Some toP, None, Some store -> PlanAction.ExplainMigrateFromStore (store, toP, decl)
                 | _ -> PlanAction.Refused (2, err "cli.explain.migrateArgs" "projection explain migrate: needs --to <modelB> with --from <modelA> or --store <lifecycle>.")
-            | _ -> PlanAction.Refused (2, err "cli.explain.unknown" "projection explain: expected diff | policy | node | suggest | registry | migrate.")
+            | sub :: _ when Map.containsKey sub cfg.Flows ->
+                // explain <flow>: B = the flow's model, A_prior = the target store.
+                let flow = Map.find sub cfg.Flows
+                let decl = parseLossDeclaration args
+                match cfg.Model, (Map.tryFind flow.To cfg.Environments |> Option.bind (fun e -> e.Store)) with
+                | Some model, Some store -> PlanAction.ExplainMigrateFromStore (store, model, decl)
+                | None, _ -> PlanAction.Refused (1, err "cli.explain.flowNoModel" (sprintf "explain '%s': no model — set \"model\" in projection.json." sub))
+                | _, None -> PlanAction.Refused (6, err "cli.explain.flowNoStore" (sprintf "explain '%s': target environment '%s' has no `store` to diff against (publish + seal once first)." sub flow.To))
+            | _ -> PlanAction.Refused (2, err "cli.explain.unknown" "projection explain: expected <flow> | diff | policy | node | suggest | registry | migrate.")
         { Notes = []; Action = action }
 
     /// Route a `seal` verb tail to its provenance action — purely.
@@ -561,6 +572,6 @@ module Command =
         match intent with
         | Intent.Flow (flow, opts) -> planFlow cfg flow opts
         | Intent.Check args        -> planCheck cfg args
-        | Intent.Explain args      -> planExplain args
+        | Intent.Explain args      -> planExplain cfg args
         | Intent.Seal args         -> planSeal args
         | Intent.Report args       -> planReport cfg args
