@@ -1502,6 +1502,15 @@ module Deploy =
     /// through the three sibling Π's, and deploy the SSDT. Returns
     /// the `Report` from `runEphemeral` along with the artifact
     /// strings that fed the deploy.
+    /// One-touch ephemeral deploy from an already-resolved `Catalog` — the
+    /// model-source-agnostic core (model read live from OSSYS or from file).
+    let runFromCatalog (catalog: Catalog) : Task<Result<Compose.Outputs * Report>> =
+        task {
+            let outputs = Compose.project EmissionPolicy.empty catalog
+            let! report = runEphemeral (Compose.aggregateSsdt outputs.SsdtBundle)
+            return Result.success (outputs, report)
+        }
+
     let runFromV1Json (jsonPath: string) : Task<Result<Compose.Outputs * Report>> =
         task {
             let! parsed = Compose.read jsonPath

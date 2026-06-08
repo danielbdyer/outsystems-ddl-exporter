@@ -34,10 +34,17 @@ let private hasCode (code: string) (errors: ValidationError list) : bool =
 // -----------------------------------------------------------------------
 
 [<Fact>]
+let ``Config.parse: model.ossys is read as the live-OSSYS primary; absent is None`` () =
+    let withOssys = Config.parse """{ "model": { "path": "model.json", "ossys": "env:ONPREM_OSSYS_CONN" } }""" |> mustOk
+    Assert.Equal(Some "env:ONPREM_OSSYS_CONN", withOssys.Model.Ossys)
+    let withoutOssys = Config.parse """{ "model": { "path": "model.json" } }""" |> mustOk
+    Assert.Equal(None, withoutOssys.Model.Ossys)
+
+[<Fact>]
 let ``Config.parse: minimal config with only model.path succeeds`` () =
     let json = """{ "model": { "path": "model.json" } }"""
     let cfg = Config.parse json |> mustOk
-    Assert.Equal("model.json", cfg.Model.Path)
+    Assert.Equal(Some "model.json", cfg.Model.Path)
     Assert.Empty(cfg.Model.Modules)
     Assert.False(cfg.Model.IncludeSystemModules)
     Assert.False(cfg.Model.IncludeInactiveModules)
@@ -51,10 +58,16 @@ let ``Config.parse: minimal config with only model.path succeeds`` () =
     Assert.True(cfg.Profile.Path.IsNone)
 
 [<Fact>]
-let ``Config.parse: missing model.path fails with structured error`` () =
+let ``Config.parse: model with only ossys (no path) succeeds — path is optional`` () =
+    let cfg = Config.parse """{ "model": { "ossys": "env:ONPREM_OSSYS_CONN" } }""" |> mustOk
+    Assert.Equal(None, cfg.Model.Path)
+    Assert.Equal(Some "env:ONPREM_OSSYS_CONN", cfg.Model.Ossys)
+
+[<Fact>]
+let ``Config.parse: model with neither path nor ossys fails with structured error`` () =
     let json = """{ "model": {} }"""
     let errors = Config.parse json |> mustFail
-    Assert.True(hasCode "pipeline.config.missingProperty" errors)
+    Assert.True(hasCode "pipeline.config.modelNoSource" errors)
 
 [<Fact>]
 let ``Config.parse: missing model section fails with structured error`` () =
@@ -126,7 +139,7 @@ let ``D9: similar-but-not-credential property names are not rejected`` () =
         }
     }"""
     let cfg = Config.parse json |> mustOk
-    Assert.Equal("model.json", cfg.Model.Path)
+    Assert.Equal(Some "model.json", cfg.Model.Path)
 
 // -----------------------------------------------------------------------
 // Full schema sketch round-trip.
@@ -200,7 +213,7 @@ let private fullConfigJson = """{
 [<Fact>]
 let ``Config.parse: full schema sketch parses without errors`` () =
     let cfg = Config.parse fullConfigJson |> mustOk
-    Assert.Equal("extracted/osm_model.json", cfg.Model.Path)
+    Assert.Equal(Some "extracted/osm_model.json", cfg.Model.Path)
     Assert.Equal(2, cfg.Model.Modules.Length)
     match cfg.Model.Modules.[0] with
     | Config.Whole name -> Assert.Equal("AppCore", name)
@@ -365,7 +378,7 @@ let ``Config.parse: unknown top-level property is tolerated`` () =
         "futureUnknownSection": { "flag": true }
     }"""
     let cfg = Config.parse json |> mustOk
-    Assert.Equal("m.json", cfg.Model.Path)
+    Assert.Equal(Some "m.json", cfg.Model.Path)
 
 // -----------------------------------------------------------------------
 // Defaults: sections absent from the JSON receive typed defaults.
@@ -402,7 +415,7 @@ let ``Config.fromFile: valid file produces Ok with parsed Config`` () =
     let json = """{ "model": { "path": "model.json" }, "output": { "dir": "elsewhere/" } }"""
     let cfg =
         withTempFile json (fun path -> Config.fromFile path |> mustOk)
-    Assert.Equal("model.json", cfg.Model.Path)
+    Assert.Equal(Some "model.json", cfg.Model.Path)
     Assert.Equal("elsewhere/", cfg.Output.Dir)
 
 [<Fact>]

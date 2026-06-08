@@ -3,8 +3,7 @@ namespace Projection.Adapters.Sql
 // LINT-ALLOW-FILE: live SQL-profiling adapter at the boundary — terminal SQL-text emission
 //   (String.Concat/Join/concat over typed encode-quoted segments), operator-
 //   facing diagnostic prose, function-local mutables, and a mutable result
-//   accumulator. Sibling of ProfileSnapshot.fs / ProfileStatistics.fs / Static.fs
-//   (all file-marked); the SQL probes emit terminal text at the DB boundary.
+//   accumulator; the SQL probes emit terminal text at the DB boundary.
 
 open System
 open System.Threading.Tasks
@@ -12,12 +11,12 @@ open Microsoft.Data.SqlClient
 open Projection.Core
 
 /// Live-SQL adapter that captures `Profile.AttributeRealities` by
-/// probing a deployed SQL Server instance. Sibling to
-/// `ProfileSnapshot.attach` (consumes V1's JSON snapshot) +
-/// `ProfileStatistics.attach` (consumes V2-defined distribution JSON);
-/// LiveProfiler is the **live-probe** path — runs deterministic
-/// SQL queries against the deployed target and populates
-/// per-attribute reality evidence directly.
+/// probing a deployed SQL Server instance. The **live-probe** path —
+/// runs deterministic SQL queries against the deployed target and
+/// populates per-attribute reality evidence directly. This is the
+/// canonical V2 profiling path: V2 reads + profiles the live database
+/// itself, with no V1-produced JSON input (the prior `ProfileSnapshot`
+/// / `ProfileStatistics` V1-JSON importers were retired 2026-06-08).
 ///
 /// **Per matrix row 49 + V2_DRIVER per-axis stakes (DATA-axis
 /// cutover-blocker).** V1's `LiveProfiler.cs` (chapter 5.4.δ
@@ -1218,10 +1217,9 @@ module LiveProfiler =
             ForeignKeySelectivities    = fkSelectivities
             JointDistributions         = jointDists }
 
-    /// Attach realities into an existing Profile. Sibling shape to
-    /// `ProfileSnapshot.attach` / `ProfileStatistics.attach`: the
-    /// adapter is composable, not authoritative — callers chain
-    /// multiple sibling adapters per the rich-profiling agenda.
+    /// Attach realities into an existing Profile. Composable, not
+    /// authoritative — callers may chain sibling adapters that fill axes
+    /// LiveProfiler does not (per the rich-profiling agenda).
     /// Captures the `EvidenceCache` substrate once (three queries per
     /// non-static kind) and composes every derived Profile axis into
     /// the input via `attachFromCache`. Pre-populated axes are

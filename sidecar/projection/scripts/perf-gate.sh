@@ -73,15 +73,21 @@ MIN_MS="${BENCH_MIN_MS:-5}"
 # Default 0.20 (20% relative σ floor); tighten when many samples
 # accumulate and σ_observed is trustworthy.
 MIN_RELATIVE_STDEV="${BENCH_MIN_RELATIVE_STDEV:-0.20}"
-# I/O-bound TIME-label prefixes (first-principles tiering, 2026-06-05). Wall-time
-# labels under these prefixes are dominated by host I/O load, not V2 code — on a
-# shared / no-swap host they vary >2× and false-trip the gate. REPORTED, not
-# gated. `deploy.` = Docker container acquisition + SQL deploy; `readside.` = the
-# WHOLE SQL read-back adapter (all its timing is round-trip-bound); `fixture
-# .bulkLoader` = the bulk seed insert. Count/size labels (`.elements`/`.batchSize`
-# /`.bytes`) under these prefixes stay HARD-gated — a count change is a real
-# volume regression.
-IO_TIME_PREFIXES="${PERF_GATE_IO_TIME_PREFIXES:-deploy.,readside.,fixture.bulkLoader}"
+# Host-load-variable TIME-label prefixes (first-principles tiering, 2026-06-05;
+# extended 2026-06-07). Wall-time labels under these prefixes are dominated by
+# host load, not V2 code — on a shared / no-swap host they vary >2× and false-trip
+# the gate. REPORTED, not gated. `deploy.` = Docker container acquisition + SQL
+# deploy; `readside.` = the WHOLE SQL read-back adapter (all its timing is
+# round-trip-bound); `fixture.bulkLoader` = the bulk seed insert. `batchSplitter.`
+# = ScriptDom batch-splitting — a *CPU*-bound wall-time (not I/O) that is stable at
+# rest (baseline σ≈10%) but spikes >2× under the concurrent build/test/SQL load the
+# Stop hook itself generates on the no-swap canary host; it has no deterministic
+# count companion, so its only signal is the host-variable wall-time. The list is
+# thus "host-load-variable wall-time" (I/O AND contention-bound CPU), not strictly
+# I/O. Count/size labels (`.elements`/`.batchSize`/`.bytes`) under these prefixes
+# stay HARD-gated — the suffix check wins; a count change is a real volume
+# regression regardless of host load.
+IO_TIME_PREFIXES="${PERF_GATE_IO_TIME_PREFIXES:-deploy.,readside.,fixture.bulkLoader,batchSplitter.}"
 # Small TIME labels (μ below this) are dominated by host CPU-SCHEDULING jitter on
 # a contended box — a 5 ms op routinely measures 20 ms when 4 cores run builds +
 # tests + SQL + the canary at once (I/O or not). REPORTED, not gated. Count/size

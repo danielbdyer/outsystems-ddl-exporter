@@ -276,3 +276,52 @@ let ``RefactorLogEmitter: no foreign-key rename produces no SqlForeignKey entry`
         |> Seq.collect snd
         |> Seq.filter (fun e -> e.ElementType = SqlForeignKey)
     Assert.Empty(allFkEntries)
+
+// ---------------------------------------------------------------------------
+// Rename ⊥ Reshape composition. A single column that is BOTH renamed (logical
+// `Name`) AND reshaped (`DataType`) lands in BOTH `AttributeDiff` axes —
+// `Renamed` AND `Changed` — independently. The refactorlog rename channel and
+// the SchemaMigration ALTER channel each fire once for it, disjointly (they
+// emit different operations — sp_rename vs ALTER COLUMN — never the same one).
+// This proves the orthogonal composition the emitters only asserted in a
+// comment; rename and reshape are NOT mutually exclusive.
+// ---------------------------------------------------------------------------
+
+let private columnRenamedAndReshapedCustomer : Kind =
+    { customer with
+        Attributes =
+            customer.Attributes
+            |> List.map (fun a ->
+                if a.SsKey = customerNameKey then { a with Name = nameOf "FullName"; Type = Integer } else a) }
+
+let private renameReshapeTarget : Catalog =
+    IRBuilders.mkCatalog [ { salesModule with Kinds = [ columnRenamedAndReshapedCustomer; order; country ] } ]
+
+[<Fact>]
+let ``CatalogDiff: a renamed-and-reshaped column lands in BOTH Renamed and Changed`` () =
+    let diff = CatalogDiff.between sampleCatalog renameReshapeTarget |> mustOk
+    match CatalogDiff.attributeDiffOf customerKey diff with
+    | None -> Assert.Fail "expected an attribute diff on customer"
+    | Some ad ->
+        Assert.True(Map.containsKey customerNameKey ad.Renamed)
+        let changed = ad.Changed |> List.filter (fun c -> c.AttributeKey = customerNameKey)
+        Assert.Equal(1, List.length changed)
+        Assert.Contains(AttributeFacet.DataType, (List.head changed).Facets)
+
+[<Fact>]
+let ``composition: rename → one SqlSimpleColumn AND reshape → one ALTER COLUMN, disjoint`` () =
+    let diff = CatalogDiff.between sampleCatalog renameReshapeTarget |> mustOk
+    // The refactorlog rename channel: exactly one SqlSimpleColumn entry.
+    let artifact = RefactorLogEmitter.emit diff |> mustOk
+    let columnRenames =
+        Map.find customerKey (ArtifactByKind.toMap artifact)
+        |> List.filter (fun e -> e.ElementType = SqlSimpleColumn)
+    Assert.Equal(1, List.length columnRenames)
+    Assert.Equal("FullName", (List.head columnRenames).NewName)
+    // The SchemaMigration ALTER channel: exactly one ALTER COLUMN (the reshape),
+    // never a CREATE or a DROP+ADD — the rename does not double-emit here.
+    let migration = SchemaMigrationEmitter.emit diff
+    let alters =
+        migration.Value |> List.choose (function Statement.AlterTableAlterColumn (_, c) -> Some c | _ -> None)
+    Assert.Equal(1, List.length alters)
+    Assert.False(migration.Value |> List.exists (function Statement.CreateTable _ -> true | _ -> false))

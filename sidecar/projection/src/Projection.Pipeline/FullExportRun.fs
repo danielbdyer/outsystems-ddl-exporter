@@ -120,8 +120,13 @@ module FullExportRun =
         LogSink.emit
             { LogSink.envelope LogSink.Info LogSink.Config "config.runStart" startPayload with
                 Phase = LogSink.Start }
+        let modelSource =
+            match cfg.Model.Ossys, cfg.Model.Path with
+            | Some _, _ -> "LiveOssys"
+            | None, Some p -> p
+            | None, None -> "(none)"
         let connPayload : Map<string, objnull> =
-            Map.ofList [ "kind", box "SnapshotJson"; "modelPath", box cfg.Model.Path ]
+            Map.ofList [ "kind", box "SnapshotJson"; "modelPath", box modelSource ]
         LogSink.emit
             { LogSink.envelope LogSink.Info LogSink.Config "config.connectionResolved" connPayload with
                 Phase  = LogSink.Start

@@ -146,7 +146,12 @@ let ``Voice register: every entry's surface clears the banned list (empty payloa
 let ``Voice register: the error frames clear the banned list`` () =
     let codes =
         [ "pipeline.config.typeMismatch"; "migrate.connectionUnavailable"
-          "transfer.insufficientGrant"; "something.unclassified" ]
+          "transfer.insufficientGrant"; "something.unclassified"
+          // the four-verb surface's coded refusals voice through the generic
+          // §10 frame — they must clear the register too (CLI fidelity #3).
+          "cli.project.modelMissing"; "cli.project.dataNotLive"
+          "cli.project.scopeDataNoSource"; "cli.check.driftArgs"
+          "cli.explain.unknown"; "cli.seal.ejectArgs"; "cli.to.unknownTarget" ]
     for code in codes do
         let surface = Voice.errorSurface (ValidationError.create code "a located cause")
         assertClean (sprintf "errorSurface %s" code) (Surface.render surface)

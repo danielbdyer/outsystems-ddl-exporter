@@ -43,7 +43,9 @@ type Strategy =
 [<RequireQualifiedAccess>]
 type DataOrigin =
     | Model
-    | Synthetic
+    /// Generated to match a profile (THE_SYNTHETIC_DATA_DESIGN). Carries the
+    /// durable profile reference (`file:<path>`) — the evidence σ replays.
+    | Synthetic of profile: string
     | NoData
     | FromTarget of alias: string
 
@@ -91,6 +93,8 @@ type MovementSpec =
         Rekey       : string option
         /// `--reconcile <table>:<col>` entries (MatchByColumn re-key rules).
         Reconcile   : string list
+        /// Declared table subset for the data leg (golden data); empty = all.
+        Tables      : string list
         /// Accept declared loss (drops) — never sourced from config (§4).
         AllowDrops  : bool
         /// Permit schema DDL against a CDC-tracked sink.
@@ -118,6 +122,7 @@ module MovementSpec =
             Shape       = Shape.Bundle
             Rekey       = None
             Reconcile   = []
+            Tables      = []
             AllowDrops  = false
             AllowCdc    = false
             Store       = None
@@ -134,52 +139,141 @@ module MovementSpec =
         | Destination.Live _ -> spec.Commit
         | Destination.Folder _ | Destination.Docker -> false
 
-/// The four operator intents (THE_CLI.md §2). `Project` is the hero
-/// (all data movement); the other three are the proof, the understanding,
-/// and the provenance planes. Check/Explain/Seal carry their raw tail in
-/// this skeleton — their typed sub-surfaces land in their build slices.
+/// Where a flow's content originates (THE_CLI.md §4.2): another environment
+/// (the cross-substrate Move), the authored model's own data, profiled
+/// synthetic data, or no data (schema only).
+[<RequireQualifiedAccess>]
+type FlowSource =
+    | Env of env: string
+    | Model
+    | Synthetic of profile: string option
+    | NoData
+
+/// A named movement (THE_CLI.md §4.2): a `Move` from a source to a target
+/// environment, with optional specialization (Reidentify re-key; a declared
+/// table subset). The named recipe the daily command runs.
+type Flow =
+    {
+        Name   : string
+        From   : FlowSource
+        To     : string
+        Rekey  : string option
+        Tables : string list
+    }
+
+/// The per-run intent that finishes a resolved flow (THE_CLI.md §3) — the
+/// only words that vary at the moment of action and never live in config.
+type FlowRunOpts =
+    {
+        Go         : bool
+        Fresh      : bool
+        AllowDrops : bool
+        /// Override the CDC-tracked-sink pre-flight gate (the gate refuses a
+        /// live write into a CDC-tracked sink unless this is set — item 3).
+        AllowCdc   : bool
+    }
+
+/// The operator intents (THE_CLI.md §2). `Flow` is the hero — the daily
+/// `projection <flow>` act. Check/Explain/Seal/Report carry their raw tail;
+/// their typed sub-surfaces land in their build slices. (The `MovementSpec`
+/// a flow resolves to is routed by `Command.planMovement`; there is no raw
+/// `project --to` intent — that surface was removed at F5.)
 [<RequireQualifiedAccess>]
 type Intent =
-    | Project of MovementSpec
+    | Flow of flow: Flow * opts: FlowRunOpts
     | Check of args: string list
     | Explain of args: string list
     | Seal of args: string list
+    | Report of args: string list
+    /// `profile <env> --out <path>` — capture the durable Profile artifact
+    /// (THE_SYNTHETIC_DATA_DESIGN §2.2). The capture step the synthetic flow
+    /// replays from.
+    | Profile of args: string list
 
-/// The engine face a `project` `MovementSpec` routes to, named with the
-/// cfg-resolved arguments (connection specs, model source) it needs — the
-/// **pure, testable seam** between the surface and the effectful `run*` faces
-/// (THE_CLI fidelity #1). Planning is pure (no I/O — a `ConfigFile` carries its
-/// path; the runner resolves it), so the surface→engine routing is
-/// totality-tested: every spec yields exactly one action, `Refused` included
-/// (total decisions, named skips). Spec-derived flags the runner reads directly
-/// (declaration / rekey / reconcile / cdc / store / env) are not duplicated here.
+/// The spec-derived options a live load/migrate carries, bundled so the plan
+/// is self-contained (the runner needs nothing but the plan).
+type LoadOpts =
+    {
+        Declaration : LossDeclaration
+        Emission    : EmissionMode
+        Reconcile   : string list
+        Rekey       : string option
+        AllowCdc    : bool
+        Store       : string option
+        Env         : string option
+        /// Declared table subset for the data leg (item 5); empty = all.
+        Tables      : string list
+    }
+
+/// The engine face a parsed `Intent` routes to, named with the cfg-resolved
+/// arguments it needs — the **pure, testable seam** spanning all four verbs
+/// (the CLI's `registered ⇔ executed`). Planning is pure (a `ConfigFile`
+/// carries its path; the runner resolves it); the routing is totality-tested,
+/// `Refused` (a coded `ValidationError` + exit) included — total decisions,
+/// named skips. The runner (`runPlan`) executes the action against the proven
+/// `run*` faces and voices every `Refused` through `Voice.errorSurface`.
 [<RequireQualifiedAccess>]
 type PlanAction =
+    // project ------------------------------------------------------------
+    // The model-bearing actions carry `model` (the osm_model.json fallback as a
+    // `ModelSource`) + `modelOssys` (the live-OSSYS primary, when configured);
+    // the runner resolves via `ModelResolution.resolveCatalog`.
     /// folder + config → the full-export bundle (richer than a bare emit).
-    | PublishBundle of config: string * dir: string
+    | PublishBundle of config: string * dir: string * store: string option * env: string option
     /// folder + model + skeleton shape → the pre-overlay emit.
-    | EmitSkeleton of model: string * dir: string
+    | EmitSkeleton of model: ModelSource * modelOssys: string option * dir: string
     /// folder + model + bundle/ssdt shape → the full pass-chain emit.
-    | EmitBundle of model: string * dir: string
-    /// docker → one-touch ephemeral deploy (runner resolves the model).
-    | DeployDocker of model: ModelSource
+    | EmitBundle of model: ModelSource * modelOssys: string option * dir: string
+    /// docker → one-touch ephemeral deploy.
+    | DeployDocker of model: ModelSource * modelOssys: string option
     /// live, no --go, no data source → the schema plan preview (B ⊖ A).
-    | PreviewSchema of model: ModelSource * conn: string
-    /// live, no --go, data source → the transfer data-plan DryRun.
-    | PreviewData of source: string * sink: string
-    /// live, --go, --scope data → DML-only transfer onto existing schema.
-    | TransferData of source: string * sink: string
+    | PreviewSchema of model: ModelSource * modelOssys: string option * conn: string * declaration: LossDeclaration
+    /// live + data source → transfer (DryRun preview when execute=false; the
+    /// DML-only load when execute=true under --scope data).
+    | Transfer of source: string * sink: string * opts: LoadOpts * execute: bool
+    /// live + synthetic data source → generate from the durable profile and
+    /// load (DryRun preview when execute=false; the DML-only load when
+    /// execute=true). The model supplies the target schema B — read live from
+    /// OSSYS when `modelOssys` is set (primary; V1-free) else from the model
+    /// file (fallback); the profile ref (`file:<path>`) supplies the evidence σ
+    /// replays.
+    | SynthesizeAndLoad of model: ModelSource * modelOssys: string option * profile: string * conn: string * opts: LoadOpts * execute: bool
     /// live, --go, data source → cross-substrate migrate-with-data.
-    | MigrateWithData of model: ModelSource * sink: string * source: string
+    | MigrateWithData of model: ModelSource * modelOssys: string option * sink: string * source: string * opts: LoadOpts
     /// live, --go, config model → publish bundle + load the seed.
-    | PublishAndLoad of config: string * conn: string
+    | PublishAndLoad of config: string * conn: string * store: string option * env: string option
     /// live, --go, bare model → in-place schema migrate.
-    | Migrate of model: ModelSource * conn: string
-    /// a named refusal with its exit code (no silent fall-through).
-    | Refused of exit: int * message: string
+    | Migrate of model: ModelSource * modelOssys: string option * conn: string * opts: LoadOpts
+    // check --------------------------------------------------------------
+    | CheckCanary of ddl: string * cdcSilence: bool
+    | CheckDrift of model: string * conn: string
+    | CheckData of before: string * after: string
+    | CheckReady
+    // explain ------------------------------------------------------------
+    | ExplainDiff of refA: string * refB: string * asJson: bool * depth: int option
+    | ExplainPolicy of configA: string * configB: string
+    | ExplainNode of config: string * ssKey: string
+    | ExplainSuggest of config: string * applyTo: string option
+    | ExplainRegistry
+    | ExplainMigratePreview of fromPath: string * toPath: string * declaration: LossDeclaration
+    | ExplainMigrateFromStore of store: string * toPath: string * declaration: LossDeclaration
+    // seal ---------------------------------------------------------------
+    | SealEject of store: string
+    | SealApprove of version: string * approver: string * rationale: string option * store: string option
+    // report -------------------------------------------------------------
+    /// the migration-team change bundle: the ChangeManifest series read from
+    /// the flow's target durable timeline (THE_CLI.md §8 / F4).
+    | ReportBundle of store: string
+    // profile ------------------------------------------------------------
+    /// capture the durable Profile from a live environment to a file
+    /// (THE_SYNTHETIC_DATA_DESIGN §2.2): read → profile → serialize.
+    | CaptureProfile of conn: string * out: string
+    // shared -------------------------------------------------------------
+    /// a named refusal — a coded `ValidationError` (voiced) + its exit code.
+    | Refused of exit: int * error: ValidationError
 
-/// A planned `project` execution: the unhonored-axis notes (surfaced, never
-/// dropped — fidelity #2) plus the routed action.
+/// A planned execution: the unhonored-axis notes (surfaced, never dropped —
+/// fidelity #2) plus the routed action.
 type ExecutionPlan =
     {
         Notes  : string list

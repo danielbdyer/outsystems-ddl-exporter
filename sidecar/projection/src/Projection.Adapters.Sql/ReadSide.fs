@@ -782,8 +782,8 @@ module ReadSide =
     /// strings via `JsonElement.GetRawText`. Both producers feed the
     /// same emitter formatter, keeping the IR canonical.
     ///
-    /// `null` / `DBNull` is encoded as the empty string — the same
-    /// sentinel `Static.fs` uses for `JsonValueKind.Null`. The
+    /// `null` / `DBNull` is encoded as the empty string — the V2 raw-form
+    /// NULL sentinel (per `RawValueCodec` / `SqlLiteral.ofRaw`). The
     /// emitter renders empty for nullable columns as `NULL`; columns
     /// not present in the row's Values map are also `NULL` by
     /// omission.

@@ -113,6 +113,7 @@
     <Compile Include="ProfileFixtures.fs" />
     <Compile Include="ProfileTests.fs" />
     <Compile Include="AttributeDistributionTests.fs" />
+    <Compile Include="SyntheticDataTests.fs" />
     <Compile Include="PolicyTests.fs" />
     <Compile Include="PolicyExprTests.fs" />
     <Compile Include="VersionedPolicyTests.fs" />
@@ -136,6 +137,7 @@
     <Compile Include="ReconciliationTests.fs" />
     <Compile Include="ConnectionResolverTests.fs" />
     <Compile Include="TransferSpecTests.fs" />
+    <Compile Include="ModelResolutionTests.fs" />
     <Compile Include="MovementSurfaceTests.fs" />
     <Compile Include="TransferRefusalTests.fs" />
     <Compile Include="PreflightTests.fs" />
@@ -162,7 +164,6 @@
     <Compile Include="SchemaComplexityPassTests.fs" />
     <Compile Include="QueryHintPassTests.fs" />
     <Compile Include="CycleResolutionTests.fs" />
-    <Compile Include="StaticAdapterDifferentialTests.fs" />
     <Compile Include="OsmCatalogReaderDifferentialTests.fs" />
     <Compile Include="OsmRowsetReaderTests.fs" />
     <Compile Include="ColumnRealitySourceSidePopulationTests.fs" />
@@ -235,8 +236,6 @@
     <Compile Include="CategoricalUniquenessRulesTests.fs" />
     <Compile Include="CategoricalUniquenessPassTests.fs" />
     <Compile Include="CompositionTests.fs" />
-    <Compile Include="ProfileSnapshotAdapterTests.fs" />
-    <Compile Include="ProfileStatisticsAdapterTests.fs" />
     <Compile Include="EndToEndDifferentialTests.fs" />
     <Compile Include="V1NullabilityParityTests.fs" />
     <Compile Include="SsdtDdlEmitterTests.fs" />
@@ -266,9 +265,9 @@
     <Compile Include="DecisionEmissionTests.fs" />
     <Compile Include="JsonEmitterTests.fs" />
     <Compile Include="CatalogCodecTests.fs" />
+    <Compile Include="ProfileCodecTests.fs" />
     <Compile Include="DistributionsEmitterTests.fs" />
     <Compile Include="SiblingEmitterContractTests.fs" />
-    <Compile Include="RichProfilingEndToEndTests.fs" />
     <Compile Include="DiagnosticsEndToEndTests.fs" />
     <Compile Include="EndToEndPipelineTests.fs" />
     <Compile Include="CanaryDeployTests.fs" />
@@ -280,6 +279,9 @@
     <Compile Include="GeneratorScaleTests.fs" />
     <Compile Include="ComprehensiveCanaryTests.fs" />
     <Compile Include="ExecuteBatchParallelTests.fs" />
+    <Compile Include="SyntheticLoadTests.fs" />
+    <Compile Include="SyntheticCanaryTests.fs" />
+    <Compile Include="ModelResolutionDockerTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

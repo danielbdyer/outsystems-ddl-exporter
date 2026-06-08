@@ -20,36 +20,31 @@ open Projection.Targets.SSDT
 /// emitted independently; no intermediate concatenation.
 let private usageLines : string list =
     [
-        "projection — produce the model at a destination, check it, understand it, seal it."
-        "  One engine, four verbs (THE_CLI.md). Targets and the default model are named in"
-        "  projection.json (or PROJECTION_CONFIG); a target's conn is an env:/file: reference (D9)."
+        "projection — move a model from a source environment to a target (THE_CLI.md)."
+        "  The daily act is `projection <flow>`: a flow is a named source→target recipe in"
+        "  projection.json (environments + flows). Preview is the default; --go applies a live"
+        "  write (and needs PROJECTION_ALLOW_EXECUTE=1). Conn refs are env:/file: only (D9)."
         ""
         "USAGE:"
-        "    projection project --to <dest> [options]"
+        "    projection <flow> [--go] [--fresh] [--allow-drops] [--allow-cdc]   the daily surface"
+        "    projection                                           list flows (name: from → to)"
         "    projection check  ( <source.sql> [--cdc-silence] | drift --model <m> --to <t>"
         "                      | data --before <t> --after <t> | ready )"
         "    projection explain ( diff <a> <b> [--format json] [--depth N] | policy <a> <b>"
         "                       | node <config> <ssKey> | suggest <config> [--apply <out>] | registry"
         "                       | migrate --to <b> ( --from <a> | --store <s> ) [--allow-drops] )"
-        "    projection seal ( --store <path> | approve <version> --approver <name>"
-        "                    [--rationale <text>] [--store <path>] )"
+        "    projection seal ( --store <path> | approve <version> --approver <name> ... )"
+        "    projection report <flow>        the on-prem migration-team change bundle"
         "    projection init                 scaffold a projection.json"
         ""
-        "PROJECT — the hero. Produce the model at a destination; the destination decides the form."
-        "  --to <dest>   a folder (the file bundle) · docker (one-touch ephemeral DB) · a named"
-        "                target or env:/file: ref (a live database; reads the prior state and"
-        "                applies the minimal change). dir: forces a folder."
-        "  Model source: --config <unified.json> (model + overlays) · --model <model.json> ·"
-        "                projection.json \"model\". "
-        "  --shape bundle|ssdt|skeleton   file-bundle composition (folder destinations)."
-        "  --scope all|schema|data        which legs to emit (DDL+DML / DML-only)."
-        "  --how merge|replace|fresh      the data replacement strategy."
-        "  --data model|synthetic|none|<target>   data origin; <target> ingests rows (transfer)."
-        "  --rekey <users.csv>            re-key identities (Reidentify) on a data load."
-        "  --from auto|empty|<model>|@<target>   the baseline A (default auto)."
-        "  --go                           commit a live write (preview by default). The live write"
-        "                                 also needs PROJECTION_ALLOW_EXECUTE=1 (R6)."
-        "  --allow-drops                  accept declared destructive loss."
+        "FLOW — the hero. Move a model from `from` to `to`; the target decides the form."
+        "  Environments (places) carry access (bundle → SSDT for Octopus | direct → live |"
+        "  docker) and grant (schema+data | data — a refusal gate). Flows are named source→"
+        "  target recipes (from/to/rekey/tables). A bundle target produces files (always"
+        "  safe); a direct target previews until --go (which also needs"
+        "  PROJECTION_ALLOW_EXECUTE=1, R6). --fresh wipes-and-loads (the rare from-scratch);"
+        "  --allow-drops accepts declared loss; --allow-cdc overrides the CDC-tracked-sink"
+        "  pre-flight gate; a schema-from-model flow against a data-only target is refused."
         ""
         "CHECK — assert fidelity.  fidelity canary (default; --cdc-silence adds the redeploy"
         "  silence assertion) · drift (deployed vs model) · data (row/null counts) · ready"
@@ -64,14 +59,14 @@ let private usageLines : string list =
         ""
         "Every verb persists a bench snapshot to bench/<verb>/<utc-iso>.json; -v surfaces the"
         "table. --pretty / --json force the channel (default AUTO: a TTY gets the panel, a pipe"
-        "gets NDJSON). --watch shows the live stage board on a project --to <folder> --config run."
+        "gets NDJSON). --watch shows the live stage board on a folder-bundle flow run."
         ""
         "Exit codes:"
         "    0  succeeded"
-        "    1  argv error (missing input / unknown target)"
+        "    1  argv error (missing input / unknown flow or environment)"
         "    2  parse error (model JSON / spec / config-parse)"
         "    3  execution error (SQL rejected the change; connection open; unbreakable cycle)"
-        "    4  Docker unavailable (project --to docker; check fidelity)"
+        "    4  Docker unavailable (a docker target; check fidelity)"
         "    5  fidelity divergence (check canary / check drift)"
         "    6  config error (file missing / unparseable / D9; connection-ref resolve)"
         "    7  gate refusal (--go without PROJECTION_ALLOW_EXECUTE=1; permission pre-flight)"
@@ -328,29 +323,24 @@ let private runFullExportLoad
                     dumpBench "full-export"
                     code
 
-let private runEmit (inputPath: string) (outputDir: string) : int =
-    if not (File.Exists inputPath) then
-        die 1 (sprintf "projection: input file not found: %s" inputPath)
-    else
-        let task = Compose.run inputPath outputDir
-        let result = task.GetAwaiter().GetResult()
-        let exitCode =
-            match result with
-            | Ok paths ->
-                printfn "projection: wrote %d artifact(s) to %s" paths.Length outputDir
-                paths
-                |> List.iter (fun p ->
-                    let info = FileInfo p
-                    printfn "  %s (%d bytes)" p info.Length)
-                0
-            | Error errors ->
-                (
-                    Console.Error.WriteLine "projection: parse failed:"
-                    printErrors Console.Error errors
-                    2
-                )
-        dumpBench "emit"
-        exitCode
+let private runEmit (catalog: Catalog) (outputDir: string) : int =
+    let exitCode =
+        match Compose.runFromCatalog catalog outputDir with
+        | Ok paths ->
+            printfn "projection: wrote %d artifact(s) to %s" paths.Length outputDir
+            paths
+            |> List.iter (fun p ->
+                let info = FileInfo p
+                printfn "  %s (%d bytes)" p info.Length)
+            0
+        | Error errors ->
+            (
+                Console.Error.WriteLine "projection: emit failed:"
+                printErrors Console.Error errors
+                2
+            )
+    dumpBench "emit"
+    exitCode
 
 /// Chapter A.4.7' slice ζ — `emit --skeleton-only`. Reads V1 JSON,
 /// projects through `RegisteredTransforms.skeletonChainSteps` (the
@@ -359,43 +349,36 @@ let private runEmit (inputPath: string) (outputDir: string) : int =
 /// Tightening / Ordering overlays) are excluded from the emit; the
 /// resulting artifacts are the V2 baseline before any operator
 /// opinion lands.
-let private runEmitSkeletonOnly (inputPath: string) (outputDir: string) : int =
-    if not (File.Exists inputPath) then
-        die 1 (sprintf "projection: input file not found: %s" inputPath)
-    else
-        let task = Compose.runSkeletonOnly inputPath outputDir
-        let result = task.GetAwaiter().GetResult()
-        let exitCode =
-            match result with
-            | Ok paths ->
-                printfn
-                    "projection: wrote %d skeleton-only artifact(s) to %s"
-                    paths.Length
-                    outputDir
-                paths
-                |> List.iter (fun p ->
-                    let info = FileInfo p
-                    printfn "  %s (%d bytes)" p info.Length)
-                0
-            | Error errors ->
-                (
-                    Console.Error.WriteLine "projection: parse failed:"
-                    printErrors Console.Error errors
-                    2
-                )
-        dumpBench "emit-skeleton-only"
-        exitCode
+let private runEmitSkeletonOnly (catalog: Catalog) (outputDir: string) : int =
+    let exitCode =
+        match Compose.runSkeletonOnlyFromCatalog catalog outputDir with
+        | Ok paths ->
+            printfn
+                "projection: wrote %d skeleton-only artifact(s) to %s"
+                paths.Length
+                outputDir
+            paths
+            |> List.iter (fun p ->
+                let info = FileInfo p
+                printfn "  %s (%d bytes)" p info.Length)
+            0
+        | Error errors ->
+            (
+                Console.Error.WriteLine "projection: emit failed:"
+                printErrors Console.Error errors
+                2
+            )
+    dumpBench "emit-skeleton-only"
+    exitCode
 
-let private runDeploy (inputPath: string) : int =
-    if not (File.Exists inputPath) then
-        die 1 (sprintf "projection: input file not found: %s" inputPath)
-    elif not (Deploy.Docker.isAvailable ()) then
+let private runDeploy (catalog: Catalog) : int =
+    if not (Deploy.Docker.isAvailable ()) then
         die
             4
             "projection: Docker daemon not reachable. Set DOCKER_HOST or start the daemon to run `deploy`."
     else
         printfn "projection: spinning up an ephemeral SQL Server container..."
-        let task = Deploy.runFromV1Json inputPath
+        let task = Deploy.runFromCatalog catalog
         let result = task.GetAwaiter().GetResult()
         let exitCode =
             match result with
@@ -675,6 +658,8 @@ let private runTransfer
     (executeRequested: bool)
     (allowCdc: bool)
     (allowDrops: bool)
+    (emission: EmissionMode)
+    (tables: string list)
     : int =
     let collect = function Ok _ -> [] | Error es -> es
     let parsedSource    = TransferSpec.parseConnectionSpec sourceSpec
@@ -742,7 +727,7 @@ let private runTransfer
     let resolveReconciliation (contract: Catalog) =
         TransferSpec.resolveAllReconciliation contract entries userMapEntries
     let result =
-        (Transfer.runThroughConnections mode allowCdc allowDrops connections resolveReconciliation)
+        (Transfer.runThroughConnectionsWithEmission mode emission allowCdc allowDrops tables connections resolveReconciliation)
             .GetAwaiter().GetResult()
     let exitCode =
         match result with
@@ -1161,23 +1146,6 @@ let private runPolicyDiff (configAPath: string) (configBPath: string) : int =
 /// non-shape facet change is refused with a non-zero exit and an explanation,
 /// never a silent plan. The `--execute` leg (against a live deployed DB) is
 /// `MigrationRun.execute`; this surface previews what it would do.
-/// Parse the declared-loss gate's input from the raw argv: `--allow-drops`
-/// accepts everything (`DeclareAll`); each `--declare-drop <token>` (repeatable)
-/// names one accepted removal (`DeclareThese`); absent both, the safe default
-/// `DeclareNone` refuses every destructive removal. The tokens are the
-/// source-free `Migration.lossToken` form the refusal prints.
-let private parseLossDeclaration (arr: string[]) : LossDeclaration =
-    if Array.contains "--allow-drops" arr then DeclareAll
-    else
-        let tokens =
-            arr
-            |> Array.indexed
-            |> Array.choose (fun (i, a) ->
-                if a = "--declare-drop" && i + 1 < arr.Length then Some arr.[i + 1] else None)
-            |> Array.toList
-        match tokens with
-        | [] -> DeclareNone
-        | _  -> DeclareThese (Set.ofList tokens)
 
 /// Shared dry-run renderer for a `migrate` preview outcome — the change-manifest
 /// of δ, or a fail-loud refusal (undeclared losses / inexpressible change).
@@ -1373,7 +1341,7 @@ let private tighteningPreflight
 /// is supplied, a verified execute durably records the episode onto the timeline
 /// (AC-P8) so the next sprint's diff loads it as the prior; absent, behavior is
 /// unchanged and a one-line note says no episode was persisted.
-let private runMigrateExecute (toPath: string) (connSpec: string) (declaration: LossDeclaration) (allowCdc: bool) (storePath: string option) (envLabel: string option) : int =
+let private runMigrateExecute (target: Catalog) (connSpec: string) (declaration: LossDeclaration) (allowCdc: bool) (storePath: string option) (envLabel: string option) : int =
     if System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" <> "1" then
         Console.Error.WriteLine
             "projection migrate: --execute requires PROJECTION_ALLOW_EXECUTE=1 in the environment (R6 gate). Refusing."
@@ -1382,17 +1350,12 @@ let private runMigrateExecute (toPath: string) (connSpec: string) (declaration: 
     else
     let work =
         task {
-            let! bRead = Compose.read toPath
-            match bRead, TransferSpec.parseConnectionSpec connSpec with
-            | Error es, _ ->
-                Console.Error.WriteLine (sprintf "projection migrate: could not read --to %s:" toPath)
-                printErrors Console.Error es
-                return 6
-            | _, Error es ->
+            match TransferSpec.parseConnectionSpec connSpec with
+            | Error es ->
                 Console.Error.WriteLine "projection migrate: --conn argument error:"
                 printErrors Console.Error es
                 return 2
-            | Ok target, Ok connRef ->
+            | Ok connRef ->
                 let sub : Substrate =
                     { Environment = parseEnvironment "migrate-sink" None; Role = SubstrateRole.Sink; ConnectionRef = connRef }
                 match! ConnectionResolver.openSubstrate sub with
@@ -1479,7 +1442,7 @@ let private runMigrateExecute (toPath: string) (connSpec: string) (declaration: 
 /// AC-I5 `validate-user-map` pre-write halt gates first; absent, it is a
 /// straight load. Schema is fail-loud + minimum-viable; the data leg runs
 /// only if the schema verified.
-let private runMigrateWithData (toPath: string) (sinkSpec: string) (sourceSpec: string) (reconcileSpecs: string list) (userMapPath: string option) (declaration: LossDeclaration) (allowCdc: bool) (storePath: string option) (envLabel: string option) : int =
+let private runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec: string) (reconcileSpecs: string list) (userMapPath: string option) (declaration: LossDeclaration) (allowCdc: bool) (storePath: string option) (envLabel: string option) : int =
     if System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" <> "1" then
         Console.Error.WriteLine
             "projection migrate: --execute requires PROJECTION_ALLOW_EXECUTE=1 in the environment (R6 gate). Refusing."
@@ -1512,21 +1475,16 @@ let private runMigrateWithData (toPath: string) (sinkSpec: string) (sourceSpec: 
     let userMapEntries   = match parsedUserMap with Ok es -> es | _ -> []
     let work =
         task {
-            let! bRead = Compose.read toPath
-            match bRead, TransferSpec.parseConnectionSpec sinkSpec, TransferSpec.parseConnectionSpec sourceSpec with
-            | Error es, _, _ ->
-                Console.Error.WriteLine (sprintf "projection migrate: could not read --to %s:" toPath)
-                printErrors Console.Error es
-                return 6
-            | _, Error es, _ ->
+            match TransferSpec.parseConnectionSpec sinkSpec, TransferSpec.parseConnectionSpec sourceSpec with
+            | Error es, _ ->
                 Console.Error.WriteLine "projection migrate: --sink-conn argument error:"
                 printErrors Console.Error es
                 return 2
-            | _, _, Error es ->
+            | _, Error es ->
                 Console.Error.WriteLine "projection migrate: --source-conn argument error:"
                 printErrors Console.Error es
                 return 2
-            | Ok target, Ok sinkRef, Ok sourceRef ->
+            | Ok sinkRef, Ok sourceRef ->
                 let sinkSub : Substrate = { Environment = parseEnvironment "migrate-sink" None; Role = SubstrateRole.Sink; ConnectionRef = sinkRef }
                 let sourceSub : Substrate = { Environment = parseEnvironment "migrate-source" None; Role = SubstrateRole.Source; ConnectionRef = sourceRef }
                 match! ConnectionResolver.openSubstrate sinkSub with
@@ -1632,44 +1590,19 @@ let private runMigrateWithData (toPath: string) (sinkSpec: string) (sourceSpec: 
 // auto-read baseline A.
 // ----------------------------------------------------------------------
 
-/// Reconstruct the out-of-band connection spec string from a resolved
-/// `ConnectionRef` so the (string-taking) migrate runners receive it.
-let private connSpecOf (r: ConnectionRef) : string =
-    match r with
-    | ConnectionRef.EnvVar n -> "env:" + n
-    | ConnectionRef.File p   -> "file:" + p
-
-/// Resolve the source of B to a concrete model path. A `ConfigFile` yields the
-/// config's `Model.Path`; a bare `ModelFile` is itself; `Unspecified` refuses.
-let private modelPathOf (model: ModelSource) : Result<string> =
-    match model with
-    | ModelSource.ModelFile m -> Result.success m
-    | ModelSource.ConfigFile c ->
-        match Config.fromFile c with
-        | Ok cfg    -> Result.success cfg.Model.Path
-        | Error es  -> Result.failure es
-    | ModelSource.Unspecified ->
-        Result.failureOf
-            (ValidationError.create "cli.project.modelMissing"
-                "no model — pass --model <model.json>, --config <config.json>, or set \"model\" in projection.json.")
 
 /// project --to <live> with no --go — preview the minimal change against the
 /// deployed state A, never writing (THE_CLI.md §5). Reads A live, previews
 /// B ⊖ A, renders the plan via the shared migrate renderer.
-let private runProjectLivePreview (toPath: string) (connSpec: string) (declaration: LossDeclaration) : int =
+let private runProjectLivePreview (target: Catalog) (connSpec: string) (declaration: LossDeclaration) : int =
     let work =
         task {
-            let! bRead = Compose.read toPath
-            match bRead, TransferSpec.parseConnectionSpec connSpec with
-            | Error es, _ ->
-                Console.Error.WriteLine (sprintf "projection project: could not read the model %s:" toPath)
-                printErrors Console.Error es
-                return 6
-            | _, Error es ->
+            match TransferSpec.parseConnectionSpec connSpec with
+            | Error es ->
                 Console.Error.WriteLine "projection project: connection reference error:"
                 printErrors Console.Error es
                 return 6
-            | Ok target, Ok connRef ->
+            | Ok connRef ->
                 let sub : Substrate =
                     { Environment = parseEnvironment "preview" None; Role = SubstrateRole.Sink; ConnectionRef = connRef }
                 match! ConnectionResolver.openSubstrate sub with
@@ -1688,94 +1621,130 @@ let private runProjectLivePreview (toPath: string) (connSpec: string) (declarati
         }
     work.GetAwaiter().GetResult()
 
-/// Execute `project` by running the pure `Surface.planProject` routing (fidelity
-/// #1). Planning is pure + totality-tested; this runner just executes the chosen
-/// `PlanAction` against the proven `run*` faces and surfaces the unhonored-axis
-/// notes (fidelity #2 — no silent drop).
-let private executeProject (cfg: TargetConfig) (spec: MovementSpec) : int =
-    let plan = Surface.planProject cfg spec
+/// Execute a planned `Intent` against the proven `run*` engine faces. Planning
+/// is pure + totality-tested (`Command.plan`); this is the single effectful
+/// seam — it voices every refusal through `Voice.errorSurface` to stderr
+/// (fidelity #1 + #3) and surfaces the unhonored-axis notes (#2 — no silent drop).
+/// `from: synthetic` — generate from the durable profile and load (S3 flow
+/// front-end). `execute = false` previews (DryRun); `execute = true` writes,
+/// gated by `PROJECTION_ALLOW_EXECUTE=1` (R6), and is fail-loud on dropped
+/// rows (mirrors `runTransfer`).
+let private runSyntheticLoad (model: ModelSource) (modelOssys: string option) (profileRef: string) (connSpec: string) (opts: LoadOpts) (execute: bool) : int =
+    let executeGated =
+        if execute then System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" = "1" else false
+    if execute && not executeGated then
+        Console.Error.WriteLine
+            "projection (synthetic): a live load requires PROJECTION_ALLOW_EXECUTE=1 in the environment (R6 gate). Refusing."
+        dumpBench "synthetic"
+        7
+    else
+    let allowDrops = (opts.Declaration = DeclareAll)
+    // The model file is the fallback; `modelOssys` (when set) is the live-OSSYS
+    // primary. ModelResolution applies the policy.
+    let modelFile =
+        match model with
+        | ModelSource.ModelFile p | ModelSource.ConfigFile p -> Some p
+        | ModelSource.Unspecified -> None
+    let result =
+        (SyntheticLoadRun.run
+            modelOssys modelFile profileRef connSpec opts.Emission opts.AllowCdc
+            SyntheticConfig.defaultConfig SyntheticLoadRun.defaultSeed executeGated)
+            .GetAwaiter().GetResult()
+    let exitCode =
+        match result with
+        | Ok report ->
+            narrateTransferReport report
+            let dropCode = Transfer.exitCodeForReport allowDrops report
+            if dropCode <> 0 then
+                Console.Error.WriteLine
+                    (sprintf
+                        "projection (synthetic): %d row(s) dropped — refusing exit 0. Pass --allow-drops to accept the loss."
+                        (Transfer.droppedRowCount report))
+            dropCode
+        | Error errors ->
+            Console.Error.WriteLine "projection (synthetic): failed:"
+            printErrors Console.Error errors
+            let anyCode (prefix: string) =
+                errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith prefix)
+            if anyCode "synthetic.profileRef" || anyCode "model." then 2
+            elif anyCode "synthetic.insufficientGrant" || anyCode "synthetic.grantProbeFailed" || anyCode "synthetic.cdcTrackedSink" then 7
+            else 3
+    dumpBench "synthetic"
+    exitCode
+
+/// `projection profile <env> --out <path>` — capture the durable Profile
+/// artifact (THE_SYNTHETIC_DATA_DESIGN §2.2). Read-only (no execute gate);
+/// reads the deployed catalog, profiles it, and writes the serialized form.
+let private runCaptureProfile (connSpec: string) (outPath: string) : int =
+    let result = (ProfileCaptureRun.captureToFile connSpec outPath).GetAwaiter().GetResult()
+    let exitCode =
+        match result with
+        | Ok () ->
+            eprintfn "projection profile: profile written to %s" outPath
+            0
+        | Error errors ->
+            Console.Error.WriteLine "projection profile: capture failed:"
+            printErrors Console.Error errors
+            let anyCode (prefix: string) =
+                errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith prefix)
+            if anyCode "profile.writeFailed" then 1
+            elif anyCode "connectionSpec" || anyCode "connection" then 6
+            else 3
+    dumpBench "profile"
+    exitCode
+
+let private runPlan (plan: ExecutionPlan) : int =
     for n in plan.Notes do eprintfn "projection project: note — %s" n
-    let declaration = if spec.AllowDrops then DeclareAll else DeclareNone
-    let needModel (model: ModelSource) (run: string -> int) : int =
-        match modelPathOf model with
-        | Ok m     -> run m
-        | Error es -> Console.Error.WriteLine "projection project:"; printErrors Console.Error es; 6
+    // Resolve the model to a Catalog under the live-OSSYS-primary / file-
+    // fallback policy (ModelResolution), then run the Catalog-accepting face.
+    let needCatalog (modelOssys: string option) (model: ModelSource) (run: Catalog -> int) : int =
+        let modelFile =
+            match model with
+            | ModelSource.ModelFile p | ModelSource.ConfigFile p -> Some p
+            | ModelSource.Unspecified -> None
+        match (ModelResolution.resolveCatalog modelOssys modelFile).GetAwaiter().GetResult() with
+        | Ok catalog -> run catalog
+        | Error es ->
+            for e in es do TtyRenderer.renderVoicedError e
+            6
     match plan.Action with
-    | PlanAction.PublishBundle (c, dir) ->
+    // project ------------------------------------------------------------
+    | PlanAction.PublishBundle (c, dir, store, env) ->
         let verbosity = if verboseMode.Value then LogSink.Verbosity.Verbose else LogSink.Verbosity.Quiet
-        let run () = runFullExport c (Some dir) verbosity Set.empty spec.Store spec.Env
-        // --watch + a real TTY → the live stage board (§13); the board renders
-        // the same LogSink stage stream this run already emits.
+        let run () = runFullExport c (Some dir) verbosity Set.empty store env
+        // --watch + a real TTY → the live stage board (§13).
         if Watch.shouldWatch watchMode.Value then Watch.renderWatch (Watch.resolveDwellMs ()) run
         else run ()
-    | PlanAction.EmitSkeleton (m, dir) -> withRun "projection project" (fun () -> runEmitSkeletonOnly m dir)
-    | PlanAction.EmitBundle (m, dir)   -> withRun "projection project" (fun () -> runEmit m dir)
-    | PlanAction.DeployDocker model    -> needModel model (fun m -> withRun "projection project" (fun () -> runDeploy m))
-    | PlanAction.PreviewSchema (model, conn) -> needModel model (fun m -> runProjectLivePreview m conn declaration)
-    | PlanAction.PreviewData (src, sink) ->
-        runTransfer src sink None None spec.Reconcile spec.Rekey false spec.AllowCdc spec.AllowDrops
-    | PlanAction.TransferData (src, sink) ->
-        runTransfer src sink None None spec.Reconcile spec.Rekey true spec.AllowCdc spec.AllowDrops
-    | PlanAction.MigrateWithData (model, sink, src) ->
-        needModel model (fun m -> runMigrateWithData m sink src spec.Reconcile spec.Rekey declaration spec.AllowCdc spec.Store spec.Env)
-    | PlanAction.PublishAndLoad (c, conn) -> runFullExportLoad c conn None spec.Store spec.Env
-    | PlanAction.Migrate (model, conn) -> needModel model (fun m -> runMigrateExecute m conn declaration spec.AllowCdc spec.Store spec.Env)
-    | PlanAction.Refused (code, msg) -> die code msg
-
-/// Execute `check` — the proof plane (canary / drift / data / ready).
-let private executeCheck (cfg: TargetConfig) (args: string list) : int =
-    let arr = List.toArray args
-    let valueOf flag = arr |> Array.tryFindIndex ((=) flag) |> Option.bind (fun i -> if i + 1 < arr.Length then Some arr.[i + 1] else None)
-    let connOf (raw: string) : Result<string> =
-        match Surface.resolveTarget cfg raw with
-        | Ok rt ->
-            match rt.Destination with
-            | Destination.Live r -> Result.success (connSpecOf r)
-            | _ -> Result.failureOf (ValidationError.create "cli.check.notLive" (sprintf "'%s' is not a live target." raw))
-        | Error es -> Result.failure es
-    match args with
-    | "drift" :: _ ->
-        match valueOf "--model", valueOf "--to" with
-        | Some m, Some toRaw ->
-            match connOf toRaw with
-            | Ok c     -> runDrift m c
-            | Error es -> Console.Error.WriteLine "projection check drift:"; printErrors Console.Error es; 6
-        | _ -> die 2 "projection check drift: requires --model <model.json> --to <target>."
-    | "data" :: _ ->
-        match valueOf "--before", valueOf "--after" with
-        | Some b, Some a ->
-            match connOf b, connOf a with
-            | Ok bc, Ok ac -> runVerifyData bc ac
-            | _ -> die 6 "projection check data: could not resolve --before / --after to live targets."
-        | _ -> die 2 "projection check data: requires --before <target> --after <target>."
-    | "ready" :: _ -> runReadiness ()
-    | _ ->
-        let ddl = args |> List.tryFind (fun a -> not (a.StartsWith "--") && a <> "fidelity")
-        match ddl with
-        | Some path ->
-            if List.contains "--cdc-silence" args
-            then withRun "projection check --cdc-silence" (fun () -> runCanaryCdcSilence path)
-            else withRun "projection check" (fun () -> runCanary path)
-        | None -> die 1 "projection check: the fidelity canary needs a source DDL path (check <source.sql>)."
-
-/// Execute `explain` — understand before shipping (diff / policy / node /
-/// suggest / migrate-preview).
-let private executeExplain (args: string list) : int =
-    let arr = List.toArray args
-    let valueOf flag = arr |> Array.tryFindIndex ((=) flag) |> Option.bind (fun i -> if i + 1 < arr.Length then Some arr.[i + 1] else None)
-    match args with
-    | "diff" :: a :: b :: _ ->
-        let asJson = (valueOf "--format" = Some "json")
-        let depth =
-            match valueOf "--depth" with
-            | Some "all" -> System.Int32.MaxValue
-            | Some d -> (match System.Int32.TryParse d with | true, n -> max 0 n | _ -> View.defaultDepth)
-            | None -> View.defaultDepth
-        runDiff a b asJson depth
-    | "policy" :: a :: b :: _ -> runPolicyDiff a b
-    | "node" :: c :: k :: _   -> runExplain c k
-    | "suggest" :: c :: _     -> runSuggestConfig c (valueOf "--apply")
-    | "registry" :: _ ->
+    | PlanAction.EmitSkeleton (model, modelOssys, dir) ->
+        needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runEmitSkeletonOnly cat dir))
+    | PlanAction.EmitBundle (model, modelOssys, dir) ->
+        needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runEmit cat dir))
+    | PlanAction.DeployDocker (model, modelOssys) ->
+        needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runDeploy cat))
+    | PlanAction.PreviewSchema (model, modelOssys, conn, decl) ->
+        needCatalog modelOssys model (fun cat -> runProjectLivePreview cat conn decl)
+    | PlanAction.Transfer (src, sink, opts, execute) ->
+        runTransfer src sink None None opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Tables
+    | PlanAction.MigrateWithData (model, modelOssys, sink, src, opts) ->
+        needCatalog modelOssys model (fun cat -> runMigrateWithData cat sink src opts.Reconcile opts.Rekey opts.Declaration opts.AllowCdc opts.Store opts.Env)
+    | PlanAction.SynthesizeAndLoad (model, modelOssys, profile, conn, opts, execute) ->
+        runSyntheticLoad model modelOssys profile conn opts execute
+    | PlanAction.CaptureProfile (conn, out) -> runCaptureProfile conn out
+    | PlanAction.PublishAndLoad (c, conn, store, env) -> runFullExportLoad c conn None store env
+    | PlanAction.Migrate (model, modelOssys, conn, opts) ->
+        needCatalog modelOssys model (fun cat -> runMigrateExecute cat conn opts.Declaration opts.AllowCdc opts.Store opts.Env)
+    // check --------------------------------------------------------------
+    | PlanAction.CheckCanary (ddl, false) -> withRun "projection check" (fun () -> runCanary ddl)
+    | PlanAction.CheckCanary (ddl, true)  -> withRun "projection check --cdc-silence" (fun () -> runCanaryCdcSilence ddl)
+    | PlanAction.CheckDrift (m, conn)      -> runDrift m conn
+    | PlanAction.CheckData (before, after) -> runVerifyData before after
+    | PlanAction.CheckReady                -> runReadiness ()
+    // explain ------------------------------------------------------------
+    | PlanAction.ExplainDiff (a, b, asJson, depthOpt) -> runDiff a b asJson (defaultArg depthOpt View.defaultDepth)
+    | PlanAction.ExplainPolicy (a, b)        -> runPolicyDiff a b
+    | PlanAction.ExplainNode (c, k)          -> runExplain c k
+    | PlanAction.ExplainSuggest (c, applyTo) -> runSuggestConfig c applyTo
+    | PlanAction.ExplainRegistry ->
         // Self-description (NORTH_STAR "self-describing" leg) — the engine names
         // its own registered transforms (the `registered ⇔ executed` registry).
         let all = RegisteredAllTransforms.all
@@ -1783,27 +1752,22 @@ let private executeExplain (args: string list) : int =
         for rt in all |> List.sortBy (fun r -> sprintf "%A" r.StageBinding, r.Name) do
             printfn "  %-12s %s" (sprintf "%A" rt.StageBinding) rt.Name
         0
-    | "migrate" :: _ ->
-        let declaration = parseLossDeclaration arr
-        match valueOf "--to", valueOf "--from", valueOf "--store" with
-        | Some toP, Some fromP, _      -> runMigratePreview fromP toP declaration
-        | Some toP, None, Some store   -> runMigrateFromStore store toP declaration
-        | _ -> die 2 "projection explain migrate: needs --to <modelB> with --from <modelA> or --store <lifecycle>."
-    | _ -> die 2 "projection explain: expected diff | policy | node | suggest | registry | migrate."
-
-/// Execute `seal` — provenance (eject / approve).
-let private executeSeal (args: string list) : int =
-    let arr = List.toArray args
-    let valueOf flag = arr |> Array.tryFindIndex ((=) flag) |> Option.bind (fun i -> if i + 1 < arr.Length then Some arr.[i + 1] else None)
-    match args with
-    | "approve" :: version :: _ ->
-        match valueOf "--approver" with
-        | Some approver -> runApprove version approver (valueOf "--rationale") (valueOf "--store")
-        | None -> die 2 "projection seal approve: requires --approver <name>."
-    | _ ->
-        match valueOf "--store" with
-        | Some store -> runEject store
-        | None -> die 2 "projection seal: requires --store <path> (the durable timeline)."
+    | PlanAction.ExplainMigratePreview (fromP, toP, decl)   -> runMigratePreview fromP toP decl
+    | PlanAction.ExplainMigrateFromStore (store, toP, decl) -> runMigrateFromStore store toP decl
+    // seal ---------------------------------------------------------------
+    | PlanAction.SealEject store -> runEject store
+    | PlanAction.SealApprove (version, approver, rationale, store) -> runApprove version approver rationale store
+    // report -------------------------------------------------------------
+    | PlanAction.ReportBundle store ->
+        match ReportRun.fromStore store with
+        | Ok bundle ->
+            printLines Console.Out (ReportRun.render bundle)
+            0
+        | Error msg ->
+            Console.Error.WriteLine (sprintf "projection report: %s" msg)
+            6
+    // refused ------------------------------------------------------------
+    | PlanAction.Refused (exit, error) -> TtyRenderer.renderVoicedError error; exit
 
 /// `projection init` — scaffold a `projection.json` so the operator starts from
 /// a working surface (first-run ergonomics). Refuses to overwrite an existing
@@ -1832,12 +1796,41 @@ let private runInit () : int =
 
 /// Discover `projection.json` (or `PROJECTION_CONFIG`) — absent is the empty
 /// config (aliasing is opt-in).
-let private discoverConfig () : Result<TargetConfig> =
+let private discoverConfig () : Result<ProjectionConfig> =
     let path =
         match System.Environment.GetEnvironmentVariable "PROJECTION_CONFIG" with
         | null | "" -> "projection.json"
         | p -> p
-    TargetConfig.fromFile path
+    ProjectionConfig.fromFile path
+
+/// A flow's content origin, rendered for the menu (THE_CLI.md §4.4).
+let private flowSourceText (s: FlowSource) : string =
+    match s with
+    | FlowSource.Env e           -> e
+    | FlowSource.Model           -> "model"
+    | FlowSource.Synthetic None  -> "synthetic"
+    | FlowSource.Synthetic (Some p) -> sprintf "synthetic(%s)" p
+    | FlowSource.NoData          -> "none"
+
+/// `projection` with no args lists the flows as `name: from → to (spec)` —
+/// the config IS the menu (THE_CLI.md §4.4). No flows configured → the help.
+let private runList () : int =
+    match discoverConfig () with
+    | Error es ->
+        Console.Error.WriteLine "projection: projection.json is invalid:"
+        printErrors Console.Error es
+        6
+    | Ok cfg ->
+        if Map.isEmpty cfg.Flows then printLines Console.Out usageLines
+        else
+            Console.Out.WriteLine "Flows (projection <flow> [--go] [--fresh] [--allow-drops]):"
+            for KeyValue (name, f) in cfg.Flows do
+                let extra =
+                    [ if Option.isSome f.Rekey then yield "rekey"
+                      if not (List.isEmpty f.Tables) then yield sprintf "tables: %s" (String.concat "," f.Tables) ]
+                let suffix = if List.isEmpty extra then "" else sprintf "  (%s)" (String.concat "; " extra)
+                Console.Out.WriteLine(sprintf "  %-16s %s → %s%s" name (flowSourceText f.From) f.To suffix)
+        0
 
 [<EntryPoint>]
 let main argv =
@@ -1859,9 +1852,10 @@ let main argv =
     let globalFlags = set [ "--pretty"; "--json"; "--no-pretty"; "-v"; "--verbose"; "--watch" ]
     let argv = argv |> Array.filter (fun a -> not (Set.contains a globalFlags))
     match argv with
-    | [||] | [| "--help" |] | [| "-h" |] ->
+    | [| "--help" |] | [| "-h" |] ->
         printLines Console.Out usageLines
         0
+    | [||] -> runList ()
     | [| "init" |] -> runInit ()
     | _ ->
         match discoverConfig () with
@@ -1870,16 +1864,13 @@ let main argv =
             printErrors Console.Error es
             6
         | Ok cfg ->
-            match Surface.parse cfg (List.ofArray argv) with
+            match Command.parse cfg (List.ofArray argv) with
             | Error es ->
-                Console.Error.WriteLine "projection: could not read the command:"
-                printErrors Console.Error es
+                for e in es do TtyRenderer.renderVoicedError e
                 Console.Error.WriteLine ""
                 printLines Console.Error usageLines
                 1
             | Ok intent ->
-                match intent with
-                | Intent.Project spec -> executeProject cfg spec
-                | Intent.Check args   -> executeCheck cfg args
-                | Intent.Explain args -> executeExplain args
-                | Intent.Seal args    -> executeSeal args
+                // Pure routing → effectful runner. The surface→engine map is
+                // totality-tested (`Command.plan`); `runPlan` executes + voices.
+                runPlan (Command.plan cfg intent)

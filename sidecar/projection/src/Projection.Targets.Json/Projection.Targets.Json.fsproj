@@ -12,6 +12,7 @@
   <ItemGroup>
     <Compile Include="JsonEmitter.fs" />
     <Compile Include="CatalogCodec.fs" />
+    <Compile Include="ProfileCodec.fs" />
   </ItemGroup>
 
   <ItemGroup>

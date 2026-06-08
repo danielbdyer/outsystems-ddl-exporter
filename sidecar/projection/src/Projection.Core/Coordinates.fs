@@ -5,7 +5,7 @@ namespace Projection.Core
 /// sites — `PhysicalRealization` in `Catalog.fs`, the SSDT-local
 /// `TableId` in `Statement.fs`, and four `(Schema, Table)` re-spellings
 /// in `PhysicalSchema.fs` — plus `(string, string, string)` 6-tuples
-/// in `Adapters.Sql/{ProfileSnapshot,ProfileStatistics,ReadSide}.fs`.
+/// in `Adapters.Sql/ReadSide.fs`.
 /// Lifting the value object to Core gives every adapter / emitter a
 /// shared coordinate vocabulary and centralizes the smart-constructor
 /// invariants.
