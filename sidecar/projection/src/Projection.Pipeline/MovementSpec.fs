@@ -43,7 +43,9 @@ type Strategy =
 [<RequireQualifiedAccess>]
 type DataOrigin =
     | Model
-    | Synthetic
+    /// Generated to match a profile (THE_SYNTHETIC_DATA_DESIGN). Carries the
+    /// durable profile reference (`file:<path>`) — the evidence σ replays.
+    | Synthetic of profile: string
     | NoData
     | FromTarget of alias: string
 
@@ -222,6 +224,11 @@ type PlanAction =
     /// live + data source → transfer (DryRun preview when execute=false; the
     /// DML-only load when execute=true under --scope data).
     | Transfer of source: string * sink: string * opts: LoadOpts * execute: bool
+    /// live + synthetic data source → generate from the durable profile and
+    /// load (DryRun preview when execute=false; the DML-only load when
+    /// execute=true). The model supplies the target schema B; the profile ref
+    /// (`file:<path>`) supplies the evidence σ replays.
+    | SynthesizeAndLoad of model: ModelSource * profile: string * conn: string * opts: LoadOpts * execute: bool
     /// live, --go, data source → cross-substrate migrate-with-data.
     | MigrateWithData of model: ModelSource * sink: string * source: string * opts: LoadOpts
     /// live, --go, config model → publish bundle + load the seed.

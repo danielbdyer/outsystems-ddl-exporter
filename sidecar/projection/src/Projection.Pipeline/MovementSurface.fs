@@ -279,9 +279,12 @@ module Command =
           match spec.Baseline with
           | Baseline.Auto -> ()
           | _ -> "baseline accepted; the engine reads the prior state automatically (auto applied)."
-          match spec.Data with
-          | DataOrigin.Synthetic -> "synthetic data accepted; synthetic generation is pending (model data applied)."
-          | DataOrigin.NoData    -> "data:none accepted; the engine emits model data (model data applied)."
+          match spec.Data, spec.Destination with
+          // Synthetic generation is honored only on a live data load; a
+          // file/docker bundle carries model data.
+          | DataOrigin.Synthetic _, (Destination.Folder _ | Destination.Docker) ->
+              "synthetic data accepted; the file/docker bundle carries model data (model data applied)."
+          | DataOrigin.NoData, _ -> "data:none accepted; the engine emits model data (model data applied)."
           | _ -> () ]
 
     /// `--fresh` → the data-plane `EmissionMode`: merge is the incremental MERGE
@@ -333,6 +336,8 @@ module Command =
                         match dataConn alias with
                         | Ok src -> PlanAction.Transfer (src, conn, opts, false)
                         | Error es -> PlanAction.Refused (6, List.head es)
+                    | DataOrigin.Synthetic profile when not schemaOnly ->
+                        PlanAction.SynthesizeAndLoad (spec.Model, profile, conn, opts, false)
                     | _ ->
                         match spec.Model with
                         | ModelSource.Unspecified -> modelMissing "projection: "
@@ -348,6 +353,9 @@ module Command =
                                 match spec.Model with
                                 | ModelSource.Unspecified -> modelMissing "projection: "
                                 | m -> PlanAction.MigrateWithData (m, conn, src, opts)
+                    | DataOrigin.Synthetic profile when not schemaOnly ->
+                        if dataOnly then PlanAction.SynthesizeAndLoad (spec.Model, profile, conn, opts, true)
+                        else PlanAction.Refused (2, err "cli.move.syntheticScope" "a synthetic load moves data only; point the flow at a data-granting target (grant: data).")
                     | _ when dataOnly ->
                         PlanAction.Refused (2, err "cli.move.scopeDataNoSource" "a DML-only load needs a data source (a flow whose `from` is a live environment).")
                     | _ ->
@@ -362,6 +370,7 @@ module Command =
             match spec.Strategy, action with
             | Strategy.Merge, _ -> []
             | _, PlanAction.Transfer _ -> []
+            | _, PlanAction.SynthesizeAndLoad _ -> []
             | _ -> [ "--fresh accepted; this action has no selectable data-load strategy (incremental applied)." ]
         { Notes = unhonoredNotes spec @ freshNote; Action = action }
 
@@ -452,7 +461,9 @@ module Command =
         match source with
         | FlowSource.Model       -> Result.success DataOrigin.Model
         | FlowSource.NoData      -> Result.success DataOrigin.NoData
-        | FlowSource.Synthetic _ -> Result.success DataOrigin.Synthetic
+        | FlowSource.Synthetic (Some profile) -> Result.success (DataOrigin.Synthetic profile)
+        | FlowSource.Synthetic None ->
+            Result.failureOf (err "cli.flow.syntheticNoProfile" "flow source `synthetic` needs a `profile` (e.g. \"profile\": \"file:legacy.profile.json\") — the evidence the generator replays.")
         | FlowSource.Env e ->
             match Map.tryFind e cfg.Environments with
             | None ->

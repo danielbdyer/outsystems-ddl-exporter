@@ -1670,6 +1670,47 @@ let private runProjectLivePreview (toPath: string) (connSpec: string) (declarati
 /// is pure + totality-tested (`Command.plan`); this is the single effectful
 /// seam — it voices every refusal through `Voice.errorSurface` to stderr
 /// (fidelity #1 + #3) and surfaces the unhonored-axis notes (#2 — no silent drop).
+/// `from: synthetic` — generate from the durable profile and load (S3 flow
+/// front-end). `execute = false` previews (DryRun); `execute = true` writes,
+/// gated by `PROJECTION_ALLOW_EXECUTE=1` (R6), and is fail-loud on dropped
+/// rows (mirrors `runTransfer`).
+let private runSyntheticLoad (modelPath: string) (profileRef: string) (connSpec: string) (opts: LoadOpts) (execute: bool) : int =
+    let executeGated =
+        if execute then System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" = "1" else false
+    if execute && not executeGated then
+        Console.Error.WriteLine
+            "projection (synthetic): a live load requires PROJECTION_ALLOW_EXECUTE=1 in the environment (R6 gate). Refusing."
+        dumpBench "synthetic"
+        7
+    else
+    let allowDrops = (opts.Declaration = DeclareAll)
+    let result =
+        (SyntheticLoadRun.run
+            modelPath profileRef connSpec opts.Emission opts.AllowCdc
+            SyntheticConfig.defaultConfig SyntheticLoadRun.defaultSeed executeGated)
+            .GetAwaiter().GetResult()
+    let exitCode =
+        match result with
+        | Ok report ->
+            narrateTransferReport report
+            let dropCode = Transfer.exitCodeForReport allowDrops report
+            if dropCode <> 0 then
+                Console.Error.WriteLine
+                    (sprintf
+                        "projection (synthetic): %d row(s) dropped — refusing exit 0. Pass --allow-drops to accept the loss."
+                        (Transfer.droppedRowCount report))
+            dropCode
+        | Error errors ->
+            Console.Error.WriteLine "projection (synthetic): failed:"
+            printErrors Console.Error errors
+            let anyCode (prefix: string) =
+                errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith prefix)
+            if anyCode "synthetic.profileRef" then 2
+            elif anyCode "synthetic.insufficientGrant" || anyCode "synthetic.grantProbeFailed" || anyCode "synthetic.cdcTrackedSink" then 7
+            else 3
+    dumpBench "synthetic"
+    exitCode
+
 let private runPlan (plan: ExecutionPlan) : int =
     for n in plan.Notes do eprintfn "projection project: note — %s" n
     let needModel (model: ModelSource) (run: string -> int) : int =
@@ -1694,6 +1735,8 @@ let private runPlan (plan: ExecutionPlan) : int =
         runTransfer src sink None None opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Tables
     | PlanAction.MigrateWithData (model, sink, src, opts) ->
         needModel model (fun m -> runMigrateWithData m sink src opts.Reconcile opts.Rekey opts.Declaration opts.AllowCdc opts.Store opts.Env)
+    | PlanAction.SynthesizeAndLoad (model, profile, conn, opts, execute) ->
+        needModel model (fun m -> runSyntheticLoad m profile conn opts execute)
     | PlanAction.PublishAndLoad (c, conn, store, env) -> runFullExportLoad c conn None store env
     | PlanAction.Migrate (model, conn, opts) -> needModel model (fun m -> runMigrateExecute m conn opts.Declaration opts.AllowCdc opts.Store opts.Env)
     // check --------------------------------------------------------------
