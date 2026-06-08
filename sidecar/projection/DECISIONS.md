@@ -20975,3 +20975,15 @@ Two refinements so an executing agent cannot drift, and orients fast:
 2. **The handoff is distilled.** The verbose addendum is replaced by "The whole thing in six lines" (machinery built / map is the backlog / looks mechanical and isn't / read why first / the bar is not the guard / start Wave 0 then Wave 1), then a one-paragraph machinery inventory and a short "lines that bind." Same content, a fraction of the read.
 
 No code changed. The mechanical inventory is intact; it now sits under the North Star and inside the register, with worked examples making the register operable at every site.
+
+---
+
+**`DECISIONS 2026-06-08 (legibility axiom)` — The substantiation translates too: algebra/erudite jargon out, domain technicality in; the bar is the technical layperson.**
+
+A register clarification the worked examples forced into the open. The first cut of the backlog's `Today → In register` examples put arcane tokens in the deeper `beneath:` substantiation lines (`‖δ‖ = 312 = CDC capture count`, `residual ∅ · Ingest ∘ Project = id`, `CDC = 0 · zero ALTERs`, `residual ≠ ∅`, `π ∘ σ ≈ id`). This is **axiomatically wrong** by `THE_VOICE.md` §2.1 ("The boundary translates — *always*") and the §11 calibration `‖δ‖ norm ▲ 3` → `Total changes: 3`, which holds *at every depth*, not just on the lead. The substantiation is the statement **made rigorous in plain words**, never the statement trailed by its glyphs — the depth is more plain precise detail, not a descent into notation.
+
+The governing bar, stated for execution: **every rendered string — statement and substantiation alike — must be legible to a technical layperson** (a developer or DBA who knows databases but nothing of this engine's internals). The line, sharpened with the operator: **algebra and erudite jargon are out; domain concreteness and purposeful technicality are in.**
+- **Out (never rendered):** `‖δ‖ ∅ ∘ ≈`, norm, residual, commuting square, isomorphism, torsor, quotient, surrogate, `Ingest ∘ Project` — recast in plain/domain terms (rows changed · nothing left over · the database matches the model · one difference remains).
+- **In (stays — sharpens, not obscures):** CDC, ALTER/ADD/DROP, idempotent, index, column, schema, the exit code. A DBA knows them; they are concrete and purposeful, not category theory.
+
+Captured in the backlog as: §1's bar sentence; a §2 "axiom, stated for execution" callout with an algebra→plain table and an explicit "stays" list; §1 rule-2 rewritten ("the proof is plain too"); every `beneath:` example purged of algebra (the §6 gold statements — including "Confirmed idempotent…" — restored, since idempotent/CDC/ALTER are permitted); and the one surviving formula (the §0 adjunction law) explicitly tagged "the one piece of algebra in this document… never rendered to the operator; the thing the Voice translates *from*." Verified mechanically: no algebra token appears in any rendered ✓ example or `beneath:` line. No code changed.

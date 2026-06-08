@@ -26,6 +26,10 @@ Ingest  : Substrate ──►  Model         (read back)
 Law     : Ingest ∘ Project = identity  (modulo named, declared erasures)
 ```
 
+*This is the engine's internal law — the one piece of algebra in this document, and it appears
+here only because it is the thing the Voice translates **from**. It is never rendered to the
+operator; every plain finding in this backlog is this law, made legible.*
+
 Everything the engine does is a corollary of that one law. The deepest thing it knows about
 itself is that this round-trip is **faithful** — not trusted, *proven*, continuously, about
 itself. The OutSystems estate's schema and data **mean exactly what the model says — provably,
@@ -36,8 +40,9 @@ instrument has three layers (`THE_INSTRUMENT.md`): **Structure** (`View` — *wh
 **Style** (`Theme` — *how it looks*), and **Voice** (*how it speaks* — the register that
 renders the deep truth as the **essence**: the plain human finding a newcomer trusts on sight,
 the formal proof one level beneath for whoever has the question). The Voice is this third
-layer. Its job is to take the theorem — `residual ∅ · Ingest ∘ Project = id` — and say it as
-*"Verified. The database matches the model."* The essence is the proof made kind; the proof is
+layer. Its job is to take what the engine proves — that reading the database back returns
+exactly the model — and say it as *"Verified. The database matches the model."* The essence is
+the proof made kind; the proof is
 the essence made rigorous; **the surface never changes between the newcomer and the master —
 only the velocity.**
 
@@ -56,13 +61,23 @@ it work?"* rendered as an internal DU dump, at the moment the operator most need
 
 The `VoiceTotalityTests` banned-list guard is **necessary and not sufficient.** It catches a
 pronoun, a shout, a `%A`. It cannot tell you whether the line is *true*, *grounded*, or
-*kind*. A line is done when all of these hold:
+*kind*. **The bar for every rendered string — statement and substantiation alike — is
+legibility to a technical layperson:** a developer or DBA who knows databases but nothing of
+*this engine's* internals reads it and understands, with no glossary. A line is done when all
+of these hold:
 
 1. **One register, two velocities.** The newcomer reads it as orientation; the master reads the
    *same line* as a glance already past. If it serves only one reader, it is not done.
-2. **Essence on top, proof one level beneath.** The lead is a complete plain finding, readable
-   aloud with no prior context. Notation (`‖δ‖`, exit codes, the commuting square, the gate
-   label) lives in the substantiation, reachable, never on the statement line.
+2. **Essence on top, proof one level beneath — and the proof is plain too.** The lead is a
+   complete plain finding, readable aloud with no prior context. The depth beneath is *more
+   plain precise detail*, never a descent into notation or internal vocabulary: **the boundary
+   translates at every layer** (§2.1 — "translate, always"). The calibration is decisive and
+   holds at depth, not just on the lead: `‖δ‖ norm ▲ 3` is the OFF mode *anywhere*; `Total
+   changes: 3` is ON. What is banished is **algebra and erudite jargon** — `‖δ‖ ∅ ∘ ≈`, "norm",
+   "residual", "commuting square", "isomorphism", `Ingest ∘ Project`; that is what the voice
+   translates *from*, never *to*. **Domain concreteness and purposeful technicality stay** — CDC,
+   ALTER, idempotent, index, schema, the exit code: a DBA knows them, and they sharpen the
+   finding rather than obscure it. The test is *the technical layperson*, not a vocabulary purge.
 3. **The finding is asserted with grounded authority.** What the engine *proves* is stated
    plainly; the proof beneath earns it. Hedge only on genuine interpretation (a recommendation).
 4. **It ends on the move.** The lever, the gate, the next command. Nothing terminates at "done";
@@ -139,6 +154,26 @@ column's name**; `‖δ‖`/norm/CDC count→**rows changed**; `Ingest∘Project
 matches the model**; canary→**self-check**; drift→**a divergence on the server**; gate→**paused
 / approval required**; episode→**this run / the record**.
 
+> **The axiom, stated for execution: every rendered string — statement *and* substantiation —
+> must be legible to a technical layperson** (a developer or DBA who knows databases but
+> nothing of this engine's internals; no glossary, no algebra). The boundary translates at
+> *every depth* (§2.1; the calibration `‖δ‖ norm ▲ 3` → `Total changes: 3` holds at depth, not
+> just on the lead), so the proof beneath is the statement **made rigorous in plain words** —
+> never the statement trailed by its symbols. The line to hold: **algebra and erudite jargon
+> out; domain concreteness and purposeful technicality in.**
+>
+> | Algebra / erudite jargon — never rendered | Plain — what the operator reads |
+> |---|---|
+> | `‖δ‖` · norm · `∅` · `∘` · `≈` | rows changed · nothing left over |
+> | commuting square · isomorphism · `Ingest ∘ Project = id` | the database matches the model |
+> | residual ∅ · residual ≠ ∅ | identical to the model · one difference remains |
+> | torsor · quotient · surrogate | recast in domain terms; never shown |
+>
+> **Stays — concrete, purposeful, known to a DBA:** CDC, ALTER / ADD / DROP, idempotent, index,
+> column, schema, the exit code. These sharpen the finding; they are not the obscurity. The test
+> is *the technical layperson*, not a word-list purge — a real schema term earns its place; a
+> piece of category theory never does.
+
 ---
 
 ## 3 — The state of play (what speaks, and what does not)
@@ -167,7 +202,7 @@ mostly hasn't been given the words at the render sites.
   nine `Preflight.GateLabel`s; the **consent moment** (§5). The drop-in for Wave 1, **uncalled**.
 - **`Voice.errorsSurface` / `renderErrorsTo`** (`TtyRenderer.fs:193`) — the located §10 refusal.
 - **`Comparison.renderCatalogDiff` / `renderCatalogChange`** (`Comparison.fs:36/122`) — the
-  statement-first `‖δ‖` panel, proven by `runDiff`; the substrate for Wave 2.
+  statement-first change panel, proven by `runDiff`; the substrate for Wave 2.
 - **`Surface.render`** (`Surface.fs`) — the Statement → Substantiation → Action (essence / proof
   / move) assembly every new surface composes through.
 
@@ -191,10 +226,11 @@ disappear at the worst moment — the verdict as a DU dump, the proof as a shout
 ✗  DRIFT DETECTED                                                        (:897)
 ─────────────────────────────────────────────────────────────────────────────────────
 ✓  The Status column will be narrowed to 20 characters. 4 rows currently exceed
-   that length.                                                   beneath: gate=tightening · exit 8
+   that length.                                                   beneath: exit 8 · Show detail
      → Trim the 4 rows, widen the target, or halt.                       (§5 / §10)
 ✓  The round-trip returned one difference. It is shown below and must be resolved
-   before shipping.                                               beneath: residual ≠ ∅  ▸ Show detail   (§6 / §10)
+   before shipping.                            beneath: the read-back differs from the model in
+                                               one column — Status · Show detail   (§6 / §10)
 ✓  The server holds 2 objects the model does not.
      → Accept them, remediate, or escalate.                             (§5 drift / §8)
 ```
@@ -219,7 +255,7 @@ most carefully-designed sentence, unspoken. `Preflight.classify` already maps co
 ✗  migrate refused — undeclared destructive change · exit 9              (:1156, :1258)
 ─────────────────────────────────────────────────────────────────────────────────────
 ✓  The IX_Order_Stale index will be dropped. No data is lost, but the drop is not
-   auto-reversible.                                               beneath: gate=declared-loss · exit 9
+   auto-reversible.                                               beneath: exit 9 · Show detail
      → Approve the removal, or halt.                                     (§5 declared-loss)
 ```
 The §5 table gives the gold standard for each label — *Connection* → `UAT is unreachable. Check
@@ -241,13 +277,14 @@ alternative is a `Preflight.IntentNotStated` variant. Record the choice in `DECI
 gate); each states the consequence as meaning + one plain imperative; gate⇔copy totality passes;
 exit codes unchanged.
 
-### Wave 2 — The §9 ‖δ‖ minimality proof (the soul, said plain)
+### Wave 2 — The §9 minimality proof (the smallest faithful change, said plain)
 
 **Why — the deepest fidelity finding, today rendered as `norm=`.** Minimality — "the touch was
 exactly what differed, and no others" — is the §6 proof that the migration is faithful. It is
 surfaced in three places, all leading with `norm=` or bare counts (§1 rule 3 / §2.2). The
-substrate is proven: `runDiff` renders the `‖δ‖` panel statement-first via
-`Comparison.renderCatalogDiff`.
+substrate is proven: `runDiff` renders the change panel statement-first via
+`Comparison.renderCatalogDiff` (the code concept is `SchemaNorm` / `CatalogDiff.norm` — but the
+glyph and the word "norm" never reach the operator).
 
 **Today → In register:**
 ```
@@ -255,16 +292,18 @@ substrate is proven: `runDiff` renders the `‖δ‖` panel statement-first via
 ✗  norm=312 (+4 / −1 / ~7 kinds; 312 CDC capture(s))
 ─────────────────────────────────────────────────────────────────────────────────────
 ✓  312 rows changed — exactly those that differed, and no others.
-     beneath: ‖δ‖ = 312 = CDC capture count · +4 / −1 / ~7 kinds   ▸ Show detail   (§6 minimality)
-✓  (idempotent)  Nothing to apply. The database is provably unchanged.   (§6 / §7 P-5)
+     beneath: the same 312 the database recorded as changed · 4 tables added,
+     1 dropped, 7 columns changed · Show detail                          (§6 minimality)
+✓  (no changes)  Nothing to apply. The database is provably unchanged.   (§6 / §7 P-5)
 ```
-Build a `Surface` mirroring `runDiff`: statement = the Minimality finding; substantiation = the
-`‖δ‖ = norm = CDC count` panel; action = the apply imperative. Fold the two `%A` tails
+Build a `Surface` mirroring `runDiff`: statement = the minimality finding; substantiation = the
+same count stated plainly (the change count *is* the count the database recorded as changed),
+the per-table breakdown beneath; action = the apply imperative. Fold the two `%A` tails
 (`:1167/:1279`) in here. Correct the nested miss: `Comparison.catalogStatement`
 (`Comparison.fs:66`) still says `"destroy structure"` (→ *drops/narrows*) inside voiced `runDiff`.
 
-**Done when:** preview + report lead with the finding, not `norm=`; the norm rides beneath;
-`"destroy structure"` corrected; `ComparisonTests` copy updated.
+**Done when:** preview + report lead with the finding, not `norm=`; the count rides beneath in
+plain words; `"destroy structure"` corrected; `ComparisonTests` copy updated.
 
 ### Wave 3 — The §6 proofs: canary, drift, data-integrity (fidelity, made plain)
 
@@ -279,9 +318,9 @@ and shouts.
 ✗  Operation completed successfully.                                     (success narration)
 ─────────────────────────────────────────────────────────────────────────────────────
 ✓  Verified. The deployed database now matches the model.
-     beneath: residual ∅ · Ingest ∘ Project = id   ▸ Show detail         (§6 commuting square)
+     beneath: the read-back is identical to the model — nothing left over · Show detail   (§6)
 ✓  Confirmed idempotent: zero rows captured, zero schema changes issued.
-     beneath: CDC = 0 · zero ALTERs                                      (§6 CDC-silence)
+     beneath: the second deploy and the first are identical · Show detail                 (§6)
 ```
 Route prose through `Voice.canary.*`; demote `PhysicalSchema.renderDiff` from the statement into
 a `Disclosure`. Sites: `runCanary*` (`:456/:523`), `runDrift` (`:894`), `runVerifyData` /
@@ -334,9 +373,9 @@ Sites: `narrateTransferReport` (`:601-645`), `runExplain` (`:1013-1041`), `runSu
 
 **Why — voice it once the pattern is settled, under evidence.** `SynthesizeAndLoad`
 (`:1626`) + `CaptureProfile` (`:1683`). Refusals fold into Waves 0–1; the success narration (the
-`π ∘ σ ≈ id` canary — its own faithfulness finding, said as *"The synthetic data reproduces the
-profile."* — plus row counts and the profile round-trip) wants a §6 + §13 surface. Lowest
-priority (IR grows under evidence).
+synthetic round-trip's own faithfulness finding, said as *"The synthetic data reproduces the
+profile."* — in code, the synthetic round-trip canary — plus row counts and the profile
+round-trip) wants a §6 + §13 surface. Lowest priority (IR grows under evidence).
 
 ---
 
