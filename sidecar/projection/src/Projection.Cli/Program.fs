@@ -457,9 +457,8 @@ let private runCanary (sourceDdlPath: string) : int =
                     0
                 else
                     eprintfn ""
-                    eprintfn
-                        "projection: canary RED — PhysicalSchema diff non-empty:\n%s"
-                        (PhysicalSchema.renderDiff report.Diff)
+                    eprintfn "The round-trip diverged from the model. The difference is shown below; it blocks the commit."
+                    eprintfn "%s" (PhysicalSchema.renderDiff report.Diff)
                     5
             | Error errors ->
                 (
@@ -520,13 +519,10 @@ let private runCanaryCdcSilence (sourceDdlPath: string) : int =
                     report.TargetReport.TablesCreated
                 let schemaOk = PhysicalSchema.isEqual report.Diff
                 if not schemaOk then
-                    eprintfn
-                        "projection: canary RED — PhysicalSchema diff non-empty:\n%s"
-                        (PhysicalSchema.renderDiff report.Diff)
+                    eprintfn "The round-trip diverged from the model. The difference is shown below; it blocks the commit."
+                    eprintfn "%s" (PhysicalSchema.renderDiff report.Diff)
                 if cdcDelta <> 0 then
-                    eprintfn
-                        "projection: canary RED — idempotent redeploy fired %d CDC capture(s) (expected 0)"
-                        cdcDelta
+                    eprintfn "The redeploy was not idempotent: %d row(s) captured where none were expected." cdcDelta
                 if schemaOk && cdcDelta = 0 then
                     printfn "projection: canary green — PhysicalSchema diff empty AND idempotent redeploy CDC-silent (0 captures measured)"
                     0
@@ -572,11 +568,11 @@ let private runApprove
         | None -> Ok ()
         | Some path ->
             match ApprovalStore.load path with
-            | Error e -> Error (sprintf "%A" e)
+            | Error e -> Error (ApprovalStore.describe e)
             | Ok registry ->
                 match ApprovalStore.save path (ApprovalRegistry.record record registry) with
                 | Ok () -> printfn "  store     : %s (recorded)" path; Ok ()
-                | Error e -> Error (sprintf "%A" e)
+                | Error e -> Error (ApprovalStore.describe e)
     match persisted with
     | Ok () -> dumpBench "approve"; 0
     | Error msg ->
@@ -894,8 +890,8 @@ let private runDrift (toPath: string) (connSpec: string) : int =
                         printfn "projection drift: no drift — the deployed schema matches the model"
                         return 0
                     else
-                        eprintfn "projection drift: DRIFT DETECTED — the deployed schema differs from the model:\n%s"
-                            (PhysicalSchema.renderDiff diff)
+                        eprintfn "The deployed schema diverges from the model. The difference is shown below."
+                        eprintfn "%s" (PhysicalSchema.renderDiff diff)
                         return 5
         }
     let code = work.GetAwaiter().GetResult()
@@ -920,7 +916,7 @@ let private runEject (storePath: string) : int =
             printfn "projection eject: package self-verified — FTC reconstruction from genesis reproduces the frozen state"
             0
         else
-            Console.Error.WriteLine "projection eject: package FAILED self-verification — the reconstruction does not reproduce the frozen state."
+            Console.Error.WriteLine "The package is not verified: the reconstruction does not reproduce the frozen state."
             5
 
 /// Tier-4 reporting — `readiness`. Read the cross-run ledger
@@ -1147,6 +1143,23 @@ let private runPolicyDiff (configAPath: string) (configBPath: string) : int =
 /// never a silent plan. The `--execute` leg (against a live deployed DB) is
 /// `MigrationRun.execute`; this surface previews what it would do.
 
+/// A `MigrationError` as a plain located cause — the operator reads the finding,
+/// never a raw DU dump (`THE_VOICE.md` §10). The full statement-first migrate
+/// surfaces land in Waves 2–3; this Wave-0 translation only banishes the `%A`.
+let private migrationErrorDetail (e: MigrationError) : string =
+    match e with
+    | DiffFailed _              -> "the changes could not be computed"
+    | RefusedByViolations v     -> sprintf "%d removal(s) are not yet approved" (List.length v)
+    | RefusedBySchemaErrors es  -> sprintf "%d change(s) cannot be expressed as a single ALTER" (List.length es)
+    | EmitFailed _              -> "the changes could not be built"
+    | SchemaReadFailed _        -> "the deployed schema could not be read"
+    | ExecutionFailed msg       -> sprintf "the migration could not be applied — %s" msg
+    | RefusedByTightening msg   -> sprintf "a column tightening would fail against existing data — %s" msg
+    | VerificationFailed _      -> "the round-trip did not match the model"
+    | DataTransferFailed _      -> "the data load did not complete"
+    | RefusedByCdc t            -> sprintf "the schema change would run against a CDC-tracked database (%d table(s))" (List.length t)
+    | StoreReadFailed msg       -> sprintf "the run history could not be read — %s" msg
+
 /// Shared dry-run renderer for a `migrate` preview outcome — the change-manifest
 /// of δ, or a fail-loud refusal (undeclared losses / inexpressible change).
 let private reportPreviewOutcome (header: string) (result: Result<MigrationArtifacts, MigrationError>) : int =
@@ -1164,7 +1177,7 @@ let private reportPreviewOutcome (header: string) (result: Result<MigrationArtif
                 Console.Error.WriteLine (sprintf "    [%s] %s" e.Code e.Message)
             9
         | Error other ->
-            Console.Error.WriteLine (sprintf "projection migrate: failed: %A" other)
+            Console.Error.WriteLine (sprintf "The migration did not complete: %s." (migrationErrorDetail other))
             2
         | Ok artifacts ->
             let p = artifacts.Plan.Preview
@@ -1276,7 +1289,7 @@ let private reportMigrationError (e: MigrationError) : int =
         printErrors Console.Error es
         6
     | other ->
-        Console.Error.WriteLine (sprintf "projection migrate: failed: %A" other)
+        Console.Error.WriteLine (sprintf "The migration did not complete: %s." (migrationErrorDetail other))
         2
 
 /// The A1 connection + A2 permission pre-flights against a sink connection,
@@ -1406,7 +1419,7 @@ let private runMigrateExecute (target: Catalog) (connSpec: string) (declaration:
                                                     (EpisodicLifecycle.episodes chain |> List.length) (Timeline.name tl)
                                                 return 0
                                             | Ok (_, None) ->
-                                                Console.Error.WriteLine "projection migrate: executed but verification FAILED — B' does not reproduce B. No episode recorded."
+                                                Console.Error.WriteLine "The changes were applied, but the read-back does not match the model. No run was recorded."
                                                 return 9
                                             | Error e -> return reportMigrationError e
                                     | None ->
@@ -1423,7 +1436,7 @@ let private runMigrateExecute (target: Catalog) (connSpec: string) (declaration:
                                             eprintfn "projection migrate: note — no --lifecycle-store supplied; no episode persisted (the next diff has no prior to load)."
                                             return 0
                                         | Ok _ ->
-                                            Console.Error.WriteLine "projection migrate: executed but verification FAILED — B' does not reproduce B."
+                                            Console.Error.WriteLine "The changes were applied, but the read-back does not match the model."
                                             return 9
                                         | Error e -> return reportMigrationError e
         }
@@ -1572,7 +1585,7 @@ let private runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec:
                                                 (List.length o.Transfer.Kinds)
                                             return 0
                                         | Ok _ ->
-                                            Console.Error.WriteLine "projection migrate: schema executed but verification FAILED — data leg skipped."
+                                            Console.Error.WriteLine "The schema changes were applied, but the read-back does not match the model. The data load was skipped."
                                             return 9
                                         | Error e -> return reportMigrationError e
         }
@@ -1748,9 +1761,16 @@ let private runPlan (plan: ExecutionPlan) : int =
         // Self-description (NORTH_STAR "self-describing" leg) — the engine names
         // its own registered transforms (the `registered ⇔ executed` registry).
         let all = RegisteredAllTransforms.all
+        let stageBindingText (s: StageBinding) =
+            match s with
+            | StageBinding.Adapter        -> "adapter"
+            | StageBinding.Pass           -> "pass"
+            | StageBinding.OrderingPolicy -> "ordering"
+            | StageBinding.Emitter        -> "emitter"
+            | StageBinding.Pipeline       -> "pipeline"
         printfn "projection: %d registered transform(s)" (List.length all)
-        for rt in all |> List.sortBy (fun r -> sprintf "%A" r.StageBinding, r.Name) do
-            printfn "  %-12s %s" (sprintf "%A" rt.StageBinding) rt.Name
+        for rt in all |> List.sortBy (fun r -> stageBindingText r.StageBinding, r.Name) do
+            printfn "  %-12s %s" (stageBindingText rt.StageBinding) rt.Name
         0
     | PlanAction.ExplainMigratePreview (fromP, toP, decl)   -> runMigratePreview fromP toP decl
     | PlanAction.ExplainMigrateFromStore (store, toP, decl) -> runMigrateFromStore store toP decl
