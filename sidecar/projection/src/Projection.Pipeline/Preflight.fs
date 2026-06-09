@@ -218,6 +218,11 @@ module Preflight =
         | Alter
         | CreateTable
 
+    /// Every write action — the closed vocabulary, enumerated so a derived
+    /// capability catalog (the capability survey) stays total over it by
+    /// construction rather than by a hand-maintained parallel list.
+    let allWriteActions : WriteAction list = [ Insert; Delete; Alter; CreateTable ]
+
     /// One object + action the plan will perform at the sink. Built from the
     /// migrate schema differential (`ALTER`/`ADD` → Alter/CreateTable) and the
     /// transfer's target kinds (`INSERT`/`DELETE`).
@@ -249,7 +254,10 @@ module Preflight =
             Granted : Set<string * string>
         }
 
-    let private permissionName (a: WriteAction) : string =
+    /// The `sys.fn_my_permissions` permission name a write action holds at. Public
+    /// so the capability survey can name the source-read (SELECT) permission in the
+    /// same vocabulary the sink-write permissions are probed under.
+    let permissionName (a: WriteAction) : string =
         match a with
         | Insert      -> "INSERT"
         | Delete      -> "DELETE"
@@ -273,11 +281,18 @@ module Preflight =
         |> List.distinct
         |> List.sortBy (fun v -> v.Object, permissionName v.Action)
 
+    /// Does the captured grant hold a named permission at **database scope** —
+    /// the place-wide grant (object-key ""). The primitive the capability survey
+    /// reconciles every required capability (write actions AND the source-read
+    /// SELECT) against. Pure + DB-free.
+    let coversPermissionAtDatabaseScope (permission: string) (grant: GrantEvidence) : bool =
+        Set.contains ("", permission) grant.Granted
+
     /// Does the captured grant cover this write action at **database scope** —
     /// the place-wide grant (object-key "") the capability survey checks an
     /// environment's declared `grant` facet against. Pure + DB-free.
     let coversAtDatabaseScope (action: WriteAction) (grant: GrantEvidence) : bool =
-        Set.contains ("", permissionName action) grant.Granted
+        coversPermissionAtDatabaseScope (permissionName action) grant
 
     let private describePermission (violations: PermissionViolation list) : string =
         violations

@@ -189,18 +189,12 @@ let buildSetupView
 /// state plainly — covered / missing the named activities / unreachable / no
 /// live gate. Pure over the probed reports.
 let buildSurveyView (reports: CapabilitySurvey.EnvironmentReport list) : View.View =
-    let actionName (a: Preflight.WriteAction) =
-        match a with
-        | Preflight.Insert      -> "INSERT"
-        | Preflight.Delete      -> "DELETE"
-        | Preflight.Alter       -> "ALTER"
-        | Preflight.CreateTable -> "CREATE TABLE"
     let field (r: CapabilitySurvey.EnvironmentReport) =
         let value, status =
             if not r.Connected then "no live gate (file or ephemeral)", View.Neutral
             elif not r.Reachable then "unreachable", View.Bad
             elif not (List.isEmpty r.Missing) then
-                sprintf "reachable %s missing %s" Theme.dot (r.Missing |> List.map actionName |> String.concat ", "), View.Warn
+                sprintf "reachable %s missing %s" Theme.dot (r.Missing |> List.map CapabilitySurvey.Capability.text |> String.concat ", "), View.Warn
             else
                 let cdc = if r.CdcTracked then sprintf " %s CDC-tracked" Theme.dot else ""
                 sprintf "reachable %s grant covered%s" Theme.dot cdc, View.Ok
