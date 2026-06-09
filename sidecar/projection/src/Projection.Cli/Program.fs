@@ -1917,31 +1917,32 @@ let private runInit () : int =
         // LINT-ALLOW: terminal operator-facing scaffold text at the CLI boundary.
         // The shape MUST match `ProjectionConfig.parse` (MovementSurface.fs):
         // `environments` (access bundle|direct|docker; grant; conn is env:/file:)
-        // and `flows` (from/to). A `local` docker env + a `try` flow is the
-        // zero-setup first run (no real database, no secret). The prior `targets`
-        // block was removed at slice F5; the flow parser ignores unknown keys, so
-        // a `targets` scaffold silently produced an empty config.
+        // and `flows` (from/to). The MODEL is read LIVE from a cloud OutSystems
+        // environment via `modelOssys` (the primary; `model` is the file fallback,
+        // ModelResolution.chooseOrigin). A SOURCE-only env carries no grant; only a
+        // SINK does — the cloud-insertion sink is `data` (DML-only, R6). The prior
+        // `targets` block was removed at slice F5; the parser ignores unknown keys.
         let scaffold =
             "{\n" +
-            "  \"model\": \"model.json\",\n" +
+            "  \"modelOssys\": \"env:OSSYS_CONN\",\n" +
             "  \"environments\": {\n" +
             "    \"local\":      { \"access\": \"docker\" },\n" +
-            "    \"onprem-dev\": { \"access\": \"bundle\", \"out\": \"./dist/onprem-dev\", \"grant\": \"schema+data\" },\n" +
-            "    \"cloud-dev\":  { \"access\": \"direct\", \"conn\": \"env:CLOUD_DEV_CONN\", \"grant\": \"schema+data\" }\n" +
+            "    \"onprem-dev\": { \"access\": \"bundle\", \"out\": \"./dist/onprem-dev\", \"grant\": \"schema+data\", \"rendition\": \"logical\" }\n" +
             "  },\n" +
             "  \"flows\": {\n" +
             "    \"try\":     { \"from\": \"model\", \"to\": \"local\" },\n" +
-            "    \"publish\": { \"from\": \"model\", \"to\": \"onprem-dev\" },\n" +
-            "    \"dev\":     { \"from\": \"model\", \"to\": \"cloud-dev\" }\n" +
+            "    \"publish\": { \"from\": \"model\", \"to\": \"onprem-dev\" }\n" +
             "  }\n" +
             "}\n"
         File.WriteAllText(path, scaffold)
         printfn "projection init: wrote %s." path
-        printfn "  Next: point \"model\" at an osm_model.json (or set \"modelOssys\" to env:<VAR>),"
-        printfn "        then run `projection` to list flows. `projection try` previews against a"
-        printfn "        throwaway Docker database (zero setup). A direct env needs its conn var set"
-        printfn "        (e.g. export CLOUD_DEV_CONN=...; a conn is an env:/file: reference, never a"
-        printfn "        literal string — D9). A live write needs both --go and PROJECTION_ALLOW_EXECUTE=1."
+        printfn "  Next: set OSSYS_CONN to your cloud OutSystems connection (env:/file: ref, never a"
+        printfn "        literal — D9) — the model is read LIVE from it. (To use a file instead, replace"
+        printfn "        \"modelOssys\" with \"model\": \"osm_model.json\".) Then `projection` lists the flows;"
+        printfn "        `projection try` previews into a throwaway Docker database; `projection publish`"
+        printfn "        emits the on-prem SSDT bundle. For the cloud-insertion flows (golden / preview /"
+        printfn "        synth into a data-only cloud sink) see examples/projection.sample.json. A live"
+        printfn "        write needs both --go and PROJECTION_ALLOW_EXECUTE=1."
         0
 
 /// Discover `projection.json` (or `PROJECTION_CONFIG`) — absent is the empty

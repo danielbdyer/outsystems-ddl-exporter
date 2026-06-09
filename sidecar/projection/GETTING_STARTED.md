@@ -18,7 +18,7 @@ largely implemented; this guide is the how-to.
 
 | Need | Why | Check |
 |---|---|---|
-| **.NET SDK 9.0.305** | `global.json` pins it with `rollForward: disable` — another version fails at load time. | `dotnet --version` → `9.0.305` |
+| **.NET SDK 9.0.314** | `global.json` pins it with `rollForward: disable` — another version fails at load time. | `dotnet --version` → `9.0.314` |
 | **Docker** (running) | For `access: docker` environments and `check canary` (ephemeral SQL Server). | `docker ps` |
 | **SQL Server 2019+** reachable | Only for `access: direct` (live writes) or applying a `bundle` via your pipeline. Not needed for the docker/bundle-file paths. | a connection string you can reach |
 
@@ -63,33 +63,40 @@ and no secrets.
 projection init        # writes a starter projection.json (refuses to overwrite an existing one)
 ```
 
-The scaffold defines three **environments** (places) and three **flows** (movements):
+The scaffold reads the **model live** from your cloud OutSystems environment and defines two
+**environments** (places) and two **flows** (movements):
 
 ```jsonc
 {
-  "model": "model.json",
+  "modelOssys": "env:OSSYS_CONN",
   "environments": {
     "local":      { "access": "docker" },
-    "onprem-dev": { "access": "bundle", "out": "./dist/onprem-dev", "grant": "schema+data" },
-    "cloud-dev":  { "access": "direct", "conn": "env:CLOUD_DEV_CONN", "grant": "schema+data" }
+    "onprem-dev": { "access": "bundle", "out": "./dist/onprem-dev", "grant": "schema+data", "rendition": "logical" }
   },
   "flows": {
     "try":     { "from": "model", "to": "local" },
-    "publish": { "from": "model", "to": "onprem-dev" },
-    "dev":     { "from": "model", "to": "cloud-dev" }
+    "publish": { "from": "model", "to": "onprem-dev" }
   }
 }
+```
+
+Set `OSSYS_CONN` to your cloud OutSystems connection — the model is read **live** from it
+(OutSystems metadata → native `SsKey`; no V1, no exported file). `modelOssys` is the primary
+model source; a `model: "osm_model.json"` file is the configured fallback (`model.json` is a
+second-class citizen — use it only when no live connection is available).
+
+```bash
+export OSSYS_CONN="Server=cloud-uat.example;Database=app;User Id=svc;Password=…;Encrypt=true"
 ```
 
 List what is configured (the resolved `source → target` of each flow):
 
 ```bash
-projection                 # → try: model → local · publish: model → onprem-dev · dev: model → cloud-dev
+projection                 # → try: model → local · publish: model → onprem-dev
 ```
 
-Point `"model"` at an exported `osm_model.json` (or set `"modelOssys": "env:OSSYS_CONN"` to
-read OutSystems metadata live), then **preview** the zero-setup flow — it deploys into a
-throwaway Docker database and reports the change without touching anything real:
+**Preview** the `try` flow — it reads the live model and deploys into a throwaway Docker
+database, reporting the change without touching anything real:
 
 ```bash
 projection try             # preview (dry-run); nothing is committed
@@ -105,8 +112,17 @@ projection publish         # writes ./dist/onprem-dev/...  (CREATE files + Refac
 
 ## 5. Environments and flows — the config reference
 
-`projection.json` (or the file named by `$PROJECTION_CONFIG`) has two blocks. The parser
-reads exactly the keys below; **unknown keys are silently ignored**, so spelling matters.
+`projection.json` (or the file named by `$PROJECTION_CONFIG`) has a model source plus two
+blocks. The parser reads exactly the keys below; **unknown keys are silently ignored**, so
+spelling matters.
+
+### Top-level — the model source
+
+| Key | Meaning |
+|---|---|
+| `modelOssys` | **primary** — a live OSSYS connection ref (`env:<VAR>` / `file:<path>`); the model is read live from your cloud OutSystems environment (native `SsKey`, no V1). |
+| `model` | **fallback** — a path to an exported `osm_model.json`. Optional when `modelOssys` is set (kept for cutover safety). When both are present, `modelOssys` wins. |
+| `environments` / `flows` | the two config blocks below. |
 
 ### Environments — the *places*
 
@@ -121,8 +137,13 @@ reads exactly the keys below; **unknown keys are silently ignored**, so spelling
 
 - **`access`** decides delivery: `bundle` produces files (always safe; for a CI/CD pipeline);
   `direct` writes to a live connection; `docker` spins up an ephemeral verified database.
-- **`grant`** is a gate, not a setting: a flow that changes schema against a `data`-only
-  target is a **type mismatch, refused loudly** — never half-applied.
+- **`grant` is a property of the *sink*, not a tier.** A **source** environment (a flow's
+  `from`) is read-only and carries **no grant**. A **sink** carries the grant for what the
+  flow changes there: **`data`** (DML only — the schema must already agree) or **`schema+data`**
+  (DDL+DML). A schema-changing flow against a `data` sink is a **type mismatch, refused
+  loudly** — never half-applied. In the cloud-insertion estate this is the natural cut:
+  **schema travels the on-prem `bundle` path (`schema+data`); data lands in the cloud via
+  DML-only (`data`) flows** — V2 owns no schema write to a live cloud environment (R6).
 
 ### Flows — the *movements*
 
@@ -158,22 +179,29 @@ committed file carries only addressing, never credentials.
 (names are your choice — no convention is enforced):
 
 ```jsonc
-// projection.json
+// projection.json — the cloud-insertion estate (full version: examples/projection.sample.json)
 {
+  "modelOssys": "env:OSSYS_CONN",
   "environments": {
-    "cloud-dev":  { "access": "direct", "conn": "env:CLOUD_DEV_CONN",  "grant": "schema+data" },
-    "cloud-qa":   { "access": "direct", "conn": "env:CLOUD_QA_CONN",   "grant": "schema+data" },
-    "cloud-uat":  { "access": "direct", "conn": "env:CLOUD_UAT_CONN",  "grant": "data" }
+    "onprem-uat":    { "access": "bundle", "out": "./dist/onprem-uat", "grant": "schema+data", "rendition": "logical" },
+    "onprem-legacy": { "access": "direct", "conn": "env:ONPREM_LEGACY_CONN", "rendition": "logical" },
+    "cloud-qa":      { "access": "direct", "conn": "env:CLOUD_QA_CONN", "rendition": "physical" },
+    "cloud-uat":     { "access": "direct", "conn": "env:CLOUD_UAT_CONN", "grant": "data", "rendition": "physical" }
   },
   "flows": {
-    "qa":  { "from": "cloud-dev", "to": "cloud-qa" },
-    "uat": { "from": "cloud-qa",  "to": "cloud-uat", "rekey": "file:users.csv" }
+    "publish": { "from": "model", "to": "onprem-uat" },
+    "golden":  { "from": "cloud-qa", "to": "cloud-uat", "rekey": "file:users.csv" },
+    "preview": { "from": "onprem-legacy", "to": "cloud-uat" }
   }
 }
 ```
 
+(Sources — `cloud-qa`, `onprem-legacy` — carry no grant; only the `cloud-uat` sink does, as
+`data`. The model is read live from `OSSYS_CONN`.)
+
 ```bash
-export CLOUD_DEV_CONN="Server=cloud-dev.example;Database=app;User Id=svc;Password=…;Encrypt=true"
+export OSSYS_CONN="Server=cloud-uat.example;Database=app;User Id=svc;Password=…;Encrypt=true"
+export ONPREM_LEGACY_CONN="…"
 export CLOUD_QA_CONN="…"
 export CLOUD_UAT_CONN="…"
 ```

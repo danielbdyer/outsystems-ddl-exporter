@@ -1,28 +1,20 @@
 {
-  "model": "extracted/osm_model.json",
+  "modelOssys": "env:OSSYS_CONN",
 
   "environments": {
-    "local":          { "access": "docker" },
+    "onprem-dev":    { "access": "bundle", "out": "./dist/onprem-dev", "grant": "schema+data", "rendition": "logical" },
+    "onprem-qa":     { "access": "bundle", "out": "./dist/onprem-qa",  "grant": "schema+data", "rendition": "logical" },
+    "onprem-uat":    { "access": "bundle", "out": "./dist/onprem-uat", "grant": "schema+data", "rendition": "logical" },
 
-    "onprem-publish": { "access": "bundle", "out": "./dist/onprem-publish", "grant": "schema+data", "rendition": "logical", "store": "lifecycle/onprem-publish.json" },
+    "onprem-legacy": { "access": "direct", "conn": "env:ONPREM_LEGACY_CONN", "rendition": "logical" },
 
-    "onprem-legacy":  { "access": "direct", "conn": "env:ONPREM_LEGACY_CONN", "grant": "data", "rendition": "logical" },
+    "cloud-qa":      { "access": "direct", "conn": "env:CLOUD_QA_CONN", "rendition": "physical" },
 
-    "cloud-dev":      { "access": "direct", "conn": "env:CLOUD_DEV_CONN", "grant": "schema+data", "rendition": "physical" },
-
-    "cloud-qa":       { "access": "direct", "conn": "env:CLOUD_QA_CONN", "grant": "schema+data", "rendition": "physical" },
-
-    "cloud-uat":      { "access": "direct", "conn": "env:CLOUD_UAT_CONN", "grant": "data", "rendition": "physical", "store": "lifecycle/cloud-uat.json" }
+    "cloud-uat":     { "access": "direct", "conn": "env:CLOUD_UAT_CONN", "grant": "data", "rendition": "physical", "store": "lifecycle/cloud-uat.json" }
   },
 
   "flows": {
-    "try":     { "from": "model", "to": "local" },
-
-    "publish": { "from": "model", "to": "onprem-publish" },
-
-    "dev":     { "from": "model", "to": "cloud-dev" },
-
-    "qa":      { "from": "cloud-dev", "to": "cloud-qa" },
+    "publish": { "from": "model", "to": "onprem-uat" },
 
     "golden":  { "from": "cloud-qa", "to": "cloud-uat", "tables": ["Customer", "Order", "OrderLine"], "rekey": "file:./secrets/users.csv" },
 
