@@ -829,6 +829,28 @@ module Transfer =
                 return! runCore mode allowCdc false source sink sinkContract Map.empty (Some (sourceContract, renameMap)) WriteOptions.def
         }
 
+    /// M3.b — the `legacy` B→A reverse leg's engine face (`THE_DATA_PRODUCERS`
+    /// LE-1). The source is at the LOGICAL rendition (B, on-prem); the sink is at
+    /// the PHYSICAL rendition (A, the OSUSR cloud) of the ONE authored `SsKey`
+    /// model. Because both contracts are RENDERED from one model, their SsKeys
+    /// align by construction — exactly the precondition `runWithRenames`'s A1-
+    /// stable, never-ordinal repoint needs; the two renditions differ only on
+    /// physical coordinates (names), which the A→B `CatalogDiff` rename map
+    /// re-points. This is a THIN wrapper that names the reverse leg and delegates
+    /// to the LE-2-proven `runWithRenames` GIVEN THE TWO CONTRACTS — it does not
+    /// produce them. Producing them (rendering one model in both renditions) is
+    /// the residual the wiring waits on (J3 / LE-1; the classifier is
+    /// `Command.reverseLegOf`). A no-rename pair collapses to a straight load.
+    let runReverseLeg
+        (mode: Mode)
+        (allowCdc: bool)
+        (source: SqlConnection)
+        (sink: SqlConnection)
+        (logicalSourceContract: Catalog)
+        (physicalSinkContract: Catalog)
+        : Task<Result<TransferReport>> =
+        runWithRenames mode allowCdc source sink logicalSourceContract physicalSinkContract
+
     /// Run a *reconciling* Transfer — the operator's headline case
     /// (Dev→UAT User re-key). `reconciliation` names, per kind, how its
     /// Source surrogates reconcile to the *pre-existing* Sink identities

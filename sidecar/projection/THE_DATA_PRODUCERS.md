@@ -244,6 +244,26 @@ the same `SsKey` model. Slices:
   physical cloud sink (A); same model, no foreign mapping. Identity reconciled by `SsKey` /
   business key as for any same-model move (reuse the §5 re-key machinery if the cloud owns its
   own users). Depends on the `rendition` flag (M1) + cross-rendition write-target resolution (M1.5).
+  - **Engine + canary GREEN (M3/LE-2, 2026-06-09):** the engine half is the 6.B.2 two-contract
+    `runWithRenames` path — it ingests with the logical (source) contract, re-points row column-
+    values onto the sink names by SsKey, and resolves the write target against the SINK contract's
+    `kind.Physical` per-`SsKey`. So table AND column rendition resolve for free; the LE-2 canary
+    proves a logical `[dbo].[Customer].[Email]` round-trips up into physical
+    `[dbo].[OSUSR_XF_CUSTOMER].[CONTACT]`. No OSUSR generator, no new write-path code.
+  - **Flow-recognition FACE landed (M3.b, 2026-06-09):** `Command.reverseLegOf` (pure, tested)
+    recognizes a flow as the B→A reverse leg from the M1 `rendition` flag (live `logical` source →
+    live `physical` sink) and resolves its two connections; `TransferRun.runReverseLeg` is the thin
+    engine face that delegates to the LE-2-proven `runWithRenames` **given the two contracts**.
+  - **The remaining piece (the per-flow runner arm — deferred):** *where do the two SsKey-aligned
+    contracts come from for a real configured flow?* `runWithRenames` needs a source contract at
+    the **logical** rendition and a sink contract at the **physical** (OSUSR) rendition whose
+    SsKeys **align by construction**. The LE-2 canary supplies them as authored stable-SsKey
+    contracts (the rename-canary precedent). For a live two-DB flow, ReadSide SsKeys are
+    **name-derived**, so reading the two DBs independently does **not** align them — that needs
+    either a **shared authored model rendered in both renditions** (the migration-team flow already
+    uses an authored model) OR **attribute-scope `V2.SsKey` recovery in ReadSide**
+    (`ReadSide.buildAttribute`, the durable alternative — a separate, larger piece). The per-flow
+    runner arm that picks up the two contracts and calls `runReverseLeg` is the remaining wiring.
 - **LE-2 — the reverse-leg (B→A) round-trip canary.** Pipe B→A, read back, assert the data
   round-trips. **No foreign-schema tolerances** — same model both ways.
 **Note:** `synthetic` profiled from the same on-prem data (`profile: onprem-...`) is the

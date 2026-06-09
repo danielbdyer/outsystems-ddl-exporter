@@ -510,12 +510,64 @@ module Command =
 
     // --- flow resolution (THE_CLI.md 2026-06-08; slice F2) -----------------
 
+    /// M3.b — the recognized B→A reverse leg of a flow (`THE_DATA_PRODUCERS`
+    /// LE-1): a `legacy` move whose live source bears the `logical` rendition (B,
+    /// the migration-team-populated on-prem model) and whose live sink bears the
+    /// `physical` rendition (A, the frozen OSUSR cloud model) of the ONE authored
+    /// `SsKey` model. Carries the resolved source/sink connection specs; the
+    /// engine face is `Transfer.runWithRenames` (the LE-2-proven capability) over
+    /// the two RENDITIONS of the one model — once the rendering mechanism supplies
+    /// those two contracts (the residual; see `reverseLegOf`).
+    type ReverseLeg =
+        {
+            Flow       : Flow
+            SourceConn : string
+            SinkConn   : string
+        }
+
     /// A `to` environment's reach → the `Destination` the engine lands at.
     let private destinationOfAccess (access: Access) : Destination =
         match access with
         | Access.Bundle out -> Destination.Folder out
         | Access.Direct r   -> Destination.Live r
         | Access.Docker     -> Destination.Docker
+
+    /// M3.b (pure) — recognize a flow as a B→A reverse leg from the M1 `rendition`
+    /// flag: `Some` exactly when the flow reads from a live `logical` source (B)
+    /// and writes to a live `physical` sink (A) — the `legacy`/`preview` shape.
+    /// This is the operator-facing FACE of the LE-2-proven engine capability: the
+    /// rendition flag drives the classification (no flow re-tagging needed; a flow
+    /// IS a reverse leg iff its endpoints' renditions say so). `None` for every
+    /// other shape (same-rendition moves, model/synthetic sources, non-`Direct`
+    /// endpoints) — those ride the established `resolveFlowSpec`/`planMovement`
+    /// routing unchanged.
+    ///
+    /// NOTE (the residual, J3 / LE-1): recognizing the reverse leg and resolving
+    /// its connections is clean and total here; what is NOT yet available is the
+    /// pair of SsKey-aligned CONTRACTS `Transfer.runWithRenames` consumes (source
+    /// = logical rendition, sink = physical rendition of the SAME model). ReadSide
+    /// SsKeys are name-derived, so reading the two live DBs independently would
+    /// NOT align them; the contracts must be RENDERED from one authored model in
+    /// both renditions. That renderer does not exist yet — so this classifier is
+    /// the landed partial, and the runner wiring waits on the rendering design
+    /// (documented in `THE_DATA_PRODUCERS.md` §6 LE-1 + `CONFIRMED_BACKLOG` J3).
+    let reverseLegOf (cfg: ProjectionConfig) (flow: Flow) : ReverseLeg option =
+        let liveConnOf (envName: string) : (Environment * string) option =
+            match Map.tryFind envName cfg.Environments with
+            | Some env ->
+                match env.Access with
+                | Access.Direct r -> Some (env, connSpecOf r)
+                | _ -> None
+            | None -> None
+        match flow.From with
+        | FlowSource.Env sourceName ->
+            match liveConnOf sourceName, liveConnOf flow.To with
+            | Some (sourceEnv, sourceConn), Some (sinkEnv, sinkConn)
+                  when sourceEnv.Rendition = Some Rendition.Logical
+                       && sinkEnv.Rendition = Some Rendition.Physical ->
+                Some { Flow = flow; SourceConn = sourceConn; SinkConn = sinkConn }
+            | _ -> None
+        | FlowSource.Model | FlowSource.Synthetic _ | FlowSource.NoData -> None
 
     /// A flow's `from` → the `DataOrigin`. A source environment must be
     /// `direct` (a live place to read rows from); the scheme-prefixed ref

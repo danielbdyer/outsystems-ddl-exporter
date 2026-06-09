@@ -139,6 +139,60 @@ let ``config refuses a flow without a to`` () =
     let json = """{ "flows": { "x": { "from": "dev" } } }"""
     Assert.Contains("cli.config.flowNoTo", errCodes (ProjectionConfig.parse json))
 
+// -- M3.b: the `legacy` B→A reverse-leg classifier (Command.reverseLegOf) ----
+// The clean partial: the rendition flag (M1) drives the recognition of a flow as
+// the B→A reverse leg (logical source -> physical sink) — the operator-facing
+// face of the LE-2-proven runWithRenames capability. The runner wiring waits on
+// the one-model-two-renditions rendering mechanism (the residual; J3 / LE-1).
+
+let private reverseCfg =
+    ProjectionConfig.parse """
+    {
+      "environments": {
+        "onprem-legacy": { "access": "direct", "conn": "env:ONPREM_LEGACY_CONN", "rendition": "logical" },
+        "cloud-uat":     { "access": "direct", "conn": "env:CLOUD_UAT_CONN", "grant": "data", "rendition": "physical" },
+        "cloud-peer":    { "access": "direct", "conn": "env:CLOUD_PEER_CONN", "rendition": "physical" },
+        "cloud-bundle":  { "access": "bundle", "out": "dist/cloud", "grant": "data", "rendition": "physical" },
+        "plain-src":     { "access": "direct", "conn": "env:PLAIN_SRC_CONN" }
+      },
+      "flows": {
+        "legacy":  { "from": "onprem-legacy", "to": "cloud-uat" },
+        "golden":  { "from": "cloud-peer",    "to": "cloud-uat" },
+        "plain":   { "from": "plain-src",     "to": "cloud-uat" },
+        "bundled": { "from": "onprem-legacy", "to": "cloud-bundle" }
+      }
+    }
+    """ |> mustOk
+
+[<Fact>]
+let ``reverseLegOf: a logical source to a physical sink is recognized as the B->A reverse leg`` () =
+    let flow = Map.find "legacy" reverseCfg.Flows
+    match Command.reverseLegOf reverseCfg flow with
+    | Some leg ->
+        Assert.Equal("env:ONPREM_LEGACY_CONN", leg.SourceConn)
+        Assert.Equal("env:CLOUD_UAT_CONN", leg.SinkConn)
+        Assert.Equal("legacy", leg.Flow.Name)
+    | None -> Assert.True(false, "logical→physical should be recognized as the reverse leg")
+
+[<Fact>]
+let ``reverseLegOf: a physical source to a physical sink (the peer/golden move) is NOT a reverse leg`` () =
+    // The peer/golden cloud→cloud move is same-rendition (physical→physical); it
+    // rides the established routing, not the reverse leg.
+    let flow = Map.find "golden" reverseCfg.Flows
+    Assert.Equal(None, Command.reverseLegOf reverseCfg flow)
+
+[<Fact>]
+let ``reverseLegOf: endpoints with no rendition set are NOT a reverse leg (same-rendition default)`` () =
+    let flow = Map.find "plain" reverseCfg.Flows
+    Assert.Equal(None, Command.reverseLegOf reverseCfg flow)
+
+[<Fact>]
+let ``reverseLegOf: a logical source to a non-live (bundle) physical sink is NOT a reverse leg`` () =
+    // The reverse leg needs two LIVE endpoints (a Move reads rows and writes
+    // them); a bundle sink produces files, so it is not the reverse-leg shape.
+    let flow = Map.find "bundled" reverseCfg.Flows
+    Assert.Equal(None, Command.reverseLegOf reverseCfg flow)
+
 // -- planMovement routing (the pure surface→engine map) --------------------
 
 // A config whose environments back the data-source aliases the routing tests
