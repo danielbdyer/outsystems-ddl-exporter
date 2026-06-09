@@ -21031,3 +21031,25 @@ Codified after this session burned real time on three self-inflicted "hangs" tha
 4. **Pure pool stays the inner loop** (`scripts/test.sh fast`); the pools never run concurrently (the existing OOM discipline). The warm SQL container is owned by `scripts/warm-sql.sh` (`restart` to revive a dead one — a dead `projection-mssql-warm` is the cause of a batch of `SqlException: Could not open a connection` failures while `PROJECTION_MSSQL_CONN_STR` is still set).
 
 This pairs with the "Tiered test runner" and "Test-failure capture protocol" disciplines (CLAUDE.md operating-disciplines table) — those say *which* pool and *how to read failures*; this says *how to invoke a focused run without hanging the loop*.
+
+---
+
+**`DECISIONS 2026-06-09` — The Voice implementation chapter: the backlog is rendered; the dynamic frontier is open and honest.**
+
+Closes the `HANDOFF_VOICE_2026_06_06.md` brief. The substantive resolutions (the narrative lives in `HANDOFF_VOICE_CLOSE_2026_06_09.md` + the commit trail):
+
+1. **The register is LIVE on every operator surface.** The seven waves shipped: no `%A` DU dump, no system-shout lead, no algebra (`norm=`/`‖δ‖`), no leaked `SsKey`/`OS_KIND` reaches the operator anywhere in the CLI — verified by a mechanical sweep. The gates (`renderGate` over the closed `Preflight.GateLabel`), the §6 proofs, the §4 moves, the §10 errors, the §13 lifecycle all render through the catalog/`View`.
+
+2. **The intent gate is a flat `gate.intent` code, not an engine DU variant** (recorded 2026-06-08; wired in Wave 1) — the engine's closed `GateLabel` DU stays exactly the gate⇔copy totality set.
+
+3. **The declared-loss gate names the REAL levers** (`--allow-drops` / `--declare-drop`), corrected from the idle copy's non-existent `--declare-loss`/`--declare-all`. A gate's action must be executable.
+
+4. **The live Watch is the rendering of the stage stream, wired across the run verbs.** `Watch.renderWatch` (pre-seeded `Pending` arc; the minimum-dwell floor) is wired onto `project` (bundle + load), `migrate --execute`, `migrate-with-data`, `transfer --execute`, and `project --deploy`. The executors stream the *existing* stage codes at their phase boundaries (`MigrationRun.execute` → emit/deploy/canary; `TransferRun.writePlan` → load) plus a new `summary.stageProgress` + `LogSink.recordStageProgress` for intra-stage progress. **Codes never changed** — only new emit sites + the one progress event. Verified live (Docker): the migrate streamed `emit/deploy/canary .started → stageCompleted` and `summary.stageProgress done 1→2→3`; the data load streamed `load.started` + per-table progress.
+
+5. **The honest estimate degrades by construction** (`Watch.etaText`): none before the first item or at the last; an estimate only when a rate can be projected; `progressText` is total over `Total` — an unknown denominator is a plain count-up ("142 applied"), never "142 of 0" (§13).
+
+6. **Per-table deploy progress is NOT honestly achievable, and was not faked.** `project --deploy` is one aggregated SQL batch (`runFromCatalog` → `runEphemeral(aggregateSsdt)`; even `executeStream` flushes DDL once, on an interleaved `InsertRow` or at the end) — batching is a deliberate perf choice. A per-table counter would show "300 of 300" while the single batch is still executing, exactly the misstated bar §13 forbids. The deploy verb gets an honest live *stage* (Applying → Deploy complete); per-unit progress lives where there is a true per-unit boundary — the data-load loop.
+
+7. **The §14 setup readback is the last latent surface, now live.** `projection setup [--conn <ref>]` reads back history / live-writes / board / bench, recommends an unset ledger (never scolds), and with `--conn` probes the target's reachability + the ALTER grant (reusing the verified pre-flight machinery). Verified live against the warm container.
+
+The locked register decisions (`HANDOFF_VOICE_2026_06_06.md` Appendix A) held throughout — stative/agentless, the legibility axiom (algebra out, domain in), the true verb, no pronouns. The pure-Core boundary held (all prose in `Projection.Cli`; the NDJSON event contract unchanged).
