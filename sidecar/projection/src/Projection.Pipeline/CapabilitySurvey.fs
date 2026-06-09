@@ -171,6 +171,14 @@ module CapabilitySurvey =
             /// (at database scope) — empty = covered.
             Missing    : Capability list
             CdcTracked : bool
+            /// G0b (P10) — the user-directory readability verdict: is the
+            /// platform user table the `golden`/`preview` re-key matches against
+            /// SELECT-able, and does it expose an email-shaped key column? A
+            /// REPORT FIELD, not a `Capability` variant — adding a variant would
+            /// break the `required ⇔ surveyed` totality
+            /// (`CapabilitySurveyTotalityTests`). `absent` for a place with no
+            /// live address (nothing probed).
+            UserDirectory : ReadSide.UserDirectoryProbe
         }
 
     /// Does a report name a *blocked* capability — a connected place that is
@@ -211,7 +219,8 @@ module CapabilitySurvey =
             let required = requiredOf config env.Name
             let baseReport =
                 { Name = env.Name; Grant = env.Grant; Required = required
-                  Connected = false; Reachable = false; Missing = []; CdcTracked = false }
+                  Connected = false; Reachable = false; Missing = []; CdcTracked = false
+                  UserDirectory = ReadSide.UserDirectoryProbe.absent }
             match env.Access with
             | Access.Bundle _ | Access.Docker -> return baseReport
             | Access.Direct connRef ->
@@ -223,6 +232,11 @@ module CapabilitySurvey =
                         do! cnn.OpenAsync()
                         let! grantEv = Preflight.captureGrantEvidence cnn
                         let! tracked = ReadSide.cdcTrackedTables cnn
+                        // G0b (P10) — the user-directory readability probe, next to
+                        // the CDC axis. Conventional candidate names (configurable
+                        // is the residual that pairs with OPEN-2's real-instance
+                        // user-table identity); read-only.
+                        let! userDir = ReadSide.userDirectoryReadability [] cnn
                         let missing =
                             match grantEv with
                             | Ok ev -> reconcile required ev
@@ -230,7 +244,8 @@ module CapabilitySurvey =
                         return
                             { baseReport with
                                 Connected = true; Reachable = true
-                                Missing = missing; CdcTracked = not (List.isEmpty tracked) }
+                                Missing = missing; CdcTracked = not (List.isEmpty tracked)
+                                UserDirectory = userDir }
                     with _ -> return { baseReport with Connected = true }
         }
 

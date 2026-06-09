@@ -1522,6 +1522,87 @@ module ReadSide =
             return List.ofSeq names
         }
 
+    /// G0b (P10) — the user-directory readability verdict for one place. The
+    /// platform user table is the FK target the `golden`/`preview` flows re-key
+    /// against by email (THE_DATA_PRODUCERS §2); this records whether that table
+    /// is actually SELECT-able and whether it exposes an email-shaped key column
+    /// to re-key on. `Found = false` ⇒ no candidate user table was visible (the
+    /// re-key has no directory to match against); `Found = true, EmailKeyed =
+    /// false` ⇒ the table is there but carries no email column (the by-email
+    /// match has no key). Read-only metadata, like every survey axis.
+    type UserDirectoryProbe =
+        {
+            /// A candidate user table was found and is SELECT-able.
+            Found      : bool
+            /// The found table exposes a column whose name is email-shaped
+            /// (the by-email re-key key). Always false when `Found` is false.
+            EmailKeyed : bool
+            /// The `schema.table` actually matched (for the operator board);
+            /// `None` when none matched.
+            TableName  : string option
+        }
+
+    [<RequireQualifiedAccess>]
+    module UserDirectoryProbe =
+        /// The absent verdict — no candidate table visible.
+        let absent : UserDirectoryProbe = { Found = false; EmailKeyed = false; TableName = None }
+
+    /// The conventional platform user-directory table names probed when the
+    /// caller names none. OutSystems' platform user entity is `OSSYS_USER`
+    /// (instance-specific in practice — OPEN-2); `User` and the OSUSR-prefixed
+    /// app user entity are the other conventional shapes. The real-instance
+    /// identity is the residual this pairs with (OPEN-2); the OFFLINE Docker
+    /// witness deploys a stand-in named from this list.
+    let conventionalUserTables : string list = [ "OSSYS_USER"; "User"; "USERS" ]
+
+    /// G0b (P10) — probe whether a platform user-directory table is SELECT-able
+    /// and email-keyed. `candidates` is the operator-configurable set of table
+    /// names to look for (case-insensitively, any schema); `None`/empty falls
+    /// back to `conventionalUserTables`. Read-only: it inspects `sys.tables` /
+    /// `sys.columns` (catalog metadata, no row read) and confirms SELECT-ability
+    /// with a metadata-only `SELECT TOP 0`. The first candidate that exists wins;
+    /// a column whose name contains "EMAIL" (case-insensitive) marks it
+    /// email-keyed. Any failure (table absent / not visible) returns `absent`,
+    /// never throws — the survey reports "not readable", it does not crash.
+    let userDirectoryReadability (candidates: string list) (cnn: SqlConnection) : Task<UserDirectoryProbe> =
+        task {
+            let names =
+                match candidates with
+                | [] -> conventionalUserTables
+                | xs -> xs
+            // Find the first candidate that exists as a non-system base table,
+            // and whether it carries an email-shaped column. One metadata query
+            // over sys.tables/sys.columns; the candidate ORDER pins determinism.
+            use cmd = cnn.CreateCommand()
+            let inList =
+                names
+                |> List.mapi (fun i _ -> sprintf "@n%d" i)
+                |> String.concat ", "
+            names |> List.iteri (fun i n -> cmd.Parameters.AddWithValue(sprintf "@n%d" i, n) |> ignore)
+            cmd.CommandText <-
+                sprintf
+                    "SELECT TOP 1 SCHEMA_NAME(t.schema_id) + '.' + t.name AS tbl, \
+                            CASE WHEN EXISTS ( \
+                              SELECT 1 FROM sys.columns c \
+                              WHERE c.object_id = t.object_id AND c.name LIKE '%%EMAIL%%') \
+                                 THEN 1 ELSE 0 END AS email_keyed \
+                     FROM sys.tables t \
+                     WHERE t.is_ms_shipped = 0 AND t.name IN (%s) \
+                     ORDER BY t.name"
+                    inList
+            try
+                use! reader = cmd.ExecuteReaderAsync()
+                let mutable result = UserDirectoryProbe.absent
+                let! more = reader.ReadAsync()
+                if more then
+                    result <-
+                        { Found = true
+                          EmailKeyed = (reader.GetInt32 1 = 1)
+                          TableName = Some (reader.GetString 0) }
+                return result
+            with _ -> return UserDirectoryProbe.absent
+        }
+
     /// W1-A seam T1 — the production CDC capture-count reader the
     /// "Measure" leg of the change-over-time proteins (X1/X4/X5/X8)
     /// needs (the change-measure `‖·‖`; physically the CDC capture

@@ -132,7 +132,25 @@ let ``requiredOf: an environment no flow touches is asked for nothing`` () =
 
 let private report name connected reachable missing : CapabilitySurvey.EnvironmentReport =
     { Name = name; Grant = Some Grant.DataOnly; Required = Set.empty
-      Connected = connected; Reachable = reachable; Missing = missing; CdcTracked = false }
+      Connected = connected; Reachable = reachable; Missing = missing; CdcTracked = false
+      UserDirectory = Projection.Adapters.Sql.ReadSide.UserDirectoryProbe.absent }
+
+// --- G0b: EnvironmentReport carries the user-directory probe field ---------
+
+[<Fact>]
+let ``EnvironmentReport carries the UserDirectory P10 field (report field, not a Capability variant)`` () =
+    // The P10 probe surfaces as a NEW FIELD on EnvironmentReport, NOT a new
+    // Capability DU variant — adding a variant would break the required ⇔
+    // surveyed totality. This pins the field's presence + that it round-trips.
+    let emailKeyed : Projection.Adapters.Sql.ReadSide.UserDirectoryProbe =
+        { Found = true; EmailKeyed = true; TableName = Some "dbo.OSSYS_USER" }
+    let r = { report "cloud-uat" true true [] with UserDirectory = emailKeyed }
+    Assert.True(r.UserDirectory.Found)
+    Assert.True(r.UserDirectory.EmailKeyed)
+    Assert.Equal(Some "dbo.OSSYS_USER", r.UserDirectory.TableName)
+    // The Capability DU is untouched — `Capability.all` is still exactly the
+    // five Reads/Performs variants (the totality stays structural).
+    Assert.Equal(5, List.length CapabilitySurvey.Capability.all)
 
 [<Fact>]
 let ``blocked: a connected place missing a required capability is blocked; an all-clear place is not`` () =

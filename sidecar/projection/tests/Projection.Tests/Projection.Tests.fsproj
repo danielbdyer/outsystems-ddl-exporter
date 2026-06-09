@@ -112,6 +112,7 @@
     <Compile Include="CdcSilenceCrossEmitterTests.fs" />
     <Compile Include="CdcSilencePropertyTests.fs" />
     <Compile Include="CdcMeasureTests.fs" />
+    <Compile Include="UserDirectoryProbeTests.fs" />
     <Compile Include="CanonicalizeIdentityTests.fs" />
     <Compile Include="ProfileFixtures.fs" />
     <Compile Include="ProfileTests.fs" />
