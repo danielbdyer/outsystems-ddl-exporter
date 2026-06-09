@@ -1,0 +1,33 @@
+{
+  "model": "extracted/osm_model.json",
+
+  "environments": {
+    "local":          { "access": "docker" },
+
+    "onprem-publish": { "access": "bundle", "out": "./dist/onprem-publish", "grant": "schema+data", "rendition": "logical", "store": "lifecycle/onprem-publish.json" },
+
+    "onprem-legacy":  { "access": "direct", "conn": "env:ONPREM_LEGACY_CONN", "grant": "data", "rendition": "logical" },
+
+    "cloud-dev":      { "access": "direct", "conn": "env:CLOUD_DEV_CONN", "grant": "schema+data", "rendition": "physical" },
+
+    "cloud-qa":       { "access": "direct", "conn": "env:CLOUD_QA_CONN", "grant": "schema+data", "rendition": "physical" },
+
+    "cloud-uat":      { "access": "direct", "conn": "env:CLOUD_UAT_CONN", "grant": "data", "rendition": "physical", "store": "lifecycle/cloud-uat.json" }
+  },
+
+  "flows": {
+    "try":     { "from": "model", "to": "local" },
+
+    "publish": { "from": "model", "to": "onprem-publish" },
+
+    "dev":     { "from": "model", "to": "cloud-dev" },
+
+    "qa":      { "from": "cloud-dev", "to": "cloud-qa" },
+
+    "golden":  { "from": "cloud-qa", "to": "cloud-uat", "tables": ["Customer", "Order", "OrderLine"], "rekey": "file:./secrets/users.csv" },
+
+    "preview": { "from": "onprem-legacy", "to": "cloud-uat" },
+
+    "synth":   { "from": "synthetic", "to": "cloud-uat", "profile": "cloud-qa" }
+  }
+}

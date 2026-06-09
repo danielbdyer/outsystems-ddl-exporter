@@ -1,5 +1,10 @@
 # Projection — V2 Pure Core
 
+> **Running the `projection` CLI as an operator?** Start with **`GETTING_STARTED.md`**
+> (first-run guide: prerequisites, build/invoke, config, secrets, preview → apply) and the
+> annotated **`examples/projection.sample.json`**. This README is the contributor-facing
+> codebase orientation.
+
 The pure-F# foundation of the OutSystems DDL exporter, V2. The pure core
 lives entirely under `sidecar/projection/`. V1 (the existing C#
 implementation in the rest of the trunk) continues to operate; V2 is
