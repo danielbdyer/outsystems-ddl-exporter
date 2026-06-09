@@ -23,6 +23,7 @@ let private inScopeCodes : Set<string> =
           "profile.started"; "profile.completed"
           "emit.started"; "emit.completed"
           "deploy.started"; "canary.started"; "load.started"
+          "watch.runTitle"; "watch.runDone"
           "summary.stageCompleted"
           "config.validationFailed" ]
 
@@ -41,6 +42,11 @@ let private knownEmittableCodes : Set<string> =
           // the migrate leg's live stage stream (build → apply → verify) + the
           // data-transfer leg's load stage
           "deploy.started"; "canary.started"; "load.started"
+          // the live Watch board's render-synthesized frame codes (§13) — the
+          // run-title header + the terminal done-frame. Not LogSink envelopes: the
+          // board is a *rendering* of the run, so its frame copy is voiced through
+          // the catalog (one register) and consumed at render, never emitted.
+          "watch.runTitle"; "watch.runDone"
           // round-trip verification verdict
           "canary.diffEmpty"; "canary.divergence"
           // emitted but voiced by mechanism-1 / later slices (not in `Voice.all` yet)
@@ -73,7 +79,9 @@ let private samplePayload : Voice.Payload =
           "reason",      box "line 12, 'threshold' must be a number"
           "code",        box "pipeline.config.typeMismatch"
           "stage",       box "extract"
-          "outcome",     box "succeeded" ]
+          "outcome",     box "succeeded"
+          "followOn",    box "Verification follows."
+          "runIdentity", box 11 ]
 
 // ---------------------------------------------------------------------------
 // code ⇔ copy totality

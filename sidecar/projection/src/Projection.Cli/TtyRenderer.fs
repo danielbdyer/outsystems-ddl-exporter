@@ -92,6 +92,22 @@ let buildReadinessView (r: RunLedger.Readiness) (recent: string list) (ledgerPat
             View.Hero(View.Ok, sprintf "ELIGIBLE %s %d consecutive green canaries" Theme.dot r.ConsecutiveGreen)
         else
             View.Hero(View.Pending, sprintf "NOT YET %s %d green run(s) to cutover-ready" Theme.dot toGo)
+    // The one lever (§8 / Appendix A.5: "One lever, named, with the next move" —
+    // never a list of problems). Derived from the data already in the readiness
+    // model: when the streak is broken (the most recent round-trip verification
+    // diverged), THAT is the single blocking item — restoring a green check is the
+    // honest next step; otherwise the lever is the remaining distance, the streak
+    // read as distance to cutover. Rendered only while not yet eligible.
+    let lever =
+        if r.Eligible then []
+        else
+            match r.LastCanary with
+            | Some "green" ->
+                [ View.Note(sprintf "The lever %s %d more green round-trip verification(s) before cutover." Theme.dot toGo) ]
+            | Some _ ->
+                [ View.Note(sprintf "The lever %s the most recent round-trip verification diverged; a green check restores the streak." Theme.dot) ]
+            | None ->
+                [ View.Note(sprintf "The lever %s a round-trip verification has not yet run; the first green check opens the streak." Theme.dot) ]
     let history = if List.isEmpty recent then [] else [ View.Dots("history", recent) ]
     // The timeline read in words — the dots' shape said plainly (§8 / Appendix
     // A.5): how the recent checks landed, and which run is the present one.
@@ -111,6 +127,7 @@ let buildReadinessView (r: RunLedger.Readiness) (recent: string list) (ledgerPat
           hero
           View.Blank
           View.Meter("cutover", r.ConsecutiveGreen, r.Threshold, sprintf "%d / %d green" r.ConsecutiveGreen r.Threshold) ]
+        @ lever
         @ history
         @ timeline
         @ [ View.Field(

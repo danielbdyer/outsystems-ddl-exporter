@@ -255,3 +255,85 @@ let ``Watch progress: an unknown total is a plain count-up — no fraction, no e
     Assert.Contains("142 applied", text)
     Assert.DoesNotContain("of 0", text)
     Assert.DoesNotContain("remaining", text)
+
+// ---------------------------------------------------------------------------
+// the run frame — the title header + the terminal done-frame (§13 D1)
+// ---------------------------------------------------------------------------
+
+let private allDone (keys: string list) : Watch.Board =
+    let seed = Watch.seeded keys
+    keys
+    |> List.fold
+        (fun b k ->
+            let started, _ = Watch.apply b (k + ".started") Map.empty
+            let done', _ =
+                Watch.apply started "summary.stageCompleted" (payload [ "stage", box k; "durationMs", box 100L ])
+            done')
+        seed
+
+[<Fact>]
+let ``Watch frame: no done-frame while the run is mid-flight`` () =
+    let board = Watch.seeded [ "extract"; "profile"; "emit" ]
+    let started, _ = Watch.apply board "extract.started" Map.empty
+    Assert.False(Watch.isTerminal started)
+    Assert.True((Watch.doneFrameText started).IsNone)
+
+[<Fact>]
+let ``Watch frame: the done-frame names the §13 follow-on once the arc lands`` () =
+    // a publish arc whose terminal stage is the change build → "Verification follows".
+    let board = allDone [ "extract"; "profile"; "emit" ]
+    Assert.True(Watch.isTerminal board)
+    match Watch.doneFrameText board with
+    | Some t -> Assert.Contains("Verification follows", t)
+    | None   -> Assert.Fail "expected a done-frame once the run is terminal"
+
+[<Fact>]
+let ``Watch frame: the migrate arc's verify terminal offers the record`` () =
+    let board = allDone [ "deploy"; "canary" ]
+    match Watch.doneFrameText board with
+    | Some t -> Assert.Contains("The record follows", t)
+    | None   -> Assert.Fail "expected a done-frame"
+
+[<Fact>]
+let ``Watch frame: a known run identity is voiced as 'Recorded as run N'`` () =
+    let seed = Watch.seededWith (Some "projection full-export") (Some "11") [ "emit" ]
+    let started, _ = Watch.apply seed "emit.started" Map.empty
+    let board, _ =
+        Watch.apply started "summary.stageCompleted" (payload [ "stage", box "emit"; "durationMs", box 100L ])
+    match Watch.doneFrameText board with
+    | Some t -> Assert.Contains("Recorded as run 11", t)
+    | None   -> Assert.Fail "expected a done-frame carrying the run identity"
+
+[<Fact>]
+let ``Watch frame: the title header voices the run in flight, never the raw code`` () =
+    let board = Watch.seededWith (Some "projection full-export") None [ "emit" ]
+    match Watch.titleText board with
+    | Some t ->
+        Assert.Contains("projection full-export", t)
+        Assert.Contains("run in flight", t)
+    | None   -> Assert.Fail "expected a title header on a framed board"
+
+[<Fact>]
+let ``Watch frame: an unframed board carries no title`` () =
+    Assert.True((Watch.titleText (Watch.seeded [ "emit" ])).IsNone)
+
+[<Fact>]
+let ``Watch frame: the run frame clears the twelve-rule banned list`` () =
+    let banned =
+        [ "your"; "you "; " i "; " we "; "that's real"; ", not "
+          "destroy"; "cleaned up"; "dig"; "oops"; "let's"; "refused" ]
+    let board = Watch.seededWith (Some "projection full-export") (Some "11") [ "extract"; "profile"; "emit" ]
+    let terminal = allDone [ "extract"; "profile"; "emit" ]
+    let lines =
+        [ Watch.titleText board
+          Watch.doneFrameText { terminal with RunIdentity = Some "11" } ]
+        |> List.choose id
+    for line in lines do
+        let lowered = line.ToLowerInvariant()
+        for b in banned do
+            Assert.False(lowered.Contains b, sprintf "run-frame line '%s' breaks the banned list: contains '%s'" line b)
+
+[<Fact>]
+let ``Watch frame: followOnAfter is total — every reachable terminal stage names a move`` () =
+    for stage in [ "extract"; "profile"; "emit"; "deploy"; "canary"; "load"; "somethingNew" ] do
+        Assert.False(System.String.IsNullOrWhiteSpace(Voice.followOnAfter stage))

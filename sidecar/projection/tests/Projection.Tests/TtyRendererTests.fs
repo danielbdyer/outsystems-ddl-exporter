@@ -89,6 +89,28 @@ let ``Tier-4 board: NOT YET names the runs-to-go`` () =
     let text = renderBoard r [ "green"; "red"; "green" ]
     Assert.Contains("NOT YET", text)
     Assert.Contains("3 green run", text)   // 10 - 7 = 3 to go
+    // §8 — the one lever, named: the streak holds, so the lever is the distance.
+    Assert.Contains("The lever", text)
+    Assert.Contains("3 more green round-trip verification", text)
+
+[<Fact>]
+let ``Tier-4 board: the lever names a broken streak as the single blocking item`` () =
+    // The most recent canary diverged → the honest one lever is restoring a green
+    // check, not the raw distance (§8 — one lever, named, with the next move).
+    let r : RunLedger.Readiness =
+        { TotalRuns = 9; CanaryRuns = 9; ConsecutiveGreen = 0
+          LastCanary = Some "red"; Threshold = 10; Eligible = false }
+    let text = renderBoard r [ "green"; "green"; "red" ]
+    Assert.Contains("The lever", text)
+    Assert.Contains("diverged", text)
+
+[<Fact>]
+let ``Tier-4 board: an eligible board names no lever (nothing in the way)`` () =
+    let r : RunLedger.Readiness =
+        { TotalRuns = 12; CanaryRuns = 12; ConsecutiveGreen = 10
+          LastCanary = Some "green"; Threshold = 10; Eligible = true }
+    let text = renderBoard r [ "green"; "green"; "green" ]
+    Assert.DoesNotContain("The lever", text)
 
 [<Fact>]
 let ``Tier-4 board: the timeline reads the recent checks in words and names the present run`` () =
