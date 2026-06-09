@@ -307,8 +307,11 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
                             do! Deploy.executeBatch sink (SsdtDdlEmitter.statements catalogA |> Render.toText)
 
                             // One call: migrate the sink A→B, THEN transfer the rows source→sink.
+                            let seen = System.Collections.Generic.List<string>()
+                            LogSink.addSubscriber (fun env -> lock seen (fun () -> seen.Add env.Code))
                             let! outcome =
                                 MigrationRun.executeWithData DeclareNone Transfer.Execute true catalogA catalogB Map.empty source sink
+                            LogSink.clearSubscribers ()
                             match outcome with
                             | Error e -> Assert.Fail(sprintf "executeWithData failed: %A" e)
                             | Ok result ->
@@ -319,6 +322,12 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
                                 Assert.Equal("2", count)
                                 let! email = scalarString sink "SELECT [EMAIL] FROM [dbo].[MIGAB_PATRON] WHERE [ID]=2;"
                                 Assert.Equal("erin@example.com", email)
+                                // The data leg streamed the live "load" stage with per-table
+                                // progress — the Watch board's "Loading the data · N of M".
+                                let codes = lock seen (fun () -> List.ofSeq seen)
+                                Assert.Contains("load.started", codes)
+                                Assert.Contains("summary.stageProgress", codes)
+                                Assert.Contains("summary.stageCompleted", codes)
                         })
                 }))
 

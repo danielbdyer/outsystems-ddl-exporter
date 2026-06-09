@@ -192,6 +192,17 @@ let ``Watch line: the migrate leg's stages read their voiced gerund + resultativ
     Assert.DoesNotContain("deploy.started", Watch.lineText { Key = "deploy"; State = Watch.Active None })
     Assert.DoesNotContain("canary.started", Watch.lineText { Key = "canary"; State = Watch.Active None })
 
+[<Fact>]
+let ``Watch line: the data-load stage reads its voiced gerund + resultative`` () =
+    // the transfer / migrate-with-data data leg streams load.started; the board
+    // appends the per-table progress beside the gerund.
+    Assert.Contains("Loading the data", Watch.lineText { Key = "load"; State = Watch.Active None })
+    Assert.Contains("Data load complete", Watch.lineText { Key = "load"; State = Watch.Done None })
+    let withProgress =
+        Watch.lineText { Key = "load"; State = Watch.Active(Some { Done = 142; Total = 300; ElapsedMs = 4000L }) }
+    Assert.Contains("Loading the data", withProgress)
+    Assert.Contains("142 of 300", withProgress)
+
 // ---------------------------------------------------------------------------
 // intra-stage progress + the honest estimate (§13)
 // ---------------------------------------------------------------------------

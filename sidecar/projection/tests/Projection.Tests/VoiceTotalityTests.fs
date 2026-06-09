@@ -22,7 +22,7 @@ let private inScopeCodes : Set<string> =
           "extract.started"; "extract.completed"
           "profile.started"; "profile.completed"
           "emit.started"; "emit.completed"
-          "deploy.started"; "canary.started"
+          "deploy.started"; "canary.started"; "load.started"
           "summary.stageCompleted"
           "config.validationFailed" ]
 
@@ -38,8 +38,9 @@ let private knownEmittableCodes : Set<string> =
           "extract.started"; "extract.completed"
           "profile.started"; "profile.completed"
           "emit.started"; "emit.completed"
-          // the migrate leg's live stage stream (build → apply → verify)
-          "deploy.started"; "canary.started"
+          // the migrate leg's live stage stream (build → apply → verify) + the
+          // data-transfer leg's load stage
+          "deploy.started"; "canary.started"; "load.started"
           // round-trip verification verdict
           "canary.diffEmpty"; "canary.divergence"
           // emitted but voiced by mechanism-1 / later slices (not in `Voice.all` yet)
@@ -170,7 +171,7 @@ let ``Voice register: the error frames clear the banned list`` () =
 let ``Voice stageName: every emitted internal stage maps to an operator name`` () =
     // The stages `LogSink.recordStageEvent` emits today (Pipeline + FullExportRun
     // + the migrate leg's deploy / canary phases).
-    let emittedStages = [ "pipeline"; "extract"; "profile"; "emit"; "deploy"; "canary" ]
+    let emittedStages = [ "pipeline"; "extract"; "profile"; "emit"; "deploy"; "canary"; "load" ]
     for s in emittedStages do
         Assert.NotEqual<string>(s, Voice.stageName s)   // never the internal verb
 

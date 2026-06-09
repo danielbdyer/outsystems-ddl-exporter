@@ -162,6 +162,14 @@ module Transfer =
                 if Map.isEmpty fkTargets then { Rows = rows; Skipped = [] }
                 else SurrogateRemap.remapRowFks fkTargets remap rows
 
+            // Live "load" stage (§13) — the data-transfer leg streams per-table
+            // progress so `--watch` shows "Loading the data · N of M · ~Xs
+            // remaining". Rides the existing NDJSON channel; plain machine events
+            // when no one is watching.
+            let loadTotal = List.length plan.Loads
+            let loadSw = System.Diagnostics.Stopwatch.StartNew()
+            let mutable loaded = 0
+            LogSink.recordStageStart "load"
             for load in plan.Loads do
                 if not (List.isEmpty load.Rows) then
                     match Catalog.tryFindKind load.Kind catalog with
@@ -187,6 +195,8 @@ module Transfer =
                                 do! Bulk.copyRows sink kind.Physical (toCellRows kind load.DeferredFkColumns remapped.Rows)
                         | _ ->
                             do! Bulk.copyRows sink kind.Physical (toCellRows kind load.DeferredFkColumns remapped.Rows)
+                loaded <- loaded + 1
+                LogSink.recordStageProgress "load" loaded loadTotal loadSw.ElapsedMilliseconds
 
             for load in plan.Loads do
                 if not (Set.isEmpty load.DeferredFkColumns) && not (List.isEmpty load.Rows) then
@@ -198,6 +208,7 @@ module Transfer =
                         if not (List.isEmpty updates) then
                             do! Deploy.executeBatch sink (String.concat "\n" updates)
 
+            LogSink.recordStageEvent "load" loadSw.ElapsedMilliseconds LogSink.Succeeded
             return writeSkips
         }
 

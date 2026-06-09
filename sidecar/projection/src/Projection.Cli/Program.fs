@@ -147,6 +147,11 @@ let private pipelineStages : string list = [ "extract"; "profile"; "emit" ]
 /// `MigrationRun.execute` streams at its phase boundaries (Appendix A.3).
 let private migrateStages : string list = [ "emit"; "deploy"; "canary" ]
 
+/// The cross-substrate migrate's arc — the schema leg (build → apply → verify)
+/// then the data leg's load (`Transfer.run` streams "load" with per-table
+/// progress).
+let private migrateDataStages : string list = [ "emit"; "deploy"; "canary"; "load" ]
+
 let private withRun (command: string) (body: unit -> int) : int =
     LogSink.beginRun () |> ignore
     Bench.reset ()
@@ -729,10 +734,10 @@ let private runTransfer
     let mode = if executeGated then Transfer.Execute else Transfer.DryRun
     let resolveReconciliation (contract: Catalog) =
         TransferSpec.resolveAllReconciliation contract entries userMapEntries
-    let result =
-        (Transfer.runThroughConnectionsWithEmission mode emission allowCdc allowDrops tables connections resolveReconciliation)
-            .GetAwaiter().GetResult()
-    let exitCode =
+    let runBody () =
+        let result =
+            (Transfer.runThroughConnectionsWithEmission mode emission allowCdc allowDrops tables connections resolveReconciliation)
+                .GetAwaiter().GetResult()
         match result with
         | Ok report ->
             narrateTransferReport report
@@ -770,6 +775,13 @@ let private runTransfer
             // timing (and the untouched Sink) changes.
             elif anyCode "transfer.unmappedIdentities" then Transfer.DroppedReferencesExit
             else 3
+    // --watch + a real TTY → the live data-load board (§13); the transfer leg
+    // streams the "load" stage with per-table progress. Only on a real --execute
+    // (a dry-run writes no rows, so the load stage would never advance).
+    let exitCode =
+        if executeGated && Watch.shouldWatch watchMode.Value then
+            Watch.renderWatch [ "load" ] (Watch.resolveDwellMs ()) runBody
+        else runBody ()
     dumpBench "transfer"
     exitCode
 
@@ -1608,7 +1620,13 @@ let private runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec:
                                             return 9
                                         | Error e -> return reportMigrationError e
         }
-    let code = work.GetAwaiter().GetResult()
+    let runBody () = work.GetAwaiter().GetResult()
+    // --watch + a real TTY → the live board (§13) across the whole arc: the
+    // schema leg (build → apply → verify) and the data leg's load.
+    let code =
+        if Watch.shouldWatch watchMode.Value then
+            Watch.renderWatch migrateDataStages (Watch.resolveDwellMs ()) runBody
+        else runBody ()
     dumpBench "migrate"
     code
 

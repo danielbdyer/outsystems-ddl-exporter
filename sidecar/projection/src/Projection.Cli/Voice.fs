@@ -104,6 +104,7 @@ module Voice =
         | "emit"     -> "Change build"
         | "deploy"   -> "Deploy"
         | "canary"   -> "Round-trip verification"
+        | "load"     -> "Data load"
         | other      -> other
 
     // ------------------------------------------------------------------
@@ -278,6 +279,16 @@ module Voice =
           Substantiation = fun _ -> []
           Action         = fun _ -> None }
 
+    /// `load.started` — the data is being loaded (`THE_VOICE.md` §13 / Act 4,
+    /// the data-transfer leg). Gerund-in-progress; the live board appends the
+    /// per-table progress + estimate beside it.
+    let private loadStarted : Copy =
+        { Code           = "load.started"
+          DocSection     = "§13"
+          Statement      = fun _ -> View.Note "Loading the data."
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
     /// `summary.stageCompleted` — a stage of the run completed (`THE_VOICE.md`
     /// §13). Resultative; the stage name is operator-shaped via `stageName`,
     /// never the internal engine verb.
@@ -335,6 +346,7 @@ module Voice =
           emitCompleted
           deployStarted
           canaryStarted
+          loadStarted
           summaryStageCompleted
           // §14 / §10 — config & errors
           configValidationFailed ]
