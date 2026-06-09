@@ -204,3 +204,24 @@ let renderErrorsTo (writer: System.IO.TextWriter) (errors: ValidationError list)
 /// Render a `ValidationError list` to stderr (the common case).
 let renderErrors (errors: ValidationError list) : unit =
     renderErrorsTo Console.Error errors
+
+// --- a voiced code's surface to a writer (slice 1 catalog, §3/§6 inline) -----
+
+/// Render a voiced code's §-surface (statement over substantiation, ending on
+/// the move) to a writer — the catalog copy (`Voice.surfaceOf`) projected
+/// through the same `View` engine that draws the gate and the answer. The
+/// structured NDJSON channel (`LogSink.emit`) is unchanged; this is the human
+/// lens for a §6 proof / §3 verdict an executor narrates inline. An unvoiced
+/// code renders nothing (the caller falls back to its own narration).
+let renderVoicedTo (writer: System.IO.TextWriter) (code: string) (payload: Voice.Payload) : unit =
+    match Voice.surfaceOf code payload with
+    | None -> ()
+    | Some surface ->
+        let console =
+            AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(writer)))
+        let redirected =
+            if System.Object.ReferenceEquals(writer, Console.Error) then Console.IsErrorRedirected
+            elif System.Object.ReferenceEquals(writer, Console.Out) then Console.IsOutputRedirected
+            else true
+        if redirected then console.Profile.Width <- 100
+        View.write console (Surface.render surface)

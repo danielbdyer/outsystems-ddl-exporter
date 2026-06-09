@@ -137,13 +137,15 @@ module Voice =
     let private canaryDivergence : Copy =
         { Code           = "canary.divergence"
           DocSection     = "§10"
-          Statement      = fun _ -> View.Hero(View.Bad, "The round-trip diverged from the model. The difference is shown below; it blocks the commit.")
+          Statement      = fun _ -> View.Hero(View.Bad, "The round-trip diverged from the model. It blocks the commit.")
           Substantiation =
             fun p ->
+                // The raw read-back diff is demoted into a disclosure — the
+                // statement is the finding, the difference opens on demand (§9).
                 match text "renderedDiff" p with
-                | Some d -> [ View.Note d ]
+                | Some d -> [ View.Disclosure("the difference", View.Neutral, [ View.Note d ]) ]
                 | None   -> []
-          Action         = fun _ -> Some(View.Action "Resolve the difference before shipping.") }
+          Action         = fun _ -> Some(View.Action "Resolve the difference, then re-verify.") }
 
     /// `summary.runComplete` — the terminal verdict (`THE_VOICE.md` §3). The
     /// outcome is asserted; a failure names that the cause is shown below, never a

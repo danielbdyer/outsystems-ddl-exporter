@@ -453,12 +453,12 @@ let private runCanary (sourceDdlPath: string) : int =
                 EventProjection.canaryEnvelopes report.TargetReport.TablesCreated report.Diff
                 |> List.iter LogSink.emit
                 if PhysicalSchema.isEqual report.Diff then
-                    printfn "projection: canary green — PhysicalSchema diff empty"
+                    TtyRenderer.renderVoicedTo Console.Out "canary.diffEmpty"
+                        (Map.ofList [ "tableCount", box report.TargetReport.TablesCreated ])
                     0
                 else
-                    eprintfn ""
-                    eprintfn "The round-trip diverged from the model. The difference is shown below; it blocks the commit."
-                    eprintfn "%s" (PhysicalSchema.renderDiff report.Diff)
+                    TtyRenderer.renderVoicedTo Console.Error "canary.divergence"
+                        (Map.ofList [ "renderedDiff", box (PhysicalSchema.renderDiff report.Diff) ])
                     5
             | Error errors ->
                 (
@@ -519,12 +519,13 @@ let private runCanaryCdcSilence (sourceDdlPath: string) : int =
                     report.TargetReport.TablesCreated
                 let schemaOk = PhysicalSchema.isEqual report.Diff
                 if not schemaOk then
-                    eprintfn "The round-trip diverged from the model. The difference is shown below; it blocks the commit."
-                    eprintfn "%s" (PhysicalSchema.renderDiff report.Diff)
+                    TtyRenderer.renderVoicedTo Console.Error "canary.divergence"
+                        (Map.ofList [ "renderedDiff", box (PhysicalSchema.renderDiff report.Diff) ])
                 if cdcDelta <> 0 then
                     eprintfn "The redeploy was not idempotent: %d row(s) captured where none were expected." cdcDelta
                 if schemaOk && cdcDelta = 0 then
-                    printfn "projection: canary green — PhysicalSchema diff empty AND idempotent redeploy CDC-silent (0 captures measured)"
+                    // §6 CDC-silence proof — the deepest fidelity finding, said plain.
+                    printfn "Confirmed idempotent: zero rows captured, zero schema changes issued."
                     0
                 else 5
             | Error errors ->
@@ -776,25 +777,27 @@ let private runTransfer
 
 let private narrateIntegrityReport (report: IntegrityReport) : unit =
     if DataIntegrityChecker.isClean report then
-        printfn "projection verify-data: clean — no row-count or null-count divergence."
+        printfn "Verified. The data matches across both deployments."
     else
+        printfn "The data diverges between the two deployments. The differences are shown below."
         if not (List.isEmpty report.RowCountDeltas) then
-            printfn "Row-count divergences (%d):" report.RowCountDeltas.Length
+            printfn ""
+            printfn "Row counts (%d differ):" report.RowCountDeltas.Length
             for d in report.RowCountDeltas do
-                printfn "  %-40s before=%d after=%d (delta=%+d)"
+                printfn "  %-40s before=%d after=%d (change=%+d)"
                     (SsKey.rootOriginal d.Kind) d.Before d.After (d.After - d.Before)
         if not (List.isEmpty report.NullCountDeltas) then
             printfn ""
-            printfn "Null-count divergences (%d):" report.NullCountDeltas.Length
+            printfn "Null counts (%d differ):" report.NullCountDeltas.Length
             for d in report.NullCountDeltas do
-                printfn "  %-40s %-30s before=%d after=%d (delta=%+d)"
+                printfn "  %-40s %-30s before=%d after=%d (change=%+d)"
                     (SsKey.rootOriginal d.Kind) (SsKey.rootOriginal d.Attribute)
                     d.Before d.After (d.After - d.Before)
         if not (List.isEmpty report.Warnings) then
             printfn ""
-            printfn "Warnings (%d) — schema drift between the two deployments:" report.Warnings.Length
+            printfn "Schema differences between the two deployments (%d):" report.Warnings.Length
             for w in report.Warnings do
-                printfn "  %s: %s" w.Code w.Message
+                printfn "  %s  (%s)" w.Message w.Code
 
 let private runVerifyData (beforeSpec: string) (afterSpec: string) : int =
     let collect = function Ok _ -> [] | Error es -> es
@@ -886,7 +889,7 @@ let private runDrift (toPath: string) (connSpec: string) : int =
                     return 3
                 | Ok diff ->
                     if PhysicalSchema.isEqual diff then
-                        printfn "projection drift: no drift — the deployed schema matches the model"
+                        printfn "Verified. The deployed schema matches the model."
                         return 0
                     else
                         eprintfn "The deployed schema diverges from the model. The difference is shown below."
@@ -912,7 +915,7 @@ let private runEject (storePath: string) : int =
         printfn "projection eject: timeline %s — %d episode(s) preserved (append-forever), %d refactorlog reference(s)"
             (Timeline.name pkg.Timeline) (List.length pkg.Episodes) (List.length pkg.RefactorLogRefs)
         if EjectRun.isFaithful pkg then
-            printfn "projection eject: package self-verified — FTC reconstruction from genesis reproduces the frozen state"
+            printfn "Verified. The reconstruction reproduces the frozen state from genesis to freeze."
             0
         else
             Console.Error.WriteLine "The package is not verified: the reconstruction does not reproduce the frozen state."
@@ -1424,7 +1427,7 @@ let private runMigrateExecute (target: Catalog) (connSpec: string) (declaration:
                                                     allowCdc declaration sourceA target store tl env at None cnn
                                             match recorded with
                                             | Ok (o, Some chain) ->
-                                                printfn "projection migrate: executed and VERIFIED — B' reproduces B (%d statement(s)); episode recorded to %s (%d episode(s) on timeline %s)"
+                                                printfn "Applied and verified — the database now matches the model. %d statement(s) applied; recorded to %s (%d episode(s) on timeline %s)."
                                                     (List.length o.Artifacts.SchemaStatements) store
                                                     (EpisodicLifecycle.episodes chain |> List.length) (Timeline.name tl)
                                                 return 0
@@ -1441,7 +1444,7 @@ let private runMigrateExecute (target: Catalog) (connSpec: string) (declaration:
                                         let! outcome = MigrationRun.executeAndMeasureCdc allowCdc declaration sourceA target cnn
                                         match outcome with
                                         | Ok (o, cdcDelta) when o.Verified ->
-                                            printfn "projection migrate: executed and VERIFIED — B' reproduces B (%d statement(s); %d CDC capture(s) measured)"
+                                            printfn "Applied and verified — the database now matches the model. %d statement(s) applied; %d row(s) captured."
                                                 (List.length o.Artifacts.SchemaStatements) cdcDelta
                                             eprintfn "projection migrate: note — no --lifecycle-store supplied; no episode persisted (the next diff has no prior to load)."
                                             return 0
@@ -1579,7 +1582,7 @@ let private runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec:
                                                         sinkSourceA target reconciliation store tl env at None dataSource sink
                                                 match recorded with
                                                 | Ok (o, chain) ->
-                                                    printfn "projection migrate: schema executed + data loaded — %d kind(s) transferred; episode recorded to %s (%d CDC capture(s) measured; %d episode(s) on timeline %s)"
+                                                    printfn "Schema applied and data loaded — %d table(s) transferred; recorded to %s (%d row(s) captured; %d episode(s) on timeline %s)."
                                                         (List.length o.Transfer.Kinds) store
                                                         (EpisodicLifecycle.latest chain).Data.CdcCaptureCount
                                                         (EpisodicLifecycle.episodes chain |> List.length) (Timeline.name tl)
@@ -1591,7 +1594,7 @@ let private runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec:
                                                 sinkSourceA target reconciliation dataSource sink
                                         match outcome with
                                         | Ok o when o.Schema.Verified ->
-                                            printfn "projection migrate: schema VERIFIED + data loaded — %d kind(s) transferred"
+                                            printfn "Schema verified and data loaded — %d table(s) transferred."
                                                 (List.length o.Transfer.Kinds)
                                             return 0
                                         | Ok _ ->
