@@ -162,6 +162,8 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
                             // and closes it (the board flips to Done on stageCompleted) — ≥3 phases
                             let completed = codes |> List.filter (fun c -> c = "summary.stageCompleted")
                             Assert.True(completed.Length >= 3, sprintf "expected ≥3 stageCompleted, got %d: %A" completed.Length codes)
+                            // the apply phase reports intra-stage progress (the ETA basis)
+                            Assert.Contains("summary.stageProgress", codes)
                     finally
                         LogSink.clearSubscribers ()
                 }))

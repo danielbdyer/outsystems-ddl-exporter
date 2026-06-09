@@ -443,13 +443,20 @@ module MigrationRun =
                 | Ok () ->
                 sw.Restart()
                 LogSink.recordStageStart "deploy"
+                let hasAlter = not (System.String.IsNullOrWhiteSpace alterSql)
+                let totalWrites = List.length renameSql + (if hasAlter then 1 else 0)
                 let! executed =
                     task {
                         try
+                            let mutable applied = 0
                             for stmt in renameSql do
                                 do! Deploy.executeBatch cnn stmt
-                            if not (System.String.IsNullOrWhiteSpace alterSql) then
+                                applied <- applied + 1
+                                LogSink.recordStageProgress "deploy" applied totalWrites sw.ElapsedMilliseconds
+                            if hasAlter then
                                 do! Deploy.executeBatch cnn alterSql
+                                applied <- applied + 1
+                                LogSink.recordStageProgress "deploy" applied totalWrites sw.ElapsedMilliseconds
                             return Ok ()
                         with ex -> return Error (ExecutionFailed ex.Message)
                     }

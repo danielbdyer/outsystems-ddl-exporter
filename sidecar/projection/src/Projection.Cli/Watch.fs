@@ -29,14 +29,20 @@ open Projection.Pipeline
 [<RequireQualifiedAccess>]
 module Watch =
 
+    /// Intra-stage progress — how far an active stage has come (`done of total`)
+    /// and the time so far, the basis of the honest estimate (`THE_VOICE.md` §13
+    /// — "~8s remaining"; when no rate can be computed, none is shown).
+    type Progress = { Done: int; Total: int; ElapsedMs: int64 }
+
     /// A stage's visible state on the board. `Pending` is a stage in the run's
     /// plan that has not yet started (shown faint with `○`, so the whole arc is
     /// visible from the first frame — `THE_STORYBOARD.md` Act 4 / Appendix A.3);
-    /// `Active` is the gerund-in-progress (rule 12 exception); `Done` carries the
+    /// `Active` is the gerund-in-progress (rule 12 exception), carrying its
+    /// intra-stage progress once the producer reports any; `Done` carries the
     /// stage's measured duration.
     type StageState =
         | Pending
-        | Active
+        | Active of Progress option
         | Done of durationMs: int64 option
 
     /// One line of the board — a stage, keyed by its internal name (the prefix of
@@ -69,6 +75,18 @@ module Watch =
         | Some (:? int as i)   -> Some(int64 i)
         | _                    -> None
 
+    let private int64Of (key: string) (payload: Map<string, objnull>) : int64 =
+        match Map.tryFind key payload with
+        | Some (:? int64 as l) -> l
+        | Some (:? int as i)   -> int64 i
+        | _                    -> 0L
+
+    let private intOf (key: string) (payload: Map<string, objnull>) : int =
+        match Map.tryFind key payload with
+        | Some (:? int as i)   -> i
+        | Some (:? int64 as l) -> int l
+        | _                    -> 0
+
     /// Fold one envelope into the board. Returns the updated board and whether it
     /// produced a *renderable* transition (so the shell sleeps + refreshes only on
     /// real changes, never on every envelope). The board reacts to exactly two
@@ -88,9 +106,25 @@ module Watch =
                     { board with
                         Stages =
                             board.Stages
-                            |> List.map (fun s -> if s.Key = key then { s with State = Active } else s) }, true
+                            |> List.map (fun s -> if s.Key = key then { s with State = Active None } else s) }, true
                 | Some _ -> board, false
-                | None -> { board with Stages = board.Stages @ [ { Key = key; State = Active } ] }, true
+                | None -> { board with Stages = board.Stages @ [ { Key = key; State = Active None } ] }, true
+        elif code = "summary.stageProgress" then
+            // An active stage reports how far it has come. The board updates that
+            // line's progress in place — a renderable change, but never a new
+            // line (a progress event for a stage that has not started is ignored).
+            match Map.tryFind "stage" payload with
+            | Some s when not (isNull s) ->
+                let key = string s
+                let prog = { Done = intOf "done" payload; Total = intOf "total" payload; ElapsedMs = int64Of "elapsedMs" payload }
+                match board.Stages |> List.tryFind (fun ln -> ln.Key = key) with
+                | Some { State = Active _ } ->
+                    { board with
+                        Stages =
+                            board.Stages
+                            |> List.map (fun ln -> if ln.Key = key then { ln with State = Active(Some prog) } else ln) }, true
+                | _ -> board, false
+            | _ -> board, false
         elif code = "summary.stageCompleted" then
             match Map.tryFind "stage" payload with
             | Some s when not (isNull s) ->
@@ -132,6 +166,23 @@ module Watch =
     let private secondsText (ms: int64) : string =
         sprintf "%.1fs" (float ms / 1000.0)
 
+    /// The honest estimate from a stage's progress (`THE_VOICE.md` §13 — "the
+    /// estimate degrades honestly: when none can be computed, none is shown").
+    /// A rate needs at least one item done over a measured interval; at the last
+    /// item (or before the first) there is nothing to project, so `None`.
+    let etaText (p: Progress) : string option =
+        if p.Done <= 0 || p.ElapsedMs <= 0L || p.Done >= p.Total then None
+        else
+            let remainingMs = float (p.Total - p.Done) * (float p.ElapsedMs / float p.Done)
+            Some(sprintf "~%s remaining" (secondsText (int64 remainingMs)))
+
+    /// The progress fragment for an active stage — `142 of 300 · ~8s remaining`
+    /// (humane numerals, the estimate only when it can be computed honestly).
+    let progressText (p: Progress) : string =
+        match etaText p with
+        | Some eta -> sprintf "%s of %s · %s" (Theme.humane p.Done) (Theme.humane p.Total) eta
+        | None     -> sprintf "%s of %s" (Theme.humane p.Done) (Theme.humane p.Total)
+
     /// The voiced text of a `Voice` statement code, filled from the payload. The
     /// board reuses the §13 stage copy (`<stage>.started` gerund; the resultative
     /// from `summary.stageCompleted`) — one register, never authored here.
@@ -148,11 +199,15 @@ module Watch =
     /// (with the measured duration) once complete. Pure + voiced, so it is
     /// testable against the twelve-rule banned list.
     let lineText (line: StageLine) : string =
+        // The gerund names the stage (its identity on the board); the glyph
+        // carries the state (faint `○` pending, `▸` active, `✓` done).
         match line.State with
-        | Pending | Active ->
-            // The gerund names the stage (its identity on the board); the glyph
-            // carries the state (faint `○` pending, `▸` active, `✓` done).
-            statementText (line.Key + ".started") Map.empty
+        | Pending -> statementText (line.Key + ".started") Map.empty
+        | Active prog ->
+            let baseText = statementText (line.Key + ".started") Map.empty
+            match prog with
+            | Some p -> sprintf "%s · %s" baseText (progressText p)
+            | None   -> baseText
         | Done dur ->
             let baseText = statementText "summary.stageCompleted" (Map.ofList [ "stage", box line.Key ])
             match dur with
@@ -162,9 +217,9 @@ module Watch =
     let private rowMarkup (line: StageLine) : string =
         let text = Markup.Escape(lineText line)
         match line.State with
-        | Pending -> sprintf "%s  %s" (Theme.muted Theme.pending)   (Theme.muted text)
-        | Active  -> sprintf "%s  %s" (Theme.accent Theme.collapsed) (Theme.bold text)
-        | Done _  -> sprintf "%s  %s" Theme.ok                       (Theme.green text)
+        | Pending  -> sprintf "%s  %s" (Theme.muted Theme.pending)   (Theme.muted text)
+        | Active _ -> sprintf "%s  %s" (Theme.accent Theme.collapsed) (Theme.bold text)
+        | Done _   -> sprintf "%s  %s" Theme.ok                       (Theme.green text)
 
     /// Project the board onto a Spectre renderable — the live target the
     /// `LiveDisplayContext` updates in place.

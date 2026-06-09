@@ -685,6 +685,24 @@ module LogSink =
                 Phase  = Start
                 StepId = Some stage }
 
+    /// Emit a `summary.stageProgress` marker — how far an active stage has come
+    /// (`done` of `total`, with the elapsed time so the live board can compute an
+    /// honest estimate, §13). A mid-stage event between `<stage>.started` and the
+    /// `summary.stageCompleted`; producers call it from their write loops at a
+    /// modest cadence (the board coalesces, the dwell floor paces the frames).
+    let recordStageProgress (stage: string) (doneCount: int) (total: int) (elapsedMs: int64) : unit =
+        let payload : Map<string, objnull> =
+            Map.ofList [
+                "stage",     box stage
+                "done",      box doneCount
+                "total",     box total
+                "elapsedMs", box elapsedMs
+            ]
+        emit
+            { envelope Info Summary "summary.stageProgress" payload with
+                Phase  = Start
+                StepId = Some stage }
+
     // -----------------------------------------------------------------
     // §11 — rollup snapshot (read-only; built ONCE during emission)
     // -----------------------------------------------------------------

@@ -47,7 +47,7 @@ let ``Watch board: a stage start opens an Active line`` () =
     let board, changed = Watch.apply Watch.empty "extract.started" Map.empty
     Assert.True changed
     match board.Stages with
-    | [ { Key = "extract"; State = Watch.Active } ] -> ()
+    | [ { Key = "extract"; State = Watch.Active None } ] -> ()
     | other -> Assert.Fail(sprintf "expected one Active extract line, got %A" other)
 
 [<Fact>]
@@ -93,7 +93,7 @@ let ``Watch board: stages hold their first-seen order`` () =
 
 [<Fact>]
 let ``Watch line: an active stage reads the in-progress gerund`` () =
-    let text = Watch.lineText { Key = "extract"; State = Watch.Active }
+    let text = Watch.lineText { Key = "extract"; State = Watch.Active None }
     Assert.Contains("Reading the model", text)
 
 [<Fact>]
@@ -117,9 +117,10 @@ let ``Watch line: every stage line clears the twelve-rule banned list`` () =
         [ Watch.lineText { Key = "extract"; State = Watch.Pending }
           Watch.lineText { Key = "profile"; State = Watch.Pending }
           Watch.lineText { Key = "emit";    State = Watch.Pending }
-          Watch.lineText { Key = "extract"; State = Watch.Active }
-          Watch.lineText { Key = "profile"; State = Watch.Active }
-          Watch.lineText { Key = "emit";    State = Watch.Active }
+          Watch.lineText { Key = "extract"; State = Watch.Active None }
+          Watch.lineText { Key = "profile"; State = Watch.Active None }
+          Watch.lineText { Key = "emit";    State = Watch.Active None }
+          Watch.lineText { Key = "deploy";  State = Watch.Active(Some { Done = 142; Total = 300; ElapsedMs = 4000L }) }
           Watch.lineText { Key = "extract"; State = Watch.Done(Some 1200L) }
           Watch.lineText { Key = "profile"; State = Watch.Done None }
           Watch.lineText { Key = "emit";    State = Watch.Done(Some 800L) } ]
@@ -159,7 +160,7 @@ let ``Watch board: a started stage flips its seeded Pending line to Active in pl
     Assert.True(changed)
     match board'.Stages with
     | [ { Key = "extract"; State = Watch.Pending }
-        { Key = "profile"; State = Watch.Active }
+        { Key = "profile"; State = Watch.Active None }
         { Key = "emit";    State = Watch.Pending } ] -> ()
     | other -> Assert.Fail(sprintf "expected profile Active in place, the others Pending, got %A" other)
 
@@ -183,10 +184,54 @@ let ``Watch line: a pending stage reads the stage gerund (the board shows the wh
 let ``Watch line: the migrate leg's stages read their voiced gerund + resultative`` () =
     // the live migrate board (build → apply → verify) — the executor streams
     // deploy.started / canary.started; the board voices them, never the code.
-    Assert.Contains("Applying the changes", Watch.lineText { Key = "deploy"; State = Watch.Active })
-    Assert.Contains("Verifying the round-trip", Watch.lineText { Key = "canary"; State = Watch.Active })
+    Assert.Contains("Applying the changes", Watch.lineText { Key = "deploy"; State = Watch.Active None })
+    Assert.Contains("Verifying the round-trip", Watch.lineText { Key = "canary"; State = Watch.Active None })
     Assert.Contains("Deploy complete", Watch.lineText { Key = "deploy"; State = Watch.Done None })
     Assert.Contains("Round-trip verification complete", Watch.lineText { Key = "canary"; State = Watch.Done None })
     // never the raw code
-    Assert.DoesNotContain("deploy.started", Watch.lineText { Key = "deploy"; State = Watch.Active })
-    Assert.DoesNotContain("canary.started", Watch.lineText { Key = "canary"; State = Watch.Active })
+    Assert.DoesNotContain("deploy.started", Watch.lineText { Key = "deploy"; State = Watch.Active None })
+    Assert.DoesNotContain("canary.started", Watch.lineText { Key = "canary"; State = Watch.Active None })
+
+// ---------------------------------------------------------------------------
+// intra-stage progress + the honest estimate (§13)
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Watch progress: a stageProgress event updates the active stage's progress in place`` () =
+    let board = Watch.seeded [ "deploy" ]
+    let started, _ = Watch.apply board "deploy.started" Map.empty
+    let progressed, changed =
+        Watch.apply started "summary.stageProgress"
+            (payload [ "stage", box "deploy"; "done", box 142; "total", box 300; "elapsedMs", box 4000L ])
+    Assert.True(changed)
+    match progressed.Stages with
+    | [ { Key = "deploy"; State = Watch.Active(Some p) } ] ->
+        Assert.Equal(142, p.Done)
+        Assert.Equal(300, p.Total)
+    | other -> Assert.Fail(sprintf "expected deploy Active with progress, got %A" other)
+
+[<Fact>]
+let ``Watch progress: a stageProgress for a not-yet-started stage is ignored`` () =
+    let board = Watch.seeded [ "deploy" ]   // Pending, never started
+    let _, changed =
+        Watch.apply board "summary.stageProgress"
+            (payload [ "stage", box "deploy"; "done", box 1; "total", box 10; "elapsedMs", box 100L ])
+    Assert.False(changed)
+
+[<Fact>]
+let ``Watch progress: the active line shows N of M and the honest estimate`` () =
+    let text =
+        Watch.lineText { Key = "deploy"; State = Watch.Active(Some { Done = 142; Total = 300; ElapsedMs = 4000L }) }
+    Assert.Contains("142 of 300", text)
+    Assert.Contains("remaining", text)
+
+[<Fact>]
+let ``Watch progress: the estimate degrades honestly — none before the first item or at the last`` () =
+    Assert.True((Watch.etaText { Done = 0;   Total = 300; ElapsedMs = 0L }).IsNone)    // nothing done yet
+    Assert.True((Watch.etaText { Done = 300; Total = 300; ElapsedMs = 5000L }).IsNone) // complete
+    Assert.True((Watch.etaText { Done = 150; Total = 300; ElapsedMs = 5000L }).IsSome) // halfway → an estimate
+
+[<Fact>]
+let ``Watch progress: the numerals are humane at scale`` () =
+    let text = Watch.progressText { Done = 1420; Total = 3000; ElapsedMs = 1000L }
+    Assert.Contains("1,420 of 3,000", text)
