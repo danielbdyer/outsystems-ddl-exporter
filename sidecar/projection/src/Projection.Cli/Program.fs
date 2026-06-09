@@ -584,20 +584,24 @@ let private runApprove
 
 let private dispositionName (d: IdentityDisposition) : string =
     match d with
-    | IdentityDisposition.ReconciledByRule    -> "ReconciledByRule"
-    | IdentityDisposition.AssignedBySink      -> "AssignedBySink"
-    | IdentityDisposition.PreservedFromSource -> "PreservedFromSource"
+    | IdentityDisposition.ReconciledByRule    -> "re-keyed by rule"
+    | IdentityDisposition.AssignedBySink      -> "assigned by the target"
+    | IdentityDisposition.PreservedFromSource -> "preserved from source"
 
 let private narrateTransferReport (report: Transfer.TransferReport) : unit =
-    let modeName =
-        match report.Mode with
-        | Transfer.DryRun  -> "DryRun (preview only — no Sink writes)"
-        | Transfer.Execute -> "Execute (Sink wrote)"
-    printfn "projection transfer: mode = %s" modeName
+    // §4 Move — lead with the finding (rows moved, in dependency order); the
+    // load plan rides beneath. Dependency order is the engine's guarantee that
+    // a row never lands before the rows it points to.
+    let totalWritten = report.Kinds |> List.sumBy (fun k -> k.RowsWritten)
+    (match report.Mode with
+     | Transfer.DryRun  ->
+         printfn "Preview — %d row(s) would move across %d table(s), in dependency order. No rows written." totalWritten report.Kinds.Length
+     | Transfer.Execute ->
+         printfn "%d row(s) moved across %d table(s), in dependency order." totalWritten report.Kinds.Length)
     printfn ""
-    printfn "Plan (%d kind(s)):" report.Kinds.Length
+    printfn "The load plan (%d table(s)):" report.Kinds.Length
     for k in report.Kinds do
-        printfn "  %-40s %-22s ingested=%d written=%d deferredFkCols=%d"
+        printfn "  %-40s %-22s ingested=%d written=%d deferred-fk-columns=%d"
             (SsKey.rootOriginal k.Kind)
             (dispositionName k.Disposition)
             k.RowsIngested
@@ -606,29 +610,29 @@ let private narrateTransferReport (report: Transfer.TransferReport) : unit =
     if not (List.isEmpty report.UnbreakableCycleFks) then
         printfn ""
         printfn
-            "Unbreakable cycle FKs (%d) — plan is unsatisfiable for Execute:"
+            "%d relationship cycle(s) cannot be broken — the load cannot run as planned:"
             report.UnbreakableCycleFks.Length
         for u in report.UnbreakableCycleFks do
             printfn
-                "  %s.%s -> %s"
+                "  %s.%s → %s"
                 (SsKey.rootOriginal u.Kind)
                 (Name.value u.Column)
                 (SsKey.rootOriginal u.Target)
     if not (List.isEmpty report.UnmatchedIdentities) then
         printfn ""
         printfn
-            "Unmatched identities (%d) — reconciled-kind sources with no Sink match:"
+            "%d identity(ies) unmatched — source records with no match in the target:"
             report.UnmatchedIdentities.Length
         for (k, s) in report.UnmatchedIdentities do
             printfn "  %s source '%s'" (SsKey.rootOriginal k) (SourceKey.value s)
     if not (List.isEmpty report.SkippedReferences) then
         printfn ""
         printfn
-            "Skipped references (%d) — rows dropped (FK targets an unmatched identity):"
+            "%d row(s) dropped — a relationship points to an unmatched record:"
             report.SkippedReferences.Length
         for (owner, r) in report.SkippedReferences do
             printfn
-                "  %s.%s -> %s (unresolved source '%s')"
+                "  %s.%s → %s (unmatched source '%s')"
                 (SsKey.rootOriginal owner)
                 (Name.value r.Column)
                 (SsKey.rootOriginal r.Target)
@@ -984,13 +988,11 @@ let private runDiff (refAText: string) (refBText: string) (asJson: bool) (depth:
 let private runExplain (configPath: string) (ssKeyText: string) : int =
     match Config.fromFile configPath with
     | Error errs ->
-        Console.Error.WriteLine "projection explain: config invalid:"
         printErrors Console.Error errs
         2
     | Ok config ->
         match (Compose.runWithConfig config).GetAwaiter().GetResult() with
         | Error errs ->
-            Console.Error.WriteLine "projection explain: run failed:"
             printErrors Console.Error errs
             2
         | Ok report ->
@@ -1006,7 +1008,7 @@ let private runExplain (configPath: string) (ssKeyText: string) : int =
             printfn ""
             if List.isEmpty trail && List.isEmpty diags then
                 printfn "  %s no transforms or findings matched" Theme.warn
-                printfn "      %s try a fuller SsKey, or a model/profile that exercises this node" Theme.dot
+                printfn "      %s try a fuller name, or a model that exercises this node" Theme.dot
                 1
             else
                 if not (List.isEmpty trail) then
@@ -1041,14 +1043,12 @@ let private runExplain (configPath: string) (ssKeyText: string) : int =
 let private runSuggestConfig (configPath: string) (applyTo: string option) : int =
     match Config.fromFile configPath with
     | Error errs ->
-        Console.Error.WriteLine "projection suggest-config: config invalid:"
         printErrors Console.Error errs
         2
     | Ok config ->
         let task = Compose.runWithConfig config
         match task.GetAwaiter().GetResult() with
         | Error errs ->
-            Console.Error.WriteLine "projection suggest-config: run failed:"
             printErrors Console.Error errs
             2
         | Ok report ->
@@ -1088,7 +1088,7 @@ let private runSuggestConfig (configPath: string) (applyTo: string option) : int
                         patch.ToJsonString(
                             System.Text.Json.JsonSerializerOptions(WriteIndented = true))
                     File.WriteAllText(out, json)
-                    printfn "  %s wrote merged patch (%d edits) to %s" Theme.ok (List.length merged) out
+                    printfn "  %s merged patch (%d edits) written to %s" Theme.ok (List.length merged) out
                 | None ->
                     printfn "  %s --apply <out.json> to write the merged patch" Theme.dot
                 0
@@ -1101,7 +1101,6 @@ let private runPolicyDiff (configAPath: string) (configBPath: string) : int =
     match Config.fromFile configAPath, Config.fromFile configBPath with
     | Error errors, _
     | _, Error errors ->
-        Console.Error.WriteLine "projection policy-diff: config error:"
         printErrors Console.Error errors
         6
     | Ok cfgA, Ok cfgB ->
@@ -1109,13 +1108,12 @@ let private runPolicyDiff (configAPath: string) (configBPath: string) : int =
         let exitCode =
             match result with
             | Error errors ->
-                Console.Error.WriteLine "projection policy-diff: failed:"
                 printErrors Console.Error errors
                 2
             | Ok diff ->
                 let s = diff.StructuralDiff
-                printfn "projection policy-diff: %s"
-                    (if s.AnyChanged then "policies differ" else "policies identical")
+                printfn "%s"
+                    (if s.AnyChanged then "The two policies differ." else "The two policies are identical.")
                 let axis (name: string) (changed: bool) =
                     printfn "  %-13s %s" name (if changed then "changed" else "same")
                 axis "selection"    s.Selection.Changed
@@ -1123,7 +1121,7 @@ let private runPolicyDiff (configAPath: string) (configBPath: string) : int =
                 axis "insertion"    s.Insertion.Changed
                 axis "tightening"   s.Tightening.Changed
                 axis "userMatching" s.UserMatching.Changed
-                printfn "  changed kinds: %d" (List.length diff.ChangedKinds)
+                printfn "  changed tables: %d" (List.length diff.ChangedKinds)
                 for k in diff.ChangedKinds do
                     printfn "    - %s" (SsKey.rootOriginal k)
                 0
@@ -1712,7 +1710,7 @@ let private runCaptureProfile (connSpec: string) (outPath: string) : int =
     exitCode
 
 let private runPlan (plan: ExecutionPlan) : int =
-    for n in plan.Notes do eprintfn "projection project: note — %s" n
+    for n in plan.Notes do eprintfn "Note — %s" n
     // Resolve the model to a Catalog under the live-OSSYS-primary / file-
     // fallback policy (ModelResolution), then run the Catalog-accepting face.
     let needCatalog (modelOssys: string option) (model: ModelSource) (run: Catalog -> int) : int =
