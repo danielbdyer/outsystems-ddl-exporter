@@ -38,11 +38,12 @@ let private countField (label: string) (n: int) : View.View =
 let renderCatalogDiff (d: CatalogDiff) : View.View =
     let c = CatalogDiff.channelCounts d
     let n = CatalogDiff.norm d
-    let chan a r rn ch = sprintf "%d added · %d dropped · %d renamed · %d changed" a r rn ch
+    let h = Theme.humane
+    let chan a r rn ch = sprintf "%s added · %s dropped · %s renamed · %s changed" (h a) (h r) (h rn) (h ch)
     View.Panel(
         "changes",
-        [ View.Field("total changes", string n, (if n = 0 then View.Ok else View.Warn))
-          View.Field("tables", sprintf "%d added · %d dropped · %d renamed" c.AddedKinds c.RemovedKinds c.RenamedKinds, View.Neutral)
+        [ View.Field("total changes", h n, (if n = 0 then View.Ok else View.Warn))
+          View.Field("tables", sprintf "%s added · %s dropped · %s renamed" (h c.AddedKinds) (h c.RemovedKinds) (h c.RenamedKinds), View.Neutral)
           View.Field("columns", chan c.AddedAttributes c.RemovedAttributes c.RenamedAttributes c.ChangedAttributes, View.Neutral)
           View.Field("relationships", chan c.AddedReferences c.RemovedReferences c.RenamedReferences c.ChangedReferences, View.Neutral)
           View.Field("indexes", chan c.AddedIndexes c.RemovedIndexes c.RenamedIndexes c.ChangedIndexes, View.Neutral)

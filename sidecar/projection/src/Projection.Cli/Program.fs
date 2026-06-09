@@ -1167,13 +1167,14 @@ let private migratePreviewSurface (artifacts: MigrationArtifacts) : Surface.Surf
         let renames =
             p.RenamedKinds
             |> List.map (fun (_, fromN, toN) -> sprintf "%s → %s" (Name.value fromN) (Name.value toN))
+        let h = Theme.humane
         { Statement      =
-            View.Hero(status, sprintf "%d changes to apply — exactly the difference between the two states, and no others." p.Norm)
+            View.Hero(status, sprintf "%s changes to apply — exactly the difference between the two states, and no others." (h p.Norm))
           Substantiation =
-            [ View.Field("tables", sprintf "%d added · %d dropped · %d renamed" c.AddedKinds c.RemovedKinds c.RenamedKinds, View.Neutral)
-              View.Field("columns", sprintf "%d added · %d dropped · %d renamed · %d changed" c.AddedAttributes c.RemovedAttributes c.RenamedAttributes c.ChangedAttributes, View.Neutral) ]
+            [ View.Field("tables", sprintf "%s added · %s dropped · %s renamed" (h c.AddedKinds) (h c.RemovedKinds) (h c.RenamedKinds), View.Neutral)
+              View.Field("columns", sprintf "%s added · %s dropped · %s renamed · %s changed" (h c.AddedAttributes) (h c.RemovedAttributes) (h c.RenamedAttributes) (h c.ChangedAttributes), View.Neutral) ]
             @ (if List.isEmpty renames then [] else [ View.Lane("⟲", "rename", View.Ok, renames) ])
-            @ [ View.Field("to run", sprintf "%d statement(s) · %d rename(s) recorded" (List.length artifacts.SchemaStatements) (List.length artifacts.RefactorLog), View.Neutral) ]
+            @ [ View.Field("to run", sprintf "%s statement(s) · %s rename(s) recorded" (h (List.length artifacts.SchemaStatements)) (h (List.length artifacts.RefactorLog)), View.Neutral) ]
           Action         = Some(View.Action "Apply against the target database with --execute.") }
 
 /// Voice the §5 declared-loss gate for undeclared destructive removals — the

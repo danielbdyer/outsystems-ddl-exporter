@@ -120,3 +120,22 @@ let ``View: a Lane renders its items (plain) and carries glyph/status/items (jso
     let items =
         j.GetProperty("items").EnumerateArray() |> Seq.map (fun e -> nonNull (e.GetString())) |> Seq.toList
     Assert.Equal<string list>([ "OrderHeader → SalesOrder"; "OrderDetail → SalesOrderLine" ], items)
+
+[<Fact>]
+let ``View: a Lane caps its rendered items and names the remainder (THE_VOICE §12)`` () =
+    let items = [ for i in 1 .. 20 -> sprintf "Table%02d" i ]
+    let v = View.Lane("−", "remove", View.Bad, items)
+    let p = plainToDepth 1 v
+    // the first items show; beyond the cap collapses to a named remainder
+    Assert.Contains("Table01", p)
+    Assert.DoesNotContain("Table20", p)
+    Assert.Contains("and 8 more", p)        // 20 − laneCap(12) = 8, named
+    // the machine lens keeps the full list — the cap is a rendering concern only
+    let kept = (json v).GetProperty("items").EnumerateArray() |> Seq.length
+    Assert.Equal(20, kept)
+
+[<Fact>]
+let ``View: a Lane humanizes its true count in the header (THE_VOICE §12)`` () =
+    let items = [ for i in 1 .. 2140 -> sprintf "c%04d" i ]
+    let v = View.Lane("+", "add", View.Ok, items)
+    Assert.Contains("2,140", plainToDepth 0 v)   // the count scales; the sentence does not

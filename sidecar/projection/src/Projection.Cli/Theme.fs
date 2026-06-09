@@ -34,6 +34,12 @@ let accent (s: string) : string = "[aqua]"   + s + "[/]"
 
 // --- Meters + trends (universal Unicode) -----------------------------------
 
+/// Humane numerals — `2,140`, not `2140` (`THE_VOICE.md` §12: "the number
+/// scales; the sentence does not"). The thousands separator keeps a big count
+/// legible at a glance, the same at any size.
+let humane (n: int) : string =
+    n.ToString("#,0", System.Globalization.CultureInfo.InvariantCulture)
+
 /// A ratio meter — filled vs. empty blocks. `meter 7 10` → `▇▇▇▇▇▇▇░░░`.
 /// Used for the R6 cutover gauge.
 let meter (filled: int) (total: int) : string =
