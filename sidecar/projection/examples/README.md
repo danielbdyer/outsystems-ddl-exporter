@@ -7,19 +7,24 @@ comments, so every key is explained below. (Start instead from `projection init`
 minimal scaffold; this sample is the real shape.) Walkthrough: `../GETTING_STARTED.md`;
 design: `../THE_CLI.md`.
 
-To use it: copy it to your working directory as `projection.json`, then export the
-connection variables it references.
+To use it: copy it to your working directory as `projection.json`, then drop one connection
+string into each `secrets/<name>.conn` file the `file:` refs name. The engine reads those
+files directly at run time — no shell `source`, no env vars.
 
 ```bash
 cp examples/projection.sample.json ./projection.json
-cp .env.example .env             # then fill in the REPLACE_ME connection strings
-set -a; source .env; set +a      # load the secrets into this shell (`.env` is gitignored)
+mkdir -p secrets && chmod 700 secrets
+for n in ossys cloud-qa cloud-uat onprem-legacy; do
+  cp examples/secret.conn.example "secrets/$n.conn"      # then replace the placeholder
+done
 projection                       # list the resolved flows
 projection golden                # preview a flow
 ```
 
-(The connection strings live in `.env`, never in `projection.json` — see
-`../GETTING_STARTED.md` §6. `.env.example` is the committed template.)
+(Each `secrets/<name>.conn` holds exactly one connection string — the whole file, trimmed, so
+no comment lines. `secrets/` and `*.conn` are gitignored; `projection.json` only names the
+`file:` references. See `../GETTING_STARTED.md` §6. `examples/secret.conn.example` is the
+committed template.)
 
 ## The model is read live — `modelOssys` is primary, the file is the fallback
 
@@ -39,9 +44,9 @@ connection reference to an OSSYS database. The engine reads OutSystems metadata 
 | Name | access | grant | rendition | Role |
 |---|---|---|---|---|
 | `onprem-dev` / `onprem-qa` / `onprem-uat` | `bundle` → `./dist/...` | `schema+data` | `logical` | emit SSDT files for the on-prem Octopus pipeline (the schema delivery path) |
-| `onprem-legacy` | `direct` (`env:ONPREM_LEGACY_CONN`) | *(none)* | `logical` | the hosted on-prem model the migration team loads — the **B** source of the reverse leg |
-| `cloud-qa` | `direct` (`env:CLOUD_QA_CONN`) | *(none)* | `physical` | the cloud QA cell — the `peer` source for golden data |
-| `cloud-uat` | `direct` (`env:CLOUD_UAT_CONN`) | `data` | `physical` | the cloud UAT **sink** — DML-only cloud insertion (R6) |
+| `onprem-legacy` | `direct` (`file:./secrets/onprem-legacy.conn`) | *(none)* | `logical` | the hosted on-prem model the migration team loads — the **B** source of the reverse leg |
+| `cloud-qa` | `direct` (`file:./secrets/cloud-qa.conn`) | *(none)* | `physical` | the cloud QA cell — the `peer` source for golden data |
+| `cloud-uat` | `direct` (`file:./secrets/cloud-uat.conn`) | `data` | `physical` | the cloud UAT **sink** — DML-only cloud insertion (R6) |
 
 ### Why the grants differ — source vs. sink (not dev vs. prod)
 

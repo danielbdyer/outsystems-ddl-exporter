@@ -6,9 +6,8 @@ obj/
 .idea/
 
 # Secrets — D9: connection strings live out-of-band, never committed.
-# `.env` holds the values the config's env:<VAR> references resolve to;
-# `.env.example` is the committed template. `secrets/` + *.conn back file:<path> refs.
+# A file:<path> ref reads its connection string from `secrets/<name>.conn`; the
+# committed template is examples/secret.conn.example. (`.env` kept ignored too.)
 .env
 secrets/
 *.conn
-!.env.example

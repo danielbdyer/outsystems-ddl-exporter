@@ -80,13 +80,15 @@ The scaffold reads the **model live** from your cloud OutSystems environment and
 }
 ```
 
-Set `OSSYS_CONN` to your cloud OutSystems connection — the model is read **live** from it
-(OutSystems metadata → native `SsKey`; no V1, no exported file). `modelOssys` is the primary
-model source; a `model: "osm_model.json"` file is the configured fallback (`model.json` is a
-second-class citizen — use it only when no live connection is available).
+Put your cloud OutSystems connection string in `./secrets/ossys.conn` — the model is read
+**live** from it (OutSystems metadata → native `SsKey`; no V1, no exported file). The engine
+reads the file directly; nothing to `source`. `modelOssys` is the primary model source; a
+`model: "osm_model.json"` file is the configured fallback (`model.json` is a second-class
+citizen — use it only when no live connection is available). See §6 for the `file:` ref details.
 
 ```bash
-export OSSYS_CONN="Server=cloud-uat.example;Database=app;User Id=svc;Password=…;Encrypt=true"
+mkdir -p secrets && chmod 700 secrets
+cp examples/secret.conn.example secrets/ossys.conn   # then replace it with the real string
 ```
 
 List what is configured (the resolved `source → target` of each flow):
@@ -163,57 +165,60 @@ spelling matters.
 
 ## 6. Secrets and multi-environment setup (the D9 discipline)
 
-**Connection strings never live in `projection.json`.** A `conn` is a *reference*, resolved
-at run time. There are exactly two forms:
+**Connection strings never live in `projection.json`.** A `conn` (and `modelOssys`) is a
+*reference* resolved at run time — and the engine reads the secret itself, so no value is ever
+committed. Two forms:
 
-| Form | Resolves to | Example |
+| Form | Resolves to | What it needs |
 |---|---|---|
-| `env:<VAR>` | the environment variable `<VAR>` | `"conn": "env:CLOUD_UAT_CONN"` → reads `$CLOUD_UAT_CONN` |
-| `file:<path>` | the first line of a text file (relative to the working dir) | `"conn": "file:./secrets/uat.txt"` |
+| `file:<path>` | the file's **contents** — the connection string, trimmed (`File.ReadAllText().Trim()`) | nothing — read directly off disk at run time |
+| `env:<VAR>` | the environment variable `<VAR>` | the var must be exported into the process first |
 
-A value that looks like an inline secret (contains `;`, `password`, `pwd=`) is **refused at
-parse time** (`cli.config.envSecretInline`, exit 6). This holds by construction: the
-committed file carries only addressing, never credentials.
+**Use `file:` — one small file per connection, read straight off disk.** Nothing to source, and
+the secret never enters the process environment. A value that *looks* like an inline secret
+(contains `;`, `password`, `pwd=`) is **refused at parse time** (`cli.config.envSecretInline`,
+exit 6) — the committed config carries only addressing.
 
-**Multi-environment** is just one reference per place; you manage the variable inventory
-(names are your choice — no convention is enforced):
+### Worked example — wire `cloud-uat` with a `file:` ref
+
+The config names the reference (committed); a gitignored file holds the secret:
 
 ```jsonc
-// projection.json — the cloud-insertion estate (full version: examples/projection.sample.json)
-{
-  "modelOssys": "env:OSSYS_CONN",
-  "environments": {
-    "onprem-uat":    { "access": "bundle", "out": "./dist/onprem-uat", "grant": "schema+data", "rendition": "logical" },
-    "onprem-legacy": { "access": "direct", "conn": "env:ONPREM_LEGACY_CONN", "rendition": "logical" },
-    "cloud-qa":      { "access": "direct", "conn": "env:CLOUD_QA_CONN", "rendition": "physical" },
-    "cloud-uat":     { "access": "direct", "conn": "env:CLOUD_UAT_CONN", "grant": "data", "rendition": "physical" }
-  },
-  "flows": {
-    "publish": { "from": "model", "to": "onprem-uat" },
-    "golden":  { "from": "cloud-qa", "to": "cloud-uat", "rekey": "file:users.csv" },
-    "preview": { "from": "onprem-legacy", "to": "cloud-uat" }
-  }
-}
+// projection.json
+"cloud-uat": { "access": "direct", "conn": "file:./secrets/cloud-uat.conn", "grant": "data" }
 ```
-
-(Sources — `cloud-qa`, `onprem-legacy` — carry no grant; only the `cloud-uat` sink does, as
-`data`. The model is read live from `OSSYS_CONN`.)
-
-**Hold the values in a local `.env`, not your shell profile.** A committed template,
-`.env.example`, lists one `<NAME>_CONN` per `direct` environment; copy it, fill it in, and
-load it into the shell you run `projection` from:
 
 ```bash
-cp .env.example .env          # .env is gitignored — never commit it
-$EDITOR .env                  # replace every REPLACE_ME
-set -a; source .env; set +a   # export them into this session (re-run per shell)
+mkdir -p secrets && chmod 700 secrets
+cp examples/secret.conn.example secrets/cloud-uat.conn   # the template is a single line
+$EDITOR secrets/cloud-uat.conn                            # replace it with the real string
+chmod 600 secrets/cloud-uat.conn
 ```
 
-`.env` is `.gitignore`d (alongside `secrets/` and `*.conn` for `file:` refs), so credentials
-never enter the repository — the committed `projection.json` only names the references. A
-`.env` is preferable to `~/.bashrc`/`~/.bash_profile`: it is scoped to this project, reviewable,
-and not loaded into every shell you open. (For a shared/maintained estate you'd source these
-from a secret manager instead — render them into `.env`, or use `file:` refs the manager writes.)
+`secrets/cloud-uat.conn` then holds **exactly** the connection string and nothing else (the
+*whole file* is the value, so no comment lines):
+
+```
+Server=tcp:cloud-uat.example.com,1433;Database=outsystems;User Id=svc;Password=…;Encrypt=true
+```
+
+Now `projection golden` reads `./secrets/cloud-uat.conn` directly — **no `source`, no env var.**
+Repeat one `secrets/<name>.conn` per `direct` environment, plus `secrets/ossys.conn` for the
+live model read. The `secrets/` directory and every `*.conn` are `.gitignore`d, so credentials
+never enter the repository.
+
+**Multi-environment** is just one reference per place — the full six-environment estate (all
+`file:` refs) is `examples/projection.sample.json`:
+
+```bash
+cp examples/projection.sample.json ./projection.json
+mkdir -p secrets   # then create secrets/ossys.conn, secrets/cloud-qa.conn, secrets/cloud-uat.conn, secrets/onprem-legacy.conn
+projection         # lists golden / preview / publish / synth
+```
+
+> Prefer environment variables? Use `env:<VAR>` refs and export them per shell
+> (`export CLOUD_UAT_CONN="…"`) — one inventory, but it needs the export step and puts the
+> secret in the process environment. `file:` avoids both.
 
 ### The environment variables the CLI reads
 

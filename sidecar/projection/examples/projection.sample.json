@@ -1,16 +1,16 @@
 {
-  "modelOssys": "env:OSSYS_CONN",
+  "modelOssys": "file:./secrets/ossys.conn",
 
   "environments": {
     "onprem-dev":    { "access": "bundle", "out": "./dist/onprem-dev", "grant": "schema+data", "rendition": "logical" },
     "onprem-qa":     { "access": "bundle", "out": "./dist/onprem-qa",  "grant": "schema+data", "rendition": "logical" },
     "onprem-uat":    { "access": "bundle", "out": "./dist/onprem-uat", "grant": "schema+data", "rendition": "logical" },
 
-    "onprem-legacy": { "access": "direct", "conn": "env:ONPREM_LEGACY_CONN", "rendition": "logical" },
+    "onprem-legacy": { "access": "direct", "conn": "file:./secrets/onprem-legacy.conn", "rendition": "logical" },
 
-    "cloud-qa":      { "access": "direct", "conn": "env:CLOUD_QA_CONN", "rendition": "physical" },
+    "cloud-qa":      { "access": "direct", "conn": "file:./secrets/cloud-qa.conn", "rendition": "physical" },
 
-    "cloud-uat":     { "access": "direct", "conn": "env:CLOUD_UAT_CONN", "grant": "data", "rendition": "physical", "store": "lifecycle/cloud-uat.json" }
+    "cloud-uat":     { "access": "direct", "conn": "file:./secrets/cloud-uat.conn", "grant": "data", "rendition": "physical", "store": "lifecycle/cloud-uat.json" }
   },
 
   "flows": {

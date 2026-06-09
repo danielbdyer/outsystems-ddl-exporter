@@ -1924,7 +1924,7 @@ let private runInit () : int =
         // `targets` block was removed at slice F5; the parser ignores unknown keys.
         let scaffold =
             "{\n" +
-            "  \"modelOssys\": \"env:OSSYS_CONN\",\n" +
+            "  \"modelOssys\": \"file:./secrets/ossys.conn\",\n" +
             "  \"environments\": {\n" +
             "    \"local\":      { \"access\": \"docker\" },\n" +
             "    \"onprem-dev\": { \"access\": \"bundle\", \"out\": \"./dist/onprem-dev\", \"grant\": \"schema+data\", \"rendition\": \"logical\" }\n" +
@@ -1936,13 +1936,14 @@ let private runInit () : int =
             "}\n"
         File.WriteAllText(path, scaffold)
         printfn "projection init: wrote %s." path
-        printfn "  Next: set OSSYS_CONN to your cloud OutSystems connection (env:/file: ref, never a"
-        printfn "        literal — D9) — the model is read LIVE from it. (To use a file instead, replace"
-        printfn "        \"modelOssys\" with \"model\": \"osm_model.json\".) Then `projection` lists the flows;"
-        printfn "        `projection try` previews into a throwaway Docker database; `projection publish`"
-        printfn "        emits the on-prem SSDT bundle. For the cloud-insertion flows (golden / preview /"
-        printfn "        synth into a data-only cloud sink) see examples/projection.sample.json. A live"
-        printfn "        write needs both --go and PROJECTION_ALLOW_EXECUTE=1."
+        printfn "  Next: put your cloud OutSystems connection string in ./secrets/ossys.conn — the"
+        printfn "        model is read LIVE from it (the file's contents ARE the connection string; D9,"
+        printfn "        gitignored, never committed). The engine reads the file directly — no shell"
+        printfn "        export. Then `projection` lists the flows; `projection try` previews into a"
+        printfn "        throwaway Docker database; `projection publish` emits the on-prem SSDT bundle."
+        printfn "        For the cloud-insertion flows (golden / preview / synth into a data-only cloud"
+        printfn "        sink) see examples/projection.sample.json. A live write needs both --go and"
+        printfn "        PROJECTION_ALLOW_EXECUTE=1."
         0
 
 /// Discover `projection.json` (or `PROJECTION_CONFIG`) — absent is the empty
