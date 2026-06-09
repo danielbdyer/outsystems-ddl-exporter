@@ -78,6 +78,52 @@ CreateTable`); the actual profile is `Preflight.GrantEvidence`
 `Preflight.permissionViolations` / the new `coversAtDatabaseScope`. The prototype
 is the smallest honest slice over all of it.
 
+## Read-only by construction (the load-bearing posture)
+
+**The survey reads; it never writes — and that is not a limitation, it is the
+point.** A survey you can run against PROD without touching it is worth far more
+than one that mutates to find out. The whole existing pre-flight suite already
+made this choice, and the survey inherits it.
+
+**What is fully profilable read-only (no write, ever):**
+
+| Question | Read-only probe |
+|---|---|
+| Reachable? / CONNECT? / login valid? | the connection open (not a write) |
+| Permissions — does the login hold INSERT/DELETE/ALTER/CREATE? | `sys.fn_my_permissions(NULL,'DATABASE')` / `(obj,'OBJECT')` — SQL Server computes the **effective** set (grants − denies, roles, ownership chains). The permission oracle. |
+| CDC tracked? | `sys.tables.is_tracked_by_cdc` / `sys.databases.is_cdc_enabled` |
+| DB writeable, or read-only mode? | `DATABASEPROPERTYEX(db,'Updateability')` |
+| Space / filegroup / DB state | `sys.database_files` / `sys.databases.state_desc` |
+| Will a narrowing/tightening succeed against existing data? | a **`COUNT`** — and the codebase already does exactly this (`Preflight.tighteningPreflight` SELECTs the NULL count; it never attempts the `ALTER` to find out) |
+
+So the *permission and readiness profile* — everything the survey needs — is
+catalog + DMV + `fn_my_permissions` reads. `captureGrantEvidence`,
+`connectionPreflight`, `cdcTrackedTables`, `tighteningPreflight` are **all**
+read-only today. The only write in the pipeline is the actual run, gated behind
+`--execute` + `PROJECTION_ALLOW_EXECUTE`.
+
+**The one thing read-only cannot certify** is the *execution of a specific write*
+under runtime/data-dependent conditions a permission check can't see — a trigger
+or row-level-security policy that rejects the row, a schema-bound dependency, a
+transient lock. `fn_my_permissions` says the permission is held; the runtime might
+still refuse. The only 100%-certain test there is the operation itself.
+
+**The "write test" idiom, and why it is not truly free.** The non-destructive
+form is the transaction-rollback probe (`BEGIN TRAN … <write> … ROLLBACK`) — it
+persists no data. **But it is not side-effect-free:** it takes locks, it fires
+triggers, and crucially **IDENTITY/SEQUENCE values do not roll back** — the seed
+advances past the rollback. That perturbs exactly the thing the engine is most
+careful to conserve (A43 — identity is the conserved charge). So even the "safe"
+write test mutates the target's identity counters.
+
+**The design rule, therefore:** the survey is read-only, full stop. A
+write-test "deep probe" (transaction-rolled-back) is an **explicit, opt-in** mode
+for the rare case where an operator needs runtime-conditional certainty — never
+the default, and it ships with the identity-seed caveat in its own copy.
+Read-only profiling of all the *necessary* information is not only achievable, it
+is the correct posture; a write test answers a *different* question ("will this
+exact write succeed right now") and costs a side effect to ask.
+
 ## What this prototype does NOT yet do (the chapter ahead)
 
 The prototype reconciles the **coarse** declared facet against the **database-scope**
