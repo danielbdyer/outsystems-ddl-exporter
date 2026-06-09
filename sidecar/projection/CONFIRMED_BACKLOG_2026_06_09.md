@@ -9,6 +9,44 @@ have since shipped, often under different names than the docs use. Future
 sessions should treat *this* file as the starting point for "what's left," and
 treat the older docs as framing/provenance, not status.
 
+---
+
+## ⓪ Execution status — 2026-06-09 session (read this first)
+
+A two-wave parallel-agent execution slice landed on branch
+`claude/sidecar-projection-backlog-r1622k` (atop the backlog doc commit). All
+changes behavior-preserving / additive; full pure pool **2943 passed / 0
+failed**; each commit SSH-signed.
+
+**SHIPPED (10 items):**
+- **B5** `ChannelDiff<'change>` unifies the 4 channel-diff records (alias-contained) — `1a4ad1b`.
+- **B2** `LineageDiagnostics.touchedEpilogue` combinator, 5 analytics passes — `c1dc7ad`. *(3 passes intentionally excluded: different return shape / conditional emission.)*
+- **B7** `Deploy.fs` decomposed into `DockerDaemon.fs` / `DatabaseNameGenerator.fs` / `DeployConnectionString.fs` + facade (1531→1315 LOC) — `90d9bee`.
+- **B1** `ArtifactByKind.perKind`/`perKindBenched`, 9 emitter sites — `ac594ba`. *(Estimate was 7; `StaticPopulationEmitter`/`ManifestEmitter` were not actually `ArtifactByKind` sites.)*
+- **A3** delete-scope-ready data emitters (`DeleteScope option` threaded, default `None`, byte-identical) — `ac594ba`. *(Emitter side only; CLI exposure not yet wired.)*
+- **B3** `ReadSide.drainRows` combinator replaces 13 reader-drain loops — `0be4005`.
+- **D1** Watch done-frame + run-title header — `88e4dd0`.
+- **D2** Ladder "one lever" honest blocking-item — `88e4dd0`.
+- **B6** canonical `mkName` promoted to shared `Fixtures`, 24 local copies removed — `2a6f157`. *(`mustOk` ×64 / `mkKey` ×31 correctly LEFT — divergent error types / SsKey prefixes.)*
+- **A6** top-level `diff <a> <b>` verb (aliases `explain diff`) — `a317c07`.
+- **A2** `--resumable` flag → `Transfer.runResumable` (default off) — `a317c07`.
+- **A7** `ModuleFilter` gets its first production caller (`ModuleFilterBinding.fromConfig` applied in `Pipeline.readConfigModel`) — `a317c07`.
+- **D3** setup probe surfaces full grant set (INSERT/CREATE/DELETE/ALTER), not just `alterGranted` — `a317c07`.
+- **D4** `--from empty` genesis-force (`MigrationRun.previewFromStoreForcing`) — `a317c07`.
+
+**RESOLVED-as-decision (operator, this session):**
+- **B4** retry → **DEFERRED**. The "exception leak" premise was stale (already caught by `ReadSide.read`'s outer try/with); only the retry gap remains. Adding retry needs a structural home for the primitive (`Retry.fs` is in `Adapters.OssysSql`; `Adapters.Sql` refs only `Core`). Re-open under a real transient-failure incident.
+- **A4** cross-schema FK diagnostic → **CLOSED on substance**. The `Unreadable` reason is named, classified, unit-tested (not silent); the stderr-vs-structured-channel detail isn't worth rippling `read`'s return shape into 4 consumers.
+
+**STILL OPEN — surfaced as semantic forks the CLI agent refused to guess (need an operator decision):**
+- **A1** single-source the transfer exit map via `Preflight.classify`. **Divergence found:** `runTransfer` hand-derives `transfer.cdcTrackedSink → exit 3`, but `classify` returns **exit 9** (`CdcTrackedSink`). Reverted to preserve current behavior. *Decide:* is exit 3 a latent bug (then route through `classify`, exit→9) or intended (leave the hand-derivation)?
+- **A5** rename-aware migrate-with-data. **Fork:** `executeWithData` assumes the data source is already at contract **B**; `runWithRenames` re-points an A→B map and is correct only if the source is at **A**. Unconditional wiring would double-apply renames. *Decide:* in Dev→UAT migrate-with-data, is the data source at old schema A or already at B (or either → needs a flag)?
+- **A7 polarity (flagged, not blocking):** `model.includeSystemModules/includeInactiveModules` default `false` while `ModuleFilter.empty` identity is `true`. The agent made filtering opt-in (effective only alongside a non-empty `model.modules`) to keep defaults byte-identical. *Decide later* if you want the flags to act globally with no `modules` named (a deliberate default-behavior change).
+
+Remaining backlog after this slice: the un-shipped Cluster-B/§E/§F items below (e.g. `Emitter.perKind` is done; **B8** binding-resolution dedup, **B9** IRBuilders α′ tail, the speculative §E/§F, the §C modeling decisions) plus A1/A5 above.
+
+---
+
 **Method.** Two passes. Pass 1 fanned out across the doc corpus and compiled a
 ~185-item candidate superset. Pass 2 dispatched per-cluster confirmation agents
 that read the actual code under an explicit anti-false-positive discipline
