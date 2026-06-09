@@ -51,7 +51,7 @@ let private usageLines : string list =
         "  (the run-ledger readiness gauge; needs PROJECTION_LEDGER_DIR)."
         ""
         "EXPLAIN — understand before shipping.  diff (two refs) · policy (two configs) · node"
-        "  (one SsKey's transforms + findings) · suggest (ranked config edits) · migrate"
+        "  (one node's transforms + findings) · suggest (ranked config edits) · migrate"
         "  (the dry-run plan: two-model or snapshot⊖snapshot)."
         ""
         "SEAL — provenance.  eject (the append-forever package; default) · approve (record a"
@@ -734,18 +734,17 @@ let private runTransfer
             if dropCode <> 0 then
                 Console.Error.WriteLine
                     (sprintf
-                        "projection transfer: %d row(s) dropped (transfer.droppedReferences) — refusing exit 0. Pass --allow-drops to accept the loss."
+                        "%d row(s) would be dropped — a relationship points to an unmatched record. Pass --allow-drops to accept the loss, or resolve the records."
                         (Transfer.droppedRowCount report))
                 let kindCount (label: string) (keys: SsKey seq) =
                     keys
                     |> Seq.countBy SsKey.rootOriginal
                     |> Seq.iter (fun (k, n) ->
                         Console.Error.WriteLine (sprintf "  %s %s: %d" label k n))
-                kindCount "SkippedReferences" (report.SkippedReferences |> List.map fst)
-                kindCount "UnmatchedIdentities" (report.UnmatchedIdentities |> List.map fst)
+                kindCount "dropped in" (report.SkippedReferences |> List.map fst)
+                kindCount "unmatched in" (report.UnmatchedIdentities |> List.map fst)
             dropCode
         | Error errors ->
-            Console.Error.WriteLine "projection transfer: failed:"
             printErrors Console.Error errors
             let anyCode (prefix: string) =
                 errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith prefix)
@@ -841,7 +840,6 @@ let private runVerifyData (beforeSpec: string) (afterSpec: string) : int =
             // CI step / cutover gate trips on data drift.
             if DataIntegrityChecker.isClean report then 0 else 8
         | Error errors ->
-            Console.Error.WriteLine "projection verify-data: failed:"
             printErrors Console.Error errors
             3
     dumpBench "verify-data"
@@ -1292,7 +1290,7 @@ let private reportMigrationError (e: MigrationError) : int =
             sprintf "projection migrate: a column tightening (NULL → NOT NULL) would fail against existing NULL data; no DDL ran. %s" msg)
         9
     | SchemaReadFailed es ->
-        Console.Error.WriteLine "projection migrate: reading the deployed schema failed:"
+        Console.Error.WriteLine "The deployed schema could not be read."
         printErrors Console.Error es
         6
     | other ->
@@ -1674,11 +1672,10 @@ let private runSyntheticLoad (model: ModelSource) (modelOssys: string option) (p
             if dropCode <> 0 then
                 Console.Error.WriteLine
                     (sprintf
-                        "projection (synthetic): %d row(s) dropped — refusing exit 0. Pass --allow-drops to accept the loss."
+                        "%d row(s) would be dropped — a relationship points to an unmatched record. Pass --allow-drops to accept the loss, or resolve the records."
                         (Transfer.droppedRowCount report))
             dropCode
         | Error errors ->
-            Console.Error.WriteLine "projection (synthetic): failed:"
             printErrors Console.Error errors
             let anyCode (prefix: string) =
                 errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith prefix)
@@ -1696,10 +1693,9 @@ let private runCaptureProfile (connSpec: string) (outPath: string) : int =
     let exitCode =
         match result with
         | Ok () ->
-            eprintfn "projection profile: profile written to %s" outPath
+            eprintfn "Profile written to %s." outPath
             0
         | Error errors ->
-            Console.Error.WriteLine "projection profile: capture failed:"
             printErrors Console.Error errors
             let anyCode (prefix: string) =
                 errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith prefix)
