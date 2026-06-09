@@ -31,6 +31,14 @@ let private mustOk r =
 
 let private name (s: string)  : Name  = Name.create s   |> mustOk
 
+/// Canonical fixture `Name` builder. Tests across the suite re-spell
+/// `Name.create s |> Result.value` (~44 local `mkName` copies, B6 audit);
+/// this is the one shared, accessible definition. Force-unwraps because
+/// fixture names are constants known to satisfy `Name.create`. The
+/// `private name` alias above is the in-file spelling; `mkName` is the
+/// exported one consuming test files open and reuse.
+let mkName (s: string) : Name = name s
+
 /// Typed SsKey builders mirroring the adapter conventions
 /// (`Projection.Adapters.Osm.CatalogReader`,
 /// `Projection.Adapters.Sql.Static`). Tests build expected catalogs

@@ -25,9 +25,6 @@ let private mustOk r =
 let private mkKey (parts: string list) : SsKey =
     SsKey.synthesizedComposite "OS_TEST" parts |> mustOk
 
-let private mkName (s: string) : Name =
-    Name.create s |> mustOk
-
 /// Static-entity fixture with explicit Id values (so VALUES rows are
 /// deployable). Three rows × three columns (Id INT PK + Code TEXT +
 /// Label TEXT).

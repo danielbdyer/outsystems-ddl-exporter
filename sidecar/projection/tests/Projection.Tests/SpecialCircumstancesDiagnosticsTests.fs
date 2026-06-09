@@ -12,7 +12,6 @@ open Projection.Tests.IRBuilders
 /// the post-chain `TopologicalOrder`. Acceptance annotation via
 /// `Metadata.acceptedVia` cross-references the operator allowlist.
 
-let private mkName (s: string) : Name = Name.create s |> Result.value
 
 let private mkKindNoPk (kindName: string) (table: string) : Kind =
     let kKey = kindKey [ kindName ]

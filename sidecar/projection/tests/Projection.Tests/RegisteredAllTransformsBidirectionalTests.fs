@@ -34,7 +34,6 @@ open Projection.Core.Passes
 open Projection.Pipeline
 open Projection.Tests.Fixtures
 
-let private mkName (s: string) : Name = Name.create s |> Result.value
 
 // ---------------------------------------------------------------------------
 // Totality — the unified registry covers every shipped surface.

@@ -113,7 +113,6 @@ let private v1MinimalFixture : string =
 // rationale and re-open trigger.
 // ---------------------------------------------------------------------------
 
-let private mkName s = Name.create s |> Result.value
 
 let private appCoreModuleKey = modKey "AppCore"
 let private userKindKey      = kindKey ["AppCore"; "User"]

@@ -37,9 +37,6 @@ let private mustOk (r: Result<'a>) : 'a =
 let private mkKey (parts: string list) : SsKey =
     SsKey.synthesizedComposite "OS_TEST" parts |> mustOk
 
-let private mkName (s: string) : Name =
-    Name.create s |> mustOk
-
 /// Static-entity fixture: 3 columns, 2 rows. `Id` is IDENTITY-flagged
 /// so the emitter SHOULD bracket the InsertRow block with
 /// SetIdentityInsert toggles.

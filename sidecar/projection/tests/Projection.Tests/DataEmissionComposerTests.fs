@@ -32,9 +32,6 @@ let private mustOk r =
 let private mkKey (parts: string list) : SsKey =
     SsKey.synthesizedComposite "OS_TEST" parts |> mustOk
 
-let private mkName (s: string) : Name =
-    Name.create s |> mustOk
-
 let private mustOkEmit (r: Result<'a, EmitError>) : 'a =
     match r with
     | Ok v -> v

@@ -57,7 +57,6 @@ let private mustFail (r: Result<'a>) : ValidationError list =
 let private hasCode (code: string) (errors: ValidationError list) : bool =
     errors |> List.exists (fun e -> e.Code = code)
 
-let private mkName (s: string) : Name = Name.create s |> mustOk
 let private mkTableId (schema: string) (table: string) : TableId =
     TableId.create schema table |> mustOk
 
