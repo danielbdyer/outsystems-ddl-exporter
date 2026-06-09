@@ -98,6 +98,33 @@ let ``6.B.2: end-to-end — diff-derived renames re-point a source row onto the 
     Assert.Equal("bob@x", sinkRow.Values.[nm "Contact"])
     Assert.Equal("1", sinkRow.Values.[nm "Id"])
 
+// A5 — the migrate-with-data data leg re-points A→B because the data source is
+// at the OLD schema A. `executeWithData` now derives its rename map exactly as
+// `runWithRenames` does — `CatalogDiff.between sinkSource target` (A→B) — so a
+// row carrying the A name (EMAIL) is re-pointed onto the B name (CONTACT). This
+// pure witness pins the diff ORIENTATION the data leg wires: A = sinkSource
+// (source contract), B = target (sink contract).
+
+[<Fact>]
+let ``A5: the migrate-with-data rename map derives from between(sinkSource=A, target=B) and re-points A->B`` () =
+    let a = catOf (custKind "Email" "EMAIL")    // sinkSource — the data source's schema A
+    let b = catOf (custKind "Contact" "CONTACT") // target — the migrated sink schema B
+    let map = RenameProjection.renames (betweenOk a b) |> RenameProjection.renameMap
+    // A row carrying the A-schema name re-points onto the B name (not lost to NULL).
+    let aRow = rowOf [ "Id", "1"; "Email", "alice@x" ]
+    let repointed = RenameProjection.repointRow map aRow
+    Assert.Equal("alice@x", repointed.Values.[nm "Contact"])
+    Assert.False(repointed.Values.ContainsKey(nm "Email"))
+
+[<Fact>]
+let ``A5: a no-renames A->B diff yields an empty rename map (the data leg stays a straight load)`` () =
+    // Default behavior is preserved: when A and B differ only in ways that are
+    // not renames (here, identical), the rename map is empty ⇒ identity repoint.
+    let a = catOf (custKind "Email" "EMAIL")
+    let b = catOf (custKind "Email" "EMAIL")
+    let map = RenameProjection.renames (betweenOk a b) |> RenameProjection.renameMap
+    Assert.True(Map.isEmpty map)
+
 // =====================================================================
 // AC-I7 — the composed Transfer: a column rename AND a Dev→UAT re-key in
 // ONE run. `Transfer.runReconcilingWithRenames` threads BOTH legs through
