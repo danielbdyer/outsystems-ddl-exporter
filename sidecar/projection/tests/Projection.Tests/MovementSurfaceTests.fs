@@ -139,6 +139,51 @@ let ``config refuses a flow without a to`` () =
     let json = """{ "flows": { "x": { "from": "dev" } } }"""
     Assert.Contains("cli.config.flowNoTo", errCodes (ProjectionConfig.parse json))
 
+// -- S1: the unified `Shaping` view (THE_CONFIG_CONTROL_PLANE §5) ------------
+// `ProjectionConfig.Shaping` is the model-shaping view of the SAME
+// `projection.json`, parsed leniently so a movement-only file defaults every
+// shaping section (no `modelNoSource`). Nothing CONSUMES it yet at S1.
+
+[<Fact>]
+let ``S1: a movement-only config parses with a default-empty Shaping (no modelNoSource)`` () =
+    // environments/flows only — no `model`/`overrides`/`policy`/`emission`.
+    // The lenient Shaping parse must default every section, not error.
+    let cfg = ProjectionConfig.parse envFlowJson |> mustOk
+    Assert.Equal(None, cfg.Shaping.Model.Path)
+    Assert.Equal(None, cfg.Shaping.Model.Ossys)
+    Assert.Empty(cfg.Shaping.Model.Modules)
+    Assert.Empty(cfg.Shaping.Overrides.TableRenames)
+    Assert.Equal(Config.defaultConfig.Policy.Selection, cfg.Shaping.Policy.Selection)
+
+[<Fact>]
+let ``S1: empty-text config carries the default Shaping`` () =
+    let cfg = ProjectionConfig.parse "" |> mustOk
+    Assert.Equal(None, cfg.Shaping.Model.Path)
+    Assert.Empty(cfg.Shaping.Overrides.TableRenames)
+
+[<Fact>]
+let ``S1: a unified config populates Shaping.Policy / Overrides / Model.Modules`` () =
+    let cfg =
+        ProjectionConfig.parse """
+        {
+          "environments": { "uat": { "access": "bundle", "out": "dist/uat", "grant": "schema+data" } },
+          "flows": { "emit": { "from": "model", "to": "uat" } },
+          "model":     { "path": "model.json", "modules": ["Sales", { "name": "Ops", "entities": ["Order"] }] },
+          "overrides": { "tableRenames": [ { "from": { "module": "Sales", "entity": "Cust" }, "to": { "schema": "dbo", "table": "Customer" } } ] },
+          "policy":    { "selection": "IncludeManual" }
+        }
+        """ |> mustOk
+    // model.modules folds into the shaping view (the canonical object form).
+    Assert.Equal<Config.ModuleSelector list>(
+        [ Config.Whole "Sales"; Config.WithEntities ("Ops", [ "Order" ]) ],
+        cfg.Shaping.Model.Modules)
+    // overrides.tableRenames folds in.
+    match cfg.Shaping.Overrides.TableRenames with
+    | [ { From = Config.LogicalSource { Module = "Sales"; Entity = "Cust" }; To = { Schema = "dbo"; Table = "Customer" } } ] -> ()
+    | other -> Assert.Fail(sprintf "expected one Sales::Cust -> dbo.Customer rename, got %A" other)
+    // policy folds in.
+    Assert.Equal("IncludeManual", cfg.Shaping.Policy.Selection)
+
 // -- M3.b: the `legacy` B→A reverse-leg classifier (Command.reverseLegOf) ----
 // The clean partial: the rendition flag (M1) drives the recognition of a flow as
 // the B→A reverse leg (logical source -> physical sink) — the operator-facing

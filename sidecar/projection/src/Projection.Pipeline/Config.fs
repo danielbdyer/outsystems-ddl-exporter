@@ -360,6 +360,39 @@ module Config =
         Dir = "out/"
     }
 
+    /// A no-source `ModelSection` — the lenient default when the `model`
+    /// section is absent (or present without `path`/`ossys`). The strict
+    /// parser refuses this (`modelNoSource`); the lenient parser (used by the
+    /// movement surface, where a movement-only `projection.json` carries no
+    /// shaping `model`) substitutes it so the document does not fail. The
+    /// field values mirror `parseModel`'s defaults (`includeSystemModules` /
+    /// `includeInactiveModules` false, `onlyActiveAttributes` true).
+    let private defaultModelSection : ModelSection = {
+        Path                   = None
+        Ossys                  = None
+        Modules                = []
+        IncludeSystemModules   = false
+        IncludeInactiveModules = false
+        OnlyActiveAttributes   = true
+        ValidationOverrides    = defaultValidationOverrides
+    }
+
+    /// The all-defaults `Config` — every section at its absent-from-JSON
+    /// default, with a no-source `model`. The neutral `Shaping` value carried
+    /// by an empty `ProjectionConfig` (no shaping authored). Distinct from the
+    /// strict `parse` of `{}`, which errors `modelNoSource`.
+    let defaultConfig : Config = {
+        Model       = defaultModelSection
+        Profile     = defaultProfile
+        Cache       = defaultCache
+        Profiler    = defaultProfiler
+        TypeMapping = defaultTypeMapping
+        Overrides   = defaultOverrides
+        Emission    = defaultEmission
+        Policy      = defaultPolicy
+        Output      = defaultOutput
+    }
+
     // -----------------------------------------------------------------------
     // Error helpers — `pipeline.config.<problem>` dot-namespace.
     // -----------------------------------------------------------------------
@@ -614,7 +647,25 @@ module Config =
                 Result.failureOf (
                     configError "typeMismatch" "model.validationOverrides must be an object.")
 
-    let private parseModel (root: JsonElement) : Result<ModelSection> =
+    /// Parse the `model` section. `requireModel` is the strict/lenient knob:
+    /// strict (`true`, the `explain`/`full-export` consumers) errors when the
+    /// section is absent (`missingProperty`) or carries no source
+    /// (`modelNoSource`); lenient (`false`, the movement surface's `Shaping`
+    /// view) substitutes the no-source `defaultModelSection` in both cases, so
+    /// a movement-only `projection.json` parses. A *present* `model` with a
+    /// source parses identically under both.
+    let private parseModelWith (requireModel: bool) (root: JsonElement) : Result<ModelSection> =
+        match tryGetProperty root "model" with
+        | None when not requireModel -> Result.success defaultModelSection
+        // Lenient view: a non-object `model` is the legacy top-level string
+        // form (`model: "<path>"`), which is NOT the shaping object — the
+        // movement surface owns it. Default the shaping `model` here (S2 maps
+        // the legacy string into `Shaping.Model.Path` in the loader). Under
+        // the strict parser the object form is required (explain/full-export),
+        // so this relaxation is lenient-only.
+        | Some el when (not requireModel) && el.ValueKind <> JsonValueKind.Object ->
+            Result.success defaultModelSection
+        | _ ->
         match getProperty root "model" with
         | Error es -> Error es
         | Ok element ->
@@ -639,12 +690,23 @@ module Config =
                                 match getOptionalString element "ossys" with
                                 | Error es -> Error es
                                 | Ok ossys ->
-                                    // At least one model source is required (path or ossys).
+                                    // At least one model source is required (path or ossys)
+                                    // under the strict parser; the lenient parser substitutes
+                                    // the no-source default instead of erroring.
                                     match path, ossys with
-                                    | None, None ->
+                                    | None, None when requireModel ->
                                         Result.failureOf (
                                             configError "modelNoSource"
                                                 "model needs `path` (osm_model.json) or `ossys` (live OSSYS connection).")
+                                    | None, None ->
+                                        Result.success {
+                                            defaultModelSection with
+                                                Modules                = modules
+                                                IncludeSystemModules   = inclSys
+                                                IncludeInactiveModules = inclInactive
+                                                OnlyActiveAttributes   = onlyActive
+                                                ValidationOverrides    = vo
+                                        }
                                     | _ ->
                                         Result.success {
                                             Path                   = path
@@ -1221,12 +1283,12 @@ module Config =
     // Top-level parser
     // -----------------------------------------------------------------------
 
-    let private parseRoot (root: JsonElement) : Result<Config> =
+    let private parseRootWith (requireModel: bool) (root: JsonElement) : Result<Config> =
         if root.ValueKind <> JsonValueKind.Object then
             Result.failureOf (
                 configError "typeMismatch" "Config root must be a JSON object.")
         else
-            match parseModel root with
+            match parseModelWith requireModel root with
             | Error es -> Error es
             | Ok model ->
                 match parseProfile root with
@@ -1284,7 +1346,29 @@ module Config =
             use document = JsonDocument.Parse(json)
             let root = document.RootElement
             match scanForCredentials "" root with
-            | [] -> parseRoot root
+            | [] -> parseRootWith true root
+            | errors -> Error errors
+        with
+        | :? JsonException as ex ->
+            Result.failureOf (
+                configError "jsonInvalid" (sprintf "Failed to parse JSON: %s" ex.Message))
+
+    /// Lenient parse — identical to `parse` (same D9 credential pre-scan, same
+    /// section parsing, same `typeMismatch`/structural errors) EXCEPT that an
+    /// absent or no-source `model` section yields the no-source
+    /// `defaultModelSection` instead of erroring `modelNoSource`. This is the
+    /// `Shaping` view used by the movement surface, where a movement-only
+    /// `projection.json` legitimately carries no shaping `model`. The strict
+    /// `parse`/`fromFile` are UNCHANGED for the `explain`/`full-export`
+    /// consumers. An empty/whitespace document is `defaultConfig`.
+    let parseLenient (json: string) : Result<Config> =
+        if System.String.IsNullOrWhiteSpace json then Result.success defaultConfig
+        else
+        try
+            use document = JsonDocument.Parse(json)
+            let root = document.RootElement
+            match scanForCredentials "" root with
+            | [] -> parseRootWith false root
             | errors -> Error errors
         with
         | :? JsonException as ex ->

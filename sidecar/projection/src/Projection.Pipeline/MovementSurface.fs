@@ -87,13 +87,21 @@ type ProjectionConfig =
         /// When set it wins over `Model`. See `ModelResolution`.
         ModelOssys   : string option
         Defaults     : Map<string, string>
+        /// The model-shaping view of the SAME `projection.json`
+        /// (`overrides`/`emission`/`policy`/`profiler`/`cache`/`typeMapping`/
+        /// `output` and the canonical `model` object), parsed leniently so a
+        /// movement-only file defaults every section. THE_CONFIG_CONTROL_PLANE
+        /// §5 — one isomorphic surface behind two views. Nothing CONSUMES this
+        /// yet at S1; S2 reads `Shaping.Model`; S3 threads it into emission.
+        Shaping      : Config.Config
     }
 
 [<RequireQualifiedAccess>]
 module ProjectionConfig =
 
     let empty : ProjectionConfig =
-        { Environments = Map.empty; Flows = Map.empty; Model = None; ModelOssys = None; Defaults = Map.empty }
+        { Environments = Map.empty; Flows = Map.empty; Model = None; ModelOssys = None; Defaults = Map.empty
+          Shaping = Config.defaultConfig }
 
     let private err (code: string) (message: string) : ValidationError =
         ValidationError.create code message
@@ -248,11 +256,20 @@ module ProjectionConfig =
                                 | None -> () ]
                             |> Map.ofList
                         | _ -> Map.empty
+                    // The shaping view of the SAME document, parsed leniently
+                    // (a movement-only file defaults every shaping section).
+                    // Any shaping error (D9 credential, type mismatch) surfaces
+                    // here so the unified document is validated as one. Nothing
+                    // consumes `Shaping` yet at S1.
+                    match Config.parseLenient json with
+                    | Error es -> Result.failure es
+                    | Ok shaping ->
                     Result.success
                         { Environments = environments; Flows = flows
                           Model = getString root "model"
                           ModelOssys = getString root "modelOssys"
-                          Defaults = defaults }
+                          Defaults = defaults
+                          Shaping = shaping }
         with ex ->
             Result.failureOf (err "cli.config.parseFailed" (sprintf "projection.json did not parse: %s" ex.Message))
 
