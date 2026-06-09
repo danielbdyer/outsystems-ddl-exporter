@@ -173,6 +173,39 @@ grant. The full reach the vision points at:
 - **S5 — the richer axes**: grant-probe-failed vs unreachable, user-map
   completeness, latency. *Each a parallel probe + a column.*
 
+## Adjustments — the refinements that make it masterful (fold these in)
+
+Everything the build needs already exists — the config model, the read-only probe
+suite, `Task` parallelism, the voice render, the obligations matrix. It is
+reification + wiring + rendering, no new mechanism. Four refinements make the
+plan **structural** rather than aspirational:
+
+1. **Read-only is a binding invariant, not a slice property.** Every probe is a
+   read; the write-test deep probe is opt-in only (see "Read-only by
+   construction"). Make it a load-bearing commitment so no future axis reaches for
+   a write to find out.
+2. **Derive required capabilities from the FLOW SHAPE, not a protein classifier.**
+   A flow's required activities are a function of its shape — already in the
+   config: the target `grant` (`schema+data` ⇒ +ALTER/CREATE; `data` ⇒
+   INSERT/DELETE), the `reconcile` opts (⇒ the user-map axis), the source kind
+   (`Env` ⇒ read; `Synthetic` ⇒ none). The obligations matrix is the **spec the
+   derivation checks against**, not a separate classification step — no
+   protein-classifier needed.
+3. **Model the required-capability catalog as a HARVESTED REGISTRY with a
+   `required ⇔ surveyed` totality** — the same declare-at-site / harvest-centrally
+   pattern as the transform registry and the voice `code ⇔ copy` catalog. Then
+   "the survey checks everything the use cases need" is true *by construction*:
+   you cannot add a flow that needs a capability without the survey knowing to
+   probe it. This is the move that makes it masterful — completeness by
+   construction, not by vigilance.
+4. **Record the gate-vs-advisory decision before S3** (per R6: V2 owns no
+   production write path during dual-track — the survey is advisory until the
+   per-pair flip; a hard gate is an operator decision, not a default).
+
+**The one thing not in our hands:** S4's permission-name vocabulary + object-scope
+confirmation needs a real managed UAT login (OPEN-2 / P1) — the build is ready,
+the confirmation is the real-world survey the scaffold was always waiting for.
+
 ## Open questions (decisions owed before S2/S4)
 
 1. **Coarse facet vs per-use-case union — when does S2's `requiredBy` earn its
