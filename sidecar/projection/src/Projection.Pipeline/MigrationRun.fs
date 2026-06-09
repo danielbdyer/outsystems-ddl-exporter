@@ -380,9 +380,16 @@ module MigrationRun =
         (cnn: SqlConnection)
         : System.Threading.Tasks.Task<Result<MigrationOutcome, MigrationError>> =
         task {
+            // Live stage stream (§13) — the migrate leg shares the pipeline's
+            // stage codes so `--watch` shows the same arc (build → apply →
+            // verify). The markers ride the existing NDJSON channel; when no one
+            // is watching they are plain machine events, never operator prose.
+            let sw = System.Diagnostics.Stopwatch.StartNew()
+            LogSink.recordStageStart "emit"
             match preview declaration source target with
             | Error e -> return Error e
             | Ok artifacts ->
+                LogSink.recordStageEvent "emit" sw.ElapsedMilliseconds LogSink.Succeeded
                 let renameSql = renameStatements artifacts.Plan.Diff
                 let alterSql = artifacts.SchemaStatements |> Render.toText
                 // 6.A.13 — schema-side CDC pre-flight. Only a run that would
@@ -434,19 +441,31 @@ module MigrationRun =
                 match tighteningGate with
                 | Error e -> return Error e
                 | Ok () ->
+                sw.Restart()
+                LogSink.recordStageStart "deploy"
+                let hasAlter = not (System.String.IsNullOrWhiteSpace alterSql)
+                let totalWrites = List.length renameSql + (if hasAlter then 1 else 0)
                 let! executed =
                     task {
                         try
+                            let mutable applied = 0
                             for stmt in renameSql do
                                 do! Deploy.executeBatch cnn stmt
-                            if not (System.String.IsNullOrWhiteSpace alterSql) then
+                                applied <- applied + 1
+                                LogSink.recordStageProgress "deploy" applied totalWrites sw.ElapsedMilliseconds
+                            if hasAlter then
                                 do! Deploy.executeBatch cnn alterSql
+                                applied <- applied + 1
+                                LogSink.recordStageProgress "deploy" applied totalWrites sw.ElapsedMilliseconds
                             return Ok ()
                         with ex -> return Error (ExecutionFailed ex.Message)
                     }
                 match executed with
                 | Error e -> return Error e
                 | Ok () ->
+                    LogSink.recordStageEvent "deploy" sw.ElapsedMilliseconds LogSink.Succeeded
+                    sw.Restart()
+                    LogSink.recordStageStart "canary"
                     let! readBack = ReadSide.read cnn
                     match readBack with
                     | Error es -> return Error (SchemaReadFailed es)
@@ -455,6 +474,7 @@ module MigrationRun =
                             PhysicalSchema.diff
                                 (PhysicalSchema.ofCatalog target)
                                 (PhysicalSchema.ofCatalog reconstructed)
+                        LogSink.recordStageEvent "canary" sw.ElapsedMilliseconds LogSink.Succeeded
                         return
                             Ok
                                 { Artifacts = artifacts

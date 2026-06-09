@@ -31,18 +31,21 @@ type Comparison<'a, 'delta> = {
 let private countField (label: string) (n: int) : View.View =
     View.Field(label, string n, (if n = 0 then View.Neutral else View.Warn))
 
-/// Render a `CatalogDiff` summary: the ‖δ‖ norm (the WAVE-6 change-measure)
-/// plus per-channel +added / −removed / ~renamed / ≠changed counts.
+/// Render a `CatalogDiff` summary: the total change count plus the per-channel
+/// added / dropped / renamed / changed breakdown, in plain words (the
+/// legibility axiom holds at depth — `THE_VOICE.md` §2.1; the `‖δ‖ norm` the
+/// engine computes never reaches the operator as a glyph).
 let renderCatalogDiff (d: CatalogDiff) : View.View =
     let c = CatalogDiff.channelCounts d
     let n = CatalogDiff.norm d
-    let chan a r rn ch = sprintf "+%d −%d ~%d⟲ %d≠" a r rn ch
+    let h = Theme.humane
+    let chan a r rn ch = sprintf "%s added · %s dropped · %s renamed · %s changed" (h a) (h r) (h rn) (h ch)
     View.Panel(
-        "catalog Δ",
-        [ View.Field("‖δ‖ norm", string n, (if n = 0 then View.Ok else View.Warn))
-          View.Field("kinds", sprintf "+%d −%d ~%d⟲" c.AddedKinds c.RemovedKinds c.RenamedKinds, View.Neutral)
-          View.Field("attributes", chan c.AddedAttributes c.RemovedAttributes c.RenamedAttributes c.ChangedAttributes, View.Neutral)
-          View.Field("references", chan c.AddedReferences c.RemovedReferences c.RenamedReferences c.ChangedReferences, View.Neutral)
+        "changes",
+        [ View.Field("total changes", h n, (if n = 0 then View.Ok else View.Warn))
+          View.Field("tables", sprintf "%s added · %s dropped · %s renamed" (h c.AddedKinds) (h c.RemovedKinds) (h c.RenamedKinds), View.Neutral)
+          View.Field("columns", chan c.AddedAttributes c.RemovedAttributes c.RenamedAttributes c.ChangedAttributes, View.Neutral)
+          View.Field("relationships", chan c.AddedReferences c.RemovedReferences c.RenamedReferences c.ChangedReferences, View.Neutral)
           View.Field("indexes", chan c.AddedIndexes c.RemovedIndexes c.RenamedIndexes c.ChangedIndexes, View.Neutral)
           View.Field("sequences", chan c.AddedSequences c.RemovedSequences c.RenamedSequences c.ChangedSequences, View.Neutral) ])
 
@@ -61,11 +64,11 @@ let catalogStatement (d: CatalogDiff) : View.View =
         c.RemovedKinds + c.RemovedAttributes + c.RemovedReferences
         + c.RemovedIndexes + c.RemovedSequences
     let n = CatalogDiff.norm d
-    if n = 0 then View.Hero(View.Ok, "no changes — identical")
+    if n = 0 then View.Hero(View.Ok, "No differences found. The two states are identical.")
     elif removed > 0 then
-        View.Hero(View.Warn, sprintf "%d changes · %d destroy structure — review first" n removed)
+        View.Hero(View.Warn, sprintf "%d changes · %d drops · review before applying" n removed)
     else
-        View.Hero(View.Ok, sprintf "%d changes · nothing destroyed" n)
+        View.Hero(View.Ok, sprintf "%d changes · no removals" n)
 
 /// One attribute facet, in plain words (for the reshape lane).
 let private facetText (f: AttributeFacet) : string =
@@ -142,7 +145,7 @@ let renderPhysicalDiff (d: PhysicalSchemaDiff) : View.View =
 /// `Catalog` comparison — a genuine torsor: `Apply = Some applyDiff` (the
 /// delta replays to reconstruct the target; Weyl-proven).
 let catalog : Comparison<Catalog, CatalogDiff> =
-    { Between = (fun a b -> CatalogDiff.between a b |> Result.mapError (fun e -> sprintf "%A" e))
+    { Between = (fun a b -> CatalogDiff.between a b |> Result.mapError (fun _ -> "the two models could not be compared"))
       IsEmpty = CatalogDiff.isEmpty
       Render  = renderCatalogDiff
       Apply   = Some (fun d a -> CatalogDiff.applyDiff a d) }

@@ -36,6 +36,8 @@ let private usageLines : string list =
         "    projection seal ( --store <path> | approve <version> --approver <name> ... )"
         "    projection report <flow>        the on-prem migration-team change bundle"
         "    projection init                 scaffold a projection.json"
+        "    projection setup [--conn <ref>] read back what is configured (history, writes, board);"
+        "                                    --conn also probes a target (reachable + ALTER grant)"
         ""
         "FLOW — the hero. Move a model from `from` to `to`; the target decides the form."
         "  Environments (places) carry access (bundle → SSDT for Octopus | direct → live |"
@@ -51,7 +53,7 @@ let private usageLines : string list =
         "  (the run-ledger readiness gauge; needs PROJECTION_LEDGER_DIR)."
         ""
         "EXPLAIN — understand before shipping.  diff (two refs) · policy (two configs) · node"
-        "  (one SsKey's transforms + findings) · suggest (ranked config edits) · migrate"
+        "  (one node's transforms + findings) · suggest (ranked config edits) · migrate"
         "  (the dry-run plan: two-model or snapshot⊖snapshot)."
         ""
         "SEAL — provenance.  eject (the append-forever package; default) · approve (record a"
@@ -136,6 +138,21 @@ let private prettyMode = ref false
 /// When set + a real TTY, `dispatchFullExport` runs the export under a live board
 /// on stderr instead of the terminal-summary-only path.
 let private watchMode = ref false
+
+/// The publish pipeline's planned stage arc, in order — the keys it streams
+/// (`extract.started` / `summary.stageCompleted{stage}`). The live Watch board
+/// pre-seeds these as `Pending` so the whole arc shows from the first frame
+/// (`THE_STORYBOARD.md` Appendix A.3).
+let private pipelineStages : string list = [ "extract"; "profile"; "emit" ]
+
+/// The in-place migrate leg's stage arc — build → apply → verify — that
+/// `MigrationRun.execute` streams at its phase boundaries (Appendix A.3).
+let private migrateStages : string list = [ "emit"; "deploy"; "canary" ]
+
+/// The cross-substrate migrate's arc — the schema leg (build → apply → verify)
+/// then the data leg's load (`Transfer.run` streams "load" with per-table
+/// progress).
+let private migrateDataStages : string list = [ "emit"; "deploy"; "canary"; "load" ]
 
 let private withRun (command: string) (body: unit -> int) : int =
     LogSink.beginRun () |> ignore
@@ -234,14 +251,14 @@ let private runFullExport
             FullExportRun.execute configPath outputOverride verbosity mutedCategories, None
     match outcome with
     | FullExportRun.RunOutcome.Succeeded (report, effectiveOutput) ->
-        printfn "projection: wrote %d artifact(s) to %s" report.Paths.Length effectiveOutput
+        printfn "%d artifact(s) written to %s." report.Paths.Length effectiveOutput
         report.Paths
         |> List.iter (fun p ->
             let info = FileInfo p
             printfn "  %s (%d bytes)" p info.Length)
         storeLeg
         |> Option.iter (fun leg ->
-            printfn "projection: lifecycle bundle — recorded episode (%d on timeline %s); accumulated refactorlog %d entr(ies)"
+            printfn "This run recorded — episode %d on timeline %s; %d refactorlog entr(ies) accumulated."
                 (EpisodicLifecycle.episodes leg.Chain |> List.length)
                 (Timeline.name (EpisodicLifecycle.timeline leg.Chain))
                 (List.length leg.AccumulatedRefactorLog))
@@ -249,7 +266,6 @@ let private runFullExport
         // config.validationFailed envelopes already emitted by `execute`.
         ()
     | FullExportRun.RunOutcome.RunFailed errors ->
-        Console.Error.WriteLine "projection: full-export failed:"
         printErrors Console.Error errors
     | FullExportRun.RunOutcome.Aborted ex ->
         Console.Error.WriteLine ("projection: full-export aborted: " + ex.Message)
@@ -308,16 +324,15 @@ let private runFullExportLoad
                     let code =
                         match work.GetAwaiter().GetResult() with
                         | Ok (report, legOpt, cdcDelta) ->
-                            printfn "projection: full-export published %d artifact(s); loaded the seed (%d CDC capture(s) measured)"
+                            printfn "%d artifact(s) published; seed loaded (%d row(s) captured)."
                                 report.Paths.Length cdcDelta
                             legOpt
                             |> Option.iter (fun leg ->
-                                printfn "  episode recorded (%d on timeline %s)"
+                                printfn "  this run recorded — episode %d on timeline %s."
                                     (EpisodicLifecycle.episodes leg.Chain |> List.length)
                                     (Timeline.name (EpisodicLifecycle.timeline leg.Chain)))
                             0
                         | Error es ->
-                            Console.Error.WriteLine "projection full-export --load: failed:"
                             printErrors Console.Error es
                             3
                     dumpBench "full-export"
@@ -327,7 +342,7 @@ let private runEmit (catalog: Catalog) (outputDir: string) : int =
     let exitCode =
         match Compose.runFromCatalog catalog outputDir with
         | Ok paths ->
-            printfn "projection: wrote %d artifact(s) to %s" paths.Length outputDir
+            printfn "%d artifact(s) written to %s." paths.Length outputDir
             paths
             |> List.iter (fun p ->
                 let info = FileInfo p
@@ -335,7 +350,6 @@ let private runEmit (catalog: Catalog) (outputDir: string) : int =
             0
         | Error errors ->
             (
-                Console.Error.WriteLine "projection: emit failed:"
                 printErrors Console.Error errors
                 2
             )
@@ -354,7 +368,7 @@ let private runEmitSkeletonOnly (catalog: Catalog) (outputDir: string) : int =
         match Compose.runSkeletonOnlyFromCatalog catalog outputDir with
         | Ok paths ->
             printfn
-                "projection: wrote %d skeleton-only artifact(s) to %s"
+                "%d skeleton-only artifact(s) written to %s."
                 paths.Length
                 outputDir
             paths
@@ -364,7 +378,6 @@ let private runEmitSkeletonOnly (catalog: Catalog) (outputDir: string) : int =
             0
         | Error errors ->
             (
-                Console.Error.WriteLine "projection: emit failed:"
                 printErrors Console.Error errors
                 2
             )
@@ -377,10 +390,13 @@ let private runDeploy (catalog: Catalog) : int =
             4
             "projection: Docker daemon not reachable. Set DOCKER_HOST or start the daemon to run `deploy`."
     else
-        printfn "projection: spinning up an ephemeral SQL Server container..."
-        let task = Deploy.runFromCatalog catalog
-        let result = task.GetAwaiter().GetResult()
-        let exitCode =
+        let runBody () =
+            printfn "projection: spinning up an ephemeral SQL Server container..."
+            LogSink.recordStageStart "deploy"
+            let sw = System.Diagnostics.Stopwatch.StartNew()
+            let result = (Deploy.runFromCatalog catalog).GetAwaiter().GetResult()
+            LogSink.recordStageEvent "deploy" sw.ElapsedMilliseconds
+                (match result with Ok (_, report) when report.Ok -> LogSink.Succeeded | _ -> LogSink.Failed)
             match result with
             | Ok (outputs, report) ->
                 printfn
@@ -409,10 +425,16 @@ let private runDeploy (catalog: Catalog) : int =
                     3
             | Error errors ->
                 (
-                    Console.Error.WriteLine "projection: parse failed:"
                     printErrors Console.Error errors
                     2
                 )
+        // --watch + a real TTY → a live deploy stage (§13). The schema deploy is
+        // one aggregated batch (no per-table count to honestly report), so the
+        // board shows the stage going Applying → Deploy complete, not a bar.
+        let exitCode =
+            if Watch.shouldWatch watchMode.Value then
+                Watch.renderWatch [ "deploy" ] (Watch.resolveDwellMs ()) runBody
+            else runBody ()
         dumpBench "deploy"
         exitCode
 
@@ -453,17 +475,15 @@ let private runCanary (sourceDdlPath: string) : int =
                 EventProjection.canaryEnvelopes report.TargetReport.TablesCreated report.Diff
                 |> List.iter LogSink.emit
                 if PhysicalSchema.isEqual report.Diff then
-                    printfn "projection: canary green — PhysicalSchema diff empty"
+                    TtyRenderer.renderVoicedTo Console.Out "canary.diffEmpty"
+                        (Map.ofList [ "tableCount", box report.TargetReport.TablesCreated ])
                     0
                 else
-                    eprintfn ""
-                    eprintfn
-                        "projection: canary RED — PhysicalSchema diff non-empty:\n%s"
-                        (PhysicalSchema.renderDiff report.Diff)
+                    TtyRenderer.renderVoicedTo Console.Error "canary.divergence"
+                        (Map.ofList [ "renderedDiff", box (PhysicalSchema.renderDiff report.Diff) ])
                     5
             | Error errors ->
                 (
-                    Console.Error.WriteLine "projection: canary failed:"
                     printErrors Console.Error errors
                     2
                 )
@@ -520,19 +540,16 @@ let private runCanaryCdcSilence (sourceDdlPath: string) : int =
                     report.TargetReport.TablesCreated
                 let schemaOk = PhysicalSchema.isEqual report.Diff
                 if not schemaOk then
-                    eprintfn
-                        "projection: canary RED — PhysicalSchema diff non-empty:\n%s"
-                        (PhysicalSchema.renderDiff report.Diff)
+                    TtyRenderer.renderVoicedTo Console.Error "canary.divergence"
+                        (Map.ofList [ "renderedDiff", box (PhysicalSchema.renderDiff report.Diff) ])
                 if cdcDelta <> 0 then
-                    eprintfn
-                        "projection: canary RED — idempotent redeploy fired %d CDC capture(s) (expected 0)"
-                        cdcDelta
+                    eprintfn "The redeploy was not idempotent: %d row(s) captured where none were expected." cdcDelta
                 if schemaOk && cdcDelta = 0 then
-                    printfn "projection: canary green — PhysicalSchema diff empty AND idempotent redeploy CDC-silent (0 captures measured)"
+                    // §6 CDC-silence proof — the deepest fidelity finding, said plain.
+                    printfn "Confirmed idempotent: zero rows captured, zero schema changes issued."
                     0
                 else 5
             | Error errors ->
-                Console.Error.WriteLine "projection: canary failed:"
                 printErrors Console.Error errors
                 2
         dumpBench "canary"
@@ -560,7 +577,7 @@ let private runApprove
     let record =
         ApprovalWorkflow.pending now policyVersion
         |> ApprovalWorkflow.approve approver rationale now
-    printfn "projection: approved policy version %s" policyVersion
+    printfn "Policy version %s approved." policyVersion
     printfn "  approver  : %s" approver
     printfn "  decision  : Approved"
     printfn "  at        : %s" (record.At.ToString "o")
@@ -572,11 +589,11 @@ let private runApprove
         | None -> Ok ()
         | Some path ->
             match ApprovalStore.load path with
-            | Error e -> Error (sprintf "%A" e)
+            | Error e -> Error (ApprovalStore.describe e)
             | Ok registry ->
                 match ApprovalStore.save path (ApprovalRegistry.record record registry) with
                 | Ok () -> printfn "  store     : %s (recorded)" path; Ok ()
-                | Error e -> Error (sprintf "%A" e)
+                | Error e -> Error (ApprovalStore.describe e)
     match persisted with
     | Ok () -> dumpBench "approve"; 0
     | Error msg ->
@@ -594,20 +611,24 @@ let private runApprove
 
 let private dispositionName (d: IdentityDisposition) : string =
     match d with
-    | IdentityDisposition.ReconciledByRule    -> "ReconciledByRule"
-    | IdentityDisposition.AssignedBySink      -> "AssignedBySink"
-    | IdentityDisposition.PreservedFromSource -> "PreservedFromSource"
+    | IdentityDisposition.ReconciledByRule    -> "re-keyed by rule"
+    | IdentityDisposition.AssignedBySink      -> "assigned by the target"
+    | IdentityDisposition.PreservedFromSource -> "preserved from source"
 
 let private narrateTransferReport (report: Transfer.TransferReport) : unit =
-    let modeName =
-        match report.Mode with
-        | Transfer.DryRun  -> "DryRun (preview only — no Sink writes)"
-        | Transfer.Execute -> "Execute (Sink wrote)"
-    printfn "projection transfer: mode = %s" modeName
+    // §4 Move — lead with the finding (rows moved, in dependency order); the
+    // load plan rides beneath. Dependency order is the engine's guarantee that
+    // a row never lands before the rows it points to.
+    let totalWritten = report.Kinds |> List.sumBy (fun k -> k.RowsWritten)
+    (match report.Mode with
+     | Transfer.DryRun  ->
+         printfn "Preview — %d row(s) would move across %d table(s), in dependency order. No rows written." totalWritten report.Kinds.Length
+     | Transfer.Execute ->
+         printfn "%d row(s) moved across %d table(s), in dependency order." totalWritten report.Kinds.Length)
     printfn ""
-    printfn "Plan (%d kind(s)):" report.Kinds.Length
+    printfn "The load plan (%d table(s)):" report.Kinds.Length
     for k in report.Kinds do
-        printfn "  %-40s %-22s ingested=%d written=%d deferredFkCols=%d"
+        printfn "  %-40s %-22s ingested=%d written=%d deferred-fk-columns=%d"
             (SsKey.rootOriginal k.Kind)
             (dispositionName k.Disposition)
             k.RowsIngested
@@ -616,29 +637,29 @@ let private narrateTransferReport (report: Transfer.TransferReport) : unit =
     if not (List.isEmpty report.UnbreakableCycleFks) then
         printfn ""
         printfn
-            "Unbreakable cycle FKs (%d) — plan is unsatisfiable for Execute:"
+            "%d relationship cycle(s) cannot be broken — the load cannot run as planned:"
             report.UnbreakableCycleFks.Length
         for u in report.UnbreakableCycleFks do
             printfn
-                "  %s.%s -> %s"
+                "  %s.%s → %s"
                 (SsKey.rootOriginal u.Kind)
                 (Name.value u.Column)
                 (SsKey.rootOriginal u.Target)
     if not (List.isEmpty report.UnmatchedIdentities) then
         printfn ""
         printfn
-            "Unmatched identities (%d) — reconciled-kind sources with no Sink match:"
+            "%d identity(ies) unmatched — source records with no match in the target:"
             report.UnmatchedIdentities.Length
         for (k, s) in report.UnmatchedIdentities do
             printfn "  %s source '%s'" (SsKey.rootOriginal k) (SourceKey.value s)
     if not (List.isEmpty report.SkippedReferences) then
         printfn ""
         printfn
-            "Skipped references (%d) — rows dropped (FK targets an unmatched identity):"
+            "%d row(s) dropped — a relationship points to an unmatched record:"
             report.SkippedReferences.Length
         for (owner, r) in report.SkippedReferences do
             printfn
-                "  %s.%s -> %s (unresolved source '%s')"
+                "  %s.%s → %s (unmatched source '%s')"
                 (SsKey.rootOriginal owner)
                 (Name.value r.Column)
                 (SsKey.rootOriginal r.Target)
@@ -692,8 +713,7 @@ let private runTransfer
             System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" = "1"
         else false
     if executeRequested && not executeGated then
-        Console.Error.WriteLine
-            "projection transfer: --execute requires PROJECTION_ALLOW_EXECUTE=1 in the environment (R6 gate). Refusing."
+        TtyRenderer.renderVoicedError (ValidationError.create "gate.intent" "PROJECTION_ALLOW_EXECUTE is not set in the environment.")
         dumpBench "transfer"
         7
     else
@@ -726,10 +746,10 @@ let private runTransfer
     let mode = if executeGated then Transfer.Execute else Transfer.DryRun
     let resolveReconciliation (contract: Catalog) =
         TransferSpec.resolveAllReconciliation contract entries userMapEntries
-    let result =
-        (Transfer.runThroughConnectionsWithEmission mode emission allowCdc allowDrops tables connections resolveReconciliation)
-            .GetAwaiter().GetResult()
-    let exitCode =
+    let runBody () =
+        let result =
+            (Transfer.runThroughConnectionsWithEmission mode emission allowCdc allowDrops tables connections resolveReconciliation)
+                .GetAwaiter().GetResult()
         match result with
         | Ok report ->
             narrateTransferReport report
@@ -741,18 +761,17 @@ let private runTransfer
             if dropCode <> 0 then
                 Console.Error.WriteLine
                     (sprintf
-                        "projection transfer: %d row(s) dropped (transfer.droppedReferences) — refusing exit 0. Pass --allow-drops to accept the loss."
+                        "%d row(s) would be dropped — a relationship points to an unmatched record. Pass --allow-drops to accept the loss, or resolve the records."
                         (Transfer.droppedRowCount report))
                 let kindCount (label: string) (keys: SsKey seq) =
                     keys
                     |> Seq.countBy SsKey.rootOriginal
                     |> Seq.iter (fun (k, n) ->
                         Console.Error.WriteLine (sprintf "  %s %s: %d" label k n))
-                kindCount "SkippedReferences" (report.SkippedReferences |> List.map fst)
-                kindCount "UnmatchedIdentities" (report.UnmatchedIdentities |> List.map fst)
+                kindCount "dropped in" (report.SkippedReferences |> List.map fst)
+                kindCount "unmatched in" (report.UnmatchedIdentities |> List.map fst)
             dropCode
         | Error errors ->
-            Console.Error.WriteLine "projection transfer: failed:"
             printErrors Console.Error errors
             let anyCode (prefix: string) =
                 errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith prefix)
@@ -768,6 +787,13 @@ let private runTransfer
             // timing (and the untouched Sink) changes.
             elif anyCode "transfer.unmappedIdentities" then Transfer.DroppedReferencesExit
             else 3
+    // --watch + a real TTY → the live data-load board (§13); the transfer leg
+    // streams the "load" stage with per-table progress. Only on a real --execute
+    // (a dry-run writes no rows, so the load stage would never advance).
+    let exitCode =
+        if executeGated && Watch.shouldWatch watchMode.Value then
+            Watch.renderWatch [ "load" ] (Watch.resolveDwellMs ()) runBody
+        else runBody ()
     dumpBench "transfer"
     exitCode
 
@@ -781,25 +807,27 @@ let private runTransfer
 
 let private narrateIntegrityReport (report: IntegrityReport) : unit =
     if DataIntegrityChecker.isClean report then
-        printfn "projection verify-data: clean — no row-count or null-count divergence."
+        printfn "Verified. The data matches across both deployments."
     else
+        printfn "The data diverges between the two deployments. The differences are shown below."
         if not (List.isEmpty report.RowCountDeltas) then
-            printfn "Row-count divergences (%d):" report.RowCountDeltas.Length
+            printfn ""
+            printfn "Row counts (%d differ):" report.RowCountDeltas.Length
             for d in report.RowCountDeltas do
-                printfn "  %-40s before=%d after=%d (delta=%+d)"
+                printfn "  %-40s before=%d after=%d (change=%+d)"
                     (SsKey.rootOriginal d.Kind) d.Before d.After (d.After - d.Before)
         if not (List.isEmpty report.NullCountDeltas) then
             printfn ""
-            printfn "Null-count divergences (%d):" report.NullCountDeltas.Length
+            printfn "Null counts (%d differ):" report.NullCountDeltas.Length
             for d in report.NullCountDeltas do
-                printfn "  %-40s %-30s before=%d after=%d (delta=%+d)"
+                printfn "  %-40s %-30s before=%d after=%d (change=%+d)"
                     (SsKey.rootOriginal d.Kind) (SsKey.rootOriginal d.Attribute)
                     d.Before d.After (d.After - d.Before)
         if not (List.isEmpty report.Warnings) then
             printfn ""
-            printfn "Warnings (%d) — schema drift between the two deployments:" report.Warnings.Length
+            printfn "Schema differences between the two deployments (%d):" report.Warnings.Length
             for w in report.Warnings do
-                printfn "  %s: %s" w.Code w.Message
+                printfn "  %s  (%s)" w.Message w.Code
 
 let private runVerifyData (beforeSpec: string) (afterSpec: string) : int =
     let collect = function Ok _ -> [] | Error es -> es
@@ -846,7 +874,6 @@ let private runVerifyData (beforeSpec: string) (afterSpec: string) : int =
             // CI step / cutover gate trips on data drift.
             if DataIntegrityChecker.isClean report then 0 else 8
         | Error errors ->
-            Console.Error.WriteLine "projection verify-data: failed:"
             printErrors Console.Error errors
             3
     dumpBench "verify-data"
@@ -891,11 +918,11 @@ let private runDrift (toPath: string) (connSpec: string) : int =
                     return 3
                 | Ok diff ->
                     if PhysicalSchema.isEqual diff then
-                        printfn "projection drift: no drift — the deployed schema matches the model"
+                        printfn "Verified. The deployed schema matches the model."
                         return 0
                     else
-                        eprintfn "projection drift: DRIFT DETECTED — the deployed schema differs from the model:\n%s"
-                            (PhysicalSchema.renderDiff diff)
+                        eprintfn "The deployed schema diverges from the model. The difference is shown below."
+                        eprintfn "%s" (PhysicalSchema.renderDiff diff)
                         return 5
         }
     let code = work.GetAwaiter().GetResult()
@@ -917,10 +944,10 @@ let private runEject (storePath: string) : int =
         printfn "projection eject: timeline %s — %d episode(s) preserved (append-forever), %d refactorlog reference(s)"
             (Timeline.name pkg.Timeline) (List.length pkg.Episodes) (List.length pkg.RefactorLogRefs)
         if EjectRun.isFaithful pkg then
-            printfn "projection eject: package self-verified — FTC reconstruction from genesis reproduces the frozen state"
+            printfn "Verified. The reconstruction reproduces the frozen state from genesis to freeze."
             0
         else
-            Console.Error.WriteLine "projection eject: package FAILED self-verification — the reconstruction does not reproduce the frozen state."
+            Console.Error.WriteLine "The package is not verified: the reconstruction does not reproduce the frozen state."
             5
 
 /// Tier-4 reporting — `readiness`. Read the cross-run ledger
@@ -955,6 +982,49 @@ let private runReadiness () : int =
                     "eligible",         box r.Eligible ]) with
                 Phase = LogSink.End }
         0
+
+/// Live-probe a target for the setup readback: `(ref, reachable, alterGranted)`.
+/// Reuses the same machinery the migrate pre-flights use — resolve the ref,
+/// open the connection (reachability), capture the grant evidence (the §14 / A.6
+/// "ALTER granted on dbo"). A failed resolve / open is `unreachable`, never a
+/// stack trace; the grant is left false when the target is unreachable.
+let private probeTarget (connRef: string) : string * bool * bool =
+    let unreachable = (connRef, false, false)
+    match TransferSpec.parseConnectionSpec connRef with
+    | Error _ -> unreachable
+    | Ok ref ->
+        match ConnectionResolver.resolve "Setup" ref with
+        | Error _ -> unreachable
+        | Ok connStr ->
+            try
+                use cnn = new Microsoft.Data.SqlClient.SqlConnection(connStr)
+                cnn.OpenAsync().GetAwaiter().GetResult()
+                let alterGranted =
+                    match (Preflight.captureGrantEvidence cnn).GetAwaiter().GetResult() with
+                    | Ok g    -> Set.contains ("", "ALTER") g.Granted
+                    | Error _ -> false
+                (connRef, true, alterGranted)
+            with _ -> unreachable
+
+/// `projection setup [--conn <ref>]` — the arrival/setup readback (§14 /
+/// Appendix A.6): a plain read of the operator switches that are set and those
+/// that are not, in the same calm voice. With `--conn`, it also probes the
+/// target — reachability + the ALTER grant. Reads the env + probes at the
+/// boundary; the view is pure.
+let private runSetup (connRef: string option) : int =
+    let envOpt (k: string) =
+        match System.Environment.GetEnvironmentVariable k with
+        | null | "" -> None
+        | v         -> Some v
+    let view =
+        TtyRenderer.buildSetupView
+            (RunLedger.configuredDir ())
+            (envOpt "PROJECTION_ALLOW_EXECUTE" = Some "1")
+            (Watch.resolveDwellMs ())
+            (envOpt "PROJECTION_BENCH_DIR")
+            (connRef |> Option.map probeTarget)
+    TtyRenderer.renderAnswer false View.defaultDepth view
+    0
 
 /// `diff <refA> <refB>` — change, rendered essence-first (INSTRUMENT slice 1,
 /// the first surface of the instrument). Resolves both refs through `Ref`
@@ -993,13 +1063,11 @@ let private runDiff (refAText: string) (refBText: string) (asJson: bool) (depth:
 let private runExplain (configPath: string) (ssKeyText: string) : int =
     match Config.fromFile configPath with
     | Error errs ->
-        Console.Error.WriteLine "projection explain: config invalid:"
         printErrors Console.Error errs
         2
     | Ok config ->
         match (Compose.runWithConfig config).GetAwaiter().GetResult() with
         | Error errs ->
-            Console.Error.WriteLine "projection explain: run failed:"
             printErrors Console.Error errs
             2
         | Ok report ->
@@ -1015,7 +1083,7 @@ let private runExplain (configPath: string) (ssKeyText: string) : int =
             printfn ""
             if List.isEmpty trail && List.isEmpty diags then
                 printfn "  %s no transforms or findings matched" Theme.warn
-                printfn "      %s try a fuller SsKey, or a model/profile that exercises this node" Theme.dot
+                printfn "      %s try a fuller name, or a model that exercises this node" Theme.dot
                 1
             else
                 if not (List.isEmpty trail) then
@@ -1050,14 +1118,12 @@ let private runExplain (configPath: string) (ssKeyText: string) : int =
 let private runSuggestConfig (configPath: string) (applyTo: string option) : int =
     match Config.fromFile configPath with
     | Error errs ->
-        Console.Error.WriteLine "projection suggest-config: config invalid:"
         printErrors Console.Error errs
         2
     | Ok config ->
         let task = Compose.runWithConfig config
         match task.GetAwaiter().GetResult() with
         | Error errs ->
-            Console.Error.WriteLine "projection suggest-config: run failed:"
             printErrors Console.Error errs
             2
         | Ok report ->
@@ -1097,7 +1163,7 @@ let private runSuggestConfig (configPath: string) (applyTo: string option) : int
                         patch.ToJsonString(
                             System.Text.Json.JsonSerializerOptions(WriteIndented = true))
                     File.WriteAllText(out, json)
-                    printfn "  %s wrote merged patch (%d edits) to %s" Theme.ok (List.length merged) out
+                    printfn "  %s merged patch (%d edits) written to %s" Theme.ok (List.length merged) out
                 | None ->
                     printfn "  %s --apply <out.json> to write the merged patch" Theme.dot
                 0
@@ -1110,7 +1176,6 @@ let private runPolicyDiff (configAPath: string) (configBPath: string) : int =
     match Config.fromFile configAPath, Config.fromFile configBPath with
     | Error errors, _
     | _, Error errors ->
-        Console.Error.WriteLine "projection policy-diff: config error:"
         printErrors Console.Error errors
         6
     | Ok cfgA, Ok cfgB ->
@@ -1118,13 +1183,12 @@ let private runPolicyDiff (configAPath: string) (configBPath: string) : int =
         let exitCode =
             match result with
             | Error errors ->
-                Console.Error.WriteLine "projection policy-diff: failed:"
                 printErrors Console.Error errors
                 2
             | Ok diff ->
                 let s = diff.StructuralDiff
-                printfn "projection policy-diff: %s"
-                    (if s.AnyChanged then "policies differ" else "policies identical")
+                printfn "%s"
+                    (if s.AnyChanged then "The two policies differ." else "The two policies are identical.")
                 let axis (name: string) (changed: bool) =
                     printfn "  %-13s %s" name (if changed then "changed" else "same")
                 axis "selection"    s.Selection.Changed
@@ -1132,7 +1196,7 @@ let private runPolicyDiff (configAPath: string) (configBPath: string) : int =
                 axis "insertion"    s.Insertion.Changed
                 axis "tightening"   s.Tightening.Changed
                 axis "userMatching" s.UserMatching.Changed
-                printfn "  changed kinds: %d" (List.length diff.ChangedKinds)
+                printfn "  changed tables: %d" (List.length diff.ChangedKinds)
                 for k in diff.ChangedKinds do
                     printfn "    - %s" (SsKey.rootOriginal k)
                 0
@@ -1147,16 +1211,65 @@ let private runPolicyDiff (configAPath: string) (configBPath: string) : int =
 /// never a silent plan. The `--execute` leg (against a live deployed DB) is
 /// `MigrationRun.execute`; this surface previews what it would do.
 
+/// A `MigrationError` as a plain located cause — the operator reads the finding,
+/// never a raw DU dump (`THE_VOICE.md` §10). The full statement-first migrate
+/// surfaces land in Waves 2–3; this Wave-0 translation only banishes the `%A`.
+let private migrationErrorDetail (e: MigrationError) : string =
+    match e with
+    | DiffFailed _              -> "the changes could not be computed"
+    | RefusedByViolations v     -> sprintf "%d removal(s) are not yet approved" (List.length v)
+    | RefusedBySchemaErrors es  -> sprintf "%d change(s) cannot be expressed as a single ALTER" (List.length es)
+    | EmitFailed _              -> "the changes could not be built"
+    | SchemaReadFailed _        -> "the deployed schema could not be read"
+    | ExecutionFailed msg       -> sprintf "the migration could not be applied — %s" msg
+    | RefusedByTightening msg   -> sprintf "a column tightening would fail against existing data — %s" msg
+    | VerificationFailed _      -> "the round-trip did not match the model"
+    | DataTransferFailed _      -> "the data load did not complete"
+    | RefusedByCdc t            -> sprintf "the schema change would run against a CDC-tracked database (%d table(s))" (List.length t)
+    | StoreReadFailed msg       -> sprintf "the run history could not be read — %s" msg
+
+/// The migrate preview as a §6/§9 minimality Surface — the smallest faithful
+/// change, said plain (statement first, the per-move breakdown beneath), never
+/// `norm=`. The schema change-manifest of δ: exactly the difference, and no more.
+let private migratePreviewSurface (artifacts: MigrationArtifacts) : Surface.Surface =
+    let p = artifacts.Plan.Preview
+    let c = p.Channels
+    if Migration.isIdempotent artifacts.Plan then
+        { Statement      = View.Hero(View.Ok, "Nothing to apply. The two states are already identical.")
+          Substantiation = []
+          Action         = None }
+    else
+        let removed = c.RemovedKinds + c.RemovedAttributes
+        let status  = if removed > 0 then View.Warn else View.Ok
+        let renames =
+            p.RenamedKinds
+            |> List.map (fun (_, fromN, toN) -> sprintf "%s → %s" (Name.value fromN) (Name.value toN))
+        let h = Theme.humane
+        { Statement      =
+            View.Hero(status, sprintf "%s changes to apply — exactly the difference between the two states, and no others." (h p.Norm))
+          Substantiation =
+            [ View.Field("tables", sprintf "%s added · %s dropped · %s renamed" (h c.AddedKinds) (h c.RemovedKinds) (h c.RenamedKinds), View.Neutral)
+              View.Field("columns", sprintf "%s added · %s dropped · %s renamed · %s changed" (h c.AddedAttributes) (h c.RemovedAttributes) (h c.RenamedAttributes) (h c.ChangedAttributes), View.Neutral) ]
+            @ (if List.isEmpty renames then [] else [ View.Lane("⟲", "rename", View.Ok, renames) ])
+            @ [ View.Field("to run", sprintf "%s statement(s) · %s rename(s) recorded" (h (List.length artifacts.SchemaStatements)) (h (List.length artifacts.RefactorLog)), View.Neutral) ]
+          Action         = Some(View.Action "Apply against the target database with --execute.") }
+
+/// Voice the §5 declared-loss gate for undeclared destructive removals — the
+/// consent moment a drop must pass. The exit (9) is unchanged; the §5 statement
+/// and the approval lever lead, the named removals ride in the substantiation.
+let private renderUndeclaredDropGate (violations: SchemaLoss list) : unit =
+    let tokens = violations |> List.map Migration.lossToken |> String.concat ", "
+    let detail = sprintf "%d removal(s) await approval: %s" (List.length violations) tokens
+    TtyRenderer.renderGate "projection migrate"
+        (Preflight.refusalOf [ ValidationError.create "migrate.undeclaredDestructiveChange" detail ])
+
 /// Shared dry-run renderer for a `migrate` preview outcome — the change-manifest
 /// of δ, or a fail-loud refusal (undeclared losses / inexpressible change).
 let private reportPreviewOutcome (header: string) (result: Result<MigrationArtifacts, MigrationError>) : int =
     let exitCode =
         match result with
         | Error (RefusedByViolations violations) ->
-            Console.Error.WriteLine (
-                sprintf "projection migrate: %d destructive change(s) are undeclared. Re-run with --allow-drops (accept all) or --declare-drop <token> for each:" (List.length violations))
-            for v in violations do
-                Console.Error.WriteLine (sprintf "    %s" (Migration.lossToken v))
+            renderUndeclaredDropGate violations
             9
         | Error (RefusedBySchemaErrors entries) ->
             Console.Error.WriteLine "projection migrate: these change(s) cannot be expressed as a single ALTER:"
@@ -1164,26 +1277,11 @@ let private reportPreviewOutcome (header: string) (result: Result<MigrationArtif
                 Console.Error.WriteLine (sprintf "    [%s] %s" e.Code e.Message)
             9
         | Error other ->
-            Console.Error.WriteLine (sprintf "projection migrate: failed: %A" other)
+            Console.Error.WriteLine (sprintf "The migration did not complete: %s." (migrationErrorDetail other))
             2
         | Ok artifacts ->
-            let p = artifacts.Plan.Preview
             printfn "%s" header
-            if Migration.isIdempotent artifacts.Plan then
-                printfn "  idempotent — nothing to do (zero minimum-viable touches)"
-            else
-                printfn "  minimum-viable touches (norm): %d" p.Norm
-                printfn "    renamed kinds:        %d" p.Channels.RenamedKinds
-                printfn "    added kinds:          %d" p.Channels.AddedKinds
-                printfn "    removed kinds:        %d" p.Channels.RemovedKinds
-                printfn "    reshaped attributes:  %d" p.Channels.ChangedAttributes
-                printfn "    renamed attributes:   %d" p.Channels.RenamedAttributes
-                printfn "    added attributes:     %d" p.Channels.AddedAttributes
-                printfn "    removed attributes:   %d" p.Channels.RemovedAttributes
-                for (_, fromN, toN) in p.RenamedKinds do
-                    printfn "    rename: %s -> %s" (Name.value fromN) (Name.value toN)
-                printfn "  emitted: %d ALTER/ADD statement(s), %d refactorlog rename(s)"
-                    (List.length artifacts.SchemaStatements) (List.length artifacts.RefactorLog)
+            TtyRenderer.renderAnswer false View.defaultDepth (Surface.render (migratePreviewSurface artifacts))
             0
     dumpBench "migrate"
     exitCode
@@ -1255,9 +1353,7 @@ let private plannedWritesOf (stmts: Statement list) : Preflight.PlannedWrite lis
 let private reportMigrationError (e: MigrationError) : int =
     match e with
     | RefusedByViolations violations ->
-        Console.Error.WriteLine (
-            sprintf "projection migrate: %d destructive change(s) are undeclared. Re-run with --allow-drops (accept all) or --declare-drop <token> for each:" (List.length violations))
-        for v in violations do Console.Error.WriteLine (sprintf "    %s" (Migration.lossToken v))
+        renderUndeclaredDropGate violations
         9
     | RefusedBySchemaErrors entries ->
         Console.Error.WriteLine "projection migrate: these change(s) cannot be expressed:"
@@ -1272,11 +1368,11 @@ let private reportMigrationError (e: MigrationError) : int =
             sprintf "projection migrate: a column tightening (NULL → NOT NULL) would fail against existing NULL data; no DDL ran. %s" msg)
         9
     | SchemaReadFailed es ->
-        Console.Error.WriteLine "projection migrate: reading the deployed schema failed:"
+        Console.Error.WriteLine "The deployed schema could not be read."
         printErrors Console.Error es
         6
     | other ->
-        Console.Error.WriteLine (sprintf "projection migrate: failed: %A" other)
+        Console.Error.WriteLine (sprintf "The migration did not complete: %s." (migrationErrorDetail other))
         2
 
 /// The A1 connection + A2 permission pre-flights against a sink connection,
@@ -1284,25 +1380,23 @@ let private reportMigrationError (e: MigrationError) : int =
 /// refusal + exit code. A2's grant capture is database-scope (survey-gated
 /// object-scope refinement, OPEN-2 / P1).
 let private migratePreflights (label: string) (cnn: Microsoft.Data.SqlClient.SqlConnection) (planned: Preflight.PlannedWrite list) : System.Threading.Tasks.Task<Result<unit, int>> =
+    // Each pre-flight refusal renders through the §5 Gate surface — the
+    // consequence as meaning + the one plain imperative — never a raw header +
+    // dump. The exit is pinned to the migrate verb's historical code (7, the
+    // connection/permission/credential class), independent of `classify`'s axis
+    // code, so the displayed exit matches the returned one.
+    let refuse (es: ValidationError list) : Result<unit, int> =
+        TtyRenderer.renderGate "projection migrate" { Preflight.refusalOf es with ExitCode = 7 }
+        Error 7
     task {
         match! Preflight.connectionPreflight cnn cnn with
-        | Error es ->
-            Console.Error.WriteLine (sprintf "projection migrate: %s connection pre-flight refused:" label)
-            printErrors Console.Error es
-            return Error 7
+        | Error es -> return refuse es
         | Ok () ->
             match! Preflight.captureGrantEvidence cnn with
-            | Error es ->
-                // A grant-probe failure is non-fatal to correctness but we surface it.
-                Console.Error.WriteLine "projection migrate: permission probe failed (sys.fn_my_permissions):"
-                printErrors Console.Error es
-                return Error 7
+            | Error es -> return refuse es
             | Ok grant ->
                 match Preflight.permissionPreflight grant planned with
-                | Error es ->
-                    Console.Error.WriteLine "projection migrate: permission pre-flight refused:"
-                    printErrors Console.Error es
-                    return Error 7
+                | Error es -> return refuse es
                 | Ok () -> return Ok ()
     }
 
@@ -1327,8 +1421,8 @@ let private tighteningPreflight
             match! Preflight.tighteningPreflight dataCnn sourceA overlay with
             | Ok () -> return Ok ()
             | Error es ->
-                Console.Error.WriteLine "projection migrate: tightening pre-flight refused (NOT-NULL on NULL-bearing data):"
-                printErrors Console.Error es
+                // §5 Data-compat gate — the existing data violates the tightening.
+                TtyRenderer.renderGate "projection migrate" (Preflight.refusalOf es)
                 return Error 9
     }
 
@@ -1343,8 +1437,7 @@ let private tighteningPreflight
 /// unchanged and a one-line note says no episode was persisted.
 let private runMigrateExecute (target: Catalog) (connSpec: string) (declaration: LossDeclaration) (allowCdc: bool) (storePath: string option) (envLabel: string option) : int =
     if System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" <> "1" then
-        Console.Error.WriteLine
-            "projection migrate: --execute requires PROJECTION_ALLOW_EXECUTE=1 in the environment (R6 gate). Refusing."
+        TtyRenderer.renderVoicedError (ValidationError.create "gate.intent" "PROJECTION_ALLOW_EXECUTE is not set in the environment.")
         dumpBench "migrate"
         7
     else
@@ -1401,12 +1494,12 @@ let private runMigrateExecute (target: Catalog) (connSpec: string) (declaration:
                                                     allowCdc declaration sourceA target store tl env at None cnn
                                             match recorded with
                                             | Ok (o, Some chain) ->
-                                                printfn "projection migrate: executed and VERIFIED — B' reproduces B (%d statement(s)); episode recorded to %s (%d episode(s) on timeline %s)"
+                                                printfn "Applied and verified — the database now matches the model. %d statement(s) applied; recorded to %s (%d episode(s) on timeline %s)."
                                                     (List.length o.Artifacts.SchemaStatements) store
                                                     (EpisodicLifecycle.episodes chain |> List.length) (Timeline.name tl)
                                                 return 0
                                             | Ok (_, None) ->
-                                                Console.Error.WriteLine "projection migrate: executed but verification FAILED — B' does not reproduce B. No episode recorded."
+                                                Console.Error.WriteLine "The changes were applied, but the read-back does not match the model. No run was recorded."
                                                 return 9
                                             | Error e -> return reportMigrationError e
                                     | None ->
@@ -1418,16 +1511,22 @@ let private runMigrateExecute (target: Catalog) (connSpec: string) (declaration:
                                         let! outcome = MigrationRun.executeAndMeasureCdc allowCdc declaration sourceA target cnn
                                         match outcome with
                                         | Ok (o, cdcDelta) when o.Verified ->
-                                            printfn "projection migrate: executed and VERIFIED — B' reproduces B (%d statement(s); %d CDC capture(s) measured)"
+                                            printfn "Applied and verified — the database now matches the model. %d statement(s) applied; %d row(s) captured."
                                                 (List.length o.Artifacts.SchemaStatements) cdcDelta
                                             eprintfn "projection migrate: note — no --lifecycle-store supplied; no episode persisted (the next diff has no prior to load)."
                                             return 0
                                         | Ok _ ->
-                                            Console.Error.WriteLine "projection migrate: executed but verification FAILED — B' does not reproduce B."
+                                            Console.Error.WriteLine "The changes were applied, but the read-back does not match the model."
                                             return 9
                                         | Error e -> return reportMigrationError e
         }
-    let code = work.GetAwaiter().GetResult()
+    let runBody () = work.GetAwaiter().GetResult()
+    // --watch + a real TTY → the live stage board (§13), pre-seeded with the
+    // migrate leg's arc (build → apply → verify) the executor streams.
+    let code =
+        if Watch.shouldWatch watchMode.Value then
+            Watch.renderWatch migrateStages (Watch.resolveDwellMs ()) runBody
+        else runBody ()
     dumpBench "migrate"
     code
 
@@ -1444,8 +1543,7 @@ let private runMigrateExecute (target: Catalog) (connSpec: string) (declaration:
 /// only if the schema verified.
 let private runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec: string) (reconcileSpecs: string list) (userMapPath: string option) (declaration: LossDeclaration) (allowCdc: bool) (storePath: string option) (envLabel: string option) : int =
     if System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" <> "1" then
-        Console.Error.WriteLine
-            "projection migrate: --execute requires PROJECTION_ALLOW_EXECUTE=1 in the environment (R6 gate). Refusing."
+        TtyRenderer.renderVoicedError (ValidationError.create "gate.intent" "PROJECTION_ALLOW_EXECUTE is not set in the environment.")
         dumpBench "migrate"
         7
     else
@@ -1508,8 +1606,9 @@ let private runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec:
                             // Pre-flight the SOURCE (read) + SINK (write) before any mutation.
                             match! Preflight.connectionPreflight dataSource sink with
                             | Error es ->
-                                Console.Error.WriteLine "projection migrate: connection pre-flight refused:"
-                                printErrors Console.Error es
+                                // §5 connection gate; the migrate verb's connection
+                                // refusal exits 7 (the credential class), pinned here.
+                                TtyRenderer.renderGate "projection migrate" { Preflight.refusalOf es with ExitCode = 7 }
                                 return 7
                             | Ok () ->
                                 match MigrationRun.preview declaration sinkSourceA target with
@@ -1556,7 +1655,7 @@ let private runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec:
                                                         sinkSourceA target reconciliation store tl env at None dataSource sink
                                                 match recorded with
                                                 | Ok (o, chain) ->
-                                                    printfn "projection migrate: schema executed + data loaded — %d kind(s) transferred; episode recorded to %s (%d CDC capture(s) measured; %d episode(s) on timeline %s)"
+                                                    printfn "Schema applied and data loaded — %d table(s) transferred; recorded to %s (%d row(s) captured; %d episode(s) on timeline %s)."
                                                         (List.length o.Transfer.Kinds) store
                                                         (EpisodicLifecycle.latest chain).Data.CdcCaptureCount
                                                         (EpisodicLifecycle.episodes chain |> List.length) (Timeline.name tl)
@@ -1568,15 +1667,21 @@ let private runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec:
                                                 sinkSourceA target reconciliation dataSource sink
                                         match outcome with
                                         | Ok o when o.Schema.Verified ->
-                                            printfn "projection migrate: schema VERIFIED + data loaded — %d kind(s) transferred"
+                                            printfn "Schema verified and data loaded — %d table(s) transferred."
                                                 (List.length o.Transfer.Kinds)
                                             return 0
                                         | Ok _ ->
-                                            Console.Error.WriteLine "projection migrate: schema executed but verification FAILED — data leg skipped."
+                                            Console.Error.WriteLine "The schema changes were applied, but the read-back does not match the model. The data load was skipped."
                                             return 9
                                         | Error e -> return reportMigrationError e
         }
-    let code = work.GetAwaiter().GetResult()
+    let runBody () = work.GetAwaiter().GetResult()
+    // --watch + a real TTY → the live board (§13) across the whole arc: the
+    // schema leg (build → apply → verify) and the data leg's load.
+    let code =
+        if Watch.shouldWatch watchMode.Value then
+            Watch.renderWatch migrateDataStages (Watch.resolveDwellMs ()) runBody
+        else runBody ()
     dumpBench "migrate"
     code
 
@@ -1633,8 +1738,7 @@ let private runSyntheticLoad (model: ModelSource) (modelOssys: string option) (p
     let executeGated =
         if execute then System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" = "1" else false
     if execute && not executeGated then
-        Console.Error.WriteLine
-            "projection (synthetic): a live load requires PROJECTION_ALLOW_EXECUTE=1 in the environment (R6 gate). Refusing."
+        TtyRenderer.renderVoicedError (ValidationError.create "gate.intent" "PROJECTION_ALLOW_EXECUTE is not set in the environment.")
         dumpBench "synthetic"
         7
     else
@@ -1658,11 +1762,10 @@ let private runSyntheticLoad (model: ModelSource) (modelOssys: string option) (p
             if dropCode <> 0 then
                 Console.Error.WriteLine
                     (sprintf
-                        "projection (synthetic): %d row(s) dropped — refusing exit 0. Pass --allow-drops to accept the loss."
+                        "%d row(s) would be dropped — a relationship points to an unmatched record. Pass --allow-drops to accept the loss, or resolve the records."
                         (Transfer.droppedRowCount report))
             dropCode
         | Error errors ->
-            Console.Error.WriteLine "projection (synthetic): failed:"
             printErrors Console.Error errors
             let anyCode (prefix: string) =
                 errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith prefix)
@@ -1680,10 +1783,9 @@ let private runCaptureProfile (connSpec: string) (outPath: string) : int =
     let exitCode =
         match result with
         | Ok () ->
-            eprintfn "projection profile: profile written to %s" outPath
+            eprintfn "Profile written to %s." outPath
             0
         | Error errors ->
-            Console.Error.WriteLine "projection profile: capture failed:"
             printErrors Console.Error errors
             let anyCode (prefix: string) =
                 errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith prefix)
@@ -1694,7 +1796,7 @@ let private runCaptureProfile (connSpec: string) (outPath: string) : int =
     exitCode
 
 let private runPlan (plan: ExecutionPlan) : int =
-    for n in plan.Notes do eprintfn "projection project: note — %s" n
+    for n in plan.Notes do eprintfn "Note — %s" n
     // Resolve the model to a Catalog under the live-OSSYS-primary / file-
     // fallback policy (ModelResolution), then run the Catalog-accepting face.
     let needCatalog (modelOssys: string option) (model: ModelSource) (run: Catalog -> int) : int =
@@ -1712,8 +1814,9 @@ let private runPlan (plan: ExecutionPlan) : int =
     | PlanAction.PublishBundle (c, dir, store, env) ->
         let verbosity = if verboseMode.Value then LogSink.Verbosity.Verbose else LogSink.Verbosity.Quiet
         let run () = runFullExport c (Some dir) verbosity Set.empty store env
-        // --watch + a real TTY → the live stage board (§13).
-        if Watch.shouldWatch watchMode.Value then Watch.renderWatch (Watch.resolveDwellMs ()) run
+        // --watch + a real TTY → the live stage board (§13), pre-seeded with the
+        // pipeline's planned stages so the whole arc is visible from the first frame.
+        if Watch.shouldWatch watchMode.Value then Watch.renderWatch pipelineStages (Watch.resolveDwellMs ()) run
         else run ()
     | PlanAction.EmitSkeleton (model, modelOssys, dir) ->
         needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runEmitSkeletonOnly cat dir))
@@ -1730,7 +1833,12 @@ let private runPlan (plan: ExecutionPlan) : int =
     | PlanAction.SynthesizeAndLoad (model, modelOssys, profile, conn, opts, execute) ->
         runSyntheticLoad model modelOssys profile conn opts execute
     | PlanAction.CaptureProfile (conn, out) -> runCaptureProfile conn out
-    | PlanAction.PublishAndLoad (c, conn, store, env) -> runFullExportLoad c conn None store env
+    | PlanAction.PublishAndLoad (c, conn, store, env) ->
+        let run () = runFullExportLoad c conn None store env
+        // The load flow runs the same publish pipeline, so it streams the same
+        // stage arc; --watch shows the live board (§13).
+        if Watch.shouldWatch watchMode.Value then Watch.renderWatch pipelineStages (Watch.resolveDwellMs ()) run
+        else run ()
     | PlanAction.Migrate (model, modelOssys, conn, opts) ->
         needCatalog modelOssys model (fun cat -> runMigrateExecute cat conn opts.Declaration opts.AllowCdc opts.Store opts.Env)
     // check --------------------------------------------------------------
@@ -1748,9 +1856,16 @@ let private runPlan (plan: ExecutionPlan) : int =
         // Self-description (NORTH_STAR "self-describing" leg) — the engine names
         // its own registered transforms (the `registered ⇔ executed` registry).
         let all = RegisteredAllTransforms.all
+        let stageBindingText (s: StageBinding) =
+            match s with
+            | StageBinding.Adapter        -> "adapter"
+            | StageBinding.Pass           -> "pass"
+            | StageBinding.OrderingPolicy -> "ordering"
+            | StageBinding.Emitter        -> "emitter"
+            | StageBinding.Pipeline       -> "pipeline"
         printfn "projection: %d registered transform(s)" (List.length all)
-        for rt in all |> List.sortBy (fun r -> sprintf "%A" r.StageBinding, r.Name) do
-            printfn "  %-12s %s" (sprintf "%A" rt.StageBinding) rt.Name
+        for rt in all |> List.sortBy (fun r -> stageBindingText r.StageBinding, r.Name) do
+            printfn "  %-12s %s" (stageBindingText rt.StageBinding) rt.Name
         0
     | PlanAction.ExplainMigratePreview (fromP, toP, decl)   -> runMigratePreview fromP toP decl
     | PlanAction.ExplainMigrateFromStore (store, toP, decl) -> runMigrateFromStore store toP decl
@@ -1802,6 +1917,23 @@ let private discoverConfig () : Result<ProjectionConfig> =
         | null | "" -> "projection.json"
         | p -> p
     ProjectionConfig.fromFile path
+
+/// `projection survey` — the capability survey (prototype;
+/// `HANDOFF_CAPABILITY_SURVEY_2026_06_09.md`). Probe every configured
+/// environment in parallel and render the declared-vs-actual capability matrix:
+/// is every place actually able to do what the pipeline asks of it?
+let private runSurvey () : int =
+    match discoverConfig () with
+    | Error es ->
+        for e in es do TtyRenderer.renderVoicedError e
+        6
+    | Ok cfg ->
+        let reports = (CapabilitySurvey.survey cfg).GetAwaiter().GetResult()
+        TtyRenderer.renderAnswer false View.defaultDepth (TtyRenderer.buildSurveyView reports)
+        // CI gate: non-zero when a connected environment can't do what is asked.
+        let blocked =
+            reports |> List.exists (fun r -> r.Connected && (not r.Reachable || not (List.isEmpty r.Missing)))
+        if blocked then 7 else 0
 
 /// A flow's content origin, rendered for the menu (THE_CLI.md §4.4).
 let private flowSourceText (s: FlowSource) : string =
@@ -1857,6 +1989,9 @@ let main argv =
         0
     | [||] -> runList ()
     | [| "init" |] -> runInit ()
+    | [| "setup" |] -> runSetup None
+    | [| "setup"; "--conn"; ref |] -> runSetup (Some ref)
+    | [| "survey" |] -> runSurvey ()
     | _ ->
         match discoverConfig () with
         | Error es ->

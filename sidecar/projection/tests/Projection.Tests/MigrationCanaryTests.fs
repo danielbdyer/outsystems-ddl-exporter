@@ -141,6 +141,34 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
     interface IClassFixture<EphemeralContainerFixture>
 
     [<Fact>]
+    member _.``migrate A B streams the live stage arc (build -> apply -> verify) for the Watch board`` () =
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "MigrateStages" (fun conn _ ->
+                task {
+                    do! Deploy.executeBatch conn (SsdtDdlEmitter.statements catalogA |> Render.toText)
+                    let seen = System.Collections.Generic.List<string>()
+                    LogSink.addSubscriber (fun env -> lock seen (fun () -> seen.Add env.Code))
+                    try
+                        let! outcome = MigrationRun.execute true DeclareNone catalogA catalogB conn
+                        match outcome with
+                        | Error e -> Assert.Fail(sprintf "migrate execute failed: %A" e)
+                        | Ok _ ->
+                            let codes = lock seen (fun () -> List.ofSeq seen)
+                            // each phase opens its line (the Watch board reacts to `.started`)
+                            Assert.Contains("emit.started", codes)
+                            Assert.Contains("deploy.started", codes)
+                            Assert.Contains("canary.started", codes)
+                            // and closes it (the board flips to Done on stageCompleted) — ≥3 phases
+                            let completed = codes |> List.filter (fun c -> c = "summary.stageCompleted")
+                            Assert.True(completed.Length >= 3, sprintf "expected ≥3 stageCompleted, got %d: %A" completed.Length codes)
+                            // the apply phase reports intra-stage progress (the ETA basis)
+                            Assert.Contains("summary.stageProgress", codes)
+                    finally
+                        LogSink.clearSubscribers ()
+                }))
+
+    [<Fact>]
     member _.``migrate A B canary: one execute evolves A→B across three channels; B reproduces B, data survives, re-run is idempotent`` () =
         if not (Deploy.Docker.ensureRunning ()) then () else
         TaskSync.run (fun () ->
@@ -279,8 +307,11 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
                             do! Deploy.executeBatch sink (SsdtDdlEmitter.statements catalogA |> Render.toText)
 
                             // One call: migrate the sink A→B, THEN transfer the rows source→sink.
+                            let seen = System.Collections.Generic.List<string>()
+                            LogSink.addSubscriber (fun env -> lock seen (fun () -> seen.Add env.Code))
                             let! outcome =
                                 MigrationRun.executeWithData DeclareNone Transfer.Execute true catalogA catalogB Map.empty source sink
+                            LogSink.clearSubscribers ()
                             match outcome with
                             | Error e -> Assert.Fail(sprintf "executeWithData failed: %A" e)
                             | Ok result ->
@@ -291,6 +322,12 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
                                 Assert.Equal("2", count)
                                 let! email = scalarString sink "SELECT [EMAIL] FROM [dbo].[MIGAB_PATRON] WHERE [ID]=2;"
                                 Assert.Equal("erin@example.com", email)
+                                // The data leg streamed the live "load" stage with per-table
+                                // progress — the Watch board's "Loading the data · N of M".
+                                let codes = lock seen (fun () -> List.ofSeq seen)
+                                Assert.Contains("load.started", codes)
+                                Assert.Contains("summary.stageProgress", codes)
+                                Assert.Contains("summary.stageCompleted", codes)
                         })
                 }))
 

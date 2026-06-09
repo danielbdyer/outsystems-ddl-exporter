@@ -143,3 +143,11 @@ module ApprovalStore =
                         | Error m -> Error (ParseFailure (path, m))
                 with ex ->
                     Error (ParseFailure (path, ex.Message))
+
+    /// The located cause of a store failure, in plain words — never a raw DU
+    /// dump on the operator surface (`THE_VOICE.md` §10: what · why · where).
+    let describe (error: ApprovalError) : string =
+        match error with
+        | ReadFailure (path, message)  -> sprintf "the approval store at %s could not be read — %s" path message
+        | ParseFailure (path, message) -> sprintf "the approval store at %s could not be parsed — %s" path message
+        | WriteFailure (path, message) -> sprintf "the approval store at %s could not be written — %s" path message

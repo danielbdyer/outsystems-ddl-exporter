@@ -119,8 +119,8 @@ let ``ReportRun: render surfaces the per-edge norm (the minimality proof)`` () =
     | Ok b ->
         let lines = ReportRun.render b
         Assert.Contains(lines, fun (l: string) -> l.Contains "eject-dev")
-        Assert.Contains(lines, fun (l: string) -> l.Contains "norm=1")
-        Assert.Contains(lines, fun (l: string) -> l.Contains "norm=0")
+        Assert.Contains(lines, fun (l: string) -> l.Contains "1 schema change")
+        Assert.Contains(lines, fun (l: string) -> l.Contains "0 schema change")
 
 [<Fact>]
 let ``ReportRun: a genesis-only timeline reports no change since genesis`` () =

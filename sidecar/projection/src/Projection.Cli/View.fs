@@ -110,6 +110,12 @@ let private writePanel (console: IAnsiConsole) (title: string) (fields: View lis
 [<Literal>]
 let defaultDepth = 1
 
+/// The most items a `Lane` renders before capping with an `and N more` tail —
+/// the §12 breadth cap (surface the few that matter, name the remainder). The
+/// full list always survives on `toJson` (the machine lens never caps).
+[<Literal>]
+let laneCap = 12
+
 /// The disclosure marker for a node with children: open (`▾`) when this level
 /// is being revealed, closed (`▸`) when it is collapsed, blank when childless.
 let private marker (depth: int) (hasChildren: bool) : string =
@@ -140,13 +146,22 @@ let rec private writeBlock (console: IAnsiConsole) (depth: int) (indent: string)
             | None   -> console.MarkupLine(sprintf "%s%s %s" indent Theme.arrow (Markup.Escape step))
     | Lane (glyph, label, st, items) ->
         // A lane is a pre-baked disclosure of one move: the summary line always
-        // shows; the items reveal at depth ≥ 1, collapse to an affordance below.
-        let m = marker depth (not (List.isEmpty items))
+        // shows (the true count, humane); the items reveal at depth ≥ 1, capped
+        // at `laneCap` with an `and N more` tail so a thousand-change lane never
+        // becomes a wall (`THE_VOICE.md` §12 — cap the breadth, name the
+        // remainder). The full list always rides `toJson` — the machine lens
+        // keeps what the human capped.
+        let n = List.length items
+        let m = marker depth (n > 0)
         console.MarkupLine(
-            sprintf "%s%s %s" indent m (colorOf st (Markup.Escape (sprintf "%s %s  %d" glyph label (List.length items)))))
+            sprintf "%s%s %s" indent m (colorOf st (Markup.Escape (sprintf "%s %s  %s" glyph label (Theme.humane n)))))
         if depth >= 1 then
-            for item in items do
+            for item in items |> List.truncate laneCap do
                 console.MarkupLine(sprintf "%s   %s %s" indent (Theme.muted Theme.dot) (Markup.Escape item))
+            if n > laneCap then
+                console.MarkupLine(
+                    sprintf "%s   %s %s" indent (Theme.muted Theme.collapsed)
+                        (Theme.muted (sprintf "and %s more" (Theme.humane (n - laneCap)))))
     | Disclosure (headline, st, detail) ->
         let m = marker depth (not (List.isEmpty detail))
         console.MarkupLine(sprintf "%s%s %s" indent m (styled st headline))

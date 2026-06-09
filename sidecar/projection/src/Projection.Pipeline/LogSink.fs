@@ -673,6 +673,36 @@ module LogSink =
                 Phase  = End
                 StepId = Some stage }
 
+    /// Emit a `<stage>.started` marker (the Start-phase sibling of
+    /// `recordStageEvent`'s End-phase `summary.stageCompleted`). The live Watch
+    /// board opens the stage's line on this; the run's own executors (the
+    /// pipeline, the migrate leg) call it at each phase boundary so the live
+    /// surface and the NDJSON share one stage stream (§13). Idempotent at the
+    /// board (a repeat `.started` on an already-active stage is a no-op there).
+    let recordStageStart (stage: string) : unit =
+        emit
+            { envelope Info Summary (stage + ".started") Map.empty with
+                Phase  = Start
+                StepId = Some stage }
+
+    /// Emit a `summary.stageProgress` marker — how far an active stage has come
+    /// (`done` of `total`, with the elapsed time so the live board can compute an
+    /// honest estimate, §13). A mid-stage event between `<stage>.started` and the
+    /// `summary.stageCompleted`; producers call it from their write loops at a
+    /// modest cadence (the board coalesces, the dwell floor paces the frames).
+    let recordStageProgress (stage: string) (doneCount: int) (total: int) (elapsedMs: int64) : unit =
+        let payload : Map<string, objnull> =
+            Map.ofList [
+                "stage",     box stage
+                "done",      box doneCount
+                "total",     box total
+                "elapsedMs", box elapsedMs
+            ]
+        emit
+            { envelope Info Summary "summary.stageProgress" payload with
+                Phase  = Start
+                StepId = Some stage }
+
     // -----------------------------------------------------------------
     // §11 — rollup snapshot (read-only; built ONCE during emission)
     // -----------------------------------------------------------------

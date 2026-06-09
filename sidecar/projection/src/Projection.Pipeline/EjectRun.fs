@@ -58,8 +58,8 @@ module EjectRun =
     /// as a string error.
     let fromStore (path: string) : Result<EjectPackage, string> =
         match LifecycleStore.load path with
-        | Error e -> Error (sprintf "could not load the lifecycle store: %A" e)
+        | Error e -> Error (LifecycleStore.describe e)
         | Ok chain ->
             match fromChain chain with
             | Ok pkg -> Ok pkg
-            | Error e -> Error (sprintf "could not reconstruct the timeline: %A" e)
+            | Error _ -> Error "the timeline could not be reconstructed from the store."

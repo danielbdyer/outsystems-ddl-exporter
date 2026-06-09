@@ -22,6 +22,7 @@ let private inScopeCodes : Set<string> =
           "extract.started"; "extract.completed"
           "profile.started"; "profile.completed"
           "emit.started"; "emit.completed"
+          "deploy.started"; "canary.started"; "load.started"
           "summary.stageCompleted"
           "config.validationFailed" ]
 
@@ -37,6 +38,9 @@ let private knownEmittableCodes : Set<string> =
           "extract.started"; "extract.completed"
           "profile.started"; "profile.completed"
           "emit.started"; "emit.completed"
+          // the migrate leg's live stage stream (build → apply → verify) + the
+          // data-transfer leg's load stage
+          "deploy.started"; "canary.started"; "load.started"
           // round-trip verification verdict
           "canary.diffEmpty"; "canary.divergence"
           // emitted but voiced by mechanism-1 / later slices (not in `Voice.all` yet)
@@ -147,6 +151,9 @@ let ``Voice register: the error frames clear the banned list`` () =
     let codes =
         [ "pipeline.config.typeMismatch"; "migrate.connectionUnavailable"
           "transfer.insufficientGrant"; "something.unclassified"
+          // the intent gate (§5/§7 two-gate consent) — the flat gate.intent code
+          // routed through the §10/§14 frame (DECISIONS 2026-06-08).
+          "gate.intent"
           // the four-verb surface's coded refusals voice through the generic
           // §10 frame — they must clear the register too (CLI fidelity #3).
           "cli.project.modelMissing"; "cli.project.dataNotLive"
@@ -162,8 +169,9 @@ let ``Voice register: the error frames clear the banned list`` () =
 
 [<Fact>]
 let ``Voice stageName: every emitted internal stage maps to an operator name`` () =
-    // The stages `LogSink.recordStageEvent` emits today (Pipeline + FullExportRun).
-    let emittedStages = [ "pipeline"; "extract"; "profile"; "emit" ]
+    // The stages `LogSink.recordStageEvent` emits today (Pipeline + FullExportRun
+    // + the migrate leg's deploy / canary phases).
+    let emittedStages = [ "pipeline"; "extract"; "profile"; "emit"; "deploy"; "canary"; "load" ]
     for s in emittedStages do
         Assert.NotEqual<string>(s, Voice.stageName s)   // never the internal verb
 
@@ -181,6 +189,7 @@ let ``Voice errorFrame: routing is total — every code yields a verdict Hero`` 
         [ "pipeline.config.typeMismatch"; "pipeline.config.fileNotFound"
           "migrate.connectionUnavailable"; "transfer.connectionUnavailable"
           "migrate.insufficientGrant"; "transfer.grantProbeFailed"
+          "gate.intent"
           "adapter.osm.parse"; "something.unclassified" ]
     for code in codes do
         match Voice.errorFrame code with
@@ -198,6 +207,16 @@ let ``Voice errorFrame: a connection code routes to the §10 unreachable frame``
     match Voice.errorFrame "migrate.connectionUnavailable" with
     | View.Hero(_, text), Some _ -> Assert.Contains("unreachable", text)
     | other -> Assert.Fail(sprintf "unexpected connection frame: %A" other)
+
+[<Fact>]
+let ``Voice errorFrame: the intent gate names the arming variable and a next move`` () =
+    // §5/§7 two-gate consent (DECISIONS 2026-06-08): the flat gate.intent code
+    // states the requirement (the arming variable) and hands over the imperative.
+    match Voice.errorFrame "gate.intent" with
+    | View.Hero(_, text), Some (View.Action move) ->
+        Assert.Contains("PROJECTION_ALLOW_EXECUTE", text)
+        Assert.Contains("PROJECTION_ALLOW_EXECUTE", move)
+    | other -> Assert.Fail(sprintf "unexpected intent-gate frame: %A" other)
 
 // ---------------------------------------------------------------------------
 // the gate ⇔ copy totality (the §5 mechanism-1 projection over the closed

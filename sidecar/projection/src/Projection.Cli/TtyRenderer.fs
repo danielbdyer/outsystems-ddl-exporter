@@ -93,6 +93,18 @@ let buildReadinessView (r: RunLedger.Readiness) (recent: string list) (ledgerPat
         else
             View.Hero(View.Pending, sprintf "NOT YET %s %d green run(s) to cutover-ready" Theme.dot toGo)
     let history = if List.isEmpty recent then [] else [ View.Dots("history", recent) ]
+    // The timeline read in words — the dots' shape said plainly (§8 / Appendix
+    // A.5): how the recent checks landed, and which run is the present one.
+    let timeline =
+        if List.isEmpty recent then []
+        else
+            let n = List.length recent
+            let diverged = recent |> List.filter (fun v -> v <> "green") |> List.length
+            let shape =
+                if diverged = 0 then sprintf "the last %d check(s) all passed" n
+                else sprintf "the last %d check(s) %s %d passed %s %d diverged" n Theme.dot (n - diverged) Theme.dot diverged
+            let here = if r.TotalRuns > 0 then sprintf " %s run %d, the present one" Theme.dot r.TotalRuns else ""
+            [ View.Note(shape + here) ]
     let lastCanary = match r.LastCanary with Some c -> c | None -> "—"
     View.Doc(
         [ View.Blank
@@ -100,6 +112,7 @@ let buildReadinessView (r: RunLedger.Readiness) (recent: string list) (ledgerPat
           View.Blank
           View.Meter("cutover", r.ConsecutiveGreen, r.Threshold, sprintf "%d / %d green" r.ConsecutiveGreen r.Threshold) ]
         @ history
+        @ timeline
         @ [ View.Field(
               "runs",
               sprintf "%d total %s %d with a canary %s last %s" r.TotalRuns Theme.dot r.CanaryRuns Theme.dot lastCanary,
@@ -114,6 +127,94 @@ let renderReadinessBoardTo
     (ledgerPath: string)
     : unit =
     View.write console (buildReadinessView r recent ledgerPath)
+
+// --- the Setup readback as a View (§14 / Appendix A.6) ---------------------
+
+/// Build the arrival/setup readback `View` — a plain read of what is configured
+/// and what is not, in the same calm voice (`THE_VOICE.md` §14: "a thing not
+/// configured is a choice to make, not a failure"). Pure over the resolved
+/// state so the env reads + the live probe stay at the boundary (`runSetup`); an
+/// unset optional (the run ledger) earns a recommendation, never a scold.
+/// `connection` is `(ref, reachable, alterGranted)` when a target was probed.
+let buildSetupView
+    (ledger: string option)
+    (executeArmed: bool)
+    (dwellMs: int64)
+    (benchDir: string option)
+    (connection: (string * bool * bool) option)
+    : View.View =
+    let history =
+        match ledger with
+        | Some dir -> View.Field("history", sprintf "retained %s %s" Theme.dot dir, View.Ok)
+        | None     -> View.Field("history", "not retained", View.Neutral)
+    let writes =
+        if executeArmed then View.Field("live writes", "armed", View.Warn)
+        else View.Field("live writes", "preview only", View.Ok)
+    let board = View.Field("live board", sprintf "%d ms dwell" dwellMs, View.Neutral)
+    let bench =
+        match benchDir with
+        | Some dir -> View.Field("bench output", dir, View.Neutral)
+        | None     -> View.Field("bench output", "off", View.Neutral)
+    // The live probe (only when a target was given) — reachability, then the
+    // grant beneath it (the grant is unknowable until the target is reachable).
+    let connectionBlock =
+        match connection with
+        | None -> []
+        | Some (ref, reachable, alterGranted) ->
+            let connField =
+                if reachable then View.Field("connection", sprintf "%s %s reachable" ref Theme.dot, View.Ok)
+                else View.Field("connection", sprintf "%s %s unreachable" ref Theme.dot, View.Bad)
+            let grantField =
+                if not reachable then []
+                elif alterGranted then [ View.Field("grant", "ALTER granted", View.Ok) ]
+                else [ View.Field("grant", "ALTER not granted", View.Warn) ]
+            connField :: grantField
+    let recommendation =
+        match ledger with
+        | Some _ -> []
+        | None   ->
+            [ View.Blank
+              View.Note "Run history is not being retained. To keep a record of runs over time, set PROJECTION_LEDGER_DIR." ]
+    View.Doc(
+        [ View.Blank; View.Hero(View.Neutral, "Setup"); View.Blank
+          history; writes; board; bench ]
+        @ connectionBlock
+        @ recommendation)
+
+// --- the capability survey matrix (prototype) ------------------------------
+
+/// Build the capability-survey `View` — the whole estate's declared-vs-actual
+/// capability matrix (`HANDOFF_CAPABILITY_SURVEY_2026_06_09.md`). The verdict
+/// leads (every place ready, or N need attention); each environment reads its
+/// state plainly — covered / missing the named activities / unreachable / no
+/// live gate. Pure over the probed reports.
+let buildSurveyView (reports: CapabilitySurvey.EnvironmentReport list) : View.View =
+    let actionName (a: Preflight.WriteAction) =
+        match a with
+        | Preflight.Insert      -> "INSERT"
+        | Preflight.Delete      -> "DELETE"
+        | Preflight.Alter       -> "ALTER"
+        | Preflight.CreateTable -> "CREATE TABLE"
+    let field (r: CapabilitySurvey.EnvironmentReport) =
+        let value, status =
+            if not r.Connected then "no live gate (file or ephemeral)", View.Neutral
+            elif not r.Reachable then "unreachable", View.Bad
+            elif not (List.isEmpty r.Missing) then
+                sprintf "reachable %s missing %s" Theme.dot (r.Missing |> List.map actionName |> String.concat ", "), View.Warn
+            else
+                let cdc = if r.CdcTracked then sprintf " %s CDC-tracked" Theme.dot else ""
+                sprintf "reachable %s grant covered%s" Theme.dot cdc, View.Ok
+        View.Field(r.Name, value, status)
+    let needAttention =
+        reports
+        |> List.filter (fun r -> r.Connected && (not r.Reachable || not (List.isEmpty r.Missing)))
+        |> List.length
+    let verdict =
+        if needAttention = 0 then
+            View.Hero(View.Ok, "Every connected environment can do what the pipeline asks of it.")
+        else
+            View.Hero(View.Warn, sprintf "%d environment(s) need attention before a live run." needAttention)
+    View.Doc([ View.Blank; verdict; View.Blank ] @ (reports |> List.map field))
 
 let renderReadinessBoard (r: RunLedger.Readiness) (recent: string list) (ledgerPath: string) : unit =
     // The board renders on every `readiness` (not just on a TTY). Pin a width
@@ -204,3 +305,24 @@ let renderErrorsTo (writer: System.IO.TextWriter) (errors: ValidationError list)
 /// Render a `ValidationError list` to stderr (the common case).
 let renderErrors (errors: ValidationError list) : unit =
     renderErrorsTo Console.Error errors
+
+// --- a voiced code's surface to a writer (slice 1 catalog, §3/§6 inline) -----
+
+/// Render a voiced code's §-surface (statement over substantiation, ending on
+/// the move) to a writer — the catalog copy (`Voice.surfaceOf`) projected
+/// through the same `View` engine that draws the gate and the answer. The
+/// structured NDJSON channel (`LogSink.emit`) is unchanged; this is the human
+/// lens for a §6 proof / §3 verdict an executor narrates inline. An unvoiced
+/// code renders nothing (the caller falls back to its own narration).
+let renderVoicedTo (writer: System.IO.TextWriter) (code: string) (payload: Voice.Payload) : unit =
+    match Voice.surfaceOf code payload with
+    | None -> ()
+    | Some surface ->
+        let console =
+            AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(writer)))
+        let redirected =
+            if System.Object.ReferenceEquals(writer, Console.Error) then Console.IsErrorRedirected
+            elif System.Object.ReferenceEquals(writer, Console.Out) then Console.IsOutputRedirected
+            else true
+        if redirected then console.Profile.Width <- 100
+        View.write console (Surface.render surface)

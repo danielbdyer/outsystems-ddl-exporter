@@ -50,6 +50,7 @@
     <Compile Include="ProfileCaptureRun.fs" />
     <Compile Include="MovementSpec.fs" />
     <Compile Include="MovementSurface.fs" />
+    <Compile Include="CapabilitySurvey.fs" />
     <Compile Include="RegisteredAllTransforms.fs" />
     <Compile Include="FullExportRun.fs" />
   </ItemGroup>

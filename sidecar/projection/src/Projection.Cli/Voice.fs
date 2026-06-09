@@ -104,6 +104,7 @@ module Voice =
         | "emit"     -> "Change build"
         | "deploy"   -> "Deploy"
         | "canary"   -> "Round-trip verification"
+        | "load"     -> "Data load"
         | other      -> other
 
     // ------------------------------------------------------------------
@@ -137,13 +138,15 @@ module Voice =
     let private canaryDivergence : Copy =
         { Code           = "canary.divergence"
           DocSection     = "§10"
-          Statement      = fun _ -> View.Hero(View.Bad, "The round-trip diverged from the model. The difference is shown below; it blocks the commit.")
+          Statement      = fun _ -> View.Hero(View.Bad, "The round-trip diverged from the model. It blocks the commit.")
           Substantiation =
             fun p ->
+                // The raw read-back diff is demoted into a disclosure — the
+                // statement is the finding, the difference opens on demand (§9).
                 match text "renderedDiff" p with
-                | Some d -> [ View.Note d ]
+                | Some d -> [ View.Disclosure("the difference", View.Neutral, [ View.Note d ]) ]
                 | None   -> []
-          Action         = fun _ -> Some(View.Action "Resolve the difference before shipping.") }
+          Action         = fun _ -> Some(View.Action "Resolve the difference, then re-verify.") }
 
     /// `summary.runComplete` — the terminal verdict (`THE_VOICE.md` §3). The
     /// outcome is asserted; a failure names that the cause is shown below, never a
@@ -258,6 +261,34 @@ module Voice =
           Substantiation = fun _ -> []
           Action         = fun _ -> None }
 
+    /// `deploy.started` — the changes are being applied (`THE_VOICE.md` §13 /
+    /// Act 4, the migrate leg). Gerund-in-progress (rule 12 exception).
+    let private deployStarted : Copy =
+        { Code           = "deploy.started"
+          DocSection     = "§13"
+          Statement      = fun _ -> View.Note "Applying the changes."
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
+    /// `canary.started` — the round-trip is being verified (`THE_VOICE.md` §13 /
+    /// §6, the migrate leg's verify phase). Gerund-in-progress.
+    let private canaryStarted : Copy =
+        { Code           = "canary.started"
+          DocSection     = "§13"
+          Statement      = fun _ -> View.Note "Verifying the round-trip."
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
+    /// `load.started` — the data is being loaded (`THE_VOICE.md` §13 / Act 4,
+    /// the data-transfer leg). Gerund-in-progress; the live board appends the
+    /// per-table progress + estimate beside it.
+    let private loadStarted : Copy =
+        { Code           = "load.started"
+          DocSection     = "§13"
+          Statement      = fun _ -> View.Note "Loading the data."
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
     /// `summary.stageCompleted` — a stage of the run completed (`THE_VOICE.md`
     /// §13). Resultative; the stage name is operator-shaped via `stageName`,
     /// never the internal engine verb.
@@ -313,6 +344,9 @@ module Voice =
           profileCompleted
           emitStarted
           emitCompleted
+          deployStarted
+          canaryStarted
+          loadStarted
           summaryStageCompleted
           // §14 / §10 — config & errors
           configValidationFailed ]
@@ -365,6 +399,13 @@ module Voice =
         if code.StartsWith "pipeline.config." then
             View.Hero(View.Bad, "The configuration has a problem. Correct it and rerun."),
             Some(View.Action "Correct the configuration and rerun.")
+        elif code = "gate.intent" then
+            // §5/§7 two-gate consent model: `--go` states intent, the
+            // PROJECTION_ALLOW_EXECUTE arming is the second gate. A CLI consent
+            // concern, not an engine pre-flight (DECISIONS 2026-06-08 — the flat
+            // gate.intent code, not a Preflight.GateLabel variant).
+            View.Hero(View.Warn, "A live write requires PROJECTION_ALLOW_EXECUTE=1 in the environment."),
+            Some(View.Action "Set PROJECTION_ALLOW_EXECUTE=1, then re-run.")
         elif code.Contains "connection" then
             View.Hero(View.Warn, "The target is unreachable. Check the connection and retry."),
             Some(View.Action "Check the connection and retry.")
@@ -422,7 +463,7 @@ module Voice =
         match label with
         | Preflight.UndeclaredDestructiveChange ->
             View.Bad, "This change drops a database object. Approve the removal, or halt.",
-            Some(View.Action "Approve the removal: --declare-loss <name> (or --declare-all), or halt.")
+            Some(View.Action "Approve the removal: --allow-drops (accept all) or --declare-drop <token> for each, or halt.")
         | Preflight.DataViolatesTightening ->
             View.Bad, "The existing data violates the tightening. Correct the data, relax the constraint, or halt.",
             Some(View.Action "Correct the data, relax the constraint, or halt.")

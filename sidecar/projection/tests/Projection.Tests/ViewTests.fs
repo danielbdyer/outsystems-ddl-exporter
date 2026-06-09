@@ -69,6 +69,50 @@ let ``View: the board build carries its data into json (consumer round-trip)`` (
     Assert.Contains("meter", kinds)
     Assert.Contains("dots", kinds)
 
+[<Fact>]
+let ``Setup readback: an unset ledger is named and recommended, never scolded (§14)`` () =
+    let p = plain (TtyRenderer.buildSetupView None false 120L None None)
+    Assert.Contains("Setup", p)
+    Assert.Contains("not retained", p)
+    Assert.Contains("preview only", p)            // live writes not armed
+    Assert.Contains("PROJECTION_LEDGER_DIR", p)   // the §14 recommendation
+
+[<Fact>]
+let ``Setup readback: configured state shows plainly, with no recommendation`` () =
+    let p = plain (TtyRenderer.buildSetupView (Some "./runs") true 200L (Some "./bench") None)
+    Assert.Contains("retained", p)
+    Assert.Contains("./runs", p)
+    Assert.Contains("armed", p)                       // live writes armed
+    Assert.Contains("200 ms", p)
+    Assert.DoesNotContain("PROJECTION_LEDGER_DIR", p) // configured → no scold
+
+[<Fact>]
+let ``Setup readback: a reachable target shows reachable + the ALTER grant`` () =
+    let p = plain (TtyRenderer.buildSetupView (Some "./runs") false 120L None (Some ("UAT", true, true)))
+    Assert.Contains("UAT", p)
+    Assert.Contains("reachable", p)
+    Assert.Contains("ALTER granted", p)
+
+[<Fact>]
+let ``Setup readback: an unreachable target is named, with no grant claimed`` () =
+    let p = plain (TtyRenderer.buildSetupView None false 120L None (Some ("UAT", false, false)))
+    Assert.Contains("unreachable", p)
+    Assert.DoesNotContain("ALTER", p)   // the grant is unknowable until reachable
+
+[<Fact>]
+let ``Capability survey: covered / missing / unreachable / no-gate each read plainly`` () =
+    let reports : CapabilitySurvey.EnvironmentReport list =
+        [ { Name = "cloud-uat"; Grant = Some Grant.SchemaAndData; Connected = true;  Reachable = true;  Missing = []; CdcTracked = false }
+          { Name = "prod";      Grant = Some Grant.DataOnly;      Connected = true;  Reachable = true;  Missing = [ Preflight.Insert ]; CdcTracked = false }
+          { Name = "stale";     Grant = Some Grant.DataOnly;      Connected = true;  Reachable = false; Missing = []; CdcTracked = false }
+          { Name = "onprem";    Grant = None;                     Connected = false; Reachable = false; Missing = []; CdcTracked = false } ]
+    let p = plain (TtyRenderer.buildSurveyView reports)
+    Assert.Contains("grant covered", p)        // cloud-uat — covered
+    Assert.Contains("missing INSERT", p)       // prod — declared data-only, INSERT absent
+    Assert.Contains("unreachable", p)          // stale
+    Assert.Contains("no live gate", p)         // onprem — bundle, nothing to probe
+    Assert.Contains("need attention", p)       // the verdict (2 of 4)
+
 // --- progressive disclosure (the dig substrate) ----------------------------
 // Discriminating predicate: a Disclosure HIDES its detail when collapsed and
 // REVEALS it one level deeper when open — but `toJson` carries the full detail
@@ -120,3 +164,22 @@ let ``View: a Lane renders its items (plain) and carries glyph/status/items (jso
     let items =
         j.GetProperty("items").EnumerateArray() |> Seq.map (fun e -> nonNull (e.GetString())) |> Seq.toList
     Assert.Equal<string list>([ "OrderHeader → SalesOrder"; "OrderDetail → SalesOrderLine" ], items)
+
+[<Fact>]
+let ``View: a Lane caps its rendered items and names the remainder (THE_VOICE §12)`` () =
+    let items = [ for i in 1 .. 20 -> sprintf "Table%02d" i ]
+    let v = View.Lane("−", "remove", View.Bad, items)
+    let p = plainToDepth 1 v
+    // the first items show; beyond the cap collapses to a named remainder
+    Assert.Contains("Table01", p)
+    Assert.DoesNotContain("Table20", p)
+    Assert.Contains("and 8 more", p)        // 20 − laneCap(12) = 8, named
+    // the machine lens keeps the full list — the cap is a rendering concern only
+    let kept = (json v).GetProperty("items").EnumerateArray() |> Seq.length
+    Assert.Equal(20, kept)
+
+[<Fact>]
+let ``View: a Lane humanizes its true count in the header (THE_VOICE §12)`` () =
+    let items = [ for i in 1 .. 2140 -> sprintf "c%04d" i ]
+    let v = View.Lane("+", "add", View.Ok, items)
+    Assert.Contains("2,140", plainToDepth 0 v)   // the count scales; the sentence does not

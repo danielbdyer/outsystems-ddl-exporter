@@ -90,9 +90,28 @@ let ``Tier-4 board: NOT YET names the runs-to-go`` () =
     Assert.Contains("NOT YET", text)
     Assert.Contains("3 green run", text)   // 10 - 7 = 3 to go
 
+[<Fact>]
+let ``Tier-4 board: the timeline reads the recent checks in words and names the present run`` () =
+    let r : RunLedger.Readiness =
+        { TotalRuns = 11; CanaryRuns = 11; ConsecutiveGreen = 6
+          LastCanary = Some "green"; Threshold = 10; Eligible = false }
+    let text = renderBoard r [ "green"; "green"; "red"; "green"; "green"; "green" ]
+    Assert.Contains("the last 6 check(s)", text)
+    Assert.Contains("1 diverged", text)
+    Assert.Contains("run 11, the present one", text)
+
+[<Fact>]
+let ``Tier-4 board: an all-green timeline says so plainly`` () =
+    let r : RunLedger.Readiness =
+        { TotalRuns = 5; CanaryRuns = 5; ConsecutiveGreen = 5
+          LastCanary = Some "green"; Threshold = 10; Eligible = false }
+    let text = renderBoard r [ "green"; "green"; "green" ]
+    Assert.Contains("all passed", text)
+
 // --- the Gate surface (INSTRUMENT slice 3) ---------------------------------
 // Discriminating predicate: a destructive refusal leads Bad and names the
-// declare-loss next action; a blocking pre-flight refusal leads Warn with none.
+// drop-approval next action (the real --allow-drops / --declare-drop levers);
+// a blocking pre-flight refusal leads Warn with none.
 // Both carry the gate axis, the detail, and the distinct exit code — not one
 // flat error string.
 
@@ -116,7 +135,7 @@ let ``Gate: a destructive refusal stops with the loss, the exit, and the declare
     Assert.Contains("undeclared destructive change", text) // the gate axis
     Assert.Contains("dropping index IX_Order_Stale", text) // the detail
     Assert.Contains("9", text)                             // the distinct exit code
-    Assert.Contains("--declare-loss", text)                // the next action
+    Assert.Contains("--declare-drop", text)                // the next action (the real per-drop lever)
     Assert.Contains("✕", text)                             // Bad glyph — survives NO_COLOR
 
 [<Fact>]
@@ -126,5 +145,5 @@ let ``Gate: a blocking pre-flight refusal leads Warn, with no declare-loss actio
     let text = renderGateText "projection migrate" refusal
     Assert.Contains("connection unavailable", text)   // the gate axis
     Assert.Contains("could not reach UAT", text)      // the detail
-    Assert.DoesNotContain("--declare-loss", text)     // not a declared-loss refusal
+    Assert.DoesNotContain("--declare-drop", text)     // not a declared-loss refusal
     Assert.Contains("▲", text)                        // Warn glyph
