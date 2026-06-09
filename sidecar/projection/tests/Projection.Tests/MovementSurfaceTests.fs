@@ -585,6 +585,52 @@ let ``modelOssys-only (no model file) still routes — the file is optional`` ()
     | PlanAction.EmitBundle (ModelSource.Unspecified, Some "env:ONPREM_OSSYS_CONN", "dist/uat") -> ()
     | other -> Assert.Fail(sprintf "expected EmitBundle from ossys-only config, got %A" other)
 
+// -- S2: the unified `model` object form vs the legacy top-level forms -------
+// The unified `model` OBJECT (path/ossys) is the canonical collision
+// reconciliation (THE_CONFIG_CONTROL_PLANE §4): a config carrying
+// `"model": { "path": ..., "ossys": ... }` must resolve to the SAME plan as
+// the legacy `"model": "<path>"` + top-level `"modelOssys": "<ref>"`.
+
+let private s2Estate flows model =
+    sprintf """
+    {
+      "environments": {
+        "uat-bundle": { "access": "bundle", "out": "dist/uat", "grant": "schema+data" },
+        "lab":        { "access": "docker", "grant": "schema+data" },
+        "cloud-live": { "access": "direct", "conn": "env:CLOUD_LIVE_CONN" }
+      },
+      "flows": %s,
+      %s
+    }
+    """ flows model
+
+let private s2Flows = """{ "emit": { "from": "model", "to": "uat-bundle" }, "spin": { "from": "model", "to": "lab" }, "preview": { "from": "model", "to": "cloud-live" } }"""
+
+let private s2LegacyCfg =
+    ProjectionConfig.parse (s2Estate s2Flows """ "model": "model.json", "modelOssys": "env:ONPREM_OSSYS_CONN" """) |> mustOk
+let private s2ObjectCfg =
+    ProjectionConfig.parse (s2Estate s2Flows """ "model": { "path": "model.json", "ossys": "env:ONPREM_OSSYS_CONN" } """) |> mustOk
+
+[<Fact>]
+let ``S2: the object model form reconciles into Shaping.Model (path + ossys)`` () =
+    Assert.Equal(Some "model.json", s2ObjectCfg.Shaping.Model.Path)
+    Assert.Equal(Some "env:ONPREM_OSSYS_CONN", s2ObjectCfg.Shaping.Model.Ossys)
+    // The legacy top-level forms reconcile to the SAME canonical Shaping.Model.
+    Assert.Equal(s2ObjectCfg.Shaping.Model.Path,  s2LegacyCfg.Shaping.Model.Path)
+    Assert.Equal(s2ObjectCfg.Shaping.Model.Ossys, s2LegacyCfg.Shaping.Model.Ossys)
+
+[<Fact>]
+let ``S2: object-model and legacy-top-level configs resolve to identical plans`` () =
+    for name in [ "emit"; "spin"; "preview" ] do
+        let legacy = (Command.planFlow s2LegacyCfg (Map.find name s2LegacyCfg.Flows) preview).Action
+        let object' = (Command.planFlow s2ObjectCfg (Map.find name s2ObjectCfg.Flows) preview).Action
+        Assert.Equal(legacy, object')
+    // And the object form carries the model file + ossys into the action,
+    // exactly like the legacy form (byte-for-byte parity with :518-527).
+    match (Command.planFlow s2ObjectCfg (Map.find "emit" s2ObjectCfg.Flows) preview).Action with
+    | PlanAction.EmitBundle (ModelSource.ModelFile "model.json", Some "env:ONPREM_OSSYS_CONN", "dist/uat") -> ()
+    | other -> Assert.Fail(sprintf "expected EmitBundle carrying the reconciled model, got %A" other)
+
 // -- profile capture verb (THE_SYNTHETIC_DATA_DESIGN §2.2) -------------------
 
 let private planArgs cfg argv = (Command.plan cfg (Command.parse cfg argv |> mustOk)).Action

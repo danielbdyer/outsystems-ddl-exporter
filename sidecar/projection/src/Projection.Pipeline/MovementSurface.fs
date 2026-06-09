@@ -256,18 +256,34 @@ module ProjectionConfig =
                                 | None -> () ]
                             |> Map.ofList
                         | _ -> Map.empty
+                    // The legacy top-level movement forms.
+                    let legacyModel = getString root "model"
+                    let legacyModelOssys = getString root "modelOssys"
                     // The shaping view of the SAME document, parsed leniently
                     // (a movement-only file defaults every shaping section).
                     // Any shaping error (D9 credential, type mismatch) surfaces
-                    // here so the unified document is validated as one. Nothing
-                    // consumes `Shaping` yet at S1.
+                    // here so the unified document is validated as one.
                     match Config.parseLenient json with
                     | Error es -> Result.failure es
                     | Ok shaping ->
+                    // S2 — reconcile `model`/`modelOssys` into the one `model`
+                    // namespace (THE_CONFIG_CONTROL_PLANE §4 collision table).
+                    // The unified `model` OBJECT (path/ossys/modules) is the
+                    // canonical form; the legacy top-level `model: "<path>"` maps
+                    // onto `Shaping.Model.Path` and top-level `modelOssys` onto
+                    // `Shaping.Model.Ossys`. The object form wins where it set a
+                    // value (a present object Path/Ossys is canonical); the
+                    // legacy form fills only what the object left absent — so the
+                    // two forms agree on one `Shaping.Model`.
+                    let reconciledModel : Config.ModelSection =
+                        { shaping.Model with
+                            Path  = (match shaping.Model.Path  with Some _ as p -> p | None -> legacyModel)
+                            Ossys = (match shaping.Model.Ossys with Some _ as o -> o | None -> legacyModelOssys) }
+                    let shaping = { shaping with Model = reconciledModel }
                     Result.success
                         { Environments = environments; Flows = flows
-                          Model = getString root "model"
-                          ModelOssys = getString root "modelOssys"
+                          Model = legacyModel
+                          ModelOssys = legacyModelOssys
                           Defaults = defaults
                           Shaping = shaping }
         with ex ->
@@ -378,7 +394,10 @@ module Command =
         let dataConn (alias: string) : Result<string> = resolveLiveConn cfg alias
         // Live OSSYS (primary) when configured; the model file (fallback) is
         // optional then. `hasModel` is true when either source is available.
-        let modelOssys = cfg.ModelOssys
+        // S2 — read the OSSYS source from the canonical `Shaping.Model.Ossys`
+        // (the legacy top-level `modelOssys` is reconciled into it by the
+        // loader), so the object `model.ossys` and legacy forms thread identically.
+        let modelOssys = cfg.Shaping.Model.Ossys
         let hasModel = spec.Model <> ModelSource.Unspecified || Option.isSome modelOssys
         let action =
             match spec.Destination with
@@ -404,7 +423,7 @@ module Command =
                         | Ok src -> PlanAction.Transfer (src, conn, opts, false)
                         | Error es -> PlanAction.Refused (6, List.head es)
                     | DataOrigin.Synthetic profile when not schemaOnly ->
-                        PlanAction.SynthesizeAndLoad (spec.Model, cfg.ModelOssys, profile, conn, opts, false)
+                        PlanAction.SynthesizeAndLoad (spec.Model, modelOssys, profile, conn, opts, false)
                     | _ ->
                         if hasModel then PlanAction.PreviewSchema (spec.Model, modelOssys, conn, opts.Declaration)
                         else modelMissing "projection: "
@@ -418,7 +437,7 @@ module Command =
                             elif hasModel then PlanAction.MigrateWithData (spec.Model, modelOssys, conn, src, opts)
                             else modelMissing "projection: "
                     | DataOrigin.Synthetic profile when not schemaOnly ->
-                        if dataOnly then PlanAction.SynthesizeAndLoad (spec.Model, cfg.ModelOssys, profile, conn, opts, true)
+                        if dataOnly then PlanAction.SynthesizeAndLoad (spec.Model, modelOssys, profile, conn, opts, true)
                         else PlanAction.Refused (2, err "cli.move.syntheticScope" "a synthetic load moves data only; point the flow at a data-granting target (grant: data).")
                     | _ when dataOnly ->
                         PlanAction.Refused (2, err "cli.move.scopeDataNoSource" "a DML-only load needs a data source (a flow whose `from` is a live environment).")
@@ -619,7 +638,13 @@ module Command =
                 let baseSpec = MovementSpec.forDestination (destinationOfAccess toEnv.Access)
                 Result.success
                     { baseSpec with
-                        Model    = (match cfg.Model with Some m -> ModelSource.ModelFile m | None -> ModelSource.Unspecified)
+                        // S2 — the model is read from the canonical
+                        // `Shaping.Model` (the unified `model` namespace, with
+                        // the legacy top-level `model:"<path>"` reconciled in by
+                        // the loader). Same resulting `ModelSource` as before.
+                        // (S3 will emit `ModelSource.ConfigFile` when shaping is
+                        // present; not yet.)
+                        Model    = (match cfg.Shaping.Model.Path with Some m -> ModelSource.ModelFile m | None -> ModelSource.Unspecified)
                         Scope    = (match toEnv.Grant with Some Grant.DataOnly -> Scope.Data | _ -> Scope.All)
                         Strategy = (if opts.Fresh then Strategy.Fresh else Strategy.Merge)
                         Data     = data
