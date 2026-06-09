@@ -34,6 +34,14 @@ type LifecycleStoreError =
 [<RequireQualifiedAccess>]
 module LifecycleStore =
 
+    /// The located cause of a store failure, in plain words — never a raw DU
+    /// dump on the operator surface (`THE_VOICE.md` §10: what · why · where).
+    let describe (error: LifecycleStoreError) : string =
+        match error with
+        | LifecycleStoreError.ReadFailure (path, message)  -> sprintf "the timeline store at %s could not be read — %s" path message
+        | LifecycleStoreError.ParseFailure (path, message) -> sprintf "the timeline store at %s could not be parsed — %s" path message
+        | LifecycleStoreError.WriteFailure (path, message) -> sprintf "the timeline store at %s could not be written — %s" path message
+
     [<Literal>]
     let private isoFormat = "O"   // round-trippable ISO-8601 (DateTimeOffset)
 

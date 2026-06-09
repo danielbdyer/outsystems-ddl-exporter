@@ -38,11 +38,11 @@ module ReportRun =
     /// entry). Fail-closed: a malformed store or non-composable edge → string.
     let fromStore (path: string) : Result<ReportBundle, string> =
         match LifecycleStore.load path with
-        | Error e -> Error (sprintf "could not load the lifecycle store: %A" e)
+        | Error e -> Error (LifecycleStore.describe e)
         | Ok chain ->
             match fromChain chain with
             | Ok b    -> Ok b
-            | Error e -> Error (sprintf "could not compute the change series: %A" e)
+            | Error _ -> Error "the change series could not be computed from the timeline."
 
     /// Render the bundle as operator-facing lines (THE_VOICE register: stative;
     /// the norm surfaced as the minimality proof). One line per recorded edge.
