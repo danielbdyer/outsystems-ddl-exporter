@@ -36,7 +36,8 @@ let private usageLines : string list =
         "    projection seal ( --store <path> | approve <version> --approver <name> ... )"
         "    projection report <flow>        the on-prem migration-team change bundle"
         "    projection init                 scaffold a projection.json"
-        "    projection setup                read back what is configured (history, writes, board)"
+        "    projection setup [--conn <ref>] read back what is configured (history, writes, board);"
+        "                                    --conn also probes a target (reachable + ALTER grant)"
         ""
         "FLOW — the hero. Move a model from `from` to `to`; the target decides the form."
         "  Environments (places) carry access (bundle → SSDT for Octopus | direct → live |"
@@ -982,10 +983,35 @@ let private runReadiness () : int =
                 Phase = LogSink.End }
         0
 
-/// `projection setup` — the arrival/setup readback (§14 / Appendix A.6): a plain
-/// read of the operator switches that are set and those that are not, in the
-/// same calm voice. Reads the env at the boundary; the view is pure.
-let private runSetup () : int =
+/// Live-probe a target for the setup readback: `(ref, reachable, alterGranted)`.
+/// Reuses the same machinery the migrate pre-flights use — resolve the ref,
+/// open the connection (reachability), capture the grant evidence (the §14 / A.6
+/// "ALTER granted on dbo"). A failed resolve / open is `unreachable`, never a
+/// stack trace; the grant is left false when the target is unreachable.
+let private probeTarget (connRef: string) : string * bool * bool =
+    let unreachable = (connRef, false, false)
+    match TransferSpec.parseConnectionSpec connRef with
+    | Error _ -> unreachable
+    | Ok ref ->
+        match ConnectionResolver.resolve "Setup" ref with
+        | Error _ -> unreachable
+        | Ok connStr ->
+            try
+                use cnn = new Microsoft.Data.SqlClient.SqlConnection(connStr)
+                cnn.OpenAsync().GetAwaiter().GetResult()
+                let alterGranted =
+                    match (Preflight.captureGrantEvidence cnn).GetAwaiter().GetResult() with
+                    | Ok g    -> Set.contains ("", "ALTER") g.Granted
+                    | Error _ -> false
+                (connRef, true, alterGranted)
+            with _ -> unreachable
+
+/// `projection setup [--conn <ref>]` — the arrival/setup readback (§14 /
+/// Appendix A.6): a plain read of the operator switches that are set and those
+/// that are not, in the same calm voice. With `--conn`, it also probes the
+/// target — reachability + the ALTER grant. Reads the env + probes at the
+/// boundary; the view is pure.
+let private runSetup (connRef: string option) : int =
     let envOpt (k: string) =
         match System.Environment.GetEnvironmentVariable k with
         | null | "" -> None
@@ -996,6 +1022,7 @@ let private runSetup () : int =
             (envOpt "PROJECTION_ALLOW_EXECUTE" = Some "1")
             (Watch.resolveDwellMs ())
             (envOpt "PROJECTION_BENCH_DIR")
+            (connRef |> Option.map probeTarget)
     TtyRenderer.renderAnswer false View.defaultDepth view
     0
 
@@ -1945,7 +1972,8 @@ let main argv =
         0
     | [||] -> runList ()
     | [| "init" |] -> runInit ()
-    | [| "setup" |] -> runSetup ()
+    | [| "setup" |] -> runSetup None
+    | [| "setup"; "--conn"; ref |] -> runSetup (Some ref)
     | _ ->
         match discoverConfig () with
         | Error es ->

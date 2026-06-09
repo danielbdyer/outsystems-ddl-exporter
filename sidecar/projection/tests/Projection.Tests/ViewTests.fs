@@ -71,7 +71,7 @@ let ``View: the board build carries its data into json (consumer round-trip)`` (
 
 [<Fact>]
 let ``Setup readback: an unset ledger is named and recommended, never scolded (§14)`` () =
-    let p = plain (TtyRenderer.buildSetupView None false 120L None)
+    let p = plain (TtyRenderer.buildSetupView None false 120L None None)
     Assert.Contains("Setup", p)
     Assert.Contains("not retained", p)
     Assert.Contains("preview only", p)            // live writes not armed
@@ -79,12 +79,25 @@ let ``Setup readback: an unset ledger is named and recommended, never scolded (�
 
 [<Fact>]
 let ``Setup readback: configured state shows plainly, with no recommendation`` () =
-    let p = plain (TtyRenderer.buildSetupView (Some "./runs") true 200L (Some "./bench"))
+    let p = plain (TtyRenderer.buildSetupView (Some "./runs") true 200L (Some "./bench") None)
     Assert.Contains("retained", p)
     Assert.Contains("./runs", p)
     Assert.Contains("armed", p)                       // live writes armed
     Assert.Contains("200 ms", p)
     Assert.DoesNotContain("PROJECTION_LEDGER_DIR", p) // configured → no scold
+
+[<Fact>]
+let ``Setup readback: a reachable target shows reachable + the ALTER grant`` () =
+    let p = plain (TtyRenderer.buildSetupView (Some "./runs") false 120L None (Some ("UAT", true, true)))
+    Assert.Contains("UAT", p)
+    Assert.Contains("reachable", p)
+    Assert.Contains("ALTER granted", p)
+
+[<Fact>]
+let ``Setup readback: an unreachable target is named, with no grant claimed`` () =
+    let p = plain (TtyRenderer.buildSetupView None false 120L None (Some ("UAT", false, false)))
+    Assert.Contains("unreachable", p)
+    Assert.DoesNotContain("ALTER", p)   // the grant is unknowable until reachable
 
 // --- progressive disclosure (the dig substrate) ----------------------------
 // Discriminating predicate: a Disclosure HIDES its detail when collapsed and

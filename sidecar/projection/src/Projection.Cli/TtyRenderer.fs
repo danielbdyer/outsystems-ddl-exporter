@@ -133,9 +133,16 @@ let renderReadinessBoardTo
 /// Build the arrival/setup readback `View` — a plain read of what is configured
 /// and what is not, in the same calm voice (`THE_VOICE.md` §14: "a thing not
 /// configured is a choice to make, not a failure"). Pure over the resolved
-/// state so the env reads stay at the boundary (`runSetup`); an unset optional
-/// (the run ledger) earns a recommendation, never a scold.
-let buildSetupView (ledger: string option) (executeArmed: bool) (dwellMs: int64) (benchDir: string option) : View.View =
+/// state so the env reads + the live probe stay at the boundary (`runSetup`); an
+/// unset optional (the run ledger) earns a recommendation, never a scold.
+/// `connection` is `(ref, reachable, alterGranted)` when a target was probed.
+let buildSetupView
+    (ledger: string option)
+    (executeArmed: bool)
+    (dwellMs: int64)
+    (benchDir: string option)
+    (connection: (string * bool * bool) option)
+    : View.View =
     let history =
         match ledger with
         | Some dir -> View.Field("history", sprintf "retained %s %s" Theme.dot dir, View.Ok)
@@ -148,6 +155,20 @@ let buildSetupView (ledger: string option) (executeArmed: bool) (dwellMs: int64)
         match benchDir with
         | Some dir -> View.Field("bench output", dir, View.Neutral)
         | None     -> View.Field("bench output", "off", View.Neutral)
+    // The live probe (only when a target was given) — reachability, then the
+    // grant beneath it (the grant is unknowable until the target is reachable).
+    let connectionBlock =
+        match connection with
+        | None -> []
+        | Some (ref, reachable, alterGranted) ->
+            let connField =
+                if reachable then View.Field("connection", sprintf "%s %s reachable" ref Theme.dot, View.Ok)
+                else View.Field("connection", sprintf "%s %s unreachable" ref Theme.dot, View.Bad)
+            let grantField =
+                if not reachable then []
+                elif alterGranted then [ View.Field("grant", "ALTER granted", View.Ok) ]
+                else [ View.Field("grant", "ALTER not granted", View.Warn) ]
+            connField :: grantField
     let recommendation =
         match ledger with
         | Some _ -> []
@@ -157,6 +178,7 @@ let buildSetupView (ledger: string option) (executeArmed: bool) (dwellMs: int64)
     View.Doc(
         [ View.Blank; View.Hero(View.Neutral, "Setup"); View.Blank
           history; writes; board; bench ]
+        @ connectionBlock
         @ recommendation)
 
 let renderReadinessBoard (r: RunLedger.Readiness) (recent: string list) (ledgerPath: string) : unit =
