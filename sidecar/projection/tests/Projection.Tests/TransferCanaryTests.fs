@@ -199,6 +199,26 @@ module private TransferCanaryFixtures =
     let renameSourceContract : Catalog = rpContract "Email" "EMAIL"
     let renameSinkContract : Catalog = rpContract "Contact" "CONTACT"
 
+    // M3 / LE-2 — the legacy B→A reverse leg: ONE SsKey-stable model in two
+    // renditions. B (logical) carries clean names ([dbo].[Customer].[Email]);
+    // A (physical) carries the OSUSR_* rendition ([dbo].[OSUSR_XF_CUSTOMER].[Contact]).
+    // SAME kind + attribute SsKeys (so the A→B diff aligns by identity), differing
+    // in BOTH table AND column name — the table-name rendition is resolved per-SsKey
+    // against the sink contract; the column-name rendition rides the rename map.
+    let private legacyContract (table: string) (emailName: string) (emailCol: string) : Catalog =
+        let cust =
+            Kind.create (rpKKey "Customer") (rpName "Customer")
+                (TableId.create "dbo" table |> Result.value)
+                [ rpAttr (rpAKey "Id") "Id" "ID" true
+                  rpAttr (rpAKey "Email") emailName emailCol false ]
+        Catalog.create
+            [ { SsKey = rpKKey "Mod"; Name = rpName "M"; Kinds = [ cust ]; IsActive = true; ExtendedProperties = [] } ] []
+        |> Result.value
+
+    /// B (logical on-prem, migration-team-populated) → A (physical cloud OSUSR).
+    let legacySourceContract : Catalog = legacyContract "Customer"          "Email"   "EMAIL"
+    let legacySinkContract   : Catalog = legacyContract "OSUSR_XF_CUSTOMER" "Contact" "CONTACT"
+
     /// Scalar string from a connection (for asserting a single cell).
     let scalarStr (cnn: Microsoft.Data.SqlClient.SqlConnection) (sql: string) : System.Threading.Tasks.Task<string> =
         task {
@@ -759,6 +779,48 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                                 let! c2 = TransferCanaryFixtures.scalarStr sink "SELECT [CONTACT] FROM [dbo].[RP_XFER_CUSTOMER] WHERE [ID]=2;"
                                 Assert.Equal("bob@x", c2)
                                 let! n = TransferCanaryFixtures.countRows sink "[dbo].[RP_XFER_CUSTOMER]"
+                                Assert.Equal(2, n)
+                            })
+                }))
+
+    // M3 / LE-2 — the legacy B→A reverse-leg canary. The migration team's data
+    // sits in the LOGICAL on-prem rendition ([dbo].[Customer].[Email]); the engine
+    // pipes it UP into the PHYSICAL cloud rendition ([dbo].[OSUSR_XF_CUSTOMER].[Contact]).
+    // Same SsKey-stable model — NOT foreign schema, no tolerances. The two-contract
+    // path resolves the write target table against the SINK contract by SsKey
+    // (table-name rendition) and re-points the column by the rename map (column-name
+    // rendition), so CONTACT in the OSUSR sink carries the source's EMAIL data.
+    [<Fact>]
+    member _.``M3/LE-2 legacy B->A: logical source pipes up into the physical OSUSR sink, data round-trips by SsKey`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "LegacyBA") then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "LegacyBASrc" (fun src _ ->
+                task {
+                    // B (logical): the hosted on-prem model the migration team filled.
+                    do! Deploy.executeBatch src (SsdtDdlEmitter.statements TransferCanaryFixtures.legacySourceContract |> Render.toText)
+                    do! Deploy.executeBatch src
+                            "INSERT INTO [dbo].[Customer] ([ID],[EMAIL]) VALUES (1, N'alice@x'), (2, N'bob@x');"
+                    return!
+                        fixture.WithEphemeralDatabase "LegacyBASink" (fun sink _ ->
+                            task {
+                                // A (physical): the frozen OSUSR_* cloud rendition, empty.
+                                do! Deploy.executeBatch sink (SsdtDdlEmitter.statements TransferCanaryFixtures.legacySinkContract |> Render.toText)
+
+                                // The up leg (B→A) over the same model.
+                                let! reportR =
+                                    Transfer.runWithRenames Transfer.Execute true src sink
+                                        TransferCanaryFixtures.legacySourceContract
+                                        TransferCanaryFixtures.legacySinkContract
+                                let _ = TransferCanaryFixtures.value reportR
+
+                                // The physical OSUSR sink's CONTACT column carries the logical
+                                // source's EMAIL data — table + column rendition resolved by SsKey,
+                                // not lost to NULL (a source-name/ordinal write) or a missing table.
+                                let! c1 = TransferCanaryFixtures.scalarStr sink "SELECT [CONTACT] FROM [dbo].[OSUSR_XF_CUSTOMER] WHERE [ID]=1;"
+                                Assert.Equal("alice@x", c1)
+                                let! c2 = TransferCanaryFixtures.scalarStr sink "SELECT [CONTACT] FROM [dbo].[OSUSR_XF_CUSTOMER] WHERE [ID]=2;"
+                                Assert.Equal("bob@x", c2)
+                                let! n = TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_XF_CUSTOMER]"
                                 Assert.Equal(2, n)
                             })
                 }))
