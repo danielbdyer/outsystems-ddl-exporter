@@ -89,7 +89,9 @@ that renders the model in its physical `OSUSR_*` disposition (**A**) rather than
 one (**B**). A and B are not two times; they are **two realizations of one identity-stable model** (the
 Realization name-space — `THE_USE_CASE_ONTOLOGY.md` §5.8, `WAVE_6_ALGEBRA.md` §1). The data crossing the
 boundary comes from one of three **producers** — `synthetic` (generated from a profile;
-`THE_SYNTHETIC_DATA_DESIGN.md`), `legacy` (the foreign-schema on-prem app), and `peer` (a same-estate
+`THE_SYNTHETIC_DATA_DESIGN.md`), `legacy` (the **B→A reverse leg** — the logical on-prem model the
+migration team populated, piped back up into the physical cloud; same model, *not* foreign schema —
+the foreign→logical mapping is the migration team's, upstream), and `peer` (a same-rendition
 cell — `golden`; sink-minted identity + email re-key suffices *because* the logical identities coincide
 across cells). The full catalogue, the `golden` user-exclusion-plus-re-key discipline, and the
 per-producer data canary live in **`THE_DATA_PRODUCERS.md`**; this prescope is the machinery they run on.

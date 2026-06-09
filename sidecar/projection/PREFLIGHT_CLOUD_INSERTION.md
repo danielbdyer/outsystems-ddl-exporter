@@ -33,15 +33,16 @@ R6, each proven by its data canary**, and specifically when:
    by email**, gated by `validate-user-map` before any DML; proven by the cloud→cloud **re-key
    canary** (a re-keyed row is one CDC Update, never Delete+Insert; source user surrogates provably
    absent from the sink).
-3. **`legacy` (`preview`)** — the foreign-schema on-prem app **ingested through the logical schema by
-   `SsKey`**, every unfaithful translation a **named tolerance**; proven by the **migration-preview
-   canary** (round-trips up to the named tolerances).
+3. **`legacy` (`preview`)** — the **reverse (B→A) leg** of the *same* logical model: the migration
+   team loads the data into the hosted logical model (B) upstream; `legacy` pipes it **up into the
+   physical cloud** (A). Same `SsKey` model, **no foreign schema** (the foreign→logical mapping is the
+   migration team's, off-engine); proven by the **B→A round-trip canary**.
 4. **The gate is real** — the capability survey resolves the per-kind disposition mix (incl. **P10**
    user-directory for the re-key), wired into the run verbs (advisory per R6, S3).
 5. **The real-UAT execute path is unblocked** — **OPEN-2** (is the cloud UAT a writable SQL
-   connection?) resolved by the ops spike; `--execute` gated by `--go` + `PROJECTION_ALLOW_EXECUTE`,
-   dry-run default, preview row-cap.
-6. **Every cross-boundary erasure is named** (foreign-schema translation, unmapped user) — none silent.
+   connection?) resolved by the ops spike; the physical (`OSUSR_*`) rendition is emitted for the cloud
+   sink; `--execute` gated by `--go` + `PROJECTION_ALLOW_EXECUTE`, dry-run default, preview row-cap.
+6. **Every cross-boundary erasure is named** (an unmapped user; any reconcile drop) — none silent.
 
 ---
 
@@ -77,11 +78,13 @@ reachable from the production path) · **DESIGN-ONLY** (spec'd, no code) · **MI
 ### DESIGN-ONLY — spec'd this session, no code
 | Component | Status | Note |
 |---|---|---|
-| `peer` / `legacy` as producers | DESIGN-ONLY | No `FlowSource.Peer`/`Legacy` variant; both would ride the generic `Env` source path. `THE_DATA_PRODUCERS.md` |
+| `peer` / `legacy` producers | DESIGN-ONLY | Distinguished by source `rendition` (peer=physical, legacy=logical), not a `FlowSource` variant. `THE_DATA_PRODUCERS.md` |
+| `rendition: physical \| logical` env flag | DESIGN-ONLY (to build, M1) | env-metadata; marks A (physical OSUSR) vs B (logical on-prem); distinguishes peer-source from legacy-source |
 | `golden` cloud→cloud user-exclusion + email re-key | DESIGN-ONLY (machinery exists) | The *machinery* is proven as the **Dev→UAT on-prem** instance (`TransferCanaryTests.fs:330`); the **cloud→cloud** flow + its canary do not exist |
-| `legacy` foreign-schema ingest | MISSING | The legacy app schema ≠ the model's schema; no ingest-through-the-logical-schema path |
+| `legacy` reverse-leg (B→A) transfer | DESIGN-ONLY | Same-model logical→physical move (not foreign ingest); needs the `rendition` flag + physical-rendition emission |
+| Physical (`OSUSR_*`) rendition emission | UNKNOWN — confirm/build | Engine targets the logical rendition today (`Realization := Designation`); writing/matching the physical rendition for a cloud sink is the shared new concern (`THE_USE_CASE_ONTOLOGY.md` §5.8) |
 | `peer` re-key canary (cloud→cloud) | MISSING | named in design; not written |
-| `legacy` migration-preview canary | MISSING | named in design; not written |
+| `legacy` B→A round-trip canary | MISSING | named in design; not written |
 
 ---
 
@@ -93,11 +96,12 @@ reachable from the production path) · **DESIGN-ONLY** (spec'd, no code) · **MI
 | Milestone | Scope | Depends on | Origin | §J |
 |---|---|---|---|---|
 | **M0** ✅ | synthetic producer · Transfer core · data-level canary · Dev→UAT re-key · migrate-with-data | — | Slices 1/A/B/C/C′/D/E (acyclic) | — |
-| **M1** | **Producer modelling decision + routing.** Decide whether `peer`/`legacy` are `FlowSource` variants or **env metadata** (`estate: same \| foreign`) + flow disciplines; wire the chosen shape so a `golden`/`preview` flow routes with its producer semantics. *(Open decision — §5 D-1.)* | M0 | `THE_DATA_PRODUCERS` §1; `MovementSpec.fs:150` | J1 |
-| **M2** | **`peer` / `golden` cloud→cloud.** PE-1 user exclusion + email re-key on the cloud→cloud flow (reuse `ReconciledByRule`+`reconcileKind MatchByColumn "Email"`); PE-2 confirm `validate-user-map` gate fires for the cloud sink; **PE-3 the re-key canary** (cloud→cloud). | M1; survey **P10** | `THE_DATA_PRODUCERS` §6 PE-1..3; AC-I2/I5; P-3 | J2 |
-| **M3** | **`legacy` / `preview`.** LE-1 foreign-schema ingest lifting the legacy substrate into the logical shape by `SsKey` (drift-by-SsKey), every unfaithful translation a **named tolerance**; **LE-2 the migration-preview canary**. *(Hardest — foreign schema.)* | M1 | `THE_DATA_PRODUCERS` §6 LE-1/2; `Tolerance.fs` | J3 |
+| **M1** | **`rendition` env flag + routing.** Add `rendition: physical \| logical` to each environment (operator decision 2026-06-09); the engine reads it to set source/sink rendition and route the producer semantics (`peer`=physical source, `legacy`=logical source). *(Was the M1 modelling fork — decided: env-metadata flag, not a `FlowSource` variant.)* | M0 | `THE_DATA_PRODUCERS` §4 decision 6; `MovementSpec.fs:150` | J1 |
+| **M1.5** | **Physical (`OSUSR_*`) rendition emission.** Confirm whether any path emits/matches the physical rendition (the engine targets logical today, `Realization := Designation`); if not, build it — the shared concern for *any* physical-cloud sink (`peer`, `legacy`, real-UAT). | M1 | `THE_USE_CASE_ONTOLOGY.md` §5.8; risk R-5 | J1 |
+| **M2** | **`peer` / `golden` cloud→cloud.** PE-1 user exclusion + email re-key on the cloud→cloud (A→A) flow (reuse `ReconciledByRule`+`reconcileKind MatchByColumn "Email"`); PE-2 confirm `validate-user-map` gate fires for the cloud sink; **PE-3 the re-key canary** (cloud→cloud). | M1; survey **P10** | `THE_DATA_PRODUCERS` §6 PE-1..3; AC-I2/I5; P-3 | J2 |
+| **M3** | **`legacy` / `preview` — the B→A reverse leg.** LE-1 the reverse-leg transfer (logical on-prem source → physical cloud sink; **same model, no foreign ingest**, identity reconciled by SsKey/business key); **LE-2 the B→A round-trip canary**. Depends on M1 + M1.5. | M1; M1.5 | `THE_DATA_PRODUCERS` §6 LE-1/2 | J3 |
 | **M4** | **The gate is real.** Wire the capability survey into the run verbs as **advisory G0** (S3, per R6); wire `Preflight.all` (= CONFIRMED A1) so the survey feeds one composed gate; surface P10 + grant breadth. | M0 | `TRANSFER_ISOMORPHISM` §2; DECISIONS 2026-06-09 (S3); CONFIRMED A1 | J4 |
-| **M5** | **Real-UAT execute (OPEN-2).** The ops spike — a throwaway-UAT `Microsoft.Data.SqlClient` connection probing `IDENTITY_INSERT`/INSERT/grants (resolves OPEN-1/2/3/5/6 + the disposition mix); then `--execute` under R6 with `--preview-row-cap`. | M4 | PRESCOPE Slice D / §13; EXEC 5.1; OPEN-2 | J5 |
+| **M5** | **Real-UAT execute (OPEN-2).** The ops spike — a throwaway-UAT `Microsoft.Data.SqlClient` connection probing `IDENTITY_INSERT`/INSERT/grants (resolves OPEN-1/2/3/5/6 + the disposition mix); then `--execute` under R6 with `--preview-row-cap`. | M4; M1.5 | PRESCOPE Slice D / §13; EXEC 5.1; OPEN-2 | J5 |
 | **M6** | **Follow-ons (pull under a consumer).** cyclic `AssignedBySink` (6.A.2) + composite-identity capture (6.A.3); `MERGE…OUTPUT` set-based capture (Contribution B — trigger-gated on P4 + measured per-row bottleneck); synthetic `--rows N` / `--seed` (= D8); scoped-delete CLI exposure (A3); user-map walkable Surface (D7); `UserRemapContext→SurrogateRemapContext` merge. | M2/M3/M5 | PRESCOPE §13; CONFIRMED A3/D7/D8/G | J6 |
 
 ---
@@ -116,8 +120,8 @@ Every milestone's proof. Status: **GREEN** (exists, claimed passing) · **TO-WRI
 | **AC-I2 / P-REKEY** — re-keyed row is one CDC **Update**, not Delete+Insert; source surrogates absent from sink | M2 | **TO-WIRE** (green Dev→UAT; cloud→cloud new) | extend `TransferCanaryTests.fs:330` → cloud→cloud `golden` |
 | **AC-I5** — `validate-user-map` halts **before any DML** on an unmapped orphan | M2 | GREEN (confirm for cloud sink) | `TransferRefusalTests.fs:131` |
 | **PE-3 re-key canary** — `(Order → User-by-email)` join identical src↔sink, users `RowsWritten=0` | M2 | **TO-WRITE** | new (cloud→cloud) |
-| **LE-2 migration-preview canary** — legacy → disposition A → readback round-trips up to named tolerances | M3 | **TO-WRITE** | new |
-| every foreign-schema erasure is a **named `Tolerance`**, none silent | M3 | **TO-WRITE** | `Tolerance.fs` (new variants) |
+| **LE-2 B→A round-trip canary** — logical on-prem (B) → physical cloud (A) → readback round-trips (same model, no foreign tolerances) | M3 | **TO-WRITE** | new |
+| physical (`OSUSR_*`) rendition emitted/matched for a physical cloud sink | M1.5 | **TO-WRITE / confirm** | `Realization` emission (`THE_USE_CASE_ONTOLOGY.md` §5.8) |
 | **AC-D2 / P-DM** — zero CDC captures on idempotent redeploy | M2/M5 | GREEN | `CdcSilenceTests.fs:239` |
 | **AC-D4** — exact `capture = k` on a real delta | M2/M5 | GREEN | `CdcMeasureTests` |
 | survey `required ⇔ surveyed` totality | M4 | GREEN | `CapabilitySurveyTotalityTests.fs` |
@@ -131,17 +135,17 @@ Every milestone's proof. Status: **GREEN** (exists, claimed passing) · **TO-WRI
 ## 4. Dependency graph + critical path
 
 ```
-M0 (done) ──┬─► M1 (producer modelling) ──┬─► M2 (peer/golden + PE-3 canary)
-            │                              └─► M3 (legacy ingest + LE-2 canary)
+M0 (done) ──► M1 (rendition flag) ──┬─► M2 (peer/golden + PE-3 canary)
+            │                       └─► M1.5 (physical OSUSR emission) ──► M3 (legacy B→A + LE-2 canary)
             └─► M4 (survey-as-G0 wiring) ──────► M5 (OPEN-2 spike → --execute)
-                          │
-                          └─ P10 probe gates M2's re-key
+                          │                                  ▲
+                          └─ P10 probe gates M2's re-key      └─ M1.5 also gates real-UAT writes
 
 M2 / M3 / M5 ──► M6 (follow-ons, each pulled under a consumer)
 ```
 
-- **Critical path to "all producers proven offline"** (ephemeral / Docker, no real UAT): `M1 → {M2, M3}` — the two new canaries (PE-3, LE-2). This is reachable **now** (no external dependency).
-- **Critical path to "real cloud-UAT preview working"**: `M4 → M5` — gated by **OPEN-2**, the single biggest external dependency. Confirm OPEN-2 *first* before committing to M5.
+- **Critical path to "all producers proven offline"** (ephemeral / Docker, no real UAT): `M1 → {M2 ; M1.5 → M3}` — the two new canaries (PE-3, LE-2). M2 is reachable **now** against a logical-named stand-in; M3 needs M1.5 (physical-rendition emission).
+- **Critical path to "real cloud-UAT preview working"**: `M1.5 + (M4 → M5)` — gated by **OPEN-2** (the biggest external dependency) and by physical-rendition emission. Confirm OPEN-2 *first* before committing to M5.
 - **M2 is gated by the survey P10 probe** (user-directory readability); until P10, the cloud→cloud re-key canary runs against an ephemeral/Docker stand-in.
 
 ---
@@ -150,14 +154,15 @@ M2 / M3 / M5 ──► M6 (follow-ons, each pulled under a consumer)
 
 | # | Item | Why it matters | Disposition |
 |---|---|---|---|
-| **D-1** | **Producer modelling (M1):** `FlowSource.Peer`/`Legacy` variants vs env metadata (`estate: same\|foreign`) + flow disciplines. | `peer` needs no new ingest (same metamodel); `legacy` needs foreign-schema ingest. A variant for `legacy` may be warranted; `peer` may stay generic `Env` + the golden discipline. | **OPEN — decide at M1.** Lean: env-metadata flag, not a `FlowSource` variant, unless `legacy` ingest forces a distinct route. |
+| **D-1** | **Producer modelling (M1).** | How `peer`/`legacy` are distinguished and routed. | **SETTLED (2026-06-09):** an env-metadata flag **`rendition: physical \| logical`**, *not* a `FlowSource` variant. Both producers move the same `SsKey` model; the source's rendition (physical peer cell vs logical on-prem) is the cut. "estate" rejected as the name. |
 | **OPEN-2** | Does cloud UAT expose a **writable SQL connection** to entity tables (vs platform-API-only)? | Blocks all real-UAT execute (M5). The whole disposition mix (`PreservedFromSource` vs `AssignedBySink`) depends on it. | **Blocks M5. Confirm first** via the ops spike. |
 | **OPEN-1** | UAT blank vs pre-populated with Users; permits `IDENTITY_INSERT`? | Sets the per-kind disposition mix and whether `peer` users are excluded vs reconciled. | Resolved by survey P3 + P10 (M4). |
 | **OPEN-3/5/6** | UAT CDC-tracked? · bulk-lane two-phase cycle-breaking · CHECK/computed/trigger schema (`NOCHECK`) | Affect the executor's safety + batching. | Resolved by survey P11/P7/P8 (M4); 6.A.2 cyclic is M6. |
 | **OPEN-7** | Connection-apparatus scope (how many envs, concurrency). | Sizes `TransferConnections`. | Low; design at M5. |
 | **R-1** | **Survey posture** — advisory until the per-pair V2-driver flip, not a hard G0. | Per R6, V2 owns no production write path yet; a survey hard-stop would seize a gate V2 doesn't hold. | **Settled** (DECISIONS 2026-06-09): wire advisory at M4; hard refusal is a per-pair operator action. |
 | **R-2** | **AC-G0 / A1 disagreement** — the ontology scorecard says `Preflight.all` HELD; `CONFIRMED_BACKLOG` A1 says OPEN (zero callers). | Determines whether M4 is "wire it" or "already wired." | **Trust CONFIRMED (OPEN).** Verify the live call site at M4 open. |
-| **R-3** | **`legacy` foreign-schema ingest (LE-1)** is genuinely hard — the legacy schema is unknown/foreign; drift-by-SsKey only helps where identity is shared. | M3 is the highest-uncertainty milestone. | Scope LE-1 against a real legacy schema sample before committing; `synthetic` profiled from legacy is the privacy-safe fallback preview. |
+| **R-3** | **`legacy` is the B→A reverse leg, *not* foreign-schema ingest** (course-corrected 2026-06-09). The migration team does the foreign→logical mapping upstream; the engine only sees the same logical model. | Earlier framing (foreign ingest + translation tolerances) was wrong and is corrected across the corpus. M3 collapses to a same-model reverse-leg transfer + canary. | **Resolved framing.** Residual uncertainty is M1.5 (physical-rendition emission), not foreign ingest. |
+| **R-5** | **Physical (`OSUSR_*`) rendition emission (M1.5)** is the genuine new engine work. The engine targets the logical rendition today; writing/matching the physical cloud rendition is unverified. | Shared prerequisite for any real physical-cloud sink (`peer`, `legacy`, real-UAT M5). | **Confirm first** whether any path emits it; the offline canaries (M2/M3) can use a logical-named stand-in until then. |
 | **R-4** | All of M2/M3/M5 stay inside **R6** (preview/migration tooling). | A producer that silently became a production write path violates the governance frame. | Hold: `--go` + `PROJECTION_ALLOW_EXECUTE`, dry-run default, cloud sink `grant: data` DML-only. |
 
 ---
@@ -166,10 +171,11 @@ M2 / M3 / M5 ──► M6 (follow-ons, each pulled under a consumer)
 
 - **Direction is a binding, not an identity** — the producer is a `DataOrigin`/`FlowSource` value, the
   disposition a `Realization`; nothing hard-codes "cloud" into a type.
-- **Identity is the only deep problem** — `peer` re-keys (machinery exists), `legacy` discovers
-  (foreign-schema ingest), `synthetic` mints.
-- **Total decisions, named skips / no silent drop** — every excluded user, foreign-schema tolerance,
-  and unmapped orphan is named (refusal or declared `Tolerance`).
+- **Identity is the only deep problem** — `peer` re-keys (surrogates differ across cells), `legacy`
+  reconciles the same-model identities on the B→A reverse leg, `synthetic` mints. None translates
+  foreign schema — that is the migration team's, upstream.
+- **Total decisions, named skips / no silent drop** — every excluded user, every unmapped orphan,
+  every reconcile drop is named (refusal or declared `Tolerance`).
 - **The canary is the forcing function** — no producer is "done" without its data canary green in the
   warm Docker pool.
 - **Operator-facing strings obey `THE_VOICE.md`**; **R6 holds** for every live write.

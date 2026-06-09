@@ -39,7 +39,8 @@ flags. So the named outcomes (lift-and-shift dev, golden-data into UAT, legacy p
 become **named flows** the operator writes once and runs trivially.
 
 The data feeding a flow comes from one of three **producers** — `synthetic` (generated from a profile),
-`legacy` (the foreign-schema on-prem app), and `peer` (a same-estate OutSystems cell, e.g. `cloud-qa`;
+`legacy` (the B→A reverse leg — the logical on-prem model the migration team populated, piped back up
+into the physical cloud; same model, not foreign schema), and `peer` (a same-rendition OutSystems cell, e.g. `cloud-qa`;
 formerly "sibling-cloud"). Writing *up* into a live cloud environment (`cloud-uat`) is **cloud insertion**:
 the `emit(B ⊖ A)` act rendering the model in its physical `OSUSR_*` disposition (A) rather than the
 logical on-prem one (B). The producer trinity, the `golden` user-exclusion-plus-re-key discipline, and the

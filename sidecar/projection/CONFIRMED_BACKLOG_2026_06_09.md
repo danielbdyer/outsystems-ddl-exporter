@@ -193,17 +193,17 @@ preflight, milestone graph, acceptance/test-case matrix, critical path, and risk
 
 | # | Item | Verdict | Evidence / target |
 |---|------|---------|-------------------|
-| J1 | **Producer modelling + routing** — decide `FlowSource.Peer`/`Legacy` variants vs env-metadata (`estate: same\|foreign`) + flow disciplines; wire the chosen shape. | OPEN (design decision) | `FlowSource = Env\|Model\|Synthetic\|NoData` `MovementSpec.fs:150`; both ride generic `Env` today. PREFLIGHT M1 / risk D-1. |
-| J2 | **`peer` / `golden` cloud→cloud** — user exclusion + email re-key on the cloud→cloud flow + the **re-key canary** (PE-3). | OPEN (machinery green as Dev→UAT) | reuse `ReconciledByRule`+`reconcileKind` (`Reconciliation.fs:47`); proven only as Dev→UAT (`TransferCanaryTests.fs:330`); cloud→cloud flow + canary absent. PREFLIGHT M2. |
-| J3 | **`legacy` / `preview`** — foreign-schema ingest through the logical schema by SsKey (named tolerances) + the **migration-preview canary** (LE-2). | OPEN (hardest — foreign schema) | no ingest path; legacy schema ≠ model schema. PREFLIGHT M3 / risk R-3. |
+| J1 | **`rendition` env flag + routing** — add `rendition: physical \| logical` to each environment (operator decision 2026-06-09); distinguishes `peer` (physical source) from `legacy` (logical source); plus **physical (`OSUSR_*`) rendition emission** for a cloud sink (M1.5). | OPEN | env-metadata, *not* a `FlowSource` variant (`MovementSpec.fs:150`); both producers move the same `SsKey` model. PREFLIGHT M1/M1.5 / risk R-5. |
+| J2 | **`peer` / `golden` cloud→cloud** — user exclusion + email re-key on the cloud→cloud (A→A) flow + the **re-key canary** (PE-3). | OPEN (machinery green as Dev→UAT) | reuse `ReconciledByRule`+`reconcileKind` (`Reconciliation.fs:47`); proven only as Dev→UAT (`TransferCanaryTests.fs:330`); cloud→cloud flow + canary absent. PREFLIGHT M2. |
+| J3 | **`legacy` / `preview` — the B→A reverse leg** (NOT foreign schema) — the logical on-prem model (B, migration-team-populated) piped up into the physical cloud (A); same `SsKey` model. The reverse-leg transfer (LE-1) + the **B→A round-trip canary** (LE-2). | OPEN | same-model logical→physical move; no foreign ingest, no translation tolerance (the foreign→logical mapping is the migration team's, upstream). Depends on J1 + M1.5. PREFLIGHT M3 / risk R-3. |
 | J4 | **Capability survey as advisory G0** — wire the survey into the run verbs (S3, per R6) + wire `Preflight.all` (= A1) so the survey feeds one composed gate; add the P10 user-directory probe. | OPEN | survey is standalone-verb-only (`CapabilitySurvey.fs`, 3 probes); `Preflight.all` zero callers (= **A1**). `DECISIONS 2026-06-09` (S3 advisory). PREFLIGHT M4. |
 | J5 | **Real-UAT execute (OPEN-2)** — the ops spike (writable-connection probe) + `--execute` under R6 + `--preview-row-cap`. | OPEN — **blocked on OPEN-2** | `PRESCOPE_TRANSFER.md` §13; `TRANSFER_ISOMORPHISM_SUBSTANTIATION.md` §2. PREFLIGHT M5. |
 | J6 | **Follow-ons** — cyclic `AssignedBySink` (6.A.2) + composite-identity capture (6.A.3); `MERGE…OUTPUT` set-based capture (trigger-gated); synthetic `--rows N`/`--seed` (= D8); scoped-delete CLI exposure (= A3); user-map walkable Surface (= D7). | OPEN (pull under a consumer) | acyclic AssignedBySink shipped 2026-05-31; the rest are named follow-ons. PREFLIGHT M6. |
 
 **Acceptance gate for the cluster:** all three producer canaries green (`π∘σ≈id` ✅ · PE-3 re-key
-canary · LE-2 migration-preview canary); `golden` excludes users + re-keys by email under a passing
-survey P10; every cross-boundary erasure named; all stay inside R6. See `PREFLIGHT_CLOUD_INSERTION.md`
-§3 for the full test-case matrix.
+canary · LE-2 B→A round-trip canary); `golden` excludes users + re-keys by email under a passing
+survey P10; the physical (`OSUSR_*`) rendition is emitted for the cloud sink; every cross-boundary
+erasure named; all stay inside R6. See `PREFLIGHT_CLOUD_INSERTION.md` §3 for the full test-case matrix.
 
 ---
 
