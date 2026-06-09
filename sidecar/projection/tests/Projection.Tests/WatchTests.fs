@@ -178,3 +178,15 @@ let ``Watch board: completing a seeded stage flips it to Done with its duration`
 let ``Watch line: a pending stage reads the stage gerund (the board shows the whole arc)`` () =
     let text = Watch.lineText { Key = "emit"; State = Watch.Pending }
     Assert.Contains("Building the changes", text)
+
+[<Fact>]
+let ``Watch line: the migrate leg's stages read their voiced gerund + resultative`` () =
+    // the live migrate board (build → apply → verify) — the executor streams
+    // deploy.started / canary.started; the board voices them, never the code.
+    Assert.Contains("Applying the changes", Watch.lineText { Key = "deploy"; State = Watch.Active })
+    Assert.Contains("Verifying the round-trip", Watch.lineText { Key = "canary"; State = Watch.Active })
+    Assert.Contains("Deploy complete", Watch.lineText { Key = "deploy"; State = Watch.Done None })
+    Assert.Contains("Round-trip verification complete", Watch.lineText { Key = "canary"; State = Watch.Done None })
+    // never the raw code
+    Assert.DoesNotContain("deploy.started", Watch.lineText { Key = "deploy"; State = Watch.Active })
+    Assert.DoesNotContain("canary.started", Watch.lineText { Key = "canary"; State = Watch.Active })

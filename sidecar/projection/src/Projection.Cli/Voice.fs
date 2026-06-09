@@ -260,6 +260,24 @@ module Voice =
           Substantiation = fun _ -> []
           Action         = fun _ -> None }
 
+    /// `deploy.started` — the changes are being applied (`THE_VOICE.md` §13 /
+    /// Act 4, the migrate leg). Gerund-in-progress (rule 12 exception).
+    let private deployStarted : Copy =
+        { Code           = "deploy.started"
+          DocSection     = "§13"
+          Statement      = fun _ -> View.Note "Applying the changes."
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
+    /// `canary.started` — the round-trip is being verified (`THE_VOICE.md` §13 /
+    /// §6, the migrate leg's verify phase). Gerund-in-progress.
+    let private canaryStarted : Copy =
+        { Code           = "canary.started"
+          DocSection     = "§13"
+          Statement      = fun _ -> View.Note "Verifying the round-trip."
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
     /// `summary.stageCompleted` — a stage of the run completed (`THE_VOICE.md`
     /// §13). Resultative; the stage name is operator-shaped via `stageName`,
     /// never the internal engine verb.
@@ -315,6 +333,8 @@ module Voice =
           profileCompleted
           emitStarted
           emitCompleted
+          deployStarted
+          canaryStarted
           summaryStageCompleted
           // §14 / §10 — config & errors
           configValidationFailed ]

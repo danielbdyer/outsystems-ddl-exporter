@@ -141,6 +141,32 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
     interface IClassFixture<EphemeralContainerFixture>
 
     [<Fact>]
+    member _.``migrate A B streams the live stage arc (build -> apply -> verify) for the Watch board`` () =
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "MigrateStages" (fun conn _ ->
+                task {
+                    do! Deploy.executeBatch conn (SsdtDdlEmitter.statements catalogA |> Render.toText)
+                    let seen = System.Collections.Generic.List<string>()
+                    LogSink.addSubscriber (fun env -> lock seen (fun () -> seen.Add env.Code))
+                    try
+                        let! outcome = MigrationRun.execute true DeclareNone catalogA catalogB conn
+                        match outcome with
+                        | Error e -> Assert.Fail(sprintf "migrate execute failed: %A" e)
+                        | Ok _ ->
+                            let codes = lock seen (fun () -> List.ofSeq seen)
+                            // each phase opens its line (the Watch board reacts to `.started`)
+                            Assert.Contains("emit.started", codes)
+                            Assert.Contains("deploy.started", codes)
+                            Assert.Contains("canary.started", codes)
+                            // and closes it (the board flips to Done on stageCompleted) — ≥3 phases
+                            let completed = codes |> List.filter (fun c -> c = "summary.stageCompleted")
+                            Assert.True(completed.Length >= 3, sprintf "expected ≥3 stageCompleted, got %d: %A" completed.Length codes)
+                    finally
+                        LogSink.clearSubscribers ()
+                }))
+
+    [<Fact>]
     member _.``migrate A B canary: one execute evolves A→B across three channels; B reproduces B, data survives, re-run is idempotent`` () =
         if not (Deploy.Docker.ensureRunning ()) then () else
         TaskSync.run (fun () ->

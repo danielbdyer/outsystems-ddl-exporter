@@ -137,6 +137,16 @@ let private prettyMode = ref false
 /// on stderr instead of the terminal-summary-only path.
 let private watchMode = ref false
 
+/// The publish pipeline's planned stage arc, in order — the keys it streams
+/// (`extract.started` / `summary.stageCompleted{stage}`). The live Watch board
+/// pre-seeds these as `Pending` so the whole arc shows from the first frame
+/// (`THE_STORYBOARD.md` Appendix A.3).
+let private pipelineStages : string list = [ "extract"; "profile"; "emit" ]
+
+/// The in-place migrate leg's stage arc — build → apply → verify — that
+/// `MigrationRun.execute` streams at its phase boundaries (Appendix A.3).
+let private migrateStages : string list = [ "emit"; "deploy"; "canary" ]
+
 let private withRun (command: string) (body: unit -> int) : int =
     LogSink.beginRun () |> ignore
     Bench.reset ()
@@ -1443,7 +1453,13 @@ let private runMigrateExecute (target: Catalog) (connSpec: string) (declaration:
                                             return 9
                                         | Error e -> return reportMigrationError e
         }
-    let code = work.GetAwaiter().GetResult()
+    let runBody () = work.GetAwaiter().GetResult()
+    // --watch + a real TTY → the live stage board (§13), pre-seeded with the
+    // migrate leg's arc (build → apply → verify) the executor streams.
+    let code =
+        if Watch.shouldWatch watchMode.Value then
+            Watch.renderWatch migrateStages (Watch.resolveDwellMs ()) runBody
+        else runBody ()
     dumpBench "migrate"
     code
 
@@ -1705,12 +1721,6 @@ let private runCaptureProfile (connSpec: string) (outPath: string) : int =
             else 3
     dumpBench "profile"
     exitCode
-
-/// The pipeline's planned stage arc, in order — the keys the publish pipeline
-/// streams (`extract.started` / `summary.stageCompleted{stage}`). The live
-/// Watch board pre-seeds these as `Pending` so the whole arc is visible before
-/// the first stage starts (`THE_STORYBOARD.md` Appendix A.3).
-let private pipelineStages : string list = [ "extract"; "profile"; "emit" ]
 
 let private runPlan (plan: ExecutionPlan) : int =
     for n in plan.Notes do eprintfn "Note — %s" n
