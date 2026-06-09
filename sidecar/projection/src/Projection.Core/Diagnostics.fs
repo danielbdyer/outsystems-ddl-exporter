@@ -407,6 +407,57 @@ module LineageDiagnostics =
     let writeLineages (events: LineageEvent list) : Lineage<Diagnostics<unit>> =
         Lineage.ofValueAndEvents events (Diagnostics.ofValue ())
 
+    /// The **"every kind was visited" lineage epilogue** — the
+    /// `DataIntent` writer tail shared by the analytics passes
+    /// (Centrality / BoundedContext / SchemaComplexity / ProfileAnomaly /
+    /// QueryHint). Each scans the catalog, computes a derived result, and
+    /// witnesses its scan by emitting one `Touched` / `DataIntent`
+    /// `LineageEvent` per node touched (per A25) alongside any findings it
+    /// surfaced.
+    ///
+    /// `touched` is the ordered list of `SsKey`s the pass observed — the
+    /// caller projects it from the source it scanned (graph `nodes`
+    /// directly, or `allKinds |> List.map (fun k -> k.SsKey)`). One event
+    /// is emitted per key, in order; all are `Touched` / `DataIntent`
+    /// because the scan carries no operator opinion (the result is the
+    /// pass's opinion, not the per-node witness). `findings` are the
+    /// diagnostics the pass surfaced (empty when the pass emits none).
+    ///
+    /// Behaviourally identical to the hand-rolled
+    /// `lineageDiagnostics { do! writeLineages events
+    ///                       do! writeDiagnostics findings
+    ///                       return result }`
+    /// tail it replaces — the events are built here from `passName` /
+    /// `passVersion` so the per-pass driver no longer constructs the
+    /// `LineageEvent` record by hand (writer-fidelity discipline,
+    /// `DECISIONS 2026-05-30`).
+    let touchedEpilogue
+        (passName: string)
+        (passVersion: int)
+        (touched: SsKey list)
+        (findings: DiagnosticEntry list)
+        (result: 'a)
+        : Lineage<Diagnostics<'a>> =
+        let events =
+            touched
+            |> List.map (fun key ->
+                { PassName       = passName
+                  PassVersion    = passVersion
+                  SsKey          = key
+                  TransformKind  = Touched
+                  Classification = DataIntent })
+        // Explicit desugaring of
+        //   lineageDiagnostics { do! writeLineages events
+        //                        do! writeDiagnostics findings
+        //                        return result }
+        // — the `lineageDiagnostics` CE is declared below this module, so
+        // the dual-writer tail is threaded directly through `bind` here
+        // (the worked equivalence is documented on the CE type).
+        writeLineages events
+        |> bind (fun () ->
+            writeDiagnostics findings
+            |> bind (fun () -> ofValue result))
+
 
 /// `lineageDiagnostics { ... }` CE for the dual writer. Same algebraic
 /// shape as `lineage { ... }`, over `Lineage<Diagnostics<'a>>`. The
