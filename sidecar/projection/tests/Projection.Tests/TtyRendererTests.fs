@@ -92,7 +92,8 @@ let ``Tier-4 board: NOT YET names the runs-to-go`` () =
 
 // --- the Gate surface (INSTRUMENT slice 3) ---------------------------------
 // Discriminating predicate: a destructive refusal leads Bad and names the
-// declare-loss next action; a blocking pre-flight refusal leads Warn with none.
+// drop-approval next action (the real --allow-drops / --declare-drop levers);
+// a blocking pre-flight refusal leads Warn with none.
 // Both carry the gate axis, the detail, and the distinct exit code — not one
 // flat error string.
 
@@ -116,7 +117,7 @@ let ``Gate: a destructive refusal stops with the loss, the exit, and the declare
     Assert.Contains("undeclared destructive change", text) // the gate axis
     Assert.Contains("dropping index IX_Order_Stale", text) // the detail
     Assert.Contains("9", text)                             // the distinct exit code
-    Assert.Contains("--declare-loss", text)                // the next action
+    Assert.Contains("--declare-drop", text)                // the next action (the real per-drop lever)
     Assert.Contains("✕", text)                             // Bad glyph — survives NO_COLOR
 
 [<Fact>]
@@ -126,5 +127,5 @@ let ``Gate: a blocking pre-flight refusal leads Warn, with no declare-loss actio
     let text = renderGateText "projection migrate" refusal
     Assert.Contains("connection unavailable", text)   // the gate axis
     Assert.Contains("could not reach UAT", text)      // the detail
-    Assert.DoesNotContain("--declare-loss", text)     // not a declared-loss refusal
+    Assert.DoesNotContain("--declare-drop", text)     // not a declared-loss refusal
     Assert.Contains("▲", text)                        // Warn glyph

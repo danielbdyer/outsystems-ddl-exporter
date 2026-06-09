@@ -688,8 +688,7 @@ let private runTransfer
             System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" = "1"
         else false
     if executeRequested && not executeGated then
-        Console.Error.WriteLine
-            "projection transfer: --execute requires PROJECTION_ALLOW_EXECUTE=1 in the environment (R6 gate). Refusing."
+        TtyRenderer.renderVoicedError (ValidationError.create "gate.intent" "PROJECTION_ALLOW_EXECUTE is not set in the environment.")
         dumpBench "transfer"
         7
     else
@@ -1160,16 +1159,22 @@ let private migrationErrorDetail (e: MigrationError) : string =
     | RefusedByCdc t            -> sprintf "the schema change would run against a CDC-tracked database (%d table(s))" (List.length t)
     | StoreReadFailed msg       -> sprintf "the run history could not be read — %s" msg
 
+/// Voice the §5 declared-loss gate for undeclared destructive removals — the
+/// consent moment a drop must pass. The exit (9) is unchanged; the §5 statement
+/// and the approval lever lead, the named removals ride in the substantiation.
+let private renderUndeclaredDropGate (violations: SchemaLoss list) : unit =
+    let tokens = violations |> List.map Migration.lossToken |> String.concat ", "
+    let detail = sprintf "%d removal(s) await approval: %s" (List.length violations) tokens
+    TtyRenderer.renderGate "projection migrate"
+        (Preflight.refusalOf [ ValidationError.create "migrate.undeclaredDestructiveChange" detail ])
+
 /// Shared dry-run renderer for a `migrate` preview outcome — the change-manifest
 /// of δ, or a fail-loud refusal (undeclared losses / inexpressible change).
 let private reportPreviewOutcome (header: string) (result: Result<MigrationArtifacts, MigrationError>) : int =
     let exitCode =
         match result with
         | Error (RefusedByViolations violations) ->
-            Console.Error.WriteLine (
-                sprintf "projection migrate: %d destructive change(s) are undeclared. Re-run with --allow-drops (accept all) or --declare-drop <token> for each:" (List.length violations))
-            for v in violations do
-                Console.Error.WriteLine (sprintf "    %s" (Migration.lossToken v))
+            renderUndeclaredDropGate violations
             9
         | Error (RefusedBySchemaErrors entries) ->
             Console.Error.WriteLine "projection migrate: these change(s) cannot be expressed as a single ALTER:"
@@ -1268,9 +1273,7 @@ let private plannedWritesOf (stmts: Statement list) : Preflight.PlannedWrite lis
 let private reportMigrationError (e: MigrationError) : int =
     match e with
     | RefusedByViolations violations ->
-        Console.Error.WriteLine (
-            sprintf "projection migrate: %d destructive change(s) are undeclared. Re-run with --allow-drops (accept all) or --declare-drop <token> for each:" (List.length violations))
-        for v in violations do Console.Error.WriteLine (sprintf "    %s" (Migration.lossToken v))
+        renderUndeclaredDropGate violations
         9
     | RefusedBySchemaErrors entries ->
         Console.Error.WriteLine "projection migrate: these change(s) cannot be expressed:"
@@ -1297,25 +1300,23 @@ let private reportMigrationError (e: MigrationError) : int =
 /// refusal + exit code. A2's grant capture is database-scope (survey-gated
 /// object-scope refinement, OPEN-2 / P1).
 let private migratePreflights (label: string) (cnn: Microsoft.Data.SqlClient.SqlConnection) (planned: Preflight.PlannedWrite list) : System.Threading.Tasks.Task<Result<unit, int>> =
+    // Each pre-flight refusal renders through the §5 Gate surface — the
+    // consequence as meaning + the one plain imperative — never a raw header +
+    // dump. The exit is pinned to the migrate verb's historical code (7, the
+    // connection/permission/credential class), independent of `classify`'s axis
+    // code, so the displayed exit matches the returned one.
+    let refuse (es: ValidationError list) : Result<unit, int> =
+        TtyRenderer.renderGate "projection migrate" { Preflight.refusalOf es with ExitCode = 7 }
+        Error 7
     task {
         match! Preflight.connectionPreflight cnn cnn with
-        | Error es ->
-            Console.Error.WriteLine (sprintf "projection migrate: %s connection pre-flight refused:" label)
-            printErrors Console.Error es
-            return Error 7
+        | Error es -> return refuse es
         | Ok () ->
             match! Preflight.captureGrantEvidence cnn with
-            | Error es ->
-                // A grant-probe failure is non-fatal to correctness but we surface it.
-                Console.Error.WriteLine "projection migrate: permission probe failed (sys.fn_my_permissions):"
-                printErrors Console.Error es
-                return Error 7
+            | Error es -> return refuse es
             | Ok grant ->
                 match Preflight.permissionPreflight grant planned with
-                | Error es ->
-                    Console.Error.WriteLine "projection migrate: permission pre-flight refused:"
-                    printErrors Console.Error es
-                    return Error 7
+                | Error es -> return refuse es
                 | Ok () -> return Ok ()
     }
 
@@ -1340,8 +1341,8 @@ let private tighteningPreflight
             match! Preflight.tighteningPreflight dataCnn sourceA overlay with
             | Ok () -> return Ok ()
             | Error es ->
-                Console.Error.WriteLine "projection migrate: tightening pre-flight refused (NOT-NULL on NULL-bearing data):"
-                printErrors Console.Error es
+                // §5 Data-compat gate — the existing data violates the tightening.
+                TtyRenderer.renderGate "projection migrate" (Preflight.refusalOf es)
                 return Error 9
     }
 
@@ -1356,8 +1357,7 @@ let private tighteningPreflight
 /// unchanged and a one-line note says no episode was persisted.
 let private runMigrateExecute (target: Catalog) (connSpec: string) (declaration: LossDeclaration) (allowCdc: bool) (storePath: string option) (envLabel: string option) : int =
     if System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" <> "1" then
-        Console.Error.WriteLine
-            "projection migrate: --execute requires PROJECTION_ALLOW_EXECUTE=1 in the environment (R6 gate). Refusing."
+        TtyRenderer.renderVoicedError (ValidationError.create "gate.intent" "PROJECTION_ALLOW_EXECUTE is not set in the environment.")
         dumpBench "migrate"
         7
     else
@@ -1457,8 +1457,7 @@ let private runMigrateExecute (target: Catalog) (connSpec: string) (declaration:
 /// only if the schema verified.
 let private runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec: string) (reconcileSpecs: string list) (userMapPath: string option) (declaration: LossDeclaration) (allowCdc: bool) (storePath: string option) (envLabel: string option) : int =
     if System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" <> "1" then
-        Console.Error.WriteLine
-            "projection migrate: --execute requires PROJECTION_ALLOW_EXECUTE=1 in the environment (R6 gate). Refusing."
+        TtyRenderer.renderVoicedError (ValidationError.create "gate.intent" "PROJECTION_ALLOW_EXECUTE is not set in the environment.")
         dumpBench "migrate"
         7
     else
@@ -1521,8 +1520,9 @@ let private runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec:
                             // Pre-flight the SOURCE (read) + SINK (write) before any mutation.
                             match! Preflight.connectionPreflight dataSource sink with
                             | Error es ->
-                                Console.Error.WriteLine "projection migrate: connection pre-flight refused:"
-                                printErrors Console.Error es
+                                // §5 connection gate; the migrate verb's connection
+                                // refusal exits 7 (the credential class), pinned here.
+                                TtyRenderer.renderGate "projection migrate" { Preflight.refusalOf es with ExitCode = 7 }
                                 return 7
                             | Ok () ->
                                 match MigrationRun.preview declaration sinkSourceA target with
@@ -1646,8 +1646,7 @@ let private runSyntheticLoad (model: ModelSource) (modelOssys: string option) (p
     let executeGated =
         if execute then System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" = "1" else false
     if execute && not executeGated then
-        Console.Error.WriteLine
-            "projection (synthetic): a live load requires PROJECTION_ALLOW_EXECUTE=1 in the environment (R6 gate). Refusing."
+        TtyRenderer.renderVoicedError (ValidationError.create "gate.intent" "PROJECTION_ALLOW_EXECUTE is not set in the environment.")
         dumpBench "synthetic"
         7
     else

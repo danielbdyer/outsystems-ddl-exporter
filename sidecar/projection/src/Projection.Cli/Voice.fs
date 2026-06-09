@@ -365,6 +365,13 @@ module Voice =
         if code.StartsWith "pipeline.config." then
             View.Hero(View.Bad, "The configuration has a problem. Correct it and rerun."),
             Some(View.Action "Correct the configuration and rerun.")
+        elif code = "gate.intent" then
+            // §5/§7 two-gate consent model: `--go` states intent, the
+            // PROJECTION_ALLOW_EXECUTE arming is the second gate. A CLI consent
+            // concern, not an engine pre-flight (DECISIONS 2026-06-08 — the flat
+            // gate.intent code, not a Preflight.GateLabel variant).
+            View.Hero(View.Warn, "A live write requires PROJECTION_ALLOW_EXECUTE=1 in the environment."),
+            Some(View.Action "Set PROJECTION_ALLOW_EXECUTE=1, then re-run.")
         elif code.Contains "connection" then
             View.Hero(View.Warn, "The target is unreachable. Check the connection and retry."),
             Some(View.Action "Check the connection and retry.")
@@ -422,7 +429,7 @@ module Voice =
         match label with
         | Preflight.UndeclaredDestructiveChange ->
             View.Bad, "This change drops a database object. Approve the removal, or halt.",
-            Some(View.Action "Approve the removal: --declare-loss <name> (or --declare-all), or halt.")
+            Some(View.Action "Approve the removal: --allow-drops (accept all) or --declare-drop <token> for each, or halt.")
         | Preflight.DataViolatesTightening ->
             View.Bad, "The existing data violates the tightening. Correct the data, relax the constraint, or halt.",
             Some(View.Action "Correct the data, relax the constraint, or halt.")
