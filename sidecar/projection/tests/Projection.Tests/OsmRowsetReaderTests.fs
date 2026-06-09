@@ -27,7 +27,6 @@ open Projection.Tests.Fixtures
 //      addition: A1 unbounded.
 // ---------------------------------------------------------------------------
 
-let private mkName s = Name.create s |> Result.value
 
 let private parseSync (source: CatalogReader.SnapshotSource) : Result<Catalog> =
     TaskSync.run (fun () -> CatalogReader.parse source)

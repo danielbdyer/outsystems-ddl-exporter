@@ -194,7 +194,6 @@ let ``A.4.7 slice α: Lineage.tellMany preserves Classification on appended even
 // tests (slice θ) close the structural loop.
 // ---------------------------------------------------------------------------
 
-let private mkName (s: string) : Name = Name.create s |> Result.value
 
 [<Fact>]
 let ``A.4.7 slice α: CanonicalizeIdentity events carry DataIntent`` () =

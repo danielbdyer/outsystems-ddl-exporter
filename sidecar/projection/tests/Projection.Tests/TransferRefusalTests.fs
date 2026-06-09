@@ -142,3 +142,21 @@ let ``AC-I5: a fully-mapped user-map passes the pre-write gate`` () =
 let ``AC-I5: --allow-drops downgrades the orphan to the post-write reported-drop path`` () =
     let reconciled = reconciledWith [ singleKey, SourceKey.ofString "999" ]
     Assert.True((Transfer.validateUserMap true reconciled).IsNone)
+
+// --- A1: cdcTrackedSink refusal routes through the Preflight classify seam ---
+//
+// `runTransfer`'s refusal branch derives its exit through `Preflight.refusalOf`
+// (the single `classify` seam) rather than a hand-rolled if/elif. The CDC
+// pre-flight refusal (`transfer.cdcTrackedSink`, raised on the Execute path in
+// `TransferRun.runCore`) must therefore exit 9 (`CdcTrackedSink`), not the
+// generic `else 3` the prior hand-derivation produced. This witnesses the seam
+// the CLI now shares with the gate composition (cf. PreflightAllTests `classify`).
+
+[<Fact>]
+let ``A1: a transfer.cdcTrackedSink refusal classifies to exit 9 through Preflight.refusalOf`` () =
+    let refusal =
+        Preflight.refusalOf
+            [ ValidationError.create "transfer.cdcTrackedSink"
+                "Sink has CDC-tracked table(s); refusing --execute." ]
+    Assert.Equal(9, refusal.ExitCode)
+    Assert.Equal(Preflight.CdcTrackedSink, refusal.Label)

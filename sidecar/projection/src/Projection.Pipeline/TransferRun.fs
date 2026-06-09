@@ -882,9 +882,15 @@ module Transfer =
                     (ValidationError.create "transfer.tablesUnknown"
                         (sprintf "table subset names not found in the source schema: %s" (String.concat ", " missing)))
 
-    let runThroughConnectionsWithEmission
+    /// The full apparatus-driven entry: the emission mode, the G10 resumable
+    /// flag, and the declared table subset, threaded onto the `WriteOptions` the
+    /// write seam consumes. `resumable = true` routes the incremental load
+    /// through `writePlanResumable` (the idempotent upsert envelope); it is inert
+    /// under `WipeAndLoad` (the wipe leg owns the refresh).
+    let runThroughConnectionsResumable
         (mode: Mode)
         (emission: EmissionMode)
+        (resumable: bool)
         (allowCdc: bool)
         (allowDrops: bool)
         (tables: string list)
@@ -909,8 +915,21 @@ module Transfer =
                             match resolveReconciliation contract with
                             | Error es -> return Result.failure es
                             | Ok reconciliation ->
-                                return! runCore mode allowCdc allowDrops source sink contract reconciliation None { WriteOptions.ofEmission emission with LoadSet = loadSet }
+                                return! runCore mode allowCdc allowDrops source sink contract reconciliation None { WriteOptions.ofEmission emission with Resumable = resumable; LoadSet = loadSet }
         }
+
+    /// The non-resumable form (every existing caller's behavior — byte-identical
+    /// to the pre-resumable write path).
+    let runThroughConnectionsWithEmission
+        (mode: Mode)
+        (emission: EmissionMode)
+        (allowCdc: bool)
+        (allowDrops: bool)
+        (tables: string list)
+        (connections: TransferConnections)
+        (resolveReconciliation: Catalog -> Result<Map<SsKey, ReconciliationStrategy>>)
+        : Task<Result<TransferReport>> =
+        runThroughConnectionsResumable mode emission false allowCdc allowDrops tables connections resolveReconciliation
 
     /// The incremental-MERGE default (the existing callers' behavior); the
     /// `--how` CLI surface selects `WipeAndLoad` via the `WithEmission` form.

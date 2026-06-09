@@ -175,20 +175,7 @@ module BoundedContextPass =
                 (sprintf "boundedContext v%d: %d community candidates from %d nodes"
                     version (List.length candidates) (List.length nodes))
 
-        let events =
-            nodes
-            |> List.map (fun key ->
-                { PassName       = passName
-                  PassVersion    = version
-                  SsKey          = key
-                  TransformKind  = Touched
-                  Classification = DataIntent })
-
-        lineageDiagnostics {
-            do! LineageDiagnostics.writeLineages events
-            do! LineageDiagnostics.writeDiagnostic entry
-            return result
-        }
+        LineageDiagnostics.touchedEpilogue passName version nodes [ entry ] result
 
     let registered : RegisteredTransform<TopologicalOrder, BoundedContextDiscovery> =
         { Name         = passName

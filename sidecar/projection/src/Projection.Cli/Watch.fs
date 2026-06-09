@@ -50,9 +50,17 @@ module Watch =
     /// current visible state. Ordered by first appearance.
     type StageLine = { Key: string; State: StageState }
 
-    type Board = { Stages: StageLine list }
+    /// The board — the stage lines, plus the optional run frame (`THE_VOICE.md`
+    /// §13: "the instrument speaks about its own running"). `Title` is the
+    /// run-in-flight header voiced above the arc; `RunIdentity` is the run's
+    /// ordinal, voiced in the done-frame as "Recorded as run N" when present. Both
+    /// default to absent — the board renders the bare arc when no frame is given.
+    type Board =
+        { Stages: StageLine list
+          Title: string option
+          RunIdentity: string option }
 
-    let empty : Board = { Stages = [] }
+    let empty : Board = { Stages = []; Title = None; RunIdentity = None }
 
     /// A board pre-seeded with the run's planned stages, each `Pending` — so the
     /// operator sees the whole arc before the first stage starts, the stages
@@ -62,7 +70,17 @@ module Watch =
         { Stages =
             stageKeys
             |> List.filter (fun k -> not (k = "pipeline"))
-            |> List.map (fun k -> { Key = k; State = Pending }) }
+            |> List.map (fun k -> { Key = k; State = Pending })
+          Title = None
+          RunIdentity = None }
+
+    /// A seeded board carrying the run frame — the run-title header voiced above
+    /// the arc (`THE_VOICE.md` §13) and, when known up front, the run's ordinal for
+    /// the done-frame's "Recorded as run N". The boundary (`renderWatch`) supplies
+    /// the command + any run identity it holds; the board renders the bare arc when
+    /// neither is given (the `seeded` shape stays the unframed default).
+    let seededWith (command: string option) (runIdentity: string option) (stageKeys: string list) : Board =
+        { seeded stageKeys with Title = command; RunIdentity = runIdentity }
 
     /// The umbrella "pipeline" stage (`FullExportRun.recordStage "pipeline"`) wraps
     /// the whole run; it is not a sub-stage the operator watches, so the board
@@ -219,6 +237,42 @@ module Watch =
             | Some ms -> sprintf "%s · %s" baseText (secondsText ms)
             | None    -> baseText
 
+    /// The run's terminal stage — the last line on the board (the arc's final
+    /// stage). `None` for an empty board. The done-frame's follow-on is keyed off
+    /// it (§13 — "a finished change build offers the verify").
+    let terminalStageKey (board: Board) : string option =
+        board.Stages |> List.tryLast |> Option.map (fun s -> s.Key)
+
+    /// Whether the run has reached its terminal stage — every seeded stage is
+    /// `Done`. The done-frame renders only then (the §13 rhythm names the next move
+    /// once the visible arc has landed, never mid-run).
+    let isTerminal (board: Board) : bool =
+        not (List.isEmpty board.Stages)
+        && board.Stages |> List.forall (fun s -> match s.State with Done _ -> true | _ -> false)
+
+    /// The done-frame line — the §13 follow-on for the terminal stage, with the
+    /// recorded-run identity beneath when the board carries one. Voiced through
+    /// `watch.runDone` (the catalog holds the copy; the board never authors prose).
+    /// `None` until the run is terminal.
+    let doneFrameText (board: Board) : string option =
+        if not (isTerminal board) then None
+        else
+            let followOn =
+                match terminalStageKey board with
+                | Some key -> Voice.followOnAfter key
+                | None     -> "The run is complete."
+            let payload =
+                [ "followOn", box followOn ]
+                @ (match board.RunIdentity with Some n -> [ "runIdentity", box n ] | None -> [])
+                |> Map.ofList
+            Some(statementText "watch.runDone" payload)
+
+    /// The run-title header line — voiced through `watch.runTitle` when the board
+    /// carries a title. `None` for an unframed board.
+    let titleText (board: Board) : string option =
+        board.Title
+        |> Option.map (fun cmd -> statementText "watch.runTitle" (Map.ofList [ "command", box cmd ]))
+
     let private rowMarkup (line: StageLine) : string =
         let text = Markup.Escape(lineText line)
         match line.State with
@@ -227,10 +281,20 @@ module Watch =
         | Done _   -> sprintf "%s  %s" Theme.ok                       (Theme.green text)
 
     /// Project the board onto a Spectre renderable — the live target the
-    /// `LiveDisplayContext` updates in place.
+    /// `LiveDisplayContext` updates in place. The optional run-title header frames
+    /// the arc above; the done-frame (the §13 follow-on + the recorded-run
+    /// identity) closes it below once the run reaches its terminal stage.
     let toRenderable (board: Board) : IRenderable =
-        let rows = board.Stages |> List.map (fun s -> Markup(rowMarkup s) :> IRenderable)
-        Rows(rows) :> IRenderable
+        let titleRow =
+            match titleText board with
+            | Some t -> [ Markup(Theme.muted (Markup.Escape t)) :> IRenderable ]
+            | None   -> []
+        let stageRows = board.Stages |> List.map (fun s -> Markup(rowMarkup s) :> IRenderable)
+        let doneRow =
+            match doneFrameText board with
+            | Some t -> [ Markup(sprintf "%s  %s" Theme.ok (Theme.green (Markup.Escape t))) :> IRenderable ]
+            | None   -> []
+        Rows(titleRow @ stageRows @ doneRow) :> IRenderable
 
     // -- the live shell --------------------------------------------------------
 

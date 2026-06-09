@@ -124,15 +124,10 @@ module internal DiagnosticDocument =
         (entries: DiagnosticEntry list)
         : Result<ArtifactByKind<JsonNode>, EmitError> =
         let grouped = entriesByKind entries
-        let allKinds = Catalog.allKinds catalog
-        let slices =
-            allKinds
-            |> List.map (fun k ->
-                let kindEntries =
-                    Map.tryFind k.SsKey grouped |> Option.defaultValue []
-                k.SsKey, kindJsonNode k kindEntries)
-            |> Map.ofList
-        ArtifactByKind.create catalog slices
+        ArtifactByKind.perKind catalog (fun k ->
+            let kindEntries =
+                Map.tryFind k.SsKey grouped |> Option.defaultValue []
+            kindJsonNode k kindEntries)
 
 
 /// Π_DecisionLog — chapter 4.3 slice α emitter for the operator-

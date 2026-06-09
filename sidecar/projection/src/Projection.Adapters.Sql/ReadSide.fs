@@ -235,6 +235,29 @@ module ReadSide =
             | :? byte as b -> Some (int b)
             | _ -> None
 
+    /// Drain a `SqlDataReader` cursor to EOF, invoking `onRow reader` for
+    /// every row the cursor advances over. The single concept the
+    /// ~17 hand-rolled `while hasMore do let! more = reader.ReadAsync() ...`
+    /// loops were each re-expressing: a row-by-row walk of one result set,
+    /// with the per-row projection / accumulation supplied by the caller.
+    /// `onRow` reads the columns it needs off the still-positioned cursor and
+    /// accumulates into the caller's own sink (ResizeArray / HashSet /
+    /// Dictionary / classify-and-skip), so the drain order and per-row
+    /// effects are byte-identical to the loops it replaces. Scoped to ONE
+    /// result set — callers walking a multi-batch reader call it once per
+    /// `NextResultAsync` step (see `readSchemaCombined`).
+    let private drainRows
+        (reader: SqlDataReader)
+        (onRow: SqlDataReader -> unit)
+        : Task<unit> =
+        task {
+            let mutable hasMore = true
+            while hasMore do
+                let! more = reader.ReadAsync()
+                if more then onRow reader
+                else hasMore <- false
+        }
+
     let private readColumnRows (cnn: SqlConnection)
         : Task<list<ColumnRow>> =
         task {
@@ -249,10 +272,7 @@ module ReadSide =
             use! reader = cmd.ExecuteReaderAsync()
             let rows = ResizeArray<ColumnRow>()
             let optInt = optIntOf reader
-            let mutable hasMore = true
-            while hasMore do
-                let! more = reader.ReadAsync()
-                if more then
+            do! drainRows reader (fun reader ->
                     let lengthRaw = optInt 5
                     let length =
                         match lengthRaw with
@@ -268,9 +288,7 @@ module ReadSide =
                             Length = length
                             Precision = optInt 6
                             Scale = optInt 7
-                        })
-                else
-                    hasMore <- false
+                        }))
             // Defensive diagnostic (slice A.4.7'-prelude.defensive-
             // hardening): zero column rows from INFORMATION_SCHEMA.COLUMNS
             // is a SIGNAL not silence. Either (a) the user-schema is
@@ -301,16 +319,11 @@ module ReadSide =
                    AND t.is_ms_shipped = 0"
             use! reader = cmd.ExecuteReaderAsync()
             let result = System.Collections.Generic.HashSet<string * string * string>()
-            let mutable hasMore = true
-            while hasMore do
-                let! more = reader.ReadAsync()
-                if more then
+            do! drainRows reader (fun reader ->
                     result.Add(
                         reader.GetString 0,
                         reader.GetString 1,
-                        reader.GetString 2) |> ignore
-                else
-                    hasMore <- false
+                        reader.GetString 2) |> ignore)
             return Set.ofSeq result
         }
 
@@ -340,16 +353,11 @@ module ReadSide =
                    AND tc.TABLE_SCHEMA NOT IN ('sys','INFORMATION_SCHEMA')"
             use! reader = cmd.ExecuteReaderAsync()
             let result = System.Collections.Generic.HashSet<string * string * string>()
-            let mutable hasMore = true
-            while hasMore do
-                let! more = reader.ReadAsync()
-                if more then
+            do! drainRows reader (fun reader ->
                     let schema = reader.GetString 0
                     let table = reader.GetString 1
                     let column = reader.GetString 2
-                    result.Add(schema, table, column) |> ignore
-                else
-                    hasMore <- false
+                    result.Add(schema, table, column) |> ignore)
             return Set.ofSeq result
         }
 
@@ -377,14 +385,9 @@ module ReadSide =
             use! reader = cmd.ExecuteReaderAsync()
             let result =
                 System.Collections.Generic.Dictionary<string * string * string, string>()
-            let mutable hasMore = true
-            while hasMore do
-                let! more = reader.ReadAsync()
-                if more then
+            do! drainRows reader (fun reader ->
                     let key = (reader.GetString 0, reader.GetString 1, reader.GetString 2)
-                    result.[key] <- reader.GetString 3
-                else
-                    hasMore <- false
+                    result.[key] <- reader.GetString 3)
             return result |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
         }
 
@@ -411,14 +414,9 @@ module ReadSide =
             use! reader = cmd.ExecuteReaderAsync()
             let result =
                 System.Collections.Generic.Dictionary<string * string * string, string * bool>()
-            let mutable hasMore = true
-            while hasMore do
-                let! more = reader.ReadAsync()
-                if more then
+            do! drainRows reader (fun reader ->
                     let key = (reader.GetString 0, reader.GetString 1, reader.GetString 2)
-                    result.[key] <- (reader.GetString 3, reader.GetBoolean 4)
-                else
-                    hasMore <- false
+                    result.[key] <- (reader.GetString 3, reader.GetBoolean 4))
             return result |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
         }
 
@@ -439,18 +437,14 @@ module ReadSide =
                  WHERE tr.is_ms_shipped = 0 AND t.is_ms_shipped = 0"
             use! reader = cmd.ExecuteReaderAsync()
             let acc = System.Collections.Generic.Dictionary<string * string, ResizeArray<string * bool * string>>()
-            let mutable hasMore = true
-            while hasMore do
-                let! more = reader.ReadAsync()
-                if more then
+            do! drainRows reader (fun reader ->
                     let key = (reader.GetString 0, reader.GetString 1)
                     let body = if reader.IsDBNull 4 then "" else reader.GetString 4
                     let entry = (reader.GetString 2, reader.GetBoolean 3, body)
                     match acc.TryGetValue key with
                     | true, lst -> lst.Add entry
                     | false, _ ->
-                        let lst = ResizeArray<_>() in lst.Add entry; acc.[key] <- lst
-                else hasMore <- false
+                        let lst = ResizeArray<_>() in lst.Add entry; acc.[key] <- lst)
             return acc |> Seq.map (fun kv -> kv.Key, List.ofSeq kv.Value) |> Map.ofSeq
         }
 
@@ -470,17 +464,13 @@ module ReadSide =
                  WHERE t.is_ms_shipped = 0"
             use! reader = cmd.ExecuteReaderAsync()
             let acc = System.Collections.Generic.Dictionary<string * string, ResizeArray<string * string * bool>>()
-            let mutable hasMore = true
-            while hasMore do
-                let! more = reader.ReadAsync()
-                if more then
+            do! drainRows reader (fun reader ->
                     let key = (reader.GetString 0, reader.GetString 1)
                     let entry = (reader.GetString 2, reader.GetString 3, reader.GetBoolean 4)
                     match acc.TryGetValue key with
                     | true, lst -> lst.Add entry
                     | false, _ ->
-                        let lst = ResizeArray<_>() in lst.Add entry; acc.[key] <- lst
-                else hasMore <- false
+                        let lst = ResizeArray<_>() in lst.Add entry; acc.[key] <- lst)
             return acc |> Seq.map (fun kv -> kv.Key, List.ofSeq kv.Value) |> Map.ofSeq
         }
 
@@ -512,10 +502,7 @@ module ReadSide =
                  ORDER BY SCHEMA_NAME(t.schema_id), t.name, i.name, ic.key_ordinal"
             use! reader = cmd.ExecuteReaderAsync()
             let acc = System.Collections.Generic.Dictionary<string * string, ResizeArray<IndexColumnRow>>()
-            let mutable hasMore = true
-            while hasMore do
-                let! more = reader.ReadAsync()
-                if more then
+            do! drainRows reader (fun reader ->
                     let key = (reader.GetString 0, reader.GetString 1)
                     let entry =
                         { IndexName    = reader.GetString 2
@@ -526,8 +513,7 @@ module ReadSide =
                     match acc.TryGetValue key with
                     | true, lst -> lst.Add entry
                     | false, _ ->
-                        let lst = ResizeArray<_>() in lst.Add entry; acc.[key] <- lst
-                else hasMore <- false
+                        let lst = ResizeArray<_>() in lst.Add entry; acc.[key] <- lst)
             return acc |> Seq.map (fun kv -> kv.Key, List.ofSeq kv.Value) |> Map.ofSeq
         }
 
@@ -549,10 +535,7 @@ module ReadSide =
             let optInt (i: int) : int option =
                 if reader.IsDBNull i then None else Some (System.Convert.ToInt32(reader.GetValue i))
             let rows = ResizeArray<SequenceRow>()
-            let mutable hasMore = true
-            while hasMore do
-                let! more = reader.ReadAsync()
-                if more then
+            do! drainRows reader (fun reader ->
                     rows.Add(
                         { Schema       = reader.GetString 0
                           Name         = reader.GetString 1
@@ -563,8 +546,7 @@ module ReadSide =
                           MaximumValue = optDec 6
                           IsCycling    = reader.GetBoolean 7
                           IsCached     = reader.GetBoolean 8
-                          CacheSize    = optInt 9 })
-                else hasMore <- false
+                          CacheSize    = optInt 9 }))
             return List.ofSeq rows
         }
 
@@ -590,10 +572,7 @@ module ReadSide =
                    AND ep.name <> N'V2.SsKey'"
             use! reader = cmd.ExecuteReaderAsync()
             let acc = System.Collections.Generic.Dictionary<string * string * string option, ResizeArray<string * string>>()
-            let mutable hasMore = true
-            while hasMore do
-                let! more = reader.ReadAsync()
-                if more then
+            do! drainRows reader (fun reader ->
                     let col = if reader.IsDBNull 2 then None else Some (reader.GetString 2)
                     let key = (reader.GetString 0, reader.GetString 1, col)
                     let value = if reader.IsDBNull 4 then "" else reader.GetString 4
@@ -601,8 +580,7 @@ module ReadSide =
                     match acc.TryGetValue key with
                     | true, lst -> lst.Add entry
                     | false, _ ->
-                        let lst = ResizeArray<_>() in lst.Add entry; acc.[key] <- lst
-                else hasMore <- false
+                        let lst = ResizeArray<_>() in lst.Add entry; acc.[key] <- lst)
             return acc |> Seq.map (fun kv -> kv.Key, List.ofSeq kv.Value) |> Map.ofSeq
         }
 
@@ -635,15 +613,12 @@ module ReadSide =
                  ORDER BY SCHEMA_NAME(t.schema_id), t.name, c.column_id"
             use! reader = cmd.ExecuteReaderAsync()
             let rows = ResizeArray<FkRow>()
-            let mutable hasMore = true
             // E2 (debrief G4): a NULL SCHEMA_NAME() (dropped schema /
             // missing VIEW DEFINITION grant) is classified Unreadable and
             // surfaces a NAMED diagnostic + skip — never a silent drop nor
             // an opaque GetString cast failure.
             let rawOpt i = if reader.IsDBNull i then None else Some (reader.GetString i)
-            while hasMore do
-                let! more = reader.ReadAsync()
-                if more then
+            do! drainRows reader (fun reader ->
                     let isNotTrusted = (not (reader.IsDBNull 6)) && reader.GetBoolean 6
                     match
                         ForeignKeyReadback.classify
@@ -658,9 +633,7 @@ module ReadSide =
                               TargetTable  = c.TargetTable
                               TargetColumn = c.TargetColumn
                               IsNotTrusted = c.IsNotTrusted })
-                    | ForeignKeyReadback.Unreadable reason -> eprintfn "%s" reason
-                else
-                    hasMore <- false
+                    | ForeignKeyReadback.Unreadable reason -> eprintfn "%s" reason)
             return List.ofSeq rows
         }
 
@@ -1432,10 +1405,7 @@ module ReadSide =
             // Result set 1: column rows (matches readColumnRows shape).
             let columnRows = ResizeArray<ColumnRow>()
             let optInt = optIntOf reader
-            let mutable hasMore1 = true
-            while hasMore1 do
-                let! more = reader.ReadAsync()
-                if more then
+            do! drainRows reader (fun reader ->
                     let lengthRaw = optInt 5
                     let length =
                         match lengthRaw with
@@ -1451,46 +1421,34 @@ module ReadSide =
                             Length = length
                             Precision = optInt 6
                             Scale = optInt 7
-                        })
-                else hasMore1 <- false
+                        }))
 
             // Result set 2: primary-key triples.
             let! _ = reader.NextResultAsync()
             let primaryKeySet = System.Collections.Generic.HashSet<string * string * string>()
-            let mutable hasMore2 = true
-            while hasMore2 do
-                let! more = reader.ReadAsync()
-                if more then
+            do! drainRows reader (fun reader ->
                     primaryKeySet.Add(
                         reader.GetString 0,
                         reader.GetString 1,
-                        reader.GetString 2) |> ignore
-                else hasMore2 <- false
+                        reader.GetString 2) |> ignore)
 
             // Result set 3: identity-column triples.
             let! _ = reader.NextResultAsync()
             let identitySet = System.Collections.Generic.HashSet<string * string * string>()
-            let mutable hasMore3 = true
-            while hasMore3 do
-                let! more = reader.ReadAsync()
-                if more then
+            do! drainRows reader (fun reader ->
                     identitySet.Add(
                         reader.GetString 0,
                         reader.GetString 1,
-                        reader.GetString 2) |> ignore
-                else hasMore3 <- false
+                        reader.GetString 2) |> ignore)
 
             // Result set 4: foreign-key tuples.
             let! _ = reader.NextResultAsync()
             let fkRows = ResizeArray<FkRow>()
-            let mutable hasMore4 = true
             // E2 (debrief G4): classify each FK row's coordinates; a NULL
             // SCHEMA_NAME() yields a NAMED diagnostic + skip instead of an
             // opaque `GetString` cast failure that would abort the readback.
             let rawOpt4 i = if reader.IsDBNull i then None else Some (reader.GetString i)
-            while hasMore4 do
-                let! more = reader.ReadAsync()
-                if more then
+            do! drainRows reader (fun reader ->
                     let isNotTrusted = (not (reader.IsDBNull 6)) && reader.GetBoolean 6
                     match
                         ForeignKeyReadback.classify
@@ -1505,8 +1463,7 @@ module ReadSide =
                               TargetTable  = c.TargetTable
                               TargetColumn = c.TargetColumn
                               IsNotTrusted = c.IsNotTrusted })
-                    | ForeignKeyReadback.Unreadable reason -> eprintfn "%s" reason
-                else hasMore4 <- false
+                    | ForeignKeyReadback.Unreadable reason -> eprintfn "%s" reason)
 
             // Result set 5: V2.LogicalName extended properties
             // (slice D.1.b). Column 2 (sys.columns.name) is NULL for
@@ -1515,10 +1472,7 @@ module ReadSide =
             let! _ = reader.NextResultAsync()
             let tableLogical = System.Collections.Generic.Dictionary<string * string, string>()
             let columnLogical = System.Collections.Generic.Dictionary<string * string * string, string>()
-            let mutable hasMore5 = true
-            while hasMore5 do
-                let! more = reader.ReadAsync()
-                if more then
+            do! drainRows reader (fun reader ->
                     let schema = reader.GetString 0
                     let table = reader.GetString 1
                     let value = reader.GetString 3
@@ -1526,8 +1480,7 @@ module ReadSide =
                         tableLogical[(schema, table)] <- value
                     else
                         let column = reader.GetString 2
-                        columnLogical[(schema, table, column)] <- value
-                else hasMore5 <- false
+                        columnLogical[(schema, table, column)] <- value)
 
             // Result set 6: V2.SsKey extended properties (Wave 4.1).
             // Table-level only (minor_id = 0); the serialized identity
@@ -1536,12 +1489,8 @@ module ReadSide =
             // rename).
             let! _ = reader.NextResultAsync()
             let tableSsKeys = System.Collections.Generic.Dictionary<string * string, string>()
-            let mutable hasMore6 = true
-            while hasMore6 do
-                let! more = reader.ReadAsync()
-                if more then
-                    tableSsKeys[(reader.GetString 0, reader.GetString 1)] <- reader.GetString 2
-                else hasMore6 <- false
+            do! drainRows reader (fun reader ->
+                    tableSsKeys[(reader.GetString 0, reader.GetString 1)] <- reader.GetString 2)
 
             return
                 List.ofSeq columnRows,
@@ -1569,10 +1518,7 @@ module ReadSide =
                  ORDER BY 1"
             use! reader = cmd.ExecuteReaderAsync()
             let names = ResizeArray<string>()
-            let mutable more = true
-            while more do
-                let! has = reader.ReadAsync()
-                if has then names.Add(reader.GetString 0) else more <- false
+            do! drainRows reader (fun reader -> names.Add(reader.GetString 0))
             return List.ofSeq names
         }
 

@@ -166,13 +166,14 @@ module MigrationRun =
     /// and the next reads it back here as the comparison basis. A **missing store
     /// is genesis** — A = ∅, so every kind is `Add` and there are no losses (the
     /// first emission of a timeline). Fail-closed on a malformed store.
-    let previewFromStore
+    let previewFromStoreForcing
+        (forceGenesis: bool)
         (path: string)
         (declaration: LossDeclaration)
         (target: Catalog)
         : Result<MigrationArtifacts, MigrationError> =
         let priorSchema : Result<Catalog, MigrationError> =
-            if System.IO.File.Exists path then
+            if (not forceGenesis) && System.IO.File.Exists path then
                 match LifecycleStore.load path with
                 | Error e -> Error (StoreReadFailed (string e))
                 | Ok chain ->
@@ -187,6 +188,16 @@ module MigrationRun =
         match priorSchema with
         | Error e -> Error e
         | Ok source -> preview declaration source target
+
+    /// The store-derived preview with genesis only on an absent store (the
+    /// default — every prior caller's behavior). `previewFromStoreForcing false`
+    /// is identical; this is the named no-force form.
+    let previewFromStore
+        (path: string)
+        (declaration: LossDeclaration)
+        (target: Catalog)
+        : Result<MigrationArtifacts, MigrationError> =
+        previewFromStoreForcing false path declaration target
 
     /// Record a completed migration's episode onto the timeline persisted at
     /// `path` (the durable substrate, 6.H.2). On the first migration of a
@@ -574,8 +585,17 @@ module MigrationRun =
     /// reconciling per `reconciliation` (the User re-key; empty = a straight
     /// load). Schema is minimum-viable + fail-loud; data is the existing
     /// `Transfer` engine. The data leg runs **only if** the schema leg verified
-    /// (never load into an unverified target). Both substrates end at B; the data
-    /// source's rows must match the contract B.
+    /// (never load into an unverified target).
+    ///
+    /// **A5 — the data source is at schema A.** In the established Dev→UAT
+    /// migrate-with-data flow the `dataSource` holds rows at the OLD schema A
+    /// (`sinkSource`), not already at B. The data leg therefore routes through
+    /// the rename-aware Transfer (`runWithRenames` / `runReconcilingWithRenames`)
+    /// with `sourceContract = sinkSource` (A) and `sinkContract = target` (B), so
+    /// rows are re-pointed onto the B names via the A→B `CatalogDiff` renames
+    /// (identity-matched, never ordinal) before the write. A no-renames diff
+    /// yields an empty rename map ⇒ identity repoint ⇒ byte-identical to the
+    /// straight load.
     let executeWithData
         (declaration: LossDeclaration)
         (mode: Transfer.Mode)
@@ -595,13 +615,17 @@ module MigrationRun =
                     return Error (VerificationFailed schema.SchemaDiff)
                 else
                     let! transferResult =
+                        // A5 — the data source is at A (`sinkSource`); re-point
+                        // rows A→B through the rename-aware Transfer. The renameMap
+                        // derives from `CatalogDiff.between sinkSource target`; a
+                        // no-renames diff repoints by identity (== the straight load).
                         if Map.isEmpty reconciliation then
-                            Transfer.run mode allowCdc dataSource sink target
+                            Transfer.runWithRenames mode allowCdc dataSource sink sinkSource target
                         else
                             // allowDrops = false: enforce the AC-I5 pre-write validate-user-map
                             // halt on the reconciling migrate-with-data path (the reconcile+migrate
                             // composition, AC-I7, is the follow-on; --allow-drops flows here then).
-                            Transfer.runReconciling mode allowCdc false dataSource sink target reconciliation
+                            Transfer.runReconcilingWithRenames mode allowCdc dataSource sink sinkSource target reconciliation
                     match transferResult with
                     | Ok report -> return Ok { Schema = schema; Transfer = report }
                     | Error es -> return Error (DataTransferFailed es)
@@ -648,10 +672,12 @@ module MigrationRun =
                 // after; the delta is the CDC capture count of the transfer.
                 let! baseline = Deploy.cdcCaptureTotal sink
                 let! transferResult =
+                    // A5 — the data source is at A (`sinkSource`); re-point rows
+                    // A→B through the rename-aware Transfer (see `executeWithData`).
                     if Map.isEmpty reconciliation then
-                        Transfer.run mode allowCdc dataSource sink target
+                        Transfer.runWithRenames mode allowCdc dataSource sink sinkSource target
                     else
-                        Transfer.runReconciling mode allowCdc false dataSource sink target reconciliation
+                        Transfer.runReconcilingWithRenames mode allowCdc dataSource sink sinkSource target reconciliation
                 match transferResult with
                 | Error es -> return Error (DataTransferFailed es)
                 | Ok report ->

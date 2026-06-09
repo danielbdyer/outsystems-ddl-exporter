@@ -329,15 +329,10 @@ module RefactorLogEmitter =
         // foreign-key renames (logical Reference.Name, N1). All are
         // RenameRefactor operations on the same kind's slice; a kind with
         // none carries the empty list (T11 keyset = target's kinds).
-        let slices =
-            Catalog.allKinds target
-            |> List.map (fun k ->
-                k.SsKey,
-                kindRefactorEntries renames k
-                @ columnRefactorEntries diff k
-                @ referenceRefactorEntries diff k)
-            |> Map.ofList
-        ArtifactByKind.create target slices
+        ArtifactByKind.perKind target (fun k ->
+            kindRefactorEntries renames k
+            @ columnRefactorEntries diff k
+            @ referenceRefactorEntries diff k)
 
 
     /// Flatten an `ArtifactByKind<RefactorLogEntry list>` into a single

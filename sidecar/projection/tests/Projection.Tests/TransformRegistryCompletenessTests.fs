@@ -64,7 +64,6 @@ let private ciRun (c: Catalog) : Lineage<Catalog> =
 // config so the per-config invocation here is a witness.
 // ---------------------------------------------------------------------------
 
-let private mkName (s: string) : Name = Name.create s |> Result.value
 let private emptyMask : VisibilityMask.Mask = { Hide = [] }
 let private hideOsNativeMask : VisibilityMask.Mask =
     { Hide = [ VisibilityMask.hideOrigin Origin.Native ] }

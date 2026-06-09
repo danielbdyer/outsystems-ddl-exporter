@@ -107,6 +107,22 @@ module Voice =
         | "load"     -> "Data load"
         | other      -> other
 
+    /// The §13 follow-on for a run whose terminal stage is `terminalStage` — "the
+    /// rhythm names the next move" (a finished change build offers the verify; a
+    /// finished verify offers the record). Stative + agentless: the next phase is
+    /// named as a state that follows, never an instruction to the reader. Public so
+    /// the Watch board's done-frame reads the one mapping and the totality test can
+    /// assert it is total over the terminal stages the board can reach.
+    let followOnAfter (terminalStage: string) : string =
+        match terminalStage with
+        | "extract"  -> "The data check follows."
+        | "profile"  -> "The change build follows."
+        | "emit"     -> "Verification follows."
+        | "deploy"   -> "Verification follows."
+        | "canary"   -> "The record follows."
+        | "load"     -> "Verification follows."
+        | _          -> "The run is complete."
+
     // ------------------------------------------------------------------
     // The catalog — grouped by `THE_VOICE.md` section (decision 5: the
     // harvested catalog mirrors the doc). Each entry is a separable
@@ -289,6 +305,41 @@ module Voice =
           Substantiation = fun _ -> []
           Action         = fun _ -> None }
 
+    /// `watch.runTitle` — the live board's run-title header (`THE_VOICE.md` §13 —
+    /// "the instrument speaks about its own running"). A neutral, agentless naming
+    /// of the run in flight (the command is the subject, never "you"); the board
+    /// reuses it as the frame the stage lines fill beneath. A render-synthesized
+    /// frame, not a LogSink envelope — the board is a rendering of the run, so the
+    /// title is voiced here (one register) rather than authored in the renderer.
+    let private watchRunTitle : Copy =
+        { Code           = "watch.runTitle"
+          DocSection     = "§13"
+          Statement      =
+            fun p ->
+                match text "command" p with
+                | Some cmd -> View.Note(sprintf "%s — the run in flight." cmd)
+                | None     -> View.Note "The run in flight."
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
+    /// `watch.runDone` — the live board's done-frame (`THE_VOICE.md` §13 — "the
+    /// rhythm names the next move … Nothing terminates at 'done'"). When the run
+    /// reaches its terminal stage, the board names what follows (`followOn`,
+    /// derived from the terminal stage — e.g. "Verification follows" after the
+    /// change build) and, when a run identity is present, states the record plainly
+    /// ("Recorded as run N"). Stative + agentless; the follow-on is the §13 move.
+    let private watchRunDone : Copy =
+        { Code           = "watch.runDone"
+          DocSection     = "§13"
+          Statement      =
+            fun p ->
+                let followOn = textOr "followOn" "The run is complete." p
+                match text "runIdentity" p with
+                | Some n -> View.Note(sprintf "%s Recorded as run %s." followOn (humane n))
+                | None   -> View.Note followOn
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
     /// `summary.stageCompleted` — a stage of the run completed (`THE_VOICE.md`
     /// §13). Resultative; the stage name is operator-shaped via `stageName`,
     /// never the internal engine verb.
@@ -347,6 +398,8 @@ module Voice =
           deployStarted
           canaryStarted
           loadStarted
+          watchRunTitle
+          watchRunDone
           summaryStageCompleted
           // §14 / §10 — config & errors
           configValidationFailed ]

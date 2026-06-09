@@ -181,12 +181,7 @@ module JsonEmitter =
     /// re-parsing.
     let emitSlices : Emitter<JsonNode> = fun catalog ->
         use _ = Bench.scope "emit.json.emitSlices"
-        let allKinds = Catalog.allKinds catalog
-        let slices =
-            allKinds
-            |> List.map (fun k -> k.SsKey, kindJsonNode k)
-            |> Map.ofList
-        ArtifactByKind.create catalog slices
+        ArtifactByKind.perKind catalog kindJsonNode
 
     /// Slice 6 (2026-06-02 audit): typed catalog-envelope JsonNode
     /// description. Mirrors the SSDT `statements : Catalog ->

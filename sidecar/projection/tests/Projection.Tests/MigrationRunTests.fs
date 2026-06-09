@@ -162,6 +162,24 @@ let ``6.H: previewFromStore diffs B against the reconstructed prior snapshot (sa
         Assert.Equal(direct.Plan.Preview.Norm, fromStore.Plan.Preview.Norm)
         Assert.Equal(1, fromStore.Plan.Preview.Channels.RenamedKinds))
 
+[<Fact>]
+let ``D4: previewFromStoreForcing true forces genesis even when the store exists`` () =
+    withTempFile (fun path ->
+        // A populated store whose reconstructed prior IS the target B: a
+        // non-forced preview against it is the identity (zero displacement).
+        let coord = EpisodeCoordinate.create (ver 0 "1.0.0") Environment.Dev (at "2026-06-01T09:00:00+00:00")
+        LifecycleStore.save path (EpisodicLifecycle.genesis (tl "dev") (Episode.ofSchema coord sampleCatalog))
+        |> (function FsResult.Ok () -> () | FsResult.Error e -> Assert.Fail(sprintf "%A" e))
+        // Non-forced: A reconstructs to sampleCatalog (= B), so nothing is Added.
+        let noForce = MigrationRun.previewFromStoreForcing false path DeclareNone sampleCatalog |> mustOk
+        Assert.Equal(0, noForce.Plan.Preview.Channels.AddedKinds)
+        // Forced (`--from empty`): A = ∅ regardless of the store, so EVERY kind is
+        // Added and nothing is dropped — the from-scratch shape on a live store.
+        let forced = MigrationRun.previewFromStoreForcing true path DeclareNone sampleCatalog |> mustOk
+        Assert.True(Migration.isSafe forced.Plan)
+        Assert.Equal(0, forced.Plan.Preview.Channels.RemovedKinds)
+        Assert.True(forced.Plan.Preview.Channels.AddedKinds > 0))
+
 // ===========================================================================
 // The live-execute rename channel — sp_rename for physical table renames
 // ===========================================================================

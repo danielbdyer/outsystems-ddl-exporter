@@ -80,12 +80,7 @@ module DataEmissionComposer =
     /// branches. Per T11 strict-equality keyset: every kind is
     /// keyed; no kind is silently absent.
     let private emptyArtifact (catalog: Catalog) : Result<ArtifactByKind<DataInsertScript>, EmitError> =
-        let allKinds = Catalog.allKinds catalog
-        let slices =
-            allKinds
-            |> List.map (fun k -> k.SsKey, emptyScript)
-            |> Map.ofList
-        ArtifactByKind.create catalog slices
+        ArtifactByKind.perKind catalog (fun _ -> emptyScript)
 
     /// Run the three sibling emitters per the policy's data-
     /// composition variant. Per pre-scope §3.4 + §3.2:

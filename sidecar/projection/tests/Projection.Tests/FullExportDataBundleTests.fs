@@ -21,7 +21,6 @@ let private mustOk r =
     | Error es -> invalidOp (sprintf "fixture: %A" es)
 
 let private mkKey (parts: string list) : SsKey = SsKey.synthesizedComposite "OS_X1" parts |> mustOk
-let private mkName (s: string) : Name = Name.create s |> mustOk
 
 /// A static-entity kind with two explicit rows (Id/Code/Label).
 let private countryKind () : Kind =

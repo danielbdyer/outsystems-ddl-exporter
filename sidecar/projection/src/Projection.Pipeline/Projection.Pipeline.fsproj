@@ -22,6 +22,7 @@
     <Compile Include="ApprovalStore.fs" />
     <Compile Include="LifecycleStore.fs" />
     <Compile Include="RenameBinding.fs" />
+    <Compile Include="ModuleFilterBinding.fs" />
     <Compile Include="TighteningBinding.fs" />
     <Compile Include="SpecialCircumstancesBinding.fs" />
     <Compile Include="SpecialCircumstancesDiagnostics.fs" />
@@ -35,6 +36,9 @@
     <Compile Include="Pipeline.fs" />
     <Compile Include="PolicyDiff.fs" />
     <Compile Include="Bulk.fs" />
+    <Compile Include="DockerDaemon.fs" />
+    <Compile Include="DatabaseNameGenerator.fs" />
+    <Compile Include="DeployConnectionString.fs" />
     <Compile Include="Deploy.fs" />
     <Compile Include="BenchSink.fs" />
     <Compile Include="Preflight.fs" />

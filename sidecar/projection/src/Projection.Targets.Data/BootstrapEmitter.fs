@@ -79,11 +79,7 @@ module BootstrapEmitter =
         (_plan: DataLoadPlan)
         : Result<ArtifactByKind<DataInsertScript>, EmitError> =
         use _ = Bench.scope "emit.bootstrap.emitFromPlan"
-        let slices =
-            Catalog.allKinds catalog
-            |> List.map (fun k -> k.SsKey, emptyScript)
-            |> Map.ofList
-        ArtifactByKind.create catalog slices
+        ArtifactByKind.perKind catalog (fun _ -> emptyScript)
 
     /// Π_Bootstrap emit (composer-facing; hoisted-topo + UserRemap
     /// context). Builds the (currently empty) plan and delegates to

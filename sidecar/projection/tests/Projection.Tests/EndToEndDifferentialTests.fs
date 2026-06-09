@@ -40,7 +40,6 @@ let private nullRun (catalog: Catalog) (policy: Policy) (profile: Profile) : Lin
 // ---------------------------------------------------------------------------
 
 let private mkKey s = testKey s
-let private mkName s = Name.create s |> Result.value
 
 // ---------------------------------------------------------------------------
 // V2 catalog matching V1's profile.micro-fk-protect fixture (Parent / Child

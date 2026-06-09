@@ -148,6 +148,7 @@ module StaticSeedsEmitter =
     /// VALUES so cycle-participating rows can INSERT before their
     /// same-SCC FK targets exist.
     let private renderMerge
+        (deleteScope: ScriptDomBuild.DeleteScope option)
         (cdcAware: bool)
         (deferred: Set<Name>)
         (k: Kind)
@@ -185,7 +186,7 @@ module StaticSeedsEmitter =
                 UpdColumns = updColumns
                 Rows        = typedRows |> List.map (typedValuesToSqlLiterals deferred (writableAttributes k))
                 CdcAware    = cdcAware
-                DeleteScope = None
+                DeleteScope = deleteScope
             }
         let mergeStmt = (ScriptDomBuild.buildMergeStatement args).Value
         // ScriptDomGenerate.generateOne emits the MERGE without a
@@ -270,6 +271,7 @@ module StaticSeedsEmitter =
     /// over the supplied rows (slice E will refine `AssignedBySink` to
     /// suppress the IDENTITY PK column).
     let private kindToScript
+        (deleteScope: ScriptDomBuild.DeleteScope option)
         (cdc: CdcAwareness)
         (kind: Kind)
         (load: DataLoadKind)
@@ -294,7 +296,7 @@ module StaticSeedsEmitter =
                     row.Identifier,
                     staticRowToTypedValues typeLookup kind.Attributes row)
             let renderedPhase1 =
-                renderMerge cdcAware deferred kind (typedRows |> List.map snd)
+                renderMerge deleteScope cdcAware deferred kind (typedRows |> List.map snd)
             let renderedPhase2 =
                 if Set.isEmpty deferred then ""
                 else
@@ -333,14 +335,22 @@ module StaticSeedsEmitter =
     /// MERGE variant. Slice δ (cycle-breaking): kinds in
     /// `topo.Cycles` defer their nullable same-SCC FK columns across
     /// the two-phase MERGE/UPDATE pattern.
-    /// Π_StaticSeeds emit (canonical; plan-consuming). Realizes the
-    /// supplied `DataLoadPlan` as per-kind MERGE/UPDATE scripts: the
-    /// plan carries POST-substitution rows + the deferred-FK set per
-    /// kind; this entry just renders. Realization is `DataIntent`
-    /// end-to-end — operator-supplied identity substitution landed once
-    /// at `DataLoadPlan.build`. Kinds absent from the plan (no load)
-    /// produce empty scripts per T11.
-    let emitFromPlan
+    /// Π_StaticSeeds emit (canonical; plan-consuming, scope-bearing).
+    /// Realizes the supplied `DataLoadPlan` as per-kind MERGE/UPDATE
+    /// scripts: the plan carries POST-substitution rows + the
+    /// deferred-FK set per kind; this entry just renders. Realization is
+    /// `DataIntent` end-to-end — operator-supplied identity substitution
+    /// landed once at `DataLoadPlan.build`. Kinds absent from the plan
+    /// (no load) produce empty scripts per T11.
+    ///
+    /// `deleteScope` gates the `WHEN NOT MATCHED BY SOURCE … DELETE` arm
+    /// (per `ScriptDomBuild.DeleteScope`): `None` (the `emitFromPlan`
+    /// default) emits an upsert-only MERGE byte-identical to the
+    /// pre-scope form; `Some scope` activates the convergent-delete arm.
+    /// The parameter makes the emitter scope-ready; the policy that
+    /// selects a scope is CLI/EmissionPolicy plumbing, not the emitter's.
+    let emitFromPlanWith
+        (deleteScope: ScriptDomBuild.DeleteScope option)
         (catalog: Catalog)
         (profile: Profile)
         (plan: DataLoadPlan)
@@ -350,16 +360,20 @@ module StaticSeedsEmitter =
         let loadByKind = plan.Loads |> List.map (fun l -> l.Kind, l) |> Map.ofList
         let emptyScript : DataInsertScript =
             { Phase1Merges = []; Phase2Updates = []; RenderedPhase1 = ""; RenderedPhase2 = ""; Rendered = "" }
-        let slices =
-            Catalog.allKinds catalog
-            |> Bench.iterMap "emit.staticSeeds.kind" (fun k ->
-                let script =
-                    match Map.tryFind k.SsKey loadByKind with
-                    | Some load -> kindToScript cdc k load
-                    | None      -> emptyScript
-                k.SsKey, script)
-            |> Map.ofList
-        ArtifactByKind.create catalog slices
+        ArtifactByKind.perKindBenched "emit.staticSeeds.kind" catalog (fun k ->
+            match Map.tryFind k.SsKey loadByKind with
+            | Some load -> kindToScript deleteScope cdc k load
+            | None      -> emptyScript)
+
+    /// Π_StaticSeeds emit (canonical; plan-consuming). The upsert-only
+    /// default form — `emitFromPlanWith` with no delete scope. Output is
+    /// byte-identical to the pre-scope emitter.
+    let emitFromPlan
+        (catalog: Catalog)
+        (profile: Profile)
+        (plan: DataLoadPlan)
+        : Result<ArtifactByKind<DataInsertScript>, EmitError> =
+        emitFromPlanWith None catalog profile plan
 
     /// Π_StaticSeeds emit (composer-facing; hoisted topo). Builds the
     /// plan from `Kind.staticPopulations` per kind with the empty

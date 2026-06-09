@@ -308,6 +308,7 @@ module Command =
           Reconcile   = spec.Reconcile
           Rekey       = spec.Rekey
           AllowCdc    = spec.AllowCdc
+          Resumable   = spec.Resumable
           Store       = spec.Store
           Env         = spec.Env
           Tables      = spec.Tables }
@@ -380,7 +381,15 @@ module Command =
             | _, PlanAction.Transfer _ -> []
             | _, PlanAction.SynthesizeAndLoad _ -> []
             | _ -> [ "--fresh accepted; this action has no selectable data-load strategy (incremental applied)." ]
-        { Notes = unhonoredNotes spec @ freshNote; Action = action }
+        // The resumable/idempotent envelope (G10) is honored on the pure-transfer
+        // data leg only; any other action carries no resumable write seam, so the
+        // flag is noted, never silently dropped (THE_VOICE no-silent-drop).
+        let resumableNote =
+            match spec.Resumable, action with
+            | false, _ -> []
+            | true, PlanAction.Transfer _ -> []
+            | true, _ -> [ "--resumable accepted; this action has no resumable data-load seam (standard write applied)." ]
+        { Notes = unhonoredNotes spec @ freshNote @ resumableNote; Action = action }
 
     /// Route a `check` verb tail to its proof-plane action — purely.
     let planCheck (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
@@ -424,15 +433,23 @@ module Command =
             | "migrate" :: _ ->
                 let decl = parseLossDeclaration args
                 match valueOf "--to", valueOf "--from", valueOf "--store" with
+                // `--from empty` is the genesis-force keyword: A = ∅ against the
+                // named `--store` (or, with no store, an empty-string store the
+                // forced genesis never reads). It is NOT a model path, so it does
+                // not route to the two-model `ExplainMigratePreview`.
+                | Some toP, Some "empty", store ->
+                    PlanAction.ExplainMigrateFromStore (defaultArg store "", toP, decl, true)
                 | Some toP, Some fromP, _    -> PlanAction.ExplainMigratePreview (fromP, toP, decl)
-                | Some toP, None, Some store -> PlanAction.ExplainMigrateFromStore (store, toP, decl)
+                | Some toP, None, Some store -> PlanAction.ExplainMigrateFromStore (store, toP, decl, false)
                 | _ -> PlanAction.Refused (2, err "cli.explain.migrateArgs" "projection explain migrate: needs --to <modelB> with --from <modelA> or --store <lifecycle>.")
             | sub :: _ when Map.containsKey sub cfg.Flows ->
                 // explain <flow>: B = the flow's model, A_prior = the target store.
                 let flow = Map.find sub cfg.Flows
                 let decl = parseLossDeclaration args
+                // `--from empty` forces genesis (A = ∅) for the flow preview too.
+                let forceGenesis = (valueOf "--from" = Some "empty")
                 match cfg.Model, (Map.tryFind flow.To cfg.Environments |> Option.bind (fun e -> e.Store)) with
-                | Some model, Some store -> PlanAction.ExplainMigrateFromStore (store, model, decl)
+                | Some model, Some store -> PlanAction.ExplainMigrateFromStore (store, model, decl, forceGenesis)
                 | None, _ -> PlanAction.Refused (1, err "cli.explain.flowNoModel" (sprintf "explain '%s': no model — set \"model\" in projection.json." sub))
                 | _, None -> PlanAction.Refused (6, err "cli.explain.flowNoStore" (sprintf "explain '%s': target environment '%s' has no `store` to diff against (publish + seal once first)." sub flow.To))
             | _ -> PlanAction.Refused (2, err "cli.explain.unknown" "projection explain: expected <flow> | diff | policy | node | suggest | registry | migrate.")
@@ -504,6 +521,7 @@ module Command =
                         Tables   = flow.Tables
                         AllowDrops = opts.AllowDrops
                         AllowCdc = opts.AllowCdc
+                        Resumable = opts.Resumable
                         // The target's durable timeline: a live --go records an
                         // episode into it (which `report` later diffs). F4.
                         Store    = toEnv.Store
@@ -587,7 +605,7 @@ module Command =
 
     /// The closed secondary-verb set (THE_CLI.md §3). A first token outside
     /// this set is read as a flow name; an unknown one is refused, naming both.
-    let private secondaryVerbs = set [ "check"; "explain"; "seal"; "report"; "profile"; "init" ]
+    let private secondaryVerbs = set [ "check"; "explain"; "seal"; "report"; "profile"; "init"; "diff" ]
 
     /// Map an argv to an `Intent` (THE_CLI.md §3): the daily surface
     /// `projection <flow> [--go] [--fresh] [--allow-drops]` (the verb is
@@ -597,6 +615,11 @@ module Command =
         match argv with
         | "check" :: rest   -> Result.success (Intent.Check rest)
         | "explain" :: rest -> Result.success (Intent.Explain rest)
+        // `diff <a> <b>` — the top-level alias for `explain diff <a> <b>`: the
+        // run-vs-run change surface promoted to a first-class verb. The tail
+        // rides the SAME `planExplain` "diff" routing (→ `runDiff`), so the
+        // alias is behavior-identical to the `explain diff` form.
+        | "diff" :: rest    -> Result.success (Intent.Explain ("diff" :: rest))
         | "seal" :: rest    -> Result.success (Intent.Seal rest)
         | "report" :: rest  -> Result.success (Intent.Report rest)
         | "profile" :: rest -> Result.success (Intent.Profile rest)
@@ -605,7 +628,8 @@ module Command =
                 { Go         = List.contains "--go" rest
                   Fresh      = List.contains "--fresh" rest
                   AllowDrops = List.contains "--allow-drops" rest
-                  AllowCdc   = List.contains "--allow-cdc" rest }
+                  AllowCdc   = List.contains "--allow-cdc" rest
+                  Resumable  = List.contains "--resumable" rest }
             Result.success (Intent.Flow (Map.find first cfg.Flows, opts))
         | first :: _ when secondaryVerbs.Contains first ->
             // a known verb with a malformed tail falls through its own branch;

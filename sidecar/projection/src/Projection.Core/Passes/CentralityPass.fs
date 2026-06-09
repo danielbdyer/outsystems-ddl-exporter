@@ -153,20 +153,7 @@ module CentralityPass =
                     (sprintf "centrality v%d: PageRank over %d nodes, %d edges; converged in %d iterations"
                         version n (List.length t.Edges) iterations)
 
-            let events =
-                nodes
-                |> List.map (fun key ->
-                    { PassName       = passName
-                      PassVersion    = version
-                      SsKey          = key
-                      TransformKind  = Touched
-                      Classification = DataIntent })
-
-            lineageDiagnostics {
-                do! LineageDiagnostics.writeLineages events
-                do! LineageDiagnostics.writeDiagnostic entry
-                return result
-            }
+            LineageDiagnostics.touchedEpilogue passName version nodes [ entry ] result
 
     /// Registered transform metadata. Input type is `TopologicalOrder`.
     let registered : RegisteredTransform<TopologicalOrder, CentralityRanking> =

@@ -90,20 +90,8 @@ module QueryHintPass =
                         (SsKey.rootOriginal idxKey) sel.DistinctCount suggestedFillFactor)
                   with SsKey = Some idxKey; SuggestedConfig = Some suggestedConfig })
 
-        let events =
-            allKinds
-            |> List.map (fun k ->
-                { PassName       = passName
-                  PassVersion    = version
-                  SsKey          = k.SsKey
-                  TransformKind  = Touched
-                  Classification = DataIntent })
-
-        lineageDiagnostics {
-            do! LineageDiagnostics.writeLineages events
-            do! LineageDiagnostics.writeDiagnostics diagnostics
-            return report
-        }
+        let touched = allKinds |> List.map (fun k -> k.SsKey)
+        LineageDiagnostics.touchedEpilogue passName version touched diagnostics report
 
     let registered (profile: Profile) : RegisteredTransform<Catalog, QueryHintReport> =
         { Name         = passName

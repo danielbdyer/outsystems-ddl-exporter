@@ -139,20 +139,8 @@ module SchemaComplexityPass =
                 (sprintf "schemaComplexity v%d: cyclomatic=%d coupling=%.3f cohesion=%.3f depth=%d nullability=%.3f overall=%.3f"
                     version cyclomatic coupling cohesion depth nullabilityRatio overallScore)
 
-        let events =
-            allKinds
-            |> List.map (fun k ->
-                { PassName       = passName
-                  PassVersion    = version
-                  SsKey          = k.SsKey
-                  TransformKind  = Touched
-                  Classification = DataIntent })
-
-        lineageDiagnostics {
-            do! LineageDiagnostics.writeLineages events
-            do! LineageDiagnostics.writeDiagnostic entry
-            return result
-        }
+        let touched = allKinds |> List.map (fun k -> k.SsKey)
+        LineageDiagnostics.touchedEpilogue passName version touched [ entry ] result
 
     let registered (topology: TopologicalOrder option) : RegisteredTransform<Catalog, SchemaComplexity> =
         let topoDefault = topology |> Option.defaultValue TopologicalOrder.empty

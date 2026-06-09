@@ -27,7 +27,6 @@ let private mustOkEmit (r: Result<'a, EmitError>) : 'a =
     | Error e -> Assert.Fail (sprintf "expected Ok, got %A" e); Unchecked.defaultof<_>
 
 let private mkKey (parts: string list) : SsKey = SsKey.synthesizedComposite "OS_TEST_SR" parts |> mustOk
-let private mkName (s: string) : Name = Name.create s |> mustOk
 
 let private userKey  = mkKey ["User"]
 let private orderKey = mkKey ["Order"]

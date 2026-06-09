@@ -296,12 +296,15 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
     member _.``migrate canary: executeWithData migrates the sink schema then loads rows from the source`` () =
         if not (Deploy.Docker.ensureRunning ()) then () else
         TaskSync.run (fun () ->
-            // Source DB at state B with seeded rows; sink DB at state A (empty).
+            // A5 — the data source is at the OLD schema A (MIGAB_CUSTOMER), NOT
+            // already at B. The data leg re-points the A-named rows A→B (the table
+            // is renamed MIGAB_CUSTOMER→MIGAB_PATRON; EMAIL is widened, not renamed)
+            // and writes against the sink's B contract. Sink DB starts at A (empty).
             fixture.WithEphemeralDatabase "MigrateDataSrc" (fun source _ ->
                 task {
-                    do! Deploy.executeBatch source (SsdtDdlEmitter.statements catalogB |> Render.toText)
+                    do! Deploy.executeBatch source (SsdtDdlEmitter.statements catalogA |> Render.toText)
                     do! Deploy.executeBatch source
-                            "INSERT INTO [dbo].[MIGAB_PATRON] ([ID],[EMAIL],[LOYALTY]) VALUES (1, N'dave@example.com', 3), (2, N'erin@example.com', 9);"
+                            "INSERT INTO [dbo].[MIGAB_CUSTOMER] ([ID],[EMAIL]) VALUES (1, N'dave@example.com'), (2, N'erin@example.com');"
                     do! fixture.WithEphemeralDatabase "MigrateDataSink" (fun sink _ ->
                         task {
                             do! Deploy.executeBatch sink (SsdtDdlEmitter.statements catalogA |> Render.toText)
@@ -317,7 +320,7 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
                             | Ok result ->
                                 // Schema leg: the sink is now at B.
                                 Assert.True(result.Schema.Verified, sprintf "sink schema not at B:\n%s" (PhysicalSchema.renderDiff result.Schema.SchemaDiff))
-                                // Data leg: both rows landed in the sink's migrated table.
+                                // Data leg: both rows landed in the sink's migrated (renamed) table.
                                 let! count = scalarString sink "SELECT COUNT(*) FROM [dbo].[MIGAB_PATRON];"
                                 Assert.Equal("2", count)
                                 let! email = scalarString sink "SELECT [EMAIL] FROM [dbo].[MIGAB_PATRON] WHERE [ID]=2;"
@@ -328,6 +331,47 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
                                 Assert.Contains("load.started", codes)
                                 Assert.Contains("summary.stageProgress", codes)
                                 Assert.Contains("summary.stageCompleted", codes)
+                        })
+                }))
+
+    // A5 — rename-aware migrate-with-data: the data source is at the OLD schema
+    // A. The sink (UAT) starts at A (EMAIL); the Dev data source ALSO holds rows
+    // at A (EMAIL); the target is B (the column renamed EMAIL→CONTACT). The data
+    // leg must re-point the A-named rows onto the sink's B name (CONTACT). Pre-A5
+    // the data leg loaded against contract B directly, so the source's EMAIL rows
+    // had no CONTACT value — CONTACT would land NULL. The re-pointed write is the
+    // discriminator: CONTACT carries the source data BY IDENTITY (the A→B rename
+    // map), never NULL.
+    [<Fact>]
+    member _.``A5: migrate-with-data re-points a renamed column when the data source is at schema A`` () =
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        TaskSync.run (fun () ->
+            // Data source (Dev) at schema A (EMAIL) with seeded rows; sink (UAT) at A.
+            fixture.WithEphemeralDatabase "MigrateRenameSrc" (fun source _ ->
+                task {
+                    do! Deploy.executeBatch source (SsdtDdlEmitter.statements catalogAcol |> Render.toText)
+                    do! Deploy.executeBatch source
+                            "INSERT INTO [dbo].[MIGAB_COL] ([ID],[EMAIL]) VALUES (1, N'alice@x'), (2, N'bob@x');"
+                    do! fixture.WithEphemeralDatabase "MigrateRenameSink" (fun sink _ ->
+                        task {
+                            do! Deploy.executeBatch sink (SsdtDdlEmitter.statements catalogAcol |> Render.toText)
+
+                            // One call: migrate the sink A→B (EMAIL→CONTACT), THEN
+                            // load the source's A-named rows re-pointed onto CONTACT.
+                            let! outcome =
+                                MigrationRun.executeWithData DeclareNone Transfer.Execute true catalogAcol catalogBcol Map.empty source sink
+                            match outcome with
+                            | Error e -> Assert.Fail(sprintf "A5 rename-aware migrate-with-data failed: %A" e)
+                            | Ok result ->
+                                Assert.True(result.Schema.Verified, sprintf "sink schema not at B:\n%s" (PhysicalSchema.renderDiff result.Schema.SchemaDiff))
+                                // THE DISCRIMINATOR: the renamed CONTACT column carries the
+                                // source's EMAIL values — re-pointed A→B by identity, not NULL.
+                                let! c1 = scalarString sink "SELECT [CONTACT] FROM [dbo].[MIGAB_COL] WHERE [ID]=1;"
+                                Assert.Equal("alice@x", c1)
+                                let! c2 = scalarString sink "SELECT [CONTACT] FROM [dbo].[MIGAB_COL] WHERE [ID]=2;"
+                                Assert.Equal("bob@x", c2)
+                                let! count = scalarString sink "SELECT COUNT(*) FROM [dbo].[MIGAB_COL];"
+                                Assert.Equal("2", count)
                         })
                 }))
 

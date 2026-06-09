@@ -39,7 +39,6 @@ open Projection.Tests.Fixtures
 // Per-file helpers
 // ---------------------------------------------------------------------------
 
-let private mkName (s: string) : Name = Name.create s |> Result.value
 
 let private shuffleModules (rng: int) (c: Catalog) : Catalog =
     // Deterministic-on-int "shuffle" via List.sortBy hash; preserves

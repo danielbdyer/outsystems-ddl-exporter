@@ -188,6 +188,7 @@ module MigrationDependenciesEmitter =
     /// CDC-aware predicate dispatch per `Profile.CdcAwareness` is
     /// preserved.
     let private renderMerge
+        (deleteScope: ScriptDomBuild.DeleteScope option)
         (cdcAware: bool)
         (deferred: Set<Name>)
         (k: Kind)
@@ -222,7 +223,7 @@ module MigrationDependenciesEmitter =
                 UpdColumns = updColumns
                 Rows        = typedRows |> List.map (typedValuesToSqlLiterals deferred (writableAttributes k))
                 CdcAware    = cdcAware
-                DeleteScope = None
+                DeleteScope = deleteScope
             }
         let mergeStmt = (ScriptDomBuild.buildMergeStatement args).Value
         System.String.Concat(  // LINT-ALLOW: terminal MERGE statement-terminator + GO-batch suffix on the rendered MERGE (chapter 4.1.B slice ε); segments are typed (output of `ScriptDomGenerate.generateOne` from typed AST + SQL Server's required MERGE statement-terminator + V1 batch-separator literal); same architectural shape as StaticSeedsEmitter's terminal-text boundary
@@ -311,6 +312,7 @@ module MigrationDependenciesEmitter =
     /// Mirrors `StaticSeedsEmitter.kindToScript` exactly — both
     /// emitters realize the same algebra over the same plan shape.
     let private kindToScript
+        (deleteScope: ScriptDomBuild.DeleteScope option)
         (cdc: CdcAwareness)
         (kind: Kind)
         (load: DataLoadKind)
@@ -331,7 +333,7 @@ module MigrationDependenciesEmitter =
                     row.Identifier,
                     rowToTypedValues typeLookup kind.Attributes row)
             let renderedPhase1 =
-                renderMerge cdcAware deferred kind (typedRows |> List.map snd)
+                renderMerge deleteScope cdcAware deferred kind (typedRows |> List.map snd)
             let renderedPhase2 =
                 if Set.isEmpty deferred then ""
                 else
@@ -355,12 +357,20 @@ module MigrationDependenciesEmitter =
               RenderedPhase2 = renderedPhase2
               Rendered       = rendered }
 
-    /// Π_MigrationDependencies emit (canonical; plan-consuming).
-    /// Realizes the supplied `DataLoadPlan` as per-kind MERGE/UPDATE
-    /// scripts; the plan carries post-substitution rows (the User-FK
-    /// remap was applied at `DataLoadPlan.build`). DataIntent
+    /// Π_MigrationDependencies emit (canonical; plan-consuming,
+    /// scope-bearing). Realizes the supplied `DataLoadPlan` as per-kind
+    /// MERGE/UPDATE scripts; the plan carries post-substitution rows (the
+    /// User-FK remap was applied at `DataLoadPlan.build`). DataIntent
     /// end-to-end — operator opinion landed once at plan-build.
-    let emitFromPlan
+    ///
+    /// `deleteScope` gates the `WHEN NOT MATCHED BY SOURCE … DELETE` arm
+    /// (per `ScriptDomBuild.DeleteScope`): `None` (the `emitFromPlan`
+    /// default) emits an upsert-only MERGE byte-identical to the
+    /// pre-scope form; `Some scope` activates the convergent-delete arm.
+    /// The parameter makes the emitter scope-ready; the policy that
+    /// selects a scope is CLI/EmissionPolicy plumbing, not the emitter's.
+    let emitFromPlanWith
+        (deleteScope: ScriptDomBuild.DeleteScope option)
         (catalog: Catalog)
         (profile: Profile)
         (plan: DataLoadPlan)
@@ -370,16 +380,20 @@ module MigrationDependenciesEmitter =
         let loadByKind = plan.Loads |> List.map (fun l -> l.Kind, l) |> Map.ofList
         let emptyScript : DataInsertScript =
             { Phase1Merges = []; Phase2Updates = []; RenderedPhase1 = ""; RenderedPhase2 = ""; Rendered = "" }
-        let slices =
-            Catalog.allKinds catalog
-            |> Bench.iterMap "emit.migrationDeps.kind" (fun k ->
-                let script =
-                    match Map.tryFind k.SsKey loadByKind with
-                    | Some load -> kindToScript cdc k load
-                    | None      -> emptyScript
-                k.SsKey, script)
-            |> Map.ofList
-        ArtifactByKind.create catalog slices
+        ArtifactByKind.perKindBenched "emit.migrationDeps.kind" catalog (fun k ->
+            match Map.tryFind k.SsKey loadByKind with
+            | Some load -> kindToScript deleteScope cdc k load
+            | None      -> emptyScript)
+
+    /// Π_MigrationDependencies emit (canonical; plan-consuming). The
+    /// upsert-only default form — `emitFromPlanWith` with no delete
+    /// scope. Output is byte-identical to the pre-scope emitter.
+    let emitFromPlan
+        (catalog: Catalog)
+        (profile: Profile)
+        (plan: DataLoadPlan)
+        : Result<ArtifactByKind<DataInsertScript>, EmitError> =
+        emitFromPlanWith None catalog profile plan
 
     /// Build the `DataLoadPlan` from the supplied `MigrationDependency
     /// Context` (operator-supplied rows) and `UserRemapContext`

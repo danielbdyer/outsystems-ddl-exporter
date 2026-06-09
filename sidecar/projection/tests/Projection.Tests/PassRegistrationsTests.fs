@@ -76,7 +76,6 @@ let ``A.4.7 slice γ: SymmetricClosure.registered carries Schema domain + DataIn
 // Category B — config + Catalog → Catalog factory.
 // ---------------------------------------------------------------------------
 
-let private mkName (s: string) : Name = Name.create s |> Result.value
 
 [<Fact>]
 let ``A.4.7 slice γ: NamingMorphism.registered factory produces DataIntent site`` () =

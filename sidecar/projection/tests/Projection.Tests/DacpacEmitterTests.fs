@@ -42,13 +42,6 @@ let private mustOkBytes (r: Result<byte[]>) : byte[] =
         Assert.Fail (sprintf "expected Ok; got %A" errs)
         Unchecked.defaultof<byte[]>
 
-let private mkName (s: string) : Name =
-    match Name.create s with
-    | Ok n -> n
-    | Error es ->
-        let codes = es |> List.map (fun e -> e.Code) |> String.concat ", "
-        invalidOp (sprintf "DacpacEmitterTests.mkName failed: %s" codes)
-
 /// Single-Kind catalog mirroring the pre-scope §5 minimum slice: one
 /// Module, one Kind, two attributes including a PK, no FKs, no
 /// indexes, no modality marks. Built inline to keep this test

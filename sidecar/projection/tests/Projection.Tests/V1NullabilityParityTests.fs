@@ -44,7 +44,6 @@ let private nullRun (catalog: Catalog) (policy: Policy) (profile: Profile) : Lin
 // ---------------------------------------------------------------------------
 
 let private mkKey s = testKey s
-let private mkName s = Name.create s |> Result.value
 
 /// Build a synthetic catalog with a single attribute matching the V1
 /// test's "Sample.SampleEntity.Mandatory" coordinate. V1 uses

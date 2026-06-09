@@ -371,7 +371,6 @@ let ``contract: SCC enumeration is invariant under input permutation`` () =
 // ---------------------------------------------------------------------------
 
 let private mkKey s = testKey s
-let private mkName s = Name.create s |> Result.value
 
 let private kindWithFk (kindKey: string) (fkKey: string) (targetKey: SsKey) : Kind =
     let attrId = mkKey (kindKey + "_Id")

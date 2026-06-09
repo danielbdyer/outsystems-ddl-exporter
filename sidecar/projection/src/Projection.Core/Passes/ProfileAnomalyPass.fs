@@ -126,20 +126,8 @@ module ProfileAnomalyPass =
 
         let allDiagnostics = nullDiagnostics @ cvDiagnostics
 
-        let events =
-            allKinds
-            |> List.map (fun k ->
-                { PassName       = passName
-                  PassVersion    = version
-                  SsKey          = k.SsKey
-                  TransformKind  = Touched
-                  Classification = DataIntent })
-
-        lineageDiagnostics {
-            do! LineageDiagnostics.writeLineages events
-            do! LineageDiagnostics.writeDiagnostics allDiagnostics
-            return report
-        }
+        let touched = allKinds |> List.map (fun k -> k.SsKey)
+        LineageDiagnostics.touchedEpilogue passName version touched allDiagnostics report
 
     let registered (profile: Profile) : RegisteredTransform<Catalog, ProfileAnomalyReport> =
         { Name         = passName

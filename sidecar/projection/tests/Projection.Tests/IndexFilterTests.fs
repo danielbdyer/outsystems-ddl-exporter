@@ -20,7 +20,6 @@ open Projection.Tests.Fixtures
 let private mkKey (v: string) : SsKey =
     SsKey.synthesized "test" v |> Result.value
 
-let private mkName (v: string) : Name = Name.create v |> Result.value
 
 let private mkTableId (schema: string) (table: string) : TableId =
     TableId.create schema table |> Result.value

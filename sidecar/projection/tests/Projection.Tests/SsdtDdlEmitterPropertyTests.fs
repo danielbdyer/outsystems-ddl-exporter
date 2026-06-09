@@ -78,7 +78,6 @@ let private mustOk (r: FsResult<'a, EmitError>) : 'a =
 let private enrich (c: Catalog) : Catalog =
     (CanonicalizeIdentity.registered.Run c |> Lineage.map (fun d -> d.Value)).Value
 
-let private mkName (s: string) : Name = Name.create s |> Result.value
 
 let private bodyOf (k: SsKey) (cat: Catalog) : string =
     let artifact = SsdtDdlEmitter.emitSlices (enrich cat) |> mustOk
