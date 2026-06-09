@@ -15,6 +15,10 @@
 > `peer` producers run on). `THE_CLI.md` §4 is the operator surface; `THE_USE_CASE_ONTOLOGY.md`
 > §3 (P-3, the User re-key protein) is the golden-data chain; `WAVE_6_ALGEBRA.md` is the
 > torsor whose A/B this document identifies with the realization name-space.
+>
+> **For the execution plan** — current-state preflight, milestone graph, acceptance/test-case
+> matrix, critical path, and risk register — see `PREFLIGHT_CLOUD_INSERTION.md` (indexed in
+> `CONFIRMED_BACKLOG_2026_06_09.md` §J, the canonical "what's left" surface).
 
 ---
 
