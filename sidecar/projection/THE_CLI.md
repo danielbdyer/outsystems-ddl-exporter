@@ -111,6 +111,15 @@ Each environment carries two permission facets and an address:
   - `schema+data` — DDL+DML permitted; the full create/alter + data.
   - `data` — DML-only; schema must already agree. A schema-changing flow against a
     `data` target is a **type mismatch**, refused loudly (never half-applied).
+- **`rendition`** *(optional, env metadata — not a gate)* — which physical shape of the
+  **one authored `SsKey` model** this place bears (`THE_DATA_PRODUCERS §0/§4.6`):
+  - `physical` — the frozen **OSUSR** cloud rendition (**A**, the up-leg sink). A *peer*
+    source (the `golden` cloud→cloud move) is physical.
+  - `logical` — the hosted **on-prem** rendition (**B**, the migration team's load target).
+    A *legacy* source (the `preview` B→A reverse leg, `THE_DATA_PRODUCERS` LE-1) is logical.
+  - *absent* — unspecified (the default). The established same-rendition surface never sets
+    it; it marks the rendition only where the reverse leg picks source=logical / sink=physical.
+    It does **not** narrow `access`/`grant`; it is metadata the reverse-leg wiring reads.
 
 D9 holds: an environment carries a connection **reference** (`env:<VAR>` / `file:<path>`),
 **never a literal connection string**. Secrets stay out-of-band; only addressing lives in

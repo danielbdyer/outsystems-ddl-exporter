@@ -61,6 +61,32 @@ let ``config parses a docker environment`` () =
     let e = Map.find "docker" (ProjectionConfig.parse envFlowJson |> mustOk).Environments
     Assert.Equal(Access.Docker, e.Access)
 
+// -- M1: the `rendition: physical | logical` env-metadata flag --------------
+
+[<Fact>]
+let ``config parses an environment with rendition physical (the OSUSR cloud A)`` () =
+    let json = """{ "environments": { "cloud-uat": { "access": "direct", "conn": "env:CLOUD_UAT_CONN", "grant": "data", "rendition": "physical" } } }"""
+    let e = Map.find "cloud-uat" (ProjectionConfig.parse json |> mustOk).Environments
+    Assert.Equal(Some Rendition.Physical, e.Rendition)
+
+[<Fact>]
+let ``config parses an environment with rendition logical (the hosted on-prem B)`` () =
+    let json = """{ "environments": { "onprem-legacy": { "access": "direct", "conn": "env:ONPREM_LEGACY_CONN", "rendition": "logical" } } }"""
+    let e = Map.find "onprem-legacy" (ProjectionConfig.parse json |> mustOk).Environments
+    Assert.Equal(Some Rendition.Logical, e.Rendition)
+
+[<Fact>]
+let ``config defaults an environment with no rendition to None (the minimal non-breaking default)`` () =
+    // The established same-rendition surface never sets it; absent must round-trip
+    // as None, not a fabricated Physical/Logical (the env-metadata default).
+    let e = Map.find "cloud-dev" (ProjectionConfig.parse envFlowJson |> mustOk).Environments
+    Assert.Equal(None, e.Rendition)
+
+[<Fact>]
+let ``config refuses an unknown rendition`` () =
+    let json = """{ "environments": { "x": { "access": "docker", "rendition": "hybrid" } } }"""
+    Assert.Contains("cli.config.envRenditionUnknown", errCodes (ProjectionConfig.parse json))
+
 [<Fact>]
 let ``config refuses an inline secret in an environment conn (D9)`` () =
     let json = """{ "environments": { "x": { "access": "direct", "conn": "Server=h;Password=p" } } }"""

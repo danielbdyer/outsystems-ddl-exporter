@@ -33,6 +33,21 @@ type Grant =
     | SchemaAndData
     | DataOnly
 
+/// Metadata facet — which *rendition* of the one authored model a place bears
+/// (THE_CLI.md §4.1; THE_DATA_PRODUCERS §0/§4.6; DECISIONS 2026-06-09 item 5).
+/// The estate hosts ONE `SsKey` model in two physical shapes: `Physical` is the
+/// frozen OSUSR cloud rendition (A — the up-leg sink); `Logical` is the hosted
+/// on-prem rendition (B — the migration team's load target, the legacy reverse
+/// leg's source). The flag distinguishes a *peer* source (physical, the `golden`
+/// cloud→cloud move) from a *legacy* source (logical, the `preview` B→A reverse
+/// leg). It is env METADATA, not a refusal gate — it does not narrow `access` /
+/// `grant`; it marks the rendition so the reverse-leg wiring (M3.b / LE-1) can
+/// pick source=logical / sink=physical. Closed so a renderer is total over it.
+[<RequireQualifiedAccess>]
+type Rendition =
+    | Physical
+    | Logical
+
 /// A named place (THE_CLI.md §4.1): its reach (`Access`) and, for a target,
 /// its permission (`Grant`). D9 holds — a `Direct`/`Bundle` address is a
 /// reference or a folder, never an inline secret.
@@ -44,6 +59,12 @@ type Environment =
         /// The durable timeline (the episode store) this place accumulates;
         /// `seal` records into it and `report` diffs against it (THE_CLI.md §8).
         Store  : string option
+        /// Which rendition of the one authored model this place bears
+        /// (`physical` = OSUSR cloud, A; `logical` = hosted on-prem, B). `None`
+        /// = unspecified (the minimal non-breaking default — same-rendition
+        /// moves, the established surface, never set it). Env metadata, not a
+        /// gate. THE_CLI.md §4.1; THE_DATA_PRODUCERS §4.6.
+        Rendition : Rendition option
     }
 
 // `FlowSource`, `Flow`, and `FlowRunOpts` live in MovementSpec.fs (the types
@@ -124,6 +145,16 @@ module ProjectionConfig =
         | "data" | "dataonly" | "data-only"                   -> Result.success Grant.DataOnly
         | other -> Result.failureOf (err "cli.config.envGrantUnknown" (sprintf "environment '%s' grant '%s' is not schema+data | data." envName other))
 
+    /// The rendition metadata facet: physical (OSUSR cloud, A) | logical
+    /// (hosted on-prem, B). Absent = `None` (unspecified — the same-rendition
+    /// default). Closed; an unknown value is a named refusal, never silently
+    /// dropped.
+    let private parseRendition (envName: string) (raw: string) : Result<Rendition> =
+        match raw.ToLowerInvariant() with
+        | "physical" -> Result.success Rendition.Physical
+        | "logical"  -> Result.success Rendition.Logical
+        | other -> Result.failureOf (err "cli.config.envRenditionUnknown" (sprintf "environment '%s' rendition '%s' is not physical | logical." envName other))
+
     let private parseEnvironment (name: string) (el: JsonElement) : Result<Environment> =
         if el.ValueKind <> JsonValueKind.Object then
             Result.failureOf (err "cli.config.envShape" (sprintf "environment '%s' must be a JSON object." name))
@@ -132,12 +163,19 @@ module ProjectionConfig =
             | Error e -> Result.failure e
             | Ok access ->
                 let store = getString el "store"
-                match getString el "grant" with
-                | None -> Result.success { Name = name; Access = access; Grant = None; Store = store }
-                | Some g ->
-                    match parseGrant name g with
-                    | Ok grant -> Result.success { Name = name; Access = access; Grant = Some grant; Store = store }
-                    | Error e  -> Result.failure e
+                let renditionR =
+                    match getString el "rendition" with
+                    | None   -> Result.success None
+                    | Some r -> parseRendition name r |> Result.map Some
+                match renditionR with
+                | Error e -> Result.failure e
+                | Ok rendition ->
+                    match getString el "grant" with
+                    | None -> Result.success { Name = name; Access = access; Grant = None; Store = store; Rendition = rendition }
+                    | Some g ->
+                        match parseGrant name g with
+                        | Ok grant -> Result.success { Name = name; Access = access; Grant = Some grant; Store = store; Rendition = rendition }
+                        | Error e  -> Result.failure e
 
     /// The content origin: `from` names an environment (the Move), or one of
     /// the keywords `model` / `synthetic` (with optional `profile`) / `none`.

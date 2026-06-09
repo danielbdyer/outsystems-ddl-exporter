@@ -58,7 +58,7 @@ let ``CapabilitySurvey.Capability.all is Reads plus every write action; permissi
 // --- the flow-shape derivation (requiredBy) --------------------------------
 
 let private env (name: string) (grant: Grant option) : Projection.Pipeline.Environment =
-    { Name = name; Access = Access.Direct (ConnectionRef.EnvVar (name + "_CONN")); Grant = grant; Store = None }
+    { Name = name; Access = Access.Direct (ConnectionRef.EnvVar (name + "_CONN")); Grant = grant; Store = None; Rendition = None }
 
 let private flow (name: string) (from: FlowSource) (toEnv: string) : Flow =
     { Name = name; From = from; To = toEnv; Rekey = None; Tables = [] }
