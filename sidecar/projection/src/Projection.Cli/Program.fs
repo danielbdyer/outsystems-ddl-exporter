@@ -1705,6 +1705,12 @@ let private runCaptureProfile (connSpec: string) (outPath: string) : int =
     dumpBench "profile"
     exitCode
 
+/// The pipeline's planned stage arc, in order — the keys the publish pipeline
+/// streams (`extract.started` / `summary.stageCompleted{stage}`). The live
+/// Watch board pre-seeds these as `Pending` so the whole arc is visible before
+/// the first stage starts (`THE_STORYBOARD.md` Appendix A.3).
+let private pipelineStages : string list = [ "extract"; "profile"; "emit" ]
+
 let private runPlan (plan: ExecutionPlan) : int =
     for n in plan.Notes do eprintfn "Note — %s" n
     // Resolve the model to a Catalog under the live-OSSYS-primary / file-
@@ -1724,8 +1730,9 @@ let private runPlan (plan: ExecutionPlan) : int =
     | PlanAction.PublishBundle (c, dir, store, env) ->
         let verbosity = if verboseMode.Value then LogSink.Verbosity.Verbose else LogSink.Verbosity.Quiet
         let run () = runFullExport c (Some dir) verbosity Set.empty store env
-        // --watch + a real TTY → the live stage board (§13).
-        if Watch.shouldWatch watchMode.Value then Watch.renderWatch (Watch.resolveDwellMs ()) run
+        // --watch + a real TTY → the live stage board (§13), pre-seeded with the
+        // pipeline's planned stages so the whole arc is visible from the first frame.
+        if Watch.shouldWatch watchMode.Value then Watch.renderWatch pipelineStages (Watch.resolveDwellMs ()) run
         else run ()
     | PlanAction.EmitSkeleton (model, modelOssys, dir) ->
         needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runEmitSkeletonOnly cat dir))
@@ -1742,7 +1749,12 @@ let private runPlan (plan: ExecutionPlan) : int =
     | PlanAction.SynthesizeAndLoad (model, modelOssys, profile, conn, opts, execute) ->
         runSyntheticLoad model modelOssys profile conn opts execute
     | PlanAction.CaptureProfile (conn, out) -> runCaptureProfile conn out
-    | PlanAction.PublishAndLoad (c, conn, store, env) -> runFullExportLoad c conn None store env
+    | PlanAction.PublishAndLoad (c, conn, store, env) ->
+        let run () = runFullExportLoad c conn None store env
+        // The load flow runs the same publish pipeline, so it streams the same
+        // stage arc; --watch shows the live board (§13).
+        if Watch.shouldWatch watchMode.Value then Watch.renderWatch pipelineStages (Watch.resolveDwellMs ()) run
+        else run ()
     | PlanAction.Migrate (model, modelOssys, conn, opts) ->
         needCatalog modelOssys model (fun cat -> runMigrateExecute cat conn opts.Declaration opts.AllowCdc opts.Store opts.Env)
     // check --------------------------------------------------------------

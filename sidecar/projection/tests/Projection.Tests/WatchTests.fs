@@ -114,7 +114,10 @@ let ``Watch line: every stage line clears the twelve-rule banned list`` () =
         [ "your"; "you "; " i "; " we "; "that's real"; ", not "
           "destroy"; "cleaned up"; "dig"; "oops"; "let's"; "refused" ]
     let lines =
-        [ Watch.lineText { Key = "extract"; State = Watch.Active }
+        [ Watch.lineText { Key = "extract"; State = Watch.Pending }
+          Watch.lineText { Key = "profile"; State = Watch.Pending }
+          Watch.lineText { Key = "emit";    State = Watch.Pending }
+          Watch.lineText { Key = "extract"; State = Watch.Active }
           Watch.lineText { Key = "profile"; State = Watch.Active }
           Watch.lineText { Key = "emit";    State = Watch.Active }
           Watch.lineText { Key = "extract"; State = Watch.Done(Some 1200L) }
@@ -133,3 +136,45 @@ let ``Watch line: the board renders one line per stage`` () =
     // The renderable is built without throwing; the board carries two stages.
     Assert.NotNull(box renderable)
     Assert.Equal(2, List.length b2.Stages)
+
+// ---------------------------------------------------------------------------
+// the seeded board (the whole arc visible from the first frame — Appendix A.3)
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Watch board: seeded shows the whole planned arc as Pending`` () =
+    let board = Watch.seeded [ "extract"; "profile"; "emit" ]
+    Assert.Equal(3, List.length board.Stages)
+    Assert.True(board.Stages |> List.forall (fun s -> s.State = Watch.Pending))
+
+[<Fact>]
+let ``Watch board: seeded omits the umbrella pipeline stage`` () =
+    let board = Watch.seeded [ "pipeline"; "extract"; "emit" ]
+    Assert.Equal<string list>([ "extract"; "emit" ], board.Stages |> List.map (fun s -> s.Key))
+
+[<Fact>]
+let ``Watch board: a started stage flips its seeded Pending line to Active in place`` () =
+    let board = Watch.seeded [ "extract"; "profile"; "emit" ]
+    let board', changed = Watch.apply board "profile.started" Map.empty
+    Assert.True(changed)
+    match board'.Stages with
+    | [ { Key = "extract"; State = Watch.Pending }
+        { Key = "profile"; State = Watch.Active }
+        { Key = "emit";    State = Watch.Pending } ] -> ()
+    | other -> Assert.Fail(sprintf "expected profile Active in place, the others Pending, got %A" other)
+
+[<Fact>]
+let ``Watch board: completing a seeded stage flips it to Done with its duration`` () =
+    let board = Watch.seeded [ "extract"; "profile" ]
+    let started, _ = Watch.apply board "extract.started" Map.empty
+    let done', changed =
+        Watch.apply started "summary.stageCompleted" (payload [ "stage", box "extract"; "durationMs", box 900L ])
+    Assert.True(changed)
+    match done'.Stages |> List.tryFind (fun s -> s.Key = "extract") with
+    | Some { State = Watch.Done(Some 900L) } -> ()
+    | other -> Assert.Fail(sprintf "expected extract Done 900, got %A" other)
+
+[<Fact>]
+let ``Watch line: a pending stage reads the stage gerund (the board shows the whole arc)`` () =
+    let text = Watch.lineText { Key = "emit"; State = Watch.Pending }
+    Assert.Contains("Building the changes", text)

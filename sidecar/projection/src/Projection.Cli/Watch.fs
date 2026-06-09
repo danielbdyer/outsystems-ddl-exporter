@@ -29,9 +29,13 @@ open Projection.Pipeline
 [<RequireQualifiedAccess>]
 module Watch =
 
-    /// A stage's visible state on the board. `Active` is the gerund-in-progress
-    /// (rule 12 exception); `Done` carries the stage's measured duration.
+    /// A stage's visible state on the board. `Pending` is a stage in the run's
+    /// plan that has not yet started (shown faint with `○`, so the whole arc is
+    /// visible from the first frame — `THE_STORYBOARD.md` Act 4 / Appendix A.3);
+    /// `Active` is the gerund-in-progress (rule 12 exception); `Done` carries the
+    /// stage's measured duration.
     type StageState =
+        | Pending
         | Active
         | Done of durationMs: int64 option
 
@@ -43,6 +47,16 @@ module Watch =
     type Board = { Stages: StageLine list }
 
     let empty : Board = { Stages = [] }
+
+    /// A board pre-seeded with the run's planned stages, each `Pending` — so the
+    /// operator sees the whole arc before the first stage starts, the stages
+    /// filling in as the run happens (Appendix A.3). The umbrella stage is never
+    /// seeded (it is not a sub-stage the operator watches).
+    let seeded (stageKeys: string list) : Board =
+        { Stages =
+            stageKeys
+            |> List.filter (fun k -> not (k = "pipeline"))
+            |> List.map (fun k -> { Key = k; State = Pending }) }
 
     /// The umbrella "pipeline" stage (`FullExportRun.recordStage "pipeline"`) wraps
     /// the whole run; it is not a sub-stage the operator watches, so the board
@@ -64,8 +78,19 @@ module Watch =
     let apply (board: Board) (code: string) (payload: Map<string, objnull>) : Board * bool =
         if code.EndsWith ".started" then
             let key = code.Substring(0, code.Length - ".started".Length)
-            if isUmbrella key || board.Stages |> List.exists (fun s -> s.Key = key) then board, false
-            else { board with Stages = board.Stages @ [ { Key = key; State = Active } ] }, true
+            if isUmbrella key then board, false
+            else
+                // A pre-seeded `Pending` stage flips to `Active` in place (keeping
+                // its planned position); an unseeded stage appends; an already
+                // Active / Done stage is a no-op (no spurious re-render).
+                match board.Stages |> List.tryFind (fun s -> s.Key = key) with
+                | Some { State = Pending } ->
+                    { board with
+                        Stages =
+                            board.Stages
+                            |> List.map (fun s -> if s.Key = key then { s with State = Active } else s) }, true
+                | Some _ -> board, false
+                | None -> { board with Stages = board.Stages @ [ { Key = key; State = Active } ] }, true
         elif code = "summary.stageCompleted" then
             match Map.tryFind "stage" payload with
             | Some s when not (isNull s) ->
@@ -124,7 +149,9 @@ module Watch =
     /// testable against the twelve-rule banned list.
     let lineText (line: StageLine) : string =
         match line.State with
-        | Active ->
+        | Pending | Active ->
+            // The gerund names the stage (its identity on the board); the glyph
+            // carries the state (faint `○` pending, `▸` active, `✓` done).
             statementText (line.Key + ".started") Map.empty
         | Done dur ->
             let baseText = statementText "summary.stageCompleted" (Map.ofList [ "stage", box line.Key ])
@@ -133,9 +160,11 @@ module Watch =
             | None    -> baseText
 
     let private rowMarkup (line: StageLine) : string =
+        let text = Markup.Escape(lineText line)
         match line.State with
-        | Active   -> sprintf "%s  %s" (Theme.muted Theme.collapsed) (Theme.muted (Markup.Escape(lineText line)))
-        | Done _   -> sprintf "%s  %s" Theme.ok (Theme.green (Markup.Escape(lineText line)))
+        | Pending -> sprintf "%s  %s" (Theme.muted Theme.pending)   (Theme.muted text)
+        | Active  -> sprintf "%s  %s" (Theme.accent Theme.collapsed) (Theme.bold text)
+        | Done _  -> sprintf "%s  %s" Theme.ok                       (Theme.green text)
 
     /// Project the board onto a Spectre renderable — the live target the
     /// `LiveDisplayContext` updates in place.
@@ -173,10 +202,10 @@ module Watch =
     /// because the run is synchronous + single-threaded and channel 1 is nulled
     /// (no contention). A future concurrent / async emitter would move the dwell to
     /// a drain loop on a render thread (`THE_VOICE_BUILD_MAP.md` §4.3).
-    let renderWatch (floorMs: int64) (body: unit -> int) : int =
+    let renderWatch (seedStages: string list) (floorMs: int64) (body: unit -> int) : int =
         let console =
             AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(Console.Error)))
-        let board = ref empty
+        let board = ref (seeded seedStages)
         let sw = System.Diagnostics.Stopwatch.StartNew()
         let mutable lastRenderAt = 0L
         let mutable code = 0
