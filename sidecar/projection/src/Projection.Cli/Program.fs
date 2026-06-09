@@ -1918,6 +1918,23 @@ let private discoverConfig () : Result<ProjectionConfig> =
         | p -> p
     ProjectionConfig.fromFile path
 
+/// `projection survey` — the capability survey (prototype;
+/// `HANDOFF_CAPABILITY_SURVEY_2026_06_09.md`). Probe every configured
+/// environment in parallel and render the declared-vs-actual capability matrix:
+/// is every place actually able to do what the pipeline asks of it?
+let private runSurvey () : int =
+    match discoverConfig () with
+    | Error es ->
+        for e in es do TtyRenderer.renderVoicedError e
+        6
+    | Ok cfg ->
+        let reports = (CapabilitySurvey.survey cfg).GetAwaiter().GetResult()
+        TtyRenderer.renderAnswer false View.defaultDepth (TtyRenderer.buildSurveyView reports)
+        // CI gate: non-zero when a connected environment can't do what is asked.
+        let blocked =
+            reports |> List.exists (fun r -> r.Connected && (not r.Reachable || not (List.isEmpty r.Missing)))
+        if blocked then 7 else 0
+
 /// A flow's content origin, rendered for the menu (THE_CLI.md §4.4).
 let private flowSourceText (s: FlowSource) : string =
     match s with
@@ -1974,6 +1991,7 @@ let main argv =
     | [| "init" |] -> runInit ()
     | [| "setup" |] -> runSetup None
     | [| "setup"; "--conn"; ref |] -> runSetup (Some ref)
+    | [| "survey" |] -> runSurvey ()
     | _ ->
         match discoverConfig () with
         | Error es ->

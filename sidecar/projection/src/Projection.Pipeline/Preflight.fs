@@ -273,6 +273,12 @@ module Preflight =
         |> List.distinct
         |> List.sortBy (fun v -> v.Object, permissionName v.Action)
 
+    /// Does the captured grant cover this write action at **database scope** —
+    /// the place-wide grant (object-key "") the capability survey checks an
+    /// environment's declared `grant` facet against. Pure + DB-free.
+    let coversAtDatabaseScope (action: WriteAction) (grant: GrantEvidence) : bool =
+        Set.contains ("", permissionName action) grant.Granted
+
     let private describePermission (violations: PermissionViolation list) : string =
         violations
         |> List.map (fun v -> sprintf "%s on %s" (permissionName v.Action) v.Object)

@@ -181,6 +181,41 @@ let buildSetupView
         @ connectionBlock
         @ recommendation)
 
+// --- the capability survey matrix (prototype) ------------------------------
+
+/// Build the capability-survey `View` — the whole estate's declared-vs-actual
+/// capability matrix (`HANDOFF_CAPABILITY_SURVEY_2026_06_09.md`). The verdict
+/// leads (every place ready, or N need attention); each environment reads its
+/// state plainly — covered / missing the named activities / unreachable / no
+/// live gate. Pure over the probed reports.
+let buildSurveyView (reports: CapabilitySurvey.EnvironmentReport list) : View.View =
+    let actionName (a: Preflight.WriteAction) =
+        match a with
+        | Preflight.Insert      -> "INSERT"
+        | Preflight.Delete      -> "DELETE"
+        | Preflight.Alter       -> "ALTER"
+        | Preflight.CreateTable -> "CREATE TABLE"
+    let field (r: CapabilitySurvey.EnvironmentReport) =
+        let value, status =
+            if not r.Connected then "no live gate (file or ephemeral)", View.Neutral
+            elif not r.Reachable then "unreachable", View.Bad
+            elif not (List.isEmpty r.Missing) then
+                sprintf "reachable %s missing %s" Theme.dot (r.Missing |> List.map actionName |> String.concat ", "), View.Warn
+            else
+                let cdc = if r.CdcTracked then sprintf " %s CDC-tracked" Theme.dot else ""
+                sprintf "reachable %s grant covered%s" Theme.dot cdc, View.Ok
+        View.Field(r.Name, value, status)
+    let needAttention =
+        reports
+        |> List.filter (fun r -> r.Connected && (not r.Reachable || not (List.isEmpty r.Missing)))
+        |> List.length
+    let verdict =
+        if needAttention = 0 then
+            View.Hero(View.Ok, "Every connected environment can do what the pipeline asks of it.")
+        else
+            View.Hero(View.Warn, sprintf "%d environment(s) need attention before a live run." needAttention)
+    View.Doc([ View.Blank; verdict; View.Blank ] @ (reports |> List.map field))
+
 let renderReadinessBoard (r: RunLedger.Readiness) (recent: string list) (ledgerPath: string) : unit =
     // The board renders on every `readiness` (not just on a TTY). Pin a width
     // when piped (Spectre's auto-width collapses lines on a non-TTY); it still

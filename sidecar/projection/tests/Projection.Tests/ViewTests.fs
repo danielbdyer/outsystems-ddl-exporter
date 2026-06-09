@@ -99,6 +99,20 @@ let ``Setup readback: an unreachable target is named, with no grant claimed`` ()
     Assert.Contains("unreachable", p)
     Assert.DoesNotContain("ALTER", p)   // the grant is unknowable until reachable
 
+[<Fact>]
+let ``Capability survey: covered / missing / unreachable / no-gate each read plainly`` () =
+    let reports : CapabilitySurvey.EnvironmentReport list =
+        [ { Name = "cloud-uat"; Grant = Some Grant.SchemaAndData; Connected = true;  Reachable = true;  Missing = []; CdcTracked = false }
+          { Name = "prod";      Grant = Some Grant.DataOnly;      Connected = true;  Reachable = true;  Missing = [ Preflight.Insert ]; CdcTracked = false }
+          { Name = "stale";     Grant = Some Grant.DataOnly;      Connected = true;  Reachable = false; Missing = []; CdcTracked = false }
+          { Name = "onprem";    Grant = None;                     Connected = false; Reachable = false; Missing = []; CdcTracked = false } ]
+    let p = plain (TtyRenderer.buildSurveyView reports)
+    Assert.Contains("grant covered", p)        // cloud-uat — covered
+    Assert.Contains("missing INSERT", p)       // prod — declared data-only, INSERT absent
+    Assert.Contains("unreachable", p)          // stale
+    Assert.Contains("no live gate", p)         // onprem — bundle, nothing to probe
+    Assert.Contains("need attention", p)       // the verdict (2 of 4)
+
 // --- progressive disclosure (the dig substrate) ----------------------------
 // Discriminating predicate: a Disclosure HIDES its detail when collapsed and
 // REVEALS it one level deeper when open — but `toJson` carries the full detail
