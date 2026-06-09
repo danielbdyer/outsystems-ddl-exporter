@@ -193,7 +193,7 @@ preflight, milestone graph, acceptance/test-case matrix, critical path, and risk
 
 | # | Item | Verdict | Evidence / target |
 |---|------|---------|-------------------|
-| J1 | **`rendition` env flag + routing** — add `rendition: physical \| logical` to each environment (operator decision 2026-06-09); distinguishes `peer` (physical source) from `legacy` (logical source); plus **physical (`OSUSR_*`) rendition emission** for a cloud sink (M1.5). | OPEN | env-metadata, *not* a `FlowSource` variant (`MovementSpec.fs:150`); both producers move the same `SsKey` model. PREFLIGHT M1/M1.5 / risk R-5. |
+| J1 | **`rendition` env flag + routing** — add `rendition: physical \| logical` to each environment (operator decision 2026-06-09); distinguishes `peer` (physical source) from `legacy` (logical source). Plus **cross-rendition write-target resolution** for the legacy B→A leg (M1.5 — resolve the write target per-`SsKey` against the sink catalog; the transfer writes using the source contract today, `TransferRun.fs:909`). | OPEN | env-metadata, *not* a `FlowSource` variant (`MovementSpec.fs:150`); both producers move the same `SsKey` model. M1.5 scoped to legacy only — `peer` (A→A) needs none. PREFLIGHT M1/M1.5 / risk R-5. |
 | J2 | **`peer` / `golden` cloud→cloud** — user exclusion + email re-key on the cloud→cloud (A→A) flow + the **re-key canary** (PE-3). | OPEN (machinery green as Dev→UAT) | reuse `ReconciledByRule`+`reconcileKind` (`Reconciliation.fs:47`); proven only as Dev→UAT (`TransferCanaryTests.fs:330`); cloud→cloud flow + canary absent. PREFLIGHT M2. |
 | J3 | **`legacy` / `preview` — the B→A reverse leg** (NOT foreign schema) — the logical on-prem model (B, migration-team-populated) piped up into the physical cloud (A); same `SsKey` model. The reverse-leg transfer (LE-1) + the **B→A round-trip canary** (LE-2). | OPEN | same-model logical→physical move; no foreign ingest, no translation tolerance (the foreign→logical mapping is the migration team's, upstream). Depends on J1 + M1.5. PREFLIGHT M3 / risk R-3. |
 | J4 | **Capability survey as advisory G0** — wire the survey into the run verbs (S3, per R6) + wire `Preflight.all` (= A1) so the survey feeds one composed gate; add the P10 user-directory probe. | OPEN | survey is standalone-verb-only (`CapabilitySurvey.fs`, 3 probes); `Preflight.all` zero callers (= **A1**). `DECISIONS 2026-06-09` (S3 advisory). PREFLIGHT M4. |
@@ -202,7 +202,7 @@ preflight, milestone graph, acceptance/test-case matrix, critical path, and risk
 
 **Acceptance gate for the cluster:** all three producer canaries green (`π∘σ≈id` ✅ · PE-3 re-key
 canary · LE-2 B→A round-trip canary); `golden` excludes users + re-keys by email under a passing
-survey P10; the physical (`OSUSR_*`) rendition is emitted for the cloud sink; every cross-boundary
+survey P10; the legacy B→A leg resolves write targets against the sink (M1.5); every cross-boundary
 erasure named; all stay inside R6. See `PREFLIGHT_CLOUD_INSERTION.md` §3 for the full test-case matrix.
 
 ---

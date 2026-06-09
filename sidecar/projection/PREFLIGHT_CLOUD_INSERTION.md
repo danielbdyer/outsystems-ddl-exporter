@@ -40,8 +40,9 @@ R6, each proven by its data canary**, and specifically when:
 4. **The gate is real** — the capability survey resolves the per-kind disposition mix (incl. **P10**
    user-directory for the re-key), wired into the run verbs (advisory per R6, S3).
 5. **The real-UAT execute path is unblocked** — **OPEN-2** (is the cloud UAT a writable SQL
-   connection?) resolved by the ops spike; the physical (`OSUSR_*`) rendition is emitted for the cloud
-   sink; `--execute` gated by `--go` + `PROJECTION_ALLOW_EXECUTE`, dry-run default, preview row-cap.
+   connection?) resolved by the ops spike; `--execute` gated by `--go` + `PROJECTION_ALLOW_EXECUTE`,
+   dry-run default, preview row-cap. *(The legacy B→A leg additionally needs cross-rendition
+   write-target resolution, M1.5; synthetic/peer do not.)*
 6. **Every cross-boundary erasure is named** (an unmapped user; any reconcile drop) — none silent.
 
 ---
@@ -82,7 +83,7 @@ reachable from the production path) · **DESIGN-ONLY** (spec'd, no code) · **MI
 | `rendition: physical \| logical` env flag | DESIGN-ONLY (to build, M1) | env-metadata; marks A (physical OSUSR) vs B (logical on-prem); distinguishes peer-source from legacy-source |
 | `golden` cloud→cloud user-exclusion + email re-key | DESIGN-ONLY (machinery exists) | The *machinery* is proven as the **Dev→UAT on-prem** instance (`TransferCanaryTests.fs:330`); the **cloud→cloud** flow + its canary do not exist |
 | `legacy` reverse-leg (B→A) transfer | DESIGN-ONLY | Same-model logical→physical move (not foreign ingest); needs the `rendition` flag + physical-rendition emission |
-| Physical (`OSUSR_*`) rendition emission | UNKNOWN — confirm/build | Engine targets the logical rendition today (`Realization := Designation`); writing/matching the physical rendition for a cloud sink is the shared new concern (`THE_USE_CASE_ONTOLOGY.md` §5.8) |
+| Cross-rendition write-target resolution (B→A) | MISSING (scoped to legacy) | The transfer writes using the **source** contract's names (`TransferRun.fs:909-918`); physical `OSUSR_*` round-trips as-read (no generator needed). A logical-source→physical-sink (legacy) leg needs the write target resolved per-`SsKey` against the **sink** catalog. Confirmed by probe 2026-06-09. |
 | `peer` re-key canary (cloud→cloud) | MISSING | named in design; not written |
 | `legacy` B→A round-trip canary | MISSING | named in design; not written |
 
@@ -97,11 +98,11 @@ reachable from the production path) · **DESIGN-ONLY** (spec'd, no code) · **MI
 |---|---|---|---|---|
 | **M0** ✅ | synthetic producer · Transfer core · data-level canary · Dev→UAT re-key · migrate-with-data | — | Slices 1/A/B/C/C′/D/E (acyclic) | — |
 | **M1** | **`rendition` env flag + routing.** Add `rendition: physical \| logical` to each environment (operator decision 2026-06-09); the engine reads it to set source/sink rendition and route the producer semantics (`peer`=physical source, `legacy`=logical source). *(Was the M1 modelling fork — decided: env-metadata flag, not a `FlowSource` variant.)* | M0 | `THE_DATA_PRODUCERS` §4 decision 6; `MovementSpec.fs:150` | J1 |
-| **M1.5** | **Physical (`OSUSR_*`) rendition emission.** Confirm whether any path emits/matches the physical rendition (the engine targets logical today, `Realization := Designation`); if not, build it — the shared concern for *any* physical-cloud sink (`peer`, `legacy`, real-UAT). | M1 | `THE_USE_CASE_ONTOLOGY.md` §5.8; risk R-5 | J1 |
+| **M1.5** | **Cross-rendition write-target resolution (B→A).** The transfer writes using the **source** contract's names (`runThroughConnections* → ReadSide.read source → runCore … contract`, `TransferRun.fs:909-918`); the `LogicalTableEmission` passes are SSDT-DDL-only, *not* in the transfer path — so physical `OSUSR_*` names round-trip as-read (no OSUSR *generator* exists or is needed). The gap is the **legacy B→A** leg: a **logical** source → **physical** cloud sink must resolve each write target per-`SsKey` against the **sink** catalog (read the sink schema; map `SsKey → sink OSUSR name`), not the source's logical name. **Scoped to M3/legacy; M2/peer (A→A, same rendition) does NOT need it.** | M1 | `TransferRun.fs:909`; `THE_USE_CASE_ONTOLOGY.md` §5.8; risk R-5 | J1 |
 | **M2** | **`peer` / `golden` cloud→cloud.** PE-1 user exclusion + email re-key on the cloud→cloud (A→A) flow (reuse `ReconciledByRule`+`reconcileKind MatchByColumn "Email"`); PE-2 confirm `validate-user-map` gate fires for the cloud sink; **PE-3 the re-key canary** (cloud→cloud). | M1; survey **P10** | `THE_DATA_PRODUCERS` §6 PE-1..3; AC-I2/I5; P-3 | J2 |
 | **M3** | **`legacy` / `preview` — the B→A reverse leg.** LE-1 the reverse-leg transfer (logical on-prem source → physical cloud sink; **same model, no foreign ingest**, identity reconciled by SsKey/business key); **LE-2 the B→A round-trip canary**. Depends on M1 + M1.5. | M1; M1.5 | `THE_DATA_PRODUCERS` §6 LE-1/2 | J3 |
 | **M4** | **The gate is real.** Wire the capability survey into the run verbs as **advisory G0** (S3, per R6); wire `Preflight.all` (= CONFIRMED A1) so the survey feeds one composed gate; surface P10 + grant breadth. | M0 | `TRANSFER_ISOMORPHISM` §2; DECISIONS 2026-06-09 (S3); CONFIRMED A1 | J4 |
-| **M5** | **Real-UAT execute (OPEN-2).** The ops spike — a throwaway-UAT `Microsoft.Data.SqlClient` connection probing `IDENTITY_INSERT`/INSERT/grants (resolves OPEN-1/2/3/5/6 + the disposition mix); then `--execute` under R6 with `--preview-row-cap`. | M4; M1.5 | PRESCOPE Slice D / §13; EXEC 5.1; OPEN-2 | J5 |
+| **M5** | **Real-UAT execute (OPEN-2).** The ops spike — a throwaway-UAT `Microsoft.Data.SqlClient` connection probing `IDENTITY_INSERT`/INSERT/grants (resolves OPEN-1/2/3/5/6 + the disposition mix); then `--execute` under R6 with `--preview-row-cap`. *(Synthetic/peer execute needs no M1.5; legacy-into-real-UAT additionally needs M1.5 + M3.)* | M4 | PRESCOPE Slice D / §13; EXEC 5.1; OPEN-2 | J5 |
 | **M6** | **Follow-ons (pull under a consumer).** cyclic `AssignedBySink` (6.A.2) + composite-identity capture (6.A.3); `MERGE…OUTPUT` set-based capture (Contribution B — trigger-gated on P4 + measured per-row bottleneck); synthetic `--rows N` / `--seed` (= D8); scoped-delete CLI exposure (A3); user-map walkable Surface (D7); `UserRemapContext→SurrogateRemapContext` merge. | M2/M3/M5 | PRESCOPE §13; CONFIRMED A3/D7/D8/G | J6 |
 
 ---
@@ -121,7 +122,7 @@ Every milestone's proof. Status: **GREEN** (exists, claimed passing) · **TO-WRI
 | **AC-I5** — `validate-user-map` halts **before any DML** on an unmapped orphan | M2 | GREEN (confirm for cloud sink) | `TransferRefusalTests.fs:131` |
 | **PE-3 re-key canary** — `(Order → User-by-email)` join identical src↔sink, users `RowsWritten=0` | M2 | **TO-WRITE** | new (cloud→cloud) |
 | **LE-2 B→A round-trip canary** — logical on-prem (B) → physical cloud (A) → readback round-trips (same model, no foreign tolerances) | M3 | **TO-WRITE** | new |
-| physical (`OSUSR_*`) rendition emitted/matched for a physical cloud sink | M1.5 | **TO-WRITE / confirm** | `Realization` emission (`THE_USE_CASE_ONTOLOGY.md` §5.8) |
+| cross-rendition write-target resolved per-`SsKey` against the sink (legacy B→A) | M1.5 | **TO-WRITE** | `DataLoadPlan` / `TransferRun` sink-name resolution (`TransferRun.fs:909`) |
 | **AC-D2 / P-DM** — zero CDC captures on idempotent redeploy | M2/M5 | GREEN | `CdcSilenceTests.fs:239` |
 | **AC-D4** — exact `capture = k` on a real delta | M2/M5 | GREEN | `CdcMeasureTests` |
 | survey `required ⇔ surveyed` totality | M4 | GREEN | `CapabilitySurveyTotalityTests.fs` |
@@ -135,18 +136,17 @@ Every milestone's proof. Status: **GREEN** (exists, claimed passing) · **TO-WRI
 ## 4. Dependency graph + critical path
 
 ```
-M0 (done) ──► M1 (rendition flag) ──┬─► M2 (peer/golden + PE-3 canary)
-            │                       └─► M1.5 (physical OSUSR emission) ──► M3 (legacy B→A + LE-2 canary)
+M0 (done) ──► M1 (rendition flag) ──┬─► M2 (peer/golden + PE-3 canary)   ← reachable NOW
+            │                       └─► M1.5 (cross-rendition target) ──► M3 (legacy B→A + LE-2 canary)
             └─► M4 (survey-as-G0 wiring) ──────► M5 (OPEN-2 spike → --execute)
-                          │                                  ▲
-                          └─ P10 probe gates M2's re-key      └─ M1.5 also gates real-UAT writes
 
 M2 / M3 / M5 ──► M6 (follow-ons, each pulled under a consumer)
+   P10 probe gates M2's re-key (real cloud only)
 ```
 
-- **Critical path to "all producers proven offline"** (ephemeral / Docker, no real UAT): `M1 → {M2 ; M1.5 → M3}` — the two new canaries (PE-3, LE-2). M2 is reachable **now** against a logical-named stand-in; M3 needs M1.5 (physical-rendition emission).
-- **Critical path to "real cloud-UAT preview working"**: `M1.5 + (M4 → M5)` — gated by **OPEN-2** (the biggest external dependency) and by physical-rendition emission. Confirm OPEN-2 *first* before committing to M5.
-- **M2 is gated by the survey P10 probe** (user-directory readability); until P10, the cloud→cloud re-key canary runs against an ephemeral/Docker stand-in.
+- **Critical path to "all producers proven offline"** (ephemeral / Docker, no real UAT): `M1 → {M2 ; M1.5 → M3}` — the two new canaries (PE-3, LE-2). **M2 is reachable now** (same-rendition OSUSR→OSUSR, no M1.5); M3 needs M1.5 (cross-rendition target resolution).
+- **Critical path to "real cloud-UAT preview working"**: `M4 → M5`, gated by **OPEN-2** (the biggest external dependency). Synthetic/peer into real UAT need no M1.5; only `legacy`-into-real-UAT additionally needs M1.5 + M3. Confirm OPEN-2 *first*.
+- **M2's re-key against a *real* cloud is gated by survey P10** (user-directory readability) — and by `OSUSR_*` name coincidence across cells (eSpace-id question, OPEN-2 class); the **offline** PE-3 canary (matching OSUSR names on two ephemeral DBs) needs neither.
 
 ---
 
@@ -162,7 +162,7 @@ M2 / M3 / M5 ──► M6 (follow-ons, each pulled under a consumer)
 | **R-1** | **Survey posture** — advisory until the per-pair V2-driver flip, not a hard G0. | Per R6, V2 owns no production write path yet; a survey hard-stop would seize a gate V2 doesn't hold. | **Settled** (DECISIONS 2026-06-09): wire advisory at M4; hard refusal is a per-pair operator action. |
 | **R-2** | **AC-G0 / A1 disagreement** — the ontology scorecard says `Preflight.all` HELD; `CONFIRMED_BACKLOG` A1 says OPEN (zero callers). | Determines whether M4 is "wire it" or "already wired." | **Trust CONFIRMED (OPEN).** Verify the live call site at M4 open. |
 | **R-3** | **`legacy` is the B→A reverse leg, *not* foreign-schema ingest** (course-corrected 2026-06-09). The migration team does the foreign→logical mapping upstream; the engine only sees the same logical model. | Earlier framing (foreign ingest + translation tolerances) was wrong and is corrected across the corpus. M3 collapses to a same-model reverse-leg transfer + canary. | **Resolved framing.** Residual uncertainty is M1.5 (physical-rendition emission), not foreign ingest. |
-| **R-5** | **Physical (`OSUSR_*`) rendition emission (M1.5)** is the genuine new engine work. The engine targets the logical rendition today; writing/matching the physical cloud rendition is unverified. | Shared prerequisite for any real physical-cloud sink (`peer`, `legacy`, real-UAT M5). | **Confirm first** whether any path emits it; the offline canaries (M2/M3) can use a logical-named stand-in until then. |
+| **R-5** | **Cross-rendition write-target resolution (M1.5)** — the transfer writes using the *source* contract's names (probe 2026-06-09, `TransferRun.fs:909`). A logical-source→physical-sink (legacy B→A) leg must resolve targets against the *sink* catalog by `SsKey`. | Scoped to M3/legacy only. M2/peer (A→A) is unaffected — same rendition, source names are the right target. Real-cloud caveat: `OSUSR_*` names embed an eSpace id that may differ across cells (a survey/OPEN-2 question, not an offline-canary blocker). | **Build at M3.** M2's offline canary proves the transfer mechanics on matching OSUSR names now. |
 | **R-4** | All of M2/M3/M5 stay inside **R6** (preview/migration tooling). | A producer that silently became a production write path violates the governance frame. | Hold: `--go` + `PROJECTION_ALLOW_EXECUTE`, dry-run default, cloud sink `grant: data` DML-only. |
 
 ---

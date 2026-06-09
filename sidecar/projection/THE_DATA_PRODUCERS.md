@@ -198,7 +198,7 @@ The Transfer engine all three producers run on is built; what is unbuilt is the 
 | `synthetic` producer (BUILT) | `SyntheticData.generate` `src/Projection.Core/SyntheticData.fs`; `Transfer.runSynthetic` `TransferRun.fs`; `ProfileCodec` `src/Projection.Targets.Json/ProfileCodec.fs`; canary `tests/Projection.Tests/SyntheticCanaryTests.fs` |
 | Capability survey (the gate) | OPEN-2 instrument — `TRANSFER_ISOMORPHISM_SUBSTANTIATION.md` §2; probe **P10** (platform user-directory table readable / how keyed) gates the `peer`/`golden` re-key |
 | **`rendition: physical \| logical` env flag** | **to build (M1)** — env-metadata on the environment; distinguishes `peer` (physical source) from `legacy` (logical source); marks the source/sink rendition for the move |
-| **Physical (`OSUSR_*`) rendition emission** | **open — confirm/build** — the engine targets the logical rendition today (`Realization := Designation`); writing/matching the physical `OSUSR_*` rendition for a physical cloud sink is the shared cloud-insertion concern (`THE_USE_CASE_ONTOLOGY.md` §5.8). Confirm whether any path emits it; if not, it is the core new build. |
+| **Cross-rendition write-target resolution (M1.5)** | **scoped to `legacy`** (probe 2026-06-09) — the transfer writes using the **source** contract's names (`TransferRun.fs:909-918`); physical `OSUSR_*` round-trips as-read (no OSUSR generator needed). Only the `legacy` B→A leg (logical source → physical sink) needs the write target resolved per-`SsKey` against the **sink** catalog. `peer` (A→A) is unaffected. |
 
 ---
 
@@ -207,10 +207,12 @@ The Transfer engine all three producers run on is built; what is unbuilt is the 
 Each producer is "done" when its data canary (§3) is green in the warm Docker pool. Listed
 in ascending build cost.
 
-**Shared concern (all producers, any physical-cloud sink):** emitting/matching the physical
-`OSUSR_*` rendition (A). The engine targets the logical rendition today; the canaries below can
-prove the *identity/transfer* logic against a logical-named stand-in first, with physical-rendition
-emission the prerequisite for a real cloud sink (and for M5's real-UAT execute).
+**Cross-rendition note (scoped to `legacy`; probe 2026-06-09):** the transfer writes using the
+**source** contract's names (`TransferRun.fs:909-918`), so physical `OSUSR_*` names round-trip
+as-read — there is no OSUSR *generator* and none is needed. The one gap is the `legacy` B→A leg
+(logical source → physical sink): the write target must be resolved per-`SsKey` against the **sink**
+catalog (M1.5). `peer` (A→A, same rendition) and `synthetic` need no such resolution — the matching
+physical names are the right target. So **M2 below is reachable now**; M1.5 is an M3 prerequisite.
 
 ### `synthetic` — **BUILT**
 Engine + durable codec + CLI + canary all green (`THE_SYNTHETIC_DATA_DESIGN.md`). The reference
@@ -241,7 +243,7 @@ the same `SsKey` model. Slices:
 - **LE-1 — the reverse-leg transfer.** Read from the logical on-prem source (B), write to the
   physical cloud sink (A); same model, no foreign mapping. Identity reconciled by `SsKey` /
   business key as for any same-model move (reuse the §5 re-key machinery if the cloud owns its
-  own users). Depends on the `rendition` flag (M1) + physical-rendition emission.
+  own users). Depends on the `rendition` flag (M1) + cross-rendition write-target resolution (M1.5).
 - **LE-2 — the reverse-leg (B→A) round-trip canary.** Pipe B→A, read back, assert the data
   round-trips. **No foreign-schema tolerances** — same model both ways.
 **Note:** `synthetic` profiled from the same on-prem data (`profile: onprem-...`) is the
