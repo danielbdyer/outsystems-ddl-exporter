@@ -1915,19 +1915,33 @@ let private runInit () : int =
         1
     else
         // LINT-ALLOW: terminal operator-facing scaffold text at the CLI boundary.
+        // The shape MUST match `ProjectionConfig.parse` (MovementSurface.fs):
+        // `environments` (access bundle|direct|docker; grant; conn is env:/file:)
+        // and `flows` (from/to). A `local` docker env + a `try` flow is the
+        // zero-setup first run (no real database, no secret). The prior `targets`
+        // block was removed at slice F5; the flow parser ignores unknown keys, so
+        // a `targets` scaffold silently produced an empty config.
         let scaffold =
             "{\n" +
             "  \"model\": \"model.json\",\n" +
-            "  \"targets\": {\n" +
-            "    \"dev\":     { \"conn\": \"env:DEV_CONN\", \"store\": \"lifecycle/dev.json\" },\n" +
-            "    \"qa\":      { \"conn\": \"env:QA_CONN\",  \"store\": \"lifecycle/qa.json\" },\n" +
-            "    \"uat\":     { \"conn\": \"env:UAT_CONN\", \"store\": \"lifecycle/uat.json\" },\n" +
-            "    \"publish\": { \"dir\": \"./publish\" }\n" +
+            "  \"environments\": {\n" +
+            "    \"local\":      { \"access\": \"docker\" },\n" +
+            "    \"onprem-dev\": { \"access\": \"bundle\", \"out\": \"./dist/onprem-dev\", \"grant\": \"schema+data\" },\n" +
+            "    \"cloud-dev\":  { \"access\": \"direct\", \"conn\": \"env:CLOUD_DEV_CONN\", \"grant\": \"schema+data\" }\n" +
             "  },\n" +
-            "  \"defaults\": { \"how\": \"merge\", \"data\": \"model\" }\n" +
+            "  \"flows\": {\n" +
+            "    \"try\":     { \"from\": \"model\", \"to\": \"local\" },\n" +
+            "    \"publish\": { \"from\": \"model\", \"to\": \"onprem-dev\" },\n" +
+            "    \"dev\":     { \"from\": \"model\", \"to\": \"cloud-dev\" }\n" +
+            "  }\n" +
             "}\n"
         File.WriteAllText(path, scaffold)
-        printfn "projection init: wrote %s — name the model and targets (a conn is an env:/file: reference, never a literal string)." path
+        printfn "projection init: wrote %s." path
+        printfn "  Next: point \"model\" at an osm_model.json (or set \"modelOssys\" to env:<VAR>),"
+        printfn "        then run `projection` to list flows. `projection try` previews against a"
+        printfn "        throwaway Docker database (zero setup). A direct env needs its conn var set"
+        printfn "        (e.g. export CLOUD_DEV_CONN=...; a conn is an env:/file: reference, never a"
+        printfn "        literal string — D9). A live write needs both --go and PROJECTION_ALLOW_EXECUTE=1."
         0
 
 /// Discover `projection.json` (or `PROJECTION_CONFIG`) — absent is the empty
