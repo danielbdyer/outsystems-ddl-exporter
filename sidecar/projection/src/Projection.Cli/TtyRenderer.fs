@@ -152,13 +152,15 @@ let renderReadinessBoardTo
 /// configured is a choice to make, not a failure"). Pure over the resolved
 /// state so the env reads + the live probe stay at the boundary (`runSetup`); an
 /// unset optional (the run ledger) earns a recommendation, never a scold.
-/// `connection` is `(ref, reachable, alterGranted)` when a target was probed.
+/// `connection` is `(ref, reachable, grants)` when a target was probed, where
+/// `grants` pairs each planned write action with its database-scope grant status
+/// (D3 — the broader INSERT / CREATE TABLE / DELETE grants, not ALTER alone).
 let buildSetupView
     (ledger: string option)
     (executeArmed: bool)
     (dwellMs: int64)
     (benchDir: string option)
-    (connection: (string * bool * bool) option)
+    (connection: (string * bool * (Preflight.WriteAction * bool) list) option)
     : View.View =
     let history =
         match ledger with
@@ -177,15 +179,37 @@ let buildSetupView
     let connectionBlock =
         match connection with
         | None -> []
-        | Some (ref, reachable, alterGranted) ->
+        | Some (ref, reachable, grants) ->
             let connField =
                 if reachable then View.Field("connection", sprintf "%s %s reachable" ref Theme.dot, View.Ok)
                 else View.Field("connection", sprintf "%s %s unreachable" ref Theme.dot, View.Bad)
+            // The ALTER line is preserved (the §14 / A.6 readback that already
+            // shipped); the broader write grants (INSERT / CREATE TABLE / DELETE)
+            // read on their own line — the granted set, or the missing set named
+            // exactly (mirroring `buildSurveyView`'s "missing X, Y" phrasing).
+            let alterGranted = grants |> List.exists (fun (a, g) -> a = Preflight.WriteAction.Alter && g)
             let grantField =
                 if not reachable then []
                 elif alterGranted then [ View.Field("grant", "ALTER granted", View.Ok) ]
                 else [ View.Field("grant", "ALTER not granted", View.Warn) ]
-            connField :: grantField
+            let dataActions =
+                grants |> List.filter (fun (a, _) -> a <> Preflight.WriteAction.Alter)
+            let writesField =
+                if not reachable || List.isEmpty dataActions then []
+                else
+                    let missing = dataActions |> List.filter (fun (_, g) -> not g) |> List.map (fun (a, _) -> Preflight.permissionName a)
+                    match missing with
+                    | [] -> [ View.Field("writes", "INSERT, CREATE TABLE, DELETE granted", View.Ok) ]
+                    | _  ->
+                        // Terminal View-field operator copy at the setup-readback boundary:
+                        // join the (≤3) missing permission-name strings into the "missing
+                        // X, Y" phrasing, the same primitive the sibling `buildSurveyView`
+                        // "missing" line uses at the same boundary. (1) lib: String.concat;
+                        // (2) already in codebase; (3) cost: none (typed string list → one
+                        // terminal string); (4) no typed-AST builder applies (leaf copy).
+                        let missingList = missing |> String.concat ", "  // LINT-ALLOW: see four-question rationale above
+                        [ View.Field("writes", sprintf "missing %s" missingList, View.Warn) ]
+            (connField :: grantField) @ writesField
     let recommendation =
         match ledger with
         | Some _ -> []

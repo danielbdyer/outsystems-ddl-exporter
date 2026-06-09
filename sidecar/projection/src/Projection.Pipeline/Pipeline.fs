@@ -1013,21 +1013,43 @@ module Compose =
         : unit =
         LogSink.emit { LogSink.envelope LogSink.Info category code payload with Phase = phase }
 
+    /// Apply the config-driven module-selection filter (`model.modules` +
+    /// the system / inactive include flags) to the read catalog — the
+    /// `ModuleFilter.apply` Selection seam (pillar 9). An empty `model.modules`
+    /// is the all-permissive identity (`ModuleFilterBinding.fromConfig` returns
+    /// `ModuleFilter.empty`, and `ModuleFilter.apply` short-circuits to the
+    /// input), so the default config is byte-identical. A non-empty selection
+    /// narrows the catalog to the named modules + their per-module entity
+    /// subsets; operator-supplied-name mismatches surface as structured
+    /// `moduleFilter.*` errors (fail-loud, never a silent empty catalog).
+    let private applyModuleFilter
+        (cfg: Config.Config)
+        (catalog: Catalog)
+        : Result<Catalog> =
+        ModuleFilterBinding.fromConfig cfg.Model
+        |> Result.bind (fun opts -> ModuleFilter.apply opts catalog)
+
     /// The full-export model read under the live-OSSYS-primary / file-fallback
     /// policy (V1_INPUT_DEPRECATION.md §3). `cfg.Model.Ossys` set ⇒ read live
     /// from OSSYS (`LiveModelRead`, V1-free); else read `cfg.Model.Path` (the
-    /// `osm_model.json` fallback). Byte-identical to the prior `read
-    /// cfg.Model.Path` when `Ossys = None`.
+    /// `osm_model.json` fallback). The read catalog passes through the
+    /// config-driven module-selection filter (identity on the default config).
+    /// Byte-identical to the prior `read cfg.Model.Path` when `Ossys = None` and
+    /// no `model.modules` selection is declared.
     let readConfigModel (cfg: Config.Config) : Task<Result<Catalog>> =
-        match cfg.Model.Ossys, cfg.Model.Path with
-        | Some connSpec, _ -> LiveModelRead.fromConnSpec connSpec
-        | None, Some path -> read path
-        | None, None ->
-            Task.FromResult
-                (Result.failureOf
-                    (ValidationError.create
-                        "pipeline.config.modelNoSource"
-                        "model needs `path` (osm_model.json) or `ossys` (live OSSYS connection)."))
+        task {
+            let! read =
+                match cfg.Model.Ossys, cfg.Model.Path with
+                | Some connSpec, _ -> LiveModelRead.fromConnSpec connSpec
+                | None, Some path -> read path
+                | None, None ->
+                    Task.FromResult
+                        (Result.failureOf
+                            (ValidationError.create
+                                "pipeline.config.modelNoSource"
+                                "model needs `path` (osm_model.json) or `ossys` (live OSSYS connection)."))
+            return read |> Result.bind (applyModuleFilter cfg)
+        }
 
     let runWithConfig (cfg: Config.Config) : Task<Result<RunReport>> =
         task {

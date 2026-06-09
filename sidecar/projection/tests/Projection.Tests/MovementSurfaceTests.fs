@@ -133,7 +133,7 @@ let private liveDev = Destination.Live (ConnectionRef.EnvVar "DEV_CONN")
 let private baseLive = MovementSpec.forDestination liveDev
 let private defaultOpts : LoadOpts =
     { Declaration = DeclareNone; Emission = EmissionMode.Incremental
-      Reconcile = []; Rekey = None; AllowCdc = false; Store = None; Env = None; Tables = [] }
+      Reconcile = []; Rekey = None; AllowCdc = false; Resumable = false; Store = None; Env = None; Tables = [] }
 
 [<Fact>]
 let ``planMovement: --fresh selects WipeAndLoad on the transfer path`` () =
@@ -145,6 +145,23 @@ let ``planMovement: --fresh selects WipeAndLoad on the transfer path`` () =
 let ``planMovement: --fresh on a non-transfer action is noted, never silently ignored`` () =
     let p = Command.planMovement routeCfg { baseLive with Commit = true; Model = ModelSource.ModelFile "m.json"; Strategy = Strategy.Replace }
     Assert.Contains(p.Notes, fun (n: string) -> n.Contains "--fresh")
+
+[<Fact>]
+let ``planMovement: --resumable threads onto the transfer LoadOpts (A2)`` () =
+    match planOf { baseLive with Commit = true; Scope = Scope.Data; Data = DataOrigin.FromTarget "qa"; Resumable = true } with
+    | PlanAction.Transfer (_, _, opts, true) -> Assert.True opts.Resumable
+    | other -> Assert.Fail(sprintf "expected Transfer, got %A" other)
+
+[<Fact>]
+let ``planMovement: --resumable default off on the transfer LoadOpts (A2 byte-identical)`` () =
+    match planOf { baseLive with Commit = true; Scope = Scope.Data; Data = DataOrigin.FromTarget "qa" } with
+    | PlanAction.Transfer (_, _, opts, true) -> Assert.False opts.Resumable
+    | other -> Assert.Fail(sprintf "expected Transfer, got %A" other)
+
+[<Fact>]
+let ``planMovement: --resumable on a non-transfer action is noted, never silently ignored (A2)`` () =
+    let p = Command.planMovement routeCfg { baseLive with Commit = true; Model = ModelSource.ModelFile "m.json"; Resumable = true }
+    Assert.Contains(p.Notes, fun (n: string) -> n.Contains "--resumable")
 
 [<Fact>]
 let ``planMovement: folder + config → PublishBundle`` () =
@@ -243,7 +260,7 @@ let private flowCfg =
     }
     """ |> mustOk
 
-let private preview = { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false }
+let private preview = { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false }
 let private commit  = { preview with Go = true }
 let private flowOf name = Map.find name flowCfg.Flows
 let private specOf name opts = Command.resolveFlowSpec flowCfg (flowOf name) opts
@@ -501,6 +518,22 @@ let ``flow --allow-cdc threads the CDC-gate override onto the spec (item 3)`` ()
     | Error es -> Assert.Fail(sprintf "%A" es)
 
 [<Fact>]
+let ``parse: --resumable sets the per-run intent (A2)`` () =
+    let (_, o) = parseFlowIntent [ "golden"; "--resumable" ]
+    Assert.True o.Resumable
+
+[<Fact>]
+let ``parse: --resumable default off (A2 byte-identical)`` () =
+    let (_, o) = parseFlowIntent [ "golden" ]
+    Assert.False o.Resumable
+
+[<Fact>]
+let ``flow --resumable threads onto the spec (A2)`` () =
+    match specOf "spin" { preview with Resumable = true } with
+    | Ok s -> Assert.True s.Resumable
+    | Error es -> Assert.Fail(sprintf "%A" es)
+
+[<Fact>]
 let ``parse: a bare flow routes through plan to its engine face`` () =
     let plan = Command.plan flowCfg (Command.parse flowCfg [ "uat" ] |> mustOk)
     Assert.Equal(PlanAction.EmitBundle (ModelSource.ModelFile "model.json", None, "dist/onprem-uat"), plan.Action)
@@ -535,10 +568,38 @@ let ``report --store <path>: an explicit store overrides`` () =
 let ``explain <flow>: previews B (the flow model) against A_prior (the target store)`` () =
     // uat → onprem-uat (store "lifecycle/uat.json"); cfg model is "model.json".
     match (Command.plan flowCfg (Intent.Explain [ "uat" ])).Action with
-    | PlanAction.ExplainMigrateFromStore (store, modelB, _) ->
+    | PlanAction.ExplainMigrateFromStore (store, modelB, _, forceGenesis) ->
         Assert.Equal("lifecycle/uat.json", store)
         Assert.Equal("model.json", modelB)
+        Assert.False forceGenesis
     | other -> Assert.Fail(sprintf "expected ExplainMigrateFromStore, got %A" other)
+
+[<Fact>]
+let ``explain migrate --from empty --store forces genesis (D4)`` () =
+    match (Command.plan flowCfg (Intent.Explain [ "migrate"; "--to"; "b"; "--from"; "empty"; "--store"; "s.json" ])).Action with
+    | PlanAction.ExplainMigrateFromStore (store, toP, _, forceGenesis) ->
+        Assert.Equal("s.json", store)
+        Assert.Equal("b", toP)
+        Assert.True forceGenesis
+    | other -> Assert.Fail(sprintf "expected ExplainMigrateFromStore forcing genesis, got %A" other)
+
+[<Fact>]
+let ``explain migrate --from <model> (not empty) stays the two-model preview (D4 additive)`` () =
+    match (Command.plan flowCfg (Intent.Explain [ "migrate"; "--to"; "b"; "--from"; "a" ])).Action with
+    | PlanAction.ExplainMigratePreview ("a", "b", _) -> ()
+    | other -> Assert.Fail(sprintf "expected ExplainMigratePreview, got %A" other)
+
+[<Fact>]
+let ``explain migrate --store without --from empty does NOT force genesis (D4 default off)`` () =
+    match (Command.plan flowCfg (Intent.Explain [ "migrate"; "--to"; "b"; "--store"; "s.json" ])).Action with
+    | PlanAction.ExplainMigrateFromStore ("s.json", "b", _, forceGenesis) -> Assert.False forceGenesis
+    | other -> Assert.Fail(sprintf "expected ExplainMigrateFromStore (no force), got %A" other)
+
+[<Fact>]
+let ``explain <flow> --from empty forces genesis for the flow preview (D4)`` () =
+    match (Command.plan flowCfg (Intent.Explain [ "uat"; "--from"; "empty" ])).Action with
+    | PlanAction.ExplainMigrateFromStore (_, _, _, forceGenesis) -> Assert.True forceGenesis
+    | other -> Assert.Fail(sprintf "expected ExplainMigrateFromStore forcing genesis, got %A" other)
 
 [<Fact>]
 let ``explain <flow>: a target with no store is refused (publish + seal once first)`` () =
@@ -549,6 +610,26 @@ let ``explain <flow>: a target with no store is refused (publish + seal once fir
 [<Fact>]
 let ``parse: an unknown first token names the known flows`` () =
     Assert.Contains("cli.verb.unknown", errCodes (Command.parse flowCfg [ "nope" ]))
+
+[<Fact>]
+let ``parse: top-level diff <a> <b> aliases explain diff (A6)`` () =
+    // `diff a b` parses to Intent.Explain ["diff"; "a"; "b"] — the SAME tail the
+    // `explain diff` form produces, so it routes to the identical ExplainDiff.
+    match Command.parse flowCfg [ "diff"; "a"; "b" ] |> mustOk with
+    | Intent.Explain [ "diff"; "a"; "b" ] -> ()
+    | other -> Assert.Fail(sprintf "expected Explain [diff;a;b], got %A" other)
+
+[<Fact>]
+let ``parse: top-level diff routes through plan to ExplainDiff (A6)`` () =
+    match (Command.plan flowCfg (Command.parse flowCfg [ "diff"; "a"; "b"; "--format"; "json" ] |> mustOk)).Action with
+    | PlanAction.ExplainDiff ("a", "b", true, _) -> ()
+    | other -> Assert.Fail(sprintf "expected ExplainDiff, got %A" other)
+
+[<Fact>]
+let ``parse: top-level diff and explain diff produce the SAME action (A6 alias)`` () =
+    let viaTop  = (Command.plan flowCfg (Command.parse flowCfg [ "diff"; "a"; "b" ] |> mustOk)).Action
+    let viaLong = (Command.plan flowCfg (Command.parse flowCfg [ "explain"; "diff"; "a"; "b" ] |> mustOk)).Action
+    Assert.Equal(viaLong, viaTop)
 
 [<Fact>]
 let ``parse: a closed verb still wins over a flow lookup`` () =

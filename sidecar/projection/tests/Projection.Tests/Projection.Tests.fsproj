@@ -57,6 +57,7 @@
     <Compile Include="LogicalNameEmissionTests.fs" />
     <Compile Include="LogicalNameRoundtripTests.fs" />
     <Compile Include="TighteningBindingTests.fs" />
+    <Compile Include="ModuleFilterBindingTests.fs" />
     <Compile Include="SpecialCircumstancesBindingTests.fs" />
     <Compile Include="SpecialCircumstancesDiagnosticsTests.fs" />
     <Compile Include="FkSelectivityDiagnosticsTests.fs" />

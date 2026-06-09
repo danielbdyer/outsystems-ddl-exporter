@@ -166,13 +166,14 @@ module MigrationRun =
     /// and the next reads it back here as the comparison basis. A **missing store
     /// is genesis** — A = ∅, so every kind is `Add` and there are no losses (the
     /// first emission of a timeline). Fail-closed on a malformed store.
-    let previewFromStore
+    let previewFromStoreForcing
+        (forceGenesis: bool)
         (path: string)
         (declaration: LossDeclaration)
         (target: Catalog)
         : Result<MigrationArtifacts, MigrationError> =
         let priorSchema : Result<Catalog, MigrationError> =
-            if System.IO.File.Exists path then
+            if (not forceGenesis) && System.IO.File.Exists path then
                 match LifecycleStore.load path with
                 | Error e -> Error (StoreReadFailed (string e))
                 | Ok chain ->
@@ -187,6 +188,16 @@ module MigrationRun =
         match priorSchema with
         | Error e -> Error e
         | Ok source -> preview declaration source target
+
+    /// The store-derived preview with genesis only on an absent store (the
+    /// default — every prior caller's behavior). `previewFromStoreForcing false`
+    /// is identical; this is the named no-force form.
+    let previewFromStore
+        (path: string)
+        (declaration: LossDeclaration)
+        (target: Catalog)
+        : Result<MigrationArtifacts, MigrationError> =
+        previewFromStoreForcing false path declaration target
 
     /// Record a completed migration's episode onto the timeline persisted at
     /// `path` (the durable substrate, 6.H.2). On the first migration of a

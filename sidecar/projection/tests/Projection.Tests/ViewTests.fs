@@ -86,16 +86,39 @@ let ``Setup readback: configured state shows plainly, with no recommendation`` (
     Assert.Contains("200 ms", p)
     Assert.DoesNotContain("PROJECTION_LEDGER_DIR", p) // configured → no scold
 
+let private allGranted : (Preflight.WriteAction * bool) list =
+    Preflight.allWriteActions |> List.map (fun a -> a, true)
+
 [<Fact>]
 let ``Setup readback: a reachable target shows reachable + the ALTER grant`` () =
-    let p = plain (TtyRenderer.buildSetupView (Some "./runs") false 120L None (Some ("UAT", true, true)))
+    let p = plain (TtyRenderer.buildSetupView (Some "./runs") false 120L None (Some ("UAT", true, allGranted)))
     Assert.Contains("UAT", p)
     Assert.Contains("reachable", p)
     Assert.Contains("ALTER granted", p)
 
 [<Fact>]
+let ``Setup readback: a reachable target names the broader write grants (D3)`` () =
+    // D3 — INSERT / CREATE TABLE / DELETE surface, not ALTER alone.
+    let p = plain (TtyRenderer.buildSetupView (Some "./runs") false 120L None (Some ("UAT", true, allGranted)))
+    Assert.Contains("INSERT", p)
+    Assert.Contains("CREATE TABLE", p)
+    Assert.Contains("DELETE", p)
+
+[<Fact>]
+let ``Setup readback: missing write grants are named exactly (D3, survey-style phrasing)`` () =
+    // Only ALTER granted; the data writes (INSERT / CREATE TABLE / DELETE) are
+    // missing and read on their own line ("missing INSERT, CREATE TABLE, DELETE").
+    let grants =
+        Preflight.allWriteActions
+        |> List.map (fun a -> a, (a = Preflight.WriteAction.Alter))
+    let p = plain (TtyRenderer.buildSetupView (Some "./runs") false 120L None (Some ("UAT", true, grants)))
+    Assert.Contains("ALTER granted", p)
+    Assert.Contains("missing", p)
+    Assert.Contains("INSERT", p)
+
+[<Fact>]
 let ``Setup readback: an unreachable target is named, with no grant claimed`` () =
-    let p = plain (TtyRenderer.buildSetupView None false 120L None (Some ("UAT", false, false)))
+    let p = plain (TtyRenderer.buildSetupView None false 120L None (Some ("UAT", false, [])))
     Assert.Contains("unreachable", p)
     Assert.DoesNotContain("ALTER", p)   // the grant is unknowable until reachable
 

@@ -99,6 +99,10 @@ type MovementSpec =
         AllowDrops  : bool
         /// Permit schema DDL against a CDC-tracked sink.
         AllowCdc    : bool
+        /// G10 — route the incremental data load through the resumable /
+        /// idempotent-upsert envelope (`Transfer.runResumable`). Honored on the
+        /// pure-transfer data leg; inert elsewhere. Default false (byte-identical).
+        Resumable   : bool
         /// Durable provenance store; fills from the target's config or `--store`.
         Store       : string option
         /// Environment label for the timeline / episode.
@@ -125,6 +129,7 @@ module MovementSpec =
             Tables      = []
             AllowDrops  = false
             AllowCdc    = false
+            Resumable   = false
             Store       = None
             Env         = None
             Commit      = false
@@ -171,6 +176,9 @@ type FlowRunOpts =
         /// Override the CDC-tracked-sink pre-flight gate (the gate refuses a
         /// live write into a CDC-tracked sink unless this is set — item 3).
         AllowCdc   : bool
+        /// `--resumable` — route the incremental data load through the resumable
+        /// / idempotent-upsert envelope (G10). Default false (byte-identical).
+        Resumable  : bool
     }
 
 /// The operator intents (THE_CLI.md §2). `Flow` is the hero — the daily
@@ -199,6 +207,8 @@ type LoadOpts =
         Reconcile   : string list
         Rekey       : string option
         AllowCdc    : bool
+        /// G10 — resumable/idempotent data load on the pure-transfer leg.
+        Resumable   : bool
         Store       : string option
         Env         : string option
         /// Declared table subset for the data leg (item 5); empty = all.
@@ -256,7 +266,11 @@ type PlanAction =
     | ExplainSuggest of config: string * applyTo: string option
     | ExplainRegistry
     | ExplainMigratePreview of fromPath: string * toPath: string * declaration: LossDeclaration
-    | ExplainMigrateFromStore of store: string * toPath: string * declaration: LossDeclaration
+    /// `forceGenesis` (the `--from empty` flag): when true, the prior state A is
+    /// forced to ∅ (every kind `Add`, no losses) EVEN when the store file exists —
+    /// the "first emission" framing on demand. Default false preserves the
+    /// store-derived A (genesis only when the store is absent).
+    | ExplainMigrateFromStore of store: string * toPath: string * declaration: LossDeclaration * forceGenesis: bool
     // seal ---------------------------------------------------------------
     | SealEject of store: string
     | SealApprove of version: string * approver: string * rationale: string option * store: string option

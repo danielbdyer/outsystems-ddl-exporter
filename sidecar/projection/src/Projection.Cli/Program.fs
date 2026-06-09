@@ -26,13 +26,14 @@ let private usageLines : string list =
         "  write (and needs PROJECTION_ALLOW_EXECUTE=1). Conn refs are env:/file: only (D9)."
         ""
         "USAGE:"
-        "    projection <flow> [--go] [--fresh] [--allow-drops] [--allow-cdc]   the daily surface"
+        "    projection <flow> [--go] [--fresh] [--allow-drops] [--allow-cdc] [--resumable]   the daily surface"
         "    projection                                           list flows (name: from → to)"
         "    projection check  ( <source.sql> [--cdc-silence] | drift --model <m> --to <t>"
         "                      | data --before <t> --after <t> | ready )"
+        "    projection diff <a> <b> [--format json] [--depth N]   change between two refs"
         "    projection explain ( diff <a> <b> [--format json] [--depth N] | policy <a> <b>"
         "                       | node <config> <ssKey> | suggest <config> [--apply <out>] | registry"
-        "                       | migrate --to <b> ( --from <a> | --store <s> ) [--allow-drops] )"
+        "                       | migrate --to <b> ( --from <a> | --from empty | --store <s> ) [--allow-drops] )"
         "    projection seal ( --store <path> | approve <version> --approver <name> ... )"
         "    projection report <flow>        the on-prem migration-team change bundle"
         "    projection init                 scaffold a projection.json"
@@ -46,7 +47,8 @@ let private usageLines : string list =
         "  safe); a direct target previews until --go (which also needs"
         "  PROJECTION_ALLOW_EXECUTE=1, R6). --fresh wipes-and-loads (the rare from-scratch);"
         "  --allow-drops accepts declared loss; --allow-cdc overrides the CDC-tracked-sink"
-        "  pre-flight gate; a schema-from-model flow against a data-only target is refused."
+        "  pre-flight gate; --resumable routes the data leg through the resumable upsert"
+        "  envelope; a schema-from-model flow against a data-only target is refused."
         ""
         "CHECK — assert fidelity.  fidelity canary (default; --cdc-silence adds the redeploy"
         "  silence assertion) · drift (deployed vs model) · data (row/null counts) · ready"
@@ -680,6 +682,7 @@ let private runTransfer
     (allowCdc: bool)
     (allowDrops: bool)
     (emission: EmissionMode)
+    (resumable: bool)
     (tables: string list)
     : int =
     let collect = function Ok _ -> [] | Error es -> es
@@ -748,7 +751,7 @@ let private runTransfer
         TransferSpec.resolveAllReconciliation contract entries userMapEntries
     let runBody () =
         let result =
-            (Transfer.runThroughConnectionsWithEmission mode emission allowCdc allowDrops tables connections resolveReconciliation)
+            (Transfer.runThroughConnectionsResumable mode emission resumable allowCdc allowDrops tables connections resolveReconciliation)
                 .GetAwaiter().GetResult()
         match result with
         | Ok report ->
@@ -983,13 +986,17 @@ let private runReadiness () : int =
                 Phase = LogSink.End }
         0
 
-/// Live-probe a target for the setup readback: `(ref, reachable, alterGranted)`.
-/// Reuses the same machinery the migrate pre-flights use — resolve the ref,
-/// open the connection (reachability), capture the grant evidence (the §14 / A.6
-/// "ALTER granted on dbo"). A failed resolve / open is `unreachable`, never a
-/// stack trace; the grant is left false when the target is unreachable.
-let private probeTarget (connRef: string) : string * bool * bool =
-    let unreachable = (connRef, false, false)
+/// Live-probe a target for the setup readback:
+/// `(ref, reachable, grants)` where `grants` pairs each planned write action
+/// (ALTER / INSERT / DELETE / CREATE TABLE) with its database-scope grant
+/// status. Reuses the same machinery the migrate pre-flights use — resolve the
+/// ref, open the connection (reachability), capture the grant evidence (the §14
+/// / A.6 readback). D3 — the broader grants (INSERT / CREATE TABLE / DELETE) are
+/// surfaced, not collapsed to ALTER alone, so the setup view names exactly which
+/// writes a target permits. A failed resolve / open is `unreachable`, never a
+/// stack trace; every grant reads false when the target is unreachable.
+let private probeTarget (connRef: string) : string * bool * (Preflight.WriteAction * bool) list =
+    let unreachable = (connRef, false, [])
     match TransferSpec.parseConnectionSpec connRef with
     | Error _ -> unreachable
     | Ok ref ->
@@ -999,11 +1006,11 @@ let private probeTarget (connRef: string) : string * bool * bool =
             try
                 use cnn = new Microsoft.Data.SqlClient.SqlConnection(connStr)
                 cnn.OpenAsync().GetAwaiter().GetResult()
-                let alterGranted =
+                let grants =
                     match (Preflight.captureGrantEvidence cnn).GetAwaiter().GetResult() with
-                    | Ok g    -> Set.contains ("", "ALTER") g.Granted
-                    | Error _ -> false
-                (connRef, true, alterGranted)
+                    | Ok g    -> Preflight.allWriteActions |> List.map (fun a -> a, Preflight.coversAtDatabaseScope a g)
+                    | Error _ -> Preflight.allWriteActions |> List.map (fun a -> a, false)
+                (connRef, true, grants)
             with _ -> unreachable
 
 /// `projection setup [--conn <ref>]` — the arrival/setup readback (§14 /
@@ -1314,7 +1321,7 @@ let private runMigratePreview (fromPath: string) (toPath: string) (declaration: 
 /// `LifecycleStore`; B is the new authored model. Closes the emission→snapshot→
 /// diff loop: the diff basis is provenance, not a second hand-authored model. A
 /// missing store is genesis (A = ∅).
-let private runMigrateFromStore (storePath: string) (toPath: string) (declaration: LossDeclaration) : int =
+let private runMigrateFromStore (storePath: string) (toPath: string) (declaration: LossDeclaration) (forceGenesis: bool) : int =
     let bRead = (Compose.read toPath).GetAwaiter().GetResult()
     match bRead with
     | Error errors ->
@@ -1322,9 +1329,15 @@ let private runMigrateFromStore (storePath: string) (toPath: string) (declaratio
         printErrors Console.Error errors
         6
     | Ok target ->
+        // `--from empty` forces A = ∅ (genesis) against a populated store — the
+        // banner names the forced from-scratch basis so the displacement is not
+        // mistaken for a store-derived diff.
+        let banner =
+            if forceGenesis then sprintf "projection migrate (from empty) -> %s  (dry-run, genesis)" toPath
+            else sprintf "projection migrate (store:%s) -> %s  (dry-run, snapshot⊖snapshot)" storePath toPath
         reportPreviewOutcome
-            (sprintf "projection migrate (store:%s) -> %s  (dry-run, snapshot⊖snapshot)" storePath toPath)
-            (MigrationRun.previewFromStore storePath declaration target)
+            banner
+            (MigrationRun.previewFromStoreForcing forceGenesis storePath declaration target)
 
 /// Derive the A2 pre-flight's planned-writes from a migration's schema
 /// statements: every DDL statement maps to the write it performs at the sink
@@ -1827,7 +1840,7 @@ let private runPlan (plan: ExecutionPlan) : int =
     | PlanAction.PreviewSchema (model, modelOssys, conn, decl) ->
         needCatalog modelOssys model (fun cat -> runProjectLivePreview cat conn decl)
     | PlanAction.Transfer (src, sink, opts, execute) ->
-        runTransfer src sink None None opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Tables
+        runTransfer src sink None None opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Tables
     | PlanAction.MigrateWithData (model, modelOssys, sink, src, opts) ->
         needCatalog modelOssys model (fun cat -> runMigrateWithData cat sink src opts.Reconcile opts.Rekey opts.Declaration opts.AllowCdc opts.Store opts.Env)
     | PlanAction.SynthesizeAndLoad (model, modelOssys, profile, conn, opts, execute) ->
@@ -1868,7 +1881,7 @@ let private runPlan (plan: ExecutionPlan) : int =
             printfn "  %-12s %s" (stageBindingText rt.StageBinding) rt.Name
         0
     | PlanAction.ExplainMigratePreview (fromP, toP, decl)   -> runMigratePreview fromP toP decl
-    | PlanAction.ExplainMigrateFromStore (store, toP, decl) -> runMigrateFromStore store toP decl
+    | PlanAction.ExplainMigrateFromStore (store, toP, decl, forceGenesis) -> runMigrateFromStore store toP decl forceGenesis
     // seal ---------------------------------------------------------------
     | PlanAction.SealEject store -> runEject store
     | PlanAction.SealApprove (version, approver, rationale, store) -> runApprove version approver rationale store
