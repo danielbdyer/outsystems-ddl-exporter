@@ -329,6 +329,8 @@ Common first-run snags:
 ## 10. Where to go next
 
 - **`examples/`** — a fuller annotated `projection.sample.json` (a four-environment estate).
+- **`CONFIG_REFERENCE.md`** — the *model-shaping* config (separate from `projection.json`):
+  modules/entities in scope, entity/table naming overrides, emission toggles, tightening policy.
 - **`THE_CLI.md`** — the surface's design and the full secondary-verb set (`check` / `explain`
   / `seal` / `report`).
 - **`THE_DATA_PRODUCERS.md`** — when you feed data up into a cloud environment (`synthetic` /
