@@ -776,20 +776,17 @@ let private runTransfer
             dropCode
         | Error errors ->
             printErrors Console.Error errors
-            let anyCode (prefix: string) =
-                errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith prefix)
-            // G1 — a dead/unreachable endpoint refuses with exit 6 (connection).
-            // G2 — an insufficient sink grant (or a failed grant probe) refuses
-            // with exit 7 (permission), mirroring the migrate verb's mapping.
-            if anyCode "transfer.connection" then 6
-            elif anyCode "transfer.insufficientGrant" || anyCode "transfer.grantProbeFailed" then 7
-            elif anyCode "transfer.reconcile." || anyCode "transfer.userMap." then 2
-            // AC-I5 — a pre-write validate-user-map halt maps to the SAME exit
-            // as a post-write drop (9), so an orphan returns the same code
-            // whether refused before the write or reported after it; only the
-            // timing (and the untouched Sink) changes.
-            elif anyCode "transfer.unmappedIdentities" then Transfer.DroppedReferencesExit
-            else 3
+            // A1 — single-source the refusal exit through `Preflight.refusalOf`
+            // (the canonical `classify` seam over the primary error code) rather
+            // than a hand-derived if/elif. The prior chain lacked an arm for
+            // `transfer.cdcTrackedSink` and silently dropped it to the generic
+            // `else 3`; `classify` maps it to 9 (`CdcTrackedSink`). Connection(6) /
+            // grant(7) / reconcile+userMap(2) / unmappedIdentities(9) classify
+            // byte-identically; a genuinely unclassified code stays at the named
+            // `(3, UnclassifiedRefusal)` default. The AC-I5 pre-write halt
+            // (`transfer.unmappedIdentities → 9`) and the post-write drop
+            // (`Transfer.DroppedReferencesExit`) still coincide at 9 via classify.
+            (Preflight.refusalOf errors).ExitCode
     // --watch + a real TTY → the live data-load board (§13); the transfer leg
     // streams the "load" stage with per-table progress. Only on a real --execute
     // (a dry-run writes no rows, so the load stage would never advance).
