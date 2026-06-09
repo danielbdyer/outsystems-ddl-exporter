@@ -684,6 +684,7 @@ let private runTransfer
     (emission: EmissionMode)
     (resumable: bool)
     (tables: string list)
+    (surveyAdvisory: string list)
     : int =
     let collect = function Ok _ -> [] | Error es -> es
     let parsedSource    = TransferSpec.parseConnectionSpec sourceSpec
@@ -787,6 +788,16 @@ let private runTransfer
             // (`transfer.unmappedIdentities → 9`) and the post-write drop
             // (`Transfer.DroppedReferencesExit`) still coincide at 9 via classify.
             (Preflight.refusalOf errors).ExitCode
+    // G0c — the advisory capability survey (R6 warn-not-stop). Before a live
+    // Execute, surface any blocked-capability / unreachable findings the survey
+    // raised over the touched environments as a STDERR ADVISORY WARNING, then
+    // PROCEED regardless. V2 owns no production write path during dual-track
+    // (CLAUDE.md R6; DECISIONS 2026-06-09 S3), so the gate is advisory until the
+    // per-pair flip — the run's own exit stands; the advisory never borrows the
+    // standalone `survey` verb's exit-7. Computed at the dispatch layer (where
+    // config is in scope) and threaded in as `surveyAdvisory`; a dry-run carries
+    // no advisory (the empty list), so the preview path is byte-identical.
+    if executeGated then for line in surveyAdvisory do Console.Error.WriteLine line
     // --watch + a real TTY → the live data-load board (§13); the transfer leg
     // streams the "load" stage with per-table progress. Only on a real --execute
     // (a dry-run writes no rows, so the load stage would never advance).
@@ -1805,7 +1816,7 @@ let private runCaptureProfile (connSpec: string) (outPath: string) : int =
     dumpBench "profile"
     exitCode
 
-let private runPlan (plan: ExecutionPlan) : int =
+let private runPlan (surveyAdvisory: string list) (plan: ExecutionPlan) : int =
     for n in plan.Notes do eprintfn "Note — %s" n
     // Resolve the model to a Catalog under the live-OSSYS-primary / file-
     // fallback policy (ModelResolution), then run the Catalog-accepting face.
@@ -1837,7 +1848,7 @@ let private runPlan (plan: ExecutionPlan) : int =
     | PlanAction.PreviewSchema (model, modelOssys, conn, decl) ->
         needCatalog modelOssys model (fun cat -> runProjectLivePreview cat conn decl)
     | PlanAction.Transfer (src, sink, opts, execute) ->
-        runTransfer src sink None None opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Tables
+        runTransfer src sink None None opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Tables surveyAdvisory
     | PlanAction.MigrateWithData (model, modelOssys, sink, src, opts) ->
         needCatalog modelOssys model (fun cat -> runMigrateWithData cat sink src opts.Reconcile opts.Rekey opts.Declaration opts.AllowCdc opts.Store opts.Env)
     | PlanAction.SynthesizeAndLoad (model, modelOssys, profile, conn, opts, execute) ->
@@ -1941,9 +1952,9 @@ let private runSurvey () : int =
         let reports = (CapabilitySurvey.survey cfg).GetAwaiter().GetResult()
         TtyRenderer.renderAnswer false View.defaultDepth (TtyRenderer.buildSurveyView reports)
         // CI gate: non-zero when a connected environment can't do what is asked.
-        let blocked =
-            reports |> List.exists (fun r -> r.Connected && (not r.Reachable || not (List.isEmpty r.Missing)))
-        if blocked then 7 else 0
+        // The standalone verb HARD-STOPS (exit 7); the in-flow advisory (G0c)
+        // reads the SAME `CapabilitySurvey.blocked` predicate but only warns.
+        if reports |> List.exists CapabilitySurvey.blocked then 7 else 0
 
 /// A flow's content origin, rendered for the menu (THE_CLI.md §4.4).
 let private flowSourceText (s: FlowSource) : string =
@@ -2018,4 +2029,18 @@ let main argv =
             | Ok intent ->
                 // Pure routing → effectful runner. The surface→engine map is
                 // totality-tested (`Command.plan`); `runPlan` executes + voices.
-                runPlan (Command.plan cfg intent)
+                //
+                // G0c — compute the advisory capability survey HERE (the dispatch
+                // layer, where `cfg` is in scope; `discoverConfig`/`survey` live
+                // below `runTransfer` in this file, so the survey is threaded IN,
+                // never fetched inside the runner). Run it only for a live-Execute
+                // Flow (a `--go` flow); preview / non-flow verbs carry no advisory
+                // (the empty list). The survey is read-only; its findings warn but
+                // never gate (R6 — V2 owns no production write path).
+                let surveyAdvisory =
+                    match intent with
+                    | Intent.Flow (_, opts) when opts.Go ->
+                        let reports = (CapabilitySurvey.survey cfg).GetAwaiter().GetResult()
+                        CapabilitySurvey.advisoryLines reports
+                    | _ -> []
+                runPlan surveyAdvisory (Command.plan cfg intent)
