@@ -12,10 +12,14 @@ connection variables it references.
 
 ```bash
 cp examples/projection.sample.json ./projection.json
-export OSSYS_CONN="…"  ONPREM_LEGACY_CONN="…"  CLOUD_QA_CONN="…"  CLOUD_UAT_CONN="…"
-projection                      # list the resolved flows
-projection golden               # preview a flow
+cp .env.example .env             # then fill in the REPLACE_ME connection strings
+set -a; source .env; set +a      # load the secrets into this shell (`.env` is gitignored)
+projection                       # list the resolved flows
+projection golden                # preview a flow
 ```
+
+(The connection strings live in `.env`, never in `projection.json` — see
+`../GETTING_STARTED.md` §6. `.env.example` is the committed template.)
 
 ## The model is read live — `modelOssys` is primary, the file is the fallback
 

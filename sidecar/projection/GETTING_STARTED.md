@@ -199,15 +199,21 @@ committed file carries only addressing, never credentials.
 (Sources — `cloud-qa`, `onprem-legacy` — carry no grant; only the `cloud-uat` sink does, as
 `data`. The model is read live from `OSSYS_CONN`.)
 
+**Hold the values in a local `.env`, not your shell profile.** A committed template,
+`.env.example`, lists one `<NAME>_CONN` per `direct` environment; copy it, fill it in, and
+load it into the shell you run `projection` from:
+
 ```bash
-export OSSYS_CONN="Server=cloud-uat.example;Database=app;User Id=svc;Password=…;Encrypt=true"
-export ONPREM_LEGACY_CONN="…"
-export CLOUD_QA_CONN="…"
-export CLOUD_UAT_CONN="…"
+cp .env.example .env          # .env is gitignored — never commit it
+$EDITOR .env                  # replace every REPLACE_ME
+set -a; source .env; set +a   # export them into this session (re-run per shell)
 ```
 
-Keep these in your shell profile, a `.env` you do **not** commit, or a secret manager — out
-of the repository. (`file:` refs are handy when a secret manager renders a file at deploy time.)
+`.env` is `.gitignore`d (alongside `secrets/` and `*.conn` for `file:` refs), so credentials
+never enter the repository — the committed `projection.json` only names the references. A
+`.env` is preferable to `~/.bashrc`/`~/.bash_profile`: it is scoped to this project, reviewable,
+and not loaded into every shell you open. (For a shared/maintained estate you'd source these
+from a secret manager instead — render them into `.env`, or use `file:` refs the manager writes.)
 
 ### The environment variables the CLI reads
 

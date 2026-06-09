@@ -4,3 +4,11 @@ obj/
 *.swp
 .vs/
 .idea/
+
+# Secrets — D9: connection strings live out-of-band, never committed.
+# `.env` holds the values the config's env:<VAR> references resolve to;
+# `.env.example` is the committed template. `secrets/` + *.conn back file:<path> refs.
+.env
+secrets/
+*.conn
+!.env.example
