@@ -234,14 +234,14 @@ let private runFullExport
             FullExportRun.execute configPath outputOverride verbosity mutedCategories, None
     match outcome with
     | FullExportRun.RunOutcome.Succeeded (report, effectiveOutput) ->
-        printfn "projection: wrote %d artifact(s) to %s" report.Paths.Length effectiveOutput
+        printfn "%d artifact(s) written to %s." report.Paths.Length effectiveOutput
         report.Paths
         |> List.iter (fun p ->
             let info = FileInfo p
             printfn "  %s (%d bytes)" p info.Length)
         storeLeg
         |> Option.iter (fun leg ->
-            printfn "projection: lifecycle bundle — recorded episode (%d on timeline %s); accumulated refactorlog %d entr(ies)"
+            printfn "This run recorded — episode %d on timeline %s; %d refactorlog entr(ies) accumulated."
                 (EpisodicLifecycle.episodes leg.Chain |> List.length)
                 (Timeline.name (EpisodicLifecycle.timeline leg.Chain))
                 (List.length leg.AccumulatedRefactorLog))
@@ -249,7 +249,6 @@ let private runFullExport
         // config.validationFailed envelopes already emitted by `execute`.
         ()
     | FullExportRun.RunOutcome.RunFailed errors ->
-        Console.Error.WriteLine "projection: full-export failed:"
         printErrors Console.Error errors
     | FullExportRun.RunOutcome.Aborted ex ->
         Console.Error.WriteLine ("projection: full-export aborted: " + ex.Message)
@@ -308,16 +307,15 @@ let private runFullExportLoad
                     let code =
                         match work.GetAwaiter().GetResult() with
                         | Ok (report, legOpt, cdcDelta) ->
-                            printfn "projection: full-export published %d artifact(s); loaded the seed (%d CDC capture(s) measured)"
+                            printfn "%d artifact(s) published; seed loaded (%d row(s) captured)."
                                 report.Paths.Length cdcDelta
                             legOpt
                             |> Option.iter (fun leg ->
-                                printfn "  episode recorded (%d on timeline %s)"
+                                printfn "  this run recorded — episode %d on timeline %s."
                                     (EpisodicLifecycle.episodes leg.Chain |> List.length)
                                     (Timeline.name (EpisodicLifecycle.timeline leg.Chain)))
                             0
                         | Error es ->
-                            Console.Error.WriteLine "projection full-export --load: failed:"
                             printErrors Console.Error es
                             3
                     dumpBench "full-export"
@@ -327,7 +325,7 @@ let private runEmit (catalog: Catalog) (outputDir: string) : int =
     let exitCode =
         match Compose.runFromCatalog catalog outputDir with
         | Ok paths ->
-            printfn "projection: wrote %d artifact(s) to %s" paths.Length outputDir
+            printfn "%d artifact(s) written to %s." paths.Length outputDir
             paths
             |> List.iter (fun p ->
                 let info = FileInfo p
@@ -335,7 +333,6 @@ let private runEmit (catalog: Catalog) (outputDir: string) : int =
             0
         | Error errors ->
             (
-                Console.Error.WriteLine "projection: emit failed:"
                 printErrors Console.Error errors
                 2
             )
@@ -354,7 +351,7 @@ let private runEmitSkeletonOnly (catalog: Catalog) (outputDir: string) : int =
         match Compose.runSkeletonOnlyFromCatalog catalog outputDir with
         | Ok paths ->
             printfn
-                "projection: wrote %d skeleton-only artifact(s) to %s"
+                "%d skeleton-only artifact(s) written to %s."
                 paths.Length
                 outputDir
             paths
@@ -364,7 +361,6 @@ let private runEmitSkeletonOnly (catalog: Catalog) (outputDir: string) : int =
             0
         | Error errors ->
             (
-                Console.Error.WriteLine "projection: emit failed:"
                 printErrors Console.Error errors
                 2
             )
@@ -409,7 +405,6 @@ let private runDeploy (catalog: Catalog) : int =
                     3
             | Error errors ->
                 (
-                    Console.Error.WriteLine "projection: parse failed:"
                     printErrors Console.Error errors
                     2
                 )
@@ -462,7 +457,6 @@ let private runCanary (sourceDdlPath: string) : int =
                     5
             | Error errors ->
                 (
-                    Console.Error.WriteLine "projection: canary failed:"
                     printErrors Console.Error errors
                     2
                 )
@@ -529,7 +523,6 @@ let private runCanaryCdcSilence (sourceDdlPath: string) : int =
                     0
                 else 5
             | Error errors ->
-                Console.Error.WriteLine "projection: canary failed:"
                 printErrors Console.Error errors
                 2
         dumpBench "canary"
@@ -557,7 +550,7 @@ let private runApprove
     let record =
         ApprovalWorkflow.pending now policyVersion
         |> ApprovalWorkflow.approve approver rationale now
-    printfn "projection: approved policy version %s" policyVersion
+    printfn "Policy version %s approved." policyVersion
     printfn "  approver  : %s" approver
     printfn "  decision  : Approved"
     printfn "  at        : %s" (record.At.ToString "o")
