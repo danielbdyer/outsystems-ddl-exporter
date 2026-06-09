@@ -69,6 +69,23 @@ let ``View: the board build carries its data into json (consumer round-trip)`` (
     Assert.Contains("meter", kinds)
     Assert.Contains("dots", kinds)
 
+[<Fact>]
+let ``Setup readback: an unset ledger is named and recommended, never scolded (§14)`` () =
+    let p = plain (TtyRenderer.buildSetupView None false 120L None)
+    Assert.Contains("Setup", p)
+    Assert.Contains("not retained", p)
+    Assert.Contains("preview only", p)            // live writes not armed
+    Assert.Contains("PROJECTION_LEDGER_DIR", p)   // the §14 recommendation
+
+[<Fact>]
+let ``Setup readback: configured state shows plainly, with no recommendation`` () =
+    let p = plain (TtyRenderer.buildSetupView (Some "./runs") true 200L (Some "./bench"))
+    Assert.Contains("retained", p)
+    Assert.Contains("./runs", p)
+    Assert.Contains("armed", p)                       // live writes armed
+    Assert.Contains("200 ms", p)
+    Assert.DoesNotContain("PROJECTION_LEDGER_DIR", p) // configured → no scold
+
 // --- progressive disclosure (the dig substrate) ----------------------------
 // Discriminating predicate: a Disclosure HIDES its detail when collapsed and
 // REVEALS it one level deeper when open — but `toJson` carries the full detail

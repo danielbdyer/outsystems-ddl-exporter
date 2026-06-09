@@ -36,6 +36,7 @@ let private usageLines : string list =
         "    projection seal ( --store <path> | approve <version> --approver <name> ... )"
         "    projection report <flow>        the on-prem migration-team change bundle"
         "    projection init                 scaffold a projection.json"
+        "    projection setup                read back what is configured (history, writes, board)"
         ""
         "FLOW — the hero. Move a model from `from` to `to`; the target decides the form."
         "  Environments (places) carry access (bundle → SSDT for Octopus | direct → live |"
@@ -388,10 +389,13 @@ let private runDeploy (catalog: Catalog) : int =
             4
             "projection: Docker daemon not reachable. Set DOCKER_HOST or start the daemon to run `deploy`."
     else
-        printfn "projection: spinning up an ephemeral SQL Server container..."
-        let task = Deploy.runFromCatalog catalog
-        let result = task.GetAwaiter().GetResult()
-        let exitCode =
+        let runBody () =
+            printfn "projection: spinning up an ephemeral SQL Server container..."
+            LogSink.recordStageStart "deploy"
+            let sw = System.Diagnostics.Stopwatch.StartNew()
+            let result = (Deploy.runFromCatalog catalog).GetAwaiter().GetResult()
+            LogSink.recordStageEvent "deploy" sw.ElapsedMilliseconds
+                (match result with Ok (_, report) when report.Ok -> LogSink.Succeeded | _ -> LogSink.Failed)
             match result with
             | Ok (outputs, report) ->
                 printfn
@@ -423,6 +427,13 @@ let private runDeploy (catalog: Catalog) : int =
                     printErrors Console.Error errors
                     2
                 )
+        // --watch + a real TTY → a live deploy stage (§13). The schema deploy is
+        // one aggregated batch (no per-table count to honestly report), so the
+        // board shows the stage going Applying → Deploy complete, not a bar.
+        let exitCode =
+            if Watch.shouldWatch watchMode.Value then
+                Watch.renderWatch [ "deploy" ] (Watch.resolveDwellMs ()) runBody
+            else runBody ()
         dumpBench "deploy"
         exitCode
 
@@ -970,6 +981,23 @@ let private runReadiness () : int =
                     "eligible",         box r.Eligible ]) with
                 Phase = LogSink.End }
         0
+
+/// `projection setup` — the arrival/setup readback (§14 / Appendix A.6): a plain
+/// read of the operator switches that are set and those that are not, in the
+/// same calm voice. Reads the env at the boundary; the view is pure.
+let private runSetup () : int =
+    let envOpt (k: string) =
+        match System.Environment.GetEnvironmentVariable k with
+        | null | "" -> None
+        | v         -> Some v
+    let view =
+        TtyRenderer.buildSetupView
+            (RunLedger.configuredDir ())
+            (envOpt "PROJECTION_ALLOW_EXECUTE" = Some "1")
+            (Watch.resolveDwellMs ())
+            (envOpt "PROJECTION_BENCH_DIR")
+    TtyRenderer.renderAnswer false View.defaultDepth view
+    0
 
 /// `diff <refA> <refB>` — change, rendered essence-first (INSTRUMENT slice 1,
 /// the first surface of the instrument). Resolves both refs through `Ref`
@@ -1917,6 +1945,7 @@ let main argv =
         0
     | [||] -> runList ()
     | [| "init" |] -> runInit ()
+    | [| "setup" |] -> runSetup ()
     | _ ->
         match discoverConfig () with
         | Error es ->
