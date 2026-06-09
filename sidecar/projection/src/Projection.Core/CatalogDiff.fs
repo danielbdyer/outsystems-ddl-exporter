@@ -50,6 +50,23 @@ type AttributeChange =
         Facets       : Set<AttributeFacet>
     }
 
+/// The structurally-identical carrier behind every per-channel diff
+/// (attributes / references / indexes / sequences). `Added` / `Removed`
+/// are entity `SsKey`s present in only the target / source; `Renamed`
+/// carries a same-`SsKey` `Name` change; `Changed` names survivors whose
+/// emitted shape differs, the channel's own change-evidence type filling
+/// `'change`. The four channels were four byte-identical records before;
+/// they are now one generic with four named instantiations (the aliases
+/// below), so field access and the public type names are unchanged for
+/// every consumer.
+type ChannelDiff<'change> =
+    {
+        Added   : Set<SsKey>
+        Removed : Set<SsKey>
+        Renamed : Map<SsKey, RenameRecord>
+        Changed : 'change list
+    }
+
 /// Per-kind attribute-level diff for a kind present in BOTH catalogs.
 /// `Added` / `Removed` are attribute `SsKey`s present in only the target /
 /// source; `Renamed` carries a same-`SsKey` `Name` change (edge-case-2 of
@@ -57,13 +74,7 @@ type AttributeChange =
 /// `Changed` names attributes whose emitted column shape differs facet by
 /// facet. An empty `AttributeDiff` (all four empty) means the kind's
 /// attributes are identical; `between` stores only non-empty diffs.
-type AttributeDiff =
-    {
-        Added   : Set<SsKey>
-        Removed : Set<SsKey>
-        Renamed : Map<SsKey, RenameRecord>
-        Changed : AttributeChange list
-    }
+type AttributeDiff = ChannelDiff<AttributeChange>
 
 // -- C1 (2026-06-02): widen the captured surface beyond column shape --------
 //
@@ -101,13 +112,7 @@ type ReferenceChange =
 
 /// Per-kind reference-level diff (kind present in both catalogs). Mirrors
 /// `AttributeDiff`; references match by `SsKey`.
-type ReferenceDiff =
-    {
-        Added   : Set<SsKey>
-        Removed : Set<SsKey>
-        Renamed : Map<SsKey, RenameRecord>
-        Changed : ReferenceChange list
-    }
+type ReferenceDiff = ChannelDiff<ReferenceChange>
 
 /// C1 — a single facet of an index's emitted shape. `Options` groups the
 /// `WITH (…)` knobs + the platform-auto / disabled flags so the facet set
@@ -132,13 +137,7 @@ type IndexChange =
 
 /// Per-kind index-level diff (kind present in both catalogs). Mirrors
 /// `AttributeDiff`; indexes match by `SsKey`.
-type IndexDiff =
-    {
-        Added   : Set<SsKey>
-        Removed : Set<SsKey>
-        Renamed : Map<SsKey, RenameRecord>
-        Changed : IndexChange list
-    }
+type IndexDiff = ChannelDiff<IndexChange>
 
 /// C1 — a single facet of a sequence's shape. `Cache` groups `CacheMode` +
 /// `CacheSize`.
@@ -163,13 +162,7 @@ type SequenceChange =
 
 /// Catalog-level sequence diff (sequences are `Catalog.Sequences`, not
 /// kind-scoped). Mirrors `AttributeDiff`; sequences match by `SsKey`.
-type SequenceDiff =
-    {
-        Added   : Set<SsKey>
-        Removed : Set<SsKey>
-        Renamed : Map<SsKey, RenameRecord>
-        Changed : SequenceChange list
-    }
+type SequenceDiff = ChannelDiff<SequenceChange>
 
 /// Total decomposition of `source ∪ target` SsKeys into four pairwise-
 /// disjoint partitions. The smart constructor `CatalogDiff.between`
@@ -278,10 +271,13 @@ module CatalogDiff =
           if s.Computed <> t.Computed then AttributeFacet.Computed ]
         |> Set.ofList
 
-    let private emptyAttributeDiff : AttributeDiff =
+    /// The empty channel diff — all four fields empty — over any change type.
+    let private emptyChannelDiff<'change> : ChannelDiff<'change> =
         { Added = Set.empty; Removed = Set.empty; Renamed = Map.empty; Changed = [] }
 
-    let private attributeDiffIsEmpty (d: AttributeDiff) : bool =
+    /// A channel diff is empty iff all four fields are empty. One predicate
+    /// for every channel (the four byte-identical `*DiffIsEmpty` collapsed).
+    let private channelDiffIsEmpty (d: ChannelDiff<'change>) : bool =
         Set.isEmpty d.Added
         && Set.isEmpty d.Removed
         && Map.isEmpty d.Renamed
@@ -330,12 +326,6 @@ module CatalogDiff =
     // changed facets for survivors whose shape differs. `Changed` is computed
     // in source-list order for T1 determinism (not Set hash order).
 
-    let private emptyReferenceDiff : ReferenceDiff =
-        { Added = Set.empty; Removed = Set.empty; Renamed = Map.empty; Changed = [] }
-
-    let private referenceDiffIsEmpty (d: ReferenceDiff) : bool =
-        Set.isEmpty d.Added && Set.isEmpty d.Removed && Map.isEmpty d.Renamed && List.isEmpty d.Changed
-
     let private changedReferenceFacets (s: Reference) (t: Reference) : Set<ReferenceFacet> =
         [ if s.TargetKind <> t.TargetKind then ReferenceFacet.Target
           if s.SourceAttribute <> t.SourceAttribute then ReferenceFacet.SourceAttribute
@@ -372,12 +362,6 @@ module CatalogDiff =
           Removed = Set.difference srcKeys tgtKeys
           Renamed = renamed
           Changed = changed }
-
-    let private emptyIndexDiff : IndexDiff =
-        { Added = Set.empty; Removed = Set.empty; Renamed = Map.empty; Changed = [] }
-
-    let private indexDiffIsEmpty (d: IndexDiff) : bool =
-        Set.isEmpty d.Added && Set.isEmpty d.Removed && Map.isEmpty d.Renamed && List.isEmpty d.Changed
 
     let private changedIndexFacets (s: Index) (t: Index) : Set<IndexFacet> =
         [ if s.Columns <> t.Columns then IndexFacet.Columns
@@ -418,12 +402,6 @@ module CatalogDiff =
           Removed = Set.difference srcKeys tgtKeys
           Renamed = renamed
           Changed = changed }
-
-    let private emptySequenceDiff : SequenceDiff =
-        { Added = Set.empty; Removed = Set.empty; Renamed = Map.empty; Changed = [] }
-
-    let private sequenceDiffIsEmpty (d: SequenceDiff) : bool =
-        Set.isEmpty d.Added && Set.isEmpty d.Removed && Map.isEmpty d.Renamed && List.isEmpty d.Changed
 
     let private changedSequenceFacets (s: Sequence) (t: Sequence) : Set<SequenceFacet> =
         [ if s.Schema <> t.Schema then SequenceFacet.Schema
@@ -520,7 +498,7 @@ module CatalogDiff =
                     match Catalog.tryFindKind key source, Catalog.tryFindKind key target with
                     | Some sk, Some tk ->
                         let d = attributeDiff sk tk
-                        if attributeDiffIsEmpty d then acc else Map.add key d acc
+                        if channelDiffIsEmpty d then acc else Map.add key d acc
                     | _ -> acc)
                 Map.empty
         // C1 — descend into references + indexes for every kind in BOTH catalogs;
@@ -533,7 +511,7 @@ module CatalogDiff =
                     match Catalog.tryFindKind key source, Catalog.tryFindKind key target with
                     | Some sk, Some tk ->
                         let d = referenceDiff sk tk
-                        if referenceDiffIsEmpty d then acc else Map.add key d acc
+                        if channelDiffIsEmpty d then acc else Map.add key d acc
                     | _ -> acc)
                 Map.empty
         let indexDiffs =
@@ -543,7 +521,7 @@ module CatalogDiff =
                     match Catalog.tryFindKind key source, Catalog.tryFindKind key target with
                     | Some sk, Some tk ->
                         let d = indexDiff sk tk
-                        if indexDiffIsEmpty d then acc else Map.add key d acc
+                        if channelDiffIsEmpty d then acc else Map.add key d acc
                     | _ -> acc)
                 Map.empty
         // C1 — sequences are catalog-level, not kind-scoped.
@@ -671,7 +649,7 @@ module CatalogDiff =
         && Map.isEmpty data.AttributeDiffs
         && Map.isEmpty data.ReferenceDiffs
         && Map.isEmpty data.IndexDiffs
-        && sequenceDiffIsEmpty data.SequenceDiff
+        && channelDiffIsEmpty data.SequenceDiff
 
     // -- 6.A.11: applyDiff — the `between` peer (H-007) -----------------------
     //
