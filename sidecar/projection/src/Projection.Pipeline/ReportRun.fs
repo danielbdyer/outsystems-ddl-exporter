@@ -47,15 +47,15 @@ module ReportRun =
     /// Render the bundle as operator-facing lines (THE_VOICE register: stative;
     /// the norm surfaced as the minimality proof). One line per recorded edge.
     let render (bundle: ReportBundle) : string list =
-        [ yield sprintf "Change report — timeline '%s' (%d episode(s) recorded)." bundle.Timeline bundle.EpisodeCount
-          yield sprintf "Total schema churn since genesis: %d move(s)." bundle.PathLength
+        [ yield sprintf "Change report — timeline '%s', %d episode(s) recorded." bundle.Timeline bundle.EpisodeCount
+          yield sprintf "Total changes recorded since genesis: %d." bundle.PathLength
           yield ""
           if List.isEmpty bundle.Manifests then
-              yield "No schema change recorded since genesis (the timeline holds a single episode)."
+              yield "No schema change recorded since genesis — the timeline holds a single episode."
           else
               yield "Changes, oldest to newest:"
               for m in bundle.Manifests do
                   let c = m.Channels
-                  yield sprintf "  %s -> %s   norm=%d  (+%d / -%d / ~%d kinds; %d CDC capture(s))"
+                  yield sprintf "  %s → %s · %d schema change(s) (%d added · %d dropped · %d renamed) · %d row(s) captured"
                             (Version.label m.From.Version) (Version.label m.To.Version)
                             m.SchemaNorm c.AddedKinds c.RemovedKinds c.RenamedKinds m.CdcCaptureCount ]

@@ -34,12 +34,12 @@ let ``Comparison: Apply replays the delta through the abstraction (Weyl flows th
     | _ -> Assert.Fail "expected a delta and an Apply"
 
 [<Fact>]
-let ``Comparison: render projects a diff onto the View substrate (norm visible in json)`` () =
+let ``Comparison: render projects a diff onto the View substrate (the count visible in json)`` () =
     match Comparison.summary Comparison.catalog sampleCatalog sampleCatalog with
     | Ok v ->
         let j = (View.toJson v).ToJsonString()
-        Assert.Contains("catalog", j)   // the panel title "catalog Δ"
-        Assert.Contains("norm", j)
+        Assert.Contains("changes", j)        // the panel title "changes"
+        Assert.Contains("total changes", j)  // the count, in plain words (never `norm`)
     | Error e -> Assert.Fail e
 
 // --- statement-first surface (INSTRUMENT slice 1) --------------------------
@@ -50,29 +50,29 @@ let ``Comparison: render projects a diff onto the View substrate (norm visible i
 let private emptyCatalog = IRBuilders.mkCatalog []
 
 [<Fact>]
-let ``Comparison statement: an identical pair leads with a calm identical verdict`` () =
+let ``Comparison statement: an identical pair leads with a calm no-differences verdict`` () =
     match Comparison.catalog.Between sampleCatalog sampleCatalog with
     | Ok d ->
         match Comparison.catalogStatement d with
-        | View.Hero(View.Ok, text) -> Assert.Contains("identical", text)
+        | View.Hero(View.Ok, text) -> Assert.Contains("No differences", text)
         | other -> Assert.Fail(sprintf "expected a calm Ok hero, got %A" other)
     | Error e -> Assert.Fail e
 
 [<Fact>]
-let ``Comparison statement: a destructive change leads amber — review first`` () =
+let ``Comparison statement: a change with removals leads amber with the true verb — review before applying`` () =
     match Comparison.catalog.Between sampleCatalog emptyCatalog with
     | Ok d ->
         match Comparison.catalogStatement d with
-        | View.Hero(View.Warn, text) -> Assert.Contains("destroy", text)
+        | View.Hero(View.Warn, text) -> Assert.Contains("drops", text)
         | other -> Assert.Fail(sprintf "expected a Warn hero, got %A" other)
     | Error e -> Assert.Fail e
 
 [<Fact>]
-let ``Comparison statement: an additive change leads calm — nothing destroyed`` () =
+let ``Comparison statement: an additive change leads calm — no removals`` () =
     match Comparison.catalog.Between emptyCatalog sampleCatalog with
     | Ok d ->
         match Comparison.catalogStatement d with
-        | View.Hero(View.Ok, text) -> Assert.Contains("nothing destroyed", text)
+        | View.Hero(View.Ok, text) -> Assert.Contains("no removals", text)
         | other -> Assert.Fail(sprintf "expected a calm Ok hero, got %A" other)
     | Error e -> Assert.Fail e
 

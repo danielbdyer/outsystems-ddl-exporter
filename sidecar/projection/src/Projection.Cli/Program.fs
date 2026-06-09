@@ -1159,6 +1159,31 @@ let private migrationErrorDetail (e: MigrationError) : string =
     | RefusedByCdc t            -> sprintf "the schema change would run against a CDC-tracked database (%d table(s))" (List.length t)
     | StoreReadFailed msg       -> sprintf "the run history could not be read — %s" msg
 
+/// The migrate preview as a §6/§9 minimality Surface — the smallest faithful
+/// change, said plain (statement first, the per-move breakdown beneath), never
+/// `norm=`. The schema change-manifest of δ: exactly the difference, and no more.
+let private migratePreviewSurface (artifacts: MigrationArtifacts) : Surface.Surface =
+    let p = artifacts.Plan.Preview
+    let c = p.Channels
+    if Migration.isIdempotent artifacts.Plan then
+        { Statement      = View.Hero(View.Ok, "Nothing to apply. The two states are already identical.")
+          Substantiation = []
+          Action         = None }
+    else
+        let removed = c.RemovedKinds + c.RemovedAttributes
+        let status  = if removed > 0 then View.Warn else View.Ok
+        let renames =
+            p.RenamedKinds
+            |> List.map (fun (_, fromN, toN) -> sprintf "%s → %s" (Name.value fromN) (Name.value toN))
+        { Statement      =
+            View.Hero(status, sprintf "%d changes to apply — exactly the difference between the two states, and no others." p.Norm)
+          Substantiation =
+            [ View.Field("tables", sprintf "%d added · %d dropped · %d renamed" c.AddedKinds c.RemovedKinds c.RenamedKinds, View.Neutral)
+              View.Field("columns", sprintf "%d added · %d dropped · %d renamed · %d changed" c.AddedAttributes c.RemovedAttributes c.RenamedAttributes c.ChangedAttributes, View.Neutral) ]
+            @ (if List.isEmpty renames then [] else [ View.Lane("⟲", "rename", View.Ok, renames) ])
+            @ [ View.Field("to run", sprintf "%d statement(s) · %d rename(s) recorded" (List.length artifacts.SchemaStatements) (List.length artifacts.RefactorLog), View.Neutral) ]
+          Action         = Some(View.Action "Apply against the target database with --execute.") }
+
 /// Voice the §5 declared-loss gate for undeclared destructive removals — the
 /// consent moment a drop must pass. The exit (9) is unchanged; the §5 statement
 /// and the approval lever lead, the named removals ride in the substantiation.
@@ -1185,23 +1210,8 @@ let private reportPreviewOutcome (header: string) (result: Result<MigrationArtif
             Console.Error.WriteLine (sprintf "The migration did not complete: %s." (migrationErrorDetail other))
             2
         | Ok artifacts ->
-            let p = artifacts.Plan.Preview
             printfn "%s" header
-            if Migration.isIdempotent artifacts.Plan then
-                printfn "  idempotent — nothing to do (zero minimum-viable touches)"
-            else
-                printfn "  minimum-viable touches (norm): %d" p.Norm
-                printfn "    renamed kinds:        %d" p.Channels.RenamedKinds
-                printfn "    added kinds:          %d" p.Channels.AddedKinds
-                printfn "    removed kinds:        %d" p.Channels.RemovedKinds
-                printfn "    reshaped attributes:  %d" p.Channels.ChangedAttributes
-                printfn "    renamed attributes:   %d" p.Channels.RenamedAttributes
-                printfn "    added attributes:     %d" p.Channels.AddedAttributes
-                printfn "    removed attributes:   %d" p.Channels.RemovedAttributes
-                for (_, fromN, toN) in p.RenamedKinds do
-                    printfn "    rename: %s -> %s" (Name.value fromN) (Name.value toN)
-                printfn "  emitted: %d ALTER/ADD statement(s), %d refactorlog rename(s)"
-                    (List.length artifacts.SchemaStatements) (List.length artifacts.RefactorLog)
+            TtyRenderer.renderAnswer false View.defaultDepth (Surface.render (migratePreviewSurface artifacts))
             0
     dumpBench "migrate"
     exitCode
