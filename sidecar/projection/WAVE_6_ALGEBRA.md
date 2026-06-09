@@ -54,6 +54,16 @@ emission functor's faithfulness ladder lives (§6).
 | `σ : Script` | the **realization** of a displacement on the substrate | `emit(δ)` — refactorlog + ALTER (schema) / change-detecting MERGE (data) |
 | `Â : Substrate` | the **deployed point** | the live database |
 
+> **A/B as dispositions (the bidirectional reading).** `Realization` is not a constant but a
+> **disposition** the sink selects: `Realization := Designation` (logical, on-prem — disposition **B**)
+> or `Realization :=` the `OSUSR_*` physical convention (cloud OutSystems — disposition **A**). So two
+> points `A`, `B` of the affine space can be **one identity-stable model in two realizations** —
+> cloud-physical vs on-prem-logical — not only two time-states. **Cloud insertion** is the *up* leg
+> `emit(B ⊖ A)` rendering the physical disposition; the realization name-space it ranges over is
+> `THE_USE_CASE_ONTOLOGY.md` §5.8, and the producers that feed it are catalogued in
+> `THE_DATA_PRODUCERS.md`. The three torsor axioms (§2) are unchanged — A and B are points either way;
+> the disposition is which realization-coordinate the point bears.
+
 ---
 
 ## 2. The torsor axioms — **T12** (round-trip · identity · composition are one structure)

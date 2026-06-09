@@ -136,7 +136,10 @@ Every real operator workflow, as a folded chain of §2 amino acids. For each: tr
 consumer/terminus · environment-lattice cells · deploy mode · the ordered chain · faithfulness
 stakes. The estate is a lattice of **(environment × release-time)** cells — DEV, TEST/QA, UAT, PROD
 — each the *same* `SsKey`-stable estate at a different rhythm-point; two states the engine compares
-are two cells of this lattice. Cadence is **once a sprint, demand-driven by the consuming team** —
+are two cells of this lattice. (The same `A`/`B` also reads as **two dispositions of one model** — the
+physical `OSUSR_*` cloud rendition vs the logical on-prem target — the Realization name-space, §5.8;
+both readings are the one axis, and **cloud insertion** moves *up* between them. See
+`THE_DATA_PRODUCERS.md`.) Cadence is **once a sprint, demand-driven by the consuming team** —
 lumpy and batched, not high-frequency. PROD carries no application/data yet, so PROD-blast-radius
 reasoning (atomicity, permission gates) is *premature, not central* — represented in the alphabet,
 deferred in priority.
@@ -196,7 +199,10 @@ deferred in priority.
 
 - **Essence.** Promote Dev schema + QA data to UAT, re-keying every User FK
   (CreatedBy/UpdatedBy/any `dbo.User` reference) from QA/Dev user identities to UAT's. Forward-only;
-  no masking.
+  no masking. **The cloud→cloud `golden` flow** (a `peer`-cell source into a cloud sink, disposition A;
+  `THE_DATA_PRODUCERS.md` §2) is the *same protocol* under the cloud-insertion leg: **user rows are not
+  copied** (the sink keeps its own users) and their FKs are re-keyed by `ByEmail` reconcile — same
+  `validate-user-map`-before-DML gate, same Reidentify-is-an-Update law.
 - **Trigger / Cadence.** UAT sprint refresh; operator supplies QA+UAT user inventories and a
   user-map (or the matcher auto-proposes); once per sprint.
 - **Terminus / demand.** On-prem UAT SQL Server: every `dbo.User` FK holds a valid UAT identity (no
@@ -945,7 +951,16 @@ Under every move, `SsKey` is conserved, with one creation/annihilation pair:
 The three name-spaces are distinct: **Identity** (`SsKey`, invariant — *what it is*) · **Designation**
 (`Name`, where renames act — *what we call it*) · **Realization** (the physical object name, derived —
 *what the substrate bears*), with the production policy `Realization := Designation`. Conflating them
-is the "physical column rename" near-miss (§2.3). **The cross-plane corollary:** a faithful schema
+is the "physical column rename" near-miss (§2.3). **Realization is a *disposition*, not a constant:**
+the on-prem/logical target sets `Realization := Designation` (clean names — disposition **B**); the
+cloud OutSystems target bears the physical `OSUSR_*` convention (disposition **A**). Same Identity, same
+Designation, **two realizations** — so the `A`/`B` the torsor compares (axes 4–6, §4.1) can be **two
+dispositions of one identity-stable model** (cloud-physical vs on-prem-logical), not only two cells or
+two times. Those readings *coincide*: the realization axis, the lattice cell, and the torsor's A/B are
+the same axis seen from different angles on the bidirectional leg. **Cloud insertion** (writing data
+*up* into a live cloud OutSystems environment) is `emit(B ⊖ A)` rendering the model in the physical
+disposition A; its three data producers are catalogued in `THE_DATA_PRODUCERS.md`, and the algebra-side
+statement is `WAVE_6_ALGEBRA.md` §1. **The cross-plane corollary:** a faithful schema
 Rename must induce **zero data moves** — `‖emit(π_Rename(δ))‖_data = 0`. Because `sp_rename` conserves
 rows whereas DROP+ADD induces `2·|table|`, "use the refactorlog for renames" is **not a convention we
 adopt — it is forced** by Identity-conservation across the schema→data coupling. P-ID: comparison
@@ -1095,6 +1110,7 @@ index; each prior document is reduced to its precise provenance role below.
 | **`EXECUTION_PLAN.md`** | The wave structure (0–6); per-slice acceptance criteria; the self-verification endgame. | Live prerequisite for the Wave-6 slice backlog. |
 | **The handbook (`/handbook/`)** | The operator-facing SSDT/DacFx doctrine: declarative-vs-imperative, the refactorlog/rename discipline, CDC and schema evolution, multi-phase patterns, the anti-pattern gallery, deployment-safety levers. | **Live prerequisite** — the physical deployment doctrine; cited (§4.5, §5), not duplicated. |
 | **`PRESCOPE_TRANSFER.md` / `TRANSFER_ISOMORPHISM_SUBSTANTIATION.md`** | The bidirectional Transfer architecture (`SubstrateRole`, `SchemaContract`, `IdentityDisposition`, `SurrogateRemapContext`); the UAT capability survey instrument. | Live reference for the data-axis L3 target and the survey gate. |
+| **`THE_DATA_PRODUCERS.md`** | The three data origins that feed cloud insertion (`synthetic` / `legacy` / `peer`); the A/B-as-dispositions reframe (physical `OSUSR_*` vs logical on-prem = the Realization name-space, §5.8); the `golden` user-exclusion-plus-re-key discipline; the per-producer data canary. | **Live reference** for the cloud-insertion *up* leg and its producers; the design home for `synthetic` (built) and the `legacy` / `peer` build slices. |
 | **`CUTOVER_READINESS_BRIEF.md` / `V1_PARITY_MATRIX.md`** | The per-axis T-30 confidence map; the 185-row V1↔V2 parity ground truth. | Live operational readiness surfaces. |
 
 ---

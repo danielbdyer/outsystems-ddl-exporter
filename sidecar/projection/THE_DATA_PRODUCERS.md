@@ -52,11 +52,11 @@ origins.
 
 ## 1. The three producers — what each IS
 
-Per `THE_CLI.md` §1 / `THE_SYNTHETIC_DATA_DESIGN.md` §1, the flow surface has four source
-substrates: `cloud-self`, `peer` (was `sibling-cloud` — §4 naming note), `on-prem-legacy`,
-and `synthetic-from-profile`. Of these, **three are the producers of production-like data
-into the cloud sink** — distinguished by *what the origin is*, not by what the engine does
-with it:
+Per `THE_SYNTHETIC_DATA_DESIGN.md` §1, the flow surface has four source substrates:
+`cloud-self`, `peer` (was `sibling-cloud` — §4 naming note), `on-prem-legacy`, and
+`synthetic-from-profile` (`THE_CLI.md` §1 now names the producer trinity directly). Of these,
+**three are the producers of production-like data into the cloud sink** — distinguished by
+*what the origin is*, not by what the engine does with it:
 
 | Producer | Origin (what it IS) | Flow (`THE_CLI.md` §4.3) | Built? |
 |---|---|---|---|
@@ -145,12 +145,12 @@ R6 (`CLAUDE.md` load-bearing commitments; `PRESCOPE_TRANSFER.md` §8): the cloud
 1. **The producer trinity is the cut.** `synthetic` / `legacy` / `peer` are the three
    origins of production-like data feeding cloud insertion, distinguished by *what the origin
    is* (generated / foreign-schema / same-estate peer), not by engine behavior.
-2. **`peer` is the concept-shaped name** for what `THE_CLI.md` §1 / `THE_SYNTHETIC_DATA_DESIGN.md`
-   §1 called **`sibling-cloud`**. Per the domain-first naming discipline (`CLAUDE.md`
-   pillar 8): the load-bearing property is "a peer cell of the same `SsKey`-stable estate
-   lattice" (§3 lattice vocabulary) — which is *why* sink-minted identity + re-key suffices.
-   The rename should propagate to `THE_CLI.md` §1 and `THE_SYNTHETIC_DATA_DESIGN.md` §1 when
-   those surfaces are next touched.
+2. **`peer` is the concept-shaped name** for what `THE_SYNTHETIC_DATA_DESIGN.md` §1 called
+   **`sibling-cloud`**. Per the domain-first naming discipline (`CLAUDE.md` pillar 8): the
+   load-bearing property is "a peer cell of the same `SsKey`-stable estate lattice"
+   (`THE_USE_CASE_ONTOLOGY.md` §3 lattice vocabulary) — which is *why* sink-minted identity +
+   re-key suffices. The rename is **propagated** (2026-06-09): `THE_SYNTHETIC_DATA_DESIGN.md`
+   §1 and `THE_CLI.md` §1 now read `peer`.
 3. **`golden` = exclude user rows, re-key their FKs** to the sink's user identities by
    `ByEmail` reconcile, gated by `validate-user-map` before any DML (§2).
 4. **A and B are two dispositions of one model, not two times** (§0): `A` = physical
@@ -160,7 +160,75 @@ R6 (`CLAUDE.md` load-bearing commitments; `PRESCOPE_TRANSFER.md` §8): the cloud
 
 ---
 
-## 5. Disciplines to hold (do not break without writing the amendment first)
+## 5. Build grounding — reusable machinery (file:line, confirmed 2026-06-09)
+
+The engine for all three producers exists; what is unbuilt is the per-producer *ingest* and
+*canary*, not the plan/write/identity core. Anchors:
+
+| Need | Anchor |
+|---|---|
+| Movement axes (the resolved flow) | `DataOrigin` (`Model`/`Synthetic of profile`/`NoData`/`FromTarget`), `FlowSource` (`Env`/`Model`/`Synthetic`/`NoData`), `Rekey: string option`, `Reconcile: string list`, `Tables: string list` — `src/Projection.Pipeline/MovementSpec.fs` |
+| Direction-neutral plan | `DataLoadPlan.build : Catalog → TopologicalOrder → Map<SsKey, StaticRow list> → SurrogateRemapContext → DataLoadPlan` `src/Projection.Core/DataLoadPlan.fs:81` |
+| Write seam (sink load) | `writePlan` / `writePlanResumable` / `wipeFkOrdered` `src/Projection.Pipeline/TransferRun.fs:582-597`; realizations `Bulk.copyRows` / `Deploy.executeStream` |
+| Topo order (FK-first) | `TopologicalOrderPass.runWith TreatAsCycle catalog` `src/Projection.Pipeline/TransferRun.fs:546` |
+| Identity disposition | `IdentityDisposition { PreservedFromSource \| AssignedBySink \| ReconciledByRule }` + `ofKind` `src/Projection.Core/SurrogateRemap.fs:65-83`; `SurrogateRemapContext` + `capture` `:95-152` |
+| Re-key by business key (the `peer`/`golden` + P-3 path) | `Reconciliation.reconcileKind` `src/Projection.Core/Reconciliation.fs:42-84`; rules `MatchByColumn \| ManualOverride` (email = `MatchByColumn "Email"`) |
+| Fail-loud on dropped rows | `DroppedReferencesExit = 9`, `exitCodeForReport` `src/Projection.Pipeline/TransferRun.fs:408,428-429` (Wave-6 6.A.1, shipped) |
+| `synthetic` producer (BUILT) | `SyntheticData.generate` `src/Projection.Core/SyntheticData.fs`; `Transfer.runSynthetic` `TransferRun.fs`; `ProfileCodec` `src/Projection.Targets.Json/ProfileCodec.fs`; canary `tests/Projection.Tests/SyntheticCanaryTests.fs` |
+| Capability survey (the gate) | OPEN-2 instrument — `TRANSFER_ISOMORPHISM_SUBSTANTIATION.md` §2; probe **P10** (platform user-directory table readable / how keyed) gates the `peer`/`golden` re-key |
+| Data-level canary (the proof) | **planned** — `PRESCOPE_TRANSFER.md` §10 Slice C (the data extension of H-050); the schema sibling is the P-9 canary |
+
+---
+
+## 6. Build slices + acceptance, per producer
+
+Each producer is "done" when its data canary (§3) is green in the warm Docker pool. Listed
+in ascending build cost.
+
+### `synthetic` — **BUILT**
+Engine + durable codec + CLI + canary all green (`THE_SYNTHETIC_DATA_DESIGN.md`). No new work;
+the reference implementation of the producer shape.
+**Acceptance:** `SyntheticCanaryTests` (`π ∘ σ ≈ id`) green; privacy property green.
+
+### `peer` (the `golden` flow) — machinery mostly exists; wire + prove
+The re-key machinery is the same as P-3 (Dev→UAT); `golden` is the cloud→cloud instance into
+disposition A. Slices:
+- **PE-1 — user exclusion + email re-key on the `golden` flow.** Exclude the `dbo.User` family
+  from the copied set (it is absent from `tables`, so the engine must *not* attempt to load or
+  wipe it), and route the user-FK columns through `ReconciledByRule` with
+  `Reconciliation.reconcileKind` keyed `MatchByColumn "Email"` against the sink's user inventory.
+- **PE-2 — the `validate-user-map` gate (before any DML).** Every source user FK must resolve to a
+  valid sink user; an unmapped orphan fails loud (`DroppedReferencesExit`), no silent `NULL`, no
+  `FallbackToSystemUser` unless explicitly declared (P-3 faithfulness stakes).
+- **PE-3 — the re-key canary.** The `Order → User-by-email` join is identical across source and
+  sink **and** the source user surrogates are provably absent from the sink (proof the row is an
+  Update, not a re-import; P-REKEY).
+**Gate:** survey probe P10 (user-directory readable / how keyed).
+**Acceptance:** PE-3 green; a re-keyed row captures **one** CDC Update, never Delete+Insert.
+
+### `legacy` (the `preview` flow) — the hardest; foreign-schema ingest + named tolerances
+The legacy app's schema is **not** the model's schema, so identity and values must be mapped
+*through* the logical schema (by `SsKey` / business key), not read 1:1. Slices:
+- **LE-1 — foreign-schema ingest** that lifts the legacy substrate into the model's logical shape
+  by `SsKey` (drift-by-SsKey, `THE_SYNTHETIC_DATA_DESIGN.md` §6 — B-only columns get type-defaults;
+  legacy-only columns are ignored), with every translation that cannot be expressed faithfully
+  surfaced as a **named tolerance**, never a silent drop.
+- **LE-2 — the migration-preview canary**: read the legacy substrate, project into disposition A,
+  read back, assert the logical content round-trips **up to the named translation tolerances**.
+**Note:** `synthetic` profiled from the legacy substrate (`profile: onprem-legacy`) is the
+privacy-safe preview of this same data; `legacy` is the real-row preview. They share the sink and
+the disposition; they differ in whether real rows cross the boundary.
+**Acceptance:** LE-2 green; every foreign-schema erasure is a named `Tolerance`, none silent.
+
+### Exit criteria (the layer is execute-complete when)
+All three producer canaries green; the `golden` flow excludes users and re-keys by email under a
+passing P10; every cross-boundary erasure (foreign-schema translation, unmapped user) is named;
+all three stay inside R6 (preview/migration tooling; `--go` + `PROJECTION_ALLOW_EXECUTE` for any
+live write; the cloud sink is `grant: data`, DML-only).
+
+---
+
+## 7. Disciplines to hold (do not break without writing the amendment first)
 
 - **Direction is a binding, not an identity** (`PRESCOPE_TRANSFER.md` §0): a substrate is a
   `Source` or `Sink` *per Transfer*. Code that hard-codes "cloud" or "the producer" into a

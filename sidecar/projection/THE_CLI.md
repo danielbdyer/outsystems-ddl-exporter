@@ -38,6 +38,13 @@ input* — and a namespace's natural home is **config**, not a tree of verbs or 
 flags. So the named outcomes (lift-and-shift dev, golden-data into UAT, legacy preview)
 become **named flows** the operator writes once and runs trivially.
 
+The data feeding a flow comes from one of three **producers** — `synthetic` (generated from a profile),
+`legacy` (the foreign-schema on-prem app), and `peer` (a same-estate OutSystems cell, e.g. `cloud-qa`;
+formerly "sibling-cloud"). Writing *up* into a live cloud environment (`cloud-uat`) is **cloud insertion**:
+the `emit(B ⊖ A)` act rendering the model in its physical `OSUSR_*` disposition (A) rather than the
+logical on-prem one (B). The producer trinity, the `golden` user-exclusion-plus-re-key discipline, and the
+A/B-as-dispositions reframe are catalogued in `THE_DATA_PRODUCERS.md`.
+
 ---
 
 ## 2. The cost model — configure once, run rarely
@@ -142,7 +149,7 @@ A flow is a named `Move`: rows (and optionally schema) flow from a `from` enviro
     "dev":     { "from": "cloud-dev",     "to": "onprem-dev" },                            // lift-and-shift, unchanged
     "qa":      { "from": "cloud-qa",      "to": "onprem-qa"  },
     "uat":     { "from": "cloud-dev",     "to": "onprem-uat", "rekey": "file:users.csv" }, // dev-cloud → UAT, rekeyed
-    "golden":  { "from": "cloud-qa",      "to": "cloud-uat",  "tables": ["Customer","Order"] }, // cloud → cloud, subset
+    "golden":  { "from": "cloud-qa",      "to": "cloud-uat",  "tables": ["Customer","Order"] }, // peer cell → cloud; users excluded, their FKs re-keyed by email (THE_DATA_PRODUCERS §2)
     "preview": { "from": "onprem-legacy", "to": "cloud-uat" }                              // on-prem legacy → cloud
   }
 }
