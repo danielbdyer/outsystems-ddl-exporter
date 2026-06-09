@@ -90,6 +90,24 @@ let ``Tier-4 board: NOT YET names the runs-to-go`` () =
     Assert.Contains("NOT YET", text)
     Assert.Contains("3 green run", text)   // 10 - 7 = 3 to go
 
+[<Fact>]
+let ``Tier-4 board: the timeline reads the recent checks in words and names the present run`` () =
+    let r : RunLedger.Readiness =
+        { TotalRuns = 11; CanaryRuns = 11; ConsecutiveGreen = 6
+          LastCanary = Some "green"; Threshold = 10; Eligible = false }
+    let text = renderBoard r [ "green"; "green"; "red"; "green"; "green"; "green" ]
+    Assert.Contains("the last 6 check(s)", text)
+    Assert.Contains("1 diverged", text)
+    Assert.Contains("run 11, the present one", text)
+
+[<Fact>]
+let ``Tier-4 board: an all-green timeline says so plainly`` () =
+    let r : RunLedger.Readiness =
+        { TotalRuns = 5; CanaryRuns = 5; ConsecutiveGreen = 5
+          LastCanary = Some "green"; Threshold = 10; Eligible = false }
+    let text = renderBoard r [ "green"; "green"; "green" ]
+    Assert.Contains("all passed", text)
+
 // --- the Gate surface (INSTRUMENT slice 3) ---------------------------------
 // Discriminating predicate: a destructive refusal leads Bad and names the
 // drop-approval next action (the real --allow-drops / --declare-drop levers);

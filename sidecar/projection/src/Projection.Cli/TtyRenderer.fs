@@ -93,6 +93,18 @@ let buildReadinessView (r: RunLedger.Readiness) (recent: string list) (ledgerPat
         else
             View.Hero(View.Pending, sprintf "NOT YET %s %d green run(s) to cutover-ready" Theme.dot toGo)
     let history = if List.isEmpty recent then [] else [ View.Dots("history", recent) ]
+    // The timeline read in words — the dots' shape said plainly (§8 / Appendix
+    // A.5): how the recent checks landed, and which run is the present one.
+    let timeline =
+        if List.isEmpty recent then []
+        else
+            let n = List.length recent
+            let diverged = recent |> List.filter (fun v -> v <> "green") |> List.length
+            let shape =
+                if diverged = 0 then sprintf "the last %d check(s) all passed" n
+                else sprintf "the last %d check(s) %s %d passed %s %d diverged" n Theme.dot (n - diverged) Theme.dot diverged
+            let here = if r.TotalRuns > 0 then sprintf " %s run %d, the present one" Theme.dot r.TotalRuns else ""
+            [ View.Note(shape + here) ]
     let lastCanary = match r.LastCanary with Some c -> c | None -> "—"
     View.Doc(
         [ View.Blank
@@ -100,6 +112,7 @@ let buildReadinessView (r: RunLedger.Readiness) (recent: string list) (ledgerPat
           View.Blank
           View.Meter("cutover", r.ConsecutiveGreen, r.Threshold, sprintf "%d / %d green" r.ConsecutiveGreen r.Threshold) ]
         @ history
+        @ timeline
         @ [ View.Field(
               "runs",
               sprintf "%d total %s %d with a canary %s last %s" r.TotalRuns Theme.dot r.CanaryRuns Theme.dot lastCanary,

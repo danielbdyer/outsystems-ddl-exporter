@@ -246,3 +246,12 @@ let ``Watch progress: the estimate degrades honestly — none before the first i
 let ``Watch progress: the numerals are humane at scale`` () =
     let text = Watch.progressText { Done = 1420; Total = 3000; ElapsedMs = 1000L }
     Assert.Contains("1,420 of 3,000", text)
+
+[<Fact>]
+let ``Watch progress: an unknown total is a plain count-up — no fraction, no estimate`` () =
+    // a lazily-streamed producer can't count ahead; §13 says show the count
+    // without a misstated bar — "142 applied", never "142 of 0".
+    let text = Watch.progressText { Done = 142; Total = 0; ElapsedMs = 3000L }
+    Assert.Contains("142 applied", text)
+    Assert.DoesNotContain("of 0", text)
+    Assert.DoesNotContain("remaining", text)

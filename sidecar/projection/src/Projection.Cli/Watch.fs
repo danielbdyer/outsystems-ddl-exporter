@@ -177,11 +177,16 @@ module Watch =
             Some(sprintf "~%s remaining" (secondsText (int64 remainingMs)))
 
     /// The progress fragment for an active stage — `142 of 300 · ~8s remaining`
-    /// (humane numerals, the estimate only when it can be computed honestly).
+    /// (humane numerals, the estimate only when it can be computed honestly). A
+    /// non-positive `Total` is an unknown denominator (a lazily-streamed producer
+    /// that cannot count ahead) — then it is a plain count-up, `142 applied`, no
+    /// fraction, no estimate (§13 — show the count without a misstated bar).
     let progressText (p: Progress) : string =
-        match etaText p with
-        | Some eta -> sprintf "%s of %s · %s" (Theme.humane p.Done) (Theme.humane p.Total) eta
-        | None     -> sprintf "%s of %s" (Theme.humane p.Done) (Theme.humane p.Total)
+        if p.Total <= 0 then sprintf "%s applied" (Theme.humane p.Done)
+        else
+            match etaText p with
+            | Some eta -> sprintf "%s of %s · %s" (Theme.humane p.Done) (Theme.humane p.Total) eta
+            | None     -> sprintf "%s of %s" (Theme.humane p.Done) (Theme.humane p.Total)
 
     /// The voiced text of a `Voice` statement code, filled from the payload. The
     /// board reuses the §13 stage copy (`<stage>.started` gerund; the resultative
