@@ -18,7 +18,7 @@ A two-wave parallel-agent execution slice landed on branch
 changes behavior-preserving / additive; full pure pool **2943 passed / 0
 failed**; each commit SSH-signed.
 
-**SHIPPED (10 items):**
+**SHIPPED (16 items):**
 - **B5** `ChannelDiff<'change>` unifies the 4 channel-diff records (alias-contained) — `1a4ad1b`.
 - **B2** `LineageDiagnostics.touchedEpilogue` combinator, 5 analytics passes — `c1dc7ad`. *(3 passes intentionally excluded: different return shape / conditional emission.)*
 - **B7** `Deploy.fs` decomposed into `DockerDaemon.fs` / `DatabaseNameGenerator.fs` / `DeployConnectionString.fs` + facade (1531→1315 LOC) — `90d9bee`.
@@ -33,15 +33,17 @@ failed**; each commit SSH-signed.
 - **A7** `ModuleFilter` gets its first production caller (`ModuleFilterBinding.fromConfig` applied in `Pipeline.readConfigModel`) — `a317c07`.
 - **D3** setup probe surfaces full grant set (INSERT/CREATE/DELETE/ALTER), not just `alterGranted` — `a317c07`.
 - **D4** `--from empty` genesis-force (`MigrationRun.previewFromStoreForcing`) — `a317c07`.
+- **A1** transfer refusal exit single-sourced through `Preflight.refusalOf` — `24c956b`. *Decision: exit 3 was the latent bug (`classify` already maps `cdcTrackedSink → 9`, the integrity-refusal class); routing the refusal arm through the seam makes it 9, all other codes byte-identical. The successful-with-drops branch untouched.*
+- **A5** rename-aware migrate-with-data — `38be8f5`. *Decision: data source is at schema A; `executeWithData`/`executeWithDataAndRecord` now route the data leg through `Transfer.runWithRenames`/`runReconcilingWithRenames` (`sourceContract = A`, `sinkContract = B`, renameMap from `CatalogDiff.between A B`). Empty rename map ⇒ identity repoint ⇒ byte-identical straight load. One pre-existing `executeWithData` canary was re-staged from B→A to match the settled premise; MigrationCanary 20/20 green on the integrated tree.*
 
 **RESOLVED-as-decision (operator, this session):**
 - **B4** retry → **DEFERRED**. The "exception leak" premise was stale (already caught by `ReadSide.read`'s outer try/with); only the retry gap remains. Adding retry needs a structural home for the primitive (`Retry.fs` is in `Adapters.OssysSql`; `Adapters.Sql` refs only `Core`). Re-open under a real transient-failure incident.
 - **A4** cross-schema FK diagnostic → **CLOSED on substance**. The `Unreadable` reason is named, classified, unit-tested (not silent); the stderr-vs-structured-channel detail isn't worth rippling `read`'s return shape into 4 consumers.
 
-**STILL OPEN — surfaced as semantic forks the CLI agent refused to guess (need an operator decision):**
-- **A1** single-source the transfer exit map via `Preflight.classify`. **Divergence found:** `runTransfer` hand-derives `transfer.cdcTrackedSink → exit 3`, but `classify` returns **exit 9** (`CdcTrackedSink`). Reverted to preserve current behavior. *Decide:* is exit 3 a latent bug (then route through `classify`, exit→9) or intended (leave the hand-derivation)?
-- **A5** rename-aware migrate-with-data. **Fork:** `executeWithData` assumes the data source is already at contract **B**; `runWithRenames` re-points an A→B map and is correct only if the source is at **A**. Unconditional wiring would double-apply renames. *Decide:* in Dev→UAT migrate-with-data, is the data source at old schema A or already at B (or either → needs a flag)?
-- **A7 polarity (flagged, not blocking):** `model.includeSystemModules/includeInactiveModules` default `false` while `ModuleFilter.empty` identity is `true`. The agent made filtering opt-in (effective only alongside a non-empty `model.modules`) to keep defaults byte-identical. *Decide later* if you want the flags to act globally with no `modules` named (a deliberate default-behavior change).
+**STILL OPEN — flagged for a later operator decision (not blocking):**
+- **A7 polarity:** `model.includeSystemModules/includeInactiveModules` default `false` while `ModuleFilter.empty` identity is `true`. The agent made filtering opt-in (effective only alongside a non-empty `model.modules`) to keep defaults byte-identical. *Decide later* if you want the flags to act globally with no `modules` named (a deliberate default-behavior change).
+
+*(A1 and A5 — previously the two open semantic forks — were decided and shipped this session; see the SHIPPED list above.)*
 
 Remaining backlog after this slice: the un-shipped Cluster-B/§E/§F items below (e.g. `Emitter.perKind` is done; **B8** binding-resolution dedup, **B9** IRBuilders α′ tail, the speculative §E/§F, the §C modeling decisions) plus A1/A5 above.
 
