@@ -832,26 +832,22 @@ module SsdtDdlEmitter =
     let emitSlicesWith (overlay: DecisionOverlay) : Emitter<SsdtFile> = fun catalog ->
         use _ = Bench.scope "emit.ssdt.emitSlices"
         let modules = moduleByKindKey catalog
-        let allKinds, targetByKey, pkAttrByKey = buildLookups catalog
+        let _allKinds, targetByKey, pkAttrByKey = buildLookups catalog
         // Per-kind iterMap — surfaces P50/P95/P99 of per-kind emission
         // cost (the dominant emit.ssdt work at production scale is
         // proportional to the kind count). Slice A.4.7'-prelude
         // .perf-sweep-6 instrumentation gap-fill.
-        let slices =
-            allKinds
-            |> Bench.iterMap "emit.ssdt.emitSlices.kind" (fun k ->
-                match Map.tryFind k.SsKey modules with
-                | Some m ->
-                    k.SsKey, kindToSsdtFile overlay targetByKey pkAttrByKey m k
-                | None ->
-                    // Unreachable: `Catalog.allKinds` walks
-                    // `c.Modules |> List.collect (fun m -> m.Kinds)`;
-                    // every yielded Kind has an owning Module. The
-                    // defensive `invalidOp` makes the unreachability
-                    // structural.
-                    invalidOp (sprintf "SsdtDdlEmitter.emitSlices: kind %A has no owning module (unreachable; Catalog.allKinds invariant)" k.SsKey))
-            |> Map.ofList
-        ArtifactByKind.create catalog slices
+        ArtifactByKind.perKindBenched "emit.ssdt.emitSlices.kind" catalog (fun k ->
+            match Map.tryFind k.SsKey modules with
+            | Some m ->
+                kindToSsdtFile overlay targetByKey pkAttrByKey m k
+            | None ->
+                // Unreachable: `Catalog.allKinds` walks
+                // `c.Modules |> List.collect (fun m -> m.Kinds)`;
+                // every yielded Kind has an owning Module. The
+                // defensive `invalidOp` makes the unreachability
+                // structural.
+                invalidOp (sprintf "SsdtDdlEmitter.emitSlices: kind %A has no owning module (unreachable; Catalog.allKinds invariant)" k.SsKey))
 
     /// Π port realization (the `empty`-overlay default). Byte-identical to
     /// pre-Wave-2 emission. See `emitSlicesWith`.

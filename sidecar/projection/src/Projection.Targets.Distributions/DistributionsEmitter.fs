@@ -212,12 +212,7 @@ module DistributionsEmitter =
     /// re-parsing.
     let emitSlices : EmitterWithProfile<JsonNode> = fun catalog profile ->
         use _ = Bench.scope "emit.distributions.emitSlices"
-        let allKinds = Catalog.allKinds catalog
-        let slices =
-            allKinds
-            |> List.map (fun k -> k.SsKey, kindJsonNode profile k)
-            |> Map.ofList
-        ArtifactByKind.create catalog slices
+        ArtifactByKind.perKind catalog (kindJsonNode profile)
 
     /// Emit the distribution report as JSON text. Takes the enriched
     /// IR (`Catalog × Profile`) and produces a deterministic string —

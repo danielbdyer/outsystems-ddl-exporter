@@ -81,6 +81,37 @@ module ArtifactByKind =
         | k :: _, _ -> Error (KindNotProduced k)
         | [], k :: _ -> Error (UnexpectedKind k)
 
+    /// Build the artifact by rendering every catalog kind. Captures the
+    /// recurring fold every sibling Π hand-rolled: walk `Catalog.allKinds`,
+    /// key each kind's rendered element by its `SsKey`, and pass the
+    /// resulting `Map` through the `create` smart constructor. The total
+    /// keyset is `Catalog.allKinds`'s SsKey set by construction, so the
+    /// strict-equality contract holds with no missing/extra keys; the
+    /// `Result` therefore only ever surfaces a `RenderFailed`-class error
+    /// if `render` itself fails (it does not here — `render` is total).
+    ///
+    /// Concept-shaped: this IS the per-kind projection of a Catalog into
+    /// an `ArtifactByKind`, the artifact's defining construction. Use it
+    /// wherever a sibling emitter produces exactly one element per kind.
+    let perKind (catalog: Catalog) (render: Kind -> 'element)
+        : Result<ArtifactByKind<'element>, EmitError> =
+        Catalog.allKinds catalog
+        |> List.map (fun k -> k.SsKey, render k)
+        |> Map.ofList
+        |> create catalog
+
+    /// `perKind` with per-kind bench instrumentation. The `label` scopes
+    /// each kind's render (drop-in for `Bench.iterMap`) so emitters that
+    /// time per-kind work keep their existing observability while sharing
+    /// the projection. Output is identical to `perKind`; only the bench
+    /// table differs (each kind's render is timed under `label`).
+    let perKindBenched (label: string) (catalog: Catalog) (render: Kind -> 'element)
+        : Result<ArtifactByKind<'element>, EmitError> =
+        Catalog.allKinds catalog
+        |> Bench.iterMap label (fun k -> k.SsKey, render k)
+        |> Map.ofList
+        |> create catalog
+
     /// Project the underlying `Map<SsKey, 'a>`. Read-only; callers
     /// must not reconstruct an `ArtifactByKind` from this — the smart
     /// constructor is the only path that re-validates.
