@@ -41,6 +41,7 @@
     <Compile Include="VoiceTotalityTests.fs" />
     <Compile Include="WatchTests.fs" />
     <Compile Include="CapabilitySurveyTests.fs" />
+    <Compile Include="CapabilitySurveyTotalityTests.fs" />
     <Compile Include="FullExportCliTests.fs" />
     <Compile Include="FullExportStoreTests.fs" />
     <Compile Include="SsKeyTests.fs" />
