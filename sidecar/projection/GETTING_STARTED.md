@@ -179,42 +179,71 @@ the secret never enters the process environment. A value that *looks* like an in
 (contains `;`, `password`, `pwd=`) is **refused at parse time** (`cli.config.envSecretInline`,
 exit 6) — the committed config carries only addressing.
 
-### Worked example — wire `cloud-uat` with a `file:` ref
+### Worked example — the `golden` flow, end to end
 
-The config names the reference (committed); a gitignored file holds the secret:
+`golden` promotes a subset of cloud-QA's data into cloud-UAT, re-keying every user FK to UAT's
+own users (no user rows are copied). It touches three live connections — the **model read**
+(`modelOssys`), the **source** cell (`cloud-qa`), and the **sink** (`cloud-uat`) — so all three
+get a `file:` ref. A realistic `projection.json`:
 
 ```jsonc
 // projection.json
-"cloud-uat": { "access": "direct", "conn": "file:./secrets/cloud-uat.conn", "grant": "data" }
+{
+  "modelOssys": "file:./secrets/ossys.conn",
+  "environments": {
+    "cloud-qa":  { "access": "direct", "conn": "file:./secrets/cloud-qa.conn",  "rendition": "physical" },
+    "cloud-uat": { "access": "direct", "conn": "file:./secrets/cloud-uat.conn", "grant": "data", "rendition": "physical" }
+  },
+  "flows": {
+    "golden": {
+      "from": "cloud-qa", "to": "cloud-uat",
+      "tables": ["Customer", "Order", "OrderLine"],
+      "rekey":  "file:./secrets/users.csv"
+    }
+  }
+}
 ```
+
+Create the secrets it names. Each `*.conn` holds **exactly** one connection string (the *whole
+file*, trimmed — no comment lines):
 
 ```bash
 mkdir -p secrets && chmod 700 secrets
-cp examples/secret.conn.example secrets/cloud-uat.conn   # the template is a single line
-$EDITOR secrets/cloud-uat.conn                            # replace it with the real string
-chmod 600 secrets/cloud-uat.conn
+cp examples/secret.conn.example secrets/ossys.conn      # the cloud OutSystems model read
+cp examples/secret.conn.example secrets/cloud-qa.conn   # the peer source cell
+cp examples/secret.conn.example secrets/cloud-uat.conn  # the UAT sink
+$EDITOR secrets/*.conn                                  # replace each REPLACE_ME, e.g.:
+#   Server=tcp:cloud-uat.example.com,1433;Database=outsystems;User Id=svc;Password=…;Encrypt=true
+chmod 600 secrets/*.conn
 ```
 
-`secrets/cloud-uat.conn` then holds **exactly** the connection string and nothing else (the
-*whole file* is the value, so no comment lines):
+The `rekey` map is a CSV — `table,sourceKey,assignedKey`, one row per user (the source cell's
+User surrogate → the matching UAT User; `table` is the physical User table). A leading `table,`
+header line is optional:
 
+```csv
+table,source,assigned
+OSUSR_ABC_USER,280,18
+OSUSR_ABC_USER,281,19
 ```
-Server=tcp:cloud-uat.example.com,1433;Database=outsystems;User Id=svc;Password=…;Encrypt=true
+```bash
+$EDITOR secrets/users.csv     # gitignored under secrets/
 ```
 
-Now `projection golden` reads `./secrets/cloud-uat.conn` directly — **no `source`, no env var.**
-Repeat one `secrets/<name>.conn` per `direct` environment, plus `secrets/ossys.conn` for the
-live model read. The `secrets/` directory and every `*.conn` are `.gitignore`d, so credentials
-never enter the repository.
-
-**Multi-environment** is just one reference per place — the full six-environment estate (all
-`file:` refs) is `examples/projection.sample.json`:
+Then preview, then apply:
 
 ```bash
-cp examples/projection.sample.json ./projection.json
-mkdir -p secrets   # then create secrets/ossys.conn, secrets/cloud-qa.conn, secrets/cloud-uat.conn, secrets/onprem-legacy.conn
-projection         # lists golden / preview / publish / synth
+projection golden                                  # preview — reads A from cloud-uat, shows B ⊖ A, writes nothing
+PROJECTION_ALLOW_EXECUTE=1 projection golden --go  # apply — re-keys the user FKs; user rows are never copied
 ```
+
+Every secret is read straight from `./secrets/` at run time — **no `source`, no env vars.** The
+committed `projection.json` names only `file:` references; `secrets/` and `*.conn` are
+`.gitignore`d, so credentials never enter the repository.
+
+The full six-environment estate (publish / golden / preview / synth, all `file:` refs) is
+`examples/projection.sample.json` — `cp` it to `./projection.json` and create one
+`secrets/<name>.conn` per `direct` environment it names.
 
 > Prefer environment variables? Use `env:<VAR>` refs and export them per shell
 > (`export CLOUD_UAT_CONN="…"`) — one inventory, but it needs the export step and puts the
