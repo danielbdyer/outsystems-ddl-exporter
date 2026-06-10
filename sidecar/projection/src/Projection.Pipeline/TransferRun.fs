@@ -137,6 +137,24 @@ module Transfer =
     [<Literal>]
     let private CaptureStagingTable = "[#__projection_capture]"
 
+    /// Drain the MERGE OUTPUT reader into `(source raw, assigned raw)` pairs.
+    /// Module-level tail-recursive task continuation rather than a
+    /// `while … let!` loop — the loop-with-`let!` shape is not statically
+    /// compilable under Release optimization (FS3511; the codebase's standing
+    /// posture, cf. `Ingestion.collectInOrder` / `Preflight.readGrantRows`).
+    let rec private readCapturePairs
+        (reader: SqlDataReader)
+        (acc: (string * string) list)
+        : Task<(string * string) list> =
+        task {
+            let! has = reader.ReadAsync()
+            if has then
+                let src = if reader.IsDBNull 0 then "" else string (reader.GetValue 0)
+                let assigned = if reader.IsDBNull 1 then "" else string (reader.GetValue 1)
+                return! readCapturePairs reader ((src, assigned) :: acc)
+            else return List.rev acc
+        }
+
     let private insertCaptureChunk
         (sink: SqlConnection)
         (kind: Kind)
@@ -187,19 +205,44 @@ module Transfer =
                         idCol
                 cmd.CommandTimeout <- 0
                 use! reader = cmd.ExecuteReaderAsync()
-                let acc = System.Collections.Generic.List<string * string>()
-                let mutable go = true
-                while go do
-                    let! has = reader.ReadAsync()
-                    if has then
-                        let src = if reader.IsDBNull 0 then "" else string (reader.GetValue 0)
-                        let assigned = if reader.IsDBNull 1 then "" else string (reader.GetValue 1)
-                        acc.Add(src, assigned)
-                    else go <- false
-                return List.ofSeq acc
+                return! readCapturePairs reader []
             finally
                 (Deploy.executeBatch sink (sprintf "DROP TABLE %s;" CaptureStagingTable))
                     .GetAwaiter().GetResult()
+        }
+
+    /// Stage-and-capture every chunk of one kind's rows, folding each chunk's
+    /// `(source → assigned)` pairs into the remap. Module-level tail-recursive
+    /// task continuation (the `for … let!` chunk loop is not statically
+    /// compilable under Release optimization — FS3511, the standing posture).
+    /// An empty or NULL source key is inserted but never captured; a
+    /// duplicate capture keeps the first binding (the smart constructor's
+    /// invariant decides).
+    let rec private captureChunks
+        (sink: SqlConnection)
+        (kind: Kind)
+        (identityAttr: Attribute)
+        (deferred: Set<Name>)
+        (kindKey: SsKey)
+        (remap: SurrogateRemapContext)
+        (chunks: StaticRow list list)
+        : Task<SurrogateRemapContext> =
+        task {
+            match chunks with
+            | [] -> return remap
+            | chunk :: rest ->
+                let! pairs = insertCaptureChunk sink kind identityAttr deferred chunk
+                let folded =
+                    pairs
+                    |> List.fold
+                        (fun ctx (srcVal, assignedVal) ->
+                            if srcVal <> "" && assignedVal <> "" then
+                                match SurrogateRemapContext.capture kindKey (SourceKey.ofString srcVal) (AssignedKey.ofString assignedVal) ctx with
+                                | Ok r    -> r
+                                | Error _ -> ctx
+                            else ctx)
+                        remap
+                return! captureChunks sink kind identityAttr deferred kindKey folded rest
         }
 
     /// Realize the plan onto an open Sink connection, returning any
@@ -274,13 +317,10 @@ module Transfer =
                                 do! Bulk.copyRowsSinkMinted sink kind.Physical
                                         (toCellRowsExcludingIdentity kind load.DeferredFkColumns remapped.Rows)
                             | Some idAttr ->
-                                for chunk in remapped.Rows |> List.chunkBySize CaptureChunkSize do
-                                    let! pairs = insertCaptureChunk sink kind idAttr load.DeferredFkColumns chunk
-                                    for (srcVal, assignedVal) in pairs do
-                                        if srcVal <> "" && assignedVal <> "" then
-                                            match SurrogateRemapContext.capture load.Kind (SourceKey.ofString srcVal) (AssignedKey.ofString assignedVal) remap with
-                                            | Ok r    -> remap <- r
-                                            | Error _ -> ()
+                                let! captured =
+                                    captureChunks sink kind idAttr load.DeferredFkColumns load.Kind remap
+                                        (remapped.Rows |> List.chunkBySize CaptureChunkSize)
+                                remap <- captured
                             | None ->
                                 // ofKind only returns AssignedBySink for an IDENTITY PK, so this is
                                 // unreachable; fall back to the bulk path rather than drop the rows.
