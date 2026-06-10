@@ -233,8 +233,15 @@ module Transfer =
             let mutable remap = SurrogateRemapContext.empty
             let mutable writeSkips : (SsKey * UnresolvedReference) list = []
 
-            let repoint (kind: Kind) (rows: StaticRow list) : RemappedRows =
-                let fkTargets = SurrogateRemap.fkColumnsTargeting assignedBySinkKinds kind
+            // Phase 1 excludes the deferred (cycle) FK columns from the re-point:
+            // they are inserted as NULL, and their targets' captures are not
+            // complete until the whole kind has loaded — resolving them here
+            // would wrongly drop rows. Phase 2 re-points them against the
+            // COMPLETED remap (`excluding = Set.empty`).
+            let repoint (excluding: Set<Name>) (kind: Kind) (rows: StaticRow list) : RemappedRows =
+                let fkTargets =
+                    SurrogateRemap.fkColumnsTargeting assignedBySinkKinds kind
+                    |> Map.filter (fun col _ -> not (Set.contains col excluding))
                 if Map.isEmpty fkTargets then { Rows = rows; Skipped = [] }
                 else SurrogateRemap.remapRowFks fkTargets remap rows
 
@@ -251,7 +258,7 @@ module Transfer =
                     match Catalog.tryFindKind load.Kind catalog with
                     | None      -> ()
                     | Some kind ->
-                        let remapped = repoint kind load.Rows
+                        let remapped = repoint load.DeferredFkColumns kind load.Rows
                         writeSkips <- writeSkips @ (remapped.Skipped |> List.map (fun u -> load.Kind, u))
                         match load.Disposition with
                         | IdentityDisposition.AssignedBySink ->
@@ -283,13 +290,40 @@ module Transfer =
                 loaded <- loaded + 1
                 LogSink.recordStageProgress "load" loaded loadTotal loadSw.ElapsedMilliseconds
 
+            // Phase 2 — re-point the cycle-deferred FK columns against the
+            // COMPLETED remap. For an `AssignedBySink` kind the WHERE keys on
+            // the ASSIGNED PK (the sink replaced the source PK at insert; the
+            // captured remap supplies the translation — the 6.A.2 lift,
+            // operator-authorized 2026-06-10). A deferred FK value with no
+            // captured target is a NAMED phase-2 erasure: the row stands (it
+            // was inserted in phase 1 with the column NULL) but the reference
+            // is lost — surfaced in `SkippedReferences`, never silent. A row
+            // whose own PK has no capture was dropped (and named) in phase 1;
+            // it has no sink row to update, so it is passed over here.
             for load in plan.Loads do
                 if not (Set.isEmpty load.DeferredFkColumns) && not (List.isEmpty load.Rows) then
                     match Catalog.tryFindKind load.Kind catalog with
                     | None      -> ()
                     | Some kind ->
-                        let rows2 = (repoint kind load.Rows).Rows
-                        let updates = rows2 |> List.choose (phase2UpdateSql kind load.DeferredFkColumns)
+                        let remapped2 = repoint Set.empty kind load.Rows
+                        writeSkips <-
+                            writeSkips
+                            @ (remapped2.Skipped
+                               |> List.filter (fun u -> Set.contains u.Column load.DeferredFkColumns)
+                               |> List.map (fun u -> load.Kind, u))
+                        let rowsForUpdate =
+                            match load.Disposition, kind.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey && a.IsIdentity) with
+                            | IdentityDisposition.AssignedBySink, Some idAttr ->
+                                remapped2.Rows
+                                |> List.choose (fun row ->
+                                    match Map.tryFind idAttr.Name row.Values with
+                                    | Some srcVal when srcVal <> "" ->
+                                        SurrogateRemapContext.tryFindAssigned load.Kind (SourceKey.ofString srcVal) remap
+                                        |> Option.map (fun assigned ->
+                                            { row with Values = Map.add idAttr.Name (AssignedKey.value assigned) row.Values })
+                                    | _ -> None)
+                            | _ -> remapped2.Rows
+                        let updates = rowsForUpdate |> List.choose (phase2UpdateSql kind load.DeferredFkColumns)
                         if not (List.isEmpty updates) then
                             do! Deploy.executeBatch sink (String.concat "\n" updates)
 
@@ -397,28 +431,16 @@ module Transfer =
                 return skips
         }
 
-    // -- 6.A.2 / 6.A.3: surrogate-capture refusals (fail-loud, not silent) ---
+    // -- 6.A.3: surrogate-capture refusal (fail-loud, not silent) -------------
     //
-    // Two `AssignedBySink` shapes the per-row capture path cannot honor. Each
-    // is detected from the built plan + the schema contract and refused at
-    // Execute time rather than silently mis-keyed — *total decisions, named
-    // skips*. Both are pure decisions (no connection) so the data canary and
-    // the fast-pool unit test witness the SAME refusal (the 6.A.1 pattern).
-
-    /// 6.A.2 — `AssignedBySink` kinds that carry cycle-deferred FK columns.
-    /// `phase2UpdateSql` keys the Phase-2 re-point on the *source* PK value;
-    /// for an `AssignedBySink` kind the Sink minted a fresh surrogate, so the
-    /// source PK no longer exists and the UPDATE matches zero rows — the
-    /// deferred FK is left silently wrong. Refuse rather than emit a no-op
-    /// UPDATE. (The correct fix — re-point Phase-2 via the captured remap AND
-    /// key the WHERE on the assigned PK — is the named follow-on.)
-    let cyclicAssignedBySinkKinds (plan: DataLoadPlan) : SsKey list =
-        plan.Loads
-        |> List.choose (fun l ->
-            if l.Disposition = IdentityDisposition.AssignedBySink
-               && not (Set.isEmpty l.DeferredFkColumns)
-            then Some l.Kind
-            else None)
+    // The `AssignedBySink` shape the capture path cannot honor, detected from
+    // the built plan + the schema contract and refused at Execute time rather
+    // than silently mis-keyed — *total decisions, named skips*. A pure
+    // decision (no connection) so the data canary and the fast-pool unit test
+    // witness the SAME refusal (the 6.A.1 pattern). The former 6.A.2 refusal
+    // (cyclic AssignedBySink) was LIFTED 2026-06-10, operator-authorized:
+    // Phase 2 now re-points the deferred FK through the completed remap AND
+    // keys its WHERE on the assigned PK, so the shape loads correctly.
 
     /// 6.A.3 — `AssignedBySink` kinds whose primary key spans more than one
     /// column. `insertCaptureRow` captures a single `IsPrimaryKey && IsIdentity`
@@ -437,9 +459,9 @@ module Transfer =
 
     /// The first Execute-time refusal a built plan triggers, or `None` when
     /// the plan is cleanly executable. Folds the existing unsatisfiable-cycle
-    /// check together with the 6.A.2 / 6.A.3 surrogate-capture refusals so the
+    /// check together with the 6.A.3 surrogate-capture refusal so the
     /// orchestrator has one pre-write gate and the order of precedence is
-    /// explicit (structural unsatisfiability first, then the capture shapes).
+    /// explicit (structural unsatisfiability first, then the capture shape).
     let executeGate (catalog: Catalog) (plan: DataLoadPlan) : ValidationError option =
         if not (DataLoadPlan.isSatisfiable plan) then
             Some (ValidationError.create
@@ -448,22 +470,14 @@ module Transfer =
                         "%d non-deferrable cycle FK(s) — cannot execute a clean two-phase load"
                         plan.UnbreakableCycleFks.Length))
         else
-            match cyclicAssignedBySinkKinds plan with
+            match compositeAssignedBySinkKinds catalog plan with
             | k :: _ ->
                 Some (ValidationError.create
-                        "transfer.cyclicAssignedBySink"
+                        "transfer.compositeSurrogateUnsupported"
                         (sprintf
-                            "Kind %s is AssignedBySink with cycle-deferred FK column(s); the Phase-2 re-point keys on the source PK the Sink replaced, so it would match zero rows. Refusing rather than emit a no-op UPDATE."
+                            "Kind %s is AssignedBySink with a multi-column primary key; surrogate capture is single-column and would truncate the composite key. Refusing rather than half-capture it."
                             (SsKey.rootOriginal k)))
-            | [] ->
-                match compositeAssignedBySinkKinds catalog plan with
-                | k :: _ ->
-                    Some (ValidationError.create
-                            "transfer.compositeSurrogateUnsupported"
-                            (sprintf
-                                "Kind %s is AssignedBySink with a multi-column primary key; surrogate capture is single-column and would truncate the composite key. Refusing rather than half-capture it."
-                                (SsKey.rootOriginal k)))
-                | [] -> None
+            | [] -> None
 
     /// AC-I5 — pre-write validate-user-map. A reconciling Transfer whose
     /// user-map leaves Source identities unmatched would, post-write, surface

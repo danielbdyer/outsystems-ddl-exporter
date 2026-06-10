@@ -208,6 +208,44 @@ module private ReverseLegFixtures =
             return c1 + c2 + c3 + c4
         }
 
+    /// The 6.A.2-lift reverse-leg fixture: one self-referencing IDENTITY
+    /// kind (the operator's User.ManagerId shape), rendered at both
+    /// renditions. The nullable self-FK defers to Phase 2, which keys on
+    /// the ASSIGNED PK through the captured remap (operator-authorized
+    /// 2026-06-10).
+    let selfFkModel : Catalog =
+        let employee =
+            { Kind.create (kKey "Employee") (nm "Employee")
+                (TableId.create "dbo" "OSUSR_L3_EMPLOYEE" |> Result.value)
+                [ { Attribute.create (aKey "Employee" "Id") (nm "Id") Integer with
+                      Column       = ColumnRealization.create "ID" false |> Result.value
+                      IsPrimaryKey = true
+                      IsIdentity   = true
+                      IsMandatory  = true }
+                  { Attribute.create (aKey "Employee" "FullName") (nm "FullName") Text with
+                      Column      = ColumnRealization.create "FULLNAME" false |> Result.value
+                      IsMandatory = true }
+                  { Attribute.create (aKey "Employee" "ManagerId") (nm "ManagerId") Integer with
+                      Column = ColumnRealization.create "MANAGER_ID" true |> Result.value } ] with
+                References =
+                    [ Reference.create (rKey "Employee" "Manager") (nm "EmployeeManager")
+                        (aKey "Employee" "ManagerId") (kKey "Employee") ] }
+        Catalog.create
+            [ { SsKey = kKey "SelfFkModule"; Name = nm "L3SelfFk"; Kinds = [ employee ]
+                IsActive = true; ExtendedProperties = [] } ] []
+        |> Result.value
+
+    /// VP's manager (CEO, 1002) lands AFTER VP in PK order — a forward
+    /// reference only Phase 2 can satisfy; Ghost's manager (9999) does not
+    /// exist — the named phase-2 erasure (the row stands, the reference is
+    /// lost, the skip is named).
+    let selfFkSeed =
+        "ALTER TABLE [dbo].[Employee] NOCHECK CONSTRAINT ALL; " +
+        "SET IDENTITY_INSERT [dbo].[Employee] ON; " +
+        "INSERT INTO [dbo].[Employee] ([Id],[FullName],[ManagerId]) VALUES " +
+        "(1000,N'VP',1002),(1001,N'Mgr',1000),(1002,N'CEO',NULL),(1003,N'Ghost',9999); " +
+        "SET IDENTITY_INSERT [dbo].[Employee] OFF;"
+
     /// A login + db-user carrying EXACTLY the cloud sink's `grant: data`
     /// envelope (database-scope SELECT, INSERT, UPDATE, DELETE — no ALTER,
     /// no ddl_admin), created by the fixture's admin connection. Returns
@@ -394,6 +432,53 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                         try System.IO.File.Delete srcFile with _ -> ()
                         try System.IO.File.Delete sinkFile with _ -> ()
                 })
+
+    [<Fact>]
+    member _.``6.A.2 lifted on the reverse leg: a self-FK IDENTITY kind loads B->A — the forward manager reference resolves in phase 2 and the orphan manager is a NAMED erasure`` () =
+        if not (ReverseLegFixtures.skipIfNoDocker "L3SelfFk") then () else
+        let model = ReverseLegFixtures.selfFkModel
+        let logicalContract = CatalogRendition.logical model
+        let physicalContract = CatalogRendition.physical model
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "L3SelfFkSrc" (fun src _ ->
+                task {
+                    do! Deploy.executeBatch src (SsdtDdlEmitter.statements logicalContract |> Render.toText)
+                    do! Deploy.executeBatch src ReverseLegFixtures.selfFkSeed
+                    return!
+                        fixture.WithEphemeralDatabase "L3SelfFkSink" (fun sink _ ->
+                            task {
+                                do! Deploy.executeBatch sink (SsdtDdlEmitter.statements physicalContract |> Render.toText)
+
+                                let! reportR =
+                                    Transfer.runWithRenames Transfer.Execute true src sink logicalContract physicalContract
+                                let report = ReverseLegFixtures.value reportR
+
+                                // Ghost's manager (9999) is the NAMED phase-2
+                                // erasure: the row stands, the reference is lost,
+                                // and the run maps to exit 9 without --allow-drops.
+                                Assert.Contains(report.SkippedReferences, fun (owner, r: UnresolvedReference) ->
+                                    owner = ReverseLegFixtures.kKey "Employee"
+                                    && r.Target = ReverseLegFixtures.kKey "Employee"
+                                    && r.UnresolvedSource = SourceKey.ofString "9999")
+                                Assert.Equal(Transfer.DroppedReferencesExit, Transfer.exitCodeForReport false report)
+
+                                // All four rows landed with sink-minted keys.
+                                let! rows = ReverseLegFixtures.countRows sink "[dbo].[OSUSR_L3_EMPLOYEE]"
+                                Assert.Equal(4, rows)
+                                let! preserved = ReverseLegFixtures.countRows sink "[dbo].[OSUSR_L3_EMPLOYEE] WHERE [ID] >= 1000"
+                                Assert.Equal(0, preserved)
+
+                                // The manager chain by name: the forward VP->CEO
+                                // reference resolved in phase 2; Ghost's manager
+                                // is NULL (the named erasure, never a wrong key).
+                                let! chain =
+                                    ReverseLegFixtures.pairs sink
+                                        ("SELECT e.[FULLNAME], m.[FULLNAME] FROM [dbo].[OSUSR_L3_EMPLOYEE] e " +
+                                         "LEFT JOIN [dbo].[OSUSR_L3_EMPLOYEE] m ON e.[MANAGER_ID] = m.[ID] ORDER BY e.[FULLNAME];")
+                                Assert.Equal<(string * string option) list>(
+                                    [ ("CEO", None); ("Ghost", None); ("Mgr", Some "VP"); ("VP", Some "CEO") ], chain)
+                            })
+                }))
 
     [<Fact>]
     member this.``re-run honesty: a second Incremental Execute into a populated sink DUPLICATES AssignedBySink rows (the named open question, pinned)`` () =

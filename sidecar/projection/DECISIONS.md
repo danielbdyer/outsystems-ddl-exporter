@@ -21304,3 +21304,55 @@ model). Two-consumer extraction fired in `RunFaces`: the 6.A.1 drop-narration bl
 `narrateDropExit`, shared by the peer and reverse-leg faces. Also fixed: `scripts/test.sh`
 failed-name extraction used `grep -B1` on the TRX and could blame the textually-preceding
 (passed) test; testName and outcome share one line, so the context flag is gone.
+
+## 2026-06-10 — 6.A.2 LIFTED (operator-authorized): cyclic AssignedBySink loads via a phase-2 re-point keyed on the ASSIGNED PK; the set-based capture lane replaces per-row INSERT…OUTPUT
+
+Two engine changes on the transfer write path, driven by the operator's
+288M-row reverse-leg estate (≤4h window; huge FK-referenced tables; lift
+authorized; chunk-level resume requested — the resume model remains open,
+see the LE-3 report addendum).
+
+**(1) The 6.A.2 refusal is lifted.** `transfer.cyclicAssignedBySink`
+(DECISIONS 6.A.2; `executeGate`) refused any `AssignedBySink` kind carrying
+cycle-deferred FK columns because `phase2UpdateSql` keyed its WHERE on the
+source PK the sink had replaced. The fix the refusal itself named is now
+built: Phase 1 re-points EXCLUDING the deferred columns (their targets'
+captures are incomplete mid-kind; resolving early would wrongly drop rows)
+and inserts them as NULL; Phase 2 re-points against the COMPLETED remap and,
+for `AssignedBySink` kinds, translates each row's PK through the captured
+remap so the UPDATE keys on the ASSIGNED PK. A deferred FK value with no
+captured target is a NAMED phase-2 erasure (the row stands, the reference is
+lost, surfaced in `SkippedReferences` → exit 9), never a silent NULL. A row
+whose own PK has no capture was dropped (and named) in phase 1 and is passed
+over. Witnesses: the rewritten 6.A.2 canary (source keys at 1000+, the
+manager chain joined by NAME, a deliberate FORWARD reference so a
+phase-1-only re-point cannot pass), the reverse-leg self-FK canary (the
+orphan-manager named erasure), the refusal-totality property (the lifted
+shape gates None), and the pure execute-gate pin. The self-referencing
+IDENTITY shape (`User.ManagerId`, `Employee.CreatedBy`) no longer refuses
+the estate.
+
+**(2) The capture lane is set-based.** Per-row `INSERT … OUTPUT` measured
+~271 rows/sec end-to-end (Tier-4 bench, warm container) — 12+ days for
+288M rows. The `VALUES`-form MERGE measured ~5.7k rows/sec, parse-bound at
+the table-value constructor's 1000-row cap. The shipped lane, per 50k-row
+chunk: bulk-copy into a session-scoped staging table whose columns are
+cloned FROM THE SINK TABLE (`SELECT TOP 0 … INTO`; **ISNULL strips the
+IDENTITY property through SELECT INTO — a CASE wrapper does NOT: it
+constant-folds and the property propagates, silently minting staging keys;
+probed live 2026-06-10**), then ONE `MERGE … OUTPUT S.[__SRC_KEY],
+INSERTED.<pk>` per chunk. tempdb rights are implicit for every principal,
+so the lane fits the DML-only `grant: data` envelope (the DML-only
+principal canary proves it). Sibling lane: an `AssignedBySink` kind no FK
+targets has no remap consumer and rides `Bulk.copyRowsSinkMinted`
+(KeepNulls only — no KeepIdentity, no implicit ALTER). Measured: ~27k
+rows/sec sustained at 100k rows ⇒ 288M ≈ 3.0h, inside the window, under
+the worst-case all-referenced shape. A36 holds: realization-layer swap,
+same `SurrogateRemapContext` feed, no IR change.
+
+Re-open triggers: platform triggers on real OSUSR tables force the
+`OUTPUT INTO` form (survey P5); a real-wire bench materially below ~20k
+rows/sec re-opens chunk sizing / parallel per-table loading; the remap's
+in-memory Map (string-keyed) at hundreds of millions of FK-target rows
+re-opens the packed-int64 / sink-resident keymap design (named open —
+the streaming + chunk-resume program, LE-3 report addendum §scale).

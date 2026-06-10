@@ -283,17 +283,21 @@ let ``remap algebra: remapRowFks re-points exactly the FK columns whose targets 
 
 // -- (d) refusal totality --------------------------------------------------------
 
-/// The three unsatisfiable shapes, injected one at a time into a generated
-/// clean acyclic surround. The law: `executeGate` lands on the EXACT named
-/// code for the injected pathology — and on None for the clean control.
+/// The unsatisfiable shapes, injected one at a time into a generated clean
+/// acyclic surround. The law: `executeGate` lands on the EXACT named code
+/// for the injected pathology — and on None for the controls. The cyclic
+/// AssignedBySink shape is a CONTROL since the 6.A.2 lift
+/// (operator-authorized 2026-06-10): phase 2 re-points the deferred FK
+/// through the completed remap keyed on the ASSIGNED PK, so the shape
+/// loads instead of refusing.
 type private Pathology =
     | NonNullableCycle        // transfer.unbreakableCycleFk
-    | CyclicAssignedBySink    // transfer.cyclicAssignedBySink
+    | CyclicAssignedBySink    // LIFTED — gates None (loads via assigned-PK phase 2)
     | CompositeIdentityPk     // transfer.compositeSurrogateUnsupported
     | CleanControl            // executeGate = None
 
 [<Fact>]
-let ``refusal totality: every generated unsatisfiable shape lands on its named refusal code — never on success, never on an unnamed crash`` () =
+let ``refusal totality: every generated unsatisfiable shape lands on its named refusal code — never on success, never on an unnamed crash; the LIFTED cyclic shape gates None`` () =
     let genCase =
         gen {
             let! pathology =
@@ -309,8 +313,8 @@ let ``refusal totality: every generated unsatisfiable shape lands on its named r
                     // A NON-nullable self-FK: phase 1 cannot NULL it.
                     [ buildKind ix false [] (Some false) 0 ]
                 | CyclicAssignedBySink ->
-                    // IDENTITY PK + nullable self-FK: deferral meets the
-                    // sink-replaced source PK (the operator's User.ManagerId).
+                    // IDENTITY PK + nullable self-FK (the operator's
+                    // User.ManagerId shape) — supported since the lift.
                     [ buildKind ix true [] (Some true) 0 ]
                 | CompositeIdentityPk ->
                     let extra =
@@ -328,7 +332,7 @@ let ``refusal totality: every generated unsatisfiable shape lands on its named r
         let refusal = Transfer.executeGate catalog plan |> Option.map (fun e -> e.Code)
         match pathology with
         | NonNullableCycle     -> refusal = Some "transfer.unbreakableCycleFk"
-        | CyclicAssignedBySink -> refusal = Some "transfer.cyclicAssignedBySink"
+        | CyclicAssignedBySink -> refusal = None
         | CompositeIdentityPk  -> refusal = Some "transfer.compositeSurrogateUnsupported"
         | CleanControl         -> refusal = None)
     |> Check.QuickThrowOnFailure

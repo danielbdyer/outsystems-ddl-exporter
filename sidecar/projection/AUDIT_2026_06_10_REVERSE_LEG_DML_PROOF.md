@@ -162,3 +162,61 @@ estate:
 3. **Accept or prioritize** the G1/G2 reserved preflights (object-scope
    grant probe; source-shape drift) — both are partial-write/unnamed-crash
    hazards on the real leg, neither blocks the mock-scale proof.
+
+---
+
+## Addendum (2026-06-10, evening) — the 288M-row program: F1 lifted, F2 superseded, the remaining scale work named
+
+The operator sharpened the premise: **~288M rows**, a **≤4h window**
+(≥20k rows/sec sustained), the **huge tables ARE FK-referenced** (the
+worst remap shape), the **F1 lift authorized**, **chunk-level resume**
+requested. Two engine changes landed the same day (see `DECISIONS
+2026-06-10 — 6.A.2 LIFTED…`); the rest is a named program.
+
+**F1 — LIFTED.** Phase 1 re-points excluding the deferred columns; Phase 2
+re-points through the completed remap and keys its UPDATE on the ASSIGNED
+PK. The self-FK IDENTITY estate loads; an orphaned deferred reference is a
+NAMED phase-2 erasure (row stands, reference lost, exit 9). Witnesses: the
+rewritten 6.A.2 canary (forward reference + colliding key spaces — no
+phase-1-only or collision alibi), the reverse-leg self-FK canary, the
+refusal-totality property (the lifted shape gates None), the pure gate pin.
+
+**F2 — SUPERSEDED by the set-based lane.** Per 50k-row chunk: bulk-copy
+into a session staging table cloned from the sink (`SELECT TOP 0 …
+INTO`; ISNULL strips IDENTITY — a CASE wrapper constant-folds and
+propagates it, a silent mis-correlation the keystone canary caught), then
+one `MERGE … OUTPUT` per chunk. Kinds nothing references skip capture
+entirely (`Bulk.copyRowsSinkMinted`). Measured on the warm container:
+
+| Lane | rows/sec (end-to-end) | 288M extrapolation |
+|---|---|---|
+| per-row `INSERT…OUTPUT` (baseline) | ~271 | ~12 days |
+| 1000-row `VALUES` MERGE (refuted — parse-bound at the TVC cap) | ~5,700 | ~14 h |
+| **bulk-staged `MERGE…OUTPUT`, 50k chunks (shipped)** | **~27,000** | **~3.0 h** |
+
+Inside the window, under the worst-case all-referenced shape, through the
+DML-only principal (the staging lane is tempdb — implicit rights). The
+real-wire number will be lower; re-bench over the actual network before
+trusting the 3h figure (re-open trigger named in DECISIONS).
+
+**The remaining scale program (open, in priority order):**
+
+1. **Streaming ingestion + bounded memory.** `Ingestion.collectInOrder`
+   materializes every table's rows in client memory — at 288M rows that is
+   tens-to-hundreds of GB. The write seam must consume per-kind
+   `AsyncStream` batches (ingest → repoint → stage → MERGE per chunk,
+   constant memory). This is the largest remaining engineering slice.
+2. **The remap representation.** With huge FK-REFERENCED tables, the
+   `SurrogateRemapContext` (string-keyed F# Map) holds an entry per row of
+   every referenced kind — at 10⁸ entries the packed `Dictionary<int64,
+   int64>` (realization-layer, A36) or a sink-resident keymap joined
+   server-side is required. Decide after the estate survey says how many
+   of the 288M rows live in FK-target tables.
+3. **Chunk-level resume** (operator-requested): durable per-chunk markers
+   + capture replay semantics. Today's honest modes are per-plan marker
+   (G10) or WipeAndLoad; per-TABLE markers are the cheap intermediate.
+4. **Parallel per-table loading** of FK-independent kinds (the topo order
+   gives the safe wavefronts) — only if the real-wire bench misses 20k.
+5. **Survey items that gate the design:** platform triggers on OSUSR
+   tables (would force `OUTPUT INTO`, P5); P7 batch ceilings; the estate
+   row-count/FK-fan-in survey (drives #2).
