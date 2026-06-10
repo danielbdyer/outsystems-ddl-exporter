@@ -332,7 +332,11 @@ module Config =
 
     let private defaultEmission : EmissionSection = {
         Ssdt                  = true
-        Dacpac                = true
+        // Dacpac defaults OFF: the flag was inert until the dacpac write leg
+        // landed (the A-cluster dacpac wire), so `false` preserves the
+        // observable default bundle byte-for-byte; an explicit
+        // `emission: { "dacpac": true }` opts into the compiled package.
+        Dacpac                = false
         Json                  = true
         Distributions         = true
         StaticSeeds           = true

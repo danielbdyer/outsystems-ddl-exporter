@@ -96,6 +96,13 @@ module Compose =
             /// deduplicated by `Path` and emitted here. Written as
             /// `suggest-config.json` alongside the SSDT bundle.
             SuggestConfigJson : JsonNode
+            /// The compiled `.dacpac` package (`DacpacEmitter.emit` over the
+            /// emitted catalog), present exactly when the operator opted in via
+            /// `emission.dacpac: true`. `None` (the default) writes no package —
+            /// byte-identical to the pre-wire bundle. Raw DacFx bytes:
+            /// content-equal across runs, NOT byte-stable (slice ζ deferral —
+            /// see `DacpacEmitter`'s header).
+            Dacpac : byte[] option
             /// The typed SSDT manifest built during projection (the same
             /// value serialized into `manifest.json` within `SsdtBundle`).
             /// Surfaced here so consumers — `runWithConfig`'s `RunReport`,
@@ -209,6 +216,10 @@ module Compose =
         /// stream; operator reviews and applies to their config file.
         [<Literal>]
         let suggestConfig = "suggest-config.json"
+        /// The compiled DacFx package (`emission.dacpac: true`); the
+        /// sibling of `projection.json` on the deployable axis.
+        [<Literal>]
+        let dacpac = "projection.dacpac"
 
     /// Aggregate the SSDT bundle's per-table SQL files into one
     /// concatenated SQL string (manifest.json excluded; iterates the
@@ -386,6 +397,10 @@ module Compose =
           RemediationSql    = ""
           SummaryText       = ""
           SuggestConfigJson = emptyJsonNode ()
+          // Conditional (operator-gated) artifact — populated at the
+          // `runWithConfigCore` seam when `emission.dacpac` opts in, not by an
+          // unconditional `EmitStep`.
+          Dacpac            = None
           Manifest          = ManifestEmitter.build ctx.EmittedCatalog
           Trail             = ctx.Trail
           PassEntries       = ctx.PassEntries }
@@ -736,13 +751,23 @@ module Compose =
         // H-032 — config-edit suggestion document (JSON).
         let suggestConfigStaging = Path.Combine(stagingDir, ArtifactPath.suggestConfig)
         writeFile suggestConfigStaging (outputs.SuggestConfigJson.ToJsonString(jsonOpts))
+        // The compiled .dacpac (operator-gated; absent by default). A binary
+        // artifact: written directly rather than through the text `FileWriter`
+        // seam, inside the same staging directory so the atomic-replace
+        // contract covers it.
+        let dacpacFinalPaths =
+            match outputs.Dacpac with
+            | None -> []
+            | Some bytes ->
+                File.WriteAllBytes(Path.Combine(stagingDir, ArtifactPath.dacpac), bytes)
+                [ Path.Combine(outputDir, ArtifactPath.dacpac) ]
         // Final-path projection (under the eventual outputDir, post-swap)
         let jsonFinal          = Path.Combine(outputDir, ArtifactPath.json)
         let distributionsFinal = Path.Combine(outputDir, ArtifactPath.distributions)
         let remediationFinal   = Path.Combine(outputDir, ArtifactPath.remediation)
         let summaryFinal       = Path.Combine(outputDir, ArtifactPath.summary)
         let suggestConfigFinal = Path.Combine(outputDir, ArtifactPath.suggestConfig)
-        bundleFinalPaths @ dataFinalPaths @ [ jsonFinal; distributionsFinal; remediationFinal; summaryFinal; suggestConfigFinal ]
+        bundleFinalPaths @ dataFinalPaths @ dacpacFinalPaths @ [ jsonFinal; distributionsFinal; remediationFinal; summaryFinal; suggestConfigFinal ]
 
     let private safeCleanupStaging (stagingDir: string) : unit =
         if Directory.Exists stagingDir then
@@ -1020,6 +1045,21 @@ module Compose =
                 | Ok policy, Ok overrides, Ok folders, Ok groups ->
                     let outputs, finalState =
                         projectWithStateWithPins pins policy profile EmissionPolicy.empty folders groups renamedCatalog
+                    // `emission.dacpac: true` — compile the .dacpac over the SAME
+                    // emitted catalog the SSDT step projected (the post-chain
+                    // catalog under the identical platform-auto-index filter).
+                    // Conditional by operator opt-in; a DacFx failure fails the
+                    // run loud, never a silent bundle-without-package.
+                    let dacpacR : Result<byte[] option> =
+                        if not cfg.Emission.Dacpac then Result.success None
+                        else
+                            EmissionPolicy.filterPlatformAutoIndexes EmissionPolicy.empty finalState.Catalog
+                            |> DacpacEmitter.emit
+                            |> Result.map Some
+                    match dacpacR with
+                    | Error errors -> Result.failure errors
+                    | Ok dacpac ->
+                    let outputs = { outputs with Dacpac = dacpac }
                     let diagnostics =
                         SpecialCircumstancesDiagnostics.emit overrides finalState
                         @ InactiveAttributeDiagnostics.emit profile

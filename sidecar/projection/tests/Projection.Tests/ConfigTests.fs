@@ -50,9 +50,11 @@ let ``Config.parse: minimal config with only model.path succeeds`` () =
     Assert.False(cfg.Model.IncludeInactiveModules)
     Assert.True(cfg.Model.OnlyActiveAttributes)
     Assert.Equal("out/", cfg.Output.Dir)
-    // Emission defaults: all ten gates open
+    // Emission defaults: every gate open EXCEPT dacpac — the compiled
+    // package is operator opt-in (`emission.dacpac: true`), so the default
+    // bundle stays byte-identical to the pre-wire output.
     Assert.True(cfg.Emission.Ssdt)
-    Assert.True(cfg.Emission.Dacpac)
+    Assert.False(cfg.Emission.Dacpac)
     Assert.True(cfg.Emission.Validations)
     // Profile path is None when section absent
     Assert.True(cfg.Profile.Path.IsNone)
