@@ -45,6 +45,51 @@ failed**; each commit SSH-signed.
 
 *(A1 and A5 — previously the two open semantic forks — were decided and shipped this session; see the SHIPPED list above.)*
 
+---
+
+## ⓪′ Execution status — 2026-06-10 session (the remaining-shelf sweep)
+
+Six wires landed on branch `claude/fsharp-projection-review-vrbtpr`, closing
+the residuals the 2026-06-09 slice left open. Pure pool **3009 passed / 0
+failed** at every commit; Docker pool run before push.
+
+**SHIPPED (6 items):**
+- **A1 (residual)** `Program.migratePreflights` routed through the one
+  mandatory `Preflight.all` (G0), mirroring the transfer Execute path; the
+  permission gate sequences on the connection gate's hot task (one `cnn`,
+  no concurrent commands); codes/precedence/exit-7 preserved — `3915c28`.
+  **A1 is now fully CLOSED.**
+- **D8** `--seed <n>` / `--scale <f>` per-run synthesis knobs (the design's
+  §7 vocabulary; the doc's "--rows N" phrasing was loose) →
+  `FlowRunOpts → MovementSpec → LoadOpts → SyntheticLoadRun`; malformed
+  values are named refusals; non-synthetic actions note, never drop — `e1f5a09`. **CLOSED.**
+- **Dacpac wire** `emission.dacpac` honored: `runWithConfigCore` compiles
+  the package over the SAME emitted catalog the SSDT step projects;
+  `projection.dacpac` staged in the atomic write. Default flipped to
+  `false` (the flag was inert at `true`, so the default bundle stays
+  byte-identical; explicit opt-in grows the artifact set) — `6a5be78`.
+  The E4 "conditional emitter executed at its own site" now exists for dacpac.
+- **J2 (follow-on)** per-flow `"reconcile": ["<table>:<col>"]` config field
+  (parse-validated via `TransferSpec.parseReconcileSpec`, rendered by the
+  declarative dual, threaded through `resolveFlowSpec`) — the golden flow's
+  User-by-email re-key is declaratively expressible — `8eff5e3`. **CLOSED.**
+- **A3 (CLI/config exposure)** `emission.deleteScope { terms: [{column,
+  value}] }` → Core `DeleteScopePolicy` on the Emission axis → composer
+  threads the plain value (A18 holds) → per-kind
+  `DeleteScopePolicy.resolveFor` (the arm renders exactly when every term
+  column is an attribute of the kind; a kind outside the scope keeps the
+  upsert-only MERGE — the faithful rendering, not a skip) — `b66bee4`.
+  **A3 is now fully CLOSED** (AC-D7 D7.1–D7.3 witnessed at the emitter).
+- **Manifest wire** `shape: manifest` (the S6.1 skeleton precedent) →
+  `PlanAction.EmitManifest` → `Compose.runManifestOnlyFromCatalogWith`:
+  the shaped full chain runs; ONLY `manifest.json` lands, via a
+  single-file write that leaves a previously published bundle standing — `bedbb40`.
+
+**Still open after this sweep:** the A7 polarity decision (unchanged);
+B8/B9 refactor tails; §C modeling decisions; D5–D7 instrument slices;
+J3 residual (reverse-leg contract source) + J5 (real-UAT execute, OPEN-2);
+§E/§F speculative items.
+
 Remaining backlog after this slice: the un-shipped Cluster-B/§E/§F items below (e.g. `Emitter.perKind` is done; **B8** binding-resolution dedup, **B9** IRBuilders α′ tail, the speculative §E/§F, the §C modeling decisions) plus A1/A5 above.
 
 ---
