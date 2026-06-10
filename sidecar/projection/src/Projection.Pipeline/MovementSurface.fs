@@ -215,6 +215,23 @@ module ProjectionConfig =
             | other ->
                 Result.failureOf (err "cli.config.flowScopeUnknown" (sprintf "flow '%s' scope '%s' is not schema | data | both." name other))
 
+    /// The bundle composition this move emits (S6.1): an optional per-flow
+    /// `"shape": "bundle" | "ssdt" | "skeleton"`. Absent = `None` (the `Bundle`
+    /// default, resolved later — so a folder model flow still emits the full
+    /// pass-chain bundle by default; `skeleton` selects the pre-overlay emit).
+    /// Closed; an unknown value is a NAMED refusal (`cli.config.flowShapeUnknown`),
+    /// never silent (mirrors `parseFlowScope`).
+    let private parseFlowShape (name: string) (el: JsonElement) : Result<Shape option> =
+        match getString el "shape" with
+        | None -> Result.success None
+        | Some raw ->
+            match raw.ToLowerInvariant() with
+            | "bundle"   -> Result.success (Some Shape.Bundle)
+            | "ssdt"     -> Result.success (Some Shape.Ssdt)
+            | "skeleton" -> Result.success (Some Shape.Skeleton)
+            | other ->
+                Result.failureOf (err "cli.config.flowShapeUnknown" (sprintf "flow '%s' shape '%s' is not bundle | ssdt | skeleton." name other))
+
     let private parseFlow (name: string) (el: JsonElement) : Result<Flow> =
         if el.ValueKind <> JsonValueKind.Object then
             Result.failureOf (err "cli.config.flowShape" (sprintf "flow '%s' must be a JSON object." name))
@@ -231,11 +248,12 @@ module ProjectionConfig =
                                 | Some s when not (String.IsNullOrWhiteSpace s) -> yield s.Trim()
                                 | _ -> () ]
                     | _ -> []
-                match parseFlowScope name el with
-                | Error es -> Result.failure es
-                | Ok scope ->
+                match parseFlowScope name el, parseFlowShape name el with
+                | Error es, _ | _, Error es -> Result.failure es
+                | Ok scope, Ok shape ->
                     Result.success
-                        { Name = name; From = parseFlowSource el; To = toEnv; Rekey = getString el "rekey"; Tables = tables; Scope = scope }
+                        { Name = name; From = parseFlowSource el; To = toEnv; Rekey = getString el "rekey"
+                          Tables = tables; Scope = scope; Shape = shape }
 
     /// Parse the `projection.json` document text into a `ProjectionConfig`.
     /// Aggregates every per-environment / per-flow error so the operator
@@ -359,6 +377,15 @@ module ProjectionConfig =
         | Scope.Data   -> "data"
         | Scope.All    -> "both"
 
+    /// The bundle-composition field (dual of `parseFlowShape`): the canonical
+    /// token. Emitted only when `Some` — the `Bundle` default round-trips through
+    /// the absent arm (mirrors how `scope` omits its default).
+    let private renderShape (s: Shape) : string =
+        match s with
+        | Shape.Bundle   -> "bundle"
+        | Shape.Ssdt     -> "ssdt"
+        | Shape.Skeleton -> "skeleton"
+
     /// Render one `Environment` to its `JsonObject` — the dual of
     /// `parseEnvironment`. `access` + its companion (`out` for bundle, `conn`
     /// for direct; docker is bare) reconstruct the reach; `grant`/`store`/
@@ -389,6 +416,7 @@ module ProjectionConfig =
          | FlowSource.Synthetic profile  -> setStr o "from" "synthetic"; setOptStr o "profile" profile
          | FlowSource.Env e              -> setStr o "from" e)
         setOptStr o "scope" (flow.Scope |> Option.map renderScope)
+        setOptStr o "shape" (flow.Shape |> Option.map renderShape)
         setOptStr o "rekey" flow.Rekey
         (if not (List.isEmpty flow.Tables) then
             let a = JsonArray()
@@ -819,6 +847,11 @@ module Command =
                         // projection the engine carries.
                         Scope    = (flow.Scope |> Option.defaultWith (fun () ->
                                         match toEnv.Grant with Some Grant.DataOnly -> Scope.Data | _ -> Scope.All))
+                        // S6.1 (decision 2) — the bundle composition this move
+                        // emits. `None` = the `Bundle` default (byte-identical:
+                        // a folder model flow keeps emitting the full pass-chain
+                        // bundle); `skeleton` makes `EmitSkeleton` flow-reachable.
+                        Shape    = (flow.Shape |> Option.defaultValue Shape.Bundle)
                         // S4b (G2) — the DERIVED direction (a binding from
                         // renditions + origin, never parsed). `planMovement`
                         // routes `UpLegacy` to the reverse-leg runner.

@@ -83,7 +83,7 @@ let private genVariant : Gen<ProjectionConfig * Flow> =
             | OriginDraw.NoData    -> FlowSource.NoData, [ sink ]
             | OriginDraw.Synthetic -> FlowSource.Synthetic (Some "file:p.profile.json"), [ sink ]
             | OriginDraw.FromEnv   -> FlowSource.Env "src", [ src; sink ]
-        let flow = { Name = "v"; From = from; To = "sink"; Rekey = None; Tables = []; Scope = scope }
+        let flow = { Name = "v"; From = from; To = "sink"; Rekey = None; Tables = []; Scope = scope; Shape = None }
         let cfg =
             { ProjectionConfig.empty with
                 Environments = envs |> List.map (fun e -> e.Name, e) |> Map.ofList
@@ -164,25 +164,27 @@ let ``A44 clause 1 — renderEnvironment ∘ parseEnvironment = id on every reac
             | Error es -> Assert.Fail(sprintf "round-trip failed for %A: %A" env es)
 
 [<Fact>]
-let ``A44 clause 1 — renderFlow ∘ parseFlow = id on every from × scope × tables`` () =
+let ``A44 clause 1 — renderFlow ∘ parseFlow = id on every from × scope × shape × tables`` () =
     let froms =
         [ FlowSource.Model; FlowSource.NoData
           FlowSource.Synthetic (Some "file:p.json"); FlowSource.Synthetic None
           FlowSource.Env "src" ]
     let tableSets = [ []; [ "Customer" ]; [ "Customer"; "Order" ] ]
+    let shapeOpts = [ None; Some Shape.Bundle; Some Shape.Ssdt; Some Shape.Skeleton ]
     // `sink` + `src` always present so a `from: env` flow resolves its endpoints.
     let baseEnvs =
         [ directEnv "sink" None None; directEnv "src" None None ]
         |> List.map (fun e -> e.Name, e) |> Map.ofList
     for from in froms do
       for scope in allScopeOpts do
-        for tables in tableSets do
-          for rekey in [ None; Some "file:users.csv" ] do
-            let flow = { Name = "f"; From = from; To = "sink"; Rekey = rekey; Tables = tables; Scope = scope }
-            let cfg = { ProjectionConfig.empty with Environments = baseEnvs; Flows = Map.ofList [ "f", flow ] }
-            match ProjectionConfig.parse (ProjectionConfig.render cfg) with
-            | Ok back -> Assert.Equal<Flow>(flow, Map.find "f" back.Flows)
-            | Error es -> Assert.Fail(sprintf "round-trip failed for %A: %A" flow es)
+        for shape in shapeOpts do
+          for tables in tableSets do
+            for rekey in [ None; Some "file:users.csv" ] do
+              let flow = { Name = "f"; From = from; To = "sink"; Rekey = rekey; Tables = tables; Scope = scope; Shape = shape }
+              let cfg = { ProjectionConfig.empty with Environments = baseEnvs; Flows = Map.ofList [ "f", flow ] }
+              match ProjectionConfig.parse (ProjectionConfig.render cfg) with
+              | Ok back -> Assert.Equal<Flow>(flow, Map.find "f" back.Flows)
+              | Error es -> Assert.Fail(sprintf "round-trip failed for %A: %A" flow es)
 
 // ---------------------------------------------------------------------------
 // CLAUSE 3 — DIRECTION DERIVED: `Direction` is a pure function of
@@ -235,7 +237,7 @@ let ``A44 clause 3 — the reverse leg (B→A) routes to RunReverseLeg; a peer (
                     [ directEnv "src" None (Some srcR); directEnv "sink" (Some Grant.DataOnly) (Some sinkR) ]
                     |> List.map (fun e -> e.Name, e) |> Map.ofList
                 Flows = Map.empty }
-        let flow = { Name = "leg"; From = FlowSource.Env "src"; To = "sink"; Rekey = None; Tables = []; Scope = Some Scope.Data }
+        let flow = { Name = "leg"; From = FlowSource.Env "src"; To = "sink"; Rekey = None; Tables = []; Scope = Some Scope.Data; Shape = None }
         cfg, flow
     let legacyCfg, legacyFlow = mk Rendition.Logical Rendition.Physical
     Assert.Equal(MovementDirection.UpLegacy, (Command.resolveFlowSpec legacyCfg legacyFlow commit |> mustOk).Direction)
@@ -273,19 +275,17 @@ let private actionTag (action: PlanAction) : string =
 
 /// The model-bearing `PlanAction` constructors `planMovement ∘ resolveFlowSpec`
 /// must span (THE_CONFIG_CONTROL_PLANE §2 directional table; `MovementSpec.fs`
-/// §226-287). Three are the NAMED RESIDUAL (`residualActions` below), EXCLUDED
-/// from the must-reach set — not silently dropped:
+/// §226-287). `EmitSkeleton` joined the must-reach set at S6.1 (the flow `shape`
+/// field — operator decision 2). Two remain the NAMED RESIDUAL (`residualActions`
+/// below), EXCLUDED from the must-reach set — not silently dropped:
 ///   • `PublishBundle`/`PublishAndLoad` — reachable only via
-///     `ModelSource.ConfigFile`, which `resolveFlowSpec` deliberately does not
-///     emit (G3, a pending operator decision).
-///   • `EmitSkeleton` — reachable only via `Shape.Skeleton`, and the flow
-///     vocabulary has NO `shape`/`skeleton` field; `resolveFlowSpec` leaves
-///     `Shape` at its `Bundle` default, so a folder model flow always lands on
-///     `EmitBundle`. The `planMovement` sweep reaches it by injecting the shape
-///     directly; the flow resolver cannot express it.
+///     `ModelSource.ConfigFile`, which `resolveFlowSpec` emits when the flow
+///     targets a provenance-bearing place (S6.2, operator decision 1). The
+///     reachability harvest exercises them through a dedicated cfg variant
+///     (`publishCfg` below); the bare-model spanning estate leaves them excluded.
 let private mustReachActions : Set<string> =
     Set.ofList
-        [ "EmitBundle"; "DeployDocker"; "PreviewSchema"
+        [ "EmitSkeleton"; "EmitBundle"; "DeployDocker"; "PreviewSchema"
           "Transfer"; "RunReverseLeg"; "SynthesizeAndLoad"; "MigrateWithData"; "Migrate" ]
 
 /// The named A44 residual — the model-bearing arms reachable in the engine
@@ -293,7 +293,7 @@ let private mustReachActions : Set<string> =
 /// a structurally-visible exclusion with a pending wire-vs-remove decision,
 /// never a silent pass. See the `Skip` stubs below for the per-arm rationale.
 let private residualActions : Set<string> =
-    Set.ofList [ "PublishBundle"; "PublishAndLoad"; "EmitSkeleton" ]
+    Set.ofList [ "PublishBundle"; "PublishAndLoad" ]
 
 /// A representative estate spanning every reachable model-bearing action: a
 /// down-leg model publish (bundle/docker/live), a synthetic mint, a peer data
@@ -313,7 +313,7 @@ let private spanningCfg : ProjectionConfig =
         "publish-bundle": { "from": "model",     "to": "bundle" },
         "publish-docker": { "from": "model",     "to": "lab" },
         "publish-live":   { "from": "model",     "to": "sink-full" },
-        "skeleton":       { "from": "none",       "to": "bundle", "scope": "schema" },
+        "skeleton":       { "from": "none",       "to": "bundle", "scope": "schema", "shape": "skeleton" },
         "synth":          { "from": "synthetic", "to": "sink-phys", "profile": "file:p.json" },
         "peer":           { "from": "src-phys",  "to": "sink-phys", "scope": "data" },
         "legacy":         { "from": "src-logi",  "to": "sink-phys", "scope": "data" },
@@ -358,17 +358,18 @@ let ``A44 residual — PublishBundle/PublishAndLoad are flow-reachable`` () =
     Assert.Contains("PublishBundle", reached)
     Assert.Contains("PublishAndLoad", reached)
 
-[<Fact(Skip = "A44 residual G4-adjacent: EmitSkeleton reachable only via Shape.Skeleton, and the flow vocabulary has NO `shape`/`skeleton` field — resolveFlowSpec leaves Shape at its Bundle default, so a folder model flow always lands on EmitBundle. The planMovement sweep reaches it by injecting the shape directly. Add-a-flow-`shape`-field vs route-skeleton-via-another-axis is a pending operator decision (THE_CONFIG_CONTROL_PLANE §3; `osm emit --skeleton-only` is today's skeleton surface, outside the flow resolver).")>]
+[<Fact>]
 let ``A44 residual — EmitSkeleton is flow-reachable`` () =
-    // STRUCTURALLY VISIBLE: the skeleton (pre-overlay) emit is reachable in the
-    // engine but the flow resolver has no input that selects `Shape.Skeleton`.
-    // Flip Skip→Fact in the commit that adds a flow `shape` field (or removes
-    // the skeleton arm from the flow-folder path) — the operator's call.
+    // RESOLVED (S6.1, operator decision 2 — add a flow `shape` field): the flow
+    // vocabulary now carries an optional `"shape": "bundle" | "ssdt" | "skeleton"`;
+    // `resolveFlowSpec` resolves it to `MovementSpec.Shape`, so a folder flow with
+    // `"shape": "skeleton"` lands on `EmitSkeleton`. The `skeleton` flow in
+    // `spanningCfg` exercises it; `EmitSkeleton` is now in `mustReachActions`.
     let reached = reachableActions spanningCfg
     Assert.Contains("EmitSkeleton", reached)
 
 [<Fact>]
-let ``A44 clause 2 — the residual is exactly PublishBundle/PublishAndLoad/EmitSkeleton (the gate names what it excludes)`` () =
+let ``A44 clause 2 — the residual is exactly PublishBundle/PublishAndLoad (the gate names what it excludes)`` () =
     // Pins the residual set precisely, so a future wiring that makes one of these
     // flow-reachable (or a deletion) forces this test to be revisited rather
     // than letting the exclusion silently widen. `mustReach` ⊎ `residual` is the

@@ -191,6 +191,11 @@ type Flow =
         /// = the grant-derived default (back-compat: a `data`-granting target
         /// implies `Scope.Data`, else `Scope.All`). Resolved in `resolveFlowSpec`.
         Scope  : Scope option
+        /// The bundle composition this move emits (S6.1) — `Bundle` / `Ssdt` /
+        /// `Skeleton`. `None` = the `Bundle` default (a folder model flow emits
+        /// the full pass-chain bundle; `skeleton` selects the pre-overlay emit).
+        /// Resolved in `resolveFlowSpec` to `MovementSpec.Shape`.
+        Shape  : Shape option
     }
 
 /// The per-run intent that finishes a resolved flow (THE_CLI.md §3) — the
