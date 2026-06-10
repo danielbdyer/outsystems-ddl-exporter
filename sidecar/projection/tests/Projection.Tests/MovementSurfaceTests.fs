@@ -238,6 +238,67 @@ let ``reverseLegOf: a logical source to a non-live (bundle) physical sink is NOT
     let flow = Map.find "bundled" reverseCfg.Flows
     Assert.Equal(None, Command.reverseLegOf reverseCfg flow)
 
+// -- S4b: the DERIVED MovementDirection (G2) ---------------------------------
+// Direction is a BINDING: derived in resolveFlowSpec from (source rendition,
+// sink rendition, content origin), never a parsed knob. It reuses the same
+// `reverseLegOf` predicate for the B→A leg, so the classifier and the router
+// can never drift.
+
+let private previewOpts : FlowRunOpts =
+    { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false }
+
+let private dirOf (cfg: ProjectionConfig) name =
+    match Command.resolveFlowSpec cfg (Map.find name cfg.Flows) previewOpts with
+    | Ok s -> s.Direction
+    | Error es -> failwithf "resolveFlowSpec failed: %A" es
+
+[<Fact>]
+let ``direction: a logical source to a physical live sink derives UpLegacy (B->A)`` () =
+    Assert.Equal(MovementDirection.UpLegacy, dirOf reverseCfg "legacy")
+
+[<Fact>]
+let ``direction: a physical->physical peer (golden) move derives UpPeer (A->A)`` () =
+    Assert.Equal(MovementDirection.UpPeer, dirOf reverseCfg "golden")
+
+[<Fact>]
+let ``direction: a logical source into a bundle (non-live) sink derives Down (not a reverse leg)`` () =
+    // The reverse leg needs two live endpoints; a bundle sink is the down-leg.
+    Assert.Equal(MovementDirection.Down, dirOf reverseCfg "bundled")
+
+[<Fact>]
+let ``direction: a synthetic mint source derives UpSynthetic`` () =
+    let cfg =
+        ProjectionConfig.parse """
+        {
+          "environments": { "cloud-uat": { "access": "direct", "conn": "env:CLOUD_UAT_CONN", "grant": "data" } },
+          "flows": { "synth": { "from": "synthetic", "profile": "file:p.json", "to": "cloud-uat" } },
+          "model": "model.json"
+        }
+        """ |> mustOk
+    Assert.Equal(MovementDirection.UpSynthetic, dirOf cfg "synth")
+
+[<Fact>]
+let ``direction: a model source to a bundle target derives Down (the A->B down-leg)`` () =
+    let cfg =
+        ProjectionConfig.parse """
+        {
+          "environments": { "pub": { "access": "bundle", "out": "dist/pub", "grant": "schema+data" } },
+          "flows": { "publish": { "from": "model", "to": "pub" } },
+          "model": "model.json"
+        }
+        """ |> mustOk
+    Assert.Equal(MovementDirection.Down, dirOf cfg "publish")
+
+[<Fact>]
+let ``direction: the legacy flow routes through planFlow to RunReverseLeg under --go --scope data`` () =
+    // The flow's grant is `data`, so the grant gate passes; the derived UpLegacy
+    // direction routes the committed data move to the reverse-leg runner.
+    let commitData = { Go = true; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false }
+    let flow = { Map.find "legacy" reverseCfg.Flows with Scope = Some Scope.Data }
+    match (Command.planFlow reverseCfg flow commitData).Action with
+    | PlanAction.RunReverseLeg ("env:ONPREM_LEGACY_CONN", "env:CLOUD_UAT_CONN", _, true) -> ()
+    | other -> Assert.Fail(sprintf "expected RunReverseLeg, got %A" other)
+
 // -- planMovement routing (the pure surface→engine map) --------------------
 
 // A config whose environments back the data-source aliases the routing tests
@@ -339,20 +400,23 @@ let ``planMovement: a data source that is not a live environment is Refused`` ()
     | other -> Assert.Fail(sprintf "expected Refused 6, got %A" other)
 
 [<Fact>]
-let ``planMovement is TOTAL across the destination × scope × data × model × commit product`` () =
+let ``planMovement is TOTAL across the destination × scope × data × model × commit × direction product`` () =
     // No combination throws; every Refused is a named exit code + coded error.
+    // S4b — the new `Direction` field + `RunReverseLeg` arm are in the sweep.
     let destinations = [ Destination.Folder "./o"; Destination.Docker; liveDev ]
     let scopes       = [ Scope.All; Scope.Schema; Scope.Data ]
     let datas        = [ DataOrigin.Model; DataOrigin.Synthetic "file:p.json"; DataOrigin.NoData; DataOrigin.FromTarget "qa"; DataOrigin.FromTarget "pub" ]
     let models       = [ ModelSource.ModelFile "m.json"; ModelSource.ConfigFile "c.json"; ModelSource.Unspecified ]
     let commits      = [ true; false ]
+    let directions   = [ MovementDirection.Down; MovementDirection.UpSynthetic; MovementDirection.UpPeer; MovementDirection.UpLegacy ]
     let mutable n = 0
     for dest in destinations do
       for scope in scopes do
         for data in datas do
           for model in models do
             for commit in commits do
-                let spec = { MovementSpec.forDestination dest with Scope = scope; Data = data; Model = model; Commit = commit }
+              for direction in directions do
+                let spec = { MovementSpec.forDestination dest with Scope = scope; Data = data; Model = model; Commit = commit; Direction = direction }
                 n <- n + 1
                 match (Command.planMovement routeCfg spec).Action with
                 | PlanAction.Refused (code, error) ->
@@ -360,7 +424,20 @@ let ``planMovement is TOTAL across the destination × scope × data × model × 
                     Assert.False(System.String.IsNullOrWhiteSpace error.Message)
                     Assert.False(System.String.IsNullOrWhiteSpace error.Code)
                 | _ -> ()
-    Assert.Equal(3 * 3 * 5 * 3 * 2, n)
+    Assert.Equal(3 * 3 * 5 * 3 * 2 * 4, n)
+
+[<Fact>]
+let ``planMovement: a data move with Direction=UpLegacy routes to RunReverseLeg, not Transfer`` () =
+    // The B→A legacy reverse leg is routed distinctly; a peer (Down) data move of
+    // the SAME DataOrigin keeps the generic Transfer.
+    let legacy = { baseLive with Commit = true; Scope = Scope.Data; Data = DataOrigin.FromTarget "qa"; Direction = MovementDirection.UpLegacy }
+    match planOf legacy with
+    | PlanAction.RunReverseLeg ("env:QA_CONN", "env:DEV_CONN", _, true) -> ()
+    | other -> Assert.Fail(sprintf "expected RunReverseLeg, got %A" other)
+    let peer = { legacy with Direction = MovementDirection.UpPeer }
+    match planOf peer with
+    | PlanAction.Transfer ("env:QA_CONN", "env:DEV_CONN", _, true) -> ()
+    | other -> Assert.Fail(sprintf "expected Transfer, got %A" other)
 
 // -- flow resolution (THE_CLI.md 2026-06-08; slice F2) ----------------------
 

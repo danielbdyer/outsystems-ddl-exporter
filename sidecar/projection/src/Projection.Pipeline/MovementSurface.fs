@@ -436,11 +436,19 @@ module Command =
                 let conn = connSpecOf connRef
                 let schemaOnly = (spec.Scope = Scope.Schema)
                 let dataOnly = (spec.Scope = Scope.Data)
+                // G2 — the DERIVED direction routes a B→A legacy data move to the
+                // reverse-leg runner; a same-rendition peer (A→A) / down-leg keeps
+                // the generic `Transfer`. The engine cannot make this distinction
+                // by `DataOrigin` alone (both are `FromTarget`).
+                let dataMove (src: string) (execute: bool) : PlanAction =
+                    match spec.Direction with
+                    | MovementDirection.UpLegacy -> PlanAction.RunReverseLeg (src, conn, opts, execute)
+                    | _                          -> PlanAction.Transfer (src, conn, opts, execute)
                 if not spec.Commit then
                     match spec.Data with
                     | DataOrigin.FromTarget alias when not schemaOnly ->
                         match dataConn alias with
-                        | Ok src -> PlanAction.Transfer (src, conn, opts, false)
+                        | Ok src -> dataMove src false
                         | Error es -> PlanAction.Refused (6, List.head es)
                     | DataOrigin.Synthetic profile when not schemaOnly ->
                         PlanAction.SynthesizeAndLoad (spec.Model, modelOssys, profile, conn, opts, false)
@@ -453,7 +461,7 @@ module Command =
                         match dataConn alias with
                         | Error es -> PlanAction.Refused (6, List.head es)
                         | Ok src ->
-                            if dataOnly then PlanAction.Transfer (src, conn, opts, true)
+                            if dataOnly then dataMove src true
                             elif hasModel then PlanAction.MigrateWithData (spec.Model, modelOssys, conn, src, opts)
                             else modelMissing "projection: "
                     | DataOrigin.Synthetic profile when not schemaOnly ->
@@ -473,6 +481,7 @@ module Command =
             match spec.Strategy, action with
             | Strategy.Merge, _ -> []
             | _, PlanAction.Transfer _ -> []
+            | _, PlanAction.RunReverseLeg _ -> []
             | _, PlanAction.SynthesizeAndLoad _ -> []
             | _ -> [ "--fresh accepted; this action has no selectable data-load strategy (incremental applied)." ]
         // The resumable/idempotent envelope (G10) is honored on the pure-transfer
@@ -482,6 +491,7 @@ module Command =
             match spec.Resumable, action with
             | false, _ -> []
             | true, PlanAction.Transfer _ -> []
+            | true, PlanAction.RunReverseLeg _ -> []
             | true, _ -> [ "--resumable accepted; this action has no resumable data-load seam (standard write applied)." ]
         { Notes = unhonoredNotes spec @ freshNote @ resumableNote; Action = action }
 
@@ -644,6 +654,34 @@ module Command =
                 | Access.Direct r -> Result.success (DataOrigin.FromTarget (connSpecOf r))
                 | _ -> Result.failureOf (err "cli.flow.fromNotDirect" (sprintf "flow source '%s' must be access:direct (a live place to read rows from)." e))
 
+    /// G2 — DERIVE the movement direction (a binding, never parsed) from the
+    /// flow's source/sink renditions + content origin (THE_CONFIG_CONTROL_PLANE
+    /// §3). Synthetic mint → `UpSynthetic`; a recognized B→A reverse leg (logical
+    /// source → physical sink — the same predicate `reverseLegOf` derives) →
+    /// `UpLegacy`; a physical→physical env-to-env peer/golden move → `UpPeer`;
+    /// everything else (model → bundle/live A→B down-leg, NoData) → `Down`. The
+    /// router distinguishes `UpLegacy` (the reverse leg) from `UpPeer` (a peer
+    /// transfer) — which it cannot do by `DataOrigin` alone.
+    let private directionOf (cfg: ProjectionConfig) (flow: Flow) : MovementDirection =
+        match flow.From with
+        | FlowSource.Synthetic _ -> MovementDirection.UpSynthetic
+        | FlowSource.Model | FlowSource.NoData -> MovementDirection.Down
+        | FlowSource.Env sourceName ->
+            // The reverse leg is exactly the `reverseLegOf` predicate (logical
+            // source → physical live sink); reuse it so the two never drift.
+            match reverseLegOf cfg flow with
+            | Some _ -> MovementDirection.UpLegacy
+            | None ->
+                // A same-rendition env→env move: physical→physical is the A→A
+                // peer/golden re-key. Any other env→env shape (e.g. a bundle
+                // sink, or unset renditions) rides the established down/transfer
+                // routing — `Down` (the router treats it identically today).
+                let renditionOf envName =
+                    Map.tryFind envName cfg.Environments |> Option.bind (fun e -> e.Rendition)
+                match renditionOf sourceName, renditionOf flow.To with
+                | Some Rendition.Physical, Some Rendition.Physical -> MovementDirection.UpPeer
+                | _ -> MovementDirection.Down
+
     /// Resolve a named flow to a full `MovementSpec`, reading its `to`/`from`
     /// environments; the per-run intent finishes it. Pure; env-resolution
     /// failures are `Error` (the grant gate is a `planFlow` refusal).
@@ -674,6 +712,10 @@ module Command =
                         // projection the engine carries.
                         Scope    = (flow.Scope |> Option.defaultWith (fun () ->
                                         match toEnv.Grant with Some Grant.DataOnly -> Scope.Data | _ -> Scope.All))
+                        // S4b (G2) — the DERIVED direction (a binding from
+                        // renditions + origin, never parsed). `planMovement`
+                        // routes `UpLegacy` to the reverse-leg runner.
+                        Direction = directionOf cfg flow
                         Strategy = (if opts.Fresh then Strategy.Fresh else Strategy.Merge)
                         Data     = data
                         Baseline = (if opts.Fresh then Baseline.Empty else Baseline.Auto)
@@ -713,7 +755,7 @@ module Command =
                     let tableNote =
                         match List.isEmpty flow.Tables, plan.Action with
                         | true, _ -> []
-                        | false, PlanAction.Transfer _ -> []
+                        | false, (PlanAction.Transfer _ | PlanAction.RunReverseLeg _) -> []
                         | false, _ -> [ sprintf "flow tables (%s) apply to the data-transfer leg only; this action moves the full model." (String.concat ", " flow.Tables) ]
                     { plan with Notes = plan.Notes @ tableNote }
 

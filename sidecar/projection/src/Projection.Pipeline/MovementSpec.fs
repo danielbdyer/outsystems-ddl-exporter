@@ -76,6 +76,21 @@ type ModelSource =
     | ConfigFile of path: string
     | Unspecified
 
+/// The DERIVED direction of a movement (G2) — a *binding*, never a stored or
+/// parsed knob (THE_DATA_PRODUCERS §286-289; THE_CONFIG_CONTROL_PLANE §2/§3).
+/// Computed in `resolveFlowSpec` from `(sourceRendition, sinkRendition, scope)`:
+/// `Down` is the A→B down-leg (model → bundle/live; the established publish
+/// path); `UpSynthetic` is the mint→A synthetic insertion; `UpPeer` is the A→A
+/// physical→physical peer/golden re-key; `UpLegacy` is the B→A legacy reverse
+/// leg (logical source → physical sink — the leg the engine must route distinctly
+/// from a peer transfer). Closed so a renderer / router is total over it.
+[<RequireQualifiedAccess>]
+type MovementDirection =
+    | Down
+    | UpSynthetic
+    | UpPeer
+    | UpLegacy
+
 /// The fully-resolved movement — what the one engine consumes. Every
 /// today-verb is a point in this space (THE_CLI.md §7). `Commit` is the
 /// operator's intent (`--go`); the `PROJECTION_ALLOW_EXECUTE` env var is
@@ -86,6 +101,11 @@ type MovementSpec =
         Model       : ModelSource
         Baseline    : Baseline
         Scope       : Scope
+        /// G2 — the DERIVED direction (a binding from renditions + scope, never
+        /// parsed). `planMovement` routes `UpLegacy` to the reverse-leg runner;
+        /// every other direction rides the established routing. Default `Down`
+        /// (the publish/down-leg — byte-identical to the prior behavior).
+        Direction   : MovementDirection
         Strategy    : Strategy
         Data        : DataOrigin
         Shape       : Shape
@@ -121,6 +141,7 @@ module MovementSpec =
             Model       = ModelSource.Unspecified
             Baseline    = Baseline.Auto
             Scope       = Scope.All
+            Direction   = MovementDirection.Down
             Strategy    = Strategy.Merge
             Data        = DataOrigin.Model
             Shape       = Shape.Bundle
@@ -247,6 +268,15 @@ type PlanAction =
     /// live + data source → transfer (DryRun preview when execute=false; the
     /// DML-only load when execute=true under --scope data).
     | Transfer of source: string * sink: string * opts: LoadOpts * execute: bool
+    /// live + data source whose DERIVED direction is `UpLegacy` (B→A) → the
+    /// reverse-leg runner (`Transfer.runReverseLeg` / the M3.b face). The engine
+    /// distinguishes this from an A→A peer `Transfer` — which it cannot do by
+    /// `DataOrigin` alone (both are `FromTarget`). The runner needs two
+    /// SsKey-aligned contracts (logical source + physical sink of the ONE model);
+    /// a live two-DB flow cannot produce them yet (the J3 residual,
+    /// THE_DATA_PRODUCERS §6 LE-1), so the runner resolves to a NAMED REFUSAL
+    /// (`cli.move.reverseLegResidual`) rather than mis-running as a peer transfer.
+    | RunReverseLeg of source: string * sink: string * opts: LoadOpts * execute: bool
     /// live + synthetic data source → generate from the durable profile and
     /// load (DryRun preview when execute=false; the DML-only load when
     /// execute=true). The model supplies the target schema B — read live from
