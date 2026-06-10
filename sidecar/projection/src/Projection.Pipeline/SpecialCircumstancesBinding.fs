@@ -82,13 +82,8 @@ module SpecialCircumstancesBinding =
         (catalog: Catalog)
         (tableName: string)
         : Result<SsKey> =
-        let hit =
-            catalog.Modules
-            |> List.tryPick (fun m ->
-                m.Kinds
-                |> List.tryFind (fun k -> TableId.tableText k.Physical = tableName))
-        match hit with
-        | Some k -> Result.success k.SsKey
+        match CatalogResolution.tryKindByPhysicalTable catalog tableName with
+        | Some key -> Result.success key
         | None ->
             Result.failureOf (
                 bindError

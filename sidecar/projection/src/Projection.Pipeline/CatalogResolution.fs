@@ -31,3 +31,55 @@ module CatalogResolution =
                 |> List.tryFind (fun k -> Name.value k.Name = entityName)
                 |> Option.map (fun k -> k.SsKey)
             else None)
+
+    /// Find the kind whose physical table name equals `tableName` —
+    /// schema-IGNORING by design (V1's circular-dependency cycle entries
+    /// don't disambiguate schemas; promote to schema-qualified matching
+    /// when a real multi-schema cycle surfaces — IR grows under evidence).
+    let tryKindByPhysicalTable
+        (catalog: Catalog)
+        (tableName: string)
+        : SsKey option =
+        catalog.Modules
+        |> List.tryPick (fun m ->
+            m.Kinds
+            |> List.tryFind (fun k -> TableId.tableText k.Physical = tableName)
+            |> Option.map (fun k -> k.SsKey))
+
+    /// Find the attribute at the logical `Module.Entity.Attribute`
+    /// coordinate. `None` when no attribute matches.
+    let tryAttributeByLogical
+        (catalog: Catalog)
+        (moduleName: string)
+        (entityName: string)
+        (attributeName: string)
+        : SsKey option =
+        catalog.Modules
+        |> List.tryPick (fun m ->
+            if Name.value m.Name = moduleName then
+                m.Kinds
+                |> List.tryPick (fun k ->
+                    if Name.value k.Name = entityName then
+                        k.Attributes
+                        |> List.tryFind (fun a -> Name.value a.Name = attributeName)
+                        |> Option.map (fun a -> a.SsKey)
+                    else None)
+            else None)
+
+    /// Find the attribute at the physical `Schema.Table.Column`
+    /// coordinate. `None` when no attribute matches.
+    let tryAttributeByPhysical
+        (catalog: Catalog)
+        (schemaName: string)
+        (tableName: string)
+        (columnName: string)
+        : SsKey option =
+        catalog.Modules
+        |> List.tryPick (fun m ->
+            m.Kinds
+            |> List.tryPick (fun k ->
+                if TableId.schemaText k.Physical = schemaName && TableId.tableText k.Physical = tableName then
+                    k.Attributes
+                    |> List.tryFind (fun a -> ColumnRealization.columnNameText a.Column = columnName)
+                    |> Option.map (fun a -> a.SsKey)
+                else None))
