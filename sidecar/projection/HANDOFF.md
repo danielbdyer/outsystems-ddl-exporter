@@ -1,3 +1,39 @@
+# Handoff addendum — 2026-06-10, evening (LE-3: the reverse leg proven at full implicature)
+
+To the next agent.
+
+The reverse leg is no longer L1-on-one-table. This session drove the proof
+into the previously untested intersection — rendered cross-rendition
+contracts × sink-minted identity (`AssignedBySink` everywhere) × a
+multi-kind FK graph (depth-4 chain + diamond) × the DML-only principal —
+and the whole stack is green in both pools. **Read
+`AUDIT_2026_06_10_REVERSE_LEG_DML_PROOF.md` first**: it states, per
+constraint in the operator's pre-cutover premise, what is proven, what is
+refused by name, and what is open, with the two findings that need the
+operator's eyes (F1: the cyclic-AssignedBySink refusal is probably on the
+critical path — a self-FK IDENTITY kind refuses the whole load; the lift
+is tractable but is the operator's call. F2: the per-row INSERT…OUTPUT
+capture envelope measured at ~271 rows/sec — the MERGE…OUTPUT set-based
+follow-on's measured-bottleneck trigger is now satisfied).
+
+The new surfaces, all test-side (no engine change was made):
+`ReverseLegCanaryTests.fs` (Tier 1 keystone + apparatus + the DML-only
+principal trio + the DENY/drift pins), `ReverseLegPropertyTests.fs` (the
+eight pure laws — order soundness, disposition totality, remap algebra,
+refusal totality over generated unsatisfiable shapes, rendition
+invariance), `ReverseLegScaleTests.fs` (the capture envelope + the CDC
+isometry norm — ‖δ‖ = capture count = row count, exactly), and
+`ReverseLegBoundaryTests.fs` (the CLI reconcile/user-map refusal live +
+four reserved Skip-stub contracts carrying their promotion triggers).
+
+What this collapses: the J5 real-UAT spike is now a re-run of a proven
+suite against a real connection — P1/P2/P3/P6 are answered on mock
+infrastructure. What genuinely remains for J5: the actual OutSystems grant
+envelope (and the G1 object-scope-DENY gap, pinned), platform triggers on
+OSUSR tables (they would force the OUTPUT INTO form, survey P5), and P7
+batch ceilings over a real wire. The decision asks are ranked in the
+report §6; act on none of them without the operator.
+
 # Handoff addendum — 2026-06-10, latest (J3 closed; A7 resolved)
 
 To the next agent.
