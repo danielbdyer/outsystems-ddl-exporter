@@ -164,6 +164,12 @@ type Flow =
         To     : string
         Rekey  : string option
         Tables : string list
+        /// The move's PROJECTION (G1): which legs of the T16 square THIS move
+        /// carries — the schema leg, the data leg, or both. Decoupled from the
+        /// target's `grant` (the refusal gate, what MAY change there). `None`
+        /// = the grant-derived default (back-compat: a `data`-granting target
+        /// implies `Scope.Data`, else `Scope.All`). Resolved in `resolveFlowSpec`.
+        Scope  : Scope option
     }
 
 /// The per-run intent that finishes a resolved flow (THE_CLI.md §3) — the

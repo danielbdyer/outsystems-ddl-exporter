@@ -197,6 +197,23 @@ module ProjectionConfig =
             | "none"      -> FlowSource.NoData
             | _           -> FlowSource.Env f
 
+    /// The move's PROJECTION (G1): an optional per-flow `"scope": "schema" |
+    /// "data" | "both"` that decides which legs of the T16 square THIS move
+    /// carries — decoupled from the target's `grant` (the refusal gate). Absent
+    /// = `None` (the grant-derived default, resolved later). Closed; an unknown
+    /// value is a NAMED refusal (`cli.config.flowScopeUnknown`), never silent.
+    let private parseFlowScope (name: string) (el: JsonElement) : Result<Scope option> =
+        match getString el "scope" with
+        | None -> Result.success None
+        | Some raw ->
+            match raw.ToLowerInvariant() with
+            | "schema"          -> Result.success (Some Scope.Schema)
+            | "data"            -> Result.success (Some Scope.Data)
+            | "both" | "all" | "schema+data" | "schemaanddata" | "schema-and-data" ->
+                Result.success (Some Scope.All)
+            | other ->
+                Result.failureOf (err "cli.config.flowScopeUnknown" (sprintf "flow '%s' scope '%s' is not schema | data | both." name other))
+
     let private parseFlow (name: string) (el: JsonElement) : Result<Flow> =
         if el.ValueKind <> JsonValueKind.Object then
             Result.failureOf (err "cli.config.flowShape" (sprintf "flow '%s' must be a JSON object." name))
@@ -213,8 +230,11 @@ module ProjectionConfig =
                                 | Some s when not (String.IsNullOrWhiteSpace s) -> yield s.Trim()
                                 | _ -> () ]
                     | _ -> []
-                Result.success
-                    { Name = name; From = parseFlowSource el; To = toEnv; Rekey = getString el "rekey"; Tables = tables }
+                match parseFlowScope name el with
+                | Error es -> Result.failure es
+                | Ok scope ->
+                    Result.success
+                        { Name = name; From = parseFlowSource el; To = toEnv; Rekey = getString el "rekey"; Tables = tables; Scope = scope }
 
     /// Parse the `projection.json` document text into a `ProjectionConfig`.
     /// Aggregates every per-environment / per-flow error so the operator
@@ -645,7 +665,15 @@ module Command =
                         // (S3 will emit `ModelSource.ConfigFile` when shaping is
                         // present; not yet.)
                         Model    = (match cfg.Shaping.Model.Path with Some m -> ModelSource.ModelFile m | None -> ModelSource.Unspecified)
-                        Scope    = (match toEnv.Grant with Some Grant.DataOnly -> Scope.Data | _ -> Scope.All)
+                        // S4a (G1) — the move's PROJECTION, decoupled from the
+                        // target's `grant`. The per-flow `scope` wins when set
+                        // (the schema-only / data-only legs become reachable);
+                        // absent, the grant-derived default holds (back-compat:
+                        // a `data`-granting target ⇒ Scope.Data, else All). `grant`
+                        // stays the refusal gate in `planFlow`; this only sets the
+                        // projection the engine carries.
+                        Scope    = (flow.Scope |> Option.defaultWith (fun () ->
+                                        match toEnv.Grant with Some Grant.DataOnly -> Scope.Data | _ -> Scope.All))
                         Strategy = (if opts.Fresh then Strategy.Fresh else Strategy.Merge)
                         Data     = data
                         Baseline = (if opts.Fresh then Baseline.Empty else Baseline.Auto)

@@ -424,7 +424,7 @@ let ``flow golden: the table subset is honored on the transfer opts (item 5)`` (
 
 [<Fact>]
 let ``flow tables on a non-transfer action is noted (data-transfer leg only)`` () =
-    let bt = { Name = "bt"; From = FlowSource.Model; To = "onprem-uat"; Rekey = None; Tables = [ "Customer" ] }
+    let bt = { Name = "bt"; From = FlowSource.Model; To = "onprem-uat"; Rekey = None; Tables = [ "Customer" ]; Scope = None }
     Assert.Contains((Command.planFlow flowCfg bt preview).Notes, fun (n: string) -> n.Contains "data-transfer leg only")
 
 [<Fact>]
@@ -432,6 +432,69 @@ let ``flow grant gate: schema-from-model against a data-only target is Refused (
     match actionOf "lift-uat" commit with
     | PlanAction.Refused (9, e) -> Assert.Equal("cli.flow.grantSchemaRefused", e.Code)
     | other -> Assert.Fail(sprintf "expected grant refusal, got %A" other)
+
+// -- S4a: per-flow `scope`, decoupled from `grant` (G1) ----------------------
+// The move's PROJECTION (which legs of the T16 square THIS move carries) is now
+// an explicit per-flow `scope`, decoupled from the target's `grant` (the refusal
+// gate). The schema-only / data-only legs (ontology V14/V15) become reachable
+// from config; absent `scope`, the grant-derived default holds (back-compat).
+
+let private scopeCfg =
+    ProjectionConfig.parse """
+    {
+      "environments": {
+        "cloud-src":  { "access": "direct", "conn": "env:CLOUD_SRC_CONN" },
+        "cloud-full": { "access": "direct", "conn": "env:CLOUD_FULL_CONN", "grant": "schema+data" }
+      },
+      "flows": {
+        "schema-leg": { "from": "cloud-src", "to": "cloud-full", "scope": "schema" },
+        "data-leg":   { "from": "cloud-src", "to": "cloud-full", "scope": "data" },
+        "both-leg":   { "from": "cloud-src", "to": "cloud-full", "scope": "both" }
+      },
+      "model": "model.json"
+    }
+    """ |> mustOk
+
+let private scopeSpecOf name opts =
+    Command.resolveFlowSpec scopeCfg (Map.find name scopeCfg.Flows) opts
+
+[<Fact>]
+let ``flow scope:schema resolves Scope.Schema regardless of grant (G1)`` () =
+    // The target grants schema+data; an explicit scope:"schema" carries the
+    // schema leg only — the projection is the flow's, not the grant's.
+    match scopeSpecOf "schema-leg" preview with
+    | Ok s -> Assert.Equal(Scope.Schema, s.Scope)
+    | Error es -> Assert.Fail(sprintf "%A" es)
+
+[<Fact>]
+let ``flow scope:data into a schema+data target resolves Scope.Data (G1)`` () =
+    // The data-only leg into a full-grant target — previously unreachable: the
+    // grant-derived default would have given Scope.All.
+    match scopeSpecOf "data-leg" preview with
+    | Ok s -> Assert.Equal(Scope.Data, s.Scope)
+    | Error es -> Assert.Fail(sprintf "%A" es)
+
+[<Fact>]
+let ``flow scope:both resolves Scope.All`` () =
+    match scopeSpecOf "both-leg" preview with
+    | Ok s -> Assert.Equal(Scope.All, s.Scope)
+    | Error es -> Assert.Fail(sprintf "%A" es)
+
+[<Fact>]
+let ``flow with no scope keeps the grant-derived default (back-compat)`` () =
+    // `golden` (no scope) into a data-granting target → Scope.Data (the grant
+    // default); `uat` (no scope) into a schema+data target → Scope.All.
+    match specOf "golden" preview with
+    | Ok s -> Assert.Equal(Scope.Data, s.Scope)
+    | Error es -> Assert.Fail(sprintf "%A" es)
+    match specOf "uat" preview with
+    | Ok s -> Assert.Equal(Scope.All, s.Scope)
+    | Error es -> Assert.Fail(sprintf "%A" es)
+
+[<Fact>]
+let ``flow scope unknown value is a named refusal (cli.config.flowScopeUnknown)`` () =
+    let json = """{ "flows": { "x": { "to": "e", "scope": "partial" } } }"""
+    Assert.Contains("cli.config.flowScopeUnknown", errCodes (ProjectionConfig.parse json))
 
 [<Fact>]
 let ``flow with a non-direct source is refused`` () =
