@@ -1410,15 +1410,24 @@ let private migratePreflights (label: string) (cnn: Microsoft.Data.SqlClient.Sql
         TtyRenderer.renderGate "projection migrate" { Preflight.refusalOf es with ExitCode = 7 }
         Error 7
     task {
-        match! Preflight.connectionPreflight cnn cnn with
+        // G0 (AC-G0) — the migrate pre-flights compose through the ONE mandatory
+        // `Preflight.all`, mirroring the transfer Execute path (`runCore`). The
+        // permission gate sequences on the connection gate's task (a hot task is
+        // awaitable more than once) so the two probes never run concurrently on
+        // the one `cnn` — SqlClient forbids concurrent commands on a connection.
+        let connectionGate : System.Threading.Tasks.Task<Result<unit>> = Preflight.connectionPreflight cnn cnn
+        let permissionGate : System.Threading.Tasks.Task<Result<unit>> =
+            task {
+                match! connectionGate with
+                | Error es -> return Error es   // never observed: `all` short-circuits on the connection gate first.
+                | Ok () ->
+                    match! Preflight.captureGrantEvidence cnn with
+                    | Error es -> return Error es
+                    | Ok grant -> return Preflight.permissionPreflight grant planned
+            }
+        match! Preflight.all [ connectionGate; permissionGate ] with
         | Error es -> return refuse es
-        | Ok () ->
-            match! Preflight.captureGrantEvidence cnn with
-            | Error es -> return refuse es
-            | Ok grant ->
-                match Preflight.permissionPreflight grant planned with
-                | Error es -> return refuse es
-                | Ok () -> return Ok ()
+        | Ok () -> return Ok ()
     }
 
 /// G7 — the Decision↔Data tightening pre-flight, wired into the migrate verbs.
