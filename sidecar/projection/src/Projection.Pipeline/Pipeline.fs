@@ -535,7 +535,12 @@ module Compose =
     /// the chain to exclude passes whose tag-set intersects any
     /// disabled group. Pass `TransformGroups.empty` for the
     /// no-overrides path (preserves V1-parity: all transforms run).
-    let projectWithState
+    /// S6.3 — `projectWithState` with operator physical-rename pins: the
+    /// `LogicalTableEmission` chain step skips the pinned kinds so a physical-form
+    /// `tableRenames` override survives into the emitted physical table.
+    /// `Set.empty` is `projectWithState` (byte-identical default).
+    let projectWithStateWithPins
+        (logicalEmissionPins: Set<SsKey>)
         (fullPolicy: Policy)
         (profile: Profile)
         (emissionPolicy: EmissionPolicy)
@@ -543,7 +548,7 @@ module Compose =
         (groups: TransformGroups)
         (catalog: Catalog)
         : Outputs * ComposeState =
-        let chain = RegisteredTransforms.allChainStepsFor fullPolicy profile
+        let chain = RegisteredTransforms.allChainStepsForWithPins logicalEmissionPins fullPolicy profile
         // H-085 — stamp the manifest with a VersionedPolicy snapshot of
         // the full policy that drove the chain when the operator
         // supplied a non-default policy. `Policy.empty` callers (no
@@ -581,6 +586,18 @@ module Compose =
                     // fails the composer (the keyset is `Catalog.allKinds`).
                     invalidOp (sprintf "Compose.projectWithState: DataEmissionComposer.composeRendered: %A" err)
         decorated, finalState
+
+    /// The canonical `projectWithState` — no physical-rename pins (byte-identical
+    /// default; the existing callers are unchanged).
+    let projectWithState
+        (fullPolicy: Policy)
+        (profile: Profile)
+        (emissionPolicy: EmissionPolicy)
+        (folders: EmissionFolders)
+        (groups: TransformGroups)
+        (catalog: Catalog)
+        : Outputs * ComposeState =
+        projectWithStateWithPins Set.empty fullPolicy profile emissionPolicy folders groups catalog
 
     /// Skeleton-shape project: routes through
     /// `RegisteredTransforms.skeletonChainSteps` (per chapter A.4.7'
@@ -854,6 +871,39 @@ module Compose =
                         ValidationError.createWithMetadata e.Code e.Message metadata)
                     |> Error)
 
+    /// S6.3 — the SsKeys of kinds an operator pinned via a PHYSICAL-form
+    /// `tableRenames` override (`{ "from": { schema, table }, "to": … }`). The
+    /// physical `from` is resolved against the ORIGINAL (pre-`applyRenames`,
+    /// pre-`LogicalTableEmission`) catalog — the OSSYS physical coordinate the
+    /// operator named — so the `LogicalTableEmission` chain step can skip these
+    /// kinds and the operator's physical target survives into the emitted table.
+    /// (A physical `from` matched against the post-emission catalog would miss,
+    /// because `LogicalTableEmission` already rewrote `Kind.Physical.Table` to the
+    /// logical name — that mismatch IS the clobber this set repairs.) Logical-form
+    /// renames are NOT pinned (the prompt scopes the fix to physical-form); the
+    /// empty set is the byte-identical default for every config without one.
+    let private physicalRenamePins
+        (cfg: Config.Config)
+        (catalog: Projection.Core.Catalog)
+        : Set<SsKey> =
+        match cfg.Overrides.TableRenames with
+        | [] -> Set.empty
+        | renames ->
+            match RenameBinding.fromConfig renames with
+            | Error _ -> Set.empty   // binding errors surface in `applyRenames`; no pins.
+            | Ok specs ->
+                let physicalSources =
+                    specs
+                    |> List.choose (fun s ->
+                        match s.Key with
+                        | Projection.Core.Passes.TableRename.Physical source -> Some source
+                        | Projection.Core.Passes.TableRename.Logical _       -> None)
+                    |> Set.ofList
+                Projection.Core.Catalog.allKinds catalog
+                |> List.filter (fun k -> Set.contains k.Physical physicalSources)
+                |> List.map (fun k -> k.SsKey)
+                |> Set.ofList
+
     /// Build the full `Policy` aggregate from a parsed `Config` and
     /// the loaded `Catalog`. Wires the tightening axis (Chapter C
     /// slice C.1) + insertion axis (Chapter C slice C.5); Selection /
@@ -955,6 +1005,10 @@ module Compose =
         match parsed with
         | Error errors -> Result.failure errors
         | Ok catalog ->
+            // S6.3 — pin the operator's physical-form renames against the
+            // ORIGINAL catalog (before applyRenames) so LogicalTableEmission
+            // skips them and the operator's physical target survives.
+            let pins = physicalRenamePins cfg catalog
             match applyRenames cfg catalog with
             | Error errors -> Result.failure errors
             | Ok renamedCatalog ->
@@ -965,7 +1019,7 @@ module Compose =
                 match policyR, overridesR, foldersR, groupsR with
                 | Ok policy, Ok overrides, Ok folders, Ok groups ->
                     let outputs, finalState =
-                        projectWithState policy profile EmissionPolicy.empty folders groups renamedCatalog
+                        projectWithStateWithPins pins policy profile EmissionPolicy.empty folders groups renamedCatalog
                     let diagnostics =
                         SpecialCircumstancesDiagnostics.emit overrides finalState
                         @ InactiveAttributeDiagnostics.emit profile
@@ -1022,7 +1076,15 @@ module Compose =
     /// narrows the catalog to the named modules + their per-module entity
     /// subsets; operator-supplied-name mismatches surface as structured
     /// `moduleFilter.*` errors (fail-loud, never a silent empty catalog).
-    let private applyModuleFilter
+    /// THE_CONFIG_CONTROL_PLANE §6 (S3) — the SINGLE shared module-filter
+    /// seam. `runWithConfig`'s model-read path (`readConfigModel`) and the
+    /// flow dispatch's resolved-catalog path (`Program.needCatalog`) both
+    /// route the read catalog through here, so a `model.modules` scope
+    /// narrows the bundle and the live/docker/migrate catalogs identically.
+    /// An empty `model.modules` is the all-permissive identity
+    /// (`ModuleFilterBinding`/`ModuleFilter.apply` short-circuit), so the
+    /// default config is byte-identical.
+    let applyModuleFilter
         (cfg: Config.Config)
         (catalog: Catalog)
         : Result<Catalog> =
@@ -1050,6 +1112,104 @@ module Compose =
                                 "model needs `path` (osm_model.json) or `ossys` (live OSSYS connection)."))
             return read |> Result.bind (applyModuleFilter cfg)
         }
+
+    /// THE_CONFIG_CONTROL_PLANE §6 (S3) — project a **caller-supplied**
+    /// catalog through the unified config's shaping overlays, yielding the
+    /// SSDT/data `Outputs`. The sibling of `runWithConfigCore`'s emit body,
+    /// but over a catalog the flow runner already resolved (live/docker/
+    /// migrate) rather than re-read from `cfg.Model`. Applies `applyRenames`
+    /// (table renames), `buildPolicyFromConfig` (tightening / insertion /
+    /// emission toggles), and the `EmissionFolders`/`TransformGroups`
+    /// bindings. The module filter is NOT applied here — it lives at the
+    /// shared `applyModuleFilter` seam the caller already routed the catalog
+    /// through (`Program.needCatalog`), so bundle and live agree.
+    ///
+    /// A `Config.defaultConfig` shaping (no renames, default policy, empty
+    /// folders/groups) yields `projectWithState Policy.empty … catalog`,
+    /// which is byte-identical to `project EmissionPolicy.empty catalog`
+    /// (the prior `runFromCatalog` body) — the empty-default invariant.
+    let projectWithConfig
+        (shaping: Config.Config)
+        (catalog: Catalog)
+        : Result<Outputs> =
+        // Empty-default invariant — a movement-only `projection.json` carries
+        // `Config.defaultConfig` shaping. Route it through the exact prior
+        // `runFromCatalog` body (`project EmissionPolicy.empty`) so the bundle
+        // is byte-identical: `projectWithState` stamps a VersionedPolicy when
+        // `buildPolicyFromConfig` ≠ `Policy.empty` (the default's
+        // `DataComposition` differs), which would otherwise perturb the
+        // manifest under the no-opinion config.
+        if shaping = Config.defaultConfig then
+            Result.success (project EmissionPolicy.empty catalog)
+        else
+        let pins = physicalRenamePins shaping catalog
+        match applyRenames shaping catalog with
+        | Error errors -> Result.failure errors
+        | Ok renamedCatalog ->
+            match buildPolicyFromConfig shaping renamedCatalog,
+                  EmissionFoldersBinding.fromConfig renamedCatalog shaping,
+                  TransformGroupsBinding.fromConfig shaping with
+            | Ok policy, Ok folders, Ok groups ->
+                let outputs, _ =
+                    projectWithStateWithPins pins policy Profile.empty EmissionPolicy.empty folders groups renamedCatalog
+                Result.success outputs
+            | p, f, g ->
+                Result.failure
+                    ((match p with Error e -> e | _ -> [])
+                     @ (match f with Error e -> e | _ -> [])
+                     @ (match g with Error e -> e | _ -> []))
+
+    /// THE_CONFIG_CONTROL_PLANE §6 (S3) — the overlay-aware sibling of
+    /// `runFromCatalog`: project a caller-supplied catalog through the
+    /// shaping overlays and write the bundle to `outputDir`. The flow
+    /// `EmitBundle` arm routes here so `projection <flow>` honors
+    /// `policy`/`overrides`/`emission`. `Config.defaultConfig` shaping is
+    /// byte-identical to `runFromCatalog catalog outputDir`.
+    let runFromCatalogWith
+        (shaping: Config.Config)
+        (catalog: Catalog)
+        (outputDir: string)
+        : Result<string list> =
+        projectWithConfig shaping catalog
+        |> Result.bind (write outputDir)
+
+    /// THE_CONFIG_CONTROL_PLANE §6 (S3) — the catalog-shaping overlay for the
+    /// non-bundle destinations (live preview / migrate / migrate-with-data),
+    /// which evolve a SINK's schema toward a target Catalog rather than emit a
+    /// file bundle. Applies `applyRenames` then runs the policy-aware pass
+    /// chain (`projectWithState`) and returns the post-chain
+    /// `ComposeState.Catalog` — the same shaped schema-B `runWithConfigCore`
+    /// publishes. The module filter is applied upstream at the shared
+    /// `Program.needCatalog` seam. `Config.defaultConfig` shaping yields
+    /// `projectWithState Policy.empty … catalog`'s catalog, which equals the
+    /// input catalog (the chain under `Policy.empty` is the skeleton — no
+    /// operator tightening), so the default migrate/preview is byte-identical.
+    let applyShapingToCatalog
+        (shaping: Config.Config)
+        (catalog: Catalog)
+        : Result<Catalog> =
+        // Empty-default invariant — the no-opinion shaping is the identity on
+        // the catalog (the migrate/preview target is the resolved catalog
+        // unchanged), so the default migrate/preview is byte-identical.
+        if shaping = Config.defaultConfig then
+            Result.success catalog
+        else
+        let pins = physicalRenamePins shaping catalog
+        match applyRenames shaping catalog with
+        | Error errors -> Result.failure errors
+        | Ok renamedCatalog ->
+            match buildPolicyFromConfig shaping renamedCatalog,
+                  EmissionFoldersBinding.fromConfig renamedCatalog shaping,
+                  TransformGroupsBinding.fromConfig shaping with
+            | Ok policy, Ok folders, Ok groups ->
+                let _, finalState =
+                    projectWithStateWithPins pins policy Profile.empty EmissionPolicy.empty folders groups renamedCatalog
+                Result.success finalState.Catalog
+            | p, f, g ->
+                Result.failure
+                    ((match p with Error e -> e | _ -> [])
+                     @ (match f with Error e -> e | _ -> [])
+                     @ (match g with Error e -> e | _ -> []))
 
     let runWithConfig (cfg: Config.Config) : Task<Result<RunReport>> =
         task {

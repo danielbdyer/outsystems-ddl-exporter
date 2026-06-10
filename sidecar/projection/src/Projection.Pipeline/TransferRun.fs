@@ -224,11 +224,30 @@ module Transfer =
     /// (`TRUNCATE` is refused by SQL Server on an FK-referenced table regardless
     /// of order, so the child-first DELETE is the FK-safe realization of the
     /// wipe — same end state, the `2·|rows|` CDC cost `EmissionMode` documents.)
-    let private wipeFkOrdered (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) (topo: TopologicalOrder) : Task<unit> =
+    /// The kinds the wipe will DELETE, child-first — the pure core of
+    /// `wipeFkOrdered`. The wipe never touches two classes of kind (PE-1 /
+    /// P-REKEY — golden user-exclusion holds under *any* strategy, not just
+    /// Incremental):
+    /// (1) a **`ReconciledByRule`** kind — its sink rows are the sink's OWN
+    /// (matched by business key); deleting them would destroy the sink's
+    /// inventory (e.g. its users) and the zeroed plan would not re-insert them;
+    /// (2) a kind outside `loadSet` (the declared golden subset) — untouched,
+    /// not refreshed. `loadSet = None` wipes every non-reconciled loaded kind.
+    let wipeTargets (plan: DataLoadPlan) (topo: TopologicalOrder) (loadSet: Set<SsKey> option) : SsKey list =
+        let loaded =
+            plan.Loads
+            |> List.filter (fun l -> l.Disposition <> IdentityDisposition.ReconciledByRule)
+            |> List.map (fun l -> l.Kind)
+            |> Set.ofList
+        let inScope =
+            match loadSet with
+            | Some ls -> Set.intersect loaded ls
+            | None    -> loaded
+        List.rev topo.Order |> List.filter (fun k -> Set.contains k inScope)
+
+    let private wipeFkOrdered (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) (topo: TopologicalOrder) (loadSet: Set<SsKey> option) : Task<unit> =
         task {
-            let loaded = plan.Loads |> List.map (fun l -> l.Kind) |> Set.ofList
-            let childFirst = List.rev topo.Order |> List.filter (fun k -> Set.contains k loaded)
-            for k in childFirst do
+            for k in wipeTargets plan topo loadSet do
                 match Catalog.tryFindKind k catalog with
                 | None      -> ()
                 | Some kind ->
@@ -280,14 +299,14 @@ module Transfer =
     /// UNSET, so re-running the same command resumes to a complete,
     /// duplicate-free state. Phase-tracked + idempotent (the resolved fork),
     /// not a single all-or-nothing transaction envelope.
-    let private writePlanResumable (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) (topo: TopologicalOrder) : Task<(SsKey * UnresolvedReference) list> =
+    let private writePlanResumable (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) (topo: TopologicalOrder) (loadSet: Set<SsKey> option) : Task<(SsKey * UnresolvedReference) list> =
         task {
             do! Deploy.executeBatch sink progressTableSql
             let marker = planMarker catalog plan
             let! already = isMarked sink marker
             if already then return []
             else
-                do! wipeFkOrdered sink catalog plan topo
+                do! wipeFkOrdered sink catalog plan topo loadSet
                 let! skips = writePlan sink catalog plan
                 do! markComplete sink marker
                 return skips
@@ -529,7 +548,18 @@ module Transfer =
             // the check. The refusal is fail-loud (a structured error), never a
             // silent proceed — writing against a CDC-tracked sink during a
             // UAT-preview is exactly the surprise R6 guards against.
-            let! cdcGate =
+            // G0 (AC-G0) — the pre-plan Execute gates compose through ONE
+            // mandatory `Preflight.all`, in precedence order (CDC first, then the
+            // spanning connection/grant/permission gate G1/G2), short-circuiting on
+            // the first refusal. The ENTRY POINT is collapsed; the per-axis exit
+            // codes are NOT — each refusal keeps its `transfer.*` code, classified
+            // by `Preflight.classify` at the CLI seam. The post-plan structural
+            // gates (executeGate → validateUserMap) stay in their precedence-ordered
+            // `preWrite` block below: they need the built plan + reconcile, so they
+            // cannot join this pre-plan list, but they refuse through the same
+            // `ValidationError` / `Preflight.refusalOf` seam. Only an Execute run
+            // mutates the sink; DryRun previews without writing, so both gates skip.
+            let cdcGate : Task<Result<unit>> =
                 task {
                     if mode = Execute && not allowCdc then
                         let! tracked = ReadSide.cdcTrackedTables sink
@@ -545,19 +575,12 @@ module Transfer =
                                             (tracked |> List.truncate 3 |> String.concat ", ")))
                     else return Ok ()
                 }
-            match cdcGate with
-            | Error e -> return Result.failure e
-            | Ok () ->
-            // G1 / G2 — both endpoints live + credentialed, and the sink grant
-            // covers the planned INSERTs, BEFORE any write. Only an Execute run
-            // mutates the sink; DryRun previews without writing, so it skips the
-            // gate (no blind grant probe on a preview).
-            let! spanningGate =
+            let spanningGate : Task<Result<unit>> =
                 task {
                     if mode = Execute then return! spanningPreflight source sink catalog
                     else return Ok ()
                 }
-            match spanningGate with
+            match! Preflight.all [ cdcGate; spanningGate ] with
             | Error es -> return Result.failure es
             | Ok () ->
             let topoLineage : Lineage<TopologicalOrder> = TopologicalOrderPass.runWith TreatAsCycle catalog
@@ -575,15 +598,21 @@ module Transfer =
                 | Some (_, renameMap) when not (Map.isEmpty renameMap) ->
                     rawRows |> Map.map (fun _ rs -> RenameProjection.repointRows renameMap rs)
                 | _ -> rawRows
+            let reconciledKinds = reconciliation |> Map.toSeq |> Seq.map fst |> Set.ofSeq
             // Item 5 — the declared table subset (golden data). Restrict the
             // load to the named kinds; the catalog stays whole (FK context),
             // so non-listed sink tables are simply never written (untouched).
+            // Reconciled kinds are KEPT even when not listed: `reconcileAgainstSink`
+            // needs their SOURCE rows to build the business-key (email) remap, and
+            // the plan zeroes them via `reclassifyReconciled` — so they remain
+            // never-inserted while the user-FK re-key still resolves (golden:
+            // exclude the User family from the copied set, re-key their FKs).
             let rows =
                 match writeOpts.LoadSet with
-                | Some loadSet -> repointed |> Map.filter (fun k _ -> Set.contains k loadSet)
+                | Some loadSet ->
+                    repointed |> Map.filter (fun k _ -> Set.contains k loadSet || Set.contains k reconciledKinds)
                 | None -> repointed
             let! reconciled = reconcileAgainstSink sink catalog reconciliation rows
-            let reconciledKinds = reconciliation |> Map.toSeq |> Seq.map fst |> Set.ofSeq
             // The plan-build is the ONE OperatorIntent Insertion site —
             // substitution is applied here, once. After this, every Row
             // is in target identity space.
@@ -611,11 +640,13 @@ module Transfer =
                             | EmissionMode.WipeAndLoad, _ ->
                                 // D10 — operator-selected full refresh: FK-ordered
                                 // wipe of the plan's tables, then the standard load.
-                                do! wipeFkOrdered sink catalog plan topo
+                                // Restricted to the LoadSet so an excluded family
+                                // (golden user-exclusion) is untouched, not wiped.
+                                do! wipeFkOrdered sink catalog plan topo writeOpts.LoadSet
                                 return! writePlan sink catalog plan
                             | EmissionMode.Incremental, true ->
                                 // G10 — resumable/idempotent envelope.
-                                return! writePlanResumable sink catalog plan topo
+                                return! writePlanResumable sink catalog plan topo writeOpts.LoadSet
                             | EmissionMode.Incremental, false ->
                                 return! writePlan sink catalog plan
                     }
@@ -756,7 +787,8 @@ module Transfer =
                             else
                                 match emission with
                                 | EmissionMode.WipeAndLoad ->
-                                    do! wipeFkOrdered sink catalog plan topo
+                                    // σ generation has no declared subset — wipe all.
+                                    do! wipeFkOrdered sink catalog plan topo None
                                     return! writePlan sink catalog plan
                                 | EmissionMode.Incremental ->
                                     return! writePlan sink catalog plan
@@ -796,6 +828,28 @@ module Transfer =
                     RenameProjection.renames diff |> RenameProjection.renameMap
                 return! runCore mode allowCdc false source sink sinkContract Map.empty (Some (sourceContract, renameMap)) WriteOptions.def
         }
+
+    /// M3.b — the `legacy` B→A reverse leg's engine face (`THE_DATA_PRODUCERS`
+    /// LE-1). The source is at the LOGICAL rendition (B, on-prem); the sink is at
+    /// the PHYSICAL rendition (A, the OSUSR cloud) of the ONE authored `SsKey`
+    /// model. Because both contracts are RENDERED from one model, their SsKeys
+    /// align by construction — exactly the precondition `runWithRenames`'s A1-
+    /// stable, never-ordinal repoint needs; the two renditions differ only on
+    /// physical coordinates (names), which the A→B `CatalogDiff` rename map
+    /// re-points. This is a THIN wrapper that names the reverse leg and delegates
+    /// to the LE-2-proven `runWithRenames` GIVEN THE TWO CONTRACTS — it does not
+    /// produce them. Producing them (rendering one model in both renditions) is
+    /// the residual the wiring waits on (J3 / LE-1; the classifier is
+    /// `Command.reverseLegOf`). A no-rename pair collapses to a straight load.
+    let runReverseLeg
+        (mode: Mode)
+        (allowCdc: bool)
+        (source: SqlConnection)
+        (sink: SqlConnection)
+        (logicalSourceContract: Catalog)
+        (physicalSinkContract: Catalog)
+        : Task<Result<TransferReport>> =
+        runWithRenames mode allowCdc source sink logicalSourceContract physicalSinkContract
 
     /// Run a *reconciling* Transfer — the operator's headline case
     /// (Dev→UAT User re-key). `reconciliation` names, per kind, how its

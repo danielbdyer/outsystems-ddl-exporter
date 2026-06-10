@@ -61,6 +61,32 @@ let ``config parses a docker environment`` () =
     let e = Map.find "docker" (ProjectionConfig.parse envFlowJson |> mustOk).Environments
     Assert.Equal(Access.Docker, e.Access)
 
+// -- M1: the `rendition: physical | logical` env-metadata flag --------------
+
+[<Fact>]
+let ``config parses an environment with rendition physical (the OSUSR cloud A)`` () =
+    let json = """{ "environments": { "cloud-uat": { "access": "direct", "conn": "env:CLOUD_UAT_CONN", "grant": "data", "rendition": "physical" } } }"""
+    let e = Map.find "cloud-uat" (ProjectionConfig.parse json |> mustOk).Environments
+    Assert.Equal(Some Rendition.Physical, e.Rendition)
+
+[<Fact>]
+let ``config parses an environment with rendition logical (the hosted on-prem B)`` () =
+    let json = """{ "environments": { "onprem-legacy": { "access": "direct", "conn": "env:ONPREM_LEGACY_CONN", "rendition": "logical" } } }"""
+    let e = Map.find "onprem-legacy" (ProjectionConfig.parse json |> mustOk).Environments
+    Assert.Equal(Some Rendition.Logical, e.Rendition)
+
+[<Fact>]
+let ``config defaults an environment with no rendition to None (the minimal non-breaking default)`` () =
+    // The established same-rendition surface never sets it; absent must round-trip
+    // as None, not a fabricated Physical/Logical (the env-metadata default).
+    let e = Map.find "cloud-dev" (ProjectionConfig.parse envFlowJson |> mustOk).Environments
+    Assert.Equal(None, e.Rendition)
+
+[<Fact>]
+let ``config refuses an unknown rendition`` () =
+    let json = """{ "environments": { "x": { "access": "docker", "rendition": "hybrid" } } }"""
+    Assert.Contains("cli.config.envRenditionUnknown", errCodes (ProjectionConfig.parse json))
+
 [<Fact>]
 let ``config refuses an inline secret in an environment conn (D9)`` () =
     let json = """{ "environments": { "x": { "access": "direct", "conn": "Server=h;Password=p" } } }"""
@@ -112,6 +138,166 @@ let ``config defaults a flow with no from to the model`` () =
 let ``config refuses a flow without a to`` () =
     let json = """{ "flows": { "x": { "from": "dev" } } }"""
     Assert.Contains("cli.config.flowNoTo", errCodes (ProjectionConfig.parse json))
+
+// -- S1: the unified `Shaping` view (THE_CONFIG_CONTROL_PLANE §5) ------------
+// `ProjectionConfig.Shaping` is the model-shaping view of the SAME
+// `projection.json`, parsed leniently so a movement-only file defaults every
+// shaping section (no `modelNoSource`). Nothing CONSUMES it yet at S1.
+
+[<Fact>]
+let ``S1: a movement-only config parses with a default-empty Shaping (no modelNoSource)`` () =
+    // environments/flows only — no `model`/`overrides`/`policy`/`emission`.
+    // The lenient Shaping parse must default every section, not error.
+    let cfg = ProjectionConfig.parse envFlowJson |> mustOk
+    Assert.Equal(None, cfg.Shaping.Model.Path)
+    Assert.Equal(None, cfg.Shaping.Model.Ossys)
+    Assert.Empty(cfg.Shaping.Model.Modules)
+    Assert.Empty(cfg.Shaping.Overrides.TableRenames)
+    Assert.Equal(Config.defaultConfig.Policy.Selection, cfg.Shaping.Policy.Selection)
+
+[<Fact>]
+let ``S1: empty-text config carries the default Shaping`` () =
+    let cfg = ProjectionConfig.parse "" |> mustOk
+    Assert.Equal(None, cfg.Shaping.Model.Path)
+    Assert.Empty(cfg.Shaping.Overrides.TableRenames)
+
+[<Fact>]
+let ``S1: a unified config populates Shaping.Policy / Overrides / Model.Modules`` () =
+    let cfg =
+        ProjectionConfig.parse """
+        {
+          "environments": { "uat": { "access": "bundle", "out": "dist/uat", "grant": "schema+data" } },
+          "flows": { "emit": { "from": "model", "to": "uat" } },
+          "model":     { "path": "model.json", "modules": ["Sales", { "name": "Ops", "entities": ["Order"] }] },
+          "overrides": { "tableRenames": [ { "from": { "module": "Sales", "entity": "Cust" }, "to": { "schema": "dbo", "table": "Customer" } } ] },
+          "policy":    { "selection": "IncludeManual" }
+        }
+        """ |> mustOk
+    // model.modules folds into the shaping view (the canonical object form).
+    Assert.Equal<Config.ModuleSelector list>(
+        [ Config.Whole "Sales"; Config.WithEntities ("Ops", [ "Order" ]) ],
+        cfg.Shaping.Model.Modules)
+    // overrides.tableRenames folds in.
+    match cfg.Shaping.Overrides.TableRenames with
+    | [ { From = Config.LogicalSource { Module = "Sales"; Entity = "Cust" }; To = { Schema = "dbo"; Table = "Customer" } } ] -> ()
+    | other -> Assert.Fail(sprintf "expected one Sales::Cust -> dbo.Customer rename, got %A" other)
+    // policy folds in.
+    Assert.Equal("IncludeManual", cfg.Shaping.Policy.Selection)
+
+// -- M3.b: the `legacy` B→A reverse-leg classifier (Command.reverseLegOf) ----
+// The clean partial: the rendition flag (M1) drives the recognition of a flow as
+// the B→A reverse leg (logical source -> physical sink) — the operator-facing
+// face of the LE-2-proven runWithRenames capability. The runner wiring waits on
+// the one-model-two-renditions rendering mechanism (the residual; J3 / LE-1).
+
+let private reverseCfg =
+    ProjectionConfig.parse """
+    {
+      "environments": {
+        "onprem-legacy": { "access": "direct", "conn": "env:ONPREM_LEGACY_CONN", "rendition": "logical" },
+        "cloud-uat":     { "access": "direct", "conn": "env:CLOUD_UAT_CONN", "grant": "data", "rendition": "physical" },
+        "cloud-peer":    { "access": "direct", "conn": "env:CLOUD_PEER_CONN", "rendition": "physical" },
+        "cloud-bundle":  { "access": "bundle", "out": "dist/cloud", "grant": "data", "rendition": "physical" },
+        "plain-src":     { "access": "direct", "conn": "env:PLAIN_SRC_CONN" }
+      },
+      "flows": {
+        "legacy":  { "from": "onprem-legacy", "to": "cloud-uat" },
+        "golden":  { "from": "cloud-peer",    "to": "cloud-uat" },
+        "plain":   { "from": "plain-src",     "to": "cloud-uat" },
+        "bundled": { "from": "onprem-legacy", "to": "cloud-bundle" }
+      }
+    }
+    """ |> mustOk
+
+[<Fact>]
+let ``reverseLegOf: a logical source to a physical sink is recognized as the B->A reverse leg`` () =
+    let flow = Map.find "legacy" reverseCfg.Flows
+    match Command.reverseLegOf reverseCfg flow with
+    | Some leg ->
+        Assert.Equal("env:ONPREM_LEGACY_CONN", leg.SourceConn)
+        Assert.Equal("env:CLOUD_UAT_CONN", leg.SinkConn)
+        Assert.Equal("legacy", leg.Flow.Name)
+    | None -> Assert.True(false, "logical→physical should be recognized as the reverse leg")
+
+[<Fact>]
+let ``reverseLegOf: a physical source to a physical sink (the peer/golden move) is NOT a reverse leg`` () =
+    // The peer/golden cloud→cloud move is same-rendition (physical→physical); it
+    // rides the established routing, not the reverse leg.
+    let flow = Map.find "golden" reverseCfg.Flows
+    Assert.Equal(None, Command.reverseLegOf reverseCfg flow)
+
+[<Fact>]
+let ``reverseLegOf: endpoints with no rendition set are NOT a reverse leg (same-rendition default)`` () =
+    let flow = Map.find "plain" reverseCfg.Flows
+    Assert.Equal(None, Command.reverseLegOf reverseCfg flow)
+
+[<Fact>]
+let ``reverseLegOf: a logical source to a non-live (bundle) physical sink is NOT a reverse leg`` () =
+    // The reverse leg needs two LIVE endpoints (a Move reads rows and writes
+    // them); a bundle sink produces files, so it is not the reverse-leg shape.
+    let flow = Map.find "bundled" reverseCfg.Flows
+    Assert.Equal(None, Command.reverseLegOf reverseCfg flow)
+
+// -- S4b: the DERIVED MovementDirection (G2) ---------------------------------
+// Direction is a BINDING: derived in resolveFlowSpec from (source rendition,
+// sink rendition, content origin), never a parsed knob. It reuses the same
+// `reverseLegOf` predicate for the B→A leg, so the classifier and the router
+// can never drift.
+
+let private previewOpts : FlowRunOpts =
+    { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false }
+
+let private dirOf (cfg: ProjectionConfig) name =
+    match Command.resolveFlowSpec cfg (Map.find name cfg.Flows) previewOpts with
+    | Ok s -> s.Direction
+    | Error es -> failwithf "resolveFlowSpec failed: %A" es
+
+[<Fact>]
+let ``direction: a logical source to a physical live sink derives UpLegacy (B->A)`` () =
+    Assert.Equal(MovementDirection.UpLegacy, dirOf reverseCfg "legacy")
+
+[<Fact>]
+let ``direction: a physical->physical peer (golden) move derives UpPeer (A->A)`` () =
+    Assert.Equal(MovementDirection.UpPeer, dirOf reverseCfg "golden")
+
+[<Fact>]
+let ``direction: a logical source into a bundle (non-live) sink derives Down (not a reverse leg)`` () =
+    // The reverse leg needs two live endpoints; a bundle sink is the down-leg.
+    Assert.Equal(MovementDirection.Down, dirOf reverseCfg "bundled")
+
+[<Fact>]
+let ``direction: a synthetic mint source derives UpSynthetic`` () =
+    let cfg =
+        ProjectionConfig.parse """
+        {
+          "environments": { "cloud-uat": { "access": "direct", "conn": "env:CLOUD_UAT_CONN", "grant": "data" } },
+          "flows": { "synth": { "from": "synthetic", "profile": "file:p.json", "to": "cloud-uat" } },
+          "model": "model.json"
+        }
+        """ |> mustOk
+    Assert.Equal(MovementDirection.UpSynthetic, dirOf cfg "synth")
+
+[<Fact>]
+let ``direction: a model source to a bundle target derives Down (the A->B down-leg)`` () =
+    let cfg =
+        ProjectionConfig.parse """
+        {
+          "environments": { "pub": { "access": "bundle", "out": "dist/pub", "grant": "schema+data" } },
+          "flows": { "publish": { "from": "model", "to": "pub" } },
+          "model": "model.json"
+        }
+        """ |> mustOk
+    Assert.Equal(MovementDirection.Down, dirOf cfg "publish")
+
+[<Fact>]
+let ``direction: the legacy flow routes through planFlow to RunReverseLeg under --go --scope data`` () =
+    // The flow's grant is `data`, so the grant gate passes; the derived UpLegacy
+    // direction routes the committed data move to the reverse-leg runner.
+    let commitData = { Go = true; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false }
+    let flow = { Map.find "legacy" reverseCfg.Flows with Scope = Some Scope.Data }
+    match (Command.planFlow reverseCfg flow commitData).Action with
+    | PlanAction.RunReverseLeg ("env:ONPREM_LEGACY_CONN", "env:CLOUD_UAT_CONN", _, true) -> ()
+    | other -> Assert.Fail(sprintf "expected RunReverseLeg, got %A" other)
 
 // -- planMovement routing (the pure surface→engine map) --------------------
 
@@ -214,20 +400,23 @@ let ``planMovement: a data source that is not a live environment is Refused`` ()
     | other -> Assert.Fail(sprintf "expected Refused 6, got %A" other)
 
 [<Fact>]
-let ``planMovement is TOTAL across the destination × scope × data × model × commit product`` () =
+let ``planMovement is TOTAL across the destination × scope × data × model × commit × direction product`` () =
     // No combination throws; every Refused is a named exit code + coded error.
+    // S4b — the new `Direction` field + `RunReverseLeg` arm are in the sweep.
     let destinations = [ Destination.Folder "./o"; Destination.Docker; liveDev ]
     let scopes       = [ Scope.All; Scope.Schema; Scope.Data ]
     let datas        = [ DataOrigin.Model; DataOrigin.Synthetic "file:p.json"; DataOrigin.NoData; DataOrigin.FromTarget "qa"; DataOrigin.FromTarget "pub" ]
     let models       = [ ModelSource.ModelFile "m.json"; ModelSource.ConfigFile "c.json"; ModelSource.Unspecified ]
     let commits      = [ true; false ]
+    let directions   = [ MovementDirection.Down; MovementDirection.UpSynthetic; MovementDirection.UpPeer; MovementDirection.UpLegacy ]
     let mutable n = 0
     for dest in destinations do
       for scope in scopes do
         for data in datas do
           for model in models do
             for commit in commits do
-                let spec = { MovementSpec.forDestination dest with Scope = scope; Data = data; Model = model; Commit = commit }
+              for direction in directions do
+                let spec = { MovementSpec.forDestination dest with Scope = scope; Data = data; Model = model; Commit = commit; Direction = direction }
                 n <- n + 1
                 match (Command.planMovement routeCfg spec).Action with
                 | PlanAction.Refused (code, error) ->
@@ -235,7 +424,20 @@ let ``planMovement is TOTAL across the destination × scope × data × model × 
                     Assert.False(System.String.IsNullOrWhiteSpace error.Message)
                     Assert.False(System.String.IsNullOrWhiteSpace error.Code)
                 | _ -> ()
-    Assert.Equal(3 * 3 * 5 * 3 * 2, n)
+    Assert.Equal(3 * 3 * 5 * 3 * 2 * 4, n)
+
+[<Fact>]
+let ``planMovement: a data move with Direction=UpLegacy routes to RunReverseLeg, not Transfer`` () =
+    // The B→A legacy reverse leg is routed distinctly; a peer (Down) data move of
+    // the SAME DataOrigin keeps the generic Transfer.
+    let legacy = { baseLive with Commit = true; Scope = Scope.Data; Data = DataOrigin.FromTarget "qa"; Direction = MovementDirection.UpLegacy }
+    match planOf legacy with
+    | PlanAction.RunReverseLeg ("env:QA_CONN", "env:DEV_CONN", _, true) -> ()
+    | other -> Assert.Fail(sprintf "expected RunReverseLeg, got %A" other)
+    let peer = { legacy with Direction = MovementDirection.UpPeer }
+    match planOf peer with
+    | PlanAction.Transfer ("env:QA_CONN", "env:DEV_CONN", _, true) -> ()
+    | other -> Assert.Fail(sprintf "expected Transfer, got %A" other)
 
 // -- flow resolution (THE_CLI.md 2026-06-08; slice F2) ----------------------
 
@@ -299,7 +501,7 @@ let ``flow golden: the table subset is honored on the transfer opts (item 5)`` (
 
 [<Fact>]
 let ``flow tables on a non-transfer action is noted (data-transfer leg only)`` () =
-    let bt = { Name = "bt"; From = FlowSource.Model; To = "onprem-uat"; Rekey = None; Tables = [ "Customer" ] }
+    let bt = { Name = "bt"; From = FlowSource.Model; To = "onprem-uat"; Rekey = None; Tables = [ "Customer" ]; Scope = None; Shape = None; Shaping = None }
     Assert.Contains((Command.planFlow flowCfg bt preview).Notes, fun (n: string) -> n.Contains "data-transfer leg only")
 
 [<Fact>]
@@ -307,6 +509,69 @@ let ``flow grant gate: schema-from-model against a data-only target is Refused (
     match actionOf "lift-uat" commit with
     | PlanAction.Refused (9, e) -> Assert.Equal("cli.flow.grantSchemaRefused", e.Code)
     | other -> Assert.Fail(sprintf "expected grant refusal, got %A" other)
+
+// -- S4a: per-flow `scope`, decoupled from `grant` (G1) ----------------------
+// The move's PROJECTION (which legs of the T16 square THIS move carries) is now
+// an explicit per-flow `scope`, decoupled from the target's `grant` (the refusal
+// gate). The schema-only / data-only legs (ontology V14/V15) become reachable
+// from config; absent `scope`, the grant-derived default holds (back-compat).
+
+let private scopeCfg =
+    ProjectionConfig.parse """
+    {
+      "environments": {
+        "cloud-src":  { "access": "direct", "conn": "env:CLOUD_SRC_CONN" },
+        "cloud-full": { "access": "direct", "conn": "env:CLOUD_FULL_CONN", "grant": "schema+data" }
+      },
+      "flows": {
+        "schema-leg": { "from": "cloud-src", "to": "cloud-full", "scope": "schema" },
+        "data-leg":   { "from": "cloud-src", "to": "cloud-full", "scope": "data" },
+        "both-leg":   { "from": "cloud-src", "to": "cloud-full", "scope": "both" }
+      },
+      "model": "model.json"
+    }
+    """ |> mustOk
+
+let private scopeSpecOf name opts =
+    Command.resolveFlowSpec scopeCfg (Map.find name scopeCfg.Flows) opts
+
+[<Fact>]
+let ``flow scope:schema resolves Scope.Schema regardless of grant (G1)`` () =
+    // The target grants schema+data; an explicit scope:"schema" carries the
+    // schema leg only — the projection is the flow's, not the grant's.
+    match scopeSpecOf "schema-leg" preview with
+    | Ok s -> Assert.Equal(Scope.Schema, s.Scope)
+    | Error es -> Assert.Fail(sprintf "%A" es)
+
+[<Fact>]
+let ``flow scope:data into a schema+data target resolves Scope.Data (G1)`` () =
+    // The data-only leg into a full-grant target — previously unreachable: the
+    // grant-derived default would have given Scope.All.
+    match scopeSpecOf "data-leg" preview with
+    | Ok s -> Assert.Equal(Scope.Data, s.Scope)
+    | Error es -> Assert.Fail(sprintf "%A" es)
+
+[<Fact>]
+let ``flow scope:both resolves Scope.All`` () =
+    match scopeSpecOf "both-leg" preview with
+    | Ok s -> Assert.Equal(Scope.All, s.Scope)
+    | Error es -> Assert.Fail(sprintf "%A" es)
+
+[<Fact>]
+let ``flow with no scope keeps the grant-derived default (back-compat)`` () =
+    // `golden` (no scope) into a data-granting target → Scope.Data (the grant
+    // default); `uat` (no scope) into a schema+data target → Scope.All.
+    match specOf "golden" preview with
+    | Ok s -> Assert.Equal(Scope.Data, s.Scope)
+    | Error es -> Assert.Fail(sprintf "%A" es)
+    match specOf "uat" preview with
+    | Ok s -> Assert.Equal(Scope.All, s.Scope)
+    | Error es -> Assert.Fail(sprintf "%A" es)
+
+[<Fact>]
+let ``flow scope unknown value is a named refusal (cli.config.flowScopeUnknown)`` () =
+    let json = """{ "flows": { "x": { "to": "e", "scope": "partial" } } }"""
+    Assert.Contains("cli.config.flowScopeUnknown", errCodes (ProjectionConfig.parse json))
 
 [<Fact>]
 let ``flow with a non-direct source is refused`` () =
@@ -459,6 +724,52 @@ let ``modelOssys-only (no model file) still routes — the file is optional`` ()
     match (Command.planFlow cfg (Map.find "emit" cfg.Flows) preview).Action with
     | PlanAction.EmitBundle (ModelSource.Unspecified, Some "env:ONPREM_OSSYS_CONN", "dist/uat") -> ()
     | other -> Assert.Fail(sprintf "expected EmitBundle from ossys-only config, got %A" other)
+
+// -- S2: the unified `model` object form vs the legacy top-level forms -------
+// The unified `model` OBJECT (path/ossys) is the canonical collision
+// reconciliation (THE_CONFIG_CONTROL_PLANE §4): a config carrying
+// `"model": { "path": ..., "ossys": ... }` must resolve to the SAME plan as
+// the legacy `"model": "<path>"` + top-level `"modelOssys": "<ref>"`.
+
+let private s2Estate flows model =
+    sprintf """
+    {
+      "environments": {
+        "uat-bundle": { "access": "bundle", "out": "dist/uat", "grant": "schema+data" },
+        "lab":        { "access": "docker", "grant": "schema+data" },
+        "cloud-live": { "access": "direct", "conn": "env:CLOUD_LIVE_CONN" }
+      },
+      "flows": %s,
+      %s
+    }
+    """ flows model
+
+let private s2Flows = """{ "emit": { "from": "model", "to": "uat-bundle" }, "spin": { "from": "model", "to": "lab" }, "preview": { "from": "model", "to": "cloud-live" } }"""
+
+let private s2LegacyCfg =
+    ProjectionConfig.parse (s2Estate s2Flows """ "model": "model.json", "modelOssys": "env:ONPREM_OSSYS_CONN" """) |> mustOk
+let private s2ObjectCfg =
+    ProjectionConfig.parse (s2Estate s2Flows """ "model": { "path": "model.json", "ossys": "env:ONPREM_OSSYS_CONN" } """) |> mustOk
+
+[<Fact>]
+let ``S2: the object model form reconciles into Shaping.Model (path + ossys)`` () =
+    Assert.Equal(Some "model.json", s2ObjectCfg.Shaping.Model.Path)
+    Assert.Equal(Some "env:ONPREM_OSSYS_CONN", s2ObjectCfg.Shaping.Model.Ossys)
+    // The legacy top-level forms reconcile to the SAME canonical Shaping.Model.
+    Assert.Equal(s2ObjectCfg.Shaping.Model.Path,  s2LegacyCfg.Shaping.Model.Path)
+    Assert.Equal(s2ObjectCfg.Shaping.Model.Ossys, s2LegacyCfg.Shaping.Model.Ossys)
+
+[<Fact>]
+let ``S2: object-model and legacy-top-level configs resolve to identical plans`` () =
+    for name in [ "emit"; "spin"; "preview" ] do
+        let legacy = (Command.planFlow s2LegacyCfg (Map.find name s2LegacyCfg.Flows) preview).Action
+        let object' = (Command.planFlow s2ObjectCfg (Map.find name s2ObjectCfg.Flows) preview).Action
+        Assert.Equal(legacy, object')
+    // And the object form carries the model file + ossys into the action,
+    // exactly like the legacy form (byte-for-byte parity with :518-527).
+    match (Command.planFlow s2ObjectCfg (Map.find "emit" s2ObjectCfg.Flows) preview).Action with
+    | PlanAction.EmitBundle (ModelSource.ModelFile "model.json", Some "env:ONPREM_OSSYS_CONN", "dist/uat") -> ()
+    | other -> Assert.Fail(sprintf "expected EmitBundle carrying the reconciled model, got %A" other)
 
 // -- profile capture verb (THE_SYNTHETIC_DATA_DESIGN §2.2) -------------------
 

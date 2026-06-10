@@ -112,6 +112,7 @@
     <Compile Include="CdcSilenceCrossEmitterTests.fs" />
     <Compile Include="CdcSilencePropertyTests.fs" />
     <Compile Include="CdcMeasureTests.fs" />
+    <Compile Include="UserDirectoryProbeTests.fs" />
     <Compile Include="CanonicalizeIdentityTests.fs" />
     <Compile Include="ProfileFixtures.fs" />
     <Compile Include="ProfileTests.fs" />
@@ -142,6 +143,7 @@
     <Compile Include="TransferSpecTests.fs" />
     <Compile Include="ModelResolutionTests.fs" />
     <Compile Include="MovementSurfaceTests.fs" />
+    <Compile Include="MovementIsomorphismTests.fs" />
     <Compile Include="TransferRefusalTests.fs" />
     <Compile Include="PreflightTests.fs" />
     <Compile Include="PreflightAllTests.fs" />
@@ -274,6 +276,7 @@
     <Compile Include="DiagnosticsEndToEndTests.fs" />
     <Compile Include="EndToEndPipelineTests.fs" />
     <Compile Include="CanaryDeployTests.fs" />
+    <Compile Include="UnifiedShapingFlowTests.fs" />
     <Compile Include="Fixtures/SourceSchema.fs" />
     <Compile Include="Fixtures/FixtureGenerator.fs" />
     <Compile Include="Fixtures/OssysFixtureSynthesizer.fs" />

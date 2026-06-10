@@ -79,9 +79,11 @@ codebase's L1/L2/L3:
   v1** — `Profile` carries marginals + FK structure, not joint distributions. Named
   boundary, not a silent gap (see §7).
 
-In `THE_CLI.md` terms, synthetic is the **fourth source substrate** (cloud-self /
-sibling-cloud / on-prem-legacy / **synthetic-from-profile**): a `from` that is *generated
-to match another substrate's profile* rather than read from a live DB.
+In `THE_CLI.md` terms, synthetic is the **fourth source substrate** (cloud-self / **peer** /
+on-prem-legacy / **synthetic-from-profile**; `peer` was `sibling-cloud`, renamed per
+`THE_DATA_PRODUCERS.md` §4): a `from` that is *generated to match another substrate's profile* rather
+than read from a live DB. The three production-data producers — `synthetic` (this doc), `legacy`, and
+`peer` — and the A/B-as-dispositions reframe they feed into are catalogued in `THE_DATA_PRODUCERS.md`.
 
 ---
 

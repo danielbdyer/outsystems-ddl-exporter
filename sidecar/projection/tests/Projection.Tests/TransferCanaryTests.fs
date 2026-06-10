@@ -72,6 +72,12 @@ module private TransferCanaryFixtures =
     let reKeySinkSeed =
         "INSERT INTO [dbo].[OSUSR_RC_USER] ([ID],[EMAIL]) VALUES (18,N'alice@x'),(19,N'bob@x');"
 
+    // Golden (peer cloud→cloud): every Source user matches a Sink user by email,
+    // so the re-key drops nothing — PE-3 isolates the Update-not-re-import proof.
+    let goldenSourceSeed =
+        "INSERT INTO [dbo].[OSUSR_RC_USER] ([ID],[EMAIL]) VALUES (280,N'alice@x'),(281,N'bob@x'); " +
+        "INSERT INTO [dbo].[OSUSR_RC_ORDER] ([ID],[USER_ID],[AMOUNT]) VALUES (10,280,100),(11,281,200);"
+
     /// AssignedBySink (§5.2): User's PK is IDENTITY, so the Sink mints new
     /// surrogates at insert time; Order (business PK) has a NOT-NULL FK to
     /// User. The Source seeds Users at 280/281 (via IDENTITY_INSERT) so the
@@ -193,6 +199,26 @@ module private TransferCanaryFixtures =
     let renameSourceContract : Catalog = rpContract "Email" "EMAIL"
     let renameSinkContract : Catalog = rpContract "Contact" "CONTACT"
 
+    // M3 / LE-2 — the legacy B→A reverse leg: ONE SsKey-stable model in two
+    // renditions. B (logical) carries clean names ([dbo].[Customer].[Email]);
+    // A (physical) carries the OSUSR_* rendition ([dbo].[OSUSR_XF_CUSTOMER].[Contact]).
+    // SAME kind + attribute SsKeys (so the A→B diff aligns by identity), differing
+    // in BOTH table AND column name — the table-name rendition is resolved per-SsKey
+    // against the sink contract; the column-name rendition rides the rename map.
+    let private legacyContract (table: string) (emailName: string) (emailCol: string) : Catalog =
+        let cust =
+            Kind.create (rpKKey "Customer") (rpName "Customer")
+                (TableId.create "dbo" table |> Result.value)
+                [ rpAttr (rpAKey "Id") "Id" "ID" true
+                  rpAttr (rpAKey "Email") emailName emailCol false ]
+        Catalog.create
+            [ { SsKey = rpKKey "Mod"; Name = rpName "M"; Kinds = [ cust ]; IsActive = true; ExtendedProperties = [] } ] []
+        |> Result.value
+
+    /// B (logical on-prem, migration-team-populated) → A (physical cloud OSUSR).
+    let legacySourceContract : Catalog = legacyContract "Customer"          "Email"   "EMAIL"
+    let legacySinkContract   : Catalog = legacyContract "OSUSR_XF_CUSTOMER" "Contact" "CONTACT"
+
     /// Scalar string from a connection (for asserting a single cell).
     let scalarStr (cnn: Microsoft.Data.SqlClient.SqlConnection) (sql: string) : System.Threading.Tasks.Task<string> =
         task {
@@ -230,6 +256,36 @@ module private TransferCanaryFixtures =
                 else go <- false
             return List.ofSeq acc
         }
+
+    /// The (Order ID → User EMAIL) join over the RC tables — the identity-
+    /// independent relationship the golden cloud→cloud re-key must preserve.
+    let orderUserEmailRc (cnn: Microsoft.Data.SqlClient.SqlConnection) : System.Threading.Tasks.Task<(int * string) list> =
+        task {
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <-
+                "SELECT o.[ID], u.[EMAIL] FROM [dbo].[OSUSR_RC_ORDER] o " +
+                "JOIN [dbo].[OSUSR_RC_USER] u ON o.[USER_ID] = u.[ID] ORDER BY o.[ID];"
+            use! reader = cmd.ExecuteReaderAsync()
+            let acc = System.Collections.Generic.List<int * string>()
+            let mutable go = true
+            while go do
+                let! has = reader.ReadAsync()
+                if has then acc.Add(reader.GetInt32 0, reader.GetString 1)
+                else go <- false
+            return List.ofSeq acc
+        }
+
+    /// Resolve `OSUSR_RC_USER` → MatchByColumn EMAIL against a reconstructed
+    /// contract — the golden user re-key reconciliation (P-3 ByEmail).
+    let resolveUserByEmail (contract: Catalog) : Result<Map<SsKey, ReconciliationStrategy>> =
+        let userKind =
+            Catalog.allModulesKinds contract |> List.map snd
+            |> List.find (fun k -> TableId.tableText k.Physical = "OSUSR_RC_USER")
+        let emailName =
+            userKind.Attributes
+            |> List.find (fun a -> ColumnRealization.columnNameText a.Column = "EMAIL")
+            |> fun a -> a.Name
+        Ok (Map.ofList [ userKind.SsKey, ReconciliationStrategy.MatchByColumn emailName ])
 
 
 [<Xunit.Collection("Docker-SqlServer")>]
@@ -727,6 +783,48 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                             })
                 }))
 
+    // M3 / LE-2 — the legacy B→A reverse-leg canary. The migration team's data
+    // sits in the LOGICAL on-prem rendition ([dbo].[Customer].[Email]); the engine
+    // pipes it UP into the PHYSICAL cloud rendition ([dbo].[OSUSR_XF_CUSTOMER].[Contact]).
+    // Same SsKey-stable model — NOT foreign schema, no tolerances. The two-contract
+    // path resolves the write target table against the SINK contract by SsKey
+    // (table-name rendition) and re-points the column by the rename map (column-name
+    // rendition), so CONTACT in the OSUSR sink carries the source's EMAIL data.
+    [<Fact>]
+    member _.``M3/LE-2 legacy B->A: logical source pipes up into the physical OSUSR sink, data round-trips by SsKey`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "LegacyBA") then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "LegacyBASrc" (fun src _ ->
+                task {
+                    // B (logical): the hosted on-prem model the migration team filled.
+                    do! Deploy.executeBatch src (SsdtDdlEmitter.statements TransferCanaryFixtures.legacySourceContract |> Render.toText)
+                    do! Deploy.executeBatch src
+                            "INSERT INTO [dbo].[Customer] ([ID],[EMAIL]) VALUES (1, N'alice@x'), (2, N'bob@x');"
+                    return!
+                        fixture.WithEphemeralDatabase "LegacyBASink" (fun sink _ ->
+                            task {
+                                // A (physical): the frozen OSUSR_* cloud rendition, empty.
+                                do! Deploy.executeBatch sink (SsdtDdlEmitter.statements TransferCanaryFixtures.legacySinkContract |> Render.toText)
+
+                                // The up leg (B→A) over the same model.
+                                let! reportR =
+                                    Transfer.runWithRenames Transfer.Execute true src sink
+                                        TransferCanaryFixtures.legacySourceContract
+                                        TransferCanaryFixtures.legacySinkContract
+                                let _ = TransferCanaryFixtures.value reportR
+
+                                // The physical OSUSR sink's CONTACT column carries the logical
+                                // source's EMAIL data — table + column rendition resolved by SsKey,
+                                // not lost to NULL (a source-name/ordinal write) or a missing table.
+                                let! c1 = TransferCanaryFixtures.scalarStr sink "SELECT [CONTACT] FROM [dbo].[OSUSR_XF_CUSTOMER] WHERE [ID]=1;"
+                                Assert.Equal("alice@x", c1)
+                                let! c2 = TransferCanaryFixtures.scalarStr sink "SELECT [CONTACT] FROM [dbo].[OSUSR_XF_CUSTOMER] WHERE [ID]=2;"
+                                Assert.Equal("bob@x", c2)
+                                let! n = TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_XF_CUSTOMER]"
+                                Assert.Equal(2, n)
+                            })
+                }))
+
     // §5.2 Slice E — the data adjunction for AssignedBySink (sink-minted keys).
     // User has an IDENTITY PK, so the Sink mints fresh surrogates per row; the
     // capture (INSERT…OUTPUT) feeds a SurrogateRemapContext that re-points every
@@ -898,5 +996,156 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                                 let! orderCount = TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_XF_ORDER]"
                                 Assert.Equal(0, custCount)
                                 Assert.Equal(0, orderCount)
+                            })
+                }))
+
+    // PE-3 — the golden cloud→cloud re-key canary (P-REKEY / AC-I2). A `golden`
+    // flow copies a subset (`tables = [Order]`) and re-keys the user FK to the
+    // Sink's OWN users by EMAIL. User is EXCLUDED from the copied set yet KEPT
+    // for reconcile (it builds the email remap; its rows are never written).
+    // Proof the re-key is an Update, not a re-import: the (Order→User-by-email)
+    // join is identical Source↔Sink, the Source user surrogates are provably
+    // ABSENT from the Sink, and the Sink's own user inventory is unchanged.
+    [<Fact>]
+    member _.``PE-3 golden: cloud->cloud re-key — User excluded, FKs re-keyed by email (P-REKEY/AC-I2)`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "GoldenPE3") then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "GoldenPE3Src" (fun src srcConnStr ->
+                task {
+                    do! Deploy.executeBatch src TransferCanaryFixtures.reKeyDdl
+                    do! Deploy.executeBatch src TransferCanaryFixtures.goldenSourceSeed
+                    return!
+                        fixture.WithEphemeralDatabase "GoldenPE3Sink" (fun sink sinkConnStr ->
+                            task {
+                                do! Deploy.executeBatch sink TransferCanaryFixtures.reKeyDdl
+                                do! Deploy.executeBatch sink TransferCanaryFixtures.reKeySinkSeed
+
+                                // The Order kind's LOGICAL name — the golden `tables` subset
+                                // (`resolveLoadSet` matches the declared subset by logical Name).
+                                let! contractR = ReadSide.read src
+                                let contract = TransferCanaryFixtures.value contractR
+                                let kindByTable (t: string) =
+                                    Catalog.allModulesKinds contract |> List.map snd
+                                    |> List.find (fun k -> TableId.tableText k.Physical = t)
+                                let orderKind = kindByTable "OSUSR_RC_ORDER"
+                                let userKind  = kindByTable "OSUSR_RC_USER"
+                                let orderName = Name.value orderKind.Name
+
+                                let srcFile = Path.GetTempFileName()
+                                let sinkFile = Path.GetTempFileName()
+                                File.WriteAllText(srcFile, srcConnStr)
+                                File.WriteAllText(sinkFile, sinkConnStr)
+                                try
+                                    let srcSub : Substrate =
+                                        { Environment = Projection.Core.Environment.Dev
+                                          Role = SubstrateRole.Source
+                                          ConnectionRef = ConnectionRef.File srcFile }
+                                    let sinkSub : Substrate =
+                                        { Environment = Projection.Core.Environment.Uat
+                                          Role = SubstrateRole.Sink
+                                          ConnectionRef = ConnectionRef.File sinkFile }
+                                    let connections =
+                                        TransferConnections.create srcSub sinkSub true
+                                        |> TransferCanaryFixtures.value
+
+                                    // tables = [Order]; reconcile User by email. allowDrops = false:
+                                    // every Source user matches, so the AC-I5 gate passes cleanly.
+                                    let! reportR =
+                                        Transfer.runThroughConnectionsWithEmission
+                                            Transfer.Execute EmissionMode.Incremental true false
+                                            [ orderName ] connections TransferCanaryFixtures.resolveUserByEmail
+                                    let report = TransferCanaryFixtures.value reportR
+
+                                    // (c) User is reconciled, not copied — 0 rows written, no drops.
+                                    let userOutcome = report.Kinds |> List.find (fun k -> k.Kind = userKind.SsKey)
+                                    Assert.Equal(IdentityDisposition.ReconciledByRule, userOutcome.Disposition)
+                                    Assert.Equal(0, userOutcome.RowsWritten)
+                                    Assert.Empty(report.UnmatchedIdentities)
+                                    Assert.Empty(report.SkippedReferences)
+
+                                    // (a) The (Order→User-by-email) join is identical Source↔Sink.
+                                    let! srcPairs = TransferCanaryFixtures.orderUserEmailRc src
+                                    let! sinkPairs = TransferCanaryFixtures.orderUserEmailRc sink
+                                    Assert.Equal<(int * string) list>(srcPairs, sinkPairs)
+                                    Assert.Equal<(int * string) list>([ (10, "alice@x"); (11, "bob@x") ], sinkPairs)
+
+                                    // (b) Source user surrogates ABSENT from the Sink; Sink's own
+                                    // 2 users unchanged; every Order FK re-pointed to a Sink surrogate.
+                                    let! users  = TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_RC_USER]"
+                                    let! orders = TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_RC_ORDER]"
+                                    Assert.Equal(2, users)
+                                    Assert.Equal(2, orders)
+                                    let! srcUsersInSink =
+                                        TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_RC_USER] WHERE [ID] IN (280,281)"
+                                    let! srcFksInSink =
+                                        TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_RC_ORDER] WHERE [USER_ID] IN (280,281)"
+                                    Assert.Equal(0, srcUsersInSink)
+                                    Assert.Equal(0, srcFksInSink)
+                                finally
+                                    try File.Delete srcFile with _ -> ()
+                                    try File.Delete sinkFile with _ -> ()
+                            })
+                }))
+
+    // PE-2 — the validate-user-map pre-write halt on the golden flow (AC-I5). A
+    // Source user with no Sink email match (ghost 999) makes Order 12 an unmapped
+    // FK; with --allow-drops OFF the load refuses BEFORE any DML — no silent NULL,
+    // no partial write. The Sink Order table stays empty (untouched).
+    [<Fact>]
+    member _.``PE-2 golden: an unmapped user FK halts the cloud load before any DML (AC-I5)`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "GoldenPE2") then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "GoldenPE2Src" (fun src srcConnStr ->
+                task {
+                    do! Deploy.executeBatch src TransferCanaryFixtures.reKeyDdl
+                    do! Deploy.executeBatch src TransferCanaryFixtures.reKeySourceSeed   // includes ghost 999
+                    return!
+                        fixture.WithEphemeralDatabase "GoldenPE2Sink" (fun sink sinkConnStr ->
+                            task {
+                                do! Deploy.executeBatch sink TransferCanaryFixtures.reKeyDdl
+                                do! Deploy.executeBatch sink TransferCanaryFixtures.reKeySinkSeed
+
+                                let! contractR = ReadSide.read src
+                                let contract = TransferCanaryFixtures.value contractR
+                                let orderName =
+                                    Catalog.allModulesKinds contract |> List.map snd
+                                    |> List.find (fun k -> TableId.tableText k.Physical = "OSUSR_RC_ORDER")
+                                    |> fun k -> Name.value k.Name
+
+                                let srcFile = Path.GetTempFileName()
+                                let sinkFile = Path.GetTempFileName()
+                                File.WriteAllText(srcFile, srcConnStr)
+                                File.WriteAllText(sinkFile, sinkConnStr)
+                                try
+                                    let srcSub : Substrate =
+                                        { Environment = Projection.Core.Environment.Dev
+                                          Role = SubstrateRole.Source
+                                          ConnectionRef = ConnectionRef.File srcFile }
+                                    let sinkSub : Substrate =
+                                        { Environment = Projection.Core.Environment.Uat
+                                          Role = SubstrateRole.Sink
+                                          ConnectionRef = ConnectionRef.File sinkFile }
+                                    let connections =
+                                        TransferConnections.create srcSub sinkSub true
+                                        |> TransferCanaryFixtures.value
+
+                                    let! reportR =
+                                        Transfer.runThroughConnectionsWithEmission
+                                            Transfer.Execute EmissionMode.Incremental true false
+                                            [ orderName ] connections TransferCanaryFixtures.resolveUserByEmail
+                                    // The unmapped 999 halts pre-write: Error transfer.unmappedIdentities.
+                                    match reportR with
+                                    | Error es ->
+                                        Assert.True(
+                                            es |> List.exists (fun e -> e.Code = "transfer.unmappedIdentities"),
+                                            sprintf "expected transfer.unmappedIdentities, got %A" (es |> List.map (fun e -> e.Code)))
+                                    | Ok _ -> Assert.Fail("expected the validate-user-map pre-write halt on the unmapped user FK")
+
+                                    // No DML reached the Sink — the Order table is still empty.
+                                    let! orders = TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_RC_ORDER]"
+                                    Assert.Equal(0, orders)
+                                finally
+                                    try File.Delete srcFile with _ -> ()
+                                    try File.Delete sinkFile with _ -> ()
                             })
                 }))

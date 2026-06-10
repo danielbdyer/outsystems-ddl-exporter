@@ -38,6 +38,14 @@ input* — and a namespace's natural home is **config**, not a tree of verbs or 
 flags. So the named outcomes (lift-and-shift dev, golden-data into UAT, legacy preview)
 become **named flows** the operator writes once and runs trivially.
 
+The data feeding a flow comes from one of three **producers** — `synthetic` (generated from a profile),
+`legacy` (the B→A reverse leg — the logical on-prem model the migration team populated, piped back up
+into the physical cloud; same model, not foreign schema), and `peer` (a same-rendition OutSystems cell, e.g. `cloud-qa`;
+formerly "sibling-cloud"). Writing *up* into a live cloud environment (`cloud-uat`) is **cloud insertion**:
+the `emit(B ⊖ A)` act rendering the model in its physical `OSUSR_*` disposition (A) rather than the
+logical on-prem one (B). The producer trinity, the `golden` user-exclusion-plus-re-key discipline, and the
+A/B-as-dispositions reframe are catalogued in `THE_DATA_PRODUCERS.md`.
+
 ---
 
 ## 2. The cost model — configure once, run rarely
@@ -103,6 +111,15 @@ Each environment carries two permission facets and an address:
   - `schema+data` — DDL+DML permitted; the full create/alter + data.
   - `data` — DML-only; schema must already agree. A schema-changing flow against a
     `data` target is a **type mismatch**, refused loudly (never half-applied).
+- **`rendition`** *(optional, env metadata — not a gate)* — which physical shape of the
+  **one authored `SsKey` model** this place bears (`THE_DATA_PRODUCERS §0/§4.6`):
+  - `physical` — the frozen **OSUSR** cloud rendition (**A**, the up-leg sink). A *peer*
+    source (the `golden` cloud→cloud move) is physical.
+  - `logical` — the hosted **on-prem** rendition (**B**, the migration team's load target).
+    A *legacy* source (the `preview` B→A reverse leg, `THE_DATA_PRODUCERS` LE-1) is logical.
+  - *absent* — unspecified (the default). The established same-rendition surface never sets
+    it; it marks the rendition only where the reverse leg picks source=logical / sink=physical.
+    It does **not** narrow `access`/`grant`; it is metadata the reverse-leg wiring reads.
 
 D9 holds: an environment carries a connection **reference** (`env:<VAR>` / `file:<path>`),
 **never a literal connection string**. Secrets stay out-of-band; only addressing lives in
@@ -142,7 +159,7 @@ A flow is a named `Move`: rows (and optionally schema) flow from a `from` enviro
     "dev":     { "from": "cloud-dev",     "to": "onprem-dev" },                            // lift-and-shift, unchanged
     "qa":      { "from": "cloud-qa",      "to": "onprem-qa"  },
     "uat":     { "from": "cloud-dev",     "to": "onprem-uat", "rekey": "file:users.csv" }, // dev-cloud → UAT, rekeyed
-    "golden":  { "from": "cloud-qa",      "to": "cloud-uat",  "tables": ["Customer","Order"] }, // cloud → cloud, subset
+    "golden":  { "from": "cloud-qa",      "to": "cloud-uat",  "tables": ["Customer","Order"] }, // peer cell → cloud; users excluded, their FKs re-keyed by email (THE_DATA_PRODUCERS §2)
     "preview": { "from": "onprem-legacy", "to": "cloud-uat" }                              // on-prem legacy → cloud
   }
 }

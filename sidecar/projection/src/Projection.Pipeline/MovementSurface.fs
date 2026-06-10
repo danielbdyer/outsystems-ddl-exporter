@@ -7,6 +7,7 @@ namespace Projection.Pipeline
 open System
 open System.IO
 open System.Text.Json
+open System.Text.Json.Nodes
 open Projection.Core
 
 // THE_CLI.md (2026-06-08) — the `projection.json` two-layer config
@@ -33,6 +34,21 @@ type Grant =
     | SchemaAndData
     | DataOnly
 
+/// Metadata facet — which *rendition* of the one authored model a place bears
+/// (THE_CLI.md §4.1; THE_DATA_PRODUCERS §0/§4.6; DECISIONS 2026-06-09 item 5).
+/// The estate hosts ONE `SsKey` model in two physical shapes: `Physical` is the
+/// frozen OSUSR cloud rendition (A — the up-leg sink); `Logical` is the hosted
+/// on-prem rendition (B — the migration team's load target, the legacy reverse
+/// leg's source). The flag distinguishes a *peer* source (physical, the `golden`
+/// cloud→cloud move) from a *legacy* source (logical, the `preview` B→A reverse
+/// leg). It is env METADATA, not a refusal gate — it does not narrow `access` /
+/// `grant`; it marks the rendition so the reverse-leg wiring (M3.b / LE-1) can
+/// pick source=logical / sink=physical. Closed so a renderer is total over it.
+[<RequireQualifiedAccess>]
+type Rendition =
+    | Physical
+    | Logical
+
 /// A named place (THE_CLI.md §4.1): its reach (`Access`) and, for a target,
 /// its permission (`Grant`). D9 holds — a `Direct`/`Bundle` address is a
 /// reference or a folder, never an inline secret.
@@ -44,6 +60,12 @@ type Environment =
         /// The durable timeline (the episode store) this place accumulates;
         /// `seal` records into it and `report` diffs against it (THE_CLI.md §8).
         Store  : string option
+        /// Which rendition of the one authored model this place bears
+        /// (`physical` = OSUSR cloud, A; `logical` = hosted on-prem, B). `None`
+        /// = unspecified (the minimal non-breaking default — same-rendition
+        /// moves, the established surface, never set it). Env metadata, not a
+        /// gate. THE_CLI.md §4.1; THE_DATA_PRODUCERS §4.6.
+        Rendition : Rendition option
     }
 
 // `FlowSource`, `Flow`, and `FlowRunOpts` live in MovementSpec.fs (the types
@@ -66,13 +88,30 @@ type ProjectionConfig =
         /// When set it wins over `Model`. See `ModelResolution`.
         ModelOssys   : string option
         Defaults     : Map<string, string>
+        /// The model-shaping view of the SAME `projection.json`
+        /// (`overrides`/`emission`/`policy`/`profiler`/`cache`/`typeMapping`/
+        /// `output` and the canonical `model` object), parsed leniently so a
+        /// movement-only file defaults every section. THE_CONFIG_CONTROL_PLANE
+        /// §5 — one isomorphic surface behind two views. Nothing CONSUMES this
+        /// yet at S1; S2 reads `Shaping.Model`; S3 threads it into emission.
+        Shaping      : Config.Config
+        /// The file the config was loaded from (S6.2 — `fromFile` sets `Some
+        /// path`; `parse`/`empty` set `None`). It is LOAD PROVENANCE, not a JSON
+        /// field — `renderConfig` never emits it, so the `parse ∘ render` round
+        /// trip ignores it. `resolveFlowSpec` emits `ModelSource.ConfigFile
+        /// sourcePath` (firing the publish-with-provenance arms) only when this is
+        /// `Some` and the sink carries a `store` and the model path is present;
+        /// otherwise it stays `None` and the byte-identical ModelFile/Unspecified
+        /// path holds.
+        SourcePath   : string option
     }
 
 [<RequireQualifiedAccess>]
 module ProjectionConfig =
 
     let empty : ProjectionConfig =
-        { Environments = Map.empty; Flows = Map.empty; Model = None; ModelOssys = None; Defaults = Map.empty }
+        { Environments = Map.empty; Flows = Map.empty; Model = None; ModelOssys = None; Defaults = Map.empty
+          Shaping = Config.defaultConfig; SourcePath = None }
 
     let private err (code: string) (message: string) : ValidationError =
         ValidationError.create code message
@@ -124,6 +163,16 @@ module ProjectionConfig =
         | "data" | "dataonly" | "data-only"                   -> Result.success Grant.DataOnly
         | other -> Result.failureOf (err "cli.config.envGrantUnknown" (sprintf "environment '%s' grant '%s' is not schema+data | data." envName other))
 
+    /// The rendition metadata facet: physical (OSUSR cloud, A) | logical
+    /// (hosted on-prem, B). Absent = `None` (unspecified — the same-rendition
+    /// default). Closed; an unknown value is a named refusal, never silently
+    /// dropped.
+    let private parseRendition (envName: string) (raw: string) : Result<Rendition> =
+        match raw.ToLowerInvariant() with
+        | "physical" -> Result.success Rendition.Physical
+        | "logical"  -> Result.success Rendition.Logical
+        | other -> Result.failureOf (err "cli.config.envRenditionUnknown" (sprintf "environment '%s' rendition '%s' is not physical | logical." envName other))
+
     let private parseEnvironment (name: string) (el: JsonElement) : Result<Environment> =
         if el.ValueKind <> JsonValueKind.Object then
             Result.failureOf (err "cli.config.envShape" (sprintf "environment '%s' must be a JSON object." name))
@@ -132,12 +181,19 @@ module ProjectionConfig =
             | Error e -> Result.failure e
             | Ok access ->
                 let store = getString el "store"
-                match getString el "grant" with
-                | None -> Result.success { Name = name; Access = access; Grant = None; Store = store }
-                | Some g ->
-                    match parseGrant name g with
-                    | Ok grant -> Result.success { Name = name; Access = access; Grant = Some grant; Store = store }
-                    | Error e  -> Result.failure e
+                let renditionR =
+                    match getString el "rendition" with
+                    | None   -> Result.success None
+                    | Some r -> parseRendition name r |> Result.map Some
+                match renditionR with
+                | Error e -> Result.failure e
+                | Ok rendition ->
+                    match getString el "grant" with
+                    | None -> Result.success { Name = name; Access = access; Grant = None; Store = store; Rendition = rendition }
+                    | Some g ->
+                        match parseGrant name g with
+                        | Ok grant -> Result.success { Name = name; Access = access; Grant = Some grant; Store = store; Rendition = rendition }
+                        | Error e  -> Result.failure e
 
     /// The content origin: `from` names an environment (the Move), or one of
     /// the keywords `model` / `synthetic` (with optional `profile`) / `none`.
@@ -150,6 +206,51 @@ module ProjectionConfig =
             | "synthetic" -> FlowSource.Synthetic (getString el "profile")
             | "none"      -> FlowSource.NoData
             | _           -> FlowSource.Env f
+
+    /// The move's PROJECTION (G1): an optional per-flow `"scope": "schema" |
+    /// "data" | "both"` that decides which legs of the T16 square THIS move
+    /// carries — decoupled from the target's `grant` (the refusal gate). Absent
+    /// = `None` (the grant-derived default, resolved later). Closed; an unknown
+    /// value is a NAMED refusal (`cli.config.flowScopeUnknown`), never silent.
+    let private parseFlowScope (name: string) (el: JsonElement) : Result<Scope option> =
+        match getString el "scope" with
+        | None -> Result.success None
+        | Some raw ->
+            match raw.ToLowerInvariant() with
+            | "schema"          -> Result.success (Some Scope.Schema)
+            | "data"            -> Result.success (Some Scope.Data)
+            | "both" | "all" | "schema+data" | "schemaanddata" | "schema-and-data" ->
+                Result.success (Some Scope.All)
+            | other ->
+                Result.failureOf (err "cli.config.flowScopeUnknown" (sprintf "flow '%s' scope '%s' is not schema | data | both." name other))
+
+    /// The bundle composition this move emits (S6.1): an optional per-flow
+    /// `"shape": "bundle" | "ssdt" | "skeleton"`. Absent = `None` (the `Bundle`
+    /// default, resolved later — so a folder model flow still emits the full
+    /// pass-chain bundle by default; `skeleton` selects the pre-overlay emit).
+    /// Closed; an unknown value is a NAMED refusal (`cli.config.flowShapeUnknown`),
+    /// never silent (mirrors `parseFlowScope`).
+    let private parseFlowShape (name: string) (el: JsonElement) : Result<Shape option> =
+        match getString el "shape" with
+        | None -> Result.success None
+        | Some raw ->
+            match raw.ToLowerInvariant() with
+            | "bundle"   -> Result.success (Some Shape.Bundle)
+            | "ssdt"     -> Result.success (Some Shape.Ssdt)
+            | "skeleton" -> Result.success (Some Shape.Skeleton)
+            | other ->
+                Result.failureOf (err "cli.config.flowShapeUnknown" (sprintf "flow '%s' shape '%s' is not bundle | ssdt | skeleton." name other))
+
+    /// The opt-in per-flow `shaping` override (S6.4): a nested `"shaping"` object
+    /// parsed leniently (`Config.parseLenient` over its raw JSON text) so the
+    /// flow can narrow the global shaping for its own emission. Absent = `Ok None`
+    /// (use the global shaping — byte-identical). A malformed sub-object surfaces
+    /// its `Config` errors (D9 credential / type mismatch), named, never silent.
+    let private parseFlowShaping (el: JsonElement) : Result<Config.Config option> =
+        match el.TryGetProperty "shaping" with
+        | true, s when s.ValueKind = JsonValueKind.Object ->
+            Config.parseLenient (s.GetRawText()) |> Result.map Some
+        | _ -> Result.success None
 
     let private parseFlow (name: string) (el: JsonElement) : Result<Flow> =
         if el.ValueKind <> JsonValueKind.Object then
@@ -167,8 +268,12 @@ module ProjectionConfig =
                                 | Some s when not (String.IsNullOrWhiteSpace s) -> yield s.Trim()
                                 | _ -> () ]
                     | _ -> []
-                Result.success
-                    { Name = name; From = parseFlowSource el; To = toEnv; Rekey = getString el "rekey"; Tables = tables }
+                match parseFlowScope name el, parseFlowShape name el, parseFlowShaping el with
+                | Error es, _, _ | _, Error es, _ | _, _, Error es -> Result.failure es
+                | Ok scope, Ok shape, Ok shaping ->
+                    Result.success
+                        { Name = name; From = parseFlowSource el; To = toEnv; Rekey = getString el "rekey"
+                          Tables = tables; Scope = scope; Shape = shape; Shaping = shaping }
 
     /// Parse the `projection.json` document text into a `ProjectionConfig`.
     /// Aggregates every per-environment / per-flow error so the operator
@@ -210,11 +315,38 @@ module ProjectionConfig =
                                 | None -> () ]
                             |> Map.ofList
                         | _ -> Map.empty
+                    // The legacy top-level movement forms.
+                    let legacyModel = getString root "model"
+                    let legacyModelOssys = getString root "modelOssys"
+                    // The shaping view of the SAME document, parsed leniently
+                    // (a movement-only file defaults every shaping section).
+                    // Any shaping error (D9 credential, type mismatch) surfaces
+                    // here so the unified document is validated as one.
+                    match Config.parseLenient json with
+                    | Error es -> Result.failure es
+                    | Ok shaping ->
+                    // S2 — reconcile `model`/`modelOssys` into the one `model`
+                    // namespace (THE_CONFIG_CONTROL_PLANE §4 collision table).
+                    // The unified `model` OBJECT (path/ossys/modules) is the
+                    // canonical form; the legacy top-level `model: "<path>"` maps
+                    // onto `Shaping.Model.Path` and top-level `modelOssys` onto
+                    // `Shaping.Model.Ossys`. The object form wins where it set a
+                    // value (a present object Path/Ossys is canonical); the
+                    // legacy form fills only what the object left absent — so the
+                    // two forms agree on one `Shaping.Model`.
+                    let reconciledModel : Config.ModelSection =
+                        { shaping.Model with
+                            Path  = (match shaping.Model.Path  with Some _ as p -> p | None -> legacyModel)
+                            Ossys = (match shaping.Model.Ossys with Some _ as o -> o | None -> legacyModelOssys) }
+                    let shaping = { shaping with Model = reconciledModel }
                     Result.success
                         { Environments = environments; Flows = flows
-                          Model = getString root "model"
-                          ModelOssys = getString root "modelOssys"
-                          Defaults = defaults }
+                          Model = legacyModel
+                          ModelOssys = legacyModelOssys
+                          Defaults = defaults
+                          Shaping = shaping
+                          // `parse` has no file provenance; `fromFile` overlays it.
+                          SourcePath = None }
         with ex ->
             Result.failureOf (err "cli.config.parseFailed" (sprintf "projection.json did not parse: %s" ex.Message))
 
@@ -223,8 +355,128 @@ module ProjectionConfig =
     let fromFile (path: string) : Result<ProjectionConfig> =
         if not (File.Exists path) then Result.success empty
         else
-            try parse (File.ReadAllText path)
+            try
+                // S6.2 — overlay the load provenance so resolveFlowSpec can route
+                // the provenance-bearing publish arms (ConfigFile) for store sinks.
+                parse (File.ReadAllText path)
+                |> Result.map (fun cfg -> { cfg with SourcePath = Some path })
             with ex -> Result.failureOf (err "cli.config.readFailed" (sprintf "could not read '%s': %s" path ex.Message))
+
+    // --- the inverse Ψ: render (the declarative dual of parse, G4) ----------
+    // THE_CONFIG_CONTROL_PLANE §2/§3 (A44, clause 1 — faithfulness) + G4. The
+    // declarative DUAL of `parseEnvironment` / `parseFlow`: a typed-DOM render
+    // (`JsonObject`, not hand-authored strings — the declarative-test-inputs
+    // discipline) over the SAME field vocabulary, so `parse ∘ render = id` on
+    // the movement config DOM. Each renderer's field set is the exact mirror of
+    // its parser's read set: env = `access`/`out`/`conn`/`grant`/`store`/
+    // `rendition`; flow = `to`/`from`/`profile`/`scope`/`tables`/`rekey`.
+
+    let private setStr (o: JsonObject) (name: string) (value: string) : unit =
+        o.[name] <- JsonValue.Create value
+
+    let private setOptStr (o: JsonObject) (name: string) (value: string option) : unit =
+        match value with Some v -> setStr o name v | None -> ()
+
+    /// The `conn` reference field text (the dual of `parseConnectionSpec`):
+    /// `env:<VAR>` / `file:<path>` — never an inline secret (D9 holds by shape).
+    let private renderConnRef (r: ConnectionRef) : string =
+        match r with
+        | ConnectionRef.EnvVar n -> "env:" + n
+        | ConnectionRef.File p   -> "file:" + p
+
+    /// The grant refusal-gate field (dual of `parseGrant`): the canonical token.
+    let private renderGrant (g: Grant) : string =
+        match g with
+        | Grant.SchemaAndData -> "schema+data"
+        | Grant.DataOnly      -> "data"
+
+    /// The rendition metadata field (dual of `parseRendition`).
+    let private renderRendition (r: Rendition) : string =
+        match r with
+        | Rendition.Physical -> "physical"
+        | Rendition.Logical  -> "logical"
+
+    /// The move-projection field (dual of `parseFlowScope`): the canonical token.
+    let private renderScope (s: Scope) : string =
+        match s with
+        | Scope.Schema -> "schema"
+        | Scope.Data   -> "data"
+        | Scope.All    -> "both"
+
+    /// The bundle-composition field (dual of `parseFlowShape`): the canonical
+    /// token. Emitted only when `Some` — the `Bundle` default round-trips through
+    /// the absent arm (mirrors how `scope` omits its default).
+    let private renderShape (s: Shape) : string =
+        match s with
+        | Shape.Bundle   -> "bundle"
+        | Shape.Ssdt     -> "ssdt"
+        | Shape.Skeleton -> "skeleton"
+
+    /// Render one `Environment` to its `JsonObject` — the dual of
+    /// `parseEnvironment`. `access` + its companion (`out` for bundle, `conn`
+    /// for direct; docker is bare) reconstruct the reach; `grant`/`store`/
+    /// `rendition` carry the optional facets only when present.
+    let renderEnvironment (env: Environment) : JsonObject =
+        let o = JsonObject()
+        (match env.Access with
+         | Access.Bundle out -> setStr o "access" "bundle"; setStr o "out" out
+         | Access.Direct r   -> setStr o "access" "direct"; setStr o "conn" (renderConnRef r)
+         | Access.Docker     -> setStr o "access" "docker")
+        setOptStr o "grant" (env.Grant |> Option.map renderGrant)
+        setOptStr o "store" env.Store
+        setOptStr o "rendition" (env.Rendition |> Option.map renderRendition)
+        o
+
+    /// Render one `Flow` to its `JsonObject` — the dual of `parseFlow`. `from`
+    /// reconstructs the content origin (`model` is the absent default, so it is
+    /// omitted; `synthetic` carries its `profile`; an env name is verbatim);
+    /// `to`/`scope`/`tables`/`rekey` mirror the remaining fields.
+    let renderFlow (flow: Flow) : JsonObject =
+        let o = JsonObject()
+        setStr o "to" flow.To
+        (match flow.From with
+         // `model` is the absent-`from` default (`parseFlowSource None`), so a
+         // model flow omits `from` — round-trips through the default arm.
+         | FlowSource.Model              -> ()
+         | FlowSource.NoData             -> setStr o "from" "none"
+         | FlowSource.Synthetic profile  -> setStr o "from" "synthetic"; setOptStr o "profile" profile
+         | FlowSource.Env e              -> setStr o "from" e)
+        setOptStr o "scope" (flow.Scope |> Option.map renderScope)
+        setOptStr o "shape" (flow.Shape |> Option.map renderShape)
+        setOptStr o "rekey" flow.Rekey
+        (if not (List.isEmpty flow.Tables) then
+            let a = JsonArray()
+            for t in flow.Tables do a.Add(JsonValue.Create t)
+            o.["tables"] <- a)
+        o
+
+    /// Render a whole movement config to its `projection.json` DOM — the inverse
+    /// Ψ at the document level (G4). Only the movement vocabulary
+    /// (`environments`/`flows`/`model`/`modelOssys`/`defaults`) is rendered; the
+    /// shaping namespaces are out of this slice's round-trip (the movement-only
+    /// document a flow authors). `parse ∘ render = id` on that DOM.
+    let renderConfig (cfg: ProjectionConfig) : JsonObject =
+        let root = JsonObject()
+        (if not (Map.isEmpty cfg.Environments) then
+            let envs = JsonObject()
+            for KeyValue (name, env) in cfg.Environments do envs.[name] <- renderEnvironment env
+            root.["environments"] <- envs)
+        (if not (Map.isEmpty cfg.Flows) then
+            let flows = JsonObject()
+            for KeyValue (name, flow) in cfg.Flows do flows.[name] <- renderFlow flow
+            root.["flows"] <- flows)
+        setOptStr root "model" cfg.Model
+        setOptStr root "modelOssys" cfg.ModelOssys
+        (if not (Map.isEmpty cfg.Defaults) then
+            let d = JsonObject()
+            for KeyValue (k, v) in cfg.Defaults do setStr d k v
+            root.["defaults"] <- d)
+        root
+
+    /// Render a movement config to its `projection.json` text — the round-trip
+    /// witness `parse (render cfg) = Ok cfg` (A44 clause 1).
+    let render (cfg: ProjectionConfig) : string =
+        (renderConfig cfg).ToJsonString()
 
 [<RequireQualifiedAccess>]
 module Command =
@@ -323,7 +575,10 @@ module Command =
         let dataConn (alias: string) : Result<string> = resolveLiveConn cfg alias
         // Live OSSYS (primary) when configured; the model file (fallback) is
         // optional then. `hasModel` is true when either source is available.
-        let modelOssys = cfg.ModelOssys
+        // S2 — read the OSSYS source from the canonical `Shaping.Model.Ossys`
+        // (the legacy top-level `modelOssys` is reconciled into it by the
+        // loader), so the object `model.ossys` and legacy forms thread identically.
+        let modelOssys = cfg.Shaping.Model.Ossys
         let hasModel = spec.Model <> ModelSource.Unspecified || Option.isSome modelOssys
         let action =
             match spec.Destination with
@@ -342,14 +597,22 @@ module Command =
                 let conn = connSpecOf connRef
                 let schemaOnly = (spec.Scope = Scope.Schema)
                 let dataOnly = (spec.Scope = Scope.Data)
+                // G2 — the DERIVED direction routes a B→A legacy data move to the
+                // reverse-leg runner; a same-rendition peer (A→A) / down-leg keeps
+                // the generic `Transfer`. The engine cannot make this distinction
+                // by `DataOrigin` alone (both are `FromTarget`).
+                let dataMove (src: string) (execute: bool) : PlanAction =
+                    match spec.Direction with
+                    | MovementDirection.UpLegacy -> PlanAction.RunReverseLeg (src, conn, opts, execute)
+                    | _                          -> PlanAction.Transfer (src, conn, opts, execute)
                 if not spec.Commit then
                     match spec.Data with
                     | DataOrigin.FromTarget alias when not schemaOnly ->
                         match dataConn alias with
-                        | Ok src -> PlanAction.Transfer (src, conn, opts, false)
+                        | Ok src -> dataMove src false
                         | Error es -> PlanAction.Refused (6, List.head es)
                     | DataOrigin.Synthetic profile when not schemaOnly ->
-                        PlanAction.SynthesizeAndLoad (spec.Model, cfg.ModelOssys, profile, conn, opts, false)
+                        PlanAction.SynthesizeAndLoad (spec.Model, modelOssys, profile, conn, opts, false)
                     | _ ->
                         if hasModel then PlanAction.PreviewSchema (spec.Model, modelOssys, conn, opts.Declaration)
                         else modelMissing "projection: "
@@ -359,11 +622,11 @@ module Command =
                         match dataConn alias with
                         | Error es -> PlanAction.Refused (6, List.head es)
                         | Ok src ->
-                            if dataOnly then PlanAction.Transfer (src, conn, opts, true)
+                            if dataOnly then dataMove src true
                             elif hasModel then PlanAction.MigrateWithData (spec.Model, modelOssys, conn, src, opts)
                             else modelMissing "projection: "
                     | DataOrigin.Synthetic profile when not schemaOnly ->
-                        if dataOnly then PlanAction.SynthesizeAndLoad (spec.Model, cfg.ModelOssys, profile, conn, opts, true)
+                        if dataOnly then PlanAction.SynthesizeAndLoad (spec.Model, modelOssys, profile, conn, opts, true)
                         else PlanAction.Refused (2, err "cli.move.syntheticScope" "a synthetic load moves data only; point the flow at a data-granting target (grant: data).")
                     | _ when dataOnly ->
                         PlanAction.Refused (2, err "cli.move.scopeDataNoSource" "a DML-only load needs a data source (a flow whose `from` is a live environment).")
@@ -379,6 +642,7 @@ module Command =
             match spec.Strategy, action with
             | Strategy.Merge, _ -> []
             | _, PlanAction.Transfer _ -> []
+            | _, PlanAction.RunReverseLeg _ -> []
             | _, PlanAction.SynthesizeAndLoad _ -> []
             | _ -> [ "--fresh accepted; this action has no selectable data-load strategy (incremental applied)." ]
         // The resumable/idempotent envelope (G10) is honored on the pure-transfer
@@ -388,6 +652,7 @@ module Command =
             match spec.Resumable, action with
             | false, _ -> []
             | true, PlanAction.Transfer _ -> []
+            | true, PlanAction.RunReverseLeg _ -> []
             | true, _ -> [ "--resumable accepted; this action has no resumable data-load seam (standard write applied)." ]
         { Notes = unhonoredNotes spec @ freshNote @ resumableNote; Action = action }
 
@@ -472,12 +737,64 @@ module Command =
 
     // --- flow resolution (THE_CLI.md 2026-06-08; slice F2) -----------------
 
+    /// M3.b — the recognized B→A reverse leg of a flow (`THE_DATA_PRODUCERS`
+    /// LE-1): a `legacy` move whose live source bears the `logical` rendition (B,
+    /// the migration-team-populated on-prem model) and whose live sink bears the
+    /// `physical` rendition (A, the frozen OSUSR cloud model) of the ONE authored
+    /// `SsKey` model. Carries the resolved source/sink connection specs; the
+    /// engine face is `Transfer.runWithRenames` (the LE-2-proven capability) over
+    /// the two RENDITIONS of the one model — once the rendering mechanism supplies
+    /// those two contracts (the residual; see `reverseLegOf`).
+    type ReverseLeg =
+        {
+            Flow       : Flow
+            SourceConn : string
+            SinkConn   : string
+        }
+
     /// A `to` environment's reach → the `Destination` the engine lands at.
     let private destinationOfAccess (access: Access) : Destination =
         match access with
         | Access.Bundle out -> Destination.Folder out
         | Access.Direct r   -> Destination.Live r
         | Access.Docker     -> Destination.Docker
+
+    /// M3.b (pure) — recognize a flow as a B→A reverse leg from the M1 `rendition`
+    /// flag: `Some` exactly when the flow reads from a live `logical` source (B)
+    /// and writes to a live `physical` sink (A) — the `legacy`/`preview` shape.
+    /// This is the operator-facing FACE of the LE-2-proven engine capability: the
+    /// rendition flag drives the classification (no flow re-tagging needed; a flow
+    /// IS a reverse leg iff its endpoints' renditions say so). `None` for every
+    /// other shape (same-rendition moves, model/synthetic sources, non-`Direct`
+    /// endpoints) — those ride the established `resolveFlowSpec`/`planMovement`
+    /// routing unchanged.
+    ///
+    /// NOTE (the residual, J3 / LE-1): recognizing the reverse leg and resolving
+    /// its connections is clean and total here; what is NOT yet available is the
+    /// pair of SsKey-aligned CONTRACTS `Transfer.runWithRenames` consumes (source
+    /// = logical rendition, sink = physical rendition of the SAME model). ReadSide
+    /// SsKeys are name-derived, so reading the two live DBs independently would
+    /// NOT align them; the contracts must be RENDERED from one authored model in
+    /// both renditions. That renderer does not exist yet — so this classifier is
+    /// the landed partial, and the runner wiring waits on the rendering design
+    /// (documented in `THE_DATA_PRODUCERS.md` §6 LE-1 + `CONFIRMED_BACKLOG` J3).
+    let reverseLegOf (cfg: ProjectionConfig) (flow: Flow) : ReverseLeg option =
+        let liveConnOf (envName: string) : (Environment * string) option =
+            match Map.tryFind envName cfg.Environments with
+            | Some env ->
+                match env.Access with
+                | Access.Direct r -> Some (env, connSpecOf r)
+                | _ -> None
+            | None -> None
+        match flow.From with
+        | FlowSource.Env sourceName ->
+            match liveConnOf sourceName, liveConnOf flow.To with
+            | Some (sourceEnv, sourceConn), Some (sinkEnv, sinkConn)
+                  when sourceEnv.Rendition = Some Rendition.Logical
+                       && sinkEnv.Rendition = Some Rendition.Physical ->
+                Some { Flow = flow; SourceConn = sourceConn; SinkConn = sinkConn }
+            | _ -> None
+        | FlowSource.Model | FlowSource.Synthetic _ | FlowSource.NoData -> None
 
     /// A flow's `from` → the `DataOrigin`. A source environment must be
     /// `direct` (a live place to read rows from); the scheme-prefixed ref
@@ -498,6 +815,34 @@ module Command =
                 | Access.Direct r -> Result.success (DataOrigin.FromTarget (connSpecOf r))
                 | _ -> Result.failureOf (err "cli.flow.fromNotDirect" (sprintf "flow source '%s' must be access:direct (a live place to read rows from)." e))
 
+    /// G2 — DERIVE the movement direction (a binding, never parsed) from the
+    /// flow's source/sink renditions + content origin (THE_CONFIG_CONTROL_PLANE
+    /// §3). Synthetic mint → `UpSynthetic`; a recognized B→A reverse leg (logical
+    /// source → physical sink — the same predicate `reverseLegOf` derives) →
+    /// `UpLegacy`; a physical→physical env-to-env peer/golden move → `UpPeer`;
+    /// everything else (model → bundle/live A→B down-leg, NoData) → `Down`. The
+    /// router distinguishes `UpLegacy` (the reverse leg) from `UpPeer` (a peer
+    /// transfer) — which it cannot do by `DataOrigin` alone.
+    let private directionOf (cfg: ProjectionConfig) (flow: Flow) : MovementDirection =
+        match flow.From with
+        | FlowSource.Synthetic _ -> MovementDirection.UpSynthetic
+        | FlowSource.Model | FlowSource.NoData -> MovementDirection.Down
+        | FlowSource.Env sourceName ->
+            // The reverse leg is exactly the `reverseLegOf` predicate (logical
+            // source → physical live sink); reuse it so the two never drift.
+            match reverseLegOf cfg flow with
+            | Some _ -> MovementDirection.UpLegacy
+            | None ->
+                // A same-rendition env→env move: physical→physical is the A→A
+                // peer/golden re-key. Any other env→env shape (e.g. a bundle
+                // sink, or unset renditions) rides the established down/transfer
+                // routing — `Down` (the router treats it identically today).
+                let renditionOf envName =
+                    Map.tryFind envName cfg.Environments |> Option.bind (fun e -> e.Rendition)
+                match renditionOf sourceName, renditionOf flow.To with
+                | Some Rendition.Physical, Some Rendition.Physical -> MovementDirection.UpPeer
+                | _ -> MovementDirection.Down
+
     /// Resolve a named flow to a full `MovementSpec`, reading its `to`/`from`
     /// environments; the per-run intent finishes it. Pure; env-resolution
     /// failures are `Error` (the grant gate is a `planFlow` refusal).
@@ -510,10 +855,48 @@ module Command =
             | Error es -> Result.failure es
             | Ok data ->
                 let baseSpec = MovementSpec.forDestination (destinationOfAccess toEnv.Access)
+                // S6.2 (G3, operator decision 1 — wire ConfigFile into flows): the
+                // publish-with-provenance arms (`PublishBundle`/`PublishAndLoad`)
+                // fire only on `ModelSource.ConfigFile`. Emit it exactly when the
+                // flow targets a PROVENANCE-BEARING place — the config was loaded
+                // from a file (`SourcePath = Some`), the sink carries a `store`
+                // (provenance is configured), AND there is a model to publish
+                // (`Shaping.Model.Path = Some`). Every store-less target and every
+                // from-string config keeps the byte-identical ModelFile/Unspecified
+                // path, so the empty/default-config invariant holds.
+                let modelSource =
+                    match cfg.SourcePath, toEnv.Store, cfg.Shaping.Model.Path with
+                    | Some sourcePath, Some _, Some _ -> ModelSource.ConfigFile sourcePath
+                    | _ ->
+                        match cfg.Shaping.Model.Path with
+                        | Some m -> ModelSource.ModelFile m
+                        | None   -> ModelSource.Unspecified
                 Result.success
                     { baseSpec with
-                        Model    = (match cfg.Model with Some m -> ModelSource.ModelFile m | None -> ModelSource.Unspecified)
-                        Scope    = (match toEnv.Grant with Some Grant.DataOnly -> Scope.Data | _ -> Scope.All)
+                        // S2/S6.2 — the model is read from the canonical
+                        // `Shaping.Model` (the unified `model` namespace, with
+                        // the legacy top-level `model:"<path>"` reconciled in by
+                        // the loader). Routes through `ConfigFile` for a
+                        // provenance-bearing sink (see `modelSource` above).
+                        Model    = modelSource
+                        // S4a (G1) — the move's PROJECTION, decoupled from the
+                        // target's `grant`. The per-flow `scope` wins when set
+                        // (the schema-only / data-only legs become reachable);
+                        // absent, the grant-derived default holds (back-compat:
+                        // a `data`-granting target ⇒ Scope.Data, else All). `grant`
+                        // stays the refusal gate in `planFlow`; this only sets the
+                        // projection the engine carries.
+                        Scope    = (flow.Scope |> Option.defaultWith (fun () ->
+                                        match toEnv.Grant with Some Grant.DataOnly -> Scope.Data | _ -> Scope.All))
+                        // S6.1 (decision 2) — the bundle composition this move
+                        // emits. `None` = the `Bundle` default (byte-identical:
+                        // a folder model flow keeps emitting the full pass-chain
+                        // bundle); `skeleton` makes `EmitSkeleton` flow-reachable.
+                        Shape    = (flow.Shape |> Option.defaultValue Shape.Bundle)
+                        // S4b (G2) — the DERIVED direction (a binding from
+                        // renditions + origin, never parsed). `planMovement`
+                        // routes `UpLegacy` to the reverse-leg runner.
+                        Direction = directionOf cfg flow
                         Strategy = (if opts.Fresh then Strategy.Fresh else Strategy.Merge)
                         Data     = data
                         Baseline = (if opts.Fresh then Baseline.Empty else Baseline.Auto)
@@ -553,7 +936,7 @@ module Command =
                     let tableNote =
                         match List.isEmpty flow.Tables, plan.Action with
                         | true, _ -> []
-                        | false, PlanAction.Transfer _ -> []
+                        | false, (PlanAction.Transfer _ | PlanAction.RunReverseLeg _) -> []
                         | false, _ -> [ sprintf "flow tables (%s) apply to the data-transfer leg only; this action moves the full model." (String.concat ", " flow.Tables) ]
                     { plan with Notes = plan.Notes @ tableNote }
 

@@ -111,13 +111,17 @@ module RegisteredTransforms =
     /// → `TopologicalOrderPass` → 2 graph-analytics passes (after
     /// topology is populated) → `ProfileAnomalyPass` → `SchemaComplexityPass`
     /// → `QueryHintPass` → 4 tightening decision passes → `UserFkReflowPass`.
-    let chainSteps : ChainStep list =
+    /// The chain, parameterized by the operator physical-rename pins (S6.3) the
+    /// `LogicalTableEmission` step must skip so a physical-form `tableRenames`
+    /// override survives into the emitted physical table. `Set.empty` is the
+    /// canonical chain (`chainSteps`) — byte-identical to the pre-S6.3 behavior.
+    let chainStepsWithPins (logicalEmissionPins: Set<SsKey>) : ChainStep list =
         [ catalogStep CanonicalizeIdentity.registered
           catalogStep (VisibilityMask.registered emptyMask)
           catalogStep (NamingMorphism.registered identityMorphism)
           catalogStep NormalizeStaticPopulations.registered
           catalogStep SymmetricClosure.registered
-          catalogStep (LogicalTableEmission.registered LogicalTableEmission.Enabled)
+          catalogStep (LogicalTableEmission.registeredWithPins logicalEmissionPins LogicalTableEmission.Enabled)
           catalogStep (LogicalColumnEmission.registered LogicalColumnEmission.Enabled)
           catalogStep (TableRename.registered [])
           decisionStep TopologicalOrderPass.registered ComposeState.withTopologicalOrder
@@ -141,6 +145,9 @@ module RegisteredTransforms =
           tighteningStep CategoricalUniquenessPass.registered ComposeState.withCategoricalUniquenessDecisions
           tighteningStep UserFkReflowPass.registered ComposeState.withUserRemap ]
 
+    /// The canonical chain — no physical-rename pins (byte-identical default).
+    let chainSteps : ChainStep list = chainStepsWithPins Set.empty
+
     /// The full Core metadata registry — every chain step's metadata
     /// (projected from `chainSteps`) plus the strategy registrations.
     /// `transform.registered`, the manifest emitter, and the A41 totality
@@ -154,6 +161,17 @@ module RegisteredTransforms =
     /// steps capture them.
     let allChainStepsFor (policy: Policy) (profile: Profile) : PassChainAdapter list =
         chainSteps |> List.map (ChainStep.build policy profile)
+
+    /// The execution chain with operator physical-rename pins (S6.3) — the
+    /// `LogicalTableEmission` step skips the pinned kinds so a physical-form
+    /// `tableRenames` override survives into the emitted physical table.
+    /// `Set.empty` is `allChainStepsFor` (byte-identical).
+    let allChainStepsForWithPins
+        (logicalEmissionPins: Set<SsKey>)
+        (policy: Policy)
+        (profile: Profile)
+        : PassChainAdapter list =
+        chainStepsWithPins logicalEmissionPins |> List.map (ChainStep.build policy profile)
 
     /// The execution chain with skeleton-friendly empty defaults —
     /// byte-identical to the prior hand-written `allChainSteps`

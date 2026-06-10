@@ -171,7 +171,44 @@ module CapabilitySurvey =
             /// (at database scope) — empty = covered.
             Missing    : Capability list
             CdcTracked : bool
+            /// G0b (P10) — the user-directory readability verdict: is the
+            /// platform user table the `golden`/`preview` re-key matches against
+            /// SELECT-able, and does it expose an email-shaped key column? A
+            /// REPORT FIELD, not a `Capability` variant — adding a variant would
+            /// break the `required ⇔ surveyed` totality
+            /// (`CapabilitySurveyTotalityTests`). `absent` for a place with no
+            /// live address (nothing probed).
+            UserDirectory : ReadSide.UserDirectoryProbe
         }
+
+    /// Does a report name a *blocked* capability — a connected place that is
+    /// unreachable, or reachable but missing a required capability? The SINGLE
+    /// predicate the standalone `survey` verb's exit-7 gate AND the in-flow
+    /// advisory both read for the MESSAGE, so the two cannot disagree on WHAT is
+    /// blocked. They differ only on the EXIT: the verb stops (exit 7); the
+    /// in-flow advisory warns and proceeds (R6 — V2 owns no production write
+    /// path; the gate is advisory until the per-pair flip; CLAUDE.md R6;
+    /// DECISIONS 2026-06-09 S3).
+    let blocked (r: EnvironmentReport) : bool =
+        r.Connected && (not r.Reachable || not (List.isEmpty r.Missing))
+
+    /// The advisory warning lines for a set of survey reports — the in-flow
+    /// surface (G0c). Empty when nothing is blocked (no warning, the flow runs
+    /// silently); otherwise one heading + one line per blocked place naming why
+    /// (unreachable / missing the named capabilities). Reuses `blocked` for the
+    /// selection and `Capability.text` for the names, so it reads the same set
+    /// the verb's gate does. Pure over the reports; the caller emits to stderr
+    /// and PROCEEDS regardless (the advisory never changes an exit).
+    let advisoryLines (reports: EnvironmentReport list) : string list =
+        let blockedReports = reports |> List.filter blocked
+        if List.isEmpty blockedReports then []
+        else
+            [ yield "Advisory — capability survey found environment(s) that may not be able to do what this run asks (proceeding anyway; this is a warning, not a gate):"
+              for r in blockedReports do
+                  if not r.Reachable then
+                      yield sprintf "  %s: unreachable" r.Name
+                  else
+                      yield sprintf "  %s: missing %s" r.Name (r.Missing |> List.map Capability.text |> String.concat ", ") ]
 
     /// Probe ONE environment (boundary): reachability, the required-vs-actual
     /// reconciliation, the CDC axis. A `Bundle` / `Docker` place has no live
@@ -182,7 +219,8 @@ module CapabilitySurvey =
             let required = requiredOf config env.Name
             let baseReport =
                 { Name = env.Name; Grant = env.Grant; Required = required
-                  Connected = false; Reachable = false; Missing = []; CdcTracked = false }
+                  Connected = false; Reachable = false; Missing = []; CdcTracked = false
+                  UserDirectory = ReadSide.UserDirectoryProbe.absent }
             match env.Access with
             | Access.Bundle _ | Access.Docker -> return baseReport
             | Access.Direct connRef ->
@@ -194,6 +232,11 @@ module CapabilitySurvey =
                         do! cnn.OpenAsync()
                         let! grantEv = Preflight.captureGrantEvidence cnn
                         let! tracked = ReadSide.cdcTrackedTables cnn
+                        // G0b (P10) — the user-directory readability probe, next to
+                        // the CDC axis. Conventional candidate names (configurable
+                        // is the residual that pairs with OPEN-2's real-instance
+                        // user-table identity); read-only.
+                        let! userDir = ReadSide.userDirectoryReadability [] cnn
                         let missing =
                             match grantEv with
                             | Ok ev -> reconcile required ev
@@ -201,7 +244,8 @@ module CapabilitySurvey =
                         return
                             { baseReport with
                                 Connected = true; Reachable = true
-                                Missing = missing; CdcTracked = not (List.isEmpty tracked) }
+                                Missing = missing; CdcTracked = not (List.isEmpty tracked)
+                                UserDirectory = userDir }
                     with _ -> return { baseReport with Connected = true }
         }
 

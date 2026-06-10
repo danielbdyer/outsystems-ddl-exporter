@@ -4,3 +4,10 @@ obj/
 *.swp
 .vs/
 .idea/
+
+# Secrets — D9: connection strings live out-of-band, never committed.
+# A file:<path> ref reads its connection string from `secrets/<name>.conn`; the
+# committed template is examples/secret.conn.example. (`.env` kept ignored too.)
+.env
+secrets/
+*.conn

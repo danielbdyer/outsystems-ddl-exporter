@@ -124,13 +124,17 @@ let ``Setup readback: an unreachable target is named, with no grant claimed`` ()
 
 [<Fact>]
 let ``Capability survey: covered / missing / unreachable / no-gate each read plainly`` () =
+    let emailKeyed : Projection.Adapters.Sql.ReadSide.UserDirectoryProbe =
+        { Found = true; EmailKeyed = true; TableName = Some "dbo.OSSYS_USER" }
+    let absentDir = Projection.Adapters.Sql.ReadSide.UserDirectoryProbe.absent
     let reports : CapabilitySurvey.EnvironmentReport list =
-        [ { Name = "cloud-uat"; Grant = Some Grant.SchemaAndData; Required = Set.empty; Connected = true;  Reachable = true;  Missing = []; CdcTracked = false }
-          { Name = "prod";      Grant = Some Grant.DataOnly;      Required = Set.empty; Connected = true;  Reachable = true;  Missing = [ CapabilitySurvey.Performs Preflight.Insert ]; CdcTracked = false }
-          { Name = "stale";     Grant = Some Grant.DataOnly;      Required = Set.empty; Connected = true;  Reachable = false; Missing = []; CdcTracked = false }
-          { Name = "onprem";    Grant = None;                     Required = Set.empty; Connected = false; Reachable = false; Missing = []; CdcTracked = false } ]
+        [ { Name = "cloud-uat"; Grant = Some Grant.SchemaAndData; Required = Set.empty; Connected = true;  Reachable = true;  Missing = []; CdcTracked = false; UserDirectory = emailKeyed }
+          { Name = "prod";      Grant = Some Grant.DataOnly;      Required = Set.empty; Connected = true;  Reachable = true;  Missing = [ CapabilitySurvey.Performs Preflight.Insert ]; CdcTracked = false; UserDirectory = absentDir }
+          { Name = "stale";     Grant = Some Grant.DataOnly;      Required = Set.empty; Connected = true;  Reachable = false; Missing = []; CdcTracked = false; UserDirectory = absentDir }
+          { Name = "onprem";    Grant = None;                     Required = Set.empty; Connected = false; Reachable = false; Missing = []; CdcTracked = false; UserDirectory = absentDir } ]
     let p = plain (TtyRenderer.buildSurveyView reports)
     Assert.Contains("grant covered", p)        // cloud-uat — covered
+    Assert.Contains("users email-keyed", p)    // cloud-uat — P10 user-directory fragment
     Assert.Contains("missing INSERT", p)       // prod — declared data-only, INSERT absent
     Assert.Contains("unreachable", p)          // stale
     Assert.Contains("no live gate", p)         // onprem — bundle, nothing to probe

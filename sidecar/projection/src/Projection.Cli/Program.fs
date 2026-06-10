@@ -340,9 +340,9 @@ let private runFullExportLoad
                     dumpBench "full-export"
                     code
 
-let private runEmit (catalog: Catalog) (outputDir: string) : int =
+let private runEmit (shaping: Config.Config) (catalog: Catalog) (outputDir: string) : int =
     let exitCode =
-        match Compose.runFromCatalog catalog outputDir with
+        match Compose.runFromCatalogWith shaping catalog outputDir with
         | Ok paths ->
             printfn "%d artifact(s) written to %s." paths.Length outputDir
             paths
@@ -386,7 +386,7 @@ let private runEmitSkeletonOnly (catalog: Catalog) (outputDir: string) : int =
     dumpBench "emit-skeleton-only"
     exitCode
 
-let private runDeploy (catalog: Catalog) : int =
+let private runDeploy (shaping: Config.Config) (catalog: Catalog) : int =
     if not (Deploy.Docker.isAvailable ()) then
         die
             4
@@ -396,7 +396,7 @@ let private runDeploy (catalog: Catalog) : int =
             printfn "projection: spinning up an ephemeral SQL Server container..."
             LogSink.recordStageStart "deploy"
             let sw = System.Diagnostics.Stopwatch.StartNew()
-            let result = (Deploy.runFromCatalog catalog).GetAwaiter().GetResult()
+            let result = (Deploy.runFromCatalogWith shaping catalog).GetAwaiter().GetResult()
             LogSink.recordStageEvent "deploy" sw.ElapsedMilliseconds
                 (match result with Ok (_, report) when report.Ok -> LogSink.Succeeded | _ -> LogSink.Failed)
             match result with
@@ -684,6 +684,7 @@ let private runTransfer
     (emission: EmissionMode)
     (resumable: bool)
     (tables: string list)
+    (surveyAdvisory: string list)
     : int =
     let collect = function Ok _ -> [] | Error es -> es
     let parsedSource    = TransferSpec.parseConnectionSpec sourceSpec
@@ -787,6 +788,16 @@ let private runTransfer
             // (`transfer.unmappedIdentities → 9`) and the post-write drop
             // (`Transfer.DroppedReferencesExit`) still coincide at 9 via classify.
             (Preflight.refusalOf errors).ExitCode
+    // G0c — the advisory capability survey (R6 warn-not-stop). Before a live
+    // Execute, surface any blocked-capability / unreachable findings the survey
+    // raised over the touched environments as a STDERR ADVISORY WARNING, then
+    // PROCEED regardless. V2 owns no production write path during dual-track
+    // (CLAUDE.md R6; DECISIONS 2026-06-09 S3), so the gate is advisory until the
+    // per-pair flip — the run's own exit stands; the advisory never borrows the
+    // standalone `survey` verb's exit-7. Computed at the dispatch layer (where
+    // config is in scope) and threaded in as `surveyAdvisory`; a dry-run carries
+    // no advisory (the empty list), so the preview path is byte-identical.
+    if executeGated then for line in surveyAdvisory do Console.Error.WriteLine line
     // --watch + a real TTY → the live data-load board (§13); the transfer leg
     // streams the "load" stage with per-table progress. Only on a real --execute
     // (a dry-run writes no rows, so the load stage would never advance).
@@ -1805,17 +1816,37 @@ let private runCaptureProfile (connSpec: string) (outPath: string) : int =
     dumpBench "profile"
     exitCode
 
-let private runPlan (plan: ExecutionPlan) : int =
+let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan: ExecutionPlan) : int =
     for n in plan.Notes do eprintfn "Note — %s" n
     // Resolve the model to a Catalog under the live-OSSYS-primary / file-
     // fallback policy (ModelResolution), then run the Catalog-accepting face.
+    //
+    // THE_CONFIG_CONTROL_PLANE §6 (S3) — the SINGLE shared module-filter seam.
+    // Every model-bearing flow arm (emit / deploy / preview / migrate) routes
+    // the resolved catalog through `Compose.applyModuleFilter` HERE so a
+    // `model.modules` scope narrows the bundle and the live/docker/migrate
+    // catalogs identically (the riskiest-seam callout). An empty `model.modules`
+    // is the all-permissive identity, so the default flow stays byte-identical.
     let needCatalog (modelOssys: string option) (model: ModelSource) (run: Catalog -> int) : int =
         let modelFile =
             match model with
             | ModelSource.ModelFile p | ModelSource.ConfigFile p -> Some p
             | ModelSource.Unspecified -> None
-        match (ModelResolution.resolveCatalog modelOssys modelFile).GetAwaiter().GetResult() with
+        let resolved =
+            (ModelResolution.resolveCatalog modelOssys modelFile).GetAwaiter().GetResult()
+            |> Result.bind (Compose.applyModuleFilter shaping)
+        match resolved with
         | Ok catalog -> run catalog
+        | Error es ->
+            for e in es do TtyRenderer.renderVoicedError e
+            6
+    // THE_CONFIG_CONTROL_PLANE §6 (S3) — apply the shaping catalog overlays
+    // (renames + policy tightening) to a module-filtered catalog before the
+    // non-bundle destinations (preview / migrate / migrate-with-data) evolve
+    // the sink schema toward it. Default shaping is the identity on the catalog.
+    let withShaped (shaping: Config.Config) (catalog: Catalog) (run: Catalog -> int) : int =
+        match Compose.applyShapingToCatalog shaping catalog with
+        | Ok shapedCatalog -> run shapedCatalog
         | Error es ->
             for e in es do TtyRenderer.renderVoicedError e
             6
@@ -1831,15 +1862,29 @@ let private runPlan (plan: ExecutionPlan) : int =
     | PlanAction.EmitSkeleton (model, modelOssys, dir) ->
         needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runEmitSkeletonOnly cat dir))
     | PlanAction.EmitBundle (model, modelOssys, dir) ->
-        needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runEmit cat dir))
+        needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runEmit shaping cat dir))
     | PlanAction.DeployDocker (model, modelOssys) ->
-        needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runDeploy cat))
+        needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runDeploy shaping cat))
     | PlanAction.PreviewSchema (model, modelOssys, conn, decl) ->
-        needCatalog modelOssys model (fun cat -> runProjectLivePreview cat conn decl)
+        needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat -> runProjectLivePreview shapedCat conn decl))
     | PlanAction.Transfer (src, sink, opts, execute) ->
-        runTransfer src sink None None opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Tables
+        runTransfer src sink None None opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Tables surveyAdvisory
+    | PlanAction.RunReverseLeg (_src, _sink, _opts, _execute) ->
+        // G2 — the engine ROUTED the B→A legacy reverse leg distinctly (not as an
+        // A→A peer transfer). The reverse-leg RUNNER (`Transfer.runReverseLeg` /
+        // the M3.b face) needs two SsKey-ALIGNED contracts — the logical source and
+        // physical sink RENDERED from the ONE authored model — which a live two-DB
+        // flow cannot produce yet (the J3 residual; THE_DATA_PRODUCERS §6 LE-1).
+        // Reading the two live DBs independently would NOT align the SsKeys. So we
+        // surface the gap as a NAMED REFUSAL — not a crash, and never a silent
+        // mis-run as a peer transfer. (When a clean contract source exists, this
+        // arm runs it; until then, the honest boundary is the refusal.)
+        TtyRenderer.renderVoicedError
+            (ValidationError.create "cli.move.reverseLegResidual"
+                "the legacy B→A reverse leg needs SsKey-aligned contracts (the one model rendered logical-source + physical-sink); a live two-DB flow cannot produce them yet — see J3 / THE_DATA_PRODUCERS §6 LE-1.")
+        6
     | PlanAction.MigrateWithData (model, modelOssys, sink, src, opts) ->
-        needCatalog modelOssys model (fun cat -> runMigrateWithData cat sink src opts.Reconcile opts.Rekey opts.Declaration opts.AllowCdc opts.Store opts.Env)
+        needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat -> runMigrateWithData shapedCat sink src opts.Reconcile opts.Rekey opts.Declaration opts.AllowCdc opts.Store opts.Env))
     | PlanAction.SynthesizeAndLoad (model, modelOssys, profile, conn, opts, execute) ->
         runSyntheticLoad model modelOssys profile conn opts execute
     | PlanAction.CaptureProfile (conn, out) -> runCaptureProfile conn out
@@ -1850,7 +1895,7 @@ let private runPlan (plan: ExecutionPlan) : int =
         if Watch.shouldWatch watchMode.Value then Watch.renderWatch pipelineStages (Watch.resolveDwellMs ()) run
         else run ()
     | PlanAction.Migrate (model, modelOssys, conn, opts) ->
-        needCatalog modelOssys model (fun cat -> runMigrateExecute cat conn opts.Declaration opts.AllowCdc opts.Store opts.Env)
+        needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat -> runMigrateExecute shapedCat conn opts.Declaration opts.AllowCdc opts.Store opts.Env))
     // check --------------------------------------------------------------
     | PlanAction.CheckCanary (ddl, false) -> withRun "projection check" (fun () -> runCanary ddl)
     | PlanAction.CheckCanary (ddl, true)  -> withRun "projection check --cdc-silence" (fun () -> runCanaryCdcSilence ddl)
@@ -1904,19 +1949,41 @@ let private runInit () : int =
         1
     else
         // LINT-ALLOW: terminal operator-facing scaffold text at the CLI boundary.
+        // The shape MUST match `ProjectionConfig.parse` (MovementSurface.fs): the
+        // UNIFIED `projection.json` (THE_CONFIG_CONTROL_PLANE) — one document, two
+        // views. The movement view is `environments` (access bundle|direct|docker;
+        // grant; conn is env:/file:) + `flows` (from/to; opt-in `shape`/`shaping`).
+        // The shaping view folds in as sibling namespaces: the canonical `model`
+        // OBJECT (path/ossys/modules — `ossys` is the LIVE primary, `path` the file
+        // fallback, ModelResolution.chooseOrigin), plus `overrides`/`emission`/
+        // `policy` (defaulted when absent). Flows now bake the shaping into the
+        // publish (ConfigFile→PublishBundle/PublishAndLoad) for store-bearing sinks.
+        // A SOURCE-only env carries no grant; only a SINK does. The parser ignores
+        // unknown keys.
         let scaffold =
             "{\n" +
-            "  \"model\": \"model.json\",\n" +
-            "  \"targets\": {\n" +
-            "    \"dev\":     { \"conn\": \"env:DEV_CONN\", \"store\": \"lifecycle/dev.json\" },\n" +
-            "    \"qa\":      { \"conn\": \"env:QA_CONN\",  \"store\": \"lifecycle/qa.json\" },\n" +
-            "    \"uat\":     { \"conn\": \"env:UAT_CONN\", \"store\": \"lifecycle/uat.json\" },\n" +
-            "    \"publish\": { \"dir\": \"./publish\" }\n" +
+            "  \"model\": { \"ossys\": \"file:./secrets/ossys.conn\" },\n" +
+            "  \"environments\": {\n" +
+            "    \"local\":      { \"access\": \"docker\" },\n" +
+            "    \"onprem-dev\": { \"access\": \"bundle\", \"out\": \"./dist/onprem-dev\", \"grant\": \"schema+data\", \"rendition\": \"logical\", \"store\": \"./lifecycle/onprem-dev.json\" }\n" +
             "  },\n" +
-            "  \"defaults\": { \"how\": \"merge\", \"data\": \"model\" }\n" +
+            "  \"emission\": { \"ssdt\": true, \"dacpac\": true },\n" +
+            "  \"flows\": {\n" +
+            "    \"try\":      { \"from\": \"model\", \"to\": \"local\" },\n" +
+            "    \"skeleton\": { \"from\": \"model\", \"to\": \"local\", \"shape\": \"skeleton\" },\n" +
+            "    \"publish\":  { \"from\": \"model\", \"to\": \"onprem-dev\" }\n" +
+            "  }\n" +
             "}\n"
         File.WriteAllText(path, scaffold)
-        printfn "projection init: wrote %s — name the model and targets (a conn is an env:/file: reference, never a literal string)." path
+        printfn "projection init: wrote %s." path
+        printfn "  Next: put your cloud OutSystems connection string in ./secrets/ossys.conn — the"
+        printfn "        model is read LIVE from it (the file's contents ARE the connection string; D9,"
+        printfn "        gitignored, never committed). The engine reads the file directly — no shell"
+        printfn "        export. Then `projection` lists the flows; `projection try` previews into a"
+        printfn "        throwaway Docker database; `projection publish` emits the on-prem SSDT bundle."
+        printfn "        For the cloud-insertion flows (golden / preview / synth into a data-only cloud"
+        printfn "        sink) see examples/projection.sample.json. A live write needs both --go and"
+        printfn "        PROJECTION_ALLOW_EXECUTE=1."
         0
 
 /// Discover `projection.json` (or `PROJECTION_CONFIG`) — absent is the empty
@@ -1941,9 +2008,9 @@ let private runSurvey () : int =
         let reports = (CapabilitySurvey.survey cfg).GetAwaiter().GetResult()
         TtyRenderer.renderAnswer false View.defaultDepth (TtyRenderer.buildSurveyView reports)
         // CI gate: non-zero when a connected environment can't do what is asked.
-        let blocked =
-            reports |> List.exists (fun r -> r.Connected && (not r.Reachable || not (List.isEmpty r.Missing)))
-        if blocked then 7 else 0
+        // The standalone verb HARD-STOPS (exit 7); the in-flow advisory (G0c)
+        // reads the SAME `CapabilitySurvey.blocked` predicate but only warns.
+        if reports |> List.exists CapabilitySurvey.blocked then 7 else 0
 
 /// A flow's content origin, rendered for the menu (THE_CLI.md §4.4).
 let private flowSourceText (s: FlowSource) : string =
@@ -2018,4 +2085,29 @@ let main argv =
             | Ok intent ->
                 // Pure routing → effectful runner. The surface→engine map is
                 // totality-tested (`Command.plan`); `runPlan` executes + voices.
-                runPlan (Command.plan cfg intent)
+                //
+                // G0c — compute the advisory capability survey HERE (the dispatch
+                // layer, where `cfg` is in scope; `discoverConfig`/`survey` live
+                // below `runTransfer` in this file, so the survey is threaded IN,
+                // never fetched inside the runner). Run it only for a live-Execute
+                // Flow (a `--go` flow); preview / non-flow verbs carry no advisory
+                // (the empty list). The survey is read-only; its findings warn but
+                // never gate (R6 — V2 owns no production write path).
+                let surveyAdvisory =
+                    match intent with
+                    | Intent.Flow (_, opts) when opts.Go ->
+                        let reports = (CapabilitySurvey.survey cfg).GetAwaiter().GetResult()
+                        CapabilitySurvey.advisoryLines reports
+                    | _ -> []
+                // S6.4 — the effective shaping for THIS run. A flow may carry an
+                // opt-in `shaping` override that deep-overlays the global shaping
+                // (`Config.overlay`, whole-section granularity) for its own
+                // emission; `None` = the global shaping (byte-identical).
+                let effectiveShaping =
+                    match intent with
+                    | Intent.Flow (flow, _) ->
+                        match flow.Shaping with
+                        | Some flowShaping -> Config.overlay cfg.Shaping flowShaping
+                        | None -> cfg.Shaping
+                    | _ -> cfg.Shaping
+                runPlan effectiveShaping surveyAdvisory (Command.plan cfg intent)

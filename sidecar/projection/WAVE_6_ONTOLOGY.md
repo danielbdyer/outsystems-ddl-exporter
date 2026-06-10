@@ -93,7 +93,9 @@ deployment engine for a live regulated estate.** Its consumers and terminus:
 **The estate is a lattice of (environment × release-time) cells** — DEV, TEST/QA, UAT, PROD — each the *same
 logical estate* (SsKey-stable) realized at a different point in space and time, lagging by releases. Two values
 `A` and `B` compared by the engine are **two cells of this lattice** — which is precisely what makes them "two
-periodic values": two rhythm-points of one estate.
+periodic values": two rhythm-points of one estate. (They also read as **two dispositions of one model** — the
+cloud physical `OSUSR_*` rendition vs the on-prem logical target, the Realization name-space; **cloud insertion**
+moves *up* between them. Same axis, different angle. See `THE_DATA_PRODUCERS.md` and `WAVE_6_ALGEBRA.md` §1.)
 
 **The actual flows** (not the generic ones I first assumed):
 - OutSystems Dev cloud → Dev on-prem; QA cloud → QA on-prem (extract + load).

@@ -1,5 +1,10 @@
 # Projection — V2 Pure Core
 
+> **Running the `projection` CLI as an operator?** Start with **`GETTING_STARTED.md`**
+> (first-run guide: prerequisites, build/invoke, config, secrets, preview → apply) and the
+> annotated **`examples/projection.sample.json`**. This README is the contributor-facing
+> codebase orientation.
+
 The pure-F# foundation of the OutSystems DDL exporter, V2. The pure core
 lives entirely under `sidecar/projection/`. V1 (the existing C#
 implementation in the rest of the trunk) continues to operate; V2 is
@@ -115,7 +120,7 @@ chapter B.3 close letter for the actually-pending shortlist):
       V2_DRIVER.md              - destination KPI + operative backlog (supersedes BACKLOG.md, now a forwarding pointer)
       VISION.md / SPINE.md / PLAYBOOK.md / STAGING.md - strategic surfaces
       CHAPTER_3_PRESCOPE_*.md / CHAPTER_4_PRESCOPE_*.md - per-chapter pre-scope docs
-      global.json            - SDK pin (9.0.305, rollForward: disable)
+      global.json            - SDK pin (9.0.314, rollForward: disable)
       .editorconfig          - F#-aware formatting scoped to this folder
       Projection.sln         - V2's own solution
 

@@ -58,10 +58,10 @@ let ``CapabilitySurvey.Capability.all is Reads plus every write action; permissi
 // --- the flow-shape derivation (requiredBy) --------------------------------
 
 let private env (name: string) (grant: Grant option) : Projection.Pipeline.Environment =
-    { Name = name; Access = Access.Direct (ConnectionRef.EnvVar (name + "_CONN")); Grant = grant; Store = None }
+    { Name = name; Access = Access.Direct (ConnectionRef.EnvVar (name + "_CONN")); Grant = grant; Store = None; Rendition = None }
 
 let private flow (name: string) (from: FlowSource) (toEnv: string) : Flow =
-    { Name = name; From = from; To = toEnv; Rekey = None; Tables = [] }
+    { Name = name; From = from; To = toEnv; Rekey = None; Tables = []; Scope = None; Shape = None; Shaping = None }
 
 let private cfgWith (envs: Projection.Pipeline.Environment list) (flows: Flow list) : ProjectionConfig =
     { ProjectionConfig.empty with
@@ -127,3 +127,68 @@ let ``requiredOf: an environment no flow touches is asked for nothing`` () =
     let unused = env "spare" (Some Grant.SchemaAndData)
     let cfg = cfgWith [ unused ] []
     Assert.Equal<Set<CapabilitySurvey.Capability>>(Set.empty, CapabilitySurvey.requiredOf cfg "spare")
+
+// --- G0c: the in-flow advisory (R6 warn, never hard-stop) ------------------
+
+let private report name connected reachable missing : CapabilitySurvey.EnvironmentReport =
+    { Name = name; Grant = Some Grant.DataOnly; Required = Set.empty
+      Connected = connected; Reachable = reachable; Missing = missing; CdcTracked = false
+      UserDirectory = Projection.Adapters.Sql.ReadSide.UserDirectoryProbe.absent }
+
+// --- G0b: EnvironmentReport carries the user-directory probe field ---------
+
+[<Fact>]
+let ``EnvironmentReport carries the UserDirectory P10 field (report field, not a Capability variant)`` () =
+    // The P10 probe surfaces as a NEW FIELD on EnvironmentReport, NOT a new
+    // Capability DU variant — adding a variant would break the required ⇔
+    // surveyed totality. This pins the field's presence + that it round-trips.
+    let emailKeyed : Projection.Adapters.Sql.ReadSide.UserDirectoryProbe =
+        { Found = true; EmailKeyed = true; TableName = Some "dbo.OSSYS_USER" }
+    let r = { report "cloud-uat" true true [] with UserDirectory = emailKeyed }
+    Assert.True(r.UserDirectory.Found)
+    Assert.True(r.UserDirectory.EmailKeyed)
+    Assert.Equal(Some "dbo.OSSYS_USER", r.UserDirectory.TableName)
+    // The Capability DU is untouched — `Capability.all` is still exactly the
+    // five Reads/Performs variants (the totality stays structural).
+    Assert.Equal(5, List.length CapabilitySurvey.Capability.all)
+
+[<Fact>]
+let ``blocked: a connected place missing a required capability is blocked; an all-clear place is not`` () =
+    Assert.True(CapabilitySurvey.blocked (report "missing-insert" true true [ Performs Preflight.Insert ]))
+    Assert.True(CapabilitySurvey.blocked (report "unreachable" true false []))
+    Assert.False(CapabilitySurvey.blocked (report "covered" true true []))
+    // A not-connected place (bundle/docker — no live gate) is never "blocked".
+    Assert.False(CapabilitySurvey.blocked (report "no-gate" false false []))
+
+[<Fact>]
+let ``advisoryLines: a blocked place yields a warning naming the missing capability — but no exit`` () =
+    let reports =
+        [ report "cloud-uat" true true []                                // covered
+          report "prod"      true true [ Performs Preflight.Insert ] ]   // missing INSERT
+    let lines = CapabilitySurvey.advisoryLines reports
+    // The warning is emitted (non-empty) and names the blocked place + its gap...
+    Assert.NotEmpty(lines)
+    Assert.Contains(lines, fun l -> l.Contains "prod" && l.Contains "INSERT")
+    // ...and it is MESSAGE-ONLY: `advisoryLines : EnvironmentReport list -> string
+    // list` returns the warning text, never an exit code, so the in-flow path
+    // cannot borrow the verb's exit-7. The run's own exit stands (R6 — advisory
+    // until the per-pair flip). The "covered" place raises no line.
+    Assert.DoesNotContain(lines, fun l -> l.Contains "cloud-uat")
+
+[<Fact>]
+let ``advisoryLines: an all-clear estate emits no warning (the flow runs silently)`` () =
+    let reports = [ report "cloud-uat" true true []; report "onprem" false false [] ]
+    Assert.Empty(CapabilitySurvey.advisoryLines reports)
+
+[<Fact>]
+let ``advisoryLines: the advisory reads the SAME blocked predicate the verb's gate reads`` () =
+    // The MESSAGE (advisoryLines) and the gate (`blocked`) cannot disagree on
+    // WHAT is blocked — the advisory names exactly the reports `blocked` selects.
+    let reports =
+        [ report "a" true true []
+          report "b" true false []                              // unreachable
+          report "c" true true [ Performs Preflight.Delete ] ]  // missing DELETE
+    let blockedNames = reports |> List.filter CapabilitySurvey.blocked |> List.map (fun r -> r.Name)
+    let lines = CapabilitySurvey.advisoryLines reports
+    for n in blockedNames do
+        Assert.Contains(lines, fun l -> l.Contains n)

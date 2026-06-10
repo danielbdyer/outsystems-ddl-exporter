@@ -160,3 +160,46 @@ let ``A1: a transfer.cdcTrackedSink refusal classifies to exit 9 through Preflig
                 "Sink has CDC-tracked table(s); refusing --execute." ]
     Assert.Equal(9, refusal.ExitCode)
     Assert.Equal(Preflight.CdcTrackedSink, refusal.Label)
+
+// --- PE-1 / P-REKEY: the golden wipe-set (exclude users, never wipe them) ---
+//
+// `wipeTargets` is the pure core of `wipeFkOrdered`. The golden cloud->cloud
+// flow excludes the User family from the copied set: a ReconciledByRule kind's
+// sink rows are the sink's OWN (matched by email), so a full-refresh wipe must
+// NEVER delete them; and a kind outside the declared subset (LoadSet) is left
+// untouched. These pure witnesses pin the WipeAndLoad-safe behavior the data
+// canary drives end-to-end against a container (the 6.A.1 same-decision pattern).
+
+let private userKey  = mkKey ["User"]
+let private orderKey = mkKey ["Order"]
+let private otherKey = mkKey ["Other"]
+let private topoOf (keys: SsKey list) : TopologicalOrder = { TopologicalOrder.empty with Order = keys }
+
+[<Fact>]
+let ``PE-1/P-REKEY: the wipe never targets a ReconciledByRule kind (golden users are not wiped)`` () =
+    let plan =
+        planOf
+            [ load userKey  IdentityDisposition.ReconciledByRule []
+              load orderKey IdentityDisposition.PreservedFromSource [] ]
+    let targets = Transfer.wipeTargets plan (topoOf [ userKey; orderKey ]) None
+    Assert.DoesNotContain(userKey, targets)
+    Assert.Contains(orderKey, targets)
+
+[<Fact>]
+let ``PE-1: the wipe respects the LoadSet (a kind outside the declared subset is untouched)`` () =
+    let plan =
+        planOf
+            [ load orderKey IdentityDisposition.PreservedFromSource []
+              load otherKey IdentityDisposition.PreservedFromSource [] ]
+    let targets = Transfer.wipeTargets plan (topoOf [ orderKey; otherKey ]) (Some (Set.ofList [ orderKey ]))
+    Assert.Equal<SsKey list>([ orderKey ], targets)
+
+[<Fact>]
+let ``PE-1: with no LoadSet the wipe targets every non-reconciled loaded kind, child-first`` () =
+    let plan =
+        planOf
+            [ load orderKey IdentityDisposition.PreservedFromSource []
+              load otherKey IdentityDisposition.PreservedFromSource [] ]
+    // topo [Order; Other] reversed (child-first) = [Other; Order]
+    let targets = Transfer.wipeTargets plan (topoOf [ orderKey; otherKey ]) None
+    Assert.Equal<SsKey list>([ otherKey; orderKey ], targets)

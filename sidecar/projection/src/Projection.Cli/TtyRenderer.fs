@@ -230,6 +230,15 @@ let buildSetupView
 /// state plainly — covered / missing the named activities / unreachable / no
 /// live gate. Pure over the probed reports.
 let buildSurveyView (reports: CapabilitySurvey.EnvironmentReport list) : View.View =
+    // G0b (P10) — the user-directory readability fragment appended to a
+    // reachable place's line: the platform user table the golden/preview re-key
+    // matches against, and whether it carries an email key. It reads plainly —
+    // "users email-keyed" / "users (no email key)" / "no user directory".
+    let userDirText (u: Projection.Adapters.Sql.ReadSide.UserDirectoryProbe) : string =
+        match u.Found, u.EmailKeyed with
+        | true, true  -> sprintf " %s users email-keyed" Theme.dot
+        | true, false -> sprintf " %s users (no email key)" Theme.dot
+        | false, _    -> sprintf " %s no user directory" Theme.dot
     let field (r: CapabilitySurvey.EnvironmentReport) =
         let value, status =
             if not r.Connected then "no live gate (file or ephemeral)", View.Neutral
@@ -238,11 +247,11 @@ let buildSurveyView (reports: CapabilitySurvey.EnvironmentReport list) : View.Vi
                 sprintf "reachable %s missing %s" Theme.dot (r.Missing |> List.map CapabilitySurvey.Capability.text |> String.concat ", "), View.Warn
             else
                 let cdc = if r.CdcTracked then sprintf " %s CDC-tracked" Theme.dot else ""
-                sprintf "reachable %s grant covered%s" Theme.dot cdc, View.Ok
+                sprintf "reachable %s grant covered%s%s" Theme.dot cdc (userDirText r.UserDirectory), View.Ok
         View.Field(r.Name, value, status)
     let needAttention =
         reports
-        |> List.filter (fun r -> r.Connected && (not r.Reachable || not (List.isEmpty r.Missing)))
+        |> List.filter CapabilitySurvey.blocked
         |> List.length
     let verdict =
         if needAttention = 0 then
