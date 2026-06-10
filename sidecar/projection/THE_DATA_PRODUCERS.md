@@ -254,16 +254,18 @@ the same `SsKey` model. Slices:
     recognizes a flow as the B→A reverse leg from the M1 `rendition` flag (live `logical` source →
     live `physical` sink) and resolves its two connections; `TransferRun.runReverseLeg` is the thin
     engine face that delegates to the LE-2-proven `runWithRenames` **given the two contracts**.
-  - **The remaining piece (the per-flow runner arm — deferred):** *where do the two SsKey-aligned
-    contracts come from for a real configured flow?* `runWithRenames` needs a source contract at
-    the **logical** rendition and a sink contract at the **physical** (OSUSR) rendition whose
-    SsKeys **align by construction**. The LE-2 canary supplies them as authored stable-SsKey
-    contracts (the rename-canary precedent). For a live two-DB flow, ReadSide SsKeys are
-    **name-derived**, so reading the two DBs independently does **not** align them — that needs
-    either a **shared authored model rendered in both renditions** (the migration-team flow already
-    uses an authored model) OR **attribute-scope `V2.SsKey` recovery in ReadSide**
-    (`ReadSide.buildAttribute`, the durable alternative — a separate, larger piece). The per-flow
-    runner arm that picks up the two contracts and calls `runReverseLeg` is the remaining wiring.
+  - **The per-flow runner arm — LANDED (J3 closed, 2026-06-10):** the contract source is the
+    **shared authored model rendered in both renditions** — `CatalogRendition.logical` (the same
+    two emission-axis passes the down-leg publish applies) / `.physical` (the catalog as
+    authored); SsKeys align by construction (A1), and the rename map is the identity (`Name` is
+    rendition-invariant — the rendition difference rides each contract's physical coordinates).
+    `PlanAction.RunReverseLeg` carries the model (a model-less legacy flow refuses at PLAN time);
+    `Transfer.runReverseLegThroughConnections` drives the leg through the apparatus; the CLI face
+    refuses reconcile/rekey by name (the reconcile + rename combination stays the follow-on).
+    Witness: the `M3/LE-1 … RENDERED … (CatalogRendition)` canary. The alternative —
+    **attribute-scope `V2.SsKey` recovery in ReadSide** (`ReadSide.buildAttribute`) — was NOT
+    pursued; re-open trigger: a reverse leg over an estate with **no** authored model.
+    See `DECISIONS 2026-06-10 — J3 residual CLOSED`.
 - **LE-2 — the reverse-leg (B→A) round-trip canary.** Pipe B→A, read back, assert the data
   round-trips. **No foreign-schema tolerances** — same model both ways.
 **Note:** `synthetic` profiled from the same on-prem data (`profile: onprem-...`) is the

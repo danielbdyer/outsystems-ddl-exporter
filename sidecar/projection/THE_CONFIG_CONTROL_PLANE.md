@@ -59,7 +59,7 @@ Direction is read off `(src rendition → sink rendition, scope)`; **A** = physi
 | publish to bundle (down-leg) · deploy to docker · migrate · schema preview | A→B | schema/both | model | ✅ |
 | synthetic cloud insertion (up) | mint→A | data | synthetic | ✅ |
 | peer/golden re-key (up) | A→A | data | `FromTarget` | ✅ (but A→A not derived — G2) |
-| legacy reverse leg (up) | **B→A** | data | `FromTarget` (logical src) | ⚠️ classified, not routed (G2) |
+| legacy reverse leg (up) | **B→A** | data | `FromTarget` (logical src) | ✅ routed (G2) + runnable (J3 closed 2026-06-10: `CatalogRendition` contracts) |
 | dev→qa→uat promotion · migrate-with-data · transfer · preview-of-any · eject | various | various | various | ✅ |
 | **schema-only down-leg** | A→B | **schema** | model | ❌ G1 |
 | **data-only into a schema+data target** | →* | **data** | peer | ❌ G1 |

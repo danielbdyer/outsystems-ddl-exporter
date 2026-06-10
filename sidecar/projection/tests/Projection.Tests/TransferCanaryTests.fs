@@ -219,6 +219,13 @@ module private TransferCanaryFixtures =
     let legacySourceContract : Catalog = legacyContract "Customer"          "Email"   "EMAIL"
     let legacySinkContract   : Catalog = legacyContract "OSUSR_XF_CUSTOMER" "Contact" "CONTACT"
 
+    /// J3 closed — the ONE authored model in its as-authored (physical) form:
+    /// the OSUSR table + physical columns; the logical names ride `Name`.
+    /// `CatalogRendition.physical` IS this catalog; `CatalogRendition.logical`
+    /// derives the B contract from it (the production contract source — the
+    /// hand-built pair above is the engine-only LE-2 precedent).
+    let legacyAuthoredModel : Catalog = legacyContract "OSUSR_XF_CUSTOMER" "Email" "CONTACT"
+
     /// Scalar string from a connection (for asserting a single cell).
     let scalarStr (cnn: Microsoft.Data.SqlClient.SqlConnection) (sql: string) : System.Threading.Tasks.Task<string> =
         task {
@@ -816,6 +823,44 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                                 // The physical OSUSR sink's CONTACT column carries the logical
                                 // source's EMAIL data — table + column rendition resolved by SsKey,
                                 // not lost to NULL (a source-name/ordinal write) or a missing table.
+                                let! c1 = TransferCanaryFixtures.scalarStr sink "SELECT [CONTACT] FROM [dbo].[OSUSR_XF_CUSTOMER] WHERE [ID]=1;"
+                                Assert.Equal("alice@x", c1)
+                                let! c2 = TransferCanaryFixtures.scalarStr sink "SELECT [CONTACT] FROM [dbo].[OSUSR_XF_CUSTOMER] WHERE [ID]=2;"
+                                Assert.Equal("bob@x", c2)
+                                let! n = TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_XF_CUSTOMER]"
+                                Assert.Equal(2, n)
+                            })
+                }))
+
+    // J3 closed / LE-1 — the SAME reverse leg with the contracts RENDERED from
+    // the ONE authored model by `CatalogRendition` (the production contract
+    // source the CLI arm uses), not hand-built: the logical source contract is
+    // DERIVED (table OSUSR_XF_CUSTOMER → Customer; columns ID/CONTACT → Id/Email),
+    // deployed, seeded, and piped up into the as-authored physical sink.
+    [<Fact>]
+    member _.``M3/LE-1 legacy B->A: contracts RENDERED from the one authored model (CatalogRendition) round-trip`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "LegacyBARendered") then () else
+        let model = TransferCanaryFixtures.legacyAuthoredModel
+        let logicalContract = CatalogRendition.logical model
+        let physicalContract = CatalogRendition.physical model
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "LegacyRenderSrc" (fun src _ ->
+                task {
+                    // B (logical): deployed from the RENDERED logical contract.
+                    do! Deploy.executeBatch src (SsdtDdlEmitter.statements logicalContract |> Render.toText)
+                    do! Deploy.executeBatch src
+                            "INSERT INTO [dbo].[Customer] ([Id],[Email]) VALUES (1, N'alice@x'), (2, N'bob@x');"
+                    return!
+                        fixture.WithEphemeralDatabase "LegacyRenderSink" (fun sink _ ->
+                            task {
+                                // A (physical): the as-authored OSUSR rendition, empty.
+                                do! Deploy.executeBatch sink (SsdtDdlEmitter.statements physicalContract |> Render.toText)
+
+                                let! reportR =
+                                    Transfer.runWithRenames Transfer.Execute true src sink
+                                        logicalContract physicalContract
+                                let _ = TransferCanaryFixtures.value reportR
+
                                 let! c1 = TransferCanaryFixtures.scalarStr sink "SELECT [CONTACT] FROM [dbo].[OSUSR_XF_CUSTOMER] WHERE [ID]=1;"
                                 Assert.Equal("alice@x", c1)
                                 let! c2 = TransferCanaryFixtures.scalarStr sink "SELECT [CONTACT] FROM [dbo].[OSUSR_XF_CUSTOMER] WHERE [ID]=2;"

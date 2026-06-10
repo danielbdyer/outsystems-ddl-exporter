@@ -312,12 +312,12 @@ type PlanAction =
     /// live + data source whose DERIVED direction is `UpLegacy` (B→A) → the
     /// reverse-leg runner (`Transfer.runReverseLeg` / the M3.b face). The engine
     /// distinguishes this from an A→A peer `Transfer` — which it cannot do by
-    /// `DataOrigin` alone (both are `FromTarget`). The runner needs two
-    /// SsKey-aligned contracts (logical source + physical sink of the ONE model);
-    /// a live two-DB flow cannot produce them yet (the J3 residual,
-    /// THE_DATA_PRODUCERS §6 LE-1), so the runner resolves to a NAMED REFUSAL
-    /// (`cli.move.reverseLegResidual`) rather than mis-running as a peer transfer.
-    | RunReverseLeg of source: string * sink: string * opts: LoadOpts * execute: bool
+    /// `DataOrigin` alone (both are `FromTarget`). The runner's two SsKey-aligned
+    /// contracts (logical source + physical sink) are the ONE authored model
+    /// RENDERED at both renditions (`CatalogRendition`; J3 closed) — so the
+    /// action carries the model the way `PreviewSchema`/`Migrate` do, and a
+    /// model-less legacy flow refuses at PLAN time (named), never at the runner.
+    | RunReverseLeg of model: ModelSource * modelOssys: string option * source: string * sink: string * opts: LoadOpts * execute: bool
     /// live + synthetic data source → generate from the durable profile and
     /// load (DryRun preview when execute=false; the DML-only load when
     /// execute=true). The model supplies the target schema B — read live from

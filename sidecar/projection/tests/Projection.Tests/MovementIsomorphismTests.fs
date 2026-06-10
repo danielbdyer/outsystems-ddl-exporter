@@ -236,7 +236,10 @@ let ``A44 clause 3 — the reverse leg (B→A) routes to RunReverseLeg; a peer (
                 Environments =
                     [ directEnv "src" None (Some srcR); directEnv "sink" (Some Grant.DataOnly) (Some sinkR) ]
                     |> List.map (fun e -> e.Name, e) |> Map.ofList
-                Flows = Map.empty }
+                Flows = Map.empty
+                // J3 — the reverse leg renders its contracts from the authored
+                // model, so the legacy variant carries one (plan-time gate).
+                Shaping = { ProjectionConfig.empty.Shaping with Model = { ProjectionConfig.empty.Shaping.Model with Path = Some "model.json" } } }
         let flow = { Name = "leg"; From = FlowSource.Env "src"; To = "sink"; Rekey = None; Tables = []; Reconcile = []; Scope = Some Scope.Data; Shape = None; Shaping = None }
         cfg, flow
     let legacyCfg, legacyFlow = mk Rendition.Logical Rendition.Physical
