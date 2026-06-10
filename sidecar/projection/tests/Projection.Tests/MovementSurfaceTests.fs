@@ -245,7 +245,7 @@ let ``reverseLegOf: a logical source to a non-live (bundle) physical sink is NOT
 // can never drift.
 
 let private previewOpts : FlowRunOpts =
-    { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false }
+    { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Seed = None; Scale = None }
 
 let private dirOf (cfg: ProjectionConfig) name =
     match Command.resolveFlowSpec cfg (Map.find name cfg.Flows) previewOpts with
@@ -293,7 +293,7 @@ let ``direction: a model source to a bundle target derives Down (the A->B down-l
 let ``direction: the legacy flow routes through planFlow to RunReverseLeg under --go --scope data`` () =
     // The flow's grant is `data`, so the grant gate passes; the derived UpLegacy
     // direction routes the committed data move to the reverse-leg runner.
-    let commitData = { Go = true; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false }
+    let commitData = { Go = true; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Seed = None; Scale = None }
     let flow = { Map.find "legacy" reverseCfg.Flows with Scope = Some Scope.Data }
     match (Command.planFlow reverseCfg flow commitData).Action with
     | PlanAction.RunReverseLeg ("env:ONPREM_LEGACY_CONN", "env:CLOUD_UAT_CONN", _, true) -> ()
@@ -319,7 +319,7 @@ let private liveDev = Destination.Live (ConnectionRef.EnvVar "DEV_CONN")
 let private baseLive = MovementSpec.forDestination liveDev
 let private defaultOpts : LoadOpts =
     { Declaration = DeclareNone; Emission = EmissionMode.Incremental
-      Reconcile = []; Rekey = None; AllowCdc = false; Resumable = false; Store = None; Env = None; Tables = [] }
+      Reconcile = []; Rekey = None; AllowCdc = false; Resumable = false; Store = None; Env = None; Tables = []; Seed = None; Scale = None }
 
 [<Fact>]
 let ``planMovement: --fresh selects WipeAndLoad on the transfer path`` () =
@@ -359,6 +359,19 @@ let ``planMovement: folder + model + shape routes Skeleton vs Bundle`` () =
     let folderModel shape = { MovementSpec.forDestination (Destination.Folder "./o") with Model = ModelSource.ModelFile "m.json"; Shape = shape }
     Assert.Equal(PlanAction.EmitSkeleton (ModelSource.ModelFile "m.json", None, "./o"), planOf (folderModel Shape.Skeleton))
     Assert.Equal(PlanAction.EmitBundle (ModelSource.ModelFile "m.json", None, "./o"), planOf (folderModel Shape.Bundle))
+
+[<Fact>]
+let ``planMovement: folder + model + shape manifest routes to EmitManifest`` () =
+    let s = { MovementSpec.forDestination (Destination.Folder "./o") with Model = ModelSource.ModelFile "m.json"; Shape = Shape.Manifest }
+    Assert.Equal(PlanAction.EmitManifest (ModelSource.ModelFile "m.json", None, "./o"), planOf s)
+
+[<Fact>]
+let ``config parses a flow's manifest shape; an unknown shape names all four tokens`` () =
+    let json = """{ "environments": { "out": { "access": "bundle", "out": "d" } }, "flows": { "m": { "to": "out", "shape": "manifest" } } }"""
+    let f = Map.find "m" (ProjectionConfig.parse json |> mustOk).Flows
+    Assert.Equal(Some Shape.Manifest, f.Shape)
+    let bad = """{ "environments": { "out": { "access": "bundle", "out": "d" } }, "flows": { "m": { "to": "out", "shape": "tarball" } } }"""
+    Assert.Contains("cli.config.flowShapeUnknown", errCodes (ProjectionConfig.parse bad))
 
 [<Fact>]
 let ``planMovement: docker + model → DeployDocker; no model → Refused`` () =
@@ -453,7 +466,7 @@ let private flowCfg =
       },
       "flows": {
         "uat":     { "from": "cloud-dev", "to": "onprem-uat", "rekey": "file:users.csv" },
-        "golden":  { "from": "cloud-qa",  "to": "cloud-uat",  "tables": ["Customer"] },
+        "golden":  { "from": "cloud-qa",  "to": "cloud-uat",  "tables": ["Customer"], "reconcile": ["OSUSR_RC_USER:EMAIL"] },
         "badsrc":  { "from": "onprem-uat","to": "cloud-uat" },
         "lift-uat":{ "from": "model",     "to": "cloud-uat" },
         "spin":    { "from": "model",     "to": "lab" }
@@ -462,7 +475,7 @@ let private flowCfg =
     }
     """ |> mustOk
 
-let private preview = { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false }
+let private preview = { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Seed = None; Scale = None }
 let private commit  = { preview with Go = true }
 let private flowOf name = Map.find name flowCfg.Flows
 let private specOf name opts = Command.resolveFlowSpec flowCfg (flowOf name) opts
@@ -501,7 +514,7 @@ let ``flow golden: the table subset is honored on the transfer opts (item 5)`` (
 
 [<Fact>]
 let ``flow tables on a non-transfer action is noted (data-transfer leg only)`` () =
-    let bt = { Name = "bt"; From = FlowSource.Model; To = "onprem-uat"; Rekey = None; Tables = [ "Customer" ]; Scope = None; Shape = None; Shaping = None }
+    let bt = { Name = "bt"; From = FlowSource.Model; To = "onprem-uat"; Rekey = None; Tables = [ "Customer" ]; Reconcile = []; Scope = None; Shape = None; Shaping = None }
     Assert.Contains((Command.planFlow flowCfg bt preview).Notes, fun (n: string) -> n.Contains "data-transfer leg only")
 
 [<Fact>]
@@ -843,6 +856,75 @@ let ``flow --resumable threads onto the spec (A2)`` () =
     match specOf "spin" { preview with Resumable = true } with
     | Ok s -> Assert.True s.Resumable
     | Error es -> Assert.Fail(sprintf "%A" es)
+
+[<Fact>]
+let ``config parses a flow's reconcile rules (J2 — the golden re-key lives in the flow)`` () =
+    Assert.Equal<string list>([ "OSUSR_RC_USER:EMAIL" ], (flowOf "golden").Reconcile)
+
+[<Fact>]
+let ``config refuses a malformed flow reconcile entry, named (J2)`` () =
+    let json = """{ "environments": { "uat": { "access": "docker" } }, "flows": { "g": { "to": "uat", "reconcile": ["OSUSR_RC_USER"] } } }"""
+    Assert.Contains("cli.config.flowReconcileShape", errCodes (ProjectionConfig.parse json))
+
+[<Fact>]
+let ``flow reconcile threads onto the spec and into the transfer's LoadOpts (J2)`` () =
+    match specOf "golden" commit with
+    | Ok s -> Assert.Equal<string list>([ "OSUSR_RC_USER:EMAIL" ], s.Reconcile)
+    | Error es -> Assert.Fail(sprintf "%A" es)
+    match actionOf "golden" commit with
+    | PlanAction.Transfer (_, _, opts, true) ->
+        Assert.Equal<string list>([ "OSUSR_RC_USER:EMAIL" ], opts.Reconcile)
+    | other -> Assert.Fail(sprintf "expected Transfer, got %A" other)
+
+[<Fact>]
+let ``render: a flow's reconcile rules round-trip (J2; parse-render = id)`` () =
+    let flow = flowOf "golden"
+    let cfg = { ProjectionConfig.empty with Flows = Map.ofList [ flow.Name, flow ] }
+    match ProjectionConfig.parse (ProjectionConfig.render cfg) with
+    | Ok back -> Assert.Equal<string list>([ "OSUSR_RC_USER:EMAIL" ], (Map.find "golden" back.Flows).Reconcile)
+    | Error es -> Assert.Fail(sprintf "round-trip failed: %A" es)
+
+[<Fact>]
+let ``parse: --seed and --scale set the per-run intent (D8)`` () =
+    let (_, o) = parseFlowIntent [ "golden"; "--seed"; "7"; "--scale"; "0.5" ]
+    Assert.Equal(Some 7UL, o.Seed)
+    Assert.Equal(Some 0.5M, o.Scale)
+
+[<Fact>]
+let ``parse: --seed and --scale default absent (D8 byte-identical)`` () =
+    let (_, o) = parseFlowIntent [ "golden" ]
+    Assert.Equal(None, o.Seed)
+    Assert.Equal(None, o.Scale)
+
+[<Fact>]
+let ``parse: a malformed --seed is refused, named (D8)`` () =
+    match Command.parse flowCfg [ "golden"; "--seed"; "many" ] with
+    | Error [ e ] -> Assert.Equal("cli.flow.seedInvalid", e.Code)
+    | other -> Assert.Fail(sprintf "expected the seed refusal, got %A" other)
+
+[<Fact>]
+let ``parse: a non-positive --scale is refused, named (D8)`` () =
+    match Command.parse flowCfg [ "golden"; "--scale"; "0" ] with
+    | Error [ e ] -> Assert.Equal("cli.flow.scaleInvalid", e.Code)
+    | other -> Assert.Fail(sprintf "expected the scale refusal, got %A" other)
+
+[<Fact>]
+let ``planMovement: seed/scale thread into the synthetic load's LoadOpts (D8)`` () =
+    let spec =
+        { baseLive with
+            Data = DataOrigin.Synthetic "file:p.json"
+            Seed = Some 7UL
+            Scale = Some 0.5M }
+    match planOf spec with
+    | PlanAction.SynthesizeAndLoad (_, _, _, _, opts, false) ->
+        Assert.Equal(Some 7UL, opts.Seed)
+        Assert.Equal(Some 0.5M, opts.Scale)
+    | other -> Assert.Fail(sprintf "expected SynthesizeAndLoad, got %A" other)
+
+[<Fact>]
+let ``planMovement: seed/scale on a non-synthetic action are noted, never silently dropped (D8)`` () =
+    let plan = Command.planMovement routeCfg { baseLive with Seed = Some 7UL }
+    Assert.Contains(plan.Notes, fun (n: string) -> n.Contains "--seed/--scale accepted")
 
 [<Fact>]
 let ``parse: a bare flow routes through plan to its engine face`` () =

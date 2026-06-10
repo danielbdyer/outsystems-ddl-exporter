@@ -109,3 +109,44 @@ let ``A7: naming a module absent from the catalog is a fail-loud moduleFilter.mo
     match ModuleFilter.apply opts cat with
     | Ok _ -> Assert.Fail "expected a missing-module refusal"
     | Error es -> Assert.Contains("moduleFilter.modules.missing", es |> List.map (fun e -> e.Code))
+
+// -- A7 (no-silent-drop): the inert include flags carry a NAMED note ----------
+
+[<Fact>]
+let ``A7: include flags without a modules list carry a named inert note (never silence)`` () =
+    let model = { modelWith [] with IncludeSystemModules = true }
+    match ModuleFilterBinding.inertFlagNote model with
+    | Some note ->
+        Assert.Contains("inert", note)
+        Assert.Contains("model.modules", note)
+    | None -> Assert.Fail "expected the inert-flag note"
+
+[<Fact>]
+let ``A7: the inert note is absent when modules are named or the flags are unset`` () =
+    // Flags set WITH a selection — the filter is live, no note.
+    let withSelection =
+        { modelWith [ Config.ModuleSelector.Whole "AppCore" ] with IncludeInactiveModules = true }
+    Assert.Equal(None, ModuleFilterBinding.inertFlagNote withSelection)
+    // No flags, no selection — the default config, no note (byte-identical).
+    Assert.Equal(None, ModuleFilterBinding.inertFlagNote (modelWith []))
+
+[<Fact>]
+let ``A7: the full-export diagnostic stream surfaces moduleFilter.flagsInert`` () =
+    // The structured-channel witness: a run whose config sets the flags with
+    // no modules list carries the Info diagnostic on RunReport.Diagnostics.
+    let modelJson = """{ "exportedAtUtc": "2026-06-10T00:00:00.0000000+00:00", "modules": [ { "name": "Solo", "isSystem": false, "isActive": true, "entities": [ { "name": "Thing", "physicalName": "OSUSR_A7_THING", "isStatic": false, "isExternal": false, "isActive": true, "db_catalog": null, "db_schema": "dbo", "attributes": [ { "name": "Id", "physicalName": "ID", "originalName": null, "dataType": "rtIdentifier", "length": null, "precision": null, "scale": null, "default": null, "isMandatory": true, "isIdentifier": true, "isAutoNumber": true, "isActive": true, "isReference": 0, "refEntityId": null, "refEntity_name": null, "refEntity_physicalName": null, "reference_deleteRuleCode": null, "reference_hasDbConstraint": 0, "external_dbType": null, "physical_isPresentButInactive": 0 } ], "relationships": [], "indexes": [], "triggers": [] } ] } ] }"""
+    let tmp suffix = System.IO.Path.Combine(System.IO.Path.GetTempPath(), sprintf "projection-a7note-%s-%s" (System.Guid.NewGuid().ToString "N") suffix)
+    let modelPath = tmp "model.json"
+    let outDir = tmp "out"
+    System.IO.File.WriteAllText(modelPath, modelJson)
+    try
+        let cfgJson =
+            sprintf
+                """{ "model": { "path": "%s", "includeSystemModules": true }, "output": { "dir": "%s" } }"""
+                (modelPath.Replace("\\", "\\\\")) (outDir.Replace("\\", "\\\\"))
+        let cfg = Config.parse cfgJson |> mustOk
+        let report = (Compose.runWithConfig cfg).GetAwaiter().GetResult() |> mustOk
+        Assert.Contains(report.Diagnostics, fun (d: DiagnosticEntry) -> d.Code = "moduleFilter.flagsInert")
+    finally
+        try System.IO.File.Delete modelPath with _ -> ()
+        try if System.IO.Directory.Exists outDir then System.IO.Directory.Delete(outDir, true) with _ -> ()

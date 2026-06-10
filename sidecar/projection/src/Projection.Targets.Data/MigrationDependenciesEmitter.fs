@@ -312,7 +312,7 @@ module MigrationDependenciesEmitter =
     /// Mirrors `StaticSeedsEmitter.kindToScript` exactly — both
     /// emitters realize the same algebra over the same plan shape.
     let private kindToScript
-        (deleteScope: ScriptDomBuild.DeleteScope option)
+        (deleteScope: DeleteScopePolicy option)
         (cdc: CdcAwareness)
         (kind: Kind)
         (load: DataLoadKind)
@@ -325,6 +325,12 @@ module MigrationDependenciesEmitter =
               Rendered      = "" }
         else
             let cdcAware = CdcAwareness.isEnabled kind.SsKey cdc
+            // AC-D7 — per-kind scope resolution; mirrors
+            // `StaticSeedsEmitter.kindToScript`.
+            let scopeForKind : ScriptDomBuild.DeleteScope option =
+                deleteScope
+                |> Option.bind (DeleteScopePolicy.resolveFor kind)
+                |> Option.map (fun terms -> ({ Terms = terms } : ScriptDomBuild.DeleteScope))
             let deferred = load.DeferredFkColumns
             let typeLookup = columnTypeLookup kind
             let typedRows =
@@ -333,7 +339,7 @@ module MigrationDependenciesEmitter =
                     row.Identifier,
                     rowToTypedValues typeLookup kind.Attributes row)
             let renderedPhase1 =
-                renderMerge deleteScope cdcAware deferred kind (typedRows |> List.map snd)
+                renderMerge scopeForKind cdcAware deferred kind (typedRows |> List.map snd)
             let renderedPhase2 =
                 if Set.isEmpty deferred then ""
                 else
@@ -364,13 +370,14 @@ module MigrationDependenciesEmitter =
     /// end-to-end — operator opinion landed once at plan-build.
     ///
     /// `deleteScope` gates the `WHEN NOT MATCHED BY SOURCE … DELETE` arm
-    /// (per `ScriptDomBuild.DeleteScope`): `None` (the `emitFromPlan`
-    /// default) emits an upsert-only MERGE byte-identical to the
-    /// pre-scope form; `Some scope` activates the convergent-delete arm.
-    /// The parameter makes the emitter scope-ready; the policy that
-    /// selects a scope is CLI/EmissionPolicy plumbing, not the emitter's.
+    /// (per `DeleteScopePolicy`): `None` (the `emitFromPlan` default)
+    /// emits an upsert-only MERGE byte-identical to the pre-scope form;
+    /// `Some policy` activates the convergent-delete arm on every kind
+    /// the policy resolves against (`DeleteScopePolicy.resolveFor`). The
+    /// emitter consumes the scope VALUE, never `Policy` (A18 amended);
+    /// the composer threads it from `EmissionPolicy.DeleteScope`.
     let emitFromPlanWith
-        (deleteScope: ScriptDomBuild.DeleteScope option)
+        (deleteScope: DeleteScopePolicy option)
         (catalog: Catalog)
         (profile: Profile)
         (plan: DataLoadPlan)
@@ -424,7 +431,8 @@ module MigrationDependenciesEmitter =
     /// Builds the plan from the migration row source + the
     /// `UserRemapContext`-derived `SurrogateRemapContext`, then
     /// delegates to `emitFromPlan`.
-    let emitWithTopo
+    let emitWithTopoWith
+        (deleteScope: DeleteScopePolicy option)
         (topo: TopologicalOrder)
         (catalog: Catalog)
         (profile: Profile)
@@ -433,7 +441,16 @@ module MigrationDependenciesEmitter =
         : Result<ArtifactByKind<DataInsertScript>, EmitError> =
         use _ = Bench.scope "emit.migrationDeps.emitWithTopo"
         let plan = buildPlan catalog topo context userRemap
-        emitFromPlan catalog profile plan
+        emitFromPlanWith deleteScope catalog profile plan
+
+    let emitWithTopo
+        (topo: TopologicalOrder)
+        (catalog: Catalog)
+        (profile: Profile)
+        (context: MigrationDependencyContext)
+        (userRemap: UserRemapContext)
+        : Result<ArtifactByKind<DataInsertScript>, EmitError> =
+        emitWithTopoWith None topo catalog profile context userRemap
 
     /// Π_MigrationDependencies emit (standalone). Convenience for
     /// callers that don't go through the `DataEmissionComposer`.

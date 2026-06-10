@@ -48,6 +48,45 @@ type DataComposition =
     | AllData
 
 
+/// One equality term of a convergent-delete scope (AC-D7 / AC-G4): the
+/// physical column gating eligibility plus its raw value (typed per kind
+/// at resolution — the same `SqlLiteral.ofRaw` lift row values ride).
+type DeleteScopeTerm = {
+    Column : string
+    Value  : string
+}
+
+/// The Emission-axis delete-scope policy (AC-D7 / AC-G4 — operator intent,
+/// `OverlayAxis = Emission`). Declares the scope within which the data
+/// emitters' MERGE may carry a `WHEN NOT MATCHED BY SOURCE … THEN DELETE`
+/// arm (a tenant / partition gate). Absent (the default), no arm is
+/// emitted — byte-identical to the upsert-only MERGE. The terms name
+/// PHYSICAL columns; resolution is per kind (see `DeleteScopePolicy.resolveFor`).
+type DeleteScopePolicy = {
+    Terms : DeleteScopeTerm list
+}
+
+[<RequireQualifiedAccess>]
+module DeleteScopePolicy =
+
+    /// Resolve the policy against ONE kind: `Some` typed `(column, literal)`
+    /// terms when every term column is a writable attribute of the kind
+    /// (the scope predicate is expressible there), `None` otherwise.
+    /// `None` is the FAITHFUL rendering, not a silent skip: a kind that
+    /// does not carry the gating column has no row inside the scope, so
+    /// the convergent-delete arm selects nothing and is omitted.
+    let resolveFor (kind: Kind) (policy: DeleteScopePolicy) : (string * SqlLiteral) list option =
+        let resolveTerm (t: DeleteScopeTerm) : (string * SqlLiteral) option =
+            kind.Attributes
+            |> List.tryFind (fun a ->
+                (ColumnRealization.columnNameText a.Column).Equals(t.Column, System.StringComparison.OrdinalIgnoreCase))
+            |> Option.map (fun a -> ColumnRealization.columnNameText a.Column, SqlLiteral.ofRaw a.Type t.Value)
+        let resolved = policy.Terms |> List.map resolveTerm
+        if not (List.isEmpty resolved) && List.forall Option.isSome resolved
+        then Some (List.choose id resolved)
+        else None
+
+
 /// Emission axis. Which artifact families a projection emits. The booleans
 /// are deliberate; orthogonality of schema / data / diagnostics is the
 /// algebra's commitment (decomposition Vector 2). When emission shapes
@@ -68,6 +107,10 @@ type EmissionPolicy = {
     /// bundle; `false` = filter them at emission time. Consumes the
     /// `Index.IsPlatformAuto` IR field shipped at chapter 4.6 slice β.
     IncludePlatformAutoIndexes : bool
+    /// AC-D7 / AC-G4 — the operator's convergent-delete scope for the data
+    /// emitters' MERGE. `None` (the default) emits NO delete arm —
+    /// byte-identical to the pre-scope output.
+    DeleteScope : DeleteScopePolicy option
 }
 
 
@@ -451,7 +494,9 @@ module EmissionPolicy =
                   EmitDiagnostics = emitDiagnostics
                   DataComposition = dataComposition
                   // Chapter 4.8 slice γ — V1 parity default.
-                  IncludePlatformAutoIndexes = true }
+                  IncludePlatformAutoIndexes = true
+                  // AC-D7 — upsert-only default; the scope is operator opt-in.
+                  DeleteScope = None }
 
     /// Replace `IncludePlatformAutoIndexes` while preserving the rest
     /// of the policy. Chapter 4.8 slice γ. Operators set to `false` to

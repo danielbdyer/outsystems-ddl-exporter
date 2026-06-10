@@ -653,3 +653,57 @@ let ``AC-D5: computed column is excluded from CDC-aware MERGE UPDATE SET + predi
     // pre-fix code emits DISPLAY in both places — this is the red→green.)
     Assert.Contains ("[Target].[CODE] = [Source].[CODE]", r)
     Assert.Contains ("[Target].[CODE] <> [Source].[CODE]", r)
+
+// -- AC-D7 / AC-G4: the emission delete-scope reaches the rendered MERGE -----
+// (A3 wire — the policy threads `EmissionPolicy.DeleteScope` → composer →
+// `emitWithTopoWith` → per-kind `DeleteScopePolicy.resolveFor`.)
+
+let private topoOf (catalog: Catalog) : TopologicalOrder =
+    (Projection.Core.Passes.TopologicalOrderPass.runWith TreatAsCycle catalog).Value
+
+[<Fact>]
+let ``AC-D7: a delete-scope policy renders the scoped DELETE arm on a kind carrying the column`` () =
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let scope : DeleteScopePolicy = { Terms = [ { Column = "CODE"; Value = "US" } ] }
+    let artifact =
+        StaticSeedsEmitter.emitWithTopoWith (Some scope) (topoOf catalog) catalog Profile.empty
+        |> mustOkEmit
+    let r = normWs (ArtifactByKind.toMap artifact |> Map.find country.SsKey).Rendered
+    Assert.Contains ("WHEN NOT MATCHED BY SOURCE AND [Target].[CODE] = N'US' THEN DELETE", r)
+    // The non-delete arms remain (the scope arm is additive).
+    Assert.Contains ("WHEN MATCHED", r)
+    Assert.Contains ("WHEN NOT MATCHED THEN INSERT", r)
+
+[<Fact>]
+let ``AC-D7: scope term columns resolve case-insensitively (the physical-column contract)`` () =
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let scope : DeleteScopePolicy = { Terms = [ { Column = "code"; Value = "US" } ] }
+    let artifact =
+        StaticSeedsEmitter.emitWithTopoWith (Some scope) (topoOf catalog) catalog Profile.empty
+        |> mustOkEmit
+    let r = normWs (ArtifactByKind.toMap artifact |> Map.find country.SsKey).Rendered
+    Assert.Contains ("THEN DELETE", r)
+
+[<Fact>]
+let ``AC-D7: a kind missing the scope column keeps the upsert-only MERGE (faithful omission, not a skip)`` () =
+    // No row of Country lies inside a TENANT_ID scope — the kind does not
+    // carry the column — so the faithful rendering omits the arm.
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let scope : DeleteScopePolicy = { Terms = [ { Column = "TENANT_ID"; Value = "42" } ] }
+    let artifact =
+        StaticSeedsEmitter.emitWithTopoWith (Some scope) (topoOf catalog) catalog Profile.empty
+        |> mustOkEmit
+    let r = normWs (ArtifactByKind.toMap artifact |> Map.find country.SsKey).Rendered
+    Assert.DoesNotContain ("NOT MATCHED BY SOURCE", r)
+    Assert.DoesNotContain ("DELETE", r)
+
+[<Fact>]
+let ``AC-D7: no scope is byte-identical to the established upsert-only emit`` () =
+    let catalog = mkCatalog [ mkCountryKind () ]
+    let viaDefault = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let viaExplicitNone =
+        StaticSeedsEmitter.emitWithTopoWith None (topoOf catalog) catalog Profile.empty |> mustOkEmit
+    Assert.Equal<Map<SsKey, DataInsertScript>>(ArtifactByKind.toMap viaDefault, ArtifactByKind.toMap viaExplicitNone)

@@ -49,33 +49,14 @@ module TighteningBinding =
             let target1 = parts.[0]
             let target2 = parts.[1]
             let target3 = parts.[2]
-            // Try logical: Module.Kind.Attribute
-            let logicalHit =
-                catalog.Modules
-                |> List.tryPick (fun m ->
-                    if Name.value m.Name = target1 then
-                        m.Kinds
-                        |> List.tryPick (fun k ->
-                            if Name.value k.Name = target2 then
-                                k.Attributes
-                                |> List.tryFind (fun a -> Name.value a.Name = target3)
-                            else None)
-                    else None)
-            match logicalHit with
-            | Some attr -> Result.success attr.SsKey
+            // Logical (Module.Entity.Attribute) first, then physical
+            // (Schema.Table.Column) — both via the shared CatalogResolution
+            // lookups (B8 centralization; the binder keeps its own error).
+            match CatalogResolution.tryAttributeByLogical catalog target1 target2 target3 with
+            | Some key -> Result.success key
             | None ->
-                // Try physical: Schema.Table.Column
-                let physicalHit =
-                    catalog.Modules
-                    |> List.tryPick (fun m ->
-                        m.Kinds
-                        |> List.tryPick (fun k ->
-                            if TableId.schemaText k.Physical = target1 && TableId.tableText k.Physical = target2 then
-                                k.Attributes
-                                |> List.tryFind (fun a -> ColumnRealization.columnNameText a.Column = target3)
-                            else None))
-                match physicalHit with
-                | Some attr -> Result.success attr.SsKey
+                match CatalogResolution.tryAttributeByPhysical catalog target1 target2 target3 with
+                | Some key -> Result.success key
                 | None ->
                     Result.failureOf (
                         bindError

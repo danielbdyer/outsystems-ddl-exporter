@@ -18,6 +18,8 @@
     <Compile Include="Voice.fs" />
     <Compile Include="TtyRenderer.fs" />
     <Compile Include="Watch.fs" />
+    <Compile Include="OperatorConsole.fs" />
+    <Compile Include="RunFaces.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

@@ -35,7 +35,23 @@
 #   scripts/test.sh focus <pat>    # one class/method by FullyQualifiedName~<pat>
 #   scripts/test.sh all            # fast THEN docker, sequential (crash-safe)
 #   scripts/test.sh list           # show the derived pool filters and exit
+#   scripts/test.sh status         # is a pool running / stuck / done, and what failed
 #   scripts/test.sh fast -- <args> # pass extra args through to dotnet test
+#
+# OBSERVABILITY (2026-06-10 hardening — "is it stuck?" is one command):
+#   Every pool run maintains two files in /tmp/projection-test-results:
+#     <pool>.live.log  — the streamed dotnet-test output (tee'd, line-live);
+#                        `tail -f` it from any other shell.
+#     <pool>.status    — ONE line of machine-readable state:
+#                        RUNNING pid=… started=… → PASSED/FAILED/KILLED
+#                        exit=… duration=…s [failed=name;name;…]
+#   `scripts/test.sh status` reads both and reports, per pool: the verdict,
+#   whether the recorded pid is still alive, how stale the live log is, and
+#   its last lines. A RUNNING status whose pid is gone = the run was killed
+#   without a verdict (treat as failed; rerun).
+#   LAUNCH ADVICE (agents especially): run pools in the background BARE —
+#   never through `| tail` / `| head` (pipes buffer to EOF; the run *looks*
+#   hung) — then poll `scripts/test.sh status`.
 #
 # WARM CONTAINER (Docker-pool dev loop). `docker` / `canary` / `focus` /
 # `all` auto-detect a running `projection-mssql-warm` container
@@ -139,13 +155,26 @@ build_once() {
 #   run as separate sequential processes (see dispatch below) so the
 #   parallel pure pool never piles onto the serial Docker pool + SQL
 #   container and OOM-kills the host on this 4-core / no-swap box.
+# Extract failed-test names from a TRX (the test-failure capture protocol).
+failed_names_of() {
+    local trx="$1"
+    grep -B1 'outcome="Failed"' "$trx" 2>/dev/null \
+        | grep -oE 'testName="[^"]*"' | sed 's/testName="//; s/"$//' | sort -u
+}
+
 run_pool() {
     local label="$1" filter="$2" maxpar="${3:-}"
     local trx="$RESULTS_DIR/$label.trx"
+    local live="$RESULTS_DIR/$label.live.log"
+    local status="$RESULTS_DIR/$label.status"
+    mkdir -p "$RESULTS_DIR"
     rm -rf "$RESULTS_DIR/$label"
+    : > "$live"
     bold "──────── $label pool ────────"
     [[ -n "$filter" ]] && log "filter: $filter"
     [[ -n "$maxpar" ]] && log "maxParallelThreads: $maxpar"
+    log "watch:  tail -f $live"
+    log "verify: scripts/test.sh status   (reads $status)"
     local t0 t1 code
     local filter_args=()
     [[ -n "$filter" ]] && filter_args=(--filter "$filter")
@@ -156,32 +185,76 @@ run_pool() {
     local sep=()
     [[ ${#runsettings[@]} -gt 0 ]] && sep=(--)
     t0=$(date +%s)
+    echo "RUNNING pid=$$ started=$(date -u +%FT%TZ)" > "$status"
+    # If the run is killed mid-flight (Ctrl-C, OOM-kill of the script,
+    # session reclaim), leave a verdict behind rather than a stale RUNNING.
+    trap 'echo "KILLED exit=130 at=$(date -u +%FT%TZ)" > "'"$status"'"' INT TERM
     # console;verbosity=normal streams per-test results live (progress is
-    # visible, so a long run never *looks* hung); trx is the structured
-    # ground truth for failure extraction.
+    # visible, so a long run never *looks* hung); the tee'd live log makes
+    # the same stream observable from OUTSIDE this process (a backgrounded
+    # run, a `| tail`-buffered pipe, a detached session); trx is the
+    # structured ground truth for failure extraction.
     dotnet test "$TEST_PROJECT" -c "$CONFIG" --no-build --nologo \
         "${filter_args[@]}" \
         --logger "console;verbosity=normal" \
         --logger "trx;LogFileName=$label.trx" \
         --results-directory "$RESULTS_DIR" \
-        "${sep[@]}" "${runsettings[@]}"
-    code=$?
+        "${sep[@]}" "${runsettings[@]}" 2>&1 | tee -a "$live"
+    code=${PIPESTATUS[0]}
+    trap - INT TERM
     t1=$(date +%s)
     if [[ "$code" -ne 0 ]]; then
+        local failed
+        failed="$(failed_names_of "$trx" | paste -sd ';' -)"
+        echo "FAILED exit=$code duration=$((t1 - t0))s failed=${failed:-unknown-see-live-log}" > "$status"
         err "$label pool FAILED (exit $code, $((t1 - t0))s)"
         if [[ -f "$trx" ]]; then
             err "failed tests:"
-            grep -oE 'testName="[^"]*"' "$trx" 2>/dev/null \
-                | sed 's/testName="/  /; s/"$//' | sort -u >&2 || true
-            # Narrow to actual failures.
-            err "(outcome=Failed names:)"
-            grep -B1 'outcome="Failed"' "$trx" 2>/dev/null \
-                | grep -oE 'testName="[^"]*"' | sed 's/testName="/  /; s/"$//' | sort -u >&2 || true
+            failed_names_of "$trx" | sed 's/^/  /' >&2 || true
         fi
     else
+        echo "PASSED exit=0 duration=$((t1 - t0))s" > "$status"
         log "$label pool passed ($((t1 - t0))s)"
     fi
     return "$code"
+}
+
+# `status` — the one-command answer to "is the run alive, stuck, or done,
+# and what failed?" Reads each pool's status line; for RUNNING entries,
+# cross-checks the recorded pid and the live log's staleness so a killed
+# run can never masquerade as in-flight.
+report_status() {
+    local found=0
+    for st in "$RESULTS_DIR"/*.status; do
+        [[ -e "$st" ]] || continue
+        found=1
+        local label line
+        label="$(basename "$st" .status)"
+        line="$(head -n1 "$st")"
+        bold "── $label ──"
+        echo "  $line"
+        if [[ "$line" == RUNNING* ]]; then
+            local pid="${line#*pid=}"; pid="${pid%% *}"
+            local live="$RESULTS_DIR/$label.live.log"
+            if kill -0 "$pid" 2>/dev/null; then
+                local age=0
+                [[ -f "$live" ]] && age=$(( $(date +%s) - $(stat -c %Y "$live") ))
+                echo "  process alive; live log last written ${age}s ago"
+                if [[ "$age" -gt 120 ]]; then
+                    echo "  ⚠ no output for >120s — likely wedged (warm container dead? 'scripts/warm-sql.sh restart')"
+                fi
+                echo "  recent output:"
+                tail -n 3 "$live" 2>/dev/null | sed 's/^/    │ /'
+            else
+                echo "  ⚠ pid $pid is GONE without a verdict — the run was killed; treat as FAILED and rerun"
+            fi
+        elif [[ "$line" == FAILED* && "$line" == *"failed="* ]]; then
+            echo "  rerun one: scripts/test.sh focus '<name-substring-from-failed=>'"
+        fi
+    done
+    if [[ "$found" -eq 0 ]]; then
+        log "no recorded runs in $RESULTS_DIR"
+    fi
 }
 
 CMD="${1:-fast}"
@@ -204,6 +277,10 @@ case "$CMD" in
         bold "Docker pool classes:"; docker_classes | sed 's/^/  /'
         echo; bold "pure filter:";   pure_filter
         echo; bold "docker filter:"; docker_filter
+        exit 0
+        ;;
+    status)
+        report_status
         exit 0
         ;;
     focus)
@@ -252,7 +329,7 @@ case "$CMD" in
         ;;
     *)
         err "unknown command: $CMD"
-        err "usage: test.sh [fast|docker|canary|all|list] [-- <dotnet test args>]"
+        err "usage: test.sh [fast|docker|canary|all|list|status] [-- <dotnet test args>]"
         err "       test.sh focus <FullyQualifiedName-substring> [-- <dotnet test args>]"
         exit 2
         ;;

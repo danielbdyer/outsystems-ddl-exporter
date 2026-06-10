@@ -188,6 +188,10 @@ module Config =
         DecisionLog           : bool
         Opportunities         : bool
         Validations           : bool
+        /// AC-D7 / AC-G4 — the convergent-delete scope for the data
+        /// emitters' MERGE (`emission.deleteScope.terms`). `None` (the
+        /// default) emits no delete arm — byte-identical output.
+        DeleteScope           : DeleteScopePolicy option
     }
 
     type UserMatchingSection = {
@@ -332,7 +336,11 @@ module Config =
 
     let private defaultEmission : EmissionSection = {
         Ssdt                  = true
-        Dacpac                = true
+        // Dacpac defaults OFF: the flag was inert until the dacpac write leg
+        // landed (the A-cluster dacpac wire), so `false` preserves the
+        // observable default bundle byte-for-byte; an explicit
+        // `emission: { "dacpac": true }` opts into the compiled package.
+        Dacpac                = false
         Json                  = true
         Distributions         = true
         StaticSeeds           = true
@@ -341,6 +349,7 @@ module Config =
         DecisionLog           = true
         Opportunities         = true
         Validations           = true
+        DeleteScope           = None
     }
 
     let private defaultUserMatching : UserMatchingSection = {
@@ -1027,6 +1036,48 @@ module Config =
                                         EmissionFolders        = folders
                                     }
 
+    /// AC-D7 — `emission.deleteScope: { "terms": [ { "column": "...",
+    /// "value": <string|number> } ] }`. Every term needs a non-blank
+    /// physical column; the value may be a JSON string or number (the
+    /// raw text is typed per kind at emission via `SqlLiteral.ofRaw`).
+    /// A malformed scope is a named config error; an absent one is the
+    /// upsert-only default.
+    let private parseDeleteScope (emission: JsonElement) : Result<DeleteScopePolicy option> =
+        match tryGetProperty emission "deleteScope" with
+        | None -> Result.success None
+        | Some scope when scope.ValueKind = JsonValueKind.Object ->
+            match tryGetProperty scope "terms" with
+            | Some terms when terms.ValueKind = JsonValueKind.Array ->
+                let parseTerm (t: JsonElement) : Result<DeleteScopeTerm> =
+                    if t.ValueKind <> JsonValueKind.Object then
+                        Result.failureOf (ValidationError.create "config.emission.deleteScope.termShape" "emission.deleteScope.terms entries must be objects with 'column' and 'value'.")
+                    else
+                        let column =
+                            match t.TryGetProperty "column" with
+                            | true, c when c.ValueKind = JsonValueKind.String -> Option.ofObj (c.GetString())
+                            | _ -> None
+                        let value =
+                            match t.TryGetProperty "value" with
+                            | true, v when v.ValueKind = JsonValueKind.String -> Option.ofObj (v.GetString())
+                            | true, v when v.ValueKind = JsonValueKind.Number -> Some (v.GetRawText())
+                            | _ -> None
+                        match column, value with
+                        | Some c, Some v when not (System.String.IsNullOrWhiteSpace c) ->
+                            Result.success { Column = c.Trim(); Value = v }
+                        | _ ->
+                            Result.failureOf (ValidationError.create "config.emission.deleteScope.termShape" "emission.deleteScope.terms entries must carry a non-blank 'column' and a string-or-number 'value'.")
+                let parsed = [ for t in terms.EnumerateArray() -> parseTerm t ]
+                let errors = parsed |> List.collect (function Error es -> es | Ok _ -> [])
+                if not (List.isEmpty errors) then Result.failure errors
+                else
+                    match parsed |> List.choose (function Ok t -> Some t | _ -> None) with
+                    | [] -> Result.failureOf (ValidationError.create "config.emission.deleteScope.empty" "emission.deleteScope.terms must name at least one term (omit deleteScope for the upsert-only default).")
+                    | ts -> Result.success (Some { Terms = ts })
+            | _ ->
+                Result.failureOf (ValidationError.create "config.emission.deleteScope.shape" "emission.deleteScope must carry a 'terms' array.")
+        | Some _ ->
+            Result.failureOf (ValidationError.create "config.emission.deleteScope.shape" "emission.deleteScope must be an object with a 'terms' array.")
+
     let private parseEmission (root: JsonElement) : Result<EmissionSection> =
         match tryGetProperty root "emission" with
         | None -> Result.success defaultEmission
@@ -1062,6 +1113,9 @@ module Config =
                                                 match read "validations" defaultEmission.Validations with
                                                 | Error es -> Error es
                                                 | Ok vals ->
+                                                    match parseDeleteScope element with
+                                                    | Error es -> Error es
+                                                    | Ok deleteScope ->
                                                     Result.success {
                                                         Ssdt = ssdt
                                                         Dacpac = dacpac
@@ -1073,6 +1127,7 @@ module Config =
                                                         DecisionLog = dlog
                                                         Opportunities = opps
                                                         Validations = vals
+                                                        DeleteScope = deleteScope
                                                     }
 
     let private parseUserMatching (element: JsonElement) : Result<UserMatchingSection> =

@@ -238,8 +238,9 @@ module ProjectionConfig =
             | "bundle"   -> Result.success (Some Shape.Bundle)
             | "ssdt"     -> Result.success (Some Shape.Ssdt)
             | "skeleton" -> Result.success (Some Shape.Skeleton)
+            | "manifest" -> Result.success (Some Shape.Manifest)
             | other ->
-                Result.failureOf (err "cli.config.flowShapeUnknown" (sprintf "flow '%s' shape '%s' is not bundle | ssdt | skeleton." name other))
+                Result.failureOf (err "cli.config.flowShapeUnknown" (sprintf "flow '%s' shape '%s' is not bundle | ssdt | skeleton | manifest." name other))
 
     /// The opt-in per-flow `shaping` override (S6.4): a nested `"shaping"` object
     /// parsed leniently (`Config.parseLenient` over its raw JSON text) so the
@@ -268,12 +269,36 @@ module ProjectionConfig =
                                 | Some s when not (String.IsNullOrWhiteSpace s) -> yield s.Trim()
                                 | _ -> () ]
                     | _ -> []
-                match parseFlowScope name el, parseFlowShape name el, parseFlowShaping el with
-                | Error es, _, _ | _, Error es, _ | _, _, Error es -> Result.failure es
-                | Ok scope, Ok shape, Ok shaping ->
+                // J2 — per-flow reconcile rules. Each entry must carry the
+                // "<table>:<match-column>" shape (the same contract the
+                // `--reconcile` tail proves via `TransferSpec.parseReconcileSpec`);
+                // a malformed entry is a named config error, never a deferred
+                // runtime surprise.
+                let reconcileR : Result<string list> =
+                    match el.TryGetProperty "reconcile" with
+                    | true, r when r.ValueKind = JsonValueKind.Array ->
+                        let entries =
+                            [ for v in r.EnumerateArray() do
+                                if v.ValueKind = JsonValueKind.String then
+                                    match Option.ofObj (v.GetString()) with
+                                    | Some s when not (String.IsNullOrWhiteSpace s) -> yield s.Trim()
+                                    | _ -> () ]
+                        let shapeErrors =
+                            entries
+                            |> List.collect (fun e ->
+                                match TransferSpec.parseReconcileSpec e with
+                                | Ok _ -> []
+                                | Error _ -> [ err "cli.config.flowReconcileShape" (sprintf "flow '%s' reconcile entry '%s' is not <table>:<match-column>." name e) ])
+                        if List.isEmpty shapeErrors then Result.success entries else Result.failure shapeErrors
+                    | true, r when r.ValueKind <> JsonValueKind.Null ->
+                        Result.failureOf (err "cli.config.flowReconcileShape" (sprintf "flow '%s' 'reconcile' must be an array of \"<table>:<match-column>\" strings." name))
+                    | _ -> Result.success []
+                match parseFlowScope name el, parseFlowShape name el, parseFlowShaping el, reconcileR with
+                | Error es, _, _, _ | _, Error es, _, _ | _, _, Error es, _ | _, _, _, Error es -> Result.failure es
+                | Ok scope, Ok shape, Ok shaping, Ok reconcile ->
                     Result.success
                         { Name = name; From = parseFlowSource el; To = toEnv; Rekey = getString el "rekey"
-                          Tables = tables; Scope = scope; Shape = shape; Shaping = shaping }
+                          Tables = tables; Reconcile = reconcile; Scope = scope; Shape = shape; Shaping = shaping }
 
     /// Parse the `projection.json` document text into a `ProjectionConfig`.
     /// Aggregates every per-environment / per-flow error so the operator
@@ -411,6 +436,7 @@ module ProjectionConfig =
         | Shape.Bundle   -> "bundle"
         | Shape.Ssdt     -> "ssdt"
         | Shape.Skeleton -> "skeleton"
+        | Shape.Manifest -> "manifest"
 
     /// Render one `Environment` to its `JsonObject` — the dual of
     /// `parseEnvironment`. `access` + its companion (`out` for bundle, `conn`
@@ -448,6 +474,12 @@ module ProjectionConfig =
             let a = JsonArray()
             for t in flow.Tables do a.Add(JsonValue.Create t)
             o.["tables"] <- a)
+        // J2 — the per-flow reconcile rules (the empty default round-trips
+        // through the absent arm, mirroring `tables`).
+        (if not (List.isEmpty flow.Reconcile) then
+            let a = JsonArray()
+            for r in flow.Reconcile do a.Add(JsonValue.Create r)
+            o.["reconcile"] <- a)
         o
 
     /// Render a whole movement config to its `projection.json` DOM — the inverse
@@ -563,7 +595,9 @@ module Command =
           Resumable   = spec.Resumable
           Store       = spec.Store
           Env         = spec.Env
-          Tables      = spec.Tables }
+          Tables      = spec.Tables
+          Seed        = spec.Seed
+          Scale       = spec.Scale }
 
     // --- the pure movement routing (the surface→engine map) ----------------
 
@@ -588,6 +622,7 @@ module Command =
                 | _ when hasModel ->
                     match spec.Shape with
                     | Shape.Skeleton            -> PlanAction.EmitSkeleton (spec.Model, modelOssys, dir)
+                    | Shape.Manifest            -> PlanAction.EmitManifest (spec.Model, modelOssys, dir)
                     | Shape.Bundle | Shape.Ssdt -> PlanAction.EmitBundle (spec.Model, modelOssys, dir)
                 | _ -> modelMissing "projection: "
             | Destination.Docker ->
@@ -654,7 +689,14 @@ module Command =
             | true, PlanAction.Transfer _ -> []
             | true, PlanAction.RunReverseLeg _ -> []
             | true, _ -> [ "--resumable accepted; this action has no resumable data-load seam (standard write applied)." ]
-        { Notes = unhonoredNotes spec @ freshNote @ resumableNote; Action = action }
+        // D8 — seed/scale are honored on the synthetic load only; on any other
+        // action they are noted, never silently dropped (THE_VOICE no-silent-drop).
+        let synthesisNote =
+            match (spec.Seed, spec.Scale), action with
+            | (None, None), _ -> []
+            | _, PlanAction.SynthesizeAndLoad _ -> []
+            | _, _ -> [ "--seed/--scale accepted; this action has no synthesis leg (model data applied)." ]
+        { Notes = unhonoredNotes spec @ freshNote @ resumableNote @ synthesisNote; Action = action }
 
     /// Route a `check` verb tail to its proof-plane action — purely.
     let planCheck (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
@@ -901,10 +943,18 @@ module Command =
                         Data     = data
                         Baseline = (if opts.Fresh then Baseline.Empty else Baseline.Auto)
                         Rekey    = flow.Rekey
+                        // J2 — the flow's declarative MatchByColumn re-key rules
+                        // (e.g. the golden flow's User-by-email reconcile) ride
+                        // the spec into the transfer leg's `LoadOpts.Reconcile`.
+                        Reconcile = flow.Reconcile
                         Tables   = flow.Tables
                         AllowDrops = opts.AllowDrops
                         AllowCdc = opts.AllowCdc
                         Resumable = opts.Resumable
+                        // D8 — the synthesis knobs ride the per-run intent
+                        // (seed/volume vary at the moment of action, never config).
+                        Seed = opts.Seed
+                        Scale = opts.Scale
                         // The target's durable timeline: a live --go records an
                         // episode into it (which `report` later diffs). F4.
                         Store    = toEnv.Store
@@ -1007,13 +1057,35 @@ module Command =
         | "report" :: rest  -> Result.success (Intent.Report rest)
         | "profile" :: rest -> Result.success (Intent.Profile rest)
         | first :: rest when Map.containsKey first cfg.Flows ->
-            let opts =
-                { Go         = List.contains "--go" rest
-                  Fresh      = List.contains "--fresh" rest
-                  AllowDrops = List.contains "--allow-drops" rest
-                  AllowCdc   = List.contains "--allow-cdc" rest
-                  Resumable  = List.contains "--resumable" rest }
-            Result.success (Intent.Flow (Map.find first cfg.Flows, opts))
+            // D8 — the value-bearing synthesis knobs. A malformed value is a
+            // refusal (named, never a silent fall-through to the default).
+            let seedR : Result<uint64 option> =
+                match flagValue rest "--seed" with
+                | None -> Result.success None
+                | Some raw ->
+                    match System.UInt64.TryParse raw with
+                    | true, v -> Result.success (Some v)
+                    | _ -> Result.failureOf (err "cli.flow.seedInvalid" (sprintf "--seed '%s' is not a non-negative integer." raw))
+            let scaleR : Result<decimal option> =
+                match flagValue rest "--scale" with
+                | None -> Result.success None
+                | Some raw ->
+                    match System.Decimal.TryParse(raw, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture) with
+                    | true, v when v > 0M -> Result.success (Some v)
+                    | true, _ -> Result.failureOf (err "cli.flow.scaleInvalid" (sprintf "--scale '%s' must be greater than zero." raw))
+                    | _ -> Result.failureOf (err "cli.flow.scaleInvalid" (sprintf "--scale '%s' is not a number." raw))
+            match seedR, scaleR with
+            | Error es, _ | _, Error es -> Result.failure es
+            | Ok seed, Ok scale ->
+                let opts =
+                    { Go         = List.contains "--go" rest
+                      Fresh      = List.contains "--fresh" rest
+                      AllowDrops = List.contains "--allow-drops" rest
+                      AllowCdc   = List.contains "--allow-cdc" rest
+                      Resumable  = List.contains "--resumable" rest
+                      Seed       = seed
+                      Scale      = scale }
+                Result.success (Intent.Flow (Map.find first cfg.Flows, opts))
         | first :: _ when secondaryVerbs.Contains first ->
             // a known verb with a malformed tail falls through its own branch;
             // this arm is unreachable for those, kept total for the type.

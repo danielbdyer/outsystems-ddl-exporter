@@ -179,6 +179,7 @@
     <Compile Include="IngestionIntegrationTests.fs" />
     <Compile Include="TransferCanaryTests.fs" />
     <Compile Include="RunWithConfigProfileTests.fs" />
+    <Compile Include="DacpacWireTests.fs" />
     <Compile Include="DescriptionLiftTests.fs" />
     <Compile Include="OriginalNameAndExternalDbTypeLiftTests.fs" />
     <Compile Include="IndexColumnDirectionTests.fs" />
@@ -251,6 +252,7 @@
     <Compile Include="SsdtSchemaFidelityPropertyTests.fs" />
     <Compile Include="DacpacEmitterTests.fs" />
     <Compile Include="DacpacRoundTripTests.fs" />
+    <Compile Include="DacpacPublishEquivalenceTests.fs" />
     <Compile Include="DockerImageEmitterTests.fs" />
     <Compile Include="CoordinatesStage2Tests.fs" />
     <Compile Include="ManifestEmitterTests.fs" />

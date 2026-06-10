@@ -65,6 +65,10 @@ type Shape =
     | Bundle
     | Ssdt
     | Skeleton
+    /// The applied-transforms manifest alone (`manifest.json`), without the
+    /// bundle siblings — the registry's per-kind self-description as a
+    /// standalone artifact (A-cluster manifest exposure).
+    | Manifest
 
 /// Where the projected state B is authored. A bare model file (the authored
 /// `Catalog`), the unified config (which carries the model path plus the
@@ -123,6 +127,12 @@ type MovementSpec =
         /// idempotent-upsert envelope (`Transfer.runResumable`). Honored on the
         /// pure-transfer data leg; inert elsewhere. Default false (byte-identical).
         Resumable   : bool
+        /// D8 — the synthesis PRNG seed (`--seed <n>`). Honored on the synthetic
+        /// load; inert elsewhere. `None` = the fixed default seed.
+        Seed        : uint64 option
+        /// D8 — the synthesis volume factor (`--scale <f>`). Honored on the
+        /// synthetic load; inert elsewhere. `None` = full scale (1.0).
+        Scale       : decimal option
         /// Durable provenance store; fills from the target's config or `--store`.
         Store       : string option
         /// Environment label for the timeline / episode.
@@ -151,6 +161,8 @@ module MovementSpec =
             AllowDrops  = false
             AllowCdc    = false
             Resumable   = false
+            Seed        = None
+            Scale       = None
             Store       = None
             Env         = None
             Commit      = false
@@ -185,6 +197,11 @@ type Flow =
         To     : string
         Rekey  : string option
         Tables : string list
+        /// J2 — per-flow `MatchByColumn` re-key rules ("<table>:<col>" each;
+        /// e.g. the golden flow's `"reconcile": ["OSSYS_USER:EMAIL"]` so the
+        /// declarative flow carries the User re-key without a per-run tail).
+        /// Empty = no reconcile (byte-identical).
+        Reconcile : string list
         /// The move's PROJECTION (G1): which legs of the T16 square THIS move
         /// carries — the schema leg, the data leg, or both. Decoupled from the
         /// target's `grant` (the refusal gate, what MAY change there). `None`
@@ -217,6 +234,12 @@ type FlowRunOpts =
         /// `--resumable` — route the incremental data load through the resumable
         /// / idempotent-upsert envelope (G10). Default false (byte-identical).
         Resumable  : bool
+        /// `--seed <n>` — the synthesis PRNG seed (D8; THE_SYNTHETIC_DATA_DESIGN
+        /// §7). `None` = the fixed default seed (byte-identical reproducibility).
+        Seed       : uint64 option
+        /// `--scale <f>` — the synthesis volume factor over the profiled
+        /// `RowCount` per kind (D8; design §7). `None` = full scale (1.0).
+        Scale      : decimal option
     }
 
 /// The operator intents (THE_CLI.md §2). `Flow` is the hero — the daily
@@ -251,6 +274,10 @@ type LoadOpts =
         Env         : string option
         /// Declared table subset for the data leg (item 5); empty = all.
         Tables      : string list
+        /// D8 — the synthesis PRNG seed; honored on the synthetic load only.
+        Seed        : uint64 option
+        /// D8 — the synthesis volume factor; honored on the synthetic load only.
+        Scale       : decimal option
     }
 
 /// The engine face a parsed `Intent` routes to, named with the cfg-resolved
@@ -270,6 +297,9 @@ type PlanAction =
     | PublishBundle of config: string * dir: string * store: string option * env: string option
     /// folder + model + skeleton shape → the pre-overlay emit.
     | EmitSkeleton of model: ModelSource * modelOssys: string option * dir: string
+    /// folder + model + manifest shape → the applied-transforms manifest
+    /// alone (the full chain runs; only `manifest.json` is written).
+    | EmitManifest of model: ModelSource * modelOssys: string option * dir: string
     /// folder + model + bundle/ssdt shape → the full pass-chain emit.
     | EmitBundle of model: ModelSource * modelOssys: string option * dir: string
     /// docker → one-touch ephemeral deploy.
