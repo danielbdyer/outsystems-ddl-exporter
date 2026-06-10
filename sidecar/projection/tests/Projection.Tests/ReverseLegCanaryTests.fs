@@ -17,7 +17,7 @@ open Projection.Core
 open Projection.Pipeline
 open Projection.Targets.SSDT
 
-module private ReverseLegFixtures =
+module internal ReverseLegFixtures =
 
     let skipIfNoDocker (label: string) : bool =
         if Deploy.Docker.ensureRunning () then true

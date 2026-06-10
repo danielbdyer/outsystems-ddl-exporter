@@ -33,6 +33,21 @@ type AsyncStream<'a> = unit -> Task<'a option>
 [<RequireQualifiedAccess>]
 module AsyncStream =
 
+    /// Pull up to `size` elements; `[]` signals upstream EOF. Re-introduced
+    /// 2026-06-10 under the streaming-transfer consumer (the Wave-0 slice
+    /// 0.2 retirement's named trigger: a real consumer arrived — the
+    /// bounded-memory chunk loop in `TransferRun`'s streaming realization).
+    let nextBatch (size: int) (next: AsyncStream<'a>) : Task<'a list> =
+        task {
+            let acc = ResizeArray<'a>()
+            let mutable cont = true
+            while cont && acc.Count < size do
+                match! next () with
+                | Some x -> acc.Add x
+                | None -> cont <- false
+            return List.ofSeq acc
+        }
+
     let toList (next: AsyncStream<'a>) : Task<'a list> =
         task {
             let acc = ResizeArray<'a>()

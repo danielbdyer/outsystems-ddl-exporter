@@ -182,6 +182,7 @@
     <Compile Include="TransferCanaryTests.fs" />
     <Compile Include="ReverseLegCanaryTests.fs" />
     <Compile Include="ReverseLegScaleTests.fs" />
+    <Compile Include="ReverseLegStreamingTests.fs" />
     <Compile Include="RunWithConfigProfileTests.fs" />
     <Compile Include="DacpacWireTests.fs" />
     <Compile Include="DescriptionLiftTests.fs" />

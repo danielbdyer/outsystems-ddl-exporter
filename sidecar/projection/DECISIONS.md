@@ -21356,3 +21356,49 @@ rows/sec re-opens chunk sizing / parallel per-table loading; the remap's
 in-memory Map (string-keyed) at hundreds of millions of FK-target rows
 re-opens the packed-int64 / sink-resident keymap design (named open —
 the streaming + chunk-resume program, LE-3 report addendum §scale).
+
+## 2026-06-10 — The streaming realization + chunk-resume journal: bounded memory for the 288M-row straight load; the journal is CLIENT-side because the sink is DML-only
+
+**The decision.** `Transfer.runStreamingWithRenames` is the bounded-memory
+realization of the straight-load (non-reconciling, Incremental) transfer:
+the plan is built STRUCTURE-ONLY (order, dispositions, deferred columns —
+rows never enter it), and each kind's rows stream from the source in
+`CaptureChunkSize` chunks through rename-repoint → FK-repoint (deferred
+excluded) → the capture ladder / minted-bulk / preserved-bulk lanes. Only
+the packed remap and the chunk in flight are resident — the materialized
+path's `Ingestion.collectInOrder` (whole-estate `Map<SsKey, StaticRow
+list>`) is untenable at 288M rows. Phase 2 re-STREAMS the deferred kinds
+against the completed remap; its UPDATEs are idempotent, so a resumed run
+repeating them is harmless. `AsyncStream.nextBatch` is re-introduced under
+this consumer (the Wave-0 slice 0.2 retirement's named trigger fired). The
+reconcile and WipeAndLoad envelopes stay on the materialized path — the
+named follow-ons, never a silent half-support.
+
+**The journal (chunk-level resume, operator-chosen).** `CaptureJournal` is
+an append-only NDJSON ledger, one file per (directory, plan marker), one
+`ChunkRecord` per completed chunk: the chunk's SOURCE fingerprint
+(first/last PK + raw count — deterministic because `ReadSide` orders by
+PK), the written count, and the chunk's captured pairs. It lives
+CLIENT-SIDE by necessity, not preference: the cloud sink is `grant: data`,
+so the G10 progress table's `CREATE TABLE` is exactly what the grant
+forbids — the engine's own ledger is the D9-consistent home. Semantics:
+a journaled chunk whose fingerprint matches is SKIPPED and its pairs
+rebuild the remap (the resumed run re-points later kinds at the FIRST
+run's minted keys); a mismatch is the named `transfer.resume.sourceDrift`
+refusal — never a silent re-run over changed data; a COMPLETED run re-runs
+as a full skip — the streaming path's idempotent re-run, closing the G3
+duplicate hazard whenever a journal is supplied. The chunk's sink
+statement (one MERGE / one bulk batch) is the atomic commit point: a crash
+DURING a chunk never journals it; a crash AFTER the append never
+re-executes it. Witnesses: streaming equivalence against the LE-3
+keystone (joins, minted keys, named orphan drop, exit 9); the
+crash-resume canary (sink table missing mid-load → remediate → resume:
+no duplicates, remap rebuilt from journal); the idempotent re-run canary;
+the source-drift refusal canary.
+
+Re-open triggers: reconcile ∘ streaming (the cloud-owns-its-users reverse
+leg at scale); WipeAndLoad ∘ journal (the wipe must invalidate the
+journal); journal compaction (288M pairs ≈ a multi-GB NDJSON — acceptable
+for a cutover run, named here); the resumed run's report counts the
+resumed run's work (the journaled run reported its own drops — exit-9
+semantics are per-run; revisit if the operator wants a merged ledger).

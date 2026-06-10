@@ -220,3 +220,49 @@ trusting the 3h figure (re-open trigger named in DECISIONS).
 5. **Survey items that gate the design:** platform triggers on OSUSR
    tables (would force `OUTPUT INTO`, P5); P7 batch ceilings; the estate
    row-count/FK-fan-in survey (drives #2).
+
+---
+
+## Addendum 2 (2026-06-10, night) — the scale program delivered: ladder, packed remap, streaming, chunk resume
+
+The four items the evening addendum named as open are now built, each with
+its witness (all green in both pools):
+
+1. **The capture-lane ladder** (`SurrogateCapture`; the operator's
+   "reverse progressive enhancement", realized as CAPABILITY DESCENT):
+   `StagedMergeOutput` → `StagedMergeOutputInto` (trigger-proof) →
+   `RowwiseScopeIdentity` (the floor). One semantics, three capability
+   envelopes; descent fires ONLY on the named capability error (SQL 334 —
+   `OUTPUT` without `INTO` on a triggered target, the real-OSUSR risk),
+   never on a data error; every descent is named on the report
+   (`TransferReport.CaptureLaneDescents`); the lane is sticky per kind.
+   Witnesses: the trigger canary (descends exactly one rung, full join
+   fidelity, descent named) and the rowwise floor on a triggered table.
+2. **The packed remap** (`PackedSurrogateRemap`): `Dictionary<int64,int64>`
+   per kind (~40B/entry, O(1)) with a string fallback for non-integral
+   raws; consumed through `SurrogateRemap.remapRowFksWith` (A40 — the
+   assignment store is the parameterized axis). The equivalence property
+   caught a real routing divergence during the build (integral source +
+   non-integral assigned) — fixed, law now green. At the operator's
+   worst case (~150M FK-target rows) the resident remap is ~6GB — feasible
+   on a serious host; the sink-resident keymap remains the named next step
+   if the real estate exceeds it.
+3. **Streaming ingestion** (`Transfer.runStreamingWithRenames`): structure-
+   only plan; per-kind chunked stream → repoint → lanes; phase 2
+   re-streams. Memory is bounded by one chunk + the remap. Witness:
+   streaming equivalence against the LE-3 keystone (joins, minted keys,
+   named orphan drop, exit 9).
+4. **Chunk-level resume** (`CaptureJournal`): client-side NDJSON ledger
+   (the sink's DML-only grant forbids the G10 progress table's CREATE
+   TABLE — a finding worth noting on its own: the EXISTING resumable
+   envelope cannot run against the real cloud sink); fingerprint-guarded
+   skip + remap rebuild; `transfer.resume.sourceDrift` named refusal;
+   a completed run re-runs as a full skip — **G3 is closed whenever a
+   journal is supplied**. Witnesses: crash-resume, idempotent re-run,
+   drift refusal.
+
+**Still open, re-ranked:** the real-wire bench (the 3h figure is
+loopback); CLI wiring of the streaming entry + journal directory onto the
+reverse-leg face; reconcile ∘ streaming; WipeAndLoad ∘ journal; parallel
+per-table wavefronts only if the wire bench misses 20k rows/sec; the
+survey gates (P5/P7; the estate row-count/FK-fan-in survey).
