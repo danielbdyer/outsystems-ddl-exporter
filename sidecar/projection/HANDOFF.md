@@ -1,3 +1,57 @@
+# Handoff letter — 2026-06-10 (the wiring shelf is empty; what's left is yours to choose)
+
+To the next agent.
+
+You're picking up after the remaining-shelf sweep on branch
+`claude/fsharp-projection-review-vrbtpr` (pushed; no PR yet — the operator
+hasn't asked for one). Read `CONFIRMED_BACKLOG_2026_06_09.md` §⓪′ first —
+it is the code-verified ledger of what this sweep closed (A1 fully, A3
+fully, D8, J2, the dacpac wire, `shape: manifest`, B8) — then the
+2026-06-10 `DECISIONS.md` entry for the resolved questions you must not
+re-litigate: the A3 faithful-omission rule, the inert-default-flips-off
+rule for the dacpac gate, and the DacFx/ScriptDom question (CLOSED — a
+documented boundary, now gated by `DacpacPublishEquivalenceTests`; do not
+re-open the "unify the ALTER surface" framing).
+
+What's actually left, in the order I'd take it:
+
+1. **J5 (real-UAT execute, OPEN-2)** is the cutover-critical path and is
+   blocked on the OPERATOR — a writable connection for the ops spike +
+   `--execute` under R6 with `--preview-row-cap`. If the operator shows up
+   with an environment, drop everything else.
+2. **The A7 polarity decision** is also the operator's: should
+   `model.includeSystemModules/includeInactiveModules: false` act globally
+   with no `modules` named, or stay effective only alongside a non-empty
+   `modules` list (today's opt-in, byte-identical default)? Five minutes of
+   their time; ask before you guess.
+3. **`Program.fs` decomposition** is the largest honest code-side item
+   (~2,150 lines: console substrate at the top, ~35 `run*` functions in
+   family clusters, `runPlan` + `main` at the bottom). Scope it as the
+   B7/`Deploy.fs` precedent: move the shared console substrate (the mode
+   refs + `withRun`/`printErrors`/`dumpBench`) into its own module first,
+   then the runner families (emission / proof / transfer / migrate /
+   explain), keeping `Program.fs` as parse + dispatch. Do it as its own
+   fresh session — it is mechanical but wide, and every `run*` touches the
+   substrate.
+4. **The reverse-leg runner arm (J3 residual)** stays deliberately
+   unforced: it needs the two SsKey-aligned contracts (a shared authored
+   model rendered in both renditions, or attribute-scope `V2.SsKey`
+   recovery in `ReadSide.buildAttribute`). The classifier + engine face are
+   landed; don't wire the arm until the contract source exists.
+
+Operational notes you'll want: `scripts/test.sh status` is new — every pool
+run leaves a live log + one-line status file, so "is it stuck?" is one
+command (the 2026-06-09 protocol's tail-buffering trap bit this session
+too; launch pools bare in the background, never through a pipe). The
+Docker daemon died once mid-session and took `projection-mssql-warm` with
+it — a batch of `Could not open a connection` failures means
+`scripts/warm-sql.sh restart`, not a real regression. Full Docker pool was
+194/194 green on this branch before push.
+
+Hold the spine.
+
+---
+
 # Handoff letter — 2026-06-02 (the isomorphism-climb debrief is canonical; read it before you open a slice)
 
 To the next agent.

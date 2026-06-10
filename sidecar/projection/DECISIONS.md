@@ -21159,3 +21159,89 @@ The S1–S6 build of `THE_CONFIG_CONTROL_PLANE.md` is complete: the two historic
 **Consumers + scaffold + docs.** The `explain node/suggest/policy` verbs already resolve through the unified loader (`Config.fromFile` over the same `projection.json` document), so no rewire was needed. `projection init` now scaffolds the unified shape (the canonical `model` object, an `emission` block, environments with a `store`, and a `skeleton` flow example) rather than the pre-unification movement-only `modelOssys` form. `CONFIG_REFERENCE.md`'s "two separate surfaces / shaping is not layered onto flow emission" claim — now FALSE — is rewritten to describe the one control plane; `examples/projection.sample.json` + `README.md` gained `shape`/`shaping`/store examples on the cloud-insertion estate; `THE_CONFIG_CONTROL_PLANE.md` §3 G3 + §7 mark the residuals RESOLVED.
 
 Each sub-slice shipped as its own green commit. Pure pool green (`scripts/test.sh fast`); the A44 canary + the Operator-reality canary green warm. No load-bearing commitment was broken; the byte-identical-default invariant holds at every new seam (`SourcePath`/`Shape`/`Shaping` absent, store-less targets, `Set.empty` pins, `defaultConfig` overlay).
+
+## 2026-06-10 — The remaining-shelf sweep: A3 delete-scope semantics; the dacpac wire + the publish-equivalence witness; D8/J2 surface decisions; test-runner observability
+
+Six wires closed the A-cluster residuals (`CONFIRMED_BACKLOG` §⓪′ carries the
+per-commit ledger). The resolved questions, durable beyond the slice:
+
+**A3 — per-kind delete-scope resolution is faithful omission, not a skip.**
+The convergent-delete scope (`emission.deleteScope { terms: [{column,
+value}] }` → Core `DeleteScopePolicy` on the Emission axis) resolves PER KIND
+(`DeleteScopePolicy.resolveFor`): the `WHEN NOT MATCHED BY SOURCE … THEN
+DELETE` arm renders exactly when every term column is an attribute of the
+kind. A kind that does not carry the gating column has NO row inside the
+scope — the predicate selects nothing there — so omitting the arm is the
+faithful rendering of the scope's semantics, not a silent partial
+application. This is why the binding does not refuse on mixed estates (a
+tenant gate over an estate with non-tenant tables is well-formed). Layering:
+the scope's raw terms are typed per kind at render via the same
+`SqlLiteral.ofRaw` lift row values ride (no single shared literal — column
+types may differ across kinds); the composer threads the scope as a PLAIN
+VALUE (`EmissionPolicy.DeleteScope` read once at the dispatch layer), so the
+emitters never see `Policy` and A18 holds. Witnesses:
+`StaticSeedsEmitterTests` AC-D7 cluster (scoped arm with per-kind typed
+literal; case-insensitive physical-column match; missing-column kind keeps
+the upsert-only MERGE; `None` byte-identical).
+
+**The dacpac wire — an inert default flips OFF when its gate gains effect.**
+`emission.dacpac` parsed but was never honored; the wire (the `.dacpac`
+compiled in `runWithConfigCore` over the SAME emitted catalog the SSDT step
+projects, staged as `projection.dacpac` in the atomic write) would have
+grown every default bundle had the default stayed `true`. Decision: a config
+gate that was inert at `true` flips to `false` in the commit that makes it
+effective — the observable default output stays byte-identical and the
+explicit opt-in is the only way the artifact set grows. (The general form of
+the byte-identical-default invariant for wiring previously-dead flags.)
+
+**The DacFx/ScriptDom "ALTER drift" question is CLOSED — boundary, not
+drift; now witnessed live.** The 2026-06-10 review flagged dual ALTER
+renderers as the one open architectural risk. Investigation: the split is
+the DOCUMENTED decision boundary (`DacpacEmitter` header; `WAVE_6_ONTOLOGY`
+§4) — the `.dacpac` is the declarative model whose deployment plan DacFx
+computes at publish; the migrate verb's ScriptDom ALTERs are the imperative
+in-place executor; the emitter excludes imperative DDL from the package by
+construction. What was genuinely missing: no test ever published the package
+through `DacServices.Deploy` against live SQL Server (coverage stopped at
+the in-memory `TSqlModel`). `DacpacPublishEquivalenceTests` (Docker pool)
+closes the leg: one Catalog → the deployed bundle vs the published dacpac →
+both read back → `PhysicalSchema` equality (deployed-vs-deployed, so shared
+erasures cancel). Green on the IDENTITY/FK/unique-index/nullability
+envelope; a future divergence between the two publish paths fails the
+Docker pool. Do not re-open the "unify the ALTER surface" framing — the
+witness is the contract.
+
+**D8 — the synthesis knobs are `--seed <n>` / `--scale <f>`,** per
+THE_SYNTHETIC_DATA_DESIGN §7's vocabulary (volume is a FACTOR over the
+profiled `RowCount`, not an absolute row count; the backlog's "--rows N"
+phrasing was loose). Per-run intent (`FlowRunOpts`), never config; malformed
+values are named refusals; on a non-synthetic action the knobs are noted,
+never silently dropped.
+
+**J2 — per-flow `"reconcile": ["<table>:<match-column>"]`** makes the golden
+re-key declaratively expressible. Entries are parse-validated through the
+SAME `TransferSpec.parseReconcileSpec` contract the `--reconcile` tail
+proves (one validation surface, two entry points), rendered by the
+declarative dual (the A44 `parse ∘ render = id` law extends to the field),
+threaded via `resolveFlowSpec` into the transfer leg's `LoadOpts`.
+
+**Smaller closures:** A1's migrate residual (the migrate pre-flights route
+through the one mandatory `Preflight.all`, the permission gate sequenced on
+the connection gate's hot task so two probes never share the one
+`SqlConnection` concurrently); `shape: manifest` (the manifest as a
+standalone artifact via a single-file write that leaves a published bundle
+standing — deliberately NOT the bundle's atomic directory replace); B8 (the
+physical-table and attribute-ref lookups centralize in `CatalogResolution`
+under its lookup-returns-option contract).
+
+**Test-runner observability (amends `DECISIONS 2026-06-09 — Agent
+test-execution protocol`).** The recurring stall was a pool run launched in
+the background (or piped through `tail`, which buffers to EOF) going dark
+with no cheap question to ask. Every `run_pool` now tees its stream to
+`<pool>.live.log` and maintains a one-line `<pool>.status` (`RUNNING pid=…`
+→ `PASSED`/`FAILED exit=… failed=<names>`; a signal trap writes `KILLED` so
+a dead run cannot masquerade as in-flight); **`scripts/test.sh status`** is
+the one-command answer: verdict, pid liveness, live-log staleness (>120s
+flags the warm-container wedge with the `warm-sql.sh restart` hint), last
+output lines. Launch pools bare in the background; poll `status`; never
+pipe a long run.
