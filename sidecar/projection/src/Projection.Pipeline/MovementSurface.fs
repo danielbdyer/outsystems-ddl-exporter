@@ -95,6 +95,15 @@ type ProjectionConfig =
         /// §5 — one isomorphic surface behind two views. Nothing CONSUMES this
         /// yet at S1; S2 reads `Shaping.Model`; S3 threads it into emission.
         Shaping      : Config.Config
+        /// The file the config was loaded from (S6.2 — `fromFile` sets `Some
+        /// path`; `parse`/`empty` set `None`). It is LOAD PROVENANCE, not a JSON
+        /// field — `renderConfig` never emits it, so the `parse ∘ render` round
+        /// trip ignores it. `resolveFlowSpec` emits `ModelSource.ConfigFile
+        /// sourcePath` (firing the publish-with-provenance arms) only when this is
+        /// `Some` and the sink carries a `store` and the model path is present;
+        /// otherwise it stays `None` and the byte-identical ModelFile/Unspecified
+        /// path holds.
+        SourcePath   : string option
     }
 
 [<RequireQualifiedAccess>]
@@ -102,7 +111,7 @@ module ProjectionConfig =
 
     let empty : ProjectionConfig =
         { Environments = Map.empty; Flows = Map.empty; Model = None; ModelOssys = None; Defaults = Map.empty
-          Shaping = Config.defaultConfig }
+          Shaping = Config.defaultConfig; SourcePath = None }
 
     let private err (code: string) (message: string) : ValidationError =
         ValidationError.create code message
@@ -324,7 +333,9 @@ module ProjectionConfig =
                           Model = legacyModel
                           ModelOssys = legacyModelOssys
                           Defaults = defaults
-                          Shaping = shaping }
+                          Shaping = shaping
+                          // `parse` has no file provenance; `fromFile` overlays it.
+                          SourcePath = None }
         with ex ->
             Result.failureOf (err "cli.config.parseFailed" (sprintf "projection.json did not parse: %s" ex.Message))
 
@@ -333,7 +344,11 @@ module ProjectionConfig =
     let fromFile (path: string) : Result<ProjectionConfig> =
         if not (File.Exists path) then Result.success empty
         else
-            try parse (File.ReadAllText path)
+            try
+                // S6.2 — overlay the load provenance so resolveFlowSpec can route
+                // the provenance-bearing publish arms (ConfigFile) for store sinks.
+                parse (File.ReadAllText path)
+                |> Result.map (fun cfg -> { cfg with SourcePath = Some path })
             with ex -> Result.failureOf (err "cli.config.readFailed" (sprintf "could not read '%s': %s" path ex.Message))
 
     // --- the inverse Ψ: render (the declarative dual of parse, G4) ----------
@@ -829,15 +844,30 @@ module Command =
             | Error es -> Result.failure es
             | Ok data ->
                 let baseSpec = MovementSpec.forDestination (destinationOfAccess toEnv.Access)
+                // S6.2 (G3, operator decision 1 — wire ConfigFile into flows): the
+                // publish-with-provenance arms (`PublishBundle`/`PublishAndLoad`)
+                // fire only on `ModelSource.ConfigFile`. Emit it exactly when the
+                // flow targets a PROVENANCE-BEARING place — the config was loaded
+                // from a file (`SourcePath = Some`), the sink carries a `store`
+                // (provenance is configured), AND there is a model to publish
+                // (`Shaping.Model.Path = Some`). Every store-less target and every
+                // from-string config keeps the byte-identical ModelFile/Unspecified
+                // path, so the empty/default-config invariant holds.
+                let modelSource =
+                    match cfg.SourcePath, toEnv.Store, cfg.Shaping.Model.Path with
+                    | Some sourcePath, Some _, Some _ -> ModelSource.ConfigFile sourcePath
+                    | _ ->
+                        match cfg.Shaping.Model.Path with
+                        | Some m -> ModelSource.ModelFile m
+                        | None   -> ModelSource.Unspecified
                 Result.success
                     { baseSpec with
-                        // S2 — the model is read from the canonical
+                        // S2/S6.2 — the model is read from the canonical
                         // `Shaping.Model` (the unified `model` namespace, with
                         // the legacy top-level `model:"<path>"` reconciled in by
-                        // the loader). Same resulting `ModelSource` as before.
-                        // (S3 will emit `ModelSource.ConfigFile` when shaping is
-                        // present; not yet.)
-                        Model    = (match cfg.Shaping.Model.Path with Some m -> ModelSource.ModelFile m | None -> ModelSource.Unspecified)
+                        // the loader). Routes through `ConfigFile` for a
+                        // provenance-bearing sink (see `modelSource` above).
+                        Model    = modelSource
                         // S4a (G1) — the move's PROJECTION, decoupled from the
                         // target's `grant`. The per-flow `scope` wins when set
                         // (the schema-only / data-only legs become reachable);

@@ -275,25 +275,26 @@ let private actionTag (action: PlanAction) : string =
 
 /// The model-bearing `PlanAction` constructors `planMovement ∘ resolveFlowSpec`
 /// must span (THE_CONFIG_CONTROL_PLANE §2 directional table; `MovementSpec.fs`
-/// §226-287). `EmitSkeleton` joined the must-reach set at S6.1 (the flow `shape`
-/// field — operator decision 2). Two remain the NAMED RESIDUAL (`residualActions`
-/// below), EXCLUDED from the must-reach set — not silently dropped:
-///   • `PublishBundle`/`PublishAndLoad` — reachable only via
-///     `ModelSource.ConfigFile`, which `resolveFlowSpec` emits when the flow
-///     targets a provenance-bearing place (S6.2, operator decision 1). The
-///     reachability harvest exercises them through a dedicated cfg variant
-///     (`publishCfg` below); the bare-model spanning estate leaves them excluded.
+/// §226-287). After S6.1 (the flow `shape` field → `EmitSkeleton`) and S6.2 (the
+/// store-trigger ConfigFile wiring → `PublishBundle`/`PublishAndLoad`), the set
+/// is the WHOLE model-bearing surface — `residualActions` is now ∅, the strongest
+/// A44 statement (`expressible = reachable`, no excluded arm). The publish arms
+/// are harvested over the provenance-bearing `publishCfg`; the rest over the
+/// bare-model `spanningCfg`; `allReachable` is their union.
 let private mustReachActions : Set<string> =
     Set.ofList
-        [ "EmitSkeleton"; "EmitBundle"; "DeployDocker"; "PreviewSchema"
+        [ "PublishBundle"; "PublishAndLoad"
+          "EmitSkeleton"; "EmitBundle"; "DeployDocker"; "PreviewSchema"
           "Transfer"; "RunReverseLeg"; "SynthesizeAndLoad"; "MigrateWithData"; "Migrate" ]
 
 /// The named A44 residual — the model-bearing arms reachable in the engine
-/// (`planMovement`) but NOT via the flow resolver (`resolveFlowSpec`). Each is
-/// a structurally-visible exclusion with a pending wire-vs-remove decision,
-/// never a silent pass. See the `Skip` stubs below for the per-arm rationale.
+/// (`planMovement`) but NOT via the flow resolver (`resolveFlowSpec`). After
+/// S6.1 + S6.2 this is EMPTY: every model-bearing arm now has a flow pre-image
+/// (`expressible = reachable`), the strongest A44 statement. Kept as an explicit
+/// (empty) set so a future arm that regresses out of reach has a named home
+/// rather than silently widening the exclusion.
 let private residualActions : Set<string> =
-    Set.ofList [ "PublishBundle"; "PublishAndLoad" ]
+    Set.empty
 
 /// A representative estate spanning every reachable model-bearing action: a
 /// down-leg model publish (bundle/docker/live), a synthetic mint, a peer data
@@ -323,6 +324,33 @@ let private spanningCfg : ProjectionConfig =
     }
     """ |> mustOk
 
+/// The provenance-bearing publish estate (S6.2, operator decision 1 — wire
+/// `ModelSource.ConfigFile` into flows). The publish-with-provenance arms
+/// (`PublishBundle`/`PublishAndLoad`) fire when the flow targets a place that
+/// carries a `store` AND the config has a load provenance (`SourcePath = Some`)
+/// AND a model path. Here `bundle`/`sink-full` carry a `store`; `SourcePath` is
+/// overlaid below (mirroring `ProjectionConfig.fromFile`). `publish-bundle`
+/// (folder, store) → `PublishBundle` under preview; `publish-live` (live, full
+/// grant, store) under commit → `PublishAndLoad`.
+let private publishCfg : ProjectionConfig =
+    let parsed =
+        ProjectionConfig.parse """
+        {
+          "environments": {
+            "sink-full": { "access": "direct", "conn": "env:SINK_FULL_CONN", "grant": "schema+data", "store": "lifecycle/full.json" },
+            "bundle":    { "access": "bundle", "out": "dist/b", "grant": "schema+data", "store": "lifecycle/bundle.json" }
+          },
+          "flows": {
+            "publish-bundle": { "from": "model", "to": "bundle" },
+            "publish-live":   { "from": "model", "to": "sink-full" }
+          },
+          "model": "model.json"
+        }
+        """ |> mustOk
+    // The load provenance the runner resolves the ConfigFile path from — set the
+    // way `fromFile` does (it is load provenance, never a rendered JSON field).
+    { parsed with SourcePath = Some "projection.json" }
+
 /// Every action reachable by `planMovement ∘ resolveFlowSpec` over the spanning
 /// estate, across preview/commit and `from:none` skeleton shape. The harvested
 /// reachable surface.
@@ -332,6 +360,11 @@ let private reachableActions (cfg: ProjectionConfig) : Set<string> =
             yield actionTag (Command.planFlow cfg flow opts).Action ]
     |> Set.ofList
 
+/// The full reachable surface: the bare-model spanning estate UNION the
+/// provenance-bearing publish estate (which routes the ConfigFile publish arms).
+let private allReachable : Set<string> =
+    Set.union (reachableActions spanningCfg) (reachableActions publishCfg)
+
 // -- reachable ⇒ expressible (the gate that names the residual) --------------
 
 [<Fact>]
@@ -339,22 +372,22 @@ let ``A44 clause 2 — reachable ⇒ expressible: every model-bearing PlanAction
     // The forcing function: each model-bearing constructor in `mustReachActions`
     // must be produced by `planMovement ∘ resolveFlowSpec` for SOME flow. A
     // missing one is a spec the config cannot express — the canary fails loud.
-    let reached = reachableActions spanningCfg
+    let reached = allReachable
     let unreached = Set.difference mustReachActions reached
     Assert.True(
         Set.isEmpty unreached,
         sprintf "model-bearing PlanActions no flow can express: %A" (Set.toList unreached))
 
-[<Fact(Skip = "A44 residual G3: PublishBundle/PublishAndLoad reachable only via the full-provenance full-export/--store path (ModelSource.ConfigFile), not the flow shaping path; resolveFlowSpec deliberately emits ModelFile/Unspecified, never ConfigFile. Wire-as-flow-option vs remove-dead-arm is a pending operator decision (THE_CONFIG_CONTROL_PLANE §3 G3 / §7).")>]
+[<Fact>]
 let ``A44 residual — PublishBundle/PublishAndLoad are flow-reachable`` () =
-    // STRUCTURALLY VISIBLE, not hidden: these two model-bearing arms fire only
-    // when `spec.Model = ModelSource.ConfigFile`, which `resolveFlowSpec` does
-    // not emit (it sets ModelFile / Unspecified). They are reachable from the
-    // `planMovement` totality sweep (MovementSurfaceTests) by injecting a
-    // ConfigFile spec directly, but NOT via the flow resolver. Flip Skip→Fact
-    // in the commit that wires `ConfigFile` into `resolveFlowSpec` (or delete
-    // this stub in the commit that removes the dead arms) — the operator's call.
-    let reached = reachableActions spanningCfg
+    // RESOLVED (S6.2, operator decision 1 — wire ConfigFile into flows): the
+    // publish-with-provenance arms fire when `spec.Model = ModelSource.ConfigFile`,
+    // which `resolveFlowSpec` now emits exactly when the flow targets a place that
+    // carries a `store` (provenance configured) AND the config has a load
+    // provenance (`SourcePath = Some`) AND a model path. `publishCfg` exercises
+    // both: a folder store sink (preview → PublishBundle) and a live full-grant
+    // store sink (commit → PublishAndLoad). Both are now in `mustReachActions`.
+    let reached = reachableActions publishCfg
     Assert.Contains("PublishBundle", reached)
     Assert.Contains("PublishAndLoad", reached)
 
@@ -369,15 +402,20 @@ let ``A44 residual — EmitSkeleton is flow-reachable`` () =
     Assert.Contains("EmitSkeleton", reached)
 
 [<Fact>]
-let ``A44 clause 2 — the residual is exactly PublishBundle/PublishAndLoad (the gate names what it excludes)`` () =
-    // Pins the residual set precisely, so a future wiring that makes one of these
-    // flow-reachable (or a deletion) forces this test to be revisited rather
-    // than letting the exclusion silently widen. `mustReach` ⊎ `residual` is the
-    // whole model-bearing surface — partition, not loss.
+let ``A44 clause 2 — the residual is ∅: mustReach spans the whole model-bearing surface (the strongest A44 statement)`` () =
+    // After S6.1 (the flow `shape` field) and S6.2 (the store-trigger ConfigFile
+    // wiring), `residualActions` is EMPTY: every model-bearing arm has a flow
+    // pre-image — `expressible = reachable` with no excluded arm, the strongest
+    // form of the A44 law. The partition stays meaningful: `mustReach` ⊎ `residual`
+    // is the whole model-bearing surface, so a future arm that regresses out of
+    // reach forces this test (it would no longer partition) rather than silently
+    // widening an (empty) exclusion.
     let allModelBearing =
         Set.ofList
             [ "PublishBundle"; "EmitSkeleton"; "EmitBundle"; "DeployDocker"; "PreviewSchema"
               "Transfer"; "RunReverseLeg"; "SynthesizeAndLoad"; "MigrateWithData"; "PublishAndLoad"; "Migrate" ]
+    Assert.True(Set.isEmpty residualActions, "residualActions must be ∅ after S6.1 + S6.2")
+    Assert.Equal<Set<string>>(allModelBearing, mustReachActions)
     Assert.Equal<Set<string>>(allModelBearing, Set.union mustReachActions residualActions)
     Assert.Equal<Set<string>>(residualActions, Set.difference allModelBearing mustReachActions)
     Assert.True(Set.isEmpty (Set.intersect mustReachActions residualActions))
