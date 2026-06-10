@@ -44,7 +44,7 @@ let ``reverse-leg face: a reconcile spec is REFUSED BY NAME (transfer.reverseLeg
             (Projection.Pipeline.CatalogRendition.logical model)
             (Projection.Pipeline.CatalogRendition.physical model)
             [ "Customer=Email" ] None
-            false true false EmissionMode.Incremental false [] []
+            false true false EmissionMode.Incremental false false None [] []
     Assert.Equal(2, exit)
 
 [<Fact>]
@@ -56,8 +56,35 @@ let ``reverse-leg face: a user-map is REFUSED BY NAME on the reverse leg (the re
             (Projection.Pipeline.CatalogRendition.logical model)
             (Projection.Pipeline.CatalogRendition.physical model)
             [] (Some "user-map.csv")
-            false true false EmissionMode.Incremental false [] []
+            false true false EmissionMode.Incremental false false None [] []
     Assert.Equal(2, exit)
+
+// -- the streaming combinations refuse BY NAME at the face --------------------
+
+let private faceExit (emission: EmissionMode) (resumable: bool) (streaming: bool) (journal: string option) (tables: string list) : int =
+    let model = tinyModel
+    RunFaces.runReverseLegTransfer
+        "env:L3B_SRC" "env:L3B_SINK"
+        (Projection.Pipeline.CatalogRendition.logical model)
+        (Projection.Pipeline.CatalogRendition.physical model)
+        [] None
+        false true false emission resumable streaming journal tables []
+
+[<Fact>]
+let ``streaming face: a declared table subset refuses by name (transfer.reverseLeg.streamingTablesUnsupported) — whole-estate only`` () =
+    Assert.Equal(2, faceExit EmissionMode.Incremental false true None [ "Customer" ])
+
+[<Fact>]
+let ``streaming face: --resumable refuses by name — the journal IS the streaming resume (the G10 progress table needs CREATE TABLE the data grant forbids)`` () =
+    Assert.Equal(2, faceExit EmissionMode.Incremental true true None [])
+
+[<Fact>]
+let ``streaming face: WipeAndLoad refuses by name — the wipe must invalidate the journal (the named follow-on)`` () =
+    Assert.Equal(2, faceExit EmissionMode.WipeAndLoad false true None [])
+
+[<Fact>]
+let ``streaming face: --journal without --streaming refuses by name — the ledger belongs to the streaming realization`` () =
+    Assert.Equal(2, faceExit EmissionMode.Incremental false false (Some "/tmp/j") [])
 
 // -- reserved follow-on contracts (Skip stubs with promotion triggers) --------
 

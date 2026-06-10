@@ -246,7 +246,7 @@ let ``reverseLegOf: a logical source to a non-live (bundle) physical sink is NOT
 // can never drift.
 
 let private previewOpts : FlowRunOpts =
-    { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Seed = None; Scale = None }
+    { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; Seed = None; Scale = None }
 
 let private dirOf (cfg: ProjectionConfig) name =
     match Command.resolveFlowSpec cfg (Map.find name cfg.Flows) previewOpts with
@@ -294,7 +294,7 @@ let ``direction: a model source to a bundle target derives Down (the A->B down-l
 let ``direction: the legacy flow routes through planFlow to RunReverseLeg under --go --scope data`` () =
     // The flow's grant is `data`, so the grant gate passes; the derived UpLegacy
     // direction routes the committed data move to the reverse-leg runner.
-    let commitData = { Go = true; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Seed = None; Scale = None }
+    let commitData = { Go = true; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; Seed = None; Scale = None }
     let flow = { Map.find "legacy" reverseCfg.Flows with Scope = Some Scope.Data }
     match (Command.planFlow reverseCfg flow commitData).Action with
     | PlanAction.RunReverseLeg (_, _, "env:ONPREM_LEGACY_CONN", "env:CLOUD_UAT_CONN", _, true) -> ()
@@ -315,7 +315,7 @@ let ``J3: a legacy flow with NO model refuses at PLAN time (the contracts render
           "flows": { "legacy": { "from": "onprem-legacy", "to": "cloud-uat" } }
         }
         """ |> mustOk
-    let commitData = { Go = true; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Seed = None; Scale = None }
+    let commitData = { Go = true; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; Seed = None; Scale = None }
     let flow = { Map.find "legacy" modelless.Flows with Scope = Some Scope.Data }
     match (Command.planFlow modelless flow commitData).Action with
     | PlanAction.Refused (1, e) -> Assert.Equal("cli.move.modelMissing", e.Code)
@@ -394,7 +394,7 @@ let private liveDev = Destination.Live (ConnectionRef.EnvVar "DEV_CONN")
 let private baseLive = MovementSpec.forDestination liveDev
 let private defaultOpts : LoadOpts =
     { Declaration = DeclareNone; Emission = EmissionMode.Incremental
-      Reconcile = []; Rekey = None; AllowCdc = false; Resumable = false; Store = None; Env = None; Tables = []; Seed = None; Scale = None }
+      Reconcile = []; Rekey = None; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; Store = None; Env = None; Tables = []; Seed = None; Scale = None }
 
 [<Fact>]
 let ``planMovement: --fresh selects WipeAndLoad on the transfer path`` () =
@@ -550,7 +550,7 @@ let private flowCfg =
     }
     """ |> mustOk
 
-let private preview = { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Seed = None; Scale = None }
+let private preview = { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; Seed = None; Scale = None }
 let private commit  = { preview with Go = true }
 let private flowOf name = Map.find name flowCfg.Flows
 let private specOf name opts = Command.resolveFlowSpec flowCfg (flowOf name) opts

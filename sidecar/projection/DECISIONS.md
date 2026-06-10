@@ -21402,3 +21402,36 @@ journal); journal compaction (288M pairs ≈ a multi-GB NDJSON — acceptable
 for a cutover run, named here); the resumed run's report counts the
 resumed run's work (the journaled run reported its own drops — exit-9
 semantics are per-run; revisit if the operator wants a merged ledger).
+
+## 2026-06-10 — Capability-descent is the house pattern for sink-capability-sensitive write seams (operator-endorsed); deployment is conservative by three rules
+
+The operator endorsed generalizing the capture-lane ladder ("reverse
+progressive enhancement") as a performance-aware pattern, deployed
+conservatively. Codified: capability descent applies at any write seam
+whose preferred realization can be REFUSED BY THE SINK for a capability
+reason (triggers, grant shape, feature availability) — lanes as separate
+functions, a closed DU naming the rungs, ONE orchestrator descending one
+rung at a time, every descent named on the run's report. Three deployment
+rules, none negotiable without an amendment: (1) the capability-error
+recognizer never widens casually — each SQL error number that triggers
+descent is argued and canary-tested like 334 was; (2) a DATA error
+(constraint violation, conversion) always propagates — degrading on data
+errors masks corruption; (3) every new rung lands with a canary proving
+behavioral equivalence on the degraded lane. The ladder is already
+deployed at the one seam with live capability variance (the transfer
+write path, shared by every transfer entry point); future
+capability-sensitive seams adopt the pattern rather than branching inside
+a lane. Per the two-consumer threshold, no speculative generalization of
+the orchestrator into a generic combinator until a second seam exists.
+
+Wiring + bench (same session): `--streaming` / `--journal <dir>` thread
+through `FlowRunOpts` → `MovementSpec` → `LoadOpts` → the reverse-leg CLI
+face, which refuses the unsupported combinations by name
+(`transfer.reverseLeg.streamingTablesUnsupported` /
+`.streamingResumableUnsupported` / `.streamingWipeUnsupported` /
+`.journalRequiresStreaming`); the apparatus entry is
+`Transfer.runStreamingReverseLegThroughConnections`. The streaming bench:
+~32.5k rows/sec bare; ONE-CHUNK INGEST PREFETCH (chunk N+1 pulls from the
+source while chunk N writes to the sink — hot task, distinct connections)
+lifted it to a stable ~35.5k rows/sec (288M ≈ 2.3h, loopback) — kept per
+the bench protocol; the overlap's value grows with real network latency.

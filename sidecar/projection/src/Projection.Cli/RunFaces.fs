@@ -667,6 +667,8 @@ let runReverseLegTransfer
     (allowDrops: bool)
     (emission: EmissionMode)
     (resumable: bool)
+    (streaming: bool)
+    (journalDirectory: string option)
     (tables: string list)
     (surveyAdvisory: string list)
     : int =
@@ -683,6 +685,33 @@ let runReverseLegTransfer
         TtyRenderer.renderVoicedError
             (ValidationError.create "transfer.reverseLeg.reconcileUnsupported"
                 "the B→A reverse leg is a straight load; reconciliation on the reverse leg is not yet supported (the reconcile + rename combination is the named follow-on).")
+        dumpBench "transfer"
+        2
+    // The streaming realization is Incremental, whole-estate, journal-resumed:
+    // the unsupported combinations refuse BY NAME (DECISIONS 2026-06-10 — the
+    // streaming realization), never a silent half-support.
+    elif streaming && not (List.isEmpty tables) then
+        TtyRenderer.renderVoicedError
+            (ValidationError.create "transfer.reverseLeg.streamingTablesUnsupported"
+                "the streaming reverse leg loads the whole estate; a declared table subset is the named follow-on. Remove --tables or run without --streaming.")
+        dumpBench "transfer"
+        2
+    elif streaming && resumable then
+        TtyRenderer.renderVoicedError
+            (ValidationError.create "transfer.reverseLeg.streamingResumableUnsupported"
+                "the streaming reverse leg resumes through its journal, not the G10 marker (whose progress table needs CREATE TABLE the data grant forbids). Replace --resumable with --journal <dir>.")
+        dumpBench "transfer"
+        2
+    elif streaming && emission = EmissionMode.WipeAndLoad then
+        TtyRenderer.renderVoicedError
+            (ValidationError.create "transfer.reverseLeg.streamingWipeUnsupported"
+                "the streaming reverse leg is Incremental; the wipe-and-load refresh stays on the materialized path (the wipe must invalidate the journal — the named follow-on).")
+        dumpBench "transfer"
+        2
+    elif (not streaming) && Option.isSome journalDirectory then
+        TtyRenderer.renderVoicedError
+            (ValidationError.create "transfer.reverseLeg.journalRequiresStreaming"
+                "--journal is the streaming realization's chunk-resume ledger; pass --streaming with it.")
         dumpBench "transfer"
         2
     else
@@ -716,8 +745,12 @@ let runReverseLegTransfer
     let mode = if executeGated then Transfer.Execute else Transfer.DryRun
     let runBody () =
         let result =
-            (Transfer.runReverseLegThroughConnections mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract)
-                .GetAwaiter().GetResult()
+            if streaming then
+                (Transfer.runStreamingReverseLegThroughConnections mode allowCdc journalDirectory connections logicalSourceContract physicalSinkContract)
+                    .GetAwaiter().GetResult()
+            else
+                (Transfer.runReverseLegThroughConnections mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract)
+                    .GetAwaiter().GetResult()
         match result with
         | Ok report ->
             narrateTransferReport report

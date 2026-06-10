@@ -28,7 +28,7 @@ open Projection.Pipeline
 
 let private mustOk r = match r with Ok v -> v | Error es -> failwithf "fixture: %A" es
 
-let private preview : FlowRunOpts = { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Seed = None; Scale = None }
+let private preview : FlowRunOpts = { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; Seed = None; Scale = None }
 let private commit  : FlowRunOpts = { preview with Go = true }
 
 // ---------------------------------------------------------------------------

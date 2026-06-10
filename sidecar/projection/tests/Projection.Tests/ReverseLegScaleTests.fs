@@ -262,6 +262,55 @@ type ReverseLegScaleTests(fixture: EphemeralContainerFixture) =
                 }))
 
 
+    [<Fact>]
+    member _.``Tier 4 streaming sustained: the same 100k rows through runStreamingWithRenames — bounded memory at the materialized path's rate`` () =
+        if not (ReverseLegScaleFixtures.skipIfNoDocker "L3StreamSustained") then () else
+        let nKinds = 4
+        let rowsPerKind = 25_000
+        let totalRows = nKinds * rowsPerKind
+        let model = ReverseLegScaleFixtures.meshModel nKinds
+        let logicalContract = CatalogRendition.logical model
+        let physicalContract = CatalogRendition.physical model
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "L3StreamSusSrc" (fun src _ ->
+                task {
+                    do! Deploy.executeBatch src (SsdtDdlEmitter.statements logicalContract |> Render.toText)
+                    do! Deploy.executeBatch src (ReverseLegScaleFixtures.meshSeed nKinds rowsPerKind)
+                    return!
+                        fixture.WithEphemeralDatabase "L3StreamSusSink" (fun sink _ ->
+                            task {
+                                do! Deploy.executeBatch sink (SsdtDdlEmitter.statements physicalContract |> Render.toText)
+
+                                let sw = System.Diagnostics.Stopwatch.StartNew()
+                                let! reportR =
+                                    Transfer.runStreamingWithRenames Transfer.Execute true src sink logicalContract physicalContract None
+                                sw.Stop()
+                                let report = ReverseLegScaleFixtures.value reportR
+                                Assert.Empty(report.SkippedReferences)
+                                Assert.True(report.Kinds |> List.forall (fun k -> k.RowsWritten = rowsPerKind))
+
+                                let rowsPerSec = float totalRows / sw.Elapsed.TotalSeconds
+                                Bench.recordSample "transfer.reverseLeg.streaming.legMs" sw.ElapsedMilliseconds
+                                printfn
+                                    "REVERSE-LEG STREAMING ENVELOPE: %d rows in %d ms ⇒ %.0f rows/sec ⇒ 288M rows ≈ %.1f h (bounded memory)"
+                                    totalRows sw.ElapsedMilliseconds rowsPerSec
+                                    (288_000_000.0 / rowsPerSec / 3600.0)
+
+                                for i in 1 .. nKinds - 1 do
+                                    let! bChain =
+                                        ReverseLegScaleFixtures.edgeChecksum src
+                                            (sprintf "[dbo].[Scale%d]" i) "[ParentId]" (sprintf "[dbo].[Scale%d]" (i - 1))
+                                            "[Bk]" "[Bk]" "[Id]"
+                                    let! aChain =
+                                        ReverseLegScaleFixtures.edgeChecksum sink
+                                            (sprintf "[dbo].[OSUSR_SC_T%d]" i) "[PARENT_ID]" (sprintf "[dbo].[OSUSR_SC_T%d]" (i - 1))
+                                            "[BK]" "[BK]" "[ID]"
+                                    Assert.Equal(int64 rowsPerKind, fst bChain)
+                                    Assert.Equal(bChain, aChain)
+                            })
+                }))
+
+
 /// The norm witness — CDC isolation per the IsolatedContainerFixture rule
 /// (`sp_cdc_enable_db` flips instance-wide state; never on the warm
 /// container).

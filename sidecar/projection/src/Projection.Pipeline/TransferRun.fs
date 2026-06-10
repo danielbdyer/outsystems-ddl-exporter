@@ -1021,20 +1021,28 @@ module Transfer =
                     return Result.success (List.length remapped.Rows, descents, skips, succeededLane)
             }
 
+        // One-chunk ingest PREFETCH: chunk N+1 starts pulling from the
+        // SOURCE while chunk N writes to the SINK (different connections —
+        // true overlap; the task CE is hot, so the pull progresses during
+        // the write await). On a refusal/crash the in-flight prefetch is
+        // abandoned (its read completes or faults unobserved — harmless,
+        // the source connection is read-only).
         let rec loadKindChunks (kind: Kind) (load: DataLoadKind) (pkName: Name) (stream: Projection.Adapters.Sql.AsyncStream<StaticRow>)
+                               (pending: Task<StaticRow list>)
                                (chunkIx: int) (lane: CaptureLane)
                                (ingested: int) (written: int)
                                (skips: (SsKey * UnresolvedReference) list) (descents: LaneDescent list)
             : Task<Result<StreamedKind * (SsKey * UnresolvedReference) list * LaneDescent list>> =
             task {
-                let! chunkRaw = Projection.Adapters.Sql.AsyncStream.nextBatch CaptureChunkSize stream
+                let! chunkRaw = pending
                 if List.isEmpty chunkRaw then
                     return Result.success ({ Ingested = ingested; Written = written }, skips, descents)
                 else
+                    let nextPending = Projection.Adapters.Sql.AsyncStream.nextBatch CaptureChunkSize stream
                     match! writeChunk kind load pkName lane chunkIx chunkRaw with
                     | Error es -> return Result.failure es
                     | Ok (written', newDescents, newSkips, lane') ->
-                        return! loadKindChunks kind load pkName stream (chunkIx + 1) lane'
+                        return! loadKindChunks kind load pkName stream nextPending (chunkIx + 1) lane'
                                     (ingested + List.length chunkRaw) (written + written')
                                     (skips @ newSkips) (descents @ newDescents)
             }
@@ -1059,7 +1067,8 @@ module Transfer =
                             |> Option.defaultValue (List.head kind.Attributes)
                             |> fun a -> a.Name
                         let stream = Ingestion.streamKind source ingestKind
-                        match! loadKindChunks kind load pkName stream 0 CaptureLane.StagedMergeOutput 0 0 [] [] with
+                        let firstChunk = Projection.Adapters.Sql.AsyncStream.nextBatch CaptureChunkSize stream
+                        match! loadKindChunks kind load pkName stream firstChunk 0 CaptureLane.StagedMergeOutput 0 0 [] [] with
                         | Error es -> return Result.failure es
                         | Ok (streamed, kindSkips, kindDescents) ->
                             LogSink.recordStageProgress "load" (loaded + 1) loadTotal loadSw.ElapsedMilliseconds
@@ -1221,6 +1230,34 @@ module Transfer =
                                           UnmatchedIdentities = []
                                           SkippedReferences   = skips
                                           CaptureLaneDescents = descents }
+        }
+
+    /// The streaming reverse leg through the `TransferConnections`
+    /// apparatus (D9) — the bounded-memory sibling of
+    /// `runReverseLegThroughConnections` for the estate-scale B→A load.
+    /// Both contracts arrive RENDERED from the one authored model
+    /// (`CatalogRendition`); the optional journal directory makes the run
+    /// chunk-resumable. Straight load, Incremental semantics — the
+    /// reconcile / WipeAndLoad / table-subset combinations stay on the
+    /// materialized path (the CLI face refuses them by name).
+    let runStreamingReverseLegThroughConnections
+        (mode: Mode)
+        (allowCdc: bool)
+        (journalDirectory: string option)
+        (connections: TransferConnections)
+        (logicalSourceContract: Catalog)
+        (physicalSinkContract: Catalog)
+        : Task<Result<TransferReport>> =
+        task {
+            match! ConnectionResolver.openSubstrate connections.Source with
+            | Error es -> return Result.failure es
+            | Ok source ->
+                use source = source
+                match! ConnectionResolver.openSubstrate connections.Sink with
+                | Error es -> return Result.failure es
+                | Ok sink ->
+                    use sink = sink
+                    return! runStreamingWithRenames mode allowCdc source sink logicalSourceContract physicalSinkContract journalDirectory
         }
 
     /// Run a *reconciling* Transfer — the operator's headline case
