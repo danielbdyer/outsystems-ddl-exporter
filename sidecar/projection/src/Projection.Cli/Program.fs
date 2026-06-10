@@ -1779,10 +1779,17 @@ let private runSyntheticLoad (model: ModelSource) (modelOssys: string option) (p
         match model with
         | ModelSource.ModelFile p | ModelSource.ConfigFile p -> Some p
         | ModelSource.Unspecified -> None
+    // D8 — the per-run synthesis knobs: `--scale <f>` overlays the volume factor
+    // on the default hybrid-by-cardinality config; `--seed <n>` selects the PRNG
+    // seed. Absent, both fall to the fixed defaults (byte-identical replay).
+    let syntheticConfig =
+        { SyntheticConfig.defaultConfig with
+            Scale = opts.Scale |> Option.defaultValue SyntheticConfig.defaultConfig.Scale }
+    let seed = opts.Seed |> Option.defaultValue SyntheticLoadRun.defaultSeed
     let result =
         (SyntheticLoadRun.run
             modelOssys modelFile profileRef connSpec opts.Emission opts.AllowCdc
-            SyntheticConfig.defaultConfig SyntheticLoadRun.defaultSeed executeGated)
+            syntheticConfig seed executeGated)
             .GetAwaiter().GetResult()
     let exitCode =
         match result with

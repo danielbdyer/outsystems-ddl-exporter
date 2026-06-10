@@ -245,7 +245,7 @@ let ``reverseLegOf: a logical source to a non-live (bundle) physical sink is NOT
 // can never drift.
 
 let private previewOpts : FlowRunOpts =
-    { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false }
+    { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Seed = None; Scale = None }
 
 let private dirOf (cfg: ProjectionConfig) name =
     match Command.resolveFlowSpec cfg (Map.find name cfg.Flows) previewOpts with
@@ -293,7 +293,7 @@ let ``direction: a model source to a bundle target derives Down (the A->B down-l
 let ``direction: the legacy flow routes through planFlow to RunReverseLeg under --go --scope data`` () =
     // The flow's grant is `data`, so the grant gate passes; the derived UpLegacy
     // direction routes the committed data move to the reverse-leg runner.
-    let commitData = { Go = true; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false }
+    let commitData = { Go = true; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Seed = None; Scale = None }
     let flow = { Map.find "legacy" reverseCfg.Flows with Scope = Some Scope.Data }
     match (Command.planFlow reverseCfg flow commitData).Action with
     | PlanAction.RunReverseLeg ("env:ONPREM_LEGACY_CONN", "env:CLOUD_UAT_CONN", _, true) -> ()
@@ -319,7 +319,7 @@ let private liveDev = Destination.Live (ConnectionRef.EnvVar "DEV_CONN")
 let private baseLive = MovementSpec.forDestination liveDev
 let private defaultOpts : LoadOpts =
     { Declaration = DeclareNone; Emission = EmissionMode.Incremental
-      Reconcile = []; Rekey = None; AllowCdc = false; Resumable = false; Store = None; Env = None; Tables = [] }
+      Reconcile = []; Rekey = None; AllowCdc = false; Resumable = false; Store = None; Env = None; Tables = []; Seed = None; Scale = None }
 
 [<Fact>]
 let ``planMovement: --fresh selects WipeAndLoad on the transfer path`` () =
@@ -462,7 +462,7 @@ let private flowCfg =
     }
     """ |> mustOk
 
-let private preview = { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false }
+let private preview = { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Seed = None; Scale = None }
 let private commit  = { preview with Go = true }
 let private flowOf name = Map.find name flowCfg.Flows
 let private specOf name opts = Command.resolveFlowSpec flowCfg (flowOf name) opts
@@ -843,6 +843,48 @@ let ``flow --resumable threads onto the spec (A2)`` () =
     match specOf "spin" { preview with Resumable = true } with
     | Ok s -> Assert.True s.Resumable
     | Error es -> Assert.Fail(sprintf "%A" es)
+
+[<Fact>]
+let ``parse: --seed and --scale set the per-run intent (D8)`` () =
+    let (_, o) = parseFlowIntent [ "golden"; "--seed"; "7"; "--scale"; "0.5" ]
+    Assert.Equal(Some 7UL, o.Seed)
+    Assert.Equal(Some 0.5M, o.Scale)
+
+[<Fact>]
+let ``parse: --seed and --scale default absent (D8 byte-identical)`` () =
+    let (_, o) = parseFlowIntent [ "golden" ]
+    Assert.Equal(None, o.Seed)
+    Assert.Equal(None, o.Scale)
+
+[<Fact>]
+let ``parse: a malformed --seed is refused, named (D8)`` () =
+    match Command.parse flowCfg [ "golden"; "--seed"; "many" ] with
+    | Error [ e ] -> Assert.Equal("cli.flow.seedInvalid", e.Code)
+    | other -> Assert.Fail(sprintf "expected the seed refusal, got %A" other)
+
+[<Fact>]
+let ``parse: a non-positive --scale is refused, named (D8)`` () =
+    match Command.parse flowCfg [ "golden"; "--scale"; "0" ] with
+    | Error [ e ] -> Assert.Equal("cli.flow.scaleInvalid", e.Code)
+    | other -> Assert.Fail(sprintf "expected the scale refusal, got %A" other)
+
+[<Fact>]
+let ``planMovement: seed/scale thread into the synthetic load's LoadOpts (D8)`` () =
+    let spec =
+        { baseLive with
+            Data = DataOrigin.Synthetic "file:p.json"
+            Seed = Some 7UL
+            Scale = Some 0.5M }
+    match planOf spec with
+    | PlanAction.SynthesizeAndLoad (_, _, _, _, opts, false) ->
+        Assert.Equal(Some 7UL, opts.Seed)
+        Assert.Equal(Some 0.5M, opts.Scale)
+    | other -> Assert.Fail(sprintf "expected SynthesizeAndLoad, got %A" other)
+
+[<Fact>]
+let ``planMovement: seed/scale on a non-synthetic action are noted, never silently dropped (D8)`` () =
+    let plan = Command.planMovement routeCfg { baseLive with Seed = Some 7UL }
+    Assert.Contains(plan.Notes, fun (n: string) -> n.Contains "--seed/--scale accepted")
 
 [<Fact>]
 let ``parse: a bare flow routes through plan to its engine face`` () =

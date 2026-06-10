@@ -123,6 +123,12 @@ type MovementSpec =
         /// idempotent-upsert envelope (`Transfer.runResumable`). Honored on the
         /// pure-transfer data leg; inert elsewhere. Default false (byte-identical).
         Resumable   : bool
+        /// D8 — the synthesis PRNG seed (`--seed <n>`). Honored on the synthetic
+        /// load; inert elsewhere. `None` = the fixed default seed.
+        Seed        : uint64 option
+        /// D8 — the synthesis volume factor (`--scale <f>`). Honored on the
+        /// synthetic load; inert elsewhere. `None` = full scale (1.0).
+        Scale       : decimal option
         /// Durable provenance store; fills from the target's config or `--store`.
         Store       : string option
         /// Environment label for the timeline / episode.
@@ -151,6 +157,8 @@ module MovementSpec =
             AllowDrops  = false
             AllowCdc    = false
             Resumable   = false
+            Seed        = None
+            Scale       = None
             Store       = None
             Env         = None
             Commit      = false
@@ -217,6 +225,12 @@ type FlowRunOpts =
         /// `--resumable` — route the incremental data load through the resumable
         /// / idempotent-upsert envelope (G10). Default false (byte-identical).
         Resumable  : bool
+        /// `--seed <n>` — the synthesis PRNG seed (D8; THE_SYNTHETIC_DATA_DESIGN
+        /// §7). `None` = the fixed default seed (byte-identical reproducibility).
+        Seed       : uint64 option
+        /// `--scale <f>` — the synthesis volume factor over the profiled
+        /// `RowCount` per kind (D8; design §7). `None` = full scale (1.0).
+        Scale      : decimal option
     }
 
 /// The operator intents (THE_CLI.md §2). `Flow` is the hero — the daily
@@ -251,6 +265,10 @@ type LoadOpts =
         Env         : string option
         /// Declared table subset for the data leg (item 5); empty = all.
         Tables      : string list
+        /// D8 — the synthesis PRNG seed; honored on the synthetic load only.
+        Seed        : uint64 option
+        /// D8 — the synthesis volume factor; honored on the synthetic load only.
+        Scale       : decimal option
     }
 
 /// The engine face a parsed `Intent` routes to, named with the cfg-resolved

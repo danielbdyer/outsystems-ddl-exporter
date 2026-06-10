@@ -563,7 +563,9 @@ module Command =
           Resumable   = spec.Resumable
           Store       = spec.Store
           Env         = spec.Env
-          Tables      = spec.Tables }
+          Tables      = spec.Tables
+          Seed        = spec.Seed
+          Scale       = spec.Scale }
 
     // --- the pure movement routing (the surface→engine map) ----------------
 
@@ -654,7 +656,14 @@ module Command =
             | true, PlanAction.Transfer _ -> []
             | true, PlanAction.RunReverseLeg _ -> []
             | true, _ -> [ "--resumable accepted; this action has no resumable data-load seam (standard write applied)." ]
-        { Notes = unhonoredNotes spec @ freshNote @ resumableNote; Action = action }
+        // D8 — seed/scale are honored on the synthetic load only; on any other
+        // action they are noted, never silently dropped (THE_VOICE no-silent-drop).
+        let synthesisNote =
+            match (spec.Seed, spec.Scale), action with
+            | (None, None), _ -> []
+            | _, PlanAction.SynthesizeAndLoad _ -> []
+            | _, _ -> [ "--seed/--scale accepted; this action has no synthesis leg (model data applied)." ]
+        { Notes = unhonoredNotes spec @ freshNote @ resumableNote @ synthesisNote; Action = action }
 
     /// Route a `check` verb tail to its proof-plane action — purely.
     let planCheck (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
@@ -905,6 +914,10 @@ module Command =
                         AllowDrops = opts.AllowDrops
                         AllowCdc = opts.AllowCdc
                         Resumable = opts.Resumable
+                        // D8 — the synthesis knobs ride the per-run intent
+                        // (seed/volume vary at the moment of action, never config).
+                        Seed = opts.Seed
+                        Scale = opts.Scale
                         // The target's durable timeline: a live --go records an
                         // episode into it (which `report` later diffs). F4.
                         Store    = toEnv.Store
@@ -1007,13 +1020,35 @@ module Command =
         | "report" :: rest  -> Result.success (Intent.Report rest)
         | "profile" :: rest -> Result.success (Intent.Profile rest)
         | first :: rest when Map.containsKey first cfg.Flows ->
-            let opts =
-                { Go         = List.contains "--go" rest
-                  Fresh      = List.contains "--fresh" rest
-                  AllowDrops = List.contains "--allow-drops" rest
-                  AllowCdc   = List.contains "--allow-cdc" rest
-                  Resumable  = List.contains "--resumable" rest }
-            Result.success (Intent.Flow (Map.find first cfg.Flows, opts))
+            // D8 — the value-bearing synthesis knobs. A malformed value is a
+            // refusal (named, never a silent fall-through to the default).
+            let seedR : Result<uint64 option> =
+                match flagValue rest "--seed" with
+                | None -> Result.success None
+                | Some raw ->
+                    match System.UInt64.TryParse raw with
+                    | true, v -> Result.success (Some v)
+                    | _ -> Result.failureOf (err "cli.flow.seedInvalid" (sprintf "--seed '%s' is not a non-negative integer." raw))
+            let scaleR : Result<decimal option> =
+                match flagValue rest "--scale" with
+                | None -> Result.success None
+                | Some raw ->
+                    match System.Decimal.TryParse(raw, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture) with
+                    | true, v when v > 0M -> Result.success (Some v)
+                    | true, _ -> Result.failureOf (err "cli.flow.scaleInvalid" (sprintf "--scale '%s' must be greater than zero." raw))
+                    | _ -> Result.failureOf (err "cli.flow.scaleInvalid" (sprintf "--scale '%s' is not a number." raw))
+            match seedR, scaleR with
+            | Error es, _ | _, Error es -> Result.failure es
+            | Ok seed, Ok scale ->
+                let opts =
+                    { Go         = List.contains "--go" rest
+                      Fresh      = List.contains "--fresh" rest
+                      AllowDrops = List.contains "--allow-drops" rest
+                      AllowCdc   = List.contains "--allow-cdc" rest
+                      Resumable  = List.contains "--resumable" rest
+                      Seed       = seed
+                      Scale      = scale }
+                Result.success (Intent.Flow (Map.find first cfg.Flows, opts))
         | first :: _ when secondaryVerbs.Contains first ->
             // a known verb with a malformed tail falls through its own branch;
             // this arm is unreachable for those, kept total for the type.
