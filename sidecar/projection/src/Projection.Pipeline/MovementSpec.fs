@@ -193,6 +193,11 @@ type Flow =
         To     : string
         Rekey  : string option
         Tables : string list
+        /// J2 — per-flow `MatchByColumn` re-key rules ("<table>:<col>" each;
+        /// e.g. the golden flow's `"reconcile": ["OSSYS_USER:EMAIL"]` so the
+        /// declarative flow carries the User re-key without a per-run tail).
+        /// Empty = no reconcile (byte-identical).
+        Reconcile : string list
         /// The move's PROJECTION (G1): which legs of the T16 square THIS move
         /// carries — the schema leg, the data leg, or both. Decoupled from the
         /// target's `grant` (the refusal gate, what MAY change there). `None`

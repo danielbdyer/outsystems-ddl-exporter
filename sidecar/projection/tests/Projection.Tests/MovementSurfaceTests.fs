@@ -453,7 +453,7 @@ let private flowCfg =
       },
       "flows": {
         "uat":     { "from": "cloud-dev", "to": "onprem-uat", "rekey": "file:users.csv" },
-        "golden":  { "from": "cloud-qa",  "to": "cloud-uat",  "tables": ["Customer"] },
+        "golden":  { "from": "cloud-qa",  "to": "cloud-uat",  "tables": ["Customer"], "reconcile": ["OSUSR_RC_USER:EMAIL"] },
         "badsrc":  { "from": "onprem-uat","to": "cloud-uat" },
         "lift-uat":{ "from": "model",     "to": "cloud-uat" },
         "spin":    { "from": "model",     "to": "lab" }
@@ -501,7 +501,7 @@ let ``flow golden: the table subset is honored on the transfer opts (item 5)`` (
 
 [<Fact>]
 let ``flow tables on a non-transfer action is noted (data-transfer leg only)`` () =
-    let bt = { Name = "bt"; From = FlowSource.Model; To = "onprem-uat"; Rekey = None; Tables = [ "Customer" ]; Scope = None; Shape = None; Shaping = None }
+    let bt = { Name = "bt"; From = FlowSource.Model; To = "onprem-uat"; Rekey = None; Tables = [ "Customer" ]; Reconcile = []; Scope = None; Shape = None; Shaping = None }
     Assert.Contains((Command.planFlow flowCfg bt preview).Notes, fun (n: string) -> n.Contains "data-transfer leg only")
 
 [<Fact>]
@@ -843,6 +843,33 @@ let ``flow --resumable threads onto the spec (A2)`` () =
     match specOf "spin" { preview with Resumable = true } with
     | Ok s -> Assert.True s.Resumable
     | Error es -> Assert.Fail(sprintf "%A" es)
+
+[<Fact>]
+let ``config parses a flow's reconcile rules (J2 — the golden re-key lives in the flow)`` () =
+    Assert.Equal<string list>([ "OSUSR_RC_USER:EMAIL" ], (flowOf "golden").Reconcile)
+
+[<Fact>]
+let ``config refuses a malformed flow reconcile entry, named (J2)`` () =
+    let json = """{ "environments": { "uat": { "access": "docker" } }, "flows": { "g": { "to": "uat", "reconcile": ["OSUSR_RC_USER"] } } }"""
+    Assert.Contains("cli.config.flowReconcileShape", errCodes (ProjectionConfig.parse json))
+
+[<Fact>]
+let ``flow reconcile threads onto the spec and into the transfer's LoadOpts (J2)`` () =
+    match specOf "golden" commit with
+    | Ok s -> Assert.Equal<string list>([ "OSUSR_RC_USER:EMAIL" ], s.Reconcile)
+    | Error es -> Assert.Fail(sprintf "%A" es)
+    match actionOf "golden" commit with
+    | PlanAction.Transfer (_, _, opts, true) ->
+        Assert.Equal<string list>([ "OSUSR_RC_USER:EMAIL" ], opts.Reconcile)
+    | other -> Assert.Fail(sprintf "expected Transfer, got %A" other)
+
+[<Fact>]
+let ``render: a flow's reconcile rules round-trip (J2; parse-render = id)`` () =
+    let flow = flowOf "golden"
+    let cfg = { ProjectionConfig.empty with Flows = Map.ofList [ flow.Name, flow ] }
+    match ProjectionConfig.parse (ProjectionConfig.render cfg) with
+    | Ok back -> Assert.Equal<string list>([ "OSUSR_RC_USER:EMAIL" ], (Map.find "golden" back.Flows).Reconcile)
+    | Error es -> Assert.Fail(sprintf "round-trip failed: %A" es)
 
 [<Fact>]
 let ``parse: --seed and --scale set the per-run intent (D8)`` () =

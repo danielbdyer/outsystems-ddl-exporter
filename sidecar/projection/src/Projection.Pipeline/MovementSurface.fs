@@ -268,12 +268,36 @@ module ProjectionConfig =
                                 | Some s when not (String.IsNullOrWhiteSpace s) -> yield s.Trim()
                                 | _ -> () ]
                     | _ -> []
-                match parseFlowScope name el, parseFlowShape name el, parseFlowShaping el with
-                | Error es, _, _ | _, Error es, _ | _, _, Error es -> Result.failure es
-                | Ok scope, Ok shape, Ok shaping ->
+                // J2 — per-flow reconcile rules. Each entry must carry the
+                // "<table>:<match-column>" shape (the same contract the
+                // `--reconcile` tail proves via `TransferSpec.parseReconcileSpec`);
+                // a malformed entry is a named config error, never a deferred
+                // runtime surprise.
+                let reconcileR : Result<string list> =
+                    match el.TryGetProperty "reconcile" with
+                    | true, r when r.ValueKind = JsonValueKind.Array ->
+                        let entries =
+                            [ for v in r.EnumerateArray() do
+                                if v.ValueKind = JsonValueKind.String then
+                                    match Option.ofObj (v.GetString()) with
+                                    | Some s when not (String.IsNullOrWhiteSpace s) -> yield s.Trim()
+                                    | _ -> () ]
+                        let shapeErrors =
+                            entries
+                            |> List.collect (fun e ->
+                                match TransferSpec.parseReconcileSpec e with
+                                | Ok _ -> []
+                                | Error _ -> [ err "cli.config.flowReconcileShape" (sprintf "flow '%s' reconcile entry '%s' is not <table>:<match-column>." name e) ])
+                        if List.isEmpty shapeErrors then Result.success entries else Result.failure shapeErrors
+                    | true, r when r.ValueKind <> JsonValueKind.Null ->
+                        Result.failureOf (err "cli.config.flowReconcileShape" (sprintf "flow '%s' 'reconcile' must be an array of \"<table>:<match-column>\" strings." name))
+                    | _ -> Result.success []
+                match parseFlowScope name el, parseFlowShape name el, parseFlowShaping el, reconcileR with
+                | Error es, _, _, _ | _, Error es, _, _ | _, _, Error es, _ | _, _, _, Error es -> Result.failure es
+                | Ok scope, Ok shape, Ok shaping, Ok reconcile ->
                     Result.success
                         { Name = name; From = parseFlowSource el; To = toEnv; Rekey = getString el "rekey"
-                          Tables = tables; Scope = scope; Shape = shape; Shaping = shaping }
+                          Tables = tables; Reconcile = reconcile; Scope = scope; Shape = shape; Shaping = shaping }
 
     /// Parse the `projection.json` document text into a `ProjectionConfig`.
     /// Aggregates every per-environment / per-flow error so the operator
@@ -448,6 +472,12 @@ module ProjectionConfig =
             let a = JsonArray()
             for t in flow.Tables do a.Add(JsonValue.Create t)
             o.["tables"] <- a)
+        // J2 — the per-flow reconcile rules (the empty default round-trips
+        // through the absent arm, mirroring `tables`).
+        (if not (List.isEmpty flow.Reconcile) then
+            let a = JsonArray()
+            for r in flow.Reconcile do a.Add(JsonValue.Create r)
+            o.["reconcile"] <- a)
         o
 
     /// Render a whole movement config to its `projection.json` DOM — the inverse
@@ -910,6 +940,10 @@ module Command =
                         Data     = data
                         Baseline = (if opts.Fresh then Baseline.Empty else Baseline.Auto)
                         Rekey    = flow.Rekey
+                        // J2 — the flow's declarative MatchByColumn re-key rules
+                        // (e.g. the golden flow's User-by-email reconcile) ride
+                        // the spec into the transfer leg's `LoadOpts.Reconcile`.
+                        Reconcile = flow.Reconcile
                         Tables   = flow.Tables
                         AllowDrops = opts.AllowDrops
                         AllowCdc = opts.AllowCdc
