@@ -1296,6 +1296,23 @@ module Deploy =
             return Result.success (outputs, report)
         }
 
+    /// THE_CONFIG_CONTROL_PLANE §6 (S3) — the overlay-aware sibling of
+    /// `runFromCatalog`: project the caller-supplied catalog through the
+    /// unified config's shaping (`Compose.projectWithConfig` — renames /
+    /// policy / emission toggles / folders / groups) before deploying the
+    /// SSDT to the ephemeral container. The flow `DeployDocker` arm routes
+    /// here so `projection <flow→docker>` honors the shaping. The module
+    /// filter is applied upstream at the shared `Program.needCatalog` seam.
+    /// `Config.defaultConfig` shaping is byte-identical to `runFromCatalog`.
+    let runFromCatalogWith (shaping: Config.Config) (catalog: Catalog) : Task<Result<Compose.Outputs * Report>> =
+        task {
+            match Compose.projectWithConfig shaping catalog with
+            | Error errors -> return Result.failure errors
+            | Ok outputs ->
+                let! report = runEphemeral (Compose.aggregateSsdt outputs.SsdtBundle)
+                return Result.success (outputs, report)
+        }
+
     let runFromV1Json (jsonPath: string) : Task<Result<Compose.Outputs * Report>> =
         task {
             let! parsed = Compose.read jsonPath

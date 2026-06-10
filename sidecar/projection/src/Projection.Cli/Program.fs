@@ -340,9 +340,9 @@ let private runFullExportLoad
                     dumpBench "full-export"
                     code
 
-let private runEmit (catalog: Catalog) (outputDir: string) : int =
+let private runEmit (shaping: Config.Config) (catalog: Catalog) (outputDir: string) : int =
     let exitCode =
-        match Compose.runFromCatalog catalog outputDir with
+        match Compose.runFromCatalogWith shaping catalog outputDir with
         | Ok paths ->
             printfn "%d artifact(s) written to %s." paths.Length outputDir
             paths
@@ -386,7 +386,7 @@ let private runEmitSkeletonOnly (catalog: Catalog) (outputDir: string) : int =
     dumpBench "emit-skeleton-only"
     exitCode
 
-let private runDeploy (catalog: Catalog) : int =
+let private runDeploy (shaping: Config.Config) (catalog: Catalog) : int =
     if not (Deploy.Docker.isAvailable ()) then
         die
             4
@@ -396,7 +396,7 @@ let private runDeploy (catalog: Catalog) : int =
             printfn "projection: spinning up an ephemeral SQL Server container..."
             LogSink.recordStageStart "deploy"
             let sw = System.Diagnostics.Stopwatch.StartNew()
-            let result = (Deploy.runFromCatalog catalog).GetAwaiter().GetResult()
+            let result = (Deploy.runFromCatalogWith shaping catalog).GetAwaiter().GetResult()
             LogSink.recordStageEvent "deploy" sw.ElapsedMilliseconds
                 (match result with Ok (_, report) when report.Ok -> LogSink.Succeeded | _ -> LogSink.Failed)
             match result with
@@ -1816,17 +1816,37 @@ let private runCaptureProfile (connSpec: string) (outPath: string) : int =
     dumpBench "profile"
     exitCode
 
-let private runPlan (surveyAdvisory: string list) (plan: ExecutionPlan) : int =
+let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan: ExecutionPlan) : int =
     for n in plan.Notes do eprintfn "Note — %s" n
     // Resolve the model to a Catalog under the live-OSSYS-primary / file-
     // fallback policy (ModelResolution), then run the Catalog-accepting face.
+    //
+    // THE_CONFIG_CONTROL_PLANE §6 (S3) — the SINGLE shared module-filter seam.
+    // Every model-bearing flow arm (emit / deploy / preview / migrate) routes
+    // the resolved catalog through `Compose.applyModuleFilter` HERE so a
+    // `model.modules` scope narrows the bundle and the live/docker/migrate
+    // catalogs identically (the riskiest-seam callout). An empty `model.modules`
+    // is the all-permissive identity, so the default flow stays byte-identical.
     let needCatalog (modelOssys: string option) (model: ModelSource) (run: Catalog -> int) : int =
         let modelFile =
             match model with
             | ModelSource.ModelFile p | ModelSource.ConfigFile p -> Some p
             | ModelSource.Unspecified -> None
-        match (ModelResolution.resolveCatalog modelOssys modelFile).GetAwaiter().GetResult() with
+        let resolved =
+            (ModelResolution.resolveCatalog modelOssys modelFile).GetAwaiter().GetResult()
+            |> Result.bind (Compose.applyModuleFilter shaping)
+        match resolved with
         | Ok catalog -> run catalog
+        | Error es ->
+            for e in es do TtyRenderer.renderVoicedError e
+            6
+    // THE_CONFIG_CONTROL_PLANE §6 (S3) — apply the shaping catalog overlays
+    // (renames + policy tightening) to a module-filtered catalog before the
+    // non-bundle destinations (preview / migrate / migrate-with-data) evolve
+    // the sink schema toward it. Default shaping is the identity on the catalog.
+    let withShaped (shaping: Config.Config) (catalog: Catalog) (run: Catalog -> int) : int =
+        match Compose.applyShapingToCatalog shaping catalog with
+        | Ok shapedCatalog -> run shapedCatalog
         | Error es ->
             for e in es do TtyRenderer.renderVoicedError e
             6
@@ -1842,15 +1862,15 @@ let private runPlan (surveyAdvisory: string list) (plan: ExecutionPlan) : int =
     | PlanAction.EmitSkeleton (model, modelOssys, dir) ->
         needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runEmitSkeletonOnly cat dir))
     | PlanAction.EmitBundle (model, modelOssys, dir) ->
-        needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runEmit cat dir))
+        needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runEmit shaping cat dir))
     | PlanAction.DeployDocker (model, modelOssys) ->
-        needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runDeploy cat))
+        needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runDeploy shaping cat))
     | PlanAction.PreviewSchema (model, modelOssys, conn, decl) ->
-        needCatalog modelOssys model (fun cat -> runProjectLivePreview cat conn decl)
+        needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat -> runProjectLivePreview shapedCat conn decl))
     | PlanAction.Transfer (src, sink, opts, execute) ->
         runTransfer src sink None None opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Tables surveyAdvisory
     | PlanAction.MigrateWithData (model, modelOssys, sink, src, opts) ->
-        needCatalog modelOssys model (fun cat -> runMigrateWithData cat sink src opts.Reconcile opts.Rekey opts.Declaration opts.AllowCdc opts.Store opts.Env)
+        needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat -> runMigrateWithData shapedCat sink src opts.Reconcile opts.Rekey opts.Declaration opts.AllowCdc opts.Store opts.Env))
     | PlanAction.SynthesizeAndLoad (model, modelOssys, profile, conn, opts, execute) ->
         runSyntheticLoad model modelOssys profile conn opts execute
     | PlanAction.CaptureProfile (conn, out) -> runCaptureProfile conn out
@@ -1861,7 +1881,7 @@ let private runPlan (surveyAdvisory: string list) (plan: ExecutionPlan) : int =
         if Watch.shouldWatch watchMode.Value then Watch.renderWatch pipelineStages (Watch.resolveDwellMs ()) run
         else run ()
     | PlanAction.Migrate (model, modelOssys, conn, opts) ->
-        needCatalog modelOssys model (fun cat -> runMigrateExecute cat conn opts.Declaration opts.AllowCdc opts.Store opts.Env)
+        needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat -> runMigrateExecute shapedCat conn opts.Declaration opts.AllowCdc opts.Store opts.Env))
     // check --------------------------------------------------------------
     | PlanAction.CheckCanary (ddl, false) -> withRun "projection check" (fun () -> runCanary ddl)
     | PlanAction.CheckCanary (ddl, true)  -> withRun "projection check --cdc-silence" (fun () -> runCanaryCdcSilence ddl)
@@ -2059,4 +2079,4 @@ let main argv =
                         let reports = (CapabilitySurvey.survey cfg).GetAwaiter().GetResult()
                         CapabilitySurvey.advisoryLines reports
                     | _ -> []
-                runPlan surveyAdvisory (Command.plan cfg intent)
+                runPlan cfg.Shaping surveyAdvisory (Command.plan cfg intent)

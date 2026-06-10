@@ -1022,7 +1022,15 @@ module Compose =
     /// narrows the catalog to the named modules + their per-module entity
     /// subsets; operator-supplied-name mismatches surface as structured
     /// `moduleFilter.*` errors (fail-loud, never a silent empty catalog).
-    let private applyModuleFilter
+    /// THE_CONFIG_CONTROL_PLANE §6 (S3) — the SINGLE shared module-filter
+    /// seam. `runWithConfig`'s model-read path (`readConfigModel`) and the
+    /// flow dispatch's resolved-catalog path (`Program.needCatalog`) both
+    /// route the read catalog through here, so a `model.modules` scope
+    /// narrows the bundle and the live/docker/migrate catalogs identically.
+    /// An empty `model.modules` is the all-permissive identity
+    /// (`ModuleFilterBinding`/`ModuleFilter.apply` short-circuit), so the
+    /// default config is byte-identical.
+    let applyModuleFilter
         (cfg: Config.Config)
         (catalog: Catalog)
         : Result<Catalog> =
@@ -1050,6 +1058,102 @@ module Compose =
                                 "model needs `path` (osm_model.json) or `ossys` (live OSSYS connection)."))
             return read |> Result.bind (applyModuleFilter cfg)
         }
+
+    /// THE_CONFIG_CONTROL_PLANE §6 (S3) — project a **caller-supplied**
+    /// catalog through the unified config's shaping overlays, yielding the
+    /// SSDT/data `Outputs`. The sibling of `runWithConfigCore`'s emit body,
+    /// but over a catalog the flow runner already resolved (live/docker/
+    /// migrate) rather than re-read from `cfg.Model`. Applies `applyRenames`
+    /// (table renames), `buildPolicyFromConfig` (tightening / insertion /
+    /// emission toggles), and the `EmissionFolders`/`TransformGroups`
+    /// bindings. The module filter is NOT applied here — it lives at the
+    /// shared `applyModuleFilter` seam the caller already routed the catalog
+    /// through (`Program.needCatalog`), so bundle and live agree.
+    ///
+    /// A `Config.defaultConfig` shaping (no renames, default policy, empty
+    /// folders/groups) yields `projectWithState Policy.empty … catalog`,
+    /// which is byte-identical to `project EmissionPolicy.empty catalog`
+    /// (the prior `runFromCatalog` body) — the empty-default invariant.
+    let projectWithConfig
+        (shaping: Config.Config)
+        (catalog: Catalog)
+        : Result<Outputs> =
+        // Empty-default invariant — a movement-only `projection.json` carries
+        // `Config.defaultConfig` shaping. Route it through the exact prior
+        // `runFromCatalog` body (`project EmissionPolicy.empty`) so the bundle
+        // is byte-identical: `projectWithState` stamps a VersionedPolicy when
+        // `buildPolicyFromConfig` ≠ `Policy.empty` (the default's
+        // `DataComposition` differs), which would otherwise perturb the
+        // manifest under the no-opinion config.
+        if shaping = Config.defaultConfig then
+            Result.success (project EmissionPolicy.empty catalog)
+        else
+        match applyRenames shaping catalog with
+        | Error errors -> Result.failure errors
+        | Ok renamedCatalog ->
+            match buildPolicyFromConfig shaping renamedCatalog,
+                  EmissionFoldersBinding.fromConfig renamedCatalog shaping,
+                  TransformGroupsBinding.fromConfig shaping with
+            | Ok policy, Ok folders, Ok groups ->
+                let outputs, _ =
+                    projectWithState policy Profile.empty EmissionPolicy.empty folders groups renamedCatalog
+                Result.success outputs
+            | p, f, g ->
+                Result.failure
+                    ((match p with Error e -> e | _ -> [])
+                     @ (match f with Error e -> e | _ -> [])
+                     @ (match g with Error e -> e | _ -> []))
+
+    /// THE_CONFIG_CONTROL_PLANE §6 (S3) — the overlay-aware sibling of
+    /// `runFromCatalog`: project a caller-supplied catalog through the
+    /// shaping overlays and write the bundle to `outputDir`. The flow
+    /// `EmitBundle` arm routes here so `projection <flow>` honors
+    /// `policy`/`overrides`/`emission`. `Config.defaultConfig` shaping is
+    /// byte-identical to `runFromCatalog catalog outputDir`.
+    let runFromCatalogWith
+        (shaping: Config.Config)
+        (catalog: Catalog)
+        (outputDir: string)
+        : Result<string list> =
+        projectWithConfig shaping catalog
+        |> Result.bind (write outputDir)
+
+    /// THE_CONFIG_CONTROL_PLANE §6 (S3) — the catalog-shaping overlay for the
+    /// non-bundle destinations (live preview / migrate / migrate-with-data),
+    /// which evolve a SINK's schema toward a target Catalog rather than emit a
+    /// file bundle. Applies `applyRenames` then runs the policy-aware pass
+    /// chain (`projectWithState`) and returns the post-chain
+    /// `ComposeState.Catalog` — the same shaped schema-B `runWithConfigCore`
+    /// publishes. The module filter is applied upstream at the shared
+    /// `Program.needCatalog` seam. `Config.defaultConfig` shaping yields
+    /// `projectWithState Policy.empty … catalog`'s catalog, which equals the
+    /// input catalog (the chain under `Policy.empty` is the skeleton — no
+    /// operator tightening), so the default migrate/preview is byte-identical.
+    let applyShapingToCatalog
+        (shaping: Config.Config)
+        (catalog: Catalog)
+        : Result<Catalog> =
+        // Empty-default invariant — the no-opinion shaping is the identity on
+        // the catalog (the migrate/preview target is the resolved catalog
+        // unchanged), so the default migrate/preview is byte-identical.
+        if shaping = Config.defaultConfig then
+            Result.success catalog
+        else
+        match applyRenames shaping catalog with
+        | Error errors -> Result.failure errors
+        | Ok renamedCatalog ->
+            match buildPolicyFromConfig shaping renamedCatalog,
+                  EmissionFoldersBinding.fromConfig renamedCatalog shaping,
+                  TransformGroupsBinding.fromConfig shaping with
+            | Ok policy, Ok folders, Ok groups ->
+                let _, finalState =
+                    projectWithState policy Profile.empty EmissionPolicy.empty folders groups renamedCatalog
+                Result.success finalState.Catalog
+            | p, f, g ->
+                Result.failure
+                    ((match p with Error e -> e | _ -> [])
+                     @ (match f with Error e -> e | _ -> [])
+                     @ (match g with Error e -> e | _ -> []))
 
     let runWithConfig (cfg: Config.Config) : Task<Result<RunReport>> =
         task {
