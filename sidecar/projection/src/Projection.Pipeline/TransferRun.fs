@@ -66,15 +66,26 @@ module Transfer =
     /// cell rows. Deferred FK columns are emitted as the empty raw —
     /// `KeepNulls` maps that to SQL NULL — so Phase 1 satisfies a cycle;
     /// Phase 2 re-points them.
-    let private toCellRows (kind: Kind) (deferred: Set<Name>) (rows: StaticRow list) : CellValue list list =
+    let private toCellsOver (attrs: Attribute list) (deferred: Set<Name>) (rows: StaticRow list) : CellValue list list =
         rows
         |> List.map (fun row ->
-            kind.Attributes
+            attrs
             |> List.map (fun a ->
                 let raw =
                     if Set.contains a.Name deferred then ""
                     else Map.tryFind a.Name row.Values |> Option.defaultValue ""
                 { Column = ColumnRealization.columnNameText a.Column; Type = a.Type; Raw = raw }))
+
+    let private toCellRows (kind: Kind) (deferred: Set<Name>) (rows: StaticRow list) : CellValue list list =
+        toCellsOver kind.Attributes deferred rows
+
+    /// The minted-bulk-lane projection: every attribute EXCEPT the IDENTITY
+    /// PK (the Sink mints it; `Bulk.copyRowsSinkMinted` carries no
+    /// `KeepIdentity`).
+    let private toCellRowsExcludingIdentity (kind: Kind) (deferred: Set<Name>) (rows: StaticRow list) : CellValue list list =
+        toCellsOver
+            (kind.Attributes |> List.filter (fun a -> not (a.IsPrimaryKey && a.IsIdentity)))
+            deferred rows
 
     /// Phase-2 UPDATE for one row: set the deferred FK columns to their
     /// (already remapped, plan-side) values, keyed by the kind's primary
@@ -96,42 +107,99 @@ module Transfer =
                     (deferredAttrs |> List.map clause |> String.concat ", ")
                     (pkAttrs |> List.map clause |> String.concat " AND "))
 
-    /// Per-row INSERT for an `AssignedBySink` kind: omit the IDENTITY PK
-    /// column (let the Sink mint it) and capture the assigned surrogate via
-    /// `OUTPUT inserted.<pk>`. Returns the assigned key as its raw string,
-    /// or `None` if the insert produced no output row. `SqlBulkCopy` cannot
-    /// return assigned identities, so this is the per-row path §5.2 requires;
-    /// the value-literal rendering mirrors `phase2UpdateSql` (the existing
-    /// transfer text boundary).
-    let private insertCaptureRow
+    /// Set-based surrogate capture for an `AssignedBySink` kind — per
+    /// chunk: bulk-copy the rows into a session-scoped staging table, then
+    /// ONE `MERGE … OUTPUT` from the staging into the sink
+    /// (TRANSFER_ISOMORPHISM_SUBSTANTIATION §3 Contribution B + probe P5's
+    /// staging form, built on its named trigger: the 2026-06-10 Tier-4
+    /// bench measured the per-row `INSERT … OUTPUT` loop at ~271 rows/sec
+    /// — O(rows) round-trips — against a 288M-row estate; the 1000-row
+    /// `VALUES` MERGE form measured ~5.7k rows/sec, parse-bound at the
+    /// table-value-constructor's 1000-row cap). `MERGE`'s `OUTPUT` may
+    /// reference the `USING` source's columns, which plain `INSERT`'s
+    /// cannot, so one statement per chunk captures `(source → assigned)`
+    /// without a natural key: the identity column is omitted (the Sink
+    /// mints it), `ON 1 = 0` forces the pure-insert arm, and `OUTPUT
+    /// S.[__SRC_KEY], INSERTED.<pk>` returns the correlation. The staging
+    /// table clones its column types FROM THE SINK TABLE (`SELECT TOP 0 …
+    /// INTO` — no client-side type rendering; the `CASE` wrapper strips
+    /// the IDENTITY property so the source keys land as plain values);
+    /// tempdb rights are implicit for every principal, so the whole lane
+    /// fits the DML-only `grant: data` envelope. Deferred (cycle) FK
+    /// columns are staged as NULL — Phase 2 re-points them — mirroring
+    /// `toCellRows`. A realization-layer swap only (A36): same
+    /// `SurrogateRemapContext` feed, same write semantics, no IR change.
+    /// Returns `(source raw, assigned raw)` pairs; a NULL source key
+    /// yields an empty source raw (inserted, never captured).
+    [<Literal>]
+    let private CaptureChunkSize = 50_000
+
+    [<Literal>]
+    let private CaptureStagingTable = "[#__projection_capture]"
+
+    let private insertCaptureChunk
         (sink: SqlConnection)
         (kind: Kind)
-        (identityColumn: string)
-        (row: StaticRow)
-        : Task<string option> =
+        (identityAttr: Attribute)
+        (deferred: Set<Name>)
+        (rows: StaticRow list)
+        : Task<(string * string) list> =
         task {
             let insertCols = kind.Attributes |> List.filter (fun a -> not (a.IsPrimaryKey && a.IsIdentity))
-            let lit (a: Attribute) =
-                Map.tryFind a.Name row.Values
-                |> Option.defaultValue ""
-                |> SqlLiteral.ofRaw a.Type
-                |> SqlLiteral.toString
-            let sql =
-                if List.isEmpty insertCols then
-                    sprintf "INSERT INTO %s OUTPUT inserted.%s DEFAULT VALUES;"
-                        (Render.tableQualified kind.Physical) (Render.quote identityColumn)
-                else
-                    sprintf "INSERT INTO %s (%s) OUTPUT inserted.%s VALUES (%s);"
+            let quotedCol (a: Attribute) = Render.quote (ColumnRealization.columnNameText a.Column)
+            let idCol = Render.quote (ColumnRealization.columnNameText identityAttr.Column)
+            // ISNULL strips the IDENTITY property through SELECT INTO while
+            // keeping the column type (a CASE wrapper gets constant-folded
+            // and the property PROPAGATES — the staging would then mint its
+            // own source keys, a silent mis-correlation; probed 2026-06-10).
+            do! Deploy.executeBatch sink
+                    (sprintf "SELECT TOP 0 ISNULL(%s, %s) AS [__SRC_KEY]%s INTO %s FROM %s;"
+                        idCol idCol
+                        (insertCols |> List.map (fun a -> ", " + quotedCol a) |> String.concat "")
+                        CaptureStagingTable
+                        (Render.tableQualified kind.Physical))
+            try
+                let cells =
+                    rows
+                    |> List.map (fun row ->
+                        { Column = "__SRC_KEY"
+                          Type = identityAttr.Type
+                          Raw = Map.tryFind identityAttr.Name row.Values |> Option.defaultValue "" }
+                        :: (insertCols
+                            |> List.map (fun a ->
+                                let raw =
+                                    if Set.contains a.Name deferred then ""
+                                    else Map.tryFind a.Name row.Values |> Option.defaultValue ""
+                                { Column = ColumnRealization.columnNameText a.Column; Type = a.Type; Raw = raw })))
+                do! Bulk.copyRowsSession sink CaptureStagingTable cells
+                let insertArm =
+                    if List.isEmpty insertCols then "INSERT DEFAULT VALUES"
+                    else
+                        sprintf "INSERT (%s) VALUES (%s)"
+                            (insertCols |> List.map quotedCol |> String.concat ", ")
+                            (insertCols |> List.map (fun a -> sprintf "S.%s" (quotedCol a)) |> String.concat ", ")
+                use cmd = sink.CreateCommand()
+                cmd.CommandText <-
+                    sprintf "MERGE INTO %s AS T USING %s AS S ON 1 = 0 WHEN NOT MATCHED THEN %s OUTPUT S.[__SRC_KEY], INSERTED.%s;"
                         (Render.tableQualified kind.Physical)
-                        (insertCols |> List.map (fun a -> Render.quote (ColumnRealization.columnNameText a.Column)) |> String.concat ", ")
-                        (Render.quote identityColumn)
-                        (insertCols |> List.map lit |> String.concat ", ")
-            use cmd = sink.CreateCommand()
-            cmd.CommandText <- sql
-            let! scalar = cmd.ExecuteScalarAsync()
-            return
-                if isNull scalar || scalar = box System.DBNull.Value then None
-                else Some (string scalar)
+                        CaptureStagingTable
+                        insertArm
+                        idCol
+                cmd.CommandTimeout <- 0
+                use! reader = cmd.ExecuteReaderAsync()
+                let acc = System.Collections.Generic.List<string * string>()
+                let mutable go = true
+                while go do
+                    let! has = reader.ReadAsync()
+                    if has then
+                        let src = if reader.IsDBNull 0 then "" else string (reader.GetValue 0)
+                        let assigned = if reader.IsDBNull 1 then "" else string (reader.GetValue 1)
+                        acc.Add(src, assigned)
+                    else go <- false
+                return List.ofSeq acc
+            finally
+                (Deploy.executeBatch sink (sprintf "DROP TABLE %s;" CaptureStagingTable))
+                    .GetAwaiter().GetResult()
         }
 
     /// Realize the plan onto an open Sink connection, returning any
@@ -149,6 +217,14 @@ module Transfer =
                 plan.Loads
                 |> List.choose (fun l ->
                     if l.Disposition = IdentityDisposition.AssignedBySink then Some l.Kind else None)
+                |> Set.ofList
+            // The kinds some FK targets — only THEIR minted surrogates have a
+            // consumer (a later referencer's re-point). An AssignedBySink kind
+            // outside this set needs no capture at all and rides the minted
+            // bulk lane (SqlBulkCopy without KeepIdentity — the fast lane).
+            let fkTargetKinds =
+                Catalog.allKinds catalog
+                |> List.collect (fun k -> k.References |> List.map (fun r -> r.TargetKind))
                 |> Set.ofList
             // The Source→Sink-minted surrogate map, accumulated as
             // AssignedBySink kinds insert; threaded through the topological
@@ -180,15 +256,24 @@ module Transfer =
                         match load.Disposition with
                         | IdentityDisposition.AssignedBySink ->
                             match kind.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey && a.IsIdentity) with
+                            | Some _ when not (Set.contains load.Kind fkTargetKinds) ->
+                                // No FK anywhere targets this kind, so its minted
+                                // surrogates have no consumer: skip capture and
+                                // bulk-insert with the identity column excluded —
+                                // the Sink mints, nothing needs the mapping. (A
+                                // cycle member is always FK-targeted by its cycle
+                                // predecessor, so this lane never carries
+                                // deferred columns.)
+                                do! Bulk.copyRowsSinkMinted sink kind.Physical
+                                        (toCellRowsExcludingIdentity kind load.DeferredFkColumns remapped.Rows)
                             | Some idAttr ->
-                                for row in remapped.Rows do
-                                    let! assigned = insertCaptureRow sink kind (ColumnRealization.columnNameText idAttr.Column) row
-                                    match Map.tryFind idAttr.Name row.Values, assigned with
-                                    | Some srcVal, Some assignedVal when srcVal <> "" ->
-                                        match SurrogateRemapContext.capture load.Kind (SourceKey.ofString srcVal) (AssignedKey.ofString assignedVal) remap with
-                                        | Ok r    -> remap <- r
-                                        | Error _ -> ()
-                                    | _ -> ()
+                                for chunk in remapped.Rows |> List.chunkBySize CaptureChunkSize do
+                                    let! pairs = insertCaptureChunk sink kind idAttr load.DeferredFkColumns chunk
+                                    for (srcVal, assignedVal) in pairs do
+                                        if srcVal <> "" && assignedVal <> "" then
+                                            match SurrogateRemapContext.capture load.Kind (SourceKey.ofString srcVal) (AssignedKey.ofString assignedVal) remap with
+                                            | Ok r    -> remap <- r
+                                            | Error _ -> ()
                             | None ->
                                 // ofKind only returns AssignedBySink for an IDENTITY PK, so this is
                                 // unreachable; fall back to the bulk path rather than drop the rows.
@@ -1091,4 +1176,4 @@ module Transfer =
               TransformSite.dataIntent "phase2FkRepoint"
                 "Phase 2: UPDATE the cycle-deferred FK columns to their plan-side values, keyed by PK, in topological order. Deterministic from the plan; no operator opinion."
               TransformSite.operatorIntent "assignedKeyCapture" Insertion
-                "§5.2 Slice E: for `AssignedBySink` kinds (IDENTITY PK), insert per-row with `OUTPUT inserted.<pk>` (omitting the identity column so the Sink mints the surrogate) and capture each Source→assigned surrogate into a `SurrogateRemapContext`; every later referencer's FK targeting the kind is re-pointed via `tryFindAssigned`, skip-and-diagnose on miss. Unlike `DataLoadPlan.build`'s substitution (operator-supplied remap, known pre-build), this remap is discovered *during* the write — the assigned identity does not exist until the Sink mints it — so the site is OperatorIntent Insertion at the realization layer." ]
+                "§5.2 Slice E (set-based form, 2026-06-10): for `AssignedBySink` kinds (IDENTITY PK), insert per-batch with `MERGE … OUTPUT S.[__SRC_KEY], INSERTED.<pk>` (omitting the identity column so the Sink mints the surrogate) and capture each Source→assigned surrogate into a `SurrogateRemapContext`; every later referencer's FK targeting the kind is re-pointed via `tryFindAssigned`, skip-and-diagnose on miss. Unlike `DataLoadPlan.build`'s substitution (operator-supplied remap, known pre-build), this remap is discovered *during* the write — the assigned identity does not exist until the Sink mints it — so the site is OperatorIntent Insertion at the realization layer." ]

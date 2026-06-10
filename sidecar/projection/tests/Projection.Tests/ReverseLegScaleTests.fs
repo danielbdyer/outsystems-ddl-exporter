@@ -162,7 +162,7 @@ type ReverseLegScaleTests(fixture: EphemeralContainerFixture) =
                                 let rowsPerSec = float totalRows / sw.Elapsed.TotalSeconds
                                 Bench.recordSample "transfer.reverseLeg.scale.legMs" sw.ElapsedMilliseconds
                                 printfn
-                                    "REVERSE-LEG CAPTURE ENVELOPE: %d rows (%d kinds × %d) in %d ms ⇒ %.0f rows/sec end-to-end (per-row INSERT…OUTPUT path)"
+                                    "REVERSE-LEG CAPTURE ENVELOPE: %d rows (%d kinds × %d) in %d ms ⇒ %.0f rows/sec end-to-end (set-based MERGE…OUTPUT capture)"
                                     totalRows nKinds rowsPerKind sw.ElapsedMilliseconds rowsPerSec
 
                                 // Every surrogate is sink-minted (no colliding
@@ -198,6 +198,66 @@ type ReverseLegScaleTests(fixture: EphemeralContainerFixture) =
                                             (sprintf "[dbo].[OSUSR_SC_T%d]" i) "[MESH_ID]" (sprintf "[dbo].[OSUSR_SC_T%d]" (i / 2))
                                             "[BK]" "[BK]" "[ID]"
                                     Assert.Equal(bMesh, aMesh)
+                            })
+                }))
+
+
+    [<Fact>]
+    member _.``Tier 4 sustained envelope: a 4-kind chain at 100k rows measures the steady-state set-based capture rate — the number the 288M-row window extrapolates from`` () =
+        if not (ReverseLegScaleFixtures.skipIfNoDocker "L3Sustained") then () else
+        let nKinds = 4
+        let rowsPerKind = 25_000
+        let totalRows = nKinds * rowsPerKind
+        let model = ReverseLegScaleFixtures.meshModel nKinds
+        let logicalContract = CatalogRendition.logical model
+        let physicalContract = CatalogRendition.physical model
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "L3SustainedSrc" (fun src _ ->
+                task {
+                    do! Deploy.executeBatch src (SsdtDdlEmitter.statements logicalContract |> Render.toText)
+                    do! Deploy.executeBatch src (ReverseLegScaleFixtures.meshSeed nKinds rowsPerKind)
+                    return!
+                        fixture.WithEphemeralDatabase "L3SustainedSink" (fun sink _ ->
+                            task {
+                                do! Deploy.executeBatch sink (SsdtDdlEmitter.statements physicalContract |> Render.toText)
+
+                                let sw = System.Diagnostics.Stopwatch.StartNew()
+                                let! reportR =
+                                    Transfer.runWithRenames Transfer.Execute true src sink logicalContract physicalContract
+                                sw.Stop()
+                                let report = ReverseLegScaleFixtures.value reportR
+                                Assert.Empty(report.SkippedReferences)
+                                Assert.True(report.Kinds |> List.forall (fun k -> k.RowsWritten = rowsPerKind))
+
+                                let rowsPerSec = float totalRows / sw.Elapsed.TotalSeconds
+                                Bench.recordSample "transfer.reverseLeg.sustained.legMs" sw.ElapsedMilliseconds
+                                printfn
+                                    "REVERSE-LEG SUSTAINED ENVELOPE: %d rows (%d kinds × %d) in %d ms ⇒ %.0f rows/sec ⇒ 288M rows ≈ %.1f h at this rate"
+                                    totalRows nKinds rowsPerKind sw.ElapsedMilliseconds rowsPerSec
+                                    (288_000_000.0 / rowsPerSec / 3600.0)
+
+                                // Fidelity at volume: every chain edge's checksum
+                                // matches; every surrogate is sink-minted.
+                                for i in 1 .. nKinds - 1 do
+                                    let! bChain =
+                                        ReverseLegScaleFixtures.edgeChecksum src
+                                            (sprintf "[dbo].[Scale%d]" i) "[ParentId]" (sprintf "[dbo].[Scale%d]" (i - 1))
+                                            "[Bk]" "[Bk]" "[Id]"
+                                    let! aChain =
+                                        ReverseLegScaleFixtures.edgeChecksum sink
+                                            (sprintf "[dbo].[OSUSR_SC_T%d]" i) "[PARENT_ID]" (sprintf "[dbo].[OSUSR_SC_T%d]" (i - 1))
+                                            "[BK]" "[BK]" "[ID]"
+                                    Assert.Equal(int64 rowsPerKind, fst bChain)
+                                    Assert.Equal(bChain, aChain)
+                                // Sink-minted proof at volume: the sink's key
+                                // space is the mint range [1, rows], not the
+                                // source's colliding [1000, 1000+rows) space.
+                                use cmd = sink.CreateCommand()
+                                cmd.CommandText <- "SELECT MIN([ID]), MAX([ID]) FROM [dbo].[OSUSR_SC_T3];"
+                                use! reader = cmd.ExecuteReaderAsync()
+                                let! _ = reader.ReadAsync()
+                                Assert.Equal(1, reader.GetInt32 0)
+                                Assert.Equal(rowsPerKind, reader.GetInt32 1)
                             })
                 }))
 
