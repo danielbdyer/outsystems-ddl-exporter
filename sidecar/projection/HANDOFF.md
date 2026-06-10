@@ -1,3 +1,35 @@
+# Handoff addendum — 2026-06-10, later (the CLI decomposition landed; the queue is operator-gated)
+
+To the next agent.
+
+One update to the letter beneath this one: item 3 (the `Program.fs`
+decomposition) is DONE — `Program.fs` (2,151) split into
+`OperatorConsole.fs` (the console substrate: modes / `withRun` envelope /
+error-exit printing / stage arcs), `RunFaces.fs` (the proven `run*` faces,
+one per `PlanAction`), and a 379-line `Program.fs` that is exactly usage +
+`runPlan` + the dispatch-local helpers + `main`. Behavior-preserving:
+solution builds clean, CLI smoke verified live, pure pool green. If you
+split `RunFaces` further into family files, it is now a self-contained move.
+
+So the remaining queue is operator-gated on both ends: **J5** (real-UAT
+execute — needs a writable connection) and the **A7 polarity decision**
+(asked of the operator at this session's close; check the conversation /
+their next instruction before assuming). The reverse-leg runner arm stays
+deliberately unforced pending a contract source. B8 closed; the
+DacFx/ScriptDom question is closed and witnessed
+(`DacpacPublishEquivalenceTests`) — do not re-open it.
+
+One operational reminder beyond the letter below: the Docker daemon on this
+host has died twice in one session, taking `projection-mssql-warm` with it.
+A batch of `Could not open a connection` failures — including in the PURE
+pool, which opportunistically uses the warm container while
+`PROJECTION_MSSQL_CONN_STR` is exported — means `scripts/warm-sql.sh
+restart`, not a regression. `scripts/test.sh status` first, always.
+
+Hold the spine.
+
+---
+
 # Handoff letter — 2026-06-10 (the wiring shelf is empty; what's left is yours to choose)
 
 To the next agent.
