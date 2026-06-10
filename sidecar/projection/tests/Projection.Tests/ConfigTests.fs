@@ -354,6 +354,44 @@ let ``Config.parse: emission gates round-trip as booleans`` () =
     Assert.True(cfg.Emission.Opportunities)
 
 // -----------------------------------------------------------------------
+// AC-D7 / AC-G4 — emission.deleteScope (the convergent-delete gate).
+// -----------------------------------------------------------------------
+
+[<Fact>]
+let ``Config.parse: emission.deleteScope terms parse (string + number values)`` () =
+    let json = """{
+        "model": { "path": "m.json" },
+        "emission": { "deleteScope": { "terms": [
+            { "column": "TENANT_ID", "value": 42 },
+            { "column": "REGION", "value": "emea" }
+        ] } }
+    }"""
+    let cfg = Config.parse json |> mustOk
+    match cfg.Emission.DeleteScope with
+    | Some scope ->
+        Assert.Equal<DeleteScopeTerm list>(
+            [ { Column = "TENANT_ID"; Value = "42" }; { Column = "REGION"; Value = "emea" } ],
+            scope.Terms)
+    | None -> Assert.Fail "expected the parsed delete scope"
+
+[<Fact>]
+let ``Config.parse: emission.deleteScope absent is None (upsert-only default)`` () =
+    let cfg = Config.parse """{ "model": { "path": "m.json" } }""" |> mustOk
+    Assert.Equal(None, cfg.Emission.DeleteScope)
+
+[<Fact>]
+let ``Config.parse: emission.deleteScope with empty terms is refused, named`` () =
+    let json = """{ "model": { "path": "m.json" }, "emission": { "deleteScope": { "terms": [] } } }"""
+    let errors = Config.parse json |> mustFail
+    Assert.True(hasCode "config.emission.deleteScope.empty" errors)
+
+[<Fact>]
+let ``Config.parse: emission.deleteScope term without a column is refused, named`` () =
+    let json = """{ "model": { "path": "m.json" }, "emission": { "deleteScope": { "terms": [ { "value": 7 } ] } } }"""
+    let errors = Config.parse json |> mustFail
+    Assert.True(hasCode "config.emission.deleteScope.termShape" errors)
+
+// -----------------------------------------------------------------------
 // Type-mismatch surfacing.
 // -----------------------------------------------------------------------
 

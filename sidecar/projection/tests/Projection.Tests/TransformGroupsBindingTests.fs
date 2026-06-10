@@ -35,7 +35,7 @@ let private mkConfig (entries: Config.TransformGroupEntry list) : Config.Config 
         Emission    = {
             Ssdt = true; Dacpac = true; Json = true; Distributions = true
             StaticSeeds = true; MigrationDependencies = true; Bootstrap = true
-            DecisionLog = true; Opportunities = true; Validations = true
+            DecisionLog = true; Opportunities = true; Validations = true; DeleteScope = None
         }
         Policy      = {
             Selection       = "IncludeAll"

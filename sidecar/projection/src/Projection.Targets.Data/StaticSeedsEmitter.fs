@@ -271,7 +271,7 @@ module StaticSeedsEmitter =
     /// over the supplied rows (slice E will refine `AssignedBySink` to
     /// suppress the IDENTITY PK column).
     let private kindToScript
-        (deleteScope: ScriptDomBuild.DeleteScope option)
+        (deleteScope: DeleteScopePolicy option)
         (cdc: CdcAwareness)
         (kind: Kind)
         (load: DataLoadKind)
@@ -284,6 +284,14 @@ module StaticSeedsEmitter =
               Rendered      = "" }
         else
             let cdcAware = CdcAwareness.isEnabled kind.SsKey cdc
+            // AC-D7 — resolve the operator's scope against THIS kind: the
+            // delete arm renders exactly when every term column is an
+            // attribute here (`DeleteScopePolicy.resolveFor`); a kind
+            // outside the scope keeps the upsert-only MERGE.
+            let scopeForKind : ScriptDomBuild.DeleteScope option =
+                deleteScope
+                |> Option.bind (DeleteScopePolicy.resolveFor kind)
+                |> Option.map (fun terms -> ({ Terms = terms } : ScriptDomBuild.DeleteScope))
             let deferred = load.DeferredFkColumns
             let typeLookup = columnTypeLookup kind
             // Slice κ pillar 1 lift: project raw `Map<Name, string>`
@@ -296,7 +304,7 @@ module StaticSeedsEmitter =
                     row.Identifier,
                     staticRowToTypedValues typeLookup kind.Attributes row)
             let renderedPhase1 =
-                renderMerge deleteScope cdcAware deferred kind (typedRows |> List.map snd)
+                renderMerge scopeForKind cdcAware deferred kind (typedRows |> List.map snd)
             let renderedPhase2 =
                 if Set.isEmpty deferred then ""
                 else
@@ -344,13 +352,14 @@ module StaticSeedsEmitter =
     /// (no load) produce empty scripts per T11.
     ///
     /// `deleteScope` gates the `WHEN NOT MATCHED BY SOURCE … DELETE` arm
-    /// (per `ScriptDomBuild.DeleteScope`): `None` (the `emitFromPlan`
-    /// default) emits an upsert-only MERGE byte-identical to the
-    /// pre-scope form; `Some scope` activates the convergent-delete arm.
-    /// The parameter makes the emitter scope-ready; the policy that
-    /// selects a scope is CLI/EmissionPolicy plumbing, not the emitter's.
+    /// (per `DeleteScopePolicy`): `None` (the `emitFromPlan` default)
+    /// emits an upsert-only MERGE byte-identical to the pre-scope form;
+    /// `Some policy` activates the convergent-delete arm on every kind
+    /// the policy resolves against (`DeleteScopePolicy.resolveFor`). The
+    /// emitter consumes the scope VALUE, never `Policy` (A18 amended);
+    /// the composer threads it from `EmissionPolicy.DeleteScope`.
     let emitFromPlanWith
-        (deleteScope: ScriptDomBuild.DeleteScope option)
+        (deleteScope: DeleteScopePolicy option)
         (catalog: Catalog)
         (profile: Profile)
         (plan: DataLoadPlan)
@@ -380,7 +389,8 @@ module StaticSeedsEmitter =
     /// remap (the static-seeds row source is catalog-resident
     /// evidence; operators wanting identity substitution build the
     /// plan themselves via `DataLoadPlan.build` + `emitFromPlan`).
-    let emitWithTopo
+    let emitWithTopoWith
+        (deleteScope: DeleteScopePolicy option)
         (topo: TopologicalOrder)
         (catalog: Catalog)
         (profile: Profile)
@@ -391,7 +401,14 @@ module StaticSeedsEmitter =
             |> List.map (fun k -> k.SsKey, Kind.staticPopulations k)
             |> Map.ofList
         let plan = DataLoadPlan.build catalog topo rawRows SurrogateRemapContext.empty
-        emitFromPlan catalog profile plan
+        emitFromPlanWith deleteScope catalog profile plan
+
+    let emitWithTopo
+        (topo: TopologicalOrder)
+        (catalog: Catalog)
+        (profile: Profile)
+        : Result<ArtifactByKind<DataInsertScript>, EmitError> =
+        emitWithTopoWith None topo catalog profile
 
     /// Π_StaticSeeds emit (standalone). Convenience for callers that
     /// don't go through the `DataEmissionComposer` (canary tests,

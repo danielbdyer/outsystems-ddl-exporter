@@ -960,7 +960,10 @@ module Compose =
                 Policy.empty with
                     Tightening = tightening
                     Insertion  = insertion
-                    Emission   = { Policy.empty.Emission with EmitData = emitData; DataComposition = dataComposition }
+                    // AC-D7 — the operator's convergent-delete scope rides the
+                    // Emission axis; absent (the default) the MERGE stays
+                    // upsert-only, byte-identical.
+                    Emission   = { Policy.empty.Emission with EmitData = emitData; DataComposition = dataComposition; DeleteScope = cfg.Emission.DeleteScope }
             }
         | _ ->
             let tighteningErrs = match tighteningR with Ok _ -> [] | Error es -> es
