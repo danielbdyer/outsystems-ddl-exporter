@@ -146,6 +146,7 @@
     <Compile Include="MovementIsomorphismTests.fs" />
     <Compile Include="TransferRefusalTests.fs" />
     <Compile Include="ReverseLegPropertyTests.fs" />
+    <Compile Include="ReverseLegBoundaryTests.fs" />
     <Compile Include="PreflightTests.fs" />
     <Compile Include="PreflightAllTests.fs" />
     <Compile Include="RenameProjectionTests.fs" />
