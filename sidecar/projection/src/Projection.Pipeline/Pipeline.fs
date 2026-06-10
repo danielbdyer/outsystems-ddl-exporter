@@ -535,7 +535,12 @@ module Compose =
     /// the chain to exclude passes whose tag-set intersects any
     /// disabled group. Pass `TransformGroups.empty` for the
     /// no-overrides path (preserves V1-parity: all transforms run).
-    let projectWithState
+    /// S6.3 — `projectWithState` with operator physical-rename pins: the
+    /// `LogicalTableEmission` chain step skips the pinned kinds so a physical-form
+    /// `tableRenames` override survives into the emitted physical table.
+    /// `Set.empty` is `projectWithState` (byte-identical default).
+    let projectWithStateWithPins
+        (logicalEmissionPins: Set<SsKey>)
         (fullPolicy: Policy)
         (profile: Profile)
         (emissionPolicy: EmissionPolicy)
@@ -543,7 +548,7 @@ module Compose =
         (groups: TransformGroups)
         (catalog: Catalog)
         : Outputs * ComposeState =
-        let chain = RegisteredTransforms.allChainStepsFor fullPolicy profile
+        let chain = RegisteredTransforms.allChainStepsForWithPins logicalEmissionPins fullPolicy profile
         // H-085 — stamp the manifest with a VersionedPolicy snapshot of
         // the full policy that drove the chain when the operator
         // supplied a non-default policy. `Policy.empty` callers (no
@@ -581,6 +586,18 @@ module Compose =
                     // fails the composer (the keyset is `Catalog.allKinds`).
                     invalidOp (sprintf "Compose.projectWithState: DataEmissionComposer.composeRendered: %A" err)
         decorated, finalState
+
+    /// The canonical `projectWithState` — no physical-rename pins (byte-identical
+    /// default; the existing callers are unchanged).
+    let projectWithState
+        (fullPolicy: Policy)
+        (profile: Profile)
+        (emissionPolicy: EmissionPolicy)
+        (folders: EmissionFolders)
+        (groups: TransformGroups)
+        (catalog: Catalog)
+        : Outputs * ComposeState =
+        projectWithStateWithPins Set.empty fullPolicy profile emissionPolicy folders groups catalog
 
     /// Skeleton-shape project: routes through
     /// `RegisteredTransforms.skeletonChainSteps` (per chapter A.4.7'
@@ -854,6 +871,39 @@ module Compose =
                         ValidationError.createWithMetadata e.Code e.Message metadata)
                     |> Error)
 
+    /// S6.3 — the SsKeys of kinds an operator pinned via a PHYSICAL-form
+    /// `tableRenames` override (`{ "from": { schema, table }, "to": … }`). The
+    /// physical `from` is resolved against the ORIGINAL (pre-`applyRenames`,
+    /// pre-`LogicalTableEmission`) catalog — the OSSYS physical coordinate the
+    /// operator named — so the `LogicalTableEmission` chain step can skip these
+    /// kinds and the operator's physical target survives into the emitted table.
+    /// (A physical `from` matched against the post-emission catalog would miss,
+    /// because `LogicalTableEmission` already rewrote `Kind.Physical.Table` to the
+    /// logical name — that mismatch IS the clobber this set repairs.) Logical-form
+    /// renames are NOT pinned (the prompt scopes the fix to physical-form); the
+    /// empty set is the byte-identical default for every config without one.
+    let private physicalRenamePins
+        (cfg: Config.Config)
+        (catalog: Projection.Core.Catalog)
+        : Set<SsKey> =
+        match cfg.Overrides.TableRenames with
+        | [] -> Set.empty
+        | renames ->
+            match RenameBinding.fromConfig renames with
+            | Error _ -> Set.empty   // binding errors surface in `applyRenames`; no pins.
+            | Ok specs ->
+                let physicalSources =
+                    specs
+                    |> List.choose (fun s ->
+                        match s.Key with
+                        | Projection.Core.Passes.TableRename.Physical source -> Some source
+                        | Projection.Core.Passes.TableRename.Logical _       -> None)
+                    |> Set.ofList
+                Projection.Core.Catalog.allKinds catalog
+                |> List.filter (fun k -> Set.contains k.Physical physicalSources)
+                |> List.map (fun k -> k.SsKey)
+                |> Set.ofList
+
     /// Build the full `Policy` aggregate from a parsed `Config` and
     /// the loaded `Catalog`. Wires the tightening axis (Chapter C
     /// slice C.1) + insertion axis (Chapter C slice C.5); Selection /
@@ -955,6 +1005,10 @@ module Compose =
         match parsed with
         | Error errors -> Result.failure errors
         | Ok catalog ->
+            // S6.3 — pin the operator's physical-form renames against the
+            // ORIGINAL catalog (before applyRenames) so LogicalTableEmission
+            // skips them and the operator's physical target survives.
+            let pins = physicalRenamePins cfg catalog
             match applyRenames cfg catalog with
             | Error errors -> Result.failure errors
             | Ok renamedCatalog ->
@@ -965,7 +1019,7 @@ module Compose =
                 match policyR, overridesR, foldersR, groupsR with
                 | Ok policy, Ok overrides, Ok folders, Ok groups ->
                     let outputs, finalState =
-                        projectWithState policy profile EmissionPolicy.empty folders groups renamedCatalog
+                        projectWithStateWithPins pins policy profile EmissionPolicy.empty folders groups renamedCatalog
                     let diagnostics =
                         SpecialCircumstancesDiagnostics.emit overrides finalState
                         @ InactiveAttributeDiagnostics.emit profile
@@ -1088,6 +1142,7 @@ module Compose =
         if shaping = Config.defaultConfig then
             Result.success (project EmissionPolicy.empty catalog)
         else
+        let pins = physicalRenamePins shaping catalog
         match applyRenames shaping catalog with
         | Error errors -> Result.failure errors
         | Ok renamedCatalog ->
@@ -1096,7 +1151,7 @@ module Compose =
                   TransformGroupsBinding.fromConfig shaping with
             | Ok policy, Ok folders, Ok groups ->
                 let outputs, _ =
-                    projectWithState policy Profile.empty EmissionPolicy.empty folders groups renamedCatalog
+                    projectWithStateWithPins pins policy Profile.empty EmissionPolicy.empty folders groups renamedCatalog
                 Result.success outputs
             | p, f, g ->
                 Result.failure
@@ -1139,6 +1194,7 @@ module Compose =
         if shaping = Config.defaultConfig then
             Result.success catalog
         else
+        let pins = physicalRenamePins shaping catalog
         match applyRenames shaping catalog with
         | Error errors -> Result.failure errors
         | Ok renamedCatalog ->
@@ -1147,7 +1203,7 @@ module Compose =
                   TransformGroupsBinding.fromConfig shaping with
             | Ok policy, Ok folders, Ok groups ->
                 let _, finalState =
-                    projectWithState policy Profile.empty EmissionPolicy.empty folders groups renamedCatalog
+                    projectWithStateWithPins pins policy Profile.empty EmissionPolicy.empty folders groups renamedCatalog
                 Result.success finalState.Catalog
             | p, f, g ->
                 Result.failure

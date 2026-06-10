@@ -78,10 +78,20 @@ module LogicalTableEmission =
           TransformKind  = PhysicallyRenamed { Before = before; After = after }
           Classification = classification }
 
-    let private substituteKind (events: LineageBuffer.Buffer) (k: Kind) : Kind option =
+    /// Substitute the logical name into the physical-realization slot. A kind
+    /// whose SsKey is in `pins` is SKIPPED: an operator-supplied PHYSICAL-form
+    /// `tableRenames` override (`{ "from": { schema, table }, "to": … }`) pins
+    /// that kind's `Kind.Physical` deliberately (the operator authored the
+    /// physical name), so the logical-name substitution must not clobber it (the
+    /// S6.3 fix — the docstring's "operator pins dominate" contract honored).
+    /// `pins` is empty for every flow without a physical-form rename, so the
+    /// default emission is byte-identical.
+    let private substituteKind (pins: Set<SsKey>) (events: LineageBuffer.Buffer) (k: Kind) : Kind option =
         let logical = Name.value k.Name
-        if System.String.IsNullOrWhiteSpace logical
-           || logical.Length > CoordinatesLimits.SqlServerIdentifierMaxLength then
+        if Set.contains k.SsKey pins then
+            Some k
+        elif System.String.IsNullOrWhiteSpace logical
+             || logical.Length > CoordinatesLimits.SqlServerIdentifierMaxLength then
             Some k
         elif logical = TableName.value k.Physical.Table then
             Some k
@@ -94,21 +104,30 @@ module LogicalTableEmission =
             LineageBuffer.add (substitutedEvent k.SsKey k.Physical after) events
             Some { k with Physical = after }
 
-    let private run (mode: Mode) (c: Catalog) : Lineage<Catalog> =
+    let private run (pins: Set<SsKey>) (mode: Mode) (c: Catalog) : Lineage<Catalog> =
         use _ = Bench.scope "passes.logicalTableEmission"
         match mode with
         | Disabled -> Lineage.ofValue c
-        | Enabled  -> c |> CatalogTraversal.mapKinds substituteKind
+        | Enabled  -> c |> CatalogTraversal.mapKinds (substituteKind pins)
 
-    /// Factory. `Mode` is captured in the closure; `RegisteredTransforms`
-    /// wires the production chain with `Enabled` (the slice D.1.a default).
-    let registered (mode: Mode) : RegisteredTransform<Catalog, Catalog> =
+    /// Factory with operator physical-rename pins (S6.3). The pinned SsKeys are
+    /// the kinds whose `Kind.Physical` an operator-supplied physical-form
+    /// `tableRenames` override authored — the substitution skips them so the
+    /// operator's physical name survives into the emitted physical `Kind.Table`.
+    /// `Set.empty` is the byte-identical default (`registered` below).
+    let registeredWithPins (pins: Set<SsKey>) (mode: Mode) : RegisteredTransform<Catalog, Catalog> =
         { Name = passName
           Domain = Schema
           StageBinding = Pass
           Sites =
             [ { SiteName = "logicalEmission"
                 Classification = classification
-                Rationale = "Substitute Name.value k.Name into Kind.Physical.Table for emission. Not a rename — the logical name already exists in the catalog; the pass aligns the physical-realization slot the emitter reads. Operator emission-axis intent; production default. Identity (SsKey) untouched per A1." } ]
-          Run = fun c -> run mode c |> Lineage.map Diagnostics.ofValue
+                Rationale = "Substitute Name.value k.Name into Kind.Physical.Table for emission. Not a rename — the logical name already exists in the catalog; the pass aligns the physical-realization slot the emitter reads. Operator emission-axis intent; production default. Identity (SsKey) untouched per A1. Skips kinds an operator physical-form tableRename pinned (S6.3)." } ]
+          Run = fun c -> run pins mode c |> Lineage.map Diagnostics.ofValue
           Status = Active }
+
+    /// Factory. `Mode` is captured in the closure; `RegisteredTransforms`
+    /// wires the production chain with `Enabled` (the slice D.1.a default).
+    /// No physical-rename pins — byte-identical to the pre-S6.3 behavior.
+    let registered (mode: Mode) : RegisteredTransform<Catalog, Catalog> =
+        registeredWithPins Set.empty mode
