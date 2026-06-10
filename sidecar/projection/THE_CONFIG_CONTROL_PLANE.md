@@ -82,6 +82,14 @@ Direction is read off `(src rendition → sink rendition, scope)`; **A** = physi
   residual stays J3 — this gap is config-expressibility + routing only.)
 - **G3 — `ModelSource.ConfigFile` unreachable from a flow.** The dead wire. **Close:** the S3
   payoff — make flow emissions apply the shaping (below).
+  **RESOLVED (2026-06-10, S6.2).** `resolveFlowSpec` emits `ModelSource.ConfigFile` exactly
+  when the flow targets a **provenance-bearing place** — the config has a load provenance
+  (`ProjectionConfig.SourcePath = Some`, set by `fromFile`), the sink carries a `store`, and a
+  `model` path is present. That fires the `PublishBundle` (folder) / `PublishAndLoad` (live
+  `--go`) arms; the runner resolves the path through the unified loader (`runFullExport` /
+  `runFullExportLoad` → `Compose.runWithConfigAndLoad`), baking the overlays + provenance in.
+  Every store-less target and from-string config keeps the byte-identical
+  `ModelFile`/`Unspecified` path. Trigger chosen: **store presence** (provenance configured).
 - **G4 — no renderer Ψ (MovementSpec → config).** No `render` dual of `parseFlow`. **Close:**
   `ProjectionConfig.renderFlow` (declarative dual) so the law is a round-trip property
   `parse ∘ render = id`.
@@ -162,6 +170,23 @@ cfg.Shaping`) for the Docker/preview/migrate destinations that have no `ConfigFi
 4. **Direction derived + `RunReverseLeg` routing** (G2) — B→A legacy auto-selects the reverse leg.
 5. **The config is an isomorphic image of the movement space** — A44; enforced by the
    `reachable ⇔ expressible` canary.
+
+### Residual closure (2026-06-10, S6)
+
+The A44 canary's two remaining `[<Fact(Skip=…)>]` residual stubs are **RESOLVED** — the
+named residual set is now **∅** (`residualActions = Set.empty`), the strongest A44 statement
+(`expressible = reachable`, every model-bearing arm flow-reachable):
+
+- **`EmitSkeleton` — RESOLVED (S6.1).** Operator decision: **add a flow `shape` field**.
+  `flows.<name>.shape` (`bundle` | `ssdt` | `skeleton`; absent = `Bundle`) resolves to
+  `MovementSpec.Shape`, so a folder flow with `"shape": "skeleton"` lands on `EmitSkeleton`.
+- **`PublishBundle`/`PublishAndLoad` — RESOLVED (S6.2).** Operator decision: **wire ConfigFile
+  into flows**, trigger = **store presence** (provenance configured); see G3 above.
+- **The LogicalTableEmission physical-`tableRenames` clobber — RESOLVED (S6.3).** A
+  physical-form override now survives into the emitted physical table (the `LogicalTableEmission`
+  pass skips operator-pinned kinds); it was previously a no-op (the logical name clobbered it).
+- **Per-flow `shaping` override (S6.4).** Whole-section-granularity deep-overlay
+  (`Config.overlay`); see DECISIONS 2026-06-10.
 
 ## 8. Slice plan (each independently shippable + green)
 

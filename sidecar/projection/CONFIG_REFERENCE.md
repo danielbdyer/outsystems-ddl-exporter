@@ -1,31 +1,43 @@
-# CONFIG_REFERENCE.md — the model-shaping configuration
+# CONFIG_REFERENCE.md — the model-shaping namespaces of the unified config
 
-There are **two** configuration surfaces, and they are deliberately separate:
+There is **one** configuration surface — a single `projection.json` that is the operator's whole control plane (THE_CONFIG_CONTROL_PLANE.md). It is **one document behind two views**, isomorphic to the movement space:
 
-| File | Surface | What it controls | Doc |
-|---|---|---|---|
-| `projection.json` | **movement** | environments (places) + flows (source→target recipes) — *where* a model/data moves | `GETTING_STARTED.md` |
-| a `Config` JSON (this doc) | **model shaping** | *what the model IS* before it moves — which modules/entities are in scope, entity/table renames, emission toggles, tightening policy, type mappings | here |
+| View | What it controls | Namespaces |
+|---|---|---|
+| **movement** | *where* a model/data moves — places + recipes | `environments`, `flows`, `defaults` |
+| **model shaping** (this doc) | *what the model IS* before it moves — module/entity scope, entity/table renames, emission toggles, tightening policy, type mappings | `model`, `overrides`, `emission`, `policy`, `profiler`, `cache`, `typeMapping`, `output` |
 
-They are parsed by different loaders (`MovementSurface.fs` vs `Config.fs`), validated independently, and one carries none of the other's keys. This doc is the **model-shaping** config: the build-time specification of the catalog the pipeline projects.
+The shaping namespaces fold in as **sibling top-level keys** of the same `projection.json`. A movement-only file leniently defaults every shaping section (so it never fails `modelNoSource`); a file that authors shaping sees them applied. The strict `Config.parse`/`fromFile` loader (this doc's schema) and the lenient movement loader (`MovementSurface.fs`) read the **same** document. The only genuine collision is the two `model` keys, reconciled into one `model` object (legacy top-level `model: "<path>"` maps to `model.path`; `modelOssys` to `model.ossys`).
 
-> **D9 holds here too:** a model source may be a connection *reference* (`ossys: "env:<VAR>"` / `"file:<path>"`), never a literal string. Any property whose *name* matches a credential signature (`password`, `secret`, `connectionString`, `accessToken`, `apiKey`, …) is refused at parse time (`pipeline.config.credentialPropertyForbidden`).
+> **D9 holds here:** a model source may be a connection *reference* (`ossys: "env:<VAR>"` / `"file:<path>"`), never a literal string. Any property whose *name* matches a credential signature (`password`, `secret`, `connectionString`, `accessToken`, `apiKey`, …) is refused at parse time (`pipeline.config.credentialPropertyForbidden`).
 
 ---
 
 ## How it is used today
 
-This config is authored and exercised through the **`explain`** verbs — each takes a config path and runs the projection pipeline *with this config's overlays applied*, so you can see the effect before emitting:
+### Flow emissions bake the shaping in (the unified control plane)
+
+A daily `projection <flow>` run **applies the shaping** to its emission — the `overrides`/`emission`/`policy`/`model.modules` you author here flow into the bundle the flow publishes. Two seams carry this (resolved 2026-06-10, S6 of THE_CONFIG_CONTROL_PLANE):
+
+- **Overlay-aware emit.** The `EmitBundle`/Docker/preview/migrate arms route the resolved catalog through `Compose.projectWithConfig` / `applyShapingToCatalog`, so `model.modules` scoping, `overrides.tableRenames`, `emission` toggles, and `policy` tightening all fire on a flow emission. (`Config.defaultConfig` shaping is byte-identical to the un-shaped project — the empty-default invariant.)
+- **Publish-with-provenance.** When a flow targets a **store-bearing** place (`environments.<name>.store` set) with a `model` path configured, `resolveFlowSpec` emits `ModelSource.ConfigFile`, firing the `PublishBundle` (folder) / `PublishAndLoad` (live `--go`) arms — the full-export bundle with the provenance/episode store. Store-less targets keep the byte-identical plain-model path.
+
+Two per-flow knobs narrow the global control plane (both opt-in; absent = the global, byte-identical):
+
+- **`flows.<name>.shape`** — `"bundle"` (default) | `"ssdt"` | `"skeleton"`. `skeleton` emits the pre-overlay baseline (the `osm emit --skeleton-only` surface, now flow-expressible).
+- **`flows.<name>.shaping`** — a nested object that deep-overlays the global shaping for THIS flow only, at **whole-section granularity** (a section the flow authors replaces the global's; sections the flow leaves silent keep the global's). See DECISIONS 2026-06-10.
+
+### The `explain` verbs
+
+The shaping is also authored and exercised through the **`explain`** verbs — each takes a `projection.json` path and runs the projection pipeline *with the shaping overlays applied*, so you can see the effect before emitting:
 
 ```bash
-projection explain node    <config.json> <ssKey>        # every transform + finding for one catalog node
-projection explain suggest <config.json> [--apply <out>] # ranked config edits (highest-leverage first; --apply writes an updated config)
-projection explain policy  <configA.json> <configB.json> # the five-axis structural delta between two configs
+projection explain node    <projection.json> <ssKey>        # every transform + finding for one catalog node
+projection explain suggest <projection.json> [--apply <out>] # ranked config edits (highest-leverage first; --apply writes an updated config)
+projection explain policy  <projectionA.json> <projectionB.json> # the five-axis structural delta between two configs
 ```
 
-`explain node` is the workhorse for verifying your shaping: point it at a kind's `SsKey` and confirm the renames / tightening / scope decisions you authored actually fire.
-
-> **Relationship to `projection.json` flows (read this).** This config and `projection.json` are **separate files**. A daily `projection <flow>` run resolves its model from the flow surface's `model` / `modelOssys` (a plain model or live OSSYS) — it does **not** layer this config's module-scope / renames / policy onto a flow emission today. So author and validate the shaping here (via `explain`); a `publish` flow emits the model as-resolved. (Wiring this config in as a flow's model — so `projection publish` bakes the overlays into the bundle — is the natural next connection; it is not in place yet.)
+`explain node` is the workhorse for verifying your shaping: point it at a kind's `SsKey` and confirm the renames / tightening / scope decisions you authored actually fire — and a `publish` flow now bakes those same overlays into the bundle.
 
 ---
 

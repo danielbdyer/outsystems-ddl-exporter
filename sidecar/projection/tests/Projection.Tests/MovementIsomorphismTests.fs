@@ -83,7 +83,7 @@ let private genVariant : Gen<ProjectionConfig * Flow> =
             | OriginDraw.NoData    -> FlowSource.NoData, [ sink ]
             | OriginDraw.Synthetic -> FlowSource.Synthetic (Some "file:p.profile.json"), [ sink ]
             | OriginDraw.FromEnv   -> FlowSource.Env "src", [ src; sink ]
-        let flow = { Name = "v"; From = from; To = "sink"; Rekey = None; Tables = []; Scope = scope; Shape = None }
+        let flow = { Name = "v"; From = from; To = "sink"; Rekey = None; Tables = []; Scope = scope; Shape = None; Shaping = None }
         let cfg =
             { ProjectionConfig.empty with
                 Environments = envs |> List.map (fun e -> e.Name, e) |> Map.ofList
@@ -180,7 +180,7 @@ let ``A44 clause 1 — renderFlow ∘ parseFlow = id on every from × scope × s
         for shape in shapeOpts do
           for tables in tableSets do
             for rekey in [ None; Some "file:users.csv" ] do
-              let flow = { Name = "f"; From = from; To = "sink"; Rekey = rekey; Tables = tables; Scope = scope; Shape = shape }
+              let flow = { Name = "f"; From = from; To = "sink"; Rekey = rekey; Tables = tables; Scope = scope; Shape = shape; Shaping = None }
               let cfg = { ProjectionConfig.empty with Environments = baseEnvs; Flows = Map.ofList [ "f", flow ] }
               match ProjectionConfig.parse (ProjectionConfig.render cfg) with
               | Ok back -> Assert.Equal<Flow>(flow, Map.find "f" back.Flows)
@@ -237,7 +237,7 @@ let ``A44 clause 3 — the reverse leg (B→A) routes to RunReverseLeg; a peer (
                     [ directEnv "src" None (Some srcR); directEnv "sink" (Some Grant.DataOnly) (Some sinkR) ]
                     |> List.map (fun e -> e.Name, e) |> Map.ofList
                 Flows = Map.empty }
-        let flow = { Name = "leg"; From = FlowSource.Env "src"; To = "sink"; Rekey = None; Tables = []; Scope = Some Scope.Data; Shape = None }
+        let flow = { Name = "leg"; From = FlowSource.Env "src"; To = "sink"; Rekey = None; Tables = []; Scope = Some Scope.Data; Shape = None; Shaping = None }
         cfg, flow
     let legacyCfg, legacyFlow = mk Rendition.Logical Rendition.Physical
     Assert.Equal(MovementDirection.UpLegacy, (Command.resolveFlowSpec legacyCfg legacyFlow commit |> mustOk).Direction)

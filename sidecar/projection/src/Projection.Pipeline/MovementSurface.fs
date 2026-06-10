@@ -241,6 +241,17 @@ module ProjectionConfig =
             | other ->
                 Result.failureOf (err "cli.config.flowShapeUnknown" (sprintf "flow '%s' shape '%s' is not bundle | ssdt | skeleton." name other))
 
+    /// The opt-in per-flow `shaping` override (S6.4): a nested `"shaping"` object
+    /// parsed leniently (`Config.parseLenient` over its raw JSON text) so the
+    /// flow can narrow the global shaping for its own emission. Absent = `Ok None`
+    /// (use the global shaping — byte-identical). A malformed sub-object surfaces
+    /// its `Config` errors (D9 credential / type mismatch), named, never silent.
+    let private parseFlowShaping (el: JsonElement) : Result<Config.Config option> =
+        match el.TryGetProperty "shaping" with
+        | true, s when s.ValueKind = JsonValueKind.Object ->
+            Config.parseLenient (s.GetRawText()) |> Result.map Some
+        | _ -> Result.success None
+
     let private parseFlow (name: string) (el: JsonElement) : Result<Flow> =
         if el.ValueKind <> JsonValueKind.Object then
             Result.failureOf (err "cli.config.flowShape" (sprintf "flow '%s' must be a JSON object." name))
@@ -257,12 +268,12 @@ module ProjectionConfig =
                                 | Some s when not (String.IsNullOrWhiteSpace s) -> yield s.Trim()
                                 | _ -> () ]
                     | _ -> []
-                match parseFlowScope name el, parseFlowShape name el with
-                | Error es, _ | _, Error es -> Result.failure es
-                | Ok scope, Ok shape ->
+                match parseFlowScope name el, parseFlowShape name el, parseFlowShaping el with
+                | Error es, _, _ | _, Error es, _ | _, _, Error es -> Result.failure es
+                | Ok scope, Ok shape, Ok shaping ->
                     Result.success
                         { Name = name; From = parseFlowSource el; To = toEnv; Rekey = getString el "rekey"
-                          Tables = tables; Scope = scope; Shape = shape }
+                          Tables = tables; Scope = scope; Shape = shape; Shaping = shaping }
 
     /// Parse the `projection.json` document text into a `ProjectionConfig`.
     /// Aggregates every per-environment / per-flow error so the operator

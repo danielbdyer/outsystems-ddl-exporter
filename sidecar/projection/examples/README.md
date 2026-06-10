@@ -26,16 +26,25 @@ no comment lines. `secrets/` and `*.conn` are gitignored; `projection.json` only
 `file:` references. See `../GETTING_STARTED.md` §6. `examples/secret.conn.example` is the
 committed template.)
 
-## The model is read live — `modelOssys` is primary, the file is the fallback
+## One unified document — movement + shaping behind two views
 
-The model is read **live from a cloud OutSystems environment** via `modelOssys` — a
-connection reference to an OSSYS database. The engine reads OutSystems metadata directly
-(native GUID `SsKey`, no V1) and shares that one read across every flow.
+This sample is one **unified `projection.json`** (THE_CONFIG_CONTROL_PLANE): the movement
+view (`environments`/`flows`) and the model-shaping view (`model`/`overrides`/`emission`/
+`policy`/…) are sibling top-level namespaces of the **same** file. A daily `projection <flow>`
+run now **bakes the shaping into the emission** — the `overrides.tableRenames`, `emission`
+toggles, `policy` tightening, and `model.modules` scope flow into the bundle the flow
+publishes. (A movement-only file omits the shaping namespaces and is byte-identical to before.)
+
+The model is read **live from a cloud OutSystems environment** via the canonical `model`
+object's `ossys` ref — the engine reads OutSystems metadata directly (native GUID `SsKey`,
+no V1) and shares that one read across every flow.
 
 | Top-level key | Meaning |
 |---|---|
-| `modelOssys` | **primary** — a live OSSYS connection ref (`env:<VAR>` / `file:<path>`). Wins over `model`. |
-| `model` *(not shown)* | **fallback** — a path to an exported `osm_model.json`. Optional when `modelOssys` is set; kept for cutover safety. (`ModelResolution.chooseOrigin`: live wins; the file is the configured fallback — `model.json` is a second-class citizen, not the default.) |
+| `model` | the canonical model object. `ossys` is the **primary** live OSSYS connection ref (`env:<VAR>` / `file:<path>`); `path` is the **fallback** `osm_model.json` (kept for cutover safety; live wins per `ModelResolution.chooseOrigin`); `modules` scopes which modules/entities are in scope. (Legacy top-level `modelOssys` / `model: "<path>"` still map in.) |
+| `overrides` | entity/table renames (`tableRenames` — logical `module::entity` OR physical `schema.table` form), emission-folder overrides, etc. (`../CONFIG_REFERENCE.md`). |
+| `emission` | which artifact kinds the bundle emits (`ssdt`/`dacpac`/…). |
+| `policy` | tightening interventions (nullability / unique / FK budgets). |
 | `environments` | the **places** (address + permissions). |
 | `flows` | the **movements** (named `source → target` recipes). |
 
@@ -76,14 +85,18 @@ environment tier.
 
 | Flow | from → to | What it is |
 |---|---|---|
-| `publish` | model → onprem-uat | emit the SSDT bundle (schema) from the live model for the on-prem pipeline |
+| `publish` | model → onprem-uat | emit the SSDT bundle (schema) from the live model for the on-prem pipeline. `onprem-uat` carries a `store`, so this fires the **publish-with-provenance** path (`ConfigFile → PublishBundle`) — the full-export bundle with the episode store. |
+| `skeleton` | model → onprem-dev | `"shape": "skeleton"` — emit the **pre-overlay baseline** (no operator overlays), the flow-expressible form of `osm emit --skeleton-only`. |
+| `audit` | model → onprem-dev | `"shaping": { … }` — a per-flow override that **deep-overlays the global shaping** (here narrowing `model.modules` to `Ops`) for this flow's emission only. |
 | `golden` | cloud-qa → cloud-uat | copy a **subset** of tables, **re-keying user FKs** to UAT's own users by email (`rekey`); the `peer` producer |
 | `preview` | onprem-legacy → cloud-uat | the **legacy B→A reverse leg**: pipe the migration team's data up from the logical on-prem model into the physical cloud |
 | `synth` | synthetic → cloud-uat | generate data matching `cloud-qa`'s profile and load it (no real rows cross) |
 
 Flow keys: `to` (required), `from` (an env name or `model`/`synthetic`/`none`; default
 `model`), `profile` (the env to profile for `synthetic`), `tables` (a subset — "golden"
-data), `rekey` (a `file:` user-FK map).
+data), `rekey` (a `file:` user-FK map), `scope` (`schema`/`data`/`both` — the move's
+projection, decoupled from `grant`), `shape` (`bundle`/`ssdt`/`skeleton` — the bundle
+composition), `shaping` (an opt-in per-flow shaping override, deep-overlaid over the global).
 
 ## Running them
 

@@ -196,6 +196,12 @@ type Flow =
         /// the full pass-chain bundle; `skeleton` selects the pre-overlay emit).
         /// Resolved in `resolveFlowSpec` to `MovementSpec.Shape`.
         Shape  : Shape option
+        /// An opt-in per-flow `shaping` override (S6.4 — "global + opt-in per-flow
+        /// override"). `None` = use the global `cfg.Shaping` (byte-identical);
+        /// `Some` deep-overlays the global at whole-section granularity
+        /// (`Config.overlay`) for THIS flow's emission only. Parsed from a nested
+        /// `"shaping"` object via `Config.parseLenient`.
+        Shaping : Config.Config option
     }
 
 /// The per-run intent that finishes a resolved flow (THE_CLI.md §3) — the

@@ -393,6 +393,29 @@ module Config =
         Output      = defaultOutput
     }
 
+    /// THE_CONFIG_CONTROL_PLANE §4/§7 (S6.4 — operator decision 2, "Global +
+    /// opt-in per-flow override"): overlay a flow's `shaping` override onto the
+    /// global shaping at WHOLE-SECTION granularity. For each of the nine
+    /// top-level sections, the override's section wins iff it DIFFERS from the
+    /// lenient default (the flow authored that section); otherwise the global's
+    /// section holds (the flow is silent there). A faithful field-level deep
+    /// merge is deferred (see DECISIONS); section granularity is the minimal,
+    /// opt-in form — an override equal to `defaultConfig` is the identity, so a
+    /// flow with no `shaping` (or an empty one) is byte-identical to the global.
+    let overlay (globalShaping: Config) (flowOverride: Config) : Config =
+        let pick (sel: Config -> 'a when 'a : equality) : 'a =
+            let o = sel flowOverride
+            if o <> sel defaultConfig then o else sel globalShaping
+        { Model       = pick (fun c -> c.Model)
+          Profile     = pick (fun c -> c.Profile)
+          Cache       = pick (fun c -> c.Cache)
+          Profiler    = pick (fun c -> c.Profiler)
+          TypeMapping = pick (fun c -> c.TypeMapping)
+          Overrides   = pick (fun c -> c.Overrides)
+          Emission    = pick (fun c -> c.Emission)
+          Policy      = pick (fun c -> c.Policy)
+          Output      = pick (fun c -> c.Output) }
+
     // -----------------------------------------------------------------------
     // Error helpers — `pipeline.config.<problem>` dot-namespace.
     // -----------------------------------------------------------------------

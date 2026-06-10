@@ -229,6 +229,64 @@ let ``S6.3: a logical-form tableRename still routes through LogicalTableEmission
     let sql = emittedPhysicalNames (Compose.projectWithConfig shaping single |> mustOk)
     Assert.Contains("[DBO].[SALESCUSTOMER]", sql)
 
+// ---------------------------------------------------------------------------
+// S6.4 — the opt-in per-flow `shaping` override (Config.overlay; whole-section
+// granularity). A flow MAY narrow the global shaping for its own emission;
+// `None` (no `shaping`) is the global shaping (byte-identical).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``S6.4: a flow shaping override deep-overlays the global at section granularity (flow wins where set, global where silent)`` () =
+    // Global narrows modules to Sales; the flow override narrows to Ops. The
+    // override's `model` section differs from the lenient default, so it wins;
+    // every section the flow leaves at default keeps the global's value.
+    let globalShaping = shapingScopedTo [ "Sales" ]
+    let flowOverride  = shapingScopedTo [ "Ops" ]
+    let effective = Config.overlay globalShaping flowOverride
+    // The flow's `model` section wins (Ops, not Sales) ...
+    Assert.Equal<Config.ModuleSelector list>([ Config.ModuleSelector.Whole "Ops" ], effective.Model.Modules)
+    // ... and a section the override left at default keeps the global's value.
+    Assert.Equal<Config.OutputSection>(globalShaping.Output, effective.Output)
+
+[<Fact>]
+let ``S6.4: a default (empty) flow shaping override is the identity on the global (byte-identical)`` () =
+    let globalShaping = shapingScopedTo [ "Sales" ]
+    // An override equal to defaultConfig sets no section, so the global holds.
+    Assert.Equal<Config.Config>(globalShaping, Config.overlay globalShaping Config.defaultConfig)
+
+[<Fact>]
+let ``S6.4: a per-flow shaping override parses from a nested `shaping` object`` () =
+    let json = """
+    {
+      "environments": { "bundle": { "access": "bundle", "out": "dist/b" } },
+      "flows": {
+        "audit": { "from": "model", "to": "bundle", "shaping": { "model": { "modules": ["Ops"] } } }
+      },
+      "model": "model.json"
+    }
+    """
+    let cfg = ProjectionConfig.parse json |> mustOk
+    let flow = Map.find "audit" cfg.Flows
+    match flow.Shaping with
+    | None -> Assert.Fail "expected the flow to carry a parsed shaping override"
+    | Some flowShaping ->
+        Assert.Equal<Config.ModuleSelector list>([ Config.ModuleSelector.Whole "Ops" ], flowShaping.Model.Modules)
+        // The overlay over the (default) global yields the flow's narrowing.
+        let effective = Config.overlay cfg.Shaping flowShaping
+        Assert.Equal<Config.ModuleSelector list>([ Config.ModuleSelector.Whole "Ops" ], effective.Model.Modules)
+
+[<Fact>]
+let ``S6.4: a flow with no shaping carries None (the global shaping holds, byte-identical)`` () =
+    let json = """
+    {
+      "environments": { "bundle": { "access": "bundle", "out": "dist/b" } },
+      "flows": { "plain": { "from": "model", "to": "bundle" } },
+      "model": "model.json"
+    }
+    """
+    let cfg = ProjectionConfig.parse json |> mustOk
+    Assert.Equal<Config.Config option>(None, (Map.find "plain" cfg.Flows).Shaping)
+
 [<Fact>]
 let ``S3: the empty-default shaping is byte-identical to the un-shaped project (empty-default invariant)`` () =
     let single = mkCatalog [ mkActiveModule "Sales" [ mkKind "SalesCustomer" ] ]

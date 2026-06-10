@@ -1949,23 +1949,29 @@ let private runInit () : int =
         1
     else
         // LINT-ALLOW: terminal operator-facing scaffold text at the CLI boundary.
-        // The shape MUST match `ProjectionConfig.parse` (MovementSurface.fs):
-        // `environments` (access bundle|direct|docker; grant; conn is env:/file:)
-        // and `flows` (from/to). The MODEL is read LIVE from a cloud OutSystems
-        // environment via `modelOssys` (the primary; `model` is the file fallback,
-        // ModelResolution.chooseOrigin). A SOURCE-only env carries no grant; only a
-        // SINK does — the cloud-insertion sink is `data` (DML-only, R6). The prior
-        // `targets` block was removed at slice F5; the parser ignores unknown keys.
+        // The shape MUST match `ProjectionConfig.parse` (MovementSurface.fs): the
+        // UNIFIED `projection.json` (THE_CONFIG_CONTROL_PLANE) — one document, two
+        // views. The movement view is `environments` (access bundle|direct|docker;
+        // grant; conn is env:/file:) + `flows` (from/to; opt-in `shape`/`shaping`).
+        // The shaping view folds in as sibling namespaces: the canonical `model`
+        // OBJECT (path/ossys/modules — `ossys` is the LIVE primary, `path` the file
+        // fallback, ModelResolution.chooseOrigin), plus `overrides`/`emission`/
+        // `policy` (defaulted when absent). Flows now bake the shaping into the
+        // publish (ConfigFile→PublishBundle/PublishAndLoad) for store-bearing sinks.
+        // A SOURCE-only env carries no grant; only a SINK does. The parser ignores
+        // unknown keys.
         let scaffold =
             "{\n" +
-            "  \"modelOssys\": \"file:./secrets/ossys.conn\",\n" +
+            "  \"model\": { \"ossys\": \"file:./secrets/ossys.conn\" },\n" +
             "  \"environments\": {\n" +
             "    \"local\":      { \"access\": \"docker\" },\n" +
-            "    \"onprem-dev\": { \"access\": \"bundle\", \"out\": \"./dist/onprem-dev\", \"grant\": \"schema+data\", \"rendition\": \"logical\" }\n" +
+            "    \"onprem-dev\": { \"access\": \"bundle\", \"out\": \"./dist/onprem-dev\", \"grant\": \"schema+data\", \"rendition\": \"logical\", \"store\": \"./lifecycle/onprem-dev.json\" }\n" +
             "  },\n" +
+            "  \"emission\": { \"ssdt\": true, \"dacpac\": true },\n" +
             "  \"flows\": {\n" +
-            "    \"try\":     { \"from\": \"model\", \"to\": \"local\" },\n" +
-            "    \"publish\": { \"from\": \"model\", \"to\": \"onprem-dev\" }\n" +
+            "    \"try\":      { \"from\": \"model\", \"to\": \"local\" },\n" +
+            "    \"skeleton\": { \"from\": \"model\", \"to\": \"local\", \"shape\": \"skeleton\" },\n" +
+            "    \"publish\":  { \"from\": \"model\", \"to\": \"onprem-dev\" }\n" +
             "  }\n" +
             "}\n"
         File.WriteAllText(path, scaffold)
@@ -2093,4 +2099,15 @@ let main argv =
                         let reports = (CapabilitySurvey.survey cfg).GetAwaiter().GetResult()
                         CapabilitySurvey.advisoryLines reports
                     | _ -> []
-                runPlan cfg.Shaping surveyAdvisory (Command.plan cfg intent)
+                // S6.4 — the effective shaping for THIS run. A flow may carry an
+                // opt-in `shaping` override that deep-overlays the global shaping
+                // (`Config.overlay`, whole-section granularity) for its own
+                // emission; `None` = the global shaping (byte-identical).
+                let effectiveShaping =
+                    match intent with
+                    | Intent.Flow (flow, _) ->
+                        match flow.Shaping with
+                        | Some flowShaping -> Config.overlay cfg.Shaping flowShaping
+                        | None -> cfg.Shaping
+                    | _ -> cfg.Shaping
+                runPlan effectiveShaping surveyAdvisory (Command.plan cfg intent)

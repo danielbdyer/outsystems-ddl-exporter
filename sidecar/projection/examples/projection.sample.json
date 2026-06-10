@@ -1,10 +1,22 @@
 {
-  "modelOssys": "file:./secrets/ossys.conn",
+  "model": { "ossys": "file:./secrets/ossys.conn" },
+
+  "overrides": {
+    "tableRenames": [
+      { "from": { "module": "Sales", "entity": "Cust" }, "to": { "schema": "dbo", "table": "Customer" } }
+    ]
+  },
+
+  "emission": { "ssdt": true, "dacpac": true },
+
+  "policy": {
+    "tightening": { "interventions": [ { "kind": "nullability", "id": "n1", "nullBudget": 0.0 } ] }
+  },
 
   "environments": {
     "onprem-dev":    { "access": "bundle", "out": "./dist/onprem-dev", "grant": "schema+data", "rendition": "logical" },
     "onprem-qa":     { "access": "bundle", "out": "./dist/onprem-qa",  "grant": "schema+data", "rendition": "logical" },
-    "onprem-uat":    { "access": "bundle", "out": "./dist/onprem-uat", "grant": "schema+data", "rendition": "logical" },
+    "onprem-uat":    { "access": "bundle", "out": "./dist/onprem-uat", "grant": "schema+data", "rendition": "logical", "store": "lifecycle/onprem-uat.json" },
 
     "onprem-legacy": { "access": "direct", "conn": "file:./secrets/onprem-legacy.conn", "rendition": "logical" },
 
@@ -14,12 +26,16 @@
   },
 
   "flows": {
-    "publish": { "from": "model", "to": "onprem-uat" },
+    "publish":  { "from": "model", "to": "onprem-uat" },
 
-    "golden":  { "from": "cloud-qa", "to": "cloud-uat", "tables": ["Customer", "Order", "OrderLine"], "rekey": "file:./secrets/users.csv" },
+    "skeleton": { "from": "model", "to": "onprem-dev", "shape": "skeleton" },
 
-    "preview": { "from": "onprem-legacy", "to": "cloud-uat" },
+    "audit":    { "from": "model", "to": "onprem-dev", "shaping": { "model": { "modules": ["Ops"] } } },
 
-    "synth":   { "from": "synthetic", "to": "cloud-uat", "profile": "cloud-qa" }
+    "golden":   { "from": "cloud-qa", "to": "cloud-uat", "scope": "data", "tables": ["Customer", "Order", "OrderLine"], "rekey": "file:./secrets/users.csv" },
+
+    "preview":  { "from": "onprem-legacy", "to": "cloud-uat", "scope": "data" },
+
+    "synth":    { "from": "synthetic", "to": "cloud-uat", "profile": "cloud-qa" }
   }
 }
