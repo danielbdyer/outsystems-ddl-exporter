@@ -65,6 +65,10 @@ type Shape =
     | Bundle
     | Ssdt
     | Skeleton
+    /// The applied-transforms manifest alone (`manifest.json`), without the
+    /// bundle siblings — the registry's per-kind self-description as a
+    /// standalone artifact (A-cluster manifest exposure).
+    | Manifest
 
 /// Where the projected state B is authored. A bare model file (the authored
 /// `Catalog`), the unified config (which carries the model path plus the
@@ -293,6 +297,9 @@ type PlanAction =
     | PublishBundle of config: string * dir: string * store: string option * env: string option
     /// folder + model + skeleton shape → the pre-overlay emit.
     | EmitSkeleton of model: ModelSource * modelOssys: string option * dir: string
+    /// folder + model + manifest shape → the applied-transforms manifest
+    /// alone (the full chain runs; only `manifest.json` is written).
+    | EmitManifest of model: ModelSource * modelOssys: string option * dir: string
     /// folder + model + bundle/ssdt shape → the full pass-chain emit.
     | EmitBundle of model: ModelSource * modelOssys: string option * dir: string
     /// docker → one-touch ephemeral deploy.

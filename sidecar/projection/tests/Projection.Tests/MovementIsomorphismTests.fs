@@ -170,7 +170,7 @@ let ``A44 clause 1 — renderFlow ∘ parseFlow = id on every from × scope × s
           FlowSource.Synthetic (Some "file:p.json"); FlowSource.Synthetic None
           FlowSource.Env "src" ]
     let tableSets = [ []; [ "Customer" ]; [ "Customer"; "Order" ] ]
-    let shapeOpts = [ None; Some Shape.Bundle; Some Shape.Ssdt; Some Shape.Skeleton ]
+    let shapeOpts = [ None; Some Shape.Bundle; Some Shape.Ssdt; Some Shape.Skeleton; Some Shape.Manifest ]
     // `sink` + `src` always present so a `from: env` flow resolves its endpoints.
     let baseEnvs =
         [ directEnv "sink" None None; directEnv "src" None None ]

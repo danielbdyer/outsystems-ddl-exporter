@@ -101,3 +101,27 @@ let ``emission default: no projection.dacpac is written (byte-identical pre-wire
         Assert.DoesNotContain(dacpacPath, paths)
         Assert.False(File.Exists dacpacPath, "the default bundle carries no dacpac")
     )
+
+// -- shape: manifest — the manifest-only emit (the A-cluster manifest wire) --
+
+[<Fact>]
+let ``manifest-only emit writes exactly manifest.json and leaves siblings standing`` () =
+    let outDir = Path.Combine(Path.GetTempPath(), sprintf "projection-manifestonly-%s" (Guid.NewGuid().ToString "N"))
+    try
+        Directory.CreateDirectory outDir |> ignore
+        // A pre-existing artifact beside the manifest MUST survive — the
+        // manifest-only emit is a single-file write, never the atomic
+        // directory replace the bundle performs.
+        let sibling = Path.Combine(outDir, "previously-published.sql")
+        File.WriteAllText(sibling, "-- bundle artifact")
+        let paths =
+            Compose.runManifestOnlyFromCatalogWith Config.defaultConfig Fixtures.sampleCatalog outDir
+            |> value
+        Assert.Equal<string list>([ Path.Combine(outDir, "manifest.json") ], paths)
+        Assert.True(File.Exists(Path.Combine(outDir, "manifest.json")))
+        Assert.True(File.Exists sibling, "the pre-existing bundle artifact survives the manifest-only emit")
+        // The artifact is the typed manifest, parseable as JSON.
+        let parsed = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(outDir, "manifest.json")))
+        Assert.NotNull parsed
+    finally
+        try if Directory.Exists outDir then Directory.Delete(outDir, true) with _ -> ()

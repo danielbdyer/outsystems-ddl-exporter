@@ -361,6 +361,19 @@ let ``planMovement: folder + model + shape routes Skeleton vs Bundle`` () =
     Assert.Equal(PlanAction.EmitBundle (ModelSource.ModelFile "m.json", None, "./o"), planOf (folderModel Shape.Bundle))
 
 [<Fact>]
+let ``planMovement: folder + model + shape manifest routes to EmitManifest`` () =
+    let s = { MovementSpec.forDestination (Destination.Folder "./o") with Model = ModelSource.ModelFile "m.json"; Shape = Shape.Manifest }
+    Assert.Equal(PlanAction.EmitManifest (ModelSource.ModelFile "m.json", None, "./o"), planOf s)
+
+[<Fact>]
+let ``config parses a flow's manifest shape; an unknown shape names all four tokens`` () =
+    let json = """{ "environments": { "out": { "access": "bundle", "out": "d" } }, "flows": { "m": { "to": "out", "shape": "manifest" } } }"""
+    let f = Map.find "m" (ProjectionConfig.parse json |> mustOk).Flows
+    Assert.Equal(Some Shape.Manifest, f.Shape)
+    let bad = """{ "environments": { "out": { "access": "bundle", "out": "d" } }, "flows": { "m": { "to": "out", "shape": "tarball" } } }"""
+    Assert.Contains("cli.config.flowShapeUnknown", errCodes (ProjectionConfig.parse bad))
+
+[<Fact>]
 let ``planMovement: docker + model → DeployDocker; no model → Refused`` () =
     Assert.Equal(PlanAction.DeployDocker (ModelSource.ModelFile "m.json", None),
                  planOf { MovementSpec.forDestination Destination.Docker with Model = ModelSource.ModelFile "m.json" })

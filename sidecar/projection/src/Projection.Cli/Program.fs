@@ -386,6 +386,26 @@ let private runEmitSkeletonOnly (catalog: Catalog) (outputDir: string) : int =
     dumpBench "emit-skeleton-only"
     exitCode
 
+/// `shape: manifest` — the applied-transforms manifest alone. The full
+/// (shaped) pass chain runs; only `manifest.json` lands in the out dir.
+let private runEmitManifestOnly (shaping: Config.Config) (catalog: Catalog) (outputDir: string) : int =
+    let exitCode =
+        match Compose.runManifestOnlyFromCatalogWith shaping catalog outputDir with
+        | Ok paths ->
+            printfn "%d manifest artifact(s) written to %s." paths.Length outputDir
+            paths
+            |> List.iter (fun p ->
+                let info = FileInfo p
+                printfn "  %s (%d bytes)" p info.Length)
+            0
+        | Error errors ->
+            (
+                printErrors Console.Error errors
+                2
+            )
+    dumpBench "emit-manifest-only"
+    exitCode
+
 let private runDeploy (shaping: Config.Config) (catalog: Catalog) : int =
     if not (Deploy.Docker.isAvailable ()) then
         die
@@ -1877,6 +1897,8 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         else run ()
     | PlanAction.EmitSkeleton (model, modelOssys, dir) ->
         needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runEmitSkeletonOnly cat dir))
+    | PlanAction.EmitManifest (model, modelOssys, dir) ->
+        needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runEmitManifestOnly shaping cat dir))
     | PlanAction.EmitBundle (model, modelOssys, dir) ->
         needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runEmit shaping cat dir))
     | PlanAction.DeployDocker (model, modelOssys) ->

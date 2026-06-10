@@ -867,6 +867,7 @@ module Compose =
     let runSkeletonOnlyFromCatalog (catalog: Catalog) (outputDir: string) : Result<string list> =
         write outputDir (projectSkeleton catalog)
 
+
     /// Apply config-driven catalog rewrites (today: table renames).
     /// Empty overrides short-circuit to the input catalog unchanged.
     /// Errors aggregate from boundary-mapping (`RenameBinding.fromConfig`)
@@ -1215,6 +1216,31 @@ module Compose =
         : Result<string list> =
         projectWithConfig shaping catalog
         |> Result.bind (write outputDir)
+
+    /// The manifest-only emit — `shape: manifest` (the A-cluster manifest
+    /// exposure). Projects through the SAME shaped full pass chain the
+    /// bundle rides (`projectWithConfig` — the manifest names every applied
+    /// transform per kind, so the chain must run), then writes ONLY
+    /// `manifest.json`. A direct single-file write, NOT the atomic
+    /// directory-replace `write` performs — replacing `outputDir` here would
+    /// destroy a previously published bundle beside the manifest.
+    let runManifestOnlyFromCatalogWith
+        (shaping: Config.Config)
+        (catalog: Catalog)
+        (outputDir: string)
+        : Result<string list> =
+        projectWithConfig shaping catalog
+        |> Result.bind (fun outputs ->
+            try
+                Directory.CreateDirectory outputDir |> ignore
+                let path = Path.Combine(outputDir, "manifest.json")
+                File.WriteAllText(path, ManifestEmitter.toJson outputs.Manifest)
+                Result.success [ path ]
+            with ex ->
+                Result.failureOf (
+                    ValidationError.create
+                        "pipeline.compose.manifestOnly.writeFailed"
+                        (sprintf "manifest-only emit could not write '%s': %s" outputDir ex.Message)))
 
     /// THE_CONFIG_CONTROL_PLANE §6 (S3) — the catalog-shaping overlay for the
     /// non-bundle destinations (live preview / migrate / migrate-with-data),

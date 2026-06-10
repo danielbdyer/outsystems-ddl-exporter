@@ -238,8 +238,9 @@ module ProjectionConfig =
             | "bundle"   -> Result.success (Some Shape.Bundle)
             | "ssdt"     -> Result.success (Some Shape.Ssdt)
             | "skeleton" -> Result.success (Some Shape.Skeleton)
+            | "manifest" -> Result.success (Some Shape.Manifest)
             | other ->
-                Result.failureOf (err "cli.config.flowShapeUnknown" (sprintf "flow '%s' shape '%s' is not bundle | ssdt | skeleton." name other))
+                Result.failureOf (err "cli.config.flowShapeUnknown" (sprintf "flow '%s' shape '%s' is not bundle | ssdt | skeleton | manifest." name other))
 
     /// The opt-in per-flow `shaping` override (S6.4): a nested `"shaping"` object
     /// parsed leniently (`Config.parseLenient` over its raw JSON text) so the
@@ -435,6 +436,7 @@ module ProjectionConfig =
         | Shape.Bundle   -> "bundle"
         | Shape.Ssdt     -> "ssdt"
         | Shape.Skeleton -> "skeleton"
+        | Shape.Manifest -> "manifest"
 
     /// Render one `Environment` to its `JsonObject` — the dual of
     /// `parseEnvironment`. `access` + its companion (`out` for bundle, `conn`
@@ -620,6 +622,7 @@ module Command =
                 | _ when hasModel ->
                     match spec.Shape with
                     | Shape.Skeleton            -> PlanAction.EmitSkeleton (spec.Model, modelOssys, dir)
+                    | Shape.Manifest            -> PlanAction.EmitManifest (spec.Model, modelOssys, dir)
                     | Shape.Bundle | Shape.Ssdt -> PlanAction.EmitBundle (spec.Model, modelOssys, dir)
                 | _ -> modelMissing "projection: "
             | Destination.Docker ->
