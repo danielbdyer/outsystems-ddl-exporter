@@ -1,3 +1,34 @@
+# Handoff addendum — 2026-06-10, late (the 288M-row program: set-based capture + the 6.A.2 lift landed)
+
+To the next agent.
+
+The operator sharpened the reverse-leg premise to ~288M rows in a ≤4h
+window, with the huge tables FK-referenced, the F1 lift authorized, and
+chunk-level resume requested. Two engine slices landed the same evening —
+read `DECISIONS 2026-06-10 — 6.A.2 LIFTED…` and the addendum at the foot
+of `AUDIT_2026_06_10_REVERSE_LEG_DML_PROOF.md` before touching the write
+path. In brief: (1) the AssignedBySink capture lane is now set-based —
+bulk-staged into a session temp table cloned from the sink, one
+MERGE…OUTPUT per 50k chunk; measured ~27k rows/sec sustained (288M ≈ 3h,
+inside the window) versus ~271 rows/sec for the retired per-row loop, and
+the unreferenced kinds skip capture entirely via Bulk.copyRowsSinkMinted.
+Watch the ISNULL-vs-CASE identity-propagation trap documented at the
+staging SELECT INTO — a CASE wrapper constant-folds and the staging mints
+its own keys (the keystone canary catches it). (2) The cyclic
+AssignedBySink refusal is LIFTED: phase 1 re-points excluding deferred
+columns, phase 2 keys its UPDATE on the ASSIGNED PK through the completed
+remap, and an orphaned deferred reference is a named phase-2 erasure.
+
+Your queue, in priority order (the report addendum carries the detail):
+streaming ingestion with bounded memory (collectInOrder materializes whole
+tables — the binding constraint at 288M), the remap representation for
+huge FK-referenced tables (packed int64 or sink-resident keymap — gate it
+on the estate row-count/FK-fan-in survey), chunk-level resume (operator-
+requested), parallel per-table wavefronts only if the real-wire bench
+misses 20k rows/sec, and the survey items (platform triggers → OUTPUT
+INTO; P7 ceilings). Re-bench over the real network before trusting the 3h
+figure.
+
 # Handoff addendum — 2026-06-10, evening (LE-3: the reverse leg proven at full implicature)
 
 To the next agent.
