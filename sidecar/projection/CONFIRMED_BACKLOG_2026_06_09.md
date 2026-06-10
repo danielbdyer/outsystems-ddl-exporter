@@ -40,8 +40,12 @@ failed**; each commit SSH-signed.
 - **B4** retry → **DEFERRED**. The "exception leak" premise was stale (already caught by `ReadSide.read`'s outer try/with); only the retry gap remains. Adding retry needs a structural home for the primitive (`Retry.fs` is in `Adapters.OssysSql`; `Adapters.Sql` refs only `Core`). Re-open under a real transient-failure incident.
 - **A4** cross-schema FK diagnostic → **CLOSED on substance**. The `Unreadable` reason is named, classified, unit-tested (not silent); the stderr-vs-structured-channel detail isn't worth rippling `read`'s return shape into 4 consumers.
 
-**STILL OPEN — flagged for a later operator decision (not blocking):**
-- **A7 polarity:** `model.includeSystemModules/includeInactiveModules` default `false` while `ModuleFilter.empty` identity is `true`. The agent made filtering opt-in (effective only alongside a non-empty `model.modules`) to keep defaults byte-identical. *Decide later* if you want the flags to act globally with no `modules` named (a deliberate default-behavior change).
+**RESOLVED (operator, 2026-06-10):**
+- **A7 polarity:** the flags STAY opt-in (effective only alongside a
+  non-empty `model.modules`); the estate-wide form was declined. The inert
+  combination now carries a named note + `moduleFilter.flagsInert`
+  diagnostic (no silent no-op). See `DECISIONS 2026-06-10 — A7 polarity
+  RESOLVED`.
 
 *(A1 and A5 — previously the two open semantic forks — were decided and shipped this session; see the SHIPPED list above.)*
 

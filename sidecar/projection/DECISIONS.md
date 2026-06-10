@@ -21245,3 +21245,17 @@ the one-command answer: verdict, pid liveness, live-log staleness (>120s
 flags the warm-container wedge with the `warm-sql.sh restart` hint), last
 output lines. Launch pools bare in the background; poll `status`; never
 pipe a long run.
+
+## 2026-06-10 — A7 polarity RESOLVED: the module-filter include flags stay opt-in
+
+Operator decision (this session): `model.includeSystemModules` /
+`includeInactiveModules` keep today's opt-in semantics — effective only
+alongside a non-empty `model.modules` selection. The estate-wide form
+(flags filtering with no modules named) was considered and declined; it
+remains available as a future deliberate default-behavior change should a
+real config demand it, but it is no longer an open question. The
+inert combination is no longer silent (same-day wire:
+`ModuleFilterBinding.inertFlagNote` → the dispatch Note channel + the
+`moduleFilter.flagsInert` Info diagnostic), so the opt-in gate is now
+named at the operator surface rather than discovered by absence. Closes
+the `CONFIRMED_BACKLOG` "STILL OPEN — A7 polarity" row.
