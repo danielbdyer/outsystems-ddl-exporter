@@ -68,3 +68,17 @@ module ModuleFilterBinding =
                 model.IncludeSystemModules
                 model.IncludeInactiveModules
                 entityFilters
+
+    /// A7 (no-silent-drop) — the include flags are inert without a declared
+    /// `model.modules` selection (the opt-in gate above), so a config that
+    /// sets them alone deserves a NAMED note, never silence. `Some` exactly
+    /// when a flag is set and `modules` is empty; the consuming surface
+    /// chooses the channel (the dispatch Note line; the full-export
+    /// diagnostic stream). The global-polarity question (should the flags
+    /// act estate-wide with no `modules` named?) stays parked as a deliberate
+    /// default-behavior change — see `CONFIRMED_BACKLOG` "A7 polarity".
+    let inertFlagNote (model: Config.ModelSection) : string option =
+        if List.isEmpty model.Modules
+           && (model.IncludeSystemModules || model.IncludeInactiveModules) then
+            Some "model.includeSystemModules/includeInactiveModules accepted; model.modules names no modules, so the filter is inert (all modules carried). Name modules under model.modules to activate the selection."
+        else None

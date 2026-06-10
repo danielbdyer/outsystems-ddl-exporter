@@ -1065,7 +1065,12 @@ module Compose =
                     | Ok dacpac ->
                     let outputs = { outputs with Dacpac = dacpac }
                     let diagnostics =
-                        SpecialCircumstancesDiagnostics.emit overrides finalState
+                        // A7 (no-silent-drop) — surface the inert module-filter
+                        // flags on the structured diagnostic stream.
+                        (ModuleFilterBinding.inertFlagNote cfg.Model
+                         |> Option.map (DiagnosticEntry.create "config:model" DiagnosticSeverity.Info "moduleFilter.flagsInert")
+                         |> Option.toList)
+                        @ SpecialCircumstancesDiagnostics.emit overrides finalState
                         @ InactiveAttributeDiagnostics.emit profile
                         @ FkSelectivityDiagnostics.emit profile    // H-025
                         @ JointDependencyDiagnostics.emit profile   // H-026

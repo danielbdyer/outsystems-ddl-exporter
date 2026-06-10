@@ -82,6 +82,11 @@ let private usageLines : string list =
 
 let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan: ExecutionPlan) : int =
     for n in plan.Notes do eprintfn "Note — %s" n
+    // A7 (no-silent-drop) — the module-filter include flags without a
+    // `model.modules` selection are inert; note it on the same channel.
+    (match ModuleFilterBinding.inertFlagNote shaping.Model with
+     | Some n -> eprintfn "Note — %s" n
+     | None -> ())
     // Resolve the model to a Catalog under the live-OSSYS-primary / file-
     // fallback policy (ModelResolution), then run the Catalog-accepting face.
     //
