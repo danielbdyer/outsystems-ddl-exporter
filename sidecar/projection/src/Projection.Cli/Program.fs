@@ -140,20 +140,16 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat -> runProjectLivePreview shapedCat conn decl))
     | PlanAction.Transfer (src, sink, opts, execute) ->
         runTransfer src sink None None opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Tables surveyAdvisory
-    | PlanAction.RunReverseLeg (_src, _sink, _opts, _execute) ->
-        // G2 — the engine ROUTED the B→A legacy reverse leg distinctly (not as an
-        // A→A peer transfer). The reverse-leg RUNNER (`Transfer.runReverseLeg` /
-        // the M3.b face) needs two SsKey-ALIGNED contracts — the logical source and
-        // physical sink RENDERED from the ONE authored model — which a live two-DB
-        // flow cannot produce yet (the J3 residual; THE_DATA_PRODUCERS §6 LE-1).
-        // Reading the two live DBs independently would NOT align the SsKeys. So we
-        // surface the gap as a NAMED REFUSAL — not a crash, and never a silent
-        // mis-run as a peer transfer. (When a clean contract source exists, this
-        // arm runs it; until then, the honest boundary is the refusal.)
-        TtyRenderer.renderVoicedError
-            (ValidationError.create "cli.move.reverseLegResidual"
-                "the legacy B→A reverse leg needs SsKey-aligned contracts (the one model rendered logical-source + physical-sink); a live two-DB flow cannot produce them yet — see J3 / THE_DATA_PRODUCERS §6 LE-1.")
-        6
+    | PlanAction.RunReverseLeg (model, modelOssys, src, sink, opts, execute) ->
+        // G2 routed the B→A legacy reverse leg distinctly; J3 (the contract
+        // source) is CLOSED — the two SsKey-aligned contracts are the ONE
+        // authored model rendered at both renditions (`CatalogRendition`).
+        // The S3 module filter applies to the model ONCE (`needCatalog`), so
+        // both renditions narrow identically. Live reads are NOT used for
+        // contracts (ReadSide synthesizes attribute SsKeys, which would never
+        // align — the original residual's premise, now honored structurally).
+        needCatalog modelOssys model (fun cat ->
+            runReverseLegTransfer src sink (CatalogRendition.logical cat) (CatalogRendition.physical cat) opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Tables surveyAdvisory)
     | PlanAction.MigrateWithData (model, modelOssys, sink, src, opts) ->
         needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat -> runMigrateWithData shapedCat sink src opts.Reconcile opts.Rekey opts.Declaration opts.AllowCdc opts.Store opts.Env))
     | PlanAction.SynthesizeAndLoad (model, modelOssys, profile, conn, opts, execute) ->

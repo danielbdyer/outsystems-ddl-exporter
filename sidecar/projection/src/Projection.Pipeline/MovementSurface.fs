@@ -638,8 +638,14 @@ module Command =
                 // by `DataOrigin` alone (both are `FromTarget`).
                 let dataMove (src: string) (execute: bool) : PlanAction =
                     match spec.Direction with
-                    | MovementDirection.UpLegacy -> PlanAction.RunReverseLeg (src, conn, opts, execute)
-                    | _                          -> PlanAction.Transfer (src, conn, opts, execute)
+                    | MovementDirection.UpLegacy ->
+                        // J3 — the reverse leg's two SsKey-aligned contracts
+                        // are RENDERED from the ONE authored model
+                        // (`CatalogRendition`); with no model there is nothing
+                        // to render, so the refusal is at PLAN time, named.
+                        if hasModel then PlanAction.RunReverseLeg (spec.Model, modelOssys, src, conn, opts, execute)
+                        else modelMissing "projection (reverse leg): the B→A reverse leg renders its contracts from the authored model. "
+                    | _ -> PlanAction.Transfer (src, conn, opts, execute)
                 if not spec.Commit then
                     match spec.Data with
                     | DataOrigin.FromTarget alias when not schemaOnly ->

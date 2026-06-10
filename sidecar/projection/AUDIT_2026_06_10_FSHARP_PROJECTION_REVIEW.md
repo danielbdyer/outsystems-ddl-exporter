@@ -85,6 +85,9 @@ The codebase's signature near-miss pattern was NOT half-built features but
 - **Reverse-leg runner arm (J3 residual)**: deliberately unforced pending a
   contract source (shared authored model in both renditions, or
   attribute-scope `V2.SsKey` recovery in `ReadSide.buildAttribute`).
+  *(CLOSED later the same day: option 1 shipped as `CatalogRendition` +
+  the full plan/engine/CLI wiring + the LE-1 rendered-contracts canary —
+  see `DECISIONS 2026-06-10 — J3 residual CLOSED`.)*
 - **A7 polarity**: RESOLVED 2026-06-10 — opt-in stands; the inert combination
   now carries a named note + `moduleFilter.flagsInert` diagnostic.
 

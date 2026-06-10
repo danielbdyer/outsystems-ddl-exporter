@@ -21259,3 +21259,48 @@ inert combination is no longer silent (same-day wire:
 `moduleFilter.flagsInert` Info diagnostic), so the opt-in gate is now
 named at the operator surface rather than discovered by absence. Closes
 the `CONFIRMED_BACKLOG` "STILL OPEN — A7 polarity" row.
+
+## 2026-06-10 — J3 residual CLOSED: the reverse-leg contract source is the ONE authored model rendered at both renditions (`CatalogRendition`)
+
+The B→A `legacy` reverse leg's last gap was the contract source: `Transfer.runReverseLeg`
+(M3.b) needed two SsKey-ALIGNED `Catalog` contracts — the logical on-prem source (B) and
+the physical OSUSR cloud sink (A) — and a live two-DB flow could not produce them
+(`ReadSide` synthesizes attribute SsKeys from physical coordinates, so two independent
+reads never align by identity). **Decision: option (1) — render the one authored model at
+both renditions.** `CatalogRendition.logical` runs the SAME two emission-axis passes the
+down-leg publish applies (`LogicalTableEmission` + `LogicalColumnEmission`, `Enabled` —
+the production default), so the B contract names tables/columns exactly as the published
+bundle deployed them; `CatalogRendition.physical` is the authored catalog (the identity,
+named for call-site legibility). Both passes preserve `SsKey` (A1), so the pair aligns BY
+CONSTRUCTION. A load-bearing property fell out: the logical `Name`s are rendition-invariant,
+so the B→A rename map is the IDENTITY — the rendition difference rides each contract's
+physical coordinates at its own SQL boundary (the LE-2-proven mechanism), tested as such.
+
+**Option (2) — live attribute-scope `V2.SsKey` recovery in `ReadSide.buildAttribute` —
+was NOT pursued** (it needs a new column-level extended-property persistence surface on
+emission plus a read path: ~100 LOC + a metadata contract, for no gain while a model is
+present). Re-open trigger: a reverse leg over an estate with NO authored model.
+
+The wiring: `PlanAction.RunReverseLeg` now carries the model (`PreviewSchema`'s
+convention); a model-less legacy flow refuses at PLAN time (`cli.move.modelMissing`,
+exit 1) — the old runtime `cli.move.reverseLegResidual` refusal (exit 6) is retired.
+`Transfer.runReverseLegThroughConnections` drives the leg through the `TransferConnections`
+apparatus (D9) with the full write-options envelope (emission / resumable / table subset
+resolved against the source contract by rendition-invariant `Name`). The CLI face
+(`runReverseLegTransfer`) mirrors the peer transfer's gates (execute env-gate → 7; the
+G0c advisory survey channel) and REFUSES reconcile/rekey on the reverse leg
+(`transfer.reverseLeg.reconcileUnsupported`, exit 2) — the reconcile + rename combination
+stays the named follow-on; never a silent straight-load. The S3 module filter applies to
+the model ONCE (`needCatalog`), so both renditions narrow identically; flow `shaping`
+overlays do NOT shape reverse-leg contracts (the leg moves data against the estates as
+the model names them).
+
+Witness: `M3/LE-1 … contracts RENDERED from the one authored model (CatalogRendition)
+round-trip` (Docker) — the rendered logical contract is deployed + seeded as B, piped up
+into the as-authored physical A, and the OSUSR sink's CONTACT column carries the source's
+Email data. Pure: rendition substitution + SsKey-alignment + identity-repoint tests; the
+plan-time model gate; the A44 clause-2/3 canaries hold (the spanning estate carries a
+model). Two-consumer extraction fired in `RunFaces`: the 6.A.1 drop-narration block is now
+`narrateDropExit`, shared by the peer and reverse-leg faces. Also fixed: `scripts/test.sh`
+failed-name extraction used `grep -B1` on the TRX and could blame the textually-preceding
+(passed) test; testName and outcome share one line, so the context flag is gone.

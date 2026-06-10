@@ -205,7 +205,8 @@ let private reverseCfg =
         "golden":  { "from": "cloud-peer",    "to": "cloud-uat" },
         "plain":   { "from": "plain-src",     "to": "cloud-uat" },
         "bundled": { "from": "onprem-legacy", "to": "cloud-bundle" }
-      }
+      },
+      "model": "model.json"
     }
     """ |> mustOk
 
@@ -296,8 +297,82 @@ let ``direction: the legacy flow routes through planFlow to RunReverseLeg under 
     let commitData = { Go = true; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Seed = None; Scale = None }
     let flow = { Map.find "legacy" reverseCfg.Flows with Scope = Some Scope.Data }
     match (Command.planFlow reverseCfg flow commitData).Action with
-    | PlanAction.RunReverseLeg ("env:ONPREM_LEGACY_CONN", "env:CLOUD_UAT_CONN", _, true) -> ()
+    | PlanAction.RunReverseLeg (_, _, "env:ONPREM_LEGACY_CONN", "env:CLOUD_UAT_CONN", _, true) -> ()
     | other -> Assert.Fail(sprintf "expected RunReverseLeg, got %A" other)
+
+[<Fact>]
+let ``J3: a legacy flow with NO model refuses at PLAN time (the contracts render from the authored model)`` () =
+    // The reverse leg's two SsKey-aligned contracts are RENDERED from the one
+    // authored model (`CatalogRendition`); with no model there is nothing to
+    // render, so the refusal is at the plan seam — named, never a runner crash.
+    let modelless =
+        ProjectionConfig.parse """
+        {
+          "environments": {
+            "onprem-legacy": { "access": "direct", "conn": "env:ONPREM_LEGACY_CONN", "rendition": "logical" },
+            "cloud-uat":     { "access": "direct", "conn": "env:CLOUD_UAT_CONN", "grant": "data", "rendition": "physical" }
+          },
+          "flows": { "legacy": { "from": "onprem-legacy", "to": "cloud-uat" } }
+        }
+        """ |> mustOk
+    let commitData = { Go = true; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Seed = None; Scale = None }
+    let flow = { Map.find "legacy" modelless.Flows with Scope = Some Scope.Data }
+    match (Command.planFlow modelless flow commitData).Action with
+    | PlanAction.Refused (1, e) -> Assert.Equal("cli.move.modelMissing", e.Code)
+    | other -> Assert.Fail(sprintf "expected a named plan-time refusal, got %A" other)
+
+// -- J3 closed: the reverse-leg contract source (CatalogRendition) -----------
+// The ONE authored model rendered at both renditions: both emission passes
+// preserve SsKey (A1) and touch only the physical-realization slots, so the
+// pair is aligned by construction and differs exactly on the coordinates the
+// reverse leg's rename map re-points.
+
+let private j3Name (s: string) : Name = Name.create s |> mustOk
+let private j3Attr (key: string) (logical: string) (col: string) (isPk: bool) : Attribute =
+    { Attribute.create (SsKey.synthesizedComposite "J3_ATTR" [ key ] |> mustOk) (j3Name logical) (if isPk then Integer else Text) with
+        Column = ColumnRealization.create col (not isPk) |> mustOk
+        IsPrimaryKey = isPk
+        IsMandatory = isPk }
+
+/// The authored model in its as-authored (physical) form: the OSUSR table +
+/// physical columns; the logical names ride `Kind.Name` / `Attribute.Name`.
+let private j3AuthoredModel : Catalog =
+    let cust =
+        Kind.create (SsKey.synthesizedComposite "J3_KIND" [ "Customer" ] |> mustOk) (j3Name "Customer")
+            (TableId.create "dbo" "OSUSR_XF_CUSTOMER" |> mustOk)
+            [ j3Attr "Id" "Id" "ID" true
+              j3Attr "Email" "Email" "CONTACT" false ]
+    Catalog.create
+        [ { SsKey = SsKey.synthesizedComposite "J3_MOD" [ "Mod" ] |> mustOk; Name = j3Name "M"; Kinds = [ cust ]; IsActive = true; ExtendedProperties = [] } ] []
+    |> mustOk
+
+[<Fact>]
+let ``J3: CatalogRendition.logical substitutes the logical coordinates; physical is the authored identity`` () =
+    Assert.Equal<Catalog>(j3AuthoredModel, CatalogRendition.physical j3AuthoredModel)
+    let logical = CatalogRendition.logical j3AuthoredModel
+    let kind = Catalog.allKinds logical |> List.exactlyOne
+    Assert.Equal("Customer", TableName.value kind.Physical.Table)
+    let cols = kind.Attributes |> List.map (fun a -> Name.value a.Name, ColumnRealization.columnNameText a.Column)
+    Assert.Equal<(string * string) list>([ ("Id", "Id"); ("Email", "Email") ], cols)
+
+[<Fact>]
+let ``J3: the rendered pair is SsKey-aligned by construction; the repoint is the identity (Name is rendition-invariant)`` () =
+    let logical = CatalogRendition.logical j3AuthoredModel
+    let keysOf (c: Catalog) : Set<SsKey> =
+        Catalog.allKinds c
+        |> List.collect (fun k -> k.SsKey :: (k.Attributes |> List.map (fun a -> a.SsKey)))
+        |> Set.ofList
+    Assert.Equal<Set<SsKey>>(keysOf j3AuthoredModel, keysOf logical)
+    match CatalogDiff.between logical j3AuthoredModel with
+    | Error es -> Assert.Fail(sprintf "the rendition diff must succeed: %A" es)
+    | Ok diff ->
+        // Both renditions carry the SAME logical `Name`s (the passes touch only
+        // the physical-realization slots), so the B→A rename map is EMPTY — the
+        // identity repoint. The rendition difference rides each contract's
+        // physical coordinates at its own SQL boundary (source reads by B's
+        // names, sink writes by A's), the LE-2-proven mechanism.
+        let renameMap = RenameProjection.renames diff |> RenameProjection.renameMap
+        Assert.True(Map.isEmpty renameMap)
 
 // -- planMovement routing (the pure surface→engine map) --------------------
 
@@ -443,9 +518,9 @@ let ``planMovement is TOTAL across the destination × scope × data × model × 
 let ``planMovement: a data move with Direction=UpLegacy routes to RunReverseLeg, not Transfer`` () =
     // The B→A legacy reverse leg is routed distinctly; a peer (Down) data move of
     // the SAME DataOrigin keeps the generic Transfer.
-    let legacy = { baseLive with Commit = true; Scope = Scope.Data; Data = DataOrigin.FromTarget "qa"; Direction = MovementDirection.UpLegacy }
+    let legacy = { baseLive with Commit = true; Scope = Scope.Data; Data = DataOrigin.FromTarget "qa"; Direction = MovementDirection.UpLegacy; Model = ModelSource.ModelFile "m.json" }
     match planOf legacy with
-    | PlanAction.RunReverseLeg ("env:QA_CONN", "env:DEV_CONN", _, true) -> ()
+    | PlanAction.RunReverseLeg (ModelSource.ModelFile "m.json", None, "env:QA_CONN", "env:DEV_CONN", _, true) -> ()
     | other -> Assert.Fail(sprintf "expected RunReverseLeg, got %A" other)
     let peer = { legacy with Direction = MovementDirection.UpPeer }
     match planOf peer with

@@ -838,8 +838,8 @@ module Transfer =
     /// physical coordinates (names), which the A→B `CatalogDiff` rename map
     /// re-points. This is a THIN wrapper that names the reverse leg and delegates
     /// to the LE-2-proven `runWithRenames` GIVEN THE TWO CONTRACTS — it does not
-    /// produce them. Producing them (rendering one model in both renditions) is
-    /// the residual the wiring waits on (J3 / LE-1; the classifier is
+    /// produce them. `CatalogRendition.logical` / `.physical` produce them from
+    /// the one authored model (J3 closed; the classifier is
     /// `Command.reverseLegOf`). A no-rename pair collapses to a straight load.
     let runReverseLeg
         (mode: Mode)
@@ -997,6 +997,50 @@ module Transfer =
         (resolveReconciliation: Catalog -> Result<Map<SsKey, ReconciliationStrategy>>)
         : Task<Result<TransferReport>> =
         runThroughConnectionsWithEmission mode EmissionMode.Incremental allowCdc allowDrops [] connections resolveReconciliation
+
+    /// J3 closed — drive the B→A reverse leg through the `TransferConnections`
+    /// apparatus (D9: credentials resolved out of band at the apparatus
+    /// boundary). Unlike `runThroughConnectionsResumable`, the contract is NOT
+    /// read from the live Source: `ReadSide` synthesizes attribute SsKeys from
+    /// physical coordinates, so two independent live reads would never align by
+    /// identity. Both contracts arrive RENDERED from the ONE authored model
+    /// (`CatalogRendition.logical` / `.physical`) — SsKey-aligned by
+    /// construction, the precondition the identity-matched repoint needs. The
+    /// declared table subset resolves against the source contract by logical
+    /// entity name (`Name` is rendition-invariant); the write options thread
+    /// the same emission/resumable envelope the peer transfer honors. Straight
+    /// load — the reconcile + rename combination is the named follow-on.
+    let runReverseLegThroughConnections
+        (mode: Mode)
+        (emission: EmissionMode)
+        (resumable: bool)
+        (allowCdc: bool)
+        (allowDrops: bool)
+        (tables: string list)
+        (connections: TransferConnections)
+        (logicalSourceContract: Catalog)
+        (physicalSinkContract: Catalog)
+        : Task<Result<TransferReport>> =
+        task {
+            match CatalogDiff.between logicalSourceContract physicalSinkContract with
+            | Error e ->
+                return Result.failureOf (ValidationError.create "transfer.renameDiffFailed" (sprintf "%A" e))
+            | Ok diff ->
+                let renameMap =
+                    RenameProjection.renames diff |> RenameProjection.renameMap
+                match resolveLoadSet logicalSourceContract tables with
+                | Error es -> return Result.failure es
+                | Ok loadSet ->
+                    match! ConnectionResolver.openSubstrate connections.Source with
+                    | Error es -> return Result.failure es
+                    | Ok source ->
+                        use source = source
+                        match! ConnectionResolver.openSubstrate connections.Sink with
+                        | Error es -> return Result.failure es
+                        | Ok sink ->
+                            use sink = sink
+                            return! runCore mode allowCdc allowDrops source sink physicalSinkContract Map.empty (Some (logicalSourceContract, renameMap)) { WriteOptions.ofEmission emission with Resumable = resumable; LoadSet = loadSet }
+        }
 
     // -- 6.A.1: the drop-set is fail-loud, not exit-0 -----------------------
     //

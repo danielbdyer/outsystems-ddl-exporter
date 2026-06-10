@@ -1,3 +1,37 @@
+# Handoff addendum — 2026-06-10, latest (J3 closed; A7 resolved)
+
+To the next agent.
+
+Two updates to the addendum beneath this one. **The reverse-leg runner arm
+is no longer unforced — J3 is CLOSED.** The contract source the wiring
+waited on exists: `CatalogRendition.logical`/`.physical`
+(`src/Projection.Pipeline/CatalogRendition.fs`) render the ONE authored
+model at both renditions — the same two emission-axis passes the down-leg
+publish applies, SsKeys untouched (A1), so the pair aligns by construction
+and the B→A rename map is the identity (`Name` is rendition-invariant; the
+rendition difference rides each contract's physical coordinates at its own
+SQL boundary). `PlanAction.RunReverseLeg` carries the model and a
+model-less legacy flow refuses at PLAN time; the CLI arm runs
+`Transfer.runReverseLegThroughConnections` through the apparatus;
+reconcile/rekey on the reverse leg is a NAMED refusal (the reconcile +
+rename combination stays the follow-on). Witnesses: the `M3/LE-1 …
+RENDERED … (CatalogRendition)` Docker canary + the J3 pure tests in
+`MovementSurfaceTests`. Read `DECISIONS 2026-06-10 — J3 residual CLOSED`
+before touching any of it. The deliberately-NOT-built alternative is live
+attribute-scope `V2.SsKey` recovery in `ReadSide.buildAttribute`; its
+re-open trigger is a reverse leg over an estate with no authored model.
+
+**A7 polarity is RESOLVED** (operator): the module-filter include flags
+stay opt-in; the inert combination carries a named note +
+`moduleFilter.flagsInert` diagnostic. Do not re-open.
+
+The remaining queue is now: **J5** (real-UAT execute — operator-gated on a
+writable connection; the one true critical-path item), **B9** (IRBuilders
+α′ Python pass), D5–D7 instrument slices, §C modeling decisions, §E/§F
+speculative items. Small operational note: `scripts/test.sh`'s failed-name
+extraction was fixed this session (it could blame the textually-preceding
+PASSED test — testName and outcome share one TRX line; no `-B1`).
+
 # Handoff addendum — 2026-06-10, later (the CLI decomposition landed; the queue is operator-gated)
 
 To the next agent.

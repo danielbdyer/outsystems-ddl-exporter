@@ -501,6 +501,26 @@ let narrateTransferReport (report: Transfer.TransferReport) : unit =
                 (SsKey.rootOriginal r.Target)
                 (SourceKey.value r.UnresolvedSource)
 
+/// 6.A.1 — the drop-set is fail-loud, not exit-0. A successful write that
+/// dropped FK-orphan rows or left reconciled-kind sources unmatched surfaces
+/// a distinct non-zero exit unless the operator declared the drops
+/// acceptable via --allow-drops; the dropped/unmatched kinds are narrated.
+let private narrateDropExit (allowDrops: bool) (report: Transfer.TransferReport) : int =
+    let dropCode = Transfer.exitCodeForReport allowDrops report
+    if dropCode <> 0 then
+        Console.Error.WriteLine
+            (sprintf
+                "%d row(s) would be dropped — a relationship points to an unmatched record. Pass --allow-drops to accept the loss, or resolve the records."
+                (Transfer.droppedRowCount report))
+        let kindCount (label: string) (keys: SsKey seq) =
+            keys
+            |> Seq.countBy SsKey.rootOriginal
+            |> Seq.iter (fun (k, n) ->
+                Console.Error.WriteLine (sprintf "  %s %s: %d" label k n))
+        kindCount "dropped in" (report.SkippedReferences |> List.map fst)
+        kindCount "unmatched in" (report.UnmatchedIdentities |> List.map fst)
+    dropCode
+
 /// Parse an optional `--source-env` / `--sink-env` label into the
 /// apparatus's `Environment`. The four named environments resolve
 /// case-insensitively; anything else is a `Named` escape hatch; absence
@@ -591,24 +611,7 @@ let runTransfer
         match result with
         | Ok report ->
             narrateTransferReport report
-            // 6.A.1 — the drop-set is fail-loud, not exit-0. A successful
-            // write that dropped FK-orphan rows or left reconciled-kind
-            // sources unmatched surfaces a distinct non-zero exit unless the
-            // operator declared the drops acceptable via --allow-drops.
-            let dropCode = Transfer.exitCodeForReport allowDrops report
-            if dropCode <> 0 then
-                Console.Error.WriteLine
-                    (sprintf
-                        "%d row(s) would be dropped — a relationship points to an unmatched record. Pass --allow-drops to accept the loss, or resolve the records."
-                        (Transfer.droppedRowCount report))
-                let kindCount (label: string) (keys: SsKey seq) =
-                    keys
-                    |> Seq.countBy SsKey.rootOriginal
-                    |> Seq.iter (fun (k, n) ->
-                        Console.Error.WriteLine (sprintf "  %s %s: %d" label k n))
-                kindCount "dropped in" (report.SkippedReferences |> List.map fst)
-                kindCount "unmatched in" (report.UnmatchedIdentities |> List.map fst)
-            dropCode
+            narrateDropExit allowDrops report
         | Error errors ->
             printErrors Console.Error errors
             // A1 — single-source the refusal exit through `Preflight.refusalOf`
@@ -635,6 +638,96 @@ let runTransfer
     // --watch + a real TTY → the live data-load board (§13); the transfer leg
     // streams the "load" stage with per-table progress. Only on a real --execute
     // (a dry-run writes no rows, so the load stage would never advance).
+    let exitCode =
+        if executeGated && Watch.shouldWatch watchMode.Value then
+            Watch.renderWatch [ "load" ] (Watch.resolveDwellMs ()) runBody
+        else runBody ()
+    dumpBench "transfer"
+    exitCode
+
+// ---------------------------------------------------------------------------
+// J3 closed — the `legacy` B→A reverse-leg face (THE_DATA_PRODUCERS §6 LE-1).
+// The two SsKey-aligned contracts arrive RENDERED from the one authored model
+// (`CatalogRendition`, produced at the dispatch arm); the face owns the
+// operator gates — the execute env-gate, and a NAMED refusal for
+// reconcile/rekey (the reconcile + rename combination is the documented
+// follow-on; refusing is the honest boundary, never a silent straight-load) —
+// and drives `Transfer.runReverseLegThroughConnections` through the apparatus.
+// ---------------------------------------------------------------------------
+
+let runReverseLegTransfer
+    (sourceSpec: string)
+    (sinkSpec: string)
+    (logicalSourceContract: Catalog)
+    (physicalSinkContract: Catalog)
+    (reconcileSpecs: string list)
+    (userMapPath: string option)
+    (executeRequested: bool)
+    (allowCdc: bool)
+    (allowDrops: bool)
+    (emission: EmissionMode)
+    (resumable: bool)
+    (tables: string list)
+    (surveyAdvisory: string list)
+    : int =
+    let collect = function Ok _ -> [] | Error es -> es
+    let parsedSource = TransferSpec.parseConnectionSpec sourceSpec
+    let parsedSink   = TransferSpec.parseConnectionSpec sinkSpec
+    let specErrors = collect parsedSource @ collect parsedSink
+    if not (List.isEmpty specErrors) then
+        Console.Error.WriteLine "projection move (reverse leg): argument error:"
+        printErrors Console.Error specErrors
+        dumpBench "transfer"
+        2
+    elif not (List.isEmpty reconcileSpecs) || Option.isSome userMapPath then
+        TtyRenderer.renderVoicedError
+            (ValidationError.create "transfer.reverseLeg.reconcileUnsupported"
+                "the B→A reverse leg is a straight load; reconciliation on the reverse leg is not yet supported (the reconcile + rename combination is the named follow-on).")
+        dumpBench "transfer"
+        2
+    else
+
+    let executeGated =
+        if executeRequested then
+            System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" = "1"
+        else false
+    if executeRequested && not executeGated then
+        TtyRenderer.renderVoicedError (ValidationError.create "gate.intent" "PROJECTION_ALLOW_EXECUTE is not set in the environment.")
+        dumpBench "transfer"
+        7
+    else
+
+    let sourceSub : Substrate =
+        { Environment   = parseEnvironment "Source" None
+          Role          = SubstrateRole.Source
+          ConnectionRef = Result.value parsedSource }
+    let sinkSub : Substrate =
+        { Environment   = parseEnvironment "Sink" None
+          Role          = SubstrateRole.Sink
+          ConnectionRef = Result.value parsedSink }
+    match TransferConnections.create sourceSub sinkSub false with
+    | Error es ->
+        Console.Error.WriteLine "projection move (reverse leg): apparatus invariant violation:"
+        printErrors Console.Error es
+        dumpBench "transfer"
+        3
+    | Ok connections ->
+
+    let mode = if executeGated then Transfer.Execute else Transfer.DryRun
+    let runBody () =
+        let result =
+            (Transfer.runReverseLegThroughConnections mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract)
+                .GetAwaiter().GetResult()
+        match result with
+        | Ok report ->
+            narrateTransferReport report
+            narrateDropExit allowDrops report
+        | Error errors ->
+            printErrors Console.Error errors
+            (Preflight.refusalOf errors).ExitCode
+    // G0c — the advisory capability survey (R6 warn-not-stop); same channel
+    // and same advisory-only posture as the peer transfer's Execute path.
+    if executeGated then for line in surveyAdvisory do Console.Error.WriteLine line
     let exitCode =
         if executeGated && Watch.shouldWatch watchMode.Value then
             Watch.renderWatch [ "load" ] (Watch.resolveDwellMs ()) runBody

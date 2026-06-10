@@ -158,7 +158,9 @@ build_once() {
 # Extract failed-test names from a TRX (the test-failure capture protocol).
 failed_names_of() {
     local trx="$1"
-    grep -B1 'outcome="Failed"' "$trx" 2>/dev/null \
+    # testName and outcome sit on the SAME UnitTestResult line; a -B1 context
+    # would drag in the textually-preceding (passed) result's line.
+    grep 'outcome="Failed"' "$trx" 2>/dev/null \
         | grep -oE 'testName="[^"]*"' | sed 's/testName="//; s/"$//' | sort -u
 }
 
