@@ -7,6 +7,7 @@ namespace Projection.Pipeline
 open System
 open System.IO
 open System.Text.Json
+open System.Text.Json.Nodes
 open Projection.Core
 
 // THE_CLI.md (2026-06-08) — the `projection.json` two-layer config
@@ -316,6 +317,112 @@ module ProjectionConfig =
         else
             try parse (File.ReadAllText path)
             with ex -> Result.failureOf (err "cli.config.readFailed" (sprintf "could not read '%s': %s" path ex.Message))
+
+    // --- the inverse Ψ: render (the declarative dual of parse, G4) ----------
+    // THE_CONFIG_CONTROL_PLANE §2/§3 (A44, clause 1 — faithfulness) + G4. The
+    // declarative DUAL of `parseEnvironment` / `parseFlow`: a typed-DOM render
+    // (`JsonObject`, not hand-authored strings — the declarative-test-inputs
+    // discipline) over the SAME field vocabulary, so `parse ∘ render = id` on
+    // the movement config DOM. Each renderer's field set is the exact mirror of
+    // its parser's read set: env = `access`/`out`/`conn`/`grant`/`store`/
+    // `rendition`; flow = `to`/`from`/`profile`/`scope`/`tables`/`rekey`.
+
+    let private setStr (o: JsonObject) (name: string) (value: string) : unit =
+        o.[name] <- JsonValue.Create value
+
+    let private setOptStr (o: JsonObject) (name: string) (value: string option) : unit =
+        match value with Some v -> setStr o name v | None -> ()
+
+    /// The `conn` reference field text (the dual of `parseConnectionSpec`):
+    /// `env:<VAR>` / `file:<path>` — never an inline secret (D9 holds by shape).
+    let private renderConnRef (r: ConnectionRef) : string =
+        match r with
+        | ConnectionRef.EnvVar n -> "env:" + n
+        | ConnectionRef.File p   -> "file:" + p
+
+    /// The grant refusal-gate field (dual of `parseGrant`): the canonical token.
+    let private renderGrant (g: Grant) : string =
+        match g with
+        | Grant.SchemaAndData -> "schema+data"
+        | Grant.DataOnly      -> "data"
+
+    /// The rendition metadata field (dual of `parseRendition`).
+    let private renderRendition (r: Rendition) : string =
+        match r with
+        | Rendition.Physical -> "physical"
+        | Rendition.Logical  -> "logical"
+
+    /// The move-projection field (dual of `parseFlowScope`): the canonical token.
+    let private renderScope (s: Scope) : string =
+        match s with
+        | Scope.Schema -> "schema"
+        | Scope.Data   -> "data"
+        | Scope.All    -> "both"
+
+    /// Render one `Environment` to its `JsonObject` — the dual of
+    /// `parseEnvironment`. `access` + its companion (`out` for bundle, `conn`
+    /// for direct; docker is bare) reconstruct the reach; `grant`/`store`/
+    /// `rendition` carry the optional facets only when present.
+    let renderEnvironment (env: Environment) : JsonObject =
+        let o = JsonObject()
+        (match env.Access with
+         | Access.Bundle out -> setStr o "access" "bundle"; setStr o "out" out
+         | Access.Direct r   -> setStr o "access" "direct"; setStr o "conn" (renderConnRef r)
+         | Access.Docker     -> setStr o "access" "docker")
+        setOptStr o "grant" (env.Grant |> Option.map renderGrant)
+        setOptStr o "store" env.Store
+        setOptStr o "rendition" (env.Rendition |> Option.map renderRendition)
+        o
+
+    /// Render one `Flow` to its `JsonObject` — the dual of `parseFlow`. `from`
+    /// reconstructs the content origin (`model` is the absent default, so it is
+    /// omitted; `synthetic` carries its `profile`; an env name is verbatim);
+    /// `to`/`scope`/`tables`/`rekey` mirror the remaining fields.
+    let renderFlow (flow: Flow) : JsonObject =
+        let o = JsonObject()
+        setStr o "to" flow.To
+        (match flow.From with
+         // `model` is the absent-`from` default (`parseFlowSource None`), so a
+         // model flow omits `from` — round-trips through the default arm.
+         | FlowSource.Model              -> ()
+         | FlowSource.NoData             -> setStr o "from" "none"
+         | FlowSource.Synthetic profile  -> setStr o "from" "synthetic"; setOptStr o "profile" profile
+         | FlowSource.Env e              -> setStr o "from" e)
+        setOptStr o "scope" (flow.Scope |> Option.map renderScope)
+        setOptStr o "rekey" flow.Rekey
+        (if not (List.isEmpty flow.Tables) then
+            let a = JsonArray()
+            for t in flow.Tables do a.Add(JsonValue.Create t)
+            o.["tables"] <- a)
+        o
+
+    /// Render a whole movement config to its `projection.json` DOM — the inverse
+    /// Ψ at the document level (G4). Only the movement vocabulary
+    /// (`environments`/`flows`/`model`/`modelOssys`/`defaults`) is rendered; the
+    /// shaping namespaces are out of this slice's round-trip (the movement-only
+    /// document a flow authors). `parse ∘ render = id` on that DOM.
+    let renderConfig (cfg: ProjectionConfig) : JsonObject =
+        let root = JsonObject()
+        (if not (Map.isEmpty cfg.Environments) then
+            let envs = JsonObject()
+            for KeyValue (name, env) in cfg.Environments do envs.[name] <- renderEnvironment env
+            root.["environments"] <- envs)
+        (if not (Map.isEmpty cfg.Flows) then
+            let flows = JsonObject()
+            for KeyValue (name, flow) in cfg.Flows do flows.[name] <- renderFlow flow
+            root.["flows"] <- flows)
+        setOptStr root "model" cfg.Model
+        setOptStr root "modelOssys" cfg.ModelOssys
+        (if not (Map.isEmpty cfg.Defaults) then
+            let d = JsonObject()
+            for KeyValue (k, v) in cfg.Defaults do setStr d k v
+            root.["defaults"] <- d)
+        root
+
+    /// Render a movement config to its `projection.json` text — the round-trip
+    /// witness `parse (render cfg) = Ok cfg` (A44 clause 1).
+    let render (cfg: ProjectionConfig) : string =
+        (renderConfig cfg).ToJsonString()
 
 [<RequireQualifiedAccess>]
 module Command =
