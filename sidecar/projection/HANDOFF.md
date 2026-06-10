@@ -1,3 +1,38 @@
+# Handoff addendum — 2026-06-10, night (streaming + packed remap + chunk resume + the capture ladder landed)
+
+To the next agent.
+
+The 288M-row program's four engine slices are in: read `DECISIONS
+2026-06-10 — The streaming realization + chunk-resume journal` and
+`— 6.A.2 LIFTED…`, plus Addendum 2 at the foot of
+`AUDIT_2026_06_10_REVERSE_LEG_DML_PROOF.md`, before touching the write
+path. In brief: `SurrogateCapture` is the capture-lane ladder (three
+rungs, one semantics; descent only on SQL error 334; every descent named
+on the report; sticky per kind) — extend it by adding a rung function and
+a ladder entry, never by branching inside a rung. `PackedSurrogateRemap`
+is the realization-layer remap (int64-packed, string fallback; consumed
+via `SurrogateRemap.remapRowFksWith` — A40). `Transfer.
+runStreamingWithRenames` is the bounded-memory straight load (structure-
+only plan; per-kind 50k chunks; phase 2 re-streams); `CaptureJournal` is
+the client-side chunk ledger (fingerprint-guarded skip; `transfer.resume.
+sourceDrift`; a completed run re-runs as a full skip — G3 closed under a
+journal). Watch two FS3511 shapes in Release: a `let rec` INSIDE a task
+block, and tuple `let!` / tuple-pattern `for` — hoist helpers out of the
+task and bind single values.
+
+One finding to carry forward: the G10 resumable envelope's progress table
+needs CREATE TABLE — the real cloud sink's `grant: data` forbids it, so
+G10 cannot run there; the journal is the DML-legal replacement on the
+streaming path.
+
+Your queue: wire `runStreamingWithRenames` + a `--journal <dir>` flag
+onto the reverse-leg CLI face (the engine entry is proven; the face is
+unwired); the real-wire bench before trusting the ~27k rows/sec / 3h
+figure; reconcile ∘ streaming and WipeAndLoad ∘ journal (both refused-by-
+scope today, named in DECISIONS); journal compaction if the estate's
+FK-target pair count makes the NDJSON unwieldy; parallel per-table
+wavefronts only if the wire bench misses 20k rows/sec.
+
 # Handoff addendum — 2026-06-10, late (the 288M-row program: set-based capture + the 6.A.2 lift landed)
 
 To the next agent.
