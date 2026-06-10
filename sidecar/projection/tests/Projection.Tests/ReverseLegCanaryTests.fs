@@ -480,6 +480,76 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                             })
                 }))
 
+    // ------------------------------------------------------------------
+    // The capture-lane ladder — capability descent, named, never silent.
+    // ------------------------------------------------------------------
+
+    [<Fact>]
+    member this.``capture ladder: a trigger on the sink table refuses OUTPUT-without-INTO (error 334) — the lane descends ONE rung, the load succeeds, the descent is NAMED on the report`` () =
+        if not (ReverseLegFixtures.skipIfNoDocker "L3Ladder") then () else
+        this.WithReverseLegEstates "L3Ladder" ReverseLegFixtures.seedClean
+            (fun src _ sink _ logicalContract physicalContract ->
+                task {
+                    // The real-OSUSR risk this ladder exists for: an enabled
+                    // trigger on the sink table makes OUTPUT-without-INTO
+                    // illegal (SQL error 334) — the fastest rung is refused
+                    // BY CAPABILITY, not by data.
+                    do! Deploy.executeBatch sink
+                            ("CREATE TRIGGER [trg_L3Ladder_Customer] ON [dbo].[OSUSR_L3_CUSTOMER] AFTER INSERT AS BEGIN SET NOCOUNT ON; END;")
+
+                    let! reportR =
+                        Transfer.runWithRenames Transfer.Execute true src sink logicalContract physicalContract
+                    let report = ReverseLegFixtures.value reportR
+                    Assert.Empty(report.SkippedReferences)
+
+                    // The descent is a NAMED outcome: Customer degraded one
+                    // rung (StagedMergeOutput -> StagedMergeOutputInto, 334);
+                    // the untriggered kinds ran the preferred rung.
+                    Assert.Contains(report.CaptureLaneDescents, fun (d: LaneDescent) ->
+                        d.Kind = ReverseLegFixtures.kKey "Customer"
+                        && d.From = CaptureLane.StagedMergeOutput
+                        && d.To = CaptureLane.StagedMergeOutputInto
+                        && d.SqlErrorNumber = 334)
+                    Assert.True(
+                        report.CaptureLaneDescents |> List.forall (fun d -> d.Kind = ReverseLegFixtures.kKey "Customer"),
+                        sprintf "only the triggered kind should descend; got %A" report.CaptureLaneDescents)
+
+                    // The degraded lane carries the SAME semantics: every
+                    // surrogate minted, every business-key join intact.
+                    let! preserved = ReverseLegFixtures.preservedKeyCount sink
+                    Assert.Equal(0, preserved)
+                    let! (aAccCust, _, aInvCust, _, _) = ReverseLegFixtures.sinkEdgeJoins sink
+                    Assert.Equal<(string * string option) list>(
+                        [ ("acc-a1", Some "alice@x"); ("acc-a2", Some "alice@x"); ("acc-b1", Some "bob@x") ], aAccCust)
+                    Assert.Equal<(string * string option) list>(
+                        [ ("inv-1", Some "alice@x"); ("inv-2", None); ("inv-3", Some "bob@x") ], aInvCust)
+                })
+
+    [<Fact>]
+    member this.``capture floor: the rowwise SCOPE_IDENTITY rung captures per row on a TRIGGERED table — the ladder's last rung is behaviorally identical`` () =
+        if not (ReverseLegFixtures.skipIfNoDocker "L3Floor") then () else
+        this.WithReverseLegEstates "L3Floor" ReverseLegFixtures.seedClean
+            (fun _ _ sink _ _ physicalContract ->
+                task {
+                    do! Deploy.executeBatch sink
+                            ("CREATE TRIGGER [trg_L3Floor_Customer] ON [dbo].[OSUSR_L3_CUSTOMER] AFTER INSERT AS BEGIN SET NOCOUNT ON; END;")
+                    let customer =
+                        Catalog.allKinds physicalContract
+                        |> List.find (fun k -> TableId.tableText k.Physical = "OSUSR_L3_CUSTOMER")
+                    let idAttr = customer.Attributes |> List.find (fun a -> a.IsPrimaryKey && a.IsIdentity)
+                    let rows =
+                        [ { Identifier = ReverseLegFixtures.aKey "Floor" "r1"
+                            Values = Map.ofList [ ReverseLegFixtures.nm "Id", "1000"; ReverseLegFixtures.nm "Email", "floor-a@x" ] }
+                          { Identifier = ReverseLegFixtures.aKey "Floor" "r2"
+                            Values = Map.ofList [ ReverseLegFixtures.nm "Id", "1001"; ReverseLegFixtures.nm "Email", "floor-b@x" ] } ]
+                    let! pairs =
+                        SurrogateCapture.captureChunk sink customer idAttr Set.empty
+                            CaptureLane.RowwiseScopeIdentity rows
+                    Assert.Equal<(string * string) list>([ ("1000", "1"); ("1001", "2") ], pairs)
+                    let! n = ReverseLegFixtures.countRows sink "[dbo].[OSUSR_L3_CUSTOMER]"
+                    Assert.Equal(2, n)
+                })
+
     [<Fact>]
     member this.``re-run honesty: a second Incremental Execute into a populated sink DUPLICATES AssignedBySink rows (the named open question, pinned)`` () =
         // The data path is INSERT-based and the sink mints fresh surrogates,

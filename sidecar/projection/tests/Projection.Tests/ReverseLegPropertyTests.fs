@@ -389,3 +389,43 @@ let ``rendition invariance: the disposition derives identically from either rend
                 IdentityDisposition.ofKind l = IdentityDisposition.ofKind p)
             logicalKinds physicalKinds)
     |> Check.QuickThrowOnFailure
+
+// -- packed remap equivalence -----------------------------------------------
+
+[<Fact>]
+let ``packed remap equivalence: capture keeps the FIRST binding and tryFind agrees with SurrogateRemapContext for every generated capture sequence`` () =
+    let genCaptures =
+        gen {
+            let! n = Gen.choose (0, 40)
+            let! captures =
+                [ for _ in 1 .. n ->
+                    gen {
+                        let! kindIx = Gen.choose (0, 2)
+                        let! src = Gen.elements [ "10"; "11"; "12"; "9007199254740993"; "not-a-number"; "x-77" ]
+                        let! assigned = Gen.elements [ "1"; "2"; "3"; "9007199254740994"; "alpha" ]
+                        return kKey kindIx, src, assigned } ]
+                |> genAll
+            return captures
+        }
+    Prop.forAll (Arb.fromGen genCaptures) (fun captures ->
+        let packed = Projection.Pipeline.PackedSurrogateRemap.create ()
+        let ctx =
+            captures
+            |> List.fold
+                (fun acc (kind, src, assigned) ->
+                    Projection.Pipeline.PackedSurrogateRemap.capture kind src assigned packed
+                    match SurrogateRemapContext.capture kind (SourceKey.ofString src) (AssignedKey.ofString assigned) acc with
+                    | Ok c -> c
+                    | Error _ -> acc)
+                SurrogateRemapContext.empty
+        let probes =
+            (captures |> List.map (fun (k, s, _) -> k, s))
+            @ [ kKey 0, "999"; kKey 1, "not-a-number"; kKey 2, "" ]
+        probes
+        |> List.forall (fun (kind, src) ->
+            let viaCtx =
+                SurrogateRemapContext.tryFindAssigned kind (SourceKey.ofString src) ctx
+                |> Option.map AssignedKey.value
+            let viaPacked = Projection.Pipeline.PackedSurrogateRemap.tryFind packed kind src
+            viaPacked = viaCtx))
+    |> Check.QuickThrowOnFailure
