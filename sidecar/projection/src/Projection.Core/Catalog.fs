@@ -1418,6 +1418,20 @@ module Catalog =
     let updateKindsWhere (predicate: Kind -> bool) (updater: Kind -> Kind) (c: Catalog) : Catalog =
         mapKinds (fun k -> if predicate k then updater k else k) c
 
+    /// Remove every `Static` modality mark, preserving all other marks.
+    /// The one definition site for the "4.4 trap" strip: `ReadSide.read`
+    /// marks every row-carrying reconstructed kind `Static` (lifting live
+    /// rows for the per-row PhysicalSchema canary), and `LiveProfiler`
+    /// skips Static kinds — so profiling over a ReadSide-derived catalog
+    /// must strip the mark first. Strips ONLY `Static`: erasing the other
+    /// marks (TenantScoped / SoftDeletable / SystemOwned / Temporal) here
+    /// would silently widen the erasure (`CONSTELLATION_BACKLOG.md` plane
+    /// N2 — the Preflight over-erasure this definition site closed).
+    let stripStaticPopulations (c: Catalog) : Catalog =
+        mapKinds
+            (fun k -> { k with Modality = k.Modality |> List.filter (function Static _ -> false | _ -> true) })
+            c
+
     /// Per-Catalog kind-index cache. Per slice
     /// A.4.7'-prelude.perf-sweep-2 (`PERF_OPPORTUNITIES.md` Rank 1 —
     /// highest single-finding leverage): `tryFindKind` is the hottest

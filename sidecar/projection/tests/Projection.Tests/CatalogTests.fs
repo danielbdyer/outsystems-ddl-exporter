@@ -246,6 +246,33 @@ let ``fixture: Country carries a Static modality with three populations`` () =
 let ``fixture: Customer carries the TenantScoped modality`` () =
     Assert.Contains(TenantScoped, customer.Modality)
 
+[<Fact>]
+let ``F2: stripStaticPopulations strips Static only — preflight preserves non-Static modality marks`` () =
+    // A kind carrying Static alongside every payload-free mark: the strip
+    // must remove exactly Static. The prior Preflight form was
+    // `Modality = []`, which also erased authored marks — the N2
+    // over-erasure (CONSTELLATION_BACKLOG plane N2), closed 2026-06-11 by
+    // routing all three strip sites through this one definition site.
+    let marked =
+        { country with
+            Modality = country.Modality @ [ TenantScoped; SoftDeletable; SystemOwned ] }
+    let catalog =
+        { sampleCatalog with
+            Modules =
+                sampleCatalog.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds = m.Kinds |> List.map (fun k -> if k.SsKey = marked.SsKey then marked else k) }) }
+    let stripped = Catalog.stripStaticPopulations catalog
+    for k in Catalog.allKinds stripped do
+        Assert.True(
+            k.Modality |> List.forall (function Static _ -> false | _ -> true),
+            sprintf "Static mark survived the strip on %A" k.Name)
+    let strippedCountry = Catalog.allKinds stripped |> List.find (fun k -> k.SsKey = country.SsKey)
+    Assert.Equal<ModalityMark list>([ TenantScoped; SoftDeletable; SystemOwned ], strippedCountry.Modality)
+    let strippedCustomer = Catalog.allKinds stripped |> List.find (fun k -> k.SsKey = customer.SsKey)
+    Assert.Contains(TenantScoped, strippedCustomer.Modality)
+
 // ---------------------------------------------------------------------------
 // Chapter 4.2 slice ζ — IsUserFk : bool on Reference.
 //

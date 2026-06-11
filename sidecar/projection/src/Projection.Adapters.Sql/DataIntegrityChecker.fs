@@ -115,37 +115,21 @@ module DataIntegrityChecker =
             Warnings        = warnings |> List.sortBy (fun w -> w.SsKey)
         }
 
-    /// verify-data verifies EVERY table's data (row + null counts),
-    /// including lookup / static-population kinds. `LiveProfiler` skips
-    /// `Modality.Static` kinds (their data is schema, emitted as seed
-    /// INSERTs), and `ReadSide.read` marks every reconstructed table that
-    /// carries rows as `Static` (an artifact of the canary's per-row
-    /// PhysicalSchema reconstruction). Clearing the `Static` marking makes
-    /// the contract fully profileable for the integrity gate without
-    /// touching the shared profiler's behavior. SsKeys are preserved, so
-    /// the cache keys still match the caller's catalog.
-    let private profileable (catalog: Catalog) : Catalog =
-        let clearStatic (k: Kind) : Kind =
-            { k with
-                Modality =
-                    k.Modality
-                    |> List.filter (function ModalityMark.Static _ -> false | _ -> true) }
-        { catalog with
-            Modules =
-                catalog.Modules
-                |> List.map (fun m -> { m with Kinds = m.Kinds |> List.map clearStatic }) }
-
     /// Capture both deployments' exact aggregate evidence and diff. The
     /// Catalog is the shared schema contract both deployments realize; the
     /// caller derives it (e.g. `ReadSide.read` against the before
     /// deployment). Reuses `LiveProfiler.captureEvidenceCache` (D9: the
     /// connections are supplied open, never a connection string in Core).
+    /// verify-data verifies EVERY table's data, including lookup kinds —
+    /// `LiveProfiler` skips `Modality.Static`, so the ReadSide-minted mark
+    /// is stripped first (`Catalog.stripStaticPopulations`, the one
+    /// definition site; SsKeys preserved, cache keys still match).
     let compare
         (before: SqlConnection)
         (after: SqlConnection)
         (catalog: Catalog)
         : Task<Result<IntegrityReport>> =
-        let contract = profileable catalog
+        let contract = Catalog.stripStaticPopulations catalog
         task {
             let! beforeR = LiveProfiler.captureEvidenceCache before contract
             match beforeR with
