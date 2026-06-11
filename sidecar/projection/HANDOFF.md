@@ -5,8 +5,9 @@ To the next agent.
 One new canonical surface sits at the projection root: **`CONSTELLATION.md`**
 (2026-06-11; amended the same day with §§4–6 — the holonic map, the
 calculus, the conceptual thermodynamics — and §9, the reification of
-R1–R5 as signature-grade F#; later sections renumbered; pointers below
-follow the amended numbering) — the architectural thesis for
+R1–R5 as signature-grade F#, whose §9.8 pattern corpus walks eleven
+grains with each entry trigger-statused; later sections renumbered;
+pointers below follow the amended numbering) — the architectural thesis for
 where this codebase is headed, derived from the code at HEAD by an
 eight-sector reconnaissance plus source spot-checks. Read it AFTER
 `PERF_HARNESS.md`, not instead of it: its §10 migration path deliberately

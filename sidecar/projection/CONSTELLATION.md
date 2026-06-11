@@ -19,6 +19,13 @@ for the amendment: `ChangeManifest.pathLength` + the live churn witness
 `MigrationRun.fs:90`), `EpisodeCoordinate` (`Episode.fs:11-16`).
 **Amended (same day, third pass).** §9 added — the reification: R1–R5 as signature-grade F#,
 each construct anchored to its in-repo precedent; prior §§9–11 renumbered §§10–12.
+**Amended (same day, fourth pass).** §9.8 added — the pattern corpus: eleven worked
+compositions down the grain tower, each entry carrying a trigger status. Anchors verified for
+the amendment: `StrategyEvaluator`/`FanOutConfig`/`fanOut` (`Composition.fs:71-133`),
+`TopologicalOrder.levels` (`TopologicalOrder.fs:238`), the parallel-safety LINT-ALLOW
+(`DataEmissionComposer.fs:389`), `remapRowFksWith` (`SurrogateRemap.fs:205`;
+`TransferRun.fs:247`), the five CDC operation-reading files, the collapse site counts
+(`drainRows` ×19; `perKind` ×6 emitter files).
 
 > **The thesis in one sentence.** Every change this engine makes is a quantum of displacement
 > that crosses each boundary exactly once, is counted at the crossing by an independent ruler,
@@ -906,6 +913,381 @@ house proves laws with witnesses, not constraints); free-monad scheduling (H-063
 consumer-less); `IObservable` (the `LogSink.addSubscriber` push model suffices); a stream
 wrapper type (§11's first refusal — R4 changes the *element*, never the surface).
 
+### 9.8 The pattern corpus — worked compositions down the grain tower
+
+§9.6 showed one composition at one grain. This corpus walks the whole tower, top to bottom —
+one worked composition per grain, each entry naming its **scale**, its **pattern**, its
+**precedent**, what **collapses or converges** there, and its **trigger status** (shipped /
+fired / armed / predicted, per the corpus's own promotion protocol). Two framings before the
+walk.
+
+**First, the metaprogramming question, answered up front.** Asked "what here resembles a macro
+in Rust," the honest answer is that this codebase sanctions exactly **three** metaprogramming
+devices, each a light F#-native answer to what Rust does with macros, each governed by the
+trigger protocol:
+
+| Device | The macro it replaces | Expansion mechanism | Drift caught by |
+|---|---|---|---|
+| the **CE builder** (`lineage{}`, `staged{}`) | a syntax macro wrapping every statement in bookkeeping | `Bind`/`Run` written once, by hand | equivalence laws (H-001/H-002 precedent) |
+| the **active pattern** | a match-arm-generating macro | one `(\|…\|)` definition; exhaustiveness native | the compiler, at every match site |
+| the **private-constructor module** | `#[derive]` over a newtype invariant | `private` + smart ctor + `[<RequireQualifiedAccess>]` | the constructor's property test |
+
+Quotations, type providers, and SRTP stay out (per the `CLAUDE.md` deferred rows) — not
+because F#'s heavier metaprogramming is weak, but because these three light devices already
+cover every macro-shaped need this codebase has demonstrated. Everything below uses only
+these three.
+
+**Second, the collapse record — the empirical base rate for "droppings-in."** Every predicted
+collapse in this corpus follows a curve the codebase has already ridden:
+
+| Shipped collapse | Sites absorbed | Shape |
+|---|---|---|
+| `drainRows` kernel | 19 occurrences in `ReadSide.fs` alone | one drain loop, injected per-row action |
+| `Emitter`/`ArtifactByKind.perKind` | 6 emitter files | one per-kind walk, injected projection |
+| `TighteningPolicy.filterIntervention` | 8 site-identical accessors | one closed-DU filter |
+| `Validation.duplicateKeyErrors` | 3 aggregate-root constructors | one groupBy-filter-error fold |
+
+A collapse here is never an abstraction hunt; it is the third-or-later consumer of a shape the
+code already repeats, and the absorbed-site count is its justification. The corpus's predicted
+collapses are held to the same accounting.
+
+---
+
+#### 9.8.1 Fleet grain — evidence folds (decisions as folds over Run ledgers)
+
+**Pattern:** at the widest scale, nothing touches a connection — every fleet-grain decision is
+a pure fold over recorded `Run` values. **Precedent:** the perf-gate's μ+σ judgment (today over
+JSON files); the R6 N=10 consecutive-green rule (today prose). **Status:** armed on R1.
+
+```fsharp
+[<RequireQualifiedAccess>]
+module PerfGate =
+    /// The μ+σ model, unchanged — its input becomes a value. Soft tiers,
+    /// σ-floor, and the K=5.0 default ride along from perf-gate.sh.
+    val judge : baseline: Run -> candidate: Run -> GateVerdict
+
+[<RequireQualifiedAccess>]
+module Protocol =
+    /// The bench-driven optimization protocol (DECISIONS 2026-05-24) as a
+    /// pure function: three candidates in, one confirmed + two refuted out,
+    /// each refusal carrying the delta that refuted it. The output IS the
+    /// DECISIONS-entry payload — the documentation is a projection of the value.
+    val adjudicate :
+        prior: Run -> candidates: (string * Run) list -> Adjudication
+
+[<RequireQualifiedAccess>]
+module Readiness =
+    /// R6: the cutover gauge is a fold — N consecutive green canary runs
+    /// for one (environment × artifact-type) pair, read off the run ledger.
+    val gauge : window: int -> Run list -> CutoverGauge
+```
+
+**Converges:** the optimizer's loop, the regression gate, and the cutover governance — three
+surfaces that today read three different artifacts — become three folds over one ledger.
+Witness: `` `Fleet: adjudicate is deterministic over its Run inputs — re-running the fold
+re-derives the published verdict` ``.
+
+#### 9.8.2 Protein grain — the ontology compiles (proteins are spine programs)
+
+**Pattern:** the masterwork's protein catalog (`THE_USE_CASE_ONTOLOGY.md` §3 — every operator
+workflow as an ordered amino-acid chain) stops being prose: **each protein is a spine
+program**, its chain order a `Bind`-order fact, its gates `Gated` mints (§9.8.3). §9.6 showed
+P-6 (`migrate`). The terminal protein, P-7 (the eject), on the same spine:
+
+```fsharp
+let runEject (req: EjectRequest) : Task<Run> =
+    staged Spines.eject {
+        let! terminal = stage Stages.snapshot   (fun _ -> Model.load req.Store)
+        let! chain    = stage Stages.accumulate (fun _ -> Lifecycle.loadChain req.Store)
+        let! gated    = stage Stages.gate       (fun _ ->
+                            Provenance.completeness chain terminal)
+                            // P-7's "last chance to catch a broken chain" —
+                            // the gate precedes publication structurally
+        let! package  = stage Stages.publish    (fun _ ->
+                            Eject.package gated req.Declarations)
+        let! verdict  = stage Stages.verify     (fun _ ->
+                            Eject.isFaithful package)   // reconstructLatest = terminal (EjectRun.fs:50-54)
+        return verdict
+    }
+    |> Run.record req.Inputs
+```
+
+**Converges:** the seven cross-protein ordering constraints (the ontology's §3 tail — rename
+before reshape, gate before mutation, record last…) migrate from a prose list into the only
+two places order lives in code: `Bind` sequence and token demands. **Status:** armed on R2;
+the stress case is P-8 (drift detection), whose human-in-the-loop gate returns a refusal or a
+continuation — still a stage, which is the falsifiable edge of the claim: a protein
+inexpressible as a spine program breaks it. Witness per protein: the chain-order property
+(`` `P-7: publish cannot precede the completeness gate — by construction` `` is a compile
+fact, listed as the Bucket-B convention witness).
+
+#### 9.8.3 Gate grain — `Gated<'plan>`, the third proof token
+
+**Pattern:** P-GATE ("every way a plan can fail or lose has a pre-flight that refuses first")
+and ordering constraint 5 ("gate before mutation") become unforgeable. **Precedent:**
+`ArtifactByKind`; `Preflight.refusalOf` as the canonical classify seam; the existing
+`Preflight.dataViolatesTightening`. **Status:** armed; lands with the spine.
+
+```fsharp
+type Gated<'plan> = private Gated of 'plan
+
+[<RequireQualifiedAccess>]
+module Gate =
+    type Gate<'plan> = 'plan -> Result<'plan, Refusal list>
+
+    val declaredLoss : Consent  -> Gate<MigrationPlan>     // refuse Removed without --allow-drops
+    val dataCompat   : Profile  -> Gate<MigrationPlan>     // refuse tightening the data violates (6.B.1)
+    val connection   : Endpoints -> Gate<MigrationPlan>    // both ends live + credentialed (T-VI)
+
+    /// Pre-flights COLLECT failures (the ValidationError-list norm): the
+    /// operator sees every refusal at once, not a peeled onion.
+    val all : Gate<'p> list -> 'p -> Result<Gated<'p>, Refusal list>
+
+// The mutation seam demands the token. There is no other constructor.
+val MigrationRun.execute : SqlConnection -> Gated<MigrationPlan> -> Task<MigrationOutcome>
+```
+
+**Collapses:** every ad-hoc "did we check X before writing?" review question becomes a type
+error. **Converges:** with the T-VI spanning gates (permission / transactionality /
+connection) — each new spanning dimension is a `Gate<'plan>` value, not a new code path.
+Witness: `` `P-GATE: execute is unreachable from an ungated plan — by construction` ``.
+
+#### 9.8.4 Selector grain — dominance encoding (and the abstraction that is refused)
+
+**Pattern:** a realization selector is a pure, total function over request facts whose
+dominant arm is justified by a committed measurement and whose inadmissible arms refuse by
+name. **Precedent:** `ReverseLegRealization.choose` (`TransferRun.fs:37-63`), verbatim.
+**Status:** the pattern is shipped; its next two instances are harness-minted.
+
+```fsharp
+/// Stage-0 slice 1 mints this selector's evidence: below the TVC cliff the
+/// inline VALUES form is fine; above it, the staged-bulk shape (§9.8.6).
+let chooseMergeShape (rowsPerKind: int) : MergeShape =
+    if rowsPerKind <= MergeShape.TvcCap then MergeShape.InlineValues
+    else MergeShape.StagedBulk
+
+/// Stage-1's batch-size sweep mints this one (PERF_HARNESS §4 slice 3).
+let chooseBulkBatch (rows: int) : BatchSize = ...
+```
+
+**The refusal that keeps this elegant:** there is deliberately **no** `Selector<'req,'real>`
+abstraction. The *shape* recurs; the *type* does not — until a third concrete selector exists
+AND something needs to project over selectors-as-values, the generalization is the
+false-symmetry move (§2 P4). In Rust this is where a macro would generate the match; in F#
+the closed DU's native exhaustiveness already is the generated match. **Converges:** with
+§9.8.1 — the selector's justifying measurement is an `adjudicate` output, so the chain
+*measurement → adjudication → committed dominant arm* is value → value → code, each step a
+recorded artifact.
+
+#### 9.8.5 Pass grain — the decoration collapse (making "modulo" a value)
+
+**Pattern:** `CLAUDE.md` states the pipeline's deepest near-identity: "the fold inside
+`PassChainAdapter.compose` IS `Pass.composeAll` modulo per-step `Bench.scope` decoration."
+A "modulo" in a law is an unfactored value. Factor it:
+
+```fsharp
+[<RequireQualifiedAccess>]
+module Meter =
+    /// Decoration as an endomorphism on arrows — identity on the value
+    /// plane (the probe law, §5.2 identity 3), effect on the meter plane.
+    let pass (name: string) (p: Pass<'a, 'b>) : Pass<'a, 'b> =
+        fun a ->
+            use _ = Bench.scope name
+            p a
+
+// PassChainAdapter.compose, after:
+let compose steps =
+    steps |> List.map (fun s -> Meter.pass s.Name s.Apply) |> Pass.composeAll
+```
+
+**Collapses:** the fold becomes *literally* the named law — no modulo, no prose. **Status:**
+fired (two consumers exist today: the pass chain and the spine's stage bracket are the same
+decoration at two grains; `Meter.pass` is the pass-grain face of §9.3's `Bind`). Witness:
+`` `Meter.pass p ≡ p on the value plane — decoration is invisible to the algebra` `` (the
+CE-equivalence shape, third instance).
+
+#### 9.8.6 Emitter grain — the taxonomy as a type; the cliff fix as a stream rewrite
+
+**Pattern one:** `CRYSTALLINE_FORM.md` §3.5's three emitter output shapes, today an
+undocumented surprise, become a closed taxonomy — so T11's scope (it holds for per-kind
+artifacts only) is a type fact:
+
+```fsharp
+type EmitterShape =
+    | PerKindArtifact       // the T11-commuting siblings (keyset law lives in ArtifactByKind)
+    | FlatStatementStream   // SchemaMigration: an ALTER stream over a CatalogDiff
+    | CatalogSummary        // Manifest: one catalog-wide value
+```
+
+**Pattern two — the stage-0 correctness fix, A35-shaped.** The >1000-row MERGE cliff
+(`ScriptDomBuild.fs:857`, no chunking, no test) is fixed not in the deploy path but as a
+**pure statement-stream rewrite**, which is what A35 is *for*:
+
+```fsharp
+[<RequireQualifiedAccess>]
+module MergeShape =
+    [<Literal>]
+    let TvcCap = 1000
+    /// ≤cap-row INSERT…VALUES chunks into #stage, then ONE MERGE … USING #stage.
+    /// Single-MERGE semantics preserved: the DeleteScope arm rides the one
+    /// trailing MERGE (a chunk-scoped WHEN NOT MATCHED BY SOURCE would delete
+    /// the other chunks' rows — the §10 stage-0 caveat, carried as a comment
+    /// the equivalence canary enforces).
+    val staged : table: TableId -> basis: RowBasis -> rows: RowQuantum seq -> Statement seq
+```
+
+**Converges:** a correctness bug becomes a `seq → seq` function — unit-testable pure, deployed
+through the existing realizations, measured through the existing probes, selected by §9.8.4's
+`chooseMergeShape`. Nothing about the deploy path changes. **Status:** stage-0 slice 1, with
+the BEFORE witness mandated first.
+
+#### 9.8.7 Chunk grain — the resumable fold, with the prefetch inside
+
+**Pattern:** `writePlanStreaming`'s 208 densest lines contain a shape worth one name — at its
+*second* consumer:
+
+```fsharp
+[<RequireQualifiedAccess>]
+module Ledger =
+    /// The chunk-grain FTC with admission (§5.1): skip verified positions,
+    /// refuse drift by name, execute-and-append the rest. The one-slot
+    /// prefetch (chunk N+1 pulls while N writes — TransferRun.fs:1074-1098)
+    /// lives INSIDE as an implementation fact, under the equivalence law.
+    val foldResumable :
+        spec    : LedgerSpec<'s, 'q, 'fp>
+        -> journal : Journal<'q, 'fp>
+        -> execute : 's -> 'q -> Task<'s>
+        -> quanta  : AsyncStream<'q>
+        -> Task<Result<'s, LedgerDrift>>
+```
+
+**Status:** armed, precisely — the named second consumers already sit in the open queue
+(reconcile ∘ streaming; the bootstrap-MERGE execute at scale), so this extraction obeys the
+two-consumer rule the day either lands, and not before. **The law that disciplines the
+concurrency:** `` `foldResumable ≡ the sequential fold on the value plane` `` — the
+capability-descent rule (every rung carries an equivalence canary) applied to a combinator.
+One-slot lookahead remains the *entire* concurrency story at this grain; anything wider waits
+on the wire-bench trigger (R5).
+
+#### 9.8.8 Row grain — the alphabet surfaces as an active pattern; the hot loop hoists its vocabulary
+
+**Pattern one — where the move alphabet actually lives in code.** The model plane deliberately
+has no row-move values (§11 item 3 — the data δ is substrate-fused). But the *measurement*
+plane reads the substrate's ledger by interpreting `__$operation` codes — today in **five
+files** (`ReadSide.fs`, `LifecycleStore.fs`, `Deploy.fs`, `CdcMeasureTests.fs`,
+`ReverseLegScaleTests.fs`). N ≥ 3: the house's own active-pattern trigger is **fired**, here
+and only here:
+
+```fsharp
+/// The data-plane move alphabet, at the one place it is a value in this
+/// engine: reading the CDC ledger. 1=delete 2=insert 3=update-before 4=update-after.
+let (|CdcDelete|CdcInsert|CdcUpdateBefore|CdcUpdateAfter|Unknown|) (op: int) = ...
+```
+
+Match sites read like the ontology's §4.3; exhaustiveness is compiler-checked; the pinned
+per-operation norm weights (`CdcMeasureTests.fs:79-153`) become pattern-mediated instead of
+integer-literal-mediated. This is the match-macro device earning its place by the book.
+
+**Pattern two — hoist the vocabulary, stream the positions.** The §9.5 carrier's payoff at
+the hottest loop, consistent with the A40 `*With` shape already at `SurrogateRemap.fs:205`
+(the lookup is injected; the basis removes per-row name resolution):
+
+```fsharp
+// before — per row, 100k+ times: Map<Name,string> lookups per FK column
+// after  — once per kind:
+let fkOrdinals : int[] = RowBasis.ordinalsOf basis fkTargets
+// per row: an array walk — no name resolution, no per-cell Map lookups
+let remapQuantum (find: int64 -> int64 option) (q: RowQuantum) : RowQuantum =
+    { Cells = q.Cells |> Array.mapi (fun i c ->
+        if Array.contains i fkOrdinals then Remap.cell find c else c) }
+```
+
+**Converges:** with `PackedSurrogateRemap` (already int64-packed) — after both moves, the
+inner loop is integers and array indices end to end; the typed vocabulary lives entirely at
+the stream header. **Status:** gated on harness slice 2, like everything at this grain.
+
+#### 9.8.9 Value grain — the proof-token table (the house derive-macro, enumerated)
+
+Every private-constructor law in the reified future, in one place — the existing ones first,
+because the pattern's authority is its precedents:
+
+| Token | The law the constructor enforces | Status |
+|---|---|---|
+| `ArtifactByKind<'e>` | keyset(artifact) = allKinds(catalog) — T11 unforgeable | shipped (`ArtifactByKind.fs:69-82`) |
+| `CatalogDiff` (private) | the four partitions cover and don't overlap (A38) | shipped (`CatalogDiff.fs:192`) |
+| `TableId`/`SchemaName`/`ColumnName` | non-blank, ≤128-char SQL identifiers | shipped (`Coordinates.fs`) |
+| `CaptureJournal` (private) | the file path is the marker digest — no unaddressed journal | shipped (`CaptureJournal.fs:40`) |
+| `Verified<'entry>` | this grain's admission check passed | §9.1 |
+| `ParallelSafe<'a>` | within-level independence — converts `DataEmissionComposer.fs:389`'s comment-borne contract ("parallel-safety is the load-bearing contract for `Deploy.executeBatchParallel` consumers") into a compiler fact, minted only by `TopologicalOrder.levels` (`TopologicalOrder.fs:238`) | §9.1 |
+| `Gated<'plan>` | every pre-flight passed before any mutation | §9.8.3 |
+| `RowBasis` | basis order = attribute order; ordinals total over the kind | §9.5 |
+| `StageName` / `RunSpine` | non-blank, dot-free; declared set distinct and fixed | §9.3 |
+| `RunId` | content-addressed from the input digests | §9.4 |
+
+The paragraph that names the device: this is F#'s newtype-plus-derive. Where Rust generates
+the invariant's enforcement with a proc-macro and carries it in the type, F# needs no
+generation step — `private` + the smart constructor + `[<RequireQualifiedAccess>]` *is* the
+expansion, written once by hand, and the constructor's property test is the only "derive."
+The module boundary is the metaprogram. Note what the table shows about scale: the same
+three-line device carries a 128-character string rule at the bottom of the tower and the
+entire parallel-deploy safety argument near the top. That uniformity — one enforcement idiom
+at every grain — is itself a holon-law (§4) instance.
+
+#### 9.8.10 Expression grain — the builder family and the stacking license
+
+The CE builders, enumerated with their laws — because in this house a builder without laws in
+the same commit is forbidden:
+
+| Builder | Channel | Its laws (same-commit) | Status |
+|---|---|---|---|
+| `lineage { }` | LineageEvent list, `@` | monad triple + A24 chronological bind + H-001 CE-equivalence | shipped |
+| `diagnostics { }` | DiagnosticEntry list, `@` | monad triple + H-002 CE-equivalence | shipped |
+| `lineageDiagnostics { }` | the WriterT-stacked product monoid | layer-wise triples; Kleisli laws inherited | shipped |
+| `staged { }` | time + envelopes + display | declared⇔executed; stage additivity; live≡post-hoc | R2 |
+| *(a third writer)* | *(e.g. a perf-trace or tolerance channel)* | A24-amended pre-licenses the stack: "stacking it atop `LineageDiagnostics` inherits A24 by the same construction — the chapter-close ritual adds the new writer's monad-law triple in the same commit" | refused until a consumer |
+
+The last row is the elegant part and the disciplined part at once: the *license to extend* is
+already written into the algebra (A24-amended names the construction and the obligations),
+so a future channel costs one stacking plus one law-triple — and is still refused until
+something consumes it. The extension point exists as a theorem, not as code.
+
+#### 9.8.11 The convergence map — declare once, project many
+
+The single deepest integration the corpus reveals. Four systems — three shipped, one reified
+— share exactly one shape: **a site declares a keyed unit once; a central catalog projects
+metadata, execution, and rendering from that single definition; a bidirectional totality test
+guards every projection.**
+
+| System | The declared unit | The projections | The totality guarding it |
+|---|---|---|---|
+| `TransformRegistry` | `ChainStep` in `chainSteps` (one list) | `all` (metadata) + `allChainSteps` (execution) | `registered ⇔ executed` (E0–E4) |
+| the Voice | `Code → Copy` in `Voice.fs` | `TtyRenderer` (human) + NDJSON (machine) | `code ⇔ copy` |
+| the config plane | flow fields in `projection.json` | `MovementSpec` (one resolved plan) | `expressible ⇔ reachable` (A44) |
+| the spine (R2) | `StageName` in `RunSpine` | Bench scopes + envelopes + the Watch board | `declared ⇔ executed` |
+
+This is the Rust-macro analogy made fully precise. A proc-macro takes one annotation and
+expands to N artifacts that cannot drift *because they share a definition site*; the house
+achieves the identical guarantee with a list of records, projection functions, and a property
+test — expansion cost zero at runtime, drift caught at test time rather than compile time,
+which is the honest F# trade and a good one. **The falsifiable prediction this map mints:**
+the next declare-once system to appear is the perf harness's scenario catalog
+(`PerfScenario` list, `PERF_HARNESS.md` §3.2 — one list already designed to project names,
+tags, KeyLabels, and runs). When it ships it should be *recognized* as the fifth instance of
+this shape — same totality test, same single definition site — and if its builder instead
+invents a new shape, this section has failed as a map and should be amended to say why.
+
+---
+
+**The corpus's own accounting.** Every entry above carries a trigger status; the discipline is
+that status, not the sketch. *Shipped* entries cite their sites. *Fired* entries (the CDC
+active pattern; the Meter decoration) have their N≥3 or two-consumer evidence named inline.
+*Armed* entries (the resumable fold; the gate token; the spine programs) name the queued
+consumer that fires them. *Predicted* entries (the selector family's third instance; the
+fifth declare-once system) are falsifiable forecasts about the codebase's own trajectory —
+each one a place a future agent can mark this corpus right or wrong. An entry built while its
+status still reads "armed" violates §2 P2 and the corpus alike; the collapse record at the
+top is the base rate that says the patience pays.
+
 The dream is disciplined: every construct in this section is one of the codebase's own moves
 applied at one more grain. Counterexample condition for the whole section: any sketch whose
 precedent column would be empty is speculation, and must wait for its trigger — per §2 P2,
@@ -1053,6 +1435,22 @@ strongest single anchor found in the amendment's verification pass: the codebase
 wrote the state-vs-path distinction in its own words — `ChangeManifest.fs:97`, "churn — work
 done that did not move the net position," with a green witness — so the thermodynamic reading
 was latent in the corpus before this document named it.
+
+**Amendment claims (fourth pass, §9.8 — the pattern corpus).** The corpus's epistemic spine
+is its trigger-status taxonomy: every entry self-classifies as shipped / fired / armed /
+predicted, and the classification is the claim. Verified in source this pass: the
+`StrategyEvaluator` and `FanOutConfig` shapes (`Composition.fs:71-133`);
+`TopologicalOrder.levels : TopologicalOrder -> SsKey list list` (`TopologicalOrder.fs:238`);
+the LINT-ALLOW at `DataEmissionComposer.fs:389` that already names parallel-safety as "the
+load-bearing contract for `Deploy.executeBatchParallel` consumers" (the `ParallelSafe` token's
+strongest grounding — the contract exists today as a comment); `remapRowFksWith`'s injected-
+lookup shape (`SurrogateRemap.fs:205`, consumed with `PackedSurrogateRemap.tryFind` at
+`TransferRun.fs:247`); the five files interpreting CDC operation codes (the N≥3 evidence that
+fires the active-pattern trigger); and the collapse record's site counts. The two *predicted*
+entries — the selector family's third instance forcing (and likely still refusing) the
+generalization question, and the harness scenario catalog arriving as the fifth declare-once
+system — are forecasts about the codebase's trajectory, falsifiable by the next two quarters
+of DECISIONS entries.
 
 **Amendment claims (third pass, §9 — the reification).** The code of §9 is signature-grade
 commitment, sketch-grade body. Every named precedent was verified in source during this pass:
