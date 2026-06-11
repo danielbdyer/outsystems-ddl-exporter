@@ -1,7 +1,11 @@
 # PERF_HARNESS — the before/after measurement fleet (architecture + backlog)
 
-**Status (2026-06-11).** Design committed; build not started. This document is
-the architectural source of record for the perf harness. The recommendations
+**Status (2026-06-11, amended same day).** Design committed; **slices 0–2 BUILT**
+(builder session 1, PR #596: the spine + `ssdt-emit-only`, the seed-MERGE pair —
+cliff REFUTED, the ReadSide drain — Q-gate OPEN; results in §5; both verdicts
+independently replicated by the follow-on session). Slices 3–5 remain open,
+sequenced by `CONSTELLATION_BACKLOG.md` (H4/H5/H6, behind its H7). This document
+is the architectural source of record for the perf harness. The recommendations
 in §3 are RESOLVED (home: test project + shell orchestrator; comparison:
 single-run deterministic delta with a named promotion trigger) — an agent
 building the harness follows §3/§4 without re-litigating them; a re-open

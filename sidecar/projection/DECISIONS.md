@@ -234,6 +234,7 @@ table before continuing.
 | **OSSYS adapter User-kind identification surface** | 2026-05-11 (Chapter 4.2 close) | A real OSSYS-source-V2-target reflow workflow surfaces with User-FK columns operators need rewritten. At cash-out time the OSSYS adapter gains a `userKindIdentity : Catalog -> SsKey option` resolution surface (per V1 reference `ModelUserSchemaGraphFactory.GetSyntheticUserForeignKeys`); references whose `TargetKind` matches the identified user kind get `IsUserFk = true`. Slice η emitter integration (MigrationDependenciesEmitter rewrite path) is structurally complete today; the gap is at the adapter boundary only. | OSSYS adapter currently sets `IsUserFk = false` for every Reference; slice η rewrite is operationally a no-op until the adapter resolves real User-FKs. See `2026-05-11 — Chapter 4.2 close` entry. |
 | **CSV adapter for `ManualOverride` (UserMapLoader)** | 2026-05-11 (Chapter 4.2 close) | A real operator workflow demands the file-format pickup path. Pre-scope §3 names `Projection.Adapters.UserMap.UserMapLoader` (CSV: `SourceUserId,TargetUserId,Rationale`). Slice ε ships `ManualOverride` consuming a programmatic `Map<SourceUserId, TargetUserId>`; I/O adapter at the boundary is deferred. Mirrors the chapter 4.1.B slice ε NDJSON-adapter deferral — sibling chapter, same shape. | No I/O adapter today; ManualOverride works via programmatic construction. See `2026-05-11 — Chapter 4.2 close` entry. |
 | **`Attribute.Default` field + DEFAULT constraint emission (chapter 4.1.A slice 7-default)** | 2026-05-11 (Chapter 4.1.A slices 6/7/8 disposition) | The SnapshotRowsets adapter (chapter 3.2) surfaces default-constraint columns from `sys.default_constraints` (the rowset variant materializes default expressions per column). Pre-scope §8 slice 7 names the IR widening (`Attribute.Default : string option`) + emission of `CONSTRAINT [DF_<Table>_<Col>] DEFAULT (<expr>)`. **107+ Attribute literal-construction sites** would need updating with `Default = None` under the record-extension empirical-test discipline; deferred per IR-grows-under-evidence until the rowset adapter surfaces real defaults. | `Tolerance.IgnoreDefaultNames = false` per pre-scope §4 line 214 documents the comparator's current acceptance posture; no consumer demands the field today. Slice 7's identity portion (`Attribute.IsIdentity`) shipped at chapter 3.1/3.2; only the default-constraint portion is deferred. |
+| **Staged-bulk MERGE shape + `chooseMergeShape` selector for emitted seed scripts** | 2026-06-11 (The perf-harness verdicts — the MERGE cliff REFUTED) | Static populations ≳100k rows/kind, where the measured ~2.5k rows/sec single-MERGE execute slope or per-statement memory matters. Demoted from stage-0 correctness to armed-perf by the H1 in-harness refutation (the `MERGE … USING (VALUES …)` derived-table form executes at 10k rows on SQL Server 2022; the 1000-row TVC cap binds `INSERT … VALUES` only — COUNT(*)-verified, replicated on a second host). Any future cut here carries the DeleteScope-correctness witness (`WHEN NOT MATCHED BY SOURCE` cannot be naively chunked) and the before/after via `perf-harness.sh run seed-merge-execute`. | Armed-perf; no consumer at this scale today. See `2026-06-11 — The perf-harness verdicts` entry; evidence `PERF_HARNESS.md` §5; plan `CONSTELLATION_BACKLOG.md` §6 item 9. |
 | **`Kind.Description` + `Attribute.Description` fields + extended-properties emission (chapter 4.1.A slice 8)** | 2026-05-11 (Chapter 4.1.A slices 6/7/8 disposition) | The SnapshotRowsets adapter surfaces description columns (`MS_Description` extended properties) from `sys.extended_properties`. Pre-scope §8 slice 8 names the IR widening (`Kind.Description : string option` + `Attribute.Description : string option`) + emission of `EXEC sys.sp_addextendedproperty @name=N'MS_Description', ...` statements per V1's `ExtendedPropertyScriptBuilder.cs:91-95`. **107+ Attribute literal-construction sites** + Kind literal-construction sites would need updating with `Description = None`; deferred per IR-grows-under-evidence until the rowset adapter surfaces real descriptions. | `Tolerance.IgnoreExtendedProperties = true` per pre-scope §4 line 213 documents the comparator's current acceptance posture; no consumer demands the field today. The V1↔V2 differential test treats extended-property absence as a deliberate divergence. |
 
 **Discipline.** Each deferral here was logged as the right call **at the
@@ -21516,3 +21517,41 @@ remains reachable through this file's index and the archive.
 chapter close finds two consecutive §4 entries stale, the restatement
 exception itself is failing and the next rebuild should consider
 generating §4 from a structured source.
+
+## 2026-06-11 — The perf-harness verdicts: the MERGE cliff REFUTED; the Q-gate OPENED (builder session 1, replicated by session 2)
+
+The first three cards of `CONSTELLATION_BACKLOG.md` executed (PR #596:
+H0 the harness spine, H1 the seed-MERGE pair, H3 the ReadSide drain),
+and the instrument's first two runs each falsified a documented
+prediction — recorded here so the trigger registry carries the
+consequences, not just the program documents (the gap is named at the
+backlog's RI-12).
+
+**Verdict 1 — the >1000-row MERGE cliff is REFUTED.** The emitted
+`MERGE … USING (VALUES …)` derived-table form executes at 1k/2.5k/10k
+rows/kind on SQL Server 2022 (COUNT(*)-verified `.ok` samples;
+`renderMerge.rows`=10000 at Count=1 proving the single-statement form;
+zero `.cliff` samples). The 1000-row TVC cap binds `INSERT … VALUES`
+only. Slope ~2.5k rows/sec at 10k. The staged-bulk shape +
+`chooseMergeShape` selector (CONSTELLATION §9.8.4/§9.8.6) demote from
+stage-0 correctness to **armed-perf** — the deferral row is added to
+the Active deferrals index above with its wake condition. Replicated
+2026-06-11 by the follow-on session on a second host (`.ok`=10000,
+zero cliff). Re-run with `scripts/perf-harness.sh run
+seed-merge-execute`; do not re-open the cliff as a correctness
+question.
+
+**Verdict 2 — the R4/Q-track gate is OPEN.** The §3.6 `materialize`
+label (one aggregated sample per stream, inside `readRowsStream`'s
+pull) attributes the per-row carrier build at 4.77 µs/row = 42% of
+stream wall at 100k×12 warm (end-to-end 11.40 µs/row); replicated at
+4.83 µs/row = 40.1% (12.05 end-to-end) on a second host. The row
+carrier is confirmed as the dominant non-wire cost; the backlog's
+stage 5 (RowQuantum/RowBasis, with the name-sorted hash permutation
+and the byte-identical canary witness) may proceed under the
+before/after protocol.
+
+Evidence of record: `PERF_HARNESS.md` §5 slice-1/slice-2 results
+blocks; `bench/perf/` artifacts are gitignored by design, so the
+witnesses are the re-runnable scenarios themselves. No perf-gate
+baseline moved.
