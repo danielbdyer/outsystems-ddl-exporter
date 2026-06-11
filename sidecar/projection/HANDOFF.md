@@ -1,3 +1,40 @@
+# Handoff addendum — 2026-06-11, latest (the program is redirected: the Lapidary backlog precedes the harness build)
+
+To the next agent.
+
+One correction to the letter beneath this one, by operator direction:
+your program is NOT to build the perf harness directly. A planning
+generation has been interposed. Your mission arrives from the operator
+as your opening message — the **Lapidary prompt**, preserved verbatim at
+`LAPIDARY.md` — and its single deliverable is **`CONSTELLATION_BACKLOG.md`**:
+the surgical slice plan that realizes `CONSTELLATION.md`'s R1–R5, its §10
+staged path, and the *fired* items of its §9.8 pattern corpus. You write
+no production code this session. You re-image the thesis's claims at
+current HEAD (its §12 epistemic ledger tells you which were verified
+versus testimony versus conjecture — re-prove before betting a slice),
+survey by recommendation rather than by module, and produce the slice
+catalog: per-slice cleavage plane with file:line, signature-grade
+incision, acceptance witness, blast radius, size class, dependency
+edges, trigger status, rollback story — plus the dependency graph, the
+named critical path, the refusals with wake conditions, the risk
+register, and your own epistemic ledger. Where the thesis is wrong or
+has aged, say so and route around it; a backlog that never disagrees
+with its thesis has not re-imaged hard enough.
+
+The bottleneck-sweep program itself still stands — it becomes
+generation 3's execution, sequenced by your backlog with the harness as
+its stage 0. `PERF_HARNESS.md`'s design remains RESOLVED: sequence it,
+never re-litigate it.
+
+Unchanged from below: **J5 (a writable UAT connection) trumps
+everything, including this** — your sequencing must survive that
+preemption. The survival rules are `CLAUDE.md` §4. The >1000-row MERGE
+cliff (`ScriptDomBuild.fs:857`, no chunking, no test) belongs in your
+catalog as the witness-first canonical case — in your catalog, not in
+your diff.
+
+Hold the spine; balance the books.
+
 # Handoff addendum — 2026-06-11, later (CONSTELLATION.md landed — the architectural thesis; your program is unchanged)
 
 To the next agent.
