@@ -38,14 +38,15 @@ stage spine, and it subsumes D5/D6 and the `REPORTING_HORIZON.md`
 run-ledger — check the thesis §8/§9/§10 before opening any of those
 backlog items independently.
 
-One more surface, NOT yet canon: **`CLAUDE.proposed.md`** — a from-scratch
-rebuild of the navigation file (point-don't-restate; a twelve-item
-survival list as the only sanctioned restatement; the trigger-governed
-F# surface replacing the drifted feature table — the incumbent's
-verified drift is enumerated in the proposal's header). It takes effect
-ONLY via operator adoption + a DECISIONS entry amending the 2026-05-22
-reading-order decision. Until then the incumbent `CLAUDE.md` governs;
-do not treat the proposal as the index.
+And the navigation file itself was rebuilt this session: **`CLAUDE.md`
+is new** (operator-adopted; `DECISIONS 2026-06-11 — CLAUDE.md rebuilt
+from scratch`). Point-don't-restate; a twelve-item survival list is the
+only sanctioned restatement (re-verified at chapter close); the F#
+surface is trigger-governed instead of a hand-maintained table. The
+predecessor is archived at `CLAUDE_ARCHIVE_2026_06_11.md` — provenance
+only, never current state. If you find the new index wrong anywhere,
+fixing it in the same commit as the discovery is now standing law (its
+§8).
 
 Hold the spine; balance the books.
 

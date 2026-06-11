@@ -21457,3 +21457,62 @@ capability-descent ladder. Re-open triggers: streaming gains table-subset
 / wipe support (the fallback conditions shrink toward empty and the
 selector arms retire); a measured regime where materialized beats
 streaming (none observed — would re-open the dominance premise).
+
+## 2026-06-11 — CLAUDE.md rebuilt from scratch: point-don't-restate (amends 2026-05-22 — CLAUDE.md reading-order update)
+
+**Resolved (operator-approved this date).** The navigation file is rebuilt
+from scratch and adopted. The predecessor is archived verbatim at
+`CLAUDE_ARCHIVE_2026_06_11.md` (provenance only); the interim
+`CLAUDE.proposed.md` is deleted on adoption — one index, no second copy.
+
+**The question this resolves.** The predecessor had drifted into a
+substitute rather than a pointer, violating its own charter line ("it
+does not substitute for the canonical documents — it points at them").
+Verified drift at adoption: its `AsyncStream` feature row still carried
+the combinator surface retired 2026-05-30 (the live surface is
+`nextBatch`/`toList`/`probe`, `AsyncStream.fs:23-84`); its canonical
+`dumpBench` pointer cited pre-decomposition `Program.fs` (now
+`OperatorConsole.fs:54`); its T11 load-bearing note still read
+"aspirational — three Π's return string" (structural via
+`ArtifactByKind.create` since chapter 3.5); hand-written counts (axiom
+entries; Bench line ranges) were stale. The failure mode is structural,
+not editorial: restated detail in an index drifts at the rate of the
+codebase, and the index is the one surface every agent reads first.
+
+**The design rules now binding on CLAUDE.md:**
+1. It points; it restates nothing — with ONE exception, the §4 survival
+   list (rules that have bitten agents within their first session), each
+   entry re-verified at chapter close BECAUSE it is a restatement.
+2. Any other restated count, line number, or feature inventory in the
+   file is a first-class defect: fix in the same commit as the discovery,
+   and say so in the commit message.
+3. The reading order is three-tiered (always-read / per-area /
+   provenance) with the latest-first rule stated once; Tier 1 is
+   KICKOFF → HANDOFF (top letter) → THE_USE_CASE_ONTOLOGY →
+   DEBRIEF_2026_06_02 + CONFIRMED_BACKLOG_2026_06_09 → PERF_HARNESS.
+   `CONSTELLATION.md` is the Tier-2 architectural-future surface.
+   NORTH_STAR / VISION move to provenance (already indexed by the
+   masterwork's §6.2).
+4. The F# feature surface is governed by triggers, not a hand-maintained
+   table: the code is the inventory; this file's Active deferrals index
+   is the trigger registry; `CONSTELLATION.md` §9.7 tracks
+   fired-awaiting-gate promotions.
+5. Aspiration T-IV: prefer generated projections (the matrix-status
+   precedent) over hand-written status in the index.
+
+**Harvest at adoption** (predecessor content carried into the rebuild
+rather than dropped): the CDC test-isolation rule
+(`IsolatedContainerFixture`; `sp_cdc_enable_db` flips instance-wide
+state) joined survival rule 1; the handoff-letter shape (forward-looking,
+second-person) joined rule 10; the executable-axioms same-commit rule and
+the T-30/T-15 gates joined the standing-law list; audit-during-validation,
+the bench three-candidate protocol, the sibling-wrapper distinguishing
+test, discover-once/derive-pure, and the VO-leak grep joined the style
+gravities; `V2_DRIVER.md`/`BACKLOG.md`/`PLAYBOOK.md` and the
+chapter-rhythm entries joined Tier 2. Everything else in the predecessor
+remains reachable through this file's index and the archive.
+
+**Re-open trigger.** If the survival list grows past ~15 entries or a
+chapter close finds two consecutive §4 entries stale, the restatement
+exception itself is failing and the next rebuild should consider
+generating §4 from a structured source.
