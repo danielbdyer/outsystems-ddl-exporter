@@ -155,6 +155,9 @@ module StaticSeedsEmitter =
         (typedRows: Map<Name, SqlLiteral> list)
         : string =
         use _ = Bench.scope "emit.staticSeeds.renderMerge"
+        // PERF_HARNESS §3.6 label 2: rows per rendered MERGE — makes rows/sec
+        // derivable from the <label>/<label>.rows pair in harness diffs.
+        Bench.recordSample "emit.staticSeeds.renderMerge.rows" (int64 typedRows.Length)
         let table : TableId =
             { Schema = k.Physical.Schema
               Table  = k.Physical.Table; Catalog = None }

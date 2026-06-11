@@ -1,3 +1,126 @@
+# Handoff addendum — 2026-06-11, builder session 1 (H0+H1+H3 landed; the cliff is REFUTED; the Q-gate is OPEN)
+
+To the next agent.
+
+You inherit a running instrument and two answers. Builder session 1
+closed three cards off `CONSTELLATION_BACKLOG.md`:
+
+**H0** — the harness spine is LIVE (`PerfHarnessScenarios.fs` +
+`scripts/perf-harness.sh list|run|capture|diff`; gate
+`PROJECTION_RUN_PERF_HARNESS=1`; artifacts at `bench/perf/<name>/`;
+slice-0 acceptance green: zero-Δ double-capture, counts byte-identical,
+fleet absent from `test.sh docker`).
+
+**H1** — **the MERGE cliff is REFUTED.** The emitted
+`MERGE … USING (VALUES …)` executes at 1k/2.5k/10k rows/kind on SQL
+Server 2022 (COUNT(*)-verified `.ok` samples; `renderMerge.rows`=10000
+at Count=1 proves the single-statement form; the 1000-row TVC cap binds
+INSERT…VALUES only). Slope ~2.5k rows/sec @10k. Card H2 is CLOSED as
+no-correctness-defect; staged-bulk demoted to armed-perf. Do NOT
+re-open the cliff; the witness is in `bench/perf/seed-merge-execute-*`
+and PERF_HARNESS §5.
+
+**H3** — the ReadSide drain + the §3.6 `materialize` label (ONE
+aggregated sample per stream, inside `readRowsStream`'s pull —
+`ReadSide.fs`, boundary documented at the accumulator). In-harness at
+100k×12: **11.40 µs/row end-to-end; materialize 4.77 µs/row = 42% of
+stream wall**. The R4 premise is confirmed: **the Q-track gate is
+OPEN** (backlog stage 5, cards Q1–Q4 — RowBasis with the name-sorted
+hash permutation first; the canary-hash byte-identity witness is the
+acceptance).
+
+Your queue, in the order I'd take it: the F-cards as warm-up (F1
+digest twins, F2 Static-strip + the Preflight over-erasure fix, F3
+case-policy fork, F4 journal unit tests, F5 profiler drain — all S,
+all independent), then **Q1** under the open gate, then H4/H5/H6 to
+finish the measurement substrate. The S-track (spine) remains open in
+parallel. J5 still preempts everything.
+
+Operational notes: the warm container is up on :11433
+(`warm-sql.sh restart` if conn failures batch); `perf-harness.sh
+capture before <filter>` is your before-ritual for ANY perf-touching
+card; the pure pool was green at every commit this session (66-77s
+warm). The harness's first two runs each falsified a documented
+prediction — keep letting it.
+
+Hold the spine; balance the books; keep the patient breathing.
+
+# Handoff addendum — 2026-06-11, the Lapidary close (the backlog exists; you are generation 3, the builder)
+
+To the next agent.
+
+You build. The plan is **`CONSTELLATION_BACKLOG.md`** — thirteen verified
+cleavage planes, thirty-six cards across six stages, a named critical
+path (H0 → H1 → H2: the harness spine, then the MERGE-cliff BEFORE
+witness, then the cliff fix as a pure Statement-stream rewrite), and
+five corrections to the thesis it realizes. Read its §1 first: the
+re-imaging found `CONSTELLATION.md` wrong in five places, most notably
+that **the Run aggregate already exists** (`Run.fs`, shipped 2026-06-05,
+test-only wiring — R1 is completion-and-wiring, not creation) and that
+the two ledgers are **duals, not twins** (the journal stores quanta, the
+episode store stores snapshots; the corrected `LedgerSpec` splits
+WriteAdmit from ResumeAdmit). Trust the backlog over the thesis where
+they differ; trust the code over both.
+
+Your first three moves are Stage 0's: H0 (the harness spine,
+`PERF_HARNESS.md` §4 slice 0, design RESOLVED — build it, don't
+re-litigate it), then H1 (the cliff witness — capture the failure BEFORE
+any fix), then F1–F5 as interleave cards (the digest twins at
+`PhysicalSchema.fs:333/593` are byte-identical and five sites scatter
+four hex idioms; the Static-strip triplication includes a latent
+over-erasure at `Preflight.fs:126`; the TransferSpec/CatalogResolution
+case divergence is a real semantic fork). Every card carries its
+witness, size, deps, and rollback; no card may leave the canary red at
+a commit boundary; behavior changes are witness-first, always.
+
+Unchanged and binding: **J5 preempts everything** — the cards are sized
+so preemption strands nothing. The survival rules are `CLAUDE.md` §4.
+The armed items (§6 of the backlog: journal compaction with its ~9-10GB
+numbers, the provenance-typed Static, envelope spill, wavefronts) have
+named wake conditions — recognize them; do not pre-build them. Per win:
+before/after numbers in the commit message, the bench protocol's
+three-candidate shape where a perf claim is made, and the perf-gate
+baseline re-recorded only with its DECISIONS amendment.
+
+Hold the spine; balance the books; keep the patient breathing.
+
+# Handoff addendum — 2026-06-11, latest (the program is redirected: the Lapidary backlog precedes the harness build)
+
+To the next agent.
+
+One correction to the letter beneath this one, by operator direction:
+your program is NOT to build the perf harness directly. A planning
+generation has been interposed. Your mission arrives from the operator
+as your opening message — the **Lapidary prompt**, preserved verbatim at
+`LAPIDARY.md` — and its single deliverable is **`CONSTELLATION_BACKLOG.md`**:
+the surgical slice plan that realizes `CONSTELLATION.md`'s R1–R5, its §10
+staged path, and the *fired* items of its §9.8 pattern corpus. You write
+no production code this session. You re-image the thesis's claims at
+current HEAD (its §12 epistemic ledger tells you which were verified
+versus testimony versus conjecture — re-prove before betting a slice),
+survey by recommendation rather than by module, and produce the slice
+catalog: per-slice cleavage plane with file:line, signature-grade
+incision, acceptance witness, blast radius, size class, dependency
+edges, trigger status, rollback story — plus the dependency graph, the
+named critical path, the refusals with wake conditions, the risk
+register, and your own epistemic ledger. Where the thesis is wrong or
+has aged, say so and route around it; a backlog that never disagrees
+with its thesis has not re-imaged hard enough.
+
+The bottleneck-sweep program itself still stands — it becomes
+generation 3's execution, sequenced by your backlog with the harness as
+its stage 0. `PERF_HARNESS.md`'s design remains RESOLVED: sequence it,
+never re-litigate it.
+
+Unchanged from below: **J5 (a writable UAT connection) trumps
+everything, including this** — your sequencing must survive that
+preemption. The survival rules are `CLAUDE.md` §4. The >1000-row MERGE
+cliff (`ScriptDomBuild.fs:857`, no chunking, no test) belongs in your
+catalog as the witness-first canonical case — in your catalog, not in
+your diff.
+
+Hold the spine; balance the books.
+
 # Handoff addendum — 2026-06-11, later (CONSTELLATION.md landed — the architectural thesis; your program is unchanged)
 
 To the next agent.
