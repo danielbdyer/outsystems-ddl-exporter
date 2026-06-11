@@ -1,3 +1,40 @@
+# Handoff addendum — 2026-06-11, later (CONSTELLATION.md landed — the architectural thesis; your program is unchanged)
+
+To the next agent.
+
+One new canonical surface sits at the projection root: **`CONSTELLATION.md`**
+(2026-06-11) — the architectural thesis for where this codebase is headed,
+derived from the code at HEAD by an eight-sector reconnaissance plus
+source spot-checks. Read it AFTER `PERF_HARNESS.md`, not instead of it: its
+§6 migration path deliberately anchors on the harness backlog, so **your
+program is unchanged — build the perf harness first** (`PERF_HARNESS.md` §4,
+slice 0 onward). The thesis names the system's organizing principle (the
+Conservation Ledger: torsor partial sums, fingerprinted, append-only — at
+episode grain `LifecycleStore`, at chunk grain `CaptureJournal`, the same
+shape built twice independently; zero cross-references, verified),
+adjudicates the streaming question (confirmed as the dominant realization
+carrier; refuted as a core data model — do not rebuild the retired
+`AsyncStream` combinator surface), and commits to five recommendations
+R1–R5, each with a counterexample condition.
+
+The one correctness-adjacent finding to hold while you build the harness:
+`buildMergeStatementCore` adds every row to a single `InlineDerivedTable`
+with no chunking (`ScriptDomBuild.fs:857`) and NO test covers the
+>1000-row VALUES boundary — harness slice 1 answers it with a BEFORE
+witness before any fix lands.
+
+What not to re-litigate from the thesis without a DECISIONS amendment: the
+stream-wrapper refusal (its §7.1), the Torsor-typeclass refusal (§7.2,
+reaffirming `WAVE_6_ALGEBRA.md` §12.3), and runtime-adaptive realization
+selectors (§7.4 — selectors stay pure over committed priors). R1 (the Run
+as a value — the one aggregate with no section/retraction pair) is the
+largest new structural commitment; it is staged AFTER the harness and the
+stage spine, and it subsumes D5/D6 and the `REPORTING_HORIZON.md`
+run-ledger — check the thesis §5/§6 before opening any of those backlog
+items independently.
+
+Hold the spine; balance the books.
+
 # Handoff addendum — 2026-06-11 (the realization selector closed the reverse-leg arc; your program is the before/after bottleneck sweep)
 
 To the next agent.

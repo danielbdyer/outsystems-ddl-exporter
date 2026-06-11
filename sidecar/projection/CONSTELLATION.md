@@ -288,7 +288,9 @@ Every load-bearing aggregate in the system round-trips: the Catalog (codec), the
 keyset (T11), the config (A44), the copy (code⇔copy), the registry (registered⇔executed), the
 episode chain (FTC). The **run** does not. A run's truth is scattered across four sinks with
 four lifecycles: `LogSink` envelopes (live, subscriber-pushed), `BenchSink` JSON (timestamped
-filenames — wall-clock-named, not content-addressed, `BenchSink.fs:54`), the `CaptureJournal`
+filenames — wall-clock-named, not content-addressed; the wall-clock there is a *deliberately*
+reified non-determinism boundary per its LINT-ALLOW, `BenchSink.fs:45-55`, so R1 relocates it
+into the Run value's recorded field rather than its address), the `CaptureJournal`
 NDJSON, and the `LifecycleStore` episode (plus the optional `RunLedger`). `REPORTING_HORIZON.md`
 §1 already states the law this violates: "one event stream, many renderings — every report is a
 *projection* of data we already produce." But a projection needs a value to project *from*, and
@@ -522,9 +524,20 @@ PERF_HARNESS resolved design and measured priors; the canonical corpus claims ci
 `WAVE_6_ALGEBRA.md`, `NORTH_STAR.md`, `THE_USE_CASE_ONTOLOGY.md`, `CRYSTALLINE_FORM.md`,
 `DEBRIEF_2026_06_02`, `HANDOFF.md`.
 
+**Verified post-commit** (second pass, source-read): the §3.1 independence claim —
+`CaptureJournal.fs` contains zero references to Episode/Lifecycle and
+`LifecycleStore.fs`/`Episode.fs` zero references to the journal; `CaptureJournal.digestOf`
+(SHA256 → 16 lowercase hex) and the `append`/atomic-commit comment ("a crash AFTER the append
+never re-executes the chunk and a crash DURING the chunk never journals it");
+`MigrationRun.recordVerified`'s refusal of unverified outcomes (verbatim, `MigrationRun.fs:271+`);
+`BenchSink.persistJson`'s reified wall-clock boundary; `Ingestion.collectInOrder` at
+`src/Projection.Adapters.Sql/Ingestion.fs:39`; and the absence of any emitter-side test at the
+>1000-row MERGE boundary (the only grep match in the test tree is a timing comment in
+`ReverseLegScaleTests.fs:8`).
+
 **Testimony, spot-check-consistent** (recon briefs whose load-bearing siblings verified
-clean): the per-file line numbers for `Deploy.fs`, `TransferRun.fs`, `CaptureJournal.fs`,
-`MigrationRun.fs`, `ReadSide.fs`, `LiveProfiler.fs`, `AxiomTests.fs`, `ManifestEmitter.fs`,
+clean): the per-file line numbers for `Deploy.fs`, `TransferRun.fs`,
+`ReadSide.fs`, `LiveProfiler.fs`, `AxiomTests.fs`, `ManifestEmitter.fs`,
 `RefactorLogEmitter.fs`; the four `AsyncStream` materialization sites; the baseline-canary
 label statistics.
 
