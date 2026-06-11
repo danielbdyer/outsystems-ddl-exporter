@@ -1,3 +1,42 @@
+# Handoff addendum — 2026-06-11, the Lapidary close (the backlog exists; you are generation 3, the builder)
+
+To the next agent.
+
+You build. The plan is **`CONSTELLATION_BACKLOG.md`** — thirteen verified
+cleavage planes, thirty-six cards across six stages, a named critical
+path (H0 → H1 → H2: the harness spine, then the MERGE-cliff BEFORE
+witness, then the cliff fix as a pure Statement-stream rewrite), and
+five corrections to the thesis it realizes. Read its §1 first: the
+re-imaging found `CONSTELLATION.md` wrong in five places, most notably
+that **the Run aggregate already exists** (`Run.fs`, shipped 2026-06-05,
+test-only wiring — R1 is completion-and-wiring, not creation) and that
+the two ledgers are **duals, not twins** (the journal stores quanta, the
+episode store stores snapshots; the corrected `LedgerSpec` splits
+WriteAdmit from ResumeAdmit). Trust the backlog over the thesis where
+they differ; trust the code over both.
+
+Your first three moves are Stage 0's: H0 (the harness spine,
+`PERF_HARNESS.md` §4 slice 0, design RESOLVED — build it, don't
+re-litigate it), then H1 (the cliff witness — capture the failure BEFORE
+any fix), then F1–F5 as interleave cards (the digest twins at
+`PhysicalSchema.fs:333/593` are byte-identical and five sites scatter
+four hex idioms; the Static-strip triplication includes a latent
+over-erasure at `Preflight.fs:126`; the TransferSpec/CatalogResolution
+case divergence is a real semantic fork). Every card carries its
+witness, size, deps, and rollback; no card may leave the canary red at
+a commit boundary; behavior changes are witness-first, always.
+
+Unchanged and binding: **J5 preempts everything** — the cards are sized
+so preemption strands nothing. The survival rules are `CLAUDE.md` §4.
+The armed items (§6 of the backlog: journal compaction with its ~9-10GB
+numbers, the provenance-typed Static, envelope spill, wavefronts) have
+named wake conditions — recognize them; do not pre-build them. Per win:
+before/after numbers in the commit message, the bench protocol's
+three-candidate shape where a perf claim is made, and the perf-gate
+baseline re-recorded only with its DECISIONS amendment.
+
+Hold the spine; balance the books; keep the patient breathing.
+
 # Handoff addendum — 2026-06-11, latest (the program is redirected: the Lapidary backlog precedes the harness build)
 
 To the next agent.
