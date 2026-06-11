@@ -54,7 +54,8 @@ bottleneck sweep on the measurement substrate `PERF_HARNESS.md` designs.
 4. `DEBRIEF_2026_06_02_ISOMORPHISM_CLIMB_AND_BACKLOG.md` + `CONFIRMED_BACKLOG_2026_06_09.md`
    — where the code stands against the target, and the living what's-left ledger. The
    masterwork is the destination; these are the distance.
-5. `PERF_HARNESS.md` — the active build program (design RESOLVED; the measurement fleet).
+5. `PERF_HARNESS.md` — the measurement fleet (design RESOLVED; slices 0–2 built) — and
+   `CONSTELLATION_BACKLOG.md`, the slice plan that sequences the active build program.
 
 **Tier 2 — before touching an area, read its surface:**
 
@@ -227,9 +228,10 @@ the predecessor's table drifted against the code within weeks (the case is enume
   deferred feature (reflection, object expressions, type providers, SRTP, free monads,
   `IObservable`) has its re-open trigger there or in the entry that deferred it.
 - **Currently-fired promotions awaiting their gates** are tracked in `CONSTELLATION.md` §9.7:
-  `[<Struct>]` scoped to the row-grain carrier (fired by measured allocation priors; gated on
-  harness slice 2) and units of measure scoped to the `Run.diff` delta surface (fired by
-  mixed quantities in one expression). Neither lands until its gate passes.
+  `[<Struct>]` scoped to the row-grain carrier (fired by measured allocation priors; **its
+  gate — harness slice 2 — passed 2026-06-11**, so it lands with the Q-track) and units of
+  measure scoped to the `Run.diff` delta surface (fired by mixed quantities in one
+  expression; still gate-held on R1d).
 - **Three metaprogramming devices are sanctioned** (builder / active pattern /
   private-constructor module); quotations and type providers stay out absent a trigger.
 

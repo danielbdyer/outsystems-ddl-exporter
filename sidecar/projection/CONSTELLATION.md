@@ -1141,6 +1141,15 @@ through the existing realizations, measured through the existing probes, selecte
 `chooseMergeShape`. Nothing about the deploy path changes. **Status:** stage-0 slice 1, with
 the BEFORE witness mandated first.
 
+> **[Amended 2026-06-11, post-publication.] The witness ran and the hypothesis is REFUTED**:
+> the emitted `MERGE … USING (VALUES …)` derived-table form executes at 10k rows/kind on SQL
+> Server 2022 (COUNT(\*)-verified, single statement; replicated on a second host) — the
+> 1000-row TVC cap binds `INSERT … VALUES`, not this form. `MergeShape.staged` and
+> `chooseMergeShape` demote to **armed-perf** (wake: ≳100k-row static populations; registered
+> in the DECISIONS Active-deferrals index). Evidence: `PERF_HARNESS.md` §5 slice-1 results;
+> re-run with `scripts/perf-harness.sh run seed-merge-execute`. Do not re-open the cliff as a
+> correctness question from this sketch.
+
 #### 9.8.7 Chunk grain — the resumable fold, with the prefetch inside
 
 **Pattern:** `writePlanStreaming`'s 208 densest lines contain a shape worth one name — at its
@@ -1276,6 +1285,17 @@ tags, KeyLabels, and runs). When it ships it should be *recognized* as the fifth
 this shape — same totality test, same single definition site — and if its builder instead
 invents a new shape, this section has failed as a map and should be amended to say why.
 
+> **[Amended 2026-06-11, post-publication — the prediction's outcome, per its own
+> instruction.]** The catalog shipped (H0, PR #596) as scattered gated `[<Fact>]`s plus a
+> grep-able `// PERF-SCENARIO:` comment registry — two enumeration surfaces, no single
+> definition list, no totality test. The prediction **partially failed**: the builder
+> reached for per-scenario facts (legitimate `--filter` ergonomics, §3.3) but did not
+> recognize the declare-once shape behind them. Why the map failed: the shape's four shipped
+> instances all live in `src/`, and nothing marked the *test tree* as territory where the
+> map applies. The repair is `CONSTELLATION_BACKLOG.md` card **H7** (reify `Scenarios.all`
+> + the registry⇔list⇔facts totality test); this note stands either way as the recorded
+> outcome of a falsifiable forecast.
+
 ---
 
 **The corpus's own accounting.** Every entry above carries a trigger status; the discipline is
@@ -1311,6 +1331,9 @@ the boundary today. The harness scenario must capture the failure as the BEFORE 
 the fix (chunked `INSERT … VALUES` into a stage table + one `MERGE … USING #stage`, preserving
 single-MERGE `DeleteScope` semantics — the alternative shape `PERF_HARNESS.md` §1.3c names)
 ships under the bench protocol.
+*[Amended 2026-06-11: slices 0–2 are built and slice 1's probe REFUTED the cliff — see the
+§9.8.6 amendment note. Stage 0's correctness leg closed with no defect; the "likely renders
+a MERGE SQL Server refuses" sentence above is the falsified prior, preserved as written.]*
 
 **Stage 1 — The isolating labels + ReadSide drain scenario** (harness slices 2–3): the
 `readside.rowstream.materialize` label, the batch-size sweep, the bulk100k re-confirmation of

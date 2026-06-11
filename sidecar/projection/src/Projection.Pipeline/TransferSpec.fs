@@ -77,14 +77,18 @@ module TransferSpec =
                 else
                     Result.success { Table = table; MatchColumn = col }
 
+    // Physical-identifier comparison is case-insensitive (SQL default
+    // collation) via the one named policy — `TableId.tableTextEquals` /
+    // `ColumnRealization.columnNameEquals`. N3: `CatalogResolution`'s
+    // physical lookups now share this name rather than re-deciding case.
     let private findKindByTable (table: string) (catalog: Catalog) : Kind option =
         Catalog.allModulesKinds catalog
         |> List.map snd
-        |> List.tryFind (fun k -> (TableId.tableText k.Physical).Equals(table, StringComparison.OrdinalIgnoreCase))
+        |> List.tryFind (fun k -> TableId.tableTextEquals table k.Physical)
 
     let private findAttributeByColumn (column: string) (kind: Kind) : Attribute option =
         kind.Attributes
-        |> List.tryFind (fun a -> (ColumnRealization.columnNameText a.Column).Equals(column, StringComparison.OrdinalIgnoreCase))
+        |> List.tryFind (fun a -> ColumnRealization.columnNameEquals column a.Column)
 
     /// Resolve parsed `ReconcileEntry`s against the reconstructed
     /// `Catalog` into the `Map<SsKey, ReconciliationStrategy>` that

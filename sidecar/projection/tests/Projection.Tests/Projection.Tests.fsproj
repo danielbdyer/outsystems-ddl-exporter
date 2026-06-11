@@ -141,6 +141,8 @@
     <Compile Include="ReconciliationTests.fs" />
     <Compile Include="ConnectionResolverTests.fs" />
     <Compile Include="TransferSpecTests.fs" />
+    <Compile Include="CaptureJournalTests.fs" />
+    <Compile Include="RowQuantumTests.fs" />
     <Compile Include="ModelResolutionTests.fs" />
     <Compile Include="MovementSurfaceTests.fs" />
     <Compile Include="MovementIsomorphismTests.fs" />

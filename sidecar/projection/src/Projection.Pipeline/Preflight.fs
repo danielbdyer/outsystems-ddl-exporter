@@ -120,10 +120,11 @@ module Preflight =
         task {
             // `LiveProfiler` skips `Modality.Static` kinds — but `ReadSide`
             // marks every row-carrying reconstructed table Static, which would
-            // skip exactly the kinds we need to probe. The pre-flight cares
-            // about the LIVE source data, not the modeling classification, so
-            // clear Modality before capture (it does not affect the SQL probe).
-            let profileCatalog = catalog |> Catalog.mapKinds (fun k -> { k with Modality = [] })
+            // skip exactly the kinds we need to probe. Strip the Static mark
+            // ONLY: the previous `Modality = []` form also erased authored
+            // marks (TenantScoped / SoftDeletable / SystemOwned / Temporal) —
+            // the N2 over-erasure, closed 2026-06-11.
+            let profileCatalog = catalog |> Catalog.stripStaticPopulations
             match! LiveProfiler.captureEvidenceCache cnn profileCatalog with
             | Error es -> return Result.failure es
             | Ok cache ->

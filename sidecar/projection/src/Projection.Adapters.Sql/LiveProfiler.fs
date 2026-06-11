@@ -72,6 +72,25 @@ module LiveProfiler =
     let private encode =
         Microsoft.SqlServer.TransactSql.ScriptDom.Identifier.EncodeIdentifier
 
+    /// Drain a reader's single result set, applying `onRow` per row. The
+    /// profiler-local twin of `ReadSide.drainRows`: same shape, same
+    /// per-row-effect contract, but `LiveProfiler` compiles before
+    /// `ReadSide` (`Projection.Adapters.Sql.fsproj`), so the kernel cannot
+    /// be shared — it is named once here instead of hand-rolled at each
+    /// drain (CONSTELLATION_BACKLOG plane N4; the cross-file kernel is the
+    /// §6 refusal, its wake a third drain consumer outside `ReadSide`).
+    let private drainReader
+        (reader: SqlDataReader)
+        (onRow: SqlDataReader -> unit)
+        : Task<unit> =
+        task {
+            let mutable hasMore = true
+            while hasMore do
+                let! more = reader.ReadAsync()
+                if more then onRow reader
+                else hasMore <- false
+        }
+
     /// Per-kind nullability reflection via `INFORMATION_SCHEMA.COLUMNS`.
     /// Returns a `Map<ColumnName, IsNullable>` for the kind's deployed
     /// table; one round-trip per kind regardless of column count.
@@ -102,19 +121,15 @@ module LiveProfiler =
             cmd.Parameters.AddWithValue("@table",  TableId.tableText kind.Physical)  |> ignore
             use! reader = cmd.ExecuteReaderAsync()
             let mutable acc : Map<string, bool> = Map.empty
-            let mutable keepGoing = true
-            while keepGoing do
-                let! advanced = reader.ReadAsync()
-                if advanced then
+            do!
+                drainReader reader (fun reader ->
                     let colName = reader.GetString(0)
                     let isNullable =
                         System.String.Equals(
                             reader.GetString(1),
                             "YES",
                             System.StringComparison.OrdinalIgnoreCase)
-                    acc <- Map.add colName isNullable acc
-                else
-                    keepGoing <- false
+                    acc <- Map.add colName isNullable acc)
             return acc
         }
 
@@ -258,16 +273,12 @@ module LiveProfiler =
                 cmd.CommandText <- cacheRowStreamSql maxRows kind
                 cmd.CommandTimeout <- CommandTimeoutPolicy.resolve ()
                 use! reader = cmd.ExecuteReaderAsync()
-                let mutable keepReading = true
-                while keepReading do
-                    let! advanced = reader.ReadAsync()
-                    if advanced then
+                do!
+                    drainReader reader (fun reader ->
                         for idx = 0 to (List.length kind.Attributes - 1) do
                             let cellValue =
                                 CachedValue.ofReaderValue (reader.GetValue idx)
-                            perColumnValues.[idx].Add cellValue
-                    else
-                        keepReading <- false
+                            perColumnValues.[idx].Add cellValue)
                 let columns =
                     kind.Attributes
                     |> List.mapi (fun idx attr ->

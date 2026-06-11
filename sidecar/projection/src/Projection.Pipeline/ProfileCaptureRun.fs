@@ -20,13 +20,6 @@ open Projection.Targets.Json
 [<RequireQualifiedAccess>]
 module ProfileCaptureRun =
 
-    /// Strip the `Static` modality `ReadSide` attaches, re-enabling live
-    /// profiling (see the module note).
-    let private stripStatic (c: Catalog) : Catalog =
-        Catalog.mapKinds
-            (fun k -> { k with Modality = k.Modality |> List.filter (function Static _ -> false | _ -> true) })
-            c
-
     /// Capture a full `Profile` from a live environment (read-only). Opens the
     /// connection in the `Source` role, reconstructs the catalog, strips the
     /// Static mark, and composes every Profile axis via `LiveProfiler.attach`.
@@ -45,7 +38,7 @@ module ProfileCaptureRun =
                     use cnn = cnn
                     match! ReadSide.read cnn with
                     | Error es -> return Result.failure es
-                    | Ok catalog -> return! LiveProfiler.attach cnn (stripStatic catalog) Profile.empty
+                    | Ok catalog -> return! LiveProfiler.attach cnn (Catalog.stripStaticPopulations catalog) Profile.empty
         }
 
     /// Capture and write the durable artifact to `outPath` (the `--out`

@@ -292,6 +292,21 @@ module TableId =
     /// encoding, qualified-name formatting, map lookups).
     let qualifiedParts (t: TableId) : string * string = (schemaText t, tableText t)
 
+    /// Does this id's table name equal `name` under SQL Server's
+    /// default-collation semantics (case-insensitive)? The one name for
+    /// the physical-table-identifier comparison: a raw `=` is the latent
+    /// bug (`CONSTELLATION_BACKLOG.md` plane N3 — `TransferSpec` already
+    /// compares case-insensitively; `CatalogResolution` had drifted to
+    /// case-sensitive `=`, silently failing to resolve a differently-cased
+    /// operator ref to a table SQL Server treats as the same).
+    let tableTextEquals (name: string) (t: TableId) : bool =
+        System.String.Equals(tableText t, name, System.StringComparison.OrdinalIgnoreCase)
+
+    /// Does this id's schema name equal `name` under default-collation
+    /// (case-insensitive) semantics? Companion to `tableTextEquals`.
+    let schemaTextEquals (name: string) (t: TableId) : bool =
+        System.String.Equals(schemaText t, name, System.StringComparison.OrdinalIgnoreCase)
+
     // Per chapter 3.5 deep audit (2026-05-09): the bracket-quoted
     // SQL identifier form `[schema].[table]` is a SQL-rendering
     // concern, not a Core concern. The canonical bracket-quoting

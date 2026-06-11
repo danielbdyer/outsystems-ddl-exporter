@@ -79,6 +79,69 @@ type StaticRow = {
     Values     : Map<Name, string>
 }
 
+/// The positional row carrier for data in flight (CONSTELLATION §9.5;
+/// CONSTELLATION_BACKLOG Q-track). `Cells` are in ATTRIBUTE order against
+/// a per-stream `RowBasis`; the typed Map vocabulary lives at the
+/// stream's header, not in every element. `[<Struct>]` per the §9.7
+/// promotion the H3 carrier-cost measurement fired (carrier build
+/// 4.77 µs/row = 42% of stream wall); a single-field struct over a
+/// `string[]` reference copies one word — no large-struct hazard.
+[<Struct>]
+type RowQuantum = { Cells : string[] }
+
+/// The per-stream column basis a `RowQuantum` is positional against. Two
+/// facts, established once per stream and never per row: the column
+/// `Names` in attribute order, and `NameSortedPerm` — the permutation of
+/// column indices that visits them in `Name`-sorted order, so the content
+/// hash reproduces `RowDigester.hashRowBytes`'s Map-sorted bytes WITHOUT
+/// re-sorting each row. Private record + smart constructor (the house
+/// derive-macro, §9.8.9): `NameSortedPerm` is, by construction, always a
+/// valid permutation of `[0 .. Names.Length-1]`.
+///
+/// **Totality precondition.** A `RowQuantum` hashed or rebuilt against a
+/// basis must be TOTAL over it — every column present (in-flight
+/// ReadSide-origin rows always are; NULL → ""). The omit-vs-NULL
+/// distinction the IR-grain `StaticRow` Map carries is deliberately NOT
+/// representable here; it stays at the IR grain.
+type RowBasis = private { Names : Name[]; NameSortedPerm : int[] }
+
+[<RequireQualifiedAccess>]
+module RowBasis =
+
+    /// Build the basis from a kind's attribute names, in attribute order.
+    let ofNames (names: Name list) : RowBasis =
+        let arr = List.toArray names
+        // Stable sort of indices by the column name's string value —
+        // matches `hashRowBytes`'s `Map.toArray |> Array.sortBy Name.value`.
+        let perm = Array.init arr.Length id |> Array.sortBy (fun i -> Name.value arr.[i])
+        { Names = arr; NameSortedPerm = perm }
+
+    let names (b: RowBasis) : Name[] = b.Names
+
+    let length (b: RowBasis) : int = b.Names.Length
+
+    /// The column indices in `Name`-sorted order — the content hash walks
+    /// this, never a per-row sort.
+    let nameSortedOrder (b: RowBasis) : int[] = b.NameSortedPerm
+
+[<RequireQualifiedAccess>]
+module RowQuantum =
+
+    /// Project a (total) `StaticRow` onto the basis: cell i is the value
+    /// for basis column i, or "" if absent (the `readRowsStream`
+    /// NULL → "" convention). For an in-flight total row every column is
+    /// present, so no cell defaults.
+    let ofStaticRow (basis: RowBasis) (row: StaticRow) : RowQuantum =
+        { Cells =
+            RowBasis.names basis
+            |> Array.map (fun n -> Map.tryFind n row.Values |> Option.defaultValue "") }
+
+    /// Rebuild the value Map from a quantum (the boundary back to the IR
+    /// grain — `StaticRow` reconstruction at the buffered `readRows`
+    /// path). Total over the basis by construction.
+    let toValues (basis: RowBasis) (q: RowQuantum) : Map<Name, string> =
+        Array.zip (RowBasis.names basis) q.Cells |> Map.ofArray
+
 
 /// SQL Server "extended property" — a named string annotation attached to
 /// a schema object. V1 source: `sys.extended_properties` (carried as
@@ -401,6 +464,17 @@ module ColumnRealization =
     /// emitter / diagnostic-formatting boundaries (SQL identifier
     /// encoding, sprintf "%s", map lookups keyed on string).
     let columnNameText (c: ColumnRealization) : string = ColumnName.value c.ColumnName
+
+    /// Does this column's physical name equal `name` under SQL Server's
+    /// default-collation semantics (case-insensitive)? The one name for the
+    /// column-identifier comparison — a raw `=` is the latent bug
+    /// (`CONSTELLATION_BACKLOG.md` plane N3): SQL treats `CustomerId` and
+    /// `CUSTOMERID` as one column, so a case-sensitive lookup silently
+    /// fails to resolve an operator's differently-cased ref. (Pre-existing
+    /// adopters of this policy, not yet migrated to this name:
+    /// `Policy.fs:82`, `OssysRowsetReader.fs:325`.)
+    let columnNameEquals (name: string) (c: ColumnRealization) : bool =
+        System.String.Equals(columnNameText c, name, System.StringComparison.OrdinalIgnoreCase)
 
     /// Build a `ColumnRealization` from a raw column-name string.
     /// Validates non-blank + ≤128-char identifier limit via
@@ -1417,6 +1491,20 @@ module Catalog =
     /// pattern in pass drivers that touch a single Kind's fields.
     let updateKindsWhere (predicate: Kind -> bool) (updater: Kind -> Kind) (c: Catalog) : Catalog =
         mapKinds (fun k -> if predicate k then updater k else k) c
+
+    /// Remove every `Static` modality mark, preserving all other marks.
+    /// The one definition site for the "4.4 trap" strip: `ReadSide.read`
+    /// marks every row-carrying reconstructed kind `Static` (lifting live
+    /// rows for the per-row PhysicalSchema canary), and `LiveProfiler`
+    /// skips Static kinds — so profiling over a ReadSide-derived catalog
+    /// must strip the mark first. Strips ONLY `Static`: erasing the other
+    /// marks (TenantScoped / SoftDeletable / SystemOwned / Temporal) here
+    /// would silently widen the erasure (`CONSTELLATION_BACKLOG.md` plane
+    /// N2 — the Preflight over-erasure this definition site closed).
+    let stripStaticPopulations (c: Catalog) : Catalog =
+        mapKinds
+            (fun k -> { k with Modality = k.Modality |> List.filter (function Static _ -> false | _ -> true) })
+            c
 
     /// Per-Catalog kind-index cache. Per slice
     /// A.4.7'-prelude.perf-sweep-2 (`PERF_OPPORTUNITIES.md` Rank 1 —
