@@ -402,6 +402,17 @@ module ColumnRealization =
     /// encoding, sprintf "%s", map lookups keyed on string).
     let columnNameText (c: ColumnRealization) : string = ColumnName.value c.ColumnName
 
+    /// Does this column's physical name equal `name` under SQL Server's
+    /// default-collation semantics (case-insensitive)? The one name for the
+    /// column-identifier comparison — a raw `=` is the latent bug
+    /// (`CONSTELLATION_BACKLOG.md` plane N3): SQL treats `CustomerId` and
+    /// `CUSTOMERID` as one column, so a case-sensitive lookup silently
+    /// fails to resolve an operator's differently-cased ref. (Pre-existing
+    /// adopters of this policy, not yet migrated to this name:
+    /// `Policy.fs:82`, `OssysRowsetReader.fs:325`.)
+    let columnNameEquals (name: string) (c: ColumnRealization) : bool =
+        System.String.Equals(columnNameText c, name, System.StringComparison.OrdinalIgnoreCase)
+
     /// Build a `ColumnRealization` from a raw column-name string.
     /// Validates non-blank + ≤128-char identifier limit via
     /// `ColumnName.create`; returns `Result`. Use at adapter

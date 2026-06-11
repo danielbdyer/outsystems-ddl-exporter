@@ -115,6 +115,28 @@ let ``resolveReconciliation matches table and column names case-insensitively`` 
         |> mustOk
     Assert.True(Map.containsKey userKey map)
 
+// -- F3 / plane N3: the one physical-name resolution policy ---------------
+// `CatalogResolution`'s physical lookups had drifted to case-sensitive `=`
+// while `TransferSpec`'s matched case-insensitively. SQL Server treats
+// identifiers case-insensitively under default collation, so the
+// case-sensitive side silently failed to resolve a differently-cased
+// operator ref. Both entry points now share `TableId.tableTextEquals` /
+// `ColumnRealization.columnNameEquals`.
+
+[<Fact>]
+let ``F3: physical lookup resolves case-divergent names identically from every entry point`` () =
+    // BEFORE this slice these three asserts returned None / no match.
+    Assert.Equal(Some userKey, CatalogResolution.tryKindByPhysicalTable catalog "osusr_rc_user")
+    Assert.Equal(Some userKey, CatalogResolution.tryKindByPhysicalTable catalog "OSUSR_RC_USER")
+    let emailKey = mkKey [ "User"; "EMAIL" ]
+    Assert.Equal(Some emailKey, CatalogResolution.tryAttributeByPhysical catalog "DBO" "osusr_rc_user" "email")
+    // … and TransferSpec resolves the same divergent-case ref to the same kind.
+    let viaTransfer =
+        TransferSpec.resolveReconciliation catalog
+            [ { TransferSpec.ReconcileEntry.Table = "OsUsr_Rc_User"; MatchColumn = "Email" } ]
+        |> mustOk
+    Assert.True(Map.containsKey userKey viaTransfer)
+
 [<Fact>]
 let ``resolveReconciliation surfaces tableNotFound when no kind matches`` () =
     match
