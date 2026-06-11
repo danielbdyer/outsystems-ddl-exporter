@@ -209,8 +209,13 @@ the thesis). *Witness:* existing profiler suites. S. Deps: none. Rollback: rever
 
 ### Stage 1 — the measurement substrate (PERF_HARNESS §4 slices 2–5, by pointer)
 
-**H3 · ReadSide drain + the `materialize` isolating label** (+ label-overhead self-check).
-M. Deps: H0. **This card gates the entire Q-track.**
+**H3 · ReadSide drain + the `materialize` isolating label** — **DONE 2026-06-11; the gate is
+OPEN.** In-harness at 100k×12 (warm): end-to-end **11.40 µs/row**; the new aggregated
+`materialize` sample isolates the carrier build at **4.77 µs/row = 42% of stream wall**
+(wire+rest 6.63). The R4 premise is confirmed; the Q-track may proceed, gated per card on the
+before/after protocol. (Label-overhead note: one `GetTimestamp` pair per row ≈ tens of ns —
+two orders below the measured signal; the per-row-scope distortion the design feared was
+avoided by the aggregated-sample shape.)
 **H4 · executeStream batch sweep.** S. Deps: H0.
 **H5 · The drains:** `staticPopulationDrain`, `physicalSchemaVerify`, `profilerDiscover`. M.
 Deps: H0.

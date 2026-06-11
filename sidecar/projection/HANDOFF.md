@@ -1,3 +1,50 @@
+# Handoff addendum — 2026-06-11, builder session 1 (H0+H1+H3 landed; the cliff is REFUTED; the Q-gate is OPEN)
+
+To the next agent.
+
+You inherit a running instrument and two answers. Builder session 1
+closed three cards off `CONSTELLATION_BACKLOG.md`:
+
+**H0** — the harness spine is LIVE (`PerfHarnessScenarios.fs` +
+`scripts/perf-harness.sh list|run|capture|diff`; gate
+`PROJECTION_RUN_PERF_HARNESS=1`; artifacts at `bench/perf/<name>/`;
+slice-0 acceptance green: zero-Δ double-capture, counts byte-identical,
+fleet absent from `test.sh docker`).
+
+**H1** — **the MERGE cliff is REFUTED.** The emitted
+`MERGE … USING (VALUES …)` executes at 1k/2.5k/10k rows/kind on SQL
+Server 2022 (COUNT(*)-verified `.ok` samples; `renderMerge.rows`=10000
+at Count=1 proves the single-statement form; the 1000-row TVC cap binds
+INSERT…VALUES only). Slope ~2.5k rows/sec @10k. Card H2 is CLOSED as
+no-correctness-defect; staged-bulk demoted to armed-perf. Do NOT
+re-open the cliff; the witness is in `bench/perf/seed-merge-execute-*`
+and PERF_HARNESS §5.
+
+**H3** — the ReadSide drain + the §3.6 `materialize` label (ONE
+aggregated sample per stream, inside `readRowsStream`'s pull —
+`ReadSide.fs`, boundary documented at the accumulator). In-harness at
+100k×12: **11.40 µs/row end-to-end; materialize 4.77 µs/row = 42% of
+stream wall**. The R4 premise is confirmed: **the Q-track gate is
+OPEN** (backlog stage 5, cards Q1–Q4 — RowBasis with the name-sorted
+hash permutation first; the canary-hash byte-identity witness is the
+acceptance).
+
+Your queue, in the order I'd take it: the F-cards as warm-up (F1
+digest twins, F2 Static-strip + the Preflight over-erasure fix, F3
+case-policy fork, F4 journal unit tests, F5 profiler drain — all S,
+all independent), then **Q1** under the open gate, then H4/H5/H6 to
+finish the measurement substrate. The S-track (spine) remains open in
+parallel. J5 still preempts everything.
+
+Operational notes: the warm container is up on :11433
+(`warm-sql.sh restart` if conn failures batch); `perf-harness.sh
+capture before <filter>` is your before-ritual for ANY perf-touching
+card; the pure pool was green at every commit this session (66-77s
+warm). The harness's first two runs each falsified a documented
+prediction — keep letting it.
+
+Hold the spine; balance the books; keep the patient breathing.
+
 # Handoff addendum — 2026-06-11, the Lapidary close (the backlog exists; you are generation 3, the builder)
 
 To the next agent.

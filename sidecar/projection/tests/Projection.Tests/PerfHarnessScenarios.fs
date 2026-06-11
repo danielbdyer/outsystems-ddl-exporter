@@ -277,3 +277,99 @@ let ``PerfHarness: seed-merge-execute 2500`` () =
 [<Fact>]
 let ``PerfHarness: seed-merge-execute 10000`` () =
     runGatedDocker "seed-merge-execute 10000" { Rows = 10000; Tables = 1; ColumnsPerTable = 3 } (seedMergeExecute 10000)
+
+// -------------------------------------------------------------------------
+// Slice 2 — the ReadSide drain (PERF_HARNESS §1 activity 1b + §3.6 label 1).
+// Gates the entire R4/Q row-quantum track (CONSTELLATION_BACKLOG stage 5).
+// 12 columns to match the 2026-06-11 standalone prior (~8.8 µs/row at
+// 100k×12); the new `readside.rowstream.materialize` aggregated sample
+// splits end-to-end into wire (ReadAsync) vs carrier-build.
+// -------------------------------------------------------------------------
+
+/// 12-column wide static kind (Id Integer PK + 11 mandatory Text columns),
+/// rows loaded via the bulk path (StaticPopulationEmitter → executeStream →
+/// SqlBulkCopy folding), then drained back through readRowsStream.
+let private wideSeedCatalog (rows: int) : Catalog =
+    let mkKey parts = SsKey.synthesizedComposite "PERF_WIDE" parts |> Result.value
+    let nmx s = Name.create s |> Result.value
+    let colNames = [ for c in 1 .. 11 -> sprintf "C%02d" c ]
+    let row (i: int) =
+        { Identifier = mkKey [ "Wide"; "Row"; string i ]
+          Values =
+            Map.ofList
+                ((nmx "Id", string i)
+                 :: [ for c in colNames -> nmx c, sprintf "%s-%06d" c i ]) }
+    let attrs =
+        { Attribute.create (mkKey [ "Wide"; "Id" ]) (nmx "Id") Integer with
+            Column = ColumnRealization.create "ID" false |> Result.value
+            IsPrimaryKey = true
+            IsMandatory = true }
+        :: [ for c in colNames ->
+                { Attribute.create (mkKey [ "Wide"; c ]) (nmx c) Text with
+                    Column = ColumnRealization.create (c.ToUpperInvariant()) false |> Result.value
+                    IsMandatory = true } ]
+    let wide =
+        { SsKey = mkKey [ "Wide" ]
+          Name = nmx "PerfWide"
+          Origin = Native
+          Modality = [ Static [ for i in 1 .. rows -> row i ] ]
+          Physical = TableId.create "dbo" "PerfWide" |> Result.value
+          Attributes = attrs
+          References = []
+          Indexes = []
+          Description = None
+          IsActive = true
+          Triggers = []
+          ColumnChecks = []
+          ExtendedProperties = [] }
+    Catalog.create
+        [ { SsKey = mkKey [ "Mod" ]
+            Name = nmx "PerfWideMod"
+            Kinds = [ wide ]
+            IsActive = true
+            ExtendedProperties = [] } ]
+        []
+    |> Result.value
+
+/// Activity 1b: deploy + bulk-load the fixture once, then drain
+/// `ReadSide.readRowsStream` to EOF — the per-row carrier cost isolated by
+/// the §3.6 `materialize` sample against the stream's end-to-end probe.
+// PERF-SCENARIO: readside-rowstream 100000 | keylabels=readside.readRowsStream.all,readside.rowstream.materialize
+let readsideRowStream (rows: int) : PerfScenario =
+    let catalog = wideSeedCatalog rows
+    let kind = catalog.Modules.Head.Kinds.Head
+    { Name = sprintf "readside-rowstream-%d" rows
+      Tag = "perf.readside.rowstream"
+      KeyLabels = [ "readside.readRowsStream.all"; "readside.rowstream.materialize" ]
+      Run =
+        fun ctx ->
+            task {
+                do!
+                    ctx.WithDatabase (sprintf "PerfRead%d" rows) (fun cnn ->
+                        task {
+                            do!
+                                Deploy.executeStream
+                                    cnn
+                                    (seq {
+                                        yield! SsdtDdlEmitter.statements catalog
+                                        yield! Projection.Targets.Data.StaticPopulationEmitter.statements catalog
+                                    })
+                            let stream = Projection.Adapters.Sql.ReadSide.readRowsStream cnn kind
+                            let mutable drained = 0
+                            let mutable go = true
+                            while go do
+                                let! next = stream ()
+                                match next with
+                                | Some _ -> drained <- drained + 1
+                                | None -> go <- false
+                            if drained <> rows then
+                                failwithf "readside-rowstream drained %d rows, expected %d" drained rows
+                        })
+            } }
+
+[<Fact>]
+let ``PerfHarness: readside-rowstream 100000`` () =
+    runGatedDocker
+        "readside-rowstream 100000"
+        { Rows = 100000; Tables = 1; ColumnsPerTable = 12 }
+        (readsideRowStream 100000)

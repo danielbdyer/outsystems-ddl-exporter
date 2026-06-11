@@ -898,6 +898,12 @@ module ReadSide =
                 let! reader = cmd.ExecuteReaderAsync()
                 readerOpt <- Some reader
             }
+        // PERF_HARNESS §3.6 label 1 accumulator: per-row carrier-build ticks,
+        // recorded as ONE aggregated sample at EOF (a per-row Bench.scope
+        // would distort at 100k rows). Boundary: includes per-column
+        // IsDBNull/GetValue + formatRawValue + the Map build + the basis
+        // string; excludes ReadAsync (the wire row-fetch) and the SsKey ctor.
+        let mutable materializeTicks = 0L
         let pull () : Task<StaticRow option> =
             task {
                 if disposed then return None
@@ -907,9 +913,13 @@ module ReadSide =
                         let r = Option.get readerOpt
                         let! more = r.ReadAsync()
                         if not more then
+                            Bench.recordSample
+                                "readside.rowstream.materialize"
+                                (materializeTicks * 1000L / System.Diagnostics.Stopwatch.Frequency)
                             dispose ()
                             return None
                         else
+                            let t0 = System.Diagnostics.Stopwatch.GetTimestamp()
                             let values =
                                 kind.Attributes
                                 |> List.mapi (fun i a ->
@@ -925,6 +935,9 @@ module ReadSide =
                                     (TableId.tableText kind.Physical)
                                     rowIdx
                             rowIdx <- rowIdx + 1
+                            materializeTicks <-
+                                materializeTicks
+                                + (System.Diagnostics.Stopwatch.GetTimestamp() - t0)
                             match SsKey.synthesized "READSIDE_ROW" basis with
                             | Ok rowKey ->
                                 return Some { Identifier = rowKey; Values = values }
