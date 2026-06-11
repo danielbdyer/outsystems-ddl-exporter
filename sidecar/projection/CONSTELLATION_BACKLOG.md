@@ -172,12 +172,15 @@ via the `meshModel` idiom (RI-5: `GenerateSpec` cannot mint `Modality.Static` IR
 the cliff hypothesis ANSWERED with captured evidence either way. M. Deps: H0. Rollback: n/a
 (evidence, not behavior).
 
-**H2 · The cliff fix as a stream rewrite.** Plane T1. Incision: `MergeShape.staged : … ->
-Statement seq` (≤cap `INSERT…VALUES` chunks into `#stage`, ONE trailing `MERGE … USING
-#stage`; the `DeleteScope` arm rides the single MERGE) + the `chooseMergeShape` selector
-(thesis §9.8.4/§9.8.6). *Witness:* `` `staged ≡ inline below the cap on PhysicalSchema;
-above the cap, staged executes where inline refused` `` + a DeleteScope survival case. M.
-Deps: H1 (the BEFORE). Rollback: selector arm back to inline; the witness pins the cliff.
+**H2 · ~~The cliff fix~~ — REFUTED BY H1 (2026-06-11, in-harness).** The execute probe ran at
+1k/2.5k/10k rows/kind: **all executed** (`perf.seedMerge.execute.ok` = COUNT(\*)-verified row
+counts; zero `.cliff` samples; `renderMerge.rows`=10000 at Count=1 proves the single-MERGE
+form). The 1000-row TVC cap binds `INSERT … VALUES`, not the `MERGE … USING (VALUES …)`
+derived-table form on SQL Server 2022. Plane T1 closes as **no-correctness-defect**; this
+card's §8 forecast is FALSIFIED, as designed. The staged-bulk shape + `chooseMergeShape`
+selector demote to **armed-perf** (wake: ≳100k-row static populations where the measured
+~2.5k rows/sec execute slope matters — and note the 100k `readRows` threshold already bounds
+IR-materialized populations). The critical path shortens: H0 → H1 → **H3**.
 
 **F1 · Digest unification.** Plane N1. Incision: one `Digest` module in Core
 (`sha256HexOf`, casing fixed once); collapse the twins; migrate `VersionedPolicy`, `Run`,

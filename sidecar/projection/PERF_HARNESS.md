@@ -494,3 +494,16 @@ it is one command to reproduce.
 
 The standalone numbers came from throwaway scripts (the anti-pattern); slices
 1–2 convert them into harness-reproducible claims or correct them.
+
+**Slice-1 results (2026-06-11, in-harness — `seed-merge-render` / `seed-merge-execute`):**
+
+| Path | Measurement | Number |
+|---|---|---|
+| emitted-MERGE EXECUTE, 1k/2.5k/10k rows/kind | `perf.seedMerge.execute.ok` + COUNT(*) verified | **all execute — the 3c cliff hypothesis is REFUTED** on SQL Server 2022: the single `MERGE … USING (VALUES …)` derived-table form is NOT bound by the 1000-row INSERT TVC cap (one MERGE, 10k rows, one statement — `renderMerge.rows`=10000, Count=1) |
+| emitted-MERGE execute slope | `deploy.executeBatch` @10k | ~3,982 ms ≈ 2.5k rows/sec (vs the transfer side's ~5.7k on its different VALUES form) |
+| rendered-MERGE TEXT emission | `emit.staticSeeds.renderMerge` | 3 ms @1k → 102 ms @10k (superlinear, small absolute) |
+
+Consequence: the staged-bulk alternative shape (§1-3c) is **not a correctness
+fix**; it remains an armed PERF candidate only (wake: static populations ≳100k
+rows/kind where the ~2.5k rows/sec slope or per-statement memory matters — note
+the 100k `readRows` threshold already bounds IR-materialized populations).
