@@ -328,9 +328,18 @@ module RowDigester =
             acc[i] <- byte (s &&& 0xFF)
             carry <- s >>> 8
 
-    /// Streaming-friendly add: same array, mutated. Caller passes
-    /// the accumulator from `State.Acc`.
-    let private hashRowBytes (row: StaticRow) : byte[] =
+    /// THE canonical per-row content hash: sort `Values` by column name,
+    /// build the `<name>=<value>` string joined by the RS (\x1e)
+    /// separator (disambiguating pairs that would otherwise alias under
+    /// degenerate name/value combinations), UTF8, SHA256 → bytes. Both
+    /// the streaming aggregate path (`add`, below) and the granular
+    /// per-row-hex path (`PhysicalSchema.hashStaticRow`) hash through this
+    /// one recipe — it was duplicated byte-for-byte as
+    /// `PhysicalSchema.hashStaticRowBytes` (CONSTELLATION_BACKLOG plane
+    /// N1, collapsed 2026-06-11). Per session-35 the single
+    /// `StringBuilder` accumulation replaced a `sortBy -> map sprintf ->
+    /// String.concat` chain (~8 → ~4 us/row at 500k scale).
+    let hashRowBytes (row: StaticRow) : byte[] =
         let pairs =
             row.Values
             |> Map.toArray
@@ -579,36 +588,11 @@ module PhysicalSchema =
                     }))
         kindEps @ attrEps
 
-    /// Hash a static row deterministically. Concatenates
-    /// `<column-name>=<value>` pairs sorted by column name and
-    /// SHA256s the result. Stable across runs given stable inputs.
-    ///
-    /// Per session-35 — single `StringBuilder` accumulation replaces
-    /// the v1 `Map.toList -> List.sortBy -> List.map sprintf ->
-    /// String.concat` chain. Per-row allocation halves at 500k-row
-    /// scale (~8 us/row -> ~4 us/row); SHA256 itself is unchanged.
-    /// The RS (\x1e) separator survives — it disambiguates
-    /// `<col>=<val>` pairs that would otherwise alias under
-    /// degenerate column-name / value combinations.
-    let private hashStaticRowBytes (row: StaticRow) : byte[] =
-        let pairs =
-            row.Values
-            |> Map.toArray
-            |> Array.sortBy (fun (n, _) -> Name.value n)
-        let sb = System.Text.StringBuilder(64)
-        let mutable first = true
-        for (n, v) in pairs do
-            if not first then sb.Append('') |> ignore
-            sb.Append(Name.value n).Append('=').Append(v) |> ignore
-            first <- false
-        let bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString())
-        System.Security.Cryptography.SHA256.HashData(System.ReadOnlySpan<byte>(bytes))
-
     /// Hex form of the row hash — used by `PhysicalRow.Hash` so per-row
     /// granular diffs render as a stable string. The bytes form
-    /// (`hashStaticRowBytes`) feeds the per-table aggregate path.
+    /// (`RowDigester.hashRowBytes`) feeds the per-table aggregate path.
     let private hashStaticRow (row: StaticRow) : string =
-        System.Convert.ToHexString (hashStaticRowBytes row)
+        System.Convert.ToHexString (RowDigester.hashRowBytes row)
 
     /// Per session-35 — `Array.Parallel.map` replaces sequential
     /// `iterMap` for the per-row hash. SHA256 is CPU-bound and

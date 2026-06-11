@@ -265,31 +265,58 @@ selector demote to **armed-perf** (wake: ≳100k-row static populations where th
 ~2.5k rows/sec execute slope matters — and note the 100k `readRows` threshold already bounds
 IR-materialized populations). The critical path shortens: H0 → H1 → **H3**.
 
-**F1 · Digest unification — REWRITTEN per RI-7.** Plane N1. Incision: one `Digest` module
-in Core — `sha256 : byte[] -> byte[]` plus named hex views (`hexLower`, `hexUpper`,
-`hexLower16`), zero-alloc throughout; the twins collapse; the ten sites migrate **each to
-its current byte-form**. Explicitly NOT a casing normalization: the journal filename
-(`transfer-<digest16>.ndjson`) and the persisted `Run.InputDigest` pin their bytes, and a
-"fixed once" casing would orphan every existing journal at resume. *Unlock:* one mechanism;
-the allocating forms retire (`VersionedPolicy`/`Run` move off `Array.map (ToString "x2")`);
-the census becomes one grep. *Witness:* `` `Digest: every migrated site emits byte-identical
-output` `` + existing round-trip suites (`RegistryDigestRoundTripTests`, `RunTests`). S.
-Deps: none. Rollback: revert.
+**F1 · The row-hash twin collapse — DONE 2026-06-11 (re-imaged, split per the one-plane
+rule).** Plane N1's *core*: `RowDigester.hashRowBytes` (`PhysicalSchema.fs:333`) ∥
+`PhysicalSchema.hashStaticRowBytes` (`:593`) were byte-identical `StaticRow → byte[]`
+recipes in two `[<RequireQualifiedAccess>]` modules of one file, each privately walled, one
+caller each. Incision: `RowDigester.hashRowBytes` becomes the canonical name (the RS-separator
+note migrates onto it); `hashStaticRowBytes` deleted; `hashStaticRow` repoints to
+`RowDigester.hashRowBytes`. Behavior-preserving (the bytes are identical) — the existing
+PhysicalSchema canary suite is the byte-stability witness (13 green; the aggregate path and
+the granular per-row-hex path now hash through one recipe by construction). S. Deps: none.
+Rollback: revert.
 
-**F2 · One Static-strip + the Preflight over-erasure fix.** Plane N2 (step a). Incision:
-`Catalog.stripReadSideStatic` in Core; three sites delegate; `Preflight.fs:126` narrowed from
-`Modality = []` to the Static-only strip. *Unlock:* the 4.4 trap gets one definition site;
-the latent authored-Static erasure closes. *Witness:* `` `preflight preserves non-Static
-modality marks` ``. S. Deps: none. Rollback: revert (sites keep working).
+*Re-imaging note (a disagreement with this card's own RI-7 rewrite):* the rewrite bundled the
+twin collapse with a 10-site hex-idiom unification. Executing it, the one-plane rule bit: the
+twins are a within-file, zero-risk dedup (the genuine "same shape built twice"); the hex
+scatter is a **different plane** spanning four assemblies, three idioms, and two
+persistence-coupled sites (the journal filename; `Run.InputDigest`) — high blast, low reward
+(no bug; each site is internally consistent). Bundling them would have been the failure mode.
+The twin collapse ships as F1; the hex scatter defers as **F1-hex (armed)**, §6 item 13.
 
-**F3 · One physical-name resolution.** Plane N3. Incision: `TransferSpec` delegates to
-`CatalogResolution` with the case policy decided **once** — recommend `OrdinalIgnoreCase`
-(SQL default-collation semantics), applied to both. *Witness:* `` `physical lookup resolves
-case-divergent names identically from every entry point` ``. S. Deps: none. Rollback: revert.
+**F2 · One Static-strip + the Preflight over-erasure fix — DONE 2026-06-11** (commit
+`20a8a1b`). Plane N2 (step a). Incision: `Catalog.stripStaticPopulations` in Core (the name
+landed; not `stripReadSideStatic` as the card first guessed); three sites delegate
+(`ProfileCaptureRun`'s private helper deleted, `DataIntegrityChecker`'s trivial wrapper
+inlined, `Preflight` narrowed from `Modality = []` to the Static-only strip). *Unlock:* the
+4.4 trap gets one definition site; the latent authored-Static erasure (TenantScoped /
+SoftDeletable / SystemOwned / Temporal) closes. *Witness shipped:* `` `F2:
+stripStaticPopulations strips Static only — preflight preserves non-Static modality marks`
+`` (pure pool, green by name). S. Deps: none. Rollback: revert (sites keep working).
 
-**F4 · Journal unit tests.** Plane N5. Pure-pool tests: load/append round-trip, fingerprint
-mismatch shape, missing-file = fresh run, malformed-line behavior (pin it, whatever it is).
-*Unlock:* L2 lands against a pinned surface. S. Deps: none. Rollback: n/a.
+**F3 · One physical-name resolution — DONE 2026-06-11 (re-imaged; commit `3cf9910`).** Plane
+N3. The card recommended *structural* delegation (`TransferSpec` → `CatalogResolution`);
+executing it, that was refused as **false symmetry** — the two sides return different types
+(`CatalogResolution → SsKey` for the binders; `TransferSpec → Kind/Attribute` to drill into
+columns), and one function would force a double lookup. The actual divergence is the
+*comparison policy*: `CatalogResolution`'s physical lookups used case-sensitive `=` (the
+latent bug — SQL Server is case-insensitive under default collation) while `TransferSpec`
+compared case-insensitively. Incision: name the policy once —
+`TableId.tableTextEquals`/`schemaTextEquals`/`ColumnRealization.columnNameEquals` (Core,
+`OrdinalIgnoreCase`); the three case-sensitive `CatalogResolution` comparisons switch to it
+(the behavior fix); `TransferSpec`'s two inline comparisons route through the same names
+(behavior-preserving). *Witness shipped:* `` `F3: physical lookup resolves case-divergent
+names identically from every entry point` `` (returns `None` on the old code). S. Deps: none.
+Rollback: revert.
+
+**F4 · Journal unit tests — DONE 2026-06-11** (commit `f33caf9`). Plane N5. Seven pure-pool
+witnesses in `CaptureJournalTests.fs`: missing-file = fresh run; append/load round-trip
+(fingerprint fields + `Pairs[][]`); accumulation; the `(kind, chunkIx)` last-write-wins
+index; blank/literal-null line skipping; the digest-keyed filename law. **Finding pinned as
+observed:** a corrupt non-JSON line *throws* — the load loop's `| null -> ()` tolerates only
+the literal JSON `null`, not arbitrary garbage; the resume surface is not silently lossy on
+corruption, a contract L2 inherits. *Unlock:* L2 lands against a pinned surface. S. Deps:
+none. Rollback: n/a.
 
 **F5 · The profiler's drain, extracted.** Plane N4. `drainReader` extraction in
 `LiveProfiler.discoverKind`; no probe added (the outer scope suffices — RI-grade softening of
@@ -573,6 +600,17 @@ is also the resume story after the interruption ends.
     PERF_HARNESS §3.5 keeps them deliberately distinct). Wake: the first noisy-scenario
     promotion, which §3.5 already specifies as "reuse the perf-gate.sh aggregation python
     verbatim" — that moment *is* the unification moment.
+13. **F1-hex — the SHA-256 hex-idiom unification: armed.** Ten sites in three idioms
+    (allocating-lowercase ×2: `VersionedPolicy.fs:119`, `Run.fs:49`; zero-alloc-lowercase
+    ×2: `CaptureJournal.fs:50`, `TransformRegistry.fs:533`; zero-alloc-uppercase: `PhysicalSchema`
+    `AggregateHash`/`hashStaticRow`, `ReadSide.fs:824`, `SyntheticData.fs:167/183`). A `Digest`
+    module (`sha256 : byte[] -> byte[]` + `hexLower`/`hexUpper`/`hexLower16`) would name the
+    mechanism. Held because two sites are persistence-coupled — the journal **filename**
+    (`transfer-<digest16>.ndjson`) and the persisted `Run.InputDigest` (`RunTests.fs:71`) — so
+    any migration must be byte-exact for nil functional reward (no bug; each site is internally
+    consistent). Wake: a *third* persistence-coupled digest, OR the casing actually diverging in
+    a way that breaks a comparison, OR R3's L2 touching `CaptureJournal.digestOf` anyway (fold
+    the unification into that commit, byte-stability as its witness — RI-7).
 
 ---
 
