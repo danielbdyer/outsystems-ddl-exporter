@@ -480,6 +480,16 @@ the boundary via `StaticRow.ofQuantum basis` (IR grain unchanged, 100k threshold
 *Witness:* `` `R4: ofQuantum ∘ toQuantum = id` `` + canary hashes byte-identical (Q1's
 permutation). M. Deps: Q1.
 
+> **Sequencing finding (re-imaging 2, Q1-session):** Q2 is **coupled to Q3+Q4**, not
+> independently win-bearing. `readRowsStream`'s streaming consumers (`TransferRun.toCellsOver`/
+> `pkOf`/`writeChunk`) read by-key, so a Q2 that flips the public return type to `RowQuantum`
+> breaks them until Q3 moves them; and a Q2 that converts `RowQuantum → StaticRow` at the pull
+> boundary to keep consumers working *adds* per-row cost (cells **and** Map **and** the
+> SsKey) with **no measured win until Q4 deletes the synthesis**. Therefore execute **Q2→Q3→Q4
+> as one focused arc**, green at each commit, with the byte-identical canary (Docker) as the
+> standing witness and an H3 re-run at the end showing the `materialize` label drop. Do not
+> ship Q2 alone expecting a number; the number is Q4's.
+
 **Q3 · In-flight consumers.** `TransferRun.toCellsOver`/`pkOf`/`writeChunk`,
 `SurrogateRemap` ordinal overload (the A40 `*With` shape extended), `SurrogateCapture` —
 in-flight sites only (~the streaming subset of the 19; IR-grain consumers untouched).

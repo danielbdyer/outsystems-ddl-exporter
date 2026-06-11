@@ -1,6 +1,76 @@
-# Handoff addendum — 2026-06-11, builder session 1 (H0+H1+H3 landed; the cliff is REFUTED; the Q-gate is OPEN)
+# Handoff addendum — 2026-06-11, builder session 2 (re-imaging 2 + the whole F-leg + Q1 landed; the critical path is open and stocked)
 
 To the next agent.
+
+You inherit a re-imaged plan and seven green commits past it. This
+session re-verified `CONSTELLATION_BACKLOG.md` at HEAD `9ab0e4b` and then
+executed against it. Two things to internalize before you cut.
+
+**First, the plan corrected itself again.** The builder's `bench/perf`
+witnesses were gitignored (root `.gitignore:32`), so I re-ran both
+verdicts on a second host and they REPLICATED — the MERGE cliff stays
+refuted, the Q-gate stays open (materialize 4.83 µs/row = 40.1% of
+stream wall vs the builder's 4.77/42%). Six new corrections landed
+(RI-7..RI-12). The sharpest: the backlog's own F1 casing claim was
+FALSE (CaptureJournal/TransformRegistry are lowercase; the journal
+digest IS the filename, so any "fix the casing once" would orphan every
+journal at resume), and the thesis's §9.8.11 declare-once prediction
+PARTIALLY FAILED at H0 by its own test (scattered Facts + a comment
+registry, no single list, no totality test). Trust the backlog at HEAD
+over its first edition; trust the code over both.
+
+**Second, the entire Stage-0 F-leg and the Q-foundation are DONE, each
+green, each witnessed, each its own commit:**
+- **F2** — one `Catalog.stripStaticPopulations`; the Preflight
+  `Modality = []` over-erasure (it wiped authored TenantScoped/etc.)
+  closed.
+- **F3** — the case-sensitive `CatalogResolution` physical-lookup bug
+  closed; the SQL-default-collation policy named once
+  (`TableId.tableTextEquals` &c). I REFUSED the card's "delegate"
+  recommendation as false symmetry (the two sides return different
+  types) — re-imaged to naming the comparison policy instead.
+- **F4** — seven pure-pool `CaptureJournal` witnesses; the resume
+  surface pinned (incl. the finding that a corrupt non-JSON line THROWS
+  — not silently lossy — which L2 inherits).
+- **F1** — the byte-identical row-hash twins collapsed
+  (`RowDigester.hashRowBytes` canonical). I SPLIT the 10-site hex
+  scatter off as armed F1-hex (§6 item 13): different plane, persistence
+  risk, nil reward; fold it into L2 when it touches `digestOf`.
+- **F5** — `LiveProfiler`'s TWO hand-rolled drains → one local
+  `drainReader`; the cross-file kernel stays refused (compile order,
+  RI-9).
+- **Q1** — `RowBasis` + `RowQuantum` (`[<Struct>]`, the gate-fired
+  promotion) + `RowDigester.hashQuantumBytes`, byte-identical to
+  `hashRowBytes`. An FsCheck property over 100 random column orderings
+  is the witness and the type's second consumer.
+
+**Your move: the Q2→Q3→Q4 arc, as ONE focused unit.** I proved (and
+carded, see Q2's sequencing finding) that Q2 is NOT independently
+win-bearing — `readRowsStream`'s streaming consumers read by-key, so
+flipping its return type breaks them until Q3, and converting back to
+`StaticRow` at the boundary only ADDS per-row cost until Q4 deletes the
+SsKey synthesis. So do Q2→Q3→Q4 together, green at every commit, with
+the byte-identical canary (Docker) as the standing witness and an H3
+re-run at the end showing the `materialize` label drop. The number is
+Q4's, not Q2's. Q1's `hashQuantumBytes` byte-identity is the footing the
+whole arc stands on — it is already proven.
+
+The lighter interleave cards remain open and independent: **F6** (one
+static-fixture catalog builder — N7's quadruplets) and **H7** (reify
+`Scenarios.all` + the registry⇔list totality test — the RI-8 repair;
+note its hidden cost, the `// PERF-SCENARIO:` comment's `|` does
+double duty as scale-separator and field-separator, so the shell `list`
+under-reports today). The S-track (spine) is still open in its own lane.
+
+Unchanged and binding: **J5 preempts everything**; the survival rules
+are `CLAUDE.md` §4 (the warm container is up on :11433; pure pool ran
+54-59s green at every commit this session); per-win bench discipline;
+the perf-gate baseline moves only with its DECISIONS amendment. The
+armed items (§6) have named wake conditions — recognize them, don't
+pre-build them.
+
+Hold the spine; balance the books; keep the patient breathing; re-run
+the witnesses you inherit before you stand on them.
 
 You inherit a running instrument and two answers. Builder session 1
 closed three cards off `CONSTELLATION_BACKLOG.md`:
