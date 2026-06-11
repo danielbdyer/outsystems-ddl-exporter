@@ -38,6 +38,15 @@ stage spine, and it subsumes D5/D6 and the `REPORTING_HORIZON.md`
 run-ledger — check the thesis §8/§9/§10 before opening any of those
 backlog items independently.
 
+One more surface, NOT yet canon: **`CLAUDE.proposed.md`** — a from-scratch
+rebuild of the navigation file (point-don't-restate; a twelve-item
+survival list as the only sanctioned restatement; the trigger-governed
+F# surface replacing the drifted feature table — the incumbent's
+verified drift is enumerated in the proposal's header). It takes effect
+ONLY via operator adoption + a DECISIONS entry amending the 2026-05-22
+reading-order decision. Until then the incumbent `CLAUDE.md` governs;
+do not treat the proposal as the index.
+
 Hold the spine; balance the books.
 
 # Handoff addendum — 2026-06-11 (the realization selector closed the reverse-leg arc; your program is the before/after bottleneck sweep)
