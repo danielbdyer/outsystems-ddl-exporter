@@ -10,7 +10,13 @@ at HEAD `9658cfa` (`ScriptDomBuild.fs` MERGE row-adds, `AsyncStream.fs` full sur
 `TransferRun.fs:27-63`, `Catalog.fs:77`, `ReadSide.fs:921-922`, `OperatorConsole.fs:91-100`,
 `CatalogDiff.fs:933-986`). Every architectural claim below carries a path; every recommendation
 carries a counterexample condition, per the `NORTH_STAR.md` discipline. Where this document's own
-evidence is thin, §8 says so.
+evidence is thin, §11 says so.
+**Amended (same day, second pass).** §§4–6 added — the holonic map, the calculus, and the
+conceptual thermodynamics; the prior §§4–8 renumbered §§7–11. New evidentiary anchors verified
+for the amendment: `ChangeManifest.pathLength` + the live churn witness
+(`ChangeManifest.fs:97-98`; `ChangeManifestTests.fs:136`), `changeDetectionPredicate`
+(`ScriptDomBuild.fs:782-880`), the monotone-append refusal (`Episode.fs:180-182`;
+`MigrationRun.fs:90`), `EpisodeCoordinate` (`Episode.fs:11-16`).
 
 > **The thesis in one sentence.** Every change this engine makes is a quantum of displacement
 > that crosses each boundary exactly once, is counted at the crossing by an independent ruler,
@@ -26,11 +32,14 @@ evidence is thin, §8 says so.
 1. [The constellation map — eight stars, with evidence](#1--the-constellation-map)
 2. [The organizing principles](#2--the-organizing-principles)
 3. [The transpositions — what the stars reveal laid across one another](#3--the-transpositions)
-4. [The streaming hypothesis, adjudicated](#4--the-streaming-hypothesis-adjudicated)
-5. [The recommendation — the Conservation Ledger](#5--the-recommendation)
-6. [The staged migration path](#6--the-staged-migration-path)
-7. [What not to build](#7--what-not-to-build)
-8. [The epistemic ledger of this document](#8--the-epistemic-ledger-of-this-document)
+4. [The holonic map — one structure, every grain](#4--the-holonic-map)
+5. [The calculus of the constellation — composition, derivatives, integrals](#5--the-calculus-of-the-constellation)
+6. [The conceptual thermodynamics — conservation, dissipation, refusal](#6--the-conceptual-thermodynamics)
+7. [The streaming hypothesis, adjudicated](#7--the-streaming-hypothesis-adjudicated)
+8. [The recommendation — the Conservation Ledger](#8--the-recommendation)
+9. [The staged migration path](#9--the-staged-migration-path)
+10. [What not to build](#10--what-not-to-build)
+11. [The epistemic ledger of this document](#11--the-epistemic-ledger-of-this-document)
 
 ---
 
@@ -206,7 +215,7 @@ request facts plus committed priors — never runtime-adaptive (T1 determinism).
 **P4 — Functional distinction over shared vocabulary.** The anti-false-symmetry rule
 (`CRYSTALLINE_FORM.md` §2): Intent vs Quotient IR; the three writer sinks; the codec's
 asymmetric fields. Surfaces that share vocabulary share a *seam*, not a type. This principle is
-what disqualifies the naive form of the streaming hypothesis (§4): `seq<Statement>`,
+what disqualifies the naive form of the streaming hypothesis (§7): `seq<Statement>`,
 `AsyncStream<StaticRow>`, `Task<'T list>`, and `CachedValue array` share the vocabulary "data
 flowing through" while differing in monad, lifecycle, grain, and consumer — exactly the
 configuration where this codebase has learned that a unifying wrapper damages the system.
@@ -234,7 +243,7 @@ architecture should name it once. Consequence: **pausability is not a streaming 
 a torsor feature.** Any operation whose progress is a fold over displacement quanta becomes
 pausable the moment its partial sums are ledgered — which is why the materialized path's G10
 progress table (`TransferRun.fs:420-431`) and the journal, today structurally disjoint resume
-mechanisms, should converge on one contract (§6, stage 3).
+mechanisms, should converge on one contract (§9, stage 3).
 
 ### 3.2 Stream × Measurement: probe entanglement is a missing stage boundary, and T14 names the fix
 
@@ -301,11 +310,205 @@ specified as file naming conventions (`bench/perf/<name>/before.json`) rather th
 operation over run values. The torsor pattern is sitting here unapplied: **runs are points;
 before/after deltas are displacements; the harness's `diff` is `⊖` at the observability
 plane.** This is the largest structural gap the constellation reveals, and closing it is the
-keystone of §5.
+keystone of §8.
 
 ---
 
-## 4 — The streaming hypothesis, adjudicated
+## 4 — The holonic map — one structure, every grain
+
+The transpositions of §3 are pairwise. Laid across one another all at once, they resolve into a
+single repeated structure — this section maps it. The term *holon* is used descriptively: a unit
+that is a complete whole at its own grain and a constituent part at the grain above. The claim,
+stated falsifiably: **the eight stars of §1 are not eight structures. They are five aspects of
+one holon — identity, displacement, norm, ledger, comparison — and the system instantiates that
+holon at every grain it operates on.** The grains nest on the state side as
+facet ⊂ row ⊂ chunk ⊂ kind ⊂ catalog ⊂ episode ⊂ timeline, and on the execution side as
+sample ⊂ label ⊂ stage ⊂ run ⊂ run-ledger. What §1 presented as stars and §3 as couplings is,
+at fifty feet, one accounting cell tiled down a grain tower.
+
+### 4.1 The tower
+
+| Grain | Identity | Displacement (the quantum) | Norm (the count) | Ledger (durable partial sums) | Comparison (the quotient and its tolerances) |
+|---|---|---|---|---|---|
+| **facet** | attribute `SsKey` × facet name (`AttributeFacet`, 9 variants; `CatalogDiff.fs:27-61`) | `AttributeChange` | per-facet term in `channelCounts` (`CatalogDiff.fs:933`) | carried by the grain above (the diff channels) | `normalizeDefault`; `CharAnsiPadding` / `DecimalScale` tolerances |
+| **row** | the reconciled business key / PK — deliberately *not* an SsKey at rest (§3.3; P-REKEY) | Insert / Update / Unchanged / Delete — the MERGE clauses (`THE_USE_CASE_ONTOLOGY.md` §4.3) | CDC captures: 1 per insert/delete, 2 per update, 0 unchanged — weights pinned exactly (`CdcMeasureTests.fs:79-153`) | the substrate's `cdc.<table>_CT` — the one ledger the engine audits but does not own | the null-safe distinctness predicate over the comparable-column set (`ScriptDomBuild.fs:782-810`); tolerance columns excluded |
+| **chunk** | `(kindRoot, chunkIx)` + fingerprint `(FirstPk, LastPk, RawCount)` (`CaptureJournal.fs:66-73`) | one 50k-row chunk through one staged MERGE / bulk batch (`TransferRun.fs:169`) | `RawCount`; rows/sec via probe pairs | `CaptureJournal` NDJSON, append-atomic (`CaptureJournal.fs:81`) | fingerprint equality; mismatch = `transfer.resume.sourceDrift` refusal |
+| **kind** | `SsKey`, persisted as `V2.SsKey` at table grain only (`ReadSide.fs:992`) — S1's identity-quality gradient, per grain | the per-kind load / per-kind DDL slice | per-kind capture counts; per-kind Bench labels | refactorlog entries on the rename channel, deduped by UUIDv5 `OperationKey` (`RefactorLogEmitter.fs:135-149`) | per-kind facet comparison + rowset SHA-256 hashes (`PhysicalSchema`) |
+| **catalog** | the `SsKey`-keyed aggregate | `CatalogDiff = between A B` (`CatalogDiff.fs:654`) | `CatalogDiff.norm = Σ channelCounts` (`:967`) | becomes the episode's payload — its ledger is the grain above | `π : Intent → Quotient` (`PhysicalSchema.ofCatalog`); the named `Tolerance` set |
+| **episode** | `EpisodeCoordinate = Version × Environment × At` (`Episode.fs:11-16`) | the episode edge; `ChangeManifest` (move counts, ‖δ‖, refactorlog xref, CDC series) | ‖δ‖ per edge; `pathLength` vs net displacement (`ChangeManifest.fs:97-98`) | `LifecycleStore` — monotone append, verified-only admission (`Episode.fs:180-182`; `MigrationRun.fs:271+`) | Verify: B′ reproduces B (`isSchemaEqual`); FTC replay equality |
+| **run** | **missing as a value** (§3.5 — the holonic gap) | before/after delta on KeyLabels | per-label Δms / Δcount | `BenchSink` + `RunLedger` + `LogSink` + journal refs — four sinks, fragmented | run-to-run jitter threshold (~2×; the 15% noisy-promotion trigger) and the μ+σ gate — the run grain's *named tolerances* (`PERF_HARNESS.md` §3.5; `scripts/perf-gate.sh`) |
+
+The execution tower instantiates the same five aspects with `Bench` as the meter: a sample has
+a label (identity), a duration (norm), an accumulator (ledger), and a baseline with a σ-floor
+(comparison) — and its one missing aspect is the typed stage boundary (R2), exactly as the
+state tower's one missing row is the Run value (R1). The two recommendations are not additions
+to the tower; they are its completion.
+
+### 4.2 The holon laws — aggregation commutes with the aspects
+
+The falsifiable content of the map: moving up one grain by aggregation must commute with each
+aspect. Six instances, each either witnessed or named open:
+
+1. **Norm, row → kind.** Σ per-row captures = the kind's capture count — witnessed at *exact
+   equality* (`ReverseLegCdcNormTests`: 3 kinds × 4 rows = 12 captures; per-operation weights
+   pinned by `CdcMeasureTests`).
+2. **Norm, channel → catalog.** `‖δ‖ = Σ_c ‖π_c(δ)‖` (T14; the A38 disjoint-partition tests).
+3. **Count, chunk → kind.** Σ journaled `RawCount` = the kind's row total — witnessed only
+   *indirectly* (the streaming ≡ materialized equivalence test); no direct ledger-sum
+   assertion exists. A named gap, cheap to close in the harness.
+4. **State, episode → timeline.** `fold ⊕ = between genesis latest` (T13's functor law;
+   `LifecycleTests` + `LifecycleStoreTests`, over a disk-loaded chain).
+5. **Time, stage → run.** `Σ wall(stage) + ε = wall(run)` — not yet structural (stages are
+   display strings, `OperatorConsole.fs:91-100`); this is R2, the execution tower's one open law.
+6. **Path vs net, across episodes.** `Σ‖δᵢ‖ ≥ ‖Σδᵢ‖`, slack = churn — witnessed live
+   (`ChangeManifestTests.fs:136`).
+
+### 4.3 The deliberate breaks in self-similarity
+
+A holonic map that claimed perfect self-similarity would be decoration. The tower breaks in
+four places, and each break is load-bearing:
+
+- **The row grain refuses the SsKey.** Identity at row grain is the reconciled business key;
+  the one place rows *do* carry SsKeys (in-flight, `READSIDE_ROW` synthesis) is the measured
+  bottleneck §3.3 corrects. The break is correct; the violation of the break is the bug.
+- **The row-grain ledger is not the engine's.** CDC is substrate-kept; the engine reads the
+  meter rather than keeping the books — the delta-representation asymmetry
+  (`WAVE_6_ALGEBRA.md` §12.4) reappearing as a ledger-ownership fact.
+- **The chunk grain exists only on the streaming realization.** The materialized path's G10
+  marker is a degenerate one-row ledger (run-level, not chunk-level); R3's contract
+  unification restores self-similarity rather than inventing it.
+- **The run grain's identity and ledger cells are empty or fragmented.** The holonic map makes
+  R1 legible as the completion of the tower, not a new idea bolted onto it.
+
+---
+
+## 5 — The calculus of the constellation — composition, derivatives, integrals
+
+The corpus already has a field theory in miniature: `WAVE_6_ALGEBRA.md` §12.1 places every
+concern κ at coordinates (emission, episode), with `∂κ/∂emission` integrating to the manifest,
+`∂κ/∂episode` integrating to the provenance store, and the mixed partial realized as the
+change-manifest series. The holonic map exposes the axis that framework left implicit:
+**grain**. The field is κ(emission, episode, grain); the derivative along the grain axis is
+refinement (a kind-load differentiates into chunks, a chunk into row-moves); its integral is
+aggregation; and §4.2's holon laws are the field's **grain-covariance** — differentiate then
+aggregate equals aggregate then differentiate, witnessed wherever the laws are green. Three
+axes, three integrals: the manifest (over emission), the ledger (over time), the rollup (over
+grain).
+
+### 5.1 The fundamental theorem, per grain
+
+The FTC — *the fold of the displacement quanta recovers the state* — is not one theorem here
+but a family, one instance per grain, each running on different machinery:
+
+| Grain | The integral | The machinery |
+|---|---|---|
+| row | the target table = the source applied through the diff; the predicate computes dδ pointwise and **SQL Server performs the integration at apply** | `changeDetectionPredicate` (`ScriptDomBuild.fs:810`), wired into `WHEN MATCHED` at `:880` — the substrate-fused integral of §12.4 |
+| chunk | the loaded kind = the fold of journaled chunks; *resume* = continue the integral from the last verified partial sum; *drift* = the integrand changed under the fold (W3 enforced at runtime) | `writePlanStreaming` + `CaptureJournal` |
+| episode | `reconstructLatest = genesis ⊕ Σδ` over a disk-loaded chain | T13; `EpisodicLifecycle` + `LifecycleStore` |
+| run | before/after is the **difference quotient** at the observability plane; the antiderivative — the Run value — does not yet exist | the harness's `diff` (`PERF_HARNESS.md` §3.4); R1 supplies the antiderivative |
+
+### 5.2 The operator algebra
+
+The stars, typed as operators; the system's behaviors are their compositions. Signatures are
+the code's, not proposals:
+
+```
+⊖   between    : State × State → Delta                      CatalogDiff.fs:654
+⊕   applyDiff  : State × Delta → State
++   compose    : Delta × Delta ⇀ Delta                      partial — defined iff endpoints meet (:986)
+π_c            : Delta → Delta                              channel projection; π_c ∘ π_c' = 0 (T14)
+‖·‖ norm       : Delta → ℕ                                  (:967)
+π_Q            : Intent → Quotient                          PhysicalSchema.ofCatalog — total, not faithful
+emit           : Delta ⇀ Script                             partial — S5 (the named refusal) IS dom(emit)'s complement, enumerated
+run            : Script × Substrate → Substrate
+probe          : Stream α → Stream α                        identity on the value plane; effect on the meter plane
+append         : Ledger × Quantum → Ledger                  monotone monoid action (Episode.fs:180; CaptureJournal.fs:81)
+fold           : Ledger → State                             the integral (§5.1)
+```
+
+Three identities are the calculus's content:
+
+1. **Equivariance (T16, restated).** `realize(A ⊕ δ) = run(emit δ, realize A)` modulo the named
+   residual: `realize` intertwines the model-plane and substrate-plane torsor actions. The
+   commuting square is precisely the statement that realization is an **equivariant map**
+   between two spaces acted on by displacement, with `emit` the (partial) homomorphism between
+   the displacement structures — isometric exactly where T15 holds.
+2. **The measurement homomorphism.** `‖·‖ : (Delta, +) → (ℕ, +)` is additive across orthogonal
+   channels (T14) and subadditive in general (the triangle inequality, with churn as the slack).
+   The same shape recurs on the time plane: `Bench` is the run-grain instance into (ms, +), and
+   stage-additivity (R2) is its exactness condition. One measurement law; two rulers (S6);
+   stated once.
+3. **Non-perturbing observation, with priced back-action.** `probe` (`Bench.streamProbe`,
+   `AsyncStream.probe`) is the identity on the value channel — elements pass through unchanged
+   — and effects only the meter. Where the meter's own cost is non-negligible the corpus
+   already prices it: the harness mandates measuring a per-row scope's overhead "before
+   trusting fine deltas" (`PERF_HARNESS.md` §3.6, label 1). Back-action is named, measured,
+   and subtractable — never assumed zero.
+
+One closing observation on idiom: these operators already compose in the house style — Kleisli
+`>=>` for passes, `|>` pipelines for realizations, folds for ledgers. The calculus is not a
+proposed abstraction layer; it is the type signatures the code already has, read as one
+grammar. The discipline of §2 P2 still governs it: none of these operators earns a typeclass.
+They earn laws with witnesses.
+
+---
+
+## 6 — The conceptual thermodynamics — conservation, dissipation, refusal
+
+This section treats the thermodynamic reading as subject material under the document's own
+discipline: each correspondence is cashed to an equation or witness already in the corpus, and
+the final paragraph states where the analogy must stop. Nothing here introduces a mechanism;
+the reading earns its place because it *predicts the architecture's actual choices* — the
+fallback hierarchy, the placement of gates before mutations, the eject's design fork — rather
+than decorating them.
+
+### 6.1 The correspondence table
+
+| Concept | The engine's realization | Equation / witness | Where the analogy ends |
+|---|---|---|---|
+| **Conserved charge** | Identity (`SsKey`) under every move; creation and annihilation only at Add/Remove | A43; Rename perturbs Designation while conserving Identity; `‖rename‖_data = 0` | conservation is postulated and witnessed, not derived from a symmetry principle — though `Realization := Designation` is, precisely, a gauge choice: the policy selecting the coordinate system in which the charge is expressed (`WAVE_6_ALGEBRA.md` §1, the disposition note) |
+| **State function vs path function** | net displacement `B ⊖ A` is path-independent (W2/Chasles); accumulated work `Σ‖δᵢ‖` is path-dependent | the codebase wrote the sentence itself: `pathLength` is "churn — work done that did not move the net position" (`ChangeManifest.fs:97`); live witness `ChangeManifestTests.fs:136` | — |
+| **Minimal / reversible work** | isometric emission `‖emit(δ)‖ = ‖δ‖`; the change-detecting MERGE is the quasi-static realization — exactly the work the displacement requires | T15; CDC-norm exact equality (`ReverseLegCdcNormTests`) | — |
+| **Dissipation** | norm inflation `‖emit(δ)‖ − ‖δ‖ ≥ 0`: complete-replace dissipates `2·\|table\| − ‖δ‖` — "norm-inflating — the precise algebraic reason it is the fallback, not the default"; across time, churn = `Σ‖δᵢ‖ − ‖Σδᵢ‖` (triangle slack) | T15's complete-replace clause; T14 equality-iff-orthogonal; the churn witness | dissipation is **counted, not weighted** — no temperature, no free-energy functional; two equal counts cost the same regardless of what they touch |
+| **Equilibrium / zero net flux** | the idempotent redeploy (P-5): `A ⊖ A = 0` ⇒ zero ALTERs, zero captures; drift = measured departure, `‖deployed ⊖ expected‖` per channel (P-8) | W1; the CDC-silence property — the one place the proof is the *absence* of signal ("the log's absence is the proof") | — |
+| **Irreversibility, priced at consent** | the abstract groupoid is fully reversible (every generator invertible); irreversibility enters only at realization — Remove/Delete annihilate the charge. The engine's posture is the thermodynamic one: the irreversible act is declared *before* it is performed (Declare(-loss), refuse-unless-declared), priced at consent time, never discovered at recovery time. Reversible moves are cheap by theorem (`sp_rename`'s data-norm is zero) | the emission-asymmetry note (`WAVE_6_ALGEBRA.md` §3); the declared-loss gates; A43's corollary | reversibility lives in the abstract groupoid only; the realization layer's partiality is the ground truth the gates defend |
+| **The monotone record** (a second-law analog about *information*, not disorder) | every provenance ledger only grows: the refactorlog never deletes (fresh-deploy replay needs full history); `EpisodicLifecycle.append` "fails rather than silently reordering" (`Episode.fs:180-182`); journals append-only. The arrow of time is structural | P-PROV; `NonMonotonic` (`MigrationRun.fs:90`); `CaptureJournal.append` | the quantity that is monotone is the record's information about the past, not an entropy over states. The eject's named fork — append-forever vs collapsible-at-freeze (P-7) — is exactly the question of **terminal coarse-graining**: may the microhistory be discarded once no consumer will ever publish against an intermediate state? The corpus's discriminating condition is the correct one |
+| **The meter and its back-action** | `Bench`/`probe` as the calorimetry of computation; CDC as the write-work meter — two conjugate rulers over one economy | S6; the harness's instruction to measure the probe's own overhead first (`PERF_HARNESS.md` §3.6) | no uncertainty principle: back-action here is additive overhead, measurable and subtractable |
+| **Sorting without unaccounted loss** | the intent filter: every observed difference lands in `intended ⊕ tolerated`, nothing unclassified (P-IF); a single unnamed leak immediately manifests as spurious work (a spurious ALTER on idempotent redeploy) | the residual of T16 (`WAVE_6_ALGEBRA.md` §8); P-5's stakes | the sorting is not free — its completeness is a *tested property* paid for in verification work, which is the honest cost of the demonless filter |
+
+### 6.2 What the architecture achieves, in this reading
+
+It converts schema-and-data change from an unmetered phenomenon into a **metered economy**.
+Every quantum of change is counted at the boundary it crosses — the first-law discipline P1
+already names. Waste is a defined, measured quantity — norm inflation within a run, churn
+across runs — rather than an intuition. Equilibrium is a testable state whose witness is
+silence. Irreversible acts are priced before they are performed. And the record of the past
+grows monotonically, giving the system a structural arrow of time.
+
+Under this lens the isomorphism ladder acquires a thermodynamic statement: **L1** says a meter
+exists; **L2** — no silent erasure — says *no flow bypasses a meter*; **L3** — the composed
+`migrate` — says the entire economy runs through one circuit whose books balance end to end
+(T16). And the recommendation's two structural commitments stop being observability
+conveniences: R2 meters the engine's own time (stages as the metered segments), R1 closes the
+engine's own runs into comparable budgets. They are the completion of the thermodynamic
+program — the engine, having metered the estate's change, finishes by metering itself.
+
+### 6.3 Where the analogy must stop
+
+The lens is a reading of existing equations, never a generator of new mechanisms. It fails —
+and should be abandoned at that point — the day a design argument invokes a thermodynamic
+concept with no corresponding equation in the engine. Three named non-extensions: dissipation
+is unweighted (no cost functional over tables — a "temperature" knob has no referent here);
+there is no statistical mechanics beneath the counts (CDC rows are exact, not sampled; the
+norm is a census, not an expectation); and no entropy *quantity* over states exists or should
+be invented — the monotone thing is the record, not the estate. The counterexample condition
+for this entire section: any row of §6.1 that cannot be traced to its cited equation or
+witness is decoration, and a future agent should cut it — per the `NORTH_STAR.md` discipline
+this document inherits.
+
+---
+
+## 7 — The streaming hypothesis, adjudicated
 
 The seed hypothesis: *the stream as core praxis — a streaming, task-based architecture in which
 the stream itself is the globally disambiguated concern, a core data model wrapping the stream
@@ -361,7 +564,7 @@ refusals; what they *run* is streams. The stream is what flows; the ledger is wh
 
 ---
 
-## 5 — The recommendation
+## 8 — The recommendation
 
 **Name the system what it already is — a Conservation Ledger — and finish it.** The engine is
 an accounting system for change: SsKeys are the account holders (S1); displacements are the
@@ -431,7 +634,7 @@ boundary-layer carrier with a three-function surface that grows only under consu
 
 ---
 
-## 6 — The staged migration path
+## 9 — The staged migration path
 
 Each stage is independently shippable, ordered so that measurement precedes mechanism. Stages
 0–1 are already-resolved backlog; the constellation adds 2–5.
@@ -477,13 +680,13 @@ stay documented hazards on the write path).
 
 ---
 
-## 7 — What not to build
+## 10 — What not to build
 
 Directions considered against the constellation and rejected, with the discriminating reason.
 Several have already been rejected once by this codebase; they are listed so the temptation is
 recognized when it recurs.
 
-1. **A core `Stream<'a>` model / Rx / `IObservable` / actor runtime.** Rejected by §4's four
+1. **A core `Stream<'a>` model / Rx / `IObservable` / actor runtime.** Rejected by §7's four
    lines of evidence. The re-open trigger is honest and narrow: a *second* consumer demanding a
    specific combinator re-admits that combinator (the `nextBatch` precedent) — never the layer.
 2. **A `Torsor` typeclass / renaming `between`→`⊖`.** Already refused (`WAVE_6_ALGEBRA.md`
@@ -511,7 +714,7 @@ recognized when it recurs.
 
 ---
 
-## 8 — The epistemic ledger of this document
+## 11 — The epistemic ledger of this document
 
 Applying the engine's own discipline to this thesis: what here is verified, what is testimony,
 what is conjecture.
@@ -555,6 +758,19 @@ contract without semantic loss (R3's counterexample condition); that stage-addit
 with small ε on this host class (R2); that the row carrier is the dominant non-wire cost at
 scale (R4 — the priors say yes at loopback; the harness decides); that the Run value's live ≡
 post-hoc projection law is satisfiable over the existing LogSink envelope vocabulary (R1).
+
+**Amendment claims (same-day second pass, §§4–6).** The holon laws of §4.2 are classified at
+entry: laws 1, 2, 4, and 6 carry live witnesses (cited); law 3 (chunk → kind ledger-sum) is
+witnessed only indirectly through the streaming ≡ materialized equivalence and is a named gap;
+law 5 (stage additivity) is unbuilt by definition — it *is* R2. The calculus of §5 introduces
+no new operator: every signature in §5.2 is read from the code, and the three identities
+restate T16, T14/T15, and the harness's own back-action note. The thermodynamic
+correspondences of §6.1 are readings of existing equations — every row cites its witness; the
+section carries its own counterexample condition (§6.3) and three named non-extensions. The
+strongest single anchor found in the amendment's verification pass: the codebase independently
+wrote the state-vs-path distinction in its own words — `ChangeManifest.fs:97`, "churn — work
+done that did not move the net position," with a green witness — so the thermodynamic reading
+was latent in the corpus before this document named it.
 
 The constellation stands or falls with these. If the harness refutes R4's premise, the row
 carrier stays as it is and this document's §3.3 becomes a documented refuted candidate — which
