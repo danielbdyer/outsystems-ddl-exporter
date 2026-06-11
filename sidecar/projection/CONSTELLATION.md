@@ -34,12 +34,12 @@ each construct anchored to its in-repo precedent; prior §§9–11 renumbered §
 1. [The constellation map — eight stars, with evidence](#1--the-constellation-map)
 2. [The organizing principles](#2--the-organizing-principles)
 3. [The transpositions — what the stars reveal laid across one another](#3--the-transpositions)
-4. [The holonic map — one structure, every grain](#4--the-holonic-map)
-5. [The calculus of the constellation — composition, derivatives, integrals](#5--the-calculus-of-the-constellation)
-6. [The conceptual thermodynamics — conservation, dissipation, refusal](#6--the-conceptual-thermodynamics)
+4. [The holonic map — one structure, every grain](#4--the-holonic-map--one-structure-every-grain)
+5. [The calculus of the constellation — composition, derivatives, integrals](#5--the-calculus-of-the-constellation--composition-derivatives-integrals)
+6. [The conceptual thermodynamics — conservation, dissipation, refusal](#6--the-conceptual-thermodynamics--conservation-dissipation-refusal)
 7. [The streaming hypothesis, adjudicated](#7--the-streaming-hypothesis-adjudicated)
 8. [The recommendation — the Conservation Ledger](#8--the-recommendation)
-9. [The reification — the future codebase, in F#](#9--the-reification)
+9. [The reification — the future codebase, in F#](#9--the-reification--the-future-codebase-in-f)
 10. [The staged migration path](#10--the-staged-migration-path)
 11. [What not to build](#11--what-not-to-build)
 12. [The epistemic ledger of this document](#12--the-epistemic-ledger-of-this-document)
@@ -185,7 +185,7 @@ partial sum. The ledger is the torsor made durable.
 ## 2 — The organizing principles
 
 Transposing the stars yields four principles that make the whole cohere. They are descriptive —
-each is already operating in the code — and the recommendation in §5 is nothing more than
+each is already operating in the code — and the recommendation in §8 is nothing more than
 finishing their application.
 
 **P1 — Conservation accounting.** Every quantum of change crosses each boundary exactly once,
@@ -932,7 +932,7 @@ ships under the bench protocol.
 
 **Stage 1 — The isolating labels + ReadSide drain scenario** (harness slices 2–3): the
 `readside.rowstream.materialize` label, the batch-size sweep, the bulk100k re-confirmation of
-the §5 priors. Output: the wire/materialize attribution R4 is gated on.
+the `PERF_HARNESS.md` §5 priors. Output: the wire/materialize attribution R4 is gated on.
 
 **Stage 2 — Typed stages (R2).** Mechanical: the stage spine type in the Pipeline, the Watch
 arcs re-derived from it, the additivity property test. Touches `OperatorConsole.fs` /
@@ -1031,7 +1031,9 @@ at summary level; the streaming path's "bounded memory" claim rests on architect
 description, not an asserted RSS bound (`ReverseLegStreamingTests` — the harness should add
 the assertion); the ‖δ‖=k norm witness exists at exactly one scale point
 (`ReverseLegCdcNormTests`, 12 rows); the 1000-row MERGE cliff is untested in either direction.
-Stage 0 addresses all four.
+Stage 0 addresses the last three; the first two — the string-typed citation and the soft-skip
+indistinguishability — are weaknesses of the proof surface itself, named here so they are not
+mistaken for verified ground.
 
 **Conjecture, falsifiable as stated:** that the journal/episode shapes generalize to one
 contract without semantic loss (R3's counterexample condition); that stage-additive time holds
