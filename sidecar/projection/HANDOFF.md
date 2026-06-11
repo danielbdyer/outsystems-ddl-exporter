@@ -4,11 +4,12 @@ To the next agent.
 
 One new canonical surface sits at the projection root: **`CONSTELLATION.md`**
 (2026-06-11; amended the same day with §§4–6 — the holonic map, the
-calculus, the conceptual thermodynamics — with later sections renumbered;
-pointers below follow the amended numbering) — the architectural thesis for
+calculus, the conceptual thermodynamics — and §9, the reification of
+R1–R5 as signature-grade F#; later sections renumbered; pointers below
+follow the amended numbering) — the architectural thesis for
 where this codebase is headed, derived from the code at HEAD by an
 eight-sector reconnaissance plus source spot-checks. Read it AFTER
-`PERF_HARNESS.md`, not instead of it: its §9 migration path deliberately
+`PERF_HARNESS.md`, not instead of it: its §10 migration path deliberately
 anchors on the harness backlog, so **your program is unchanged — build the
 perf harness first** (`PERF_HARNESS.md` §4, slice 0 onward). The thesis names the system's organizing principle (the
 Conservation Ledger: torsor partial sums, fingerprinted, append-only — at
@@ -26,15 +27,15 @@ with no chunking (`ScriptDomBuild.fs:857`) and NO test covers the
 witness before any fix lands.
 
 What not to re-litigate from the thesis without a DECISIONS amendment: the
-stream-wrapper refusal (its §10 item 1), the Torsor-typeclass refusal
-(§10 item 2, reaffirming `WAVE_6_ALGEBRA.md` §12.3), and runtime-adaptive
-realization selectors (§10 item 4 — selectors stay pure over committed
+stream-wrapper refusal (its §11 item 1), the Torsor-typeclass refusal
+(§11 item 2, reaffirming `WAVE_6_ALGEBRA.md` §12.3), and runtime-adaptive
+realization selectors (§11 item 4 — selectors stay pure over committed
 priors). R1 (the Run
 as a value — the one aggregate with no section/retraction pair) is the
 largest new structural commitment; it is staged AFTER the harness and the
 stage spine, and it subsumes D5/D6 and the `REPORTING_HORIZON.md`
-run-ledger — check the thesis §8/§9 before opening any of those backlog
-items independently.
+run-ledger — check the thesis §8/§9/§10 before opening any of those
+backlog items independently.
 
 Hold the spine; balance the books.
 

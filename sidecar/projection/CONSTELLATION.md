@@ -10,13 +10,15 @@ at HEAD `9658cfa` (`ScriptDomBuild.fs` MERGE row-adds, `AsyncStream.fs` full sur
 `TransferRun.fs:27-63`, `Catalog.fs:77`, `ReadSide.fs:921-922`, `OperatorConsole.fs:91-100`,
 `CatalogDiff.fs:933-986`). Every architectural claim below carries a path; every recommendation
 carries a counterexample condition, per the `NORTH_STAR.md` discipline. Where this document's own
-evidence is thin, §11 says so.
+evidence is thin, §12 says so.
 **Amended (same day, second pass).** §§4–6 added — the holonic map, the calculus, and the
 conceptual thermodynamics; the prior §§4–8 renumbered §§7–11. New evidentiary anchors verified
 for the amendment: `ChangeManifest.pathLength` + the live churn witness
 (`ChangeManifest.fs:97-98`; `ChangeManifestTests.fs:136`), `changeDetectionPredicate`
 (`ScriptDomBuild.fs:782-880`), the monotone-append refusal (`Episode.fs:180-182`;
 `MigrationRun.fs:90`), `EpisodeCoordinate` (`Episode.fs:11-16`).
+**Amended (same day, third pass).** §9 added — the reification: R1–R5 as signature-grade F#,
+each construct anchored to its in-repo precedent; prior §§9–11 renumbered §§10–12.
 
 > **The thesis in one sentence.** Every change this engine makes is a quantum of displacement
 > that crosses each boundary exactly once, is counted at the crossing by an independent ruler,
@@ -37,9 +39,10 @@ for the amendment: `ChangeManifest.pathLength` + the live churn witness
 6. [The conceptual thermodynamics — conservation, dissipation, refusal](#6--the-conceptual-thermodynamics)
 7. [The streaming hypothesis, adjudicated](#7--the-streaming-hypothesis-adjudicated)
 8. [The recommendation — the Conservation Ledger](#8--the-recommendation)
-9. [The staged migration path](#9--the-staged-migration-path)
-10. [What not to build](#10--what-not-to-build)
-11. [The epistemic ledger of this document](#11--the-epistemic-ledger-of-this-document)
+9. [The reification — the future codebase, in F#](#9--the-reification)
+10. [The staged migration path](#10--the-staged-migration-path)
+11. [What not to build](#11--what-not-to-build)
+12. [The epistemic ledger of this document](#12--the-epistemic-ledger-of-this-document)
 
 ---
 
@@ -243,7 +246,7 @@ architecture should name it once. Consequence: **pausability is not a streaming 
 a torsor feature.** Any operation whose progress is a fold over displacement quanta becomes
 pausable the moment its partial sums are ledgered — which is why the materialized path's G10
 progress table (`TransferRun.fs:420-431`) and the journal, today structurally disjoint resume
-mechanisms, should converge on one contract (§9, stage 3).
+mechanisms, should converge on one contract (§10, stage 3).
 
 ### 3.2 Stream × Measurement: probe entanglement is a missing stage boundary, and T14 names the fix
 
@@ -634,10 +637,287 @@ boundary-layer carrier with a three-function surface that grows only under consu
 
 ---
 
-## 9 — The staged migration path
+## 9 — The reification — the future codebase, in F#
+
+The recommendation of §8 names five commitments; this section shows them as code. The register:
+**signatures are commitments, bodies are sketches.** Every construct below extends a named
+precedent already in the codebase, in the house style (private smart constructors,
+`[<RequireQualifiedAccess>]` modules, `Result` at boundaries, Core synchronous, effects at the
+edges); every F# feature promoted here cites the `CLAUDE.md` feature-surface row whose trigger
+it fires — the corpus's own protocol for adopting language features. Acceptance witnesses are
+given as house-style backticked test names, because in this codebase a design is not a diagram;
+it is the set of laws its tests will cite.
+
+### 9.1 The proof-token idiom — the one move everything else uses
+
+The codebase already has its deepest pattern in `ArtifactByKind` (`ArtifactByKind.fs:59-82`): a
+**private single-case DU whose smart constructor is the law** — a value of the type cannot
+exist unless the law held at construction. T11 is not tested there; it is unforgeable. The
+reification generalizes this move to two new tokens:
+
+```fsharp
+/// A ledger entry that passed its grain's admission check. Minted ONLY by
+/// the grain's verifier — the private constructor IS the admission law.
+/// Chunk grain: minted on source-fingerprint match (the CaptureJournal
+/// check). Episode grain: minted on B' ≡ B (MigrationRun.recordVerified,
+/// which today enforces this by convention at one call site).
+type Verified<'entry> = private Verified of 'entry
+
+/// A group whose members may execute concurrently. Minted ONLY by the
+/// topological pass. DataEmissionComposer.fs:338's docstring obligation —
+/// "callers MUST deploy Phase1Levels in order; within a single level…" —
+/// becomes a constructor: the MUST dies, the type lives.
+type ParallelSafe<'a> = private ParallelSafe of 'a list
+```
+
+The immediate payoff is R5: `Deploy.executeBatchParallel` — shipped, proven, and unwired since
+perf-sweep-5 (`Deploy.fs:413-498`, "the canary continues using sequential executeBatch until
+the composer exposes safe groups") — re-signs as
+
+```fsharp
+val executeBatchParallel : SqlConnection -> ParallelSafe<Segment> -> Task<unit>
+```
+
+and becomes impossible to miswire: the only producer of its argument is the pass that proves
+the safety. Witnesses: `` `R5: leveled deploy ≡ sequential deploy on PhysicalSchema` `` (the
+equivalence canary, per the capability-descent rule that every new rung carries one) and the
+convention witness that only `TopologicalOrder.levels` mints the token (Bucket B — the
+structural kind `AxiomTests.fs` already catalogues).
+
+### 9.2 The ledger contract (R3) — one algebra, the journal and the store as instances
+
+Per no-I/O-in-Core, the contract splits exactly where `Episode` (Core) and `LifecycleStore`
+(Pipeline) already split: **Core owns the pure chain algebra; the boundary owns append.**
+
+```fsharp
+/// Core — the partial-sum ledger, pure. The journal (chunk grain) and the
+/// lifecycle store (episode grain) become its two instances; the harness's
+/// before/after captures its third. Record-of-functions, not an interface —
+/// the house prefers data over dispatch (object expressions: deferred).
+type LedgerSpec<'state, 'quantum, 'fp when 'fp : equality> =
+    { Genesis       : 'state
+      Apply         : 'state -> 'quantum -> 'state      // ⊕ at this grain
+      FingerprintOf : 'quantum -> 'fp }                 // what admission recomputes
+
+type LedgerEntry<'quantum, 'fp> =
+    { Position : int; Fingerprint : 'fp; Quantum : 'quantum }
+
+[<RequireQualifiedAccess>]
+module Ledger =
+    /// The FTC at this grain (§5.1): fold ⊕ over verified entries.
+    val replay :
+        LedgerSpec<'s,'q,'fp> -> Verified<LedgerEntry<'q,'fp>> list -> 's
+    /// Resume = the first position absent from the chain. Drift = a recorded
+    /// fingerprint disagreeing with recomputation — a NAMED refusal
+    /// (transfer.resume.sourceDrift's shape, generalized), never a silent re-run.
+    val resumePoint :
+        recorded: LedgerEntry<'q,'fp> list -> recompute: (int -> 'fp)
+            -> Result<int, LedgerDrift>
+```
+
+The instances, with what each fingerprints:
+
+| Instance | 'state | 'quantum | 'fp | Admission (mints `Verified`) |
+|---|---|---|---|---|
+| `CaptureJournal` | packed remap + written totals | `ChunkRecord` (`CaptureJournal.fs:18-27`) | `FirstPk × LastPk × RawCount` | source-slice fingerprint match |
+| `LifecycleStore` | `Catalog` | the episode edge (`CatalogDiff` + manifest) | the monotone `EpisodeCoordinate` | `recordVerified`: B′ reproduces B |
+| harness captures | the baseline | one `Bench.Run` (`Bench.fs:355`) | the `RunInputs` digest (§9.4) | scenario determinism check |
+
+The G10 progress table re-reads as the degenerate single-entry instance (one quantum: "the
+whole run"), which is why R3 retires it onto the contract rather than maintaining a second
+mechanism. Witnesses: `` `R3: replay = fold ⊕ — the FTC at every instance` `` (one FsCheck
+property, three instantiations, per the constructed-valid-generator discipline);
+`` `R3: crash at chunk k resumes at k; fingerprint drift refuses by name` ``; and
+`` `R3: Σ RawCount over the chain = the kind's row total` `` — which closes §4.2's holon-law-3
+gap as a by-product of the contract existing.
+
+### 9.3 The stage spine (R2) — the writer-fidelity graduation, applied to time
+
+Stage identity today is a string-prefix convention over event codes (`Watch.fs:48` keys the
+board on "the prefix of the `<stage>.started` / `summary.stageCompleted{stage}` codes") and a
+display list (`OperatorConsole.fs:91-100`). The future state types the spine and brackets every
+stage structurally — the exact graduation the `lineageDiagnostics` CE performed on 2026-05-22,
+when manual record-building went from forbidden-by-discipline to impossible-by-syntax:
+
+```fsharp
+type StageName = private StageName of string            // smart ctor: non-blank, dot-free
+type RunSpine  = private { Declared : StageName list }  // distinct, non-empty;
+                                                        // Watch pre-seeds Pending from it
+type Stage<'a> = private Stage of StageName * (StageContext -> Task<'a>)
+
+/// Member set mirrors LineageDiagnosticsBuilder (Diagnostics.fs:478-500).
+/// Bind IS the boundary crossing, and the crossing is counted (P1):
+///   Bench.scope on the stage name        — structural, not by discipline
+///   Envelope <stage>.started/.completed  — LogSink.fs:129; Watch transitions
+///   Pending → Active → Done              — Watch.fs:43-46, fed not inferred
+/// Run asserts executed ⇔ declared — a missed or extra stage is a named
+/// refusal at run end, not a render glitch.
+type StagedBuilder(spine: RunSpine) =
+    member _.Bind  : Stage<'a> * ('a -> Stage<'b>) -> Stage<'b>
+    member _.Return: 'a -> Stage<'a>
+    member _.Run   : Stage<'a> -> (RunContext -> Task<StagedOutcome<'a>>)
+```
+
+Inside the CE, **unmetered work is syntactically impossible** — there is no way to compute
+between stages without being inside one. Witnesses:
+`` `R2: declared ⇔ executed — the spine's bidirectional totality` `` (the registry pattern's
+fifth instance, after registered⇔executed, code⇔copy, expressible⇔reachable, and the codec);
+`` `R2: wall(run) − Σ wall(stage) ≤ ε — T14 on the time plane` ``; and the structural
+retirement of the lazy-probe trap — a `streamProbe` label now attributes to the stage whose
+bracket encloses its enumeration.
+
+### 9.4 The Run value (R1) — the fifth aggregate, content-addressed
+
+Two feature promotions land here, each by the corpus's own trigger:
+
+```fsharp
+[<Measure>] type ms
+[<Measure>] type captures
+// CLAUDE.md's units-of-measure row defers UoM until "a strategy starts
+// mixing percentile and count values in the same expression" (H-013:
+// trigger unfired). Run.diff is that expression: Δtime and Δcount flow
+// through one delta surface. The trigger fires HERE — and the scope stays
+// here: Bench's hot accumulator remains raw int64; only the comparison
+// surface is dimensioned.
+
+type RunId = private RunId of string
+[<RequireQualifiedAccess>]
+module RunId =
+    /// Content-addressed: SHA-256 over the input digests — the
+    /// CaptureJournal naming move (CaptureJournal.fs:48-52) lifted to run
+    /// grain. The wall clock moves INTO the value and OUT of the address
+    /// (BenchSink's reified non-determinism boundary, relocated per §3.5).
+    val ofInputs : RunInputs -> RunId
+
+type RunInputs =
+    { CatalogDigest  : string                 // SHA-256 of CatalogCodec.serialize
+      PolicyVersion  : string
+      RegistryDigest : string                 // ManifestEmitter.fs:549's digest, reused
+      Spine          : StageName list
+      Scale          : ScaleKnob option }
+
+type Run =
+    { Id            : RunId
+      Inputs        : RunInputs
+      Events        : Envelope list           // LogSink.fs:129-141 — Envelope.RunId
+                                              // already exists; the aggregate it
+                                              // foreign-keys finally does too
+      Bench         : Bench.Run               // Bench.fs:355
+      Ledgers       : LedgerRef list          // journal files; episode coordinates
+      Verdict       : Verdict
+      CapturedAtUtc : DateTimeOffset }
+
+[<RequireQualifiedAccess>]
+module Run =
+    /// Total / deterministic / re-validating — the CatalogCodec discipline,
+    /// with the round-trip law over a constructed-valid generator.
+    val serialize   : Run -> string
+    val deserialize : string -> Result<Run, ValidationError list>
+    /// ⊖ at the observability plane (§5.1's missing antiderivative): runs
+    /// are points; before/after is a displacement; the norm is per-label.
+    val diff : before: Run -> after: Run -> RunDelta
+
+type LabelDelta = { Label : string; DMean : decimal<ms>; DCount : int }
+```
+
+The consumers collapse onto one value: Watch renders it live; `inspect <runId>` (D5) renders it
+post hoc; the perf gate becomes `Run.diff baseline current |> PerfGate.judge` (the μ+σ model
+unchanged — its *input* becomes a value instead of a filename glob); the harness's
+`capture before/after` becomes `Run.diff` restricted to KeyLabels; the R6 N=10 consecutive-green
+gauge is a fold over the run ledger. Witness:
+`` `R1: project (record run) ≡ live view — no rendering shows a fact the Run lacks` ``.
+
+### 9.5 The row quantum (R4) — the quotient cleavage, applied to data in flight
+
+```fsharp
+/// Kind-grain header: the typed vocabulary, established ONCE per stream —
+/// the Intent/Quotient discipline (S3) applied to the data plane.
+type RowBasis = private { Kind : SsKey; Columns : ColumnName[]; Ordinals : Map<Name, int> }
+[<RequireQualifiedAccess>]
+module RowBasis =
+    val ofKind : Kind -> RowBasis                          // basis order = attribute order
+    val view   : RowBasis -> RowQuantum -> Name -> string  // typed access, preserved
+
+/// Row-grain carrier: positional against the basis. [<Struct>] promotion:
+/// CLAUDE.md's own trigger — "when profiling shows allocation pressure on
+/// a hot pass" — is fired by the 2026-06-11 priors (carrier build
+/// ~1.85 µs/row against a ~1.9 µs/row wire floor; PERF_HARNESS.md §5).
+/// A single-field struct over string[] copies one reference: no
+/// large-struct copy hazard. RawValueCodec contract unchanged (DBNull = "").
+[<Struct>]
+type RowQuantum = { Cells : string[] }
+```
+
+Streams become `AsyncStream<RowQuantum>` *with the basis carried beside the stream as a pair* —
+the element type changes; the three-function `AsyncStream` surface does not (§11's first
+refusal holds). Consumer migration: `SurrogateRemap` resolves FK ordinals once per kind through
+the basis, then indexes; `PhysicalSchema` row-hashing iterates `Cells` in basis order instead
+of walking a per-row `Map`; `StaticRow` remains the IR-grain carrier for static populations —
+the quantum is in-flight only. Identity at row grain is the PK cell read through the basis: the
+synthesized `READSIDE_ROW` SsKey and its measured per-row basis `sprintf`
+(`ReadSide.fs:921-922`, ~0.39 µs/row) are **deleted, not optimized**. Witness:
+`` `R4: ofQuantum basis ∘ toQuantum basis = id on StaticRow` ``, gated on harness slice 2 per
+§8's counterexample condition.
+
+### 9.6 The composition — one run face, end to end
+
+The future-state migrate-with-data face, every line annotated with the star or recommendation
+it realizes — and not one line a new mechanism:
+
+```fsharp
+let runMigrateExecute (req: MigrateRequest) : Task<Run> =
+    staged Spines.migrateData {                                     // R2 — declared ⇔ executed; metered by syntax
+        let! deployed = stage Stages.snapshot (fun _ ->
+                            ReadSide.read req.Source)               // S3 — Ingest into the quotient's domain
+        let! plan     = stage Stages.diff (fun _ ->
+                            Migration.plan deployed req.Target      // S2 — emit(B ⊖ A), the torsor leg
+                            |> Gate.declaredLoss req.Consent)       // S5 — irreversibility priced at consent (§6.1)
+        let! _        = stage Stages.apply (fun ctx ->
+                            Ledger.resumePoint ctx.Journal          // R3/S8 — continue the fold from the last
+                            |> Transfer.streamQuanta req.Basis      //          verified partial sum
+                                                                    // R4/S7 — RowQuantum flow on AsyncStream
+                            |> Wavefront.over plan.Levels
+                                 (Deploy.executeLeveled ctx.Sink))  // R5 — ParallelSafe minted by the pass alone
+        let! verdict  = stage Stages.verify (fun _ ->
+                            Canary.verify deployed req.Target)      // S4 — Ingest ∘ Project = id, mod tolerances
+        return verdict                                              // S6 — every bracket above fed two rulers
+    }
+    |> Run.record req.Inputs                                        // R1 — content-addressed; verified-only admission
+
+// The optimizer's loop, now torsor-shaped at the run grain:
+//   Run.diff before after |> PerfGate.judge        — ⊖ on the observability plane
+```
+
+### 9.7 The feature-promotion ledger
+
+Each promotion follows the corpus's protocol: the feature-surface row, the trigger, the scope.
+
+| F# construct | Status in `CLAUDE.md`'s feature surface | What fires it | Scope it lands in |
+|---|---|---|---|
+| CE builder for the spine | precedented — the lineage/diagnostics builders are canonical | R2: metering graduates from discipline to syntax | `StagedBuilder`, Pipeline/CLI |
+| private-DU proof tokens | precedented — `ArtifactByKind` is the worked example | R3 admission; R5 parallel safety | `Verified<_>`, `ParallelSafe<_>` |
+| `[<Struct>]` records | consciously deferred; trigger = "allocation pressure on a hot pass" | trigger **fired** by the measured row-carrier priors | `RowQuantum` only |
+| units of measure | deferred at H-013; trigger = mixed quantities in one expression | trigger **fires** at `Run.diff` (ms × counts, one surface) | the delta surface only; hot accumulators stay raw |
+| `ReadOnlySpan<byte>` / `ValueTask` | already precedented (`PhysicalSchema.fs:345`; `Retry.fs:110`) | — | hashing/codec/retry boundaries, unchanged |
+| record-of-functions contracts | house-preferred over interfaces and object expressions | R3's two existing consumers + the harness third | `LedgerSpec`, Core |
+
+What stays refused, in one line each: SRTP/typeclass-style generalization (arcane here; the
+house proves laws with witnesses, not constraints); free-monad scheduling (H-063 — still
+consumer-less); `IObservable` (the `LogSink.addSubscriber` push model suffices); a stream
+wrapper type (§11's first refusal — R4 changes the *element*, never the surface).
+
+The dream is disciplined: every construct in this section is one of the codebase's own moves
+applied at one more grain. Counterexample condition for the whole section: any sketch whose
+precedent column would be empty is speculation, and must wait for its trigger — per §2 P2,
+which the reification does not get to suspend.
+
+---
+
+## 10 — The staged migration path
 
 Each stage is independently shippable, ordered so that measurement precedes mechanism. Stages
-0–1 are already-resolved backlog; the constellation adds 2–5.
+0–1 are already-resolved backlog; the constellation adds 2–5, and §9 supplies stages 2–5 their
+target signatures.
 
 **Stage 0 — Build the perf harness as designed** (`PERF_HARNESS.md` §4, slices 0–5; design
 RESOLVED). It is the evidence substrate every later stage's acceptance criterion cites. Within
@@ -680,7 +960,7 @@ stay documented hazards on the write path).
 
 ---
 
-## 10 — What not to build
+## 11 — What not to build
 
 Directions considered against the constellation and rejected, with the discriminating reason.
 Several have already been rejected once by this codebase; they are listed so the temptation is
@@ -714,7 +994,7 @@ recognized when it recurs.
 
 ---
 
-## 11 — The epistemic ledger of this document
+## 12 — The epistemic ledger of this document
 
 Applying the engine's own discipline to this thesis: what here is verified, what is testimony,
 what is conjecture.
@@ -771,6 +1051,18 @@ strongest single anchor found in the amendment's verification pass: the codebase
 wrote the state-vs-path distinction in its own words — `ChangeManifest.fs:97`, "churn — work
 done that did not move the net position," with a green witness — so the thermodynamic reading
 was latent in the corpus before this document named it.
+
+**Amendment claims (third pass, §9 — the reification).** The code of §9 is signature-grade
+commitment, sketch-grade body. Every named precedent was verified in source during this pass:
+`Envelope` with its already-existing `RunId` field (`LogSink.fs:129-141`); `StageState` and the
+string-prefix stage convention (`Watch.fs:43-48`); `ChunkRecord` (`CaptureJournal.fs:18-27`);
+`Bench.Stats`/`Bench.Run` (`Bench.fs:90-101`, `:355-360`); the leveled-deploy docstring
+obligation (`DataEmissionComposer.fs:334-359`); the `ReadOnlySpan`/`ValueTask` precedents
+(`PhysicalSchema.fs:345`; `Retry.fs:110`); the CE builder member set (`Diagnostics.fs:275-500`).
+The two feature promotions each cite the `CLAUDE.md` trigger they claim fires, and both claims
+are falsifiable: the `[<Struct>]` promotion dies with R4's gate; the units-of-measure promotion
+dies if `Run.diff` ships carrying a single quantity. No sketch introduces an operator absent
+from §5.2.
 
 The constellation stands or falls with these. If the harness refutes R4's premise, the row
 carrier stays as it is and this document's §3.3 becomes a documented refuted candidate — which
