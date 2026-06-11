@@ -1,3 +1,62 @@
+# Handoff addendum — 2026-06-11 (the realization selector closed the reverse-leg arc; your program is the before/after bottleneck sweep)
+
+To the next agent.
+
+You're picking up at a clean seam. The reverse-leg/288M arc is COMPLETE
+through the realization selector: `ReverseLegRealization.choose` (pure,
+in `TransferRun.fs`) auto-selects the streaming realization whenever the
+request admits it, the capability-descent ladder and per-kind lane choice
+handle the genuinely dynamic layers beneath it, and the whole stack is
+proven at ~35.5–40.8k rows/sec sustained on loopback (288M ≈ 2.0–2.3h).
+Read, in order: `DECISIONS 2026-06-11 — the realization selector`,
+`DECISIONS 2026-06-10 — The streaming realization + chunk-resume journal`,
+`— 6.A.2 LIFTED…`, `— Capability-descent is the house pattern…`, and the
+two addenda at the foot of `AUDIT_2026_06_10_REVERSE_LEG_DML_PROOF.md`
+(~30 minutes). The test surfaces are `ReverseLeg{Canary,Property,Scale,
+Streaming,Boundary}Tests.fs` — the fixture idioms there are your
+templates.
+
+**Your program — the operator's words: "find other places where
+performance might bottleneck and fix them … the profiling, the data
+extraction, the SSDT file emission, the Bootstrap emission itself, how
+the generated INSERT and/or MERGE scripts for the Bootstrap will run.
+Let's before-and-after optimize those too."** Hold the bench-driven
+optimization protocol strictly (three-candidate / 2-refuted / 1-confirmed
+with bench data; refuted swaps documented). The measurement
+infrastructure already exists — do NOT guess at hot spots:
+
+1. **Capture the BEFORE profile first.** The operator-reality canary
+   (`scripts/perf-gate.sh`, ~6s warm) and `GeneratorScaleTests`
+   (`bulk1k/10k/100k`) emit per-label Bench rollups (Count/Mean/P50/P95/
+   P99, sorted by TotalMs — the expensive labels surface at the top).
+   Run bulk100k + operator-reality, keep the rollups as the baseline
+   artifact, and let the top labels NAME your targets.
+2. **The candidate areas, with my priors (verify against the rollup):**
+   `LiveProfiler` / `EvidenceCache` (already discovery-then-derive
+   optimized — measure before touching); `ReadSide.readRowsStream`
+   (per-row `Map<Name,string>` construction — allocation-heavy at scale;
+   a column-array carrier would be an IR-adjacent change, so measure
+   FIRST and weigh against the StaticRow contract); `SsdtDdlEmitter` /
+   `Render.toText` (statement-stream rendering — streamProbe labels
+   exist); `StaticSeedsEmitter.renderMerge` + how the emitted Bootstrap
+   MERGE scripts EXECUTE (batch sizing of the rendered VALUES blocks —
+   note the 1000-row table-value-constructor cap we hit on the transfer
+   side; the same parse-bound ceiling likely applies to emitted scripts,
+   and the staged-bulk pattern from `SurrogateCapture` is the proven
+   alternative shape); `Deploy.executeStream`'s InsertRow-run folding
+   into SqlBulkCopy (already bulk — measure batch boundaries).
+3. **Per win:** before/after numbers in the commit message, a Bench
+   label if the path lacks one, and the perf-gate baseline re-recorded
+   (`PERF_GATE_RECORD=1`) ONLY when a floor legitimately improves, with
+   the DECISIONS amendment the gate discipline requires.
+
+Also still open from the reverse-leg queue (lower priority than the
+sweep): the real-wire bench; reconcile ∘ streaming; WipeAndLoad ∘
+journal; journal compaction; the G1/G2 reserved preflights. The FS3511
+Release traps (let rec inside task; tuple let!; tuple-pattern for) and
+the ISNULL-vs-CASE identity-propagation trap are documented in the
+2026-06-10 DECISIONS entries — read them before touching the write path.
+
 # Handoff addendum — 2026-06-10, night (streaming + packed remap + chunk resume + the capture ladder landed)
 
 To the next agent.
