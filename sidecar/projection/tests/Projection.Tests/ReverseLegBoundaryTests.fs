@@ -59,32 +59,62 @@ let ``reverse-leg face: a user-map is REFUSED BY NAME on the reverse leg (the re
             false true false EmissionMode.Incremental false false None [] []
     Assert.Equal(2, exit)
 
-// -- the streaming combinations refuse BY NAME at the face --------------------
+// -- the realization SELECTOR: the best admissible realization, chosen pure --
 
-let private faceExit (emission: EmissionMode) (resumable: bool) (streaming: bool) (journal: string option) (tables: string list) : int =
+let private choose emission resumable tables streamingRequested journal =
+    Projection.Pipeline.ReverseLegRealization.choose emission resumable tables streamingRequested journal
+
+[<Fact>]
+let ``selector: an admissible request streams AUTOMATICALLY — the dominant realization needs no flag`` () =
+    match choose EmissionMode.Incremental false [] false None with
+    | Ok (Projection.Pipeline.ReverseLegRealization.Streaming None) -> ()
+    | other -> Assert.Fail(sprintf "expected auto Streaming, got %A" other)
+
+[<Fact>]
+let ``selector: --journal alone rides the auto-selected streaming realization`` () =
+    match choose EmissionMode.Incremental false [] false (Some "/j") with
+    | Ok (Projection.Pipeline.ReverseLegRealization.Streaming (Some "/j")) -> ()
+    | other -> Assert.Fail(sprintf "expected Streaming with journal, got %A" other)
+
+[<Fact>]
+let ``selector: a table subset falls back to the materialized path (streaming does not yet support it) — no flag, no refusal`` () =
+    match choose EmissionMode.Incremental false [ "Customer" ] false None with
+    | Ok Projection.Pipeline.ReverseLegRealization.Materialized -> ()
+    | other -> Assert.Fail(sprintf "expected Materialized fallback, got %A" other)
+
+[<Fact>]
+let ``selector: WipeAndLoad and --resumable fall back to the materialized path`` () =
+    match choose EmissionMode.WipeAndLoad false [] false None with
+    | Ok Projection.Pipeline.ReverseLegRealization.Materialized -> ()
+    | other -> Assert.Fail(sprintf "expected Materialized for WipeAndLoad, got %A" other)
+    match choose EmissionMode.Incremental true [] false None with
+    | Ok Projection.Pipeline.ReverseLegRealization.Materialized -> ()
+    | other -> Assert.Fail(sprintf "expected Materialized for --resumable, got %A" other)
+
+[<Fact>]
+let ``selector: an EXPLICIT --streaming on an inadmissible request refuses BY NAME — never a silent downgrade`` () =
+    let codeOf r = match r with Error (es: ValidationError list) -> (List.head es).Code | Ok _ -> "OK"
+    Assert.Equal("transfer.reverseLeg.streamingTablesUnsupported", codeOf (choose EmissionMode.Incremental false [ "Customer" ] true None))
+    Assert.Equal("transfer.reverseLeg.streamingResumableUnsupported", codeOf (choose EmissionMode.Incremental true [] true None))
+    Assert.Equal("transfer.reverseLeg.streamingWipeUnsupported", codeOf (choose EmissionMode.WipeAndLoad false [] true None))
+
+[<Fact>]
+let ``selector: --journal on an inadmissible request refuses by name — the ledger belongs to the streaming realization`` () =
+    match choose EmissionMode.Incremental false [ "Customer" ] false (Some "/j") with
+    | Error es -> Assert.Equal("transfer.reverseLeg.journalRequiresStreaming", (List.head es).Code)
+    | Ok other -> Assert.Fail(sprintf "expected the journal refusal, got %A" other)
+
+[<Fact>]
+let ``streaming face: an explicit --streaming with --tables refuses at the face with exit 2`` () =
     let model = tinyModel
-    RunFaces.runReverseLegTransfer
-        "env:L3B_SRC" "env:L3B_SINK"
-        (Projection.Pipeline.CatalogRendition.logical model)
-        (Projection.Pipeline.CatalogRendition.physical model)
-        [] None
-        false true false emission resumable streaming journal tables []
-
-[<Fact>]
-let ``streaming face: a declared table subset refuses by name (transfer.reverseLeg.streamingTablesUnsupported) — whole-estate only`` () =
-    Assert.Equal(2, faceExit EmissionMode.Incremental false true None [ "Customer" ])
-
-[<Fact>]
-let ``streaming face: --resumable refuses by name — the journal IS the streaming resume (the G10 progress table needs CREATE TABLE the data grant forbids)`` () =
-    Assert.Equal(2, faceExit EmissionMode.Incremental true true None [])
-
-[<Fact>]
-let ``streaming face: WipeAndLoad refuses by name — the wipe must invalidate the journal (the named follow-on)`` () =
-    Assert.Equal(2, faceExit EmissionMode.WipeAndLoad false true None [])
-
-[<Fact>]
-let ``streaming face: --journal without --streaming refuses by name — the ledger belongs to the streaming realization`` () =
-    Assert.Equal(2, faceExit EmissionMode.Incremental false false (Some "/tmp/j") [])
+    let exit =
+        RunFaces.runReverseLegTransfer
+            "env:L3B_SRC" "env:L3B_SINK"
+            (Projection.Pipeline.CatalogRendition.logical model)
+            (Projection.Pipeline.CatalogRendition.physical model)
+            [] None
+            false true false EmissionMode.Incremental false true None [ "Customer" ] []
+    Assert.Equal(2, exit)
 
 // -- reserved follow-on contracts (Skip stubs with promotion triggers) --------
 

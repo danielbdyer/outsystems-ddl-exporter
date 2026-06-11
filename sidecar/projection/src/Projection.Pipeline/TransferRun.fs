@@ -12,6 +12,56 @@ open Projection.Core.Passes
 open Projection.Adapters.Sql
 open Projection.Targets.SSDT
 
+/// Which realization a reverse-leg request runs on — the "best possible
+/// realization" policy made STRUCTURAL. The streaming realization
+/// dominates the materialized path on every measured axis FOR THE
+/// REQUESTS IT ADMITS (faster: ~35.5k vs ~27k rows/sec at the 2026-06-10
+/// bench; bounded memory; journal-resumable), so it is chosen
+/// AUTOMATICALLY whenever the request admits it; the materialized path
+/// carries the combinations streaming does not yet support (a declared
+/// table subset, the G10 resumable envelope, WipeAndLoad). An EXPLICIT
+/// streaming request on an inadmissible combination refuses BY NAME —
+/// never a silent downgrade; a journal on an inadmissible combination
+/// likewise (the ledger belongs to the streaming realization).
+[<RequireQualifiedAccess>]
+type ReverseLegRealization =
+    | Streaming of journalDirectory: string option
+    | Materialized
+
+[<RequireQualifiedAccess>]
+module ReverseLegRealization =
+
+    /// Pure and total over the request surface: every request lands on a
+    /// realization or a NAMED refusal. The selector is deterministic from
+    /// the request alone — testable without a connection.
+    let choose
+        (emission: EmissionMode)
+        (resumable: bool)
+        (tables: string list)
+        (streamingRequested: bool)
+        (journalDirectory: string option)
+        : Result<ReverseLegRealization> =
+        let admissible =
+            List.isEmpty tables && not resumable && emission = EmissionMode.Incremental
+        if streamingRequested && not (List.isEmpty tables) then
+            Result.failureOf
+                (ValidationError.create "transfer.reverseLeg.streamingTablesUnsupported"
+                    "the streaming reverse leg loads the whole estate; a declared table subset is the named follow-on. Remove --tables or drop --streaming to run materialized.")
+        elif streamingRequested && resumable then
+            Result.failureOf
+                (ValidationError.create "transfer.reverseLeg.streamingResumableUnsupported"
+                    "the streaming reverse leg resumes through its journal, not the G10 marker (whose progress table needs CREATE TABLE the data grant forbids). Replace --resumable with --journal <dir>.")
+        elif streamingRequested && emission = EmissionMode.WipeAndLoad then
+            Result.failureOf
+                (ValidationError.create "transfer.reverseLeg.streamingWipeUnsupported"
+                    "the streaming reverse leg is Incremental; the wipe-and-load refresh stays on the materialized path (the wipe must invalidate the journal — the named follow-on).")
+        elif Option.isSome journalDirectory && not admissible then
+            Result.failureOf
+                (ValidationError.create "transfer.reverseLeg.journalRequiresStreaming"
+                    "--journal is the streaming realization's chunk-resume ledger; the request's table subset / --resumable / wipe forces the materialized path. Remove those to stream, or drop --journal.")
+        elif admissible then Result.success (ReverseLegRealization.Streaming journalDirectory)
+        else Result.success ReverseLegRealization.Materialized
+
 /// The Transfer orchestrator — `Compose`'s data-direction sibling. Binds
 /// the two legs of the adjunction across two substrates: `Ingestion`
 /// (Source → rows) then a Projection-onto-Sink realization (rows → Sink),

@@ -21435,3 +21435,25 @@ face, which refuses the unsupported combinations by name
 source while chunk N writes to the sink — hot task, distinct connections)
 lifted it to a stable ~35.5k rows/sec (288M ≈ 2.3h, loopback) — kept per
 the bench protocol; the overlap's value grows with real network latency.
+
+## 2026-06-11 — The reverse-leg realization SELECTOR: the dominant realization is chosen automatically; flags are overrides, downgrades are never silent
+
+The operator asked whether the realization choice is "inherently dynamic
+so it arrives at the best possible realization across all applicable use
+cases." Resolution: where one realization DOMINATES on every measured
+axis for the requests it admits, dynamism is a DEFAULT WITH NAMED
+FALLBACK CONDITIONS, not a heuristic chooser. `ReverseLegRealization.
+choose` (pure, total, connection-free) selects the STREAMING realization
+automatically whenever the request admits it (Incremental, no table
+subset, no --resumable) — it is faster (~35.5k vs ~27k rows/sec at the
+2026-06-10/11 bench), bounded-memory, and journal-resumable — and falls
+back to the materialized path for the combinations streaming does not
+yet support. `--journal` alone rides the auto-selected stream. An
+EXPLICIT `--streaming` on an inadmissible combination refuses by name
+(never a silent downgrade); a journal on an inadmissible combination
+likewise. The genuinely dynamic layers stay dynamic: the per-kind lane
+choice (capture vs minted-bulk, by FK-target analysis) and the
+capability-descent ladder. Re-open triggers: streaming gains table-subset
+/ wipe support (the fallback conditions shrink toward empty and the
+selector arms retire); a measured regime where materialized beats
+streaming (none observed — would re-open the dominance premise).
