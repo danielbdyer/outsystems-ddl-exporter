@@ -318,12 +318,16 @@ the literal JSON `null`, not arbitrary garbage; the resume surface is not silent
 corruption, a contract L2 inherits. *Unlock:* L2 lands against a pinned surface. S. Deps:
 none. Rollback: n/a.
 
-**F5 · The profiler's drain, extracted.** Plane N4. `drainReader` extraction in
-`LiveProfiler.discoverKind`; no probe added (the outer scope suffices — RI-grade softening of
-the thesis). RI-9 pins the rationale: `ReadSide.drainRows` exists but compile order
-(`LiveProfiler.fs` before `ReadSide.fs`) forecloses reuse — the local extraction is the
-honest cut; the shared kernel is refused in §6 with its wake condition. *Witness:* existing
-profiler suites. S. Deps: none. Rollback: revert.
+**F5 · The profiler's drain, extracted — DONE 2026-06-11** (commit pending). Plane N4. A
+local `drainReader` (mirroring `ReadSide.drainRows`' exact signature/body) absorbs **two**
+hand-rolled drain loops, not one: `reflectNullability` (`:106`) and `discoverKind` (`:262`) —
+the N≥2 within-file consumers that justify the extraction. No probe added (the outer
+`profile.live.*` scopes suffice — RI-grade softening of the thesis). RI-9's rationale holds:
+`ReadSide.drainRows` exists but compile order (`LiveProfiler.fs` before `ReadSide.fs`)
+forecloses reuse — the local kernel is the honest cut; the cross-file shared kernel is refused
+in §6 item 10 with its wake condition. *Witness shipped:* the Docker-gated
+`LiveProfilerIntegrationTests` (6/6 green against the warm container — both drain paths
+exercised). S. Deps: none. Rollback: revert.
 
 **F6 · One static-fixture catalog builder.** Plane N7. Incision: a test-tree
 `StaticCatalogFixtures` module (parameterized: kind name, attribute shapes, rows) absorbing
