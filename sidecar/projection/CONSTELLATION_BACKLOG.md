@@ -459,11 +459,20 @@ gauges over `RunHistory`. S. Deps: R1b, S2 (the spine makes board-reconstruction
 construction, 19 consumer sites all order-safe, both hashes name-sorted, `RowQuantum`/
 `RowBasis` not yet extant.
 
-**Q1 · `RowBasis` with the hash permutation.** Columns in attribute order **plus a
-precomputed name-sorted ordinal permutation** (the RI-4 correction — hashing walks the
-permutation; bytes identical to today). Totality precondition documented: quanta are
-in-flight ReadSide-origin rows, always total over the basis (the absent-key semantics stay at
-the IR grain). S. Deps: gate.
+**Q1 · `RowBasis` with the hash permutation — DONE 2026-06-11** (commit pending). Columns in
+attribute order **plus a precomputed name-sorted ordinal permutation** (the RI-4 correction —
+hashing walks the permutation; bytes identical to today). Shipped in `Catalog.fs`:
+`RowQuantum` (`[<Struct>]`, the §9.7 promotion the H3 gate fired) + `RowBasis` (private record
++ `ofNames` smart ctor, the house derive-macro) + `RowQuantum.ofStaticRow`/`toValues`;
+`RowDigester.hashQuantumBytes` in `PhysicalSchema.fs` shares `hashRowBytes`' exact recipe and
+RS (0x1e) separator. Totality precondition documented on the type: quanta are in-flight
+ReadSide-origin rows, total over the basis (absent-key semantics stay at the IR grain).
+*Witness shipped:* `` `Q1: hashQuantumBytes equals hashRowBytes over any total row` `` — an
+FsCheck property (100 random orderings) plus declarative edge cases (the reverse-sorted
+permutation; values bearing `=`/RS; 12 interleaved columns), asserting byte-identical hashes
+and a lossless `toValues` round-trip. The property test is the type's second consumer (the
+zero-consumer tension resolved). S. Deps: gate (open). Rollback: revert; types unused until
+Q2.
 
 **Q2 · The stream re-typed.** `readRowsStream` emits `RowQuantum` (`[<Struct>]`, per the
 fired promotion); `Ingestion.streamKind` re-typed; the buffered `readRows` path converts at

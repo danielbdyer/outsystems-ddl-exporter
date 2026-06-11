@@ -353,6 +353,26 @@ module RowDigester =
         let bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString())
         System.Security.Cryptography.SHA256.HashData(System.ReadOnlySpan<byte>(bytes))
 
+    /// Hash a `RowQuantum` byte-identically to `hashRowBytes` over the
+    /// equivalent TOTAL `StaticRow`: walk the basis's name-sorted
+    /// permutation (no per-row sort), build `<name>=<value>` joined by the
+    /// RS () separator, UTF8, SHA256. The byte-identity with
+    /// `hashRowBytes` is the Q-track's load-bearing invariant — it keeps
+    /// the canary's row hashes stable when the read carrier becomes
+    /// positional (CONSTELLATION_BACKLOG Q1; witness `Q1: hashQuantumBytes
+    /// over a quantum equals hashRowBytes over the equivalent row`).
+    let hashQuantumBytes (basis: RowBasis) (q: RowQuantum) : byte[] =
+        let names = RowBasis.names basis
+        let order = RowBasis.nameSortedOrder basis
+        let sb = System.Text.StringBuilder(64)
+        let mutable first = true
+        for i in order do
+            if not first then sb.Append('') |> ignore
+            sb.Append(Name.value names.[i]).Append('=').Append(q.Cells.[i]) |> ignore
+            first <- false
+        let bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString())
+        System.Security.Cryptography.SHA256.HashData(System.ReadOnlySpan<byte>(bytes))
+
     let add (row: StaticRow) (s: State) : State =
         let h = hashRowBytes row
         addInPlace s.Acc h
