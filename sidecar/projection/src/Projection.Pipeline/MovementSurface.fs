@@ -593,6 +593,8 @@ module Command =
           Rekey       = spec.Rekey
           AllowCdc    = spec.AllowCdc
           Resumable   = spec.Resumable
+          Streaming   = spec.Streaming
+          Journal     = spec.Journal
           Store       = spec.Store
           Env         = spec.Env
           Tables      = spec.Tables
@@ -957,6 +959,8 @@ module Command =
                         AllowDrops = opts.AllowDrops
                         AllowCdc = opts.AllowCdc
                         Resumable = opts.Resumable
+                        Streaming = opts.Streaming
+                        Journal = opts.Journal
                         // D8 — the synthesis knobs ride the per-run intent
                         // (seed/volume vary at the moment of action, never config).
                         Seed = opts.Seed
@@ -1089,6 +1093,8 @@ module Command =
                       AllowDrops = List.contains "--allow-drops" rest
                       AllowCdc   = List.contains "--allow-cdc" rest
                       Resumable  = List.contains "--resumable" rest
+                      Streaming  = List.contains "--streaming" rest
+                      Journal    = flagValue rest "--journal"
                       Seed       = seed
                       Scale      = scale }
                 Result.success (Intent.Flow (Map.find first cfg.Flows, opts))

@@ -667,6 +667,8 @@ let runReverseLegTransfer
     (allowDrops: bool)
     (emission: EmissionMode)
     (resumable: bool)
+    (streaming: bool)
+    (journalDirectory: string option)
     (tables: string list)
     (surveyAdvisory: string list)
     : int =
@@ -686,6 +688,19 @@ let runReverseLegTransfer
         dumpBench "transfer"
         2
     else
+
+    // The realization SELECTOR (DECISIONS 2026-06-11): the engine chooses
+    // the best realization the request admits — streaming whenever
+    // admissible (it dominates on every measured axis), the materialized
+    // path for the combinations streaming does not yet support. An
+    // explicit --streaming on an inadmissible combination refuses BY
+    // NAME, never a silent downgrade.
+    match ReverseLegRealization.choose emission resumable tables streaming journalDirectory with
+    | Error errors ->
+        errors |> List.iter TtyRenderer.renderVoicedError
+        dumpBench "transfer"
+        2
+    | Ok realization ->
 
     let executeGated =
         if executeRequested then
@@ -716,8 +731,13 @@ let runReverseLegTransfer
     let mode = if executeGated then Transfer.Execute else Transfer.DryRun
     let runBody () =
         let result =
-            (Transfer.runReverseLegThroughConnections mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract)
-                .GetAwaiter().GetResult()
+            match realization with
+            | ReverseLegRealization.Streaming journal ->
+                (Transfer.runStreamingReverseLegThroughConnections mode allowCdc journal connections logicalSourceContract physicalSinkContract)
+                    .GetAwaiter().GetResult()
+            | ReverseLegRealization.Materialized ->
+                (Transfer.runReverseLegThroughConnections mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract)
+                    .GetAwaiter().GetResult()
         match result with
         | Ok report ->
             narrateTransferReport report

@@ -98,11 +98,14 @@ module private TransferCanaryFixtures =
         "SET IDENTITY_INSERT [dbo].[OSUSR_AS_USER] OFF; " +
         "INSERT INTO [dbo].[OSUSR_AS_ORDER] ([ID],[USER_ID],[AMOUNT]) VALUES (10,280,100),(11,281,200);"
 
-    /// 6.A.2 — a self-referential IDENTITY kind: PK is IDENTITY
-    /// (`AssignedBySink`) and MANAGER_ID is a NULLABLE self-FK, so the
-    /// two-phase load would *defer* it to Phase 2. But the Phase-2 re-point
-    /// keys on the source PK the Sink replaced — it would match zero rows.
-    /// The Transfer must refuse, not emit a no-op UPDATE.
+    /// 6.A.2 LIFTED (operator-authorized 2026-06-10) — a self-referential
+    /// IDENTITY kind: PK is IDENTITY (`AssignedBySink`) and MANAGER_ID is a
+    /// NULLABLE self-FK, so the two-phase load defers it to Phase 2, which
+    /// re-points it through the COMPLETED remap and keys its WHERE on the
+    /// ASSIGNED PK. Source keys start at 1000 so the sink-minted keys (1,2,3)
+    /// provably differ — a mis-keyed Phase 2 cannot pass by collision; and
+    /// VP's manager (CEO, 1002) lands AFTER VP in PK order, so a
+    /// phase-1-only re-point cannot pass either.
     let cyclicAssignedDdl =
         "CREATE TABLE [dbo].[OSUSR_XF_EMPID] (" +
         "[ID] INT IDENTITY(1,1) NOT NULL PRIMARY KEY, [NAME] NVARCHAR(50) NULL, [MANAGER_ID] INT NULL, " +
@@ -110,10 +113,32 @@ module private TransferCanaryFixtures =
         "REFERENCES [dbo].[OSUSR_XF_EMPID] ([ID]));"
 
     let cyclicAssignedSeed =
+        "ALTER TABLE [dbo].[OSUSR_XF_EMPID] NOCHECK CONSTRAINT ALL; " +
         "SET IDENTITY_INSERT [dbo].[OSUSR_XF_EMPID] ON; " +
         "INSERT INTO [dbo].[OSUSR_XF_EMPID] ([ID],[NAME],[MANAGER_ID]) VALUES " +
-        "(1,N'CEO',NULL),(2,N'VP',1),(3,N'Mgr',2); " +
-        "SET IDENTITY_INSERT [dbo].[OSUSR_XF_EMPID] OFF;"
+        "(1000,N'VP',1002),(1001,N'Mgr',1000),(1002,N'CEO',NULL); " +
+        "SET IDENTITY_INSERT [dbo].[OSUSR_XF_EMPID] OFF; " +
+        "ALTER TABLE [dbo].[OSUSR_XF_EMPID] WITH NOCHECK CHECK CONSTRAINT ALL;"
+
+    /// (employee NAME, manager NAME or NULL) pairs — the identity-independent
+    /// manager chain the lifted self-FK load must preserve.
+    let managerChain (cnn: Microsoft.Data.SqlClient.SqlConnection) : System.Threading.Tasks.Task<(string * string option) list> =
+        task {
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <-
+                "SELECT e.[NAME], m.[NAME] FROM [dbo].[OSUSR_XF_EMPID] e " +
+                "LEFT JOIN [dbo].[OSUSR_XF_EMPID] m ON e.[MANAGER_ID] = m.[ID] ORDER BY e.[NAME];"
+            use! reader = cmd.ExecuteReaderAsync()
+            let acc = System.Collections.Generic.List<string * string option>()
+            let mutable go = true
+            while go do
+                let! has = reader.ReadAsync()
+                if has then
+                    let mgr = if reader.IsDBNull 1 then None else Some (reader.GetString 1)
+                    acc.Add(reader.GetString 0, mgr)
+                else go <- false
+            return List.ofSeq acc
+        }
 
     /// 6.A.3 — a composite IDENTITY PK ([ID] IDENTITY + [TENANT]). `ofKind`
     /// is `AssignedBySink` (the PK carries IDENTITY), but the per-row capture
@@ -496,14 +521,15 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                             })
                 }))
 
-    // 6.A.2 — a cyclic AssignedBySink load (self-ref IDENTITY kind with a
-    // nullable self-FK) is refused at Execute, not silently mis-keyed. The
-    // Phase-2 re-point would key on the source PK the Sink replaced. The
-    // refusal is the pure `executeGate` decision the fast-pool test also
-    // witnesses; here the full Transfer.run surfaces it end-to-end. DryRun
-    // (no write, no mis-key) proceeds.
+    // 6.A.2 LIFTED (operator-authorized 2026-06-10) — a cyclic AssignedBySink
+    // load (self-ref IDENTITY kind with a nullable self-FK) now LOADS: Phase 1
+    // inserts with the deferred self-FK NULLed and captures the minted keys;
+    // Phase 2 re-points the self-FK through the completed remap and keys its
+    // WHERE on the ASSIGNED PK. Source keys start at 1000 (sink mints 1..3,
+    // no collision alibi) and VP's manager lands after VP in PK order (no
+    // phase-1-only alibi). The manager chain by NAME is the proof.
     [<Fact>]
-    member _.``data canary: cyclic AssignedBySink is refused, not silently mis-keyed`` () =
+    member _.``data canary (6.A.2 lifted): a cyclic AssignedBySink kind loads — phase 2 re-points the self-FK keyed on the ASSIGNED PK`` () =
         if not (TransferCanaryFixtures.skipIfNoDocker "XferCyclicAssigned") then () else
         TaskSync.run (fun () ->
             fixture.WithEphemeralDatabase "XferCyclicAssignedSrc" (fun src _ ->
@@ -524,24 +550,24 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                                 // AssignedBySink (its IDENTITY PK survives ReadSide).
                                 Assert.Equal(IdentityDisposition.AssignedBySink, IdentityDisposition.ofKind empKind)
 
-                                // Execute refuses, fail-loud, with the named code.
-                                let! refusedR = Transfer.run Transfer.Execute true src sink contract
-                                match refusedR with
-                                | Error es ->
-                                    Assert.True(
-                                        es |> List.exists (fun e -> e.Code = "transfer.cyclicAssignedBySink"),
-                                        sprintf "expected transfer.cyclicAssignedBySink, got %A" (es |> List.map (fun e -> e.Code)))
-                                | Ok _ -> Assert.Fail("expected the cyclic-AssignedBySink refusal at Execute")
+                                let! reportR = Transfer.run Transfer.Execute true src sink contract
+                                let report = TransferCanaryFixtures.value reportR
+                                Assert.Empty(report.SkippedReferences)
 
-                                // The Sink is untouched (the refusal preceded any write).
+                                // All three rows landed with sink-minted keys.
                                 let! rows = TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_XF_EMPID]"
-                                Assert.Equal(0, rows)
+                                Assert.Equal(3, rows)
+                                let! preserved = TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_XF_EMPID] WHERE [ID] >= 1000"
+                                Assert.Equal(0, preserved)
 
-                                // DryRun does not write, so it does not mis-key — it reports the plan.
-                                let! dryR = Transfer.run Transfer.DryRun true src sink contract
-                                match dryR with
-                                | Ok report -> Assert.Equal(Transfer.DryRun, report.Mode)
-                                | Error es -> Assert.Fail(sprintf "DryRun should not refuse; got %A" (es |> List.map (fun e -> e.Code)))
+                                // The manager chain is identical by NAME across
+                                // both estates — the phase-2 re-point hit the
+                                // minted rows and pointed them at minted keys.
+                                let! srcChain = TransferCanaryFixtures.managerChain src
+                                let! sinkChain = TransferCanaryFixtures.managerChain sink
+                                Assert.Equal<(string * string option) list>(srcChain, sinkChain)
+                                Assert.Equal<(string * string option) list>(
+                                    [ ("CEO", None); ("Mgr", Some "VP"); ("VP", Some "CEO") ], sinkChain)
                             })
                 }))
 

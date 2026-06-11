@@ -193,15 +193,18 @@ module SurrogateRemap =
             else None)
         |> Map.ofList
 
-    /// Apply a `SurrogateRemapContext` to one kind's rows. For each row,
-    /// every `fkTargets` column carrying a non-NULL Source surrogate is
-    /// resolved against the remap: a hit re-points the value to the
-    /// assigned surrogate; a miss drops the row (skip-and-diagnose — the
-    /// referenced identity has no target home). A NULL / absent FK is
-    /// left untouched. Pure and order-preserving (T1 determinism).
-    let remapRowFks
+    /// Apply a surrogate re-point to one kind's rows through an INJECTED
+    /// lookup (A40 harmonization — same algorithm, the assignment store is
+    /// the parameterized axis: the pure `SurrogateRemapContext` for
+    /// plan-side remaps, the realization layer's packed store for the
+    /// estate-scale capture path). For each row, every `fkTargets` column
+    /// carrying a non-NULL Source surrogate is resolved: a hit re-points
+    /// the value to the assigned surrogate; a miss drops the row
+    /// (skip-and-diagnose). A NULL / absent FK is left untouched. Pure and
+    /// order-preserving (T1 determinism).
+    let remapRowFksWith
+        (tryFindAssigned: SsKey -> string -> string option)
         (fkTargets: Map<Name, SsKey>)
-        (remap: SurrogateRemapContext)
         (rows: StaticRow list)
         : RemappedRows =
         let mutable kept : StaticRow list = []
@@ -218,8 +221,8 @@ module SurrogateRemap =
                             | None -> Ok values
                             | Some v when v = "" -> Ok values
                             | Some v ->
-                                match SurrogateRemapContext.tryFindAssigned target (SourceKey.ofString v) remap with
-                                | Some assigned -> Ok (Map.add col (AssignedKey.value assigned) values)
+                                match tryFindAssigned target v with
+                                | Some assigned -> Ok (Map.add col assigned values)
                                 | None ->
                                     Error { Column = col; Target = target; UnresolvedSource = SourceKey.ofString v })
                     (Ok row.Values)
@@ -228,3 +231,16 @@ module SurrogateRemap =
             | Error uref -> skipped <- uref :: skipped
         { Rows    = List.rev kept
           Skipped = List.rev skipped }
+
+    /// Apply a `SurrogateRemapContext` to one kind's rows — the
+    /// context-backed projection of `remapRowFksWith`.
+    let remapRowFks
+        (fkTargets: Map<Name, SsKey>)
+        (remap: SurrogateRemapContext)
+        (rows: StaticRow list)
+        : RemappedRows =
+        remapRowFksWith
+            (fun target v ->
+                SurrogateRemapContext.tryFindAssigned target (SourceKey.ofString v) remap
+                |> Option.map AssignedKey.value)
+            fkTargets rows

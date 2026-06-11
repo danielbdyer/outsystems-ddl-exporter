@@ -91,13 +91,10 @@ module Bulk =
                 |> List.toArray
             dt.Rows.Add arr |> ignore
 
-    /// Bulk-copy a homogeneous batch of `InsertRow` values into the
-    /// target table. `KeepIdentity` is honored so source PKs survive
-    /// across the round-trip; `KeepNulls` so `NULL` raws map to
-    /// SQL `NULL` rather than column defaults.
-    let copyRows
+    let private copyCore
         (cnn: SqlConnection)
-        (table: TableId)
+        (destination: string)
+        (opts: SqlBulkCopyOptions)
         (rows: CellValue list list)
         : Task<unit> =
         task {
@@ -107,11 +104,8 @@ module Bulk =
                 let shape = List.head rows
                 use dt = buildTable shape
                 fillTable dt rows
-                let opts =
-                    SqlBulkCopyOptions.KeepIdentity
-                    ||| SqlBulkCopyOptions.KeepNulls
                 use bulk = new SqlBulkCopy(cnn, opts, null)
-                bulk.DestinationTableName <- Render.tableQualified table
+                bulk.DestinationTableName <- destination
                 for c in shape do
                     bulk.ColumnMappings.Add(c.Column, c.Column) |> ignore
                 bulk.BulkCopyTimeout <- 0
@@ -119,3 +113,40 @@ module Bulk =
                 Bench.recordSample "deploy.bulk.copyRows.batchSize" (int64 rows.Length)
                 do! bulk.WriteToServerAsync dt
         }
+
+    /// Bulk-copy a homogeneous batch of `InsertRow` values into the
+    /// target table. `KeepIdentity` is honored so source PKs survive
+    /// across the round-trip; `KeepNulls` so `NULL` raws map to
+    /// SQL `NULL` rather than column defaults.
+    let copyRows
+        (cnn: SqlConnection)
+        (table: TableId)
+        (rows: CellValue list list)
+        : Task<unit> =
+        copyCore cnn (Render.tableQualified table)
+            (SqlBulkCopyOptions.KeepIdentity ||| SqlBulkCopyOptions.KeepNulls) rows
+
+    /// Bulk-copy WITHOUT `KeepIdentity` — the Sink mints every identity
+    /// value (the caller excludes the identity column from the cells).
+    /// The `AssignedBySink` fast lane for a kind no FK targets: no remap
+    /// consumer exists, so no capture is needed, and `KeepIdentity`'s
+    /// implicit ALTER requirement is avoided — the lane fits the DML-only
+    /// `grant: data` envelope.
+    let copyRowsSinkMinted
+        (cnn: SqlConnection)
+        (table: TableId)
+        (rows: CellValue list list)
+        : Task<unit> =
+        copyCore cnn (Render.tableQualified table) SqlBulkCopyOptions.KeepNulls rows
+
+    /// Bulk-copy into a session-scoped (`#`) staging table — the
+    /// surrogate-capture lane's transport (the staging table is created
+    /// per chunk by `SELECT TOP 0 … INTO`, so the destination is a raw
+    /// session-table name, not a catalog `TableId`). tempdb rights are
+    /// implicit for every principal, so the lane fits the DML-only grant.
+    let copyRowsSession
+        (cnn: SqlConnection)
+        (sessionTable: string)
+        (rows: CellValue list list)
+        : Task<unit> =
+        copyCore cnn sessionTable SqlBulkCopyOptions.KeepNulls rows

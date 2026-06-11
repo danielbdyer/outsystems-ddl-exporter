@@ -1,3 +1,164 @@
+# Handoff addendum — 2026-06-11 (the realization selector closed the reverse-leg arc; your program is the before/after bottleneck sweep)
+
+To the next agent.
+
+You're picking up at a clean seam. The reverse-leg/288M arc is COMPLETE
+through the realization selector: `ReverseLegRealization.choose` (pure,
+in `TransferRun.fs`) auto-selects the streaming realization whenever the
+request admits it, the capability-descent ladder and per-kind lane choice
+handle the genuinely dynamic layers beneath it, and the whole stack is
+proven at ~35.5–40.8k rows/sec sustained on loopback (288M ≈ 2.0–2.3h).
+Read, in order: `DECISIONS 2026-06-11 — the realization selector`,
+`DECISIONS 2026-06-10 — The streaming realization + chunk-resume journal`,
+`— 6.A.2 LIFTED…`, `— Capability-descent is the house pattern…`, and the
+two addenda at the foot of `AUDIT_2026_06_10_REVERSE_LEG_DML_PROOF.md`
+(~30 minutes). The test surfaces are `ReverseLeg{Canary,Property,Scale,
+Streaming,Boundary}Tests.fs` — the fixture idioms there are your
+templates.
+
+**Your program — the operator's words: "find other places where
+performance might bottleneck and fix them … the profiling, the data
+extraction, the SSDT file emission, the Bootstrap emission itself, how
+the generated INSERT and/or MERGE scripts for the Bootstrap will run.
+Let's before-and-after optimize those too."** Hold the bench-driven
+optimization protocol strictly (three-candidate / 2-refuted / 1-confirmed
+with bench data; refuted swaps documented). The measurement
+infrastructure already exists — do NOT guess at hot spots:
+
+1. **Capture the BEFORE profile first.** The operator-reality canary
+   (`scripts/perf-gate.sh`, ~6s warm) and `GeneratorScaleTests`
+   (`bulk1k/10k/100k`) emit per-label Bench rollups (Count/Mean/P50/P95/
+   P99, sorted by TotalMs — the expensive labels surface at the top).
+   Run bulk100k + operator-reality, keep the rollups as the baseline
+   artifact, and let the top labels NAME your targets.
+2. **The candidate areas, with my priors (verify against the rollup):**
+   `LiveProfiler` / `EvidenceCache` (already discovery-then-derive
+   optimized — measure before touching); `ReadSide.readRowsStream`
+   (per-row `Map<Name,string>` construction — allocation-heavy at scale;
+   a column-array carrier would be an IR-adjacent change, so measure
+   FIRST and weigh against the StaticRow contract); `SsdtDdlEmitter` /
+   `Render.toText` (statement-stream rendering — streamProbe labels
+   exist); `StaticSeedsEmitter.renderMerge` + how the emitted Bootstrap
+   MERGE scripts EXECUTE (batch sizing of the rendered VALUES blocks —
+   note the 1000-row table-value-constructor cap we hit on the transfer
+   side; the same parse-bound ceiling likely applies to emitted scripts,
+   and the staged-bulk pattern from `SurrogateCapture` is the proven
+   alternative shape); `Deploy.executeStream`'s InsertRow-run folding
+   into SqlBulkCopy (already bulk — measure batch boundaries).
+3. **Per win:** before/after numbers in the commit message, a Bench
+   label if the path lacks one, and the perf-gate baseline re-recorded
+   (`PERF_GATE_RECORD=1`) ONLY when a floor legitimately improves, with
+   the DECISIONS amendment the gate discipline requires.
+
+Also still open from the reverse-leg queue (lower priority than the
+sweep): the real-wire bench; reconcile ∘ streaming; WipeAndLoad ∘
+journal; journal compaction; the G1/G2 reserved preflights. The FS3511
+Release traps (let rec inside task; tuple let!; tuple-pattern for) and
+the ISNULL-vs-CASE identity-propagation trap are documented in the
+2026-06-10 DECISIONS entries — read them before touching the write path.
+
+# Handoff addendum — 2026-06-10, night (streaming + packed remap + chunk resume + the capture ladder landed)
+
+To the next agent.
+
+The 288M-row program's four engine slices are in: read `DECISIONS
+2026-06-10 — The streaming realization + chunk-resume journal` and
+`— 6.A.2 LIFTED…`, plus Addendum 2 at the foot of
+`AUDIT_2026_06_10_REVERSE_LEG_DML_PROOF.md`, before touching the write
+path. In brief: `SurrogateCapture` is the capture-lane ladder (three
+rungs, one semantics; descent only on SQL error 334; every descent named
+on the report; sticky per kind) — extend it by adding a rung function and
+a ladder entry, never by branching inside a rung. `PackedSurrogateRemap`
+is the realization-layer remap (int64-packed, string fallback; consumed
+via `SurrogateRemap.remapRowFksWith` — A40). `Transfer.
+runStreamingWithRenames` is the bounded-memory straight load (structure-
+only plan; per-kind 50k chunks; phase 2 re-streams); `CaptureJournal` is
+the client-side chunk ledger (fingerprint-guarded skip; `transfer.resume.
+sourceDrift`; a completed run re-runs as a full skip — G3 closed under a
+journal). Watch two FS3511 shapes in Release: a `let rec` INSIDE a task
+block, and tuple `let!` / tuple-pattern `for` — hoist helpers out of the
+task and bind single values.
+
+One finding to carry forward: the G10 resumable envelope's progress table
+needs CREATE TABLE — the real cloud sink's `grant: data` forbids it, so
+G10 cannot run there; the journal is the DML-legal replacement on the
+streaming path.
+
+Your queue: wire `runStreamingWithRenames` + a `--journal <dir>` flag
+onto the reverse-leg CLI face (the engine entry is proven; the face is
+unwired); the real-wire bench before trusting the ~27k rows/sec / 3h
+figure; reconcile ∘ streaming and WipeAndLoad ∘ journal (both refused-by-
+scope today, named in DECISIONS); journal compaction if the estate's
+FK-target pair count makes the NDJSON unwieldy; parallel per-table
+wavefronts only if the wire bench misses 20k rows/sec.
+
+# Handoff addendum — 2026-06-10, late (the 288M-row program: set-based capture + the 6.A.2 lift landed)
+
+To the next agent.
+
+The operator sharpened the reverse-leg premise to ~288M rows in a ≤4h
+window, with the huge tables FK-referenced, the F1 lift authorized, and
+chunk-level resume requested. Two engine slices landed the same evening —
+read `DECISIONS 2026-06-10 — 6.A.2 LIFTED…` and the addendum at the foot
+of `AUDIT_2026_06_10_REVERSE_LEG_DML_PROOF.md` before touching the write
+path. In brief: (1) the AssignedBySink capture lane is now set-based —
+bulk-staged into a session temp table cloned from the sink, one
+MERGE…OUTPUT per 50k chunk; measured ~27k rows/sec sustained (288M ≈ 3h,
+inside the window) versus ~271 rows/sec for the retired per-row loop, and
+the unreferenced kinds skip capture entirely via Bulk.copyRowsSinkMinted.
+Watch the ISNULL-vs-CASE identity-propagation trap documented at the
+staging SELECT INTO — a CASE wrapper constant-folds and the staging mints
+its own keys (the keystone canary catches it). (2) The cyclic
+AssignedBySink refusal is LIFTED: phase 1 re-points excluding deferred
+columns, phase 2 keys its UPDATE on the ASSIGNED PK through the completed
+remap, and an orphaned deferred reference is a named phase-2 erasure.
+
+Your queue, in priority order (the report addendum carries the detail):
+streaming ingestion with bounded memory (collectInOrder materializes whole
+tables — the binding constraint at 288M), the remap representation for
+huge FK-referenced tables (packed int64 or sink-resident keymap — gate it
+on the estate row-count/FK-fan-in survey), chunk-level resume (operator-
+requested), parallel per-table wavefronts only if the real-wire bench
+misses 20k rows/sec, and the survey items (platform triggers → OUTPUT
+INTO; P7 ceilings). Re-bench over the real network before trusting the 3h
+figure.
+
+# Handoff addendum — 2026-06-10, evening (LE-3: the reverse leg proven at full implicature)
+
+To the next agent.
+
+The reverse leg is no longer L1-on-one-table. This session drove the proof
+into the previously untested intersection — rendered cross-rendition
+contracts × sink-minted identity (`AssignedBySink` everywhere) × a
+multi-kind FK graph (depth-4 chain + diamond) × the DML-only principal —
+and the whole stack is green in both pools. **Read
+`AUDIT_2026_06_10_REVERSE_LEG_DML_PROOF.md` first**: it states, per
+constraint in the operator's pre-cutover premise, what is proven, what is
+refused by name, and what is open, with the two findings that need the
+operator's eyes (F1: the cyclic-AssignedBySink refusal is probably on the
+critical path — a self-FK IDENTITY kind refuses the whole load; the lift
+is tractable but is the operator's call. F2: the per-row INSERT…OUTPUT
+capture envelope measured at ~271 rows/sec — the MERGE…OUTPUT set-based
+follow-on's measured-bottleneck trigger is now satisfied).
+
+The new surfaces, all test-side (no engine change was made):
+`ReverseLegCanaryTests.fs` (Tier 1 keystone + apparatus + the DML-only
+principal trio + the DENY/drift pins), `ReverseLegPropertyTests.fs` (the
+eight pure laws — order soundness, disposition totality, remap algebra,
+refusal totality over generated unsatisfiable shapes, rendition
+invariance), `ReverseLegScaleTests.fs` (the capture envelope + the CDC
+isometry norm — ‖δ‖ = capture count = row count, exactly), and
+`ReverseLegBoundaryTests.fs` (the CLI reconcile/user-map refusal live +
+four reserved Skip-stub contracts carrying their promotion triggers).
+
+What this collapses: the J5 real-UAT spike is now a re-run of a proven
+suite against a real connection — P1/P2/P3/P6 are answered on mock
+infrastructure. What genuinely remains for J5: the actual OutSystems grant
+envelope (and the G1 object-scope-DENY gap, pinned), platform triggers on
+OSUSR tables (they would force the OUTPUT INTO form, survey P5), and P7
+batch ceilings over a real wire. The decision asks are ranked in the
+report §6; act on none of them without the operator.
+
 # Handoff addendum — 2026-06-10, latest (J3 closed; A7 resolved)
 
 To the next agent.

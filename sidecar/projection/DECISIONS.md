@@ -21304,3 +21304,156 @@ model). Two-consumer extraction fired in `RunFaces`: the 6.A.1 drop-narration bl
 `narrateDropExit`, shared by the peer and reverse-leg faces. Also fixed: `scripts/test.sh`
 failed-name extraction used `grep -B1` on the TRX and could blame the textually-preceding
 (passed) test; testName and outcome share one line, so the context flag is gone.
+
+## 2026-06-10 — 6.A.2 LIFTED (operator-authorized): cyclic AssignedBySink loads via a phase-2 re-point keyed on the ASSIGNED PK; the set-based capture lane replaces per-row INSERT…OUTPUT
+
+Two engine changes on the transfer write path, driven by the operator's
+288M-row reverse-leg estate (≤4h window; huge FK-referenced tables; lift
+authorized; chunk-level resume requested — the resume model remains open,
+see the LE-3 report addendum).
+
+**(1) The 6.A.2 refusal is lifted.** `transfer.cyclicAssignedBySink`
+(DECISIONS 6.A.2; `executeGate`) refused any `AssignedBySink` kind carrying
+cycle-deferred FK columns because `phase2UpdateSql` keyed its WHERE on the
+source PK the sink had replaced. The fix the refusal itself named is now
+built: Phase 1 re-points EXCLUDING the deferred columns (their targets'
+captures are incomplete mid-kind; resolving early would wrongly drop rows)
+and inserts them as NULL; Phase 2 re-points against the COMPLETED remap and,
+for `AssignedBySink` kinds, translates each row's PK through the captured
+remap so the UPDATE keys on the ASSIGNED PK. A deferred FK value with no
+captured target is a NAMED phase-2 erasure (the row stands, the reference is
+lost, surfaced in `SkippedReferences` → exit 9), never a silent NULL. A row
+whose own PK has no capture was dropped (and named) in phase 1 and is passed
+over. Witnesses: the rewritten 6.A.2 canary (source keys at 1000+, the
+manager chain joined by NAME, a deliberate FORWARD reference so a
+phase-1-only re-point cannot pass), the reverse-leg self-FK canary (the
+orphan-manager named erasure), the refusal-totality property (the lifted
+shape gates None), and the pure execute-gate pin. The self-referencing
+IDENTITY shape (`User.ManagerId`, `Employee.CreatedBy`) no longer refuses
+the estate.
+
+**(2) The capture lane is set-based.** Per-row `INSERT … OUTPUT` measured
+~271 rows/sec end-to-end (Tier-4 bench, warm container) — 12+ days for
+288M rows. The `VALUES`-form MERGE measured ~5.7k rows/sec, parse-bound at
+the table-value constructor's 1000-row cap. The shipped lane, per 50k-row
+chunk: bulk-copy into a session-scoped staging table whose columns are
+cloned FROM THE SINK TABLE (`SELECT TOP 0 … INTO`; **ISNULL strips the
+IDENTITY property through SELECT INTO — a CASE wrapper does NOT: it
+constant-folds and the property propagates, silently minting staging keys;
+probed live 2026-06-10**), then ONE `MERGE … OUTPUT S.[__SRC_KEY],
+INSERTED.<pk>` per chunk. tempdb rights are implicit for every principal,
+so the lane fits the DML-only `grant: data` envelope (the DML-only
+principal canary proves it). Sibling lane: an `AssignedBySink` kind no FK
+targets has no remap consumer and rides `Bulk.copyRowsSinkMinted`
+(KeepNulls only — no KeepIdentity, no implicit ALTER). Measured: ~27k
+rows/sec sustained at 100k rows ⇒ 288M ≈ 3.0h, inside the window, under
+the worst-case all-referenced shape. A36 holds: realization-layer swap,
+same `SurrogateRemapContext` feed, no IR change.
+
+Re-open triggers: platform triggers on real OSUSR tables force the
+`OUTPUT INTO` form (survey P5); a real-wire bench materially below ~20k
+rows/sec re-opens chunk sizing / parallel per-table loading; the remap's
+in-memory Map (string-keyed) at hundreds of millions of FK-target rows
+re-opens the packed-int64 / sink-resident keymap design (named open —
+the streaming + chunk-resume program, LE-3 report addendum §scale).
+
+## 2026-06-10 — The streaming realization + chunk-resume journal: bounded memory for the 288M-row straight load; the journal is CLIENT-side because the sink is DML-only
+
+**The decision.** `Transfer.runStreamingWithRenames` is the bounded-memory
+realization of the straight-load (non-reconciling, Incremental) transfer:
+the plan is built STRUCTURE-ONLY (order, dispositions, deferred columns —
+rows never enter it), and each kind's rows stream from the source in
+`CaptureChunkSize` chunks through rename-repoint → FK-repoint (deferred
+excluded) → the capture ladder / minted-bulk / preserved-bulk lanes. Only
+the packed remap and the chunk in flight are resident — the materialized
+path's `Ingestion.collectInOrder` (whole-estate `Map<SsKey, StaticRow
+list>`) is untenable at 288M rows. Phase 2 re-STREAMS the deferred kinds
+against the completed remap; its UPDATEs are idempotent, so a resumed run
+repeating them is harmless. `AsyncStream.nextBatch` is re-introduced under
+this consumer (the Wave-0 slice 0.2 retirement's named trigger fired). The
+reconcile and WipeAndLoad envelopes stay on the materialized path — the
+named follow-ons, never a silent half-support.
+
+**The journal (chunk-level resume, operator-chosen).** `CaptureJournal` is
+an append-only NDJSON ledger, one file per (directory, plan marker), one
+`ChunkRecord` per completed chunk: the chunk's SOURCE fingerprint
+(first/last PK + raw count — deterministic because `ReadSide` orders by
+PK), the written count, and the chunk's captured pairs. It lives
+CLIENT-SIDE by necessity, not preference: the cloud sink is `grant: data`,
+so the G10 progress table's `CREATE TABLE` is exactly what the grant
+forbids — the engine's own ledger is the D9-consistent home. Semantics:
+a journaled chunk whose fingerprint matches is SKIPPED and its pairs
+rebuild the remap (the resumed run re-points later kinds at the FIRST
+run's minted keys); a mismatch is the named `transfer.resume.sourceDrift`
+refusal — never a silent re-run over changed data; a COMPLETED run re-runs
+as a full skip — the streaming path's idempotent re-run, closing the G3
+duplicate hazard whenever a journal is supplied. The chunk's sink
+statement (one MERGE / one bulk batch) is the atomic commit point: a crash
+DURING a chunk never journals it; a crash AFTER the append never
+re-executes it. Witnesses: streaming equivalence against the LE-3
+keystone (joins, minted keys, named orphan drop, exit 9); the
+crash-resume canary (sink table missing mid-load → remediate → resume:
+no duplicates, remap rebuilt from journal); the idempotent re-run canary;
+the source-drift refusal canary.
+
+Re-open triggers: reconcile ∘ streaming (the cloud-owns-its-users reverse
+leg at scale); WipeAndLoad ∘ journal (the wipe must invalidate the
+journal); journal compaction (288M pairs ≈ a multi-GB NDJSON — acceptable
+for a cutover run, named here); the resumed run's report counts the
+resumed run's work (the journaled run reported its own drops — exit-9
+semantics are per-run; revisit if the operator wants a merged ledger).
+
+## 2026-06-10 — Capability-descent is the house pattern for sink-capability-sensitive write seams (operator-endorsed); deployment is conservative by three rules
+
+The operator endorsed generalizing the capture-lane ladder ("reverse
+progressive enhancement") as a performance-aware pattern, deployed
+conservatively. Codified: capability descent applies at any write seam
+whose preferred realization can be REFUSED BY THE SINK for a capability
+reason (triggers, grant shape, feature availability) — lanes as separate
+functions, a closed DU naming the rungs, ONE orchestrator descending one
+rung at a time, every descent named on the run's report. Three deployment
+rules, none negotiable without an amendment: (1) the capability-error
+recognizer never widens casually — each SQL error number that triggers
+descent is argued and canary-tested like 334 was; (2) a DATA error
+(constraint violation, conversion) always propagates — degrading on data
+errors masks corruption; (3) every new rung lands with a canary proving
+behavioral equivalence on the degraded lane. The ladder is already
+deployed at the one seam with live capability variance (the transfer
+write path, shared by every transfer entry point); future
+capability-sensitive seams adopt the pattern rather than branching inside
+a lane. Per the two-consumer threshold, no speculative generalization of
+the orchestrator into a generic combinator until a second seam exists.
+
+Wiring + bench (same session): `--streaming` / `--journal <dir>` thread
+through `FlowRunOpts` → `MovementSpec` → `LoadOpts` → the reverse-leg CLI
+face, which refuses the unsupported combinations by name
+(`transfer.reverseLeg.streamingTablesUnsupported` /
+`.streamingResumableUnsupported` / `.streamingWipeUnsupported` /
+`.journalRequiresStreaming`); the apparatus entry is
+`Transfer.runStreamingReverseLegThroughConnections`. The streaming bench:
+~32.5k rows/sec bare; ONE-CHUNK INGEST PREFETCH (chunk N+1 pulls from the
+source while chunk N writes to the sink — hot task, distinct connections)
+lifted it to a stable ~35.5k rows/sec (288M ≈ 2.3h, loopback) — kept per
+the bench protocol; the overlap's value grows with real network latency.
+
+## 2026-06-11 — The reverse-leg realization SELECTOR: the dominant realization is chosen automatically; flags are overrides, downgrades are never silent
+
+The operator asked whether the realization choice is "inherently dynamic
+so it arrives at the best possible realization across all applicable use
+cases." Resolution: where one realization DOMINATES on every measured
+axis for the requests it admits, dynamism is a DEFAULT WITH NAMED
+FALLBACK CONDITIONS, not a heuristic chooser. `ReverseLegRealization.
+choose` (pure, total, connection-free) selects the STREAMING realization
+automatically whenever the request admits it (Incremental, no table
+subset, no --resumable) — it is faster (~35.5k vs ~27k rows/sec at the
+2026-06-10/11 bench), bounded-memory, and journal-resumable — and falls
+back to the materialized path for the combinations streaming does not
+yet support. `--journal` alone rides the auto-selected stream. An
+EXPLICIT `--streaming` on an inadmissible combination refuses by name
+(never a silent downgrade); a journal on an inadmissible combination
+likewise. The genuinely dynamic layers stay dynamic: the per-kind lane
+choice (capture vs minted-bulk, by FK-target analysis) and the
+capability-descent ladder. Re-open triggers: streaming gains table-subset
+/ wipe support (the fallback conditions shrink toward empty and the
+selector arms retire); a measured regime where materialized beats
+streaming (none observed — would re-open the dominance premise).

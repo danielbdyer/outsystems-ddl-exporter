@@ -12,6 +12,56 @@ open Projection.Core.Passes
 open Projection.Adapters.Sql
 open Projection.Targets.SSDT
 
+/// Which realization a reverse-leg request runs on — the "best possible
+/// realization" policy made STRUCTURAL. The streaming realization
+/// dominates the materialized path on every measured axis FOR THE
+/// REQUESTS IT ADMITS (faster: ~35.5k vs ~27k rows/sec at the 2026-06-10
+/// bench; bounded memory; journal-resumable), so it is chosen
+/// AUTOMATICALLY whenever the request admits it; the materialized path
+/// carries the combinations streaming does not yet support (a declared
+/// table subset, the G10 resumable envelope, WipeAndLoad). An EXPLICIT
+/// streaming request on an inadmissible combination refuses BY NAME —
+/// never a silent downgrade; a journal on an inadmissible combination
+/// likewise (the ledger belongs to the streaming realization).
+[<RequireQualifiedAccess>]
+type ReverseLegRealization =
+    | Streaming of journalDirectory: string option
+    | Materialized
+
+[<RequireQualifiedAccess>]
+module ReverseLegRealization =
+
+    /// Pure and total over the request surface: every request lands on a
+    /// realization or a NAMED refusal. The selector is deterministic from
+    /// the request alone — testable without a connection.
+    let choose
+        (emission: EmissionMode)
+        (resumable: bool)
+        (tables: string list)
+        (streamingRequested: bool)
+        (journalDirectory: string option)
+        : Result<ReverseLegRealization> =
+        let admissible =
+            List.isEmpty tables && not resumable && emission = EmissionMode.Incremental
+        if streamingRequested && not (List.isEmpty tables) then
+            Result.failureOf
+                (ValidationError.create "transfer.reverseLeg.streamingTablesUnsupported"
+                    "the streaming reverse leg loads the whole estate; a declared table subset is the named follow-on. Remove --tables or drop --streaming to run materialized.")
+        elif streamingRequested && resumable then
+            Result.failureOf
+                (ValidationError.create "transfer.reverseLeg.streamingResumableUnsupported"
+                    "the streaming reverse leg resumes through its journal, not the G10 marker (whose progress table needs CREATE TABLE the data grant forbids). Replace --resumable with --journal <dir>.")
+        elif streamingRequested && emission = EmissionMode.WipeAndLoad then
+            Result.failureOf
+                (ValidationError.create "transfer.reverseLeg.streamingWipeUnsupported"
+                    "the streaming reverse leg is Incremental; the wipe-and-load refresh stays on the materialized path (the wipe must invalidate the journal — the named follow-on).")
+        elif Option.isSome journalDirectory && not admissible then
+            Result.failureOf
+                (ValidationError.create "transfer.reverseLeg.journalRequiresStreaming"
+                    "--journal is the streaming realization's chunk-resume ledger; the request's table subset / --resumable / wipe forces the materialized path. Remove those to stream, or drop --journal.")
+        elif admissible then Result.success (ReverseLegRealization.Streaming journalDirectory)
+        else Result.success ReverseLegRealization.Materialized
+
 /// The Transfer orchestrator — `Compose`'s data-direction sibling. Binds
 /// the two legs of the adjunction across two substrates: `Ingestion`
 /// (Source → rows) then a Projection-onto-Sink realization (rows → Sink),
@@ -58,6 +108,11 @@ module Transfer =
             /// had no matched assigned counterpart — paired with the
             /// owning kind. Empty for a non-reconciling Transfer.
             SkippedReferences   : (SsKey * UnresolvedReference) list
+            /// Every capture-ladder rung descent the write took (a sink
+            /// capability refusal — e.g. triggers reject OUTPUT-without-
+            /// INTO — degraded the lane, named per kind). Empty when every
+            /// kind ran its preferred rung.
+            CaptureLaneDescents : LaneDescent list
         }
 
     // -- Projection-onto-Sink realization -----------------------------------
@@ -66,15 +121,26 @@ module Transfer =
     /// cell rows. Deferred FK columns are emitted as the empty raw —
     /// `KeepNulls` maps that to SQL NULL — so Phase 1 satisfies a cycle;
     /// Phase 2 re-points them.
-    let private toCellRows (kind: Kind) (deferred: Set<Name>) (rows: StaticRow list) : CellValue list list =
+    let private toCellsOver (attrs: Attribute list) (deferred: Set<Name>) (rows: StaticRow list) : CellValue list list =
         rows
         |> List.map (fun row ->
-            kind.Attributes
+            attrs
             |> List.map (fun a ->
                 let raw =
                     if Set.contains a.Name deferred then ""
                     else Map.tryFind a.Name row.Values |> Option.defaultValue ""
                 { Column = ColumnRealization.columnNameText a.Column; Type = a.Type; Raw = raw }))
+
+    let private toCellRows (kind: Kind) (deferred: Set<Name>) (rows: StaticRow list) : CellValue list list =
+        toCellsOver kind.Attributes deferred rows
+
+    /// The minted-bulk-lane projection: every attribute EXCEPT the IDENTITY
+    /// PK (the Sink mints it; `Bulk.copyRowsSinkMinted` carries no
+    /// `KeepIdentity`).
+    let private toCellRowsExcludingIdentity (kind: Kind) (deferred: Set<Name>) (rows: StaticRow list) : CellValue list list =
+        toCellsOver
+            (kind.Attributes |> List.filter (fun a -> not (a.IsPrimaryKey && a.IsIdentity)))
+            deferred rows
 
     /// Phase-2 UPDATE for one row: set the deferred FK columns to their
     /// (already remapped, plan-side) values, keyed by the kind's primary
@@ -96,42 +162,41 @@ module Transfer =
                     (deferredAttrs |> List.map clause |> String.concat ", ")
                     (pkAttrs |> List.map clause |> String.concat " AND "))
 
-    /// Per-row INSERT for an `AssignedBySink` kind: omit the IDENTITY PK
-    /// column (let the Sink mint it) and capture the assigned surrogate via
-    /// `OUTPUT inserted.<pk>`. Returns the assigned key as its raw string,
-    /// or `None` if the insert produced no output row. `SqlBulkCopy` cannot
-    /// return assigned identities, so this is the per-row path §5.2 requires;
-    /// the value-literal rendering mirrors `phase2UpdateSql` (the existing
-    /// transfer text boundary).
-    let private insertCaptureRow
+    /// The chunk size every capture rung consumes (the staged rungs amortize
+    /// one MERGE per chunk; the bench rationale and the rung mechanics live
+    /// in `SurrogateCapture`).
+    [<Literal>]
+    let private CaptureChunkSize = 50_000
+
+    /// Stage-and-capture every chunk of one kind's rows through the capture
+    /// LADDER (`SurrogateCapture.captureChunkDescending`), folding each
+    /// chunk's `(source → assigned)` pairs into the PACKED remap. The lane
+    /// is STICKY per kind: a rung the sink refused once is not re-attempted
+    /// on the kind's later chunks. Module-level tail-recursive task
+    /// continuation (FS3511 posture). Returns every descent taken — each a
+    /// named outcome for the report.
+    let rec private captureChunks
         (sink: SqlConnection)
         (kind: Kind)
-        (identityColumn: string)
-        (row: StaticRow)
-        : Task<string option> =
+        (identityAttr: Attribute)
+        (deferred: Set<Name>)
+        (kindKey: SsKey)
+        (remap: PackedSurrogateRemap)
+        (lane: CaptureLane)
+        (descents: LaneDescent list)
+        (chunks: StaticRow list list)
+        : Task<LaneDescent list> =
         task {
-            let insertCols = kind.Attributes |> List.filter (fun a -> not (a.IsPrimaryKey && a.IsIdentity))
-            let lit (a: Attribute) =
-                Map.tryFind a.Name row.Values
-                |> Option.defaultValue ""
-                |> SqlLiteral.ofRaw a.Type
-                |> SqlLiteral.toString
-            let sql =
-                if List.isEmpty insertCols then
-                    sprintf "INSERT INTO %s OUTPUT inserted.%s DEFAULT VALUES;"
-                        (Render.tableQualified kind.Physical) (Render.quote identityColumn)
-                else
-                    sprintf "INSERT INTO %s (%s) OUTPUT inserted.%s VALUES (%s);"
-                        (Render.tableQualified kind.Physical)
-                        (insertCols |> List.map (fun a -> Render.quote (ColumnRealization.columnNameText a.Column)) |> String.concat ", ")
-                        (Render.quote identityColumn)
-                        (insertCols |> List.map lit |> String.concat ", ")
-            use cmd = sink.CreateCommand()
-            cmd.CommandText <- sql
-            let! scalar = cmd.ExecuteScalarAsync()
-            return
-                if isNull scalar || scalar = box System.DBNull.Value then None
-                else Some (string scalar)
+            match chunks with
+            | [] -> return descents
+            | chunk :: rest ->
+                // Single-value bind then destructure — a tuple `let!` is not
+                // statically compilable under Release (FS3511).
+                let! outcome =
+                    SurrogateCapture.captureChunkDescending sink kind kindKey identityAttr deferred lane chunk
+                let pairs, succeededLane, newDescents = outcome
+                pairs |> List.iter (fun (srcVal, assignedVal) -> PackedSurrogateRemap.capture kindKey srcVal assignedVal remap)
+                return! captureChunks sink kind identityAttr deferred kindKey remap succeededLane (descents @ newDescents) rest
         }
 
     /// Realize the plan onto an open Sink connection, returning any
@@ -143,24 +208,43 @@ module Transfer =
     /// against the completed remap. `PreservedFromSource` /
     /// `ReconciledByRule` loads are byte-identical to the pre-§5.2 path —
     /// the re-point is a no-op when no `AssignedBySink` kind is in scope.
-    let private writePlan (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) : Task<(SsKey * UnresolvedReference) list> =
+    let private writePlan (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) : Task<(SsKey * UnresolvedReference) list * LaneDescent list> =
         task {
             let assignedBySinkKinds =
                 plan.Loads
                 |> List.choose (fun l ->
                     if l.Disposition = IdentityDisposition.AssignedBySink then Some l.Kind else None)
                 |> Set.ofList
+            // The kinds some FK targets — only THEIR minted surrogates have a
+            // consumer (a later referencer's re-point). An AssignedBySink kind
+            // outside this set needs no capture at all and rides the minted
+            // bulk lane (SqlBulkCopy without KeepIdentity — the fast lane).
+            let fkTargetKinds =
+                Catalog.allKinds catalog
+                |> List.collect (fun k -> k.References |> List.map (fun r -> r.TargetKind))
+                |> Set.ofList
             // The Source→Sink-minted surrogate map, accumulated as
-            // AssignedBySink kinds insert; threaded through the topological
-            // Phase-1 loop so referencers re-point against captures made by
-            // their (earlier-ordered) targets.
-            let mutable remap = SurrogateRemapContext.empty
+            // AssignedBySink kinds insert; the PACKED realization-layer store
+            // (Dictionary<int64,int64> per kind — the 288M-row estate's
+            // FK-target tables would not fit the string-keyed immutable Map).
+            // Threaded through the topological Phase-1 loop so referencers
+            // re-point against captures made by their (earlier-ordered)
+            // targets.
+            let remap = PackedSurrogateRemap.create ()
             let mutable writeSkips : (SsKey * UnresolvedReference) list = []
+            let mutable laneDescents : LaneDescent list = []
 
-            let repoint (kind: Kind) (rows: StaticRow list) : RemappedRows =
-                let fkTargets = SurrogateRemap.fkColumnsTargeting assignedBySinkKinds kind
+            // Phase 1 excludes the deferred (cycle) FK columns from the re-point:
+            // they are inserted as NULL, and their targets' captures are not
+            // complete until the whole kind has loaded — resolving them here
+            // would wrongly drop rows. Phase 2 re-points them against the
+            // COMPLETED remap (`excluding = Set.empty`).
+            let repoint (excluding: Set<Name>) (kind: Kind) (rows: StaticRow list) : RemappedRows =
+                let fkTargets =
+                    SurrogateRemap.fkColumnsTargeting assignedBySinkKinds kind
+                    |> Map.filter (fun col _ -> not (Set.contains col excluding))
                 if Map.isEmpty fkTargets then { Rows = rows; Skipped = [] }
-                else SurrogateRemap.remapRowFks fkTargets remap rows
+                else SurrogateRemap.remapRowFksWith (PackedSurrogateRemap.tryFind remap) fkTargets rows
 
             // Live "load" stage (§13) — the data-transfer leg streams per-table
             // progress so `--watch` shows "Loading the data · N of M · ~Xs
@@ -175,20 +259,27 @@ module Transfer =
                     match Catalog.tryFindKind load.Kind catalog with
                     | None      -> ()
                     | Some kind ->
-                        let remapped = repoint kind load.Rows
+                        let remapped = repoint load.DeferredFkColumns kind load.Rows
                         writeSkips <- writeSkips @ (remapped.Skipped |> List.map (fun u -> load.Kind, u))
                         match load.Disposition with
                         | IdentityDisposition.AssignedBySink ->
                             match kind.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey && a.IsIdentity) with
+                            | Some _ when not (Set.contains load.Kind fkTargetKinds) ->
+                                // No FK anywhere targets this kind, so its minted
+                                // surrogates have no consumer: skip capture and
+                                // bulk-insert with the identity column excluded —
+                                // the Sink mints, nothing needs the mapping. (A
+                                // cycle member is always FK-targeted by its cycle
+                                // predecessor, so this lane never carries
+                                // deferred columns.)
+                                do! Bulk.copyRowsSinkMinted sink kind.Physical
+                                        (toCellRowsExcludingIdentity kind load.DeferredFkColumns remapped.Rows)
                             | Some idAttr ->
-                                for row in remapped.Rows do
-                                    let! assigned = insertCaptureRow sink kind (ColumnRealization.columnNameText idAttr.Column) row
-                                    match Map.tryFind idAttr.Name row.Values, assigned with
-                                    | Some srcVal, Some assignedVal when srcVal <> "" ->
-                                        match SurrogateRemapContext.capture load.Kind (SourceKey.ofString srcVal) (AssignedKey.ofString assignedVal) remap with
-                                        | Ok r    -> remap <- r
-                                        | Error _ -> ()
-                                    | _ -> ()
+                                let! descents =
+                                    captureChunks sink kind idAttr load.DeferredFkColumns load.Kind remap
+                                        CaptureLane.StagedMergeOutput []
+                                        (remapped.Rows |> List.chunkBySize CaptureChunkSize)
+                                laneDescents <- laneDescents @ descents
                             | None ->
                                 // ofKind only returns AssignedBySink for an IDENTITY PK, so this is
                                 // unreachable; fall back to the bulk path rather than drop the rows.
@@ -198,18 +289,45 @@ module Transfer =
                 loaded <- loaded + 1
                 LogSink.recordStageProgress "load" loaded loadTotal loadSw.ElapsedMilliseconds
 
+            // Phase 2 — re-point the cycle-deferred FK columns against the
+            // COMPLETED remap. For an `AssignedBySink` kind the WHERE keys on
+            // the ASSIGNED PK (the sink replaced the source PK at insert; the
+            // captured remap supplies the translation — the 6.A.2 lift,
+            // operator-authorized 2026-06-10). A deferred FK value with no
+            // captured target is a NAMED phase-2 erasure: the row stands (it
+            // was inserted in phase 1 with the column NULL) but the reference
+            // is lost — surfaced in `SkippedReferences`, never silent. A row
+            // whose own PK has no capture was dropped (and named) in phase 1;
+            // it has no sink row to update, so it is passed over here.
             for load in plan.Loads do
                 if not (Set.isEmpty load.DeferredFkColumns) && not (List.isEmpty load.Rows) then
                     match Catalog.tryFindKind load.Kind catalog with
                     | None      -> ()
                     | Some kind ->
-                        let rows2 = (repoint kind load.Rows).Rows
-                        let updates = rows2 |> List.choose (phase2UpdateSql kind load.DeferredFkColumns)
+                        let remapped2 = repoint Set.empty kind load.Rows
+                        writeSkips <-
+                            writeSkips
+                            @ (remapped2.Skipped
+                               |> List.filter (fun u -> Set.contains u.Column load.DeferredFkColumns)
+                               |> List.map (fun u -> load.Kind, u))
+                        let rowsForUpdate =
+                            match load.Disposition, kind.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey && a.IsIdentity) with
+                            | IdentityDisposition.AssignedBySink, Some idAttr ->
+                                remapped2.Rows
+                                |> List.choose (fun row ->
+                                    match Map.tryFind idAttr.Name row.Values with
+                                    | Some srcVal when srcVal <> "" ->
+                                        PackedSurrogateRemap.tryFind remap load.Kind srcVal
+                                        |> Option.map (fun assigned ->
+                                            { row with Values = Map.add idAttr.Name assigned row.Values })
+                                    | _ -> None)
+                            | _ -> remapped2.Rows
+                        let updates = rowsForUpdate |> List.choose (phase2UpdateSql kind load.DeferredFkColumns)
                         if not (List.isEmpty updates) then
                             do! Deploy.executeBatch sink (String.concat "\n" updates)
 
             LogSink.recordStageEvent "load" loadSw.ElapsedMilliseconds LogSink.Succeeded
-            return writeSkips
+            return writeSkips, laneDescents
         }
 
     // -- D10 / G10 (Wave 3) — the wipe-and-load + resumable write envelopes ---
@@ -299,41 +417,29 @@ module Transfer =
     /// UNSET, so re-running the same command resumes to a complete,
     /// duplicate-free state. Phase-tracked + idempotent (the resolved fork),
     /// not a single all-or-nothing transaction envelope.
-    let private writePlanResumable (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) (topo: TopologicalOrder) (loadSet: Set<SsKey> option) : Task<(SsKey * UnresolvedReference) list> =
+    let private writePlanResumable (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) (topo: TopologicalOrder) (loadSet: Set<SsKey> option) : Task<(SsKey * UnresolvedReference) list * LaneDescent list> =
         task {
             do! Deploy.executeBatch sink progressTableSql
             let marker = planMarker catalog plan
             let! already = isMarked sink marker
-            if already then return []
+            if already then return [], []
             else
                 do! wipeFkOrdered sink catalog plan topo loadSet
-                let! skips = writePlan sink catalog plan
+                let! outcome = writePlan sink catalog plan
                 do! markComplete sink marker
-                return skips
+                return outcome
         }
 
-    // -- 6.A.2 / 6.A.3: surrogate-capture refusals (fail-loud, not silent) ---
+    // -- 6.A.3: surrogate-capture refusal (fail-loud, not silent) -------------
     //
-    // Two `AssignedBySink` shapes the per-row capture path cannot honor. Each
-    // is detected from the built plan + the schema contract and refused at
-    // Execute time rather than silently mis-keyed — *total decisions, named
-    // skips*. Both are pure decisions (no connection) so the data canary and
-    // the fast-pool unit test witness the SAME refusal (the 6.A.1 pattern).
-
-    /// 6.A.2 — `AssignedBySink` kinds that carry cycle-deferred FK columns.
-    /// `phase2UpdateSql` keys the Phase-2 re-point on the *source* PK value;
-    /// for an `AssignedBySink` kind the Sink minted a fresh surrogate, so the
-    /// source PK no longer exists and the UPDATE matches zero rows — the
-    /// deferred FK is left silently wrong. Refuse rather than emit a no-op
-    /// UPDATE. (The correct fix — re-point Phase-2 via the captured remap AND
-    /// key the WHERE on the assigned PK — is the named follow-on.)
-    let cyclicAssignedBySinkKinds (plan: DataLoadPlan) : SsKey list =
-        plan.Loads
-        |> List.choose (fun l ->
-            if l.Disposition = IdentityDisposition.AssignedBySink
-               && not (Set.isEmpty l.DeferredFkColumns)
-            then Some l.Kind
-            else None)
+    // The `AssignedBySink` shape the capture path cannot honor, detected from
+    // the built plan + the schema contract and refused at Execute time rather
+    // than silently mis-keyed — *total decisions, named skips*. A pure
+    // decision (no connection) so the data canary and the fast-pool unit test
+    // witness the SAME refusal (the 6.A.1 pattern). The former 6.A.2 refusal
+    // (cyclic AssignedBySink) was LIFTED 2026-06-10, operator-authorized:
+    // Phase 2 now re-points the deferred FK through the completed remap AND
+    // keys its WHERE on the assigned PK, so the shape loads correctly.
 
     /// 6.A.3 — `AssignedBySink` kinds whose primary key spans more than one
     /// column. `insertCaptureRow` captures a single `IsPrimaryKey && IsIdentity`
@@ -352,9 +458,9 @@ module Transfer =
 
     /// The first Execute-time refusal a built plan triggers, or `None` when
     /// the plan is cleanly executable. Folds the existing unsatisfiable-cycle
-    /// check together with the 6.A.2 / 6.A.3 surrogate-capture refusals so the
+    /// check together with the 6.A.3 surrogate-capture refusal so the
     /// orchestrator has one pre-write gate and the order of precedence is
-    /// explicit (structural unsatisfiability first, then the capture shapes).
+    /// explicit (structural unsatisfiability first, then the capture shape).
     let executeGate (catalog: Catalog) (plan: DataLoadPlan) : ValidationError option =
         if not (DataLoadPlan.isSatisfiable plan) then
             Some (ValidationError.create
@@ -363,22 +469,14 @@ module Transfer =
                         "%d non-deferrable cycle FK(s) — cannot execute a clean two-phase load"
                         plan.UnbreakableCycleFks.Length))
         else
-            match cyclicAssignedBySinkKinds plan with
+            match compositeAssignedBySinkKinds catalog plan with
             | k :: _ ->
                 Some (ValidationError.create
-                        "transfer.cyclicAssignedBySink"
+                        "transfer.compositeSurrogateUnsupported"
                         (sprintf
-                            "Kind %s is AssignedBySink with cycle-deferred FK column(s); the Phase-2 re-point keys on the source PK the Sink replaced, so it would match zero rows. Refusing rather than emit a no-op UPDATE."
+                            "Kind %s is AssignedBySink with a multi-column primary key; surrogate capture is single-column and would truncate the composite key. Refusing rather than half-capture it."
                             (SsKey.rootOriginal k)))
-            | [] ->
-                match compositeAssignedBySinkKinds catalog plan with
-                | k :: _ ->
-                    Some (ValidationError.create
-                            "transfer.compositeSurrogateUnsupported"
-                            (sprintf
-                                "Kind %s is AssignedBySink with a multi-column primary key; surrogate capture is single-column and would truncate the composite key. Refusing rather than half-capture it."
-                                (SsKey.rootOriginal k)))
-                | [] -> None
+            | [] -> None
 
     /// AC-I5 — pre-write validate-user-map. A reconciling Transfer whose
     /// user-map leaves Source identities unmatched would, post-write, surface
@@ -632,9 +730,9 @@ module Transfer =
             match preWrite with
             | Some refusal -> return Result.failureOf refusal
             | None ->
-                let! writeSkips =
+                let! writeSkips, laneDescents =
                     task {
-                        if mode <> Execute then return []
+                        if mode <> Execute then return [], []
                         else
                             match writeOpts.Emission, writeOpts.Resumable with
                             | EmissionMode.WipeAndLoad, _ ->
@@ -658,7 +756,8 @@ module Transfer =
                           UnmatchedIdentities = reconciled.Unmatched
                           // Plan-build drops (reconcile misses) + write-time
                           // drops (AssignedBySink FK misses) both surface here.
-                          SkippedReferences   = plan.SkippedReferences @ writeSkips }
+                          SkippedReferences   = plan.SkippedReferences @ writeSkips
+                          CaptureLaneDescents = laneDescents }
         }
 
     /// Run a Transfer over one shared `Catalog` (the schema contract):
@@ -781,9 +880,9 @@ module Transfer =
                 match preWrite with
                 | Some refusal -> return Result.failureOf refusal
                 | None ->
-                    let! writeSkips =
+                    let! writeSkips, laneDescents =
                         task {
-                            if mode <> Execute then return []
+                            if mode <> Execute then return [], []
                             else
                                 match emission with
                                 | EmissionMode.WipeAndLoad ->
@@ -799,7 +898,8 @@ module Transfer =
                               Kinds               = reportKinds mode plan
                               UnbreakableCycleFks = plan.UnbreakableCycleFks
                               UnmatchedIdentities = []
-                              SkippedReferences   = plan.SkippedReferences @ writeSkips }
+                              SkippedReferences   = plan.SkippedReferences @ writeSkips
+                              CaptureLaneDescents = laneDescents }
         }
 
     /// 6.B.2 — RefactorLog-aware Transfer. The source is at schema A
@@ -850,6 +950,365 @@ module Transfer =
         (physicalSinkContract: Catalog)
         : Task<Result<TransferReport>> =
         runWithRenames mode allowCdc source sink logicalSourceContract physicalSinkContract
+
+    // -- The streaming realization (bounded memory + chunk resume) -----------
+
+    /// The named refusal for a resume whose source changed under the journal.
+    let private sourceDriftRefusal (kind: SsKey) (chunkIx: int) : ValidationError =
+        ValidationError.create
+            "transfer.resume.sourceDrift"
+            (sprintf
+                "Kind %s chunk %d does not match its journaled fingerprint; the source changed since the journaled run. Refusing to resume over drifted data — clear the journal (or run WipeAndLoad) to reload from scratch."
+                (SsKey.rootOriginal kind) chunkIx)
+
+    /// Per-kind phase-1 streaming totals (rows pulled from the source;
+    /// rows that reached the sink — journal-skipped chunks count what the
+    /// journaled run wrote).
+    type private StreamedKind =
+        { Ingested : int
+          Written  : int }
+
+    /// The bounded-memory realization of the straight-load plan: per kind,
+    /// the source streams in `CaptureChunkSize` chunks through
+    /// rename-repoint → FK-repoint (deferred excluded) → the capture
+    /// ladder / bulk lanes; only the packed remap and the chunk in flight
+    /// are resident. Phase 2 re-STREAMS the deferred kinds against the
+    /// completed remap (idempotent UPDATEs — safe to repeat on resume).
+    /// With a journal: a journaled chunk whose source fingerprint
+    /// (first/last PK + raw count — deterministic because `ReadSide`
+    /// orders by PK) matches is skipped and its pairs rebuild the remap; a
+    /// mismatch is the named `transfer.resume.sourceDrift` refusal.
+    let private writePlanStreaming
+        (source: SqlConnection)
+        (sink: SqlConnection)
+        (ingestCatalog: Catalog)
+        (renameMap: Map<Name, Name>)
+        (catalog: Catalog)
+        (plan: DataLoadPlan)
+        (journal: CaptureJournal option)
+        : Task<Result<Map<SsKey, StreamedKind> * (SsKey * UnresolvedReference) list * LaneDescent list>> =
+        let assignedBySinkKinds =
+            plan.Loads
+            |> List.choose (fun l -> if l.Disposition = IdentityDisposition.AssignedBySink then Some l.Kind else None)
+            |> Set.ofList
+        let fkTargetKinds =
+            Catalog.allKinds catalog
+            |> List.collect (fun k -> k.References |> List.map (fun r -> r.TargetKind))
+            |> Set.ofList
+        let remap = PackedSurrogateRemap.create ()
+        let journalIndex = journal |> Option.map CaptureJournal.load
+
+        let repoint (excluding: Set<Name>) (kind: Kind) (rows: StaticRow list) : RemappedRows =
+            let fkTargets =
+                SurrogateRemap.fkColumnsTargeting assignedBySinkKinds kind
+                |> Map.filter (fun col _ -> not (Set.contains col excluding))
+            if Map.isEmpty fkTargets then { Rows = rows; Skipped = [] }
+            else SurrogateRemap.remapRowFksWith (PackedSurrogateRemap.tryFind remap) fkTargets rows
+
+        let rename (rows: StaticRow list) : StaticRow list =
+            if Map.isEmpty renameMap then rows else RenameProjection.repointRows renameMap rows
+
+        // One chunk of one kind — a journal skip or a lane write, each
+        // ending in a journal append so the chunk is durably done.
+        let writeChunk (kind: Kind) (load: DataLoadKind) (pkName: Name) (lane: CaptureLane) (chunkIx: int) (chunkRaw: StaticRow list)
+            : Task<Result<int * LaneDescent list * (SsKey * UnresolvedReference) list * CaptureLane>> =
+            task {
+                let renamed = rename chunkRaw
+                let pkOf (row: StaticRow) = Map.tryFind pkName row.Values |> Option.defaultValue ""
+                let firstPk = renamed |> List.tryHead |> Option.map pkOf |> Option.defaultValue ""
+                let lastPk = renamed |> List.tryLast |> Option.map pkOf |> Option.defaultValue ""
+                let rawCount = List.length renamed
+                let journaled =
+                    journalIndex
+                    |> Option.bind (fun index ->
+                        match index.TryGetValue((SsKey.rootOriginal load.Kind, chunkIx)) with
+                        | true, record -> Some record
+                        | false, _ -> None)
+                match journaled with
+                | Some record when record.FirstPk = firstPk && record.LastPk = lastPk && record.RawCount = rawCount ->
+                    record.Pairs
+                    |> Array.iter (fun pair ->
+                        if pair.Length = 2 then PackedSurrogateRemap.capture load.Kind pair[0] pair[1] remap)
+                    return Result.success (record.WrittenCount, [], [], lane)
+                | Some _ ->
+                    return Result.failureOf (sourceDriftRefusal load.Kind chunkIx)
+                | None ->
+                    let remapped = repoint load.DeferredFkColumns kind renamed
+                    let skips = remapped.Skipped |> List.map (fun u -> load.Kind, u)
+                    let! laneOutcome =
+                        task {
+                            match load.Disposition with
+                            | IdentityDisposition.AssignedBySink ->
+                                match kind.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey && a.IsIdentity) with
+                                | Some _ when not (Set.contains load.Kind fkTargetKinds) ->
+                                    do! Bulk.copyRowsSinkMinted sink kind.Physical
+                                            (toCellRowsExcludingIdentity kind load.DeferredFkColumns remapped.Rows)
+                                    return [], lane, []
+                                | Some idAttr ->
+                                    let! outcome =
+                                        SurrogateCapture.captureChunkDescending sink kind load.Kind idAttr load.DeferredFkColumns lane remapped.Rows
+                                    let pairs, succeeded, descents = outcome
+                                    pairs |> List.iter (fun (src, assigned) -> PackedSurrogateRemap.capture load.Kind src assigned remap)
+                                    return pairs, succeeded, descents
+                                | None ->
+                                    do! Bulk.copyRows sink kind.Physical (toCellRows kind load.DeferredFkColumns remapped.Rows)
+                                    return [], lane, []
+                            | _ ->
+                                do! Bulk.copyRows sink kind.Physical (toCellRows kind load.DeferredFkColumns remapped.Rows)
+                                return [], lane, []
+                        }
+                    let pairs, succeededLane, descents = laneOutcome
+                    journal
+                    |> Option.iter (fun j ->
+                        CaptureJournal.append j
+                            { Kind = SsKey.rootOriginal load.Kind
+                              ChunkIx = chunkIx
+                              FirstPk = firstPk
+                              LastPk = lastPk
+                              RawCount = rawCount
+                              WrittenCount = List.length remapped.Rows
+                              Pairs = pairs |> List.map (fun (src, assigned) -> [| src; assigned |]) |> List.toArray })
+                    return Result.success (List.length remapped.Rows, descents, skips, succeededLane)
+            }
+
+        // One-chunk ingest PREFETCH: chunk N+1 starts pulling from the
+        // SOURCE while chunk N writes to the SINK (different connections —
+        // true overlap; the task CE is hot, so the pull progresses during
+        // the write await). On a refusal/crash the in-flight prefetch is
+        // abandoned (its read completes or faults unobserved — harmless,
+        // the source connection is read-only).
+        let rec loadKindChunks (kind: Kind) (load: DataLoadKind) (pkName: Name) (stream: Projection.Adapters.Sql.AsyncStream<StaticRow>)
+                               (pending: Task<StaticRow list>)
+                               (chunkIx: int) (lane: CaptureLane)
+                               (ingested: int) (written: int)
+                               (skips: (SsKey * UnresolvedReference) list) (descents: LaneDescent list)
+            : Task<Result<StreamedKind * (SsKey * UnresolvedReference) list * LaneDescent list>> =
+            task {
+                let! chunkRaw = pending
+                if List.isEmpty chunkRaw then
+                    return Result.success ({ Ingested = ingested; Written = written }, skips, descents)
+                else
+                    let nextPending = Projection.Adapters.Sql.AsyncStream.nextBatch CaptureChunkSize stream
+                    match! writeChunk kind load pkName lane chunkIx chunkRaw with
+                    | Error es -> return Result.failure es
+                    | Ok (written', newDescents, newSkips, lane') ->
+                        return! loadKindChunks kind load pkName stream nextPending (chunkIx + 1) lane'
+                                    (ingested + List.length chunkRaw) (written + written')
+                                    (skips @ newSkips) (descents @ newDescents)
+            }
+
+        let loadTotal = List.length plan.Loads
+        let loadSw = System.Diagnostics.Stopwatch.StartNew()
+
+        let rec phase1 (loads: DataLoadKind list) (loaded: int)
+                       (totals: Map<SsKey, StreamedKind>)
+                       (skips: (SsKey * UnresolvedReference) list)
+                       (descents: LaneDescent list)
+            : Task<Result<Map<SsKey, StreamedKind> * (SsKey * UnresolvedReference) list * LaneDescent list>> =
+            task {
+                match loads with
+                | [] -> return Result.success (totals, skips, descents)
+                | load :: rest ->
+                    match Catalog.tryFindKind load.Kind catalog, Catalog.tryFindKind load.Kind ingestCatalog with
+                    | Some kind, Some ingestKind ->
+                        let pkName =
+                            kind.Attributes
+                            |> List.tryFind (fun a -> a.IsPrimaryKey)
+                            |> Option.defaultValue (List.head kind.Attributes)
+                            |> fun a -> a.Name
+                        let stream = Ingestion.streamKind source ingestKind
+                        let firstChunk = Projection.Adapters.Sql.AsyncStream.nextBatch CaptureChunkSize stream
+                        match! loadKindChunks kind load pkName stream firstChunk 0 CaptureLane.StagedMergeOutput 0 0 [] [] with
+                        | Error es -> return Result.failure es
+                        | Ok (streamed, kindSkips, kindDescents) ->
+                            LogSink.recordStageProgress "load" (loaded + 1) loadTotal loadSw.ElapsedMilliseconds
+                            return! phase1 rest (loaded + 1) (Map.add load.Kind streamed totals) (skips @ kindSkips) (descents @ kindDescents)
+                    | _ ->
+                        return! phase1 rest (loaded + 1) totals skips descents
+            }
+
+        // Phase 2 — re-stream the deferred kinds against the COMPLETED
+        // remap; the same semantics as the materialized path (the 6.A.2
+        // lift: WHERE keyed on the ASSIGNED PK; an unresolved deferred
+        // value is a NAMED erasure). UPDATEs are idempotent, so a resumed
+        // run repeating them is harmless.
+        let rec phase2Chunks (kind: Kind) (load: DataLoadKind) (idAttr: Attribute option) (stream: Projection.Adapters.Sql.AsyncStream<StaticRow>)
+                             (skips: (SsKey * UnresolvedReference) list)
+            : Task<(SsKey * UnresolvedReference) list> =
+            task {
+                let! chunkRaw = Projection.Adapters.Sql.AsyncStream.nextBatch CaptureChunkSize stream
+                if List.isEmpty chunkRaw then return skips
+                else
+                    let remapped2 = repoint Set.empty kind (rename chunkRaw)
+                    let newSkips =
+                        remapped2.Skipped
+                        |> List.filter (fun u -> Set.contains u.Column load.DeferredFkColumns)
+                        |> List.map (fun u -> load.Kind, u)
+                    let rowsForUpdate =
+                        match load.Disposition, idAttr with
+                        | IdentityDisposition.AssignedBySink, Some idAttr ->
+                            remapped2.Rows
+                            |> List.choose (fun row ->
+                                match Map.tryFind idAttr.Name row.Values with
+                                | Some srcVal when srcVal <> "" ->
+                                    PackedSurrogateRemap.tryFind remap load.Kind srcVal
+                                    |> Option.map (fun assigned -> { row with Values = Map.add idAttr.Name assigned row.Values })
+                                | _ -> None)
+                        | _ -> remapped2.Rows
+                    let updates = rowsForUpdate |> List.choose (phase2UpdateSql kind load.DeferredFkColumns)
+                    if not (List.isEmpty updates) then
+                        do! Deploy.executeBatch sink (String.concat "\n" updates)
+                    return! phase2Chunks kind load idAttr stream (skips @ newSkips)
+            }
+
+        let rec phase2 (loads: DataLoadKind list) (skips: (SsKey * UnresolvedReference) list)
+            : Task<(SsKey * UnresolvedReference) list> =
+            task {
+                match loads with
+                | [] -> return skips
+                | load :: rest ->
+                    if Set.isEmpty load.DeferredFkColumns then return! phase2 rest skips
+                    else
+                        match Catalog.tryFindKind load.Kind catalog, Catalog.tryFindKind load.Kind ingestCatalog with
+                        | Some kind, Some ingestKind ->
+                            let idAttr = kind.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey && a.IsIdentity)
+                            let stream = Ingestion.streamKind source ingestKind
+                            let! kindSkips = phase2Chunks kind load idAttr stream []
+                            return! phase2 rest (skips @ kindSkips)
+                        | _ -> return! phase2 rest skips
+            }
+
+        task {
+            LogSink.recordStageStart "load"
+            match! phase1 plan.Loads 0 Map.empty [] [] with
+            | Error es -> return Result.failure es
+            | Ok (totals, skips, descents) ->
+                let! phase2Skips = phase2 plan.Loads []
+                LogSink.recordStageEvent "load" loadSw.ElapsedMilliseconds LogSink.Succeeded
+                return Result.success (totals, skips @ phase2Skips, descents)
+        }
+
+    /// **The streaming realization** — bounded memory for the estate-scale
+    /// straight load (non-reconciling; Incremental semantics — the wipe and
+    /// reconcile envelopes stay on the materialized path). The optional
+    /// journal directory makes the run CHUNK-RESUMABLE: a journaled chunk
+    /// whose source fingerprint matches is skipped and its captured pairs
+    /// rebuild the remap; a fingerprint mismatch refuses by name
+    /// (`transfer.resume.sourceDrift`); a COMPLETED run re-runs as a full
+    /// skip — the streaming path's idempotent re-run (closing the G3
+    /// duplicate hazard whenever a journal is supplied). The resumed run's
+    /// report counts the resumed run's work; the journaled run reported its
+    /// own drops (exit-9 semantics are per-run). `DryRun` reports the plan
+    /// structure with zero counts — nothing is ingested.
+    let runStreamingWithRenames
+        (mode: Mode)
+        (allowCdc: bool)
+        (source: SqlConnection)
+        (sink: SqlConnection)
+        (sourceContract: Catalog)
+        (sinkContract: Catalog)
+        (journalDirectory: string option)
+        : Task<Result<TransferReport>> =
+        task {
+            match CatalogDiff.between sourceContract sinkContract with
+            | Error e ->
+                return Result.failureOf (ValidationError.create "transfer.renameDiffFailed" (sprintf "%A" e))
+            | Ok diff ->
+                let renameMap = RenameProjection.renames diff |> RenameProjection.renameMap
+                let cdcGate : Task<Result<unit>> =
+                    task {
+                        if mode = Execute && not allowCdc then
+                            let! tracked = ReadSide.cdcTrackedTables sink
+                            if List.isEmpty tracked then return Ok ()
+                            else
+                                return
+                                    Result.failureOf
+                                        (ValidationError.create
+                                            "transfer.cdcTrackedSink"
+                                            (sprintf
+                                                "Sink has %d CDC-tracked table(s) (e.g. %s); refusing --execute. Pass --allow-cdc to override."
+                                                (List.length tracked)
+                                                (tracked |> List.truncate 3 |> String.concat ", ")))
+                        else return Ok ()
+                    }
+                let spanningGate : Task<Result<unit>> =
+                    task {
+                        if mode = Execute then return! spanningPreflight source sink sinkContract
+                        else return Ok ()
+                    }
+                match! Preflight.all [ cdcGate; spanningGate ] with
+                | Error es -> return Result.failure es
+                | Ok () ->
+                    let topo = (TopologicalOrderPass.runWith TreatAsCycle sinkContract).Value
+                    // Structure only — order, dispositions, deferred columns;
+                    // the rows STREAM at write time (the whole point).
+                    let plan = DataLoadPlan.build sinkContract topo Map.empty SurrogateRemapContext.empty
+                    let preWrite = if mode = Execute then executeGate sinkContract plan else None
+                    match preWrite with
+                    | Some refusal -> return Result.failureOf refusal
+                    | None ->
+                        if mode <> Execute then
+                            return
+                                Result.success
+                                    { Mode                = mode
+                                      Kinds               = reportKinds mode plan
+                                      UnbreakableCycleFks = plan.UnbreakableCycleFks
+                                      UnmatchedIdentities = []
+                                      SkippedReferences   = plan.SkippedReferences
+                                      CaptureLaneDescents = [] }
+                        else
+                            let journal =
+                                journalDirectory
+                                |> Option.map (fun dir -> CaptureJournal.create dir (planMarker sinkContract plan))
+                            match! writePlanStreaming source sink sourceContract renameMap sinkContract plan journal with
+                            | Error es -> return Result.failure es
+                            | Ok (totals, skips, descents) ->
+                                let kinds =
+                                    plan.Loads
+                                    |> List.map (fun l ->
+                                        let t = Map.tryFind l.Kind totals |> Option.defaultValue { Ingested = 0; Written = 0 }
+                                        { Kind              = l.Kind
+                                          Disposition       = l.Disposition
+                                          RowsIngested      = t.Ingested
+                                          DeferredFkColumns = l.DeferredFkColumns
+                                          RowsWritten       = t.Written })
+                                return
+                                    Result.success
+                                        { Mode                = mode
+                                          Kinds               = kinds
+                                          UnbreakableCycleFks = plan.UnbreakableCycleFks
+                                          UnmatchedIdentities = []
+                                          SkippedReferences   = skips
+                                          CaptureLaneDescents = descents }
+        }
+
+    /// The streaming reverse leg through the `TransferConnections`
+    /// apparatus (D9) — the bounded-memory sibling of
+    /// `runReverseLegThroughConnections` for the estate-scale B→A load.
+    /// Both contracts arrive RENDERED from the one authored model
+    /// (`CatalogRendition`); the optional journal directory makes the run
+    /// chunk-resumable. Straight load, Incremental semantics — the
+    /// reconcile / WipeAndLoad / table-subset combinations stay on the
+    /// materialized path (the CLI face refuses them by name).
+    let runStreamingReverseLegThroughConnections
+        (mode: Mode)
+        (allowCdc: bool)
+        (journalDirectory: string option)
+        (connections: TransferConnections)
+        (logicalSourceContract: Catalog)
+        (physicalSinkContract: Catalog)
+        : Task<Result<TransferReport>> =
+        task {
+            match! ConnectionResolver.openSubstrate connections.Source with
+            | Error es -> return Result.failure es
+            | Ok source ->
+                use source = source
+                match! ConnectionResolver.openSubstrate connections.Sink with
+                | Error es -> return Result.failure es
+                | Ok sink ->
+                    use sink = sink
+                    return! runStreamingWithRenames mode allowCdc source sink logicalSourceContract physicalSinkContract journalDirectory
+        }
 
     /// Run a *reconciling* Transfer — the operator's headline case
     /// (Dev→UAT User re-key). `reconciliation` names, per kind, how its
@@ -1091,4 +1550,4 @@ module Transfer =
               TransformSite.dataIntent "phase2FkRepoint"
                 "Phase 2: UPDATE the cycle-deferred FK columns to their plan-side values, keyed by PK, in topological order. Deterministic from the plan; no operator opinion."
               TransformSite.operatorIntent "assignedKeyCapture" Insertion
-                "§5.2 Slice E: for `AssignedBySink` kinds (IDENTITY PK), insert per-row with `OUTPUT inserted.<pk>` (omitting the identity column so the Sink mints the surrogate) and capture each Source→assigned surrogate into a `SurrogateRemapContext`; every later referencer's FK targeting the kind is re-pointed via `tryFindAssigned`, skip-and-diagnose on miss. Unlike `DataLoadPlan.build`'s substitution (operator-supplied remap, known pre-build), this remap is discovered *during* the write — the assigned identity does not exist until the Sink mints it — so the site is OperatorIntent Insertion at the realization layer." ]
+                "§5.2 Slice E (set-based form, 2026-06-10): for `AssignedBySink` kinds (IDENTITY PK), insert per-batch with `MERGE … OUTPUT S.[__SRC_KEY], INSERTED.<pk>` (omitting the identity column so the Sink mints the surrogate) and capture each Source→assigned surrogate into a `SurrogateRemapContext`; every later referencer's FK targeting the kind is re-pointed via `tryFindAssigned`, skip-and-diagnose on miss. Unlike `DataLoadPlan.build`'s substitution (operator-supplied remap, known pre-build), this remap is discovered *during* the write — the assigned identity does not exist until the Sink mints it — so the site is OperatorIntent Insertion at the realization layer." ]

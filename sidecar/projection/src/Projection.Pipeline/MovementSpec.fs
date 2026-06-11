@@ -127,6 +127,10 @@ type MovementSpec =
         /// idempotent-upsert envelope (`Transfer.runResumable`). Honored on the
         /// pure-transfer data leg; inert elsewhere. Default false (byte-identical).
         Resumable   : bool
+        /// The streaming realization flag (reverse leg only; `--streaming`).
+        Streaming   : bool
+        /// The chunk-resume journal directory (streaming only; `--journal`).
+        Journal     : string option
         /// D8 — the synthesis PRNG seed (`--seed <n>`). Honored on the synthetic
         /// load; inert elsewhere. `None` = the fixed default seed.
         Seed        : uint64 option
@@ -161,6 +165,8 @@ module MovementSpec =
             AllowDrops  = false
             AllowCdc    = false
             Resumable   = false
+            Streaming   = false
+            Journal     = None
             Seed        = None
             Scale       = None
             Store       = None
@@ -240,6 +246,14 @@ type FlowRunOpts =
         /// `--scale <f>` — the synthesis volume factor over the profiled
         /// `RowCount` per kind (D8; design §7). `None` = full scale (1.0).
         Scale      : decimal option
+        /// `--streaming` — the bounded-memory chunked realization for the
+        /// estate-scale reverse leg (the 288M-row program). Honored on the
+        /// B→A reverse leg only; the face refuses unsupported combinations
+        /// by name. Default false (byte-identical).
+        Streaming  : bool
+        /// `--journal <dir>` — the chunk-resume journal directory for a
+        /// streaming run (`CaptureJournal`). `None` = no resume ledger.
+        Journal    : string option
     }
 
 /// The operator intents (THE_CLI.md §2). `Flow` is the hero — the daily
@@ -270,6 +284,10 @@ type LoadOpts =
         AllowCdc    : bool
         /// G10 — resumable/idempotent data load on the pure-transfer leg.
         Resumable   : bool
+        /// The streaming realization (reverse leg only).
+        Streaming   : bool
+        /// The chunk-resume journal directory (streaming only).
+        Journal     : string option
         Store       : string option
         Env         : string option
         /// Declared table subset for the data leg (item 5); empty = all.

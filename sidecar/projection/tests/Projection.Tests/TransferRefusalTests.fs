@@ -55,24 +55,16 @@ let private load (key: SsKey) (disp: IdentityDisposition) (deferred: string list
 let private planOf (loads: DataLoadKind list) : DataLoadPlan =
     { Loads = loads; UnbreakableCycleFks = []; SkippedReferences = [] }
 
-// --- 6.A.2: cyclic AssignedBySink ----------------------------------------
+// --- 6.A.2 LIFTED (operator-authorized 2026-06-10) ------------------------
+// A cyclic AssignedBySink shape no longer refuses: Phase 2 re-points the
+// deferred FK through the COMPLETED remap and keys its WHERE on the
+// ASSIGNED PK the capture supplied. The gate passing is the pure pin of
+// the lift; the Docker canary proves the loaded chain by business key.
 
 [<Fact>]
-let ``6.A.2: an AssignedBySink kind with a deferred FK is flagged cyclic`` () =
+let ``6.A.2 lifted: an AssignedBySink kind with a deferred FK passes the execute gate (phase 2 keys on the assigned PK)`` () =
     let plan = planOf [ load singleKey IdentityDisposition.AssignedBySink [ "MANAGER_ID" ] ]
-    Assert.Equal<SsKey list>([ singleKey ], Transfer.cyclicAssignedBySinkKinds plan)
-
-[<Fact>]
-let ``6.A.2: an AssignedBySink kind with no deferred FK is not cyclic`` () =
-    let plan = planOf [ load singleKey IdentityDisposition.AssignedBySink [] ]
-    Assert.Empty(Transfer.cyclicAssignedBySinkKinds plan)
-
-[<Fact>]
-let ``6.A.2: a deferred FK on a PreservedFromSource kind is not a cyclic-AssignedBySink case`` () =
-    // The deferred-self-FK two-phase load is correct when the key is not
-    // sink-minted — only AssignedBySink loses the source PK.
-    let plan = planOf [ load singleKey IdentityDisposition.PreservedFromSource [ "MANAGER_ID" ] ]
-    Assert.Empty(Transfer.cyclicAssignedBySinkKinds plan)
+    Assert.True((Transfer.executeGate catalog plan).IsNone)
 
 // --- 6.A.3: composite-identity AssignedBySink ----------------------------
 
@@ -96,13 +88,6 @@ let ``executeGate: an unbreakable cycle FK refuses before the capture shapes`` (
     match Transfer.executeGate catalog plan with
     | Some e -> Assert.Equal("transfer.unbreakableCycleFk", e.Code)
     | None   -> Assert.Fail("expected the unsatisfiable-cycle refusal")
-
-[<Fact>]
-let ``executeGate: cyclic AssignedBySink refuses with transfer.cyclicAssignedBySink`` () =
-    let plan = planOf [ load singleKey IdentityDisposition.AssignedBySink [ "MANAGER_ID" ] ]
-    match Transfer.executeGate catalog plan with
-    | Some e -> Assert.Equal("transfer.cyclicAssignedBySink", e.Code)
-    | None   -> Assert.Fail("expected the cyclic-AssignedBySink refusal")
 
 [<Fact>]
 let ``executeGate: composite-identity AssignedBySink refuses with transfer.compositeSurrogateUnsupported`` () =

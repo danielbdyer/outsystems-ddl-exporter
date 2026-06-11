@@ -149,7 +149,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         // contracts (ReadSide synthesizes attribute SsKeys, which would never
         // align — the original residual's premise, now honored structurally).
         needCatalog modelOssys model (fun cat ->
-            runReverseLegTransfer src sink (CatalogRendition.logical cat) (CatalogRendition.physical cat) opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Tables surveyAdvisory)
+            runReverseLegTransfer src sink (CatalogRendition.logical cat) (CatalogRendition.physical cat) opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Streaming opts.Journal opts.Tables surveyAdvisory)
     | PlanAction.MigrateWithData (model, modelOssys, sink, src, opts) ->
         needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat -> runMigrateWithData shapedCat sink src opts.Reconcile opts.Rekey opts.Declaration opts.AllowCdc opts.Store opts.Env))
     | PlanAction.SynthesizeAndLoad (model, modelOssys, profile, conn, opts, execute) ->
