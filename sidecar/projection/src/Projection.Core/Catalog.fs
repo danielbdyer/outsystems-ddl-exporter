@@ -124,6 +124,24 @@ module RowBasis =
     /// this, never a per-row sort.
     let nameSortedOrder (b: RowBasis) : int[] = b.NameSortedPerm
 
+    /// Ordinal of `name` in the basis, if present. Resolved once per
+    /// stream/kind by consumers (never per row) — the quantum's by-key
+    /// access path (Q3).
+    let tryOrdinal (name: Name) (b: RowBasis) : int option =
+        b.Names |> Array.tryFindIndex (fun n -> n = name)
+
+    /// Rename basis columns through a source→sink Name re-key map — the
+    /// basis-level realization of a column rename (Q3): under a positional
+    /// carrier a rename is a HEADER operation done once per stream; the
+    /// quanta are untouched. Names absent from the map pass through; the
+    /// name-sorted permutation is recomputed (renames can reorder names).
+    /// Empty map → the same basis (the no-rename stream is byte-identical).
+    let rename (map: Map<Name, Name>) (b: RowBasis) : RowBasis =
+        if Map.isEmpty map then b
+        else
+            ofNames
+                [ for n in b.Names -> Map.tryFind n map |> Option.defaultValue n ]
+
 [<RequireQualifiedAccess>]
 module RowQuantum =
 
@@ -141,6 +159,33 @@ module RowQuantum =
     /// path). Total over the basis by construction.
     let toValues (basis: RowBasis) (q: RowQuantum) : Map<Name, string> =
         Array.zip (RowBasis.names basis) q.Cells |> Map.ofArray
+
+    /// STAGED by-name accessor: resolve the ordinal once per kind/stream,
+    /// index per row (Q3 — the quantum counterpart of `Map.tryFind name
+    /// row.Values |> Option.defaultValue ""`; a name absent from the basis
+    /// reads as the empty raw, exactly as an absent Map key does).
+    let cellGetter (basis: RowBasis) (name: Name) : (RowQuantum -> string) =
+        match RowBasis.tryOrdinal name basis with
+        | Some ix -> fun q -> q.Cells.[ix]
+        | None -> fun _ -> ""
+
+[<RequireQualifiedAccess>]
+module StaticRow =
+
+    /// The Map-carried row's by-name accessor, empty-raw default — named
+    /// once so the carrier-generic consumers (Q3: the capture ladder, the
+    /// cell projections) read identically over both grains.
+    let valueOrEmpty (name: Name) (row: StaticRow) : string =
+        Map.tryFind name row.Values |> Option.defaultValue ""
+
+    /// The IR-grain boundary: rebuild a `StaticRow` from an in-flight
+    /// quantum (Q2 — `RowQuantum.ofStaticRow`'s inverse over a total row;
+    /// witness `R4: ofQuantum ∘ toQuantum = id`). The caller supplies the
+    /// row identity — quanta deliberately carry none (identity at row
+    /// grain is the PK cell through the basis); the IR grain still does.
+    let ofQuantum (basis: RowBasis) (identifier: SsKey) (q: RowQuantum) : StaticRow =
+        { Identifier = identifier
+          Values = RowQuantum.toValues basis q }
 
 
 /// SQL Server "extended property" — a named string annotation attached to
@@ -1302,6 +1347,13 @@ module Kind =
     /// contain multiple entries for composite-key kinds.
     let primaryKey (k: Kind) : Attribute list =
         k.Attributes |> List.filter (fun a -> a.IsPrimaryKey)
+
+    /// The kind's row basis: its attribute Names in attribute order — the
+    /// per-stream header every in-flight `RowQuantum` read from this kind
+    /// is positional against (Q2). Established once per stream, never per
+    /// row.
+    let rowBasis (k: Kind) : RowBasis =
+        RowBasis.ofNames (k.Attributes |> List.map (fun a -> a.Name))
 
     /// The static-population rows attached to this kind via
     /// `Modality.Static`, or `[]` if the kind carries no static

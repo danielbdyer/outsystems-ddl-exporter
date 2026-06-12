@@ -76,8 +76,8 @@ type ToleratedDivergence =
 
     /// Static-entity populations (INSERT statements) are absent
     /// from `PhysicalSchema`'s comparison surface (same docstring).
-    /// The data-plane axis is covered by `PhysicalSchema.Rows` /
-    /// `RowDigests` when the canary opts into the data round-trip;
+    /// The data-plane axis is covered by `PhysicalSchema.Rows`
+    /// when the canary opts into the data round-trip;
     /// chapter 4.1.B will retire this variant for population kinds.
     /// @ladder StaticPopulationsUnreflected Data AcceptedFaithful
     | StaticPopulationsUnreflected

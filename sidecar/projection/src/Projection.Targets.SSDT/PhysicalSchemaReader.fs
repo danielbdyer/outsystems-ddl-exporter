@@ -90,9 +90,9 @@ module PhysicalSchemaReader =
     /// ```
     ///
     /// on the (Columns, ForeignKeys) axes. The full PhysicalSchema
-    /// shape adds Rows (static seeds) and RowDigests (streaming row
-    /// hashes); both are populated by sibling readers (StaticSeeds
-    /// adapter / RowDigester) outside this module's scope.
+    /// shape adds Rows (static seeds), populated by the StaticSeeds
+    /// sibling reader outside this module's scope. (The RowDigests
+    /// axis was deleted 2026-06-12 — backlog card F7.)
     let ofStatementStream (statements: seq<Statement>) : PhysicalSchema =
         use _ = Bench.scope "physicalSchemaReader.ofStatementStream"
         let columns =
@@ -143,7 +143,6 @@ module PhysicalSchemaReader =
             Columns = columns
             ForeignKeys = foreignKeys
             Rows = Set.empty
-            RowDigests = Set.empty
             LogicalNameBindings = logicalNameBindings
             // Wave-1 slice 1.3 — the in-process AST reader projects the
             // SCHEMA adjunction (columns + FKs + logical names + computed,

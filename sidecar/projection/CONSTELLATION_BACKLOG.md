@@ -203,6 +203,23 @@ DECISIONS Active-deferrals index as *the* trigger registry, whose stated purpose
 silently-fired (and silently-armed) triggers. Fixed this session: `DECISIONS 2026-06-11 —
 the perf-harness verdicts`, plus an index row for the staged-bulk wake condition.
 
+**RI-13 (generation 4, 2026-06-12, the arc-cutter) — the Q-cards changed shape under the
+knife, per the F1/F3 precedent.** Executing the arc: (a) Q4's deletion content (the per-row
+`READSIDE_ROW` SsKey synthesis out of the stream) landed structurally AT Q2 — once
+`readRowsStream` emits quanta, the synthesis has nowhere to live in the pull; it moved to
+the ONE IR-grain boundary (`ReadSide.materializeStream`), where it carries its own
+aggregated label (`readside.rowstream.materializeIr`) so the relocated cost stays on the
+books (the §3.8/attribution rule, honored rather than dodged). (b) Q2 and Q3 shipped as ONE
+commit: the backlog's own sequencing finding proves Q2 is not independently win-bearing, and
+a Q2-only commit would have required staging a tree state that was never itself
+suite-verified — the witness chain (pure pool + canary suite + full Docker pool, green at
+the commit) outranks the card count. (c) Q3's `SurrogateCapture` incision generalized the
+ladder over the row carrier (a staged `getterOf : Attribute -> ('row -> string)`) instead of
+duplicating it — A40 applied at the carrier axis; the materialized path keeps `StaticRow`
+through the same functions. The journal fingerprint bytes are unchanged — existing journals
+resume across the carrier change (the RI-7 byte-stability discipline, applied to the
+fingerprint plane).
+
 ---
 
 ## 2 — The cleavage-plane inventory
@@ -330,15 +347,20 @@ in §6 item 10 with its wake condition. *Witness shipped:* the Docker-gated
 `LiveProfilerIntegrationTests` (6/6 green against the warm container — both drain paths
 exercised). S. Deps: none. Rollback: revert.
 
-**F6 · One static-fixture catalog builder.** Plane N7. Incision: a test-tree
-`StaticCatalogFixtures` module (parameterized: kind name, attribute shapes, rows) absorbing
-`staticSeedCatalog`, `wideSeedCatalog`, and the AC-X1 catalog build; `meshModel` stays (a
-cousin — FK mesh, no static rows). *Unlock:* the fourth instance never gets written; fixture
-determinism has one definition site. *Witness:* harness scenarios + AC-X1 outputs byte-stable
-across the move. S. Deps: none. Rollback: revert. Interleave filler — never block a gated
-card on it.
+**F6 · One static-fixture catalog builder — DONE 2026-06-12.** Plane N7. Shipped as
+`StaticCatalogFixtures.staticCatalog` (test tree, compiled before `MigrationCanaryTests` —
+the fsproj-order trap checked first per the risk register), absorbing FOUR instances, not
+three: `staticSeedCatalog`, `wideSeedCatalog`, and BOTH AC-X1 catalog builds (parts A and B
+each carried one, `OS_X1L`/`OS_X1B` — the card's census said three). The SsKey synthesis
+contract is documented on the module; instances keep their exact key shapes (byte-identical
+fixtures). `meshModel` stays (a cousin — FK mesh, no static rows). *Witness:* pure pool +
+the AC-X1 Docker pair green across the move. The H4–H6 scenarios build on it.
 
-**F7 · Retire the consumer-less streaming-digest apparatus.** Plane N10. The fold surface
+**F7 · Retire the consumer-less streaming-digest apparatus — DONE 2026-06-12** (deleted per
+the dead-algebra precedent; the >100k canary was not being opened simultaneously, so the
+wire-it alternative correctly did not fire; blast radius matched the card plus two
+sites the card missed — `EventProjection.fs` carried two always-zero diff payload counts,
+deleted in the same commit). Plane N10. The fold surface
 (`RowDigester.State/empty/addInPlace/add/finalize`), `PhysicalSchema.withDigests`, the
 always-empty `RowDigests : Set<PhysicalRowDigest>` axis, its two diff arms, two `isEqual`
 clauses, and two render blocks — zero consumers, all arms structurally inert. Incision:
@@ -380,10 +402,25 @@ avoided by the aggregated-sample shape.) **Replicated by re-imaging 2** (second 
 end-to-end 12.05 µs/row; materialize 483 ms = 4.83 µs/row = 40.1%); accumulator boundary
 read against its documentation and they agree: `t0` after `ReadAsync`, stop before
 `SsKey.synthesized`, one aggregated sample at EOF.
-**H4 · executeStream batch sweep.** S. Deps: H0.
-**H5 · The drains:** `staticPopulationDrain`, `physicalSchemaVerify`, `profilerDiscover`. M.
-Deps: H0.
-**H6 · `ossysParse` at ≥1k entities.** S. Deps: H0.
+**H4 · executeStream batch sweep — DONE 2026-06-12.** `Deploy.executeStreamWith batchSize`
+(the sibling wrapper supplying `DefaultBulkBatchSize` — passes the distinguishing test);
+declared scenarios `execute-stream-batch-100000x{1000,5000,10000}`. The sweep's first edition
+carried 20000 and the harness PRICED IT OUT live: the bulk-insert memory grant (539 MB
+requested) exceeds the 4 GiB container's big-query resource semaphore (~492 MB) and suspends
+on RESOURCE_SEMAPHORE indefinitely — a named infeasibility, not a slow point (PERF_HARNESS §5
+records it; the instrument falsifying its author's scale choice on first contact, again).
+First-run numbers in PERF_HARNESS §5.
+**H5 · The drains — DONE 2026-06-12:** `static-population-drain-100000` (pure emit
+isolated: **313 ms/100k = 3.1 µs/row** — the in-canary 3.4–3.7 s on the same label was ~90%
+consumer time between pulls, exactly the §1-3a caveat), `physical-schema-verify-100000`
+(ofCatalog 2× = 1094 ms, rows.hash 702 ms/200k = 3.5 µs/row, diff 242 ms — the bulk100k
+~14 s verify prior decomposes), `profiler-discover-150` (the discovery leg isolated over a
+150-table mesh; rows=0 by design — the scenario measures the discover-once round-trips, the
+axis the chapter-B.3 prior speaks to). Deps: H0 (met).
+**H6 · `ossysParse` at ≥1k entities — DONE 2026-06-12.** `ossys-parse-1000` over a
+JsonNode-synthesized V1 envelope (1000 entities × 8 attrs × 1 index, deterministic ssKeys):
+**~170 ms/1000 entities** at first run — the parse plane is cheap at estate scale; the
+PERF_OPPORTUNITIES A3/A4 priors are now one command to re-interrogate.
 
 ### Stage 2 — the spine (R2, corrected per RI-2)
 
@@ -496,11 +533,16 @@ and a lossless `toValues` round-trip. The property test is the type's second con
 zero-consumer tension resolved). S. Deps: gate (open). Rollback: revert; types unused until
 Q2.
 
-**Q2 · The stream re-typed.** `readRowsStream` emits `RowQuantum` (`[<Struct>]`, per the
-fired promotion); `Ingestion.streamKind` re-typed; the buffered `readRows` path converts at
-the boundary via `StaticRow.ofQuantum basis` (IR grain unchanged, 100k threshold unchanged).
-*Witness:* `` `R4: ofQuantum ∘ toQuantum = id` `` + canary hashes byte-identical (Q1's
-permutation). M. Deps: Q1.
+**Q2 · The stream re-typed — DONE 2026-06-12** (with Q3, one commit; RI-13). `readRowsStream`
+emits `RowQuantum` (`[<Struct>]`, per the fired promotion); `Ingestion.streamKind` re-typed;
+`streamsInOrder` DELETED rather than re-typed — its single consumer was `collectInOrder` and
+the streaming realization streams per kind inside its own chunk loop, so the re-typed triple
+would have shipped consumer-less (the dead-algebra precedent; a boundary-map correction —
+the map said "re-type", the census at the cut said "delete"); the buffered `readRows` path and
+`collectInOrder` convert at the ONE IR-grain boundary (`ReadSide.materializeStream` →
+`StaticRow.ofQuantum` — Map + `READSIDE_ROW` Identifier minted there, preview/canary scale),
+which carries the `materializeIr` aggregated label. *Witness shipped:* `` `R4: ofQuantum ∘
+toQuantum = id` `` + pure pool + canary suite green at the commit.
 
 > **Sequencing finding (re-imaging 2, Q1-session):** Q2 is **coupled to Q3+Q4**, not
 > independently win-bearing. `readRowsStream`'s streaming consumers (`TransferRun.toCellsOver`/
@@ -537,17 +579,27 @@ permutation). M. Deps: Q1.
 > - `RowDigester`'s fold is dead (N10/F7) — the arc does NOT need to wire quanta into it;
 >   `hashQuantumBytes` already covers the hash plane (Q1, witnessed).
 
-**Q3 · In-flight consumers.** `TransferRun.toCellsOver`/`pkOf`/`writeChunk`,
-`SurrogateRemap` ordinal overload (the A40 `*With` shape extended), `SurrogateCapture` —
-in-flight sites only (~the streaming subset of the 19; IR-grain consumers untouched).
-*Witness:* reverse-leg property + scale suites, green, with the before/after delta in the
-commit message per the bench protocol. M. Deps: Q2.
+**Q3 · In-flight consumers — DONE 2026-06-12** (with Q2, one commit; RI-13). The streaming
+realization consumes quanta end-to-end: renames are HEADER operations (`RowBasis.rename`,
+once per kind — the per-row walk deleted, not ported; the materialized path keeps
+`RenameProjection` at its scale); PK fingerprints + phase-2 identity re-keys index cells
+through the basis (`RowQuantum.cellGetter`, ordinals resolved once per kind); FK re-point at
+the quantum grain (`SurrogateRemap.remapQuantumFksWith` + `fkOrdinalsTargeting`, Name-ordered
+so skip diagnostics are identical, copy-on-write cells); the capture ladder carrier-generic
+(`SurrogateCapture` staged `getterOf` — A40 at the carrier axis); bulk lanes project via
+`quantumCellsOver`. Journal fingerprint bytes unchanged — journals resume across the carrier
+change. *Witnesses shipped:* `` `Q3: remapQuantumFksWith equals remapRowFksWith over any
+total rows` `` (FsCheck) + `` `Q3: RowBasis.rename — the header rename equals the per-row
+rename walk` `` + full Docker pool (reverse-leg Streaming/Canary/Property/Scale suites)
+green at the commit.
 
-**Q4 · Delete the per-row SsKey from the stream.** The `READSIDE_ROW` synthesis and its
-measured sprintf (`ReadSide.fs:921-930`) go; identity at row grain is the PK cell through
-the basis. The IR-grain `Identifier` consumers (sort passes, `DataInsertRow`) are out of
-scope and unaffected. *Witness:* H3 re-run shows the materialize label's drop. S. Deps: Q2,
-Q3.
+**Q4 · Delete the per-row SsKey from the stream — DONE 2026-06-12** (deletion content landed
+structurally at Q2, per RI-13; this card closed as the arc's measurement). The `READSIDE_ROW`
+synthesis and its sprintf are out of the stream — identity at row grain is the PK cell
+through the basis; the synthesis survives ONLY at the IR-grain boundary
+(`materializeStream`), where the IR-grain `Identifier` consumers (sort passes,
+`DataInsertRow`) still receive it unchanged. *Witness:* H3 re-run (same host, same warm
+container, back-to-back with the BEFORE) — see PERF_HARNESS §5 Q-arc results.
 
 ### Stage 6 — licensed parallelism (R5, corrected per RI-5)
 
@@ -701,6 +753,7 @@ is also the resume story after the interruption ends.
 | FS3511 Release shapes | any task-CE work in L2/Q2/Q3 | the survival rules; hoist and bind single values |
 | perf-gate baseline drift | P2, Q3, anything that legitimately moves a floor | `PERF_GATE_RECORD=1` + the DECISIONS amendment, never silent |
 | Docker soft-skip masking | every Docker-gated witness above | confirm via TRX / `test.sh status` when the verdict matters |
+| warm-container memory-grant stall | any bulk load that hangs indefinitely (no error, no rows) on a long-running warm container | it is a RESOURCE_SEMAPHORE wait, not a code bug and not the batch knob (the grant ~535 MB is batch-size-independent): check `sys.dm_exec_query_memory_grants` + `_resource_semaphores`, then `warm-sql.sh restart` (PERF_HARNESS §5, 2026-06-12) |
 
 ---
 

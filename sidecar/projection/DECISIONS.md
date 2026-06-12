@@ -21555,3 +21555,54 @@ Evidence of record: `PERF_HARNESS.md` §5 slice-1/slice-2 results
 blocks; `bench/perf/` artifacts are gitignored by design, so the
 witnesses are the re-runnable scenarios themselves. No perf-gate
 baseline moved.
+
+## 2026-06-12 — The Q-arc lands: the in-flight row carrier is positional (Q2+Q3+Q4, one arc, RI-13)
+
+The CONSTELLATION_BACKLOG stage-5 critical path executed as one focused
+arc under the open H3 gate (materialize = 40–42% of stream wall,
+confirmed on three hosts including this one's BEFORE: 420 ms / 985 ms
+end-to-end = 42.6% at 100k×12 warm).
+
+**The decision.** `ReadSide.readRowsStream` emits `RowQuantum` (cells
+positional against `Kind.rowBasis`); the Map + `READSIDE_ROW` SsKey
+mint lives ONLY at the IR-grain boundary (`ReadSide.materializeStream`
+→ `StaticRow.ofQuantum`), which the buffered `readRows`,
+`Ingestion.collectInOrder`/`streamKindRows`, and the reconcile read use
+at preview/canary scale. The streaming realization consumes quanta
+end-to-end: renames are basis-header operations (`RowBasis.rename`,
+once per kind — the per-row rename walk is deleted on that path, not
+ported); PK/identity access is by precomputed ordinal
+(`RowQuantum.cellGetter`); FK re-point is
+`SurrogateRemap.remapQuantumFksWith` over `fkOrdinalsTargeting`
+(Name-ordered — identical skip diagnostics — copy-on-write cells); the
+capture ladder is carrier-generic via a staged
+`getterOf : Attribute -> ('row -> string)` (A40 at the carrier axis —
+the materialized path keeps `StaticRow` through the same functions).
+
+**Attribution (the §3.8 rule, honored).** The `materialize` label now
+brackets the cells build inside the pull; the relocated Map/SsKey cost
+carries its own aggregated label (`readside.rowstream.materializeIr`)
+at the boundary. The win's witness is the end-to-end `.all` number,
+not the label.
+
+**Byte-stability ledger.** Canary row hashes: unchanged by
+construction (Q1's name-sorted permutation; `hashQuantumBytes` ≡
+`hashRowBytes`, FsCheck-witnessed). Journal fingerprints (first/last
+PK + raw count): same bytes — existing journals resume across the
+carrier change. IR-grain `StaticRow`s rebuilt at the boundary:
+identical Maps and identifiers (`R4: ofQuantum ∘ toQuantum = id`).
+
+**The measured outcome (Q4's number; `perf-harness.sh` readside-rowstream
+100k×12, warm, back-to-back with the BEFORE on this host, three AFTER
+runs):** end-to-end 985 ms → 652/753/867 ms, mean 757 ms (9.85 →
+~7.6 µs/row, **−23% end-to-end**, ~101.5k → ~132k rows/sec at the best
+run); materialize 420 ms → 126/154/188 ms, mean 156 ms (4.20 →
+~1.56 µs/row, **−63%** — cells build only; the boundary conversion is
+not paid by the drain or the streaming realization). Count drift zero
+(100000/100000); the materialize delta is far beyond 2× run-to-run
+jitter, the end-to-end delta beyond it on the mean.
+
+Cards Q2/Q3/Q4 closed in two commits (Q2+Q3 coupled per the backlog's
+sequencing finding; Q4 = the measurement + docs) — the card-shape
+changes are RI-13. Witnesses at every commit: pure pool, canary suite,
+full Docker pool. No perf-gate baseline moved.

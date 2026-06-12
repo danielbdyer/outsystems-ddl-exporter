@@ -526,7 +526,12 @@ module Deploy =
     /// `deploy.bulk.copyRows.batchSize`) record batch-level
     /// throughput. Operators reading the bench table see the row
     /// count, batch count, total wall time per realization.
-    let executeStream (cnn: SqlConnection) (statements: seq<Statement>) : Task<unit> =
+    /// `executeStream` with an explicit bulk batch size — the sibling
+    /// wrapper supplies `DefaultBulkBatchSize` (the F# default-argument
+    /// idiom). The knob exists for the perf harness's batch sweep
+    /// (PERF_HARNESS §4 slice 3 / CONSTELLATION_BACKLOG H4); production
+    /// callers use `executeStream`.
+    let executeStreamWith (batchSize: int) (cnn: SqlConnection) (statements: seq<Statement>) : Task<unit> =
         task {
             use _ = Bench.scope "deploy.executeStream"
             let buffer = ResizeArray<CellValue list>()
@@ -653,7 +658,7 @@ module Deploy =
                         currentTable <- Some table
                         currentShape <- Some shape
                     buffer.Add values
-                    if buffer.Count >= DefaultBulkBatchSize then
+                    if buffer.Count >= batchSize then
                         do! flushBulk ()
                         currentTable <- Some table
                         currentShape <- Some shape
@@ -661,6 +666,9 @@ module Deploy =
             do! flushBulk ()
             do! flushDdl ()
         }
+
+    let executeStream (cnn: SqlConnection) (statements: seq<Statement>) : Task<unit> =
+        executeStreamWith DefaultBulkBatchSize cnn statements
 
     /// `countUserTables` SQL — typed component list joined by
     /// `String.concat " "` per the no-string-concatenation discipline

@@ -143,49 +143,14 @@ let private seedPolicy : Policy =
 
 /// AC-X1's blessed static-kind shape (MigrationCanaryTests), parameterized
 /// by rows/kind (§3.7: production smart constructors + deterministic values).
+/// Built on the F6 single-definition-site fixture builder.
 let private staticSeedCatalog (rowsPerKind: int) : Catalog =
-    let mkKey parts =
-        SsKey.synthesizedComposite "PERF_SEED" parts |> Result.value
-    let nmx s = Name.create s |> Result.value
-    let row (i: int) =
-        { Identifier = mkKey [ "Lookup"; "Row"; string i ]
-          Values =
-            Map.ofList
-                [ nmx "Id", string i
-                  nmx "Code", sprintf "C%06d" i
-                  nmx "Label", sprintf "Perf label %d" i ] }
-    let lookup =
-        { SsKey = mkKey [ "Lookup" ]
-          Name = nmx "PerfLookup"
-          Origin = Native
-          Modality = [ Static [ for i in 1 .. rowsPerKind -> row i ] ]
-          Physical = TableId.create "dbo" "PerfLookup" |> Result.value
-          Attributes =
-            [ { Attribute.create (mkKey [ "Lookup"; "Id" ]) (nmx "Id") Integer with
-                  Column = ColumnRealization.create "ID" false |> Result.value
-                  IsPrimaryKey = true
-                  IsMandatory = true }
-              { Attribute.create (mkKey [ "Lookup"; "Code" ]) (nmx "Code") Text with
-                  Column = ColumnRealization.create "CODE" false |> Result.value
-                  IsMandatory = true }
-              { Attribute.create (mkKey [ "Lookup"; "Label" ]) (nmx "Label") Text with
-                  Column = ColumnRealization.create "LABEL" false |> Result.value
-                  IsMandatory = true } ]
-          References = []
-          Indexes = []
-          Description = None
-          IsActive = true
-          Triggers = []
-          ColumnChecks = []
-          ExtendedProperties = [] }
-    Catalog.create
-        [ { SsKey = mkKey [ "Mod" ]
-            Name = nmx "PerfSeedMod"
-            Kinds = [ lookup ]
-            IsActive = true
-            ExtendedProperties = [] } ]
-        []
-    |> Result.value
+    StaticCatalogFixtures.staticCatalog "PERF_SEED" "PerfSeedMod" [ "Lookup" ] "PerfLookup" "PerfLookup"
+        [ StaticCatalogFixtures.pk "Id" "ID" Integer
+          StaticCatalogFixtures.attr "Code" "CODE" Text
+          StaticCatalogFixtures.attr "Label" "LABEL" Text ]
+        [ for i in 1 .. rowsPerKind ->
+            string i, [ string i; sprintf "C%06d" i; sprintf "Perf label %d" i ] ]
 
 /// Activity 3b: the rendered-MERGE TEXT emission at scale, no Docker.
 // PERF-SCENARIO: seed-merge-render 1000|10000 | keylabels=emit.staticSeeds.renderMerge,compose.data.composeRendered
@@ -251,46 +216,12 @@ let seedMergeExecute (rowsPerKind: int) : PerfScenario =
 /// rows loaded via the bulk path (StaticPopulationEmitter → executeStream →
 /// SqlBulkCopy folding), then drained back through readRowsStream.
 let private wideSeedCatalog (rows: int) : Catalog =
-    let mkKey parts = SsKey.synthesizedComposite "PERF_WIDE" parts |> Result.value
-    let nmx s = Name.create s |> Result.value
     let colNames = [ for c in 1 .. 11 -> sprintf "C%02d" c ]
-    let row (i: int) =
-        { Identifier = mkKey [ "Wide"; "Row"; string i ]
-          Values =
-            Map.ofList
-                ((nmx "Id", string i)
-                 :: [ for c in colNames -> nmx c, sprintf "%s-%06d" c i ]) }
-    let attrs =
-        { Attribute.create (mkKey [ "Wide"; "Id" ]) (nmx "Id") Integer with
-            Column = ColumnRealization.create "ID" false |> Result.value
-            IsPrimaryKey = true
-            IsMandatory = true }
-        :: [ for c in colNames ->
-                { Attribute.create (mkKey [ "Wide"; c ]) (nmx c) Text with
-                    Column = ColumnRealization.create (c.ToUpperInvariant()) false |> Result.value
-                    IsMandatory = true } ]
-    let wide =
-        { SsKey = mkKey [ "Wide" ]
-          Name = nmx "PerfWide"
-          Origin = Native
-          Modality = [ Static [ for i in 1 .. rows -> row i ] ]
-          Physical = TableId.create "dbo" "PerfWide" |> Result.value
-          Attributes = attrs
-          References = []
-          Indexes = []
-          Description = None
-          IsActive = true
-          Triggers = []
-          ColumnChecks = []
-          ExtendedProperties = [] }
-    Catalog.create
-        [ { SsKey = mkKey [ "Mod" ]
-            Name = nmx "PerfWideMod"
-            Kinds = [ wide ]
-            IsActive = true
-            ExtendedProperties = [] } ]
-        []
-    |> Result.value
+    StaticCatalogFixtures.staticCatalog "PERF_WIDE" "PerfWideMod" [ "Wide" ] "PerfWide" "PerfWide"
+        (StaticCatalogFixtures.pk "Id" "ID" Integer
+         :: [ for c in colNames -> StaticCatalogFixtures.attr c (c.ToUpperInvariant()) Text ])
+        [ for i in 1 .. rows ->
+            string i, (string i :: [ for c in colNames -> sprintf "%s-%06d" c i ]) ]
 
 /// Activity 1b: deploy + bulk-load the fixture once, then drain
 /// `ReadSide.readRowsStream` to EOF — the per-row carrier cost isolated by
@@ -326,6 +257,206 @@ let readsideRowStream (rows: int) : PerfScenario =
                             if drained <> rows then
                                 failwithf "readside-rowstream drained %d rows, expected %d" drained rows
                         })
+            } }
+
+// -------------------------------------------------------------------------
+// Slice 3 (H4) — the executeStream batch sweep (PERF_HARNESS §4 slice 3 /
+// §1 activity 4a): the same controlled InsertRow stream realized at
+// different bulk batch sizes through `Deploy.executeStreamWith` (the
+// batch-size sibling the sweep fired). rows/sec per batch size answers
+// whether the 5000 default (session-35 bench) still holds.
+// -------------------------------------------------------------------------
+
+/// Activity 4a: deploy the schema, then realize the static-population
+/// InsertRow stream at an explicit bulk batch size; COUNT(*)-verified.
+// PERF-SCENARIO: execute-stream-batch 100000x1000|100000x5000|100000x10000 | keylabels=deploy.executeStream,deploy.bulk.copyRows,deploy.bulk.copyRows.batchSize
+// (The sweep's first run priced batchSize=20000 out: its bulk-insert
+// memory grant — 539 MB requested, 607 ideal — EXCEEDS the big-query
+// resource semaphore (~492 MB) on the 4 GiB warm container and stalls
+// on RESOURCE_SEMAPHORE indefinitely. 20000 is not "slower", it is
+// grant-infeasible at this container size; the top of the sweep is
+// 10000. PERF_HARNESS §5 records the finding.)
+let executeStreamBatch (rows: int) (batchSize: int) : PerfScenario =
+    let catalog = wideSeedCatalog rows
+    { Name = sprintf "execute-stream-batch-%dx%d" rows batchSize
+      Tag = "perf.deploy.executeStreamBatch"
+      KeyLabels = [ "deploy.executeStream"; "deploy.bulk.copyRows"; "deploy.bulk.copyRows.batchSize" ]
+      Run =
+        fun ctx ->
+            task {
+                do!
+                    ctx.WithDatabase (sprintf "PerfBatch%d" batchSize) (fun cnn ->
+                        task {
+                            do! Deploy.executeBatch cnn (SsdtDdlEmitter.statements catalog |> Render.toText)
+                            do! Deploy.executeStreamWith batchSize cnn (StaticPopulationEmitter.statements catalog)
+                            use check = new SqlCommand("SELECT COUNT(*) FROM [dbo].[PerfWide];", cnn)
+                            let! loaded = check.ExecuteScalarAsync()
+                            if Convert.ToInt32 loaded <> rows then
+                                failwithf "execute-stream-batch loaded %A rows, expected %d" loaded rows
+                        })
+            } }
+
+// -------------------------------------------------------------------------
+// Slice 4 (H5) — the drains: the pure static-population emit (3a), the
+// pure PhysicalSchema verify block (X1's cross-stage cost), and the
+// profiler discovery leg (1a — the "already optimized, leave it" prior,
+// finally measured in isolation).
+// -------------------------------------------------------------------------
+
+/// Activity 3a: drain `StaticPopulationEmitter.statements` to a sink
+/// WITHOUT deploying — the streamProbe label finally measures pure emit
+/// cost (in the canary its wall-time includes the consumer's SQL
+/// round-trips between pulls).
+// PERF-SCENARIO: static-population-drain 100000 | keylabels=emit.staticPopulation.statements.stream
+let staticPopulationDrain (rows: int) : PerfScenario =
+    let catalog = wideSeedCatalog rows
+    { Name = sprintf "static-population-drain-%d" rows
+      Tag = "perf.emit.staticPopulationDrain"
+      KeyLabels = [ "emit.staticPopulation.statements.stream" ]
+      Run =
+        fun _ ->
+            task {
+                let mutable n = 0
+                for _ in StaticPopulationEmitter.statements catalog do
+                    n <- n + 1
+                if n < rows then
+                    failwithf "static-population-drain drained %d statements for %d rows" n rows
+            } }
+
+/// Cross-stage X1: the canary's verify block in isolation — ofCatalog
+/// (with per-row hashing) twice + diff over identical in-memory rows.
+/// No Docker; the ~14 s bulk100k prior becomes attributable.
+// PERF-SCENARIO: physical-schema-verify 100000 | keylabels=physicalSchema.ofCatalog,physicalSchema.diff,physicalSchema.rows.hash
+let physicalSchemaVerify (rows: int) : PerfScenario =
+    let catalog = wideSeedCatalog rows
+    { Name = sprintf "physical-schema-verify-%d" rows
+      Tag = "perf.physicalSchema.verify"
+      KeyLabels = [ "physicalSchema.ofCatalog"; "physicalSchema.diff"; "physicalSchema.rows.hash" ]
+      Run =
+        fun _ ->
+            task {
+                let source = PhysicalSchema.ofCatalog catalog
+                let target = PhysicalSchema.ofCatalog catalog
+                let d = PhysicalSchema.diff source target
+                if not (PhysicalSchema.isEqual d) then
+                    failwith "physical-schema-verify: identical catalogs diffed unequal"
+            } }
+
+/// Activity 1a: the profiler's discovery leg over a pre-deployed
+/// FK-mesh estate (table-count scaling — the EvidenceCache
+/// discover-once cost, chapter-B.3's optimization target). The catalog
+/// is `meshModel` (no Static marks, so every kind is profiled — the 4.4
+/// trap does not bite); rows/table is zero by design: this scenario
+/// isolates DISCOVERY round-trips, the axis the prior speaks to (the
+/// row-bearing read path has its own scenarios).
+// PERF-SCENARIO: profiler-discover 150 | keylabels=profile.live.captureEvidenceCache,profile.live.discoverKind,profile.cache.deriveColumnProfiles
+let profilerDiscover (tables: int) : PerfScenario =
+    let catalog = ReverseLegScaleFixtures.meshModel tables
+    { Name = sprintf "profiler-discover-%d" tables
+      Tag = "perf.profile.discover"
+      KeyLabels = [ "profile.live.captureEvidenceCache"; "profile.live.discoverKind"; "profile.cache.deriveColumnProfiles" ]
+      Run =
+        fun ctx ->
+            task {
+                do!
+                    ctx.WithDatabase (sprintf "PerfProf%d" tables) (fun cnn ->
+                        task {
+                            do! Deploy.executeStream cnn (SsdtDdlEmitter.statements catalog)
+                            match! Projection.Adapters.Sql.LiveProfiler.attach cnn catalog Profile.empty with
+                            | Error es -> failwithf "profiler-discover failed: %A" es
+                            | Ok _ -> ()
+                        })
+            } }
+
+// -------------------------------------------------------------------------
+// Slice 5 (H6) — the OSSYS JSON parse at estate scale (PERF_HARNESS §1
+// activity 1d). The V1-shaped envelope is synthesized via JsonNode
+// (typed-AST-first; no string assembly) at N entities × 8 attributes
+// × 1 index; `OssysJsonReader.parseJsonString` is the production entry.
+// -------------------------------------------------------------------------
+
+/// Deterministic v1-envelope synthesis. GUID-shaped ssKeys derive from
+/// the entity/attribute ordinals, so the JSON is byte-stable per scale.
+let private ossysEnvelopeJson (entities: int) : string =
+    let guidOf (kind: int) (i: int) (j: int) =
+        sprintf "%08d-%04d-4%03d-8%03d-%012d" kind (i % 10000) (i % 1000) (j % 1000) (i * 100 + j)
+    let node = System.Text.Json.Nodes.JsonObject()
+    let modules = System.Text.Json.Nodes.JsonArray()
+    let perModule = 100
+    let moduleCount = max 1 ((entities + perModule - 1) / perModule)
+    let mutable entityIx = 0
+    for m in 1 .. moduleCount do
+        let entitiesArr = System.Text.Json.Nodes.JsonArray()
+        let inModule = min perModule (entities - entityIx)
+        for e in 1 .. inModule do
+            entityIx <- entityIx + 1
+            let i = entityIx
+            let attrs = System.Text.Json.Nodes.JsonArray()
+            let attrSpec =
+                ("Id", "ID", "Identifier", true, true)
+                :: [ for c in 1 .. 7 -> (sprintf "C%02d" c, sprintf "C%02d" c, "Text", false, false) ]
+            attrSpec
+            |> List.iteri (fun j (name, phys, dt, isId, isAuto) ->
+                let a = System.Text.Json.Nodes.JsonObject()
+                a["ssKey"] <- guidOf 2 i j
+                a["name"] <- name
+                a["physicalName"] <- phys
+                a["dataType"] <- dt
+                a["isMandatory"] <- isId
+                a["isIdentifier"] <- isId
+                a["isAutoNumber"] <- isAuto
+                a["isReference"] <- 0
+                attrs.Add a)
+            let idx = System.Text.Json.Nodes.JsonObject()
+            idx["name"] <- sprintf "IX_E%06d" i
+            idx["isPrimary"] <- true
+            idx["isUnique"] <- true
+            let idxCols = System.Text.Json.Nodes.JsonArray()
+            let col = System.Text.Json.Nodes.JsonObject()
+            col["attribute"] <- "Id"
+            col["ordinal"] <- 1
+            idxCols.Add col
+            idx["columns"] <- idxCols
+            let indexes = System.Text.Json.Nodes.JsonArray()
+            indexes.Add idx
+            let ent = System.Text.Json.Nodes.JsonObject()
+            ent["ssKey"] <- guidOf 1 i 0
+            ent["name"] <- sprintf "Entity%06d" i
+            ent["physicalName"] <- sprintf "OSUSR_P_E%06d" i
+            ent["db_schema"] <- "dbo"
+            ent["isExternal"] <- false
+            ent["isStatic"] <- false
+            ent["isActive"] <- true
+            ent["attributes"] <- attrs
+            ent["indexes"] <- indexes
+            entitiesArr.Add ent
+        let md = System.Text.Json.Nodes.JsonObject()
+        md["ssKey"] <- guidOf 3 m 0
+        md["name"] <- sprintf "Module%03d" m
+        md["physicalName"] <- sprintf "Module%03d" m
+        md["isActive"] <- true
+        md["entities"] <- entitiesArr
+        modules.Add md
+    node["modules"] <- modules
+    node.ToJsonString()
+
+/// Activity 1d: `OssysJsonReader.parseJsonString` over the synthesized
+/// envelope — the PERF_OPPORTUNITIES A3/A4 priors become measurable.
+// PERF-SCENARIO: ossys-parse 1000 | keylabels=adapter.osm.parse.attribute,adapter.osm.parse.index
+let ossysParse (entities: int) : PerfScenario =
+    { Name = sprintf "ossys-parse-%d" entities
+      Tag = "perf.adapter.osm.parse"
+      KeyLabels = [ "adapter.osm.parse.attribute"; "adapter.osm.parse.index" ]
+      Run =
+        fun _ ->
+            task {
+                let json = ossysEnvelopeJson entities
+                match Projection.Adapters.Osm.OssysJsonReader.parseJsonString json with
+                | Error es -> failwithf "ossys-parse failed: %A" es
+                | Ok catalog ->
+                    let kinds = Catalog.allKinds catalog |> List.length
+                    if kinds <> entities then
+                        failwithf "ossys-parse lifted %d kinds, expected %d" kinds entities
             } }
 
 // -------------------------------------------------------------------------
@@ -373,7 +504,35 @@ let all : ScenarioDecl list =
       { Name = "readside-rowstream-100000"
         Docker = true
         Scale = { Rows = 100000; Tables = 1; ColumnsPerTable = 12 }
-        Make = fun () -> readsideRowStream 100000 } ]
+        Make = fun () -> readsideRowStream 100000 }
+      { Name = "execute-stream-batch-100000x1000"
+        Docker = true
+        Scale = { Rows = 100000; Tables = 1; ColumnsPerTable = 12 }
+        Make = fun () -> executeStreamBatch 100000 1000 }
+      { Name = "execute-stream-batch-100000x5000"
+        Docker = true
+        Scale = { Rows = 100000; Tables = 1; ColumnsPerTable = 12 }
+        Make = fun () -> executeStreamBatch 100000 5000 }
+      { Name = "execute-stream-batch-100000x10000"
+        Docker = true
+        Scale = { Rows = 100000; Tables = 1; ColumnsPerTable = 12 }
+        Make = fun () -> executeStreamBatch 100000 10000 }
+      { Name = "static-population-drain-100000"
+        Docker = false
+        Scale = { Rows = 100000; Tables = 1; ColumnsPerTable = 12 }
+        Make = fun () -> staticPopulationDrain 100000 }
+      { Name = "physical-schema-verify-100000"
+        Docker = false
+        Scale = { Rows = 100000; Tables = 1; ColumnsPerTable = 12 }
+        Make = fun () -> physicalSchemaVerify 100000 }
+      { Name = "profiler-discover-150"
+        Docker = true
+        Scale = { Rows = 0; Tables = 150; ColumnsPerTable = 4 }
+        Make = fun () -> profilerDiscover 150 }
+      { Name = "ossys-parse-1000"
+        Docker = false
+        Scale = { Rows = 0; Tables = 1000; ColumnsPerTable = 8 }
+        Make = fun () -> ossysParse 1000 } ]
 
 /// Run one DECLARED scenario: gate first (no fixture construction on the
 /// skip path), then build, then verify the declared name against the
@@ -418,3 +577,24 @@ let ``PerfHarness: seed-merge-execute 10000`` () = runDeclared "seed-merge-execu
 
 [<Fact>]
 let ``PerfHarness: readside-rowstream 100000`` () = runDeclared "readside-rowstream-100000"
+
+[<Fact>]
+let ``PerfHarness: execute-stream-batch 100000x1000`` () = runDeclared "execute-stream-batch-100000x1000"
+
+[<Fact>]
+let ``PerfHarness: execute-stream-batch 100000x5000`` () = runDeclared "execute-stream-batch-100000x5000"
+
+[<Fact>]
+let ``PerfHarness: execute-stream-batch 100000x10000`` () = runDeclared "execute-stream-batch-100000x10000"
+
+[<Fact>]
+let ``PerfHarness: static-population-drain 100000`` () = runDeclared "static-population-drain-100000"
+
+[<Fact>]
+let ``PerfHarness: physical-schema-verify 100000`` () = runDeclared "physical-schema-verify-100000"
+
+[<Fact>]
+let ``PerfHarness: profiler-discover 150`` () = runDeclared "profiler-discover-150"
+
+[<Fact>]
+let ``PerfHarness: ossys-parse 1000`` () = runDeclared "ossys-parse-1000"

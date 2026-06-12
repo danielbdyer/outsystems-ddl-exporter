@@ -1,10 +1,14 @@
 # PERF_HARNESS — the before/after measurement fleet (architecture + backlog)
 
-**Status (2026-06-11, amended same day).** Design committed; **slices 0–2 BUILT**
-(builder session 1, PR #596: the spine + `ssdt-emit-only`, the seed-MERGE pair —
-cliff REFUTED, the ReadSide drain — Q-gate OPEN; results in §5; both verdicts
-independently replicated by the follow-on session). Slices 3–5 remain open,
-sequenced by `CONSTELLATION_BACKLOG.md` (H4/H5/H6, behind its H7). This document
+**Status (2026-06-11, amended same day; slices 3–5 added 2026-06-12).** Design
+committed; **slices 0–5 BUILT** (slices 0–2: builder session 1, PR #596 — the
+spine + `ssdt-emit-only`, the seed-MERGE pair — cliff REFUTED, the ReadSide
+drain — Q-gate OPEN, both verdicts independently replicated; slices 3–5:
+generation 4 — the `execute-stream-batch` sweep over `executeStreamWith`, the
+three drains `static-population-drain`/`physical-schema-verify`/
+`profiler-discover`, and `ossys-parse` over a synthesized 1000-entity
+envelope; first-run numbers in §5). The substrate is COMPLETE against the
+declared catalog (H7). This document
 is the architectural source of record for the perf harness. The recommendations
 in §3 are RESOLVED (home: test project + shell orchestrator; comparison:
 single-run deterministic delta with a named promotion trigger) — an agent
@@ -524,3 +528,43 @@ The 1b attribution claim is CONFIRMED in-harness: the carrier build is
 comparable to the wire read at scale. **The R4/Q-track gate is OPEN**
 (CONSTELLATION_BACKLOG stage 5). The −22% Map.add and −6× basis-concat
 candidate swaps are now one-command re-runnable claims against this scenario.
+
+**Q-arc results (2026-06-12, in-harness — `readside-rowstream 100000`, 12 cols, warm
+container, BEFORE/AFTER back-to-back on one host; CONSTELLATION_BACKLOG Q2–Q4):**
+
+| Path | BEFORE (StaticRow carrier) | AFTER (RowQuantum carrier) | Δ |
+|---|---|---|---|
+| ReadSide end-to-end (`readside.readRowsStream.all`) | 985 ms = 9.85 µs/row | 652/753/867 ms (3 runs, mean 757) ≈ 7.6 µs/row | **−23%** (mean) |
+| carrier build (`readside.rowstream.materialize`) | 420 ms = 4.20 µs/row (Map + SsKey + cells) | 126/154/188 ms (mean 156) ≈ 1.56 µs/row (cells only) | **−63%** (mean) |
+
+Attribution note (the §3.8 rule): after the arc, `materialize` brackets the
+cells build only; the Map + SsKey mint moved to the IR-grain boundary
+(`ReadSide.materializeStream`) and carries its own aggregated label
+(`readside.rowstream.materializeIr`), which the drain scenario and the
+streaming realization never pay. The win's witness is the END-TO-END number,
+not the label.
+
+**Slice 3–5 first-run results (2026-06-12, in-harness — the substrate completes):**
+
+| Scenario | Measurement | Number |
+|---|---|---|
+| `static-population-drain-100000` (3a, pure) | `emit.staticPopulation.statements.stream` with no consumer | **313 ms / 100k = 3.1 µs/row pure emit** — the same label read 3.4–3.7 s in-canary, so ~90% of the in-canary number is consumer time between pulls (the §1-3a caveat, now quantified) |
+| `physical-schema-verify-100000` (X1, pure) | `physicalSchema.ofCatalog` ×2 / `rows.hash` / `diff` | 1094 ms (2 calls) / 702 ms per 200k hashes = **3.5 µs/row hash** / 242 ms diff — the bulk100k ~14 s verify prior decomposes into attributable parts |
+| `ossys-parse-1000` (1d, pure) | `adapter.osm.parse.*` over a 1000-entity × 8-attr synthesized envelope | **~170 ms / 1000 entities** — the parse plane is cheap at estate scale; A3/A4 priors stay un-fired |
+| `profiler-discover-150` (1a, Docker) | `profile.live.captureEvidenceCache` over a 150-table mesh | **607 ms / 150 tables ≈ 4 ms/table** (discoverKind 532 ms / 150) — the chapter-B.3 "already optimized, leave it" prior is CONFIRMED with a number |
+| `execute-stream-batch-100000x{1000,5000,10000}` (4a, Docker) | `deploy.executeStream` rows/sec per batch size (fresh container) | 1000: 4065 ms = **24.6k rows/sec** (100 batches); 5000: 3200 ms = **31.3k**; 10000: 3186 ms = **31.4k** — the 5000 default is VINDICATED (5k≈10k within noise; 1k pays ~27% round-trip overhead; the session-35 rationale holds in-harness) |
+
+**The RESOURCE_SEMAPHORE finding (named, 2026-06-12; diagnosis sharpened
+live):** the sweep's first run suspended indefinitely on a bulk-insert
+memory grant. Initially read as a 20000-batch problem; the re-run at
+`batchSize=1000` requested the SAME ~535 MB (ideal 607 MB) — the grant is
+the bulk-insert SORT estimate over the indexed target and is
+batch-size-INDEPENDENT. The real cause: on a warm container that has run a
+day's pools, SQL's big-query semaphore target had shrunk below the grant
+(~488 MB available < 535 requested) — memory-pressure drift, the
+environmental signature class. The remedy is `warm-sql.sh restart` (fresh
+semaphore ≥ the grant; the same loads ran fine at 07:26). Two consequences:
+(a) the sweep's top stays 10000 — sufficient for the slope question;
+(b) any indefinitely-suspended bulk load on the warm container should be
+diagnosed via `sys.dm_exec_query_memory_grants` +
+`sys.dm_exec_query_resource_semaphores` BEFORE blaming the batch knob.

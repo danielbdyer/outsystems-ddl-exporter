@@ -107,7 +107,10 @@ within their first session. Everything not on this list, this file only points t
    instance-wide state; never on the warm container.
 2. **A batch of `Could not open a connection` failures means the warm SQL container died**,
    not a regression. `scripts/warm-sql.sh restart`. Check `scripts/test.sh status` first,
-   always.
+   always. Same remedy for a second signature (2026-06-12): **a bulk load that hangs
+   indefinitely** (no error, zero rows) on a long-running warm container is a
+   RESOURCE_SEMAPHORE memory-grant stall — batch-size-independent; diagnose via
+   `sys.dm_exec_query_memory_grants`, then restart. (PERF_HARNESS §5.)
 3. **Never `pgrep`-guard a test run; never watch a run through `| tail`** — the guard matches
    itself and tail buffers to EOF. Launch bare in the background; poll `test.sh status`.
 4. **On any `Failed: N>0`, re-run with the TRX logger and grep the TRX** — console output
@@ -228,10 +231,10 @@ the predecessor's table drifted against the code within weeks (the case is enume
   deferred feature (reflection, object expressions, type providers, SRTP, free monads,
   `IObservable`) has its re-open trigger there or in the entry that deferred it.
 - **Currently-fired promotions awaiting their gates** are tracked in `CONSTELLATION.md` §9.7:
-  `[<Struct>]` scoped to the row-grain carrier (fired by measured allocation priors; **its
-  gate — harness slice 2 — passed 2026-06-11**, so it lands with the Q-track) and units of
-  measure scoped to the `Run.diff` delta surface (fired by mixed quantities in one
-  expression; still gate-held on R1d).
+  `[<Struct>]` scoped to the row-grain carrier (fired by measured allocation priors; its
+  gate — harness slice 2 — passed 2026-06-11; **landed with the Q-track 2026-06-12**,
+  `RowQuantum`) and units of measure scoped to the `Run.diff` delta surface (fired by mixed
+  quantities in one expression; still gate-held on R1d).
 - **Three metaprogramming devices are sanctioned** (builder / active pattern /
   private-constructor module); quotations and type providers stay out absent a trigger.
 

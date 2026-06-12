@@ -14,27 +14,32 @@ open Projection.Core
 module Ingestion =
 
     /// Stream one kind's rows from the Source connection (the row-reader
-    /// leg, named in Transfer vocabulary).
-    let streamKind (cnn: SqlConnection) (kind: Kind) : AsyncStream<StaticRow> =
+    /// leg, named in Transfer vocabulary). Quanta are positional against
+    /// `Kind.rowBasis kind` (Q2 — the in-flight carrier).
+    let streamKind (cnn: SqlConnection) (kind: Kind) : AsyncStream<RowQuantum> =
         ReadSide.readRowsStream cnn kind
 
-    /// Per-kind row streams in topological order. Kinds in the order but
-    /// absent from the catalog are skipped. The streams are lazy — nothing
-    /// is read until a consumer pulls.
-    let streamsInOrder
-        (cnn: SqlConnection)
-        (catalog: Catalog)
-        (topo: TopologicalOrder)
-        : (SsKey * AsyncStream<StaticRow>) list =
-        topo.Order
-        |> List.choose (fun key ->
-            Catalog.tryFindKind key catalog
-            |> Option.map (fun k -> key, streamKind cnn k))
+    /// Stream one kind's rows rebuilt at the IR grain (`StaticRow`, Map +
+    /// `READSIDE_ROW` identity minted per row) — the materialized-scale
+    /// boundary for consumers that hold whole row sets (reconcile reads,
+    /// preview/canary collection). The streaming realization consumes
+    /// `streamKind` directly and never pays this conversion.
+    let streamKindRows (cnn: SqlConnection) (kind: Kind) : AsyncStream<StaticRow> =
+        streamKind cnn kind |> ReadSide.materializeStream kind
+
+    // `streamsInOrder` (per-kind streams in topological order) was deleted
+    // here (Q3, 2026-06-12): its single consumer was `collectInOrder`, which
+    // now converts at the IR-grain boundary directly, and the streaming
+    // realization streams per kind via `streamKind` inside its own
+    // chunk loop — zero consumers remained (the dead-algebra precedent,
+    // DECISIONS 2026-06-04). Re-introduce per the two-consumer threshold.
 
     /// Materialize every kind's rows into the `Map<SsKey, StaticRow list>`
-    /// that the pure `TransferPlan.build` consumes. Reads each kind in
+    /// that the pure `TransferPlan.build` consumes — the materialized
+    /// path's SINGLE conversion point back to the IR grain (Q2: Map +
+    /// Identifier minted here, via `streamKindRows`). Reads each kind in
     /// topological order, one open reader at a time (Source-friendly). For
-    /// preview / canary scale; a streaming realization (Slice C) consumes
+    /// preview / canary scale; the streaming realization consumes
     /// `streamsInOrder` directly without materializing.
     let collectInOrder
         (cnn: SqlConnection)
@@ -58,7 +63,12 @@ module Ingestion =
                     let! rows = AsyncStream.toList stream
                     return! loop (Map.add key rows acc) rest
             }
-        loop Map.empty (streamsInOrder cnn catalog topo)
+        let rowStreams =
+            topo.Order
+            |> List.choose (fun key ->
+                Catalog.tryFindKind key catalog
+                |> Option.map (fun k -> key, streamKindRows cnn k))
+        loop Map.empty rowStreams
 
     /// Registry metadata (pillar 9). The ingestion adapter leg classifies
     /// entirely as `DataIntent` — lifting a substrate's rows is observation,

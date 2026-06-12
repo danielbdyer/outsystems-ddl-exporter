@@ -173,6 +173,15 @@ type RemappedRows =
         Skipped : UnresolvedReference list
     }
 
+/// `RemappedRows`' sibling at the in-flight quantum grain (Q3): the quanta
+/// kept (FK cells re-pointed, copy-on-write) and the references dropped
+/// because the remap had no matched identity.
+type RemappedQuanta =
+    {
+        Rows    : RowQuantum list
+        Skipped : UnresolvedReference list
+    }
+
 
 [<RequireQualifiedAccess>]
 module SurrogateRemap =
@@ -231,6 +240,64 @@ module SurrogateRemap =
             | Error uref -> skipped <- uref :: skipped
         { Rows    = List.rev kept
           Skipped = List.rev skipped }
+
+    /// Resolve `fkColumnsTargeting`'s Name-keyed targets onto a basis as
+    /// ordinals, ONCE per kind/stream (Q3) — never per row. Emitted in
+    /// Name order (the order `remapRowFksWith`'s Map fold visits), so the
+    /// quantum remap reports the same first-unresolved column a Map-carried
+    /// remap would. A column absent from the basis carries no value on
+    /// this stream and is dropped from the target set.
+    let fkOrdinalsTargeting
+        (basis: RowBasis)
+        (fkTargets: Map<Name, SsKey>)
+        : (int * Name * SsKey) list =
+        fkTargets
+        |> Map.toList
+        |> List.choose (fun (col, target) ->
+            RowBasis.tryOrdinal col basis
+            |> Option.map (fun ix -> ix, col, target))
+
+    /// `remapRowFksWith` at the quantum grain (A40 — same algorithm, the
+    /// row carrier is the parameterized axis). FK targets arrive as basis
+    /// ordinals (`fkOrdinalsTargeting`); a re-point copies the cells array
+    /// once per changed row (copy-on-write — quanta are immutable values);
+    /// an unresolvable non-NULL FK drops the row (skip-and-diagnose),
+    /// exactly as the Map-carried remap does. Pure and order-preserving
+    /// (T1 determinism).
+    let remapQuantumFksWith
+        (tryFindAssigned: SsKey -> string -> string option)
+        (fkTargets: (int * Name * SsKey) list)
+        (rows: RowQuantum list)
+        : RemappedQuanta =
+        if List.isEmpty fkTargets then { Rows = rows; Skipped = [] }
+        else
+            let mutable kept : RowQuantum list = []
+            let mutable skipped : UnresolvedReference list = []
+            for q in rows do
+                let mutable cells = q.Cells
+                let mutable copied = false
+                let mutable failure : UnresolvedReference option = None
+                for (ix, col, target) in fkTargets do
+                    if Option.isNone failure then
+                        let v = cells.[ix]
+                        if v <> "" then
+                            match tryFindAssigned target v with
+                            | Some assigned ->
+                                if not copied then
+                                    cells <- Array.copy cells
+                                    copied <- true
+                                cells.[ix] <- assigned
+                            | None ->
+                                failure <-
+                                    Some
+                                        { Column = col
+                                          Target = target
+                                          UnresolvedSource = SourceKey.ofString v }
+                match failure with
+                | None -> kept <- { Cells = cells } :: kept
+                | Some uref -> skipped <- uref :: skipped
+            { Rows    = List.rev kept
+              Skipped = List.rev skipped }
 
     /// Apply a `SurrogateRemapContext` to one kind's rows — the
     /// context-backed projection of `remapRowFksWith`.
