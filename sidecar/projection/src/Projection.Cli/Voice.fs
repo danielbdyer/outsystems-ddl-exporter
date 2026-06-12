@@ -184,9 +184,205 @@ module Voice =
                 | None    -> []
           Action         = fun _ -> None }
 
+    /// `load.completed` — the publish-and-load verdict (`THE_VOICE.md` §4 data
+    /// plane / §6 minimality): the bundle is published and the idempotent seed is
+    /// loaded, the data movement grounded in its measure (the CDC capture count =
+    /// rows captured, rule 8). A face-verdict code rendered by the run face
+    /// (`renderVoicedTo`), the sibling of `canary.diffEmpty`.
+    let private loadCompleted : Copy =
+        { Code           = "load.completed"
+          DocSection     = "§6"
+          Statement      =
+            fun p ->
+                match text "capturedRows" p with
+                | Some n -> View.Hero(View.Ok, sprintf "The bundle is published and the seed is loaded — %s rows captured." (humane n))
+                | None   -> View.Hero(View.Ok, "The bundle is published and the seed is loaded.")
+          Substantiation =
+            fun p ->
+                (match text "artifactCount" p with
+                 | Some n -> [ View.Field("artifacts", sprintf "%s published" (humane n), View.Neutral) ]
+                 | None   -> [])
+                @ (match text "capturedRows" p with
+                   | Some n -> [ View.Field("evidence", sprintf "CDC capture count = %s — the measured data movement" (humane n), View.Neutral) ]
+                   | None   -> [])
+          Action         = fun _ -> None }
+
+    /// `deploy.completed` — the deploy verdict (`THE_VOICE.md` §3): the change
+    /// build landed in SQL Server. Resultative and agentless; the ephemeral
+    /// database name is the substantiation, never the lead.
+    let private deployCompleted : Copy =
+        { Code           = "deploy.completed"
+          DocSection     = "§3"
+          Statement      =
+            fun p ->
+                match text "tableCount" p with
+                | Some n -> View.Hero(View.Ok, sprintf "Deploy complete — %s tables created." (humane n))
+                | None   -> View.Hero(View.Ok, "Deploy complete.")
+          Substantiation =
+            fun p ->
+                match text "database" p with
+                | Some db -> [ View.Field("database", db, View.Neutral) ]
+                | None    -> []
+          Action         = fun _ -> None }
+
+    /// `deploy.ssdtRejected` — SQL Server rejected the emitted SSDT
+    /// (`THE_VOICE.md` §10): the statement is the plain finding; the server's
+    /// own messages are demoted into a disclosure (the substantiation), exactly
+    /// as `canary.divergence` demotes the rendered diff. The database name rides
+    /// beneath; the move ends the surface.
+    let private deploySsdtRejected : Copy =
+        { Code           = "deploy.ssdtRejected"
+          DocSection     = "§10"
+          Statement      = fun _ -> View.Hero(View.Bad, "SQL Server rejected the change build. The server's findings are shown below.")
+          Substantiation =
+            fun p ->
+                (match text "database" p with
+                 | Some db -> [ View.Field("database", db, View.Neutral) ]
+                 | None    -> [])
+                @ (match text "serverErrors" p with
+                   | Some es ->
+                       let lines =
+                           es.Split '\n'
+                           |> Array.toList
+                           |> List.filter (fun l -> l.Trim() <> "")
+                       [ View.Disclosure("the server's findings", View.Bad, lines |> List.map View.Note) ]
+                   | None -> [])
+          Action         = fun _ -> Some(View.Action "Resolve the findings, then redeploy.") }
+
+    /// `canary.cdcSilent` — the CDC-silence proof (`THE_VOICE.md` §6): the
+    /// deepest fidelity finding, said plain and grounded in both its zeros.
+    let private canaryCdcSilent : Copy =
+        { Code           = "canary.cdcSilent"
+          DocSection     = "§6"
+          Statement      = fun _ -> View.Hero(View.Ok, "Confirmed idempotent: zero rows captured, zero schema changes issued.")
+          Substantiation = fun _ -> [ View.Field("evidence", "CDC capture count = 0 · zero ALTER statements", View.Neutral) ]
+          Action         = fun _ -> None }
+
+    /// `canary.cdcCaptured` — the CDC-silence proof failed (`THE_VOICE.md` §6 /
+    /// §10): the redeploy touched rows where the proof requires silence. The
+    /// finding is asserted with its measure; the capture detail is in the run's
+    /// events. Ends on the verdict — no single lever exists for this finding.
+    let private canaryCdcCaptured : Copy =
+        { Code           = "canary.cdcCaptured"
+          DocSection     = "§6"
+          Statement      =
+            fun p ->
+                match text "capturedRows" p with
+                | Some n -> View.Hero(View.Bad, sprintf "The redeploy was not idempotent — %s rows captured where zero were expected." (humane n))
+                | None   -> View.Hero(View.Bad, "The redeploy was not idempotent — rows were captured where zero were expected.")
+          Substantiation =
+            fun p ->
+                match text "capturedRows" p with
+                | Some n -> [ View.Field("evidence", sprintf "CDC capture count = %s" (humane n), View.Neutral) ]
+                | None   -> []
+          Action         = fun _ -> None }
+
+    /// `drift.none` — the deployed-vs-model check found no divergence
+    /// (`THE_VOICE.md` §6 commuting square, the drift lens). Asserted; the
+    /// residual evidence beneath.
+    let private driftNone : Copy =
+        { Code           = "drift.none"
+          DocSection     = "§6"
+          Statement      = fun _ -> View.Hero(View.Ok, "Verified. The deployed schema matches the model.")
+          Substantiation = fun _ -> [ View.Field("evidence", "deployed ⊖ model residual empty", View.Neutral) ]
+          Action         = fun _ -> None }
+
+    /// `drift.diverged` — the deployed schema differs from the model
+    /// (`THE_VOICE.md` §5 drift gate / §10): a watchful finding, the rendered
+    /// difference demoted into the disclosure, ending on the operator's levers.
+    let private driftDiverged : Copy =
+        { Code           = "drift.diverged"
+          DocSection     = "§5"
+          Statement      = fun _ -> View.Hero(View.Warn, "The deployed schema diverges from the model. The difference is shown below.")
+          Substantiation =
+            fun p ->
+                match text "renderedDiff" p with
+                | Some d -> [ View.Disclosure("the difference", View.Warn, [ View.Note d ]) ]
+                | None   -> []
+          Action         = fun _ -> Some(View.Action "Remediate the server, or update the model, then re-run the check.") }
+
     // §13 — lifecycle & the live run (Watch). Stage names are what they do for the
     //       operator, never the engine verb. The gerund names a live activity in
     //       progress (rule 12 exception); a completed stage is resultative.
+
+    /// `canary.deployed` — both sides of the round-trip verification are in
+    /// place (`THE_VOICE.md` §13, resultative): the source schema and the
+    /// engine's own emission, each deployed to its ephemeral database.
+    let private canaryDeployed : Copy =
+        { Code           = "canary.deployed"
+          DocSection     = "§13"
+          Statement      =
+            fun p ->
+                match text "sourceTables" p, text "targetTables" p with
+                | Some s, Some t ->
+                    View.Note(sprintf "Both sides deployed — source %s tables, target %s tables." (humane s) (humane t))
+                | _ -> View.Note "Both sides deployed."
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
+    /// `container.starting` — an ephemeral SQL Server container is coming up for
+    /// a run that needs one (`THE_VOICE.md` §13). Gerund-in-progress (rule 12
+    /// exception); `purpose` names which face the container serves.
+    let private containerStarting : Copy =
+        { Code           = "container.starting"
+          DocSection     = "§13"
+          Statement      =
+            fun p ->
+                match text "purpose" p with
+                | Some purpose -> View.Note(sprintf "Starting an ephemeral SQL Server container for the %s." purpose)
+                | None         -> View.Note "Starting an ephemeral SQL Server container."
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
+    /// `deploy.bundleEmitted` — the change build is complete and its SSDT bundle
+    /// is in hand (`THE_VOICE.md` §13, resultative). The entry count grounds the
+    /// line; the emitter internals (the JSON node machinery) stay off the surface.
+    let private deployBundleEmitted : Copy =
+        { Code           = "deploy.bundleEmitted"
+          DocSection     = "§13"
+          Statement      =
+            fun p ->
+                match text "entryCount" p with
+                | Some n -> View.Note(sprintf "Change build complete — %s SSDT bundle entries." (humane n))
+                | None   -> View.Note "Change build complete."
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
+    /// `eject.packaged` — the provenance package is assembled (`THE_VOICE.md`
+    /// §13, resultative; §7 P-7): every episode preserved, the rename records
+    /// carried; the timeline named beneath. ("append-forever" and "refactorlog"
+    /// stay off the surface — §2.1: the operator's words are the history and
+    /// the record.)
+    let private ejectPackaged : Copy =
+        { Code           = "eject.packaged"
+          DocSection     = "§13"
+          Statement      =
+            fun p ->
+                match text "episodeCount" p, text "refactorLogCount" p with
+                | Some n, Some r ->
+                    View.Note(sprintf "Provenance package assembled — %s episodes preserved, %s rename records carried." (humane n) (humane r))
+                | _ -> View.Note "Provenance package assembled — every episode preserved."
+          Substantiation =
+            fun p ->
+                match text "timeline" p with
+                | Some tl -> [ View.Field("timeline", tl, View.Neutral) ]
+                | None    -> []
+          Action         = fun _ -> None }
+
+    /// `episode.recorded` — the run's durable record (`THE_VOICE.md` §13 — "This
+    /// run recorded to the history."). Stative and agentless: the record is a
+    /// state, named with its episode ordinal and timeline when present.
+    let private episodeRecorded : Copy =
+        { Code           = "episode.recorded"
+          DocSection     = "§13"
+          Statement      =
+            fun p ->
+                match text "episodeCount" p, text "timeline" p with
+                | Some n, Some tl ->
+                    View.Note(sprintf "This run recorded to the history — episode %s on timeline %s." (humane n) tl)
+                | _ -> View.Note "This run recorded to the history."
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
 
     /// `config.runStart` — the run opens by reading its configuration
     /// (`THE_VOICE.md` §13 / Act 1 Reading). A gerund-in-progress (rule 12
@@ -398,6 +594,143 @@ module Voice =
                 @ (match text "code" p with Some c -> [ View.Field("code", c, View.Neutral) ] | None -> [])
           Action         = fun _ -> Some(View.Action "Correct the configuration and rerun.") }
 
+    /// `verifyData.matched` — the post-deploy data-integrity check passed
+    /// (`THE_VOICE.md` §6, the data-fidelity complement of the structural
+    /// round-trip): asserted, with the compared measures as the evidence.
+    let private verifyDataMatched : Copy =
+        { Code           = "verifyData.matched"
+          DocSection     = "§6"
+          Statement      = fun _ -> View.Hero(View.Ok, "Verified. The data matches across both deployments.")
+          Substantiation = fun _ -> [ View.Field("evidence", "per-table row counts and per-column null counts equal", View.Neutral) ]
+          Action         = fun _ -> None }
+
+    /// `verifyData.diverged` — the data differs between the two deployments
+    /// (`THE_VOICE.md` §6 / §10): the finding leads; the per-table deltas are
+    /// demoted into disclosures (row counts · null counts · schema differences),
+    /// each counted on its headline; the surface ends on the move.
+    let private verifyDataDiverged : Copy =
+        { Code           = "verifyData.diverged"
+          DocSection     = "§6"
+          Statement      = fun _ -> View.Hero(View.Bad, "The data diverges between the two deployments. The differences are shown below.")
+          Substantiation =
+            fun p ->
+                let detailLines (v: string) =
+                    v.Split '\n' |> Array.toList |> List.filter (fun l -> l.Trim() <> "")
+                let block (key: string) (label: string) (status: View.Status) =
+                    match text key p with
+                    | Some v ->
+                        let lines = detailLines v
+                        [ View.Disclosure(
+                            sprintf "%s — %s differ" label (humane (string (List.length lines))),
+                            status, lines |> List.map View.Note) ]
+                    | None -> []
+                block "rowDeltas" "row counts" View.Bad
+                @ block "nullDeltas" "null counts" View.Bad
+                @ block "schemaWarnings" "schema differences" View.Warn
+          Action         = fun _ -> Some(View.Action "Investigate the listed tables, then re-run the check.") }
+
+    /// `eject.verified` — the freeze's self-verification passed (`THE_VOICE.md`
+    /// §6 / §7 P-7): the reconstruction from genesis reproduces the frozen
+    /// state. Asserted; the replay evidence beneath.
+    let private ejectVerified : Copy =
+        { Code           = "eject.verified"
+          DocSection     = "§6"
+          Statement      = fun _ -> View.Hero(View.Ok, "Verified. The reconstruction reproduces the frozen state from genesis to freeze.")
+          Substantiation = fun _ -> [ View.Field("evidence", "replay from genesis = the frozen state", View.Neutral) ]
+          Action         = fun _ -> None }
+
+    /// `eject.unverified` — the freeze's self-verification failed
+    /// (`THE_VOICE.md` §6 / §10): the reconstruction diverges from the frozen
+    /// state, so the package is unverified. Honest without exception — the
+    /// finding is stated plainly; no lever exists beyond investigation.
+    let private ejectUnverified : Copy =
+        { Code           = "eject.unverified"
+          DocSection     = "§6"
+          Statement      = fun _ -> View.Hero(View.Bad, "The reconstruction does not reproduce the frozen state. The package is unverified.")
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
+    /// `migrate.inexpressible` — the schema emitter refused changes it cannot
+    /// express as a single ALTER (`THE_VOICE.md` §10): the statement carries the
+    /// count and states that the database is unchanged; each refusing change is
+    /// demoted into the disclosure beneath, its code beside its cause.
+    let private migrateInexpressible : Copy =
+        { Code           = "migrate.inexpressible"
+          DocSection     = "§10"
+          Statement      =
+            fun p ->
+                match text "entryCount" p with
+                | Some n -> View.Hero(View.Bad, sprintf "%s change(s) cannot be expressed as a single ALTER. The database is unchanged." (humane n))
+                | None   -> View.Hero(View.Bad, "A change cannot be expressed as a single ALTER. The database is unchanged.")
+          Substantiation =
+            fun p ->
+                match text "entries" p with
+                | Some es ->
+                    let lines =
+                        es.Split '\n'
+                        |> Array.toList
+                        |> List.filter (fun l -> l.Trim() <> "")
+                    [ View.Disclosure("the changes", View.Bad, lines |> List.map View.Note) ]
+                | None -> []
+          Action         = fun _ -> None }
+
+    /// `migrate.stopped` — a migration stop outside the §5 gate vocabulary
+    /// (`THE_VOICE.md` §10 real failure): the run stopped; the plain located
+    /// cause (the `migrationStopDetail` projection) rides beneath.
+    let private migrateStopped : Copy =
+        { Code           = "migrate.stopped"
+          DocSection     = "§10"
+          Statement      = fun _ -> View.Hero(View.Bad, "The migration did not complete. The cause is shown below.")
+          Substantiation =
+            fun p ->
+                match text "cause" p with
+                | Some c -> [ View.Field("cause", c, View.Neutral) ]
+                | None   -> []
+          Action         = fun _ -> None }
+
+    /// `eject.storeUnreadable` — the durable run history could not be loaded for
+    /// the freeze (`THE_VOICE.md` §14 set-but-invalid / §10): the plain finding
+    /// with the located cause beneath, never a raw store error on the lead.
+    let private ejectStoreUnreadable : Copy =
+        { Code           = "eject.storeUnreadable"
+          DocSection     = "§14"
+          Statement      = fun _ -> View.Hero(View.Bad, "The run history could not be read. Check the --store path and retry.")
+          Substantiation =
+            fun p ->
+                match text "cause" p with
+                | Some c -> [ View.Field("cause", c, View.Neutral) ]
+                | None   -> []
+          Action         = fun _ -> Some(View.Action "Check the --store path and retry.") }
+
+    /// `canary.sourceMissing` — the round-trip verification's source DDL file is
+    /// absent (`THE_VOICE.md` §14 set-but-invalid: concrete and located — the
+    /// path rides beneath the plain statement).
+    let private canarySourceMissing : Copy =
+        { Code           = "canary.sourceMissing"
+          DocSection     = "§14"
+          Statement      = fun _ -> View.Hero(View.Bad, "The source DDL file was not found. Check the path and rerun.")
+          Substantiation =
+            fun p ->
+                match text "path" p with
+                | Some path -> [ View.Field("path", path, View.Neutral) ]
+                | None      -> []
+          Action         = fun _ -> Some(View.Action "Check the path and rerun.") }
+
+    /// `docker.unavailable` — a face that needs an ephemeral SQL Server cannot
+    /// reach the Docker daemon (`THE_VOICE.md` §14 required-and-missing): the
+    /// requirement and how to provide it, stated without scolding. `purpose`
+    /// names the face the daemon is required for.
+    let private dockerUnavailable : Copy =
+        { Code           = "docker.unavailable"
+          DocSection     = "§14"
+          Statement      =
+            fun p ->
+                View.Hero(View.Warn,
+                    sprintf "A reachable Docker daemon is required for the %s. Start the daemon or set DOCKER_HOST, then retry."
+                        (textOr "purpose" "run" p))
+          Substantiation = fun _ -> []
+          Action         = fun _ -> Some(View.Action "Start the Docker daemon or set DOCKER_HOST, then retry.") }
+
     // ------------------------------------------------------------------
     // The harvest — `all` gathers every declared copy into one catalog.
     // The `code ⇔ copy` totality test reads this (the sibling of the
@@ -412,7 +745,23 @@ module Voice =
           canaryDiffEmpty
           canaryDivergence
           summaryRunComplete
+          loadCompleted
+          deployCompleted
+          deploySsdtRejected
+          canaryCdcSilent
+          canaryCdcCaptured
+          driftNone
+          driftDiverged
+          verifyDataMatched
+          verifyDataDiverged
+          ejectVerified
+          ejectUnverified
           // §13 — lifecycle / Watch (the spine + the per-stage stream)
+          episodeRecorded
+          ejectPackaged
+          containerStarting
+          deployBundleEmitted
+          canaryDeployed
           configRunStart
           configConnectionResolved
           extractStarted
@@ -430,7 +779,12 @@ module Voice =
           watchStageHalted
           summaryStageCompleted
           // §14 / §10 — config & errors
-          configValidationFailed ]
+          configValidationFailed
+          canarySourceMissing
+          dockerUnavailable
+          migrateInexpressible
+          migrateStopped
+          ejectStoreUnreadable ]
 
     /// Look a code's copy up. `None` when the code is not yet voiced — the
     /// totality test guarantees every in-scope LIVE code IS voiced, so a `None`
@@ -487,6 +841,36 @@ module Voice =
             // gate.intent code, not a Preflight.GateLabel variant).
             View.Hero(View.Warn, "A live write requires PROJECTION_ALLOW_EXECUTE=1 in the environment."),
             Some(View.Action "Set PROJECTION_ALLOW_EXECUTE=1, then re-run.")
+        elif code.StartsWith "transfer.connection.spec" then
+            // §14 set-but-invalid: the reference's *shape* is wrong — an argument
+            // finding, never a reachability claim (the prior routing borrowed the
+            // unreachable frame for parse failures, which overstated the probe).
+            View.Hero(View.Bad, "The connection reference is malformed — the expected shape is env:NAME or file:PATH. Correct it and rerun."),
+            Some(View.Action "Correct the connection reference and rerun.")
+        elif code.StartsWith "transfer.connection.ref" then
+            // §14 required-and-missing: the reference is well-formed but the
+            // secret it points to (the env var / the file) is absent or empty.
+            View.Hero(View.Bad, "The connection reference does not resolve to a connection string. Provide the secret it points to, then retry."),
+            Some(View.Action "Provide the connection secret, then retry.")
+        elif code.StartsWith "timeline.name" then
+            // §14 set-but-invalid: the --env label cannot name a timeline.
+            View.Hero(View.Bad, "The environment label cannot name a timeline. Correct the --env label and rerun."),
+            Some(View.Action "Correct the --env label and rerun.")
+        elif code.StartsWith "transfer.reconcile." || code.StartsWith "transfer.userMap." then
+            // §14 set-but-invalid — a reconciliation argument the run cannot
+            // use; the located cause (the spec / the file) is the substantiation.
+            View.Hero(View.Bad, "A reconciliation argument is invalid. Correct the --reconcile / --user-map value and rerun."),
+            Some(View.Action "Correct the --reconcile / --user-map value and rerun.")
+        elif code.StartsWith "adapter.osm." || code.StartsWith "model." then
+            // §10 invalid input — the model could not be loaded; the located
+            // detail (path / line / field) is the substantiation beneath.
+            View.Hero(View.Bad, "The model failed to load. Correct it and rerun."),
+            Some(View.Action "Correct the model and rerun.")
+        elif code.StartsWith "readside." then
+            // §10 — the deployed schema could not be read (the same finding the
+            // §5 SchemaReadFailed gate states).
+            View.Hero(View.Bad, "The deployed schema could not be read. Check the connection and retry."),
+            Some(View.Action "Check the connection and retry.")
         elif code.Contains "connection" then
             View.Hero(View.Warn, "The target is unreachable. Check the connection and retry."),
             Some(View.Action "Check the connection and retry.")
@@ -587,3 +971,32 @@ module Voice =
                   View.Field("detail", refusal.Error.Message, View.Neutral)
                   View.Field("exit", string refusal.ExitCode, View.Neutral) ]) ]
           Action         = action }
+
+    // ------------------------------------------------------------------
+    // The migrate stop channel — §10 (mechanism 1: a typed projection over
+    // the closed `MigrationError` DU, the run-stop sibling of the §5 gate
+    // projection). The face routes the gate-shaped arms (violations /
+    // CDC-tracked / tightening) through `gateSurface`; the inexpressible
+    // refusal speaks through `migrate.inexpressible`; every remaining arm
+    // states its plain located cause through `migrate.stopped`.
+    // ------------------------------------------------------------------
+
+    /// The plain located cause for a `MigrationError` (`THE_VOICE.md` §10) —
+    /// the finding in operator words, never a raw DU dump. Total over the
+    /// closed DU by exhaustive match. (Moved from `RunFaces.
+    /// migrationErrorDetail`, 2026-06-12 register migration — the catalog owns
+    /// the copy; the face passes the projection as the `migrate.stopped`
+    /// payload's located cause.)
+    let migrationStopDetail (e: MigrationError) : string =
+        match e with
+        | DiffFailed _              -> "the changes could not be computed"
+        | RefusedByViolations v     -> sprintf "%d removal(s) are not yet approved" (List.length v)
+        | RefusedBySchemaErrors es  -> sprintf "%d change(s) cannot be expressed as a single ALTER" (List.length es)
+        | EmitFailed _              -> "the changes could not be built"
+        | SchemaReadFailed _        -> "the deployed schema could not be read"
+        | ExecutionFailed msg       -> sprintf "the migration could not be applied — %s" msg
+        | RefusedByTightening msg   -> sprintf "a column tightening would fail against existing data — %s" msg
+        | VerificationFailed _      -> "the round-trip did not match the model"
+        | DataTransferFailed _      -> "the data load did not complete"
+        | RefusedByCdc t            -> sprintf "the schema change would run against a CDC-tracked database (%d table(s))" (List.length t)
+        | StoreReadFailed msg       -> sprintf "the run history could not be read — %s" msg

@@ -25,7 +25,30 @@ let private inScopeCodes : Set<string> =
           "preflight.started"; "deploy.started"; "canary.started"; "load.started"
           "watch.runTitle"; "watch.runDone"; "watch.stageHalted"
           "summary.stageCompleted"
-          "config.validationFailed" ]
+          "config.validationFailed"
+          // the run-face verdict codes (`RunFaces` register migration) — the
+          // §4/§6 publish-and-load verdict and the §13 durable-record line
+          "load.completed"; "episode.recorded"
+          // the deploy face: the §3 verdict, the §10 SSDT rejection (server
+          // findings demoted to the disclosure), the §13 stage lines, and the
+          // §14 Docker requirement
+          "deploy.completed"; "deploy.ssdtRejected"
+          "container.starting"; "deploy.bundleEmitted"; "docker.unavailable"
+          // the canary faces: the §6 CDC-silence proof pair, the §13
+          // both-sides-deployed line, and the §14 located source-file finding
+          "canary.cdcSilent"; "canary.cdcCaptured"
+          "canary.deployed"; "canary.sourceMissing"
+          // the drift face: the §6 no-drift verdict and the §5 drift finding
+          "drift.none"; "drift.diverged"
+          // the migrate family's shared stop channel: the §10 inexpressible
+          // refusal and the generic located stop
+          "migrate.inexpressible"; "migrate.stopped"
+          // the eject face: the §13 package line, the §6 self-verification
+          // pair, and the §14 located store finding
+          "eject.packaged"; "eject.verified"; "eject.unverified"
+          "eject.storeUnreadable"
+          // the verify-data face: the §6 data-fidelity verdict pair
+          "verifyData.matched"; "verifyData.diverged" ]
 
 // The codes the engine can actually emit today (the inventory — the contract the
 // totality test holds Voice to). Voicing a code outside this set would be copy for
@@ -50,6 +73,28 @@ let private knownEmittableCodes : Set<string> =
           "watch.runTitle"; "watch.runDone"; "watch.stageHalted"
           // round-trip verification verdict
           "canary.diffEmpty"; "canary.divergence"
+          // the run-face verdict codes — like the watch frames, these are not
+          // LogSink envelopes: a face renders its own verdict through the
+          // catalog (`TtyRenderer.renderVoicedTo`), one register, consumed at
+          // render. `load.completed` is `full-export --load`'s publish-and-load
+          // verdict; `episode.recorded` is the §13 durable-record line.
+          "load.completed"; "episode.recorded"
+          // the deploy face's verdicts + stage lines + the §14 Docker
+          // requirement (shared with the canary faces)
+          "deploy.completed"; "deploy.ssdtRejected"
+          "container.starting"; "deploy.bundleEmitted"; "docker.unavailable"
+          // the canary faces' verdicts + stage line + located source finding
+          "canary.cdcSilent"; "canary.cdcCaptured"
+          "canary.deployed"; "canary.sourceMissing"
+          // the drift face's verdict pair
+          "drift.none"; "drift.diverged"
+          // the migrate family's shared stop channel
+          "migrate.inexpressible"; "migrate.stopped"
+          // the eject face's package + self-verification + store finding
+          "eject.packaged"; "eject.verified"; "eject.unverified"
+          "eject.storeUnreadable"
+          // the verify-data face's verdict pair
+          "verifyData.matched"; "verifyData.diverged"
           // emitted but voiced by mechanism-1 / later slices (not in `Voice.all` yet)
           "transform.registered"; "transform.applied"; "transform.declined"
           "transform.lineage"; "transform.diagnostic"; "bench.label" ]
@@ -82,7 +127,24 @@ let private samplePayload : Voice.Payload =
           "stage",       box "extract"
           "outcome",     box "succeeded"
           "followOn",    box "Verification follows."
-          "runIdentity", box 11 ]
+          "runIdentity", box 11
+          "artifactCount", box 7
+          "capturedRows",  box 4210
+          "episodeCount",  box 3
+          "timeline",      box "DEV"
+          "purpose",       box "deploy"
+          "entryCount",    box 12
+          "database",      box "projection_canary_01"
+          "serverErrors",  box "Incorrect syntax near 'GO'.\nThe object 'dbo.Order' already exists."
+          "sourceTables",  box 300
+          "targetTables",  box 300
+          "path",          box "model.sql"
+          "cause",         box "the changes could not be computed"
+          "entries",       box "the Amount column narrows to a smaller type (emit.alterColumn.narrowing)"
+          "refactorLogCount", box 5
+          "rowDeltas",     box "OrderHeader    before=12 after=14 (change=+2)"
+          "nullDeltas",    box "OrderHeader    Email    before=0 after=3 (change=+3)"
+          "schemaWarnings", box "the After deployment carries an added index (verify.schema.indexAdded)" ]
 
 // ---------------------------------------------------------------------------
 // code ⇔ copy totality
@@ -110,7 +172,7 @@ let ``Voice totality: codes are distinct`` () =
 
 [<Fact>]
 let ``Voice totality: every entry cites a recognized THE_VOICE section`` () =
-    let recognized = Set.ofList [ "§3"; "§6"; "§10"; "§13"; "§14" ]
+    let recognized = Set.ofList [ "§3"; "§5"; "§6"; "§10"; "§13"; "§14" ]
     for c in Voice.all do
         Assert.False(System.String.IsNullOrWhiteSpace c.DocSection, sprintf "%s has no DocSection" c.Code)
         Assert.True(Set.contains c.DocSection recognized, sprintf "%s cites unrecognized section %s" c.Code c.DocSection)
@@ -173,6 +235,158 @@ let ``Voice register: the error frames clear the banned list`` () =
         assertClean (sprintf "errorSurface %s" code) (Surface.render surface)
 
 // ---------------------------------------------------------------------------
+// the deploy face's §10 rejection — statement in the register, the server's
+// findings demoted to the substantiation (the canary.divergence shape)
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Voice deploy.ssdtRejected: the statement is the finding and the server lines are the disclosure`` () =
+    let payload : Voice.Payload =
+        Map.ofList
+            [ "database",     box "projection_dpl_01"
+              "serverErrors", box "Incorrect syntax near 'GO'.\nThe object 'dbo.Order' already exists." ]
+    match Voice.surfaceOf "deploy.ssdtRejected" payload with
+    | None -> Assert.Fail "deploy.ssdtRejected is unvoiced"
+    | Some surface ->
+        // The lead is a plain Bad verdict, never a raw server line.
+        match surface.Statement with
+        | View.Hero(View.Bad, text) -> Assert.Contains("rejected the change build", text)
+        | other -> Assert.Fail(sprintf "statement is not a Bad Hero: %A" other)
+        // Every server line is demoted into the disclosure, one Note each.
+        let disclosed =
+            surface.Substantiation
+            |> List.collect (function View.Disclosure(_, _, detail) -> detail | _ -> [])
+        Assert.Equal(2, List.length disclosed)
+        // The surface ends on the move.
+        match surface.Action with
+        | Some (View.Action _) -> ()
+        | other -> Assert.Fail(sprintf "no imperative next move: %A" other)
+
+[<Fact>]
+let ``Voice deploy.ssdtRejected: an empty payload still leads with the finding`` () =
+    match Voice.surfaceOf "deploy.ssdtRejected" Map.empty with
+    | Some { Statement = View.Hero(View.Bad, _) } -> ()
+    | other -> Assert.Fail(sprintf "unexpected empty-payload surface: %A" other)
+
+// ---------------------------------------------------------------------------
+// the canary faces' §6 CDC-silence proof pair — the proof and its failure are
+// both grounded findings, never a bare count
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Voice canary.cdcSilent: the silence proof leads Ok and grounds both zeros`` () =
+    match Voice.surfaceOf "canary.cdcSilent" Map.empty with
+    | Some { Statement = View.Hero(View.Ok, text); Substantiation = subs } ->
+        Assert.Contains("Confirmed idempotent", text)
+        Assert.Contains("zero rows captured", text)
+        Assert.False(List.isEmpty subs)   // the CDC = 0 evidence rides beneath
+    | other -> Assert.Fail(sprintf "unexpected cdcSilent surface: %A" other)
+
+[<Fact>]
+let ``Voice canary.cdcCaptured: the failed proof carries its measure on the finding`` () =
+    let payload : Voice.Payload = Map.ofList [ "capturedRows", box 4210 ]
+    match Voice.surfaceOf "canary.cdcCaptured" payload with
+    | Some { Statement = View.Hero(View.Bad, text) } ->
+        Assert.Contains("4,210", text)   // humane numerals, §12
+    | other -> Assert.Fail(sprintf "unexpected cdcCaptured surface: %A" other)
+
+// ---------------------------------------------------------------------------
+// the migrate stop channel (§10, mechanism 1 over the closed MigrationError DU)
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Voice migrationStopDetail: every easily-constructed arm yields a plain located cause`` () =
+    // The match is exhaustive over the closed DU at compile time; this witness
+    // pins the register of the constructible arms (no DU dump, no shout).
+    let cases : (MigrationError * string) list =
+        [ ExecutionFailed "the server closed the connection", "could not be applied"
+          RefusedByTightening "4 rows exceed the new limit",  "tightening"
+          StoreReadFailed "the store is malformed",           "run history"
+          DataTransferFailed [],                              "data load"
+          SchemaReadFailed [],                                "deployed schema"
+          RefusedByCdc [ "dbo.Order" ],                       "CDC-tracked" ]
+    for e, expected in cases do
+        let detail = Voice.migrationStopDetail e
+        Assert.Contains(expected, detail)
+        assertClean (sprintf "migrationStopDetail %A" e) (View.Note detail)
+
+[<Fact>]
+let ``Voice migrate.inexpressible: the count leads and each change is the disclosure`` () =
+    let payload : Voice.Payload =
+        Map.ofList
+            [ "entryCount", box 2
+              "entries", box "first cause (code.a)\nsecond cause (code.b)" ]
+    match Voice.surfaceOf "migrate.inexpressible" payload with
+    | Some surface ->
+        (match surface.Statement with
+         | View.Hero(View.Bad, text) ->
+             Assert.Contains("cannot be expressed as a single ALTER", text)
+             Assert.Contains("The database is unchanged", text)
+         | other -> Assert.Fail(sprintf "statement is not a Bad Hero: %A" other))
+        let disclosed =
+            surface.Substantiation
+            |> List.collect (function View.Disclosure(_, _, detail) -> detail | _ -> [])
+        Assert.Equal(2, List.length disclosed)
+    | None -> Assert.Fail "migrate.inexpressible is unvoiced"
+
+[<Fact>]
+let ``Voice migrate.stopped: the frame leads and the cause rides beneath`` () =
+    let payload : Voice.Payload = Map.ofList [ "cause", box "the changes could not be built" ]
+    match Voice.surfaceOf "migrate.stopped" payload with
+    | Some { Statement = View.Hero(View.Bad, text); Substantiation = subs } ->
+        Assert.Contains("did not complete", text)
+        Assert.False(List.isEmpty subs)
+    | other -> Assert.Fail(sprintf "unexpected migrate.stopped surface: %A" other)
+
+[<Fact>]
+let ``Voice errorFrame: a reconciliation argument routes to the §14 invalid frame`` () =
+    for code in [ "transfer.reconcile.specShape"; "transfer.userMap.fileMissing" ] do
+        match Voice.errorFrame code with
+        | View.Hero(View.Bad, text), Some _ -> Assert.Contains("reconciliation argument", text)
+        | other -> Assert.Fail(sprintf "unexpected reconcile frame for %s: %A" code other)
+
+// ---------------------------------------------------------------------------
+// the verify-data face's §6 pair — the divergence demotes each delta family
+// into a counted disclosure
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Voice verifyData.diverged: the finding leads and each delta family is a counted disclosure`` () =
+    let payload : Voice.Payload =
+        Map.ofList
+            [ "rowDeltas",  box "OrderHeader before=12 after=14 (change=+2)\nCountry before=8 after=7 (change=-1)"
+              "nullDeltas", box "OrderHeader Email before=0 after=3 (change=+3)" ]
+    match Voice.surfaceOf "verifyData.diverged" payload with
+    | Some surface ->
+        (match surface.Statement with
+         | View.Hero(View.Bad, text) -> Assert.Contains("diverges between the two deployments", text)
+         | other -> Assert.Fail(sprintf "statement is not a Bad Hero: %A" other))
+        let headlines =
+            surface.Substantiation
+            |> List.choose (function View.Disclosure(h, _, detail) -> Some(h, List.length detail) | _ -> None)
+        Assert.Equal<(string * int) list>([ "row counts — 2 differ", 2; "null counts — 1 differ", 1 ], headlines)
+        match surface.Action with
+        | Some (View.Action _) -> ()
+        | other -> Assert.Fail(sprintf "no next move: %A" other)
+    | None -> Assert.Fail "verifyData.diverged is unvoiced"
+
+// ---------------------------------------------------------------------------
+// the eject face's self-verification pair (§6, the P-7 freeze)
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Voice eject: the self-verification pair leads with the asserted finding`` () =
+    (match Voice.surfaceOf "eject.verified" Map.empty with
+     | Some { Statement = View.Hero(View.Ok, text); Substantiation = subs } ->
+         Assert.Contains("genesis to freeze", text)
+         Assert.False(List.isEmpty subs)   // the replay evidence rides beneath
+     | other -> Assert.Fail(sprintf "unexpected eject.verified surface: %A" other))
+    match Voice.surfaceOf "eject.unverified" Map.empty with
+    | Some { Statement = View.Hero(View.Bad, text) } ->
+        Assert.Contains("does not reproduce the frozen state", text)
+    | other -> Assert.Fail(sprintf "unexpected eject.unverified surface: %A" other)
+
+// ---------------------------------------------------------------------------
 // the stage-name mapping (THE_VOICE.md §13 — operator-shaped, never the verb)
 // ---------------------------------------------------------------------------
 
@@ -199,6 +413,9 @@ let ``Voice errorFrame: routing is total — every code yields a verdict Hero`` 
           "migrate.connectionUnavailable"; "transfer.connectionUnavailable"
           "migrate.insufficientGrant"; "transfer.grantProbeFailed"
           "gate.intent"
+          "transfer.connection.specShape"; "transfer.connection.specEmpty"
+          "transfer.connection.refMissing"; "transfer.connection.refEmpty"
+          "transfer.connection.openFailed"; "timeline.name.empty"
           "adapter.osm.parse"; "something.unclassified" ]
     for code in codes do
         match Voice.errorFrame code with
@@ -216,6 +433,67 @@ let ``Voice errorFrame: a connection code routes to the §10 unreachable frame``
     match Voice.errorFrame "migrate.connectionUnavailable" with
     | View.Hero(_, text), Some _ -> Assert.Contains("unreachable", text)
     | other -> Assert.Fail(sprintf "unexpected connection frame: %A" other)
+
+[<Fact>]
+let ``Voice errorFrame: a malformed connection reference is an argument finding (§14 set-but-invalid)`` () =
+    // The parse-failure class must NOT borrow the reachability frame: the
+    // reference's shape is wrong; nothing was probed.
+    for code in [ "transfer.connection.specEmpty"; "transfer.connection.specShape"; "transfer.connection.specPrefix" ] do
+        match Voice.errorFrame code with
+        | View.Hero(View.Bad, text), Some _ ->
+            Assert.Contains("malformed", text)
+            Assert.DoesNotContain("unreachable", text)
+        | other -> Assert.Fail(sprintf "unexpected spec frame for %s: %A" code other)
+
+[<Fact>]
+let ``Voice errorFrame: an unresolvable connection reference names the missing secret (§14 required-and-missing)`` () =
+    for code in [ "transfer.connection.refMissing"; "transfer.connection.refEmpty" ] do
+        match Voice.errorFrame code with
+        | View.Hero(View.Bad, text), Some _ ->
+            Assert.Contains("does not resolve", text)
+        | other -> Assert.Fail(sprintf "unexpected ref frame for %s: %A" code other)
+
+[<Fact>]
+let ``Voice errorFrame: a failed connection open still routes to the §10 unreachable frame`` () =
+    match Voice.errorFrame "transfer.connection.openFailed" with
+    | View.Hero(_, text), Some _ -> Assert.Contains("unreachable", text)
+    | other -> Assert.Fail(sprintf "unexpected open frame: %A" other)
+
+[<Fact>]
+let ``Voice errorFrame: an empty timeline name is a located --env finding`` () =
+    match Voice.errorFrame "timeline.name.empty" with
+    | View.Hero(View.Bad, text), Some _ -> Assert.Contains("--env", text)
+    | other -> Assert.Fail(sprintf "unexpected timeline frame: %A" other)
+
+[<Fact>]
+let ``Voice errorFrame: a model-load failure routes to the §10 model frame`` () =
+    for code in [ "adapter.osm.fileReadFailed"; "adapter.osm.parse"; "model.resolution" ] do
+        match Voice.errorFrame code with
+        | View.Hero(View.Bad, text), Some _ -> Assert.Contains("model failed to load", text)
+        | other -> Assert.Fail(sprintf "unexpected model frame for %s: %A" code other)
+
+[<Fact>]
+let ``Voice errorFrame: a deployed-schema read failure names the schema, never a generic stop`` () =
+    match Voice.errorFrame "readside.query.failed" with
+    | View.Hero(View.Bad, text), Some _ -> Assert.Contains("deployed schema could not be read", text)
+    | other -> Assert.Fail(sprintf "unexpected readside frame: %A" other)
+
+[<Fact>]
+let ``Voice drift.diverged: the finding leads and the rendered difference is the disclosure`` () =
+    let payload : Voice.Payload = Map.ofList [ "renderedDiff", box "table dbo.Extra exists only on the server" ]
+    match Voice.surfaceOf "drift.diverged" payload with
+    | Some surface ->
+        (match surface.Statement with
+         | View.Hero(View.Warn, text) -> Assert.Contains("diverges from the model", text)
+         | other -> Assert.Fail(sprintf "statement is not a Warn Hero: %A" other))
+        let disclosed =
+            surface.Substantiation
+            |> List.collect (function View.Disclosure(_, _, detail) -> detail | _ -> [])
+        Assert.False(List.isEmpty disclosed)
+        match surface.Action with
+        | Some (View.Action _) -> ()
+        | other -> Assert.Fail(sprintf "no next move: %A" other)
+    | None -> Assert.Fail "drift.diverged is unvoiced"
 
 [<Fact>]
 let ``Voice errorFrame: the intent gate names the arming variable and a next move`` () =
