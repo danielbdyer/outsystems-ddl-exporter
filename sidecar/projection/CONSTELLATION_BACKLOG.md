@@ -355,7 +355,11 @@ determinism has one definition site. *Witness:* harness scenarios + AC-X1 output
 across the move. S. Deps: none. Rollback: revert. Interleave filler — never block a gated
 card on it.
 
-**F7 · Retire the consumer-less streaming-digest apparatus.** Plane N10. The fold surface
+**F7 · Retire the consumer-less streaming-digest apparatus — DONE 2026-06-12** (deleted per
+the dead-algebra precedent; the >100k canary was not being opened simultaneously, so the
+wire-it alternative correctly did not fire; blast radius matched the card plus two
+sites the card missed — `EventProjection.fs` carried two always-zero diff payload counts,
+deleted in the same commit). Plane N10. The fold surface
 (`RowDigester.State/empty/addInPlace/add/finalize`), `PhysicalSchema.withDigests`, the
 always-empty `RowDigests : Set<PhysicalRowDigest>` axis, its two diff arms, two `isEqual`
 clauses, and two render blocks — zero consumers, all arms structurally inert. Incision:

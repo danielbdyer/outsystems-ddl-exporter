@@ -245,8 +245,6 @@ module EventProjection =
                     "extraIndexes",               box (List.length diff.ExtraIndexes)
                     "missingRows",                box (List.length diff.MissingRows)
                     "extraRows",                  box (List.length diff.ExtraRows)
-                    "missingRowDigests",          box (List.length diff.MissingRowDigests)
-                    "extraRowDigests",            box (List.length diff.ExtraRowDigests)
                     "missingAnnotations",         box (List.length diff.MissingAnnotations)
                     "extraAnnotations",           box (List.length diff.ExtraAnnotations)
                     "missingLogicalNameBindings", box (List.length diff.MissingLogicalNameBindings)

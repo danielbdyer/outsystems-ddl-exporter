@@ -1743,8 +1743,8 @@ module ReadSide =
                         // axis; above, the round-trip falls back to
                         // schema-only (no rows in IR). Streaming
                         // realizations (`readRowsStream`) bypass the
-                        // threshold and feed digesters directly without
-                        // IR materialization — chapter-4.1 territory.
+                        // threshold entirely — quanta flow without IR
+                        // materialization.
                         let maxRows = 100_000
                         let kindsWithRows = ResizeArray<Kind>(List.length kindsWithRefs)
                         for k in kindsWithRefs do

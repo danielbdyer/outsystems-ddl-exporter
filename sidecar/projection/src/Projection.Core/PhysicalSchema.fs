@@ -177,25 +177,6 @@ type PhysicalRow =
         Hash : string
     }
 
-/// Per-table aggregate row fingerprint. Per session-35 — covers
-/// tables whose row counts exceed `Modality.Static`'s materialization
-/// budget, so structural-fidelity comparison still has a row axis at
-/// enterprise scale (1M+ row tables) without holding rows in IR
-/// memory. Order-independent: the aggregate combines per-row SHA256
-/// hashes by sum-mod-2^256, so ingest order is irrelevant.
-///
-/// Two aggregates with the same `(Count, AggregateHash)` represent
-/// identical multisets with overwhelming probability. A drift either
-/// shifts the count or perturbs the sum; both surface as a non-empty
-/// diff entry on the `RowDigests` axis.
-type PhysicalRowDigest =
-    {
-        Schema : string
-        Table : string
-        Count : int64
-        AggregateHash : string
-    }
-
 /// A binding from a deployed physical coordinate to its logical
 /// name. Slice D.1.c addition — closes the chapter-D logical-name-
 /// emission arc by giving the canary's PhysicalSchema diff a fifth
@@ -240,7 +221,6 @@ type PhysicalSchema =
         Columns : Set<PhysicalColumn>
         ForeignKeys : Set<PhysicalForeignKey>
         Rows : Set<PhysicalRow>
-        RowDigests : Set<PhysicalRowDigest>
         /// Slice D.1.c — logical-name bindings (the kind's / attribute's
         /// `Name` projected alongside the deployed physical coordinate).
         /// Populated from `Kind.Name` + `Attribute.Name` in `ofCatalog`;
@@ -274,8 +254,6 @@ type PhysicalSchemaDiff =
         ExtraForeignKeys : PhysicalForeignKey list
         MissingRows : PhysicalRow list
         ExtraRows : PhysicalRow list
-        MissingRowDigests : PhysicalRowDigest list
-        ExtraRowDigests : PhysicalRowDigest list
         /// Slice D.1.c — logical-name bindings that appear in source
         /// but not target (Missing) / target but not source (Extra).
         /// Set-difference on the binding's full record (Schema + Table
@@ -296,44 +274,19 @@ type PhysicalSchemaDiff =
         ExtraIndexes : PhysicalIndex list
     }
 
-/// Streaming aggregate row-hash builder. Per session-35 — folds an
-/// arbitrary row stream into a `(count, aggregateHash)` pair without
-/// materializing rows in memory. The aggregate is the sum-mod-2^256
-/// of per-row SHA256s; commutative and associative, so streaming
-/// order doesn't matter (multiset equality survives reordering).
-///
-/// **Consumer status (verified 2026-06-11, re-imaging 2).** The fold
-/// surface (`empty`/`add`/`finalize`) and `PhysicalSchema.withDigests`
-/// have ZERO call sites at HEAD — the intended large-table canary
-/// wiring never landed, so `RowDigests` is always empty and its diff
-/// arms are structurally dead. The module's LIVE consumers are the hash
-/// recipes: `hashRowBytes` (← `hashStaticRow` ← `ofCatalog`, the
-/// canary's actual per-row hash path) and `hashQuantumBytes` (the
-/// Q-track). Disposition is CONSTELLATION_BACKLOG card F7: delete the
-/// dead fold per the dead-algebra precedent, or wire it as the >100k
-/// data-round-trip fold — decided there, not silently here.
-/// Sync (Core-friendly); async wrapping happens at the call site.
+/// The canonical per-row content-hash recipes (both canary paths and
+/// the Q-track hash through here). The streaming sum-mod-2^256
+/// aggregate fold (`State`/`empty`/`add`/`finalize` + the
+/// `PhysicalSchema.RowDigests` axis it fed) was DELETED 2026-06-12
+/// (CONSTELLATION_BACKLOG card F7, plane N10): zero call sites at HEAD
+/// — the intended large-table canary wiring never landed, so the axis
+/// was always empty and every diff/render arm structurally dead (the
+/// dead-algebra precedent, DECISIONS 2026-06-04). If the >100k
+/// data-round-trip canary ever opens, rebuild the fold over quanta via
+/// `hashQuantumBytes` (cheap — git preserves the old fold at this
+/// file's history).
 [<RequireQualifiedAccess>]
 module RowDigester =
-
-    type State =
-        {
-            Count : int64
-            Acc : byte[]   // 32-byte running sum mod 2^256
-        }
-
-    let empty () : State = { Count = 0L; Acc = Array.zeroCreate 32 }
-
-    /// Big-endian add-with-carry of a 32-byte addend into a 32-byte
-    /// accumulator, mod 2^256. Mutates the accumulator in place to
-    /// avoid per-row allocation; the State carries this same array
-    /// across folds.
-    let private addInPlace (acc: byte[]) (addend: byte[]) : unit =
-        let mutable carry = 0
-        for i in 31 .. -1 .. 0 do
-            let s = int acc[i] + int addend[i] + carry
-            acc[i] <- byte (s &&& 0xFF)
-            carry <- s >>> 8
 
     /// THE canonical per-row content hash: sort `Values` by column name,
     /// build the `<name>=<value>` string joined by the RS (\x1e)
@@ -379,20 +332,6 @@ module RowDigester =
             first <- false
         let bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString())
         System.Security.Cryptography.SHA256.HashData(System.ReadOnlySpan<byte>(bytes))
-
-    let add (row: StaticRow) (s: State) : State =
-        let h = hashRowBytes row
-        addInPlace s.Acc h
-        { s with Count = s.Count + 1L }
-
-    let finalize
-        (schema: string) (table: string) (s: State) : PhysicalRowDigest =
-        {
-            Schema = schema
-            Table = table
-            Count = s.Count
-            AggregateHash = System.Convert.ToHexString s.Acc
-        }
 
 [<RequireQualifiedAccess>]
 module PhysicalSchema =
@@ -616,8 +555,8 @@ module PhysicalSchema =
         kindEps @ attrEps
 
     /// Hex form of the row hash — used by `PhysicalRow.Hash` so per-row
-    /// granular diffs render as a stable string. The bytes form
-    /// (`RowDigester.hashRowBytes`) feeds the per-table aggregate path.
+    /// granular diffs render as a stable string, over the one canonical
+    /// recipe (`RowDigester.hashRowBytes`).
     let private hashStaticRow (row: StaticRow) : string =
         System.Convert.ToHexString (RowDigester.hashRowBytes row)
 
@@ -690,10 +629,6 @@ module PhysicalSchema =
     /// tuples PLUS the set of `(src, tgt)` FK tuples reachable
     /// through every Module's Kinds. Modules, Origin, Modality,
     /// non-PK Indexes are projected out by construction.
-    ///
-    /// Per session-35 — `RowDigests` defaults empty; bulk-table
-    /// digests are layered on via `withDigests` when the canary
-    /// computes them out-of-band (streaming readside fold).
     let ofCatalog (c: Catalog) : PhysicalSchema =
         use _ = Bench.scope "physicalSchema.ofCatalog"
         let kinds = c.Modules |> List.collect (fun m -> m.Kinds)
@@ -740,21 +675,13 @@ module PhysicalSchema =
             Columns = columns
             ForeignKeys = foreignKeys
             Rows = rows
-            RowDigests = Set.empty
             LogicalNameBindings = logicalNameBindings
             Annotations = annotations
             Indexes = indexes
         }
 
-    /// Layer per-table aggregate row digests onto an existing
-    /// PhysicalSchema. Used when row data is too large to materialize
-    /// into the Catalog's `Modality.Static`; the digests come from
-    /// `RowDigester` folds over the streaming readside.
-    let withDigests (digests: seq<PhysicalRowDigest>) (s: PhysicalSchema) : PhysicalSchema =
-        { s with RowDigests = s.RowDigests + Set.ofSeq digests }
-
-    /// Diff two `PhysicalSchema` values across four axes (columns +
-    /// FKs + per-row hashes + per-table digests). Per session-35 —
+    /// Diff two `PhysicalSchema` values across its axes (columns +
+    /// FKs + per-row hashes + bindings + annotations + indexes). Per session-35 —
     /// `Set.difference` switched to `HashSet.ExceptWith` form for
     /// large-row diffs (`PhysicalSchema.diff` was the dominant cost
     /// when canaries fail with millions of mismatched rows).
@@ -775,8 +702,6 @@ module PhysicalSchema =
             ExtraForeignKeys           = setDifference target.ForeignKeys         source.ForeignKeys
             MissingRows                = setDifference source.Rows                target.Rows
             ExtraRows                  = setDifference target.Rows                source.Rows
-            MissingRowDigests          = setDifference source.RowDigests          target.RowDigests
-            ExtraRowDigests            = setDifference target.RowDigests          source.RowDigests
             MissingLogicalNameBindings = setDifference source.LogicalNameBindings target.LogicalNameBindings
             ExtraLogicalNameBindings   = setDifference target.LogicalNameBindings source.LogicalNameBindings
             MissingAnnotations         = setDifference source.Annotations         target.Annotations
@@ -793,8 +718,6 @@ module PhysicalSchema =
         && List.isEmpty d.ExtraForeignKeys
         && List.isEmpty d.MissingRows
         && List.isEmpty d.ExtraRows
-        && List.isEmpty d.MissingRowDigests
-        && List.isEmpty d.ExtraRowDigests
         && List.isEmpty d.MissingLogicalNameBindings
         && List.isEmpty d.ExtraLogicalNameBindings
         && List.isEmpty d.MissingAnnotations
@@ -803,8 +726,8 @@ module PhysicalSchema =
         && List.isEmpty d.ExtraIndexes
 
     /// Schema-structural equality: columns + FKs + logical-name bindings +
-    /// annotations match, **ignoring row data** (`Missing`/`ExtraRows` +
-    /// `*RowDigests`). The right predicate for a *schema* migration's
+    /// annotations match, **ignoring row data** (`Missing`/`ExtraRows`).
+    /// The right predicate for a *schema* migration's
     /// verification — `migrate A B` must make B' reproduce B's **structure**;
     /// the rows B' carries are the **preserved/migrated data** (the whole point
     /// of a differential over a drop+recreate), not part of the schema target B
@@ -862,13 +785,6 @@ module PhysicalSchema =
                 r.Schema
                 r.Table
                 (r.Hash.Substring(0, min 16 r.Hash.Length))
-        let renderDigest (d: PhysicalRowDigest) : string =
-            sprintf
-                "  [%s].[%s] count=%d aggregate=%s"
-                d.Schema
-                d.Table
-                d.Count
-                (d.AggregateHash.Substring(0, min 16 d.AggregateHash.Length))
         let renderBinding (b: LogicalNameBinding) : string =
             match b.Column with
             | None ->
@@ -931,8 +847,6 @@ module PhysicalSchema =
                 block "Extra FKs in target (target has, source did not)" renderFk d.ExtraForeignKeys
                 truncatedBlock "Missing rows in target (source had, target lost)" renderRow d.MissingRows
                 truncatedBlock "Extra rows in target (target has, source did not)" renderRow d.ExtraRows
-                truncatedBlock "Missing row digests in target (source had, target lost)" renderDigest d.MissingRowDigests
-                truncatedBlock "Extra row digests in target (target has, source did not)" renderDigest d.ExtraRowDigests
                 truncatedBlock "Missing logical-name bindings in target (source had, target lost)" renderBinding d.MissingLogicalNameBindings
                 truncatedBlock "Extra logical-name bindings in target (target has, source did not)" renderBinding d.ExtraLogicalNameBindings
                 truncatedBlock "Missing annotations in target (triggers/checks/sequences/extprops source had, target lost)" renderAnnotation d.MissingAnnotations

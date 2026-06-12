@@ -186,10 +186,10 @@ let ``H-050 in-process adjunction: PhysicalSchema.diff is empty across the two p
     let viaStream =
         PhysicalSchemaReader.ofStatementStream (SsdtDdlEmitter.statements sampleCatalog)
     let diff = PhysicalSchema.diff viaCatalog viaStream
-    // Columns + FKs must agree across the two projections. Rows and
-    // RowDigests are deliberately not populated by ofStatementStream
+    // Columns + FKs must agree across the two projections. Rows are
+    // deliberately not populated by ofStatementStream
     // (the Statement stream doesn't carry static-row content the way
-    // a populated Catalog does); those axes are out of scope for the
+    // a populated Catalog does); that axis is out of scope for the
     // structural adjunction.
     Assert.Empty diff.MissingColumns
     Assert.Empty diff.ExtraColumns
