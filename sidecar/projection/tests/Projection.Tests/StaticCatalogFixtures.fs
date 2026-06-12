@@ -31,6 +31,58 @@ let attr (name: string) (column: string) (ty: PrimitiveType) : StaticAttrSpec =
 let pk (name: string) (column: string) (ty: PrimitiveType) : StaticAttrSpec =
     { attr name column ty with IsPrimaryKey = true }
 
+/// One static kind's spec for the multi-kind form (P2-gate measurement,
+/// 2026-06-12): the same per-kind shape `staticCatalog` always built,
+/// reified so a catalog of N independent static kinds has the SAME single
+/// definition site (the fifth hand-rolled instance stays unwritten).
+type StaticKindSpec =
+    { KindKeyParts : string list
+      KindName : string
+      PhysicalTable : string
+      Attrs : StaticAttrSpec list
+      Rows : (string * string list) list }
+
+/// Build a one-module catalog of N static kinds. Key shapes are
+/// byte-identical to `staticCatalog`'s per kind (same synthesis recipe).
+let staticCatalogOfKinds
+    (keyPrefix: string)
+    (moduleName: string)
+    (kinds: StaticKindSpec list)
+    : Catalog =
+    let mkKey parts = SsKey.synthesizedComposite keyPrefix parts |> Result.value
+    let nmx s = Name.create s |> Result.value
+    let buildKind (spec: StaticKindSpec) =
+        let attrNames = spec.Attrs |> List.map (fun a -> nmx a.Name)
+        let row (tag: string, cells: string list) =
+            { Identifier = mkKey (spec.KindKeyParts @ [ "Row"; tag ])
+              Values = List.zip attrNames cells |> Map.ofList }
+        let attribute (a: StaticAttrSpec) =
+            { Attribute.create (mkKey (spec.KindKeyParts @ [ a.Name ])) (nmx a.Name) a.Type with
+                Column = ColumnRealization.create a.Column false |> Result.value
+                IsPrimaryKey = a.IsPrimaryKey
+                IsMandatory = true }
+        { SsKey = mkKey spec.KindKeyParts
+          Name = nmx spec.KindName
+          Origin = Native
+          Modality = [ Static (spec.Rows |> List.map row) ]
+          Physical = TableId.create "dbo" spec.PhysicalTable |> Result.value
+          Attributes = spec.Attrs |> List.map attribute
+          References = []
+          Indexes = []
+          Description = None
+          IsActive = true
+          Triggers = []
+          ColumnChecks = []
+          ExtendedProperties = [] }
+    Catalog.create
+        [ { SsKey = mkKey [ "Mod" ]
+            Name = nmx moduleName
+            Kinds = kinds |> List.map buildKind
+            IsActive = true
+            ExtendedProperties = [] } ]
+        []
+    |> Result.value
+
 /// Build the shared static-population catalog shape. `rows` are
 /// `(rowTag, cells-in-attribute-order)`; every attribute is mandatory
 /// (the shared shape of all absorbed instances — a non-mandatory or
@@ -44,36 +96,9 @@ let staticCatalog
     (attrs: StaticAttrSpec list)
     (rows: (string * string list) list)
     : Catalog =
-    let mkKey parts = SsKey.synthesizedComposite keyPrefix parts |> Result.value
-    let nmx s = Name.create s |> Result.value
-    let attrNames = attrs |> List.map (fun a -> nmx a.Name)
-    let row (tag: string, cells: string list) =
-        { Identifier = mkKey (kindKeyParts @ [ "Row"; tag ])
-          Values = List.zip attrNames cells |> Map.ofList }
-    let attribute (a: StaticAttrSpec) =
-        { Attribute.create (mkKey (kindKeyParts @ [ a.Name ])) (nmx a.Name) a.Type with
-            Column = ColumnRealization.create a.Column false |> Result.value
-            IsPrimaryKey = a.IsPrimaryKey
-            IsMandatory = true }
-    let kind =
-        { SsKey = mkKey kindKeyParts
-          Name = nmx kindName
-          Origin = Native
-          Modality = [ Static (rows |> List.map row) ]
-          Physical = TableId.create "dbo" physicalTable |> Result.value
-          Attributes = attrs |> List.map attribute
-          References = []
-          Indexes = []
-          Description = None
-          IsActive = true
-          Triggers = []
-          ColumnChecks = []
-          ExtendedProperties = [] }
-    Catalog.create
-        [ { SsKey = mkKey [ "Mod" ]
-            Name = nmx moduleName
-            Kinds = [ kind ]
-            IsActive = true
-            ExtendedProperties = [] } ]
-        []
-    |> Result.value
+    staticCatalogOfKinds keyPrefix moduleName
+        [ { KindKeyParts = kindKeyParts
+            KindName = kindName
+            PhysicalTable = physicalTable
+            Attrs = attrs
+            Rows = rows } ]

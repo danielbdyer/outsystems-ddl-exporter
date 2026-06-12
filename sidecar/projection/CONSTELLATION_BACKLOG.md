@@ -686,11 +686,20 @@ Bucket-B convention witness (+1); the leveled ≡ sequential equivalence ran GAT
 **P2 · Production leveled data deploy.** The canary-only wiring promoted to the CLI deploy
 path behind the existing parallelism resolution stack. *Witness:* operator-reality canary +
 perf-gate (baseline re-record only if the floor moves, with its DECISIONS amendment). S.
-Deps: P1 (met), and a Stage-0/1 measurement showing the win at operator scale. *Gate state
-(2026-06-12):* segment-level evidence is registered — the 20-table microbench shows
-sequential 782ms → parallel(4) 411ms (1.90×) — but the OPERATOR-SCALE before/after through
-the production face (6.25k×150, the perf-gate envelope) has not been run; the gate stands
-half-met, do not wire on the microbench alone.
+Deps: P1 (met), and a Stage-0/1 measurement showing the win at operator scale — **gate MET
+2026-06-12**: the declared `leveled-deploy-150x42` scenario (150 independent static kinds ×
+42 rows = the operator envelope, through the REAL composer + leveled plan + the existing
+`resolveParallelism` stack, paired legs on one container) replicated **2.59× / 2.65× /
+2.85×** across three runs (sequential ~2.0–2.1s → leveled-parallel ~0.74–0.79s at
+parallelism 4). One command re-runs it: `perf-harness.sh run leveled-deploy`. *What the
+wiring slice must decide (named so it isn't re-derived):* the two candidate faces are
+`runDeploy → runFromCatalogWith → runEphemeral` (deploys `aggregateSsdt`'s fused
+schema+seeds single batch — splitting schema-vs-data there must keep the deploy FAITHFUL to
+the published bundle, never a re-composition that can diverge from it) and the full-export
+load leg (`Compose.runWithConfigAndLoad` takes an injected `SqlConnection -> string -> Task`
+executor — `executeBatchParallel` needs the connection STRING for per-segment opens, so the
+executor seam needs re-threading). Witnesses stay as carded: operator-reality canary +
+perf-gate, baseline re-record only if the floor moves, with its DECISIONS amendment.
 
 **P3 · Schema-side levels.** `statementsWith` gains a leveled grouping (inline-FK fact makes
 level-by-level the only safe shape — RI-5); deploy through `ParallelSafe`. **Trigger-held:**

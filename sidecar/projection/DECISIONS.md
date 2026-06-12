@@ -21791,3 +21791,28 @@ empty PhysicalSchema diff).
 operator-scale before/after through the production face has NOT been
 run; P2 stays open and must not wire on the microbench alone. P3 stays
 trigger-held on harness evidence of schema-deploy as a bottleneck.
+
+## 2026-06-12 — P2's gate is MET: leveled-parallel wins 2.6–2.9× at the operator envelope (wiring owed, design constraint named)
+
+The declared `leveled-deploy-150x42` harness scenario (150 independent
+static kinds × 42 rows — the perf-gate canary's table count and
+volume; independent lookups ARE the static-seed topology) ran the
+paired comparison through the REAL path: `composeRenderedLeveled` →
+`ParallelSafe` levels → `executeBatchParallel` under the existing
+`resolveParallelism` stack, against today's production shape (the
+aggregated sequential batch). Three runs, one warm container,
+back-to-back legs: **2.85× / 2.59× / 2.65×** (sequential ~2.0–2.1s →
+parallel ~0.74–0.79s at parallelism 4). The scenario landed DECLARED
+(H7: `all` + the PERF-SCENARIO registry + the gated fact; totality
+test green), and `StaticCatalogFixtures` gained the N-kind form
+(`staticCatalogOfKinds`) rather than a fifth hand-rolled instance —
+`staticCatalog` now delegates, key shapes byte-identical.
+
+The WIRING is deliberately left to its own slice, with the design
+constraint recorded on the card so it is not re-derived: `runEphemeral`
+deploys `aggregateSsdt`'s fused schema+seeds, so a schema-vs-data split
+there must stay FAITHFUL to the published bundle; the full-export load
+leg injects a `SqlConnection -> string -> Task` executor, while
+`executeBatchParallel` needs the connection STRING for per-segment
+opens — the seam needs re-threading. Witnesses for the wire stay as
+carded (operator-reality canary + perf-gate).
