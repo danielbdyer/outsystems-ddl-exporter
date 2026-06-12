@@ -136,6 +136,42 @@ type TopologicalOrder = {
     Diagnostics  : string list
 }
 
+/// R5 / card P1 — a group whose members may execute CONCURRENTLY. The
+/// proof-token idiom (`ArtifactByKind`'s move, applied to parallelism):
+/// the private constructor is the safety law — a value of this type
+/// cannot exist unless the independence proof ran at construction. The
+/// ONLY production mint is `TopologicalOrder.levels` (the Kahn-style
+/// level assignment: within a level, no member depends on another).
+/// The comment-borne "callers MUST deploy levels in order; within a
+/// single level segments are independent" contract becomes this type:
+/// the MUST dies, the type lives.
+///
+/// `map` / `choose` are the structure-preserving carriers: per-member
+/// projection (kind → that kind's rendered script) and per-member
+/// dropping can never merge groups or smuggle a dependent member in —
+/// so the token survives the composer's rendering pipeline honestly.
+type ParallelSafe<'a> = private ParallelSafe of 'a list
+
+[<RequireQualifiedAccess>]
+module ParallelSafe =
+
+    /// The group's members, for consumers that render or count — the
+    /// read-only view (a manifest listing, a level walk). Reading never
+    /// forges; only construction is guarded.
+    let members (ParallelSafe xs) : 'a list = xs
+
+    /// Per-member projection. Structure-preserving: one image per
+    /// member, no merging, no reordering across groups.
+    let map (f: 'a -> 'b) (ParallelSafe xs) : ParallelSafe<'b> =
+        ParallelSafe (List.map f xs)
+
+    /// Per-member projection that may drop members. Dropping a member
+    /// never breaks the independence of those that remain.
+    let choose (f: 'a -> 'b option) (ParallelSafe xs) : ParallelSafe<'b> =
+        ParallelSafe (List.choose f xs)
+
+    let isEmpty (ParallelSafe xs) : bool = List.isEmpty xs
+
 [<RequireQualifiedAccess>]
 module TopologicalOrder =
 
@@ -235,7 +271,12 @@ module TopologicalOrder =
                 else None)
             |> Set.ofList
 
-    let levels (t: TopologicalOrder) : SsKey list list =
+    /// Kahn-style level assignment — and the MINT of `ParallelSafe`
+    /// (card P1): each returned group's members sit at one dependency
+    /// depth, so no member depends on another and the group may deploy
+    /// concurrently. Levels themselves stay ordered (level k+1 may
+    /// depend on level k); only WITHIN a group is parallelism licensed.
+    let levels (t: TopologicalOrder) : ParallelSafe<SsKey> list =
         let parentsOf =
             t.Edges
             |> List.groupBy fst
@@ -259,7 +300,8 @@ module TopologicalOrder =
         |> List.groupBy snd
         |> List.sortBy fst
         |> List.map (fun (_, pairs) ->
-            pairs |> List.map fst |> List.sort)
+            // The mint: one dependency depth = one concurrent-safe group.
+            ParallelSafe (pairs |> List.map fst |> List.sort))
 
 
 /// H-037 — result of schema island detection. Each inner list is one

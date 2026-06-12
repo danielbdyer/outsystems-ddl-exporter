@@ -674,8 +674,10 @@ module ManifestEmitter =
                                        StdDev = moments.StdDev })))
             |> List.sortBy (fun cp -> cp.Schema, cp.Table, cp.Column)
         let deploymentBatches =
+            // P1 — `levels` now mints `ParallelSafe`; the manifest LISTS the
+            // groups (read-only view), so its wire shape is unchanged.
             topology
-            |> Option.map TopologicalOrder.levels
+            |> Option.map (TopologicalOrder.levels >> List.map ParallelSafe.members)
             |> Option.defaultValue []
         {
             Tables = entries

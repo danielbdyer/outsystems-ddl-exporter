@@ -410,30 +410,24 @@ module Deploy =
                     return detected
         }
 
-    /// **Parallel-segment realization of a SQL text batch** (slice
-    /// A.4.7'-prelude.perf-sweep-5 primitive; integration deferred per
-    /// preflight). Splits via `BatchSplitter` then dispatches segments
-    /// across `parallelism` concurrent SqlConnections gated by a
-    /// SemaphoreSlim. Each segment runs on its own freshly-opened
-    /// connection; `SqlConnection`'s internal pooling (keyed on the
-    /// connection string) makes the per-segment new/Open/Dispose cheap
-    /// on warm pools.
+    /// **Parallel realization of one concurrent-safe group** (slice
+    /// A.4.7'-prelude.perf-sweep-5 primitive; card P1 re-signs it to
+    /// DEMAND the proof). Each member is batch-split via `BatchSplitter`
+    /// and the segments dispatch across `parallelism` concurrent
+    /// SqlConnections gated by a SemaphoreSlim. Each segment runs on its
+    /// own freshly-opened connection; `SqlConnection`'s internal pooling
+    /// (keyed on the connection string) makes the per-segment
+    /// new/Open/Dispose cheap on warm pools.
     ///
-    /// **CALLER CONTRACT — segment-ordering independence.** The caller
-    /// MUST guarantee that all segments in `sql` are mutually
-    /// independent. Violating this contract produces nondeterministic
-    /// failures (FK constraints; Phase-1/Phase-2 sequencing; etc.).
-    /// True for: a topological-level group of independent kinds at a
-    /// single phase. FALSE for: full schema DDL (FK target → FK source);
-    /// full data deploy (Phase-1 MERGEs are topologically ordered;
-    /// Phase-2 UPDATEs reference Phase-1 rows).
-    ///
-    /// **Status — landed without integration.** The composer-side
-    /// refactor to emit parallel-safe topological-level groups is
-    /// deferred to a dedicated architectural slice. This primitive
-    /// ships as a ready tool with the preflight contract documented;
-    /// the canary continues using sequential `executeBatch` until the
-    /// composer exposes safe groups.
+    /// **The independence contract is the argument's TYPE** (card P1 /
+    /// R5): `ParallelSafe<string>` cannot exist unless
+    /// `TopologicalOrder.levels` proved the group's members mutually
+    /// independent — the comment-borne MUST this docstring used to
+    /// carry is structural now. (Its 2026-05-era "the canary continues
+    /// using sequential executeBatch until the composer exposes safe
+    /// groups" status note was stale — the comprehensive canary has
+    /// deployed leveled data through this primitive since perf-sweep-6 —
+    /// and is retired with the re-signing, RI-5.)
     /// Cap the requested parallelism against the connection string's
     /// `Max Pool Size` (slice A.4.7'-prelude.defensive-hardening).
     /// Defensive against Azure SQL Database tier connection caps
@@ -466,12 +460,18 @@ module Deploy =
 
     let executeBatchParallel
             (connectionString: string)
-            (sql: string)
+            (level: ParallelSafe<string>)
             (parallelism: int)
             : Task<unit> =
         task {
             use _ = Bench.scope "deploy.executeBatchParallel"
-            let segments = BatchSplitter.splitWithLoudFallback "deploy.executeBatchParallel" sql
+            // Per-member split then flatten ≡ split-of-concatenation (every
+            // member is GO-terminated), so the segment bytes and the bench
+            // label series are unchanged by the re-signing.
+            let segments =
+                ParallelSafe.members level
+                |> List.toArray
+                |> Array.collect (BatchSplitter.splitWithLoudFallback "deploy.executeBatchParallel")
             let cappedParallelism = capParallelismToPool connectionString parallelism
             Bench.recordSample "deploy.executeBatchParallel.segments" (int64 segments.Length)
             Bench.recordSample "deploy.executeBatchParallel.parallelism" (int64 cappedParallelism)

@@ -546,8 +546,8 @@ module ComprehensiveCanaryTests =
     /// independent per `TopologicalOrder.levels`'s invariant).
     type private LeveledDeploymentPlan = {
         Schema       : string
-        Phase1Levels : string list
-        Phase2Levels : string list
+        Phase1Levels : ParallelSafe<string> list
+        Phase2Levels : ParallelSafe<string> list
     }
 
     /// Sibling of `composeEmission` for leveled deployment. Fires the
@@ -573,12 +573,14 @@ module ComprehensiveCanaryTests =
                 UserRemapContext.empty
         match dataResult with
         | Ok leveled ->
+            let levelBytes (levels: ParallelSafe<string> list) =
+                levels |> List.sumBy (ParallelSafe.members >> List.sumBy (fun s -> s.Length))
             printfn
                 "Data emission leveled: %d Phase-1 levels, %d Phase-2 levels (%d + %d bytes)"
                 leveled.Phase1Levels.Length
                 leveled.Phase2Levels.Length
-                (leveled.Phase1Levels |> List.sumBy (fun s -> s.Length))
-                (leveled.Phase2Levels |> List.sumBy (fun s -> s.Length))
+                (levelBytes leveled.Phase1Levels)
+                (levelBytes leveled.Phase2Levels)
             { Schema       = schemaText
               Phase1Levels = leveled.Phase1Levels
               Phase2Levels = leveled.Phase2Levels }
@@ -1034,14 +1036,15 @@ module ComprehensiveCanaryTests =
                     printfn "Target-deploy parallelism resolved to %d" parallelism
                     // Phase A: schema (sequential — FK-ordered DDL).
                     do! Deploy.executeBatch cnn leveledPlan.Schema
-                    // Phase B: data Phase-1 levels (parallel within level).
-                    for levelText in leveledPlan.Phase1Levels do
-                        if levelText.Length > 0 then
-                            do! Deploy.executeBatchParallel perDbConn levelText parallelism
+                    // Phase B: data Phase-1 levels (parallel within level —
+                    // the ParallelSafe token IS the within-level proof, P1).
+                    for level in leveledPlan.Phase1Levels do
+                        if not (ParallelSafe.isEmpty level) then
+                            do! Deploy.executeBatchParallel perDbConn level parallelism
                     // Phase C: data Phase-2 levels (parallel within level).
-                    for levelText in leveledPlan.Phase2Levels do
-                        if levelText.Length > 0 then
-                            do! Deploy.executeBatchParallel perDbConn levelText parallelism
+                    for level in leveledPlan.Phase2Levels do
+                        if not (ParallelSafe.isEmpty level) then
+                            do! Deploy.executeBatchParallel perDbConn level parallelism
                     return! ReadSide.read cnn
                 })
                 |> fun t -> t.GetAwaiter().GetResult()

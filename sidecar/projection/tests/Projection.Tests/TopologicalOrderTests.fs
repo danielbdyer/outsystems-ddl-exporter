@@ -140,7 +140,7 @@ let ``levels: solitary kind with no edges lives at level 0`` () =
             Edges = [] }
     Assert.Equal<SsKey list list>(
         [ [ customerKey ] ],
-        TopologicalOrder.levels t)
+        TopologicalOrder.levels t |> List.map ParallelSafe.members)
 
 [<Fact>]
 let ``levels: chain customer<-order<-country produces three singleton levels`` () =
@@ -152,7 +152,7 @@ let ``levels: chain customer<-order<-country produces three singleton levels`` (
                       countryKey, orderKey ] }
     Assert.Equal<SsKey list list>(
         [ [ customerKey ]; [ orderKey ]; [ countryKey ] ],
-        TopologicalOrder.levels t)
+        TopologicalOrder.levels t |> List.map ParallelSafe.members)
 
 [<Fact>]
 let ``levels: two independent kinds collapse into one level-0 group`` () =
@@ -161,7 +161,7 @@ let ``levels: two independent kinds collapse into one level-0 group`` () =
             Order = [ customerKey; countryKey ]
             Edges = [] }
     // Both at level 0; inner list sorted by SsKey.
-    let result = TopologicalOrder.levels t
+    let result = TopologicalOrder.levels t |> List.map ParallelSafe.members
     Assert.Single(result) |> ignore
     let level0 = List.head result
     Assert.Equal(2, List.length level0)
@@ -176,7 +176,7 @@ let ``levels: diamond shape — two parents at level 0; shared dependent at leve
             Order = [ customerKey; countryKey; orderKey ]
             Edges = [ orderKey, customerKey
                       orderKey, countryKey ] }
-    let result = TopologicalOrder.levels t
+    let result = TopologicalOrder.levels t |> List.map ParallelSafe.members
     Assert.Equal(2, List.length result)
     let level0 = List.head result
     let level1 = List.item 1 result
@@ -198,7 +198,7 @@ let ``levels: parallel-safety invariant holds — no edge between kinds at the s
             Edges = [ cKey, aKey  // C depends on A
                       cKey, bKey  // C depends on B
                       dKey, cKey ] }  // D depends on C
-    let levels = TopologicalOrder.levels t
+    let levels = TopologicalOrder.levels t |> List.map ParallelSafe.members
     // For each level, check no two kinds at that level have an edge between them.
     let levelOf (k: SsKey) : int =
         levels
@@ -224,7 +224,35 @@ let ``levels: cycle-broken kind receives finite level`` () =
             Order = [ aKey; bKey ]
             Edges = [ aKey, bKey
                       bKey, aKey ] }
-    let result = TopologicalOrder.levels t
+    let result = TopologicalOrder.levels t |> List.map ParallelSafe.members
     Assert.Equal(2, List.length result)
     Assert.Equal<SsKey list>([ aKey ], List.head result)
     Assert.Equal<SsKey list>([ bKey ], List.item 1 result)
+
+// ---------------------------------------------------------------------------
+// P1 / R5 — the ParallelSafe token: levels is the mint; map/choose are the
+// structure-preserving carriers (the convention witness, Bucket B).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``P1: levels mints ParallelSafe — map and choose carry the group without merging or reordering`` () =
+    let t : TopologicalOrder =
+        { TopologicalOrder.empty with
+            Order = [ customerKey; countryKey; orderKey ]
+            Edges = [ orderKey, customerKey ] }
+    let levels = TopologicalOrder.levels t
+    Assert.Equal(2, List.length levels)
+    // map: one image per member, same order — the rendering carrier.
+    let rendered = levels |> List.map (ParallelSafe.map SsKey.rootOriginal)
+    Assert.Equal<string list>(
+        List.head levels |> ParallelSafe.members |> List.map SsKey.rootOriginal,
+        List.head rendered |> ParallelSafe.members)
+    // choose: dropping a member keeps the group's remaining members intact.
+    let chosen =
+        List.head levels
+        |> ParallelSafe.choose (fun k -> if k = countryKey then None else Some k)
+    Assert.Equal<SsKey list>(
+        (List.head levels |> ParallelSafe.members |> List.filter (fun k -> k <> countryKey)),
+        ParallelSafe.members chosen)
+    // isEmpty: the empty group is detectable without unwrapping.
+    Assert.True(ParallelSafe.choose (fun _ -> None) (List.head levels) |> ParallelSafe.isEmpty)

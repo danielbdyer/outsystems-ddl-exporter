@@ -330,22 +330,25 @@ module DataEmissionComposer =
                     |> System.String.Concat  // LINT-ALLOW: terminal global Phase-1-then-Phase-2 concatenation across all kinds in topological order (chapter 4.1.B slice ι); each segment is the per-kind ScriptDom-rendered RenderedPhase1 / RenderedPhase2 string already terminated by `;\nGO\n`; BCL `String.Concat(IEnumerable<string>)` is the right primitive at this terminal-text boundary; preserves the global cycle-correct deploy order that per-kind Rendered cannot express
                 Ok allText
 
-    /// Per-level rendered text for parallel-safe deployment. Each
-    /// `string` in `Phase1Levels` / `Phase2Levels` concatenates the
-    /// rendered SQL for every kind at one topological level; the
-    /// list itself is level-ordered (level 0 first).
+    /// Per-level rendered scripts for parallel-safe deployment. Each
+    /// `ParallelSafe<string>` group carries one kind's rendered SQL per
+    /// member, at one topological level; the lists are level-ordered
+    /// (level 0 first).
     ///
-    /// **Realization contract:** callers MUST deploy `Phase1Levels`
-    /// in order, then `Phase2Levels` in order. Within a single level
-    /// string, segments are mutually FK-independent — callers MAY
-    /// dispatch via `Deploy.executeBatchParallel` for within-level
-    /// parallelism. Empty levels are dropped from the output (a
-    /// level whose kinds have empty `RenderedPhase1` or
+    /// **Realization contract (card P1 — the half the type now
+    /// carries):** WITHIN-group independence is the token itself —
+    /// `ParallelSafe` is minted only by `TopologicalOrder.levels` and
+    /// rides here through per-member `choose` (kind → that kind's
+    /// rendered script), so `Deploy.executeBatchParallel` can demand it.
+    /// What stays the caller's duty, stated: deploy `Phase1Levels` in
+    /// order, then `Phase2Levels` in order — LEVELS are sequential;
+    /// only members within one level are concurrent. Empty levels are
+    /// dropped (a level whose kinds have empty `RenderedPhase1` /
     /// `RenderedPhase2` doesn't appear). Slice
     /// A.4.7'-prelude.perf-sweep-6 (composer-levels) cash-out.
     type LeveledDeploymentText = {
-        Phase1Levels : string list
-        Phase2Levels : string list
+        Phase1Levels : ParallelSafe<string> list
+        Phase2Levels : ParallelSafe<string> list
     }
 
     /// Level-aware sibling of `composeRenderedFull` — returns the
@@ -379,22 +382,29 @@ module DataEmissionComposer =
             | Ok artifact ->
                 let map = ArtifactByKind.toMap artifact
                 let levels = TopologicalOrder.levels topo
-                let textForLevel
+                // Card P1 — the token rides the rendering: per-member
+                // `choose` (kind → that kind's rendered script) preserves
+                // the group structure `levels` proved, so the cross-kind
+                // concatenation (and its LINT-ALLOW) is retired — the
+                // members stay distinct and `executeBatchParallel` splits
+                // per member.
+                let scriptsForLevel
                     (selector: DataInsertScript -> string)
-                    (levelKeys: SsKey list)
-                    : string =
-                    levelKeys
-                    |> List.choose (fun k ->
-                        Map.tryFind k map |> Option.map selector)
-                    |> System.String.Concat  // LINT-ALLOW: terminal cross-kind concatenation within a single topological level (slice A.4.7'-prelude.perf-sweep-6); each segment is a ScriptDom-rendered string already terminated by `;\nGO\n`; within-level kinds are SsKey-sorted via `TopologicalOrder.levels`; parallel-safety is the load-bearing contract for `Deploy.executeBatchParallel` consumers
-                let nonEmpty = List.filter (fun (s: string) -> s.Length > 0)
+                    (level: ParallelSafe<SsKey>)
+                    : ParallelSafe<string> =
+                    level
+                    |> ParallelSafe.choose (fun k ->
+                        Map.tryFind k map
+                        |> Option.map selector
+                        |> Option.filter (fun s -> s.Length > 0))
+                let nonEmpty = List.filter (ParallelSafe.isEmpty >> not)
                 let phase1 =
                     levels
-                    |> List.map (textForLevel (fun s -> s.RenderedPhase1))
+                    |> List.map (scriptsForLevel (fun s -> s.RenderedPhase1))
                     |> nonEmpty
                 let phase2 =
                     levels
-                    |> List.map (textForLevel (fun s -> s.RenderedPhase2))
+                    |> List.map (scriptsForLevel (fun s -> s.RenderedPhase2))
                     |> nonEmpty
                 Bench.recordSample "compose.data.composeRenderedLeveled.phase1Levels" (int64 phase1.Length)
                 Bench.recordSample "compose.data.composeRenderedLeveled.phase2Levels" (int64 phase2.Length)
