@@ -139,7 +139,13 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
     | PlanAction.PreviewSchema (model, modelOssys, conn, decl) ->
         needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat -> runProjectLivePreview shapedCat conn decl))
     | PlanAction.Transfer (src, sink, opts, execute) ->
-        runTransfer src sink None None opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Tables surveyAdvisory
+        // R1b — the envelope-emitting faces move under `withRun` (the law:
+        // a verb that mints envelopes runs bracketed; RI-11's census). The
+        // transfer/migrate/synthetic engines emit the staged spines' stage
+        // events, so their streams now open with `config.runStart` and
+        // close with the §10 terminal — and the run is capturable.
+        withRun "projection transfer" (fun () ->
+            runTransfer src sink None None opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Tables surveyAdvisory)
     | PlanAction.RunReverseLeg (model, modelOssys, src, sink, opts, execute) ->
         // G2 routed the B→A legacy reverse leg distinctly; J3 (the contract
         // source) is CLOSED — the two SsKey-aligned contracts are the ONE
@@ -149,11 +155,14 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         // contracts (ReadSide synthesizes attribute SsKeys, which would never
         // align — the original residual's premise, now honored structurally).
         needCatalog modelOssys model (fun cat ->
-            runReverseLegTransfer src sink (CatalogRendition.logical cat) (CatalogRendition.physical cat) opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Streaming opts.Journal opts.Tables surveyAdvisory)
+            withRun "projection reverse-leg" (fun () ->
+                runReverseLegTransfer src sink (CatalogRendition.logical cat) (CatalogRendition.physical cat) opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Streaming opts.Journal opts.Tables surveyAdvisory))
     | PlanAction.MigrateWithData (model, modelOssys, sink, src, opts) ->
-        needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat -> runMigrateWithData shapedCat sink src opts.Reconcile opts.Rekey opts.Declaration opts.AllowCdc opts.Store opts.Env))
+        needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat ->
+            withRun "projection migrate --with-data" (fun () ->
+                runMigrateWithData shapedCat sink src opts.Reconcile opts.Rekey opts.Declaration opts.AllowCdc opts.Store opts.Env)))
     | PlanAction.SynthesizeAndLoad (model, modelOssys, profile, conn, opts, execute) ->
-        runSyntheticLoad model modelOssys profile conn opts execute
+        withRun "projection synth-load" (fun () -> runSyntheticLoad model modelOssys profile conn opts execute)
     | PlanAction.CaptureProfile (conn, out) -> runCaptureProfile conn out
     | PlanAction.PublishAndLoad (c, conn, store, env) ->
         let run () = runFullExportLoad c conn None store env
@@ -162,7 +171,9 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         if Watch.shouldWatch watchMode.Value then Watch.renderWatch Spines.pipeline (Watch.resolveDwellMs ()) run
         else run ()
     | PlanAction.Migrate (model, modelOssys, conn, opts) ->
-        needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat -> runMigrateExecute shapedCat conn opts.Declaration opts.AllowCdc opts.Store opts.Env))
+        needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat ->
+            withRun "projection migrate" (fun () ->
+                runMigrateExecute shapedCat conn opts.Declaration opts.AllowCdc opts.Store opts.Env)))
     // check --------------------------------------------------------------
     | PlanAction.CheckCanary (ddl, false) -> withRun "projection check" (fun () -> runCanary ddl)
     | PlanAction.CheckCanary (ddl, true)  -> withRun "projection check --cdc-silence" (fun () -> runCanaryCdcSilence ddl)

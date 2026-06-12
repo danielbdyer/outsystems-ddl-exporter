@@ -83,6 +83,35 @@ let ``Run: toLedgerEntry projects the index row (subsumes LedgerRecord)`` () =
     Assert.Equal(sample.Outcome, e.Outcome)
 
 [<Fact>]
+let ``R1b: every bracketed verb's run is capturable — no orphan RunIds`` () =
+    // The bracket owner (RunEnvelope) persists the completed aggregate
+    // under PROJECTION_LEDGER_DIR: the stream's runId resolves to a stored
+    // Run carrying the events (runStart + the §10 terminal) and the bench
+    // snapshot. Opt-in: without the env var, nothing accumulates.
+    let dir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"))
+    let prior = Environment.GetEnvironmentVariable "PROJECTION_LEDGER_DIR"
+    try
+        Environment.SetEnvironmentVariable("PROJECTION_LEDGER_DIR", dir)
+        use sw = new StringWriter()
+        LogSink.reset ()
+        let mutable code = -1
+        LogSink.withWriter sw (fun () ->
+            code <- RunEnvelope.bracket "projection test-verb" ignore Map.empty (fun () -> 0, LogSink.Succeeded))
+        Assert.Equal(0, code)
+        let runId = LogSink.runId ()
+        match Run.load dir runId with
+        | Some r ->
+            Assert.Equal("projection test-verb", r.Command)
+            Assert.Equal("succeeded", r.Outcome)
+            Assert.True(r.Bench.IsSome)
+            Assert.Contains(r.Events, fun (e: string) -> e.Contains "config.runStart")
+            Assert.Contains(r.Events, fun (e: string) -> e.Contains "summary.runComplete")
+        | None -> Assert.Fail "expected the captured run aggregate under PROJECTION_LEDGER_DIR"
+    finally
+        Environment.SetEnvironmentVariable("PROJECTION_LEDGER_DIR", prior)
+        try Directory.Delete(dir, true) with _ -> ()
+
+[<Fact>]
 let ``Run: capture builds a Run from the live LogSink state + the artifact tree`` () =
     use sw = new StringWriter()
     LogSink.reset ()

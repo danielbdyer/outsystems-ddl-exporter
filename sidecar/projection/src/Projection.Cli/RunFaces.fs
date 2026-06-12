@@ -966,27 +966,33 @@ let runReadiness () : int =
         eprintfn "projection: no run ledger configured. Set PROJECTION_LEDGER_DIR to accumulate run history."
         4
     | Some dir ->
-        let records = RunLedger.read dir
-        let r = RunLedger.readiness records
-        let recent =
-            records |> List.choose (fun e -> e.Canary) |> List.rev |> List.truncate 16 |> List.rev
-        // Human channel — the themed cutover board (color on a TTY, plain piped).
-        TtyRenderer.renderReadinessBoard r recent (RunLedger.ledgerPath dir)
-        // Machine channel — one structured summary.readiness event (CI gates
-        // on `eligible`).
-        LogSink.beginRun () |> ignore
-        LogSink.emit
-            { LogSink.envelope LogSink.Info LogSink.Summary "summary.readiness"
-                (Map.ofList [
-                    "totalRuns",        box r.TotalRuns
-                    "canaryRuns",       box r.CanaryRuns
-                    "consecutiveGreen", box r.ConsecutiveGreen
-                    "threshold",        box r.Threshold
-                    "lastCanary",       (match r.LastCanary with Some c -> box c | None -> null)
-                    "recentCanaries",   box recent
-                    "eligible",         box r.Eligible ]) with
-                Phase = LogSink.End }
-        0
+        // R1b — the orphan `beginRun` is retired: the run-envelope bracket
+        // (the ONE owner, S4) brackets the readiness query directly, so
+        // `summary.readiness` rides a CONFORMING stream (runStart first,
+        // §10 terminal always) and the run is capturable. Bracketed here
+        // rather than via `withRun` to honor the documented contract above:
+        // no ledger append for the query itself.
+        RunEnvelope.bracket "projection check ready" ignore Map.empty (fun () ->
+            let records = RunLedger.read dir
+            let r = RunLedger.readiness records
+            let recent =
+                records |> List.choose (fun e -> e.Canary) |> List.rev |> List.truncate 16 |> List.rev
+            // Human channel — the themed cutover board (color on a TTY, plain piped).
+            TtyRenderer.renderReadinessBoard r recent (RunLedger.ledgerPath dir)
+            // Machine channel — one structured summary.readiness event (CI gates
+            // on `eligible`).
+            LogSink.emit
+                { LogSink.envelope LogSink.Info LogSink.Summary "summary.readiness"
+                    (Map.ofList [
+                        "totalRuns",        box r.TotalRuns
+                        "canaryRuns",       box r.CanaryRuns
+                        "consecutiveGreen", box r.ConsecutiveGreen
+                        "threshold",        box r.Threshold
+                        "lastCanary",       (match r.LastCanary with Some c -> box c | None -> null)
+                        "recentCanaries",   box recent
+                        "eligible",         box r.Eligible ]) with
+                    Phase = LogSink.End }
+            0, LogSink.Succeeded)
 
 /// Live-probe a target for the setup readback:
 /// `(ref, reachable, grants)` where `grants` pairs each planned write action
