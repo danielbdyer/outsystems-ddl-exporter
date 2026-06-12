@@ -211,6 +211,28 @@ let ``levels: parallel-safety invariant holds — no edge between kinds at the s
             sprintf "edge (%A → %A): parent level %d should be < child level %d" parent child parentLvl childLvl)
 
 [<Fact>]
+let ``P2: levels under Alphabetical mode mints only singleton groups — no parallelism on an order without parent-precedence proof`` () =
+    // The P2-wire finding (2026-06-12): the level computation rests on
+    // "parents precede children", which only Mode = Topological carries.
+    // Under the Alphabetical fallback (any unresolved cycle in the
+    // catalog) a child can sort before its parent; the "unknown parent
+    // contributes 0" rule then collapsed this REAL FK chain into one
+    // "level" — a ParallelSafe group with FK edges inside it. The mode
+    // guard refuses: singleton groups in Order order, vacuously safe,
+    // exactly the sequential deploy.
+    let t : TopologicalOrder =
+        { TopologicalOrder.empty with
+            Mode  = Alphabetical
+            // Alphabetical order happens to put dependents first here —
+            // the shape that previously flattened everything to level 0.
+            Order = [ countryKey; orderKey; customerKey ]
+            Edges = [ orderKey, customerKey     // order depends on customer
+                      countryKey, orderKey ] }  // country depends on order
+    Assert.Equal<SsKey list list>(
+        [ [ countryKey ]; [ orderKey ]; [ customerKey ] ],
+        TopologicalOrder.levels t |> List.map ParallelSafe.members)
+
+[<Fact>]
 let ``levels: cycle-broken kind receives finite level`` () =
     // A ⟶ B ⟶ A (self-cycle). Cycle-resolver picks A first; B follows.
     // Edge (A, B) means A depends on B — but B comes AFTER A in Order

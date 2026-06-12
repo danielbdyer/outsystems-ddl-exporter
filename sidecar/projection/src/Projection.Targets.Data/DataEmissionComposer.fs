@@ -351,6 +351,17 @@ module DataEmissionComposer =
         Phase2Levels : ParallelSafe<string> list
     }
 
+    /// Companion surface for the leveled plan (card P2 — the load leg's
+    /// "nothing to deploy" arm needs both, mirroring the fused form's
+    /// `IsNullOrWhiteSpace` gate). `composeRenderedLeveled` drops empty
+    /// levels, so `isEmpty` ⇔ the catalog projected no seed statements.
+    [<RequireQualifiedAccess>]
+    module LeveledDeploymentText =
+        let empty : LeveledDeploymentText =
+            { Phase1Levels = []; Phase2Levels = [] }
+        let isEmpty (plan: LeveledDeploymentText) : bool =
+            List.isEmpty plan.Phase1Levels && List.isEmpty plan.Phase2Levels
+
     /// Level-aware sibling of `composeRenderedFull` — returns the
     /// rendered text grouped by topological level so callers can
     /// dispatch each level's segments in parallel via

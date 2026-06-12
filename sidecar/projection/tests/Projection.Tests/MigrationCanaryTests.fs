@@ -876,6 +876,114 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
         finally
             if System.IO.File.Exists storePath then System.IO.File.Delete storePath
 
+    // -- Card P2 (live) — the PRODUCTION load shape: the seed deploys as the
+    //    LEVELED plan through `Deploy.executeLeveledSeed` ----------------------
+    //
+    // THE STANDARD: `runFullExportLoad` now rides `Compose.loadLeveledSeedAndRecord`
+    // + `Deploy.executeLeveledSeed <connStr>` (card P2 — the gate-met promotion).
+    // This witnesses that face's exact dispatch end-to-end: the plan is minted
+    // through the REAL prover (`composeRenderedLeveled` → `TopologicalOrder.levels`
+    // → `ParallelSafe`), two independent static kinds share ONE level (genuinely
+    // concurrent members), the rows land, the movement is MEASURED and RECORDED,
+    // and the idempotent re-load is CDC-silent — the same contract the fused
+    // sequential leg (`loadSeedAndRecord`, above) witnesses for the published
+    // `Data/seed.sql` artifact.
+    [<Fact>]
+    member _.``P2: the leveled load leg lands the seed through ParallelSafe levels, measures it, and is CDC-silent on the re-load`` () =
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        let catalog =
+            StaticCatalogFixtures.staticCatalogOfKinds "OS_P2L" "Mod"
+                [ { StaticCatalogFixtures.KindKeyParts = [ "Mod"; "P2LCountry" ]
+                    KindName = "P2LCountry"
+                    PhysicalTable = "P2LCountry"
+                    Attrs =
+                      [ StaticCatalogFixtures.pk "Id" "ID" Integer
+                        StaticCatalogFixtures.attr "Label" "LABEL" Text ]
+                    Rows =
+                      [ "1", [ "1"; "United States" ]
+                        "2", [ "2"; "Canada" ] ]
+                  }
+                  { StaticCatalogFixtures.KindKeyParts = [ "Mod"; "P2LRegion" ]
+                    KindName = "P2LRegion"
+                    PhysicalTable = "P2LRegion"
+                    Attrs =
+                      [ StaticCatalogFixtures.pk "Id" "ID" Integer
+                        StaticCatalogFixtures.attr "Label" "LABEL" Text ]
+                    Rows =
+                      [ "1", [ "1"; "North" ]
+                        "2", [ "2"; "South" ] ]
+                  } ]
+        let policy =
+            { Policy.empty with Emission = { Policy.empty.Emission with EmitData = true; DataComposition = AllRemaining } }
+        let outputs, finalState =
+            Compose.projectWithState policy Profile.empty EmissionPolicy.empty EmissionFolders.empty TransformGroups.empty catalog
+        let ddl = Compose.aggregateSsdt outputs.SsdtBundle
+        // The plan composes over the POST-CHAIN catalog — exactly what the
+        // production seam (`Compose.projectSeedPlan`) does, so the MERGEs
+        // target the same (logical-named) tables the deployed DDL created.
+        let plan =
+            Projection.Targets.Data.DataEmissionComposer.composeRenderedLeveled
+                policy finalState.Catalog Profile.empty
+                Projection.Targets.Data.MigrationDependencyContext.empty UserRemapContext.empty
+            |> function
+               | Ok p -> p
+               | Error e -> failwithf "composeRenderedLeveled: %A" e
+        // The plan shape the prover minted: two FK-independent kinds form ONE
+        // Phase-1 level with TWO members (genuine within-level parallelism);
+        // no cycles ⇒ no Phase-2 levels.
+        Assert.Equal(1, List.length plan.Phase1Levels)
+        Assert.Equal(2, ParallelSafe.members (List.head plan.Phase1Levels) |> List.length)
+        Assert.Empty plan.Phase2Levels
+        let storePath =
+            System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(),
+                System.String.Concat("p2lvl-", System.Guid.NewGuid().ToString("N"), ".lifecycle.json"))
+        try
+            TaskSync.run (fun () ->
+                fixture.WithEphemeralDatabase "P2LeveledLoad" (fun conn perDbConn ->
+                    task {
+                        do! Deploy.executeBatch conn ddl
+                        let! enabled =
+                            task {
+                                try
+                                    do! Deploy.executeBatch conn "EXEC sys.sp_cdc_enable_db;"
+                                    do! Deploy.executeBatch conn "EXEC sys.sp_cdc_enable_table @source_schema=N'dbo', @source_name=N'P2LCountry', @role_name=NULL, @supports_net_changes=0;"
+                                    do! Deploy.executeBatch conn "EXEC sys.sp_cdc_enable_table @source_schema=N'dbo', @source_name=N'P2LRegion', @role_name=NULL, @supports_net_changes=0;"
+                                    let! c = scalarInt conn "SELECT COUNT(*) FROM sys.tables WHERE is_tracked_by_cdc = 1 AND name IN (N'P2LCountry', N'P2LRegion');"
+                                    return c = 2
+                                with _ -> return false
+                            }
+                        if not enabled then
+                            printfn "SKIP P2 (leveled load leg): container did not enable CDC"
+                        else
+                            let tl = Timeline.create "p2load" |> Result.value
+                            let at = System.DateTimeOffset.UtcNow
+                            // LEG 1 — first leveled load: the face's exact dispatch
+                            // (executeLeveledSeed over the per-DB connection STRING).
+                            let! first = Compose.loadLeveledSeedAndRecord Deploy.cdcCaptureTotal (Deploy.executeLeveledSeed perDbConn) catalog plan conn (Some storePath) tl Environment.Dev at
+                            match first with
+                            | Error es -> Assert.Fail(sprintf "leveled load leg failed: %A" es)
+                            | Ok (legOpt, delta1) ->
+                                Assert.Equal(4, delta1)   // 2 + 2 static rows captured (measured).
+                                match legOpt with
+                                | None -> Assert.Fail("a store was supplied; an episode must be recorded")
+                                | Some leg ->
+                                    let recorded = EpisodicLifecycle.latest leg.Chain
+                                    Assert.Equal(4, recorded.Data.CdcCaptureCount)
+                            // LEG 2 — idempotent leveled re-load: CDC-silent, non-overwriting.
+                            let! second = Compose.loadLeveledSeedAndRecord Deploy.cdcCaptureTotal (Deploy.executeLeveledSeed perDbConn) catalog plan conn None tl Environment.Dev at
+                            match second with
+                            | Error es -> Assert.Fail(sprintf "leveled re-load failed: %A" es)
+                            | Ok (_, delta2) ->
+                                Assert.Equal(0, delta2)
+                                let! countries = scalarInt conn "SELECT COUNT(*) FROM [dbo].[P2LCountry];"
+                                let! regions   = scalarInt conn "SELECT COUNT(*) FROM [dbo].[P2LRegion];"
+                                Assert.Equal(2, countries)
+                                Assert.Equal(2, regions)
+                    }))
+        finally
+            if System.IO.File.Exists storePath then System.IO.File.Delete storePath
+
     // -- AC-S8 — RENAME is CDC-transparent (‖rename‖_data = 0) ----------------
     //
     // THE STANDARD (obligations §0): a discriminating LIVE witness. A RENAME via

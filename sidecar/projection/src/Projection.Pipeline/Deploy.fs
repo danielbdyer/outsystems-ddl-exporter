@@ -497,6 +497,36 @@ module Deploy =
             ()
         }
 
+    /// **Production leveled seed dispatch (card P2)** — the ONE owner of
+    /// the leveled deploy order, so faces cannot misorder it: Phase-1
+    /// levels in level order, THEN Phase-2 levels in level order; levels
+    /// are sequential (level k+1 may depend on level k); only WITHIN a
+    /// level does `executeBatchParallel` dispatch concurrently, licensed
+    /// by the `ParallelSafe` token each level carries. Parallelism rides
+    /// the existing resolution stack (`resolveParallelism`: the
+    /// `PROJECTION_DEPLOY_PARALLELISM` operator override, else the DMV
+    /// probe cached per connection string, else 4) and the Max-Pool-Size
+    /// cap inside `executeBatchParallel`.
+    ///
+    /// The connection STRING (not an open connection) is the argument
+    /// because every segment opens its own pooled connection — the seam
+    /// the P2 card named. Error semantics: a failing segment surfaces
+    /// from its level's `Task.WhenAll` and no later level starts; the
+    /// seed is an idempotent MERGE, so a re-run after a partial failure
+    /// converges (and is CDC-silent on the already-landed rows).
+    let executeLeveledSeed
+            (connectionString: string)
+            (plan: Projection.Targets.Data.DataEmissionComposer.LeveledDeploymentText)
+            : Task<unit> =
+        task {
+            use _ = Bench.scope "deploy.executeLeveledSeed"
+            let! parallelism = resolveParallelism connectionString
+            for level in plan.Phase1Levels do
+                do! executeBatchParallel connectionString level parallelism
+            for level in plan.Phase2Levels do
+                do! executeBatchParallel connectionString level parallelism
+        }
+
     /// Default bulk batch size — per session-35 bench, 1000 was
     /// network-round-trip dominant (~12 ms per 1000-row batch on a
     /// warm container). Bumping to 5000 amortizes the round-trip

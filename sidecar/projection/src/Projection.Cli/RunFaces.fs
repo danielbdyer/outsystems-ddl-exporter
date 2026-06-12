@@ -135,7 +135,10 @@ let runFullExportLoad
                         task {
                             use sink = new Microsoft.Data.SqlClient.SqlConnection(connStr)
                             do! sink.OpenAsync()
-                            return! Compose.runWithConfigAndLoad Deploy.cdcCaptureTotal Deploy.executeBatch cfg sink storePath tl env at
+                            // Card P2 — the seed loads leveled-parallel: the executor
+                            // closes over the connection STRING (per-segment pooled
+                            // opens); `sink` stays the CDC measure's connection.
+                            return! Compose.runWithConfigAndLoad Deploy.cdcCaptureTotal (Deploy.executeLeveledSeed connStr) cfg sink storePath tl env at
                         }
                     let code =
                         match work.GetAwaiter().GetResult() with

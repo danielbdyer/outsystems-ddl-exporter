@@ -276,32 +276,52 @@ module TopologicalOrder =
     /// depth, so no member depends on another and the group may deploy
     /// concurrently. Levels themselves stay ordered (level k+1 may
     /// depend on level k); only WITHIN a group is parallelism licensed.
+    ///
+    /// **The mint refuses to license parallelism it cannot prove (card
+    /// P2 finding, 2026-06-12).** The level computation's safety rests
+    /// on `t.Order` placing parents before children; only
+    /// `Mode = Topological` carries that guarantee. Under
+    /// `Alphabetical` (an unresolved cycle anywhere in the catalog) an
+    /// FK child can sort BEFORE its parent — the "unknown parent
+    /// contributes 0" rule then collapsed a real FK chain into one
+    /// "level", minting a group whose members were NOT independent
+    /// (one self-FK kind anywhere was enough to flatten everything).
+    /// Under `JunctionDeferred` the deferred suffix is likewise
+    /// non-topological. For both, the honest degenerate is SINGLETON
+    /// groups in `t.Order` order: every group is vacuously
+    /// parallel-safe and the leveled deploy equals the sequential one
+    /// exactly.
     let levels (t: TopologicalOrder) : ParallelSafe<SsKey> list =
-        let parentsOf =
-            t.Edges
-            |> List.groupBy fst
-            |> List.map (fun (child, edges) -> child, edges |> List.map snd)
-            |> Map.ofList
-        let computeLevel (levelMap: Map<SsKey, int>) (k: SsKey) : int =
-            match Map.tryFind k parentsOf with
-            | None -> 0
-            | Some parents ->
-                let knownLevels =
-                    parents |> List.choose (fun p -> Map.tryFind p levelMap)
-                if List.isEmpty knownLevels then 0
-                else (List.max knownLevels) + 1
-        let finalMap =
-            t.Order
-            |> List.fold
-                (fun acc k -> Map.add k (computeLevel acc k) acc)
-                Map.empty
-        finalMap
-        |> Map.toList
-        |> List.groupBy snd
-        |> List.sortBy fst
-        |> List.map (fun (_, pairs) ->
-            // The mint: one dependency depth = one concurrent-safe group.
-            ParallelSafe (pairs |> List.map fst |> List.sort))
+        match t.Mode with
+        | Alphabetical
+        | JunctionDeferred ->
+            t.Order |> List.map (fun k -> ParallelSafe [ k ])
+        | Topological ->
+            let parentsOf =
+                t.Edges
+                |> List.groupBy fst
+                |> List.map (fun (child, edges) -> child, edges |> List.map snd)
+                |> Map.ofList
+            let computeLevel (levelMap: Map<SsKey, int>) (k: SsKey) : int =
+                match Map.tryFind k parentsOf with
+                | None -> 0
+                | Some parents ->
+                    let knownLevels =
+                        parents |> List.choose (fun p -> Map.tryFind p levelMap)
+                    if List.isEmpty knownLevels then 0
+                    else (List.max knownLevels) + 1
+            let finalMap =
+                t.Order
+                |> List.fold
+                    (fun acc k -> Map.add k (computeLevel acc k) acc)
+                    Map.empty
+            finalMap
+            |> Map.toList
+            |> List.groupBy snd
+            |> List.sortBy fst
+            |> List.map (fun (_, pairs) ->
+                // The mint: one dependency depth = one concurrent-safe group.
+                ParallelSafe (pairs |> List.map fst |> List.sort))
 
 
 /// H-037 — result of schema island detection. Each inner list is one

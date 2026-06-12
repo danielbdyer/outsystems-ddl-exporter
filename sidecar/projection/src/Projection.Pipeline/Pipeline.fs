@@ -31,6 +31,10 @@ open Projection.Targets.OperationalDiagnostics
 [<RequireQualifiedAccess>]
 module Compose =
 
+    // Card P2 — the seed-load seam names the data composer's leveled plan;
+    // module abbreviations are file-local, so nothing is re-exported.
+    module DataComposer = Projection.Targets.Data.DataEmissionComposer
+
     /// Per-emitter output captured into memory before being written to
     /// disk. Tests assert against these values without round-tripping
     /// through the file system.
@@ -1361,14 +1365,23 @@ module Compose =
             return parsed |> Result.bind (applyRenames cfg)
         }
 
-    /// AC-X1 (part B) — the emitted catalog + the rendered data-seed script for
-    /// the live-load leg. Re-projects the config's model (genesis profile shape;
-    /// the seed rows are catalog-borne `Modality.Static`, profile-independent) so
-    /// the load consumes exactly the `Data/seed.sql` the bundle published. Empty
-    /// seed when data emission is off.
-    /// Synchronous core of `emittedSeed` (extracted so the task surface is a
+    /// AC-X1 (part B, leveled per card P2) — the emitted catalog + the LEVELED
+    /// seed plan for the live-load leg. Re-projects the config's model (genesis
+    /// profile shape; the seed rows are catalog-borne `Modality.Static`,
+    /// profile-independent) through the SAME chain the bundle rode, then renders
+    /// the per-kind seed scripts grouped by topological level
+    /// (`composeRenderedLeveled`). The plan is a faithful PARTITION of the
+    /// published `Data/seed.sql` — same `dispatchSiblings + unionSiblings`
+    /// artifact, same per-kind `RenderedPhase1`/`RenderedPhase2` strings the
+    /// fused bundle concatenates; nothing is re-rendered (the partition law is
+    /// property-witnessed in `DataEmissionComposerTests`). Empty plan when data
+    /// emission is off or the catalog projects no seed statements.
+    /// Synchronous core of `emittedSeedPlan` (extracted so the task surface is a
     /// single `let!` + `return`, statically compilable in Release — FS3511).
-    let private projectSeed (cfg: Config.Config) (parsed: Result<Catalog>) : Result<Catalog * string> =
+    let private projectSeedPlan
+        (cfg: Config.Config)
+        (parsed: Result<Catalog>)
+        : Result<Catalog * DataComposer.LeveledDeploymentText> =
         match parsed |> Result.bind (applyRenames cfg) with
         | Error es -> Result.failure es
         | Ok catalog ->
@@ -1376,10 +1389,23 @@ module Compose =
                   EmissionFoldersBinding.fromConfig catalog cfg,
                   TransformGroupsBinding.fromConfig cfg with
             | Ok policy, Ok folders, Ok groups ->
-                let outputs, _ =
+                let _, finalState =
                     projectWithState policy Profile.empty EmissionPolicy.empty folders groups catalog
-                let seed = Map.tryFind "Data/seed.sql" outputs.DataBundle |> Option.defaultValue ""
-                Result.success (catalog, seed)
+                if not policy.Emission.EmitData then
+                    Result.success (catalog, DataComposer.LeveledDeploymentText.empty)
+                else
+                    match
+                        DataComposer.composeRenderedLeveled
+                            policy finalState.Catalog Profile.empty
+                            Projection.Targets.Data.MigrationDependencyContext.empty
+                            UserRemapContext.empty
+                    with
+                    | Ok plan -> Result.success (catalog, plan)
+                    | Error err ->
+                        // Mirrors the bundle decoration's invariant: a valid
+                        // catalog never fails the composer (the keyset is
+                        // `Catalog.allKinds`).
+                        invalidOp (sprintf "Compose.projectSeedPlan: DataEmissionComposer.composeRenderedLeveled: %A" err)
             | p, f, g ->
                 let errs =
                     (match p with Error e -> e | _ -> [])
@@ -1387,10 +1413,10 @@ module Compose =
                     @ (match g with Error e -> e | _ -> [])
                 Result.failure errs
 
-    let private emittedSeed (cfg: Config.Config) : Task<Result<Catalog * string>> =
+    let private emittedSeedPlan (cfg: Config.Config) : Task<Result<Catalog * DataComposer.LeveledDeploymentText>> =
         task {
             let! parsed = readConfigModel cfg
-            return projectSeed cfg parsed
+            return projectSeedPlan cfg parsed
         }
 
     /// State A — the prior emission's schema, reconstructed from the durable
@@ -1634,6 +1660,33 @@ module Compose =
             | Error storeErr -> Result.failureOf (mapStoreErr storeErr)
         | _ -> Result.success (None, cdcDelta)
 
+    /// The CDC-bracketed load-measure-record core shared by the two load
+    /// shapes (fused-string and leveled). `load` is a thunk so the work
+    /// starts AFTER the baseline capture; the caller selects it
+    /// synchronously (an unconditional `do!` of a pre-selected Task is
+    /// the FS3511-safe shape).
+    let private loadMeasureAndRecord
+        (cdcCaptureTotal: SqlConnection -> Task<int>)
+        (load: unit -> Task<unit>)
+        (emitted: Catalog)
+        (sink: SqlConnection)
+        (storePath: string option)
+        (timeline: Timeline)
+        (environment: Environment)
+        (at: System.DateTimeOffset)
+        : Task<Result<FullExportStoreLeg option * int>> =
+        task {
+            let! baseline = cdcCaptureTotal sink
+            let loading = load ()
+            do! loading
+            let! post = cdcCaptureTotal sink
+            return recordLoad emitted (post - baseline) storePath timeline environment at
+        }
+
+    /// The fused-string load shape — what an operator executing the
+    /// published `Data/seed.sql` by hand gets; the witness surface for
+    /// the bundle's idempotent-MERGE contract (AC-X1 part B tests).
+    /// The CLI load leg rides `loadLeveledSeedAndRecord` since card P2.
     let loadSeedAndRecord
         (cdcCaptureTotal: SqlConnection -> Task<int>)
         (executeBatch: SqlConnection -> string -> Task<unit>)
@@ -1648,32 +1701,58 @@ module Compose =
         // `cdcCaptureTotal` / `executeBatch` are injected (the `Deploy` module
         // compiles AFTER this one, so Compose cannot name it; callers pass
         // `Deploy.cdcCaptureTotal` / `Deploy.executeBatch`).
-        task {
-            let! baseline = cdcCaptureTotal sink
-            // Unconditional `do!` of a synchronously-selected Task (a *conditional*
-            // `do!` is the FS3511 trigger): an empty seed loads nothing.
-            let execSeed =
+        loadMeasureAndRecord
+            cdcCaptureTotal
+            (fun () ->
+                // An empty seed loads nothing.
                 if System.String.IsNullOrWhiteSpace seed then Task.FromResult ()
-                else executeBatch sink seed
-            do! execSeed
-            let! post = cdcCaptureTotal sink
-            return recordLoad emitted (post - baseline) storePath timeline environment at
-        }
+                else executeBatch sink seed)
+            emitted sink storePath timeline environment at
+
+    /// Card P2 — the LEVELED production load: same CDC bracket, same
+    /// episode recording, but the seed deploys as the leveled plan
+    /// through the injected executor (callers pass
+    /// `Deploy.executeLeveledSeed <connection string>` — the executor
+    /// closes over the connection STRING because every segment opens its
+    /// own pooled connection; `sink` stays the CDC measure's connection).
+    let loadLeveledSeedAndRecord
+        (cdcCaptureTotal: SqlConnection -> Task<int>)
+        (executeLeveled: DataComposer.LeveledDeploymentText -> Task<unit>)
+        (emitted: Catalog)
+        (plan: DataComposer.LeveledDeploymentText)
+        (sink: SqlConnection)
+        (storePath: string option)
+        (timeline: Timeline)
+        (environment: Environment)
+        (at: System.DateTimeOffset)
+        : Task<Result<FullExportStoreLeg option * int>> =
+        loadMeasureAndRecord
+            cdcCaptureTotal
+            (fun () ->
+                // An empty plan loads nothing (data emission off, or no
+                // seed statements in scope) — parity with the fused form's
+                // whitespace gate.
+                if DataComposer.LeveledDeploymentText.isEmpty plan then Task.FromResult ()
+                else executeLeveled plan)
+            emitted sink storePath timeline environment at
 
     /// AC-X1 (part B) — `runWithConfig` PLUS the live data-load leg the W1-B
     /// store leg deferred. After the bundle is published (unchanged), the
-    /// idempotent CDC-aware seed (`Data/seed.sql`) is loaded into the
-    /// already-deployed `sink`, the movement is measured, and (with a store) the
-    /// episode is recorded with the measured `DataObservation`. The schema is
-    /// assumed already deployed on the sink (the publication→deploy→load premise:
-    /// the operator deploys the published DDL + enables CDC for the SSIS consumer,
-    /// then the data lands).
-    /// Emit-then-load for a config: re-project the seed and load it. Extracted
-    /// so `runWithConfigAndLoad` keeps a two-level await depth (FS3511-safe;
-    /// the three-level `let!`-in-match nesting does not statically compile).
+    /// idempotent CDC-aware seed is loaded into the already-deployed `sink` as
+    /// the LEVELED plan (card P2 — a faithful partition of the published
+    /// `Data/seed.sql`, dispatched per level through the injected executor),
+    /// the movement is measured, and (with a store) the episode is recorded
+    /// with the measured `DataObservation`. The schema is assumed already
+    /// deployed on the sink (the publication→deploy→load premise: the operator
+    /// deploys the published DDL + enables CDC for the SSIS consumer, then the
+    /// data lands).
+    /// Emit-then-load for a config: re-project the seed plan and load it.
+    /// Extracted so `runWithConfigAndLoad` keeps a two-level await depth
+    /// (FS3511-safe; the three-level `let!`-in-match nesting does not
+    /// statically compile).
     let private loadFromConfig
         (cdcCaptureTotal: SqlConnection -> Task<int>)
-        (executeBatch: SqlConnection -> string -> Task<unit>)
+        (executeLeveled: DataComposer.LeveledDeploymentText -> Task<unit>)
         (cfg: Config.Config)
         (sink: SqlConnection)
         (storePath: string option)
@@ -1682,17 +1761,21 @@ module Compose =
         (at: System.DateTimeOffset)
         : Task<Result<FullExportStoreLeg option * int>> =
         task {
-            let! seedR = emittedSeed cfg
+            let! seedR = emittedSeedPlan cfg
             return!
                 match seedR with
                 | Error errors -> Task.FromResult (Result.failure errors)
-                | Ok (emitted, seed) ->
-                    loadSeedAndRecord cdcCaptureTotal executeBatch emitted seed sink storePath timeline environment at
+                | Ok (emitted, plan) ->
+                    loadLeveledSeedAndRecord cdcCaptureTotal executeLeveled emitted plan sink storePath timeline environment at
         }
 
+    /// Card P2 re-threaded seam: the second argument is the LEVELED seed
+    /// executor (`Deploy.executeLeveledSeed <connection string>` at the CLI
+    /// face — partial application carries the connection string the
+    /// per-segment opens need; `sink` remains the CDC measure's connection).
     let runWithConfigAndLoad
         (cdcCaptureTotal: SqlConnection -> Task<int>)
-        (executeBatch: SqlConnection -> string -> Task<unit>)
+        (executeLeveled: DataComposer.LeveledDeploymentText -> Task<unit>)
         (cfg: Config.Config)
         (sink: SqlConnection)
         (storePath: string option)
@@ -1705,6 +1788,6 @@ module Compose =
             match reportResult with
             | Error errors -> return Result.failure errors
             | Ok report ->
-                let! loadResult = loadFromConfig cdcCaptureTotal executeBatch cfg sink storePath timeline environment at
+                let! loadResult = loadFromConfig cdcCaptureTotal executeLeveled cfg sink storePath timeline environment at
                 return loadResult |> Result.map (fun (leg, cdcDelta) -> report, leg, cdcDelta)
         }
