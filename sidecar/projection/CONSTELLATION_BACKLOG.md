@@ -502,11 +502,19 @@ gates into a declared arc, R1b-adjacent territory). S. Deps: S4.
 
 ### Stage 3 — the ledger contract (R3, corrected per RI-3)
 
-**L1 · `LedgerSpec`, corrected.** Core, pure: `Genesis/Apply/FingerprintOf` **plus the
-admission split** — `WriteAdmit` (external-witness-capable; mints `Verified<_>`) and
-`ResumeAdmit` (recomputation vs stored fingerprint). `Ledger.replay`/`resumePoint` over
-verified entries. *Witness:* the FsCheck FTC property over a constructed-valid generator. M.
-Deps: none (F4 recommended first). Rollback: revert; instances not yet cut over.
+**L1 · `LedgerSpec`, corrected — DONE 2026-06-12.** Shipped in Core (`Ledger.fs`, after
+`Lifecycle.fs`): `LedgerSpec` (Genesis/Apply/FingerprintOf — record-of-functions, the house
+preference over interfaces) **plus the RI-3 admission split** — `Ledger.admitWrite` takes the
+per-grain EXTERNAL witness and is the one mint of the private-ctor `Verified<_>` proof token
+(the §9.8.9 row realized); `Ledger.resumePoint` is recomputation against stored fingerprints,
+with drift a typed, located refusal (`LedgerDrift`), last-write-wins on duplicated positions
+(the journal index's existing semantics, honored at the contract) and entries beyond the
+first gap ignored (they re-execute). `Ledger.replay` folds ⊕ over verified entries in
+position order — entry-list order immaterial, property-tested with a non-commutative ⊕.
+*Witnesses shipped:* `` `R3: replay = fold ⊕ — the FTC at the contract` `` (FsCheck) +
+crash-at-k-resumes-at-k (FsCheck) + the located-drift refusal + the witness-gated mint + four
+edge pins (nine in `LedgerSpecTests.fs`, pure pool). M→S in practice. Deps: none (F4 done).
+Rollback: revert; instances not yet cut over.
 
 **L2 · The journal instance.** `CaptureJournal` re-expressed on the contract; the effectful
 remap fold adapted at the instance (the spec stays pure); resume path of

@@ -86,6 +86,7 @@
     <Compile Include="CatalogDiffTests.fs" />
     <Compile Include="ComparisonTests.fs" />
     <Compile Include="LifecycleTests.fs" />
+    <Compile Include="LedgerSpecTests.fs" />
     <Compile Include="EpisodeTests.fs" />
     <Compile Include="ChangeManifestTests.fs" />
     <Compile Include="MigrationTests.fs" />
