@@ -354,14 +354,19 @@ sites in `PhysicalSchema.fs` + three stale comments (`Tolerance.fs:80`,
 precedent exists because "it might be wired someday" is how dead algebra accretes. S. Deps:
 none. Rollback: revert (git preserves the fold).
 
-**H7 · The scenario catalog becomes the fifth declare-once instance.** Plane N9 (RI-8).
-Incision: `Scenarios.all : (ScaleKnob * PerfScenario) list` as the single definition site;
-the gated `[<Fact>]`s index into it by name (a missing name fails the fact); a pure-pool
-totality test pins registry ⇔ list — `` `H7: PERF-SCENARIO registry ⇔ Scenarios.all ⇔ gated
-facts` `` (the code⇔copy shape; the source file read as fixture is the AxiomTests-citation
-precedent). *Unlock:* §9.8.11's map holds; scenario drift becomes a test failure instead of
-a stale `list` output. S. Deps: none — but land it **before H4–H6** so the next three
-scenarios arrive declared. Rollback: revert.
+**H7 · The scenario catalog becomes the fifth declare-once instance — DONE 2026-06-11.**
+Plane N9 (RI-8). Shipped as `PerfHarnessScenarios.all : ScenarioDecl list` (Name/Docker/
+Scale/`Make` thunk — thunks so gate-closed paths build no fixture; verified: 20 ms
+pass-through SKIP); the seven gated facts index into it via `runDeclared` (undeclared name
+fails the fact; declared-vs-built name drift fails loudly at run); the pure-pool totality
+test pins registry ⇔ catalog — `` `H7: PERF-SCENARIO registry ⇔ the declared catalog — the
+declare-once totality` `` + `` `H7: declared scenario names are unique` `` (the source file
+read as fixture); `perf-harness.sh list` fixed to stop cutting scale alternations at the
+first `|`. *Finding en route:* the substring pool-split trap (risk register) — the totality
+test's first name embedded the Docker module's name and silently fell out of the pure pool
+until renamed. Gate-open path re-verified end-to-end (`run ssdt-emit-only` green). §9.8.11's
+outcome note already records the prediction's partial failure; this card is its repair —
+the next three scenarios (H4–H6) now land declared. S. Deps: none. Rollback: revert.
 
 ### Stage 1 — the measurement substrate (PERF_HARNESS §4 slices 2–5, by pointer)
 
@@ -689,6 +694,7 @@ is also the resume story after the interruption ends.
 | `DeleteScope` under chunking | the armed staged-bulk shape (§6 item 9), if its wake ever fires | the single-trailing-MERGE shape; the survival case in the witness |
 | journal-filename coupling | F1 — any byte-form change to `CaptureJournal.digestOf` | byte-stability is the witness; the digest IS the address (RI-7) |
 | fsproj compile order | any intra-assembly reuse plan (F5's lesson, RI-9) | check `<Compile Include>` order before carding a cross-file delegation |
+| substring pool-split | any test whose display name embeds a Docker-collection module name | `test.sh` excludes the pure pool by `FullyQualifiedName!~<file>` substring — the H7 totality test silently fell out of the pure pool until renamed; never put a Docker-class module name in a test display name |
 | pinned envelope shapes | S3/S4 | `FullExportCliTests` slice-7 trio amended in the same commit, shape change named |
 | double bracket owners | S4 | one owner decided (the spine); `FullExportRun`'s self-reset retired in the same commit |
 | aborted-stage display hangs | S2 | the `Aborted` closure arm is part of the law, not an afterthought |

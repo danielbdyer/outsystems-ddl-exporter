@@ -29,7 +29,12 @@ cmd="${1:-}"
 filt="${2:-}"
 
 list_scenarios() {
-  grep -o 'PERF-SCENARIO: [^|]*' "$SCEN_FILE" | sed 's/PERF-SCENARIO: //' | sed 's/ *$//'
+  # Print the full scenario spec (scale alternations like `1000|10000`
+  # included — the old `[^|]*` form cut them at the first `|`), stripping
+  # only the keylabels suffix. The pure-pool totality test
+  # (PerfHarnessCatalogTests.fs) pins these lines against the declared
+  # catalog `PerfHarnessScenarios.all` (H7).
+  grep '// PERF-SCENARIO: ' "$SCEN_FILE" | sed 's/.*PERF-SCENARIO: //' | sed 's/ *| *keylabels=.*//' | sed 's/ *$//'
 }
 
 run_fleet() {
