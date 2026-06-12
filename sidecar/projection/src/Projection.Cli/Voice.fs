@@ -249,9 +249,52 @@ module Voice =
                    | None -> [])
           Action         = fun _ -> Some(View.Action "Resolve the findings, then redeploy.") }
 
+    /// `canary.cdcSilent` — the CDC-silence proof (`THE_VOICE.md` §6): the
+    /// deepest fidelity finding, said plain and grounded in both its zeros.
+    let private canaryCdcSilent : Copy =
+        { Code           = "canary.cdcSilent"
+          DocSection     = "§6"
+          Statement      = fun _ -> View.Hero(View.Ok, "Confirmed idempotent: zero rows captured, zero schema changes issued.")
+          Substantiation = fun _ -> [ View.Field("evidence", "CDC capture count = 0 · zero ALTER statements", View.Neutral) ]
+          Action         = fun _ -> None }
+
+    /// `canary.cdcCaptured` — the CDC-silence proof failed (`THE_VOICE.md` §6 /
+    /// §10): the redeploy touched rows where the proof requires silence. The
+    /// finding is asserted with its measure; the capture detail is in the run's
+    /// events. Ends on the verdict — no single lever exists for this finding.
+    let private canaryCdcCaptured : Copy =
+        { Code           = "canary.cdcCaptured"
+          DocSection     = "§6"
+          Statement      =
+            fun p ->
+                match text "capturedRows" p with
+                | Some n -> View.Hero(View.Bad, sprintf "The redeploy was not idempotent — %s rows captured where zero were expected." (humane n))
+                | None   -> View.Hero(View.Bad, "The redeploy was not idempotent — rows were captured where zero were expected.")
+          Substantiation =
+            fun p ->
+                match text "capturedRows" p with
+                | Some n -> [ View.Field("evidence", sprintf "CDC capture count = %s" (humane n), View.Neutral) ]
+                | None   -> []
+          Action         = fun _ -> None }
+
     // §13 — lifecycle & the live run (Watch). Stage names are what they do for the
     //       operator, never the engine verb. The gerund names a live activity in
     //       progress (rule 12 exception); a completed stage is resultative.
+
+    /// `canary.deployed` — both sides of the round-trip verification are in
+    /// place (`THE_VOICE.md` §13, resultative): the source schema and the
+    /// engine's own emission, each deployed to its ephemeral database.
+    let private canaryDeployed : Copy =
+        { Code           = "canary.deployed"
+          DocSection     = "§13"
+          Statement      =
+            fun p ->
+                match text "sourceTables" p, text "targetTables" p with
+                | Some s, Some t ->
+                    View.Note(sprintf "Both sides deployed — source %s tables, target %s tables." (humane s) (humane t))
+                | _ -> View.Note "Both sides deployed."
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
 
     /// `container.starting` — an ephemeral SQL Server container is coming up for
     /// a run that needs one (`THE_VOICE.md` §13). Gerund-in-progress (rule 12
@@ -506,6 +549,20 @@ module Voice =
                 @ (match text "code" p with Some c -> [ View.Field("code", c, View.Neutral) ] | None -> [])
           Action         = fun _ -> Some(View.Action "Correct the configuration and rerun.") }
 
+    /// `canary.sourceMissing` — the round-trip verification's source DDL file is
+    /// absent (`THE_VOICE.md` §14 set-but-invalid: concrete and located — the
+    /// path rides beneath the plain statement).
+    let private canarySourceMissing : Copy =
+        { Code           = "canary.sourceMissing"
+          DocSection     = "§14"
+          Statement      = fun _ -> View.Hero(View.Bad, "The source DDL file was not found. Check the path and rerun.")
+          Substantiation =
+            fun p ->
+                match text "path" p with
+                | Some path -> [ View.Field("path", path, View.Neutral) ]
+                | None      -> []
+          Action         = fun _ -> Some(View.Action "Check the path and rerun.") }
+
     /// `docker.unavailable` — a face that needs an ephemeral SQL Server cannot
     /// reach the Docker daemon (`THE_VOICE.md` §14 required-and-missing): the
     /// requirement and how to provide it, stated without scolding. `purpose`
@@ -538,10 +595,13 @@ module Voice =
           loadCompleted
           deployCompleted
           deploySsdtRejected
+          canaryCdcSilent
+          canaryCdcCaptured
           // §13 — lifecycle / Watch (the spine + the per-stage stream)
           episodeRecorded
           containerStarting
           deployBundleEmitted
+          canaryDeployed
           configRunStart
           configConnectionResolved
           extractStarted
@@ -560,6 +620,7 @@ module Voice =
           summaryStageCompleted
           // §14 / §10 — config & errors
           configValidationFailed
+          canarySourceMissing
           dockerUnavailable ]
 
     /// Look a code's copy up. `None` when the code is not yet voiced — the

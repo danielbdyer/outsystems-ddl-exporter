@@ -33,7 +33,11 @@ let private inScopeCodes : Set<string> =
           // findings demoted to the disclosure), the §13 stage lines, and the
           // §14 Docker requirement
           "deploy.completed"; "deploy.ssdtRejected"
-          "container.starting"; "deploy.bundleEmitted"; "docker.unavailable" ]
+          "container.starting"; "deploy.bundleEmitted"; "docker.unavailable"
+          // the canary faces: the §6 CDC-silence proof pair, the §13
+          // both-sides-deployed line, and the §14 located source-file finding
+          "canary.cdcSilent"; "canary.cdcCaptured"
+          "canary.deployed"; "canary.sourceMissing" ]
 
 // The codes the engine can actually emit today (the inventory — the contract the
 // totality test holds Voice to). Voicing a code outside this set would be copy for
@@ -68,6 +72,9 @@ let private knownEmittableCodes : Set<string> =
           // requirement (shared with the canary faces)
           "deploy.completed"; "deploy.ssdtRejected"
           "container.starting"; "deploy.bundleEmitted"; "docker.unavailable"
+          // the canary faces' verdicts + stage line + located source finding
+          "canary.cdcSilent"; "canary.cdcCaptured"
+          "canary.deployed"; "canary.sourceMissing"
           // emitted but voiced by mechanism-1 / later slices (not in `Voice.all` yet)
           "transform.registered"; "transform.applied"; "transform.declined"
           "transform.lineage"; "transform.diagnostic"; "bench.label" ]
@@ -108,7 +115,10 @@ let private samplePayload : Voice.Payload =
           "purpose",       box "deploy"
           "entryCount",    box 12
           "database",      box "projection_canary_01"
-          "serverErrors",  box "Incorrect syntax near 'GO'.\nThe object 'dbo.Order' already exists." ]
+          "serverErrors",  box "Incorrect syntax near 'GO'.\nThe object 'dbo.Order' already exists."
+          "sourceTables",  box 300
+          "targetTables",  box 300
+          "path",          box "model.sql" ]
 
 // ---------------------------------------------------------------------------
 // code ⇔ copy totality
@@ -231,6 +241,28 @@ let ``Voice deploy.ssdtRejected: an empty payload still leads with the finding``
     match Voice.surfaceOf "deploy.ssdtRejected" Map.empty with
     | Some { Statement = View.Hero(View.Bad, _) } -> ()
     | other -> Assert.Fail(sprintf "unexpected empty-payload surface: %A" other)
+
+// ---------------------------------------------------------------------------
+// the canary faces' §6 CDC-silence proof pair — the proof and its failure are
+// both grounded findings, never a bare count
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Voice canary.cdcSilent: the silence proof leads Ok and grounds both zeros`` () =
+    match Voice.surfaceOf "canary.cdcSilent" Map.empty with
+    | Some { Statement = View.Hero(View.Ok, text); Substantiation = subs } ->
+        Assert.Contains("Confirmed idempotent", text)
+        Assert.Contains("zero rows captured", text)
+        Assert.False(List.isEmpty subs)   // the CDC = 0 evidence rides beneath
+    | other -> Assert.Fail(sprintf "unexpected cdcSilent surface: %A" other)
+
+[<Fact>]
+let ``Voice canary.cdcCaptured: the failed proof carries its measure on the finding`` () =
+    let payload : Voice.Payload = Map.ofList [ "capturedRows", box 4210 ]
+    match Voice.surfaceOf "canary.cdcCaptured" payload with
+    | Some { Statement = View.Hero(View.Bad, text) } ->
+        Assert.Contains("4,210", text)   // humane numerals, §12
+    | other -> Assert.Fail(sprintf "unexpected cdcCaptured surface: %A" other)
 
 // ---------------------------------------------------------------------------
 // the stage-name mapping (THE_VOICE.md §13 — operator-shaped, never the verb)

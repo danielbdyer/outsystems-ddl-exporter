@@ -316,14 +316,18 @@ type private CanaryStop =
 
 let runCanary (sourceDdlPath: string) : int =
     if not (File.Exists sourceDdlPath) then
-        die 1 (sprintf "projection: source DDL not found: %s" sourceDdlPath)
+        // §14 — concrete and located; the path is the substantiation.
+        TtyRenderer.renderVoicedTo Console.Error "canary.sourceMissing"
+            (Map.ofList [ "path", box sourceDdlPath ])
+        1
     elif not (Deploy.Docker.isAvailable ()) then
-        die
-            4
-            "projection: Docker daemon not reachable. Set DOCKER_HOST or start the daemon to run `canary`."
+        TtyRenderer.renderVoicedTo Console.Error "docker.unavailable"
+            (Map.ofList [ "purpose", box "round-trip verification" ])
+        4
     else
         let sourceDdl = File.ReadAllText sourceDdlPath
-        printfn "projection: spinning up ephemeral SQL Server for the wide canary..."
+        TtyRenderer.renderVoicedTo Console.Out "container.starting"
+            (Map.ofList [ "purpose", box "round-trip verification" ])
         // E4 — the production canary deploys the canonical schema-then-data
         // form (DDL + StaticPopulationEmitter's InsertRow realization into the
         // fresh-empty target). Schema-only when the source carries no static
@@ -349,10 +353,11 @@ let runCanary (sourceDdlPath: string) : int =
                 return report
             }).GetAwaiter().GetResult()
         let deployedLine (report: Deploy.WideCanaryReport) =
-            printfn
-                "projection: source deployed %d table(s); target deployed %d table(s)"
-                report.SourceReport.TablesCreated
-                report.TargetReport.TablesCreated
+            // §13 resultative — both sides of the round-trip are in place.
+            TtyRenderer.renderVoicedTo Console.Out "canary.deployed"
+                (Map.ofList
+                    [ "sourceTables", box report.SourceReport.TablesCreated
+                      "targetTables", box report.TargetReport.TablesCreated ])
             // Tier-1 reporting (§7.7) — emit the structured fidelity verdict
             // (canary.diffEmpty / canary.divergence) alongside the prose, so
             // CI can gate on it and the run ledger can record it.
@@ -389,11 +394,13 @@ let runCanary (sourceDdlPath: string) : int =
 /// the canary itself, not a harness.
 let runCanaryCdcSilence (sourceDdlPath: string) : int =
     if not (File.Exists sourceDdlPath) then
-        die 1 (sprintf "projection: source DDL not found: %s" sourceDdlPath)
+        TtyRenderer.renderVoicedTo Console.Error "canary.sourceMissing"
+            (Map.ofList [ "path", box sourceDdlPath ])
+        1
     elif not (Deploy.Docker.isAvailable ()) then
-        die
-            4
-            "projection: Docker daemon not reachable. Set DOCKER_HOST or start the daemon to run `canary`."
+        TtyRenderer.renderVoicedTo Console.Error "docker.unavailable"
+            (Map.ofList [ "purpose", box "CDC-silence verification" ])
+        4
     else
         let sourceDdl = File.ReadAllText sourceDdlPath
         let enableCdc cnn (cat: Catalog) =
@@ -413,7 +420,8 @@ let runCanaryCdcSilence (sourceDdlPath: string) : int =
                 let! _ = MigrationRun.execute true DeclareNone cat cat cnn
                 return ()
             }
-        printfn "projection: spinning up ephemeral SQL Server for the CDC-silence canary..."
+        TtyRenderer.renderVoicedTo Console.Out "container.starting"
+            (Map.ofList [ "purpose", box "CDC-silence verification" ])
         let work =
             Deploy.runWideCanaryWithCdcSilence
                 (fun cnn -> Deploy.executeBatch cnn sourceDdl)
@@ -424,19 +432,21 @@ let runCanaryCdcSilence (sourceDdlPath: string) : int =
         let exitCode =
             match result with
             | Ok (report, cdcDelta) ->
-                printfn
-                    "projection: source deployed %d table(s); target deployed %d table(s)"
-                    report.SourceReport.TablesCreated
-                    report.TargetReport.TablesCreated
+                TtyRenderer.renderVoicedTo Console.Out "canary.deployed"
+                    (Map.ofList
+                        [ "sourceTables", box report.SourceReport.TablesCreated
+                          "targetTables", box report.TargetReport.TablesCreated ])
                 let schemaOk = PhysicalSchema.isEqual report.Diff
                 if not schemaOk then
                     TtyRenderer.renderVoicedTo Console.Error "canary.divergence"
                         (Map.ofList [ "renderedDiff", box (PhysicalSchema.renderDiff report.Diff) ])
                 if cdcDelta <> 0 then
-                    eprintfn "The redeploy was not idempotent: %d row(s) captured where none were expected." cdcDelta
+                    // §6 — the silence proof failed; the finding carries its measure.
+                    TtyRenderer.renderVoicedTo Console.Error "canary.cdcCaptured"
+                        (Map.ofList [ "capturedRows", box cdcDelta ])
                 if schemaOk && cdcDelta = 0 then
                     // §6 CDC-silence proof — the deepest fidelity finding, said plain.
-                    printfn "Confirmed idempotent: zero rows captured, zero schema changes issued."
+                    TtyRenderer.renderVoicedTo Console.Out "canary.cdcSilent" Map.empty
                     0
                 else 5
             | Error errors ->
