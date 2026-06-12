@@ -293,6 +293,7 @@
     <Compile Include="LogicalNameTriangleCanaryTests.fs" />
     <Compile Include="GeneratorScaleTests.fs" />
     <Compile Include="PerfHarnessScenarios.fs" />
+    <Compile Include="PerfHarnessCatalogTests.fs" />
     <Compile Include="ComprehensiveCanaryTests.fs" />
     <Compile Include="ExecuteBatchParallelTests.fs" />
     <Compile Include="SyntheticLoadTests.fs" />

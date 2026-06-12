@@ -83,16 +83,12 @@ let private pureContext (scale: ScaleKnob) : ScenarioContext =
                 "PerfScenario requested database '%s' in the pure context — Docker-backed scenarios land with PERF_HARNESS §4 slice 1+."
                 dbName }
 
-let private runGated (label: string) (scale: ScaleKnob) (scenario: PerfScenario) : unit =
-    if not (gateOpen ()) then
-        printfn "SKIP perf-harness [%s]: set PROJECTION_RUN_PERF_HARNESS=1 to run." label
-    else
-        measure (pureContext scale) scenario
-
 // -------------------------------------------------------------------------
 // The scenario catalog (§3.2) — curried constructors over production entry
-// points. One `// PERF-SCENARIO:` registry line per scenario keeps
-// `perf-harness.sh list` honest without a second enumeration surface.
+// points. One `PERF-SCENARIO` registry line per scenario feeds
+// `perf-harness.sh list`; the single definition site is `all` (below, H7),
+// and the pure-pool totality test (`PerfHarnessCatalogTests.fs`) pins
+// registry ⇔ `all` so neither surface can drift from the other.
 // -------------------------------------------------------------------------
 
 /// Stage-2a emit-only (PERF_HARNESS §1 activity 2a): the full
@@ -113,13 +109,6 @@ let ssdtEmitOnly (tables: int) : PerfScenario =
                 if text.Length = 0 then
                     failwith "ssdt-emit-only produced empty DDL"
             } }
-
-[<Fact>]
-let ``PerfHarness: ssdt-emit-only 150`` () =
-    runGated
-        "ssdt-emit-only 150"
-        { Rows = 0; Tables = 150; ColumnsPerTable = 4 }
-        (ssdtEmitOnly 150)
 
 // -------------------------------------------------------------------------
 // Slice 1 — the seed-MERGE pair (PERF_HARNESS §1 activities 3b/3c; the
@@ -144,14 +133,6 @@ let private dockerContext (scale: ScaleKnob) : ScenarioContext =
                         })
                 return ()
             } }
-
-let private runGatedDocker (label: string) (scale: ScaleKnob) (scenario: PerfScenario) : unit =
-    if not (gateOpen ()) then
-        printfn "SKIP perf-harness [%s]: set PROJECTION_RUN_PERF_HARNESS=1 to run." label
-    elif not (Deploy.Docker.ensureRunning ()) then
-        printfn "SKIP perf-harness [%s]: Docker daemon not reachable." label
-    else
-        measure (dockerContext scale) scenario
 
 let private seedPolicy : Policy =
     { Policy.empty with
@@ -258,26 +239,6 @@ let seedMergeExecute (rowsPerKind: int) : PerfScenario =
                             })
             } }
 
-[<Fact>]
-let ``PerfHarness: seed-merge-render 1000`` () =
-    runGated "seed-merge-render 1000" { Rows = 1000; Tables = 1; ColumnsPerTable = 3 } (seedMergeRender 1000)
-
-[<Fact>]
-let ``PerfHarness: seed-merge-render 10000`` () =
-    runGated "seed-merge-render 10000" { Rows = 10000; Tables = 1; ColumnsPerTable = 3 } (seedMergeRender 10000)
-
-[<Fact>]
-let ``PerfHarness: seed-merge-execute 1000`` () =
-    runGatedDocker "seed-merge-execute 1000" { Rows = 1000; Tables = 1; ColumnsPerTable = 3 } (seedMergeExecute 1000)
-
-[<Fact>]
-let ``PerfHarness: seed-merge-execute 2500`` () =
-    runGatedDocker "seed-merge-execute 2500" { Rows = 2500; Tables = 1; ColumnsPerTable = 3 } (seedMergeExecute 2500)
-
-[<Fact>]
-let ``PerfHarness: seed-merge-execute 10000`` () =
-    runGatedDocker "seed-merge-execute 10000" { Rows = 10000; Tables = 1; ColumnsPerTable = 3 } (seedMergeExecute 10000)
-
 // -------------------------------------------------------------------------
 // Slice 2 — the ReadSide drain (PERF_HARNESS §1 activity 1b + §3.6 label 1).
 // Gates the entire R4/Q row-quantum track (CONSTELLATION_BACKLOG stage 5).
@@ -367,9 +328,93 @@ let readsideRowStream (rows: int) : PerfScenario =
                         })
             } }
 
+// -------------------------------------------------------------------------
+// H7 (CONSTELLATION_BACKLOG plane N9; CONSTELLATION §9.8.11) — the catalog
+// as the fifth declare-once system. `all` is the single definition site;
+// the gated facts below index into it by name (an undeclared name fails
+// the fact); `scripts/perf-harness.sh list` reads the `PERF-SCENARIO`
+// registry comments; and the pure-pool totality test
+// (`PerfHarnessCatalogTests.fs`) pins registry ⇔ `all`, so the comment
+// surface cannot drift from the declared one. `Make` is a thunk: fixture
+// catalogs (up to 100k rows) are built only once the env gate is open.
+// -------------------------------------------------------------------------
+
+type ScenarioDecl =
+    { Name : string   // must equal Make().Name — checked at run, pinned by the totality test
+      Docker : bool
+      Scale : ScaleKnob
+      Make : unit -> PerfScenario }
+
+let all : ScenarioDecl list =
+    [ { Name = "ssdt-emit-only-150"
+        Docker = false
+        Scale = { Rows = 0; Tables = 150; ColumnsPerTable = 4 }
+        Make = fun () -> ssdtEmitOnly 150 }
+      { Name = "seed-merge-render-1000"
+        Docker = false
+        Scale = { Rows = 1000; Tables = 1; ColumnsPerTable = 3 }
+        Make = fun () -> seedMergeRender 1000 }
+      { Name = "seed-merge-render-10000"
+        Docker = false
+        Scale = { Rows = 10000; Tables = 1; ColumnsPerTable = 3 }
+        Make = fun () -> seedMergeRender 10000 }
+      { Name = "seed-merge-execute-1000"
+        Docker = true
+        Scale = { Rows = 1000; Tables = 1; ColumnsPerTable = 3 }
+        Make = fun () -> seedMergeExecute 1000 }
+      { Name = "seed-merge-execute-2500"
+        Docker = true
+        Scale = { Rows = 2500; Tables = 1; ColumnsPerTable = 3 }
+        Make = fun () -> seedMergeExecute 2500 }
+      { Name = "seed-merge-execute-10000"
+        Docker = true
+        Scale = { Rows = 10000; Tables = 1; ColumnsPerTable = 3 }
+        Make = fun () -> seedMergeExecute 10000 }
+      { Name = "readside-rowstream-100000"
+        Docker = true
+        Scale = { Rows = 100000; Tables = 1; ColumnsPerTable = 12 }
+        Make = fun () -> readsideRowStream 100000 } ]
+
+/// Run one DECLARED scenario: gate first (no fixture construction on the
+/// skip path), then build, then verify the declared name against the
+/// built one — drift between the two fails loudly, never silently.
+let private runDeclared (name: string) : unit =
+    match all |> List.tryFind (fun d -> d.Name = name) with
+    | None ->
+        failwithf
+            "PerfHarness fact references undeclared scenario '%s' — declare it in PerfHarnessScenarios.all."
+            name
+    | Some d ->
+        if not (gateOpen ()) then
+            printfn "SKIP perf-harness [%s]: set PROJECTION_RUN_PERF_HARNESS=1 to run." name
+        elif d.Docker && not (Deploy.Docker.ensureRunning ()) then
+            printfn "SKIP perf-harness [%s]: Docker daemon not reachable." name
+        else
+            let s = d.Make ()
+            if s.Name <> d.Name then
+                failwithf
+                    "scenario decl '%s' built a scenario named '%s' — the declared name must match the built one."
+                    d.Name
+                    s.Name
+            measure ((if d.Docker then dockerContext else pureContext) d.Scale) s
+
 [<Fact>]
-let ``PerfHarness: readside-rowstream 100000`` () =
-    runGatedDocker
-        "readside-rowstream 100000"
-        { Rows = 100000; Tables = 1; ColumnsPerTable = 12 }
-        (readsideRowStream 100000)
+let ``PerfHarness: ssdt-emit-only 150`` () = runDeclared "ssdt-emit-only-150"
+
+[<Fact>]
+let ``PerfHarness: seed-merge-render 1000`` () = runDeclared "seed-merge-render-1000"
+
+[<Fact>]
+let ``PerfHarness: seed-merge-render 10000`` () = runDeclared "seed-merge-render-10000"
+
+[<Fact>]
+let ``PerfHarness: seed-merge-execute 1000`` () = runDeclared "seed-merge-execute-1000"
+
+[<Fact>]
+let ``PerfHarness: seed-merge-execute 2500`` () = runDeclared "seed-merge-execute-2500"
+
+[<Fact>]
+let ``PerfHarness: seed-merge-execute 10000`` () = runDeclared "seed-merge-execute-10000"
+
+[<Fact>]
+let ``PerfHarness: readside-rowstream 100000`` () = runDeclared "readside-rowstream-100000"

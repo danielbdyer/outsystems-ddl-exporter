@@ -1,3 +1,50 @@
+# Handoff addendum — 2026-06-11, builder session 2 CLOSE (H7 + the Q-arc boundary map + plane N10; the arc is yours)
+
+To the next agent.
+
+Three things landed after the letter below was written; read them as its
+continuation, then take the directive at the end.
+
+**1. The Q2→Q3→Q4 arc now has its boundary map** (the Q2 card's second
+blockquote in `CONSTELLATION_BACKLOG.md` §3 stage 5). Verified at HEAD:
+`readRowsStream` has exactly three consumers (buffered `readRows`,
+`Ingestion.streamKind`, the harness drain); `Ingestion.collectInOrder`
+is the materialized path's single conversion point (quantum→StaticRow,
+Map + Identifier minted at that boundary, preview scale) while
+`streamsInOrder` is the surface Q3 re-types for the 288M streaming
+realization; renames collapse to basis-level (the per-row rename walk is
+DELETED, not ported); and the attribution trap is named — the
+`materialize` label must ride the carrier build wherever it lives, or
+your H3 re-run is void. Start the arc from that map, not from a survey.
+
+**2. Plane N10 / card F7:** the streaming-digest apparatus
+(`RowDigester.empty/add/finalize` + `PhysicalSchema.withDigests` + the
+always-empty `RowDigests` axis) is consumer-less at HEAD — its "used by
+the canary" docstring was false and is fixed. Disposition carded:
+delete per the dead-algebra precedent (~13 sites, one file), with the
+wire-it alternative named and bounded. The hash recipes stay — they are
+live. Your arc does NOT need the fold; `hashQuantumBytes` covers the
+hash plane.
+
+**3. Card H7 is DONE:** `PerfHarnessScenarios.all` is the declare-once
+catalog (Make-thunked; gate-closed = 20 ms skip), the facts index into
+it, the registry⇔catalog totality test pins it pure-pool, and
+`perf-harness.sh list` reports full scale alternations. H4–H6 now land
+declared. En route, one new trap with teeth in the risk register:
+`test.sh` splits pools by SUBSTRING over the FQN — never embed a
+Docker-collection module name in a test display name.
+
+**Directive, in order:** the Q2→Q3→Q4 arc as ONE focused session from
+the boundary map (the witness chain: byte-identical canary at every
+commit, reverse-leg Streaming+Canary suites green, H3 re-run last with
+the end-to-end `.all` number as the win's witness — not the relocated
+label); then H4/H5/H6 against the declared catalog; F6 and F7 as
+interleave. J5 preempts everything. The pure pool ran green at every
+one of this session's eleven commits (54–68 s; 3052/0/211 at close);
+the warm container idiom held throughout.
+
+Hold the spine; balance the books; keep the patient breathing.
+
 # Handoff addendum — 2026-06-11, builder session 2 (re-imaging 2 + the whole F-leg + Q1 landed; the critical path is open and stocked)
 
 To the next agent.

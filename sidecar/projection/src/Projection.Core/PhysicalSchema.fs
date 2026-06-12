@@ -302,9 +302,16 @@ type PhysicalSchemaDiff =
 /// of per-row SHA256s; commutative and associative, so streaming
 /// order doesn't matter (multiset equality survives reordering).
 ///
-/// Used by the canary at large-table scale: ReadSide streams via
-/// `readRowsStream`, the digester folds, the result becomes a
-/// `PhysicalRowDigest` that joins `PhysicalSchema.RowDigests`.
+/// **Consumer status (verified 2026-06-11, re-imaging 2).** The fold
+/// surface (`empty`/`add`/`finalize`) and `PhysicalSchema.withDigests`
+/// have ZERO call sites at HEAD — the intended large-table canary
+/// wiring never landed, so `RowDigests` is always empty and its diff
+/// arms are structurally dead. The module's LIVE consumers are the hash
+/// recipes: `hashRowBytes` (← `hashStaticRow` ← `ofCatalog`, the
+/// canary's actual per-row hash path) and `hashQuantumBytes` (the
+/// Q-track). Disposition is CONSTELLATION_BACKLOG card F7: delete the
+/// dead fold per the dead-algebra precedent, or wire it as the >100k
+/// data-round-trip fold — decided there, not silently here.
 /// Sync (Core-friendly); async wrapping happens at the call site.
 [<RequireQualifiedAccess>]
 module RowDigester =
