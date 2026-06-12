@@ -27,6 +27,7 @@
     <Compile Include="EphemeralContainerFixture.fs" />
     <Compile Include="ScaffoldingTests.fs" />
     <Compile Include="ResultTests.fs" />
+    <Compile Include="LedgerTests.fs" />
     <Compile Include="BenchTests.fs" />
     <Compile Include="LogSinkTests.fs" />
     <Compile Include="LogSinkSubscriberTests.fs" />

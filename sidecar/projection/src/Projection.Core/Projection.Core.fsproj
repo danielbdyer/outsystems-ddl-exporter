@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <Compile Include="Result.fs" />
+    <Compile Include="Ledger.fs" />
     <Compile Include="Message.fs" />
     <Compile Include="Bench.fs" />
     <Compile Include="PinnedWriting.fs" />
