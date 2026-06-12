@@ -827,29 +827,39 @@ let runReverseLegTransfer
 // contract is read from the before deployment via `ReadSide.read`.
 // ---------------------------------------------------------------------------
 
+/// The §6 data-fidelity verdict pair, voiced (`verifyData.matched` /
+/// `verifyData.diverged`): the statement leads; the per-table deltas are
+/// demoted into counted disclosures beneath. The newline joins are data
+/// marshalling into the envelope payload, not prose — the catalog owns the
+/// framing and the disclosure headlines.
 let narrateIntegrityReport (report: IntegrityReport) : unit =
     if DataIntegrityChecker.isClean report then
-        printfn "Verified. The data matches across both deployments."
+        TtyRenderer.renderVoicedTo Console.Out "verifyData.matched" Map.empty
     else
-        printfn "The data diverges between the two deployments. The differences are shown below."
-        if not (List.isEmpty report.RowCountDeltas) then
-            printfn ""
-            printfn "Row counts (%d differ):" report.RowCountDeltas.Length
-            for d in report.RowCountDeltas do
-                printfn "  %-40s before=%d after=%d (change=%+d)"
-                    (SsKey.rootOriginal d.Kind) d.Before d.After (d.After - d.Before)
-        if not (List.isEmpty report.NullCountDeltas) then
-            printfn ""
-            printfn "Null counts (%d differ):" report.NullCountDeltas.Length
-            for d in report.NullCountDeltas do
-                printfn "  %-40s %-30s before=%d after=%d (change=%+d)"
-                    (SsKey.rootOriginal d.Kind) (SsKey.rootOriginal d.Attribute)
-                    d.Before d.After (d.After - d.Before)
-        if not (List.isEmpty report.Warnings) then
-            printfn ""
-            printfn "Schema differences between the two deployments (%d):" report.Warnings.Length
-            for w in report.Warnings do
-                printfn "  %s  (%s)" w.Message w.Code
+        let joined (lines: string list) = lines |> String.concat "\n"
+        let payload : Voice.Payload =
+            [ if not (List.isEmpty report.RowCountDeltas) then
+                "rowDeltas",
+                box (report.RowCountDeltas
+                     |> List.map (fun d ->
+                         sprintf "%-40s before=%d after=%d (change=%+d)"
+                             (SsKey.rootOriginal d.Kind) d.Before d.After (d.After - d.Before))
+                     |> joined)
+              if not (List.isEmpty report.NullCountDeltas) then
+                "nullDeltas",
+                box (report.NullCountDeltas
+                     |> List.map (fun d ->
+                         sprintf "%-40s %-30s before=%d after=%d (change=%+d)"
+                             (SsKey.rootOriginal d.Kind) (SsKey.rootOriginal d.Attribute)
+                             d.Before d.After (d.After - d.Before))
+                     |> joined)
+              if not (List.isEmpty report.Warnings) then
+                "schemaWarnings",
+                box (report.Warnings
+                     |> List.map (fun w -> sprintf "%s (%s)" w.Message w.Code)
+                     |> joined) ]
+            |> Map.ofList
+        TtyRenderer.renderVoicedTo Console.Out "verifyData.diverged" payload
 
 let runVerifyData (beforeSpec: string) (afterSpec: string) : int =
     let collect = function Ok _ -> [] | Error es -> es
@@ -857,7 +867,8 @@ let runVerifyData (beforeSpec: string) (afterSpec: string) : int =
     let parsedAfter  = TransferSpec.parseConnectionSpec afterSpec
     let specErrors = collect parsedBefore @ collect parsedAfter
     if not (List.isEmpty specErrors) then
-        Console.Error.WriteLine "projection verify-data: argument error:"
+        // The voiced §10/§14 error surface is the whole error face — no
+        // command-prefixed header; exits unchanged.
         printErrors Console.Error specErrors
         dumpBench "verify-data"
         2
@@ -869,7 +880,6 @@ let runVerifyData (beforeSpec: string) (afterSpec: string) : int =
     let afterStrR  = ConnectionResolver.resolve "After"  afterRef
     let connErrors = collect beforeStrR @ collect afterStrR
     if not (List.isEmpty connErrors) then
-        Console.Error.WriteLine "projection verify-data: connection error:"
         printErrors Console.Error connErrors
         dumpBench "verify-data"
         6

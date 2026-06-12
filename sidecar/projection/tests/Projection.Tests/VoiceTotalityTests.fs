@@ -46,7 +46,9 @@ let private inScopeCodes : Set<string> =
           // the eject face: the §13 package line, the §6 self-verification
           // pair, and the §14 located store finding
           "eject.packaged"; "eject.verified"; "eject.unverified"
-          "eject.storeUnreadable" ]
+          "eject.storeUnreadable"
+          // the verify-data face: the §6 data-fidelity verdict pair
+          "verifyData.matched"; "verifyData.diverged" ]
 
 // The codes the engine can actually emit today (the inventory — the contract the
 // totality test holds Voice to). Voicing a code outside this set would be copy for
@@ -91,6 +93,8 @@ let private knownEmittableCodes : Set<string> =
           // the eject face's package + self-verification + store finding
           "eject.packaged"; "eject.verified"; "eject.unverified"
           "eject.storeUnreadable"
+          // the verify-data face's verdict pair
+          "verifyData.matched"; "verifyData.diverged"
           // emitted but voiced by mechanism-1 / later slices (not in `Voice.all` yet)
           "transform.registered"; "transform.applied"; "transform.declined"
           "transform.lineage"; "transform.diagnostic"; "bench.label" ]
@@ -137,7 +141,10 @@ let private samplePayload : Voice.Payload =
           "path",          box "model.sql"
           "cause",         box "the changes could not be computed"
           "entries",       box "the Amount column narrows to a smaller type (emit.alterColumn.narrowing)"
-          "refactorLogCount", box 5 ]
+          "refactorLogCount", box 5
+          "rowDeltas",     box "OrderHeader    before=12 after=14 (change=+2)"
+          "nullDeltas",    box "OrderHeader    Email    before=0 after=3 (change=+3)"
+          "schemaWarnings", box "the After deployment carries an added index (verify.schema.indexAdded)" ]
 
 // ---------------------------------------------------------------------------
 // code ⇔ copy totality
@@ -337,6 +344,31 @@ let ``Voice errorFrame: a reconciliation argument routes to the §14 invalid fra
         match Voice.errorFrame code with
         | View.Hero(View.Bad, text), Some _ -> Assert.Contains("reconciliation argument", text)
         | other -> Assert.Fail(sprintf "unexpected reconcile frame for %s: %A" code other)
+
+// ---------------------------------------------------------------------------
+// the verify-data face's §6 pair — the divergence demotes each delta family
+// into a counted disclosure
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Voice verifyData.diverged: the finding leads and each delta family is a counted disclosure`` () =
+    let payload : Voice.Payload =
+        Map.ofList
+            [ "rowDeltas",  box "OrderHeader before=12 after=14 (change=+2)\nCountry before=8 after=7 (change=-1)"
+              "nullDeltas", box "OrderHeader Email before=0 after=3 (change=+3)" ]
+    match Voice.surfaceOf "verifyData.diverged" payload with
+    | Some surface ->
+        (match surface.Statement with
+         | View.Hero(View.Bad, text) -> Assert.Contains("diverges between the two deployments", text)
+         | other -> Assert.Fail(sprintf "statement is not a Bad Hero: %A" other))
+        let headlines =
+            surface.Substantiation
+            |> List.choose (function View.Disclosure(h, _, detail) -> Some(h, List.length detail) | _ -> None)
+        Assert.Equal<(string * int) list>([ "row counts — 2 differ", 2; "null counts — 1 differ", 1 ], headlines)
+        match surface.Action with
+        | Some (View.Action _) -> ()
+        | other -> Assert.Fail(sprintf "no next move: %A" other)
+    | None -> Assert.Fail "verifyData.diverged is unvoiced"
 
 // ---------------------------------------------------------------------------
 // the eject face's self-verification pair (§6, the P-7 freeze)

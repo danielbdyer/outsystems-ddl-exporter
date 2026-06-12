@@ -594,6 +594,41 @@ module Voice =
                 @ (match text "code" p with Some c -> [ View.Field("code", c, View.Neutral) ] | None -> [])
           Action         = fun _ -> Some(View.Action "Correct the configuration and rerun.") }
 
+    /// `verifyData.matched` — the post-deploy data-integrity check passed
+    /// (`THE_VOICE.md` §6, the data-fidelity complement of the structural
+    /// round-trip): asserted, with the compared measures as the evidence.
+    let private verifyDataMatched : Copy =
+        { Code           = "verifyData.matched"
+          DocSection     = "§6"
+          Statement      = fun _ -> View.Hero(View.Ok, "Verified. The data matches across both deployments.")
+          Substantiation = fun _ -> [ View.Field("evidence", "per-table row counts and per-column null counts equal", View.Neutral) ]
+          Action         = fun _ -> None }
+
+    /// `verifyData.diverged` — the data differs between the two deployments
+    /// (`THE_VOICE.md` §6 / §10): the finding leads; the per-table deltas are
+    /// demoted into disclosures (row counts · null counts · schema differences),
+    /// each counted on its headline; the surface ends on the move.
+    let private verifyDataDiverged : Copy =
+        { Code           = "verifyData.diverged"
+          DocSection     = "§6"
+          Statement      = fun _ -> View.Hero(View.Bad, "The data diverges between the two deployments. The differences are shown below.")
+          Substantiation =
+            fun p ->
+                let detailLines (v: string) =
+                    v.Split '\n' |> Array.toList |> List.filter (fun l -> l.Trim() <> "")
+                let block (key: string) (label: string) (status: View.Status) =
+                    match text key p with
+                    | Some v ->
+                        let lines = detailLines v
+                        [ View.Disclosure(
+                            sprintf "%s — %s differ" label (humane (string (List.length lines))),
+                            status, lines |> List.map View.Note) ]
+                    | None -> []
+                block "rowDeltas" "row counts" View.Bad
+                @ block "nullDeltas" "null counts" View.Bad
+                @ block "schemaWarnings" "schema differences" View.Warn
+          Action         = fun _ -> Some(View.Action "Investigate the listed tables, then re-run the check.") }
+
     /// `eject.verified` — the freeze's self-verification passed (`THE_VOICE.md`
     /// §6 / §7 P-7): the reconstruction from genesis reproduces the frozen
     /// state. Asserted; the replay evidence beneath.
@@ -717,6 +752,8 @@ module Voice =
           canaryCdcCaptured
           driftNone
           driftDiverged
+          verifyDataMatched
+          verifyDataDiverged
           ejectVerified
           ejectUnverified
           // §13 — lifecycle / Watch (the spine + the per-stage stream)
