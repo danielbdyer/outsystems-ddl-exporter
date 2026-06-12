@@ -869,11 +869,23 @@ module Deploy =
 
     /// Bootstrap a fresh per-run database, deploy `seedSql` to it,
     /// then invoke `body` with an open `SqlConnection`. Disposes the
-    /// connection on exit; the per-run database is left for the
-    /// container's cleanup. Chapter 5.0 slice γ — the OSSYS extraction
-    /// canary's orchestration primitive: caller seeds the database with
-    /// the synthetic OSSYS schema, then runs the rowsets-SQL extraction
-    /// against the seeded source.
+    /// connection AND reaps the per-run database on exit (best-effort).
+    /// Chapter 5.0 slice γ — the OSSYS extraction canary's orchestration
+    /// primitive: caller seeds the database with the synthetic OSSYS
+    /// schema, then runs the rowsets-SQL extraction against the seeded
+    /// source.
+    ///
+    /// **Why the reap (2026-06-12).** The original "left for the
+    /// container's cleanup" was correct only for true ephemeral
+    /// containers. Under the warm dev-loop container the per-run
+    /// databases ACCUMULATED for the instance's lifetime — 209 counted
+    /// after one session's runs — and that accumulation is the
+    /// degradation behind the warm container's
+    /// `insufficient system memory in resource pool 'default'` failures
+    /// (CLAUDE.md §4 rule 2's third signature, root-caused). The drop is
+    /// cheap (~50 ms) because the per-DB pool is evicted first — an idle
+    /// pooled session makes SINGLE_USER WITH ROLLBACK IMMEDIATE cost
+    /// ~3 s (measured) while an evicted one costs ~50 ms.
     ///
     /// The body's `SqlConnection` is open against the bootstrapped
     /// per-run database. The body is responsible for any exception
@@ -891,10 +903,25 @@ module Deploy =
                         let dbName = uniqueDatabaseName DatabaseNameGenerator.guidBased databaseLabel
                         do! createDatabase masterConn dbName
                         let perDbConn = buildPerDbConnectionString masterConn dbName
-                        use cnn = new SqlConnection(perDbConn)
-                        do! cnn.OpenAsync()
-                        do! executeBatch cnn seedSql
-                        return! body cnn
+                        try
+                            use cnn = new SqlConnection(perDbConn)
+                            do! cnn.OpenAsync()
+                            do! executeBatch cnn seedSql
+                            return! body cnn
+                        finally
+                            try
+                                let cnnEvict = new SqlConnection(perDbConn)
+                                SqlConnection.ClearPool cnnEvict
+                                cnnEvict.Dispose()
+                                use cnnDrop = new SqlConnection(masterConn)
+                                cnnDrop.OpenAsync().GetAwaiter().GetResult()
+                                executeBatch cnnDrop
+                                    (System.String.Concat(
+                                        "ALTER DATABASE ", Render.quote dbName,
+                                        " SET SINGLE_USER WITH ROLLBACK IMMEDIATE; ",
+                                        "DROP DATABASE ", Render.quote dbName, ";"))
+                                |> fun t -> t.GetAwaiter().GetResult()
+                            with _ -> ()
                     })
         }
 

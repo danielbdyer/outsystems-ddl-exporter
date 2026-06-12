@@ -126,6 +126,12 @@ module ExecuteBatchParallelTests =
                         finally
                             // Best-effort drop.
                             try
+                                // Pool evicted first: an idle pooled per-DB
+                                // session makes the SINGLE_USER ROLLBACK kill
+                                // cost ~3s; evicted, ~50ms (2026-06-12).
+                                let cnnEvict = new SqlConnection(perDbConn)
+                                SqlConnection.ClearPool cnnEvict
+                                cnnEvict.Dispose()
                                 use cnnDrop = new SqlConnection(masterConn)
                                 cnnDrop.OpenAsync().GetAwaiter().GetResult()
                                 let q = Render.quote dbName
@@ -185,6 +191,12 @@ module ExecuteBatchParallelTests =
                             return threw
                         finally
                             try
+                                // Pool evicted first: an idle pooled per-DB
+                                // session makes the SINGLE_USER ROLLBACK kill
+                                // cost ~3s; evicted, ~50ms (2026-06-12).
+                                let cnnEvict = new SqlConnection(perDbConn)
+                                SqlConnection.ClearPool cnnEvict
+                                cnnEvict.Dispose()
                                 use cnnDrop = new SqlConnection(masterConn)
                                 cnnDrop.OpenAsync().GetAwaiter().GetResult()
                                 let q = Render.quote dbName
@@ -266,6 +278,12 @@ module ExecuteBatchParallelTests =
                         // ---- Teardown both DBs (best-effort).
                         for db in [ dbSeq; dbPar ] do
                             try
+                                // Pool evicted first: an idle pooled per-DB
+                                // session makes the SINGLE_USER ROLLBACK kill
+                                // cost ~3s; evicted, ~50ms (2026-06-12).
+                                let cnnEvict = new SqlConnection(Deploy.ConnectionString.buildPerDb masterConn db)
+                                SqlConnection.ClearPool cnnEvict
+                                cnnEvict.Dispose()
                                 use cnnDrop = new SqlConnection(masterConn)
                                 cnnDrop.OpenAsync().GetAwaiter().GetResult()
                                 let q = Render.quote db
