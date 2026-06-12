@@ -52,9 +52,11 @@ card, per the protocol. J5 — a writable UAT connection — still trumps
 everything.
 
 Witness state at close: pure pool 3056/0/211 green at every commit;
-canary suite 103/0/4; full Docker pool 222/0 at the arc commit and the
-full suite re-run at close (see the final commit). Six commits, every
-one green, every number in its commit message.
+canary suite 103/0/4; full Docker pool 222/0 at the arc commit and
+229/0 (876 s) at the close re-run (`test.sh all`: fast exit 0, docker
+exit 0 — the gated perf facts soft-skip there by design and were each
+exercised gate-open this session). Six commits, every one green, every
+number in its commit message.
 
 Hold the spine; balance the books; keep the patient breathing; re-run
 the witnesses you inherit before you stand on them.
