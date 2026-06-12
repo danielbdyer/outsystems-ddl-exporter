@@ -543,7 +543,9 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                           { Identifier = ReverseLegFixtures.aKey "Floor" "r2"
                             Values = Map.ofList [ ReverseLegFixtures.nm "Id", "1001"; ReverseLegFixtures.nm "Email", "floor-b@x" ] } ]
                     let! pairs =
-                        SurrogateCapture.captureChunk sink customer idAttr Set.empty
+                        SurrogateCapture.captureChunk sink customer
+                            (fun (a: Attribute) -> StaticRow.valueOrEmpty a.Name)
+                            idAttr Set.empty
                             CaptureLane.RowwiseScopeIdentity rows
                     Assert.Equal<(string * string) list>([ ("1000", "1"); ("1001", "2") ], pairs)
                     let! n = ReverseLegFixtures.countRows sink "[dbo].[OSUSR_L3_CUSTOMER]"

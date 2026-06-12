@@ -4,6 +4,7 @@ open Xunit
 open FsCheck
 open FsCheck.Xunit
 open Projection.Core
+open Projection.Pipeline
 
 // CONSTELLATION_BACKLOG card Q1 (the row-quantum foundation, under the
 // open H3 gate). `RowBasis` carries a per-stream column basis + a
@@ -77,6 +78,86 @@ let ``Q1: nameSortedOrder is a permutation of the column indices`` () =
     // Walking the order visits names in ascending string order.
     let visited = order |> Array.map (fun i -> Name.value (RowBasis.names basis).[i])
     Assert.Equal<string[]>(Array.sort visited, visited)
+
+// -- Q2: the IR-grain boundary round-trip ----------------------------------
+
+[<Fact>]
+let ``R4: ofQuantum ∘ toQuantum = id — the IR-grain boundary loses nothing over a total row`` () =
+    // The Q2 boundary law: a total StaticRow projected onto the basis
+    // (toQuantum = RowQuantum.ofStaticRow) and rebuilt at the IR grain
+    // (StaticRow.ofQuantum) is the SAME row — Values and Identifier both.
+    let names, row =
+        rowOf [ "Zebra", "z"; "Mango", "x=y"; "Apple", ""; "Delta", "d" ]
+    let basis = RowBasis.ofNames names
+    let rebuilt =
+        StaticRow.ofQuantum basis row.Identifier (RowQuantum.ofStaticRow basis row)
+    Assert.Equal<StaticRow>(row, rebuilt)
+
+// -- Q3: the carrier-equivalence laws --------------------------------------
+// The streaming realization's per-row operations moved from the Map-carried
+// `StaticRow` to the positional `RowQuantum`. These laws pin that the move
+// changed the carrier and nothing else: same kept rows, same re-pointed
+// values, same skip diagnostics, same renamed headers.
+
+let private targetA : SsKey = SsKey.synthesized "OS_TEST_RQ" "TargetA" |> mustOk
+let private targetB : SsKey = SsKey.synthesized "OS_TEST_RQ" "TargetB" |> mustOk
+
+[<Property>]
+let ``Q3: remapQuantumFksWith equals remapRowFksWith over any total rows`` (seeds: (int * int) list) =
+    // Columns: Id (never a target), FkA → TargetA, FkB → TargetB. The
+    // lookup resolves even-valued surrogates only, so kept/skipped both
+    // exercise; FkB is sometimes NULL ("") to exercise the pass-through.
+    let names = [ "Id"; "FkA"; "FkB" ] |> List.map nm
+    let basis = RowBasis.ofNames names
+    let fkTargets = Map.ofList [ nm "FkA", targetA; nm "FkB", targetB ]
+    let tryFind (_target: SsKey) (v: string) : string option =
+        if (int v) % 2 = 0 then Some ("assigned-" + v) else None
+    let rows =
+        seeds
+        |> List.mapi (fun i (a, b) ->
+            { Identifier = anyKey ()
+              Values =
+                Map.ofList
+                    [ nm "Id", string i
+                      nm "FkA", string (abs a % 10)
+                      nm "FkB", (if b % 3 = 0 then "" else string (abs b % 10)) ] })
+    let viaRows = SurrogateRemap.remapRowFksWith tryFind fkTargets rows
+    let viaQuanta =
+        SurrogateRemap.remapQuantumFksWith
+            tryFind
+            (SurrogateRemap.fkOrdinalsTargeting basis fkTargets)
+            (rows |> List.map (RowQuantum.ofStaticRow basis))
+    (viaQuanta.Rows |> List.map (RowQuantum.toValues basis))
+        = (viaRows.Rows |> List.map (fun r -> r.Values))
+    && viaQuanta.Skipped = viaRows.Skipped
+
+[<Fact>]
+let ``Q3: RowBasis.rename — the header rename equals the per-row rename walk`` () =
+    // Under a positional carrier a rename is a basis (header) operation
+    // done once per stream; this pins it against the Map-carried
+    // `RenameProjection.repointRow` it replaces on the streaming path.
+    let names = [ "OldA"; "Keep"; "OldB" ] |> List.map nm
+    let map = Map.ofList [ nm "OldA", nm "NewA"; nm "OldB", nm "NewB" ]
+    let basis = RowBasis.ofNames names
+    let renamed = RowBasis.rename map basis
+    let row =
+        { Identifier = anyKey ()
+          Values = Map.ofList [ nm "OldA", "a"; nm "Keep", "k"; nm "OldB", "b=x" ] }
+    let q = RowQuantum.ofStaticRow basis row
+    Assert.Equal<Map<Name, string>>(
+        (RenameProjection.repointRow map row).Values,
+        RowQuantum.toValues renamed q)
+    // Empty map → the same basis (the no-rename stream is byte-identical).
+    Assert.Equal<RowBasis>(basis, RowBasis.rename Map.empty basis)
+
+[<Fact>]
+let ``Q3: cellGetter reads by name through the basis; absent names read empty`` () =
+    let names = [ "Zebra"; "Apple" ] |> List.map nm
+    let basis = RowBasis.ofNames names
+    let q : RowQuantum = { Cells = [| "z"; "a" |] }
+    Assert.Equal<string>("z", RowQuantum.cellGetter basis (nm "Zebra") q)
+    Assert.Equal<string>("a", RowQuantum.cellGetter basis (nm "Apple") q)
+    Assert.Equal<string>("", RowQuantum.cellGetter basis (nm "Missing") q)
 
 // -- the property: byte-identity over any total row, any column order -----
 

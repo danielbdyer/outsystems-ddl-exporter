@@ -79,18 +79,27 @@ module SurrogateCapture =
 
     /// The staged chunk's cells: the source key first, then every insert
     /// column (deferred cycle columns as NULL — Phase 2 re-points them).
-    let private captureCells (identityAttr: Attribute) (insertCols: Attribute list) (deferred: Set<Name>) (rows: StaticRow list) : CellValue list list =
+    /// Generic over the row carrier (Q3, A40): `getterOf` is STAGED — the
+    /// per-column accessor is resolved once per chunk, then applied per
+    /// row (a Map lookup for `StaticRow`, an ordinal index for
+    /// `RowQuantum`).
+    let private captureCells (getterOf: Attribute -> ('row -> string)) (identityAttr: Attribute) (insertCols: Attribute list) (deferred: Set<Name>) (rows: 'row list) : CellValue list list =
+        let idGet = getterOf identityAttr
+        let colGets =
+            insertCols
+            |> List.map (fun a ->
+                let get =
+                    if Set.contains a.Name deferred then (fun _ -> "")
+                    else getterOf a
+                ColumnRealization.columnNameText a.Column, a.Type, get)
         rows
         |> List.map (fun row ->
             { Column = "__SRC_KEY"
               Type = identityAttr.Type
-              Raw = Map.tryFind identityAttr.Name row.Values |> Option.defaultValue "" }
-            :: (insertCols
-                |> List.map (fun a ->
-                    let raw =
-                        if Set.contains a.Name deferred then ""
-                        else Map.tryFind a.Name row.Values |> Option.defaultValue ""
-                    { Column = ColumnRealization.columnNameText a.Column; Type = a.Type; Raw = raw })))
+              Raw = idGet row }
+            :: (colGets
+                |> List.map (fun (col, ty, get) ->
+                    { Column = col; Type = ty; Raw = get row })))
 
     /// Clone the staging table's column types FROM THE SINK TABLE
     /// (`SELECT TOP 0 … INTO`; ISNULL strips the IDENTITY property — a
@@ -179,37 +188,37 @@ module SurrogateCapture =
 
     /// The floor rung — per row: INSERT (identity omitted, deferred NULLed)
     /// then `SCOPE_IDENTITY()`. Module-level tail-recursive continuation.
+    /// `litGets` are the pre-staged per-column literal getters; `idGet`
+    /// the source-key getter (Q3 — resolved once per chunk by
+    /// `captureChunk`, generic over the row carrier).
     let rec private rowwiseChunk
-        (sink: SqlConnection) (kind: Kind) (identityAttr: Attribute) (insertCols: Attribute list) (deferred: Set<Name>)
-        (rows: StaticRow list)
+        (sink: SqlConnection) (kind: Kind) (idGet: 'row -> string) (litGets: (Attribute * ('row -> string)) list)
+        (rows: 'row list)
         (acc: (string * string) list)
         : Task<(string * string) list> =
         task {
             match rows with
             | [] -> return List.rev acc
             | row :: rest ->
-                let lit (a: Attribute) =
-                    let raw =
-                        if Set.contains a.Name deferred then ""
-                        else Map.tryFind a.Name row.Values |> Option.defaultValue ""
-                    raw |> SqlLiteral.ofRaw a.Type |> SqlLiteral.toString
+                let lit (get: 'row -> string) (a: Attribute) =
+                    get row |> SqlLiteral.ofRaw a.Type |> SqlLiteral.toString
                 let insertSql =
-                    if List.isEmpty insertCols then
+                    if List.isEmpty litGets then
                         sprintf "INSERT INTO %s DEFAULT VALUES; SELECT CAST(SCOPE_IDENTITY() AS BIGINT);"
                             (Render.tableQualified kind.Physical)
                     else
                         sprintf "INSERT INTO %s (%s) VALUES (%s); SELECT CAST(SCOPE_IDENTITY() AS BIGINT);"
                             (Render.tableQualified kind.Physical)
-                            (insertCols |> List.map quotedCol |> String.concat ", ")
-                            (insertCols |> List.map lit |> String.concat ", ")
+                            (litGets |> List.map (fst >> quotedCol) |> String.concat ", ")
+                            (litGets |> List.map (fun (a, get) -> lit get a) |> String.concat ", ")
                 use cmd = sink.CreateCommand()
                 cmd.CommandText <- insertSql
                 let! scalar = cmd.ExecuteScalarAsync()
                 let assigned =
                     if isNull scalar || scalar = box System.DBNull.Value then ""
                     else string scalar
-                let src = Map.tryFind identityAttr.Name row.Values |> Option.defaultValue ""
-                return! rowwiseChunk sink kind identityAttr insertCols deferred rest ((src, assigned) :: acc)
+                let src = idGet row
+                return! rowwiseChunk sink kind idGet litGets rest ((src, assigned) :: acc)
         }
 
     /// Realize one chunk on ONE named rung. Staged rungs share the staging
@@ -217,21 +226,27 @@ module SurrogateCapture =
     let captureChunk
         (sink: SqlConnection)
         (kind: Kind)
+        (getterOf: Attribute -> ('row -> string))
         (identityAttr: Attribute)
         (deferred: Set<Name>)
         (lane: CaptureLane)
-        (rows: StaticRow list)
+        (rows: 'row list)
         : Task<(string * string) list> =
         task {
             let insertCols = insertColsOf kind
             match lane with
             | CaptureLane.RowwiseScopeIdentity ->
-                return! rowwiseChunk sink kind identityAttr insertCols deferred rows []
+                let idGet = getterOf identityAttr
+                let litGets =
+                    insertCols
+                    |> List.map (fun a ->
+                        a, (if Set.contains a.Name deferred then (fun _ -> "") else getterOf a))
+                return! rowwiseChunk sink kind idGet litGets rows []
             | CaptureLane.StagedMergeOutput
             | CaptureLane.StagedMergeOutputInto ->
                 do! createStaging sink kind identityAttr insertCols
                 try
-                    do! Bulk.copyRowsSession sink StagingTable (captureCells identityAttr insertCols deferred rows)
+                    do! Bulk.copyRowsSession sink StagingTable (captureCells getterOf identityAttr insertCols deferred rows)
                     match lane with
                     | CaptureLane.StagedMergeOutput -> return! mergeOutputChunk sink kind identityAttr insertCols
                     | _                             -> return! mergeOutputIntoChunk sink kind identityAttr insertCols
@@ -255,10 +270,11 @@ module SurrogateCapture =
         (sink: SqlConnection)
         (kind: Kind)
         (kindKey: SsKey)
+        (getterOf: Attribute -> ('row -> string))
         (identityAttr: Attribute)
         (deferred: Set<Name>)
         (preferred: CaptureLane)
-        (rows: StaticRow list)
+        (rows: 'row list)
         : Task<(string * string) list * CaptureLane * LaneDescent list> =
         let rec attempt (lanes: CaptureLane list) (descents: LaneDescent list) : Task<(string * string) list * CaptureLane * LaneDescent list> =
             task {
@@ -268,11 +284,11 @@ module SurrogateCapture =
                     // and an INSERT failure is not a capability refusal.
                     return invalidOp "capture ladder exhausted"
                 | [ last ] ->
-                    let! pairs = captureChunk sink kind identityAttr deferred last rows
+                    let! pairs = captureChunk sink kind getterOf identityAttr deferred last rows
                     return pairs, last, List.rev descents
                 | lane :: (next :: _ as rest) ->
                     try
-                        let! pairs = captureChunk sink kind identityAttr deferred lane rows
+                        let! pairs = captureChunk sink kind getterOf identityAttr deferred lane rows
                         return pairs, lane, List.rev descents
                     with :? SqlException as ex when isCapabilityRefusal ex ->
                         return!

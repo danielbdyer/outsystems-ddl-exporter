@@ -1,10 +1,11 @@
 namespace Projection.Adapters.Sql
 
 // LINT-ALLOW-FILE-MUTATION: SQL streaming reader lifetime —
-//   cmdOpt / readerOpt / rowIdx / disposed and per-batch hasMore
-//   mutables encapsulated behind the AsyncStream<StaticRow> pull
-//   abstraction. BCL's SqlDataReader is itself a mutable cursor;
-//   the lifetime state machine is reified per audit Lens-2 Tier-2.
+//   cmdOpt / readerOpt / disposed and per-batch hasMore mutables
+//   encapsulated behind the AsyncStream<RowQuantum> pull abstraction
+//   (rowIdx lives at the IR-grain boundary, `materializeStream`).
+//   BCL's SqlDataReader is itself a mutable cursor; the lifetime
+//   state machine is reified per audit Lens-2 Tier-2.
 
 open System.Threading.Tasks
 open Microsoft.Data.SqlClient
@@ -823,18 +824,21 @@ module ReadSide =
                             (sprintf "ReadSide.Binary: unexpected runtime type %s" (other.GetType().FullName))
                 System.Convert.ToHexString bytes
 
-    /// Stream a table's rows as an `AsyncStream<StaticRow>` — pull-
-    /// based, bench-instrumented, no row materialization. Per
+    /// Stream a table's rows as an `AsyncStream<RowQuantum>` — pull-
+    /// based, bench-instrumented, positional against `Kind.rowBasis kind`
+    /// (Q2: the in-flight carrier is the quantum; the typed Map vocabulary
+    /// lives at the stream's header, not in every element). Per
     /// session-34, the streaming readside is the canonical row
     /// source; `readRows` is a buffered wrapper retained for the
     /// existing per-row PhysicalSchema axis where small-table
-    /// granularity is wanted.
+    /// granularity is wanted — it rebuilds `StaticRow`s at the IR-grain
+    /// boundary via `materializeStream`.
     ///
     /// The reader's lifetime tracks the stream: the underlying
     /// `SqlCommand` and `SqlDataReader` open on first pull and
     /// dispose on EOF or exception. Callers must drain to `None`
     /// (or accept that abandoned streams clean up at GC).
-    let readRowsStream (cnn: SqlConnection) (kind: Kind) : AsyncStream<StaticRow> =
+    let readRowsStream (cnn: SqlConnection) (kind: Kind) : AsyncStream<RowQuantum> =
         // Bracket-quoting flows through ScriptDom's
         // `Identifier.EncodeIdentifier` (canonical, vendor-supplied
         // SQL-identifier encoder). Eliminates the prior `sprintf
@@ -873,9 +877,9 @@ module ReadSide =
                 "SELECT ", columns,
                 " FROM ", qualified,
                 " ORDER BY ", encode pkCol)
+        let attrs = List.toArray kind.Attributes
         let mutable cmdOpt : SqlCommand option = None
         let mutable readerOpt : SqlDataReader option = None
-        let mutable rowIdx = 0
         let mutable disposed = false
         let dispose () =
             if not disposed then
@@ -900,11 +904,14 @@ module ReadSide =
             }
         // PERF_HARNESS §3.6 label 1 accumulator: per-row carrier-build ticks,
         // recorded as ONE aggregated sample at EOF (a per-row Bench.scope
-        // would distort at 100k rows). Boundary: includes per-column
-        // IsDBNull/GetValue + formatRawValue + the Map build + the basis
-        // string; excludes ReadAsync (the wire row-fetch) and the SsKey ctor.
+        // would distort at 100k rows). Boundary (Q4 end-state): includes
+        // per-column IsDBNull/GetValue + formatRawValue + the cells-array
+        // build; excludes ReadAsync (the wire row-fetch). The Map + SsKey
+        // build this label used to bracket moved to the IR-grain boundary
+        // (`materializeStream`), which carries its own label — the label
+        // rides the carrier build wherever it lives (the attribution rule).
         let mutable materializeTicks = 0L
-        let pull () : Task<StaticRow option> =
+        let pull () : Task<RowQuantum option> =
             task {
                 if disposed then return None
                 else
@@ -920,32 +927,16 @@ module ReadSide =
                             return None
                         else
                             let t0 = System.Diagnostics.Stopwatch.GetTimestamp()
-                            let values =
-                                kind.Attributes
-                                |> List.mapi (fun i a ->
-                                    let raw : obj | null =
-                                        if r.IsDBNull i then null
-                                        else r.GetValue i
-                                    a.Name, formatRawValue a.Type raw)
-                                |> Map.ofList
-                            let basis =
-                                sprintf
-                                    "%s.%s.%d"
-                                    (TableId.schemaText kind.Physical)
-                                    (TableId.tableText kind.Physical)
-                                    rowIdx
-                            rowIdx <- rowIdx + 1
+                            let cells = Array.zeroCreate<string> attrs.Length
+                            for i in 0 .. attrs.Length - 1 do
+                                let raw : obj | null =
+                                    if r.IsDBNull i then null
+                                    else r.GetValue i
+                                cells.[i] <- formatRawValue attrs.[i].Type raw
                             materializeTicks <-
                                 materializeTicks
                                 + (System.Diagnostics.Stopwatch.GetTimestamp() - t0)
-                            match SsKey.synthesized "READSIDE_ROW" basis with
-                            | Ok rowKey ->
-                                return Some { Identifier = rowKey; Values = values }
-                            | Error _ ->
-                                // SsKey.synthesized only fails on blank input;
-                                // basis is non-blank by construction.
-                                dispose ()
-                                return None
+                            return Some { Cells = cells }
                     with ex ->
                         dispose ()
                         return raise ex
@@ -953,6 +944,46 @@ module ReadSide =
         pull
         |> AsyncStream.probe (sprintf "readside.readRowsStream.%s.%s" (TableId.schemaText kind.Physical) (TableId.tableText kind.Physical))
         |> AsyncStream.probe "readside.readRowsStream.all"
+
+    /// The IR-grain boundary (Q2): rebuild `StaticRow`s from an in-flight
+    /// quantum stream — the Map mint plus the `READSIDE_ROW` row identity
+    /// (`<schema>.<table>.<rowIdx>`, exactly the pre-Q2 synthesis). This is
+    /// the ONLY place readback rows re-enter the IR grain; the streaming
+    /// realization consumes quanta directly and never pays this. The
+    /// aggregated `materializeIr` sample keeps the relocated Map/SsKey cost
+    /// on the books (the attribution rule: a label rides the carrier build
+    /// wherever it lives).
+    let materializeStream (kind: Kind) (stream: AsyncStream<RowQuantum>) : AsyncStream<StaticRow> =
+        let basis = Kind.rowBasis kind
+        let mutable rowIdx = 0
+        let mutable irTicks = 0L
+        fun () ->
+            task {
+                match! stream () with
+                | None ->
+                    Bench.recordSample
+                        "readside.rowstream.materializeIr"
+                        (irTicks * 1000L / System.Diagnostics.Stopwatch.Frequency)
+                    return None
+                | Some q ->
+                    let t0 = System.Diagnostics.Stopwatch.GetTimestamp()
+                    let rowBasisText =
+                        sprintf
+                            "%s.%s.%d"
+                            (TableId.schemaText kind.Physical)
+                            (TableId.tableText kind.Physical)
+                            rowIdx
+                    rowIdx <- rowIdx + 1
+                    match SsKey.synthesized "READSIDE_ROW" rowBasisText with
+                    | Ok rowKey ->
+                        let row = StaticRow.ofQuantum basis rowKey q
+                        irTicks <- irTicks + (System.Diagnostics.Stopwatch.GetTimestamp() - t0)
+                        return Some row
+                    | Error _ ->
+                        // SsKey.synthesized only fails on blank input;
+                        // rowBasisText is non-blank by construction.
+                        return None
+            }
 
     /// Buffered wrapper: probe COUNT(*), and if ≤ `maxRows`, drain
     /// `readRowsStream` into a list. Above threshold, return `None`
@@ -985,7 +1016,7 @@ module ReadSide =
             elif count = 0 then
                 return Some []
             else
-                let stream = readRowsStream cnn kind
+                let stream = readRowsStream cnn kind |> materializeStream kind
                 let! rows = AsyncStream.toList stream
                 return Some rows
         }
