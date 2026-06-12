@@ -81,13 +81,29 @@ log()  { printf '\033[36m[test]\033[0m %s\n' "$1"; }
 err()  { printf '\033[31m[test]\033[0m %s\n' "$1" >&2; }
 
 # Derive the Docker-collection test classes from the source markers, so the
-# pool split stays correct as classes are added/removed. One file = one class
-# (the module/type name matches the file name by convention); the ephemeral
-# container fixture is infra, not a test class.
+# pool split stays correct as classes are added/removed.
+#
+# 2026-06-12 — derived from the DECLARATION the attribute decorates, not the
+# file basename. The one-file-one-class convention broke silently: a file can
+# carry several classes, and a class named differently from its file
+# (ReverseLegCdcNormTests in ReverseLegScaleTests.fs;
+# LogicalNameRoundtripIntegration in LogicalNameRoundtripTests.fs; the two
+# RunWithConfig* classes in RunWithConfigProfileTests.fs) LEAKED into the
+# pure pool — ~25s of Docker-collection SQL tests, including an isolated-
+# container cold start, ran inside the parallel fast loop. The awk walks each
+# `[<Collection("Docker-SqlServer")>]` to the module/type it decorates, so
+# the attribute IS the pool membership — by construction, not by filename.
 docker_classes() {
-    grep -rl 'Collection("Docker-SqlServer")' "$TESTS_DIR"/*.fs 2>/dev/null \
-        | xargs -n1 basename \
-        | sed 's/\.fs$//' \
+    awk '
+        /CollectionDefinition/ { next }
+        /Collection\("Docker-SqlServer"\)/ { armed=1; next }
+        armed && /^(module|type) / {
+            name = $2
+            sub(/\(.*/, "", name)        # type X(fixture: ...) -> X
+            print name
+            armed = 0
+        }
+    ' "$TESTS_DIR"/*.fs 2>/dev/null \
         | grep -v '^EphemeralContainerFixture$' \
         | sort -u
 }
@@ -126,9 +142,29 @@ warm_autodetect() {
     fi
 }
 
+# The test DLL is current when it is newer than EVERY build input (sources,
+# project files, props/targets, restore assets). The scan costs ~100 ms and
+# replaces a ~10 s no-op MSBuild walk in the steady-state loop — the build
+# runs only when something actually changed. TEST_FORCE_BUILD=1 overrides.
+build_is_current() {
+    local dll="$TESTS_DIR/bin/$CONFIG/net9.0/Projection.Tests.dll"
+    [[ -f "$dll" ]] || return 1
+    local newer
+    newer="$(find "$ROOT/src" "$ROOT/tests" "$ROOT/global.json" \
+                \( -name '*.fs' -o -name '*.fsproj' -o -name '*.props' \
+                   -o -name '*.targets' -o -name 'project.assets.json' \
+                   -o -name 'global.json' \) \
+                -not -path '*/bin/*' -newer "$dll" -print -quit 2>/dev/null)"
+    [[ -z "$newer" ]]
+}
+
 build_once() {
     if [[ "${TEST_NO_BUILD:-0}" == "1" ]]; then
         log "skipping build (TEST_NO_BUILD=1)"
+        return 0
+    fi
+    if [[ "${TEST_FORCE_BUILD:-0}" != "1" ]] && build_is_current; then
+        log "build current — skipping (every input older than the test DLL; TEST_FORCE_BUILD=1 overrides)"
         return 0
     fi
     log "building Projection.Tests ($CONFIG)..."
@@ -156,6 +192,20 @@ build_once() {
 #   parallel pure pool never piles onto the serial Docker pool + SQL
 #   container and OOM-kills the host on this 4-core / no-swap box.
 # Extract failed-test names from a TRX (the test-failure capture protocol).
+# The five slowest tests of a finished pool, from the TRX — keeps the cost
+# surface in the operator's attention so the pools stay fast (the same
+# motive as the bench table, applied to the test plane).
+slowest_of() {
+    local trx="$1"
+    [[ -f "$trx" ]] || return 0
+    log "slowest:"
+    grep -oE 'testName="[^"]+" [^>]*duration="[0-9:.]+"' "$trx" 2>/dev/null \
+        | sed -E 's/^testName="([^"]+)".*duration="([0-9:.]+)".*$/\2 \1/' \
+        | sort -r | head -n 5 \
+        | sed -E 's/^([0-9:.]+) (Projection\.Tests\.)?(.*)$/    \1  \3/' \
+        | cut -c1-110
+}
+
 failed_names_of() {
     local trx="$1"
     # testName and outcome sit on the SAME UnitTestResult line; a -B1 context
@@ -217,6 +267,7 @@ run_pool() {
     else
         echo "PASSED exit=0 duration=$((t1 - t0))s" > "$status"
         log "$label pool passed ($((t1 - t0))s)"
+        slowest_of "$trx"
     fi
     return "$code"
 }
