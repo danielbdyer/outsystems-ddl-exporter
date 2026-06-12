@@ -301,8 +301,15 @@ module SsdtDdlEmitter =
         // decided `DoNotEnforce` (overlay.DropFk). Additive-only on the drop
         // axis: a reference NOT in DropFk resolves exactly as before
         // (byte-identical with the empty overlay).
+        // DECISIONS 2026-06-12 (reconciliation slice 1) — deployable
+        // references only: a symmetric-closure inverse resolved through
+        // `fkDef` scripts a second FK on the TARGET'S PK column (duplicate
+        // FK_* names on the CreatedBy/UpdatedBy shape; PK-to-PK type
+        // mismatches). Inverses are navigation edges; they never reach a
+        // constraint-emission surface.
         let fks =
             k.References
+            |> List.filter Reference.isDeployable
             |> List.filter (fun r -> not (Set.contains r.SsKey overlay.DropFk))
             |> List.choose (fkDef targetByKey pkAttrByKey k)
         // Slice 5.13.column-features-emit: thread Kind.ColumnChecks
@@ -353,6 +360,10 @@ module SsdtDdlEmitter =
         (k: Kind)
         : Statement list =
         k.References
+        // Deployable references only (DECISIONS 2026-06-12) — an inverse's
+        // inline FK is never created, so an ALTER pair against its phantom
+        // constraint name must never emit either.
+        |> List.filter Reference.isDeployable
         |> List.filter (fun r -> not (Set.contains r.SsKey overlay.DropFk))
         |> List.collect (fun r ->
             match fkDef targetByKey pkAttrByKey k r with
@@ -890,6 +901,10 @@ module SsdtDdlEmitter =
         allKinds
         |> List.collect (fun k ->
             k.References
+            // Deployable references only (DECISIONS 2026-06-12) — an
+            // inverse never attempts an inline FK, so its structural
+            // non-resolution is not a drop to witness.
+            |> List.filter Reference.isDeployable
             |> List.choose (fun r ->
                 match fkDef targetByKey pkAttrByKey k r with
                 | Some _ -> None
@@ -920,6 +935,15 @@ module SsdtDdlEmitter =
     /// every constraint the engine removed. Pure sibling of the emitter port
     /// (A18 holds; `statements` / `emitSlices` stay byte-identical — the audit
     /// rides the `Diagnostics` channel). Pairs with `DecisionLogEmitter`.
+    // DECISIONS 2026-06-12 (reconciliation slice 1) — the audit stops
+    // lying: "the source enforced it" is claimed only when the
+    // reference's `HasDbConstraint` says so (post-carve-out this is
+    // exactly the missing-target/scoped-export case). Logical-only
+    // non-introduction is a different fact with its own code —
+    // `decision.fkNotIntroduced` (Info): the emitted schema matches
+    // source reality. Inverse-derived references are excluded outright
+    // (navigation edges; never decision subjects as of FK pass v3 —
+    // the filter here is defense in depth).
     let foreignKeyDecisionDropDiagnostics
         (overlay: DecisionOverlay)
         (catalog: Catalog)
@@ -927,13 +951,21 @@ module SsdtDdlEmitter =
         Catalog.allKinds catalog
         |> List.collect (fun k ->
             k.References
+            |> List.filter Reference.isDeployable
             |> List.choose (fun r ->
                 if Set.contains r.SsKey overlay.DropFk then
+                    let severity, code, message =
+                        if r.HasDbConstraint then
+                            DiagnosticSeverity.Warning,
+                            "decision.fkDropped",
+                            "Foreign key dropped by decision: a tightening Decision (DoNotEnforce) removed this FK constraint at emission. The source enforced it; the emitted schema does not."
+                        else
+                            DiagnosticSeverity.Info,
+                            "decision.fkNotIntroduced",
+                            "Foreign key not introduced: a tightening Decision (DoNotEnforce) declined to create this constraint. The source does not enforce it either (logical-only reference); the emitted schema matches source reality."
                     Some
                         { DiagnosticEntry.create
-                            "emitter:ssdtDdlEmitter" DiagnosticSeverity.Warning
-                            "decision.fkDropped"
-                            "Foreign key dropped by decision: a tightening Decision (DoNotEnforce) removed this FK constraint at emission. The source enforced it; the emitted schema does not."
+                            "emitter:ssdtDdlEmitter" severity code message
                           with
                             SsKey = Some r.SsKey
                             Metadata =
@@ -942,6 +974,52 @@ module SsdtDdlEmitter =
                                       "sourceTable", TableId.tableText k.Physical
                                       "reference", Name.value r.Name ] }
                 else None))
+
+    /// DECISIONS 2026-06-12 (reconciliation slice 1) — the FK-name
+    /// collision TRIPWIRE. SQL Server constraint names are
+    /// schema-scoped; two emitted FKs sharing `(schema, name)` fail
+    /// deployment. V1 deduped via a silent `processedConstraints`
+    /// HashSet (SmoForeignKeyBuilder.cs:23) — V2 names the wound
+    /// instead: one `Error` per participating reference so every
+    /// collision site is visible. With inverses excluded from emission
+    /// this is structurally unreachable for forward references (the
+    /// name embeds the source column, unique per reference); the
+    /// tripwire guards the invariant, it does not implement behavior.
+    /// Pure sibling of the emitter port (A18 holds; the audit rides
+    /// the `Diagnostics` channel).
+    let foreignKeyNameCollisionDiagnostics
+        (overlay: DecisionOverlay)
+        (catalog: Catalog)
+        : DiagnosticEntry list =
+        let allKinds, targetByKey, pkAttrByKey = buildLookups catalog
+        let emittedFks =
+            allKinds
+            |> List.collect (fun k ->
+                k.References
+                |> List.filter Reference.isDeployable
+                |> List.filter (fun r -> not (Set.contains r.SsKey overlay.DropFk))
+                |> List.choose (fun r ->
+                    fkDef targetByKey pkAttrByKey k r
+                    |> Option.map (fun fk -> k, r, fk)))
+        emittedFks
+        |> List.groupBy (fun (k, _, fk) -> TableId.schemaText k.Physical, fk.Name)
+        |> List.collect (fun ((schemaText, fkName), members) ->
+            if List.length members <= 1 then []
+            else
+                members
+                |> List.map (fun (k, r, _) ->
+                    { DiagnosticEntry.create
+                        "emitter:ssdtDdlEmitter" DiagnosticSeverity.Error
+                        "emit.ssdt.foreignKey.nameCollision"
+                        "Foreign-key constraint name collision: two or more emitted FK constraints share a schema-scoped name. The deployment would fail; resolve the naming overlap before publishing."
+                      with
+                        SsKey = Some r.SsKey
+                        Metadata =
+                            Map.ofList
+                                [ "schema", schemaText
+                                  "constraintName", fkName
+                                  "sourceTable", TableId.tableText k.Physical
+                                  "reference", Name.value r.Name ] }))
 
     /// Slice 5.13.emit-features-registry (2026-05-18) — the SSDT
     /// emitter's `RegisteredTransform` surface. Metadata-only per the

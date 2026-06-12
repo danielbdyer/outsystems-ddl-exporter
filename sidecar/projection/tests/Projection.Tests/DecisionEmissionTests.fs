@@ -242,12 +242,19 @@ let ``L3-X7: a fully-resolvable FK emits no drop witness`` () =
 // in `overlay.DropFk` is filtered out of the emitted DDL BEFORE `fkDef` is
 // consulted, so `foreignKeyDropDiagnostics` (structural drops only) never
 // sees it — the removal was silent at emission. `foreignKeyDecisionDropDiagnostics`
-// surfaces one Warning (`decision.fkDropped`) per DropFk key so every
-// constraint the engine removed by decision is named. Witness for the
-// matrix: "every DropFk decision surfaces a Warning diagnostic".
+// surfaces one entry per DropFk key so every constraint the engine removed
+// by decision is named. Reconciliation slice 1 (DECISIONS 2026-06-12)
+// narrows the claim: Warning `decision.fkDropped` ("the source enforced
+// it") only when `HasDbConstraint = true`; logical-only references report
+// Info `decision.fkNotIntroduced` (the emitted schema matches source
+// reality). Witness for the matrix: "every DropFk decision surfaces a
+// diagnostic, and the audit never claims source enforcement it cannot
+// prove".
 // ---------------------------------------------------------------------
 
 /// sampleCatalog's Order → Customer FK reference key (the only reference).
+/// The fixture reference is logical-only (`Reference.create` default
+/// `HasDbConstraint = false`).
 let private orderToCustomerRefKey () : SsKey =
     sampleCatalog
     |> Catalog.allKinds
@@ -256,7 +263,7 @@ let private orderToCustomerRefKey () : SsKey =
     |> (fun r -> r.SsKey)
 
 [<Fact>]
-let ``every DropFk decision surfaces a Warning diagnostic`` () =
+let ``every DropFk decision surfaces a diagnostic — logical-only reports Info fkNotIntroduced`` () =
     let refKey = orderToCustomerRefKey ()
     let overlay = { DecisionOverlay.empty with DropFk = Set.singleton refKey }
 
@@ -265,18 +272,21 @@ let ``every DropFk decision surfaces a Warning diagnostic`` () =
     // without this audit.
     Assert.Empty(SsdtDdlEmitter.foreignKeyDropDiagnostics sampleCatalog)
 
-    // The decision-drop audit surfaces exactly one Warning naming the removal.
+    // The decision-drop audit surfaces exactly one entry naming the
+    // non-introduction; the fixture reference is logical-only, so the audit
+    // must NOT claim the source enforced it.
     let diags = SsdtDdlEmitter.foreignKeyDecisionDropDiagnostics overlay sampleCatalog
     Assert.Equal(1, List.length diags)
     let d = List.head diags
-    Assert.Equal("decision.fkDropped", d.Code)
-    Assert.Equal(DiagnosticSeverity.Warning, d.Severity)
+    Assert.Equal("decision.fkNotIntroduced", d.Code)
+    Assert.Equal(DiagnosticSeverity.Info, d.Severity)
     Assert.Equal("emitter:ssdtDdlEmitter", d.Source)
     Assert.Equal(Some refKey, d.SsKey)
 
 [<Fact>]
-let ``decision.fkDropped surfaces one Warning for every key in DropFk (no silent removal)`` () =
-    // Two references, both dropped by decision — each must surface.
+let ``decision-drop audit splits by HasDbConstraint: Warning fkDropped for source-backed, Info fkNotIntroduced for logical-only`` () =
+    // Two references, both dropped by decision — each must surface, each
+    // with the truthful claim for its constraint state.
     let aKey = kkey "A"
     let bKey = kkey "B"
     let refToA = akey "B.refToA"
@@ -294,7 +304,8 @@ let ``decision.fkDropped surfaces one Warning for every key in DropFk (no silent
               mkAttr (akey "B.AId") "AId" false
               mkAttr (akey "B.AId2") "AId2" false ]
           with References =
-                [ Reference.create refToA (nm "A") (akey "B.AId") aKey
+                [ { Reference.create refToA (nm "A") (akey "B.AId") aKey
+                      with HasDbConstraint = true }
                   Reference.create refToA2 (nm "A") (akey "B.AId2") aKey ] }
     let catalog =
         match Catalog.create [ { SsKey = kkey "Mod"; Name = nm "FdMod"; Kinds = [ a; b ]; IsActive = true; ExtendedProperties = [] } ] [] with
@@ -302,11 +313,13 @@ let ``decision.fkDropped surfaces one Warning for every key in DropFk (no silent
     let overlay = { DecisionOverlay.empty with DropFk = Set.ofList [ refToA; refToA2 ] }
     let diags = SsdtDdlEmitter.foreignKeyDecisionDropDiagnostics overlay catalog
     Assert.Equal(2, List.length diags)
-    Assert.All(diags, fun d ->
-        Assert.Equal("decision.fkDropped", d.Code)
-        Assert.Equal(DiagnosticSeverity.Warning, d.Severity))
-    let keysSurfaced = diags |> List.choose (fun d -> d.SsKey) |> Set.ofList
-    Assert.Equal<Set<SsKey>>(Set.ofList [ refToA; refToA2 ], keysSurfaced)
+    let byKey = diags |> List.choose (fun d -> d.SsKey |> Option.map (fun k -> k, d)) |> Map.ofList
+    let backed = Map.find refToA byKey
+    Assert.Equal("decision.fkDropped", backed.Code)
+    Assert.Equal(DiagnosticSeverity.Warning, backed.Severity)
+    let logicalOnly = Map.find refToA2 byKey
+    Assert.Equal("decision.fkNotIntroduced", logicalOnly.Code)
+    Assert.Equal(DiagnosticSeverity.Info, logicalOnly.Severity)
 
 [<Fact>]
 let ``no DropFk decision emits no decision-drop diagnostic (empty overlay is silent-clean)`` () =

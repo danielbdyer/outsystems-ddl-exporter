@@ -1,3 +1,44 @@
+# Handoff addendum — 2026-06-12, reconciliation slice 1 CLOSE (inverse references are logical-only edges; the FK decision layer reads `HasDbConstraint`)
+
+To the next agent.
+
+**A new program opened today and its first slice is DONE.** The operator
+ran the full-export flow end-to-end in a corporate estate and mapped the
+problem series; the resulting research record and nine-package program
+live in `V1_FULL_EXPORT_RECONCILIATION_PLAN.md` — read it BEFORE touching
+anything on the full-export surface; it captures the code-truth findings
+(file:line), the standing-law constraints, and four operator-adjudicated
+collisions (C1: rename the `V2.*` extended properties to domain
+terminology; C2: CDC-silence canonical, EXCEPT validate-before-apply as
+opt-in fallback; C3: Service-Studio ordering as a registered pass; C4:
+adapter-time scope pushdown for declared scopes, `ModuleFilter` stays the
+semantic owner).
+
+**Slice 1 (WP1+WP2) shipped** (`DECISIONS 2026-06-12 — Slice 1 of the
+full-export reconciliation`; matrix rows 191–192 + row-57 amendment):
+`Reference.isDeployable`/`isInverse` are the single definition site;
+`ForeignKeyPass` (v3) and every `SsdtDdlEmitter` constraint surface
+exclude the inverse class (navigation keeps the closure; flag
+inheritance retained); `ForeignKeyRules.evaluate` gained the V1
+carve-out (MissingTarget → HasDbConstraint ⇒ Enforce → PolicyDisabled →
+profile) and lost the producer-less `TrustedConstraint` branch; the
+decision-drop audit splits `decision.fkDropped` (Warning, source-backed)
+from `decision.fkNotIntroduced` (Info, logical-only); a schema-scoped
+FK-name collision tripwire (Error) rides the config-driven diagnostics.
+Witnesses in `DeployableReferenceTests.fs` (post-closure AND full-chain —
+the first canaries that emit from a post-chain catalog; keep that
+discipline for any pass that rewrites the catalog). Fast pool green
+(3,132 passed / 0 failed).
+
+**The queue is the plan's §5**: slice 2 = WP4 (collapse the
+`EmissionPolicy` two-channel seam; wire the dormant emission flags) +
+the `BatchSeparator` trailing-blank fix with golden refresh; then WP3
+(scope pushdown), WP6 (data lanes — IDENTITY_INSERT strictly BEFORE
+hydration), WP5 (the C1 rename + gate), WP7/WP8, WP9. Books obligations
+per slice are in the plan's §8. J5 still trumps everything.
+
+---
+
 # Handoff addendum — 2026-06-12, generation 7 CLOSE (P2 is WIRED: the load leg deploys the seed leveled-parallel; the mint gained its mode guard)
 
 To the next agent.

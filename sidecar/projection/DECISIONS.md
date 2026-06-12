@@ -21872,3 +21872,81 @@ seeds (the cure is cycle-resolution reach, not deploy-order surgery).
 Perf-gate baseline NOT re-recorded: no floor legitimately moved (the
 canary's compose/deploy labels are path-unchanged; the load leg gained
 speed, and the gate ceilings tolerate downward movement).
+
+## 2026-06-12 — Slice 1 of the full-export reconciliation: inverse references become logical-only edges; the FK decision layer reads `HasDbConstraint`
+
+Context: `V1_FULL_EXPORT_RECONCILIATION_PLAN.md` (the 2026-06-12 parity
+research record; WP1 + WP2 land here). The operator's corporate run
+surfaced two constraint-surface defects with one root: V2 lost V1's
+distinction between deployable and logical-only references.
+
+**1. Deployable-reference is now a named predicate with one definition
+site.** `Reference.isDeployable` / `Reference.isInverse` (Catalog.fs,
+the compile-order floor of the reference vocabulary) own the
+symmetric-closure derivation reason (`Reference.inverseDerivationReason`;
+`SymmetricClosure.inverseReason` aliases it — the 2026-05-06 reserved
+string moves home, it does not change). A symmetric-closure inverse is a
+navigation/ordering edge ONLY: it never enters FK tightening decisions
+(`ForeignKeyPass.sortedReferences` filters; pass version 2 → 3) and
+never reaches a constraint-emission surface
+(`SsdtDdlEmitter.createTableStatement` / `untrustedFkAlters` /
+`foreignKeyDropDiagnostics` / `foreignKeyDecisionDropDiagnostics`).
+This enforces the contract the topological-order tests already named
+("symmetric closure is for surface navigation, not for FK-safe data
+emission") that the emitter never honored: an inverse resolved by
+`fkDef` scripts a second FK on the TARGET'S PK COLUMN, named by that PK
+column — duplicate `FK_*` names whenever two forward references share a
+target (the routine CreatedBy/UpdatedBy → User shape) and PK-to-PK
+type-mismatch failures. The closure pass itself is UNCHANGED: inverses
+stay in the catalog for topological ordering, centrality, and
+navigation, and they keep inheriting `HasDbConstraint`/
+`IsConstraintTrusted` (the chapter 4.6 slice α semantics — the inverse
+view surfaces the forward edge's storage truth). Exclusion is by
+derivation class, not by flag. New tripwire, never a silent dedupe:
+`foreignKeyNameCollisionDiagnostics` emits one Error per reference
+participating in a schema-scoped FK-name collision (V1 deduped via a
+silent HashSet; V2 names the wound).
+
+**2. The FK decision layer reads the IR flag it always carried.**
+`ForeignKeyRules.evaluate` gate order becomes: MissingTarget →
+**`reference.HasDbConstraint` ⇒ `EnforceConstraint
+DatabaseConstraintPresent`** → PolicyDisabled → profile-driven. This
+restores V1's carve-out (`ForeignKeyEvaluator.cs:124-145`: a
+source-backed FK is enforced before and regardless of every gate;
+`EnableCreation` gates only NEW creation; orphans never override —
+physically-backed-with-orphans only arises under NOCHECK, which
+`IsConstraintTrusted` already realizes at the emitter). The prior
+approximation — `ProbeStatus.Outcome = TrustedConstraint` — had NO
+producer anywhere in the codebase (LiveProfiler mints only
+observed/ambiguous; only the codec round-trips the variant): a dead
+branch in production, retired per the dead-algebra precedent
+(2026-06-04). The `TrustedConstraint` DU variant STAYS (codec
+compatibility); only the rules branch goes. Precedence note: a
+reference that is both policy-disabled and missing-target now reports
+MissingTarget (was PolicyDisabled) — the structural impossibility
+outranks the chosen gate, and the diagnostic is the truthful one for
+scoped exports (a module-scoped catalog cannot emit an FK to a kind
+outside the export, source-backed or not).
+
+**3. The decision-drop audit stops lying.** `decision.fkDropped`
+claimed "The source enforced it" for every DropFk key — false for
+logical-only references. The audit splits: `decision.fkDropped`
+(Warning) only when `HasDbConstraint = true` (post-carve-out this is
+exactly the missing-target/scoped-export case); logical-only
+non-introduction reports as `decision.fkNotIntroduced` (Info) — "the
+emitted schema matches source reality." The
+`DropFk : Set<SsKey> → Map<SsKey, reason>` refinement is DEFERRED to
+its own slice (it churns the 6.A.8 decision read-back and the
+lifecycle codec); the diagnostics consult the catalog's flag directly
+in the interim. Re-open trigger: the first consumer needing per-reason
+drop partitioning beyond the two-way split.
+
+Witnesses: post-chain emission canary (chain → emit → assert exactly
+one FK per non-dropped forward reference, zero inverse-sourced FKs, no
+duplicate names on the CreatedBy/UpdatedBy shape — closing the CI gap
+where every deploy canary emitted from pre-chain catalogs);
+`HasDbConstraint=true ⇒ FK emitted` property across
+EnableCreation/profile-absence/orphan axes; the diagnostics split
+pinned both ways; the inheritance pin
+(ReferenceHasDbConstraintTests) re-stated alongside the new
+exclusion-contract pin.

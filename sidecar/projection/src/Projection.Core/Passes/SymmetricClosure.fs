@@ -29,16 +29,19 @@ module SymmetricClosure =
     let private passName : string = "symmetricClosure"
 
     /// The reserved derivation reason for inverse references. The string
-    /// is registered in DECISIONS.md (2026-05-06 — SsKey as a sum type).
+    /// is registered in DECISIONS.md (2026-05-06 — SsKey as a sum type);
+    /// ownership moved to `Reference.inverseDerivationReason` so the
+    /// deployability predicate and this pass share one definition
+    /// (DECISIONS 2026-06-12 — reconciliation slice 1). This alias keeps
+    /// the pass's public vocabulary stable.
     [<Literal>]
-    let inverseReason : string = "inverse"
+    let inverseReason : string = Reference.inverseDerivationReason
 
     /// Does this reference's SsKey indicate it is itself an inverse from
     /// a previous run of the pass? Used to keep the pass idempotent.
+    /// Delegates to the canonical predicate (one definition site).
     let private isInverseRef (r: Reference) : bool =
-        match r.SsKey with
-        | DerivedFrom (_, reason) when reason = inverseReason -> true
-        | _ -> false
+        Reference.isInverse r
 
     let private deriveInverseKey (r: Reference) : SsKey =
         // A5 enforced by SsKey.derivedFrom; the deterministic formula is

@@ -1086,7 +1086,17 @@ module Compose =
                         // tightening Decision that drops an FK the source
                         // enforced is a safety change; surface one Warning per
                         // dropped decision so it is never silent at emission.
+                        // (Reconciliation slice 1 narrows the claim: Warning
+                        // `decision.fkDropped` only when the source really
+                        // enforced it; Info `decision.fkNotIntroduced` for
+                        // logical-only references.)
                         @ SsdtDdlEmitter.foreignKeyDecisionDropDiagnostics
+                            (DecisionOverlay.ofComposeState finalState) finalState.Catalog
+                        // Reconciliation slice 1 — the FK-name collision
+                        // tripwire (schema-scoped constraint-name uniqueness;
+                        // one Error per participating reference, never a
+                        // silent dedupe).
+                        @ SsdtDdlEmitter.foreignKeyNameCollisionDiagnostics
                             (DecisionOverlay.ofComposeState finalState) finalState.Catalog
                     match write cfg.Output.Dir outputs with
                     | Ok paths    -> Result.success { Paths = paths; Diagnostics = diagnostics; Manifest = outputs.Manifest; Trail = outputs.Trail; PassDiagnostics = outputs.PassEntries }

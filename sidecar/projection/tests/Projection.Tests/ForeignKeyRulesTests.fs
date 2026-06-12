@@ -93,33 +93,67 @@ let ``missingTarget: target kind absent from catalog ⇒ DoNotEnforce(MissingTar
         decision.Outcome)
 
 // ---------------------------------------------------------------------------
-// DatabaseConstraintPresent — V1's HasDatabaseConstraint=true maps to
-// V2's TrustedConstraint probe outcome (the probe was skipped because
-// the DB constraint was trusted).
+// DatabaseConstraintPresent — the V1 carve-out, restored (DECISIONS
+// 2026-06-12 — reconciliation slice 1; V1 ForeignKeyEvaluator.cs:124-145).
+// `Reference.HasDbConstraint = true` enforces BEFORE and REGARDLESS OF
+// every remaining gate: EnableCreation gates only NEW creation; orphan
+// evidence never overrides. The prior `TrustedConstraint` probe
+// approximation had no producer anywhere and is retired from the rules.
 // ---------------------------------------------------------------------------
 
+let private sourceBackedRef : Reference =
+    { orderRef with HasDbConstraint = true }
+
 [<Fact>]
-let ``trusted constraint: TrustedConstraint probe outcome ⇒ EnforceConstraint(DatabaseConstraintPresent)`` () =
+let ``hasDbConstraint: source-backed reference ⇒ EnforceConstraint(DatabaseConstraintPresent) with no profile at all`` () =
     let cfg = mkConfig true true false
-    let profile =
-        { Profile.empty with
-            ForeignKeys = [ mkReality orderRef.SsKey false 0L TrustedConstraint ] }
-    let decision = decide cfg sampleCatalog order orderRef profile
+    let decision = decide cfg sampleCatalog order sourceBackedRef Profile.empty
     Assert.Equal(
         ForeignKeyOutcome.EnforceConstraint DatabaseConstraintPresent,
         decision.Outcome)
 
 [<Fact>]
-let ``trusted constraint: TrustedConstraint short-circuits regardless of cross-schema gate`` () =
-    // Even with cross-schema disallowed, TrustedConstraint wins —
-    // the DB already enforces the FK, V2 records what's there.
-    let cfg = mkConfig true false false
-    let profile =
-        { Profile.empty with
-            ForeignKeys = [ mkReality orderRef.SsKey false 0L TrustedConstraint ] }
-    let decision = decide cfg sampleCatalog order orderRef profile
+let ``hasDbConstraint: carve-out short-circuits EnableCreation=false (the gate covers new constraints only)`` () =
+    let cfg = mkConfig false true false
+    let decision = decide cfg sampleCatalog order sourceBackedRef Profile.empty
     Assert.Equal(
         ForeignKeyOutcome.EnforceConstraint DatabaseConstraintPresent,
+        decision.Outcome)
+
+[<Fact>]
+let ``hasDbConstraint: carve-out short-circuits the cross-schema gate`` () =
+    // Even with cross-schema disallowed, the source-backed constraint
+    // wins — the DB already enforces the FK; V2 records what's there.
+    let cfg = mkConfig true false false
+    let decision = decide cfg sampleCatalog order sourceBackedRef Profile.empty
+    Assert.Equal(
+        ForeignKeyOutcome.EnforceConstraint DatabaseConstraintPresent,
+        decision.Outcome)
+
+[<Fact>]
+let ``hasDbConstraint: orphan evidence never overrides a source-backed constraint`` () =
+    // Physically-backed-with-orphans only arises under NOCHECK, which
+    // `IsConstraintTrusted` realizes at the emitter — the decision
+    // layer keeps the constraint.
+    let cfg = mkConfig true true false
+    let profile =
+        { Profile.empty with
+            ForeignKeys = [ mkReality sourceBackedRef.SsKey true 12L Succeeded ] }
+    let decision = decide cfg sampleCatalog order sourceBackedRef profile
+    Assert.Equal(
+        ForeignKeyOutcome.EnforceConstraint DatabaseConstraintPresent,
+        decision.Outcome)
+
+[<Fact>]
+let ``hasDbConstraint: MissingTarget outranks the carve-out (a scoped export cannot emit an FK to an absent kind)`` () =
+    let danglingTargetKey = ssKey "OS_KIND_NoSuchKind"
+    let danglingBacked : Reference =
+        { Reference.create (ssKey "OS_REF_Order_DanglingBacked") (name "Dangling") orderCustomerFkKey danglingTargetKey
+            with HasDbConstraint = true }
+    let cfg = mkConfig true true true
+    let decision = decide cfg sampleCatalog order danglingBacked Profile.empty
+    Assert.Equal(
+        ForeignKeyOutcome.DoNotEnforce MissingTarget,
         decision.Outcome)
 
 // ---------------------------------------------------------------------------
