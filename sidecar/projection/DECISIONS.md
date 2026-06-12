@@ -21652,3 +21652,45 @@ emissions). Witnesses: `R2: declared ⇔ executed∪aborted` and seven
 siblings in `StagedTests.fs` (Global-MutableState pool, the live
 envelope feed asserted via the subscriber the real board consumes);
 WatchTests re-derived (+5).
+
+## 2026-06-12 — S4: the hard faces ride the spine; the run-envelope bracket has ONE owner
+
+Three per-face commits (the card's own rollback story). The structural
+verdicts that outlive the diffs:
+
+**One bracket owner.** `RunEnvelope.bracket` (Pipeline, after
+`RegisteredAllTransforms`) is the single implementation of
+begin → `config.runStart` → §7.4 registry → body → terminal
+`summary.runComplete`. `OperatorConsole.withRun` and
+`FullExportRun.executeCore` both delegate; the executeCore self-reset is
+retired. Two contract repairs rode along, named: `config.runStart` is
+now the FIRST event of every run including failed-config runs (§7.1 —
+previously those streams opened with `validationFailed`), and a crashed
+body still closes its stream with the §10 terminal event before the
+exception rethrows (previously `withRun` bodies escaped without it).
+The §7.1 payload: `command` + `configPath` stay on runStart; the
+config-resolved `outputDir` moved to `config.connectionResolved`.
+
+**The engines own their spines.** `Compose.runWithConfig` =
+`staged Spines.pipeline` (umbrella root + three children — all four of
+its consumers get the bracketed arc); `MigrationRun.execute` =
+`staged Spines.migrate` with the safety gates (CDC 6.A.13 + tightening
+G9) as the declared `preflight` stage; both transfer load paths =
+`staged Spines.transfer`. The RI-2(a) class of defect — error paths
+returning early past an open `recordStageStart` — is now structurally
+impossible on the migrated faces: every bracket closes on the wire
+(`failed`/`aborted`) before the error propagates.
+
+**Named ε residue (S5 inherits this list):** the migrate FACE's grant
+pre-flights (`migratePreflights`) + the state-A read; config/model
+resolution outside the pipeline root; artifact recording + diagnostics
+projection; `dumpBench`; ledger append; argv parsing.
+
+**Shape changes, named:** `<stage>.started` markers on the publish arc
+carry the bracket's Summary category (was Extract/Profile/Emit —
+uniform with the migrate/transfer legs; the category-bearing
+`<stage>.completed` domain markers stay, with their payloads); a failed
+stage skips the downstream arc (no more phantom failed `emit` after a
+failed `profile`); migrate runs gain `preflight` started/completed
+pairs and stage-table entries. The pinned FullExportCliTests slice-7
+trio held without amendment.

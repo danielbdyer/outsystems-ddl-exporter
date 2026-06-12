@@ -261,6 +261,45 @@ let ``R2: the stage bracket meters — Bench carries one stage-labelled sample p
     Assert.Contains("stage.canary", labels)
 
 // ---------------------------------------------------------------------------
+// additivity (card S5) — T14 on the time plane, honestly
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``R2: wall(root) − Σ wall(stage) ≤ ε — T14 on the time plane (the spine's nesting is tight)`` () =
+    // The CE's own nesting: the root bracket encloses exactly the declared
+    // children plus the builder's plumbing (binds, ledger appends, envelope
+    // emission — no I/O between brackets by construction). The sleeps make
+    // the children's wall dominate; ε is the plumbing, bounded generously
+    // for CI scheduling noise. The +2ms slack absorbs independent stopwatch
+    // rounding. (The RUN-level account — config, artifacts, face gates —
+    // is the FullExportCliTests S5 witness; its residue is enumerated
+    // there.)
+    let rootSpine =
+        RunSpine.createWithRoot (stage "pipeline") [ stage "extract"; stage "emit" ]
+        |> Result.value
+    let sleepStage (ms: int) : unit -> Task<Result<unit, string>> =
+        fun () ->
+            task {
+                do! Task.Delay ms
+                return Ok ()
+            }
+    let verdict, _ =
+        runCaptured (fun () ->
+            staged rootSpine {
+                do! Staged.stage (stage "extract") (sleepStage 60)
+                do! Staged.stage (stage "emit") (sleepStage 60)
+                return ()
+            })
+    let childSum =
+        verdict.Outcomes
+        |> List.sumBy (fun (_, o) -> match o with Completed ms -> ms | _ -> 0L)
+    match verdict.Root with
+    | Some (_, Completed rootMs) ->
+        Assert.True(rootMs + 2L >= childSum, sprintf "the root (%dms) must cover its children (%dms)" rootMs childSum)
+        Assert.True(rootMs - childSum <= 250L, sprintf "nesting ε=%dms exceeds the named 250ms bound" (rootMs - childSum))
+    | other -> Assert.Fail(sprintf "expected the root bracket completed, got %A" other)
+
+// ---------------------------------------------------------------------------
 // the run-envelope bracket (card S4a) — ONE owner, both callers
 // ---------------------------------------------------------------------------
 

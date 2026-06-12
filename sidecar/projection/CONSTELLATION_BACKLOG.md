@@ -467,18 +467,38 @@ no face can drift from its declaration by retyping a string); `Spines.canary` ad
 face as consumer. runDeploy's existing envelope pair is byte-compatible (same codes, same
 payload shape, one emission site). S. Deps: S2.
 
-**S4 · The hard faces.** `runFullExport` (umbrella + three children), `runMigrateExecute` /
-`runMigrateWithData` (**pre-flight gates become declared stages** — they are real SQL I/O and
-belong inside the meter), `runTransfer`/`runReverseLegTransfer`. Touches the four pipeline
-files RI-2 names, not just `RunFaces.fs`; reconciles the two bracket owners (`withRun` vs
-`FullExportRun`'s self-reset) to ONE. *Witness:* pinned envelope-shape tests
-(`FullExportCliTests` slice-7 trio) stay green or are amended in the same commit with the
-shape change named. **L.** Deps: S2, S3. Rollback: per-face — each face migrates in its own
-commit.
+**S4 · The hard faces — DONE 2026-06-12** (three commits, per the card's own per-face
+rollback story). **S4a — runFullExport:** `Compose.runWithConfig` is the `staged { }` CE over
+`Spines.pipeline` (umbrella root + extract/profile/emit; bodies keep their category-bearing
+`<stage>.completed` domain markers); the two bracket owners reconciled to ONE —
+`RunEnvelope.bracket` (runStart FIRST on every run including failed-config; the §7.4 registry;
+the §10 terminal ALWAYS, crash included), with `withRun` and `executeCore` both delegating
+(the self-reset retired). The pinned slice-7 trio held WITHOUT amendment; two shapes changed,
+named in the commit (`<stage>.started` markers carry the bracket's Summary category; a failed
+stage skips the downstream arc instead of opening phantom failed stages). **S4b —
+runMigrateExecute/runMigrateWithData:** `MigrationRun.execute` rides `Spines.migrate` (emit →
+**preflight** → deploy → canary) — the 6.A.13 CDC gate + G9 tightening gate are the declared
+`preflight` stage (real SQL, inside the meter; Voice gained `preflight.started` + "Safety
+checks"); the RI-2(a) abort defect closes by construction (the pre-spine code returned early
+out of emit/deploy/canary leaving them open on the board). The FACE-level grant pre-flights
+(`migratePreflights`) remain outside the engine's spine — named ε residue for S5. **S4c —
+runTransfer/runReverseLegTransfer:** both load brackets (materialized `writePlan`; streaming
+`writePlanStreaming`) are CE-owned — the streaming phase-1 refusal and any mid-load exception
+now CLOSE the stage on the wire instead of hanging the board. *Witnesses:* per-commit pure
+pool + full Docker pool (one S4a docker failure was a named infra flake — SQL 1205 deadlock
+inside `sp_cdc_enable_db` setup, TRX-verified, class re-ran green). Deps: S2, S3.
 
-**S5 · Additivity, honestly.** The property `` `wall(run) − Σ wall(stage) ≤ ε` `` lands only
-after S4 has bracketed gates/config/bookkeeping as named stages; ε's residue is enumerated in
-the test's docstring (arg parsing, process startup). S. Deps: S4.
+**S5 · Additivity, honestly — DONE 2026-06-12.** Two witnesses, two levels of nesting:
+`` `R2: wall(root) − Σ wall(stage) ≤ ε — T14 on the time plane (the spine's nesting is
+tight)` `` (the CE's own nesting over synthetic sleeps — ε is the builder's plumbing, bounded
+at 250 ms) and `` `S5: wall(run) − Σ wall(stage) ≤ ε — the publish run's stage account,
+honestly bounded` `` (the REAL full-export run: umbrella covers children within 500 ms; the
+run wall covers the umbrella within 3000 ms — bounds generous for CI noise, catching the
+structural unaccounted-work class, not micro-jitter). ε's residue is enumerated in the
+docstrings: config/model resolution, artifact recording + diagnostics projection + egress,
+and — named UNBOUNDED — the migrate face's grant pre-flights, which run real SQL before the
+engine's spine opens (see DECISIONS 2026-06-12 S4 entry; bounding them means lifting the face
+gates into a declared arc, R1b-adjacent territory). S. Deps: S4.
 
 ### Stage 3 — the ledger contract (R3, corrected per RI-3)
 
