@@ -40,3 +40,20 @@ let ``RunHistory: latest is the most recent run`` () =
     match RunHistory.latest h with
     | Some r -> Assert.Equal("2026-03", r.Ts)
     | None   -> Assert.Fail "expected a latest run"
+
+[<Fact>]
+let ``R1: readiness over RunHistory ≡ readiness over the ledger projection of the same runs`` () =
+    // R1e's second clause: the run subsumes the ledger row, so the gauge
+    // over stored runs and the gauge over their projected ledger rows are
+    // the SAME gauge — two stores, one definition of readiness.
+    let runs =
+        [ run "2026-01" (Some "green") 0
+          run "2026-02" None 1
+          run "2026-03" (Some "red") 0
+          run "2026-04" (Some "green") 2
+          run "2026-05" (Some "green") 0 ]
+    let viaHistory = RunHistory.ofRuns runs |> RunHistory.readiness
+    let viaLedger = RunLedger.readiness (runs |> List.map Run.toLedgerEntry)
+    Assert.Equal(viaLedger, viaHistory)
+    Assert.Equal(2, viaHistory.ConsecutiveGreen)
+    Assert.False(viaHistory.Eligible)

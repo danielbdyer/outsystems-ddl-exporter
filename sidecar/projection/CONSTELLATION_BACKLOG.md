@@ -542,32 +542,41 @@ machinery (a single full-state quantum has no partial sums; the no-op IS the res
 
 ### Stage 4 — the Run, completed and wired (R1, reframed per RI-1)
 
-**R1a · Complete the aggregate.** Add to the existing `Run.Run`: `Ledgers : LedgerRef list`
-(journal file digests + episode coordinates) and `Bench : Bench.Run option`. Keep the
-shipped ULID + `InputDigest` factoring (the thesis's content-addressed-RunId design is
-withdrawn). Codec discipline per the house (totality over the new fields). S. Deps: none
-(better after L1 for `LedgerRef` naming). Rollback: additive fields.
+**R1a · Complete the aggregate — DONE 2026-06-12.** `Run.Run` gained `Ledgers : LedgerRef
+list` (JournalRef digest / EpisodeRef coordinate — the run-side name for the R3 instances)
+and `Bench : Bench.Run option`; ULID + `InputDigest` factoring kept. Codec totality
+hand-built (Bench.Stats is an F# list — STJ deserialize foreclosed); pre-R1a files load
+with `[]`/`None`. *Witness shipped:* the populated round-trip law (+1).
 
-**R1b · Wire capture into the envelope — census corrected per RI-11.** `withRun` calls
-`Run.capture`+`Run.save` under the existing `PROJECTION_LEDGER_DIR` (not a second env var);
-the orphan verbs move under `withRun` — **~21 of 27 faces run bare today**, not ~11, so the
-card scopes by the law: every envelope-*emitting* verb moves; pure read-only verbs that mint
-no envelopes may stay outside, each named in the commit. The `runReadiness` orphan
-`beginRun` (`RunFaces.fs:930`) is fixed. *Witness:* `` `every verb's run is capturable: no
-orphan RunIds` ``. M–L. Deps: R1a; after S4 if sequenced late (the spine changes what
-`withRun` brackets — do R1b after S4 to wire once). Rollback: env-gated.
+**R1b · Wire capture into the envelope — DONE 2026-06-12.** Capture landed at the ONE
+bracket owner (`RunEnvelope.bracket` — the "after S4, to wire once" clause realized
+literally): under `PROJECTION_LEDGER_DIR` every bracketed run persists `run.json` (events +
+bench snapshot; crashed bodies included). The emitting orphans moved under `withRun`
+(transfer, reverse-leg, migrate, migrate --with-data, synth-load); `runReadiness`'s orphan
+`beginRun` RETIRED (the face brackets directly — no ledger append for the query, per its
+documented contract); the envelope-free faces stay bare, each named in the commit.
+InputDigest stays `""` at the bracket grain, named (per-face threading is consumer
+territory). *Witness shipped:* `` `R1b: every bracketed verb's run is capturable — no
+orphan RunIds` ``.
 
-**R1c · Bench keyed by run.** `BenchSink` filename = RunId (wall-clock moves inside the
-value — `BenchSink.fs`'s reified boundary relocated, not deleted); `perf-gate.sh` discovery
-updated from mtime-glob to newest-run. S. Deps: R1a. Rollback: dual-write one release.
+**R1c · Bench keyed by run — DONE 2026-06-12.** `BenchSink.runPath` (bench/<tag>/<runId>.json;
+`defaultPath` retired; ULID keeps the chronological `ls | sort` walk); wall-clock lives only
+inside the value (`CapturedAtUtc`). `perf-gate.sh` discovery = lexical max over ULID-shaped
+names; legacy-only directories fall back to mtime WITH a logged warning. Baseline NOT
+re-recorded (no floor moved).
 
-**R1d · The projections.** `inspect <runId>` (D5 — the store already resolves; the verb
-renders) and `diff <runA> <runB>` (`Run.diff` with the UoM delta surface; the harness's
-before/after becomes its restriction to KeyLabels). M. Deps: R1a–c. Rollback: read-only verbs.
+**R1d · The projections — DONE 2026-06-12.** `projection inspect <runId>` renders the
+stored aggregate; `inspect <a> <b>` renders `Run.diff` — the §7 UoM promotion FIRED here,
+scoped to the delta surface (`[<Measure>] ms`); the keyLabels restriction is the harness's
+before/after shape. *Deviation, named:* the card's `diff <runA> <runB>` verb name is held
+by the shipped catalog-refs diff — the run-grain projection lands under `inspect` (one noun
+per surface). `Run.storeDir` = the one reader resolution rule (RUNS_DIR else LEDGER_DIR).
 
-**R1e · The law.** `` `R1: live view ≡ projection of the stored Run` `` — the Watch board
-reconstructed from `Run.Events` equals the board the live subscriber built; `readiness`
-gauges over `RunHistory`. S. Deps: R1b, S2 (the spine makes board-reconstruction total).
+**R1e · The law — DONE 2026-06-12.** `` `R1: live view ≡ projection of the stored Run` ``:
+`Watch.boardOfStored` folds the persisted NDJSON trail through the SAME `apply` the live
+subscriber feeds — witnessed equal on a mixed run (Halted + ledger-only Skip arms; the S2
+spine makes the reconstruction total). `RunHistory.readiness` already existed; its
+equivalence to the ledger projection is now witnessed (two stores, one gauge).
 
 ### Stage 5 — the row quantum (R4, gated; corrected per RI-4)
 
