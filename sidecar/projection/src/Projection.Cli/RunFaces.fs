@@ -964,16 +964,23 @@ let runDrift (toPath: string) (connSpec: string) : int =
 let runEject (storePath: string) : int =
     match EjectRun.fromStore storePath with
     | Error msg ->
-        Console.Error.WriteLine (sprintf "projection eject: %s" msg)
+        // §14 — the finding leads; the raw store error is the located cause.
+        TtyRenderer.renderVoicedTo Console.Error "eject.storeUnreadable"
+            (Map.ofList [ "cause", box msg ])
         2
     | Ok pkg ->
-        printfn "projection eject: timeline %s — %d episode(s) preserved (append-forever), %d refactorlog reference(s)"
-            (Timeline.name pkg.Timeline) (List.length pkg.Episodes) (List.length pkg.RefactorLogRefs)
+        // §13 resultative — the package line, voiced; the timeline beneath.
+        TtyRenderer.renderVoicedTo Console.Out "eject.packaged"
+            (Map.ofList
+                [ "timeline",         box (Timeline.name pkg.Timeline)
+                  "episodeCount",     box (List.length pkg.Episodes)
+                  "refactorLogCount", box (List.length pkg.RefactorLogRefs) ])
         if EjectRun.isFaithful pkg then
-            printfn "Verified. The reconstruction reproduces the frozen state from genesis to freeze."
+            // §6 — the freeze's self-verification, asserted.
+            TtyRenderer.renderVoicedTo Console.Out "eject.verified" Map.empty
             0
         else
-            Console.Error.WriteLine "The package is not verified: the reconstruction does not reproduce the frozen state."
+            TtyRenderer.renderVoicedTo Console.Error "eject.unverified" Map.empty
             5
 
 /// Tier-4 reporting — `readiness`. Read the cross-run ledger

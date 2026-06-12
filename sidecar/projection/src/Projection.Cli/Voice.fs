@@ -348,6 +348,27 @@ module Voice =
           Substantiation = fun _ -> []
           Action         = fun _ -> None }
 
+    /// `eject.packaged` — the provenance package is assembled (`THE_VOICE.md`
+    /// §13, resultative; §7 P-7): every episode preserved, the rename records
+    /// carried; the timeline named beneath. ("append-forever" and "refactorlog"
+    /// stay off the surface — §2.1: the operator's words are the history and
+    /// the record.)
+    let private ejectPackaged : Copy =
+        { Code           = "eject.packaged"
+          DocSection     = "§13"
+          Statement      =
+            fun p ->
+                match text "episodeCount" p, text "refactorLogCount" p with
+                | Some n, Some r ->
+                    View.Note(sprintf "Provenance package assembled — %s episodes preserved, %s rename records carried." (humane n) (humane r))
+                | _ -> View.Note "Provenance package assembled — every episode preserved."
+          Substantiation =
+            fun p ->
+                match text "timeline" p with
+                | Some tl -> [ View.Field("timeline", tl, View.Neutral) ]
+                | None    -> []
+          Action         = fun _ -> None }
+
     /// `episode.recorded` — the run's durable record (`THE_VOICE.md` §13 — "This
     /// run recorded to the history."). Stative and agentless: the record is a
     /// state, named with its episode ordinal and timeline when present.
@@ -573,6 +594,27 @@ module Voice =
                 @ (match text "code" p with Some c -> [ View.Field("code", c, View.Neutral) ] | None -> [])
           Action         = fun _ -> Some(View.Action "Correct the configuration and rerun.") }
 
+    /// `eject.verified` — the freeze's self-verification passed (`THE_VOICE.md`
+    /// §6 / §7 P-7): the reconstruction from genesis reproduces the frozen
+    /// state. Asserted; the replay evidence beneath.
+    let private ejectVerified : Copy =
+        { Code           = "eject.verified"
+          DocSection     = "§6"
+          Statement      = fun _ -> View.Hero(View.Ok, "Verified. The reconstruction reproduces the frozen state from genesis to freeze.")
+          Substantiation = fun _ -> [ View.Field("evidence", "replay from genesis = the frozen state", View.Neutral) ]
+          Action         = fun _ -> None }
+
+    /// `eject.unverified` — the freeze's self-verification failed
+    /// (`THE_VOICE.md` §6 / §10): the reconstruction diverges from the frozen
+    /// state, so the package is unverified. Honest without exception — the
+    /// finding is stated plainly; no lever exists beyond investigation.
+    let private ejectUnverified : Copy =
+        { Code           = "eject.unverified"
+          DocSection     = "§6"
+          Statement      = fun _ -> View.Hero(View.Bad, "The reconstruction does not reproduce the frozen state. The package is unverified.")
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
     /// `migrate.inexpressible` — the schema emitter refused changes it cannot
     /// express as a single ALTER (`THE_VOICE.md` §10): the statement carries the
     /// count and states that the database is unchanged; each refusing change is
@@ -610,6 +652,20 @@ module Voice =
                 | Some c -> [ View.Field("cause", c, View.Neutral) ]
                 | None   -> []
           Action         = fun _ -> None }
+
+    /// `eject.storeUnreadable` — the durable run history could not be loaded for
+    /// the freeze (`THE_VOICE.md` §14 set-but-invalid / §10): the plain finding
+    /// with the located cause beneath, never a raw store error on the lead.
+    let private ejectStoreUnreadable : Copy =
+        { Code           = "eject.storeUnreadable"
+          DocSection     = "§14"
+          Statement      = fun _ -> View.Hero(View.Bad, "The run history could not be read. Check the --store path and retry.")
+          Substantiation =
+            fun p ->
+                match text "cause" p with
+                | Some c -> [ View.Field("cause", c, View.Neutral) ]
+                | None   -> []
+          Action         = fun _ -> Some(View.Action "Check the --store path and retry.") }
 
     /// `canary.sourceMissing` — the round-trip verification's source DDL file is
     /// absent (`THE_VOICE.md` §14 set-but-invalid: concrete and located — the
@@ -661,8 +717,11 @@ module Voice =
           canaryCdcCaptured
           driftNone
           driftDiverged
+          ejectVerified
+          ejectUnverified
           // §13 — lifecycle / Watch (the spine + the per-stage stream)
           episodeRecorded
+          ejectPackaged
           containerStarting
           deployBundleEmitted
           canaryDeployed
@@ -687,7 +746,8 @@ module Voice =
           canarySourceMissing
           dockerUnavailable
           migrateInexpressible
-          migrateStopped ]
+          migrateStopped
+          ejectStoreUnreadable ]
 
     /// Look a code's copy up. `None` when the code is not yet voiced — the
     /// totality test guarantees every in-scope LIVE code IS voiced, so a `None`

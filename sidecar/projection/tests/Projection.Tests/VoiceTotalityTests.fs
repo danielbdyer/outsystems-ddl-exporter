@@ -42,7 +42,11 @@ let private inScopeCodes : Set<string> =
           "drift.none"; "drift.diverged"
           // the migrate family's shared stop channel: the §10 inexpressible
           // refusal and the generic located stop
-          "migrate.inexpressible"; "migrate.stopped" ]
+          "migrate.inexpressible"; "migrate.stopped"
+          // the eject face: the §13 package line, the §6 self-verification
+          // pair, and the §14 located store finding
+          "eject.packaged"; "eject.verified"; "eject.unverified"
+          "eject.storeUnreadable" ]
 
 // The codes the engine can actually emit today (the inventory — the contract the
 // totality test holds Voice to). Voicing a code outside this set would be copy for
@@ -84,6 +88,9 @@ let private knownEmittableCodes : Set<string> =
           "drift.none"; "drift.diverged"
           // the migrate family's shared stop channel
           "migrate.inexpressible"; "migrate.stopped"
+          // the eject face's package + self-verification + store finding
+          "eject.packaged"; "eject.verified"; "eject.unverified"
+          "eject.storeUnreadable"
           // emitted but voiced by mechanism-1 / later slices (not in `Voice.all` yet)
           "transform.registered"; "transform.applied"; "transform.declined"
           "transform.lineage"; "transform.diagnostic"; "bench.label" ]
@@ -129,7 +136,8 @@ let private samplePayload : Voice.Payload =
           "targetTables",  box 300
           "path",          box "model.sql"
           "cause",         box "the changes could not be computed"
-          "entries",       box "the Amount column narrows to a smaller type (emit.alterColumn.narrowing)" ]
+          "entries",       box "the Amount column narrows to a smaller type (emit.alterColumn.narrowing)"
+          "refactorLogCount", box 5 ]
 
 // ---------------------------------------------------------------------------
 // code ⇔ copy totality
@@ -329,6 +337,22 @@ let ``Voice errorFrame: a reconciliation argument routes to the §14 invalid fra
         match Voice.errorFrame code with
         | View.Hero(View.Bad, text), Some _ -> Assert.Contains("reconciliation argument", text)
         | other -> Assert.Fail(sprintf "unexpected reconcile frame for %s: %A" code other)
+
+// ---------------------------------------------------------------------------
+// the eject face's self-verification pair (§6, the P-7 freeze)
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Voice eject: the self-verification pair leads with the asserted finding`` () =
+    (match Voice.surfaceOf "eject.verified" Map.empty with
+     | Some { Statement = View.Hero(View.Ok, text); Substantiation = subs } ->
+         Assert.Contains("genesis to freeze", text)
+         Assert.False(List.isEmpty subs)   // the replay evidence rides beneath
+     | other -> Assert.Fail(sprintf "unexpected eject.verified surface: %A" other))
+    match Voice.surfaceOf "eject.unverified" Map.empty with
+    | Some { Statement = View.Hero(View.Bad, text) } ->
+        Assert.Contains("does not reproduce the frozen state", text)
+    | other -> Assert.Fail(sprintf "unexpected eject.unverified surface: %A" other)
 
 // ---------------------------------------------------------------------------
 // the stage-name mapping (THE_VOICE.md §13 — operator-shaped, never the verb)
