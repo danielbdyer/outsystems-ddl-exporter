@@ -180,6 +180,13 @@ module EpisodicLifecycle =
     /// Append the next episode, enforcing L3-L2 (monotonic history) on the
     /// schema-plane `Version` ordinal — the same rule `Lifecycle.append` holds.
     /// A non-monotone append fails rather than silently reordering.
+    ///
+    /// This check IS the episode grain's **ResumeAdmit** (R3 / RI-3, card
+    /// L3): re-run over every edge when the store reloads a chain, it
+    /// verifies chain STRUCTURE — ordinal monotonicity — and nothing more.
+    /// The grain's write witness (B'≡B, `MigrationRun.recordVerified`)
+    /// cannot be re-verified at load (no B' exists to re-deploy), and this
+    /// contract does not pretend to.
     let append (episode: Episode) (lifecycle: EpisodicLifecycle) : Result<EpisodicLifecycle> =
         let (EpisodicLifecycle data) = lifecycle
         let lastOrdinal = Version.ordinal (Episode.version (List.last data.Episodes))
@@ -207,6 +214,13 @@ module EpisodicLifecycle =
     /// reconstructing the latest schema from genesis + the per-edge deltas. The
     /// chain-level round-trip law: the reconstruction agrees with the stored
     /// latest schema modulo the diff's captured surface.
+    ///
+    /// On the ledger contract (R3, card L3) this fold is the snapshot
+    /// chain's **verification property, not its recovery path** — each
+    /// episode carries FULL state, so recovery reads the stored latest
+    /// snapshot directly; the FTC fold earns its keep by AGREEING with it.
+    /// (The dual of the journal grain, whose entries are partial sums and
+    /// whose replay IS recovery.)
     let reconstructLatestSchema (lifecycle: EpisodicLifecycle) : Result<Catalog, EmitError> =
         let (EpisodicLifecycle data) = lifecycle
         let genesisSchema = (List.head data.Episodes).Schema

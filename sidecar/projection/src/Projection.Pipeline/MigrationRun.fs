@@ -277,12 +277,25 @@ module MigrationRun =
         (data: DataObservation)
         (outcome: MigrationOutcome)
         : Result<EpisodicLifecycle, MigrationRecordError> =
-        if not outcome.Verified then
-            Error (NonMonotonic "refusing to record an unverified migration outcome (B' did not reproduce B)")
-        else
+        // L3 — the episode grain's WriteAdmit (R3 / RI-3): the B'≡B
+        // round-trip is the external witness, checked HERE — the one moment
+        // it is checkable — and the `Verified<_>` token carries that the
+        // witness held. The grain's ResumeAdmit is ordinal monotonicity
+        // (`EpisodicLifecycle.append`, re-run at load by the store's
+        // `buildLifecycle`) — named as such, honestly: the store cannot
+        // re-verify B'≡B at load, because no B' exists to re-deploy.
+        let admitted =
+            Ledger.writeAdmit
+                (fun (o: MigrationOutcome) ->
+                    if o.Verified then Ok ()
+                    else Error (NonMonotonic "refusing to record an unverified migration outcome (B' did not reproduce B)"))
+                outcome
+        match admitted with
+        | Error e -> Error e
+        | Ok token ->
             match nextCoordinate path environment at with
             | Error e -> Error e
-            | Ok coordinate -> record path timeline coordinate refactorLogRef data outcome.Artifacts
+            | Ok coordinate -> record path timeline coordinate refactorLogRef data (Verified.value token).Artifacts
 
     // -- the live-execute leg (direct execution against a deployed DB) --------
 
