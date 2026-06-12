@@ -383,13 +383,16 @@ module Stages =
         StageName.create s |> Result.value
 
     /// The full-export umbrella root (never a watched sub-stage).
-    let pipeline : StageName = name "pipeline"
-    let extract  : StageName = name "extract"
-    let profile  : StageName = name "profile"
-    let emit     : StageName = name "emit"
-    let deploy   : StageName = name "deploy"
-    let canary   : StageName = name "canary"
-    let load     : StageName = name "load"
+    let pipeline  : StageName = name "pipeline"
+    let extract   : StageName = name "extract"
+    let profile   : StageName = name "profile"
+    let emit      : StageName = name "emit"
+    /// The migrate engine's safety gates (the 6.A.13 CDC gate + the G9
+    /// tightening gate) — real SQL I/O, declared and metered (card S4b).
+    let preflight : StageName = name "preflight"
+    let deploy    : StageName = name "deploy"
+    let canary    : StageName = name "canary"
+    let load      : StageName = name "load"
 
 /// The declared spines — one definition site per run face's arc (the
 /// per-face display string lists retire onto these; the Watch pre-seeds
@@ -402,13 +405,15 @@ module Spines =
         RunSpine.createWithRoot Stages.pipeline [ Stages.extract; Stages.profile; Stages.emit ]
         |> Result.value
 
-    /// The in-place migrate leg: build → apply → verify.
+    /// The in-place migrate leg: build → safety gates → apply → verify.
     let migrate : RunSpine =
-        RunSpine.create [ Stages.emit; Stages.deploy; Stages.canary ] |> Result.value
+        RunSpine.create [ Stages.emit; Stages.preflight; Stages.deploy; Stages.canary ] |> Result.value
 
     /// The cross-substrate migrate: the schema leg, then the data load.
     let migrateData : RunSpine =
-        RunSpine.create [ Stages.emit; Stages.deploy; Stages.canary; Stages.load ] |> Result.value
+        RunSpine.create
+            [ Stages.emit; Stages.preflight; Stages.deploy; Stages.canary; Stages.load ]
+        |> Result.value
 
     /// The standalone deploy verb's single-stage arc.
     let deploy : RunSpine =

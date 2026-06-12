@@ -98,14 +98,15 @@ module Voice =
     /// streaming Watch (slice 2) reuses the one mapping.
     let stageName (internalStage: string) : string =
         match internalStage with
-        | "pipeline" -> "The pipeline"
-        | "extract"  -> "Model read"
-        | "profile"  -> "Data check"
-        | "emit"     -> "Change build"
-        | "deploy"   -> "Deploy"
-        | "canary"   -> "Round-trip verification"
-        | "load"     -> "Data load"
-        | other      -> other
+        | "pipeline"  -> "The pipeline"
+        | "extract"   -> "Model read"
+        | "profile"   -> "Data check"
+        | "emit"      -> "Change build"
+        | "preflight" -> "Safety checks"
+        | "deploy"    -> "Deploy"
+        | "canary"    -> "Round-trip verification"
+        | "load"      -> "Data load"
+        | other       -> other
 
     /// The §13 follow-on for a run whose terminal stage is `terminalStage` — "the
     /// rhythm names the next move" (a finished change build offers the verify; a
@@ -115,13 +116,14 @@ module Voice =
     /// assert it is total over the terminal stages the board can reach.
     let followOnAfter (terminalStage: string) : string =
         match terminalStage with
-        | "extract"  -> "The data check follows."
-        | "profile"  -> "The change build follows."
-        | "emit"     -> "Verification follows."
-        | "deploy"   -> "Verification follows."
-        | "canary"   -> "The record follows."
-        | "load"     -> "Verification follows."
-        | _          -> "The run is complete."
+        | "extract"   -> "The data check follows."
+        | "profile"   -> "The change build follows."
+        | "emit"      -> "Verification follows."
+        | "preflight" -> "The deploy follows."
+        | "deploy"    -> "Verification follows."
+        | "canary"    -> "The record follows."
+        | "load"      -> "Verification follows."
+        | _           -> "The run is complete."
 
     // ------------------------------------------------------------------
     // The catalog — grouped by `THE_VOICE.md` section (decision 5: the
@@ -277,6 +279,16 @@ module Voice =
           Substantiation = fun _ -> []
           Action         = fun _ -> None }
 
+    /// `preflight.started` — the migrate engine's safety gates are running
+    /// (the 6.A.13 CDC gate + the G9 tightening gate — card S4b made them a
+    /// declared stage). Gerund-in-progress (rule 12 exception).
+    let private preflightStarted : Copy =
+        { Code           = "preflight.started"
+          DocSection     = "§13"
+          Statement      = fun _ -> View.Note "Checking the change is safe to apply."
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
     /// `deploy.started` — the changes are being applied (`THE_VOICE.md` §13 /
     /// Act 4, the migrate leg). Gerund-in-progress (rule 12 exception).
     let private deployStarted : Copy =
@@ -409,6 +421,7 @@ module Voice =
           profileCompleted
           emitStarted
           emitCompleted
+          preflightStarted
           deployStarted
           canaryStarted
           loadStarted

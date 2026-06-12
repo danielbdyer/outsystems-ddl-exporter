@@ -316,8 +316,10 @@ let ``S4a: RunEnvelope.bracket — a crashed body still closes its stream with t
 let ``S2: the declared spines carry the per-face arcs the string lists carried`` () =
     Assert.Equal<string list>([ "extract"; "profile"; "emit" ], RunSpine.keys Spines.pipeline)
     Assert.Equal(Some "pipeline", RunSpine.rootKey Spines.pipeline)
-    Assert.Equal<string list>([ "emit"; "deploy"; "canary" ], RunSpine.keys Spines.migrate)
-    Assert.Equal<string list>([ "emit"; "deploy"; "canary"; "load" ], RunSpine.keys Spines.migrateData)
+    Assert.Equal<string list>([ "emit"; "preflight"; "deploy"; "canary" ], RunSpine.keys Spines.migrate)
+    Assert.Equal<string list>(
+        [ "emit"; "preflight"; "deploy"; "canary"; "load" ],
+        RunSpine.keys Spines.migrateData)
     Assert.Equal<string list>([ "deploy" ], RunSpine.keys Spines.deploy)
     Assert.Equal<string list>([ "canary" ], RunSpine.keys Spines.canary)
     Assert.Equal<string list>([ "load" ], RunSpine.keys Spines.transfer)
