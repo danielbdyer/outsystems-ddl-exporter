@@ -228,6 +228,7 @@ session. Status: **fired** (consumers exist now) / **armed** (named consumer que
 | N7 | **the fixture-catalog quadruplets** | `staticSeedCatalog` (`PerfHarnessScenarios.fs:165`) ∥ `wideSeedCatalog` (`:292`) ∥ the AC-X1 static catalog (`MigrationCanaryTests`) — the same hand-rolled static-kind `Catalog.create` chain, third+ instance shipped 2026-06-11 (`meshModel` is a cousin, not a twin: FK mesh, no static rows) | fired (test grain → F6) |
 | N8 | the env-gate idiom | five `GetEnvironmentVariable … = "1"` sites across tests; identical parse, no observed divergence | refused (§6) |
 | N9 | **the unregistered fifth declare-once system** | the scenario catalog (`PerfHarnessScenarios.fs`) ∥ the four shipped declare-once systems (§9.8.11): same shape, missing its single definition site and totality test — RI-8 | fired (→ H7) |
+| N10 | **the consumer-less streaming-digest apparatus** | `RowDigester.empty/add/finalize` + `PhysicalSchema.withDigests`: zero call sites at HEAD (grep-verified, re-imaging 2) — `RowDigests` is always `Set.empty`, so `Missing/ExtraRowDigests`, their `isEqual` clauses (`PhysicalSchema.fs:789-790`), and their render blocks (`:927-928`) are structurally dead; the module docstring's "used by the canary" claim was false (fixed same-commit). The live hash path is `ofCatalog → hashStaticRow → hashRowBytes` (<100k Static populations only) | fired (→ F7) |
 
 ---
 
@@ -336,6 +337,22 @@ cousin — FK mesh, no static rows). *Unlock:* the fourth instance never gets wr
 determinism has one definition site. *Witness:* harness scenarios + AC-X1 outputs byte-stable
 across the move. S. Deps: none. Rollback: revert. Interleave filler — never block a gated
 card on it.
+
+**F7 · Retire the consumer-less streaming-digest apparatus.** Plane N10. The fold surface
+(`RowDigester.State/empty/addInPlace/add/finalize`), `PhysicalSchema.withDigests`, the
+always-empty `RowDigests : Set<PhysicalRowDigest>` axis, its two diff arms, two `isEqual`
+clauses, and two render blocks — zero consumers, all arms structurally inert. Incision:
+delete, per the dead-algebra precedent (`DECISIONS 2026-06-04`: zero-consumer
+symmetry-builds get deleted). **Keep** `hashRowBytes`/`hashQuantumBytes` (live consumers:
+`hashStaticRow`/`ofCatalog`; the Q-track) — the recipes are not the fold. Blast radius: ~13
+sites in `PhysicalSchema.fs` + three stale comments (`Tolerance.fs:80`,
+`AdjunctionLawTests.fs:190`, `ReadSide.fs:958-961`); zero test literals construct the axis
+(grep-verified). *Witness:* suite green; the diff record loses two always-empty fields.
+*Alternative disposition, named:* if the executing session is simultaneously opening the
+>100k data-round-trip canary (the fold's only plausible consumer, now cheap over quanta via
+`hashQuantumBytes`), wire it instead — but do not keep it on that hypothesis alone; the
+precedent exists because "it might be wired someday" is how dead algebra accretes. S. Deps:
+none. Rollback: revert (git preserves the fold).
 
 **H7 · The scenario catalog becomes the fifth declare-once instance.** Plane N9 (RI-8).
 Incision: `Scenarios.all : (ScaleKnob * PerfScenario) list` as the single definition site;
@@ -489,6 +506,31 @@ permutation). M. Deps: Q1.
 > as one focused arc**, green at each commit, with the byte-identical canary (Docker) as the
 > standing witness and an H3 re-run at the end showing the `materialize` label drop. Do not
 > ship Q2 alone expecting a number; the number is Q4's.
+>
+> **The arc's boundary map (verified at HEAD, session 2 close — the next session starts
+> here, not at a fresh survey):**
+> - `readRowsStream : SqlConnection -> Kind -> AsyncStream<StaticRow>` (`ReadSide.fs:837`)
+>   has exactly **three** consumers: the buffered `readRows` (`:988`, `AsyncStream.toList`,
+>   <100k, IR grain), `Ingestion.streamKind` (`Ingestion.fs:19`, a thin alias), and the
+>   harness drain scenario (test).
+> - `Ingestion` splits the two worlds cleanly: **`collectInOrder`** materializes
+>   `Map<SsKey, StaticRow list>` for the pure plan (preview/canary scale — this is the
+>   *materialized* path's single conversion point: quantum → StaticRow lands HERE, Map +
+>   Identifier synthesized at the boundary, cost unchanged at its scale); **`streamsInOrder`**
+>   is what the streaming realization consumes directly — THIS is the surface Q3 re-types to
+>   `(SsKey * RowBasis * AsyncStream<RowQuantum>) list`.
+> - **Renames become basis-level.** `RenameProjection`'s per-row `Map.toList` walk
+>   (`RenameProjection.fs:55`) is, under a basis, a rename of the basis *header* done once
+>   per kind — rows untouched. The ordinal rewrite does not port the per-row rename; it
+>   deletes it.
+> - **The attribution trap, named:** the `materialize` accumulator brackets the carrier
+>   build *inside the pull*. Any Q2 form that relocates the Map/SsKey build to a consumer
+>   boundary makes the label drop **without the cost dropping**. The label must ride the
+>   carrier build wherever it lives, or the H3 re-run is void (the §3.8 trap in a new
+>   costume). The honest end-state: after Q4 the label measures cells-build only, and the
+>   end-to-end `.all` number — not the label — is the win's witness.
+> - `RowDigester`'s fold is dead (N10/F7) — the arc does NOT need to wire quanta into it;
+>   `hashQuantumBytes` already covers the hash plane (Q1, witnessed).
 
 **Q3 · In-flight consumers.** `TransferRun.toCellsOver`/`pkOf`/`writeChunk`,
 `SurrogateRemap` ordinal overload (the A40 `*With` shape extended), `SurrogateCapture` —
