@@ -203,6 +203,23 @@ DECISIONS Active-deferrals index as *the* trigger registry, whose stated purpose
 silently-fired (and silently-armed) triggers. Fixed this session: `DECISIONS 2026-06-11 —
 the perf-harness verdicts`, plus an index row for the staged-bulk wake condition.
 
+**RI-13 (generation 4, 2026-06-12, the arc-cutter) — the Q-cards changed shape under the
+knife, per the F1/F3 precedent.** Executing the arc: (a) Q4's deletion content (the per-row
+`READSIDE_ROW` SsKey synthesis out of the stream) landed structurally AT Q2 — once
+`readRowsStream` emits quanta, the synthesis has nowhere to live in the pull; it moved to
+the ONE IR-grain boundary (`ReadSide.materializeStream`), where it carries its own
+aggregated label (`readside.rowstream.materializeIr`) so the relocated cost stays on the
+books (the §3.8/attribution rule, honored rather than dodged). (b) Q2 and Q3 shipped as ONE
+commit: the backlog's own sequencing finding proves Q2 is not independently win-bearing, and
+a Q2-only commit would have required staging a tree state that was never itself
+suite-verified — the witness chain (pure pool + canary suite + full Docker pool, green at
+the commit) outranks the card count. (c) Q3's `SurrogateCapture` incision generalized the
+ladder over the row carrier (a staged `getterOf : Attribute -> ('row -> string)`) instead of
+duplicating it — A40 applied at the carrier axis; the materialized path keeps `StaticRow`
+through the same functions. The journal fingerprint bytes are unchanged — existing journals
+resume across the carrier change (the RI-7 byte-stability discipline, applied to the
+fingerprint plane).
+
 ---
 
 ## 2 — The cleavage-plane inventory
@@ -496,11 +513,16 @@ and a lossless `toValues` round-trip. The property test is the type's second con
 zero-consumer tension resolved). S. Deps: gate (open). Rollback: revert; types unused until
 Q2.
 
-**Q2 · The stream re-typed.** `readRowsStream` emits `RowQuantum` (`[<Struct>]`, per the
-fired promotion); `Ingestion.streamKind` re-typed; the buffered `readRows` path converts at
-the boundary via `StaticRow.ofQuantum basis` (IR grain unchanged, 100k threshold unchanged).
-*Witness:* `` `R4: ofQuantum ∘ toQuantum = id` `` + canary hashes byte-identical (Q1's
-permutation). M. Deps: Q1.
+**Q2 · The stream re-typed — DONE 2026-06-12** (with Q3, one commit; RI-13). `readRowsStream`
+emits `RowQuantum` (`[<Struct>]`, per the fired promotion); `Ingestion.streamKind` re-typed;
+`streamsInOrder` DELETED rather than re-typed — its single consumer was `collectInOrder` and
+the streaming realization streams per kind inside its own chunk loop, so the re-typed triple
+would have shipped consumer-less (the dead-algebra precedent; a boundary-map correction —
+the map said "re-type", the census at the cut said "delete"); the buffered `readRows` path and
+`collectInOrder` convert at the ONE IR-grain boundary (`ReadSide.materializeStream` →
+`StaticRow.ofQuantum` — Map + `READSIDE_ROW` Identifier minted there, preview/canary scale),
+which carries the `materializeIr` aggregated label. *Witness shipped:* `` `R4: ofQuantum ∘
+toQuantum = id` `` + pure pool + canary suite green at the commit.
 
 > **Sequencing finding (re-imaging 2, Q1-session):** Q2 is **coupled to Q3+Q4**, not
 > independently win-bearing. `readRowsStream`'s streaming consumers (`TransferRun.toCellsOver`/
@@ -537,17 +559,27 @@ permutation). M. Deps: Q1.
 > - `RowDigester`'s fold is dead (N10/F7) — the arc does NOT need to wire quanta into it;
 >   `hashQuantumBytes` already covers the hash plane (Q1, witnessed).
 
-**Q3 · In-flight consumers.** `TransferRun.toCellsOver`/`pkOf`/`writeChunk`,
-`SurrogateRemap` ordinal overload (the A40 `*With` shape extended), `SurrogateCapture` —
-in-flight sites only (~the streaming subset of the 19; IR-grain consumers untouched).
-*Witness:* reverse-leg property + scale suites, green, with the before/after delta in the
-commit message per the bench protocol. M. Deps: Q2.
+**Q3 · In-flight consumers — DONE 2026-06-12** (with Q2, one commit; RI-13). The streaming
+realization consumes quanta end-to-end: renames are HEADER operations (`RowBasis.rename`,
+once per kind — the per-row walk deleted, not ported; the materialized path keeps
+`RenameProjection` at its scale); PK fingerprints + phase-2 identity re-keys index cells
+through the basis (`RowQuantum.cellGetter`, ordinals resolved once per kind); FK re-point at
+the quantum grain (`SurrogateRemap.remapQuantumFksWith` + `fkOrdinalsTargeting`, Name-ordered
+so skip diagnostics are identical, copy-on-write cells); the capture ladder carrier-generic
+(`SurrogateCapture` staged `getterOf` — A40 at the carrier axis); bulk lanes project via
+`quantumCellsOver`. Journal fingerprint bytes unchanged — journals resume across the carrier
+change. *Witnesses shipped:* `` `Q3: remapQuantumFksWith equals remapRowFksWith over any
+total rows` `` (FsCheck) + `` `Q3: RowBasis.rename — the header rename equals the per-row
+rename walk` `` + full Docker pool (reverse-leg Streaming/Canary/Property/Scale suites)
+green at the commit.
 
-**Q4 · Delete the per-row SsKey from the stream.** The `READSIDE_ROW` synthesis and its
-measured sprintf (`ReadSide.fs:921-930`) go; identity at row grain is the PK cell through
-the basis. The IR-grain `Identifier` consumers (sort passes, `DataInsertRow`) are out of
-scope and unaffected. *Witness:* H3 re-run shows the materialize label's drop. S. Deps: Q2,
-Q3.
+**Q4 · Delete the per-row SsKey from the stream — DONE 2026-06-12** (deletion content landed
+structurally at Q2, per RI-13; this card closed as the arc's measurement). The `READSIDE_ROW`
+synthesis and its sprintf are out of the stream — identity at row grain is the PK cell
+through the basis; the synthesis survives ONLY at the IR-grain boundary
+(`materializeStream`), where the IR-grain `Identifier` consumers (sort passes,
+`DataInsertRow`) still receive it unchanged. *Witness:* H3 re-run (same host, same warm
+container, back-to-back with the BEFORE) — see PERF_HARNESS §5 Q-arc results.
 
 ### Stage 6 — licensed parallelism (R5, corrected per RI-5)
 

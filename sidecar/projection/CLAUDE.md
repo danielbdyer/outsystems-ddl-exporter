@@ -228,10 +228,10 @@ the predecessor's table drifted against the code within weeks (the case is enume
   deferred feature (reflection, object expressions, type providers, SRTP, free monads,
   `IObservable`) has its re-open trigger there or in the entry that deferred it.
 - **Currently-fired promotions awaiting their gates** are tracked in `CONSTELLATION.md` §9.7:
-  `[<Struct>]` scoped to the row-grain carrier (fired by measured allocation priors; **its
-  gate — harness slice 2 — passed 2026-06-11**, so it lands with the Q-track) and units of
-  measure scoped to the `Run.diff` delta surface (fired by mixed quantities in one
-  expression; still gate-held on R1d).
+  `[<Struct>]` scoped to the row-grain carrier (fired by measured allocation priors; its
+  gate — harness slice 2 — passed 2026-06-11; **landed with the Q-track 2026-06-12**,
+  `RowQuantum`) and units of measure scoped to the `Run.diff` delta surface (fired by mixed
+  quantities in one expression; still gate-held on R1d).
 - **Three metaprogramming devices are sanctioned** (builder / active pattern /
   private-constructor module); quotations and type providers stay out absent a trigger.
 

@@ -524,3 +524,18 @@ The 1b attribution claim is CONFIRMED in-harness: the carrier build is
 comparable to the wire read at scale. **The R4/Q-track gate is OPEN**
 (CONSTELLATION_BACKLOG stage 5). The −22% Map.add and −6× basis-concat
 candidate swaps are now one-command re-runnable claims against this scenario.
+
+**Q-arc results (2026-06-12, in-harness — `readside-rowstream 100000`, 12 cols, warm
+container, BEFORE/AFTER back-to-back on one host; CONSTELLATION_BACKLOG Q2–Q4):**
+
+| Path | BEFORE (StaticRow carrier) | AFTER (RowQuantum carrier) | Δ |
+|---|---|---|---|
+| ReadSide end-to-end (`readside.readRowsStream.all`) | 985 ms = 9.85 µs/row | 652/753/867 ms (3 runs, mean 757) ≈ 7.6 µs/row | **−23%** (mean) |
+| carrier build (`readside.rowstream.materialize`) | 420 ms = 4.20 µs/row (Map + SsKey + cells) | 126/154/188 ms (mean 156) ≈ 1.56 µs/row (cells only) | **−63%** (mean) |
+
+Attribution note (the §3.8 rule): after the arc, `materialize` brackets the
+cells build only; the Map + SsKey mint moved to the IR-grain boundary
+(`ReadSide.materializeStream`) and carries its own aggregated label
+(`readside.rowstream.materializeIr`), which the drain scenario and the
+streaming realization never pay. The win's witness is the END-TO-END number,
+not the label.
