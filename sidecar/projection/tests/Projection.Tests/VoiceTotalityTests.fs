@@ -25,7 +25,10 @@ let private inScopeCodes : Set<string> =
           "preflight.started"; "deploy.started"; "canary.started"; "load.started"
           "watch.runTitle"; "watch.runDone"; "watch.stageHalted"
           "summary.stageCompleted"
-          "config.validationFailed" ]
+          "config.validationFailed"
+          // the run-face verdict codes (`RunFaces` register migration) — the
+          // §4/§6 publish-and-load verdict and the §13 durable-record line
+          "load.completed"; "episode.recorded" ]
 
 // The codes the engine can actually emit today (the inventory — the contract the
 // totality test holds Voice to). Voicing a code outside this set would be copy for
@@ -50,6 +53,12 @@ let private knownEmittableCodes : Set<string> =
           "watch.runTitle"; "watch.runDone"; "watch.stageHalted"
           // round-trip verification verdict
           "canary.diffEmpty"; "canary.divergence"
+          // the run-face verdict codes — like the watch frames, these are not
+          // LogSink envelopes: a face renders its own verdict through the
+          // catalog (`TtyRenderer.renderVoicedTo`), one register, consumed at
+          // render. `load.completed` is `full-export --load`'s publish-and-load
+          // verdict; `episode.recorded` is the §13 durable-record line.
+          "load.completed"; "episode.recorded"
           // emitted but voiced by mechanism-1 / later slices (not in `Voice.all` yet)
           "transform.registered"; "transform.applied"; "transform.declined"
           "transform.lineage"; "transform.diagnostic"; "bench.label" ]
@@ -82,7 +91,11 @@ let private samplePayload : Voice.Payload =
           "stage",       box "extract"
           "outcome",     box "succeeded"
           "followOn",    box "Verification follows."
-          "runIdentity", box 11 ]
+          "runIdentity", box 11
+          "artifactCount", box 7
+          "capturedRows",  box 4210
+          "episodeCount",  box 3
+          "timeline",      box "DEV" ]
 
 // ---------------------------------------------------------------------------
 // code ⇔ copy totality
@@ -199,6 +212,9 @@ let ``Voice errorFrame: routing is total — every code yields a verdict Hero`` 
           "migrate.connectionUnavailable"; "transfer.connectionUnavailable"
           "migrate.insufficientGrant"; "transfer.grantProbeFailed"
           "gate.intent"
+          "transfer.connection.specShape"; "transfer.connection.specEmpty"
+          "transfer.connection.refMissing"; "transfer.connection.refEmpty"
+          "transfer.connection.openFailed"; "timeline.name.empty"
           "adapter.osm.parse"; "something.unclassified" ]
     for code in codes do
         match Voice.errorFrame code with
@@ -216,6 +232,37 @@ let ``Voice errorFrame: a connection code routes to the §10 unreachable frame``
     match Voice.errorFrame "migrate.connectionUnavailable" with
     | View.Hero(_, text), Some _ -> Assert.Contains("unreachable", text)
     | other -> Assert.Fail(sprintf "unexpected connection frame: %A" other)
+
+[<Fact>]
+let ``Voice errorFrame: a malformed connection reference is an argument finding (§14 set-but-invalid)`` () =
+    // The parse-failure class must NOT borrow the reachability frame: the
+    // reference's shape is wrong; nothing was probed.
+    for code in [ "transfer.connection.specEmpty"; "transfer.connection.specShape"; "transfer.connection.specPrefix" ] do
+        match Voice.errorFrame code with
+        | View.Hero(View.Bad, text), Some _ ->
+            Assert.Contains("malformed", text)
+            Assert.DoesNotContain("unreachable", text)
+        | other -> Assert.Fail(sprintf "unexpected spec frame for %s: %A" code other)
+
+[<Fact>]
+let ``Voice errorFrame: an unresolvable connection reference names the missing secret (§14 required-and-missing)`` () =
+    for code in [ "transfer.connection.refMissing"; "transfer.connection.refEmpty" ] do
+        match Voice.errorFrame code with
+        | View.Hero(View.Bad, text), Some _ ->
+            Assert.Contains("does not resolve", text)
+        | other -> Assert.Fail(sprintf "unexpected ref frame for %s: %A" code other)
+
+[<Fact>]
+let ``Voice errorFrame: a failed connection open still routes to the §10 unreachable frame`` () =
+    match Voice.errorFrame "transfer.connection.openFailed" with
+    | View.Hero(_, text), Some _ -> Assert.Contains("unreachable", text)
+    | other -> Assert.Fail(sprintf "unexpected open frame: %A" other)
+
+[<Fact>]
+let ``Voice errorFrame: an empty timeline name is a located --env finding`` () =
+    match Voice.errorFrame "timeline.name.empty" with
+    | View.Hero(View.Bad, text), Some _ -> Assert.Contains("--env", text)
+    | other -> Assert.Fail(sprintf "unexpected timeline frame: %A" other)
 
 [<Fact>]
 let ``Voice errorFrame: the intent gate names the arming variable and a next move`` () =

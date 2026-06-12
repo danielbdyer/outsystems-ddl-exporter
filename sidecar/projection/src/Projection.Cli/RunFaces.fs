@@ -101,21 +101,22 @@ let runFullExportLoad
     (storePath: string option)
     (envLabel: string option)
     : int =
+    // The error face is the voiced §10/§14 surface alone (`printErrors` →
+    // `Voice.errorsSurface`): the statement is the catalog's frame for the
+    // primary code, the located causes ride beneath. No command-prefixed
+    // header — the frame already names the finding and the next move.
     match TransferSpec.parseConnectionSpec connSpec with
     | Error es ->
-        Console.Error.WriteLine "projection full-export --load: --conn argument error:"
         printErrors Console.Error es
         2
     | Ok connRef ->
         match ConnectionResolver.resolve "Sink" connRef with
         | Error es ->
-            Console.Error.WriteLine "projection full-export --load: connection error:"
             printErrors Console.Error es
             6
         | Ok connStr ->
             match Config.fromFile configPath with
             | Error es ->
-                Console.Error.WriteLine "projection full-export --load: config error:"
                 printErrors Console.Error es
                 6
             | Ok cfg0 ->
@@ -126,7 +127,6 @@ let runFullExportLoad
                 let env = parseEnvironment "DEV" envLabel
                 match Timeline.create (Projection.Core.Environment.name env) with
                 | Error es ->
-                    Console.Error.WriteLine "projection full-export --load: --env timeline name error:"
                     printErrors Console.Error es
                     2
                 | Ok tl ->
@@ -140,13 +140,20 @@ let runFullExportLoad
                     let code =
                         match work.GetAwaiter().GetResult() with
                         | Ok (report, legOpt, cdcDelta) ->
-                            printfn "%d artifact(s) published; seed loaded (%d row(s) captured)."
-                                report.Paths.Length cdcDelta
+                            // §4/§6 — the publish-and-load verdict, voiced by code
+                            // (`load.completed`): statement first, the CDC measure
+                            // as the grounding evidence beneath.
+                            TtyRenderer.renderVoicedTo Console.Out "load.completed"
+                                (Map.ofList
+                                    [ "artifactCount", box report.Paths.Length
+                                      "capturedRows",  box cdcDelta ])
                             legOpt
                             |> Option.iter (fun leg ->
-                                printfn "  this run recorded — episode %d on timeline %s."
-                                    (EpisodicLifecycle.episodes leg.Chain |> List.length)
-                                    (Timeline.name (EpisodicLifecycle.timeline leg.Chain)))
+                                // §13 — the durable record, stated plainly.
+                                TtyRenderer.renderVoicedTo Console.Out "episode.recorded"
+                                    (Map.ofList
+                                        [ "episodeCount", box (EpisodicLifecycle.episodes leg.Chain |> List.length)
+                                          "timeline",     box (Timeline.name (EpisodicLifecycle.timeline leg.Chain)) ]))
                             0
                         | Error es ->
                             printErrors Console.Error es

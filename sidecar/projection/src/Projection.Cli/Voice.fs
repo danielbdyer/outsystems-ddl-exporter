@@ -184,9 +184,47 @@ module Voice =
                 | None    -> []
           Action         = fun _ -> None }
 
+    /// `load.completed` — the publish-and-load verdict (`THE_VOICE.md` §4 data
+    /// plane / §6 minimality): the bundle is published and the idempotent seed is
+    /// loaded, the data movement grounded in its measure (the CDC capture count =
+    /// rows captured, rule 8). A face-verdict code rendered by the run face
+    /// (`renderVoicedTo`), the sibling of `canary.diffEmpty`.
+    let private loadCompleted : Copy =
+        { Code           = "load.completed"
+          DocSection     = "§6"
+          Statement      =
+            fun p ->
+                match text "capturedRows" p with
+                | Some n -> View.Hero(View.Ok, sprintf "The bundle is published and the seed is loaded — %s rows captured." (humane n))
+                | None   -> View.Hero(View.Ok, "The bundle is published and the seed is loaded.")
+          Substantiation =
+            fun p ->
+                (match text "artifactCount" p with
+                 | Some n -> [ View.Field("artifacts", sprintf "%s published" (humane n), View.Neutral) ]
+                 | None   -> [])
+                @ (match text "capturedRows" p with
+                   | Some n -> [ View.Field("evidence", sprintf "CDC capture count = %s — the measured data movement" (humane n), View.Neutral) ]
+                   | None   -> [])
+          Action         = fun _ -> None }
+
     // §13 — lifecycle & the live run (Watch). Stage names are what they do for the
     //       operator, never the engine verb. The gerund names a live activity in
     //       progress (rule 12 exception); a completed stage is resultative.
+
+    /// `episode.recorded` — the run's durable record (`THE_VOICE.md` §13 — "This
+    /// run recorded to the history."). Stative and agentless: the record is a
+    /// state, named with its episode ordinal and timeline when present.
+    let private episodeRecorded : Copy =
+        { Code           = "episode.recorded"
+          DocSection     = "§13"
+          Statement      =
+            fun p ->
+                match text "episodeCount" p, text "timeline" p with
+                | Some n, Some tl ->
+                    View.Note(sprintf "This run recorded to the history — episode %s on timeline %s." (humane n) tl)
+                | _ -> View.Note "This run recorded to the history."
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
 
     /// `config.runStart` — the run opens by reading its configuration
     /// (`THE_VOICE.md` §13 / Act 1 Reading). A gerund-in-progress (rule 12
@@ -412,7 +450,9 @@ module Voice =
           canaryDiffEmpty
           canaryDivergence
           summaryRunComplete
+          loadCompleted
           // §13 — lifecycle / Watch (the spine + the per-stage stream)
+          episodeRecorded
           configRunStart
           configConnectionResolved
           extractStarted
@@ -487,6 +527,21 @@ module Voice =
             // gate.intent code, not a Preflight.GateLabel variant).
             View.Hero(View.Warn, "A live write requires PROJECTION_ALLOW_EXECUTE=1 in the environment."),
             Some(View.Action "Set PROJECTION_ALLOW_EXECUTE=1, then re-run.")
+        elif code.StartsWith "transfer.connection.spec" then
+            // §14 set-but-invalid: the reference's *shape* is wrong — an argument
+            // finding, never a reachability claim (the prior routing borrowed the
+            // unreachable frame for parse failures, which overstated the probe).
+            View.Hero(View.Bad, "The connection reference is malformed — the expected shape is env:NAME or file:PATH. Correct it and rerun."),
+            Some(View.Action "Correct the connection reference and rerun.")
+        elif code.StartsWith "transfer.connection.ref" then
+            // §14 required-and-missing: the reference is well-formed but the
+            // secret it points to (the env var / the file) is absent or empty.
+            View.Hero(View.Bad, "The connection reference does not resolve to a connection string. Provide the secret it points to, then retry."),
+            Some(View.Action "Provide the connection secret, then retry.")
+        elif code.StartsWith "timeline.name" then
+            // §14 set-but-invalid: the --env label cannot name a timeline.
+            View.Hero(View.Bad, "The environment label cannot name a timeline. Correct the --env label and rerun."),
+            Some(View.Action "Correct the --env label and rerun.")
         elif code.Contains "connection" then
             View.Hero(View.Warn, "The target is unreachable. Check the connection and retry."),
             Some(View.Action "Check the connection and retry.")
