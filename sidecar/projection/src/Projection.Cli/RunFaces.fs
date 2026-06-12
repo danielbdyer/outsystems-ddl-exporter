@@ -907,17 +907,19 @@ let runVerifyData (beforeSpec: string) (afterSpec: string) : int =
 /// is rendered). This is the deployed-vs-model check `verify-data`
 /// (deployed-vs-deployed) structurally cannot perform.
 let runDrift (toPath: string) (connSpec: string) : int =
+    // The error face is the voiced §10/§14 surface alone — no command-prefixed
+    // headers: the catalog's frame for the primary code is the statement
+    // (malformed reference / unresolved secret / model failed to load /
+    // deployed schema unreadable), the located causes ride beneath.
     let collect = function Ok _ -> [] | Error es -> es
     let parsedConn = TransferSpec.parseConnectionSpec connSpec
     if not (List.isEmpty (collect parsedConn)) then
-        Console.Error.WriteLine "projection drift: --conn argument error:"
         printErrors Console.Error (collect parsedConn)
         dumpBench "drift"
         2
     else
     let connStrR = ConnectionResolver.resolve "Deployed" (Result.value parsedConn)
     if not (List.isEmpty (collect connStrR)) then
-        Console.Error.WriteLine "projection drift: connection error:"
         printErrors Console.Error (collect connStrR)
         dumpBench "drift"
         6
@@ -927,7 +929,6 @@ let runDrift (toPath: string) (connSpec: string) : int =
             let! modelR = Compose.read toPath
             match modelR with
             | Error es ->
-                Console.Error.WriteLine (sprintf "projection drift: could not read --to %s:" toPath)
                 printErrors Console.Error es
                 return 6
             | Ok model ->
@@ -935,16 +936,19 @@ let runDrift (toPath: string) (connSpec: string) : int =
                 do! cnn.OpenAsync()
                 match! DriftRun.detect model cnn with
                 | Error es ->
-                    Console.Error.WriteLine "projection drift: could not read the deployed schema:"
                     printErrors Console.Error es
                     return 3
                 | Ok diff ->
                     if PhysicalSchema.isEqual diff then
-                        printfn "Verified. The deployed schema matches the model."
+                        // §6 — the no-drift verdict, voiced (`drift.none`).
+                        TtyRenderer.renderVoicedTo Console.Out "drift.none" Map.empty
                         return 0
                     else
-                        eprintfn "The deployed schema diverges from the model. The difference is shown below."
-                        eprintfn "%s" (PhysicalSchema.renderDiff diff)
+                        // §5 drift gate — the finding leads; the rendered
+                        // difference is demoted into the disclosure beneath;
+                        // the surface ends on the operator's levers.
+                        TtyRenderer.renderVoicedTo Console.Error "drift.diverged"
+                            (Map.ofList [ "renderedDiff", box (PhysicalSchema.renderDiff diff) ])
                         return 5
         }
     let code = work.GetAwaiter().GetResult()

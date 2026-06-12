@@ -277,6 +277,30 @@ module Voice =
                 | None   -> []
           Action         = fun _ -> None }
 
+    /// `drift.none` — the deployed-vs-model check found no divergence
+    /// (`THE_VOICE.md` §6 commuting square, the drift lens). Asserted; the
+    /// residual evidence beneath.
+    let private driftNone : Copy =
+        { Code           = "drift.none"
+          DocSection     = "§6"
+          Statement      = fun _ -> View.Hero(View.Ok, "Verified. The deployed schema matches the model.")
+          Substantiation = fun _ -> [ View.Field("evidence", "deployed ⊖ model residual empty", View.Neutral) ]
+          Action         = fun _ -> None }
+
+    /// `drift.diverged` — the deployed schema differs from the model
+    /// (`THE_VOICE.md` §5 drift gate / §10): a watchful finding, the rendered
+    /// difference demoted into the disclosure, ending on the operator's levers.
+    let private driftDiverged : Copy =
+        { Code           = "drift.diverged"
+          DocSection     = "§5"
+          Statement      = fun _ -> View.Hero(View.Warn, "The deployed schema diverges from the model. The difference is shown below.")
+          Substantiation =
+            fun p ->
+                match text "renderedDiff" p with
+                | Some d -> [ View.Disclosure("the difference", View.Warn, [ View.Note d ]) ]
+                | None   -> []
+          Action         = fun _ -> Some(View.Action "Remediate the server, or update the model, then re-run the check.") }
+
     // §13 — lifecycle & the live run (Watch). Stage names are what they do for the
     //       operator, never the engine verb. The gerund names a live activity in
     //       progress (rule 12 exception); a completed stage is resultative.
@@ -597,6 +621,8 @@ module Voice =
           deploySsdtRejected
           canaryCdcSilent
           canaryCdcCaptured
+          driftNone
+          driftDiverged
           // §13 — lifecycle / Watch (the spine + the per-stage stream)
           episodeRecorded
           containerStarting
@@ -693,6 +719,16 @@ module Voice =
             // §14 set-but-invalid: the --env label cannot name a timeline.
             View.Hero(View.Bad, "The environment label cannot name a timeline. Correct the --env label and rerun."),
             Some(View.Action "Correct the --env label and rerun.")
+        elif code.StartsWith "adapter.osm." || code.StartsWith "model." then
+            // §10 invalid input — the model could not be loaded; the located
+            // detail (path / line / field) is the substantiation beneath.
+            View.Hero(View.Bad, "The model failed to load. Correct it and rerun."),
+            Some(View.Action "Correct the model and rerun.")
+        elif code.StartsWith "readside." then
+            // §10 — the deployed schema could not be read (the same finding the
+            // §5 SchemaReadFailed gate states).
+            View.Hero(View.Bad, "The deployed schema could not be read. Check the connection and retry."),
+            Some(View.Action "Check the connection and retry.")
         elif code.Contains "connection" then
             View.Hero(View.Warn, "The target is unreachable. Check the connection and retry."),
             Some(View.Action "Check the connection and retry.")

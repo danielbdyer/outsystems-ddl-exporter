@@ -37,7 +37,9 @@ let private inScopeCodes : Set<string> =
           // the canary faces: the §6 CDC-silence proof pair, the §13
           // both-sides-deployed line, and the §14 located source-file finding
           "canary.cdcSilent"; "canary.cdcCaptured"
-          "canary.deployed"; "canary.sourceMissing" ]
+          "canary.deployed"; "canary.sourceMissing"
+          // the drift face: the §6 no-drift verdict and the §5 drift finding
+          "drift.none"; "drift.diverged" ]
 
 // The codes the engine can actually emit today (the inventory — the contract the
 // totality test holds Voice to). Voicing a code outside this set would be copy for
@@ -75,6 +77,8 @@ let private knownEmittableCodes : Set<string> =
           // the canary faces' verdicts + stage line + located source finding
           "canary.cdcSilent"; "canary.cdcCaptured"
           "canary.deployed"; "canary.sourceMissing"
+          // the drift face's verdict pair
+          "drift.none"; "drift.diverged"
           // emitted but voiced by mechanism-1 / later slices (not in `Voice.all` yet)
           "transform.registered"; "transform.applied"; "transform.declined"
           "transform.lineage"; "transform.diagnostic"; "bench.label" ]
@@ -146,7 +150,7 @@ let ``Voice totality: codes are distinct`` () =
 
 [<Fact>]
 let ``Voice totality: every entry cites a recognized THE_VOICE section`` () =
-    let recognized = Set.ofList [ "§3"; "§6"; "§10"; "§13"; "§14" ]
+    let recognized = Set.ofList [ "§3"; "§5"; "§6"; "§10"; "§13"; "§14" ]
     for c in Voice.all do
         Assert.False(System.String.IsNullOrWhiteSpace c.DocSection, sprintf "%s has no DocSection" c.Code)
         Assert.True(Set.contains c.DocSection recognized, sprintf "%s cites unrecognized section %s" c.Code c.DocSection)
@@ -342,6 +346,36 @@ let ``Voice errorFrame: an empty timeline name is a located --env finding`` () =
     match Voice.errorFrame "timeline.name.empty" with
     | View.Hero(View.Bad, text), Some _ -> Assert.Contains("--env", text)
     | other -> Assert.Fail(sprintf "unexpected timeline frame: %A" other)
+
+[<Fact>]
+let ``Voice errorFrame: a model-load failure routes to the §10 model frame`` () =
+    for code in [ "adapter.osm.fileReadFailed"; "adapter.osm.parse"; "model.resolution" ] do
+        match Voice.errorFrame code with
+        | View.Hero(View.Bad, text), Some _ -> Assert.Contains("model failed to load", text)
+        | other -> Assert.Fail(sprintf "unexpected model frame for %s: %A" code other)
+
+[<Fact>]
+let ``Voice errorFrame: a deployed-schema read failure names the schema, never a generic stop`` () =
+    match Voice.errorFrame "readside.query.failed" with
+    | View.Hero(View.Bad, text), Some _ -> Assert.Contains("deployed schema could not be read", text)
+    | other -> Assert.Fail(sprintf "unexpected readside frame: %A" other)
+
+[<Fact>]
+let ``Voice drift.diverged: the finding leads and the rendered difference is the disclosure`` () =
+    let payload : Voice.Payload = Map.ofList [ "renderedDiff", box "table dbo.Extra exists only on the server" ]
+    match Voice.surfaceOf "drift.diverged" payload with
+    | Some surface ->
+        (match surface.Statement with
+         | View.Hero(View.Warn, text) -> Assert.Contains("diverges from the model", text)
+         | other -> Assert.Fail(sprintf "statement is not a Warn Hero: %A" other))
+        let disclosed =
+            surface.Substantiation
+            |> List.collect (function View.Disclosure(_, _, detail) -> detail | _ -> [])
+        Assert.False(List.isEmpty disclosed)
+        match surface.Action with
+        | Some (View.Action _) -> ()
+        | other -> Assert.Fail(sprintf "no next move: %A" other)
+    | None -> Assert.Fail "drift.diverged is unvoiced"
 
 [<Fact>]
 let ``Voice errorFrame: the intent gate names the arming variable and a next move`` () =
