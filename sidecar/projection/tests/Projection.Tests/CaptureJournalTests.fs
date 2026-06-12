@@ -3,6 +3,7 @@ module Projection.Tests.CaptureJournalTests
 open System
 open System.IO
 open Xunit
+open Projection.Core
 open Projection.Pipeline
 
 // CONSTELLATION_BACKLOG card F4 / plane N5: the chunk-resume journal was
@@ -130,3 +131,59 @@ let ``load: a corrupt (non-JSON) line throws — the resume surface is not silen
         CaptureJournal.append j (chunk "OS_USER" 0 "1" "5" 5 [||])
         File.AppendAllText(CaptureJournal.filePath j, "this-is-not-json\n")
         Assert.ThrowsAny<exn>(fun () -> CaptureJournal.load j |> ignore) |> ignore)
+
+// -- L2: the journal grain on the ledger contract (R3 / RI-3) --------------
+// The contract instance over REAL journal records: the chain form, the
+// resume point, drift detection, and the effectful remap fold adapted at
+// the instance. The operator-facing named refusal
+// (transfer.resume.sourceDrift) and the no-duplicates equivalence ride the
+// Docker ReverseLegStreaming witnesses, unchanged.
+
+let private testKind : SsKey =
+    SsKey.synthesized "OS_TEST_CJ" "User"
+    |> function Ok k -> k | Error e -> failwithf "fixture: %A" e
+
+[<Fact>]
+let ``R3: crash at chunk k resumes at k — the journaled kind's chain through Ledger.resumePoint`` () =
+    withTempDir (fun dir ->
+        let j = CaptureJournal.create dir "plan-A"
+        CaptureJournal.append j (chunk "OS_USER" 0 "1" "5" 5 [||])
+        CaptureJournal.append j (chunk "OS_USER" 1 "6" "10" 5 [||])
+        CaptureJournal.append j (chunk "OS_USER" 2 "11" "15" 5 [||])
+        CaptureJournal.append j (chunk "OS_ORDER" 0 "1" "3" 3 [||])
+        let userChain =
+            CaptureJournal.load j
+            |> Seq.filter (fun kv -> fst kv.Key = "OS_USER")
+            |> Seq.map (fun kv -> CaptureJournal.toEntry kv.Value)
+            |> List.ofSeq
+        Assert.Equal(3, Ledger.resumePoint userChain))
+
+[<Fact>]
+let ``R3: drift refuses by name — the live slice's recomputed fingerprint disagrees at the chunk`` () =
+    let recorded = CaptureJournal.toEntry (chunk "OS_USER" 4 "201" "250" 50 [||])
+    match Ledger.resumeAdmit ("201", "250", 49) recorded with
+    | Ok _ -> failwith "a drifted source slice must never silently admit"
+    | Error drift ->
+        Assert.Equal(4, drift.Position)
+        Assert.Equal(("201", "250", 50), drift.Recorded)
+        Assert.Equal(("201", "250", 49), drift.Recomputed)
+
+[<Fact>]
+let ``R3: journaled pairs rebuild the remap through replay — the effectful fold adapted at the instance`` () =
+    let remap = PackedSurrogateRemap.create ()
+    let records =
+        [ chunk "OS_USER" 0 "1" "2" 2 [| [| "1"; "9001" |]; [| "2"; "9002" |] |]
+          chunk "OS_USER" 1 "3" "4" 2 [| [| "3"; "9003" |] |] ]
+    let admitted =
+        records
+        |> List.map (fun r ->
+            match Ledger.resumeAdmit (CaptureJournal.fingerprintOf r) (CaptureJournal.toEntry r) with
+            | Ok token -> token
+            | Error drift -> failwithf "fixture: unexpected drift at %d" drift.Position)
+    let replayed = Ledger.replay (CaptureJournal.spec testKind remap) admitted
+    // Apply folds INTO the shared accumulator (Genesis), never beside it.
+    Assert.Same(remap, replayed)
+    Assert.Equal(Some "9001", PackedSurrogateRemap.tryFind remap testKind "1")
+    Assert.Equal(Some "9002", PackedSurrogateRemap.tryFind remap testKind "2")
+    Assert.Equal(Some "9003", PackedSurrogateRemap.tryFind remap testKind "3")
+    Assert.Equal(None, PackedSurrogateRemap.tryFind remap testKind "4")

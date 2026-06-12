@@ -1032,12 +1032,21 @@ module Transfer =
     // -- The streaming realization (bounded memory + chunk resume) -----------
 
     /// The named refusal for a resume whose source changed under the journal.
-    let private sourceDriftRefusal (kind: SsKey) (chunkIx: int) : ValidationError =
-        ValidationError.create
+    /// L2: the typed `LedgerDrift` (the contract's ResumeAdmit disagreement)
+    /// maps onto the SAME named refusal — code and message bytes unchanged;
+    /// the recorded/recomputed fingerprints ride as metadata (candor gained,
+    /// nothing moved).
+    let private sourceDriftRefusal (kind: SsKey) (drift: LedgerDrift<string * string * int>) : ValidationError =
+        let render (firstPk: string, lastPk: string, rawCount: int) =
+            sprintf "firstPk=%s lastPk=%s rawCount=%d" firstPk lastPk rawCount
+        ValidationError.createWithMetadata
             "transfer.resume.sourceDrift"
             (sprintf
                 "Kind %s chunk %d does not match its journaled fingerprint; the source changed since the journaled run. Refusing to resume over drifted data — clear the journal (or run WipeAndLoad) to reload from scratch."
-                (SsKey.rootOriginal kind) chunkIx)
+                (SsKey.rootOriginal kind) drift.Position)
+            (Map.ofList
+                [ "recordedFingerprint", Some (render drift.Recorded)
+                  "recomputedFingerprint", Some (render drift.Recomputed) ])
 
     /// Per-kind phase-1 streaming totals (rows pulled from the source;
     /// rows that reached the sink — journal-skipped chunks count what the
@@ -1111,13 +1120,19 @@ module Transfer =
                         | true, record -> Some record
                         | false, _ -> None)
                 match journaled with
-                | Some record when record.FirstPk = firstPk && record.LastPk = lastPk && record.RawCount = rawCount ->
-                    record.Pairs
-                    |> Array.iter (fun pair ->
-                        if pair.Length = 2 then PackedSurrogateRemap.capture load.Kind pair[0] pair[1] remap)
-                    return Result.success (record.WrittenCount, [], [], lane)
-                | Some _ ->
-                    return Result.failureOf (sourceDriftRefusal load.Kind chunkIx)
+                | Some record ->
+                    // L2 — the journal grain's ResumeAdmit (R3 / RI-3): the
+                    // live source slice recomputes the fingerprint; admission
+                    // replays the journaled pairs into the shared remap
+                    // through the instance's spec (the effectful fold,
+                    // adapted at the instance); disagreement is the SAME
+                    // named drift refusal as before, never a silent re-run.
+                    match Ledger.resumeAdmit (firstPk, lastPk, rawCount) (CaptureJournal.toEntry record) with
+                    | Ok admitted ->
+                        Ledger.replay (CaptureJournal.spec load.Kind remap) [ admitted ] |> ignore
+                        return Result.success ((Verified.value admitted).WrittenCount, [], [], lane)
+                    | Error drift ->
+                        return Result.failureOf (sourceDriftRefusal load.Kind drift)
                 | None ->
                     let remapped = repoint basis load.DeferredFkColumns kind chunkRaw
                     let skips = remapped.Skipped |> List.map (fun u -> load.Kind, u)

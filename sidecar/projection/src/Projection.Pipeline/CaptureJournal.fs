@@ -76,6 +76,46 @@ module CaptureJournal =
     /// Append one completed chunk. The write is flushed on close, so a
     /// crash AFTER the append never re-executes the chunk and a crash
     /// DURING the chunk never journals it — the chunk's sink statement
-    /// (one MERGE / one bulk batch) is the atomic commit point.
+    /// (one MERGE / one bulk batch) is the atomic commit point. This
+    /// positioning IS the grain's WriteAdmit (R3 / RI-3): the completed
+    /// sink statement is the external witness, proven by control flow —
+    /// a ceremonial `Ledger.writeAdmit` here would assert nothing the
+    /// append's position does not already.
     let append (journal: CaptureJournal) (record: ChunkRecord) : unit =
         File.AppendAllText(journal.FilePath, JsonSerializer.Serialize record + "\n")
+
+    // -- L2: the journal grain on the ledger contract (R3 / RI-3) ------------
+
+    /// The chunk's SOURCE fingerprint — what `Ledger.resumeAdmit` compares
+    /// against the live stream's recomputation (first/last source PK + raw
+    /// count; deterministic because `ReadSide` orders by PK). The persisted
+    /// bytes are unchanged by this card: the `ChunkRecord` NDJSON line IS
+    /// the stored fingerprint, so existing journals resume across the
+    /// contract cutover (the RI-7 byte-stability discipline).
+    let fingerprintOf (record: ChunkRecord) : string * string * int =
+        record.FirstPk, record.LastPk, record.RawCount
+
+    /// A journaled record in chain form: position = the chunk index within
+    /// its kind. The one NDJSON file is a per-kind FAMILY of chains —
+    /// `load`'s `(kind, chunkIx)` last-write-wins index — so the contract
+    /// instance is per kind, and `Ledger.resumePoint` over one kind's
+    /// entries is where its crashed run resumes.
+    let toEntry (record: ChunkRecord) : LedgerEntry<ChunkRecord, string * string * int> =
+        { Position = record.ChunkIx; Fingerprint = fingerprintOf record; Entry = record }
+
+    /// The journal grain's `LedgerSpec` instance for one kind — the
+    /// EFFECTFUL REMAP FOLD, ADAPTED AT THE INSTANCE (RI-3): the contract
+    /// record stays pure data; this instance's `Apply` feeds the journaled
+    /// `(source → assigned)` pairs into the accumulator it is handed and
+    /// returns the same value. `Genesis` is the run's SHARED in-flight
+    /// remap (FKs cross kinds, so the run owns ONE accumulator; replay
+    /// folds into it, never beside it).
+    let spec (kind: SsKey) (remap: PackedSurrogateRemap) : LedgerSpec<PackedSurrogateRemap, ChunkRecord, string * string * int> =
+        { Genesis = remap
+          Apply =
+            fun acc record ->
+                record.Pairs
+                |> Array.iter (fun pair ->
+                    if pair.Length = 2 then PackedSurrogateRemap.capture kind pair[0] pair[1] acc)
+                acc
+          FingerprintOf = fingerprintOf }
