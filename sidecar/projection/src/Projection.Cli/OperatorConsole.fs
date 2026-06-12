@@ -89,23 +89,20 @@ let watchMode = ref false
 // arc), no longer from hand-rolled string lists here.
 
 let withRun (command: string) (body: unit -> int) : int =
-    LogSink.beginRun () |> ignore
-    Bench.reset ()
     // Tier-3 channel 2 (§15.1) — when --pretty + a real TTY, the panel
     // REPLACES the NDJSON on stderr (never both on the same TTY); route
-    // channel 1 to the null sink for this run.
+    // channel 1 to the null sink for this run. (The writer is not run
+    // state, so it is set before the bracket's reset.)
     let pretty = TtyRenderer.shouldRender prettyMode.Value
     if pretty then LogSink.setWriter System.IO.TextWriter.Null
-    LogSink.emit
-        { LogSink.envelope LogSink.Info LogSink.Config "config.runStart"
-            (Map.ofList [ "command", box command ]) with
-            Phase = LogSink.Start }
-    // §7.4 — every run publishes its classified transform inventory
-    // (the registry that drives the pass chain), not just full-export.
-    EventProjection.ofRegistry RegisteredAllTransforms.all |> List.iter LogSink.emit
-    let code = body ()
-    let outcome = if code = 0 then LogSink.Succeeded else LogSink.Failed
-    LogSink.runComplete outcome command (Bench.snapshot ()) |> ignore
+    // Card S4a — the run envelope bracket has ONE owner (`RunEnvelope`,
+    // shared with `FullExportRun.executeCore`): runStart first, the §7.4
+    // registry inventory, the terminal runComplete always — now including
+    // crashed bodies, which previously escaped without their §10 close.
+    let code =
+        RunEnvelope.bracket command ignore Map.empty (fun () ->
+            let code = body ()
+            code, (if code = 0 then LogSink.Succeeded else LogSink.Failed))
     // Tier-4 reporting — append this run to the cross-run ledger when one is
     // configured (`PROJECTION_LEDGER_DIR`), so the readiness gauge can read
     // the canary streak. Opt-in: default runs don't accumulate.

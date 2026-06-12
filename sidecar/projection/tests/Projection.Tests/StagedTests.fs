@@ -261,6 +261,53 @@ let ``R2: the stage bracket meters — Bench carries one stage-labelled sample p
     Assert.Contains("stage.canary", labels)
 
 // ---------------------------------------------------------------------------
+// the run-envelope bracket (card S4a) — ONE owner, both callers
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``S4a: RunEnvelope.bracket — runStart is the first event and runComplete the terminal one, with the verb's payload`` () =
+    let captured = ResizeArray<LogSink.Envelope>()
+    LogSink.reset ()
+    LogSink.addSubscriber captured.Add
+    try
+        let value =
+            LogSink.withWriter (new System.IO.StringWriter()) (fun () ->
+                RunEnvelope.bracket "projection test-verb"
+                    ignore
+                    (Map.ofList [ "configPath", box "cfg.json" ])
+                    (fun () -> 41 + 1, LogSink.Succeeded))
+        Assert.Equal(42, value)
+        let envs = List.ofSeq captured
+        let first = List.head envs
+        Assert.Equal("config.runStart", first.Code)
+        Assert.Equal(box "projection test-verb", Map.find "command" first.Payload)
+        Assert.Equal(box "cfg.json", Map.find "configPath" first.Payload)
+        Assert.Equal("summary.runComplete", (List.last envs).Code)
+    finally
+        LogSink.clearSubscribers ()
+
+[<Fact>]
+let ``S4a: RunEnvelope.bracket — a crashed body still closes its stream with the §10 terminal event`` () =
+    let captured = ResizeArray<LogSink.Envelope>()
+    LogSink.reset ()
+    LogSink.addSubscriber captured.Add
+    try
+        let thrown =
+            try
+                LogSink.withWriter (new System.IO.StringWriter()) (fun () ->
+                    RunEnvelope.bracket "projection test-verb" ignore Map.empty
+                        (fun () -> failwith "boom" : int * LogSink.Outcome))
+                |> ignore
+                false
+            with _ -> true
+        Assert.True(thrown, "the body's exception must propagate after the terminal event")
+        let last = List.last (List.ofSeq captured)
+        Assert.Equal("summary.runComplete", last.Code)
+        Assert.Equal(box "failed", Map.find "outcome" last.Payload)
+    finally
+        LogSink.clearSubscribers ()
+
+// ---------------------------------------------------------------------------
 // the declared spines — the retired string lists, pinned at their one
 // definition site
 // ---------------------------------------------------------------------------

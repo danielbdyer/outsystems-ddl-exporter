@@ -41,18 +41,6 @@ module FullExportRun =
         | RunOutcome.RunFailed _     -> 2
         | RunOutcome.Aborted _       -> 2
 
-    /// Map a stage's duration to a `LogSink.recordStage` +
-    /// `summary.stageCompleted` envelope pair (both ends, so the
-    /// runSummary stage table is populated alongside the per-stage end
-    /// event).
-    let private recordStage (stageName: string) (outcome: LogSink.Outcome) (durationMs: int64) : unit =
-        // The "pipeline" umbrella stage. The granular extract / profile /
-        // emit sub-stages are emitted inside `Compose.runWithConfig`
-        // (Slice 2); this records the end-to-end envelope (which also
-        // covers the store-leg path that doesn't route through
-        // `runWithConfig`).
-        LogSink.recordStageEvent stageName durationMs outcome
-
     /// One `config.validationFailed` envelope per config ValidationError
     /// (§7.1) so the operator can grep / jq each independently.
     let private emitConfigErrors (errors: ValidationError list) : unit =
@@ -107,39 +95,39 @@ module FullExportRun =
         | Some dir when not (String.IsNullOrWhiteSpace dir) -> dir
         | _ -> cfg.Output.Dir
 
-    /// `config.runStart` (command + configPath) then
-    /// `config.connectionResolved` (SnapshotJson source; secrets absent
-    /// by construction per D9) at run start (§7.1).
-    let private emitConfigSnapshot (cfg: Config.Config) (configPath: string) (effectiveOutput: string) : unit =
-        let startPayload : Map<string, objnull> =
-            Map.ofList [
-                "command",    box "projection full-export"
-                "configPath", box configPath
-                "outputDir",  box effectiveOutput
-            ]
-        LogSink.emit
-            { LogSink.envelope LogSink.Info LogSink.Config "config.runStart" startPayload with
-                Phase = LogSink.Start }
+    /// `config.connectionResolved` (SnapshotJson source + the resolved
+    /// output dir; secrets absent by construction per D9) once the config
+    /// has loaded (§7.1). The run's `config.runStart` is the
+    /// `RunEnvelope.bracket`'s — emitted before the config loads, so it is
+    /// the first event of EVERY run, including failed-config runs (card
+    /// S4a; `outputDir` rides here now, since it is config-resolved).
+    let private emitConfigSnapshot (cfg: Config.Config) (effectiveOutput: string) : unit =
         let modelSource =
             match cfg.Model.Ossys, cfg.Model.Path with
             | Some _, _ -> "LiveOssys"
             | None, Some p -> p
             | None, None -> "(none)"
         let connPayload : Map<string, objnull> =
-            Map.ofList [ "kind", box "SnapshotJson"; "modelPath", box modelSource ]
+            Map.ofList
+                [ "kind",      box "SnapshotJson"
+                  "modelPath", box modelSource
+                  "outputDir", box effectiveOutput ]
         LogSink.emit
             { LogSink.envelope LogSink.Info LogSink.Config "config.connectionResolved" connPayload with
                 Phase  = LogSink.Start
                 Source = Some LogSink.Configuration }
 
-    /// Run a full export under the structured LogSink stream. Resets the
-    /// sink + bench state, applies verbosity / muted categories, emits the
-    /// config snapshot, delegates composition to `Compose.runWithConfig`,
-    /// records the pipeline stage + diagnostics + artifacts, and always
-    /// emits the terminal `summary.runComplete` (the §10 mandatory exit
-    /// event). Synchronous (drives the `runWithConfig` task to completion)
-    /// to keep the resumable-state-machine surface minimal. Console
-    /// narration + bench dump are the caller's (CLI's) concern.
+    /// Run a full export under the structured LogSink stream. The run
+    /// envelope (fresh runId + Bench, `config.runStart` first, the §7.4
+    /// registry inventory, the mandatory terminal `summary.runComplete`) is
+    /// `RunEnvelope.bracket`'s — the ONE owner (card S4a; the prior
+    /// self-reset is retired). This core loads the config, emits the
+    /// snapshot, delegates composition to the runner (whose stage spine —
+    /// the "pipeline" umbrella + extract/profile/emit — rides
+    /// `Compose.runWithConfig`'s `staged { }`), and projects diagnostics +
+    /// artifacts. Synchronous (drives the `runWithConfig` task to
+    /// completion) to keep the resumable-state-machine surface minimal.
+    /// Console narration + bench dump are the caller's (CLI's) concern.
     /// The shared run core, parameterized by the composition runner. The runner
     /// drives the (genesis or store-leg) composition to completion and returns
     /// the `RunReport` plus the optional `FullExportStoreLeg` (always `None` for
@@ -154,74 +142,60 @@ module FullExportRun =
         (runComposition:
             Config.Config -> Result<Compose.RunReport * Compose.FullExportStoreLeg option>)
         : RunOutcome * Compose.FullExportStoreLeg option =
-        LogSink.reset ()
-        LogSink.setVerbosity verbosity
-        LogSink.setMutedCategories mutedCategories
-        Bench.reset ()
-        let mutable outcome : LogSink.Outcome = LogSink.Succeeded
         let mutable storeLeg : Compose.FullExportStoreLeg option = None
-        try
-            try
-                match Config.fromFile configPath with
-                | Error errors ->
-                    emitConfigErrors errors
-                    outcome <- LogSink.Failed
-                    RunOutcome.ConfigInvalid errors
-                | Ok cfg ->
-                    let effectiveOutput = resolveOutputDir cfg outputOverride
-                    let cfgForRun = { cfg with Output = { Dir = effectiveOutput } }
-                    emitConfigSnapshot cfgForRun configPath effectiveOutput
-                    // §7.4 transform.registered — the run's complete classified
-                    // transform inventory (pillar-9 totality surface), emitted at
-                    // start from the same registry that drives the run. Debug
-                    // level: default-hidden, surfaces under --verbose / --debug.
-                    EventProjection.ofRegistry RegisteredAllTransforms.all |> List.iter LogSink.emit
-                    let sw = Stopwatch.StartNew()
-                    let result = runComposition cfgForRun
-                    sw.Stop()
-                    match result with
-                    | Ok (report, leg) ->
-                        storeLeg <- leg
-                        recordStage "pipeline" LogSink.Succeeded sw.ElapsedMilliseconds
-                        emitSpecialCircumstancesDiagnostics report.Diagnostics
-                        // §16 egress projection — surface the pass chain's
-                        // accumulated writers as `transform.*` events. The
-                        // trail projects to `transform.applied` / `.declined`
-                        // (info) + `transform.lineage` (debug); the chain's
-                        // full diagnostics project to `transform.diagnostic`
-                        // (disjoint from the curated set emitted above).
-                        EventProjection.ofLineageTrail report.Trail |> List.iter LogSink.emit
-                        EventProjection.ofDiagnostics report.PassDiagnostics |> List.iter LogSink.emit
-                        report.Paths
-                        |> List.iter (fun p ->
-                            let info = FileInfo p
-                            LogSink.recordArtifact {
-                                Kind      = Path.GetFileName p |> nonNull
-                                Path      = p
-                                SizeBytes = Some info.Length
-                                FileCount = None
-                            })
-                        RunOutcome.Succeeded (report, effectiveOutput)
-                    | Error errors ->
-                        recordStage "pipeline" LogSink.Failed sw.ElapsedMilliseconds
-                        emitTransformErrors errors
-                        outcome <- LogSink.Failed
-                        RunOutcome.RunFailed errors
-            with ex ->
-                outcome <- LogSink.Failed
-                let payload : Map<string, objnull> =
-                    Map.ofList [
-                        "exception", box (ex.GetType().Name)
-                        "message",   box ex.Message
-                    ]
-                LogSink.emit
-                    { LogSink.envelope LogSink.Error LogSink.Config "config.validationFailed" payload with
-                        Phase = LogSink.ErrorPhase }
-                RunOutcome.Aborted ex
-        finally
-            let benchStats = Bench.snapshot ()
-            LogSink.runComplete outcome "projection full-export" benchStats |> ignore
-        |> fun runOutcome -> runOutcome, storeLeg
+        let runOutcome =
+            RunEnvelope.bracket
+                "projection full-export"
+                (fun () ->
+                    LogSink.setVerbosity verbosity
+                    LogSink.setMutedCategories mutedCategories)
+                (Map.ofList [ "configPath", box configPath ])
+                (fun () ->
+                    try
+                        match Config.fromFile configPath with
+                        | Error errors ->
+                            emitConfigErrors errors
+                            RunOutcome.ConfigInvalid errors, LogSink.Failed
+                        | Ok cfg ->
+                            let effectiveOutput = resolveOutputDir cfg outputOverride
+                            let cfgForRun = { cfg with Output = { Dir = effectiveOutput } }
+                            emitConfigSnapshot cfgForRun effectiveOutput
+                            match runComposition cfgForRun with
+                            | Ok (report, leg) ->
+                                storeLeg <- leg
+                                emitSpecialCircumstancesDiagnostics report.Diagnostics
+                                // §16 egress projection — surface the pass chain's
+                                // accumulated writers as `transform.*` events. The
+                                // trail projects to `transform.applied` / `.declined`
+                                // (info) + `transform.lineage` (debug); the chain's
+                                // full diagnostics project to `transform.diagnostic`
+                                // (disjoint from the curated set emitted above).
+                                EventProjection.ofLineageTrail report.Trail |> List.iter LogSink.emit
+                                EventProjection.ofDiagnostics report.PassDiagnostics |> List.iter LogSink.emit
+                                report.Paths
+                                |> List.iter (fun p ->
+                                    let info = FileInfo p
+                                    LogSink.recordArtifact {
+                                        Kind      = Path.GetFileName p |> nonNull
+                                        Path      = p
+                                        SizeBytes = Some info.Length
+                                        FileCount = None
+                                    })
+                                RunOutcome.Succeeded (report, effectiveOutput), LogSink.Succeeded
+                            | Error errors ->
+                                emitTransformErrors errors
+                                RunOutcome.RunFailed errors, LogSink.Failed
+                    with ex ->
+                        let payload : Map<string, objnull> =
+                            Map.ofList [
+                                "exception", box (ex.GetType().Name)
+                                "message",   box ex.Message
+                            ]
+                        LogSink.emit
+                            { LogSink.envelope LogSink.Error LogSink.Config "config.validationFailed" payload with
+                                Phase = LogSink.ErrorPhase }
+                        RunOutcome.Aborted ex, LogSink.Failed)
+        runOutcome, storeLeg
 
     let execute
         (configPath: string)
