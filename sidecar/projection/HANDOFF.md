@@ -1,3 +1,64 @@
+# Handoff addendum — 2026-06-12, generation 4 CLOSE (the Q-arc is CUT and measured; the substrate is COMPLETE; F6/F7 closed)
+
+To the next agent.
+
+The arc-cutter's session is done. What you inherit, in order of weight:
+
+**1. The Q-track critical path is CLOSED (Q1→Q2→Q3→Q4, all DONE).** The
+in-flight row carrier is positional: `readRowsStream` emits `RowQuantum`
+against `Kind.rowBasis`; the Map + `READSIDE_ROW` mint lives ONLY at the
+IR-grain boundary (`ReadSide.materializeStream`, its own `materializeIr`
+label); the streaming realization consumes quanta end-to-end — renames
+are basis-header operations (`RowBasis.rename`, the per-row walk is
+DELETED on that path), PK/FK/identity access is by precomputed ordinal,
+the capture ladder is carrier-generic (staged `getterOf`, A40). **The
+measured win: end-to-end 985→757 ms mean (−23%, ~7.6 µs/row, up to 133k
+rows/sec); carrier build 4.20→1.56 µs/row (−63%).** Byte-stability held
+everywhere it had to: canary row hashes (Q1's permutation), journal
+fingerprints (existing journals resume), IR-grain rows
+(`R4: ofQuantum ∘ toQuantum = id`). RI-13 records where the cards
+changed shape under the knife: Q4's deletion landed at Q2;
+`streamsInOrder` was deleted (consumer-less), not re-typed; Q2+Q3
+shipped as one verified commit per the coupling finding. Read
+`DECISIONS 2026-06-12 — The Q-arc lands` before touching the read path.
+
+**2. The measurement substrate is COMPLETE (H0–H7 all closed).** Twelve
+declared scenarios, every one exercised gate-open this session; numbers
+in PERF_HARNESS §5. The new verdicts: the 5000 bulk default VINDICATED
+(31.3k rows/sec ≈ 10k's 31.4k; 1k pays +27%); pure static-population
+emit is 3.1 µs/row (the in-canary number was ~90% consumer time — the
+3a caveat, quantified); profiler discovery ≈ 4 ms/table (the B.3 prior
+CONFIRMED — leave it); ossys-parse ~170 ms/1000 entities (cheap; A3/A4
+stay unfired); physical-schema-verify decomposes the ~14 s bulk100k
+verify prior (rows.hash 3.5 µs/row is its biggest part — an UNMEASURED-
+until-now candidate if a future gate demands it). One trap with teeth,
+new in PERF_HARNESS §5: an indefinitely-suspended bulk load on the warm
+container is a MEMORY-GRANT stall (`sys.dm_exec_query_memory_grants` +
+`_resource_semaphores`, grant ~535 MB batch-size-INDEPENDENT) — the
+day-old container's semaphore shrinks below it; `warm-sql.sh restart`
+is the remedy. Do not blame the batch knob; I did, for half an hour.
+
+**3. F6 and F7 closed** (the fixture builder absorbed FOUR instances,
+not the card's three; the dead digest fold is deleted, recipes kept).
+Stage 0 and Stage 1 of the backlog are now ENTIRELY done.
+
+**Your queue, by the backlog's own graph:** the S-track (S1→S5, the
+spine — the structural critical path to R1e, untouched and ready in its
+parallel lane); then L1–L4 (F4's pinned journal surface awaits), then
+the R1 stage. The armed items (§6) still have named wake conditions —
+including F1-hex (item 13) and staged-bulk (item 9). The perf substrate
+is no longer the work; it is the instrument — capture before/after per
+card, per the protocol. J5 — a writable UAT connection — still trumps
+everything.
+
+Witness state at close: pure pool 3056/0/211 green at every commit;
+canary suite 103/0/4; full Docker pool 222/0 at the arc commit and the
+full suite re-run at close (see the final commit). Six commits, every
+one green, every number in its commit message.
+
+Hold the spine; balance the books; keep the patient breathing; re-run
+the witnesses you inherit before you stand on them.
+
 # Handoff addendum — 2026-06-11, builder session 2 CLOSE (H7 + the Q-arc boundary map + plane N10; the arc is yours)
 
 To the next agent.

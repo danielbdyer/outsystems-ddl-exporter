@@ -107,7 +107,10 @@ within their first session. Everything not on this list, this file only points t
    instance-wide state; never on the warm container.
 2. **A batch of `Could not open a connection` failures means the warm SQL container died**,
    not a regression. `scripts/warm-sql.sh restart`. Check `scripts/test.sh status` first,
-   always.
+   always. Same remedy for a second signature (2026-06-12): **a bulk load that hangs
+   indefinitely** (no error, zero rows) on a long-running warm container is a
+   RESOURCE_SEMAPHORE memory-grant stall — batch-size-independent; diagnose via
+   `sys.dm_exec_query_memory_grants`, then restart. (PERF_HARNESS §5.)
 3. **Never `pgrep`-guard a test run; never watch a run through `| tail`** — the guard matches
    itself and tail buffers to EOF. Launch bare in the background; poll `test.sh status`.
 4. **On any `Failed: N>0`, re-run with the TRX logger and grep the TRX** — console output

@@ -753,6 +753,7 @@ is also the resume story after the interruption ends.
 | FS3511 Release shapes | any task-CE work in L2/Q2/Q3 | the survival rules; hoist and bind single values |
 | perf-gate baseline drift | P2, Q3, anything that legitimately moves a floor | `PERF_GATE_RECORD=1` + the DECISIONS amendment, never silent |
 | Docker soft-skip masking | every Docker-gated witness above | confirm via TRX / `test.sh status` when the verdict matters |
+| warm-container memory-grant stall | any bulk load that hangs indefinitely (no error, no rows) on a long-running warm container | it is a RESOURCE_SEMAPHORE wait, not a code bug and not the batch knob (the grant ~535 MB is batch-size-independent): check `sys.dm_exec_query_memory_grants` + `_resource_semaphores`, then `warm-sql.sh restart` (PERF_HARNESS §5, 2026-06-12) |
 
 ---
 
