@@ -1,5 +1,11 @@
 namespace Projection.Pipeline
 
+// LINT-ALLOW-FILE: run-envelope bracket at the logging boundary — function-local
+//   mutables thread the body's value/outcome past the mandatory `finally`
+//   (no module-level mutable state), and `box` feeds the LogSink payload
+//   (`Map<string, objnull>` — the BCL JSON boundary, same shape as
+//   FullExportRun.fs's marker). The structural surface is typed end to end.
+
 open Projection.Core
 
 /// Card S4 — the run-envelope bracket, reconciled to ONE owner. Before
