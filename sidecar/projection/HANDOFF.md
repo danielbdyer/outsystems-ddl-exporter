@@ -1,3 +1,87 @@
+# Handoff addendum — 2026-06-12, generation 7 CLOSE (P2 is WIRED: the load leg deploys the seed leveled-parallel; the mint gained its mode guard)
+
+To the next agent.
+
+**P2 is DONE — the wire landed on the gate generation 6 met.** The
+production data face was FOUND, not assumed: the card's "fused
+schema+seeds" premise about `runDeploy → runEphemeral` was the probe's
+error — `aggregateSsdt` joins `SsdtBundle` (schema files only;
+`Data/seed.sql` lives in `DataBundle` and never rode the deploy face),
+so face (a) is REFUSED on the card (nothing data-shaped to level;
+schema leveling stays P3, trigger-held). The real face is the
+full-export load leg, whose old shape (`executeBatch sink <fused
+seed>`) was exactly the measured gate's losing leg. Now:
+`runFullExportLoad` → `Compose.runWithConfigAndLoad` (executor seam
+re-threaded: inject `Deploy.executeLeveledSeed <connection string>` —
+partial application carries the string for per-segment pooled opens;
+`sink` stays the CDC measure's connection) →
+`Compose.loadLeveledSeedAndRecord` → `Deploy.executeLeveledSeed`, the
+ONE owner of the leveled order (Phase-1 levels then Phase-2, levels
+sequential, within-level concurrency by the token, parallelism via
+`resolveParallelism`). Faithfulness is a LAW: the leveled plan
+PARTITIONS the published seed (GO-batch segment-multiset equality,
+property-witnessed in both ordering modes); the fused
+`loadSeedAndRecord` stays as the published-artifact contract witness.
+
+**The wire surfaced a mint defect — fixed at the mint.** Under
+`Mode = Alphabetical` (any unresolved cycle; ONE self-FK kind anywhere
+suffices), `TopologicalOrder.levels`' "unknown parent contributes 0"
+rule collapsed real FK chains into ONE ParallelSafe group — the
+token's no-edge-within-group law was violated at its only mint, and
+the wire would have promoted that to CONCURRENT execution. `levels`
+now licenses multi-member groups only under `Topological`; degraded
+modes yield singleton groups in order (≡ the sequential deploy,
+exactly). A named residual rides the DECISIONS entry: the FUSED path's
+alphabetical MERGE order under that mode is a PRE-EXISTING hazard for
+non-cycle FK chains among seeded kinds (loud FK error, not silent);
+cure trigger = a real catalog hitting it (cycle-resolution reach, not
+deploy-order surgery).
+
+**Witness state at close (this host runs ~20% slower than gen 6's —
+calibrate before comparing):** inherited fast pool replicated EXACTLY
+at open (3116/0/211); with the wire, fast 3121/0/211 at 137s (+5 pure:
+partition law, level precedence, singleton degrade, isEmpty parity,
+the mint-mode witness) and docker 231/0 at 374s (+2 over the inherited
+229 = gen 6's gated leveled-deploy scenario fact + the new live leg —
+confirmed EXERCISED, not soft-skipped, per §4 rule 12); comprehensive
+canary gate-open 1/1 at 4m02s, empty PhysicalSchema diff, leveled
+target-deploy at parallelism 4 with 3 real Phase-1 levels (the guard
+did not degrade the acyclic path); `perf-harness.sh run leveled-deploy`
+replicated 2.78× post-wire (1932 ms → 696 ms, parallelism 4 — inside
+the gate's 2.59–2.85× band); readside-rowstream 1042 ms / 206 ms at
+100k×12 (above the 869/165 band by the same ~20% this host runs
+everything; elements exact at 100000); perf-gate CLEAN solo (132
+labels; baseline NOT re-recorded — no floor moved); lint surface
+byte-identical to the clean tree.
+
+**Traps from this session:** (a) the pass chain rewrites `Physical` to
+the LOGICAL name (the D.1.a move) — a fixture whose KindName and
+PhysicalTable differ deploys under the KIND name; the existing X1
+tests only worked because theirs coincide; compose any test plan over
+the POST-CHAIN catalog (`finalState.Catalog`), as `projectSeedPlan`
+does. (b) §4 rule 12 bit live: my first leveled-leg run "passed" while
+soft-skipping on a swallowed CDC-enable error — grep the live log for
+the SKIP marker before counting a docker witness. (c) NEW §4 rule 13:
+a perf-gate verdict taken while anything else runs on the host is VOID
+— the CPU-bound tier false-tripped 3.3× over baseline during a
+concurrent build; the solo re-run was clean on the same tree.
+
+**Your queue, by the backlog's graph:** the Voice lane's named
+remainder (migrate success verdicts the natural small face; transfer
+narration wants TransferReport → Surface; explain/suggest want
+View/Surface documents — reasons in the lane's commits), P3 stays
+trigger-held, the §6 armed items keep their wake conditions (F1-hex
+unchanged — `digestOf` untouched). J5 — a writable UAT connection —
+still trumps everything.
+
+Hold the spine; balance the books; keep the patient breathing; re-run
+the witnesses you inherit before you stand on them — mine are one
+command each: `scripts/test.sh fast`, `scripts/test.sh docker`,
+`perf-harness.sh run leveled-deploy`, `perf-harness.sh run
+readside-rowstream`, `scripts/perf-gate.sh` (solo, per rule 13).
+
+— Generation 7, the wire-layer, 2026-06-12
+
 # Handoff addendum — 2026-06-12, generation 6 SECOND POSTSCRIPT (P2's gate is MET: 2.6–2.9× at the operator envelope; the wiring slice is yours)
 
 The half-met gate in the postscript below is now FULLY MET. The

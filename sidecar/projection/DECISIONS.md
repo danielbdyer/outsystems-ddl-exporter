@@ -21816,3 +21816,59 @@ leg injects a `SqlConnection -> string -> Task` executor, while
 `executeBatchParallel` needs the connection STRING for per-segment
 opens — the seam needs re-threading. Witnesses for the wire stay as
 carded (operator-reality canary + perf-gate).
+
+## 2026-06-12 — P2 lands: the load leg deploys the seed leveled-parallel; the mint gains its mode guard
+
+The wire, on the gate met earlier today. Three disciplines with teeth:
+
+**1. The face was found, not assumed — and the card's premise was
+corrected.** The probe's "fused schema+seeds" claim about
+`runDeploy → runEphemeral` was FALSE: `aggregateSsdt` joins
+`Outputs.SsdtBundle` (per-table schema files; `manifest.json` filtered),
+and the seeds live in `Outputs.DataBundle` as ONE fused `Data/seed.sql`
+— the deploy face never carried data, so there was nothing data-shaped
+to level there (refused; schema leveling stays P3, trigger-held). The
+production data face is the full-export load leg, whose sequential
+shape (`executeBatch sink <fused seed>`) was exactly the measured
+gate's LOSING leg. The wire: `runFullExportLoad` →
+`runWithConfigAndLoad` (executor re-threaded to
+`Deploy.executeLeveledSeed <connection string>` — partial application
+carries the string for per-segment pooled opens; `sink` stays the CDC
+measure's connection) → `loadLeveledSeedAndRecord` (same CDC bracket,
+same episode recording; the fused `loadSeedAndRecord` remains as the
+published-artifact contract witness) → `executeLeveledSeed`, the ONE
+owner of the leveled order (Phase-1 levels then Phase-2, levels
+sequential, within-level concurrency by the token, parallelism from
+`resolveParallelism` with the `PROJECTION_DEPLOY_PARALLELISM` override).
+
+**2. Faithfulness is a LAW, not a comment.** The leveled plan is a
+PARTITION of the published seed: `composeRenderedLeveled` selects the
+same per-kind `RenderedPhase1`/`RenderedPhase2` strings the fused
+`composeRenderedFull` concatenates. Property-witnessed at the execution
+plane: the GO-batch segment multiset of the leveled members equals the
+fused string's, on both a Topological catalog and an Alphabetical-mode
+one. Error semantics named: a failing segment fails its level's
+`WhenAll` and no later level starts; the MERGE seed is idempotent, so a
+re-run converges and is CDC-silent on landed rows.
+
+**3. The wire surfaced a mint defect — fixed at the mint, not the
+consumer.** Under `Mode = Alphabetical` (ANY unresolved cycle; one
+self-FK kind suffices — common in real estates), `levels`' "unknown
+parent contributes 0" rule collapsed real FK chains into ONE
+`ParallelSafe` group: the token's no-edge-within-group law was violated
+at its only mint, and P2 would have promoted that to CONCURRENT
+execution. `TopologicalOrder.levels` now matches on mode: only
+`Topological` licenses multi-member groups; `Alphabetical` /
+`JunctionDeferred` yield singleton groups in order — vacuously safe,
+exactly the sequential deploy. The operator envelope (independent
+lookups) stays Topological, so the 2.6–2.9× win is untouched.
+**Named residual, not cured here:** under Alphabetical mode the FUSED
+path already deploys MERGEs in alphabetical order, which can violate a
+non-cycle FK chain among seeded kinds (loud SQL error, not silent) —
+pre-existing, now equal-not-worse under the leveled path. Trigger to
+cure: a real catalog hitting Alphabetical mode with FK-dependent static
+seeds (the cure is cycle-resolution reach, not deploy-order surgery).
+
+Perf-gate baseline NOT re-recorded: no floor legitimately moved (the
+canary's compose/deploy labels are path-unchanged; the load leg gained
+speed, and the gate ceilings tolerate downward movement).

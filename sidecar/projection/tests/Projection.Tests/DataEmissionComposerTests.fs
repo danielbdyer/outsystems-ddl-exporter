@@ -585,3 +585,191 @@ let ``5.13.data-emission-registry: cross-emitter coverage holds the partition in
         Assert.Equal(1, List.length legacyScript.Phase2Updates)
         Assert.Equal(0, List.length countryScript.Phase2Updates)
     | Error e -> Assert.Fail (sprintf "expected partition success, got %A" e)
+
+// ---------------------------------------------------------------------------
+// Card P2 — the leveled plan is a faithful PARTITION of the fused seed.
+//
+// The wiring constraint the P2 card pre-derived: the production load leg
+// (`Compose.loadLeveledSeedAndRecord` → `Deploy.executeLeveledSeed`) must
+// stay faithful to the published `Data/seed.sql` — a partition of the same
+// rendered per-kind strings, never a re-composition that can diverge. Both
+// `composeRenderedFull` and `composeRenderedLeveled` derive from the SAME
+// `dispatchSiblings + unionSiblings` artifact; these witnesses pin the
+// claim at the execution plane: the GO-batch SEGMENT multiset the leveled
+// plan dispatches equals the segment multiset the fused string deploys
+// (within-level order is SsKey-sorted, so order is a permutation — the
+// multiset, all-Phase-1-before-Phase-2, and level precedence are the laws).
+// ---------------------------------------------------------------------------
+
+/// A static kind with `rowIds` rows and (optionally) a cross-kind FK to
+/// `target` on a nullable TARGETID column — the level-graph fixture.
+let private mkStaticLevelKind (name: string) (table: string) (target: Kind option) (rowIds: string list) : Kind =
+    let kindKey = mkKey ["TestModule"; name]
+    let idKey = mkKey ["TestModule"; name; "Id"]
+    let targetIdKey = mkKey ["TestModule"; name; "TargetId"]
+    let row (rid: string) =
+        let baseValues = [ mkName "Id", rid ]
+        let values =
+            match target with
+            | Some _ -> (mkName "TargetId", rid) :: baseValues
+            | None   -> baseValues
+        { Identifier = mkKey ["TestModule"; name; "Row"; rid]
+          Values = Map.ofList values }
+    let fkAttrs =
+        match target with
+        | Some _ ->
+            [ { Attribute.create targetIdKey (mkName "TargetId") Integer with
+                  Column = ColumnRealization.create ("TARGETID") (true) |> Result.value } ]
+        | None -> []
+    let references =
+        match target with
+        | Some t ->
+            [ Reference.create (mkKey ["TestModule"; name; "RefTarget"]) (mkName "RefTarget") targetIdKey t.SsKey ]
+        | None -> []
+    {
+        SsKey    = kindKey
+        Name     = mkName name
+        Origin   = Native
+        Modality = [ Static (rowIds |> List.map row) ]
+        Physical = mkTableId "dbo" table
+        Attributes =
+            { Attribute.create idKey (mkName "Id") Integer with
+                Column = ColumnRealization.create ("ID") (false) |> Result.value
+                IsPrimaryKey = true
+                IsMandatory = true }
+            :: fkAttrs
+        References = references
+        Indexes    = []
+        Description = None
+        IsActive = true
+        Triggers = []
+        ColumnChecks = []
+        ExtendedProperties = []
+        }
+
+/// A static kind with a self-FK cycle on nullable PARENTID — produces a
+/// Phase-2 UPDATE, so the partition law covers both phases.
+let private mkStaticSelfCycleKind (name: string) (table: string) : Kind =
+    let kindKey = mkKey ["TestModule"; name]
+    let idKey = mkKey ["TestModule"; name; "Id"]
+    let parentKey = mkKey ["TestModule"; name; "ParentId"]
+    let row =
+        { Identifier = mkKey ["TestModule"; name; "Row"; "1"]
+          Values = Map.ofList [ mkName "Id", "1"; mkName "ParentId", "1" ] }
+    {
+        SsKey    = kindKey
+        Name     = mkName name
+        Origin   = Native
+        Modality = [ Static [ row ] ]
+        Physical = mkTableId "dbo" table
+        Attributes =
+            [
+                { Attribute.create idKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true }
+                { Attribute.create parentKey (mkName "ParentId") Integer with Column = ColumnRealization.create ("PARENTID") (true) |> Result.value }
+            ]
+        References =
+            [ Reference.create (mkKey ["TestModule"; name; "RefSelf"]) (mkName "RefSelf") parentKey kindKey ]
+        Indexes    = []
+        Description = None
+        IsActive = true
+        Triggers = []
+        ColumnChecks = []
+        ExtendedProperties = []
+        }
+
+/// The ACYCLIC level-graph catalog: Root ← Mid ← Leaf (a 3-deep FK
+/// chain) and Indep (no FKs — shares Root's level). `Mode = Topological`
+/// ⇒ the mint licenses real multi-member levels.
+let private mkAcyclicLeveledCatalog () : Kind list =
+    let root  = mkStaticLevelKind "LvlRoot" "OSUSR_TEST_LVL_ROOT" None [ "1"; "2" ]
+    let mid   = mkStaticLevelKind "LvlMid"  "OSUSR_TEST_LVL_MID"  (Some root) [ "1"; "2" ]
+    let leaf  = mkStaticLevelKind "LvlLeaf" "OSUSR_TEST_LVL_LEAF" (Some mid)  [ "1" ]
+    let indep = mkStaticLevelKind "LvlIndep" "OSUSR_TEST_LVL_INDEP" None [ "1" ]
+    [ root; mid; leaf; indep ]
+
+/// The same graph PLUS a self-cycle kind. The unresolved 1-node SCC puts
+/// the WHOLE order into `Mode = Alphabetical` — the mint's degraded arm
+/// (singleton groups; no parallelism licensed) and the Phase-2 surface
+/// (the deferred self-FK re-points by UPDATE).
+let private mkCycleBearingCatalog () : Kind list =
+    mkAcyclicLeveledCatalog () @ [ mkStaticSelfCycleKind "LvlCyc" "OSUSR_TEST_LVL_CYC" ]
+
+let private composeBoth (kinds: Kind list) =
+    let catalog = mkCatalog kinds
+    let policy = policyWith AllRemaining
+    let fused =
+        DataEmissionComposer.composeRenderedFull
+            policy catalog Profile.empty
+            MigrationDependencyContext.empty UserRemapContext.empty
+        |> mustOkEmit
+    let leveled =
+        DataEmissionComposer.composeRenderedLeveled
+            policy catalog Profile.empty
+            MigrationDependencyContext.empty UserRemapContext.empty
+        |> mustOkEmit
+    fused, leveled
+
+let private segments (sql: string) =
+    Projection.Targets.SSDT.BatchSplitter.splitOnGoLineFold sql |> Array.toList
+
+let private leveledSegmentsOf (leveled: DataEmissionComposer.LeveledDeploymentText) =
+    (leveled.Phase1Levels @ leveled.Phase2Levels)
+    |> List.collect ParallelSafe.members
+    |> List.collect segments
+
+[<Fact>]
+let ``P2: composeRenderedLeveled PARTITIONS composeRenderedFull — segment multiset equality (faithful split, never a re-render)`` () =
+    // The law holds in BOTH modes: the Topological catalog (real levels)
+    // and the cycle-bearing one (Alphabetical fallback, singleton groups).
+    for kinds in [ mkAcyclicLeveledCatalog (); mkCycleBearingCatalog () ] do
+        let fused, leveled = composeBoth kinds
+        let fusedSegments = segments fused |> List.sort
+        let leveledSegments = leveledSegmentsOf leveled |> List.sort
+        Assert.NotEmpty fusedSegments
+        Assert.Equal<string list>(fusedSegments, leveledSegments)
+
+[<Fact>]
+let ``P2: the leveled plan deploys FK parents at earlier Phase-1 levels; FK-independent kinds share a level`` () =
+    let _, leveled = composeBoth (mkAcyclicLeveledCatalog ())
+    let levelIndexOf (table: string) =
+        leveled.Phase1Levels
+        |> List.findIndex (fun lvl ->
+            ParallelSafe.members lvl |> List.exists (fun s -> s.Contains table))
+    let root = levelIndexOf "OSUSR_TEST_LVL_ROOT"
+    let mid  = levelIndexOf "OSUSR_TEST_LVL_MID"
+    let leaf = levelIndexOf "OSUSR_TEST_LVL_LEAF"
+    Assert.True(root < mid && mid < leaf,
+                sprintf "FK chain must descend levels: root=%d mid=%d leaf=%d" root mid leaf)
+    // Indep has no FK edges — it shares the chain root's level, and that
+    // group genuinely carries more than one member (the parallel prize).
+    Assert.Equal(root, levelIndexOf "OSUSR_TEST_LVL_INDEP")
+    let rootMembers = ParallelSafe.members (List.item root leveled.Phase1Levels)
+    Assert.True(List.length rootMembers >= 2, "the root level must carry ≥2 concurrent members")
+    // Acyclic ⇒ no deferred FKs ⇒ no Phase-2 levels.
+    Assert.Empty leveled.Phase2Levels
+
+[<Fact>]
+let ``P2: an unresolved cycle anywhere degrades the plan to singleton groups — parallelism is never licensed on an alphabetical order`` () =
+    // One self-FK kind puts the WHOLE catalog into Mode = Alphabetical
+    // (the resolver does not break 1-node SCCs); under it "parents
+    // precede children" no longer holds, so the mint refuses multi-member
+    // groups — the leveled deploy degrades to exactly the fused
+    // sequential order, never to unproven concurrency. (The P2-wire
+    // finding: before the mode guard, this catalog collapsed the real
+    // Root←Mid←Leaf FK chain into ONE concurrent group.)
+    let _, leveled = composeBoth (mkCycleBearingCatalog ())
+    for level in leveled.Phase1Levels @ leveled.Phase2Levels do
+        Assert.Equal(1, ParallelSafe.members level |> List.length)
+    // The self-cycle kind's deferred FK still lands in Phase 2.
+    Assert.NotEmpty leveled.Phase2Levels
+
+[<Fact>]
+let ``P2: LeveledDeploymentText.isEmpty parity — no seed statements ⇔ empty plan ⇔ whitespace fused text`` () =
+    // A static kind with ZERO rows projects no seed statements: the fused
+    // form is whitespace (the load leg's IsNullOrWhiteSpace gate) and the
+    // leveled form is the empty plan (the load leg's isEmpty gate).
+    let emptyKind = mkStaticLevelKind "LvlEmpty" "OSUSR_TEST_LVL_EMPTY" None []
+    let fused, leveled = composeBoth [ emptyKind ]
+    Assert.True(System.String.IsNullOrWhiteSpace fused)
+    Assert.True(DataEmissionComposer.LeveledDeploymentText.isEmpty leveled)
+    Assert.True(DataEmissionComposer.LeveledDeploymentText.isEmpty DataEmissionComposer.LeveledDeploymentText.empty)

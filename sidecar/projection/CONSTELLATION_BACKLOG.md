@@ -683,23 +683,41 @@ retired (RI-5). The primitive tests mint through the REAL prover. The manifest's
 Bucket-B convention witness (+1); the leveled ≡ sequential equivalence ran GATE-OPEN
 (comprehensive canary 1/1, 4m17s, empty PhysicalSchema diff).
 
-**P2 · Production leveled data deploy.** The canary-only wiring promoted to the CLI deploy
-path behind the existing parallelism resolution stack. *Witness:* operator-reality canary +
-perf-gate (baseline re-record only if the floor moves, with its DECISIONS amendment). S.
-Deps: P1 (met), and a Stage-0/1 measurement showing the win at operator scale — **gate MET
-2026-06-12**: the declared `leveled-deploy-150x42` scenario (150 independent static kinds ×
-42 rows = the operator envelope, through the REAL composer + leveled plan + the existing
-`resolveParallelism` stack, paired legs on one container) replicated **2.59× / 2.65× /
-2.85×** across three runs (sequential ~2.0–2.1s → leveled-parallel ~0.74–0.79s at
-parallelism 4). One command re-runs it: `perf-harness.sh run leveled-deploy`. *What the
-wiring slice must decide (named so it isn't re-derived):* the two candidate faces are
-`runDeploy → runFromCatalogWith → runEphemeral` (deploys `aggregateSsdt`'s fused
-schema+seeds single batch — splitting schema-vs-data there must keep the deploy FAITHFUL to
-the published bundle, never a re-composition that can diverge from it) and the full-export
-load leg (`Compose.runWithConfigAndLoad` takes an injected `SqlConnection -> string -> Task`
-executor — `executeBatchParallel` needs the connection STRING for per-segment opens, so the
-executor seam needs re-threading). Witnesses stay as carded: operator-reality canary +
-perf-gate, baseline re-record only if the floor moves, with its DECISIONS amendment.
+**P2 · Production leveled data deploy — DONE 2026-06-12** (the wire; gate was MET earlier
+same day, below). The full-export load leg is the production face and it now deploys the
+seed LEVELED: `runFullExportLoad` → `Compose.runWithConfigAndLoad` (seam re-threaded — the
+injected executor is `Deploy.executeLeveledSeed <connection string>`; partial application
+carries the string the per-segment opens need, `sink` stays the CDC measure's connection) →
+`Compose.loadLeveledSeedAndRecord` → `Deploy.executeLeveledSeed` (the ONE owner of the
+leveled order: Phase-1 levels then Phase-2 levels, levels sequential, within-level
+concurrency licensed by the token, under `resolveParallelism`). Faithfulness is the
+partition law, property-witnessed: the leveled plan's GO-batch segment multiset equals the
+fused `Data/seed.sql`'s — same artifact, same rendered strings, nothing re-rendered.
+*Two card corrections, named:* (a) the `runDeploy → runEphemeral` batch is **schema-only**
+— `aggregateSsdt` never carried seeds (`Data/seed.sql` lives in `Outputs.DataBundle`, not
+`SsdtBundle`); the "fused schema+seeds" parenthetical was the probe's error, and the open
+question (are seed entries per-kind?) resolves to NO — there are no seed entries in that
+batch at all. Face (a) is REFUSED: nothing data-shaped to level there; schema leveling is
+P3's territory, trigger-held. (b) **A mint defect found and fixed under the wire:** under
+`Mode = Alphabetical` (any unresolved cycle — one self-FK kind suffices) `levels`' "unknown
+parent contributes 0" rule collapsed real FK chains into ONE ParallelSafe group — the
+token's no-edge-within-group law was violated at the mint. `TopologicalOrder.levels` now
+licenses multi-member groups only under `Topological` mode; degraded modes yield singleton
+groups in order (≡ the sequential deploy, exactly). *Witnesses shipped:* the partition law
++ level-precedence + singleton-degrade + isEmpty-parity (pure), the mint-mode witness
+(TopologicalOrderTests), and the live leg (`MigrationCanaryTests` P2: two independent kinds
+through ONE two-member level via `executeLeveledSeed` — measured delta, recorded episode,
+CDC-silent re-load). The operator envelope stays acyclic (150 independent lookups) so the
+2.6–2.9× win rides; baseline NOT re-recorded (no floor moved — the canary path is
+unchanged; the load leg gained parallelism, which the gate's μ+σ ceiling tolerates
+downward).
+
+> *Gate record (MET 2026-06-12, pre-wire):* the declared `leveled-deploy-150x42` scenario
+> (150 independent static kinds × 42 rows = the operator envelope, through the REAL
+> composer + leveled plan + the existing `resolveParallelism` stack, paired legs on one
+> container) replicated **2.59× / 2.65× / 2.85×** across three runs (sequential ~2.0–2.1s
+> → leveled-parallel ~0.74–0.79s at parallelism 4). One command re-runs it:
+> `perf-harness.sh run leveled-deploy`.
 
 **P3 · Schema-side levels.** `statementsWith` gains a leveled grouping (inline-FK fact makes
 level-by-level the only safe shape — RI-5); deploy through `ParallelSafe`. **Trigger-held:**

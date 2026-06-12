@@ -146,6 +146,12 @@ within their first session. Everything not on this list, this file only points t
 12. **Docker-gated tests that soft-skip are indistinguishable from passes at summary level.**
     When the Docker pool's verdict matters, confirm against the TRX or `test.sh status`,
     not the green count.
+13. **A perf-gate verdict taken while anything else runs on the host is VOID** — a
+    concurrent build or test pool inflates the CPU-bound gated tier 2–3× and false-trips
+    the gate (2026-06-12: `emit.staticPopulation.statements.stream` read 4841 → 6738 →
+    9830 ms across three captures as concurrent load grew; the quiet re-run was clean on
+    the same tree). Re-run solo before believing a regression — and especially before
+    reaching for `PERF_GATE_RECORD=1`.
 
 ## 5 — The load-bearing commitments (standing law, one line each)
 
