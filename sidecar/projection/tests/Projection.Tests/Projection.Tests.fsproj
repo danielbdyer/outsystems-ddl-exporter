@@ -48,6 +48,7 @@
     <Compile Include="UuidV5Tests.fs" />
     <Compile Include="IRBuilders.fs" />
     <Compile Include="Fixtures.fs" />
+    <Compile Include="StaticCatalogFixtures.fs" />
     <Compile Include="ConfigTests.fs" />
     <Compile Include="CatalogTests.fs" />
     <Compile Include="ModuleFilterTests.fs" />

@@ -755,25 +755,13 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
     [<Fact>]
     member _.``AC-X1: the full-export seed bundle is non-overwriting and CDC-silent on a fresh-blank-DB re-run`` () =
         if not (Deploy.Docker.ensureRunning ()) then () else
-        let mkKey (parts: string list) = SsKey.synthesizedComposite "OS_X1L" parts |> Result.value
-        let nmx (s: string) = Name.create s |> Result.value
-        let kindKey = mkKey ["Mod"; "Country"]
-        let row code label =
-            { Identifier = mkKey ["Mod"; "Country"; "Row"; code]
-              Values = Map.ofList [ nmx "Id", code; nmx "Code", code; nmx "Label", label ] }
-        let country =
-            { SsKey = kindKey; Name = nmx "Country"; Origin = Native
-              Modality = [ Static [ row "1" "United States"; row "2" "Canada" ] ]
-              Physical = mkTableId "dbo" "Country"
-              Attributes =
-                [ { Attribute.create (mkKey ["Mod";"Country";"Id"]) (nmx "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true }
-                  { Attribute.create (mkKey ["Mod";"Country";"Code"]) (nmx "Code") Text with Column = ColumnRealization.create ("CODE") (false) |> Result.value; IsMandatory = true }
-                  { Attribute.create (mkKey ["Mod";"Country";"Label"]) (nmx "Label") Text with Column = ColumnRealization.create ("LABEL") (false) |> Result.value; IsMandatory = true } ]
-              References = []; Indexes = []; Description = None; IsActive = true
-              Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
         let catalog =
-            Catalog.create [ { SsKey = mkKey ["Mod"]; Name = nmx "Mod"; Kinds = [ country ]; IsActive = true; ExtendedProperties = [] } ] []
-            |> Result.value
+            StaticCatalogFixtures.staticCatalog "OS_X1L" "Mod" [ "Mod"; "Country" ] "Country" "Country"
+                [ StaticCatalogFixtures.pk "Id" "ID" Integer
+                  StaticCatalogFixtures.attr "Code" "CODE" Text
+                  StaticCatalogFixtures.attr "Label" "LABEL" Text ]
+                [ "1", [ "1"; "1"; "United States" ]
+                  "2", [ "2"; "2"; "Canada" ] ]
         let policy =
             { Policy.empty with Emission = { Policy.empty.Emission with EmitData = true; DataComposition = AllRemaining } }
         let outputs =
@@ -826,24 +814,13 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
     [<Fact>]
     member _.``AC-X1: the full-export load leg measures the data movement and records it; the re-load is CDC-silent`` () =
         if not (Deploy.Docker.ensureRunning ()) then () else
-        let mkKey (parts: string list) = SsKey.synthesizedComposite "OS_X1B" parts |> Result.value
-        let nmx (s: string) = Name.create s |> Result.value
-        let row code label =
-            { Identifier = mkKey ["Mod"; "Country"; "Row"; code]
-              Values = Map.ofList [ nmx "Id", code; nmx "Code", code; nmx "Label", label ] }
-        let country =
-            { SsKey = mkKey ["Mod"; "Country"]; Name = nmx "Country"; Origin = Native
-              Modality = [ Static [ row "1" "United States"; row "2" "Canada" ] ]
-              Physical = mkTableId "dbo" "Country"
-              Attributes =
-                [ { Attribute.create (mkKey ["Mod";"Country";"Id"]) (nmx "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true }
-                  { Attribute.create (mkKey ["Mod";"Country";"Code"]) (nmx "Code") Text with Column = ColumnRealization.create ("CODE") (false) |> Result.value; IsMandatory = true }
-                  { Attribute.create (mkKey ["Mod";"Country";"Label"]) (nmx "Label") Text with Column = ColumnRealization.create ("LABEL") (false) |> Result.value; IsMandatory = true } ]
-              References = []; Indexes = []; Description = None; IsActive = true
-              Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
         let catalog =
-            Catalog.create [ { SsKey = mkKey ["Mod"]; Name = nmx "Mod"; Kinds = [ country ]; IsActive = true; ExtendedProperties = [] } ] []
-            |> Result.value
+            StaticCatalogFixtures.staticCatalog "OS_X1B" "Mod" [ "Mod"; "Country" ] "Country" "Country"
+                [ StaticCatalogFixtures.pk "Id" "ID" Integer
+                  StaticCatalogFixtures.attr "Code" "CODE" Text
+                  StaticCatalogFixtures.attr "Label" "LABEL" Text ]
+                [ "1", [ "1"; "1"; "United States" ]
+                  "2", [ "2"; "2"; "Canada" ] ]
         let policy =
             { Policy.empty with Emission = { Policy.empty.Emission with EmitData = true; DataComposition = AllRemaining } }
         let outputs =

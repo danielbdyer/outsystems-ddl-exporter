@@ -143,49 +143,14 @@ let private seedPolicy : Policy =
 
 /// AC-X1's blessed static-kind shape (MigrationCanaryTests), parameterized
 /// by rows/kind (§3.7: production smart constructors + deterministic values).
+/// Built on the F6 single-definition-site fixture builder.
 let private staticSeedCatalog (rowsPerKind: int) : Catalog =
-    let mkKey parts =
-        SsKey.synthesizedComposite "PERF_SEED" parts |> Result.value
-    let nmx s = Name.create s |> Result.value
-    let row (i: int) =
-        { Identifier = mkKey [ "Lookup"; "Row"; string i ]
-          Values =
-            Map.ofList
-                [ nmx "Id", string i
-                  nmx "Code", sprintf "C%06d" i
-                  nmx "Label", sprintf "Perf label %d" i ] }
-    let lookup =
-        { SsKey = mkKey [ "Lookup" ]
-          Name = nmx "PerfLookup"
-          Origin = Native
-          Modality = [ Static [ for i in 1 .. rowsPerKind -> row i ] ]
-          Physical = TableId.create "dbo" "PerfLookup" |> Result.value
-          Attributes =
-            [ { Attribute.create (mkKey [ "Lookup"; "Id" ]) (nmx "Id") Integer with
-                  Column = ColumnRealization.create "ID" false |> Result.value
-                  IsPrimaryKey = true
-                  IsMandatory = true }
-              { Attribute.create (mkKey [ "Lookup"; "Code" ]) (nmx "Code") Text with
-                  Column = ColumnRealization.create "CODE" false |> Result.value
-                  IsMandatory = true }
-              { Attribute.create (mkKey [ "Lookup"; "Label" ]) (nmx "Label") Text with
-                  Column = ColumnRealization.create "LABEL" false |> Result.value
-                  IsMandatory = true } ]
-          References = []
-          Indexes = []
-          Description = None
-          IsActive = true
-          Triggers = []
-          ColumnChecks = []
-          ExtendedProperties = [] }
-    Catalog.create
-        [ { SsKey = mkKey [ "Mod" ]
-            Name = nmx "PerfSeedMod"
-            Kinds = [ lookup ]
-            IsActive = true
-            ExtendedProperties = [] } ]
-        []
-    |> Result.value
+    StaticCatalogFixtures.staticCatalog "PERF_SEED" "PerfSeedMod" [ "Lookup" ] "PerfLookup" "PerfLookup"
+        [ StaticCatalogFixtures.pk "Id" "ID" Integer
+          StaticCatalogFixtures.attr "Code" "CODE" Text
+          StaticCatalogFixtures.attr "Label" "LABEL" Text ]
+        [ for i in 1 .. rowsPerKind ->
+            string i, [ string i; sprintf "C%06d" i; sprintf "Perf label %d" i ] ]
 
 /// Activity 3b: the rendered-MERGE TEXT emission at scale, no Docker.
 // PERF-SCENARIO: seed-merge-render 1000|10000 | keylabels=emit.staticSeeds.renderMerge,compose.data.composeRendered
@@ -251,46 +216,12 @@ let seedMergeExecute (rowsPerKind: int) : PerfScenario =
 /// rows loaded via the bulk path (StaticPopulationEmitter → executeStream →
 /// SqlBulkCopy folding), then drained back through readRowsStream.
 let private wideSeedCatalog (rows: int) : Catalog =
-    let mkKey parts = SsKey.synthesizedComposite "PERF_WIDE" parts |> Result.value
-    let nmx s = Name.create s |> Result.value
     let colNames = [ for c in 1 .. 11 -> sprintf "C%02d" c ]
-    let row (i: int) =
-        { Identifier = mkKey [ "Wide"; "Row"; string i ]
-          Values =
-            Map.ofList
-                ((nmx "Id", string i)
-                 :: [ for c in colNames -> nmx c, sprintf "%s-%06d" c i ]) }
-    let attrs =
-        { Attribute.create (mkKey [ "Wide"; "Id" ]) (nmx "Id") Integer with
-            Column = ColumnRealization.create "ID" false |> Result.value
-            IsPrimaryKey = true
-            IsMandatory = true }
-        :: [ for c in colNames ->
-                { Attribute.create (mkKey [ "Wide"; c ]) (nmx c) Text with
-                    Column = ColumnRealization.create (c.ToUpperInvariant()) false |> Result.value
-                    IsMandatory = true } ]
-    let wide =
-        { SsKey = mkKey [ "Wide" ]
-          Name = nmx "PerfWide"
-          Origin = Native
-          Modality = [ Static [ for i in 1 .. rows -> row i ] ]
-          Physical = TableId.create "dbo" "PerfWide" |> Result.value
-          Attributes = attrs
-          References = []
-          Indexes = []
-          Description = None
-          IsActive = true
-          Triggers = []
-          ColumnChecks = []
-          ExtendedProperties = [] }
-    Catalog.create
-        [ { SsKey = mkKey [ "Mod" ]
-            Name = nmx "PerfWideMod"
-            Kinds = [ wide ]
-            IsActive = true
-            ExtendedProperties = [] } ]
-        []
-    |> Result.value
+    StaticCatalogFixtures.staticCatalog "PERF_WIDE" "PerfWideMod" [ "Wide" ] "PerfWide" "PerfWide"
+        (StaticCatalogFixtures.pk "Id" "ID" Integer
+         :: [ for c in colNames -> StaticCatalogFixtures.attr c (c.ToUpperInvariant()) Text ])
+        [ for i in 1 .. rows ->
+            string i, (string i :: [ for c in colNames -> sprintf "%s-%06d" c i ]) ]
 
 /// Activity 1b: deploy + bulk-load the fixture once, then drain
 /// `ReadSide.readRowsStream` to EOF — the per-row carrier cost isolated by

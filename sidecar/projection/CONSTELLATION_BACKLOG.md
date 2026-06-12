@@ -347,13 +347,14 @@ in §6 item 10 with its wake condition. *Witness shipped:* the Docker-gated
 `LiveProfilerIntegrationTests` (6/6 green against the warm container — both drain paths
 exercised). S. Deps: none. Rollback: revert.
 
-**F6 · One static-fixture catalog builder.** Plane N7. Incision: a test-tree
-`StaticCatalogFixtures` module (parameterized: kind name, attribute shapes, rows) absorbing
-`staticSeedCatalog`, `wideSeedCatalog`, and the AC-X1 catalog build; `meshModel` stays (a
-cousin — FK mesh, no static rows). *Unlock:* the fourth instance never gets written; fixture
-determinism has one definition site. *Witness:* harness scenarios + AC-X1 outputs byte-stable
-across the move. S. Deps: none. Rollback: revert. Interleave filler — never block a gated
-card on it.
+**F6 · One static-fixture catalog builder — DONE 2026-06-12.** Plane N7. Shipped as
+`StaticCatalogFixtures.staticCatalog` (test tree, compiled before `MigrationCanaryTests` —
+the fsproj-order trap checked first per the risk register), absorbing FOUR instances, not
+three: `staticSeedCatalog`, `wideSeedCatalog`, and BOTH AC-X1 catalog builds (parts A and B
+each carried one, `OS_X1L`/`OS_X1B` — the card's census said three). The SsKey synthesis
+contract is documented on the module; instances keep their exact key shapes (byte-identical
+fixtures). `meshModel` stays (a cousin — FK mesh, no static rows). *Witness:* pure pool +
+the AC-X1 Docker pair green across the move. The H4–H6 scenarios build on it.
 
 **F7 · Retire the consumer-less streaming-digest apparatus — DONE 2026-06-12** (deleted per
 the dead-algebra precedent; the >100k canary was not being opened simultaneously, so the
