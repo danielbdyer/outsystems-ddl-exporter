@@ -111,6 +111,64 @@ let ``R1b: every bracketed verb's run is capturable — no orphan RunIds`` () =
         Environment.SetEnvironmentVariable("PROJECTION_LEDGER_DIR", prior)
         try Directory.Delete(dir, true) with _ -> ()
 
+// -- R1d: the run-vs-run delta surface (the UoM promotion's home) ----------
+
+let private benchOf (pairs: (string * int64) list) : Bench.Run =
+    { CapturedAtUtc = System.DateTime(2026, 6, 12, 12, 0, 0, System.DateTimeKind.Utc)
+      Tag = "t"
+      Stats =
+        pairs
+        |> List.map (fun (label, total) ->
+            { Label = label; Count = 1
+              TotalMs = total; MinMs = total; MaxMs = total; MeanMs = float total
+              P50Ms = total; P95Ms = total; P99Ms = total }) }
+
+[<Fact>]
+let ``R1d: Run.diff carries verdict movement, count deltas, and per-label wall-time deltas`` () =
+    let a = { sample with RunId = "A"; Registered = 40; Applied = 2; Declined = 1
+                          Bench = Some (benchOf [ "stage.extract", 100L; "stage.emit", 50L ]) }
+    let b = { sample with RunId = "B"; Registered = 42; Applied = 5; Declined = 0
+                          Outcome = "failed"
+                          Bench = Some (benchOf [ "stage.extract", 70L; "stage.profile", 25L ]) }
+    let d = Run.diff None a b
+    Assert.Equal(("A", "B"), d.RunIds)
+    Assert.Equal(("succeeded", "failed"), d.Outcomes)
+    Assert.Equal(2, d.Registered)
+    Assert.Equal(3, d.Applied)
+    Assert.Equal(-1, d.Declined)
+    // The label union, deltas typed in ms: changed, after-only, before-only.
+    let byLabel = d.BenchDeltas |> List.map (fun bd -> bd.Label, bd) |> Map.ofList
+    Assert.Equal(-30L<Run.ms>, byLabel.["stage.extract"].DeltaMs)
+    Assert.Equal(-50L<Run.ms>, byLabel.["stage.emit"].DeltaMs)      // before-only: dropped
+    Assert.Equal(25L<Run.ms>, byLabel.["stage.profile"].DeltaMs)    // after-only: appeared
+    Assert.Equal(None, byLabel.["stage.profile"].BeforeMs)
+    // Largest movement leads.
+    Assert.Equal("stage.emit", (List.head d.BenchDeltas).Label)
+
+[<Fact>]
+let ``R1d: Run.diff restricted to key labels is the harness's before/after shape`` () =
+    let a = { sample with RunId = "A"; Bench = Some (benchOf [ "k1", 10L; "noise", 999L ]) }
+    let b = { sample with RunId = "B"; Bench = Some (benchOf [ "k1", 30L; "noise", 1L ]) }
+    let d = Run.diff (Some (Set.ofList [ "k1" ])) a b
+    Assert.Equal<string list>([ "k1" ], d.BenchDeltas |> List.map (fun bd -> bd.Label))
+    Assert.Equal(20L<Run.ms>, (List.head d.BenchDeltas).DeltaMs)
+
+[<Fact>]
+let ``R1d: storeDir resolves PROJECTION_RUNS_DIR first, then PROJECTION_LEDGER_DIR`` () =
+    let priorRuns = Environment.GetEnvironmentVariable "PROJECTION_RUNS_DIR"
+    let priorLedger = Environment.GetEnvironmentVariable "PROJECTION_LEDGER_DIR"
+    try
+        Environment.SetEnvironmentVariable("PROJECTION_RUNS_DIR", "/tmp/runs-explicit")
+        Environment.SetEnvironmentVariable("PROJECTION_LEDGER_DIR", "/tmp/ledger-dir")
+        Assert.Equal(Some "/tmp/runs-explicit", Run.storeDir ())
+        Environment.SetEnvironmentVariable("PROJECTION_RUNS_DIR", "")
+        Assert.Equal(Some "/tmp/ledger-dir", Run.storeDir ())
+        Environment.SetEnvironmentVariable("PROJECTION_LEDGER_DIR", "")
+        Assert.Equal(None, Run.storeDir ())
+    finally
+        Environment.SetEnvironmentVariable("PROJECTION_RUNS_DIR", priorRuns)
+        Environment.SetEnvironmentVariable("PROJECTION_LEDGER_DIR", priorLedger)
+
 [<Fact>]
 let ``Run: capture builds a Run from the live LogSink state + the artifact tree`` () =
     use sw = new StringWriter()

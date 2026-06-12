@@ -1079,6 +1079,79 @@ let runSetup (connRef: string option) : int =
     TtyRenderer.renderAnswer false View.defaultDepth view
     0
 
+/// R1d — `projection inspect <runId> [<runId>]`: the stored Run aggregate,
+/// rendered (D5 — the store already resolves; this verb renders). One id
+/// answers "what was this run?"; two ids answer "what moved between these
+/// runs?" through `Run.diff` (the UoM delta surface; the harness's
+/// before/after protocol is its restriction to a key-label set).
+/// Read-only and envelope-free — stays outside the bracket per the R1b law.
+/// NOTE: the card named this verb `diff <runA> <runB>`; that name is held
+/// by the shipped catalog-refs diff, so the run-grain projection lands
+/// under `inspect` — one noun per surface, the collision named here.
+let runInspect (idA: string) (idB: string option) : int =
+    match Run.storeDir () with
+    | None ->
+        eprintfn "No run store is configured. Set PROJECTION_LEDGER_DIR to capture runs, then inspect by run id."
+        4
+    | Some dir ->
+        let load (id: string) : Run.Run option = Run.load dir id
+        match idB with
+        | None ->
+            match load idA with
+            | None ->
+                eprintfn "Run %s is not in the store at %s." idA dir
+                1
+            | Some r ->
+                printfn "Run %s — %s" r.RunId r.Command
+                printfn "  at %s — %s%s" r.Ts r.Outcome (match r.Canary with Some c -> sprintf " (canary %s)" c | None -> "")
+                printfn "  transforms: %d registered, %d applied, %d declined" r.Registered r.Applied r.Declined
+                printfn "  events: %d   artifacts: %s"
+                    (List.length r.Events)
+                    (if Map.isEmpty r.Artifacts then "none" else r.Artifacts |> Map.toList |> List.map fst |> String.concat ", ")
+                (match r.Ledgers with
+                 | [] -> ()
+                 | ledgers ->
+                     printfn "  ledgers extended:"
+                     for l in ledgers do
+                         match l with
+                         | Run.JournalRef d -> printfn "    journal %s" d
+                         | Run.EpisodeRef (t, o) -> printfn "    episode %s ordinal %d" t o)
+                (match r.Bench with
+                 | None -> ()
+                 | Some b ->
+                     let top = b.Stats |> List.sortByDescending (fun s -> s.TotalMs) |> List.truncate 5
+                     if not (List.isEmpty top) then
+                         printfn "  slowest labels:"
+                         for s in top do printfn "    %-44s %6d ms" s.Label s.TotalMs)
+                0
+        | Some idB ->
+            match load idA, load idB with
+            | None, _ ->
+                eprintfn "Run %s is not in the store at %s." idA dir
+                1
+            | _, None ->
+                eprintfn "Run %s is not in the store at %s." idB dir
+                1
+            | Some a, Some b ->
+                let d = Run.diff None a b
+                printfn "Runs %s → %s" (fst d.RunIds) (snd d.RunIds)
+                printfn "  commands: %s → %s" (fst d.Commands) (snd d.Commands)
+                printfn "  outcomes: %s → %s%s" (fst d.Outcomes) (snd d.Outcomes)
+                    (match d.Canaries with
+                     | Some ca, Some cb -> sprintf " (canary %s → %s)" ca cb
+                     | _ -> "")
+                printfn "  transform deltas: %+d registered, %+d applied, %+d declined   events: %+d"
+                    d.Registered d.Applied d.Declined d.Events
+                let moved = d.BenchDeltas |> List.filter (fun bd -> bd.DeltaMs <> 0L<Run.ms>) |> List.truncate 10
+                if List.isEmpty moved then
+                    printfn "  wall times: no label moved."
+                else
+                    printfn "  wall-time movement (largest first):"
+                    for bd in moved do
+                        let fmt (v: int64<Run.ms> option) = match v with Some x -> sprintf "%d" (int64 x) | None -> "—"
+                        printfn "    %-44s %s → %s ms (%+d)" bd.Label (fmt bd.BeforeMs) (fmt bd.AfterMs) (int64 bd.DeltaMs)
+                0
+
 /// `diff <refA> <refB>` — change, rendered essence-first (INSTRUMENT slice 1,
 /// the first surface of the instrument). Resolves both refs through `Ref`
 /// (file / `@runId` / `json:` / `live:`) and renders the catalog change: the

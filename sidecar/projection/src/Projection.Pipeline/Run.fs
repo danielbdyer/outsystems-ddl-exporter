@@ -232,6 +232,84 @@ module Run =
             |> Array.toList
         else []
 
+    /// R1d — where runs are stored, one resolution rule for every reader:
+    /// `PROJECTION_RUNS_DIR` when set (the explicit override), else
+    /// `PROJECTION_LEDGER_DIR` (where the R1b bracket capture persists).
+    let storeDir () : string option =
+        match configuredDir () with
+        | Some d -> Some d
+        | None -> RunLedger.configuredDir ()
+
+    // R1d — the run-vs-run delta surface. The §7 units-of-measure
+    // promotion FIRES here, scoped to this surface exactly as gated
+    // (CONSTELLATION §9.7): the trigger was mixed quantities — counts
+    // beside milliseconds — in one expression; the measure keeps a
+    // bench millisecond from ever adding to a transform count.
+    [<Measure>]
+    type ms
+
+    /// One label's wall-time movement between two runs. `None` = the
+    /// label is absent from that side (a stage that ran only once).
+    type BenchDelta =
+        {
+            Label    : string
+            BeforeMs : int64<ms> option
+            AfterMs  : int64<ms> option
+            /// after − before, an absent side counting 0.
+            DeltaMs  : int64<ms>
+        }
+
+    /// The run-vs-run projection: verdict movement + count deltas (b − a)
+    /// + the per-label bench deltas.
+    type RunDiff =
+        {
+            RunIds      : string * string
+            Commands    : string * string
+            Outcomes    : string * string
+            Canaries    : string option * string option
+            Registered  : int
+            Applied     : int
+            Declined    : int
+            Events      : int
+            BenchDeltas : BenchDelta list
+        }
+
+    let private benchTotals (r: Run) : Map<string, int64<ms>> =
+        match r.Bench with
+        | None -> Map.empty
+        | Some b -> b.Stats |> List.map (fun s -> s.Label, s.TotalMs * 1L<ms>) |> Map.ofList
+
+    /// R1d — diff two stored runs. `keyLabels` is the restriction the
+    /// harness's before/after protocol is an instance of: `Some labels`
+    /// compares exactly those; `None` compares every label present on
+    /// either side. Labels sort by |delta| descending — the biggest
+    /// movement leads.
+    let diff (keyLabels: Set<string> option) (a: Run) (b: Run) : RunDiff =
+        let ta, tb = benchTotals a, benchTotals b
+        let labels =
+            Set.union (ta |> Map.toSeq |> Seq.map fst |> Set.ofSeq) (tb |> Map.toSeq |> Seq.map fst |> Set.ofSeq)
+            |> fun all -> match keyLabels with Some ks -> Set.intersect all ks | None -> all
+        let deltas =
+            labels
+            |> Set.toList
+            |> List.map (fun label ->
+                let before = Map.tryFind label ta
+                let after = Map.tryFind label tb
+                { Label = label
+                  BeforeMs = before
+                  AfterMs = after
+                  DeltaMs = (defaultArg after 0L<ms>) - (defaultArg before 0L<ms>) })
+            |> List.sortByDescending (fun d -> abs (int64 d.DeltaMs))
+        { RunIds = a.RunId, b.RunId
+          Commands = a.Command, b.Command
+          Outcomes = a.Outcome, b.Outcome
+          Canaries = a.Canary, b.Canary
+          Registered = b.Registered - a.Registered
+          Applied = b.Applied - a.Applied
+          Declined = b.Declined - a.Declined
+          Events = List.length b.Events - List.length a.Events
+          BenchDeltas = deltas }
+
     /// Project the run onto its ledger index row — the run subsumes the
     /// `RunLedger.LedgerRecord` (one source, the ledger is a derived view).
     let toLedgerEntry (r: Run) : RunLedger.LedgerRecord =

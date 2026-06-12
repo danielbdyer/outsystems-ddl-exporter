@@ -38,6 +38,7 @@ let private usageLines : string list =
         "                       | migrate --to <b> ( --from <a> | --from empty | --store <s> ) [--allow-drops] )"
         "    projection seal ( --store <path> | approve <version> --approver <name> ... )"
         "    projection report <flow>        the on-prem migration-team change bundle"
+        "    projection inspect <runId> [<runId>]  a stored run, or what moved between two runs"
         "    projection init                 scaffold a projection.json"
         "    projection setup [--conn <ref>] read back what is configured (history, writes, board);"
         "                                    --conn also probes a target (reachable + ALTER grant)"
@@ -344,6 +345,8 @@ let main argv =
         0
     | [||] -> runList ()
     | [| "init" |] -> runInit ()
+    | [| "inspect"; runId |] -> runInspect runId None
+    | [| "inspect"; runA; runB |] -> runInspect runA (Some runB)
     | [| "setup" |] -> runSetup None
     | [| "setup"; "--conn"; ref |] -> runSetup (Some ref)
     | [| "survey" |] -> runSurvey ()
