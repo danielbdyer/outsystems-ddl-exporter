@@ -272,4 +272,5 @@ let ``S2: the declared spines carry the per-face arcs the string lists carried``
     Assert.Equal<string list>([ "emit"; "deploy"; "canary" ], RunSpine.keys Spines.migrate)
     Assert.Equal<string list>([ "emit"; "deploy"; "canary"; "load" ], RunSpine.keys Spines.migrateData)
     Assert.Equal<string list>([ "deploy" ], RunSpine.keys Spines.deploy)
+    Assert.Equal<string list>([ "canary" ], RunSpine.keys Spines.canary)
     Assert.Equal<string list>([ "load" ], RunSpine.keys Spines.transfer)

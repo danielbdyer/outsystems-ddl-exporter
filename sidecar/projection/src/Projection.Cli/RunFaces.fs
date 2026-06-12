@@ -220,6 +220,12 @@ let runEmitManifestOnly (shaping: Config.Config) (catalog: Catalog) (outputDir: 
     dumpBench "emit-manifest-only"
     exitCode
 
+/// Card S3 — the deploy face's stop channel: what a closed-`failed` deploy
+/// stage carries to the exit-code mapping (the `staged { }` Error lane).
+type private DeployStop =
+    | SsdtRejected of outputs: Compose.Outputs * report: Deploy.Report
+    | DeployCatalogInvalid of errors: ValidationError list
+
 let runDeploy (shaping: Config.Config) (catalog: Catalog) : int =
     if not (Deploy.Docker.isAvailable ()) then
         die
@@ -228,42 +234,62 @@ let runDeploy (shaping: Config.Config) (catalog: Catalog) : int =
     else
         let runBody () =
             printfn "projection: spinning up an ephemeral SQL Server container..."
-            LogSink.recordStageStart "deploy"
-            let sw = System.Diagnostics.Stopwatch.StartNew()
-            let result = (Deploy.runFromCatalogWith shaping catalog).GetAwaiter().GetResult()
-            LogSink.recordStageEvent "deploy" sw.ElapsedMilliseconds
-                (match result with Ok (_, report) when report.Ok -> LogSink.Succeeded | _ -> LogSink.Failed)
-            match result with
-            | Ok (outputs, report) ->
+            // Card S3 — the face rides the spine: the `staged { }` CE owns the
+            // deploy stage's bracket (started/completed envelopes + the §10
+            // stage table + `Bench.scope "stage.deploy"`); the face maps the
+            // disposition to its narration + documented exit codes.
+            let verdict =
+                (staged Spines.deploy {
+                    let! landed =
+                        Staged.stage Stages.deploy (fun () ->
+                            task {
+                                let! result = Deploy.runFromCatalogWith shaping catalog
+                                return
+                                    match result with
+                                    | Ok (outputs, report) when report.Ok -> Ok (outputs, report)
+                                    | Ok (outputs, report) -> Error (SsdtRejected (outputs, report))
+                                    | Error errors -> Error (DeployCatalogInvalid errors)
+                            })
+                    return landed
+                }).GetAwaiter().GetResult()
+            let emittedLine (outputs: Compose.Outputs) =
                 printfn
                     "projection: emitted %d SSDT bundle entries (JSON + distributions: typed JsonNode)"
                     (Map.count outputs.SsdtBundle)
-                if report.Ok then
-                    printfn
-                        "projection: deploy succeeded — database `%s`, %d table(s) landed"
-                        report.Database
-                        report.TablesCreated
-                    0
-                else
-                    // Per chapter 3.5 deep audit (2026-05-09): CLI
-                    // error emission via per-line `Console.Error
-                    // .WriteLine`. Typed list flows in; per-segment
-                    // writes flow out; no concatenation. Header line
-                    // composes via `Console.Error.Write` segments —
-                    // each typed value (`report.Database`) emitted
-                    // independently.
-                    Console.Error.Write "projection: SQL Server rejected the SSDT in database `"
-                    Console.Error.Write report.Database
-                    Console.Error.WriteLine "`:"
-                    for line in report.Errors do
-                        Console.Error.Write "  "
-                        Console.Error.WriteLine line
-                    3
-            | Error errors ->
-                (
-                    printErrors Console.Error errors
-                    2
-                )
+            match verdict.Disposition with
+            | RunCompleted (outputs, report) ->
+                emittedLine outputs
+                printfn
+                    "projection: deploy succeeded — database `%s`, %d table(s) landed"
+                    report.Database
+                    report.TablesCreated
+                0
+            | RunStopped (SsdtRejected (outputs, report)) ->
+                emittedLine outputs
+                // Per chapter 3.5 deep audit (2026-05-09): CLI
+                // error emission via per-line `Console.Error
+                // .WriteLine`. Typed list flows in; per-segment
+                // writes flow out; no concatenation. Header line
+                // composes via `Console.Error.Write` segments —
+                // each typed value (`report.Database`) emitted
+                // independently.
+                Console.Error.Write "projection: SQL Server rejected the SSDT in database `"
+                Console.Error.Write report.Database
+                Console.Error.WriteLine "`:"
+                for line in report.Errors do
+                    Console.Error.Write "  "
+                    Console.Error.WriteLine line
+                3
+            | RunStopped (DeployCatalogInvalid errors) ->
+                printErrors Console.Error errors
+                2
+            | RunAborted (refusal, cause) ->
+                // The spine already closed the books (the stage's bracket
+                // closed `aborted` on the wire); the face preserves the
+                // verb's pre-spine crash semantics.
+                match cause with
+                | Some ex -> raise ex
+                | None    -> failwith refusal
         // --watch + a real TTY → a live deploy stage (§13). The schema deploy is
         // one aggregated batch (no per-table count to honestly report), so the
         // board shows the stage going Applying → Deploy complete, not a bar.
@@ -273,6 +299,13 @@ let runDeploy (shaping: Config.Config) (catalog: Catalog) : int =
             else runBody ()
         dumpBench "deploy"
         exitCode
+
+/// Card S3 — the canary face's stop channel: a structurally-divergent
+/// round-trip (exit 5) or an invalid run (exit 2), carried out of the
+/// closed-`failed` canary stage.
+type private CanaryStop =
+    | CanaryDiverged of report: Deploy.WideCanaryReport
+    | CanaryRunInvalid of errors: ValidationError list
 
 let runCanary (sourceDdlPath: string) : int =
     if not (File.Exists sourceDdlPath) then
@@ -288,41 +321,55 @@ let runCanary (sourceDdlPath: string) : int =
         // form (DDL + StaticPopulationEmitter's InsertRow realization into the
         // fresh-empty target). Schema-only when the source carries no static
         // populations. See `Deploy.schemaWithStaticPopulation`.
-        let stageTimer = System.Diagnostics.Stopwatch.StartNew()
-        let task = Deploy.runWideCanary sourceDdl Deploy.schemaWithStaticPopulation
-        let result = task.GetAwaiter().GetResult()
-        stageTimer.Stop()
-        // Tier-1 reporting — the canary stage feeds the §10 runComplete stages
-        // table (the canary verb is single-stage; full-export records its own).
-        LogSink.recordStage "canary" stageTimer.ElapsedMilliseconds
-            (match result with
-             | Ok r when PhysicalSchema.isEqual r.Diff -> LogSink.Succeeded
-             | _ -> LogSink.Failed)
+        //
+        // Card S3 — the face rides the spine. This closes the slice-7
+        // discrepancy: the prior bare `recordStage` fed the §10 stage table
+        // but never the live stream; the CE's bracket emits the
+        // `canary.started` / `summary.stageCompleted` pair AND the table
+        // entry from one site (`recordStageEvent` semantics).
+        let verdict =
+            (staged Spines.canary {
+                let! report =
+                    Staged.stage Stages.canary (fun () ->
+                        task {
+                            let! result = Deploy.runWideCanary sourceDdl Deploy.schemaWithStaticPopulation
+                            return
+                                match result with
+                                | Ok r when PhysicalSchema.isEqual r.Diff -> Ok r
+                                | Ok r -> Error (CanaryDiverged r)
+                                | Error errors -> Error (CanaryRunInvalid errors)
+                        })
+                return report
+            }).GetAwaiter().GetResult()
+        let deployedLine (report: Deploy.WideCanaryReport) =
+            printfn
+                "projection: source deployed %d table(s); target deployed %d table(s)"
+                report.SourceReport.TablesCreated
+                report.TargetReport.TablesCreated
+            // Tier-1 reporting (§7.7) — emit the structured fidelity verdict
+            // (canary.diffEmpty / canary.divergence) alongside the prose, so
+            // CI can gate on it and the run ledger can record it.
+            EventProjection.canaryEnvelopes report.TargetReport.TablesCreated report.Diff
+            |> List.iter LogSink.emit
         let exitCode =
-            match result with
-            | Ok report ->
-                printfn
-                    "projection: source deployed %d table(s); target deployed %d table(s)"
-                    report.SourceReport.TablesCreated
-                    report.TargetReport.TablesCreated
-                // Tier-1 reporting (§7.7) — emit the structured fidelity verdict
-                // (canary.diffEmpty / canary.divergence) alongside the prose, so
-                // CI can gate on it and the run ledger can record it.
-                EventProjection.canaryEnvelopes report.TargetReport.TablesCreated report.Diff
-                |> List.iter LogSink.emit
-                if PhysicalSchema.isEqual report.Diff then
-                    TtyRenderer.renderVoicedTo Console.Out "canary.diffEmpty"
-                        (Map.ofList [ "tableCount", box report.TargetReport.TablesCreated ])
-                    0
-                else
-                    TtyRenderer.renderVoicedTo Console.Error "canary.divergence"
-                        (Map.ofList [ "renderedDiff", box (PhysicalSchema.renderDiff report.Diff) ])
-                    5
-            | Error errors ->
-                (
-                    printErrors Console.Error errors
-                    2
-                )
+            match verdict.Disposition with
+            | RunCompleted report ->
+                deployedLine report
+                TtyRenderer.renderVoicedTo Console.Out "canary.diffEmpty"
+                    (Map.ofList [ "tableCount", box report.TargetReport.TablesCreated ])
+                0
+            | RunStopped (CanaryDiverged report) ->
+                deployedLine report
+                TtyRenderer.renderVoicedTo Console.Error "canary.divergence"
+                    (Map.ofList [ "renderedDiff", box (PhysicalSchema.renderDiff report.Diff) ])
+                5
+            | RunStopped (CanaryRunInvalid errors) ->
+                printErrors Console.Error errors
+                2
+            | RunAborted (refusal, cause) ->
+                match cause with
+                | Some ex -> raise ex
+                | None    -> failwith refusal
         dumpBench "canary"
         exitCode
 

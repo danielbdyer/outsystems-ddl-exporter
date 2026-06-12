@@ -454,10 +454,18 @@ emissions unchanged at this commit (no face on the CE until S3/S4). *Witnesses s
 WatchTests re-derived. See `DECISIONS 2026-06-12 — The stage spine lands`. M. Deps: S1.
 Rollback: faces keep old emissions until S3/S4 migrate.
 
-**S3 · The trivial faces.** `runDeploy`, `runCanary` onto the CE — including the
-`recordStage` vs `recordStageEvent` discrepancy fix at `RunFaces.fs:297`. *Witness:* envelope
-streams byte-compatible (the pinned `FullExportCliTests` shapes are the guard for S4, not
-here). S. Deps: S2.
+**S3 · The trivial faces — DONE 2026-06-12.** `runDeploy` and `runCanary` ride the
+`staged { }` CE: each face's stage bracket (started/completed envelopes + §10 stage table +
+`stage.<name>` Bench scope) is CE-owned; the face maps the disposition to its narration and
+documented exit codes through a typed stop channel (`DeployStop` / `CanaryStop`; the
+`RunAborted` arm re-raises to preserve pre-spine crash semantics — with the books now closed
+first). The `recordStage` discrepancy closed: the canary verb's bare `recordStage` (stage
+table only, no live stream) became the CE bracket — the `canary.started` /
+`summary.stageCompleted` pair now rides the wire (additive; named here). `Stages` landed as
+the declare-once site at the stage-name grain (spines and faces reference the same values —
+no face can drift from its declaration by retyping a string); `Spines.canary` added with its
+face as consumer. runDeploy's existing envelope pair is byte-compatible (same codes, same
+payload shape, one emission site). S. Deps: S2.
 
 **S4 · The hard faces.** `runFullExport` (umbrella + three children), `runMigrateExecute` /
 `runMigrateWithData` (**pre-flight gates become declared stages** — they are real SQL I/O and

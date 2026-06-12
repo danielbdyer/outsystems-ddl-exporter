@@ -372,33 +372,53 @@ module StagedBuilderEntry =
     /// between stages is syntactically impossible.
     let staged (spine: RunSpine) : StagedBuilder = StagedBuilder spine
 
+/// The canonical stage names — the declare-once site at the stage-name
+/// grain. The spines compose from these, and the faces reference the same
+/// values at their `Staged.stage` calls, so a face cannot drift from its
+/// declaration by retyping a string.
+[<RequireQualifiedAccess>]
+module Stages =
+
+    let private name (s: string) : StageName =
+        StageName.create s |> Result.value
+
+    /// The full-export umbrella root (never a watched sub-stage).
+    let pipeline : StageName = name "pipeline"
+    let extract  : StageName = name "extract"
+    let profile  : StageName = name "profile"
+    let emit     : StageName = name "emit"
+    let deploy   : StageName = name "deploy"
+    let canary   : StageName = name "canary"
+    let load     : StageName = name "load"
+
 /// The declared spines — one definition site per run face's arc (the
 /// per-face display string lists retire onto these; the Watch pre-seeds
 /// derive via `RunSpine.keys`).
 [<RequireQualifiedAccess>]
 module Spines =
 
-    let private name (s: string) : StageName =
-        StageName.create s |> Result.value
-
     /// `full-export`: the "pipeline" umbrella over extract → profile → emit.
     let pipeline : RunSpine =
-        RunSpine.createWithRoot (name "pipeline") [ name "extract"; name "profile"; name "emit" ]
+        RunSpine.createWithRoot Stages.pipeline [ Stages.extract; Stages.profile; Stages.emit ]
         |> Result.value
 
     /// The in-place migrate leg: build → apply → verify.
     let migrate : RunSpine =
-        RunSpine.create [ name "emit"; name "deploy"; name "canary" ] |> Result.value
+        RunSpine.create [ Stages.emit; Stages.deploy; Stages.canary ] |> Result.value
 
     /// The cross-substrate migrate: the schema leg, then the data load.
     let migrateData : RunSpine =
-        RunSpine.create [ name "emit"; name "deploy"; name "canary"; name "load" ] |> Result.value
+        RunSpine.create [ Stages.emit; Stages.deploy; Stages.canary; Stages.load ] |> Result.value
 
     /// The standalone deploy verb's single-stage arc.
     let deploy : RunSpine =
-        RunSpine.create [ name "deploy" ] |> Result.value
+        RunSpine.create [ Stages.deploy ] |> Result.value
+
+    /// The wide-canary verb's single-stage arc.
+    let canary : RunSpine =
+        RunSpine.create [ Stages.canary ] |> Result.value
 
     /// The data-transfer verbs' single-stage arc (the load leg streams its
     /// own per-table progress inside the one stage).
     let transfer : RunSpine =
-        RunSpine.create [ name "load" ] |> Result.value
+        RunSpine.create [ Stages.load ] |> Result.value
