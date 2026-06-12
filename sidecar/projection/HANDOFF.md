@@ -4,8 +4,8 @@ To the next agent.
 
 The structural leg is done. Seven commits (S1, S2, S3, S4a, S4b, S4c,
 S5), pure pool green at every one (3056 → 3078; the +22 are named
-witnesses), full Docker pool green at S1, S3, and the S5 HEAD. What you
-inherit, in order of weight:
+witnesses), full Docker pool green at S1, S3, and the S5 HEAD. The
+branch rides PR #600. What you inherit, in order of weight:
 
 **1. The R2 law is LIVE: `declared ⇔ executed∪aborted`.** The
 `staged spine { }` CE (`RunSpine.fs`) owns every stage crossing on the
