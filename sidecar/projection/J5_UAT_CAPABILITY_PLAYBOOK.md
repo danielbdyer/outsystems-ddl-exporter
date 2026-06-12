@@ -1,8 +1,8 @@
 # J5 — Cloud UAT Capability Playbook (generic; agent-constructed, operator-executed)
 
 > **What this is.** The J5 ops spike (real-UAT execute, OPEN-2) as a **playbook**, not a
-> script: a risk-ordered ladder of SQL capability probes that an in-network agent **binds
-> to existing OSUSR tables** selected with the operator from the model at hand. No
+> script: a risk-ordered ladder of SQL capability probes that an agent **binds to
+> existing OSUSR tables** selected with the operator from the model at hand. No
 > sandbox DDL is created — the prerequisite throwaway table from the v1 probe sheet is
 > intentionally deferred; the probes run against real, carefully chosen entity tables
 > with small, marked, reversible writes.
@@ -13,9 +13,9 @@
 >
 > **Governance.** This is an ops action, not a write path. No `--execute` is engaged;
 > no R6 posture changes. The agent never executes a write itself; the operator runs
-> every statement. Findings cross the corporate boundary only in the sanitized ledger
-> form of §7 — capability verdicts and standard SQL Server error numbers, never table
-> names, row data, logins, or connection details.
+> every statement. Findings travel beyond the probe session only in the sanitized
+> ledger form of §7 — capability verdicts and standard SQL Server error numbers, never
+> table names, row data, logins, or connection details.
 
 ---
 
@@ -23,25 +23,25 @@
 
 The loop, per statement or small statement group:
 
-1. **The agent constructs.** Working inside the corporate network with the model and
-   the binding sheet (§3), the agent instantiates the next rung's template against the
+1. **The agent constructs.** Working with the model and the binding sheet (§3)
+   alongside the operator, the agent instantiates the next rung's template against the
    selected tables and presents the exact SQL to the operator, together with: what it
    probes, the expected outcome, and — for anything that persists — the pre-staged
    revert statement in the same message.
 2. **The operator executes** in the Cloud UAT SQL surface and pastes back the full
-   resultset / error text **to the in-network agent**. Full fidelity is fine here —
-   this exchange stays inside the network.
+   resultset / error text to the agent. Full fidelity is fine here — this exchange
+   stays within the probe session.
 3. **The agent adjudicates**: advance to the next rung, issue a sideways exploration
    statement (e.g., a follow-up metadata read to explain a surprise), or stop and
    summarize. A failed rung halts the ladder until adjudicated — never skip past a
    failure.
 4. **The findings travel conceptually.** When the ladder is done (or stopped), the
    agent writes the §7 ledger: per-probe verdicts in generic vocabulary. That ledger —
-   and only that — is what leaves the corporate environment, feeding the DECISIONS
-   entry that closes the OPENs.
+   and only that — travels beyond the probe session, feeding the DECISIONS entry that
+   closes the OPENs.
 
-The agent may iterate freely in-network (more reads, refined probes). The asymmetry is
-deliberate: rich evidence inside, conceptual findings outside.
+The agent may iterate freely within the session (more reads, refined probes). The
+asymmetry is deliberate: rich evidence inside, conceptual findings outside.
 
 ---
 
@@ -70,8 +70,8 @@ deliberate: rich evidence inside, conceptual findings outside.
    posture: **infer from Rung A grant evidence** (both require `ALTER`, so an absent
    `ALTER` grant settles them) and run the live probe only against an
    operator-designated expendable table, if one exists.
-7. **Nothing proprietary crosses the boundary.** Table names, column names, row values,
-   logins, server names, and connection strings stay in-network. Standard SQL Server
+7. **Nothing proprietary travels.** Table names, column names, row values, logins,
+   server names, and connection strings stay within the probe session. Standard SQL Server
    error numbers (e.g., 229 permission-denied, 8102 identity-column update) are generic
    and transportable.
 
@@ -95,7 +95,7 @@ Optional secondary table `<T2>`: an FK referencer of `<T1>`, only if relational 
 are later wanted; not required for the core ladder. The user-directory probe (P10)
 needs no selection — it probes conventional names via metadata only.
 
-**The binding sheet** (stays in-network; the agent keeps it current):
+**The binding sheet** (stays within the probe session; the agent keeps it current):
 
 | Binding | Value |
 |---|---|
@@ -173,7 +173,7 @@ the spike's write rungs are already answered (denied) — record and stop early.
 -- The baseline count every later rung re-checks.
 SELECT COUNT(*) AS baseline FROM <T1>;
 
--- Shape check (data stays in-network; prefer naming columns over * if the
+-- Shape check (resultset stays within the session; prefer naming columns over * if the
 -- table is wide or sensitive).
 SELECT TOP 5 <PK>, <TXT> FROM <T1> ORDER BY <PK> DESC;
 
@@ -335,7 +335,7 @@ Stop the ladder and write the ledger as-is when any of these hits:
 
 ## 7. The findings ledger — the transportable artifact
 
-The only thing that leaves the corporate network. Generic vocabulary only: verdicts,
+The only artifact that travels beyond the probe session. Generic vocabulary only: verdicts,
 standard error numbers, and the bindings replaced by their roles (`the probe table`,
 `the user directory`).
 
