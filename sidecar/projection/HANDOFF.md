@@ -1,3 +1,96 @@
+# Handoff addendum — 2026-06-12, generation 6 CLOSE (the contract leg is CLOSED: L1→L4 + R1a→R1e; the Voice lane advanced; the pools pay for work)
+
+To the next agent.
+
+The books balance. What you inherit, in order of weight:
+
+**1. The ledger contract is LIVE (L1→L4) on the RI-3 admission split.**
+`LedgerSpec` + the `Verified<_>` proof token in Core (`Ledger.fs`);
+`writeAdmit` (external witness — B′≡B at `recordVerified`; the
+journal's commit-point position) vs `resumeAdmit` (recomputed-vs-stored
+fingerprint; drift is typed, mapped onto the unchanged
+`transfer.resume.sourceDrift`). The journal instance adapts the
+effectful remap fold (Genesis = the shared in-flight accumulator); the
+episode instance names load-time verification as chain structure,
+honestly; G10 is the degenerate single-quantum instance, retired as a
+second mechanism. Two card corrections are named in the backlog (L2's
+resumePoint→resumeAdmit-per-chunk; the positional WriteAdmit). F1-hex
+stays ARMED — `digestOf` was never touched.
+
+**2. The Run is COMPLETE and WIRED (R1a→R1e).** Capture lives at the
+ONE bracket owner (`RunEnvelope.bracket`, the "wire once" clause
+realized literally): under `PROJECTION_LEDGER_DIR`, every bracketed
+run persists its aggregate — crashed bodies included, no orphan
+RunIds. Transfer/reverse-leg/migrate/migrate-with-data/synth-load
+moved under `withRun`; `runReadiness`'s orphan beginRun is retired
+(face-bracketed, no ledger append per its contract); bench keys by
+RunId; `projection inspect <runId> [<runId>]` renders the store and
+the `Run.diff` delta surface — where the §9.7 UoM promotion FIRED
+(`[<Measure>] ms`, scoped exactly as gated). R1e's law is witnessed:
+stored-trail board ≡ live board (mixed run), readiness over RunHistory
+≡ the ledger projection. The card's `diff <a> <b>` name collided with
+the shipped refs-diff verb — landed under `inspect`, named.
+
+**3. The pools pay for work, not ceremony — and §4 rule 2's third
+signature has a ROOT CAUSE.** The flat ~3.4s ephemeral-test floor was
+the DROP killing the idle pooled per-DB session (3051ms measured; 51ms
+evicted) — `ClearPool` lands before every drop. The warm container was
+dying of LEAKED databases (`withBootstrappedDatabase` never dropped;
+209 counted) — it reaps now; a full fast run adds zero. The pool split
+follows the Collection ATTRIBUTE, not the filename — the substring
+trap had broken both ways (six Docker tests in the parallel fast pool;
+six pure AxiomTests in the serial docker pool; set-diff proved the
+6↔6 swap, nothing dropped). Build skips when the test DLL is newer
+than every input. **fast: 58–71s → 31s; docker: 925s → 383s (229/0);
+every passing pool prints its five slowest.** `runEphemeral` is
+deliberately unchanged (deploy-to-docker leaves an inspectable DB by
+design). The remaining docker wall is ~71s of 100k sustained-envelope
+MEASUREMENT — witnesses, not overhead.
+
+**4. The Voice lane advanced in parallel (a worktree subagent,
+reviewed against the register before merging).** Seven faces voiced
+(full-export --load, deploy's SSDT-rejection worked example, the
+canary pair, drift, the migrate stop channel with
+`Voice.migrationStopDetail` as a typed projection, eject,
+verify-data); 21 codes, catalog 20→41, both totality registries per
+commit, exits byte-identical, NDJSON untouched. RunFaces raw-print
+census 148 → 80; the remaining faces (transfer narration — wants a
+TransferReport→Surface design, not flat templates; explain/suggest —
+View/Surface documents; migrate success verdicts) are deferred with
+named reasons in the lane's commits.
+
+**Witness state at close:** pure pool 31s green at every commit
+(3115/0 at the head under the corrected split — six axiom tests came
+HOME to the fast pool, six Docker tests went home to docker); full
+Docker pool 229/0 (383s) at the head; the inherited witnesses were
+re-run at open per the law (pure 3078/0/211 exact; Docker 229/0 at
+925s pre-fix; readside-rowstream 869ms/165ms — inside generation 4's
+band, four hosts deep). One infra flake en route, named and §4-filed:
+a 27-failure pre-login-handshake batch (rule 2's fourth signature;
+restart → focused re-run green → full green).
+
+**Traps from this session:** (a) `Assert`-era F# files can shadow
+`System.DateTime` — qualify it in new test literals (two FS0003s cost
+minutes). (b) The paren-`use` eviction form trips FS0792 inside a task
+CE's `finally` — use let-bind + explicit Dispose. (c) Editing test.sh
+while a pool RUNS risks corrupting the in-flight bash — stage to /tmp,
+swap after the verdict.
+
+**Your queue, by the backlog's graph:** P1→P2 (licensed parallelism —
+`ParallelSafe` minted by `levels`; P3 stays trigger-held on harness
+evidence), the Voice lane's named remainder, and the §6 armed items
+with their wake conditions (F1-hex still waits on a third
+persistence-coupled digest or a digestOf touch). J5 — a writable UAT
+connection — still trumps everything.
+
+Hold the spine; balance the books; keep the patient breathing; re-run
+the witnesses you inherit before you stand on them — mine are one
+command each: `scripts/test.sh fast` (31s), `scripts/test.sh docker`
+(383s, 229/0), `perf-harness.sh run readside-rowstream` (the Q-arc's
+band).
+
+— Generation 6, the contract-keeper, 2026-06-12
+
 # Handoff addendum — 2026-06-12, generation 5 CLOSE (the S-track is CLOSED: the spine is held, S1→S5)
 
 To the next agent.

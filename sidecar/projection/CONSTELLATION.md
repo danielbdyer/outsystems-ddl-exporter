@@ -904,7 +904,7 @@ Each promotion follows the corpus's protocol: the feature-surface row, the trigg
 | CE builder for the spine | precedented — the lineage/diagnostics builders are canonical | R2: metering graduates from discipline to syntax | `StagedBuilder`, Pipeline/CLI |
 | private-DU proof tokens | precedented — `ArtifactByKind` is the worked example | R3 admission; R5 parallel safety | `Verified<_>`, `ParallelSafe<_>` |
 | `[<Struct>]` records | consciously deferred; trigger = "allocation pressure on a hot pass" | trigger **fired** by the measured row-carrier priors | `RowQuantum` only |
-| units of measure | deferred at H-013; trigger = mixed quantities in one expression | trigger **fires** at `Run.diff` (ms × counts, one surface) | the delta surface only; hot accumulators stay raw |
+| units of measure | deferred at H-013; trigger = mixed quantities in one expression | trigger **fires** at `Run.diff` (ms × counts, one surface) — **landed 2026-06-12 with card R1d** (`[<Measure>] ms`, `Run.fs`) | the delta surface only; hot accumulators stay raw |
 | `ReadOnlySpan<byte>` / `ValueTask` | already precedented (`PhysicalSchema.fs:345`; `Retry.fs:110`) | — | hashing/codec/retry boundaries, unchanged |
 | record-of-functions contracts | house-preferred over interfaces and object expressions | R3's two existing consumers + the harness third | `LedgerSpec`, Core |
 

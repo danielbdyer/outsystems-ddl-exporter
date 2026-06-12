@@ -21694,3 +21694,74 @@ stage skips the downstream arc (no more phantom failed `emit` after a
 failed `profile`); migrate runs gain `preflight` started/completed
 pairs and stage-table entries. The pinned FullExportCliTests slice-7
 trio held without amendment.
+
+## 2026-06-12 — The ledger contract and the Run land (cards L1–L4, R1a–R1e); the UoM gate fires
+
+The R3 + R1 legs of the constellation backlog are CLOSED, on the
+admission-split correction (RI-3) and the complete-don't-rebuild
+reframe (RI-1). The disciplines that outlive the diffs:
+
+**L — one contract, three honest instances.** `LedgerSpec`
+(Genesis/Apply/FingerprintOf, Core, pure) + the proof-token
+`Verified<_>` whose only mints are the two admission arms: `writeAdmit`
+(the external witness, checked at the one moment it is checkable) and
+`resumeAdmit` (recomputed-vs-stored fingerprint; Core compares values,
+the recomputation stays the instance's I/O). The journal instance
+adapts the EFFECTFUL remap fold (Genesis = the run's shared in-flight
+accumulator); the episode instance says plainly that load-time
+verification is chain structure (ordinal monotonicity), never a
+re-verification of B′≡B; the G10 marker is the degenerate
+single-quantum instance, retired as a separate mechanism. Two
+refusals, named: a ceremonial writeAdmit at the journal's append
+(control flow already proves the witness), and the card's
+resumePoint-in-the-walk (the journal resumes per chunk against a
+last-write-wins index; resumePoint keeps the chain-form law).
+F1-hex stays armed — `digestOf` untouched.
+
+**R1 — the aggregate completed, capture wired ONCE.** `Run.Run` gains
+`Ledgers : LedgerRef list` + `Bench : Bench.Run option` (codec
+hand-built: Bench.Stats is an F# list, STJ deserialize foreclosed).
+Capture lives at the single bracket owner (`RunEnvelope.bracket`):
+under `PROJECTION_LEDGER_DIR` every bracketed run persists run.json —
+crashed bodies included, no orphan RunIds. The envelope-emitting
+orphans moved under `withRun` (transfer, reverse-leg, migrate ×2,
+synth-load); `runReadiness`'s orphan beginRun retired by bracketing
+the face directly (no ledger append for the query — its documented
+contract). Bench snapshots key by RunId (`BenchSink.runPath`;
+perf-gate discovery off mtime, legacy fallback logged). `inspect
+<runId> [<runId>]` renders the store and the `Run.diff` delta surface —
+where the §9.7 units-of-measure promotion FIRED, scoped as gated
+(`[<Measure>] ms`; a bench millisecond cannot add to a transform
+count). R1e's law holds witnessed: the board reconstructed from a
+stored run's envelope trail equals the live board (mixed run — Halted
++ ledger-only Skip), and readiness over RunHistory equals the ledger
+projection.
+
+## 2026-06-12 — The test pools pay for work, not ceremony; §4 rule 2's third signature is root-caused
+
+Operator-directed optimization, measurement-first. Three findings with
+teeth:
+
+1. **The ~3.4s flat per-test floor was the DROP.** SINGLE_USER WITH
+   ROLLBACK IMMEDIATE killing the body's idle pooled per-DB session:
+   3051ms measured; 51ms with the pool evicted first. One incision at
+   `ContainerFixtureSupport.withEphemeralDatabase` (+ three inline
+   sites). LiveProfilerIntegrationTests: median 3.46s → 0.43s.
+2. **The warm container was dying of leaked databases.**
+   `withBootstrappedDatabase` never dropped (209 user DBs after one
+   session) — the root cause of rule 2's third signature. It reaps on
+   exit now; a full fast run adds zero databases. `runEphemeral`
+   deliberately unchanged (the deploy-to-docker flow leaves an
+   inspectable database by design).
+3. **The pool split now follows the attribute, not the filename.** The
+   substring split had broken BOTH ways: six Docker-collection tests
+   ran inside the parallel fast pool (one cold-starting an isolated
+   container there), and six pure AxiomTests whose names embed Docker
+   class names ran inside the serial docker pool. Set-diff proves the
+   exact 6↔6 swap, nothing dropped. Plus: build skipped when the test
+   DLL is newer than every input (~100ms scan vs ~10s no-op MSBuild);
+   every passing pool prints its five slowest.
+
+The pools: fast 58–71s → **31s**; docker 925s → **383s** (229/0). The
+remaining docker wall is dominated by the two 100k sustained-envelope
+measurements (71s) — witnesses, not overhead; they stay.
