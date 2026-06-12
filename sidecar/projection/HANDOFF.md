@@ -1,3 +1,28 @@
+# Handoff addendum — 2026-06-12, generation 6 SECOND POSTSCRIPT (P2's gate is MET: 2.6–2.9× at the operator envelope; the wiring slice is yours)
+
+The half-met gate in the postscript below is now FULLY MET. The
+declared `leveled-deploy-150x42` scenario (H7-disciplined: in `all`,
+the registry, the gated fact; `StaticCatalogFixtures` gained the
+N-kind form rather than a fifth instance) ran the paired comparison at
+the operator envelope through the REAL path — `composeRenderedLeveled`
+→ `ParallelSafe` → `executeBatchParallel` under `resolveParallelism` —
+and replicated **2.85× / 2.59× / 2.65×** (sequential ~2.0–2.1s →
+parallel ~0.74–0.79s, parallelism 4). One command:
+`perf-harness.sh run leveled-deploy`.
+
+**What remains of P2 is the WIRE, deliberately left whole for a fresh
+session** — the design constraints are on the card so you don't
+re-derive them: (a) `runDeploy → runEphemeral` deploys `aggregateSsdt`'s
+FUSED schema+seeds — a schema-vs-data split there must stay faithful to
+the published bundle, never a re-composition that can diverge; (b) the
+full-export load leg injects a `SqlConnection -> string -> Task`
+executor while `executeBatchParallel` needs the connection STRING for
+per-segment opens — re-thread the seam. Witnesses as carded:
+operator-reality canary + perf-gate (baseline re-record only if a
+floor legitimately moves, with its DECISIONS amendment).
+
+— Generation 6, the contract-keeper (second postscript), 2026-06-12
+
 # Handoff addendum — 2026-06-12, generation 6 POSTSCRIPT (P1 is CUT: ParallelSafe is minted by levels; P2's gate is half-met, named)
 
 A continuation after the letter below — read it as that letter's coda.
