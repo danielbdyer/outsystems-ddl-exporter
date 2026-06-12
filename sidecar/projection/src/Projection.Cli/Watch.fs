@@ -39,11 +39,15 @@ module Watch =
     /// visible from the first frame — `THE_STORYBOARD.md` Act 4 / Appendix A.3);
     /// `Active` is the gerund-in-progress (rule 12 exception), carrying its
     /// intra-stage progress once the producer reports any; `Done` carries the
-    /// stage's measured duration.
+    /// stage's measured duration. `Halted` is the R2 Aborted arm on the board:
+    /// the stage's bracket CLOSED with a non-success wire outcome (`failed` /
+    /// `aborted`) — the line closes honestly (`✕`, "<Stage> stopped"), never a
+    /// hang and never a `✓` that misstates (§13).
     type StageState =
         | Pending
         | Active of Progress option
         | Done of durationMs: int64 option
+        | Halted of durationMs: int64 option
 
     /// One line of the board — a stage, keyed by its internal name (the prefix of
     /// the `<stage>.started` / `summary.stageCompleted{stage}` codes), with its
@@ -55,12 +59,18 @@ module Watch =
     /// run-in-flight header voiced above the arc; `RunIdentity` is the run's
     /// ordinal, voiced in the done-frame as "Recorded as run N" when present. Both
     /// default to absent — the board renders the bare arc when no frame is given.
+    /// `Umbrella` is the run's root-scope key (the spine's declared root — R2):
+    /// its events are elided, never a watched line. Boards built from flat string
+    /// lists keep the legacy "pipeline" convention; boards seeded from a
+    /// `RunSpine` derive it from the declaration.
     type Board =
         { Stages: StageLine list
           Title: string option
-          RunIdentity: string option }
+          RunIdentity: string option
+          Umbrella: string option }
 
-    let empty : Board = { Stages = []; Title = None; RunIdentity = None }
+    let empty : Board =
+        { Stages = []; Title = None; RunIdentity = None; Umbrella = Some "pipeline" }
 
     /// A board pre-seeded with the run's planned stages, each `Pending` — so the
     /// operator sees the whole arc before the first stage starts, the stages
@@ -72,7 +82,8 @@ module Watch =
             |> List.filter (fun k -> not (k = "pipeline"))
             |> List.map (fun k -> { Key = k; State = Pending })
           Title = None
-          RunIdentity = None }
+          RunIdentity = None
+          Umbrella = Some "pipeline" }
 
     /// A seeded board carrying the run frame — the run-title header voiced above
     /// the arc (`THE_VOICE.md` §13) and, when known up front, the run's ordinal for
@@ -82,10 +93,21 @@ module Watch =
     let seededWith (command: string option) (runIdentity: string option) (stageKeys: string list) : Board =
         { seeded stageKeys with Title = command; RunIdentity = runIdentity }
 
-    /// The umbrella "pipeline" stage (`FullExportRun.recordStage "pipeline"`) wraps
-    /// the whole run; it is not a sub-stage the operator watches, so the board
-    /// elides it (the sub-stages extract / profile / emit are the live arc).
-    let private isUmbrella (key: string) : bool = key = "pipeline"
+    /// A board pre-seeded from a declared `RunSpine` (R2 — the pre-seeds derive
+    /// from the declaration; the per-face string lists retire). The declared arc
+    /// never contains the root by construction, so no filtering; the umbrella key
+    /// derives from the spine's declared root rather than the legacy convention.
+    let seededOf (spine: RunSpine) : Board =
+        { Stages = RunSpine.keys spine |> List.map (fun k -> { Key = k; State = Pending })
+          Title = None
+          RunIdentity = None
+          Umbrella = RunSpine.rootKey spine }
+
+    /// The umbrella root scope (e.g. full-export's "pipeline") wraps the whole
+    /// run; it is not a sub-stage the operator watches, so the board elides its
+    /// events (the declared sub-stages are the live arc).
+    let private isUmbrella (board: Board) (key: string) : bool =
+        board.Umbrella = Some key
 
     let private durationOf (payload: Map<string, objnull>) : int64 option =
         match Map.tryFind "durationMs" payload with
@@ -109,12 +131,15 @@ module Watch =
     /// produced a *renderable* transition (so the shell sleeps + refreshes only on
     /// real changes, never on every envelope). The board reacts to exactly two
     /// event kinds: a `<stage>.started` (→ `Active`) and a `summary.stageCompleted`
-    /// (→ `Done` with the measured duration). The redundant `<stage>.completed`
-    /// markers are ignored — `summary.stageCompleted` carries the duration.
+    /// (→ `Done` with the measured duration on a `succeeded` outcome; → `Halted`
+    /// on `failed` / `aborted`, so a closed-unsuccessful stage reads `✕`, never a
+    /// `✓` that misstates and never a hung Active line — the R2 Aborted arm). The
+    /// redundant `<stage>.completed` markers are ignored — `summary.stageCompleted`
+    /// carries the duration.
     let apply (board: Board) (code: string) (payload: Map<string, objnull>) : Board * bool =
         if code.EndsWith ".started" then
             let key = code.Substring(0, code.Length - ".started".Length)
-            if isUmbrella key then board, false
+            if isUmbrella board key then board, false
             else
                 // A pre-seeded `Pending` stage flips to `Active` in place (keeping
                 // its planned position); an unseeded stage appends; an already
@@ -147,16 +172,23 @@ module Watch =
             match Map.tryFind "stage" payload with
             | Some s when not (isNull s) ->
                 let key = string s
-                if isUmbrella key then board, false
+                if isUmbrella board key then board, false
                 else
                     let dur = durationOf payload
+                    // The wire outcome decides the closed state: `succeeded`
+                    // (or absent — the pre-outcome envelope shape) → Done;
+                    // `failed` / `aborted` → Halted. The line always closes.
+                    let closed =
+                        match Map.tryFind "outcome" payload with
+                        | Some o when not (isNull o) && string o <> "succeeded" -> Halted dur
+                        | _ -> Done dur
                     if board.Stages |> List.exists (fun ln -> ln.Key = key) then
                         { board with
                             Stages =
                                 board.Stages
-                                |> List.map (fun ln -> if ln.Key = key then { ln with State = Done dur } else ln) }, true
+                                |> List.map (fun ln -> if ln.Key = key then { ln with State = closed } else ln) }, true
                     else
-                        { board with Stages = board.Stages @ [ { Key = key; State = Done dur } ] }, true
+                        { board with Stages = board.Stages @ [ { Key = key; State = closed } ] }, true
             | _ -> board, false
         else board, false
 
@@ -236,6 +268,13 @@ module Watch =
             match dur with
             | Some ms -> sprintf "%s · %s" baseText (secondsText ms)
             | None    -> baseText
+        | Halted dur ->
+            // The closed-unsuccessful line — voiced through `watch.stageHalted`
+            // (the catalog owns the copy; the board never authors prose).
+            let baseText = statementText "watch.stageHalted" (Map.ofList [ "stage", box line.Key ])
+            match dur with
+            | Some ms -> sprintf "%s · %s" baseText (secondsText ms)
+            | None    -> baseText
 
     /// The run's terminal stage — the last line on the board (the arc's final
     /// stage). `None` for an empty board. The done-frame's follow-on is keyed off
@@ -279,6 +318,7 @@ module Watch =
         | Pending  -> sprintf "%s  %s" (Theme.muted Theme.pending)   (Theme.muted text)
         | Active _ -> sprintf "%s  %s" (Theme.accent Theme.collapsed) (Theme.bold text)
         | Done _   -> sprintf "%s  %s" Theme.ok                       (Theme.green text)
+        | Halted _ -> sprintf "%s  %s" (Theme.red Theme.bad)          (Theme.red text)
 
     /// Project the board onto a Spectre renderable — the live target the
     /// `LiveDisplayContext` updates in place. The optional run-title header frames
@@ -326,10 +366,10 @@ module Watch =
     /// because the run is synchronous + single-threaded and channel 1 is nulled
     /// (no contention). A future concurrent / async emitter would move the dwell to
     /// a drain loop on a render thread (`THE_VOICE_BUILD_MAP.md` §4.3).
-    let renderWatch (seedStages: string list) (floorMs: int64) (body: unit -> int) : int =
+    let renderWatch (spine: RunSpine) (floorMs: int64) (body: unit -> int) : int =
         let console =
             AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(Console.Error)))
-        let board = ref (seeded seedStages)
+        let board = ref (seededOf spine)
         let sw = System.Diagnostics.Stopwatch.StartNew()
         let mutable lastRenderAt = 0L
         let mutable code = 0

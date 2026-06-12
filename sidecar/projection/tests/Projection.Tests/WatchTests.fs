@@ -68,6 +68,55 @@ let ``Watch board: stageCompleted flips the line to Done with its duration`` () 
     | other -> Assert.Fail(sprintf "expected extract Done 1200, got %A" other)
 
 [<Fact>]
+let ``Watch board: a stageCompleted with a failed or aborted outcome goes Halted, never a misstating Done`` () =
+    // The R2 Aborted arm on the board: the line CLOSES (no hang) and reads
+    // halted (no `✓` for a stage that did not succeed).
+    let close outcome =
+        let board, _ = Watch.apply Watch.empty "deploy.started" Map.empty
+        Watch.apply board "summary.stageCompleted"
+            (payload [ "stage", box "deploy"; "durationMs", box 700L; "outcome", box outcome ])
+    match close "aborted" with
+    | { Stages = [ { Key = "deploy"; State = Watch.Halted(Some 700L) } ] }, true -> ()
+    | other -> Assert.Fail(sprintf "expected deploy Halted on aborted, got %A" other)
+    match close "failed" with
+    | { Stages = [ { State = Watch.Halted(Some 700L) } ] }, true -> ()
+    | other -> Assert.Fail(sprintf "expected deploy Halted on failed, got %A" other)
+    match close "succeeded" with
+    | { Stages = [ { State = Watch.Done(Some 700L) } ] }, true -> ()
+    | other -> Assert.Fail(sprintf "expected deploy Done on succeeded, got %A" other)
+
+[<Fact>]
+let ``Watch board: a halted stage blocks the done-frame — the arc did not land`` () =
+    let board = Watch.seeded [ "deploy"; "canary" ]
+    let started, _ = Watch.apply board "deploy.started" Map.empty
+    let halted, _ =
+        Watch.apply started "summary.stageCompleted"
+            (payload [ "stage", box "deploy"; "durationMs", box 1L; "outcome", box "aborted" ])
+    Assert.False(Watch.isTerminal halted)
+    Assert.True((Watch.doneFrameText halted).IsNone)
+
+[<Fact>]
+let ``Watch line: a halted stage voices the stop — candid, never a checkmark phrase`` () =
+    let text = Watch.lineText { Key = "deploy"; State = Watch.Halted(Some 1200L) }
+    Assert.Contains("Deploy stopped", text)
+    Assert.Contains("1.2s", text)
+    Assert.DoesNotContain("complete", text)
+
+[<Fact>]
+let ``Watch board: seededOf derives the arc and the umbrella from the declared spine`` () =
+    // R2 — the pre-seeds derive from the declaration (the per-face string
+    // lists retired onto `Spines`).
+    let board = Watch.seededOf Projection.Pipeline.Spines.pipeline
+    Assert.Equal<string list>(
+        [ "extract"; "profile"; "emit" ],
+        board.Stages |> List.map (fun s -> s.Key))
+    Assert.True(board.Stages |> List.forall (fun s -> s.State = Watch.Pending))
+    // The spine's declared root is the elided umbrella.
+    let afterRootStart, changed = Watch.apply board "pipeline.started" Map.empty
+    Assert.False changed
+    Assert.Equal(3, List.length afterRootStart.Stages)
+
+[<Fact>]
 let ``Watch board: the pipeline umbrella stage is elided`` () =
     let board, changed =
         Watch.apply Watch.empty "summary.stageCompleted" (payload [ "stage", box "pipeline"; "durationMs", box 5L ])
@@ -123,7 +172,9 @@ let ``Watch line: every stage line clears the twelve-rule banned list`` () =
           Watch.lineText { Key = "deploy";  State = Watch.Active(Some { Done = 142; Total = 300; ElapsedMs = 4000L }) }
           Watch.lineText { Key = "extract"; State = Watch.Done(Some 1200L) }
           Watch.lineText { Key = "profile"; State = Watch.Done None }
-          Watch.lineText { Key = "emit";    State = Watch.Done(Some 800L) } ]
+          Watch.lineText { Key = "emit";    State = Watch.Done(Some 800L) }
+          Watch.lineText { Key = "deploy";  State = Watch.Halted(Some 700L) }
+          Watch.lineText { Key = "canary";  State = Watch.Halted None } ]
     for line in lines do
         let lowered = line.ToLowerInvariant()
         for b in banned do

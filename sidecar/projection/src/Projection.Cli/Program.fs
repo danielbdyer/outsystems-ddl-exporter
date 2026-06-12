@@ -126,7 +126,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         let run () = runFullExport c (Some dir) verbosity Set.empty store env
         // --watch + a real TTY → the live stage board (§13), pre-seeded with the
         // pipeline's planned stages so the whole arc is visible from the first frame.
-        if Watch.shouldWatch watchMode.Value then Watch.renderWatch pipelineStages (Watch.resolveDwellMs ()) run
+        if Watch.shouldWatch watchMode.Value then Watch.renderWatch Spines.pipeline (Watch.resolveDwellMs ()) run
         else run ()
     | PlanAction.EmitSkeleton (model, modelOssys, dir) ->
         needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runEmitSkeletonOnly cat dir))
@@ -159,7 +159,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         let run () = runFullExportLoad c conn None store env
         // The load flow runs the same publish pipeline, so it streams the same
         // stage arc; --watch shows the live board (§13).
-        if Watch.shouldWatch watchMode.Value then Watch.renderWatch pipelineStages (Watch.resolveDwellMs ()) run
+        if Watch.shouldWatch watchMode.Value then Watch.renderWatch Spines.pipeline (Watch.resolveDwellMs ()) run
         else run ()
     | PlanAction.Migrate (model, modelOssys, conn, opts) ->
         needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat -> runMigrateExecute shapedCat conn opts.Declaration opts.AllowCdc opts.Store opts.Env))

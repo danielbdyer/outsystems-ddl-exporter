@@ -269,7 +269,7 @@ let runDeploy (shaping: Config.Config) (catalog: Catalog) : int =
         // board shows the stage going Applying → Deploy complete, not a bar.
         let exitCode =
             if Watch.shouldWatch watchMode.Value then
-                Watch.renderWatch [ "deploy" ] (Watch.resolveDwellMs ()) runBody
+                Watch.renderWatch Spines.deploy (Watch.resolveDwellMs ()) runBody
             else runBody ()
         dumpBench "deploy"
         exitCode
@@ -640,7 +640,7 @@ let runTransfer
     // (a dry-run writes no rows, so the load stage would never advance).
     let exitCode =
         if executeGated && Watch.shouldWatch watchMode.Value then
-            Watch.renderWatch [ "load" ] (Watch.resolveDwellMs ()) runBody
+            Watch.renderWatch Spines.transfer (Watch.resolveDwellMs ()) runBody
         else runBody ()
     dumpBench "transfer"
     exitCode
@@ -750,7 +750,7 @@ let runReverseLegTransfer
     if executeGated then for line in surveyAdvisory do Console.Error.WriteLine line
     let exitCode =
         if executeGated && Watch.shouldWatch watchMode.Value then
-            Watch.renderWatch [ "load" ] (Watch.resolveDwellMs ()) runBody
+            Watch.renderWatch Spines.transfer (Watch.resolveDwellMs ()) runBody
         else runBody ()
     dumpBench "transfer"
     exitCode
@@ -1502,7 +1502,7 @@ let runMigrateExecute (target: Catalog) (connSpec: string) (declaration: LossDec
     // migrate leg's arc (build → apply → verify) the executor streams.
     let code =
         if Watch.shouldWatch watchMode.Value then
-            Watch.renderWatch migrateStages (Watch.resolveDwellMs ()) runBody
+            Watch.renderWatch Spines.migrate (Watch.resolveDwellMs ()) runBody
         else runBody ()
     dumpBench "migrate"
     code
@@ -1657,7 +1657,7 @@ let runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec: string)
     // schema leg (build → apply → verify) and the data leg's load.
     let code =
         if Watch.shouldWatch watchMode.Value then
-            Watch.renderWatch migrateDataStages (Watch.resolveDwellMs ()) runBody
+            Watch.renderWatch Spines.migrateData (Watch.resolveDwellMs ()) runBody
         else runBody ()
     dumpBench "migrate"
     code

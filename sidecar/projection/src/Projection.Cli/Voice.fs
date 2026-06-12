@@ -340,6 +340,20 @@ module Voice =
           Substantiation = fun _ -> []
           Action         = fun _ -> None }
 
+    /// `watch.stageHalted` — the live board's line for a stage whose bracket
+    /// closed without success (`failed` / `aborted` on the wire — the R2 Aborted
+    /// arm made visible). Candid and stative: the stage stopped; the run's own
+    /// error surface carries the cause. A render-synthesized frame like
+    /// `watch.runTitle` — the board is a rendering, so the copy is voiced here,
+    /// never authored in the renderer; never a `✓` that misstates (§13).
+    let private watchStageHalted : Copy =
+        { Code           = "watch.stageHalted"
+          DocSection     = "§13"
+          Statement      =
+            fun p -> View.Note(sprintf "%s stopped." (stageName (textOr "stage" "stage" p)))
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
     /// `summary.stageCompleted` — a stage of the run completed (`THE_VOICE.md`
     /// §13). Resultative; the stage name is operator-shaped via `stageName`,
     /// never the internal engine verb.
@@ -400,6 +414,7 @@ module Voice =
           loadStarted
           watchRunTitle
           watchRunDone
+          watchStageHalted
           summaryStageCompleted
           // §14 / §10 — config & errors
           configValidationFailed ]

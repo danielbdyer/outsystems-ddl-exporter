@@ -437,12 +437,22 @@ the algebra` `` + the distribution-over-composition property + the two smart-cto
 (`RunSpineTests.fs`). §9.8.5 carries the landed-outcome note. S. Deps: none.
 Rollback: revert; types unused until S2.
 
-**S2 · The `staged{}` CE + the law.** Bind brackets (Bench scope, `<stage>.started/.completed`
-envelopes, Watch transitions); `Run` closure asserts `declared ⇔ executed-or-aborted` — an
-open stage at run end becomes a named `Aborted`, never a board hang. Watch pre-seeds derive
-from `RunSpine` (the string lists retire). Umbrella stages are the spine's root scope —
-nesting is one level, by declaration. *Witness:* `` `R2: declared ⇔ executed∪aborted` `` +
-WatchTests re-derived. M. Deps: S1. Rollback: faces keep old emissions until S3/S4 migrate.
+**S2 · The `staged{}` CE + the law — DONE 2026-06-12.** Shipped in `RunSpine.fs`: the
+`staged spine { }` CE (Bind brackets `Bench.scope "stage.<name>"` — a new additive meter
+surface — + the `<stage>.started` / `summary.stageCompleted` envelopes the board folds);
+the Run closure balances total books (`declared ⇔ executed∪aborted`; missed/extra/re-entered
+stages are named refusals; `Completed` is bracket-plane — a body `Error` closes the stage
+`failed` and stops the run; an exception closes it `aborted` on the wire so the board's line
+goes `Halted`, never a hang). `RunSpine` gained the umbrella root (`createWithRoot`; the CE's
+Run brackets it — one level of nesting, by declaration). Watch pre-seeds derive from the
+declared `Spines` (pipeline/migrate/migrateData/deploy/transfer; the OperatorConsole string
+lists retired); the board gained `Halted` + the board-only `watch.stageHalted` copy — today's
+failed closes now render `✕ stopped`, not the prior misstating `✓ complete`. Production
+emissions unchanged at this commit (no face on the CE until S3/S4). *Witnesses shipped:*
+`` `R2: declared ⇔ executed∪aborted — every declared stage accounted, in declared order` ``
++ seven siblings (`StagedTests.fs`, incl. the board-fold of the live envelope feed) +
+WatchTests re-derived. See `DECISIONS 2026-06-12 — The stage spine lands`. M. Deps: S1.
+Rollback: faces keep old emissions until S3/S4 migrate.
 
 **S3 · The trivial faces.** `runDeploy`, `runCanary` onto the CE — including the
 `recordStage` vs `recordStageEvent` discrepancy fix at `RunFaces.fs:297`. *Witness:* envelope
