@@ -460,6 +460,105 @@ let ossysParse (entities: int) : PerfScenario =
             } }
 
 // -------------------------------------------------------------------------
+// P2 gate (CONSTELLATION_BACKLOG stage 6) — leveled-parallel vs sequential
+// rendered-data deploy at the operator envelope: 150 independent static
+// kinds × 42 rows = 6,300 rows (the perf-gate canary's table count and
+// volume; independent lookups ARE the static-seed topology, so the leveled
+// plan is one ParallelSafe group of 150 members). PAIRED back-to-back legs
+// on one container control drift: leg A is today's production shape (the
+// aggregated sequential batch `runEphemeral` deploys); leg B is the
+// promoted shape (per-level ParallelSafe dispatch under the existing
+// `Deploy.resolveParallelism` stack). The label pair IS the gate's
+// evidence — P2 wires or stays refused on what this prints.
+// -------------------------------------------------------------------------
+
+let private leveledSeedCatalog (kinds: int) (rowsPerKind: int) : Catalog =
+    StaticCatalogFixtures.staticCatalogOfKinds "PERF_LVL" "PerfLevelMod"
+        [ for k in 0 .. kinds - 1 ->
+            { StaticCatalogFixtures.KindKeyParts = [ sprintf "Lookup%03d" k ]
+              KindName = sprintf "PerfLevel%03d" k
+              PhysicalTable = sprintf "PerfLevel%03d" k
+              Attrs =
+                [ StaticCatalogFixtures.pk "Id" "ID" Integer
+                  StaticCatalogFixtures.attr "Code" "CODE" Text
+                  StaticCatalogFixtures.attr "Label" "LABEL" Text ]
+              Rows =
+                [ for i in 1 .. rowsPerKind ->
+                    string i, [ string i; sprintf "C%06d" i; sprintf "Level %d row %d" k i ] ] } ]
+
+// PERF-SCENARIO: leveled-deploy 150x42 | keylabels=perf.leveledDeploy.sequential,perf.leveledDeploy.parallel,deploy.executeBatchParallel
+let leveledDeploy (kinds: int) (rowsPerKind: int) : PerfScenario =
+    let catalog = leveledSeedCatalog kinds rowsPerKind
+    { Name = sprintf "leveled-deploy-%dx%d" kinds rowsPerKind
+      Tag = "perf.leveledDeploy"
+      KeyLabels = [ "perf.leveledDeploy.sequential"; "perf.leveledDeploy.parallel"; "deploy.executeBatchParallel" ]
+      Run =
+        fun _ ->
+            task {
+                let ddl = SsdtDdlEmitter.statements catalog |> Render.toText
+                let sequentialSeed =
+                    match DataEmissionComposer.composeRendered seedPolicy catalog Profile.empty with
+                    | Ok s -> s
+                    | Error e -> failwithf "leveled-deploy compose (sequential) failed: %A" e
+                let leveled =
+                    match
+                        DataEmissionComposer.composeRenderedLeveled
+                            seedPolicy catalog Profile.empty
+                            MigrationDependencyContext.empty UserRemapContext.empty
+                    with
+                    | Ok l -> l
+                    | Error e -> failwithf "leveled-deploy compose (leveled) failed: %A" e
+                let expectTotal = int64 (kinds * rowsPerKind)
+                let assertLoaded (cnn: SqlConnection) (leg: string) =
+                    task {
+                        use check =
+                            new SqlCommand(
+                                "SELECT SUM(p.rows) FROM sys.partitions p JOIN sys.tables t ON p.object_id = t.object_id WHERE p.index_id IN (0,1);",
+                                cnn)
+                        let! loaded = check.ExecuteScalarAsync()
+                        if Convert.ToInt64 loaded <> expectTotal then
+                            failwithf "leveled-deploy %s leg loaded %d rows, expected %d" leg (Convert.ToInt64 loaded) expectTotal
+                    }
+                do!
+                    Deploy.useContainer (fun masterConn ->
+                        task {
+                            // Leg A — today's production shape: one aggregated
+                            // batch through sequential executeBatch.
+                            do!
+                                ContainerFixtureSupport.withEphemeralDatabase masterConn "PerfLvlSeq" (fun cnn _ ->
+                                    task {
+                                        do! Deploy.executeBatch cnn ddl
+                                        do!
+                                            task {
+                                                use _ = Bench.scope "perf.leveledDeploy.sequential"
+                                                do! Deploy.executeBatch cnn sequentialSeed
+                                            }
+                                        do! assertLoaded cnn "sequential"
+                                    })
+                            // Leg B — the promoted shape: per-level ParallelSafe
+                            // dispatch behind the existing parallelism resolution.
+                            do!
+                                ContainerFixtureSupport.withEphemeralDatabase masterConn "PerfLvlPar" (fun cnn perDbConn ->
+                                    task {
+                                        do! Deploy.executeBatch cnn ddl
+                                        let! parallelism = Deploy.resolveParallelism perDbConn
+                                        Bench.recordSample "perf.leveledDeploy.parallelism" (int64 parallelism)
+                                        do!
+                                            task {
+                                                use _ = Bench.scope "perf.leveledDeploy.parallel"
+                                                for level in leveled.Phase1Levels do
+                                                    if not (ParallelSafe.isEmpty level) then
+                                                        do! Deploy.executeBatchParallel perDbConn level parallelism
+                                                for level in leveled.Phase2Levels do
+                                                    if not (ParallelSafe.isEmpty level) then
+                                                        do! Deploy.executeBatchParallel perDbConn level parallelism
+                                            }
+                                        do! assertLoaded cnn "parallel"
+                                    })
+                        })
+            } }
+
+// -------------------------------------------------------------------------
 // H7 (CONSTELLATION_BACKLOG plane N9; CONSTELLATION §9.8.11) — the catalog
 // as the fifth declare-once system. `all` is the single definition site;
 // the gated facts below index into it by name (an undeclared name fails
@@ -532,7 +631,11 @@ let all : ScenarioDecl list =
       { Name = "ossys-parse-1000"
         Docker = false
         Scale = { Rows = 0; Tables = 1000; ColumnsPerTable = 8 }
-        Make = fun () -> ossysParse 1000 } ]
+        Make = fun () -> ossysParse 1000 }
+      { Name = "leveled-deploy-150x42"
+        Docker = true
+        Scale = { Rows = 6300; Tables = 150; ColumnsPerTable = 3 }
+        Make = fun () -> leveledDeploy 150 42 } ]
 
 /// Run one DECLARED scenario: gate first (no fixture construction on the
 /// skip path), then build, then verify the declared name against the
@@ -598,3 +701,6 @@ let ``PerfHarness: profiler-discover 150`` () = runDeclared "profiler-discover-1
 
 [<Fact>]
 let ``PerfHarness: ossys-parse 1000`` () = runDeclared "ossys-parse-1000"
+
+[<Fact>]
+let ``PerfHarness: leveled-deploy 150x42`` () = runDeclared "leveled-deploy-150x42"

@@ -256,7 +256,7 @@ let ``Operator-reality canary: 6.25k rows × 150 tables, variegated, round-trips
                         | d -> findRoot d.Parent
                     findRoot (System.IO.DirectoryInfo(System.IO.Directory.GetCurrentDirectory()))
                 | v -> v
-            let path = BenchSink.defaultPath benchRoot "canary"
+            let path = BenchSink.runPath benchRoot "canary" (LogSink.runId ())
             BenchSink.persistJson path "operatorReality" stats
             printfn "operatorReality bench snapshot: %s" path
 

@@ -188,7 +188,18 @@ run_canary() {
     fi
 
     local snapshot
-    snapshot="$(ls -1t "$ROOT/bench/canary"/*.json 2>/dev/null | head -n1 || true)"
+    # R1c — snapshots are keyed by RunId (ULID, lexically time-ordered), so
+    # the newest RUN is the lexically-greatest ULID name; file mtime no
+    # longer decides (a re-touched old file cannot masquerade as the latest
+    # run). Legacy timestamped names are excluded from selection; if ONLY
+    # legacy files exist the gate falls back to mtime-newest and says so.
+    snapshot="$(ls -1 "$ROOT/bench/canary" 2>/dev/null | grep -E '^[0-9A-HJKMNP-TV-Z]{26}\.json$' | LC_ALL=C sort | tail -n1 || true)"
+    if [[ -n "$snapshot" ]]; then
+        snapshot="$ROOT/bench/canary/$snapshot"
+    else
+        snapshot="$(ls -1t "$ROOT/bench/canary"/*.json 2>/dev/null | head -n1 || true)"
+        [[ -n "$snapshot" ]] && log "WARN: no RunId-keyed snapshot found; falling back to mtime-newest over legacy names"
+    fi
 
     if [[ -z "$snapshot" ]]; then
         log "FATAL: no canary bench snapshot found under $ROOT/bench/canary/"

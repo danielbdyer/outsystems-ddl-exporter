@@ -362,3 +362,41 @@ let ``S2: the declared spines carry the per-face arcs the string lists carried``
     Assert.Equal<string list>([ "deploy" ], RunSpine.keys Spines.deploy)
     Assert.Equal<string list>([ "canary" ], RunSpine.keys Spines.canary)
     Assert.Equal<string list>([ "load" ], RunSpine.keys Spines.transfer)
+
+// ---------------------------------------------------------------------------
+// R1e — the law: live view ≡ projection of the stored Run. The board
+// reconstructed from the SERIALIZED envelope trail (the exact strings
+// `Run.capture` persists as `Run.Events`) equals the board the live
+// subscriber built. The S2 spine makes the reconstruction total: every
+// crossing is on the wire, failed and aborted arms included.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``R1: live view ≡ projection of the stored Run — the reconstructed board equals the live board`` () =
+    // A mixed run: extract succeeds, deploy fails (→ Halted on the board),
+    // canary is run-stopped (ledger-only Skip — Pending on both boards).
+    let verdict, envs =
+        runCaptured (fun () ->
+            staged spine3 {
+                let! a = Staged.stage (stage "extract") (ok 1)
+                let! b = Staged.stage (stage "deploy") (err "refused")
+                let! c = Staged.stage (stage "canary") (ok (b + 1))
+                return c
+            })
+    (match verdict.Disposition with
+     | RunStopped _ -> ()
+     | other -> Assert.Fail(sprintf "expected RunStopped, got %A" other))
+    let live =
+        envs |> List.fold (fun b e -> Watch.applyEnvelope b e |> fst) (Watch.seededOf spine3)
+    // The stored form: the same trail as Run.capture's Events field.
+    let stored = LogSink.serializedEnvelopes ()
+    let reconstructed = Watch.boardOfStored (Watch.seededOf spine3) stored
+    Assert.Equal<Watch.Board>(live, reconstructed)
+    // And the projection is honest about the mixed verdict: deploy Halted,
+    // canary still Pending (its skip is ledger-only, by design).
+    (match reconstructed.Stages |> List.tryFind (fun s -> s.Key = "deploy") with
+     | Some { State = Watch.Halted _ } -> ()
+     | other -> Assert.Fail(sprintf "expected deploy Halted on the reconstructed board, got %A" other))
+    (match reconstructed.Stages |> List.tryFind (fun s -> s.Key = "canary") with
+     | Some { State = Watch.Pending } -> ()
+     | other -> Assert.Fail(sprintf "expected canary Pending on the reconstructed board, got %A" other))

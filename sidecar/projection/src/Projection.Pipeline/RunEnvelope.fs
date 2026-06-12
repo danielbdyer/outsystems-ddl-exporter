@@ -55,4 +55,26 @@ module RunEnvelope =
             value <- v
         finally
             LogSink.runComplete outcome command (Bench.snapshot ()) |> ignore
+            // R1b — wired ONCE, at the single bracket owner (the card's
+            // "after S4, to wire once" clause): under PROJECTION_LEDGER_DIR
+            // the completed aggregate persists beside the ledger NDJSON —
+            // run.json keyed by runId, events including the terminal §10
+            // close, the bench snapshot on the value (R1a) — so no bracketed
+            // run leaves an orphan RunId, crashed bodies included. Opt-in
+            // (the env var), and a capture failure never masks the body's
+            // outcome. InputDigest stays "" at the bracket grain — the
+            // bracket cannot see config/catalog content; per-face threading
+            // is R1d-consumer territory, not faked here.
+            match RunLedger.configuredDir () with
+            | Some dir ->
+                (try
+                    let bench : Bench.Run =
+                        { CapturedAtUtc = System.DateTime.UtcNow  // LINT-ALLOW: reified non-determinism boundary at the envelope sink (BenchSink's pattern)
+                          Tag = command
+                          Stats = Bench.snapshot () }
+                    let code = match outcome with LogSink.Succeeded -> 0 | _ -> 1
+                    Run.save dir { Run.capture command code "" Map.empty with Bench = Some bench }
+                 with ex ->
+                    eprintfn "  WARNING: failed to persist the run aggregate: %s" ex.Message)
+            | None -> ()
         value

@@ -46,7 +46,8 @@ let ``Ref: a runId ref resolves to the run's catalog (the Run-Ref connection)`` 
         let run : Run.Run =
             { RunId = "01HUB"; Ts = "t"; Command = "x"; InputDigest = "d"; Outcome = "succeeded"
               Canary = None; Registered = 0; Applied = 0; Declined = 0; Events = []
-              Artifacts = Map.ofList [ "model.json", minimalModel ] }
+              Artifacts = Map.ofList [ "model.json", minimalModel ]
+              Ledgers = []; Bench = None }
         Run.save dir run
         match TaskSync.run (fun () -> Ref.resolveCatalog (Ref.parse "@01HUB")) with
         | Ok c    -> Assert.NotEmpty(Catalog.allKinds c)

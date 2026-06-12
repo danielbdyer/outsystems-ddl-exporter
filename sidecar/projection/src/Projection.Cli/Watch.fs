@@ -196,6 +196,50 @@ module Watch =
     let applyEnvelope (board: Board) (env: LogSink.Envelope) : Board * bool =
         apply board env.Code env.Payload
 
+    /// R1e — reconstruct the board from a STORED run's serialized envelopes
+    /// (`Run.Events`, the NDJSON lines `Run.capture` persists): each line
+    /// parses to its (code, payload) and folds through the SAME `apply` the
+    /// live subscriber feeds. The R1 law is that this projection equals the
+    /// board the live run built — the stored Run is a faithful source for
+    /// the view, not a lossy echo. Unparseable lines fold as no-ops (the
+    /// board reacts to the stage codes only; foreign lines carry none).
+    let boardOfStored (seed: Board) (events: string list) : Board =
+        let parseLine (line: string) : (string * Map<string, objnull>) option =
+            try
+                use doc = System.Text.Json.JsonDocument.Parse line
+                let root = doc.RootElement
+                match root.TryGetProperty "code" with
+                | true, c when c.ValueKind = System.Text.Json.JsonValueKind.String ->
+                    let code = match c.GetString() with null -> "" | s -> s
+                    let payload =
+                        match root.TryGetProperty "payload" with
+                        | true, p when p.ValueKind = System.Text.Json.JsonValueKind.Object ->
+                            [ for prop in p.EnumerateObject() ->
+                                let v : objnull =
+                                    match prop.Value.ValueKind with
+                                    | System.Text.Json.JsonValueKind.Number ->
+                                        (match prop.Value.TryGetInt64() with
+                                         | true, l -> box l
+                                         | _ -> box (prop.Value.GetDouble()))
+                                    | System.Text.Json.JsonValueKind.String ->
+                                        (match prop.Value.GetString() with null -> box "" | s -> box s)
+                                    | System.Text.Json.JsonValueKind.True -> box true
+                                    | System.Text.Json.JsonValueKind.False -> box false
+                                    | _ -> box (prop.Value.GetRawText())
+                                prop.Name, v ]
+                            |> Map.ofList
+                        | _ -> Map.empty
+                    Some (code, payload)
+                | _ -> None
+            with _ -> None
+        events
+        |> List.fold
+            (fun board line ->
+                match parseLine line with
+                | Some (code, payload) -> fst (apply board code payload)
+                | None -> board)
+            seed
+
     // -- the dwell floor (pure; clock-injected) --------------------------------
 
     /// The minimum interval a frame stays on screen before the next is shown

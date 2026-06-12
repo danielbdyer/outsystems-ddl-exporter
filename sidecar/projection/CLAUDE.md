@@ -115,7 +115,11 @@ within their first session. Everything not on this list, this file only points t
    failing the 100k-row scale tests after several full Docker-pool runs on one warm
    container — the instance's memory pool degrades with accumulated load; it is the
    container, not the code. Restart, re-run the failed class focused, and only then suspect
-   a regression.
+   a regression. *Root cause found 2026-06-12 (L/R session): per-run databases were never
+   dropped on the warm container (209 counted after one session) — `withBootstrappedDatabase`
+   now reaps on exit, so accumulation is structural-fixed; the restart remedy stays for
+   long-lived containers predating the fix. A fourth signature from the same family:
+   **a batch of pre-login-handshake failures** across warm-container suites — same remedy.*
 3. **Never `pgrep`-guard a test run; never watch a run through `| tail`** — the guard matches
    itself and tail buffers to EOF. Launch bare in the background; poll `test.sh status`.
 4. **On any `Failed: N>0`, re-run with the TRX logger and grep the TRX** — console output

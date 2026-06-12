@@ -20,14 +20,6 @@ open Projection.Core
 [<RequireQualifiedAccess>]
 module BenchSink =
 
-    /// Filename timestamp format: `yyyyMMddTHHmmssZ` keeps lexically
-    /// sortable, fixed-width filenames so a future bench-tracker
-    /// script can `ls bench/<tag>/` and walk runs in chronological
-    /// order without parsing dates. The trailing `Z` advertises UTC
-    /// (the timestamp itself is `DateTime.UtcNow`).
-    [<Literal>]
-    let private TimestampFormat : string = "yyyyMMddTHHmmssZ"
-
     let private jsonOptions : JsonSerializerOptions =
         let o = JsonSerializerOptions(WriteIndented = true)
         o.Converters.Add(JsonStringEnumConverter())
@@ -62,10 +54,6 @@ module BenchSink =
         let json = JsonSerializer.Serialize(run, jsonOptions)
         File.WriteAllText(path, json)
 
-    /// Compose a default `bench/<tag>/<utc-iso>.json` path under
-    /// `rootDir`. The UTC timestamp in `yyyyMMddTHHmmssZ` form keeps
-    /// filenames sortable. Used by the CLI to choose where to drop
-    /// each run's JSON.
     /// Subdirectory under `rootDir` collecting bench snapshots.
     [<Literal>]
     let private BenchSubdirectory : string = "bench"
@@ -74,7 +62,14 @@ module BenchSink =
     [<Literal>]
     let private SnapshotExtension : string = ".json"
 
-    let defaultPath (rootDir: string) (tag: string) : string =
-        let timestamp = DateTime.UtcNow.ToString(TimestampFormat)  // LINT-ALLOW: reified non-determinism boundary at file-sink layer
-        Path.Combine(rootDir, BenchSubdirectory, tag, timestamp + SnapshotExtension)  // LINT-ALLOW: terminal filesystem path; timestamp is already vetted typed format
+    /// Compose the per-run `bench/<tag>/<runId>.json` path under `rootDir`
+    /// (R1c — the snapshot is keyed by the RUN that produced it, so a
+    /// stored `Run` and its bench file share an address). A ULID is
+    /// lexically time-ordered, so `ls | sort` still walks runs
+    /// chronologically — the property the retired timestamp filename
+    /// carried. The wall-clock now lives only INSIDE the value
+    /// (`persistJson`'s `CapturedAtUtc`) — the reified non-determinism
+    /// boundary relocated, not deleted.
+    let runPath (rootDir: string) (tag: string) (runId: string) : string =
+        Path.Combine(rootDir, BenchSubdirectory, tag, runId + SnapshotExtension)  // LINT-ALLOW: terminal filesystem path; runId is the LogSink-minted ULID
 

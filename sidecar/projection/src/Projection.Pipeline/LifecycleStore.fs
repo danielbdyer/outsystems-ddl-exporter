@@ -210,7 +210,11 @@ module LifecycleStore =
                         Ok (Episode.create coordinate schema Profile.empty (optStr el "refactorLogRef") data)
 
     /// Reconstruct the chain from a non-empty episode list, enforcing the
-    /// monotone-history invariant via `EpisodicLifecycle.append`.
+    /// monotone-history invariant via `EpisodicLifecycle.append` — the
+    /// episode grain's ResumeAdmit (R3 / RI-3), run over every loaded edge:
+    /// chain structure is verified at load; the B'≡B write witness is not
+    /// re-verifiable here and is not pretended to be (see
+    /// `MigrationRun.recordVerified`, the grain's WriteAdmit).
     let private buildLifecycle (timeline: Timeline) (episodes: Episode list) : Result<EpisodicLifecycle, string> =
         match episodes with
         | [] -> Error "lifecycle has no episodes (a lifecycle opens at genesis)"

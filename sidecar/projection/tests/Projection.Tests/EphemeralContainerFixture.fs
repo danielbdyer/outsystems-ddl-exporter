@@ -46,6 +46,17 @@ module ContainerFixtureSupport =
                 return! body cnnPerDb perDbConn
             finally
                 try
+                    // Evict the per-DB connection POOL before the drop: the
+                    // body's `use` returned its physical connection to the
+                    // pool still OPEN, and a SINGLE_USER WITH ROLLBACK
+                    // IMMEDIATE that must KILL that idle session costs ~3.0s
+                    // per drop (measured 2026-06-12: 3051ms with one idle
+                    // session vs 51ms with none — the flat ~3.4s per-test
+                    // floor the docker pool's TRX showed). ClearPool closes
+                    // it client-side, so the drop pays the cheap path.
+                    let cnnEvict = new SqlConnection(perDbConn)
+                    SqlConnection.ClearPool cnnEvict
+                    cnnEvict.Dispose()
                     use cnnDrop = new SqlConnection(masterConn)
                     cnnDrop.OpenAsync().GetAwaiter().GetResult()
                     let q = Render.quote dbName

@@ -452,7 +452,9 @@ module Preflight =
             9, UnmappedIdentities
         elif code = "migrate.dataViolatesTightening" then
             9, DataViolatesTightening
-        elif code = "transfer.cdcTrackedSink" then
+        elif code = "transfer.cdcTrackedSink" || code = "migrate.cdcTrackedSink" then
+            // The same axis under both namespaces — the migrate verb's
+            // RefusedByCdc routes through the gate surface under its own name.
             9, CdcTrackedSink
         elif code = "migrate.schemaReadFailed" then
             6, SchemaReadFailed

@@ -49,22 +49,42 @@ module ExecuteBatchParallelTests =
             sb.AppendLine "GO" |> ignore
         sb.ToString()
 
-    /// Build N independent INSERT batches (one INSERT-per-table,
-    /// separated by GO) — each is a self-contained segment with no
-    /// cross-table dependency.
-    let private buildIndependentInsertBatches (n: int) (rowsPerTable: int) : string =
+    /// One table's self-contained INSERT batch (GO-terminated) — the
+    /// per-member script shape the token carries.
+    let private insertBatchFor (rowsPerTable: int) (i: int) : string =
         let sb = System.Text.StringBuilder()
-        for i in 0 .. n - 1 do
+        sb.AppendLine(
+            sprintf
+                "INSERT INTO [dbo].[T%d] ([Id], [Label]) VALUES"
+                i) |> ignore
+        for r in 0 .. rowsPerTable - 1 do
+            let sep = if r = rowsPerTable - 1 then ";" else ","
             sb.AppendLine(
-                sprintf
-                    "INSERT INTO [dbo].[T%d] ([Id], [Label]) VALUES"
-                    i) |> ignore
-            for r in 0 .. rowsPerTable - 1 do
-                let sep = if r = rowsPerTable - 1 then ";" else ","
-                sb.AppendLine(
-                    sprintf "    (%d, N'row-%d-%d')%s" r i r sep) |> ignore
-            sb.AppendLine "GO" |> ignore
+                sprintf "    (%d, N'row-%d-%d')%s" r i r sep) |> ignore
+        sb.AppendLine "GO" |> ignore
         sb.ToString()
+
+    /// Build N independent INSERT batches as ONE text (GO-separated) —
+    /// the sequential `executeBatch` leg's shape.
+    let private buildIndependentInsertBatches (n: int) (rowsPerTable: int) : string =
+        [ for i in 0 .. n - 1 -> insertBatchFor rowsPerTable i ]
+        |> String.concat ""
+
+    /// Mint the test's concurrent-safe group through the REAL prover
+    /// (card P1 — `ParallelSafe` has no other producer): n independent
+    /// kinds (no edges) form exactly one level under
+    /// `TopologicalOrder.levels`; the per-table batches ride the token
+    /// via per-member `map`, the same carrier production scripts use.
+    let private mintIndependentBatches (n: int) (batchFor: int -> string) : ParallelSafe<string> =
+        let keys =
+            [ for i in 0 .. n - 1 ->
+                SsKey.synthesized "OS_TEST_EBP" (sprintf "T%02d" i)
+                |> function Ok k -> k | Error e -> failwithf "fixture: %A" e ]
+        let order = { TopologicalOrder.empty with Order = keys }
+        let indexOf = keys |> List.mapi (fun i k -> k, i) |> Map.ofList
+        match TopologicalOrder.levels order with
+        | [ level ] -> level |> ParallelSafe.map (fun k -> batchFor indexOf.[k])
+        | other -> failwithf "fixture: expected ONE level over independent kinds, got %d" (List.length other)
 
     let private countRows (cnn: SqlConnection) (table: string) : Task<int> =
         task {
@@ -108,8 +128,9 @@ module ExecuteBatchParallelTests =
                                 do! cnn.OpenAsync()
                                 do! Deploy.executeBatch cnn (buildIndependentSchemaDdl 5)
                             }
-                            // Parallel insert dispatch.
-                            let inserts = buildIndependentInsertBatches 5 3
+                            // Parallel insert dispatch — the group minted
+                            // through the prover (P1).
+                            let inserts = mintIndependentBatches 5 (insertBatchFor 3)
                             do! Deploy.executeBatchParallel perDbConn inserts 3
                             // Verify rows landed.
                             use cnn = new SqlConnection(perDbConn)
@@ -126,6 +147,12 @@ module ExecuteBatchParallelTests =
                         finally
                             // Best-effort drop.
                             try
+                                // Pool evicted first: an idle pooled per-DB
+                                // session makes the SINGLE_USER ROLLBACK kill
+                                // cost ~3s; evicted, ~50ms (2026-06-12).
+                                let cnnEvict = new SqlConnection(perDbConn)
+                                SqlConnection.ClearPool cnnEvict
+                                cnnEvict.Dispose()
                                 use cnnDrop = new SqlConnection(masterConn)
                                 cnnDrop.OpenAsync().GetAwaiter().GetResult()
                                 let q = Render.quote dbName
@@ -176,15 +203,23 @@ module ExecuteBatchParallelTests =
                             // missing table. We don't deploy any schema;
                             // both should fail. Either way, the await
                             // must surface an exception.
-                            let badSql =
-                                "SELECT 1;\nGO\nINSERT INTO [dbo].[DoesNotExist] ([X]) VALUES (1);\nGO"
+                            let badLevel =
+                                mintIndependentBatches 2 (fun i ->
+                                    if i = 0 then "SELECT 1;\nGO\n"
+                                    else "INSERT INTO [dbo].[DoesNotExist] ([X]) VALUES (1);\nGO\n")
                             let mutable threw = false
                             try
-                                do! Deploy.executeBatchParallel perDbConn badSql 2
+                                do! Deploy.executeBatchParallel perDbConn badLevel 2
                             with _ -> threw <- true
                             return threw
                         finally
                             try
+                                // Pool evicted first: an idle pooled per-DB
+                                // session makes the SINGLE_USER ROLLBACK kill
+                                // cost ~3s; evicted, ~50ms (2026-06-12).
+                                let cnnEvict = new SqlConnection(perDbConn)
+                                SqlConnection.ClearPool cnnEvict
+                                cnnEvict.Dispose()
                                 use cnnDrop = new SqlConnection(masterConn)
                                 cnnDrop.OpenAsync().GetAwaiter().GetResult()
                                 let q = Render.quote dbName
@@ -259,13 +294,19 @@ module ExecuteBatchParallelTests =
                             do! Deploy.executeBatch cnn schema
                         }
                         let sw = System.Diagnostics.Stopwatch.StartNew()
-                        do! Deploy.executeBatchParallel connPar inserts 4
+                        do! Deploy.executeBatchParallel connPar (mintIndependentBatches n (insertBatchFor rowsPerTable)) 4
                         sw.Stop()
                         let parMs = sw.ElapsedMilliseconds
 
                         // ---- Teardown both DBs (best-effort).
                         for db in [ dbSeq; dbPar ] do
                             try
+                                // Pool evicted first: an idle pooled per-DB
+                                // session makes the SINGLE_USER ROLLBACK kill
+                                // cost ~3s; evicted, ~50ms (2026-06-12).
+                                let cnnEvict = new SqlConnection(Deploy.ConnectionString.buildPerDb masterConn db)
+                                SqlConnection.ClearPool cnnEvict
+                                cnnEvict.Dispose()
                                 use cnnDrop = new SqlConnection(masterConn)
                                 cnnDrop.OpenAsync().GetAwaiter().GetResult()
                                 let q = Render.quote db
