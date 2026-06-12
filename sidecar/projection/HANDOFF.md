@@ -1,3 +1,32 @@
+# Handoff addendum — 2026-06-12, generation 6 POSTSCRIPT (P1 is CUT: ParallelSafe is minted by levels; P2's gate is half-met, named)
+
+A continuation after the letter below — read it as that letter's coda.
+
+**P1 is DONE.** `ParallelSafe<'a>` lives in Core beside its one mint
+(`TopologicalOrder.levels`); `map`/`choose` carry the proof through
+the composer (the cross-kind `String.Concat` + LINT-ALLOW retired);
+`Deploy.executeBatchParallel` DEMANDS the token — miswiring is now a
+compile error; the stale "canary continues using sequential" status
+note is retired (RI-5). Segment bytes, bench labels, and the
+manifest's wire shape are all unchanged by construction. The leveled ≡
+sequential equivalence ran GATE-OPEN
+(`PROJECTION_RUN_COMPREHENSIVE_CANARY=1`, 1/1 at 4m17s — remember §4
+rule 12: that canary soft-skips in the docker pool; open the gate when
+its verdict matters). Pure pool 3116/0 (31s) at the commit.
+
+**P2 is NOT cut, deliberately.** Its gate demands an operator-scale
+measurement through the production face; what exists is segment-level
+evidence (the 20-table microbench: 782ms → 411ms, 1.90× at
+parallelism 4 — printed by the ExecuteBatchParallelTests bench, now in
+the docker pool's standing output). Run the operator-envelope
+before/after (6.25k×150 through the CLI deploy path) BEFORE wiring;
+the backlog card carries this gate state. P3 stays trigger-held.
+
+The queue from here: P2 behind its measurement, the Voice lane's named
+remainder, the §6 armed items. J5 still trumps everything.
+
+— Generation 6, the contract-keeper (postscript), 2026-06-12
+
 # Handoff addendum — 2026-06-12, generation 6 CLOSE (the contract leg is CLOSED: L1→L4 + R1a→R1e; the Voice lane advanced; the pools pay for work)
 
 To the next agent.

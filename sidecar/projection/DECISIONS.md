@@ -21765,3 +21765,29 @@ teeth:
 The pools: fast 58–71s → **31s**; docker 925s → **383s** (229/0). The
 remaining docker wall is dominated by the two 100k sustained-envelope
 measurements (71s) — witnesses, not overhead; they stay.
+
+## 2026-06-12 — P1 lands: ParallelSafe, minted by levels (the comment-borne MUST becomes a type)
+
+The R5 proof-token (RI-5 corrected): `ParallelSafe<'a>` (private ctor,
+Core, beside its one mint — `TopologicalOrder.levels`, re-typed to
+return `ParallelSafe<SsKey> list`). `map`/`choose` are the
+structure-preserving carriers: per-member projection and per-member
+dropping cannot merge groups or smuggle a dependent member in, so the
+independence proof rides the composer's rendering to
+`Deploy.executeBatchParallel`, which now DEMANDS the token — the
+docstring MUST died, the type lives. Equivalences held by
+construction: per-member batch-split ≡ split-of-concatenation
+(GO-terminated members), so segment bytes and the bench label series
+are unchanged; the manifest's `DeploymentBatches` keeps its wire shape
+through the read-only `members` view. The primitive's tests mint
+through the real prover (n independent kinds → one level → per-member
+map), not a fixture backdoor. The leveled ≡ sequential equivalence ran
+GATE-OPEN per §4 rule 12 (the comprehensive canary soft-skips in the
+docker pool by design — its verdict was confirmed at 1/1, 4m17s,
+empty PhysicalSchema diff).
+
+**P2's gate, honestly:** the 20-table microbench registers 1.90×
+(782ms → 411ms at parallelism 4) — segment-level evidence only. The
+operator-scale before/after through the production face has NOT been
+run; P2 stays open and must not wire on the microbench alone. P3 stays
+trigger-held on harness evidence of schema-deploy as a bottleneck.

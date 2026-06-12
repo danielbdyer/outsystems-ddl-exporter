@@ -671,15 +671,26 @@ container, back-to-back with the BEFORE) — see PERF_HARNESS §5 Q-arc results.
 
 ### Stage 6 — licensed parallelism (R5, corrected per RI-5)
 
-**P1 · `ParallelSafe`, minted by `levels`.** The token + `executeBatchParallel` re-signed to
-demand it + `ComprehensiveCanaryTests` updated as the first consumer; the `Deploy.fs:436`
-stale docstring retired. *Witness:* the leveled ≡ sequential equivalence already in the
-canary, now type-guarded. S. Deps: none.
+**P1 · `ParallelSafe`, minted by `levels` — DONE 2026-06-12.** The proof token landed in
+Core beside its one mint (`TopologicalOrder.levels`, re-typed `→ ParallelSafe<SsKey> list`);
+`map`/`choose` are the structure-preserving carriers, so the token rides the composer's
+rendering (`LeveledDeploymentText` carries `ParallelSafe<string>` per level — the cross-kind
+`String.Concat` and its LINT-ALLOW retired). `executeBatchParallel` RE-SIGNED to demand the
+token (miswiring is a compile error; segment bytes + bench labels unchanged — per-member
+split ≡ split-of-concat over GO-terminated members); the stale `Deploy.fs` status note
+retired (RI-5). The primitive tests mint through the REAL prover. The manifest's
+`DeploymentBatches` wire shape kept via the read-only `members` view. *Witnesses:* the
+Bucket-B convention witness (+1); the leveled ≡ sequential equivalence ran GATE-OPEN
+(comprehensive canary 1/1, 4m17s, empty PhysicalSchema diff).
 
 **P2 · Production leveled data deploy.** The canary-only wiring promoted to the CLI deploy
 path behind the existing parallelism resolution stack. *Witness:* operator-reality canary +
 perf-gate (baseline re-record only if the floor moves, with its DECISIONS amendment). S.
-Deps: P1, and a Stage-0/1 measurement showing the win at operator scale.
+Deps: P1 (met), and a Stage-0/1 measurement showing the win at operator scale. *Gate state
+(2026-06-12):* segment-level evidence is registered — the 20-table microbench shows
+sequential 782ms → parallel(4) 411ms (1.90×) — but the OPERATOR-SCALE before/after through
+the production face (6.25k×150, the perf-gate envelope) has not been run; the gate stands
+half-met, do not wire on the microbench alone.
 
 **P3 · Schema-side levels.** `statementsWith` gains a leveled grouping (inline-FK fact makes
 level-by-level the only safe shape — RI-5); deploy through `ParallelSafe`. **Trigger-held:**
