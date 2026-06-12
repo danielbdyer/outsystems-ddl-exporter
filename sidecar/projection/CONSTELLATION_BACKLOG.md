@@ -402,10 +402,25 @@ avoided by the aggregated-sample shape.) **Replicated by re-imaging 2** (second 
 end-to-end 12.05 µs/row; materialize 483 ms = 4.83 µs/row = 40.1%); accumulator boundary
 read against its documentation and they agree: `t0` after `ReadAsync`, stop before
 `SsKey.synthesized`, one aggregated sample at EOF.
-**H4 · executeStream batch sweep.** S. Deps: H0.
-**H5 · The drains:** `staticPopulationDrain`, `physicalSchemaVerify`, `profilerDiscover`. M.
-Deps: H0.
-**H6 · `ossysParse` at ≥1k entities.** S. Deps: H0.
+**H4 · executeStream batch sweep — DONE 2026-06-12.** `Deploy.executeStreamWith batchSize`
+(the sibling wrapper supplying `DefaultBulkBatchSize` — passes the distinguishing test);
+declared scenarios `execute-stream-batch-100000x{1000,5000,10000}`. The sweep's first edition
+carried 20000 and the harness PRICED IT OUT live: the bulk-insert memory grant (539 MB
+requested) exceeds the 4 GiB container's big-query resource semaphore (~492 MB) and suspends
+on RESOURCE_SEMAPHORE indefinitely — a named infeasibility, not a slow point (PERF_HARNESS §5
+records it; the instrument falsifying its author's scale choice on first contact, again).
+First-run numbers in PERF_HARNESS §5.
+**H5 · The drains — DONE 2026-06-12:** `static-population-drain-100000` (pure emit
+isolated: **313 ms/100k = 3.1 µs/row** — the in-canary 3.4–3.7 s on the same label was ~90%
+consumer time between pulls, exactly the §1-3a caveat), `physical-schema-verify-100000`
+(ofCatalog 2× = 1094 ms, rows.hash 702 ms/200k = 3.5 µs/row, diff 242 ms — the bulk100k
+~14 s verify prior decomposes), `profiler-discover-150` (the discovery leg isolated over a
+150-table mesh; rows=0 by design — the scenario measures the discover-once round-trips, the
+axis the chapter-B.3 prior speaks to). Deps: H0 (met).
+**H6 · `ossysParse` at ≥1k entities — DONE 2026-06-12.** `ossys-parse-1000` over a
+JsonNode-synthesized V1 envelope (1000 entities × 8 attrs × 1 index, deterministic ssKeys):
+**~170 ms/1000 entities** at first run — the parse plane is cheap at estate scale; the
+PERF_OPPORTUNITIES A3/A4 priors are now one command to re-interrogate.
 
 ### Stage 2 — the spine (R2, corrected per RI-2)
 
