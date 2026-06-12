@@ -1241,22 +1241,25 @@ let runPolicyDiff (configAPath: string) (configBPath: string) : int =
 /// never a silent plan. The `--execute` leg (against a live deployed DB) is
 /// `MigrationRun.execute`; this surface previews what it would do.
 
-/// A `MigrationError` as a plain located cause — the operator reads the finding,
-/// never a raw DU dump (`THE_VOICE.md` §10). The full statement-first migrate
-/// surfaces land in Waves 2–3; this Wave-0 translation only banishes the `%A`.
-let migrationErrorDetail (e: MigrationError) : string =
-    match e with
-    | DiffFailed _              -> "the changes could not be computed"
-    | RefusedByViolations v     -> sprintf "%d removal(s) are not yet approved" (List.length v)
-    | RefusedBySchemaErrors es  -> sprintf "%d change(s) cannot be expressed as a single ALTER" (List.length es)
-    | EmitFailed _              -> "the changes could not be built"
-    | SchemaReadFailed _        -> "the deployed schema could not be read"
-    | ExecutionFailed msg       -> sprintf "the migration could not be applied — %s" msg
-    | RefusedByTightening msg   -> sprintf "a column tightening would fail against existing data — %s" msg
-    | VerificationFailed _      -> "the round-trip did not match the model"
-    | DataTransferFailed _      -> "the data load did not complete"
-    | RefusedByCdc t            -> sprintf "the schema change would run against a CDC-tracked database (%d table(s))" (List.length t)
-    | StoreReadFailed msg       -> sprintf "the run history could not be read — %s" msg
+/// The §10 inexpressible-change verdict, voiced (`migrate.inexpressible`): the
+/// statement carries the count; each refusing entry is demoted into the
+/// disclosure beneath, its code beside its cause. The newline join is data
+/// marshalling into the envelope payload, not prose.
+let private renderInexpressible (entries: DiagnosticEntry list) : unit =
+    TtyRenderer.renderVoicedTo Console.Error "migrate.inexpressible"
+        (Map.ofList
+            [ "entryCount", box (List.length entries)
+              "entries",
+              box (entries
+                   |> List.map (fun e -> sprintf "%s (%s)" e.Message e.Code)
+                   |> String.concat "\n") ])
+
+/// The §10 stop for a `MigrationError` the gates do not own, voiced
+/// (`migrate.stopped`): the statement frames the stop; the plain located cause
+/// is `Voice.migrationStopDetail` (the catalog's typed projection over the DU).
+let private renderMigrateStopped (e: MigrationError) : unit =
+    TtyRenderer.renderVoicedTo Console.Error "migrate.stopped"
+        (Map.ofList [ "cause", box (Voice.migrationStopDetail e) ])
 
 /// The migrate preview as a §6/§9 minimality Surface — the smallest faithful
 /// change, said plain (statement first, the per-move breakdown beneath), never
@@ -1302,12 +1305,10 @@ let reportPreviewOutcome (header: string) (result: Result<MigrationArtifacts, Mi
             renderUndeclaredDropGate violations
             9
         | Error (RefusedBySchemaErrors entries) ->
-            Console.Error.WriteLine "projection migrate: these change(s) cannot be expressed as a single ALTER:"
-            for e in entries do
-                Console.Error.WriteLine (sprintf "    [%s] %s" e.Code e.Message)
+            renderInexpressible entries
             9
         | Error other ->
-            Console.Error.WriteLine (sprintf "The migration did not complete: %s." (migrationErrorDetail other))
+            renderMigrateStopped other
             2
         | Ok artifacts ->
             printfn "%s" header
@@ -1326,11 +1327,9 @@ let runMigratePreview (fromPath: string) (toPath: string) (declaration: LossDecl
     let a, b = loaded.GetAwaiter().GetResult()
     match a, b with
     | Error errors, _ ->
-        Console.Error.WriteLine (sprintf "projection migrate: could not read --from %s:" fromPath)
         printErrors Console.Error errors
         6
     | _, Error errors ->
-        Console.Error.WriteLine (sprintf "projection migrate: could not read --to %s:" toPath)
         printErrors Console.Error errors
         6
     | Ok source, Ok target ->
@@ -1348,7 +1347,6 @@ let runMigrateFromStore (storePath: string) (toPath: string) (declaration: LossD
     let bRead = (Compose.read toPath).GetAwaiter().GetResult()
     match bRead with
     | Error errors ->
-        Console.Error.WriteLine (sprintf "projection migrate: could not read --to %s:" toPath)
         printErrors Console.Error errors
         6
     | Ok target ->
@@ -1392,23 +1390,29 @@ let reportMigrationError (e: MigrationError) : int =
         renderUndeclaredDropGate violations
         9
     | RefusedBySchemaErrors entries ->
-        Console.Error.WriteLine "projection migrate: these change(s) cannot be expressed:"
-        for e in entries do Console.Error.WriteLine (sprintf "    [%s] %s" e.Code e.Message)
+        renderInexpressible entries
         9
     | RefusedByCdc tracked ->
-        Console.Error.WriteLine (
-            sprintf "projection migrate: schema DDL against a CDC-tracked database (%d table(s)). Pass --allow-cdc to proceed." (List.length tracked))
+        // §5 CDC gate — the consent surface (consequence as meaning + the one
+        // lever), keyed by the closed GateLabel DU; the tracked count and the
+        // --allow-cdc lever ride in the located detail. Exit 9 unchanged.
+        TtyRenderer.renderGate "projection migrate"
+            (Preflight.refusalOf
+                [ ValidationError.create "migrate.cdcTrackedSink"
+                    (sprintf "%d table(s) are CDC-tracked; --allow-cdc accepts the capture." (List.length tracked)) ])
         9
     | RefusedByTightening msg ->
-        Console.Error.WriteLine (
-            sprintf "projection migrate: a column tightening (NULL → NOT NULL) would fail against existing NULL data; no DDL ran. %s" msg)
+        // §5 data-compat gate — the same surface the pre-flight probe renders.
+        TtyRenderer.renderGate "projection migrate"
+            (Preflight.refusalOf [ ValidationError.create "migrate.dataViolatesTightening" msg ])
         9
     | SchemaReadFailed es ->
-        Console.Error.WriteLine "The deployed schema could not be read."
+        // The §10 schema-read frame states the finding; the located causes
+        // ride beneath (the raw header line is retired).
         printErrors Console.Error es
         6
     | other ->
-        Console.Error.WriteLine (sprintf "The migration did not complete: %s." (migrationErrorDetail other))
+        renderMigrateStopped other
         2
 
 /// The A1 connection + A2 permission pre-flights against a sink connection,
@@ -1490,7 +1494,6 @@ let runMigrateExecute (target: Catalog) (connSpec: string) (declaration: LossDec
         task {
             match TransferSpec.parseConnectionSpec connSpec with
             | Error es ->
-                Console.Error.WriteLine "projection migrate: --conn argument error:"
                 printErrors Console.Error es
                 return 2
             | Ok connRef ->
@@ -1498,7 +1501,6 @@ let runMigrateExecute (target: Catalog) (connSpec: string) (declaration: LossDec
                     { Environment = parseEnvironment "migrate-sink" None; Role = SubstrateRole.Sink; ConnectionRef = connRef }
                 match! ConnectionResolver.openSubstrate sub with
                 | Error es ->
-                    Console.Error.WriteLine "projection migrate: could not open --conn:"
                     printErrors Console.Error es
                     return 3
                 | Ok cnn ->
@@ -1529,7 +1531,6 @@ let runMigrateExecute (target: Catalog) (connSpec: string) (declaration: LossDec
                                         let timeline = Timeline.create (Projection.Core.Environment.name env)
                                         match timeline with
                                         | Error es ->
-                                            Console.Error.WriteLine "projection migrate: --lifecycle-store timeline name error:"
                                             printErrors Console.Error es
                                             return 2
                                         | Ok tl ->
@@ -1609,7 +1610,6 @@ let runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec: string)
             else TransferSpec.parseUserMapCsv (System.IO.File.ReadAllText path)
     let specErrors = (parsedReconciles |> List.collect collectErrs) @ collectErrs parsedUserMap
     if not (List.isEmpty specErrors) then
-        Console.Error.WriteLine "projection migrate: --reconcile / --user-map argument error:"
         printErrors Console.Error specErrors
         dumpBench "migrate"
         2
@@ -1620,11 +1620,9 @@ let runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec: string)
         task {
             match TransferSpec.parseConnectionSpec sinkSpec, TransferSpec.parseConnectionSpec sourceSpec with
             | Error es, _ ->
-                Console.Error.WriteLine "projection migrate: --sink-conn argument error:"
                 printErrors Console.Error es
                 return 2
             | _, Error es ->
-                Console.Error.WriteLine "projection migrate: --source-conn argument error:"
                 printErrors Console.Error es
                 return 2
             | Ok sinkRef, Ok sourceRef ->
@@ -1632,14 +1630,12 @@ let runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec: string)
                 let sourceSub : Substrate = { Environment = parseEnvironment "migrate-source" None; Role = SubstrateRole.Source; ConnectionRef = sourceRef }
                 match! ConnectionResolver.openSubstrate sinkSub with
                 | Error es ->
-                    Console.Error.WriteLine "projection migrate: could not open --sink-conn:"
                     printErrors Console.Error es
                     return 3
                 | Ok sink ->
                     use sink = sink
                     match! ConnectionResolver.openSubstrate sourceSub with
                     | Error es ->
-                        Console.Error.WriteLine "projection migrate: could not open --source-conn:"
                         printErrors Console.Error es
                         return 3
                     | Ok dataSource ->
@@ -1675,7 +1671,6 @@ let runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec: string)
                                       // pre-write gate composes first.
                                       match TransferSpec.resolveAllReconciliation target reconcileEntries userMapEntries with
                                       | Error es ->
-                                          Console.Error.WriteLine "projection migrate: --reconcile / --user-map could not be resolved against contract B:"
                                           printErrors Console.Error es
                                           return 2
                                       | Ok reconciliation ->
@@ -1690,7 +1685,6 @@ let runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec: string)
                                             let env = parseEnvironment "DEV" envLabel
                                             match Timeline.create (Projection.Core.Environment.name env) with
                                             | Error es ->
-                                                Console.Error.WriteLine "projection migrate: --lifecycle-store timeline name error:"
                                                 printErrors Console.Error es
                                                 return 2
                                             | Ok tl ->
@@ -1749,7 +1743,6 @@ let runProjectLivePreview (target: Catalog) (connSpec: string) (declaration: Los
         task {
             match TransferSpec.parseConnectionSpec connSpec with
             | Error es ->
-                Console.Error.WriteLine "projection project: connection reference error:"
                 printErrors Console.Error es
                 return 6
             | Ok connRef ->
@@ -1757,7 +1750,6 @@ let runProjectLivePreview (target: Catalog) (connSpec: string) (declaration: Los
                     { Environment = parseEnvironment "preview" None; Role = SubstrateRole.Sink; ConnectionRef = connRef }
                 match! ConnectionResolver.openSubstrate sub with
                 | Error es ->
-                    Console.Error.WriteLine "projection project: could not open the destination:"
                     printErrors Console.Error es
                     return 3
                 | Ok cnn ->

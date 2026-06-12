@@ -573,6 +573,44 @@ module Voice =
                 @ (match text "code" p with Some c -> [ View.Field("code", c, View.Neutral) ] | None -> [])
           Action         = fun _ -> Some(View.Action "Correct the configuration and rerun.") }
 
+    /// `migrate.inexpressible` — the schema emitter refused changes it cannot
+    /// express as a single ALTER (`THE_VOICE.md` §10): the statement carries the
+    /// count and states that the database is unchanged; each refusing change is
+    /// demoted into the disclosure beneath, its code beside its cause.
+    let private migrateInexpressible : Copy =
+        { Code           = "migrate.inexpressible"
+          DocSection     = "§10"
+          Statement      =
+            fun p ->
+                match text "entryCount" p with
+                | Some n -> View.Hero(View.Bad, sprintf "%s change(s) cannot be expressed as a single ALTER. The database is unchanged." (humane n))
+                | None   -> View.Hero(View.Bad, "A change cannot be expressed as a single ALTER. The database is unchanged.")
+          Substantiation =
+            fun p ->
+                match text "entries" p with
+                | Some es ->
+                    let lines =
+                        es.Split '\n'
+                        |> Array.toList
+                        |> List.filter (fun l -> l.Trim() <> "")
+                    [ View.Disclosure("the changes", View.Bad, lines |> List.map View.Note) ]
+                | None -> []
+          Action         = fun _ -> None }
+
+    /// `migrate.stopped` — a migration stop outside the §5 gate vocabulary
+    /// (`THE_VOICE.md` §10 real failure): the run stopped; the plain located
+    /// cause (the `migrationStopDetail` projection) rides beneath.
+    let private migrateStopped : Copy =
+        { Code           = "migrate.stopped"
+          DocSection     = "§10"
+          Statement      = fun _ -> View.Hero(View.Bad, "The migration did not complete. The cause is shown below.")
+          Substantiation =
+            fun p ->
+                match text "cause" p with
+                | Some c -> [ View.Field("cause", c, View.Neutral) ]
+                | None   -> []
+          Action         = fun _ -> None }
+
     /// `canary.sourceMissing` — the round-trip verification's source DDL file is
     /// absent (`THE_VOICE.md` §14 set-but-invalid: concrete and located — the
     /// path rides beneath the plain statement).
@@ -647,7 +685,9 @@ module Voice =
           // §14 / §10 — config & errors
           configValidationFailed
           canarySourceMissing
-          dockerUnavailable ]
+          dockerUnavailable
+          migrateInexpressible
+          migrateStopped ]
 
     /// Look a code's copy up. `None` when the code is not yet voiced — the
     /// totality test guarantees every in-scope LIVE code IS voiced, so a `None`
@@ -719,6 +759,11 @@ module Voice =
             // §14 set-but-invalid: the --env label cannot name a timeline.
             View.Hero(View.Bad, "The environment label cannot name a timeline. Correct the --env label and rerun."),
             Some(View.Action "Correct the --env label and rerun.")
+        elif code.StartsWith "transfer.reconcile." || code.StartsWith "transfer.userMap." then
+            // §14 set-but-invalid — a reconciliation argument the run cannot
+            // use; the located cause (the spec / the file) is the substantiation.
+            View.Hero(View.Bad, "A reconciliation argument is invalid. Correct the --reconcile / --user-map value and rerun."),
+            Some(View.Action "Correct the --reconcile / --user-map value and rerun.")
         elif code.StartsWith "adapter.osm." || code.StartsWith "model." then
             // §10 invalid input — the model could not be loaded; the located
             // detail (path / line / field) is the substantiation beneath.
@@ -829,3 +874,32 @@ module Voice =
                   View.Field("detail", refusal.Error.Message, View.Neutral)
                   View.Field("exit", string refusal.ExitCode, View.Neutral) ]) ]
           Action         = action }
+
+    // ------------------------------------------------------------------
+    // The migrate stop channel — §10 (mechanism 1: a typed projection over
+    // the closed `MigrationError` DU, the run-stop sibling of the §5 gate
+    // projection). The face routes the gate-shaped arms (violations /
+    // CDC-tracked / tightening) through `gateSurface`; the inexpressible
+    // refusal speaks through `migrate.inexpressible`; every remaining arm
+    // states its plain located cause through `migrate.stopped`.
+    // ------------------------------------------------------------------
+
+    /// The plain located cause for a `MigrationError` (`THE_VOICE.md` §10) —
+    /// the finding in operator words, never a raw DU dump. Total over the
+    /// closed DU by exhaustive match. (Moved from `RunFaces.
+    /// migrationErrorDetail`, 2026-06-12 register migration — the catalog owns
+    /// the copy; the face passes the projection as the `migrate.stopped`
+    /// payload's located cause.)
+    let migrationStopDetail (e: MigrationError) : string =
+        match e with
+        | DiffFailed _              -> "the changes could not be computed"
+        | RefusedByViolations v     -> sprintf "%d removal(s) are not yet approved" (List.length v)
+        | RefusedBySchemaErrors es  -> sprintf "%d change(s) cannot be expressed as a single ALTER" (List.length es)
+        | EmitFailed _              -> "the changes could not be built"
+        | SchemaReadFailed _        -> "the deployed schema could not be read"
+        | ExecutionFailed msg       -> sprintf "the migration could not be applied — %s" msg
+        | RefusedByTightening msg   -> sprintf "a column tightening would fail against existing data — %s" msg
+        | VerificationFailed _      -> "the round-trip did not match the model"
+        | DataTransferFailed _      -> "the data load did not complete"
+        | RefusedByCdc t            -> sprintf "the schema change would run against a CDC-tracked database (%d table(s))" (List.length t)
+        | StoreReadFailed msg       -> sprintf "the run history could not be read — %s" msg

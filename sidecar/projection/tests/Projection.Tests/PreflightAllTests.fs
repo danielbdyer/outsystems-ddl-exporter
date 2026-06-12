@@ -216,6 +216,7 @@ let ``G0.4: a verb that omits a gate produces a WORSE outcome than routing throu
 [<InlineData("transfer.unmappedIdentities", 9)>]
 [<InlineData("migrate.dataViolatesTightening", 9)>]
 [<InlineData("transfer.cdcTrackedSink", 9)>]
+[<InlineData("migrate.cdcTrackedSink", 9)>]
 [<InlineData("migrate.schemaReadFailed", 6)>]
 let ``G0: classify maps each KNOWN gate code to its distinct per-verb exit`` (code: string) (expected: int) =
     // §8 discriminator: the composition must NOT flatten distinct refusals to one

@@ -39,7 +39,10 @@ let private inScopeCodes : Set<string> =
           "canary.cdcSilent"; "canary.cdcCaptured"
           "canary.deployed"; "canary.sourceMissing"
           // the drift face: the §6 no-drift verdict and the §5 drift finding
-          "drift.none"; "drift.diverged" ]
+          "drift.none"; "drift.diverged"
+          // the migrate family's shared stop channel: the §10 inexpressible
+          // refusal and the generic located stop
+          "migrate.inexpressible"; "migrate.stopped" ]
 
 // The codes the engine can actually emit today (the inventory — the contract the
 // totality test holds Voice to). Voicing a code outside this set would be copy for
@@ -79,6 +82,8 @@ let private knownEmittableCodes : Set<string> =
           "canary.deployed"; "canary.sourceMissing"
           // the drift face's verdict pair
           "drift.none"; "drift.diverged"
+          // the migrate family's shared stop channel
+          "migrate.inexpressible"; "migrate.stopped"
           // emitted but voiced by mechanism-1 / later slices (not in `Voice.all` yet)
           "transform.registered"; "transform.applied"; "transform.declined"
           "transform.lineage"; "transform.diagnostic"; "bench.label" ]
@@ -122,7 +127,9 @@ let private samplePayload : Voice.Payload =
           "serverErrors",  box "Incorrect syntax near 'GO'.\nThe object 'dbo.Order' already exists."
           "sourceTables",  box 300
           "targetTables",  box 300
-          "path",          box "model.sql" ]
+          "path",          box "model.sql"
+          "cause",         box "the changes could not be computed"
+          "entries",       box "the Amount column narrows to a smaller type (emit.alterColumn.narrowing)" ]
 
 // ---------------------------------------------------------------------------
 // code ⇔ copy totality
@@ -267,6 +274,61 @@ let ``Voice canary.cdcCaptured: the failed proof carries its measure on the find
     | Some { Statement = View.Hero(View.Bad, text) } ->
         Assert.Contains("4,210", text)   // humane numerals, §12
     | other -> Assert.Fail(sprintf "unexpected cdcCaptured surface: %A" other)
+
+// ---------------------------------------------------------------------------
+// the migrate stop channel (§10, mechanism 1 over the closed MigrationError DU)
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Voice migrationStopDetail: every easily-constructed arm yields a plain located cause`` () =
+    // The match is exhaustive over the closed DU at compile time; this witness
+    // pins the register of the constructible arms (no DU dump, no shout).
+    let cases : (MigrationError * string) list =
+        [ ExecutionFailed "the server closed the connection", "could not be applied"
+          RefusedByTightening "4 rows exceed the new limit",  "tightening"
+          StoreReadFailed "the store is malformed",           "run history"
+          DataTransferFailed [],                              "data load"
+          SchemaReadFailed [],                                "deployed schema"
+          RefusedByCdc [ "dbo.Order" ],                       "CDC-tracked" ]
+    for e, expected in cases do
+        let detail = Voice.migrationStopDetail e
+        Assert.Contains(expected, detail)
+        assertClean (sprintf "migrationStopDetail %A" e) (View.Note detail)
+
+[<Fact>]
+let ``Voice migrate.inexpressible: the count leads and each change is the disclosure`` () =
+    let payload : Voice.Payload =
+        Map.ofList
+            [ "entryCount", box 2
+              "entries", box "first cause (code.a)\nsecond cause (code.b)" ]
+    match Voice.surfaceOf "migrate.inexpressible" payload with
+    | Some surface ->
+        (match surface.Statement with
+         | View.Hero(View.Bad, text) ->
+             Assert.Contains("cannot be expressed as a single ALTER", text)
+             Assert.Contains("The database is unchanged", text)
+         | other -> Assert.Fail(sprintf "statement is not a Bad Hero: %A" other))
+        let disclosed =
+            surface.Substantiation
+            |> List.collect (function View.Disclosure(_, _, detail) -> detail | _ -> [])
+        Assert.Equal(2, List.length disclosed)
+    | None -> Assert.Fail "migrate.inexpressible is unvoiced"
+
+[<Fact>]
+let ``Voice migrate.stopped: the frame leads and the cause rides beneath`` () =
+    let payload : Voice.Payload = Map.ofList [ "cause", box "the changes could not be built" ]
+    match Voice.surfaceOf "migrate.stopped" payload with
+    | Some { Statement = View.Hero(View.Bad, text); Substantiation = subs } ->
+        Assert.Contains("did not complete", text)
+        Assert.False(List.isEmpty subs)
+    | other -> Assert.Fail(sprintf "unexpected migrate.stopped surface: %A" other)
+
+[<Fact>]
+let ``Voice errorFrame: a reconciliation argument routes to the §14 invalid frame`` () =
+    for code in [ "transfer.reconcile.specShape"; "transfer.userMap.fileMissing" ] do
+        match Voice.errorFrame code with
+        | View.Hero(View.Bad, text), Some _ -> Assert.Contains("reconciliation argument", text)
+        | other -> Assert.Fail(sprintf "unexpected reconcile frame for %s: %A" code other)
 
 // ---------------------------------------------------------------------------
 // the stage-name mapping (THE_VOICE.md §13 — operator-shaped, never the verb)
