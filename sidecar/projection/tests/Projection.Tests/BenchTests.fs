@@ -164,11 +164,11 @@ let ``Bench: iterMap projects values and records one sample per element`` () =
     Assert.Equal(4, entry.Count)
 
 [<Fact>]
-let ``BenchSink: defaultPath produces a sortable timestamped path under bench/<tag>/`` () =
-    let path = BenchSink.defaultPath "/tmp/example" "wide-canary-enterprise"
+let ``R1c: BenchSink.runPath keys the snapshot by RunId under bench/<tag>/`` () =
+    // The run and its bench file share an address; a ULID filename keeps
+    // the chronological `ls | sort` walk the retired timestamp gave.
+    let path = BenchSink.runPath "/tmp/example" "wide-canary-enterprise" "01KTY80SV6X3P9423RJ15ZABKB"
     Assert.Contains("bench", path)
     Assert.Contains("wide-canary-enterprise", path)
     Assert.EndsWith(".json", path)
-    // Filename is yyyyMMddTHHmmssZ.json — sortable.
-    let filename = Path.GetFileName path
-    Assert.Matches(@"^\d{8}T\d{6}Z\.json$", filename)
+    Assert.Equal("01KTY80SV6X3P9423RJ15ZABKB.json", Path.GetFileName path)

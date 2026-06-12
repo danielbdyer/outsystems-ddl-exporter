@@ -1107,7 +1107,7 @@ module ComprehensiveCanaryTests =
                         | d -> findRoot d.Parent
                     findRoot (System.IO.DirectoryInfo(System.IO.Directory.GetCurrentDirectory()))
                 | v -> v
-            let path = BenchSink.defaultPath benchRoot "canary"
+            let path = BenchSink.runPath benchRoot "canary" (LogSink.runId ())
             BenchSink.persistJson path "comprehensiveOperatorReality" stats
             printfn "Bench snapshot persisted: %s" path
 

@@ -54,7 +54,9 @@ let verboseMode = ref false
 let dumpBench (tag: string) : unit =
     let stats = Bench.snapshot ()
     if not (List.isEmpty stats) then
-        let path = BenchSink.defaultPath (Directory.GetCurrentDirectory()) tag
+        // R1c — keyed by the run: the snapshot file and the captured Run
+        // aggregate share the RunId address.
+        let path = BenchSink.runPath (Directory.GetCurrentDirectory()) tag (LogSink.runId ())
         try BenchSink.persistJson path tag stats
         with ex -> eprintfn "  WARNING: failed to persist bench snapshot: %s" ex.Message
         // Calm by default (REPORTING_HORIZON polish) — the table is depth,
