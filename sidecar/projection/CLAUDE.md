@@ -110,7 +110,12 @@ within their first session. Everything not on this list, this file only points t
    always. Same remedy for a second signature (2026-06-12): **a bulk load that hangs
    indefinitely** (no error, zero rows) on a long-running warm container is a
    RESOURCE_SEMAPHORE memory-grant stall — batch-size-independent; diagnose via
-   `sys.dm_exec_query_memory_grants`, then restart. (PERF_HARNESS §5.)
+   `sys.dm_exec_query_memory_grants`, then restart. (PERF_HARNESS §5.) And a third
+   (2026-06-12, S-track session): **`insufficient system memory in resource pool 'default'`**
+   failing the 100k-row scale tests after several full Docker-pool runs on one warm
+   container — the instance's memory pool degrades with accumulated load; it is the
+   container, not the code. Restart, re-run the failed class focused, and only then suspect
+   a regression.
 3. **Never `pgrep`-guard a test run; never watch a run through `| tail`** — the guard matches
    itself and tail buffers to EOF. Launch bare in the background; poll `test.sh status`.
 4. **On any `Failed: N>0`, re-run with the TRX logger and grep the TRX** — console output

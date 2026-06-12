@@ -1106,6 +1106,14 @@ decoration at two grains; `Meter.pass` is the pass-grain face of §9.3's `Bind`)
 `` `Meter.pass p ≡ p on the value plane — decoration is invisible to the algebra` `` (the
 CE-equivalence shape, third instance).
 
+> **[Amended 2026-06-11/12, post-publication.]** RI-6 re-graded this section's "fired" to
+> **armed on R2** — the claimed second consumer was the unbuilt spine, and the two-consumer
+> rule does not bend for the thesis's own sketches. **Landed 2026-06-12 with card S1**
+> (`Meter.fs`; `PassChainAdapter.compose` is the first consumer; the spine bracket is the
+> second, arriving at S2). One correction to the sketch above: the rewrite decorates with the
+> *full live label* (`compose.passChain.<Name>`), not bare `s.Name` — the per-step label
+> bytes predate the extraction and the perf surfaces read them; changing them was refused.
+
 #### 9.8.6 Emitter grain — the taxonomy as a type; the cliff fix as a stream rewrite
 
 **Pattern one:** `CRYSTALLINE_FORM.md` §3.5's three emitter output shapes, today an

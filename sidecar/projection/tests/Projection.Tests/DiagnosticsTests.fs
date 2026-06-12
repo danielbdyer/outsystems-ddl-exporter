@@ -541,6 +541,27 @@ let ``H-003 Kleisli: composeAll [f; g; h] threads chronologically`` () =
     Assert.Equal<DiagnosticEntry list>([d1; d2; d3], LineageDiagnostics.entries result)
 
 // ---------------------------------------------------------------------------
+// §9.8.5 (card S1): Meter.pass — the decoration collapse. The Bench
+// decoration is an endomorphism on Kleisli arrows that is IDENTITY on the
+// value plane (payload + both writers' trails); its only effect is a meter
+// sample. With this law, `PassChainAdapter.compose` = `Pass.composeAll`
+// over decorated arrows is exactly the undecorated algebra's result.
+// ---------------------------------------------------------------------------
+
+[<Property>]
+let ``Meter.pass p ≡ p on the value plane — decoration is invisible to the algebra`` (x: int) =
+    let p = wrapPass (dualEvent customerKey) (entry "p" DiagnosticSeverity.Info "c" "m") 7
+    byValueAndBothTrails (Meter.pass "test.meter.pass" p x) (p x)
+
+[<Property>]
+let ``Meter.pass distributes over composition — metered chains compose like bare chains`` (x: int) =
+    let f = wrapPass (dualEvent customerKey) (entry "f" DiagnosticSeverity.Info "c1" "m1") 1
+    let g = wrapPass (dualEvent orderKey)    (entry "g" DiagnosticSeverity.Info "c2" "m2") 2
+    let metered = Pass.composeAll [ Meter.pass "test.meter.f" f; Meter.pass "test.meter.g" g ]
+    let bare    = Pass.composeAll [ f; g ]
+    byValueAndBothTrails (metered x) (bare x)
+
+// ---------------------------------------------------------------------------
 // H-008: DiagnosticLattice — subsumption + minimal reduction.
 // ---------------------------------------------------------------------------
 

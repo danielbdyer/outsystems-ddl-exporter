@@ -1,3 +1,81 @@
+# Handoff addendum — 2026-06-12, generation 5 CLOSE (the S-track is CLOSED: the spine is held, S1→S5)
+
+To the next agent.
+
+The structural leg is done. Seven commits (S1, S2, S3, S4a, S4b, S4c,
+S5), pure pool green at every one (3056 → 3078; the +22 are named
+witnesses), full Docker pool green at S1, S3, and the S5 HEAD. What you
+inherit, in order of weight:
+
+**1. The R2 law is LIVE: `declared ⇔ executed∪aborted`.** The
+`staged spine { }` CE (`RunSpine.fs`) owns every stage crossing on the
+migrated faces — `Bench.scope "stage.<name>"` (a NEW additive meter
+surface), the `<stage>.started` envelope, and the
+`summary.stageCompleted` close, with the books balanced at run end
+(missed/extra/re-entered stages are named refusals; `Completed` is
+bracket-plane; the Aborted arm closes the wire `aborted` so the board
+goes `Halted`, never hangs — the RI-2(a) defect class is structurally
+impossible on migrated faces). Read `DECISIONS 2026-06-12 — The stage
+spine lands` and the S4 entry before touching any run face.
+
+**2. The engines own their spines; the bracket has ONE owner.**
+`Compose.runWithConfig` = `staged Spines.pipeline` (umbrella root +
+extract/profile/emit); `MigrationRun.execute` = `staged Spines.migrate`
+with the CDC+tightening gates as the declared `preflight` stage (Voice:
+"Safety checks"); both transfer load paths = `staged Spines.transfer`.
+`RunEnvelope.bracket` is the single run-envelope owner — `withRun` and
+`FullExportRun.executeCore` both delegate; runStart is now FIRST on
+every run (failed-config included) and the §10 terminal fires even on
+crash. The pinned slice-7 trio held WITHOUT amendment; the named shape
+changes are in the commit messages and the S4 DECISIONS entry.
+
+**3. S5's additivity holds with NAMED residue.** Two witnesses (CE
+tightness ≤250 ms; the real publish run: umbrella−children ≤500 ms,
+run−umbrella ≤3000 ms). The named UNBOUNDED residue: the migrate FACE's
+grant pre-flights (`migratePreflights`) — real SQL before the engine's
+spine opens. Bounding them = lifting the face gates into a declared
+arc — R1b-adjacent; do not bound them dishonestly.
+
+**4. Meter.pass landed (§9.8.5 fired, RI-6 resolved):**
+`PassChainAdapter.compose` is literally `Pass.composeAll` over
+decorated arrows; the label bytes (`compose.passChain.<Name>`) were
+kept against the thesis sketch's `s.Name` form — the refusal is noted
+in §9.8.5's amendment.
+
+**Witness state at close:** pure 3078/0/211 (60 s warm); Docker 229/0
+at the close re-run. Two infra flakes were named, diagnosed via TRX,
+and re-run green — a SQL 1205 deadlock inside `sp_cdc_enable_db` setup,
+and `insufficient system memory in resource pool 'default'` on the
+100k scale tests after the warm container's third full pool run. The
+second is now CLAUDE.md §4 rule 2's third signature: restart the
+container and re-run the class BEFORE suspecting code. The inherited
+witnesses were re-run at open per the lineage's law: pure pool
+replicated exactly (3056/0/211) and the Q-arc's AFTER replicated on
+this host (811 ms end-to-end / 167 ms materialize at 100k×12 — inside
+generation 4's band). The arc stands on rock; extend me the same
+courtesy — my AFTER is one command too.
+
+**Two traps from this session, so they don't bite you:** (a) F#
+closures cannot capture `let mutable` locals — moving loop bodies into
+a stage thunk means ref cells (`writePlan`'s accumulators; the compiler
+error is clear but the fix touches every usage). (b) If you work two
+cards in one tree, the commit-separation dance (temp-file swaps to
+commit each card at its verified content) costs real care — prefer
+committing each card BEFORE cutting the next; I learned this twice.
+
+**Your queue, by the backlog's graph:** the L-track (L1→L4 — F4's
+pinned journal surface awaits; fold F1-hex into L2 if you touch
+`digestOf`, per §6 item 13), then the R1 stage — note R1b's sequencing
+clause is now SATISFIED (the card says "do R1b after S4 to wire once";
+S4 is done), and R1e's S2 dependency is met. The armed items (§6) keep
+their named wake conditions. J5 — a writable UAT connection — still
+trumps everything.
+
+Hold the spine — it holds; balance the books; keep the patient
+breathing; re-run the witnesses you inherit before you stand on them.
+
+— Generation 5, the spine-setter, 2026-06-12
+
 # Handoff addendum — 2026-06-12, generation 4 CLOSE (the Q-arc is CUT and measured; the substrate is COMPLETE; F6/F7 closed)
 
 To the next agent.

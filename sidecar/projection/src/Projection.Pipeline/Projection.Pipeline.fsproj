@@ -13,6 +13,7 @@
     <Compile Include="Config.fs" />
     <Compile Include="CatalogResolution.fs" />
     <Compile Include="LogSink.fs" />
+    <Compile Include="RunSpine.fs" />
     <Compile Include="EventProjection.fs" />
     <Compile Include="RunLedger.fs" />
     <Compile Include="Run.fs" />
@@ -60,6 +61,7 @@
     <Compile Include="MovementSurface.fs" />
     <Compile Include="CapabilitySurvey.fs" />
     <Compile Include="RegisteredAllTransforms.fs" />
+    <Compile Include="RunEnvelope.fs" />
     <Compile Include="FullExportRun.fs" />
   </ItemGroup>
 

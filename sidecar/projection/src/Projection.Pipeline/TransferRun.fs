@@ -286,8 +286,11 @@ module Transfer =
             // re-point against captures made by their (earlier-ordered)
             // targets.
             let remap = PackedSurrogateRemap.create ()
-            let mutable writeSkips : (SsKey * UnresolvedReference) list = []
-            let mutable laneDescents : LaneDescent list = []
+            // ref cells (not `let mutable`): the load body is the staged CE's
+            // stage thunk (card S4c), and F# closures cannot capture mutable
+            // locals.
+            let writeSkips : (SsKey * UnresolvedReference) list ref = ref []
+            let laneDescents : LaneDescent list ref = ref []
 
             // Phase 1 excludes the deferred (cycle) FK columns from the re-point:
             // they are inserted as NULL, and their targets' captures are not
@@ -307,82 +310,102 @@ module Transfer =
             // when no one is watching.
             let loadTotal = List.length plan.Loads
             let loadSw = System.Diagnostics.Stopwatch.StartNew()
-            let mutable loaded = 0
-            LogSink.recordStageStart "load"
-            for load in plan.Loads do
-                if not (List.isEmpty load.Rows) then
-                    match Catalog.tryFindKind load.Kind catalog with
-                    | None      -> ()
-                    | Some kind ->
-                        let remapped = repoint load.DeferredFkColumns kind load.Rows
-                        writeSkips <- writeSkips @ (remapped.Skipped |> List.map (fun u -> load.Kind, u))
-                        match load.Disposition with
-                        | IdentityDisposition.AssignedBySink ->
-                            match kind.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey && a.IsIdentity) with
-                            | Some _ when not (Set.contains load.Kind fkTargetKinds) ->
-                                // No FK anywhere targets this kind, so its minted
-                                // surrogates have no consumer: skip capture and
-                                // bulk-insert with the identity column excluded —
-                                // the Sink mints, nothing needs the mapping. (A
-                                // cycle member is always FK-targeted by its cycle
-                                // predecessor, so this lane never carries
-                                // deferred columns.)
-                                do! Bulk.copyRowsSinkMinted sink kind.Physical
-                                        (toCellRowsExcludingIdentity kind load.DeferredFkColumns remapped.Rows)
-                            | Some idAttr ->
-                                let! descents =
-                                    captureChunks sink kind idAttr load.DeferredFkColumns load.Kind remap
-                                        CaptureLane.StagedMergeOutput []
-                                        (remapped.Rows |> List.chunkBySize CaptureChunkSize)
-                                laneDescents <- laneDescents @ descents
-                            | None ->
-                                // ofKind only returns AssignedBySink for an IDENTITY PK, so this is
-                                // unreachable; fall back to the bulk path rather than drop the rows.
+            let loaded = ref 0
+            // Card S4c — the load bracket is the `staged { }` CE's
+            // (`Spines.transfer`): an exception mid-load now CLOSES the stage
+            // `aborted` on the wire (the board line goes Halted) instead of
+            // leaving an open `.started`; the per-table progress events are
+            // unchanged.
+            let loadBody () : Task<Result<unit, ValidationError list>> =
+              task {
+                for load in plan.Loads do
+                    if not (List.isEmpty load.Rows) then
+                        match Catalog.tryFindKind load.Kind catalog with
+                        | None      -> ()
+                        | Some kind ->
+                            let remapped = repoint load.DeferredFkColumns kind load.Rows
+                            writeSkips.Value <- writeSkips.Value @ (remapped.Skipped |> List.map (fun u -> load.Kind, u))
+                            match load.Disposition with
+                            | IdentityDisposition.AssignedBySink ->
+                                match kind.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey && a.IsIdentity) with
+                                | Some _ when not (Set.contains load.Kind fkTargetKinds) ->
+                                    // No FK anywhere targets this kind, so its minted
+                                    // surrogates have no consumer: skip capture and
+                                    // bulk-insert with the identity column excluded —
+                                    // the Sink mints, nothing needs the mapping. (A
+                                    // cycle member is always FK-targeted by its cycle
+                                    // predecessor, so this lane never carries
+                                    // deferred columns.)
+                                    do! Bulk.copyRowsSinkMinted sink kind.Physical
+                                            (toCellRowsExcludingIdentity kind load.DeferredFkColumns remapped.Rows)
+                                | Some idAttr ->
+                                    let! descents =
+                                        captureChunks sink kind idAttr load.DeferredFkColumns load.Kind remap
+                                            CaptureLane.StagedMergeOutput []
+                                            (remapped.Rows |> List.chunkBySize CaptureChunkSize)
+                                    laneDescents.Value <- laneDescents.Value @ descents
+                                | None ->
+                                    // ofKind only returns AssignedBySink for an IDENTITY PK, so this is
+                                    // unreachable; fall back to the bulk path rather than drop the rows.
+                                    do! Bulk.copyRows sink kind.Physical (toCellRows kind load.DeferredFkColumns remapped.Rows)
+                            | _ ->
                                 do! Bulk.copyRows sink kind.Physical (toCellRows kind load.DeferredFkColumns remapped.Rows)
-                        | _ ->
-                            do! Bulk.copyRows sink kind.Physical (toCellRows kind load.DeferredFkColumns remapped.Rows)
-                loaded <- loaded + 1
-                LogSink.recordStageProgress "load" loaded loadTotal loadSw.ElapsedMilliseconds
+                    loaded.Value <- loaded.Value + 1
+                    LogSink.recordStageProgress "load" loaded.Value loadTotal loadSw.ElapsedMilliseconds
 
-            // Phase 2 — re-point the cycle-deferred FK columns against the
-            // COMPLETED remap. For an `AssignedBySink` kind the WHERE keys on
-            // the ASSIGNED PK (the sink replaced the source PK at insert; the
-            // captured remap supplies the translation — the 6.A.2 lift,
-            // operator-authorized 2026-06-10). A deferred FK value with no
-            // captured target is a NAMED phase-2 erasure: the row stands (it
-            // was inserted in phase 1 with the column NULL) but the reference
-            // is lost — surfaced in `SkippedReferences`, never silent. A row
-            // whose own PK has no capture was dropped (and named) in phase 1;
-            // it has no sink row to update, so it is passed over here.
-            for load in plan.Loads do
-                if not (Set.isEmpty load.DeferredFkColumns) && not (List.isEmpty load.Rows) then
-                    match Catalog.tryFindKind load.Kind catalog with
-                    | None      -> ()
-                    | Some kind ->
-                        let remapped2 = repoint Set.empty kind load.Rows
-                        writeSkips <-
-                            writeSkips
-                            @ (remapped2.Skipped
-                               |> List.filter (fun u -> Set.contains u.Column load.DeferredFkColumns)
-                               |> List.map (fun u -> load.Kind, u))
-                        let rowsForUpdate =
-                            match load.Disposition, kind.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey && a.IsIdentity) with
-                            | IdentityDisposition.AssignedBySink, Some idAttr ->
-                                remapped2.Rows
-                                |> List.choose (fun row ->
-                                    match Map.tryFind idAttr.Name row.Values with
-                                    | Some srcVal when srcVal <> "" ->
-                                        PackedSurrogateRemap.tryFind remap load.Kind srcVal
-                                        |> Option.map (fun assigned ->
-                                            { row with Values = Map.add idAttr.Name assigned row.Values })
-                                    | _ -> None)
-                            | _ -> remapped2.Rows
-                        let updates = rowsForUpdate |> List.choose (phase2UpdateSql kind load.DeferredFkColumns)
-                        if not (List.isEmpty updates) then
-                            do! Deploy.executeBatch sink (String.concat "\n" updates)
+                // Phase 2 — re-point the cycle-deferred FK columns against the
+                // COMPLETED remap. For an `AssignedBySink` kind the WHERE keys on
+                // the ASSIGNED PK (the sink replaced the source PK at insert; the
+                // captured remap supplies the translation — the 6.A.2 lift,
+                // operator-authorized 2026-06-10). A deferred FK value with no
+                // captured target is a NAMED phase-2 erasure: the row stands (it
+                // was inserted in phase 1 with the column NULL) but the reference
+                // is lost — surfaced in `SkippedReferences`, never silent. A row
+                // whose own PK has no capture was dropped (and named) in phase 1;
+                // it has no sink row to update, so it is passed over here.
+                for load in plan.Loads do
+                    if not (Set.isEmpty load.DeferredFkColumns) && not (List.isEmpty load.Rows) then
+                        match Catalog.tryFindKind load.Kind catalog with
+                        | None      -> ()
+                        | Some kind ->
+                            let remapped2 = repoint Set.empty kind load.Rows
+                            writeSkips.Value <-
+                                writeSkips.Value
+                                @ (remapped2.Skipped
+                                   |> List.filter (fun u -> Set.contains u.Column load.DeferredFkColumns)
+                                   |> List.map (fun u -> load.Kind, u))
+                            let rowsForUpdate =
+                                match load.Disposition, kind.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey && a.IsIdentity) with
+                                | IdentityDisposition.AssignedBySink, Some idAttr ->
+                                    remapped2.Rows
+                                    |> List.choose (fun row ->
+                                        match Map.tryFind idAttr.Name row.Values with
+                                        | Some srcVal when srcVal <> "" ->
+                                            PackedSurrogateRemap.tryFind remap load.Kind srcVal
+                                            |> Option.map (fun assigned ->
+                                                { row with Values = Map.add idAttr.Name assigned row.Values })
+                                        | _ -> None)
+                                | _ -> remapped2.Rows
+                            let updates = rowsForUpdate |> List.choose (phase2UpdateSql kind load.DeferredFkColumns)
+                            if not (List.isEmpty updates) then
+                                do! Deploy.executeBatch sink (String.concat "\n" updates)
 
-            LogSink.recordStageEvent "load" loadSw.ElapsedMilliseconds LogSink.Succeeded
-            return writeSkips, laneDescents
+                return Ok ()
+              }
+            let! verdict =
+                staged Spines.transfer {
+                    do! Staged.stage Stages.load loadBody
+                    return ()
+                }
+            match verdict.Disposition with
+            | RunCompleted () -> return writeSkips.Value, laneDescents.Value
+            | RunStopped _ ->
+                // The body never returns Error; total match, named.
+                return invalidOp "writePlan: the load body cannot stop"
+            | RunAborted (_, Some ex) ->
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw()
+                return Unchecked.defaultof<_>
+            | RunAborted (refusal, None) -> return failwith refusal
         }
 
     // -- D10 / G10 (Wave 3) — the wipe-and-load + resumable write envelopes ---
@@ -1265,13 +1288,31 @@ module Transfer =
             }
 
         task {
-            LogSink.recordStageStart "load"
-            match! phase1 plan.Loads 0 Map.empty [] [] with
-            | Error es -> return Result.failure es
-            | Ok (totals, skips, descents) ->
-                let! phase2Skips = phase2 plan.Loads []
-                LogSink.recordStageEvent "load" loadSw.ElapsedMilliseconds LogSink.Succeeded
-                return Result.success (totals, skips @ phase2Skips, descents)
+            // Card S4c — the load bracket is the `staged { }` CE's
+            // (`Spines.transfer`): a phase-1 refusal (e.g. the resume
+            // source-drift refusal) now CLOSES the stage `failed` on the wire —
+            // the pre-spine code returned early, leaving the board hanging on
+            // an open `.started` — and an exception closes it `aborted`.
+            let! verdict =
+                staged Spines.transfer {
+                    let! outcome =
+                        Staged.stage Stages.load (fun () ->
+                            task {
+                                match! phase1 plan.Loads 0 Map.empty [] [] with
+                                | Error es -> return Error es
+                                | Ok (totals, skips, descents) ->
+                                    let! phase2Skips = phase2 plan.Loads []
+                                    return Ok (totals, skips @ phase2Skips, descents)
+                            })
+                    return outcome
+                }
+            match verdict.Disposition with
+            | RunCompleted value -> return Result.success value
+            | RunStopped es -> return Result.failure es
+            | RunAborted (_, Some ex) ->
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw()
+                return Unchecked.defaultof<_>
+            | RunAborted (refusal, None) -> return failwith refusal
         }
 
     /// **The streaming realization** — bounded memory for the estate-scale

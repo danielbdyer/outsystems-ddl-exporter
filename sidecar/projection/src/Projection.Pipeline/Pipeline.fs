@@ -1287,39 +1287,64 @@ module Compose =
 
     let runWithConfig (cfg: Config.Config) : Task<Result<RunReport>> =
         task {
-            // §7.2 extract — OSSYS catalog read.
-            let swExtract = System.Diagnostics.Stopwatch.StartNew()
-            emitStageMarker LogSink.Extract "extract.started" LogSink.Start Map.empty
-            let! parsed = readConfigModel cfg
-            swExtract.Stop()
-            match parsed with
-            | Error errors ->
-                LogSink.recordStageEvent "extract" swExtract.ElapsedMilliseconds LogSink.Failed
-                return Result.failure errors
-            | Ok catalog ->
-                emitStageMarker LogSink.Extract "extract.completed" LogSink.End
-                    (Map.ofList [ "moduleCount", box (List.length catalog.Modules) ])
-                LogSink.recordStageEvent "extract" swExtract.ElapsedMilliseconds LogSink.Succeeded
-                // §7.3 profile — live SQL probing (Profile.empty for the
-                // SnapshotJson path; a real probe for the live provider).
-                let swProfile = System.Diagnostics.Stopwatch.StartNew()
-                emitStageMarker LogSink.Profile "profile.started" LogSink.Start Map.empty
-                let! profileResult = acquireProfile cfg catalog
-                swProfile.Stop()
-                let profileOutcome =
-                    match profileResult with Ok _ -> LogSink.Succeeded | Error _ -> LogSink.Failed
-                emitStageMarker LogSink.Profile "profile.completed" LogSink.End Map.empty
-                LogSink.recordStageEvent "profile" swProfile.ElapsedMilliseconds profileOutcome
-                // §7.5 emit — pass chain + sibling-Π emission + artifact write.
-                let swEmit = System.Diagnostics.Stopwatch.StartNew()
-                emitStageMarker LogSink.Emit "emit.started" LogSink.Start Map.empty
-                let result = profileResult |> Result.bind (runWithConfigCore cfg (Ok catalog))
-                swEmit.Stop()
-                let emitOutcome =
-                    match result with Ok _ -> LogSink.Succeeded | Error _ -> LogSink.Failed
-                emitStageMarker LogSink.Emit "emit.completed" LogSink.End Map.empty
-                LogSink.recordStageEvent "emit" swEmit.ElapsedMilliseconds emitOutcome
-                return result
+            // Card S4a — the publish arc rides the spine. The `staged { }`
+            // CE owns the "pipeline" umbrella root + the extract / profile /
+            // emit brackets (started/stageCompleted envelopes, the §10 stage
+            // table, `stage.<name>` Bench scopes); the bodies keep their
+            // category-bearing `<stage>.completed` domain markers (§7.2-§7.5
+            // payloads). Two shapes changed, named: the `<stage>.started`
+            // markers now carry the bracket's Summary category (uniform with
+            // the migrate/transfer legs), and a failed stage SKIPS the
+            // downstream arc instead of opening phantom failed stages (the
+            // pre-spine stream closed `emit` as failed on a profile failure
+            // that never reached it).
+            let! verdict =
+                staged Spines.pipeline {
+                    let! catalog =
+                        Staged.stage Stages.extract (fun () ->
+                            task {
+                                // §7.2 extract — OSSYS catalog read.
+                                let! parsed = readConfigModel cfg
+                                match parsed with
+                                | Ok catalog ->
+                                    emitStageMarker LogSink.Extract "extract.completed" LogSink.End
+                                        (Map.ofList [ "moduleCount", box (List.length catalog.Modules) ])
+                                    return Ok catalog
+                                | Error errors ->
+                                    return Error errors
+                            })
+                    let! profile =
+                        Staged.stage Stages.profile (fun () ->
+                            task {
+                                // §7.3 profile — live SQL probing (Profile.empty
+                                // for the SnapshotJson path; a real probe for the
+                                // live provider).
+                                let! profileResult = acquireProfile cfg catalog
+                                emitStageMarker LogSink.Profile "profile.completed" LogSink.End Map.empty
+                                return profileResult
+                            })
+                    let! report =
+                        Staged.stage Stages.emit (fun () ->
+                            task {
+                                // §7.5 emit — pass chain + sibling-Π emission +
+                                // artifact write.
+                                let result = runWithConfigCore cfg (Ok catalog) profile
+                                emitStageMarker LogSink.Emit "emit.completed" LogSink.End Map.empty
+                                return result
+                            })
+                    return report
+                }
+            return
+                match verdict.Disposition with
+                | RunCompleted report -> Result.success report
+                | RunStopped errors   -> Result.failure errors
+                | RunAborted (_, Some ex) ->
+                    // The spine closed the books (the open stage + the root
+                    // closed `aborted` on the wire); the composition's crash
+                    // semantics are preserved for the caller's catch.
+                    System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw()
+                    Unchecked.defaultof<_>
+                | RunAborted (refusal, None) -> failwith refusal
         }
 
     // -- Track W1-B (seam T2): the diff-vs-prior store leg -------------------

@@ -336,6 +336,54 @@ let ``slice 7: eventCounts.info >= 3 on happy path (runStart + connectionResolve
         File.Delete configPath
         File.Delete modelPath
 
+[<Fact>]
+let ``S5: wall(run) − Σ wall(stage) ≤ ε — the publish run's stage account, honestly bounded`` () =
+    // R2's additivity law (T14 on the time plane), asserted on the REAL run
+    // at two levels of nesting. ε's residue, enumerated:
+    //   level 1 (umbrella − children): the staged CE's plumbing only — no
+    //     I/O between brackets by construction (card S4a).
+    //   level 2 (run wall − umbrella): config load + model-path resolution
+    //     (before the root opens), artifact recording + diagnostics
+    //     projection + transform-event egress + envelope serialization
+    //     (after it closes). No SQL and no network on this fixture.
+    // The bounds are generous for CI scheduling noise: this witness catches
+    // STRUCTURAL unaccounted work (the pre-spine migratePreflights class,
+    // seconds of unmetered I/O), not micro-jitter. The migrate run's
+    // face-level grant pre-flights remain named, unbounded residue — they
+    // run real SQL before the engine's spine opens (DECISIONS 2026-06-12,
+    // S4).
+    let modelPath = writeTempJson v1MinimalFixture
+    let outDir = tempOutputDir ()
+    let configPath = writeTempConfig modelPath outDir
+    try
+        let _, text = runFullExportInProcess configPath None
+        let lines = parseLines text
+        let first = List.head lines
+        let last = List.last lines
+        let stages = prop (prop last "payload") "stages"
+        let stageDur (name: string) : int64 =
+            [ for i in 0 .. stages.GetArrayLength() - 1 -> stages.[i] ]
+            |> List.tryPick (fun s ->
+                if getStr (prop s "stage") = name then Some ((prop s "durationMs").GetInt64()) else None)
+            |> Option.defaultValue 0L
+        let umbrella = stageDur "pipeline"
+        let childSum = stageDur "extract" + stageDur "profile" + stageDur "emit"
+        // level 1 — the umbrella covers its children; the gap is CE plumbing.
+        Assert.True(umbrella + 3L >= childSum, sprintf "umbrella %dms must cover children %dms" umbrella childSum)
+        Assert.True(umbrella - childSum <= 500L, sprintf "nesting ε=%dms exceeds the named 500ms bound" (umbrella - childSum))
+        // level 2 — the run wall covers the umbrella; the gap is the named residue.
+        let tsOf (e: JsonElement) =
+            DateTime.Parse(getStr (prop e "ts"), null, System.Globalization.DateTimeStyles.RoundtripKind)
+        let runWallMs = int64 (tsOf last - tsOf first).TotalMilliseconds
+        Assert.True(runWallMs + 3L >= umbrella, sprintf "run wall %dms must cover the umbrella %dms" runWallMs umbrella)
+        Assert.True(
+            runWallMs - umbrella <= 3000L,
+            sprintf "run-level ε=%dms — unaccounted run work grew past the named residue" (runWallMs - umbrella))
+    finally
+        safeRm outDir
+        File.Delete configPath
+        File.Delete modelPath
+
 // ----------------------------------------------------------------------
 // AC-X3 — the publication bundle is reachable from the `full-export` CLI
 // surface (the `--lifecycle-store` routing the CLI's `runFullExport` does).

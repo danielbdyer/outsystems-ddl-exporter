@@ -383,6 +383,60 @@ module MigrationRun =
     /// level. Idempotent + resumable **by construction**: re-running re-diffs the
     /// now-current state against B, so a partial run completes on re-run and a
     /// fully-migrated DB is a no-op (empty differential).
+    /// The migrate engine's safety gates — the declared `preflight` stage's
+    /// body (card S4b: real SQL I/O, inside the meter).
+    ///
+    /// 6.A.13 — schema-side CDC pre-flight. Only a run that would emit DDL
+    /// is at risk; an UNCHANGED schema (zero renames + no ALTER) skips the
+    /// check entirely — that is engine-level CDC-silence (an idempotent
+    /// redeploy churns no CDC). When there IS DDL and the DB is
+    /// CDC-tracked, refuse unless `allowCdc` (mirrors the transfer-side
+    /// gate).
+    ///
+    /// G9 (NEITHER→HELD) — the NOT-NULL tightening pre-flight. The
+    /// in-place `ALTER COLUMN … NOT NULL` against a column that still
+    /// carries NULL rows is REFUSED *before* the ALTER is submitted,
+    /// not caught post-facto as `ExecutionFailed`. This is the
+    /// DATA-aware last line *after* the schema-blind narrowing
+    /// declared-loss gate (G8): even an operator who has DECLARED the
+    /// narrowing loss cannot apply NOT NULL while NULL rows remain —
+    /// the data physically blocks it. The overlay (Track-F's
+    /// `Preflight.tighteningOverlay`) names every nullable→NOT NULL
+    /// column the A→B displacement tightens; the probe counts live
+    /// NULLs on the SOURCE schema (the DB is at A, where the column is
+    /// still nullable). A clean source (or no tightening at all)
+    /// passes; a NULL-bearing tightening refuses with
+    /// `migrate.dataViolatesTightening` — the column stays nullable,
+    /// no DDL runs.
+    let private safetyGates
+        (allowCdc: bool)
+        (hasDdl: bool)
+        (source: Catalog)
+        (target: Catalog)
+        (cnn: SqlConnection)
+        : System.Threading.Tasks.Task<Result<unit, MigrationError>> =
+        task {
+            let! cdcGate =
+                task {
+                    if hasDdl && not allowCdc then
+                        let! tracked = ReadSide.cdcTrackedTables cnn
+                        if List.isEmpty tracked then return Ok ()
+                        else return Error (RefusedByCdc tracked)
+                    else return Ok ()
+                }
+            match cdcGate with
+            | Error e -> return Error e
+            | Ok () ->
+                let overlay = Preflight.tighteningOverlay source target
+                if Set.isEmpty overlay.EnforceNotNull then return Ok ()
+                else
+                    match! Preflight.tighteningPreflight cnn source overlay with
+                    | Ok () -> return Ok ()
+                    | Error es ->
+                        let msg = es |> List.map (fun e -> e.Message) |> String.concat "; "
+                        return Error (RefusedByTightening msg)
+        }
+
     let execute
         (allowCdc: bool)
         (declaration: LossDeclaration)
@@ -391,110 +445,91 @@ module MigrationRun =
         (cnn: SqlConnection)
         : System.Threading.Tasks.Task<Result<MigrationOutcome, MigrationError>> =
         task {
-            // Live stage stream (§13) — the migrate leg shares the pipeline's
-            // stage codes so `--watch` shows the same arc (build → apply →
-            // verify). The markers ride the existing NDJSON channel; when no one
-            // is watching they are plain machine events, never operator prose.
-            let sw = System.Diagnostics.Stopwatch.StartNew()
-            LogSink.recordStageStart "emit"
-            match preview declaration source target with
-            | Error e -> return Error e
-            | Ok artifacts ->
-                LogSink.recordStageEvent "emit" sw.ElapsedMilliseconds LogSink.Succeeded
-                let renameSql = renameStatements artifacts.Plan.Diff
-                let alterSql = artifacts.SchemaStatements |> Render.toText
-                // 6.A.13 — schema-side CDC pre-flight. Only a run that would
-                // emit DDL is at risk; an UNCHANGED schema (zero renames + no
-                // ALTER) skips the check entirely — that is engine-level
-                // CDC-silence (an idempotent redeploy churns no CDC). When
-                // there IS DDL and the DB is CDC-tracked, refuse unless
-                // `allowCdc` (mirrors the transfer-side gate).
-                let hasDdl =
-                    not (List.isEmpty renameSql)
-                    || not (System.String.IsNullOrWhiteSpace alterSql)
-                let! cdcGate =
-                    task {
-                        if hasDdl && not allowCdc then
-                            let! tracked = ReadSide.cdcTrackedTables cnn
-                            if List.isEmpty tracked then return Ok ()
-                            else return Error (RefusedByCdc tracked)
-                        else return Ok ()
-                    }
-                match cdcGate with
-                | Error e -> return Error e
-                | Ok () ->
-                // G9 (NEITHER→HELD) — the NOT-NULL tightening pre-flight. The
-                // in-place `ALTER COLUMN … NOT NULL` against a column that still
-                // carries NULL rows is REFUSED *before* the ALTER is submitted,
-                // not caught post-facto as `ExecutionFailed`. This is the
-                // DATA-aware last line *after* the schema-blind narrowing
-                // declared-loss gate (G8): even an operator who has DECLARED the
-                // narrowing loss cannot apply NOT NULL while NULL rows remain —
-                // the data physically blocks it. The overlay (Track-F's
-                // `Preflight.tighteningOverlay`) names every nullable→NOT NULL
-                // column the A→B displacement tightens; the probe counts live
-                // NULLs on the SOURCE schema (the DB is at A, where the column is
-                // still nullable). A clean source (or no tightening at all)
-                // passes; a NULL-bearing tightening refuses with
-                // `migrate.dataViolatesTightening` — the column stays nullable,
-                // no DDL runs.
-                let overlay = Preflight.tighteningOverlay source target
-                let! tighteningGate =
-                    task {
-                        if Set.isEmpty overlay.EnforceNotNull then return Ok ()
-                        else
-                            match! Preflight.tighteningPreflight cnn source overlay with
-                            | Ok () -> return Ok ()
-                            | Error es ->
-                                let msg = es |> List.map (fun e -> e.Message) |> String.concat "; "
-                                return Error (RefusedByTightening msg)
-                    }
-                match tighteningGate with
-                | Error e -> return Error e
-                | Ok () ->
-                sw.Restart()
-                LogSink.recordStageStart "deploy"
-                let hasAlter = not (System.String.IsNullOrWhiteSpace alterSql)
-                let totalWrites = List.length renameSql + (if hasAlter then 1 else 0)
-                let! executed =
-                    task {
-                        try
-                            let mutable applied = 0
-                            for stmt in renameSql do
-                                do! Deploy.executeBatch cnn stmt
-                                applied <- applied + 1
-                                LogSink.recordStageProgress "deploy" applied totalWrites sw.ElapsedMilliseconds
-                            if hasAlter then
-                                do! Deploy.executeBatch cnn alterSql
-                                applied <- applied + 1
-                                LogSink.recordStageProgress "deploy" applied totalWrites sw.ElapsedMilliseconds
-                            return Ok ()
-                        with ex -> return Error (ExecutionFailed ex.Message)
-                    }
-                match executed with
-                | Error e -> return Error e
-                | Ok () ->
-                    LogSink.recordStageEvent "deploy" sw.ElapsedMilliseconds LogSink.Succeeded
-                    sw.Restart()
-                    LogSink.recordStageStart "canary"
-                    let! readBack = ReadSide.read cnn
-                    match readBack with
-                    | Error es -> return Error (SchemaReadFailed es)
-                    | Ok reconstructed ->
-                        let sdiff =
-                            PhysicalSchema.diff
-                                (PhysicalSchema.ofCatalog target)
-                                (PhysicalSchema.ofCatalog reconstructed)
-                        LogSink.recordStageEvent "canary" sw.ElapsedMilliseconds LogSink.Succeeded
-                        return
-                            Ok
-                                { Artifacts = artifacts
-                                  Reconstructed = reconstructed
-                                  SchemaDiff = sdiff
-                                  // Schema-structural verification: B' reproduces B's
-                                  // structure; the rows it carries are the preserved data
-                                  // (data preservation is asserted separately by the canary).
-                                  Verified = PhysicalSchema.isSchemaEqual sdiff }
+            // Card S4b — the migrate engine rides the spine (`Spines.migrate`:
+            // build → safety gates → apply → verify). The `staged { }` CE owns
+            // every bracket, which closes the RI-2(a) defect by construction:
+            // an error inside any stage CLOSES it on the wire (`failed` /
+            // `aborted`) instead of leaving the board hanging on an open
+            // `.started` — the pre-spine code returned early out of emit,
+            // deploy, and canary without ever closing them. The safety gates
+            // (CDC + tightening — real SQL) are now the declared `preflight`
+            // stage. The FACE-level grant pre-flights (`migratePreflights` in
+            // the CLI) remain outside the engine's spine — named residue for
+            // S5's ε. The live stage stream (§13) rides the same NDJSON
+            // channel as before; when no one is watching they are plain
+            // machine events, never operator prose.
+            let! verdict =
+                staged Spines.migrate {
+                    let! built =
+                        Staged.stage Stages.emit (fun () ->
+                            // The change build: the plan plus the rendered DDL
+                            // text (rendering is emit work — attributed here).
+                            match preview declaration source target with
+                            | Error e -> System.Threading.Tasks.Task.FromResult (Error e)
+                            | Ok artifacts ->
+                                let renameSql = renameStatements artifacts.Plan.Diff
+                                let alterSql = artifacts.SchemaStatements |> Render.toText
+                                System.Threading.Tasks.Task.FromResult (Ok (artifacts, renameSql, alterSql)))
+                    let artifacts, renameSql, alterSql = built
+                    let hasDdl =
+                        not (List.isEmpty renameSql)
+                        || not (System.String.IsNullOrWhiteSpace alterSql)
+                    let! _ =
+                        Staged.stage Stages.preflight (fun () ->
+                            safetyGates allowCdc hasDdl source target cnn)
+                    let! _ =
+                        Staged.stage Stages.deploy (fun () ->
+                            task {
+                                let sw = System.Diagnostics.Stopwatch.StartNew()
+                                let hasAlter = not (System.String.IsNullOrWhiteSpace alterSql)
+                                let totalWrites = List.length renameSql + (if hasAlter then 1 else 0)
+                                try
+                                    let mutable applied = 0
+                                    for stmt in renameSql do
+                                        do! Deploy.executeBatch cnn stmt
+                                        applied <- applied + 1
+                                        LogSink.recordStageProgress "deploy" applied totalWrites sw.ElapsedMilliseconds
+                                    if hasAlter then
+                                        do! Deploy.executeBatch cnn alterSql
+                                        applied <- applied + 1
+                                        LogSink.recordStageProgress "deploy" applied totalWrites sw.ElapsedMilliseconds
+                                    return Ok ()
+                                with ex -> return Error (ExecutionFailed ex.Message)
+                            })
+                    let! outcome =
+                        Staged.stage Stages.canary (fun () ->
+                            task {
+                                let! readBack = ReadSide.read cnn
+                                match readBack with
+                                | Error es -> return Error (SchemaReadFailed es)
+                                | Ok reconstructed ->
+                                    let sdiff =
+                                        PhysicalSchema.diff
+                                            (PhysicalSchema.ofCatalog target)
+                                            (PhysicalSchema.ofCatalog reconstructed)
+                                    return
+                                        Ok
+                                            { Artifacts = artifacts
+                                              Reconstructed = reconstructed
+                                              SchemaDiff = sdiff
+                                              // Schema-structural verification: B' reproduces B's
+                                              // structure; the rows it carries are the preserved data
+                                              // (data preservation is asserted separately by the canary).
+                                              Verified = PhysicalSchema.isSchemaEqual sdiff }
+                            })
+                    return outcome
+                }
+            return
+                match verdict.Disposition with
+                | RunCompleted outcome -> Ok outcome
+                | RunStopped e -> Error e
+                | RunAborted (_, Some ex) ->
+                    // The spine closed the books (the open stage closed
+                    // `aborted` on the wire); the engine's crash semantics
+                    // are preserved for the caller.
+                    System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw()
+                    Unchecked.defaultof<_>
+                | RunAborted (refusal, None) -> failwith refusal
         }
 
     /// **X4 — the in-place migrate's CDC-measure leg.** The criterion

@@ -424,36 +424,81 @@ PERF_OPPORTUNITIES A3/A4 priors are now one command to re-interrogate.
 
 ### Stage 2 — the spine (R2, corrected per RI-2)
 
-**S1 · The spine types + the decoration value.** `StageName`/`RunSpine` (private smart
-ctors), `StagedOutcome = Completed of ms | Aborted of refusal | Skipped of reason` (the RI-2
-third arm), and `Meter.pass` extracted **as part of this card** (RI-6: its second consumer
-arrives here). *Witness:* `` `Meter.pass p ≡ p on the value plane` ``. S. Deps: none.
+**S1 · The spine types + the decoration value — DONE 2026-06-12.** Shipped: `StageName`/
+`RunSpine` (private smart ctors, `RunSpine.fs` after `LogSink.fs` so the S2 CE can join the
+file with LogSink in scope), `StagedOutcome = Completed of durationMs | Aborted of refusal |
+Skipped of reason` (the RI-2 third arm), and `Meter.pass` extracted (`Meter.fs`, Core, after
+`Diagnostics.fs`) with `PassChainAdapter.compose` rewired as its first consumer — the fold is
+now literally `Pass.composeAll` over `Meter.pass`-decorated arrows. The §9.8.5 sketch's
+`Meter.pass s.Name` label form was REFUSED: the live label bytes (`compose.passChain.<Name>`)
+predate the cut and the perf surfaces read them; the rewrite keeps them byte-identical.
+*Witnesses shipped:* `` `Meter.pass p ≡ p on the value plane — decoration is invisible to
+the algebra` `` + the distribution-over-composition property + the two smart-ctor pins
+(`RunSpineTests.fs`). §9.8.5 carries the landed-outcome note. S. Deps: none.
 Rollback: revert; types unused until S2.
 
-**S2 · The `staged{}` CE + the law.** Bind brackets (Bench scope, `<stage>.started/.completed`
-envelopes, Watch transitions); `Run` closure asserts `declared ⇔ executed-or-aborted` — an
-open stage at run end becomes a named `Aborted`, never a board hang. Watch pre-seeds derive
-from `RunSpine` (the string lists retire). Umbrella stages are the spine's root scope —
-nesting is one level, by declaration. *Witness:* `` `R2: declared ⇔ executed∪aborted` `` +
-WatchTests re-derived. M. Deps: S1. Rollback: faces keep old emissions until S3/S4 migrate.
+**S2 · The `staged{}` CE + the law — DONE 2026-06-12.** Shipped in `RunSpine.fs`: the
+`staged spine { }` CE (Bind brackets `Bench.scope "stage.<name>"` — a new additive meter
+surface — + the `<stage>.started` / `summary.stageCompleted` envelopes the board folds);
+the Run closure balances total books (`declared ⇔ executed∪aborted`; missed/extra/re-entered
+stages are named refusals; `Completed` is bracket-plane — a body `Error` closes the stage
+`failed` and stops the run; an exception closes it `aborted` on the wire so the board's line
+goes `Halted`, never a hang). `RunSpine` gained the umbrella root (`createWithRoot`; the CE's
+Run brackets it — one level of nesting, by declaration). Watch pre-seeds derive from the
+declared `Spines` (pipeline/migrate/migrateData/deploy/transfer; the OperatorConsole string
+lists retired); the board gained `Halted` + the board-only `watch.stageHalted` copy — today's
+failed closes now render `✕ stopped`, not the prior misstating `✓ complete`. Production
+emissions unchanged at this commit (no face on the CE until S3/S4). *Witnesses shipped:*
+`` `R2: declared ⇔ executed∪aborted — every declared stage accounted, in declared order` ``
++ seven siblings (`StagedTests.fs`, incl. the board-fold of the live envelope feed) +
+WatchTests re-derived. See `DECISIONS 2026-06-12 — The stage spine lands`. M. Deps: S1.
+Rollback: faces keep old emissions until S3/S4 migrate.
 
-**S3 · The trivial faces.** `runDeploy`, `runCanary` onto the CE — including the
-`recordStage` vs `recordStageEvent` discrepancy fix at `RunFaces.fs:297`. *Witness:* envelope
-streams byte-compatible (the pinned `FullExportCliTests` shapes are the guard for S4, not
-here). S. Deps: S2.
+**S3 · The trivial faces — DONE 2026-06-12.** `runDeploy` and `runCanary` ride the
+`staged { }` CE: each face's stage bracket (started/completed envelopes + §10 stage table +
+`stage.<name>` Bench scope) is CE-owned; the face maps the disposition to its narration and
+documented exit codes through a typed stop channel (`DeployStop` / `CanaryStop`; the
+`RunAborted` arm re-raises to preserve pre-spine crash semantics — with the books now closed
+first). The `recordStage` discrepancy closed: the canary verb's bare `recordStage` (stage
+table only, no live stream) became the CE bracket — the `canary.started` /
+`summary.stageCompleted` pair now rides the wire (additive; named here). `Stages` landed as
+the declare-once site at the stage-name grain (spines and faces reference the same values —
+no face can drift from its declaration by retyping a string); `Spines.canary` added with its
+face as consumer. runDeploy's existing envelope pair is byte-compatible (same codes, same
+payload shape, one emission site). S. Deps: S2.
 
-**S4 · The hard faces.** `runFullExport` (umbrella + three children), `runMigrateExecute` /
-`runMigrateWithData` (**pre-flight gates become declared stages** — they are real SQL I/O and
-belong inside the meter), `runTransfer`/`runReverseLegTransfer`. Touches the four pipeline
-files RI-2 names, not just `RunFaces.fs`; reconciles the two bracket owners (`withRun` vs
-`FullExportRun`'s self-reset) to ONE. *Witness:* pinned envelope-shape tests
-(`FullExportCliTests` slice-7 trio) stay green or are amended in the same commit with the
-shape change named. **L.** Deps: S2, S3. Rollback: per-face — each face migrates in its own
-commit.
+**S4 · The hard faces — DONE 2026-06-12** (three commits, per the card's own per-face
+rollback story). **S4a — runFullExport:** `Compose.runWithConfig` is the `staged { }` CE over
+`Spines.pipeline` (umbrella root + extract/profile/emit; bodies keep their category-bearing
+`<stage>.completed` domain markers); the two bracket owners reconciled to ONE —
+`RunEnvelope.bracket` (runStart FIRST on every run including failed-config; the §7.4 registry;
+the §10 terminal ALWAYS, crash included), with `withRun` and `executeCore` both delegating
+(the self-reset retired). The pinned slice-7 trio held WITHOUT amendment; two shapes changed,
+named in the commit (`<stage>.started` markers carry the bracket's Summary category; a failed
+stage skips the downstream arc instead of opening phantom failed stages). **S4b —
+runMigrateExecute/runMigrateWithData:** `MigrationRun.execute` rides `Spines.migrate` (emit →
+**preflight** → deploy → canary) — the 6.A.13 CDC gate + G9 tightening gate are the declared
+`preflight` stage (real SQL, inside the meter; Voice gained `preflight.started` + "Safety
+checks"); the RI-2(a) abort defect closes by construction (the pre-spine code returned early
+out of emit/deploy/canary leaving them open on the board). The FACE-level grant pre-flights
+(`migratePreflights`) remain outside the engine's spine — named ε residue for S5. **S4c —
+runTransfer/runReverseLegTransfer:** both load brackets (materialized `writePlan`; streaming
+`writePlanStreaming`) are CE-owned — the streaming phase-1 refusal and any mid-load exception
+now CLOSE the stage on the wire instead of hanging the board. *Witnesses:* per-commit pure
+pool + full Docker pool (one S4a docker failure was a named infra flake — SQL 1205 deadlock
+inside `sp_cdc_enable_db` setup, TRX-verified, class re-ran green). Deps: S2, S3.
 
-**S5 · Additivity, honestly.** The property `` `wall(run) − Σ wall(stage) ≤ ε` `` lands only
-after S4 has bracketed gates/config/bookkeeping as named stages; ε's residue is enumerated in
-the test's docstring (arg parsing, process startup). S. Deps: S4.
+**S5 · Additivity, honestly — DONE 2026-06-12.** Two witnesses, two levels of nesting:
+`` `R2: wall(root) − Σ wall(stage) ≤ ε — T14 on the time plane (the spine's nesting is
+tight)` `` (the CE's own nesting over synthetic sleeps — ε is the builder's plumbing, bounded
+at 250 ms) and `` `S5: wall(run) − Σ wall(stage) ≤ ε — the publish run's stage account,
+honestly bounded` `` (the REAL full-export run: umbrella covers children within 500 ms; the
+run wall covers the umbrella within 3000 ms — bounds generous for CI noise, catching the
+structural unaccounted-work class, not micro-jitter). ε's residue is enumerated in the
+docstrings: config/model resolution, artifact recording + diagnostics projection + egress,
+and — named UNBOUNDED — the migrate face's grant pre-flights, which run real SQL before the
+engine's spine opens (see DECISIONS 2026-06-12 S4 entry; bounding them means lifting the face
+gates into a declared arc, R1b-adjacent territory). S. Deps: S4.
 
 ### Stage 3 — the ledger contract (R3, corrected per RI-3)
 

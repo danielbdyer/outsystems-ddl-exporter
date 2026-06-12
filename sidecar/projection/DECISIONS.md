@@ -21606,3 +21606,91 @@ Cards Q2/Q3/Q4 closed in two commits (Q2+Q3 coupled per the backlog's
 sequencing finding; Q4 = the measurement + docs) — the card-shape
 changes are RI-13. Witnesses at every commit: pure pool, canary suite,
 full Docker pool. No perf-gate baseline moved.
+
+## 2026-06-12 — The stage spine lands: staged{} + the R2 law (cards S1+S2)
+
+The spine's structural leg (CONSTELLATION §9.3, backlog stage 2) is
+built: `StageName`/`RunSpine` (private smart ctors; an optional
+umbrella **root** — nesting is one level, by declaration),
+`StagedOutcome` with the RI-2 third arm, and the `staged spine { }` CE
+(`RunSpine.fs`, after `LogSink.fs`). Inside the CE a stage crossing is
+structural: Bind brackets `Bench.scope "stage.<name>"` (a NEW additive
+meter surface — the label LogSink's own docstring promised), the
+`<stage>.started` envelope, and the `summary.stageCompleted` close.
+
+**The law — `declared ⇔ executed∪aborted` — and its semantics:**
+- `Completed` is **bracket-plane**: the stage ran to its close; the
+  wire outcome (`succeeded`/`failed`) rides the envelope, not the arm.
+  A body returning `Error` closes the stage `failed` and stops the run
+  (`RunStopped`); downstream declared stages close as `Skipped` with
+  the run-shaped reason.
+- **The Aborted arm is first-class:** an exception inside a stage
+  closes the bracket on the wire with outcome `aborted` (the board's
+  line goes `Halted` — closed and candid, never a hang and never a
+  misstating `✓`), names the refusal, and skips the rest by name.
+- A missed (unvisited, unskipped) or extra (undeclared, re-entered)
+  stage is a **named refusal at run end** (`spine.stages.unvisited` /
+  `spine.stage.undeclared` / `spine.stage.reentered`) — the registry
+  pattern's fifth instance. Explicit skips (`Staged.skip`) keep the
+  books total, ledger-only (no phantom wire events).
+- The verdict's `Outcomes` are total over the declaration, in declared
+  order; the root bracket rides beside them, never among them.
+
+**Watch re-derivation:** pre-seeds derive from the declared `Spines`
+(`RunSpine.keys`; the OperatorConsole string lists retired); the board
+gains the `Halted` state, folded from the `outcome` payload that
+`recordStageEvent` always carried — which also makes TODAY's
+failed-stage closes render candidly (`✕ <Stage> stopped.`, voiced via
+the new board-only `watch.stageHalted` copy) instead of the prior
+`✓ complete` misstatement. The umbrella key derives from the spine's
+root for spine-seeded boards (legacy "pipeline" convention kept for
+flat-list boards until S4 reconciles the bracket owners).
+
+Production emissions are UNCHANGED at this commit — no face is on the
+CE until S3/S4 migrate them (the rollback story: faces keep their old
+emissions). Witnesses: `R2: declared ⇔ executed∪aborted` and seven
+siblings in `StagedTests.fs` (Global-MutableState pool, the live
+envelope feed asserted via the subscriber the real board consumes);
+WatchTests re-derived (+5).
+
+## 2026-06-12 — S4: the hard faces ride the spine; the run-envelope bracket has ONE owner
+
+Three per-face commits (the card's own rollback story). The structural
+verdicts that outlive the diffs:
+
+**One bracket owner.** `RunEnvelope.bracket` (Pipeline, after
+`RegisteredAllTransforms`) is the single implementation of
+begin → `config.runStart` → §7.4 registry → body → terminal
+`summary.runComplete`. `OperatorConsole.withRun` and
+`FullExportRun.executeCore` both delegate; the executeCore self-reset is
+retired. Two contract repairs rode along, named: `config.runStart` is
+now the FIRST event of every run including failed-config runs (§7.1 —
+previously those streams opened with `validationFailed`), and a crashed
+body still closes its stream with the §10 terminal event before the
+exception rethrows (previously `withRun` bodies escaped without it).
+The §7.1 payload: `command` + `configPath` stay on runStart; the
+config-resolved `outputDir` moved to `config.connectionResolved`.
+
+**The engines own their spines.** `Compose.runWithConfig` =
+`staged Spines.pipeline` (umbrella root + three children — all four of
+its consumers get the bracketed arc); `MigrationRun.execute` =
+`staged Spines.migrate` with the safety gates (CDC 6.A.13 + tightening
+G9) as the declared `preflight` stage; both transfer load paths =
+`staged Spines.transfer`. The RI-2(a) class of defect — error paths
+returning early past an open `recordStageStart` — is now structurally
+impossible on the migrated faces: every bracket closes on the wire
+(`failed`/`aborted`) before the error propagates.
+
+**Named ε residue (S5 inherits this list):** the migrate FACE's grant
+pre-flights (`migratePreflights`) + the state-A read; config/model
+resolution outside the pipeline root; artifact recording + diagnostics
+projection; `dumpBench`; ledger append; argv parsing.
+
+**Shape changes, named:** `<stage>.started` markers on the publish arc
+carry the bracket's Summary category (was Extract/Profile/Emit —
+uniform with the migrate/transfer legs; the category-bearing
+`<stage>.completed` domain markers stay, with their payloads); a failed
+stage skips the downstream arc (no more phantom failed `emit` after a
+failed `profile`); migrate runs gain `preflight` started/completed
+pairs and stage-table entries. The pinned FullExportCliTests slice-7
+trio held without amendment.

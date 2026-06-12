@@ -22,8 +22,8 @@ let private inScopeCodes : Set<string> =
           "extract.started"; "extract.completed"
           "profile.started"; "profile.completed"
           "emit.started"; "emit.completed"
-          "deploy.started"; "canary.started"; "load.started"
-          "watch.runTitle"; "watch.runDone"
+          "preflight.started"; "deploy.started"; "canary.started"; "load.started"
+          "watch.runTitle"; "watch.runDone"; "watch.stageHalted"
           "summary.stageCompleted"
           "config.validationFailed" ]
 
@@ -41,12 +41,13 @@ let private knownEmittableCodes : Set<string> =
           "emit.started"; "emit.completed"
           // the migrate leg's live stage stream (build → apply → verify) + the
           // data-transfer leg's load stage
-          "deploy.started"; "canary.started"; "load.started"
+          "preflight.started"; "deploy.started"; "canary.started"; "load.started"
           // the live Watch board's render-synthesized frame codes (§13) — the
-          // run-title header + the terminal done-frame. Not LogSink envelopes: the
-          // board is a *rendering* of the run, so its frame copy is voiced through
-          // the catalog (one register) and consumed at render, never emitted.
-          "watch.runTitle"; "watch.runDone"
+          // run-title header, the terminal done-frame, and the halted stage line
+          // (the R2 Aborted arm). Not LogSink envelopes: the board is a
+          // *rendering* of the run, so its frame copy is voiced through the
+          // catalog (one register) and consumed at render, never emitted.
+          "watch.runTitle"; "watch.runDone"; "watch.stageHalted"
           // round-trip verification verdict
           "canary.diffEmpty"; "canary.divergence"
           // emitted but voiced by mechanism-1 / later slices (not in `Voice.all` yet)
@@ -179,7 +180,7 @@ let ``Voice register: the error frames clear the banned list`` () =
 let ``Voice stageName: every emitted internal stage maps to an operator name`` () =
     // The stages `LogSink.recordStageEvent` emits today (Pipeline + FullExportRun
     // + the migrate leg's deploy / canary phases).
-    let emittedStages = [ "pipeline"; "extract"; "profile"; "emit"; "deploy"; "canary"; "load" ]
+    let emittedStages = [ "pipeline"; "extract"; "profile"; "emit"; "preflight"; "deploy"; "canary"; "load" ]
     for s in emittedStages do
         Assert.NotEqual<string>(s, Voice.stageName s)   // never the internal verb
 
