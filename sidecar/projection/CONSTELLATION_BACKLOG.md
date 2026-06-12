@@ -502,29 +502,43 @@ gates into a declared arc, R1b-adjacent territory). S. Deps: S4.
 
 ### Stage 3 — the ledger contract (R3, corrected per RI-3)
 
-**L1 · `LedgerSpec`, corrected.** Core, pure: `Genesis/Apply/FingerprintOf` **plus the
-admission split** — `WriteAdmit` (external-witness-capable; mints `Verified<_>`) and
-`ResumeAdmit` (recomputation vs stored fingerprint). `Ledger.replay`/`resumePoint` over
-verified entries. *Witness:* the FsCheck FTC property over a constructed-valid generator. M.
-Deps: none (F4 recommended first). Rollback: revert; instances not yet cut over.
+**L1 · `LedgerSpec`, corrected — DONE 2026-06-12.** Core, pure (`Ledger.fs`):
+`Genesis/Apply/FingerprintOf` **plus the admission split** — `Ledger.writeAdmit`
+(external-witness-capable; mints the private-ctor `Verified<_>` token) and
+`Ledger.resumeAdmit` (recomputed-vs-stored fingerprint; the recomputation is the instance's
+I/O — Core compares values and returns a typed `LedgerDrift` on disagreement).
+`Ledger.replay` (the FTC fold) / `resumePoint` (first absent position — an index, not a
+prefix) over verified entries. *Witness shipped:* the FsCheck FTC property + the partial-sum
+step law + crash-at-k + seven siblings (`LedgerTests.fs`, +9 pure pool).
 
-**L2 · The journal instance.** `CaptureJournal` re-expressed on the contract; the effectful
-remap fold adapted at the instance (the spec stays pure); resume path of
-`writePlanStreaming` re-routed through `Ledger.resumePoint`. *Witness:* `` `R3: crash at
-chunk k resumes at k; drift refuses by name` `` + the streaming ≡ materialized equivalence
-canary, unchanged. M. Deps: L1, F4. Rollback: the old inline path is one commit back; the
-equivalence canary guards both.
+**L2 · The journal instance — DONE 2026-06-12.** `CaptureJournal` re-expressed on the
+contract (`fingerprintOf`/`toEntry`/`spec`); the effectful remap fold adapted at the
+instance (Apply feeds pairs into the SHARED in-flight remap it is handed — Genesis is the
+live accumulator). *Shape correction at the cut:* the card's "re-routed through
+`Ledger.resumePoint`" landed as **`Ledger.resumeAdmit` per chunk** — the journal's resume is
+per-chunk admission against the `(kind, chunkIx)` last-write-wins index, not a single point;
+`resumePoint` carries the kind's chain-form law in the witnesses. WriteAdmit is named as
+POSITIONAL (the append sits after the chunk's atomic commit point — ceremony refused).
+`digestOf` untouched — **F1-hex stays armed** (§6 item 13). Drift maps the typed
+`LedgerDrift` onto the same `transfer.resume.sourceDrift` (code+message bytes unchanged;
+recorded/recomputed fingerprints added as metadata). *Witnesses shipped:* +3 pure-pool
+instance laws; the four Docker ReverseLegStreaming witnesses green unchanged.
 
-**L3 · The episode instance, honestly.** The snapshot-chain instance: `WriteAdmit` = the
-B′≡B witness (`recordVerified` re-expressed as the `Verified` mint); `ResumeAdmit` = ordinal
-monotonicity (named as such — the contract does NOT pretend to re-verify B′≡B at load); the
-FTC fold remains the *verification property*, not the recovery path. The store keeps full
-snapshots — converting to stored-diffs is **refused** (§6). *Witness:* `LifecycleStoreTests`
-green, unchanged. S. Deps: L1. Rollback: revert.
+**L3 · The episode instance, honestly — DONE 2026-06-12.** `recordVerified` re-expressed as
+the grain's WriteAdmit (`Ledger.writeAdmit` mints `Verified<MigrationOutcome>` on B′≡B;
+refusal shape unchanged, AC-P8 trio held); `ResumeAdmit` = ordinal monotonicity, named as
+such at both seats (`EpisodicLifecycle.append`, `LifecycleStore.buildLifecycle`) — the
+contract does NOT pretend to re-verify B′≡B at load; `reconstructLatestSchema` named as the
+*verification property*, not the recovery path (the snapshot dual). The store keeps full
+snapshots — stored-diffs stays **refused** (§6). *Witness:* the lifecycle-store +
+MigrationRun suites green, unchanged (zero new tests, by design).
 
-**L4 · G10 onto the contract.** The progress table as the trivial single-quantum instance —
-retired as a separate mechanism, honest that it exercises nothing (RI-3). *Witness:* the
-resumable-transfer Docker test, unchanged. S. Deps: L2.
+**L4 · G10 onto the contract — DONE 2026-06-12.** The progress table named as the DEGENERATE
+single-quantum instance (entry = the whole run; fingerprint = `planMarker` recomputed per
+run, equality realized as SQL set-membership; WriteAdmit positional at `markComplete`) —
+retired as a separate ledger mechanism, honest that it exercises nothing of the replay
+machinery (a single full-state quantum has no partial sums; the no-op IS the resume).
+*Witness:* AC-G10 Docker test green, unchanged.
 
 ### Stage 4 — the Run, completed and wired (R1, reframed per RI-1)
 

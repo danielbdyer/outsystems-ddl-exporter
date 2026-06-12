@@ -453,6 +453,20 @@ module Transfer =
 
     /// The durable phase-marker table — records which transfers completed, so a
     /// re-run of an already-finished transfer is a no-op (idempotent).
+    ///
+    /// L4 — G10 on the ledger contract (R3 / RI-3): this is the DEGENERATE
+    /// single-quantum instance, retired as a separate ledger mechanism. One
+    /// entry ("the whole run"), fingerprint = the plan signature
+    /// (`planMarker`, recomputed from the live plan on every run — the
+    /// grain's ResumeAdmit, with equality realized as the SQL set-membership
+    /// `isMarked` answers), WriteAdmit positional at `markComplete` (after
+    /// `writePlan`, the same control-flow witness as the journal's append).
+    /// It exercises NOTHING of the contract's replay machinery, honestly: a
+    /// single full-state quantum has no partial sums to rebuild — the sink's
+    /// rows ARE the state, and the admitted re-run's no-op IS the resume.
+    /// The streaming realization's chunk-grain journal (`CaptureJournal`) is
+    /// the non-degenerate sibling; the two stay distinct REALIZATIONS of one
+    /// contract, not two mechanisms.
     let private progressTableSql : string =
         "IF OBJECT_ID('dbo.__projection_transfer_progress') IS NULL \
            CREATE TABLE dbo.__projection_transfer_progress \
