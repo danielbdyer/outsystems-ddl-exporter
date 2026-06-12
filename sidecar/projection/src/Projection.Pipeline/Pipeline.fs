@@ -237,7 +237,7 @@ module Compose =
         |> Map.toSeq
         |> Seq.filter (fun (path, _) -> path.EndsWith(".sql"))
         |> Seq.map snd
-        |> String.concat "\nGO\n"  // LINT-ALLOW: terminal SQL-batch joiner across per-table SsdtBundle entries; segments are typed (each `Body` is the rendered ScriptDom output from SsdtDdlEmitter); BCL `String.concat` IS the use-case-specific library at the SQL-batch concatenation boundary
+        |> String.concat "\nGO\n\n"  // LINT-ALLOW: terminal SQL-batch joiner across per-table SsdtBundle entries; segments are typed (each `Body` is the rendered ScriptDom output from SsdtDdlEmitter); BCL `String.concat` IS the use-case-specific library at the SQL-batch concatenation boundary. Reconciliation slice 2 — blank line on BOTH sides of GO (V1 StatementBatchFormatter spacing)
 
     /// Run the three sibling Π's against a Catalog. Pure: same Catalog
     /// → same Outputs (T1 byte-determinism). Profile is `Profile.empty`
@@ -527,17 +527,19 @@ module Compose =
     /// Chapter C slice C.1 — production-shape project with caller-
     /// supplied full `Policy` + `Profile` threaded through the four
     /// tightening passes via `RegisteredTransforms.allChainStepsFor`.
-    /// Sibling to `project`; preserves the EmissionPolicy filter
-    /// behavior. Operator-tightening interventions registered in
-    /// `fullPolicy.Tightening.Interventions` fire here.
+    /// Sibling to `project`. The emission axis rides
+    /// `fullPolicy.Emission` — reconciliation slice 2 (`DECISIONS
+    /// 2026-06-12`) collapsed the former separate `EmissionPolicy`
+    /// parameter (one type, two channels, one config-fed — the
+    /// sibling-wrapper smell). Operator-tightening interventions
+    /// registered in `fullPolicy.Tightening.Interventions` fire here.
     let projectWith
         (fullPolicy: Policy)
         (profile: Profile)
-        (emissionPolicy: EmissionPolicy)
         (catalog: Catalog)
         : Outputs =
         let chain = RegisteredTransforms.allChainStepsFor fullPolicy profile
-        projectFromChain chain profile emissionPolicy catalog
+        projectFromChain chain profile fullPolicy.Emission catalog
 
     /// Chapter C slice C.2 — `projectWith` sibling that returns the
     /// post-chain `ComposeState` alongside the outputs. Used by
@@ -562,7 +564,6 @@ module Compose =
         (logicalEmissionPins: Set<SsKey>)
         (fullPolicy: Policy)
         (profile: Profile)
-        (emissionPolicy: EmissionPolicy)
         (folders: EmissionFolders)
         (groups: TransformGroups)
         (catalog: Catalog)
@@ -580,7 +581,7 @@ module Compose =
             projectFromChainWithState
                 chain
                 profile
-                emissionPolicy
+                fullPolicy.Emission
                 folders
                 groups
                 versionedPolicy
@@ -611,12 +612,11 @@ module Compose =
     let projectWithState
         (fullPolicy: Policy)
         (profile: Profile)
-        (emissionPolicy: EmissionPolicy)
         (folders: EmissionFolders)
         (groups: TransformGroups)
         (catalog: Catalog)
         : Outputs * ComposeState =
-        projectWithStateWithPins Set.empty fullPolicy profile emissionPolicy folders groups catalog
+        projectWithStateWithPins Set.empty fullPolicy profile folders groups catalog
 
     /// Skeleton-shape project: routes through
     /// `RegisteredTransforms.skeletonChainSteps` (per chapter A.4.7'
@@ -967,8 +967,14 @@ module Compose =
                     Insertion  = insertion
                     // AC-D7 — the operator's convergent-delete scope rides the
                     // Emission axis; absent (the default) the MERGE stays
-                    // upsert-only, byte-identical.
-                    Emission   = { Policy.empty.Emission with EmitData = emitData; DataComposition = dataComposition; DeleteScope = cfg.Emission.DeleteScope }
+                    // upsert-only, byte-identical. Reconciliation slice 2 —
+                    // `emission.includePlatformAutoIndexes` threads to the
+                    // collapsed seam (default true = current behavior).
+                    Emission   = { Policy.empty.Emission with
+                                     EmitData = emitData
+                                     DataComposition = dataComposition
+                                     DeleteScope = cfg.Emission.DeleteScope
+                                     IncludePlatformAutoIndexes = cfg.Emission.IncludePlatformAutoIndexes }
             }
         | _ ->
             let tighteningErrs = match tighteningR with Ok _ -> [] | Error es -> es
@@ -1052,16 +1058,18 @@ module Compose =
                 match policyR, overridesR, foldersR, groupsR with
                 | Ok policy, Ok overrides, Ok folders, Ok groups ->
                     let outputs, finalState =
-                        projectWithStateWithPins pins policy profile EmissionPolicy.empty folders groups renamedCatalog
+                        projectWithStateWithPins pins policy profile folders groups renamedCatalog
                     // `emission.dacpac: true` — compile the .dacpac over the SAME
                     // emitted catalog the SSDT step projected (the post-chain
-                    // catalog under the identical platform-auto-index filter).
+                    // catalog under the identical platform-auto-index filter —
+                    // the identical POLICY too, since reconciliation slice 2
+                    // collapsed the seam onto `policy.Emission`).
                     // Conditional by operator opt-in; a DacFx failure fails the
                     // run loud, never a silent bundle-without-package.
                     let dacpacR : Result<byte[] option> =
                         if not cfg.Emission.Dacpac then Result.success None
                         else
-                            EmissionPolicy.filterPlatformAutoIndexes EmissionPolicy.empty finalState.Catalog
+                            EmissionPolicy.filterPlatformAutoIndexes policy.Emission finalState.Catalog
                             |> DacpacEmitter.emit
                             |> Result.map Some
                     match dacpacR with
@@ -1214,7 +1222,7 @@ module Compose =
                   TransformGroupsBinding.fromConfig shaping with
             | Ok policy, Ok folders, Ok groups ->
                 let outputs, _ =
-                    projectWithStateWithPins pins policy Profile.empty EmissionPolicy.empty folders groups renamedCatalog
+                    projectWithStateWithPins pins policy Profile.empty folders groups renamedCatalog
                 Result.success outputs
             | p, f, g ->
                 Result.failure
@@ -1291,7 +1299,7 @@ module Compose =
                   TransformGroupsBinding.fromConfig shaping with
             | Ok policy, Ok folders, Ok groups ->
                 let _, finalState =
-                    projectWithStateWithPins pins policy Profile.empty EmissionPolicy.empty folders groups renamedCatalog
+                    projectWithStateWithPins pins policy Profile.empty folders groups renamedCatalog
                 Result.success finalState.Catalog
             | p, f, g ->
                 Result.failure
@@ -1400,7 +1408,7 @@ module Compose =
                   TransformGroupsBinding.fromConfig cfg with
             | Ok policy, Ok folders, Ok groups ->
                 let _, finalState =
-                    projectWithState policy Profile.empty EmissionPolicy.empty folders groups catalog
+                    projectWithState policy Profile.empty folders groups catalog
                 if not policy.Emission.EmitData then
                     Result.success (catalog, DataComposer.LeveledDeploymentText.empty)
                 else

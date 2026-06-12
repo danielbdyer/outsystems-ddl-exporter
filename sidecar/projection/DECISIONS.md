@@ -21950,3 +21950,101 @@ EnableCreation/profile-absence/orphan axes; the diagnostics split
 pinned both ways; the inheritance pin
 (ReferenceHasDbConstraintTests) re-stated alongside the new
 exclusion-contract pin.
+
+## 2026-06-12 — Slice 2 of the full-export reconciliation: the EmissionPolicy seam loses its second channel; `includePlatformAutoIndexes` becomes config-reachable; `GO` gains its trailing blank line
+
+Context: `V1_FULL_EXPORT_RECONCILIATION_PLAN.md` WP4 + WP7-GO (slice 2
+of the program slice 1 opened).
+
+**1. One type, two channels, one config-fed — collapsed.** The
+`projectWith` / `projectWithState` / `projectWithStateWithPins` family
+took a full `Policy` AND a separate `emissionPolicy: EmissionPolicy`
+parameter; the same type rode two channels and only the
+`fullPolicy.Emission` channel was config-fed. Every config-driven call
+site passed the literal `EmissionPolicy.empty` at the seam
+(`runWithConfigCore`, `projectWithConfig`, `applyShapingToCatalog`,
+`projectSeedPlan`, the dacpac filter), so `IncludePlatformAutoIndexes`
+— the one thing the parameter drove — was unreachable from any config.
+The separate parameter fails the sibling-wrapper distinguishing test
+(it hides information, supplying nothing the caller couldn't compute):
+the family now reads `fullPolicy.Emission`. The single-channel
+low-level faces (`project`, `projectFromChain*`, `projectSkeleton`)
+keep their plain `EmissionPolicy` parameter — there is no `Policy`
+at that altitude to collapse into (A18 posture unchanged: plain
+values at the seam). Byte-identical default: every `EmissionPolicy`
+constructed by `create` carries `IncludePlatformAutoIndexes = true`,
+so collapsing onto config-built policies preserves the filter's
+identity behavior exactly.
+
+**2. `emission.includePlatformAutoIndexes` (default `true`).** The
+chapter 4.8 slice-γ toggle gains its config key — A44's
+expressible ⇔ reachable for the collapsed channel. Default `true`
+preserves current bytes (the dacpac-wire precedent; note V1's
+*shipped* default-tightening.json said `false`, but V2's observed
+behavior is the contract — the matrix row records the divergence).
+Wired in `buildPolicyFromConfig`; the SSDT bundle and the dacpac
+compile over the SAME filtered catalog (the dacpac arm already read
+"the identical platform-auto-index filter" — now it is the identical
+*policy* too).
+
+**3. `BatchSeparator` renders `\nGO\n\n`.** V1's
+`StatementBatchFormatter` leaves a blank line before AND after `GO`
+(matrix row 128's split/assembly parity was real; the *spacing* was
+not). V2 emitted the leading blank only, so every multi-statement
+table differed in inter-statement spacing even when the statements
+matched. The renderer gains the trailing blank; `aggregateSsdt`'s
+joiner aligns (`\nGO\n` → `\nGO\n\n`). V2 keeps its terminal `GO`
+after the final statement (V1 trims it; harmless, sqlcmd-safe — V2
+wins, recorded on the matrix row). `BatchSplitter` recognition
+(`^GO$`) is whitespace-line tolerant; the leveled-plan partition law
+compares the data lane's `;\nGO\n`-framed segments, which this does
+not touch.
+
+Witnesses: the seam-collapse compiles every caller onto one channel
+(the type system is the witness); config-reachability pinned by a
+`projectWithConfig` test (platform-auto index present under default,
+absent under `includePlatformAutoIndexes: false`); the GO spacing
+pinned at the renderer grain (`statement / blank / GO / blank /
+statement`).
+
+## 2026-06-12 — THE GOLDEN EMISSION adopted: the Platonic corpus, the blessing protocol, and the first recording's findings
+
+Operator-directed (the reconciliation program's companion discipline;
+charter at `THE_GOLDEN_EMISSION.md`). The canaries prove laws; the
+corpus pins INTENT: one contrived catalog carrying every expressible
+emission variance (`GoldenCatalog.fs`), emitted through the production
+config-driven composition under three scenario configs (`default`,
+`pruned-platform-auto`, `delete-scope`), byte-compared against the
+git-tracked corpus (`tests/Projection.Tests/Golden/`). Re-record only
+via `GOLDEN_RECORD=1` AND a DECISIONS note naming why — the
+`PERF_GATE_RECORD` discipline, extended to bytes. Negative invariants
+(no per-table GO; no duplicate FK names; no inverse-sourced FKs; no
+CRLF; non-empty GO batches) assert on every scenario regardless of
+bytes. `manifest.json` is EXCLUDED (the `VersionedPolicy` stamp
+captures `UtcNow` at the Pipeline boundary — wall-clock-bearing bytes;
+unblock = boundary-injected clock); the dacpac is excluded per its
+standing byte-determinism deferral.
+
+**The first recording found two real things** (the corpus working as
+designed before it was even committed):
+
+1. **Delete-scope terms resolve POST-CHAIN.** `DeleteScopePolicy`'s
+   doc says terms name PHYSICAL columns, but `resolveFor` runs against
+   the post-`LogicalColumnEmission` catalog — under the default
+   logical rendition the operator must write the LOGICAL column name
+   or the arm silently fails to attach (resolveFor's None is the
+   documented faithful-omission, which here masked a config mistake).
+   The doc/semantics reconciliation (and whether a non-resolving
+   explicit term deserves a named note instead of silence) rides the
+   reconciliation plan's WP4 follow-on.
+2. **Per-table bodies do not end with a newline** — every
+   `Modules/**.sql` ends at the last statement's final char. Recorded
+   as-is (known-unblessed); the trailing-newline normalization joins
+   WP7's per-table formatting work.
+
+The initial corpus deliberately pins CURRENT behavior including the
+known-unblessed rows (V2.* annotation names pre-WP5-rename; verbatim
+physical index names pre-WP7; `DEFAULT NULL` for the empty-string-Text
+tolerance; one-line per-table constraints; explicit `ON DELETE NO
+ACTION` in file bodies; SsKey column order pre-WP8) — each later slice
+converts its rows into blessed bytes as a deliberate, reviewable diff.

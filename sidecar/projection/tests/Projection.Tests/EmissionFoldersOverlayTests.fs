@@ -78,7 +78,7 @@ let private kindByName (catalog: Catalog) (name: string) : Kind =
     |> List.find (fun k -> Name.value k.Name = name)
 
 let private projectFor (folders: EmissionFolders) (catalog: Catalog) : Compose.Outputs =
-    Compose.projectWithState Policy.empty Profile.empty EmissionPolicy.empty folders TransformGroups.empty catalog
+    Compose.projectWithState Policy.empty Profile.empty folders TransformGroups.empty catalog
     |> fst
 
 let private sqlPaths (outputs: Compose.Outputs) : Set<string> =
@@ -107,7 +107,6 @@ let ``C.3: empty EmissionFolders yields byte-identical outputs to no-override pr
         Compose.projectWithState
             Policy.empty
             Profile.empty
-            EmissionPolicy.empty
             EmissionFolders.empty
             TransformGroups.empty
             catalog

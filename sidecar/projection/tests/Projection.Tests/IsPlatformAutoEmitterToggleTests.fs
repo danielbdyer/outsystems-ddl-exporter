@@ -101,3 +101,37 @@ let ``Slice δ: Compose.project with IncludePlatformAutoIndexes=false prunes pla
         |> EmissionPolicy.withIncludePlatformAutoIndexes false
     let outputs = Compose.project policy catalogBoth
     Assert.Equal(1, countCreateIndexInBundle outputs.SsdtBundle)
+
+// ---------------------------------------------------------------------------
+// Reconciliation slice 2 (DECISIONS 2026-06-12) — A44 reachability. The
+// toggle rides `emission.includePlatformAutoIndexes` through the
+// config-driven seam: the former second `EmissionPolicy` channel is
+// collapsed onto `policy.Emission`, so the config-built policy IS the
+// emission policy the post-chain filter consults.
+// ---------------------------------------------------------------------------
+
+let private mustOk (r: Result<'a>) : 'a =
+    match r with Ok v -> v | Error e -> failwithf "expected Ok, got %A" e
+
+let private configWithIncludeAuto (value: bool) : Config.Config =
+    { Config.defaultConfig with
+        Emission = { Config.defaultConfig.Emission with IncludePlatformAutoIndexes = value } }
+
+[<Fact>]
+let ``Slice 2: projectWithConfig default keeps platform-auto indexes (byte-identical default)`` () =
+    let outputs = Compose.projectWithConfig Config.defaultConfig catalogBoth |> mustOk
+    Assert.Equal(2, countCreateIndexInBundle outputs.SsdtBundle)
+
+[<Fact>]
+let ``Slice 2: emission.includePlatformAutoIndexes=false reaches the post-chain seam (expressible ⇔ reachable)`` () =
+    let outputs = Compose.projectWithConfig (configWithIncludeAuto false) catalogBoth |> mustOk
+    Assert.Equal(1, countCreateIndexInBundle outputs.SsdtBundle)
+
+[<Fact>]
+let ``Slice 2: Config.parseLenient reads emission.includePlatformAutoIndexes (absent key defaults true)`` () =
+    let withKey =
+        Config.parseLenient """{ "emission": { "includePlatformAutoIndexes": false } }""" |> mustOk
+    Assert.False withKey.Emission.IncludePlatformAutoIndexes
+    let withoutKey =
+        Config.parseLenient """{ "emission": { } }""" |> mustOk
+    Assert.True withoutKey.Emission.IncludePlatformAutoIndexes

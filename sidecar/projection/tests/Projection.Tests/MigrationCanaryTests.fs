@@ -765,7 +765,7 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
         let policy =
             { Policy.empty with Emission = { Policy.empty.Emission with EmitData = true; DataComposition = AllRemaining } }
         let outputs =
-            Compose.projectWithState policy Profile.empty EmissionPolicy.empty EmissionFolders.empty TransformGroups.empty catalog
+            Compose.projectWithState policy Profile.empty EmissionFolders.empty TransformGroups.empty catalog
             |> fst
         let ddl = Compose.aggregateSsdt outputs.SsdtBundle
         let seed = Map.find "Data/seed.sql" outputs.DataBundle
@@ -824,7 +824,7 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
         let policy =
             { Policy.empty with Emission = { Policy.empty.Emission with EmitData = true; DataComposition = AllRemaining } }
         let outputs =
-            Compose.projectWithState policy Profile.empty EmissionPolicy.empty EmissionFolders.empty TransformGroups.empty catalog
+            Compose.projectWithState policy Profile.empty EmissionFolders.empty TransformGroups.empty catalog
             |> fst
         let ddl = Compose.aggregateSsdt outputs.SsdtBundle
         let seed = Map.find "Data/seed.sql" outputs.DataBundle
@@ -916,7 +916,7 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
         let policy =
             { Policy.empty with Emission = { Policy.empty.Emission with EmitData = true; DataComposition = AllRemaining } }
         let outputs, finalState =
-            Compose.projectWithState policy Profile.empty EmissionPolicy.empty EmissionFolders.empty TransformGroups.empty catalog
+            Compose.projectWithState policy Profile.empty EmissionFolders.empty TransformGroups.empty catalog
         let ddl = Compose.aggregateSsdt outputs.SsdtBundle
         // The plan composes over the POST-CHAIN catalog — exactly what the
         // production seam (`Compose.projectSeedPlan`) does, so the MERGEs

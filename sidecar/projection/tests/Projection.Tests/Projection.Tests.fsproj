@@ -282,6 +282,8 @@
     <Compile Include="DecisionOverlayTests.fs" />
     <Compile Include="DecisionEmissionTests.fs" />
     <Compile Include="DeployableReferenceTests.fs" />
+    <Compile Include="GoldenCatalog.fs" />
+    <Compile Include="GoldenEmissionTests.fs" />
     <Compile Include="JsonEmitterTests.fs" />
     <Compile Include="CatalogCodecTests.fs" />
     <Compile Include="ProfileCodecTests.fs" />

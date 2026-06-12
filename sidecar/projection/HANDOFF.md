@@ -1,3 +1,36 @@
+# Handoff addendum — 2026-06-12, reconciliation slice 2 CLOSE + THE GOLDEN EMISSION adopted
+
+To the next agent.
+
+**Slice 2 (WP4 + WP7-GO) shipped** (`DECISIONS 2026-06-12 — Slice 2`):
+the `projectWith*` family lost its second `EmissionPolicy` channel
+(`fullPolicy.Emission` is the one channel; every config-driven
+`EmissionPolicy.empty` literal dissolved);
+`emission.includePlatformAutoIndexes` is config-reachable (default
+true; CONFIG_REFERENCE updated); `BatchSeparator` renders `\nGO\n\n`
+(V1's blank-both-sides framing; `aggregateSsdt` joiner aligned). Fast
+pool green; Docker pool 231/231 green on the warm container.
+
+**THE GOLDEN EMISSION is live** (`THE_GOLDEN_EMISSION.md`; DECISIONS
+entry of the same date): the Platonic catalog (`GoldenCatalog.fs`,
+every expressible emission variance), three scenario configs, the
+byte comparator + `GOLDEN_RECORD=1` blessing protocol, and the
+committed corpus at `tests/Projection.Tests/Golden/`. The first
+recording already found two real things: delete-scope terms resolve
+POST-chain (logical column names under the default rendition — doc
+mismatch recorded), and per-table bodies lack trailing newlines. From
+now on: **a slice that changes emission lands with its golden diff in
+the same commit** — the diff is the operator-blessing surface. The
+known-unblessed inventory rows in §4 are the reconciliation plan's
+worklist intersected with the corpus.
+
+Queue unchanged otherwise: slice 3 = WP3 (scope pushdown), then WP6
+(data lanes — IDENTITY_INSERT strictly before hydration), WP5 (C1
+rename + gate — its golden diff will be the worked example of the
+blessing protocol), WP7/WP8, WP9. J5 still trumps everything.
+
+---
+
 # Handoff addendum — 2026-06-12, reconciliation slice 1 CLOSE (inverse references are logical-only edges; the FK decision layer reads `HasDbConstraint`)
 
 To the next agent.

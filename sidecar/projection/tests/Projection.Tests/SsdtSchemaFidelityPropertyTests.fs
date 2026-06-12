@@ -302,6 +302,28 @@ let ``5.3.α.statement-batch: per-kind file body does not contain GO separator``
             body.Split('\n')
             |> Array.exists (fun line -> line.Trim() = "GO"))
 
+[<Fact>]
+let ``reconciliation slice 2: flat-stream GO is framed by a blank line on BOTH sides (V1 StatementBatchFormatter spacing)`` () =
+    // V1 (StatementBatchFormatter.cs:44-58) leaves a blank line before
+    // AND after GO between statements; V2 emitted the leading blank
+    // only, so every multi-statement table differed in spacing even
+    // when the statements matched (DECISIONS 2026-06-12, slice 2).
+    let text =
+        SsdtDdlEmitter.statements sampleCatalog
+        |> Render.toText
+    let lines = text.Split('\n') |> Array.map (fun l -> l.TrimEnd('\r'))
+    let goIndexes =
+        lines
+        |> Array.indexed
+        |> Array.filter (fun (_, l) -> l.Trim() = "GO")
+        |> Array.map fst
+    Assert.NotEmpty goIndexes
+    for i in goIndexes do
+        Assert.True (i > 0 && lines.[i - 1].Trim() = "",
+            sprintf "GO at line %d is not preceded by a blank line" i)
+        Assert.True (i + 1 < lines.Length && lines.[i + 1].Trim() = "",
+            sprintf "GO at line %d is not followed by a blank line" i)
+
 // ---------------------------------------------------------------------------
 // Deferred axes — Skip-stubs reserve contract names + name triggers.
 // Per the operating-disciplines table "Skip = "..." for deliberate V2
