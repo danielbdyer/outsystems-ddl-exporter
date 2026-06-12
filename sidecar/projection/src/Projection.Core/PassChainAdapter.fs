@@ -17,7 +17,8 @@ namespace Projection.Core
 ///
 /// `Apply` is a Kleisli endo-arrow `Pass<ComposeState, ComposeState>`
 /// (H-003 type alias in `Diagnostics.fs`). The fold in `compose` is
-/// `Pass.composeAll` modulo per-step Bench scoping.
+/// `Pass.composeAll` over `Meter.pass`-decorated arrows (§9.8.5 — the
+/// former "modulo per-step Bench scoping", factored into a value).
 type PassChainAdapter = {
     Name : string
     Apply : Pass<ComposeState, ComposeState>
@@ -102,16 +103,18 @@ module PassChainAdapter =
     /// Chapter A.4.7' slice γ — fold a `PassChainAdapter list` into
     /// one composed Apply step.
     ///
-    /// **H-003 — Kleisli structure.** This is `Pass.composeAll` over the
+    /// **H-003 — Kleisli structure.** This IS `Pass.composeAll` over the
     /// pass-chain endo-arrows (`Pass<ComposeState, ComposeState> list`),
-    /// modulo per-step Bench scoping. Each adapter's `Apply` is a
-    /// Kleisli arrow; folding `LineageDiagnostics.bind` from the
-    /// identity arrow (`LineageDiagnostics.ofValue state`) computes
+    /// each decorated by `Meter.pass` (§9.8.5 — the per-step Bench
+    /// scoping, factored from "modulo" prose into a value; card S1).
+    /// `composeAll` folds `compose` from the identity arrow, computing
     /// `(((id >=> a₁) >=> a₂) >=> … >=> aₙ) state`. Both writers'
     /// trails compose chronologically (A24 for Lineage; same convention
-    /// for Diagnostics). The Kleisli identity and associativity laws
-    /// underwrite the fold's correctness — tested in
-    /// `KleisliLawTests.fs` against the algebraic `Pass.composeAll`.
+    /// for Diagnostics); `Meter.pass` is identity on the value plane, so
+    /// the decoration is invisible to the algebra. The Kleisli laws are
+    /// tested in `DiagnosticsTests.fs` (H-003) against the algebraic
+    /// `Pass.composeAll`; the per-step labels keep their exact bytes
+    /// (`compose.passChain.<Name>` — the perf surfaces read them).
     ///
     /// Slice δ consumes `compose RegisteredTransforms.allChainSteps`
     /// inside `Compose.project`; slice ε consumes
@@ -124,14 +127,13 @@ module PassChainAdapter =
         (state: ComposeState)
         : Lineage<Diagnostics<ComposeState>> =
         use _ = Bench.scope "compose.passChain.compose"
-        adapters
-        |> List.fold
-            (fun acc adapter ->
-                let timedApply (s: ComposeState) =
-                    use _ = Bench.scope (System.String.Concat("compose.passChain.", adapter.Name))
-                    adapter.Apply s
-                LineageDiagnostics.bind timedApply acc)
-            (LineageDiagnostics.ofValue state)
+        let metered =
+            adapters
+            |> List.map (fun adapter ->
+                Meter.pass
+                    (System.String.Concat("compose.passChain.", adapter.Name))
+                    adapter.Apply)
+        Pass.composeAll metered state
 
 
 /// A single registered pass-chain step — the **single definition site**

@@ -424,10 +424,17 @@ PERF_OPPORTUNITIES A3/A4 priors are now one command to re-interrogate.
 
 ### Stage 2 — the spine (R2, corrected per RI-2)
 
-**S1 · The spine types + the decoration value.** `StageName`/`RunSpine` (private smart
-ctors), `StagedOutcome = Completed of ms | Aborted of refusal | Skipped of reason` (the RI-2
-third arm), and `Meter.pass` extracted **as part of this card** (RI-6: its second consumer
-arrives here). *Witness:* `` `Meter.pass p ≡ p on the value plane` ``. S. Deps: none.
+**S1 · The spine types + the decoration value — DONE 2026-06-12.** Shipped: `StageName`/
+`RunSpine` (private smart ctors, `RunSpine.fs` after `LogSink.fs` so the S2 CE can join the
+file with LogSink in scope), `StagedOutcome = Completed of durationMs | Aborted of refusal |
+Skipped of reason` (the RI-2 third arm), and `Meter.pass` extracted (`Meter.fs`, Core, after
+`Diagnostics.fs`) with `PassChainAdapter.compose` rewired as its first consumer — the fold is
+now literally `Pass.composeAll` over `Meter.pass`-decorated arrows. The §9.8.5 sketch's
+`Meter.pass s.Name` label form was REFUSED: the live label bytes (`compose.passChain.<Name>`)
+predate the cut and the perf surfaces read them; the rewrite keeps them byte-identical.
+*Witnesses shipped:* `` `Meter.pass p ≡ p on the value plane — decoration is invisible to
+the algebra` `` + the distribution-over-composition property + the two smart-ctor pins
+(`RunSpineTests.fs`). §9.8.5 carries the landed-outcome note. S. Deps: none.
 Rollback: revert; types unused until S2.
 
 **S2 · The `staged{}` CE + the law.** Bind brackets (Bench scope, `<stage>.started/.completed`

@@ -526,9 +526,10 @@ module LineageDiagnosticsBuilders =
 /// concat).
 ///
 /// **Operational meaning.** The pass-chain fold in
-/// `PassChainAdapter.compose` (line 61) is exactly `Pass.composeAll`:
-/// folding `bind` over a list of arrows starting from the identity.
-/// Naming the alias makes the algebra legible without changing behavior.
+/// `PassChainAdapter.compose` is exactly `Pass.composeAll` over
+/// `Meter.pass`-decorated arrows (§9.8.5): folding `bind` over a list of
+/// arrows starting from the identity. Naming the alias makes the algebra
+/// legible without changing behavior.
 ///
 /// **A18 amended bound.** `Pass<'a, 'b>` is the structural witness that
 /// passes consume only `'a` (typically `Catalog` or `ComposeState`) —
@@ -565,9 +566,10 @@ module Pass =
 
     /// Compose a list of endo-arrows into one. Folds with `compose` over
     /// `Pass.id`; the empty list reduces to `Pass.id`. This is the
-    /// algebraic content of `PassChainAdapter.compose` minus the per-
-    /// step Bench scoping — the registry-driven pass chain IS this
-    /// fold under different operational decoration.
+    /// algebraic content of `PassChainAdapter.compose` — which consumes
+    /// it directly over `Meter.pass`-decorated arrows (§9.8.5; the
+    /// decoration is identity on the value plane, so the registry-driven
+    /// pass chain IS this fold).
     let composeAll<'a when 'a : equality> (steps: Pass<'a, 'a> list) : Pass<'a, 'a> =
         steps |> List.fold (fun acc step -> compose acc step) id
 
