@@ -207,9 +207,79 @@ module Voice =
                    | None   -> [])
           Action         = fun _ -> None }
 
+    /// `deploy.completed` — the deploy verdict (`THE_VOICE.md` §3): the change
+    /// build landed in SQL Server. Resultative and agentless; the ephemeral
+    /// database name is the substantiation, never the lead.
+    let private deployCompleted : Copy =
+        { Code           = "deploy.completed"
+          DocSection     = "§3"
+          Statement      =
+            fun p ->
+                match text "tableCount" p with
+                | Some n -> View.Hero(View.Ok, sprintf "Deploy complete — %s tables created." (humane n))
+                | None   -> View.Hero(View.Ok, "Deploy complete.")
+          Substantiation =
+            fun p ->
+                match text "database" p with
+                | Some db -> [ View.Field("database", db, View.Neutral) ]
+                | None    -> []
+          Action         = fun _ -> None }
+
+    /// `deploy.ssdtRejected` — SQL Server rejected the emitted SSDT
+    /// (`THE_VOICE.md` §10): the statement is the plain finding; the server's
+    /// own messages are demoted into a disclosure (the substantiation), exactly
+    /// as `canary.divergence` demotes the rendered diff. The database name rides
+    /// beneath; the move ends the surface.
+    let private deploySsdtRejected : Copy =
+        { Code           = "deploy.ssdtRejected"
+          DocSection     = "§10"
+          Statement      = fun _ -> View.Hero(View.Bad, "SQL Server rejected the change build. The server's findings are shown below.")
+          Substantiation =
+            fun p ->
+                (match text "database" p with
+                 | Some db -> [ View.Field("database", db, View.Neutral) ]
+                 | None    -> [])
+                @ (match text "serverErrors" p with
+                   | Some es ->
+                       let lines =
+                           es.Split '\n'
+                           |> Array.toList
+                           |> List.filter (fun l -> l.Trim() <> "")
+                       [ View.Disclosure("the server's findings", View.Bad, lines |> List.map View.Note) ]
+                   | None -> [])
+          Action         = fun _ -> Some(View.Action "Resolve the findings, then redeploy.") }
+
     // §13 — lifecycle & the live run (Watch). Stage names are what they do for the
     //       operator, never the engine verb. The gerund names a live activity in
     //       progress (rule 12 exception); a completed stage is resultative.
+
+    /// `container.starting` — an ephemeral SQL Server container is coming up for
+    /// a run that needs one (`THE_VOICE.md` §13). Gerund-in-progress (rule 12
+    /// exception); `purpose` names which face the container serves.
+    let private containerStarting : Copy =
+        { Code           = "container.starting"
+          DocSection     = "§13"
+          Statement      =
+            fun p ->
+                match text "purpose" p with
+                | Some purpose -> View.Note(sprintf "Starting an ephemeral SQL Server container for the %s." purpose)
+                | None         -> View.Note "Starting an ephemeral SQL Server container."
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
+    /// `deploy.bundleEmitted` — the change build is complete and its SSDT bundle
+    /// is in hand (`THE_VOICE.md` §13, resultative). The entry count grounds the
+    /// line; the emitter internals (the JSON node machinery) stay off the surface.
+    let private deployBundleEmitted : Copy =
+        { Code           = "deploy.bundleEmitted"
+          DocSection     = "§13"
+          Statement      =
+            fun p ->
+                match text "entryCount" p with
+                | Some n -> View.Note(sprintf "Change build complete — %s SSDT bundle entries." (humane n))
+                | None   -> View.Note "Change build complete."
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
 
     /// `episode.recorded` — the run's durable record (`THE_VOICE.md` §13 — "This
     /// run recorded to the history."). Stative and agentless: the record is a
@@ -436,6 +506,21 @@ module Voice =
                 @ (match text "code" p with Some c -> [ View.Field("code", c, View.Neutral) ] | None -> [])
           Action         = fun _ -> Some(View.Action "Correct the configuration and rerun.") }
 
+    /// `docker.unavailable` — a face that needs an ephemeral SQL Server cannot
+    /// reach the Docker daemon (`THE_VOICE.md` §14 required-and-missing): the
+    /// requirement and how to provide it, stated without scolding. `purpose`
+    /// names the face the daemon is required for.
+    let private dockerUnavailable : Copy =
+        { Code           = "docker.unavailable"
+          DocSection     = "§14"
+          Statement      =
+            fun p ->
+                View.Hero(View.Warn,
+                    sprintf "A reachable Docker daemon is required for the %s. Start the daemon or set DOCKER_HOST, then retry."
+                        (textOr "purpose" "run" p))
+          Substantiation = fun _ -> []
+          Action         = fun _ -> Some(View.Action "Start the Docker daemon or set DOCKER_HOST, then retry.") }
+
     // ------------------------------------------------------------------
     // The harvest — `all` gathers every declared copy into one catalog.
     // The `code ⇔ copy` totality test reads this (the sibling of the
@@ -451,8 +536,12 @@ module Voice =
           canaryDivergence
           summaryRunComplete
           loadCompleted
+          deployCompleted
+          deploySsdtRejected
           // §13 — lifecycle / Watch (the spine + the per-stage stream)
           episodeRecorded
+          containerStarting
+          deployBundleEmitted
           configRunStart
           configConnectionResolved
           extractStarted
@@ -470,7 +559,8 @@ module Voice =
           watchStageHalted
           summaryStageCompleted
           // §14 / §10 — config & errors
-          configValidationFailed ]
+          configValidationFailed
+          dockerUnavailable ]
 
     /// Look a code's copy up. `None` when the code is not yet voiced — the
     /// totality test guarantees every in-scope LIVE code IS voiced, so a `None`

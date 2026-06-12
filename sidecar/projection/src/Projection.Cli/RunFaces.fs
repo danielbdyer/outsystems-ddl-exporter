@@ -235,12 +235,14 @@ type private DeployStop =
 
 let runDeploy (shaping: Config.Config) (catalog: Catalog) : int =
     if not (Deploy.Docker.isAvailable ()) then
-        die
-            4
-            "projection: Docker daemon not reachable. Set DOCKER_HOST or start the daemon to run `deploy`."
+        // §14 required-and-missing, voiced by code (`docker.unavailable`).
+        TtyRenderer.renderVoicedTo Console.Error "docker.unavailable"
+            (Map.ofList [ "purpose", box "deploy" ])
+        4
     else
         let runBody () =
-            printfn "projection: spinning up an ephemeral SQL Server container..."
+            TtyRenderer.renderVoicedTo Console.Out "container.starting"
+                (Map.ofList [ "purpose", box "deploy" ])
             // Card S3 — the face rides the spine: the `staged { }` CE owns the
             // deploy stage's bracket (started/completed envelopes + the §10
             // stage table + `Bench.scope "stage.deploy"`); the face maps the
@@ -260,32 +262,30 @@ let runDeploy (shaping: Config.Config) (catalog: Catalog) : int =
                     return landed
                 }).GetAwaiter().GetResult()
             let emittedLine (outputs: Compose.Outputs) =
-                printfn
-                    "projection: emitted %d SSDT bundle entries (JSON + distributions: typed JsonNode)"
-                    (Map.count outputs.SsdtBundle)
+                // §13 resultative stage line, voiced by code.
+                TtyRenderer.renderVoicedTo Console.Out "deploy.bundleEmitted"
+                    (Map.ofList [ "entryCount", box (Map.count outputs.SsdtBundle) ])
             match verdict.Disposition with
             | RunCompleted (outputs, report) ->
                 emittedLine outputs
-                printfn
-                    "projection: deploy succeeded — database `%s`, %d table(s) landed"
-                    report.Database
-                    report.TablesCreated
+                // §3 — the deploy verdict, voiced (`deploy.completed`); the
+                // ephemeral database name is the substantiation.
+                TtyRenderer.renderVoicedTo Console.Out "deploy.completed"
+                    (Map.ofList
+                        [ "database",   box report.Database
+                          "tableCount", box report.TablesCreated ])
                 0
             | RunStopped (SsdtRejected (outputs, report)) ->
                 emittedLine outputs
-                // Per chapter 3.5 deep audit (2026-05-09): CLI
-                // error emission via per-line `Console.Error
-                // .WriteLine`. Typed list flows in; per-segment
-                // writes flow out; no concatenation. Header line
-                // composes via `Console.Error.Write` segments —
-                // each typed value (`report.Database`) emitted
-                // independently.
-                Console.Error.Write "projection: SQL Server rejected the SSDT in database `"
-                Console.Error.Write report.Database
-                Console.Error.WriteLine "`:"
-                for line in report.Errors do
-                    Console.Error.Write "  "
-                    Console.Error.WriteLine line
+                // §10 — the rejection verdict, voiced (`deploy.ssdtRejected`):
+                // the statement is the register's finding; the server's own
+                // error lines are demoted into the disclosure beneath, the
+                // exact shape `canary.divergence` set. The newline join is
+                // data marshalling into the envelope payload, not prose.
+                TtyRenderer.renderVoicedTo Console.Error "deploy.ssdtRejected"
+                    (Map.ofList
+                        [ "database",     box report.Database
+                          "serverErrors", box (String.concat "\n" report.Errors) ])
                 3
             | RunStopped (DeployCatalogInvalid errors) ->
                 printErrors Console.Error errors

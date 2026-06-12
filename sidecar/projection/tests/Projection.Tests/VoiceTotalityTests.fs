@@ -28,7 +28,12 @@ let private inScopeCodes : Set<string> =
           "config.validationFailed"
           // the run-face verdict codes (`RunFaces` register migration) — the
           // §4/§6 publish-and-load verdict and the §13 durable-record line
-          "load.completed"; "episode.recorded" ]
+          "load.completed"; "episode.recorded"
+          // the deploy face: the §3 verdict, the §10 SSDT rejection (server
+          // findings demoted to the disclosure), the §13 stage lines, and the
+          // §14 Docker requirement
+          "deploy.completed"; "deploy.ssdtRejected"
+          "container.starting"; "deploy.bundleEmitted"; "docker.unavailable" ]
 
 // The codes the engine can actually emit today (the inventory — the contract the
 // totality test holds Voice to). Voicing a code outside this set would be copy for
@@ -59,6 +64,10 @@ let private knownEmittableCodes : Set<string> =
           // render. `load.completed` is `full-export --load`'s publish-and-load
           // verdict; `episode.recorded` is the §13 durable-record line.
           "load.completed"; "episode.recorded"
+          // the deploy face's verdicts + stage lines + the §14 Docker
+          // requirement (shared with the canary faces)
+          "deploy.completed"; "deploy.ssdtRejected"
+          "container.starting"; "deploy.bundleEmitted"; "docker.unavailable"
           // emitted but voiced by mechanism-1 / later slices (not in `Voice.all` yet)
           "transform.registered"; "transform.applied"; "transform.declined"
           "transform.lineage"; "transform.diagnostic"; "bench.label" ]
@@ -95,7 +104,11 @@ let private samplePayload : Voice.Payload =
           "artifactCount", box 7
           "capturedRows",  box 4210
           "episodeCount",  box 3
-          "timeline",      box "DEV" ]
+          "timeline",      box "DEV"
+          "purpose",       box "deploy"
+          "entryCount",    box 12
+          "database",      box "projection_canary_01"
+          "serverErrors",  box "Incorrect syntax near 'GO'.\nThe object 'dbo.Order' already exists." ]
 
 // ---------------------------------------------------------------------------
 // code ⇔ copy totality
@@ -184,6 +197,40 @@ let ``Voice register: the error frames clear the banned list`` () =
     for code in codes do
         let surface = Voice.errorSurface (ValidationError.create code "a located cause")
         assertClean (sprintf "errorSurface %s" code) (Surface.render surface)
+
+// ---------------------------------------------------------------------------
+// the deploy face's §10 rejection — statement in the register, the server's
+// findings demoted to the substantiation (the canary.divergence shape)
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``Voice deploy.ssdtRejected: the statement is the finding and the server lines are the disclosure`` () =
+    let payload : Voice.Payload =
+        Map.ofList
+            [ "database",     box "projection_dpl_01"
+              "serverErrors", box "Incorrect syntax near 'GO'.\nThe object 'dbo.Order' already exists." ]
+    match Voice.surfaceOf "deploy.ssdtRejected" payload with
+    | None -> Assert.Fail "deploy.ssdtRejected is unvoiced"
+    | Some surface ->
+        // The lead is a plain Bad verdict, never a raw server line.
+        match surface.Statement with
+        | View.Hero(View.Bad, text) -> Assert.Contains("rejected the change build", text)
+        | other -> Assert.Fail(sprintf "statement is not a Bad Hero: %A" other)
+        // Every server line is demoted into the disclosure, one Note each.
+        let disclosed =
+            surface.Substantiation
+            |> List.collect (function View.Disclosure(_, _, detail) -> detail | _ -> [])
+        Assert.Equal(2, List.length disclosed)
+        // The surface ends on the move.
+        match surface.Action with
+        | Some (View.Action _) -> ()
+        | other -> Assert.Fail(sprintf "no imperative next move: %A" other)
+
+[<Fact>]
+let ``Voice deploy.ssdtRejected: an empty payload still leads with the finding`` () =
+    match Voice.surfaceOf "deploy.ssdtRejected" Map.empty with
+    | Some { Statement = View.Hero(View.Bad, _) } -> ()
+    | other -> Assert.Fail(sprintf "unexpected empty-payload surface: %A" other)
 
 // ---------------------------------------------------------------------------
 // the stage-name mapping (THE_VOICE.md §13 — operator-shaped, never the verb)
