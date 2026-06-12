@@ -23,6 +23,17 @@ open System.Security.Cryptography
 /// projection (`toLedgerEntry`), so the run *subsumes* the ledger row.
 module Run =
 
+    /// R1a — a reference to a durable ledger the run touched. The run
+    /// aggregate carries WHERE its ledgers live, never their content: the
+    /// capture journal by its digest (the digest IS the filename,
+    /// `transfer-<digest16>.ndjson` — RI-7), the episode by its timeline
+    /// coordinate. `LedgerRef` is the run-side name for the R3 contract's
+    /// instances (L1–L4): a stored run can answer "which chains did this
+    /// run extend?" offline.
+    type LedgerRef =
+        | JournalRef of digest: string
+        | EpisodeRef of timeline: string * ordinal: int
+
     type Run = {
         RunId       : string
         Ts          : string
@@ -42,6 +53,13 @@ module Run =
         /// makes a `runId` resolve to *artifacts* (so diff / migrate / explain
         /// can operate offline from a stored run), not just events.
         Artifacts   : Map<string, string>
+        /// R1a — the ledgers this run extended (journal digests + episode
+        /// coordinates). Empty for runs that touched no chain.
+        Ledgers     : LedgerRef list
+        /// R1a — the run's measurement snapshot, when one was captured
+        /// (R1c keys the BenchSink file by RunId; this carries the value
+        /// on the aggregate so `diff <runA> <runB>` can compare offline).
+        Bench       : Projection.Core.Bench.Run option
     }
 
     /// Content-address the run by its inputs. Two runs with the same config +
@@ -72,6 +90,42 @@ module Run =
         let art = JsonObject()
         for KeyValue(k, v) in r.Artifacts do art.[k] <- JsonValue.Create v
         o.["artifacts"] <- art
+        // R1a — codec totality over the completed aggregate: every field
+        // on the record round-trips (the load(save run) = run predicate).
+        let ledgers = JsonArray()
+        for l in r.Ledgers do
+            let lo = JsonObject()
+            (match l with
+             | JournalRef digest ->
+                 lo.["kind"]   <- JsonValue.Create "journal"
+                 lo.["digest"] <- JsonValue.Create digest
+             | EpisodeRef (timeline, ordinal) ->
+                 lo.["kind"]     <- JsonValue.Create "episode"
+                 lo.["timeline"] <- JsonValue.Create timeline
+                 lo.["ordinal"]  <- JsonValue.Create ordinal)
+            ledgers.Add lo
+        o.["ledgers"] <- ledgers
+        (match r.Bench with
+         | None -> ()
+         | Some b ->
+             let bo = JsonObject()
+             bo.["capturedAtUtc"] <- JsonValue.Create (b.CapturedAtUtc.ToString("o"))
+             bo.["tag"] <- JsonValue.Create b.Tag
+             let sa = JsonArray()
+             for s in b.Stats do
+                 let so = JsonObject()
+                 so.["label"]   <- JsonValue.Create s.Label
+                 so.["count"]   <- JsonValue.Create s.Count
+                 so.["totalMs"] <- JsonValue.Create s.TotalMs
+                 so.["minMs"]   <- JsonValue.Create s.MinMs
+                 so.["maxMs"]   <- JsonValue.Create s.MaxMs
+                 so.["meanMs"]  <- JsonValue.Create s.MeanMs
+                 so.["p50Ms"]   <- JsonValue.Create s.P50Ms
+                 so.["p95Ms"]   <- JsonValue.Create s.P95Ms
+                 so.["p99Ms"]   <- JsonValue.Create s.P99Ms
+                 sa.Add so
+             bo.["stats"] <- sa
+             o.["bench"] <- bo)
         o.ToJsonString(JsonSerializerOptions(WriteIndented = true))
 
     let private parse (json: string) : Run option =
@@ -97,11 +151,56 @@ module Run =
                 if root.TryGetProperty("artifacts", &v) && v.ValueKind = JsonValueKind.Object
                 then [ for p in v.EnumerateObject() -> (p.Name, nz (p.Value.GetString())) ] |> Map.ofList
                 else Map.empty
+            // R1a — total over the new fields; a pre-R1a run.json (no
+            // 'ledgers' / 'bench') loads with the empty/None defaults.
+            let estr (el: JsonElement) (name: string) =
+                let mutable v = Unchecked.defaultof<JsonElement>
+                if el.TryGetProperty(name, &v) && v.ValueKind = JsonValueKind.String then nz (v.GetString()) else ""
+            let ledgers =
+                let mutable v = Unchecked.defaultof<JsonElement>
+                if root.TryGetProperty("ledgers", &v) && v.ValueKind = JsonValueKind.Array then
+                    [ for el in v.EnumerateArray() do
+                        match estr el "kind" with
+                        | "journal" -> yield JournalRef (estr el "digest")
+                        | "episode" ->
+                            let mutable ov = Unchecked.defaultof<JsonElement>
+                            let ordinal = if el.TryGetProperty("ordinal", &ov) && ov.ValueKind = JsonValueKind.Number then ov.GetInt32() else 0
+                            yield EpisodeRef (estr el "timeline", ordinal)
+                        | _ -> () ]
+                else []
+            let bench =
+                let mutable v = Unchecked.defaultof<JsonElement>
+                if root.TryGetProperty("bench", &v) && v.ValueKind = JsonValueKind.Object then
+                    let stats =
+                        let mutable sv = Unchecked.defaultof<JsonElement>
+                        if v.TryGetProperty("stats", &sv) && sv.ValueKind = JsonValueKind.Array then
+                            [ for el in sv.EnumerateArray() do
+                                let i64 (name: string) =
+                                    let mutable nv = Unchecked.defaultof<JsonElement>
+                                    if el.TryGetProperty(name, &nv) && nv.ValueKind = JsonValueKind.Number then nv.GetInt64() else 0L
+                                let f (name: string) =
+                                    let mutable nv = Unchecked.defaultof<JsonElement>
+                                    if el.TryGetProperty(name, &nv) && nv.ValueKind = JsonValueKind.Number then nv.GetDouble() else 0.0
+                                let c =
+                                    let mutable nv = Unchecked.defaultof<JsonElement>
+                                    if el.TryGetProperty("count", &nv) && nv.ValueKind = JsonValueKind.Number then nv.GetInt32() else 0
+                                ({ Label = estr el "label"; Count = c
+                                   TotalMs = i64 "totalMs"; MinMs = i64 "minMs"; MaxMs = i64 "maxMs"
+                                   MeanMs = f "meanMs"
+                                   P50Ms = i64 "p50Ms"; P95Ms = i64 "p95Ms"; P99Ms = i64 "p99Ms" } : Projection.Core.Bench.Stats) ]
+                        else []
+                    let capturedAt =
+                        match DateTime.TryParse(estr v "capturedAtUtc", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind) with
+                        | true, dt -> dt
+                        | _ -> DateTime.MinValue
+                    Some ({ CapturedAtUtc = capturedAt; Tag = estr v "tag"; Stats = stats } : Projection.Core.Bench.Run)
+                else None
             Some {
                 RunId = str "runId"; Ts = str "ts"; Command = str "command"
                 InputDigest = str "inputDigest"; Outcome = str "outcome"; Canary = canary
                 Registered = i "registered"; Applied = i "applied"; Declined = i "declined"
                 Events = events; Artifacts = artifacts
+                Ledgers = ledgers; Bench = bench
             }
         with _ -> None
 
@@ -165,4 +264,8 @@ module Run =
           Applied     = applied
           Declined    = declined
           Events      = LogSink.serializedEnvelopes ()
-          Artifacts   = artifacts }
+          Artifacts   = artifacts
+          // R1a — additive defaults at capture; R1b/R1c thread the real
+          // ledger refs + bench snapshot when the envelope wires them.
+          Ledgers     = []
+          Bench       = None }

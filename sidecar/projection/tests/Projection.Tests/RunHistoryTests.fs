@@ -9,7 +9,8 @@ open Projection.Pipeline
 let private run (ts: string) (canary: string option) (declined: int) : Run.Run =
     { RunId = ts; Ts = ts; Command = "projection canary"; InputDigest = "d"
       Outcome = "succeeded"; Canary = canary; Registered = 42; Applied = 0; Declined = declined
-      Events = []; Artifacts = Map.empty }
+      Events = []; Artifacts = Map.empty
+      Ledgers = []; Bench = None }
 
 [<Fact>]
 let ``RunHistory: ofRuns sorts chronologically (oldest first)`` () =

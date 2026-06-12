@@ -15,7 +15,8 @@ let private sample : Run.Run =
       InputDigest = "deadbeef"; Outcome = "succeeded"; Canary = Some "green"
       Registered = 42; Applied = 3; Declined = 1
       Events = [ """{"code":"config.runStart"}"""; """{"code":"summary.runComplete"}""" ]
-      Artifacts = Map.ofList [ "catalog.json", """{"modules":[]}"""; "summary.txt", "all green" ] }
+      Artifacts = Map.ofList [ "catalog.json", """{"modules":[]}"""; "summary.txt", "all green" ]
+      Ledgers = []; Bench = None }
 
 [<Fact>]
 let ``Run: inputDigest is stable across calls and sensitive to inputs (content-addressed)`` () =
@@ -31,6 +32,31 @@ let ``Run: save then load round-trips the aggregate including the event stream``
         Run.save dir sample
         match Run.load dir sample.RunId with
         | Some loaded -> Assert.Equal(sample, loaded)     // structural equality, events included
+        | None -> Assert.Fail "expected to load the saved run"
+    finally
+        try Directory.Delete(dir, true) with _ -> ()
+
+[<Fact>]
+let ``R1a: load(save run) = run over the completed aggregate — ledger refs and bench carried`` () =
+    // The codec-totality witness for the two R1a fields: a run that
+    // extended both chains and carried a measurement snapshot round-trips
+    // structurally (pre-R1a files load with []/None — the additive law).
+    let completed =
+        { sample with
+            RunId = "01R1AAAA"
+            Ledgers = [ Run.JournalRef "a1b2c3d4e5f60718"; Run.EpisodeRef ("dev", 3) ]
+            Bench =
+                Some ({ CapturedAtUtc = System.DateTime(2026, 6, 12, 15, 0, 0, System.DateTimeKind.Utc)
+                        Tag = "publish"
+                        Stats =
+                          [ { Label = "stage.extract"; Count = 1
+                              TotalMs = 120L; MinMs = 120L; MaxMs = 120L; MeanMs = 120.0
+                              P50Ms = 120L; P95Ms = 120L; P99Ms = 120L } ] } : Bench.Run) }
+    let dir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"))
+    try
+        Run.save dir completed
+        match Run.load dir completed.RunId with
+        | Some loaded -> Assert.Equal(completed, loaded)
         | None -> Assert.Fail "expected to load the saved run"
     finally
         try Directory.Delete(dir, true) with _ -> ()
