@@ -22289,3 +22289,63 @@ extraction tests that share the fast pool (`BtReferenceFkFlowTests`,
 run; this slice's witness is the PURE golden corpus + the data-lane
 composer tests, which are the operator-blessing surface for an emission
 change. The Docker pool must be run before merge.
+
+---
+
+## 2026-06-13 — Slice 5 of the full-export reconciliation (WP6 step 2): Bootstrap delegates to the static-seeds renderer; its registry entry goes Active
+
+Context: `V1_FULL_EXPORT_RECONCILIATION_PLAN.md` WP6 step 3 ("Bootstrap
+delegates: `BootstrapEmitter.emitFromPlan` → `StaticSeedsEmitter
+.emitFromPlanWith` (signature-identical)"). `BootstrapEmitter` shipped at
+chapter 4.1.B slice ζ as a structural stub: `emitFromPlan` discarded its
+plan and returned the empty no-op per kind, with `Status =
+NotImplementedInV2`. WP6 fills the lane.
+
+**1. The renderer IS the static-seeds renderer (A40).** Both emitters
+realize the same algebra over the same `DataLoadPlan` shape (MERGE Phase-1
++ deferred-FK Phase-2). `BootstrapEmitter.emitFromPlan` now delegates to
+`StaticSeedsEmitter.emitFromPlanWith None catalog profile plan` — one line,
+no second renderer. The `None` delete-scope is the bootstrap lane's posture
+(the convergent-delete arm rides Static/Migration via the composer's
+`EmissionPolicy.DeleteScope`; Bootstrap is the remaining-kinds upsert lane).
+The slice-ζ private `emptyScript` retires (no consumer left). Note: the
+IDENTITY_INSERT bracket (WP6 step 1) rides this delegation for free — a
+bootstrap kind whose plan disposition is `AssignedBySink` is bracketed by
+the same `StaticSeedsEmitter.kindToScript` path.
+
+**2. Registry status flips `NotImplementedInV2` → `Active`.** The lane is
+implemented: it renders whatever plan it is handed (an empty plan renders
+empty per kind, exactly as `MigrationDependenciesEmitter` does without a
+`MigrationDependencyContext`). The metadata moves to the
+`RegisteredTransformMetadata.emitter` helper (Status = Active) and gains a
+DataIntent `bootstrapRowsProjection` site beside the retained OperatorIntent
+`userRemapBootstrap` site. The slice-ζ test that pinned
+`NotImplementedInV2` is rewritten to assert `Active`; skeleton/overlay
+membership is unchanged (Bootstrap still carries an OperatorIntent site, so
+it stays out of the skeleton view and in the overlay view).
+
+**3. The UserRemap conversion is wired (the anticipated conversion).**
+`emitWithTopo` now converts the operator's `UserRemapContext` to a
+`SurrogateRemapContext` via `UserRemapContext.toSurrogate` keyed under the
+catalog-discovered user kind — the same route `MigrationDependenciesEmitter
+.buildPlan` takes. With the empty `UserRemapContext` the composer passes
+today (and an empty row source), the conversion is the identity and output
+is byte-identical to the prior stub; the wiring is in place for when the
+hydration step (WP6 step 4) supplies Bootstrap's rows.
+
+**4. The remaining-kinds partition is a LAW the row source must respect.**
+Bootstrap's populated coverage MUST be the complement of
+(Static-populated ∪ Migration-context) kinds; feeding it a kind another lane
+also populates trips the composer's `OverlappingEmitterCoverage` partition
+assertion, which `Pipeline` escalates to a production `invalidOp`. At this
+step Bootstrap's row source is still empty (the per-kind hydration graft is
+WP6 step 4), so the partition holds trivially; the complement-filtering of
+the hydrated row source is the hydration step's responsibility and is named
+here so step 4 does not rediscover it.
+
+**5. Byte-stable.** Bootstrap emits empty until hydration supplies rows, so
+the golden corpus is unchanged by this step. Witness: the data-lane
+registry tests (`RegisteredDataTransforms` — Active + skeleton/overlay) and
+`BootstrapEmitterTests` (the delegation now renders a populated plan; the
+empty-source case stays empty). Docker pool unavailable this session (see
+the step-1 environment note); must be run before merge.

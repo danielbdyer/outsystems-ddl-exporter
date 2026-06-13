@@ -131,21 +131,21 @@ let ``5.13.data-emission-registry: MigrationDependenciesEmitter keeps row-emissi
                  "userRemapRewrite retired at the data-load convergence; substitution lives at DataLoadPlan.identitySubstitution")
 
 [<Fact>]
-let ``5.13.data-emission-registry: BootstrapEmitter is NotImplementedInV2 at slice ζ MVP`` () =
-    // Slice ζ MVP — Bootstrap is the empty-no-op stub today; the
-    // registry entry transitions to Active when chapter 4.2 slice η
-    // populates the per-kind row source. The rationale must be
-    // substantive (pillar 9 harvest-discipline; TransformRegistry
-    // rejects empty rationale).
+let ``5.13.data-emission-registry: BootstrapEmitter is Active and delegates to the static-seeds renderer (WP6 step 2)`` () =
+    // WP6 step 2 (DECISIONS 2026-06-13) — Bootstrap's emitFromPlan delegates
+    // to StaticSeedsEmitter.emitFromPlanWith (A40 — same algebra over the
+    // same DataLoadPlan), so the lane is implemented and the registry entry
+    // is Active. It carries a DataIntent bootstrapRowsProjection site (the
+    // plan rendering) beside the retained OperatorIntent userRemapBootstrap
+    // site (the UserRemapContext threading).
     let emitter = BootstrapEmitter.registeredMetadata
     match emitter.Status with
+    | Active -> ()
     | NotImplementedInV2 rationale ->
-        Assert.False(
-            System.String.IsNullOrWhiteSpace rationale,
-            "BootstrapEmitter NotImplementedInV2 rationale must be substantive per pillar 9")
-        Assert.Contains("Chapter 4.2 slice η", rationale)
-    | Active ->
-        Assert.Fail("BootstrapEmitter expected to be NotImplementedInV2 at slice ζ MVP")
+        Assert.Fail(sprintf "BootstrapEmitter expected Active (WP6 step 2), got NotImplementedInV2: %s" rationale)
+    let bySite = emitter.Sites |> List.map (fun s -> s.SiteName, s.Classification) |> Map.ofList
+    Assert.Equal<Classification>(DataIntent, bySite.["bootstrapRowsProjection"])
+    Assert.Equal<Classification>(OperatorIntent Insertion, bySite.["userRemapBootstrap"])
 
 [<Fact>]
 let ``5.13.data-emission-registry: skeletonView excludes every entry carrying an OperatorIntent site`` () =
