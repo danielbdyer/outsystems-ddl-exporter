@@ -22457,3 +22457,52 @@ intermediate step and the measurement (49→20) that motivated contraction;
 this entry is the live shape. Witness: GoldenEmission green on re-record;
 byte changes are the master's `seed.sql` gaining the ScopedLookup DELETE arm
 (blessed) and the scenario restructure. Docker pool still owed (env).
+
+---
+
+## 2026-06-13 — Slice 5 of the full-export reconciliation (WP6 step 3): per-lane data outputs, self-minimizing
+
+Context: `V1_FULL_EXPORT_RECONCILIATION_PLAN.md` WP6 step 5 — "`runWithConfig`
+writes per-lane artifacts (`Data/StaticSeeds.sql`, `Data/Bootstrap.sql`,
+`Data/MigrationData.sql`, each internally topo-ordered from the pre-union
+sibling dispatch) PLUS the fused global `Data/seed.sql`." Reconciled with the
+operator's standing minimize-golden-surface directive (the two DECISIONS
+entries above).
+
+**1. One render site, one dispatch.** `DataEmissionComposer` gains
+`renderArtifactInTopoOrder` (the global-phase walk — Phase-1-all then
+Phase-2-all over `topo.Order`), and `composeRenderedFull` is refactored onto
+it (byte-identical). `composeRenderedBundleFull` does ONE `dispatchSiblings`
+and renders the fused union AND each pre-union sibling through the same
+helper, returning `RenderedDataBundle { Fused; StaticSeeds; MigrationData;
+Bootstrap }`. The per-lane strings are byte-faithful slices of the same
+per-kind renders — nothing is re-rendered (the plan's "render once from one
+dispatch").
+
+**2. Self-minimizing emission (the reconciliation).** The pipeline writes a
+per-lane `Data/<Lane>.sql` file only when **≥2 lanes carry content**
+(`RenderedDataBundle.nonEmptyLaneCount`). Rationale: with exactly one
+non-empty lane the fused `Data/seed.sql` IS that lane, so a per-lane file
+would byte-duplicate it — precisely the redundancy the operator's directive
+forbids. The per-lane split adds information only when lanes interleave (≥2),
+and that is exactly when the files are written. The writer is unchanged (it
+iterates `DataBundle` generically); `Map.isEmpty` still holds when `EmitData`
+is off.
+
+**3. Golden impact: none.** The operator-config golden path supplies no
+migration/bootstrap context and runs no hydration (it is catalog-direct via
+`projectWithConfig`), so the `master` scenario has only the static lane →
+the ≥2 rule omits per-lane files → the corpus pins only the fused
+`Data/seed.sql` (which already carries the static MERGE/Phase-2 shapes and
+the `Tier` IDENTITY_INSERT bracket). The per-lane split is witnessed at the
+composer level (`DataEmissionComposerTests`: a two-lane static+migration
+catalog yields `StaticSeeds` ≠ `MigrationData`, both distinct from `Fused`;
+a one-lane catalog yields `Fused = StaticSeeds`, count 1). `THE_GOLDEN
+_EMISSION.md §4` data-lane section updated to this reconciliation.
+
+**4. Deviation from the plan's literal text, named.** The plan said per-lane
+files land "plus the fused" unconditionally; this emits them conditionally
+(≥2 lanes) to honor the newer, repeated minimize-surface directive. The
+capability is fully present; only the redundant single-lane file is withheld.
+Witness: DataEmissionComposer 27/0, FullExportDataBundle 3/0, GoldenEmission
+3/0 (byte-stable). Docker pool owed (env).

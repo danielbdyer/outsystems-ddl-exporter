@@ -84,3 +84,16 @@ let ``AC-X1: data emission off leaves the bundle byte-identical (empty DataBundl
     Assert.True(Map.isEmpty outputs.DataBundle, "DataBundle must be empty when EmitData is off")
     // The schema bundle is still produced (only the data leg is gated).
     Assert.False(Map.isEmpty outputs.SsdtBundle, "the SSDT schema bundle is unaffected by the data toggle")
+
+[<Fact>]
+let ``WP6 step 3: a single active lane emits only the fused seed (no redundant per-lane file)`` () =
+    // The pipeline path carries no migration/bootstrap context, so only the
+    // static lane has content. The fused Data/seed.sql IS that lane, so the
+    // per-lane files would byte-duplicate it and are omitted (the >=2-lane
+    // self-minimizing rule; DECISIONS 2026-06-13). Per-lane rendering itself
+    // is witnessed at the composer level (DataEmissionComposerTests).
+    let outputs = projectBundle emitDataPolicy
+    Assert.True(Map.containsKey "Data/seed.sql" outputs.DataBundle)
+    Assert.False(Map.containsKey "Data/StaticSeeds.sql" outputs.DataBundle, "single lane ⇒ no redundant per-lane file")
+    Assert.False(Map.containsKey "Data/MigrationData.sql" outputs.DataBundle)
+    Assert.False(Map.containsKey "Data/Bootstrap.sql" outputs.DataBundle)

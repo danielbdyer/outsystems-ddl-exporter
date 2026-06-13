@@ -597,14 +597,28 @@ module Compose =
             if not fullPolicy.Emission.EmitData then outputs
             else
                 use _ = Bench.scope "emit.dataBundle.compose"
-                match Projection.Targets.Data.DataEmissionComposer.composeRendered fullPolicy finalState.Catalog profile with
-                | Ok sql when not (System.String.IsNullOrWhiteSpace sql) ->
-                    { outputs with DataBundle = Map.ofList [ "Data/seed.sql", sql ] }
-                | Ok _ -> outputs   // no static/bootstrap rows in scope ⇒ nothing to emit
+                match DataComposer.composeRenderedBundle fullPolicy finalState.Catalog profile with
+                | Ok bundle when not (System.String.IsNullOrWhiteSpace bundle.Fused) ->
+                    // The fused `Data/seed.sql` is the deploy artifact. WP6
+                    // step 3 — also write the per-lane files
+                    // (`Data/StaticSeeds.sql` / `Data/MigrationData.sql` /
+                    // `Data/Bootstrap.sql`), but ONLY when ≥2 lanes carry
+                    // content: with a single active lane the fused seed IS
+                    // that lane, so a per-lane file would byte-duplicate it
+                    // (minimize review/golden surface — DECISIONS 2026-06-13).
+                    // The writer iterates `DataBundle` generically (no writer
+                    // change); `Map.isEmpty` still holds when EmitData is off
+                    // (the data flags gate this whole branch).
+                    let perLane =
+                        if DataComposer.RenderedDataBundle.nonEmptyLaneCount bundle >= 2
+                        then DataComposer.RenderedDataBundle.perLaneFiles bundle
+                        else Map.empty
+                    { outputs with DataBundle = perLane |> Map.add "Data/seed.sql" bundle.Fused }
+                | Ok _ -> outputs   // no rows in scope ⇒ nothing to emit
                 | Error err ->
                     // Mirrors the SSDT-bundle invariant: a valid catalog never
                     // fails the composer (the keyset is `Catalog.allKinds`).
-                    invalidOp (sprintf "Compose.projectWithState: DataEmissionComposer.composeRendered: %A" err)
+                    invalidOp (sprintf "Compose.projectWithState: DataEmissionComposer.composeRenderedBundle: %A" err)
         decorated, finalState
 
     /// The canonical `projectWithState` — no physical-rename pins (byte-identical

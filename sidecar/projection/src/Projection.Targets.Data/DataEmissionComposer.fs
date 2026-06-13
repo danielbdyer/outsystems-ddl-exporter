@@ -282,6 +282,29 @@ module DataEmissionComposer =
     /// (the kind-local Phase-1 + Phase-2 IS the deploy order for
     /// a 1-node SCC); multi-kind cycles require this global view.
     ///
+    /// Render one `ArtifactByKind` as a globally-ordered GO-batched T-SQL
+    /// string: ALL Phase-1 MERGEs across all kinds (in topological order)
+    /// then ALL Phase-2 UPDATEs (same order) — the slice-ι global-phase
+    /// shape. Walking `topo.Order` honors FK precedence for Phase-1; Phase-2
+    /// targets exist by then (the order is for diagnostic determinism). The
+    /// single render site for both the fused union and each per-lane sibling
+    /// (WP6 step 3) — they differ only in WHICH artifact is walked, never in
+    /// HOW, so the per-lane outputs are byte-faithful slices of the same
+    /// per-kind strings, re-rendered nowhere.
+    let private renderArtifactInTopoOrder
+        (topo: TopologicalOrder)
+        (artifact: ArtifactByKind<DataInsertScript>)
+        : string =
+        let map = ArtifactByKind.toMap artifact
+        let phase1Texts =
+            topo.Order
+            |> List.choose (fun k -> Map.tryFind k map |> Option.map (fun s -> s.RenderedPhase1))
+        let phase2Texts =
+            topo.Order
+            |> List.choose (fun k -> Map.tryFind k map |> Option.map (fun s -> s.RenderedPhase2))
+        Seq.append phase1Texts phase2Texts
+        |> System.String.Concat  // LINT-ALLOW: terminal global Phase-1-then-Phase-2 concatenation across all kinds in topological order (chapter 4.1.B slice ι); each segment is the per-kind ScriptDom-rendered RenderedPhase1 / RenderedPhase2 string already terminated by `;\nGO\n`; BCL `String.Concat(IEnumerable<string>)` is the right primitive at this terminal-text boundary; preserves the global cycle-correct deploy order that per-kind Rendered cannot express
+
     /// Full-arity form. The `composeRendered` convenience defaults
     /// both contexts to empty.
     let composeRenderedFull
@@ -306,29 +329,79 @@ module DataEmissionComposer =
         | Ok siblings ->
             match unionSiblings catalog siblings with
             | Error e   -> Error e
-            | Ok artifact ->
-                let map = ArtifactByKind.toMap artifact
-                // Walk kinds in topological order so Phase-1 MERGEs
-                // honor FK precedence at the global level
-                // (cycle-broken kinds appear in topo.Order via
-                // `applyResolver`'s reduced-graph re-Kahn). Same
-                // order applies to Phase-2 UPDATEs (target rows
-                // exist by then; ordering is for diagnostic
-                // determinism rather than correctness).
-                let phase1Texts =
-                    topo.Order
-                    |> List.choose (fun k ->
-                        Map.tryFind k map
-                        |> Option.map (fun s -> s.RenderedPhase1))
-                let phase2Texts =
-                    topo.Order
-                    |> List.choose (fun k ->
-                        Map.tryFind k map
-                        |> Option.map (fun s -> s.RenderedPhase2))
-                let allText =
-                    Seq.append phase1Texts phase2Texts
-                    |> System.String.Concat  // LINT-ALLOW: terminal global Phase-1-then-Phase-2 concatenation across all kinds in topological order (chapter 4.1.B slice ι); each segment is the per-kind ScriptDom-rendered RenderedPhase1 / RenderedPhase2 string already terminated by `;\nGO\n`; BCL `String.Concat(IEnumerable<string>)` is the right primitive at this terminal-text boundary; preserves the global cycle-correct deploy order that per-kind Rendered cannot express
-                Ok allText
+            | Ok artifact -> Ok (renderArtifactInTopoOrder topo artifact)
+
+    /// The fused global seed plus the three per-lane renderings, all from
+    /// ONE dispatch (WP6 step 3). `Fused` is the deploy artifact
+    /// (`Data/seed.sql`) — the union walked global-phase; the per-lane
+    /// strings are each sibling walked the same way (`Data/StaticSeeds.sql`
+    /// / `Data/MigrationData.sql` / `Data/Bootstrap.sql`). A lane with no
+    /// owned rows renders the empty string. When exactly one lane is
+    /// non-empty, `Fused` is byte-equal to that lane (nothing to interleave),
+    /// so the pipeline omits the redundant per-lane files; they carry
+    /// information only when ≥2 lanes contribute.
+    type RenderedDataBundle =
+        {
+            Fused         : string
+            StaticSeeds   : string
+            MigrationData : string
+            Bootstrap     : string
+        }
+
+    [<RequireQualifiedAccess>]
+    module RenderedDataBundle =
+        /// The non-empty per-lane renderings, keyed by their `Data/*.sql`
+        /// relative path. Empty lanes are dropped. Used by the pipeline to
+        /// decide the per-lane file set (it emits these only when ≥2 are
+        /// present — see `nonEmptyLaneCount`).
+        let perLaneFiles (b: RenderedDataBundle) : Map<string, string> =
+            [ "Data/StaticSeeds.sql",   b.StaticSeeds
+              "Data/MigrationData.sql", b.MigrationData
+              "Data/Bootstrap.sql",     b.Bootstrap ]
+            |> List.filter (fun (_, sql) -> not (System.String.IsNullOrWhiteSpace sql))
+            |> Map.ofList
+
+        /// How many lanes carry content. The fused seed equals a single
+        /// non-empty lane, so the per-lane split adds information only at ≥2.
+        let nonEmptyLaneCount (b: RenderedDataBundle) : int =
+            perLaneFiles b |> Map.count
+
+    /// Π_Data compose-rendered with the per-lane split (WP6 step 3).
+    /// One dispatch → the fused seed + the three lane renderings. The
+    /// fused arm is byte-identical to `composeRenderedFull`.
+    let composeRenderedBundleFull
+        (policy: Policy)
+        (catalog: Catalog)
+        (profile: Profile)
+        (migration: MigrationDependencyContext)
+        (userRemap: UserRemapContext)
+        : Result<RenderedDataBundle, EmitError> =
+        use _ = Bench.scope "compose.data.composeRenderedBundle"
+        let topoLineage = TopologicalOrderPass.runWith TreatAsCycle catalog
+        let topo = topoLineage.Value
+        let composition = policy.Emission.DataComposition
+        let deleteScope = policy.Emission.DeleteScope
+        match dispatchSiblings composition deleteScope topo catalog profile migration userRemap with
+        | Error e -> Error e
+        | Ok siblings ->
+            match unionSiblings catalog siblings with
+            | Error e   -> Error e
+            | Ok union ->
+                Ok { Fused         = renderArtifactInTopoOrder topo union
+                     StaticSeeds   = renderArtifactInTopoOrder topo siblings.StaticSeeds
+                     MigrationData = renderArtifactInTopoOrder topo siblings.MigrationDependencies
+                     Bootstrap     = renderArtifactInTopoOrder topo siblings.Bootstrap }
+
+    /// Convenience over `composeRenderedBundleFull` — empty contexts.
+    let composeRenderedBundle
+        (policy: Policy)
+        (catalog: Catalog)
+        (profile: Profile)
+        : Result<RenderedDataBundle, EmitError> =
+        composeRenderedBundleFull
+            policy catalog profile
+            MigrationDependencyContext.empty
+            UserRemapContext.empty
 
     /// Per-level rendered scripts for parallel-safe deployment. Each
     /// `ParallelSafe<string>` group carries one kind's rendered SQL per

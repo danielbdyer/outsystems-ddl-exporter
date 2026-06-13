@@ -189,16 +189,23 @@ inventory row and its variance in the catalog, in the same commit.**
 | `EXECUTE [sys].[sp_addextendedproperty]` canonical form | COVERED (documented accepted deviation) |
 | Per-table file: V1's rendered form — framed GO between statements (never trailing), constraint ladder, wrapped EXEC | COVERED + BLESSED (slice 3, operator decision — supersedes the prior no-GO contract) |
 
-### Data lanes — the per-lane golden expansion (operator directive, 2026-06-13)
-When the reconciliation plan's WP6 lands (hydration + bootstrap realization +
-per-lane outputs), the corpus grows per-lane golden artifacts in the same
-commit: `Data/StaticSeeds.sql`, `Data/Bootstrap.sql`, `Data/MigrationData.sql`
-alongside the fused global `Data/seed.sql` — each lane's MERGE/Phase-2 shape,
-IDENTITY_INSERT bracket, and (opt-in) EXCEPT validate-before-apply prelude
-pinned byte-exact. The Platonic catalog gains the lane variances then
-(supplemental/bootstrap-owned kinds; an IDENTITY-PK static kind; a
-migration-row kind). Trigger: WP6 slice open — this section is the standing
-reminder.
+### Data lanes — the per-lane outputs (WP6 step 3; reconciled with minimize-surface, DECISIONS 2026-06-13)
+The pipeline emits the per-lane files `Data/StaticSeeds.sql` /
+`Data/MigrationData.sql` / `Data/Bootstrap.sql` alongside the fused global
+`Data/seed.sql`, but **self-minimizing**: a per-lane file is written only when
+**≥2 lanes carry content**. With a single active lane the fused seed IS that
+lane, so a per-lane file would byte-duplicate it — exactly the redundancy the
+operator's minimize-surface directive forbids. Consequence for THIS corpus:
+the operator-config golden path supplies no migration/bootstrap context (and
+hydration doesn't run on the catalog-direct golden path), so the `master`
+scenario has only the **static** lane and pins **only `Data/seed.sql`** — no
+per-lane files. The per-lane split (StaticSeeds vs MigrationData, distinct
+from the fused) is witnessed at the composer level in
+`DataEmissionComposerTests` (a two-lane catalog), not pinned in the golden,
+because pinning it here would duplicate `seed.sql`. The fused `seed.sql`
+already pins the static MERGE/Phase-2 shapes and the IDENTITY_INSERT bracket
+(`Tier`). The IDENTITY-PK static kind is COVERED (`Tier`, step 1); the EXCEPT
+validate-before-apply prelude rides a later slice (WP6.6 / C2).
 
 ### Data lanes
 | Variance | Status |
@@ -207,8 +214,8 @@ reminder.
 | Phase-2 deferred-FK UPDATE (nullable FK cycle between static kinds) | COVERED (`RegionA`/`RegionB` cycle) |
 | Delete-scope arm (`WHEN NOT MATCHED BY SOURCE … DELETE` under the term predicate) | COVERED — **folded into the `master` scenario** (DeleteScope resolves per kind, so the scoped kind carries the DELETE arm while other static kinds stay plain MERGEs; DECISIONS 2026-06-13 take 2). **First-recording finding:** the term resolves against the POST-CHAIN catalog (after `LogicalColumnEmission`), so under the default logical rendition the term must name the LOGICAL column — the `DeleteScopePolicy` doc's "terms name PHYSICAL columns" is stale for that rendition. Doc/semantics reconciliation rides the plan's WP4 follow-on |
 | Static kind with IDENTITY PK (IDENTITY_INSERT handling) | COVERED + BLESSED (WP6 step 1, `Tier` — the MERGE is bracketed by `SET IDENTITY_INSERT … ON/OFF` as ONE GO batch; DECISIONS 2026-06-13) |
-| Bootstrap lane content | TODO — plan WP6 (today: empty; the goldens pin the emptiness so the lane filling is a visible diff) |
-| MigrationData lane content | TODO — plan WP6 |
+| Bootstrap lane content | COVERED at the composer (WP6 step 2 — Bootstrap delegates to the static-seeds renderer; per-lane split witnessed in `DataEmissionComposerTests`). Pipeline content arrives via hydration (step 4); not golden-pinned (single-lane in the golden path) |
+| MigrationData lane content | COVERED at the composer (WP6 step 3 — the per-lane split renders the migration lane distinct from static; witnessed in `DataEmissionComposerTests`). Not golden-pinned (the golden path supplies no migration context) |
 | Row batching ≥ threshold | TODO (armed perf trigger) |
 | EXCEPT validate-before-apply prelude (opt-in) | TODO — plan WP6 step 6 (C2) |
 
