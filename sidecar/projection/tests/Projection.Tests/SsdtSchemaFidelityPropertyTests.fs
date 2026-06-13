@@ -568,3 +568,30 @@ let ``5.3.α.index LR7: filegroup and partition-scheme ON clauses emit`` () =
           Sequences = [] }
     let body = bodyOf (kindKey ["LR7Witness"]) cat
     Assert.Contains ("ON [INDEX_FG]", body)
+
+// ---------------------------------------------------------------------------
+// NM-38 — `Render.toTextWith` constraint-rendering-mode reachability. The
+// `ConstraintFormatter.Disabled` mode (the operator's V1-parity / regression-
+// bisect opt-out) was unreachable from production until the
+// `EmissionPolicy.RenderConstraintsElegant` axis threaded it to
+// `Render.toTextWith`. These witness that the two modes produce DIFFERENT
+// rendered text on a constraint-bearing catalog (so `Disabled` is not a no-op
+// alias of `Enabled`) and that `toText` equals `toTextWith Enabled` (the
+// byte-identical default wrapper).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``NM-38: Render.toTextWith Disabled differs from Enabled on a constraint-bearing catalog`` () =
+    let statements = SsdtDdlEmitter.statements (enrich sampleCatalog) |> List.ofSeq
+    let enabled  = Render.toTextWith ConstraintFormatter.Enabled statements
+    let disabled = Render.toTextWith ConstraintFormatter.Disabled statements
+    // The elegant multi-line constraint shape (Enabled) post-processes
+    // ScriptDom's compact column-inline output; Disabled passes it through.
+    // The sample catalog carries PK / FK / DEFAULT constraints, so the two
+    // renderings cannot coincide — proving the Disabled mode is live.
+    Assert.NotEqual<string>(enabled, disabled)
+
+[<Fact>]
+let ``NM-38: Render.toText equals toTextWith Enabled (byte-identical default wrapper)`` () =
+    let statements = SsdtDdlEmitter.statements (enrich sampleCatalog) |> List.ofSeq
+    Assert.Equal<string>(Render.toText statements, Render.toTextWith ConstraintFormatter.Enabled statements)

@@ -118,7 +118,11 @@ module Render =
     /// costs. Per session-35 — `IList`-backed `seq` short-circuits
     /// to a count probe; otherwise the default seed remains 64 KB
     /// (handles the 300-table fixture without resize).
-    let toText (statements: seq<Statement>) : string =
+    ///
+    /// NM-38 — the `ConstraintFormatter.Mode` is now a parameter
+    /// (`toTextWith`); `toText` is the `Enabled` wrapper preserving the
+    /// production default. See `toTextWith`.
+    let toTextWith (mode: ConstraintFormatter.Mode) (statements: seq<Statement>) : string =
         use _ = Bench.scope "render.toText"
         let initialCapacity =
             match statements with
@@ -139,10 +143,21 @@ module Render =
         // column / constraint name / body lines; table-level FK with
         // ON DELETE / ON UPDATE on indented clause lines).
         //
-        // Slice D.3.b — Mode parameter captured at the production
-        // wiring as `Enabled` (default-on; matches `LogicalTableEmission` /
-        // `LogicalColumnEmission` precedent). The classification IS
-        // `OperatorIntent Emission`; `ConstraintFormatter.registeredMetadata`
-        // surfaces it in the registry's totality-coverage scan + the
-        // canary manifest's `applied-transforms` field.
-        ConstraintFormatter.format ConstraintFormatter.Enabled (sb.ToString())
+        // Slice D.3.b / NM-38 — `mode` is threaded from the
+        // `EmissionPolicy.RenderConstraintsElegant` axis (default
+        // `Enabled`; matches `LogicalTableEmission` / `LogicalColumnEmission`
+        // precedent). The classification IS `OperatorIntent Emission`;
+        // `ConstraintFormatter.registeredMetadata` surfaces it in the
+        // registry's totality-coverage scan + the canary manifest's
+        // `applied-transforms` field. With `Disabled` the post-processor
+        // passes ScriptDom's compact output through (the operator's
+        // V1-parity / regression-bisect opt-out).
+        ConstraintFormatter.format mode (sb.ToString())
+
+    /// Fold a statement stream into a single SQL-text artifact with the
+    /// production-default `Enabled` constraint-rendering mode. The
+    /// byte-identical wrapper preserved for every existing caller; new
+    /// callers that thread the operator's `EmissionPolicy` axis use
+    /// `toTextWith`.
+    let toText (statements: seq<Statement>) : string =
+        toTextWith ConstraintFormatter.Enabled statements

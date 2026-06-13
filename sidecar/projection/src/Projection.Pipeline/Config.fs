@@ -198,6 +198,13 @@ module Config =
         /// emitters' MERGE (`emission.deleteScope.terms`). `None` (the
         /// default) emits no delete arm — byte-identical output.
         DeleteScope           : DeleteScopePolicy option
+        /// NM-38 — `emission.renderConstraintsElegant`. `true` (the
+        /// default — current behavior) reformats ScriptDom's compact
+        /// column-inline constraints into V1's elegant multi-line shape;
+        /// `false` is the diagnostic / V1-parity-bisect opt-out that
+        /// passes ScriptDom's raw output through. Threads to
+        /// `EmissionPolicy.RenderConstraintsElegant`.
+        RenderConstraintsElegant : bool
     }
 
     type UserMatchingSection = {
@@ -357,6 +364,8 @@ module Config =
         Validations           = true
         IncludePlatformAutoIndexes = true
         DeleteScope           = None
+        // NM-38 — V1-parity default-on (elegant multi-line constraints).
+        RenderConstraintsElegant = true
     }
 
     let private defaultUserMatching : UserMatchingSection = {
@@ -1123,6 +1132,9 @@ module Config =
                                                     match read "includePlatformAutoIndexes" defaultEmission.IncludePlatformAutoIndexes with
                                                     | Error es -> Error es
                                                     | Ok includeAuto ->
+                                                    match read "renderConstraintsElegant" defaultEmission.RenderConstraintsElegant with
+                                                    | Error es -> Error es
+                                                    | Ok renderElegant ->
                                                     match parseDeleteScope element with
                                                     | Error es -> Error es
                                                     | Ok deleteScope ->
@@ -1139,6 +1151,7 @@ module Config =
                                                         Validations = vals
                                                         IncludePlatformAutoIndexes = includeAuto
                                                         DeleteScope = deleteScope
+                                                        RenderConstraintsElegant = renderElegant
                                                     }
 
     let private parseUserMatching (element: JsonElement) : Result<UserMatchingSection> =
