@@ -10,33 +10,33 @@ CREATE TABLE [dbo].[RegionB] (
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'RegionB',
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'RegionB',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'RegionB'
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.SsKey', @value = N'S9:GOLD_KIND1:17:RegionB',
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_KIND1:17:RegionB',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'RegionB'
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Id',
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Id',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'RegionB',
     @level2type = N'COLUMN', @level2name = N'Id'
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Name',
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Name',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'RegionB',
     @level2type = N'COLUMN', @level2name = N'Name'
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'PartnerId',
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'PartnerId',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'RegionB',
     @level2type = N'COLUMN', @level2name = N'PartnerId'

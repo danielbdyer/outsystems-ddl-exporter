@@ -13,26 +13,26 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'MS_Description', @value = N'The
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'User',
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'User',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'User'
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.SsKey', @value = N'S9:GOLD_KIND1:14:User',
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_KIND1:14:User',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'User'
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Email',
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Email',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'User',
     @level2type = N'COLUMN', @level2name = N'Email'
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Id',
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Id',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'User',
     @level2type = N'COLUMN', @level2name = N'Id'

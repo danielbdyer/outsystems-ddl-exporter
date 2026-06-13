@@ -359,7 +359,7 @@ let ``Slice 1.3: triggers / checks / sequences / extended properties are RECOVER
         let recoveredChecks = kinds |> List.collect (fun k -> k.ColumnChecks)
         let recoveredEps =
             kinds |> List.collect (fun k -> k.ExtendedProperties @ (k.Attributes |> List.collect (fun a -> a.ExtendedProperties)))
-            |> List.filter (fun ep -> ep.Name <> "V2.LogicalName")
+            |> List.filter (fun ep -> ep.Name <> "Projection.LogicalName" && ep.Name <> "V2.LogicalName")
         Assert.True((not (List.isEmpty recoveredTriggers)), "ReadSide recovered ZERO triggers (1.3 trigger probe regressed).")
         Assert.True((not (List.isEmpty recoveredChecks)), "ReadSide recovered ZERO CHECK constraints (1.3 check probe regressed).")
         Assert.True((not (List.isEmpty recoveredEps)), "ReadSide recovered ZERO non-LogicalName extended properties (1.3 ext-prop probe regressed).")

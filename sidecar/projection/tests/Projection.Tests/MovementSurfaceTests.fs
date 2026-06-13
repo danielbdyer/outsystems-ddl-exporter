@@ -290,6 +290,49 @@ let ``direction: a model source to a bundle target derives Down (the A->B down-l
         """ |> mustOk
     Assert.Equal(MovementDirection.Down, dirOf cfg "publish")
 
+// -- WP9: the provenance arm fires for OSSYS-only configs (event-ledger #1) ---
+// resolveFlowSpec emits ModelSource.ConfigFile (the publish-with-provenance
+// arm) when the config has load provenance (SourcePath), the sink carries a
+// store, AND there is a publishable model — which is model.path OR model.ossys.
+// Before WP9 it required model.path, so an ossys-only config never published
+// with provenance even with a store. (DECISIONS 2026-06-13.)
+
+let private modelOf (cfg: ProjectionConfig) (name: string) : ModelSource =
+    match Command.resolveFlowSpec cfg (Map.find name cfg.Flows) previewOpts with
+    | Ok s -> s.Model
+    | Error es -> failwithf "resolveFlowSpec failed: %A" es
+
+[<Fact>]
+let ``provenance arm: an ossys-only config with load provenance + a store fires ConfigFile (WP9)`` () =
+    let parsed =
+        ProjectionConfig.parse """
+        {
+          "environments": { "pub": { "access": "bundle", "out": "dist/pub", "grant": "schema+data", "store": "dist/pub/timeline.ndjson" } },
+          "flows": { "publish": { "from": "model", "to": "pub" } },
+          "model": { "ossys": "file:/etc/ossys.conn" }
+        }
+        """ |> mustOk
+    let cfg = { parsed with SourcePath = Some "projection.json" }
+    match modelOf cfg "publish" with
+    | ModelSource.ConfigFile "projection.json" -> ()
+    | other -> Assert.Fail(sprintf "expected ConfigFile (the ossys-only provenance arm), got %A" other)
+
+[<Fact>]
+let ``provenance arm: an ossys-only config WITHOUT a store stays non-provenance (gate intact)`` () =
+    // No store ⇒ no provenance to bear ⇒ the byte-identical non-ConfigFile path.
+    let parsed =
+        ProjectionConfig.parse """
+        {
+          "environments": { "pub": { "access": "bundle", "out": "dist/pub", "grant": "schema+data" } },
+          "flows": { "publish": { "from": "model", "to": "pub" } },
+          "model": { "ossys": "file:/etc/ossys.conn" }
+        }
+        """ |> mustOk
+    let cfg = { parsed with SourcePath = Some "projection.json" }
+    match modelOf cfg "publish" with
+    | ModelSource.ConfigFile _ -> Assert.Fail "a store-less sink must not fire the provenance arm"
+    | _ -> ()
+
 [<Fact>]
 let ``direction: the legacy flow routes through planFlow to RunReverseLeg under --go --scope data`` () =
     // The flow's grant is `data`, so the grant gate passes; the derived UpLegacy

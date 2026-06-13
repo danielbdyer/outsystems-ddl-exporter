@@ -910,13 +910,20 @@ module Command =
                 // fire only on `ModelSource.ConfigFile`. Emit it exactly when the
                 // flow targets a PROVENANCE-BEARING place — the config was loaded
                 // from a file (`SourcePath = Some`), the sink carries a `store`
-                // (provenance is configured), AND there is a model to publish
-                // (`Shaping.Model.Path = Some`). Every store-less target and every
-                // from-string config keeps the byte-identical ModelFile/Unspecified
-                // path, so the empty/default-config invariant holds.
+                // (provenance is configured), AND there is a model to publish.
+                // WP9 (DECISIONS 2026-06-13; event-ledger #1): "a model to
+                // publish" is `Shaping.Model.Path` OR `Shaping.Model.Ossys` — an
+                // OSSYS-sourced config (no `model.path`) is a first-class publish
+                // source, so it fires provenance too. Every store-less target and
+                // every from-string config keeps the byte-identical
+                // ModelFile/Unspecified path, so the empty/default-config
+                // invariant holds (path-sourced and store-less configs are
+                // unchanged; only ossys-only-with-store gains provenance).
+                let hasPublishableModel =
+                    Option.isSome cfg.Shaping.Model.Path || Option.isSome cfg.Shaping.Model.Ossys
                 let modelSource =
-                    match cfg.SourcePath, toEnv.Store, cfg.Shaping.Model.Path with
-                    | Some sourcePath, Some _, Some _ -> ModelSource.ConfigFile sourcePath
+                    match cfg.SourcePath, toEnv.Store with
+                    | Some sourcePath, Some _ when hasPublishableModel -> ModelSource.ConfigFile sourcePath
                     | _ ->
                         match cfg.Shaping.Model.Path with
                         | Some m -> ModelSource.ModelFile m

@@ -9,26 +9,26 @@ CREATE TABLE [dbo].[InterdepartmentalResourceAllocationAuthorizationLedger] (
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'InterdepartmentalResourceAllocationAuthorizationLedger',
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'InterdepartmentalResourceAllocationAuthorizationLedger',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'InterdepartmentalResourceAllocationAuthorizationLedger'
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.SsKey', @value = N'S9:GOLD_KIND1:16:Ledger',
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_KIND1:16:Ledger',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'InterdepartmentalResourceAllocationAuthorizationLedger'
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Id',
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Id',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'InterdepartmentalResourceAllocationAuthorizationLedger',
     @level2type = N'COLUMN', @level2name = N'Id'
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'PrimaryResponsibleEnterpriseCustomerRelationshipManagerId',
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'PrimaryResponsibleEnterpriseCustomerRelationshipManagerId',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'InterdepartmentalResourceAllocationAuthorizationLedger',
     @level2type = N'COLUMN', @level2name = N'PrimaryResponsibleEnterpriseCustomerRelationshipManagerId'

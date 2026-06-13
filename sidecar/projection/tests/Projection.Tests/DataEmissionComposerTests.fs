@@ -586,6 +586,58 @@ let ``5.13.data-emission-registry: cross-emitter coverage holds the partition in
         Assert.Equal(0, List.length countryScript.Phase2Updates)
     | Error e -> Assert.Fail (sprintf "expected partition success, got %A" e)
 
+[<Fact>]
+let ``WP6 step 3: composeRenderedBundle splits the lanes (StaticSeeds vs MigrationData) from one dispatch`` () =
+    // Two active lanes ⇒ the per-lane split carries information the fused
+    // seed doesn't trivially convey. StaticSeeds holds Country only;
+    // MigrationData holds LegacyOrder (MERGE + Phase-2 UPDATE) only.
+    let country = mkCountryKind ()
+    let legacy = mkLegacyKindForMigration "LegacyOrder" "OSUSR_TEST_LEGACY_ORDER"
+    let catalog = mkCatalog [ country; legacy ]
+    let migration : MigrationDependencyContext =
+        { Rows =
+            [ { KindKey = legacy.SsKey
+                Identifier = mkKey ["TestModule"; "LegacyOrder"; "Row"; "1"]
+                Values = Map.ofList [ mkName "Id", "1"; mkName "ParentId", "1" ] } ] }
+    let bundle =
+        DataEmissionComposer.composeRenderedBundleFull
+            (policyWith AllRemaining) catalog Profile.empty migration UserRemapContext.empty
+        |> mustOkEmit
+    let staticN = normWsCmp bundle.StaticSeeds
+    let migN = normWsCmp bundle.MigrationData
+    Assert.Contains ("MERGE INTO [dbo].[OSUSR_TEST_COUNTRY]", staticN)
+    Assert.DoesNotContain ("OSUSR_TEST_LEGACY_ORDER", staticN)
+    Assert.Contains ("MERGE INTO [dbo].[OSUSR_TEST_LEGACY_ORDER]", migN)
+    Assert.Contains ("UPDATE [dbo].[OSUSR_TEST_LEGACY_ORDER]", migN)
+    Assert.DoesNotContain ("OSUSR_TEST_COUNTRY", migN)
+    Assert.True (System.String.IsNullOrWhiteSpace bundle.Bootstrap)
+    // Two lanes carry content ⇒ per-lane files are informative.
+    Assert.Equal (2, DataEmissionComposer.RenderedDataBundle.nonEmptyLaneCount bundle)
+    let files = DataEmissionComposer.RenderedDataBundle.perLaneFiles bundle
+    Assert.True (Map.containsKey "Data/StaticSeeds.sql" files)
+    Assert.True (Map.containsKey "Data/MigrationData.sql" files)
+    Assert.False (Map.containsKey "Data/Bootstrap.sql" files)
+    // The fused arm is byte-identical to composeRenderedFull (one render).
+    let fused =
+        DataEmissionComposer.composeRenderedFull
+            (policyWith AllRemaining) catalog Profile.empty migration UserRemapContext.empty
+        |> mustOkEmit
+    Assert.Equal<string> (fused, bundle.Fused)
+
+[<Fact>]
+let ``WP6 step 3: a single active lane makes the fused seed equal that lane (nonEmptyLaneCount = 1)`` () =
+    // Only the static lane has content ⇒ the fused seed IS the static lane,
+    // so the per-lane split adds nothing and the pipeline omits it.
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let bundle =
+        DataEmissionComposer.composeRenderedBundle (policyWith AllRemaining) catalog Profile.empty
+        |> mustOkEmit
+    Assert.Equal (1, DataEmissionComposer.RenderedDataBundle.nonEmptyLaneCount bundle)
+    Assert.Equal<string> (bundle.Fused, bundle.StaticSeeds)
+    Assert.True (System.String.IsNullOrWhiteSpace bundle.MigrationData)
+    Assert.True (System.String.IsNullOrWhiteSpace bundle.Bootstrap)
+
 // ---------------------------------------------------------------------------
 // Card P2 — the leveled plan is a faithful PARTITION of the fused seed.
 //

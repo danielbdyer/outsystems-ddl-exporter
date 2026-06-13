@@ -197,7 +197,7 @@ let ``live: renameStatements emits sp_rename + a logical-name re-bind for a phys
     Assert.Contains("sp_rename", stmts.[0])
     Assert.Contains("PATRON_TBL", stmts.[0])
     Assert.Contains("sp_updateextendedproperty", stmts.[1])
-    Assert.Contains("V2.LogicalName", stmts.[1])
+    Assert.Contains("Projection.LogicalName", stmts.[1])
     Assert.Contains("Patron", stmts.[1])
 
 let private columnRenameTarget : Catalog =

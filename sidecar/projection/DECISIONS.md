@@ -22457,3 +22457,300 @@ intermediate step and the measurement (49→20) that motivated contraction;
 this entry is the live shape. Witness: GoldenEmission green on re-record;
 byte changes are the master's `seed.sql` gaining the ScopedLookup DELETE arm
 (blessed) and the scenario restructure. Docker pool still owed (env).
+
+---
+
+## 2026-06-13 — Slice 5 of the full-export reconciliation (WP6 step 3): per-lane data outputs, self-minimizing
+
+Context: `V1_FULL_EXPORT_RECONCILIATION_PLAN.md` WP6 step 5 — "`runWithConfig`
+writes per-lane artifacts (`Data/StaticSeeds.sql`, `Data/Bootstrap.sql`,
+`Data/MigrationData.sql`, each internally topo-ordered from the pre-union
+sibling dispatch) PLUS the fused global `Data/seed.sql`." Reconciled with the
+operator's standing minimize-golden-surface directive (the two DECISIONS
+entries above).
+
+**1. One render site, one dispatch.** `DataEmissionComposer` gains
+`renderArtifactInTopoOrder` (the global-phase walk — Phase-1-all then
+Phase-2-all over `topo.Order`), and `composeRenderedFull` is refactored onto
+it (byte-identical). `composeRenderedBundleFull` does ONE `dispatchSiblings`
+and renders the fused union AND each pre-union sibling through the same
+helper, returning `RenderedDataBundle { Fused; StaticSeeds; MigrationData;
+Bootstrap }`. The per-lane strings are byte-faithful slices of the same
+per-kind renders — nothing is re-rendered (the plan's "render once from one
+dispatch").
+
+**2. Self-minimizing emission (the reconciliation).** The pipeline writes a
+per-lane `Data/<Lane>.sql` file only when **≥2 lanes carry content**
+(`RenderedDataBundle.nonEmptyLaneCount`). Rationale: with exactly one
+non-empty lane the fused `Data/seed.sql` IS that lane, so a per-lane file
+would byte-duplicate it — precisely the redundancy the operator's directive
+forbids. The per-lane split adds information only when lanes interleave (≥2),
+and that is exactly when the files are written. The writer is unchanged (it
+iterates `DataBundle` generically); `Map.isEmpty` still holds when `EmitData`
+is off.
+
+**3. Golden impact: none.** The operator-config golden path supplies no
+migration/bootstrap context and runs no hydration (it is catalog-direct via
+`projectWithConfig`), so the `master` scenario has only the static lane →
+the ≥2 rule omits per-lane files → the corpus pins only the fused
+`Data/seed.sql` (which already carries the static MERGE/Phase-2 shapes and
+the `Tier` IDENTITY_INSERT bracket). The per-lane split is witnessed at the
+composer level (`DataEmissionComposerTests`: a two-lane static+migration
+catalog yields `StaticSeeds` ≠ `MigrationData`, both distinct from `Fused`;
+a one-lane catalog yields `Fused = StaticSeeds`, count 1). `THE_GOLDEN
+_EMISSION.md §4` data-lane section updated to this reconciliation.
+
+**4. Deviation from the plan's literal text, named.** The plan said per-lane
+files land "plus the fused" unconditionally; this emits them conditionally
+(≥2 lanes) to honor the newer, repeated minimize-surface directive. The
+capability is fully present; only the redundant single-lane file is withheld.
+Witness: DataEmissionComposer 27/0, FullExportDataBundle 3/0, GoldenEmission
+3/0 (byte-stable). Docker pool owed (env).
+
+---
+
+## 2026-06-13 — Slice 5 of the full-export reconciliation (WP6 step 4): data hydration grafts live static rows onto the catalog
+
+Context: `V1_FULL_EXPORT_RECONCILIATION_PLAN.md` WP6 step 2 — the forward OSSYS
+read marks static entities `Static []` (the marker present, populations
+empty; `OssysRowsetReader`), so the static-seed lane emits nothing until a
+read-only hydration step streams those rows from the live source and grafts
+them onto the catalog before the data lanes render.
+
+**1. The `Hydration` module (Pipeline).** `graftStaticPopulations` (PURE)
+replaces the rows of static-marked kinds by `SsKey` (rename-invariant, A1),
+preserving other modality marks and kind order; grafting pre-chain lets
+`NormalizeStaticPopulations` sort deterministically. `hydrateCatalog` (async)
+is the orchestrator: data-off ⇒ identity; file-sourced (no `model.ossys`) ⇒
+identity; OSSYS-sourced ⇒ open a SECOND connection (the model-read connection
+is use-disposed) via the `LiveModelRead.fromConnSpecWith` open template, stream
+the static-marked kinds through `Ingestion.collectInOrderFor` (a new scoped
+collector — streams ONLY the owned static kinds, NEVER `ReadSide.read` which
+marks every table Static, survival rule 8), and graft. The async entry lives
+in the pipeline caller, never the sync `runWithConfigCore` (FS3511).
+
+**2. One seam, both legs (the parity duty).** `readAndHydrateConfigModel`
+(= `readConfigModel` then `hydrateCatalog`) is consumed by BOTH the publish
+path (the `runWithConfig` extract stage) and the store leg
+(`emittedSeedPlan` → `projectSeedPlan`), so the deployed seed plan reflects
+the same hydrated rows the bundle published — no drift between deployed and
+published. `emittedSchema` (schema plane) is untouched (data-free).
+
+**3. Named skip, never silence.** Data on + file-sourced model ⇒
+`Hydration.diagnostics` yields the Warning `data.hydration.skippedFileSourced`
+(config-derived, pure), added to `runWithConfigCore`'s diagnostic stream. The
+note is computed from config in the sync core; the actual graft runs in the
+async caller — clean separation, and the note is testable without a
+connection.
+
+**4. Marker approach now; provenance-typed Static as the named follow-up.**
+Hydrated rows graft into `Modality.Static`, indistinguishable from authored
+static rows. The armed `ReadbackPopulated` / provenance-typed-Static closed-DU
+change (CONSTELLATION_BACKLOG §6 item 4) would keep authored vs hydrated rows
+distinguishable, but it is a codec-totality blast across every round-trip
+surface; per the handoff's allowance it is the immediate follow-up, not this
+step. Note: hydration only FILLS existing `Static` markers (never mints new
+ones), so it does not re-introduce the 4.4 trap (survival rule 8) — the
+catalog's static classification is unchanged; only rows are added.
+
+**5. Witness + environment limit.** PURE/no-connection witnesses are green
+(`HydrationTests` 8/0 — graft fills/ignores/order-preserves; the file-sourced
+skip diagnostic; data-off and file-sourced `hydrateCatalog` identity). The
+LIVE OSSYS stream branch (open + stream + graft) compiles and is FS3511-safe
+but CANNOT be exercised in this environment (no OSSYS source); it must be
+witnessed against a live estate (J5-adjacent). Fast pool 3134/27/211 — the 27
+failures are the same three Docker-gated extraction classes, unchanged
+(Docker daemon unavailable this session). Docker pool owed before merge.
+
+---
+
+## 2026-06-13 — Slice 5 of the full-export reconciliation (WP6 step 5 / slice close): per-lane goldens reconciled; WP6 steps 1–5 complete
+
+Context: `V1_FULL_EXPORT_RECONCILIATION_PLAN.md` WP6 step 5 — "GoldenCatalog
+gains the lane variances (a bootstrap-owned kind, a migration-row kind, the
+IDENTITY-PK static); re-record per the blessing protocol." Reconciled with the
+operator's minimize-surface directive and the self-minimizing per-lane design
+(step 3).
+
+**1. What the golden pins (and why no new artifacts).** The golden path is
+`projectWithConfig GoldenCatalog.catalog` — catalog-direct, with empty
+migration/userRemap contexts and no hydration. So only the **static** lane
+ever carries content there, the fused `Data/seed.sql` IS that lane, and the
+≥2-lane rule (step 3) writes no per-lane files. The `master` scenario's
+`Data/seed.sql` already pins every golden-reachable WP6 data-lane variance:
+the static MERGE/Phase-2 shapes, the `Tier` IDENTITY_INSERT bracket (step 1),
+and the folded-in `ScopedLookup` delete arm (corpus take-2). No new golden
+artifacts are added — pinning a per-lane `StaticSeeds.sql` would byte-duplicate
+`seed.sql` (the exact redundancy the operator forbade).
+
+**2. Where the per-lane / migration / bootstrap variances are witnessed.** At
+the composer (`DataEmissionComposerTests`): a two-lane static+migration
+catalog yields `StaticSeeds` ≠ `MigrationData`, both distinct from the fused
+seed, with `nonEmptyLaneCount = 2`; a one-lane catalog yields
+`Fused = StaticSeeds`. This is the right altitude — the migration/bootstrap
+lanes need operator/hydration contexts the golden path does not supply, so
+they cannot be golden-pinned without wiring migration-context-from-config
+(a separate concern, not WP6).
+
+**3. Deviation from the handoff's literal step 5, named.** I did NOT add a
+bootstrap-owned or migration-row kind to `GoldenCatalog`: in the golden path
+those lanes have no content, so the kinds would be empty/static and add no
+golden information. The one golden-pinnable lane variance (the IDENTITY-PK
+static) IS in the catalog (`Tier`). The lane-split variance lives in the
+composer tests.
+
+**WP6 status: steps 1–5 COMPLETE this slice** (IDENTITY_INSERT bracket;
+Bootstrap delegation + Active; per-lane outputs self-minimizing; hydration;
+per-lane goldens reconciled). Step 6 (EXCEPT validate-before-apply, C2) is a
+later slice per the plan's §5 sequencing. Remaining caveat: the live OSSYS
+hydration stream and the full Docker pool are unwitnessed in this environment
+(no OSSYS source; Docker daemon unavailable) — both owed before merge.
+
+---
+
+## 2026-06-13 — WP5 / C1: the identity extended properties rename `V2.*` → `Projection.*` (the worked example of the blessing protocol)
+
+Context: `V1_FULL_EXPORT_RECONCILIATION_PLAN.md` WP5; operator adjudication C1
+(*"get the rename done. V2 is only useful as terminology in meta … not
+practical inside the domain"*). The emitted identity extended properties were
+`V2.LogicalName` / `V2.SsKey`; this renames them to domain terminology
+**`Projection.LogicalName` / `Projection.SsKey`** (final names, per C1).
+
+**1. Writer + in-memory reader (paired, PURE-witnessed).** `SsdtDdlEmitter`
+emits the new names (table + column `Projection.LogicalName`, table
+`Projection.SsKey`); `PhysicalSchemaReader` (the in-memory statement-stream
+round-trip) reads the new name — paired with the writer, always fresh
+emission, so new-name only. `PhysicalSchema`'s diff-blindness (`isLogicalName`)
+excludes BOTH `Projection.LogicalName` and `V2.LogicalName` so neither
+phantom-diffs during the window.
+
+**2. Live `ReadSide` dual-read (Docker-gated).** The deployed-schema readers
+read BOTH names (`ep.name IN (N'Projection.…', N'V2.…')`) — new-first by
+preference, legacy retained so already-deployed `V2.*`-bearing schemas still
+recover (the dual-read window; legacy-read retirement is trigger-gated on no
+`V2.*`-bearing environment remaining). The non-identity extended-property read
+excludes all four names. `MigrationRun`'s rename rebind targets
+`Projection.LogicalName`; migrating a LEGACY `V2.*` deployed schema is the
+dual-window migrate edge (named here; Docker-gated, owed).
+
+**3. Golden = the worked example.** Re-recorded under the blessing protocol:
+a clean 1:1 rename, 160 insertions / 160 deletions across 17 master files,
+every `V2.*` → `Projection.*`, no other byte moved. This commit's golden diff
+IS the operator-blessing surface the corpus was built for.
+
+**4. Scope: the rename only; the `emit|omit` gate is the named follow-on.**
+WP5 also specifies gating the annotations behind an `EmissionPolicy
+.IdentityAnnotations = emit|omit` axis (a named downgrade with a diagnostic).
+That requires a new policy axis threaded to the (private)
+`extendedPropertyStatements` — a signature cascade separable from the rename.
+The rename is the operator's explicit C1 ask and lands now; the gate is the
+immediate follow-on (its DECISIONS amendment + config key + the named-downgrade
+diagnostic come with it).
+
+**Witness.** Fast pool 3134/27/211 — the cross-cutting rename broke zero pure
+tests (the 27 are the unchanged Docker-gated extraction classes). Pure
+witnesses: `LogicalNameRoundtripTests` emission asserts, `MigrationRunTests`
+rebind-gen, `CanaryRoundTripTests` EP filter, `GoldenEmission` (re-recorded).
+The live `ReadSide` dual-read round-trip and the legacy-schema migrate are
+Docker-gated/OSSYS-adjacent — owed before merge. (Code comments and the legacy
+`Fixtures/SourceSchema.fs` deliberately keep `V2.*` — the latter now exercises
+the dual-read legacy path.)
+
+---
+
+## 2026-06-13 — Docker repaired mid-session: both pools green; WP5/WP6 Docker-witnessed; hydration live stream closed; the `env:`/`file:` ossys de-conflation
+
+The sandbox Docker daemon (down for most of this session — the
+"owed before merge" caveat on the WP5/WP6 entries above) was auto-repaired.
+The warm SQL container started (`warm-sql.sh start`, image cached, ready ~6s),
+which let the owed witnesses run:
+
+**1. Both pools green.** Docker pool **231/231**. Fast pool **3161/0/211** with
+the warm container — the 27 previously-"env-gated" extraction tests
+(`BtReferenceFkFlowTests`, `OssysComprehensiveFixtureTests`,
+`OssysExtractionCanaryTests`) now EXECUTE (not skip) and pass. The
+"Docker pool owed" caveat on the WP5/WP6 DECISIONS entries above is
+RESOLVED (those entries stand as the as-of-the-time record; this is the
+update).
+
+**2. WP5 + WP6 Docker-witnessed.** The Docker pool exercises the WP5 ReadSide
+dual-read round-trip (deploy `Projection.*` → read back → recover) and the WP6
+leveled deploy (the IDENTITY_INSERT bracket executing), plus CDC silence —
+all green. My cross-cutting WP5 rename and WP6 deploy paths are verified
+end-to-end, not just structurally.
+
+**3. WP6 hydration live stream — gap closed.** A new Docker-gated test
+(`IngestionIntegrationTests` — `Hydration.hydrateCatalog streams live static
+rows via BOTH env: and file: ossys refs`) seeds a static-entity table, marks
+the catalog kind `Static []`, and runs `hydrateCatalog` against the warm
+container: the empty marker fills with the 3 seeded rows. The full composition
+(open `model.ossys` → `Ingestion.collectInOrderFor` scoped to static kinds →
+graft) is now witnessed, not just its pieces.
+
+**4. The `env:`/`file:` ossys de-conflation (operator-flagged).** `model.ossys`
+predominantly uses `file:` refs in the operator's configs; the `file:` form is
+NOT deprecated and must not be conflated with `model.path`. Hydration already
+supported both (it routes through `LiveModelRead.parseConnRef`, which handles
+`env:` and `file:` identically) — but the diagnostic NAME and prose conflated
+them: "file-sourced" read as if a `file:` ossys ref were skipped. Fixed: the
+skip keys on the PRESENCE of `model.ossys` (not its ref form); the diagnostic
+is renamed `data.hydration.skippedFileSourced` → `data.hydration
+.skippedNoLiveSource` and its message names `model.path` (the osm_model.json
+fallback) explicitly as the no-live-source case, distinct from a `model.ossys`
+`file:` ref (which hydrates). The Docker test exercises BOTH ref forms; a pure
+test pins that a `file:` ossys ref emits no skip diagnostic. `model.path`
+(JSON fallback) and `model.ossys` (live, `env:` or `file:`) are the two model
+sources; only the former skips hydration.
+
+The only standing caveat now is the dual-window MIGRATE edge (rebinding the
+renamed identity property on a LEGACY `V2.*`-bearing deployed schema) — named
+in the WP5 entry; trigger-gated on the legacy-name retirement.
+
+---
+
+## 2026-06-13 — WP9 (provenance arm) + the standing invariant: `model.path` never gates; `model.ossys` is the only primary
+
+Context: `V1_FULL_EXPORT_RECONCILIATION_PLAN.md` WP9 / event-ledger #1, plus an
+operator-stated FULL INVARIANT: *"existence of `model.path` should never be a
+prerequisite or gating condition for our app, anywhere in the logic. Live
+ossys is the only primary; `model.path` is now only a backstop / dependency-
+injection point — keep it accessible."*
+
+**1. The provenance-arm fix.** `MovementSurface.resolveFlowSpec` classified
+`ModelSource.ConfigFile` (the publish-with-provenance arm,
+`PublishBundle`/`PublishAndLoad`) only when
+`SourcePath ∧ store ∧ Shaping.Model.Path` were all present — so an
+OSSYS-sourced config (no `model.path`) never published with provenance even
+with a store configured. Fixed: the "publishable model" condition is now
+`Shaping.Model.Path` **OR** `Shaping.Model.Ossys`. Additive — path-sourced and
+store-less configs keep their byte-identical classification; only
+ossys-only-with-store gains provenance.
+
+**2. The invariant, AUDITED across the app.** Every runtime `cfg.Model.Path`
+read was checked; none gate on path presence:
+- `Compose.readConfigModel` — `model.ossys` PRIMARY, `model.path` FALLBACK; the
+  only error (`pipeline.config.modelNoSource`) fires when BOTH are absent (a
+  "need some source" check that `model.ossys` alone satisfies). Not a path gate.
+- `MovementSurface.resolveFlowSpec` — the ONE place path was a gate (the
+  ConfigFile classification); removed in (1). The fallback `ModelFile`
+  classification keeps `model.path` as a first-class source when present.
+- `FullExportRun.emitConfigSnapshot` — a log label (`"LiveOssys"` / the path /
+  `"(none)"`); no gate.
+- `Hydration` — keys on `model.ossys` presence; `model.path` appears only in
+  the named SKIP diagnostic message (`data.hydration.skippedNoLiveSource`),
+  not as a gate (hydration is the identity without ossys, it does not require
+  path).
+- The remainder are comments or the loader's legacy `model:"<path>"` →
+  `Shaping.Model.Path` reconciliation.
+So the invariant HOLDS: `model.path` is never a prerequisite; `model.ossys`
+alone drives every path. `model.path` stays accessible as the backstop / DI
+point (the `ModelFile` classification + the `readConfigModel` fallback).
+
+**Witness.** `MovementSurfaceTests` 114/0 — an ossys-only config with load
+provenance + a store fires `ConfigFile` (provenance); the same config WITHOUT
+a store stays non-provenance (the store gate is intact, only the path gate is
+gone). The broader suite is unchanged (the fix is additive).
+
+**WP9 remainder (not this slice):** the `examples/projection.sample.json`
+rewrite (ossys-first sample) and the `projection compare` verb (multi-
+environment readiness; a design-first slice per the plan) remain.

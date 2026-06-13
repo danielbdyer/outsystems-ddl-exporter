@@ -83,26 +83,26 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'MS_Description', @value = N'The
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'ScalarGallery',
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'ScalarGallery',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery'
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.SsKey', @value = N'S9:GOLD_KIND1:113:ScalarGallery',
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_KIND1:113:ScalarGallery',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery'
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'AlarmAt',
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'AlarmAt',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
     @level2type = N'COLUMN', @level2name = N'AlarmAt'
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Amount',
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Amount',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
     @level2type = N'COLUMN', @level2name = N'Amount'
@@ -116,21 +116,21 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'MS_Description', @value = N'Wor
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Code',
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Code',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
     @level2type = N'COLUMN', @level2name = N'Code'
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'DueDate',
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'DueDate',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
     @level2type = N'COLUMN', @level2name = N'DueDate'
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'ExternalKey',
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'ExternalKey',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
     @level2type = N'COLUMN', @level2name = N'ExternalKey'
@@ -144,49 +144,49 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'MS_Description', @value = N'No 
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'FreeText',
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'FreeText',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
     @level2type = N'COLUMN', @level2name = N'FreeText'
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Id',
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Id',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
     @level2type = N'COLUMN', @level2name = N'Id'
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'IsActive',
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'IsActive',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
     @level2type = N'COLUMN', @level2name = N'IsActive'
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Notes',
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Notes',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
     @level2type = N'COLUMN', @level2name = N'Notes'
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'OccurredOn',
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'OccurredOn',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
     @level2type = N'COLUMN', @level2name = N'OccurredOn'
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Payload',
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Payload',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
     @level2type = N'COLUMN', @level2name = N'Payload'
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Tally',
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Tally',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
     @level2type = N'COLUMN', @level2name = N'Tally'

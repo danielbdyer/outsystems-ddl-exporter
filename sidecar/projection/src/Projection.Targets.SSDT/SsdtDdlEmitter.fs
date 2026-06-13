@@ -582,7 +582,7 @@ module SsdtDdlEmitter =
             // to hydrate `Kind.Name` from the deployed schema, so the
             // logical-vs-physical divergence survives deploy → read.
             yield Statement.SetExtendedProperty (
-                TableProperty table, "V2.LogicalName", Some (Name.value k.Name))
+                TableProperty table, "Projection.LogicalName", Some (Name.value k.Name))
 
             // Wave 4.1 — V2.SsKey extended property at the table level.
             // Carries the round-trippable serialization of the kind's
@@ -591,7 +591,7 @@ module SsdtDdlEmitter =
             // original key instead of synthesizing `READSIDE_KIND` from
             // physical coordinates. Sibling to V2.LogicalName.
             yield Statement.SetExtendedProperty (
-                TableProperty table, "V2.SsKey", Some (SsKey.serialize k.SsKey))
+                TableProperty table, "Projection.SsKey", Some (SsKey.serialize k.SsKey))
 
             for ep in k.ExtendedProperties do
                 yield Statement.SetExtendedProperty (
@@ -609,7 +609,7 @@ module SsdtDdlEmitter =
                 // the column level. Same roundtrip-recovery role as
                 // the table-level sibling above.
                 yield Statement.SetExtendedProperty (
-                    ColumnProperty (table, columnName), "V2.LogicalName", Some (Name.value attr.Name))
+                    ColumnProperty (table, columnName), "Projection.LogicalName", Some (Name.value attr.Name))
 
                 for ep in attr.ExtendedProperties do
                     yield Statement.SetExtendedProperty (

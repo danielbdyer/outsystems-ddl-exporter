@@ -120,7 +120,11 @@ module PhysicalSchemaReader =
             statements
             |> Seq.choose (fun stmt ->
                 match stmt with
-                | SetExtendedProperty (owner, "V2.LogicalName", Some value) ->
+                // WP5 / C1 — paired with the writer's renamed property
+                // (`Projection.LogicalName`). The in-memory round-trip is
+                // always fresh emission, so it reads the new name only; the
+                // dual-read (legacy `V2.*`) lives in the live `ReadSide`.
+                | SetExtendedProperty (owner, "Projection.LogicalName", Some value) ->
                     match owner with
                     | TableProperty table ->
                         let schemaStr, tableStr = TableId.qualifiedParts table

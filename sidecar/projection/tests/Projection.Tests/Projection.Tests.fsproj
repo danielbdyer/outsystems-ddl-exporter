@@ -111,6 +111,7 @@
     <Compile Include="MigrationDependenciesEmitterTests.fs" />
     <Compile Include="BootstrapEmitterTests.fs" />
     <Compile Include="DataEmissionComposerTests.fs" />
+    <Compile Include="HydrationTests.fs" />
     <Compile Include="StaticPopulationEmitterTests.fs" />
     <Compile Include="CdcSilenceTests.fs" />
     <Compile Include="CdcSilenceCrossEmitterTests.fs" />
