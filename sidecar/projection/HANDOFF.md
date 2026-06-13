@@ -54,7 +54,11 @@ a kind another lane also populates and the composer's
 Step 3 (per-lane `Data/StaticSeeds.sql` / `Bootstrap.sql` / `MigrationData.sql`
 out of `SiblingArtifacts` pre-union) and step 5 (the per-lane goldens) are
 PURE-witnessable through the golden corpus and need no live connection — they
-can land next without Docker. Step 4 (hydration in `runWithConfig`) is the
+can land next without Docker. **Note the golden corpus was contracted
+(`2ca4374`, DECISIONS + `THE_GOLDEN_EMISSION.md §3`):** `default/` is the full
+baseline; non-baseline scenarios now commit ONLY files that differ from it
+(comparator law `scenario = baseline ⊕ {deltas}`). So step 3's lane files pin
+in `default` and delta into `delete-scope` only — do NOT triplicate them. Step 4 (hydration in `runWithConfig`) is the
 big one and the only step that wants a live OSSYS connection; the marker /
 `ReadbackPopulated` choice and the `projectSeedPlan` parity duty are in the
 pre-scope. The IDENTITY_INSERT bracket already rides Bootstrap's delegation,
