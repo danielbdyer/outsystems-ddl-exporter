@@ -63,21 +63,33 @@ where the plan says so — each such slice shows up here as a deliberate diff).
 ```
 tests/Projection.Tests/Golden/
   README.md                      — pointer to this document
-  default/                       — Config.defaultConfig + all data lanes on
+  default/                       — the BASELINE: the FULL artifact set
     Modules/<Module>/<Schema>.<Table>.sql   (the per-table SSDT bundle)
     manifest.json
     stream.sql                   — the flat-stream Render.toText realization
                                    (where GO framing + the constraint ladder live)
     Data/seed.sql                — present only when the lanes produce content
   pruned-platform-auto/          — emission.includePlatformAutoIndexes=false
+                                   (ONLY the files that differ from default)
   delete-scope/                  — emission.deleteScope on the scoped kind
+                                   (ONLY the files that differ from default)
 ```
 
-Each scenario is the **full** artifact set (not a diff against `default`) so
-any golden file is readable standalone. The dacpac is **excluded** by design:
-its byte-determinism is an explicitly deferred guarantee (content-equality
-only, per the standing deferral) — pinning its bytes would make the corpus
-flaky against a non-claim.
+**The baseline + delta layout (DECISIONS 2026-06-13 — golden corpus
+contraction).** `default/` is the baseline and holds the **full**,
+standalone-readable artifact set — the one place a reviewer reads a complete
+emission. Every other scenario commits **only the files whose bytes differ
+from the baseline**; the comparator asserts the law
+`scenario = baseline ⊕ {committed deltas}` (keyset parity with the baseline;
+each committed delta genuinely differs and byte-matches; every non-committed
+file equals the baseline). This keeps the review surface proportional to what
+a scenario actually changes (an axis-orthogonal variance touches only the
+baseline) rather than triplicating invariant artifacts. The trade-off:
+non-baseline directories are **not** standalone-readable — but their
+committed files ARE exactly the axis's effect, nothing else. The dacpac is
+**excluded** by design: its byte-determinism is an explicitly deferred
+guarantee (content-equality only, per the standing deferral) — pinning its
+bytes would make the corpus flaky against a non-claim.
 
 Scenario configs are authored in `GoldenEmissionTests.fs` next to the
 comparator — the config IS part of the pinned intent.

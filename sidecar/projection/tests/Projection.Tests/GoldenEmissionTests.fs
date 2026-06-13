@@ -61,6 +61,19 @@ let private scenarios : (string * Config.Config) list =
                     // THE_GOLDEN_EMISSION.md §4 and the reconciliation plan.
                     DeleteScope = Some { Terms = [ { Column = "TenantId"; Value = "42" } ] } } } ]
 
+/// The baseline scenario whose directory holds the FULL, standalone-
+/// readable artifact set — the one place a reviewer reads a complete
+/// emission. Every OTHER scenario commits ONLY the files whose bytes
+/// differ from this baseline (DECISIONS 2026-06-13 — golden corpus
+/// contraction; amends THE_GOLDEN_EMISSION.md §3's full-set choice). The
+/// comparator asserts `scenario = baseline ⊕ {committed deltas}`, so a
+/// file equal to the baseline is never duplicated into a non-baseline
+/// scenario, and an axis-orthogonal variance touches only the baseline.
+let private baselineScenario : string = "default"
+
+let private baselineConfig : Config.Config =
+    scenarios |> List.find (fun (n, _) -> n = baselineScenario) |> snd
+
 /// Emit one scenario's artifact set: the per-table SSDT bundle (minus
 /// manifest.json — its VersionedPolicy stamp carries a wall clock; the
 /// inventory holds the TODO), the Data bundle, and the flat-stream
@@ -103,6 +116,24 @@ let private record (scenarioDir: string) (files: Map<string, string>) : unit =
         | dir -> Directory.CreateDirectory dir |> ignore
         File.WriteAllText(path, body)
 
+/// Byte-exact assertion with a first-divergence context window. Shared by
+/// the baseline (full-set) and delta comparators.
+let private assertByteMatch (scenario: string) (rel: string) (expectedBody: string) (actualBody: string) : unit =
+    if expectedBody <> actualBody then
+        let firstDiffAt =
+            Seq.zip (expectedBody :> char seq) (actualBody :> char seq)
+            |> Seq.tryFindIndex (fun (a, b) -> a <> b)
+            |> Option.defaultValue (min expectedBody.Length actualBody.Length)
+        let context (s: string) =
+            let from = max 0 (firstDiffAt - 80)
+            let len = min 160 (s.Length - from)
+            if len <= 0 then "" else s.Substring(from, len)
+        Assert.Fail(
+            sprintf "scenario %s: %s drifted from the golden at char %d.\n--- golden ---\n%s\n--- emitted ---\n%s\n(bless deliberately with GOLDEN_RECORD=1 + a DECISIONS note)"
+                scenario rel firstDiffAt (context expectedBody) (context actualBody))
+
+/// Baseline comparator (the `default` scenario) — the FULL artifact set is
+/// pinned and read standalone; the artifact-set drift check lives here.
 let private compare (scenario: string) (expected: Map<string, string>) (actual: Map<string, string>) : unit =
     let expectedKeys = expected |> Map.toSeq |> Seq.map fst |> Set.ofSeq
     let actualKeys = actual |> Map.toSeq |> Seq.map fst |> Set.ofSeq
@@ -112,19 +143,50 @@ let private compare (scenario: string) (expected: Map<string, string>) (actual: 
         sprintf "scenario %s: artifact set drifted.\n  missing from emission: %A\n  not in goldens: %A\n  (re-record deliberately with GOLDEN_RECORD=1 + a DECISIONS note)"
             scenario (Set.toList missing) (Set.toList extra))
     for KeyValue (rel, expectedBody) in expected do
-        let actualBody = Map.find rel actual
-        if expectedBody <> actualBody then
-            let firstDiffAt =
-                Seq.zip (expectedBody :> char seq) (actualBody :> char seq)
-                |> Seq.tryFindIndex (fun (a, b) -> a <> b)
-                |> Option.defaultValue (min expectedBody.Length actualBody.Length)
-            let context (s: string) =
-                let from = max 0 (firstDiffAt - 80)
-                let len = min 160 (s.Length - from)
-                if len <= 0 then "" else s.Substring(from, len)
-            Assert.Fail(
-                sprintf "scenario %s: %s drifted from the golden at char %d.\n--- golden ---\n%s\n--- emitted ---\n%s\n(bless deliberately with GOLDEN_RECORD=1 + a DECISIONS note)"
-                    scenario rel firstDiffAt (context expectedBody) (context actualBody))
+        assertByteMatch scenario rel expectedBody (Map.find rel actual)
+
+/// Delta comparator (every non-baseline scenario). The committed corpus
+/// holds ONLY the files whose bytes differ from the baseline; the law is
+/// `scenario = baseline ⊕ {committed deltas}`. Three sub-laws:
+///   1. same Platonic catalog ⇒ identical artifact keyset to the baseline;
+///   2. each committed delta genuinely differs from the baseline AND
+///      byte-matches the emission (no equal-to-baseline duplication);
+///   3. every NON-committed file equals the baseline (the invariance law).
+let private compareDelta
+    (scenario: string)
+    (baseline: Map<string, string>)
+    (committed: Map<string, string>)
+    (actual: Map<string, string>)
+    : unit =
+    let actualKeys = actual |> Map.toSeq |> Seq.map fst |> Set.ofSeq
+    let baselineKeys = baseline |> Map.toSeq |> Seq.map fst |> Set.ofSeq
+    Assert.True((actualKeys = baselineKeys),
+        sprintf "scenario %s: artifact keyset diverged from the %s baseline.\n  only here: %A\n  only in baseline: %A"
+            scenario baselineScenario
+            (Set.difference actualKeys baselineKeys |> Set.toList)
+            (Set.difference baselineKeys actualKeys |> Set.toList))
+    for KeyValue (rel, committedBody) in committed do
+        match Map.tryFind rel actual with
+        | None ->
+            Assert.Fail(sprintf "scenario %s: committed delta %s is absent from the emission (re-record with GOLDEN_RECORD=1)" scenario rel)
+        | Some actualBody ->
+            match Map.tryFind rel baseline with
+            | Some b when b = actualBody ->
+                Assert.Fail(sprintf "scenario %s: committed delta %s equals the %s baseline — a non-baseline scenario must not duplicate baseline bytes; re-record to drop it" scenario rel baselineScenario)
+            | _ -> assertByteMatch scenario rel committedBody actualBody
+    for KeyValue (rel, actualBody) in actual do
+        if not (Map.containsKey rel committed) then
+            match Map.tryFind rel baseline with
+            | Some b when b = actualBody -> ()
+            | _ ->
+                Assert.Fail(sprintf "scenario %s: %s differs from the %s baseline but is not a committed delta (re-record with GOLDEN_RECORD=1 + a DECISIONS note)" scenario rel baselineScenario)
+
+/// Record only the files whose bytes differ from the baseline emission —
+/// the corpus-contraction recorder for non-baseline scenarios.
+let private recordDelta (scenarioDir: string) (baseline: Map<string, string>) (actual: Map<string, string>) : unit =
+    actual
+    |> Map.filter (fun rel body -> Map.tryFind rel baseline <> Some body)
+    |> record scenarioDir
 
 // ---------------------------------------------------------------------
 // Negative invariants — THE_GOLDEN_EMISSION.md §4, asserted per scenario.
@@ -208,15 +270,25 @@ let private assertNegativeInvariants (scenario: string) (files: Map<string, stri
 let private runScenario (name: string) : unit =
     let cfg = scenarios |> List.find (fun (n, _) -> n = name) |> snd
     let actual = emitScenario cfg
+    // The negative invariants run on the FULL emission for every scenario,
+    // independent of the delta-recording layout.
     assertNegativeInvariants name actual
     let scenarioDir = Path.Combine(goldenRoot, name)
-    if recording then
-        record scenarioDir actual
+    if name = baselineScenario then
+        if recording then record scenarioDir actual
+        else
+            let expected = listGoldenFiles scenarioDir
+            Assert.False(Map.isEmpty expected,
+                sprintf "no goldens recorded for scenario %s — run with GOLDEN_RECORD=1 first" name)
+            compare name expected actual
     else
-        let expected = listGoldenFiles scenarioDir
-        Assert.False(Map.isEmpty expected,
-            sprintf "no goldens recorded for scenario %s — run with GOLDEN_RECORD=1 first" name)
-        compare name expected actual
+        // Non-baseline: pin only the delta from the baseline emission.
+        let baseline = emitScenario baselineConfig
+        if recording then recordDelta scenarioDir baseline actual
+        else
+            Assert.True(Directory.Exists scenarioDir,
+                sprintf "no goldens recorded for scenario %s — run with GOLDEN_RECORD=1 first" name)
+            compareDelta name baseline (listGoldenFiles scenarioDir) actual
 
 [<Fact>]
 let ``golden emission: default scenario matches the blessed corpus byte-for-byte`` () =

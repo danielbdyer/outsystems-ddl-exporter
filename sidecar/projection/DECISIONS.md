@@ -22349,3 +22349,58 @@ registry tests (`RegisteredDataTransforms` — Active + skeleton/overlay) and
 `BootstrapEmitterTests` (the delegation now renders a populated plan; the
 empty-source case stays empty). Docker pool unavailable this session (see
 the step-1 environment note); must be run before merge.
+
+---
+
+## 2026-06-13 — Golden corpus contraction: non-baseline scenarios pin only their delta from the `default` baseline
+
+Context: operator directive, mid-WP6 — "maximally compress and contract the
+number of golden diffs we make as a codebase value; less surface area to
+review is better for long-term legibility as coverage expands." Measured
+the corpus to ground it: 49 committed files across 3 scenarios, of which
+**29 are byte-identical copies of `default`** (`pruned-platform-auto`
+differs from `default` in 2 of 16 files; `delete-scope` in 1 of 16). Each
+scenario was re-committing the entire emission to express a one- or two-file
+effect, and an axis-orthogonal variance (e.g. the WP6-step-1 `Tier` kind)
+rippled into all three scenario directories.
+
+**The value, stated as a law:** a golden change commits only the bytes it
+actually affects; invariance is asserted as a *test law*, not stored as
+duplicated bytes.
+
+**The mechanism.** `GoldenEmissionTests` now treats `default` as the
+baseline: its directory keeps the FULL, standalone-readable artifact set
+(the one place a reviewer reads a complete emission). Every other scenario
+commits ONLY the files whose bytes differ from the baseline emission; the
+comparator asserts `scenario = baseline ⊕ {committed deltas}` via three
+sub-laws — (1) same Platonic catalog ⇒ identical artifact keyset to the
+baseline; (2) each committed delta genuinely differs from the baseline AND
+byte-matches the emission (a delta that equals the baseline is a defect —
+re-record drops it); (3) every non-committed file equals the baseline (the
+invariance law). The recorder (`recordDelta`) writes only the differing
+files; the negative invariants still run on the FULL emission for every
+scenario.
+
+**This commit is byte-preserving.** The effective emission is unchanged;
+only the 29 duplicated *committed* files are dropped (corpus 49 → 20). No
+surviving golden file changes a byte — `git` shows deletions only. Coverage
+is unchanged: `default` still pins every table byte-for-byte, so a
+cross-cutting bug surfaces there; a non-default divergence still surfaces
+(it newly differs from `default`, so the recorder writes it and the diff
+appears); a bug that makes a scenario wrongly equal the baseline is still
+caught by the baseline's own pins.
+
+**Amendment.** This amends `THE_GOLDEN_EMISSION.md §3`'s "each scenario is
+the full artifact set … so any golden file is readable standalone" choice:
+the *baseline* stays standalone-readable; non-baseline scenarios trade
+standalone-readability for minimal review surface, and in exchange their
+committed files ARE exactly the axis's effect, nothing else. §3 is updated
+in the same commit.
+
+**Forward effect (the point):** the next axis-orthogonal variance touches
+only `default`; a new scenario costs only its genuine deltas; a cross-cutting
+emission change still re-records `default` in full (unavoidable — that IS
+the change) but no longer multiplies across invariant scenario copies. WP6
+step 3's per-lane data goldens (`Data/StaticSeeds.sql` etc.) land on this
+slimmer surface — invariant to the platform-auto axis, so they pin in
+`default` and delta only into `delete-scope`, never triplicated.
