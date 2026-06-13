@@ -1526,12 +1526,16 @@ let reportMigrationError (e: MigrationError) : int =
 let migratePreflights (label: string) (cnn: Microsoft.Data.SqlClient.SqlConnection) (planned: Preflight.PlannedWrite list) : System.Threading.Tasks.Task<Result<unit, int>> =
     // Each pre-flight refusal renders through the §5 Gate surface — the
     // consequence as meaning + the one plain imperative — never a raw header +
-    // dump. The exit is pinned to the migrate verb's historical code (7, the
-    // connection/permission/credential class), independent of `classify`'s axis
-    // code, so the displayed exit matches the returned one.
+    // dump. NM-61: the exit HONORS `classify` (the A1 single-source seam the
+    // transfer path routes through at `runCore`) rather than flattening every
+    // refusal to 7 — so the connection axis exits 6 (its own axis) while the
+    // permission/grant axis stays 7 (`migrate.insufficientGrant` /
+    // `migrate.grantProbeFailed` classify to 7). The displayed exit matches the
+    // returned one because both come from the one `refusalOf` classification.
     let refuse (es: ValidationError list) : Result<unit, int> =
-        TtyRenderer.renderGate "projection migrate" { Preflight.refusalOf es with ExitCode = 7 }
-        Error 7
+        let refusal = Preflight.refusalOf es
+        TtyRenderer.renderGate "projection migrate" refusal
+        Error refusal.ExitCode
     task {
         // G0 (AC-G0) — the migrate pre-flights compose through the ONE mandatory
         // `Preflight.all`, mirroring the transfer Execute path (`runCore`). The
@@ -1751,10 +1755,14 @@ let runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec: string)
                             // Pre-flight the SOURCE (read) + SINK (write) before any mutation.
                             match! Preflight.connectionPreflight dataSource sink with
                             | Error es ->
-                                // §5 connection gate; the migrate verb's connection
-                                // refusal exits 7 (the credential class), pinned here.
-                                TtyRenderer.renderGate "projection migrate" { Preflight.refusalOf es with ExitCode = 7 }
-                                return 7
+                                // §5 connection gate. NM-61: HONOR `classify` — a
+                                // connection refusal (`migrate.connectionUnavailable`)
+                                // is its own axis (exit 6), not the permission/credential
+                                // class (7). Single-sourced through `refusalOf` so the
+                                // displayed and returned exits agree and match `transfer`.
+                                let refusal = Preflight.refusalOf es
+                                TtyRenderer.renderGate "projection migrate" refusal
+                                return refusal.ExitCode
                             | Ok () ->
                                 match MigrationRun.preview declaration sinkSourceA target with
                                 | Error e -> return reportMigrationError e

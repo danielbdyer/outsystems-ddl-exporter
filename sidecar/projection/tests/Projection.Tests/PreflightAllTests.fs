@@ -270,6 +270,31 @@ let ``G0: labelText renders every GateLabel variant (closed-DU totality)`` () =
         Assert.False(System.String.IsNullOrWhiteSpace(Preflight.labelText l))
 
 [<Fact>]
+let ``NM-61: a migrate connection refusal classifies to exit 6 (its own axis), not the flattened 7`` () =
+    // NM-61 — the migrate face (`migratePreflights` / `runMigrateWithData`) once
+    // hardcoded EVERY refusal to exit 7, so a dead endpoint exited 6 on `transfer`
+    // but 7 on `migrate` — the same axis, the same probe, two codes — and the
+    // `migrate.connectionUnavailable → 6` arm in `classify` was dead. The face now
+    // routes through `refusalOf` (the A1 single-source seam) and returns its exit,
+    // so the connection axis is 6 on migrate too and the classify arm is live.
+    let refusal =
+        Preflight.refusalOf
+            [ ValidationError.create "migrate.connectionUnavailable" "the sink endpoint refused" ]
+    Assert.Equal(6, refusal.ExitCode)
+    Assert.Equal(Preflight.ConnectionUnavailable, refusal.Label)
+
+[<Fact>]
+let ``NM-61: the OTHER migrate refusal axes keep their distinct exits through refusalOf`` () =
+    // The fix must not flatten the rest: the migrate permission/grant axis stays 7,
+    // the CDC-tracked sink 9, the tightening axis 9 — the same exits the verb
+    // produced before, now sourced from the one classification.
+    let exitOf code = (Preflight.refusalOf [ ValidationError.create code "refused" ]).ExitCode
+    Assert.Equal(7, exitOf "migrate.insufficientGrant")
+    Assert.Equal(7, exitOf "migrate.grantProbeFailed")
+    Assert.Equal(9, exitOf "migrate.cdcTrackedSink")
+    Assert.Equal(9, exitOf "migrate.dataViolatesTightening")
+
+[<Fact>]
 let ``G0: refusalOf classifies the FIRST error code (the gate's primary refusal)`` () =
     // The composition reports the structured first-failure with its (exit,label):
     // `refusalOf` keys off the primary (first) error's code.
