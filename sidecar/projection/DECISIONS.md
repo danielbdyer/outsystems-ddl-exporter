@@ -22148,3 +22148,58 @@ mixed-direction composite IX on `Engagement`; a DEFAULT+FK stack
 long-name reference pair whose generated FK name overflows — the
 hashed 128-char name is VISIBLE in the goldens. Goldens re-recorded
 under this entry.
+
+## 2026-06-13 — Slice 4 of the full-export reconciliation: the declared scope pushes down to the OSSYS read; the equivalence law; the dangling-reference gap it exposed
+
+Context: `V1_FULL_EXPORT_RECONCILIATION_PLAN.md` WP3; operator
+adjudication C4 ("elevate the model filtering to be adapter-time …
+it's not useful to gain ALL of the applications, eSpaces, and tables —
+we'll discard the data immediately anyway"). This entry AMENDS the
+2026-05-16 slice-β stance ("filtering is an IR/ModuleFilter concern,
+not adapter-time") for the module/entity-scope axis specifically: the
+pushdown is an extraction-COST reduction; `ModuleFilter.apply` REMAINS
+the semantic owner and runs after every read (double enforcement —
+V1's own precedent: SQL at query time AND ModuleFilter at every load).
+
+**1. The wire.** `SnapshotScopeBinding.fromModel` (Pipeline) derives
+the adapter's `SnapshotParameters` from `model.modules` — names sorted
++ deduplicated (the V1 `ModelExtractionCommand.Create` discipline),
+the per-module entity allow-list as the documented
+`@EntityFilterJson` shape, the include flags threaded. The opt-in gate
+mirrors `ModuleFilterBinding` exactly (A7 polarity): empty
+`model.modules` ⇒ `defaultParameters`, flags inert.
+`LiveModelRead.fromConnectionWith`/`fromConnSpecWith` are the
+scope-bearing faces; `readConfigModel` binds them on the full-export
+path. `OnlyActiveAttributes` is deliberately NOT pushed — the in-memory
+filter does not filter attributes, so binding it would break the
+equivalence law below and silently starve
+`InactiveAttributeDiagnostics`; the dormant `model.onlyActiveAttributes`
+key keeps its standing deferral.
+
+**2. The law.** `scopedRead(scope) ≡ ModuleFilter.apply(scope) ∘
+fullRead` — Docker-witnessed against the 3-module edge-case seed
+(value-grain `Catalog` equality plus the scope-reality assertions).
+The pushdown can never be a semantics change; if the two legs drift,
+the law trips.
+
+**3. What the law exposed on its FIRST run (the corpus discipline,
+again):** `ModuleFilter.apply` performed list surgery without
+restoring the aggregate invariant — a kept kind referencing an
+excluded module carried a DANGLING reference, a value `Catalog.create`
+refuses to construct. Scoped in-memory catalogs have been
+non-constructible values all along (the emitter tolerated them via
+map-lookup drops with witnesses). The defined semantic, now at BOTH
+legs: **a declared scope excludes its cross-scope edges exactly as it
+excludes the kinds they point at** — `apply` gains step 5 (prune
+references whose `TargetKind` left the catalog), and the scoped read
+prunes the same edges at the bundle grain (`RefEntityId` ∉ scoped
+entity ids; unknown-id rows are kept so a truly-dangling row still
+fails loudly at `Catalog.create` — the corrupt-source posture for full
+reads is unchanged). Consequences, named: the slice-1
+missing-target diagnostics (`decision.fkDropped` for
+out-of-scope-backed FKs; `emit.ssdt.foreignKey.unresolvedTargetDropped`)
+become structurally unreachable through the scoping path — the scope
+surface now owns that fact; a per-edge `moduleFilter.referencePruned`
+witness lands when the filter seam gains a diagnostics channel (named
+follow-up; until then the prune is documented here and law-tested,
+never ad-hoc).

@@ -1173,7 +1173,15 @@ module Compose =
         task {
             let! read =
                 match cfg.Model.Ossys, cfg.Model.Path with
-                | Some connSpec, _ -> LiveModelRead.fromConnSpec connSpec
+                | Some connSpec, _ ->
+                    // Reconciliation slice 4 (DECISIONS 2026-06-13; C4) —
+                    // the declared module/entity scope pushes down to the
+                    // rowsets SQL at query time (extraction-cost reduction;
+                    // opt-in through non-empty model.modules, the A7
+                    // polarity). `applyModuleFilter` below REMAINS the
+                    // semantic seam — double enforcement, V1's own
+                    // precedent.
+                    LiveModelRead.fromConnSpecWith (SnapshotScopeBinding.fromModel cfg.Model) connSpec
                 | None, Some path -> read path
                 | None, None ->
                     Task.FromResult

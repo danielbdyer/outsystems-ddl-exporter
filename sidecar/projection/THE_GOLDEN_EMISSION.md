@@ -164,6 +164,17 @@ inventory row and its variance in the catalog, in the same commit.**
 | `EXECUTE [sys].[sp_addextendedproperty]` canonical form | COVERED (documented accepted deviation) |
 | Per-table file: V1's rendered form — framed GO between statements (never trailing), constraint ladder, wrapped EXEC | COVERED + BLESSED (slice 3, operator decision — supersedes the prior no-GO contract) |
 
+### Data lanes — the per-lane golden expansion (operator directive, 2026-06-13)
+When the reconciliation plan's WP6 lands (hydration + bootstrap realization +
+per-lane outputs), the corpus grows per-lane golden artifacts in the same
+commit: `Data/StaticSeeds.sql`, `Data/Bootstrap.sql`, `Data/MigrationData.sql`
+alongside the fused global `Data/seed.sql` — each lane's MERGE/Phase-2 shape,
+IDENTITY_INSERT bracket, and (opt-in) EXCEPT validate-before-apply prelude
+pinned byte-exact. The Platonic catalog gains the lane variances then
+(supplemental/bootstrap-owned kinds; an IDENTITY-PK static kind; a
+migration-row kind). Trigger: WP6 slice open — this section is the standing
+reminder.
+
 ### Data lanes
 | Variance | Status |
 |---|---|

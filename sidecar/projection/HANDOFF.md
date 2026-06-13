@@ -1,3 +1,46 @@
+# Handoff addendum — 2026-06-13, reconciliation slice 4 CLOSE (the scope pushes down to the OSSYS read; the equivalence law; the dangling-reference fix)
+
+To the next agent.
+
+**Slice 4 (WP3; adjudication C4) shipped** (`DECISIONS 2026-06-13`
+slice-4 entry — it AMENDS the 2026-05-16 "filtering is an IR concern"
+stance for the scope axis): `SnapshotScopeBinding.fromModel` binds
+`model.modules` + entity narrowing + the include flags into the
+adapter's `SnapshotParameters` (A7 opt-in gate mirrored verbatim from
+`ModuleFilterBinding`; `OnlyActiveAttributes` deliberately NOT pushed);
+`LiveModelRead.fromConnSpecWith`/`fromConnectionWith` are the
+scope-bearing faces; `readConfigModel` binds them on the full-export
+path; `ModuleFilter.apply` REMAINS the semantic seam (double
+enforcement — V1's own precedent). The LAW:
+`scopedRead(scope) ≡ ModuleFilter.apply(scope) ∘ fullRead`,
+Docker-witnessed against the 3-module edge-case seed.
+
+**The law's first run exposed a latent integrity gap**: `apply` did
+list surgery without restoring the aggregate invariant — kept kinds
+referencing excluded modules carried DANGLING references
+(`Catalog.create`-unconstructible values). Fixed at BOTH legs with one
+defined semantic: a declared scope excludes its cross-scope edges
+exactly as it excludes the kinds they point at (`apply` step-5 prune;
+bundle-grain prune under a pushed scope; unknown-`RefEntityId` rows
+kept so corrupt sources still fail loudly). Named consequence: the
+missing-target diagnostics are structurally unreachable through the
+scoping path now; the per-edge `moduleFilter.referencePruned` witness
+lands when the filter seam gains a diagnostics channel.
+
+**Operator directive (2026-06-13), now standing in the charter**: when
+WP6 lands, the golden corpus grows PER-LANE data artifacts
+(`Data/StaticSeeds.sql` / `Data/Bootstrap.sql` /
+`Data/MigrationData.sql` + the fused global seed) in the same commit —
+`THE_GOLDEN_EMISSION.md` §4's data-lane expansion section is the
+reminder; the Platonic catalog gains the lane variances then.
+
+Queue: slice 5 = WP6 (data lanes — IDENTITY_INSERT strictly BEFORE
+hydration; bootstrap delegates to the static-seeds renderer; per-lane
+outputs + the per-lane goldens above). Then WP5 (C1 rename + gate),
+WP7-remainder/WP8, WP9. J5 still trumps everything.
+
+---
+
 # Handoff addendum — 2026-06-13, reconciliation slice 3b CLOSE (operator blessing #2: the column-constraint stack; inline CHECKs; composite indexes; the identifier budget)
 
 To the next agent.

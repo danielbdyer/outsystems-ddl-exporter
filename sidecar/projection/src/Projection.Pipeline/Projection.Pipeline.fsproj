@@ -24,6 +24,7 @@
     <Compile Include="LifecycleStore.fs" />
     <Compile Include="RenameBinding.fs" />
     <Compile Include="ModuleFilterBinding.fs" />
+    <Compile Include="SnapshotScopeBinding.fs" />
     <Compile Include="TighteningBinding.fs" />
     <Compile Include="SpecialCircumstancesBinding.fs" />
     <Compile Include="SpecialCircumstancesDiagnostics.fs" />
