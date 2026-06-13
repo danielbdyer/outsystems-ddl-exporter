@@ -103,9 +103,19 @@ module CapabilitySurvey =
         match targetGrant, source with
         | Some Grant.DataOnly, (FlowSource.Env _ | FlowSource.Synthetic _) -> dataLoad
         | Some Grant.DataOnly, (FlowSource.Model | FlowSource.NoData)       -> Set.empty
-        | (Some Grant.SchemaAndData | None), FlowSource.Env _              -> Set.union schemaPublish dataLoad
-        | (Some Grant.SchemaAndData | None), (FlowSource.Model | FlowSource.NoData) -> schemaPublish
-        | (Some Grant.SchemaAndData | None), FlowSource.Synthetic _        -> Set.empty
+        | Some Grant.SchemaAndData, FlowSource.Env _                       -> Set.union schemaPublish dataLoad
+        | Some Grant.SchemaAndData, (FlowSource.Model | FlowSource.NoData) -> schemaPublish
+        | Some Grant.SchemaAndData, FlowSource.Synthetic _                 -> Set.empty
+        // NM-57 — an UNSPECIFIED grant (`None`) gets its OWN conservative arm: it
+        // requires NOTHING, rather than (the prior bug) being bundled with
+        // `Some Grant.SchemaAndData` and demanding the LARGEST write set. A place
+        // with no declared `grant` is one we cannot prove permits schema OR data,
+        // so demanding the maximal set inverts the conservative default and fires
+        // spurious "missing capability" / exit-7 advisories. This keeps the two
+        // reconciliation surfaces SYMMETRIC on the unspecified-grant place: the
+        // coarse peer `requiredFor : Grant -> _` has no `None` case (it demands
+        // nothing of an undeclared grant), so neither does this.
+        | None, _                                                         -> Set.empty
 
     /// The capabilities a flow requires of a substrate in the given role —
     /// derived purely from the flow's SHAPE (its `to` target's grant facet, its

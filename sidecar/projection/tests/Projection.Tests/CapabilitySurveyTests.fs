@@ -102,6 +102,28 @@ let ``requiredBy: a live source to a schema+data target migrates schema and data
               Performs Preflight.Alter; Performs Preflight.CreateTable ],
         CapabilitySurvey.requiredBy cfg f SubstrateRole.Sink)
 
+[<Fact>]
+let ``NM-57: an unspecified-grant sink requires NOTHING (conservative None default, symmetric with requiredFor)`` () =
+    // A place with no declared `grant` used to be bundled with
+    // `Some Grant.SchemaAndData` and demanded the LARGEST write set — a spurious
+    // "missing capability" / exit-7 advisory. The fix gives `None` its own arm:
+    // it requires nothing, regardless of the source shape. Pinned across every
+    // source kind so the conservative default cannot silently regress.
+    let sinkUndeclared = env "mystery" None
+    let liveSource = env "staging" (Some Grant.SchemaAndData)
+    for src, label in
+        [ FlowSource.Env "staging", "live"
+          FlowSource.Model,         "model"
+          FlowSource.Synthetic None, "synthetic"
+          FlowSource.NoData,        "no-data" ] do
+        let cfg = cfgWith [ sinkUndeclared; liveSource ] [ flow ("f-" + label) src "mystery" ]
+        let f = Map.find ("f-" + label) cfg.Flows
+        Assert.Equal<Set<CapabilitySurvey.Capability>>(
+            Set.empty,
+            CapabilitySurvey.requiredBy cfg f SubstrateRole.Sink)
+    // Symmetry witness: `requiredFor : Grant -> _` has no `None` case, so the
+    // unspecified grant demands nothing on EITHER surface — they agree.
+
 // --- the harvest (requiredOf) ----------------------------------------------
 
 [<Fact>]
