@@ -245,6 +245,10 @@ let buildSurveyView (reports: CapabilitySurvey.EnvironmentReport list) : View.Vi
             elif not r.Reachable then "unreachable", View.Bad
             elif not (List.isEmpty r.Missing) then
                 sprintf "reachable %s missing %s" Theme.dot (r.Missing |> List.map CapabilitySurvey.Capability.text |> String.concat ", "), View.Warn
+            elif r.GrantUnreadable then
+                // NM-55 — reachable but the grant could not be read: unverified,
+                // not covered.
+                sprintf "reachable %s grant unreadable (coverage unverified)" Theme.dot, View.Warn
             else
                 let cdc = if r.CdcTracked then sprintf " %s CDC-tracked" Theme.dot else ""
                 sprintf "reachable %s grant covered%s%s" Theme.dot cdc (userDirText r.UserDirectory), View.Ok

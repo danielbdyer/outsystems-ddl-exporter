@@ -170,6 +170,12 @@ module CapabilitySurvey =
             /// The required capabilities the live grant does not actually cover
             /// (at database scope) — empty = covered.
             Missing    : Capability list
+            /// NM-55 — the grant probe (`sys.fn_my_permissions`) could not be
+            /// read on a reachable place (least-privilege / permission-denied).
+            /// `true` means coverage is UNVERIFIED, not confirmed: a REPORT
+            /// FIELD (like `UserDirectory`), and `blocked` treats it as blocking
+            /// so the survey never claims "covered" for an unprobed grant.
+            GrantUnreadable : bool
             CdcTracked : bool
             /// G0b (P10) — the user-directory readability verdict: is the
             /// platform user table the `golden`/`preview` re-key matches against
@@ -190,7 +196,9 @@ module CapabilitySurvey =
     /// path; the gate is advisory until the per-pair flip; CLAUDE.md R6;
     /// DECISIONS 2026-06-09 S3).
     let blocked (r: EnvironmentReport) : bool =
-        r.Connected && (not r.Reachable || not (List.isEmpty r.Missing))
+        // NM-55 — an unreadable grant on a reachable place is blocking:
+        // coverage is unverified, so "covered" must not be claimed.
+        r.Connected && (not r.Reachable || r.GrantUnreadable || not (List.isEmpty r.Missing))
 
     /// The advisory warning lines for a set of survey reports — the in-flow
     /// surface (G0c). Empty when nothing is blocked (no warning, the flow runs
@@ -207,6 +215,8 @@ module CapabilitySurvey =
               for r in blockedReports do
                   if not r.Reachable then
                       yield sprintf "  %s: unreachable" r.Name
+                  elif r.GrantUnreadable then
+                      yield sprintf "  %s: grant unreadable (coverage unverified)" r.Name
                   else
                       yield sprintf "  %s: missing %s" r.Name (r.Missing |> List.map Capability.text |> String.concat ", ") ]
 
@@ -219,7 +229,7 @@ module CapabilitySurvey =
             let required = requiredOf config env.Name
             let baseReport =
                 { Name = env.Name; Grant = env.Grant; Required = required
-                  Connected = false; Reachable = false; Missing = []; CdcTracked = false
+                  Connected = false; Reachable = false; Missing = []; GrantUnreadable = false; CdcTracked = false
                   UserDirectory = ReadSide.UserDirectoryProbe.absent }
             match env.Access with
             | Access.Bundle _ | Access.Docker -> return baseReport
@@ -237,14 +247,19 @@ module CapabilitySurvey =
                         // is the residual that pairs with OPEN-2's real-instance
                         // user-table identity); read-only.
                         let! userDir = ReadSide.userDirectoryReadability [] cnn
-                        let missing =
+                        // NM-55 — a failed grant probe is NOT "no missing
+                        // capabilities"; it is unverified coverage. Carry it as
+                        // `GrantUnreadable` so `blocked` refuses the "covered"
+                        // claim, rather than collapsing `Error _` to `[]`.
+                        let missing, grantUnreadable =
                             match grantEv with
-                            | Ok ev -> reconcile required ev
-                            | Error _ -> []
+                            | Ok ev   -> reconcile required ev, false
+                            | Error _ -> [], true
                         return
                             { baseReport with
                                 Connected = true; Reachable = true
-                                Missing = missing; CdcTracked = not (List.isEmpty tracked)
+                                Missing = missing; GrantUnreadable = grantUnreadable
+                                CdcTracked = not (List.isEmpty tracked)
                                 UserDirectory = userDir }
                     with _ -> return { baseReport with Connected = true }
         }

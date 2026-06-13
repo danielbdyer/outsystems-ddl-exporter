@@ -132,8 +132,17 @@ let ``requiredOf: an environment no flow touches is asked for nothing`` () =
 
 let private report name connected reachable missing : CapabilitySurvey.EnvironmentReport =
     { Name = name; Grant = Some Grant.DataOnly; Required = Set.empty
-      Connected = connected; Reachable = reachable; Missing = missing; CdcTracked = false
+      Connected = connected; Reachable = reachable; Missing = missing
+      GrantUnreadable = false; CdcTracked = false
       UserDirectory = Projection.Adapters.Sql.ReadSide.UserDirectoryProbe.absent }
+
+[<Fact>]
+let ``NM-55: a reachable place with an unreadable grant is blocked (coverage unverified, not covered)`` () =
+    // grantEv = Error _ used to collapse to Missing = [] and report "covered".
+    let r = { report "cloud-uat" true true [] with GrantUnreadable = true }
+    Assert.True(CapabilitySurvey.blocked r, "grant-unreadable place must be blocked")
+    let lines = CapabilitySurvey.advisoryLines [ r ]
+    Assert.Contains(lines, fun (l: string) -> l.Contains "grant unreadable")
 
 // --- G0b: EnvironmentReport carries the user-directory probe field ---------
 

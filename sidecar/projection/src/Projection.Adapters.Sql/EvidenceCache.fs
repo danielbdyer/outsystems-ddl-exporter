@@ -90,6 +90,12 @@ module CachedValue =
         | :? DateTime as dt          ->
             DateValue (DateTimeOffset(dt, TimeSpan.Zero))
         | :? (byte array) as b       -> BinaryValue b
+        // NM-19 — SQL `bit` arrives as a CLR bool; without this arm it fell
+        // through to `StringValue "True"/"False"` and profiled as 2-value text
+        // (OutSystems is bit-heavy). Project 0/1 as the sibling
+        // `ReadSide.formatRawValue` does, so duplicate/distinct evidence is keyed
+        // as the integer it is.
+        | :? bool as flag            -> IntValue (if flag then 1L else 0L)
         | other ->
             match other.ToString() with
             | null -> NullValue

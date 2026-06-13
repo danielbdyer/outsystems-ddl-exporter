@@ -104,6 +104,11 @@ module Transfer =
             /// identity (the per-identity skip-and-diagnose from
             /// `reconcileKind`). Empty for a non-reconciling Transfer.
             UnmatchedIdentities : (SsKey * SourceKey) list
+            /// NM-51 — reconciled Source surrogates whose PK column value was
+            /// NOT unique among the rows (the second binding refused, first
+            /// kept). A data-fidelity hazard surfaced, not silently dropped.
+            /// Empty for a non-reconciling Transfer or a unique reconcile key.
+            AmbiguousIdentities : (SsKey * SourceKey) list
             /// Source rows dropped at plan-build because a targeted FK
             /// had no matched assigned counterpart — paired with the
             /// owning kind. Empty for a non-reconciling Transfer.
@@ -666,6 +671,7 @@ module Transfer =
         task {
             let mutable remap = SurrogateRemapContext.empty
             let mutable unmatched : (SsKey * SourceKey) list = []
+            let mutable ambiguous : (SsKey * SourceKey) list = []
             for KeyValue (kind, strategy) in reconciliation do
                 match Catalog.tryFindKind kind catalog with
                 | None -> ()
@@ -679,10 +685,13 @@ module Transfer =
                             for KeyValue (src, assigned) in inner do
                                 match SurrogateRemapContext.capture rk src assigned remap with
                                 | Ok r    -> remap <- r
-                                | Error _ -> ()
+                                // NM-51/NM-52 — record the cross-kind merge
+                                // conflict instead of discarding the named error.
+                                | Error _ -> ambiguous <- (rk, src) :: ambiguous
                         unmatched <- unmatched @ result.Unmatched
+                        ambiguous <- ambiguous @ result.Ambiguous
                     | [] -> ()
-            return { Remap = remap; Unmatched = unmatched }
+            return { Remap = remap; Unmatched = unmatched; Ambiguous = ambiguous }
         }
 
     // -- orchestration ------------------------------------------------------
@@ -846,6 +855,7 @@ module Transfer =
                           Kinds               = reportKinds mode plan
                           UnbreakableCycleFks = plan.UnbreakableCycleFks
                           UnmatchedIdentities = reconciled.Unmatched
+                          AmbiguousIdentities = reconciled.Ambiguous
                           // Plan-build drops (reconcile misses) + write-time
                           // drops (AssignedBySink FK misses) both surface here.
                           SkippedReferences   = plan.SkippedReferences @ writeSkips
@@ -998,6 +1008,7 @@ module Transfer =
                               Kinds               = reportKinds mode plan
                               UnbreakableCycleFks = plan.UnbreakableCycleFks
                               UnmatchedIdentities = []
+                              AmbiguousIdentities = []
                               SkippedReferences   = plan.SkippedReferences @ writeSkips
                               CaptureLaneDescents = laneDescents }
         }
@@ -1423,6 +1434,7 @@ module Transfer =
                                       Kinds               = reportKinds mode plan
                                       UnbreakableCycleFks = plan.UnbreakableCycleFks
                                       UnmatchedIdentities = []
+                                      AmbiguousIdentities = []
                                       SkippedReferences   = plan.SkippedReferences
                                       CaptureLaneDescents = [] }
                         else
@@ -1447,6 +1459,7 @@ module Transfer =
                                           Kinds               = kinds
                                           UnbreakableCycleFks = plan.UnbreakableCycleFks
                                           UnmatchedIdentities = []
+                                          AmbiguousIdentities = []
                                           SkippedReferences   = skips
                                           CaptureLaneDescents = descents }
         }
@@ -1692,12 +1705,15 @@ module Transfer =
     /// surrogates with no Sink match (`UnmatchedIdentities`). Both are data
     /// the Sink will not carry; both must be surfaced, never silently 0.
     let droppedRowCount (report: TransferReport) : int =
-        report.SkippedReferences.Length + report.UnmatchedIdentities.Length
+        report.SkippedReferences.Length
+        + report.UnmatchedIdentities.Length
+        + report.AmbiguousIdentities.Length   // NM-51
 
     /// Whether a completed run lost any rows (the drop-set is non-empty).
     let hasDrops (report: TransferReport) : bool =
         not (List.isEmpty report.SkippedReferences)
         || not (List.isEmpty report.UnmatchedIdentities)
+        || not (List.isEmpty report.AmbiguousIdentities)   // NM-51
 
     /// The exit-code policy for a *completed* (Ok) Transfer. A clean run is
     /// 0; a run that dropped rows is `DroppedReferencesExit` (fail-loud)
