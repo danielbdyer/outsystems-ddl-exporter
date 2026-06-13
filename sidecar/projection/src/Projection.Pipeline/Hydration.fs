@@ -54,10 +54,14 @@ module Hydration =
             | _ -> k)
 
     /// The named diagnostics for the hydration step, derived from config
-    /// (pure; surfaced by `runWithConfigCore`). Data on + a file-sourced model
-    /// (no `model.ossys`) ⇒ a NAMED skip — never silent emptiness: the static
+    /// (pure; surfaced by `runWithConfigCore`). Data on + NO live OSSYS source
+    /// (the model is read from `model.path`, the osm_model.json fallback, not
+    /// `model.ossys`) ⇒ a NAMED skip — never silent emptiness: the static
     /// lanes can only emit catalog-resident rows because there is no live
-    /// source to hydrate from. OSSYS-sourced or data-off ⇒ no diagnostic.
+    /// connection to hydrate from. NB this keys on the PRESENCE of
+    /// `model.ossys`, not its ref FORM — an `env:` and a `file:` ossys ref
+    /// both hydrate (the `file:` form is the operator's predominant one). A
+    /// live OSSYS source, or data-off, ⇒ no diagnostic.
     let diagnostics (cfg: Config.Config) : DiagnosticEntry list =
         if not (emitDataOf cfg) then []
         else
@@ -69,8 +73,8 @@ module Hydration =
                     [ DiagnosticEntry.create
                         "data:hydration"
                         DiagnosticSeverity.Warning
-                        "data.hydration.skippedFileSourced"
-                        "data emission is on but the model is file-sourced (model.path); static-entity rows cannot be hydrated from a live source, so the data lanes emit only catalog-resident populations. Set model.ossys to hydrate from the live source." ]
+                        "data.hydration.skippedNoLiveSource"
+                        "data emission is on but the model has no live OSSYS source: it is read from model.path (the osm_model.json fallback), not model.ossys. Static-entity rows can only be hydrated from a live connection, so the data lanes emit only catalog-resident populations. Set model.ossys (an env: or file: connection ref) to hydrate." ]
                 | None -> []
 
     /// Stream the static-marked kinds' rows from an open OSSYS connection and
@@ -89,11 +93,13 @@ module Hydration =
         }
 
     /// Hydrate the catalog for a full-export run. No data emission ⇒ identity.
-    /// File-sourced (no `model.ossys`) ⇒ identity (the skip is named in
-    /// `diagnostics`, never silent). OSSYS-sourced ⇒ open a SECOND connection
-    /// (the model-read connection is use-disposed, not reusable) and
-    /// stream+graft. The OSSYS branch mirrors `LiveModelRead.fromConnSpecWith`'s
-    /// open template.
+    /// No live OSSYS source (the model came from `model.path`) ⇒ identity (the
+    /// skip is named in `diagnostics`, never silent). `model.ossys` present ⇒
+    /// open a SECOND connection (the model-read connection is use-disposed, not
+    /// reusable) and stream+graft. `parseConnRef` accepts BOTH `env:` and
+    /// `file:` ossys refs and hydration treats them identically — the `file:`
+    /// form is not special-cased and not deprecated. The OSSYS branch mirrors
+    /// `LiveModelRead.fromConnSpecWith`'s open template.
     let hydrateCatalog (cfg: Config.Config) (catalog: Catalog) : Task<Result<Catalog>> =
         task {
             if not (emitDataOf cfg) then
@@ -122,4 +128,4 @@ module Hydration =
     let registeredMetadata : RegisteredTransformMetadata =
         RegisteredTransformMetadata.adapter "fullExportHydration" Data
             [ TransformSite.dataIntent "staticRowHydration"
-                "Stream static-entity rows from the live OSSYS source (Ingestion.collectInOrderFor, scoped to static-marked kinds — never ReadSide.read) and graft them onto the catalog's Static populations before the data lanes render. Observation only — the rows are what the source holds; no operator opinion enters. A file-sourced model skips with the named data.hydration.skippedFileSourced diagnostic." ]
+                "Stream static-entity rows from the live OSSYS source (Ingestion.collectInOrderFor, scoped to static-marked kinds — never ReadSide.read) and graft them onto the catalog's Static populations before the data lanes render. The model.ossys connection ref may be env: or file: (both hydrate identically). Observation only — the rows are what the source holds; no operator opinion enters. A model with no live OSSYS source (read from model.path) skips with the named data.hydration.skippedNoLiveSource diagnostic." ]

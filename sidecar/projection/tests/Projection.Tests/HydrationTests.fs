@@ -93,16 +93,23 @@ let private dataOff (cfg: Config.Config) : Config.Config =
             { cfg.Emission with StaticSeeds = false; MigrationDependencies = false; Bootstrap = false } }
 
 [<Fact>]
-let ``WP6 step 4: diagnostics names the skip for a file-sourced model with data on`` () =
+let ``WP6 step 4: diagnostics names the skip for a model.path source (no live OSSYS) with data on`` () =
     let cfg = Config.defaultConfig |> withModel None (Some "model.json")
     let ds = Hydration.diagnostics cfg
     Assert.Equal (1, List.length ds)
-    Assert.Equal<string> ("data.hydration.skippedFileSourced", ds.Head.Code)
+    Assert.Equal<string> ("data.hydration.skippedNoLiveSource", ds.Head.Code)
     Assert.Equal<DiagnosticSeverity> (DiagnosticSeverity.Warning, ds.Head.Severity)
 
 [<Fact>]
-let ``WP6 step 4: diagnostics is silent for an OSSYS-sourced model`` () =
+let ``WP6 step 4: diagnostics is silent for an OSSYS source via an env: ref`` () =
     let cfg = Config.defaultConfig |> withModel (Some "env:OSSYS") None
+    Assert.Empty (Hydration.diagnostics cfg)
+
+[<Fact>]
+let ``WP6 step 4: diagnostics is silent for an OSSYS source via a file: ref (the predominant form)`` () =
+    // The skip keys on the PRESENCE of model.ossys, not its ref form — a
+    // file: ossys ref hydrates exactly like an env: one (not deprecated).
+    let cfg = Config.defaultConfig |> withModel (Some "file:/etc/ossys.conn") None
     Assert.Empty (Hydration.diagnostics cfg)
 
 [<Fact>]
@@ -124,7 +131,7 @@ let ``WP6 step 4: hydrateCatalog is the identity when data emission is off`` () 
     Assert.Equal<Catalog> (catalog, runHydrate cfg catalog)
 
 [<Fact>]
-let ``WP6 step 4: hydrateCatalog is the identity for a file-sourced model (graft skipped; the skip is the diagnostic)`` () =
+let ``WP6 step 4: hydrateCatalog is the identity for a model.path source (no live OSSYS; the skip is the diagnostic)`` () =
     let cfg = Config.defaultConfig |> withModel None (Some "model.json")
     let catalog = mkCatalog [ staticKind "Country" [] ]
     Assert.Equal<Catalog> (catalog, runHydrate cfg catalog)

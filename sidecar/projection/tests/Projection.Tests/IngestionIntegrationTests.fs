@@ -105,3 +105,53 @@ type IngestionIntegrationTests(fixture: EphemeralContainerFixture) =
                     Assert.Equal(IdentityDisposition.PreservedFromSource, load.Disposition)
                     Assert.True(DataLoadPlan.isSatisfiable plan)
                 }))
+
+    // WP6 step 4 — the full hydration composition end-to-end: a catalog whose
+    // Items kind is marked `Static []` (the forward-read shape) is hydrated
+    // from the live source by `Hydration.hydrateCatalog` (open a SECOND
+    // connection from `model.ossys` → stream the static-marked kinds via
+    // Ingestion → graft). Exercised via BOTH `env:` AND `file:` ossys refs —
+    // the `file:` form is the operator's predominant one and must hydrate
+    // identically. Closes the live-stream gap the pure HydrationTests can't
+    // reach.
+    [<Fact>]
+    member _.``Hydration.hydrateCatalog streams live static rows via BOTH env: and file: ossys refs (WP6 step 4)`` () =
+        if not (IngestionFixtures.skipIfNoDocker "hydrate-catalog") then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "Hydrate" (fun cnn perDbConn ->
+                task {
+                    do! Deploy.executeBatch cnn IngestionFixtures.schemaSql
+                    do! Deploy.executeBatch cnn IngestionFixtures.seedSql
+                    let staticItems = { IngestionFixtures.itemsKind with Modality = [ Static [] ] }
+                    let staticCatalog : Catalog =
+                        { Modules =
+                            [ { SsKey = IngestionFixtures.mkKey ["Module"]
+                                Name  = IngestionFixtures.mkName "M"
+                                Kinds = [ staticItems ]
+                                IsActive = true
+                                ExtendedProperties = [] } ]
+                          Sequences = [] }
+                    let hydratedCountVia (connSpec: string) : System.Threading.Tasks.Task<int> =
+                        task {
+                            let cfg =
+                                { Config.defaultConfig with
+                                    Model = { Config.defaultConfig.Model with Ossys = Some connSpec; Path = None } }
+                            let! r = Hydration.hydrateCatalog cfg staticCatalog
+                            let c = match r with Ok c -> c | Error es -> failwithf "hydrate (%s): %A" connSpec es
+                            let k = Catalog.allKinds c |> List.find (fun k -> k.SsKey = IngestionFixtures.itemsKey)
+                            return List.length (Kind.staticPopulations k)
+                        }
+                    // env: ref — the per-DB connection via an out-of-band env var.
+                    System.Environment.SetEnvironmentVariable("HYDRATION_TEST_OSSYS", perDbConn)
+                    let! viaEnv = hydratedCountVia "env:HYDRATION_TEST_OSSYS"
+                    Assert.Equal(3, viaEnv)
+                    // file: ref — a file holding the connection string (the
+                    // operator's predominant form); must hydrate identically.
+                    let connFile = System.IO.Path.GetTempFileName()
+                    System.IO.File.WriteAllText(connFile, perDbConn)
+                    try
+                        let! viaFile = hydratedCountVia (sprintf "file:%s" connFile)
+                        Assert.Equal(3, viaFile)
+                    finally
+                        System.IO.File.Delete connFile
+                }))

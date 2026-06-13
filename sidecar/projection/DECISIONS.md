@@ -22655,3 +22655,53 @@ The live `ReadSide` dual-read round-trip and the legacy-schema migrate are
 Docker-gated/OSSYS-adjacent — owed before merge. (Code comments and the legacy
 `Fixtures/SourceSchema.fs` deliberately keep `V2.*` — the latter now exercises
 the dual-read legacy path.)
+
+---
+
+## 2026-06-13 — Docker repaired mid-session: both pools green; WP5/WP6 Docker-witnessed; hydration live stream closed; the `env:`/`file:` ossys de-conflation
+
+The sandbox Docker daemon (down for most of this session — the
+"owed before merge" caveat on the WP5/WP6 entries above) was auto-repaired.
+The warm SQL container started (`warm-sql.sh start`, image cached, ready ~6s),
+which let the owed witnesses run:
+
+**1. Both pools green.** Docker pool **231/231**. Fast pool **3161/0/211** with
+the warm container — the 27 previously-"env-gated" extraction tests
+(`BtReferenceFkFlowTests`, `OssysComprehensiveFixtureTests`,
+`OssysExtractionCanaryTests`) now EXECUTE (not skip) and pass. The
+"Docker pool owed" caveat on the WP5/WP6 DECISIONS entries above is
+RESOLVED (those entries stand as the as-of-the-time record; this is the
+update).
+
+**2. WP5 + WP6 Docker-witnessed.** The Docker pool exercises the WP5 ReadSide
+dual-read round-trip (deploy `Projection.*` → read back → recover) and the WP6
+leveled deploy (the IDENTITY_INSERT bracket executing), plus CDC silence —
+all green. My cross-cutting WP5 rename and WP6 deploy paths are verified
+end-to-end, not just structurally.
+
+**3. WP6 hydration live stream — gap closed.** A new Docker-gated test
+(`IngestionIntegrationTests` — `Hydration.hydrateCatalog streams live static
+rows via BOTH env: and file: ossys refs`) seeds a static-entity table, marks
+the catalog kind `Static []`, and runs `hydrateCatalog` against the warm
+container: the empty marker fills with the 3 seeded rows. The full composition
+(open `model.ossys` → `Ingestion.collectInOrderFor` scoped to static kinds →
+graft) is now witnessed, not just its pieces.
+
+**4. The `env:`/`file:` ossys de-conflation (operator-flagged).** `model.ossys`
+predominantly uses `file:` refs in the operator's configs; the `file:` form is
+NOT deprecated and must not be conflated with `model.path`. Hydration already
+supported both (it routes through `LiveModelRead.parseConnRef`, which handles
+`env:` and `file:` identically) — but the diagnostic NAME and prose conflated
+them: "file-sourced" read as if a `file:` ossys ref were skipped. Fixed: the
+skip keys on the PRESENCE of `model.ossys` (not its ref form); the diagnostic
+is renamed `data.hydration.skippedFileSourced` → `data.hydration
+.skippedNoLiveSource` and its message names `model.path` (the osm_model.json
+fallback) explicitly as the no-live-source case, distinct from a `model.ossys`
+`file:` ref (which hydrates). The Docker test exercises BOTH ref forms; a pure
+test pins that a `file:` ossys ref emits no skip diagnostic. `model.path`
+(JSON fallback) and `model.ossys` (live, `env:` or `file:`) are the two model
+sources; only the former skips hydration.
+
+The only standing caveat now is the dual-window MIGRATE edge (rebinding the
+renamed identity property on a LEGACY `V2.*`-bearing deployed schema) — named
+in the WP5 entry; trigger-gated on the legacy-name retirement.

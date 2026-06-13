@@ -40,20 +40,25 @@ they'd byte-duplicate `seed.sql`; the per-lane split is witnessed in
 `DataEmissionComposerTests` (a 2-lane catalog), which is the right altitude
 (the golden path supplies no migration/bootstrap context).
 
-**TWO caveats owed before merge — read these:**
-1. **The live OSSYS hydration stream is UNWITNESSED.** `hydrateCatalog`'s
-   OSSYS branch (open → `Ingestion.collectInOrderFor` → graft) compiles and
-   is FS3511-safe, but there is no OSSYS source in this environment to
-   exercise it. The pure graft, the named skip, and the no-connection
-   identity branches ARE witnessed (`HydrationTests` 8/0). Run it against a
-   live estate (J5-adjacent).
-2. **The Docker pool is OWED.** The sandbox Docker daemon went down
-   mid-session; `scripts/test.sh docker` could not run, and the three
-   Docker-gated extraction classes in the fast pool
-   (`BtReferenceFkFlowTests`, `OssysComprehensiveFixtureTests`,
-   `OssysExtractionCanaryTests`) self-skip when Docker is absent (green) but
-   error when it flaps (the 27-failure signature you'll see). They are
-   environmental, unchanged by WP6. Run the Docker pool before merge.
+**Caveats — both prior ones are now RESOLVED (Docker was auto-repaired
+mid-session):**
+1. **Docker pool: GREEN (231/231).** The warm container came back, so the
+   pool ran — the WP5 ReadSide dual-read round-trip (deploy `Projection.*` →
+   read back → recover) and the WP6 leveled deploy are now Docker-witnessed,
+   plus CDC silence. Fast pool with the warm container is fully green
+   (**3161/0/211** — the three formerly-"env-gated" extraction classes now
+   execute and pass).
+2. **The live OSSYS hydration stream: WITNESSED.** A Docker-gated test
+   (`IngestionIntegrationTests` — `hydrateCatalog … via BOTH env: and file:
+   ossys refs`) seeds a static table and runs `hydrateCatalog` against the
+   container; the `Static []` marker fills with the seeded rows. `model.ossys`
+   accepts BOTH `env:` and `file:` refs (the `file:` form is the operator's
+   predominant one and is NOT deprecated); the skip diagnostic
+   (`data.hydration.skippedNoLiveSource`) fires only for `model.path` (the
+   JSON fallback, no live source) — never for a `model.ossys` `file:` ref.
+   The ONE residual: the dual-window MIGRATE edge (rebinding the renamed
+   identity property on a legacy `V2.*` deployed schema) — trigger-gated on
+   legacy-name retirement.
 
 **The named follow-up:** hydration uses the **marker approach** (rows graft
 into `Modality.Static`, indistinguishable from authored). The armed
