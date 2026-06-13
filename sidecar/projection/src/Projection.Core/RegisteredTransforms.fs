@@ -110,7 +110,8 @@ module RegisteredTransforms =
     /// (BEFORE `TableRename` so operator pins dominate) → `TableRename`
     /// → `TopologicalOrderPass` → 2 graph-analytics passes (after
     /// topology is populated) → `ProfileAnomalyPass` → `SchemaComplexityPass`
-    /// → `QueryHintPass` → 4 tightening decision passes → `UserFkReflowPass`.
+    /// → cascade-shock-zone advisory (NM-36) → `QueryHintPass` → 4 tightening
+    /// decision passes → `UserFkReflowPass`.
     /// The chain, parameterized by the operator physical-rename pins (S6.3) the
     /// `LogicalTableEmission` step must skip so a physical-form `tableRenames`
     /// override survives into the emitted physical table. `Set.empty` is the
@@ -138,6 +139,20 @@ module RegisteredTransforms =
                         SchemaComplexityPass.name
                         SchemaComplexityPass.run
                         ComposeState.withSchemaComplexity }
+          // NM-36 — the cascade-shock-zone risk advisory. Like
+          // SchemaComplexityPass it reads BOTH the Catalog and the
+          // pre-computed topology from ComposeState at apply-time (the
+          // topology must be populated — it runs after TopologicalOrderPass),
+          // so it uses the catalog-topology lift directly. Its
+          // `topology.cascadeShock` Warning diagnostics flow to the same
+          // decision-log / diagnostics surface as the other analytics passes.
+          { Metadata = RegisteredTransform.toMetadata TopologicalOrderPass.cascadeShockRegistered
+            Build    =
+                fun _ _ ->
+                    PassChainAdapter.liftCatalogTopologyPass
+                        TopologicalOrderPass.cascadeShockPassName
+                        TopologicalOrderPass.runCascadeShockZones
+                        ComposeState.withCascadeShockZones }
           profileDecisionStep QueryHintPass.registered ComposeState.withQueryHints
           tighteningStep NullabilityPass.registered ComposeState.withNullabilityDecisions
           tighteningStep UniqueIndexPass.registered ComposeState.withUniqueIndexDecisions

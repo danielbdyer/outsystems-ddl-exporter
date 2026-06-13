@@ -101,7 +101,7 @@ let private mkConfig (overrides: Config.OverridesSection) : Config.Config =
         Emission    = {
             Ssdt = true; Dacpac = true; Json = true; Distributions = true
             StaticSeeds = true; MigrationDependencies = true; Bootstrap = true
-            DecisionLog = true; Opportunities = true; Validations = true; IncludePlatformAutoIndexes = true; DeleteScope = None
+            DecisionLog = true; Opportunities = true; Validations = true; IncludePlatformAutoIndexes = true; DeleteScope = None; RenderConstraintsElegant = true
         }
         Policy      = {
             Selection       = "IncludeAll"

@@ -364,6 +364,12 @@ module Compose =
         VersionedPolicy : VersionedPolicy option
         Trail           : LineageEvent list
         PassEntries     : DiagnosticEntry list
+        /// NM-38 — the SSDT constraint-rendering mode lifted from
+        /// `EmissionPolicy.RenderConstraintsElegant` at the composition
+        /// seam (Core's bool → SSDT's typed `Mode`; Core cannot name the
+        /// SSDT type). Threaded into `SsdtDdlEmitter.emitSlicesWithRendering`
+        /// so the operator's V1-parity / bisect opt-out reaches production.
+        ConstraintRendering : ConstraintFormatter.Mode
     }
 
     /// One registered emit step: its metadata (the pillar-9 classification
@@ -416,7 +422,7 @@ module Compose =
               fun ctx outputs ->
                 use _ = Bench.scope "emit.ssdtBundle.compose"
                 let decisionOverlay = DecisionOverlay.ofComposeState ctx.ComposedState
-                match SsdtDdlEmitter.emitSlicesWith decisionOverlay ctx.EmittedCatalog with
+                match SsdtDdlEmitter.emitSlicesWithRendering ctx.ConstraintRendering decisionOverlay ctx.EmittedCatalog with
                 | Ok ssdtFiles ->
                     let rewritten = applyEmissionFolderOverrides ctx.Folders ctx.EmittedCatalog ssdtFiles
                     let policyConflicts = ConflictDetector.detectConflicts ctx.Trail ctx.PassEntries
@@ -494,7 +500,12 @@ module Compose =
               Folders         = folders
               VersionedPolicy = versionedPolicy
               Trail           = composed.Trail
-              PassEntries     = passEntries }
+              PassEntries     = passEntries
+              // NM-38 — lift the Core bool to the SSDT typed Mode at the
+              // composition seam; `true` (default) ⇒ `Enabled` (byte-identical).
+              ConstraintRendering =
+                if policy.RenderConstraintsElegant then ConstraintFormatter.Enabled
+                else ConstraintFormatter.Disabled }
         let outputs =
             emitSteps
             |> List.fold (fun acc step -> step.Emit emitContext acc) (seedOutputs emitContext)
@@ -988,7 +999,11 @@ module Compose =
                                      EmitData = emitData
                                      DataComposition = dataComposition
                                      DeleteScope = cfg.Emission.DeleteScope
-                                     IncludePlatformAutoIndexes = cfg.Emission.IncludePlatformAutoIndexes }
+                                     IncludePlatformAutoIndexes = cfg.Emission.IncludePlatformAutoIndexes
+                                     // NM-38 — `emission.renderConstraintsElegant`
+                                     // threads the operator's constraint-rendering
+                                     // opt-out (default true = current behavior).
+                                     RenderConstraintsElegant = cfg.Emission.RenderConstraintsElegant }
             }
         | _ ->
             let tighteningErrs = match tighteningR with Ok _ -> [] | Error es -> es

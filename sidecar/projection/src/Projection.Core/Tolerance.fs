@@ -74,6 +74,46 @@ type ToleratedDivergence =
     /// @ladder IndexOptionsUnreflected Schema OpenGap
     | IndexOptionsUnreflected
 
+    /// NM-16 — `CatalogDiff.between` compares kinds by NAME and descends
+    /// only into attributes / references / indexes / sequences; a kind's
+    /// `Triggers` are NOT a diff channel. A changed / added / removed
+    /// trigger produces `norm d = 0` ("idempotent redeploy") and
+    /// `migrate A B` emits nothing — yet the canary's `PhysicalSchema.diff`
+    /// surface CAN see trigger drift, so the two surfaces disagree on
+    /// "what is a change." Named here so the kind-level trigger erasure in
+    /// the `CatalogDiff` algebra is *closed* (witnessed), not silent —
+    /// satisfying "nothing lost in silence" (the LIGHT route, not a full
+    /// `KindFacet` diff channel). Retiring it: add a kind-trigger diff
+    /// channel to `CatalogDiff.between` (mirroring the attribute facet
+    /// descent) with `applyDiff` patches + a fixture.
+    /// @ladder KindTriggersUnreflectedInDiff Schema OpenGap
+    | KindTriggersUnreflectedInDiff
+
+    /// NM-16 — a kind's `ColumnChecks` (table-level CHECK constraints) are
+    /// not a `CatalogDiff.between` channel; a changed / added / removed
+    /// CHECK produces `norm d = 0` and `migrate` emits nothing, while the
+    /// physical canary can observe the change. Named here so the erasure
+    /// is *closed* (witnessed), not silent. Retiring it: add a kind-CHECK
+    /// diff channel with `applyDiff` patches + a fixture.
+    /// @ladder KindChecksUnreflectedInDiff Schema OpenGap
+    | KindChecksUnreflectedInDiff
+
+    /// NM-16 — a kind's `Modality` (the static-vs-dynamic / population
+    /// modality mark) is not a `CatalogDiff.between` channel; a modality
+    /// flip produces `norm d = 0` and `migrate` emits nothing. Named here
+    /// so the erasure is *closed* (witnessed), not silent. Retiring it: add
+    /// a kind-modality diff channel with `applyDiff` patches + a fixture.
+    /// @ladder KindModalityUnreflectedInDiff Schema OpenGap
+    | KindModalityUnreflectedInDiff
+
+    /// NM-16 — a kind's `IsActive` activation flag is not a
+    /// `CatalogDiff.between` channel; activating / deactivating a kind
+    /// produces `norm d = 0` and `migrate` emits nothing. Named here so the
+    /// erasure is *closed* (witnessed), not silent. Retiring it: add a
+    /// kind-activation diff channel with `applyDiff` patches + a fixture.
+    /// @ladder KindActivationUnreflectedInDiff Schema OpenGap
+    | KindActivationUnreflectedInDiff
+
     /// Static-entity populations (INSERT statements) are absent
     /// from `PhysicalSchema`'s comparison surface (same docstring).
     /// The data-plane axis is covered by `PhysicalSchema.Rows`
@@ -169,6 +209,10 @@ module ToleratedDivergence =
         | ToleratedDivergence.HeaderCommentsOmitted          -> ToleratedDivergence.HeaderCommentsOmitted
         | ToleratedDivergence.PostDeployForeignKeysSplit     -> ToleratedDivergence.PostDeployForeignKeysSplit
         | ToleratedDivergence.IndexOptionsUnreflected             -> ToleratedDivergence.IndexOptionsUnreflected
+        | ToleratedDivergence.KindTriggersUnreflectedInDiff  -> ToleratedDivergence.KindTriggersUnreflectedInDiff
+        | ToleratedDivergence.KindChecksUnreflectedInDiff    -> ToleratedDivergence.KindChecksUnreflectedInDiff
+        | ToleratedDivergence.KindModalityUnreflectedInDiff  -> ToleratedDivergence.KindModalityUnreflectedInDiff
+        | ToleratedDivergence.KindActivationUnreflectedInDiff -> ToleratedDivergence.KindActivationUnreflectedInDiff
         | ToleratedDivergence.StaticPopulationsUnreflected   -> ToleratedDivergence.StaticPopulationsUnreflected
         | ToleratedDivergence.EmptyTextNormalizedToNull      -> ToleratedDivergence.EmptyTextNormalizedToNull
         | ToleratedDivergence.CharAnsiPaddingTolerated       -> ToleratedDivergence.CharAnsiPaddingTolerated
@@ -191,6 +235,10 @@ module ToleratedDivergence =
                 coverage ToleratedDivergence.HeaderCommentsOmitted
                 coverage ToleratedDivergence.PostDeployForeignKeysSplit
                 coverage ToleratedDivergence.IndexOptionsUnreflected
+                coverage ToleratedDivergence.KindTriggersUnreflectedInDiff
+                coverage ToleratedDivergence.KindChecksUnreflectedInDiff
+                coverage ToleratedDivergence.KindModalityUnreflectedInDiff
+                coverage ToleratedDivergence.KindActivationUnreflectedInDiff
                 coverage ToleratedDivergence.StaticPopulationsUnreflected
                 coverage ToleratedDivergence.EmptyTextNormalizedToNull
                 coverage ToleratedDivergence.CharAnsiPaddingTolerated
@@ -207,6 +255,10 @@ module ToleratedDivergence =
         | ToleratedDivergence.HeaderCommentsOmitted        -> "HeaderCommentsOmitted"
         | ToleratedDivergence.PostDeployForeignKeysSplit   -> "PostDeployForeignKeysSplit"
         | ToleratedDivergence.IndexOptionsUnreflected           -> "IndexOptionsUnreflected"
+        | ToleratedDivergence.KindTriggersUnreflectedInDiff   -> "KindTriggersUnreflectedInDiff"
+        | ToleratedDivergence.KindChecksUnreflectedInDiff     -> "KindChecksUnreflectedInDiff"
+        | ToleratedDivergence.KindModalityUnreflectedInDiff   -> "KindModalityUnreflectedInDiff"
+        | ToleratedDivergence.KindActivationUnreflectedInDiff -> "KindActivationUnreflectedInDiff"
         | ToleratedDivergence.StaticPopulationsUnreflected -> "StaticPopulationsUnreflected"
         | ToleratedDivergence.EmptyTextNormalizedToNull    -> "EmptyTextNormalizedToNull"
         | ToleratedDivergence.CharAnsiPaddingTolerated     -> "CharAnsiPaddingTolerated"

@@ -659,6 +659,7 @@ module SsdtDdlEmitter =
         }
 
     let private kindToSsdtFile
+        (renderMode: ConstraintFormatter.Mode)
         (overlay: DecisionOverlay)
         (targetByKey: Map<SsKey, Kind>)
         (pkAttrByKey: Map<SsKey, Attribute>)
@@ -705,7 +706,11 @@ module SsdtDdlEmitter =
             |> List.ofSeq
             |> List.mapi (fun i s -> if i = 0 then [ s ] else [ BatchSeparator; s ])
             |> List.concat
-        let body = Render.toText separated
+        // NM-38 — `renderMode` threads the operator's
+        // `EmissionPolicy.RenderConstraintsElegant` axis to the constraint
+        // post-processor. `Enabled` (the default wrapper) is byte-identical
+        // to the prior hardcoded `Render.toText`.
+        let body = Render.toTextWith renderMode separated
         { RelativePath = relativePath m k; Body = body }
 
     /// Lookup table from kind SsKey to owning Module. Same shape as
@@ -856,10 +861,18 @@ module SsdtDdlEmitter =
     let statements (catalog: Catalog) : seq<Statement> =
         statementsWith DecisionOverlay.empty catalog
 
-    /// Wave-2 slice 2.2 — overlay-bearing form of `emitSlices`. `emitSlices`
-    /// is the principled `empty`-default wrapper. With `empty`, every per-kind
-    /// `SsdtFile` body is byte-identical to pre-overlay emission.
-    let emitSlicesWith (overlay: DecisionOverlay) : Emitter<SsdtFile> = fun catalog ->
+    /// NM-38 — overlay + constraint-rendering-mode-bearing form of
+    /// `emitSlices`. `renderMode` threads the operator's
+    /// `EmissionPolicy.RenderConstraintsElegant` axis to the per-file
+    /// `Render.toTextWith` post-processor; `Enabled` is the production
+    /// default (byte-identical to pre-NM-38 emission). Per A18, the
+    /// `Emitter<SsdtFile>` port stays `Catalog`-only — `renderMode` is a
+    /// realization-layer overlay choice resolved at the composition seam,
+    /// never read from `Policy` inside the emitter.
+    let emitSlicesWithRendering
+        (renderMode: ConstraintFormatter.Mode)
+        (overlay: DecisionOverlay)
+        : Emitter<SsdtFile> = fun catalog ->
         use _ = Bench.scope "emit.ssdt.emitSlices"
         let modules = moduleByKindKey catalog
         let _allKinds, targetByKey, pkAttrByKey = buildLookups catalog
@@ -870,7 +883,7 @@ module SsdtDdlEmitter =
         ArtifactByKind.perKindBenched "emit.ssdt.emitSlices.kind" catalog (fun k ->
             match Map.tryFind k.SsKey modules with
             | Some m ->
-                kindToSsdtFile overlay targetByKey pkAttrByKey m k
+                kindToSsdtFile renderMode overlay targetByKey pkAttrByKey m k
             | None ->
                 // Unreachable: `Catalog.allKinds` walks
                 // `c.Modules |> List.collect (fun m -> m.Kinds)`;
@@ -878,6 +891,14 @@ module SsdtDdlEmitter =
                 // defensive `invalidOp` makes the unreachability
                 // structural.
                 invalidOp (sprintf "SsdtDdlEmitter.emitSlices: kind %A has no owning module (unreachable; Catalog.allKinds invariant)" k.SsKey))
+
+    /// Wave-2 slice 2.2 — overlay-bearing form of `emitSlices`. `emitSlices`
+    /// is the principled `empty`-default wrapper. With `empty`, every per-kind
+    /// `SsdtFile` body is byte-identical to pre-overlay emission. Renders with
+    /// the `Enabled` (V1-parity) constraint mode; see `emitSlicesWithRendering`
+    /// for the operator-overridable form (NM-38).
+    let emitSlicesWith (overlay: DecisionOverlay) : Emitter<SsdtFile> =
+        emitSlicesWithRendering ConstraintFormatter.Enabled overlay
 
     /// Π port realization (the `empty`-overlay default). Byte-identical to
     /// pre-Wave-2 emission. See `emitSlicesWith`.

@@ -182,9 +182,14 @@ let ``Chapter 4.1.A slice 8: Tolerance.CommentMetadataUnreflected variant retire
         | ToleratedDivergence.HeaderCommentsOmitted        -> ()
         | ToleratedDivergence.PostDeployForeignKeysSplit   -> ()
         | ToleratedDivergence.IndexOptionsUnreflected           -> ()
+        | ToleratedDivergence.KindTriggersUnreflectedInDiff   -> ()
+        | ToleratedDivergence.KindChecksUnreflectedInDiff     -> ()
+        | ToleratedDivergence.KindModalityUnreflectedInDiff   -> ()
+        | ToleratedDivergence.KindActivationUnreflectedInDiff -> ()
         | ToleratedDivergence.StaticPopulationsUnreflected -> ()
         | ToleratedDivergence.EmptyTextNormalizedToNull    -> ()
         | ToleratedDivergence.CharAnsiPaddingTolerated     -> ()
         | ToleratedDivergence.DecimalScaleTolerated        -> ()
-    // AC-D6 (NEITHER→HELD) added the two representation-only tolerances.
-    Assert.Equal(7, Set.count ToleratedDivergence.allKnown)
+    // AC-D6 (NEITHER→HELD) added the two representation-only tolerances;
+    // NM-16 (2026-06-13) added the four kind-facet diff-erasure tolerances.
+    Assert.Equal(11, Set.count ToleratedDivergence.allKnown)

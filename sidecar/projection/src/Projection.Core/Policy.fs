@@ -111,6 +111,16 @@ type EmissionPolicy = {
     /// emitters' MERGE. `None` (the default) emits NO delete arm —
     /// byte-identical to the pre-scope output.
     DeleteScope : DeleteScopePolicy option
+    /// NM-38 — operator toggle for the SSDT constraint-rendering overlay
+    /// (`ConstraintFormatter.Mode`, classified `OperatorIntent Emission`).
+    /// `true` (the V1-parity production default) reformats ScriptDom's
+    /// compact column-inline constraints into V1's elegant multi-line
+    /// shape; `false` is the diagnostic / V1-parity-bisect opt-out that
+    /// passes ScriptDom's raw output through. The typed `Mode` lives in
+    /// `Projection.Targets.SSDT` (downstream of Core), so the axis rides
+    /// here as a bool the SSDT emit seam lifts to `Render.toTextWith`.
+    /// Default `true` keeps the default bundle byte-identical.
+    RenderConstraintsElegant : bool
 }
 
 
@@ -496,13 +506,24 @@ module EmissionPolicy =
                   // Chapter 4.8 slice γ — V1 parity default.
                   IncludePlatformAutoIndexes = true
                   // AC-D7 — upsert-only default; the scope is operator opt-in.
-                  DeleteScope = None }
+                  DeleteScope = None
+                  // NM-38 — V1-parity default-on; the elegant multi-line
+                  // constraint shape is the production default (matches the
+                  // prior hardcoded `Render.toText` Enabled mode).
+                  RenderConstraintsElegant = true }
 
     /// Replace `IncludePlatformAutoIndexes` while preserving the rest
     /// of the policy. Chapter 4.8 slice γ. Operators set to `false` to
     /// filter platform-auto indexes from the SSDT bundle.
     let withIncludePlatformAutoIndexes (includeAuto: bool) (policy: EmissionPolicy) : EmissionPolicy =
         { policy with IncludePlatformAutoIndexes = includeAuto }
+
+    /// NM-38 — replace `RenderConstraintsElegant` while preserving the rest
+    /// of the policy. Operators set to `false` to fall back to ScriptDom's
+    /// compact column-inline constraint emission (the V1-parity / regression-
+    /// bisect opt-out). Sibling to `withIncludePlatformAutoIndexes`.
+    let withRenderConstraintsElegant (elegant: bool) (policy: EmissionPolicy) : EmissionPolicy =
+        { policy with RenderConstraintsElegant = elegant }
 
     /// Project a catalog by the `IncludePlatformAutoIndexes` toggle. When
     /// the policy says `true` (V1 default), returns the catalog
