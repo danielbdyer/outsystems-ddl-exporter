@@ -173,7 +173,7 @@ inventory row and its variance in the catalog, in the same commit.**
 | Variance | Status |
 |---|---|
 | MS_Description at table + column level (logical names) | COVERED |
-| Identity annotations (`V2.LogicalName`/`V2.SsKey`; unconditional today) | COVERED — **known-unblessed** (plan WP5: rename + gate; the rename will be a deliberate golden diff) |
+| Identity annotations — RENAMED `V2.*` → `Projection.LogicalName`/`Projection.SsKey` (WP5 / C1) | COVERED + BLESSED (the clean 1:1 rename is the worked example of the blessing protocol; DECISIONS 2026-06-13). Still unconditional — the `emit\|omit` gate is the named follow-on |
 | Index-level extended properties | COVERED |
 | CHECK constraints (`ColumnChecks`) — definitions follow the logical column substitution (`LogicalColumnEmission` v2) | COVERED + BLESSED (slice 3; authored with physical refs, emitted logical) |
 | Single-column CHECK beneath its attribute (structural anchor: exactly one referenced column); multi-column CHECK at table level | COVERED + BLESSED (slice 3b) |

@@ -348,7 +348,11 @@ module MigrationRun =
                         else []
                     let reBind =
                         sprintf
-                            "EXEC sys.sp_updateextendedproperty @name=N'V2.LogicalName', @value=N'%s', @level0type=N'SCHEMA', @level0name=N'%s', @level1type=N'TABLE', @level1name=N'%s';"
+                            // WP5 / C1 — rebind the renamed identity property
+                            // (`Projection.LogicalName`). Legacy `V2.*`-bearing
+                            // deployed schemas are the dual-window migrate edge
+                            // (Docker-gated; named in DECISIONS).
+                            "EXEC sys.sp_updateextendedproperty @name=N'Projection.LogicalName', @value=N'%s', @level0type=N'SCHEMA', @level0name=N'%s', @level1type=N'TABLE', @level1name=N'%s';"
                             (esc (Name.value t.Name)) (esc schema) (esc newTable)
                     spRename @ [ reBind ]
                 | _ -> [])
@@ -376,7 +380,9 @@ module MigrationRun =
                                 else []
                             let reBind =
                                 sprintf
-                                    "EXEC sys.sp_updateextendedproperty @name=N'V2.LogicalName', @value=N'%s', @level0type=N'SCHEMA', @level0name=N'%s', @level1type=N'TABLE', @level1name=N'%s', @level2type=N'COLUMN', @level2name=N'%s';"
+                                    // WP5 / C1 — rebind the renamed identity
+                                    // property (`Projection.LogicalName`).
+                                    "EXEC sys.sp_updateextendedproperty @name=N'Projection.LogicalName', @value=N'%s', @level0type=N'SCHEMA', @level0name=N'%s', @level1type=N'TABLE', @level1name=N'%s', @level2type=N'COLUMN', @level2name=N'%s';"
                                     (esc (Name.value newName)) (esc schema) (esc table) (esc newCol)
                             spRename @ [ reBind ]
                         | _ -> [])

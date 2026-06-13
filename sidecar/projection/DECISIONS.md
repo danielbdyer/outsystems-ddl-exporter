@@ -22605,3 +22605,53 @@ per-lane goldens reconciled). Step 6 (EXCEPT validate-before-apply, C2) is a
 later slice per the plan's §5 sequencing. Remaining caveat: the live OSSYS
 hydration stream and the full Docker pool are unwitnessed in this environment
 (no OSSYS source; Docker daemon unavailable) — both owed before merge.
+
+---
+
+## 2026-06-13 — WP5 / C1: the identity extended properties rename `V2.*` → `Projection.*` (the worked example of the blessing protocol)
+
+Context: `V1_FULL_EXPORT_RECONCILIATION_PLAN.md` WP5; operator adjudication C1
+(*"get the rename done. V2 is only useful as terminology in meta … not
+practical inside the domain"*). The emitted identity extended properties were
+`V2.LogicalName` / `V2.SsKey`; this renames them to domain terminology
+**`Projection.LogicalName` / `Projection.SsKey`** (final names, per C1).
+
+**1. Writer + in-memory reader (paired, PURE-witnessed).** `SsdtDdlEmitter`
+emits the new names (table + column `Projection.LogicalName`, table
+`Projection.SsKey`); `PhysicalSchemaReader` (the in-memory statement-stream
+round-trip) reads the new name — paired with the writer, always fresh
+emission, so new-name only. `PhysicalSchema`'s diff-blindness (`isLogicalName`)
+excludes BOTH `Projection.LogicalName` and `V2.LogicalName` so neither
+phantom-diffs during the window.
+
+**2. Live `ReadSide` dual-read (Docker-gated).** The deployed-schema readers
+read BOTH names (`ep.name IN (N'Projection.…', N'V2.…')`) — new-first by
+preference, legacy retained so already-deployed `V2.*`-bearing schemas still
+recover (the dual-read window; legacy-read retirement is trigger-gated on no
+`V2.*`-bearing environment remaining). The non-identity extended-property read
+excludes all four names. `MigrationRun`'s rename rebind targets
+`Projection.LogicalName`; migrating a LEGACY `V2.*` deployed schema is the
+dual-window migrate edge (named here; Docker-gated, owed).
+
+**3. Golden = the worked example.** Re-recorded under the blessing protocol:
+a clean 1:1 rename, 160 insertions / 160 deletions across 17 master files,
+every `V2.*` → `Projection.*`, no other byte moved. This commit's golden diff
+IS the operator-blessing surface the corpus was built for.
+
+**4. Scope: the rename only; the `emit|omit` gate is the named follow-on.**
+WP5 also specifies gating the annotations behind an `EmissionPolicy
+.IdentityAnnotations = emit|omit` axis (a named downgrade with a diagnostic).
+That requires a new policy axis threaded to the (private)
+`extendedPropertyStatements` — a signature cascade separable from the rename.
+The rename is the operator's explicit C1 ask and lands now; the gate is the
+immediate follow-on (its DECISIONS amendment + config key + the named-downgrade
+diagnostic come with it).
+
+**Witness.** Fast pool 3134/27/211 — the cross-cutting rename broke zero pure
+tests (the 27 are the unchanged Docker-gated extraction classes). Pure
+witnesses: `LogicalNameRoundtripTests` emission asserts, `MigrationRunTests`
+rebind-gen, `CanaryRoundTripTests` EP filter, `GoldenEmission` (re-recorded).
+The live `ReadSide` dual-read round-trip and the legacy-schema migrate are
+Docker-gated/OSSYS-adjacent — owed before merge. (Code comments and the legacy
+`Fixtures/SourceSchema.fs` deliberately keep `V2.*` — the latter now exercises
+the dual-read legacy path.)

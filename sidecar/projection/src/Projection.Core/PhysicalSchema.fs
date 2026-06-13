@@ -529,7 +529,11 @@ module PhysicalSchema =
     /// emitter's own round-trip scaffolding.
     let private toExtendedPropertyAnnotations (k: Kind) : PhysicalAnnotation list =
         let tableOwner = System.String.Concat("[", TableId.schemaText k.Physical, "].[", TableId.tableText k.Physical, "]")
-        let isLogicalName (ep: ExtendedProperty) = ep.Name = "V2.LogicalName"
+        // WP5 / C1 — exclude BOTH the renamed (`Projection.LogicalName`) and
+        // the legacy (`V2.LogicalName`) identity property during the dual-read
+        // window, so neither phantom-diffs against the other.
+        let isLogicalName (ep: ExtendedProperty) =
+            ep.Name = "Projection.LogicalName" || ep.Name = "V2.LogicalName"
         let kindEps =
             k.ExtendedProperties
             |> List.filter (not << isLogicalName)

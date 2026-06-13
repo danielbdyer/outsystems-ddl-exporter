@@ -569,8 +569,7 @@ module ReadSide =
                  LEFT JOIN sys.columns c \
                    ON c.object_id = ep.major_id AND c.column_id = ep.minor_id \
                  WHERE ep.class = 1 AND t.is_ms_shipped = 0 \
-                   AND ep.name <> N'V2.LogicalName' \
-                   AND ep.name <> N'V2.SsKey'"
+                   AND ep.name NOT IN (N'Projection.LogicalName', N'Projection.SsKey', N'V2.LogicalName', N'V2.SsKey')"
             use! reader = cmd.ExecuteReaderAsync()
             let acc = System.Collections.Generic.Dictionary<string * string * string option, ResizeArray<string * string>>()
             do! drainRows reader (fun reader ->
@@ -1433,7 +1432,7 @@ module ReadSide =
                  LEFT JOIN sys.columns c \
                    ON c.object_id = ep.major_id AND c.column_id = ep.minor_id \
                  WHERE ep.class = 1 \
-                   AND ep.name = N'V2.LogicalName' \
+                   AND ep.name IN (N'Projection.LogicalName', N'V2.LogicalName') \
                    AND t.is_ms_shipped = 0; \
                  SELECT \
                     SCHEMA_NAME(t.schema_id), t.name, \
@@ -1441,7 +1440,7 @@ module ReadSide =
                  FROM sys.extended_properties ep \
                  JOIN sys.tables t ON t.object_id = ep.major_id \
                  WHERE ep.class = 1 \
-                   AND ep.name = N'V2.SsKey' \
+                   AND ep.name IN (N'Projection.SsKey', N'V2.SsKey') \
                    AND ep.minor_id = 0 \
                    AND t.is_ms_shipped = 0"
             use! reader = cmd.ExecuteReaderAsync()

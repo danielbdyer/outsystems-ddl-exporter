@@ -144,7 +144,7 @@ module LogicalNameRoundtripUnit =
     [<Fact>]
     let ``Slice D.1.b: SSDT body carries V2.LogicalName extended property at the table level`` () =
         let body = renderSsdtWithSubstitution (divergentCatalog ())
-        Assert.Contains("@name = N'V2.LogicalName'", body)
+        Assert.Contains("@name = N'Projection.LogicalName'", body)
         Assert.Contains("@value = N'Customer'", body)
 
     [<Fact>]
@@ -170,7 +170,7 @@ module LogicalNameRoundtripUnit =
                   IsActive = true; ExtendedProperties = [] }
             { Modules = [ m ]; Sequences = [] }
         let body = renderSsdtWithSubstitution aligned
-        Assert.Contains("@name = N'V2.LogicalName'", body)
+        Assert.Contains("@name = N'Projection.LogicalName'", body)
         Assert.Contains("@value = N'T'", body)
         Assert.Contains("@value = N'C'", body)
 
