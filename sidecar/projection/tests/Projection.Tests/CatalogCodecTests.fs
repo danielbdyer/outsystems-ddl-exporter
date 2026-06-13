@@ -441,6 +441,21 @@ let ``decode re-proves the A39 aggregate invariant (dangling FK target)`` () =
     |> editing (fun n -> (n |> field "modules" |> item 0 |> field "kinds").AsArray().RemoveAt(0))
     |> expectError "dangling FK target — A39 re-validation on decode"
 
+[<Fact>]
+let ``NM-12: Catalog.create rejects the illegal constraint-state quadrant`` () =
+    // A self-reference in the illegal (no-constraint, untrusted) quadrant, set via
+    // a raw record-`with` that bypasses `withConstraintState`. The aggregate root
+    // must refuse it (G14), so the quadrant cannot enter the IR by any path.
+    let attr = Attribute.create (key 1) (nm "Col") PrimitiveType.Text
+    let badRef =
+        { Reference.create (key 2) (nm "FK_self") attr.SsKey (key 3) with
+            HasDbConstraint = false; IsConstraintTrusted = false }
+    let kind = { Kind.create (key 3) (nm "K") (tableId "dbo" "K") [ attr ] with References = [ badRef ] }
+    let m = { SsKey = key 1000; Name = nm "M"; Kinds = [ kind ]; IsActive = true; ExtendedProperties = [] }
+    match Catalog.create [ m ] [] with
+    | Ok _ -> Assert.True(false, "expected Catalog.create to reject the illegal constraint-state quadrant")
+    | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "catalog.reference.illegalConstraintState")
+
 // ============================================================================
 // The round-trip LAW, universally quantified (FsCheck). The enumerated tests
 // above prove totality per variant; this proves the law over random *combina-
@@ -506,8 +521,12 @@ let private genKind (kindIx: int) (allKindKeys: SsKey list) : Gen<Kind> =
                     let! hasDb = genBool
                     let! trusted = genBool
                     return
+                        // NM-12 — route the constraint-state pair through the
+                        // sanctioned normalizer so the generator never produces
+                        // the illegal quadrant that `Catalog.create` now rejects.
                         { Reference.create (key (20000 + kindIx * 100 + r)) (nm (sprintf "R%d_%d" kindIx r)) srcA tgt with
-                            OnDelete = onDel; OnUpdate = onUpd; IsUserFk = userFk; HasDbConstraint = hasDb; IsConstraintTrusted = trusted } } ]
+                            OnDelete = onDel; OnUpdate = onUpd; IsUserFk = userFk }
+                        |> Reference.withConstraintState hasDb trusted } ]
             |> genAll
 
         let! nIdx = Gen.choose (0, 2)

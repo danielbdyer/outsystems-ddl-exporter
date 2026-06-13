@@ -274,9 +274,13 @@ let ``C1 emit: an added sequence emits CREATE SEQUENCE`` () =
 
 [<Fact>]
 let ``C1 emit: an FK trust change (trusted -> NOCHECK) emits the disable + nocheck two-step`` () =
+    // NM-12 — represent the WITH NOCHECK FK as a real untrusted constraint (both
+    // sides legal via withConstraintState); the trust facet still flips.
+    let orderTrusted =
+        { order with References = order.References |> List.map (Reference.withConstraintState true true) }
     let orderUntrusted =
-        { order with References = order.References |> List.map (fun r -> { r with IsConstraintTrusted = false }) }
-    let stmts, _ = migrationBetween (catalogOf [ customer; order; country ] []) (catalogOf [ customer; orderUntrusted; country ] [])
+        { order with References = order.References |> List.map (Reference.withConstraintState true false) }
+    let stmts, _ = migrationBetween (catalogOf [ customer; orderTrusted; country ] []) (catalogOf [ customer; orderUntrusted; country ] [])
     Assert.True(stmts |> List.exists (function Statement.AlterTableDisableConstraint _ -> true | _ -> false))
     Assert.True(stmts |> List.exists (function Statement.AlterTableNoCheckConstraint _ -> true | _ -> false))
 

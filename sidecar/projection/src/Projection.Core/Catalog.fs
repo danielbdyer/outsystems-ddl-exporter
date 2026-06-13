@@ -1719,6 +1719,19 @@ module Catalog =
                                 (sprintf
                                     "Reference %A on Kind %A has TargetKind %A absent from the catalog."
                                     r.SsKey k.SsKey r.TargetKind))
+                    // NM-12 — G14: the illegal trust quadrant
+                    // (HasDbConstraint=false ∧ IsConstraintTrusted=false) is
+                    // unreachable at the aggregate root. Every ingest boundary
+                    // (ReadSide / codec / V1) normalizes through
+                    // `Reference.withConstraintState`; `Catalog.create` rejects
+                    // anything that bypassed it, so the quadrant cannot enter the IR.
+                    if not (Reference.isConstraintStateConsistent r) then
+                        refAcc.Add(
+                            ValidationError.create
+                                "catalog.reference.illegalConstraintState"
+                                (sprintf
+                                    "Reference %A on Kind %A is in the illegal constraint-state quadrant (HasDbConstraint=false, IsConstraintTrusted=false); an untrusted constraint requires the constraint to exist. Set it through Reference.withConstraintState."
+                                    r.SsKey k.SsKey))
                 for idx in k.Indexes do
                     for col in idx.Columns do
                         if not (Set.contains col.Attribute attrKeys) then
