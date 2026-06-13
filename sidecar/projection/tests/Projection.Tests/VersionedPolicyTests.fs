@@ -175,6 +175,16 @@ let ``H-085 evolve: removing a Tightening intervention bumps major`` () =
     Assert.Equal({ Major = 2; Minor = 0; Patch = 0 }, next.Version)
 
 [<Fact>]
+let ``H-085 bump: a same-id intervention config change is a MinorBump (NM-58)`` () =
+    // The ID set is unchanged, but the NullBudget moves 0.1 → 0.5 — a material
+    // change of operator intent that must NOT downgrade to a cosmetic PatchBump.
+    let cfgA = NullabilityTighteningConfig.create 0.1m false [] |> Result.value
+    let cfgB = NullabilityTighteningConfig.create 0.5m false [] |> Result.value
+    let before = { Policy.empty with Tightening = { Interventions = [Nullability ("n1", cfgA)] } }
+    let after  = { Policy.empty with Tightening = { Interventions = [Nullability ("n1", cfgB)] } }
+    Assert.Equal(MinorBump, VersionedPolicy.bumpKind before after)
+
+[<Fact>]
 let ``H-085 evolve: structurally identical policies bump nothing`` () =
     let predecessor = VersionedPolicy.create testTime Policy.empty None
     let next = VersionedPolicy.evolve predecessor testTime Policy.empty None

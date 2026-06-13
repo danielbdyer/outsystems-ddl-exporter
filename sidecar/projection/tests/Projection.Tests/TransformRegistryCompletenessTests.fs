@@ -58,10 +58,20 @@ let private ciRun (c: Catalog) : Lineage<Catalog> =
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// Test-side aggregated registry (all 18 entries: 1 adapter + 12 passes
-// + 5 strategies). Configurable passes are pre-applied with sensible
+// Test-side aggregated registry (the slice-θ canonical subset: 1 adapter +
+// 12 passes + 5 strategies). Configurable passes are pre-applied with sensible
 // defaults; the factory pattern's static metadata doesn't vary with
 // config so the per-config invocation here is a witness.
+//
+// NM-42 SCOPE — this is a FIXTURE, NOT the full executable chain. The live
+// chain (`RegisteredTransforms.all`, "cannot drift from what runs") runs more
+// passes (the analytics passes Centrality / BoundedContext / ProfileAnomaly /
+// SchemaComplexity / QueryHint / LogicalTable+Column emission). Totality of the
+// LIVE chain is owned by `RegisteredTransforms.all` +
+// `RegisteredAllTransformsBidirectionalTests` — do NOT read the "18 / covers
+// all passes" assertions below as full-chain totality. Reconciling this
+// fixture's membership against the live registry (the adapter is not a chain
+// step; the 12-vs-19 pass gap) is a deferred test-architecture slice.
 // ---------------------------------------------------------------------------
 
 let private emptyMask : VisibilityMask.Mask = { Hide = [] }

@@ -91,6 +91,16 @@ module RegisteredTransformTags =
 
     /// Look up a pass's tags by name. `Set.empty` for passes not in
     /// the map (untagged passes always run).
+    ///
+    /// NM-44 — `passTags` is the hand-maintained `OverlayAxis → TransformGroup`
+    /// mapping (no structural derivation exists: `OverlayAxis` has `Tightening`
+    /// but no `UserReflow` variant, so the two surfaces cannot be projected from
+    /// one another today). COVERAGE IS ONE-DIRECTIONAL: the test asserts every
+    /// tagged name is a real pass, but NOT that every group-toggleable pass is
+    /// tagged. A new `OperatorIntent Tightening`/UserReflow pass added without a
+    /// `passTags` row would silently ALWAYS RUN, ignoring the operator's group
+    /// toggle. Closing that (a reverse-coverage guard, or deriving tags from the
+    /// pass's `Sites` classification) is a deferred slice.
     let tagsFor (name: string) : Set<TransformGroup> =
         match Map.tryFind name passTags with
         | Some s -> s

@@ -704,7 +704,21 @@ module Command =
             | (None, None), _ -> []
             | _, PlanAction.SynthesizeAndLoad _ -> []
             | _, _ -> [ "--seed/--scale accepted; this action has no synthesis leg (model data applied)." ]
-        { Notes = unhonoredNotes spec @ freshNote @ resumableNote @ synthesisNote; Action = action }
+        // NM-07 — the streaming realization + its capture journal are honored on
+        // the reverse leg only (the sole `opts.Streaming`/`opts.Journal` consumer,
+        // `runReverseLegTransfer`); any other action carries no streaming/journaled
+        // write seam, so the flags are noted, never silently dropped.
+        let streamingNote =
+            match spec.Streaming, action with
+            | false, _ -> []
+            | true, PlanAction.RunReverseLeg _ -> []
+            | true, _ -> [ "--streaming accepted; this action has no streaming write seam (materialized write applied)." ]
+        let journalNote =
+            match spec.Journal, action with
+            | None, _ -> []
+            | Some _, PlanAction.RunReverseLeg _ -> []
+            | Some _, _ -> [ "--journal accepted; this action has no journaled write seam (unjournaled write applied)." ]
+        { Notes = unhonoredNotes spec @ freshNote @ resumableNote @ synthesisNote @ streamingNote @ journalNote; Action = action }
 
     /// Route a `check` verb tail to its proof-plane action — purely.
     let planCheck (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =

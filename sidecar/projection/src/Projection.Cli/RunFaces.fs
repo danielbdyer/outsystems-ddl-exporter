@@ -56,9 +56,11 @@ let runFullExport
         | Some store when not (System.String.IsNullOrWhiteSpace store) ->
             let env = parseEnvironment "DEV" envLabel
             match Timeline.create (Projection.Core.Environment.name env) with
-            | Error _ ->
-                // A malformed timeline name falls back to the genesis path rather
-                // than aborting the emission; the store leg is simply absent.
+            | Error es ->
+                // NM-56: name the downgrade. The operator asked for --store, but
+                // the env label cannot name a timeline; surface the error (not
+                // silent) then fall back to the genesis emission (store leg absent).
+                printErrors Console.Error es
                 FullExportRun.execute configPath outputOverride verbosity mutedCategories, None
             | Ok tl ->
                 let at = System.DateTimeOffset.UtcNow
