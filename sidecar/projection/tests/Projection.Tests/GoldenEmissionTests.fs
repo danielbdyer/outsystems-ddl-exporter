@@ -132,16 +132,30 @@ let private compare (scenario: string) (expected: Map<string, string>) (actual: 
 
 let private assertNegativeInvariants (scenario: string) (files: Map<string, string>) : unit =
     for KeyValue (rel, body) in files do
-        // 4 — no CRLF anywhere. (Trailing-newline termination is NOT
-        // current behavior — per-table bodies end at the last
-        // statement's final char; the inventory carries the TODO under
-        // the WP7 per-table formatting work.)
+        // 4 — newline-terminated, no CRLF anywhere (slice 3 restored
+        // the termination: per-table bodies render via Render.toText).
+        Assert.True(body.EndsWith "\n", sprintf "%s/%s does not end with a newline" scenario rel)
         Assert.DoesNotContain("\r\n", body)
-        // 1 — no bare-line GO inside per-table bundle files.
+        // 1 — per-table GO is framed (blank line both sides) and never
+        // trailing (operator decision, DECISIONS 2026-06-13 — V1's
+        // per-file form; supersedes the prior no-GO contract).
         if rel.StartsWith "Modules/" then
-            Assert.False(
-                body.Split('\n') |> Array.exists (fun l -> l.Trim() = "GO"),
-                sprintf "%s/%s carries a bare-line GO (per-table files are GO-free)" scenario rel)
+            let lines = body.Split('\n')
+            let goIndexes =
+                lines
+                |> Array.indexed
+                |> Array.filter (fun (_, l) -> l.Trim() = "GO")
+                |> Array.map fst
+            for i in goIndexes do
+                Assert.True(i > 0 && lines.[i - 1].Trim() = "",
+                    sprintf "%s/%s: GO at line %d lacks its leading blank" scenario rel i)
+                Assert.True(i + 1 < lines.Length && lines.[i + 1].Trim() = "",
+                    sprintf "%s/%s: GO at line %d lacks its trailing blank" scenario rel i)
+            match lines |> Array.tryFindBack (fun l -> not (System.String.IsNullOrWhiteSpace l)) with
+            | Some l ->
+                Assert.False(l.Trim() = "GO",
+                    sprintf "%s/%s ends with a trailing GO (V1 joins between statements only)" scenario rel)
+            | None -> ()
     // 3 — no FK owned by the pure-target kind (the inverse-exclusion law).
     for KeyValue (rel, body) in files do
         if rel.EndsWith "GOLD_USER.sql" then

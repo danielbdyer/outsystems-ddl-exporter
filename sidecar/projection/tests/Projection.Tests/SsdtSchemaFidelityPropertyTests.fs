@@ -291,16 +291,32 @@ let ``5.3.α.extended-properties: emission uses sys.sp_addextendedproperty for d
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``5.3.α.statement-batch: per-kind file body does not contain GO separator`` () =
-    // V2's per-kind file is exactly one CREATE TABLE [+optional inline
-    // ALTERs / CREATE INDEXes / sp_addextendedproperty statements]; no
-    // GO inside the file. GO is added at deploy time per V1 convention.
+let ``reconciliation slice 3: per-kind file body carries V1's rendered form — framed GO between statements, never trailing`` () =
+    // OPERATOR DECISION (DECISIONS 2026-06-13) — supersedes the prior
+    // "per-kind file body does not contain GO separator" pin. The
+    // per-table file now renders through the same Render.toText
+    // realization as the flat stream: statements separated by GO framed
+    // with a blank line on BOTH sides (V1 StatementBatchFormatter
+    // spacing), with no trailing GO after the final statement (V1
+    // JoinStatements joins BETWEEN statements only).
     for _, body in allBodies sampleCatalog do
-        // GO appearing as a bare-line is what V1's BatchSplitter splits
-        // on; V2's per-kind body must not include it.
-        Assert.False (
-            body.Split('\n')
-            |> Array.exists (fun line -> line.Trim() = "GO"))
+        let lines = body.Split('\n') |> Array.map (fun l -> l.TrimEnd('\r'))
+        let goIndexes =
+            lines
+            |> Array.indexed
+            |> Array.filter (fun (_, l) -> l.Trim() = "GO")
+            |> Array.map fst
+        for i in goIndexes do
+            Assert.True (i > 0 && lines.[i - 1].Trim() = "",
+                sprintf "GO at line %d is not preceded by a blank line" i)
+            Assert.True (i + 1 < lines.Length && lines.[i + 1].Trim() = "",
+                sprintf "GO at line %d is not followed by a blank line" i)
+        // Never trailing: the last non-blank line is a statement, not GO.
+        let lastNonBlank =
+            lines |> Array.tryFindBack (fun l -> not (System.String.IsNullOrWhiteSpace l))
+        match lastNonBlank with
+        | Some l -> Assert.NotEqual<string>("GO", l.Trim())
+        | None -> ()
 
 [<Fact>]
 let ``reconciliation slice 2: flat-stream GO is framed by a blank line on BOTH sides (V1 StatementBatchFormatter spacing)`` () =

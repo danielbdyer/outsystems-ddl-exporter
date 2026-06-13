@@ -100,6 +100,7 @@ inventory row and its variance in the catalog, in the same commit.**
 | PK-less kind (heap) | COVERED (`Heap`) |
 | DEFAULT — unnamed inline | COVERED |
 | DEFAULT — named constraint | COVERED |
+| The full scalar×DEFAULT enumeration on ONE master table (every `PrimitiveType` with its DEFAULT-able literal: Integer/Decimal/Text/Boolean/DateTime/Date/Time/Guid/Binary + the no-default contrast column) | COVERED (slice 3, `ScalarGallery`) |
 | DEFAULT — empty-string Text (the `EmptyTextNormalizedToNull` tolerance, renders `DEFAULT NULL`) | COVERED — **known-unblessed** (named tolerance with retirement trigger) |
 | Computed columns | TODO (IR support pending) |
 | Collation overrides | TODO |
@@ -114,6 +115,8 @@ inventory row and its variance in the catalog, in the same commit.**
 | ON DELETE Cascade / SetNull / NoAction | COVERED |
 | ON UPDATE explicit action (V2 superset over V1) | COVERED |
 | Cross-schema FK | COVERED (`audit.ChangeLog` → `dbo`) |
+| Self-referencing FK (`Engagement.ParentId` → `Engagement`) | COVERED (slice 3) |
+| Column-inline FK ladder (constraint beneath its attribute at +4/+8/+12; V1 column-suffix shape) | COVERED + BLESSED (slice 3) |
 | Composite-key FK | N/A today (composite-FK semantics deferred-with-trigger) |
 | FK name length-cap / provided-name round-trip | TODO (plan WP7; matrix row 57 trigger) |
 
@@ -122,7 +125,7 @@ inventory row and its variance in the catalog, in the same commit.**
 |---|---|
 | Plain IX / unique UIX | COVERED |
 | Platform-auto index (OSIDX; present in `default`, absent in `pruned-platform-auto`) | COVERED |
-| Filtered index | COVERED |
+| Filtered index — FILTER predicate follows the logical substitution (v2) | COVERED + BLESSED (slice 3) |
 | INCLUDE columns | COVERED |
 | DESC key column | COVERED |
 | FillFactor / PAD_INDEX / IGNORE_DUP_KEY / disabled / DATA_COMPRESSION | COVERED (`IndexGallery`) |
@@ -134,8 +137,8 @@ inventory row and its variance in the catalog, in the same commit.**
 | MS_Description at table + column level (logical names) | COVERED |
 | Identity annotations (`V2.LogicalName`/`V2.SsKey`; unconditional today) | COVERED — **known-unblessed** (plan WP5: rename + gate; the rename will be a deliberate golden diff) |
 | Index-level extended properties | COVERED |
-| CHECK constraints (`ColumnChecks`) | COVERED |
-| Triggers | COVERED |
+| CHECK constraints (`ColumnChecks`) — definitions follow the logical column substitution (`LogicalColumnEmission` v2) | COVERED + BLESSED (slice 3; authored with physical refs, emitted logical) |
+| Triggers | COVERED — definition bodies still carry PHYSICAL table/column references (**known-unblessed**; rewrite is its own slice — they reference table names too) |
 | Temporal (system-versioned) tables | TODO |
 | Sequences | TODO |
 
@@ -145,7 +148,7 @@ inventory row and its variance in the catalog, in the same commit.**
 | GO framed by blank lines on both sides (slice 2) | COVERED (`stream.sql`) |
 | Constraint ladder (4/8/12 indentation) on the flat stream | COVERED |
 | `EXECUTE [sys].[sp_addextendedproperty]` canonical form | COVERED (documented accepted deviation) |
-| Per-table file: no GO, single-line constraints | COVERED — formatting ladder for file bodies is plan WP7 TODO (**known-unblessed**) |
+| Per-table file: V1's rendered form — framed GO between statements (never trailing), constraint ladder, wrapped EXEC | COVERED + BLESSED (slice 3, operator decision — supersedes the prior no-GO contract) |
 
 ### Data lanes
 | Variance | Status |
@@ -160,14 +163,12 @@ inventory row and its variance in the catalog, in the same commit.**
 | EXCEPT validate-before-apply prelude (opt-in) | TODO — plan WP6 step 6 (C2) |
 
 ### Negative invariants (asserted on every scenario, not byte-pinned)
-1. No bare-line `GO` inside any per-table `Modules/**.sql` body.
+1. Per-table `GO` is framed by a blank line on both sides and never trailing (operator decision, slice 3 — supersedes the prior no-GO invariant).
 2. No duplicate `(schema, FK constraint name)` across the emitted set.
 3. No FK constraint sourced from a derived-inverse reference (no FK on a
    pure-target kind like `User`).
-4. No `\r\n` in any artifact. (Trailing-newline termination is NOT current
-   behavior — per-table bodies end at the last statement's final char; the
-   first corpus recording surfaced this. TODO under the WP7 per-table
-   formatting work, **known-unblessed**.)
+4. Every artifact ends with a newline; no `\r\n` anywhere (slice 3 restored
+   the termination — per-table bodies render via `Render.toText`).
 5. The per-table file set keyset equals the catalog keyset (T11 face).
 6. `stream.sql` parses into batches under `BatchSplitter` with no empty batch.
 

@@ -7,11 +7,16 @@ module Projection.Tests.GoldenCatalog
 // constructors so it carries the same invariants as the forward path.
 // It is not a realistic estate; it is the COMPLETE estate.
 //
-// Organized as themed modules so the golden files group by theme:
-//   Forms     — types, defaults, keys, checks, triggers, indexes
-//   Relations — every reference variance (the CreatedBy/UpdatedBy →
-//               User corporate shape included)
-//   Statics   — data-lane variances (rows, deferred-FK cycle,
+// Consolidation discipline (operator blessing #1, DECISIONS
+// 2026-06-13): MANY ATTRIBUTES, FEW TABLES — every variety enumerated
+// on master tables rather than spread across a suite:
+//   Forms     — ScalarGallery (every scalar × its DEFAULT literal,
+//               named/unnamed DEFAULTs, checks, trigger, the full
+//               index gallery) + Heap (PK-less)
+//   Relations — Engagement (every reference variance on one table,
+//               including the self-referencing FK) + the pure targets
+//               User / Customer + ChangeLog (cross-schema)
+//   Statics   — the data-lane variances (rows, deferred-FK cycle,
 //               delete-scope column)
 //
 // Growth rule: a new emission capability lands with its variance HERE
@@ -55,41 +60,109 @@ let private pkAttr (k: SsKey) (logical: string) (physical: string) (identity: bo
         IsIdentity   = identity }
 
 // ---------------------------------------------------------------------
-// Forms module
+// Forms module — ScalarGallery: the master scalar/DEFAULT/check/
+// trigger/index table. Physical column names are OSSYS-flavored
+// (UPPER_SNAKE) so the logical substitution — and its v2 follow-through
+// into CHECK definitions and index FILTER predicates — is visible.
 // ---------------------------------------------------------------------
 
-/// Every primitive-type realization + length/precision/scale carriage +
-/// the three DEFAULT shapes (unnamed, named, empty-string-Text — the
-/// `EmptyTextNormalizedToNull` tolerance) + table/column descriptions.
-let private typeGallery : Kind =
-    { Kind.create (kkey "TypeGallery") (nm "TypeGallery")
-        (table "dbo" "GOLD_TYPE_GALLERY")
-        [ pkAttr (akey "TypeGallery.Id") "Id" "ID" true
-          { attr (akey "TypeGallery.Label") "Label" "LABEL" Text false with
-              Length = Some 100
-              Description = Some "A bounded text column." }
-          { attr (akey "TypeGallery.Notes") "Notes" "NOTES" Text true with
+let private scalarGallery : Kind =
+    let idA      = akey "ScalarGallery.Id"
+    let codeA    = akey "ScalarGallery.Code"
+    let notesA   = akey "ScalarGallery.Notes"
+    let tallyA   = akey "ScalarGallery.Tally"
+    let amountA  = akey "ScalarGallery.Amount"
+    let ix (k: SsKey) (n: string) (cols: SsKey list) = Index.ofKeyColumns k (nm n) cols
+    { Kind.create (kkey "ScalarGallery") (nm "ScalarGallery")
+        (table "dbo" "GOLD_SCALAR_GALLERY")
+        [ pkAttr idA "Id" "ID" true
+          // Text + NAMED DEFAULT.
+          { attr codeA "Code" "CODE" Text false with
+              Length = Some 20
+              DefaultValue = Some (SqlLiteral.TextLit "Pending")
+              DefaultName  = Some (nm "DF_ScalarGallery_Code")
+              Description  = Some "Workflow code; defaults to Pending." }
+          // Text + EMPTY-STRING DEFAULT — the EmptyTextNormalizedToNull
+          // tolerance (renders DEFAULT NULL; known-unblessed).
+          { attr notesA "Notes" "NOTES" Text true with
               Length = Some 2000
-              // Unnamed empty-string Text default — the named
-              // EmptyTextNormalizedToNull tolerance (renders DEFAULT NULL).
               DefaultValue = Some (SqlLiteral.TextLit "") }
-          { attr (akey "TypeGallery.Amount") "Amount" "AMOUNT" Decimal true with
+          // Integer + unnamed DEFAULT.
+          { attr tallyA "Tally" "TALLY" Integer true with
+              DefaultValue = Some (SqlLiteral.IntegerLit "42") }
+          // Decimal p,s + unnamed DEFAULT.
+          { attr amountA "Amount" "AMOUNT" Decimal true with
               Precision = Some 18
               Scale = Some 4
-              // Unnamed inline default.
-              DefaultValue = Some (SqlLiteral.DecimalLit "0.0") }
-          { attr (akey "TypeGallery.IsActive") "IsActive" "IS_ACTIVE" Boolean false with
-              // Named DEFAULT constraint.
+              DefaultValue = Some (SqlLiteral.DecimalLit "3.1400") }
+          // Boolean + NAMED DEFAULT.
+          { attr (akey "ScalarGallery.IsActive") "IsActive" "IS_ACTIVE" Boolean false with
               DefaultValue = Some (SqlLiteral.BooleanLit true)
-              DefaultName  = Some (nm "DF_TypeGallery_IsActive") }
-          attr (akey "TypeGallery.OccurredOn") "OccurredOn" "OCCURRED_ON" DateTime true
-          attr (akey "TypeGallery.DueDate") "DueDate" "DUE_DATE" Date true
-          attr (akey "TypeGallery.AlarmAt") "AlarmAt" "ALARM_AT" Time true
-          { attr (akey "TypeGallery.Payload") "Payload" "PAYLOAD" Binary true with
-              Length = Some 512 }
-          attr (akey "TypeGallery.ExternalKey") "ExternalKey" "EXTERNAL_KEY" Guid true ]
+              DefaultName  = Some (nm "DF_ScalarGallery_IsActive") }
+          // DateTime / Date / Time — each with its temporal DEFAULT.
+          { attr (akey "ScalarGallery.OccurredOn") "OccurredOn" "OCCURRED_ON" DateTime true with
+              DefaultValue = Some (SqlLiteral.TemporalLit "2020-01-01 00:00:00") }
+          { attr (akey "ScalarGallery.DueDate") "DueDate" "DUE_DATE" Date true with
+              DefaultValue = Some (SqlLiteral.TemporalLit "2020-01-01") }
+          { attr (akey "ScalarGallery.AlarmAt") "AlarmAt" "ALARM_AT" Time true with
+              DefaultValue = Some (SqlLiteral.TemporalLit "08:30:00") }
+          // Guid + DEFAULT.
+          { attr (akey "ScalarGallery.ExternalKey") "ExternalKey" "EXTERNAL_KEY" Guid true with
+              DefaultValue = Some (SqlLiteral.GuidLit "00000000-0000-0000-0000-000000000000") }
+          // Binary + DEFAULT.
+          { attr (akey "ScalarGallery.Payload") "Payload" "PAYLOAD" Binary true with
+              Length = Some 512
+              DefaultValue = Some (SqlLiteral.BinaryLit "0x00") }
+          // Contrast: no DEFAULT at all.
+          { attr (akey "ScalarGallery.FreeText") "FreeText" "FREE_TEXT" Text true with
+              Length = Some 50
+              Description = Some "No default; the contrast column." } ]
       with
-        Description = Some "The type gallery: every primitive realization." }
+        Description = Some "The scalar gallery: every primitive realization and every DEFAULT-able literal."
+        ColumnChecks =
+            // Definitions authored with PHYSICAL column references —
+            // LogicalColumnEmission v2 rewrites them to the logical
+            // names ([TALLY] → [Tally], [AMOUNT] → [Amount]).
+            [ { SsKey = ckey "ScalarGallery.TallyNonNegative"
+                Name = Some (nm "CK_ScalarGallery_Tally")
+                Definition = "([TALLY]>=(0))"
+                IsNotTrusted = false }
+              { SsKey = ckey "ScalarGallery.AmountCeiling"
+                Name = None
+                Definition = "([AMOUNT]<=(1000000.0000))"
+                IsNotTrusted = true } ]
+        Triggers =
+            [ { SsKey = tkey "ScalarGallery.Audit"
+                Name = nm "TRG_ScalarGallery_Audit"
+                IsDisabled = false
+                Definition = "CREATE TRIGGER [dbo].[TRG_ScalarGallery_Audit] ON [dbo].[GOLD_SCALAR_GALLERY] AFTER INSERT AS BEGIN SET NOCOUNT ON; END" } ]
+        Indexes =
+            [ ix (ikey "SG.Plain") "IX_ScalarGallery_Code" [ codeA ]
+              { ix (ikey "SG.Unique") "UIX_ScalarGallery_Code" [ codeA ] with
+                  Uniqueness = Unique }
+              // Platform-auto (present in `default`; pruned in the
+              // `pruned-platform-auto` scenario).
+              { ix (ikey "SG.PlatformAuto") "OSIDX_GOLD_SCALAR_GALLERY_TALLY" [ tallyA ] with
+                  IsPlatformAuto = true }
+              // FILTER authored with the PHYSICAL column reference —
+              // exercises the v2 filter rewrite ([TALLY] → [Tally]).
+              { ix (ikey "SG.Filtered") "IX_ScalarGallery_Tally_Filtered" [ tallyA ] with
+                  Filter = Some "([TALLY] IS NOT NULL)" }
+              { ix (ikey "SG.Covering") "IX_ScalarGallery_Code_Covering" [ codeA ] with
+                  IncludedColumns = [ amountA ] }
+              { Index.create (ikey "SG.Desc") (nm "IX_ScalarGallery_Tally_Desc")
+                  [ IndexColumn.create tallyA Descending ] with
+                  ExtendedProperties =
+                      [ match ExtendedProperty.create "MS_Description" (Some "Descending scan support.") with
+                        | Ok p -> p | Error e -> failwithf "extprop: %A" e ] }
+              { ix (ikey "SG.Tuned") "UIX_ScalarGallery_Amount_Tuned" [ amountA ] with
+                  Uniqueness = Unique
+                  FillFactor = Some 80
+                  IsPadded = true
+                  IgnoreDuplicateKey = true
+                  DataCompression = Some DataCompressionLevel.Page }
+              { ix (ikey "SG.Disabled") "IX_ScalarGallery_Code_Disabled" [ codeA ] with
+                  IsDisabled = true } ] }
 
 /// PK-less heap — `allowMissingPrimaryKey` shape.
 let private heap : Kind =
@@ -98,73 +171,13 @@ let private heap : Kind =
         [ attr (akey "Heap.LoggedAt") "LoggedAt" "LOGGED_AT" DateTime false
           { attr (akey "Heap.Message") "Message" "MESSAGE" Text true with Length = Some 500 } ]
 
-/// CHECK constraints (named + unnamed) and a trigger.
-let private guarded : Kind =
-    { Kind.create (kkey "Guarded") (nm "Guarded")
-        (table "dbo" "GOLD_GUARDED")
-        [ pkAttr (akey "Guarded.Id") "Id" "ID" true
-          attr (akey "Guarded.Qty") "Qty" "QTY" Integer false ]
-      with
-        ColumnChecks =
-            [ { SsKey = ckey "Guarded.QtyNonNegative"
-                Name = Some (nm "CK_Guarded_Qty")
-                Definition = "([QTY]>=(0))"
-                IsNotTrusted = false }
-              { SsKey = ckey "Guarded.QtyCeiling"
-                Name = None
-                Definition = "([QTY]<=(1000000))"
-                IsNotTrusted = true } ]
-        Triggers =
-            [ { SsKey = tkey "Guarded.Audit"
-                Name = nm "TRG_Guarded_Audit"
-                IsDisabled = false
-                Definition = "CREATE TRIGGER [dbo].[TRG_Guarded_Audit] ON [dbo].[GOLD_GUARDED] AFTER INSERT AS BEGIN SET NOCOUNT ON; END" } ] }
-
-/// The index gallery — every index variance on one kind.
-let private indexGallery : Kind =
-    let idA = akey "IndexGallery.Id"
-    let aA  = akey "IndexGallery.Alpha"
-    let bA  = akey "IndexGallery.Beta"
-    let cA  = akey "IndexGallery.Gamma"
-    let ix (k: SsKey) (n: string) (cols: SsKey list) = Index.ofKeyColumns k (nm n) cols
-    { Kind.create (kkey "IndexGallery") (nm "IndexGallery")
-        (table "dbo" "GOLD_INDEX_GALLERY")
-        [ pkAttr idA "Id" "ID" true
-          { attr aA "Alpha" "ALPHA" Text true with Length = Some 50 }
-          attr bA "Beta" "BETA" Integer true
-          attr cA "Gamma" "GAMMA" Integer true ]
-      with
-        Indexes =
-            [ ix (ikey "IG.Plain") "IX_IndexGallery_Alpha" [ aA ]
-              { ix (ikey "IG.Unique") "UIX_IndexGallery_Beta" [ bA ] with
-                  Uniqueness = Unique }
-              // Platform-auto (present in `default`; pruned in the
-              // `pruned-platform-auto` scenario).
-              { ix (ikey "IG.PlatformAuto") "OSIDX_GOLD_INDEX_GALLERY_GAMMA" [ cA ] with
-                  IsPlatformAuto = true }
-              { ix (ikey "IG.Filtered") "IX_IndexGallery_Beta_Filtered" [ bA ] with
-                  Filter = Some "([BETA] IS NOT NULL)" }
-              { ix (ikey "IG.Covering") "IX_IndexGallery_Alpha_Covering" [ aA ] with
-                  IncludedColumns = [ cA ] }
-              { Index.create (ikey "IG.Desc") (nm "IX_IndexGallery_Beta_Desc")
-                  [ IndexColumn.create bA Descending ] with
-                  ExtendedProperties =
-                      [ match ExtendedProperty.create "MS_Description" (Some "Descending scan support.") with
-                        | Ok p -> p | Error e -> failwithf "extprop: %A" e ] }
-              { ix (ikey "IG.Tuned") "UIX_IndexGallery_Gamma_Tuned" [ cA ] with
-                  Uniqueness = Unique
-                  FillFactor = Some 80
-                  IsPadded = true
-                  IgnoreDuplicateKey = true
-                  DataCompression = Some DataCompressionLevel.Page }
-              { ix (ikey "IG.Disabled") "IX_IndexGallery_Alpha_Disabled" [ aA ] with
-                  IsDisabled = true } ] }
-
 // ---------------------------------------------------------------------
-// Relations module
+// Relations module — Engagement: the master reference table.
 // ---------------------------------------------------------------------
 
 let private userKindKey = kkey "User"
+let private customerKindKey = kkey "Customer"
+let private engagementKey = kkey "Engagement"
 
 /// Pure FK target — the corporate User shape. The inverse-exclusion
 /// contract is visible here: NO golden file may carry an FK owned by
@@ -177,52 +190,46 @@ let private user : Kind =
       with
         Description = Some "The platform user kind (pure reference target)." }
 
-/// The corporate shape: two source-backed forward references to one
-/// target. CreatedBy: trusted, ON DELETE NoAction, explicit ON UPDATE
-/// Cascade (the V2 superset over V1). UpdatedBy: UNTRUSTED — drives the
-/// NOCHECK two-step ALTER pair.
-let private task : Kind =
-    let createdBy = akey "Task.CreatedBy"
-    let updatedBy = akey "Task.UpdatedBy"
-    { Kind.create (kkey "Task") (nm "Task")
-        (table "dbo" "GOLD_TASK")
-        [ pkAttr (akey "Task.Id") "Id" "ID" true
-          { attr (akey "Task.Title") "Title" "TITLE" Text false with Length = Some 200 }
-          attr createdBy "CreatedBy" "CREATED_BY" Integer false
-          attr updatedBy "UpdatedBy" "UPDATED_BY" Integer true ]
-      with
-        References =
-            [ { (Reference.create (refk "Task.CreatedBy") (nm "User") createdBy userKindKey
-                 |> Reference.withConstraintState true true)
-                with OnUpdate = Some Cascade }
-              (Reference.create (refk "Task.UpdatedBy") (nm "User") updatedBy userKindKey
-               |> Reference.withConstraintState true false) ] }
-
-let private customerKindKey = kkey "Customer"
-
 let private customer : Kind =
     Kind.create customerKindKey (nm "Customer")
         (table "dbo" "GOLD_CUSTOMER")
         [ pkAttr (akey "Customer.Id") "Id" "ID" true
           { attr (akey "Customer.Name") "Name" "NAME" Text false with Length = Some 120 } ]
 
-/// Logical-only reference (HasDbConstraint=false — the OutSystems
-/// model edge with no storage constraint) with ON DELETE Cascade; and
-/// a SetNull sibling.
-let private order : Kind =
-    let custFk = akey "Order.CustomerId"
-    let altFk  = akey "Order.AltCustomerId"
-    { Kind.create (kkey "Order") (nm "Order")
-        (table "dbo" "GOLD_ORDER")
-        [ pkAttr (akey "Order.Id") "Id" "ID" true
+/// Every reference variance on ONE table:
+///   CreatedBy  → User       source-backed, trusted, ON UPDATE CASCADE
+///   UpdatedBy  → User       source-backed, UNTRUSTED (NOCHECK two-step)
+///   CustomerId → Customer   logical-only, ON DELETE CASCADE
+///   AltCustomerId → Customer logical-only, ON DELETE SET NULL
+///   ParentId   → Engagement SELF-REFERENCING, source-backed, trusted
+let private engagement : Kind =
+    let createdBy = akey "Engagement.CreatedBy"
+    let updatedBy = akey "Engagement.UpdatedBy"
+    let custFk    = akey "Engagement.CustomerId"
+    let altFk     = akey "Engagement.AltCustomerId"
+    let parentFk  = akey "Engagement.ParentId"
+    { Kind.create engagementKey (nm "Engagement")
+        (table "dbo" "GOLD_ENGAGEMENT")
+        [ pkAttr (akey "Engagement.Id") "Id" "ID" true
+          { attr (akey "Engagement.Subject") "Subject" "SUBJECT" Text false with Length = Some 200 }
+          attr createdBy "CreatedBy" "CREATED_BY" Integer false
+          attr updatedBy "UpdatedBy" "UPDATED_BY" Integer true
           attr custFk "CustomerId" "CUSTOMER_ID" Integer false
-          attr altFk "AltCustomerId" "ALT_CUSTOMER_ID" Integer true ]
+          attr altFk "AltCustomerId" "ALT_CUSTOMER_ID" Integer true
+          attr parentFk "ParentId" "PARENT_ID" Integer true ]
       with
         References =
-            [ { Reference.create (refk "Order.Customer") (nm "Customer") custFk customerKindKey
+            [ { (Reference.create (refk "Engagement.CreatedBy") (nm "User") createdBy userKindKey
+                 |> Reference.withConstraintState true true)
+                with OnUpdate = Some Cascade }
+              (Reference.create (refk "Engagement.UpdatedBy") (nm "User") updatedBy userKindKey
+               |> Reference.withConstraintState true false)
+              { Reference.create (refk "Engagement.Customer") (nm "Customer") custFk customerKindKey
                   with OnDelete = Cascade }
-              { Reference.create (refk "Order.AltCustomer") (nm "Customer") altFk customerKindKey
-                  with OnDelete = SetNull } ] }
+              { Reference.create (refk "Engagement.AltCustomer") (nm "Customer") altFk customerKindKey
+                  with OnDelete = SetNull }
+              (Reference.create (refk "Engagement.Parent") (nm "Engagement") parentFk engagementKey
+               |> Reference.withConstraintState true true) ] }
 
 /// Cross-schema FK: audit.ChangeLog → dbo.GOLD_USER.
 let private changeLog : Kind =
@@ -296,9 +303,9 @@ let private regionB : Kind =
                 [ { Identifier = rowk "RegionB.South"
                     Values = Map.ofList [ nm "Id", "1"; nm "Name", "South"; nm "PartnerId", "1" ] } ] ] }
 
-/// Static kind carrying the delete-scope gate column (TENANT_ID) —
-/// the `delete-scope` scenario adds the `WHEN NOT MATCHED BY SOURCE …
-/// DELETE` arm here and ONLY here.
+/// Static kind carrying the delete-scope gate column (logical name
+/// `TenantId` post-substitution) — the `delete-scope` scenario adds the
+/// `WHEN NOT MATCHED BY SOURCE … DELETE` arm here and ONLY here.
 let private scopedLookup : Kind =
     { Kind.create (kkey "ScopedLookup") (nm "ScopedLookup")
         (table "dbo" "GOLD_SCOPED_LOOKUP")
@@ -325,8 +332,8 @@ let private mkModule (k: SsKey) (n: string) (kinds: Kind list) : Module =
 let catalog : Catalog =
     match
         Catalog.create
-            [ mkModule (mkey "Forms")     "Forms"     [ typeGallery; heap; guarded; indexGallery ]
-              mkModule (mkey "Relations") "Relations" [ user; task; customer; order; changeLog ]
+            [ mkModule (mkey "Forms")     "Forms"     [ scalarGallery; heap ]
+              mkModule (mkey "Relations") "Relations" [ user; customer; engagement; changeLog ]
               mkModule (mkey "Statics")   "Statics"   [ country; regionA; regionB; scopedLookup ] ]
             []
     with

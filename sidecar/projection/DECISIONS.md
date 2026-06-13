@@ -22048,3 +22048,53 @@ physical index names pre-WP7; `DEFAULT NULL` for the empty-string-Text
 tolerance; one-line per-table constraints; explicit `ON DELETE NO
 ACTION` in file bodies; SsKey column order pre-WP8) — each later slice
 converts its rows into blessed bytes as a deliberate, reviewable diff.
+
+## 2026-06-13 — Slice 3 of the full-export reconciliation (operator blessing #1): per-table files carry V1's rendered form; FKs inline beneath their attribute; CHECK/filter definitions follow the logical substitution; the Platonic catalog consolidates
+
+Context: the FIRST operator blessing pass over the golden corpus
+(THE_GOLDEN_EMISSION protocol working as designed — this entire slice
+is its yield). Four findings, four changes. The planned WP3 scope
+pushdown moves to the next slice; operator blessing outranks the queue.
+
+**1. Per-table SSDT file bodies render through `Render.toText` —
+superseding the no-GO per-file contract.** The operator blessed V1's
+per-file form: statements separated by the framed `GO` (between
+statements, never trailing — V1 `StatementBatchFormatter.JoinStatements`),
+the constraint ladder, the wrapped EXEC shape. `kindToSsdtFile` now
+renders its statement list via the SAME `Render.toText` realization the
+flat stream uses (one rendering algorithm — A40; the prior
+`ScriptDomGenerate.toText` raw join was a second, poorer renderer). The
+2026-05-?? per-kind no-GO pin (`SsdtSchemaFidelityPropertyTests`
+"per-kind file body does not contain GO separator") is OVERTURNED by
+operator decision and rewritten to pin the new contract. Bonus: bodies
+now end with a newline (the first-recording known-unblessed row closes).
+
+**2. Single-column FKs attach inline beneath their source column** (V1
+`CreateTableStatementBuilder.cs:197-202`; mirrors the LR3 inline-PK
+shape — `attachInlineForeignKey` is `attachInlinePrimaryKey`'s sibling).
+A non-resolving source column falls back to table-level (defensive;
+unreachable under `Catalog.create`'s referential invariant). The
+ConstraintFormatter ladder then renders the V1 8/12 column-suffix shape.
+
+**3. `LogicalColumnEmission` v2: the substitution follows the column
+into CHECK definitions and index FILTER predicates.** Source-reality
+definitions carry bracketed PHYSICAL column references; once the column
+substitutes to its logical name, an unrewritten definition references a
+column that no longer exists on the emitted table — a deploy-time
+failure the corpus surfaced (the operator's "CHECKs emit the physical
+attribute name"). The pass rewrites bracketed tokens pairwise
+(physical → logical, ordinal-ignore-case) for every touched attribute,
+in both `Kind.ColumnChecks[].Definition` and `Kind.Indexes[].Filter`.
+Trigger DEFINITIONS have the same defect class and are NOT cured here
+(they reference table names too — own slice; inventory TODO).
+
+**4. The Platonic catalog consolidates: many attributes, few tables,
+every variety enumerated.** One master `ScalarGallery` (every
+`PrimitiveType` × its DEFAULT-able literal — including the empty-Text
+tolerance — plus named/unnamed DEFAULTs, checks, a trigger, and the
+full index gallery), one master `Engagement` relations table
+(CreatedBy/UpdatedBy → User backed trusted/untrusted + ON UPDATE,
+logical-only Cascade/SetNull → Customer, and a SELF-REFERENCING
+ParentId → Engagement), `User`/`Customer` pure targets, `ChangeLog`
+(cross-schema), `Heap`, and the Statics lane unchanged. Goldens
+re-recorded under this entry (the blessing-protocol note).

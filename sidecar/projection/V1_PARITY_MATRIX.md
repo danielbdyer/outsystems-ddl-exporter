@@ -261,6 +261,26 @@ the original audit missed it), append a dated amendment to this
 section naming the prior status, the new status, and the discovery
 slice.
 
+### Reconciliation slice 3 — 2026-06-13 (row 128 spacing + per-file form: operator blessing #1)
+
+**Row 128 (StatementBatchFormatter ⇄ BatchSplitter, 🟢 PARITY)** held at the
+split/assembly level but not at the spacing or per-file grain. Slice 2 gave
+`GO` its trailing blank line (V1's blank-both-sides framing); slice 3 — by
+OPERATOR DECISION over the golden corpus — overturned V2's per-kind no-GO
+file contract entirely: per-table `SsdtFile` bodies now render through the
+same `Render.toText` realization as the flat stream (framed GO BETWEEN
+statements, never trailing, per V1 `JoinStatements`; the constraint ladder;
+the wrapped EXEC shape; newline-terminated). The prior pin
+(`SsdtSchemaFidelityPropertyTests` "per-kind file body does not contain GO
+separator") is rewritten to the new contract. Companion fixes in the same
+slice: single-column FKs attach inline beneath their source column
+(`attachInlineForeignKey`, the LR3 inline-PK sibling — V1
+CreateTableStatementBuilder.cs:197-202) with the column-suffix ladder
+(+4/+8/+12); `LogicalColumnEmission` v2 follows the substitution into CHECK
+definitions and index FILTER predicates (physical-bracket refs → logical;
+trigger definitions remain TODO). See `DECISIONS 2026-06-13` and
+`THE_GOLDEN_EMISSION.md` §4.
+
 ### Reconciliation slice 1 — 2026-06-12 (row 57 hazard controlled: inverse references are logical-only edges)
 
 **Row 57 stays 🟡 DIVERGENCE** (the single-`Reference` conflation stands — it

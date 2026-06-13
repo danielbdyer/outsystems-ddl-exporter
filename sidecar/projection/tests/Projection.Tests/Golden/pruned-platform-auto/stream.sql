@@ -3,9 +3,9 @@ CREATE TABLE [audit].[ChangeLog] (
     [Id]     INT       IDENTITY (1, 1) NOT NULL
         CONSTRAINT [PK_audit_ChangeLog]
             PRIMARY KEY CLUSTERED,
-    [UserId] INT       NOT NULL,
-    CONSTRAINT [FK_ChangeLog_User_UserId]
-        FOREIGN KEY ([UserId]) REFERENCES [dbo].[User] ([Id])
+    [UserId] INT       NOT NULL
+        CONSTRAINT [FK_ChangeLog_User_UserId]
+            FOREIGN KEY ([UserId]) REFERENCES [dbo].[User] ([Id])
 )
 
 GO
@@ -121,54 +121,102 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Nam
 
 GO
 
-CREATE TABLE [dbo].[Guarded] (
-    [Id]  INT IDENTITY (1, 1) NOT NULL
-        CONSTRAINT [PK_dbo_Guarded]
+CREATE TABLE [dbo].[Engagement] (
+    [AltCustomerId] INT            NULL
+        CONSTRAINT [FK_Engagement_Customer_AltCustomerId]
+            FOREIGN KEY ([AltCustomerId]) REFERENCES [dbo].[Customer] ([Id])
+                ON DELETE SET NULL
+                ON UPDATE NO ACTION,
+    [CreatedBy]     INT            NOT NULL
+        CONSTRAINT [FK_Engagement_User_CreatedBy]
+            FOREIGN KEY ([CreatedBy]) REFERENCES [dbo].[User] ([Id])
+                ON DELETE NO ACTION
+                ON UPDATE CASCADE,
+    [CustomerId]    INT            NOT NULL
+        CONSTRAINT [FK_Engagement_Customer_CustomerId]
+            FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer] ([Id])
+                ON DELETE CASCADE
+                ON UPDATE NO ACTION,
+    [Id]            INT            IDENTITY (1, 1) NOT NULL
+        CONSTRAINT [PK_dbo_Engagement]
             PRIMARY KEY CLUSTERED,
-    [Qty] INT NOT NULL,
-    CONSTRAINT [CK_Guarded_Qty]
-        CHECK (([QTY] >= (0))),
-    CHECK (([QTY] <= (1000000)))
+    [ParentId]      INT            NULL
+        CONSTRAINT [FK_Engagement_Engagement_ParentId]
+            FOREIGN KEY ([ParentId]) REFERENCES [dbo].[Engagement] ([Id]),
+    [Subject]       NVARCHAR (200) NOT NULL,
+    [UpdatedBy]     INT            NULL
+        CONSTRAINT [FK_Engagement_User_UpdatedBy]
+            FOREIGN KEY ([UpdatedBy]) REFERENCES [dbo].[User] ([Id])
 )
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Guarded',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'Guarded'
+ALTER TABLE [dbo].[Engagement] NOCHECK CONSTRAINT [FK_Engagement_User_UpdatedBy]
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.SsKey', @value = N'S9:GOLD_KIND1:17:Guarded',
+ALTER TABLE [dbo].[Engagement] WITH NOCHECK CHECK CONSTRAINT [FK_Engagement_User_UpdatedBy]
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Engagement',
     @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'Guarded'
+    @level1type = N'TABLE', @level1name = N'Engagement'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.SsKey', @value = N'S9:GOLD_KIND1:110:Engagement',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Engagement'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'AltCustomerId',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Engagement',
+    @level2type = N'COLUMN', @level2name = N'AltCustomerId'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'CreatedBy',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Engagement',
+    @level2type = N'COLUMN', @level2name = N'CreatedBy'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'CustomerId',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Engagement',
+    @level2type = N'COLUMN', @level2name = N'CustomerId'
 
 GO
 
 EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Id',
     @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'Guarded',
+    @level1type = N'TABLE', @level1name = N'Engagement',
     @level2type = N'COLUMN', @level2name = N'Id'
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Qty',
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'ParentId',
     @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'Guarded',
-    @level2type = N'COLUMN', @level2name = N'Qty'
+    @level1type = N'TABLE', @level1name = N'Engagement',
+    @level2type = N'COLUMN', @level2name = N'ParentId'
 
 GO
 
--- Trigger: TRG_Guarded_Audit (disabled: false)
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Subject',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Engagement',
+    @level2type = N'COLUMN', @level2name = N'Subject'
 
 GO
 
-CREATE TRIGGER [dbo].[TRG_Guarded_Audit]
-    ON [dbo].[GOLD_GUARDED]
-    AFTER INSERT
-    AS BEGIN
-           SET NOCOUNT ON;
-       END
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'UpdatedBy',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Engagement',
+    @level2type = N'COLUMN', @level2name = N'UpdatedBy'
 
 GO
 
@@ -205,164 +253,14 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Mes
 
 GO
 
-CREATE TABLE [dbo].[IndexGallery] (
-    [Alpha] NVARCHAR (50) NULL,
-    [Beta]  INT           NULL,
-    [Gamma] INT           NULL,
-    [Id]    INT           IDENTITY (1, 1) NOT NULL
-        CONSTRAINT [PK_dbo_IndexGallery]
-            PRIMARY KEY CLUSTERED
-)
-
-GO
-
-CREATE INDEX [IX_IndexGallery_Alpha_Covering]
-    ON [dbo].[IndexGallery]([Alpha])
-    INCLUDE([Gamma])
-
-GO
-
-CREATE INDEX [IX_IndexGallery_Beta_Desc]
-    ON [dbo].[IndexGallery]([Beta] DESC)
-
-GO
-
-CREATE INDEX [IX_IndexGallery_Alpha_Disabled]
-    ON [dbo].[IndexGallery]([Alpha])
-
-GO
-
-CREATE INDEX [IX_IndexGallery_Beta_Filtered]
-    ON [dbo].[IndexGallery]([Beta]) WHERE ([BETA] IS NOT NULL)
-
-GO
-
-CREATE INDEX [IX_IndexGallery_Alpha]
-    ON [dbo].[IndexGallery]([Alpha])
-
-GO
-
-CREATE UNIQUE INDEX [UIX_IndexGallery_Gamma_Tuned]
-    ON [dbo].[IndexGallery]([Gamma]) WITH (FILLFACTOR = 80, PAD_INDEX = ON, IGNORE_DUP_KEY = ON, DATA_COMPRESSION = PAGE)
-
-GO
-
-CREATE UNIQUE INDEX [UIX_IndexGallery_Beta]
-    ON [dbo].[IndexGallery]([Beta])
-
-GO
-
-ALTER INDEX [IX_IndexGallery_Alpha_Disabled]
-    ON [dbo].[IndexGallery] DISABLE
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'IndexGallery',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'IndexGallery'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.SsKey', @value = N'S9:GOLD_KIND1:112:IndexGallery',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'IndexGallery'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Alpha',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'IndexGallery',
-    @level2type = N'COLUMN', @level2name = N'Alpha'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Beta',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'IndexGallery',
-    @level2type = N'COLUMN', @level2name = N'Beta'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Gamma',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'IndexGallery',
-    @level2type = N'COLUMN', @level2name = N'Gamma'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Id',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'IndexGallery',
-    @level2type = N'COLUMN', @level2name = N'Id'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'MS_Description', @value = N'Descending scan support.',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'IndexGallery',
-    @level2type = N'INDEX', @level2name = N'IX_IndexGallery_Beta_Desc'
-
-GO
-
-CREATE TABLE [dbo].[Order] (
-    [AltCustomerId] INT NULL,
-    [CustomerId]    INT NOT NULL,
-    [Id]            INT IDENTITY (1, 1) NOT NULL
-        CONSTRAINT [PK_dbo_Order]
-            PRIMARY KEY CLUSTERED,
-    CONSTRAINT [FK_Order_Customer_AltCustomerId]
-        FOREIGN KEY ([AltCustomerId]) REFERENCES [dbo].[Customer] ([Id])
-            ON DELETE SET NULL
-            ON UPDATE NO ACTION,
-    CONSTRAINT [FK_Order_Customer_CustomerId]
-        FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer] ([Id])
-            ON DELETE CASCADE
-            ON UPDATE NO ACTION
-)
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Order',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'Order'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.SsKey', @value = N'S9:GOLD_KIND1:15:Order',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'Order'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'AltCustomerId',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'Order',
-    @level2type = N'COLUMN', @level2name = N'AltCustomerId'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'CustomerId',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'Order',
-    @level2type = N'COLUMN', @level2name = N'CustomerId'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Id',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'Order',
-    @level2type = N'COLUMN', @level2name = N'Id'
-
-GO
-
 CREATE TABLE [dbo].[RegionA] (
     [Id]        INT           NOT NULL
         CONSTRAINT [PK_dbo_RegionA]
             PRIMARY KEY CLUSTERED,
     [Name]      NVARCHAR (60) NOT NULL,
-    [PartnerId] INT           NULL,
-    CONSTRAINT [FK_RegionA_RegionB_PartnerId]
-        FOREIGN KEY ([PartnerId]) REFERENCES [dbo].[RegionB] ([Id])
+    [PartnerId] INT           NULL
+        CONSTRAINT [FK_RegionA_RegionB_PartnerId]
+            FOREIGN KEY ([PartnerId]) REFERENCES [dbo].[RegionB] ([Id])
 )
 
 GO
@@ -405,9 +303,9 @@ CREATE TABLE [dbo].[RegionB] (
         CONSTRAINT [PK_dbo_RegionB]
             PRIMARY KEY CLUSTERED,
     [Name]      NVARCHAR (60) NOT NULL,
-    [PartnerId] INT           NULL,
-    CONSTRAINT [FK_RegionB_RegionA_PartnerId]
-        FOREIGN KEY ([PartnerId]) REFERENCES [dbo].[RegionA] ([Id])
+    [PartnerId] INT           NULL
+        CONSTRAINT [FK_RegionB_RegionA_PartnerId]
+            FOREIGN KEY ([PartnerId]) REFERENCES [dbo].[RegionA] ([Id])
 )
 
 GO
@@ -442,6 +340,215 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Par
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'RegionB',
     @level2type = N'COLUMN', @level2name = N'PartnerId'
+
+GO
+
+CREATE TABLE [dbo].[ScalarGallery] (
+    [AlarmAt]     TIME             NULL
+        DEFAULT '08:30:00',
+    [Amount]      DECIMAL (18, 4)  NULL
+        DEFAULT 3.1400,
+    [Code]        NVARCHAR (20)    NOT NULL
+        CONSTRAINT [DF_ScalarGallery_Code] DEFAULT N'Pending',
+    [DueDate]     DATE             NULL
+        DEFAULT '2020-01-01',
+    [ExternalKey] UNIQUEIDENTIFIER NULL
+        DEFAULT '00000000-0000-0000-0000-000000000000',
+    [FreeText]    NVARCHAR (50)    NULL,
+    [Id]          INT              IDENTITY (1, 1) NOT NULL
+        CONSTRAINT [PK_dbo_ScalarGallery]
+            PRIMARY KEY CLUSTERED,
+    [IsActive]    BIT              NOT NULL
+        CONSTRAINT [DF_ScalarGallery_IsActive] DEFAULT 1,
+    [Notes]       NVARCHAR (2000)  NULL
+        DEFAULT N'',
+    [OccurredOn]  DATETIME2        NULL
+        DEFAULT '2020-01-01 00:00:00',
+    [Payload]     VARBINARY (512)  NULL
+        DEFAULT 0x00,
+    [Tally]       INT              NULL
+        DEFAULT 42,
+    CONSTRAINT [CK_ScalarGallery_Tally]
+        CHECK (([Tally] >= (0))),
+    CHECK (([Amount] <= (1000000.0000)))
+)
+
+GO
+
+CREATE INDEX [IX_ScalarGallery_Code_Covering]
+    ON [dbo].[ScalarGallery]([Code])
+    INCLUDE([Amount])
+
+GO
+
+CREATE INDEX [IX_ScalarGallery_Tally_Desc]
+    ON [dbo].[ScalarGallery]([Tally] DESC)
+
+GO
+
+CREATE INDEX [IX_ScalarGallery_Code_Disabled]
+    ON [dbo].[ScalarGallery]([Code])
+
+GO
+
+CREATE INDEX [IX_ScalarGallery_Tally_Filtered]
+    ON [dbo].[ScalarGallery]([Tally]) WHERE ([Tally] IS NOT NULL)
+
+GO
+
+CREATE INDEX [IX_ScalarGallery_Code]
+    ON [dbo].[ScalarGallery]([Code])
+
+GO
+
+CREATE UNIQUE INDEX [UIX_ScalarGallery_Amount_Tuned]
+    ON [dbo].[ScalarGallery]([Amount]) WITH (FILLFACTOR = 80, PAD_INDEX = ON, IGNORE_DUP_KEY = ON, DATA_COMPRESSION = PAGE)
+
+GO
+
+CREATE UNIQUE INDEX [UIX_ScalarGallery_Code]
+    ON [dbo].[ScalarGallery]([Code])
+
+GO
+
+ALTER INDEX [IX_ScalarGallery_Code_Disabled]
+    ON [dbo].[ScalarGallery] DISABLE
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'MS_Description', @value = N'The scalar gallery: every primitive realization and every DEFAULT-able literal.',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'ScalarGallery',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.SsKey', @value = N'S9:GOLD_KIND1:113:ScalarGallery',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'AlarmAt',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'AlarmAt'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Amount',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'Amount'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'MS_Description', @value = N'Workflow code; defaults to Pending.',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'Code'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Code',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'Code'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'DueDate',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'DueDate'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'ExternalKey',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'ExternalKey'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'MS_Description', @value = N'No default; the contrast column.',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'FreeText'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'FreeText',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'FreeText'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'Id'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'IsActive',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'IsActive'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Notes',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'Notes'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'OccurredOn',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'OccurredOn'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Payload',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'Payload'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Tally',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'Tally'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'MS_Description', @value = N'Descending scan support.',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'INDEX', @level2name = N'IX_ScalarGallery_Tally_Desc'
+
+GO
+
+-- Trigger: TRG_ScalarGallery_Audit (disabled: false)
+
+GO
+
+CREATE TRIGGER [dbo].[TRG_ScalarGallery_Audit]
+    ON [dbo].[GOLD_SCALAR_GALLERY]
+    AFTER INSERT
+    AS BEGIN
+           SET NOCOUNT ON;
+       END
 
 GO
 
@@ -485,186 +592,6 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Val
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScopedLookup',
     @level2type = N'COLUMN', @level2name = N'Value'
-
-GO
-
-CREATE TABLE [dbo].[Task] (
-    [CreatedBy] INT            NOT NULL,
-    [Id]        INT            IDENTITY (1, 1) NOT NULL
-        CONSTRAINT [PK_dbo_Task]
-            PRIMARY KEY CLUSTERED,
-    [Title]     NVARCHAR (200) NOT NULL,
-    [UpdatedBy] INT            NULL,
-    CONSTRAINT [FK_Task_User_CreatedBy]
-        FOREIGN KEY ([CreatedBy]) REFERENCES [dbo].[User] ([Id])
-            ON DELETE NO ACTION
-            ON UPDATE CASCADE,
-    CONSTRAINT [FK_Task_User_UpdatedBy]
-        FOREIGN KEY ([UpdatedBy]) REFERENCES [dbo].[User] ([Id])
-)
-
-GO
-
-ALTER TABLE [dbo].[Task] NOCHECK CONSTRAINT [FK_Task_User_UpdatedBy]
-
-GO
-
-ALTER TABLE [dbo].[Task] WITH NOCHECK CHECK CONSTRAINT [FK_Task_User_UpdatedBy]
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Task',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'Task'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.SsKey', @value = N'S9:GOLD_KIND1:14:Task',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'Task'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'CreatedBy',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'Task',
-    @level2type = N'COLUMN', @level2name = N'CreatedBy'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Id',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'Task',
-    @level2type = N'COLUMN', @level2name = N'Id'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Title',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'Task',
-    @level2type = N'COLUMN', @level2name = N'Title'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'UpdatedBy',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'Task',
-    @level2type = N'COLUMN', @level2name = N'UpdatedBy'
-
-GO
-
-CREATE TABLE [dbo].[TypeGallery] (
-    [AlarmAt]     TIME             NULL,
-    [Amount]      DECIMAL (18, 4)  NULL
-        DEFAULT 0.0,
-    [DueDate]     DATE             NULL,
-    [ExternalKey] UNIQUEIDENTIFIER NULL,
-    [Id]          INT              IDENTITY (1, 1) NOT NULL
-        CONSTRAINT [PK_dbo_TypeGallery]
-            PRIMARY KEY CLUSTERED,
-    [IsActive]    BIT              NOT NULL
-        CONSTRAINT [DF_TypeGallery_IsActive] DEFAULT 1,
-    [Label]       NVARCHAR (100)   NOT NULL,
-    [Notes]       NVARCHAR (2000)  NULL
-        DEFAULT N'',
-    [OccurredOn]  DATETIME2        NULL,
-    [Payload]     VARBINARY (512)  NULL
-)
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'MS_Description', @value = N'The type gallery: every primitive realization.',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'TypeGallery'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'TypeGallery',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'TypeGallery'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.SsKey', @value = N'S9:GOLD_KIND1:111:TypeGallery',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'TypeGallery'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'AlarmAt',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'TypeGallery',
-    @level2type = N'COLUMN', @level2name = N'AlarmAt'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Amount',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'TypeGallery',
-    @level2type = N'COLUMN', @level2name = N'Amount'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'DueDate',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'TypeGallery',
-    @level2type = N'COLUMN', @level2name = N'DueDate'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'ExternalKey',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'TypeGallery',
-    @level2type = N'COLUMN', @level2name = N'ExternalKey'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Id',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'TypeGallery',
-    @level2type = N'COLUMN', @level2name = N'Id'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'IsActive',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'TypeGallery',
-    @level2type = N'COLUMN', @level2name = N'IsActive'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'MS_Description', @value = N'A bounded text column.',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'TypeGallery',
-    @level2type = N'COLUMN', @level2name = N'Label'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Label',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'TypeGallery',
-    @level2type = N'COLUMN', @level2name = N'Label'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Notes',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'TypeGallery',
-    @level2type = N'COLUMN', @level2name = N'Notes'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'OccurredOn',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'TypeGallery',
-    @level2type = N'COLUMN', @level2name = N'OccurredOn'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Payload',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'TypeGallery',
-    @level2type = N'COLUMN', @level2name = N'Payload'
 
 GO
 

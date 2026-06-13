@@ -129,6 +129,19 @@ module ConstraintFormatter =
         let trimmed = line.TrimStart()
         line.Substring(0, line.Length - trimmed.Length)
 
+    /// Index of `keyword` searched AFTER the bracketed constraint name
+    /// — a name like `[CK_PropCheck_LtN_931]` must never match a body
+    /// keyword (CHECK / PRIMARY KEY / FOREIGN KEY / DEFAULT) inside its
+    /// own text. Reconciliation slice 3 (DECISIONS 2026-06-13): a
+    /// latent splitter defect the rendered-per-table-body migration
+    /// exposed via the 5.13 property sweep — the keyword search ran
+    /// from position 0 and split mid-name. Search begins at the first
+    /// `]` when one exists (the close of the bracketed name), else 0.
+    let private indexAfterBracketedName (text: string) (keyword: string) : int =
+        let bracketEnd = text.IndexOf(']')
+        let fromIdx = if bracketEnd >= 0 then bracketEnd else 0
+        text.IndexOf(keyword, fromIdx, StringComparison.OrdinalIgnoreCase)
+
     /// Strip trailing comma from a line; returns (without-comma, ",")
     /// or (line, "") when no trailing comma.
     let private splitTrailingComma (line: string) : string * string =
@@ -155,7 +168,7 @@ module ConstraintFormatter =
         let constraintWithComma = line.Substring(constraintIdx + 1).TrimEnd()
         let constraintPart, trailingComma = splitTrailingComma constraintWithComma
         let primaryKeyIdx =
-            constraintPart.IndexOf("PRIMARY KEY", StringComparison.OrdinalIgnoreCase)
+            indexAfterBracketedName constraintPart "PRIMARY KEY"
         if primaryKeyIdx < 0 then
             false
         else
@@ -185,7 +198,7 @@ module ConstraintFormatter =
         let columnPart = line.Substring(0, constraintIdx)
         let constraintWithComma = line.Substring(constraintIdx + 1).TrimEnd()
         let constraintPart, trailingComma = splitTrailingComma constraintWithComma
-        if not (constraintPart.IndexOf("DEFAULT", StringComparison.OrdinalIgnoreCase) > 0) then
+        if not (indexAfterBracketedName constraintPart "DEFAULT" > 0) then
             false
         else
             let columnIndent = indentOf line
@@ -205,15 +218,23 @@ module ConstraintFormatter =
     //
     // Mirrors V1's `ConstraintFormatter.AppendFormattedForeignKey`.
     // ---------------------------------------------------------------
-    let private formatTableLevelForeignKey
+    // Shared FK-segment splitter (reconciliation slice 3, DECISIONS
+    // 2026-06-13): parses `CONSTRAINT [name] FOREIGN KEY (cols)
+    // REFERENCES t (cols) [ON DELETE x] [ON UPDATE y][,]`, applies
+    // V1's NO ACTION normalization, and appends the laddered shape at
+    // `nameIndent` / +4 / +8. Serves BOTH the table-level FK line and
+    // the column-inline FK suffix (V1 places single-column FKs beneath
+    // their attribute; `attachInlineForeignKey` restored that
+    // placement, so the formatter gained the column-grain caller).
+    let private appendForeignKeySegment
         (sb: StringBuilder)
-        (line: string)
+        (nameIndent: string)
+        (segment: string)
         : bool =
-        let indent = indentOf line
-        let trimmed = line.TrimStart()
-        let withoutComma, trailingComma = splitTrailingComma trimmed
-        let fkIdx = withoutComma.IndexOf("FOREIGN KEY", StringComparison.OrdinalIgnoreCase)
-        let refIdx = withoutComma.IndexOf("REFERENCES", StringComparison.OrdinalIgnoreCase)
+        let indent = nameIndent
+        let withoutComma, trailingComma = splitTrailingComma (segment.TrimEnd())
+        let fkIdx = indexAfterBracketedName withoutComma "FOREIGN KEY"
+        let refIdx = indexAfterBracketedName withoutComma "REFERENCES"
         if fkIdx <= 0 || refIdx <= fkIdx then
             false
         else
@@ -285,6 +306,40 @@ module ConstraintFormatter =
                 sb.Append(trailingComma).Append(newLine) |> ignore
             true
 
+    let private formatTableLevelForeignKey
+        (sb: StringBuilder)
+        (line: string)
+        : bool =
+        appendForeignKeySegment sb (indentOf line) (line.TrimStart())
+
+    // ---------------------------------------------------------------
+    // Column-inline FOREIGN KEY: split the column line, then ladder the
+    // constraint at +4/+8/+12 (V1's column-suffix FK shape; reference
+    // fixture tests/Fixtures/emission/edge-case/Modules/AppCore/
+    // dbo.Customer.sql lines 10-12). Reconciliation slice 3.
+    //
+    // Input:  `    [CityId] INT NOT NULL CONSTRAINT [FK_*] FOREIGN KEY ([CityId]) REFERENCES [dbo].[City] ([Id]) ON DELETE CASCADE,`
+    // Output: `    [CityId] INT NOT NULL\n`
+    //         `        CONSTRAINT [FK_*]\n`
+    //         `            FOREIGN KEY ([CityId]) REFERENCES [dbo].[City] ([Id])\n`
+    //         `                ON DELETE CASCADE\n`
+    //         `                ON UPDATE NO ACTION,\n`
+    // ---------------------------------------------------------------
+    let private formatColumnInlineForeignKey
+        (sb: StringBuilder)
+        (line: string)
+        (constraintIdx: int)
+        : bool =
+        let segment = line.Substring(constraintIdx + 1)
+        if indexAfterBracketedName segment "FOREIGN KEY" <= 0
+           || indexAfterBracketedName segment "REFERENCES" <= 0 then
+            false
+        else
+            let columnPart = line.Substring(0, constraintIdx)
+            let nameIndent = indentOf line + "    "  // LINT-ALLOW: V1 4-space convention; column-suffix constraint name at columnIndent + 4
+            sb.Append(columnPart).Append(newLine) |> ignore
+            appendForeignKeySegment sb nameIndent segment
+
     // ---------------------------------------------------------------
     // Column-inline named CHECK: split into two indented lines.
     //
@@ -306,7 +361,7 @@ module ConstraintFormatter =
         let columnPart = line.Substring(0, constraintIdx)
         let constraintWithComma = line.Substring(constraintIdx + 1).TrimEnd()
         let constraintPart, trailingComma = splitTrailingComma constraintWithComma
-        if not (constraintPart.IndexOf("CHECK", StringComparison.OrdinalIgnoreCase) > 0) then
+        if not (indexAfterBracketedName constraintPart "CHECK" > 0) then
             false
         else
             let columnIndent = indentOf line
@@ -368,7 +423,7 @@ module ConstraintFormatter =
         let trimmed = line.TrimStart()
         let withoutComma, trailingComma = splitTrailingComma trimmed
         let bodyIdx =
-            withoutComma.IndexOf(bodyKeyword, StringComparison.OrdinalIgnoreCase)
+            indexAfterBracketedName withoutComma bodyKeyword
         if bodyIdx <= 0 then
             false
         else
@@ -447,12 +502,18 @@ module ConstraintFormatter =
             let constraintIdx = inlineConstraintIndex line
             if constraintIdx >= 0 then
                 // The substring AFTER " CONSTRAINT [" tells us PK / DEFAULT / CHECK.
+                // Classify by the keyword AFTER the bracketed name —
+                // a name like [DF_PropCheck_X] must not classify as
+                // CHECK (slice 3; see indexAfterBracketedName).
                 let after = line.Substring(constraintIdx + " CONSTRAINT ".Length)
-                if after.IndexOf("PRIMARY KEY", StringComparison.OrdinalIgnoreCase) >= 0 then
+                if indexAfterBracketedName after "PRIMARY KEY" >= 0 then
                     formatColumnInlinePrimaryKey sb line constraintIdx
-                elif after.IndexOf("CHECK", StringComparison.OrdinalIgnoreCase) >= 0 then
+                elif indexAfterBracketedName after "FOREIGN KEY" >= 0 then
+                    // Slice 3 — V1's column-suffix FK ladder.
+                    formatColumnInlineForeignKey sb line constraintIdx
+                elif indexAfterBracketedName after "CHECK" >= 0 then
                     formatColumnInlineCheck sb line constraintIdx
-                elif after.IndexOf("DEFAULT", StringComparison.OrdinalIgnoreCase) >= 0 then
+                elif indexAfterBracketedName after "DEFAULT" >= 0 then
                     formatColumnInlineDefault sb line constraintIdx
                 else
                     false
@@ -465,12 +526,12 @@ module ConstraintFormatter =
             // Table-level constraint dispatch. FK has REFERENCES;
             // composite PK has PRIMARY KEY without REFERENCES;
             // CHECK has CHECK without PRIMARY KEY or FOREIGN KEY.
-            if trimmed.IndexOf("FOREIGN KEY", StringComparison.OrdinalIgnoreCase) > 0
-               && trimmed.IndexOf("REFERENCES", StringComparison.OrdinalIgnoreCase) > 0 then
+            if indexAfterBracketedName trimmed "FOREIGN KEY" > 0
+               && indexAfterBracketedName trimmed "REFERENCES" > 0 then
                 formatTableLevelForeignKey sb line
-            elif trimmed.IndexOf("PRIMARY KEY", StringComparison.OrdinalIgnoreCase) > 0 then
+            elif indexAfterBracketedName trimmed "PRIMARY KEY" > 0 then
                 formatTableLevelPrimaryKey sb line
-            elif trimmed.IndexOf("CHECK", StringComparison.OrdinalIgnoreCase) > 0 then
+            elif indexAfterBracketedName trimmed "CHECK" > 0 then
                 formatTableLevelCheck sb line
             else
                 false

@@ -686,7 +686,19 @@ module SsdtDdlEmitter =
                 // deployed so the ON <table> reference resolves cleanly.
                 yield! triggerStatements k
             }
-        let body = ScriptDomGenerate.toText statements
+        // Reconciliation slice 3 (operator blessing, DECISIONS
+        // 2026-06-13) — the per-table file body renders through the
+        // SAME `Render.toText` realization the flat stream uses (one
+        // rendering algorithm; A40): the framed `GO` BETWEEN statements
+        // (never trailing — V1 StatementBatchFormatter.JoinStatements),
+        // the constraint ladder, and the wrapped EXEC shape. Supersedes
+        // the prior raw `ScriptDomGenerate.toText` no-GO contract.
+        let separated =
+            statements
+            |> List.ofSeq
+            |> List.mapi (fun i s -> if i = 0 then [ s ] else [ BatchSeparator; s ])
+            |> List.concat
+        let body = Render.toText separated
         { RelativePath = relativePath m k; Body = body }
 
     /// Lookup table from kind SsKey to owning Module. Same shape as

@@ -1,3 +1,38 @@
+# Handoff addendum — 2026-06-13, reconciliation slice 3 CLOSE (operator blessing #1: per-table V1 form; inline FK ladder; CHECK/filter logical rewrite; the catalog consolidates)
+
+To the next agent.
+
+**Slice 3 was the corpus's first yield** (`DECISIONS 2026-06-13`): the
+operator's blessing pass over the goldens redirected the queue (WP3
+scope pushdown moves to the next slice — operator blessing outranks).
+Four changes: (1) per-table `SsdtFile` bodies render through
+`Render.toText` — framed GO BETWEEN statements (never trailing), the
+constraint ladder, the wrapped EXEC, newline-terminated; the per-kind
+no-GO pin is OVERTURNED by operator decision and rewritten. (2)
+Single-column FKs attach inline beneath their source column
+(`attachInlineForeignKey`, the LR3 sibling) and the formatter gained
+the column-suffix FK ladder (+4/+8/+12) with V1's NO ACTION fill/drop
+normalization. (3) `LogicalColumnEmission` v2 follows the substitution
+into CHECK definitions and index FILTER predicates (trigger bodies
+still carry physical names — own slice; inventory TODO). (4) The
+Platonic catalog consolidated: master `ScalarGallery` (every scalar ×
+its DEFAULT literal + checks + trigger + the index gallery), master
+`Engagement` (every reference variance including the SELF-referencing
+FK), pure targets, `Heap`, Statics unchanged. Goldens re-recorded
+under the DECISIONS note.
+
+Watch for: four 5.13-era pins were updated to the rendered-body
+contract (the OnUpdate fill convention + the CHECK two-line ladder) —
+any other test asserting RAW per-table body shapes will collide with
+the formatter; pin against the laddered form.
+
+Queue: slice 4 = WP3 (scope pushdown into the OSSYS read; C4
+adjudicated). Then WP6 (data lanes — IDENTITY_INSERT strictly before
+hydration), WP5 (C1 rename + gate), WP7-remainder/WP8, WP9. J5 still
+trumps everything.
+
+---
+
 # Handoff addendum — 2026-06-12, reconciliation slice 2 CLOSE + THE GOLDEN EMISSION adopted
 
 To the next agent.

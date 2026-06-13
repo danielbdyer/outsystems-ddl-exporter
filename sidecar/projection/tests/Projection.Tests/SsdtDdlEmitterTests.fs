@@ -974,10 +974,11 @@ let ``Slice 5.13.column-features-emit: CHECK constraint surfaces in CREATE TABLE
     let file =
         ArtifactByKind.toMap artifact
         |> Map.find columnFeaturesKind.SsKey
-    // The CHECK constraint is named and parsed from `([PRICE] >= 0)`;
-    // ScriptDom round-trips it as `CHECK ([PRICE]>=0)` (no spaces around
-    // the operator per the generator's pinned options).
-    Assert.Contains ("CONSTRAINT [CK_Widget_PricePositive] CHECK", file.Body)
+    // The CHECK constraint is named and parsed from `([PRICE] >= 0)`.
+    // Reconciliation slice 3: the per-table body renders through
+    // Render.toText, so the table-level CHECK takes the two-line ladder
+    // (CONSTRAINT name at indent; CHECK body at indent + 4).
+    Assert.Contains ("CONSTRAINT [CK_Widget_PricePositive]\n        CHECK", file.Body)
 
 [<Fact>]
 let ``Slice 5.13.column-features-emit: T1 byte-determinism holds with DEFAULT + CHECK`` () =
@@ -1042,14 +1043,17 @@ let private fkFeaturesCatalog (onUpdate: ReferenceAction option) (trusted: bool)
     }
 
 [<Fact>]
-let ``Slice 5.13.fk-features-emit: OnUpdate = None omits the ON UPDATE clause (V1 emission shape)`` () =
+let ``Slice 5.13.fk-features-emit: OnUpdate = None fills ON UPDATE NO ACTION beside a non-default ON DELETE (V1 fill convention)`` () =
+    // Reconciliation slice 3 (DECISIONS 2026-06-13): per-table bodies
+    // render through Render.toText, so V1's clause normalization applies
+    // — when exactly one of ON DELETE / ON UPDATE is present, the other
+    // is filled with the explicit NO ACTION form (both dropped only when
+    // both are NO ACTION).
     let enriched = enrich (fkFeaturesCatalog None true)
     let artifact = SsdtDdlEmitter.emitSlices enriched |> mustOk
     let body = (ArtifactByKind.toMap artifact |> Map.find fkFeaturesBKey).Body
-    // OnDelete = Cascade still emits ON DELETE CASCADE.
     Assert.Contains ("ON DELETE CASCADE", body)
-    // OnUpdate = None means no ON UPDATE clause in the FK definition.
-    Assert.DoesNotContain ("ON UPDATE", body)
+    Assert.Contains ("ON UPDATE NO ACTION", body)
 
 [<Fact>]
 let ``Slice 5.13.fk-features-emit: OnUpdate = Some Cascade emits ON UPDATE CASCADE`` () =

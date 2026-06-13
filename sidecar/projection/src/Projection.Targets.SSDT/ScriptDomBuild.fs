@@ -497,6 +497,30 @@ module ScriptDomBuild =
         | None        -> ()
         cons :> ConstraintDefinition
 
+    /// Reconciliation slice 3 (operator blessing, DECISIONS 2026-06-13;
+    /// V1 CreateTableStatementBuilder.cs:197-202 shape): single-column
+    /// FK constraints attach inline beneath their source column —
+    /// `attachInlinePrimaryKey`'s sibling. A non-resolving source
+    /// column falls back to table-level (defensive; unreachable under
+    /// `Catalog.create`'s referential invariant).
+    let private attachInlineForeignKey
+        (colDefs: System.Collections.Generic.IList<ColumnDefinition>)
+        (tableConstraints: System.Collections.Generic.IList<ConstraintDefinition>)
+        (fk: ForeignKeyDef)
+        : unit =
+        let target =
+            colDefs
+            |> Seq.tryFind (fun cd ->
+                match Option.ofObj cd.ColumnIdentifier with
+                | Some ident ->
+                    System.String.Equals(
+                        ident.Value, fk.SourceColumn,
+                        System.StringComparison.OrdinalIgnoreCase)
+                | None -> false)
+        match target with
+        | Some cd -> cd.Constraints.Add(foreignKeyConstraint fk)
+        | None    -> tableConstraints.Add(foreignKeyConstraint fk)
+
     /// Build a `CreateTableStatement` from V2's typed
     /// `(TableId, ColumnDef list, PrimaryKeyDef option, ForeignKeyDef list)`
     /// triple. Pure: same inputs → same fragment shape (verified by
@@ -578,7 +602,9 @@ module ScriptDomBuild =
             | _     -> def.TableConstraints.Add(primaryKeyConstraint p)
         fks
         |> Bench.iterDo "emit.scriptDom.build.createTable.fk" (fun fk ->
-            def.TableConstraints.Add(foreignKeyConstraint fk))
+            // Slice 3 (DECISIONS 2026-06-13) — inline beneath the
+            // source column, V1 shape; table-level fallback only.
+            attachInlineForeignKey def.ColumnDefinitions def.TableConstraints fk)
         // Slice 5.13.column-features-emit (chapter A.0' slice ε emit
         // closure): table-level CHECK constraints follow PK + FK in
         // declaration order, matching V1's CREATE TABLE shape.
