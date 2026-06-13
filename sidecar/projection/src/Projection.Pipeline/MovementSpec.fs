@@ -342,7 +342,15 @@ type PlanAction =
     /// OSSYS when `modelOssys` is set (primary; V1-free) else from the model
     /// file (fallback); the profile ref (`file:<path>`) supplies the evidence σ
     /// replays.
-    | SynthesizeAndLoad of model: ModelSource * modelOssys: string option * profile: string * conn: string * opts: LoadOpts * execute: bool
+    ///
+    /// NM-08/09 — carries the `modelSection` (the config's `model` block) so the
+    /// resolved synthetic catalog passes through the SAME module-filter seam
+    /// (`ModuleFilterBinding.fromConfig` → `ModuleFilter.apply`) every other
+    /// action routes through at `Program.needCatalog`. Without it a `from:
+    /// synthetic` flow emitted the FULL estate, silently ignoring `model.modules`.
+    /// An empty `model.modules` is the all-permissive identity, so the default
+    /// synthetic load stays byte-identical.
+    | SynthesizeAndLoad of model: ModelSource * modelOssys: string option * profile: string * conn: string * opts: LoadOpts * execute: bool * modelSection: Config.ModelSection
     /// live, --go, data source → cross-substrate migrate-with-data.
     | MigrateWithData of model: ModelSource * modelOssys: string option * sink: string * source: string * opts: LoadOpts
     /// live, --go, config model → publish bundle + load the seed.

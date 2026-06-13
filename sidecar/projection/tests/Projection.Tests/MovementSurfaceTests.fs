@@ -765,11 +765,59 @@ let private specOfIn cfg name opts = Command.resolveFlowSpec cfg (Map.find name 
 [<Fact>]
 let ``synthetic flow (data-only target) → SynthesizeAndLoad; preview vs --go`` () =
     match synthAction "preview-synth" preview with
-    | PlanAction.SynthesizeAndLoad (ModelSource.ModelFile "model.json", None, "file:legacy.profile.json", "env:CLOUD_UAT_CONN", _, false) -> ()
+    | PlanAction.SynthesizeAndLoad (ModelSource.ModelFile "model.json", None, "file:legacy.profile.json", "env:CLOUD_UAT_CONN", _, false, _) -> ()
     | other -> Assert.Fail(sprintf "expected preview SynthesizeAndLoad, got %A" other)
     match synthAction "preview-synth" commit with
-    | PlanAction.SynthesizeAndLoad (_, None, "file:legacy.profile.json", "env:CLOUD_UAT_CONN", _, true) -> ()
+    | PlanAction.SynthesizeAndLoad (_, None, "file:legacy.profile.json", "env:CLOUD_UAT_CONN", _, true, _) -> ()
     | other -> Assert.Fail(sprintf "expected executing SynthesizeAndLoad, got %A" other)
+
+// NM-08/09 — a module-scoped synthetic config. Before the fix, the synthetic
+// path called `resolveCatalog` WITHOUT the module filter, so a `from: synthetic`
+// flow emitted the FULL estate, silently ignoring `model.modules`. The action
+// now carries the `model` section so `SyntheticLoadRun.run` routes the resolved
+// catalog through the SAME filter every sibling action applies.
+let private synthScopedCfg =
+    ProjectionConfig.parse """
+    {
+      "environments": {
+        "cloud-uat": { "access": "direct", "conn": "env:CLOUD_UAT_CONN", "grant": "data" }
+      },
+      "flows": {
+        "preview-synth": { "from": "synthetic", "profile": "file:legacy.profile.json", "to": "cloud-uat" }
+      },
+      "model": { "path": "model.json", "modules": [ "AppCore" ] }
+    }
+    """ |> mustOk
+
+[<Fact>]
+let ``NM-08/09: a module-scoped synthetic flow threads model.modules into the action (no longer the full estate)`` () =
+    let action =
+        (Command.planFlow synthScopedCfg (Map.find "preview-synth" synthScopedCfg.Flows) preview).Action
+    match action with
+    | PlanAction.SynthesizeAndLoad (_, _, _, _, _, false, modelSection) ->
+        // The configured scope rides on the action…
+        Assert.Equal<Config.ModuleSelector list>(
+            [ Config.ModuleSelector.Whole "AppCore" ], modelSection.Modules)
+        // …and binds to a REAL (narrowing) filter — so the synthetic load applies
+        // the same module filter every other action does, not the identity.
+        let opts =
+            ModuleFilterBinding.fromConfig modelSection
+            |> function Ok o -> o | Error es -> failwithf "binding failed: %A" es
+        Assert.True(ModuleFilter.hasFilter opts, "the threaded scope must bind to a narrowing filter, not the identity")
+    | other -> Assert.Fail(sprintf "expected module-scoped SynthesizeAndLoad, got %A" other)
+
+[<Fact>]
+let ``NM-08/09: an unscoped synthetic flow carries the identity filter (byte-identical default)`` () =
+    // Empty `model.modules` is the all-permissive identity, so the default
+    // synthetic load stays byte-identical — the fix narrows ONLY when scoped.
+    match synthAction "preview-synth" preview with
+    | PlanAction.SynthesizeAndLoad (_, _, _, _, _, false, modelSection) ->
+        Assert.Empty(modelSection.Modules)
+        let opts =
+            ModuleFilterBinding.fromConfig modelSection
+            |> function Ok o -> o | Error es -> failwithf "binding failed: %A" es
+        Assert.False(ModuleFilter.hasFilter opts)
+    | other -> Assert.Fail(sprintf "expected SynthesizeAndLoad, got %A" other)
 
 [<Fact>]
 let ``synthetic flow carries the profile ref through resolveFlowSpec`` () =
@@ -786,7 +834,7 @@ let ``synthetic flow without a profile is Refused (named, not silent)`` () =
 [<Fact>]
 let ``synthetic flow preview works under all-scope; --go to a non-data target is Refused`` () =
     match synthAction "synth-all" preview with
-    | PlanAction.SynthesizeAndLoad (_, _, _, "env:CLOUD_ALL_CONN", _, false) -> ()
+    | PlanAction.SynthesizeAndLoad (_, _, _, "env:CLOUD_ALL_CONN", _, false, _) -> ()
     | other -> Assert.Fail(sprintf "expected all-scope preview SynthesizeAndLoad, got %A" other)
     match synthAction "synth-all" commit with
     | PlanAction.Refused (2, e) -> Assert.Equal("cli.move.syntheticScope", e.Code)
@@ -806,7 +854,7 @@ let ``synthetic flow threads the live-OSSYS model source (primary) when configur
     Assert.Equal(Some "env:ONPREM_OSSYS_CONN", cfg.ModelOssys)
     match (Command.planFlow cfg (Map.find "preview-synth" cfg.Flows) preview).Action with
     // modelOssys (primary) rides in the action; the model file remains the fallback.
-    | PlanAction.SynthesizeAndLoad (ModelSource.ModelFile "model.json", Some "env:ONPREM_OSSYS_CONN", _, _, _, false) -> ()
+    | PlanAction.SynthesizeAndLoad (ModelSource.ModelFile "model.json", Some "env:ONPREM_OSSYS_CONN", _, _, _, false, _) -> ()
     | other -> Assert.Fail(sprintf "expected SynthesizeAndLoad carrying the live-OSSYS primary, got %A" other)
 
 // -- live-OSSYS model primary across the whole flow surface -----------------
@@ -1034,7 +1082,7 @@ let ``planMovement: seed/scale thread into the synthetic load's LoadOpts (D8)`` 
             Seed = Some 7UL
             Scale = Some 0.5M }
     match planOf spec with
-    | PlanAction.SynthesizeAndLoad (_, _, _, _, opts, false) ->
+    | PlanAction.SynthesizeAndLoad (_, _, _, _, opts, false, _) ->
         Assert.Equal(Some 7UL, opts.Seed)
         Assert.Equal(Some 0.5M, opts.Scale)
     | other -> Assert.Fail(sprintf "expected SynthesizeAndLoad, got %A" other)

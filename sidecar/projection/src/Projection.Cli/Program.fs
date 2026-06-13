@@ -162,8 +162,8 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat ->
             withRun "projection migrate --with-data" (fun () ->
                 runMigrateWithData shapedCat sink src opts.Reconcile opts.Rekey opts.Declaration opts.AllowCdc opts.Store opts.Env)))
-    | PlanAction.SynthesizeAndLoad (model, modelOssys, profile, conn, opts, execute) ->
-        withRun "projection synth-load" (fun () -> runSyntheticLoad model modelOssys profile conn opts execute)
+    | PlanAction.SynthesizeAndLoad (model, modelOssys, profile, conn, opts, execute, modelSection) ->
+        withRun "projection synth-load" (fun () -> runSyntheticLoad model modelOssys profile conn opts execute modelSection)
     | PlanAction.CaptureProfile (conn, out) -> runCaptureProfile conn out
     | PlanAction.PublishAndLoad (c, conn, store, env) ->
         let run () = runFullExportLoad c conn None store env

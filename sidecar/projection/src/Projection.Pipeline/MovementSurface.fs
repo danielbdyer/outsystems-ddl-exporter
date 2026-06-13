@@ -655,7 +655,7 @@ module Command =
                         | Ok src -> dataMove src false
                         | Error es -> PlanAction.Refused (6, List.head es)
                     | DataOrigin.Synthetic profile when not schemaOnly ->
-                        PlanAction.SynthesizeAndLoad (spec.Model, modelOssys, profile, conn, opts, false)
+                        PlanAction.SynthesizeAndLoad (spec.Model, modelOssys, profile, conn, opts, false, cfg.Shaping.Model)
                     | _ ->
                         if hasModel then PlanAction.PreviewSchema (spec.Model, modelOssys, conn, opts.Declaration)
                         else modelMissing "projection: "
@@ -669,7 +669,7 @@ module Command =
                             elif hasModel then PlanAction.MigrateWithData (spec.Model, modelOssys, conn, src, opts)
                             else modelMissing "projection: "
                     | DataOrigin.Synthetic profile when not schemaOnly ->
-                        if dataOnly then PlanAction.SynthesizeAndLoad (spec.Model, modelOssys, profile, conn, opts, true)
+                        if dataOnly then PlanAction.SynthesizeAndLoad (spec.Model, modelOssys, profile, conn, opts, true, cfg.Shaping.Model)
                         else PlanAction.Refused (2, err "cli.move.syntheticScope" "a synthetic load moves data only; point the flow at a data-granting target (grant: data).")
                     | _ when dataOnly ->
                         PlanAction.Refused (2, err "cli.move.scopeDataNoSource" "a DML-only load needs a data source (a flow whose `from` is a live environment).")

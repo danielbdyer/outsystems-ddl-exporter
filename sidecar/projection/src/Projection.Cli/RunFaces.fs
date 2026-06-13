@@ -1912,7 +1912,7 @@ let runProjectLivePreview (target: Catalog) (connSpec: string) (declaration: Los
 /// front-end). `execute = false` previews (DryRun); `execute = true` writes,
 /// gated by `PROJECTION_ALLOW_EXECUTE=1` (R6), and is fail-loud on dropped
 /// rows (mirrors `runTransfer`).
-let runSyntheticLoad (model: ModelSource) (modelOssys: string option) (profileRef: string) (connSpec: string) (opts: LoadOpts) (execute: bool) : int =
+let runSyntheticLoad (model: ModelSource) (modelOssys: string option) (profileRef: string) (connSpec: string) (opts: LoadOpts) (execute: bool) (modelSection: Config.ModelSection) : int =
     let executeGated =
         if execute then System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" = "1" else false
     if execute && not executeGated then
@@ -1937,7 +1937,7 @@ let runSyntheticLoad (model: ModelSource) (modelOssys: string option) (profileRe
     let result =
         (SyntheticLoadRun.run
             modelOssys modelFile profileRef connSpec opts.Emission opts.AllowCdc
-            syntheticConfig seed executeGated)
+            syntheticConfig seed executeGated modelSection)
             .GetAwaiter().GetResult()
     let exitCode =
         match result with
