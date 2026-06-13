@@ -28,16 +28,18 @@ open Projection.Core
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``A.4.7' slice β + D.1.a: RegisteredTransforms.all carries 24 Core-resident entries (19 pass + 5 strategy)`` () =
+let ``A.4.7' slice β + D.1.a: RegisteredTransforms.all carries 25 Core-resident entries (20 pass + 5 strategy)`` () =
     // Slice D.1.a added LogicalTableEmission + LogicalColumnEmission
     // (the two default-on emission-axis passes for logical-name
     // substitution into the physical-realization slot).
-    Assert.Equal(24, List.length RegisteredTransforms.all)
+    // NM-36 wired cascadeShockZones as a DataIntent analytics pass (20th).
+    Assert.Equal(25, List.length RegisteredTransforms.all)
 
 [<Fact>]
-let ``A.4.7' slice β + D.1.a: RegisteredTransforms.allChainSteps carries 19 PassChainAdapter entries`` () =
-    // Slice D.1.a added LogicalTableEmission + LogicalColumnEmission.
-    Assert.Equal(19, List.length RegisteredTransforms.allChainSteps)
+let ``A.4.7' slice β + D.1.a: RegisteredTransforms.allChainSteps carries 20 PassChainAdapter entries`` () =
+    // Slice D.1.a added LogicalTableEmission + LogicalColumnEmission;
+    // NM-36 added cascadeShockZones.
+    Assert.Equal(20, List.length RegisteredTransforms.allChainSteps)
 
 [<Fact>]
 let ``A.4.7' slice β: every PassChainAdapter Name matches a Pass-stage entry in RegisteredTransforms.all`` () =
@@ -60,7 +62,7 @@ let ``A.4.7' slice β: every PassChainAdapter Name matches a Pass-stage entry in
 [<Fact>]
 let ``A41: RegisteredTransforms.all validates through TransformRegistry.create (uniqueness + rationale + status invariants)`` () =
     match TransformRegistry.create RegisteredTransforms.all with
-    | Ok entries -> Assert.Equal(24, List.length entries)
+    | Ok entries -> Assert.Equal(25, List.length entries)
     | Error es -> failwithf "expected RegisteredTransforms.all to validate; got %A" es
 
 [<Fact>]
