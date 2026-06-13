@@ -77,9 +77,12 @@ let ``D1: an axis with only accepted tolerances reaches L3 (the generator discri
     Assert.DoesNotContain("L2-partial", data)
 
 [<Fact>]
-let ``D1: exactly one tolerance is an open fidelity gap today`` () =
+let ``D1: exactly five tolerances are open fidelity gaps today`` () =
     // The matrix's open-gap count is the codebase's named schema-fidelity debt.
-    // Pinning it to 1 (IndexOptionsUnreflected) makes a silently-added OpenGap — or a
-    // silently-retired one without regenerating — fail here. Retiring G3 (E1)
-    // legitimately flips this to 0 and the assertion updates in the same commit.
-    Assert.Contains("1 open", generatedMatrix)
+    // Pinning it makes a silently-added OpenGap — or a silently-retired one
+    // without regenerating — fail here. NM-16 (2026-06-13) added four kind-facet
+    // diff-erasure tolerances (KindTriggers / KindChecks / KindModality /
+    // KindActivation UnreflectedInDiff), all Schema OpenGap, joining
+    // IndexOptionsUnreflected — so the count moved 1 → 5. Retiring any
+    // legitimately decrements this and the assertion updates in the same commit.
+    Assert.Contains("5 open", generatedMatrix)

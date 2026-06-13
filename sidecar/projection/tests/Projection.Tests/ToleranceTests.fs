@@ -56,7 +56,7 @@ let ``Tolerance.permissive is not strict`` () =
     Assert.False (Tolerance.isStrict Tolerance.permissive)
 
 [<Fact>]
-let ``Closed-DU coverage: ToleratedDivergence.allKnown contains seven variants (AC-D6 Char/Decimal representation tolerances added)`` () =
+let ``Closed-DU coverage: ToleratedDivergence.allKnown contains eleven variants (NM-16 kind-facet diff-erasure tolerances added)`` () =
     // Per the closed-DU expansion empirical-test discipline (`DECISIONS
     // 2026-05-13`): when a new ToleratedDivergence variant lands, this
     // count assertion fires until allKnown is extended. The companion
@@ -73,7 +73,13 @@ let ``Closed-DU coverage: ToleratedDivergence.allKnown contains seven variants (
     // CharAnsiPaddingTolerated + DecimalScaleTolerated name the
     // representation-only differences ('foo  '≈'foo', 1.0≈1.00) that do
     // NOT fire CDC under SQL Server's ANSI-pad / numeric comparison.
-    Assert.Equal (7, Set.count ToleratedDivergence.allKnown)
+    // **NM-16 (2026-06-13):** 11 — KindTriggersUnreflectedInDiff /
+    // KindChecksUnreflectedInDiff / KindModalityUnreflectedInDiff /
+    // KindActivationUnreflectedInDiff name the kind-level facets the
+    // `CatalogDiff.between` algebra erases (a changed trigger / CHECK /
+    // modality / IsActive yields norm=0, "idempotent redeploy", emits
+    // nothing) — the SILENT erasure is now WITNESSED.
+    Assert.Equal (11, Set.count ToleratedDivergence.allKnown)
 
 [<Fact>]
 let ``Tolerance.ofSet round-trips through divergences`` () =
@@ -140,6 +146,35 @@ let ``Compare<Tolerance> is inhabited (S0.A type-pattern instantiation)`` () =
 let ``3.4: every ToleratedDivergence name round-trips through tryParse`` () =
     ToleratedDivergence.allKnown
     |> Set.forall (fun d -> ToleratedDivergence.tryParse (ToleratedDivergence.name d) = Some d)
+
+// ---------------------------------------------------------------------------
+// NM-16 — the kind-level facet erasure in the `CatalogDiff.between` algebra
+// (a changed/added/removed kind Trigger / ColumnCheck / Modality / IsActive
+// yields norm=0, "idempotent redeploy", migrate emits nothing) is now a
+// WITNESSED ToleratedDivergence rather than a silent erasure. These four
+// variants exist, are members of `allKnown`, and parse round-trip — so the
+// gap is named with a retirement trigger (the LIGHT route per the audit;
+// retiring each adds the corresponding diff channel to `CatalogDiff.between`).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``NM-16: the four kind-facet diff-erasure tolerances exist, are in allKnown, and round-trip`` () =
+    let kindFacetVariants =
+        [ ToleratedDivergence.KindTriggersUnreflectedInDiff
+          ToleratedDivergence.KindChecksUnreflectedInDiff
+          ToleratedDivergence.KindModalityUnreflectedInDiff
+          ToleratedDivergence.KindActivationUnreflectedInDiff ]
+    for d in kindFacetVariants do
+        // Each is a member of the closed-DU coverage set.
+        Assert.True(
+            Set.contains d ToleratedDivergence.allKnown,
+            sprintf "%s must be in allKnown" (ToleratedDivergence.name d))
+        // name >> tryParse is the identity (parse round-trip).
+        Assert.Equal<ToleratedDivergence option>(
+            Some d, ToleratedDivergence.tryParse (ToleratedDivergence.name d))
+    // The four tokens are distinct (no name collision).
+    let names = kindFacetVariants |> List.map ToleratedDivergence.name
+    Assert.Equal(4, List.length (List.distinct names))
 
 [<Fact>]
 let ``3.4: parse accepts every known token and yields a tolerance that tolerates them`` () =
