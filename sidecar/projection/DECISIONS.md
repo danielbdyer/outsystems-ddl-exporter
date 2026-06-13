@@ -22561,3 +22561,47 @@ but CANNOT be exercised in this environment (no OSSYS source); it must be
 witnessed against a live estate (J5-adjacent). Fast pool 3134/27/211 — the 27
 failures are the same three Docker-gated extraction classes, unchanged
 (Docker daemon unavailable this session). Docker pool owed before merge.
+
+---
+
+## 2026-06-13 — Slice 5 of the full-export reconciliation (WP6 step 5 / slice close): per-lane goldens reconciled; WP6 steps 1–5 complete
+
+Context: `V1_FULL_EXPORT_RECONCILIATION_PLAN.md` WP6 step 5 — "GoldenCatalog
+gains the lane variances (a bootstrap-owned kind, a migration-row kind, the
+IDENTITY-PK static); re-record per the blessing protocol." Reconciled with the
+operator's minimize-surface directive and the self-minimizing per-lane design
+(step 3).
+
+**1. What the golden pins (and why no new artifacts).** The golden path is
+`projectWithConfig GoldenCatalog.catalog` — catalog-direct, with empty
+migration/userRemap contexts and no hydration. So only the **static** lane
+ever carries content there, the fused `Data/seed.sql` IS that lane, and the
+≥2-lane rule (step 3) writes no per-lane files. The `master` scenario's
+`Data/seed.sql` already pins every golden-reachable WP6 data-lane variance:
+the static MERGE/Phase-2 shapes, the `Tier` IDENTITY_INSERT bracket (step 1),
+and the folded-in `ScopedLookup` delete arm (corpus take-2). No new golden
+artifacts are added — pinning a per-lane `StaticSeeds.sql` would byte-duplicate
+`seed.sql` (the exact redundancy the operator forbade).
+
+**2. Where the per-lane / migration / bootstrap variances are witnessed.** At
+the composer (`DataEmissionComposerTests`): a two-lane static+migration
+catalog yields `StaticSeeds` ≠ `MigrationData`, both distinct from the fused
+seed, with `nonEmptyLaneCount = 2`; a one-lane catalog yields
+`Fused = StaticSeeds`. This is the right altitude — the migration/bootstrap
+lanes need operator/hydration contexts the golden path does not supply, so
+they cannot be golden-pinned without wiring migration-context-from-config
+(a separate concern, not WP6).
+
+**3. Deviation from the handoff's literal step 5, named.** I did NOT add a
+bootstrap-owned or migration-row kind to `GoldenCatalog`: in the golden path
+those lanes have no content, so the kinds would be empty/static and add no
+golden information. The one golden-pinnable lane variance (the IDENTITY-PK
+static) IS in the catalog (`Tier`). The lane-split variance lives in the
+composer tests.
+
+**WP6 status: steps 1–5 COMPLETE this slice** (IDENTITY_INSERT bracket;
+Bootstrap delegation + Active; per-lane outputs self-minimizing; hydration;
+per-lane goldens reconciled). Step 6 (EXCEPT validate-before-apply, C2) is a
+later slice per the plan's §5 sequencing. Remaining caveat: the live OSSYS
+hydration stream and the full Docker pool are unwitnessed in this environment
+(no OSSYS source; Docker daemon unavailable) — both owed before merge.

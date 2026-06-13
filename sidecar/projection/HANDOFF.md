@@ -1,3 +1,76 @@
+# Handoff addendum — 2026-06-13, WP6 COMPLETE (data lanes filled): IDENTITY_INSERT bracket · Bootstrap Active · per-lane outputs (self-minimizing) · hydration · goldens reconciled — TWO caveats owed before merge (live OSSYS witness; Docker pool)
+
+To the next agent.
+
+Slice 5 (WP6, the data lanes) is **done, steps 1–5**, on branch
+`claude/dreamy-pasteur-akjbx3` (PR #604). Read this, then the mid-slice and
+pre-scope letters below for the seam-level detail. The program queue resumes
+at WP5 (the C1 `V2.*` rename + gate), then WP7-remainder/WP8, then WP9; WP6
+step 6 (EXCEPT validate-before-apply, C2) is its own later slice per the
+plan's §5.
+
+**What shipped (commit · what · witness):**
+- `68b3506` — **step 1** IDENTITY_INSERT bracket on `AssignedBySink` MERGEs,
+  ONE GO batch (the leveled deploy opens a connection per GO-segment).
+- `9be312c` — **step 2** `BootstrapEmitter` delegates to the static-seeds
+  renderer + goes `Active` (the last `NotImplementedInV2` in the codebase).
+- `a796991` — **step 3** per-lane data outputs via `composeRenderedBundle`
+  (one dispatch → fused + 3 lanes), emitted **only when ≥2 lanes carry
+  content** (self-minimizing: a single active lane equals the fused seed, so
+  no redundant per-lane file). Composer-witnessed.
+- `196ac53` — **step 4** hydration: `Hydration.graftStaticPopulations`
+  (pure) + `hydrateCatalog` (async — OSSYS-sourced opens a SECOND connection
+  and streams the static-marked kinds via `Ingestion.collectInOrderFor`,
+  never `ReadSide.read`). One seam `readAndHydrateConfigModel` feeds BOTH the
+  publish extract stage and the store leg `emittedSeedPlan` (parity). Named
+  skip `data.hydration.skippedFileSourced` for file-sourced models.
+- **step 5** per-lane goldens reconciled (no new artifacts — see below).
+- Plus the golden corpus reshaped to **one maximal `master/` + small
+  standalone one-offs** (`2ca4374` delta layout → `f1ca2a3` take-2),
+  operator-directed minimize-surface.
+
+**The golden corpus, as it stands.** `master/` is the one full standalone
+emission (all catalog variants incl. the delete-scope arm folded in);
+`pruned-platform-auto/` is a 2-file one-off over a tiny catalog
+(`GoldenCatalog.prunePlatformAutoCatalog`). The data lane in `master` is the
+fused `Data/seed.sql` only (single static lane → the ≥2 rule omits per-lane
+files); it already pins the static MERGEs, the `Tier` IDENTITY bracket, and
+the `ScopedLookup` delete arm. **Do not add per-lane `Data/*.sql` goldens** —
+they'd byte-duplicate `seed.sql`; the per-lane split is witnessed in
+`DataEmissionComposerTests` (a 2-lane catalog), which is the right altitude
+(the golden path supplies no migration/bootstrap context).
+
+**TWO caveats owed before merge — read these:**
+1. **The live OSSYS hydration stream is UNWITNESSED.** `hydrateCatalog`'s
+   OSSYS branch (open → `Ingestion.collectInOrderFor` → graft) compiles and
+   is FS3511-safe, but there is no OSSYS source in this environment to
+   exercise it. The pure graft, the named skip, and the no-connection
+   identity branches ARE witnessed (`HydrationTests` 8/0). Run it against a
+   live estate (J5-adjacent).
+2. **The Docker pool is OWED.** The sandbox Docker daemon went down
+   mid-session; `scripts/test.sh docker` could not run, and the three
+   Docker-gated extraction classes in the fast pool
+   (`BtReferenceFkFlowTests`, `OssysComprehensiveFixtureTests`,
+   `OssysExtractionCanaryTests`) self-skip when Docker is absent (green) but
+   error when it flaps (the 27-failure signature you'll see). They are
+   environmental, unchanged by WP6. Run the Docker pool before merge.
+
+**The named follow-up:** hydration uses the **marker approach** (rows graft
+into `Modality.Static`, indistinguishable from authored). The armed
+`ReadbackPopulated` provenance-typed-Static closed-DU change (keeps authored
+vs hydrated distinguishable) is the immediate follow-up — a codec-totality
+blast across every round-trip surface; its DECISIONS amendment comes first.
+Hydration only FILLS existing `Static` markers (never mints new ones), so it
+does not reintroduce the 4.4 trap.
+
+**Rhythm that held:** DECISIONS entry before each step's code; golden diff in
+the same commit as the emission change; fail-then-bless-then-INSPECT (a
+missing `;` in the IDENTITY bracket was caught only by reading the bytes);
+both books amended per step; fast pool green (delta = only the env-gated
+classes) after every step. Hold the spine.
+
+---
+
 # Handoff addendum — 2026-06-13, WP6 mid-slice: steps 1+2 CLOSED (the MERGE lane brackets IDENTITY_INSERT; Bootstrap delegates and goes Active — the last `NotImplementedInV2` is gone); steps 3–5 remain; the Docker pool is OWED
 
 To the next agent.
