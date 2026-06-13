@@ -22705,3 +22705,52 @@ sources; only the former skips hydration.
 The only standing caveat now is the dual-window MIGRATE edge (rebinding the
 renamed identity property on a LEGACY `V2.*`-bearing deployed schema) — named
 in the WP5 entry; trigger-gated on the legacy-name retirement.
+
+---
+
+## 2026-06-13 — WP9 (provenance arm) + the standing invariant: `model.path` never gates; `model.ossys` is the only primary
+
+Context: `V1_FULL_EXPORT_RECONCILIATION_PLAN.md` WP9 / event-ledger #1, plus an
+operator-stated FULL INVARIANT: *"existence of `model.path` should never be a
+prerequisite or gating condition for our app, anywhere in the logic. Live
+ossys is the only primary; `model.path` is now only a backstop / dependency-
+injection point — keep it accessible."*
+
+**1. The provenance-arm fix.** `MovementSurface.resolveFlowSpec` classified
+`ModelSource.ConfigFile` (the publish-with-provenance arm,
+`PublishBundle`/`PublishAndLoad`) only when
+`SourcePath ∧ store ∧ Shaping.Model.Path` were all present — so an
+OSSYS-sourced config (no `model.path`) never published with provenance even
+with a store configured. Fixed: the "publishable model" condition is now
+`Shaping.Model.Path` **OR** `Shaping.Model.Ossys`. Additive — path-sourced and
+store-less configs keep their byte-identical classification; only
+ossys-only-with-store gains provenance.
+
+**2. The invariant, AUDITED across the app.** Every runtime `cfg.Model.Path`
+read was checked; none gate on path presence:
+- `Compose.readConfigModel` — `model.ossys` PRIMARY, `model.path` FALLBACK; the
+  only error (`pipeline.config.modelNoSource`) fires when BOTH are absent (a
+  "need some source" check that `model.ossys` alone satisfies). Not a path gate.
+- `MovementSurface.resolveFlowSpec` — the ONE place path was a gate (the
+  ConfigFile classification); removed in (1). The fallback `ModelFile`
+  classification keeps `model.path` as a first-class source when present.
+- `FullExportRun.emitConfigSnapshot` — a log label (`"LiveOssys"` / the path /
+  `"(none)"`); no gate.
+- `Hydration` — keys on `model.ossys` presence; `model.path` appears only in
+  the named SKIP diagnostic message (`data.hydration.skippedNoLiveSource`),
+  not as a gate (hydration is the identity without ossys, it does not require
+  path).
+- The remainder are comments or the loader's legacy `model:"<path>"` →
+  `Shaping.Model.Path` reconciliation.
+So the invariant HOLDS: `model.path` is never a prerequisite; `model.ossys`
+alone drives every path. `model.path` stays accessible as the backstop / DI
+point (the `ModelFile` classification + the `readConfigModel` fallback).
+
+**Witness.** `MovementSurfaceTests` 114/0 — an ossys-only config with load
+provenance + a store fires `ConfigFile` (provenance); the same config WITHOUT
+a store stays non-provenance (the store gate is intact, only the path gate is
+gone). The broader suite is unchanged (the fix is additive).
+
+**WP9 remainder (not this slice):** the `examples/projection.sample.json`
+rewrite (ossys-first sample) and the `projection compare` verb (multi-
+environment readiness; a design-first slice per the plan) remain.
