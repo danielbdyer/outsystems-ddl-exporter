@@ -22203,3 +22203,89 @@ surface now owns that fact; a per-edge `moduleFilter.referencePruned`
 witness lands when the filter seam gains a diagnostics channel (named
 follow-up; until then the prune is documented here and law-tested,
 never ad-hoc).
+
+---
+
+## 2026-06-13 — Slice 5 of the full-export reconciliation (WP6 step 1): the MERGE lane brackets IDENTITY-PK kinds with `SET IDENTITY_INSERT`, as a single GO batch
+
+Context: `V1_FULL_EXPORT_RECONCILIATION_PLAN.md` WP6 step 1 ("pull slice E
+forward — IDENTITY_INSERT in the MERGE lane FIRST; landing hydration
+without this converts empty-output into deploy-failure"). V1 reference:
+`StaticSeedSqlBuilder.cs:140-145,202-206` brackets the seed INSERT block
+with `SET IDENTITY_INSERT … ON/OFF`. V2 had the bracket on the
+`StaticPopulationEmitter`/Bulk lanes (`StaticPopulationEmitter.fs:95-116`)
+but **not** on the production MERGE lane (`StaticSeedsEmitter`), where the
+slice-E note ("`AssignedBySink` will suppress the IDENTITY PK column") was
+the placeholder. This slice cashes it out — and overturns the suppression
+plan.
+
+**1. Dispatch on `IdentityDisposition.AssignedBySink`, not column scan.**
+`StaticSeedsEmitter.kindToScript` now reads `load.Disposition` (minted
+structurally at `DataLoadPlan.build` via `IdentityDisposition.ofKind` —
+`AssignedBySink` iff the PK carries IDENTITY). An `AssignedBySink` kind's
+Phase-1 MERGE is bracketed; every other disposition is byte-identical to
+the pre-slice output.
+
+**2. PK suppression is WRONG for the MERGE lane — overturned.** The slice-E
+docstring proposed suppressing the IDENTITY PK column for `AssignedBySink`.
+The MERGE's `ON` clause joins on the PK (`[Target].[Id] = [Source].[Id]`)
+and the `WHEN NOT MATCHED … INSERT` lists the PK; dropping the PK column
+would break the idempotent upsert. The correct realization is the V1
+bracket: keep the PK in the MERGE and wrap with `SET IDENTITY_INSERT`.
+
+**3. The bracket is a SINGLE GO batch — the load-bearing correctness call.**
+`SET IDENTITY_INSERT` is **session-scoped**, and the leveled load leg
+(`Deploy.executeBatchParallel`, the gen-7 wire) opens a *fresh connection
+per GO-segment* and races them under a semaphore. A bracket split across GO
+boundaries (`SET ON; GO … MERGE; GO … SET OFF; GO`) would land the toggle
+and the MERGE on different connections — the toggle would not apply and the
+insert would fail. So the bracket emits as ONE GO segment:
+`SET IDENTITY_INSERT [t] ON;\n<merge>;\nSET IDENTITY_INSERT [t] OFF;\nGO\n`
+— atomic on whatever single connection runs that segment, correct for both
+the fused `Data/seed.sql` artifact (one sqlcmd session) and the leveled
+deploy (one connection per segment).
+
+**4. The bracket lives INSIDE `RenderedPhase1` — the partition law holds.**
+Both the fused render (`composeRenderedFull`) and the leveled render
+(`composeRenderedLeveled`) consume the same per-kind `RenderedPhase1`
+string, so the fused-≡-leveled GO-segment-multiset partition law
+(`DataEmissionComposerTests` P2) is preserved by construction. Phase-2
+(`RenderedPhase2`, the deferred-FK UPDATE) never touches the PK, so it is
+not bracketed.
+
+**5. Every statement in the batch is explicitly `;`-terminated.** The `SET`
+statements render via `ScriptDomGenerate.generateOne` from the typed
+`SetIdentityInsertStatement`; empirically (verified against the recorded
+bytes) `generateOne` does NOT append a `;` to a `SET IDENTITY_INSERT` — the
+terminator behavior is statement-type-specific, not governed by the pinned
+`IncludeSemicolons = true` (the `Render.toText` Statement path gets away
+without it because its neighbor is INSERT, which has no preceding-terminator
+rule). MERGE, by contrast, requires its immediately-preceding statement to
+be `;`-terminated, so the emitter appends `;` to the `SET ON`, to the MERGE
+(the documented ScriptDom MERGE-terminator quirk), and to the `SET OFF`.
+Typed AST throughout; the only terminal-text literals are the SQL statement
+terminators and the `GO` batch separator.
+
+**6. Scope: the static-seeds MERGE lane only.** The
+`MigrationDependenciesEmitter` mirror (its `kindToScript` is the algebraic
+twin) is deferred to the slice that introduces a migration-row golden kind
+(WP6 step 5), where it lands with its own golden witness. The static lane
+is the one the operator's corporate run exercises.
+
+**7. Golden witness.** `GoldenCatalog` gained `Tier` — a static lookup with
+an IDENTITY PK and authored rows — the first `AssignedBySink` static in the
+Platonic catalog (the existing statics are all non-identity PKs, so no diff
+showed until now). `THE_GOLDEN_EMISSION.md` §4 flips "Static kind with
+IDENTITY PK" from TODO/known-unblessed to COVERED+BLESSED; the goldens are
+re-recorded under this note (`GOLDEN_RECORD=1`): a new
+`Modules/Statics/dbo.Tier.sql` per scenario, the bracketed Tier MERGE in
+each `Data/seed.sql`, and Tier's CREATE in each `stream.sql`.
+
+**Environment note (this session):** the sandbox's Docker daemon, reachable
+at session open, went away mid-session (SQL port closed; `warm-sql.sh
+restart` itself needs Docker). The Docker pool and the Docker-gated
+extraction tests that share the fast pool (`BtReferenceFkFlowTests`,
+`OssysComprehensiveFixtureTests`, `OssysExtractionCanaryTests`) could not be
+run; this slice's witness is the PURE golden corpus + the data-lane
+composer tests, which are the operator-blessing surface for an emission
+change. The Docker pool must be run before merge.

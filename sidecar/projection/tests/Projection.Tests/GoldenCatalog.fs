@@ -369,6 +369,30 @@ let private scopedLookup : Kind =
                   { Identifier = rowk "ScopedLookup.B"
                     Values = Map.ofList [ nm "Id", "2"; nm "TenantId", "42"; nm "Value", "Beta" ] } ] ] }
 
+let private tierKindKey = kkey "Tier"
+
+/// Static lookup with an IDENTITY primary key + authored rows — the
+/// `IdentityDisposition.AssignedBySink` case (WP6 step 1). Seeding
+/// explicit PK values into an IDENTITY column requires the MERGE be
+/// bracketed by `SET IDENTITY_INSERT … ON/OFF` (one GO batch). The
+/// other statics carry non-identity PKs (`pkAttr … false`), so this is
+/// the first static whose seed shows the bracket in the goldens.
+let private tier : Kind =
+    { Kind.create tierKindKey (nm "Tier")
+        (table "dbo" "GOLD_TIER")
+        [ pkAttr (akey "Tier.Id") "Id" "ID" true
+          { attr (akey "Tier.Name") "Name" "NAME" Text false with Length = Some 40 } ]
+      with
+        Description = Some "Static lookup with an IDENTITY PK — the IDENTITY_INSERT bracket case."
+        Modality =
+            [ Static
+                [ { Identifier = rowk "Tier.Bronze"
+                    Values = Map.ofList [ nm "Id", "1"; nm "Name", "Bronze" ] }
+                  { Identifier = rowk "Tier.Silver"
+                    Values = Map.ofList [ nm "Id", "2"; nm "Name", "Silver" ] }
+                  { Identifier = rowk "Tier.Gold"
+                    Values = Map.ofList [ nm "Id", "3"; nm "Name", "Gold" ] } ] ] }
+
 // ---------------------------------------------------------------------
 // The catalog
 // ---------------------------------------------------------------------
@@ -383,7 +407,7 @@ let catalog : Catalog =
         Catalog.create
             [ mkModule (mkey "Forms")     "Forms"     [ scalarGallery; assignment; heap ]
               mkModule (mkey "Relations") "Relations" [ user; customer; engagement; ecrmSnapshot; ledger; changeLog ]
-              mkModule (mkey "Statics")   "Statics"   [ country; regionA; regionB; scopedLookup ] ]
+              mkModule (mkey "Statics")   "Statics"   [ country; regionA; regionB; scopedLookup; tier ] ]
             []
     with
     | Ok c -> c

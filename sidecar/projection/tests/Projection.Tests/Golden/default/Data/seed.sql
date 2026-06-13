@@ -28,6 +28,15 @@ WHEN MATCHED THEN UPDATE
         [Target].[Value]    = [Source].[Value]
 WHEN NOT MATCHED THEN INSERT ([Id], [TenantId], [Value]) VALUES ([Source].[Id], [Source].[TenantId], [Source].[Value]);
 GO
+SET IDENTITY_INSERT [dbo].[Tier] ON;
+MERGE INTO [dbo].[Tier]
+ AS [Target]
+USING (VALUES (1, N'Bronze'), (3, N'Gold'), (2, N'Silver')) AS [Source]([Id], [Name]) ON [Target].[Id] = [Source].[Id]
+WHEN MATCHED THEN UPDATE 
+    SET [Target].[Name] = [Source].[Name]
+WHEN NOT MATCHED THEN INSERT ([Id], [Name]) VALUES ([Source].[Id], [Source].[Name]);
+SET IDENTITY_INSERT [dbo].[Tier] OFF;
+GO
 UPDATE  [dbo].[RegionA]
     SET [PartnerId] = 1
 WHERE   [Id] = 1;

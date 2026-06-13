@@ -181,7 +181,7 @@ reminder.
 | Static seed MERGE (idempotent, CDC-aware predicate) | COVERED (`Country` rows) |
 | Phase-2 deferred-FK UPDATE (nullable FK cycle between static kinds) | COVERED (`RegionA`/`RegionB` cycle) |
 | Delete-scope arm (`WHEN NOT MATCHED BY SOURCE … DELETE` under the term predicate) | COVERED (`delete-scope` scenario). **First-recording finding:** the term resolves against the POST-CHAIN catalog (after `LogicalColumnEmission`), so under the default logical rendition the term must name the LOGICAL column — the `DeleteScopePolicy` doc's "terms name PHYSICAL columns" is stale for that rendition. Doc/semantics reconciliation rides the plan's WP4 follow-on |
-| Static kind with IDENTITY PK (IDENTITY_INSERT handling) | TODO — plan WP6 step 1 (**known-unblessed**: today renders without the bracket) |
+| Static kind with IDENTITY PK (IDENTITY_INSERT handling) | COVERED + BLESSED (WP6 step 1, `Tier` — the MERGE is bracketed by `SET IDENTITY_INSERT … ON/OFF` as ONE GO batch; DECISIONS 2026-06-13) |
 | Bootstrap lane content | TODO — plan WP6 (today: empty; the goldens pin the emptiness so the lane filling is a visible diff) |
 | MigrationData lane content | TODO — plan WP6 |
 | Row batching ≥ threshold | TODO (armed perf trigger) |
