@@ -1096,6 +1096,11 @@ module Compose =
                         (ModuleFilterBinding.inertFlagNote cfg.Model
                          |> Option.map (DiagnosticEntry.create "config:model" DiagnosticSeverity.Info "moduleFilter.flagsInert")
                          |> Option.toList)
+                        // WP6 step 4 — data on + file-sourced model ⇒ a named
+                        // hydration skip (never silent emptiness). Config-
+                        // derived; the actual graft runs in the async caller
+                        // (`readAndHydrateConfigModel`).
+                        @ Hydration.diagnostics cfg
                         @ SpecialCircumstancesDiagnostics.emit overrides finalState
                         @ InactiveAttributeDiagnostics.emit profile
                         @ FkSelectivityDiagnostics.emit profile    // H-025
@@ -1204,6 +1209,25 @@ module Compose =
                                 "pipeline.config.modelNoSource"
                                 "model needs `path` (osm_model.json) or `ossys` (live OSSYS connection)."))
             return read |> Result.bind (applyModuleFilter cfg)
+        }
+
+    /// WP6 step 4 (DECISIONS 2026-06-13) — the full-export model read followed
+    /// by data hydration. Reads the catalog (`readConfigModel`) then grafts
+    /// live static-entity rows when data emission is on AND the model is
+    /// OSSYS-sourced (`Hydration.hydrateCatalog` — a SECOND connection from
+    /// `cfg.Model.Ossys`, streaming owned static kinds via `Ingestion`, never
+    /// `ReadSide.read`). A file-sourced or data-off run is the identity on the
+    /// catalog (the file-sourced skip is NAMED in `Hydration.diagnostics`,
+    /// surfaced by `runWithConfigCore`). This is the SINGLE hydration seam
+    /// shared by the publish path (the extract stage) and the store leg
+    /// (`emittedSeedPlan`), so the deployed seed never drifts from the
+    /// published one (the parity duty).
+    let readAndHydrateConfigModel (cfg: Config.Config) : Task<Result<Catalog>> =
+        task {
+            let! parsed = readConfigModel cfg
+            match parsed with
+            | Error _ -> return parsed
+            | Ok catalog -> return! Hydration.hydrateCatalog cfg catalog
         }
 
     /// THE_CONFIG_CONTROL_PLANE §6 (S3) — project a **caller-supplied**
@@ -1347,8 +1371,10 @@ module Compose =
                     let! catalog =
                         Staged.stage Stages.extract (fun () ->
                             task {
-                                // §7.2 extract — OSSYS catalog read.
-                                let! parsed = readConfigModel cfg
+                                // §7.2 extract — OSSYS catalog read + WP6 step-4
+                                // data hydration (graft live static rows when
+                                // OSSYS-sourced + data on; identity otherwise).
+                                let! parsed = readAndHydrateConfigModel cfg
                                 match parsed with
                                 | Ok catalog ->
                                     emitStageMarker LogSink.Extract "extract.completed" LogSink.End
@@ -1455,7 +1481,10 @@ module Compose =
 
     let private emittedSeedPlan (cfg: Config.Config) : Task<Result<Catalog * DataComposer.LeveledDeploymentText>> =
         task {
-            let! parsed = readConfigModel cfg
+            // WP6 step 4 parity — hydrate the store-leg catalog the SAME way the
+            // publish path does (`readAndHydrateConfigModel`), so the deployed
+            // seed plan reflects the same hydrated rows the bundle published.
+            let! parsed = readAndHydrateConfigModel cfg
             return projectSeedPlan cfg parsed
         }
 

@@ -41,7 +41,14 @@ module Ingestion =
     /// topological order, one open reader at a time (Source-friendly). For
     /// preview / canary scale; the streaming realization consumes
     /// `streamsInOrder` directly without materializing.
-    let collectInOrder
+    /// Materialize the rows of a SCOPED set of kinds (`owned`) into the
+    /// `Map<SsKey, StaticRow list>` shape `DataLoadPlan.build` consumes, in
+    /// topological order. The scope is the kinds the caller owns — the
+    /// full-export hydration passes its static-marked kind set so it streams
+    /// ONLY those (never the mark-everything `ReadSide.read`; survival rule
+    /// 8). A key absent from `owned` (or from the catalog) is skipped.
+    let collectInOrderFor
+        (owned: Set<SsKey>)
         (cnn: SqlConnection)
         (catalog: Catalog)
         (topo: TopologicalOrder)
@@ -66,9 +73,18 @@ module Ingestion =
         let rowStreams =
             topo.Order
             |> List.choose (fun key ->
-                Catalog.tryFindKind key catalog
-                |> Option.map (fun k -> key, streamKindRows cnn k))
+                if Set.contains key owned then
+                    Catalog.tryFindKind key catalog
+                    |> Option.map (fun k -> key, streamKindRows cnn k)
+                else None)
         loop Map.empty rowStreams
+
+    let collectInOrder
+        (cnn: SqlConnection)
+        (catalog: Catalog)
+        (topo: TopologicalOrder)
+        : Task<Map<SsKey, StaticRow list>> =
+        collectInOrderFor (Set.ofList topo.Order) cnn catalog topo
 
     /// Registry metadata (pillar 9). The ingestion adapter leg classifies
     /// entirely as `DataIntent` — lifting a substrate's rows is observation,

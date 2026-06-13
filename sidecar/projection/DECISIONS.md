@@ -22506,3 +22506,58 @@ files land "plus the fused" unconditionally; this emits them conditionally
 capability is fully present; only the redundant single-lane file is withheld.
 Witness: DataEmissionComposer 27/0, FullExportDataBundle 3/0, GoldenEmission
 3/0 (byte-stable). Docker pool owed (env).
+
+---
+
+## 2026-06-13 — Slice 5 of the full-export reconciliation (WP6 step 4): data hydration grafts live static rows onto the catalog
+
+Context: `V1_FULL_EXPORT_RECONCILIATION_PLAN.md` WP6 step 2 — the forward OSSYS
+read marks static entities `Static []` (the marker present, populations
+empty; `OssysRowsetReader`), so the static-seed lane emits nothing until a
+read-only hydration step streams those rows from the live source and grafts
+them onto the catalog before the data lanes render.
+
+**1. The `Hydration` module (Pipeline).** `graftStaticPopulations` (PURE)
+replaces the rows of static-marked kinds by `SsKey` (rename-invariant, A1),
+preserving other modality marks and kind order; grafting pre-chain lets
+`NormalizeStaticPopulations` sort deterministically. `hydrateCatalog` (async)
+is the orchestrator: data-off ⇒ identity; file-sourced (no `model.ossys`) ⇒
+identity; OSSYS-sourced ⇒ open a SECOND connection (the model-read connection
+is use-disposed) via the `LiveModelRead.fromConnSpecWith` open template, stream
+the static-marked kinds through `Ingestion.collectInOrderFor` (a new scoped
+collector — streams ONLY the owned static kinds, NEVER `ReadSide.read` which
+marks every table Static, survival rule 8), and graft. The async entry lives
+in the pipeline caller, never the sync `runWithConfigCore` (FS3511).
+
+**2. One seam, both legs (the parity duty).** `readAndHydrateConfigModel`
+(= `readConfigModel` then `hydrateCatalog`) is consumed by BOTH the publish
+path (the `runWithConfig` extract stage) and the store leg
+(`emittedSeedPlan` → `projectSeedPlan`), so the deployed seed plan reflects
+the same hydrated rows the bundle published — no drift between deployed and
+published. `emittedSchema` (schema plane) is untouched (data-free).
+
+**3. Named skip, never silence.** Data on + file-sourced model ⇒
+`Hydration.diagnostics` yields the Warning `data.hydration.skippedFileSourced`
+(config-derived, pure), added to `runWithConfigCore`'s diagnostic stream. The
+note is computed from config in the sync core; the actual graft runs in the
+async caller — clean separation, and the note is testable without a
+connection.
+
+**4. Marker approach now; provenance-typed Static as the named follow-up.**
+Hydrated rows graft into `Modality.Static`, indistinguishable from authored
+static rows. The armed `ReadbackPopulated` / provenance-typed-Static closed-DU
+change (CONSTELLATION_BACKLOG §6 item 4) would keep authored vs hydrated rows
+distinguishable, but it is a codec-totality blast across every round-trip
+surface; per the handoff's allowance it is the immediate follow-up, not this
+step. Note: hydration only FILLS existing `Static` markers (never mints new
+ones), so it does not re-introduce the 4.4 trap (survival rule 8) — the
+catalog's static classification is unchanged; only rows are added.
+
+**5. Witness + environment limit.** PURE/no-connection witnesses are green
+(`HydrationTests` 8/0 — graft fills/ignores/order-preserves; the file-sourced
+skip diagnostic; data-off and file-sourced `hydrateCatalog` identity). The
+LIVE OSSYS stream branch (open + stream + graft) compiles and is FS3511-safe
+but CANNOT be exercised in this environment (no OSSYS source); it must be
+witnessed against a live estate (J5-adjacent). Fast pool 3134/27/211 — the 27
+failures are the same three Docker-gated extraction classes, unchanged
+(Docker daemon unavailable this session). Docker pool owed before merge.

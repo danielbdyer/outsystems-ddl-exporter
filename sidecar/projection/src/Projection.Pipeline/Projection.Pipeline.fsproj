@@ -35,6 +35,7 @@
     <Compile Include="TransformGroupsBinding.fs" />
     <Compile Include="InsertionPolicyBinding.fs" />
     <Compile Include="LiveModelRead.fs" />
+    <Compile Include="Hydration.fs" />
     <Compile Include="Pipeline.fs" />
     <Compile Include="PolicyDiff.fs" />
     <Compile Include="Bulk.fs" />
