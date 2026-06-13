@@ -86,11 +86,15 @@ module Render =
         | Comment text ->
             sb.Append("-- ").AppendLine(text) |> ignore
         | BatchSeparator ->
-            // Slice D.2.c — emit `GO` on its own line, preceded by a
-            // blank line per V1's per-statement-group convention. The
-            // trailing newline closes the GO line; the leading blank
-            // line is V1's elegant inter-statement separator.
-            sb.AppendLine().Append("GO").AppendLine() |> ignore  // LINT-ALLOW: sqlcmd directive at terminal text-emission boundary; GO is not T-SQL syntax (no ScriptDom AST equivalent), so the literal `GO` IS the canonical form per BatchSplitter's recognition rule (`^GO$` case-insensitive)
+            // Slice D.2.c — emit `GO` on its own line, framed by blank
+            // lines per V1's per-statement-group convention
+            // (StatementBatchFormatter.cs:44-58: blank line BEFORE and
+            // AFTER GO). The first AppendLine opens the leading blank
+            // line; the second closes the GO line; the third is the
+            // trailing blank V2 was missing (reconciliation slice 2,
+            // DECISIONS 2026-06-12 — every multi-statement table
+            // differed in spacing even when the statements matched).
+            sb.AppendLine().Append("GO").AppendLine().AppendLine() |> ignore  // LINT-ALLOW: sqlcmd directive at terminal text-emission boundary; GO is not T-SQL syntax (no ScriptDom AST equivalent), so the literal `GO` IS the canonical form per BatchSplitter's recognition rule (`^GO$` case-insensitive)
         | _ ->
             match ScriptDomBuild.buildStatement s with
             | Some fragment ->

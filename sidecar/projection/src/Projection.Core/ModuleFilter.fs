@@ -321,6 +321,33 @@ module ModuleFilter =
     ///     entity not present in its module.
     ///   - `moduleFilter.entities.empty`: per-module entity filter
     ///     would leave zero kinds in a selected module.
+    /// Step 5 (reconciliation slice 4, DECISIONS 2026-06-13) — prune
+    /// references whose `TargetKind` left the catalog with the filtered
+    /// scope. Before this step, `apply` performed list surgery without
+    /// restoring the aggregate invariant: a kept kind referencing an
+    /// excluded module carried a DANGLING reference — a value
+    /// `Catalog.create` refuses to construct (the latent integrity gap
+    /// the slice-4 pushdown ≡ filter equivalence law exposed on its
+    /// first run). The defined semantic: a declared scope excludes its
+    /// cross-scope edges exactly as it excludes the kinds they point
+    /// at. (A per-edge `moduleFilter.referencePruned` witness lands
+    /// when this seam gains a diagnostics channel — named follow-up.)
+    let private pruneCrossScopeReferences (modules: Module list) : Module list =
+        let keptKinds =
+            modules
+            |> List.collect (fun m -> m.Kinds |> List.map (fun k -> k.SsKey))
+            |> Set.ofList
+        modules
+        |> List.map (fun m ->
+            Lens.over CatalogLenses.kindsOf
+                (List.map (fun (k: Kind) ->
+                    let kept =
+                        k.References
+                        |> List.filter (fun r -> Set.contains r.TargetKind keptKinds)
+                    if List.length kept = List.length k.References then k
+                    else { k with References = kept }))
+                m)
+
     let apply (opts: ModuleFilterOptions) (catalog: Catalog) : Result<Catalog> =
         use _ = Bench.scope "moduleFilter.apply"
         if not (hasFilter opts) then
@@ -389,7 +416,7 @@ module ModuleFilter =
         // multi-module filter producing two missing-name events
         // returns both).
         if Map.isEmpty opts.EntityFilters then
-            Result.success { catalog with Modules = filteredModules }
+            Result.success { catalog with Modules = pruneCrossScopeReferences filteredModules }
         else
         let entityErrors = ResizeArray<ValidationError>()
         let adjusted =
@@ -434,4 +461,4 @@ module ModuleFilter =
                     "moduleFilter.modules.empty"
                     "Module filter removed all entities from at least one module.")
         else
-            Result.success { catalog with Modules = adjusted }
+            Result.success { catalog with Modules = pruneCrossScopeReferences adjusted }

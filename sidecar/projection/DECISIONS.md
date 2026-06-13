@@ -21872,3 +21872,334 @@ seeds (the cure is cycle-resolution reach, not deploy-order surgery).
 Perf-gate baseline NOT re-recorded: no floor legitimately moved (the
 canary's compose/deploy labels are path-unchanged; the load leg gained
 speed, and the gate ceilings tolerate downward movement).
+
+## 2026-06-12 — Slice 1 of the full-export reconciliation: inverse references become logical-only edges; the FK decision layer reads `HasDbConstraint`
+
+Context: `V1_FULL_EXPORT_RECONCILIATION_PLAN.md` (the 2026-06-12 parity
+research record; WP1 + WP2 land here). The operator's corporate run
+surfaced two constraint-surface defects with one root: V2 lost V1's
+distinction between deployable and logical-only references.
+
+**1. Deployable-reference is now a named predicate with one definition
+site.** `Reference.isDeployable` / `Reference.isInverse` (Catalog.fs,
+the compile-order floor of the reference vocabulary) own the
+symmetric-closure derivation reason (`Reference.inverseDerivationReason`;
+`SymmetricClosure.inverseReason` aliases it — the 2026-05-06 reserved
+string moves home, it does not change). A symmetric-closure inverse is a
+navigation/ordering edge ONLY: it never enters FK tightening decisions
+(`ForeignKeyPass.sortedReferences` filters; pass version 2 → 3) and
+never reaches a constraint-emission surface
+(`SsdtDdlEmitter.createTableStatement` / `untrustedFkAlters` /
+`foreignKeyDropDiagnostics` / `foreignKeyDecisionDropDiagnostics`).
+This enforces the contract the topological-order tests already named
+("symmetric closure is for surface navigation, not for FK-safe data
+emission") that the emitter never honored: an inverse resolved by
+`fkDef` scripts a second FK on the TARGET'S PK COLUMN, named by that PK
+column — duplicate `FK_*` names whenever two forward references share a
+target (the routine CreatedBy/UpdatedBy → User shape) and PK-to-PK
+type-mismatch failures. The closure pass itself is UNCHANGED: inverses
+stay in the catalog for topological ordering, centrality, and
+navigation, and they keep inheriting `HasDbConstraint`/
+`IsConstraintTrusted` (the chapter 4.6 slice α semantics — the inverse
+view surfaces the forward edge's storage truth). Exclusion is by
+derivation class, not by flag. New tripwire, never a silent dedupe:
+`foreignKeyNameCollisionDiagnostics` emits one Error per reference
+participating in a schema-scoped FK-name collision (V1 deduped via a
+silent HashSet; V2 names the wound).
+
+**2. The FK decision layer reads the IR flag it always carried.**
+`ForeignKeyRules.evaluate` gate order becomes: MissingTarget →
+**`reference.HasDbConstraint` ⇒ `EnforceConstraint
+DatabaseConstraintPresent`** → PolicyDisabled → profile-driven. This
+restores V1's carve-out (`ForeignKeyEvaluator.cs:124-145`: a
+source-backed FK is enforced before and regardless of every gate;
+`EnableCreation` gates only NEW creation; orphans never override —
+physically-backed-with-orphans only arises under NOCHECK, which
+`IsConstraintTrusted` already realizes at the emitter). The prior
+approximation — `ProbeStatus.Outcome = TrustedConstraint` — had NO
+producer anywhere in the codebase (LiveProfiler mints only
+observed/ambiguous; only the codec round-trips the variant): a dead
+branch in production, retired per the dead-algebra precedent
+(2026-06-04). The `TrustedConstraint` DU variant STAYS (codec
+compatibility); only the rules branch goes. Precedence note: a
+reference that is both policy-disabled and missing-target now reports
+MissingTarget (was PolicyDisabled) — the structural impossibility
+outranks the chosen gate, and the diagnostic is the truthful one for
+scoped exports (a module-scoped catalog cannot emit an FK to a kind
+outside the export, source-backed or not).
+
+**3. The decision-drop audit stops lying.** `decision.fkDropped`
+claimed "The source enforced it" for every DropFk key — false for
+logical-only references. The audit splits: `decision.fkDropped`
+(Warning) only when `HasDbConstraint = true` (post-carve-out this is
+exactly the missing-target/scoped-export case); logical-only
+non-introduction reports as `decision.fkNotIntroduced` (Info) — "the
+emitted schema matches source reality." The
+`DropFk : Set<SsKey> → Map<SsKey, reason>` refinement is DEFERRED to
+its own slice (it churns the 6.A.8 decision read-back and the
+lifecycle codec); the diagnostics consult the catalog's flag directly
+in the interim. Re-open trigger: the first consumer needing per-reason
+drop partitioning beyond the two-way split.
+
+Witnesses: post-chain emission canary (chain → emit → assert exactly
+one FK per non-dropped forward reference, zero inverse-sourced FKs, no
+duplicate names on the CreatedBy/UpdatedBy shape — closing the CI gap
+where every deploy canary emitted from pre-chain catalogs);
+`HasDbConstraint=true ⇒ FK emitted` property across
+EnableCreation/profile-absence/orphan axes; the diagnostics split
+pinned both ways; the inheritance pin
+(ReferenceHasDbConstraintTests) re-stated alongside the new
+exclusion-contract pin.
+
+## 2026-06-12 — Slice 2 of the full-export reconciliation: the EmissionPolicy seam loses its second channel; `includePlatformAutoIndexes` becomes config-reachable; `GO` gains its trailing blank line
+
+Context: `V1_FULL_EXPORT_RECONCILIATION_PLAN.md` WP4 + WP7-GO (slice 2
+of the program slice 1 opened).
+
+**1. One type, two channels, one config-fed — collapsed.** The
+`projectWith` / `projectWithState` / `projectWithStateWithPins` family
+took a full `Policy` AND a separate `emissionPolicy: EmissionPolicy`
+parameter; the same type rode two channels and only the
+`fullPolicy.Emission` channel was config-fed. Every config-driven call
+site passed the literal `EmissionPolicy.empty` at the seam
+(`runWithConfigCore`, `projectWithConfig`, `applyShapingToCatalog`,
+`projectSeedPlan`, the dacpac filter), so `IncludePlatformAutoIndexes`
+— the one thing the parameter drove — was unreachable from any config.
+The separate parameter fails the sibling-wrapper distinguishing test
+(it hides information, supplying nothing the caller couldn't compute):
+the family now reads `fullPolicy.Emission`. The single-channel
+low-level faces (`project`, `projectFromChain*`, `projectSkeleton`)
+keep their plain `EmissionPolicy` parameter — there is no `Policy`
+at that altitude to collapse into (A18 posture unchanged: plain
+values at the seam). Byte-identical default: every `EmissionPolicy`
+constructed by `create` carries `IncludePlatformAutoIndexes = true`,
+so collapsing onto config-built policies preserves the filter's
+identity behavior exactly.
+
+**2. `emission.includePlatformAutoIndexes` (default `true`).** The
+chapter 4.8 slice-γ toggle gains its config key — A44's
+expressible ⇔ reachable for the collapsed channel. Default `true`
+preserves current bytes (the dacpac-wire precedent; note V1's
+*shipped* default-tightening.json said `false`, but V2's observed
+behavior is the contract — the matrix row records the divergence).
+Wired in `buildPolicyFromConfig`; the SSDT bundle and the dacpac
+compile over the SAME filtered catalog (the dacpac arm already read
+"the identical platform-auto-index filter" — now it is the identical
+*policy* too).
+
+**3. `BatchSeparator` renders `\nGO\n\n`.** V1's
+`StatementBatchFormatter` leaves a blank line before AND after `GO`
+(matrix row 128's split/assembly parity was real; the *spacing* was
+not). V2 emitted the leading blank only, so every multi-statement
+table differed in inter-statement spacing even when the statements
+matched. The renderer gains the trailing blank; `aggregateSsdt`'s
+joiner aligns (`\nGO\n` → `\nGO\n\n`). V2 keeps its terminal `GO`
+after the final statement (V1 trims it; harmless, sqlcmd-safe — V2
+wins, recorded on the matrix row). `BatchSplitter` recognition
+(`^GO$`) is whitespace-line tolerant; the leveled-plan partition law
+compares the data lane's `;\nGO\n`-framed segments, which this does
+not touch.
+
+Witnesses: the seam-collapse compiles every caller onto one channel
+(the type system is the witness); config-reachability pinned by a
+`projectWithConfig` test (platform-auto index present under default,
+absent under `includePlatformAutoIndexes: false`); the GO spacing
+pinned at the renderer grain (`statement / blank / GO / blank /
+statement`).
+
+## 2026-06-12 — THE GOLDEN EMISSION adopted: the Platonic corpus, the blessing protocol, and the first recording's findings
+
+Operator-directed (the reconciliation program's companion discipline;
+charter at `THE_GOLDEN_EMISSION.md`). The canaries prove laws; the
+corpus pins INTENT: one contrived catalog carrying every expressible
+emission variance (`GoldenCatalog.fs`), emitted through the production
+config-driven composition under three scenario configs (`default`,
+`pruned-platform-auto`, `delete-scope`), byte-compared against the
+git-tracked corpus (`tests/Projection.Tests/Golden/`). Re-record only
+via `GOLDEN_RECORD=1` AND a DECISIONS note naming why — the
+`PERF_GATE_RECORD` discipline, extended to bytes. Negative invariants
+(no per-table GO; no duplicate FK names; no inverse-sourced FKs; no
+CRLF; non-empty GO batches) assert on every scenario regardless of
+bytes. `manifest.json` is EXCLUDED (the `VersionedPolicy` stamp
+captures `UtcNow` at the Pipeline boundary — wall-clock-bearing bytes;
+unblock = boundary-injected clock); the dacpac is excluded per its
+standing byte-determinism deferral.
+
+**The first recording found two real things** (the corpus working as
+designed before it was even committed):
+
+1. **Delete-scope terms resolve POST-CHAIN.** `DeleteScopePolicy`'s
+   doc says terms name PHYSICAL columns, but `resolveFor` runs against
+   the post-`LogicalColumnEmission` catalog — under the default
+   logical rendition the operator must write the LOGICAL column name
+   or the arm silently fails to attach (resolveFor's None is the
+   documented faithful-omission, which here masked a config mistake).
+   The doc/semantics reconciliation (and whether a non-resolving
+   explicit term deserves a named note instead of silence) rides the
+   reconciliation plan's WP4 follow-on.
+2. **Per-table bodies do not end with a newline** — every
+   `Modules/**.sql` ends at the last statement's final char. Recorded
+   as-is (known-unblessed); the trailing-newline normalization joins
+   WP7's per-table formatting work.
+
+The initial corpus deliberately pins CURRENT behavior including the
+known-unblessed rows (V2.* annotation names pre-WP5-rename; verbatim
+physical index names pre-WP7; `DEFAULT NULL` for the empty-string-Text
+tolerance; one-line per-table constraints; explicit `ON DELETE NO
+ACTION` in file bodies; SsKey column order pre-WP8) — each later slice
+converts its rows into blessed bytes as a deliberate, reviewable diff.
+
+## 2026-06-13 — Slice 3 of the full-export reconciliation (operator blessing #1): per-table files carry V1's rendered form; FKs inline beneath their attribute; CHECK/filter definitions follow the logical substitution; the Platonic catalog consolidates
+
+Context: the FIRST operator blessing pass over the golden corpus
+(THE_GOLDEN_EMISSION protocol working as designed — this entire slice
+is its yield). Four findings, four changes. The planned WP3 scope
+pushdown moves to the next slice; operator blessing outranks the queue.
+
+**1. Per-table SSDT file bodies render through `Render.toText` —
+superseding the no-GO per-file contract.** The operator blessed V1's
+per-file form: statements separated by the framed `GO` (between
+statements, never trailing — V1 `StatementBatchFormatter.JoinStatements`),
+the constraint ladder, the wrapped EXEC shape. `kindToSsdtFile` now
+renders its statement list via the SAME `Render.toText` realization the
+flat stream uses (one rendering algorithm — A40; the prior
+`ScriptDomGenerate.toText` raw join was a second, poorer renderer). The
+2026-05-?? per-kind no-GO pin (`SsdtSchemaFidelityPropertyTests`
+"per-kind file body does not contain GO separator") is OVERTURNED by
+operator decision and rewritten to pin the new contract. Bonus: bodies
+now end with a newline (the first-recording known-unblessed row closes).
+
+**2. Single-column FKs attach inline beneath their source column** (V1
+`CreateTableStatementBuilder.cs:197-202`; mirrors the LR3 inline-PK
+shape — `attachInlineForeignKey` is `attachInlinePrimaryKey`'s sibling).
+A non-resolving source column falls back to table-level (defensive;
+unreachable under `Catalog.create`'s referential invariant). The
+ConstraintFormatter ladder then renders the V1 8/12 column-suffix shape.
+
+**3. `LogicalColumnEmission` v2: the substitution follows the column
+into CHECK definitions and index FILTER predicates.** Source-reality
+definitions carry bracketed PHYSICAL column references; once the column
+substitutes to its logical name, an unrewritten definition references a
+column that no longer exists on the emitted table — a deploy-time
+failure the corpus surfaced (the operator's "CHECKs emit the physical
+attribute name"). The pass rewrites bracketed tokens pairwise
+(physical → logical, ordinal-ignore-case) for every touched attribute,
+in both `Kind.ColumnChecks[].Definition` and `Kind.Indexes[].Filter`.
+Trigger DEFINITIONS have the same defect class and are NOT cured here
+(they reference table names too — own slice; inventory TODO).
+
+**4. The Platonic catalog consolidates: many attributes, few tables,
+every variety enumerated.** One master `ScalarGallery` (every
+`PrimitiveType` × its DEFAULT-able literal — including the empty-Text
+tolerance — plus named/unnamed DEFAULTs, checks, a trigger, and the
+full index gallery), one master `Engagement` relations table
+(CreatedBy/UpdatedBy → User backed trusted/untrusted + ON UPDATE,
+logical-only Cascade/SetNull → Customer, and a SELF-REFERENCING
+ParentId → Engagement), `User`/`Customer` pure targets, `ChangeLog`
+(cross-schema), `Heap`, and the Statics lane unchanged. Goldens
+re-recorded under this entry (the blessing-protocol note).
+
+## 2026-06-13 — Slice 3b (operator blessing #2): CHECKs beneath their attribute; the column-constraint STACK; composite indexes; the identifier-length budget
+
+Context: the operator's second blessing pass (THE_GOLDEN_EMISSION).
+Note: the "FKs still not inline" observation crossed slice 3's push —
+all FKs ladder beneath their attributes as of `2749ee4`; this slice
+covers the genuinely-new asks.
+
+**1. Single-column CHECKs attach beneath their attribute**
+(`attachInlineCheck`, the third sibling after inline-PK and inline-FK).
+The IR's `ColumnCheck` carries no column anchor, so attachment resolves
+structurally: the bracketed tokens of the (post-substitution)
+definition are matched against the kind's column identifiers — exactly
+ONE distinct matching column ⇒ the constraint attaches to it;
+multi-column or non-resolving definitions stay table-level (the
+faithful placement, not a fallback hack).
+
+**2. The formatter learns the column-constraint STACK.** A column may
+carry several constraints on one ScriptDom line (DEFAULT + CHECK;
+DEFAULT + FK; PK on an IDENTITY column; any combination). The prior
+per-kind splitters each assumed ONE constraint per line. They are
+replaced by a top-level segmenter (paren/quote/bracket-aware scan;
+boundaries at ` CONSTRAINT [`, anonymous ` DEFAULT `, anonymous
+` CHECK (`; a named segment consumes its own body keyword) that
+renders the column head once and ladders EVERY segment beneath it —
+one statement, no per-constraint commas, the trailing comma closing
+the last segment. This is the operator's "same statement, line wrap
+and indentation" stated generally.
+
+**3. The identifier-length budget** (`IdentifierBudget.fit`, Core).
+SQL Server caps identifiers at 128; V2's GENERATED names (FK
+`FK_<Owner>_<Target>_<SourceColumn>`, PK `PK_<Schema>_<Table>`) can
+overflow on long logical names. The budget: ≤128 passes through
+byte-identical; over ⇒ truncate to 115 + `_` + first 12 lowercase hex
+of SHA-256(full name) = exactly 128 — deterministic (T1),
+prefix-preserving (operators can still read the head), collision-safe
+in practice (the hash is of the FULL un-truncated name; V1's
+`ConstraintNameNormalizer` hash-truncation discipline, ported).
+Applied at every generated-name site; authored names (indexes, V1
+`Reference.Name` when the WP7 round-trip lands) will route through the
+same budget. The matrix row 57 length-cap trigger is hereby cashed out
+at the generated-name sites.
+
+**4. The Platonic catalog enumerates the new permutations**: a
+composite-PK kind (table-level 2-line PK shape); a composite UIX and a
+mixed-direction composite IX on `Engagement`; a DEFAULT+FK stack
+(`AltCustomerId`); the DEFAULT+CHECK stack (`Tally`, via #1); and a
+long-name reference pair whose generated FK name overflows — the
+hashed 128-char name is VISIBLE in the goldens. Goldens re-recorded
+under this entry.
+
+## 2026-06-13 — Slice 4 of the full-export reconciliation: the declared scope pushes down to the OSSYS read; the equivalence law; the dangling-reference gap it exposed
+
+Context: `V1_FULL_EXPORT_RECONCILIATION_PLAN.md` WP3; operator
+adjudication C4 ("elevate the model filtering to be adapter-time …
+it's not useful to gain ALL of the applications, eSpaces, and tables —
+we'll discard the data immediately anyway"). This entry AMENDS the
+2026-05-16 slice-β stance ("filtering is an IR/ModuleFilter concern,
+not adapter-time") for the module/entity-scope axis specifically: the
+pushdown is an extraction-COST reduction; `ModuleFilter.apply` REMAINS
+the semantic owner and runs after every read (double enforcement —
+V1's own precedent: SQL at query time AND ModuleFilter at every load).
+
+**1. The wire.** `SnapshotScopeBinding.fromModel` (Pipeline) derives
+the adapter's `SnapshotParameters` from `model.modules` — names sorted
++ deduplicated (the V1 `ModelExtractionCommand.Create` discipline),
+the per-module entity allow-list as the documented
+`@EntityFilterJson` shape, the include flags threaded. The opt-in gate
+mirrors `ModuleFilterBinding` exactly (A7 polarity): empty
+`model.modules` ⇒ `defaultParameters`, flags inert.
+`LiveModelRead.fromConnectionWith`/`fromConnSpecWith` are the
+scope-bearing faces; `readConfigModel` binds them on the full-export
+path. `OnlyActiveAttributes` is deliberately NOT pushed — the in-memory
+filter does not filter attributes, so binding it would break the
+equivalence law below and silently starve
+`InactiveAttributeDiagnostics`; the dormant `model.onlyActiveAttributes`
+key keeps its standing deferral.
+
+**2. The law.** `scopedRead(scope) ≡ ModuleFilter.apply(scope) ∘
+fullRead` — Docker-witnessed against the 3-module edge-case seed
+(value-grain `Catalog` equality plus the scope-reality assertions).
+The pushdown can never be a semantics change; if the two legs drift,
+the law trips.
+
+**3. What the law exposed on its FIRST run (the corpus discipline,
+again):** `ModuleFilter.apply` performed list surgery without
+restoring the aggregate invariant — a kept kind referencing an
+excluded module carried a DANGLING reference, a value `Catalog.create`
+refuses to construct. Scoped in-memory catalogs have been
+non-constructible values all along (the emitter tolerated them via
+map-lookup drops with witnesses). The defined semantic, now at BOTH
+legs: **a declared scope excludes its cross-scope edges exactly as it
+excludes the kinds they point at** — `apply` gains step 5 (prune
+references whose `TargetKind` left the catalog), and the scoped read
+prunes the same edges at the bundle grain (`RefEntityId` ∉ scoped
+entity ids; unknown-id rows are kept so a truly-dangling row still
+fails loudly at `Catalog.create` — the corrupt-source posture for full
+reads is unchanged). Consequences, named: the slice-1
+missing-target diagnostics (`decision.fkDropped` for
+out-of-scope-backed FKs; `emit.ssdt.foreignKey.unresolvedTargetDropped`)
+become structurally unreachable through the scoping path — the scope
+surface now owns that fact; a per-edge `moduleFilter.referencePruned`
+witness lands when the filter seam gains a diagnostics channel (named
+follow-up; until then the prune is documented here and law-tested,
+never ad-hoc).

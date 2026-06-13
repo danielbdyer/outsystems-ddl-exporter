@@ -36,8 +36,16 @@ open Projection.Core
 module LogicalColumnEmission =
 
     /// Pass version. Bump when substitution semantics change.
+    /// v1 — attribute `ColumnName` substitution only.
+    /// v2 — reconciliation slice 3 (DECISIONS 2026-06-13): the
+    ///      substitution follows the column into `ColumnCheck.Definition`
+    ///      and `Index.Filter` (bracketed physical references rewritten
+    ///      to the logical names; an unrewritten definition would
+    ///      reference a column that no longer exists on the emitted
+    ///      table). Trigger definitions are NOT rewritten yet (they
+    ///      reference table names too — own slice).
     [<Literal>]
-    let version : int = 1
+    let version : int = 2
 
     [<Literal>]
     let private passName : string = "logicalColumnEmission"
@@ -78,9 +86,49 @@ module LogicalColumnEmission =
             LineageBuffer.add (substitutedEvent a.SsKey kind (ColumnRealization.columnNameText a.Column) logical) events
             a |> Lens.over CatalogLenses.columnOf (fun col -> { col with ColumnName = logicalColumnName })
 
+    /// v2 — rewrite a SQL definition's bracketed physical column
+    /// references to the logical names the columns now carry. Bracket-
+    /// token substitution, not a parse: source-reality definitions
+    /// (sys.check_constraints / sys.indexes.filter_definition) always
+    /// bracket column references, and Core stays ScriptDom-free. A
+    /// physical name occurring inside a string literal would also be
+    /// rewritten — accepted limitation, documented at the pass grain.
+    let private rewriteDefinition (pairs: (string * string) list) (definition: string) : string =
+        pairs
+        |> List.fold
+            (fun (acc: string) (physical, logical) ->
+                acc.Replace(  // LINT-ALLOW: bracketed-identifier token rewrite at the substitution pass; the tokens are typed names lifted from the IR (ColumnRealization/Name), not composed prose; Core is ScriptDom-free by design so a typed-AST rewrite is not available at this layer
+                    System.String.Concat("[", physical, "]"),
+                    System.String.Concat("[", logical, "]"),
+                    System.StringComparison.OrdinalIgnoreCase))
+            definition
+
     let private substituteKind (events: LineageBuffer.Buffer) (k: Kind) : Kind option =
         let attrs' = k.Attributes |> List.map (substituteAttribute events k.Physical)
-        Some (Lens.set CatalogLenses.attributesOf attrs' k)
+        // v2 — the substitution follows the column into CHECK
+        // definitions and index FILTER predicates (pairs = exactly the
+        // attributes the substitution touched; identity when none did).
+        let pairs =
+            List.zip k.Attributes attrs'
+            |> List.choose (fun (before, after) ->
+                let b = ColumnRealization.columnNameText before.Column
+                let a = ColumnRealization.columnNameText after.Column
+                if b = a then None else Some (b, a))
+        let k' = Lens.set CatalogLenses.attributesOf attrs' k
+        if List.isEmpty pairs then Some k'
+        else
+            Some
+                { k' with
+                    ColumnChecks =
+                        k'.ColumnChecks
+                        |> List.map (fun chk ->
+                            { chk with Definition = rewriteDefinition pairs chk.Definition })
+                    Indexes =
+                        k'.Indexes
+                        |> List.map (fun idx ->
+                            match idx.Filter with
+                            | None -> idx
+                            | Some f -> { idx with Filter = Some (rewriteDefinition pairs f) }) }
 
     let private run (mode: Mode) (c: Catalog) : Lineage<Catalog> =
         use _ = Bench.scope "passes.logicalColumnEmission"

@@ -205,21 +205,29 @@ module ForeignKeyRules =
 
     /// Decide a single (reference, intervention) pair.
     ///
-    /// Order of evaluation (V1 signal hierarchy, ForeignKeyEvaluator.cs:83):
-    ///   1. PolicyDisabled — `EnableCreation = false`. Gate the
-    ///      caller chose; reported without further reasoning.
-    ///   2. MissingTarget — target kind absent from catalog. V2
-    ///      surfaces explicitly; V1 silently skips.
-    ///   3. DatabaseConstraintPresent — V1's `HasDatabaseConstraint = true`
-    ///      maps to V2's `Profile.ForeignKeys[ref].IsNoCheck`-aware
-    ///      probe state. V2's `ForeignKeyReality` doesn't carry a
-    ///      direct `HasDatabaseConstraint` flag; the closest semantic
-    ///      is "probe succeeded against an existing constraint."
-    ///      Until the V1↔V2 adapter wires this through, V2 derives
-    ///      it from `ProbeStatus.Outcome = TrustedConstraint` (the
-    ///      probe was skipped because the DB constraint was trusted —
-    ///      that *is* the V1 signal). Reading
-    ///      `Profile.ForeignKeys[ref]` and matching on the outcome.
+    /// Order of evaluation (DECISIONS 2026-06-12 — reconciliation
+    /// slice 1; restores V1's carve-out, ForeignKeyEvaluator.cs:124-145):
+    ///   1. MissingTarget — target kind absent from catalog. A
+    ///      reference whose target is outside this catalog
+    ///      (module-scoped export; dangling edge) cannot emit a
+    ///      deployable constraint regardless of source backing — the
+    ///      suppression is structural. V2 surfaces explicitly; V1
+    ///      silently skips. (Outranks PolicyDisabled: the structural
+    ///      impossibility beats the chosen gate.)
+    ///   2. DatabaseConstraintPresent — `reference.HasDbConstraint =
+    ///      true` (V1's `HasDatabaseConstraint`, carried on the IR
+    ///      since chapter 4.6 slice α). Enforced BEFORE and
+    ///      REGARDLESS OF every remaining gate: `EnableCreation`
+    ///      gates only NEW creation; orphan evidence never overrides
+    ///      (physically-backed-with-orphans only arises under
+    ///      NOCHECK, which `IsConstraintTrusted` realizes at the
+    ///      emitter). The prior approximation — `ProbeStatus.Outcome
+    ///      = TrustedConstraint` — had no producer anywhere (dead in
+    ///      production) and is retired; the DU variant stays for
+    ///      codec compatibility.
+    ///   3. PolicyDisabled — `EnableCreation = false`. Gate the
+    ///      caller chose; reported without further reasoning. New
+    ///      constraints only, per the carve-out above.
     ///   4. Profile-driven decision:
     ///        - Probe missing or unreliable ⇒ EvidenceMissing
     ///          (V2 collapsed-mode strict default; V1 implicitly
@@ -253,26 +261,32 @@ module ForeignKeyRules =
               Outcome        = outcome
               InterventionId = interventionId }
 
-        // 1. EnableCreation gate. The algebra reports the gate.
-        if not config.EnableCreation then
-            mkDecision (ForeignKeyOutcome.DoNotEnforce PolicyDisabled)
-        else
-            // 2. Target kind must exist in the catalog.
-            match Catalog.tryFindKind reference.TargetKind catalog with
-            | None ->
-                mkDecision (ForeignKeyOutcome.DoNotEnforce MissingTarget)
-            | Some targetKind ->
-                // 3. Profile-driven decision on existing-constraint
-                //    + orphan signals. V2's TrustedConstraint probe
-                //    outcome maps to V1's HasDatabaseConstraint=true:
-                //    the DB constraint was trusted, so it exists.
+        // 1. Target kind must exist in the catalog. Structural
+        //    impossibility outranks every gate: a scoped export cannot
+        //    emit an FK to a kind outside the catalog, source-backed
+        //    or not (the diagnostics layer reports the source-backed
+        //    case HasDbConstraint-aware).
+        match Catalog.tryFindKind reference.TargetKind catalog with
+        | None ->
+            mkDecision (ForeignKeyOutcome.DoNotEnforce MissingTarget)
+        | Some targetKind ->
+            // 2. V1's carve-out, restored (DECISIONS 2026-06-12): a
+            //    reference backed by a real source-side DB constraint
+            //    is enforced before and regardless of every remaining
+            //    gate. Reads the IR flag directly; the dead
+            //    TrustedConstraint probe approximation is retired.
+            if reference.HasDbConstraint then
+                mkDecision
+                    (ForeignKeyOutcome.EnforceConstraint
+                        DatabaseConstraintPresent)
+            // 3. EnableCreation gate — new constraints only. The
+            //    algebra reports the gate.
+            elif not config.EnableCreation then
+                mkDecision (ForeignKeyOutcome.DoNotEnforce PolicyDisabled)
+            else
+                // 4. Profile-driven decision on orphan signals.
                 let realityOpt = Profile.tryFindForeignKey reference.SsKey profile
                 match realityOpt with
-                | Some reality when reality.ProbeStatus.Outcome = TrustedConstraint ->
-                    // The DB already enforces this — trust the source.
-                    mkDecision
-                        (ForeignKeyOutcome.EnforceConstraint
-                            DatabaseConstraintPresent)
                 | Some reality when ProbeStatus.isReliable reality.ProbeStatus ->
                     // Probe ran successfully; consult the result.
                     if reality.HasOrphan then

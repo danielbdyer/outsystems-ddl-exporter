@@ -188,6 +188,12 @@ module Config =
         DecisionLog           : bool
         Opportunities         : bool
         Validations           : bool
+        /// Chapter 4.8 slice γ toggle, config-reachable since the
+        /// reconciliation slice 2 (`DECISIONS 2026-06-12`). `true`
+        /// (the default — current behavior) keeps OutSystems
+        /// platform-auto indexes in the SSDT bundle and the dacpac;
+        /// `false` prunes them at the post-chain seam.
+        IncludePlatformAutoIndexes : bool
         /// AC-D7 / AC-G4 — the convergent-delete scope for the data
         /// emitters' MERGE (`emission.deleteScope.terms`). `None` (the
         /// default) emits no delete arm — byte-identical output.
@@ -349,6 +355,7 @@ module Config =
         DecisionLog           = true
         Opportunities         = true
         Validations           = true
+        IncludePlatformAutoIndexes = true
         DeleteScope           = None
     }
 
@@ -1113,6 +1120,9 @@ module Config =
                                                 match read "validations" defaultEmission.Validations with
                                                 | Error es -> Error es
                                                 | Ok vals ->
+                                                    match read "includePlatformAutoIndexes" defaultEmission.IncludePlatformAutoIndexes with
+                                                    | Error es -> Error es
+                                                    | Ok includeAuto ->
                                                     match parseDeleteScope element with
                                                     | Error es -> Error es
                                                     | Ok deleteScope ->
@@ -1127,6 +1137,7 @@ module Config =
                                                         DecisionLog = dlog
                                                         Opportunities = opps
                                                         Validations = vals
+                                                        IncludePlatformAutoIndexes = includeAuto
                                                         DeleteScope = deleteScope
                                                     }
 

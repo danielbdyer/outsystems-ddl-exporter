@@ -77,6 +77,35 @@ module internal CoordinatesLimits =
     [<Literal>]
     let SqlServerIdentifierMaxLength : int = 128
 
+/// The identifier-length budget for GENERATED constraint names
+/// (reconciliation slice 3b, DECISIONS 2026-06-13; V1's
+/// `ConstraintNameNormalizer` hash-truncation discipline, ported).
+/// SQL Server caps identifiers at 128 chars; V2's synthesized names
+/// (`FK_<Owner>_<Target>_<SourceColumn>`, `PK_<Schema>_<Table>`) can
+/// overflow on long logical names.
+[<RequireQualifiedAccess>]
+module IdentifierBudget =
+
+    /// Fit a generated identifier into the 128-char budget.
+    /// ≤128 passes through byte-identical (the overwhelmingly common
+    /// case — T1's byte-stability claim is untouched for it). Over:
+    /// truncate to 115 chars + `_` + the first 12 lowercase-hex chars
+    /// of SHA-256(full name) = exactly 128. Deterministic (the hash is
+    /// a pure function of the full un-truncated name), prefix-
+    /// preserving (the readable head survives), and collision-safe in
+    /// practice (two distinct over-budget names share a truncated head
+    /// only if their first 115 chars agree, and then differ in the
+    /// 48-bit hash of their full text).
+    let fit (name: string) : string =
+        if name.Length <= CoordinatesLimits.SqlServerIdentifierMaxLength then
+            name
+        else
+            use sha = System.Security.Cryptography.SHA256.Create()
+            let hash = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes name)
+            let hex = System.Convert.ToHexString(hash, 0, 6).ToLowerInvariant()
+            let keep = CoordinatesLimits.SqlServerIdentifierMaxLength - 1 - hex.Length
+            System.String.Concat(name.Substring(0, keep), "_", hex)  // LINT-ALLOW: terminal identifier-budget composition; segments are the truncated head + the deterministic hash suffix; BCL String.Concat IS the use-case-specific library at this naming boundary
+
 /// SQL Server schema-namespace name. Single-case DU wrapping a
 /// validated string; the constructor `SchemaName.create` is the only
 /// path to a value. Two `SchemaName`s are equal iff their underlying

@@ -61,7 +61,7 @@ let private emitDataPolicy : Policy =
         Emission = { Policy.empty.Emission with EmitData = true; DataComposition = AllRemaining } }
 
 let private projectBundle (policy: Policy) : Compose.Outputs =
-    Compose.projectWithState policy Profile.empty EmissionPolicy.empty EmissionFolders.empty TransformGroups.empty staticCatalog
+    Compose.projectWithState policy Profile.empty EmissionFolders.empty TransformGroups.empty staticCatalog
     |> fst
 
 [<Fact>]

@@ -144,7 +144,7 @@ module ProfileManifestThreadingTests =
         let profile = numericProfileFor Fixtures.customerTenantKey 50M 12M
         let outputs, _ =
             Compose.projectWithState
-                Policy.empty profile EmissionPolicy.empty
+                Policy.empty profile
                 EmissionFolders.empty TransformGroups.empty Fixtures.sampleCatalog
         Assert.NotEmpty(outputs.Manifest.ColumnProfiles)
         Assert.Contains(
@@ -155,7 +155,7 @@ module ProfileManifestThreadingTests =
     let ``projectWithState with Profile.empty yields empty Manifest.ColumnProfiles (base case)`` () =
         let outputs, _ =
             Compose.projectWithState
-                Policy.empty Profile.empty EmissionPolicy.empty
+                Policy.empty Profile.empty
                 EmissionFolders.empty TransformGroups.empty Fixtures.sampleCatalog
         Assert.Empty(outputs.Manifest.ColumnProfiles)
 

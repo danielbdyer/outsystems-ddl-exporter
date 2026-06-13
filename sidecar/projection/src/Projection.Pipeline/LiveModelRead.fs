@@ -32,20 +32,58 @@ module LiveModelRead =
                     "model.ossys.connRef"
                     (sprintf "model OSSYS connection '%s' must be an out-of-band reference (env:<var> or file:<path>)." spec))
 
-    /// Read the model from an already-open OSSYS connection: snapshot → bundle
-    /// → Catalog (native SsKey).
-    let fromConnection (cnn: SqlConnection) : Task<Result<Catalog>> =
+    /// Read the model from an already-open OSSYS connection under the
+    /// supplied scope parameters: snapshot → bundle → Catalog (native
+    /// SsKey). Reconciliation slice 4 (DECISIONS 2026-06-13) — the
+    /// scope-bearing face; `SnapshotScopeBinding.fromModel` derives the
+    /// parameters from the operator's `model.modules` declaration, and
+    /// `ModuleFilter.apply` remains the semantic seam downstream.
+    let fromConnectionWith
+        (parameters: MetadataSnapshotRunner.SnapshotParameters)
+        (cnn: SqlConnection)
+        : Task<Result<Catalog>> =
         task {
-            match! MetadataSnapshotRunner.runAsync cnn MetadataSnapshotRunner.defaultParameters with
+            match! MetadataSnapshotRunner.runAsync cnn parameters with
             | Error es -> return Result.failure es
             | Ok snapshot ->
                 let bundle = MetadataSnapshotRunner.toBundle snapshot
-                return! CatalogReader.parse (CatalogReader.SnapshotRowsets bundle)
+                // Slice 4 — under a pushed scope, prune reference rows
+                // whose target entity the server-side narrowing excluded
+                // (the cross-scope edges). `ModuleFilter.apply` applies
+                // the SAME semantic in memory (its step 5), which is the
+                // pushdown ≡ filter equivalence law. Rows whose
+                // `RefEntityId` is unknown (`None`) are kept — a truly
+                // dangling one still fails loudly at `Catalog.create`,
+                // preserving the corrupt-source posture for full reads.
+                let scoped =
+                    if List.isEmpty parameters.ModuleNames then bundle
+                    else
+                        let kindIds =
+                            bundle.Kinds
+                            |> List.map (fun k -> k.EntityId)
+                            |> Set.ofList
+                        { bundle with
+                            References =
+                                bundle.References
+                                |> List.filter (fun r ->
+                                    match r.RefEntityId with
+                                    | Some id -> Set.contains id kindIds
+                                    | None    -> true) }
+                return! CatalogReader.parse (CatalogReader.SnapshotRowsets scoped)
         }
 
-    /// Read the model live from a connection reference: parse → open (Source
-    /// role) → `fromConnection`.
-    let fromConnSpec (connSpec: string) : Task<Result<Catalog>> =
+    /// Read the model from an already-open OSSYS connection: snapshot → bundle
+    /// → Catalog (native SsKey). The show-me-everything stance
+    /// (`defaultParameters`) — the canary/baseline face.
+    let fromConnection (cnn: SqlConnection) : Task<Result<Catalog>> =
+        fromConnectionWith MetadataSnapshotRunner.defaultParameters cnn
+
+    /// Read the model live from a connection reference under the supplied
+    /// scope parameters: parse → open (Source role) → `fromConnectionWith`.
+    let fromConnSpecWith
+        (parameters: MetadataSnapshotRunner.SnapshotParameters)
+        (connSpec: string)
+        : Task<Result<Catalog>> =
         task {
             match parseConnRef connSpec with
             | Error es -> return Result.failure es
@@ -58,5 +96,10 @@ module LiveModelRead =
                 | Error es -> return Result.failure es
                 | Ok cnn ->
                     use cnn = cnn
-                    return! fromConnection cnn
+                    return! fromConnectionWith parameters cnn
         }
+
+    /// Read the model live from a connection reference: parse → open (Source
+    /// role) → `fromConnection`.
+    let fromConnSpec (connSpec: string) : Task<Result<Catalog>> =
+        fromConnSpecWith MetadataSnapshotRunner.defaultParameters connSpec

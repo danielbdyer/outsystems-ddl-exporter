@@ -272,3 +272,85 @@ let ``Slice 5.13.ossys-rowsets-cluster: triggers lift via rowset path (matrix ro
                 |> List.map (fun t -> Name.value t.Name)
                 |> Set.ofList
             Assert.Contains("TR_OSUSR_XYZ_JOBRUN_AUDIT", allTriggers)
+
+// ---------------------------------------------------------------------
+// Reconciliation slice 4 (DECISIONS 2026-06-13; adjudication C4) — the
+// pushdown ≡ filter EQUIVALENCE law:
+//
+//     scopedRead(scope) ≡ ModuleFilter.apply(scope) ∘ fullRead
+//
+// The SQL pushdown (server-side #E/#Ent narrowing) and the in-memory
+// semantic seam must agree on the produced Catalog, so the pushdown is
+// PURELY an extraction-cost reduction — never a semantics change.
+// Exercised against the 3-module edge-case seed (AppCore + Ops +
+// system-module SystemUsers) with entity narrowing on AppCore.
+// ---------------------------------------------------------------------
+
+let private scopedModel : Projection.Pipeline.Config.ModelSection =
+    { Path                   = None
+      Ossys                  = None
+      Modules                =
+        [ Projection.Pipeline.Config.ModuleSelector.WithEntities ("AppCore", [ "Customer"; "City" ])
+          Projection.Pipeline.Config.ModuleSelector.Whole "Ops" ]
+      IncludeSystemModules   = false
+      IncludeInactiveModules = false
+      OnlyActiveAttributes   = true
+      ValidationOverrides    = { AllowMissingSchema = [] } }
+
+let private extractEquivalencePair () : Task<Result<Catalog> * Result<Catalog>> =
+    task {
+        let seed = MetadataExtractionSql.readEdgeCaseSeed()
+        let! pair =
+            Deploy.withBootstrappedDatabase "OssysScopePushdown" seed (fun cnn ->
+                task {
+                    // Leg 1 — the pushdown read (scope bound into the SQL).
+                    let! scoped =
+                        LiveModelRead.fromConnectionWith
+                            (SnapshotScopeBinding.fromModel scopedModel) cnn
+                    // Leg 2 — the full read, narrowed by the semantic seam.
+                    let! full = LiveModelRead.fromConnection cnn
+                    let filtered =
+                        match full, ModuleFilterBinding.fromConfig scopedModel with
+                        | Ok catalog, Ok opts -> ModuleFilter.apply opts catalog
+                        | Error es, _ -> Result.failure es
+                        | _, Error es -> Result.failure es
+                    return Result.success (scoped, filtered)
+                })
+        return
+            match pair with
+            | Ok p -> p
+            | Error es -> (Result.failure es, Result.failure es)
+    }
+
+[<Fact>]
+let ``slice 4 equivalence: scoped pushdown read equals full read narrowed by ModuleFilter.apply`` () =
+    if skipIfNoDocker "ossys-scope-pushdown-equivalence" then
+        let scoped, filtered = TaskSync.run extractEquivalencePair
+        match scoped, filtered with
+        | Ok s, Ok f ->
+            // The law at the value grain: identical catalogs.
+            Assert.Equal<Catalog>(f, s)
+            // And the scope is real: only the two named modules; the
+            // entity narrowing dropped BillingAccount from AppCore.
+            let moduleNames =
+                s.Modules |> List.map (fun m -> Name.value m.Name) |> Set.ofList
+            Assert.Equal<Set<string>>(Set.ofList [ "AppCore"; "Ops" ], moduleNames)
+            let appCoreEntities =
+                s.Modules
+                |> List.find (fun m -> Name.value m.Name = "AppCore")
+                |> fun m -> m.Kinds |> List.map (fun k -> Name.value k.Name) |> Set.ofList
+            Assert.Equal<Set<string>>(Set.ofList [ "Customer"; "City" ], appCoreEntities)
+            // The cross-scope edge (JobRun → SystemUsers.User) is pruned
+            // on BOTH legs — the defined scoping semantic (a declared
+            // scope excludes its cross-scope edges exactly as it
+            // excludes the kinds they point at), and the prune that
+            // restored `Catalog.create` constructibility to filtered
+            // catalogs (the latent gap this law exposed on first run).
+            let jobRun =
+                Catalog.allKinds s |> List.find (fun k -> Name.value k.Name = "JobRun")
+            Assert.All(jobRun.References, fun r ->
+                Assert.True(
+                    Catalog.allKinds s |> List.exists (fun k -> k.SsKey = r.TargetKind),
+                    "scoped catalog carries a dangling cross-scope reference"))
+        | s, f ->
+            failwithf "equivalence legs failed: scoped=%A filtered=%A" s f

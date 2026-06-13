@@ -1,3 +1,316 @@
+# Handoff addendum — 2026-06-13, SESSION CLOSE: the reconciliation program is four slices deep, every pool green, and slice 5 (WP6, the data lanes) is pre-scoped to the line
+
+To the next agent.
+
+You are inheriting the V1 full-export reconciliation program at full
+stride. Read `V1_FULL_EXPORT_RECONCILIATION_PLAN.md` FIRST (the
+research record, the nine work packages, the four operator
+adjudications C1–C4), then `THE_GOLDEN_EMISSION.md` (the blessing
+protocol you will live inside). Four slices shipped this session —
+`cd11d93` (logical-only inverse edges + the HasDbConstraint carve-out),
+`ab5df9d` (EmissionPolicy channel collapse + the golden corpus
+founding), `2749ee4`/`8371a31` (operator blessings #1 and #2: V1
+per-table form, inline FK/CHECK ladders, the constraint stack, the
+128-char identifier budget), `e16aab9` (scope pushdown + the
+equivalence law + the dangling-reference fix). Every slice closed with
+fast AND docker pools green (latest: 3150/0 and 231/231). The
+operating rhythm that made that true: DECISIONS entry FIRST, golden
+diff in the SAME commit as the emission change, matrix/charter
+amendments with the slice, both pools before push.
+
+**Your slice is WP6 — the data lanes.** The operator's directive is
+standing in `THE_GOLDEN_EMISSION.md` §4: per-lane golden artifacts
+(`Data/StaticSeeds.sql` / `Data/Bootstrap.sql` /
+`Data/MigrationData.sql`) land in the SAME commit as the lanes fill.
+The full seam map below is current at `e16aab9` — verify line numbers
+with a grep, then execute.
+
+**Step 1 — IDENTITY_INSERT bracket (strictly first; ~half day).**
+`StaticSeedsEmitter.kindToScript` (StaticSeedsEmitter.fs:276–332)
+never reads `load.Disposition` — dispatch on
+`IdentityDisposition.AssignedBySink` (minted structurally at
+DataLoadPlan.build:106 via `IdentityDisposition.ofKind`,
+SurrogateRemap.fs:78–83) and bracket `RenderedPhase1` with
+`ScriptDomBuild.buildSetIdentityInsert` (ScriptDomBuild.fs:1187–1195,
+raw node → `ScriptDomGenerate.generateOne` → the `;\nGO\n` framing the
+partition law depends on). Bracket INSIDE the per-kind rendered string
+— a bracket outside it breaks the P2 leveled-partition property
+(DataEmissionComposerTests.fs:594–721). PK-suppression is WRONG for
+the MERGE lane (the ON clause joins on the PK). Precedent:
+StaticPopulationEmitter.fs:95–116. Add an IDENTITY-PK static kind to
+GoldenCatalog (the statics are all `pkAttr … false` today, so no diff
+shows until you do) + re-record + DECISIONS note.
+
+**Step 2 — Bootstrap delegation (~1 day).** `BootstrapEmitter
+.emitFromPlan` (BootstrapEmitter.fs:76–82) discards its plan — body
+becomes a delegation to `StaticSeedsEmitter.emitFromPlanWith`
+(StaticSeedsEmitter.fs:364–378; signature-identical modulo the scope).
+The UserRemap conversion already exists: `UserRemapContext.toSurrogate`
+(UserRemap.fs:183–200), worked example at
+MigrationDependenciesEmitter.buildPlan:412–428. Flip
+`registeredMetadata.Status` from `NotImplementedInV2` to `Active`
+(BootstrapEmitter.fs:141–143) or the totality property tests bite.
+Bootstrap's "remaining kinds" set MUST be the complement of
+(Static-populated ∪ Migration-context) kinds — an overlap is
+`OverlappingEmitterCoverage` which Pipeline.fs:604–607 escalates to a
+production `invalidOp`. Rewrite the empty-no-op pins
+(BootstrapEmitterTests.fs:83–100).
+
+**Step 3 — Per-lane outputs (~1 day).** The per-lane rendered strings
+already exist BEFORE the union: `SiblingArtifacts`
+(DataEmissionComposer.fs:60–65) out of `dispatchSiblings` (:98–128).
+Render each sibling in `topo.Order` exactly as `composeRenderedFull`
+does (:318–331) — render ONCE from one dispatch, never twice. The
+decoration (Pipeline.fs:596–607) adds the three keys beside
+`Data/seed.sql`; `writeAllToStaging` iterates `DataBundle`
+generically (zero writer changes). Keep `Map.isEmpty` when the flags
+are off (FullExportDataBundleTests.fs:67–86 pins it).
+
+**Step 4 — Hydration (the big one; 2–3 days).** The graft point:
+`runWithConfig` is a staged task (Pipeline.fs:1318–1378); add a staged
+step between extract and emit on the `acquireProfile` template
+(:1015–1032) — `runWithConfigCore` is deliberately sync (FS3511; its
+docstring :1034–1038), so hydration lives in the async caller. Row
+source: open a SECOND connection from `cfg.Model.Ossys` via the
+`LiveModelRead.fromConnSpecWith` Substrate pattern
+(LiveModelRead.fs:83–100; the model-read connection is use-disposed —
+not reusable). Stream per owned kind via `Ingestion.streamKindRows` /
+`collectInOrder` (Ingestion.fs:19–71 — already FS3511-safe; scope it
+to owned kinds, NEVER `ReadSide.read` — survival rule 8 marks
+everything Static). Replace the `Static []` marks
+(OssysRowsetReader.fs:581) with hydrated rows;
+`NormalizeStaticPopulations` sorts them deterministically for free if
+you graft pre-chain (graft by SsKey — rename-invariant, A1).
+**Parity duty:** hydration must also reach `projectSeedPlan` /
+`emittedSeedPlan` (Pipeline.fs:1407–1446) or the deployed seed drifts
+from the published one. File-sourced model + data flags on ⇒ a NAMED
+skip diagnostic, never silent emptiness. The `ReadbackPopulated`
+provenance-typed-Static closed-DU change is the structural close
+(armed at CONSTELLATION_BACKLOG.md:796–799; the plan declares its
+trigger fired) — codec-totality blast radius; its DECISIONS amendment
+comes FIRST and it is acceptable to land hydration with the marker
+approach + the DU change as the immediate follow-up if the blast
+proves large mid-slice.
+
+**Step 5 — Per-lane goldens (same commit train as 3/4).** GoldenCatalog
+gains the lane variances (a bootstrap-owned kind, a migration-row
+kind, the IDENTITY-PK static from step 1); `GOLDEN_RECORD=1` +
+DECISIONS note per the blessing protocol.
+
+**Traps, beyond the survival list:** (1) the Platonic catalog's
+self-FK (`Engagement.ParentId`) puts the data composer's
+`TreatAsCycle` topo into Alphabetical mode — the gen-7 residual
+("fused-path alphabetical MERGE order can violate non-cycle FK chains
+among seeded kinds — loud, not silent") becomes LIVE once real rows
+flow; watch RegionA/B Phase-2 ordering in the golden diffs. (2)
+Compose data over the POST-chain catalog only (gen-7 trap (a)). (3)
+The golden comparator fails on artifact-set drift — three new files
+per scenario are EXPECTED failures until re-recorded with the note.
+
+**After WP6, the queue:** WP5 (the C1 `V2.*` → domain-name rename +
+gate — its golden diff is the worked example of the blessing
+protocol; dual-read window in ReadSide), WP7-remainder (logical
+IX/UIX synthesis; trigger-definition rewrite; >128 PK golden example),
+WP8 (Order_Num — registered pass per C3; the rowsets-SQL divergence
+gets a header citation), WP9 (sample-config rewrite; the
+`resolveFlowSpec` ossys-only provenance-arm fix at
+MovementSurface.fs:917–923; the reserved `projection compare` verb —
+matrix row 41's shape, trigger fired). The EXCEPT validate-before-apply
+mode (C2: opt-in) rides WP6's lane work or its own slice. J5 — a
+writable UAT connection — still trumps everything.
+
+Run `scripts/test.sh fast` early and often; docker pool before every
+push (the warm container is your friend; survival rules 1–4 for its
+failure signatures). Hold the spine.
+
+---
+
+# Handoff addendum — 2026-06-13, reconciliation slice 4 CLOSE (the scope pushes down to the OSSYS read; the equivalence law; the dangling-reference fix)
+
+To the next agent.
+
+**Slice 4 (WP3; adjudication C4) shipped** (`DECISIONS 2026-06-13`
+slice-4 entry — it AMENDS the 2026-05-16 "filtering is an IR concern"
+stance for the scope axis): `SnapshotScopeBinding.fromModel` binds
+`model.modules` + entity narrowing + the include flags into the
+adapter's `SnapshotParameters` (A7 opt-in gate mirrored verbatim from
+`ModuleFilterBinding`; `OnlyActiveAttributes` deliberately NOT pushed);
+`LiveModelRead.fromConnSpecWith`/`fromConnectionWith` are the
+scope-bearing faces; `readConfigModel` binds them on the full-export
+path; `ModuleFilter.apply` REMAINS the semantic seam (double
+enforcement — V1's own precedent). The LAW:
+`scopedRead(scope) ≡ ModuleFilter.apply(scope) ∘ fullRead`,
+Docker-witnessed against the 3-module edge-case seed.
+
+**The law's first run exposed a latent integrity gap**: `apply` did
+list surgery without restoring the aggregate invariant — kept kinds
+referencing excluded modules carried DANGLING references
+(`Catalog.create`-unconstructible values). Fixed at BOTH legs with one
+defined semantic: a declared scope excludes its cross-scope edges
+exactly as it excludes the kinds they point at (`apply` step-5 prune;
+bundle-grain prune under a pushed scope; unknown-`RefEntityId` rows
+kept so corrupt sources still fail loudly). Named consequence: the
+missing-target diagnostics are structurally unreachable through the
+scoping path now; the per-edge `moduleFilter.referencePruned` witness
+lands when the filter seam gains a diagnostics channel.
+
+**Operator directive (2026-06-13), now standing in the charter**: when
+WP6 lands, the golden corpus grows PER-LANE data artifacts
+(`Data/StaticSeeds.sql` / `Data/Bootstrap.sql` /
+`Data/MigrationData.sql` + the fused global seed) in the same commit —
+`THE_GOLDEN_EMISSION.md` §4's data-lane expansion section is the
+reminder; the Platonic catalog gains the lane variances then.
+
+Queue: slice 5 = WP6 (data lanes — IDENTITY_INSERT strictly BEFORE
+hydration; bootstrap delegates to the static-seeds renderer; per-lane
+outputs + the per-lane goldens above). Then WP5 (C1 rename + gate),
+WP7-remainder/WP8, WP9. J5 still trumps everything.
+
+---
+
+# Handoff addendum — 2026-06-13, reconciliation slice 3b CLOSE (operator blessing #2: the column-constraint stack; inline CHECKs; composite indexes; the identifier budget)
+
+To the next agent.
+
+**Slice 3b shipped on the operator's second blessing pass**
+(`DECISIONS 2026-06-13` slice-3b entry; commit `8371a31`; fast pool
+3146/0, docker pool 231/231): single-column CHECKs attach beneath
+their attribute (`attachInlineCheck`, structurally anchored — exactly
+one referenced column ⇒ inline, else table-level); the
+ConstraintFormatter's per-kind splitters are REPLACED by the
+column-constraint STACK segmenter (top-level paren/bracket/quote-aware
+scan; any DEFAULT/CHECK/PK/FK combination on one column renders as one
+statement, every segment laddered, comma on the last);
+`IdentifierBudget.fit` (Core) caps generated FK/PK names at 128
+(115-char head + `_` + 12-hex SHA-256 of the full name; matrix row 57
+length-cap cashed out); the Platonic catalog gained composite-PK
+`Assignment`, composite + mixed-direction indexes on `Engagement`, the
+DEFAULT+FK and DEFAULT+CHECK stacks, a multi-column table-level CHECK,
+and the long-name `Ledger → EcrmSnapshot` pair whose hashed 128-char
+FK name is golden-visible.
+
+Watch for: (1) the formatter's old single-constraint splitters are
+GONE — anything resembling them in stale branches will conflict; (2) a
+>128 generated PK name has the budget applied but no catalog example
+yet (needs a >120-char table name; inventory TODO); (3) trigger
+DEFINITIONS still carry physical table/column names (inventory TODO,
+own slice).
+
+Queue unchanged: slice 4 = WP3 (scope pushdown into the OSSYS read).
+Then WP6 (data lanes — IDENTITY_INSERT strictly before hydration), WP5
+(C1 rename + gate), WP7-remainder/WP8, WP9. J5 still trumps everything.
+
+---
+
+# Handoff addendum — 2026-06-13, reconciliation slice 3 CLOSE (operator blessing #1: per-table V1 form; inline FK ladder; CHECK/filter logical rewrite; the catalog consolidates)
+
+To the next agent.
+
+**Slice 3 was the corpus's first yield** (`DECISIONS 2026-06-13`): the
+operator's blessing pass over the goldens redirected the queue (WP3
+scope pushdown moves to the next slice — operator blessing outranks).
+Four changes: (1) per-table `SsdtFile` bodies render through
+`Render.toText` — framed GO BETWEEN statements (never trailing), the
+constraint ladder, the wrapped EXEC, newline-terminated; the per-kind
+no-GO pin is OVERTURNED by operator decision and rewritten. (2)
+Single-column FKs attach inline beneath their source column
+(`attachInlineForeignKey`, the LR3 sibling) and the formatter gained
+the column-suffix FK ladder (+4/+8/+12) with V1's NO ACTION fill/drop
+normalization. (3) `LogicalColumnEmission` v2 follows the substitution
+into CHECK definitions and index FILTER predicates (trigger bodies
+still carry physical names — own slice; inventory TODO). (4) The
+Platonic catalog consolidated: master `ScalarGallery` (every scalar ×
+its DEFAULT literal + checks + trigger + the index gallery), master
+`Engagement` (every reference variance including the SELF-referencing
+FK), pure targets, `Heap`, Statics unchanged. Goldens re-recorded
+under the DECISIONS note.
+
+Watch for: four 5.13-era pins were updated to the rendered-body
+contract (the OnUpdate fill convention + the CHECK two-line ladder) —
+any other test asserting RAW per-table body shapes will collide with
+the formatter; pin against the laddered form.
+
+Queue: slice 4 = WP3 (scope pushdown into the OSSYS read; C4
+adjudicated). Then WP6 (data lanes — IDENTITY_INSERT strictly before
+hydration), WP5 (C1 rename + gate), WP7-remainder/WP8, WP9. J5 still
+trumps everything.
+
+---
+
+# Handoff addendum — 2026-06-12, reconciliation slice 2 CLOSE + THE GOLDEN EMISSION adopted
+
+To the next agent.
+
+**Slice 2 (WP4 + WP7-GO) shipped** (`DECISIONS 2026-06-12 — Slice 2`):
+the `projectWith*` family lost its second `EmissionPolicy` channel
+(`fullPolicy.Emission` is the one channel; every config-driven
+`EmissionPolicy.empty` literal dissolved);
+`emission.includePlatformAutoIndexes` is config-reachable (default
+true; CONFIG_REFERENCE updated); `BatchSeparator` renders `\nGO\n\n`
+(V1's blank-both-sides framing; `aggregateSsdt` joiner aligned). Fast
+pool green; Docker pool 231/231 green on the warm container.
+
+**THE GOLDEN EMISSION is live** (`THE_GOLDEN_EMISSION.md`; DECISIONS
+entry of the same date): the Platonic catalog (`GoldenCatalog.fs`,
+every expressible emission variance), three scenario configs, the
+byte comparator + `GOLDEN_RECORD=1` blessing protocol, and the
+committed corpus at `tests/Projection.Tests/Golden/`. The first
+recording already found two real things: delete-scope terms resolve
+POST-chain (logical column names under the default rendition — doc
+mismatch recorded), and per-table bodies lack trailing newlines. From
+now on: **a slice that changes emission lands with its golden diff in
+the same commit** — the diff is the operator-blessing surface. The
+known-unblessed inventory rows in §4 are the reconciliation plan's
+worklist intersected with the corpus.
+
+Queue unchanged otherwise: slice 3 = WP3 (scope pushdown), then WP6
+(data lanes — IDENTITY_INSERT strictly before hydration), WP5 (C1
+rename + gate — its golden diff will be the worked example of the
+blessing protocol), WP7/WP8, WP9. J5 still trumps everything.
+
+---
+
+# Handoff addendum — 2026-06-12, reconciliation slice 1 CLOSE (inverse references are logical-only edges; the FK decision layer reads `HasDbConstraint`)
+
+To the next agent.
+
+**A new program opened today and its first slice is DONE.** The operator
+ran the full-export flow end-to-end in a corporate estate and mapped the
+problem series; the resulting research record and nine-package program
+live in `V1_FULL_EXPORT_RECONCILIATION_PLAN.md` — read it BEFORE touching
+anything on the full-export surface; it captures the code-truth findings
+(file:line), the standing-law constraints, and four operator-adjudicated
+collisions (C1: rename the `V2.*` extended properties to domain
+terminology; C2: CDC-silence canonical, EXCEPT validate-before-apply as
+opt-in fallback; C3: Service-Studio ordering as a registered pass; C4:
+adapter-time scope pushdown for declared scopes, `ModuleFilter` stays the
+semantic owner).
+
+**Slice 1 (WP1+WP2) shipped** (`DECISIONS 2026-06-12 — Slice 1 of the
+full-export reconciliation`; matrix rows 191–192 + row-57 amendment):
+`Reference.isDeployable`/`isInverse` are the single definition site;
+`ForeignKeyPass` (v3) and every `SsdtDdlEmitter` constraint surface
+exclude the inverse class (navigation keeps the closure; flag
+inheritance retained); `ForeignKeyRules.evaluate` gained the V1
+carve-out (MissingTarget → HasDbConstraint ⇒ Enforce → PolicyDisabled →
+profile) and lost the producer-less `TrustedConstraint` branch; the
+decision-drop audit splits `decision.fkDropped` (Warning, source-backed)
+from `decision.fkNotIntroduced` (Info, logical-only); a schema-scoped
+FK-name collision tripwire (Error) rides the config-driven diagnostics.
+Witnesses in `DeployableReferenceTests.fs` (post-closure AND full-chain —
+the first canaries that emit from a post-chain catalog; keep that
+discipline for any pass that rewrites the catalog). Fast pool green
+(3,132 passed / 0 failed).
+
+**The queue is the plan's §5**: slice 2 = WP4 (collapse the
+`EmissionPolicy` two-channel seam; wire the dormant emission flags) +
+the `BatchSeparator` trailing-blank fix with golden refresh; then WP3
+(scope pushdown), WP6 (data lanes — IDENTITY_INSERT strictly BEFORE
+hydration), WP5 (the C1 rename + gate), WP7/WP8, WP9. Books obligations
+per slice are in the plan's §8. J5 still trumps everything.
+
+---
+
 # Handoff addendum — 2026-06-12, generation 7 CLOSE (P2 is WIRED: the load leg deploys the seed leveled-parallel; the mint gained its mode guard)
 
 To the next agent.

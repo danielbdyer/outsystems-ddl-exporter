@@ -410,8 +410,10 @@ let ``5.13.schema-axis-property-sweep: CHECK (P2) permutation invariance on Modu
 
 [<Property(Arbitrary = [| typeof<Generators> |])>]
 let ``5.13.schema-axis-property-sweep: CHECK (P3) named constraint surfaces`` (axis: CheckAxis) : bool =
+    // Slice 3b: a single-column CHECK attaches beneath its attribute
+    // (the inline stack) — one wrapped line at columnIndent + 4.
     let body = bodyOf checkAxisKey (wrap (checkAxisKind axis))
-    body.Contains (sprintf "CONSTRAINT [%s] CHECK" (checkExpectedConstraintName axis))
+    body.Contains (sprintf "\n        CONSTRAINT [%s] CHECK" (checkExpectedConstraintName axis))
 
 // ---------------------------------------------------------------------------
 // Axis 3 — OnUpdate properties.
@@ -428,10 +430,13 @@ let ``5.13.schema-axis-property-sweep: OnUpdate (P2) permutation invariance on M
     bodyOf fkChildKey cat = bodyOf fkChildKey (shuffleModules seed cat)
 
 [<Property(Arbitrary = [| typeof<Generators> |])>]
-let ``5.13.schema-axis-property-sweep: OnUpdate (P3) ON UPDATE clause surfaces (or absent for None)`` (axis: ReferenceAction option) : bool =
+let ``5.13.schema-axis-property-sweep: OnUpdate (P3) ON UPDATE clause surfaces (None fills NO ACTION beside ON DELETE CASCADE)`` (axis: ReferenceAction option) : bool =
+    // Slice 3: bodies render through Render.toText — V1's clause
+    // normalization fills the absent ON UPDATE with the explicit
+    // NO ACTION form because the fixture's OnDelete is Cascade.
     let body = bodyOf fkChildKey (fkCatalog axis true)
     match onUpdateExpectedClause axis with
-    | None        -> not (body.Contains "ON UPDATE")
+    | None        -> body.Contains "ON UPDATE NO ACTION"
     | Some clause -> body.Contains clause
 
 // ---------------------------------------------------------------------------

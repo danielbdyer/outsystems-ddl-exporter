@@ -497,6 +497,74 @@ module ScriptDomBuild =
         | None        -> ()
         cons :> ConstraintDefinition
 
+    /// Reconciliation slice 3 (operator blessing, DECISIONS 2026-06-13;
+    /// V1 CreateTableStatementBuilder.cs:197-202 shape): single-column
+    /// FK constraints attach inline beneath their source column —
+    /// `attachInlinePrimaryKey`'s sibling. A non-resolving source
+    /// column falls back to table-level (defensive; unreachable under
+    /// `Catalog.create`'s referential invariant).
+    let private attachInlineForeignKey
+        (colDefs: System.Collections.Generic.IList<ColumnDefinition>)
+        (tableConstraints: System.Collections.Generic.IList<ConstraintDefinition>)
+        (fk: ForeignKeyDef)
+        : unit =
+        let target =
+            colDefs
+            |> Seq.tryFind (fun cd ->
+                match Option.ofObj cd.ColumnIdentifier with
+                | Some ident ->
+                    System.String.Equals(
+                        ident.Value, fk.SourceColumn,
+                        System.StringComparison.OrdinalIgnoreCase)
+                | None -> false)
+        match target with
+        | Some cd -> cd.Constraints.Add(foreignKeyConstraint fk)
+        | None    -> tableConstraints.Add(foreignKeyConstraint fk)
+
+    /// Bracketed identifier tokens of a SQL definition text (the
+    /// `[...]` contents, in order). Slice 3b — the column anchor for
+    /// inline-CHECK attachment.
+    let private bracketedTokens (text: string) : string list =
+        let rec go (i: int) (acc: string list) =
+            if i >= text.Length then List.rev acc
+            else
+                match text.IndexOf('[', i) with
+                | -1 -> List.rev acc
+                | s ->
+                    match text.IndexOf(']', s + 1) with
+                    | -1 -> List.rev acc
+                    | e -> go (e + 1) (text.Substring(s + 1, e - s - 1) :: acc)
+        go 0 []
+
+    /// Reconciliation slice 3b (operator blessing #2, DECISIONS
+    /// 2026-06-13): single-column CHECKs attach beneath their
+    /// attribute — the third inline sibling after PK and FK. The IR's
+    /// `ColumnCheck` carries no column anchor, so attachment resolves
+    /// structurally: the definition's bracketed tokens are matched
+    /// against the column identifiers; exactly ONE distinct matching
+    /// column ⇒ attach there; multi-column or non-resolving
+    /// definitions stay table-level (the faithful placement).
+    let private attachInlineCheck
+        (colDefs: System.Collections.Generic.IList<ColumnDefinition>)
+        (tableConstraints: System.Collections.Generic.IList<ConstraintDefinition>)
+        (chk: ColumnCheckDef)
+        : unit =
+        let referenced =
+            bracketedTokens chk.Definition
+            |> List.map (fun t -> t.ToUpperInvariant())
+            |> List.distinct
+            |> Set.ofList
+        let matching =
+            colDefs
+            |> Seq.filter (fun cd ->
+                match Option.ofObj cd.ColumnIdentifier with
+                | Some ident -> Set.contains (ident.Value.ToUpperInvariant()) referenced
+                | None -> false)
+            |> List.ofSeq
+        match matching with
+        | [ cd ] -> cd.Constraints.Add(checkConstraint chk)
+        | _      -> tableConstraints.Add(checkConstraint chk)
+
     /// Build a `CreateTableStatement` from V2's typed
     /// `(TableId, ColumnDef list, PrimaryKeyDef option, ForeignKeyDef list)`
     /// triple. Pure: same inputs → same fragment shape (verified by
@@ -578,13 +646,17 @@ module ScriptDomBuild =
             | _     -> def.TableConstraints.Add(primaryKeyConstraint p)
         fks
         |> Bench.iterDo "emit.scriptDom.build.createTable.fk" (fun fk ->
-            def.TableConstraints.Add(foreignKeyConstraint fk))
+            // Slice 3 (DECISIONS 2026-06-13) — inline beneath the
+            // source column, V1 shape; table-level fallback only.
+            attachInlineForeignKey def.ColumnDefinitions def.TableConstraints fk)
         // Slice 5.13.column-features-emit (chapter A.0' slice ε emit
         // closure): table-level CHECK constraints follow PK + FK in
         // declaration order, matching V1's CREATE TABLE shape.
         checks
         |> Bench.iterDo "emit.scriptDom.build.createTable.check" (fun chk ->
-            def.TableConstraints.Add(checkConstraint chk))
+            // Slice 3b (DECISIONS 2026-06-13) — single-column checks
+            // beneath their attribute; multi-column stay table-level.
+            attachInlineCheck def.ColumnDefinitions def.TableConstraints chk)
         stmt.Definition <- def
         // H-022: `ModalityMark.Temporal` — emit PERIOD FOR SYSTEM_TIME
         // inside the table definition and WITH (SYSTEM_VERSIONING = ON)

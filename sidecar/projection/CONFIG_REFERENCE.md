@@ -72,6 +72,10 @@ Every key, with type · required? · default. Unknown keys are ignored; type mis
 
 `ssdt` · `dacpac` · `json` · `distributions` · `staticSeeds` · `migrationDependencies` · `bootstrap` · `decisionLog` · `opportunities` · `validations` — each a `bool`. Set to `false` to suppress that artifact.
 
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `includePlatformAutoIndexes` | bool | `true` | `false` prunes OutSystems platform-auto indexes from the SSDT bundle and the dacpac at the post-chain seam (reconciliation slice 2; V1's `SsdtManifestOptions.IncludePlatformAutoIndexes`) |
+
 ### `policy` — the operator overlays
 
 | Key | Type | Default | Meaning |

@@ -55,7 +55,6 @@ let private projectFor (groups: TransformGroups) (catalog: Catalog) : ComposeSta
     Compose.projectWithState
         Policy.empty
         Profile.empty
-        EmissionPolicy.empty
         EmissionFolders.empty
         groups
         catalog

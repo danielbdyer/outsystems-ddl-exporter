@@ -66,8 +66,14 @@ module ForeignKeyPass =
     ///       and one success-side caveat variant within a single
     ///       pass. Whether the writer absorbs the heterogeneity
     ///       cleanly is the substantive session-16 question.
+    /// v3 — iteration domain narrows to deployable references
+    ///       (DECISIONS 2026-06-12 — reconciliation slice 1):
+    ///       symmetric-closure inverses are logical-only edges and
+    ///       never enter FK decisions, so the spurious per-inverse
+    ///       `evidenceMissing` warnings (and the accidental-DropFk
+    ///       suppression they fed) disappear.
     [<Literal>]
-    let version : int = 2
+    let version : int = 3
 
     [<Literal>]
     let private passName : string = "foreignKey"
@@ -97,8 +103,14 @@ module ForeignKeyPass =
     /// in registration order (the caller chose the order; the pass
     /// preserves it). The shape mirrors `sortedAttributes` /
     /// `sortedIndexes`; only the inner field changes.
+    /// Deployable references only (v3): symmetric-closure inverses are
+    /// navigation/ordering edges and never enter the FK decision
+    /// domain — neither as decisions nor as per-reference diagnostics.
     let private sortedReferences (catalog: Catalog) : (Kind * Reference) list =
-        Catalog.kindContexts (fun k -> k.References) (fun r -> r.SsKey) catalog
+        Catalog.kindContexts
+            (fun k -> k.References |> List.filter Reference.isDeployable)
+            (fun r -> r.SsKey)
+            catalog
 
     /// H-024 — enrich `baseMetadata` with FK cardinality evidence when
     /// present. `ForeignKeyCardinality.ChildCountDistribution.Moments.Mean`

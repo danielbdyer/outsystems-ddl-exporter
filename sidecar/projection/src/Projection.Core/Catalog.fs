@@ -1236,6 +1236,36 @@ module Reference =
         else
             { r with HasDbConstraint = false; IsConstraintTrusted = true }
 
+    /// The reserved SsKey derivation reason the symmetric-closure pass
+    /// stamps on synthesized inverse references (the first reserved
+    /// reason, DECISIONS 2026-05-06). Owned here — the compile-order
+    /// floor of the reference vocabulary — so the deployability
+    /// predicate below and the pass share one definition;
+    /// `SymmetricClosure.inverseReason` aliases this constant.
+    /// (DECISIONS 2026-06-12 — reconciliation slice 1.)
+    [<Literal>]
+    let inverseDerivationReason : string = "inverse"
+
+    /// True iff this reference is a symmetric-closure inverse — a
+    /// pass-synthesized edge carrying `DerivedFrom(_, "inverse")`.
+    let isInverse (r: Reference) : bool =
+        match r.SsKey with
+        | DerivedFrom (_, reason) when reason = inverseDerivationReason -> true
+        | _ -> false
+
+    /// The single definition site for "deployable reference"
+    /// (DECISIONS 2026-06-12 — reconciliation slice 1). A
+    /// symmetric-closure inverse is a navigation/ordering edge only:
+    /// it never participates in FK tightening decisions or
+    /// constraint-emission surfaces (its `fkDef` resolution would
+    /// script a second FK on the TARGET'S PK column — duplicate
+    /// `FK_*` names and PK-to-PK type mismatches). Constraint-
+    /// modeling surfaces filter by this predicate; navigation
+    /// surfaces (topological order, centrality, bounded context)
+    /// keep the full closure.
+    let isDeployable (r: Reference) : bool =
+        not (isInverse r)
+
 
 [<RequireQualifiedAccess>]
 module Index =
