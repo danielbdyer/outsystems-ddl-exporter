@@ -102,7 +102,11 @@ let withRun (command: string) (body: unit -> int) : int =
     // registry inventory, the terminal runComplete always — now including
     // crashed bodies, which previously escaped without their §10 close.
     let code =
-        RunEnvelope.bracket command ignore Map.empty (fun () ->
+        // NM-34b — the generic verb wrapper is content-blind (it brackets an
+        // arbitrary `body : unit -> int`), so it declares no hashable inputs.
+        // A digest-bearing verb runs through its own face (e.g. full-export),
+        // not this generic console bracket.
+        RunEnvelope.bracket command ignore Map.empty (fun () -> "", []) (fun () ->
             let code = body ()
             code, (if code = 0 then LogSink.Succeeded else LogSink.Failed))
     // Tier-4 reporting — append this run to the cross-run ledger when one is

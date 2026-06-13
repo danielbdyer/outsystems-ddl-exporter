@@ -47,6 +47,37 @@ type OverlayAxis =
     /// slice ε with `Classification = OperatorIntent Ordering`.
     | Ordering
 
+/// Operations on `OverlayAxis` — the canonical string codec for the five
+/// axes. `name` is the single source of truth (the closed-DU case name);
+/// `tryParse` is its inverse, total over the known tokens and `None` for an
+/// unrecognized one (fail-closed, mirroring `ToleratedDivergence.name`/
+/// `tryParse`). The durable provenance store (`LifecycleStore`) serializes the
+/// per-artifact overlay enumeration through this codec, so the round-trip
+/// `name >> tryParse = Some` is the persistence law.
+[<RequireQualifiedAccess>]
+module OverlayAxis =
+
+    /// Canonical token for an overlay axis. Exhaustive match: a new variant
+    /// fires FS0025 here under `TreatWarningsAsErrors`, forcing a token.
+    let name (a: OverlayAxis) : string =
+        match a with
+        | Selection  -> "Selection"
+        | Emission   -> "Emission"
+        | Insertion  -> "Insertion"
+        | Tightening -> "Tightening"
+        | Ordering   -> "Ordering"
+
+    /// Every known overlay axis (the closed set the round-trip ranges over).
+    let allKnown : OverlayAxis list =
+        [ Selection; Emission; Insertion; Tightening; Ordering ]
+
+    /// Parse a token to its axis, or `None` for an unrecognized token.
+    /// Derived from `name` so `name >> tryParse` is the identity on every
+    /// known variant.
+    let tryParse (token: string) : OverlayAxis option =
+        allKnown |> List.tryFind (fun a -> name a = token)
+
+
 /// Harvest-dichotomy classification (pillar 9; `DECISIONS 2026-05-15
 /// (late)`). Every transformation site in V2 reads under one of two
 /// classifications:

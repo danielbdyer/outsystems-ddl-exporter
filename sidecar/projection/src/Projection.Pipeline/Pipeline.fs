@@ -1603,6 +1603,18 @@ module Compose =
     /// `ChangeManifest` for the edge, and record exactly one new episode. Pure
     /// w.r.t. the genesis emission (it runs *after* the bundle lands and never
     /// alters it); the only side effect is the durable store write.
+    ///
+    /// `appliedTransforms` is the composed run's §5.5 per-artifact overlay
+    /// enumeration (`ManifestEmitter.appliedTransforms` over the run's lineage
+    /// trail, surfaced on `RunReport.Manifest.AppliedTransforms`); `tolerances`
+    /// is the run's resolved tolerance residual. Both are stamped onto the new
+    /// episode via `Episode.withProvenance` so the recorded episode — and the
+    /// `ChangeManifest` of its edge — carries "under what overlay / equivalence
+    /// was this displacement accepted?", not the dead `[]` / `strict` defaults.
+    /// (FLAG: no production caller resolves a non-`strict` tolerance set today —
+    /// the config carries no per-environment divergence axis and `Tolerance.parse`
+    /// is unwired; see `storeLegFromConfig`. The wiring is live so a future
+    /// tolerance-resolving caller populates it without re-touching this seam.)
     let private runStoreLeg
         (path: string)
         (timeline: Timeline)
@@ -1610,6 +1622,8 @@ module Compose =
         (at: System.DateTimeOffset)
         (refactorLogRef: string option)
         (data: DataObservation)
+        (tolerances: Tolerance)
+        (appliedTransforms: (SsKey * OverlayAxis option) list)
         (emitted: Catalog)
         : Result<FullExportStoreLeg, FullExportStoreError> =
         match priorSchemaFromStore path with
@@ -1630,8 +1644,14 @@ module Compose =
                         | Error e -> Error e
                         | Ok coordinate ->
                             // The emitted schema is the new episode's schema plane
-                            // (the same `Catalog` the bundle published).
-                            let episode = Episode.create coordinate emitted Profile.empty refactorLogRef data
+                            // (the same `Catalog` the bundle published). Thread the
+                            // run's provenance onto it (NM-33): the resolved
+                            // tolerance residual + the composed run's per-artifact
+                            // overlay enumeration. `withProvenance` is the single
+                            // production caller of the provenance plane.
+                            let episode =
+                                Episode.create coordinate emitted Profile.empty refactorLogRef data
+                                |> Episode.withProvenance tolerances appliedTransforms
                             match recordEpisode path timeline episode with
                             | Error e -> Error e
                             | Ok chain ->
@@ -1662,12 +1682,20 @@ module Compose =
     /// supplied. Extracted so `runWithConfigAndStore` keeps a two-level await
     /// depth (the three-level `let!`-in-match nesting is not statically
     /// compilable under Release — FS3511).
+    /// `appliedTransforms` is the run's §5.5 overlay enumeration, taken from
+    /// `RunReport.Manifest.AppliedTransforms` (the composed run the caller
+    /// already produced), threaded onto the recorded episode (NM-33). The
+    /// tolerance residual is `Tolerance.strict` here — the only resolved value
+    /// available: the unified config carries no per-environment divergence axis
+    /// and `Tolerance.parse` has no production caller, so a non-strict residual
+    /// is not yet reachable at this site (FLAGGED on `runStoreLeg`).
     let private storeLegFromConfig
         (cfg: Config.Config)
         (storePath: string option)
         (timeline: Timeline)
         (environment: Environment)
         (at: System.DateTimeOffset)
+        (appliedTransforms: (SsKey * OverlayAxis option) list)
         : Task<Result<FullExportStoreLeg option>> =
         match storePath with
         | None -> Task.FromResult (Result.success None)
@@ -1679,7 +1707,7 @@ module Compose =
                     match emittedR with
                     | Error errors -> Result.failure errors
                     | Ok emitted ->
-                        match runStoreLeg path timeline environment at None DataObservation.empty emitted with
+                        match runStoreLeg path timeline environment at None DataObservation.empty Tolerance.strict appliedTransforms emitted with
                         | Ok leg -> Result.success (Some leg)
                         | Error storeErr -> Result.failureOf (mapStoreErr storeErr)
             }
@@ -1713,7 +1741,7 @@ module Compose =
             match reportResult with
             | Error errors -> return Result.failure errors
             | Ok report ->
-                let! legResult = storeLegFromConfig cfg storePath timeline environment at
+                let! legResult = storeLegFromConfig cfg storePath timeline environment at report.Manifest.AppliedTransforms
                 return legResult |> Result.map (fun legOpt -> report, legOpt)
         }
 
@@ -1739,7 +1767,13 @@ module Compose =
         match storePath with
         | Some path when not (System.String.IsNullOrWhiteSpace path) ->
             let data = DataObservation.create cdcDelta None
-            match runStoreLeg path timeline environment at None data emitted with
+            // The data-load leg records the measured CDC `DataObservation` but
+            // carries no composed-run lineage trail at this site (the trail is a
+            // schema-emission artifact, not a load artifact), so the §5.5 overlay
+            // enumeration is empty here and the tolerance residual is `strict`
+            // (see the FLAG on `runStoreLeg`). The diff-vs-prior leg
+            // (`storeLegFromConfig`) is where the real overlay enumeration threads.
+            match runStoreLeg path timeline environment at None data Tolerance.strict [] emitted with
             | Ok leg -> Result.success (Some leg, cdcDelta)
             | Error storeErr -> Result.failureOf (mapStoreErr storeErr)
         | _ -> Result.success (None, cdcDelta)
