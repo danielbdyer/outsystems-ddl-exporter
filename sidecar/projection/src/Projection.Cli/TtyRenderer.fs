@@ -250,8 +250,15 @@ let buildSurveyView (reports: CapabilitySurvey.EnvironmentReport list) : View.Vi
                 // not covered.
                 sprintf "reachable %s grant unreadable (coverage unverified)" Theme.dot, View.Warn
             else
-                let cdc = if r.CdcTracked then sprintf " %s CDC-tracked" Theme.dot else ""
-                sprintf "reachable %s grant covered%s%s" Theme.dot cdc (userDirText r.UserDirectory), View.Ok
+                // NM-54 — surface an unverified CDC axis rather than reading a
+                // clean "no CDC": the probe could not be taken, so the verdict is
+                // advisory (Warn), not Ok.
+                let cdc =
+                    if r.CdcProbeFailed then sprintf " %s CDC unverified" Theme.dot
+                    elif r.CdcTracked then sprintf " %s CDC-tracked" Theme.dot
+                    else ""
+                let status = if r.CdcProbeFailed then View.Warn else View.Ok
+                sprintf "reachable %s grant covered%s%s" Theme.dot cdc (userDirText r.UserDirectory), status
         View.Field(r.Name, value, status)
     let needAttention =
         reports

@@ -308,7 +308,8 @@ let ``Voice migrationStopDetail: every easily-constructed arm yields a plain loc
           StoreReadFailed "the store is malformed",           "run history"
           DataTransferFailed [],                              "data load"
           SchemaReadFailed [],                                "deployed schema"
-          RefusedByCdc [ "dbo.Order" ],                       "CDC-tracked" ]
+          RefusedByCdc [ "dbo.Order" ],                       "CDC-tracked"
+          RefusedByCdcUnverifiable "sys.tables not readable",  "CDC state could not be verified" ]
     for e, expected in cases do
         let detail = Voice.migrationStopDetail e
         Assert.Contains(expected, detail)

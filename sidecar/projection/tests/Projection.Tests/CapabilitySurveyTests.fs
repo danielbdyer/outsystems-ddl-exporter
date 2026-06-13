@@ -133,7 +133,7 @@ let ``requiredOf: an environment no flow touches is asked for nothing`` () =
 let private report name connected reachable missing : CapabilitySurvey.EnvironmentReport =
     { Name = name; Grant = Some Grant.DataOnly; Required = Set.empty
       Connected = connected; Reachable = reachable; Missing = missing
-      GrantUnreadable = false; CdcTracked = false
+      GrantUnreadable = false; CdcTracked = false; CdcProbeFailed = false
       UserDirectory = Projection.Adapters.Sql.ReadSide.UserDirectoryProbe.absent }
 
 [<Fact>]

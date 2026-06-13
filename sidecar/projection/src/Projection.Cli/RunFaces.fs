@@ -1534,6 +1534,15 @@ let reportMigrationError (e: MigrationError) : int =
                 [ ValidationError.create "migrate.cdcTrackedSink"
                     (sprintf "%d table(s) are CDC-tracked; --allow-cdc accepts the capture." (List.length tracked)) ])
         9
+    | RefusedByCdcUnverifiable msg ->
+        // NM-54 — the CDC probe could not run; an unverifiable CDC state is
+        // UNSAFE, so the schema change is REFUSED through the same §5 gate
+        // surface as an observed-CDC refusal. Exit 9 (a clean named refusal),
+        // never a crash.
+        TtyRenderer.renderGate "projection migrate"
+            (Preflight.refusalOf
+                [ ValidationError.create "migrate.cdcStateUnverifiable" msg ])
+        9
     | RefusedByTightening msg ->
         // §5 data-compat gate — the same surface the pre-flight probe renders.
         TtyRenderer.renderGate "projection migrate"

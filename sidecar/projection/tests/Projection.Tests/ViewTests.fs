@@ -128,10 +128,10 @@ let ``Capability survey: covered / missing / unreachable / no-gate each read pla
         { Found = true; EmailKeyed = true; TableName = Some "dbo.OSSYS_USER" }
     let absentDir = Projection.Adapters.Sql.ReadSide.UserDirectoryProbe.absent
     let reports : CapabilitySurvey.EnvironmentReport list =
-        [ { Name = "cloud-uat"; Grant = Some Grant.SchemaAndData; Required = Set.empty; Connected = true;  Reachable = true;  Missing = []; GrantUnreadable = false; CdcTracked = false; UserDirectory = emailKeyed }
-          { Name = "prod";      Grant = Some Grant.DataOnly;      Required = Set.empty; Connected = true;  Reachable = true;  Missing = [ CapabilitySurvey.Performs Preflight.Insert ]; GrantUnreadable = false; CdcTracked = false; UserDirectory = absentDir }
-          { Name = "stale";     Grant = Some Grant.DataOnly;      Required = Set.empty; Connected = true;  Reachable = false; Missing = []; GrantUnreadable = false; CdcTracked = false; UserDirectory = absentDir }
-          { Name = "onprem";    Grant = None;                     Required = Set.empty; Connected = false; Reachable = false; Missing = []; GrantUnreadable = false; CdcTracked = false; UserDirectory = absentDir } ]
+        [ { Name = "cloud-uat"; Grant = Some Grant.SchemaAndData; Required = Set.empty; Connected = true;  Reachable = true;  Missing = []; GrantUnreadable = false; CdcTracked = false; CdcProbeFailed = false; UserDirectory = emailKeyed }
+          { Name = "prod";      Grant = Some Grant.DataOnly;      Required = Set.empty; Connected = true;  Reachable = true;  Missing = [ CapabilitySurvey.Performs Preflight.Insert ]; GrantUnreadable = false; CdcTracked = false; CdcProbeFailed = false; UserDirectory = absentDir }
+          { Name = "stale";     Grant = Some Grant.DataOnly;      Required = Set.empty; Connected = true;  Reachable = false; Missing = []; GrantUnreadable = false; CdcTracked = false; CdcProbeFailed = false; UserDirectory = absentDir }
+          { Name = "onprem";    Grant = None;                     Required = Set.empty; Connected = false; Reachable = false; Missing = []; GrantUnreadable = false; CdcTracked = false; CdcProbeFailed = false; UserDirectory = absentDir } ]
     let p = plain (TtyRenderer.buildSurveyView reports)
     Assert.Contains("grant covered", p)        // cloud-uat — covered
     Assert.Contains("users email-keyed", p)    // cloud-uat — P10 user-directory fragment

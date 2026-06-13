@@ -484,10 +484,12 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
 
                         // LEG 2 — meter-liveness: the SAME production primitive,
                         // bracketing one INSERT, reads exactly +1.
-                        let! baseline = Deploy.cdcCaptureTotal conn
+                        let! baselineR = Deploy.cdcCaptureTotal conn
+                        let baseline = match baselineR with Ok n -> n | Error es -> failwithf "cdcCaptureTotal baseline: %A" es
                         do! Deploy.executeBatch conn
                                 "INSERT INTO [dbo].[MIGAB_CUSTOMER] ([ID],[EMAIL]) VALUES (3, N'c@x.com');"
-                        let! post = Deploy.cdcCaptureTotal conn
+                        let! postR = Deploy.cdcCaptureTotal conn
+                        let post = match postR with Ok n -> n | Error es -> failwithf "cdcCaptureTotal post: %A" es
                         Assert.Equal(baseline + 1, post)
                 }))
 
@@ -789,9 +791,11 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
                     if not enabled then
                         printfn "SKIP AC-X1 (live): container did not enable CDC"
                     else
-                        let! baseline = Deploy.cdcCaptureTotal conn
+                        let! baselineR = Deploy.cdcCaptureTotal conn
+                        let baseline = match baselineR with Ok n -> n | Error es -> failwithf "cdcCaptureTotal baseline: %A" es
                         do! Deploy.executeBatch conn seed   // re-run the SAME seed script
-                        let! post = Deploy.cdcCaptureTotal conn
+                        let! postR = Deploy.cdcCaptureTotal conn
+                        let post = match postR with Ok n -> n | Error es -> failwithf "cdcCaptureTotal post: %A" es
                         let! after = scalarInt conn "SELECT COUNT(*) FROM [dbo].[Country];"
                         Assert.Equal(2, after)            // still 2 — non-overwriting, no dupes.
                         Assert.Equal(baseline, post)     // zero CDC captures on the idempotent re-run.

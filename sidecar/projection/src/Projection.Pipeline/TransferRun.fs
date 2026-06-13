@@ -761,17 +761,23 @@ module Transfer =
             let cdcGate : Task<Result<unit>> =
                 task {
                     if mode = Execute && not allowCdc then
-                        let! tracked = ReadSide.cdcTrackedTables sink
-                        if List.isEmpty tracked then return Ok ()
-                        else
-                            return
-                                Result.failureOf
-                                    (ValidationError.create
-                                        "transfer.cdcTrackedSink"
-                                        (sprintf
-                                            "Sink has %d CDC-tracked table(s) (e.g. %s); refusing --execute. Pass --allow-cdc to override."
-                                            (List.length tracked)
-                                            (tracked |> List.truncate 3 |> String.concat ", ")))
+                        // NM-54 — an unverifiable CDC state is UNSAFE: a probe
+                        // failure (transient SqlException / VIEW DEFINITION denial)
+                        // REFUSES the write through the same named-refusal seam,
+                        // never proceeds and never crashes.
+                        match! ReadSide.cdcTrackedTables sink with
+                        | Error es -> return Result.failure es
+                        | Ok tracked ->
+                            if List.isEmpty tracked then return Ok ()
+                            else
+                                return
+                                    Result.failureOf
+                                        (ValidationError.create
+                                            "transfer.cdcTrackedSink"
+                                            (sprintf
+                                                "Sink has %d CDC-tracked table(s) (e.g. %s); refusing --execute. Pass --allow-cdc to override."
+                                                (List.length tracked)
+                                                (tracked |> List.truncate 3 |> String.concat ", ")))
                     else return Ok ()
                 }
             let spanningGate : Task<Result<unit>> =
@@ -942,17 +948,20 @@ module Transfer =
             let! cdcGate =
                 task {
                     if mode = Execute && not allowCdc then
-                        let! tracked = ReadSide.cdcTrackedTables sink
-                        if List.isEmpty tracked then return Ok ()
-                        else
-                            return
-                                Result.failureOf
-                                    (ValidationError.create
-                                        "synthetic.cdcTrackedSink"
-                                        (sprintf
-                                            "Sink has %d CDC-tracked table(s) (e.g. %s); refusing --execute. Pass --allow-cdc to override."
-                                            (List.length tracked)
-                                            (tracked |> List.truncate 3 |> String.concat ", ")))
+                        // NM-54 — unverifiable CDC state is UNSAFE: refuse on probe failure.
+                        match! ReadSide.cdcTrackedTables sink with
+                        | Error es -> return Result.failure es
+                        | Ok tracked ->
+                            if List.isEmpty tracked then return Ok ()
+                            else
+                                return
+                                    Result.failureOf
+                                        (ValidationError.create
+                                            "synthetic.cdcTrackedSink"
+                                            (sprintf
+                                                "Sink has %d CDC-tracked table(s) (e.g. %s); refusing --execute. Pass --allow-cdc to override."
+                                                (List.length tracked)
+                                                (tracked |> List.truncate 3 |> String.concat ", ")))
                     else return Ok ()
                 }
             match cdcGate with
@@ -1398,17 +1407,20 @@ module Transfer =
                 let cdcGate : Task<Result<unit>> =
                     task {
                         if mode = Execute && not allowCdc then
-                            let! tracked = ReadSide.cdcTrackedTables sink
-                            if List.isEmpty tracked then return Ok ()
-                            else
-                                return
-                                    Result.failureOf
-                                        (ValidationError.create
-                                            "transfer.cdcTrackedSink"
-                                            (sprintf
-                                                "Sink has %d CDC-tracked table(s) (e.g. %s); refusing --execute. Pass --allow-cdc to override."
-                                                (List.length tracked)
-                                                (tracked |> List.truncate 3 |> String.concat ", ")))
+                            // NM-54 — unverifiable CDC state is UNSAFE: refuse on probe failure.
+                            match! ReadSide.cdcTrackedTables sink with
+                            | Error es -> return Result.failure es
+                            | Ok tracked ->
+                                if List.isEmpty tracked then return Ok ()
+                                else
+                                    return
+                                        Result.failureOf
+                                            (ValidationError.create
+                                                "transfer.cdcTrackedSink"
+                                                (sprintf
+                                                    "Sink has %d CDC-tracked table(s) (e.g. %s); refusing --execute. Pass --allow-cdc to override."
+                                                    (List.length tracked)
+                                                    (tracked |> List.truncate 3 |> String.concat ", ")))
                         else return Ok ()
                     }
                 let spanningGate : Task<Result<unit>> =

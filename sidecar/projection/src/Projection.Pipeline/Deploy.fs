@@ -237,14 +237,21 @@ module Deploy =
     /// land automatically) and swallowed, so the count is still the truth.
     /// No CDC tracking ⇒ 0 by the empty fold. Callers bracket an action with
     /// this (baseline → act → post) to surface the captures the action fired.
-    let cdcCaptureTotal (cnn: SqlConnection) : Task<int> =
+    ///
+    /// NM-54 — this is a MEASURE: if the CDC axis can't be read (the tracked
+    /// probe or the capture-count probe refuses), the count CANNOT be taken, and
+    /// fabricating 0 would silently understate the change-norm. Both probes now
+    /// return a NAMED `Result`; this surfaces the Error rather than swallowing it.
+    let cdcCaptureTotal (cnn: SqlConnection) : Task<Result<int>> =
         task {
-            let! tracked = ReadSide.cdcTrackedTables cnn
-            if List.isEmpty tracked then return 0
-            else
-                try do! executeBatch cnn "EXEC sys.sp_cdc_scan;"
-                with _ -> ()  // capture job already running ⇒ captures land automatically
-                return! ReadSide.cdcCaptureCount cnn tracked
+            match! ReadSide.cdcTrackedTables cnn with
+            | Error es -> return Result.failure es
+            | Ok tracked ->
+                if List.isEmpty tracked then return Result.success 0
+                else
+                    try do! executeBatch cnn "EXEC sys.sp_cdc_scan;"
+                    with _ -> ()  // capture job already running ⇒ captures land automatically
+                    return! ReadSide.cdcCaptureCount cnn tracked
         }
 
     /// Cache of resolved parallelism per connection string. Per slice
@@ -1341,10 +1348,16 @@ module Deploy =
                                 use cdcConn = new SqlConnection(targetConn)
                                 do! cdcConn.OpenAsync()
                                 do! enableCdc cdcConn tgt
-                                let! baseline = cdcCaptureTotal cdcConn
-                                do! redeploy cdcConn tgt
-                                let! post = cdcCaptureTotal cdcConn
-                                return Result.success (report, post - baseline)
+                                // NM-54 — the measure surfaces its probe Error
+                                // rather than fabricating a count.
+                                match! cdcCaptureTotal cdcConn with
+                                | Error es -> return Result.failure es
+                                | Ok baseline ->
+                                    do! redeploy cdcConn tgt
+                                    match! cdcCaptureTotal cdcConn with
+                                    | Error es -> return Result.failure es
+                                    | Ok post ->
+                                        return Result.success (report, post - baseline)
                     })
         }
 

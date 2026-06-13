@@ -1551,18 +1551,35 @@ module ReadSide =
     /// metadata); the Transfer pre-flight (`Projection.Pipeline.Transfer`)
     /// consults it to refuse an `Execute` write against a CDC-tracked sink.
     /// Returns `[schema].[table]`-style names, ordered.
-    let cdcTrackedTables (cnn: SqlConnection) : Task<string list> =
+    ///
+    /// NM-54 — this is the CDC integrity gate the Transfer/Migration pre-flight
+    /// consults to REFUSE an `Execute` write against a CDC-tracked sink. A
+    /// transient `SqlException` or a `VIEW DEFINITION`/`VIEW SERVER STATE`
+    /// permission denial reading `sys.tables` must NOT propagate unwrapped: an
+    /// unverifiable CDC state is UNSAFE, so the failure becomes a NAMED refusal
+    /// (`readside.cdcTrackedProbeFailed`) the gate binds and converts to a clean
+    /// refusal — never a raw stack trace. Same `try/with`→`Result` envelope as
+    /// `read` below; no retry (the structural-home blocker stands).
+    let cdcTrackedTables (cnn: SqlConnection) : Task<Result<string list>> =
         task {
-            use cmd = cnn.CreateCommand()
-            cmd.CommandText <-
-                "SELECT SCHEMA_NAME(t.schema_id) + '.' + t.name \
-                 FROM sys.tables t \
-                 WHERE t.is_tracked_by_cdc = 1 AND t.is_ms_shipped = 0 \
-                 ORDER BY 1"
-            use! reader = cmd.ExecuteReaderAsync()
-            let names = ResizeArray<string>()
-            do! drainRows reader (fun reader -> names.Add(reader.GetString 0))
-            return List.ofSeq names
+            try
+                use cmd = cnn.CreateCommand()
+                cmd.CommandText <-
+                    "SELECT SCHEMA_NAME(t.schema_id) + '.' + t.name \
+                     FROM sys.tables t \
+                     WHERE t.is_tracked_by_cdc = 1 AND t.is_ms_shipped = 0 \
+                     ORDER BY 1"
+                use! reader = cmd.ExecuteReaderAsync()
+                let names = ResizeArray<string>()
+                do! drainRows reader (fun reader -> names.Add(reader.GetString 0))
+                return Result.success (List.ofSeq names)
+            with
+            | ex ->
+                return
+                    Result.failureOf (
+                        ValidationError.create
+                            "readside.cdcTrackedProbeFailed"
+                            (sprintf "CDC-tracked-table probe failed (sys.tables not readable): %s" ex.Message))
         }
 
     /// G0b (P10) — the user-directory readability verdict for one place. The
@@ -1659,25 +1676,40 @@ module ReadSide =
     /// unchanged. The no-CDC case (empty `tracked`) returns 0 by the
     /// empty fold. The caller controls scope by passing the table list,
     /// so a sum over a subset (one kind's "Measure" leg) is expressible.
-    let cdcCaptureCount (cnn: SqlConnection) (tracked: string list) : Task<int> =
+    ///
+    /// NM-63 — the CT capture-table name is derived (`cdc.<schema>_<table>_CT`);
+    /// a custom `@capture_instance` or an absent capture table makes the
+    /// `COUNT(*)` throw `Invalid object name`. That must not abort the data-norm
+    /// measure unwrapped: the failure becomes a NAMED refusal
+    /// (`readside.cdcCaptureProbeFailed`) the caller binds and surfaces. Same
+    /// `try/with`→`Result` envelope as `read` below.
+    let cdcCaptureCount (cnn: SqlConnection) (tracked: string list) : Task<Result<int>> =
         task {
-            let mutable total = 0
-            for name in tracked do
-                // `cdcTrackedTables` returns unbracketed `schema.table`;
-                // split on the first '.' so a table whose name carries a
-                // '.' (unusual but legal) still resolves its schema.
-                let schema, table =
-                    match name.IndexOf '.' with
-                    | i when i >= 0 -> name.Substring(0, i), name.Substring(i + 1)
-                    | _ -> "dbo", name
-                let captureTable =
-                    System.String.Concat("cdc.[", schema, "_", table, "_CT]")  // LINT-ALLOW: terminal SQL-text-emission boundary; CT-table name mirrors SQL Server's cdc.<schema>_<table>_CT naming
-                use cmd = cnn.CreateCommand()
-                cmd.CommandText <-
-                    System.String.Concat("SELECT COUNT(*) FROM ", captureTable, ";")  // LINT-ALLOW: terminal SQL-text-emission boundary; captureTable is the CDC capture relation name
-                let! countObj = cmd.ExecuteScalarAsync()
-                total <- total + System.Convert.ToInt32 countObj
-            return total
+            try
+                let mutable total = 0
+                for name in tracked do
+                    // `cdcTrackedTables` returns unbracketed `schema.table`;
+                    // split on the first '.' so a table whose name carries a
+                    // '.' (unusual but legal) still resolves its schema.
+                    let schema, table =
+                        match name.IndexOf '.' with
+                        | i when i >= 0 -> name.Substring(0, i), name.Substring(i + 1)
+                        | _ -> "dbo", name
+                    let captureTable =
+                        System.String.Concat("cdc.[", schema, "_", table, "_CT]")  // LINT-ALLOW: terminal SQL-text-emission boundary; CT-table name mirrors SQL Server's cdc.<schema>_<table>_CT naming
+                    use cmd = cnn.CreateCommand()
+                    cmd.CommandText <-
+                        System.String.Concat("SELECT COUNT(*) FROM ", captureTable, ";")  // LINT-ALLOW: terminal SQL-text-emission boundary; captureTable is the CDC capture relation name
+                    let! countObj = cmd.ExecuteScalarAsync()
+                    total <- total + System.Convert.ToInt32 countObj
+                return Result.success total
+            with
+            | ex ->
+                return
+                    Result.failureOf (
+                        ValidationError.create
+                            "readside.cdcCaptureProbeFailed"
+                            (sprintf "CDC capture-count probe failed (capture table absent or custom-named): %s" ex.Message))
         }
 
     let read (cnn: SqlConnection) : Task<Result<Catalog>> =
