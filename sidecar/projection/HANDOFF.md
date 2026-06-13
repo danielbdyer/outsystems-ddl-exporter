@@ -1,3 +1,130 @@
+# Handoff addendum — 2026-06-13, SESSION CLOSE: the reconciliation program is four slices deep, every pool green, and slice 5 (WP6, the data lanes) is pre-scoped to the line
+
+To the next agent.
+
+You are inheriting the V1 full-export reconciliation program at full
+stride. Read `V1_FULL_EXPORT_RECONCILIATION_PLAN.md` FIRST (the
+research record, the nine work packages, the four operator
+adjudications C1–C4), then `THE_GOLDEN_EMISSION.md` (the blessing
+protocol you will live inside). Four slices shipped this session —
+`cd11d93` (logical-only inverse edges + the HasDbConstraint carve-out),
+`ab5df9d` (EmissionPolicy channel collapse + the golden corpus
+founding), `2749ee4`/`8371a31` (operator blessings #1 and #2: V1
+per-table form, inline FK/CHECK ladders, the constraint stack, the
+128-char identifier budget), `e16aab9` (scope pushdown + the
+equivalence law + the dangling-reference fix). Every slice closed with
+fast AND docker pools green (latest: 3150/0 and 231/231). The
+operating rhythm that made that true: DECISIONS entry FIRST, golden
+diff in the SAME commit as the emission change, matrix/charter
+amendments with the slice, both pools before push.
+
+**Your slice is WP6 — the data lanes.** The operator's directive is
+standing in `THE_GOLDEN_EMISSION.md` §4: per-lane golden artifacts
+(`Data/StaticSeeds.sql` / `Data/Bootstrap.sql` /
+`Data/MigrationData.sql`) land in the SAME commit as the lanes fill.
+The full seam map below is current at `e16aab9` — verify line numbers
+with a grep, then execute.
+
+**Step 1 — IDENTITY_INSERT bracket (strictly first; ~half day).**
+`StaticSeedsEmitter.kindToScript` (StaticSeedsEmitter.fs:276–332)
+never reads `load.Disposition` — dispatch on
+`IdentityDisposition.AssignedBySink` (minted structurally at
+DataLoadPlan.build:106 via `IdentityDisposition.ofKind`,
+SurrogateRemap.fs:78–83) and bracket `RenderedPhase1` with
+`ScriptDomBuild.buildSetIdentityInsert` (ScriptDomBuild.fs:1187–1195,
+raw node → `ScriptDomGenerate.generateOne` → the `;\nGO\n` framing the
+partition law depends on). Bracket INSIDE the per-kind rendered string
+— a bracket outside it breaks the P2 leveled-partition property
+(DataEmissionComposerTests.fs:594–721). PK-suppression is WRONG for
+the MERGE lane (the ON clause joins on the PK). Precedent:
+StaticPopulationEmitter.fs:95–116. Add an IDENTITY-PK static kind to
+GoldenCatalog (the statics are all `pkAttr … false` today, so no diff
+shows until you do) + re-record + DECISIONS note.
+
+**Step 2 — Bootstrap delegation (~1 day).** `BootstrapEmitter
+.emitFromPlan` (BootstrapEmitter.fs:76–82) discards its plan — body
+becomes a delegation to `StaticSeedsEmitter.emitFromPlanWith`
+(StaticSeedsEmitter.fs:364–378; signature-identical modulo the scope).
+The UserRemap conversion already exists: `UserRemapContext.toSurrogate`
+(UserRemap.fs:183–200), worked example at
+MigrationDependenciesEmitter.buildPlan:412–428. Flip
+`registeredMetadata.Status` from `NotImplementedInV2` to `Active`
+(BootstrapEmitter.fs:141–143) or the totality property tests bite.
+Bootstrap's "remaining kinds" set MUST be the complement of
+(Static-populated ∪ Migration-context) kinds — an overlap is
+`OverlappingEmitterCoverage` which Pipeline.fs:604–607 escalates to a
+production `invalidOp`. Rewrite the empty-no-op pins
+(BootstrapEmitterTests.fs:83–100).
+
+**Step 3 — Per-lane outputs (~1 day).** The per-lane rendered strings
+already exist BEFORE the union: `SiblingArtifacts`
+(DataEmissionComposer.fs:60–65) out of `dispatchSiblings` (:98–128).
+Render each sibling in `topo.Order` exactly as `composeRenderedFull`
+does (:318–331) — render ONCE from one dispatch, never twice. The
+decoration (Pipeline.fs:596–607) adds the three keys beside
+`Data/seed.sql`; `writeAllToStaging` iterates `DataBundle`
+generically (zero writer changes). Keep `Map.isEmpty` when the flags
+are off (FullExportDataBundleTests.fs:67–86 pins it).
+
+**Step 4 — Hydration (the big one; 2–3 days).** The graft point:
+`runWithConfig` is a staged task (Pipeline.fs:1318–1378); add a staged
+step between extract and emit on the `acquireProfile` template
+(:1015–1032) — `runWithConfigCore` is deliberately sync (FS3511; its
+docstring :1034–1038), so hydration lives in the async caller. Row
+source: open a SECOND connection from `cfg.Model.Ossys` via the
+`LiveModelRead.fromConnSpecWith` Substrate pattern
+(LiveModelRead.fs:83–100; the model-read connection is use-disposed —
+not reusable). Stream per owned kind via `Ingestion.streamKindRows` /
+`collectInOrder` (Ingestion.fs:19–71 — already FS3511-safe; scope it
+to owned kinds, NEVER `ReadSide.read` — survival rule 8 marks
+everything Static). Replace the `Static []` marks
+(OssysRowsetReader.fs:581) with hydrated rows;
+`NormalizeStaticPopulations` sorts them deterministically for free if
+you graft pre-chain (graft by SsKey — rename-invariant, A1).
+**Parity duty:** hydration must also reach `projectSeedPlan` /
+`emittedSeedPlan` (Pipeline.fs:1407–1446) or the deployed seed drifts
+from the published one. File-sourced model + data flags on ⇒ a NAMED
+skip diagnostic, never silent emptiness. The `ReadbackPopulated`
+provenance-typed-Static closed-DU change is the structural close
+(armed at CONSTELLATION_BACKLOG.md:796–799; the plan declares its
+trigger fired) — codec-totality blast radius; its DECISIONS amendment
+comes FIRST and it is acceptable to land hydration with the marker
+approach + the DU change as the immediate follow-up if the blast
+proves large mid-slice.
+
+**Step 5 — Per-lane goldens (same commit train as 3/4).** GoldenCatalog
+gains the lane variances (a bootstrap-owned kind, a migration-row
+kind, the IDENTITY-PK static from step 1); `GOLDEN_RECORD=1` +
+DECISIONS note per the blessing protocol.
+
+**Traps, beyond the survival list:** (1) the Platonic catalog's
+self-FK (`Engagement.ParentId`) puts the data composer's
+`TreatAsCycle` topo into Alphabetical mode — the gen-7 residual
+("fused-path alphabetical MERGE order can violate non-cycle FK chains
+among seeded kinds — loud, not silent") becomes LIVE once real rows
+flow; watch RegionA/B Phase-2 ordering in the golden diffs. (2)
+Compose data over the POST-chain catalog only (gen-7 trap (a)). (3)
+The golden comparator fails on artifact-set drift — three new files
+per scenario are EXPECTED failures until re-recorded with the note.
+
+**After WP6, the queue:** WP5 (the C1 `V2.*` → domain-name rename +
+gate — its golden diff is the worked example of the blessing
+protocol; dual-read window in ReadSide), WP7-remainder (logical
+IX/UIX synthesis; trigger-definition rewrite; >128 PK golden example),
+WP8 (Order_Num — registered pass per C3; the rowsets-SQL divergence
+gets a header citation), WP9 (sample-config rewrite; the
+`resolveFlowSpec` ossys-only provenance-arm fix at
+MovementSurface.fs:917–923; the reserved `projection compare` verb —
+matrix row 41's shape, trigger fired). The EXCEPT validate-before-apply
+mode (C2: opt-in) rides WP6's lane work or its own slice. J5 — a
+writable UAT connection — still trumps everything.
+
+Run `scripts/test.sh fast` early and often; docker pool before every
+push (the warm container is your friend; survival rules 1–4 for its
+failure signatures). Hold the spine.
+
+---
+
 # Handoff addendum — 2026-06-13, reconciliation slice 4 CLOSE (the scope pushes down to the OSSYS read; the equivalence law; the dangling-reference fix)
 
 To the next agent.
