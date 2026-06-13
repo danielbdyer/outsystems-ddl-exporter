@@ -53,40 +53,52 @@ module BootstrapEmitter =
     [<Literal>]
     let version : int = 1
 
-    /// Empty-script projection — the slice ζ MVP shape per kind.
-    /// Carries the slice ι split (`RenderedPhase1` + `RenderedPhase2`)
-    /// at empty defaults; per-kind `Rendered` is the empty
-    /// concatenation.
-    let private emptyScript : DataInsertScript =
-        { Phase1Merges   = []
-          Phase2Updates  = []
-          RenderedPhase1 = ""
-          RenderedPhase2 = ""
-          Rendered       = "" }
+    /// Discover the user kind's `SsKey` from the catalog by scanning for
+    /// any reference flagged `IsUserFk` — its `TargetKind` names the
+    /// platform user kind. Mirrors `MigrationDependenciesEmitter
+    /// .tryDiscoverUserKind` (the two data-publication emitters that
+    /// thread a `UserRemapContext` share the discovery shape; kept local
+    /// per the deliberate per-emitter parallelism). `None` when no such
+    /// reference exists (the dominant case until the OSSYS adapter's
+    /// IsUserFk detection lands).
+    let private tryDiscoverUserKind (catalog: Catalog) : SsKey option =
+        Catalog.allKinds catalog
+        |> List.tryPick (fun k ->
+            k.References
+            |> List.tryPick (fun r -> if r.IsUserFk then Some r.TargetKind else None))
 
-    /// Π_Bootstrap emit (canonical; plan-consuming). Realizes the
-    /// supplied `DataLoadPlan`. Slice ζ MVP scope: Bootstrap has no
-    /// row source today (the plan's `Loads[i].Rows` are empty for
-    /// every kind in the current call paths), so emission is
-    /// uniformly the empty no-op script per T11 keyset coverage.
-    /// Chapter 4.2 slice η lands the per-kind row source (system
-    /// users + default policies) routed through `DataLoadPlan.build`
-    /// — at which point this same `emitFromPlan` body materializes
-    /// real content without signature churn.
+    /// Π_Bootstrap emit (canonical; plan-consuming). WP6 step 2
+    /// (DECISIONS 2026-06-13) — Bootstrap's renderer IS the static-seeds
+    /// MERGE renderer: both emitters realize the same algebra over the
+    /// same `DataLoadPlan` (A40), so this delegates to
+    /// `StaticSeedsEmitter.emitFromPlanWith`. Bootstrap is the
+    /// remaining-kinds upsert lane (system users, default policies, and
+    /// kinds not owned by StaticSeeds or MigrationDependencies); no
+    /// delete scope on this lane. An empty plan (the case until the WP6
+    /// hydration step grafts the per-kind row source) renders empty per
+    /// kind, byte-identical to the prior stub; a populated plan renders
+    /// its MERGEs (IDENTITY_INSERT-bracketed for `AssignedBySink` kinds,
+    /// via the shared renderer).
     let emitFromPlan
         (catalog: Catalog)
-        (_profile: Profile)
-        (_plan: DataLoadPlan)
+        (profile: Profile)
+        (plan: DataLoadPlan)
         : Result<ArtifactByKind<DataInsertScript>, EmitError> =
         use _ = Bench.scope "emit.bootstrap.emitFromPlan"
-        ArtifactByKind.perKind catalog (fun _ -> emptyScript)
+        StaticSeedsEmitter.emitFromPlanWith None catalog profile plan
 
     /// Π_Bootstrap emit (composer-facing; hoisted-topo + UserRemap
-    /// context). Builds the (currently empty) plan and delegates to
-    /// `emitFromPlan`; `UserRemapContext` flows in by signature but
-    /// substitution lands at `DataLoadPlan.build` (the canonical
-    /// site). The composer's external interface preserves the
-    /// existing arity for zero-churn through this slice.
+    /// context). Converts the operator's `UserRemapContext` to a
+    /// `SurrogateRemapContext` (the anticipated conversion — same route
+    /// `MigrationDependenciesEmitter.buildPlan` takes), then builds the
+    /// plan and delegates to `emitFromPlan`. The per-kind row source is
+    /// `Map.empty` until the WP6 hydration step grafts the supplemental +
+    /// remaining-kind rows; with no rows the converted remap applies to
+    /// nothing (byte-stable). **Partition law:** the hydrated row source
+    /// MUST be the complement of (Static-populated ∪ Migration-context)
+    /// kinds — feeding Bootstrap a kind another lane also populates trips
+    /// the composer's `OverlappingEmitterCoverage` assertion (a
+    /// production `invalidOp`).
     let emitWithTopo
         (topo: TopologicalOrder)
         (catalog: Catalog)
@@ -94,12 +106,14 @@ module BootstrapEmitter =
         (userRemap: UserRemapContext)
         : Result<ArtifactByKind<DataInsertScript>, EmitError> =
         use _ = Bench.scope "emit.bootstrap.emitWithTopo"
-        // Slice ζ MVP: no row source yet (Map.empty). When chapter
-        // 4.2 slice η lands the per-kind row source, discover the
-        // user kind here and convert UserRemap → SurrogateRemap so
-        // the plan-build applies the substitution.
-        let _ = userRemap
-        let plan = DataLoadPlan.build catalog topo Map.empty SurrogateRemapContext.empty
+        let remap =
+            match tryDiscoverUserKind catalog with
+            | Some userKindKey ->
+                match UserRemapContext.toSurrogate userKindKey userRemap with
+                | Ok r    -> r
+                | Error _ -> SurrogateRemapContext.empty
+            | None -> SurrogateRemapContext.empty
+        let plan = DataLoadPlan.build catalog topo Map.empty remap
         emitFromPlan catalog profile plan
 
     /// Π_Bootstrap emit (standalone). Convenience for callers that
@@ -117,27 +131,19 @@ module BootstrapEmitter =
     /// Harvest-discipline classification per pillar 9 (chapter 5.13
     /// slice data-emission-registry).
     ///
-    /// **Status = NotImplementedInV2 at slice-ζ-MVP scope.** The
-    /// emitter ships structurally (T11 keyset coverage; composer-
-    /// dispatch hook; A18-amended signature) but emits no rows today.
-    /// The rationale captures the deferral substantively per the
-    /// `TransformRegistry.create` non-empty-rationale invariant.
-    /// Future chapter 4.2 slice η wires the populated `UserRemapContext`
-    /// into actual row emission; the registry entry transitions to
-    /// `Active` with the Sites widening (per the closed-DU expansion
-    /// empirical-test discipline).
+    /// **Status = Active (WP6 step 2, DECISIONS 2026-06-13).** Bootstrap
+    /// is implemented: `emitFromPlan` delegates to the static-seeds MERGE
+    /// renderer (A40 — same algebra over the same `DataLoadPlan`), so it
+    /// renders whatever plan it is handed (an empty plan renders empty per
+    /// kind — `MigrationDependenciesEmitter` is likewise Active and emits
+    /// nothing without a context). The DataIntent `bootstrapRowsProjection`
+    /// site is the plan-rendering surface; the OperatorIntent
+    /// `userRemapBootstrap` site is the `UserRemapContext` threading
+    /// (`emitWithTopo` converts it via `UserRemapContext.toSurrogate`). The
+    /// per-kind row source is grafted by the WP6 hydration step.
     let registeredMetadata : RegisteredTransformMetadata =
-        // `NotImplementedInV2` status — Bootstrap uses the record-literal
-        // form (`RegisteredTransformMetadata.emitter` helper fixes
-        // Status = Active per the sibling-emitter-registry-helper
-        // arc's "common case" rationale). TransformSite helper still
-        // applies for the inner site.
-        { Name = "bootstrapEmitter"
-          Domain = Data
-          StageBinding = Emitter
-          Sites =
-            [ TransformSite.operatorIntent "userRemapBootstrap" Insertion
-                "Slice ζ MVP — Bootstrap's data-publication surface is the operator's `UserRemapContext` (target-environment user identity mapping). The emitter consumes the context but emits no rows yet (chapter 4.2 slice η populates the per-kind row source). OverlayAxis = Insertion when the future emission lands; named here so chapter 4.2's cash-out doesn't need to invent the classification." ]
-          Status =
-            NotImplementedInV2
-                "Slice ζ MVP — Bootstrap emits the empty no-op artifact for every kind today. Chapter 4.2 slice η (UserFkReflowPass emitter integration) lands the per-kind row source; chapter 4.3 (Diagnostics emitters) lands the Profile-evidence-derived row source. The structural hook + composer dispatch land at slice ζ so chapters 4.2 + 4.3 have a fixed insertion point and the slice θ partition assertion is honest (the composer asks Bootstrap for its coverage rather than silently knowing it's empty)." }
+        RegisteredTransformMetadata.emitter "bootstrapEmitter" Data
+            [ TransformSite.dataIntent "bootstrapRowsProjection"
+                "Render MERGE statements for the supplied DataLoadPlan's loads — the remaining-kinds lane (system users, default policies, and any kind not owned by StaticSeeds or MigrationDependencies). Delegates to StaticSeedsEmitter.emitFromPlanWith; pure projection of the post-substitution plan (identity substitution landed once at DataLoadPlan.build). DataIntent. The per-kind row source is grafted by the WP6 hydration step; an empty plan renders empty per kind (T11 keyset preserved). The populated coverage MUST be the complement of (Static ∪ Migration) kinds, or the composer's OverlappingEmitterCoverage partition assertion fires."
+              TransformSite.operatorIntent "userRemapBootstrap" Insertion
+                "Bootstrap's data-publication surface threads the operator's `UserRemapContext` (target-environment user identity mapping) into `DataLoadPlan.build` via `UserRemapContext.toSurrogate`, keyed under the catalog-discovered user kind — the same conversion `MigrationDependenciesEmitter.buildPlan` performs. OverlayAxis = Insertion." ]

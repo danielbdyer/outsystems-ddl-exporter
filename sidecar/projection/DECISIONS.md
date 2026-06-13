@@ -22203,3 +22203,257 @@ surface now owns that fact; a per-edge `moduleFilter.referencePruned`
 witness lands when the filter seam gains a diagnostics channel (named
 follow-up; until then the prune is documented here and law-tested,
 never ad-hoc).
+
+---
+
+## 2026-06-13 — Slice 5 of the full-export reconciliation (WP6 step 1): the MERGE lane brackets IDENTITY-PK kinds with `SET IDENTITY_INSERT`, as a single GO batch
+
+Context: `V1_FULL_EXPORT_RECONCILIATION_PLAN.md` WP6 step 1 ("pull slice E
+forward — IDENTITY_INSERT in the MERGE lane FIRST; landing hydration
+without this converts empty-output into deploy-failure"). V1 reference:
+`StaticSeedSqlBuilder.cs:140-145,202-206` brackets the seed INSERT block
+with `SET IDENTITY_INSERT … ON/OFF`. V2 had the bracket on the
+`StaticPopulationEmitter`/Bulk lanes (`StaticPopulationEmitter.fs:95-116`)
+but **not** on the production MERGE lane (`StaticSeedsEmitter`), where the
+slice-E note ("`AssignedBySink` will suppress the IDENTITY PK column") was
+the placeholder. This slice cashes it out — and overturns the suppression
+plan.
+
+**1. Dispatch on `IdentityDisposition.AssignedBySink`, not column scan.**
+`StaticSeedsEmitter.kindToScript` now reads `load.Disposition` (minted
+structurally at `DataLoadPlan.build` via `IdentityDisposition.ofKind` —
+`AssignedBySink` iff the PK carries IDENTITY). An `AssignedBySink` kind's
+Phase-1 MERGE is bracketed; every other disposition is byte-identical to
+the pre-slice output.
+
+**2. PK suppression is WRONG for the MERGE lane — overturned.** The slice-E
+docstring proposed suppressing the IDENTITY PK column for `AssignedBySink`.
+The MERGE's `ON` clause joins on the PK (`[Target].[Id] = [Source].[Id]`)
+and the `WHEN NOT MATCHED … INSERT` lists the PK; dropping the PK column
+would break the idempotent upsert. The correct realization is the V1
+bracket: keep the PK in the MERGE and wrap with `SET IDENTITY_INSERT`.
+
+**3. The bracket is a SINGLE GO batch — the load-bearing correctness call.**
+`SET IDENTITY_INSERT` is **session-scoped**, and the leveled load leg
+(`Deploy.executeBatchParallel`, the gen-7 wire) opens a *fresh connection
+per GO-segment* and races them under a semaphore. A bracket split across GO
+boundaries (`SET ON; GO … MERGE; GO … SET OFF; GO`) would land the toggle
+and the MERGE on different connections — the toggle would not apply and the
+insert would fail. So the bracket emits as ONE GO segment:
+`SET IDENTITY_INSERT [t] ON;\n<merge>;\nSET IDENTITY_INSERT [t] OFF;\nGO\n`
+— atomic on whatever single connection runs that segment, correct for both
+the fused `Data/seed.sql` artifact (one sqlcmd session) and the leveled
+deploy (one connection per segment).
+
+**4. The bracket lives INSIDE `RenderedPhase1` — the partition law holds.**
+Both the fused render (`composeRenderedFull`) and the leveled render
+(`composeRenderedLeveled`) consume the same per-kind `RenderedPhase1`
+string, so the fused-≡-leveled GO-segment-multiset partition law
+(`DataEmissionComposerTests` P2) is preserved by construction. Phase-2
+(`RenderedPhase2`, the deferred-FK UPDATE) never touches the PK, so it is
+not bracketed.
+
+**5. Every statement in the batch is explicitly `;`-terminated.** The `SET`
+statements render via `ScriptDomGenerate.generateOne` from the typed
+`SetIdentityInsertStatement`; empirically (verified against the recorded
+bytes) `generateOne` does NOT append a `;` to a `SET IDENTITY_INSERT` — the
+terminator behavior is statement-type-specific, not governed by the pinned
+`IncludeSemicolons = true` (the `Render.toText` Statement path gets away
+without it because its neighbor is INSERT, which has no preceding-terminator
+rule). MERGE, by contrast, requires its immediately-preceding statement to
+be `;`-terminated, so the emitter appends `;` to the `SET ON`, to the MERGE
+(the documented ScriptDom MERGE-terminator quirk), and to the `SET OFF`.
+Typed AST throughout; the only terminal-text literals are the SQL statement
+terminators and the `GO` batch separator.
+
+**6. Scope: the static-seeds MERGE lane only.** The
+`MigrationDependenciesEmitter` mirror (its `kindToScript` is the algebraic
+twin) is deferred to the slice that introduces a migration-row golden kind
+(WP6 step 5), where it lands with its own golden witness. The static lane
+is the one the operator's corporate run exercises.
+
+**7. Golden witness.** `GoldenCatalog` gained `Tier` — a static lookup with
+an IDENTITY PK and authored rows — the first `AssignedBySink` static in the
+Platonic catalog (the existing statics are all non-identity PKs, so no diff
+showed until now). `THE_GOLDEN_EMISSION.md` §4 flips "Static kind with
+IDENTITY PK" from TODO/known-unblessed to COVERED+BLESSED; the goldens are
+re-recorded under this note (`GOLDEN_RECORD=1`): a new
+`Modules/Statics/dbo.Tier.sql` per scenario, the bracketed Tier MERGE in
+each `Data/seed.sql`, and Tier's CREATE in each `stream.sql`.
+
+**Environment note (this session):** the sandbox's Docker daemon, reachable
+at session open, went away mid-session (SQL port closed; `warm-sql.sh
+restart` itself needs Docker). The Docker pool and the Docker-gated
+extraction tests that share the fast pool (`BtReferenceFkFlowTests`,
+`OssysComprehensiveFixtureTests`, `OssysExtractionCanaryTests`) could not be
+run; this slice's witness is the PURE golden corpus + the data-lane
+composer tests, which are the operator-blessing surface for an emission
+change. The Docker pool must be run before merge.
+
+---
+
+## 2026-06-13 — Slice 5 of the full-export reconciliation (WP6 step 2): Bootstrap delegates to the static-seeds renderer; its registry entry goes Active
+
+Context: `V1_FULL_EXPORT_RECONCILIATION_PLAN.md` WP6 step 3 ("Bootstrap
+delegates: `BootstrapEmitter.emitFromPlan` → `StaticSeedsEmitter
+.emitFromPlanWith` (signature-identical)"). `BootstrapEmitter` shipped at
+chapter 4.1.B slice ζ as a structural stub: `emitFromPlan` discarded its
+plan and returned the empty no-op per kind, with `Status =
+NotImplementedInV2`. WP6 fills the lane.
+
+**1. The renderer IS the static-seeds renderer (A40).** Both emitters
+realize the same algebra over the same `DataLoadPlan` shape (MERGE Phase-1
++ deferred-FK Phase-2). `BootstrapEmitter.emitFromPlan` now delegates to
+`StaticSeedsEmitter.emitFromPlanWith None catalog profile plan` — one line,
+no second renderer. The `None` delete-scope is the bootstrap lane's posture
+(the convergent-delete arm rides Static/Migration via the composer's
+`EmissionPolicy.DeleteScope`; Bootstrap is the remaining-kinds upsert lane).
+The slice-ζ private `emptyScript` retires (no consumer left). Note: the
+IDENTITY_INSERT bracket (WP6 step 1) rides this delegation for free — a
+bootstrap kind whose plan disposition is `AssignedBySink` is bracketed by
+the same `StaticSeedsEmitter.kindToScript` path.
+
+**2. Registry status flips `NotImplementedInV2` → `Active`.** The lane is
+implemented: it renders whatever plan it is handed (an empty plan renders
+empty per kind, exactly as `MigrationDependenciesEmitter` does without a
+`MigrationDependencyContext`). The metadata moves to the
+`RegisteredTransformMetadata.emitter` helper (Status = Active) and gains a
+DataIntent `bootstrapRowsProjection` site beside the retained OperatorIntent
+`userRemapBootstrap` site. The slice-ζ test that pinned
+`NotImplementedInV2` is rewritten to assert `Active`; skeleton/overlay
+membership is unchanged (Bootstrap still carries an OperatorIntent site, so
+it stays out of the skeleton view and in the overlay view).
+
+**3. The UserRemap conversion is wired (the anticipated conversion).**
+`emitWithTopo` now converts the operator's `UserRemapContext` to a
+`SurrogateRemapContext` via `UserRemapContext.toSurrogate` keyed under the
+catalog-discovered user kind — the same route `MigrationDependenciesEmitter
+.buildPlan` takes. With the empty `UserRemapContext` the composer passes
+today (and an empty row source), the conversion is the identity and output
+is byte-identical to the prior stub; the wiring is in place for when the
+hydration step (WP6 step 4) supplies Bootstrap's rows.
+
+**4. The remaining-kinds partition is a LAW the row source must respect.**
+Bootstrap's populated coverage MUST be the complement of
+(Static-populated ∪ Migration-context) kinds; feeding it a kind another lane
+also populates trips the composer's `OverlappingEmitterCoverage` partition
+assertion, which `Pipeline` escalates to a production `invalidOp`. At this
+step Bootstrap's row source is still empty (the per-kind hydration graft is
+WP6 step 4), so the partition holds trivially; the complement-filtering of
+the hydrated row source is the hydration step's responsibility and is named
+here so step 4 does not rediscover it.
+
+**5. Byte-stable.** Bootstrap emits empty until hydration supplies rows, so
+the golden corpus is unchanged by this step. Witness: the data-lane
+registry tests (`RegisteredDataTransforms` — Active + skeleton/overlay) and
+`BootstrapEmitterTests` (the delegation now renders a populated plan; the
+empty-source case stays empty). Docker pool unavailable this session (see
+the step-1 environment note); must be run before merge.
+
+---
+
+## 2026-06-13 — Golden corpus contraction: non-baseline scenarios pin only their delta from the `default` baseline
+
+Context: operator directive, mid-WP6 — "maximally compress and contract the
+number of golden diffs we make as a codebase value; less surface area to
+review is better for long-term legibility as coverage expands." Measured
+the corpus to ground it: 49 committed files across 3 scenarios, of which
+**29 are byte-identical copies of `default`** (`pruned-platform-auto`
+differs from `default` in 2 of 16 files; `delete-scope` in 1 of 16). Each
+scenario was re-committing the entire emission to express a one- or two-file
+effect, and an axis-orthogonal variance (e.g. the WP6-step-1 `Tier` kind)
+rippled into all three scenario directories.
+
+**The value, stated as a law:** a golden change commits only the bytes it
+actually affects; invariance is asserted as a *test law*, not stored as
+duplicated bytes.
+
+**The mechanism.** `GoldenEmissionTests` now treats `default` as the
+baseline: its directory keeps the FULL, standalone-readable artifact set
+(the one place a reviewer reads a complete emission). Every other scenario
+commits ONLY the files whose bytes differ from the baseline emission; the
+comparator asserts `scenario = baseline ⊕ {committed deltas}` via three
+sub-laws — (1) same Platonic catalog ⇒ identical artifact keyset to the
+baseline; (2) each committed delta genuinely differs from the baseline AND
+byte-matches the emission (a delta that equals the baseline is a defect —
+re-record drops it); (3) every non-committed file equals the baseline (the
+invariance law). The recorder (`recordDelta`) writes only the differing
+files; the negative invariants still run on the FULL emission for every
+scenario.
+
+**This commit is byte-preserving.** The effective emission is unchanged;
+only the 29 duplicated *committed* files are dropped (corpus 49 → 20). No
+surviving golden file changes a byte — `git` shows deletions only. Coverage
+is unchanged: `default` still pins every table byte-for-byte, so a
+cross-cutting bug surfaces there; a non-default divergence still surfaces
+(it newly differs from `default`, so the recorder writes it and the diff
+appears); a bug that makes a scenario wrongly equal the baseline is still
+caught by the baseline's own pins.
+
+**Amendment.** This amends `THE_GOLDEN_EMISSION.md §3`'s "each scenario is
+the full artifact set … so any golden file is readable standalone" choice:
+the *baseline* stays standalone-readable; non-baseline scenarios trade
+standalone-readability for minimal review surface, and in exchange their
+committed files ARE exactly the axis's effect, nothing else. §3 is updated
+in the same commit.
+
+**Forward effect (the point):** the next axis-orthogonal variance touches
+only `default`; a new scenario costs only its genuine deltas; a cross-cutting
+emission change still re-records `default` in full (unavoidable — that IS
+the change) but no longer multiplies across invariant scenario copies. WP6
+step 3's per-lane data goldens (`Data/StaticSeeds.sql` etc.) land on this
+slimmer surface — invariant to the platform-auto axis, so they pin in
+`default` and delta only into `delete-scope`, never triplicated.
+
+---
+
+## 2026-06-13 — Golden corpus, take 2 (operator-directed): one maximal master + standalone one-offs (supersedes the delta layout above)
+
+Context: the operator clarified the intent the delta layout (entry above)
+served imperfectly — *"one master emission target with all possible
+variations in there, inclusive of table emissions … one massive emission
+attempt with most variants, with a few emission attempts that are
+exclusively the one-offs."* The delta layout cut surface but read as "the
+master's files, minus some" rather than "one master + a few standalone
+one-offs." This entry adopts the shape the operator chose ("maximal master +
+standalone one-offs") and **supersedes the delta machinery** (which is
+removed — each scenario is once again a full, standalone byte-set).
+
+**The governing distinction: catalog-shaped vs config-shaped variants.**
+- A *catalog-shaped* variant (a table, column, reference, index, constraint,
+  annotation, or data lane) folds into ONE catalog — that is the existing
+  "many attributes, few tables" consolidation, and the master Platonic
+  catalog already carries all of them.
+- A *config-shaped* variant is a whole-run `EmissionPolicy` flag. It splits
+  into two sub-cases:
+  - **Per-kind-resolvable ⇒ folds into the master.** `DeleteScope` resolves
+    per kind (`DeleteScopePolicy.resolveFor`), so the master's config now
+    *carries* the scope: the scoped kind (`ScopedLookup`) renders its
+    `WHEN NOT MATCHED BY SOURCE … DELETE` arm while every other static kind
+    stays a plain MERGE — both variants visible in the one master emission.
+    The separate `delete-scope` scenario is retired (folded in).
+  - **Globally all-or-nothing ⇒ a genuine one-off.** `IncludePlatformAuto
+    Indexes` is a single boolean for the whole run — an index is present
+    everywhere or absent everywhere, so the pruned rendering cannot coexist
+    with the master. It stays a scenario, but as a **small, self-contained**
+    emission of a purpose-built tiny catalog (`GoldenCatalog
+    .prunePlatformAutoCatalog` — one kind with a platform-auto index beside a
+    normal one), so the one-off shows exactly the prune's effect and nothing
+    else, rather than re-emitting the whole estate.
+
+**Result.** The corpus is `master/` (the full, standalone, all-catalog-
+variants emission — what a reviewer reads top to bottom, table emissions
+included) + `pruned-platform-auto/` (a ~2-file standalone one-off). Future
+non-foldable config flags (WP5 identity-annotation omit; WP6.6 EXCEPT
+validate-before-apply) each add their own small standalone one-off; foldable
+ones go into the master. `emitScenario` now takes the scenario's catalog
+(the master catalog or a one-off catalog); the comparator is back to the
+simple full-set byte-compare + artifact-set drift check per scenario.
+
+**Books.** `THE_GOLDEN_EMISSION.md §3/§4` updated (the master+one-off model;
+the second catalog; delete-scope folded into the master inventory row). The
+delta-layout entry above is retained as provenance — it records the
+intermediate step and the measurement (49→20) that motivated contraction;
+this entry is the live shape. Witness: GoldenEmission green on re-record;
+byte changes are the master's `seed.sql` gaining the ScopedLookup DELETE arm
+(blessed) and the scenario restructure. Docker pool still owed (env).

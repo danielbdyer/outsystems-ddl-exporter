@@ -2,6 +2,7 @@ module Projection.Tests.BootstrapEmitterTests
 
 open Xunit
 open Projection.Core
+open Projection.Core.Passes
 open Projection.Targets.Data
 open Projection.Tests
 
@@ -87,7 +88,12 @@ let ``BootstrapEmitter.emit produces one DataInsertScript per kind (T11 keyset)`
     Assert.Equal (2, Map.count map)
 
 [<Fact>]
-let ``Slice ζ MVP: BootstrapEmitter.emit returns empty no-op for every kind (UserRemap.empty pass-through)`` () =
+let ``WP6 step 2: BootstrapEmitter.emit with an empty row source renders empty per kind (renderer is real; rows arrive at hydration)`` () =
+    // Post-delegation (DECISIONS 2026-06-13) the emitter is no longer a
+    // stub that discards its plan — it renders whatever plan it is handed.
+    // The composer-facing `emit`/`emitWithTopo` build the plan from an
+    // empty row source (the per-kind hydration graft is WP6 step 4), so the
+    // output is empty per kind; the REASON is "no rows yet", not "stub".
     let customer = mkKind "Customer"
     let catalog = mkCatalog [ customer ]
     let artifact = BootstrapEmitter.emit catalog Profile.empty UserRemapContext.empty |> mustOkEmit
@@ -95,6 +101,38 @@ let ``Slice ζ MVP: BootstrapEmitter.emit returns empty no-op for every kind (Us
     Assert.Empty script.Phase1Merges
     Assert.Empty script.Phase2Updates
     Assert.Equal<string> ("", script.Rendered)
+
+[<Fact>]
+let ``WP6 step 2: BootstrapEmitter.emitFromPlan delegates to the static-seeds renderer (byte-identical for the same plan)`` () =
+    // The delegation witness: for the SAME DataLoadPlan, Bootstrap's output
+    // equals StaticSeedsEmitter's output (both realize the same algebra via
+    // StaticSeedsEmitter.emitFromPlanWith — A40), and a populated plan
+    // renders a real MERGE (no longer the empty stub).
+    let idKey = mkKey ["TestModule"; "Customer"; "Id"]
+    let nameKey = mkKey ["TestModule"; "Customer"; "Name"]
+    let customer : Kind =
+        Kind.create (mkKey ["TestModule"; "Customer"]) (mkName "Customer")
+            (Fixtures.mkTableId "dbo" "OSUSR_TEST_CUSTOMER")
+            [ { Attribute.create idKey (mkName "Id") Integer with
+                  Column = ColumnRealization.create ("ID") (false) |> Result.value
+                  IsPrimaryKey = true; IsMandatory = true }
+              { Attribute.create nameKey (mkName "Name") Text with
+                  Column = ColumnRealization.create ("NAME") (false) |> Result.value
+                  IsMandatory = true } ]
+    let catalog = mkCatalog [ customer ]
+    let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
+    let rawRows : Map<SsKey, StaticRow list> =
+        Map.ofList
+            [ customer.SsKey,
+              [ { Identifier = mkKey ["TestModule"; "Customer"; "Row"; "1"]
+                  Values = Map.ofList [ mkName "Id", "1"; mkName "Name", "Acme" ] } ] ]
+    let plan = DataLoadPlan.build catalog topo rawRows SurrogateRemapContext.empty
+    let boot = BootstrapEmitter.emitFromPlan catalog Profile.empty plan |> mustOkEmit |> ArtifactByKind.toMap
+    let stat = StaticSeedsEmitter.emitFromPlan catalog Profile.empty plan |> mustOkEmit |> ArtifactByKind.toMap
+    Assert.Equal<Map<SsKey, DataInsertScript>> (stat, boot)
+    let script = Map.find customer.SsKey boot
+    Assert.NotEmpty script.Phase1Merges
+    Assert.Contains("MERGE", script.Rendered)
 
 [<Fact>]
 let ``T1: BootstrapEmitter.emit is byte-deterministic across repeat invocations`` () =

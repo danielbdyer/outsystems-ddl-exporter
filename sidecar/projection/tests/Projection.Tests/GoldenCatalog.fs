@@ -369,6 +369,30 @@ let private scopedLookup : Kind =
                   { Identifier = rowk "ScopedLookup.B"
                     Values = Map.ofList [ nm "Id", "2"; nm "TenantId", "42"; nm "Value", "Beta" ] } ] ] }
 
+let private tierKindKey = kkey "Tier"
+
+/// Static lookup with an IDENTITY primary key + authored rows — the
+/// `IdentityDisposition.AssignedBySink` case (WP6 step 1). Seeding
+/// explicit PK values into an IDENTITY column requires the MERGE be
+/// bracketed by `SET IDENTITY_INSERT … ON/OFF` (one GO batch). The
+/// other statics carry non-identity PKs (`pkAttr … false`), so this is
+/// the first static whose seed shows the bracket in the goldens.
+let private tier : Kind =
+    { Kind.create tierKindKey (nm "Tier")
+        (table "dbo" "GOLD_TIER")
+        [ pkAttr (akey "Tier.Id") "Id" "ID" true
+          { attr (akey "Tier.Name") "Name" "NAME" Text false with Length = Some 40 } ]
+      with
+        Description = Some "Static lookup with an IDENTITY PK — the IDENTITY_INSERT bracket case."
+        Modality =
+            [ Static
+                [ { Identifier = rowk "Tier.Bronze"
+                    Values = Map.ofList [ nm "Id", "1"; nm "Name", "Bronze" ] }
+                  { Identifier = rowk "Tier.Silver"
+                    Values = Map.ofList [ nm "Id", "2"; nm "Name", "Silver" ] }
+                  { Identifier = rowk "Tier.Gold"
+                    Values = Map.ofList [ nm "Id", "3"; nm "Name", "Gold" ] } ] ] }
+
 // ---------------------------------------------------------------------
 // The catalog
 // ---------------------------------------------------------------------
@@ -383,8 +407,33 @@ let catalog : Catalog =
         Catalog.create
             [ mkModule (mkey "Forms")     "Forms"     [ scalarGallery; assignment; heap ]
               mkModule (mkey "Relations") "Relations" [ user; customer; engagement; ecrmSnapshot; ledger; changeLog ]
-              mkModule (mkey "Statics")   "Statics"   [ country; regionA; regionB; scopedLookup ] ]
+              mkModule (mkey "Statics")   "Statics"   [ country; regionA; regionB; scopedLookup; tier ] ]
             []
     with
     | Ok c -> c
     | Error e -> failwithf "GoldenCatalog.catalog: %A" e
+
+/// Isolated one-off catalog for the platform-auto-index prune axis
+/// (`emission.includePlatformAutoIndexes = false`). That flag is global —
+/// all-or-nothing per run — so it cannot fold into the master Platonic
+/// catalog; this tiny purpose-built catalog is its STANDALONE one-off
+/// emission (DECISIONS 2026-06-13 — maximal master + standalone one-offs).
+/// One kind with a platform-auto index (dropped under prune) beside a
+/// normal index (kept), so the one-off shows exactly the prune's effect and
+/// nothing else rather than re-emitting the whole estate.
+let prunePlatformAutoCatalog : Catalog =
+    let codeA = akey "PruneProbe.Code"
+    let probe : Kind =
+        { Kind.create (kkey "PruneProbe") (nm "PruneProbe")
+            (table "dbo" "GOLD_PRUNE_PROBE")
+            [ pkAttr (akey "PruneProbe.Id") "Id" "ID" true
+              { attr codeA "Code" "CODE" Text false with Length = Some 20 } ]
+          with
+            Description = Some "Prune one-off probe: a platform-auto index beside a normal one."
+            Indexes =
+                [ Index.ofKeyColumns (ikey "PruneProbe.Code") (nm "IX_PruneProbe_Code") [ codeA ]
+                  { Index.ofKeyColumns (ikey "PruneProbe.AutoCode") (nm "OSIDX_GOLD_PRUNE_PROBE_CODE") [ codeA ] with
+                      IsPlatformAuto = true } ] }
+    match Catalog.create [ mkModule (mkey "PruneForms") "PruneForms" [ probe ] ] [] with
+    | Ok c -> c
+    | Error e -> failwithf "GoldenCatalog.prunePlatformAutoCatalog: %A" e

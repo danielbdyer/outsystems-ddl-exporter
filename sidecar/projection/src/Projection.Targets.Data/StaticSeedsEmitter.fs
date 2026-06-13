@@ -151,6 +151,7 @@ module StaticSeedsEmitter =
         (deleteScope: ScriptDomBuild.DeleteScope option)
         (cdcAware: bool)
         (deferred: Set<Name>)
+        (bracketIdentity: bool)
         (k: Kind)
         (typedRows: Map<Name, SqlLiteral> list)
         : string =
@@ -198,9 +199,40 @@ module StaticSeedsEmitter =
         // REQUIRES MERGE to terminate with `;` (SqlException: "A
         // MERGE statement must be terminated by a semi-colon (;)").
         // The terminal-text boundary appends `;` + `GO`.
-        System.String.Concat(  // LINT-ALLOW: terminal MERGE statement-terminator + GO-batch suffix on the rendered MERGE; segments are typed (output of `ScriptDomGenerate.generateOne` from typed AST + SQL Server's required MERGE statement-terminator + V1 batch-separator literal); BCL `String.Concat` is the right primitive at this terminal-text boundary
-            ScriptDomGenerate.generateOne (mergeStmt :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement),
-            ";\nGO\n")
+        let mergeText =
+            ScriptDomGenerate.generateOne (mergeStmt :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement)
+        if not bracketIdentity then
+            System.String.Concat(  // LINT-ALLOW: terminal MERGE statement-terminator + GO-batch suffix on the rendered MERGE; segments are typed (output of `ScriptDomGenerate.generateOne` from typed AST + SQL Server's required MERGE statement-terminator + V1 batch-separator literal); BCL `String.Concat` is the right primitive at this terminal-text boundary
+                mergeText, ";\nGO\n")
+        else
+            // WP6 step 1 (DECISIONS 2026-06-13) — an IDENTITY-PK static
+            // kind (`IdentityDisposition.AssignedBySink`) seeds explicit PK
+            // values, so the MERGE's WHEN-NOT-MATCHED INSERT writes into the
+            // IDENTITY column and SQL Server requires `SET IDENTITY_INSERT
+            // [t] ON` to be active for it. The toggle is SESSION-scoped, and
+            // the leveled load leg (`Deploy.executeBatchParallel`) opens a
+            // FRESH connection per GO-segment — so the bracket MUST stay ONE
+            // GO batch (no internal GO): a GO between the toggle and the
+            // MERGE would land them on different connections and the toggle
+            // would not apply. One batch is correct for both the fused
+            // `Data/seed.sql` artifact (one sqlcmd session) and the leveled
+            // deploy (one connection per segment), and it keeps the bracket
+            // INSIDE `RenderedPhase1` so the fused-≡-leveled partition law
+            // holds. `generateOne` does NOT terminate a `SET IDENTITY_INSERT`
+            // statement (verified against the recorded bytes — the
+            // statement-terminator behavior is statement-type-specific, not
+            // governed by `IncludeSemicolons`), and MERGE requires its
+            // IMMEDIATELY-preceding statement to be `;`-terminated, so every
+            // segment gets an explicit `;` (the MERGE's manual `;` is the
+            // same documented ScriptDom MERGE-terminator quirk).
+            let setIdentityInsert (enabled: bool) : string =
+                ScriptDomGenerate.generateOne
+                    (ScriptDomBuild.buildSetIdentityInsert table enabled
+                     :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement)
+            System.String.Concat(  // LINT-ALLOW: terminal IDENTITY_INSERT-bracketed MERGE batch as a single GO segment (WP6 step 1); every segment is the typed ScriptDom render of `SET IDENTITY_INSERT` / the MERGE; the SQL Server statement terminators + the V1 `GO` batch separator are the terminal-text literals; BCL `String.Concat` is the right primitive at this terminal-text boundary
+                setIdentityInsert true, ";\n",
+                mergeText, ";\n",
+                setIdentityInsert false, ";\nGO\n")
 
     /// Render one Phase-2 UPDATE statement for a row whose Phase-1
     /// MERGE deferred its same-SCC FK columns to NULL. The UPDATE
@@ -296,6 +328,12 @@ module StaticSeedsEmitter =
                 |> Option.bind (DeleteScopePolicy.resolveFor kind)
                 |> Option.map (fun terms -> ({ Terms = terms } : ScriptDomBuild.DeleteScope))
             let deferred = load.DeferredFkColumns
+            // WP6 step 1 — bracket the Phase-1 MERGE with `SET IDENTITY_INSERT`
+            // when the sink mints the surrogate (the PK carries IDENTITY).
+            // `IdentityDisposition.ofKind` set this at `DataLoadPlan.build`;
+            // PreservedFromSource / ReconciledByRule render unbracketed.
+            let bracketIdentity =
+                load.Disposition = IdentityDisposition.AssignedBySink
             let typeLookup = columnTypeLookup kind
             // Slice κ pillar 1 lift: project raw `Map<Name, string>`
             // populations into typed `Map<Name, SqlLiteral>` once at
@@ -307,7 +345,7 @@ module StaticSeedsEmitter =
                     row.Identifier,
                     staticRowToTypedValues typeLookup kind.Attributes row)
             let renderedPhase1 =
-                renderMerge scopeForKind cdcAware deferred kind (typedRows |> List.map snd)
+                renderMerge scopeForKind cdcAware deferred bracketIdentity kind (typedRows |> List.map snd)
             let renderedPhase2 =
                 if Set.isEmpty deferred then ""
                 else

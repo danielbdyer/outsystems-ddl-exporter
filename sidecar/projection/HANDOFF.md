@@ -1,3 +1,92 @@
+# Handoff addendum — 2026-06-13, WP6 mid-slice: steps 1+2 CLOSED (the MERGE lane brackets IDENTITY_INSERT; Bootstrap delegates and goes Active — the last `NotImplementedInV2` is gone); steps 3–5 remain; the Docker pool is OWED
+
+To the next agent.
+
+You are inside slice 5 (WP6, the data lanes). The pre-scope letter
+immediately below is still your seam map for what remains — trust it,
+re-grep the line numbers. Two of its five steps are now SHIPPED on this
+branch (`claude/dreamy-pasteur-akjbx3`); read this letter first, then drop
+to the pre-scope for steps 3–5.
+
+**Step 1 — IDENTITY_INSERT bracket — CLOSED (`68b3506`).**
+`StaticSeedsEmitter.kindToScript` dispatches on `load.Disposition`: an
+`IdentityDisposition.AssignedBySink` kind's Phase-1 MERGE is wrapped
+`SET IDENTITY_INSERT [t] ON; <merge>; SET IDENTITY_INSERT [t] OFF; GO` as
+**one GO segment**. The single-batch shape is load-bearing, not cosmetic:
+`Deploy.executeBatchParallel` opens a *fresh connection per GO-segment*
+(Deploy.fs:485) and the toggle is session-scoped — split the bracket across
+GO and the toggle lands on a different connection than the MERGE. The PK is
+KEPT (the MERGE's ON joins on it); the slice-E "suppress the PK" note is
+overturned. The bracket lives inside `RenderedPhase1`, so the fused-≡-leveled
+partition law holds untouched. Trap I hit, now documented in the code:
+`ScriptDomGenerate.generateOne` does NOT terminate a `SET IDENTITY_INSERT`
+(verified against recorded bytes — terminator behavior is statement-type
+specific, not `IncludeSemicolons`), so each segment is `;`-terminated
+explicitly. `GoldenCatalog` gained `Tier` (the first IDENTITY-PK static);
+goldens re-recorded; `THE_GOLDEN_EMISSION.md` §4 row flipped to
+COVERED+BLESSED. **Discipline that saved me: fail → re-record → INSPECT the
+bytes → re-verify. The first re-record had `SET … ON` with no `;` and the
+golden negative-invariants did not catch it — only reading the seed bytes
+did.**
+
+**Step 2 — Bootstrap delegation — CLOSED (`9be312c`).**
+`BootstrapEmitter.emitFromPlan` now delegates to
+`StaticSeedsEmitter.emitFromPlanWith None` (A40 — same algebra over the same
+`DataLoadPlan`); the slice-ζ empty stub + its `emptyScript` are gone.
+`emitWithTopo` wires the `UserRemapContext → SurrogateRemapContext`
+conversion (`UserRemapContext.toSurrogate` via the discovered user kind,
+mirroring `MigrationDependenciesEmitter.buildPlan`). Registry `Status`
+flipped `NotImplementedInV2 → Active` via the `emitter` helper, adding a
+DataIntent `bootstrapRowsProjection` site beside the OperatorIntent
+`userRemapBootstrap`. **This was the last `NotImplementedInV2` in the
+codebase — `grep -rn NotImplementedInV2 src` now finds only the DU
+definition, its validator, and the render/digest projections; every
+registered transform is `Status = Active`.** The step is BYTE-STABLE: the
+bootstrap row source is still `Map.empty` (the per-kind graft is step 4), so
+the lane emits empty and the golden corpus did not move. **A LAW for step
+4, named so you don't rediscover it:** Bootstrap's hydrated row source MUST
+be the complement of (Static-populated ∪ Migration-context) kinds — feed it
+a kind another lane also populates and the composer's
+`OverlappingEmitterCoverage` assertion escalates to a production `invalidOp`
+(`Pipeline.fs:604-607`).
+
+**What remains: steps 3, 4, 5 (see the pre-scope below for the seams).**
+Step 3 (per-lane `Data/StaticSeeds.sql` / `Bootstrap.sql` / `MigrationData.sql`
+out of `SiblingArtifacts` pre-union) and step 5 (the per-lane goldens) are
+PURE-witnessable through the golden corpus and need no live connection — they
+can land next without Docker. **Note the golden corpus was reshaped (DECISIONS
+2026-06-13 take 2 + `THE_GOLDEN_EMISSION.md §3`):** it is now one maximal
+`master/` (the full Platonic catalog under a kitchen-sink config — delete-scope
+is FOLDED IN, since it resolves per kind) plus small standalone one-offs for
+genuinely-global flags (today just `pruned-platform-auto/`, a tiny catalog).
+So step 3's per-lane data files (`Data/StaticSeeds.sql` etc.) land in
+`master/Data/` only — there is no second data scenario to keep in sync. Step 4 (hydration in `runWithConfig`) is the
+big one and the only step that wants a live OSSYS connection; the marker /
+`ReadbackPopulated` choice and the `projectSeedPlan` parity duty are in the
+pre-scope. The IDENTITY_INSERT bracket already rides Bootstrap's delegation,
+so step-3 lane outputs inherit it for free.
+
+**THE DOCKER POOL IS OWED — read this.** The sandbox's Docker daemon was
+reachable at session open (a `projection-mssql-warm` container was up) then
+went away mid-session (SQL port closed; `warm-sql.sh restart` itself needs
+Docker). Consequence you will also see: the three Docker-gated extraction
+classes that live in the FAST pool — `BtReferenceFkFlowTests`,
+`OssysComprehensiveFixtureTests`, `OssysExtractionCanaryTests` — *self-skip*
+when Docker is absent (fast pool green) but *error* with "Could not open a
+connection" when Docker is intermittently present and `ensureRunning()`
+memoizes true before SQL is reachable (the flaky 27–28 connection failures;
+survival-rule-2 family). They are environmental, orthogonal to WP6, and
+unchanged by steps 1+2. **Steps 1+2 are witnessed by the PURE pool only**
+(GoldenEmission + the data-lane composer/registry tests — the
+operator-blessing surface for an emission change). `scripts/test.sh docker`
+could NOT be run this session; run it before merge.
+
+**Rhythm that held:** DECISIONS entry before the code (both steps); golden
+diff in the same commit as the emission change (step 1); fail-then-bless-
+then-INSPECT; both books amended with the slice. Hold the spine.
+
+---
+
 # Handoff addendum — 2026-06-13, SESSION CLOSE: the reconciliation program is four slices deep, every pool green, and slice 5 (WP6, the data lanes) is pre-scoped to the line
 
 To the next agent.

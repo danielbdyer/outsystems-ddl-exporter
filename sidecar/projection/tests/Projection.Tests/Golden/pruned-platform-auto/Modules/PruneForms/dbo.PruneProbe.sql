@@ -42,6 +42,3 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Id'
     @level1type = N'TABLE', @level1name = N'PruneProbe',
     @level2type = N'COLUMN', @level2name = N'Id'
 
-GO
-
-
