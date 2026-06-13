@@ -245,3 +245,34 @@ let ``FK-name collision tripwire: schema-scoped name overlap surfaces one Error 
 let ``FK-name collision tripwire is silent on the post-closure corporate shape (the invariant the exclusion restores)`` () =
     let catalog = closed (corporateShape true true)
     Assert.Empty (SsdtDdlEmitter.foreignKeyNameCollisionDiagnostics DecisionOverlay.empty catalog)
+
+// ---------------------------------------------------------------------
+// Slice 3b (DECISIONS 2026-06-13) — the identifier-length budget for
+// generated constraint names.
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``IdentifierBudget: names within 128 chars pass through byte-identical`` () =
+    let name = "FK_Task_User_CreatedBy"
+    Assert.Equal<string>(name, IdentifierBudget.fit name)
+    let exactly128 = String.replicate 128 "x"
+    Assert.Equal<string>(exactly128, IdentifierBudget.fit exactly128)
+
+[<Fact>]
+let ``IdentifierBudget: over-budget names land at exactly 128 with the readable head and a deterministic hash suffix`` () =
+    let long = "FK_" + String.replicate 90 "A" + "_" + String.replicate 90 "B"
+    let fitted = IdentifierBudget.fit long
+    Assert.Equal(128, fitted.Length)
+    Assert.StartsWith(long.Substring(0, 115), fitted)
+    Assert.Equal('_', fitted.[115])
+    // Deterministic (T1): same input, same bytes.
+    Assert.Equal<string>(fitted, IdentifierBudget.fit long)
+
+[<Fact>]
+let ``IdentifierBudget: two over-budget names sharing a 115-char head still get distinct fitted names`` () =
+    let head = "FK_" + String.replicate 120 "A"
+    let a = IdentifierBudget.fit (head + "_TARGET_ONE")
+    let b = IdentifierBudget.fit (head + "_TARGET_TWO")
+    Assert.NotEqual<string>(a, b)
+    Assert.Equal(128, a.Length)
+    Assert.Equal(128, b.Length)

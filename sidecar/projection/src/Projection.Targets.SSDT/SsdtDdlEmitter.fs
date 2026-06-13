@@ -201,7 +201,9 @@ module SsdtDdlEmitter =
                     // k.Physical.Schema and k.Physical.Table are the
                     // canonical SchemaName/TableName strings from the
                     // Coordinates value object).
-                    Name = System.String.Concat("PK_", TableId.schemaText k.Physical, "_", TableId.tableText k.Physical)  // LINT-ALLOW: V1 naming-convention PK constraint name; ScriptDom has no helper for V1-specific naming; segments are pre-unwrapped via TableId.schemaText/tableText (otherwise Concat would call ToString on the typed VOs and emit "SchemaName \"dbo\"")
+                    // Slice 3b — generated names ride the identifier
+                    // budget (≤128 byte-identical; over ⇒ 115 + hash12).
+                    Name = IdentifierBudget.fit (System.String.Concat("PK_", TableId.schemaText k.Physical, "_", TableId.tableText k.Physical))  // LINT-ALLOW: V1 naming-convention PK constraint name; ScriptDom has no helper for V1-specific naming; segments are pre-unwrapped via TableId.schemaText/tableText (otherwise Concat would call ToString on the typed VOs and emit "SchemaName \"dbo\"")
                     Columns = pkColumns
                 }
 
@@ -257,13 +259,17 @@ module SsdtDdlEmitter =
             // (k.Physical.Table from Coordinates.TableId; target.Physical
             // .Table likewise; sourceColumn from k.Attributes).
             let fkName =
-                System.String.Concat(  // LINT-ALLOW: V1 FK naming-convention mirror; V1 ForeignKeyNameFactory considered + cannot be referenced (cherry-pick discipline); segments pre-unwrapped via TableId.tableText (otherwise Concat would call ToString on TableName VO and emit "TableName \"X\"")
-                    "FK_",
-                    TableId.tableText k.Physical,
-                    "_",
-                    TableId.tableText target.Physical,
-                    "_",
-                    sourceColumn)
+                // Slice 3b — generated names ride the identifier budget
+                // (≤128 byte-identical; over ⇒ 115-char head + hash12;
+                // the matrix row 57 length-cap trigger, cashed out).
+                IdentifierBudget.fit (
+                    System.String.Concat(  // LINT-ALLOW: V1 FK naming-convention mirror; V1 ForeignKeyNameFactory considered + cannot be referenced (cherry-pick discipline); segments pre-unwrapped via TableId.tableText (otherwise Concat would call ToString on TableName VO and emit "TableName \"X\"")
+                        "FK_",
+                        TableId.tableText k.Physical,
+                        "_",
+                        TableId.tableText target.Physical,
+                        "_",
+                        sourceColumn))
             Some
                 {
                     Name         = fkName

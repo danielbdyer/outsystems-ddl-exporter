@@ -975,10 +975,9 @@ let ``Slice 5.13.column-features-emit: CHECK constraint surfaces in CREATE TABLE
         ArtifactByKind.toMap artifact
         |> Map.find columnFeaturesKind.SsKey
     // The CHECK constraint is named and parsed from `([PRICE] >= 0)`.
-    // Reconciliation slice 3: the per-table body renders through
-    // Render.toText, so the table-level CHECK takes the two-line ladder
-    // (CONSTRAINT name at indent; CHECK body at indent + 4).
-    Assert.Contains ("CONSTRAINT [CK_Widget_PricePositive]\n        CHECK", file.Body)
+    // Slice 3b: a single-column CHECK attaches beneath its attribute
+    // (the inline stack) — one wrapped line at columnIndent + 4.
+    Assert.Contains ("\n        CONSTRAINT [CK_Widget_PricePositive] CHECK", file.Body)
 
 [<Fact>]
 let ``Slice 5.13.column-features-emit: T1 byte-determinism holds with DEFAULT + CHECK`` () =

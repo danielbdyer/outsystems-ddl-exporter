@@ -1,5 +1,6 @@
 CREATE TABLE [dbo].[Engagement] (
     [AltCustomerId] INT            NULL
+        DEFAULT 0
         CONSTRAINT [FK_Engagement_Customer_AltCustomerId]
             FOREIGN KEY ([AltCustomerId]) REFERENCES [dbo].[Customer] ([Id])
                 ON DELETE SET NULL
@@ -33,6 +34,16 @@ ALTER TABLE [dbo].[Engagement] NOCHECK CONSTRAINT [FK_Engagement_User_UpdatedBy]
 GO
 
 ALTER TABLE [dbo].[Engagement] WITH NOCHECK CHECK CONSTRAINT [FK_Engagement_User_UpdatedBy]
+
+GO
+
+CREATE INDEX [IX_Engagement_CreatedBy_UpdatedByDesc]
+    ON [dbo].[Engagement]([CreatedBy], [UpdatedBy] DESC)
+
+GO
+
+CREATE UNIQUE INDEX [UIX_Engagement_CustomerId_Subject]
+    ON [dbo].[Engagement]([CustomerId], [Subject])
 
 GO
 

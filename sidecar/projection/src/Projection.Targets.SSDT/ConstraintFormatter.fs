@@ -151,63 +151,6 @@ module ConstraintFormatter =
             line, ""
 
     // ---------------------------------------------------------------
-    // Column-inline PRIMARY KEY: split the column line into three.
-    //
-    // Input:  `    [Id]    INT    NOT NULL CONSTRAINT [PK_*] PRIMARY KEY CLUSTERED,`
-    // Output: `    [Id]    INT    NOT NULL\n`
-    //         `        CONSTRAINT [PK_*]\n`
-    //         `            PRIMARY KEY CLUSTERED,\n`
-    // ---------------------------------------------------------------
-    let private formatColumnInlinePrimaryKey
-        (sb: StringBuilder)
-        (line: string)
-        (constraintIdx: int)
-        : bool =
-        // working: the constraint-segment (e.g. "CONSTRAINT [PK_*] PRIMARY KEY CLUSTERED,")
-        let columnPart = line.Substring(0, constraintIdx)
-        let constraintWithComma = line.Substring(constraintIdx + 1).TrimEnd()
-        let constraintPart, trailingComma = splitTrailingComma constraintWithComma
-        let primaryKeyIdx =
-            indexAfterBracketedName constraintPart "PRIMARY KEY"
-        if primaryKeyIdx < 0 then
-            false
-        else
-            let constraintName =
-                constraintPart.Substring(0, primaryKeyIdx).TrimEnd()
-            let primaryKeyBody = constraintPart.Substring(primaryKeyIdx)
-            let columnIndent = indentOf line
-            let nameIndent = columnIndent + "    "  // LINT-ALLOW: terminal-text-emission indentation; 4-space convention from V1's ConstraintFormatter; mirrors V1 carbon-copy
-            let bodyIndent = columnIndent + "        "  // LINT-ALLOW: terminal-text-emission indentation; same V1 convention
-            sb.Append(columnPart).Append(newLine) |> ignore
-            sb.Append(nameIndent).Append(constraintName).Append(newLine) |> ignore
-            sb.Append(bodyIndent).Append(primaryKeyBody).Append(trailingComma).Append(newLine) |> ignore
-            true
-
-    // ---------------------------------------------------------------
-    // Column-inline DEFAULT: split into two indented lines.
-    //
-    // Input:  `    [IsActive] BIT NOT NULL CONSTRAINT [DF_*] DEFAULT 1,`
-    // Output: `    [IsActive] BIT NOT NULL\n`
-    //         `        CONSTRAINT [DF_*] DEFAULT 1,\n`
-    // ---------------------------------------------------------------
-    let private formatColumnInlineDefault
-        (sb: StringBuilder)
-        (line: string)
-        (constraintIdx: int)
-        : bool =
-        let columnPart = line.Substring(0, constraintIdx)
-        let constraintWithComma = line.Substring(constraintIdx + 1).TrimEnd()
-        let constraintPart, trailingComma = splitTrailingComma constraintWithComma
-        if not (indexAfterBracketedName constraintPart "DEFAULT" > 0) then
-            false
-        else
-            let columnIndent = indentOf line
-            let constraintIndent = columnIndent + "    "  // LINT-ALLOW: same V1 4-space convention
-            sb.Append(columnPart).Append(newLine) |> ignore
-            sb.Append(constraintIndent).Append(constraintPart).Append(trailingComma).Append(newLine) |> ignore
-            true
-
-    // ---------------------------------------------------------------
     // Table-level FOREIGN KEY: split into multi-line shape.
     //
     // Input:  `    CONSTRAINT [FK_*] FOREIGN KEY ([col]) REFERENCES [s].[t] ([id]) ON DELETE CASCADE ON UPDATE NO ACTION`
@@ -313,93 +256,6 @@ module ConstraintFormatter =
         appendForeignKeySegment sb (indentOf line) (line.TrimStart())
 
     // ---------------------------------------------------------------
-    // Column-inline FOREIGN KEY: split the column line, then ladder the
-    // constraint at +4/+8/+12 (V1's column-suffix FK shape; reference
-    // fixture tests/Fixtures/emission/edge-case/Modules/AppCore/
-    // dbo.Customer.sql lines 10-12). Reconciliation slice 3.
-    //
-    // Input:  `    [CityId] INT NOT NULL CONSTRAINT [FK_*] FOREIGN KEY ([CityId]) REFERENCES [dbo].[City] ([Id]) ON DELETE CASCADE,`
-    // Output: `    [CityId] INT NOT NULL\n`
-    //         `        CONSTRAINT [FK_*]\n`
-    //         `            FOREIGN KEY ([CityId]) REFERENCES [dbo].[City] ([Id])\n`
-    //         `                ON DELETE CASCADE\n`
-    //         `                ON UPDATE NO ACTION,\n`
-    // ---------------------------------------------------------------
-    let private formatColumnInlineForeignKey
-        (sb: StringBuilder)
-        (line: string)
-        (constraintIdx: int)
-        : bool =
-        let segment = line.Substring(constraintIdx + 1)
-        if indexAfterBracketedName segment "FOREIGN KEY" <= 0
-           || indexAfterBracketedName segment "REFERENCES" <= 0 then
-            false
-        else
-            let columnPart = line.Substring(0, constraintIdx)
-            let nameIndent = indentOf line + "    "  // LINT-ALLOW: V1 4-space convention; column-suffix constraint name at columnIndent + 4
-            sb.Append(columnPart).Append(newLine) |> ignore
-            appendForeignKeySegment sb nameIndent segment
-
-    // ---------------------------------------------------------------
-    // Column-inline named CHECK: split into two indented lines.
-    //
-    // Input:  `    [Status] NVARCHAR (50) NOT NULL CONSTRAINT [CK_*] CHECK ([Status] IN ('A', 'B')),`
-    // Output: `    [Status] NVARCHAR (50) NOT NULL\n`
-    //         `        CONSTRAINT [CK_*] CHECK ([Status] IN ('A', 'B')),\n`
-    //
-    // Slice D.2.b — sibling to formatColumnInlineDefault; same
-    // two-line shape, distinguished by the constraint body keyword
-    // ("CHECK" vs "DEFAULT"). V1 reference fixture:
-    // tests/Fixtures/emission-matrix/temporal-audit/Modules/Matrix/
-    // dbo.TemporalOrder.sql (slice-D.2.b carbon-copy delta).
-    // ---------------------------------------------------------------
-    let private formatColumnInlineCheck
-        (sb: StringBuilder)
-        (line: string)
-        (constraintIdx: int)
-        : bool =
-        let columnPart = line.Substring(0, constraintIdx)
-        let constraintWithComma = line.Substring(constraintIdx + 1).TrimEnd()
-        let constraintPart, trailingComma = splitTrailingComma constraintWithComma
-        if not (indexAfterBracketedName constraintPart "CHECK" > 0) then
-            false
-        else
-            let columnIndent = indentOf line
-            let constraintIndent = columnIndent + "    "  // LINT-ALLOW: V1 4-space convention
-            sb.Append(columnPart).Append(newLine) |> ignore
-            sb.Append(constraintIndent).Append(constraintPart).Append(trailingComma).Append(newLine) |> ignore
-            true
-
-    // ---------------------------------------------------------------
-    // Column-inline ANONYMOUS DEFAULT (no CONSTRAINT name): split
-    // into two indented lines.
-    //
-    // Input:  `    [FirstName] NVARCHAR (100) NULL DEFAULT (''),`
-    // Output: `    [FirstName] NVARCHAR (100) NULL\n`
-    //         `        DEFAULT (''),\n`
-    //
-    // Slice D.2.b — fires when ScriptDom emits the anonymous-default
-    // shape (V2's `Attribute.DefaultName = None`). The named-default
-    // case (`CONSTRAINT [name] DEFAULT value`) is handled by
-    // formatColumnInlineDefault; this branch covers the unnamed
-    // case where CONSTRAINT prefix is absent. V1 reference fixture:
-    // tests/Fixtures/emission/edge-case/Modules/AppCore/dbo.Customer.sql.
-    // ---------------------------------------------------------------
-    let private formatColumnInlineAnonymousDefault
-        (sb: StringBuilder)
-        (line: string)
-        (defaultIdx: int)
-        : bool =
-        let columnPart = line.Substring(0, defaultIdx)
-        let defaultWithComma = line.Substring(defaultIdx + 1).TrimEnd()
-        let defaultPart, trailingComma = splitTrailingComma defaultWithComma
-        let columnIndent = indentOf line
-        let defaultIndent = columnIndent + "    "  // LINT-ALLOW: V1 4-space convention
-        sb.Append(columnPart).Append(newLine) |> ignore
-        sb.Append(defaultIndent).Append(defaultPart).Append(trailingComma).Append(newLine) |> ignore
-        true
-
-    // ---------------------------------------------------------------
     // Table-level two-line constraint split, parameterised by the
     // body-keyword. Used by PRIMARY KEY (composite or single-column
     // at table-level) and CHECK (V2 emits ColumnChecks at the table-
@@ -493,35 +349,131 @@ module ConstraintFormatter =
                 sb.Append(continuationIndent).Append(level2Segment).Append(newLine) |> ignore
             true
 
+    // -----------------------------------------------------------------
+    // Slice 3b (DECISIONS 2026-06-13) — the column-constraint STACK.
+    // A column may carry several constraints on one ScriptDom line
+    // (DEFAULT + CHECK; DEFAULT + FK; PK on an IDENTITY column; any
+    // combination). The per-kind splitters above each assumed ONE
+    // constraint per line; the segmenter below scans the suffix at the
+    // top level (outside parens / brackets / quotes), splits it into
+    // constraint segments, and ladders EVERY segment beneath the
+    // column head — one statement, no per-constraint commas, the
+    // trailing comma closing the last segment.
+    // -----------------------------------------------------------------
+
+    /// Top-level token occurrences: positions where one of the
+    /// recognized tokens begins while OUTSIDE parens, brackets, and
+    /// string literals. The bracket guard is what makes a constraint
+    /// name like [CK_PropCheck_X] inert; the paren guard keeps CHECK
+    /// expressions and IDENTITY (1, 1) inert; the quote guard keeps
+    /// string literals inert ('' is the SQL escape).
+    let private topLevelMatches (text: string) : (int * string) list =
+        let tokens = [ " CONSTRAINT ["; " DEFAULT "; " CHECK ("; " PRIMARY KEY"; " FOREIGN KEY" ]
+        let results = System.Collections.Generic.List<int * string>()
+        let mutable depth = 0
+        let mutable inQuote = false
+        let mutable inBracket = false
+        let mutable i = 0
+        while i < text.Length do
+            let c = text.[i]
+            if inQuote then
+                if c = '\'' then
+                    if i + 1 < text.Length && text.[i + 1] = '\'' then i <- i + 1
+                    else inQuote <- false
+            elif inBracket then
+                if c = ']' then inBracket <- false
+            else
+                if depth = 0 then
+                    for t in tokens do
+                        if i + t.Length <= text.Length
+                           && System.String.Compare(text, i, t, 0, t.Length, StringComparison.OrdinalIgnoreCase) = 0 then
+                            results.Add(i, t)
+                match c with
+                | '\'' -> inQuote <- true
+                | '[' -> inBracket <- true
+                | '(' -> depth <- depth + 1
+                | ')' -> depth <- depth - 1
+                | _ -> ()
+            i <- i + 1
+        List.ofSeq results
+
+    /// Split a (comma-stripped) column line into its head + constraint
+    /// segments. Boundaries: every top-level ` CONSTRAINT [`, plus
+    /// every ANONYMOUS top-level ` DEFAULT ` / ` CHECK (` — a named
+    /// segment consumes its own body keyword (the first DEFAULT /
+    /// CHECK / PRIMARY KEY / FOREIGN KEY after its name). Returns None
+    /// when the line carries no constraint (pass-through).
+    let private splitColumnStack (withoutComma: string) : (string * string list) option =
+        let matches = topLevelMatches withoutComma
+        let boundaries = System.Collections.Generic.List<int>()
+        let mutable pendingNamedBody = false
+        for (pos, tok) in matches do
+            match tok with
+            | " CONSTRAINT [" ->
+                boundaries.Add pos
+                pendingNamedBody <- true
+            | " PRIMARY KEY" | " FOREIGN KEY" ->
+                pendingNamedBody <- false
+            | _ ->
+                // " DEFAULT " / " CHECK (" — the named segment's body
+                // the first time after a CONSTRAINT; a new anonymous
+                // segment otherwise.
+                if pendingNamedBody then pendingNamedBody <- false
+                else boundaries.Add pos
+        if boundaries.Count = 0 then None
+        else
+            let bs = List.ofSeq boundaries
+            let head = withoutComma.Substring(0, List.head bs).TrimEnd()
+            let segs =
+                bs
+                |> List.mapi (fun idx s ->
+                    let e = if idx + 1 < List.length bs then bs.[idx + 1] else withoutComma.Length
+                    withoutComma.Substring(s, e - s).Trim())
+            Some (head, segs)
+
+    /// Render a column line's constraint stack: head once, every
+    /// segment laddered beneath it (PK: name +4 / body +8; FK: name +4
+    /// / body +8 / clauses +12 via `appendForeignKeySegment`; DEFAULT /
+    /// CHECK named-or-anonymous: one wrapped line at +4). The trailing
+    /// comma closes the LAST segment only.
+    let private renderColumnStack (sb: StringBuilder) (line: string) : bool =
+        let columnIndent = indentOf line
+        let withoutComma, comma = splitTrailingComma (line.TrimEnd())
+        match splitColumnStack withoutComma with
+        | None -> false
+        | Some (head, segs) ->
+            let nameIndent = columnIndent + "    "  // LINT-ALLOW: V1 4-space convention; column-suffix constraint at columnIndent + 4
+            let bodyIndent = columnIndent + "        "  // LINT-ALLOW: V1 8-space convention
+            sb.Append(head).Append(newLine) |> ignore
+            let lastIdx = List.length segs - 1
+            segs
+            |> List.iteri (fun idx seg ->
+                let tail = if idx = lastIdx then comma else ""
+                let isNamed = seg.StartsWith("CONSTRAINT [", StringComparison.OrdinalIgnoreCase)
+                let fkIdx = indexAfterBracketedName seg "FOREIGN KEY"
+                let pkIdx = indexAfterBracketedName seg "PRIMARY KEY"
+                if isNamed && fkIdx > 0 && indexAfterBracketedName seg "REFERENCES" > fkIdx then
+                    appendForeignKeySegment sb nameIndent (seg + tail) |> ignore
+                elif isNamed && pkIdx > 0 then
+                    let name = seg.Substring(0, pkIdx).TrimEnd()
+                    let body = seg.Substring(pkIdx).Trim()
+                    sb.Append(nameIndent).Append(name).Append(newLine) |> ignore
+                    sb.Append(bodyIndent).Append(body).Append(tail).Append(newLine) |> ignore
+                else
+                    sb.Append(nameIndent).Append(seg).Append(tail).Append(newLine) |> ignore)
+            true
+
     /// Detect which constraint shape, if any, the line carries; format
     /// accordingly into the StringBuilder. Returns true on
     /// reformat, false when the line passes through unchanged.
     let private tryFormatLine (sb: StringBuilder) (line: string) : bool =
         let trimmed = line.TrimStart()
         if startsWithColumnIdentifier trimmed then
-            let constraintIdx = inlineConstraintIndex line
-            if constraintIdx >= 0 then
-                // The substring AFTER " CONSTRAINT [" tells us PK / DEFAULT / CHECK.
-                // Classify by the keyword AFTER the bracketed name —
-                // a name like [DF_PropCheck_X] must not classify as
-                // CHECK (slice 3; see indexAfterBracketedName).
-                let after = line.Substring(constraintIdx + " CONSTRAINT ".Length)
-                if indexAfterBracketedName after "PRIMARY KEY" >= 0 then
-                    formatColumnInlinePrimaryKey sb line constraintIdx
-                elif indexAfterBracketedName after "FOREIGN KEY" >= 0 then
-                    // Slice 3 — V1's column-suffix FK ladder.
-                    formatColumnInlineForeignKey sb line constraintIdx
-                elif indexAfterBracketedName after "CHECK" >= 0 then
-                    formatColumnInlineCheck sb line constraintIdx
-                elif indexAfterBracketedName after "DEFAULT" >= 0 then
-                    formatColumnInlineDefault sb line constraintIdx
-                else
-                    false
-            else
-                // No CONSTRAINT prefix — check for column-inline anonymous DEFAULT.
-                let defaultIdx = line.IndexOf(" DEFAULT ", StringComparison.OrdinalIgnoreCase)
-                if defaultIdx > 0 then formatColumnInlineAnonymousDefault sb line defaultIdx
-                else false
+            // Slice 3b — the general column-constraint STACK renderer
+            // subsumes the prior per-kind single-constraint splitters
+            // (PK / FK / CHECK / DEFAULT, named or anonymous, in any
+            // combination on one column line).
+            renderColumnStack sb line
         elif startsWithConstraint trimmed then
             // Table-level constraint dispatch. FK has REFERENCES;
             // composite PK has PRIMARY KEY without REFERENCES;

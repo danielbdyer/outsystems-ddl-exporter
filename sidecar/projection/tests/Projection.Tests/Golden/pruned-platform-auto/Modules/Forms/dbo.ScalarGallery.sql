@@ -2,7 +2,8 @@ CREATE TABLE [dbo].[ScalarGallery] (
     [AlarmAt]     TIME             NULL
         DEFAULT '08:30:00',
     [Amount]      DECIMAL (18, 4)  NULL
-        DEFAULT 3.1400,
+        DEFAULT 3.1400
+        CHECK (([Amount] <= (1000000.0000))),
     [Code]        NVARCHAR (20)    NOT NULL
         CONSTRAINT [DF_ScalarGallery_Code] DEFAULT N'Pending',
     [DueDate]     DATE             NULL
@@ -22,10 +23,10 @@ CREATE TABLE [dbo].[ScalarGallery] (
     [Payload]     VARBINARY (512)  NULL
         DEFAULT 0x00,
     [Tally]       INT              NULL
-        DEFAULT 42,
-    CONSTRAINT [CK_ScalarGallery_Tally]
-        CHECK (([Tally] >= (0))),
-    CHECK (([Amount] <= (1000000.0000)))
+        DEFAULT 42
+        CONSTRAINT [CK_ScalarGallery_Tally] CHECK (([Tally] >= (0))),
+    CONSTRAINT [CK_ScalarGallery_TallyWithinAmount]
+        CHECK (([Tally] <= [Amount]))
 )
 
 GO

@@ -130,7 +130,14 @@ let private scalarGallery : Kind =
               { SsKey = ckey "ScalarGallery.AmountCeiling"
                 Name = None
                 Definition = "([AMOUNT]<=(1000000.0000))"
-                IsNotTrusted = true } ]
+                IsNotTrusted = true }
+              // Multi-column CHECK — references two columns, so it
+              // stays at the TABLE level (the faithful placement; the
+              // single-column siblings attach beneath their attribute).
+              { SsKey = ckey "ScalarGallery.TallyWithinAmount"
+                Name = Some (nm "CK_ScalarGallery_TallyWithinAmount")
+                Definition = "([TALLY]<=[AMOUNT])"
+                IsNotTrusted = false } ]
         Triggers =
             [ { SsKey = tkey "ScalarGallery.Audit"
                 Name = nm "TRG_ScalarGallery_Audit"
@@ -163,6 +170,16 @@ let private scalarGallery : Kind =
                   DataCompression = Some DataCompressionLevel.Page }
               { ix (ikey "SG.Disabled") "IX_ScalarGallery_Code_Disabled" [ codeA ] with
                   IsDisabled = true } ] }
+
+/// Composite primary key — the TABLE-level 2-line PK shape (single-
+/// column PKs attach inline beneath their attribute; composite PKs
+/// keep V1's table-level placement).
+let private assignment : Kind =
+    Kind.create (kkey "Assignment") (nm "Assignment")
+        (table "dbo" "GOLD_ASSIGNMENT")
+        [ pkAttr (akey "Assignment.ProjectId") "ProjectId" "PROJECT_ID" false
+          pkAttr (akey "Assignment.ResourceId") "ResourceId" "RESOURCE_ID" false
+          { attr (akey "Assignment.Role") "Role" "ROLE" Text true with Length = Some 40 } ]
 
 /// PK-less heap — `allowMissingPrimaryKey` shape.
 let private heap : Kind =
@@ -215,7 +232,9 @@ let private engagement : Kind =
           attr createdBy "CreatedBy" "CREATED_BY" Integer false
           attr updatedBy "UpdatedBy" "UPDATED_BY" Integer true
           attr custFk "CustomerId" "CUSTOMER_ID" Integer false
-          attr altFk "AltCustomerId" "ALT_CUSTOMER_ID" Integer true
+          // DEFAULT + FK on one column — the constraint STACK (slice 3b).
+          { attr altFk "AltCustomerId" "ALT_CUSTOMER_ID" Integer true with
+              DefaultValue = Some (SqlLiteral.IntegerLit "0") }
           attr parentFk "ParentId" "PARENT_ID" Integer true ]
       with
         References =
@@ -229,7 +248,37 @@ let private engagement : Kind =
               { Reference.create (refk "Engagement.AltCustomer") (nm "Customer") altFk customerKindKey
                   with OnDelete = SetNull }
               (Reference.create (refk "Engagement.Parent") (nm "Engagement") parentFk engagementKey
-               |> Reference.withConstraintState true true) ] }
+               |> Reference.withConstraintState true true) ]
+        Indexes =
+            // Slice 3b — composite indexes: a multi-attribute UNIQUE
+            // index and a mixed-direction composite index.
+            [ { Index.ofKeyColumns (ikey "EN.CompositeUix") (nm "UIX_Engagement_CustomerId_Subject")
+                  [ custFk; akey "Engagement.Subject" ] with
+                  Uniqueness = Unique }
+              Index.create (ikey "EN.CompositeMixed") (nm "IX_Engagement_CreatedBy_UpdatedByDesc")
+                  [ IndexColumn.create createdBy Ascending
+                    IndexColumn.create updatedBy Descending ] ] }
+
+let private snapshotKey = kkey "EcrmSnapshot"
+
+/// Long-name pair — the identifier-length budget made VISIBLE: the
+/// generated FK name (FK_<Owner>_<Target>_<SourceColumn>) overflows
+/// 128 chars and lands as the 115-char head + `_` + 12-hex-hash form.
+let private ecrmSnapshot : Kind =
+    Kind.create snapshotKey (nm "EnterpriseCustomerRelationshipManagementProfileSnapshot")
+        (table "dbo" "GOLD_ECRM_PROFILE_SNAPSHOT")
+        [ pkAttr (akey "EcrmSnapshot.Id") "Id" "ID" true ]
+
+let private ledger : Kind =
+    let managerFk = akey "Ledger.ManagerId"
+    { Kind.create (kkey "Ledger") (nm "InterdepartmentalResourceAllocationAuthorizationLedger")
+        (table "dbo" "GOLD_IRAA_LEDGER")
+        [ pkAttr (akey "Ledger.Id") "Id" "ID" true
+          attr managerFk "PrimaryResponsibleEnterpriseCustomerRelationshipManagerId" "PRIMARY_RESPONSIBLE_ECRM_MANAGER_ID" Integer false ]
+      with
+        References =
+            [ Reference.create (refk "Ledger.Manager") (nm "EnterpriseCustomerRelationshipManagementProfileSnapshot") managerFk snapshotKey
+              |> Reference.withConstraintState true true ] }
 
 /// Cross-schema FK: audit.ChangeLog → dbo.GOLD_USER.
 let private changeLog : Kind =
@@ -332,8 +381,8 @@ let private mkModule (k: SsKey) (n: string) (kinds: Kind list) : Module =
 let catalog : Catalog =
     match
         Catalog.create
-            [ mkModule (mkey "Forms")     "Forms"     [ scalarGallery; heap ]
-              mkModule (mkey "Relations") "Relations" [ user; customer; engagement; changeLog ]
+            [ mkModule (mkey "Forms")     "Forms"     [ scalarGallery; assignment; heap ]
+              mkModule (mkey "Relations") "Relations" [ user; customer; engagement; ecrmSnapshot; ledger; changeLog ]
               mkModule (mkey "Statics")   "Statics"   [ country; regionA; regionB; scopedLookup ] ]
             []
     with

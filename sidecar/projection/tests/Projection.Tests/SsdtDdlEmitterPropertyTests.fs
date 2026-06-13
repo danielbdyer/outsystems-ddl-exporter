@@ -410,10 +410,10 @@ let ``5.13.schema-axis-property-sweep: CHECK (P2) permutation invariance on Modu
 
 [<Property(Arbitrary = [| typeof<Generators> |])>]
 let ``5.13.schema-axis-property-sweep: CHECK (P3) named constraint surfaces`` (axis: CheckAxis) : bool =
-    // Slice 3: bodies render through Render.toText — the table-level
-    // CHECK takes the two-line ladder (name at indent; body at +4).
+    // Slice 3b: a single-column CHECK attaches beneath its attribute
+    // (the inline stack) — one wrapped line at columnIndent + 4.
     let body = bodyOf checkAxisKey (wrap (checkAxisKind axis))
-    body.Contains (sprintf "CONSTRAINT [%s]\n        CHECK" (checkExpectedConstraintName axis))
+    body.Contains (sprintf "\n        CONSTRAINT [%s] CHECK" (checkExpectedConstraintName axis))
 
 // ---------------------------------------------------------------------------
 // Axis 3 — OnUpdate properties.

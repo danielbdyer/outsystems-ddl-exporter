@@ -120,10 +120,23 @@ inventory row and its variance in the catalog, in the same commit.**
 | Composite-key FK | N/A today (composite-FK semantics deferred-with-trigger) |
 | FK name length-cap / provided-name round-trip | TODO (plan WP7; matrix row 57 trigger) |
 
+### Constraint placement & the naming budget (slice 3b)
+| Variance | Status |
+|---|---|
+| Column-constraint STACK — several constraints on one column rendered as ONE statement, each laddered beneath the head, comma on the last segment | COVERED + BLESSED (`Tally` DEFAULT+CHECK; `AltCustomerId` DEFAULT+FK) |
+| Single-column PK inline / composite PK table-level (2-line) | COVERED (`ScalarGallery.Id` / `Assignment`) |
+| Single-column FK inline / non-resolving fallback table-level | COVERED / defensive-only (unreachable under `Catalog.create`) |
+| Generated FK name ≤128 — byte-identical pass-through | COVERED (every ordinary FK) |
+| Generated FK name >128 — `IdentifierBudget.fit`: 115-char head + `_` + 12-hex SHA-256 of the full name = exactly 128 | COVERED + BLESSED (`Ledger` → `EcrmSnapshot`, visible in the goldens) |
+| Generated PK name >128 | Budget applied at the site; catalog example TODO (needs a >120-char table name) |
+| Authored index names — pass-through (no budget; source-owned) | COVERED |
+
 ### Schema — indexes
 | Variance | Status |
 |---|---|
 | Plain IX / unique UIX | COVERED |
+| Composite (multi-attribute) UNIQUE index | COVERED + BLESSED (slice 3b, `UIX_Engagement_CustomerId_Subject`) |
+| Composite index with mixed ASC/DESC directions | COVERED + BLESSED (slice 3b, `IX_Engagement_CreatedBy_UpdatedByDesc`) |
 | Platform-auto index (OSIDX; present in `default`, absent in `pruned-platform-auto`) | COVERED |
 | Filtered index — FILTER predicate follows the logical substitution (v2) | COVERED + BLESSED (slice 3) |
 | INCLUDE columns | COVERED |
@@ -138,6 +151,7 @@ inventory row and its variance in the catalog, in the same commit.**
 | Identity annotations (`V2.LogicalName`/`V2.SsKey`; unconditional today) | COVERED — **known-unblessed** (plan WP5: rename + gate; the rename will be a deliberate golden diff) |
 | Index-level extended properties | COVERED |
 | CHECK constraints (`ColumnChecks`) — definitions follow the logical column substitution (`LogicalColumnEmission` v2) | COVERED + BLESSED (slice 3; authored with physical refs, emitted logical) |
+| Single-column CHECK beneath its attribute (structural anchor: exactly one referenced column); multi-column CHECK at table level | COVERED + BLESSED (slice 3b) |
 | Triggers | COVERED — definition bodies still carry PHYSICAL table/column references (**known-unblessed**; rewrite is its own slice — they reference table names too) |
 | Temporal (system-versioned) tables | TODO |
 | Sequences | TODO |

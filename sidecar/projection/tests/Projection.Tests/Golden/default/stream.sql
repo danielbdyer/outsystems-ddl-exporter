@@ -1,3 +1,46 @@
+CREATE TABLE [dbo].[Assignment] (
+    [ProjectId]  INT           NOT NULL,
+    [ResourceId] INT           NOT NULL,
+    [Role]       NVARCHAR (40) NULL,
+    CONSTRAINT [PK_dbo_Assignment]
+        PRIMARY KEY ([ProjectId], [ResourceId])
+)
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Assignment',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Assignment'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.SsKey', @value = N'S9:GOLD_KIND1:110:Assignment',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Assignment'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'ProjectId',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Assignment',
+    @level2type = N'COLUMN', @level2name = N'ProjectId'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'ResourceId',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Assignment',
+    @level2type = N'COLUMN', @level2name = N'ResourceId'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Role',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Assignment',
+    @level2type = N'COLUMN', @level2name = N'Role'
+
+GO
+
 CREATE TABLE [audit].[ChangeLog] (
     [At]     DATETIME2 NOT NULL,
     [Id]     INT       IDENTITY (1, 1) NOT NULL
@@ -121,8 +164,36 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Nam
 
 GO
 
+CREATE TABLE [dbo].[EnterpriseCustomerRelationshipManagementProfileSnapshot] (
+    [Id] INT IDENTITY (1, 1) NOT NULL
+        CONSTRAINT [PK_dbo_EnterpriseCustomerRelationshipManagementProfileSnapshot]
+            PRIMARY KEY CLUSTERED
+)
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'EnterpriseCustomerRelationshipManagementProfileSnapshot',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'EnterpriseCustomerRelationshipManagementProfileSnapshot'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.SsKey', @value = N'S9:GOLD_KIND1:112:EcrmSnapshot',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'EnterpriseCustomerRelationshipManagementProfileSnapshot'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'EnterpriseCustomerRelationshipManagementProfileSnapshot',
+    @level2type = N'COLUMN', @level2name = N'Id'
+
+GO
+
 CREATE TABLE [dbo].[Engagement] (
     [AltCustomerId] INT            NULL
+        DEFAULT 0
         CONSTRAINT [FK_Engagement_Customer_AltCustomerId]
             FOREIGN KEY ([AltCustomerId]) REFERENCES [dbo].[Customer] ([Id])
                 ON DELETE SET NULL
@@ -156,6 +227,16 @@ ALTER TABLE [dbo].[Engagement] NOCHECK CONSTRAINT [FK_Engagement_User_UpdatedBy]
 GO
 
 ALTER TABLE [dbo].[Engagement] WITH NOCHECK CHECK CONSTRAINT [FK_Engagement_User_UpdatedBy]
+
+GO
+
+CREATE INDEX [IX_Engagement_CreatedBy_UpdatedByDesc]
+    ON [dbo].[Engagement]([CreatedBy], [UpdatedBy] DESC)
+
+GO
+
+CREATE UNIQUE INDEX [UIX_Engagement_CustomerId_Subject]
+    ON [dbo].[Engagement]([CustomerId], [Subject])
 
 GO
 
@@ -253,6 +334,43 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Mes
 
 GO
 
+CREATE TABLE [dbo].[InterdepartmentalResourceAllocationAuthorizationLedger] (
+    [Id]                                                        INT IDENTITY (1, 1) NOT NULL
+        CONSTRAINT [PK_dbo_InterdepartmentalResourceAllocationAuthorizationLedger]
+            PRIMARY KEY CLUSTERED,
+    [PrimaryResponsibleEnterpriseCustomerRelationshipManagerId] INT NOT NULL
+        CONSTRAINT [FK_InterdepartmentalResourceAllocationAuthorizationLedger_EnterpriseCustomerRelationshipManagementProfileSnapshot_P_b94286649f49]
+            FOREIGN KEY ([PrimaryResponsibleEnterpriseCustomerRelationshipManagerId]) REFERENCES [dbo].[EnterpriseCustomerRelationshipManagementProfileSnapshot] ([Id])
+)
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'InterdepartmentalResourceAllocationAuthorizationLedger',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'InterdepartmentalResourceAllocationAuthorizationLedger'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.SsKey', @value = N'S9:GOLD_KIND1:16:Ledger',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'InterdepartmentalResourceAllocationAuthorizationLedger'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'InterdepartmentalResourceAllocationAuthorizationLedger',
+    @level2type = N'COLUMN', @level2name = N'Id'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'V2.LogicalName', @value = N'PrimaryResponsibleEnterpriseCustomerRelationshipManagerId',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'InterdepartmentalResourceAllocationAuthorizationLedger',
+    @level2type = N'COLUMN', @level2name = N'PrimaryResponsibleEnterpriseCustomerRelationshipManagerId'
+
+GO
+
 CREATE TABLE [dbo].[RegionA] (
     [Id]        INT           NOT NULL
         CONSTRAINT [PK_dbo_RegionA]
@@ -347,7 +465,8 @@ CREATE TABLE [dbo].[ScalarGallery] (
     [AlarmAt]     TIME             NULL
         DEFAULT '08:30:00',
     [Amount]      DECIMAL (18, 4)  NULL
-        DEFAULT 3.1400,
+        DEFAULT 3.1400
+        CHECK (([Amount] <= (1000000.0000))),
     [Code]        NVARCHAR (20)    NOT NULL
         CONSTRAINT [DF_ScalarGallery_Code] DEFAULT N'Pending',
     [DueDate]     DATE             NULL
@@ -367,10 +486,10 @@ CREATE TABLE [dbo].[ScalarGallery] (
     [Payload]     VARBINARY (512)  NULL
         DEFAULT 0x00,
     [Tally]       INT              NULL
-        DEFAULT 42,
-    CONSTRAINT [CK_ScalarGallery_Tally]
-        CHECK (([Tally] >= (0))),
-    CHECK (([Amount] <= (1000000.0000)))
+        DEFAULT 42
+        CONSTRAINT [CK_ScalarGallery_Tally] CHECK (([Tally] >= (0))),
+    CONSTRAINT [CK_ScalarGallery_TallyWithinAmount]
+        CHECK (([Tally] <= [Amount]))
 )
 
 GO

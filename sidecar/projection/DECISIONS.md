@@ -22098,3 +22098,53 @@ logical-only Cascade/SetNull → Customer, and a SELF-REFERENCING
 ParentId → Engagement), `User`/`Customer` pure targets, `ChangeLog`
 (cross-schema), `Heap`, and the Statics lane unchanged. Goldens
 re-recorded under this entry (the blessing-protocol note).
+
+## 2026-06-13 — Slice 3b (operator blessing #2): CHECKs beneath their attribute; the column-constraint STACK; composite indexes; the identifier-length budget
+
+Context: the operator's second blessing pass (THE_GOLDEN_EMISSION).
+Note: the "FKs still not inline" observation crossed slice 3's push —
+all FKs ladder beneath their attributes as of `2749ee4`; this slice
+covers the genuinely-new asks.
+
+**1. Single-column CHECKs attach beneath their attribute**
+(`attachInlineCheck`, the third sibling after inline-PK and inline-FK).
+The IR's `ColumnCheck` carries no column anchor, so attachment resolves
+structurally: the bracketed tokens of the (post-substitution)
+definition are matched against the kind's column identifiers — exactly
+ONE distinct matching column ⇒ the constraint attaches to it;
+multi-column or non-resolving definitions stay table-level (the
+faithful placement, not a fallback hack).
+
+**2. The formatter learns the column-constraint STACK.** A column may
+carry several constraints on one ScriptDom line (DEFAULT + CHECK;
+DEFAULT + FK; PK on an IDENTITY column; any combination). The prior
+per-kind splitters each assumed ONE constraint per line. They are
+replaced by a top-level segmenter (paren/quote/bracket-aware scan;
+boundaries at ` CONSTRAINT [`, anonymous ` DEFAULT `, anonymous
+` CHECK (`; a named segment consumes its own body keyword) that
+renders the column head once and ladders EVERY segment beneath it —
+one statement, no per-constraint commas, the trailing comma closing
+the last segment. This is the operator's "same statement, line wrap
+and indentation" stated generally.
+
+**3. The identifier-length budget** (`IdentifierBudget.fit`, Core).
+SQL Server caps identifiers at 128; V2's GENERATED names (FK
+`FK_<Owner>_<Target>_<SourceColumn>`, PK `PK_<Schema>_<Table>`) can
+overflow on long logical names. The budget: ≤128 passes through
+byte-identical; over ⇒ truncate to 115 + `_` + first 12 lowercase hex
+of SHA-256(full name) = exactly 128 — deterministic (T1),
+prefix-preserving (operators can still read the head), collision-safe
+in practice (the hash is of the FULL un-truncated name; V1's
+`ConstraintNameNormalizer` hash-truncation discipline, ported).
+Applied at every generated-name site; authored names (indexes, V1
+`Reference.Name` when the WP7 round-trip lands) will route through the
+same budget. The matrix row 57 length-cap trigger is hereby cashed out
+at the generated-name sites.
+
+**4. The Platonic catalog enumerates the new permutations**: a
+composite-PK kind (table-level 2-line PK shape); a composite UIX and a
+mixed-direction composite IX on `Engagement`; a DEFAULT+FK stack
+(`AltCustomerId`); the DEFAULT+CHECK stack (`Tally`, via #1); and a
+long-name reference pair whose generated FK name overflows — the
+hashed 128-char name is VISIBLE in the goldens. Goldens re-recorded
+under this entry.
