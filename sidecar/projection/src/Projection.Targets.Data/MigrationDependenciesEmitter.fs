@@ -190,6 +190,7 @@ module MigrationDependenciesEmitter =
     let private renderMerge
         (deleteScope: ScriptDomBuild.DeleteScope option)
         (cdcAware: bool)
+        (bracketIdentity: bool)
         (deferred: Set<Name>)
         (k: Kind)
         (typedRows: Map<Name, SqlLiteral> list)
@@ -226,9 +227,26 @@ module MigrationDependenciesEmitter =
                 DeleteScope = deleteScope
             }
         let mergeStmt = (ScriptDomBuild.buildMergeStatement args).Value
-        System.String.Concat(  // LINT-ALLOW: terminal MERGE statement-terminator + GO-batch suffix on the rendered MERGE (chapter 4.1.B slice ε); segments are typed (output of `ScriptDomGenerate.generateOne` from typed AST + SQL Server's required MERGE statement-terminator + V1 batch-separator literal); same architectural shape as StaticSeedsEmitter's terminal-text boundary
-            ScriptDomGenerate.generateOne (mergeStmt :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement),
-            ";\nGO\n")
+        let mergeText =
+            ScriptDomGenerate.generateOne (mergeStmt :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement)
+        if not bracketIdentity then
+            System.String.Concat(  // LINT-ALLOW: terminal MERGE statement-terminator + GO-batch suffix on the rendered MERGE (chapter 4.1.B slice ε); segments are typed (output of `ScriptDomGenerate.generateOne` from typed AST + SQL Server's required MERGE statement-terminator + V1 batch-separator literal); same architectural shape as StaticSeedsEmitter's terminal-text boundary
+                mergeText, ";\nGO\n")
+        else
+            // NM-25 — mirror StaticSeedsEmitter (WP6 step 1). An IDENTITY-PK
+            // migration kind (`IdentityDisposition.AssignedBySink`) seeds explicit
+            // PK values, so the MERGE's WHEN-NOT-MATCHED INSERT writes into the
+            // IDENTITY column and requires `SET IDENTITY_INSERT [t] ON`. The toggle
+            // is SESSION-scoped and the leveled load opens a fresh connection per
+            // GO-segment, so the bracket MUST stay ONE GO batch (no internal GO).
+            let setIdentityInsert (enabled: bool) : string =
+                ScriptDomGenerate.generateOne
+                    (ScriptDomBuild.buildSetIdentityInsert table enabled
+                     :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement)
+            System.String.Concat(  // LINT-ALLOW: terminal IDENTITY_INSERT-bracketed MERGE batch as a single GO segment (NM-25, mirrors StaticSeedsEmitter WP6 step 1); every segment is the typed ScriptDom render of `SET IDENTITY_INSERT` / the MERGE; the SQL Server statement terminators + the V1 `GO` batch separator are the terminal-text literals
+                setIdentityInsert true, ";\n",
+                mergeText, ";\n",
+                setIdentityInsert false, ";\nGO\n")
 
     /// Render one Phase-2 UPDATE for a row with a deferred FK column.
     /// Same shape as `StaticSeedsEmitter.renderUpdate`. Per the
@@ -338,8 +356,14 @@ module MigrationDependenciesEmitter =
                 |> List.map (fun row ->
                     row.Identifier,
                     rowToTypedValues typeLookup kind.Attributes row)
+            // NM-25 — bracket the Phase-1 MERGE with SET IDENTITY_INSERT when the
+            // sink mints the surrogate (PK carries IDENTITY), exactly as the
+            // StaticSeeds sibling does; otherwise the INSERT into the IDENTITY
+            // column is rejected at deploy.
+            let bracketIdentity =
+                load.Disposition = IdentityDisposition.AssignedBySink
             let renderedPhase1 =
-                renderMerge scopeForKind cdcAware deferred kind (typedRows |> List.map snd)
+                renderMerge scopeForKind cdcAware bracketIdentity deferred kind (typedRows |> List.map snd)
             let renderedPhase2 =
                 if Set.isEmpty deferred then ""
                 else
