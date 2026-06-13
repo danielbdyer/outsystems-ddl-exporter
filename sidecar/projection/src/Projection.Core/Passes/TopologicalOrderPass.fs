@@ -708,6 +708,21 @@ module TopologicalOrderPass =
     // and running `CycleResolution.classify`.
     // -----------------------------------------------------------------------
 
+    /// NM-36 — the cascade-shock analytics pass is a SEPARATE registered
+    /// chain step (it produces an operator-facing risk warning, not the
+    /// topological order), so it carries its own pass name. Its diagnostics
+    /// and lineage events are stamped with `cascadeShockPassName` rather
+    /// than the topology pass's `passName`, keeping the registry Name, the
+    /// `DiagnosticEntry.Pass`, and the `LineageEvent.PassName` consistent.
+    let cascadeShockPassName : string = "cascadeShockZones"
+
+    let private cascadeShockTouchedEvent (key: SsKey) : LineageEvent =
+        { PassName       = cascadeShockPassName
+          PassVersion    = version
+          SsKey          = key
+          TransformKind  = Touched
+          Classification = classification }
+
     /// Detect cascade shock zones: sets of kinds reachable by chasing
     /// Cascade-strength FK edges from a root, with |Reachable| ≥ 3.
     ///
@@ -786,15 +801,37 @@ module TopologicalOrderPass =
                     z.Reachable
                     |> List.map SsKey.rootOriginal
                     |> String.concat ", "
-                { DiagnosticEntry.create passName DiagnosticSeverity.Warning
+                { DiagnosticEntry.create cascadeShockPassName DiagnosticSeverity.Warning
                     "topology.cascadeShock"
                     (sprintf "Cascade shock zone rooted at %s: %d kinds reachable via CASCADE FK edges: [%s]"
                         (SsKey.rootOriginal z.Root) (List.length z.Reachable) reachStr)
                   with SsKey = Some z.Root })
 
-        let events = allKeys |> List.map touchedEvent
+        let events = allKeys |> List.map cascadeShockTouchedEvent
         lineageDiagnostics {
             do! LineageDiagnostics.writeLineages events
             do! LineageDiagnostics.writeDiagnostics diagnostics
             return zones
         }
+
+    /// NM-36 — registry metadata for the cascade-shock analytics pass,
+    /// mirroring `SchemaComplexityPass.registered`. The pass reads the
+    /// `Catalog` and the pre-computed `TopologicalOrder` from ComposeState
+    /// at apply-time; like the other advisory analytics passes its single
+    /// site is `DataIntent` (the cascade-risk warning is graph-derived, not
+    /// an operator opinion). The `Run` is a placeholder for the metadata
+    /// projection — the chain step's real execution lift is
+    /// `liftCatalogTopologyPass cascadeShockPassName runCascadeShockZones`,
+    /// which reads the live topology from ComposeState (the metadata Run is
+    /// never invoked in the chain, matching the `SchemaComplexityPass`
+    /// precedent's `registered None`).
+    let cascadeShockRegistered : RegisteredTransform<Catalog, CascadeShockZone list> =
+        { Name         = cascadeShockPassName
+          Domain       = CrossCutting
+          StageBinding = Pass
+          Sites =
+            [ { SiteName       = "cascadeShockZones"
+                Classification = DataIntent
+                Rationale      = "Cascade-delete / cascade-update risk advisory: sets of ≥3 kinds reachable by chasing CASCADE-strength FK edges from a root. Graph-derived; no operator opinion. Emits one Warning DiagnosticEntry per qualifying zone (topology.cascadeShock)." } ]
+          Run    = fun c -> runCascadeShockZones c TopologicalOrder.empty
+          Status = Active }
