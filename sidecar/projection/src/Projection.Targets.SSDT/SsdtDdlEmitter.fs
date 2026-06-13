@@ -231,9 +231,10 @@ module SsdtDdlEmitter =
     /// `ForeignKeyNameFactory.cs:17-60`):**
     /// `FK_<OwnerTable>_<TargetTable>_<SourceColumn>`. Length-cap at
     /// 128 with `_<sha256-12-hex>` suffix when over is V1's
-    /// `ConstraintNameNormalizer` discipline; deferred-with-trigger
-    /// to slice 6 when cross-module FKs make the length cap
-    /// observable on real OSSYS-shaped fixtures.
+    /// `ConstraintNameNormalizer` discipline — SHIPPED at slice 3b via
+    /// `IdentifierBudget.fit` below (matrix row 57 length-cap trigger
+    /// cashed out). (Honoring a present `Reference.Name` over this
+    /// synthesized form is the open WP7 remainder, not the cap.)
     let private fkDef
         (targetByKey: Map<SsKey, Kind>)
         (pkAttrByKey: Map<SsKey, Attribute>)

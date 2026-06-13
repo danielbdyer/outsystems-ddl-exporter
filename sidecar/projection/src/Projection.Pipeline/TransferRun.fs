@@ -875,6 +875,10 @@ module Transfer =
     /// the same command — the plan's tables are cleared FK-first then reloaded,
     /// and a completion marker makes a finished transfer a no-op. No duplicate
     /// rows on re-run; resumes to complete, duplicate-free state.
+    ///
+    /// NM-40: TEST-ONLY SEAM — exercises the resumable engine without the
+    /// connection apparatus. Production routes through
+    /// `runThroughConnectionsResumable`; the only callers are canary tests.
     let runResumable
         (mode: Mode)
         (allowCdc: bool)
@@ -888,6 +892,10 @@ module Transfer =
     /// exactly `run`; `WipeAndLoad` FK-ordered-clears the plan's tables before
     /// the load — the operator-selected full refresh (the `2·|rows|` CDC cost
     /// `EmissionMode` documents). Incremental stays the default everywhere else.
+    ///
+    /// NM-40: TEST-ONLY SEAM — exercises the emission-mode branch without the
+    /// connection apparatus. Production routes through the
+    /// `*ThroughConnections*` family; the only callers are canary tests.
     let runWithEmissionMode
         (mode: Mode)
         (emission: EmissionMode)
@@ -1033,6 +1041,11 @@ module Transfer =
     /// produce them. `CatalogRendition.logical` / `.physical` produce them from
     /// the one authored model (J3 closed; the classifier is
     /// `Command.reverseLegOf`). A no-rename pair collapses to a straight load.
+    ///
+    /// NM-40: TEST-ONLY SEAM — names + delegates the reverse leg without the
+    /// connection apparatus. Production routes through
+    /// `runReverseLegThroughConnections` / the streaming variant; the only
+    /// callers are canary tests.
     let runReverseLeg
         (mode: Mode)
         (allowCdc: bool)

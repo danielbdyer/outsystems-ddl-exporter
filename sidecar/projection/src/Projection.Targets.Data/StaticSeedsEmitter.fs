@@ -303,8 +303,10 @@ module StaticSeedsEmitter =
     /// `ReconciledByRule` loads carry empty rows by plan-build and
     /// produce empty scripts (target already holds the identities);
     /// `PreservedFromSource` and `AssignedBySink` both render MERGE
-    /// over the supplied rows (slice E will refine `AssignedBySink` to
-    /// suppress the IDENTITY PK column).
+    /// over the supplied rows; the IDENTITY PK is KEPT for both (the
+    /// MERGE's `ON` joins on it). For `AssignedBySink` the Phase-1 MERGE
+    /// is bracketed with `SET IDENTITY_INSERT` (WP6 step 1) — the
+    /// slice-E "suppress the PK" note is overturned (HANDOFF, WP6).
     let private kindToScript
         (deleteScope: DeleteScopePolicy option)
         (cdc: CdcAwareness)

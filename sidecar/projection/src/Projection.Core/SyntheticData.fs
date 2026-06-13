@@ -203,7 +203,7 @@ module SyntheticData =
     /// The hybrid-by-cardinality decision (design §2.1). Overrides win;
     /// otherwise truncation ⇒ synthesize (a capped vocabulary means the tail
     /// is unseen), high distinct-count ⇒ synthesize, else preserve.
-    let valueFidelityFor
+    let private valueFidelityFor
         (config: SyntheticConfig)
         (attrName: string)
         (cat: CategoricalDistribution)

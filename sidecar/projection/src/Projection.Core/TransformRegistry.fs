@@ -323,13 +323,14 @@ module TransformRegistry =
         else
             Error allErrors
 
-    /// The empty registry. Slice β ships this as a structural
-    /// placeholder; slice γ + δ + ε populate as pass modules /
-    /// adapter rules / emitter strategies expose `.registered`. The
-    /// top-level evaluation order is hand-maintained — each pass
-    /// module's `.registered |> RegisteredTransform.toMetadata`
-    /// reference is added to this list explicitly. F# top-level
-    /// evaluation order resolves the cross-module dependencies.
+    /// The empty registry. Slice β shipped this as a structural
+    /// placeholder; the populate-trigger (slices γ–ε) ultimately fired
+    /// **elsewhere** — the live, populated registry is
+    /// `RegisteredTransforms.all` (and the assembly-wide
+    /// `RegisteredAllTransforms.all`), NOT this binding. This one stays
+    /// empty by design (pinned by `TransformRegistryTests` "ships
+    /// empty"); do not read it as the registry — reach for
+    /// `RegisteredTransforms.all` (NM-39).
     let all : RegisteredTransformMetadata list = []
 
     /// Filter to a single stage. Used by `Compose.run` traversal

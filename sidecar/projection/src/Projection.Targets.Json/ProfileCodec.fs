@@ -376,7 +376,12 @@ module ProfileCodec =
         optField el "moments" readMoments |> Result.bind (fun moments ->
         field el "probeStatus" readProbeStatus |> Result.bind (fun ps ->
         NumericDistribution.create key mn p25 p50 p75 p95 p99 mx ss ps
-        |> Result.map (fun nd -> { nd with Moments = moments }))))))))))))
+        |> Result.bind (fun nd ->
+            // NM-13: re-prove the moment-range invariant (Min ≤ Mean ≤ Max)
+            // through the sanctioned `withMoments`, never a raw record-`with`.
+            match moments with
+            | Some m -> NumericDistribution.withMoments m nd
+            | None   -> Result.success nd))))))))))))
 
     let private readCategorical (el: JsonElement) : Result<CategoricalDistribution> =
         field el "attributeKey" readSsKey |> Result.bind (fun key ->

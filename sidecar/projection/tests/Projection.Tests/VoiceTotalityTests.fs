@@ -59,6 +59,10 @@ let private knownEmittableCodes : Set<string> =
         [ // lifecycle spine + stages (LIVE on every full-export run)
           "config.runStart"; "config.connectionResolved"; "config.validationFailed"
           "summary.stageCompleted"; "summary.runComplete"
+          // NM-59: the two live structured-channel summary codes the inventory
+          // had drifted behind — `summary.stageProgress` (LogSink → Watch) and
+          // `summary.readiness` (the readiness board's machine envelope).
+          "summary.stageProgress"; "summary.readiness"
           "extract.started"; "extract.completed"
           "profile.started"; "profile.completed"
           "emit.started"; "emit.completed"
