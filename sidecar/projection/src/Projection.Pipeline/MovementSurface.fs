@@ -756,7 +756,7 @@ module Command =
             match args with
             | "diff" :: a :: b :: _ -> PlanAction.ExplainDiff (a, b, (valueOf "--format" = Some "json"), depthOpt)
             | "policy" :: a :: b :: _ -> PlanAction.ExplainPolicy (a, b)
-            | "node" :: c :: k :: _   -> PlanAction.ExplainNode (c, k)
+            | "node" :: c :: k :: _   -> PlanAction.ExplainNode (c, k, (valueOf "--format" = Some "json"), depthOpt)
             | "suggest" :: c :: _     -> PlanAction.ExplainSuggest (c, valueOf "--apply")
             | "registry" :: _         -> PlanAction.ExplainRegistry
             | "migrate" :: _ ->

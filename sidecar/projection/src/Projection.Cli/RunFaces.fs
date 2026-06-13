@@ -1187,6 +1187,63 @@ let runDiff (refAText: string) (refBText: string) (asJson: bool) (depth: int) : 
                 TtyRenderer.renderAnswer asJson depth (Comparison.renderCatalogChange d)
                 0
 
+/// NM-37 — the explain story as a `View` (the masterful base #3 substrate),
+/// built PURELY from the filtered transform trail + findings so it is testable
+/// without the projection I/O. The transform trail uses the `View.Trail` block
+/// (built for exactly this surface, previously zero producers); the
+/// empty/findings states use `View.Note`/`View.Field`/`View.Action`. The whole
+/// document routes through `TtyRenderer.renderAnswer`, so explain gains the
+/// pretty + plain + JSON (`--format json` / `--query`) lenses every other answer
+/// surface carries — the human and machine views are one value, never a parallel
+/// print path. The trail is rendered through the SAME
+/// `EventProjection.transformKindRender` the event stream uses, so the two
+/// trails cannot drift.
+let explainView
+    (ssKeyText: string)
+    (trail: LineageEvent list)
+    (diags: DiagnosticEntry list)
+    : View.View =
+    let header = View.Field ("explain", ssKeyText, View.Neutral)
+    if List.isEmpty trail && List.isEmpty diags then
+        View.Doc
+            [ header
+              View.Blank
+              View.Note "no transforms or findings matched"
+              View.Action "try a fuller name, or a model that exercises this node" ]
+    else
+        // The transform trail: one step per touching transform, the step label
+        // carrying the pass name and the rendered kind tag, the optional detail
+        // its decision/rationale.
+        let trailBlock =
+            if List.isEmpty trail then []
+            else
+                let steps =
+                    trail
+                    |> List.map (fun e ->
+                        let tag, detail = EventProjection.transformKindRender e.TransformKind
+                        let stepLabel = sprintf "%s %s %s" e.PassName Theme.dot tag
+                        stepLabel, detail)
+                [ View.Trail ("transforms", steps); View.Blank ]
+        // The findings: each a status-glyphed field (severity → status), its
+        // suggested fix the next-action line beneath it.
+        let findingBlocks =
+            if List.isEmpty diags then []
+            else
+                let rows =
+                    diags
+                    |> List.collect (fun d ->
+                        let st =
+                            match d.Severity with
+                            | DiagnosticSeverity.Error   -> View.Bad
+                            | DiagnosticSeverity.Warning -> View.Warn
+                            | _                          -> View.Neutral
+                        let field = View.Field (d.Code, d.Message, st)
+                        match d.SuggestedConfig with
+                        | Some c -> [ field; View.Action (sprintf "fix: %s = %s" c.Path c.Value) ]
+                        | None   -> [ field ])
+                View.Note "findings" :: rows @ [ View.Blank ]
+        View.Doc ([ header; View.Blank ] @ trailBlock @ findingBlocks)
+
 /// P3 (REPORTING_HORIZON polish) — `explain <config> <ssKey>`. The drill-down
 /// doorway: run the projection, then tell the full story for ONE node — every
 /// transform that touched it (with the decision + rationale, rendered through
@@ -1194,7 +1251,7 @@ let runDiff (refAText: string) (refBText: string) (asJson: bool) (depth: int) : 
 /// every finding (with its suggested fix). "Every number is a doorway."
 /// `ssKey` matches by exact root or substring, so `CustomerId` finds
 /// `OSUSR_FOO.OrderHeader.CustomerId`.
-let runExplain (configPath: string) (ssKeyText: string) : int =
+let runExplain (configPath: string) (ssKeyText: string) (asJson: bool) (depth: int) : int =
     match Config.fromFile configPath with
     | Error errs ->
         printErrors Console.Error errs
@@ -1212,36 +1269,8 @@ let runExplain (configPath: string) (ssKeyText: string) : int =
             let diags =
                 (report.Diagnostics @ report.PassDiagnostics)
                 |> List.filter (fun d -> match d.SsKey with Some k -> matchesKey k | None -> false)
-            printfn ""
-            printfn "  explain  %s" ssKeyText
-            printfn ""
-            if List.isEmpty trail && List.isEmpty diags then
-                printfn "  %s no transforms or findings matched" Theme.warn
-                printfn "      %s try a fuller name, or a model that exercises this node" Theme.dot
-                1
-            else
-                if not (List.isEmpty trail) then
-                    printfn "  transforms"
-                    for e in trail do
-                        let tag, detail = EventProjection.transformKindRender e.TransformKind
-                        match detail with
-                        | Some d -> printfn "  %s %s %s %s %s %s" Theme.arrow e.PassName Theme.dot tag Theme.dot d
-                        | None   -> printfn "  %s %s %s %s" Theme.arrow e.PassName Theme.dot tag
-                    printfn ""
-                if not (List.isEmpty diags) then
-                    printfn "  findings"
-                    for d in diags do
-                        let g =
-                            match d.Severity with
-                            | DiagnosticSeverity.Error   -> Theme.bad
-                            | DiagnosticSeverity.Warning -> Theme.warn
-                            | _                          -> Theme.dot
-                        printfn "  %s %s %s %s" g d.Code Theme.dot d.Message
-                        match d.SuggestedConfig with
-                        | Some c -> printfn "      %s fix: %s = %s" Theme.arrow c.Path c.Value
-                        | None   -> ()
-                    printfn ""
-                0
+            TtyRenderer.renderAnswer asJson depth (explainView ssKeyText trail diags)
+            if List.isEmpty trail && List.isEmpty diags then 1 else 0
 
 /// P4 (REPORTING_HORIZON polish) — `suggest-config <config> [--apply <out>]`.
 /// Run the projection, collect every actionable `SuggestedConfig` from the

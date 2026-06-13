@@ -357,7 +357,7 @@ type PlanAction =
     // explain ------------------------------------------------------------
     | ExplainDiff of refA: string * refB: string * asJson: bool * depth: int option
     | ExplainPolicy of configA: string * configB: string
-    | ExplainNode of config: string * ssKey: string
+    | ExplainNode of config: string * ssKey: string * asJson: bool * depth: int option
     | ExplainSuggest of config: string * applyTo: string option
     | ExplainRegistry
     | ExplainMigratePreview of fromPath: string * toPath: string * declaration: LossDeclaration

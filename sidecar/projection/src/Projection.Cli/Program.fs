@@ -184,7 +184,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
     // explain ------------------------------------------------------------
     | PlanAction.ExplainDiff (a, b, asJson, depthOpt) -> runDiff a b asJson (defaultArg depthOpt View.defaultDepth)
     | PlanAction.ExplainPolicy (a, b)        -> runPolicyDiff a b
-    | PlanAction.ExplainNode (c, k)          -> runExplain c k
+    | PlanAction.ExplainNode (c, k, asJson, depthOpt) -> runExplain c k asJson (defaultArg depthOpt View.defaultDepth)
     | PlanAction.ExplainSuggest (c, applyTo) -> runSuggestConfig c applyTo
     | PlanAction.ExplainRegistry ->
         // Self-description (NORTH_STAR "self-describing" leg) — the engine names
