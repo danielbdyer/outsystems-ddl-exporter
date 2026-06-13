@@ -1,3 +1,37 @@
+# Handoff addendum — 2026-06-13, reconciliation slice 3b CLOSE (operator blessing #2: the column-constraint stack; inline CHECKs; composite indexes; the identifier budget)
+
+To the next agent.
+
+**Slice 3b shipped on the operator's second blessing pass**
+(`DECISIONS 2026-06-13` slice-3b entry; commit `8371a31`; fast pool
+3146/0, docker pool 231/231): single-column CHECKs attach beneath
+their attribute (`attachInlineCheck`, structurally anchored — exactly
+one referenced column ⇒ inline, else table-level); the
+ConstraintFormatter's per-kind splitters are REPLACED by the
+column-constraint STACK segmenter (top-level paren/bracket/quote-aware
+scan; any DEFAULT/CHECK/PK/FK combination on one column renders as one
+statement, every segment laddered, comma on the last);
+`IdentifierBudget.fit` (Core) caps generated FK/PK names at 128
+(115-char head + `_` + 12-hex SHA-256 of the full name; matrix row 57
+length-cap cashed out); the Platonic catalog gained composite-PK
+`Assignment`, composite + mixed-direction indexes on `Engagement`, the
+DEFAULT+FK and DEFAULT+CHECK stacks, a multi-column table-level CHECK,
+and the long-name `Ledger → EcrmSnapshot` pair whose hashed 128-char
+FK name is golden-visible.
+
+Watch for: (1) the formatter's old single-constraint splitters are
+GONE — anything resembling them in stale branches will conflict; (2) a
+>128 generated PK name has the budget applied but no catalog example
+yet (needs a >120-char table name; inventory TODO); (3) trigger
+DEFINITIONS still carry physical table/column names (inventory TODO,
+own slice).
+
+Queue unchanged: slice 4 = WP3 (scope pushdown into the OSSYS read).
+Then WP6 (data lanes — IDENTITY_INSERT strictly before hydration), WP5
+(C1 rename + gate), WP7-remainder/WP8, WP9. J5 still trumps everything.
+
+---
+
 # Handoff addendum — 2026-06-13, reconciliation slice 3 CLOSE (operator blessing #1: per-table V1 form; inline FK ladder; CHECK/filter logical rewrite; the catalog consolidates)
 
 To the next agent.
