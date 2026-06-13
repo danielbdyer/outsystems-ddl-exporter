@@ -43,45 +43,45 @@ let private baseConfig : Config.Config =
     { Config.defaultConfig with
         Output = { Dir = "golden" } }
 
-let private scenarios : (string * Config.Config) list =
-    [ "default", baseConfig
-      "pruned-platform-auto",
-        { baseConfig with
-            Emission = { baseConfig.Emission with IncludePlatformAutoIndexes = false } }
-      "delete-scope",
+/// The scenario matrix (DECISIONS 2026-06-13 — maximal master + standalone
+/// one-offs). `master` is the ONE massive emission: the full Platonic
+/// catalog under a kitchen-sink config that folds in every variant that can
+/// coexist — including the delete-scope arm, which resolves per kind
+/// (`DeleteScopePolicy.resolveFor`), so `ScopedLookup` renders its
+/// `WHEN NOT MATCHED BY SOURCE … DELETE` arm while every other static kind
+/// stays a plain MERGE (both variants visible in one emission). Every other
+/// scenario is a SMALL, self-contained one-off for a *global* config flag
+/// that cannot coexist with the master — today only `pruned-platform-auto`
+/// (`IncludePlatformAutoIndexes` is all-or-nothing per run), emitted over a
+/// tiny purpose-built catalog so it shows exactly the prune's effect.
+/// Each entry carries its own catalog; each is a FULL standalone byte-set.
+let private scenarios : (string * Config.Config * Catalog) list =
+    [ "master",
+        // Kitchen-sink: defaults + the per-kind-resolvable delete scope.
+        // NB (first-recording finding): the term resolves against the
+        // POST-CHAIN catalog — LogicalColumnEmission has substituted logical
+        // column names by then — so under the default logical rendition the
+        // term names the LOGICAL column ("TenantId"), although the
+        // DeleteScopePolicy doc says "PHYSICAL columns" (recorded in
+        // THE_GOLDEN_EMISSION.md §4 + the reconciliation plan).
         { baseConfig with
             Emission =
                 { baseConfig.Emission with
-                    // NB (first-recording finding): the term resolves against
-                    // the POST-CHAIN catalog — LogicalColumnEmission has
-                    // substituted logical column names by then — so under the
-                    // default logical rendition the term names the LOGICAL
-                    // column ("TenantId"), although the DeleteScopePolicy doc
-                    // says "PHYSICAL columns". The wart is recorded in
-                    // THE_GOLDEN_EMISSION.md §4 and the reconciliation plan.
-                    DeleteScope = Some { Terms = [ { Column = "TenantId"; Value = "42" } ] } } } ]
+                    DeleteScope = Some { Terms = [ { Column = "TenantId"; Value = "42" } ] } } },
+        GoldenCatalog.catalog
+      "pruned-platform-auto",
+        { baseConfig with
+            Emission = { baseConfig.Emission with IncludePlatformAutoIndexes = false } },
+        GoldenCatalog.prunePlatformAutoCatalog ]
 
-/// The baseline scenario whose directory holds the FULL, standalone-
-/// readable artifact set — the one place a reviewer reads a complete
-/// emission. Every OTHER scenario commits ONLY the files whose bytes
-/// differ from this baseline (DECISIONS 2026-06-13 — golden corpus
-/// contraction; amends THE_GOLDEN_EMISSION.md §3's full-set choice). The
-/// comparator asserts `scenario = baseline ⊕ {committed deltas}`, so a
-/// file equal to the baseline is never duplicated into a non-baseline
-/// scenario, and an axis-orthogonal variance touches only the baseline.
-let private baselineScenario : string = "default"
-
-let private baselineConfig : Config.Config =
-    scenarios |> List.find (fun (n, _) -> n = baselineScenario) |> snd
-
-/// Emit one scenario's artifact set: the per-table SSDT bundle (minus
-/// manifest.json — its VersionedPolicy stamp carries a wall clock; the
-/// inventory holds the TODO), the Data bundle, and the flat-stream
-/// realization (stream.sql — where GO framing and the constraint
-/// ladder live).
-let private emitScenario (cfg: Config.Config) : Map<string, string> =
-    let outputs = Compose.projectWithConfig cfg GoldenCatalog.catalog |> mustOk
-    let postChain = Compose.applyShapingToCatalog cfg GoldenCatalog.catalog |> mustOk
+/// Emit one scenario's artifact set over its own catalog: the per-table
+/// SSDT bundle (minus manifest.json — its VersionedPolicy stamp carries a
+/// wall clock; the inventory holds the TODO), the Data bundle, and the
+/// flat-stream realization (stream.sql — where GO framing and the
+/// constraint ladder live).
+let private emitScenario (cfg: Config.Config) (catalog: Catalog) : Map<string, string> =
+    let outputs = Compose.projectWithConfig cfg catalog |> mustOk
+    let postChain = Compose.applyShapingToCatalog cfg catalog |> mustOk
     let emitted =
         EmissionPolicy.filterPlatformAutoIndexes
             (EmissionPolicy.withIncludePlatformAutoIndexes
@@ -116,8 +116,7 @@ let private record (scenarioDir: string) (files: Map<string, string>) : unit =
         | dir -> Directory.CreateDirectory dir |> ignore
         File.WriteAllText(path, body)
 
-/// Byte-exact assertion with a first-divergence context window. Shared by
-/// the baseline (full-set) and delta comparators.
+/// Byte-exact assertion with a first-divergence context window.
 let private assertByteMatch (scenario: string) (rel: string) (expectedBody: string) (actualBody: string) : unit =
     if expectedBody <> actualBody then
         let firstDiffAt =
@@ -132,8 +131,9 @@ let private assertByteMatch (scenario: string) (rel: string) (expectedBody: stri
             sprintf "scenario %s: %s drifted from the golden at char %d.\n--- golden ---\n%s\n--- emitted ---\n%s\n(bless deliberately with GOLDEN_RECORD=1 + a DECISIONS note)"
                 scenario rel firstDiffAt (context expectedBody) (context actualBody))
 
-/// Baseline comparator (the `default` scenario) — the FULL artifact set is
-/// pinned and read standalone; the artifact-set drift check lives here.
+/// Full-set comparator — every scenario is its own standalone byte-set
+/// (the master over the full catalog; each one-off over its small catalog).
+/// Artifact-set drift (missing/extra files) + byte-exact per file.
 let private compare (scenario: string) (expected: Map<string, string>) (actual: Map<string, string>) : unit =
     let expectedKeys = expected |> Map.toSeq |> Seq.map fst |> Set.ofSeq
     let actualKeys = actual |> Map.toSeq |> Seq.map fst |> Set.ofSeq
@@ -144,49 +144,6 @@ let private compare (scenario: string) (expected: Map<string, string>) (actual: 
             scenario (Set.toList missing) (Set.toList extra))
     for KeyValue (rel, expectedBody) in expected do
         assertByteMatch scenario rel expectedBody (Map.find rel actual)
-
-/// Delta comparator (every non-baseline scenario). The committed corpus
-/// holds ONLY the files whose bytes differ from the baseline; the law is
-/// `scenario = baseline ⊕ {committed deltas}`. Three sub-laws:
-///   1. same Platonic catalog ⇒ identical artifact keyset to the baseline;
-///   2. each committed delta genuinely differs from the baseline AND
-///      byte-matches the emission (no equal-to-baseline duplication);
-///   3. every NON-committed file equals the baseline (the invariance law).
-let private compareDelta
-    (scenario: string)
-    (baseline: Map<string, string>)
-    (committed: Map<string, string>)
-    (actual: Map<string, string>)
-    : unit =
-    let actualKeys = actual |> Map.toSeq |> Seq.map fst |> Set.ofSeq
-    let baselineKeys = baseline |> Map.toSeq |> Seq.map fst |> Set.ofSeq
-    Assert.True((actualKeys = baselineKeys),
-        sprintf "scenario %s: artifact keyset diverged from the %s baseline.\n  only here: %A\n  only in baseline: %A"
-            scenario baselineScenario
-            (Set.difference actualKeys baselineKeys |> Set.toList)
-            (Set.difference baselineKeys actualKeys |> Set.toList))
-    for KeyValue (rel, committedBody) in committed do
-        match Map.tryFind rel actual with
-        | None ->
-            Assert.Fail(sprintf "scenario %s: committed delta %s is absent from the emission (re-record with GOLDEN_RECORD=1)" scenario rel)
-        | Some actualBody ->
-            match Map.tryFind rel baseline with
-            | Some b when b = actualBody ->
-                Assert.Fail(sprintf "scenario %s: committed delta %s equals the %s baseline — a non-baseline scenario must not duplicate baseline bytes; re-record to drop it" scenario rel baselineScenario)
-            | _ -> assertByteMatch scenario rel committedBody actualBody
-    for KeyValue (rel, actualBody) in actual do
-        if not (Map.containsKey rel committed) then
-            match Map.tryFind rel baseline with
-            | Some b when b = actualBody -> ()
-            | _ ->
-                Assert.Fail(sprintf "scenario %s: %s differs from the %s baseline but is not a committed delta (re-record with GOLDEN_RECORD=1 + a DECISIONS note)" scenario rel baselineScenario)
-
-/// Record only the files whose bytes differ from the baseline emission —
-/// the corpus-contraction recorder for non-baseline scenarios.
-let private recordDelta (scenarioDir: string) (baseline: Map<string, string>) (actual: Map<string, string>) : unit =
-    actual
-    |> Map.filter (fun rel body -> Map.tryFind rel baseline <> Some body)
-    |> record scenarioDir
 
 // ---------------------------------------------------------------------
 // Negative invariants — THE_GOLDEN_EMISSION.md §4, asserted per scenario.
@@ -268,44 +225,29 @@ let private assertNegativeInvariants (scenario: string) (files: Map<string, stri
 // ---------------------------------------------------------------------
 
 let private runScenario (name: string) : unit =
-    let cfg = scenarios |> List.find (fun (n, _) -> n = name) |> snd
-    let actual = emitScenario cfg
-    // The negative invariants run on the FULL emission for every scenario,
-    // independent of the delta-recording layout.
+    let _, cfg, catalog = scenarios |> List.find (fun (n, _, _) -> n = name)
+    let actual = emitScenario cfg catalog
     assertNegativeInvariants name actual
     let scenarioDir = Path.Combine(goldenRoot, name)
-    if name = baselineScenario then
-        if recording then record scenarioDir actual
-        else
-            let expected = listGoldenFiles scenarioDir
-            Assert.False(Map.isEmpty expected,
-                sprintf "no goldens recorded for scenario %s — run with GOLDEN_RECORD=1 first" name)
-            compare name expected actual
+    if recording then record scenarioDir actual
     else
-        // Non-baseline: pin only the delta from the baseline emission.
-        let baseline = emitScenario baselineConfig
-        if recording then recordDelta scenarioDir baseline actual
-        else
-            Assert.True(Directory.Exists scenarioDir,
-                sprintf "no goldens recorded for scenario %s — run with GOLDEN_RECORD=1 first" name)
-            compareDelta name baseline (listGoldenFiles scenarioDir) actual
+        let expected = listGoldenFiles scenarioDir
+        Assert.False(Map.isEmpty expected,
+            sprintf "no goldens recorded for scenario %s — run with GOLDEN_RECORD=1 first" name)
+        compare name expected actual
 
 [<Fact>]
-let ``golden emission: default scenario matches the blessed corpus byte-for-byte`` () =
-    runScenario "default"
+let ``golden emission: master scenario matches the blessed corpus byte-for-byte`` () =
+    runScenario "master"
 
 [<Fact>]
 let ``golden emission: pruned-platform-auto scenario matches the blessed corpus byte-for-byte`` () =
     runScenario "pruned-platform-auto"
 
 [<Fact>]
-let ``golden emission: delete-scope scenario matches the blessed corpus byte-for-byte`` () =
-    runScenario "delete-scope"
-
-[<Fact>]
 let ``golden emission: scenario artifact sets are deterministic across repeated emission (T1 face)`` () =
-    for name, cfg in scenarios do
-        let a = emitScenario cfg
-        let b = emitScenario cfg
+    for name, cfg, catalog in scenarios do
+        let a = emitScenario cfg catalog
+        let b = emitScenario cfg catalog
         Assert.Equal<Map<string, string>>(a, b)
         ignore name

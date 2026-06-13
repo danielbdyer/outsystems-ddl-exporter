@@ -412,3 +412,28 @@ let catalog : Catalog =
     with
     | Ok c -> c
     | Error e -> failwithf "GoldenCatalog.catalog: %A" e
+
+/// Isolated one-off catalog for the platform-auto-index prune axis
+/// (`emission.includePlatformAutoIndexes = false`). That flag is global —
+/// all-or-nothing per run — so it cannot fold into the master Platonic
+/// catalog; this tiny purpose-built catalog is its STANDALONE one-off
+/// emission (DECISIONS 2026-06-13 — maximal master + standalone one-offs).
+/// One kind with a platform-auto index (dropped under prune) beside a
+/// normal index (kept), so the one-off shows exactly the prune's effect and
+/// nothing else rather than re-emitting the whole estate.
+let prunePlatformAutoCatalog : Catalog =
+    let codeA = akey "PruneProbe.Code"
+    let probe : Kind =
+        { Kind.create (kkey "PruneProbe") (nm "PruneProbe")
+            (table "dbo" "GOLD_PRUNE_PROBE")
+            [ pkAttr (akey "PruneProbe.Id") "Id" "ID" true
+              { attr codeA "Code" "CODE" Text false with Length = Some 20 } ]
+          with
+            Description = Some "Prune one-off probe: a platform-auto index beside a normal one."
+            Indexes =
+                [ Index.ofKeyColumns (ikey "PruneProbe.Code") (nm "IX_PruneProbe_Code") [ codeA ]
+                  { Index.ofKeyColumns (ikey "PruneProbe.AutoCode") (nm "OSIDX_GOLD_PRUNE_PROBE_CODE") [ codeA ] with
+                      IsPlatformAuto = true } ] }
+    match Catalog.create [ mkModule (mkey "PruneForms") "PruneForms" [ probe ] ] [] with
+    | Ok c -> c
+    | Error e -> failwithf "GoldenCatalog.prunePlatformAutoCatalog: %A" e

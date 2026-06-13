@@ -22404,3 +22404,56 @@ the change) but no longer multiplies across invariant scenario copies. WP6
 step 3's per-lane data goldens (`Data/StaticSeeds.sql` etc.) land on this
 slimmer surface — invariant to the platform-auto axis, so they pin in
 `default` and delta only into `delete-scope`, never triplicated.
+
+---
+
+## 2026-06-13 — Golden corpus, take 2 (operator-directed): one maximal master + standalone one-offs (supersedes the delta layout above)
+
+Context: the operator clarified the intent the delta layout (entry above)
+served imperfectly — *"one master emission target with all possible
+variations in there, inclusive of table emissions … one massive emission
+attempt with most variants, with a few emission attempts that are
+exclusively the one-offs."* The delta layout cut surface but read as "the
+master's files, minus some" rather than "one master + a few standalone
+one-offs." This entry adopts the shape the operator chose ("maximal master +
+standalone one-offs") and **supersedes the delta machinery** (which is
+removed — each scenario is once again a full, standalone byte-set).
+
+**The governing distinction: catalog-shaped vs config-shaped variants.**
+- A *catalog-shaped* variant (a table, column, reference, index, constraint,
+  annotation, or data lane) folds into ONE catalog — that is the existing
+  "many attributes, few tables" consolidation, and the master Platonic
+  catalog already carries all of them.
+- A *config-shaped* variant is a whole-run `EmissionPolicy` flag. It splits
+  into two sub-cases:
+  - **Per-kind-resolvable ⇒ folds into the master.** `DeleteScope` resolves
+    per kind (`DeleteScopePolicy.resolveFor`), so the master's config now
+    *carries* the scope: the scoped kind (`ScopedLookup`) renders its
+    `WHEN NOT MATCHED BY SOURCE … DELETE` arm while every other static kind
+    stays a plain MERGE — both variants visible in the one master emission.
+    The separate `delete-scope` scenario is retired (folded in).
+  - **Globally all-or-nothing ⇒ a genuine one-off.** `IncludePlatformAuto
+    Indexes` is a single boolean for the whole run — an index is present
+    everywhere or absent everywhere, so the pruned rendering cannot coexist
+    with the master. It stays a scenario, but as a **small, self-contained**
+    emission of a purpose-built tiny catalog (`GoldenCatalog
+    .prunePlatformAutoCatalog` — one kind with a platform-auto index beside a
+    normal one), so the one-off shows exactly the prune's effect and nothing
+    else, rather than re-emitting the whole estate.
+
+**Result.** The corpus is `master/` (the full, standalone, all-catalog-
+variants emission — what a reviewer reads top to bottom, table emissions
+included) + `pruned-platform-auto/` (a ~2-file standalone one-off). Future
+non-foldable config flags (WP5 identity-annotation omit; WP6.6 EXCEPT
+validate-before-apply) each add their own small standalone one-off; foldable
+ones go into the master. `emitScenario` now takes the scenario's catalog
+(the master catalog or a one-off catalog); the comparator is back to the
+simple full-set byte-compare + artifact-set drift check per scenario.
+
+**Books.** `THE_GOLDEN_EMISSION.md §3/§4` updated (the master+one-off model;
+the second catalog; delete-scope folded into the master inventory row). The
+delta-layout entry above is retained as provenance — it records the
+intermediate step and the measurement (49→20) that motivated contraction;
+this entry is the live shape. Witness: GoldenEmission green on re-record;
+byte changes are the master's `seed.sql` gaining the ScopedLookup DELETE arm
+(blessed) and the scenario restructure. Docker pool still owed (env).

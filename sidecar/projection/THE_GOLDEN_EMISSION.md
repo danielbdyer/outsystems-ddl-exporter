@@ -63,33 +63,46 @@ where the plan says so — each such slice shows up here as a deliberate diff).
 ```
 tests/Projection.Tests/Golden/
   README.md                      — pointer to this document
-  default/                       — the BASELINE: the FULL artifact set
+  master/                        — THE one massive emission: the full
+                                   Platonic catalog under a kitchen-sink config
     Modules/<Module>/<Schema>.<Table>.sql   (the per-table SSDT bundle)
     manifest.json
     stream.sql                   — the flat-stream Render.toText realization
                                    (where GO framing + the constraint ladder live)
-    Data/seed.sql                — present only when the lanes produce content
-  pruned-platform-auto/          — emission.includePlatformAutoIndexes=false
-                                   (ONLY the files that differ from default)
-  delete-scope/                  — emission.deleteScope on the scoped kind
-                                   (ONLY the files that differ from default)
+    Data/seed.sql                — the data lanes (incl. the folded-in
+                                   delete-scope DELETE arm on the scoped kind)
+  pruned-platform-auto/          — a SMALL standalone one-off: a tiny catalog
+                                   under emission.includePlatformAutoIndexes=false
 ```
 
-**The baseline + delta layout (DECISIONS 2026-06-13 — golden corpus
-contraction).** `default/` is the baseline and holds the **full**,
-standalone-readable artifact set — the one place a reviewer reads a complete
-emission. Every other scenario commits **only the files whose bytes differ
-from the baseline**; the comparator asserts the law
-`scenario = baseline ⊕ {committed deltas}` (keyset parity with the baseline;
-each committed delta genuinely differs and byte-matches; every non-committed
-file equals the baseline). This keeps the review surface proportional to what
-a scenario actually changes (an axis-orthogonal variance touches only the
-baseline) rather than triplicating invariant artifacts. The trade-off:
-non-baseline directories are **not** standalone-readable — but their
-committed files ARE exactly the axis's effect, nothing else. The dacpac is
-**excluded** by design: its byte-determinism is an explicitly deferred
-guarantee (content-equality only, per the standing deferral) — pinning its
-bytes would make the corpus flaky against a non-claim.
+**The maximal-master + standalone-one-offs layout (DECISIONS 2026-06-13 —
+golden corpus, take 2; supersedes the delta layout).** The corpus is one
+**master** plus a few small **one-offs**, by the catalog-vs-config
+distinction:
+
+- **`master/`** is the one massive, standalone, read-top-to-bottom emission:
+  the full Platonic catalog (every catalog-shaped variant — tables, columns,
+  references, indexes, constraints, annotations, data lanes) under a
+  kitchen-sink config that also folds in every *config*-shaped variant that
+  can coexist. `DeleteScope` resolves per kind, so the master carries it: the
+  scoped kind renders its `WHEN NOT MATCHED BY SOURCE … DELETE` arm while
+  every other static kind stays a plain MERGE — both variants in one file.
+- **one-offs** exist only for *globally all-or-nothing* config flags that
+  cannot coexist with the master. Each is a **small, self-contained** full
+  emission over a tiny purpose-built catalog, so it shows exactly that flag's
+  effect and nothing else. Today: `pruned-platform-auto/` (one kind with a
+  platform-auto index beside a normal one; `IncludePlatformAutoIndexes` is
+  global, so the pruned rendering can't live in the master). Future
+  non-foldable flags (WP5 identity-annotation omit; WP6.6 EXCEPT
+  validate-before-apply) each add their own small one-off; foldable ones go
+  into the master.
+
+Every scenario is a FULL standalone byte-set (the comparator is a per-file
+byte-compare + artifact-set drift check); there is no baseline/delta
+relationship to mentally reconstruct. The dacpac is **excluded** by design:
+its byte-determinism is an explicitly deferred guarantee (content-equality
+only, per the standing deferral) — pinning its bytes would make the corpus
+flaky against a non-claim.
 
 Scenario configs are authored in `GoldenEmissionTests.fs` next to the
 comparator — the config IS part of the pinned intent.
@@ -149,7 +162,7 @@ inventory row and its variance in the catalog, in the same commit.**
 | Plain IX / unique UIX | COVERED |
 | Composite (multi-attribute) UNIQUE index | COVERED + BLESSED (slice 3b, `UIX_Engagement_CustomerId_Subject`) |
 | Composite index with mixed ASC/DESC directions | COVERED + BLESSED (slice 3b, `IX_Engagement_CreatedBy_UpdatedByDesc`) |
-| Platform-auto index (OSIDX; present in `default`, absent in `pruned-platform-auto`) | COVERED |
+| Platform-auto index (OSIDX; present in `master`, absent in the `pruned-platform-auto` one-off) | COVERED |
 | Filtered index — FILTER predicate follows the logical substitution (v2) | COVERED + BLESSED (slice 3) |
 | INCLUDE columns | COVERED |
 | DESC key column | COVERED |
@@ -192,7 +205,7 @@ reminder.
 |---|---|
 | Static seed MERGE (idempotent, CDC-aware predicate) | COVERED (`Country` rows) |
 | Phase-2 deferred-FK UPDATE (nullable FK cycle between static kinds) | COVERED (`RegionA`/`RegionB` cycle) |
-| Delete-scope arm (`WHEN NOT MATCHED BY SOURCE … DELETE` under the term predicate) | COVERED (`delete-scope` scenario). **First-recording finding:** the term resolves against the POST-CHAIN catalog (after `LogicalColumnEmission`), so under the default logical rendition the term must name the LOGICAL column — the `DeleteScopePolicy` doc's "terms name PHYSICAL columns" is stale for that rendition. Doc/semantics reconciliation rides the plan's WP4 follow-on |
+| Delete-scope arm (`WHEN NOT MATCHED BY SOURCE … DELETE` under the term predicate) | COVERED — **folded into the `master` scenario** (DeleteScope resolves per kind, so the scoped kind carries the DELETE arm while other static kinds stay plain MERGEs; DECISIONS 2026-06-13 take 2). **First-recording finding:** the term resolves against the POST-CHAIN catalog (after `LogicalColumnEmission`), so under the default logical rendition the term must name the LOGICAL column — the `DeleteScopePolicy` doc's "terms name PHYSICAL columns" is stale for that rendition. Doc/semantics reconciliation rides the plan's WP4 follow-on |
 | Static kind with IDENTITY PK (IDENTITY_INSERT handling) | COVERED + BLESSED (WP6 step 1, `Tier` — the MERGE is bracketed by `SET IDENTITY_INSERT … ON/OFF` as ONE GO batch; DECISIONS 2026-06-13) |
 | Bootstrap lane content | TODO — plan WP6 (today: empty; the goldens pin the emptiness so the lane filling is a visible diff) |
 | MigrationData lane content | TODO — plan WP6 |

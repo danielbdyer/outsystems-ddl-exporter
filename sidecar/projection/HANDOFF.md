@@ -54,11 +54,13 @@ a kind another lane also populates and the composer's
 Step 3 (per-lane `Data/StaticSeeds.sql` / `Bootstrap.sql` / `MigrationData.sql`
 out of `SiblingArtifacts` pre-union) and step 5 (the per-lane goldens) are
 PURE-witnessable through the golden corpus and need no live connection — they
-can land next without Docker. **Note the golden corpus was contracted
-(`2ca4374`, DECISIONS + `THE_GOLDEN_EMISSION.md §3`):** `default/` is the full
-baseline; non-baseline scenarios now commit ONLY files that differ from it
-(comparator law `scenario = baseline ⊕ {deltas}`). So step 3's lane files pin
-in `default` and delta into `delete-scope` only — do NOT triplicate them. Step 4 (hydration in `runWithConfig`) is the
+can land next without Docker. **Note the golden corpus was reshaped (DECISIONS
+2026-06-13 take 2 + `THE_GOLDEN_EMISSION.md §3`):** it is now one maximal
+`master/` (the full Platonic catalog under a kitchen-sink config — delete-scope
+is FOLDED IN, since it resolves per kind) plus small standalone one-offs for
+genuinely-global flags (today just `pruned-platform-auto/`, a tiny catalog).
+So step 3's per-lane data files (`Data/StaticSeeds.sql` etc.) land in
+`master/Data/` only — there is no second data scenario to keep in sync. Step 4 (hydration in `runWithConfig`) is the
 big one and the only step that wants a live OSSYS connection; the marker /
 `ReadbackPopulated` choice and the `projectSeedPlan` parity duty are in the
 pre-scope. The IDENTITY_INSERT bracket already rides Bootstrap's delegation,
