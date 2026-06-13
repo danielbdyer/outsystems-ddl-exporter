@@ -94,6 +94,14 @@ type ToleratedDivergence =
     /// forces faithful empty-string preservation today). NB: for a NOT-NULL
     /// `Text` column an empty source value would instead fail the load —
     /// that schema-vs-data compatibility check is 6.B.1, not this tolerance.
+    ///
+    /// NM-18 — SCOPE: the empty raw string is the V2 IR's *universal* NULL
+    /// sentinel (`SqlLiteral.ofRaw "" = NullLit` for EVERY `PrimitiveType`, by
+    /// the `RawValueCodec` single-source-of-truth convention), so this erasure
+    /// also covers a stored empty `TextLit ""` (`N''`) and a zero-length
+    /// `BinaryLit` (`0x`) — not just the empty-string-vs-NULL ambiguity the name
+    /// foregrounds. Retiring the sentinel (a faithful empty/zero-length form)
+    /// is the same IR-grows-under-evidence slice.
     /// @ladder EmptyTextNormalizedToNull Data AcceptedFaithful
     | EmptyTextNormalizedToNull
 

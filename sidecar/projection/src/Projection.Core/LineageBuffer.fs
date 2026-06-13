@@ -90,3 +90,17 @@ module CatalogTraversal =
             c |> Lens.over CatalogLenses.modules (
                 List.map (Lens.over CatalogLenses.kindsOf (List.choose (visit events))))
         Lineage.ofValueAndEvents (LineageBuffer.toList events) withVisitedKinds
+
+    /// NM-50 — the IDENTITY-preserving sibling of `mapKinds`: the visitor
+    /// returns a `Kind` (never `None`), so a rewriting pass that must NOT lose a
+    /// kind (e.g. `LogicalTableEmission`) cannot silently shrink the catalog. A
+    /// kind count is conserved by construction (`List.map`, not `List.choose`).
+    let mapKindsTotal
+        (visit: LineageBuffer.Buffer -> Kind -> Kind)
+        (c: Catalog)
+        : Lineage<Catalog> =
+        let events = LineageBuffer.create ()
+        let withVisitedKinds =
+            c |> Lens.over CatalogLenses.modules (
+                List.map (Lens.over CatalogLenses.kindsOf (List.map (visit events))))
+        Lineage.ofValueAndEvents (LineageBuffer.toList events) withVisitedKinds
