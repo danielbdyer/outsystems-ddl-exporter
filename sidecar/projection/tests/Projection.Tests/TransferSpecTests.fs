@@ -14,6 +14,43 @@ let private mustOk r = match r with Ok v -> v | Error es -> failwithf "fixture: 
 let private mkKey (parts: string list) : SsKey = SsKey.synthesizedComposite "OS_TEST_TSPEC" parts |> mustOk
 let private mkName (s: string) : Name = Name.create s |> mustOk
 
+// -- NM-53: a resumable G10 no-op re-run replays the prior drop verdict ------
+
+/// A clean transfer report (no live drops) carrying an optional replayed
+/// prior-drop count — the shape a G10 no-op re-run produces.
+let private reportWithReplay (replayed: int option) : Transfer.TransferReport =
+    { Mode                = Transfer.Execute
+      Kinds               = []
+      UnbreakableCycleFks = []
+      UnmatchedIdentities = []
+      AmbiguousIdentities = []
+      SkippedReferences   = []
+      CaptureLaneDescents = []
+      ReplayedPriorDrops  = replayed }
+
+[<Fact>]
+let ``NM-53: a no-op re-run with a replayed prior-drop count replays exit-9, not a clean exit-0`` () =
+    // The first run legitimately dropped 3 FK-orphans (exit 9); the marker
+    // persists the count. The re-run is a no-op (empty live drop-set) but
+    // re-surfaces the prior verdict — `hasDrops` true, exit 9 — so a refresh
+    // wrapper re-running to confirm is NOT misled into a clean exit-0.
+    let replayed = reportWithReplay (Some 3)
+    Assert.True(Transfer.hasDrops replayed, "a replayed prior drop count must count as drops")
+    Assert.Equal(3, Transfer.droppedRowCount replayed)
+    Assert.Equal(Transfer.DroppedReferencesExit, Transfer.exitCodeForReport false replayed)
+    // --allow-drops still downgrades the replayed verdict to 0 (the operator
+    // accepted the loss), exactly as it does for live drops.
+    Assert.Equal(0, Transfer.exitCodeForReport true replayed)
+
+[<Fact>]
+let ``NM-53: a no-op re-run of a clean prior run (no drops) stays exit-0`` () =
+    // A first run that dropped nothing records 0; the replay is benign.
+    for replayed in [ None; Some 0 ] do
+        let clean = reportWithReplay replayed
+        Assert.False(Transfer.hasDrops clean, "a zero/absent replay is not drops")
+        Assert.Equal(0, Transfer.droppedRowCount clean)
+        Assert.Equal(0, Transfer.exitCodeForReport false clean)
+
 // -- parseConnectionSpec ---------------------------------------------------
 
 [<Fact>]
