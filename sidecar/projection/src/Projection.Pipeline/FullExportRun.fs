@@ -143,6 +143,49 @@ module FullExportRun =
             Config.Config -> Result<Compose.RunReport * Compose.FullExportStoreLeg option>)
         : RunOutcome * Compose.FullExportStoreLeg option =
         let mutable storeLeg : Compose.FullExportStoreLeg option = None
+        // NM-34b — the resolved config the body validated, captured so the
+        // post-body `captureInputs` can compute the REAL `Run.inputDigest`
+        // (config text + source-model content) and the touched `LedgerRef`.
+        // `None` ⇒ the config never validated, so there is no stable input
+        // content to hash (the honest empty digest).
+        let mutable resolvedConfig : Config.Config option = None
+        // NM-34b — the input digest + touched ledger refs, evaluated AFTER the
+        // body so it reads what the run resolved. The digest is `Run.inputDigest
+        // configText sourceModelJson`:
+        //   * configText  — the raw unified-config file (a genuine run input);
+        //   * sourceModelJson — the source model FILE content when the model is
+        //     `Path`-sourced (the second input the digest contract names).
+        // FLAG: a LIVE-OSSYS model (`cfg.Model.Ossys`, `cfg.Model.Path = None`)
+        // has no on-disk source content; hashing it deterministically would mean
+        // serializing the read catalog (it is not surfaced on `RunReport` today),
+        // so the model half is "" for a live run — the digest still varies with
+        // the config but is NOT a full inputs digest. TODO(NM-34b-live): surface
+        // the read source `Catalog` (its `CatalogCodec.serialize`) on `RunReport`
+        // and hash it here so live runs get a full inputs digest. The ledger ref
+        // is the recorded episode's `EpisodeRef(timeline, ordinal)` from the
+        // store leg, when a store was threaded.
+        let captureInputs () : string * Run.LedgerRef list =
+            let digest =
+                match resolvedConfig with
+                | None -> ""   // config never validated ⇒ no stable inputs to hash
+                | Some cfg ->
+                    let configText =
+                        try File.ReadAllText configPath with _ -> ""
+                    let sourceModelJson =
+                        match cfg.Model.Path with
+                        | Some modelPath ->
+                            try File.ReadAllText modelPath with _ -> ""
+                        | None -> ""   // FLAG (live Ossys): no on-disk source content
+                    if configText = "" then "" else Run.inputDigest configText sourceModelJson
+            let ledgers =
+                match storeLeg with
+                | Some leg ->
+                    let latest = EpisodicLifecycle.latest leg.Chain
+                    let timeline = EpisodicLifecycle.timeline leg.Chain |> Timeline.name
+                    let ordinal = Episode.version latest |> Version.ordinal
+                    [ Run.EpisodeRef (timeline, ordinal) ]
+                | None -> []
+            digest, ledgers
         let runOutcome =
             RunEnvelope.bracket
                 "projection full-export"
@@ -150,6 +193,7 @@ module FullExportRun =
                     LogSink.setVerbosity verbosity
                     LogSink.setMutedCategories mutedCategories)
                 (Map.ofList [ "configPath", box configPath ])
+                captureInputs
                 (fun () ->
                     try
                         match Config.fromFile configPath with
@@ -159,6 +203,9 @@ module FullExportRun =
                         | Ok cfg ->
                             let effectiveOutput = resolveOutputDir cfg outputOverride
                             let cfgForRun = { cfg with Output = { Dir = effectiveOutput } }
+                            // NM-34b — record the validated config so the
+                            // post-body `captureInputs` can hash the real inputs.
+                            resolvedConfig <- Some cfgForRun
                             emitConfigSnapshot cfgForRun effectiveOutput
                             match runComposition cfgForRun with
                             | Ok (report, leg) ->

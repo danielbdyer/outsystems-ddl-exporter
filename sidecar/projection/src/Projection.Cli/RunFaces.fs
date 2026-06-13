@@ -1015,7 +1015,10 @@ let runReadiness () : int =
         // §10 terminal always) and the run is capturable. Bracketed here
         // rather than via `withRun` to honor the documented contract above:
         // no ledger append for the query itself.
-        RunEnvelope.bracket "projection check ready" ignore Map.empty (fun () ->
+        // NM-34b — `check ready` reads the ledger; it has no hashable run input
+        // and touches no ledger (the documented no-append contract above), so it
+        // declares the empty digest + no `LedgerRef`.
+        RunEnvelope.bracket "projection check ready" ignore Map.empty (fun () -> "", []) (fun () ->
             let records = RunLedger.read dir
             let r = RunLedger.readiness records
             let recent =

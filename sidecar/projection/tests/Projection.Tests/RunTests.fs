@@ -96,7 +96,8 @@ let ``R1b: every bracketed verb's run is capturable — no orphan RunIds`` () =
         LogSink.reset ()
         let mutable code = -1
         LogSink.withWriter sw (fun () ->
-            code <- RunEnvelope.bracket "projection test-verb" ignore Map.empty (fun () -> 0, LogSink.Succeeded))
+            // A content-less verb supplies the empty inputs capture ("", []).
+            code <- RunEnvelope.bracket "projection test-verb" ignore Map.empty (fun () -> "", []) (fun () -> 0, LogSink.Succeeded))
         Assert.Equal(0, code)
         let runId = LogSink.runId ()
         match Run.load dir runId with
@@ -106,7 +107,70 @@ let ``R1b: every bracketed verb's run is capturable — no orphan RunIds`` () =
             Assert.True(r.Bench.IsSome)
             Assert.Contains(r.Events, fun (e: string) -> e.Contains "config.runStart")
             Assert.Contains(r.Events, fun (e: string) -> e.Contains "summary.runComplete")
+            // NM-34b — a content-less verb's empty capture: no fabricated digest.
+            Assert.Equal("", r.InputDigest)
+            Assert.Empty(r.Ledgers)
         | None -> Assert.Fail "expected the captured run aggregate under PROJECTION_LEDGER_DIR"
+    finally
+        Environment.SetEnvironmentVariable("PROJECTION_LEDGER_DIR", prior)
+        try Directory.Delete(dir, true) with _ -> ()
+
+[<Fact>]
+let ``NM-34b: the bracket persists the verb's REAL inputDigest + touched LedgerRefs (no longer hardcoded empty)`` () =
+    // Before NM-34b the bracket hardcoded inputDigest="" and Ledgers=[], so
+    // RunHistory/Run.diff dedup over InputDigest was structurally inoperative.
+    // The bracket now threads the per-verb `captureInputs` side-channel: a verb
+    // that resolved real inputs persists a genuine content-hash + its episode
+    // ledger ref.
+    let dir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"))
+    let prior = Environment.GetEnvironmentVariable "PROJECTION_LEDGER_DIR"
+    let expectedDigest = Run.inputDigest "config-text" "model-json"
+    try
+        Environment.SetEnvironmentVariable("PROJECTION_LEDGER_DIR", dir)
+        use sw = new StringWriter()
+        LogSink.reset ()
+        LogSink.withWriter sw (fun () ->
+            RunEnvelope.bracket
+                "projection inputs-verb"
+                ignore
+                Map.empty
+                (fun () -> expectedDigest, [ Run.EpisodeRef ("appcore", 2) ])
+                (fun () -> (), LogSink.Succeeded))
+        let runId = LogSink.runId ()
+        match Run.load dir runId with
+        | Some r ->
+            Assert.Equal(expectedDigest, r.InputDigest)
+            Assert.NotEqual<string>("", r.InputDigest)
+            Assert.Equal<Run.LedgerRef list>([ Run.EpisodeRef ("appcore", 2) ], r.Ledgers)
+        | None -> Assert.Fail "expected the captured run aggregate under PROJECTION_LEDGER_DIR"
+    finally
+        Environment.SetEnvironmentVariable("PROJECTION_LEDGER_DIR", prior)
+        try Directory.Delete(dir, true) with _ -> ()
+
+[<Fact>]
+let ``NM-34b: a captureInputs throw degrades to the empty digest, never masking the run outcome`` () =
+    // The capture is defensive: a throw inside `captureInputs` must not abort
+    // the run aggregate persistence nor the body's outcome.
+    let dir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"))
+    let prior = Environment.GetEnvironmentVariable "PROJECTION_LEDGER_DIR"
+    try
+        Environment.SetEnvironmentVariable("PROJECTION_LEDGER_DIR", dir)
+        use sw = new StringWriter()
+        LogSink.reset ()
+        let mutable code = -1
+        LogSink.withWriter sw (fun () ->
+            code <- RunEnvelope.bracket
+                        "projection throwing-inputs"
+                        ignore
+                        Map.empty
+                        (fun () -> failwith "capture boom")
+                        (fun () -> 7, LogSink.Succeeded))
+        Assert.Equal(7, code)
+        match Run.load dir (LogSink.runId ()) with
+        | Some r ->
+            Assert.Equal("", r.InputDigest)
+            Assert.Empty(r.Ledgers)
+        | None -> Assert.Fail "expected the captured run aggregate even when captureInputs threw"
     finally
         Environment.SetEnvironmentVariable("PROJECTION_LEDGER_DIR", prior)
         try Directory.Delete(dir, true) with _ -> ()

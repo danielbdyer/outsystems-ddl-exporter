@@ -30,10 +30,22 @@ module RunEnvelope =
     /// `startPayload` carries the verb's §7.1 payload beyond `command`
     /// (full-export adds `configPath`); `body` returns its value plus the
     /// run's wire outcome.
+    ///
+    /// `captureInputs` (NM-34b) is evaluated in the `finally` AFTER the body, so
+    /// it can read what the body computed (the resolved config + source-model
+    /// content for the `Run.inputDigest`; the touched `Run.LedgerRef`s — episode
+    /// coordinates / journal digests — from the body's result). Returning
+    /// `("", [])` is the honest empty for a content-less verb (e.g. `check
+    /// ready`): the bracket itself is content-blind, so each verb supplies its
+    /// own inputs or declares it has none. NEVER fabricate a digest — an empty
+    /// string means "no stable input content was hashed", which `Run.diff`'s
+    /// dedup treats as a non-match (correct: it cannot claim two unknowable runs
+    /// are the same).
     let bracket
         (command: string)
         (configure: unit -> unit)
         (startPayload: Map<string, objnull>)
+        (captureInputs: unit -> string * Run.LedgerRef list)
         (body: unit -> 'a * LogSink.Outcome)
         : 'a =
         LogSink.beginRun () |> ignore
@@ -62,9 +74,12 @@ module RunEnvelope =
             // close, the bench snapshot on the value (R1a) — so no bracketed
             // run leaves an orphan RunId, crashed bodies included. Opt-in
             // (the env var), and a capture failure never masks the body's
-            // outcome. InputDigest stays "" at the bracket grain — the
-            // bracket cannot see config/catalog content; per-face threading
-            // is R1d-consumer territory, not faked here.
+            // outcome. NM-34b — the input digest + touched ledger refs are now
+            // supplied by `captureInputs` (the per-verb side-channel the bracket
+            // grain cannot see for itself): the full-export face threads the real
+            // `Run.inputDigest` + the recorded episode's `LedgerRef`; a
+            // content-less verb returns `("", [])`. Evaluated defensively — a
+            // capture throw degrades to the empty digest, never masking outcome.
             match RunLedger.configuredDir () with
             | Some dir ->
                 (try
@@ -73,7 +88,13 @@ module RunEnvelope =
                           Tag = command
                           Stats = Bench.snapshot () }
                     let code = match outcome with LogSink.Succeeded -> 0 | _ -> 1
-                    Run.save dir { Run.capture command code "" Map.empty with Bench = Some bench }
+                    let inputDigest, ledgers =
+                        try captureInputs ()
+                        with _ -> "", []
+                    Run.save dir
+                        { Run.capture command code inputDigest Map.empty with
+                            Bench = Some bench
+                            Ledgers = ledgers }
                  with ex ->
                     eprintfn "  WARNING: failed to persist the run aggregate: %s" ex.Message)
             | None -> ()
