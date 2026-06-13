@@ -132,6 +132,42 @@ let ``ReportRun: a genesis-only timeline reports no change since genesis`` () =
         Assert.Empty(b.Manifests)
         Assert.Contains(ReportRun.render b, fun (l: string) -> l.Contains "No schema change recorded since genesis")
 
+// NM-32 — `render` surfaces the change-accounting "under what equivalence was
+// this accepted?" plane: the tolerance residual + the applied-transforms count,
+// each only when non-empty (a strict, skeleton-only edge stays silent).
+
+let private provenanceE1 : Episode =
+    Episode.create coord1 targetCatalog Profile.empty (Some "refactorlog#1") (DataObservation.create 10 None)
+    |> Episode.withProvenance
+        (Tolerance.strict |> Tolerance.withDivergence ToleratedDivergence.HeaderCommentsOmitted)
+        [ customer.SsKey, Some OverlayAxis.Emission; order.SsKey, None ]
+
+let private provenanceChain : EpisodicLifecycle =
+    EpisodicLifecycle.genesis (tl "report-dev") e0
+    |> EpisodicLifecycle.append provenanceE1
+    |> mustResultOk
+
+[<Fact>]
+let ``NM-32: render surfaces the tolerance residual and the applied-transforms count when non-empty`` () =
+    match ReportRun.fromChain provenanceChain with
+    | Error e -> Assert.Fail(sprintf "%A" e)
+    | Ok b ->
+        let lines = ReportRun.render b
+        // The tolerance residual names the accepted divergence on the edge.
+        Assert.Contains(lines, fun (l: string) -> l.Contains "accepted under tolerance" && l.Contains "HeaderCommentsOmitted")
+        // The applied-transforms count surfaces the overlay enumeration (2 rows).
+        Assert.Contains(lines, fun (l: string) -> l.Contains "applied transforms recorded" && l.Contains "2 overlay row")
+
+[<Fact>]
+let ``NM-32: a strict, skeleton-only edge surfaces no provenance line (silence is the faithful case)`` () =
+    // `threeEpisodeChain`'s episodes carry the `strict`/`[]` defaults.
+    match ReportRun.fromChain threeEpisodeChain with
+    | Error e -> Assert.Fail(sprintf "%A" e)
+    | Ok b ->
+        let lines = ReportRun.render b
+        Assert.DoesNotContain(lines, fun (l: string) -> l.Contains "accepted under tolerance")
+        Assert.DoesNotContain(lines, fun (l: string) -> l.Contains "applied transforms recorded")
+
 [<Fact>]
 let ``ReportRun: round-trips through the durable store`` () =
     let path =

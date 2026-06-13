@@ -58,4 +58,15 @@ module ReportRun =
                   let c = m.Channels
                   yield sprintf "  %s → %s · %d schema change(s) (%d added · %d dropped · %d renamed) · %d row(s) captured"
                             (Version.label m.From.Version) (Version.label m.To.Version)
-                            m.SchemaNorm c.AddedKinds c.RemovedKinds c.RenamedKinds m.CdcCaptureCount ]
+                            m.SchemaNorm c.AddedKinds c.RemovedKinds c.RenamedKinds m.CdcCaptureCount
+                  // NM-32 — the change-accounting "under what equivalence was
+                  // this accepted?" plane. The tolerance residual names the
+                  // divergences this edge's canary accepted; the applied-
+                  // transforms count is the per-artifact overlay enumeration. Both
+                  // are surfaced only when non-empty (a strict, skeleton-only edge
+                  // adds no provenance line — silence is the faithful case).
+                  if not (List.isEmpty m.ToleranceResidual) then
+                      let names = m.ToleranceResidual |> List.map ToleratedDivergence.name |> String.concat ", "
+                      yield sprintf "      accepted under tolerance: %s" names
+                  if not (List.isEmpty m.AppliedTransforms) then
+                      yield sprintf "      applied transforms recorded: %d overlay row(s)" (List.length m.AppliedTransforms) ]
