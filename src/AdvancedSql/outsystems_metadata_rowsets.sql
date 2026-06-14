@@ -179,7 +179,12 @@ CREATE TABLE #Attr
     LegacyType           NVARCHAR(400)  NULL,
     Decimals             INT            NULL,
     OriginalType         NVARCHAR(200)  NULL,
-    AttrDescription      NVARCHAR(MAX)  NULL
+    AttrDescription      NVARCHAR(MAX)  NULL,
+    -- WP8 / NM-72 — Service-Studio authored attribute order from the
+    -- real `ossys_Entity_Attr.Order_Num` column. COALESCEd to the
+    -- attribute's creation `Id` in the dynamic INSERT when the source
+    -- estate lacks the column, so it is non-null after population.
+    OrderNum             INT            NULL
 );
 
 DECLARE
@@ -203,6 +208,11 @@ DECLARE
     @HasOriginalType BIT = CASE WHEN COL_LENGTH(N'dbo.ossys_Entity_Attr', 'Original_Type') IS NOT NULL THEN 1 ELSE 0 END,
     @HasSSKey BIT = CASE WHEN COL_LENGTH(N'dbo.ossys_Entity_Attr', 'SS_Key') IS NOT NULL THEN 1 ELSE 0 END,
     @HasLength BIT = CASE WHEN COL_LENGTH(N'dbo.ossys_Entity_Attr', 'Length') IS NOT NULL THEN 1 ELSE 0 END,
+    -- WP8 / NM-72 — tolerate estates whose `ossys_Entity_Attr` lacks the
+    -- `Order_Num` column. When absent, the dynamic INSERT falls back to
+    -- the attribute's creation `Id` (a stable, monotone authored proxy)
+    -- so emission ordering stays deterministic on every estate.
+    @HasOrderNum BIT = CASE WHEN COL_LENGTH(N'dbo.ossys_Entity_Attr', 'Order_Num') IS NOT NULL THEN 1 ELSE 0 END,
     @AttrDescriptionExpr NVARCHAR(MAX),
     @InsertAttr NVARCHAR(MAX);
 
@@ -224,7 +234,7 @@ SET @InsertAttr = N'INSERT INTO #Attr (
       AttrId, EntityId, AttrName, AttrSSKey, DataType, [Length], [Precision], [Scale],
       DefaultValue, IsMandatory, AttrIsActive, IsAutoNumber, IsIdentifier, RefEntityId,
       OriginalName, ExternalColumnType, DeleteRule, PhysicalColumnName, DatabaseColumnName,
-      LegacyType, Decimals, OriginalType, AttrDescription)
+      LegacyType, Decimals, OriginalType, AttrDescription, OrderNum)
     SELECT
       a.[Id],
       a.[Entity_Id],
@@ -248,7 +258,13 @@ SET @InsertAttr = N'INSERT INTO #Attr (
       ' + CASE WHEN @HasType = 1 THEN N'a.[Type]' ELSE N'NULL' END + N',
       ' + CASE WHEN @HasDecimals = 1 THEN N'a.[Decimals]' ELSE N'NULL' END + N',
       ' + CASE WHEN @HasOriginalType = 1 THEN N'a.[Original_Type]' ELSE N'NULL' END + N',
-      ' + @AttrDescriptionExpr + N'
+      ' + @AttrDescriptionExpr + N',
+      -- WP8 / NM-72 — authored Service-Studio order. Read the real
+      -- `Order_Num` column when the estate exposes it; COALESCE to the
+      -- attribute creation `Id` as a stable fallback (FLAG: estates
+      -- without Order_Num order by creation Id, a monotone proxy for
+      -- authored order, not the true Service-Studio order).
+      ' + CASE WHEN @HasOrderNum = 1 THEN N'COALESCE(a.[Order_Num], a.[Id])' ELSE N'a.[Id]' END + N'
     FROM ' + QUOTENAME(@AttrSchema) + N'.' + QUOTENAME(@AttrName) + N' AS a
     JOIN #Ent ON #Ent.EntityId = a.[Entity_Id]
     WHERE (@OnlyActiveAttributes = 0 OR ISNULL(a.[Is_Active],1) = 1);';
@@ -748,6 +764,9 @@ SELECT
   ISNULL((
     SELECT
       a.AttrName AS [name],
+      -- WP8 / NM-72 — authored Service-Studio order carried into the
+      -- JSON-path payload (`OssysJsonReader` reads the `order` property).
+      a.OrderNum AS [order],
       COALESCE(NULLIF(a.PhysicalColumnName, ''), NULLIF(a.DatabaseColumnName, ''), a.AttrName) AS [physicalName],
       NULLIF(LTRIM(RTRIM(a.OriginalName)), '') AS [originalName],
       COALESCE(a.DataType, a.OriginalType, a.LegacyType) AS [dataType],
@@ -800,7 +819,11 @@ SELECT
     LEFT JOIN #ColumnReality cr ON cr.AttrId = a.AttrId
     LEFT JOIN #AttrCheckJson chk ON chk.AttrId = a.AttrId
     WHERE a.EntityId = en.EntityId
+    -- WP8 / NM-72 — emission column order: PK first, then the authored
+    -- Service-Studio `Order_Num` ascending, then `AttrName` as the
+    -- stable tiebreak (deterministic when two attributes share an order).
     ORDER BY CASE WHEN COALESCE(a.IsIdentifier, CASE WHEN a.AttrSSKey = en.PrimaryKeySSKey THEN 1 ELSE 0 END) = 1 THEN 0 ELSE 1 END,
+             a.OrderNum,
              a.AttrName
     FOR JSON PATH
   ), '[]') AS AttributesJson
@@ -816,6 +839,10 @@ SELECT
     SELECT DISTINCT
       a.AttrId                           AS [viaAttributeId],
       a.AttrName                         AS [viaAttributeName],
+      -- WP8 / NM-72 — projected so the `SELECT DISTINCT ... ORDER BY
+      -- a.OrderNum` below is well-formed; the reader ignores it (the
+      -- reference IR carries no per-attribute order field today).
+      a.OrderNum                         AS [viaOrder],
       COALESCE(r.RefEntityName, fk.ReferencedTable)       AS [toEntity_name],
       COALESCE(r.RefPhysicalName, fk.ReferencedTable)     AS [toEntity_physicalName],
       a.DeleteRule                       AS [deleteRuleCode],
@@ -834,7 +861,14 @@ SELECT
              AND fc.ParentAttrId = a.AttrId)
     WHERE a.EntityId = en.EntityId
       AND (r.AttrId IS NOT NULL OR fk.FkObjectId IS NOT NULL)
-    ORDER BY a.AttrName
+    -- WP8 / NM-72 — authored Service-Studio order for the relationships
+    -- (reference) payload. Under `SELECT DISTINCT`, every ORDER BY key
+    -- must appear in the projection; `a.OrderNum` is projected as
+    -- `[viaOrder]` so the references stream in authored order. (Emission
+    -- re-sorts references by SsKey at `CanonicalizeIdentity`; this keeps
+    -- the snapshot payload itself authored-ordered for fidelity.)
+    ORDER BY a.OrderNum,
+             a.AttrName
     FOR JSON PATH
   ), '[]') AS RelationshipsJson
 INTO #RelJson
@@ -1001,9 +1035,20 @@ SELECT
   a.LegacyType,
   a.Decimals,
   a.OriginalType,
-  a.AttrDescription
+  a.AttrDescription,
+  -- WP8 / NM-72 — authored Service-Studio order (ordinal 23, appended
+  -- last so the existing ordinals 0-22 are unshifted). `mapAttributeRow`
+  -- reads it at ordinal 23 into `OssysAttributeRow.Order`.
+  a.OrderNum
 FROM #Attr AS a
-ORDER BY a.EntityId, a.AttrName;
+-- WP8 / NM-72 — PK first, then authored `OrderNum`, then `AttrName` as
+-- the stable tiebreak (CanonicalizeIdentity re-derives the canonical
+-- order downstream; this keeps the snapshot rowset itself deterministic
+-- and authored-ordered).
+ORDER BY a.EntityId,
+         CASE WHEN ISNULL(a.IsIdentifier, 0) = 1 THEN 0 ELSE 1 END,
+         a.OrderNum,
+         a.AttrName;
 
 SELECT
   rr.AttrId,
