@@ -1,8 +1,10 @@
 namespace Projection.Pipeline
 
 open System.Threading.Tasks
+open Microsoft.Data.SqlClient
 open Projection.Core
 open Projection.Adapters.Osm
+open Projection.Adapters.Sql
 
 /// Frontier base — the capability-typed input boundary. A `Source` resolves a
 /// `Catalog` from somewhere (a snapshot file, an inline JSON model, a live
@@ -47,6 +49,49 @@ module Source =
     /// A static-model source from an inline JSON model — reads only.
     let ofJson (json: string) : Source =
         snapshot "json:inline" (CatalogReader.SnapshotJson json)
+
+    /// Resolve a `live:` operand string to a connection string. `env:VAR`
+    /// reads the connection string from the environment (the operator's
+    /// predominant, secret-safe form); anything else is treated as a raw
+    /// connection string. A missing env var falls through to the raw value,
+    /// so the connection open fails loudly rather than silently picking a
+    /// wrong target.
+    let private resolveConnString (conn: string) : string =
+        if conn.StartsWith("env:") then
+            match System.Environment.GetEnvironmentVariable(conn.Substring(4)) with
+            | null | "" -> conn
+            | v -> v
+        else conn
+
+    /// The live OSSYS adapter — the *verb* for the `Source` port. Reads the
+    /// deployed catalog back via `ReadSide.read` (INFORMATION_SCHEMA → V2
+    /// `Catalog`) and profiles the live data via `LiveProfiler.attach`. `conn`
+    /// is a raw connection string or `env:VAR`. Carries ReadCatalog + Profile
+    /// + Live capabilities. Each capability opens its own short-lived
+    /// connection — the catalog read and the profile pass are independent
+    /// operations and neither shares connection state.
+    let ofLive (conn: string) : Source =
+        let connStr = resolveConnString conn
+        let openConnection () : Task<SqlConnection> =
+            task {
+                let c = new SqlConnection(connStr)
+                do! c.OpenAsync()
+                return c
+            }
+        { Identity       = "live:" + conn
+          Capabilities   = Set.ofList [ ReadCatalog; Profile; Live ]
+          ReadCatalog    =
+            (fun () ->
+                task {
+                    use! cnn = openConnection ()
+                    return! ReadSide.read cnn
+                })
+          AcquireProfile =
+            Some (fun catalog ->
+                task {
+                    use! cnn = openConnection ()
+                    return! LiveProfiler.attach cnn catalog Profile.empty
+                }) }
 
     /// Enrich a source with the `Profile` capability (the live / profilable
     /// form). The capability is the presence of the function — cf.

@@ -61,7 +61,8 @@ module Ref =
                         | Some modelJson -> return! Source.read (Source.ofJson modelJson)
                         | None -> return fail "ref.noModelArtifact" (sprintf "run %s captured no model.json artifact" runId)
             | Live conn ->
-                // The Source capability exists; the live adapter is the pending
-                // verb (feature 5). Fail loud rather than silently wrong.
-                return fail "ref.liveUnavailable" (sprintf "live source '%s' is not yet wired" conn)
+                // The live adapter (`Source.ofLive`) reads the deployed catalog
+                // back via ReadSide over the connection; `env:VAR` resolves the
+                // connection string from the environment.
+                return! Source.read (Source.ofLive conn)
         }

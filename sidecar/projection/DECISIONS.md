@@ -23029,3 +23029,23 @@ This is the foundation for "Bootstrap emitted basically always": once the bootst
 lane carries content (live hydration), `Data/Bootstrap.sql` emits by the same
 per-lane rule. The live-source adapter + bootstrap hydration + compare live-profiling
 are the Docker-gated follow-on steps.
+
+---
+
+## 2026-06-14 (later) — Live-source adapter wired (feature 5): `Source.ofLive` + `Ref` live refs
+
+`Source.ofLive conn` is the live OSSYS adapter — the *verb* for the `Source` port
+that was previously a port-without-a-verb. It reads the deployed catalog back via
+`ReadSide.read` (INFORMATION_SCHEMA → V2 `Catalog`) and profiles the live data via
+`LiveProfiler.attach` (`AcquireProfile`), each over its own short-lived
+`SqlConnection`. `conn` is a raw connection string or `env:VAR` (resolved from the
+environment, the secret-safe operator form; a missing var falls through to the raw
+value so the open fails loudly). `Ref.resolveCatalog (Live conn)` now resolves
+(previously `fail "ref.liveUnavailable"`), so `diff` / `compare` / `migrate` accept
+a `live:` operand and read its deployed schema.
+
+It composes two already-Docker-tested adapters (`ReadSide.read`, `LiveProfiler.attach`)
+plus the standard `new SqlConnection` + `OpenAsync` connection pattern from `Deploy.fs`;
+the wiring is thin and build-verified. The end-to-end `live:`-ref Docker smoke test and
+the `compare` source-profiling wiring (thread `Source.AcquireProfile` into `runCompare`)
+are the immediate next increments.
