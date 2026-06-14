@@ -19,7 +19,6 @@ let private mkConfig (insertion: string) : Config.Config =
             IncludeSystemModules   = false
             IncludeInactiveModules = false
             OnlyActiveAttributes   = true
-            ValidationOverrides    = { AllowMissingSchema = [] }
         }
         Profile     = { Path = None }
         Cache       = { Root = ""; Refresh = false; TtlSeconds = 0 }

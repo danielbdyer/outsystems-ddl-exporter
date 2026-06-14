@@ -46,9 +46,13 @@ module Config =
         | Whole of name: string
         | WithEntities of name: string * entities: string list
 
-    type ValidationOverrides = {
-        AllowMissingSchema     : string list
-    }
+    // NM-04 (2026-06-13) — `model.validationOverrides.allowMissingSchema`
+    // removed. It parsed into a `ValidationOverrides` axis that the
+    // `ModuleFilter` port explicitly disclaims (`ModuleFilter.fs:70-71` — "V1
+    // carried a `ValidationOverrides` axis that this port does NOT carry") and
+    // nothing else bound it: structurally unreachable operator-facing config.
+    // Its live sibling `overrides.allowMissingPrimaryKey` (a different section,
+    // consumed by `SpecialCircumstancesBinding`) is untouched.
 
     type ModelSection = {
         /// The authored `osm_model.json` path — the model **fallback**. `None`
@@ -63,7 +67,6 @@ module Config =
         IncludeSystemModules   : bool
         IncludeInactiveModules : bool
         OnlyActiveAttributes   : bool
-        ValidationOverrides    : ValidationOverrides
     }
 
     type ProfileSection = {
@@ -313,10 +316,6 @@ module Config =
     // Defaults — applied when a section is absent from the JSON.
     // -----------------------------------------------------------------------
 
-    let private defaultValidationOverrides : ValidationOverrides = {
-        AllowMissingSchema     = []
-    }
-
     let private defaultProfile : ProfileSection = {
         Path = None
     }
@@ -399,7 +398,6 @@ module Config =
         IncludeSystemModules   = false
         IncludeInactiveModules = false
         OnlyActiveAttributes   = true
-        ValidationOverrides    = defaultValidationOverrides
     }
 
     /// The all-defaults `Config` — every section at its absent-from-JSON
@@ -679,22 +677,6 @@ module Config =
                 Result.failureOf (
                     configError "typeMismatch" "model.modules must be an array.")
 
-    let private parseValidationOverrides (element: JsonElement) : Result<ValidationOverrides> =
-        match element.TryGetProperty("validationOverrides") with
-        | false, _ -> Result.success defaultValidationOverrides
-        | true, v ->
-            match v.ValueKind with
-            | JsonValueKind.Null | JsonValueKind.Undefined ->
-                Result.success defaultValidationOverrides
-            | JsonValueKind.Object ->
-                match getStringListOrEmpty v "allowMissingSchema" with
-                | Error es -> Error es
-                | Ok schemas ->
-                    Result.success { AllowMissingSchema = schemas }
-            | _ ->
-                Result.failureOf (
-                    configError "typeMismatch" "model.validationOverrides must be an object.")
-
     /// Parse the `model` section. `requireModel` is the strict/lenient knob:
     /// strict (`true`, the `explain`/`full-export` consumers) errors when the
     /// section is absent (`missingProperty`) or carries no source
@@ -732,9 +714,6 @@ module Config =
                             match getBoolOr element "onlyActiveAttributes" true with
                             | Error es -> Error es
                             | Ok onlyActive ->
-                                match parseValidationOverrides element with
-                                | Error es -> Error es
-                                | Ok vo ->
                                 match getOptionalString element "ossys" with
                                 | Error es -> Error es
                                 | Ok ossys ->
@@ -753,7 +732,6 @@ module Config =
                                                 IncludeSystemModules   = inclSys
                                                 IncludeInactiveModules = inclInactive
                                                 OnlyActiveAttributes   = onlyActive
-                                                ValidationOverrides    = vo
                                         }
                                     | _ ->
                                         Result.success {
@@ -763,7 +741,6 @@ module Config =
                                             IncludeSystemModules   = inclSys
                                             IncludeInactiveModules = inclInactive
                                             OnlyActiveAttributes   = onlyActive
-                                            ValidationOverrides    = vo
                                         }
 
     let private parseProfile (root: JsonElement) : Result<ProfileSection> =

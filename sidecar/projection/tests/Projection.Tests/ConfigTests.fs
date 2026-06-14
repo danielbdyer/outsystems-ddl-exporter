@@ -156,10 +156,7 @@ let private fullConfigJson = """{
         ],
         "includeSystemModules": false,
         "includeInactiveModules": false,
-        "onlyActiveAttributes": true,
-        "validationOverrides": {
-            "allowMissingSchema": [ "Mod::*" ]
-        }
+        "onlyActiveAttributes": true
     },
     "profile": { "path": "extracted/profile.json" },
     "cache": { "root": ".artifacts/cache", "refresh": false, "ttlSeconds": 7200 },
