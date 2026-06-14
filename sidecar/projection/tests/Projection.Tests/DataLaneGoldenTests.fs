@@ -7,17 +7,19 @@ module Projection.Tests.DataLaneGoldenTests
 // only — its single static lane means the production ≥2-lane rule omits the
 // per-lane files. This harness lets an operator review the PER-LANE data
 // SQL byte-for-byte, just like the SSDT goldens: it composes a scenario with
-// TWO non-empty data lanes (StaticSeeds + MigrationData) through the SAME
-// production composer (`DataEmissionComposer.composeRenderedBundleFull`) and
-// pins each lane's bytes under tests/Projection.Tests/Golden/data-lanes/.
+// all THREE non-empty data lanes (StaticSeeds + MigrationData + Bootstrap)
+// through the SAME production composer
+// (`DataEmissionComposer.composeRenderedBundleWithBootstrap`) and pins each
+// lane's bytes under tests/Projection.Tests/Golden/data-lanes/.
 //
-// Why no Bootstrap lane: `BootstrapEmitter` renders from an empty row source
-// in every non-hydrated path (its rows are grafted only by the live Pipeline
-// hydration step, which reads a real SQL source — Docker-gated). An empty lane
-// is dropped by `RenderedDataBundle.perLaneFiles`, so `Data/Bootstrap.sql` is
-// absent BY CONSTRUCTION here. Bootstrap shares the StaticSeeds MERGE renderer
-// (WP6 step 2), so `Data/StaticSeeds.sql` IS its render shape; a populated
-// Bootstrap golden would need a Docker hydration scenario (see DECISIONS).
+// The Bootstrap lane (added 2026-06-14, Bootstrap-always): in production its
+// rows arrive from the live Pipeline hydration step (Docker-gated); here they
+// are supplied IN-MEMORY (the same `Map<SsKey, StaticRow list>` seam hydration
+// fills), keyed on a non-static, non-migration kind (Customer) so the three
+// lanes stay DISJOINT and the composer's `OverlappingEmitterCoverage`
+// partition law holds. Bootstrap shares the StaticSeeds MERGE renderer (A40),
+// so `Data/Bootstrap.sql` reads like a static-seed MERGE; the live-hydrated
+// shape is witnessed end-to-end by the Docker golden.
 //
 // Blessing protocol (mirrors GoldenEmissionTests / THE_GOLDEN_EMISSION.md §2):
 //   GOLDEN_RECORD=1 rewrites the corpus instead of asserting. A re-record
@@ -72,10 +74,31 @@ let private migRow (n: int) : MigrationDependencyRow =
       Identifier = SsKey.synthesized "Assignment" (sprintf "MigRow%d" n) |> Result.value
       Values     = migrationKind.Attributes |> List.map cell |> Map.ofList }
 
+// The bootstrap lane is a NON-static, NON-migration kind (Customer) so the
+// three lanes are disjoint (the partition law holds). Its rows are supplied in
+// memory — the same `Map<SsKey, StaticRow list>` shape the live hydration step
+// fills (Bootstrap-always, 2026-06-14). Derived from the live kind so they
+// cannot drift from the fixture.
+let private bootstrapKind : Kind =
+    Catalog.allKinds catalog
+    |> List.find (fun k -> Name.value k.Name = "Customer")
+
+let private bootRow (n: int) : StaticRow =
+    let cell (a: Attribute) : Name * string =
+        a.Name,
+        match a.Type with
+        | Integer -> string n
+        | _       -> sprintf "Customer%d" n
+    { Identifier = SsKey.synthesized "Customer" (sprintf "BootRow%d" n) |> Result.value
+      Values     = bootstrapKind.Attributes |> List.map cell |> Map.ofList }
+
+let private bootstrapRows : Map<SsKey, StaticRow list> =
+    Map.ofList [ bootstrapKind.SsKey, [ bootRow 1; bootRow 2 ] ]
+
 let private bundle : DataEmissionComposer.RenderedDataBundle =
     let ctx : MigrationDependencyContext = { Rows = [ migRow 1; migRow 2 ] }
-    DataEmissionComposer.composeRenderedBundleFull
-        Policy.empty catalog Profile.empty ctx UserRemapContext.empty
+    DataEmissionComposer.composeRenderedBundleWithBootstrap
+        Policy.empty catalog Profile.empty ctx bootstrapRows UserRemapContext.empty
     |> mustOkEmit
 
 /// The reviewable data files: the non-empty per-lane renderings, exactly as the
@@ -122,12 +145,15 @@ let ``data-lane golden: the per-lane static + migration data files match the ble
             Assert.Equal(body, Map.find rel dataFiles)
 
 [<Fact>]
-let ``data-lane golden: exactly the static + migration lanes are present (no fused seed.sql; bootstrap empty without hydration)`` () =
+let ``data-lane golden: all three lanes are present (static + migration + bootstrap; no fused seed.sql)`` () =
     // The reviewable set is the per-lane files only. The fused Data/seed.sql is
-    // no longer emitted (operator decision). Bootstrap is absent because its
-    // rows arrive only via live hydration (covered by the Docker golden).
+    // no longer emitted (operator decision). All three lanes carry content: the
+    // Bootstrap lane is populated from an in-memory row source (the live
+    // hydration shape) on a disjoint kind (Bootstrap-always, 2026-06-14).
     let keys = dataFiles |> Map.toSeq |> Seq.map fst |> Set.ofSeq
     Assert.Contains("Data/StaticSeeds.sql", keys)
     Assert.Contains("Data/MigrationData.sql", keys)
+    Assert.Contains("Data/Bootstrap.sql", keys)
     Assert.DoesNotContain("Data/seed.sql", keys)
-    Assert.DoesNotContain("Data/Bootstrap.sql", keys)
+    // The bootstrap lane is a real MERGE (the renderer is shared with StaticSeeds).
+    Assert.Contains("MERGE", Map.find "Data/Bootstrap.sql" dataFiles)

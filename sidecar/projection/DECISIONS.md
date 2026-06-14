@@ -23065,3 +23065,73 @@ profile → the section stays honestly advisory-silent. A profiling failure degr
 advisory-silent (never aborts — the schema delta still leads). Build-verified; the
 live path composes the Docker-tested `ReadSide.read` + `LiveProfiler.attach` via
 `Source.ofLive`.
+
+---
+
+## 2026-06-14 (later) — Live-source Docker witness + two adapter fixes the build-only verification hid
+
+The live-source adapter and `compare` live-profiling shipped build-verified only;
+writing their end-to-end Docker tests (`LiveSourceDockerTests`) surfaced two latent
+defects, now fixed.
+
+- **The 4.4 trap in `Source.ofLive`'s profile path.** `ReadSide.read` marks every
+  reconstructed kind `Modality.Static`; `LiveProfiler` SKIPS static kinds. So
+  profiling a ReadSide-derived catalog as-is yielded an EMPTY evidence cache and the
+  `compare` dealbreaker section was silently never populated — the feature was inert.
+  `AcquireProfile` now strips the Static mark (`Catalog.stripStaticPopulations`,
+  Static-only — the N2 over-erasure precedent) before profiling, exactly as
+  `Preflight.tighteningPreflight` and `DataIntegrityChecker` already do. The
+  dealbreaker Docker test fails without this.
+- **Unhandled connection exceptions escaping the `Task<Result<_>>` boundary.** A
+  malformed / unreachable live connection threw rather than returning a typed
+  failure, which would crash the CLI's `.GetAwaiter().GetResult()` in
+  `runCompare`/`runDiff`. Both live capabilities now wrap their body in a `guard`
+  that surfaces `source.live.connectionFailed` / `.profileFailed` — "refusals named,
+  downgrades never silent." The stale `RefTests` "live ref fails loud (adapter
+  pending)" (red since the adapter shipped) now asserts this contract.
+
+---
+
+## 2026-06-14 (later) — Bootstrap-always: the Bootstrap lane gains its row source; `AllData` dispatch corrected; NM-73 on bootstrap (operator-directed)
+
+Closes the WP6 step 3 row-source gap (the slice-ζ MVP shipped Bootstrap as a
+structural stub fed `Map.empty`). Operator framing (2026-06-14, verbatim intent):
+*"Bootstrap is all the data from the database, with an optional flag to make it the
+non-intersecting portion of what's not in StaticSeeds or MigrationData — no reason to
+load twice."* That maps exactly onto the existing `DataComposition` DU: **`AllData`**
+= Bootstrap covers everything (the full snapshot); **`AllRemaining`** (default) =
+Bootstrap covers the complement of (Static ∪ Migration). DynamicData is a deprecated
+V1 term (retired in favour of the bootstrap snapshot + static seeds, per
+`docs/full-export-artifact-contract.md`); V2's Bootstrap is V1's
+`AllEntitiesIncludingStatic` snapshot, not the dead DynamicData lane.
+
+- **Row source threaded.** `BootstrapEmitter.emitWithTopoWithVerification` takes a
+  `Map<SsKey, StaticRow list>` (replacing the hardcoded `Map.empty`) and delegates to
+  the shared static-seeds renderer (A40). The composer threads it via the new
+  `DataEmissionComposer.composeRenderedBundleWithBootstrap`; the existing public
+  compose entries pass `Map.empty` (byte-identical — zero caller churn). The pure
+  composer renders what it is handed; the pipeline's hydration step computes the
+  per-composition scope and streams the rows (B2).
+- **`AllData` dispatch corrected.** `dispatchSiblings` previously fired StaticSeeds
+  under `AllData` (contradicting the `AllData` doc — "Static + Migration skipped").
+  Harmless while Bootstrap was an empty stub; once Bootstrap is populated it would
+  trip the `unionSiblings` `OverlappingEmitterCoverage` partition law. Fixed:
+  `AllData` skips Static + Migration (only Bootstrap fires, covering everything);
+  `AllRemaining` keeps all three disjoint. The MVP test that codified the bug
+  (`compose AllData … matches AllRemaining`) now asserts the corrected, differentiated
+  behaviour, plus a positive test that Bootstrap covers the static kind under
+  `AllData` with the partition holding.
+- **NM-73 on bootstrap (operator decision).** The validate-before-apply drift guard
+  now rides the Bootstrap lane too (it was on StaticSeeds + MigrationDependencies):
+  `dispatchSiblings` threads `DataVerification` into Bootstrap, which delegates to
+  `StaticSeedsEmitter.emitFromPlanWithVerification`. Bootstrap carries **no delete
+  scope** (`None`) — it is the additive upsert lane.
+- **Golden re-bless.** `DataLaneGoldenTests` is upgraded to a three-lane scenario
+  (StaticSeeds + MigrationData + Bootstrap), the Bootstrap lane sourced in-memory
+  (the hydration shape) on a disjoint kind (Customer) so the partition holds.
+  `Golden/data-lanes/Data/Bootstrap.sql` is newly recorded (a real MERGE via the
+  shared renderer). Re-record blessed under this note (THE_GOLDEN_EMISSION.md §2).
+
+Default stays `AllRemaining`; `AllData` is opt-in (the config flag lands in B2 with
+the pipeline hydration + Docker golden). Supplemental kinds (`ossys_User` beyond the
+catalog's own entities) deferred per operator. Pure pool green (3311/0).

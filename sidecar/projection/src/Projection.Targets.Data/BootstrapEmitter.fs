@@ -87,34 +87,62 @@ module BootstrapEmitter =
         use _ = Bench.scope "emit.bootstrap.emitFromPlan"
         StaticSeedsEmitter.emitFromPlanWith None catalog profile plan
 
-    /// Π_Bootstrap emit (composer-facing; hoisted-topo + UserRemap
-    /// context). Converts the operator's `UserRemapContext` to a
-    /// `SurrogateRemapContext` (the anticipated conversion — same route
-    /// `MigrationDependenciesEmitter.buildPlan` takes), then builds the
-    /// plan and delegates to `emitFromPlan`. The per-kind row source is
-    /// `Map.empty` until the WP6 hydration step grafts the supplemental +
-    /// remaining-kind rows; with no rows the converted remap applies to
-    /// nothing (byte-stable). **Partition law:** the hydrated row source
-    /// MUST be the complement of (Static-populated ∪ Migration-context)
-    /// kinds — feeding Bootstrap a kind another lane also populates trips
-    /// the composer's `OverlappingEmitterCoverage` assertion (a
-    /// production `invalidOp`).
+    /// Convert the operator's `UserRemapContext` to a `SurrogateRemapContext`
+    /// keyed under the catalog-discovered user kind (the same route
+    /// `MigrationDependenciesEmitter.buildPlan` takes). No user kind / a failed
+    /// conversion ⇒ the empty remap (the dominant case until OSSYS IsUserFk
+    /// detection lands).
+    let private resolveRemap (catalog: Catalog) (userRemap: UserRemapContext) : SurrogateRemapContext =
+        match tryDiscoverUserKind catalog with
+        | Some userKindKey ->
+            match UserRemapContext.toSurrogate userKindKey userRemap with
+            | Ok r    -> r
+            | Error _ -> SurrogateRemapContext.empty
+        | None -> SurrogateRemapContext.empty
+
+    /// Π_Bootstrap emit (composer-facing; hoisted-topo + UserRemap + the
+    /// hydrated row source + NM-73 verification). Converts the `UserRemap
+    /// Context`, builds the plan over `bootstrapRows`, and delegates to the
+    /// shared static-seeds renderer (A40 — same algebra over the same
+    /// `DataLoadPlan`). The row source is what the pipeline's hydration step
+    /// streamed for the bootstrap lane: every data-bearing kind under
+    /// `AllData`, the complement of (Static-populated ∪ Migration-context)
+    /// under `AllRemaining`; empty until hydrated (byte-stable empty per kind).
+    /// `verification` threads the operator's NM-73 drift-guard posture; the
+    /// guard is enabled on this lane (operator decision 2026-06-14). Bootstrap
+    /// carries **no delete scope** (`None`) — it is the additive upsert lane.
+    /// **Partition law:** the hydrated row source MUST be the complement of
+    /// (Static-populated ∪ Migration-context) kinds whenever those lanes also
+    /// fire (i.e. under `AllRemaining`/`AllExceptStatic`) — feeding Bootstrap a
+    /// kind another active lane also populates trips the composer's
+    /// `OverlappingEmitterCoverage` assertion (a production `invalidOp`). Under
+    /// `AllData` the sibling lanes are dispatched empty, so Bootstrap covers
+    /// every kind without overlap.
+    let emitWithTopoWithVerification
+        (verification: DataVerification)
+        (topo: TopologicalOrder)
+        (catalog: Catalog)
+        (profile: Profile)
+        (bootstrapRows: Map<SsKey, StaticRow list>)
+        (userRemap: UserRemapContext)
+        : Result<ArtifactByKind<DataInsertScript>, EmitError> =
+        use _ = Bench.scope "emit.bootstrap.emitWithTopo"
+        let remap = resolveRemap catalog userRemap
+        let plan = DataLoadPlan.build catalog topo bootstrapRows remap
+        StaticSeedsEmitter.emitFromPlanWithVerification verification None catalog profile plan
+
+    /// NM-73 — the pre-verification / pre-row-source entry:
+    /// `emitWithTopoWithVerification` with `DataVerification.Standard` and an
+    /// empty row source (byte-identical to the slice-ζ stub shape). Preserves
+    /// the established `emitWithTopo` call shape (the standalone `emit` + the
+    /// MVP tests).
     let emitWithTopo
         (topo: TopologicalOrder)
         (catalog: Catalog)
         (profile: Profile)
         (userRemap: UserRemapContext)
         : Result<ArtifactByKind<DataInsertScript>, EmitError> =
-        use _ = Bench.scope "emit.bootstrap.emitWithTopo"
-        let remap =
-            match tryDiscoverUserKind catalog with
-            | Some userKindKey ->
-                match UserRemapContext.toSurrogate userKindKey userRemap with
-                | Ok r    -> r
-                | Error _ -> SurrogateRemapContext.empty
-            | None -> SurrogateRemapContext.empty
-        let plan = DataLoadPlan.build catalog topo Map.empty remap
-        emitFromPlan catalog profile plan
+        emitWithTopoWithVerification DataVerification.Standard topo catalog profile Map.empty userRemap
 
     /// Π_Bootstrap emit (standalone). Convenience for callers that
     /// don't go through the `DataEmissionComposer`. Slice ζ MVP

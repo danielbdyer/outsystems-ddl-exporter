@@ -143,18 +143,46 @@ let ``compose AllExceptStatic: Static skipped (no Phase1Merges even for static k
     Assert.Empty script.Phase2Updates
 
 [<Fact>]
-let ``compose AllData: Static fires for every kind (matches AllRemaining for static-only catalog)`` () =
+let ``compose AllData: Static lane is SKIPPED (Bootstrap covers everything; differs from AllRemaining)`` () =
+    // Slice ζ shipped (2026-06-14): Bootstrap now renders a real row source, so
+    // `AllData` (Bootstrap covers everything, static included) SKIPS the Static
+    // lane — else both lanes claim the static kind and the partition law trips.
+    // Through the plain `compose` (no hydrated bootstrap rows), `AllData` yields
+    // an EMPTY script for the static kind (Static skipped, Bootstrap row source
+    // empty), while `AllRemaining` fires the Static lane (2 merges). The two are
+    // now observably DIFFERENT — the differentiation the MVP test anticipated.
     let country = mkCountryKind ()
     let catalog = mkCatalog [ country ]
     let allData = DataEmissionComposer.compose (policyWith AllData) catalog Profile.empty |> mustOkEmit
     let allRemaining = DataEmissionComposer.compose (policyWith AllRemaining) catalog Profile.empty |> mustOkEmit
-    // MVP scope: with no Migration/Bootstrap consumers shipped yet,
-    // AllData and AllRemaining are observably equivalent. Slice ζ
-    // (Bootstrap) will differentiate them by having Bootstrap emit
-    // even Static kinds under AllData.
     let s1 = ArtifactByKind.toMap allData |> Map.find country.SsKey
     let s2 = ArtifactByKind.toMap allRemaining |> Map.find country.SsKey
-    Assert.Equal<string> (s1.Rendered, s2.Rendered)
+    // AllData with no bootstrap rows: the static kind renders empty.
+    Assert.Empty s1.Phase1Merges
+    // AllRemaining: the Static lane fires for the static kind.
+    Assert.Equal (2, List.length s2.Phase1Merges)
+    Assert.NotEqual<string> (s2.Rendered, s1.Rendered)
+
+[<Fact>]
+let ``compose AllData WITH a bootstrap row source: Bootstrap covers the static kind (no overlap, partition holds)`` () =
+    // The positive half: under `AllData`, a hydrated bootstrap row source makes
+    // Bootstrap emit the (otherwise-static) kind — and because the Static lane
+    // is skipped, the partition law holds (exactly one lane populates the kind).
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let rows : Map<SsKey, StaticRow list> =
+        Map.ofList
+            [ country.SsKey,
+              [ { Identifier = mkKey ["TestModule"; "Country"; "Row"; "1"]
+                  Values = country.Attributes |> List.map (fun a -> a.Name, "1") |> Map.ofList } ] ]
+    let bundle =
+        DataEmissionComposer.composeRenderedBundleWithBootstrap
+            (policyWith AllData) catalog Profile.empty
+            MigrationDependencyContext.empty rows UserRemapContext.empty
+        |> mustOkEmit
+    // Bootstrap lane carries the MERGE; Static lane is empty (skipped).
+    Assert.Contains("MERGE", bundle.Bootstrap)
+    Assert.True(System.String.IsNullOrWhiteSpace bundle.StaticSeeds)
 
 // ---------------------------------------------------------------------------
 // T11 — every catalog kind appears in the composer's keyset.
