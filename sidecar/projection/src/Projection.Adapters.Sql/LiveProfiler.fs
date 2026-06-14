@@ -378,11 +378,28 @@ module LiveProfiler =
                         let nullCount =
                             Map.tryFind attr.SsKey cached.NullCounts
                             |> Option.defaultValue 0L
+                        // Max-observed STORAGE length: the pure-F# `MAX(LEN/DATALENGTH)`
+                        // over the sampled cells (derive-pure from the row-stream the
+                        // cache already holds — no extra SQL probe). `None` when the
+                        // column carries no length-bearing value (numeric/date/all-NULL),
+                        // so a non-text attribute never asserts a spurious length.
+                        let maxObservedLength =
+                            match Map.tryFind attr.SsKey cached.ColumnsByKey with
+                            | None     -> None
+                            | Some col ->
+                                col.Values
+                                |> Array.choose CachedValue.observedLength
+                                |> fun lengths ->
+                                    if Array.isEmpty lengths then None
+                                    else Some (Array.max lengths)
                         match
                             ColumnProfile.create
                                 attr.SsKey cached.RowCount nullCount statusWithSample
                         with
-                        | Ok p    -> Some p
+                        | Ok p    ->
+                            match maxObservedLength with
+                            | Some len -> Some (ColumnProfile.withMaxObservedLength len p)
+                            | None     -> Some p
                         | Error _ -> None))
             // The probeStatus binding above is a stylistic hold;
             // the real probe status uses the observed sample size
