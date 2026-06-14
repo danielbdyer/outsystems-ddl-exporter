@@ -18,6 +18,49 @@
 
 ---
 
+## § Disposition — 2026-06-14 (the campaign ledger; read this first)
+
+The findings below were **worked end-to-end** over 2026-06-13/14 (~70 commits on
+`claude/projection-invariant-audit-b6iknj`, full pure pool green at each step).
+This section is the live map of what shipped; the numbered findings remain as the
+provenance/evidence they were found on.
+
+**SHIPPED (per-finding, by cluster):** NM-07, 08/09, 10, 12, 13, 14, 16 *(light
+route — kind-facet erasures named as `ToleratedDivergence`s; the heavy `KindFacet`
+channel is NM-17, owed)*, 18, 19, 20, 21, 23, 24, 25, 26, 27, 28 *(named
+`CompositePkFkUnreflected` — V2's `Reference` is single-column, so the faithful
+per-leg fix is structurally N/A)*, 29, 30, 31 *(documented asymmetry)*, 32/33/34
+*(provenance plane alive: `Episode.withProvenance` wired, tolerance residual
+resolved from the emitted data, persisted + surfaced)*, 35 *(closed by BUILDING
+the uniqueness advisory in the Model Fidelity Report, not deprecating)*, 36, 37,
+38, 39, 40, 41, 42, 43, 44 *(reverse-coverage; `UserReflow` is not axis-derivable —
+stays a hand row)*, 45, 46, 47, 48, 49, 50, 51 (+52), 53, 54, 55, 56, 57, 58, 59,
+60, 61 *(+ the audit-extended migrate/preview sites)*, 63, 65, 66, 67, 68, 69, 70,
+72 *(Order_Num column ordering — DECISIONS 2026-06-14)*, 74.
+
+**Config-cluster dispositions (operator-adjudicated):** NM-02 **wired** (schema/
+diagnostics emission now gateable); NM-04/05/03 **deprecated** (inert config
+removed); NM-06 **RETAINED** (the audit's "dead `rekey`" verdict was STALE — it is
+the live, sole user-map-path wiring); NM-01 **shelved** (intent unconfirmed —
+likely drop-all-and-reinsert-via-stream, not yet built).
+
+**Two features built atop the hunt:** the **Model Fidelity Report** (a per-run
+`fidelity.json`/`.txt` roll-up: data-violations + accepted-divergences + uniqueness
+candidates, surfaced via `report`) and the **`projection compare`** verb (read-only
+multi-env readiness reusing the fidelity engine).
+
+**OWED (three slices — see `HANDOFF.md` 2026-06-14 for the build plans):**
+- **NM-73** — EXCEPT validate-before-apply (a safety-critical typed-AST drift
+  guard; consciously deferred for a careful daylight build; the inert `Policy`
+  axis a stalled agent started was reverted).
+- **NM-17** — the heavy `KindFacet` diff channel (the change-algebra capstone;
+  NM-16 shipped the light tolerance-naming route).
+- **NM-62** — trivial (advisory-threshold constants).
+- *Follow-on:* `compare` v1 is schema-delta-live; live-profile the source operand
+  to populate its data-dealbreaker section.
+
+---
+
 ## 0 — What this is, in one breath
 
 The codebase's soul is **named everything**: every refusal named, every tolerated
