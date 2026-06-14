@@ -1,3 +1,59 @@
+# Handoff addendum — 2026-06-14 (evening), THE LIVE-SOURCE CHAPTER — campaign owed-work CLOSED + operator data-artifact direction; live-source adapter + compare-profiling SHIPPED build-verified; OWED: Docker smoke tests for the live path + Bootstrap-always (has a real open question)
+
+To the next agent.
+
+You are inheriting an **operator-directed chapter on top of the (now-closed)
+invariant near-miss campaign**. Everything lives on branch
+`claude/projection-invariant-audit-b6iknj`, **PR #607** (8 commits on top of
+`4c1426a0` = main). Your executable plan is **`PLAN_2026_06_14_LIVE_SOURCE_AND_
+BOOTSTRAP.md`** — read it after this letter; it carries the file:line seams.
+
+**What is DONE (context, so you don't redo it).** The campaign's owed slices all
+landed (NM-73 on BOTH data lanes; NM-17 the heavy `KindFacet` diff channel + the
+four NM-16 tolerances retired; NM-62 was already-satisfied). Then the operator
+redirected to data artifacts: the fused `Data/seed.sql` FILE is **retired** — the
+per-lane files (`Data/StaticSeeds.sql` / `Data/MigrationData.sql` /
+`Data/Bootstrap.sql`) are the operator-facing artifacts, each emitted when its lane
+has content (the ≥2-lane gate is gone; `bundle.Fused` stays in-memory for the
+leveled deploy's cross-lane ordering). Per-lane data goldens are blessed under
+`Golden/data-lanes/`. The **live-source adapter** (`Source.ofLive`; `Ref` `live:`
+refs resolve) and **`compare` live-profiling** are wired and **build-verified** —
+but they compose Docker-tested adapters WITHOUT their own end-to-end Docker test yet.
+
+**What you OWE (two things; the plan has the recipes):**
+1. **Docker smoke tests for the live path.** Prove `live:`-ref catalog readback
+   (`ReadSide.read`) and `compare` live-profiling (dealbreakers populated) work
+   end-to-end. The fixture surface is ready: `EphemeralContainerFixture`'s
+   `MasterConnectionString` + `WithEphemeralDatabase` + `Deploy.ConnectionString
+   .buildPerDb` give you a `live:`-able connection string. Plan §2.
+2. **Bootstrap-always.** The operator wants `Data/Bootstrap.sql` created basically
+   always, Docker + live. Step 1 already makes the FILE emit the instant the lane
+   has content — but **nothing feeds the Bootstrap lane**: `BootstrapEmitter
+   .emitWithTopo` uses `Map.empty`, and hydration only grafts STATIC-marked kinds.
+   **There is a real design question first** (do NOT guess): *what is a
+   bootstrap-eligible kind and where do its rows come from?* — the complement of
+   (Static ∪ Migration): system users / default policies. Resolve the row-source
+   with the operator (live-hydrate the complement? an explicit context? a modality
+   mark?), THEN wire it through `dispatchSiblings` → `BootstrapEmitter` and add the
+   golden (non-Docker via `DataLaneGoldenTests` + a Docker hydrated scenario). Plan §3.
+
+**WILL-BITE-YOU watch-fors (this session's scars):**
+- The **warm SQL container is up** (`scripts/warm-sql.sh status`) — but it dies
+  under accumulated load (survival rule #2: `Could not open a connection` ⇒
+  `warm-sql.sh restart`, re-run focused; NOT a regression).
+- Commits show **"Unverified"** — the env's SSH signing key is empty (environmental).
+- **PR #607's description is stale** (lists only the first 3 commits) — `gh pr edit`
+  needs `gh auth refresh -s read:project`; the full 8-commit summary is below in
+  this letter's predecessor and in the plan §4.
+- The campaign's whole ethos: **don't ship inert/half-built code, and bless a golden
+  only with a DECISIONS note.** Land the live Docker tests before claiming the live
+  path works; resolve the Bootstrap row-source question before building it.
+
+Hold the spine — read the plan, run the tests warm, finish the live path with a
+Docker witness, and name the Bootstrap row-source before you wire it.
+
+---
+
 # Handoff addendum — 2026-06-14, THE INVARIANT NEAR-MISS CAMPAIGN (the bug hunt) — ~60 of 74 findings shipped + two features (Model Fidelity Report · `compare` verb); THREE slices owed (NM-73 EXCEPT guard · NM-17 KindFacet channel · NM-62 trivial)
 
 To the next agent.
