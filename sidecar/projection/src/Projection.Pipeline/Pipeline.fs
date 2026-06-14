@@ -438,10 +438,43 @@ module Compose =
     /// emitted catalog × the run's profile × the categorical-uniqueness
     /// decision set (`ComposeState.CategoricalUniquenessDecisions`, which the
     /// `CategoricalUniquenessPass` write-back populates; this is the consumer
-    /// that closes NM-35). The accepted-divergence residual is wired by the
-    /// run boundary post-canary; the seed computes the data-violation + the
-    /// uniqueness-candidate sections (the strict-default empty residual is the
-    /// honest base case for a pure emit with no round-trip).
+    /// that closes NM-35). The accepted-divergence residual is the set of named
+    /// tolerances the emitted output structurally invokes (`emittedAccepted-
+    /// Divergences`, NM-32/33 final hop); a clean pure emit yields the empty
+    /// residual, the honest base case.
+    /// NM-32/33 (final hop) — the per-run accepted-divergence residual,
+    /// computed STRUCTURALLY from the emitted catalog's static data. The emit
+    /// path has no deploy round-trip (the canary is the separate `check` verb),
+    /// so the residual is the set of named tolerances the EMITTED output
+    /// structurally invokes — today, the empty-text → NULL normalization
+    /// (`CanaryResidual.observeCell`) — resolved against the accepted set.
+    /// `Tolerance.permissive` is the accepted set until an operator tolerance
+    /// config is wired (then it becomes that configured value). Closes the
+    /// `runStoreLeg` / `fidelityOf` FLAG.
+    let private emittedResidualCollector (catalog: Catalog) : CanaryResidual.Collector =
+        Catalog.allKinds catalog
+        |> List.fold
+            (fun coll (k: Kind) ->
+                let typeByName = k.Attributes |> List.map (fun a -> a.Name, a.Type) |> Map.ofList
+                Kind.staticPopulations k
+                |> List.fold
+                    (fun c (row: StaticRow) ->
+                        row.Values
+                        |> Map.fold
+                            (fun c2 name raw ->
+                                match Map.tryFind name typeByName with
+                                | Some typ -> CanaryResidual.observeCell typ raw c2
+                                | None     -> c2)
+                            c)
+                    coll)
+            CanaryResidual.empty
+
+    let private emittedToleranceResidual (catalog: Catalog) : Tolerance =
+        CanaryResidual.resolve Tolerance.permissive (emittedResidualCollector catalog)
+
+    let private emittedAcceptedDivergences (catalog: Catalog) : ToleratedDivergence list =
+        CanaryResidual.resolvedDivergences Tolerance.permissive (emittedResidualCollector catalog)
+
     let private fidelityOf (ctx: EmitContext) : ModelFidelity.ModelFidelityReport =
         let categoricalDecisions =
             ctx.ComposedState.CategoricalUniquenessDecisions
@@ -451,7 +484,7 @@ module Compose =
             ctx.EmittedCatalog
             ctx.Profile
             categoricalDecisions
-            []
+            (emittedAcceptedDivergences ctx.EmittedCatalog)
 
     /// The fold seed. Every artifact field is a placeholder the matching
     /// `EmitStep` overwrites (the `registered ⇔ executed` invariant
@@ -1842,7 +1875,7 @@ module Compose =
                     match emittedR with
                     | Error errors -> Result.failure errors
                     | Ok emitted ->
-                        match runStoreLeg path timeline environment at None DataObservation.empty Tolerance.strict appliedTransforms emitted with
+                        match runStoreLeg path timeline environment at None DataObservation.empty (emittedToleranceResidual emitted) appliedTransforms emitted with
                         | Ok leg -> Result.success (Some leg)
                         | Error storeErr -> Result.failureOf (mapStoreErr storeErr)
             }
@@ -1905,10 +1938,11 @@ module Compose =
             // The data-load leg records the measured CDC `DataObservation` but
             // carries no composed-run lineage trail at this site (the trail is a
             // schema-emission artifact, not a load artifact), so the §5.5 overlay
-            // enumeration is empty here and the tolerance residual is `strict`
-            // (see the FLAG on `runStoreLeg`). The diff-vs-prior leg
-            // (`storeLegFromConfig`) is where the real overlay enumeration threads.
-            match runStoreLeg path timeline environment at None data Tolerance.strict [] emitted with
+            // enumeration is empty here. The tolerance residual IS now resolved
+            // (NM-32/33 final hop): the accepted-divergences the emitted catalog
+            // structurally invokes, computed from its static data. The diff-vs-prior
+            // leg (`storeLegFromConfig`) is where the real overlay enumeration threads.
+            match runStoreLeg path timeline environment at None data (emittedToleranceResidual emitted) [] emitted with
             | Ok leg -> Result.success (Some leg, cdcDelta)
             | Error storeErr -> Result.failureOf (mapStoreErr storeErr)
         | _ -> Result.success (None, cdcDelta)
