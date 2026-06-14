@@ -53,6 +53,18 @@ module DistributionsEmitter =
     // to `rootOriginal` / `isDerived`); call sites reference the
     // canonical projection directly.
 
+    /// NM-27 — render continuous (`decimal`) evidence as an
+    /// InvariantCulture STRING, byte-identical to the sibling
+    /// `ProfileCodec.inv` (`d.ToString(CultureInfo.InvariantCulture)`).
+    /// `WriteNumber(decimal)` preserves the trailing-zero scale (`10.0`
+    /// vs `10`) and is locale-fragile; the codec deliberately rejected
+    /// it for exactly the percentile fields, so the T1 byte-determinism
+    /// claim only holds when this emitter routes the same fields the
+    /// same way. SampleSize (`int64`) stays a JSON number — integers
+    /// have no scale/locale drift.
+    let private inv (d: decimal) : string =
+        d.ToString System.Globalization.CultureInfo.InvariantCulture
+
     let private outcomeString (o: ProbeOutcome) : string =
         match o with
         | Succeeded         -> "Succeeded"
@@ -88,13 +100,16 @@ module DistributionsEmitter =
     let private writeNumeric (w: Utf8JsonWriter) (num: NumericDistribution) : unit =
         w.WriteStartObject()
         w.WriteString("kind", "Numeric")
-        w.WriteNumber("min", num.Min)
-        w.WriteNumber("p25", num.P25)
-        w.WriteNumber("p50", num.P50)
-        w.WriteNumber("p75", num.P75)
-        w.WriteNumber("p95", num.P95)
-        w.WriteNumber("p99", num.P99)
-        w.WriteNumber("max", num.Max)
+        // NM-27: percentile decimals route through the InvariantCulture
+        // string form (sibling-identical to `ProfileCodec.wNumeric`) so
+        // the metadata's T1 byte-determinism claim actually holds.
+        w.WriteString("min", inv num.Min)
+        w.WriteString("p25", inv num.P25)
+        w.WriteString("p50", inv num.P50)
+        w.WriteString("p75", inv num.P75)
+        w.WriteString("p95", inv num.P95)
+        w.WriteString("p99", inv num.P99)
+        w.WriteString("max", inv num.Max)
         w.WriteNumber("sampleSize", num.SampleSize)
         w.WritePropertyName("probe")
         writeProbeStatus w num.ProbeStatus
@@ -239,8 +254,11 @@ module DistributionsEmitter =
     ///           { "ssKey": "...", "name": "...", "column": "...",
     ///             "distribution": {                    // numeric
     ///               "kind": "Numeric",
-    ///               "min": 0, "p25": 10, "p50": 25, "p75": 50,
-    ///               "p95": 90, "p99": 99, "max": 100,
+    ///               // percentile decimals are InvariantCulture STRINGS
+    ///               // (NM-27 — sibling-identical to ProfileCodec; dodges
+    ///               // WriteNumber's trailing-zero/locale drift)
+    ///               "min": "0", "p25": "10", "p50": "25", "p75": "50",
+    ///               "p95": "90", "p99": "99", "max": "100",
     ///               "sampleSize": 100,
     ///               "probe": { ... } } } ] } ] } ] }
     ///   ```
@@ -332,7 +350,7 @@ module DistributionsEmitter =
               TransformSite.dataIntent "writeCategorical"
                 "Project `CategoricalDistribution` → JsonNode — kind / distinctCount / isTruncated / frequencies / probe. Frequencies array preserves capture order (the IR carries them as `(string * int64) list`); probe status flattens to `outcome / sampleSize / capturedAtUtc` (ISO-8601 round-trip). Categorical evidence is observation-shaped per pillar 9."
               TransformSite.dataIntent "writeNumeric"
-                "Project `NumericDistribution` → JsonNode — kind / min / p25 / p50 / p75 / p95 / p99 / max / sampleSize / probe. All percentile fields are `decimal` (T1 byte-determinism per `DECISIONS 2026-05-13 — Decimal as default for continuous statistical evidence`). Closed-DU `AttributeDistribution` exhaustively dispatches Categorical / Numeric."
+                "Project `NumericDistribution` → JsonNode — kind / min / p25 / p50 / p75 / p95 / p99 / max / sampleSize / probe. All percentile fields are `decimal` (per `DECISIONS 2026-05-13 — Decimal as default for continuous statistical evidence`), rendered as InvariantCulture STRINGS (NM-27) — sibling-identical to `ProfileCodec.wNumeric`, dodging `WriteNumber`'s trailing-zero/locale drift so the T1 byte-determinism claim holds. Closed-DU `AttributeDistribution` exhaustively dispatches Categorical / Numeric."
               TransformSite.dataIntent "writeProbeStatus"
                 "Project `ProbeStatus` → JsonNode — outcome / sampleSize / capturedAtUtc. Closed-DU `ProbeOutcome` flattens via `outcomeString` (5 variants: Succeeded / FallbackTimeout / Cancelled / TrustedConstraint / AmbiguousMapping). The probe status IS the per-distribution capture provenance; observation-shaped."
               TransformSite.dataIntent "emitSlices"

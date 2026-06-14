@@ -223,9 +223,17 @@ let ``Customer.TenantId attribute renders the numeric distribution`` () =
                     let dist = a.GetProperty("distribution")
                     Assert.Equal(JsonValueKind.Object, dist.ValueKind)
                     Assert.Equal("Numeric", dist.GetProperty("kind").GetString())
-                    Assert.Equal(1m, dist.GetProperty("min").GetDecimal())
-                    Assert.Equal(4m, dist.GetProperty("p75").GetDecimal())
-                    Assert.Equal(10m, dist.GetProperty("max").GetDecimal())
+                    // NM-27: percentile decimals are rendered as
+                    // InvariantCulture STRINGS (sibling-identical to
+                    // ProfileCodec), not JSON numbers — dodging
+                    // WriteNumber's trailing-zero/locale drift so the T1
+                    // byte-determinism claim holds.
+                    Assert.Equal(JsonValueKind.String, dist.GetProperty("min").ValueKind)
+                    Assert.Equal("1", dist.GetProperty("min").GetString())
+                    Assert.Equal("4", dist.GetProperty("p75").GetString())
+                    Assert.Equal("10", dist.GetProperty("max").GetString())
+                    // SampleSize (int64) stays a JSON number — no scale drift.
+                    Assert.Equal(JsonValueKind.Number, dist.GetProperty("sampleSize").ValueKind)
                     Assert.Equal(100L, dist.GetProperty("sampleSize").GetInt64())
     Assert.True(found, "Customer.TenantId not found in output")
 
@@ -283,6 +291,47 @@ let ``numeric rendering is byte-deterministic across repeats`` () =
     let outputs =
         [ for _ in 1 .. 10 -> DistributionsEmitter.emit sampleCatalog profileWithNumeric ]
     Assert.All(outputs, fun s -> Assert.Equal(List.head outputs, s))
+
+[<Fact>]
+let ``NM-27: percentile decimals carry no trailing-zero scale (WriteString(inv) form, not WriteNumber)`` () =
+    // 10.0m and 25.00m carry scale that WriteNumber(decimal) would
+    // preserve ("10.0" / "25.00"), breaking byte-determinism against an
+    // equivalent 10m / 25m. The InvariantCulture string form the sibling
+    // ProfileCodec uses still preserves scale in `.ToString()` — so the
+    // invariant the emitters share is "same decimal value + same scale
+    // ⇒ same bytes", and crucially the rendering matches the codec
+    // exactly. Pin that the chosen path is the string form.
+    let scaled =
+        NumericDistribution.create
+            customerTenantKey
+            0m 10.0m 25.00m 50m 90m 99m 100m
+            100L
+            (succeededProbe 100L)
+        |> Result.value
+    let profile =
+        { Profile.empty with Distributions = [ AttributeDistribution.Numeric scaled ] }
+    let output = DistributionsEmitter.emit sampleCatalog profile
+    use doc = JsonDocument.Parse output
+    let root = doc.RootElement
+    let target = SsKey.rootOriginal customerTenantKey
+    let mutable found = false
+    for m in root.GetProperty("modules").EnumerateArray() do
+        for k in m.GetProperty("kinds").EnumerateArray() do
+            for a in k.GetProperty("attributes").EnumerateArray() do
+                if a.GetProperty("ssKey").GetString() = target then
+                    found <- true
+                    let dist = a.GetProperty("distribution")
+                    // String-valued (the deliberate WriteString(inv) path),
+                    // sibling-identical to ProfileCodec's
+                    // `d.ToString(InvariantCulture)`.
+                    Assert.Equal(JsonValueKind.String, dist.GetProperty("p25").ValueKind)
+                    Assert.Equal(
+                        (10.0m).ToString System.Globalization.CultureInfo.InvariantCulture,
+                        dist.GetProperty("p25").GetString())
+                    Assert.Equal(
+                        (25.00m).ToString System.Globalization.CultureInfo.InvariantCulture,
+                        dist.GetProperty("p50").GetString())
+    Assert.True(found, "Customer.TenantId not found in output")
 
 [<Fact>]
 let ``emitter version is 2 after numeric rendering lands`` () =
