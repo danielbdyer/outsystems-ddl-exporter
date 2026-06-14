@@ -116,7 +116,7 @@ module DataEmissionComposer =
             use _ = Bench.scope "compose.data.dispatchSiblings.migrationDeps"
             match composition with
             | AllRemaining
-            | AllExceptStatic -> MigrationDependenciesEmitter.emitWithTopoWith deleteScope topo catalog profile migration userRemap
+            | AllExceptStatic -> MigrationDependenciesEmitter.emitWithTopoWithVerification verification deleteScope topo catalog profile migration userRemap
             | AllData         -> emptyArtifact catalog
         let bootstrap =
             use _ = Bench.scope "compose.data.dispatchSiblings.bootstrap"

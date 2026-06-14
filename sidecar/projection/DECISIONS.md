@@ -22956,3 +22956,18 @@ regenerated (`scripts/matrix-status.sh`).
 
 **Owed after this:** NM-62's `compare`-source-profiling follow-on, and the
 `MigrationDependenciesEmitter` validate-before-apply guard extension (NM-73 scope).
+
+---
+
+## 2026-06-14 (later) — NM-73 follow-on: the validate-before-apply guard extends to MigrationDependenciesEmitter
+
+The NM-73 guard, originally scoped to `StaticSeedsEmitter` (the named static-seed
+lane), now also covers `MigrationDependenciesEmitter` — the sibling data emitter
+that MERGEs migration-dependency rows. Identical mechanism: `verification` threads
+`emitWithTopoWithVerification` / `emitFromPlanWithVerification` → `kindToScript` →
+`renderMerge`, which prepends `ScriptDomBuild.buildValidateBeforeApplyGuard` as its
+own GO batch when `ValidateBeforeApply`. The composer's `dispatchSiblings` passes
+`policy.Emission.DataVerification` to both emitters. `Standard` stays byte-identical.
+Tests mirror the StaticSeeds pair (Standard byte-identical; ValidateBeforeApply
+prepends the symmetric-EXCEPT THROW). Both data MERGE lanes now honor the operator's
+conservative drift-guard override.
