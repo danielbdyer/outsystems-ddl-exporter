@@ -128,6 +128,13 @@ module Transfer =
             /// `UnresolvedReference`s are not re-listed, only the verdict-bearing
             /// count is persisted in the progress marker).
             ReplayedPriorDrops  : int option
+            /// NM-21 — the named `synthetic.fk.unsatisfiable` events σ raised:
+            /// a non-nullable FK column forced to NULL because its synthetic
+            /// parent pool was empty. Surfaced here so a DryRun preview (which
+            /// never reaches the load-time failure) reports the unsatisfiable
+            /// structure rather than letting σ's NULL pass silently. Empty for
+            /// an ingested Transfer (only the σ path can raise it).
+            SyntheticUnsatisfiableFks : SyntheticDiagnostic list
         }
 
     // -- Projection-onto-Sink realization -----------------------------------
@@ -914,7 +921,10 @@ module Transfer =
                           // drops (AssignedBySink FK misses) both surface here.
                           SkippedReferences   = plan.SkippedReferences @ writeSkips
                           CaptureLaneDescents = laneDescents
-                          ReplayedPriorDrops  = replayedPriorDrops }
+                          ReplayedPriorDrops  = replayedPriorDrops
+                          // NM-21 — only the σ path can raise these; ingested
+                          // Transfer never draws against a synthetic pool.
+                          SyntheticUnsatisfiableFks = [] }
         }
 
     /// Run a Transfer over one shared `Catalog` (the schema contract):
@@ -1042,7 +1052,7 @@ module Transfer =
                 let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
                 // σ — pure generation in place of ingestion. Rows are already in
                 // target identity space, so the remap is empty (identity).
-                let rows = SyntheticData.generate catalog profile config seed
+                let rows, syntheticDiags = SyntheticData.generateWithDiagnostics catalog profile config seed
                 let plan = DataLoadPlan.build catalog topo rows SurrogateRemapContext.empty
                 let preWrite = if mode = Execute then executeGate catalog plan else None
                 match preWrite with
@@ -1070,7 +1080,9 @@ module Transfer =
                               SkippedReferences   = plan.SkippedReferences @ writeSkips
                               CaptureLaneDescents = laneDescents
                               // Synthetic load has no resumable G10 envelope.
-                              ReplayedPriorDrops  = None }
+                              ReplayedPriorDrops  = None
+                              // NM-21 — σ's named unsatisfiable-FK lineage.
+                              SyntheticUnsatisfiableFks = syntheticDiags }
         }
 
     /// 6.B.2 — RefactorLog-aware Transfer. The source is at schema A
@@ -1501,7 +1513,9 @@ module Transfer =
                                       SkippedReferences   = plan.SkippedReferences
                                       CaptureLaneDescents = []
                                       // Streaming DryRun: no G10 resumable replay.
-                                      ReplayedPriorDrops  = None }
+                                      ReplayedPriorDrops  = None
+                                      // NM-21 — streaming Transfer ingests source rows, not σ.
+                                      SyntheticUnsatisfiableFks = [] }
                         else
                             let journal =
                                 journalDirectory
@@ -1530,7 +1544,9 @@ module Transfer =
                                           // Streaming-journal resume is per-run by
                                           // design (the journaled run reported its
                                           // own drops); no G10 marker replay here.
-                                          ReplayedPriorDrops  = None }
+                                          ReplayedPriorDrops  = None
+                                          // NM-21 — streaming Transfer ingests source rows, not σ.
+                                          SyntheticUnsatisfiableFks = [] }
         }
 
     /// The streaming reverse leg through the `TransferConnections`

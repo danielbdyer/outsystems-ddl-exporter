@@ -78,6 +78,54 @@ module SyntheticConfig =
           Scale                  = 1M }
 
 
+/// NM-21 — a named lineage event σ emits when a **non-nullable** FK column
+/// draws against an **empty** parent pool. The constraint hierarchy (design
+/// §3 step 2) emits `NULL` for such a column because there is no parent key
+/// to point at — an *unsatisfiable structure* the load surfaces. Previously
+/// σ emitted that `NULL` with NO Core-level signal, so a DryRun preview (which
+/// never reaches the load-time failure) saw the erasure silently. This record
+/// names it: σ now returns one `SyntheticDiagnostic` per unsatisfiable
+/// non-nullable FK. Keys are `SsKey` (strongly typed; no name lookup); `Reason`
+/// is human-readable — surface it to operator diagnostics, never parse it.
+type SyntheticDiagnostic = {
+    /// Stable diagnostic code (`category.subject.problem` lower-dot convention,
+    /// mirroring `ValidationError.Code`). Always `"synthetic.fk.unsatisfiable"`
+    /// for this variant; carried explicitly so a consumer filters on the code,
+    /// not the message.
+    Code            : string
+    /// The owning kind whose row would carry the FK.
+    Kind            : SsKey
+    /// The FK source attribute (the non-nullable column forced to `NULL`).
+    SourceAttribute : SsKey
+    /// The target kind whose PK pool is empty.
+    TargetKind      : SsKey
+    /// Human-readable narration for operator diagnostics. Never parse it.
+    Reason          : string
+}
+
+[<RequireQualifiedAccess>]
+module SyntheticDiagnostic =
+
+    /// The stable code for the unsatisfiable-non-nullable-FK event.
+    [<Literal>]
+    let UnsatisfiableForeignKeyCode : string = "synthetic.fk.unsatisfiable"
+
+    /// Build the unsatisfiable-FK diagnostic for one (kind, source attr,
+    /// target) triple drawn against an empty parent pool.
+    let unsatisfiableForeignKey (kind: SsKey) (sourceAttr: SsKey) (target: SsKey) : SyntheticDiagnostic =
+        { Code            = UnsatisfiableForeignKeyCode
+          Kind            = kind
+          SourceAttribute = sourceAttr
+          TargetKind      = target
+          Reason          =
+            String.concat "" [
+                "non-nullable FK "; SsKey.serialize sourceAttr
+                " (kind "; SsKey.serialize kind
+                ") references kind "; SsKey.serialize target
+                " whose synthetic PK pool is empty: the column is forced to NULL "
+                "(an unsatisfiable structure the load surfaces, never a silent orphan)" ] }
+
+
 [<RequireQualifiedAccess>]
 module SyntheticData =
 
@@ -312,7 +360,7 @@ module SyntheticData =
         (master: uint64)
         (pkPools: Map<SsKey, string list>)
         (kind: Kind)
-        : StaticRow list =
+        : StaticRow list * SyntheticDiagnostic list =
         let kindHash = fnv1a (SsKey.serialize kind.SsKey)
         let rowCount = pkPools |> Map.tryFind kind.SsKey |> Option.map List.length |> Option.defaultValue 0
         let pkPool = pkPools |> Map.tryFind kind.SsKey |> Option.defaultValue []
@@ -322,12 +370,27 @@ module SyntheticData =
             kind.References
             |> List.map (fun ref -> ref.SourceAttribute, ref.TargetKind)
             |> Map.ofList
+        // NM-21 — name the unsatisfiable FKs once per kind (row-independent):
+        // a non-nullable FK column whose target PK pool is empty is forced to
+        // NULL below; σ now emits a `synthetic.fk.unsatisfiable` diagnostic so
+        // the erasure is named in Core (a DryRun preview that never reaches the
+        // load-time failure still surfaces it), never silent.
+        let unsatisfiableFks =
+            kind.Attributes
+            |> List.choose (fun attr ->
+                match Map.tryFind attr.SsKey fkByAttr with
+                | Some target when
+                        not attr.Column.IsNullable
+                        && (pkPools |> Map.tryFind target |> Option.defaultValue [] |> List.isEmpty) ->
+                    Some (SyntheticDiagnostic.unsatisfiableForeignKey kind.SsKey attr.SsKey target)
+                | _ -> None)
         // pass-2 rng, salted off the PK-pool rng so FK / distribution draws
         // don't correlate with surrogate minting.
         let mutable state = rngOf (kindSeed master kind.SsKey ^^^ 0xD1B54A32D192ED03UL)
         let nextDraw () =
             let v, s = draw state in state <- s; v
-        [ for i in 0 .. rowCount - 1 ->
+        let rows =
+          [ for i in 0 .. rowCount - 1 ->
             let cells =
                 kind.Attributes
                 |> List.choose (fun attr ->
@@ -348,9 +411,11 @@ module SyntheticData =
                             state <- s
                             if nulled && nullable then None
                             elif List.isEmpty pool then
-                                // empty parent pool — NULL (named; a non-nullable
-                                // FK here is an unsatisfiable structure the load
-                                // surfaces, never a silent orphan).
+                                // empty parent pool — NULL. For a non-nullable FK
+                                // this is an unsatisfiable structure: NM-21 names it
+                                // via the `unsatisfiableFks` diagnostics computed
+                                // above (`synthetic.fk.unsatisfiable`), so the load
+                                // surfaces it but Core no longer emits it silently.
                                 None
                             else
                                 let j = int (nextDraw () % uint64 (List.length pool))
@@ -389,6 +454,7 @@ module SyntheticData =
                      SsKey.synthesizedComposite "SYNTH_ROW" [ SsKey.rootOriginal kind.SsKey; string i ]
                      |> function Ok k -> k | Error _ -> kind.SsKey)
               Values = Map.ofList cells } ]
+        rows, unsatisfiableFks
 
     /// The volume for a kind (design §7: "profiled `RowCount` per kind", with
     /// the `Scale` factor). `RowCount` is read from any of the kind's column
@@ -422,18 +488,45 @@ module SyntheticData =
             kind.SsKey, pool)
         |> Map.ofList
 
+    /// `σ` with its lineage — generate the synthetic dataset (design §8, slice
+    /// S1) AND the named diagnostics σ raised. Pure; `seed`-deterministic;
+    /// FK-aware; hybrid-by-cardinality; drift-by-SsKey. The result keys are
+    /// kind `SsKey`s; values are rows in `RawValueCodec` raw-string form for the
+    /// load to render via `SqlLiteral`.
+    ///
+    /// NM-21 — the diagnostics list names every `synthetic.fk.unsatisfiable`
+    /// event: a non-nullable FK column forced to NULL because its parent pool is
+    /// empty. The unsatisfiable structure is now named in Core (visible even on a
+    /// DryRun preview that never reaches the load-time failure), never a silent
+    /// NULL. Diagnostics are ordered by kind (catalog order), then by attribute
+    /// declaration order — deterministic by construction.
+    let generateWithDiagnostics
+        (catalog: Catalog)
+        (profile: Profile)
+        (config: SyntheticConfig)
+        (seed: uint64)
+        : Map<SsKey, StaticRow list> * SyntheticDiagnostic list =
+        let pkPools = mintPkPools catalog profile config seed
+        let perKind =
+            Catalog.allKinds catalog
+            |> List.map (fun kind ->
+                let rows, diags = generateKindRows catalog profile config seed pkPools kind
+                kind.SsKey, rows, diags)
+        let dataset = perKind |> List.map (fun (k, rows, _) -> k, rows) |> Map.ofList
+        let diagnostics = perKind |> List.collect (fun (_, _, diags) -> diags)
+        dataset, diagnostics
+
     /// `σ` — generate the synthetic dataset (design §8, slice S1). Pure;
     /// `seed`-deterministic; FK-aware; hybrid-by-cardinality; drift-by-SsKey.
     /// The result keys are kind `SsKey`s; values are rows in `RawValueCodec`
     /// raw-string form for the load to render via `SqlLiteral`.
+    ///
+    /// The dataset-only projection of `generateWithDiagnostics`; callers that
+    /// need the NM-21 `synthetic.fk.unsatisfiable` lineage use that form.
     let generate
         (catalog: Catalog)
         (profile: Profile)
         (config: SyntheticConfig)
         (seed: uint64)
         : Map<SsKey, StaticRow list> =
-        let pkPools = mintPkPools catalog profile config seed
-        Catalog.allKinds catalog
-        |> List.map (fun kind ->
-            kind.SsKey, generateKindRows catalog profile config seed pkPools kind)
-        |> Map.ofList
+        generateWithDiagnostics catalog profile config seed |> fst
