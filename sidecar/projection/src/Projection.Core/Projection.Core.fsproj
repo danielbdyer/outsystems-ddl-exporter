@@ -57,6 +57,7 @@
     <Compile Include="Lifecycle.fs" />
     <Compile Include="PhysicalSchema.fs" />
     <Compile Include="Tolerance.fs" />
+    <Compile Include="CanaryResidual.fs" />
     <Compile Include="UserIdentity.fs" />
     <Compile Include="Profile.fs" />
     <Compile Include="SyntheticData.fs" />
