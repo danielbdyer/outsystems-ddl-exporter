@@ -188,6 +188,7 @@ module MigrationDependenciesEmitter =
     /// CDC-aware predicate dispatch per `Profile.CdcAwareness` is
     /// preserved.
     let private renderMerge
+        (verification: DataVerification)
         (deleteScope: ScriptDomBuild.DeleteScope option)
         (cdcAware: bool)
         (bracketIdentity: bool)
@@ -229,10 +230,11 @@ module MigrationDependenciesEmitter =
         let mergeStmt = (ScriptDomBuild.buildMergeStatement args).Value
         let mergeText =
             ScriptDomGenerate.generateOne (mergeStmt :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement)
-        if not bracketIdentity then
+        let mergeBatch =
+          if not bracketIdentity then
             System.String.Concat(  // LINT-ALLOW: terminal MERGE statement-terminator + GO-batch suffix on the rendered MERGE (chapter 4.1.B slice ε); segments are typed (output of `ScriptDomGenerate.generateOne` from typed AST + SQL Server's required MERGE statement-terminator + V1 batch-separator literal); same architectural shape as StaticSeedsEmitter's terminal-text boundary
                 mergeText, ";\nGO\n")
-        else
+          else
             // NM-25 — mirror StaticSeedsEmitter (WP6 step 1). An IDENTITY-PK
             // migration kind (`IdentityDisposition.AssignedBySink`) seeds explicit
             // PK values, so the MERGE's WHEN-NOT-MATCHED INSERT writes into the
@@ -247,6 +249,17 @@ module MigrationDependenciesEmitter =
                 setIdentityInsert true, ";\n",
                 mergeText, ";\n",
                 setIdentityInsert false, ";\nGO\n")
+        // NM-73 — prepend the validate-before-apply drift guard as its OWN GO
+        // batch before the MERGE (mirrors StaticSeedsEmitter). `Standard` is
+        // byte-identical; `ValidateBeforeApply` parses V1's symmetric-EXCEPT
+        // THROW guard over the same `args` rows the MERGE writes.
+        match verification with
+        | DataVerification.Standard -> mergeBatch
+        | DataVerification.ValidateBeforeApply ->
+            let guardText =
+                ScriptDomGenerate.generateOne (ScriptDomBuild.buildValidateBeforeApplyGuard args)
+            System.String.Concat(  // LINT-ALLOW: terminal guard-batch prefix (NM-73; mirrors StaticSeedsEmitter); the guard is the typed-AST parse-template render of V1's symmetric-EXCEPT THROW, framed as its own GO batch ahead of the MERGE; the V1 `GO` batch separator is the terminal-text literal
+                guardText, "\nGO\n", mergeBatch)
 
     /// Render one Phase-2 UPDATE for a row with a deferred FK column.
     /// Same shape as `StaticSeedsEmitter.renderUpdate`. Per the
@@ -330,6 +343,7 @@ module MigrationDependenciesEmitter =
     /// Mirrors `StaticSeedsEmitter.kindToScript` exactly — both
     /// emitters realize the same algebra over the same plan shape.
     let private kindToScript
+        (verification: DataVerification)
         (deleteScope: DeleteScopePolicy option)
         (cdc: CdcAwareness)
         (kind: Kind)
@@ -366,7 +380,7 @@ module MigrationDependenciesEmitter =
             let bracketIdentity =
                 IdentityDisposition.needsIdentityInsert kind
             let renderedPhase1 =
-                renderMerge scopeForKind cdcAware bracketIdentity deferred kind (typedRows |> List.map snd)
+                renderMerge verification scopeForKind cdcAware bracketIdentity deferred kind (typedRows |> List.map snd)
             let renderedPhase2 =
                 if Set.isEmpty deferred then ""
                 else
@@ -403,7 +417,8 @@ module MigrationDependenciesEmitter =
     /// the policy resolves against (`DeleteScopePolicy.resolveFor`). The
     /// emitter consumes the scope VALUE, never `Policy` (A18 amended);
     /// the composer threads it from `EmissionPolicy.DeleteScope`.
-    let emitFromPlanWith
+    let emitFromPlanWithVerification
+        (verification: DataVerification)
         (deleteScope: DeleteScopePolicy option)
         (catalog: Catalog)
         (profile: Profile)
@@ -416,8 +431,19 @@ module MigrationDependenciesEmitter =
             { Phase1Merges = []; Phase2Updates = []; RenderedPhase1 = ""; RenderedPhase2 = ""; Rendered = "" }
         ArtifactByKind.perKindBenched "emit.migrationDeps.kind" catalog (fun k ->
             match Map.tryFind k.SsKey loadByKind with
-            | Some load -> kindToScript deleteScope cdc k load
+            | Some load -> kindToScript verification deleteScope cdc k load
             | None      -> emptyScript)
+
+    /// NM-73 — the pre-verification entry: `emitFromPlanWithVerification` with
+    /// `DataVerification.Standard` (byte-identical). Preserves the established
+    /// `emitFromPlanWith deleteScope …` call shape.
+    let emitFromPlanWith
+        (deleteScope: DeleteScopePolicy option)
+        (catalog: Catalog)
+        (profile: Profile)
+        (plan: DataLoadPlan)
+        : Result<ArtifactByKind<DataInsertScript>, EmitError> =
+        emitFromPlanWithVerification DataVerification.Standard deleteScope catalog profile plan
 
     /// Π_MigrationDependencies emit (canonical; plan-consuming). The
     /// upsert-only default form — `emitFromPlanWith` with no delete
@@ -458,7 +484,8 @@ module MigrationDependenciesEmitter =
     /// Builds the plan from the migration row source + the
     /// `UserRemapContext`-derived `SurrogateRemapContext`, then
     /// delegates to `emitFromPlan`.
-    let emitWithTopoWith
+    let emitWithTopoWithVerification
+        (verification: DataVerification)
         (deleteScope: DeleteScopePolicy option)
         (topo: TopologicalOrder)
         (catalog: Catalog)
@@ -468,7 +495,19 @@ module MigrationDependenciesEmitter =
         : Result<ArtifactByKind<DataInsertScript>, EmitError> =
         use _ = Bench.scope "emit.migrationDeps.emitWithTopo"
         let plan = buildPlan catalog topo context userRemap
-        emitFromPlanWith deleteScope catalog profile plan
+        emitFromPlanWithVerification verification deleteScope catalog profile plan
+
+    /// NM-73 — the pre-verification entry: `emitWithTopoWithVerification` with
+    /// `DataVerification.Standard`. Preserves the established call shape.
+    let emitWithTopoWith
+        (deleteScope: DeleteScopePolicy option)
+        (topo: TopologicalOrder)
+        (catalog: Catalog)
+        (profile: Profile)
+        (context: MigrationDependencyContext)
+        (userRemap: UserRemapContext)
+        : Result<ArtifactByKind<DataInsertScript>, EmitError> =
+        emitWithTopoWithVerification DataVerification.Standard deleteScope topo catalog profile context userRemap
 
     let emitWithTopo
         (topo: TopologicalOrder)

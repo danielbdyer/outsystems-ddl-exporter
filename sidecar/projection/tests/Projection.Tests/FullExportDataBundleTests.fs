@@ -67,8 +67,11 @@ let private projectBundle (policy: Policy) : Compose.Outputs =
 [<Fact>]
 let ``AC-X1: full-export emits the idempotent seed bundle when data emission is enabled`` () =
     let outputs = projectBundle emitDataPolicy
-    Assert.True(Map.containsKey "Data/seed.sql" outputs.DataBundle, "Data/seed.sql must be in the bundle when EmitData is on")
-    let seed = Map.find "Data/seed.sql" outputs.DataBundle
+    // The per-lane static-seed file is the operator-facing data artifact; the
+    // fused Data/seed.sql FILE is no longer emitted (DECISIONS 2026-06-14).
+    Assert.True(Map.containsKey "Data/StaticSeeds.sql" outputs.DataBundle, "Data/StaticSeeds.sql must be in the bundle when EmitData is on")
+    Assert.False(Map.containsKey "Data/seed.sql" outputs.DataBundle, "the fused Data/seed.sql file is retired")
+    let seed = Map.find "Data/StaticSeeds.sql" outputs.DataBundle
     // THE NON-OVERWRITING / IDEMPOTENT DISCRIMINATOR: a MERGE with WHEN NOT
     // MATCHED INSERT — not a bare `INSERT INTO ... VALUES` (which would duplicate
     // on a re-run against a non-empty DB). This is the from-fresh-blank-DB-safe
@@ -125,14 +128,17 @@ let ``NM-02: EmitDiagnostics=false suppresses the operational diagnostic artifac
     Assert.Equal<string>("{}", outputs.SuggestConfigJson.ToJsonString())
 
 [<Fact>]
-let ``WP6 step 3: a single active lane emits only the fused seed (no redundant per-lane file)`` () =
+let ``data artifacts: a single active lane emits its per-lane file and no fused seed.sql`` () =
     // The pipeline path carries no migration/bootstrap context, so only the
-    // static lane has content. The fused Data/seed.sql IS that lane, so the
-    // per-lane files would byte-duplicate it and are omitted (the >=2-lane
-    // self-minimizing rule; DECISIONS 2026-06-13). Per-lane rendering itself
-    // is witnessed at the composer level (DataEmissionComposerTests).
+    // static lane has content → Data/StaticSeeds.sql. The fused composition
+    // stays IN-MEMORY for the leveled deploy's cross-lane ordering; the
+    // Data/seed.sql FILE is no longer emitted (DECISIONS 2026-06-14, operator
+    // decision — the per-lane files are the reviewed/applied artifacts). The
+    // prior ≥2-lane gate (which existed only to avoid duplicating the fused
+    // file) is retired. Per-lane rendering is witnessed at the composer level
+    // (DataEmissionComposerTests).
     let outputs = projectBundle emitDataPolicy
-    Assert.True(Map.containsKey "Data/seed.sql" outputs.DataBundle)
-    Assert.False(Map.containsKey "Data/StaticSeeds.sql" outputs.DataBundle, "single lane ⇒ no redundant per-lane file")
-    Assert.False(Map.containsKey "Data/MigrationData.sql" outputs.DataBundle)
-    Assert.False(Map.containsKey "Data/Bootstrap.sql" outputs.DataBundle)
+    Assert.True(Map.containsKey "Data/StaticSeeds.sql" outputs.DataBundle, "the static lane emits its per-lane file")
+    Assert.False(Map.containsKey "Data/seed.sql" outputs.DataBundle, "the fused seed.sql file is retired")
+    Assert.False(Map.containsKey "Data/MigrationData.sql" outputs.DataBundle, "no migration context in this path")
+    Assert.False(Map.containsKey "Data/Bootstrap.sql" outputs.DataBundle, "bootstrap is empty without hydration")

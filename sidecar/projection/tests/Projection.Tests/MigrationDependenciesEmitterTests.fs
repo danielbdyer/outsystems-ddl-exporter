@@ -158,6 +158,43 @@ let ``MigrationDependenciesEmitter.emit Rendered MERGE shape contains V1-require
     Assert.Contains ("WHEN NOT MATCHED THEN INSERT", r)
     Assert.EndsWith ("GO", r)
 
+// -- NM-73: validate-before-apply drift guard (the migration lane) -----------
+// MigrationDependenciesEmitter mirrors StaticSeedsEmitter's guard: `Standard`
+// is byte-identical; `ValidateBeforeApply` prepends V1's symmetric-EXCEPT
+// THROW guard as its own GO batch before the MERGE.
+
+let private topoOf (catalog: Catalog) : TopologicalOrder =
+    (Projection.Core.Passes.TopologicalOrderPass.runWith TreatAsCycle catalog).Value
+
+[<Fact>]
+let ``NM-73: MigrationDependenciesEmitter Standard verification is byte-identical to the default emit`` () =
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let context = { Rows = [ mkMigrationRow country.SsKey "1" "US" "United States" ] }
+    let viaDefault = MigrationDependenciesEmitter.emit catalog Profile.empty context |> mustOkEmit
+    let viaStandard =
+        MigrationDependenciesEmitter.emitWithTopoWithVerification
+            DataVerification.Standard None (topoOf catalog) catalog Profile.empty context UserRemapContext.empty
+        |> mustOkEmit
+    Assert.Equal<Map<SsKey, DataInsertScript>>(ArtifactByKind.toMap viaDefault, ArtifactByKind.toMap viaStandard)
+
+[<Fact>]
+let ``NM-73: MigrationDependenciesEmitter ValidateBeforeApply prepends the symmetric-EXCEPT THROW guard before the MERGE`` () =
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let context = { Rows = [ mkMigrationRow country.SsKey "1" "US" "United States" ] }
+    let artifact =
+        MigrationDependenciesEmitter.emitWithTopoWithVerification
+            DataVerification.ValidateBeforeApply None (topoOf catalog) catalog Profile.empty context UserRemapContext.empty
+        |> mustOkEmit
+    let rendered = (ArtifactByKind.toMap artifact |> Map.find country.SsKey).Rendered
+    let r = normWs rendered
+    Assert.Contains ("IF EXISTS (SELECT 1 FROM [dbo].[OSUSR_TEST_COUNTRY])", r)
+    Assert.Contains ("THROW 50000", r)
+    let exceptCount = (r.Split([| "EXCEPT" |], System.StringSplitOptions.None)).Length - 1
+    Assert.Equal (2, exceptCount)
+    Assert.True (rendered.IndexOf("THROW") < rendered.IndexOf("MERGE INTO"), "the drift guard must precede the MERGE")
+
 [<Fact>]
 let ``MigrationDependenciesEmitter.emit honors CdcAwareness per-kind dispatch (slice β parity)`` () =
     let country = mkCountryKind ()

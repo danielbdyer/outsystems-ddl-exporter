@@ -22956,3 +22956,112 @@ regenerated (`scripts/matrix-status.sh`).
 
 **Owed after this:** NM-62's `compare`-source-profiling follow-on, and the
 `MigrationDependenciesEmitter` validate-before-apply guard extension (NM-73 scope).
+
+---
+
+## 2026-06-14 (later) — NM-73 follow-on: the validate-before-apply guard extends to MigrationDependenciesEmitter
+
+The NM-73 guard, originally scoped to `StaticSeedsEmitter` (the named static-seed
+lane), now also covers `MigrationDependenciesEmitter` — the sibling data emitter
+that MERGEs migration-dependency rows. Identical mechanism: `verification` threads
+`emitWithTopoWithVerification` / `emitFromPlanWithVerification` → `kindToScript` →
+`renderMerge`, which prepends `ScriptDomBuild.buildValidateBeforeApplyGuard` as its
+own GO batch when `ValidateBeforeApply`. The composer's `dispatchSiblings` passes
+`policy.Emission.DataVerification` to both emitters. `Standard` stays byte-identical.
+Tests mirror the StaticSeeds pair (Standard byte-identical; ValidateBeforeApply
+prepends the symmetric-EXCEPT THROW). Both data MERGE lanes now honor the operator's
+conservative drift-guard override.
+
+---
+
+## 2026-06-14 (later) — Operator-review enablement: per-lane data goldens (static seeds + migration)
+
+The operator asked to review the emitted static-seed and bootstrap data SQL "just
+like the other golden test files." `DataLaneGoldenTests` adds a blessed, byte-
+reviewable golden corpus for the per-lane data emission under
+`tests/Projection.Tests/Golden/data-lanes/Data/`:
+- `StaticSeeds.sql` — the static lookup MERGEs (GoldenCatalog's Country / Region /
+  ScopedLookup / Tier),
+- `MigrationData.sql` — the migration lane (a `MigrationDependencyContext` over the
+  non-static `Assignment` kind; composite-PK MERGE),
+- `seed.sql` — the fused deploy artifact.
+
+It composes through the SAME production path the pipeline uses
+(`DataEmissionComposer.composeRenderedBundleFull` → `RenderedDataBundle.perLaneFiles`)
+over a scenario with two non-empty lanes, so the per-lane split (otherwise omitted
+by the ≥2-lane rule when only the static lane is populated) is recorded for review.
+Blessed via `GOLDEN_RECORD=1`, with the LF-only / newline-terminated negative
+invariants asserted.
+
+**Bootstrap is absent by construction, and that is correct.** `BootstrapEmitter`
+renders from an empty row source in every non-hydrated path — its rows are grafted
+only by the live Pipeline hydration step (a real SQL source; Docker-gated) — and
+`perLaneFiles` drops empty lanes. Bootstrap shares the StaticSeeds MERGE renderer
+(WP6 step 2), so `StaticSeeds.sql` IS the bootstrap render shape. A populated
+`Bootstrap.sql` golden would require a Docker hydration scenario; deferred per the
+operator's scope choice (non-Docker per-lane goldens).
+
+---
+
+## 2026-06-14 (later) — Data artifacts: the per-lane files replace the fused `Data/seed.sql` (operator decision)
+
+The pipeline no longer emits a fused `Data/seed.sql` file. The operator-facing data
+artifacts are the PER-LANE files — `Data/StaticSeeds.sql`, `Data/MigrationData.sql`,
+`Data/Bootstrap.sql` — each emitted whenever its lane carries content (the prior
+≥2-lane gate, NM-74, existed only to avoid byte-duplicating the fused file and is
+retired). Operator rationale (2026-06-14): "seed.sql can be removed as a file
+emission outcome … the notion of 'fused' (all data) is not problematic, but I will
+never use that file per se."
+
+The fused composition (`RenderedDataBundle.Fused`) STAYS — in-memory — for the
+leveled deploy's cross-lane topological ordering: the deploy re-projects it as a
+`LeveledDeploymentText` (per-level), it never reads back a `Data/seed.sql` file. So
+dropping the file does not change deploy behaviour (the staging writer iterates
+`DataBundle` generically; `Pipeline.fs:874`). For a single static lane the new
+`Data/StaticSeeds.sql` is byte-identical to the former `Data/seed.sql` (fused ≡ the
+one active lane) — a clean rename, witnessed by the re-blessed master golden.
+
+Goldens re-recorded (GOLDEN_RECORD=1): `master/Data/seed.sql` → `master/Data/
+StaticSeeds.sql`; `data-lanes/Data/seed.sql` dropped. `FullExportDataBundleTests`
+and `DataLaneGoldenTests` updated to the per-lane contract.
+
+This is the foundation for "Bootstrap emitted basically always": once the bootstrap
+lane carries content (live hydration), `Data/Bootstrap.sql` emits by the same
+per-lane rule. The live-source adapter + bootstrap hydration + compare live-profiling
+are the Docker-gated follow-on steps.
+
+---
+
+## 2026-06-14 (later) — Live-source adapter wired (feature 5): `Source.ofLive` + `Ref` live refs
+
+`Source.ofLive conn` is the live OSSYS adapter — the *verb* for the `Source` port
+that was previously a port-without-a-verb. It reads the deployed catalog back via
+`ReadSide.read` (INFORMATION_SCHEMA → V2 `Catalog`) and profiles the live data via
+`LiveProfiler.attach` (`AcquireProfile`), each over its own short-lived
+`SqlConnection`. `conn` is a raw connection string or `env:VAR` (resolved from the
+environment, the secret-safe operator form; a missing var falls through to the raw
+value so the open fails loudly). `Ref.resolveCatalog (Live conn)` now resolves
+(previously `fail "ref.liveUnavailable"`), so `diff` / `compare` / `migrate` accept
+a `live:` operand and read its deployed schema.
+
+It composes two already-Docker-tested adapters (`ReadSide.read`, `LiveProfiler.attach`)
+plus the standard `new SqlConnection` + `OpenAsync` connection pattern from `Deploy.fs`;
+the wiring is thin and build-verified. The end-to-end `live:`-ref Docker smoke test and
+the `compare` source-profiling wiring (thread `Source.AcquireProfile` into `runCompare`)
+are the immediate next increments.
+
+---
+
+## 2026-06-14 (later) — compare live-profiling: the source dealbreaker section is populated from a live env
+
+`Ref.resolveSource` resolves a ref to its capability-typed `Source` (catalog read +,
+for a live env, `AcquireProfile`); `resolveCatalog` is the catalog-only read.
+`runCompare` now resolves the SOURCE operand as a `Source`, reads its catalog, and —
+when the source can profile (a live env, via `Source.ofLive`) — live-profiles it and
+threads the `Profile` into `Compare.compute`, so the data-dealbreaker section reflects
+A's real data against B's declared model (previously advisory-silent because operands
+resolved to catalogs only). A static source (file / `@runId` / json) carries no
+profile → the section stays honestly advisory-silent. A profiling failure degrades to
+advisory-silent (never aborts — the schema delta still leads). Build-verified; the
+live path composes the Docker-tested `ReadSide.read` + `LiveProfiler.attach` via
+`Source.ofLive`.
