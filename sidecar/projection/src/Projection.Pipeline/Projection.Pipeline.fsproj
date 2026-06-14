@@ -36,6 +36,7 @@
     <Compile Include="InsertionPolicyBinding.fs" />
     <Compile Include="LiveModelRead.fs" />
     <Compile Include="Hydration.fs" />
+    <Compile Include="ModelFidelity.fs" />
     <Compile Include="Pipeline.fs" />
     <Compile Include="PolicyDiff.fs" />
     <Compile Include="Bulk.fs" />

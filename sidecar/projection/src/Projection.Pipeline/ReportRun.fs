@@ -44,6 +44,25 @@ module ReportRun =
             | Ok b    -> Ok b
             | Error _ -> Error "the change series could not be computed from the timeline."
 
+    /// Surface a recorded Model Fidelity Report as operator-facing lines. The
+    /// per-run `fidelity.json` artifact is read back (the codec inverse) and
+    /// rendered as the count-first roll-up. `candidatePaths` are searched in
+    /// order; the first readable + parseable `fidelity.json` wins. Empty list
+    /// when none is found (the verb states the report is not recorded rather
+    /// than fabricating one). The store load stays the only mandatory I/O; this
+    /// is an additive, best-effort surfacing.
+    let renderFidelity (candidatePaths: string list) : string list =
+        candidatePaths
+        |> List.tryPick (fun path ->
+            try
+                if System.IO.File.Exists path then
+                    System.IO.File.ReadAllText path
+                    |> ModelFidelity.fromJson
+                    |> Option.map ModelFidelity.render
+                else None
+            with _ -> None)
+        |> Option.defaultValue []
+
     /// Render the bundle as operator-facing lines (THE_VOICE register: stative;
     /// the norm surfaced as the minimality proof). One line per recorded edge.
     let render (bundle: ReportBundle) : string list =

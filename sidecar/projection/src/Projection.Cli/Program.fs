@@ -211,6 +211,22 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         match ReportRun.fromStore store with
         | Ok bundle ->
             printLines Console.Out (ReportRun.render bundle)
+            // Surface the per-run Model Fidelity Report when one was recorded —
+            // the rolled-up account of the distance between the declared model
+            // and the observed source reality. Searched next to the store and
+            // in the default output directory; absent until a profiled run
+            // emits it (best-effort, additive — the change report stands alone).
+            let fidelityCandidates =
+                [ match Option.ofObj (Path.GetDirectoryName store) with
+                  | Some dir when dir <> "" -> yield Path.Combine(dir, "fidelity.json")
+                  | _ -> ()
+                  yield Path.Combine("out", "fidelity.json")
+                  yield "fidelity.json" ]
+            match ReportRun.renderFidelity fidelityCandidates with
+            | [] -> ()
+            | lines ->
+                Console.Out.WriteLine ""
+                printLines Console.Out lines
             0
         | Error msg ->
             Console.Error.WriteLine (sprintf "projection report: %s" msg)
