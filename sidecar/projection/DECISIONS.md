@@ -22754,3 +22754,39 @@ gone). The broader suite is unchanged (the fix is additive).
 **WP9 remainder (not this slice):** the `examples/projection.sample.json`
 rewrite (ossys-first sample) and the `projection compare` verb (multi-
 environment readiness; a design-first slice per the plan) remain.
+
+---
+
+## 2026-06-14 — NM-72: column emission follows Service-Studio `Order_Num` (the `CanonicalizeIdentity` attribute sort refined; SsKey stays the tiebreak)
+
+**Operator-authorized** (2026-06-14 — `Order_Num` confirmed exposed on
+`ossys_Entity_Attribute`). Emitted `CREATE TABLE` column order now follows the
+operator's authored Service-Studio order, not alphabetical-by-name.
+
+**The change.** `CanonicalizeIdentity.canonicalizeKind` previously sorted a
+kind's `Attributes` by `SsKey` alone. It now sorts by `(PK rank, authored-order
+rank, SsKey)` — primary-key columns first, then ascending `Attribute.Order` (the
+new `int option` lifted from `ossys_Entity_Attribute.Order_Num`), with `SsKey`
+the final tiebreak. `Order = None` (hand-built / ReadSide / non-OSSYS catalogs)
+sorts after all authored attributes by `SsKey` — byte-identical to the prior
+order within each PK band.
+
+**Why this does NOT break the §5 "determinism is constructed" commitment.** That
+commitment names `SsKey` as the sort basis; `SsKey` remains the terminal
+tiebreak, so the canonical order is still a *total, deterministic* function of
+the catalog (T1 byte-determinism preserved). The refinement leads with authored
+order where it exists; absent it, behavior is unchanged. This is an *additive
+refinement* of the determinism law, not a break — recorded here per the §5
+standing-law-amendment discipline.
+
+**Threading.** `ossys_Entity_Attribute.Order_Num` → the `#Attr` extraction
+(`COALESCE(Order_Num, Id)` fallback for estates lacking the column) → both the
+rowset and JSON readers → `Attribute.Order : int option` → the
+`CanonicalizeIdentity` sort key → all emitters (which iterate `Kind.Attributes`
+in list order, so the sort propagates to SSDT + the data lanes in lockstep).
+`CanonicalizeIdentity.version` bumped 1→2. The golden corpus regenerated (a
+PK-first reordering, since the golden catalog is all `Order = None`).
+
+**Residual.** Estates whose `ossys_Entity_Attribute` lacks `Order_Num` fall back
+to the creation `Id` (a monotone proxy for authored order, not the true
+Service-Studio order) — documented in the rowset SQL.
