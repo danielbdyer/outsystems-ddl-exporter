@@ -31,7 +31,7 @@ let private mkConfig (entries: Config.TransformGroupEntry list) : Config.Config 
         }
         Emission    = {
             Ssdt = true; Dacpac = true; Json = true; Distributions = true
-            StaticSeeds = true; MigrationDependencies = true; Bootstrap = true
+            StaticSeeds = true; MigrationDependencies = true; Bootstrap = true; BootstrapAllData = false
             DecisionLog = true; Opportunities = true; Validations = true; IncludePlatformAutoIndexes = true; DeleteScope = None; RenderConstraintsElegant = true; EmitIdentityAnnotations = true; DataVerification = Projection.Core.DataVerification.Standard
         }
         Policy      = {

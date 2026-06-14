@@ -690,12 +690,13 @@ module Compose =
     /// `LogicalTableEmission` chain step skips the pinned kinds so a physical-form
     /// `tableRenames` override survives into the emitted physical table.
     /// `Set.empty` is `projectWithState` (byte-identical default).
-    let projectWithStateWithPins
+    let projectWithStateWithPinsAndBootstrap
         (logicalEmissionPins: Set<SsKey>)
         (fullPolicy: Policy)
         (profile: Profile)
         (folders: EmissionFolders)
         (groups: TransformGroups)
+        (bootstrapRows: Map<SsKey, StaticRow list>)
         (catalog: Catalog)
         : Outputs * ComposeState =
         let chain = RegisteredTransforms.allChainStepsForWithPins logicalEmissionPins fullPolicy profile
@@ -727,7 +728,12 @@ module Compose =
             if not fullPolicy.Emission.EmitData then outputs
             else
                 use _ = Bench.scope "emit.dataBundle.compose"
-                match DataComposer.composeRenderedBundle fullPolicy finalState.Catalog profile with
+                // Bootstrap-always (2026-06-14) — thread the hydrated Bootstrap
+                // row source into the per-lane render so `Data/Bootstrap.sql`
+                // carries content. `bootstrapRows = Map.empty` (the non-hydrated
+                // path, all callers but the config-driven publish path) is
+                // byte-identical to the prior `composeRenderedBundle`.
+                match DataComposer.composeRenderedBundleWithBootstrap fullPolicy finalState.Catalog profile Projection.Targets.Data.MigrationDependencyContext.empty bootstrapRows UserRemapContext.empty with
                 | Ok bundle when not (System.String.IsNullOrWhiteSpace bundle.Fused) ->
                     // The PER-LANE files (`Data/StaticSeeds.sql` /
                     // `Data/MigrationData.sql` / `Data/Bootstrap.sql`) are the
@@ -749,6 +755,21 @@ module Compose =
                     // fails the composer (the keyset is `Catalog.allKinds`).
                     invalidOp (sprintf "Compose.projectWithState: DataEmissionComposer.composeRenderedBundle: %A" err)
         decorated, finalState
+
+    /// `projectWithStateWithPins` — no Bootstrap row source
+    /// (`projectWithStateWithPinsAndBootstrap` with `Map.empty`; byte-identical
+    /// to the pre-Bootstrap-always behaviour). The established call shape for
+    /// every caller but the config-driven publish path, which hydrates the
+    /// Bootstrap lane and routes through the `…AndBootstrap` entry.
+    let projectWithStateWithPins
+        (logicalEmissionPins: Set<SsKey>)
+        (fullPolicy: Policy)
+        (profile: Profile)
+        (folders: EmissionFolders)
+        (groups: TransformGroups)
+        (catalog: Catalog)
+        : Outputs * ComposeState =
+        projectWithStateWithPinsAndBootstrap logicalEmissionPins fullPolicy profile folders groups Map.empty catalog
 
     /// The canonical `projectWithState` — no physical-rename pins (byte-identical
     /// default; the existing callers are unchanged).
@@ -1116,8 +1137,12 @@ module Compose =
                 cfg.Emission.StaticSeeds
                 || cfg.Emission.MigrationDependencies
                 || cfg.Emission.Bootstrap
-            let dataComposition =
-                if cfg.Emission.StaticSeeds then AllRemaining else AllExceptStatic
+            // Bootstrap-always (2026-06-14) — the SINGLE composition derivation
+            // (`Config.dataCompositionOf`), shared with the Bootstrap-lane
+            // hydration so dispatch and row-scope can never drift. `AllData`
+            // (Bootstrap covers everything) is now reachable via
+            // `emission.bootstrapAllData`.
+            let dataComposition = Config.dataCompositionOf cfg
             // NM-02 (2026-06-13) — translate the schema / diagnostics emission
             // toggles into the EmissionPolicy, mirroring the data-lane wiring
             // above. `emission.ssdt` gates the CREATE/SSDT schema bundle;
@@ -1224,6 +1249,7 @@ module Compose =
     let private runWithConfigCore
         (cfg: Config.Config)
         (parsed: Result<Catalog>)
+        (bootstrapRows: Map<SsKey, StaticRow list>)
         (profile: Profile)
         : Result<RunReport> =
         match parsed with
@@ -1243,7 +1269,7 @@ module Compose =
                 match policyR, overridesR, foldersR, groupsR with
                 | Ok policy, Ok overrides, Ok folders, Ok groups ->
                     let outputs, finalState =
-                        projectWithStateWithPins pins policy profile folders groups renamedCatalog
+                        projectWithStateWithPinsAndBootstrap pins policy profile folders groups bootstrapRows renamedCatalog
                     // `emission.dacpac: true` — compile the .dacpac over the SAME
                     // emitted catalog the SSDT step projected (the post-chain
                     // catalog under the identical platform-auto-index filter —
@@ -1409,12 +1435,25 @@ module Compose =
     /// shared by the publish path (the extract stage) and the store leg
     /// (`emittedSeedPlan`), so the deployed seed never drifts from the
     /// published one (the parity duty).
-    let readAndHydrateConfigModel (cfg: Config.Config) : Task<Result<Catalog>> =
+    /// Bootstrap-always (2026-06-14) — returns BOTH the static-hydrated catalog
+    /// (StaticSeeds lane, rows grafted onto `Modality.Static`) AND the Bootstrap
+    /// lane's row source (`Hydration.hydrateBootstrapRows`, scoped per
+    /// composition). Both callers — the publish path and the store-leg seed plan
+    /// — thread the same pair, so the deployed Bootstrap never drifts from the
+    /// published one (the parity duty). Empty bootstrap Map on the file-sourced /
+    /// data-off path (the named skip is in `Hydration.diagnostics`).
+    let readAndHydrateConfigModel (cfg: Config.Config) : Task<Result<Catalog * Map<SsKey, StaticRow list>>> =
         task {
             let! parsed = readConfigModel cfg
             match parsed with
-            | Error _ -> return parsed
-            | Ok catalog -> return! Hydration.hydrateCatalog cfg catalog
+            | Error es -> return Result.failure es
+            | Ok catalog ->
+                match! Hydration.hydrateCatalog cfg catalog with
+                | Error es -> return Result.failure es
+                | Ok hydrated ->
+                    match! Hydration.hydrateBootstrapRows cfg hydrated with
+                    | Error es      -> return Result.failure es
+                    | Ok bootRows   -> return Result.success (hydrated, bootRows)
         }
 
     /// THE_CONFIG_CONTROL_PLANE §6 (S3) — project a **caller-supplied**
@@ -1555,21 +1594,24 @@ module Compose =
             // that never reached it).
             let! verdict =
                 staged Spines.pipeline {
-                    let! catalog =
+                    let! extracted =
                         Staged.stage Stages.extract (fun () ->
                             task {
                                 // §7.2 extract — OSSYS catalog read + WP6 step-4
                                 // data hydration (graft live static rows when
-                                // OSSYS-sourced + data on; identity otherwise).
+                                // OSSYS-sourced + data on; identity otherwise) +
+                                // the Bootstrap lane's row source (Bootstrap-always).
                                 let! parsed = readAndHydrateConfigModel cfg
                                 match parsed with
-                                | Ok catalog ->
+                                | Ok (catalog, bootRows) ->
                                     emitStageMarker LogSink.Extract "extract.completed" LogSink.End
                                         (Map.ofList [ "moduleCount", box (List.length catalog.Modules) ])
-                                    return Ok catalog
+                                    return Ok (catalog, bootRows)
                                 | Error errors ->
                                     return Error errors
                             })
+                    let catalog = fst extracted
+                    let bootstrapRows = snd extracted
                     let! profile =
                         Staged.stage Stages.profile (fun () ->
                             task {
@@ -1585,7 +1627,7 @@ module Compose =
                             task {
                                 // §7.5 emit — pass chain + sibling-Π emission +
                                 // artifact write.
-                                let result = runWithConfigCore cfg (Ok catalog) profile
+                                let result = runWithConfigCore cfg (Ok catalog) bootstrapRows profile
                                 emitStageMarker LogSink.Emit "emit.completed" LogSink.End Map.empty
                                 return result
                             })
@@ -1634,6 +1676,7 @@ module Compose =
     let private projectSeedPlan
         (cfg: Config.Config)
         (parsed: Result<Catalog>)
+        (bootstrapRows: Map<SsKey, StaticRow list>)
         : Result<Catalog * DataComposer.LeveledDeploymentText> =
         match parsed |> Result.bind (applyRenames cfg) with
         | Error es -> Result.failure es
@@ -1648,9 +1691,13 @@ module Compose =
                     Result.success (catalog, DataComposer.LeveledDeploymentText.empty)
                 else
                     match
-                        DataComposer.composeRenderedLeveled
+                        // Bootstrap-always — the store-leg threads the SAME
+                        // Bootstrap rows the publish path does (parity duty), so
+                        // the deployed leveled seed never drifts from the bundle.
+                        DataComposer.composeRenderedLeveledWithBootstrap
                             policy finalState.Catalog Profile.empty
                             Projection.Targets.Data.MigrationDependencyContext.empty
+                            bootstrapRows
                             UserRemapContext.empty
                     with
                     | Ok plan -> Result.success (catalog, plan)
@@ -1672,7 +1719,9 @@ module Compose =
             // publish path does (`readAndHydrateConfigModel`), so the deployed
             // seed plan reflects the same hydrated rows the bundle published.
             let! parsed = readAndHydrateConfigModel cfg
-            return projectSeedPlan cfg parsed
+            match parsed with
+            | Error es -> return Result.failure es
+            | Ok (catalog, bootRows) -> return projectSeedPlan cfg (Ok catalog) bootRows
         }
 
     /// State A — the prior emission's schema, reconstructed from the durable

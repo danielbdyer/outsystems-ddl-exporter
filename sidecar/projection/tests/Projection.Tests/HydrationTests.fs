@@ -147,3 +147,41 @@ let ``WP6 step 4: hydrateCatalog is the identity for a model.path source (no liv
     let cfg = Config.defaultConfig |> withModel None (Some "model.json")
     let catalog = mkCatalog [ staticKind "Country" [] ]
     Assert.Equal<Catalog> (catalog, runHydrate cfg catalog)
+
+// ---------------------------------------------------------------------------
+// hydrateBootstrapRows — the no-connection branches (Bootstrap-always).
+// The live stream is the Docker test's job (LiveSourceDockerTests); here we
+// cover the parts that don't need a connection: data-off, no-ossys, and the
+// composition scoping (AllRemaining excludes static-marked kinds, so an
+// all-static catalog yields the empty Map WITHOUT attempting a connection).
+// ---------------------------------------------------------------------------
+
+let private runHydrateBoot (cfg: Config.Config) (catalog: Catalog) : Map<SsKey, StaticRow list> =
+    (Hydration.hydrateBootstrapRows cfg catalog).GetAwaiter().GetResult() |> mustOk
+
+[<Fact>]
+let ``Bootstrap-always: hydrateBootstrapRows is the empty Map when data emission is off`` () =
+    // Data off + a live ossys ref + an eligible (non-static) kind: still empty.
+    let cfg = Config.defaultConfig |> withModel (Some "env:OSSYS") None |> dataOff
+    let catalog = mkCatalog [ plainKind "Order" ]
+    Assert.True (Map.isEmpty (runHydrateBoot cfg catalog))
+
+[<Fact>]
+let ``Bootstrap-always: hydrateBootstrapRows is the empty Map for a model.path source (no live OSSYS)`` () =
+    // An eligible non-static kind is present, but no live source ⇒ empty
+    // (the named skip is the shared Hydration.diagnostics).
+    let cfg = Config.defaultConfig |> withModel None (Some "model.json")
+    let catalog = mkCatalog [ plainKind "Order" ]
+    Assert.True (Map.isEmpty (runHydrateBoot cfg catalog))
+
+[<Fact>]
+let ``Bootstrap-always: under AllRemaining the bootstrap scope EXCLUDES static-marked kinds (empty without a connection)`` () =
+    // AllRemaining (the default) ⇒ Bootstrap = complement of Static. An
+    // all-static catalog has NO bootstrap-eligible kind, so the function
+    // short-circuits to the empty Map BEFORE any connection is opened — the
+    // partition: static kinds belong to StaticSeeds, not Bootstrap. The ossys
+    // ref is intentionally never reached.
+    let cfg = Config.defaultConfig |> withModel (Some "env:UNREACHED") None
+    Assert.Equal<DataComposition> (AllRemaining, Config.dataCompositionOf cfg)
+    let catalog = mkCatalog [ staticKind "Country" []; staticKind "Region" [] ]
+    Assert.True (Map.isEmpty (runHydrateBoot cfg catalog))

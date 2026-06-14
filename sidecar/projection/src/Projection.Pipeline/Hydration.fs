@@ -137,9 +137,64 @@ module Hydration =
                             return Result.success hydrated
         }
 
+    /// The Bootstrap lane's row source (Bootstrap-always, 2026-06-14). Streams
+    /// the bootstrap-eligible kinds' rows from the live OSSYS source into the
+    /// `Map<SsKey, StaticRow list>` shape `DataLoadPlan.build` consumes — every
+    /// data-bearing kind under `AllData`, the complement of (Static-marked ∪
+    /// Migration) under `AllRemaining`/`AllExceptStatic`. (Migration is empty in
+    /// the production path today; the complement excludes its kinds when it is
+    /// wired.) Disjoint from the Static lane's catalog-grafted populations, so
+    /// the composer's `OverlappingEmitterCoverage` partition law holds. Data-off
+    /// / no live OSSYS source / no eligible kinds ⇒ the empty Map (the
+    /// file-sourced skip is NAMED in `diagnostics`, never silent). Scoped via
+    /// `Ingestion.collectInOrderFor` — never the mark-everything `ReadSide.read`
+    /// (survival rule 8). A SECOND short-lived connection (the model-read
+    /// connection is use-disposed), mirroring `hydrateCatalog`.
+    let hydrateBootstrapRows (cfg: Config.Config) (catalog: Catalog) : Task<Result<Map<SsKey, StaticRow list>>> =
+        task {
+            if not (emitDataOf cfg) then
+                return Result.success Map.empty
+            else
+                // A kind carries rows worth bootstrapping only if it has columns
+                // to write (PK-less / attribute-less artifacts have no MERGE).
+                let isDataBearing (k: Kind) = not (List.isEmpty k.Attributes)
+                let composition = Config.dataCompositionOf cfg
+                let eligible =
+                    Catalog.allKinds catalog
+                    |> List.filter (fun k ->
+                        isDataBearing k
+                        && (match composition with
+                            | AllData -> true
+                            | AllRemaining | AllExceptStatic -> not (isStaticKind k)))
+                    |> List.map (fun k -> k.SsKey)
+                    |> Set.ofList
+                if Set.isEmpty eligible then
+                    return Result.success Map.empty
+                else
+                    match cfg.Model.Ossys with
+                    | None -> return Result.success Map.empty
+                    | Some connSpec ->
+                        match LiveModelRead.parseConnRef connSpec with
+                        | Error es -> return Result.failure es
+                        | Ok connRef ->
+                            let sub : Substrate =
+                                { Environment   = Environment.Named "ossys-bootstrap-source"
+                                  Role          = SubstrateRole.Source
+                                  ConnectionRef = connRef }
+                            match! ConnectionResolver.openSubstrate sub with
+                            | Error es -> return Result.failure es
+                            | Ok cnn ->
+                                use cnn = cnn
+                                let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
+                                let! rows = Ingestion.collectInOrderFor eligible cnn catalog topo
+                                return Result.success rows
+        }
+
     /// Registry metadata (pillar 9). Read-only observation — DataIntent
     /// (mirrors the OSSYS `CatalogReader` / Transfer `Ingestion` adapters).
     let registeredMetadata : RegisteredTransformMetadata =
         RegisteredTransformMetadata.adapter "fullExportHydration" Data
             [ TransformSite.dataIntent "staticRowHydration"
-                "Stream static-entity rows from the live OSSYS source (Ingestion.collectInOrderFor, scoped to static-marked kinds — never ReadSide.read) and graft them onto the catalog's Static populations before the data lanes render. The model.ossys connection ref may be env: or file: (both hydrate identically). Observation only — the rows are what the source holds; no operator opinion enters. A model with no live OSSYS source (read from model.path) skips with the named data.hydration.skippedNoLiveSource diagnostic." ]
+                "Stream static-entity rows from the live OSSYS source (Ingestion.collectInOrderFor, scoped to static-marked kinds — never ReadSide.read) and graft them onto the catalog's Static populations before the data lanes render. The model.ossys connection ref may be env: or file: (both hydrate identically). Observation only — the rows are what the source holds; no operator opinion enters. A model with no live OSSYS source (read from model.path) skips with the named data.hydration.skippedNoLiveSource diagnostic."
+              TransformSite.dataIntent "bootstrapRowHydration"
+                "Stream the Bootstrap lane's rows from the live OSSYS source (Ingestion.collectInOrderFor, scoped per DataComposition — every data-bearing kind under AllData, the complement of Static ∪ Migration under AllRemaining/AllExceptStatic; never ReadSide.read) into the Map<SsKey, StaticRow list> the BootstrapEmitter renders. Observation only — the rows are what the source holds; no operator opinion enters. Disjoint from the Static lane (the partition law). Data-off / file-sourced ⇒ the empty Map (named skip in diagnostics)." ]

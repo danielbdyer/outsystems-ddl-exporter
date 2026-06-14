@@ -34,6 +34,7 @@ open Microsoft.Data.SqlClient
 open Xunit
 open Projection.Core
 open Projection.Pipeline
+open Projection.Targets.Data
 
 [<Xunit.Collection("Docker-SqlServer")>]
 type LiveSourceDockerTests(fixture: EphemeralContainerFixture) =
@@ -53,6 +54,14 @@ type LiveSourceDockerTests(fixture: EphemeralContainerFixture) =
                 |> List.map (fun e -> System.String.Concat(e.Code, ": ", e.Message))
                 |> String.concat " | "
             invalidOp (System.String.Concat("expected Ok; got: ", detail))
+
+    let mustOkEmit (r: Result<'a, EmitError>) : 'a =
+        match r with
+        | Ok v -> v
+        | Error e -> invalidOp (sprintf "expected Ok; got %A" e)
+
+    let mkName (s: string) : Name = Name.create s |> mustOk
+    let mkKey (parts: string list) : SsKey = SsKey.synthesizedComposite "OS_BOOT" parts |> mustOk
 
     interface IClassFixture<EphemeralContainerFixture>
 
@@ -146,3 +155,75 @@ type LiveSourceDockerTests(fixture: EphemeralContainerFixture) =
         Assert.True(
             (not (List.isEmpty report.DataDealbreakers)),
             "expected a NOT-NULL data dealbreaker from A's NULL row against B's model")
+
+    // -- Test 3 — Bootstrap-always: live hydration populates Data/Bootstrap.sql --
+
+    [<Fact>]
+    member _.``Bootstrap-always: hydrateBootstrapRows streams live rows into a populated Data/Bootstrap.sql`` () =
+        if not (skipIfNoDocker "bootstrap-live-hydration") then () else
+        // A NON-static, data-bearing kind whose rows live in a real DB. The
+        // config's model.ossys points at that DB (via an env: ref); the
+        // Bootstrap lane hydrates its rows and renders Data/Bootstrap.sql — the
+        // operator's "Bootstrap created, both Docker and live source."
+        let envVar = "PROJECTION_TEST_BOOT_CONN"
+        let bundle =
+            fixture.WithEphemeralDatabase "BootSrc" (fun cnn connStr ->
+                task {
+                    do!
+                        Deploy.executeBatch cnn
+                            ("CREATE TABLE [dbo].[OSUSR_BOOT_WIDGET] (" +
+                             "[ID] INT NOT NULL PRIMARY KEY, " +
+                             "[NAME] NVARCHAR(100) NOT NULL);")
+                    do!
+                        Deploy.executeBatch cnn
+                            ("INSERT INTO [dbo].[OSUSR_BOOT_WIDGET] ([ID], [NAME]) " +
+                             "VALUES (1, N'Gadget'), (2, N'Gizmo');")
+                    // A programmatic NON-static catalog kind over the deployed
+                    // table — non-static ⇒ bootstrap-eligible under AllRemaining.
+                    let widget : Kind =
+                        { Kind.create (mkKey ["Widget"]) (mkName "Widget")
+                            (TableId.create "dbo" "OSUSR_BOOT_WIDGET" |> mustOk)
+                            [ { Attribute.create (mkKey ["Widget"; "Id"]) (mkName "Id") Integer with
+                                  Column = ColumnRealization.create "ID" false |> Result.value
+                                  IsPrimaryKey = true; IsMandatory = true }
+                              { Attribute.create (mkKey ["Widget"; "Name"]) (mkName "Name") Text with
+                                  Column = ColumnRealization.create "NAME" false |> Result.value
+                                  Length = Some 100; IsMandatory = true } ]
+                          with Modality = [] }
+                    let catalog : Catalog =
+                        { Modules =
+                            [ { SsKey = mkKey ["M"]; Name = mkName "M"
+                                Kinds = [ widget ]; IsActive = true; ExtendedProperties = [] } ]
+                          Sequences = [] }
+                    // model.ossys = env:<var> → the per-DB connection string.
+                    System.Environment.SetEnvironmentVariable(envVar, connStr)
+                    try
+                        let cfg =
+                            { Config.defaultConfig with
+                                Model = { Config.defaultConfig.Model with
+                                            Ossys = Some ("env:" + envVar); Path = None } }
+                        let! rowsR = Hydration.hydrateBootstrapRows cfg catalog
+                        let bootstrapRows = mustOk rowsR
+                        // The live rows reached the bootstrap row source.
+                        Assert.True(
+                            Map.containsKey widget.SsKey bootstrapRows,
+                            "hydrateBootstrapRows did not stream the widget kind's rows")
+                        let bundle =
+                            DataEmissionComposer.composeRenderedBundleWithBootstrap
+                                Policy.empty catalog Profile.empty
+                                MigrationDependencyContext.empty bootstrapRows UserRemapContext.empty
+                            |> mustOkEmit
+                        return bundle
+                    finally
+                        System.Environment.SetEnvironmentVariable(envVar, null)
+                })
+            |> fun t -> t.GetAwaiter().GetResult()
+        // Data/Bootstrap.sql is emitted and carries the live rows.
+        let files = DataEmissionComposer.RenderedDataBundle.perLaneFiles bundle
+        Assert.True(
+            Map.containsKey "Data/Bootstrap.sql" files,
+            "Data/Bootstrap.sql was not emitted from the live-hydrated bootstrap lane")
+        let boot = Map.find "Data/Bootstrap.sql" files
+        Assert.Contains("MERGE", boot)
+        Assert.Contains("OSUSR_BOOT_WIDGET", boot)
+        Assert.Contains("Gadget", boot)

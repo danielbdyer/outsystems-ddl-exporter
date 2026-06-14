@@ -491,11 +491,18 @@ module DataEmissionComposer =
     /// `composeRenderedFull` are (a) per-level grouping via
     /// `TopologicalOrder.levels`, (b) structured return type, (c)
     /// empty-level dropping.
-    let composeRenderedLeveled
+    /// Level-aware sibling WITH the hydrated Bootstrap row source (Bootstrap-
+    /// always, 2026-06-14) — the store-leg counterpart of
+    /// `composeRenderedBundleWithBootstrap`, so the deployed leveled seed plan
+    /// carries the same Bootstrap rows the published bundle does (the parity
+    /// duty). Byte-identical to `composeRenderedLeveled` when
+    /// `bootstrapRows = Map.empty`.
+    let composeRenderedLeveledWithBootstrap
         (policy: Policy)
         (catalog: Catalog)
         (profile: Profile)
         (migration: MigrationDependencyContext)
+        (bootstrapRows: Map<SsKey, StaticRow list>)
         (userRemap: UserRemapContext)
         : Result<LeveledDeploymentText, EmitError> =
         use _ = Bench.scope "compose.data.composeRenderedLeveled"
@@ -507,7 +514,7 @@ module DataEmissionComposer =
         // the plain value; the emitters never see `Policy` (A18 amended).
         let deleteScope = policy.Emission.DeleteScope
         let verification = policy.Emission.DataVerification
-        match dispatchSiblings composition deleteScope verification topo catalog profile migration Map.empty userRemap with
+        match dispatchSiblings composition deleteScope verification topo catalog profile migration bootstrapRows userRemap with
         | Error e -> Error e
         | Ok siblings ->
             match unionSiblings catalog siblings with
@@ -542,6 +549,19 @@ module DataEmissionComposer =
                 Bench.recordSample "compose.data.composeRenderedLeveled.phase1Levels" (int64 phase1.Length)
                 Bench.recordSample "compose.data.composeRenderedLeveled.phase2Levels" (int64 phase2.Length)
                 Ok { Phase1Levels = phase1; Phase2Levels = phase2 }
+
+    /// Level-aware sibling of `composeRenderedFull` — no Bootstrap row source
+    /// (`composeRenderedLeveledWithBootstrap` with `Map.empty`; byte-identical
+    /// to the pre-Bootstrap-always behaviour). The established call shape for
+    /// the canary / perf callers that do not hydrate a Bootstrap lane.
+    let composeRenderedLeveled
+        (policy: Policy)
+        (catalog: Catalog)
+        (profile: Profile)
+        (migration: MigrationDependencyContext)
+        (userRemap: UserRemapContext)
+        : Result<LeveledDeploymentText, EmitError> =
+        composeRenderedLeveledWithBootstrap policy catalog profile migration Map.empty userRemap
 
     /// Π_Data compose-rendered (canary-test convenience). Defaults
     /// migration + userRemap to empty.

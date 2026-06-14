@@ -23135,3 +23135,39 @@ V1 term (retired in favour of the bootstrap snapshot + static seeds, per
 Default stays `AllRemaining`; `AllData` is opt-in (the config flag lands in B2 with
 the pipeline hydration + Docker golden). Supplemental kinds (`ossys_User` beyond the
 catalog's own entities) deferred per operator. Pure pool green (3311/0).
+
+---
+
+## 2026-06-14 (later) — Bootstrap-always (B2): the pipeline hydrates the Bootstrap lane from the live source; `AllData` reachable via config
+
+B1 made the composer render a Bootstrap row source; B2 feeds it live rows on the
+config-driven path (publish + store-leg), so `Data/Bootstrap.sql` is created
+"basically always, both Docker and live source" (operator intent).
+
+- **`Hydration.hydrateBootstrapRows cfg catalog`** — streams the bootstrap-eligible
+  kinds' rows from `cfg.Model.Ossys` (the same second connection `hydrateCatalog`
+  uses; `Ingestion.collectInOrderFor`, never `ReadSide.read` — survival rule 8) into
+  the `Map<SsKey, StaticRow list>` the BootstrapEmitter renders. Scope by
+  composition: every data-bearing kind under `AllData`; the complement of
+  (Static-marked ∪ Migration) under `AllRemaining`/`AllExceptStatic` — disjoint from
+  the Static lane, so the partition law holds. Data-off / no live OSSYS / no eligible
+  kinds ⇒ the empty Map (the named skip is the shared `Hydration.diagnostics`); the
+  empty Map is byte-identical to the prior behaviour.
+- **`AllData` reachable via config** — new `emission.bootstrapAllData` (default
+  `false` ⇒ `AllRemaining`; `true` ⇒ `AllData`). The single derivation
+  `Config.dataCompositionOf` is shared by `buildPolicyFromConfig` (which emitters
+  fire) and `hydrateBootstrapRows` (which kinds the lane streams), so dispatch and
+  row-scope cannot drift.
+- **Threading** (minimal-churn `*WithBootstrap` variants): `readAndHydrate
+  ConfigModel` returns `(Catalog * bootstrapRows)`; `projectWithStateWithPinsAnd
+  Bootstrap` (compose → `composeRenderedBundleWithBootstrap`) and `composeRendered
+  LeveledWithBootstrap` carry the rows; `runWithConfigCore` + `projectSeedPlan`
+  thread them; the existing public entries delegate `Map.empty` (byte-identical, zero
+  caller churn). Both the publish path and the store-leg seed plan thread the SAME
+  rows — the deployed Bootstrap never drifts from the published one (the parity duty).
+- **Witnesses**: `LiveSourceDockerTests` "hydrateBootstrapRows streams live rows into
+  a populated Data/Bootstrap.sql" (deploy a non-static table + rows → hydrate via
+  `model.ossys=env:` → compose → `Data/Bootstrap.sql` carries the MERGE);
+  `HydrationTests` covers the no-connection branches (data-off / no-ossys / the
+  AllRemaining-excludes-static scoping). Pure pool 3314/0; the live-path Docker class
+  3/3.
