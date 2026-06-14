@@ -23,6 +23,23 @@ open Projection.Targets.SSDT
 /// streaming request on an inadmissible combination refuses BY NAME —
 /// never a silent downgrade; a journal on an inadmissible combination
 /// likewise (the ledger belongs to the streaming realization).
+///
+/// **NM-31 — the realizations are NOT drop-symmetric (capability
+/// asymmetry, NOT a silent drop).** The materialized arm threads
+/// `allowDrops` into the ENGINE: a reconciling run with unmatched
+/// orphans takes a PRE-WRITE halt (`validateUserMap` / `executeGate`,
+/// AC-I5 — the Sink stays untouched) gated on `allowDrops`. The
+/// streaming arm has NO reconcile leg (it is straight, non-reconciling
+/// Incremental), so it CANNOT offer a pre-write reconcile-orphan halt;
+/// `allowDrops` reaches only the run face's POST-write narration / exit
+/// (`narrateDropExit` — FK orphans surface as `SkippedReferences` + the
+/// exit-9 verdict AFTER the write). This is not a silent drop today —
+/// the streaming leg refuses reconcile up front, and its FK orphans are
+/// reported and exit-9'd — but the two arms are NOT interchangeable on
+/// the pre-write-halt capability, and `choose` presents them as if they
+/// were. Adding a pre-write halt to the streaming arm is the named
+/// follow-on (it needs a streaming reconcile leg); it is NOT attempted
+/// here.
 [<RequireQualifiedAccess>]
 type ReverseLegRealization =
     | Streaming of journalDirectory: string option
@@ -34,6 +51,16 @@ module ReverseLegRealization =
     /// Pure and total over the request surface: every request lands on a
     /// realization or a NAMED refusal. The selector is deterministic from
     /// the request alone — testable without a connection.
+    ///
+    /// **NM-31 caveat.** `choose` selects on admissibility (table subset /
+    /// resumable / emission), NOT on drop-halt capability. The two
+    /// realizations it returns are NOT symmetric on the pre-write orphan
+    /// halt: only `Materialized` threads `allowDrops` into a pre-write
+    /// engine halt (its reconcile leg); `Streaming` is non-reconciling, so
+    /// `allowDrops` reaches only post-write narration/exit. See the type
+    /// docstring above. The selector does not — and is not asked to —
+    /// reconcile that asymmetry; the streaming pre-write halt is a named
+    /// follow-on, not built here.
     let choose
         (emission: EmissionMode)
         (resumable: bool)
@@ -1440,6 +1467,15 @@ module Transfer =
     /// report counts the resumed run's work; the journaled run reported its
     /// own drops (exit-9 semantics are per-run). `DryRun` reports the plan
     /// structure with zero counts — nothing is ingested.
+    ///
+    /// **NM-31 — no `allowDrops` parameter, by construction.** This runner
+    /// is the straight, non-reconciling streaming realization: it has no
+    /// reconcile leg and therefore NO pre-write reconcile-orphan halt to
+    /// gate. FK orphans surface POST-write as `SkippedReferences` (the run
+    /// face's `narrateDropExit` applies `--allow-drops` to the exit code);
+    /// the materialized runner's pre-write `allowDrops` halt (AC-I5) has no
+    /// counterpart here. A streaming pre-write halt is the named follow-on,
+    /// gated on a streaming reconcile leg that does not yet exist.
     let runStreamingWithRenames
         (mode: Mode)
         (allowCdc: bool)

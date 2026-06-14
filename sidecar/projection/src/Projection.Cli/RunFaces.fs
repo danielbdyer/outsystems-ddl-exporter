@@ -812,6 +812,13 @@ let runReverseLegTransfer
     let runBody () =
         let result =
             match realization with
+            // NM-31: the streaming runner takes NO `allowDrops` — it is
+            // non-reconciling and offers no pre-write orphan halt (only the
+            // materialized arm threads `allowDrops` into the engine). For the
+            // streaming arm `allowDrops` reaches only the POST-write
+            // `narrateDropExit` below. This is a capability asymmetry, not a
+            // silent drop (FK orphans still surface + exit-9); see
+            // `ReverseLegRealization` / `runStreamingWithRenames`.
             | ReverseLegRealization.Streaming journal ->
                 (Transfer.runStreamingReverseLegThroughConnections mode allowCdc journal connections logicalSourceContract physicalSinkContract)
                     .GetAwaiter().GetResult()
