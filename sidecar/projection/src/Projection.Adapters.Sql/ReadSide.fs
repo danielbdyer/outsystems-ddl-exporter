@@ -1189,23 +1189,28 @@ module ReadSide =
     /// `normalizeDefault`, the DEFAULT survives the emit → deploy → read
     /// round-trip on the `PhysicalColumn.Default` axis. Attributes without a
     /// recovered default keep `DefaultValue = None`.
+    // NM-30: the four `attach*` helpers are SYMMETRIC — none early-out on an
+    // empty map. An empty `defaults`/`computed` read is NOT special-cased away,
+    // because an empty permission-filtered `sys.default_constraints` read is
+    // indistinguishable from "genuinely no defaults"; short-circuiting one and
+    // walking the others let the two outcomes diverge silently. The uniform walk
+    // is identical in result (every `Map.tryFind` misses on an empty map) and
+    // removes the asymmetry; `attachAnnotations`/`attachIndexes` already walk.
     let private attachDefaults
         (defaults: Map<string * string * string, string>)
         (k: Kind)
         : Kind =
-        if Map.isEmpty defaults then k
-        else
-            let attrs =
-                k.Attributes
-                |> List.map (fun a ->
-                    let schemaStr, tableStr = TableId.qualifiedParts k.Physical
-                    let coord = (schemaStr, tableStr, ColumnRealization.columnNameText a.Column)
-                    match Map.tryFind coord defaults with
-                    | Some definition ->
-                        let normalized = PhysicalSchema.normalizeDefault definition
-                        { a with DefaultValue = Some (SqlLiteral.ofRaw a.Type normalized) }
-                    | None -> a)
-            { k with Attributes = attrs }
+        let attrs =
+            k.Attributes
+            |> List.map (fun a ->
+                let schemaStr, tableStr = TableId.qualifiedParts k.Physical
+                let coord = (schemaStr, tableStr, ColumnRealization.columnNameText a.Column)
+                match Map.tryFind coord defaults with
+                | Some definition ->
+                    let normalized = PhysicalSchema.normalizeDefault definition
+                    { a with DefaultValue = Some (SqlLiteral.ofRaw a.Type normalized) }
+                | None -> a)
+        { k with Attributes = attrs }
 
     /// Wave-1 slice 1.3 (L3-S7) — attach recovered computed-column configs to
     /// a Kind's attributes. `computed` maps `(schema, table, column)` to the
@@ -1218,20 +1223,20 @@ module ReadSide =
         (computed: Map<string * string * string, string * bool>)
         (k: Kind)
         : Kind =
-        if Map.isEmpty computed then k
-        else
-            let attrs =
-                k.Attributes
-                |> List.map (fun a ->
-                    let schemaStr, tableStr = TableId.qualifiedParts k.Physical
-                    let coord = (schemaStr, tableStr, ColumnRealization.columnNameText a.Column)
-                    match Map.tryFind coord computed with
-                    | Some (definition, isPersisted) ->
-                        match ComputedColumnConfig.create definition isPersisted with
-                        | Ok cc -> { a with Computed = Some cc }
-                        | Error _ -> a
-                    | None -> a)
-            { k with Attributes = attrs }
+        // NM-30: walks uniformly (no empty-map early-out) — symmetric with the
+        // other three `attach*` helpers.
+        let attrs =
+            k.Attributes
+            |> List.map (fun a ->
+                let schemaStr, tableStr = TableId.qualifiedParts k.Physical
+                let coord = (schemaStr, tableStr, ColumnRealization.columnNameText a.Column)
+                match Map.tryFind coord computed with
+                | Some (definition, isPersisted) ->
+                    match ComputedColumnConfig.create definition isPersisted with
+                    | Ok cc -> { a with Computed = Some cc }
+                    | Error _ -> a
+                | None -> a)
+        { k with Attributes = attrs }
 
     /// Wave-1 slice 1.3 — attach recovered triggers + CHECK constraints +
     /// extended properties to a Kind. Uses the Core smart constructors

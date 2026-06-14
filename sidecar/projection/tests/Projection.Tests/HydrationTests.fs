@@ -117,6 +117,18 @@ let ``WP6 step 4: diagnostics is silent when data emission is off`` () =
     let cfg = Config.defaultConfig |> withModel None (Some "model.json") |> dataOff
     Assert.Empty (Hydration.diagnostics cfg)
 
+[<Fact>]
+let ``NM-48: diagnostics names the skip for the both-absent model source (no path, no ossys) with data on`` () =
+    // The both-absent case (Ossys = None ∧ Path = None, data on) is refused
+    // upstream (pipeline.config.modelNoSource), so it is unreachable in the
+    // normal pipeline — but the pure `diagnostics` must NOT fall to a silent
+    // `[]` relying on that distant guard. It names the skip explicitly.
+    let cfg = Config.defaultConfig |> withModel None None
+    let ds = Hydration.diagnostics cfg
+    Assert.Equal (1, List.length ds)
+    Assert.Equal<string> ("data.hydration.skippedNoModelSource", ds.Head.Code)
+    Assert.Equal<DiagnosticSeverity> (DiagnosticSeverity.Warning, ds.Head.Severity)
+
 // ---------------------------------------------------------------------------
 // hydrateCatalog — the no-connection branches (identity).
 // ---------------------------------------------------------------------------

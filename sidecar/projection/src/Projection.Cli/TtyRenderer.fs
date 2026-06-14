@@ -367,17 +367,22 @@ let renderErrors (errors: ValidationError list) : unit =
 /// the move) to a writer — the catalog copy (`Voice.surfaceOf`) projected
 /// through the same `View` engine that draws the gate and the answer. The
 /// structured NDJSON channel (`LogSink.emit`) is unchanged; this is the human
-/// lens for a §6 proof / §3 verdict an executor narrates inline. An unvoiced
-/// code renders nothing (the caller falls back to its own narration).
+/// lens for a §6 proof / §3 verdict an executor narrates inline. NM-47: an
+/// UNVOICED code no longer renders nothing (an invisible operator verdict) — it
+/// falls back to a plain located narration of the raw code + payload
+/// (`Voice.fallbackSurface`), so a typo'd or newly-added face code is loud, not
+/// silent. The totality assertion pins every literal code passed here as voiced,
+/// keeping the fallback unreached in production.
 let renderVoicedTo (writer: System.IO.TextWriter) (code: string) (payload: Voice.Payload) : unit =
-    match Voice.surfaceOf code payload with
-    | None -> ()
-    | Some surface ->
-        let console =
-            AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(writer)))
-        let redirected =
-            if System.Object.ReferenceEquals(writer, Console.Error) then Console.IsErrorRedirected
-            elif System.Object.ReferenceEquals(writer, Console.Out) then Console.IsOutputRedirected
-            else true
-        if redirected then console.Profile.Width <- 100
-        View.write console (Surface.render surface)
+    let surface =
+        match Voice.surfaceOf code payload with
+        | Some surface -> surface
+        | None         -> Voice.fallbackSurface code payload
+    let console =
+        AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(writer)))
+    let redirected =
+        if System.Object.ReferenceEquals(writer, Console.Error) then Console.IsErrorRedirected
+        elif System.Object.ReferenceEquals(writer, Console.Out) then Console.IsOutputRedirected
+        else true
+    if redirected then console.Profile.Width <- 100
+    View.write console (Surface.render surface)

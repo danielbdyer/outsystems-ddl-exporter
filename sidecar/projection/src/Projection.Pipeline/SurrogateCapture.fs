@@ -51,6 +51,19 @@ module CaptureLane =
         | CaptureLane.StagedMergeOutputInto -> "staged-merge-output-into"
         | CaptureLane.RowwiseScopeIdentity  -> "rowwise-scope-identity"
 
+    /// The descent suffix of the ladder starting AT `preferred` (inclusive) — the
+    /// rungs `captureChunkDescending` will try, fastest first. NM-49: TOTAL — a
+    /// `preferred` not present in the ladder yields the FULL ladder (the maximally
+    /// conservative descent from the head), never the empty tail that the raw
+    /// `skipWhile` produced (which the descent loop mislabels "capture ladder
+    /// exhausted", masking the unknown-preferred-lane cause). With the closed
+    /// `CaptureLane` DU and a complete ladder, the miss does not arise — this
+    /// keeps the positioning structural rather than positional regardless.
+    let ladderFrom (preferred: CaptureLane) : CaptureLane list =
+        match ladder |> List.skipWhile (fun l -> l <> preferred) with
+        | []       -> ladder
+        | fromHere -> fromHere
+
 /// One recorded rung descent: the kind, the rung the sink refused, the
 /// rung that took over, and the SQL error number that named the refusal.
 /// Surfaced on the `TransferReport` — a degraded lane is a NAMED outcome,
@@ -295,4 +308,7 @@ module SurrogateCapture =
                             attempt rest
                                 ({ Kind = kindKey; From = lane; To = next; SqlErrorNumber = ex.Number } :: descents)
             }
-        attempt (CaptureLane.ladder |> List.skipWhile (fun l -> l <> preferred)) []
+        // NM-49: position the descent at `preferred` via the TOTAL `ladderFrom`
+        // (an unknown preferred lane begins at the ladder head, never the empty
+        // tail that `attempt` would mislabel "capture ladder exhausted").
+        attempt (CaptureLane.ladderFrom preferred) []

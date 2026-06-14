@@ -75,7 +75,21 @@ module Hydration =
                         DiagnosticSeverity.Warning
                         "data.hydration.skippedNoLiveSource"
                         "data emission is on but the model has no live OSSYS source: it is read from model.path (the osm_model.json fallback), not model.ossys. Static-entity rows can only be hydrated from a live connection, so the data lanes emit only catalog-resident populations. Set model.ossys (an env: or file: connection ref) to hydrate." ]
-                | None -> []
+                | None ->
+                    // NM-48: the BOTH-ABSENT case (Ossys = None ∧ Path = None,
+                    // data on). The model has no source at all — a degenerate
+                    // config the upstream model-read refuses (`modelNoSource`),
+                    // so this branch is UNREACHABLE in the normal pipeline. The
+                    // "named skip, never silence" law does not get to rely on a
+                    // distant guard: rather than fall to a silent `[]`, name the
+                    // skip explicitly so an out-of-pipeline caller of this pure
+                    // function (or a future path that bypasses the guard) sees a
+                    // diagnostic, not nothing.
+                    [ DiagnosticEntry.create
+                        "data:hydration"
+                        DiagnosticSeverity.Warning
+                        "data.hydration.skippedNoModelSource"
+                        "data emission is on but the model declares no source at all (neither model.path nor model.ossys). The model read refuses this configuration upstream (pipeline.config.modelNoSource); if it is reached here, no rows can be hydrated and the data lanes emit nothing. Set model.ossys (to hydrate) or model.path (catalog-resident populations only)." ]
 
     /// Stream the static-marked kinds' rows from an open OSSYS connection and
     /// graft them. Scoped to the static kinds via `Ingestion.collectInOrderFor`
