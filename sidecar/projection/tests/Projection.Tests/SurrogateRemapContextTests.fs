@@ -96,6 +96,46 @@ let ``IdentityDisposition.ofKind is PreservedFromSource for a kind with no prima
     Assert.Equal (IdentityDisposition.PreservedFromSource, IdentityDisposition.ofKind k)
 
 // ---------------------------------------------------------------------------
+// NM-26 — `needsIdentityInsert` is the single-sourced SET IDENTITY_INSERT
+// bracketing predicate shared by StaticPopulation / StaticSeeds /
+// MigrationDependencies. It is DELIBERATELY broader than `ofKind`'s
+// AssignedBySink (PK-IDENTITY): `IDENTITY_INSERT` is required whenever the
+// INSERT supplies a value for ANY identity column, PK or not. The two
+// questions ("does the sink mint the PK?" vs "must we bracket the INSERT?")
+// answer differently for a kind with a non-PK identity column — exactly the
+// shape that diverged silently before NM-26.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``NM-26: needsIdentityInsert is true when the PK is an identity column`` () =
+    let k = kindWithPk "OSUSR_AUTONUMBER" true
+    Assert.True (IdentityDisposition.needsIdentityInsert k)
+
+[<Fact>]
+let ``NM-26: needsIdentityInsert is false when no attribute is an identity column`` () =
+    let k = kindWithPk "OSUSR_BUSINESSKEY" false
+    Assert.False (IdentityDisposition.needsIdentityInsert k)
+
+[<Fact>]
+let ``NM-26: needsIdentityInsert is true for a NON-PK identity column where ofKind is PreservedFromSource`` () =
+    // The divergence point: a natural/business PK plus an OutSystems
+    // autonumber surrogate. `ofKind` reads PreservedFromSource (the PK is
+    // not identity), but the all-column INSERT still writes the identity
+    // column, so SQL Server requires the bracket. needsIdentityInsert is
+    // the SQL-correct predicate; the two answers MUST differ here.
+    let nonPkIdentity =
+        { Attribute.create (mkSsKey [ "K"; "Seq" ]) (mkName "Seq") Integer with
+            IsPrimaryKey = false
+            IsIdentity   = true }
+    let pk =
+        { Attribute.create (mkSsKey [ "K"; "Code" ]) (mkName "Code") Text with
+            IsPrimaryKey = true
+            IsIdentity   = false }
+    let k = Kind.create (mkSsKey [ "K" ]) (mkName "K") (physical "OSUSR_K") [ pk; nonPkIdentity ]
+    Assert.True (IdentityDisposition.needsIdentityInsert k)
+    Assert.Equal (IdentityDisposition.PreservedFromSource, IdentityDisposition.ofKind k)
+
+// ---------------------------------------------------------------------------
 // SurrogateRemapContext.empty + accessors.
 // ---------------------------------------------------------------------------
 

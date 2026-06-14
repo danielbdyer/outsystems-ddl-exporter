@@ -142,10 +142,56 @@ let ``DecisionLogEmitter.emit drops entries with SsKey = None (catalog-level ent
     let artifact = DecisionLogEmitter.emit sampleCatalog [ entry ] |> mustOk
     let map = ArtifactByKind.toMap artifact
     // Every kind's entries array is empty (the catalog-level entry
-    // bucket is slice η surface, not slice α).
+    // bucket is slice η surface, not slice α). The artifact bytes are
+    // unchanged by NM-23 — the shed is witnessed on the diagnostics
+    // channel, not by mutating the per-kind documents.
     for (KeyValue (_, doc)) in map do
         let entries = requireArr "entries" doc["entries"]
         Assert.Equal (0, entries.Count)
+
+// ---------------------------------------------------------------------------
+// NM-23 — the catalog-level (SsKey = None) shed is witnessed, not silent.
+// The per-kind artifact still cannot carry catalog-level entries (the bytes
+// above are unchanged), but `catalogLevelShedWitness` now names the loss so
+// the audit channel does not silently drop catalog-level decisions.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``NM-23: catalogLevelShedWitness names every shed SsKey = None entry with a count`` () =
+    let entries =
+        [ mkEntry DiagnosticSeverity.Warning "boundary" "adapter.unscoped.a" "no SsKey a" None
+          mkEntry DiagnosticSeverity.Info    "boundary" "adapter.unscoped.b" "no SsKey b" None ]
+    match DecisionLogEmitter.catalogLevelShedWitness entries with
+    | None -> Assert.Fail "expected a shed witness for two catalog-level entries"
+    | Some w ->
+        Assert.Equal<string> ("emit.decisionLog.catalogLevelEntriesShed", w.Code)
+        Assert.Equal (DiagnosticSeverity.Warning, w.Severity)
+        Assert.True (Option.isNone w.SsKey)
+        Assert.Equal<string> ("2", Map.find "shedCount" w.Metadata)
+        // Codes are sorted + newline-joined for byte-determinism.
+        Assert.Equal<string> ("adapter.unscoped.a\nadapter.unscoped.b", Map.find "shedCodes" w.Metadata)
+
+[<Fact>]
+let ``NM-23: catalogLevelShedWitness is None when no catalog-level entry is shed`` () =
+    let customer = Catalog.allKinds sampleCatalog |> List.head
+    let entries =
+        [ mkEntry DiagnosticSeverity.Warning "p" "test.scoped" "scoped" (Some customer.SsKey) ]
+    Assert.True (Option.isNone (DecisionLogEmitter.catalogLevelShedWitness entries))
+
+[<Fact>]
+let ``NM-23: catalogLevelShedWitness witness count matches the shed entries dropped from the per-kind artifact`` () =
+    let customer = Catalog.allKinds sampleCatalog |> List.head
+    let scoped = mkEntry DiagnosticSeverity.Info "p" "test.scoped" "scoped" (Some customer.SsKey)
+    let unscoped1 = mkEntry DiagnosticSeverity.Warning "b" "adapter.unscoped.x" "no SsKey x" None
+    let unscoped2 = mkEntry DiagnosticSeverity.Error   "b" "adapter.unscoped.y" "no SsKey y" None
+    let all = [ scoped; unscoped1; unscoped2 ]
+    // The scoped entry lands in the per-kind doc; the two unscoped are shed.
+    let artifact = DecisionLogEmitter.emit sampleCatalog all |> mustOk
+    let customerDoc = ArtifactByKind.toMap artifact |> Map.find customer.SsKey
+    Assert.Equal (1, (requireArr "entries" customerDoc["entries"]).Count)
+    match DecisionLogEmitter.catalogLevelShedWitness all with
+    | None -> Assert.Fail "expected a shed witness"
+    | Some w -> Assert.Equal<string> ("2", Map.find "shedCount" w.Metadata)
 
 // ---------------------------------------------------------------------------
 // JSON shape: severity / source / code / message / ssKey / metadata.

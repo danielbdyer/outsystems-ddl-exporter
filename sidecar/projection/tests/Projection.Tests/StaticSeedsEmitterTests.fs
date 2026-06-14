@@ -2,6 +2,7 @@ module Projection.Tests.StaticSeedsEmitterTests
 
 open Xunit
 open Projection.Core
+open Projection.Targets.SSDT
 open Projection.Targets.Data
 open Projection.Tests.Fixtures
 
@@ -707,3 +708,78 @@ let ``AC-D7: no scope is byte-identical to the established upsert-only emit`` ()
     let viaExplicitNone =
         StaticSeedsEmitter.emitWithTopoWith None (topoOf catalog) catalog Profile.empty |> mustOkEmit
     Assert.Equal<Map<SsKey, DataInsertScript>>(ArtifactByKind.toMap viaDefault, ArtifactByKind.toMap viaExplicitNone)
+
+// ---------------------------------------------------------------------------
+// NM-26 — StaticPopulation + StaticSeeds agree on IDENTITY_INSERT bracketing.
+// Both now route through `IdentityDisposition.needsIdentityInsert` (any
+// IsIdentity attr), so on the same kind they bracket identically. The
+// load-bearing case is a NON-PK identity column (a business PK + an
+// OutSystems autonumber surrogate): pre-NM-26 StaticSeeds gated on
+// AssignedBySink (PK-IDENTITY only) and silently FAILED to bracket it — a
+// deploy rejection of the same family as NM-25.
+// ---------------------------------------------------------------------------
+
+/// A static kind whose PK is a business/natural key (Code TEXT) plus a
+/// non-PK IDENTITY surrogate column (Seq). `IdentityDisposition.ofKind`
+/// reads PreservedFromSource; `needsIdentityInsert` reads true.
+let private mkNonPkIdentityKind () : Kind =
+    let kindKey = mkKey ["TestModule"; "Region"]
+    let codeKey = mkKey ["TestModule"; "Region"; "Code"]
+    let seqKey  = mkKey ["TestModule"; "Region"; "Seq"]
+    let nameKey = mkKey ["TestModule"; "Region"; "Name"]
+    let row code seq name =
+        { Identifier = mkKey ["TestModule"; "Region"; "Row"; code]
+          Values =
+              Map.ofList
+                  [ mkName "Code", code
+                    mkName "Seq",  seq
+                    mkName "Name", name ] }
+    {
+        SsKey    = kindKey
+        Name     = mkName "Region"
+        Origin   = Native
+        Modality = [ Static [ row "EMEA" "1" "Europe"
+                              row "APAC" "2" "Asia Pacific" ] ]
+        Physical = mkTableId "dbo" "OSUSR_TEST_REGION"
+        Attributes =
+            [
+                { Attribute.create codeKey (mkName "Code") Text with Column = ColumnRealization.create ("CODE") (false) |> Result.value; IsPrimaryKey = true; IsMandatory = true }
+                { Attribute.create seqKey (mkName "Seq") Integer with Column = ColumnRealization.create ("SEQ") (false) |> Result.value; IsMandatory = true; IsIdentity = true }
+                { Attribute.create nameKey (mkName "Name") Text with Column = ColumnRealization.create ("NAME") (false) |> Result.value; IsMandatory = true }
+            ]
+        References = []
+        Indexes    = []
+        Description = None
+        IsActive = true
+        Triggers = []
+        ColumnChecks = []
+        ExtendedProperties = []
+        }
+
+/// True iff `StaticPopulationEmitter.statements` brackets this catalog's
+/// rows with `SetIdentityInsert` toggles.
+let private populationBrackets (catalog: Catalog) : bool =
+    StaticPopulationEmitter.statements catalog
+    |> Seq.exists (function SetIdentityInsert _ -> true | _ -> false)
+
+/// True iff `StaticSeedsEmitter.emit` renders a `SET IDENTITY_INSERT`
+/// bracket for the given kind.
+let private seedsBracket (catalog: Catalog) (kindKey: SsKey) : bool =
+    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let rendered = (ArtifactByKind.toMap artifact |> Map.find kindKey).Rendered
+    rendered.Contains "IDENTITY_INSERT"
+
+[<Fact>]
+let ``NM-26: StaticPopulation and StaticSeeds agree on a NON-PK identity kind (both bracket)`` () =
+    let region = mkNonPkIdentityKind ()
+    let catalog = mkCatalog [ region ]
+    Assert.True (populationBrackets catalog, "StaticPopulation must bracket the non-PK identity column")
+    Assert.True (seedsBracket catalog region.SsKey, "StaticSeeds must bracket the non-PK identity column (NM-26 fix)")
+
+[<Fact>]
+let ``NM-26: StaticPopulation and StaticSeeds agree on a non-identity kind (neither brackets)`` () =
+    // Country here has no IsIdentity attribute — neither emitter brackets.
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    Assert.False (populationBrackets catalog)
+    Assert.False (seedsBracket catalog country.SsKey)

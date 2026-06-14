@@ -82,6 +82,30 @@ module IdentityDisposition =
         if pkIsIdentity then IdentityDisposition.AssignedBySink
         else IdentityDisposition.PreservedFromSource
 
+    /// NM-26 — the SINGLE-SOURCED `SET IDENTITY_INSERT` bracketing
+    /// predicate shared by every data emitter (`StaticPopulationEmitter`,
+    /// `StaticSeedsEmitter`, `MigrationDependenciesEmitter`).
+    ///
+    /// **Why this is `IsIdentity` over `IsPrimaryKey && IsIdentity`.**
+    /// The disposition split (`AssignedBySink` ⇔ PK-is-IDENTITY) answers
+    /// a DIFFERENT question — "does the sink mint the surrogate, so a
+    /// remap is needed?" — and is correct for THAT. But the SQL Server
+    /// requirement for `SET IDENTITY_INSERT [t] ON` is narrower in
+    /// meaning and broader in scope: it is required whenever an `INSERT`
+    /// supplies an explicit value for the table's IDENTITY column,
+    /// *whether or not that column is the primary key*. A table has at
+    /// most one IDENTITY column; the emitters insert ALL columns from
+    /// the same static-population rows (`orderedColumnNames`), so a kind
+    /// with a NON-PK identity column (a natural/business PK plus an
+    /// OutSystems autonumber surrogate) still writes into the IDENTITY
+    /// column and SQL Server rejects the `INSERT`/`MERGE` without the
+    /// bracket. `AssignedBySink` misses exactly that kind. Routing every
+    /// emitter through this predicate makes the three siblings agree by
+    /// construction (T11) and closes the deploy-rejection hazard NM-25
+    /// named for the PK case, here for the non-PK case.
+    let needsIdentityInsert (kind: Kind) : bool =
+        kind.Attributes |> List.exists (fun a -> a.IsIdentity)
+
 
 /// Per-kind Source→target surrogate mapping. Outer key: the kind's
 /// `SsKey`. Inner: `SourceKey` → `AssignedKey`. Acquired by Transfer's
