@@ -101,6 +101,15 @@ type ColumnProfile = {
     RowCount             : int64
     /// Rows where this column was NULL.
     NullCount            : int64
+    /// The maximum observed STORAGE length of this column's values across
+    /// the sampled rows — `MAX(LEN(col))` for text, `MAX(DATALENGTH(col))`
+    /// for binary. `None` when the axis was not probed (a non-text/binary
+    /// column, or a profiler that did not run the length probe). Drives the
+    /// fidelity report's "Length / type overflow" violation category: an
+    /// observed length exceeding the declared `Attribute.Length` is a data
+    /// contradiction the declared model cannot hold (T16 / "nothing lost in
+    /// silence" — the declared cap is shorter than reality).
+    MaxObservedLength    : int option
     /// Probe metadata.
     NullCountProbeStatus : ProbeStatus
 }
@@ -179,8 +188,20 @@ module ColumnProfile =
                     AttributeKey         = attributeKey
                     RowCount             = rowCount
                     NullCount            = nullCount
+                    MaxObservedLength    = None
                     NullCountProbeStatus = probeStatus
                 }
+
+    /// Attach the max-observed-length axis to a column profile (the
+    /// LiveProfiler overrides via this setter once the `MAX(LEN(col))` /
+    /// `MAX(DATALENGTH(col))` probe completes). `create` leaves the axis
+    /// `None` (minimum-evidence default); a negative observation is
+    /// clamped to `0` (a length is non-negative by construction). Mirrors
+    /// the `AttributeReality.create` + record-update precedent — the
+    /// invariant (`MaxObservedLength ≥ 0`) is single-sourced here so no
+    /// caller can attach a negative length.
+    let withMaxObservedLength (maxLength: int) (p: ColumnProfile) : ColumnProfile =
+        { p with MaxObservedLength = Some (max 0 maxLength) }
 
     /// Fraction of observed rows that were NULL. `None` when no rows were
     /// observed (degenerate case; consumers default to conservative
@@ -1145,9 +1166,20 @@ module Profile =
           Outcome       = outcome }
 
     let private mergeColumnProfile (a: ColumnProfile) (b: ColumnProfile) : ColumnProfile =
+        // Max-observed-length is a worst-case witness: the larger of two
+        // observations is the one that can overflow a declared cap, so the
+        // union takes the MAX (mirroring RowCount / NullCount). `None` is the
+        // no-evidence identity — a present observation always wins over absence.
+        let mergedMaxLen =
+            match a.MaxObservedLength, b.MaxObservedLength with
+            | Some x, Some y -> Some (max x y)
+            | Some x, None   -> Some x
+            | None, Some y   -> Some y
+            | None, None     -> None
         { AttributeKey         = a.AttributeKey
           RowCount             = max a.RowCount b.RowCount
           NullCount            = max a.NullCount b.NullCount
+          MaxObservedLength    = mergedMaxLen
           NullCountProbeStatus = mergeProbeStatus a.NullCountProbeStatus b.NullCountProbeStatus }
 
     let private mergeUniqueCandidate (a: UniqueCandidateProfile) (b: UniqueCandidateProfile) : UniqueCandidateProfile =

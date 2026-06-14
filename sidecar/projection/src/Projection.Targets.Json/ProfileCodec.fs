@@ -82,6 +82,12 @@ module ProfileCodec =
         wField jw "attributeKey" wSsKeyVal c.AttributeKey
         jw.WriteNumber("rowCount", c.RowCount)
         jw.WriteNumber("nullCount", c.NullCount)
+        // The max-observed-length axis is optional evidence — written only when
+        // the profiler probed it, so a profile without it round-trips to `None`
+        // (the no-evidence identity) rather than a spurious `Some 0`.
+        match c.MaxObservedLength with
+        | Some len -> jw.WriteNumber("maxObservedLength", len)
+        | None     -> ()
         wField jw "probeStatus" wProbeStatus c.NullCountProbeStatus
         jw.WriteEndObject()
 
@@ -333,8 +339,13 @@ module ProfileCodec =
         field el "attributeKey" readSsKey |> Result.bind (fun key ->
         field el "rowCount" asInt64 |> Result.bind (fun rc ->
         field el "nullCount" asInt64 |> Result.bind (fun nc ->
+        optField el "maxObservedLength" asInt |> Result.bind (fun maxLen ->
         field el "probeStatus" readProbeStatus |> Result.bind (fun ps ->
-        ColumnProfile.create key rc nc ps))))
+        ColumnProfile.create key rc nc ps
+        |> Result.map (fun cp ->
+            match maxLen with
+            | Some len -> ColumnProfile.withMaxObservedLength len cp
+            | None     -> cp))))))
 
     let private readUniqueCandidate (el: JsonElement) : Result<UniqueCandidateProfile> =
         field el "attributeKey" readSsKey |> Result.bind (fun key ->

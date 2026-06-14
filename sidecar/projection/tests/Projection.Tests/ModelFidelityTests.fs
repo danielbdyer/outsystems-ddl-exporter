@@ -148,6 +148,93 @@ let ``ModelFidelity: a column whose NULLs are absent is not a violation`` () =
             match v.Kind with ModelFidelity.NotNullButNullsPresent _ -> true | _ -> false)
     Assert.Empty(notNull)
 
+// -- Length / type overflow (the max-observed-length axis) ------------------
+//   A catalog whose Email column declares a finite VARCHAR(50) cap; the
+//   profiled MaxObservedLength decides whether the source overflows it.
+
+let private cappedCustomer (declaredLength: int) : Kind =
+    let emailAttr =
+        { mkAttr custEmailKey "Email" Text false false with Length = Some declaredLength }
+    { Kind.create customerKey (name "Customer") (tableId "OSUSR_CUSTOMER")
+        [ mkAttr custIdKey "Id" Integer true false
+          emailAttr ]
+        with Indexes = [] }
+
+let private cappedCatalog (declaredLength: int) : Catalog =
+    let salesModule =
+        Module.create (modKey "Sales") (name "Sales") [ cappedCustomer declaredLength ] true []
+        |> mustOk
+    Catalog.create [ salesModule ] [] |> mustOk
+
+let private columnWithMaxLength (key: SsKey) (rows: int64) (maxLength: int) : ColumnProfile =
+    ColumnProfile.create key rows 0L ProbeStatus.noProbeRun
+    |> mustOk
+    |> ColumnProfile.withMaxObservedLength maxLength
+
+[<Fact>]
+let ``ModelFidelity: an observed length exceeding the declared length is an overflow violation`` () =
+    // Email declared VARCHAR(50); the source carries a value 80 chars long.
+    let catalog = cappedCatalog 50
+    let profile = { Profile.empty with Columns = [ columnWithMaxLength custEmailKey 100L 80 ] }
+    let report = ModelFidelity.compose "ACME" catalog profile { Decisions = [] } []
+    let overflows =
+        report.DataViolations
+        |> List.choose (fun v ->
+            match v.Kind with
+            | ModelFidelity.LengthOrTypeOverflow (observed, declared) -> Some (v.Reference, observed, declared)
+            | _ -> None)
+    match overflows with
+    | [ (reference, observed, declared) ] ->
+        Assert.Equal("Customer", reference.Entity)
+        Assert.Equal("Email", reference.Column)
+        Assert.Equal("80", observed)
+        Assert.Equal("50", declared)
+    | other -> Assert.Fail(sprintf "expected exactly one overflow violation, got %A" other)
+
+[<Fact>]
+let ``ModelFidelity: an observed length within the declared length is not an overflow violation`` () =
+    // Email declared VARCHAR(50); the source's longest value is 40 chars — fits.
+    let catalog = cappedCatalog 50
+    let profile = { Profile.empty with Columns = [ columnWithMaxLength custEmailKey 100L 40 ] }
+    let report = ModelFidelity.compose "ACME" catalog profile { Decisions = [] } []
+    let overflows =
+        report.DataViolations
+        |> List.filter (fun v ->
+            match v.Kind with ModelFidelity.LengthOrTypeOverflow _ -> true | _ -> false)
+    Assert.Empty(overflows)
+
+[<Fact>]
+let ``ModelFidelity: an observed length exactly at the declared length is not an overflow violation`` () =
+    // Boundary — observed = declared is a fit, not an overflow (strict >).
+    let catalog = cappedCatalog 50
+    let profile = { Profile.empty with Columns = [ columnWithMaxLength custEmailKey 100L 50 ] }
+    let report = ModelFidelity.compose "ACME" catalog profile { Decisions = [] } []
+    let overflows =
+        report.DataViolations
+        |> List.filter (fun v ->
+            match v.Kind with ModelFidelity.LengthOrTypeOverflow _ -> true | _ -> false)
+    Assert.Empty(overflows)
+
+[<Fact>]
+let ``ModelFidelity: an open-ended (MAX) declared length never overflows regardless of observed length`` () =
+    // Email declared with Length = None (VARCHAR(MAX) / open-ended); even a
+    // very long observed value cannot overflow an absent cap.
+    let openEndedCustomer =
+        { Kind.create customerKey (name "Customer") (tableId "OSUSR_CUSTOMER")
+            [ mkAttr custIdKey "Id" Integer true false
+              mkAttr custEmailKey "Email" Text false false ]  // Length = None
+            with Indexes = [] }
+    let salesModule =
+        Module.create (modKey "Sales") (name "Sales") [ openEndedCustomer ] true [] |> mustOk
+    let catalog = Catalog.create [ salesModule ] [] |> mustOk
+    let profile = { Profile.empty with Columns = [ columnWithMaxLength custEmailKey 100L 5000 ] }
+    let report = ModelFidelity.compose "ACME" catalog profile { Decisions = [] } []
+    let overflows =
+        report.DataViolations
+        |> List.filter (fun v ->
+            match v.Kind with ModelFidelity.LengthOrTypeOverflow _ -> true | _ -> false)
+    Assert.Empty(overflows)
+
 [<Fact>]
 let ``ModelFidelity: the rolled-up text leads with the estate masthead and the data-violation total`` () =
     let report = ModelFidelity.compose "ACME" fixtureCatalog profiledEvidence { Decisions = [] } []

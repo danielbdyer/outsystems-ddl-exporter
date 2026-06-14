@@ -217,6 +217,7 @@ let private nullabilityProfileWithNullsBeyondBudget : Profile =
             { AttributeKey         = mandatoryAttributeKey
               RowCount             = 100L
               NullCount            = 12L
+              MaxObservedLength = None
               NullCountProbeStatus = probe } ] }
 
 let private nullabilityPolicyForOpportunity : Policy =

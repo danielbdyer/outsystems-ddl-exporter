@@ -227,6 +227,7 @@ let private mkColProfile (attrKey: SsKey) (rowCount: int64) (nullCount: int64) :
     { AttributeKey         = attrKey
       RowCount             = rowCount
       NullCount            = nullCount
+      MaxObservedLength = None
       NullCountProbeStatus = probe }
 
 [<Fact>]

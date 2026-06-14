@@ -382,3 +382,23 @@ module Tolerance =
                     | Some d -> loop (Set.add d acc) rest
                     | None -> Error (UnknownDivergence token)
         loop Set.empty tokens
+
+    /// The per-run **tolerance residual**: the subset of THIS tolerance that a
+    /// canary round-trip actually *consumed* — the divergences both configured
+    /// as accepted (`tolerates`) AND observed firing during the comparison
+    /// (`observed`). The intersection is the R6 honesty cut: a divergence in
+    /// the config that never fired is not part of the run's witnessed residual
+    /// (the report must not claim a tolerance fired when it did not), and a
+    /// divergence that fired but is NOT configured-tolerated is a canary
+    /// FAILURE (it blocks), so it is excluded here too — the residual is, by
+    /// construction, the set of accepted-AND-fired divergences.
+    ///
+    /// A clean round-trip (`observed = ∅`) yields `Tolerance.strict`. This is
+    /// the value `Episode.withProvenance` records and `ModelFidelity
+    /// .withAcceptedDivergences` surfaces for a canary-coupled run; the canary
+    /// collects `observed` at the per-axis application sites (the empty-text →
+    /// NULL normalization, the char-padding / decimal-scale predicate, the
+    /// index-options / composite-FK structural residual) — see
+    /// `CanaryResidual.collect`.
+    let matchedResidual (observed: Set<ToleratedDivergence>) (t: Tolerance) : Tolerance =
+        Set.intersect (divergences t) observed |> ofSet

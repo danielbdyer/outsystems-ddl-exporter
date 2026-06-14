@@ -132,6 +132,20 @@ module CachedValue =
         | StringValue s -> Some s
         | _             -> None
 
+    /// The observed STORAGE length of one cell — the pure-F# twin of SQL's
+    /// `LEN` (text) / `DATALENGTH` (binary), derived from the sampled value
+    /// rather than a separate SQL probe (the discover-once / derive-pure
+    /// pattern). `StringValue` → character length; `BinaryValue` → byte
+    /// length; every other variant (numeric / date / NULL) carries no
+    /// length axis → `None`. Feeds the `MaxObservedLength` column-profile
+    /// axis, which the fidelity report's "Length / type overflow" category
+    /// compares against the declared `Attribute.Length`.
+    let observedLength (v: CachedValue) : int option =
+        match v with
+        | StringValue s -> Some s.Length
+        | BinaryValue b -> Some b.Length
+        | _             -> None
+
 
 /// One column's sampled cell-values plus metadata. Column-oriented
 /// for cheap iteration over single-column aggregates.

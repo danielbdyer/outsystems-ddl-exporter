@@ -38,7 +38,10 @@ let ``round-trip: the empty profile`` () =
 let ``round-trip: every axis populated (totality)`` () =
     let p : Profile =
         { Columns =
+            // c1 carries the max-observed-length axis (so the round trip exercises
+            // it); c2 leaves it `None` (so the absent-axis case round-trips too).
             [ ColumnProfile.create (aKey "c1") 100L 5L (probe 100L) |> value
+              |> ColumnProfile.withMaxObservedLength 128
               ColumnProfile.create (aKey "c2") 100L 0L (probe 100L) |> value ]
           UniqueCandidates =
             [ { UniqueCandidateProfile.create (aKey "c2") with HasDuplicate = true; ProbeStatus = probe 100L } ]

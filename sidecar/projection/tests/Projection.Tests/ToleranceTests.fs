@@ -273,3 +273,31 @@ let ``AC-D6: a representation-tolerant environment passes Char/Decimal divergenc
     Assert.True(Tolerance.tolerates ToleratedDivergence.DecimalScaleTolerated tolerant)
     Assert.False(Tolerance.tolerates ToleratedDivergence.CharAnsiPaddingTolerated strict)
     Assert.False(Tolerance.tolerates ToleratedDivergence.DecimalScaleTolerated strict)
+
+// ---------------------------------------------------------------------------
+// matchedResidual — the per-run residual the canary collector resolves
+// against the configured tolerance (closes the NM-32/33 provenance FLAG).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``matchedResidual: the accepted-AND-fired intersection is the run's residual`` () =
+    // Configured to accept empty-text + char-padding; the canary observed
+    // empty-text + decimal-scale firing. The residual is the intersection:
+    // empty-text alone (accepted AND fired).
+    let configured =
+        Tolerance.ofSet (Set.ofList
+            [ ToleratedDivergence.EmptyTextNormalizedToNull
+              ToleratedDivergence.CharAnsiPaddingTolerated ])
+    let observed =
+        Set.ofList
+            [ ToleratedDivergence.EmptyTextNormalizedToNull
+              ToleratedDivergence.DecimalScaleTolerated ]
+    let residual = Tolerance.matchedResidual observed configured
+    Assert.Equal<Set<ToleratedDivergence>>(
+        Set.ofList [ ToleratedDivergence.EmptyTextNormalizedToNull ],
+        Tolerance.divergences residual)
+
+[<Fact>]
+let ``matchedResidual: nothing observed resolves to strict`` () =
+    let configured = Tolerance.ofSet (Set.ofList [ ToleratedDivergence.EmptyTextNormalizedToNull ])
+    Assert.True(Tolerance.isStrict (Tolerance.matchedResidual Set.empty configured))

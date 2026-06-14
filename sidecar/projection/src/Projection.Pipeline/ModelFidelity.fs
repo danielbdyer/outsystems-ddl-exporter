@@ -269,16 +269,35 @@ module ModelFidelity =
                           Kind = ForeignKeyOrphans fk.OrphanCount }
                 | _ -> None))
 
-    /// Length / type overflow — declared `Length` / type vs the profiled
-    /// maximum. FLAGGED: scoped to the empty list today. The string-length leg
-    /// is unreachable from the Profile — no axis surfaces max-observed-string-
-    /// length (the `EvidenceCache` holds the raw values, but no derivation
-    /// projects the max length). The category exists in the rollup so the
-    /// section is present and honest about its current reach; it fills when a
-    /// `max-observed-length` Profile axis lands (an IR-grows-under-evidence
-    /// slice).
-    let private overflowViolations (_catalog: Catalog) (_profile: Profile) : DataViolation list =
-        []
+    /// Length / type overflow — declared `Attribute.Length` vs the profiled
+    /// `ColumnProfile.MaxObservedLength`. A violation fires when the source
+    /// carries a value LONGER than the declared cap: the declared model
+    /// asserts a width the data exceeds, so the declaration cannot hold the
+    /// reality. Scoped to attributes that declare a finite `Length` (a `None`
+    /// declared length is MAX / open-ended — no cap to overflow) and that
+    /// carry a probed `MaxObservedLength` (a non-text/binary column, or an
+    /// unprobed one, surfaces no length axis → no violation). The `observed`
+    /// / `declared` tokens render the proof beside the finding.
+    let private overflowViolations (catalog: Catalog) (profile: Profile) : DataViolation list =
+        catalog
+        |> Catalog.allKinds
+        |> List.collect (fun kind ->
+            kind.Attributes
+            |> List.choose (fun attr ->
+                match attr.Length with
+                | None -> None  // MAX / not-length-applicable — no cap to overflow.
+                | Some declared ->
+                    Profile.tryFindColumn attr.SsKey profile
+                    |> Option.bind (fun c -> c.MaxObservedLength)
+                    |> Option.bind (fun observed ->
+                        if observed > declared then
+                            Some
+                                { Reference = entityColumnOf kind attr
+                                  Kind =
+                                    LengthOrTypeOverflow (
+                                        observed = string observed,
+                                        declared = string declared) }
+                        else None)))
 
     /// Aggregate the data-violation section from a declared catalog × profiled
     /// evidence. Deterministic — sorted by category then operator-facing

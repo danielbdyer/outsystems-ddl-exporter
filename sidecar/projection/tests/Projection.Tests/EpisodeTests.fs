@@ -127,3 +127,15 @@ let ``EpisodicLifecycle.schemaEvolutionChain has one edge per consecutive pair``
     let chain = EpisodicLifecycle.schemaEvolutionChain devChain |> mustOk
     Assert.Equal(1, List.length chain)
     Assert.Equal(1, CatalogDiff.norm (List.head chain))
+
+[<Fact>]
+let ``Episode.withProvenance carries a canary-resolved tolerance residual (closes the NM-32 placeholder)`` () =
+    // A canary-coupled run resolves a non-strict residual (the empty-text → NULL
+    // erasure fired and was accepted); withProvenance records it on the episode,
+    // replacing the Tolerance.strict placeholder.
+    let residual = Tolerance.ofSet (Set.ofList [ ToleratedDivergence.EmptyTextNormalizedToNull ])
+    let withProv = Episode.withProvenance residual [] e0
+    Assert.False(Tolerance.isStrict withProv.Tolerances)
+    Assert.True(Tolerance.tolerates ToleratedDivergence.EmptyTextNormalizedToNull withProv.Tolerances)
+    // The genesis episode itself stays strict (the honest no-canary base case).
+    Assert.True(Tolerance.isStrict e0.Tolerances)

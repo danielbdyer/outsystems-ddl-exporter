@@ -36,6 +36,7 @@ let customerIdProfile : ColumnProfile = {
     AttributeKey         = customerIdAttrKey
     RowCount             = 100L
     NullCount            = 0L
+    MaxObservedLength = None
     NullCountProbeStatus = succeededProbe 100L
 }
 
@@ -43,6 +44,7 @@ let customerNameProfile : ColumnProfile = {
     AttributeKey         = customerNameKey
     RowCount             = 100L
     NullCount            = 2L
+    MaxObservedLength = None
     NullCountProbeStatus = succeededProbe 100L
 }
 
@@ -50,6 +52,7 @@ let customerTenantProfile : ColumnProfile = {
     AttributeKey         = customerTenantKey
     RowCount             = 100L
     NullCount            = 0L
+    MaxObservedLength = None
     NullCountProbeStatus = succeededProbe 100L
 }
 
@@ -61,6 +64,7 @@ let orderIdProfile : ColumnProfile = {
     AttributeKey         = orderIdAttrKey
     RowCount             = 250L
     NullCount            = 0L
+    MaxObservedLength = None
     NullCountProbeStatus = succeededProbe 250L
 }
 
@@ -68,6 +72,7 @@ let orderCustomerFkProfile : ColumnProfile = {
     AttributeKey         = orderCustomerFkKey
     RowCount             = 250L
     NullCount            = 0L
+    MaxObservedLength = None
     NullCountProbeStatus = succeededProbe 250L
 }
 
@@ -88,6 +93,7 @@ let countryIdProfile : ColumnProfile = {
     AttributeKey         = countryIdAttrKey
     RowCount             = 3L
     NullCount            = 0L
+    MaxObservedLength = None
     NullCountProbeStatus = succeededProbe 3L
 }
 
@@ -95,6 +101,7 @@ let countryCodeProfile : ColumnProfile = {
     AttributeKey         = countryCodeKey
     RowCount             = 3L
     NullCount            = 0L
+    MaxObservedLength = None
     NullCountProbeStatus = succeededProbe 3L
 }
 
@@ -102,6 +109,7 @@ let countryLabelProfile : ColumnProfile = {
     AttributeKey         = countryLabelKey
     RowCount             = 3L
     NullCount            = 0L
+    MaxObservedLength = None
     NullCountProbeStatus = succeededProbe 3L
 }
 
