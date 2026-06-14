@@ -263,7 +263,14 @@ let private allStorageTypes : SqlStorageType list =
 [<Fact>]
 let ``every SqlStorageType (incl. SqlLength Bounded/Max) round-trips`` () =
     for s in allStorageTypes do
-        let a = { baseAttr () with SqlStorage = Some s }
+        // NM-14 — the attribute's semantic Type must agree with its concrete
+        // SqlStorage (`SqlStorageType.toPrimitiveType s = Type`), now enforced
+        // at `Catalog.create`. Derive Type from the storage so the round-trip
+        // fixture is a consistent attribute, not a mismatched one.
+        let a =
+            { baseAttr () with
+                Type = SqlStorageType.toPrimitiveType s
+                SqlStorage = Some s }
         assertRoundTrips (sprintf "SqlStorageType %A" s) (catalogOf (kindOfAttr a))
 
 let private allLiterals : SqlLiteral list =
@@ -456,6 +463,35 @@ let ``NM-12: Catalog.create rejects the illegal constraint-state quadrant`` () =
     | Ok _ -> Assert.True(false, "expected Catalog.create to reject the illegal constraint-state quadrant")
     | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "catalog.reference.illegalConstraintState")
 
+[<Fact>]
+let ``NM-14: Catalog.create rejects a (Type, SqlStorage) mismatch`` () =
+    // An attribute typed Text but carrying concrete BigInt storage evidence, set via
+    // a raw record-`with`. The two disagree (`toPrimitiveType BigInt = Integer ≠ Text`):
+    // the emitter would render BIGINT while every type-driven decision treated the
+    // column as text. The aggregate root must refuse it (NM-14), so the disagreeing
+    // pair cannot enter the IR by any path.
+    let attr =
+        { Attribute.create (key 1) (nm "Col") PrimitiveType.Text with
+            SqlStorage = Some SqlStorageType.BigInt }
+    let kind = { Kind.create (key 3) (nm "K") (tableId "dbo" "K") [ attr ] with References = [] }
+    let m = { SsKey = key 1000; Name = nm "M"; Kinds = [ kind ]; IsActive = true; ExtendedProperties = [] }
+    match Catalog.create [ m ] [] with
+    | Ok _ -> Assert.True(false, "expected Catalog.create to reject the (Type, SqlStorage) mismatch")
+    | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "catalog.attribute.storageTypeMismatch")
+
+[<Fact>]
+let ``NM-14: Catalog.create accepts an agreeing (Type, SqlStorage) pair`` () =
+    // The consistent companion of the reject above: Integer + BigInt agree
+    // (`toPrimitiveType BigInt = Integer`), so construction succeeds.
+    let attr =
+        { Attribute.create (key 1) (nm "Col") PrimitiveType.Integer with
+            SqlStorage = Some SqlStorageType.BigInt }
+    let kind = { Kind.create (key 3) (nm "K") (tableId "dbo" "K") [ attr ] with References = [] }
+    let m = { SsKey = key 1000; Name = nm "M"; Kinds = [ kind ]; IsActive = true; ExtendedProperties = [] }
+    match Catalog.create [ m ] [] with
+    | Ok _ -> ()
+    | Error es -> Assert.True(false, sprintf "expected Catalog.create to accept the agreeing pair; got %A" es)
+
 // ============================================================================
 // The round-trip LAW, universally quantified (FsCheck). The enumerated tests
 // above prove totality per variant; this proves the law over random *combina-
@@ -481,13 +517,22 @@ let private kAttr (kindIx: int) (attrIx: int) : SsKey = key (10000 + kindIx * 10
 
 let private genAttr (sk: SsKey) (name: Name) : Gen<Attribute> =
     gen {
-        let! ptype = Gen.elements allPrimitiveTypes
+        let! ptypeChosen = Gen.elements allPrimitiveTypes
         let! isPk = genBool
         let! isMand = genBool
         let! isIdentity = genBool
         let! isActive = genBool
         let! len = genOpt (Gen.choose (1, 4000))
         let! storage = genOpt (Gen.elements allStorageTypes)
+        // NM-14 — `(Type, SqlStorage)` agreement is enforced at
+        // `Catalog.create`. Validity is CONSTRUCTED here, not validated:
+        // when the generator draws concrete storage, derive the semantic
+        // Type from it (`SqlStorageType.toPrimitiveType`) so the pair always
+        // agrees; otherwise keep the freely-chosen Type.
+        let ptype =
+            match storage with
+            | Some s -> SqlStorageType.toPrimitiveType s
+            | None -> ptypeChosen
         let! def = genOpt (Gen.elements allLiterals)
         let! descr = genOpt (Gen.constant "doc")
         return

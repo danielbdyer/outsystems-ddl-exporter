@@ -1183,6 +1183,25 @@ module Attribute =
             SqlStorage           = None
         }
 
+    /// NM-14 — the `(Type, SqlStorage)` agreement invariant. When an
+    /// attribute carries concrete storage evidence (`SqlStorage = Some
+    /// storage`), that storage's semantic projection MUST equal the
+    /// attribute's semantic `Type`: `SqlStorageType.toPrimitiveType
+    /// storage = Type`. Both halves of an attribute's typing then stay
+    /// consistent — every type-driven decision reads `Type`, the emitter
+    /// reads `SqlStorage`, and the two never disagree (an adapter that
+    /// set `Type = Text; SqlStorage = Some BigInt` would emit `BIGINT`
+    /// while every semantic decision treated the column as text). The
+    /// `None` case is vacuously consistent: no concrete evidence, the
+    /// emitter falls back to the `Type → SqlDataTypeOption` mapping.
+    /// Asserted at construction by `Catalog.create`, mirroring the
+    /// reference constraint-state quadrant
+    /// (`Reference.isConstraintStateConsistent`, NM-12).
+    let isStorageTypeConsistent (a: Attribute) : bool =
+        match a.SqlStorage with
+        | Some storage -> SqlStorageType.toPrimitiveType storage = a.Type
+        | None -> true
+
 
 [<RequireQualifiedAccess>]
 module Reference =
@@ -1708,12 +1727,33 @@ module Catalog =
         // hot path (bench label `ir.catalog.create`). Verified
         // order-preserving by the existing pure `CatalogTests`
         // dangling-key suite.
-        let referenceErrors, indexErrors =
+        let referenceErrors, indexErrors, attributeErrors =
             let refAcc = ResizeArray<ValidationError>()
             let idxAcc = ResizeArray<ValidationError>()
+            let attrAcc = ResizeArray<ValidationError>()
             for k in allKindList do
                 let attrKeys =
                     k.Attributes |> List.map (fun a -> a.SsKey) |> Set.ofList
+                for a in k.Attributes do
+                    // NM-14 — the `(Type, SqlStorage)` agreement invariant.
+                    // When an attribute carries concrete storage evidence
+                    // (`SqlStorage = Some storage`), `SqlStorageType.toPrimitiveType
+                    // storage` MUST equal the semantic `Type`. Otherwise the
+                    // emitter would render the concrete storage (e.g. BIGINT)
+                    // while every type-driven decision read the disagreeing
+                    // semantic category (e.g. Text). Mirrors the NM-12 reference
+                    // quadrant reject: the disagreeing pair cannot enter the IR.
+                    if not (Attribute.isStorageTypeConsistent a) then
+                        attrAcc.Add(
+                            ValidationError.create
+                                "catalog.attribute.storageTypeMismatch"
+                                (sprintf
+                                    "Attribute %A on Kind %A has SqlStorage %A whose semantic projection (%A) disagrees with its Type %A; the concrete storage evidence must agree with the semantic type (SqlStorageType.toPrimitiveType storage = Type)."
+                                    a.SsKey
+                                    k.SsKey
+                                    a.SqlStorage
+                                    (a.SqlStorage |> Option.map SqlStorageType.toPrimitiveType)
+                                    a.Type))
                 for r in k.References do
                     if not (Set.contains r.SourceAttribute attrKeys) then
                         refAcc.Add(
@@ -1751,7 +1791,7 @@ module Catalog =
                                     (sprintf
                                         "Index %A on Kind %A references column SsKey %A absent from the kind's Attributes."
                                         idx.SsKey k.SsKey col.Attribute))
-            List.ofSeq refAcc, List.ofSeq idxAcc
+            List.ofSeq refAcc, List.ofSeq idxAcc, List.ofSeq attrAcc
 
         // Sequence SsKey disjointness (chapter A.0' slice δ). Sequences
         // are top-level Catalog objects; their SsKeys must be unique
@@ -1769,7 +1809,7 @@ module Catalog =
                 (fun s -> s.SsKey)
 
         let allErrors =
-            moduleDupes @ kindDupes @ referenceErrors @ indexErrors @ sequenceDupes
+            moduleDupes @ kindDupes @ referenceErrors @ indexErrors @ attributeErrors @ sequenceDupes
 
         if List.isEmpty allErrors then
             Result.success { Modules = modules; Sequences = sequences }
