@@ -164,6 +164,24 @@ type SequenceChange =
 /// kind-scoped). Mirrors `AttributeDiff`; sequences match by `SsKey`.
 type SequenceDiff = ChannelDiff<SequenceChange>
 
+/// NM-17 — a single kind-OWN facet that `CatalogDiff` previously erased.
+/// The attribute / reference / index / sequence channels cover a kind's
+/// *children*; this channel covers the kind's own shape beyond presence/name:
+/// its population `Modality`, `Triggers`, table-level `ColumnChecks`, and the
+/// `IsActive` activation flag. NM-16 took the LIGHT route — naming these
+/// erasures as `ToleratedDivergence`s so `norm d = 0` was *witnessed*, not
+/// silent; NM-17 is the HEAVY route that reflects them as a real diff channel,
+/// retiring those tolerances and restoring the agreement between `migrate`
+/// (the `CatalogDiff` algebra) and the canary's `PhysicalSchema.diff`. Closed
+/// DU; widen when a further kind-own field (`Description` / ext-props / module
+/// structure — still unwitnessed residual) gets a consumer.
+[<RequireQualifiedAccess>]
+type KindFacet =
+    | Modality
+    | Triggers
+    | ColumnChecks
+    | IsActive
+
 /// Total decomposition of `source ∪ target` SsKeys into four pairwise-
 /// disjoint partitions. The smart constructor `CatalogDiff.between`
 /// enforces exhaustiveness — every `SsKey` in `Catalog.allKinds source`
@@ -215,6 +233,11 @@ and CatalogDiffData =
         /// C1 — the catalog-level sequence diff. Empty (all four fields empty)
         /// when source and target carry identical sequences.
         SequenceDiff : SequenceDiff
+        /// NM-17 — per-kind kind-OWN facet diffs (sparse: only kinds present in
+        /// BOTH catalogs whose `Modality` / `Triggers` / `ColumnChecks` /
+        /// `IsActive` differ). Keyed by kind `SsKey`; every stored set is
+        /// non-empty. Mirrors `AttributeDiffs`' sparsity contract.
+        KindFacetDiffs : Map<SsKey, Set<KindFacet>>
     }
 
 /// 6.A.7 — evidence that a name-derived (`Synthesized`) identity was
@@ -403,6 +426,18 @@ module CatalogDiff =
           Renamed = renamed
           Changed = changed }
 
+    /// NM-17 — the kind-OWN facets that differ between a kind's source and
+    /// target realization. Presence/name is the top-level partition; children
+    /// ride the attribute/reference/index channels; this is the kind's own
+    /// shape. Empty ⇒ the kind's own facets are identical. Mirrors
+    /// `changedFacets`.
+    let private changedKindFacets (s: Kind) (t: Kind) : Set<KindFacet> =
+        [ if s.Modality <> t.Modality then KindFacet.Modality
+          if s.Triggers <> t.Triggers then KindFacet.Triggers
+          if s.ColumnChecks <> t.ColumnChecks then KindFacet.ColumnChecks
+          if s.IsActive <> t.IsActive then KindFacet.IsActive ]
+        |> Set.ofList
+
     let private changedSequenceFacets (s: Sequence) (t: Sequence) : Set<SequenceFacet> =
         [ if s.Schema <> t.Schema then SequenceFacet.Schema
           if s.DataType <> t.DataType then SequenceFacet.DataType
@@ -524,6 +559,21 @@ module CatalogDiff =
                         if channelDiffIsEmpty d then acc else Map.add key d acc
                     | _ -> acc)
                 Map.empty
+        // NM-17 — descend into each kind's OWN facets (modality / triggers /
+        // CHECKs / activation) for every kind in BOTH catalogs; store only
+        // non-empty sets (an unchanged kind contributes nothing, so an
+        // idempotent redeploy stays empty → CDC-silence). Closes the NM-16
+        // tolerance erasure: these were named-but-unreflected; now reflected.
+        let kindFacetDiffs =
+            intersect
+            |> Set.fold
+                (fun acc key ->
+                    match Catalog.tryFindKind key source, Catalog.tryFindKind key target with
+                    | Some sk, Some tk ->
+                        let facets = changedKindFacets sk tk
+                        if Set.isEmpty facets then acc else Map.add key facets acc
+                    | _ -> acc)
+                Map.empty
         // C1 — sequences are catalog-level, not kind-scoped.
         let sequenceDiff = sequenceDiffBetween source target
         Ok
@@ -539,6 +589,7 @@ module CatalogDiff =
                     ReferenceDiffs = referenceDiffs
                     IndexDiffs = indexDiffs
                     SequenceDiff = sequenceDiff
+                    KindFacetDiffs = kindFacetDiffs
                 })
 
     let source (CatalogDiff d) : Catalog = d.Source
@@ -573,6 +624,16 @@ module CatalogDiff =
 
     /// C1 — the catalog-level sequence diff (empty when sequences are identical).
     let sequenceDiff (CatalogDiff d) : SequenceDiff = d.SequenceDiff
+
+    /// NM-17 — the per-kind kind-OWN facet diffs (sparse: only kinds present in
+    /// both catalogs with a changed `Modality` / `Triggers` / `ColumnChecks` /
+    /// `IsActive`). Keyed by kind `SsKey`.
+    let kindFacetDiffs (CatalogDiff d) : Map<SsKey, Set<KindFacet>> = d.KindFacetDiffs
+
+    /// NM-17 — the kind-facet diff for one kind, or `None` if the kind's own
+    /// facets are identical (or the kind is not present in both catalogs).
+    let kindFacetDiffOf (key: SsKey) (CatalogDiff d) : Set<KindFacet> option =
+        Map.tryFind key d.KindFacetDiffs
 
     /// 6.A.7 — the Synthesized-key renames the SsKey-matching diff could not
     /// thread. A `Synthesized` SsKey is name-derived, so a rename changes the
@@ -650,6 +711,7 @@ module CatalogDiff =
         && Map.isEmpty data.ReferenceDiffs
         && Map.isEmpty data.IndexDiffs
         && channelDiffIsEmpty data.SequenceDiff
+        && Map.isEmpty data.KindFacetDiffs
 
     // -- 6.A.11: applyDiff — the `between` peer (H-007) -----------------------
     //
@@ -669,20 +731,19 @@ module CatalogDiff =
     // (the no-cheat property test). It is NOT `fun base d -> target d`.
     //
     // **Captured surface (the law's modulus).** The diff captures kind
-    // presence/name + attribute presence/name + the nine column-shape facets
-    // (`AttributeFacet`) + references + indexes + sequences (the C1 channels,
-    // each with its own `apply*Diff` patch). It does NOT capture kind-level
-    // `Modality`, `Triggers`, `ColumnChecks`, `Description`, `IsActive`,
-    // `ExtendedProperties`, or module structure — those ride through from
-    // `base` unchanged. (NM-16 LIGHT route, 2026-06-13: the trigger / CHECK /
-    // modality / activation slice of that residual erasure is now NAMED — the
-    // `ToleratedDivergence.Kind{Triggers,Checks,Modality,Activation}Unreflected
-    // InDiff` variants witness it, each with a retirement trigger — so it is a
-    // *witnessed* gap, not a silent one. The canary's `PhysicalSchema.diff`
-    // DOES compare these, so the two surfaces still disagree on "what is a
-    // change"; retiring a variant means adding its diff channel here.
-    // `Description` / `ExtendedProperties` / module structure remain unwitnessed
-    // residual.) The round-trip law therefore holds for
+    // presence/name + the kind-OWN facets `Modality` / `Triggers` /
+    // `ColumnChecks` / `IsActive` (`KindFacet`, NM-17) + attribute
+    // presence/name + the nine column-shape facets (`AttributeFacet`) +
+    // references + indexes + sequences (the C1 channels, each with its own
+    // `apply*Diff` patch). (NM-16 took the LIGHT route — naming the trigger /
+    // CHECK / modality / activation erasure as `ToleratedDivergence`s so the
+    // gap was witnessed, not silent; NM-17, 2026-06-14, took the HEAVY route:
+    // the `KindFacet` diff channel above reflects them for real, so the
+    // `CatalogDiff` algebra and the canary's `PhysicalSchema.diff` now AGREE on
+    // "what is a change," and those four tolerances are retired.) It does NOT
+    // capture kind-level `Description`, `ExtendedProperties`, or module
+    // structure — those ride through from `base` unchanged and remain
+    // unwitnessed residual. The round-trip law therefore holds for
     // A→B evolutions within the captured surface, witnessed order-insensitively
     // by `between B (applyDiff (between A B) A) |> isEmpty`. A future
     // self-contained diff (inline payloads, no stored source/target) would
@@ -703,6 +764,18 @@ module CatalogDiff =
         | AttributeFacet.Identity     -> { dest with IsIdentity = src.IsIdentity }
         | AttributeFacet.DefaultValue -> { dest with DefaultValue = src.DefaultValue; DefaultName = src.DefaultName }
         | AttributeFacet.Computed     -> { dest with Computed = src.Computed }
+
+    /// NM-17 — patch one kind-OWN facet of `dest` from `src` (the recorded
+    /// target kind). Mirrors `applyFacet`; only the named facet moves, every
+    /// other field of `dest` rides through. `dest` is an existing `Kind`
+    /// value, so `{ dest with … }` replaces a single field (no smart-ctor
+    /// reconstruction → no default-substitution bomb).
+    let private applyKindFacet (src: Kind) (facet: KindFacet) (dest: Kind) : Kind =
+        match facet with
+        | KindFacet.Modality     -> { dest with Modality = src.Modality }
+        | KindFacet.Triggers     -> { dest with Triggers = src.Triggers }
+        | KindFacet.ColumnChecks -> { dest with ColumnChecks = src.ColumnChecks }
+        | KindFacet.IsActive     -> { dest with IsActive = src.IsActive }
 
     /// Apply a per-kind `AttributeDiff` to a kind's base attribute list,
     /// sourcing new attributes / new facet values from the recorded target
@@ -839,9 +912,11 @@ module CatalogDiff =
     /// 6.A.11 — apply a `CatalogDiff` to a base `Catalog`, reconstructing the
     /// target modulo the captured surface. Total: trusts the delta (no
     /// re-validation), so the round-trip law is `between B (applyDiff
-    /// (between A B) A) |> isEmpty`. References / indexes / modality / module
-    /// structure / sequences ride through from `base` (not captured by the
-    /// diff). H-007: the `between` peer that makes Time an evolution algebra.
+    /// (between A B) A) |> isEmpty`. Attributes / references / indexes /
+    /// sequences (C1) and the kind-OWN facets modality / triggers / CHECKs /
+    /// activation (NM-17) are all captured and patched; only kind `Description`
+    /// / ext-props / module structure ride through from `base` (the remaining
+    /// residual). H-007: the `between` peer that makes Time an evolution algebra.
     let applyDiff (baseCatalog: Catalog) (d: CatalogDiff) : Catalog =
         let (CatalogDiff data) = d
         let tgt = data.Target
@@ -859,9 +934,14 @@ module CatalogDiff =
                 match Map.tryFind k.SsKey data.ReferenceDiffs with
                 | Some rd -> { withAttrs with References = applyReferenceDiff rd tgtKind withAttrs.References }
                 | None -> withAttrs
-            match Map.tryFind k.SsKey data.IndexDiffs with
-            | Some idd -> { withRefs with Indexes = applyIndexDiff idd tgtKind withRefs.Indexes }
-            | None -> withRefs
+            let withIndexes =
+                match Map.tryFind k.SsKey data.IndexDiffs with
+                | Some idd -> { withRefs with Indexes = applyIndexDiff idd tgtKind withRefs.Indexes }
+                | None -> withRefs
+            // NM-17 — patch the kind's own facets from the recorded target.
+            match Map.tryFind k.SsKey data.KindFacetDiffs, tgtKind with
+            | Some facets, Some tk -> Set.fold (fun acc f -> applyKindFacet tk f acc) withIndexes facets
+            | _ -> withIndexes
         // Transform base's modules: drop Removed kinds, transform survivors.
         let survivingKeys =
             Catalog.allKinds baseCatalog
@@ -921,6 +1001,10 @@ module CatalogDiff =
             RenamedKinds      : int
             AddedKinds        : int
             RemovedKinds      : int
+            // NM-17 — kinds present in both catalogs whose OWN facets changed
+            // (modality / triggers / CHECKs / activation). One move per kind,
+            // mirroring `ChangedAttributes` (entity-count, not facet-count).
+            ChangedKinds      : int
             AddedAttributes   : int
             RemovedAttributes : int
             RenamedAttributes : int
@@ -952,6 +1036,7 @@ module CatalogDiff =
             RenamedKinds      = Map.count data.Renamed
             AddedKinds        = Set.count data.Added
             RemovedKinds      = Set.count data.Removed
+            ChangedKinds      = Map.count data.KindFacetDiffs
             AddedAttributes   = sumAttr (fun ad -> Set.count ad.Added)
             RemovedAttributes = sumAttr (fun ad -> Set.count ad.Removed)
             RenamedAttributes = sumAttr (fun ad -> Map.count ad.Renamed)
@@ -976,7 +1061,7 @@ module CatalogDiff =
     /// `AttributeDiff` contributes ≥ 1 to the norm).
     let norm (d: CatalogDiff) : int =
         let c = channelCounts d
-        c.RenamedKinds + c.AddedKinds + c.RemovedKinds
+        c.RenamedKinds + c.AddedKinds + c.RemovedKinds + c.ChangedKinds
         + c.AddedAttributes + c.RemovedAttributes + c.RenamedAttributes + c.ChangedAttributes
         + c.AddedReferences + c.RemovedReferences + c.RenamedReferences + c.ChangedReferences
         + c.AddedIndexes + c.RemovedIndexes + c.RenamedIndexes + c.ChangedIndexes

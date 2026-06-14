@@ -196,6 +196,48 @@ let ``CatalogDiff: a column type change surfaces as an attribute-level Changed e
         Assert.Equal(customerNameKey, change.AttributeKey)
         Assert.Contains(AttributeFacet.DataType, change.Facets)
 
+// ---------------------------------------------------------------------------
+// NM-17 — the KindFacet diff channel. A kind's OWN facets (modality / triggers
+// / CHECKs / activation) are now a real diff channel, retiring the NM-16
+// "unreflected" tolerances: the change is reflected, not erased.
+// ---------------------------------------------------------------------------
+
+/// Rebuild `sampleCatalog` with the Customer KIND itself transformed.
+let private catalogWithCustomerKind (f: Kind -> Kind) : Catalog =
+    let m = { salesModule with Kinds = [ f customer; order; country ] }
+    Catalog.create [ m ] [] |> Result.value
+
+[<Fact>]
+let ``NM-17: a kind IsActive flip surfaces a KindFacet change (kind stays Unchanged; isEmpty honest)`` () =
+    let target = catalogWithCustomerKind (fun k -> { k with IsActive = not k.IsActive })
+    let diff = CatalogDiff.between sampleCatalog target |> mustOk
+    // Kind-level partition preserved: name stable → Unchanged.
+    Assert.Contains(customerKey, CatalogDiff.unchanged diff)
+    // The kind-facet change is visible and isEmpty is honest (NM-16 erasure closed).
+    Assert.False(CatalogDiff.isEmpty diff)
+    match CatalogDiff.kindFacetDiffOf customerKey diff with
+    | None -> Assert.Fail "expected a KindFacet diff for Customer"
+    | Some facets -> Assert.Contains(KindFacet.IsActive, facets)
+    // One move on the kind channel (norm = 0 ⟺ isEmpty).
+    Assert.Equal(1, CatalogDiff.norm diff)
+
+[<Fact>]
+let ``NM-17: a kind Modality change surfaces the Modality facet`` () =
+    let target = catalogWithCustomerKind (fun k -> { k with Modality = [ ModalityMark.SystemOwned ] })
+    let diff = CatalogDiff.between sampleCatalog target |> mustOk
+    match CatalogDiff.kindFacetDiffOf customerKey diff with
+    | None -> Assert.Fail "expected a KindFacet diff for Customer"
+    | Some facets -> Assert.Contains(KindFacet.Modality, facets)
+
+[<Fact>]
+let ``NM-17: applyDiff round-trips a kind-facet change (between B (applyDiff (between A B) A) is empty)`` () =
+    let a = sampleCatalog
+    let b = catalogWithCustomerKind (fun k -> { k with IsActive = not k.IsActive; Modality = [ ModalityMark.SystemOwned ] })
+    let d = CatalogDiff.between a b |> mustOk
+    let reconstructed = CatalogDiff.applyDiff a d
+    // The round-trip law holds on the kind-facet channel (the NM-17 fixture).
+    Assert.True(CatalogDiff.between b reconstructed |> mustOk |> CatalogDiff.isEmpty)
+
 [<Fact>]
 let ``CatalogDiff: a column widening (length change) names the Length facet (TEXT -> NVARCHAR(256))`` () =
     // The audit's headline scenario: type category stable, declared length
