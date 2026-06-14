@@ -214,6 +214,7 @@ let private mkAttrRow
         IsComputed           = false
         ComputedDefinition   = None
         DefaultConstraintName = None
+        Order                = None
     }
 
 [<Fact>]

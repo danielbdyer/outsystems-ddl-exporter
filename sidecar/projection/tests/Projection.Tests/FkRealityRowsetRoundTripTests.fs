@@ -99,7 +99,8 @@ let private customerIdAttrRow : OssysRowsetTypes.AttributeRow =
       ExternalDatabaseType = None
       IsComputed           = false
       ComputedDefinition   = None
-      DefaultConstraintName = None }
+      DefaultConstraintName = None
+      Order                = None }
 
 let private orderIdAttrRow : OssysRowsetTypes.AttributeRow =
     { customerIdAttrRow with
@@ -125,7 +126,8 @@ let private orderCustomerFkAttrRow : OssysRowsetTypes.AttributeRow =
       ExternalDatabaseType = None
       IsComputed           = false
       ComputedDefinition   = None
-      DefaultConstraintName = None }
+      DefaultConstraintName = None
+      Order                = None }
 
 let private fkReferenceRow
     (onUpdate: string option)

@@ -675,6 +675,19 @@ type Attribute = {
     /// `SqlStorageType.toPrimitiveType storage = Type` whenever
     /// `Some storage`.
     SqlStorage : SqlStorageType option
+    /// Service-Studio authored attribute order, carried from the real
+    /// `ossys_Entity_Attr.Order_Num` column (rowset path) or the
+    /// `order` JSON property (JSON path). `None` for hand-built
+    /// catalogs and for the `ReadSide` reflection path (deployed
+    /// schema carries no OutSystems authored order). WP8 / NM-72 —
+    /// emission column order is `(PK first, then Order ascending,
+    /// then SsKey as a stable tiebreak)`; `None` falls back to the
+    /// existing PK-first / SsKey order so determinism (T1) holds for
+    /// every source. The ordering is applied at `CanonicalizeIdentity`
+    /// (the pass that already owns the canonical attribute order),
+    /// inherited uniformly by the SSDT, dacpac, and data-lane emitters
+    /// which all iterate `Kind.Attributes` in list order.
+    Order : int option
 }
 
 
@@ -1134,6 +1147,8 @@ module Attribute =
     ///   - `ExtendedProperties = []`
     ///   - `OriginalName = None`; `ExternalDatabaseType = None`
     ///   - `SqlStorage = None` (semantic fallback; emitters use `Type`)
+    ///   - `Order = None` (no authored Service-Studio order; PK-first /
+    ///     SsKey canonical fallback)
     ///
     /// Consumers override via record-update: `{ Attribute.create k n
     /// Integer with IsPrimaryKey = true; IsMandatory = true }`.
@@ -1181,6 +1196,12 @@ module Attribute =
             OriginalName         = None
             ExternalDatabaseType = None
             SqlStorage           = None
+            // WP8 / NM-72 — authored Service-Studio order. `None` by
+            // default: hand-built and minimum-evidence attributes carry
+            // no authored order and fall back to the PK-first / SsKey
+            // canonical order. The OSSYS rowset / JSON paths override
+            // via `{ Attribute.create … with Order = Some n }`.
+            Order                = None
         }
 
     /// NM-14 — the `(Type, SqlStorage)` agreement invariant. When an

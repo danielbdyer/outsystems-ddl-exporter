@@ -739,6 +739,14 @@ module ReadSide =
                             // stays `None` (semantic fallback) so this
                             // path's emission is unchanged.
                             SqlStorage = None
+                            // WP8 / NM-72 — ReadSide reflects the deployed
+                            // SQL Server schema, which carries no OutSystems
+                            // authored attribute order (ORDINAL_POSITION is
+                            // physical, not Service-Studio order). `None`
+                            // falls back to the PK-first / SsKey canonical
+                            // order; the OSSYS adapter paths carry the
+                            // `Order_Num` value where present.
+                            Order = None
                         }
 
     /// Format a SQL Server scalar value as the canonical raw

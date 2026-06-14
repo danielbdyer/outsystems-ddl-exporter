@@ -76,7 +76,8 @@ let private attrRow
       ExternalDatabaseType = None
       IsComputed           = isComputed
       ComputedDefinition   = computedDef
-      DefaultConstraintName = defaultConstraintName }
+      DefaultConstraintName = defaultConstraintName
+      Order                = None }
 
 let private buildBundle (attrs: OssysRowsetTypes.AttributeRow list) : OssysRowsetTypes.RowsetBundle =
     { OssysRowsetTypes.RowsetBundle.empty with
