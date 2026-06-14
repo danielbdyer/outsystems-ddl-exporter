@@ -174,6 +174,29 @@ module ProfileManifestThreadingTests =
         finally
             cleanup modelPath cfgPath outDir
 
+    [<Fact>]
+    let ``NM-34b: runWithConfig surfaces the READ source Catalog on RunReport.ReadCatalog`` () =
+        // The read model is surfaced so the run boundary can hash its canonical
+        // form into the live-path input digest. The fixture model has modules;
+        // ReadCatalog must carry them (the model the run actually read).
+        let modelPath = writeTempJson metricModelJson
+        let outDir = tempOutputDir ()
+        let cfgPath = writeConfig modelPath outDir "fixture"
+        try
+            match Config.fromFile cfgPath with
+            | Error es -> failwithf "config parse failed: %A" es
+            | Ok cfg ->
+                match runConfigSync cfg with
+                | Error es -> failwithf "runWithConfig failed: %A" es
+                | Ok report ->
+                    Assert.NotEmpty(report.ReadCatalog.Modules)
+                    // The canonical serialization is non-empty and deterministic
+                    // — the live-path model-digest input is well-formed.
+                    let canonical = Projection.Targets.Json.CatalogCodec.serialize report.ReadCatalog
+                    Assert.NotEqual<string>("", canonical)
+        finally
+            cleanup modelPath cfgPath outDir
+
 
 // ---------------------------------------------------------------------------
 // Env-var-sensitive cases: serialized in the Docker-SqlServer collection so

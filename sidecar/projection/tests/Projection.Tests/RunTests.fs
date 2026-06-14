@@ -7,6 +7,32 @@ open Xunit
 open Projection.Core
 open Projection.Pipeline
 
+// NM-34b (live) — minimal inline catalogs (RunTests compiles before the
+// shared fixtures, so we build a tiny two-kind divergence here rather than
+// reorder the fsproj). Two distinct one-kind catalogs witness the model-
+// sensitivity of the live-path digest.
+module private RunTestCatalogs =
+
+    let private ok r = match r with | Ok v -> v | Error _ -> failwith "RunTests fixture"
+
+    let private nm (s: string) : Name = Name.create s |> ok
+    let private kKey (s: string) : SsKey = SsKey.synthesized "OS_KIND_RT" s |> ok
+    let private aKey (s: string) : SsKey = SsKey.synthesized "OS_ATTR_RT" s |> ok
+    let private mKey (s: string) : SsKey = SsKey.synthesized "OS_MOD_RT" s |> ok
+
+    let single (entity: string) : Catalog =
+        let idAttr =
+            let a = Attribute.create (aKey (entity + ".Id")) (nm "Id") PrimitiveType.Integer
+            { a with IsPrimaryKey = true; IsMandatory = true }
+        let kind =
+            Kind.create (kKey entity) (nm entity) (TableId.create "dbo" (entity.ToUpperInvariant()) |> ok) [ idAttr ]
+        let m =
+            { SsKey = mKey "M"; Name = nm "M"; Kinds = [ kind ]; IsActive = true; ExtendedProperties = [] }
+        { Modules = [ m ]; Sequences = [] }
+
+    let catalogA : Catalog = single "Customer"
+    let catalogB : Catalog = single "Invoice"
+
 /// Masterful base #2 — the addressable run aggregate. Discriminating
 /// predicate: load(save(run)) = run, and inputDigest depends only on inputs.
 
@@ -24,6 +50,63 @@ let ``Run: inputDigest is stable across calls and sensitive to inputs (content-a
     Assert.Equal(d, Run.inputDigest "config-text" "catalog-json")     // wall-clock independent
     Assert.NotEqual<string>(d, Run.inputDigest "config-text-2" "catalog-json")
     Assert.NotEqual<string>(d, Run.inputDigest "config-text" "catalog-json-2")
+
+// ---------------------------------------------------------------------------
+// NM-34b (live) — FullExportRun.modelDigestInput: the model half of the
+// input digest is FILE TEXT for a path-sourced model (byte-identical) and
+// the CANONICAL serialization of the read catalog for a live-OSSYS model.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``NM-34b live: path-sourced model digest input is the file text (byte-identical)`` () =
+    // The path branch reads the model file; the live read catalog is ignored.
+    let got =
+        FullExportRun.modelDigestInput
+            (fun p -> sprintf "FILE(%s)" p)
+            (Some "model.json")
+            (Some RunTestCatalogs.catalogA)
+    Assert.Equal<string>("FILE(model.json)", got)
+
+[<Fact>]
+let ``NM-34b live: live-OSSYS model digest input is the canonical serialization of the read catalog`` () =
+    // No model path ⇒ the read catalog's canonical form is the model input.
+    let got =
+        FullExportRun.modelDigestInput
+            (fun _ -> "UNUSED")
+            None
+            (Some RunTestCatalogs.catalogA)
+    Assert.NotEqual<string>("", got)
+    Assert.Equal<string>(Projection.Targets.Json.CatalogCodec.serialize RunTestCatalogs.catalogA, got)
+
+[<Fact>]
+let ``NM-34b live: a live-OSSYS run yields a non-empty, model-SENSITIVE inputDigest`` () =
+    // Two distinct read models under the same config text ⇒ distinct digests;
+    // both non-empty (the NM-34b-live FLAG closure).
+    let configText = "config-text"
+    let live (catalog: Catalog) : string =
+        let modelInput = FullExportRun.modelDigestInput (fun _ -> "UNUSED") None (Some catalog)
+        Run.inputDigest configText modelInput
+    let digestA = live RunTestCatalogs.catalogA
+    let digestB = live RunTestCatalogs.catalogB
+    Assert.NotEqual<string>("", digestA)
+    Assert.NotEqual<string>(digestA, digestB)   // changing the model changes the digest
+
+[<Fact>]
+let ``NM-34b live: a file-sourced run digest is unchanged by the read catalog (file text wins)`` () =
+    // The path branch is independent of the read catalog ⇒ the file-sourced
+    // digest is identical regardless of which model was read.
+    let configText = "config-text"
+    let fileSourced (catalog: Catalog option) : string =
+        let modelInput = FullExportRun.modelDigestInput (fun _ -> "MODEL-FILE-TEXT") (Some "m.json") catalog
+        Run.inputDigest configText modelInput
+    Assert.Equal<string>(fileSourced (Some RunTestCatalogs.catalogA), fileSourced (Some RunTestCatalogs.catalogB))
+    Assert.Equal<string>(fileSourced (Some RunTestCatalogs.catalogA), fileSourced None)
+
+[<Fact>]
+let ``NM-34b live: no read catalog on the live path is the honest empty model half`` () =
+    // No model path AND no report ⇒ empty model input (config-only digest).
+    let got = FullExportRun.modelDigestInput (fun _ -> "UNUSED") None None
+    Assert.Equal<string>("", got)
 
 [<Fact>]
 let ``Run: save then load round-trips the aggregate including the event stream`` () =

@@ -171,6 +171,14 @@ module Compose =
         /// curated `Diagnostics` set (special-circumstances / inactive /
         /// FK-selectivity / joint-dependency / FK-drop witnesses).
         PassDiagnostics : DiagnosticEntry list
+        /// NM-34b (live) — the source `Catalog` the run READ (the live model
+        /// resolved via `LiveModelRead` / hydration, before renames). Surfaced
+        /// so the run boundary can hash its CANONICAL form
+        /// (`CatalogCodec.serialize`) into the `Run.inputDigest` model half on
+        /// the live-OSSYS path, where there is no on-disk model file to hash.
+        /// Path-sourced runs keep hashing the file text (byte-identical); this
+        /// field is the deterministic model-content input for the live path.
+        ReadCatalog : Catalog
     }
 
     /// Track W1-B (seam T2) — the **diff-vs-prior store leg** of `full-export`.
@@ -1259,7 +1267,10 @@ module Compose =
                                    "emission.identityAnnotations.omitted"
                                    "Identity annotations omitted: the Projection.SsKey / Projection.LogicalName extended properties were not emitted; identity recovery degrades to name-derived SsKeys (no persisted SsKey to read back on roundtrip)." ])
                     match write cfg.Output.Dir outputs with
-                    | Ok paths    -> Result.success { Paths = paths; Diagnostics = diagnostics; Manifest = outputs.Manifest; Trail = outputs.Trail; PassDiagnostics = outputs.PassEntries }
+                    // NM-34b (live) — `ReadCatalog = catalog`: the source model
+                    // the run READ (pre-rename), surfaced so the run boundary can
+                    // hash its canonical form into the live-path input digest.
+                    | Ok paths    -> Result.success { Paths = paths; Diagnostics = diagnostics; Manifest = outputs.Manifest; Trail = outputs.Trail; PassDiagnostics = outputs.PassEntries; ReadCatalog = catalog }
                     | Error errors -> Result.failure errors
                 | _ ->
                     let policyErrs    = match policyR    with Ok _ -> [] | Error es -> es
