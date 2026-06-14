@@ -139,6 +139,29 @@ let ``config refuses a flow without a to`` () =
     let json = """{ "flows": { "x": { "from": "dev" } } }"""
     Assert.Contains("cli.config.flowNoTo", errCodes (ProjectionConfig.parse json))
 
+[<Fact>]
+let ``NM-10: config refuses a flow named after a reserved verb (it would be unreachable)`` () =
+    // `projection report` runs the built-in `report` verb (the verb arm
+    // precedes the cfg.Flows map in Command.parse), so a flow named `report`
+    // can never be dispatched. The config load refuses it, naming the flow.
+    let json = """{ "flows": { "report": { "from": "model", "to": "uat" } } }"""
+    let codes = errCodes (ProjectionConfig.parse json)
+    Assert.Contains("cli.config.flowNameReservedVerb", codes)
+
+[<Fact>]
+let ``NM-10: every reserved verb name is refused as a flow name`` () =
+    // The collision check is sourced from the same reservedFlowVerbs set the
+    // argv router uses — so every routed verb is rejected, no drift.
+    for verb in ProjectionConfig.reservedFlowVerbs do
+        let json = sprintf """{ "flows": { "%s": { "from": "model", "to": "uat" } } }""" verb
+        Assert.Contains("cli.config.flowNameReservedVerb", errCodes (ProjectionConfig.parse json))
+
+[<Fact>]
+let ``NM-10: a flow with an ordinary name still parses`` () =
+    let json = """{ "flows": { "publish": { "from": "model", "to": "uat" } } }"""
+    let cfg = ProjectionConfig.parse json |> mustOk
+    Assert.True(Map.containsKey "publish" cfg.Flows)
+
 // -- S1: the unified `Shaping` view (THE_CONFIG_CONTROL_PLANE §5) ------------
 // `ProjectionConfig.Shaping` is the model-shaping view of the SAME
 // `projection.json`, parsed leniently so a movement-only file defaults every
@@ -153,7 +176,7 @@ let ``S1: a movement-only config parses with a default-empty Shaping (no modelNo
     Assert.Equal(None, cfg.Shaping.Model.Ossys)
     Assert.Empty(cfg.Shaping.Model.Modules)
     Assert.Empty(cfg.Shaping.Overrides.TableRenames)
-    Assert.Equal(Config.defaultConfig.Policy.Selection, cfg.Shaping.Policy.Selection)
+    Assert.Equal(Config.defaultConfig.Policy.Insertion, cfg.Shaping.Policy.Insertion)
 
 [<Fact>]
 let ``S1: empty-text config carries the default Shaping`` () =
@@ -170,7 +193,7 @@ let ``S1: a unified config populates Shaping.Policy / Overrides / Model.Modules`
           "flows": { "emit": { "from": "model", "to": "uat" } },
           "model":     { "path": "model.json", "modules": ["Sales", { "name": "Ops", "entities": ["Order"] }] },
           "overrides": { "tableRenames": [ { "from": { "module": "Sales", "entity": "Cust" }, "to": { "schema": "dbo", "table": "Customer" } } ] },
-          "policy":    { "selection": "IncludeManual" }
+          "policy":    { "insertion": "Merge" }
         }
         """ |> mustOk
     // model.modules folds into the shaping view (the canonical object form).
@@ -182,7 +205,7 @@ let ``S1: a unified config populates Shaping.Policy / Overrides / Model.Modules`
     | [ { From = Config.LogicalSource { Module = "Sales"; Entity = "Cust" }; To = { Schema = "dbo"; Table = "Customer" } } ] -> ()
     | other -> Assert.Fail(sprintf "expected one Sales::Cust -> dbo.Customer rename, got %A" other)
     // policy folds in.
-    Assert.Equal("IncludeManual", cfg.Shaping.Policy.Selection)
+    Assert.Equal("Merge", cfg.Shaping.Policy.Insertion)
 
 // -- M3.b: the `legacy` B→A reverse-leg classifier (Command.reverseLegOf) ----
 // The clean partial: the rendition flag (M1) drives the recognition of a flow as

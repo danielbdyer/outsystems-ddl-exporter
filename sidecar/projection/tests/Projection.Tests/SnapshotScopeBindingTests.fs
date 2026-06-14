@@ -20,8 +20,7 @@ let private model (modules: Config.ModuleSelector list) (incSys: bool) (incInact
       Modules                = modules
       IncludeSystemModules   = incSys
       IncludeInactiveModules = incInactive
-      OnlyActiveAttributes   = true
-      ValidationOverrides    = { AllowMissingSchema = [] } }
+      OnlyActiveAttributes   = true }
 
 [<Fact>]
 let ``empty model.modules yields defaultParameters (pushdown is opt-in; byte-identical default)`` () =

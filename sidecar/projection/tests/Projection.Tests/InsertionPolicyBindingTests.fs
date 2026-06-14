@@ -19,12 +19,9 @@ let private mkConfig (insertion: string) : Config.Config =
             IncludeSystemModules   = false
             IncludeInactiveModules = false
             OnlyActiveAttributes   = true
-            ValidationOverrides    = { AllowMissingSchema = [] }
         }
         Profile     = { Path = None }
-        Cache       = { Root = ""; Refresh = false; TtlSeconds = 0 }
-        Profiler    = { Provider = "fixture"; MockFolder = None }
-        TypeMapping = { Path = None; Default = None; Overrides = Map.empty }
+        Profiler    = { Provider = "fixture" }
         Overrides   = {
             TableRenames           = []
             MigrationDependencies  = None
@@ -39,9 +36,7 @@ let private mkConfig (insertion: string) : Config.Config =
             DecisionLog = true; Opportunities = true; Validations = true; IncludePlatformAutoIndexes = true; DeleteScope = None; RenderConstraintsElegant = true
         }
         Policy      = {
-            Selection       = "IncludeAll"
             Insertion       = insertion
-            UserMatching    = { Strategy = "ByEmail"; Fallback = "NoFallback" }
             Tightening      = None
             TransformGroups = []
         }

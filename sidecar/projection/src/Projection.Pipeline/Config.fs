@@ -46,9 +46,13 @@ module Config =
         | Whole of name: string
         | WithEntities of name: string * entities: string list
 
-    type ValidationOverrides = {
-        AllowMissingSchema     : string list
-    }
+    // NM-04 (2026-06-13) — `model.validationOverrides.allowMissingSchema`
+    // removed. It parsed into a `ValidationOverrides` axis that the
+    // `ModuleFilter` port explicitly disclaims (`ModuleFilter.fs:70-71` — "V1
+    // carried a `ValidationOverrides` axis that this port does NOT carry") and
+    // nothing else bound it: structurally unreachable operator-facing config.
+    // Its live sibling `overrides.allowMissingPrimaryKey` (a different section,
+    // consumed by `SpecialCircumstancesBinding`) is untouched.
 
     type ModelSection = {
         /// The authored `osm_model.json` path — the model **fallback**. `None`
@@ -63,22 +67,20 @@ module Config =
         IncludeSystemModules   : bool
         IncludeInactiveModules : bool
         OnlyActiveAttributes   : bool
-        ValidationOverrides    : ValidationOverrides
     }
 
     type ProfileSection = {
         Path : string option
     }
 
-    type CacheSection = {
-        Root       : string
-        Refresh    : bool
-        TtlSeconds : int
-    }
+    // NM-05 (2026-06-13) — the `cache` section and the `typeMapping` section
+    // were parsed and carried on `Config` but consumed by nothing at runtime
+    // (no named-skip either). Removed along with `profiler.mockFolder` (also
+    // dead). `profiler.provider` IS consumed (`LiveProfiler` selection) and
+    // stays.
 
     type ProfilerSection = {
         Provider   : string
-        MockFolder : string option
     }
 
     /// `profiler.provider` value that selects live source-environment
@@ -95,12 +97,6 @@ module Config =
     /// environment IS the operator's single MSSQL connection.
     [<Literal>]
     let SourceConnectionStringEnvVar = "PROJECTION_MSSQL_CONN_STR"
-
-    type TypeMappingSection = {
-        Path      : string option
-        Default   : string option
-        Overrides : Map<string, string>
-    }
 
     type LogicalName = {
         Module : string
@@ -207,10 +203,18 @@ module Config =
         RenderConstraintsElegant : bool
     }
 
-    type UserMatchingSection = {
-        Strategy : string
-        Fallback : string
-    }
+    // NM-03 (2026-06-13) — `policy.selection` and `policy.userMatching` were
+    // parsed into the config `PolicySection` but never threaded into the
+    // runtime `Policy` aggregate (`buildPolicyFromConfig` wires only
+    // Tightening / Insertion / Emission). The Core `Policy.Selection` /
+    // `Policy.UserMatching` axes have real consumers (`UserFkReflowPass`,
+    // `PolicyDiff`) but are NOT fed from this config surface — they are set
+    // directly by their callers. So the operator-facing config ingestion is
+    // dead and is removed here. The `UserMatchingSection` type goes with it;
+    // the Core axes stay untouched.
+    //   FLAG: full removal of the config fields (not "keep at default") —
+    //   `PolicyDiff` reads the Core `Policy`, never the config `PolicySection`,
+    //   so nothing live needs the config `Selection` / `UserMatching` fields.
 
     // -----------------------------------------------------------------------
     // Tightening axis (Chapter C slice C.1). Operator-facing config surface
@@ -282,9 +286,7 @@ module Config =
     }
 
     type PolicySection = {
-        Selection       : string
         Insertion       : string
-        UserMatching    : UserMatchingSection
         Tightening      : TighteningSection option
         /// Chapter C slice C.4 — operator-supplied feature-toggle
         /// groupings (`Map<TransformGroup, bool>`). Missing groups
@@ -300,9 +302,7 @@ module Config =
     type Config = {
         Model        : ModelSection
         Profile      : ProfileSection
-        Cache        : CacheSection
         Profiler     : ProfilerSection
-        TypeMapping  : TypeMappingSection
         Overrides    : OverridesSection
         Emission     : EmissionSection
         Policy       : PolicySection
@@ -313,29 +313,12 @@ module Config =
     // Defaults — applied when a section is absent from the JSON.
     // -----------------------------------------------------------------------
 
-    let private defaultValidationOverrides : ValidationOverrides = {
-        AllowMissingSchema     = []
-    }
-
     let private defaultProfile : ProfileSection = {
         Path = None
     }
 
-    let private defaultCache : CacheSection = {
-        Root       = ".artifacts/cache"
-        Refresh    = false
-        TtlSeconds = 7200
-    }
-
     let private defaultProfiler : ProfilerSection = {
         Provider   = "fixture"
-        MockFolder = None
-    }
-
-    let private defaultTypeMapping : TypeMappingSection = {
-        Path      = None
-        Default   = None
-        Overrides = Map.empty
     }
 
     let private defaultOverrides : OverridesSection = {
@@ -368,15 +351,8 @@ module Config =
         RenderConstraintsElegant = true
     }
 
-    let private defaultUserMatching : UserMatchingSection = {
-        Strategy = "ByEmail"
-        Fallback = "NoFallback"
-    }
-
     let private defaultPolicy : PolicySection = {
-        Selection       = "IncludeAll"
         Insertion       = "SchemaOnly"
-        UserMatching    = defaultUserMatching
         Tightening      = None
         TransformGroups = []
     }
@@ -399,7 +375,6 @@ module Config =
         IncludeSystemModules   = false
         IncludeInactiveModules = false
         OnlyActiveAttributes   = true
-        ValidationOverrides    = defaultValidationOverrides
     }
 
     /// The all-defaults `Config` — every section at its absent-from-JSON
@@ -409,9 +384,7 @@ module Config =
     let defaultConfig : Config = {
         Model       = defaultModelSection
         Profile     = defaultProfile
-        Cache       = defaultCache
         Profiler    = defaultProfiler
-        TypeMapping = defaultTypeMapping
         Overrides   = defaultOverrides
         Emission    = defaultEmission
         Policy      = defaultPolicy
@@ -420,8 +393,8 @@ module Config =
 
     /// THE_CONFIG_CONTROL_PLANE §4/§7 (S6.4 — operator decision 2, "Global +
     /// opt-in per-flow override"): overlay a flow's `shaping` override onto the
-    /// global shaping at WHOLE-SECTION granularity. For each of the nine
-    /// top-level sections, the override's section wins iff it DIFFERS from the
+    /// global shaping at WHOLE-SECTION granularity. For each top-level
+    /// section, the override's section wins iff it DIFFERS from the
     /// lenient default (the flow authored that section); otherwise the global's
     /// section holds (the flow is silent there). A faithful field-level deep
     /// merge is deferred (see DECISIONS); section granularity is the minimal,
@@ -433,9 +406,7 @@ module Config =
             if o <> sel defaultConfig then o else sel globalShaping
         { Model       = pick (fun c -> c.Model)
           Profile     = pick (fun c -> c.Profile)
-          Cache       = pick (fun c -> c.Cache)
           Profiler    = pick (fun c -> c.Profiler)
-          TypeMapping = pick (fun c -> c.TypeMapping)
           Overrides   = pick (fun c -> c.Overrides)
           Emission    = pick (fun c -> c.Emission)
           Policy      = pick (fun c -> c.Policy)
@@ -679,22 +650,6 @@ module Config =
                 Result.failureOf (
                     configError "typeMismatch" "model.modules must be an array.")
 
-    let private parseValidationOverrides (element: JsonElement) : Result<ValidationOverrides> =
-        match element.TryGetProperty("validationOverrides") with
-        | false, _ -> Result.success defaultValidationOverrides
-        | true, v ->
-            match v.ValueKind with
-            | JsonValueKind.Null | JsonValueKind.Undefined ->
-                Result.success defaultValidationOverrides
-            | JsonValueKind.Object ->
-                match getStringListOrEmpty v "allowMissingSchema" with
-                | Error es -> Error es
-                | Ok schemas ->
-                    Result.success { AllowMissingSchema = schemas }
-            | _ ->
-                Result.failureOf (
-                    configError "typeMismatch" "model.validationOverrides must be an object.")
-
     /// Parse the `model` section. `requireModel` is the strict/lenient knob:
     /// strict (`true`, the `explain`/`full-export` consumers) errors when the
     /// section is absent (`missingProperty`) or carries no source
@@ -732,9 +687,6 @@ module Config =
                             match getBoolOr element "onlyActiveAttributes" true with
                             | Error es -> Error es
                             | Ok onlyActive ->
-                                match parseValidationOverrides element with
-                                | Error es -> Error es
-                                | Ok vo ->
                                 match getOptionalString element "ossys" with
                                 | Error es -> Error es
                                 | Ok ossys ->
@@ -753,7 +705,6 @@ module Config =
                                                 IncludeSystemModules   = inclSys
                                                 IncludeInactiveModules = inclInactive
                                                 OnlyActiveAttributes   = onlyActive
-                                                ValidationOverrides    = vo
                                         }
                                     | _ ->
                                         Result.success {
@@ -763,7 +714,6 @@ module Config =
                                             IncludeSystemModules   = inclSys
                                             IncludeInactiveModules = inclInactive
                                             OnlyActiveAttributes   = onlyActive
-                                            ValidationOverrides    = vo
                                         }
 
     let private parseProfile (root: JsonElement) : Result<ProfileSection> =
@@ -773,26 +723,6 @@ module Config =
             match getOptionalString element "path" with
             | Error es -> Error es
             | Ok path -> Result.success { Path = path }
-
-    let private parseCache (root: JsonElement) : Result<CacheSection> =
-        match tryGetProperty root "cache" with
-        | None -> Result.success defaultCache
-        | Some element ->
-            let rootR =
-                match getOptionalString element "root" with
-                | Error es -> Error es
-                | Ok None -> Result.success defaultCache.Root
-                | Ok (Some s) -> Result.success s
-            match rootR with
-            | Error es -> Error es
-            | Ok r ->
-                match getBoolOr element "refresh" defaultCache.Refresh with
-                | Error es -> Error es
-                | Ok refresh ->
-                    match getIntOr element "ttlSeconds" defaultCache.TtlSeconds with
-                    | Error es -> Error es
-                    | Ok ttl ->
-                        Result.success { Root = r; Refresh = refresh; TtlSeconds = ttl }
 
     let private parseProfiler (root: JsonElement) : Result<ProfilerSection> =
         match tryGetProperty root "profiler" with
@@ -806,35 +736,7 @@ module Config =
             match providerR with
             | Error es -> Error es
             | Ok provider ->
-                match getOptionalString element "mockFolder" with
-                | Error es -> Error es
-                | Ok mockFolder ->
-                    Result.success { Provider = provider; MockFolder = mockFolder }
-
-    let private parseTypeMapping (root: JsonElement) : Result<TypeMappingSection> =
-        match tryGetProperty root "typeMapping" with
-        | None -> Result.success defaultTypeMapping
-        | Some element ->
-            match getOptionalString element "path" with
-            | Error es -> Error es
-            | Ok path ->
-                match getOptionalString element "default" with
-                | Error es -> Error es
-                | Ok defaultRule ->
-                    let overrides =
-                        match element.TryGetProperty("overrides") with
-                        | false, _ -> Map.empty
-                        | true, v when v.ValueKind = JsonValueKind.Object ->
-                            v.EnumerateObject()
-                            |> Seq.choose (fun prop ->
-                                if prop.Value.ValueKind = JsonValueKind.String then
-                                    match prop.Value.GetString() with
-                                    | null -> None
-                                    | s -> Some (prop.Name, s)
-                                else None)
-                            |> Map.ofSeq
-                        | _ -> Map.empty
-                    Result.success { Path = path; Default = defaultRule; Overrides = overrides }
+                Result.success { Provider = provider }
 
     let private parsePhysicalName (element: JsonElement) : Result<PhysicalName> =
         match getString element "schema" with
@@ -1154,31 +1056,6 @@ module Config =
                                                         RenderConstraintsElegant = renderElegant
                                                     }
 
-    let private parseUserMatching (element: JsonElement) : Result<UserMatchingSection> =
-        match element.TryGetProperty("userMatching") with
-        | false, _ -> Result.success defaultUserMatching
-        | true, v when v.ValueKind = JsonValueKind.Object ->
-            let strategyR =
-                match getOptionalString v "strategy" with
-                | Error es -> Error es
-                | Ok None -> Result.success defaultUserMatching.Strategy
-                | Ok (Some s) -> Result.success s
-            match strategyR with
-            | Error es -> Error es
-            | Ok strategy ->
-                let fallbackR =
-                    match getOptionalString v "fallback" with
-                    | Error es -> Error es
-                    | Ok None -> Result.success defaultUserMatching.Fallback
-                    | Ok (Some s) -> Result.success s
-                match fallbackR with
-                | Error es -> Error es
-                | Ok fallback ->
-                    Result.success { Strategy = strategy; Fallback = fallback }
-        | _ ->
-            Result.failureOf (
-                configError "typeMismatch" "policy.userMatching must be an object.")
-
     let private getOptionalBool (element: JsonElement) (name: string) : Result<bool option> =
         match element.TryGetProperty(name) with
         | false, _ -> Result.success None
@@ -1339,38 +1216,25 @@ module Config =
         match tryGetProperty root "policy" with
         | None -> Result.success defaultPolicy
         | Some element ->
-            let selectionR =
-                match getOptionalString element "selection" with
+            let insertionR =
+                match getOptionalString element "insertion" with
                 | Error es -> Error es
-                | Ok None -> Result.success defaultPolicy.Selection
+                | Ok None -> Result.success defaultPolicy.Insertion
                 | Ok (Some s) -> Result.success s
-            match selectionR with
+            match insertionR with
             | Error es -> Error es
-            | Ok selection ->
-                let insertionR =
-                    match getOptionalString element "insertion" with
-                    | Error es -> Error es
-                    | Ok None -> Result.success defaultPolicy.Insertion
-                    | Ok (Some s) -> Result.success s
-                match insertionR with
+            | Ok insertion ->
+                match parseTightening element with
                 | Error es -> Error es
-                | Ok insertion ->
-                    match parseUserMatching element with
+                | Ok tightening ->
+                    match parseTransformGroups element with
                     | Error es -> Error es
-                    | Ok userMatching ->
-                        match parseTightening element with
-                        | Error es -> Error es
-                        | Ok tightening ->
-                            match parseTransformGroups element with
-                            | Error es -> Error es
-                            | Ok transformGroups ->
-                                Result.success {
-                                    Selection       = selection
-                                    Insertion       = insertion
-                                    UserMatching    = userMatching
-                                    Tightening      = tightening
-                                    TransformGroups = transformGroups
-                                }
+                    | Ok transformGroups ->
+                        Result.success {
+                            Insertion       = insertion
+                            Tightening      = tightening
+                            TransformGroups = transformGroups
+                        }
 
     let private parseOutput (root: JsonElement) : Result<OutputSection> =
         match tryGetProperty root "output" with
@@ -1396,38 +1260,30 @@ module Config =
                 match parseProfile root with
                 | Error es -> Error es
                 | Ok profile ->
-                    match parseCache root with
+                    match parseProfiler root with
                     | Error es -> Error es
-                    | Ok cache ->
-                        match parseProfiler root with
+                    | Ok profiler ->
+                        match parseOverrides root with
                         | Error es -> Error es
-                        | Ok profiler ->
-                            match parseTypeMapping root with
+                        | Ok overrides ->
+                            match parseEmission root with
                             | Error es -> Error es
-                            | Ok typeMapping ->
-                                match parseOverrides root with
+                            | Ok emission ->
+                                match parsePolicy root with
                                 | Error es -> Error es
-                                | Ok overrides ->
-                                    match parseEmission root with
+                                | Ok policy ->
+                                    match parseOutput root with
                                     | Error es -> Error es
-                                    | Ok emission ->
-                                        match parsePolicy root with
-                                        | Error es -> Error es
-                                        | Ok policy ->
-                                            match parseOutput root with
-                                            | Error es -> Error es
-                                            | Ok output ->
-                                                Result.success {
-                                                    Model       = model
-                                                    Profile     = profile
-                                                    Cache       = cache
-                                                    Profiler    = profiler
-                                                    TypeMapping = typeMapping
-                                                    Overrides   = overrides
-                                                    Emission    = emission
-                                                    Policy      = policy
-                                                    Output      = output
-                                                }
+                                    | Ok output ->
+                                        Result.success {
+                                            Model       = model
+                                            Profile     = profile
+                                            Profiler    = profiler
+                                            Overrides   = overrides
+                                            Emission    = emission
+                                            Policy      = policy
+                                            Output      = output
+                                        }
 
     /// Parse a JSON string into a typed `Config`. Order of operations:
     ///   1. Parse the JSON syntactically. Malformed JSON returns

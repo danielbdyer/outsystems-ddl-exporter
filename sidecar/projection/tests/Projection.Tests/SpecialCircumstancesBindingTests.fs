@@ -91,12 +91,9 @@ let private mkConfig (overrides: Config.OverridesSection) : Config.Config =
             IncludeSystemModules   = false
             IncludeInactiveModules = false
             OnlyActiveAttributes   = true
-            ValidationOverrides    = { AllowMissingSchema = [] }
         }
         Profile     = { Path = None }
-        Cache       = { Root = ""; Refresh = false; TtlSeconds = 0 }
-        Profiler    = { Provider = "fixture"; MockFolder = None }
-        TypeMapping = { Path = None; Default = None; Overrides = Map.empty }
+        Profiler    = { Provider = "fixture" }
         Overrides   = overrides
         Emission    = {
             Ssdt = true; Dacpac = true; Json = true; Distributions = true
@@ -104,9 +101,7 @@ let private mkConfig (overrides: Config.OverridesSection) : Config.Config =
             DecisionLog = true; Opportunities = true; Validations = true; IncludePlatformAutoIndexes = true; DeleteScope = None; RenderConstraintsElegant = true
         }
         Policy      = {
-            Selection       = "IncludeAll"
             Insertion       = "SchemaOnly"
-            UserMatching    = { Strategy = "ByEmail"; Fallback = "NoFallback" }
             Tightening      = None
             TransformGroups = []
         }

@@ -156,19 +156,10 @@ let private fullConfigJson = """{
         ],
         "includeSystemModules": false,
         "includeInactiveModules": false,
-        "onlyActiveAttributes": true,
-        "validationOverrides": {
-            "allowMissingSchema": [ "Mod::*" ]
-        }
+        "onlyActiveAttributes": true
     },
     "profile": { "path": "extracted/profile.json" },
-    "cache": { "root": ".artifacts/cache", "refresh": false, "ttlSeconds": 7200 },
-    "profiler": { "provider": "fixture", "mockFolder": null },
-    "typeMapping": {
-        "path": "config/type-mapping.default.json",
-        "default": null,
-        "overrides": { "Text": "nvarchar(max)" }
-    },
+    "profiler": { "provider": "fixture" },
     "overrides": {
         "tableRenames": [
             { "from": { "module": "Old", "entity": "OldE" }, "to": { "schema": "dbo", "table": "NEW_T" } },
@@ -205,9 +196,7 @@ let private fullConfigJson = """{
         "decisionLog": true, "opportunities": true, "validations": true
     },
     "policy": {
-        "selection": "IncludeAll",
-        "insertion": "SchemaOnly",
-        "userMatching": { "strategy": "ByEmail", "fallback": "NoFallback" }
+        "insertion": "SchemaOnly"
     },
     "output": { "dir": "out/" }
 }"""
@@ -428,15 +417,8 @@ let ``Config.parse: unknown top-level property is tolerated`` () =
 let ``Config.parse: defaults applied when sections are absent`` () =
     let json = """{ "model": { "path": "m.json" } }"""
     let cfg = Config.parse json |> mustOk
-    Assert.Equal(".artifacts/cache", cfg.Cache.Root)
-    Assert.Equal(7200, cfg.Cache.TtlSeconds)
-    Assert.False(cfg.Cache.Refresh)
     Assert.Equal("fixture", cfg.Profiler.Provider)
-    Assert.True(cfg.Profiler.MockFolder.IsNone)
-    Assert.Equal("IncludeAll", cfg.Policy.Selection)
     Assert.Equal("SchemaOnly", cfg.Policy.Insertion)
-    Assert.Equal("ByEmail",    cfg.Policy.UserMatching.Strategy)
-    Assert.Equal("NoFallback", cfg.Policy.UserMatching.Fallback)
 
 // -----------------------------------------------------------------------
 // Config.fromFile — file I/O wrapper. A.1 CLI bridge ingests config via

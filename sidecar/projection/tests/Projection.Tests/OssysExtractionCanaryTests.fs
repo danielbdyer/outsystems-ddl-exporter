@@ -294,8 +294,7 @@ let private scopedModel : Projection.Pipeline.Config.ModelSection =
           Projection.Pipeline.Config.ModuleSelector.Whole "Ops" ]
       IncludeSystemModules   = false
       IncludeInactiveModules = false
-      OnlyActiveAttributes   = true
-      ValidationOverrides    = { AllowMissingSchema = [] } }
+      OnlyActiveAttributes   = true }
 
 let private extractEquivalencePair () : Task<Result<Catalog> * Result<Catalog>> =
     task {

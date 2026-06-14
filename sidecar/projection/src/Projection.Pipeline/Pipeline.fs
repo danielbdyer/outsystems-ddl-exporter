@@ -509,7 +509,28 @@ module Compose =
         let outputs =
             emitSteps
             |> List.fold (fun acc step -> step.Emit emitContext acc) (seedOutputs emitContext)
-        outputs, composedState
+        // NM-02 (2026-06-13) — the emission axes `EmitSchema` / `EmitDiagnostics`
+        // now gate real emit steps, mirroring the `EmitData` gate on the data
+        // bundle (line ~608). Every `EmitStep` still runs (so `registered ⇔
+        // executed` holds and `Manifest`/`Trail`/`PassEntries` stay populated as
+        // the §16 egress conduits); the gate clears the artifact fields AFTER the
+        // fold rather than skipping the step. The defaults (`EmissionPolicy.empty`
+        // = schema + diagnostics on) leave this identity — byte-identical default.
+        let schemaGated =
+            // `EmitSchema = false` ⇒ no CREATE/SSDT schema bundle. The `Manifest`
+            // value stays (a conduit, embedded in no file when SsdtBundle is empty).
+            if policy.EmitSchema then outputs
+            else { outputs with SsdtBundle = Map.empty }
+        let diagnosticsGated =
+            // `EmitDiagnostics = false` ⇒ no operational diagnostic artifacts
+            // (decision-log-derived remediation SQL / summary prose / suggest-config).
+            if policy.EmitDiagnostics then schemaGated
+            else
+                { schemaGated with
+                    RemediationSql    = ""
+                    SummaryText       = ""
+                    SuggestConfigJson = emptyJsonNode () }
+        diagnosticsGated, composedState
 
     let private projectFromChain
         (chain: PassChainAdapter list)
@@ -986,6 +1007,18 @@ module Compose =
                 || cfg.Emission.Bootstrap
             let dataComposition =
                 if cfg.Emission.StaticSeeds then AllRemaining else AllExceptStatic
+            // NM-02 (2026-06-13) — translate the schema / diagnostics emission
+            // toggles into the EmissionPolicy, mirroring the data-lane wiring
+            // above. `emission.ssdt` gates the CREATE/SSDT schema bundle;
+            // any of `emission.decisionLog` / `.opportunities` / `.validations`
+            // keeps the diagnostic-artifact emission on. Both config families
+            // default `true`, so the default policy stays schema + diagnostics
+            // (byte-identical to `EmissionPolicy.empty`).
+            let emitSchema = cfg.Emission.Ssdt
+            let emitDiagnostics =
+                cfg.Emission.DecisionLog
+                || cfg.Emission.Opportunities
+                || cfg.Emission.Validations
             Result.success {
                 Policy.empty with
                     Tightening = tightening
@@ -996,7 +1029,9 @@ module Compose =
                     // `emission.includePlatformAutoIndexes` threads to the
                     // collapsed seam (default true = current behavior).
                     Emission   = { Policy.empty.Emission with
+                                     EmitSchema = emitSchema
                                      EmitData = emitData
+                                     EmitDiagnostics = emitDiagnostics
                                      DataComposition = dataComposition
                                      DeleteScope = cfg.Emission.DeleteScope
                                      IncludePlatformAutoIndexes = cfg.Emission.IncludePlatformAutoIndexes
