@@ -999,5 +999,5 @@ module Voice =
         | VerificationFailed _      -> "the round-trip did not match the model"
         | DataTransferFailed _      -> "the data load did not complete"
         | RefusedByCdc t            -> sprintf "the schema change would run against a CDC-tracked database (%d table(s))" (List.length t)
-        | RefusedByCdcUnverifiable msg -> sprintf "the CDC state could not be verified, so the schema change was refused — %s" msg
+        | RefusedByCdcUnverifiable msg -> sprintf "the CDC state could not be verified, so the schema change did not run — %s" msg
         | StoreReadFailed msg       -> sprintf "the run history could not be read — %s" msg
