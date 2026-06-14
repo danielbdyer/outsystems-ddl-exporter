@@ -86,7 +86,10 @@ let ``Watch board: a stageCompleted with a failed or aborted outcome goes Halted
     | other -> Assert.Fail(sprintf "expected deploy Done on succeeded, got %A" other)
 
 [<Fact>]
-let ``Watch board: a halted stage blocks the done-frame — the arc did not land`` () =
+let ``Watch board: a mid-arc halt with a later stage still pending blocks the done-frame`` () =
+    // The arc has NOT closed: `deploy` halted but `canary` is still pending, so
+    // the run is not yet terminal and the done-frame stays held back. (The halt AT
+    // the terminal stage is the NM-46 case below — that one DOES close the frame.)
     let board = Watch.seeded [ "deploy"; "canary" ]
     let started, _ = Watch.apply board "deploy.started" Map.empty
     let halted, _ =
@@ -94,6 +97,26 @@ let ``Watch board: a halted stage blocks the done-frame — the arc did not land
             (payload [ "stage", box "deploy"; "durationMs", box 1L; "outcome", box "aborted" ])
     Assert.False(Watch.isTerminal halted)
     Assert.True((Watch.doneFrameText halted).IsNone)
+
+[<Fact>]
+let ``Watch board: a halt at the terminal stage IS terminal and closes with a remediation move (NM-46)`` () =
+    // NM-46: a run that HALTS at its last stage reaches terminal (the arc landed on
+    // a ✕). The board must NOT go silent on the red ✕ — the done-frame still renders
+    // and names the next move (the §13 'never end at done' rule), pointing the
+    // operator at the error surface that carries the cause.
+    let board = Watch.seeded [ "deploy" ]
+    let started, _ = Watch.apply board "deploy.started" Map.empty
+    let halted, _ =
+        Watch.apply started "summary.stageCompleted"
+            (payload [ "stage", box "deploy"; "durationMs", box 700L; "outcome", box "aborted" ])
+    // The terminal halt is terminal — the frame must NOT be held back.
+    Assert.True(Watch.isTerminal halted)
+    match Watch.doneFrameText halted with
+    | Some t ->
+        Assert.Contains("Deploy stopped", t)
+        Assert.Contains("error surface", t)   // points at the cause, not silence
+        Assert.Contains("re-run", t)          // names the next move (§13)
+    | None -> Assert.Fail "a halted terminal run must still close with a done-frame (NM-46)"
 
 [<Fact>]
 let ``Watch line: a halted stage voices the stop — candid, never a checkmark phrase`` () =

@@ -125,6 +125,16 @@ module Voice =
         | "load"      -> "Verification follows."
         | _           -> "The run is complete."
 
+    /// The §13 follow-on for a run whose terminal stage HALTED — NM-46: a run that
+    /// stops at its terminal stage must still close with the next move, never go
+    /// silent on the red ✕ (the board's cardinal §13 rule, "never end at 'done'").
+    /// The cause already lives on the run's error surface; this follow-on names the
+    /// remediation the board points to. Stative + agentless; never a pronoun, never
+    /// "failed"/"refused" as a lead (the §2.2 banned register). Public so the board's
+    /// done-frame reads the one mapping and the totality test asserts both branches.
+    let followOnHalted (terminalStage: string) : string =
+        sprintf "%s stopped. The cause is on the error surface above; resolve it and re-run." (stageName terminalStage)
+
     // ------------------------------------------------------------------
     // The catalog — grouped by `THE_VOICE.md` section (decision 5: the
     // harvested catalog mirrors the doc). Each entry is a separable
