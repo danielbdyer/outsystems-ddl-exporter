@@ -57,7 +57,15 @@ let ``Ref: a runId ref resolves to the run's catalog (the Run-Ref connection)`` 
         try Directory.Delete(dir, true) with _ -> ()
 
 [<Fact>]
-let ``Ref: a live ref fails loud (capability exists; adapter pending)`` () =
-    match TaskSync.run (fun () -> Ref.resolveCatalog (Ref.Live "uat")) with
-    | Ok _    -> Assert.Fail "live should be unavailable, not silently wrong"
-    | Error _ -> ()
+let ``Ref: a live ref resolves through the adapter and fails loud as a NAMED Error on an unreachable endpoint`` () =
+    // The live adapter shipped (Source.ofLive): a `live:` ref now resolves
+    // through ReadSide over a real connection. An unreachable / malformed
+    // endpoint must surface as the port's typed refusal — NOT a silent success
+    // (the original "don't be silently wrong" guarantee) and NOT a raw
+    // exception escaping the `Task<Result<_>>` boundary (which would crash the
+    // CLI's `.GetAwaiter().GetResult()` instead of printing a clean error).
+    // A short login timeout keeps the test fast without reaching any server.
+    match TaskSync.run (fun () -> Ref.resolveCatalog (Ref.Live "Server=127.0.0.1,1;Connect Timeout=1;TrustServerCertificate=True;Encrypt=False")) with
+    | Ok _     -> Assert.Fail "live should fail on an unreachable endpoint, not silently succeed"
+    | Error es ->
+        Assert.Contains(es, fun e -> e.Code = "source.live.connectionFailed")
