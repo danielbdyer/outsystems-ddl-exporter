@@ -135,12 +135,31 @@ let runFullExportLoad
                     let at = System.DateTimeOffset.UtcNow
                     let work =
                         task {
-                            use sink = new Microsoft.Data.SqlClient.SqlConnection(connStr)
-                            do! sink.OpenAsync()
-                            // Card P2 — the seed loads leveled-parallel: the executor
-                            // closes over the connection STRING (per-segment pooled
-                            // opens); `sink` stays the CDC measure's connection.
-                            return! Compose.runWithConfigAndLoad Deploy.cdcCaptureTotal (Deploy.executeLeveledSeed connStr) cfg sink storePath tl env at
+                            // The connection OPEN is guarded so a dead/unreachable sink
+                            // surfaces as the named connection-axis refusal (exit 6,
+                            // matching transfer/migrate's `openSubstrate`) rather than an
+                            // uncaught `SqlException` crashing the verb. The ref-resolve
+                            // axis was already handled above (exit 6); this closes the
+                            // open-failure leg that previously escaped the Result channel.
+                            let sink = new Microsoft.Data.SqlClient.SqlConnection(connStr)
+                            let! opened =
+                                task {
+                                    try
+                                        do! sink.OpenAsync()
+                                        return Ok ()
+                                    with ex ->
+                                        return Result.failure [ ValidationError.create "transfer.connection.openFailed" (sprintf "Sink connection: failed to open — %s" ex.Message) ]
+                                }
+                            match opened with
+                            | Error es ->
+                                sink.Dispose()
+                                return Error es
+                            | Ok () ->
+                                use sink = sink
+                                // Card P2 — the seed loads leveled-parallel: the executor
+                                // closes over the connection STRING (per-segment pooled
+                                // opens); `sink` stays the CDC measure's connection.
+                                return! Compose.runWithConfigAndLoad Deploy.cdcCaptureTotal (Deploy.executeLeveledSeed connStr) cfg sink storePath tl env at
                         }
                     let code =
                         match work.GetAwaiter().GetResult() with
@@ -161,8 +180,12 @@ let runFullExportLoad
                                           "timeline",     box (Timeline.name (EpisodicLifecycle.timeline leg.Chain)) ]))
                             0
                         | Error es ->
+                            // Single-source the exit through `classify`: a guarded
+                            // connection-open failure is the connection axis (6, matching
+                            // transfer/migrate); a genuine load/execution error keeps the
+                            // unclassified-refusal default (3). No silent flattening.
                             printErrors Console.Error es
-                            3
+                            (Preflight.refusalOf es).ExitCode
                     dumpBench "full-export"
                     code
 
@@ -1665,8 +1688,15 @@ let runMigrateExecute (target: Catalog) (connSpec: string) (declaration: LossDec
                     { Environment = parseEnvironment "migrate-sink" None; Role = SubstrateRole.Sink; ConnectionRef = connRef }
                 match! ConnectionResolver.openSubstrate sub with
                 | Error es ->
+                    // NM-61 (extended) — the connection axis exits 6 on migrate too,
+                    // matching `transfer`. `openSubstrate` surfaces `transfer.connection.*`
+                    // (ref-resolve + open), which `classify` maps to 6; single-sourcing
+                    // through `refusalOf` keeps this short-circuit in step with the
+                    // in-flight `migratePreflights` connection gate (also 6) — closing the
+                    // residual where the open-failure path hardcoded 3 while transfer's
+                    // identical probe returned 6.
                     printErrors Console.Error es
-                    return 3
+                    return (Preflight.refusalOf es).ExitCode
                 | Ok cnn ->
                     use cnn = cnn
                     // Read state A live, then run the pre-flights on the planned writes.
@@ -1794,14 +1824,16 @@ let runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec: string)
                 let sourceSub : Substrate = { Environment = parseEnvironment "migrate-source" None; Role = SubstrateRole.Source; ConnectionRef = sourceRef }
                 match! ConnectionResolver.openSubstrate sinkSub with
                 | Error es ->
+                    // NM-61 (extended) — connection axis → 6 (matches transfer + the
+                    // in-flight gate); single-sourced through `refusalOf`.
                     printErrors Console.Error es
-                    return 3
+                    return (Preflight.refusalOf es).ExitCode
                 | Ok sink ->
                     use sink = sink
                     match! ConnectionResolver.openSubstrate sourceSub with
                     | Error es ->
                         printErrors Console.Error es
-                        return 3
+                        return (Preflight.refusalOf es).ExitCode
                     | Ok dataSource ->
                         use dataSource = dataSource
                         let! readA = ReadSide.read sink
@@ -1911,15 +1943,21 @@ let runProjectLivePreview (target: Catalog) (connSpec: string) (declaration: Los
         task {
             match TransferSpec.parseConnectionSpec connSpec with
             | Error es ->
+                // A malformed connection SPEC is the parse axis (exit 2), matching
+                // `transfer` (spec errors → 2) and `runMigrateExecute`. (The prior 6
+                // conflated spec-parse with the connection-reach axis.)
                 printErrors Console.Error es
-                return 6
+                return 2
             | Ok connRef ->
                 let sub : Substrate =
                     { Environment = parseEnvironment "preview" None; Role = SubstrateRole.Sink; ConnectionRef = connRef }
                 match! ConnectionResolver.openSubstrate sub with
                 | Error es ->
+                    // NM-61 (extended) — the connection-reach axis exits 6, matching
+                    // transfer + the migrate execute/with-data faces (single-sourced
+                    // through `refusalOf`); the prior hardcoded 3 diverged.
                     printErrors Console.Error es
-                    return 3
+                    return (Preflight.refusalOf es).ExitCode
                 | Ok cnn ->
                     use cnn = cnn
                     match! ReadSide.read cnn with

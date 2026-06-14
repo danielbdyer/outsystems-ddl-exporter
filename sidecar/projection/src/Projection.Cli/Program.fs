@@ -207,17 +207,22 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
     | PlanAction.SealEject store -> runEject store
     | PlanAction.SealApprove (version, approver, rationale, store) -> runApprove version approver rationale store
     // report -------------------------------------------------------------
-    | PlanAction.ReportBundle store ->
+    | PlanAction.ReportBundle (store, outputDir) ->
         match ReportRun.fromStore store with
         | Ok bundle ->
             printLines Console.Out (ReportRun.render bundle)
             // Surface the per-run Model Fidelity Report when one was recorded —
             // the rolled-up account of the distance between the declared model
-            // and the observed source reality. Searched next to the store and
-            // in the default output directory; absent until a profiled run
-            // emits it (best-effort, additive — the change report stands alone).
+            // and the observed source reality. Searched FIRST in the flow target's
+            // own bundle `out` folder (where the full-export feeding this timeline
+            // wrote it — threaded by `planReport`), then next to the store and in
+            // the default output directory; absent until a profiled run emits it
+            // (best-effort, additive — the change report stands alone).
             let fidelityCandidates =
-                [ match Option.ofObj (Path.GetDirectoryName store) with
+                [ match outputDir with
+                  | Some dir when dir <> "" -> yield Path.Combine(dir, "fidelity.json")
+                  | _ -> ()
+                  match Option.ofObj (Path.GetDirectoryName store) with
                   | Some dir when dir <> "" -> yield Path.Combine(dir, "fidelity.json")
                   | _ -> ()
                   yield Path.Combine("out", "fidelity.json")
