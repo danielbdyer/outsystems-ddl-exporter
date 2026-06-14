@@ -165,11 +165,11 @@ module Lifecycle =
     /// chain (each edge's target IS the next edge's source), and both groupings
     /// recompute `between genesis latest`. A genesis-only lifecycle (empty
     /// chain) has no edges to compose, so the net displacement is the self-diff
-    /// at genesis (`between C₀ C₀`, the empty delta). The `None` branch of the
-    /// fold is structurally unreachable for a well-formed monotone chain (each
-    /// edge meets the next on the captured surface by construction); it falls
-    /// back to the direct `between` — observably identical by the functor law —
-    /// rather than fabricating an `EmitError` variant for an impossible state.
+    /// at genesis (`between C₀ C₀`, the empty delta). NM-45 — the `None` branch
+    /// of the fold is structurally unreachable for a well-formed monotone chain
+    /// (each edge meets the next on the captured surface by construction); it now
+    /// surfaces `EmitError.NonComposableLifecycleChain` rather than silently
+    /// substituting the direct `between` that the fold was meant to corroborate.
     /// `applyDiff (netDiff lc) genesis ≈ latest` (modulo the captured surface).
     /// Threads the Π-side `EmitError`.
     let netDiff (lifecycle: Lifecycle) : Result<CatalogDiff, EmitError> =
@@ -184,7 +184,8 @@ module Lifecycle =
             // Fold the groupoid composition across the chain — the production
             // exercise of CatalogDiff.compose. By the functor law the folded
             // delta equals `between genesis latest`; `None` is unreachable on a
-            // monotone chain and falls back to the (equal) direct diff.
+            // monotone chain and is now a NAMED refusal (NM-45), not a silent
+            // fallback to the direct diff `compose` was meant to corroborate.
             let composed =
                 rest
                 |> List.fold
@@ -195,4 +196,10 @@ module Lifecycle =
                     (Some d0)
             match composed with
             | Some net -> Ok net
-            | None     -> directNetDiff ()
+            | None     ->
+                Error (
+                    NonComposableLifecycleChain
+                        "Lifecycle.netDiff: an evolution-chain edge does not meet \
+                         the next on the captured surface — the chain is not \
+                         monotone (CatalogDiff.compose returned None, unreachable \
+                         by construction for a well-formed lifecycle).")

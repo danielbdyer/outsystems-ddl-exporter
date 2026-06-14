@@ -233,8 +233,11 @@ module EpisodicLifecycle =
     /// `CatalogDiff.compose` over the `schemaEvolutionChain`** — the production
     /// consumer of the groupoid composition `⊕` on the episodic plane. The
     /// functor law guarantees the fold equals the direct `between E₀.Schema
-    /// Eₙ.Schema`; a genesis-only lifecycle (empty chain) and the structurally-
-    /// unreachable non-composable fold both fall back to the (equal) direct diff.
+    /// Eₙ.Schema`; a genesis-only lifecycle (empty chain) falls back to the
+    /// direct diff. NM-45 — the structurally-unreachable non-composable fold now
+    /// surfaces `EmitError.NonComposableLifecycleChain` instead of silently
+    /// substituting the direct diff it was meant to corroborate (`compose`'s
+    /// `None` is fail-loud, "never a silently-wrong result").
     let netSchemaDiff (lifecycle: EpisodicLifecycle) : Result<CatalogDiff, EmitError> =
         let (EpisodicLifecycle data) = lifecycle
         let genesisSchema = (List.head data.Episodes).Schema
@@ -254,4 +257,11 @@ module EpisodicLifecycle =
                     (Some d0)
             match composed with
             | Some net -> Ok net
-            | None     -> directNetDiff ()
+            | None     ->
+                Error (
+                    NonComposableLifecycleChain
+                        "Episode.netSchemaDiff: a schema-evolution-chain edge does \
+                         not meet the next on the captured surface — the chain is \
+                         not monotone (CatalogDiff.compose returned None, \
+                         unreachable by construction for a well-formed episodic \
+                         lifecycle).")
