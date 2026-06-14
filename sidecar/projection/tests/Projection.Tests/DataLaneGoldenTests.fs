@@ -78,11 +78,12 @@ let private bundle : DataEmissionComposer.RenderedDataBundle =
         Policy.empty catalog Profile.empty ctx UserRemapContext.empty
     |> mustOkEmit
 
-/// The reviewable data files: the non-empty per-lane renderings plus the fused
-/// deploy artifact, exactly as the pipeline would publish them at ≥2 lanes.
+/// The reviewable data files: the non-empty per-lane renderings, exactly as the
+/// pipeline now publishes them (DECISIONS 2026-06-14 — the fused `Data/seed.sql`
+/// file is no longer emitted; the fused composition stays in-memory for the
+/// leveled deploy's cross-lane ordering).
 let private dataFiles : Map<string, string> =
     DataEmissionComposer.RenderedDataBundle.perLaneFiles bundle
-    |> Map.add "Data/seed.sql" bundle.Fused
 
 let private listGoldenFiles (dir: string) : Map<string, string> =
     if not (Directory.Exists dir) then Map.empty
@@ -121,11 +122,12 @@ let ``data-lane golden: the per-lane static + migration data files match the ble
             Assert.Equal(body, Map.find rel dataFiles)
 
 [<Fact>]
-let ``data-lane golden: exactly the static + migration lanes are present (bootstrap is empty by construction)`` () =
-    // The reviewable set is the two populatable lanes plus the fused seed.
-    // Bootstrap is absent because its rows arrive only via live hydration.
+let ``data-lane golden: exactly the static + migration lanes are present (no fused seed.sql; bootstrap empty without hydration)`` () =
+    // The reviewable set is the per-lane files only. The fused Data/seed.sql is
+    // no longer emitted (operator decision). Bootstrap is absent because its
+    // rows arrive only via live hydration (covered by the Docker golden).
     let keys = dataFiles |> Map.toSeq |> Seq.map fst |> Set.ofSeq
     Assert.Contains("Data/StaticSeeds.sql", keys)
     Assert.Contains("Data/MigrationData.sql", keys)
-    Assert.Contains("Data/seed.sql", keys)
+    Assert.DoesNotContain("Data/seed.sql", keys)
     Assert.DoesNotContain("Data/Bootstrap.sql", keys)

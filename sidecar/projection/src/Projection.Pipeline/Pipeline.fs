@@ -729,21 +729,20 @@ module Compose =
                 use _ = Bench.scope "emit.dataBundle.compose"
                 match DataComposer.composeRenderedBundle fullPolicy finalState.Catalog profile with
                 | Ok bundle when not (System.String.IsNullOrWhiteSpace bundle.Fused) ->
-                    // The fused `Data/seed.sql` is the deploy artifact. WP6
-                    // step 3 — also write the per-lane files
-                    // (`Data/StaticSeeds.sql` / `Data/MigrationData.sql` /
-                    // `Data/Bootstrap.sql`), but ONLY when ≥2 lanes carry
-                    // content: with a single active lane the fused seed IS
-                    // that lane, so a per-lane file would byte-duplicate it
-                    // (minimize review/golden surface — DECISIONS 2026-06-13).
-                    // The writer iterates `DataBundle` generically (no writer
-                    // change); `Map.isEmpty` still holds when EmitData is off
-                    // (the data flags gate this whole branch).
-                    let perLane =
-                        if DataComposer.RenderedDataBundle.nonEmptyLaneCount bundle >= 2
-                        then DataComposer.RenderedDataBundle.perLaneFiles bundle
-                        else Map.empty
-                    { outputs with DataBundle = perLane |> Map.add "Data/seed.sql" bundle.Fused }
+                    // The PER-LANE files (`Data/StaticSeeds.sql` /
+                    // `Data/MigrationData.sql` / `Data/Bootstrap.sql`) are the
+                    // operator-facing data artifacts — each lane that carries
+                    // content emits its own file (DECISIONS 2026-06-14, operator
+                    // decision: the per-lane files are the reviewed/applied
+                    // artifacts; the prior ≥2-lane gate existed only to avoid
+                    // byte-duplicating the fused file, which is no longer emitted).
+                    // The fused composition (`bundle.Fused`) stays IN-MEMORY for
+                    // the leveled deploy's cross-lane topo ordering (it is
+                    // re-projected as a `LeveledDeploymentText`, never read back
+                    // from a `Data/seed.sql` file) — so dropping the file does not
+                    // change deploy behaviour. The writer iterates `DataBundle`
+                    // generically (no writer change).
+                    { outputs with DataBundle = DataComposer.RenderedDataBundle.perLaneFiles bundle }
                 | Ok _ -> outputs   // no rows in scope ⇒ nothing to emit
                 | Error err ->
                     // Mirrors the SSDT-bundle invariant: a valid catalog never

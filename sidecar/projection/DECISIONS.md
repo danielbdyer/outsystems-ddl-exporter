@@ -23000,3 +23000,32 @@ only by the live Pipeline hydration step (a real SQL source; Docker-gated) — a
 (WP6 step 2), so `StaticSeeds.sql` IS the bootstrap render shape. A populated
 `Bootstrap.sql` golden would require a Docker hydration scenario; deferred per the
 operator's scope choice (non-Docker per-lane goldens).
+
+---
+
+## 2026-06-14 (later) — Data artifacts: the per-lane files replace the fused `Data/seed.sql` (operator decision)
+
+The pipeline no longer emits a fused `Data/seed.sql` file. The operator-facing data
+artifacts are the PER-LANE files — `Data/StaticSeeds.sql`, `Data/MigrationData.sql`,
+`Data/Bootstrap.sql` — each emitted whenever its lane carries content (the prior
+≥2-lane gate, NM-74, existed only to avoid byte-duplicating the fused file and is
+retired). Operator rationale (2026-06-14): "seed.sql can be removed as a file
+emission outcome … the notion of 'fused' (all data) is not problematic, but I will
+never use that file per se."
+
+The fused composition (`RenderedDataBundle.Fused`) STAYS — in-memory — for the
+leveled deploy's cross-lane topological ordering: the deploy re-projects it as a
+`LeveledDeploymentText` (per-level), it never reads back a `Data/seed.sql` file. So
+dropping the file does not change deploy behaviour (the staging writer iterates
+`DataBundle` generically; `Pipeline.fs:874`). For a single static lane the new
+`Data/StaticSeeds.sql` is byte-identical to the former `Data/seed.sql` (fused ≡ the
+one active lane) — a clean rename, witnessed by the re-blessed master golden.
+
+Goldens re-recorded (GOLDEN_RECORD=1): `master/Data/seed.sql` → `master/Data/
+StaticSeeds.sql`; `data-lanes/Data/seed.sql` dropped. `FullExportDataBundleTests`
+and `DataLaneGoldenTests` updated to the per-lane contract.
+
+This is the foundation for "Bootstrap emitted basically always": once the bootstrap
+lane carries content (live hydration), `Data/Bootstrap.sql` emits by the same
+per-lane rule. The live-source adapter + bootstrap hydration + compare live-profiling
+are the Docker-gated follow-on steps.
