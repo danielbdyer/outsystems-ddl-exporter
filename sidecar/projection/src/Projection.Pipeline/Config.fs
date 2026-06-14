@@ -201,6 +201,13 @@ module Config =
         /// passes ScriptDom's raw output through. Threads to
         /// `EmissionPolicy.RenderConstraintsElegant`.
         RenderConstraintsElegant : bool
+        /// NM-70 (WP5) — `emission.identityAnnotations`. `true` (the
+        /// default — current behavior) emits the `Projection.SsKey` /
+        /// `Projection.LogicalName` identity extended properties; `false`
+        /// is the named downgrade that suppresses them (identity recovery
+        /// degrades to name-derived SsKeys, with a diagnostic). Threads to
+        /// `EmissionPolicy.EmitIdentityAnnotations`.
+        EmitIdentityAnnotations : bool
     }
 
     // NM-03 (2026-06-13) — `policy.selection` and `policy.userMatching` were
@@ -349,6 +356,8 @@ module Config =
         DeleteScope           = None
         // NM-38 — V1-parity default-on (elegant multi-line constraints).
         RenderConstraintsElegant = true
+        // NM-70 — default-on (identity annotations emit; byte-identical).
+        EmitIdentityAnnotations = true
     }
 
     let private defaultPolicy : PolicySection = {
@@ -1037,6 +1046,10 @@ module Config =
                                                     match read "renderConstraintsElegant" defaultEmission.RenderConstraintsElegant with
                                                     | Error es -> Error es
                                                     | Ok renderElegant ->
+                                                    // NM-70 — `emission.identityAnnotations`; default true.
+                                                    match read "identityAnnotations" defaultEmission.EmitIdentityAnnotations with
+                                                    | Error es -> Error es
+                                                    | Ok identityAnnotations ->
                                                     match parseDeleteScope element with
                                                     | Error es -> Error es
                                                     | Ok deleteScope ->
@@ -1054,6 +1067,7 @@ module Config =
                                                         IncludePlatformAutoIndexes = includeAuto
                                                         DeleteScope = deleteScope
                                                         RenderConstraintsElegant = renderElegant
+                                                        EmitIdentityAnnotations = identityAnnotations
                                                     }
 
     let private getOptionalBool (element: JsonElement) (name: string) : Result<bool option> =

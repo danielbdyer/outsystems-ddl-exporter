@@ -48,6 +48,18 @@ let private customerSsdtBody (catalog: Catalog) : string =
     | Some file -> file.Body
     | None -> failwithf "Customer kind missing from SSDT outputs"
 
+/// NM-70 — render the Customer body with the identity-annotation gate
+/// set explicitly. `emitIdentityAnnotations = false` is the omit
+/// posture (the `Projection.*` properties are suppressed).
+let private customerSsdtBodyWithIdentityAnnotations (emitIdentityAnnotations: bool) (catalog: Catalog) : string =
+    let outputs =
+        SsdtDdlEmitter.emitSlicesWithRendering
+            ConstraintFormatter.Enabled emitIdentityAnnotations DecisionOverlay.empty (enrich catalog)
+        |> mustOk
+    match ArtifactByKind.tryFind customerKey outputs with
+    | Some file -> file.Body
+    | None -> failwithf "Customer kind missing from SSDT outputs"
+
 /// Build a fixture-shaped sampleCatalog with one Kind carrying a
 /// table-level Description.
 let private withCustomerDescription (desc: string) : Catalog =
@@ -195,3 +207,52 @@ let ``Chapter 4.1.A slice 8: Tolerance.CommentMetadataUnreflected variant retire
     // NM-16 (2026-06-13) added the four kind-facet diff-erasure tolerances;
     // NM-28 (2026-06-14) added CompositePkFkUnreflected.
     Assert.Equal(12, Set.count ToleratedDivergence.allKnown)
+
+// ---------------------------------------------------------------------------
+// NM-70 (WP5) — the identity-annotation emit | omit gate.
+//
+// `emitIdentityAnnotations = true` (the default) emits the `Projection.*`
+// identity extended properties unconditionally (byte-identical to
+// pre-NM-70). `false` suppresses them; other extended properties
+// (MS_Description, authored ExtendedProperties) still emit.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``NM-70: default (emit) renders the Projection.SsKey + Projection.LogicalName identity properties`` () =
+    let body = customerSsdtBodyWithIdentityAnnotations true sampleCatalog
+    Assert.Contains("@name = N'Projection.SsKey'", body)
+    Assert.Contains("@name = N'Projection.LogicalName'", body)
+
+[<Fact>]
+let ``NM-70: emit-on path is byte-identical to the default emitSlices body`` () =
+    // The gate's `true` branch must not perturb the default emission.
+    let gated   = customerSsdtBodyWithIdentityAnnotations true sampleCatalog
+    let default_ = customerSsdtBody sampleCatalog
+    Assert.Equal<string>(default_, gated)
+
+[<Fact>]
+let ``NM-70: omit suppresses the Projection.* identity extended properties`` () =
+    let body = customerSsdtBodyWithIdentityAnnotations false sampleCatalog
+    Assert.DoesNotContain("Projection.SsKey", body)
+    Assert.DoesNotContain("Projection.LogicalName", body)
+
+[<Fact>]
+let ``NM-70: omit still emits MS_Description and authored extended properties`` () =
+    // Other extended properties survive the identity-annotation omit.
+    let catalog =
+        withCustomerExtendedProperty "OutSystems_EntityId" (Some "42")
+        |> fun c ->
+            { c with
+                Modules =
+                    c.Modules
+                    |> List.map (fun m ->
+                        { m with
+                            Kinds =
+                                m.Kinds
+                                |> List.map (fun k ->
+                                    if k.SsKey = customerKey then { k with Description = Some "Customer master" }
+                                    else k) }) }
+    let body = customerSsdtBodyWithIdentityAnnotations false catalog
+    Assert.DoesNotContain("Projection.SsKey", body)
+    Assert.Contains("@name = N'MS_Description'", body)
+    Assert.Contains("@name = N'OutSystems_EntityId'", body)

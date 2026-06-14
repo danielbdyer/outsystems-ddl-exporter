@@ -387,6 +387,12 @@ module Compose =
         /// SSDT type). Threaded into `SsdtDdlEmitter.emitSlicesWithRendering`
         /// so the operator's V1-parity / bisect opt-out reaches production.
         ConstraintRendering : ConstraintFormatter.Mode
+        /// NM-70 (WP5) — `EmissionPolicy.EmitIdentityAnnotations` lifted to
+        /// the SSDT emit seam. `true` (default) ⇒ the `Projection.*` identity
+        /// extended properties emit (byte-identical). `false` ⇒ they are
+        /// suppressed and the `emission.identityAnnotations.omitted` named
+        /// downgrade diagnostic is emitted at the SSDT emit step.
+        EmitIdentityAnnotations : bool
     }
 
     /// One registered emit step: its metadata (the pillar-9 classification
@@ -468,7 +474,7 @@ module Compose =
               fun ctx outputs ->
                 use _ = Bench.scope "emit.ssdtBundle.compose"
                 let decisionOverlay = DecisionOverlay.ofComposeState ctx.ComposedState
-                match SsdtDdlEmitter.emitSlicesWithRendering ctx.ConstraintRendering decisionOverlay ctx.EmittedCatalog with
+                match SsdtDdlEmitter.emitSlicesWithRendering ctx.ConstraintRendering ctx.EmitIdentityAnnotations decisionOverlay ctx.EmittedCatalog with
                 | Ok ssdtFiles ->
                     let rewritten = applyEmissionFolderOverrides ctx.Folders ctx.EmittedCatalog ssdtFiles
                     let policyConflicts = ConflictDetector.detectConflicts ctx.Trail ctx.PassEntries
@@ -551,7 +557,12 @@ module Compose =
               // composition seam; `true` (default) ⇒ `Enabled` (byte-identical).
               ConstraintRendering =
                 if policy.RenderConstraintsElegant then ConstraintFormatter.Enabled
-                else ConstraintFormatter.Disabled }
+                else ConstraintFormatter.Disabled
+              // NM-70 — thread the identity-annotation gate to the SSDT emit
+              // step; `true` (default) ⇒ the `Projection.*` properties emit
+              // (byte-identical). The named-downgrade diagnostic is emitted at
+              // the `runWithConfigCore` diagnostics merge, not here.
+              EmitIdentityAnnotations = policy.EmitIdentityAnnotations }
         let outputs =
             emitSteps
             |> List.fold (fun acc step -> step.Emit emitContext acc) (seedOutputs emitContext)
@@ -1092,7 +1103,12 @@ module Compose =
                                      // NM-38 — `emission.renderConstraintsElegant`
                                      // threads the operator's constraint-rendering
                                      // opt-out (default true = current behavior).
-                                     RenderConstraintsElegant = cfg.Emission.RenderConstraintsElegant }
+                                     RenderConstraintsElegant = cfg.Emission.RenderConstraintsElegant
+                                     // NM-70 — `emission.identityAnnotations`
+                                     // threads the operator's identity-annotation
+                                     // gate (default true = current behavior;
+                                     // false is the named downgrade).
+                                     EmitIdentityAnnotations = cfg.Emission.EmitIdentityAnnotations }
             }
         | _ ->
             let tighteningErrs = match tighteningR with Ok _ -> [] | Error es -> es
@@ -1229,6 +1245,19 @@ module Compose =
                         // silent dedupe).
                         @ SsdtDdlEmitter.foreignKeyNameCollisionDiagnostics
                             (DecisionOverlay.ofComposeState finalState) finalState.Catalog
+                        // NM-70 (WP5) — the named downgrade. When the operator
+                        // omits the identity annotations, the `Projection.*`
+                        // extended properties are NOT written, so identity
+                        // recovery degrades to name-derived SsKeys (no
+                        // persisted SsKey to read back on roundtrip). One
+                        // Warning per run; never a silent suppression.
+                        @ (if policy.Emission.EmitIdentityAnnotations then []
+                           else
+                               [ DiagnosticEntry.create
+                                   "emitter:ssdtDdlEmitter"
+                                   DiagnosticSeverity.Warning
+                                   "emission.identityAnnotations.omitted"
+                                   "Identity annotations omitted: the Projection.SsKey / Projection.LogicalName extended properties were not emitted; identity recovery degrades to name-derived SsKeys (no persisted SsKey to read back on roundtrip)." ])
                     match write cfg.Output.Dir outputs with
                     | Ok paths    -> Result.success { Paths = paths; Diagnostics = diagnostics; Manifest = outputs.Manifest; Trail = outputs.Trail; PassDiagnostics = outputs.PassEntries }
                     | Error errors -> Result.failure errors
