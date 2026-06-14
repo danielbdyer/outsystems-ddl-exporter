@@ -68,9 +68,24 @@ module SqlTypeCorrespondence =
     /// Inverse classification: SQL Server `INFORMATION_SCHEMA.DATA_TYPE`
     /// value → V2 `PrimitiveType`. The SQL Server vocabulary is
     /// broader than V2's (`BIGINT` / `SMALLINT` / `TINYINT` all
-    /// collapse to `Integer`; `MONEY` / `SMALLMONEY` collapse to
-    /// `Decimal`; `IMAGE` / `BINARY` collapse to `Binary`); the
-    /// match below names every alias the adapter recognizes.
+    /// collapse to `Integer`; `MONEY` / `SMALLMONEY` / `FLOAT` / `REAL`
+    /// collapse to `Decimal`; `IMAGE` / `BINARY` collapse to `Binary`;
+    /// `XML` collapses to `Text`).
+    ///
+    /// **NM-29 — one inverse, loss localized.** This used to own a SECOND,
+    /// independently-maintained lossy table that coarsened `BIGINT` /
+    /// `SMALLINT` / `TINYINT` to `Integer` in parallel with the faithful
+    /// `SqlStorageType.ofSqlType` (which preserves `BigInt` ≠ `Int`). Two
+    /// inverses meant a consumer could silently pick the lossy one unaware
+    /// of the faithful one. It now delegates to
+    /// `SqlStorageType.ofSqlType >> SqlStorageType.toPrimitiveType`: the
+    /// faithful storage parse is the single inverse, and the semantic
+    /// coarsening (storage → category) happens in exactly ONE named place
+    /// (`toPrimitiveType`), where the closed-DU dispatch makes the collapse
+    /// explicit and exhaustive. A consumer that needs the faithful width
+    /// calls `SqlStorageType.ofSqlType` directly; this `PrimitiveType`-only
+    /// projection is, by construction, the lossy view OF that one inverse —
+    /// not a competing second one.
     ///
     /// Returns `Error` for unknown types — surfaces an emitter-IR
     /// mismatch the canary's blocking semantic catches. M4's
@@ -81,37 +96,20 @@ module SqlTypeCorrespondence =
     /// for every `PrimitiveType pt`. Asserted by property test in
     /// `tests/Projection.Tests/SqlTypeCorrespondenceTests.fs`.
     let ofSqlDataType (dataType: string) : Result<PrimitiveType> =
-        match dataType.ToUpperInvariant() with
-        | "INT" | "BIGINT" | "SMALLINT" | "TINYINT" ->
-            Result.success Integer
-        | "DECIMAL" | "NUMERIC" | "MONEY" | "SMALLMONEY" ->
-            Result.success Decimal
-        | "NVARCHAR" | "VARCHAR" | "CHAR" | "NCHAR" | "TEXT" | "NTEXT" ->
-            Result.success Text
-        | "BIT" ->
-            Result.success Boolean
-        | "DATETIME" | "DATETIME2" | "SMALLDATETIME" | "DATETIMEOFFSET" ->
-            Result.success DateTime
-        | "DATE" ->
-            Result.success Date
-        | "TIME" ->
-            Result.success Time
-        | "VARBINARY" | "BINARY" | "IMAGE" ->
-            Result.success Binary
-        | "UNIQUEIDENTIFIER" ->
-            Result.success Guid
-        | unknown ->
+        match SqlStorageType.ofSqlType dataType None None None with
+        | Some storage -> Result.success (SqlStorageType.toPrimitiveType storage)
+        | None ->
             // Operator-facing diagnostic message: typed segments via
             // `String.Concat`; no `sprintf`. Same observable string the
             // legacy `ReadSide.mapSqlType` produced.
             Result.failureOf (
                 ValidationError.create
                     "sqlTypeCorrespondence.unknown"
-                    (System.String.Concat(  // LINT-ALLOW: terminal diagnostic-text emission boundary; segments are typed (literal + bound `unknown`)
+                    (System.String.Concat(  // LINT-ALLOW: terminal diagnostic-text emission boundary; segments are typed (literal + bound `dataType`)
                         "INFORMATION_SCHEMA.DATA_TYPE = '",
-                        unknown,
+                        dataType,
                         "' has no V2 PrimitiveType mapping. ",
-                        "Either extend SqlTypeCorrespondence.ofSqlDataType ",
+                        "Either extend SqlStorageType.ofSqlType ",
                         "or add a Tolerance flag (M4).")))
 
     /// Enumerate every `PrimitiveType` variant. Used by property tests
