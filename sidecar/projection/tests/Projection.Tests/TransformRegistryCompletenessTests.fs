@@ -235,6 +235,48 @@ let ``L3-CC-Transform-Totality: every expected pass / adapter / strategy name is
         ]
     Assert.Equal<Set<string>>(expected, names)
 
+// ---------------------------------------------------------------------------
+// NM-42 — the cross-surface DRIFT GUARD (the deferred half).
+//
+// `allRegistrations` above is a slice-θ HAND-LIST (1 adapter +
+// 12 passes + 5 strategies). The LIVE executable chain is
+// `RegisteredTransforms.all` (the projection of `chainSteps`, "cannot
+// drift from what runs", + the strategy registrations) — which carries
+// MORE passes (the analytics + logical-emission passes) and NO adapter
+// (the adapter is an ingest boundary, not a chain step).
+//
+// One-directional by design: this does NOT assert the hand-list COVERS
+// the live chain (the live chain is deliberately larger; that totality
+// is owned by `RegisteredAllTransformsBidirectionalTests`). It asserts
+// the OTHER direction — every PASS / STRATEGY this fixture hand-lists
+// MUST still be a step in the live chain. A pass/strategy dropped from
+// `chainSteps` while its hand-list entry lingers (a stale fixture that
+// would keep asserting a transform that no longer runs) fails loudly
+// here. The adapter (`ossysCatalogReader`) is excluded: it is not a
+// chain step, so it has no membership in `RegisteredTransforms.all`.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``NM-42: every hand-listed pass / strategy is a step in the live RegisteredTransforms.all chain (cross-surface drift guard)`` () =
+    let liveNames =
+        RegisteredTransforms.all
+        |> List.map (fun rt -> rt.Name)
+        |> Set.ofList
+    // The adapter is an ingest boundary, not a chain step — exclude it;
+    // every remaining hand-listed pass / strategy must be live.
+    let handListedChainSteps =
+        allRegistrations
+        |> List.map (fun rt -> rt.Name)
+        |> List.filter (fun n -> n <> CatalogReader.registeredMetadata.Name)
+    Assert.NotEmpty handListedChainSteps
+    for name in handListedChainSteps do
+        Assert.True(
+            Set.contains name liveNames,
+            sprintf
+                "Hand-listed pass/strategy '%s' is absent from the live RegisteredTransforms.all chain — the fixture has drifted from what runs (or the pass was dropped from chainSteps). Live names: %A"
+                name
+                (liveNames |> Set.toList |> List.sort))
+
 [<Fact>]
 let ``L3-CC-Transform-Totality: aggregated registry validates through TransformRegistry.create (uniqueness + rationale + status invariants)`` () =
     match TransformRegistry.create allRegistrations with
