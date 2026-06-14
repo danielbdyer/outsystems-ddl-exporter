@@ -210,6 +210,28 @@ let ``ModelFidelity: a malformed fidelity.json fails closed to None`` () =
     Assert.Equal<ModelFidelity.ModelFidelityReport option>(None, ModelFidelity.fromJson "{ this is not json")
 
 [<Fact>]
+let ``ReportRun: renderFidelity reads a recorded fidelity.json into the rolled-up text (the report-verb surfacing)`` () =
+    let report = ModelFidelity.compose "ACME" fixtureCatalog profiledEvidence { Decisions = [] } []
+    let dir =
+        System.IO.Path.Combine(System.IO.Path.GetTempPath(), sprintf "mf-report-%s" (System.Guid.NewGuid().ToString "N"))
+    System.IO.Directory.CreateDirectory dir |> ignore
+    try
+        let fidelityPath = System.IO.Path.Combine(dir, "fidelity.json")
+        System.IO.File.WriteAllText(fidelityPath, ModelFidelity.toJsonString report)
+        // The report verb searches a candidate list; a missing path is skipped,
+        // the recorded one is rendered as the count-first roll-up.
+        let lines = ReportRun.renderFidelity [ System.IO.Path.Combine(dir, "absent.json"); fidelityPath ]
+        Assert.NotEmpty(lines)
+        Assert.StartsWith("MODEL FIDELITY — ACME", List.head lines)
+        Assert.Contains(lines, fun l -> l.Contains "DATA VIOLATIONS" && l.Contains "3 total")
+    finally
+        if System.IO.Directory.Exists dir then System.IO.Directory.Delete(dir, recursive = true)
+
+[<Fact>]
+let ``ReportRun: renderFidelity is empty when no fidelity.json is recorded`` () =
+    Assert.Empty(ReportRun.renderFidelity [ "/nonexistent/fidelity.json" ])
+
+[<Fact>]
 let ``ModelFidelity: withAcceptedDivergences stamps a resolved tolerance residual onto the report`` () =
     // The emit-time report has an empty residual (a pure emit compares nothing).
     let baseReport = ModelFidelity.compose "ACME" fixtureCatalog Profile.empty { Decisions = [] } []
