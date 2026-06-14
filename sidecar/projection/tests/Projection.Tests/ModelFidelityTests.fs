@@ -210,6 +210,20 @@ let ``ModelFidelity: a malformed fidelity.json fails closed to None`` () =
     Assert.Equal<ModelFidelity.ModelFidelityReport option>(None, ModelFidelity.fromJson "{ this is not json")
 
 [<Fact>]
+let ``ModelFidelity: withAcceptedDivergences stamps a resolved tolerance residual onto the report`` () =
+    // The emit-time report has an empty residual (a pure emit compares nothing).
+    let baseReport = ModelFidelity.compose "ACME" fixtureCatalog Profile.empty { Decisions = [] } []
+    Assert.Empty(baseReport.AcceptedDivergences)
+    // A canary-coupled run resolves its matched-tolerance set and stamps it.
+    let stamped =
+        baseReport
+        |> ModelFidelity.withAcceptedDivergences
+            [ ToleratedDivergence.HeaderCommentsOmitted; ToleratedDivergence.DecimalScaleTolerated ]
+    Assert.Equal(2, List.length stamped.AcceptedDivergences)
+    // The original report is untouched (immutable update).
+    Assert.Empty(baseReport.AcceptedDivergences)
+
+[<Fact>]
 let ``ModelFidelity: the accepted-divergences section renders the tolerance residual`` () =
     let report =
         ModelFidelity.compose "ACME" fixtureCatalog Profile.empty { Decisions = [] }

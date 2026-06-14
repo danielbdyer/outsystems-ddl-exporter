@@ -148,6 +148,27 @@ module ModelFidelity =
           AcceptedDivergences  = []
           UniquenessCandidates = [] }
 
+    /// Stamp the run's resolved tolerance residual onto the report's accepted-
+    /// divergences section. The report is computed at emit time (before any
+    /// round-trip); the canary's matched-tolerance set is resolved later, so a
+    /// caller that has run a round-trip threads the residual through here.
+    ///
+    /// FLAGGED (the tolerance-residual canary coupling): the full-export / migrate
+    /// emit path has no round-trip canary of its own — the canary is the separate
+    /// `check` verb, and the store leg records `Tolerance.strict` because no
+    /// production caller resolves a non-strict residual yet (see
+    /// `Pipeline.runStoreLeg`'s standing FLAG + `Episode.withProvenance`). This
+    /// updater is the clean hook: a future canary-coupled run resolves its
+    /// matched-tolerance set and stamps it here, and the section surfaces it —
+    /// without re-touching the aggregation. Until then the section is honestly
+    /// empty (a pure emit compares nothing).
+    let withAcceptedDivergences
+        (divergences: ToleratedDivergence list)
+        (report: ModelFidelityReport)
+        : ModelFidelityReport =
+        { report with
+            AcceptedDivergences = divergences |> List.map (fun d -> { Divergence = d }) }
+
     // ----------------------------------------------------------------------
     // Aggregation — from a declared Catalog × the profiled evidence.
     // ----------------------------------------------------------------------
