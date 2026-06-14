@@ -159,13 +159,7 @@ let private fullConfigJson = """{
         "onlyActiveAttributes": true
     },
     "profile": { "path": "extracted/profile.json" },
-    "cache": { "root": ".artifacts/cache", "refresh": false, "ttlSeconds": 7200 },
-    "profiler": { "provider": "fixture", "mockFolder": null },
-    "typeMapping": {
-        "path": "config/type-mapping.default.json",
-        "default": null,
-        "overrides": { "Text": "nvarchar(max)" }
-    },
+    "profiler": { "provider": "fixture" },
     "overrides": {
         "tableRenames": [
             { "from": { "module": "Old", "entity": "OldE" }, "to": { "schema": "dbo", "table": "NEW_T" } },
@@ -425,11 +419,7 @@ let ``Config.parse: unknown top-level property is tolerated`` () =
 let ``Config.parse: defaults applied when sections are absent`` () =
     let json = """{ "model": { "path": "m.json" } }"""
     let cfg = Config.parse json |> mustOk
-    Assert.Equal(".artifacts/cache", cfg.Cache.Root)
-    Assert.Equal(7200, cfg.Cache.TtlSeconds)
-    Assert.False(cfg.Cache.Refresh)
     Assert.Equal("fixture", cfg.Profiler.Provider)
-    Assert.True(cfg.Profiler.MockFolder.IsNone)
     Assert.Equal("IncludeAll", cfg.Policy.Selection)
     Assert.Equal("SchemaOnly", cfg.Policy.Insertion)
     Assert.Equal("ByEmail",    cfg.Policy.UserMatching.Strategy)

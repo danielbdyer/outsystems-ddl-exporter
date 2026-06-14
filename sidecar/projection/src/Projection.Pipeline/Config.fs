@@ -73,15 +73,14 @@ module Config =
         Path : string option
     }
 
-    type CacheSection = {
-        Root       : string
-        Refresh    : bool
-        TtlSeconds : int
-    }
+    // NM-05 (2026-06-13) — the `cache` section and the `typeMapping` section
+    // were parsed and carried on `Config` but consumed by nothing at runtime
+    // (no named-skip either). Removed along with `profiler.mockFolder` (also
+    // dead). `profiler.provider` IS consumed (`LiveProfiler` selection) and
+    // stays.
 
     type ProfilerSection = {
         Provider   : string
-        MockFolder : string option
     }
 
     /// `profiler.provider` value that selects live source-environment
@@ -98,12 +97,6 @@ module Config =
     /// environment IS the operator's single MSSQL connection.
     [<Literal>]
     let SourceConnectionStringEnvVar = "PROJECTION_MSSQL_CONN_STR"
-
-    type TypeMappingSection = {
-        Path      : string option
-        Default   : string option
-        Overrides : Map<string, string>
-    }
 
     type LogicalName = {
         Module : string
@@ -303,9 +296,7 @@ module Config =
     type Config = {
         Model        : ModelSection
         Profile      : ProfileSection
-        Cache        : CacheSection
         Profiler     : ProfilerSection
-        TypeMapping  : TypeMappingSection
         Overrides    : OverridesSection
         Emission     : EmissionSection
         Policy       : PolicySection
@@ -320,21 +311,8 @@ module Config =
         Path = None
     }
 
-    let private defaultCache : CacheSection = {
-        Root       = ".artifacts/cache"
-        Refresh    = false
-        TtlSeconds = 7200
-    }
-
     let private defaultProfiler : ProfilerSection = {
         Provider   = "fixture"
-        MockFolder = None
-    }
-
-    let private defaultTypeMapping : TypeMappingSection = {
-        Path      = None
-        Default   = None
-        Overrides = Map.empty
     }
 
     let private defaultOverrides : OverridesSection = {
@@ -407,9 +385,7 @@ module Config =
     let defaultConfig : Config = {
         Model       = defaultModelSection
         Profile     = defaultProfile
-        Cache       = defaultCache
         Profiler    = defaultProfiler
-        TypeMapping = defaultTypeMapping
         Overrides   = defaultOverrides
         Emission    = defaultEmission
         Policy      = defaultPolicy
@@ -418,8 +394,8 @@ module Config =
 
     /// THE_CONFIG_CONTROL_PLANE §4/§7 (S6.4 — operator decision 2, "Global +
     /// opt-in per-flow override"): overlay a flow's `shaping` override onto the
-    /// global shaping at WHOLE-SECTION granularity. For each of the nine
-    /// top-level sections, the override's section wins iff it DIFFERS from the
+    /// global shaping at WHOLE-SECTION granularity. For each top-level
+    /// section, the override's section wins iff it DIFFERS from the
     /// lenient default (the flow authored that section); otherwise the global's
     /// section holds (the flow is silent there). A faithful field-level deep
     /// merge is deferred (see DECISIONS); section granularity is the minimal,
@@ -431,9 +407,7 @@ module Config =
             if o <> sel defaultConfig then o else sel globalShaping
         { Model       = pick (fun c -> c.Model)
           Profile     = pick (fun c -> c.Profile)
-          Cache       = pick (fun c -> c.Cache)
           Profiler    = pick (fun c -> c.Profiler)
-          TypeMapping = pick (fun c -> c.TypeMapping)
           Overrides   = pick (fun c -> c.Overrides)
           Emission    = pick (fun c -> c.Emission)
           Policy      = pick (fun c -> c.Policy)
@@ -751,26 +725,6 @@ module Config =
             | Error es -> Error es
             | Ok path -> Result.success { Path = path }
 
-    let private parseCache (root: JsonElement) : Result<CacheSection> =
-        match tryGetProperty root "cache" with
-        | None -> Result.success defaultCache
-        | Some element ->
-            let rootR =
-                match getOptionalString element "root" with
-                | Error es -> Error es
-                | Ok None -> Result.success defaultCache.Root
-                | Ok (Some s) -> Result.success s
-            match rootR with
-            | Error es -> Error es
-            | Ok r ->
-                match getBoolOr element "refresh" defaultCache.Refresh with
-                | Error es -> Error es
-                | Ok refresh ->
-                    match getIntOr element "ttlSeconds" defaultCache.TtlSeconds with
-                    | Error es -> Error es
-                    | Ok ttl ->
-                        Result.success { Root = r; Refresh = refresh; TtlSeconds = ttl }
-
     let private parseProfiler (root: JsonElement) : Result<ProfilerSection> =
         match tryGetProperty root "profiler" with
         | None -> Result.success defaultProfiler
@@ -783,35 +737,7 @@ module Config =
             match providerR with
             | Error es -> Error es
             | Ok provider ->
-                match getOptionalString element "mockFolder" with
-                | Error es -> Error es
-                | Ok mockFolder ->
-                    Result.success { Provider = provider; MockFolder = mockFolder }
-
-    let private parseTypeMapping (root: JsonElement) : Result<TypeMappingSection> =
-        match tryGetProperty root "typeMapping" with
-        | None -> Result.success defaultTypeMapping
-        | Some element ->
-            match getOptionalString element "path" with
-            | Error es -> Error es
-            | Ok path ->
-                match getOptionalString element "default" with
-                | Error es -> Error es
-                | Ok defaultRule ->
-                    let overrides =
-                        match element.TryGetProperty("overrides") with
-                        | false, _ -> Map.empty
-                        | true, v when v.ValueKind = JsonValueKind.Object ->
-                            v.EnumerateObject()
-                            |> Seq.choose (fun prop ->
-                                if prop.Value.ValueKind = JsonValueKind.String then
-                                    match prop.Value.GetString() with
-                                    | null -> None
-                                    | s -> Some (prop.Name, s)
-                                else None)
-                            |> Map.ofSeq
-                        | _ -> Map.empty
-                    Result.success { Path = path; Default = defaultRule; Overrides = overrides }
+                Result.success { Provider = provider }
 
     let private parsePhysicalName (element: JsonElement) : Result<PhysicalName> =
         match getString element "schema" with
@@ -1373,38 +1299,30 @@ module Config =
                 match parseProfile root with
                 | Error es -> Error es
                 | Ok profile ->
-                    match parseCache root with
+                    match parseProfiler root with
                     | Error es -> Error es
-                    | Ok cache ->
-                        match parseProfiler root with
+                    | Ok profiler ->
+                        match parseOverrides root with
                         | Error es -> Error es
-                        | Ok profiler ->
-                            match parseTypeMapping root with
+                        | Ok overrides ->
+                            match parseEmission root with
                             | Error es -> Error es
-                            | Ok typeMapping ->
-                                match parseOverrides root with
+                            | Ok emission ->
+                                match parsePolicy root with
                                 | Error es -> Error es
-                                | Ok overrides ->
-                                    match parseEmission root with
+                                | Ok policy ->
+                                    match parseOutput root with
                                     | Error es -> Error es
-                                    | Ok emission ->
-                                        match parsePolicy root with
-                                        | Error es -> Error es
-                                        | Ok policy ->
-                                            match parseOutput root with
-                                            | Error es -> Error es
-                                            | Ok output ->
-                                                Result.success {
-                                                    Model       = model
-                                                    Profile     = profile
-                                                    Cache       = cache
-                                                    Profiler    = profiler
-                                                    TypeMapping = typeMapping
-                                                    Overrides   = overrides
-                                                    Emission    = emission
-                                                    Policy      = policy
-                                                    Output      = output
-                                                }
+                                    | Ok output ->
+                                        Result.success {
+                                            Model       = model
+                                            Profile     = profile
+                                            Profiler    = profiler
+                                            Overrides   = overrides
+                                            Emission    = emission
+                                            Policy      = policy
+                                            Output      = output
+                                        }
 
     /// Parse a JSON string into a typed `Config`. Order of operations:
     ///   1. Parse the JSON syntactically. Malformed JSON returns

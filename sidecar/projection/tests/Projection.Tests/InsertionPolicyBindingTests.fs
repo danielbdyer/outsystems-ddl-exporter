@@ -21,9 +21,7 @@ let private mkConfig (insertion: string) : Config.Config =
             OnlyActiveAttributes   = true
         }
         Profile     = { Path = None }
-        Cache       = { Root = ""; Refresh = false; TtlSeconds = 0 }
-        Profiler    = { Provider = "fixture"; MockFolder = None }
-        TypeMapping = { Path = None; Default = None; Overrides = Map.empty }
+        Profiler    = { Provider = "fixture" }
         Overrides   = {
             TableRenames           = []
             MigrationDependencies  = None
