@@ -569,6 +569,17 @@ let narrateTransferReport (report: Transfer.TransferReport) : unit =
                 (Name.value r.Column)
                 (SsKey.rootOriginal r.Target)
                 (SourceKey.value r.UnresolvedSource)
+    // NM-53 — a resumable G10 no-op re-run replays the prior run's drop count
+    // (the marker persists the count, not the exact references), so the re-run
+    // is not silently clean. Surfaced explicitly as a replay, not freshly
+    // observed drops.
+    match report.ReplayedPriorDrops with
+    | Some n when n > 0 ->
+        printfn ""
+        printfn
+            "already complete; prior run dropped %d row(s) — re-surfacing that verdict (exact references not replayed)."
+            n
+    | _ -> ()
 
 /// 6.A.1 — the drop-set is fail-loud, not exit-0. A successful write that
 /// dropped FK-orphan rows or left reconciled-kind sources unmatched surfaces
@@ -1533,6 +1544,15 @@ let reportMigrationError (e: MigrationError) : int =
             (Preflight.refusalOf
                 [ ValidationError.create "migrate.cdcTrackedSink"
                     (sprintf "%d table(s) are CDC-tracked; --allow-cdc accepts the capture." (List.length tracked)) ])
+        9
+    | RefusedByCdcUnverifiable msg ->
+        // NM-54 — the CDC probe could not run; an unverifiable CDC state is
+        // UNSAFE, so the schema change is REFUSED through the same §5 gate
+        // surface as an observed-CDC refusal. Exit 9 (a clean named refusal),
+        // never a crash.
+        TtyRenderer.renderGate "projection migrate"
+            (Preflight.refusalOf
+                [ ValidationError.create "migrate.cdcStateUnverifiable" msg ])
         9
     | RefusedByTightening msg ->
         // §5 data-compat gate — the same surface the pre-flight probe renders.

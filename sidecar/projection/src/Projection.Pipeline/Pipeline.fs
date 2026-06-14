@@ -1784,7 +1784,7 @@ module Compose =
     /// synchronously (an unconditional `do!` of a pre-selected Task is
     /// the FS3511-safe shape).
     let private loadMeasureAndRecord
-        (cdcCaptureTotal: SqlConnection -> Task<int>)
+        (cdcCaptureTotal: SqlConnection -> Task<Result<int>>)
         (load: unit -> Task<unit>)
         (emitted: Catalog)
         (sink: SqlConnection)
@@ -1794,11 +1794,17 @@ module Compose =
         (at: System.DateTimeOffset)
         : Task<Result<FullExportStoreLeg option * int>> =
         task {
-            let! baseline = cdcCaptureTotal sink
-            let loading = load ()
-            do! loading
-            let! post = cdcCaptureTotal sink
-            return recordLoad emitted (post - baseline) storePath timeline environment at
+            // NM-54 — the CDC measure surfaces its probe Error rather than
+            // fabricating a count; an unreadable axis fails the load-measure leg.
+            match! cdcCaptureTotal sink with
+            | Error es -> return Result.failure es
+            | Ok baseline ->
+                let loading = load ()
+                do! loading
+                match! cdcCaptureTotal sink with
+                | Error es -> return Result.failure es
+                | Ok post ->
+                    return recordLoad emitted (post - baseline) storePath timeline environment at
         }
 
     /// The fused-string load shape — what an operator executing the
@@ -1806,7 +1812,7 @@ module Compose =
     /// the bundle's idempotent-MERGE contract (AC-X1 part B tests).
     /// The CLI load leg rides `loadLeveledSeedAndRecord` since card P2.
     let loadSeedAndRecord
-        (cdcCaptureTotal: SqlConnection -> Task<int>)
+        (cdcCaptureTotal: SqlConnection -> Task<Result<int>>)
         (executeBatch: SqlConnection -> string -> Task<unit>)
         (emitted: Catalog)
         (seed: string)
@@ -1834,7 +1840,7 @@ module Compose =
     /// closes over the connection STRING because every segment opens its
     /// own pooled connection; `sink` stays the CDC measure's connection).
     let loadLeveledSeedAndRecord
-        (cdcCaptureTotal: SqlConnection -> Task<int>)
+        (cdcCaptureTotal: SqlConnection -> Task<Result<int>>)
         (executeLeveled: DataComposer.LeveledDeploymentText -> Task<unit>)
         (emitted: Catalog)
         (plan: DataComposer.LeveledDeploymentText)
@@ -1869,7 +1875,7 @@ module Compose =
     /// (FS3511-safe; the three-level `let!`-in-match nesting does not
     /// statically compile).
     let private loadFromConfig
-        (cdcCaptureTotal: SqlConnection -> Task<int>)
+        (cdcCaptureTotal: SqlConnection -> Task<Result<int>>)
         (executeLeveled: DataComposer.LeveledDeploymentText -> Task<unit>)
         (cfg: Config.Config)
         (sink: SqlConnection)
@@ -1892,7 +1898,7 @@ module Compose =
     /// face — partial application carries the connection string the
     /// per-segment opens need; `sink` remains the CDC measure's connection).
     let runWithConfigAndLoad
-        (cdcCaptureTotal: SqlConnection -> Task<int>)
+        (cdcCaptureTotal: SqlConnection -> Task<Result<int>>)
         (executeLeveled: DataComposer.LeveledDeploymentText -> Task<unit>)
         (cfg: Config.Config)
         (sink: SqlConnection)

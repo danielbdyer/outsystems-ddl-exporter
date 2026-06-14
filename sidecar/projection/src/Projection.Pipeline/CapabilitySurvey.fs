@@ -103,9 +103,19 @@ module CapabilitySurvey =
         match targetGrant, source with
         | Some Grant.DataOnly, (FlowSource.Env _ | FlowSource.Synthetic _) -> dataLoad
         | Some Grant.DataOnly, (FlowSource.Model | FlowSource.NoData)       -> Set.empty
-        | (Some Grant.SchemaAndData | None), FlowSource.Env _              -> Set.union schemaPublish dataLoad
-        | (Some Grant.SchemaAndData | None), (FlowSource.Model | FlowSource.NoData) -> schemaPublish
-        | (Some Grant.SchemaAndData | None), FlowSource.Synthetic _        -> Set.empty
+        | Some Grant.SchemaAndData, FlowSource.Env _                       -> Set.union schemaPublish dataLoad
+        | Some Grant.SchemaAndData, (FlowSource.Model | FlowSource.NoData) -> schemaPublish
+        | Some Grant.SchemaAndData, FlowSource.Synthetic _                 -> Set.empty
+        // NM-57 — an UNSPECIFIED grant (`None`) gets its OWN conservative arm: it
+        // requires NOTHING, rather than (the prior bug) being bundled with
+        // `Some Grant.SchemaAndData` and demanding the LARGEST write set. A place
+        // with no declared `grant` is one we cannot prove permits schema OR data,
+        // so demanding the maximal set inverts the conservative default and fires
+        // spurious "missing capability" / exit-7 advisories. This keeps the two
+        // reconciliation surfaces SYMMETRIC on the unspecified-grant place: the
+        // coarse peer `requiredFor : Grant -> _` has no `None` case (it demands
+        // nothing of an undeclared grant), so neither does this.
+        | None, _                                                         -> Set.empty
 
     /// The capabilities a flow requires of a substrate in the given role —
     /// derived purely from the flow's SHAPE (its `to` target's grant facet, its
@@ -177,6 +187,14 @@ module CapabilitySurvey =
             /// so the survey never claims "covered" for an unprobed grant.
             GrantUnreadable : bool
             CdcTracked : bool
+            /// NM-54 — the CDC-tracked probe (`ReadSide.cdcTrackedTables`)
+            /// could not be read on a reachable place (transient SqlException /
+            /// `VIEW DEFINITION` denial). `true` means the CDC axis is
+            /// UNVERIFIED, not "no CDC": a REPORT FIELD (like `GrantUnreadable`),
+            /// surfaced advisory so the survey never fabricates a clean CDC
+            /// verdict for an unprobed sink. `CdcTracked` is forced `false` when
+            /// this is `true` (the axis was never observed).
+            CdcProbeFailed : bool
             /// G0b (P10) — the user-directory readability verdict: is the
             /// platform user table the `golden`/`preview` re-key matches against
             /// SELECT-able, and does it expose an email-shaped key column? A
@@ -230,6 +248,7 @@ module CapabilitySurvey =
             let baseReport =
                 { Name = env.Name; Grant = env.Grant; Required = required
                   Connected = false; Reachable = false; Missing = []; GrantUnreadable = false; CdcTracked = false
+                  CdcProbeFailed = false
                   UserDirectory = ReadSide.UserDirectoryProbe.absent }
             match env.Access with
             | Access.Bundle _ | Access.Docker -> return baseReport
@@ -241,7 +260,7 @@ module CapabilitySurvey =
                         use cnn = new SqlConnection(connStr)
                         do! cnn.OpenAsync()
                         let! grantEv = Preflight.captureGrantEvidence cnn
-                        let! tracked = ReadSide.cdcTrackedTables cnn
+                        let! trackedEv = ReadSide.cdcTrackedTables cnn
                         // G0b (P10) — the user-directory readability probe, next to
                         // the CDC axis. Conventional candidate names (configurable
                         // is the residual that pairs with OPEN-2's real-instance
@@ -255,11 +274,19 @@ module CapabilitySurvey =
                             match grantEv with
                             | Ok ev   -> reconcile required ev, false
                             | Error _ -> [], true
+                        // NM-54 — a failed CDC probe is NOT "no CDC"; it is an
+                        // UNVERIFIED axis. Carry it as `CdcProbeFailed` (mirroring
+                        // `GrantUnreadable`) so the survey surfaces the unreadable
+                        // axis rather than fabricating a clean CDC verdict.
+                        let cdcTracked, cdcProbeFailed =
+                            match trackedEv with
+                            | Ok tracked -> not (List.isEmpty tracked), false
+                            | Error _    -> false, true
                         return
                             { baseReport with
                                 Connected = true; Reachable = true
                                 Missing = missing; GrantUnreadable = grantUnreadable
-                                CdcTracked = not (List.isEmpty tracked)
+                                CdcTracked = cdcTracked; CdcProbeFailed = cdcProbeFailed
                                 UserDirectory = userDir }
                     with _ -> return { baseReport with Connected = true }
         }

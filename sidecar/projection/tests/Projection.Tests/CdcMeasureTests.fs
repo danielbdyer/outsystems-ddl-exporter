@@ -64,8 +64,12 @@ module private CdcMeasureFixtures =
     let scanAndMeasure (cnn: SqlConnection) : Task<int> =
         task {
             do! Deploy.executeBatch cnn "EXEC sys.sp_cdc_scan;"
-            let! tracked = ReadSide.cdcTrackedTables cnn
-            return! ReadSide.cdcCaptureCount cnn tracked
+            match! ReadSide.cdcTrackedTables cnn with
+            | Error es -> return failwithf "cdcTrackedTables: %A" es
+            | Ok tracked ->
+                match! ReadSide.cdcCaptureCount cnn tracked with
+                | Error es -> return failwithf "cdcCaptureCount: %A" es
+                | Ok n -> return n
         }
 
 open CdcMeasureFixtures
@@ -151,3 +155,43 @@ type CdcMeasureTests(fixture: IsolatedContainerFixture) =
         // An under-counting reader (DISTINCT-key / net-changes) turns this
         // RED; an over-capturing one overshoots +2.
         Assert.Equal (afterInsert + 2, afterUpdate)
+
+// ---------------------------------------------------------------------------
+// NM-54 / NM-63 — the CDC integrity-gate probes are FAIL-SAFE: a reader that
+// throws (a transient SqlException / a `VIEW DEFINITION` denial / an absent or
+// custom-named CT table) becomes a NAMED `Result.Error`, NOT an unhandled
+// exception that propagates a raw stack trace through the write-refusal gate.
+// No Docker — an UNOPENED `SqlConnection` throws on `CreateCommand`/
+// `ExecuteReaderAsync`, exercising the `try/with`→`Result` envelope directly.
+// ---------------------------------------------------------------------------
+
+type CdcProbeFailSafeTests() =
+
+    // A connection that is never opened: `ExecuteReaderAsync` / `ExecuteScalarAsync`
+    // throw `InvalidOperationException` ("ExecuteReader requires an open ... connection").
+    let unopened () : SqlConnection =
+        new SqlConnection("Server=localhost;Database=nonexistent;Connect Timeout=1;Encrypt=False")
+
+    [<Fact>]
+    member _.``NM-54: cdcTrackedTables on a throwing reader yields the named Result.Error, not an exception`` () =
+        let result =
+            TaskSync.run (fun () -> task {
+                use cnn = unopened ()
+                return! ReadSide.cdcTrackedTables cnn
+            })
+        match result with
+        | Ok _ -> Assert.Fail "expected a named refusal; the gate must not succeed on an unprobeable sink"
+        | Error es ->
+            Assert.Contains(es, fun (e: Projection.Core.ValidationError) -> e.Code = "readside.cdcTrackedProbeFailed")
+
+    [<Fact>]
+    member _.``NM-63: cdcCaptureCount on a throwing reader yields the named Result.Error, not an exception`` () =
+        let result =
+            TaskSync.run (fun () -> task {
+                use cnn = unopened ()
+                return! ReadSide.cdcCaptureCount cnn [ "dbo.Anything" ]
+            })
+        match result with
+        | Ok _ -> Assert.Fail "expected a named refusal; the measure must not fabricate a count"
+        | Error es ->
+            Assert.Contains(es, fun (e: Projection.Core.ValidationError) -> e.Code = "readside.cdcCaptureProbeFailed")

@@ -118,6 +118,16 @@ module Transfer =
             /// INTO — degraded the lane, named per kind). Empty when every
             /// kind ran its preferred rung.
             CaptureLaneDescents : LaneDescent list
+            /// NM-53 — on a G10 resumable NO-OP re-run of a transfer that already
+            /// completed, this carries the DROP COUNT the FIRST run recorded
+            /// (`Some n`); `None` on a fresh run (the run's own
+            /// `SkippedReferences` are the live drops). It exists so the no-op
+            /// path REPLAYS a prior exit-9 (FK-orphan) verdict — `hasDrops`
+            /// consults it — rather than reporting a misleading clean exit-0. It
+            /// is a REPLAYED count, marked as such (the exact prior
+            /// `UnresolvedReference`s are not re-listed, only the verdict-bearing
+            /// count is persisted in the progress marker).
+            ReplayedPriorDrops  : int option
         }
 
     // -- Projection-onto-Sink realization -----------------------------------
@@ -472,11 +482,22 @@ module Transfer =
     /// The streaming realization's chunk-grain journal (`CaptureJournal`) is
     /// the non-degenerate sibling; the two stay distinct REALIZATIONS of one
     /// contract, not two mechanisms.
+    /// NM-53 — the marker now persists the prior run's DROP COUNT, not just the
+    /// completion fact. A transfer that legitimately dropped FK-orphans on its
+    /// first run (exit 9) and then re-runs hits the completion marker; without
+    /// the persisted count the no-op return is `SkippedReferences = []` → exit 0,
+    /// so a refresh wrapper re-running to confirm sees a misleading clean. The
+    /// `DropCount` column lets the no-op path REPLAY the prior drop verdict.
+    /// `ADD`-guarded so a marker table from a pre-NM-53 run gains the column.
     let private progressTableSql : string =
         "IF OBJECT_ID('dbo.__projection_transfer_progress') IS NULL \
            CREATE TABLE dbo.__projection_transfer_progress \
              ( Marker NVARCHAR(450) NOT NULL PRIMARY KEY, \
-               CompletedAt DATETIME2 NOT NULL CONSTRAINT DF___ptp_at DEFAULT SYSUTCDATETIME() );"
+               CompletedAt DATETIME2 NOT NULL CONSTRAINT DF___ptp_at DEFAULT SYSUTCDATETIME(), \
+               DropCount INT NOT NULL CONSTRAINT DF___ptp_drops DEFAULT 0 ); \
+         IF COL_LENGTH('dbo.__projection_transfer_progress', 'DropCount') IS NULL \
+           ALTER TABLE dbo.__projection_transfer_progress \
+             ADD DropCount INT NOT NULL CONSTRAINT DF___ptp_drops DEFAULT 0;"
 
     /// A deterministic signature of a plan — the sorted set of target tables it
     /// loads. Two re-runs of the same transfer share it; a different transfer
@@ -488,20 +509,27 @@ module Transfer =
         |> List.sort
         |> String.concat "|"
 
-    let private isMarked (sink: SqlConnection) (marker: string) : Task<bool> =
+    /// NM-53 — `None` when the marker is absent (not yet complete); `Some n` when
+    /// the transfer completed, carrying the DROP COUNT it recorded. The no-op
+    /// re-run replays that count so a prior exit-9 (FK-orphan drops) is not
+    /// silently re-reported as a clean exit-0.
+    let private markedDropCount (sink: SqlConnection) (marker: string) : Task<int option> =
         task {
             use cmd = sink.CreateCommand()
-            cmd.CommandText <- "SELECT COUNT(*) FROM dbo.__projection_transfer_progress WHERE Marker = @m;"
+            cmd.CommandText <- "SELECT DropCount FROM dbo.__projection_transfer_progress WHERE Marker = @m;"
             cmd.Parameters.AddWithValue("@m", marker) |> ignore
-            let! c = cmd.ExecuteScalarAsync()
-            return System.Convert.ToInt32 c > 0
+            let! v = cmd.ExecuteScalarAsync()
+            return
+                if isNull v || v = box System.DBNull.Value then None
+                else Some (System.Convert.ToInt32 v)
         }
 
-    let private markComplete (sink: SqlConnection) (marker: string) : Task<unit> =
+    let private markComplete (sink: SqlConnection) (marker: string) (dropCount: int) : Task<unit> =
         task {
             use cmd = sink.CreateCommand()
-            cmd.CommandText <- "INSERT INTO dbo.__projection_transfer_progress (Marker) VALUES (@m);"
+            cmd.CommandText <- "INSERT INTO dbo.__projection_transfer_progress (Marker, DropCount) VALUES (@m, @d);"
             cmd.Parameters.AddWithValue("@m", marker) |> ignore
+            cmd.Parameters.AddWithValue("@d", dropCount) |> ignore
             let! _ = cmd.ExecuteNonQueryAsync()
             return ()
         }
@@ -514,17 +542,33 @@ module Transfer =
     /// UNSET, so re-running the same command resumes to a complete,
     /// duplicate-free state. Phase-tracked + idempotent (the resolved fork),
     /// not a single all-or-nothing transaction envelope.
-    let private writePlanResumable (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) (topo: TopologicalOrder) (loadSet: Set<SsKey> option) : Task<(SsKey * UnresolvedReference) list * LaneDescent list> =
+    ///
+    /// NM-53 — the third return component is the REPLAYED prior-drop count:
+    /// `None` on a fresh run (the write's own `writeSkips` ARE the drops); on a
+    /// no-op re-run of a completed transfer, `Some n` re-surfaces the drop count
+    /// the first run recorded, so `hasDrops` / exit-9 REPLAYS rather than reading
+    /// a misleading clean exit-0. The marker records the count (not the full
+    /// drop-set — re-listing the exact `UnresolvedReference`s would need a codec
+    /// that ripples too far; the count replays the VERDICT, and the report marks
+    /// it as a replay, not as freshly-observed drops).
+    let private writePlanResumable (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) (topo: TopologicalOrder) (loadSet: Set<SsKey> option) : Task<(SsKey * UnresolvedReference) list * LaneDescent list * int option> =
         task {
             do! Deploy.executeBatch sink progressTableSql
             let marker = planMarker catalog plan
-            let! already = isMarked sink marker
-            if already then return [], []
-            else
+            let! prior = markedDropCount sink marker
+            match prior with
+            | Some priorDrops ->
+                // Completed already: no-op the write, but REPLAY the prior drop
+                // verdict so a re-run does not silently report a clean exit-0.
+                return [], [], Some priorDrops
+            | None ->
                 do! wipeFkOrdered sink catalog plan topo loadSet
-                let! outcome = writePlan sink catalog plan
-                do! markComplete sink marker
-                return outcome
+                let! (writeSkips, laneDescents) = writePlan sink catalog plan
+                // The drop count = plan-build drops + this write's drops; the same
+                // sum `SkippedReferences` (and thus `hasDrops`) sees this run.
+                let dropCount = plan.SkippedReferences.Length + writeSkips.Length
+                do! markComplete sink marker dropCount
+                return writeSkips, laneDescents, None
         }
 
     // -- 6.A.3: surrogate-capture refusal (fail-loud, not silent) -------------
@@ -761,17 +805,23 @@ module Transfer =
             let cdcGate : Task<Result<unit>> =
                 task {
                     if mode = Execute && not allowCdc then
-                        let! tracked = ReadSide.cdcTrackedTables sink
-                        if List.isEmpty tracked then return Ok ()
-                        else
-                            return
-                                Result.failureOf
-                                    (ValidationError.create
-                                        "transfer.cdcTrackedSink"
-                                        (sprintf
-                                            "Sink has %d CDC-tracked table(s) (e.g. %s); refusing --execute. Pass --allow-cdc to override."
-                                            (List.length tracked)
-                                            (tracked |> List.truncate 3 |> String.concat ", ")))
+                        // NM-54 — an unverifiable CDC state is UNSAFE: a probe
+                        // failure (transient SqlException / VIEW DEFINITION denial)
+                        // REFUSES the write through the same named-refusal seam,
+                        // never proceeds and never crashes.
+                        match! ReadSide.cdcTrackedTables sink with
+                        | Error es -> return Result.failure es
+                        | Ok tracked ->
+                            if List.isEmpty tracked then return Ok ()
+                            else
+                                return
+                                    Result.failureOf
+                                        (ValidationError.create
+                                            "transfer.cdcTrackedSink"
+                                            (sprintf
+                                                "Sink has %d CDC-tracked table(s) (e.g. %s); refusing --execute. Pass --allow-cdc to override."
+                                                (List.length tracked)
+                                                (tracked |> List.truncate 3 |> String.concat ", ")))
                     else return Ok ()
                 }
             let spanningGate : Task<Result<unit>> =
@@ -831,9 +881,9 @@ module Transfer =
             match preWrite with
             | Some refusal -> return Result.failureOf refusal
             | None ->
-                let! writeSkips, laneDescents =
+                let! writeSkips, laneDescents, replayedPriorDrops =
                     task {
-                        if mode <> Execute then return [], []
+                        if mode <> Execute then return [], [], None
                         else
                             match writeOpts.Emission, writeOpts.Resumable with
                             | EmissionMode.WipeAndLoad, _ ->
@@ -842,12 +892,16 @@ module Transfer =
                                 // Restricted to the LoadSet so an excluded family
                                 // (golden user-exclusion) is untouched, not wiped.
                                 do! wipeFkOrdered sink catalog plan topo writeOpts.LoadSet
-                                return! writePlan sink catalog plan
+                                let! (skips, descents) = writePlan sink catalog plan
+                                return skips, descents, None
                             | EmissionMode.Incremental, true ->
-                                // G10 — resumable/idempotent envelope.
+                                // G10 — resumable/idempotent envelope. NM-53 — the
+                                // third component REPLAYS a prior no-op run's drop
+                                // count so exit-9 is not silently lost on re-run.
                                 return! writePlanResumable sink catalog plan topo writeOpts.LoadSet
                             | EmissionMode.Incremental, false ->
-                                return! writePlan sink catalog plan
+                                let! (skips, descents) = writePlan sink catalog plan
+                                return skips, descents, None
                     }
                 return
                     Result.success
@@ -859,7 +913,8 @@ module Transfer =
                           // Plan-build drops (reconcile misses) + write-time
                           // drops (AssignedBySink FK misses) both surface here.
                           SkippedReferences   = plan.SkippedReferences @ writeSkips
-                          CaptureLaneDescents = laneDescents }
+                          CaptureLaneDescents = laneDescents
+                          ReplayedPriorDrops  = replayedPriorDrops }
         }
 
     /// Run a Transfer over one shared `Catalog` (the schema contract):
@@ -942,17 +997,20 @@ module Transfer =
             let! cdcGate =
                 task {
                     if mode = Execute && not allowCdc then
-                        let! tracked = ReadSide.cdcTrackedTables sink
-                        if List.isEmpty tracked then return Ok ()
-                        else
-                            return
-                                Result.failureOf
-                                    (ValidationError.create
-                                        "synthetic.cdcTrackedSink"
-                                        (sprintf
-                                            "Sink has %d CDC-tracked table(s) (e.g. %s); refusing --execute. Pass --allow-cdc to override."
-                                            (List.length tracked)
-                                            (tracked |> List.truncate 3 |> String.concat ", ")))
+                        // NM-54 — unverifiable CDC state is UNSAFE: refuse on probe failure.
+                        match! ReadSide.cdcTrackedTables sink with
+                        | Error es -> return Result.failure es
+                        | Ok tracked ->
+                            if List.isEmpty tracked then return Ok ()
+                            else
+                                return
+                                    Result.failureOf
+                                        (ValidationError.create
+                                            "synthetic.cdcTrackedSink"
+                                            (sprintf
+                                                "Sink has %d CDC-tracked table(s) (e.g. %s); refusing --execute. Pass --allow-cdc to override."
+                                                (List.length tracked)
+                                                (tracked |> List.truncate 3 |> String.concat ", ")))
                     else return Ok ()
                 }
             match cdcGate with
@@ -1010,7 +1068,9 @@ module Transfer =
                               UnmatchedIdentities = []
                               AmbiguousIdentities = []
                               SkippedReferences   = plan.SkippedReferences @ writeSkips
-                              CaptureLaneDescents = laneDescents }
+                              CaptureLaneDescents = laneDescents
+                              // Synthetic load has no resumable G10 envelope.
+                              ReplayedPriorDrops  = None }
         }
 
     /// 6.B.2 — RefactorLog-aware Transfer. The source is at schema A
@@ -1398,17 +1458,20 @@ module Transfer =
                 let cdcGate : Task<Result<unit>> =
                     task {
                         if mode = Execute && not allowCdc then
-                            let! tracked = ReadSide.cdcTrackedTables sink
-                            if List.isEmpty tracked then return Ok ()
-                            else
-                                return
-                                    Result.failureOf
-                                        (ValidationError.create
-                                            "transfer.cdcTrackedSink"
-                                            (sprintf
-                                                "Sink has %d CDC-tracked table(s) (e.g. %s); refusing --execute. Pass --allow-cdc to override."
-                                                (List.length tracked)
-                                                (tracked |> List.truncate 3 |> String.concat ", ")))
+                            // NM-54 — unverifiable CDC state is UNSAFE: refuse on probe failure.
+                            match! ReadSide.cdcTrackedTables sink with
+                            | Error es -> return Result.failure es
+                            | Ok tracked ->
+                                if List.isEmpty tracked then return Ok ()
+                                else
+                                    return
+                                        Result.failureOf
+                                            (ValidationError.create
+                                                "transfer.cdcTrackedSink"
+                                                (sprintf
+                                                    "Sink has %d CDC-tracked table(s) (e.g. %s); refusing --execute. Pass --allow-cdc to override."
+                                                    (List.length tracked)
+                                                    (tracked |> List.truncate 3 |> String.concat ", ")))
                         else return Ok ()
                     }
                 let spanningGate : Task<Result<unit>> =
@@ -1436,7 +1499,9 @@ module Transfer =
                                       UnmatchedIdentities = []
                                       AmbiguousIdentities = []
                                       SkippedReferences   = plan.SkippedReferences
-                                      CaptureLaneDescents = [] }
+                                      CaptureLaneDescents = []
+                                      // Streaming DryRun: no G10 resumable replay.
+                                      ReplayedPriorDrops  = None }
                         else
                             let journal =
                                 journalDirectory
@@ -1461,7 +1526,11 @@ module Transfer =
                                           UnmatchedIdentities = []
                                           AmbiguousIdentities = []
                                           SkippedReferences   = skips
-                                          CaptureLaneDescents = descents }
+                                          CaptureLaneDescents = descents
+                                          // Streaming-journal resume is per-run by
+                                          // design (the journaled run reported its
+                                          // own drops); no G10 marker replay here.
+                                          ReplayedPriorDrops  = None }
         }
 
     /// The streaming reverse leg through the `TransferConnections`
@@ -1708,12 +1777,19 @@ module Transfer =
         report.SkippedReferences.Length
         + report.UnmatchedIdentities.Length
         + report.AmbiguousIdentities.Length   // NM-51
+        + (report.ReplayedPriorDrops |> Option.defaultValue 0)   // NM-53
 
     /// Whether a completed run lost any rows (the drop-set is non-empty).
+    ///
+    /// NM-53 — a G10 resumable NO-OP re-run of a transfer that previously dropped
+    /// FK-orphans (exit 9) carries the prior count in `ReplayedPriorDrops`; it
+    /// counts as drops so the exit-9 verdict REPLAYS rather than reading a
+    /// misleading clean exit-0 on the re-run.
     let hasDrops (report: TransferReport) : bool =
         not (List.isEmpty report.SkippedReferences)
         || not (List.isEmpty report.UnmatchedIdentities)
         || not (List.isEmpty report.AmbiguousIdentities)   // NM-51
+        || (report.ReplayedPriorDrops |> Option.exists (fun n -> n > 0))   // NM-53
 
     /// The exit-code policy for a *completed* (Ok) Transfer. A clean run is
     /// 0; a run that dropped rows is `DroppedReferencesExit` (fail-loud)
