@@ -36,6 +36,7 @@ type ToleratedDivergenceGen =
                 ToleratedDivergence.IndexOptionsUnreflected
                 ToleratedDivergence.StaticPopulationsUnreflected
                 ToleratedDivergence.EmptyTextNormalizedToNull
+                ToleratedDivergence.CompositePkFkUnreflected
                 ToleratedDivergence.CharAnsiPaddingTolerated
                 ToleratedDivergence.DecimalScaleTolerated
             ]
@@ -56,7 +57,7 @@ let ``Tolerance.permissive is not strict`` () =
     Assert.False (Tolerance.isStrict Tolerance.permissive)
 
 [<Fact>]
-let ``Closed-DU coverage: ToleratedDivergence.allKnown contains eleven variants (NM-16 kind-facet diff-erasure tolerances added)`` () =
+let ``Closed-DU coverage: ToleratedDivergence.allKnown contains twelve variants (NM-28 CompositePkFkUnreflected added)`` () =
     // Per the closed-DU expansion empirical-test discipline (`DECISIONS
     // 2026-05-13`): when a new ToleratedDivergence variant lands, this
     // count assertion fires until allKnown is extended. The companion
@@ -79,7 +80,10 @@ let ``Closed-DU coverage: ToleratedDivergence.allKnown contains eleven variants 
     // `CatalogDiff.between` algebra erases (a changed trigger / CHECK /
     // modality / IsActive yields norm=0, "idempotent redeploy", emits
     // nothing) — the SILENT erasure is now WITNESSED.
-    Assert.Equal (11, Set.count ToleratedDivergence.allKnown)
+    // **NM-28 (2026-06-14):** 12 — CompositePkFkUnreflected names the
+    // composite-target-PK FK whose second-and-later legs the single-column
+    // Reference IR cannot reflect (only the first leg round-trips).
+    Assert.Equal (12, Set.count ToleratedDivergence.allKnown)
 
 [<Fact>]
 let ``Tolerance.ofSet round-trips through divergences`` () =

@@ -234,3 +234,41 @@ let ``PrimitiveType is exhausted — every variant generates a renderable raw`` 
             | Some raw -> SqlLiteral.ofRaw t raw |> SqlLiteral.toString |> ignore
             | None -> ()
     Assert.True(true)
+
+// ---------------------------------------------------------------------------
+// NM-21 — a non-nullable FK drawing against an EMPTY parent pool is forced to
+// NULL (an unsatisfiable structure the load surfaces). σ now NAMES that
+// erasure via a `synthetic.fk.unsatisfiable` diagnostic, visible even on a
+// DryRun preview that never reaches the load-time failure — never a silent NULL.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``NM-21: a non-nullable FK to an empty parent pool emits a named synthetic.fk.unsatisfiable diagnostic`` () =
+    // Profile gives ORDER 5 rows but CUSTOMER none (no column profile) → the
+    // Customer PK pool is empty. Order.CustomerId is a NON-NULLABLE FK to it.
+    let profUnsat =
+        { Profile.empty with
+            Columns = [ col ordId 5L 0L; col ordCust 5L 0L; col ordOpt 5L 0L ] }
+    let dataset, diags = SyntheticData.generateWithDiagnostics catalog profUnsat cfg 5UL
+    // The mandatory FK column is forced to NULL for every row (absent from Values).
+    Assert.Empty(valuesOf dataset ordKey "CustomerId")
+    // ...and that erasure is NAMED, not silent.
+    let unsat =
+        diags
+        |> List.filter (fun d -> d.Code = SyntheticDiagnostic.UnsatisfiableForeignKeyCode)
+    let mandatory =
+        unsat |> List.filter (fun d -> d.SourceAttribute = ordCust)
+    Assert.Equal(1, List.length mandatory)
+    let d = List.head mandatory
+    Assert.Equal(ordKey, d.Kind)
+    Assert.Equal(custKey, d.TargetKind)
+    // The OPTIONAL FK (OptCustomerId, nullable) draws against the same empty
+    // pool but is NOT an unsatisfiable structure — no diagnostic for it.
+    Assert.Empty(unsat |> List.filter (fun d -> d.SourceAttribute = ordOpt))
+
+[<Fact>]
+let ``NM-21: a satisfiable population emits no unsatisfiable-FK diagnostics`` () =
+    // The standard profile gives Customer a populated pool, so the Order FK
+    // is satisfiable — σ raises no unsatisfiable-FK lineage.
+    let _, diags = SyntheticData.generateWithDiagnostics catalog profile cfg 5UL
+    Assert.Empty(diags |> List.filter (fun d -> d.Code = SyntheticDiagnostic.UnsatisfiableForeignKeyCode))

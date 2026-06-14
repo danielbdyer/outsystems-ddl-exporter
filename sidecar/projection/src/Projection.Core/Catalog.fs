@@ -1142,20 +1142,30 @@ module Attribute =
             SsKey                = ssKey
             Name                 = name
             Type                 = ptype
-            // Slice 5b (lift): default ColumnName synthesized from Name. Contract:
-            // the Name fits SQL Server's 128-char identifier limit. Callers with
-            // long Names (rare; `LogicalColumnEmission` guards the substitution
-            // path against the same case) must override Column via record-update
-            // before SQL emission. Failure surfaces loud here rather than as
-            // silent invalid SQL downstream.
+            // Slice 5b (lift): default ColumnName synthesized from Name.
+            //
+            // NM-15 — this was the ONLY non-total smart constructor in the file
+            // (every sibling returns `Result`); it `failwithf`'d on an over-128-
+            // char logical name. The throw was both unnecessary and hazardous:
+            // the dominant production caller is `CatalogCodec.readAttribute`,
+            // which writes `{ Attribute.create k n t with Column = <deserialized> }`
+            // — F# still EVALUATES this throwing default before the `with` block
+            // discards it, so a long-named attribute with a perfectly valid
+            // explicit Column threw anyway. And the docstring's "loud rather than
+            // silent invalid SQL" defense was unfounded: the column-derivation
+            // naming site (`LogicalColumnEmission.substituteAttribute`) does NOT
+            // throw on a long logical name — it leaves the physical name as-is.
+            //
+            // The default now applies `IdentifierBudget.fit` — the same
+            // deterministic truncate-+-SHA-suffix discipline the SSDT emitters
+            // use for over-budget GENERATED names (PK_/FK_). The result is always
+            // a VALID ≤128-char identifier (never silent-invalid SQL), `fit` is a
+            // total pure function, and an explicit `with Column = …` override
+            // still replaces it. The constructor is now total, matching every
+            // sibling.
             Column               =
-                match ColumnName.create (Name.value name) with
-                | Ok cn -> { ColumnName = cn; IsNullable = false }
-                | Error _ ->
-                    failwithf
-                        "Attribute.create: Name %A (length %d) exceeds SQL Server's 128-char identifier limit. Override the default Column via record-update for long names."
-                        (Name.value name)
-                        (Name.value name).Length
+                { ColumnName = ColumnName.create (IdentifierBudget.fit (Name.value name)) |> Result.value
+                  IsNullable = false }
             IsPrimaryKey         = false
             IsMandatory          = false
             Length               = None

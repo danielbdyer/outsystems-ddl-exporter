@@ -103,3 +103,48 @@ let ``A41 (digest round-trip): digest is invariant under input-list reordering``
     let asGiven = TransformRegistry.digest RegisteredTransforms.all
     let reversed = TransformRegistry.digest (List.rev RegisteredTransforms.all)
     Assert.Equal<string>(asGiven, reversed)
+
+// ---------------------------------------------------------------------------
+// NM-60 — tamper-evidence: a crafted free-text field can no longer forge a
+// delimiter-injection collision. Two DISTINCT registries whose UNESCAPED
+// concatenation would have been byte-identical (one site with a rationale that
+// embeds the `}{siteName=...;rationale=...` structure of a SECOND site, vs the
+// two genuine sites) now produce DIFFERENT digests, because every variable-
+// length field is length-prefixed (injective encoding).
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``NM-60: a delimiter-injection collision in a Sites.Rationale is defeated by length-prefixing`` () =
+    // Registry A — ONE site whose Rationale embeds the exact delimiter structure
+    // that would, under the OLD unescaped scheme, re-parse as a second site.
+    let injected =
+        "r}{siteName=s2;classification=DataIntent;rationale=r2"
+    let registryA =
+        [ RegisteredTransformMetadata.emitter "T" Domain.Schema
+            [ TransformSite.dataIntent "s" injected ] ]
+    // Registry B — TWO genuine sites carrying the same content split across the
+    // real field boundaries. Under the OLD raw concatenation A and B serialized
+    // to the IDENTICAL buffer
+    //   ...sites=[{siteName=s;classification=DataIntent;rationale=r}
+    //             {siteName=s2;classification=DataIntent;rationale=r2}]
+    // — a forged collision. With length prefixes they are distinguishable.
+    let registryB =
+        [ RegisteredTransformMetadata.emitter "T" Domain.Schema
+            [ TransformSite.dataIntent "s" "r"
+              TransformSite.dataIntent "s2" "r2" ] ]
+    let digestA = TransformRegistry.digest registryA
+    let digestB = TransformRegistry.digest registryB
+    Assert.NotEqual<string>(digestA, digestB)
+
+[<Fact>]
+let ``NM-60: shifting a delimiter-like substring across the Name boundary changes the digest`` () =
+    // Two single-entry registries: one carries `|domain=` injected into its Name,
+    // the other splits the same characters across the real Name/domain boundary.
+    // Length-prefixing the Name makes the two non-colliding.
+    let registryA =
+        [ RegisteredTransformMetadata.emitter "a|domain=Schema" Domain.Schema
+            [ TransformSite.dataIntent "s" "r" ] ]
+    let registryB =
+        [ RegisteredTransformMetadata.emitter "a" Domain.Schema
+            [ TransformSite.dataIntent "s" "r" ] ]
+    Assert.NotEqual<string>(TransformRegistry.digest registryA, TransformRegistry.digest registryB)

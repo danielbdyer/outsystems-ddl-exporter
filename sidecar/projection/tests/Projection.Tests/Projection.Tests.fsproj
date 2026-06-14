@@ -279,6 +279,7 @@
     <Compile Include="IndexDataSpaceTests.fs" />
     <Compile Include="IsPlatformAutoEmitterToggleTests.fs" />
     <Compile Include="ReferenceHasDbConstraintTests.fs" />
+    <Compile Include="PhysicalSchemaForeignKeyTests.fs" />
     <Compile Include="FilterParseDiagnosticTests.fs" />
     <Compile Include="BuildCreateIndexDiagnosticsTests.fs" />
     <Compile Include="DecisionOverlayTests.fs" />

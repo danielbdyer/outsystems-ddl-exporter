@@ -26,7 +26,8 @@ let private reportWithReplay (replayed: int option) : Transfer.TransferReport =
       AmbiguousIdentities = []
       SkippedReferences   = []
       CaptureLaneDescents = []
-      ReplayedPriorDrops  = replayed }
+      ReplayedPriorDrops  = replayed
+      SyntheticUnsatisfiableFks = [] }
 
 [<Fact>]
 let ``NM-53: a no-op re-run with a replayed prior-drop count replays exit-9, not a clean exit-0`` () =
