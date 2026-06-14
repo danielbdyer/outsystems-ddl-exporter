@@ -199,3 +199,70 @@ let ``C.4: passTags coverage invariant — every tagged name appears in Register
     Assert.True(
         Set.isEmpty missing,
         sprintf "passTags references unknown registry names: %A" missing)
+
+// ----------------------------------------------------------------------
+// NM-44 — reverse-coverage guard (the deferred half).
+//
+// The forward invariant above proves every TAGGED name is a real pass.
+// The reverse direction was missing: a group-toggleable pass added
+// WITHOUT a `passTags` row would silently fall through `tagsFor`'s
+// `Set.empty` default and ALWAYS RUN, ignoring the operator's group
+// toggle — the exact `model.path` "accidental non-gating" dual.
+//
+// This guard derives the expected tag STRUCTURALLY from each pass's
+// `Sites` classification: every CHAIN-STEP pass whose `Sites` carry
+// `OperatorIntent` on an axis that `RegisteredTransformTags.groupForAxis`
+// maps to a `TransformGroup` MUST appear in `passTags` carrying that
+// group. Scoped to the axis-derivable groups (today: Tightening) so it
+// does NOT over-fire on the group-less axes (Selection / Emission /
+// Insertion / Ordering) — `VisibilityMask` (Selection), `TableRename`
+// (Emission), `TopologicalOrderPass` (Ordering) always run and are
+// correctly NOT flagged.
+//
+// **Scope: CHAIN STEPS only.** The group filter (`filterChainByGroups`,
+// Pipeline.fs) operates on the `PassChainAdapter` chain — the passes
+// projected from `RegisteredTransforms.chainSteps`. The STRATEGY
+// registrations (`nullabilityRules`, `uniqueIndexRules`, …) also carry
+// `OperatorIntent Tightening` sites, but they are NOT independent chain
+// entries — a strategy rides INSIDE its pass, so disabling the pass
+// already disables the strategy. They have no `passTags` row by
+// construction and must not be flagged here. The `UserReflow` group is
+// not axis-derivable (UserFkReflowPass classifies on the Selection axis)
+// and is guarded by the forward test.
+// ----------------------------------------------------------------------
+
+[<Fact>]
+let ``NM-44: reverse-coverage — every axis-derivable group-class chain-step pass is tagged with that group`` () =
+    // For each pass, the set of axis-derived groups its OperatorIntent
+    // sites imply.
+    let expectedGroupsFor (rt: RegisteredTransformMetadata) : Set<TransformGroup> =
+        rt.Sites
+        |> List.choose (fun site ->
+            match site.Classification with
+            | OperatorIntent axis -> RegisteredTransformTags.groupForAxis axis
+            | DataIntent -> None)
+        |> Set.ofList
+
+    // The filterable chain-step passes (what `filterChainByGroups`
+    // actually toggles) — projected from the live `chainSteps`, NOT the
+    // strategy registrations that ride inside their passes.
+    let chainStepMetadata =
+        RegisteredTransforms.chainSteps
+        |> List.map ChainStep.metadata
+
+    let violations =
+        chainStepMetadata
+        |> List.choose (fun rt ->
+            let expected = expectedGroupsFor rt
+            if Set.isEmpty expected then None
+            else
+                let actual = RegisteredTransformTags.tagsFor rt.Name
+                let uncovered = Set.difference expected actual
+                if Set.isEmpty uncovered then None
+                else Some (rt.Name, uncovered))
+
+    Assert.True(
+        List.isEmpty violations,
+        sprintf
+            "Group-class passes missing their `passTags` row (would silently ALWAYS RUN, ignoring the operator's group toggle): %A"
+            violations)
