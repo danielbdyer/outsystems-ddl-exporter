@@ -23049,3 +23049,19 @@ plus the standard `new SqlConnection` + `OpenAsync` connection pattern from `Dep
 the wiring is thin and build-verified. The end-to-end `live:`-ref Docker smoke test and
 the `compare` source-profiling wiring (thread `Source.AcquireProfile` into `runCompare`)
 are the immediate next increments.
+
+---
+
+## 2026-06-14 (later) — compare live-profiling: the source dealbreaker section is populated from a live env
+
+`Ref.resolveSource` resolves a ref to its capability-typed `Source` (catalog read +,
+for a live env, `AcquireProfile`); `resolveCatalog` is the catalog-only read.
+`runCompare` now resolves the SOURCE operand as a `Source`, reads its catalog, and —
+when the source can profile (a live env, via `Source.ofLive`) — live-profiles it and
+threads the `Profile` into `Compare.compute`, so the data-dealbreaker section reflects
+A's real data against B's declared model (previously advisory-silent because operands
+resolved to catalogs only). A static source (file / `@runId` / json) carries no
+profile → the section stays honestly advisory-silent. A profiling failure degrades to
+advisory-silent (never aborts — the schema delta still leads). Build-verified; the
+live path composes the Docker-tested `ReadSide.read` + `LiveProfiler.attach` via
+`Source.ofLive`.

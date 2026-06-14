@@ -38,7 +38,7 @@ module Ref =
         | RunArtifact id -> "@" + id
         | Live c -> "live:" + c
 
-    let private fail (code: string) (msg: string) : Result<Catalog> =
+    let private fail (code: string) (msg: string) : Result<'a> =
         Result.failure [ ValidationError.create code msg ]
 
     /// Resolve a reference to its `Catalog` operand. External refs flow through
@@ -65,4 +65,29 @@ module Ref =
                 // back via ReadSide over the connection; `env:VAR` resolves the
                 // connection string from the environment.
                 return! Source.read (Source.ofLive conn)
+        }
+
+    /// Resolve a reference to its capability-typed `Source` — the catalog read
+    /// PLUS, for a live env, the profile-acquisition verb (`AcquireProfile`).
+    /// `resolveCatalog` reads only the catalog; consumers that also need the
+    /// data evidence (e.g. `compare`'s dealbreaker section) resolve the Source
+    /// and call `Source.profile`. A `@runId` / file / json source carries no
+    /// profile (a static model has no observed data) — `AcquireProfile = None`,
+    /// so the dealbreaker section stays honestly advisory-silent for them.
+    let resolveSource (r: Ref) : Task<Result<Source.Source>> =
+        task {
+            match r with
+            | File path -> return Result.success (Source.ofFile path)
+            | Json json -> return Result.success (Source.ofJson json)
+            | Live conn -> return Result.success (Source.ofLive conn)
+            | RunArtifact runId ->
+                match Run.configuredDir () with
+                | None -> return fail "ref.noRunsDir" "set PROJECTION_RUNS_DIR to resolve @runId references"
+                | Some dir ->
+                    match Run.load dir runId with
+                    | None -> return fail "ref.runNotFound" (sprintf "run %s not found in the store" runId)
+                    | Some run ->
+                        match Map.tryFind "model.json" run.Artifacts with
+                        | Some modelJson -> return Result.success (Source.ofJson modelJson)
+                        | None -> return fail "ref.noModelArtifact" (sprintf "run %s captured no model.json artifact" runId)
         }
