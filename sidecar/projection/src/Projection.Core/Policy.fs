@@ -121,6 +121,20 @@ type EmissionPolicy = {
     /// here as a bool the SSDT emit seam lifts to `Render.toTextWith`.
     /// Default `true` keeps the default bundle byte-identical.
     RenderConstraintsElegant : bool
+    /// NM-70 (WP5) — operator toggle for the identity extended-property
+    /// annotations (the `Projection.SsKey` / `Projection.LogicalName`
+    /// SsKey-bearing extended properties `SsdtDdlEmitter` writes). `true`
+    /// (the production default) emits them unconditionally — byte-identical
+    /// to pre-NM-70 emission, and the posture that lets ReadSide recover the
+    /// persisted SsKey on roundtrip read. `false` is a NAMED DOWNGRADE: the
+    /// `Projection.*` identity properties are suppressed (other extended
+    /// properties — Descriptions, authored properties — still emit), and the
+    /// composition seam emits the `emission.identityAnnotations.omitted`
+    /// diagnostic recording that identity recovery now degrades to
+    /// name-derived SsKeys (no persisted SsKey to read back). Sibling to
+    /// `RenderConstraintsElegant`; lifted to the SSDT emit seam at the
+    /// composition layer (A18 — the emitter never reads `Policy`).
+    EmitIdentityAnnotations : bool
 }
 
 
@@ -510,7 +524,11 @@ module EmissionPolicy =
                   // NM-38 — V1-parity default-on; the elegant multi-line
                   // constraint shape is the production default (matches the
                   // prior hardcoded `Render.toText` Enabled mode).
-                  RenderConstraintsElegant = true }
+                  RenderConstraintsElegant = true
+                  // NM-70 — identity annotations emit by default (the
+                  // downgrade-free posture; byte-identical to pre-NM-70 and
+                  // the posture ReadSide's persisted-SsKey recovery needs).
+                  EmitIdentityAnnotations = true }
 
     /// Replace `IncludePlatformAutoIndexes` while preserving the rest
     /// of the policy. Chapter 4.8 slice γ. Operators set to `false` to
@@ -524,6 +542,14 @@ module EmissionPolicy =
     /// bisect opt-out). Sibling to `withIncludePlatformAutoIndexes`.
     let withRenderConstraintsElegant (elegant: bool) (policy: EmissionPolicy) : EmissionPolicy =
         { policy with RenderConstraintsElegant = elegant }
+
+    /// NM-70 (WP5) — replace `EmitIdentityAnnotations` while preserving the
+    /// rest of the policy. Operators set to `false` to suppress the
+    /// `Projection.*` identity extended properties (the named downgrade:
+    /// identity recovery degrades to name-derived SsKeys). Sibling to
+    /// `withRenderConstraintsElegant`.
+    let withEmitIdentityAnnotations (emit: bool) (policy: EmissionPolicy) : EmissionPolicy =
+        { policy with EmitIdentityAnnotations = emit }
 
     /// Project a catalog by the `IncludePlatformAutoIndexes` toggle. When
     /// the policy says `true` (V1 default), returns the catalog

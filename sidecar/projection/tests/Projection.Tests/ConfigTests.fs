@@ -342,6 +342,17 @@ let ``Config.parse: emission gates round-trip as booleans`` () =
     Assert.True(cfg.Emission.Bootstrap)
     Assert.True(cfg.Emission.Opportunities)
 
+[<Fact>]
+let ``NM-70: Config.parse: emission.identityAnnotations defaults true (emit) when absent`` () =
+    let cfg = Config.parse """{ "model": { "path": "m.json" } }""" |> mustOk
+    Assert.True(cfg.Emission.EmitIdentityAnnotations)
+
+[<Fact>]
+let ``NM-70: Config.parse: emission.identityAnnotations false parses (the named downgrade)`` () =
+    let json = """{ "model": { "path": "m.json" }, "emission": { "identityAnnotations": false } }"""
+    let cfg = Config.parse json |> mustOk
+    Assert.False(cfg.Emission.EmitIdentityAnnotations)
+
 // -----------------------------------------------------------------------
 // AC-D7 / AC-G4 — emission.deleteScope (the convergent-delete gate).
 // -----------------------------------------------------------------------
