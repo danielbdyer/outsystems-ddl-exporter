@@ -161,6 +161,64 @@ let ``ModelFidelity: the rolled-up text leads with the estate masthead and the d
         Assert.DoesNotContain("your", line.ToLowerInvariant())
 
 [<Fact>]
+let ``ModelFidelity: the uniqueness-candidate section consumes the SuggestUnique decisions (closes NM-35)`` () =
+    // A SuggestUnique decision on Customer.Email — the pass observed every value
+    // distinct; the report surfaces it as an advisory natural-key candidate.
+    let decisions : CategoricalUniquenessDecisionSet =
+        { Decisions =
+            [ { AttributeKey = custEmailKey
+                Outcome = CategoricalUniquenessOutcome.SuggestUnique (EveryValueDistinct (100L, 100L))
+                InterventionId = "test" }
+              // A DoNotSuggest decision is NOT a candidate.
+              { AttributeKey = custNoteKey
+                Outcome = CategoricalUniquenessOutcome.DoNotSuggest CategoricalUniquenessKeepReason.NoCategoricalEvidence
+                InterventionId = "test" } ] }
+    let report = ModelFidelity.compose "ACME" fixtureCatalog Profile.empty decisions []
+    match report.UniquenessCandidates with
+    | [ c ] ->
+        Assert.Equal("Customer", c.Reference.Entity)
+        Assert.Equal("Email", c.Reference.Column)
+        Assert.Equal(100L, c.DistinctCount)
+        Assert.Equal(Some 1.0M, ModelFidelity.candidateDistinctFraction c)
+    | other -> Assert.Fail(sprintf "expected exactly one candidate, got %A" other)
+
+[<Fact>]
+let ``ModelFidelity: the fidelity.json codec round-trips through fromJson`` () =
+    let decisions : CategoricalUniquenessDecisionSet =
+        { Decisions =
+            [ { AttributeKey = custEmailKey
+                Outcome = CategoricalUniquenessOutcome.SuggestUnique (EveryValueDistinct (100L, 100L))
+                InterventionId = "test" } ] }
+    let report =
+        ModelFidelity.compose "ACME" fixtureCatalog profiledEvidence decisions
+            [ ToleratedDivergence.HeaderCommentsOmitted ]
+    let json = ModelFidelity.toJsonString report
+    match ModelFidelity.fromJson json with
+    | Some restored ->
+        Assert.Equal(report.Estate, restored.Estate)
+        Assert.Equal(report.EntityCount, restored.EntityCount)
+        Assert.Equal(List.length report.DataViolations, List.length restored.DataViolations)
+        Assert.Equal(List.length report.UniquenessCandidates, List.length restored.UniquenessCandidates)
+        Assert.Equal(List.length report.AcceptedDivergences, List.length restored.AcceptedDivergences)
+        // The rolled-up text is identical across the round-trip (the artifact
+        // the `report` verb surfaces is faithful to the run that produced it).
+        Assert.Equal<string list>(ModelFidelity.render report, ModelFidelity.render restored)
+    | None -> Assert.Fail "fidelity.json failed to parse back"
+
+[<Fact>]
+let ``ModelFidelity: a malformed fidelity.json fails closed to None`` () =
+    Assert.Equal<ModelFidelity.ModelFidelityReport option>(None, ModelFidelity.fromJson "{ this is not json")
+
+[<Fact>]
+let ``ModelFidelity: the accepted-divergences section renders the tolerance residual`` () =
+    let report =
+        ModelFidelity.compose "ACME" fixtureCatalog Profile.empty { Decisions = [] }
+            [ ToleratedDivergence.HeaderCommentsOmitted; ToleratedDivergence.IndexOptionsUnreflected ]
+    let lines = ModelFidelity.render report
+    Assert.Contains(lines, fun l -> l.Contains "ACCEPTED DIVERGENCES" && l.Contains "2")
+    Assert.Contains(lines, fun l -> l.Contains "HeaderCommentsOmitted")
+
+[<Fact>]
 let ``ModelFidelity: violations sort deterministically by category then reference`` () =
     let a = ModelFidelity.compose "ACME" fixtureCatalog profiledEvidence { Decisions = [] } []
     let b = ModelFidelity.compose "ACME" fixtureCatalog profiledEvidence { Decisions = [] } []

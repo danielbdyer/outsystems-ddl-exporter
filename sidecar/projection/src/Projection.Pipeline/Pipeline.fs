@@ -129,6 +129,16 @@ module Compose =
             /// `transform.diagnostic` egress projection. Disjoint from the
             /// curated operational `RunReport.Diagnostics` set.
             PassEntries : DiagnosticEntry list
+            /// The Model Fidelity Report — the per-run, rolled-up account of the
+            /// distance between the declared model and the source reality the
+            /// live profiler observed (data violations + accepted divergences +
+            /// uniqueness candidates). Computed at the `seedOutputs` seam from
+            /// the emitted catalog × the run's `Profile` × the categorical-
+            /// uniqueness decision set; written as `fidelity.json` (structured)
+            /// + `fidelity.txt` (the rolled-up text). Empty-but-present on the
+            /// `Profile.empty` base case (a pure emit observes no reality — the
+            /// honest empty report).
+            Fidelity : ModelFidelity.ModelFidelityReport
         }
 
     /// Chapter C slice C.2 — run-shape value returned by
@@ -224,6 +234,13 @@ module Compose =
         /// sibling of `projection.json` on the deployable axis.
         [<Literal>]
         let dacpac = "projection.dacpac"
+        /// The Model Fidelity Report — structured (`fidelity.json`) + the
+        /// rolled-up operator text (`fidelity.txt`). Default-on; emitted
+        /// alongside the other run artifacts on full-export and migrate.
+        [<Literal>]
+        let fidelityJson = "fidelity.json"
+        [<Literal>]
+        let fidelityText = "fidelity.txt"
 
     /// Aggregate the SSDT bundle's per-table SQL files into one
     /// concatenated SQL string (manifest.json excluded; iterates the
@@ -394,6 +411,34 @@ module Compose =
         | null -> invalidOp "Compose.seedOutputs: '{}' did not parse (unreachable)"
         | n    -> n
 
+    /// The estate name the fidelity-report masthead leads with — neutral,
+    /// THE_VOICE §7 ("never *your*"). A single-module catalog names itself; a
+    /// multi-module estate is "the model" (the count-bearing masthead carries
+    /// the module / entity tally beside it).
+    let private estateName (catalog: Catalog) : string =
+        match catalog.Modules with
+        | [ only ] -> Name.value only.Name
+        | _        -> "the model"
+
+    /// Compute the per-run Model Fidelity Report from the emit context — the
+    /// emitted catalog × the run's profile × the categorical-uniqueness
+    /// decision set (`ComposeState.CategoricalUniquenessDecisions`, which the
+    /// `CategoricalUniquenessPass` write-back populates; this is the consumer
+    /// that closes NM-35). The accepted-divergence residual is wired by the
+    /// run boundary post-canary; the seed computes the data-violation + the
+    /// uniqueness-candidate sections (the strict-default empty residual is the
+    /// honest base case for a pure emit with no round-trip).
+    let private fidelityOf (ctx: EmitContext) : ModelFidelity.ModelFidelityReport =
+        let categoricalDecisions =
+            ctx.ComposedState.CategoricalUniquenessDecisions
+            |> Option.defaultValue CategoricalUniquenessRules.emptyDecisionSet
+        ModelFidelity.compose
+            (estateName ctx.EmittedCatalog)
+            ctx.EmittedCatalog
+            ctx.Profile
+            categoricalDecisions
+            []
+
     /// The fold seed. Every artifact field is a placeholder the matching
     /// `EmitStep` overwrites (the `registered ⇔ executed` invariant
     /// guarantees every step runs); `Trail` / `PassEntries` carry through
@@ -413,7 +458,8 @@ module Compose =
           Dacpac            = None
           Manifest          = ManifestEmitter.build ctx.EmittedCatalog
           Trail             = ctx.Trail
-          PassEntries       = ctx.PassEntries }
+          PassEntries       = ctx.PassEntries
+          Fidelity          = fidelityOf ctx }
 
     /// The single source for the sibling-Π emit phase, in emission order.
     let emitSteps : EmitStep list =
@@ -801,6 +847,12 @@ module Compose =
         // H-032 — config-edit suggestion document (JSON).
         let suggestConfigStaging = Path.Combine(stagingDir, ArtifactPath.suggestConfig)
         writeFile suggestConfigStaging (outputs.SuggestConfigJson.ToJsonString(jsonOpts))
+        // The Model Fidelity Report — structured + the rolled-up text. Default-on;
+        // written alongside the other run artifacts on every full-export / migrate.
+        let fidelityJsonStaging = Path.Combine(stagingDir, ArtifactPath.fidelityJson)
+        writeFile fidelityJsonStaging (ModelFidelity.toJsonString outputs.Fidelity)
+        let fidelityTextStaging = Path.Combine(stagingDir, ArtifactPath.fidelityText)
+        writeFile fidelityTextStaging (String.concat "\n" (ModelFidelity.render outputs.Fidelity))
         // The compiled .dacpac (operator-gated; absent by default). A binary
         // artifact: written directly rather than through the text `FileWriter`
         // seam, inside the same staging directory so the atomic-replace
@@ -817,7 +869,9 @@ module Compose =
         let remediationFinal   = Path.Combine(outputDir, ArtifactPath.remediation)
         let summaryFinal       = Path.Combine(outputDir, ArtifactPath.summary)
         let suggestConfigFinal = Path.Combine(outputDir, ArtifactPath.suggestConfig)
-        bundleFinalPaths @ dataFinalPaths @ dacpacFinalPaths @ [ jsonFinal; distributionsFinal; remediationFinal; summaryFinal; suggestConfigFinal ]
+        let fidelityJsonFinal  = Path.Combine(outputDir, ArtifactPath.fidelityJson)
+        let fidelityTextFinal  = Path.Combine(outputDir, ArtifactPath.fidelityText)
+        bundleFinalPaths @ dataFinalPaths @ dacpacFinalPaths @ [ jsonFinal; distributionsFinal; remediationFinal; summaryFinal; suggestConfigFinal; fidelityJsonFinal; fidelityTextFinal ]
 
     let private safeCleanupStaging (stagingDir: string) : unit =
         if Directory.Exists stagingDir then

@@ -555,3 +555,118 @@ module ModelFidelity =
     let toJsonString (report: ModelFidelityReport) : string =
         let opts = System.Text.Json.JsonSerializerOptions(WriteIndented = true)
         (toJson report).ToJsonString(opts)
+
+    // ----------------------------------------------------------------------
+    // The codec inverse — read a recorded `fidelity.json` back into a report
+    // so the `report` verb can surface a prior run's roll-up. Fail-closed: a
+    // malformed document yields `None` (the caller states "no fidelity report
+    // recorded" rather than crashing).
+    // ----------------------------------------------------------------------
+
+    let private tryNode (o: JsonObject) (key: string) : JsonNode option =
+        match o.TryGetPropertyValue key with
+        | true, node -> Option.ofObj node
+        | _ -> None
+
+    let private tryStr (o: JsonObject) (key: string) : string option =
+        tryNode o key
+        |> Option.bind (fun node -> try Some (node.GetValue<string>()) with _ -> None)
+
+    let private tryInt (o: JsonObject) (key: string) : int option =
+        tryNode o key |> Option.bind (fun node -> try Some (node.GetValue<int>()) with _ -> None)
+
+    let private tryInt64 (o: JsonObject) (key: string) : int64 option =
+        tryNode o key |> Option.bind (fun node -> try Some (node.GetValue<int64>()) with _ -> None)
+
+    let private asObject (node: JsonNode) : JsonObject option =
+        match node with :? JsonObject as o -> Some o | _ -> None
+
+    let private asArray (node: JsonNode) : JsonArray option =
+        match node with :? JsonArray as a -> Some a | _ -> None
+
+    /// The non-null elements of a JSON array, narrowed for nullness.
+    let private elements (arr: JsonArray) : JsonNode list =
+        [ for n in arr do match Option.ofObj n with Some node -> yield node | None -> () ]
+
+    let private kindFromNode (o: JsonObject) : ViolationKind option =
+        match tryStr o "axis" with
+        | Some "notNullButNullsPresent" ->
+            Some (NotNullButNullsPresent (tryInt64 o "nullCount" |> Option.defaultValue 0L))
+        | Some "uniqueButDuplicatesPresent" -> Some UniqueButDuplicatesPresent
+        | Some "foreignKeyOrphans" ->
+            Some (ForeignKeyOrphans (tryInt64 o "orphanCount" |> Option.defaultValue 0L))
+        | Some "lengthOrTypeOverflow" ->
+            Some (LengthOrTypeOverflow (tryStr o "observed" |> Option.defaultValue "", tryStr o "declared" |> Option.defaultValue ""))
+        | _ -> None
+
+    /// Parse a `fidelity.json` document back into a `ModelFidelityReport`.
+    /// `None` on a malformed document (fail-closed). Reconstructs the
+    /// data-violation list from the per-category arrays + the candidate /
+    /// divergence sections.
+    let fromJson (json: string) : ModelFidelityReport option =
+        try
+            match Option.ofObj (JsonNode.Parse json) |> Option.bind asObject with
+            | None -> None
+            | Some root ->
+                let estate = tryStr root "estate" |> Option.defaultValue "the model"
+                let moduleCount = tryInt root "moduleCount" |> Option.defaultValue 0
+                let entityCount = tryInt root "entityCount" |> Option.defaultValue 0
+                let violations =
+                    [ match tryNode root "dataViolations" |> Option.bind asObject with
+                      | None -> ()
+                      | Some dv ->
+                          match tryNode dv "categories" |> Option.bind asArray with
+                          | None -> ()
+                          | Some cats ->
+                              for cat in elements cats do
+                                  match asObject cat with
+                                  | None -> ()
+                                  | Some c ->
+                                      match tryNode c "violations" |> Option.bind asArray with
+                                      | None -> ()
+                                      | Some items ->
+                                          for item in elements items do
+                                              match asObject item with
+                                              | None -> ()
+                                              | Some v ->
+                                                  match tryStr v "entity", tryStr v "column", tryNode v "kind" |> Option.bind asObject with
+                                                  | Some entity, Some column, Some k ->
+                                                      match kindFromNode k with
+                                                      | Some kind ->
+                                                          yield { Reference = { Entity = entity; Column = column }; Kind = kind }
+                                                      | None -> ()
+                                                  | _ -> () ]
+                let accepted =
+                    [ match tryNode root "acceptedDivergences" |> Option.bind asArray with
+                      | None -> ()
+                      | Some arr ->
+                          for n in elements arr do
+                              match (try Some (n.GetValue<string>()) with _ -> None) with
+                              | Some token ->
+                                  match ToleratedDivergence.tryParse token with
+                                  | Some d -> yield { Divergence = d }
+                                  | None -> ()
+                              | None -> () ]
+                let candidates =
+                    [ match tryNode root "uniquenessCandidates" |> Option.bind asArray with
+                      | None -> ()
+                      | Some arr ->
+                          for n in elements arr do
+                              match asObject n with
+                              | None -> ()
+                              | Some c ->
+                                  match tryStr c "entity", tryStr c "column" with
+                                  | Some entity, Some column ->
+                                      yield
+                                          { Reference         = { Entity = entity; Column = column }
+                                            DistinctCount     = tryInt64 c "distinctCount" |> Option.defaultValue 0L
+                                            TotalObservations = tryInt64 c "totalObservations" |> Option.defaultValue 0L }
+                                  | _ -> () ]
+                Some
+                    { Estate               = estate
+                      ModuleCount          = moduleCount
+                      EntityCount          = entityCount
+                      DataViolations       = violations
+                      AcceptedDivergences  = accepted
+                      UniquenessCandidates = candidates }
+        with _ -> None
