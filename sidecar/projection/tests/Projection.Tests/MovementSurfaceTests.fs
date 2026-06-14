@@ -176,7 +176,7 @@ let ``S1: a movement-only config parses with a default-empty Shaping (no modelNo
     Assert.Equal(None, cfg.Shaping.Model.Ossys)
     Assert.Empty(cfg.Shaping.Model.Modules)
     Assert.Empty(cfg.Shaping.Overrides.TableRenames)
-    Assert.Equal(Config.defaultConfig.Policy.Selection, cfg.Shaping.Policy.Selection)
+    Assert.Equal(Config.defaultConfig.Policy.Insertion, cfg.Shaping.Policy.Insertion)
 
 [<Fact>]
 let ``S1: empty-text config carries the default Shaping`` () =
@@ -193,7 +193,7 @@ let ``S1: a unified config populates Shaping.Policy / Overrides / Model.Modules`
           "flows": { "emit": { "from": "model", "to": "uat" } },
           "model":     { "path": "model.json", "modules": ["Sales", { "name": "Ops", "entities": ["Order"] }] },
           "overrides": { "tableRenames": [ { "from": { "module": "Sales", "entity": "Cust" }, "to": { "schema": "dbo", "table": "Customer" } } ] },
-          "policy":    { "selection": "IncludeManual" }
+          "policy":    { "insertion": "Merge" }
         }
         """ |> mustOk
     // model.modules folds into the shaping view (the canonical object form).
@@ -205,7 +205,7 @@ let ``S1: a unified config populates Shaping.Policy / Overrides / Model.Modules`
     | [ { From = Config.LogicalSource { Module = "Sales"; Entity = "Cust" }; To = { Schema = "dbo"; Table = "Customer" } } ] -> ()
     | other -> Assert.Fail(sprintf "expected one Sales::Cust -> dbo.Customer rename, got %A" other)
     // policy folds in.
-    Assert.Equal("IncludeManual", cfg.Shaping.Policy.Selection)
+    Assert.Equal("Merge", cfg.Shaping.Policy.Insertion)
 
 // -- M3.b: the `legacy` B→A reverse-leg classifier (Command.reverseLegOf) ----
 // The clean partial: the rendition flag (M1) drives the recognition of a flow as

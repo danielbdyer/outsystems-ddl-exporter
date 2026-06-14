@@ -203,10 +203,18 @@ module Config =
         RenderConstraintsElegant : bool
     }
 
-    type UserMatchingSection = {
-        Strategy : string
-        Fallback : string
-    }
+    // NM-03 (2026-06-13) — `policy.selection` and `policy.userMatching` were
+    // parsed into the config `PolicySection` but never threaded into the
+    // runtime `Policy` aggregate (`buildPolicyFromConfig` wires only
+    // Tightening / Insertion / Emission). The Core `Policy.Selection` /
+    // `Policy.UserMatching` axes have real consumers (`UserFkReflowPass`,
+    // `PolicyDiff`) but are NOT fed from this config surface — they are set
+    // directly by their callers. So the operator-facing config ingestion is
+    // dead and is removed here. The `UserMatchingSection` type goes with it;
+    // the Core axes stay untouched.
+    //   FLAG: full removal of the config fields (not "keep at default") —
+    //   `PolicyDiff` reads the Core `Policy`, never the config `PolicySection`,
+    //   so nothing live needs the config `Selection` / `UserMatching` fields.
 
     // -----------------------------------------------------------------------
     // Tightening axis (Chapter C slice C.1). Operator-facing config surface
@@ -278,9 +286,7 @@ module Config =
     }
 
     type PolicySection = {
-        Selection       : string
         Insertion       : string
-        UserMatching    : UserMatchingSection
         Tightening      : TighteningSection option
         /// Chapter C slice C.4 — operator-supplied feature-toggle
         /// groupings (`Map<TransformGroup, bool>`). Missing groups
@@ -345,15 +351,8 @@ module Config =
         RenderConstraintsElegant = true
     }
 
-    let private defaultUserMatching : UserMatchingSection = {
-        Strategy = "ByEmail"
-        Fallback = "NoFallback"
-    }
-
     let private defaultPolicy : PolicySection = {
-        Selection       = "IncludeAll"
         Insertion       = "SchemaOnly"
-        UserMatching    = defaultUserMatching
         Tightening      = None
         TransformGroups = []
     }
@@ -1057,31 +1056,6 @@ module Config =
                                                         RenderConstraintsElegant = renderElegant
                                                     }
 
-    let private parseUserMatching (element: JsonElement) : Result<UserMatchingSection> =
-        match element.TryGetProperty("userMatching") with
-        | false, _ -> Result.success defaultUserMatching
-        | true, v when v.ValueKind = JsonValueKind.Object ->
-            let strategyR =
-                match getOptionalString v "strategy" with
-                | Error es -> Error es
-                | Ok None -> Result.success defaultUserMatching.Strategy
-                | Ok (Some s) -> Result.success s
-            match strategyR with
-            | Error es -> Error es
-            | Ok strategy ->
-                let fallbackR =
-                    match getOptionalString v "fallback" with
-                    | Error es -> Error es
-                    | Ok None -> Result.success defaultUserMatching.Fallback
-                    | Ok (Some s) -> Result.success s
-                match fallbackR with
-                | Error es -> Error es
-                | Ok fallback ->
-                    Result.success { Strategy = strategy; Fallback = fallback }
-        | _ ->
-            Result.failureOf (
-                configError "typeMismatch" "policy.userMatching must be an object.")
-
     let private getOptionalBool (element: JsonElement) (name: string) : Result<bool option> =
         match element.TryGetProperty(name) with
         | false, _ -> Result.success None
@@ -1242,38 +1216,25 @@ module Config =
         match tryGetProperty root "policy" with
         | None -> Result.success defaultPolicy
         | Some element ->
-            let selectionR =
-                match getOptionalString element "selection" with
+            let insertionR =
+                match getOptionalString element "insertion" with
                 | Error es -> Error es
-                | Ok None -> Result.success defaultPolicy.Selection
+                | Ok None -> Result.success defaultPolicy.Insertion
                 | Ok (Some s) -> Result.success s
-            match selectionR with
+            match insertionR with
             | Error es -> Error es
-            | Ok selection ->
-                let insertionR =
-                    match getOptionalString element "insertion" with
-                    | Error es -> Error es
-                    | Ok None -> Result.success defaultPolicy.Insertion
-                    | Ok (Some s) -> Result.success s
-                match insertionR with
+            | Ok insertion ->
+                match parseTightening element with
                 | Error es -> Error es
-                | Ok insertion ->
-                    match parseUserMatching element with
+                | Ok tightening ->
+                    match parseTransformGroups element with
                     | Error es -> Error es
-                    | Ok userMatching ->
-                        match parseTightening element with
-                        | Error es -> Error es
-                        | Ok tightening ->
-                            match parseTransformGroups element with
-                            | Error es -> Error es
-                            | Ok transformGroups ->
-                                Result.success {
-                                    Selection       = selection
-                                    Insertion       = insertion
-                                    UserMatching    = userMatching
-                                    Tightening      = tightening
-                                    TransformGroups = transformGroups
-                                }
+                    | Ok transformGroups ->
+                        Result.success {
+                            Insertion       = insertion
+                            Tightening      = tightening
+                            TransformGroups = transformGroups
+                        }
 
     let private parseOutput (root: JsonElement) : Result<OutputSection> =
         match tryGetProperty root "output" with

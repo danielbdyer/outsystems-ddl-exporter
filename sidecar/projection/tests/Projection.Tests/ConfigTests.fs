@@ -196,9 +196,7 @@ let private fullConfigJson = """{
         "decisionLog": true, "opportunities": true, "validations": true
     },
     "policy": {
-        "selection": "IncludeAll",
-        "insertion": "SchemaOnly",
-        "userMatching": { "strategy": "ByEmail", "fallback": "NoFallback" }
+        "insertion": "SchemaOnly"
     },
     "output": { "dir": "out/" }
 }"""
@@ -420,10 +418,7 @@ let ``Config.parse: defaults applied when sections are absent`` () =
     let json = """{ "model": { "path": "m.json" } }"""
     let cfg = Config.parse json |> mustOk
     Assert.Equal("fixture", cfg.Profiler.Provider)
-    Assert.Equal("IncludeAll", cfg.Policy.Selection)
     Assert.Equal("SchemaOnly", cfg.Policy.Insertion)
-    Assert.Equal("ByEmail",    cfg.Policy.UserMatching.Strategy)
-    Assert.Equal("NoFallback", cfg.Policy.UserMatching.Fallback)
 
 // -----------------------------------------------------------------------
 // Config.fromFile — file I/O wrapper. A.1 CLI bridge ingests config via

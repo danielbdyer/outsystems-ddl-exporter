@@ -35,9 +35,7 @@ let private mkConfig (entries: Config.TransformGroupEntry list) : Config.Config 
             DecisionLog = true; Opportunities = true; Validations = true; IncludePlatformAutoIndexes = true; DeleteScope = None; RenderConstraintsElegant = true
         }
         Policy      = {
-            Selection       = "IncludeAll"
             Insertion       = "SchemaOnly"
-            UserMatching    = { Strategy = "ByEmail"; Fallback = "NoFallback" }
             Tightening      = None
             TransformGroups = entries
         }

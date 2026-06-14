@@ -36,9 +36,7 @@ let private mkConfig (insertion: string) : Config.Config =
             DecisionLog = true; Opportunities = true; Validations = true; IncludePlatformAutoIndexes = true; DeleteScope = None; RenderConstraintsElegant = true
         }
         Policy      = {
-            Selection       = "IncludeAll"
             Insertion       = insertion
-            UserMatching    = { Strategy = "ByEmail"; Fallback = "NoFallback" }
             Tightening      = None
             TransformGroups = []
         }
