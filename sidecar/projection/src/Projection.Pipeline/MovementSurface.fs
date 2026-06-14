@@ -303,6 +303,18 @@ module ProjectionConfig =
     /// Parse the `projection.json` document text into a `ProjectionConfig`.
     /// Aggregates every per-environment / per-flow error so the operator
     /// sees them all at once.
+    /// NM-10 (2026-06-13) — the closed secondary-verb set, hoisted here so it
+    /// is the SINGLE source for both the argv router (`Command.secondaryVerbs`
+    /// = this) and the config-load collision check below. A flow named after
+    /// one of these verbs is permanently unreachable: `Command.parse` matches
+    /// the verb arms before the `cfg.Flows` map, so `projection report` runs
+    /// the verb, never a `flows: { "report": … }` entry. `ProjectionConfig.parse`
+    /// rejects such a flow at load (`cli.config.flowNameReservedVerb`) rather
+    /// than let it parse, render, and list while reaching nothing (A44:
+    /// expressible ⇔ reachable). THE_CLI.md §3.
+    let reservedFlowVerbs : Set<string> =
+        set [ "check"; "explain"; "seal"; "report"; "profile"; "init"; "diff" ]
+
     let parse (json: string) : Result<ProjectionConfig> =
         if String.IsNullOrWhiteSpace json then Result.success empty
         else
@@ -322,9 +334,24 @@ module ProjectionConfig =
                     | true, f when f.ValueKind = JsonValueKind.Object ->
                         [ for p in f.EnumerateObject() -> parseFlow p.Name p.Value ]
                     | _ -> []
+                // NM-10 — a flow named after a reserved secondary verb is
+                // shadowed by `Command.parse` (the verb arms precede the
+                // `cfg.Flows` map) and is permanently unreachable. Refuse it at
+                // load, naming the offending flow + that the name is a reserved
+                // verb, sourced from `reservedFlowVerbs` (the same set the router
+                // uses — no drifting copy).
+                let reservedVerbCollisions =
+                    flowResults
+                    |> List.choose (function Ok f -> Some f.Name | Error _ -> None)
+                    |> List.filter reservedFlowVerbs.Contains
+                    |> List.map (fun name ->
+                        err
+                            "cli.config.flowNameReservedVerb"
+                            (sprintf "flow '%s' is a reserved verb name; `projection %s` always runs the built-in verb, so the flow would be unreachable. Rename the flow." name name))
                 let errors =
                     (envResults |> List.collect (function Error e -> e | Ok _ -> []))
                     @ (flowResults |> List.collect (function Error e -> e | Ok _ -> []))
+                    @ reservedVerbCollisions
                 if not (List.isEmpty errors) then Result.failure errors
                 else
                     let environments =
@@ -1069,7 +1096,10 @@ module Command =
 
     /// The closed secondary-verb set (THE_CLI.md §3). A first token outside
     /// this set is read as a flow name; an unknown one is refused, naming both.
-    let private secondaryVerbs = set [ "check"; "explain"; "seal"; "report"; "profile"; "init"; "diff" ]
+    /// NM-10 — single-sourced from `ProjectionConfig.reservedFlowVerbs` (the
+    /// config-load collision check rejects a flow named after any of these), so
+    /// the router and the load-time refusal can never drift apart.
+    let private secondaryVerbs = ProjectionConfig.reservedFlowVerbs
 
     /// Map an argv to an `Intent` (THE_CLI.md §3): the daily surface
     /// `projection <flow> [--go] [--fresh] [--allow-drops]` (the verb is
