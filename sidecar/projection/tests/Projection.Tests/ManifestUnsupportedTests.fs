@@ -52,6 +52,7 @@ let ``Unsupported.compute names match current ToleratedDivergence variants`` () 
     let expected =
         Set.ofList
             [ "CharAnsiPaddingTolerated"
+              "CompositePkFkUnreflected"
               "DecimalScaleTolerated"
               "EmptyTextNormalizedToNull"
               "HeaderCommentsOmitted"
