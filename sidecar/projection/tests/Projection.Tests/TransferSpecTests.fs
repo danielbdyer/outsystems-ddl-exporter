@@ -293,3 +293,36 @@ let ``resolveAllReconciliation rejects a kind reconciled by both strategies`` ()
     with
     | Ok _    -> Assert.Fail "expected Error"
     | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "transfer.reconcile.strategyConflict")
+
+// ---------------------------------------------------------------------------
+// NM-49: the capture-lane descent positioning is TOTAL — `CaptureLane.ladderFrom`
+// returns the descent suffix at `preferred`, and an unknown preferred lane
+// begins at the ladder HEAD rather than the empty tail that the descent loop
+// mislabels "capture ladder exhausted".
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``NM-49: ladderFrom positions the descent at a known preferred lane (inclusive)`` () =
+    Assert.Equal<CaptureLane list>(
+        CaptureLane.ladder,
+        CaptureLane.ladderFrom CaptureLane.StagedMergeOutput)
+    Assert.Equal<CaptureLane list>(
+        [ CaptureLane.StagedMergeOutputInto; CaptureLane.RowwiseScopeIdentity ],
+        CaptureLane.ladderFrom CaptureLane.StagedMergeOutputInto)
+    Assert.Equal<CaptureLane list>(
+        [ CaptureLane.RowwiseScopeIdentity ],
+        CaptureLane.ladderFrom CaptureLane.RowwiseScopeIdentity)
+
+[<Fact>]
+let ``NM-49: ladderFrom is total — every closed CaptureLane variant yields a non-empty descent`` () =
+    // The descent must NEVER be empty (an empty descent is the "exhausted"
+    // mislabel). Exhaustively over the closed DU.
+    for lane in [ CaptureLane.StagedMergeOutput; CaptureLane.StagedMergeOutputInto; CaptureLane.RowwiseScopeIdentity ] do
+        let descent = CaptureLane.ladderFrom lane
+        Assert.NotEmpty descent
+        // The descent is always a suffix of the full ladder (the conservative
+        // order is preserved — no rung skipped, no rung reordered).
+        Assert.True(
+            CaptureLane.ladder |> List.skipWhile (fun l -> l <> List.head descent) = descent
+            || descent = CaptureLane.ladder,
+            sprintf "ladderFrom %A is not a ladder suffix: %A" lane descent)
