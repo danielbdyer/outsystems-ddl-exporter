@@ -183,6 +183,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
     | PlanAction.CheckReady                -> runReadiness ()
     // explain ------------------------------------------------------------
     | PlanAction.ExplainDiff (a, b, asJson, depthOpt) -> runDiff a b asJson (defaultArg depthOpt View.defaultDepth)
+    | PlanAction.Compare (a, b, asJson)      -> runCompare a b asJson
     | PlanAction.ExplainPolicy (a, b)        -> runPolicyDiff a b
     | PlanAction.ExplainNode (c, k, asJson, depthOpt) -> runExplain c k asJson (defaultArg depthOpt View.defaultDepth)
     | PlanAction.ExplainSuggest (c, applyTo) -> runSuggestConfig c applyTo

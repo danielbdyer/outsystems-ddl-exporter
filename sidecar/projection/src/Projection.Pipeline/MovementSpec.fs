@@ -272,6 +272,9 @@ type Intent =
     /// (THE_SYNTHETIC_DATA_DESIGN §2.2). The capture step the synthetic flow
     /// replays from.
     | Profile of args: string list
+    /// `compare <A> <B>` — NM-71/WP9: the read-only multi-environment readiness
+    /// check (schema delta + data dealbreakers). Advisory; no writes.
+    | Compare of args: string list
 
 /// The spec-derived options a live load/migrate carries, bundled so the plan
 /// is self-contained (the runner needs nothing but the plan).
@@ -364,6 +367,7 @@ type PlanAction =
     | CheckReady
     // explain ------------------------------------------------------------
     | ExplainDiff of refA: string * refB: string * asJson: bool * depth: int option
+    | Compare of refA: string * refB: string * asJson: bool
     | ExplainPolicy of configA: string * configB: string
     | ExplainNode of config: string * ssKey: string * asJson: bool * depth: int option
     | ExplainSuggest of config: string * applyTo: string option

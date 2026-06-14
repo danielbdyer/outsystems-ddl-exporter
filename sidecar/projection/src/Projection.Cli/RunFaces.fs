@@ -1228,6 +1228,36 @@ let runDiff (refAText: string) (refBText: string) (asJson: bool) (depth: int) : 
                 TtyRenderer.renderAnswer asJson depth (Comparison.renderCatalogChange d)
                 0
 
+/// `projection compare <A> <B>` — NM-71/WP9: the read-only multi-environment
+/// readiness check. Resolves both operands to catalogs (the `Ref` machinery,
+/// like `diff`), runs the schema-delta + data-dealbreaker compare, prints the
+/// roll-up (or `--format json`), and writes `compare.json`. Advisory — exits 0
+/// (the report carries the readiness verdict); a malformed operand exits 2.
+/// NOTE (v1): the operands resolve to catalogs only, so the data-dealbreaker
+/// section is advisory-silent (no `Profile`); live-profiling the source operand
+/// to populate the dealbreakers is the named follow-on.
+let runCompare (refAText: string) (refBText: string) (asJson: bool) : int =
+    let resolve (s: string) = (Ref.resolveCatalog (Ref.parse s)).GetAwaiter().GetResult()
+    match resolve refAText with
+    | Error errs ->
+        Console.Error.WriteLine "projection compare: could not resolve the first reference:"
+        printErrors Console.Error errs
+        2
+    | Ok a ->
+        match resolve refBText with
+        | Error errs ->
+            Console.Error.WriteLine "projection compare: could not resolve the second reference:"
+            printErrors Console.Error errs
+            2
+        | Ok b ->
+            let source : Compare.Operand = { Label = refAText; Catalog = a; Profile = None }
+            let target : Compare.Operand = { Label = refBText; Catalog = b; Profile = None }
+            let report = Compare.compute source target
+            if asJson then printfn "%s" (Compare.toJsonString report)
+            else Compare.render report |> List.iter (fun line -> printfn "%s" line)
+            System.IO.File.WriteAllText("compare.json", Compare.toJsonString report)
+            0
+
 /// NM-37 — the explain story as a `View` (the masterful base #3 substrate),
 /// built PURELY from the filtered transform trail + findings so it is testable
 /// without the projection I/O. The transform trail uses the `View.Trail` block

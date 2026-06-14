@@ -313,7 +313,7 @@ module ProjectionConfig =
     /// than let it parse, render, and list while reaching nothing (A44:
     /// expressible ⇔ reachable). THE_CLI.md §3.
     let reservedFlowVerbs : Set<string> =
-        set [ "check"; "explain"; "seal"; "report"; "profile"; "init"; "diff" ]
+        set [ "check"; "explain"; "seal"; "report"; "profile"; "init"; "diff"; "compare" ]
 
     let parse (json: string) : Result<ProjectionConfig> =
         if String.IsNullOrWhiteSpace json then Result.success empty
@@ -772,6 +772,20 @@ module Command =
     /// `explain <flow>` is the live preview: what publishing the flow would
     /// change against its target's last sealed episode (B = the flow's model,
     /// A_prior = the target store) — the preview sibling to `report`'s history.
+    /// `compare <A> <B>` — NM-71/WP9: resolve two operand refs and run the
+    /// read-only readiness compare (schema delta + data dealbreakers). The face
+    /// writes `compare.json` + prints the roll-up. Two refs are required.
+    let planCompare (_cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
+        let valueOf = flagValue args
+        let action =
+            match args with
+            | a :: b :: _ -> PlanAction.Compare (a, b, (valueOf "--format" = Some "json"))
+            | _ ->
+                PlanAction.Refused (
+                    2,
+                    err "cli.compare.args" "projection compare: needs two references — projection compare <A> <B>.")
+        { Notes = []; Action = action }
+
     let planExplain (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
         let valueOf = flagValue args
         let depthOpt =
@@ -1124,6 +1138,7 @@ module Command =
         | "diff" :: rest    -> Result.success (Intent.Explain ("diff" :: rest))
         | "seal" :: rest    -> Result.success (Intent.Seal rest)
         | "report" :: rest  -> Result.success (Intent.Report rest)
+        | "compare" :: rest -> Result.success (Intent.Compare rest)
         | "profile" :: rest -> Result.success (Intent.Profile rest)
         | first :: rest when Map.containsKey first cfg.Flows ->
             // D8 — the value-bearing synthesis knobs. A malformed value is a
@@ -1177,4 +1192,5 @@ module Command =
         | Intent.Explain args      -> planExplain cfg args
         | Intent.Seal args         -> planSeal args
         | Intent.Report args       -> planReport cfg args
+        | Intent.Compare args      -> planCompare cfg args
         | Intent.Profile args      -> planProfile cfg args

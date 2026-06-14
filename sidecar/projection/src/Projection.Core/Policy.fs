@@ -87,6 +87,35 @@ module DeleteScopePolicy =
         else None
 
 
+/// NM-73 (WP6.6 / C2) — the conservative data-emission verification mode
+/// for the data emitters' MERGE. Closed two-way discriminant:
+///
+///   - `Standard` (the default) — emit the MERGE alone (the canonical,
+///     CDC-silence posture). BYTE-IDENTICAL to pre-NM-73.
+///   - `ValidateBeforeApply` — prepend a typed-AST `IF EXISTS (… EXCEPT …)
+///     THROW` guard before each MERGE so that a drifted target (a row this
+///     MERGE manages whose current target state differs from the source row
+///     we are about to write) aborts the apply LOUDLY rather than silently
+///     overwriting out-of-band edits. Per C2 (the drift-authority
+///     adjudication): CDC-silence stays canonical; this EXCEPT guard is the
+///     opt-in conservative fallback/override until J5 proves the CDC path on
+///     real UAT.
+///
+/// Sibling to `RenderConstraintsElegant` / `EmitIdentityAnnotations` /
+/// `DeleteScope` — an Emission-axis operator intent the composer reads off
+/// `Policy` and threads to the data emitters as a plain value (A18 amended —
+/// the emitter never reads `Policy`).
+type DataVerification =
+    /// Default (CDC-silence canonical). The MERGE alone; no guard.
+    /// BYTE-IDENTICAL to pre-NM-73 emission.
+    | Standard
+    /// The conservative drift-check: a typed-AST `IF EXISTS (… EXCEPT …)
+    /// THROW` guard precedes the MERGE (one batch, like the
+    /// IDENTITY_INSERT bracket precedent). A first apply over an empty
+    /// target passes; a re-apply over a drifted target THROWs.
+    | ValidateBeforeApply
+
+
 /// Emission axis. Which artifact families a projection emits. The booleans
 /// are deliberate; orthogonality of schema / data / diagnostics is the
 /// algebra's commitment (decomposition Vector 2). When emission shapes
@@ -135,6 +164,15 @@ type EmissionPolicy = {
     /// `RenderConstraintsElegant`; lifted to the SSDT emit seam at the
     /// composition layer (A18 — the emitter never reads `Policy`).
     EmitIdentityAnnotations : bool
+    /// NM-73 (WP6.6 / C2) — the conservative data-emission verification
+    /// mode for the data emitters' MERGE. `Standard` (the default) emits
+    /// the MERGE alone — BYTE-IDENTICAL to pre-NM-73. `ValidateBeforeApply`
+    /// prepends a typed-AST `IF EXISTS (… EXCEPT …) THROW` drift-guard
+    /// before the MERGE (one GO batch, like the IDENTITY_INSERT bracket).
+    /// Sibling to `EmitIdentityAnnotations`; the composer reads it off
+    /// `Policy` and threads the plain value to the data emitters (A18 —
+    /// the emitter never reads `Policy`).
+    DataVerification : DataVerification
 }
 
 
@@ -528,7 +566,11 @@ module EmissionPolicy =
                   // NM-70 — identity annotations emit by default (the
                   // downgrade-free posture; byte-identical to pre-NM-70 and
                   // the posture ReadSide's persisted-SsKey recovery needs).
-                  EmitIdentityAnnotations = true }
+                  EmitIdentityAnnotations = true
+                  // NM-73 — Standard (CDC-silence canonical) by default; the
+                  // EXCEPT validate-before-apply guard is operator opt-in.
+                  // Byte-identical to pre-NM-73.
+                  DataVerification = Standard }
 
     /// Replace `IncludePlatformAutoIndexes` while preserving the rest
     /// of the policy. Chapter 4.8 slice γ. Operators set to `false` to
@@ -550,6 +592,14 @@ module EmissionPolicy =
     /// `withRenderConstraintsElegant`.
     let withEmitIdentityAnnotations (emit: bool) (policy: EmissionPolicy) : EmissionPolicy =
         { policy with EmitIdentityAnnotations = emit }
+
+    /// NM-73 (WP6.6 / C2) — replace `DataVerification` while preserving the
+    /// rest of the policy. Operators set `ValidateBeforeApply` to prepend the
+    /// EXCEPT drift-guard before each data MERGE (the conservative fallback);
+    /// `Standard` (the default) is byte-identical to pre-NM-73. Sibling to
+    /// `withEmitIdentityAnnotations`.
+    let withDataVerification (verification: DataVerification) (policy: EmissionPolicy) : EmissionPolicy =
+        { policy with DataVerification = verification }
 
     /// Project a catalog by the `IncludePlatformAutoIndexes` toggle. When
     /// the policy says `true` (V1 default), returns the catalog
