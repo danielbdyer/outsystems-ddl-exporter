@@ -106,7 +106,12 @@ module OssysRowsetReader =
                   ExtendedProperties = []
                   OriginalName = row.OriginalName
                   ExternalDatabaseType = row.ExternalDatabaseType
-                  SqlStorage   = Some storage }
+                  SqlStorage   = Some storage
+                  // WP8 / NM-72 — Service-Studio authored order from the
+                  // real `ossys_Entity_Attr.Order_Num` column (rowset
+                  // path). `CanonicalizeIdentity` consumes it for emission
+                  // column ordering (PK first, then Order ascending).
+                  Order        = row.Order }
         | _ ->
             // Propagate underlying errors via `propagateOrFallback`.
             propagateOrFallback

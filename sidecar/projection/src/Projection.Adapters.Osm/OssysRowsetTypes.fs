@@ -143,6 +143,16 @@ module OssysRowsetTypes =
             /// constraint exists. Threads to `Attribute.DefaultName`
             /// for round-trip parity with V1 emission.
             DefaultConstraintName : string option
+            /// WP8 / NM-72 — Service-Studio authored attribute order,
+            /// carried from the real `ossys_Entity_Attr.Order_Num`
+            /// column. `None` when the source estate lacks the column
+            /// (the rowset SQL COALESCEs to the attribute's creation
+            /// `Id` as a stable fallback, so this is rarely `None` on a
+            /// live extraction; the JSON-fallback and hand-built models
+            /// carry `None`). Threads to `Attribute.Order`, which the
+            /// `CanonicalizeIdentity` pass consumes for emission column
+            /// ordering `(PK first, then Order ascending, then SsKey)`.
+            Order : int option
         }
 
     /// V1 rowset 4 — `#RefResolved` resolved-reference rows; chapter

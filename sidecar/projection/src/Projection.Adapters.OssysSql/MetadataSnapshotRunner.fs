@@ -181,7 +181,14 @@ module MetadataSnapshotRunner =
           ExternalDbType    : string option
           DeleteRule        : string option
           PhysicalCol       : string
-          Description       : string option }
+          Description       : string option
+          // WP8 / NM-72 — Service-Studio authored order from the real
+          // `ossys_Entity_Attr.Order_Num` column (the rowset SQL
+          // COALESCEs to the attribute's creation `Id` when the source
+          // estate lacks the column, so this is `Some` on a live
+          // extraction). Threads through `toBundle` into the
+          // `AttributeRow.Order` the rowset reader consumes.
+          Order             : int option }
 
     type OssysReferenceRow =
         { AttrId          : int
@@ -490,7 +497,13 @@ module MetadataSnapshotRunner =
               match readStringOpt r 17 with
               | Some n when not (System.String.IsNullOrWhiteSpace n) -> n
               | _ -> (readString r 2).ToUpperInvariant()
-          Description    = readStringOpt r 22 }
+          Description    = readStringOpt r 22
+          // ordinal 23 = Order_Num (WP8 / NM-72). Appended at the END of
+          // the `attributes` SELECT so the existing ordinals (0-22) are
+          // unshifted. The rowset SQL COALESCEs to the attribute's
+          // creation `Id` when the source estate lacks the column, so
+          // this is non-null on a live extraction.
+          Order          = readIntOpt r 23 }
 
     let private mapReferenceRow (r: SqlDataReader) : OssysReferenceRow =
         { AttrId          = readInt r 0
@@ -1049,6 +1062,9 @@ module MetadataSnapshotRunner =
                     IsComputed            = realityIsComputed
                     ComputedDefinition    = realityComputedDef
                     DefaultConstraintName = realityDefaultName
+                    // WP8 / NM-72 — carry the authored Service-Studio
+                    // order through to the rowset reader.
+                    Order                 = a.Order
                 } : OssysRowsetTypes.AttributeRow)
 
         // Slice 5.13.fk-reality-join — JOIN OssysReferenceRow with

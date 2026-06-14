@@ -1,8 +1,8 @@
 CREATE TABLE [dbo].[PruneProbe] (
-    [Code] NVARCHAR (20) NOT NULL,
     [Id]   INT           IDENTITY (1, 1) NOT NULL
         CONSTRAINT [PK_dbo_PruneProbe]
-            PRIMARY KEY CLUSTERED
+            PRIMARY KEY CLUSTERED,
+    [Code] NVARCHAR (20) NOT NULL
 )
 
 GO
@@ -30,15 +30,15 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Code',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'PruneProbe',
-    @level2type = N'COLUMN', @level2name = N'Code'
-
-GO
-
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Id',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'PruneProbe',
     @level2type = N'COLUMN', @level2name = N'Id'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Code',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'PruneProbe',
+    @level2type = N'COLUMN', @level2name = N'Code'
 

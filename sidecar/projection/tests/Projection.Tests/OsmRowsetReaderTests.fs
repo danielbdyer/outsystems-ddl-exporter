@@ -86,6 +86,7 @@ let private idAttrRow (sskey: System.Guid option) : OssysRowsetTypes.AttributeRo
         IsComputed = false
         ComputedDefinition = None
         DefaultConstraintName = None
+        Order = None
     }
 
 let private emailAttrRow (sskey: System.Guid option) : OssysRowsetTypes.AttributeRow =
@@ -109,6 +110,7 @@ let private emailAttrRow (sskey: System.Guid option) : OssysRowsetTypes.Attribut
         IsComputed = false
         ComputedDefinition = None
         DefaultConstraintName = None
+        Order = None
     }
 
 // ---------------------------------------------------------------------------
@@ -438,6 +440,7 @@ let private accountIdRow (sskey: System.Guid option) : OssysRowsetTypes.Attribut
         IsComputed = false
         ComputedDefinition = None
         DefaultConstraintName = None
+        Order = None
     }
 
 /// User has Id (PK + IDENTITY) and AccountId (FK to Account); the
@@ -467,6 +470,7 @@ let private userAccountIdRow : OssysRowsetTypes.AttributeRow =
         IsComputed = false
         ComputedDefinition = None
         DefaultConstraintName = None
+        Order = None
     }
 
 let private userAccountRefRow : OssysRowsetTypes.ReferenceRow =
@@ -710,6 +714,7 @@ let private billingAccountIdRow : OssysRowsetTypes.AttributeRow =
         IsComputed = false
         ComputedDefinition = None
         DefaultConstraintName = None
+        Order = None
     }
 
 let private externalBundle (espaceKind: string option) : OssysRowsetTypes.RowsetBundle =
@@ -885,6 +890,7 @@ let private systemAuditIdRow : OssysRowsetTypes.AttributeRow =
         IsComputed = false
         ComputedDefinition = None
         DefaultConstraintName = None
+        Order = None
     }
 
 let private systemBundle : OssysRowsetTypes.RowsetBundle =
