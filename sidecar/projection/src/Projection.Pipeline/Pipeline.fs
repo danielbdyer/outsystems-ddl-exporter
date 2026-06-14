@@ -1155,7 +1155,12 @@ module Compose =
                                      // threads the operator's identity-annotation
                                      // gate (default true = current behavior;
                                      // false is the named downgrade).
-                                     EmitIdentityAnnotations = cfg.Emission.EmitIdentityAnnotations }
+                                     EmitIdentityAnnotations = cfg.Emission.EmitIdentityAnnotations
+                                     // NM-73 — `emission.dataVerification` threads
+                                     // the operator's drift-guard posture (default
+                                     // Standard = byte-identical; ValidateBeforeApply
+                                     // prepends the symmetric-EXCEPT THROW guard).
+                                     DataVerification = cfg.Emission.DataVerification }
             }
         | _ ->
             let tighteningErrs = match tighteningR with Ok _ -> [] | Error es -> es

@@ -87,6 +87,27 @@ module DeleteScopePolicy =
         else None
 
 
+/// NM-73 (WP6.6, operator choice C2) — the data emitters' drift-guard
+/// posture. `Standard` (the default) emits the MERGE alone: byte-identical
+/// to pre-NM-73 and the CDC-silence-canonical posture V2 commits to.
+/// `ValidateBeforeApply` is the operator's **conservative override** — it
+/// prepends a typed symmetric-`EXCEPT` drift guard before the MERGE
+/// (mirrors V1's `StaticSeedSqlBuilder.ValidateThenApply`): if the target
+/// is non-empty AND its managed rows differ — in *either* direction — from
+/// the source about to be written, `THROW 50000` aborts the batch before
+/// the MERGE overwrites. First apply over an empty target proceeds; an
+/// idempotent re-apply stays silent; a *drifted* re-apply throws. Per C2,
+/// CDC-silence stays canonical; this is the opt-in fallback until J5
+/// proves the CDC path on real UAT. Modeled as a closed DU (not a bool)
+/// so a future third verification posture lands as a named variant.
+[<RequireQualifiedAccess>]
+type DataVerification =
+    /// MERGE alone — byte-identical, CDC-silence-canonical (the default).
+    | Standard
+    /// Symmetric-`EXCEPT` drift guard prelude + `THROW 50000`, one GO
+    /// batch with the MERGE. The operator's conservative override.
+    | ValidateBeforeApply
+
 /// Emission axis. Which artifact families a projection emits. The booleans
 /// are deliberate; orthogonality of schema / data / diagnostics is the
 /// algebra's commitment (decomposition Vector 2). When emission shapes
@@ -135,6 +156,12 @@ type EmissionPolicy = {
     /// `RenderConstraintsElegant`; lifted to the SSDT emit seam at the
     /// composition layer (A18 — the emitter never reads `Policy`).
     EmitIdentityAnnotations : bool
+    /// NM-73 (WP6.6) — the data emitters' drift-guard posture. `Standard`
+    /// (the default) is byte-identical to pre-NM-73; `ValidateBeforeApply`
+    /// prepends the symmetric-`EXCEPT` `THROW 50000` guard before each
+    /// MERGE. Lifted to the data emit seam as a plain value (A18 — the
+    /// emitter never reads `Policy`). See the `DataVerification` DU.
+    DataVerification : DataVerification
 }
 
 
@@ -528,7 +555,10 @@ module EmissionPolicy =
                   // NM-70 — identity annotations emit by default (the
                   // downgrade-free posture; byte-identical to pre-NM-70 and
                   // the posture ReadSide's persisted-SsKey recovery needs).
-                  EmitIdentityAnnotations = true }
+                  EmitIdentityAnnotations = true
+                  // NM-73 — CDC-silence-canonical default; the EXCEPT drift
+                  // guard is the operator's opt-in conservative override.
+                  DataVerification = DataVerification.Standard }
 
     /// Replace `IncludePlatformAutoIndexes` while preserving the rest
     /// of the policy. Chapter 4.8 slice γ. Operators set to `false` to
@@ -550,6 +580,13 @@ module EmissionPolicy =
     /// `withRenderConstraintsElegant`.
     let withEmitIdentityAnnotations (emit: bool) (policy: EmissionPolicy) : EmissionPolicy =
         { policy with EmitIdentityAnnotations = emit }
+
+    /// NM-73 (WP6.6) — replace `DataVerification` while preserving the rest
+    /// of the policy. Operators set `ValidateBeforeApply` to prepend the
+    /// symmetric-`EXCEPT` drift guard before the data MERGEs (the C2
+    /// conservative override). Sibling to `withEmitIdentityAnnotations`.
+    let withDataVerification (verification: DataVerification) (policy: EmissionPolicy) : EmissionPolicy =
+        { policy with DataVerification = verification }
 
     /// Project a catalog by the `IncludePlatformAutoIndexes` toggle. When
     /// the policy says `true` (V1 default), returns the catalog

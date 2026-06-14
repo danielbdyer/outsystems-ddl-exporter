@@ -709,6 +709,43 @@ let ``AC-D7: no scope is byte-identical to the established upsert-only emit`` ()
         StaticSeedsEmitter.emitWithTopoWith None (topoOf catalog) catalog Profile.empty |> mustOkEmit
     Assert.Equal<Map<SsKey, DataInsertScript>>(ArtifactByKind.toMap viaDefault, ArtifactByKind.toMap viaExplicitNone)
 
+// -- NM-73 (WP6.6, C2): validate-before-apply drift guard --------------------
+// `Standard` is byte-identical (CDC-silence canonical); `ValidateBeforeApply`
+// prepends V1 `ValidateThenApply`'s symmetric-EXCEPT THROW guard as its own
+// GO batch before the MERGE. Built via the typed parse-template path.
+
+[<Fact>]
+let ``NM-73: Standard verification is byte-identical to the established emit`` () =
+    let catalog = mkCatalog [ mkCountryKind () ]
+    let viaDefault = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let viaStandard =
+        StaticSeedsEmitter.emitWithTopoWithVerification DataVerification.Standard None (topoOf catalog) catalog Profile.empty
+        |> mustOkEmit
+    Assert.Equal<Map<SsKey, DataInsertScript>>(ArtifactByKind.toMap viaDefault, ArtifactByKind.toMap viaStandard)
+
+[<Fact>]
+let ``NM-73: ValidateBeforeApply prepends the symmetric-EXCEPT THROW guard before the MERGE`` () =
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let artifact =
+        StaticSeedsEmitter.emitWithTopoWithVerification DataVerification.ValidateBeforeApply None (topoOf catalog) catalog Profile.empty
+        |> mustOkEmit
+    let rendered = (ArtifactByKind.toMap artifact |> Map.find country.SsKey).Rendered
+    let r = normWs rendered
+    // V1 ValidateThenApply shape: guarded on a non-empty target, THROW on drift.
+    Assert.Contains ("IF EXISTS (SELECT 1 FROM [dbo].[OSUSR_TEST_COUNTRY])", r)
+    Assert.Contains ("THROW 50000", r)
+    // Symmetric EXCEPT pair (drift in either direction).
+    let exceptCount = (r.Split([| "EXCEPT" |], System.StringSplitOptions.None)).Length - 1
+    Assert.Equal (2, exceptCount)
+    // The guard validates against the same target the MERGE writes.
+    Assert.Contains ("[Existing]", r)
+    // The guard is its own batch BEFORE the MERGE — it THROWs first.
+    Assert.True (rendered.IndexOf("THROW") < rendered.IndexOf("MERGE INTO"), "the drift guard must precede the MERGE")
+    // The MERGE still follows intact.
+    Assert.Contains ("MERGE INTO [dbo].[OSUSR_TEST_COUNTRY] AS [Target]", r)
+    Assert.EndsWith ("GO", r)
+
 // ---------------------------------------------------------------------------
 // NM-26 — StaticPopulation + StaticSeeds agree on IDENTITY_INSERT bracketing.
 // Both now route through `IdentityDisposition.needsIdentityInsert` (any

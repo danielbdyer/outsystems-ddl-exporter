@@ -208,6 +208,12 @@ module Config =
         /// degrades to name-derived SsKeys, with a diagnostic). Threads to
         /// `EmissionPolicy.EmitIdentityAnnotations`.
         EmitIdentityAnnotations : bool
+        /// NM-73 (WP6.6) — `emission.dataVerification`. `"standard"` (the
+        /// default) emits the data MERGEs alone (byte-identical, CDC-silence
+        /// canonical); `"validateBeforeApply"` prepends the symmetric-`EXCEPT`
+        /// drift guard (`THROW 50000` on drift). Threads to
+        /// `EmissionPolicy.DataVerification`.
+        DataVerification : DataVerification
     }
 
     // NM-03 (2026-06-13) — `policy.selection` and `policy.userMatching` were
@@ -358,6 +364,8 @@ module Config =
         RenderConstraintsElegant = true
         // NM-70 — default-on (identity annotations emit; byte-identical).
         EmitIdentityAnnotations = true
+        // NM-73 — CDC-silence-canonical default (byte-identical).
+        DataVerification = DataVerification.Standard
     }
 
     let private defaultPolicy : PolicySection = {
@@ -568,6 +576,21 @@ module Config =
             | _ ->
                 Result.failureOf (
                     configError "typeMismatch" (sprintf "Property '%s' is not a string when present." name))
+
+    /// NM-73 — parse the `emission.dataVerification` string key into the
+    /// typed `DataVerification` DU. Absent / null → `Standard` (the
+    /// byte-identical default). An unrecognised value is a loud config error,
+    /// never a silent fallback (named-refusal discipline).
+    let private parseDataVerification (element: JsonElement) : Result<DataVerification> =
+        match getOptionalString element "dataVerification" with
+        | Error es -> Error es
+        | Ok None -> Result.success DataVerification.Standard
+        | Ok (Some "standard") -> Result.success DataVerification.Standard
+        | Ok (Some "validateBeforeApply") -> Result.success DataVerification.ValidateBeforeApply
+        | Ok (Some other) ->
+            Result.failureOf (
+                configError "invalidValue"
+                    (sprintf "emission.dataVerification must be \"standard\" or \"validateBeforeApply\"; got \"%s\"." other))
 
     let private getBoolOr (element: JsonElement) (name: string) (defaultValue: bool) : Result<bool> =
         match element.TryGetProperty(name) with
@@ -1050,6 +1073,9 @@ module Config =
                                                     match read "identityAnnotations" defaultEmission.EmitIdentityAnnotations with
                                                     | Error es -> Error es
                                                     | Ok identityAnnotations ->
+                                                    match parseDataVerification element with
+                                                    | Error es -> Error es
+                                                    | Ok dataVerification ->
                                                     match parseDeleteScope element with
                                                     | Error es -> Error es
                                                     | Ok deleteScope ->
@@ -1068,6 +1094,7 @@ module Config =
                                                         DeleteScope = deleteScope
                                                         RenderConstraintsElegant = renderElegant
                                                         EmitIdentityAnnotations = identityAnnotations
+                                                        DataVerification = dataVerification
                                                     }
 
     let private getOptionalBool (element: JsonElement) (name: string) : Result<bool option> =

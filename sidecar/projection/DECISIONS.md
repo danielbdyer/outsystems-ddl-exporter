@@ -22844,3 +22844,58 @@ on GitHub — the env's SSH signing key is empty (0 bytes), so signing is imposs
 here. And the warm SQL container degrades under accumulated load and dies mid-pool
 (survival rule #2) — the OSSYS-extraction classes fail on a tired container; a
 restart + focused re-run proves health.
+
+---
+
+## 2026-06-14 (later) — NM-73 lands: EXCEPT validate-before-apply, the daylight safety slice
+
+**What shipped.** The consciously-deferred NM-73 guard is now built, end-to-end and
+green, exactly per the settled plan — no inert axis left behind (the whole slice
+lands as one change: axis → config → threading → guard → tests).
+
+- **`EmissionPolicy.DataVerification = Standard | ValidateBeforeApply`** (closed DU,
+  not a bool, so a future third posture is a named variant). Default `Standard` is
+  **byte-identical** to pre-NM-73 emission — the CDC-silence-canonical posture V2
+  commits to. `Policy.withDataVerification` is the sibling setter to
+  `withEmitIdentityAnnotations`.
+- **`emission.dataVerification` config key** (`"standard"` | `"validateBeforeApply"`),
+  parsed in `Config.fs` via `parseDataVerification`; an unrecognised value is a **loud
+  config error**, never a silent fallback (named-refusal discipline). Threaded
+  `cfg.Emission.DataVerification → EmissionPolicy.DataVerification` in `Pipeline.fs`,
+  and `policy.Emission.DataVerification → dispatchSiblings → StaticSeedsEmitter`
+  in the composer (A18 — the emitter takes the plain value, never `Policy`).
+- **The guard** (`ScriptDomBuild.buildValidateBeforeApplyGuard`) faithfully mirrors
+  V1's `StaticSeedSqlBuilder.ValidateThenApply` (`src/Osm.Emission/Seeds/
+  StaticSeedSqlBuilder.cs:102-138`): a **symmetric `EXCEPT` pair gated on a non-empty
+  target** — `IF EXISTS(target) AND (EXISTS(source EXCEPT target) OR EXISTS(target
+  EXCEPT source)) THROW 50000`. First apply over an empty target proceeds; an
+  idempotent re-apply is silent; a *drifted* re-apply aborts before the MERGE
+  overwrites. Built via the **`TSql160Parser` parse-template path** (the
+  `checkConstraint`/`tryParseTriggerBody` idiom) so the result is a typed
+  `TSqlStatement` re-rendered canonically by `generateOne` — not a hand-built AST,
+  not a text blob. The guard's inline `VALUES` reuse the exact `MergeBuildArgs` rows
+  the MERGE is about to write, so the comparison is against the real deploy source.
+- **Framing:** the guard is its own `GO` batch prepended to the MERGE batch (it
+  THROWs before the MERGE runs), composing with the IDENTITY_INSERT bracket.
+
+**Two safety choices worth recording.**
+1. **No silent downgrade of the guard.** A parse failure of the self-constructed
+   guard template is a *programmer error*, raised loudly (`invalidOp`), never a
+   recovered skip — a silently-dropped safety guard is exactly the campaign's
+   cardinal sin. The template is built from typed-rendered literals + bracket-quoted
+   identifiers, so it always parses for valid input; the loud path is the backstop.
+2. **Scope.** The guard is wired into `StaticSeedsEmitter` (the static-seed lane the
+   plan named). `MigrationDependenciesEmitter` (the sibling that also MERGEs) keeps
+   `Standard`; extending the guard there is a named follow-on, tracked with NM-D's
+   IDENTITY_INSERT-bracket sibling-divergence work.
+
+**Tests.** `StaticSeedsEmitterTests` — `Standard` is byte-identical to the
+established emit; `ValidateBeforeApply` prepends the symmetric-`EXCEPT` `THROW 50000`
+guard *before* the MERGE (structural assertions + ordering). `ConfigTests` — the
+key defaults `Standard`, parses `validateBeforeApply`, and errors loudly on garbage
+(A44: expressible ⇔ reachable). The four `*BindingTests` `EmissionSection` literals
+gained the field.
+
+**Owed after this:** NM-17 (heavy `KindFacet` diff channel), NM-62 (threshold
+constants), the `compare`-source-profiling follow-on, and the
+`MigrationDependenciesEmitter` guard extension.
