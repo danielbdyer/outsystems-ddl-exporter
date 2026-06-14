@@ -1,10 +1,10 @@
 MERGE INTO [dbo].[Country]
  AS [Target]
-USING (VALUES (N'CA', 2, N'Canada'), (N'MX', 3, N'Mexico'), (N'US', 1, N'United States')) AS [Source]([Code], [Id], [Label]) ON [Target].[Id] = [Source].[Id]
+USING (VALUES (2, N'CA', N'Canada'), (3, N'MX', N'Mexico'), (1, N'US', N'United States')) AS [Source]([Id], [Code], [Label]) ON [Target].[Id] = [Source].[Id]
 WHEN MATCHED THEN UPDATE 
     SET [Target].[Code]  = [Source].[Code],
         [Target].[Label] = [Source].[Label]
-WHEN NOT MATCHED THEN INSERT ([Code], [Id], [Label]) VALUES ([Source].[Code], [Source].[Id], [Source].[Label]);
+WHEN NOT MATCHED THEN INSERT ([Id], [Code], [Label]) VALUES ([Source].[Id], [Source].[Code], [Source].[Label]);
 GO
 MERGE INTO [dbo].[RegionA]
  AS [Target]

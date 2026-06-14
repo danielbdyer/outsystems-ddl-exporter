@@ -42,10 +42,10 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 GO
 
 CREATE TABLE [audit].[ChangeLog] (
-    [At]     DATETIME2 NOT NULL,
     [Id]     INT       IDENTITY (1, 1) NOT NULL
         CONSTRAINT [PK_audit_ChangeLog]
             PRIMARY KEY CLUSTERED,
+    [At]     DATETIME2 NOT NULL,
     [UserId] INT       NOT NULL
         CONSTRAINT [FK_ChangeLog_User_UserId]
             FOREIGN KEY ([UserId]) REFERENCES [dbo].[User] ([Id])
@@ -65,17 +65,17 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'At',
-    @level0type = N'SCHEMA', @level0name = N'audit',
-    @level1type = N'TABLE', @level1name = N'ChangeLog',
-    @level2type = N'COLUMN', @level2name = N'At'
-
-GO
-
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Id',
     @level0type = N'SCHEMA', @level0name = N'audit',
     @level1type = N'TABLE', @level1name = N'ChangeLog',
     @level2type = N'COLUMN', @level2name = N'Id'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'At',
+    @level0type = N'SCHEMA', @level0name = N'audit',
+    @level1type = N'TABLE', @level1name = N'ChangeLog',
+    @level2type = N'COLUMN', @level2name = N'At'
 
 GO
 
@@ -87,10 +87,10 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 GO
 
 CREATE TABLE [dbo].[Country] (
-    [Code]  NVARCHAR (2)   NOT NULL,
     [Id]    INT            NOT NULL
         CONSTRAINT [PK_dbo_Country]
             PRIMARY KEY CLUSTERED,
+    [Code]  NVARCHAR (2)   NOT NULL,
     [Label] NVARCHAR (100) NOT NULL
 )
 
@@ -108,17 +108,17 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Code',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'Country',
-    @level2type = N'COLUMN', @level2name = N'Code'
-
-GO
-
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Id',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'Country',
     @level2type = N'COLUMN', @level2name = N'Id'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Code',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Country',
+    @level2type = N'COLUMN', @level2name = N'Code'
 
 GO
 
@@ -192,6 +192,9 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 GO
 
 CREATE TABLE [dbo].[Engagement] (
+    [Id]            INT            IDENTITY (1, 1) NOT NULL
+        CONSTRAINT [PK_dbo_Engagement]
+            PRIMARY KEY CLUSTERED,
     [AltCustomerId] INT            NULL
         DEFAULT 0
         CONSTRAINT [FK_Engagement_Customer_AltCustomerId]
@@ -208,9 +211,6 @@ CREATE TABLE [dbo].[Engagement] (
             FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer] ([Id])
                 ON DELETE CASCADE
                 ON UPDATE NO ACTION,
-    [Id]            INT            IDENTITY (1, 1) NOT NULL
-        CONSTRAINT [PK_dbo_Engagement]
-            PRIMARY KEY CLUSTERED,
     [ParentId]      INT            NULL
         CONSTRAINT [FK_Engagement_Engagement_ParentId]
             FOREIGN KEY ([ParentId]) REFERENCES [dbo].[Engagement] ([Id]),
@@ -252,6 +252,13 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Engagement',
+    @level2type = N'COLUMN', @level2name = N'Id'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'AltCustomerId',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'Engagement',
@@ -270,13 +277,6 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'Engagement',
     @level2type = N'COLUMN', @level2name = N'CustomerId'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Id',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'Engagement',
-    @level2type = N'COLUMN', @level2name = N'Id'
 
 GO
 
@@ -462,6 +462,9 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 GO
 
 CREATE TABLE [dbo].[ScalarGallery] (
+    [Id]          INT              IDENTITY (1, 1) NOT NULL
+        CONSTRAINT [PK_dbo_ScalarGallery]
+            PRIMARY KEY CLUSTERED,
     [AlarmAt]     TIME             NULL
         DEFAULT '08:30:00',
     [Amount]      DECIMAL (18, 4)  NULL
@@ -474,9 +477,6 @@ CREATE TABLE [dbo].[ScalarGallery] (
     [ExternalKey] UNIQUEIDENTIFIER NULL
         DEFAULT '00000000-0000-0000-0000-000000000000',
     [FreeText]    NVARCHAR (50)    NULL,
-    [Id]          INT              IDENTITY (1, 1) NOT NULL
-        CONSTRAINT [PK_dbo_ScalarGallery]
-            PRIMARY KEY CLUSTERED,
     [IsActive]    BIT              NOT NULL
         CONSTRAINT [DF_ScalarGallery_IsActive] DEFAULT 1,
     [Notes]       NVARCHAR (2000)  NULL
@@ -558,6 +558,13 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'Id'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'AlarmAt',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
@@ -611,13 +618,6 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
     @level2type = N'COLUMN', @level2name = N'FreeText'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Id',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'ScalarGallery',
-    @level2type = N'COLUMN', @level2name = N'Id'
 
 GO
 
@@ -761,10 +761,10 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 GO
 
 CREATE TABLE [dbo].[User] (
-    [Email] NVARCHAR (250) NOT NULL,
     [Id]    INT            IDENTITY (1, 1) NOT NULL
         CONSTRAINT [PK_dbo_User]
-            PRIMARY KEY CLUSTERED
+            PRIMARY KEY CLUSTERED,
+    [Email] NVARCHAR (250) NOT NULL
 )
 
 GO
@@ -787,17 +787,17 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S
 
 GO
 
-EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Email',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'User',
-    @level2type = N'COLUMN', @level2name = N'Email'
-
-GO
-
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Id',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'User',
     @level2type = N'COLUMN', @level2name = N'Id'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Email',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'User',
+    @level2type = N'COLUMN', @level2name = N'Email'
 
 GO
 

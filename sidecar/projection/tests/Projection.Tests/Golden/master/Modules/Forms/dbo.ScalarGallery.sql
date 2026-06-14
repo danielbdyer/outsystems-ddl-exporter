@@ -1,4 +1,7 @@
 CREATE TABLE [dbo].[ScalarGallery] (
+    [Id]          INT              IDENTITY (1, 1) NOT NULL
+        CONSTRAINT [PK_dbo_ScalarGallery]
+            PRIMARY KEY CLUSTERED,
     [AlarmAt]     TIME             NULL
         DEFAULT '08:30:00',
     [Amount]      DECIMAL (18, 4)  NULL
@@ -11,9 +14,6 @@ CREATE TABLE [dbo].[ScalarGallery] (
     [ExternalKey] UNIQUEIDENTIFIER NULL
         DEFAULT '00000000-0000-0000-0000-000000000000',
     [FreeText]    NVARCHAR (50)    NULL,
-    [Id]          INT              IDENTITY (1, 1) NOT NULL
-        CONSTRAINT [PK_dbo_ScalarGallery]
-            PRIMARY KEY CLUSTERED,
     [IsActive]    BIT              NOT NULL
         CONSTRAINT [DF_ScalarGallery_IsActive] DEFAULT 1,
     [Notes]       NVARCHAR (2000)  NULL
@@ -95,6 +95,13 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'Id'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'AlarmAt',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
@@ -148,13 +155,6 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
     @level2type = N'COLUMN', @level2name = N'FreeText'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Id',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'ScalarGallery',
-    @level2type = N'COLUMN', @level2name = N'Id'
 
 GO
 
