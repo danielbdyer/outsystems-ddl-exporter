@@ -330,12 +330,19 @@ module StaticSeedsEmitter =
                 |> Option.bind (DeleteScopePolicy.resolveFor kind)
                 |> Option.map (fun terms -> ({ Terms = terms } : ScriptDomBuild.DeleteScope))
             let deferred = load.DeferredFkColumns
-            // WP6 step 1 — bracket the Phase-1 MERGE with `SET IDENTITY_INSERT`
-            // when the sink mints the surrogate (the PK carries IDENTITY).
-            // `IdentityDisposition.ofKind` set this at `DataLoadPlan.build`;
-            // PreservedFromSource / ReconciledByRule render unbracketed.
+            // NM-26 — bracket the Phase-1 MERGE with `SET IDENTITY_INSERT`
+            // whenever the kind carries ANY IDENTITY column, via the
+            // single-sourced `IdentityDisposition.needsIdentityInsert`
+            // predicate shared with StaticPopulationEmitter +
+            // MigrationDependenciesEmitter. Prior to NM-26 this gated on
+            // `load.Disposition = AssignedBySink` (PK-IDENTITY only), which
+            // failed to bracket a non-PK IDENTITY column whose explicit
+            // value the MERGE's all-column INSERT still writes — a deploy
+            // rejection of the same family as NM-25. The disposition still
+            // drives the remap/MERGE strategy; it just no longer doubles as
+            // the bracketing theory.
             let bracketIdentity =
-                load.Disposition = IdentityDisposition.AssignedBySink
+                IdentityDisposition.needsIdentityInsert kind
             let typeLookup = columnTypeLookup kind
             // Slice κ pillar 1 lift: project raw `Map<Name, string>`
             // populations into typed `Map<Name, SqlLiteral>` once at

@@ -356,12 +356,15 @@ module MigrationDependenciesEmitter =
                 |> List.map (fun row ->
                     row.Identifier,
                     rowToTypedValues typeLookup kind.Attributes row)
-            // NM-25 — bracket the Phase-1 MERGE with SET IDENTITY_INSERT when the
-            // sink mints the surrogate (PK carries IDENTITY), exactly as the
-            // StaticSeeds sibling does; otherwise the INSERT into the IDENTITY
-            // column is rejected at deploy.
+            // NM-25 / NM-26 — bracket the Phase-1 MERGE with SET IDENTITY_INSERT
+            // whenever the kind carries ANY IDENTITY column, via the
+            // single-sourced `IdentityDisposition.needsIdentityInsert` predicate
+            // shared with StaticSeedsEmitter + StaticPopulationEmitter. Gating on
+            // `AssignedBySink` (PK-IDENTITY only) missed a non-PK IDENTITY column
+            // whose explicit value the all-column INSERT still writes — a deploy
+            // rejection of the same family NM-25 closed for the PK case.
             let bracketIdentity =
-                load.Disposition = IdentityDisposition.AssignedBySink
+                IdentityDisposition.needsIdentityInsert kind
             let renderedPhase1 =
                 renderMerge scopeForKind cdcAware bracketIdentity deferred kind (typedRows |> List.map snd)
             let renderedPhase2 =
