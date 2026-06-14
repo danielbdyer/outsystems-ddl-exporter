@@ -144,11 +144,24 @@ let ``canonicalizeIdentity: kinds within a module are ordered by SsKey`` () =
     Assert.Equal<SsKey list>(keys, List.sort keys)
 
 [<Fact>]
-let ``canonicalizeIdentity: attributes within a kind are ordered by SsKey`` () =
+let ``canonicalizeIdentity: attributes within a kind are PK-first then SsKey-ordered (Order=None fixture)`` () =
+    // WP8 / NM-72 — the sample fixture carries no authored `Order`
+    // (every attribute is `Order = None`), so the ordering reduces to
+    // (PK first, then SsKey) within each kind. PKs lead; the non-PK body
+    // stays SsKey-ordered (the v1 contract within each band).
     let result = (ciRun (reverseAllCollections sampleCatalog)).Value
     for k in Catalog.allKinds result do
-        let keys = k.Attributes |> List.map (fun a -> a.SsKey)
-        Assert.Equal<SsKey list>(keys, List.sort keys)
+        // No attribute in the fixture carries an authored order.
+        Assert.All(k.Attributes, fun a -> Assert.True(Option.isNone a.Order))
+        // PK rank is monotone non-decreasing: every PK precedes every non-PK.
+        let pkRanks = k.Attributes |> List.map (fun a -> if a.IsPrimaryKey then 0 else 1)
+        Assert.Equal<int list>(pkRanks, List.sort pkRanks)
+        // Within the non-PK band, SsKey order holds.
+        let nonPkKeys = k.Attributes |> List.filter (fun a -> not a.IsPrimaryKey) |> List.map (fun a -> a.SsKey)
+        Assert.Equal<SsKey list>(nonPkKeys, List.sort nonPkKeys)
+        // Within the PK band, SsKey order holds.
+        let pkKeys = k.Attributes |> List.filter (fun a -> a.IsPrimaryKey) |> List.map (fun a -> a.SsKey)
+        Assert.Equal<SsKey list>(pkKeys, List.sort pkKeys)
 
 [<Fact>]
 let ``canonicalizeIdentity: static populations are ordered by Identifier`` () =
@@ -203,3 +216,94 @@ let ``canonicalizeIdentity: idempotent under collection reversal`` (reverseFlag:
     let once  = (ciRun input).Value
     let twice = (ciRun once).Value
     once = twice
+
+// ---------------------------------------------------------------------------
+// WP8 / NM-72 — attribute ordering: (PK first, then authored Order
+// ascending, then SsKey). These pure tests pin the ordering contract
+// without Docker; the OSSYS extraction canary proves the end-to-end path.
+// ---------------------------------------------------------------------------
+
+module private OrderFixtures =
+    let nm (s: string) : Name = Name.create s |> Result.value
+    // Keys are chosen so SsKey order (the old v1 sort) would be A < B <
+    // C < D — i.e. alphabetical — making the authored re-order visible.
+    let key (n: int) : SsKey =
+        SsKey.ossysOriginal (System.Guid(n, 0s, 0s, 0uy, 0uy, 0uy, 0uy, 0uy, 0uy, 0uy, 0uy))
+    let tableId (schema: string) (table: string) : TableId =
+        TableId.create schema table |> Result.value
+    let attrWith (n: int) (name: string) (isPk: bool) (order: int option) : Attribute =
+        { Attribute.create (key n) (nm name) PrimitiveType.Integer with
+            IsPrimaryKey = isPk
+            Order = order }
+
+[<Fact>]
+let ``canonicalizeIdentity: attributes emit in authored Order, not SsKey/alphabetical order`` () =
+    let open' = OrderFixtures.attrWith
+    // SsKey/alphabetical order would be: Id, Apple, Banana, Cherry, Date.
+    // Authored order (PK first, then Order ascending) is: Id, Date(10),
+    // Cherry(20), Banana(30), Apple(40) — the reverse of alphabetical.
+    let attrs =
+        [ open' 1 "Id"     true  (Some 1)
+          open' 2 "Apple"  false (Some 40)
+          open' 3 "Banana" false (Some 30)
+          open' 4 "Cherry" false (Some 20)
+          open' 5 "Date"   false (Some 10) ]
+    let kind =
+        Kind.create (OrderFixtures.key 100) (OrderFixtures.nm "K")
+            (OrderFixtures.tableId "dbo" "K") attrs
+    let m =
+        { SsKey = OrderFixtures.key 1000; Name = OrderFixtures.nm "M"
+          Kinds = [ kind ]; IsActive = true; ExtendedProperties = [] }
+    let catalog = Catalog.create [ m ] [] |> Result.value
+    let ordered =
+        (ciRun catalog).Value.Modules
+        |> List.head |> fun m -> m.Kinds |> List.head
+        |> fun k -> k.Attributes |> List.map (fun a -> Name.value a.Name)
+    Assert.Equal<string list>([ "Id"; "Date"; "Cherry"; "Banana"; "Apple" ], ordered)
+
+[<Fact>]
+let ``canonicalizeIdentity: Order=None falls back to PK-first then SsKey order (determinism preserved)`` () =
+    let open' = OrderFixtures.attrWith
+    // No authored order anywhere — the result must be the old v1
+    // behaviour within each PK band: PK first, then SsKey order.
+    let attrs =
+        [ open' 4 "Cherry" false None
+          open' 2 "Apple"  false None
+          open' 1 "Id"     true  None
+          open' 3 "Banana" false None ]
+    let kind =
+        Kind.create (OrderFixtures.key 100) (OrderFixtures.nm "K")
+            (OrderFixtures.tableId "dbo" "K") attrs
+    let m =
+        { SsKey = OrderFixtures.key 1000; Name = OrderFixtures.nm "M"
+          Kinds = [ kind ]; IsActive = true; ExtendedProperties = [] }
+    let catalog = Catalog.create [ m ] [] |> Result.value
+    let ordered =
+        (ciRun catalog).Value.Modules
+        |> List.head |> fun m -> m.Kinds |> List.head
+        |> fun k -> k.Attributes |> List.map (fun a -> Name.value a.Name)
+    // Id is PK (rank 0), then keys 2,3,4 in SsKey order: Apple, Banana, Cherry.
+    Assert.Equal<string list>([ "Id"; "Apple"; "Banana"; "Cherry" ], ordered)
+
+[<Fact>]
+let ``canonicalizeIdentity: authored attributes precede Order=None ones within the non-PK band`` () =
+    let open' = OrderFixtures.attrWith
+    // Mixed: some authored, some not. Authored (Order=Some) sort ahead of
+    // unauthored (Order=None); within each band the prior tiebreak applies.
+    let attrs =
+        [ open' 1 "Id"       true  (Some 1)
+          open' 2 "Unsorted" false None
+          open' 3 "Second"   false (Some 20)
+          open' 4 "First"    false (Some 10) ]
+    let kind =
+        Kind.create (OrderFixtures.key 100) (OrderFixtures.nm "K")
+            (OrderFixtures.tableId "dbo" "K") attrs
+    let m =
+        { SsKey = OrderFixtures.key 1000; Name = OrderFixtures.nm "M"
+          Kinds = [ kind ]; IsActive = true; ExtendedProperties = [] }
+    let catalog = Catalog.create [ m ] [] |> Result.value
+    let ordered =
+        (ciRun catalog).Value.Modules
+        |> List.head |> fun m -> m.Kinds |> List.head
+        |> fun k -> k.Attributes |> List.map (fun a -> Name.value a.Name)
+    Assert.Equal<string list>([ "Id"; "First"; "Second"; "Unsorted" ], ordered)

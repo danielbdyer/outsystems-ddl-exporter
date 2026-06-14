@@ -3,6 +3,7 @@ module Projection.Tests.OssysExtractionCanaryTests
 open System.Threading.Tasks
 open Xunit
 open Projection.Core
+open Projection.Core.Passes
 open Projection.Pipeline
 open Projection.Adapters.Osm
 open Projection.Adapters.OssysSql
@@ -128,6 +129,41 @@ let ``Slice ε canary: Customer entity carries six attributes including FK to Ci
                 |> List.exists (fun r ->
                     Name.value r.Name = "CityId" || Name.value r.Name = "City")
             Assert.True(hasCityRef, "expected Customer.CityId reference to City")
+
+[<Fact>]
+let ``WP8/NM-72 canary: Customer attributes extract in authored Order_Num order, not alphabetical`` () =
+    // The seed gives Customer a Service-Studio order (Order_Num) that is
+    // DELIBERATELY different from alphabetical: Id(PK,1), LegacyCode(10),
+    // FirstName(20), LastName(30), Email(40), CityId(50). The extraction
+    // ORDER BY is (PK-first, Order_Num, AttrName) and CanonicalizeIdentity
+    // re-derives the same key, so the emitted column order honors the
+    // operator's authored order — proving NM-72 closed end-to-end.
+    if skipIfNoDocker "ossys-canary-order-num" then
+        let result = TaskSync.run extractFromSeed
+        match result with
+        | Error errors ->
+            Assert.Fail (sprintf "OSSYS canary extraction failed: %A" errors)
+        | Ok catalog ->
+            // Run the canonicalization pass — the single ordering site —
+            // so the assertion pins the order emission actually sees.
+            let canon =
+                (CanonicalizeIdentity.registered.Run catalog
+                 |> Lineage.map (fun d -> d.Value)).Value
+            let customer =
+                canon.Modules
+                |> List.find (fun m -> Name.value m.Name = "AppCore")
+                |> fun m -> m.Kinds
+                |> List.find (fun k -> Name.value k.Name = "Customer")
+            let authored =
+                customer.Attributes |> List.map (fun a -> Name.value a.Name)
+            // Authored (PK first, then Order_Num ascending):
+            let expectedAuthored =
+                [ "Id"; "LegacyCode"; "FirstName"; "LastName"; "Email"; "CityId" ]
+            Assert.Equal<string list>(expectedAuthored, authored)
+            // And it is NOT the alphabetical order the old SsKey sort gave:
+            let alphabetical =
+                [ "Id"; "CityId"; "Email"; "FirstName"; "LastName"; "LegacyCode" ]
+            Assert.NotEqual<string list>(alphabetical, authored)
 
 [<Fact>]
 let ``Slice ε canary: extraction is deterministic across repeated runs`` () =
