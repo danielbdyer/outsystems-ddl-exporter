@@ -1129,8 +1129,12 @@ let ``parse: report dispatches to Intent.Report`` () =
 [<Fact>]
 let ``report <flow>: resolves the target environment's store (F4)`` () =
     // onprem-uat (flow uat's target) carries a store → ReportBundle on it.
+    // It also threads the target's bundle `out` folder so the report verb can
+    // surface the fidelity.json the full-export feeding this timeline wrote there.
     match (Command.plan flowCfg (Intent.Report [ "uat" ])).Action with
-    | PlanAction.ReportBundle store -> Assert.Equal("lifecycle/uat.json", store)
+    | PlanAction.ReportBundle (store, outputDir) ->
+        Assert.Equal("lifecycle/uat.json", store)
+        Assert.Equal(Some "dist/onprem-uat", outputDir)
     | other -> Assert.Fail(sprintf "expected ReportBundle, got %A" other)
 
 [<Fact>]
@@ -1142,8 +1146,12 @@ let ``report <flow>: a target with no store is refused (named, not silent)`` () 
 
 [<Fact>]
 let ``report --store <path>: an explicit store overrides`` () =
+    // A --store-only report has no flow environment, so no bundle out dir is
+    // threaded (the fidelity surfacing falls back to dirname(store) / out / cwd).
     match (Command.plan flowCfg (Intent.Report [ "--store"; "x.lifecycle.json" ])).Action with
-    | PlanAction.ReportBundle store -> Assert.Equal("x.lifecycle.json", store)
+    | PlanAction.ReportBundle (store, outputDir) ->
+        Assert.Equal("x.lifecycle.json", store)
+        Assert.Equal(None, outputDir)
     | other -> Assert.Fail(sprintf "expected ReportBundle, got %A" other)
 
 [<Fact>]

@@ -379,8 +379,13 @@ type PlanAction =
     | SealApprove of version: string * approver: string * rationale: string option * store: string option
     // report -------------------------------------------------------------
     /// the migration-team change bundle: the ChangeManifest series read from
-    /// the flow's target durable timeline (THE_CLI.md §8 / F4).
-    | ReportBundle of store: string
+    /// the flow's target durable timeline (THE_CLI.md §8 / F4). `outputDir` is
+    /// the flow target's bundle `out` folder (when one is configured) — the
+    /// directory the full-export that fed this timeline wrote `fidelity.json`
+    /// into, so the report verb can surface the recorded Model Fidelity Report
+    /// without guessing. `None` for a `--store`-only report (no flow env) or a
+    /// non-bundle target.
+    | ReportBundle of store: string * outputDir: string option
     // profile ------------------------------------------------------------
     /// capture the durable Profile from a live environment to a file
     /// (THE_SYNTHETIC_DATA_DESIGN §2.2): read → profile → serialize.

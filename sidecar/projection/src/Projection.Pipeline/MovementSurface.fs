@@ -1054,9 +1054,17 @@ module Command =
     /// explicit `--store <path>` overrides; a target with no store is refused
     /// (named, never silent). The bundle itself is built by the runner.
     let planReport (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
-        let storeOf () : Result<string> =
+        // The flow target's bundle `out` folder, when one is configured — the
+        // directory the full-export feeding this timeline wrote `fidelity.json`
+        // into, threaded so the report verb surfaces the Model Fidelity Report
+        // without guessing (the prior candidate list only knew dirname(store) /
+        // `out/` / cwd, so a flow whose bundle dir was none of those lost it).
+        let bundleOutOf (envName: string) : string option =
+            Map.tryFind envName cfg.Environments
+            |> Option.bind (fun e -> match e.Access with Access.Bundle out -> Some out | _ -> None)
+        let storeOf () : Result<string * string option> =
             match flagValue args "--store" with
-            | Some s -> Result.success s
+            | Some s -> Result.success (s, None)
             | None ->
                 match args |> List.tryFind (fun a -> not (a.StartsWith "--")) with
                 | None -> Result.failureOf (err "cli.report.noFlow" "projection report: name a flow (report <flow>) or pass --store <path>.")
@@ -1065,10 +1073,10 @@ module Command =
                     | None -> Result.failureOf (err "cli.report.unknownFlow" (sprintf "report: unknown flow '%s'." flowName))
                     | Some flow ->
                         match Map.tryFind flow.To cfg.Environments |> Option.bind (fun e -> e.Store) with
-                        | Some store -> Result.success store
+                        | Some store -> Result.success (store, bundleOutOf flow.To)
                         | None -> Result.failureOf (err "cli.report.noStore" (sprintf "report '%s': target environment '%s' has no `store` (the durable timeline); add one or pass --store <path>." flowName flow.To))
         match storeOf () with
-        | Ok store -> { Notes = []; Action = PlanAction.ReportBundle store }
+        | Ok (store, outDir) -> { Notes = []; Action = PlanAction.ReportBundle (store, outDir) }
         | Error es -> { Notes = []; Action = PlanAction.Refused (6, List.head es) }
 
     /// Route a `profile` verb tail (THE_SYNTHETIC_DATA_DESIGN §2.2):

@@ -867,7 +867,13 @@ module Compose =
         let suggestConfigStaging = Path.Combine(stagingDir, ArtifactPath.suggestConfig)
         writeFile suggestConfigStaging (outputs.SuggestConfigJson.ToJsonString(jsonOpts))
         // The Model Fidelity Report — structured + the rolled-up text. Default-on;
-        // written alongside the other run artifacts on every full-export / migrate.
+        // written alongside the other run artifacts on every BUNDLE emission
+        // (full-export / emit). The live in-place `migrate` differential has no
+        // output directory and no profiled source, so it emits no fidelity artifact
+        // — its provenance is the recorded episode + RefactorLog, not a bundle. (The
+        // prior comment claimed "full-export / migrate"; migrate never reaches this
+        // writer — it runs ALTERs against a live DB. THE_CLI distinction: bundle vs
+        // live-differential.)
         let fidelityJsonStaging = Path.Combine(stagingDir, ArtifactPath.fidelityJson)
         writeFile fidelityJsonStaging (ModelFidelity.toJsonString outputs.Fidelity)
         let fidelityTextStaging = Path.Combine(stagingDir, ArtifactPath.fidelityText)
