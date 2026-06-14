@@ -79,15 +79,45 @@ module RawValueCodec =
     // tolerance (`Bulk.parseRaw` previously hard-coded the predicate).
     // ---------------------------------------------------------------------
 
+    /// NM-20 — the named refusal code for an unrecognized Boolean raw.
+    /// `category.subject.problem` lower-dot convention (mirrors
+    /// `ValidationError.Code`). Carried in the `FormatException` message
+    /// so the fail-loud refusal is *named*, not a silent default.
+    [<Literal>]
+    let BooleanUnrecognizedCode : string = "rawValue.boolean.unrecognized"
+
     /// Parse a Boolean raw value. Accepts the canonical V2 form
     /// (`"true"` / `"false"` case-insensitive) and the V1 numeric
-    /// form (`"1"` / `"0"`). Anything else parses as `false`
-    /// (matches the prior `Bulk.parseRaw` semantic — defensive
-    /// fallback for malformed V1 source data).
+    /// form (`"1"` / `"0"`).
+    ///
+    /// **NM-20 — fails loud on garbage, like every sibling parser.**
+    /// `DateTime.ParseExact` / `Guid.Parse` / `Int64.Parse` (the other
+    /// `Bulk.parseRaw` arms) all throw a `FormatException` on a malformed
+    /// raw; Boolean previously *silently coerced* any unrecognized input
+    /// (`"2"`, `"yes"`, `"tru"`) to `false`, making a real BIT divergence
+    /// indistinguishable from a legitimate `false`. It now raises a
+    /// `FormatException` carrying the named refusal code
+    /// `rawValue.boolean.unrecognized` — the malformed-raw hard-fail is the
+    /// same loud failure the siblings already use, now NAMED rather than
+    /// swallowed. (A `Result` return was rejected: both callers —
+    /// `SqlLiteral.ofRaw` and `Bulk.parseRaw` — are total IR projections
+    /// whose siblings throw, so a `Result` would ripple the loud-fail
+    /// discipline they already rely on; a `ToleratedDivergence` was rejected
+    /// because the audit names this a divergence to *surface*, not a
+    /// coercion to *accept* — and that DU is the canary's round-trip
+    /// equivalence surface, not a place for a parse refusal.)
     let parseBoolean (raw: string) : bool =
         match raw.ToLowerInvariant() with
-        | "true" | "1" -> true
-        | _            -> false
+        | "true" | "1"  -> true
+        | "false" | "0" -> false
+        | _ ->
+            raise (
+                System.FormatException(
+                    String.concat "" [
+                        BooleanUnrecognizedCode
+                        ": unrecognized Boolean raw value '"
+                        raw
+                        "' (expected 'true'/'false'/'1'/'0')" ]))
 
     /// Format a Boolean as the canonical V2 raw form.
     let formatBoolean (value: bool) : string =

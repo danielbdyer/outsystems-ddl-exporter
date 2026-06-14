@@ -42,6 +42,25 @@ let ``SqlLiteral.ofRaw maps Boolean via RawValueCodec.parseBoolean`` () =
     Assert.Equal<SqlLiteral> (BooleanLit false, SqlLiteral.ofRaw Boolean "0")
 
 [<Fact>]
+let ``RawValueCodec.parseBoolean raises a named refusal on unrecognized input (NM-20)`` () =
+    // NM-20 — every sibling parser (DateTime.ParseExact / Guid.Parse) throws on
+    // garbage; Boolean previously silently coerced "2"/"yes"/"tru" to false,
+    // hiding a real BIT divergence. It now fails loud with the named refusal
+    // code carried in the message.
+    for garbage in [ "2"; "yes"; "tru"; "FALSE_"; " " ] do
+        let ex = Assert.Throws<System.FormatException>(fun () -> RawValueCodec.parseBoolean garbage |> ignore)
+        Assert.Contains(RawValueCodec.BooleanUnrecognizedCode, ex.Message)
+    // The canonical + V1-bridge forms still parse (no regression).
+    Assert.True(RawValueCodec.parseBoolean "true")
+    Assert.True(RawValueCodec.parseBoolean "1")
+    Assert.False(RawValueCodec.parseBoolean "false")
+    Assert.False(RawValueCodec.parseBoolean "0")
+
+[<Fact>]
+let ``SqlLiteral.ofRaw on an unrecognized Boolean raw fails loud, not silent-false (NM-20)`` () =
+    Assert.Throws<System.FormatException>(fun () -> SqlLiteral.ofRaw Boolean "2" |> ignore) |> ignore
+
+[<Fact>]
 let ``SqlLiteral.ofRaw maps temporal types to TemporalLit`` () =
     Assert.Equal<SqlLiteral> (TemporalLit "2026-05-10", SqlLiteral.ofRaw Date "2026-05-10")
     Assert.Equal<SqlLiteral> (TemporalLit "2026-05-10 12:30:00.0000000", SqlLiteral.ofRaw DateTime "2026-05-10 12:30:00.0000000")
