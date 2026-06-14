@@ -995,6 +995,87 @@ module ScriptDomBuild =
         Diagnostics.ofValue (buildMergeStatementCore args)
 
     // -----------------------------------------------------------------------
+    // NM-73 — validate-before-apply drift guard (WP6.6, operator choice C2).
+    // -----------------------------------------------------------------------
+    // Carbon-copied semantics from V1's
+    // `src/Osm.Emission/Seeds/StaticSeedSqlBuilder.cs:102-138`
+    // (`ValidateThenApply`): a SYMMETRIC `EXCEPT` pair gated on a non-empty
+    // target — `IF EXISTS(target) AND (EXISTS(source EXCEPT target) OR
+    // EXISTS(target EXCEPT source)) THROW 50000`. First apply over an empty
+    // target proceeds; an idempotent re-apply is silent; a re-apply over a
+    // DRIFTED target (managed rows differ in either direction) aborts the
+    // batch before the MERGE can overwrite. Built via the parse-template
+    // path (the `checkConstraint` / `tryParseTriggerBody` idiom) so the
+    // result is a typed `TSqlStatement`, not a hand-built AST or text blob
+    // — `generateOne` re-renders it canonically (pinned options, LF).
+
+    /// `[name]` as text, with any `]` doubled per T-SQL bracket-quoting.
+    let private bracketText (name: string) : string =
+        System.String.Concat("[", name.Replace("]", "]]"), "]")
+
+    /// `[schema].[table]` text for a `TableId`. The catalog qualifier is
+    /// omitted — seeds deploy to the connection's catalog, exactly as the
+    /// MERGE target (`schemaObjectFromTableId`) does.
+    let private tableIdText (t: TableId) : string =
+        System.String.Concat(bracketText (TableId.schemaText t), ".", bracketText (TableId.tableText t))
+
+    /// Render one typed `SqlLiteral` to its T-SQL text via ScriptDom, so the
+    /// guard's inline `VALUES` literals (`N'..'` / `0x..` / numeric) match
+    /// the MERGE's own literal rendering. A fresh generator per cell; cells
+    /// are few and this path runs only under the opt-in guard.
+    let private literalText (lit: SqlLiteral) : string =
+        let generator = Sql160ScriptGenerator(SqlScriptGeneratorOptions())
+        let mutable text : string | null = null
+        generator.GenerateScript(buildSqlLiteral lit :> TSqlFragment, &text)
+        (text |> Option.ofObj |> Option.defaultValue "").Trim()
+
+    /// Build the validate-before-apply drift guard as a typed
+    /// `TSqlStatement`, mirroring V1's `ValidateThenApply`. The guard
+    /// references the SAME source rows the MERGE is about to write
+    /// (`args.Rows` over `args.AllColumns`). `THROW 50000` aborts on drift.
+    ///
+    /// Invariant: the guard template is self-constructed from typed-rendered
+    /// literals + bracket-quoted identifiers, so it ALWAYS parses; a parse
+    /// failure is a programmer error, raised loudly (never a silent
+    /// downgrade of the safety guard). The caller is responsible for only
+    /// invoking this with a non-empty `args.Rows` (an empty source would
+    /// yield an invalid `VALUES ()` clause); `renderMerge` guarantees it.
+    let buildValidateBeforeApplyGuard (args: MergeBuildArgs) : TSqlStatement =
+        let targetText = tableIdText args.Target
+        let colList = args.AllColumns |> List.map bracketText |> String.concat ", "
+        let valuesText =
+            args.Rows
+            |> List.map (fun row ->
+                row |> List.map literalText |> String.concat ", " |> sprintf "(%s)")
+            |> String.concat ", "
+        let sourceSelect =
+            sprintf "SELECT %s FROM (VALUES %s) AS [Source] (%s)" colList valuesText colList
+        let targetSelect =
+            sprintf "SELECT %s FROM %s AS [Existing]" colList targetText
+        let message =
+            (sprintf "Static seed drift on %s: existing managed rows differ from the deploy source; aborting before MERGE (NM-73 validate-before-apply)." targetText)
+                .Replace("'", "''")
+        let template =
+            sprintf
+                "IF EXISTS (SELECT 1 FROM %s) AND (EXISTS (%s EXCEPT %s) OR EXISTS (%s EXCEPT %s)) BEGIN THROW 50000, '%s', 1; END"
+                targetText sourceSelect targetSelect targetSelect sourceSelect message
+        use reader = new System.IO.StringReader(template)
+        let frag, errors = threadLocalParser.Value.Parse(reader)
+        let errorCount = if isNull errors then 0 else errors.Count
+        let parsed =
+            if errorCount > 0 then None
+            else
+                match frag with
+                | :? TSqlScript as s ->
+                    s.Batches |> Seq.tryHead |> Option.bind (fun b -> b.Statements |> Seq.tryHead)
+                | _ -> None
+        match parsed with
+        | Some stmt -> stmt
+        | None ->
+            invalidOp
+                (sprintf "NM-73: validate-before-apply guard template failed to parse for %s — programmer error, not a recoverable downgrade." targetText)
+
+    // -----------------------------------------------------------------------
     // UPDATE statement (chapter 4.1.B slice δ; two-phase insertion /
     // cycle-breaking).
     //

@@ -251,7 +251,10 @@ module SummaryFormatter =
         (foreignKey: ForeignKeyDecisionSet)
         : string =
         format nullability uniqueIndex foreignKey
-        |> String.concat System.Environment.NewLine
+        // LF, not Environment.NewLine: `manifest.summary.txt` is an
+        // emitted artifact and must be byte-identical across platforms
+        // (T1). A host-dependent newline would yield CRLF on Windows.
+        |> String.concat "\n"
 
     /// `RegisteredTransform` metadata view per the pillar 9 +
     /// L3-CC-Transform-Totality discipline. Classifies as

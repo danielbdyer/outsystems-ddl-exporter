@@ -106,7 +106,11 @@ module ConstraintFormatter =
               TransformSite.operatorIntent "extendedPropertyExecWrap" Emission
                 "Wrap `EXEC sys.sp_addextendedproperty` calls at @level0type / @level1type / @level2type boundaries with 4-space continuation indent. Mirrors V1's MS_Description emission shape. Operator emission-axis intent." ]
 
-    let private newLine = Environment.NewLine
+    // LF, not Environment.NewLine: this formatter reshapes ScriptDom's
+    // CREATE TABLE constraint lines into the emitted SSDT artifact, so
+    // its newline must be byte-identical across platforms (T1). A
+    // host-dependent newline here would re-introduce CRLF on Windows.
+    let private newLine = "\n"
 
     /// True iff the (already-trimmed) text starts with `CONSTRAINT [`
     /// — a table-level constraint declaration in ScriptDom's output.

@@ -98,6 +98,7 @@ module DataEmissionComposer =
     let private dispatchSiblings
         (composition: DataComposition)
         (deleteScope: DeleteScopePolicy option)
+        (verification: DataVerification)
         (topo: TopologicalOrder)
         (catalog: Catalog)
         (profile: Profile)
@@ -109,7 +110,7 @@ module DataEmissionComposer =
             use _ = Bench.scope "compose.data.dispatchSiblings.staticSeeds"
             match composition with
             | AllRemaining
-            | AllData         -> StaticSeedsEmitter.emitWithTopoWith deleteScope topo catalog profile
+            | AllData         -> StaticSeedsEmitter.emitWithTopoWithVerification verification deleteScope topo catalog profile
             | AllExceptStatic -> emptyArtifact catalog
         let migrationDependencies =
             use _ = Bench.scope "compose.data.dispatchSiblings.migrationDeps"
@@ -208,12 +209,13 @@ module DataEmissionComposer =
         // Emission). The composer resolves it OFF `Policy` here and threads
         // the plain value; the emitters never see `Policy` (A18 amended).
         let deleteScope = policy.Emission.DeleteScope
+        let verification = policy.Emission.DataVerification
         // Match-bind explicitly: dispatchSiblings + unionSiblings
         // both return `Result<_, EmitError>` (the BCL two-parameter
         // Result), distinct from V2's `Result<'a> = Result<'a,
         // ValidationError list>` alias whose bind is in scope.
         let result =
-            match dispatchSiblings composition deleteScope topo catalog profile migration userRemap with
+            match dispatchSiblings composition deleteScope verification topo catalog profile migration userRemap with
             | Ok siblings -> unionSiblings catalog siblings
             | Error e     -> Error e
         topoLineage |> Lineage.map (fun _ -> result)
@@ -324,7 +326,8 @@ module DataEmissionComposer =
         // Emission). The composer resolves it OFF `Policy` here and threads
         // the plain value; the emitters never see `Policy` (A18 amended).
         let deleteScope = policy.Emission.DeleteScope
-        match dispatchSiblings composition deleteScope topo catalog profile migration userRemap with
+        let verification = policy.Emission.DataVerification
+        match dispatchSiblings composition deleteScope verification topo catalog profile migration userRemap with
         | Error e -> Error e
         | Ok siblings ->
             match unionSiblings catalog siblings with
@@ -381,7 +384,8 @@ module DataEmissionComposer =
         let topo = topoLineage.Value
         let composition = policy.Emission.DataComposition
         let deleteScope = policy.Emission.DeleteScope
-        match dispatchSiblings composition deleteScope topo catalog profile migration userRemap with
+        let verification = policy.Emission.DataVerification
+        match dispatchSiblings composition deleteScope verification topo catalog profile migration userRemap with
         | Error e -> Error e
         | Ok siblings ->
             match unionSiblings catalog siblings with
@@ -458,7 +462,8 @@ module DataEmissionComposer =
         // Emission). The composer resolves it OFF `Policy` here and threads
         // the plain value; the emitters never see `Policy` (A18 amended).
         let deleteScope = policy.Emission.DeleteScope
-        match dispatchSiblings composition deleteScope topo catalog profile migration userRemap with
+        let verification = policy.Emission.DataVerification
+        match dispatchSiblings composition deleteScope verification topo catalog profile migration userRemap with
         | Error e -> Error e
         | Ok siblings ->
             match unionSiblings catalog siblings with

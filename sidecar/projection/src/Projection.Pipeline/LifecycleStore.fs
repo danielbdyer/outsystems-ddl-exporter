@@ -145,7 +145,11 @@ module LifecycleStore =
 
     let private serialize (lifecycle: EpisodicLifecycle) : byte[] =
         use stream = new System.IO.MemoryStream()
-        (use jw = new Utf8JsonWriter(stream, JsonWriterOptions(Indented = true))
+        // Pinned LF newlines (`JsonOptions.indented` sets NewLine = "\n"): the
+        // lifecycle store is a durable artifact, so its bytes must be identical
+        // across platforms (T1). A bare `JsonWriterOptions(Indented = true)`
+        // inherits the host newline (CRLF on Windows) under .NET 9.
+        (use jw = new Utf8JsonWriter(stream, JsonOptions.indented ())
          jw.WriteStartObject()
          jw.WriteString("timeline", Timeline.name (EpisodicLifecycle.timeline lifecycle))
          jw.WritePropertyName "episodes"

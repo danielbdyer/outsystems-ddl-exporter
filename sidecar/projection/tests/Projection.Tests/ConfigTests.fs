@@ -353,6 +353,24 @@ let ``NM-70: Config.parse: emission.identityAnnotations false parses (the named 
     let cfg = Config.parse json |> mustOk
     Assert.False(cfg.Emission.EmitIdentityAnnotations)
 
+[<Fact>]
+let ``NM-73: Config.parse: emission.dataVerification defaults Standard when absent`` () =
+    let cfg = Config.parse """{ "model": { "path": "m.json" } }""" |> mustOk
+    Assert.Equal(DataVerification.Standard, cfg.Emission.DataVerification)
+
+[<Fact>]
+let ``NM-73: Config.parse: emission.dataVerification "validateBeforeApply" parses (the conservative override)`` () =
+    let json = """{ "model": { "path": "m.json" }, "emission": { "dataVerification": "validateBeforeApply" } }"""
+    let cfg = Config.parse json |> mustOk
+    Assert.Equal(DataVerification.ValidateBeforeApply, cfg.Emission.DataVerification)
+
+[<Fact>]
+let ``NM-73: Config.parse: an unrecognised emission.dataVerification is a loud error, not a silent fallback`` () =
+    let json = """{ "model": { "path": "m.json" }, "emission": { "dataVerification": "yolo" } }"""
+    match Config.parse json with
+    | Ok _ -> Assert.Fail("expected a config error for an invalid dataVerification value")
+    | Error _ -> ()
+
 // -----------------------------------------------------------------------
 // AC-D7 / AC-G4 — emission.deleteScope (the convergent-delete gate).
 // -----------------------------------------------------------------------

@@ -83,7 +83,10 @@ let ``Closed-DU coverage: ToleratedDivergence.allKnown contains twelve variants 
     // **NM-28 (2026-06-14):** 12 — CompositePkFkUnreflected names the
     // composite-target-PK FK whose second-and-later legs the single-column
     // Reference IR cannot reflect (only the first leg round-trips).
-    Assert.Equal (12, Set.count ToleratedDivergence.allKnown)
+    // **NM-17 (2026-06-14):** back to 8 — the four NM-16 kind-facet
+    // diff-erasure tolerances are RETIRED (now a real `KindFacet` diff
+    // channel in `CatalogDiff`, not an erased tolerance).
+    Assert.Equal (8, Set.count ToleratedDivergence.allKnown)
 
 [<Fact>]
 let ``Tolerance.ofSet round-trips through divergences`` () =
@@ -152,33 +155,28 @@ let ``3.4: every ToleratedDivergence name round-trips through tryParse`` () =
     |> Set.forall (fun d -> ToleratedDivergence.tryParse (ToleratedDivergence.name d) = Some d)
 
 // ---------------------------------------------------------------------------
-// NM-16 — the kind-level facet erasure in the `CatalogDiff.between` algebra
-// (a changed/added/removed kind Trigger / ColumnCheck / Modality / IsActive
-// yields norm=0, "idempotent redeploy", migrate emits nothing) is now a
-// WITNESSED ToleratedDivergence rather than a silent erasure. These four
-// variants exist, are members of `allKnown`, and parse round-trip — so the
-// gap is named with a retirement trigger (the LIGHT route per the audit;
-// retiring each adds the corresponding diff channel to `CatalogDiff.between`).
+// NM-17 — the four NM-16 kind-facet diff-erasure tolerances
+// (KindTriggers/Checks/Modality/Activation UnreflectedInDiff) are RETIRED:
+// `CatalogDiff` now reflects modality / triggers / CHECKs / activation as a
+// real `KindFacet` diff channel, so the erasure they named no longer exists.
+// A retired OpenGap leaves no DU variant behind — its config token no longer
+// parses and it is absent from `allKnown`.
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``NM-16: the four kind-facet diff-erasure tolerances exist, are in allKnown, and round-trip`` () =
-    let kindFacetVariants =
-        [ ToleratedDivergence.KindTriggersUnreflectedInDiff
-          ToleratedDivergence.KindChecksUnreflectedInDiff
-          ToleratedDivergence.KindModalityUnreflectedInDiff
-          ToleratedDivergence.KindActivationUnreflectedInDiff ]
-    for d in kindFacetVariants do
-        // Each is a member of the closed-DU coverage set.
-        Assert.True(
-            Set.contains d ToleratedDivergence.allKnown,
-            sprintf "%s must be in allKnown" (ToleratedDivergence.name d))
-        // name >> tryParse is the identity (parse round-trip).
-        Assert.Equal<ToleratedDivergence option>(
-            Some d, ToleratedDivergence.tryParse (ToleratedDivergence.name d))
-    // The four tokens are distinct (no name collision).
-    let names = kindFacetVariants |> List.map ToleratedDivergence.name
-    Assert.Equal(4, List.length (List.distinct names))
+let ``NM-17: the four NM-16 kind-facet diff-erasure tolerance tokens are retired (no longer parse)`` () =
+    let retiredTokens =
+        [ "KindTriggersUnreflectedInDiff"
+          "KindChecksUnreflectedInDiff"
+          "KindModalityUnreflectedInDiff"
+          "KindActivationUnreflectedInDiff" ]
+    for token in retiredTokens do
+        // The token no longer maps to any variant (fail-closed parse).
+        Assert.Equal<ToleratedDivergence option>(None, ToleratedDivergence.tryParse token)
+    // None of the surviving tolerances carries a retired token.
+    let liveNames = ToleratedDivergence.allKnown |> Set.toList |> List.map ToleratedDivergence.name |> Set.ofList
+    for token in retiredTokens do
+        Assert.False(Set.contains token liveNames, sprintf "%s must be absent from allKnown" token)
 
 [<Fact>]
 let ``3.4: parse accepts every known token and yields a tolerance that tolerates them`` () =

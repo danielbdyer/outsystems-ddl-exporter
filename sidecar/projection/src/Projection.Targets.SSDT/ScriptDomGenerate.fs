@@ -52,9 +52,12 @@ module ScriptDomGenerate =
         // Keyword casing — uppercase per SSDT convention. ScriptDom
         // default is `Uppercase`; we re-pin for explicitness.
         opts.KeywordCasing <- KeywordCasing.Uppercase
-        // Statement-level newline / indentation. Pin to LF newlines
-        // and 4-space indent (SSDT convention); `IncludeSemicolons`
-        // = true ensures every statement terminates explicitly.
+        // Statement-level line breaks / indentation. (The newline
+        // *character* is pinned to LF separately in `pinNewlines` —
+        // ScriptDom emits `Environment.NewLine`, which these flags do
+        // not control.) 4-space indent (SSDT convention);
+        // `IncludeSemicolons` = true ensures every statement
+        // terminates explicitly.
         opts.NewLineBeforeFromClause <- true
         opts.NewLineBeforeWhereClause <- true
         opts.NewLineBeforeOrderByClause <- true
@@ -86,6 +89,16 @@ module ScriptDomGenerate =
         opts.SqlEngineType <- SqlEngineType.All
         opts
 
+    /// ScriptDom's `Sql160ScriptGenerator.GenerateScript` emits the
+    /// host's `Environment.NewLine` (CRLF on Windows, LF on Linux);
+    /// `SqlScriptGeneratorOptions` exposes no newline-character axis.
+    /// Pin to LF so emission is byte-identical across platforms — T1
+    /// determinism is constructed at the boundary, not inherited from
+    /// the host. A no-op on LF hosts; collapses CRLF (and any lone CR)
+    /// to LF.
+    let private pinNewlines (text: string) : string =
+        text.Replace("\r\n", "\n").Replace("\r", "\n")
+
     /// Generate T-SQL text for a single typed `TSqlStatement` via
     /// `Sql160ScriptGenerator`. Returns the rendered text without
     /// trailing newline; callers append the framing.
@@ -108,7 +121,7 @@ module ScriptDomGenerate =
         let generator = Sql160ScriptGenerator(pinnedOptions ())
         let mutable text : string | null = null
         generator.GenerateScript(stmt :> TSqlFragment, &text)
-        text |> Option.ofObj |> Option.defaultValue ""
+        text |> Option.ofObj |> Option.defaultValue "" |> pinNewlines
 
     /// Generate T-SQL text for any `TSqlFragment` sub-tree (data type
     /// references, identifiers, expressions) that doesn't constitute a
@@ -130,7 +143,7 @@ module ScriptDomGenerate =
         let generator = Sql160ScriptGenerator(pinnedOptions ())
         let mutable text : string | null = null
         generator.GenerateScript(fragment :> TSqlFragment, &text)
-        text |> Option.ofObj |> Option.defaultValue ""
+        text |> Option.ofObj |> Option.defaultValue "" |> pinNewlines
 
     /// Render a comment line through the SSDT-canonical inline
     /// comment form. Per chapter 3.5 deep audit (2026-05-09):

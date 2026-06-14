@@ -22844,3 +22844,115 @@ on GitHub — the env's SSH signing key is empty (0 bytes), so signing is imposs
 here. And the warm SQL container degrades under accumulated load and dies mid-pool
 (survival rule #2) — the OSSYS-extraction classes fail on a tired container; a
 restart + focused re-run proves health.
+
+---
+
+## 2026-06-14 (later) — NM-73 lands: EXCEPT validate-before-apply, the daylight safety slice
+
+**What shipped.** The consciously-deferred NM-73 guard is now built, end-to-end and
+green, exactly per the settled plan — no inert axis left behind (the whole slice
+lands as one change: axis → config → threading → guard → tests).
+
+- **`EmissionPolicy.DataVerification = Standard | ValidateBeforeApply`** (closed DU,
+  not a bool, so a future third posture is a named variant). Default `Standard` is
+  **byte-identical** to pre-NM-73 emission — the CDC-silence-canonical posture V2
+  commits to. `Policy.withDataVerification` is the sibling setter to
+  `withEmitIdentityAnnotations`.
+- **`emission.dataVerification` config key** (`"standard"` | `"validateBeforeApply"`),
+  parsed in `Config.fs` via `parseDataVerification`; an unrecognised value is a **loud
+  config error**, never a silent fallback (named-refusal discipline). Threaded
+  `cfg.Emission.DataVerification → EmissionPolicy.DataVerification` in `Pipeline.fs`,
+  and `policy.Emission.DataVerification → dispatchSiblings → StaticSeedsEmitter`
+  in the composer (A18 — the emitter takes the plain value, never `Policy`).
+- **The guard** (`ScriptDomBuild.buildValidateBeforeApplyGuard`) faithfully mirrors
+  V1's `StaticSeedSqlBuilder.ValidateThenApply` (`src/Osm.Emission/Seeds/
+  StaticSeedSqlBuilder.cs:102-138`): a **symmetric `EXCEPT` pair gated on a non-empty
+  target** — `IF EXISTS(target) AND (EXISTS(source EXCEPT target) OR EXISTS(target
+  EXCEPT source)) THROW 50000`. First apply over an empty target proceeds; an
+  idempotent re-apply is silent; a *drifted* re-apply aborts before the MERGE
+  overwrites. Built via the **`TSql160Parser` parse-template path** (the
+  `checkConstraint`/`tryParseTriggerBody` idiom) so the result is a typed
+  `TSqlStatement` re-rendered canonically by `generateOne` — not a hand-built AST,
+  not a text blob. The guard's inline `VALUES` reuse the exact `MergeBuildArgs` rows
+  the MERGE is about to write, so the comparison is against the real deploy source.
+- **Framing:** the guard is its own `GO` batch prepended to the MERGE batch (it
+  THROWs before the MERGE runs), composing with the IDENTITY_INSERT bracket.
+
+**Two safety choices worth recording.**
+1. **No silent downgrade of the guard.** A parse failure of the self-constructed
+   guard template is a *programmer error*, raised loudly (`invalidOp`), never a
+   recovered skip — a silently-dropped safety guard is exactly the campaign's
+   cardinal sin. The template is built from typed-rendered literals + bracket-quoted
+   identifiers, so it always parses for valid input; the loud path is the backstop.
+2. **Scope.** The guard is wired into `StaticSeedsEmitter` (the static-seed lane the
+   plan named). `MigrationDependenciesEmitter` (the sibling that also MERGEs) keeps
+   `Standard`; extending the guard there is a named follow-on, tracked with NM-D's
+   IDENTITY_INSERT-bracket sibling-divergence work.
+
+**Tests.** `StaticSeedsEmitterTests` — `Standard` is byte-identical to the
+established emit; `ValidateBeforeApply` prepends the symmetric-`EXCEPT` `THROW 50000`
+guard *before* the MERGE (structural assertions + ordering). `ConfigTests` — the
+key defaults `Standard`, parses `validateBeforeApply`, and errors loudly on garbage
+(A44: expressible ⇔ reachable). The four `*BindingTests` `EmissionSection` literals
+gained the field.
+
+**Owed after this:** NM-17 (heavy `KindFacet` diff channel), NM-62 (threshold
+constants), the `compare`-source-profiling follow-on, and the
+`MigrationDependenciesEmitter` guard extension.
+
+---
+
+## 2026-06-14 (later) — NM-17 lands: the heavy KindFacet diff channel (change-algebra capstone)
+
+**What shipped.** NM-16 took the LIGHT route — naming the kind-level erasures
+(`Triggers` / `ColumnChecks` / `Modality` / `IsActive`) as four `OpenGap`
+`ToleratedDivergence`s so `CatalogDiff.norm = 0` on a changed kind was *witnessed*,
+not silent. NM-17 takes the HEAVY route: a real `KindFacet` diff channel, retiring
+those four tolerances.
+
+- **`KindFacet = Modality | Triggers | ColumnChecks | IsActive`** + a sparse
+  `CatalogDiffData.KindFacetDiffs : Map<SsKey, Set<KindFacet>>` (parallel to
+  `AttributeDiffs`: only kinds present in both catalogs with a changed kind-OWN
+  facet; every stored set non-empty). `changedKindFacets` mirrors `changedFacets`.
+- `between` descends into each shared kind's own facets; `isEmpty` and the norm
+  account for them (`ChannelCounts.ChangedKinds = Map.count KindFacetDiffs`, one
+  move per changed kind, mirroring `ChangedAttributes`); `applyDiff` patches them
+  via `applyKindFacet` from the recorded target. The round-trip law
+  `between B (applyDiff (between A B) A) |> isEmpty` now holds on the kind facets.
+- **`compose`'s composability bridge** (which uses `isEmpty` for adjacency)
+  inherits the fix for free — NM-17's named sibling defect (a kind-facet-only
+  intermediate mismatch declared composable) closes with `isEmpty`.
+- **Retired** the four `KindTriggers/Checks/Modality/Activation UnreflectedInDiff`
+  tolerances from `Tolerance.fs` (DU + `coverage` + `allKnown` + `name`) — a closed
+  OpenGap leaves no DU variant behind (dead-algebra-retirement precedent). `allKnown`
+  12 → 8; the matrix's open-gap count 6 → 2 (`IndexOptionsUnreflected` +
+  `CompositePkFkUnreflected` remain). Closes the stale-docstring NM-65 in the same
+  edit (the `applyDiff` captured-surface comment now names modality/triggers/CHECKs/
+  activation as captured; only `Description` / ext-props / module structure remain
+  residual).
+
+**Why this is the highest-leverage invariant.** It restores the agreement between
+the two surfaces that disagreed on "what is a change": the `CatalogDiff` algebra
+(what `migrate` emits) and the canary's `PhysicalSchema.diff` (what the round-trip
+observes). A trigger / CHECK / modality / activation flip now produces `norm ≥ 1`
+and a migrate delta, instead of `norm = 0` "idempotent redeploy" + silent
+full-redeploy — the CDC-as-norm isometry the change algebra rests on.
+
+**An adjacent CRLF determinism gap, fixed in passing.** Running the suite on
+Windows surfaced `LifecycleStore.serialize` building `Utf8JsonWriter` with a bare
+`JsonWriterOptions(Indented = true)` — no pinned `NewLine`, so .NET 9 emits the host
+newline (CRLF on Windows) into a durable artifact (a T1 violation). Pinned to
+`JsonOptions.indented ()` (LF), the same single-sanctioned-home form `PinnedWriting`
+already mandates. Not an NM-17 change (the failure reproduced on the committed
+state without NM-17); folded in here since it blocked a green suite and is the same
+cross-platform-determinism class as the earlier LF pin.
+
+**Tests.** `CatalogDiffTests` — an IsActive flip surfaces `KindFacet.IsActive`
+(kind stays Unchanged, `isEmpty` honest, `norm = 1`); a Modality change surfaces
+`KindFacet.Modality`; `applyDiff` round-trips a kind-facet change. `ToleranceTests`
+/ `ManifestUnsupportedTests` / `SsdtExtendedPropertyEmissionTests` — count 12 → 8,
+retired tokens no longer parse. `MatrixLadderTests` — open gaps 6 → 2. Matrix
+regenerated (`scripts/matrix-status.sh`).
+
+**Owed after this:** NM-62's `compare`-source-profiling follow-on, and the
+`MigrationDependenciesEmitter` validate-before-apply guard extension (NM-73 scope).
