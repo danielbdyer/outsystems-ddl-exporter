@@ -73,6 +73,11 @@ module SqlLiteral =
     /// V2 raw-form contract has a single source of truth across emit /
     /// parse / readback.
     let ofRaw (typ: PrimitiveType) (raw: string) : SqlLiteral =
+        // NM-18 — the empty raw string is the IR's UNIVERSAL NULL sentinel: this
+        // test fires before the type match, so an empty value of ANY type (incl.
+        // a stored empty Text `N''` or a zero-length Binary `0x`) becomes NULL.
+        // The named, witnessed erasure is `Tolerance.EmptyTextNormalizedToNull`
+        // (see its scope note); retiring it needs a faithful empty/zero sentinel.
         if raw = "" then NullLit
         else
             match typ with

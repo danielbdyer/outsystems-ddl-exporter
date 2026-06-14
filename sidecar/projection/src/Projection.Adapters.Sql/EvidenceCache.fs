@@ -90,6 +90,12 @@ module CachedValue =
         | :? DateTime as dt          ->
             DateValue (DateTimeOffset(dt, TimeSpan.Zero))
         | :? (byte array) as b       -> BinaryValue b
+        // NM-19 — SQL `bit` arrives as a CLR bool; without this arm it fell
+        // through to `StringValue "True"/"False"` and profiled as 2-value text
+        // (OutSystems is bit-heavy). Project 0/1 as the sibling
+        // `ReadSide.formatRawValue` does, so duplicate/distinct evidence is keyed
+        // as the integer it is.
+        | :? bool as flag            -> IntValue (if flag then 1L else 0L)
         | other ->
             match other.ToString() with
             | null -> NullValue
@@ -124,6 +130,20 @@ module CachedValue =
     let tryString (v: CachedValue) : string option =
         match v with
         | StringValue s -> Some s
+        | _             -> None
+
+    /// The observed STORAGE length of one cell — the pure-F# twin of SQL's
+    /// `LEN` (text) / `DATALENGTH` (binary), derived from the sampled value
+    /// rather than a separate SQL probe (the discover-once / derive-pure
+    /// pattern). `StringValue` → character length; `BinaryValue` → byte
+    /// length; every other variant (numeric / date / NULL) carries no
+    /// length axis → `None`. Feeds the `MaxObservedLength` column-profile
+    /// axis, which the fidelity report's "Length / type overflow" category
+    /// compares against the declared `Attribute.Length`.
+    let observedLength (v: CachedValue) : int option =
+        match v with
+        | StringValue s -> Some s.Length
+        | BinaryValue b -> Some b.Length
         | _             -> None
 
 

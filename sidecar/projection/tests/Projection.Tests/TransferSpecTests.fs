@@ -14,6 +14,44 @@ let private mustOk r = match r with Ok v -> v | Error es -> failwithf "fixture: 
 let private mkKey (parts: string list) : SsKey = SsKey.synthesizedComposite "OS_TEST_TSPEC" parts |> mustOk
 let private mkName (s: string) : Name = Name.create s |> mustOk
 
+// -- NM-53: a resumable G10 no-op re-run replays the prior drop verdict ------
+
+/// A clean transfer report (no live drops) carrying an optional replayed
+/// prior-drop count — the shape a G10 no-op re-run produces.
+let private reportWithReplay (replayed: int option) : Transfer.TransferReport =
+    { Mode                = Transfer.Execute
+      Kinds               = []
+      UnbreakableCycleFks = []
+      UnmatchedIdentities = []
+      AmbiguousIdentities = []
+      SkippedReferences   = []
+      CaptureLaneDescents = []
+      ReplayedPriorDrops  = replayed
+      SyntheticUnsatisfiableFks = [] }
+
+[<Fact>]
+let ``NM-53: a no-op re-run with a replayed prior-drop count replays exit-9, not a clean exit-0`` () =
+    // The first run legitimately dropped 3 FK-orphans (exit 9); the marker
+    // persists the count. The re-run is a no-op (empty live drop-set) but
+    // re-surfaces the prior verdict — `hasDrops` true, exit 9 — so a refresh
+    // wrapper re-running to confirm is NOT misled into a clean exit-0.
+    let replayed = reportWithReplay (Some 3)
+    Assert.True(Transfer.hasDrops replayed, "a replayed prior drop count must count as drops")
+    Assert.Equal(3, Transfer.droppedRowCount replayed)
+    Assert.Equal(Transfer.DroppedReferencesExit, Transfer.exitCodeForReport false replayed)
+    // --allow-drops still downgrades the replayed verdict to 0 (the operator
+    // accepted the loss), exactly as it does for live drops.
+    Assert.Equal(0, Transfer.exitCodeForReport true replayed)
+
+[<Fact>]
+let ``NM-53: a no-op re-run of a clean prior run (no drops) stays exit-0`` () =
+    // A first run that dropped nothing records 0; the replay is benign.
+    for replayed in [ None; Some 0 ] do
+        let clean = reportWithReplay replayed
+        Assert.False(Transfer.hasDrops clean, "a zero/absent replay is not drops")
+        Assert.Equal(0, Transfer.droppedRowCount clean)
+        Assert.Equal(0, Transfer.exitCodeForReport false clean)
+
 // -- parseConnectionSpec ---------------------------------------------------
 
 [<Fact>]
@@ -256,3 +294,36 @@ let ``resolveAllReconciliation rejects a kind reconciled by both strategies`` ()
     with
     | Ok _    -> Assert.Fail "expected Error"
     | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "transfer.reconcile.strategyConflict")
+
+// ---------------------------------------------------------------------------
+// NM-49: the capture-lane descent positioning is TOTAL — `CaptureLane.ladderFrom`
+// returns the descent suffix at `preferred`, and an unknown preferred lane
+// begins at the ladder HEAD rather than the empty tail that the descent loop
+// mislabels "capture ladder exhausted".
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``NM-49: ladderFrom positions the descent at a known preferred lane (inclusive)`` () =
+    Assert.Equal<CaptureLane list>(
+        CaptureLane.ladder,
+        CaptureLane.ladderFrom CaptureLane.StagedMergeOutput)
+    Assert.Equal<CaptureLane list>(
+        [ CaptureLane.StagedMergeOutputInto; CaptureLane.RowwiseScopeIdentity ],
+        CaptureLane.ladderFrom CaptureLane.StagedMergeOutputInto)
+    Assert.Equal<CaptureLane list>(
+        [ CaptureLane.RowwiseScopeIdentity ],
+        CaptureLane.ladderFrom CaptureLane.RowwiseScopeIdentity)
+
+[<Fact>]
+let ``NM-49: ladderFrom is total — every closed CaptureLane variant yields a non-empty descent`` () =
+    // The descent must NEVER be empty (an empty descent is the "exhausted"
+    // mislabel). Exhaustively over the closed DU.
+    for lane in [ CaptureLane.StagedMergeOutput; CaptureLane.StagedMergeOutputInto; CaptureLane.RowwiseScopeIdentity ] do
+        let descent = CaptureLane.ladderFrom lane
+        Assert.NotEmpty descent
+        // The descent is always a suffix of the full ladder (the conservative
+        // order is preserved — no rung skipped, no rung reordered).
+        Assert.True(
+            CaptureLane.ladder |> List.skipWhile (fun l -> l <> List.head descent) = descent
+            || descent = CaptureLane.ladder,
+            sprintf "ladderFrom %A is not a ladder suffix: %A" lane descent)

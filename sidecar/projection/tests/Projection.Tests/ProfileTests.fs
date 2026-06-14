@@ -213,6 +213,7 @@ let ``ColumnProfile.nullPercentage is deterministic`` (rowCount: int64) (nullCou
         { AttributeKey         = customerIdAttrKey
           RowCount             = rowCount
           NullCount            = nullCount
+          MaxObservedLength    = None
           NullCountProbeStatus = probe }
     ColumnProfile.nullPercentage cp = ColumnProfile.nullPercentage cp
 
@@ -233,6 +234,7 @@ let private profileWithColumn (key: SsKey) (rowCount: int64) (nullCount: int64) 
             { AttributeKey         = key
               RowCount             = max 0L rowCount
               NullCount             = max 0L (min nullCount rowCount)
+              MaxObservedLength    = None
               NullCountProbeStatus = mkProbe (max 0L rowCount) }
         ] }
 
@@ -259,6 +261,30 @@ let ``B.3.7: Profile.merge takes worst-case MAX of RowCount + NullCount per attr
     let col = merged.Columns.Head
     Assert.Equal(200L, col.RowCount)
     Assert.Equal(30L, col.NullCount)
+
+[<Fact>]
+let ``ColumnProfile.withMaxObservedLength attaches the axis and clamps a negative to zero`` () =
+    let baseCol = ColumnProfile.create customerIdAttrKey 100L 5L (mkProbe 100L) |> Result.value
+    Assert.Equal(None, baseCol.MaxObservedLength)
+    let withLen = ColumnProfile.withMaxObservedLength 42 baseCol
+    Assert.Equal(Some 42, withLen.MaxObservedLength)
+    let clamped = ColumnProfile.withMaxObservedLength -7 baseCol
+    Assert.Equal(Some 0, clamped.MaxObservedLength)
+
+[<Fact>]
+let ``Profile.merge takes the worst-case MAX of MaxObservedLength; None is the identity`` () =
+    let withLen (n: int) =
+        let p = profileWithColumn customerIdAttrKey 100L 0L
+        { p with Columns = p.Columns |> List.map (ColumnProfile.withMaxObservedLength n) }
+    // Both present → MAX wins.
+    let merged = Profile.merge (withLen 30) (withLen 80)
+    Assert.Equal(Some 80, merged.Columns.Head.MaxObservedLength)
+    // One present, one absent → the present observation survives.
+    let withNone = profileWithColumn customerIdAttrKey 100L 0L
+    let mergedL = Profile.merge (withLen 55) withNone
+    Assert.Equal(Some 55, mergedL.Columns.Head.MaxObservedLength)
+    let mergedR = Profile.merge withNone (withLen 55)
+    Assert.Equal(Some 55, mergedR.Columns.Head.MaxObservedLength)
 
 [<Fact>]
 let ``B.3.7: Profile.merge unions columns for disjoint attribute keys`` () =

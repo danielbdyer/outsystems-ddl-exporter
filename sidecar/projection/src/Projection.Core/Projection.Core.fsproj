@@ -30,8 +30,14 @@
     <Compile Include="StructuredString.fs" />
     <Compile Include="PrimitiveType.fs" />
     <Compile Include="RawValueCodec.fs" />
-    <Compile Include="SqlTypeCorrespondence.fs" />
+    <!--
+      SqlStorageType precedes SqlTypeCorrespondence (NM-29): the faithful
+      inverse `ofSqlType` + `toPrimitiveType` is the single source of the
+      SQL→PrimitiveType collapse, and `SqlTypeCorrespondence.ofSqlDataType`
+      now delegates to it. SqlStorageType depends only on PrimitiveType.
+    -->
     <Compile Include="SqlStorageType.fs" />
+    <Compile Include="SqlTypeCorrespondence.fs" />
     <Compile Include="SqlLiteral.fs" />
     <Compile Include="Catalog.fs" />
     <!--
@@ -51,6 +57,7 @@
     <Compile Include="Lifecycle.fs" />
     <Compile Include="PhysicalSchema.fs" />
     <Compile Include="Tolerance.fs" />
+    <Compile Include="CanaryResidual.fs" />
     <Compile Include="UserIdentity.fs" />
     <Compile Include="Profile.fs" />
     <Compile Include="SyntheticData.fs" />

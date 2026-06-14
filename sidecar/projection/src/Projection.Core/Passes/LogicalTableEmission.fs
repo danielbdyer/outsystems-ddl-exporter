@@ -86,15 +86,18 @@ module LogicalTableEmission =
     /// S6.3 fix — the docstring's "operator pins dominate" contract honored).
     /// `pins` is empty for every flow without a physical-form rename, so the
     /// default emission is byte-identical.
-    let private substituteKind (pins: Set<SsKey>) (events: LineageBuffer.Buffer) (k: Kind) : Kind option =
+    // NM-50 — returns a `Kind` (never drops): this pass rewrites `Kind.Physical`
+    // and must conserve the kind count (A1 identity preservation). Routed through
+    // the total `mapKindsTotal`, so a drop is structurally impossible here.
+    let private substituteKind (pins: Set<SsKey>) (events: LineageBuffer.Buffer) (k: Kind) : Kind =
         let logical = Name.value k.Name
         if Set.contains k.SsKey pins then
-            Some k
+            k
         elif System.String.IsNullOrWhiteSpace logical
              || logical.Length > CoordinatesLimits.SqlServerIdentifierMaxLength then
-            Some k
+            k
         elif logical = TableName.value k.Physical.Table then
-            Some k
+            k
         else
             // The pre-checks above (non-blank + length ≤ 128) match
             // `TableName.create`'s validation exactly; the create call
@@ -102,13 +105,13 @@ module LogicalTableEmission =
             // unwrap is safe here.
             let after = { k.Physical with Table = TableName.create logical |> Result.value }
             LineageBuffer.add (substitutedEvent k.SsKey k.Physical after) events
-            Some { k with Physical = after }
+            { k with Physical = after }
 
     let private run (pins: Set<SsKey>) (mode: Mode) (c: Catalog) : Lineage<Catalog> =
         use _ = Bench.scope "passes.logicalTableEmission"
         match mode with
         | Disabled -> Lineage.ofValue c
-        | Enabled  -> c |> CatalogTraversal.mapKinds (substituteKind pins)
+        | Enabled  -> c |> CatalogTraversal.mapKindsTotal (substituteKind pins)
 
     /// Factory with operator physical-rename pins (S6.3). The pinned SsKeys are
     /// the kinds whose `Kind.Physical` an operator-supplied physical-form

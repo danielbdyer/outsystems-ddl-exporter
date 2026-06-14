@@ -59,6 +59,10 @@ let private knownEmittableCodes : Set<string> =
         [ // lifecycle spine + stages (LIVE on every full-export run)
           "config.runStart"; "config.connectionResolved"; "config.validationFailed"
           "summary.stageCompleted"; "summary.runComplete"
+          // NM-59: the two live structured-channel summary codes the inventory
+          // had drifted behind — `summary.stageProgress` (LogSink → Watch) and
+          // `summary.readiness` (the readiness board's machine envelope).
+          "summary.stageProgress"; "summary.readiness"
           "extract.started"; "extract.completed"
           "profile.started"; "profile.completed"
           "emit.started"; "emit.completed"
@@ -183,6 +187,54 @@ let ``Voice totality: lookup is total over the in-scope codes`` () =
         Assert.True((Voice.lookup code).IsSome, sprintf "lookup returned None for in-scope code %s" code)
 
 // ---------------------------------------------------------------------------
+// NM-47: `renderVoicedTo` must never render NOTHING for a code (an invisible
+// operator verdict). The defence is two-pronged: (1) every literal code string
+// the run faces pass to `renderVoicedTo` IS voiced — so the fallback is unreached
+// in production; (2) when an unvoiced code DOES reach the renderer (a typo / a
+// new face code), `Voice.fallbackSurface` is LOUD — a warn verdict naming the
+// raw code, never an empty render.
+// ---------------------------------------------------------------------------
+
+// The exact literal code strings handed to `TtyRenderer.renderVoicedTo` across
+// `RunFaces` (the run-face verdict + lifecycle lines). Kept in lockstep with the
+// call sites: a new `renderVoicedTo "x.y" …` whose code is unvoiced would make the
+// fallback reachable in production — this list pins the contract that it is not.
+let private renderVoicedCallSiteCodes : Set<string> =
+    Set.ofList
+        [ "load.completed"; "episode.recorded"
+          "docker.unavailable"; "container.starting"
+          "deploy.bundleEmitted"; "deploy.completed"; "deploy.ssdtRejected"
+          "canary.sourceMissing"; "canary.deployed"
+          "canary.diffEmpty"; "canary.divergence"
+          "canary.cdcCaptured"; "canary.cdcSilent"
+          "verifyData.matched"; "verifyData.diverged"
+          "drift.none"; "drift.diverged"
+          "eject.storeUnreadable"; "eject.packaged"; "eject.verified"; "eject.unverified"
+          "migrate.inexpressible"; "migrate.stopped" ]
+
+[<Fact>]
+let ``Voice totality: every code rendered by a run face is voiced (no silent verdict — NM-47)`` () =
+    let unvoiced = Set.difference renderVoicedCallSiteCodes voicedCodes
+    Assert.True(
+        Set.isEmpty unvoiced,
+        sprintf "run-face codes passed to renderVoicedTo with no Voice copy (would render NOTHING — NM-47): %A" (Set.toList unvoiced))
+
+[<Fact>]
+let ``Voice fallbackSurface: an unvoiced code surfaces LOUD, never nothing (NM-47)`` () =
+    let payload : Voice.Payload = Map.ofList [ "stage", box "extract"; "reason", box "a located cause" ]
+    let surface = Voice.fallbackSurface "some.typod.code" payload
+    // The raw code leads as a warn verdict — never an empty / silent surface.
+    match surface.Statement with
+    | View.Hero(View.Warn, text) -> Assert.Equal<string>("some.typod.code", text)
+    | other -> Assert.Fail(sprintf "fallback statement is not a Warn Hero: %A" other)
+    // The payload rides beneath, so the verdict carries its located detail.
+    let fieldValues =
+        surface.Substantiation
+        |> List.choose (function View.Field(_, v, _) -> Some v | _ -> None)
+    Assert.Contains("extract", fieldValues)
+    Assert.Contains("a located cause", fieldValues)
+
+// ---------------------------------------------------------------------------
 // the twelve-rule banned list (THE_VOICE.md §1 + §2.2), mechanically
 // ---------------------------------------------------------------------------
 
@@ -304,7 +356,8 @@ let ``Voice migrationStopDetail: every easily-constructed arm yields a plain loc
           StoreReadFailed "the store is malformed",           "run history"
           DataTransferFailed [],                              "data load"
           SchemaReadFailed [],                                "deployed schema"
-          RefusedByCdc [ "dbo.Order" ],                       "CDC-tracked" ]
+          RefusedByCdc [ "dbo.Order" ],                       "CDC-tracked"
+          RefusedByCdcUnverifiable "sys.tables not readable",  "CDC state could not be verified" ]
     for e, expected in cases do
         let detail = Voice.migrationStopDetail e
         Assert.Contains(expected, detail)

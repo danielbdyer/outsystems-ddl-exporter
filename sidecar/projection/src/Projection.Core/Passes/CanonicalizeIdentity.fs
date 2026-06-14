@@ -3,19 +3,31 @@ namespace Projection.Core.Passes
 open Projection.Core
 
 /// The first enrichment pass. Brings the catalog into a canonical
-/// representation by deterministically ordering every collection by SsKey:
+/// representation by deterministically ordering every collection:
 ///
-///   * modules within a catalog,
-///   * kinds within a module,
-///   * attributes within a kind,
-///   * references within a kind,
-///   * static-row populations (when present).
+///   * modules within a catalog — by SsKey,
+///   * kinds within a module — by SsKey,
+///   * attributes within a kind — by `(PK first, then authored
+///     Service-Studio order ascending, then SsKey)` (WP8 / NM-72),
+///   * references within a kind — by SsKey,
+///   * static-row populations (when present) — by identifier.
 ///
 /// This is the minimum normalization that makes T1 (determinism) hold
 /// across runs whose input order varies (e.g., reader iteration order, set
 /// vs. list source). It does not rewrite SsKey strings — a real Catalog
 /// Reader may eventually surface the need (whitespace, Unicode form), at
 /// which point this pass's `version` is bumped and the rule is added.
+///
+/// WP8 / NM-72 — the attribute ordering honors the operator's authored
+/// Service-Studio order (`Attribute.Order`, sourced from the real
+/// `ossys_Entity_Attr.Order_Num`). PK columns lead (they are emitted
+/// first in OutSystems-faithful DDL); within the non-PK body, authored
+/// order ascending governs; `Order = None` (hand-built catalogs, the
+/// ReadSide reflection path) sorts last and falls back to the SsKey
+/// tiebreak, so determinism holds for every source. Emission is
+/// inherited uniformly — the SSDT, dacpac, and data-lane emitters all
+/// iterate `Kind.Attributes` in list order, so ordering here is the
+/// single ordering site.
 ///
 /// Identity-preserving: the pass never invents, drops, or re-keys an
 /// identity (A3, A4). It emits a `Touched` lineage event per kind so that
@@ -26,8 +38,11 @@ module CanonicalizeIdentity =
     /// Pass version. Per A23, lineage events carry this so functionally
     /// different versions of this pass produce distinguishable provenance.
     /// Bump in the same commit that changes the canonicalization rules.
+    /// v2 (WP8 / NM-72): attribute ordering is `(PK first, then authored
+    /// `Attribute.Order` ascending, then SsKey)`, replacing the v1
+    /// SsKey-only sort.
     [<Literal>]
-    let version : int = 1
+    let version : int = 2
 
     [<Literal>]
     let private passName : string = "canonicalizeIdentity"
@@ -47,9 +62,28 @@ module CanonicalizeIdentity =
         // canonicalization is identity.
         | Temporal _    -> m
 
+    /// WP8 / NM-72 — the total order on attributes within a kind.
+    /// `(PK rank, authored-order rank, SsKey)`:
+    ///   * PK rank 0 for primary keys, 1 otherwise — PKs lead.
+    ///   * authored-order rank `(0, n)` for `Order = Some n`, `(1, 0)`
+    ///     for `Order = None` — authored attributes precede unauthored,
+    ///     ascending within the authored band.
+    ///   * SsKey is the final stable tiebreak — when two attributes share
+    ///     PK rank and authored rank (e.g. both `Order = None`), the order
+    ///     is the prior SsKey order, so a hand-built catalog (every
+    ///     `Order = None`) is byte-identical to the v1 SsKey sort within
+    ///     each PK band, and determinism (T1) holds for every source.
+    let private attributeSortKey (a: Attribute) : (int * (int * int) * SsKey) =
+        let pkRank = if a.IsPrimaryKey then 0 else 1
+        let orderRank =
+            match a.Order with
+            | Some n -> (0, n)
+            | None   -> (1, 0)
+        (pkRank, orderRank, a.SsKey)
+
     let private canonicalizeKind (k: Kind) : Kind =
         { k with
-            Attributes = k.Attributes |> List.sortBy (fun a -> a.SsKey)
+            Attributes = k.Attributes |> List.sortBy attributeSortKey
             References = k.References |> List.sortBy (fun r -> r.SsKey)
             Modality   = k.Modality   |> List.map canonicalizeModality }
 
@@ -104,6 +138,6 @@ module CanonicalizeIdentity =
           Sites =
             [ { SiteName = "canonicalize"
                 Classification = classification
-                Rationale = "Catalog-wide deterministic re-sort by SsKey at every level (modules / kinds / attributes / references) plus modality-mark normalization. No operator opinion enters; reachable from Project(catalog, Policy.empty, profile)." } ]
+                Rationale = "Catalog-wide deterministic re-sort at every level (modules / kinds / references by SsKey; attributes by PK-first, then authored Service-Studio order, then SsKey per WP8 / NM-72) plus modality-mark normalization. No operator opinion enters; the authored order is source evidence, not policy; reachable from Project(catalog, Policy.empty, profile)." } ]
           Run = fun c -> run c |> Lineage.map Diagnostics.ofValue
           Status = Active }

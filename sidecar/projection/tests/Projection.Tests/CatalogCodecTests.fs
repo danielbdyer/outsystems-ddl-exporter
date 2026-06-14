@@ -263,7 +263,14 @@ let private allStorageTypes : SqlStorageType list =
 [<Fact>]
 let ``every SqlStorageType (incl. SqlLength Bounded/Max) round-trips`` () =
     for s in allStorageTypes do
-        let a = { baseAttr () with SqlStorage = Some s }
+        // NM-14 — the attribute's semantic Type must agree with its concrete
+        // SqlStorage (`SqlStorageType.toPrimitiveType s = Type`), now enforced
+        // at `Catalog.create`. Derive Type from the storage so the round-trip
+        // fixture is a consistent attribute, not a mismatched one.
+        let a =
+            { baseAttr () with
+                Type = SqlStorageType.toPrimitiveType s
+                SqlStorage = Some s }
         assertRoundTrips (sprintf "SqlStorageType %A" s) (catalogOf (kindOfAttr a))
 
 let private allLiterals : SqlLiteral list =
@@ -441,6 +448,50 @@ let ``decode re-proves the A39 aggregate invariant (dangling FK target)`` () =
     |> editing (fun n -> (n |> field "modules" |> item 0 |> field "kinds").AsArray().RemoveAt(0))
     |> expectError "dangling FK target — A39 re-validation on decode"
 
+[<Fact>]
+let ``NM-12: Catalog.create rejects the illegal constraint-state quadrant`` () =
+    // A self-reference in the illegal (no-constraint, untrusted) quadrant, set via
+    // a raw record-`with` that bypasses `withConstraintState`. The aggregate root
+    // must refuse it (G14), so the quadrant cannot enter the IR by any path.
+    let attr = Attribute.create (key 1) (nm "Col") PrimitiveType.Text
+    let badRef =
+        { Reference.create (key 2) (nm "FK_self") attr.SsKey (key 3) with
+            HasDbConstraint = false; IsConstraintTrusted = false }
+    let kind = { Kind.create (key 3) (nm "K") (tableId "dbo" "K") [ attr ] with References = [ badRef ] }
+    let m = { SsKey = key 1000; Name = nm "M"; Kinds = [ kind ]; IsActive = true; ExtendedProperties = [] }
+    match Catalog.create [ m ] [] with
+    | Ok _ -> Assert.True(false, "expected Catalog.create to reject the illegal constraint-state quadrant")
+    | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "catalog.reference.illegalConstraintState")
+
+[<Fact>]
+let ``NM-14: Catalog.create rejects a (Type, SqlStorage) mismatch`` () =
+    // An attribute typed Text but carrying concrete BigInt storage evidence, set via
+    // a raw record-`with`. The two disagree (`toPrimitiveType BigInt = Integer ≠ Text`):
+    // the emitter would render BIGINT while every type-driven decision treated the
+    // column as text. The aggregate root must refuse it (NM-14), so the disagreeing
+    // pair cannot enter the IR by any path.
+    let attr =
+        { Attribute.create (key 1) (nm "Col") PrimitiveType.Text with
+            SqlStorage = Some SqlStorageType.BigInt }
+    let kind = { Kind.create (key 3) (nm "K") (tableId "dbo" "K") [ attr ] with References = [] }
+    let m = { SsKey = key 1000; Name = nm "M"; Kinds = [ kind ]; IsActive = true; ExtendedProperties = [] }
+    match Catalog.create [ m ] [] with
+    | Ok _ -> Assert.True(false, "expected Catalog.create to reject the (Type, SqlStorage) mismatch")
+    | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "catalog.attribute.storageTypeMismatch")
+
+[<Fact>]
+let ``NM-14: Catalog.create accepts an agreeing (Type, SqlStorage) pair`` () =
+    // The consistent companion of the reject above: Integer + BigInt agree
+    // (`toPrimitiveType BigInt = Integer`), so construction succeeds.
+    let attr =
+        { Attribute.create (key 1) (nm "Col") PrimitiveType.Integer with
+            SqlStorage = Some SqlStorageType.BigInt }
+    let kind = { Kind.create (key 3) (nm "K") (tableId "dbo" "K") [ attr ] with References = [] }
+    let m = { SsKey = key 1000; Name = nm "M"; Kinds = [ kind ]; IsActive = true; ExtendedProperties = [] }
+    match Catalog.create [ m ] [] with
+    | Ok _ -> ()
+    | Error es -> Assert.True(false, sprintf "expected Catalog.create to accept the agreeing pair; got %A" es)
+
 // ============================================================================
 // The round-trip LAW, universally quantified (FsCheck). The enumerated tests
 // above prove totality per variant; this proves the law over random *combina-
@@ -466,13 +517,22 @@ let private kAttr (kindIx: int) (attrIx: int) : SsKey = key (10000 + kindIx * 10
 
 let private genAttr (sk: SsKey) (name: Name) : Gen<Attribute> =
     gen {
-        let! ptype = Gen.elements allPrimitiveTypes
+        let! ptypeChosen = Gen.elements allPrimitiveTypes
         let! isPk = genBool
         let! isMand = genBool
         let! isIdentity = genBool
         let! isActive = genBool
         let! len = genOpt (Gen.choose (1, 4000))
         let! storage = genOpt (Gen.elements allStorageTypes)
+        // NM-14 — `(Type, SqlStorage)` agreement is enforced at
+        // `Catalog.create`. Validity is CONSTRUCTED here, not validated:
+        // when the generator draws concrete storage, derive the semantic
+        // Type from it (`SqlStorageType.toPrimitiveType`) so the pair always
+        // agrees; otherwise keep the freely-chosen Type.
+        let ptype =
+            match storage with
+            | Some s -> SqlStorageType.toPrimitiveType s
+            | None -> ptypeChosen
         let! def = genOpt (Gen.elements allLiterals)
         let! descr = genOpt (Gen.constant "doc")
         return
@@ -506,8 +566,12 @@ let private genKind (kindIx: int) (allKindKeys: SsKey list) : Gen<Kind> =
                     let! hasDb = genBool
                     let! trusted = genBool
                     return
+                        // NM-12 — route the constraint-state pair through the
+                        // sanctioned normalizer so the generator never produces
+                        // the illegal quadrant that `Catalog.create` now rejects.
                         { Reference.create (key (20000 + kindIx * 100 + r)) (nm (sprintf "R%d_%d" kindIx r)) srcA tgt with
-                            OnDelete = onDel; OnUpdate = onUpd; IsUserFk = userFk; HasDbConstraint = hasDb; IsConstraintTrusted = trusted } } ]
+                            OnDelete = onDel; OnUpdate = onUpd; IsUserFk = userFk }
+                        |> Reference.withConstraintState hasDb trusted } ]
             |> genAll
 
         let! nIdx = Gen.choose (0, 2)

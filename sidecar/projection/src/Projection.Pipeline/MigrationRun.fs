@@ -56,6 +56,13 @@ type MigrationError =
     /// CDC. Carries the tracked `[schema].[table]` names. Mirrors the
     /// transfer-side `transfer.cdcTrackedSink` gate.
     | RefusedByCdc of trackedTables: string list
+    /// NM-54 — the CDC integrity probe itself could not run (a transient
+    /// `SqlException` / `VIEW DEFINITION` denial reading `sys.tables`). The CDC
+    /// state is UNVERIFIABLE, which is UNSAFE: fail-safe means REFUSE the DDL,
+    /// not proceed as if no CDC. Carries the named `readside.cdcTrackedProbeFailed`
+    /// message. Distinct from `RefusedByCdc` (the gate observed CDC and refused);
+    /// here the gate could not observe at all.
+    | RefusedByCdcUnverifiable of message: string
     /// The durable provenance store (the prior-emission snapshot, state A) could
     /// not be loaded — a malformed/corrupt `LifecycleStore`. Fail-closed: a
     /// snapshot⊖snapshot plan never proceeds on an unreadable prior.
@@ -438,9 +445,16 @@ module MigrationRun =
             let! cdcGate =
                 task {
                     if hasDdl && not allowCdc then
-                        let! tracked = ReadSide.cdcTrackedTables cnn
-                        if List.isEmpty tracked then return Ok ()
-                        else return Error (RefusedByCdc tracked)
+                        // NM-54 — unverifiable CDC state is UNSAFE: a probe
+                        // failure REFUSES the DDL (RefusedByCdcUnverifiable),
+                        // never proceeds and never crashes.
+                        match! ReadSide.cdcTrackedTables cnn with
+                        | Error es ->
+                            let msg = es |> List.map (fun e -> e.Message) |> String.concat "; "
+                            return Error (RefusedByCdcUnverifiable msg)
+                        | Ok tracked ->
+                            if List.isEmpty tracked then return Ok ()
+                            else return Error (RefusedByCdc tracked)
                     else return Ok ()
                 }
             match cdcGate with
@@ -568,13 +582,19 @@ module MigrationRun =
         (cnn: SqlConnection)
         : System.Threading.Tasks.Task<Result<MigrationOutcome * int, MigrationError>> =
         task {
-            let! baseline = Deploy.cdcCaptureTotal cnn
-            let! result = execute allowCdc declaration source target cnn
-            match result with
-            | Error e -> return Error e
-            | Ok outcome ->
-                let! post = Deploy.cdcCaptureTotal cnn
-                return Ok (outcome, post - baseline)
+            // NM-54 — the CDC measure surfaces its probe Error (a refused axis
+            // can't be measured) rather than fabricating 0.
+            match! Deploy.cdcCaptureTotal cnn with
+            | Error es -> return Error (SchemaReadFailed es)
+            | Ok baseline ->
+                let! result = execute allowCdc declaration source target cnn
+                match result with
+                | Error e -> return Error e
+                | Ok outcome ->
+                    match! Deploy.cdcCaptureTotal cnn with
+                    | Error es -> return Error (SchemaReadFailed es)
+                    | Ok post ->
+                        return Ok (outcome, post - baseline)
         }
 
     /// **The composed live execute → record** — the L3 CLI bullseye made
@@ -724,7 +744,10 @@ module MigrationRun =
             | Ok schema ->
                 // Measure the data movement: baseline before the load, post
                 // after; the delta is the CDC capture count of the transfer.
-                let! baseline = Deploy.cdcCaptureTotal sink
+                // NM-54 — the CDC measure surfaces its probe Error rather than 0.
+                match! Deploy.cdcCaptureTotal sink with
+                | Error es -> return Error (SchemaReadFailed es)
+                | Ok baseline ->
                 let! transferResult =
                     // A5 — the data source is at A (`sinkSource`); re-point rows
                     // A→B through the rename-aware Transfer (see `executeWithData`).
@@ -735,7 +758,9 @@ module MigrationRun =
                 match transferResult with
                 | Error es -> return Error (DataTransferFailed es)
                 | Ok report ->
-                    let! post = Deploy.cdcCaptureTotal sink
+                    match! Deploy.cdcCaptureTotal sink with
+                    | Error es -> return Error (SchemaReadFailed es)
+                    | Ok post ->
                     let data = DataObservation.create (post - baseline) None
                     match nextCoordinate path environment at with
                     | Error e -> return Error (ExecutionFailed (sprintf "data load succeeded but deriving the episode coordinate failed: %A" e))

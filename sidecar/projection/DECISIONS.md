@@ -22754,3 +22754,93 @@ gone). The broader suite is unchanged (the fix is additive).
 **WP9 remainder (not this slice):** the `examples/projection.sample.json`
 rewrite (ossys-first sample) and the `projection compare` verb (multi-
 environment readiness; a design-first slice per the plan) remain.
+
+---
+
+## 2026-06-14 — NM-72: column emission follows Service-Studio `Order_Num` (the `CanonicalizeIdentity` attribute sort refined; SsKey stays the tiebreak)
+
+**Operator-authorized** (2026-06-14 — `Order_Num` confirmed exposed on
+`ossys_Entity_Attribute`). Emitted `CREATE TABLE` column order now follows the
+operator's authored Service-Studio order, not alphabetical-by-name.
+
+**The change.** `CanonicalizeIdentity.canonicalizeKind` previously sorted a
+kind's `Attributes` by `SsKey` alone. It now sorts by `(PK rank, authored-order
+rank, SsKey)` — primary-key columns first, then ascending `Attribute.Order` (the
+new `int option` lifted from `ossys_Entity_Attribute.Order_Num`), with `SsKey`
+the final tiebreak. `Order = None` (hand-built / ReadSide / non-OSSYS catalogs)
+sorts after all authored attributes by `SsKey` — byte-identical to the prior
+order within each PK band.
+
+**Why this does NOT break the §5 "determinism is constructed" commitment.** That
+commitment names `SsKey` as the sort basis; `SsKey` remains the terminal
+tiebreak, so the canonical order is still a *total, deterministic* function of
+the catalog (T1 byte-determinism preserved). The refinement leads with authored
+order where it exists; absent it, behavior is unchanged. This is an *additive
+refinement* of the determinism law, not a break — recorded here per the §5
+standing-law-amendment discipline.
+
+**Threading.** `ossys_Entity_Attribute.Order_Num` → the `#Attr` extraction
+(`COALESCE(Order_Num, Id)` fallback for estates lacking the column) → both the
+rowset and JSON readers → `Attribute.Order : int option` → the
+`CanonicalizeIdentity` sort key → all emitters (which iterate `Kind.Attributes`
+in list order, so the sort propagates to SSDT + the data lanes in lockstep).
+`CanonicalizeIdentity.version` bumped 1→2. The golden corpus regenerated (a
+PK-first reordering, since the golden catalog is all `Order = None`).
+
+**Residual.** Estates whose `ossys_Entity_Attribute` lacks `Order_Num` fall back
+to the creation `Id` (a monotone proxy for authored order, not the true
+Service-Studio order) — documented in the rowset SQL.
+
+---
+
+## 2026-06-14 — The invariant near-miss campaign closes (≈60 of 74 findings shipped); NM-73 (EXCEPT validate-before-apply) consciously DEFERRED as a safety slice
+
+**The campaign.** The operator-directed near-miss hunt
+(`AUDIT_2026_06_13_INVARIANT_NEAR_MISS_HUNT.md`, 74 findings) was worked end-to-end
+over 2026-06-13/14 — ~70 commits on `claude/projection-invariant-audit-b6iknj`, the
+pure pool green at each step. The audit doc's new **§ Disposition** is the
+per-finding ledger. Most of the codebase's "name every refusal / witness every
+erasure / no silent downgrade" near-misses are now closed; two features were built
+atop the hunt (the **Model Fidelity Report** and the **`projection compare`** verb).
+
+**Operator adjudications recorded here:**
+- **NM-06 (`rekey`) RETAINED, not deprecated.** The audit's "consumed by no runner"
+  verdict was stale — `flow.rekey → LoadOpts.Rekey` is the live, sole user-map-path
+  wiring (`runTransfer`/`runReverseLeg`/`runMigrateWithData`). It stays; the operator
+  will instantiate the proprietary user-remap logic in a later pass.
+- **NM-04/05/03 deprecated** (inert config keys removed — `allowMissingSchema`,
+  `cache`/`typeMapping`/`profiler.mockFolder`, `policy.selection`/`userMatching`).
+  `allowMissingSchema` was "isomorphic with V1" but has no V2 check to gate (no
+  cross-schema modeling) and no business case.
+- **NM-35 closed by BUILDING, not deprecating.** CategoricalUniqueness is a
+  *uniqueness* suggestion (not nullability). Hardening into a constraint is the
+  operator's team's call, so the suggestion is surfaced as the **advisory** third
+  section of the Model Fidelity Report, never enforced. The operator's inverse ask —
+  a rolled-up report of where the *data* violates the *declared model* — is the
+  report's headline section.
+- **NM-01 shelved** (intent unconfirmed: likely drop-all-and-reinsert-via-stream).
+
+**The deferral decision (NM-73 — EXCEPT validate-before-apply).** Built last in a
+very long session against a flaky container, NM-73's guard is a **typed-AST
+`IF EXISTS (… EXCEPT …) THROW`** drift check that gates a real data write — a
+safety surface where a subtly-wrong guard THROWs spuriously or misses real drift.
+Per the supreme discipline (and the very ethos of this audit — do not ship
+half-built or possibly-wrong work), I declined to rush it at session-end and
+**reverted the inert `EmissionPolicy.DataVerification` axis a stalled agent had
+started** (an unconsumed field is the half-wired anti-pattern the audit hunts).
+NM-73 lands as its own daylight slice; the plan is settled (see `HANDOFF.md`
+2026-06-14): the `DataVerification` axis (default `Standard`, byte-identical) +
+`emission.dataVerification` config + thread to `renderMerge` (the IDENTITY_INSERT
+bracket precedent) + the typed guard built via the `TSql160Parser` template path
+(the CHECK/computed-column parser idiom), expected-pre-state = the target's managed
+rows match the source we are about to write.
+
+**Owed after this close:** NM-73 (above), NM-17 (the heavy `KindFacet` diff channel —
+NM-16 shipped the light tolerance-naming route), NM-62 (trivial threshold constants),
+and the `compare`-source-profiling follow-on.
+
+**Environment note (not a discipline lapse):** commits this session are "Unverified"
+on GitHub — the env's SSH signing key is empty (0 bytes), so signing is impossible
+here. And the warm SQL container degrades under accumulated load and dies mid-pool
+(survival rule #2) — the OSSYS-extraction classes fail on a tired container; a
+restart + focused re-run proves health.

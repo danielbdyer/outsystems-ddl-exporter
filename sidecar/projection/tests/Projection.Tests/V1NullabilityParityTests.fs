@@ -78,6 +78,7 @@ let private buildProfile (rowCount: int64) (nullCount: int64) : Profile =
             { AttributeKey         = mandatoryAttributeKey
               RowCount             = rowCount
               NullCount            = nullCount
+              MaxObservedLength = None
               NullCountProbeStatus = probe } ] }
 
 let private policyWith (config: NullabilityTighteningConfig) : Policy =
@@ -322,6 +323,7 @@ let ``V2 invariant (V1 implicit): PK + IsMandatory yields PrimaryKey, not Logica
                 { AttributeKey         = idAttributeKey
                   RowCount             = 100L
                   NullCount            = 50L
+                  MaxObservedLength = None
                   NullCountProbeStatus = probe } ] }
     let cfg = NullabilityTighteningConfig.create 0.05m false [] |> Result.value
     let lineage = nullRun catalog (policyWith cfg) profileWithIdNulls

@@ -85,15 +85,16 @@ module StaticPopulationEmitter =
             Map.tryFind a.Name row.Values
             |> Option.map (cellValue a))
 
-    /// True when the kind carries any IDENTITY-flagged attribute. The
+    /// True when the kind requires `SET IDENTITY_INSERT` bracketing.
+    /// NM-26 — single-sourced through `IdentityDisposition
+    /// .needsIdentityInsert` (any `IsIdentity` attribute), the
+    /// SQL-correct predicate shared by all three data emitters. The
     /// `SET IDENTITY_INSERT [table] ON ... OFF` toggle brackets the
     /// `InsertRow` block when realizing through `Render.toSql` (the
     /// text path); `Bulk.copyRows` honors `SqlBulkCopyOptions
     /// .KeepIdentity` and does not require the toggle (per
     /// `Bulk.fs:105`). The toggle is emitted unconditionally so both
     /// realizations are correct without consumer-specific knowledge.
-    let private hasIdentity (k: Kind) : bool =
-        k.Attributes |> List.exists (fun a -> a.IsIdentity)
 
     /// Emit the per-kind `InsertRow` block bracketed by IDENTITY
     /// toggles when applicable. Empty-population kinds yield an
@@ -105,7 +106,7 @@ module StaticPopulationEmitter =
             let rows = Kind.staticPopulations k
             if not (List.isEmpty rows) then
                 let table : TableId = k.Physical
-                let identityToggle = hasIdentity k
+                let identityToggle = IdentityDisposition.needsIdentityInsert k
                 if identityToggle then
                     yield SetIdentityInsert (table, true)
                 for row in rows do

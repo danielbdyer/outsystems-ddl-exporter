@@ -595,7 +595,7 @@ module PhysicalSchema =
                 List.ofArray hashed
             | _ -> [])
 
-    /// Per session-35 — `kindByKey` and `targetPkColumnByKey` lifted
+    /// Per session-35 — `kindByKey` and `targetPkColumnsByKey` lifted
     /// to `Map` once per `ofCatalog` invocation rather than scanning
     /// the catalog linearly per reference. At 300 kinds × ~5 refs
     /// each that's ~1500 catalog scans (each O(K)) → ~1500 hash
@@ -604,7 +604,7 @@ module PhysicalSchema =
     /// allocation of a separate map).
     let private toPhysicalForeignKeys
         (kindByKey: Map<SsKey, Kind>)
-        (targetPkColumnByKey: Map<SsKey, string>)
+        (targetPkColumnsByKey: Map<SsKey, string list>)
         (k: Kind)
         : PhysicalForeignKey list =
         k.References
@@ -615,8 +615,17 @@ module PhysicalSchema =
                 |> Option.map (fun a -> ColumnRealization.columnNameText a.Column)
             match sourceColumn,
                   Map.tryFind r.TargetKind kindByKey,
-                  Map.tryFind r.TargetKind targetPkColumnByKey with
-            | Some srcCol, Some tk, Some tgtCol ->
+                  Map.tryFind r.TargetKind targetPkColumnsByKey with
+            | Some srcCol, Some tk, Some (tgtPkFirst :: tgtPkRest) ->
+                // NM-28 — the target's PK is the FULL ordered list
+                // `tgtPkFirst :: tgtPkRest`. V2's `Reference` IR carries ONE
+                // source column (single-column per chapter 5.0), so only the
+                // first leg can be paired; a composite target PK
+                // (`tgtPkRest <> []`) leaves the later legs UNREFLECTED. This is
+                // the named, closed tolerance `ToleratedDivergence
+                // .CompositePkFkUnreflected` (NOT a silent first-element pick) —
+                // retiring it needs a composite-FK IR carrying the source legs.
+                ignore tgtPkRest
                 Some
                     {
                         SourceSchema = SchemaName.value k.Physical.Schema
@@ -624,9 +633,19 @@ module PhysicalSchema =
                         SourceColumn = srcCol
                         TargetSchema = SchemaName.value tk.Physical.Schema
                         TargetTable = TableName.value tk.Physical.Table
-                        TargetColumn = tgtCol
+                        TargetColumn = tgtPkFirst
                     }
-            | _ -> None)
+            | _ ->
+                // Dropped: the source attribute is unresolvable, the target
+                // kind is absent from the catalog, OR the target has NO primary
+                // key (empty PK list). The first two are structural-integrity
+                // gaps `Catalog.create` validates upstream; the no-PK-target
+                // case has no FK to reflect by construction (a SQL FK must
+                // reference a key). Surfacing these as a Core diagnostic needs a
+                // diagnostics channel on `PhysicalSchema` (today a pure
+                // set-of-tuples value) — FLAGGED as a larger change (NM-28b),
+                // not landed here.
+                None)
 
     /// Project a Catalog to its `PhysicalSchema` view — the set of
     /// `(schema, table, column, type, nullable, isPrimaryKey)`
@@ -642,12 +661,21 @@ module PhysicalSchema =
         // ~1500 hashed ops.
         let kindByKey =
             kinds |> List.map (fun k -> k.SsKey, k) |> Map.ofList
-        let targetPkColumnByKey =
+        // NM-28 — the FULL ordered PK column list per kind (declaration order),
+        // not just the first PK column. `toPhysicalForeignKeys` reflects only
+        // the first leg (single-column `Reference` IR) but now sees the whole
+        // list, so the composite case is named (`CompositePkFkUnreflected`)
+        // rather than silently collapsed at the map-build site.
+        let targetPkColumnsByKey =
             kinds
             |> List.choose (fun k ->
-                k.Attributes
-                |> List.tryFind (fun a -> a.IsPrimaryKey)
-                |> Option.map (fun pk -> k.SsKey, ColumnRealization.columnNameText pk.Column))
+                match
+                    k.Attributes
+                    |> List.filter (fun a -> a.IsPrimaryKey)
+                    |> List.map (fun pk -> ColumnRealization.columnNameText pk.Column)
+                with
+                | []      -> None
+                | pkCols  -> Some (k.SsKey, pkCols))
             |> Map.ofList
         let columns =
             kinds
@@ -656,7 +684,7 @@ module PhysicalSchema =
             |> Set.ofList
         let foreignKeys =
             kinds
-            |> List.collect (toPhysicalForeignKeys kindByKey targetPkColumnByKey)
+            |> List.collect (toPhysicalForeignKeys kindByKey targetPkColumnsByKey)
             |> Set.ofList
         let rows =
             kinds

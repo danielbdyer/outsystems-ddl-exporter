@@ -26,6 +26,7 @@ let private mkColumnProfile (key: SsKey) (rowCount: int64) (nullCount: int64) : 
     { AttributeKey         = key
       RowCount             = rowCount
       NullCount            = nullCount
+      MaxObservedLength = None
       NullCountProbeStatus = ProbeStatus.noProbeRun }
 
 // Build a one-Kind catalog with N+1 attributes (1 PK + N data columns).

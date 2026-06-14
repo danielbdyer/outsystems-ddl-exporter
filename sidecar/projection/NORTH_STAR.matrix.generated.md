@@ -10,10 +10,10 @@ _Derived from `tests/Projection.Tests/AxiomTests.fs` + `src/Projection.Core/Tole
 
 | Class | Meaning | Count |
 |---|---|---:|
-| Live | verified ("verified by …") or convention-enforced `[<Fact>]` | 83 |
+| Live | verified ("verified by …") or convention-enforced `[<Fact>]` | 78 |
 | Deferred C | weakness — `[<Fact(Skip … Bucket C …)>]` | 6 |
 | Deferred D | unnamed/unbacked — `[<Fact(Skip … Bucket D …)>]` | 1 |
-| **total axiom entries** | | **117** |
+| **total axiom entries** | | **112** |
 
 **Verifiability gate: `PASS`** — no deferral claims verified (no phantom Bucket-A/B); every deferral names its bucket.
 
@@ -27,14 +27,14 @@ witness covers the axis. The **Ladder** column is the honest weakest-rung summar
 
 | Axis | L1 witness | L2 faithful | L3 composed | Open tolerances | Ladder |
 |---|:--:|:--:|:--:|---|---|
-| **Schema** | ✅ | ◑ L2-partial | ✅ | `IndexOptionsUnreflected` | ◑ L2-partial |
+| **Schema** | ✅ | ◑ L2-partial | ✅ | `IndexOptionsUnreflected`, `KindTriggersUnreflectedInDiff`, `KindChecksUnreflectedInDiff`, `KindModalityUnreflectedInDiff`, `KindActivationUnreflectedInDiff`, `CompositePkFkUnreflected` | ◑ L2-partial |
 | **Data** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |
 | **Identity** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |
 | **Time** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |
 | **Decision** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |
 
 **Rungs reached: L1 5/5 · L2 4/5 · L3 5/5.** Tolerance set:
-7 named, of which **1 open** (`OpenGap`). A cell cannot be
+12 named, of which **6 open** (`OpenGap`). A cell cannot be
 hand-marked: L1/L3 require the witness test to exist; L2 requires the open tolerance
 to be retired from `Tolerance.fs`. The generator under-claims; it never over-claims.
 
@@ -46,4 +46,4 @@ to be retired from `Tolerance.fs`. The generator under-claims; it never over-cla
 > L3 here is "a composition witness exists for the axis," not "faithful under every
 > spanning axis" (T-VI atomicity/permissions ride the debrief until cluster A names them).
 
-_Self-reported · gate=PASS · L2 axioms live/C/D=83/6/1 · rungs L1/L2/L3=5/4/5 of 5 · tolerances 7 (1 open)_
+_Self-reported · gate=PASS · L2 axioms live/C/D=78/6/1 · rungs L1/L2/L3=5/4/5 of 5 · tolerances 12 (6 open)_

@@ -26,6 +26,12 @@ type ReconciledIdentity =
     {
         Remap     : SurrogateRemapContext
         Unmatched : (SsKey * SourceKey) list
+        /// NM-51 — Source surrogates whose PK column value is NOT unique among
+        /// the rows reconciled: `SurrogateRemapContext.capture` refused the
+        /// second binding (kept the first). Surfaced, never silently dropped —
+        /// a non-unique reconcile key is a data-fidelity hazard the operator
+        /// must see (the `MatchByColumn` / CSV `--user-map` reachable case).
+        Ambiguous : (SsKey * SourceKey) list
     }
 
 /// How the operator reconciles Source surrogates to pre-existing Sink
@@ -100,6 +106,7 @@ module Reconciliation =
 
         let mutable remap = SurrogateRemapContext.empty
         let mutable unmatched : (SsKey * SourceKey) list = []
+        let mutable ambiguous : (SsKey * SourceKey) list = []
         for row in sourceRows do
             match surrogateOf row with
             | None -> ()
@@ -108,11 +115,16 @@ module Reconciliation =
                 | Some assigned ->
                     match SurrogateRemapContext.capture kind src assigned remap with
                     | Ok r    -> remap <- r
-                    | Error _ -> ()   // duplicate Source surrogate — keep first
+                    // NM-51 — a duplicate Source surrogate keeps the first binding
+                    // but is RECORDED (the named error is no longer discarded), so
+                    // a non-unique reconcile key surfaces instead of silently
+                    // dropping the row's identity.
+                    | Error _ -> ambiguous <- (kind, src) :: ambiguous
                 | None -> unmatched <- (kind, src) :: unmatched
 
         { Remap     = remap
-          Unmatched = unmatched |> List.sortBy (fun (_, SourceKey s) -> s) }
+          Unmatched = unmatched |> List.sortBy (fun (_, SourceKey s) -> s)
+          Ambiguous = ambiguous |> List.sortBy (fun (_, SourceKey s) -> s) }
 
     /// Translate the User kind's `UserMatchingStrategy` into the generic
     /// `ReconciliationStrategy` so all four operator-chosen user-match

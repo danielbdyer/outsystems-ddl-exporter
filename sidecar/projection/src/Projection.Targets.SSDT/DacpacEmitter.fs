@@ -96,6 +96,36 @@ module DacpacEmitter =
         | Some fragment -> Some (ScriptDomGenerate.generateOne fragment)
         | None -> None
 
+    /// A `Statement` that yields no script *by construction* — there is
+    /// no T-SQL AST equivalent (`Blank` whitespace, `Comment` text,
+    /// `BatchSeparator` `GO`). For these, `statementToScript = None` is
+    /// expected and silent omission from the DacFx model is correct.
+    /// Every OTHER `None` is a render FAILURE (today: a `CreateTrigger`
+    /// whose body `tryParseTriggerBody` could not parse) and must be
+    /// witnessed, not dropped (NM-24).
+    let private isStructurallyScriptless (statement: Statement) : bool =
+        match statement with
+        | Blank | Comment _ | BatchSeparator -> true
+        | _ -> false
+
+    /// A short, deterministic label for the statement kind whose render
+    /// failed — surfaced in the witness `ValidationError` metadata so the
+    /// dropped object is named (mirrors the SSDT FK-drop witness's
+    /// per-drop naming). No statement payload is interpolated into the
+    /// message (the static-phrase + structured-metadata discipline).
+    let private statementKindLabel (statement: Statement) : string =
+        match statement with
+        | CreateTrigger _ -> "CreateTrigger"
+        | CreateTable _ -> "CreateTable"
+        | CreateIndex _ -> "CreateIndex"
+        | CreateSequence _ -> "CreateSequence"
+        | SetExtendedProperty _ -> "SetExtendedProperty"
+        | AlterTableNoCheckConstraint _ -> "AlterTableNoCheckConstraint"
+        | AlterTableDisableConstraint _ -> "AlterTableDisableConstraint"
+        | AlterIndexDisable _ -> "AlterIndexDisable"
+        | AlterTableDisableTrigger _ -> "AlterTableDisableTrigger"
+        | other -> (other.GetType().Name)
+
     /// Construct a `TSqlModel` and ingest each DDL statement
     /// separately. Pinned target version `Sql160` mirrors the V1
     /// trunk's ScriptDom Sql160 pin; surface a version-pin DECISIONS
@@ -106,14 +136,32 @@ module DacpacEmitter =
     /// accepts a single statement (or `GO`-separated batch). Feeding
     /// the filtered Π stream one statement at a time keeps the
     /// emitter free of batch-separator grammar.
-    let private buildModel (statements: Statement seq) : TSqlModel =
+    /// Returns the built model paired with one `ValidationError`
+    /// witness per statement that `statementToScript` failed to render
+    /// **and** is not structurally scriptless. The DACPAC path has no
+    /// round-trip canary backstop (the SSDT directory path does), so an
+    /// unrendered statement here would otherwise vanish from the package
+    /// with zero signal — the exact silent-drop shape the FK-drop
+    /// witness was built against. The model still ingests every
+    /// statement that DID render; `emit` decides whether the witnesses
+    /// fail the package.
+    let private buildModel (statements: Statement seq) : TSqlModel * ValidationError list =
         let model = new TSqlModel(SqlServerVersion.Sql160, TSqlModelOptions())
+        let mutable dropped : ValidationError list = []
         for statement in statements do
             match statementToScript statement with
             | Some script when not (String.IsNullOrWhiteSpace script) ->
                 model.AddObjects script
-            | _ -> ()
-        model
+            | _ ->
+                if not (isStructurallyScriptless statement) then
+                    let label = statementKindLabel statement
+                    dropped <-
+                        ValidationError.createWithMetadata
+                            "emitter.dacpac.statementUnrendered"
+                            "A schema statement could not be rendered to T-SQL (its typed-AST build returned no fragment) and would be silently omitted from the .dacpac. The DACPAC path has no round-trip canary backstop; the package is refused so the missing object is named, not dropped."
+                            (Map.ofList [ "statementKind", Some label ])
+                        :: dropped
+        model, List.rev dropped
 
     /// Serialize the model to `.dacpac` bytes via DacFx's
     /// `DacPackageExtensions.BuildPackage`. `MemoryStream` keeps
@@ -150,9 +198,19 @@ module DacpacEmitter =
             let statements =
                 SsdtDdlEmitter.statements catalog
                 |> Seq.filter isSchemaStatement
-            use model = buildModel statements
-            let bytes = buildPackageBytes model
-            Result.success bytes
+            let model, dropped = buildModel statements
+            use model = model
+            // NM-24: a statement that failed to render (e.g. a
+            // `CreateTrigger` with an unparseable body) is NOT silently
+            // omitted — the package is refused and every dropped object
+            // is named. A partial .dacpac missing a schema object with
+            // no signal is the silent-drop hazard the FK-drop witness
+            // was built against; this path has no canary backstop.
+            match dropped with
+            | [] ->
+                let bytes = buildPackageBytes model
+                Result.success bytes
+            | errors -> Result.failure errors
         with
         | ex ->
             dacFxFailure

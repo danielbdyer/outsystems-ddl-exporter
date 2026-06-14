@@ -1,3 +1,91 @@
+# Handoff addendum — 2026-06-14, THE INVARIANT NEAR-MISS CAMPAIGN (the bug hunt) — ~60 of 74 findings shipped + two features (Model Fidelity Report · `compare` verb); THREE slices owed (NM-73 EXCEPT guard · NM-17 KindFacet channel · NM-62 trivial)
+
+To the next agent.
+
+You are inheriting the close of a **near-miss invariant hunt**, not a chapter in
+the usual program. An operator-directed audit (a 12-agent sweep) catalogued **74
+near-miss findings** — places where the codebase *almost* obeys a rule it would
+want named/enforced/tested — in `AUDIT_2026_06_13_INVARIANT_NEAR_MISS_HUNT.md`.
+That doc is the campaign's index; its new **§ Disposition** (top) is the live
+ledger of what shipped vs what's owed. Branch `claude/projection-invariant-audit-b6iknj`,
+HEAD `fc35d517`, ~70 commits, full pure pool **green (3298/0)** on a healthy
+container. Read the audit doc's Disposition first, then this letter's *owed* list.
+
+**What is DONE (don't re-hunt — the audit doc's Disposition has the per-finding
+map).** The whole no-brainer / next-ten / further-ten / gate-cluster / Pile-2
+sweep landed (~50 fixes), each green-gated. Two corrections worth carrying: **NM-06
+(`rekey`) is LIVE** (the sole user-map-path wiring — the audit's "dead" verdict was
+stale, so it STAYED), and **NM-01 is shelved** (operator unsure of intent — drop-
+all-and-reinsert-via-stream, not yet built). Plus two real features shipped: the
+**Model Fidelity Report** (`fidelity.json`/`.txt` on every full-export/migrate run,
+surfaced via `report` — a count-first roll-up of data-violations + accepted-
+divergences + uniqueness candidates; closed NM-35 by *building* the uniqueness
+section) and the **`projection compare <A> <B>`** verb (read-only multi-env
+readiness — schema delta + the fidelity engine's data-dealbreakers).
+
+**What you OWE (three slices, in priority order):**
+
+1. **NM-73 — EXCEPT validate-before-apply.** *Consciously deferred, not forgotten.*
+   It's a **safety-critical drift guard** (a typed-AST `IF EXISTS (SELECT keys FROM
+   target EXCEPT SELECT keys FROM <the MERGE source>) THROW`), so build it carefully
+   in daylight — a subtly-wrong one THROWs spuriously or misses real drift. The plan
+   is settled: add `EmissionPolicy.DataVerification = Standard | ValidateBeforeApply`
+   (default `Standard`, BYTE-IDENTICAL); the `emission.dataVerification` config key
+   (mirror NM-02 `EmitSchema`/NM-70 identity-annotations); thread to the data emitters'
+   `renderMerge` (the IDENTITY_INSERT-bracket precedent at `StaticSeedsEmitter.renderMerge`,
+   one GO batch); build the typed guard via the existing `TSql160Parser` template path
+   (the same parse-string-into-typed-AST the CHECK/computed-column builders use —
+   `ScriptDomBuild.fs:410`), NOT a hand-built AST and NOT a text-builder. Pin the
+   "expected pre-state" = the target's managed rows match the source we're about to
+   write (first apply over an empty target passes; a re-apply over a drifted target
+   THROWs). **An agent started ONLY the `Policy` axis overnight; I reverted it** so no
+   inert field is left behind — start clean.
+
+2. **NM-17 — the real `KindFacet` diff channel (the capstone).** NM-16 took the
+   *light* route (named the kind-level erasures — triggers/CHECKs/modality/IsActive —
+   as `ToleratedDivergence`s so `CatalogDiff.norm=0` is witnessed, not silent). The
+   *heavy* route closes it: a `KindFacet` DU mirroring `AttributeFacet` in
+   `CatalogDiff.between`, with `applyDiff` patches + the round-trip + fixtures, then
+   retire those tolerances. It touches the change algebra and regenerates goldens —
+   its own focused slice.
+
+3. **NM-62 — trivial.** Two advisory thresholds (`QueryHintPass`/`ProfileAnomalyPass`)
+   are hardcoded; lift to named module constants (no config knob warranted).
+
+   Plus a **small follow-on**: `compare` v1 resolves operands to catalogs only, so the
+   data-dealbreaker section is advisory-silent — live-profile the *source* operand
+   (reuse the profile-capture path) to populate it.
+
+**WILL-BITE-YOU watch-fors (this session's scars):**
+- **The warm SQL container degrades under accumulated load and dies MID-POOL** — a
+  full ~3500-test pool exhausts it and the OSSYS-extraction classes
+  (`BtReferenceFkFlow`/`OssysComprehensiveFixture`/`OssysExtractionCanary`) fail with
+  connection errors. This is survival rule #2, NOT a regression. `scripts/warm-sql.sh
+  restart`, then a *focused* run of the failed OSSYS class proves health; the full
+  pool is green on a fresh container. Don't chase these as code bugs.
+- **Subagents died silently mid-task several times** (committed nothing, or left
+  uncommitted WIP). When delegating, check `git -C <worktree> status` if a completion
+  is slow; the WIP is often salvageable (NM-71's 365-line `Compare.fs` was recovered
+  that way). The worktree-branch ref also drifts onto the main checkout — re-`checkout`
+  the feature branch before integrating.
+- **Commits show "Unverified" on GitHub** — the env's SSH signing key
+  (`/home/claude/.ssh/commit_signing_key.pub`) is **empty (0 bytes)**, so signing is
+  impossible here. Every commit this session is unsigned; it's the environment, not a
+  discipline lapse.
+- **The perf-gate's stop-hook false-trips** on `emit.staticPopulation.statements.stream`
+  (the canonical rule-#13 label) — it runs CONCURRENTLY with the test pool and inflates
+  the CPU-bound labels uniformly. **Never `PERF_GATE_RECORD=1`** off these; the gate
+  changes touch zero emit/ScriptDom files, so the label cannot be a real regression.
+
+The hunt is essentially won — the codebase's "name every refusal, witness every
+erasure, no silent downgrade" discipline now holds at far more sites than it did
+72 hours ago. Finish NM-73 with care (it's the one safety surface), land NM-17 as
+the algebra capstone, and the campaign closes clean.
+
+Hold the spine — and name the gate.
+
+---
+
 # Handoff addendum — 2026-06-13, WP6 COMPLETE (data lanes filled): IDENTITY_INSERT bracket · Bootstrap Active · per-lane outputs (self-minimizing) · hydration · goldens reconciled — TWO caveats owed before merge (live OSSYS witness; Docker pool)
 
 To the next agent.

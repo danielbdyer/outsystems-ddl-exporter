@@ -19,12 +19,9 @@ let private mkConfig (insertion: string) : Config.Config =
             IncludeSystemModules   = false
             IncludeInactiveModules = false
             OnlyActiveAttributes   = true
-            ValidationOverrides    = { AllowMissingSchema = [] }
         }
         Profile     = { Path = None }
-        Cache       = { Root = ""; Refresh = false; TtlSeconds = 0 }
-        Profiler    = { Provider = "fixture"; MockFolder = None }
-        TypeMapping = { Path = None; Default = None; Overrides = Map.empty }
+        Profiler    = { Provider = "fixture" }
         Overrides   = {
             TableRenames           = []
             MigrationDependencies  = None
@@ -36,12 +33,10 @@ let private mkConfig (insertion: string) : Config.Config =
         Emission    = {
             Ssdt = true; Dacpac = true; Json = true; Distributions = true
             StaticSeeds = true; MigrationDependencies = true; Bootstrap = true
-            DecisionLog = true; Opportunities = true; Validations = true; IncludePlatformAutoIndexes = true; DeleteScope = None
+            DecisionLog = true; Opportunities = true; Validations = true; IncludePlatformAutoIndexes = true; DeleteScope = None; RenderConstraintsElegant = true; EmitIdentityAnnotations = true
         }
         Policy      = {
-            Selection       = "IncludeAll"
             Insertion       = insertion
-            UserMatching    = { Strategy = "ByEmail"; Fallback = "NoFallback" }
             Tightening      = None
             TransformGroups = []
         }
@@ -124,3 +119,27 @@ let ``C.5: fromConfig surfaces unknownVariant error for invalid config string`` 
     | Ok _ -> Assert.Fail("expected Error")
     | Error errs ->
         Assert.True(hasErrorCode "pipeline.insertionPolicy.unknownVariant" errs)
+
+// ----------------------------------------------------------------------
+// NM-70 (WP5) — emission.identityAnnotations threads to
+// EmissionPolicy.EmitIdentityAnnotations via buildPolicyFromConfig.
+// ----------------------------------------------------------------------
+
+let private emptyCatalog : Catalog = { Modules = []; Sequences = [] }
+
+let private withIdentityAnnotations (emit: bool) (cfg: Config.Config) : Config.Config =
+    { cfg with Emission = { cfg.Emission with EmitIdentityAnnotations = emit } }
+
+[<Fact>]
+let ``NM-70: buildPolicyFromConfig threads emission.identityAnnotations = true (the emit default)`` () =
+    let cfg = mkConfig "SchemaOnly" |> withIdentityAnnotations true
+    match Compose.buildPolicyFromConfig cfg emptyCatalog with
+    | Ok policy -> Assert.True(policy.Emission.EmitIdentityAnnotations)
+    | Error errs -> Assert.Fail(sprintf "expected Ok policy, got %A" errs)
+
+[<Fact>]
+let ``NM-70: buildPolicyFromConfig threads emission.identityAnnotations = false (the named downgrade)`` () =
+    let cfg = mkConfig "SchemaOnly" |> withIdentityAnnotations false
+    match Compose.buildPolicyFromConfig cfg emptyCatalog with
+    | Ok policy -> Assert.False(policy.Emission.EmitIdentityAnnotations)
+    | Error errs -> Assert.Fail(sprintf "expected Ok policy, got %A" errs)

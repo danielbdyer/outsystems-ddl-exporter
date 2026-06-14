@@ -56,9 +56,11 @@ let runFullExport
         | Some store when not (System.String.IsNullOrWhiteSpace store) ->
             let env = parseEnvironment "DEV" envLabel
             match Timeline.create (Projection.Core.Environment.name env) with
-            | Error _ ->
-                // A malformed timeline name falls back to the genesis path rather
-                // than aborting the emission; the store leg is simply absent.
+            | Error es ->
+                // NM-56: name the downgrade. The operator asked for --store, but
+                // the env label cannot name a timeline; surface the error (not
+                // silent) then fall back to the genesis emission (store leg absent).
+                printErrors Console.Error es
                 FullExportRun.execute configPath outputOverride verbosity mutedCategories, None
             | Ok tl ->
                 let at = System.DateTimeOffset.UtcNow
@@ -133,12 +135,31 @@ let runFullExportLoad
                     let at = System.DateTimeOffset.UtcNow
                     let work =
                         task {
-                            use sink = new Microsoft.Data.SqlClient.SqlConnection(connStr)
-                            do! sink.OpenAsync()
-                            // Card P2 — the seed loads leveled-parallel: the executor
-                            // closes over the connection STRING (per-segment pooled
-                            // opens); `sink` stays the CDC measure's connection.
-                            return! Compose.runWithConfigAndLoad Deploy.cdcCaptureTotal (Deploy.executeLeveledSeed connStr) cfg sink storePath tl env at
+                            // The connection OPEN is guarded so a dead/unreachable sink
+                            // surfaces as the named connection-axis refusal (exit 6,
+                            // matching transfer/migrate's `openSubstrate`) rather than an
+                            // uncaught `SqlException` crashing the verb. The ref-resolve
+                            // axis was already handled above (exit 6); this closes the
+                            // open-failure leg that previously escaped the Result channel.
+                            let sink = new Microsoft.Data.SqlClient.SqlConnection(connStr)
+                            let! opened =
+                                task {
+                                    try
+                                        do! sink.OpenAsync()
+                                        return Ok ()
+                                    with ex ->
+                                        return Result.failure [ ValidationError.create "transfer.connection.openFailed" (sprintf "Sink connection: failed to open — %s" ex.Message) ]
+                                }
+                            match opened with
+                            | Error es ->
+                                sink.Dispose()
+                                return Error es
+                            | Ok () ->
+                                use sink = sink
+                                // Card P2 — the seed loads leveled-parallel: the executor
+                                // closes over the connection STRING (per-segment pooled
+                                // opens); `sink` stays the CDC measure's connection.
+                                return! Compose.runWithConfigAndLoad Deploy.cdcCaptureTotal (Deploy.executeLeveledSeed connStr) cfg sink storePath tl env at
                         }
                     let code =
                         match work.GetAwaiter().GetResult() with
@@ -159,8 +180,12 @@ let runFullExportLoad
                                           "timeline",     box (Timeline.name (EpisodicLifecycle.timeline leg.Chain)) ]))
                             0
                         | Error es ->
+                            // Single-source the exit through `classify`: a guarded
+                            // connection-open failure is the connection axis (6, matching
+                            // transfer/migrate); a genuine load/execution error keeps the
+                            // unclassified-refusal default (3). No silent flattening.
                             printErrors Console.Error es
-                            3
+                            (Preflight.refusalOf es).ExitCode
                     dumpBench "full-export"
                     code
 
@@ -567,6 +592,17 @@ let narrateTransferReport (report: Transfer.TransferReport) : unit =
                 (Name.value r.Column)
                 (SsKey.rootOriginal r.Target)
                 (SourceKey.value r.UnresolvedSource)
+    // NM-53 — a resumable G10 no-op re-run replays the prior run's drop count
+    // (the marker persists the count, not the exact references), so the re-run
+    // is not silently clean. Surfaced explicitly as a replay, not freshly
+    // observed drops.
+    match report.ReplayedPriorDrops with
+    | Some n when n > 0 ->
+        printfn ""
+        printfn
+            "already complete; prior run dropped %d row(s) — re-surfacing that verdict (exact references not replayed)."
+            n
+    | _ -> ()
 
 /// 6.A.1 — the drop-set is fail-loud, not exit-0. A successful write that
 /// dropped FK-orphan rows or left reconciled-kind sources unmatched surfaces
@@ -799,6 +835,13 @@ let runReverseLegTransfer
     let runBody () =
         let result =
             match realization with
+            // NM-31: the streaming runner takes NO `allowDrops` — it is
+            // non-reconciling and offers no pre-write orphan halt (only the
+            // materialized arm threads `allowDrops` into the engine). For the
+            // streaming arm `allowDrops` reaches only the POST-write
+            // `narrateDropExit` below. This is a capability asymmetry, not a
+            // silent drop (FK orphans still surface + exit-9); see
+            // `ReverseLegRealization` / `runStreamingWithRenames`.
             | ReverseLegRealization.Streaming journal ->
                 (Transfer.runStreamingReverseLegThroughConnections mode allowCdc journal connections logicalSourceContract physicalSinkContract)
                     .GetAwaiter().GetResult()
@@ -1013,7 +1056,10 @@ let runReadiness () : int =
         // §10 terminal always) and the run is capturable. Bracketed here
         // rather than via `withRun` to honor the documented contract above:
         // no ledger append for the query itself.
-        RunEnvelope.bracket "projection check ready" ignore Map.empty (fun () ->
+        // NM-34b — `check ready` reads the ledger; it has no hashable run input
+        // and touches no ledger (the documented no-append contract above), so it
+        // declares the empty digest + no `LedgerRef`.
+        RunEnvelope.bracket "projection check ready" ignore Map.empty (fun () -> "", []) (fun () ->
             let records = RunLedger.read dir
             let r = RunLedger.readiness records
             let recent =
@@ -1182,6 +1228,93 @@ let runDiff (refAText: string) (refBText: string) (asJson: bool) (depth: int) : 
                 TtyRenderer.renderAnswer asJson depth (Comparison.renderCatalogChange d)
                 0
 
+/// `projection compare <A> <B>` — NM-71/WP9: the read-only multi-environment
+/// readiness check. Resolves both operands to catalogs (the `Ref` machinery,
+/// like `diff`), runs the schema-delta + data-dealbreaker compare, prints the
+/// roll-up (or `--format json`), and writes `compare.json`. Advisory — exits 0
+/// (the report carries the readiness verdict); a malformed operand exits 2.
+/// NOTE (v1): the operands resolve to catalogs only, so the data-dealbreaker
+/// section is advisory-silent (no `Profile`); live-profiling the source operand
+/// to populate the dealbreakers is the named follow-on.
+let runCompare (refAText: string) (refBText: string) (asJson: bool) : int =
+    let resolve (s: string) = (Ref.resolveCatalog (Ref.parse s)).GetAwaiter().GetResult()
+    match resolve refAText with
+    | Error errs ->
+        Console.Error.WriteLine "projection compare: could not resolve the first reference:"
+        printErrors Console.Error errs
+        2
+    | Ok a ->
+        match resolve refBText with
+        | Error errs ->
+            Console.Error.WriteLine "projection compare: could not resolve the second reference:"
+            printErrors Console.Error errs
+            2
+        | Ok b ->
+            let source : Compare.Operand = { Label = refAText; Catalog = a; Profile = None }
+            let target : Compare.Operand = { Label = refBText; Catalog = b; Profile = None }
+            let report = Compare.compute source target
+            if asJson then printfn "%s" (Compare.toJsonString report)
+            else Compare.render report |> List.iter (fun line -> printfn "%s" line)
+            System.IO.File.WriteAllText("compare.json", Compare.toJsonString report)
+            0
+
+/// NM-37 — the explain story as a `View` (the masterful base #3 substrate),
+/// built PURELY from the filtered transform trail + findings so it is testable
+/// without the projection I/O. The transform trail uses the `View.Trail` block
+/// (built for exactly this surface, previously zero producers); the
+/// empty/findings states use `View.Note`/`View.Field`/`View.Action`. The whole
+/// document routes through `TtyRenderer.renderAnswer`, so explain gains the
+/// pretty + plain + JSON (`--format json` / `--query`) lenses every other answer
+/// surface carries — the human and machine views are one value, never a parallel
+/// print path. The trail is rendered through the SAME
+/// `EventProjection.transformKindRender` the event stream uses, so the two
+/// trails cannot drift.
+let explainView
+    (ssKeyText: string)
+    (trail: LineageEvent list)
+    (diags: DiagnosticEntry list)
+    : View.View =
+    let header = View.Field ("explain", ssKeyText, View.Neutral)
+    if List.isEmpty trail && List.isEmpty diags then
+        View.Doc
+            [ header
+              View.Blank
+              View.Note "no transforms or findings matched"
+              View.Action "try a fuller name, or a model that exercises this node" ]
+    else
+        // The transform trail: one step per touching transform, the step label
+        // carrying the pass name and the rendered kind tag, the optional detail
+        // its decision/rationale.
+        let trailBlock =
+            if List.isEmpty trail then []
+            else
+                let steps =
+                    trail
+                    |> List.map (fun e ->
+                        let tag, detail = EventProjection.transformKindRender e.TransformKind
+                        let stepLabel = sprintf "%s %s %s" e.PassName Theme.dot tag
+                        stepLabel, detail)
+                [ View.Trail ("transforms", steps); View.Blank ]
+        // The findings: each a status-glyphed field (severity → status), its
+        // suggested fix the next-action line beneath it.
+        let findingBlocks =
+            if List.isEmpty diags then []
+            else
+                let rows =
+                    diags
+                    |> List.collect (fun d ->
+                        let st =
+                            match d.Severity with
+                            | DiagnosticSeverity.Error   -> View.Bad
+                            | DiagnosticSeverity.Warning -> View.Warn
+                            | _                          -> View.Neutral
+                        let field = View.Field (d.Code, d.Message, st)
+                        match d.SuggestedConfig with
+                        | Some c -> [ field; View.Action (sprintf "fix: %s = %s" c.Path c.Value) ]
+                        | None   -> [ field ])
+                View.Note "findings" :: rows @ [ View.Blank ]
+        View.Doc ([ header; View.Blank ] @ trailBlock @ findingBlocks)
+
 /// P3 (REPORTING_HORIZON polish) — `explain <config> <ssKey>`. The drill-down
 /// doorway: run the projection, then tell the full story for ONE node — every
 /// transform that touched it (with the decision + rationale, rendered through
@@ -1189,7 +1322,7 @@ let runDiff (refAText: string) (refBText: string) (asJson: bool) (depth: int) : 
 /// every finding (with its suggested fix). "Every number is a doorway."
 /// `ssKey` matches by exact root or substring, so `CustomerId` finds
 /// `OSUSR_FOO.OrderHeader.CustomerId`.
-let runExplain (configPath: string) (ssKeyText: string) : int =
+let runExplain (configPath: string) (ssKeyText: string) (asJson: bool) (depth: int) : int =
     match Config.fromFile configPath with
     | Error errs ->
         printErrors Console.Error errs
@@ -1207,36 +1340,8 @@ let runExplain (configPath: string) (ssKeyText: string) : int =
             let diags =
                 (report.Diagnostics @ report.PassDiagnostics)
                 |> List.filter (fun d -> match d.SsKey with Some k -> matchesKey k | None -> false)
-            printfn ""
-            printfn "  explain  %s" ssKeyText
-            printfn ""
-            if List.isEmpty trail && List.isEmpty diags then
-                printfn "  %s no transforms or findings matched" Theme.warn
-                printfn "      %s try a fuller name, or a model that exercises this node" Theme.dot
-                1
-            else
-                if not (List.isEmpty trail) then
-                    printfn "  transforms"
-                    for e in trail do
-                        let tag, detail = EventProjection.transformKindRender e.TransformKind
-                        match detail with
-                        | Some d -> printfn "  %s %s %s %s %s %s" Theme.arrow e.PassName Theme.dot tag Theme.dot d
-                        | None   -> printfn "  %s %s %s %s" Theme.arrow e.PassName Theme.dot tag
-                    printfn ""
-                if not (List.isEmpty diags) then
-                    printfn "  findings"
-                    for d in diags do
-                        let g =
-                            match d.Severity with
-                            | DiagnosticSeverity.Error   -> Theme.bad
-                            | DiagnosticSeverity.Warning -> Theme.warn
-                            | _                          -> Theme.dot
-                        printfn "  %s %s %s %s" g d.Code Theme.dot d.Message
-                        match d.SuggestedConfig with
-                        | Some c -> printfn "      %s fix: %s = %s" Theme.arrow c.Path c.Value
-                        | None   -> ()
-                    printfn ""
-                0
+            TtyRenderer.renderAnswer asJson depth (explainView ssKeyText trail diags)
+            if List.isEmpty trail && List.isEmpty diags then 1 else 0
 
 /// P4 (REPORTING_HORIZON polish) — `suggest-config <config> [--apply <out>]`.
 /// Run the projection, collect every actionable `SuggestedConfig` from the
@@ -1500,6 +1605,15 @@ let reportMigrationError (e: MigrationError) : int =
                 [ ValidationError.create "migrate.cdcTrackedSink"
                     (sprintf "%d table(s) are CDC-tracked; --allow-cdc accepts the capture." (List.length tracked)) ])
         9
+    | RefusedByCdcUnverifiable msg ->
+        // NM-54 — the CDC probe could not run; an unverifiable CDC state is
+        // UNSAFE, so the schema change is REFUSED through the same §5 gate
+        // surface as an observed-CDC refusal. Exit 9 (a clean named refusal),
+        // never a crash.
+        TtyRenderer.renderGate "projection migrate"
+            (Preflight.refusalOf
+                [ ValidationError.create "migrate.cdcStateUnverifiable" msg ])
+        9
     | RefusedByTightening msg ->
         // §5 data-compat gate — the same surface the pre-flight probe renders.
         TtyRenderer.renderGate "projection migrate"
@@ -1521,12 +1635,16 @@ let reportMigrationError (e: MigrationError) : int =
 let migratePreflights (label: string) (cnn: Microsoft.Data.SqlClient.SqlConnection) (planned: Preflight.PlannedWrite list) : System.Threading.Tasks.Task<Result<unit, int>> =
     // Each pre-flight refusal renders through the §5 Gate surface — the
     // consequence as meaning + the one plain imperative — never a raw header +
-    // dump. The exit is pinned to the migrate verb's historical code (7, the
-    // connection/permission/credential class), independent of `classify`'s axis
-    // code, so the displayed exit matches the returned one.
+    // dump. NM-61: the exit HONORS `classify` (the A1 single-source seam the
+    // transfer path routes through at `runCore`) rather than flattening every
+    // refusal to 7 — so the connection axis exits 6 (its own axis) while the
+    // permission/grant axis stays 7 (`migrate.insufficientGrant` /
+    // `migrate.grantProbeFailed` classify to 7). The displayed exit matches the
+    // returned one because both come from the one `refusalOf` classification.
     let refuse (es: ValidationError list) : Result<unit, int> =
-        TtyRenderer.renderGate "projection migrate" { Preflight.refusalOf es with ExitCode = 7 }
-        Error 7
+        let refusal = Preflight.refusalOf es
+        TtyRenderer.renderGate "projection migrate" refusal
+        Error refusal.ExitCode
     task {
         // G0 (AC-G0) — the migrate pre-flights compose through the ONE mandatory
         // `Preflight.all`, mirroring the transfer Execute path (`runCore`). The
@@ -1600,8 +1718,15 @@ let runMigrateExecute (target: Catalog) (connSpec: string) (declaration: LossDec
                     { Environment = parseEnvironment "migrate-sink" None; Role = SubstrateRole.Sink; ConnectionRef = connRef }
                 match! ConnectionResolver.openSubstrate sub with
                 | Error es ->
+                    // NM-61 (extended) — the connection axis exits 6 on migrate too,
+                    // matching `transfer`. `openSubstrate` surfaces `transfer.connection.*`
+                    // (ref-resolve + open), which `classify` maps to 6; single-sourcing
+                    // through `refusalOf` keeps this short-circuit in step with the
+                    // in-flight `migratePreflights` connection gate (also 6) — closing the
+                    // residual where the open-failure path hardcoded 3 while transfer's
+                    // identical probe returned 6.
                     printErrors Console.Error es
-                    return 3
+                    return (Preflight.refusalOf es).ExitCode
                 | Ok cnn ->
                     use cnn = cnn
                     // Read state A live, then run the pre-flights on the planned writes.
@@ -1729,14 +1854,16 @@ let runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec: string)
                 let sourceSub : Substrate = { Environment = parseEnvironment "migrate-source" None; Role = SubstrateRole.Source; ConnectionRef = sourceRef }
                 match! ConnectionResolver.openSubstrate sinkSub with
                 | Error es ->
+                    // NM-61 (extended) — connection axis → 6 (matches transfer + the
+                    // in-flight gate); single-sourced through `refusalOf`.
                     printErrors Console.Error es
-                    return 3
+                    return (Preflight.refusalOf es).ExitCode
                 | Ok sink ->
                     use sink = sink
                     match! ConnectionResolver.openSubstrate sourceSub with
                     | Error es ->
                         printErrors Console.Error es
-                        return 3
+                        return (Preflight.refusalOf es).ExitCode
                     | Ok dataSource ->
                         use dataSource = dataSource
                         let! readA = ReadSide.read sink
@@ -1746,10 +1873,14 @@ let runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec: string)
                             // Pre-flight the SOURCE (read) + SINK (write) before any mutation.
                             match! Preflight.connectionPreflight dataSource sink with
                             | Error es ->
-                                // §5 connection gate; the migrate verb's connection
-                                // refusal exits 7 (the credential class), pinned here.
-                                TtyRenderer.renderGate "projection migrate" { Preflight.refusalOf es with ExitCode = 7 }
-                                return 7
+                                // §5 connection gate. NM-61: HONOR `classify` — a
+                                // connection refusal (`migrate.connectionUnavailable`)
+                                // is its own axis (exit 6), not the permission/credential
+                                // class (7). Single-sourced through `refusalOf` so the
+                                // displayed and returned exits agree and match `transfer`.
+                                let refusal = Preflight.refusalOf es
+                                TtyRenderer.renderGate "projection migrate" refusal
+                                return refusal.ExitCode
                             | Ok () ->
                                 match MigrationRun.preview declaration sinkSourceA target with
                                 | Error e -> return reportMigrationError e
@@ -1842,15 +1973,21 @@ let runProjectLivePreview (target: Catalog) (connSpec: string) (declaration: Los
         task {
             match TransferSpec.parseConnectionSpec connSpec with
             | Error es ->
+                // A malformed connection SPEC is the parse axis (exit 2), matching
+                // `transfer` (spec errors → 2) and `runMigrateExecute`. (The prior 6
+                // conflated spec-parse with the connection-reach axis.)
                 printErrors Console.Error es
-                return 6
+                return 2
             | Ok connRef ->
                 let sub : Substrate =
                     { Environment = parseEnvironment "preview" None; Role = SubstrateRole.Sink; ConnectionRef = connRef }
                 match! ConnectionResolver.openSubstrate sub with
                 | Error es ->
+                    // NM-61 (extended) — the connection-reach axis exits 6, matching
+                    // transfer + the migrate execute/with-data faces (single-sourced
+                    // through `refusalOf`); the prior hardcoded 3 diverged.
                     printErrors Console.Error es
-                    return 3
+                    return (Preflight.refusalOf es).ExitCode
                 | Ok cnn ->
                     use cnn = cnn
                     match! ReadSide.read cnn with
@@ -1870,7 +2007,7 @@ let runProjectLivePreview (target: Catalog) (connSpec: string) (declaration: Los
 /// front-end). `execute = false` previews (DryRun); `execute = true` writes,
 /// gated by `PROJECTION_ALLOW_EXECUTE=1` (R6), and is fail-loud on dropped
 /// rows (mirrors `runTransfer`).
-let runSyntheticLoad (model: ModelSource) (modelOssys: string option) (profileRef: string) (connSpec: string) (opts: LoadOpts) (execute: bool) : int =
+let runSyntheticLoad (model: ModelSource) (modelOssys: string option) (profileRef: string) (connSpec: string) (opts: LoadOpts) (execute: bool) (modelSection: Config.ModelSection) : int =
     let executeGated =
         if execute then System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" = "1" else false
     if execute && not executeGated then
@@ -1895,7 +2032,7 @@ let runSyntheticLoad (model: ModelSource) (modelOssys: string option) (profileRe
     let result =
         (SyntheticLoadRun.run
             modelOssys modelFile profileRef connSpec opts.Emission opts.AllowCdc
-            syntheticConfig seed executeGated)
+            syntheticConfig seed executeGated modelSection)
             .GetAwaiter().GetResult()
     let exitCode =
         match result with

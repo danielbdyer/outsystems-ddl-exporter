@@ -231,9 +231,10 @@ module SsdtDdlEmitter =
     /// `ForeignKeyNameFactory.cs:17-60`):**
     /// `FK_<OwnerTable>_<TargetTable>_<SourceColumn>`. Length-cap at
     /// 128 with `_<sha256-12-hex>` suffix when over is V1's
-    /// `ConstraintNameNormalizer` discipline; deferred-with-trigger
-    /// to slice 6 when cross-module FKs make the length cap
-    /// observable on real OSSYS-shaped fixtures.
+    /// `ConstraintNameNormalizer` discipline — SHIPPED at slice 3b via
+    /// `IdentifierBudget.fit` below (matrix row 57 length-cap trigger
+    /// cashed out). (Honoring a present `Reference.Name` over this
+    /// synthesized form is the open WP7 remainder, not the cap.)
     let private fkDef
         (targetByKey: Map<SsKey, Kind>)
         (pkAttrByKey: Map<SsKey, Attribute>)
@@ -566,7 +567,17 @@ module SsdtDdlEmitter =
     /// formalize. The triple-deliverable will surface when V1
     /// emission for module-level extended properties is confirmed
     /// (chapter 4.x).
-    let private extendedPropertyStatements (k: Kind) : Statement seq =
+    /// NM-70 (WP5) — `emitIdentityAnnotations = false` suppresses the
+    /// `Projection.*` identity extended properties (`Projection.SsKey` +
+    /// `Projection.LogicalName`, table and column level). All other
+    /// extended properties — `MS_Description`, authored
+    /// `ExtendedProperties` — still emit. `true` (the production default)
+    /// keeps the bundle byte-identical. Omit is a NAMED DOWNGRADE: identity
+    /// recovery degrades to name-derived SsKeys (no persisted SsKey to read
+    /// back); the composition seam emits the
+    /// `emission.identityAnnotations.omitted` diagnostic — this pure emitter
+    /// only honors the gate.
+    let private extendedPropertyStatements (emitIdentityAnnotations: bool) (k: Kind) : Statement seq =
         seq {
             let table = k.Physical
             match k.Description with
@@ -581,17 +592,19 @@ module SsdtDdlEmitter =
             // substitution). ReadSide queries this on roundtrip read
             // to hydrate `Kind.Name` from the deployed schema, so the
             // logical-vs-physical divergence survives deploy → read.
-            yield Statement.SetExtendedProperty (
-                TableProperty table, "Projection.LogicalName", Some (Name.value k.Name))
+            // NM-70 — gated on the identity-annotation axis.
+            if emitIdentityAnnotations then
+                yield Statement.SetExtendedProperty (
+                    TableProperty table, "Projection.LogicalName", Some (Name.value k.Name))
 
-            // Wave 4.1 — V2.SsKey extended property at the table level.
-            // Carries the round-trippable serialization of the kind's
-            // identity (A1: identity survives rename). ReadSide reads this
-            // on roundtrip and `SsKey.deserialize`s it, recovering the
-            // original key instead of synthesizing `READSIDE_KIND` from
-            // physical coordinates. Sibling to V2.LogicalName.
-            yield Statement.SetExtendedProperty (
-                TableProperty table, "Projection.SsKey", Some (SsKey.serialize k.SsKey))
+                // Wave 4.1 — V2.SsKey extended property at the table level.
+                // Carries the round-trippable serialization of the kind's
+                // identity (A1: identity survives rename). ReadSide reads this
+                // on roundtrip and `SsKey.deserialize`s it, recovering the
+                // original key instead of synthesizing `READSIDE_KIND` from
+                // physical coordinates. Sibling to V2.LogicalName.
+                yield Statement.SetExtendedProperty (
+                    TableProperty table, "Projection.SsKey", Some (SsKey.serialize k.SsKey))
 
             for ep in k.ExtendedProperties do
                 yield Statement.SetExtendedProperty (
@@ -607,9 +620,10 @@ module SsdtDdlEmitter =
 
                 // Slice D.1.b — V2.LogicalName extended property at
                 // the column level. Same roundtrip-recovery role as
-                // the table-level sibling above.
-                yield Statement.SetExtendedProperty (
-                    ColumnProperty (table, columnName), "Projection.LogicalName", Some (Name.value attr.Name))
+                // the table-level sibling above. NM-70 — gated.
+                if emitIdentityAnnotations then
+                    yield Statement.SetExtendedProperty (
+                        ColumnProperty (table, columnName), "Projection.LogicalName", Some (Name.value attr.Name))
 
                 for ep in attr.ExtendedProperties do
                     yield Statement.SetExtendedProperty (
@@ -658,6 +672,8 @@ module SsdtDdlEmitter =
         }
 
     let private kindToSsdtFile
+        (renderMode: ConstraintFormatter.Mode)
+        (emitIdentityAnnotations: bool)
         (overlay: DecisionOverlay)
         (targetByKey: Map<SsKey, Kind>)
         (pkAttrByKey: Map<SsKey, Attribute>)
@@ -687,7 +703,7 @@ module SsdtDdlEmitter =
                 // Emitted AFTER CREATE INDEX so the named index
                 // exists when the ALTER references it.
                 yield! disabledIndexAlters k
-                yield! extendedPropertyStatements k
+                yield! extendedPropertyStatements emitIdentityAnnotations k
                 // H-019: triggers fire after the table + all indexes are
                 // deployed so the ON <table> reference resolves cleanly.
                 yield! triggerStatements k
@@ -704,7 +720,11 @@ module SsdtDdlEmitter =
             |> List.ofSeq
             |> List.mapi (fun i s -> if i = 0 then [ s ] else [ BatchSeparator; s ])
             |> List.concat
-        let body = Render.toText separated
+        // NM-38 — `renderMode` threads the operator's
+        // `EmissionPolicy.RenderConstraintsElegant` axis to the constraint
+        // post-processor. `Enabled` (the default wrapper) is byte-identical
+        // to the prior hardcoded `Render.toText`.
+        let body = Render.toTextWith renderMode separated
         { RelativePath = relativePath m k; Body = body }
 
     /// Lookup table from kind SsKey to owning Module. Same shape as
@@ -791,7 +811,11 @@ module SsdtDdlEmitter =
     /// `statements` is the principled `empty`-default wrapper (sibling-wrapper
     /// discipline — `empty` is a default the caller couldn't otherwise
     /// access). With `empty`, output is byte-identical to pre-overlay emission.
-    let statementsWith (overlay: DecisionOverlay) (catalog: Catalog) : seq<Statement> =
+    let statementsWithIdentityAnnotations
+        (emitIdentityAnnotations: bool)
+        (overlay: DecisionOverlay)
+        (catalog: Catalog)
+        : seq<Statement> =
         use _ = Bench.scope "emit.ssdt.statements"
         let _, targetByKey, pkAttrByKey = buildLookups catalog
         // Topological order via `TopologicalOrderPass.runWith
@@ -844,21 +868,39 @@ module SsdtDdlEmitter =
                 // roundtrip read). Without this, `Render.toText`-based
                 // deploys (Deploy.runWithReadback / runWithLoader) lose
                 // logical-name recovery and the M3 closure breaks.
-                yield! yieldAllWithSeparator (extendedPropertyStatements k)
+                yield! yieldAllWithSeparator (extendedPropertyStatements emitIdentityAnnotations k)
                 // H-019: triggers after table + indexes per kindToSsdtFile
                 // emission order (ON <table> must exist before the trigger).
                 yield! yieldAllWithSeparator (triggerStatements k)
         }
+
+    /// Overlay-bearing flat stream with the identity annotations ON — the
+    /// byte-identical default wrapper over `statementsWithIdentityAnnotations`
+    /// (NM-70: `emit` is the default downgrade-free posture).
+    let statementsWith (overlay: DecisionOverlay) (catalog: Catalog) : seq<Statement> =
+        statementsWithIdentityAnnotations true overlay catalog
 
     /// Catalog-wide typed statement stream (the `empty`-overlay default).
     /// Byte-identical to pre-Wave-2 emission. See `statementsWith`.
     let statements (catalog: Catalog) : seq<Statement> =
         statementsWith DecisionOverlay.empty catalog
 
-    /// Wave-2 slice 2.2 — overlay-bearing form of `emitSlices`. `emitSlices`
-    /// is the principled `empty`-default wrapper. With `empty`, every per-kind
-    /// `SsdtFile` body is byte-identical to pre-overlay emission.
-    let emitSlicesWith (overlay: DecisionOverlay) : Emitter<SsdtFile> = fun catalog ->
+    /// NM-38 + NM-70 — overlay + constraint-rendering-mode +
+    /// identity-annotation-gate form of `emitSlices`. `renderMode` threads
+    /// the operator's `EmissionPolicy.RenderConstraintsElegant` axis to the
+    /// per-file `Render.toTextWith` post-processor; `emitIdentityAnnotations`
+    /// threads `EmissionPolicy.EmitIdentityAnnotations` (NM-70) — `true` ⇒
+    /// the `Projection.*` extended properties emit (byte-identical to
+    /// pre-NM-70 emission); `false` ⇒ they are suppressed (the named
+    /// downgrade, diagnostic emitted at the composition seam). Per A18, the
+    /// `Emitter<SsdtFile>` port stays `Catalog`-only — both are
+    /// realization-layer overlay choices resolved at the composition seam,
+    /// never read from `Policy` inside the emitter.
+    let emitSlicesWithRendering
+        (renderMode: ConstraintFormatter.Mode)
+        (emitIdentityAnnotations: bool)
+        (overlay: DecisionOverlay)
+        : Emitter<SsdtFile> = fun catalog ->
         use _ = Bench.scope "emit.ssdt.emitSlices"
         let modules = moduleByKindKey catalog
         let _allKinds, targetByKey, pkAttrByKey = buildLookups catalog
@@ -869,7 +911,7 @@ module SsdtDdlEmitter =
         ArtifactByKind.perKindBenched "emit.ssdt.emitSlices.kind" catalog (fun k ->
             match Map.tryFind k.SsKey modules with
             | Some m ->
-                kindToSsdtFile overlay targetByKey pkAttrByKey m k
+                kindToSsdtFile renderMode emitIdentityAnnotations overlay targetByKey pkAttrByKey m k
             | None ->
                 // Unreachable: `Catalog.allKinds` walks
                 // `c.Modules |> List.collect (fun m -> m.Kinds)`;
@@ -877,6 +919,14 @@ module SsdtDdlEmitter =
                 // defensive `invalidOp` makes the unreachability
                 // structural.
                 invalidOp (sprintf "SsdtDdlEmitter.emitSlices: kind %A has no owning module (unreachable; Catalog.allKinds invariant)" k.SsKey))
+
+    /// Wave-2 slice 2.2 — overlay-bearing form of `emitSlices`. `emitSlices`
+    /// is the principled `empty`-default wrapper. With `empty`, every per-kind
+    /// `SsdtFile` body is byte-identical to pre-overlay emission. Renders with
+    /// the `Enabled` (V1-parity) constraint mode; see `emitSlicesWithRendering`
+    /// for the operator-overridable form (NM-38).
+    let emitSlicesWith (overlay: DecisionOverlay) : Emitter<SsdtFile> =
+        emitSlicesWithRendering ConstraintFormatter.Enabled true overlay
 
     /// Π port realization (the `empty`-overlay default). Byte-identical to
     /// pre-Wave-2 emission. See `emitSlicesWith`.

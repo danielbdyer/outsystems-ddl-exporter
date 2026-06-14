@@ -256,9 +256,14 @@ module JsonEmitter =
     //
     // **Classification.** All Sites carry `DataIntent` — `emitSlices`
     // signature is `Catalog → Result<ArtifactByKind<JsonNode>, EmitError>`
-    // (per A18, Catalog only; no Profile, no Policy). The projection is
-    // shape-preserving: every IR field maps 1:1 to a JSON property. No
-    // operator policy enters at any site.
+    // (per A18, Catalog only; no Profile, no Policy). The projection is a
+    // LOSSY, SSDT-consumer-oriented view: it carries the structural spine
+    // (ssKey / name / type / column / nullability / PK / references /
+    // modality) and intentionally OMITS fields no JSON consumer reads yet
+    // (length / precision / scale, identity, computed, sqlStorage; the
+    // FK-feature carriage-deferrals named per-site below). The faithful,
+    // full-fidelity round-trip surface is `CatalogCodec`, not this emitter.
+    // No operator policy enters at any site.
     //
     // **Project-boundary note.** Lives in `Projection.Targets.Json`; the
     // consumer that wants the full sibling-emitter chorus (CLI / canary /

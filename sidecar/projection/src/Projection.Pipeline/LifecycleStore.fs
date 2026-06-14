@@ -88,6 +88,37 @@ module LifecycleStore =
         | None   -> jw.WriteNull("cdcHandle")
         jw.WriteEndObject()
 
+    /// The episode's **tolerance residual** (NM-34) — the accepted-divergence
+    /// set as a name-sorted array of `ToleratedDivergence.name` tokens (the same
+    /// tokens `Tolerance.parse` reads back). `Tolerance.strict` ⇒ `[]`. Sorted
+    /// for byte-determinism (T1), matching `ChangeManifest.between`'s ordering.
+    let private writeTolerances (jw: Utf8JsonWriter) (t: Tolerance) : unit =
+        jw.WriteStartArray()
+        t
+        |> Tolerance.divergences
+        |> Set.toList
+        |> List.map ToleratedDivergence.name
+        |> List.sort
+        |> List.iter jw.WriteStringValue
+        jw.WriteEndArray()
+
+    /// The episode's **applied-transforms** overlay enumeration (NM-34) — each
+    /// `(SsKey × OverlayAxis option)` row as `{ ssKey; overlay }`, where `ssKey`
+    /// is the lossless `SsKey.serialize` form (NOT the lossy `rootOriginal`
+    /// display) and `overlay` is the `OverlayAxis.name` token or `null` for the
+    /// skeleton-only (`None`) rows. Order preserved (already `(SsKey, OverlayAxis
+    /// option)`-sorted at its source).
+    let private writeAppliedTransforms (jw: Utf8JsonWriter) (rows: (SsKey * OverlayAxis option) list) : unit =
+        jw.WriteStartArray()
+        for (ssKey, axisOpt) in rows do
+            jw.WriteStartObject()
+            jw.WriteString("ssKey", SsKey.serialize ssKey)
+            match axisOpt with
+            | Some axis -> jw.WriteString("overlay", OverlayAxis.name axis)
+            | None      -> jw.WriteNull("overlay")
+            jw.WriteEndObject()
+        jw.WriteEndArray()
+
     let private writeEpisode (jw: Utf8JsonWriter) (e: Episode) : unit =
         jw.WriteStartObject()
         jw.WritePropertyName "coordinate"
@@ -101,6 +132,15 @@ module LifecycleStore =
         | None   -> jw.WriteNull("refactorLogRef")
         jw.WritePropertyName "data"
         writeData jw e.Data
+        // NM-34 — the provenance planes: the tolerance residual + the §5.5
+        // applied-transforms overlay enumeration. `durableProjection` KEEPS
+        // both, so persisting them is what makes a stored episode equal its own
+        // `durableProjection` (before this, a provenance-bearing episode lost
+        // them on the store round-trip).
+        jw.WritePropertyName "tolerances"
+        writeTolerances jw e.Tolerances
+        jw.WritePropertyName "appliedTransforms"
+        writeAppliedTransforms jw e.AppliedTransforms
         jw.WriteEndObject()
 
     let private serialize (lifecycle: EpisodicLifecycle) : byte[] =
@@ -192,6 +232,63 @@ module LifecycleStore =
         fieldInt el "cdcCaptureCount"
         |> mapR (fun count -> DataObservation.create count (optStr el "cdcHandle"))
 
+    /// The episode's tolerance residual (NM-34). A **missing** `tolerances`
+    /// field reads as `Tolerance.strict` (forward-compatible with pre-NM-34
+    /// stores). A present field is the name-token array `Tolerance.parse` reads;
+    /// an **unrecognized** token is a hard error (fail-closed — the same
+    /// `UnknownDivergence` safety `Tolerance.parse` guarantees; never silently
+    /// widening or narrowing the canary's equivalence).
+    let private readTolerances (el: JsonElement) : Result<Tolerance, string> =
+        match el.TryGetProperty "tolerances" with
+        | true, v when v.ValueKind = JsonValueKind.Array ->
+            let tokens : string list =
+                v.EnumerateArray()
+                |> Seq.choose (fun t ->
+                    if t.ValueKind = JsonValueKind.String then
+                        match t.GetString() with null -> None | s -> Some s
+                    else None)
+                |> Seq.toList
+            match Tolerance.parse tokens with
+            | Ok t -> Ok t
+            | Error (UnknownDivergence token) ->
+                Error (sprintf "unknown tolerated-divergence token '%s'" token)
+        | true, v -> Error (sprintf "field 'tolerances': expected array, got %A" v.ValueKind)
+        | _ -> Ok Tolerance.strict
+
+    /// The episode's applied-transforms overlay enumeration (NM-34). A
+    /// **missing** `appliedTransforms` field reads as `[]`. Each row is
+    /// `{ ssKey; overlay }` — `ssKey` through `SsKey.deserialize` (the lossless
+    /// inverse), `overlay` through `OverlayAxis.tryParse` (`null` ⇒ the `None`
+    /// skeleton row). A malformed `ssKey` or an unknown `overlay` token is a hard
+    /// error (the store is never silently partial — a half-loaded provenance
+    /// plane would corrupt the change-accounting).
+    let private readAppliedTransforms (el: JsonElement) : Result<(SsKey * OverlayAxis option) list, string> =
+        match el.TryGetProperty "appliedTransforms" with
+        | true, v when v.ValueKind = JsonValueKind.Array ->
+            let rec loop acc (rows: JsonElement list) =
+                match rows with
+                | [] -> Ok (List.rev acc)
+                | row :: rest ->
+                    match fieldStr row "ssKey" with
+                    | Error m -> Error m
+                    | Ok ssKeyText ->
+                        match SsKey.deserialize ssKeyText with
+                        | Error errs -> Error (errorsToMessage errs)
+                        | Ok ssKey ->
+                            let axisResult =
+                                match optStr row "overlay" with
+                                | None -> Ok None
+                                | Some token ->
+                                    match OverlayAxis.tryParse token with
+                                    | Some axis -> Ok (Some axis)
+                                    | None -> Error (sprintf "unknown overlay axis token '%s'" token)
+                            match axisResult with
+                            | Error m -> Error m
+                            | Ok axisOpt -> loop ((ssKey, axisOpt) :: acc) rest
+            loop [] (v.EnumerateArray() |> Seq.toList)
+        | true, v -> Error (sprintf "field 'appliedTransforms': expected array, got %A" v.ValueKind)
+        | _ -> Ok []
+
     let private readEpisode (el: JsonElement) : Result<Episode, string> =
         match prop el "coordinate" |> bindR readCoordinate with
         | Error m -> Error m
@@ -206,8 +303,17 @@ module LifecycleStore =
                     | Error m -> Error m
                     | Ok data ->
                         // Profile is not persisted (§12.4) — a loaded episode is
-                        // its own `durableProjection` (Profile.empty).
-                        Ok (Episode.create coordinate schema Profile.empty (optStr el "refactorLogRef") data)
+                        // its own `durableProjection` (Profile.empty). The
+                        // provenance planes (NM-34) ARE persisted and KEPT by
+                        // `durableProjection`, so they are re-threaded here via
+                        // `withProvenance` — that is what makes stored = durable.
+                        match readTolerances el, readAppliedTransforms el with
+                        | Error m, _ -> Error m
+                        | _, Error m -> Error m
+                        | Ok tolerances, Ok appliedTransforms ->
+                            Episode.create coordinate schema Profile.empty (optStr el "refactorLogRef") data
+                            |> Episode.withProvenance tolerances appliedTransforms
+                            |> Ok
 
     /// Reconstruct the chain from a non-empty episode list, enforcing the
     /// monotone-history invariant via `EpisodicLifecycle.append` — the

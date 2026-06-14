@@ -74,6 +74,46 @@ type ToleratedDivergence =
     /// @ladder IndexOptionsUnreflected Schema OpenGap
     | IndexOptionsUnreflected
 
+    /// NM-16 — `CatalogDiff.between` compares kinds by NAME and descends
+    /// only into attributes / references / indexes / sequences; a kind's
+    /// `Triggers` are NOT a diff channel. A changed / added / removed
+    /// trigger produces `norm d = 0` ("idempotent redeploy") and
+    /// `migrate A B` emits nothing — yet the canary's `PhysicalSchema.diff`
+    /// surface CAN see trigger drift, so the two surfaces disagree on
+    /// "what is a change." Named here so the kind-level trigger erasure in
+    /// the `CatalogDiff` algebra is *closed* (witnessed), not silent —
+    /// satisfying "nothing lost in silence" (the LIGHT route, not a full
+    /// `KindFacet` diff channel). Retiring it: add a kind-trigger diff
+    /// channel to `CatalogDiff.between` (mirroring the attribute facet
+    /// descent) with `applyDiff` patches + a fixture.
+    /// @ladder KindTriggersUnreflectedInDiff Schema OpenGap
+    | KindTriggersUnreflectedInDiff
+
+    /// NM-16 — a kind's `ColumnChecks` (table-level CHECK constraints) are
+    /// not a `CatalogDiff.between` channel; a changed / added / removed
+    /// CHECK produces `norm d = 0` and `migrate` emits nothing, while the
+    /// physical canary can observe the change. Named here so the erasure
+    /// is *closed* (witnessed), not silent. Retiring it: add a kind-CHECK
+    /// diff channel with `applyDiff` patches + a fixture.
+    /// @ladder KindChecksUnreflectedInDiff Schema OpenGap
+    | KindChecksUnreflectedInDiff
+
+    /// NM-16 — a kind's `Modality` (the static-vs-dynamic / population
+    /// modality mark) is not a `CatalogDiff.between` channel; a modality
+    /// flip produces `norm d = 0` and `migrate` emits nothing. Named here
+    /// so the erasure is *closed* (witnessed), not silent. Retiring it: add
+    /// a kind-modality diff channel with `applyDiff` patches + a fixture.
+    /// @ladder KindModalityUnreflectedInDiff Schema OpenGap
+    | KindModalityUnreflectedInDiff
+
+    /// NM-16 — a kind's `IsActive` activation flag is not a
+    /// `CatalogDiff.between` channel; activating / deactivating a kind
+    /// produces `norm d = 0` and `migrate` emits nothing. Named here so the
+    /// erasure is *closed* (witnessed), not silent. Retiring it: add a
+    /// kind-activation diff channel with `applyDiff` patches + a fixture.
+    /// @ladder KindActivationUnreflectedInDiff Schema OpenGap
+    | KindActivationUnreflectedInDiff
+
     /// Static-entity populations (INSERT statements) are absent
     /// from `PhysicalSchema`'s comparison surface (same docstring).
     /// The data-plane axis is covered by `PhysicalSchema.Rows`
@@ -94,6 +134,14 @@ type ToleratedDivergence =
     /// forces faithful empty-string preservation today). NB: for a NOT-NULL
     /// `Text` column an empty source value would instead fail the load —
     /// that schema-vs-data compatibility check is 6.B.1, not this tolerance.
+    ///
+    /// NM-18 — SCOPE: the empty raw string is the V2 IR's *universal* NULL
+    /// sentinel (`SqlLiteral.ofRaw "" = NullLit` for EVERY `PrimitiveType`, by
+    /// the `RawValueCodec` single-source-of-truth convention), so this erasure
+    /// also covers a stored empty `TextLit ""` (`N''`) and a zero-length
+    /// `BinaryLit` (`0x`) — not just the empty-string-vs-NULL ambiguity the name
+    /// foregrounds. Retiring the sentinel (a faithful empty/zero-length form)
+    /// is the same IR-grows-under-evidence slice.
     /// @ladder EmptyTextNormalizedToNull Data AcceptedFaithful
     | EmptyTextNormalizedToNull
 
@@ -113,6 +161,23 @@ type ToleratedDivergence =
     /// it is a property of SQL Server's ANSI char semantics, not a V2 gap.
     /// @ladder CharAnsiPaddingTolerated Data AcceptedFaithful
     | CharAnsiPaddingTolerated
+
+    /// NM-28 — a foreign key whose TARGET kind has a **composite** primary key
+    /// is reflected on only its FIRST leg. `PhysicalSchema.toPhysicalForeignKeys`
+    /// pairs the (single) FK source column against the target's first PK column;
+    /// the second-and-later legs are not emitted, so the canary's
+    /// `PhysicalSchema.ForeignKeys` set cannot observe drift in them. The cause
+    /// is structural, not a coding slip: V2's `Reference` IR is **single-column
+    /// per chapter 5.0** (`MetadataSnapshotRunner` `#FkColumns` note — the
+    /// multi-column source columns exist in `sys.foreign_key_columns` but have no
+    /// IR carrier yet), so there is no source column to pair the second target PK
+    /// leg against. Named here so the residual is *closed* (documented +
+    /// witnessed at construction), not silent. Retiring it: lift a composite-FK
+    /// IR (the deferred chapter-5.0 refinement) so a `Reference` carries its full
+    /// ordered (source, target) column list, then emit one `PhysicalForeignKey`
+    /// per leg and round-trip every leg.
+    /// @ladder CompositePkFkUnreflected Schema OpenGap
+    | CompositePkFkUnreflected
 
     /// AC-D6 — a `decimal(p,s)` / `numeric(p,s)` column's stored value is a
     /// **numeric** quantity, so `1.0` and `1.00` are the **same stored
@@ -161,8 +226,13 @@ module ToleratedDivergence =
         | ToleratedDivergence.HeaderCommentsOmitted          -> ToleratedDivergence.HeaderCommentsOmitted
         | ToleratedDivergence.PostDeployForeignKeysSplit     -> ToleratedDivergence.PostDeployForeignKeysSplit
         | ToleratedDivergence.IndexOptionsUnreflected             -> ToleratedDivergence.IndexOptionsUnreflected
+        | ToleratedDivergence.KindTriggersUnreflectedInDiff  -> ToleratedDivergence.KindTriggersUnreflectedInDiff
+        | ToleratedDivergence.KindChecksUnreflectedInDiff    -> ToleratedDivergence.KindChecksUnreflectedInDiff
+        | ToleratedDivergence.KindModalityUnreflectedInDiff  -> ToleratedDivergence.KindModalityUnreflectedInDiff
+        | ToleratedDivergence.KindActivationUnreflectedInDiff -> ToleratedDivergence.KindActivationUnreflectedInDiff
         | ToleratedDivergence.StaticPopulationsUnreflected   -> ToleratedDivergence.StaticPopulationsUnreflected
         | ToleratedDivergence.EmptyTextNormalizedToNull      -> ToleratedDivergence.EmptyTextNormalizedToNull
+        | ToleratedDivergence.CompositePkFkUnreflected       -> ToleratedDivergence.CompositePkFkUnreflected
         | ToleratedDivergence.CharAnsiPaddingTolerated       -> ToleratedDivergence.CharAnsiPaddingTolerated
         | ToleratedDivergence.DecimalScaleTolerated          -> ToleratedDivergence.DecimalScaleTolerated
 
@@ -183,8 +253,13 @@ module ToleratedDivergence =
                 coverage ToleratedDivergence.HeaderCommentsOmitted
                 coverage ToleratedDivergence.PostDeployForeignKeysSplit
                 coverage ToleratedDivergence.IndexOptionsUnreflected
+                coverage ToleratedDivergence.KindTriggersUnreflectedInDiff
+                coverage ToleratedDivergence.KindChecksUnreflectedInDiff
+                coverage ToleratedDivergence.KindModalityUnreflectedInDiff
+                coverage ToleratedDivergence.KindActivationUnreflectedInDiff
                 coverage ToleratedDivergence.StaticPopulationsUnreflected
                 coverage ToleratedDivergence.EmptyTextNormalizedToNull
+                coverage ToleratedDivergence.CompositePkFkUnreflected
                 coverage ToleratedDivergence.CharAnsiPaddingTolerated
                 coverage ToleratedDivergence.DecimalScaleTolerated
             ]
@@ -199,8 +274,13 @@ module ToleratedDivergence =
         | ToleratedDivergence.HeaderCommentsOmitted        -> "HeaderCommentsOmitted"
         | ToleratedDivergence.PostDeployForeignKeysSplit   -> "PostDeployForeignKeysSplit"
         | ToleratedDivergence.IndexOptionsUnreflected           -> "IndexOptionsUnreflected"
+        | ToleratedDivergence.KindTriggersUnreflectedInDiff   -> "KindTriggersUnreflectedInDiff"
+        | ToleratedDivergence.KindChecksUnreflectedInDiff     -> "KindChecksUnreflectedInDiff"
+        | ToleratedDivergence.KindModalityUnreflectedInDiff   -> "KindModalityUnreflectedInDiff"
+        | ToleratedDivergence.KindActivationUnreflectedInDiff -> "KindActivationUnreflectedInDiff"
         | ToleratedDivergence.StaticPopulationsUnreflected -> "StaticPopulationsUnreflected"
         | ToleratedDivergence.EmptyTextNormalizedToNull    -> "EmptyTextNormalizedToNull"
+        | ToleratedDivergence.CompositePkFkUnreflected     -> "CompositePkFkUnreflected"
         | ToleratedDivergence.CharAnsiPaddingTolerated     -> "CharAnsiPaddingTolerated"
         | ToleratedDivergence.DecimalScaleTolerated        -> "DecimalScaleTolerated"
 
@@ -302,3 +382,23 @@ module Tolerance =
                     | Some d -> loop (Set.add d acc) rest
                     | None -> Error (UnknownDivergence token)
         loop Set.empty tokens
+
+    /// The per-run **tolerance residual**: the subset of THIS tolerance that a
+    /// canary round-trip actually *consumed* — the divergences both configured
+    /// as accepted (`tolerates`) AND observed firing during the comparison
+    /// (`observed`). The intersection is the R6 honesty cut: a divergence in
+    /// the config that never fired is not part of the run's witnessed residual
+    /// (the report must not claim a tolerance fired when it did not), and a
+    /// divergence that fired but is NOT configured-tolerated is a canary
+    /// FAILURE (it blocks), so it is excluded here too — the residual is, by
+    /// construction, the set of accepted-AND-fired divergences.
+    ///
+    /// A clean round-trip (`observed = ∅`) yields `Tolerance.strict`. This is
+    /// the value `Episode.withProvenance` records and `ModelFidelity
+    /// .withAcceptedDivergences` surfaces for a canary-coupled run; the canary
+    /// collects `observed` at the per-axis application sites (the empty-text →
+    /// NULL normalization, the char-padding / decimal-scale predicate, the
+    /// index-options / composite-FK structural residual) — see
+    /// `CanaryResidual.collect`.
+    let matchedResidual (observed: Set<ToleratedDivergence>) (t: Tolerance) : Tolerance =
+        Set.intersect (divergences t) observed |> ofSet

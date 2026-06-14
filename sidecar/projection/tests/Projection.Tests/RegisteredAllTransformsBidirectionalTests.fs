@@ -358,3 +358,64 @@ let ``E1: SuggestConfigEmitter is registered (closes the executed-but-unregister
         List.contains "suggestConfigEmitter" emitStepNames,
         "suggestConfigEmitter must be one of the registry-driven emit steps")
     Assert.Contains("suggestConfigEmitter", allNames)
+
+// ---------------------------------------------------------------------------
+// NM-43 — the registered <-> executed projection closed BOTH WAYS for the one
+// surface where both sides project from `chainSteps`: the Core registry
+// `RegisteredTransforms.all`, which is `(chainSteps |> map metadata) @
+// StrategyRegistrations.all`. The bidirectional suite above asserts
+// `executed ⊆ registered`; the REVERSE — `registered ⊆ executed` for the
+// executable (chain-projected) entries — was untested, so a typo'd
+// registration name, or a chainStep removed while its metadata lingers, was
+// invisible. These close it WITHOUT over-firing on the intentionally
+// metadata-only strategy entries (which bind `Pass` too but are not chain
+// steps — they are invoked via `Composition.fanOut` from inside a host pass).
+// ---------------------------------------------------------------------------
+
+let private chainStepNames : Set<string> =
+    RegisteredTransforms.chainSteps |> List.map (fun s -> s.Metadata.Name) |> Set.ofList
+
+let private coreRegistryNames : Set<string> =
+    RegisteredTransforms.all |> List.map (fun m -> m.Name) |> Set.ofList
+
+let private strategyRegistrationNames : Set<string> =
+    StrategyRegistrations.all |> List.map (fun m -> m.Name) |> Set.ofList
+
+[<Fact>]
+let ``NM-43 (forward): every chainSteps step name is registered in RegisteredTransforms.all`` () =
+    let unregistered = Set.difference chainStepNames coreRegistryNames
+    Assert.True(
+        Set.isEmpty unregistered,
+        sprintf "chainSteps that execute but are not in RegisteredTransforms.all: %A" (Set.toList unregistered))
+
+[<Fact>]
+let ``NM-43 (reverse): every chain-projected entry in RegisteredTransforms.all is an executed chainStep`` () =
+    // `RegisteredTransforms.all` projects from exactly two sources — the chain
+    // (`chainSteps |> map metadata`) and the metadata-only strategies
+    // (`StrategyRegistrations.all`). The chain-projected partition is therefore
+    // `all` minus the strategy registrations; every name in it MUST be a live
+    // chainStep. A registration whose name typo'd away from its chainStep, or a
+    // chainStep removed while a metadata entry lingered, surfaces here as an
+    // entry that registers but no longer executes.
+    let chainProjected = Set.difference coreRegistryNames strategyRegistrationNames
+    let registeredButNotExecuted = Set.difference chainProjected chainStepNames
+    Assert.True(
+        Set.isEmpty registeredButNotExecuted,
+        sprintf
+            "RegisteredTransforms.all entries that register (non-strategy) but execute via no chainStep: %A"
+            (Set.toList registeredButNotExecuted))
+
+[<Fact>]
+let ``NM-43: the chain projection is EXACTLY closed — all = chainSteps ∪ strategies, partitioned`` () =
+    // The strongest statement of the round-trip: the Core registry is precisely
+    // the chainStep names plus the strategy names, with the strategy partition
+    // disjoint from the chain partition (no strategy name shadows a chainStep,
+    // no chainStep is mis-tagged as a strategy). This pins the projection so any
+    // drift on EITHER side — a phantom registration or a dropped chainStep —
+    // fails loudly.
+    Assert.Equal<Set<string>>(coreRegistryNames, Set.union chainStepNames strategyRegistrationNames)
+    Assert.True(
+        Set.isEmpty (Set.intersect chainStepNames strategyRegistrationNames),
+        sprintf
+            "a strategy registration name collides with a chainStep name: %A"
+            (Set.toList (Set.intersect chainStepNames strategyRegistrationNames)))

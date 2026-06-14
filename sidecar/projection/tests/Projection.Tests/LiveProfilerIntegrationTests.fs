@@ -711,6 +711,27 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
         Assert.Equal(1L, name.NullCount)
 
     [<Fact>]
+    member _.``max-observed-length: deriveColumnProfiles surfaces MAX(LEN) for text and None for non-text (fills the fidelity overflow axis)`` () =
+        if not (skipIfNoDocker "live-profiler-max-observed-length") then () else
+        let derived =
+            (fixture.WithEphemeralDatabase "LiveProfilerMaxLen" (fun cnn _ -> task {
+                do! Deploy.executeBatch cnn schemaSql
+                do! Deploy.executeBatch cnn seedSql
+                let! cacheR = LiveProfiler.captureEvidenceCache cnn itemsCatalog
+                let cache = mustOk cacheR
+                return LiveProfiler.Cache.deriveColumnProfiles cache itemsCatalog
+            })).GetAwaiter().GetResult()
+        // Name holds 'alpha' / 'gamma' (5 chars) + a NULL → MAX observed = 5.
+        let name = derived |> List.find (fun c -> c.AttributeKey = nameAttrKey)
+        Assert.Equal(Some 5, name.MaxObservedLength)
+        // Code holds 'A1'..'A4' (2 chars each) → MAX observed = 2.
+        let code = derived |> List.find (fun c -> c.AttributeKey = codeAttrKey)
+        Assert.Equal(Some 2, code.MaxObservedLength)
+        // Id is INTEGER — carries no length axis → None (no spurious overflow).
+        let idCol = derived |> List.find (fun c -> c.AttributeKey = idAttrKey)
+        Assert.Equal(None, idCol.MaxObservedLength)
+
+    [<Fact>]
     member _.``B.3.6.evidence-cache: attach via cache pivot composes every Profile axis (AttributeRealities + Columns + UniqueCandidates + ForeignKeys + CompositeUniqueCandidates)`` () =
         if not (skipIfNoDocker "live-profiler-cache-attach-integration") then () else
         let p =

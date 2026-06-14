@@ -129,3 +129,36 @@ let ``Tier-1 #8: every recognized alias maps to Ok`` () =
         match SqlTypeCorrespondence.ofSqlDataType alias with
         | Ok _    -> true
         | Error _ -> false)
+
+// ---------------------------------------------------------------------------
+// NM-29 — ofSqlDataType is now the PrimitiveType-view OF the single faithful
+// inverse (SqlStorageType.ofSqlType), not a competing second lossy table.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``NM-29: ofSqlDataType is exactly ofSqlType then toPrimitiveType (one inverse)`` () =
+    // For every SQL alias, the PrimitiveType the correspondence returns equals
+    // the category of the FAITHFUL storage parse — there is no second table.
+    let aliases =
+        Set.toList recognizedAliases
+        @ [ "FLOAT"; "REAL"; "XML"; "DATETIMEOFFSET" ]   // ofSqlType's wider vocabulary
+    for alias in aliases do
+        match SqlStorageType.ofSqlType alias None None None with
+        | Some storage ->
+            let viaStorage = SqlStorageType.toPrimitiveType storage
+            let viaCorrespondence = SqlTypeCorrespondence.ofSqlDataType alias |> mustOk
+            Assert.Equal (viaStorage, viaCorrespondence)
+        | None -> Assert.Fail (sprintf "ofSqlType failed to parse a recognized alias '%s'" alias)
+
+[<Fact>]
+let ``NM-29: the faithful inverse distinguishes BIGINT from INT; the PrimitiveType view coarsens both`` () =
+    // The single inverse PRESERVES the width distinction...
+    let bigint = SqlStorageType.ofSqlType "BIGINT" None None None
+    let int_   = SqlStorageType.ofSqlType "INT"    None None None
+    Assert.Equal (Some SqlStorageType.BigInt, bigint)
+    Assert.Equal (Some SqlStorageType.Int,    int_)
+    Assert.NotEqual<SqlStorageType option> (bigint, int_)
+    // ...and ofSqlDataType is the localized-loss VIEW of it: both collapse to
+    // Integer, but through the ONE inverse, not a parallel lossy table.
+    Assert.Equal (Integer, SqlTypeCorrespondence.ofSqlDataType "BIGINT" |> mustOk)
+    Assert.Equal (Integer, SqlTypeCorrespondence.ofSqlDataType "INT"    |> mustOk)

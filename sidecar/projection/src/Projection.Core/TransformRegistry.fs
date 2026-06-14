@@ -323,13 +323,14 @@ module TransformRegistry =
         else
             Error allErrors
 
-    /// The empty registry. Slice β ships this as a structural
-    /// placeholder; slice γ + δ + ε populate as pass modules /
-    /// adapter rules / emitter strategies expose `.registered`. The
-    /// top-level evaluation order is hand-maintained — each pass
-    /// module's `.registered |> RegisteredTransform.toMetadata`
-    /// reference is added to this list explicitly. F# top-level
-    /// evaluation order resolves the cross-module dependencies.
+    /// The empty registry. Slice β shipped this as a structural
+    /// placeholder; the populate-trigger (slices γ–ε) ultimately fired
+    /// **elsewhere** — the live, populated registry is
+    /// `RegisteredTransforms.all` (and the assembly-wide
+    /// `RegisteredAllTransforms.all`), NOT this binding. This one stays
+    /// empty by design (pinned by `TransformRegistryTests` "ships
+    /// empty"); do not read it as the registry — reach for
+    /// `RegisteredTransforms.all` (NM-39).
     let all : RegisteredTransformMetadata list = []
 
     /// Filter to a single stage. Used by `Compose.run` traversal
@@ -486,6 +487,22 @@ module TransformRegistry =
         | OperatorIntent axis ->
             System.String.Concat ("OperatorIntent.", overlayAxisName axis)  // LINT-ALLOW: terminal digest-projection at the SHA256 boundary; segments are typed (literal prefix + closed-DU case name); BCL `String.Concat` is the use-case-specific library for two-segment qualified-case-name composition
 
+    /// NM-60 — append a variable-length (free-text) field LENGTH-PREFIXED:
+    /// `<utf8-byte-count>:<value>`. A length prefix makes the encoding
+    /// injective: no crafted `Name` / `SiteName` / `Rationale` containing the
+    /// structural delimiters (`|`, `=`, `{`, `}`, `;`, `[`, `]`, `:`) can forge
+    /// a different field structure that serializes to the same buffer (the
+    /// delimiter-injection collision the unescaped append allowed). The byte
+    /// count — not the char count — is used so a multibyte UTF-8 field cannot be
+    /// confused with a shorter one. Mirrors the explicit-projection discipline
+    /// the closed-DU fields (`domainName` / `stageName` / ...) already enjoy by
+    /// drawing from a fixed token set.
+    let private appendLenPrefixed (sb: System.Text.StringBuilder) (value: string) : unit =
+        let byteCount = System.Text.Encoding.UTF8.GetByteCount(value)
+        sb.Append(byteCount) |> ignore
+        sb.Append(':') |> ignore
+        sb.Append(value) |> ignore
+
     let private statusName (s: TransformStatus) : string =
         match s with
         | Active -> "Active"
@@ -504,6 +521,20 @@ module TransformRegistry =
     /// digest; reorderings do not (the sort by Name normalizes input
     /// order). The 5th bidirectional property test asserts the round-
     /// trip stability + perturbation sensitivity per A41.
+    ///
+    /// **NM-60 — tamper-evidence: the variable-length free-text fields are
+    /// LENGTH-PREFIXED, not appended raw.** `Name`, `SiteName`, `Rationale`, and
+    /// the `NotImplementedInV2` status rationale previously went into the buffer
+    /// between unescaped `|` / `=` / `{` / `}` / `;` delimiters. A crafted
+    /// rationale (e.g. one containing `}` or `|domain=`) could re-parse the field
+    /// structure so two DISTINCT registries serialized to the SAME buffer — a
+    /// delimiter-injection collision that silently downgraded the manifest's
+    /// tamper-evidence claim. Every free-text field now carries its UTF-8 byte
+    /// count as a `<len>:` prefix (`appendLenPrefixed`), making the encoding
+    /// injective: the structural delimiters become unforgeable. The closed-DU
+    /// fields (`domainName` / `stageName` / `classificationName` / the status
+    /// TAG) draw from a fixed finite token set and need no prefix. **This changes
+    /// the digest VALUE** — the round-trip baseline + any pinned digest move.
     let digest (entries: RegisteredTransformMetadata list) : string =
         use _ = Bench.scope "ir.registry.digest"
         let sorted = entries |> List.sortBy (fun e -> e.Name)
@@ -511,22 +542,22 @@ module TransformRegistry =
         for entry in sorted do
             buffer.Append('|') |> ignore
             buffer.Append("name=") |> ignore
-            buffer.Append(entry.Name) |> ignore
+            appendLenPrefixed buffer entry.Name
             buffer.Append("|domain=") |> ignore
             buffer.Append(domainName entry.Domain) |> ignore
             buffer.Append("|stage=") |> ignore
             buffer.Append(stageName entry.StageBinding) |> ignore
             buffer.Append("|status=") |> ignore
-            buffer.Append(statusName entry.Status) |> ignore
+            appendLenPrefixed buffer (statusName entry.Status)
             buffer.Append("|sites=[") |> ignore
             for site in entry.Sites do
                 buffer.Append('{') |> ignore
                 buffer.Append("siteName=") |> ignore
-                buffer.Append(site.SiteName) |> ignore
+                appendLenPrefixed buffer site.SiteName
                 buffer.Append(";classification=") |> ignore
                 buffer.Append(classificationName site.Classification) |> ignore
                 buffer.Append(";rationale=") |> ignore
-                buffer.Append(site.Rationale) |> ignore
+                appendLenPrefixed buffer site.Rationale
                 buffer.Append('}') |> ignore
             buffer.Append(']') |> ignore
         let bytes = System.Text.Encoding.UTF8.GetBytes(buffer.ToString())

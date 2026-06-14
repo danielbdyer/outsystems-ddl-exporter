@@ -208,6 +208,13 @@ let ``G0.4: a verb that omits a gate produces a WORSE outcome than routing throu
 [<Theory>]
 [<InlineData("transfer.connectionUnavailable", 6)>]
 [<InlineData("migrate.connectionUnavailable", 6)>]
+// NM-61 (extended) — the `ConnectionResolver.openSubstrate` error codes (the
+// ones the migrate execute / migrate-with-data / project-preview faces now route
+// through `refusalOf` instead of hardcoding 3). All `transfer.connection.*`, so
+// the connection-reach axis is exit 6 on EVERY verb, never the prior face-local 3.
+[<InlineData("transfer.connection.openFailed", 6)>]
+[<InlineData("transfer.connection.refMissing", 6)>]
+[<InlineData("transfer.connection.refEmpty", 6)>]
 [<InlineData("transfer.insufficientGrant", 7)>]
 [<InlineData("migrate.insufficientGrant", 7)>]
 [<InlineData("transfer.grantProbeFailed", 7)>]
@@ -268,6 +275,48 @@ let ``G0: labelText renders every GateLabel variant (closed-DU totality)`` () =
           Preflight.UnclassifiedRefusal ]
     for l in labels do
         Assert.False(System.String.IsNullOrWhiteSpace(Preflight.labelText l))
+
+[<Fact>]
+let ``NM-61: a migrate connection refusal classifies to exit 6 (its own axis), not the flattened 7`` () =
+    // NM-61 — the migrate face (`migratePreflights` / `runMigrateWithData`) once
+    // hardcoded EVERY refusal to exit 7, so a dead endpoint exited 6 on `transfer`
+    // but 7 on `migrate` — the same axis, the same probe, two codes — and the
+    // `migrate.connectionUnavailable → 6` arm in `classify` was dead. The face now
+    // routes through `refusalOf` (the A1 single-source seam) and returns its exit,
+    // so the connection axis is 6 on migrate too and the classify arm is live.
+    let refusal =
+        Preflight.refusalOf
+            [ ValidationError.create "migrate.connectionUnavailable" "the sink endpoint refused" ]
+    Assert.Equal(6, refusal.ExitCode)
+    Assert.Equal(Preflight.ConnectionUnavailable, refusal.Label)
+
+[<Fact>]
+let ``NM-61 (extended): an openSubstrate connection failure classifies to 6 on the migrate faces, matching transfer`` () =
+    // The migrate execute / migrate-with-data / project-preview faces opened the
+    // sink via `ConnectionResolver.openSubstrate` and hardcoded exit 3 on its
+    // failure — so a dead endpoint exited 6 on `transfer` (which routes the same
+    // codes through `refusalOf`) but 3 on `migrate`. The faces now route the
+    // openSubstrate errors through `refusalOf` too; this pins that every code
+    // `openSubstrate` can emit lands on the connection axis (6), the verb-agnostic
+    // exit, so the same dead endpoint exits the same way everywhere.
+    let exitOf code = (Preflight.refusalOf [ ValidationError.create code "openSubstrate refused" ]).ExitCode
+    Assert.Equal(6, exitOf "transfer.connection.openFailed")
+    Assert.Equal(6, exitOf "transfer.connection.refMissing")
+    Assert.Equal(6, exitOf "transfer.connection.refEmpty")
+    // And the label is the shared connection-axis label, not a verb-local one.
+    let refusal = Preflight.refusalOf [ ValidationError.create "transfer.connection.openFailed" "down" ]
+    Assert.Equal(Preflight.ConnectionUnavailable, refusal.Label)
+
+[<Fact>]
+let ``NM-61: the OTHER migrate refusal axes keep their distinct exits through refusalOf`` () =
+    // The fix must not flatten the rest: the migrate permission/grant axis stays 7,
+    // the CDC-tracked sink 9, the tightening axis 9 — the same exits the verb
+    // produced before, now sourced from the one classification.
+    let exitOf code = (Preflight.refusalOf [ ValidationError.create code "refused" ]).ExitCode
+    Assert.Equal(7, exitOf "migrate.insufficientGrant")
+    Assert.Equal(7, exitOf "migrate.grantProbeFailed")
+    Assert.Equal(9, exitOf "migrate.cdcTrackedSink")
+    Assert.Equal(9, exitOf "migrate.dataViolatesTightening")
 
 [<Fact>]
 let ``G0: refusalOf classifies the FIRST error code (the gate's primary refusal)`` () =

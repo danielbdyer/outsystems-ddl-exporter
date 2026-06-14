@@ -243,13 +243,15 @@ let ``M1: Compose.write writes the same bytes Compose.project produced`` () =
             | Error errs ->
                 let codes = errs |> List.map (fun e -> e.Code) |> String.concat ", "
                 failwithf "Compose.write failed: %s" codes
-        // Per Tier-1 #2: the bundle path count + the five top-level
+        // Per Tier-1 #2: the bundle path count + the seven top-level
         // artifacts (json + distributions + remediation + summary +
-        // suggest-config). Bundle has 1 .sql per catalog kind + 1
-        // manifest.json. Chapter 5+ slices 5.13.remediation-emitter +
-        // 5.13.summary-formatter add `manifest.remediation.sql` +
-        // `manifest.summary.txt`; H-032 adds `suggest-config.json`.
-        let expectedCount = Map.count outputs.SsdtBundle + 5
+        // suggest-config + fidelity.json + fidelity.txt). Bundle has 1 .sql
+        // per catalog kind + 1 manifest.json. Chapter 5+ slices
+        // 5.13.remediation-emitter + 5.13.summary-formatter add
+        // `manifest.remediation.sql` + `manifest.summary.txt`; H-032 adds
+        // `suggest-config.json`; the Model Fidelity Report adds `fidelity.json`
+        // + `fidelity.txt`.
+        let expectedCount = Map.count outputs.SsdtBundle + 7
         Assert.Equal(expectedCount, List.length paths)
         // Each bundle entry round-trips byte-for-byte.
         for KeyValue(relPath, body) in outputs.SsdtBundle do
@@ -274,6 +276,15 @@ let ``M1: Compose.write writes the same bytes Compose.project produced`` () =
         let suggestConfigOnDisk =
             File.ReadAllText(Path.Combine(outputDir, Compose.ArtifactPath.suggestConfig))
         Assert.Equal<string>(outputs.SuggestConfigJson.ToJsonString(jsonOpts), suggestConfigOnDisk)
+        // The Model Fidelity Report lands as fidelity.json + fidelity.txt; the
+        // structured artifact round-trips byte-for-byte against the in-memory
+        // report, and the text matches the renderer (the report verb reads this).
+        let fidelityJsonOnDisk =
+            File.ReadAllText(Path.Combine(outputDir, Compose.ArtifactPath.fidelityJson))
+        Assert.Equal<string>(ModelFidelity.toJsonString outputs.Fidelity, fidelityJsonOnDisk)
+        let fidelityTextOnDisk =
+            File.ReadAllText(Path.Combine(outputDir, Compose.ArtifactPath.fidelityText))
+        Assert.Equal<string>(String.concat "\n" (ModelFidelity.render outputs.Fidelity), fidelityTextOnDisk)
     finally
         if Directory.Exists outputDir then
             Directory.Delete(outputDir, recursive = true)

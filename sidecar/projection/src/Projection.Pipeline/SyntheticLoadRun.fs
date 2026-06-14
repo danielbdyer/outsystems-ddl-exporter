@@ -47,6 +47,15 @@ module SyntheticLoadRun =
     /// (primary; V1-free), else the `osm_model.json` file (fallback);
     /// `profileRef` the evidence; `connSpec` the sink. Connection / grant / CDC
     /// gates ride `Transfer.runSynthetic`.
+    ///
+    /// NM-08/09 — the resolved catalog passes through the SAME module-filter seam
+    /// (`ModuleFilterBinding.fromConfig modelSection` → `ModuleFilter.apply`)
+    /// every other action routes through at `Program.needCatalog` /
+    /// `Pipeline.applyModuleFilter`. Before this, the synthetic path called
+    /// `resolveCatalog` WITHOUT the filter, so a `from: synthetic` flow emitted
+    /// the FULL estate, silently ignoring `model.modules`. An empty
+    /// `model.modules` is the all-permissive identity, so the default synthetic
+    /// load stays byte-identical.
     let run
         (modelOssys: string option)
         (modelFile: string option)
@@ -57,6 +66,7 @@ module SyntheticLoadRun =
         (config: SyntheticConfig)
         (seed: uint64)
         (execute: bool)
+        (modelSection: Config.ModelSection)
         : Task<Result<Transfer.TransferReport>> =
         task {
             match resolveProfile profileRef, TransferSpec.parseConnectionSpec connSpec with
@@ -65,7 +75,17 @@ module SyntheticLoadRun =
             | Ok profile, Ok connRef ->
                 match! ModelResolution.resolveCatalog modelOssys modelFile with
                 | Error es -> return Result.failure es
-                | Ok catalog ->
+                | Ok rawCatalog ->
+                    // NM-08/09 — narrow the resolved estate by `model.modules`
+                    // through the shared seam BEFORE synthesis (identity when
+                    // `model.modules` is empty), so a `from: synthetic` flow honors
+                    // the scope every sibling action applies.
+                    let filtered =
+                        ModuleFilterBinding.fromConfig modelSection
+                        |> Result.bind (fun opts -> ModuleFilter.apply opts rawCatalog)
+                    match filtered with
+                    | Error es -> return Result.failure es
+                    | Ok catalog ->
                     let sub : Substrate =
                         { Environment   = Environment.Named "synthetic-sink"
                           Role          = SubstrateRole.Sink

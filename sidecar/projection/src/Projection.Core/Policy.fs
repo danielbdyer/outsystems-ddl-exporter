@@ -111,6 +111,30 @@ type EmissionPolicy = {
     /// emitters' MERGE. `None` (the default) emits NO delete arm —
     /// byte-identical to the pre-scope output.
     DeleteScope : DeleteScopePolicy option
+    /// NM-38 — operator toggle for the SSDT constraint-rendering overlay
+    /// (`ConstraintFormatter.Mode`, classified `OperatorIntent Emission`).
+    /// `true` (the V1-parity production default) reformats ScriptDom's
+    /// compact column-inline constraints into V1's elegant multi-line
+    /// shape; `false` is the diagnostic / V1-parity-bisect opt-out that
+    /// passes ScriptDom's raw output through. The typed `Mode` lives in
+    /// `Projection.Targets.SSDT` (downstream of Core), so the axis rides
+    /// here as a bool the SSDT emit seam lifts to `Render.toTextWith`.
+    /// Default `true` keeps the default bundle byte-identical.
+    RenderConstraintsElegant : bool
+    /// NM-70 (WP5) — operator toggle for the identity extended-property
+    /// annotations (the `Projection.SsKey` / `Projection.LogicalName`
+    /// SsKey-bearing extended properties `SsdtDdlEmitter` writes). `true`
+    /// (the production default) emits them unconditionally — byte-identical
+    /// to pre-NM-70 emission, and the posture that lets ReadSide recover the
+    /// persisted SsKey on roundtrip read. `false` is a NAMED DOWNGRADE: the
+    /// `Projection.*` identity properties are suppressed (other extended
+    /// properties — Descriptions, authored properties — still emit), and the
+    /// composition seam emits the `emission.identityAnnotations.omitted`
+    /// diagnostic recording that identity recovery now degrades to
+    /// name-derived SsKeys (no persisted SsKey to read back). Sibling to
+    /// `RenderConstraintsElegant`; lifted to the SSDT emit seam at the
+    /// composition layer (A18 — the emitter never reads `Policy`).
+    EmitIdentityAnnotations : bool
 }
 
 
@@ -496,13 +520,36 @@ module EmissionPolicy =
                   // Chapter 4.8 slice γ — V1 parity default.
                   IncludePlatformAutoIndexes = true
                   // AC-D7 — upsert-only default; the scope is operator opt-in.
-                  DeleteScope = None }
+                  DeleteScope = None
+                  // NM-38 — V1-parity default-on; the elegant multi-line
+                  // constraint shape is the production default (matches the
+                  // prior hardcoded `Render.toText` Enabled mode).
+                  RenderConstraintsElegant = true
+                  // NM-70 — identity annotations emit by default (the
+                  // downgrade-free posture; byte-identical to pre-NM-70 and
+                  // the posture ReadSide's persisted-SsKey recovery needs).
+                  EmitIdentityAnnotations = true }
 
     /// Replace `IncludePlatformAutoIndexes` while preserving the rest
     /// of the policy. Chapter 4.8 slice γ. Operators set to `false` to
     /// filter platform-auto indexes from the SSDT bundle.
     let withIncludePlatformAutoIndexes (includeAuto: bool) (policy: EmissionPolicy) : EmissionPolicy =
         { policy with IncludePlatformAutoIndexes = includeAuto }
+
+    /// NM-38 — replace `RenderConstraintsElegant` while preserving the rest
+    /// of the policy. Operators set to `false` to fall back to ScriptDom's
+    /// compact column-inline constraint emission (the V1-parity / regression-
+    /// bisect opt-out). Sibling to `withIncludePlatformAutoIndexes`.
+    let withRenderConstraintsElegant (elegant: bool) (policy: EmissionPolicy) : EmissionPolicy =
+        { policy with RenderConstraintsElegant = elegant }
+
+    /// NM-70 (WP5) — replace `EmitIdentityAnnotations` while preserving the
+    /// rest of the policy. Operators set to `false` to suppress the
+    /// `Projection.*` identity extended properties (the named downgrade:
+    /// identity recovery degrades to name-derived SsKeys). Sibling to
+    /// `withRenderConstraintsElegant`.
+    let withEmitIdentityAnnotations (emit: bool) (policy: EmissionPolicy) : EmissionPolicy =
+        { policy with EmitIdentityAnnotations = emit }
 
     /// Project a catalog by the `IncludePlatformAutoIndexes` toggle. When
     /// the policy says `true` (V1 default), returns the catalog
@@ -528,15 +575,32 @@ module EmissionPolicy =
                                         |> List.filter (fun i -> not i.IsPlatformAuto) }) })
               Sequences = c.Sequences }
 
-    /// Default emission: schema only. The most common configuration and
-    /// the one where the algebra's structural claims are sharpest.
+    /// Default emission: schema + diagnostics (the default bundle).
+    /// `EmitData` is opt-in (off here); `EmitSchema` and `EmitDiagnostics`
+    /// are both on because the default `Compose.project` bundle emits the
+    /// CREATE/SSDT schema bundle AND the operational diagnostic artifacts
+    /// (decision log / remediation / summary / suggest-config).
+    ///
+    /// NM-02 (2026-06-13): these two booleans now gate real emit steps
+    /// (`projectFromChainWithState`). The default must therefore declare
+    /// what it actually emits — so `EmitDiagnostics` is `true` here (it was
+    /// previously `false`, an inert field the `allFalse` validator defended
+    /// while gating nothing). Flipping it to `true` keeps the default bundle
+    /// byte-identical (the default already emitted diagnostics) while making
+    /// the field honest — the audit's invariant: every disjunct of the
+    /// `allFalse` refusal gates a real emit step.
     /// Constructed via the smart constructor; `Result.value` is safe
     /// because the constants satisfy the invariant by construction.
     let empty : EmissionPolicy =
-        create true false false AllRemaining |> Result.value
+        create true false true AllRemaining |> Result.value
 
-    /// Schema artifacts only.
-    let schemaOnly : EmissionPolicy = empty
+    /// Schema artifacts only — the CREATE/SSDT bundle with NO diagnostic
+    /// artifacts. Distinct from `empty` since NM-02 wired `EmitDiagnostics`
+    /// to gate the diagnostic-artifact emission: `empty` is the default
+    /// bundle (schema + diagnostics); `schemaOnly` is the narrower
+    /// schema-without-diagnostics profile.
+    let schemaOnly : EmissionPolicy =
+        create true false false AllRemaining |> Result.value
 
     /// Data artifacts only — for full-export pipelines that keep schema
     /// emission elsewhere.

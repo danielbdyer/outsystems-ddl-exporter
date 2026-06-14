@@ -93,6 +93,73 @@ let ``DacpacEmitter.emit on single-Kind Catalog returns non-empty bytes`` () =
     Assert.Equal (byte 0x4B, bytes.[1])
 
 // ---------------------------------------------------------------------------
+// NM-24 — an unparseable CreateTrigger is a NAMED witness, not a silent drop.
+// The DACPAC path has no round-trip canary backstop (the SSDT directory path
+// does), so a trigger whose body fails `tryParseTriggerBody` would otherwise
+// vanish from the package with zero signal. `emit` now refuses and names the
+// dropped statement kind via a `ValidationError`.
+// ---------------------------------------------------------------------------
+
+let private widgetWithTrigger (triggerDefinition: string) : Catalog =
+    let widgetKey = kindKey ["Widget"]
+    let widgetIdKey = attrKey ["Widget"; "Id"]
+    let trigger =
+        Trigger.create
+            (kindKey ["Widget"; "trg"])
+            (mkName "trgWidget")
+            false
+            triggerDefinition
+        |> Result.value
+    let widget : Kind = {
+        SsKey    = widgetKey
+        Name     = mkName "Widget"
+        Origin   = Native
+        Modality = []
+        Physical = mkTableId "dbo" "WIDGET"
+        Attributes = [
+            { Attribute.create widgetIdKey (mkName "Id") Integer with Column = ColumnRealization.create ("ID") (false) |> Result.value; IsPrimaryKey = true }
+        ]
+        References = []
+        Indexes    = []
+        Description = None
+        IsActive = true
+        Triggers = [ trigger ]
+        ColumnChecks = []
+        ExtendedProperties = []
+        }
+    let m : Module = {
+        SsKey = modKey "Inventory"
+        Name  = mkName "Inventory"
+        Kinds = [ widget ]
+        IsActive = true
+        ExtendedProperties = []
+        }
+    { Modules = [ m ]; Sequences = [] }
+
+[<Fact>]
+let ``NM-24: DacpacEmitter.emit refuses an unparseable trigger with a named witness (no silent drop)`` () =
+    // Non-blank (passes Trigger.create) but syntactically invalid T-SQL —
+    // `tryParseTriggerBody` returns None, so the statement renders to no
+    // script. Pre-NM-24 this trigger silently vanished from the .dacpac.
+    let enriched = enrich (widgetWithTrigger "THIS IS NOT VALID TSQL @@ )(")
+    match DacpacEmitter.emit enriched with
+    | Ok _ -> Assert.Fail "expected a refusal naming the dropped trigger; got a (silently partial) package"
+    | Error errs ->
+        Assert.NotEmpty errs
+        let e = List.head errs
+        Assert.Equal<string> ("emitter.dacpac.statementUnrendered", e.Code)
+        Assert.Equal<string option> (Some "CreateTrigger", Map.tryFind "statementKind" e.Metadata |> Option.flatten)
+
+[<Fact>]
+let ``NM-24: DacpacEmitter.emit still succeeds for a catalog whose trigger body parses`` () =
+    // A well-formed trigger body renders; the package builds with no witness.
+    let body =
+        "CREATE TRIGGER [dbo].[trgWidget] ON [dbo].[WIDGET] AFTER INSERT AS BEGIN SET NOCOUNT ON END"
+    let enriched = enrich (widgetWithTrigger body)
+    let bytes = DacpacEmitter.emit enriched |> mustOkBytes
+    Assert.NotEmpty bytes
+
+// ---------------------------------------------------------------------------
 // Content-equality via DacFx round-trip — slice α T1 amendment for binary
 // emitters. Per `DECISIONS 2026-05-11 — Chapter 3.x DacpacEmitter open`
 // commitment 3: same Catalog → DacFx model contains same Table objects

@@ -36,6 +36,18 @@ type EmitError =
     /// (e.g., a kind appearing both in `Modality.Static` AND in the
     /// migration team's pickup channel under `AllRemaining`).
     | OverlappingEmitterCoverage of SsKey * emitters: string list
+    /// NM-45 — `Lifecycle.netDiff` / `Episode.netSchemaDiff` fold
+    /// `CatalogDiff.compose` (the partial groupoid `⊕`) across an evolution
+    /// chain. `compose` returns `None` — fail-loud, "never a silently-wrong
+    /// result" — exactly when two adjacent diffs do NOT meet on the captured
+    /// surface. On a well-formed monotone chain that is unreachable by
+    /// construction (each edge's target IS the next edge's source). If it ever
+    /// fires it is a structural violation of the chain's monotonicity, NOT an
+    /// occasion to silently substitute the direct `between genesis latest`
+    /// (which the fold was supposed to corroborate). This variant names that
+    /// impossible state so the refusal surfaces loudly. `reason` is
+    /// human-readable; never parse it.
+    | NonComposableLifecycleChain of reason: string
 
 
 /// Per-kind output indexed by SsKey root. The smart constructor

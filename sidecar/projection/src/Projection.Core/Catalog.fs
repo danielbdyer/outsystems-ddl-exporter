@@ -675,6 +675,19 @@ type Attribute = {
     /// `SqlStorageType.toPrimitiveType storage = Type` whenever
     /// `Some storage`.
     SqlStorage : SqlStorageType option
+    /// Service-Studio authored attribute order, carried from the real
+    /// `ossys_Entity_Attr.Order_Num` column (rowset path) or the
+    /// `order` JSON property (JSON path). `None` for hand-built
+    /// catalogs and for the `ReadSide` reflection path (deployed
+    /// schema carries no OutSystems authored order). WP8 / NM-72 —
+    /// emission column order is `(PK first, then Order ascending,
+    /// then SsKey as a stable tiebreak)`; `None` falls back to the
+    /// existing PK-first / SsKey order so determinism (T1) holds for
+    /// every source. The ordering is applied at `CanonicalizeIdentity`
+    /// (the pass that already owns the canonical attribute order),
+    /// inherited uniformly by the SSDT, dacpac, and data-lane emitters
+    /// which all iterate `Kind.Attributes` in list order.
+    Order : int option
 }
 
 
@@ -1134,6 +1147,8 @@ module Attribute =
     ///   - `ExtendedProperties = []`
     ///   - `OriginalName = None`; `ExternalDatabaseType = None`
     ///   - `SqlStorage = None` (semantic fallback; emitters use `Type`)
+    ///   - `Order = None` (no authored Service-Studio order; PK-first /
+    ///     SsKey canonical fallback)
     ///
     /// Consumers override via record-update: `{ Attribute.create k n
     /// Integer with IsPrimaryKey = true; IsMandatory = true }`.
@@ -1142,20 +1157,30 @@ module Attribute =
             SsKey                = ssKey
             Name                 = name
             Type                 = ptype
-            // Slice 5b (lift): default ColumnName synthesized from Name. Contract:
-            // the Name fits SQL Server's 128-char identifier limit. Callers with
-            // long Names (rare; `LogicalColumnEmission` guards the substitution
-            // path against the same case) must override Column via record-update
-            // before SQL emission. Failure surfaces loud here rather than as
-            // silent invalid SQL downstream.
+            // Slice 5b (lift): default ColumnName synthesized from Name.
+            //
+            // NM-15 — this was the ONLY non-total smart constructor in the file
+            // (every sibling returns `Result`); it `failwithf`'d on an over-128-
+            // char logical name. The throw was both unnecessary and hazardous:
+            // the dominant production caller is `CatalogCodec.readAttribute`,
+            // which writes `{ Attribute.create k n t with Column = <deserialized> }`
+            // — F# still EVALUATES this throwing default before the `with` block
+            // discards it, so a long-named attribute with a perfectly valid
+            // explicit Column threw anyway. And the docstring's "loud rather than
+            // silent invalid SQL" defense was unfounded: the column-derivation
+            // naming site (`LogicalColumnEmission.substituteAttribute`) does NOT
+            // throw on a long logical name — it leaves the physical name as-is.
+            //
+            // The default now applies `IdentifierBudget.fit` — the same
+            // deterministic truncate-+-SHA-suffix discipline the SSDT emitters
+            // use for over-budget GENERATED names (PK_/FK_). The result is always
+            // a VALID ≤128-char identifier (never silent-invalid SQL), `fit` is a
+            // total pure function, and an explicit `with Column = …` override
+            // still replaces it. The constructor is now total, matching every
+            // sibling.
             Column               =
-                match ColumnName.create (Name.value name) with
-                | Ok cn -> { ColumnName = cn; IsNullable = false }
-                | Error _ ->
-                    failwithf
-                        "Attribute.create: Name %A (length %d) exceeds SQL Server's 128-char identifier limit. Override the default Column via record-update for long names."
-                        (Name.value name)
-                        (Name.value name).Length
+                { ColumnName = ColumnName.create (IdentifierBudget.fit (Name.value name)) |> Result.value
+                  IsNullable = false }
             IsPrimaryKey         = false
             IsMandatory          = false
             Length               = None
@@ -1171,7 +1196,32 @@ module Attribute =
             OriginalName         = None
             ExternalDatabaseType = None
             SqlStorage           = None
+            // WP8 / NM-72 — authored Service-Studio order. `None` by
+            // default: hand-built and minimum-evidence attributes carry
+            // no authored order and fall back to the PK-first / SsKey
+            // canonical order. The OSSYS rowset / JSON paths override
+            // via `{ Attribute.create … with Order = Some n }`.
+            Order                = None
         }
+
+    /// NM-14 — the `(Type, SqlStorage)` agreement invariant. When an
+    /// attribute carries concrete storage evidence (`SqlStorage = Some
+    /// storage`), that storage's semantic projection MUST equal the
+    /// attribute's semantic `Type`: `SqlStorageType.toPrimitiveType
+    /// storage = Type`. Both halves of an attribute's typing then stay
+    /// consistent — every type-driven decision reads `Type`, the emitter
+    /// reads `SqlStorage`, and the two never disagree (an adapter that
+    /// set `Type = Text; SqlStorage = Some BigInt` would emit `BIGINT`
+    /// while every semantic decision treated the column as text). The
+    /// `None` case is vacuously consistent: no concrete evidence, the
+    /// emitter falls back to the `Type → SqlDataTypeOption` mapping.
+    /// Asserted at construction by `Catalog.create`, mirroring the
+    /// reference constraint-state quadrant
+    /// (`Reference.isConstraintStateConsistent`, NM-12).
+    let isStorageTypeConsistent (a: Attribute) : bool =
+        match a.SqlStorage with
+        | Some storage -> SqlStorageType.toPrimitiveType storage = a.Type
+        | None -> true
 
 
 [<RequireQualifiedAccess>]
@@ -1698,12 +1748,33 @@ module Catalog =
         // hot path (bench label `ir.catalog.create`). Verified
         // order-preserving by the existing pure `CatalogTests`
         // dangling-key suite.
-        let referenceErrors, indexErrors =
+        let referenceErrors, indexErrors, attributeErrors =
             let refAcc = ResizeArray<ValidationError>()
             let idxAcc = ResizeArray<ValidationError>()
+            let attrAcc = ResizeArray<ValidationError>()
             for k in allKindList do
                 let attrKeys =
                     k.Attributes |> List.map (fun a -> a.SsKey) |> Set.ofList
+                for a in k.Attributes do
+                    // NM-14 — the `(Type, SqlStorage)` agreement invariant.
+                    // When an attribute carries concrete storage evidence
+                    // (`SqlStorage = Some storage`), `SqlStorageType.toPrimitiveType
+                    // storage` MUST equal the semantic `Type`. Otherwise the
+                    // emitter would render the concrete storage (e.g. BIGINT)
+                    // while every type-driven decision read the disagreeing
+                    // semantic category (e.g. Text). Mirrors the NM-12 reference
+                    // quadrant reject: the disagreeing pair cannot enter the IR.
+                    if not (Attribute.isStorageTypeConsistent a) then
+                        attrAcc.Add(
+                            ValidationError.create
+                                "catalog.attribute.storageTypeMismatch"
+                                (sprintf
+                                    "Attribute %A on Kind %A has SqlStorage %A whose semantic projection (%A) disagrees with its Type %A; the concrete storage evidence must agree with the semantic type (SqlStorageType.toPrimitiveType storage = Type)."
+                                    a.SsKey
+                                    k.SsKey
+                                    a.SqlStorage
+                                    (a.SqlStorage |> Option.map SqlStorageType.toPrimitiveType)
+                                    a.Type))
                 for r in k.References do
                     if not (Set.contains r.SourceAttribute attrKeys) then
                         refAcc.Add(
@@ -1719,6 +1790,19 @@ module Catalog =
                                 (sprintf
                                     "Reference %A on Kind %A has TargetKind %A absent from the catalog."
                                     r.SsKey k.SsKey r.TargetKind))
+                    // NM-12 — G14: the illegal trust quadrant
+                    // (HasDbConstraint=false ∧ IsConstraintTrusted=false) is
+                    // unreachable at the aggregate root. Every ingest boundary
+                    // (ReadSide / codec / V1) normalizes through
+                    // `Reference.withConstraintState`; `Catalog.create` rejects
+                    // anything that bypassed it, so the quadrant cannot enter the IR.
+                    if not (Reference.isConstraintStateConsistent r) then
+                        refAcc.Add(
+                            ValidationError.create
+                                "catalog.reference.illegalConstraintState"
+                                (sprintf
+                                    "Reference %A on Kind %A is in the illegal constraint-state quadrant (HasDbConstraint=false, IsConstraintTrusted=false); an untrusted constraint requires the constraint to exist. Set it through Reference.withConstraintState."
+                                    r.SsKey k.SsKey))
                 for idx in k.Indexes do
                     for col in idx.Columns do
                         if not (Set.contains col.Attribute attrKeys) then
@@ -1728,7 +1812,7 @@ module Catalog =
                                     (sprintf
                                         "Index %A on Kind %A references column SsKey %A absent from the kind's Attributes."
                                         idx.SsKey k.SsKey col.Attribute))
-            List.ofSeq refAcc, List.ofSeq idxAcc
+            List.ofSeq refAcc, List.ofSeq idxAcc, List.ofSeq attrAcc
 
         // Sequence SsKey disjointness (chapter A.0' slice δ). Sequences
         // are top-level Catalog objects; their SsKeys must be unique
@@ -1746,7 +1830,7 @@ module Catalog =
                 (fun s -> s.SsKey)
 
         let allErrors =
-            moduleDupes @ kindDupes @ referenceErrors @ indexErrors @ sequenceDupes
+            moduleDupes @ kindDupes @ referenceErrors @ indexErrors @ attributeErrors @ sequenceDupes
 
         if List.isEmpty allErrors then
             Result.success { Modules = modules; Sequences = sequences }

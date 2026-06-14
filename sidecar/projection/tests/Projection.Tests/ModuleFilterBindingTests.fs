@@ -37,8 +37,7 @@ let private modelWith (modules: Config.ModuleSelector list) : Config.ModelSectio
       Modules                = modules
       IncludeSystemModules   = false
       IncludeInactiveModules = false
-      OnlyActiveAttributes   = true
-      ValidationOverrides    = { AllowMissingSchema = [] } }
+      OnlyActiveAttributes   = true }
 
 [<Fact>]
 let ``A7: an empty model.modules binds to ModuleFilter.empty (identity, byte-identical default)`` () =

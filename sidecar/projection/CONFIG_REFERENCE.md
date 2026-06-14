@@ -75,6 +75,7 @@ Every key, with type · required? · default. Unknown keys are ignored; type mis
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `includePlatformAutoIndexes` | bool | `true` | `false` prunes OutSystems platform-auto indexes from the SSDT bundle and the dacpac at the post-chain seam (reconciliation slice 2; V1's `SsdtManifestOptions.IncludePlatformAutoIndexes`) |
+| `identityAnnotations` | bool | `true` | `false` is the NAMED DOWNGRADE (NM-70 / WP5): suppresses the `Projection.SsKey` / `Projection.LogicalName` identity extended properties so they are not written to the SSDT bundle. Other extended properties (Descriptions, authored properties) still emit. Identity recovery degrades to name-derived SsKeys (no persisted SsKey to read back on roundtrip); the run records the `emission.identityAnnotations.omitted` Warning diagnostic. |
 
 ### `policy` — the operator overlays
 

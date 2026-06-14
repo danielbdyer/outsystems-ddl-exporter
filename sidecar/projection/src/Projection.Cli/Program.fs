@@ -162,8 +162,8 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat ->
             withRun "projection migrate --with-data" (fun () ->
                 runMigrateWithData shapedCat sink src opts.Reconcile opts.Rekey opts.Declaration opts.AllowCdc opts.Store opts.Env)))
-    | PlanAction.SynthesizeAndLoad (model, modelOssys, profile, conn, opts, execute) ->
-        withRun "projection synth-load" (fun () -> runSyntheticLoad model modelOssys profile conn opts execute)
+    | PlanAction.SynthesizeAndLoad (model, modelOssys, profile, conn, opts, execute, modelSection) ->
+        withRun "projection synth-load" (fun () -> runSyntheticLoad model modelOssys profile conn opts execute modelSection)
     | PlanAction.CaptureProfile (conn, out) -> runCaptureProfile conn out
     | PlanAction.PublishAndLoad (c, conn, store, env) ->
         let run () = runFullExportLoad c conn None store env
@@ -183,8 +183,9 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
     | PlanAction.CheckReady                -> runReadiness ()
     // explain ------------------------------------------------------------
     | PlanAction.ExplainDiff (a, b, asJson, depthOpt) -> runDiff a b asJson (defaultArg depthOpt View.defaultDepth)
+    | PlanAction.Compare (a, b, asJson)      -> runCompare a b asJson
     | PlanAction.ExplainPolicy (a, b)        -> runPolicyDiff a b
-    | PlanAction.ExplainNode (c, k)          -> runExplain c k
+    | PlanAction.ExplainNode (c, k, asJson, depthOpt) -> runExplain c k asJson (defaultArg depthOpt View.defaultDepth)
     | PlanAction.ExplainSuggest (c, applyTo) -> runSuggestConfig c applyTo
     | PlanAction.ExplainRegistry ->
         // Self-description (NORTH_STAR "self-describing" leg) — the engine names
@@ -207,10 +208,31 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
     | PlanAction.SealEject store -> runEject store
     | PlanAction.SealApprove (version, approver, rationale, store) -> runApprove version approver rationale store
     // report -------------------------------------------------------------
-    | PlanAction.ReportBundle store ->
+    | PlanAction.ReportBundle (store, outputDir) ->
         match ReportRun.fromStore store with
         | Ok bundle ->
             printLines Console.Out (ReportRun.render bundle)
+            // Surface the per-run Model Fidelity Report when one was recorded —
+            // the rolled-up account of the distance between the declared model
+            // and the observed source reality. Searched FIRST in the flow target's
+            // own bundle `out` folder (where the full-export feeding this timeline
+            // wrote it — threaded by `planReport`), then next to the store and in
+            // the default output directory; absent until a profiled run emits it
+            // (best-effort, additive — the change report stands alone).
+            let fidelityCandidates =
+                [ match outputDir with
+                  | Some dir when dir <> "" -> yield Path.Combine(dir, "fidelity.json")
+                  | _ -> ()
+                  match Option.ofObj (Path.GetDirectoryName store) with
+                  | Some dir when dir <> "" -> yield Path.Combine(dir, "fidelity.json")
+                  | _ -> ()
+                  yield Path.Combine("out", "fidelity.json")
+                  yield "fidelity.json" ]
+            match ReportRun.renderFidelity fidelityCandidates with
+            | [] -> ()
+            | lines ->
+                Console.Out.WriteLine ""
+                printLines Console.Out lines
             0
         | Error msg ->
             Console.Error.WriteLine (sprintf "projection report: %s" msg)

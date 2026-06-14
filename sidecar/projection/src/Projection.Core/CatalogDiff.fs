@@ -670,11 +670,21 @@ module CatalogDiff =
     //
     // **Captured surface (the law's modulus).** The diff captures kind
     // presence/name + attribute presence/name + the nine column-shape facets
-    // (`AttributeFacet`). It does NOT capture references, indexes, modality,
-    // module structure, or sequences — those ride through from `base`
-    // unchanged. The round-trip law therefore holds for A→B evolutions within
-    // the captured surface, witnessed order-insensitively by
-    // `between B (applyDiff (between A B) A) |> isEmpty`. A future
+    // (`AttributeFacet`) + references + indexes + sequences (the C1 channels,
+    // each with its own `apply*Diff` patch). It does NOT capture kind-level
+    // `Modality`, `Triggers`, `ColumnChecks`, `Description`, `IsActive`,
+    // `ExtendedProperties`, or module structure — those ride through from
+    // `base` unchanged. (NM-16 LIGHT route, 2026-06-13: the trigger / CHECK /
+    // modality / activation slice of that residual erasure is now NAMED — the
+    // `ToleratedDivergence.Kind{Triggers,Checks,Modality,Activation}Unreflected
+    // InDiff` variants witness it, each with a retirement trigger — so it is a
+    // *witnessed* gap, not a silent one. The canary's `PhysicalSchema.diff`
+    // DOES compare these, so the two surfaces still disagree on "what is a
+    // change"; retiring a variant means adding its diff channel here.
+    // `Description` / `ExtendedProperties` / module structure remain unwitnessed
+    // residual.) The round-trip law therefore holds for
+    // A→B evolutions within the captured surface, witnessed order-insensitively
+    // by `between B (applyDiff (between A B) A) |> isEmpty`. A future
     // self-contained diff (inline payloads, no stored source/target) would
     // widen the surface; deferred under IR-grows-under-evidence.
 

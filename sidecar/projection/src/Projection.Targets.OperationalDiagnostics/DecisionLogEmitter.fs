@@ -101,20 +101,74 @@ module internal DiagnosticDocument =
         | null -> invalidOp "DiagnosticDocument.kindJsonNode: writer produced empty stream (unreachable; writeKindDocument always emits an object)"
         | node -> node
 
-    /// Group entries by their `SsKey` field. Entries with `SsKey =
-    /// None` (catalog-level diagnostics) drop at the per-kind seam;
-    /// slice δ (CLI wire-up) lifts the catalog-level shape if a
-    /// consumer demands it.
+    /// Partition entries by their `SsKey` field. Entries with `SsKey =
+    /// Some k` group into the per-kind map; entries with `SsKey = None`
+    /// (catalog-level diagnostics) cannot be keyed by a kind, so they
+    /// are returned as the SECOND tuple element rather than vanishing
+    /// inside the `List.choose`. The shed entries flow to
+    /// `catalogLevelShedWitness` so the per-kind seam never loses a
+    /// catalog-level decision in silence (NM-23). Slice δ (CLI wire-up)
+    /// lifts the catalog-level shape into its own artifact bucket if a
+    /// consumer demands it; until then the witness is the
+    /// no-silent-drop guarantee.
+    let partitionByKind
+        (entries: DiagnosticEntry list)
+        : Map<SsKey, DiagnosticEntry list> * DiagnosticEntry list =
+        let perKind, catalogLevel =
+            entries |> List.partition (fun e -> Option.isSome e.SsKey)
+        let grouped =
+            perKind
+            |> List.choose (fun e ->
+                e.SsKey |> Option.map (fun k -> k, e))
+            |> List.groupBy fst
+            |> List.map (fun (k, pairs) ->
+                k, pairs |> List.map snd)
+            |> Map.ofList
+        grouped, catalogLevel
+
+    /// Group entries by their `SsKey` field, discarding the
+    /// catalog-level (`SsKey = None`) residue. Retained as the keying
+    /// helper for the artifact build; callers that must surface the
+    /// shed catalog-level entries use `partitionByKind` +
+    /// `catalogLevelShedWitness`.
     let entriesByKind
         (entries: DiagnosticEntry list)
         : Map<SsKey, DiagnosticEntry list> =
-        entries
-        |> List.choose (fun e ->
-            e.SsKey |> Option.map (fun k -> k, e))
-        |> List.groupBy fst
-        |> List.map (fun (k, pairs) ->
-            k, pairs |> List.map snd)
-        |> Map.ofList
+        partitionByKind entries |> fst
+
+    /// Name the catalog-level (`SsKey = None`) diagnostics that the
+    /// per-kind projection structurally cannot carry. Returns a single
+    /// `Warning` witness recording how many entries were shed (with a
+    /// `\n`-joined, sorted inventory of their codes in `Metadata`) so
+    /// the audit channel surfaces the loss instead of swallowing it.
+    /// `None` when nothing was shed — the common case stays
+    /// witness-free. Pure sibling of the emit port (A18 holds; the
+    /// artifact bytes are unchanged — the witness rides the
+    /// `Diagnostics` channel), mirroring the SSDT FK-drop witness
+    /// (`foreignKeyDecisionDropDiagnostics`). Pairs with the slice δ
+    /// catalog-level bucket when it ships.
+    let catalogLevelShedWitness
+        (entries: DiagnosticEntry list)
+        : DiagnosticEntry option =
+        match entries |> List.filter (fun e -> Option.isNone e.SsKey) with
+        | [] -> None
+        | shed ->
+            let codes =
+                shed |> List.map (fun e -> e.Code) |> List.sort |> String.concat "\n"
+            Some
+                { DiagnosticEntry.create
+                    "emitter:decisionLogEmitter"
+                    DiagnosticSeverity.Warning
+                    "emit.decisionLog.catalogLevelEntriesShed"
+                    (sprintf
+                        "%d catalog-level diagnostic(s) (SsKey = None) could not be projected into the per-kind decision log and were shed at the per-kind seam. The catalog-level artifact bucket ships at slice δ; this witness names the loss until then."
+                        (List.length shed))
+                  with
+                    SsKey = None
+                    Metadata =
+                        Map.ofList
+                            [ "shedCount", string (List.length shed)
+                              "shedCodes", codes ] }
 
     /// Build the per-kind artifact for a given catalog + filtered
     /// entry list. The bench-scope label is the emitter's
@@ -174,6 +228,18 @@ module DecisionLogEmitter =
         use _ = Bench.scope "emit.decisionLog.emit"
         let organized = ActionableDiagnostics.organize entries
         DiagnosticDocument.buildArtifact catalog organized
+
+    /// NM-23 audit-channel witness. Given the same entry list passed to
+    /// `emit`, names how many catalog-level (`SsKey = None`) diagnostics
+    /// the per-kind artifact structurally cannot carry — `Some warning`
+    /// when any were shed, `None` otherwise. Pure sibling: the artifact
+    /// bytes are unchanged; the witness rides the diagnostics channel so
+    /// the audit log never silently loses a catalog-level decision.
+    /// (Mirrors `SsdtDdlEmitter.foreignKeyDecisionDropDiagnostics`.)
+    let catalogLevelShedWitness
+        (entries: DiagnosticEntry list)
+        : DiagnosticEntry option =
+        DiagnosticDocument.catalogLevelShedWitness entries
 
     /// Π_DecisionLog emit with routing pre-applied. Slice β + γ
     /// callers (the three-emitter composition) route entries

@@ -317,6 +317,9 @@ module CatalogCodec =
         wOpt jw "originalName" wStrVal a.OriginalName
         wOpt jw "externalDatabaseType" wStrVal a.ExternalDatabaseType
         wOpt jw "sqlStorage" wSqlStorage a.SqlStorage
+        // WP8 / NM-72 — persist the authored Service-Studio order for
+        // round-trip fidelity (the codec is the IR's lossless store).
+        wOpt jw "order" wIntVal a.Order
         jw.WriteEndObject()
 
     let private wReference (jw: Utf8JsonWriter) (r: Reference) : unit =
@@ -749,6 +752,8 @@ module CatalogCodec =
             let! originalName = optField el "originalName" asString
             let! externalDatabaseType = optField el "externalDatabaseType" asString
             let! sqlStorage = optField el "sqlStorage" readSqlStorage
+            // WP8 / NM-72 — authored Service-Studio order, round-tripped.
+            let! order = optField el "order" asInt
             return
                 { Attribute.create ssKey name typ with
                     Column = column
@@ -766,7 +771,8 @@ module CatalogCodec =
                     ExtendedProperties = extendedProperties
                     OriginalName = originalName
                     ExternalDatabaseType = externalDatabaseType
-                    SqlStorage = sqlStorage }
+                    SqlStorage = sqlStorage
+                    Order = order }
         }
 
     let private readReference (el: JsonElement) : Result<Reference> =

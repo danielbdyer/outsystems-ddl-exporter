@@ -129,6 +129,16 @@ module Compose =
             /// `transform.diagnostic` egress projection. Disjoint from the
             /// curated operational `RunReport.Diagnostics` set.
             PassEntries : DiagnosticEntry list
+            /// The Model Fidelity Report — the per-run, rolled-up account of the
+            /// distance between the declared model and the source reality the
+            /// live profiler observed (data violations + accepted divergences +
+            /// uniqueness candidates). Computed at the `seedOutputs` seam from
+            /// the emitted catalog × the run's `Profile` × the categorical-
+            /// uniqueness decision set; written as `fidelity.json` (structured)
+            /// + `fidelity.txt` (the rolled-up text). Empty-but-present on the
+            /// `Profile.empty` base case (a pure emit observes no reality — the
+            /// honest empty report).
+            Fidelity : ModelFidelity.ModelFidelityReport
         }
 
     /// Chapter C slice C.2 — run-shape value returned by
@@ -161,6 +171,14 @@ module Compose =
         /// curated `Diagnostics` set (special-circumstances / inactive /
         /// FK-selectivity / joint-dependency / FK-drop witnesses).
         PassDiagnostics : DiagnosticEntry list
+        /// NM-34b (live) — the source `Catalog` the run READ (the live model
+        /// resolved via `LiveModelRead` / hydration, before renames). Surfaced
+        /// so the run boundary can hash its CANONICAL form
+        /// (`CatalogCodec.serialize`) into the `Run.inputDigest` model half on
+        /// the live-OSSYS path, where there is no on-disk model file to hash.
+        /// Path-sourced runs keep hashing the file text (byte-identical); this
+        /// field is the deterministic model-content input for the live path.
+        ReadCatalog : Catalog
     }
 
     /// Track W1-B (seam T2) — the **diff-vs-prior store leg** of `full-export`.
@@ -224,6 +242,13 @@ module Compose =
         /// sibling of `projection.json` on the deployable axis.
         [<Literal>]
         let dacpac = "projection.dacpac"
+        /// The Model Fidelity Report — structured (`fidelity.json`) + the
+        /// rolled-up operator text (`fidelity.txt`). Default-on; emitted
+        /// alongside the other run artifacts on full-export and migrate.
+        [<Literal>]
+        let fidelityJson = "fidelity.json"
+        [<Literal>]
+        let fidelityText = "fidelity.txt"
 
     /// Aggregate the SSDT bundle's per-table SQL files into one
     /// concatenated SQL string (manifest.json excluded; iterates the
@@ -364,6 +389,18 @@ module Compose =
         VersionedPolicy : VersionedPolicy option
         Trail           : LineageEvent list
         PassEntries     : DiagnosticEntry list
+        /// NM-38 — the SSDT constraint-rendering mode lifted from
+        /// `EmissionPolicy.RenderConstraintsElegant` at the composition
+        /// seam (Core's bool → SSDT's typed `Mode`; Core cannot name the
+        /// SSDT type). Threaded into `SsdtDdlEmitter.emitSlicesWithRendering`
+        /// so the operator's V1-parity / bisect opt-out reaches production.
+        ConstraintRendering : ConstraintFormatter.Mode
+        /// NM-70 (WP5) — `EmissionPolicy.EmitIdentityAnnotations` lifted to
+        /// the SSDT emit seam. `true` (default) ⇒ the `Projection.*` identity
+        /// extended properties emit (byte-identical). `false` ⇒ they are
+        /// suppressed and the `emission.identityAnnotations.omitted` named
+        /// downgrade diagnostic is emitted at the SSDT emit step.
+        EmitIdentityAnnotations : bool
     }
 
     /// One registered emit step: its metadata (the pillar-9 classification
@@ -388,6 +425,67 @@ module Compose =
         | null -> invalidOp "Compose.seedOutputs: '{}' did not parse (unreachable)"
         | n    -> n
 
+    /// The estate name the fidelity-report masthead leads with — neutral,
+    /// THE_VOICE §7 ("never *your*"). A single-module catalog names itself; a
+    /// multi-module estate is "the model" (the count-bearing masthead carries
+    /// the module / entity tally beside it).
+    let private estateName (catalog: Catalog) : string =
+        match catalog.Modules with
+        | [ only ] -> Name.value only.Name
+        | _        -> "the model"
+
+    /// Compute the per-run Model Fidelity Report from the emit context — the
+    /// emitted catalog × the run's profile × the categorical-uniqueness
+    /// decision set (`ComposeState.CategoricalUniquenessDecisions`, which the
+    /// `CategoricalUniquenessPass` write-back populates; this is the consumer
+    /// that closes NM-35). The accepted-divergence residual is the set of named
+    /// tolerances the emitted output structurally invokes (`emittedAccepted-
+    /// Divergences`, NM-32/33 final hop); a clean pure emit yields the empty
+    /// residual, the honest base case.
+    /// NM-32/33 (final hop) — the per-run accepted-divergence residual,
+    /// computed STRUCTURALLY from the emitted catalog's static data. The emit
+    /// path has no deploy round-trip (the canary is the separate `check` verb),
+    /// so the residual is the set of named tolerances the EMITTED output
+    /// structurally invokes — today, the empty-text → NULL normalization
+    /// (`CanaryResidual.observeCell`) — resolved against the accepted set.
+    /// `Tolerance.permissive` is the accepted set until an operator tolerance
+    /// config is wired (then it becomes that configured value). Closes the
+    /// `runStoreLeg` / `fidelityOf` FLAG.
+    let private emittedResidualCollector (catalog: Catalog) : CanaryResidual.Collector =
+        Catalog.allKinds catalog
+        |> List.fold
+            (fun coll (k: Kind) ->
+                let typeByName = k.Attributes |> List.map (fun a -> a.Name, a.Type) |> Map.ofList
+                Kind.staticPopulations k
+                |> List.fold
+                    (fun c (row: StaticRow) ->
+                        row.Values
+                        |> Map.fold
+                            (fun c2 name raw ->
+                                match Map.tryFind name typeByName with
+                                | Some typ -> CanaryResidual.observeCell typ raw c2
+                                | None     -> c2)
+                            c)
+                    coll)
+            CanaryResidual.empty
+
+    let private emittedToleranceResidual (catalog: Catalog) : Tolerance =
+        CanaryResidual.resolve Tolerance.permissive (emittedResidualCollector catalog)
+
+    let private emittedAcceptedDivergences (catalog: Catalog) : ToleratedDivergence list =
+        CanaryResidual.resolvedDivergences Tolerance.permissive (emittedResidualCollector catalog)
+
+    let private fidelityOf (ctx: EmitContext) : ModelFidelity.ModelFidelityReport =
+        let categoricalDecisions =
+            ctx.ComposedState.CategoricalUniquenessDecisions
+            |> Option.defaultValue CategoricalUniquenessRules.emptyDecisionSet
+        ModelFidelity.compose
+            (estateName ctx.EmittedCatalog)
+            ctx.EmittedCatalog
+            ctx.Profile
+            categoricalDecisions
+            (emittedAcceptedDivergences ctx.EmittedCatalog)
+
     /// The fold seed. Every artifact field is a placeholder the matching
     /// `EmitStep` overwrites (the `registered ⇔ executed` invariant
     /// guarantees every step runs); `Trail` / `PassEntries` carry through
@@ -407,7 +505,8 @@ module Compose =
           Dacpac            = None
           Manifest          = ManifestEmitter.build ctx.EmittedCatalog
           Trail             = ctx.Trail
-          PassEntries       = ctx.PassEntries }
+          PassEntries       = ctx.PassEntries
+          Fidelity          = fidelityOf ctx }
 
     /// The single source for the sibling-Π emit phase, in emission order.
     let emitSteps : EmitStep list =
@@ -416,7 +515,7 @@ module Compose =
               fun ctx outputs ->
                 use _ = Bench.scope "emit.ssdtBundle.compose"
                 let decisionOverlay = DecisionOverlay.ofComposeState ctx.ComposedState
-                match SsdtDdlEmitter.emitSlicesWith decisionOverlay ctx.EmittedCatalog with
+                match SsdtDdlEmitter.emitSlicesWithRendering ctx.ConstraintRendering ctx.EmitIdentityAnnotations decisionOverlay ctx.EmittedCatalog with
                 | Ok ssdtFiles ->
                     let rewritten = applyEmissionFolderOverrides ctx.Folders ctx.EmittedCatalog ssdtFiles
                     let policyConflicts = ConflictDetector.detectConflicts ctx.Trail ctx.PassEntries
@@ -494,11 +593,42 @@ module Compose =
               Folders         = folders
               VersionedPolicy = versionedPolicy
               Trail           = composed.Trail
-              PassEntries     = passEntries }
+              PassEntries     = passEntries
+              // NM-38 — lift the Core bool to the SSDT typed Mode at the
+              // composition seam; `true` (default) ⇒ `Enabled` (byte-identical).
+              ConstraintRendering =
+                if policy.RenderConstraintsElegant then ConstraintFormatter.Enabled
+                else ConstraintFormatter.Disabled
+              // NM-70 — thread the identity-annotation gate to the SSDT emit
+              // step; `true` (default) ⇒ the `Projection.*` properties emit
+              // (byte-identical). The named-downgrade diagnostic is emitted at
+              // the `runWithConfigCore` diagnostics merge, not here.
+              EmitIdentityAnnotations = policy.EmitIdentityAnnotations }
         let outputs =
             emitSteps
             |> List.fold (fun acc step -> step.Emit emitContext acc) (seedOutputs emitContext)
-        outputs, composedState
+        // NM-02 (2026-06-13) — the emission axes `EmitSchema` / `EmitDiagnostics`
+        // now gate real emit steps, mirroring the `EmitData` gate on the data
+        // bundle (line ~608). Every `EmitStep` still runs (so `registered ⇔
+        // executed` holds and `Manifest`/`Trail`/`PassEntries` stay populated as
+        // the §16 egress conduits); the gate clears the artifact fields AFTER the
+        // fold rather than skipping the step. The defaults (`EmissionPolicy.empty`
+        // = schema + diagnostics on) leave this identity — byte-identical default.
+        let schemaGated =
+            // `EmitSchema = false` ⇒ no CREATE/SSDT schema bundle. The `Manifest`
+            // value stays (a conduit, embedded in no file when SsdtBundle is empty).
+            if policy.EmitSchema then outputs
+            else { outputs with SsdtBundle = Map.empty }
+        let diagnosticsGated =
+            // `EmitDiagnostics = false` ⇒ no operational diagnostic artifacts
+            // (decision-log-derived remediation SQL / summary prose / suggest-config).
+            if policy.EmitDiagnostics then schemaGated
+            else
+                { schemaGated with
+                    RemediationSql    = ""
+                    SummaryText       = ""
+                    SuggestConfigJson = emptyJsonNode () }
+        diagnosticsGated, composedState
 
     let private projectFromChain
         (chain: PassChainAdapter list)
@@ -769,6 +899,18 @@ module Compose =
         // H-032 — config-edit suggestion document (JSON).
         let suggestConfigStaging = Path.Combine(stagingDir, ArtifactPath.suggestConfig)
         writeFile suggestConfigStaging (outputs.SuggestConfigJson.ToJsonString(jsonOpts))
+        // The Model Fidelity Report — structured + the rolled-up text. Default-on;
+        // written alongside the other run artifacts on every BUNDLE emission
+        // (full-export / emit). The live in-place `migrate` differential has no
+        // output directory and no profiled source, so it emits no fidelity artifact
+        // — its provenance is the recorded episode + RefactorLog, not a bundle. (The
+        // prior comment claimed "full-export / migrate"; migrate never reaches this
+        // writer — it runs ALTERs against a live DB. THE_CLI distinction: bundle vs
+        // live-differential.)
+        let fidelityJsonStaging = Path.Combine(stagingDir, ArtifactPath.fidelityJson)
+        writeFile fidelityJsonStaging (ModelFidelity.toJsonString outputs.Fidelity)
+        let fidelityTextStaging = Path.Combine(stagingDir, ArtifactPath.fidelityText)
+        writeFile fidelityTextStaging (String.concat "\n" (ModelFidelity.render outputs.Fidelity))
         // The compiled .dacpac (operator-gated; absent by default). A binary
         // artifact: written directly rather than through the text `FileWriter`
         // seam, inside the same staging directory so the atomic-replace
@@ -785,7 +927,9 @@ module Compose =
         let remediationFinal   = Path.Combine(outputDir, ArtifactPath.remediation)
         let summaryFinal       = Path.Combine(outputDir, ArtifactPath.summary)
         let suggestConfigFinal = Path.Combine(outputDir, ArtifactPath.suggestConfig)
-        bundleFinalPaths @ dataFinalPaths @ dacpacFinalPaths @ [ jsonFinal; distributionsFinal; remediationFinal; summaryFinal; suggestConfigFinal ]
+        let fidelityJsonFinal  = Path.Combine(outputDir, ArtifactPath.fidelityJson)
+        let fidelityTextFinal  = Path.Combine(outputDir, ArtifactPath.fidelityText)
+        bundleFinalPaths @ dataFinalPaths @ dacpacFinalPaths @ [ jsonFinal; distributionsFinal; remediationFinal; summaryFinal; suggestConfigFinal; fidelityJsonFinal; fidelityTextFinal ]
 
     let private safeCleanupStaging (stagingDir: string) : unit =
         if Directory.Exists stagingDir then
@@ -975,6 +1119,18 @@ module Compose =
                 || cfg.Emission.Bootstrap
             let dataComposition =
                 if cfg.Emission.StaticSeeds then AllRemaining else AllExceptStatic
+            // NM-02 (2026-06-13) — translate the schema / diagnostics emission
+            // toggles into the EmissionPolicy, mirroring the data-lane wiring
+            // above. `emission.ssdt` gates the CREATE/SSDT schema bundle;
+            // any of `emission.decisionLog` / `.opportunities` / `.validations`
+            // keeps the diagnostic-artifact emission on. Both config families
+            // default `true`, so the default policy stays schema + diagnostics
+            // (byte-identical to `EmissionPolicy.empty`).
+            let emitSchema = cfg.Emission.Ssdt
+            let emitDiagnostics =
+                cfg.Emission.DecisionLog
+                || cfg.Emission.Opportunities
+                || cfg.Emission.Validations
             Result.success {
                 Policy.empty with
                     Tightening = tightening
@@ -985,10 +1141,21 @@ module Compose =
                     // `emission.includePlatformAutoIndexes` threads to the
                     // collapsed seam (default true = current behavior).
                     Emission   = { Policy.empty.Emission with
+                                     EmitSchema = emitSchema
                                      EmitData = emitData
+                                     EmitDiagnostics = emitDiagnostics
                                      DataComposition = dataComposition
                                      DeleteScope = cfg.Emission.DeleteScope
-                                     IncludePlatformAutoIndexes = cfg.Emission.IncludePlatformAutoIndexes }
+                                     IncludePlatformAutoIndexes = cfg.Emission.IncludePlatformAutoIndexes
+                                     // NM-38 — `emission.renderConstraintsElegant`
+                                     // threads the operator's constraint-rendering
+                                     // opt-out (default true = current behavior).
+                                     RenderConstraintsElegant = cfg.Emission.RenderConstraintsElegant
+                                     // NM-70 — `emission.identityAnnotations`
+                                     // threads the operator's identity-annotation
+                                     // gate (default true = current behavior;
+                                     // false is the named downgrade).
+                                     EmitIdentityAnnotations = cfg.Emission.EmitIdentityAnnotations }
             }
         | _ ->
             let tighteningErrs = match tighteningR with Ok _ -> [] | Error es -> es
@@ -1125,8 +1292,24 @@ module Compose =
                         // silent dedupe).
                         @ SsdtDdlEmitter.foreignKeyNameCollisionDiagnostics
                             (DecisionOverlay.ofComposeState finalState) finalState.Catalog
+                        // NM-70 (WP5) — the named downgrade. When the operator
+                        // omits the identity annotations, the `Projection.*`
+                        // extended properties are NOT written, so identity
+                        // recovery degrades to name-derived SsKeys (no
+                        // persisted SsKey to read back on roundtrip). One
+                        // Warning per run; never a silent suppression.
+                        @ (if policy.Emission.EmitIdentityAnnotations then []
+                           else
+                               [ DiagnosticEntry.create
+                                   "emitter:ssdtDdlEmitter"
+                                   DiagnosticSeverity.Warning
+                                   "emission.identityAnnotations.omitted"
+                                   "Identity annotations omitted: the Projection.SsKey / Projection.LogicalName extended properties were not emitted; identity recovery degrades to name-derived SsKeys (no persisted SsKey to read back on roundtrip)." ])
                     match write cfg.Output.Dir outputs with
-                    | Ok paths    -> Result.success { Paths = paths; Diagnostics = diagnostics; Manifest = outputs.Manifest; Trail = outputs.Trail; PassDiagnostics = outputs.PassEntries }
+                    // NM-34b (live) — `ReadCatalog = catalog`: the source model
+                    // the run READ (pre-rename), surfaced so the run boundary can
+                    // hash its canonical form into the live-path input digest.
+                    | Ok paths    -> Result.success { Paths = paths; Diagnostics = diagnostics; Manifest = outputs.Manifest; Trail = outputs.Trail; PassDiagnostics = outputs.PassEntries; ReadCatalog = catalog }
                     | Error errors -> Result.failure errors
                 | _ ->
                     let policyErrs    = match policyR    with Ok _ -> [] | Error es -> es
@@ -1588,6 +1771,18 @@ module Compose =
     /// `ChangeManifest` for the edge, and record exactly one new episode. Pure
     /// w.r.t. the genesis emission (it runs *after* the bundle lands and never
     /// alters it); the only side effect is the durable store write.
+    ///
+    /// `appliedTransforms` is the composed run's §5.5 per-artifact overlay
+    /// enumeration (`ManifestEmitter.appliedTransforms` over the run's lineage
+    /// trail, surfaced on `RunReport.Manifest.AppliedTransforms`); `tolerances`
+    /// is the run's resolved tolerance residual. Both are stamped onto the new
+    /// episode via `Episode.withProvenance` so the recorded episode — and the
+    /// `ChangeManifest` of its edge — carries "under what overlay / equivalence
+    /// was this displacement accepted?", not the dead `[]` / `strict` defaults.
+    /// (FLAG: no production caller resolves a non-`strict` tolerance set today —
+    /// the config carries no per-environment divergence axis and `Tolerance.parse`
+    /// is unwired; see `storeLegFromConfig`. The wiring is live so a future
+    /// tolerance-resolving caller populates it without re-touching this seam.)
     let private runStoreLeg
         (path: string)
         (timeline: Timeline)
@@ -1595,6 +1790,8 @@ module Compose =
         (at: System.DateTimeOffset)
         (refactorLogRef: string option)
         (data: DataObservation)
+        (tolerances: Tolerance)
+        (appliedTransforms: (SsKey * OverlayAxis option) list)
         (emitted: Catalog)
         : Result<FullExportStoreLeg, FullExportStoreError> =
         match priorSchemaFromStore path with
@@ -1615,8 +1812,14 @@ module Compose =
                         | Error e -> Error e
                         | Ok coordinate ->
                             // The emitted schema is the new episode's schema plane
-                            // (the same `Catalog` the bundle published).
-                            let episode = Episode.create coordinate emitted Profile.empty refactorLogRef data
+                            // (the same `Catalog` the bundle published). Thread the
+                            // run's provenance onto it (NM-33): the resolved
+                            // tolerance residual + the composed run's per-artifact
+                            // overlay enumeration. `withProvenance` is the single
+                            // production caller of the provenance plane.
+                            let episode =
+                                Episode.create coordinate emitted Profile.empty refactorLogRef data
+                                |> Episode.withProvenance tolerances appliedTransforms
                             match recordEpisode path timeline episode with
                             | Error e -> Error e
                             | Ok chain ->
@@ -1647,12 +1850,20 @@ module Compose =
     /// supplied. Extracted so `runWithConfigAndStore` keeps a two-level await
     /// depth (the three-level `let!`-in-match nesting is not statically
     /// compilable under Release — FS3511).
+    /// `appliedTransforms` is the run's §5.5 overlay enumeration, taken from
+    /// `RunReport.Manifest.AppliedTransforms` (the composed run the caller
+    /// already produced), threaded onto the recorded episode (NM-33). The
+    /// tolerance residual is `Tolerance.strict` here — the only resolved value
+    /// available: the unified config carries no per-environment divergence axis
+    /// and `Tolerance.parse` has no production caller, so a non-strict residual
+    /// is not yet reachable at this site (FLAGGED on `runStoreLeg`).
     let private storeLegFromConfig
         (cfg: Config.Config)
         (storePath: string option)
         (timeline: Timeline)
         (environment: Environment)
         (at: System.DateTimeOffset)
+        (appliedTransforms: (SsKey * OverlayAxis option) list)
         : Task<Result<FullExportStoreLeg option>> =
         match storePath with
         | None -> Task.FromResult (Result.success None)
@@ -1664,7 +1875,7 @@ module Compose =
                     match emittedR with
                     | Error errors -> Result.failure errors
                     | Ok emitted ->
-                        match runStoreLeg path timeline environment at None DataObservation.empty emitted with
+                        match runStoreLeg path timeline environment at None DataObservation.empty (emittedToleranceResidual emitted) appliedTransforms emitted with
                         | Ok leg -> Result.success (Some leg)
                         | Error storeErr -> Result.failureOf (mapStoreErr storeErr)
             }
@@ -1698,7 +1909,7 @@ module Compose =
             match reportResult with
             | Error errors -> return Result.failure errors
             | Ok report ->
-                let! legResult = storeLegFromConfig cfg storePath timeline environment at
+                let! legResult = storeLegFromConfig cfg storePath timeline environment at report.Manifest.AppliedTransforms
                 return legResult |> Result.map (fun legOpt -> report, legOpt)
         }
 
@@ -1724,7 +1935,14 @@ module Compose =
         match storePath with
         | Some path when not (System.String.IsNullOrWhiteSpace path) ->
             let data = DataObservation.create cdcDelta None
-            match runStoreLeg path timeline environment at None data emitted with
+            // The data-load leg records the measured CDC `DataObservation` but
+            // carries no composed-run lineage trail at this site (the trail is a
+            // schema-emission artifact, not a load artifact), so the §5.5 overlay
+            // enumeration is empty here. The tolerance residual IS now resolved
+            // (NM-32/33 final hop): the accepted-divergences the emitted catalog
+            // structurally invokes, computed from its static data. The diff-vs-prior
+            // leg (`storeLegFromConfig`) is where the real overlay enumeration threads.
+            match runStoreLeg path timeline environment at None data (emittedToleranceResidual emitted) [] emitted with
             | Ok leg -> Result.success (Some leg, cdcDelta)
             | Error storeErr -> Result.failureOf (mapStoreErr storeErr)
         | _ -> Result.success (None, cdcDelta)
@@ -1735,7 +1953,7 @@ module Compose =
     /// synchronously (an unconditional `do!` of a pre-selected Task is
     /// the FS3511-safe shape).
     let private loadMeasureAndRecord
-        (cdcCaptureTotal: SqlConnection -> Task<int>)
+        (cdcCaptureTotal: SqlConnection -> Task<Result<int>>)
         (load: unit -> Task<unit>)
         (emitted: Catalog)
         (sink: SqlConnection)
@@ -1745,11 +1963,17 @@ module Compose =
         (at: System.DateTimeOffset)
         : Task<Result<FullExportStoreLeg option * int>> =
         task {
-            let! baseline = cdcCaptureTotal sink
-            let loading = load ()
-            do! loading
-            let! post = cdcCaptureTotal sink
-            return recordLoad emitted (post - baseline) storePath timeline environment at
+            // NM-54 — the CDC measure surfaces its probe Error rather than
+            // fabricating a count; an unreadable axis fails the load-measure leg.
+            match! cdcCaptureTotal sink with
+            | Error es -> return Result.failure es
+            | Ok baseline ->
+                let loading = load ()
+                do! loading
+                match! cdcCaptureTotal sink with
+                | Error es -> return Result.failure es
+                | Ok post ->
+                    return recordLoad emitted (post - baseline) storePath timeline environment at
         }
 
     /// The fused-string load shape — what an operator executing the
@@ -1757,7 +1981,7 @@ module Compose =
     /// the bundle's idempotent-MERGE contract (AC-X1 part B tests).
     /// The CLI load leg rides `loadLeveledSeedAndRecord` since card P2.
     let loadSeedAndRecord
-        (cdcCaptureTotal: SqlConnection -> Task<int>)
+        (cdcCaptureTotal: SqlConnection -> Task<Result<int>>)
         (executeBatch: SqlConnection -> string -> Task<unit>)
         (emitted: Catalog)
         (seed: string)
@@ -1785,7 +2009,7 @@ module Compose =
     /// closes over the connection STRING because every segment opens its
     /// own pooled connection; `sink` stays the CDC measure's connection).
     let loadLeveledSeedAndRecord
-        (cdcCaptureTotal: SqlConnection -> Task<int>)
+        (cdcCaptureTotal: SqlConnection -> Task<Result<int>>)
         (executeLeveled: DataComposer.LeveledDeploymentText -> Task<unit>)
         (emitted: Catalog)
         (plan: DataComposer.LeveledDeploymentText)
@@ -1820,7 +2044,7 @@ module Compose =
     /// (FS3511-safe; the three-level `let!`-in-match nesting does not
     /// statically compile).
     let private loadFromConfig
-        (cdcCaptureTotal: SqlConnection -> Task<int>)
+        (cdcCaptureTotal: SqlConnection -> Task<Result<int>>)
         (executeLeveled: DataComposer.LeveledDeploymentText -> Task<unit>)
         (cfg: Config.Config)
         (sink: SqlConnection)
@@ -1843,7 +2067,7 @@ module Compose =
     /// face — partial application carries the connection string the
     /// per-segment opens need; `sink` remains the CDC measure's connection).
     let runWithConfigAndLoad
-        (cdcCaptureTotal: SqlConnection -> Task<int>)
+        (cdcCaptureTotal: SqlConnection -> Task<Result<int>>)
         (executeLeveled: DataComposer.LeveledDeploymentText -> Task<unit>)
         (cfg: Config.Config)
         (sink: SqlConnection)

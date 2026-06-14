@@ -47,6 +47,18 @@ let ``reconcileKind ManualOverride maps explicit Source->Sink; sources outside t
     Assert.Equal(Some (AssignedKey.ofString "18"), SurrogateRemapContext.tryFindAssigned userKey (SourceKey.ofString "280") result.Remap)
     Assert.Equal<(SsKey * SourceKey) list>([ userKey, SourceKey.ofString "281" ], result.Unmatched)
 
+[<Fact>]
+let ``reconcileKind records a duplicate Source surrogate as Ambiguous (NM-51), keeping the first binding`` () =
+    // Two Source rows share the PK surrogate "280" — a non-unique reconcile key
+    // (reachable via MatchByColumn / a CSV --user-map). The second binding is
+    // refused and RECORDED, not silently dropped.
+    let source = [ row "280" [ "Email", "alice@x" ]; row "280" [ "Email", "bob@x" ] ]
+    let sink   = [ row "18" [ "Email", "alice@x" ]; row "19" [ "Email", "bob@x" ] ]
+    let result = Reconciliation.reconcileKind userKey idCol byEmail source sink
+    Assert.Equal<(SsKey * SourceKey) list>([ userKey, SourceKey.ofString "280" ], result.Ambiguous)
+    // the first binding is kept
+    Assert.Equal(Some (AssignedKey.ofString "18"), SurrogateRemapContext.tryFindAssigned userKey (SourceKey.ofString "280") result.Remap)
+
 // -- AC-I2 bridge: every UserMatchingStrategy reaches the Transfer re-key ---
 //
 // `Reconciliation.ofUserMatching` translates the User kind's

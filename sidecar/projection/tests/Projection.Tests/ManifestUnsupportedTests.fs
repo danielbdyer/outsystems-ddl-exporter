@@ -47,14 +47,20 @@ let ``Unsupported.compute names match current ToleratedDivergence variants`` () 
     // this test surfaces it (closed-DU expansion empirical-test sibling).
     // 6.A.4 (2026-06-02) added EmptyTextNormalizedToNull. AC-D6 added the
     // two representation-only tolerances (Char/Decimal) that do not fire CDC.
+    // NM-16 (2026-06-13) added the four kind-facet diff-erasure tolerances.
     let result = Unsupported.compute () |> Set.ofList
     let expected =
         Set.ofList
             [ "CharAnsiPaddingTolerated"
+              "CompositePkFkUnreflected"
               "DecimalScaleTolerated"
               "EmptyTextNormalizedToNull"
               "HeaderCommentsOmitted"
               "IndexOptionsUnreflected"
+              "KindActivationUnreflectedInDiff"
+              "KindChecksUnreflectedInDiff"
+              "KindModalityUnreflectedInDiff"
+              "KindTriggersUnreflectedInDiff"
               "PostDeployForeignKeysSplit"
               "StaticPopulationsUnreflected" ]
     Assert.Equal<Set<string>> (expected, result)

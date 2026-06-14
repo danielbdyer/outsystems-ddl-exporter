@@ -352,8 +352,10 @@ type ReverseLegCdcNormTests(fixture: IsolatedContainerFixture) =
                                 Assert.Empty(report.SkippedReferences)
 
                                 do! Deploy.executeBatch sink "EXEC sys.sp_cdc_scan;"
-                                let! tracked = Projection.Adapters.Sql.ReadSide.cdcTrackedTables sink
-                                let! captureCount = Projection.Adapters.Sql.ReadSide.cdcCaptureCount sink tracked
+                                let! trackedR = Projection.Adapters.Sql.ReadSide.cdcTrackedTables sink
+                                let tracked = match trackedR with Ok t -> t | Error es -> failwithf "cdcTrackedTables: %A" es
+                                let! captureCountR = Projection.Adapters.Sql.ReadSide.cdcCaptureCount sink tracked
+                                let captureCount = match captureCountR with Ok n -> n | Error es -> failwithf "cdcCaptureCount: %A" es
 
                                 // ‖δ‖ = CDC capture count = row count: the first
                                 // load is isometric — every emitted change is an

@@ -303,6 +303,18 @@ module ProjectionConfig =
     /// Parse the `projection.json` document text into a `ProjectionConfig`.
     /// Aggregates every per-environment / per-flow error so the operator
     /// sees them all at once.
+    /// NM-10 (2026-06-13) — the closed secondary-verb set, hoisted here so it
+    /// is the SINGLE source for both the argv router (`Command.secondaryVerbs`
+    /// = this) and the config-load collision check below. A flow named after
+    /// one of these verbs is permanently unreachable: `Command.parse` matches
+    /// the verb arms before the `cfg.Flows` map, so `projection report` runs
+    /// the verb, never a `flows: { "report": … }` entry. `ProjectionConfig.parse`
+    /// rejects such a flow at load (`cli.config.flowNameReservedVerb`) rather
+    /// than let it parse, render, and list while reaching nothing (A44:
+    /// expressible ⇔ reachable). THE_CLI.md §3.
+    let reservedFlowVerbs : Set<string> =
+        set [ "check"; "explain"; "seal"; "report"; "profile"; "init"; "diff"; "compare" ]
+
     let parse (json: string) : Result<ProjectionConfig> =
         if String.IsNullOrWhiteSpace json then Result.success empty
         else
@@ -322,9 +334,24 @@ module ProjectionConfig =
                     | true, f when f.ValueKind = JsonValueKind.Object ->
                         [ for p in f.EnumerateObject() -> parseFlow p.Name p.Value ]
                     | _ -> []
+                // NM-10 — a flow named after a reserved secondary verb is
+                // shadowed by `Command.parse` (the verb arms precede the
+                // `cfg.Flows` map) and is permanently unreachable. Refuse it at
+                // load, naming the offending flow + that the name is a reserved
+                // verb, sourced from `reservedFlowVerbs` (the same set the router
+                // uses — no drifting copy).
+                let reservedVerbCollisions =
+                    flowResults
+                    |> List.choose (function Ok f -> Some f.Name | Error _ -> None)
+                    |> List.filter reservedFlowVerbs.Contains
+                    |> List.map (fun name ->
+                        err
+                            "cli.config.flowNameReservedVerb"
+                            (sprintf "flow '%s' is a reserved verb name; `projection %s` always runs the built-in verb, so the flow would be unreachable. Rename the flow." name name))
                 let errors =
                     (envResults |> List.collect (function Error e -> e | Ok _ -> []))
                     @ (flowResults |> List.collect (function Error e -> e | Ok _ -> []))
+                    @ reservedVerbCollisions
                 if not (List.isEmpty errors) then Result.failure errors
                 else
                     let environments =
@@ -655,7 +682,7 @@ module Command =
                         | Ok src -> dataMove src false
                         | Error es -> PlanAction.Refused (6, List.head es)
                     | DataOrigin.Synthetic profile when not schemaOnly ->
-                        PlanAction.SynthesizeAndLoad (spec.Model, modelOssys, profile, conn, opts, false)
+                        PlanAction.SynthesizeAndLoad (spec.Model, modelOssys, profile, conn, opts, false, cfg.Shaping.Model)
                     | _ ->
                         if hasModel then PlanAction.PreviewSchema (spec.Model, modelOssys, conn, opts.Declaration)
                         else modelMissing "projection: "
@@ -669,7 +696,7 @@ module Command =
                             elif hasModel then PlanAction.MigrateWithData (spec.Model, modelOssys, conn, src, opts)
                             else modelMissing "projection: "
                     | DataOrigin.Synthetic profile when not schemaOnly ->
-                        if dataOnly then PlanAction.SynthesizeAndLoad (spec.Model, modelOssys, profile, conn, opts, true)
+                        if dataOnly then PlanAction.SynthesizeAndLoad (spec.Model, modelOssys, profile, conn, opts, true, cfg.Shaping.Model)
                         else PlanAction.Refused (2, err "cli.move.syntheticScope" "a synthetic load moves data only; point the flow at a data-granting target (grant: data).")
                     | _ when dataOnly ->
                         PlanAction.Refused (2, err "cli.move.scopeDataNoSource" "a DML-only load needs a data source (a flow whose `from` is a live environment).")
@@ -704,7 +731,21 @@ module Command =
             | (None, None), _ -> []
             | _, PlanAction.SynthesizeAndLoad _ -> []
             | _, _ -> [ "--seed/--scale accepted; this action has no synthesis leg (model data applied)." ]
-        { Notes = unhonoredNotes spec @ freshNote @ resumableNote @ synthesisNote; Action = action }
+        // NM-07 — the streaming realization + its capture journal are honored on
+        // the reverse leg only (the sole `opts.Streaming`/`opts.Journal` consumer,
+        // `runReverseLegTransfer`); any other action carries no streaming/journaled
+        // write seam, so the flags are noted, never silently dropped.
+        let streamingNote =
+            match spec.Streaming, action with
+            | false, _ -> []
+            | true, PlanAction.RunReverseLeg _ -> []
+            | true, _ -> [ "--streaming accepted; this action has no streaming write seam (materialized write applied)." ]
+        let journalNote =
+            match spec.Journal, action with
+            | None, _ -> []
+            | Some _, PlanAction.RunReverseLeg _ -> []
+            | Some _, _ -> [ "--journal accepted; this action has no journaled write seam (unjournaled write applied)." ]
+        { Notes = unhonoredNotes spec @ freshNote @ resumableNote @ synthesisNote @ streamingNote @ journalNote; Action = action }
 
     /// Route a `check` verb tail to its proof-plane action — purely.
     let planCheck (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
@@ -731,6 +772,20 @@ module Command =
     /// `explain <flow>` is the live preview: what publishing the flow would
     /// change against its target's last sealed episode (B = the flow's model,
     /// A_prior = the target store) — the preview sibling to `report`'s history.
+    /// `compare <A> <B>` — NM-71/WP9: resolve two operand refs and run the
+    /// read-only readiness compare (schema delta + data dealbreakers). The face
+    /// writes `compare.json` + prints the roll-up. Two refs are required.
+    let planCompare (_cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
+        let valueOf = flagValue args
+        let action =
+            match args with
+            | a :: b :: _ -> PlanAction.Compare (a, b, (valueOf "--format" = Some "json"))
+            | _ ->
+                PlanAction.Refused (
+                    2,
+                    err "cli.compare.args" "projection compare: needs two references — projection compare <A> <B>.")
+        { Notes = []; Action = action }
+
     let planExplain (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
         let valueOf = flagValue args
         let depthOpt =
@@ -742,7 +797,7 @@ module Command =
             match args with
             | "diff" :: a :: b :: _ -> PlanAction.ExplainDiff (a, b, (valueOf "--format" = Some "json"), depthOpt)
             | "policy" :: a :: b :: _ -> PlanAction.ExplainPolicy (a, b)
-            | "node" :: c :: k :: _   -> PlanAction.ExplainNode (c, k)
+            | "node" :: c :: k :: _   -> PlanAction.ExplainNode (c, k, (valueOf "--format" = Some "json"), depthOpt)
             | "suggest" :: c :: _     -> PlanAction.ExplainSuggest (c, valueOf "--apply")
             | "registry" :: _         -> PlanAction.ExplainRegistry
             | "migrate" :: _ ->
@@ -1013,9 +1068,17 @@ module Command =
     /// explicit `--store <path>` overrides; a target with no store is refused
     /// (named, never silent). The bundle itself is built by the runner.
     let planReport (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
-        let storeOf () : Result<string> =
+        // The flow target's bundle `out` folder, when one is configured — the
+        // directory the full-export feeding this timeline wrote `fidelity.json`
+        // into, threaded so the report verb surfaces the Model Fidelity Report
+        // without guessing (the prior candidate list only knew dirname(store) /
+        // `out/` / cwd, so a flow whose bundle dir was none of those lost it).
+        let bundleOutOf (envName: string) : string option =
+            Map.tryFind envName cfg.Environments
+            |> Option.bind (fun e -> match e.Access with Access.Bundle out -> Some out | _ -> None)
+        let storeOf () : Result<string * string option> =
             match flagValue args "--store" with
-            | Some s -> Result.success s
+            | Some s -> Result.success (s, None)
             | None ->
                 match args |> List.tryFind (fun a -> not (a.StartsWith "--")) with
                 | None -> Result.failureOf (err "cli.report.noFlow" "projection report: name a flow (report <flow>) or pass --store <path>.")
@@ -1024,10 +1087,10 @@ module Command =
                     | None -> Result.failureOf (err "cli.report.unknownFlow" (sprintf "report: unknown flow '%s'." flowName))
                     | Some flow ->
                         match Map.tryFind flow.To cfg.Environments |> Option.bind (fun e -> e.Store) with
-                        | Some store -> Result.success store
+                        | Some store -> Result.success (store, bundleOutOf flow.To)
                         | None -> Result.failureOf (err "cli.report.noStore" (sprintf "report '%s': target environment '%s' has no `store` (the durable timeline); add one or pass --store <path>." flowName flow.To))
         match storeOf () with
-        | Ok store -> { Notes = []; Action = PlanAction.ReportBundle store }
+        | Ok (store, outDir) -> { Notes = []; Action = PlanAction.ReportBundle (store, outDir) }
         | Error es -> { Notes = []; Action = PlanAction.Refused (6, List.head es) }
 
     /// Route a `profile` verb tail (THE_SYNTHETIC_DATA_DESIGN §2.2):
@@ -1055,7 +1118,10 @@ module Command =
 
     /// The closed secondary-verb set (THE_CLI.md §3). A first token outside
     /// this set is read as a flow name; an unknown one is refused, naming both.
-    let private secondaryVerbs = set [ "check"; "explain"; "seal"; "report"; "profile"; "init"; "diff" ]
+    /// NM-10 — single-sourced from `ProjectionConfig.reservedFlowVerbs` (the
+    /// config-load collision check rejects a flow named after any of these), so
+    /// the router and the load-time refusal can never drift apart.
+    let private secondaryVerbs = ProjectionConfig.reservedFlowVerbs
 
     /// Map an argv to an `Intent` (THE_CLI.md §3): the daily surface
     /// `projection <flow> [--go] [--fresh] [--allow-drops]` (the verb is
@@ -1072,6 +1138,7 @@ module Command =
         | "diff" :: rest    -> Result.success (Intent.Explain ("diff" :: rest))
         | "seal" :: rest    -> Result.success (Intent.Seal rest)
         | "report" :: rest  -> Result.success (Intent.Report rest)
+        | "compare" :: rest -> Result.success (Intent.Compare rest)
         | "profile" :: rest -> Result.success (Intent.Profile rest)
         | first :: rest when Map.containsKey first cfg.Flows ->
             // D8 — the value-bearing synthesis knobs. A malformed value is a
@@ -1125,4 +1192,5 @@ module Command =
         | Intent.Explain args      -> planExplain cfg args
         | Intent.Seal args         -> planSeal args
         | Intent.Report args       -> planReport cfg args
+        | Intent.Compare args      -> planCompare cfg args
         | Intent.Profile args      -> planProfile cfg args

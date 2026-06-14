@@ -329,6 +329,7 @@ let private attrRowWith (isActive: bool) (attrId: int) (entityId: int) (attrName
         IsComputed = false
         ComputedDefinition = None
         DefaultConstraintName = None
+        Order = None
     }
 
 [<Fact>]

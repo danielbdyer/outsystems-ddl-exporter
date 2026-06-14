@@ -60,6 +60,7 @@ let private trivialOutputs () : Compose.Outputs =
             Manifest          = Projection.Targets.SSDT.ManifestEmitter.build Fixtures.sampleCatalog
             Trail             = []
             PassEntries       = []
+            Fidelity          = ModelFidelity.empty "Sales"
         }
 
 let private listAllFiles (dir: string) : string list =
@@ -111,12 +112,14 @@ let ``L3-Boundary-AtomicEmission: happy path writes all artifacts and reports th
         let outputDir = Path.Combine(root, "out")
         let outputs = trivialOutputs ()
         let paths = Compose.write outputDir outputs |> mustOk
-        // Expect: 3 bundle entries + json + distributions + remediation + summary + suggest-config = 8
+        // Expect: 3 bundle entries + json + distributions + remediation + summary
+        //  + suggest-config + fidelity.json + fidelity.txt = 10
         // (chapter 5+ slices 5.13.remediation-emitter + 5.13.summary-formatter
         //  add `manifest.remediation.sql` + `manifest.summary.txt`; H-032 adds
-        //  `suggest-config.json` — all are operator-UX projections of the
-        //  post-chain DecisionSets.)
-        Assert.Equal(8, List.length paths)
+        //  `suggest-config.json`; the Model Fidelity Report adds `fidelity.json`
+        //  + `fidelity.txt` — all are operator-UX projections of the post-chain
+        //  DecisionSets / the profiled-vs-declared crossing.)
+        Assert.Equal(10, List.length paths)
         // Every reported path exists on disk
         for p in paths do
             Assert.True(File.Exists p, sprintf "Expected file at %s" p))

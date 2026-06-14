@@ -139,6 +139,29 @@ let ``config refuses a flow without a to`` () =
     let json = """{ "flows": { "x": { "from": "dev" } } }"""
     Assert.Contains("cli.config.flowNoTo", errCodes (ProjectionConfig.parse json))
 
+[<Fact>]
+let ``NM-10: config refuses a flow named after a reserved verb (it would be unreachable)`` () =
+    // `projection report` runs the built-in `report` verb (the verb arm
+    // precedes the cfg.Flows map in Command.parse), so a flow named `report`
+    // can never be dispatched. The config load refuses it, naming the flow.
+    let json = """{ "flows": { "report": { "from": "model", "to": "uat" } } }"""
+    let codes = errCodes (ProjectionConfig.parse json)
+    Assert.Contains("cli.config.flowNameReservedVerb", codes)
+
+[<Fact>]
+let ``NM-10: every reserved verb name is refused as a flow name`` () =
+    // The collision check is sourced from the same reservedFlowVerbs set the
+    // argv router uses — so every routed verb is rejected, no drift.
+    for verb in ProjectionConfig.reservedFlowVerbs do
+        let json = sprintf """{ "flows": { "%s": { "from": "model", "to": "uat" } } }""" verb
+        Assert.Contains("cli.config.flowNameReservedVerb", errCodes (ProjectionConfig.parse json))
+
+[<Fact>]
+let ``NM-10: a flow with an ordinary name still parses`` () =
+    let json = """{ "flows": { "publish": { "from": "model", "to": "uat" } } }"""
+    let cfg = ProjectionConfig.parse json |> mustOk
+    Assert.True(Map.containsKey "publish" cfg.Flows)
+
 // -- S1: the unified `Shaping` view (THE_CONFIG_CONTROL_PLANE §5) ------------
 // `ProjectionConfig.Shaping` is the model-shaping view of the SAME
 // `projection.json`, parsed leniently so a movement-only file defaults every
@@ -153,7 +176,7 @@ let ``S1: a movement-only config parses with a default-empty Shaping (no modelNo
     Assert.Equal(None, cfg.Shaping.Model.Ossys)
     Assert.Empty(cfg.Shaping.Model.Modules)
     Assert.Empty(cfg.Shaping.Overrides.TableRenames)
-    Assert.Equal(Config.defaultConfig.Policy.Selection, cfg.Shaping.Policy.Selection)
+    Assert.Equal(Config.defaultConfig.Policy.Insertion, cfg.Shaping.Policy.Insertion)
 
 [<Fact>]
 let ``S1: empty-text config carries the default Shaping`` () =
@@ -170,7 +193,7 @@ let ``S1: a unified config populates Shaping.Policy / Overrides / Model.Modules`
           "flows": { "emit": { "from": "model", "to": "uat" } },
           "model":     { "path": "model.json", "modules": ["Sales", { "name": "Ops", "entities": ["Order"] }] },
           "overrides": { "tableRenames": [ { "from": { "module": "Sales", "entity": "Cust" }, "to": { "schema": "dbo", "table": "Customer" } } ] },
-          "policy":    { "selection": "IncludeManual" }
+          "policy":    { "insertion": "Merge" }
         }
         """ |> mustOk
     // model.modules folds into the shaping view (the canonical object form).
@@ -182,7 +205,7 @@ let ``S1: a unified config populates Shaping.Policy / Overrides / Model.Modules`
     | [ { From = Config.LogicalSource { Module = "Sales"; Entity = "Cust" }; To = { Schema = "dbo"; Table = "Customer" } } ] -> ()
     | other -> Assert.Fail(sprintf "expected one Sales::Cust -> dbo.Customer rename, got %A" other)
     // policy folds in.
-    Assert.Equal("IncludeManual", cfg.Shaping.Policy.Selection)
+    Assert.Equal("Merge", cfg.Shaping.Policy.Insertion)
 
 // -- M3.b: the `legacy` B→A reverse-leg classifier (Command.reverseLegOf) ----
 // The clean partial: the rendition flag (M1) drives the recognition of a flow as
@@ -765,11 +788,59 @@ let private specOfIn cfg name opts = Command.resolveFlowSpec cfg (Map.find name 
 [<Fact>]
 let ``synthetic flow (data-only target) → SynthesizeAndLoad; preview vs --go`` () =
     match synthAction "preview-synth" preview with
-    | PlanAction.SynthesizeAndLoad (ModelSource.ModelFile "model.json", None, "file:legacy.profile.json", "env:CLOUD_UAT_CONN", _, false) -> ()
+    | PlanAction.SynthesizeAndLoad (ModelSource.ModelFile "model.json", None, "file:legacy.profile.json", "env:CLOUD_UAT_CONN", _, false, _) -> ()
     | other -> Assert.Fail(sprintf "expected preview SynthesizeAndLoad, got %A" other)
     match synthAction "preview-synth" commit with
-    | PlanAction.SynthesizeAndLoad (_, None, "file:legacy.profile.json", "env:CLOUD_UAT_CONN", _, true) -> ()
+    | PlanAction.SynthesizeAndLoad (_, None, "file:legacy.profile.json", "env:CLOUD_UAT_CONN", _, true, _) -> ()
     | other -> Assert.Fail(sprintf "expected executing SynthesizeAndLoad, got %A" other)
+
+// NM-08/09 — a module-scoped synthetic config. Before the fix, the synthetic
+// path called `resolveCatalog` WITHOUT the module filter, so a `from: synthetic`
+// flow emitted the FULL estate, silently ignoring `model.modules`. The action
+// now carries the `model` section so `SyntheticLoadRun.run` routes the resolved
+// catalog through the SAME filter every sibling action applies.
+let private synthScopedCfg =
+    ProjectionConfig.parse """
+    {
+      "environments": {
+        "cloud-uat": { "access": "direct", "conn": "env:CLOUD_UAT_CONN", "grant": "data" }
+      },
+      "flows": {
+        "preview-synth": { "from": "synthetic", "profile": "file:legacy.profile.json", "to": "cloud-uat" }
+      },
+      "model": { "path": "model.json", "modules": [ "AppCore" ] }
+    }
+    """ |> mustOk
+
+[<Fact>]
+let ``NM-08/09: a module-scoped synthetic flow threads model.modules into the action (no longer the full estate)`` () =
+    let action =
+        (Command.planFlow synthScopedCfg (Map.find "preview-synth" synthScopedCfg.Flows) preview).Action
+    match action with
+    | PlanAction.SynthesizeAndLoad (_, _, _, _, _, false, modelSection) ->
+        // The configured scope rides on the action…
+        Assert.Equal<Config.ModuleSelector list>(
+            [ Config.ModuleSelector.Whole "AppCore" ], modelSection.Modules)
+        // …and binds to a REAL (narrowing) filter — so the synthetic load applies
+        // the same module filter every other action does, not the identity.
+        let opts =
+            ModuleFilterBinding.fromConfig modelSection
+            |> function Ok o -> o | Error es -> failwithf "binding failed: %A" es
+        Assert.True(ModuleFilter.hasFilter opts, "the threaded scope must bind to a narrowing filter, not the identity")
+    | other -> Assert.Fail(sprintf "expected module-scoped SynthesizeAndLoad, got %A" other)
+
+[<Fact>]
+let ``NM-08/09: an unscoped synthetic flow carries the identity filter (byte-identical default)`` () =
+    // Empty `model.modules` is the all-permissive identity, so the default
+    // synthetic load stays byte-identical — the fix narrows ONLY when scoped.
+    match synthAction "preview-synth" preview with
+    | PlanAction.SynthesizeAndLoad (_, _, _, _, _, false, modelSection) ->
+        Assert.Empty(modelSection.Modules)
+        let opts =
+            ModuleFilterBinding.fromConfig modelSection
+            |> function Ok o -> o | Error es -> failwithf "binding failed: %A" es
+        Assert.False(ModuleFilter.hasFilter opts)
+    | other -> Assert.Fail(sprintf "expected SynthesizeAndLoad, got %A" other)
 
 [<Fact>]
 let ``synthetic flow carries the profile ref through resolveFlowSpec`` () =
@@ -786,7 +857,7 @@ let ``synthetic flow without a profile is Refused (named, not silent)`` () =
 [<Fact>]
 let ``synthetic flow preview works under all-scope; --go to a non-data target is Refused`` () =
     match synthAction "synth-all" preview with
-    | PlanAction.SynthesizeAndLoad (_, _, _, "env:CLOUD_ALL_CONN", _, false) -> ()
+    | PlanAction.SynthesizeAndLoad (_, _, _, "env:CLOUD_ALL_CONN", _, false, _) -> ()
     | other -> Assert.Fail(sprintf "expected all-scope preview SynthesizeAndLoad, got %A" other)
     match synthAction "synth-all" commit with
     | PlanAction.Refused (2, e) -> Assert.Equal("cli.move.syntheticScope", e.Code)
@@ -806,7 +877,7 @@ let ``synthetic flow threads the live-OSSYS model source (primary) when configur
     Assert.Equal(Some "env:ONPREM_OSSYS_CONN", cfg.ModelOssys)
     match (Command.planFlow cfg (Map.find "preview-synth" cfg.Flows) preview).Action with
     // modelOssys (primary) rides in the action; the model file remains the fallback.
-    | PlanAction.SynthesizeAndLoad (ModelSource.ModelFile "model.json", Some "env:ONPREM_OSSYS_CONN", _, _, _, false) -> ()
+    | PlanAction.SynthesizeAndLoad (ModelSource.ModelFile "model.json", Some "env:ONPREM_OSSYS_CONN", _, _, _, false, _) -> ()
     | other -> Assert.Fail(sprintf "expected SynthesizeAndLoad carrying the live-OSSYS primary, got %A" other)
 
 // -- live-OSSYS model primary across the whole flow surface -----------------
@@ -1034,7 +1105,7 @@ let ``planMovement: seed/scale thread into the synthetic load's LoadOpts (D8)`` 
             Seed = Some 7UL
             Scale = Some 0.5M }
     match planOf spec with
-    | PlanAction.SynthesizeAndLoad (_, _, _, _, opts, false) ->
+    | PlanAction.SynthesizeAndLoad (_, _, _, _, opts, false, _) ->
         Assert.Equal(Some 7UL, opts.Seed)
         Assert.Equal(Some 0.5M, opts.Scale)
     | other -> Assert.Fail(sprintf "expected SynthesizeAndLoad, got %A" other)
@@ -1058,8 +1129,12 @@ let ``parse: report dispatches to Intent.Report`` () =
 [<Fact>]
 let ``report <flow>: resolves the target environment's store (F4)`` () =
     // onprem-uat (flow uat's target) carries a store → ReportBundle on it.
+    // It also threads the target's bundle `out` folder so the report verb can
+    // surface the fidelity.json the full-export feeding this timeline wrote there.
     match (Command.plan flowCfg (Intent.Report [ "uat" ])).Action with
-    | PlanAction.ReportBundle store -> Assert.Equal("lifecycle/uat.json", store)
+    | PlanAction.ReportBundle (store, outputDir) ->
+        Assert.Equal("lifecycle/uat.json", store)
+        Assert.Equal(Some "dist/onprem-uat", outputDir)
     | other -> Assert.Fail(sprintf "expected ReportBundle, got %A" other)
 
 [<Fact>]
@@ -1071,8 +1146,12 @@ let ``report <flow>: a target with no store is refused (named, not silent)`` () 
 
 [<Fact>]
 let ``report --store <path>: an explicit store overrides`` () =
+    // A --store-only report has no flow environment, so no bundle out dir is
+    // threaded (the fidelity surfacing falls back to dirname(store) / out / cwd).
     match (Command.plan flowCfg (Intent.Report [ "--store"; "x.lifecycle.json" ])).Action with
-    | PlanAction.ReportBundle store -> Assert.Equal("x.lifecycle.json", store)
+    | PlanAction.ReportBundle (store, outputDir) ->
+        Assert.Equal("x.lifecycle.json", store)
+        Assert.Equal(None, outputDir)
     | other -> Assert.Fail(sprintf "expected ReportBundle, got %A" other)
 
 [<Fact>]

@@ -739,6 +739,14 @@ module ReadSide =
                             // stays `None` (semantic fallback) so this
                             // path's emission is unchanged.
                             SqlStorage = None
+                            // WP8 / NM-72 — ReadSide reflects the deployed
+                            // SQL Server schema, which carries no OutSystems
+                            // authored attribute order (ORDINAL_POSITION is
+                            // physical, not Service-Studio order). `None`
+                            // falls back to the PK-first / SsKey canonical
+                            // order; the OSSYS adapter paths carry the
+                            // `Order_Num` value where present.
+                            Order = None
                         }
 
     /// Format a SQL Server scalar value as the canonical raw
@@ -1189,23 +1197,28 @@ module ReadSide =
     /// `normalizeDefault`, the DEFAULT survives the emit → deploy → read
     /// round-trip on the `PhysicalColumn.Default` axis. Attributes without a
     /// recovered default keep `DefaultValue = None`.
+    // NM-30: the four `attach*` helpers are SYMMETRIC — none early-out on an
+    // empty map. An empty `defaults`/`computed` read is NOT special-cased away,
+    // because an empty permission-filtered `sys.default_constraints` read is
+    // indistinguishable from "genuinely no defaults"; short-circuiting one and
+    // walking the others let the two outcomes diverge silently. The uniform walk
+    // is identical in result (every `Map.tryFind` misses on an empty map) and
+    // removes the asymmetry; `attachAnnotations`/`attachIndexes` already walk.
     let private attachDefaults
         (defaults: Map<string * string * string, string>)
         (k: Kind)
         : Kind =
-        if Map.isEmpty defaults then k
-        else
-            let attrs =
-                k.Attributes
-                |> List.map (fun a ->
-                    let schemaStr, tableStr = TableId.qualifiedParts k.Physical
-                    let coord = (schemaStr, tableStr, ColumnRealization.columnNameText a.Column)
-                    match Map.tryFind coord defaults with
-                    | Some definition ->
-                        let normalized = PhysicalSchema.normalizeDefault definition
-                        { a with DefaultValue = Some (SqlLiteral.ofRaw a.Type normalized) }
-                    | None -> a)
-            { k with Attributes = attrs }
+        let attrs =
+            k.Attributes
+            |> List.map (fun a ->
+                let schemaStr, tableStr = TableId.qualifiedParts k.Physical
+                let coord = (schemaStr, tableStr, ColumnRealization.columnNameText a.Column)
+                match Map.tryFind coord defaults with
+                | Some definition ->
+                    let normalized = PhysicalSchema.normalizeDefault definition
+                    { a with DefaultValue = Some (SqlLiteral.ofRaw a.Type normalized) }
+                | None -> a)
+        { k with Attributes = attrs }
 
     /// Wave-1 slice 1.3 (L3-S7) — attach recovered computed-column configs to
     /// a Kind's attributes. `computed` maps `(schema, table, column)` to the
@@ -1218,20 +1231,20 @@ module ReadSide =
         (computed: Map<string * string * string, string * bool>)
         (k: Kind)
         : Kind =
-        if Map.isEmpty computed then k
-        else
-            let attrs =
-                k.Attributes
-                |> List.map (fun a ->
-                    let schemaStr, tableStr = TableId.qualifiedParts k.Physical
-                    let coord = (schemaStr, tableStr, ColumnRealization.columnNameText a.Column)
-                    match Map.tryFind coord computed with
-                    | Some (definition, isPersisted) ->
-                        match ComputedColumnConfig.create definition isPersisted with
-                        | Ok cc -> { a with Computed = Some cc }
-                        | Error _ -> a
-                    | None -> a)
-            { k with Attributes = attrs }
+        // NM-30: walks uniformly (no empty-map early-out) — symmetric with the
+        // other three `attach*` helpers.
+        let attrs =
+            k.Attributes
+            |> List.map (fun a ->
+                let schemaStr, tableStr = TableId.qualifiedParts k.Physical
+                let coord = (schemaStr, tableStr, ColumnRealization.columnNameText a.Column)
+                match Map.tryFind coord computed with
+                | Some (definition, isPersisted) ->
+                    match ComputedColumnConfig.create definition isPersisted with
+                    | Ok cc -> { a with Computed = Some cc }
+                    | Error _ -> a
+                | None -> a)
+        { k with Attributes = attrs }
 
     /// Wave-1 slice 1.3 — attach recovered triggers + CHECK constraints +
     /// extended properties to a Kind. Uses the Core smart constructors
@@ -1551,18 +1564,35 @@ module ReadSide =
     /// metadata); the Transfer pre-flight (`Projection.Pipeline.Transfer`)
     /// consults it to refuse an `Execute` write against a CDC-tracked sink.
     /// Returns `[schema].[table]`-style names, ordered.
-    let cdcTrackedTables (cnn: SqlConnection) : Task<string list> =
+    ///
+    /// NM-54 — this is the CDC integrity gate the Transfer/Migration pre-flight
+    /// consults to REFUSE an `Execute` write against a CDC-tracked sink. A
+    /// transient `SqlException` or a `VIEW DEFINITION`/`VIEW SERVER STATE`
+    /// permission denial reading `sys.tables` must NOT propagate unwrapped: an
+    /// unverifiable CDC state is UNSAFE, so the failure becomes a NAMED refusal
+    /// (`readside.cdcTrackedProbeFailed`) the gate binds and converts to a clean
+    /// refusal — never a raw stack trace. Same `try/with`→`Result` envelope as
+    /// `read` below; no retry (the structural-home blocker stands).
+    let cdcTrackedTables (cnn: SqlConnection) : Task<Result<string list>> =
         task {
-            use cmd = cnn.CreateCommand()
-            cmd.CommandText <-
-                "SELECT SCHEMA_NAME(t.schema_id) + '.' + t.name \
-                 FROM sys.tables t \
-                 WHERE t.is_tracked_by_cdc = 1 AND t.is_ms_shipped = 0 \
-                 ORDER BY 1"
-            use! reader = cmd.ExecuteReaderAsync()
-            let names = ResizeArray<string>()
-            do! drainRows reader (fun reader -> names.Add(reader.GetString 0))
-            return List.ofSeq names
+            try
+                use cmd = cnn.CreateCommand()
+                cmd.CommandText <-
+                    "SELECT SCHEMA_NAME(t.schema_id) + '.' + t.name \
+                     FROM sys.tables t \
+                     WHERE t.is_tracked_by_cdc = 1 AND t.is_ms_shipped = 0 \
+                     ORDER BY 1"
+                use! reader = cmd.ExecuteReaderAsync()
+                let names = ResizeArray<string>()
+                do! drainRows reader (fun reader -> names.Add(reader.GetString 0))
+                return Result.success (List.ofSeq names)
+            with
+            | ex ->
+                return
+                    Result.failureOf (
+                        ValidationError.create
+                            "readside.cdcTrackedProbeFailed"
+                            (sprintf "CDC-tracked-table probe failed (sys.tables not readable): %s" ex.Message))
         }
 
     /// G0b (P10) — the user-directory readability verdict for one place. The
@@ -1659,25 +1689,40 @@ module ReadSide =
     /// unchanged. The no-CDC case (empty `tracked`) returns 0 by the
     /// empty fold. The caller controls scope by passing the table list,
     /// so a sum over a subset (one kind's "Measure" leg) is expressible.
-    let cdcCaptureCount (cnn: SqlConnection) (tracked: string list) : Task<int> =
+    ///
+    /// NM-63 — the CT capture-table name is derived (`cdc.<schema>_<table>_CT`);
+    /// a custom `@capture_instance` or an absent capture table makes the
+    /// `COUNT(*)` throw `Invalid object name`. That must not abort the data-norm
+    /// measure unwrapped: the failure becomes a NAMED refusal
+    /// (`readside.cdcCaptureProbeFailed`) the caller binds and surfaces. Same
+    /// `try/with`→`Result` envelope as `read` below.
+    let cdcCaptureCount (cnn: SqlConnection) (tracked: string list) : Task<Result<int>> =
         task {
-            let mutable total = 0
-            for name in tracked do
-                // `cdcTrackedTables` returns unbracketed `schema.table`;
-                // split on the first '.' so a table whose name carries a
-                // '.' (unusual but legal) still resolves its schema.
-                let schema, table =
-                    match name.IndexOf '.' with
-                    | i when i >= 0 -> name.Substring(0, i), name.Substring(i + 1)
-                    | _ -> "dbo", name
-                let captureTable =
-                    System.String.Concat("cdc.[", schema, "_", table, "_CT]")  // LINT-ALLOW: terminal SQL-text-emission boundary; CT-table name mirrors SQL Server's cdc.<schema>_<table>_CT naming
-                use cmd = cnn.CreateCommand()
-                cmd.CommandText <-
-                    System.String.Concat("SELECT COUNT(*) FROM ", captureTable, ";")  // LINT-ALLOW: terminal SQL-text-emission boundary; captureTable is the CDC capture relation name
-                let! countObj = cmd.ExecuteScalarAsync()
-                total <- total + System.Convert.ToInt32 countObj
-            return total
+            try
+                let mutable total = 0
+                for name in tracked do
+                    // `cdcTrackedTables` returns unbracketed `schema.table`;
+                    // split on the first '.' so a table whose name carries a
+                    // '.' (unusual but legal) still resolves its schema.
+                    let schema, table =
+                        match name.IndexOf '.' with
+                        | i when i >= 0 -> name.Substring(0, i), name.Substring(i + 1)
+                        | _ -> "dbo", name
+                    let captureTable =
+                        System.String.Concat("cdc.[", schema, "_", table, "_CT]")  // LINT-ALLOW: terminal SQL-text-emission boundary; CT-table name mirrors SQL Server's cdc.<schema>_<table>_CT naming
+                    use cmd = cnn.CreateCommand()
+                    cmd.CommandText <-
+                        System.String.Concat("SELECT COUNT(*) FROM ", captureTable, ";")  // LINT-ALLOW: terminal SQL-text-emission boundary; captureTable is the CDC capture relation name
+                    let! countObj = cmd.ExecuteScalarAsync()
+                    total <- total + System.Convert.ToInt32 countObj
+                return Result.success total
+            with
+            | ex ->
+                return
+                    Result.failureOf (
+                        ValidationError.create
+                            "readside.cdcCaptureProbeFailed"
+                            (sprintf "CDC capture-count probe failed (capture table absent or custom-named): %s" ex.Message))
         }
 
     let read (cnn: SqlConnection) : Task<Result<Catalog>> =

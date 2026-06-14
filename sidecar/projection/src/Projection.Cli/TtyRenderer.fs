@@ -245,9 +245,20 @@ let buildSurveyView (reports: CapabilitySurvey.EnvironmentReport list) : View.Vi
             elif not r.Reachable then "unreachable", View.Bad
             elif not (List.isEmpty r.Missing) then
                 sprintf "reachable %s missing %s" Theme.dot (r.Missing |> List.map CapabilitySurvey.Capability.text |> String.concat ", "), View.Warn
+            elif r.GrantUnreadable then
+                // NM-55 — reachable but the grant could not be read: unverified,
+                // not covered.
+                sprintf "reachable %s grant unreadable (coverage unverified)" Theme.dot, View.Warn
             else
-                let cdc = if r.CdcTracked then sprintf " %s CDC-tracked" Theme.dot else ""
-                sprintf "reachable %s grant covered%s%s" Theme.dot cdc (userDirText r.UserDirectory), View.Ok
+                // NM-54 — surface an unverified CDC axis rather than reading a
+                // clean "no CDC": the probe could not be taken, so the verdict is
+                // advisory (Warn), not Ok.
+                let cdc =
+                    if r.CdcProbeFailed then sprintf " %s CDC unverified" Theme.dot
+                    elif r.CdcTracked then sprintf " %s CDC-tracked" Theme.dot
+                    else ""
+                let status = if r.CdcProbeFailed then View.Warn else View.Ok
+                sprintf "reachable %s grant covered%s%s" Theme.dot cdc (userDirText r.UserDirectory), status
         View.Field(r.Name, value, status)
     let needAttention =
         reports
@@ -356,17 +367,22 @@ let renderErrors (errors: ValidationError list) : unit =
 /// the move) to a writer — the catalog copy (`Voice.surfaceOf`) projected
 /// through the same `View` engine that draws the gate and the answer. The
 /// structured NDJSON channel (`LogSink.emit`) is unchanged; this is the human
-/// lens for a §6 proof / §3 verdict an executor narrates inline. An unvoiced
-/// code renders nothing (the caller falls back to its own narration).
+/// lens for a §6 proof / §3 verdict an executor narrates inline. NM-47: an
+/// UNVOICED code no longer renders nothing (an invisible operator verdict) — it
+/// falls back to a plain located narration of the raw code + payload
+/// (`Voice.fallbackSurface`), so a typo'd or newly-added face code is loud, not
+/// silent. The totality assertion pins every literal code passed here as voiced,
+/// keeping the fallback unreached in production.
 let renderVoicedTo (writer: System.IO.TextWriter) (code: string) (payload: Voice.Payload) : unit =
-    match Voice.surfaceOf code payload with
-    | None -> ()
-    | Some surface ->
-        let console =
-            AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(writer)))
-        let redirected =
-            if System.Object.ReferenceEquals(writer, Console.Error) then Console.IsErrorRedirected
-            elif System.Object.ReferenceEquals(writer, Console.Out) then Console.IsOutputRedirected
-            else true
-        if redirected then console.Profile.Width <- 100
-        View.write console (Surface.render surface)
+    let surface =
+        match Voice.surfaceOf code payload with
+        | Some surface -> surface
+        | None         -> Voice.fallbackSurface code payload
+    let console =
+        AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(writer)))
+    let redirected =
+        if System.Object.ReferenceEquals(writer, Console.Error) then Console.IsErrorRedirected
+        elif System.Object.ReferenceEquals(writer, Console.Out) then Console.IsOutputRedirected
+        else true
+    if redirected then console.Profile.Width <- 100
+    View.write console (Surface.render surface)

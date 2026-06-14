@@ -1,4 +1,7 @@
 CREATE TABLE [dbo].[Engagement] (
+    [Id]            INT            IDENTITY (1, 1) NOT NULL
+        CONSTRAINT [PK_dbo_Engagement]
+            PRIMARY KEY CLUSTERED,
     [AltCustomerId] INT            NULL
         DEFAULT 0
         CONSTRAINT [FK_Engagement_Customer_AltCustomerId]
@@ -15,9 +18,6 @@ CREATE TABLE [dbo].[Engagement] (
             FOREIGN KEY ([CustomerId]) REFERENCES [dbo].[Customer] ([Id])
                 ON DELETE CASCADE
                 ON UPDATE NO ACTION,
-    [Id]            INT            IDENTITY (1, 1) NOT NULL
-        CONSTRAINT [PK_dbo_Engagement]
-            PRIMARY KEY CLUSTERED,
     [ParentId]      INT            NULL
         CONSTRAINT [FK_Engagement_Engagement_ParentId]
             FOREIGN KEY ([ParentId]) REFERENCES [dbo].[Engagement] ([Id]),
@@ -59,6 +59,13 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Engagement',
+    @level2type = N'COLUMN', @level2name = N'Id'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'AltCustomerId',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'Engagement',
@@ -77,13 +84,6 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'Engagement',
     @level2type = N'COLUMN', @level2name = N'CustomerId'
-
-GO
-
-EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Id',
-    @level0type = N'SCHEMA', @level0name = N'dbo',
-    @level1type = N'TABLE', @level1name = N'Engagement',
-    @level2type = N'COLUMN', @level2name = N'Id'
 
 GO
 

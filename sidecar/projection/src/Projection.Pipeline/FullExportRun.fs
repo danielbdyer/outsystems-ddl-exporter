@@ -9,6 +9,9 @@ open System
 open System.IO
 open System.Diagnostics
 open Projection.Core
+// NM-34b (live) — `CatalogCodec.serialize` is the deterministic canonical
+// byte form hashed into the live-OSSYS input digest's model half.
+open Projection.Targets.Json
 
 /// The full-export run lifecycle, expressed as the structured LogSink
 /// envelope stream around a `Compose.runWithConfig` composition. This is
@@ -40,6 +43,31 @@ module FullExportRun =
         | RunOutcome.ConfigInvalid _ -> 6
         | RunOutcome.RunFailed _     -> 2
         | RunOutcome.Aborted _       -> 2
+
+    /// NM-34b (live) — the model half of the `Run.inputDigest`. The digest's
+    /// first half is always the config-file text; this picks the second half
+    /// (the model-content input) by the model source:
+    ///   * PATH-sourced (`cfg.Model.Path = Some _`): the model FILE text — the
+    ///     deterministic on-disk model input. Byte-identical to the pre-NM-34b-
+    ///     live behavior (`readFileText` reads the same file the run read).
+    ///   * LIVE-OSSYS (`cfg.Model.Path = None`): the CANONICAL serialization of
+    ///     the READ source `Catalog` (`CatalogCodec.serialize`) — there is no
+    ///     on-disk model file, so the read model's deterministic byte form is the
+    ///     model-digest input. `None` (no report produced) ⇒ the honest empty
+    ///     model half.
+    /// `readFileText` is injected so the path branch stays testable without a
+    /// real file on disk (the live branch is fully pure given the read catalog).
+    let modelDigestInput
+        (readFileText: string -> string)
+        (modelPath: string option)
+        (readCatalog: Catalog option)
+        : string =
+        match modelPath with
+        | Some p  -> readFileText p
+        | None    ->
+            match readCatalog with
+            | Some catalog -> CatalogCodec.serialize catalog
+            | None         -> ""
 
     /// One `config.validationFailed` envelope per config ValidationError
     /// (§7.1) so the operator can grep / jq each independently.
@@ -143,6 +171,60 @@ module FullExportRun =
             Config.Config -> Result<Compose.RunReport * Compose.FullExportStoreLeg option>)
         : RunOutcome * Compose.FullExportStoreLeg option =
         let mutable storeLeg : Compose.FullExportStoreLeg option = None
+        // NM-34b — the resolved config the body validated, captured so the
+        // post-body `captureInputs` can compute the REAL `Run.inputDigest`
+        // (config text + source-model content) and the touched `LedgerRef`.
+        // `None` ⇒ the config never validated, so there is no stable input
+        // content to hash (the honest empty digest).
+        let mutable resolvedConfig : Config.Config option = None
+        // NM-34b (live) — the source `Catalog` the run READ, captured from the
+        // `RunReport`. `captureInputs` hashes its CANONICAL form
+        // (`CatalogCodec.serialize`) as the model-digest input on the live-OSSYS
+        // path (where `cfg.Model.Path = None`, so there is no on-disk model file
+        // to hash). `None` ⇒ the composition never produced a report (config
+        // invalid / aborted), so there is no read model to hash.
+        let mutable readCatalog : Catalog option = None
+        // NM-34b — the input digest + touched ledger refs, evaluated AFTER the
+        // body so it reads what the run resolved. The digest is `Run.inputDigest
+        // configText sourceModelContent`:
+        //   * configText  — the raw unified-config file (a genuine run input);
+        //   * sourceModelContent — the second input the digest contract names:
+        //       - PATH-sourced model (`cfg.Model.Path = Some _`): the source
+        //         model FILE content (byte-identical to the pre-NM-34b-live
+        //         behavior — file text is the deterministic model input);
+        //       - LIVE-OSSYS model (`cfg.Model.Path = None`): the CANONICAL
+        //         serialization of the read source `Catalog`
+        //         (`CatalogCodec.serialize report.ReadCatalog`) — there is no
+        //         on-disk model file, so the read model's deterministic byte
+        //         form is the model-digest input. This closes the NM-34b-live
+        //         FLAG: a live run now yields a non-empty, model-SENSITIVE
+        //         digest (changing the model changes it).
+        // The ledger ref is the recorded episode's `EpisodeRef(timeline,
+        // ordinal)` from the store leg, when a store was threaded.
+        let captureInputs () : string * Run.LedgerRef list =
+            let digest =
+                match resolvedConfig with
+                | None -> ""   // config never validated ⇒ no stable inputs to hash
+                | Some cfg ->
+                    let configText =
+                        try File.ReadAllText configPath with _ -> ""
+                    // NM-34b — path-sourced ⇒ file text (byte-identical);
+                    // live-OSSYS ⇒ canonical serialization of the read catalog
+                    // (model-SENSITIVE digest). See `modelDigestInput`.
+                    let safeReadFile (p: string) : string =
+                        try File.ReadAllText p with _ -> ""
+                    let sourceModelContent =
+                        modelDigestInput safeReadFile cfg.Model.Path readCatalog
+                    if configText = "" then "" else Run.inputDigest configText sourceModelContent
+            let ledgers =
+                match storeLeg with
+                | Some leg ->
+                    let latest = EpisodicLifecycle.latest leg.Chain
+                    let timeline = EpisodicLifecycle.timeline leg.Chain |> Timeline.name
+                    let ordinal = Episode.version latest |> Version.ordinal
+                    [ Run.EpisodeRef (timeline, ordinal) ]
+                | None -> []
+            digest, ledgers
         let runOutcome =
             RunEnvelope.bracket
                 "projection full-export"
@@ -150,6 +232,7 @@ module FullExportRun =
                     LogSink.setVerbosity verbosity
                     LogSink.setMutedCategories mutedCategories)
                 (Map.ofList [ "configPath", box configPath ])
+                captureInputs
                 (fun () ->
                     try
                         match Config.fromFile configPath with
@@ -159,10 +242,17 @@ module FullExportRun =
                         | Ok cfg ->
                             let effectiveOutput = resolveOutputDir cfg outputOverride
                             let cfgForRun = { cfg with Output = { Dir = effectiveOutput } }
+                            // NM-34b — record the validated config so the
+                            // post-body `captureInputs` can hash the real inputs.
+                            resolvedConfig <- Some cfgForRun
                             emitConfigSnapshot cfgForRun effectiveOutput
                             match runComposition cfgForRun with
                             | Ok (report, leg) ->
                                 storeLeg <- leg
+                                // NM-34b (live) — capture the read source model so
+                                // the post-body `captureInputs` can hash its
+                                // canonical form into the live-path input digest.
+                                readCatalog <- Some report.ReadCatalog
                                 emitSpecialCircumstancesDiagnostics report.Diagnostics
                                 // §16 egress projection — surface the pass chain's
                                 // accumulated writers as `transform.*` events. The

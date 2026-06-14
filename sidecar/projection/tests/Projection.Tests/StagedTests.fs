@@ -314,6 +314,7 @@ let ``S4a: RunEnvelope.bracket — runStart is the first event and runComplete t
                 RunEnvelope.bracket "projection test-verb"
                     ignore
                     (Map.ofList [ "configPath", box "cfg.json" ])
+                    (fun () -> "", [])
                     (fun () -> 41 + 1, LogSink.Succeeded))
         Assert.Equal(42, value)
         let envs = List.ofSeq captured
@@ -334,7 +335,7 @@ let ``S4a: RunEnvelope.bracket — a crashed body still closes its stream with t
         let thrown =
             try
                 LogSink.withWriter (new System.IO.StringWriter()) (fun () ->
-                    RunEnvelope.bracket "projection test-verb" ignore Map.empty
+                    RunEnvelope.bracket "projection test-verb" ignore Map.empty (fun () -> "", [])
                         (fun () -> failwith "boom" : int * LogSink.Outcome))
                 |> ignore
                 false

@@ -89,8 +89,49 @@ module RegisteredTransformTags =
             "userFkReflow",          Set.singleton TransformGroup.UserReflow
         ]
 
+    /// NM-44 — the partial `OverlayAxis → TransformGroup` map: which
+    /// operator-intent AXIS a pass's `OperatorIntent` site carries
+    /// implies which feature-toggle GROUP it belongs to. Most axes map
+    /// to no group (`None`): `Selection` / `Emission` / `Insertion` /
+    /// `Ordering` are operator-intent axes that carry no group toggle
+    /// (a `VisibilityMask` Selection pass, a `TableRename` Emission
+    /// pass, a `TopologicalOrderPass` Ordering pass all always run —
+    /// they are not group-toggleable). Only `Tightening` maps to a
+    /// group (`TransformGroup.Tightening`).
+    ///
+    /// This is INTENTIONALLY partial, NOT a bijection. `TransformGroup`
+    /// and `OverlayAxis` are distinct concepts (Classification.fs: a
+    /// group names *which preset*; an axis names *whose intent*). The
+    /// `UserReflow` group is the worked counter-example: `UserFkReflowPass`
+    /// classifies its `OperatorIntent` site on the *Selection* axis
+    /// ("re-direction reads more naturally as Selection"), yet the
+    /// operator-toggle preset it belongs to is `UserReflow`. So the
+    /// `UserReflow` group is NOT axis-derivable; it stays a hand `passTags`
+    /// row keyed by the pass name. The reverse-coverage guard
+    /// (`TransformGroupsBindingTests`) therefore scopes to the
+    /// axis-derivable groups — it catches the dominant silent-always-run
+    /// risk (a new `OperatorIntent Tightening` pass added without a
+    /// `passTags` row) without over-firing on the group-less axes.
+    let groupForAxis (axis: OverlayAxis) : TransformGroup option =
+        match axis with
+        | Tightening -> Some TransformGroup.Tightening
+        | Selection
+        | Emission
+        | Insertion
+        | Ordering -> None
+
     /// Look up a pass's tags by name. `Set.empty` for passes not in
     /// the map (untagged passes always run).
+    ///
+    /// NM-44 — `passTags` is the hand-maintained pass-name → group map.
+    /// Coverage was historically ONE-DIRECTIONAL (every tagged name is a
+    /// real pass), so a new group-toggleable pass added without a `passTags`
+    /// row would silently ALWAYS RUN, ignoring the operator's group toggle.
+    /// The reverse-coverage guard now closes the axis-derivable half via
+    /// `groupForAxis` (above): any pass whose `Sites` carry `OperatorIntent`
+    /// on an axis that maps to a `TransformGroup` MUST be tagged with that
+    /// group. The `UserReflow` group is not axis-derivable (see `groupForAxis`)
+    /// and stays a hand row guarded by the forward coverage test.
     let tagsFor (name: string) : Set<TransformGroup> =
         match Map.tryFind name passTags with
         | Some s -> s

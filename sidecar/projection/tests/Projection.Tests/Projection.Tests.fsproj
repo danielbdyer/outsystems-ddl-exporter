@@ -40,6 +40,7 @@
     <Compile Include="RunHistoryTests.fs" />
     <Compile Include="ThemeTests.fs" />
     <Compile Include="ViewTests.fs" />
+    <Compile Include="ExplainViewTests.fs" />
     <Compile Include="TtyRendererTests.fs" />
     <Compile Include="VoiceTotalityTests.fs" />
     <Compile Include="WatchTests.fs" />
@@ -156,6 +157,9 @@
     <Compile Include="ReverseLegBoundaryTests.fs" />
     <Compile Include="PreflightTests.fs" />
     <Compile Include="PreflightAllTests.fs" />
+    <Compile Include="ModelFidelityTests.fs" />
+    <Compile Include="CompareTests.fs" />
+    <Compile Include="CanaryResidualTests.fs" />
     <Compile Include="RenameProjectionTests.fs" />
     <Compile Include="UserFkReflowPassTests.fs" />
     <Compile Include="UserFkReflowPropertyTests.fs" />
@@ -278,6 +282,7 @@
     <Compile Include="IndexDataSpaceTests.fs" />
     <Compile Include="IsPlatformAutoEmitterToggleTests.fs" />
     <Compile Include="ReferenceHasDbConstraintTests.fs" />
+    <Compile Include="PhysicalSchemaForeignKeyTests.fs" />
     <Compile Include="FilterParseDiagnosticTests.fs" />
     <Compile Include="BuildCreateIndexDiagnosticsTests.fs" />
     <Compile Include="DecisionOverlayTests.fs" />

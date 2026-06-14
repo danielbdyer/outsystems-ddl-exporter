@@ -125,6 +125,16 @@ module Voice =
         | "load"      -> "Verification follows."
         | _           -> "The run is complete."
 
+    /// The §13 follow-on for a run whose terminal stage HALTED — NM-46: a run that
+    /// stops at its terminal stage must still close with the next move, never go
+    /// silent on the red ✕ (the board's cardinal §13 rule, "never end at 'done'").
+    /// The cause already lives on the run's error surface; this follow-on names the
+    /// remediation the board points to. Stative + agentless; never a pronoun, never
+    /// "failed"/"refused" as a lead (the §2.2 banned register). Public so the board's
+    /// done-frame reads the one mapping and the totality test asserts both branches.
+    let followOnHalted (terminalStage: string) : string =
+        sprintf "%s stopped. The cause is on the error surface above; resolve it and re-run." (stageName terminalStage)
+
     // ------------------------------------------------------------------
     // The catalog — grouped by `THE_VOICE.md` section (decision 5: the
     // harvested catalog mirrors the doc). Each entry is a separable
@@ -804,6 +814,27 @@ module Voice =
     let surfaceOf (code: string) (payload: Payload) : Surface.Surface option =
         lookup code |> Option.map (fun c -> toSurface c payload)
 
+    /// The fallback surface for an UNVOICED code (a typo'd or newly-added face
+    /// code with no catalog entry) — NM-47: an unvoiced verdict must never render
+    /// nothing (an invisible operator verdict). Rather than swallow the code, it is
+    /// surfaced as a plain located narration: the raw code leads (a warn `Hero`),
+    /// the payload rides beneath as fields, a note names the missing copy. The
+    /// totality assertion (`renderVoicedCodesAreAllVoiced`) keeps this arm
+    /// unreached in production; it exists so a latent code is loud, not silent.
+    let fallbackSurface (code: string) (payload: Payload) : Surface.Surface =
+        let payloadFields =
+            payload
+            |> Map.toList
+            |> List.sortBy fst
+            |> List.map (fun (k, v) ->
+                let rendered = if isNull v then "—" else string v
+                View.Field(k, rendered, View.Neutral))
+        { Statement      = View.Hero(View.Warn, code)
+          Substantiation =
+            View.Note("this code has no operator copy yet — an unvoiced verdict; report it")
+            :: payloadFields
+          Action         = None }
+
     /// The voiced verdict line (a `Hero`) for a code, or `None` when the code is
     /// unvoiced or its statement is not a verdict (a lifecycle `Note`). The
     /// verdict panel reads this to lead with the finding (`THE_VOICE.md` §3).
@@ -999,4 +1030,5 @@ module Voice =
         | VerificationFailed _      -> "the round-trip did not match the model"
         | DataTransferFailed _      -> "the data load did not complete"
         | RefusedByCdc t            -> sprintf "the schema change would run against a CDC-tracked database (%d table(s))" (List.length t)
+        | RefusedByCdcUnverifiable msg -> sprintf "the CDC state could not be verified, so the schema change did not run — %s" msg
         | StoreReadFailed msg       -> sprintf "the run history could not be read — %s" msg

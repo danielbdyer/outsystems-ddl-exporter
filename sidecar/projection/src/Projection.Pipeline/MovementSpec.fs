@@ -272,6 +272,9 @@ type Intent =
     /// (THE_SYNTHETIC_DATA_DESIGN §2.2). The capture step the synthetic flow
     /// replays from.
     | Profile of args: string list
+    /// `compare <A> <B>` — NM-71/WP9: the read-only multi-environment readiness
+    /// check (schema delta + data dealbreakers). Advisory; no writes.
+    | Compare of args: string list
 
 /// The spec-derived options a live load/migrate carries, bundled so the plan
 /// is self-contained (the runner needs nothing but the plan).
@@ -342,7 +345,15 @@ type PlanAction =
     /// OSSYS when `modelOssys` is set (primary; V1-free) else from the model
     /// file (fallback); the profile ref (`file:<path>`) supplies the evidence σ
     /// replays.
-    | SynthesizeAndLoad of model: ModelSource * modelOssys: string option * profile: string * conn: string * opts: LoadOpts * execute: bool
+    ///
+    /// NM-08/09 — carries the `modelSection` (the config's `model` block) so the
+    /// resolved synthetic catalog passes through the SAME module-filter seam
+    /// (`ModuleFilterBinding.fromConfig` → `ModuleFilter.apply`) every other
+    /// action routes through at `Program.needCatalog`. Without it a `from:
+    /// synthetic` flow emitted the FULL estate, silently ignoring `model.modules`.
+    /// An empty `model.modules` is the all-permissive identity, so the default
+    /// synthetic load stays byte-identical.
+    | SynthesizeAndLoad of model: ModelSource * modelOssys: string option * profile: string * conn: string * opts: LoadOpts * execute: bool * modelSection: Config.ModelSection
     /// live, --go, data source → cross-substrate migrate-with-data.
     | MigrateWithData of model: ModelSource * modelOssys: string option * sink: string * source: string * opts: LoadOpts
     /// live, --go, config model → publish bundle + load the seed.
@@ -356,8 +367,9 @@ type PlanAction =
     | CheckReady
     // explain ------------------------------------------------------------
     | ExplainDiff of refA: string * refB: string * asJson: bool * depth: int option
+    | Compare of refA: string * refB: string * asJson: bool
     | ExplainPolicy of configA: string * configB: string
-    | ExplainNode of config: string * ssKey: string
+    | ExplainNode of config: string * ssKey: string * asJson: bool * depth: int option
     | ExplainSuggest of config: string * applyTo: string option
     | ExplainRegistry
     | ExplainMigratePreview of fromPath: string * toPath: string * declaration: LossDeclaration
@@ -371,8 +383,13 @@ type PlanAction =
     | SealApprove of version: string * approver: string * rationale: string option * store: string option
     // report -------------------------------------------------------------
     /// the migration-team change bundle: the ChangeManifest series read from
-    /// the flow's target durable timeline (THE_CLI.md §8 / F4).
-    | ReportBundle of store: string
+    /// the flow's target durable timeline (THE_CLI.md §8 / F4). `outputDir` is
+    /// the flow target's bundle `out` folder (when one is configured) — the
+    /// directory the full-export that fed this timeline wrote `fidelity.json`
+    /// into, so the report verb can surface the recorded Model Fidelity Report
+    /// without guessing. `None` for a `--store`-only report (no flow env) or a
+    /// non-bundle target.
+    | ReportBundle of store: string * outputDir: string option
     // profile ------------------------------------------------------------
     /// capture the durable Profile from a live environment to a file
     /// (THE_SYNTHETIC_DATA_DESIGN §2.2): read → profile → serialize.

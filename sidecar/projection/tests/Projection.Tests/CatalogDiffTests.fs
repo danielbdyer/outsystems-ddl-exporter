@@ -594,10 +594,17 @@ let ``C1: between/applyDiff round-trips an added FK (reference channel)`` () =
 [<Fact>]
 let ``C1: an FK trust change (WITH NOCHECK) names the Trust facet and round-trips`` () =
     // The Decision/Schema-coupled facet: a deployed FK flips to WITH NOCHECK.
-    let a = catalogOfKinds [ customer; order; country ]
+    // NM-12 — a WITH NOCHECK FK is a REAL constraint that is untrusted
+    // (HasDbConstraint=true, IsConstraintTrusted=false); set both sides through
+    // the sanctioned normalizer so neither enters the illegal quadrant. The
+    // change remains a pure Trust flip.
+    let orderTrusted =
+        { order with
+            References = order.References |> List.map (Reference.withConstraintState true true) }
+    let a = catalogOfKinds [ customer; orderTrusted; country ]
     let orderUntrusted =
         { order with
-            References = order.References |> List.map (fun r -> { r with IsConstraintTrusted = false }) }
+            References = order.References |> List.map (Reference.withConstraintState true false) }
     let b = catalogOfKinds [ customer; orderUntrusted; country ]
     let diff = CatalogDiff.between a b |> mustOk
     let rd = (CatalogDiff.referenceDiffOf orderKey diff).Value

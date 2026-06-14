@@ -362,3 +362,41 @@ let ``X3.T2 (adversarial): the accumulated refactorlog is a distinct bundle memb
         Assert.True(File.Exists(Path.Combine(outDir, Compose.ArtifactPath.json)))
     finally
         safeRm outDir; safeDel cfg; safeDel store; safeDel modelPath
+
+// ===========================================================================
+// NM-33 — `Episode.withProvenance` is wired at the episode-record site, so the
+// recorded episode (and the ChangeManifest of its edge) carries the run's
+// §5.5 applied-transforms overlay enumeration instead of the dead `[]` default.
+// ===========================================================================
+
+[<Fact>]
+let ``NM-33: the recorded episode carries the run's AppliedTransforms (withProvenance is wired, not the dead [] default)`` () =
+    let modelPath = writeTempJson v1ModelOneColumn
+    let outDir = tempOutputDir ()
+    let cfg = writeTempConfig modelPath outDir
+    let store = tempStorePath ()
+    try
+        // A genesis full-export against a store. Before NM-33 the recorded
+        // episode defaulted to `AppliedTransforms = []` (withProvenance had zero
+        // production callers), so the ChangeManifest's AppliedTransforms — and
+        // the durable episode's — were ALWAYS empty. With the wiring live, the
+        // composed run's per-artifact overlay enumeration (at minimum the
+        // skeleton `None` rows) threads onto the episode.
+        let leg = runWithStore cfg store 1
+
+        // The change manifest of the genesis edge now carries the overlay
+        // enumeration — non-empty for any run that emitted artifacts.
+        Assert.NotEmpty(leg.Manifest.AppliedTransforms)
+
+        // And it SURVIVES the store round-trip onto the durable episode (the
+        // NM-34 durability the next sub-step guarantees; asserted here so the
+        // provenance is proven live end-to-end, not just on the in-memory edge).
+        let recorded =
+            LifecycleStore.load store
+            |> mustStoreOk
+            |> EpisodicLifecycle.latest
+        Assert.NotEmpty(recorded.AppliedTransforms)
+        Assert.Equal<(SsKey * OverlayAxis option) list>(
+            leg.Manifest.AppliedTransforms, recorded.AppliedTransforms)
+    finally
+        safeRm outDir; safeDel cfg; safeDel store; safeDel modelPath

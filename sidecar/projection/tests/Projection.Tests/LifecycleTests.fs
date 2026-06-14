@@ -246,6 +246,49 @@ let ``P4 (6.H.3): production netDiff on a genesis-only lifecycle is the empty de
     let nd = Lifecycle.netDiff devGenesis |> mustOk
     Assert.True(CatalogDiff.isEmpty nd)
 
+// ---------------------------------------------------------------------------
+// NM-45 — netDiff's non-composable fold is a NAMED refusal, not a silent
+// fallback. `CatalogDiff.compose` returns `None` (fail-loud) exactly when two
+// diffs are not adjacent on the captured surface; netDiff used to swallow that
+// into the direct `between` it was meant to corroborate. The branch is
+// unreachable for a well-formed monotone chain (Lifecycle.append enforces it),
+// so we (1) prove the fail-loud precondition `compose` guards on directly, and
+// (2) prove every well-formed multi-edge chain that reaches the fold returns Ok
+// — the NonComposableLifecycleChain error never fires on a monotone chain.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``NM-45: CatalogDiff.compose returns None (fail-loud) on non-adjacent diffs`` () =
+    // d1 : genesis → targetCatalog (Customer renamed Patron).
+    // d2 : genesis → genesis (the empty self-diff). d1's TARGET (Patron) does
+    // NOT meet d2's SOURCE (genesis/Customer) on the captured surface, so the
+    // groupoid composition is undefined — `compose` returns None. This is the
+    // exact fail-loud signal netDiff's None branch now names rather than masks.
+    let d1 = CatalogDiff.between sampleCatalog targetCatalog |> mustOk
+    let d2 = CatalogDiff.between sampleCatalog sampleCatalog |> mustOk
+    Assert.True(Option.isNone (CatalogDiff.compose d1 d2),
+                "compose must fail loud (None) when d1.target does not meet d2.source")
+    // ...and the ADJACENT pair composes (Some) — the precondition is genuine.
+    let d2adj = CatalogDiff.between targetCatalog sampleCatalog |> mustOk
+    Assert.True(Option.isSome (CatalogDiff.compose d1 d2adj),
+                "compose must be defined (Some) on an adjacent pair")
+
+[<Fact>]
+let ``NM-45: netDiff over a well-formed monotone chain is always Ok (the named refusal never fires)`` () =
+    // Several well-formed chains, each reaching the compose fold (>= 2 edges).
+    // Every one must be Ok — NonComposableLifecycleChain is unreachable by
+    // construction for a monotone lifecycle.
+    let c2a : CatalogSnapshot = { Version = ver 2 "1.2.0"; Catalog = sampleCatalog }
+    let c2b : CatalogSnapshot = { Version = ver 2 "1.2.0"; Catalog = targetCatalog }
+    let chainBackToSample = Lifecycle.append c2a devChain |> mustResultOk
+    let chainStaysPatron  = Lifecycle.append c2b devChain |> mustResultOk
+    for chain in [ chainBackToSample; chainStaysPatron ] do
+        match Lifecycle.netDiff chain with
+        | Ok _ -> ()
+        | Error (NonComposableLifecycleChain reason) ->
+            Assert.Fail(sprintf "monotone chain produced the named non-composable refusal: %s" reason)
+        | Error e -> Assert.Fail(sprintf "unexpected EmitError: %A" e)
+
 [<Fact>]
 let ``A-Lifecycle-3 (L3-L3): timelines are independent histories`` () =
     let uat = Lifecycle.genesis (tl "uat") c0

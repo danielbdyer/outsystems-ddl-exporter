@@ -60,6 +60,12 @@ module OssysJsonReader =
             let lengthOpt    = getOptionalInt attrJson "length"
             let precisionOpt = getOptionalInt attrJson "precision"
             let scaleOpt     = getOptionalInt attrJson "scale"
+            // WP8 / NM-72 — Service-Studio authored order from V1's
+            // `order` JSON property (the rowset SQL's `AttributesJson`
+            // payload carries `a.[Order_Num]`). `None` when the source
+            // omits it (older snapshots, hand-built fixtures); the
+            // canonical fallback (PK-first / SsKey) then applies.
+            let orderOpt     = getOptionalInt attrJson "order"
             // Resolve the semantic category + concrete SQL Server
             // storage type from the OutSystems type name (rt-prefix
             // aware) plus the declared length / precision / scale, with
@@ -131,7 +137,11 @@ module OssysJsonReader =
                       ExtendedProperties = []
                       OriginalName       = originalName
                       ExternalDatabaseType = externalDatabaseType
-                      SqlStorage         = Some storage }
+                      SqlStorage         = Some storage
+                      // WP8 / NM-72 — authored Service-Studio order from
+                      // the `order` JSON property (sourced from the
+                      // rowset SQL's `a.[Order_Num]`).
+                      Order              = orderOpt }
             | _ ->
                 // Propagate underlying errors via `propagateOrFallback`.
                 // Substantive causes (e.g., `adapter.osm.unmappedDataType`

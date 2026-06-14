@@ -159,3 +159,90 @@ let ``6.H.2: a corrupt embedded schema fails the load (codec re-validation surfa
         match LifecycleStore.load path with
         | FsResult.Error (LifecycleStoreError.ParseFailure _) -> ()
         | other -> Assert.Fail(sprintf "expected ParseFailure from codec re-validation, got %A" other))
+
+// ===========================================================================
+// NM-34 — the provenance planes (Tolerances + AppliedTransforms) survive the
+// store round-trip. Before this, the writer/reader serialized coordinate / cdc
+// / refactorlog but NOT the provenance, so a provenance-bearing episode lost it
+// on store round-trip — stored ≠ durableProjection (which KEEPS them).
+// ===========================================================================
+
+/// A provenance-bearing chain: the genesis is the bare durable-faithful shape,
+/// but the second episode carries BOTH a non-empty tolerance residual and a
+/// non-empty applied-transforms overlay enumeration (mixing `Some axis` rows
+/// across distinct axes and a skeleton-only `None` row).
+let private provenanceTolerances : Tolerance =
+    Tolerance.strict
+    |> Tolerance.withDivergence ToleratedDivergence.HeaderCommentsOmitted
+    |> Tolerance.withDivergence ToleratedDivergence.IndexOptionsUnreflected
+
+let private provenanceApplied : (SsKey * OverlayAxis option) list =
+    [ customer.SsKey, Some OverlayAxis.Emission
+      customer.SsKey, Some OverlayAxis.Tightening
+      order.SsKey,    None ]
+    |> List.sort
+
+let private provenanceEpisode : Episode =
+    Episode.create (coord 1 "1.1.0" Environment.Qa 8) targetCatalog Profile.empty (Some "reflog#1") (DataObservation.create 120 (Some "lsn:0x10"))
+    |> Episode.withProvenance provenanceTolerances provenanceApplied
+
+let private provenanceChain : EpisodicLifecycle =
+    EpisodicLifecycle.genesis (tl "dev") e0
+    |> (fun lc -> EpisodicLifecycle.append provenanceEpisode lc |> mustResultOk)
+
+[<Fact>]
+let ``NM-34: the tolerance residual + applied-transforms survive the store round-trip`` () =
+    withTempFile (fun path ->
+        LifecycleStore.save path provenanceChain |> mustStoreOk
+        let loaded = LifecycleStore.load path |> mustStoreOk
+        let loadedE1 = EpisodicLifecycle.episodes loaded |> List.item 1
+        Assert.Equal<Tolerance>(provenanceTolerances, loadedE1.Tolerances)
+        Assert.Equal<(SsKey * OverlayAxis option) list>(provenanceApplied, loadedE1.AppliedTransforms))
+
+[<Fact>]
+let ``NM-34: a provenance-bearing loaded episode equals its own durableProjection (stored = durable)`` () =
+    withTempFile (fun path ->
+        LifecycleStore.save path provenanceChain |> mustStoreOk
+        let loaded = LifecycleStore.load path |> mustStoreOk
+        // `durableProjection` keeps the provenance planes (drops only Profile),
+        // so the loaded chain equals the original projected through it. Before
+        // NM-34 the load dropped the planes and this equality failed.
+        let expected =
+            EpisodicLifecycle.genesis (tl "dev") (Episode.durableProjection e0)
+            |> (fun lc -> EpisodicLifecycle.append (Episode.durableProjection provenanceEpisode) lc |> mustResultOk)
+        Assert.Equal<EpisodicLifecycle>(expected, loaded))
+
+[<Fact>]
+let ``NM-34: a pre-provenance store (no tolerances/appliedTransforms fields) loads as strict/empty`` () =
+    withTempFile (fun path ->
+        // Save the strict/empty `chain` (every episode's provenance defaults to
+        // `strict` / `[]`, so the new fields serialize as empty arrays), then
+        // remove those exact two trailing fields from each episode object to
+        // simulate a store written before NM-34. They are the LAST two fields of
+        // each episode, so removing them (and the comma after `data`'s object)
+        // leaves valid JSON. The reader must default forward-compatibly, never
+        // fail on the absent fields.
+        LifecycleStore.save path chain |> mustStoreOk
+        let stripped =
+            (System.IO.File.ReadAllText path)
+                .Replace(",\n      \"tolerances\": [],\n      \"appliedTransforms\": []", "")
+        // Sanity: the strip actually removed the fields (guards against a
+        // formatting drift silently turning this into a no-op assertion).
+        Assert.DoesNotContain("tolerances", stripped)
+        Assert.DoesNotContain("appliedTransforms", stripped)
+        System.IO.File.WriteAllText(path, stripped)
+        let loaded = LifecycleStore.load path |> mustStoreOk
+        let loadedGenesis = EpisodicLifecycle.head loaded
+        Assert.True(Tolerance.isStrict loadedGenesis.Tolerances)
+        Assert.Empty(loadedGenesis.AppliedTransforms))
+
+[<Fact>]
+let ``NM-34: an unknown tolerated-divergence token fails the load (fail-closed, never silently dropped)`` () =
+    withTempFile (fun path ->
+        LifecycleStore.save path provenanceChain |> mustStoreOk
+        let text = System.IO.File.ReadAllText path
+        let corrupted = text.Replace("\"HeaderCommentsOmitted\"", "\"NotARealDivergence\"")
+        System.IO.File.WriteAllText(path, corrupted)
+        match LifecycleStore.load path with
+        | FsResult.Error (LifecycleStoreError.ParseFailure _) -> ()
+        | other -> Assert.Fail(sprintf "expected ParseFailure on an unknown divergence token, got %A" other))

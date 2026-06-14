@@ -195,23 +195,33 @@ module VersionedPolicy =
                     && before.Insertion   = Policy.empty.Insertion)
                 || (before.UserMatching <> after.UserMatching
                     && before.UserMatching = Policy.empty.UserMatching)
+            let interventionsContentChanged =
+                // Same ID set but different config (e.g. a NullBudget or
+                // EnableCreation flip) is a MATERIAL change of operator intent,
+                // not cosmetic (NM-58). Sort by id so a pure reordering of the
+                // intervention list does not count. The intervention carries
+                // only (id, config) — there is no rationale field to exclude.
+                (before.Tightening.Interventions |> List.sortBy TighteningIntervention.id)
+                <> (after.Tightening.Interventions |> List.sortBy TighteningIntervention.id)
             let isStructural =
                 before.Selection <> after.Selection
                 || before.Emission <> after.Emission
                 || before.Insertion <> after.Insertion
                 || before.UserMatching <> after.UserMatching
                 || beforeIds <> afterIds
+                || interventionsContentChanged
             if isMajor then MajorBump
             elif isMinor then MinorBump
             elif isStructural then
-                // Non-default → non-default change on an axis: the axis
-                // surface is changing rather than appearing/disappearing.
-                // Counts as Minor (a new operator intent appeared).
+                // Non-default → non-default change on an axis, or a same-id
+                // intervention whose config changed: the axis surface is
+                // changing rather than appearing/disappearing. Counts as Minor
+                // (a new operator intent appeared).
                 MinorBump
             else
-                // Same set of intervention IDs but different content
-                // (e.g., reordering, rationale-only change). Patch bump
-                // preserves the chain without claiming structural change.
+                // Identical intervention content in a different order (a pure
+                // reorder). Patch bump preserves the chain without claiming a
+                // structural change.
                 PatchBump
 
     // -----------------------------------------------------------------

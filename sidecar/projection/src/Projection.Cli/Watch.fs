@@ -326,24 +326,44 @@ module Watch =
     let terminalStageKey (board: Board) : string option =
         board.Stages |> List.tryLast |> Option.map (fun s -> s.Key)
 
-    /// Whether the run has reached its terminal stage — every seeded stage is
-    /// `Done`. The done-frame renders only then (the §13 rhythm names the next move
-    /// once the visible arc has landed, never mid-run).
+    /// Whether the run has reached its terminal stage — every seeded stage has
+    /// closed (`Done` or `Halted`). NM-46: a run that HALTS at its terminal stage
+    /// IS terminal — the arc landed (on a ✕, not a ✓), so the done-frame must still
+    /// render and name the next move; treating only `Done` as terminal left a halted
+    /// terminal stage with NO done-frame, the board stopping on the red ✕ in silence
+    /// (a §13 violation). The done-frame renders once the visible arc has closed,
+    /// never mid-run (a `Pending` / `Active` stage still keeps the frame held back).
     let isTerminal (board: Board) : bool =
         not (List.isEmpty board.Stages)
-        && board.Stages |> List.forall (fun s -> match s.State with Done _ -> true | _ -> false)
+        && board.Stages |> List.forall (fun s -> match s.State with Done _ | Halted _ -> true | _ -> false)
+
+    /// Whether the run reached terminal by HALTING at its last stage (the ✕ close)
+    /// rather than completing it (the ✓ close) — the done-frame branches on this so a
+    /// halted terminal run closes with a remediation follow-on, a completed one with
+    /// the §13 next-phase follow-on. Only the terminal (last) stage's close decides
+    /// the frame's register; an earlier halted-then-recovered stage does not arise on
+    /// the board (a halt closes the arc), but keying on the terminal stage keeps the
+    /// branch honest regardless.
+    let private haltedAtTerminal (board: Board) : bool =
+        match board.Stages |> List.tryLast with
+        | Some { State = Halted _ } -> true
+        | _                         -> false
 
     /// The done-frame line — the §13 follow-on for the terminal stage, with the
     /// recorded-run identity beneath when the board carries one. Voiced through
     /// `watch.runDone` (the catalog holds the copy; the board never authors prose).
-    /// `None` until the run is terminal.
+    /// NM-46: branches on whether the terminal stage completed or HALTED — a halted
+    /// terminal run closes with `Voice.followOnHalted` (a remediation move that
+    /// points at the error surface), never silence on the ✕. `None` until the run is
+    /// terminal.
     let doneFrameText (board: Board) : string option =
         if not (isTerminal board) then None
         else
             let followOn =
                 match terminalStageKey board with
-                | Some key -> Voice.followOnAfter key
-                | None     -> "The run is complete."
+                | Some key when haltedAtTerminal board -> Voice.followOnHalted key
+                | Some key                             -> Voice.followOnAfter key
+                | None                                 -> "The run is complete."
             let payload =
                 [ "followOn", box followOn ]
                 @ (match board.RunIdentity with Some n -> [ "runIdentity", box n ] | None -> [])
@@ -376,7 +396,13 @@ module Watch =
         let stageRows = board.Stages |> List.map (fun s -> Markup(rowMarkup s) :> IRenderable)
         let doneRow =
             match doneFrameText board with
-            | Some t -> [ Markup(sprintf "%s  %s" Theme.ok (Theme.green (Markup.Escape t))) :> IRenderable ]
+            | Some t ->
+                // NM-46: a halted terminal run closes with the ✕/red glyph — a
+                // green ✓ on the remediation line would misstate the run's outcome.
+                let glyph, paint =
+                    if haltedAtTerminal board then Theme.red Theme.bad, Theme.red
+                    else Theme.ok, Theme.green
+                [ Markup(sprintf "%s  %s" glyph (paint (Markup.Escape t))) :> IRenderable ]
             | None   -> []
         Rows(titleRow @ stageRows @ doneRow) :> IRenderable
 

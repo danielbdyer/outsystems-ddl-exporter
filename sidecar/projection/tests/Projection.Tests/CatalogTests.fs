@@ -308,3 +308,43 @@ let ``Slice ζ: SymmetricClosure pass inherits IsUserFk from the original refere
     let userFkRef : Reference =
         { Reference.create orderRefToCustomer (Name.create "CreatedByFk" |> Result.value) orderCustomerFkKey customerKey with IsUserFk = true }
     Assert.True userFkRef.IsUserFk
+
+// ---------------------------------------------------------------------------
+// NM-15 — Attribute.create is TOTAL. An over-128-char logical name no longer
+// failwithf's mid-IR-build (it was the only non-total smart constructor in the
+// file); the default ColumnName is fitted via IdentifierBudget.fit — the same
+// deterministic discipline the SSDT emitters use for over-budget generated
+// names — yielding a VALID <=128-char identifier, never silent-invalid SQL.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``NM-15: Attribute.create on an over-128-char logical name does not throw and fits the default column`` () =
+    let longLogical = String.replicate 200 "x"   // 200 chars > 128
+    let nm = Name.create longLogical |> Result.value
+    // Previously this threw; now it is total.
+    let attr = Attribute.create (attrKey ["X"; "Long"]) nm Integer
+    let colText = ColumnRealization.columnNameText attr.Column
+    // The fitted default is a valid SQL Server identifier (<=128 chars) and
+    // exactly matches IdentifierBudget.fit of the logical name (deterministic).
+    Assert.True(colText.Length <= 128, "fitted default column name must fit the 128-char budget")
+    Assert.Equal(IdentifierBudget.fit longLogical, colText)
+    // The logical Name itself is preserved unchanged (only the column is fitted).
+    Assert.Equal(longLogical, Name.value attr.Name)
+
+[<Fact>]
+let ``NM-15: a short logical name still derives a byte-identical default column (T1 untouched)`` () =
+    let nm = Name.create "CustomerId" |> Result.value
+    let attr = Attribute.create (attrKey ["X"; "Short"]) nm Integer
+    Assert.Equal("CustomerId", ColumnRealization.columnNameText attr.Column)
+
+[<Fact>]
+let ``NM-15: an explicit Column override on a long-named attribute is honored (no throw on the discarded default)`` () =
+    // The CatalogCodec JSON round-trip shape: `{ Attribute.create k n t with
+    // Column = <deserialized> }`. The throwing default used to fire even though
+    // the override immediately replaced it; now the total default lets the
+    // override stand.
+    let longLogical = String.replicate 200 "y"
+    let nm = Name.create longLogical |> Result.value
+    let explicitCol = ColumnRealization.create "PHYSICAL_COL" false |> Result.value
+    let attr = { Attribute.create (attrKey ["X"; "Override"]) nm Integer with Column = explicitCol }
+    Assert.Equal("PHYSICAL_COL", ColumnRealization.columnNameText attr.Column)

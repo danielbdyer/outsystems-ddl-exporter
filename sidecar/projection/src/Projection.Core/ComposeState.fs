@@ -37,6 +37,11 @@ type ComposeState = {
     /// H-076 — Query hint fill-factor suggestions.
     /// Populated when QueryHintPass runs in the chain.
     QueryHints : QueryHintReport option
+    /// NM-36 / H-039 — cascade-delete-risk shock zones over the FK graph.
+    /// Populated when the cascade-shock analytics pass runs in the chain;
+    /// its `topology.cascadeShock` Warning DiagnosticEntries reach the
+    /// decision-log / diagnostics surface like the other advisory passes.
+    CascadeShockZones : CascadeShockZone list option
 }
 
 [<RequireQualifiedAccess>]
@@ -56,7 +61,8 @@ module ComposeState =
           BoundedContexts = None
           ProfileAnomalies = None
           SchemaComplexity = None
-          QueryHints = None }
+          QueryHints = None
+          CascadeShockZones = None }
 
     let withCatalog (catalog: Catalog) (state: ComposeState) : ComposeState =
         { state with Catalog = catalog }
@@ -96,3 +102,6 @@ module ComposeState =
 
     let withQueryHints (value: QueryHintReport) (state: ComposeState) : ComposeState =
         { state with QueryHints = Some value }
+
+    let withCascadeShockZones (value: CascadeShockZone list) (state: ComposeState) : ComposeState =
+        { state with CascadeShockZones = Some value }

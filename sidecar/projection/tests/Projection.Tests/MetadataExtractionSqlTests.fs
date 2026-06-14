@@ -35,11 +35,12 @@ let private v1SourcePath : string =
 [<Fact>]
 let ``Slice α: embedded SQL resource loads with expected line count`` () =
     let sql = MetadataExtractionSql.read()
-    // V1's source file at carbon-copy time is 1184 lines.
+    // V1's donor file is 1229 lines after the NM-72 Order_Num threading
+    // (the donor + the V2 embedded copy stay byte-identical per the carbon-copy
+    // invariant; both were synced when NM-72 added the Order_Num extraction).
     let lineCount = sql.Split('\n').Length
-    // Be tolerant of trailing-newline variations (1184 lines = 1184 newlines
-    // or 1183 newlines depending on EOL discipline). Accept either.
-    Assert.InRange(lineCount, 1183, 1185)
+    // Be tolerant of trailing-newline variations.
+    Assert.InRange(lineCount, 1229, 1231)
 
 [<Fact>]
 let ``Slice α: embedded SQL declares the five expected parameters`` () =
