@@ -291,6 +291,7 @@
     <Compile Include="SnapshotScopeBindingTests.fs" />
     <Compile Include="GoldenCatalog.fs" />
     <Compile Include="GoldenEmissionTests.fs" />
+    <Compile Include="DataLaneGoldenTests.fs" />
     <Compile Include="JsonEmitterTests.fs" />
     <Compile Include="CatalogCodecTests.fs" />
     <Compile Include="ProfileCodecTests.fs" />

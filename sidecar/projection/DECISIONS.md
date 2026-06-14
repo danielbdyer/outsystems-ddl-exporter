@@ -22971,3 +22971,32 @@ own GO batch when `ValidateBeforeApply`. The composer's `dispatchSiblings` passe
 Tests mirror the StaticSeeds pair (Standard byte-identical; ValidateBeforeApply
 prepends the symmetric-EXCEPT THROW). Both data MERGE lanes now honor the operator's
 conservative drift-guard override.
+
+---
+
+## 2026-06-14 (later) — Operator-review enablement: per-lane data goldens (static seeds + migration)
+
+The operator asked to review the emitted static-seed and bootstrap data SQL "just
+like the other golden test files." `DataLaneGoldenTests` adds a blessed, byte-
+reviewable golden corpus for the per-lane data emission under
+`tests/Projection.Tests/Golden/data-lanes/Data/`:
+- `StaticSeeds.sql` — the static lookup MERGEs (GoldenCatalog's Country / Region /
+  ScopedLookup / Tier),
+- `MigrationData.sql` — the migration lane (a `MigrationDependencyContext` over the
+  non-static `Assignment` kind; composite-PK MERGE),
+- `seed.sql` — the fused deploy artifact.
+
+It composes through the SAME production path the pipeline uses
+(`DataEmissionComposer.composeRenderedBundleFull` → `RenderedDataBundle.perLaneFiles`)
+over a scenario with two non-empty lanes, so the per-lane split (otherwise omitted
+by the ≥2-lane rule when only the static lane is populated) is recorded for review.
+Blessed via `GOLDEN_RECORD=1`, with the LF-only / newline-terminated negative
+invariants asserted.
+
+**Bootstrap is absent by construction, and that is correct.** `BootstrapEmitter`
+renders from an empty row source in every non-hydrated path — its rows are grafted
+only by the live Pipeline hydration step (a real SQL source; Docker-gated) — and
+`perLaneFiles` drops empty lanes. Bootstrap shares the StaticSeeds MERGE renderer
+(WP6 step 2), so `StaticSeeds.sql` IS the bootstrap render shape. A populated
+`Bootstrap.sql` golden would require a Docker hydration scenario; deferred per the
+operator's scope choice (non-Docker per-lane goldens).
