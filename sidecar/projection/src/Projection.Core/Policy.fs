@@ -549,15 +549,32 @@ module EmissionPolicy =
                                         |> List.filter (fun i -> not i.IsPlatformAuto) }) })
               Sequences = c.Sequences }
 
-    /// Default emission: schema only. The most common configuration and
-    /// the one where the algebra's structural claims are sharpest.
+    /// Default emission: schema + diagnostics (the default bundle).
+    /// `EmitData` is opt-in (off here); `EmitSchema` and `EmitDiagnostics`
+    /// are both on because the default `Compose.project` bundle emits the
+    /// CREATE/SSDT schema bundle AND the operational diagnostic artifacts
+    /// (decision log / remediation / summary / suggest-config).
+    ///
+    /// NM-02 (2026-06-13): these two booleans now gate real emit steps
+    /// (`projectFromChainWithState`). The default must therefore declare
+    /// what it actually emits — so `EmitDiagnostics` is `true` here (it was
+    /// previously `false`, an inert field the `allFalse` validator defended
+    /// while gating nothing). Flipping it to `true` keeps the default bundle
+    /// byte-identical (the default already emitted diagnostics) while making
+    /// the field honest — the audit's invariant: every disjunct of the
+    /// `allFalse` refusal gates a real emit step.
     /// Constructed via the smart constructor; `Result.value` is safe
     /// because the constants satisfy the invariant by construction.
     let empty : EmissionPolicy =
-        create true false false AllRemaining |> Result.value
+        create true false true AllRemaining |> Result.value
 
-    /// Schema artifacts only.
-    let schemaOnly : EmissionPolicy = empty
+    /// Schema artifacts only — the CREATE/SSDT bundle with NO diagnostic
+    /// artifacts. Distinct from `empty` since NM-02 wired `EmitDiagnostics`
+    /// to gate the diagnostic-artifact emission: `empty` is the default
+    /// bundle (schema + diagnostics); `schemaOnly` is the narrower
+    /// schema-without-diagnostics profile.
+    let schemaOnly : EmissionPolicy =
+        create true false false AllRemaining |> Result.value
 
     /// Data artifacts only — for full-export pipelines that keep schema
     /// emission elsewhere.

@@ -85,6 +85,45 @@ let ``AC-X1: data emission off leaves the bundle byte-identical (empty DataBundl
     // The schema bundle is still produced (only the data leg is gated).
     Assert.False(Map.isEmpty outputs.SsdtBundle, "the SSDT schema bundle is unaffected by the data toggle")
 
+// NM-02 (2026-06-13) — `EmitSchema` / `EmitDiagnostics` now gate real emit
+// steps, mirroring the `EmitData` gate witnessed above. The witnesses pin:
+// the default bundle (schema + diagnostics) is unchanged; `EmitSchema = false`
+// suppresses the CREATE/SSDT schema bundle; `EmitDiagnostics = false`
+// suppresses the operational diagnostic artifacts (remediation / summary /
+// suggest-config).
+
+let private schemaOnlyPolicy : Policy =
+    { Policy.empty with Emission = EmissionPolicy.schemaOnly }
+
+let private emitSchemaOffPolicy : Policy =
+    { Policy.empty with
+        Emission = { Policy.empty.Emission with EmitSchema = false; EmitData = true } }
+
+[<Fact>]
+let ``NM-02: the default bundle still emits schema and the diagnostic artifacts`` () =
+    // `Policy.empty` is the default bundle (schema + diagnostics on) — the
+    // gates are identity here, so the default stays byte-identical.
+    let outputs = projectBundle Policy.empty
+    Assert.False(Map.isEmpty outputs.SsdtBundle, "default emits the schema bundle")
+    Assert.NotEqual<string>("", outputs.RemediationSql)
+    Assert.NotEqual<string>("", outputs.SummaryText)
+
+[<Fact>]
+let ``NM-02: EmitSchema=false suppresses the CREATE/SSDT schema bundle`` () =
+    // EmitData on so the policy is not all-false (a no-op); the schema bundle
+    // is gated off while the data bundle still emits.
+    let outputs = projectBundle emitSchemaOffPolicy
+    Assert.True(Map.isEmpty outputs.SsdtBundle, "EmitSchema=false must clear the SSDT schema bundle")
+
+[<Fact>]
+let ``NM-02: EmitDiagnostics=false suppresses the operational diagnostic artifacts`` () =
+    // schemaOnly = schema on, diagnostics off. Schema survives; diagnostics go.
+    let outputs = projectBundle schemaOnlyPolicy
+    Assert.False(Map.isEmpty outputs.SsdtBundle, "schema bundle is unaffected by the diagnostics toggle")
+    Assert.Equal<string>("", outputs.RemediationSql)
+    Assert.Equal<string>("", outputs.SummaryText)
+    Assert.Equal<string>("{}", outputs.SuggestConfigJson.ToJsonString())
+
 [<Fact>]
 let ``WP6 step 3: a single active lane emits only the fused seed (no redundant per-lane file)`` () =
     // The pipeline path carries no migration/bootstrap context, so only the

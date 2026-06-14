@@ -19,7 +19,11 @@ open Projection.Tests.ProfileFixtures
 [<Fact>]
 let ``A12 (V2 2026-05-09): Policy.empty pins all four axes at empty defaults`` () =
     Assert.Equal<SelectionPolicy>(IncludeAll,                Policy.empty.Selection)
-    Assert.Equal<EmissionPolicy>(EmissionPolicy.schemaOnly,  Policy.empty.Emission)
+    // NM-02 (2026-06-13): the default emission is the default *bundle* —
+    // schema + diagnostics (`EmissionPolicy.empty`). `schemaOnly` is now the
+    // narrower schema-without-diagnostics profile (distinct from `empty`),
+    // since `EmitDiagnostics` gates a real emit step.
+    Assert.Equal<EmissionPolicy>(EmissionPolicy.empty,       Policy.empty.Emission)
     Assert.Equal<InsertionPolicy>(SchemaOnly,                Policy.empty.Insertion)
     Assert.Equal<TighteningPolicy>(TighteningPolicy.empty,   Policy.empty.Tightening)
 
@@ -328,3 +332,19 @@ let ``EmissionPolicy.combined emits all three`` () =
     Assert.True(EmissionPolicy.combined.EmitSchema)
     Assert.True(EmissionPolicy.combined.EmitData)
     Assert.True(EmissionPolicy.combined.EmitDiagnostics)
+
+[<Fact>]
+let ``NM-02: EmissionPolicy.empty (the default bundle) emits schema and diagnostics, not data`` () =
+    // The default bundle is schema + diagnostics; `EmitDiagnostics` is `true`
+    // because the default `Compose.project` run emits the operational
+    // diagnostic artifacts, and the field now gates that real emit step.
+    Assert.True (EmissionPolicy.empty.EmitSchema)
+    Assert.False(EmissionPolicy.empty.EmitData)
+    Assert.True (EmissionPolicy.empty.EmitDiagnostics)
+
+[<Fact>]
+let ``NM-02: EmissionPolicy.schemaOnly is schema-without-diagnostics, distinct from empty`` () =
+    Assert.True (EmissionPolicy.schemaOnly.EmitSchema)
+    Assert.False(EmissionPolicy.schemaOnly.EmitData)
+    Assert.False(EmissionPolicy.schemaOnly.EmitDiagnostics)
+    Assert.NotEqual<EmissionPolicy>(EmissionPolicy.empty, EmissionPolicy.schemaOnly)
