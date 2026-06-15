@@ -204,8 +204,9 @@ force a drop or an ambiguous match.
 - **Read-out:** the SOURCE counts size the move; any non-zero TARGET count on a table you intend to
   load means "append" semantics — confirm the journal discipline (or a wipe) so a re-run does not
   duplicate. **If the DMV is denied on the target, record it as an environment capability gap** (it
-  affects B2 keymap-sizing and `verify-data` stale-count validation too) and decide DMV-grant vs the
-  `COUNT_BIG` scan — see `DATABASE_ARCHETYPES.md` (DMV-readability is a capability facet).
+  affects only these *fast sizing* probes — B2 keymap-sizing; the **engine's `verify-data` counts via
+  `COUNT_BIG`, not DMVs, so it is unaffected**) and decide DMV-grant vs the `COUNT_BIG` scan — see
+  `DATABASE_ARCHETYPES.md` (DMV-readability is a capability facet) and `NEXT_BUILD_INPUTS.sql` Part 1.
 
 ### B2 — How many rows live in FK-target tables (the resident key-map RAM ceiling)?
 - **What I can't know:** the total rows in tables that are pointed *at* by a foreign key — the only

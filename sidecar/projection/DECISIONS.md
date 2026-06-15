@@ -23567,9 +23567,13 @@ they settle, and the one CODE change they demanded.
 
 - **The on-prem DMV capability gap (recorded).** The on-prem **target** B1/B2 failed: the login lacks
   **`VIEW DATABASE PERFORMANCE STATE`**, so `sys.dm_db_partition_stats` returns nothing (plain `SELECT`s
-  still work; the source/managed side had no issue). **Impact:** target occupancy, `verify-data`
-  stale-count validation, and target-side keymap-MB are unknown via DMV. **Decision:** degrade those to
-  an exact `COUNT_BIG(*)` scan (added to the probe sheet B1 as the named fallback) OR request the DMV
+  still work; the source/managed side had no issue). **Impact:** the *fast* (partition-stats) sizing
+  probes (B1/B2) are blocked on the on-prem target. **The engine is NOT affected** — `verify-data` and
+  profiling count via `COUNT_BIG(*)`, not DMVs (`DataIntegrityChecker` reuses `LiveProfiler`'s
+  `COUNT_BIG` `RowCount`), so post-load verification already works on a DMV-denied target (the
+  "verify-data DMV fallback" item is a **no-op** — confirmed, nothing to build). **Decision:** degrade
+  the *sizing probes* to an exact `COUNT_BIG(*)` scan (added to the probe sheet B1 + `NEXT_BUILD_INPUTS.sql`
+  Part 1c as the named fallback) OR request the DMV
   grant; **record DMV-read as an independent on-prem capability gap** (a `FullRights`-minus-DMV target),
   which is exactly why `DATABASE_ARCHETYPES.md` carries each capability as its own verified facet, not a
   bundle (§5).
