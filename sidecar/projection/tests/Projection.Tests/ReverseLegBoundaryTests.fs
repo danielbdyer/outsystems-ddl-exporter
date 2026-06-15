@@ -53,7 +53,7 @@ let ``reverse-leg face: a MALFORMED reconcile spec refuses by name (arg error, e
             (Projection.Pipeline.CatalogRendition.logical model)
             (Projection.Pipeline.CatalogRendition.physical model)
             [ "Customer" ] None   // no ':' — transfer.reconcile.specShape
-            false true false EmissionMode.Incremental false false None [] []
+            false true false EmissionMode.Incremental false false None [] SinkLoadCapability.structural []
     Assert.Equal(2, exit)
 
 [<Fact>]
@@ -65,7 +65,7 @@ let ``reverse-leg face: a reconcile spec naming an unknown table refuses by name
             (Projection.Pipeline.CatalogRendition.logical model)
             (Projection.Pipeline.CatalogRendition.physical model)
             [ "OSUSR_NOPE:ID" ] None   // table not in the contract — transfer.reconcile.tableNotFound
-            false true false EmissionMode.Incremental false false None [] []
+            false true false EmissionMode.Incremental false false None [] SinkLoadCapability.structural []
     Assert.Equal(2, exit)
 
 [<Fact>]
@@ -77,7 +77,7 @@ let ``reverse-leg face: a WELL-FORMED resolvable reconcile spec is ACCEPTED (no 
             (Projection.Pipeline.CatalogRendition.logical model)
             (Projection.Pipeline.CatalogRendition.physical model)
             [ "OSUSR_B_CUSTOMER:ID" ] None   // resolves to MatchByColumn (Id)
-            false true false EmissionMode.Incremental false false None [] []
+            false true false EmissionMode.Incremental false false None [] SinkLoadCapability.structural []
     // Past the parse/resolve gate the run reaches connection-opening, which
     // fails on the unset env vars — a connection-class exit, NEVER the arg/
     // resolve exit 2. The point: reconcile is no longer refused at the face.
@@ -85,8 +85,14 @@ let ``reverse-leg face: a WELL-FORMED resolvable reconcile spec is ACCEPTED (no 
 
 // -- the realization SELECTOR: the best admissible realization, chosen pure --
 
+// The selector helper defaults `sinkResidentResumeAvailable = false` (the
+// ManagedDml / undeclared sink — byte-identical to the pre-Slice-C cloud shape);
+// the FullRights (`true`) fork is pinned by its own Slice-C2 cell below.
 let private choose emission resumable tables streamingRequested journal =
-    Projection.Pipeline.ReverseLegRealization.choose emission resumable tables streamingRequested journal
+    Projection.Pipeline.ReverseLegRealization.choose emission resumable tables streamingRequested journal false
+
+let private chooseOn emission resumable tables streamingRequested journal sinkResidentResume =
+    Projection.Pipeline.ReverseLegRealization.choose emission resumable tables streamingRequested journal sinkResidentResume
 
 [<Fact>]
 let ``selector: an admissible request streams AUTOMATICALLY — the dominant realization needs no flag`` () =
@@ -121,6 +127,21 @@ let ``selector: an EXPLICIT --streaming on an inadmissible request refuses BY NA
     Assert.Equal("transfer.reverseLeg.streamingTablesUnsupported", codeOf (choose EmissionMode.Incremental false [ "Customer" ] true None))
     Assert.Equal("transfer.reverseLeg.streamingResumableUnsupported", codeOf (choose EmissionMode.Incremental true [] true None))
     Assert.Equal("transfer.reverseLeg.streamingWipeUnsupported", codeOf (choose EmissionMode.WipeAndLoad false [] true None))
+
+[<Fact>]
+let ``Slice C2: the resume chooser reads the sink archetype — a FullRights sink ADMITS streaming+resumable on the materialized envelope; ManagedDml still refuses`` () =
+    let codeOf r = match r with Error (es: ValidationError list) -> (List.head es).Code | Ok _ -> "OK"
+    // ManagedDml / undeclared (sinkResidentResume = false): the cloud-shaped
+    // refusal stands — the data grant forbids the CREATE TABLE a sink-resident
+    // progress table needs (byte-identical to the pre-Slice-C selector).
+    Assert.Equal("transfer.reverseLeg.streamingResumableUnsupported", codeOf (chooseOn EmissionMode.Incremental true [] true None false))
+    // FullRights (sinkResidentResume = true): the sink CAN host the G10
+    // sink-resident progress table, so --resumable is HONORED on the
+    // materialized envelope (the path that carries sink-resident resume) — the
+    // archetype-correct admission, not the cloud-shaped refusal.
+    match chooseOn EmissionMode.Incremental true [] true None true with
+    | Ok Projection.Pipeline.ReverseLegRealization.Materialized -> ()
+    | other -> Assert.Fail(sprintf "expected Materialized (sink-resident resume admitted), got %A" other)
 
 [<Fact>]
 let ``selector: --journal on an inadmissible request refuses by name — the ledger belongs to the streaming realization`` () =
@@ -175,7 +196,7 @@ let ``streaming face: an explicit --streaming with --tables refuses at the face 
             (Projection.Pipeline.CatalogRendition.logical model)
             (Projection.Pipeline.CatalogRendition.physical model)
             [] None
-            false true false EmissionMode.Incremental false true None [ "Customer" ] []
+            false true false EmissionMode.Incremental false true None [ "Customer" ] SinkLoadCapability.structural []
     Assert.Equal(2, exit)
 
 // -- reserved follow-on contracts (Skip stubs with promotion triggers) --------

@@ -49,6 +49,121 @@ type Rendition =
     | Physical
     | Logical
 
+/// The capability CLASS of a target (DATABASE_ARCHETYPES.md §1/§4) — the bundle
+/// of covarying dispositions the engine forks on, named ONCE. `FullRights` = the
+/// on-prem schema+data home (DDL + IDENTITY_INSERT — verified 2026-06-15);
+/// `ManagedDml` = the managed DML-only sink (the J5 profile: sink-mints, no DDL /
+/// IDENTITY_INSERT / CREATE TABLE). Closed so every consumer (the disposition
+/// selector, the resume-mechanism chooser, the gate set, the renderer) is TOTAL
+/// over it — a new target class joins by ONE DU case, never a parallel hand-list
+/// (the `ArtifactByKind` / `registered ⇔ executed` discipline applied to
+/// capability; CONSTELLATION §9.8.9). It SUBSUMES `Grant` (which becomes a
+/// derived projection — `Archetype.grant`) and stays orthogonal to `Rendition`.
+[<RequireQualifiedAccess>]
+type Archetype =
+    | FullRights
+    | ManagedDml
+
+/// Where mid-run resume state lives (DATABASE_ARCHETYPES.md §1/§2.2). A
+/// `FullRights` sink can host a sink-resident progress table (needs CREATE
+/// TABLE — durable, queryable, no filename↔digest coupling); a `ManagedDml` sink
+/// must journal off-box (the client-side NDJSON journal — the only option under a
+/// no-DDL grant). Closed so the resume-mechanism chooser (Slice C) is total.
+[<RequireQualifiedAccess>]
+type ResumeKind =
+    | SinkResidentTable
+    | ClientJournal
+
+/// How a fresh load wipes a sink (DATABASE_ARCHETYPES.md §1/§2.5). `Truncate` is
+/// the ALTER-gated fast refresh (`FullRights`); `ChildFirstDelete` is the only
+/// DML-legal path under a no-ALTER grant (`ManagedDml` — the 2·|rows| CDC-costed
+/// path). Closed so the wipe chooser is total.
+[<RequireQualifiedAccess>]
+type WipeKind =
+    | Truncate
+    | ChildFirstDelete
+
+/// What an `Archetype` EXPANDS to — the disposition defaults the pipeline reads
+/// instead of re-deciding "is this DML-only?" from scattered checks
+/// (DATABASE_ARCHETYPES.md §4). Each capability is its OWN flag, NOT a bundle
+/// inferred from the label, because a real estate hands you a SPLIT target (the
+/// on-prem `FullRights`-minus-DMV, observed 2026-06-15 — DATABASE_ARCHETYPES.md
+/// §5): the survey (Slice B) can flip an individual probed flag without
+/// re-classing the whole archetype. `CapabilityProfile.of` is the SINGLE
+/// expansion site (total over `Archetype`); the disposition selector, resume
+/// chooser, and gate set all read this record.
+type CapabilityProfile =
+    {
+        /// The coarse refusal-gate facet this archetype derives (subsumes the
+        /// hand-set `Grant`): `FullRights → SchemaAndData`, `ManagedDml → DataOnly`.
+        Grant            : Grant
+        /// The identity-disposition DEFAULT the structural classifier starts from
+        /// (per-table overrides still apply — a `ReconciledByRule` user table, a
+        /// composite-key refusal): `FullRights → PreservedFromSource` (write source
+        /// keys; no capture/remap/FK-repoint), `ManagedDml → AssignedBySink`.
+        IdentityDefault  : IdentityDisposition
+        /// CREATE TABLE / ALTER permitted — schema deploy + a sink-resident
+        /// progress table become available.
+        DdlPermitted     : bool
+        /// IDENTITY_INSERT permitted — `PreservedFromSource` is viable on an
+        /// IDENTITY PK (write the source surrogate directly).
+        IdentityInsert   : bool
+        /// NOCHECK / disable-trigger fast lane (needs ALTER).
+        ConstraintBypass : bool
+        /// Where a mid-run resume checkpoint lives.
+        ResumeCheckpoint : ResumeKind
+        /// How a fresh load wipes the sink.
+        WipeStrategy     : WipeKind
+    }
+
+[<RequireQualifiedAccess>]
+module Archetype =
+
+    /// The `Grant` an archetype derives — the coarse facet becomes a PROJECTION
+    /// of the class (DATABASE_ARCHETYPES.md §4). Total over `Archetype`.
+    let grant (a: Archetype) : Grant =
+        match a with
+        | Archetype.FullRights -> Grant.SchemaAndData
+        | Archetype.ManagedDml -> Grant.DataOnly
+
+    /// Infer the archetype a `Grant` implies — the inverse of `grant`, used to
+    /// DEFAULT an undeclared archetype from the existing `grant` facet
+    /// (`SchemaAndData → FullRights`, `DataOnly → ManagedDml`). The two 2-element
+    /// sets are in bijection, so `grant ∘ ofGrant = id` AND `ofGrant ∘ grant = id`
+    /// — the round-trip witness (`ArchetypeTests`).
+    let ofGrant (g: Grant) : Archetype =
+        match g with
+        | Grant.SchemaAndData -> Archetype.FullRights
+        | Grant.DataOnly      -> Archetype.ManagedDml
+
+[<RequireQualifiedAccess>]
+module CapabilityProfile =
+
+    /// EXPAND an archetype to its disposition bundle — the SINGLE definition site
+    /// (DATABASE_ARCHETYPES.md §1/§4). Total over `Archetype`. The confirmed
+    /// verdicts are pinned by `CapabilityProfileTests`: on-prem `FullRights` =
+    /// DDL + IDENTITY_INSERT + constraint-bypass + a sink-resident progress table
+    /// + TRUNCATE, PreservedFromSource by default; cloud `ManagedDml` = the J5
+    /// ledger (none of those — sink-mints, client journal, child-first DELETE).
+    let ``of`` (a: Archetype) : CapabilityProfile =
+        match a with
+        | Archetype.FullRights ->
+            { Grant            = Grant.SchemaAndData
+              IdentityDefault  = IdentityDisposition.PreservedFromSource
+              DdlPermitted     = true
+              IdentityInsert   = true
+              ConstraintBypass = true
+              ResumeCheckpoint = ResumeKind.SinkResidentTable
+              WipeStrategy     = WipeKind.Truncate }
+        | Archetype.ManagedDml ->
+            { Grant            = Grant.DataOnly
+              IdentityDefault  = IdentityDisposition.AssignedBySink
+              DdlPermitted     = false
+              IdentityInsert   = false
+              ConstraintBypass = false
+              ResumeCheckpoint = ResumeKind.ClientJournal
+              WipeStrategy     = WipeKind.ChildFirstDelete }
+
 /// A named place (THE_CLI.md §4.1): its reach (`Access`) and, for a target,
 /// its permission (`Grant`). D9 holds — a `Direct`/`Bundle` address is a
 /// reference or a folder, never an inline secret.
@@ -66,7 +181,30 @@ type Environment =
         /// moves, the established surface, never set it). Env metadata, not a
         /// gate. THE_CLI.md §4.1; THE_DATA_PRODUCERS §4.6.
         Rendition : Rendition option
+        /// The capability CLASS this place DECLARES (DATABASE_ARCHETYPES.md §4) —
+        /// the bundle of dispositions the engine forks on, named once. `None` =
+        /// undeclared (the established surface — every config to date). Stored
+        /// declared-only (NOT eagerly inferred) so existing configs render
+        /// byte-identically and `parse ∘ render = id` holds without parse-time
+        /// inference diverging; consumers DEFAULT it from `Grant` via
+        /// `Environment.effectiveArchetype`. Nothing branches on it until Slices
+        /// B/C/S — Slice A is byte-identical by construction.
+        Archetype : Archetype option
     }
+
+[<RequireQualifiedAccess>]
+module Environment =
+
+    /// The EFFECTIVE archetype of a place — its declared `Archetype`, else
+    /// inferred from the `Grant` facet (`SchemaAndData → FullRights`,
+    /// `DataOnly → ManagedDml`; no grant ⇒ `None`). The DEFAULTING the design
+    /// names (DATABASE_ARCHETYPES.md §6.1) done LAZILY at read time, so the stored
+    /// field stays declared-only (byte-identical render) while consumers still see
+    /// a class for any grant-bearing place. This is what Slices B/C/S read.
+    let effectiveArchetype (env: Environment) : Archetype option =
+        match env.Archetype with
+        | Some a -> Some a
+        | None   -> env.Grant |> Option.map Archetype.ofGrant
 
 // `FlowSource`, `Flow`, and `FlowRunOpts` live in MovementSpec.fs (the types
 // file) — `Intent.Flow` carries them, so they precede it in compile order.
@@ -173,6 +311,16 @@ module ProjectionConfig =
         | "logical"  -> Result.success Rendition.Logical
         | other -> Result.failureOf (err "cli.config.envRenditionUnknown" (sprintf "environment '%s' rendition '%s' is not physical | logical." envName other))
 
+    /// The capability-class disposition facet (DATABASE_ARCHETYPES.md §4):
+    /// full-rights (on-prem, DDL+IDENTITY_INSERT) | managed-dml (cloud, the J5
+    /// DML-only profile). Absent = `None` (consumers default it from `grant`).
+    /// Closed; an unknown value is a named refusal, never silently dropped.
+    let private parseArchetype (envName: string) (raw: string) : Result<Archetype> =
+        match raw.ToLowerInvariant() with
+        | "fullrights" | "full-rights" | "full"          -> Result.success Archetype.FullRights
+        | "manageddml" | "managed-dml" | "managed" | "dml" -> Result.success Archetype.ManagedDml
+        | other -> Result.failureOf (err "cli.config.envArchetypeUnknown" (sprintf "environment '%s' archetype '%s' is not full-rights | managed-dml." envName other))
+
     let private parseEnvironment (name: string) (el: JsonElement) : Result<Environment> =
         if el.ValueKind <> JsonValueKind.Object then
             Result.failureOf (err "cli.config.envShape" (sprintf "environment '%s' must be a JSON object." name))
@@ -185,14 +333,18 @@ module ProjectionConfig =
                     match getString el "rendition" with
                     | None   -> Result.success None
                     | Some r -> parseRendition name r |> Result.map Some
-                match renditionR with
-                | Error e -> Result.failure e
-                | Ok rendition ->
+                let archetypeR =
+                    match getString el "archetype" with
+                    | None   -> Result.success None
+                    | Some a -> parseArchetype name a |> Result.map Some
+                match renditionR, archetypeR with
+                | Error e, _ | _, Error e -> Result.failure e
+                | Ok rendition, Ok archetype ->
                     match getString el "grant" with
-                    | None -> Result.success { Name = name; Access = access; Grant = None; Store = store; Rendition = rendition }
+                    | None -> Result.success { Name = name; Access = access; Grant = None; Store = store; Rendition = rendition; Archetype = archetype }
                     | Some g ->
                         match parseGrant name g with
-                        | Ok grant -> Result.success { Name = name; Access = access; Grant = Some grant; Store = store; Rendition = rendition }
+                        | Ok grant -> Result.success { Name = name; Access = access; Grant = Some grant; Store = store; Rendition = rendition; Archetype = archetype }
                         | Error e  -> Result.failure e
 
     /// The content origin: `from` names an environment (the Move), or one of
@@ -448,6 +600,15 @@ module ProjectionConfig =
         | Rendition.Physical -> "physical"
         | Rendition.Logical  -> "logical"
 
+    /// The archetype disposition field (dual of `parseArchetype`): the canonical
+    /// token. Emitted only when DECLARED (`Some`) — an undeclared archetype
+    /// round-trips through the absent arm (so existing configs render
+    /// byte-identically; mirrors how `grant`/`rendition` omit their absent value).
+    let private renderArchetype (a: Archetype) : string =
+        match a with
+        | Archetype.FullRights -> "full-rights"
+        | Archetype.ManagedDml -> "managed-dml"
+
     /// The move-projection field (dual of `parseFlowScope`): the canonical token.
     let private renderScope (s: Scope) : string =
         match s with
@@ -478,6 +639,7 @@ module ProjectionConfig =
         setOptStr o "grant" (env.Grant |> Option.map renderGrant)
         setOptStr o "store" env.Store
         setOptStr o "rendition" (env.Rendition |> Option.map renderRendition)
+        setOptStr o "archetype" (env.Archetype |> Option.map renderArchetype)
         o
 
     /// Render one `Flow` to its `JsonObject` — the dual of `parseFlow`. `from`
@@ -626,7 +788,8 @@ module Command =
           Env         = spec.Env
           Tables      = spec.Tables
           Seed        = spec.Seed
-          Scale       = spec.Scale }
+          Scale       = spec.Scale
+          SinkCapability = spec.SinkCapability }
 
     // --- the pure movement routing (the surface→engine map) ----------------
 
@@ -976,6 +1139,23 @@ module Command =
                 // unchanged; only ossys-only-with-store gains provenance).
                 let hasPublishableModel =
                     Option.isSome cfg.Shaping.Model.Path || Option.isSome cfg.Shaping.Model.Ossys
+                // Slice C — derive the sink's capability-derived engine inputs from
+                // its DECLARED-or-inferred archetype (DATABASE_ARCHETYPES.md §4).
+                // `FullRights` (IDENTITY_INSERT + CREATE TABLE) ⇒ PreferPreservedKeys
+                // + sink-resident resume; `ManagedDml` / undeclared ⇒ `structural`
+                // (byte-identical). The two engine bits are projected here, the one
+                // site that sees both the sink `Environment` and `CapabilityProfile`.
+                let sinkCapability : SinkLoadCapability =
+                    match Environment.effectiveArchetype toEnv with
+                    | Some archetype ->
+                        let profile = CapabilityProfile.``of`` archetype
+                        { IdentityPolicy =
+                            (if profile.IdentityInsert then IdentityPolicy.PreferPreservedKeys else IdentityPolicy.Structural)
+                          SinkResidentResume =
+                            (match profile.ResumeCheckpoint with
+                             | ResumeKind.SinkResidentTable -> true
+                             | ResumeKind.ClientJournal     -> false) }
+                    | None -> SinkLoadCapability.structural
                 let modelSource =
                     match cfg.SourcePath, toEnv.Store with
                     | Some sourcePath, Some _ when hasPublishableModel -> ModelSource.ConfigFile sourcePath
@@ -1030,6 +1210,8 @@ module Command =
                         // The target's durable timeline: a live --go records an
                         // episode into it (which `report` later diffs). F4.
                         Store    = toEnv.Store
+                        // Slice C — the sink's archetype-derived engine inputs.
+                        SinkCapability = sinkCapability
                         Commit   = opts.Go }
 
     /// Route a named flow to its `ExecutionPlan`. The grant gate refuses a

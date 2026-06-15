@@ -60,6 +60,7 @@ module ReverseLegRealization =
         (tables: string list)
         (streamingRequested: bool)
         (journalDirectory: string option)
+        (sinkResidentResumeAvailable: bool)
         : Result<ReverseLegRealization> =
         let admissible =
             List.isEmpty tables && not resumable && emission = EmissionMode.Incremental
@@ -67,6 +68,15 @@ module ReverseLegRealization =
             Result.failureOf
                 (ValidationError.create "transfer.reverseLeg.streamingTablesUnsupported"
                     "the streaming reverse leg loads the whole estate; a declared table subset is the named follow-on. Remove --tables or drop --streaming to run materialized.")
+        elif streamingRequested && resumable && sinkResidentResumeAvailable then
+            // Slice C2 — the resume chooser reads the sink ARCHETYPE instead of
+            // assuming the cloud (ManagedDml) shape. A `FullRights` sink CAN host
+            // the G10 sink-resident progress table (CREATE TABLE permitted), so
+            // `--resumable` is HONORED on the materialized envelope (the path that
+            // carries sink-resident resume) rather than refused. The ManagedDml
+            // refusal below stands — its data grant forbids the CREATE TABLE the
+            // progress table needs (the original, archetype-correct reasoning).
+            Result.success ReverseLegRealization.Materialized
         elif streamingRequested && resumable then
             Result.failureOf
                 (ValidationError.create "transfer.reverseLeg.streamingResumableUnsupported"
@@ -818,11 +828,16 @@ module Transfer =
           /// loads every kind; `Some s` loads only kinds in `s`, leaving the
           /// rest of the sink untouched (the catalog stays whole for FK
           /// context — only the per-kind row load is restricted).
-          LoadSet : Set<SsKey> option }
+          LoadSet : Set<SsKey> option
+          /// Slice C1 — the identity-disposition policy `DataLoadPlan.buildWith`
+          /// applies. `Structural` (the `def` default) is byte-identical; a
+          /// `FullRights` sink threads `PreferPreservedKeys` so IDENTITY-PK kinds
+          /// preserve their source keys (no capture/remap).
+          IdentityPolicy : IdentityPolicy }
 
     [<RequireQualifiedAccess>]
     module WriteOptions =
-        let def : WriteOptions = { Emission = EmissionMode.Incremental; Resumable = false; LoadSet = None }
+        let def : WriteOptions = { Emission = EmissionMode.Incremental; Resumable = false; LoadSet = None; IdentityPolicy = IdentityPolicy.Structural }
         let resumable : WriteOptions = { def with Resumable = true }
         let ofEmission (mode: EmissionMode) : WriteOptions = { def with Emission = mode }
 
@@ -918,7 +933,7 @@ module Transfer =
             // substitution is applied here, once. After this, every Row
             // is in target identity space.
             let plan =
-                DataLoadPlan.build catalog topo rows reconciled.Remap
+                DataLoadPlan.buildWith writeOpts.IdentityPolicy catalog topo rows reconciled.Remap
                 |> DataLoadPlan.reclassifyReconciled reconciledKinds
             // Pre-write gate, precedence-ordered: structural unsatisfiability /
             // surrogate-capture shapes first (executeGate), then the
@@ -1141,7 +1156,11 @@ module Transfer =
     /// ordinal), and writes against the sink contract. A no-rename pair (A = B
     /// modulo renames) is byte-identical to `run`. Straight load (no
     /// reconciliation); the reconcile + rename combination is the follow-on.
-    let runWithRenames
+    /// Slice C1 — the policy-bearing `runWithRenames`: a `FullRights` sink threads
+    /// `IdentityPolicy.PreferPreservedKeys` so the populate preserves source keys
+    /// (no capture/remap). `runWithRenames` fixes `Structural` (byte-identical).
+    let runWithRenamesWith
+        (identityPolicy: IdentityPolicy)
         (mode: Mode)
         (allowCdc: bool)
         (source: SqlConnection)
@@ -1156,8 +1175,18 @@ module Transfer =
             | Ok diff ->
                 let renameMap =
                     RenameProjection.renames diff |> RenameProjection.renameMap
-                return! runCore mode allowCdc false source sink sinkContract Map.empty (Some (sourceContract, renameMap)) WriteOptions.def
+                return! runCore mode allowCdc false source sink sinkContract Map.empty (Some (sourceContract, renameMap)) { WriteOptions.def with IdentityPolicy = identityPolicy }
         }
+
+    let runWithRenames
+        (mode: Mode)
+        (allowCdc: bool)
+        (source: SqlConnection)
+        (sink: SqlConnection)
+        (sourceContract: Catalog)
+        (sinkContract: Catalog)
+        : Task<Result<TransferReport>> =
+        runWithRenamesWith IdentityPolicy.Structural mode allowCdc source sink sourceContract sinkContract
 
     /// M3.b — the `legacy` B→A reverse leg's engine face (`THE_DATA_PRODUCERS`
     /// LE-1). The source is at the LOGICAL rendition (B, on-prem); the sink is at
@@ -1827,7 +1856,11 @@ module Transfer =
     /// context (A = B). A no-rename pair AND empty reconciliation collapses
     /// to `run`. This composition is what the `runWithRenames`/`runReconciling`
     /// site named "the follow-on."
-    let runReconcilingWithRenames
+    /// Slice C1 — the policy-bearing `runReconcilingWithRenames`. A `FullRights`
+    /// sink threads `PreferPreservedKeys`; `runReconcilingWithRenames` fixes
+    /// `Structural` (byte-identical).
+    let runReconcilingWithRenamesWith
+        (identityPolicy: IdentityPolicy)
         (mode: Mode)
         (allowCdc: bool)
         (source: SqlConnection)
@@ -1843,8 +1876,19 @@ module Transfer =
             | Ok diff ->
                 let renameMap =
                     RenameProjection.renames diff |> RenameProjection.renameMap
-                return! runCore mode allowCdc false source sink sinkContract reconciliation (Some (sourceContract, renameMap)) WriteOptions.def
+                return! runCore mode allowCdc false source sink sinkContract reconciliation (Some (sourceContract, renameMap)) { WriteOptions.def with IdentityPolicy = identityPolicy }
         }
+
+    let runReconcilingWithRenames
+        (mode: Mode)
+        (allowCdc: bool)
+        (source: SqlConnection)
+        (sink: SqlConnection)
+        (sourceContract: Catalog)
+        (sinkContract: Catalog)
+        (reconciliation: Map<SsKey, ReconciliationStrategy>)
+        : Task<Result<TransferReport>> =
+        runReconcilingWithRenamesWith IdentityPolicy.Structural mode allowCdc source sink sourceContract sinkContract reconciliation
 
     /// Slice 4.2 — drive a Transfer through the `TransferConnections`
     /// apparatus instead of caller-opened connections. Opens both
@@ -1959,7 +2003,8 @@ module Transfer =
     /// (`runStreamingReverseLegThroughConnections`) is preferred for the
     /// estate-scale combinations; this materialized arm carries the table-
     /// subset / WipeAndLoad / G10-resumable cases the selector routes here.
-    let runReverseLegThroughConnections
+    let runReverseLegThroughConnectionsWith
+        (identityPolicy: IdentityPolicy)
         (mode: Mode)
         (emission: EmissionMode)
         (resumable: bool)
@@ -1989,8 +2034,25 @@ module Transfer =
                         | Error es -> return Result.failure es
                         | Ok sink ->
                             use sink = sink
-                            return! runCore mode allowCdc allowDrops source sink physicalSinkContract reconciliation (Some (logicalSourceContract, renameMap)) { WriteOptions.ofEmission emission with Resumable = resumable; LoadSet = loadSet }
+                            return! runCore mode allowCdc allowDrops source sink physicalSinkContract reconciliation (Some (logicalSourceContract, renameMap)) { WriteOptions.ofEmission emission with Resumable = resumable; LoadSet = loadSet; IdentityPolicy = identityPolicy }
         }
+
+    /// The structural-policy reverse leg (byte-identical; the ManagedDml cloud
+    /// sink). A `FullRights` reverse-leg sink threads `PreferPreservedKeys` via
+    /// `runReverseLegThroughConnectionsWith`.
+    let runReverseLegThroughConnections
+        (mode: Mode)
+        (emission: EmissionMode)
+        (resumable: bool)
+        (allowCdc: bool)
+        (allowDrops: bool)
+        (tables: string list)
+        (connections: TransferConnections)
+        (logicalSourceContract: Catalog)
+        (physicalSinkContract: Catalog)
+        (reconciliation: Map<SsKey, ReconciliationStrategy>)
+        : Task<Result<TransferReport>> =
+        runReverseLegThroughConnectionsWith IdentityPolicy.Structural mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation
 
     // -- 6.A.1: the drop-set is fail-loud, not exit-0 -----------------------
     //

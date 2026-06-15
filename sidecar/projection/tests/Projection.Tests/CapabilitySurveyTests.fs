@@ -58,7 +58,7 @@ let ``CapabilitySurvey.Capability.all is Reads plus every write action; permissi
 // --- the flow-shape derivation (requiredBy) --------------------------------
 
 let private env (name: string) (grant: Grant option) : Projection.Pipeline.Environment =
-    { Name = name; Access = Access.Direct (ConnectionRef.EnvVar (name + "_CONN")); Grant = grant; Store = None; Rendition = None }
+    { Name = name; Access = Access.Direct (ConnectionRef.EnvVar (name + "_CONN")); Grant = grant; Store = None; Rendition = None; Archetype = None }
 
 let private flow (name: string) (from: FlowSource) (toEnv: string) : Flow =
     { Name = name; From = from; To = toEnv; Rekey = None; Tables = []; Reconcile = []; Scope = None; Shape = None; Shaping = None }
@@ -156,7 +156,8 @@ let private report name connected reachable missing : CapabilitySurvey.Environme
     { Name = name; Grant = Some Grant.DataOnly; Required = Set.empty
       Connected = connected; Reachable = reachable; Missing = missing
       GrantUnreadable = false; CdcTracked = false; CdcProbeFailed = false
-      UserDirectory = Projection.Adapters.Sql.ReadSide.UserDirectoryProbe.absent }
+      UserDirectory = Projection.Adapters.Sql.ReadSide.UserDirectoryProbe.absent
+      ArchetypeFindings = [] }
 
 [<Fact>]
 let ``NM-55: a reachable place with an unreadable grant is blocked (coverage unverified, not covered)`` () =
@@ -223,3 +224,73 @@ let ``advisoryLines: the advisory reads the SAME blocked predicate the verb's ga
     let lines = CapabilitySurvey.advisoryLines reports
     for n in blockedNames do
         Assert.Contains(lines, fun l -> l.Contains n)
+
+// --- Slice B — the survey VERIFIES the archetype (A44; the J5 covenant) -------
+
+let private envArch (name: string) (archetype: Archetype option) : Projection.Pipeline.Environment =
+    { Name = name; Access = Access.Direct (ConnectionRef.EnvVar (name + "_CONN")); Grant = None; Store = None; Rendition = None; Archetype = archetype }
+
+/// A database-scope `GrantEvidence` from a permission-name list (object-key "").
+let private grantOf (perms: string list) : Preflight.GrantEvidence =
+    { Granted = perms |> List.map (fun p -> ("", p)) |> Set.ofList }
+
+[<Fact>]
+let ``Slice B (Part 1): the survey routes through the archetype's derived grant — an archetype-declared sink yields the SAME required set as the equivalent grant (byte-identical)`` () =
+    // A `full-rights` archetype derives `schema+data`; a `managed-dml` archetype
+    // derives `data` — so `requiredBy` is identical to the hand-set grant.
+    let liveSource = env "staging" (Some Grant.SchemaAndData)
+    let archetypeSink = envArch "uat-arch" (Some Archetype.FullRights)
+    let grantSink     = env "uat-grant" (Some Grant.SchemaAndData)
+    let cfgA = cfgWith [ liveSource; archetypeSink ] [ flow "a" (FlowSource.Env "staging") "uat-arch" ]
+    let cfgG = cfgWith [ liveSource; grantSink ]     [ flow "g" (FlowSource.Env "staging") "uat-grant" ]
+    Assert.Equal<Set<CapabilitySurvey.Capability>>(
+        CapabilitySurvey.requiredBy cfgG (Map.find "g" cfgG.Flows) SubstrateRole.Sink,
+        CapabilitySurvey.requiredBy cfgA (Map.find "a" cfgA.Flows) SubstrateRole.Sink)
+    // The ManagedDml mirror: derives `data` ⇒ the DML-only required set.
+    let dmlSink = envArch "cloud" (Some Archetype.ManagedDml)
+    let cfgD = cfgWith [ liveSource; dmlSink ] [ flow "d" (FlowSource.Env "staging") "cloud" ]
+    Assert.Equal<Set<CapabilitySurvey.Capability>>(
+        set [ Performs Preflight.Insert; Performs Preflight.Delete ],
+        CapabilitySurvey.requiredBy cfgD (Map.find "d" cfgD.Flows) SubstrateRole.Sink)
+
+[<Fact>]
+let ``Slice B (Part 2): a declared FullRights whose probe COVERS DDL + IDENTITY_INSERT + DMV reconciles clean`` () =
+    let grant = grantOf [ "CREATE TABLE"; "ALTER"; "VIEW DATABASE PERFORMANCE STATE"; "INSERT"; "DELETE" ]
+    Assert.Empty(CapabilitySurvey.reconcileArchetype Archetype.FullRights grant)
+
+[<Fact>]
+let ``Slice B (Part 2): a declared FullRights missing CREATE TABLE / IDENTITY_INSERT is a NAMED required-capability mismatch`` () =
+    let grant = grantOf [ "INSERT"; "DELETE" ]   // DML only — no DDL
+    let findings = CapabilitySurvey.reconcileArchetype Archetype.FullRights grant
+    Assert.Contains(CapabilitySurvey.RequiredCapabilityDenied "CREATE TABLE", findings)
+    Assert.Contains(CapabilitySurvey.RequiredCapabilityDenied "ALTER (IDENTITY_INSERT)", findings)
+
+[<Fact>]
+let ``Slice B (Part 2): the on-prem FullRights-minus-DMV classifies correctly — DDL present, DMV-read absent surfaces as the SPLIT (not a misdeclaration)`` () =
+    // The real on-prem target (2026-06-15): full DDL/DML, minus VIEW DATABASE
+    // PERFORMANCE STATE. The class is FullRights; only the DMV probe degrades.
+    let grant = grantOf [ "CREATE TABLE"; "ALTER"; "INSERT"; "DELETE" ]   // no DMV-read
+    let findings = CapabilitySurvey.reconcileArchetype Archetype.FullRights grant
+    Assert.Equal<CapabilitySurvey.ArchetypeFinding list>(
+        [ CapabilitySurvey.SoftCapabilityAbsent "VIEW DATABASE PERFORMANCE STATE" ], findings)
+
+[<Fact>]
+let ``Slice B (Part 2): a declared ManagedDml that UNEXPECTEDLY permits IDENTITY_INSERT is surfaced (safer than declared)`` () =
+    let grant = grantOf [ "INSERT"; "DELETE"; "ALTER"; "CREATE TABLE" ]   // more than DML-only
+    let findings = CapabilitySurvey.reconcileArchetype Archetype.ManagedDml grant
+    Assert.Contains(CapabilitySurvey.ForbiddenCapabilityPermitted "CREATE TABLE", findings)
+    Assert.Contains(CapabilitySurvey.ForbiddenCapabilityPermitted "ALTER (IDENTITY_INSERT)", findings)
+
+[<Fact>]
+let ``Slice B (Part 2): a declared ManagedDml on the true J5 DML-only grant reconciles clean`` () =
+    let grant = grantOf [ "INSERT"; "DELETE"; "SELECT" ]
+    Assert.Empty(CapabilitySurvey.reconcileArchetype Archetype.ManagedDml grant)
+
+[<Fact>]
+let ``Slice B: a report carrying archetype findings surfaces them in advisoryLines (even when not blocked)`` () =
+    let r =
+        { report "onprem" true true [] with
+            ArchetypeFindings = [ CapabilitySurvey.SoftCapabilityAbsent "VIEW DATABASE PERFORMANCE STATE" ] }
+    Assert.False(CapabilitySurvey.blocked r)   // a split is NOT blocking
+    let lines = CapabilitySurvey.advisoryLines [ r ]
+    Assert.Contains(lines, fun (l: string) -> l.Contains "onprem" && l.Contains "VIEW DATABASE PERFORMANCE STATE")

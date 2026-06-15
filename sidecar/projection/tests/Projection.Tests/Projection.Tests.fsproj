@@ -154,6 +154,7 @@
     <Compile Include="ModelResolutionTests.fs" />
     <Compile Include="MovementSurfaceTests.fs" />
     <Compile Include="MovementIsomorphismTests.fs" />
+    <Compile Include="ArchetypeTests.fs" />
     <Compile Include="TransferRefusalTests.fs" />
     <Compile Include="ReverseLegPropertyTests.fs" />
     <Compile Include="ReverseLegBoundaryTests.fs" />
@@ -196,6 +197,7 @@
     <Compile Include="ReverseLegCanaryTests.fs" />
     <Compile Include="ReverseLegScaleTests.fs" />
     <Compile Include="ReverseLegStreamingTests.fs" />
+    <Compile Include="KeymapSpillTests.fs" />
     <Compile Include="RunWithConfigProfileTests.fs" />
     <Compile Include="DacpacWireTests.fs" />
     <Compile Include="DescriptionLiftTests.fs" />

@@ -23696,3 +23696,191 @@ is the sequenced build plan.
   capability profile picking the safe mechanism per target. The work plan (`REVERSE_LEG_WORK_PLAN.md`)
   sequences Slice A (the type) → B (survey-verify) → C (the FullRights populate forks) → S (the
   reverse-leg `#`-temp spill), all on top of the already-shipped Phases 2–4 + NM-58.
+
+## 2026-06-15 (later) — Slice A BUILT: `Archetype` is a first-class config disposition (byte-identical foundation)
+
+The first of the four archetype slices (REVERSE_LEG_WORK_PLAN §3; `DATABASE_ARCHETYPES.md` §4/§6.1)
+is built and warm-witnessed. The capability CLASS of a target is now a named, closed, reusable
+config disposition — the foundation the populate forks (C), the at-scale spill (S), and the survey
+verification (B) all build on. **Nothing branches on it yet; the run is byte-identical.**
+
+- **What landed (all in `MovementSurface.fs`, Projection.Pipeline).**
+  - **`type Archetype = FullRights | ManagedDml`** — `[<RequireQualifiedAccess>]`, closed. `FullRights`
+    = the on-prem schema+data home (DDL + IDENTITY_INSERT, verified 2026-06-15); `ManagedDml` = the J5
+    managed DML-only sink. A new target class joins by ONE DU case (the `ArtifactByKind` /
+    `registered ⇔ executed` discipline applied to capability — total over the engine by construction).
+  - **`type CapabilityProfile`** + **`CapabilityProfile.of : Archetype -> CapabilityProfile`** — the
+    SINGLE expansion site, total over `Archetype`. Each capability is its OWN flag (`DdlPermitted`,
+    `IdentityInsert`, `ConstraintBypass`, `ResumeCheckpoint`, `WipeStrategy`, `IdentityDefault`,
+    derived `Grant`), NOT a bundle inferred from the label — so the survey (B) can flip an individual
+    probed flag for a SPLIT target (the on-prem `FullRights`-minus-DMV, §5) without re-classing the
+    whole archetype. The two new carrier DUs `ResumeKind` (`SinkResidentTable | ClientJournal`) and
+    `WipeKind` (`Truncate | ChildFirstDelete`) reify the resume/wipe dispositions C/S will read.
+  - **`Grant` becomes a derived projection** — `Archetype.grant : Archetype -> Grant` (`FullRights →
+    SchemaAndData`, `ManagedDml → DataOnly`) and its inverse `Archetype.ofGrant`. The two 2-element
+    sets are in bijection, so the round-trip holds both ways.
+  - **`Environment.Archetype : Archetype option`** facet, parsed from `projection.json`
+    (`"archetype": "full-rights" | "managed-dml"`; unknown = the named refusal
+    `cli.config.envArchetypeUnknown`). **Stored declared-only** (NOT eagerly inferred) — the design's
+    "default from `Grant`" is done LAZILY at read time via `Environment.effectiveArchetype` (declared
+    wins; else inferred from grant; no grant ⇒ `None`). This is the load-bearing choice: an
+    undeclared archetype renders no field, so **every existing config is byte-identical** AND
+    `parse ∘ render = id` holds without parse-time inference diverging from the round-trip generator.
+- **Why lazy-default over eager-infer (the refused alternative).** Inferring the archetype into the
+  stored field at parse time would have made `render` emit an `archetype` key for every grant-bearing
+  config (not byte-identical) and broken the A44 `parse ∘ render = id` property test (the generated
+  `Archetype = None` would parse back as `Some <inferred>`). The derived accessor keeps the field a
+  faithful image of the JSON and pushes the "default" to the consumer — exactly mirroring how
+  `Rendition`/`Grant` already store option-of-declared.
+- **Witness (pure, warm — 43 green: `ArchetypeTests` + `MovementIsomorphismTests` + `CapabilitySurvey*`).**
+  The work plan's named witness `(infer ∘ derive-grant)` round-trips BOTH ways
+  (`ofGrant ∘ grant = id`, `grant ∘ ofGrant = id`); `CapabilityProfile.of FullRights/ManagedDml` match
+  the confirmed verdicts (on-prem: DDL + IDENTITY_INSERT + sink-resident + TRUNCATE,
+  PreservedFromSource; cloud: none of those, sink-mints, client journal, child-first DELETE); the
+  derived `Grant` is a projection of the archetype; `effectiveArchetype` honors declared-over-inferred
+  and `None → None`; and the new facet round-trips through `parse ∘ render` across the full
+  reach × grant × rendition × **archetype** × store sweep (the A44 exhaustive pin, extended).
+- **Gate / refusal.** None at runtime (byte-identical). The only refusal is config-load:
+  `cli.config.envArchetypeUnknown` on a malformed `archetype` token (closed; never silently dropped).
+- **Net.** The disposition is named and verified-by-round-trip; consumers are next. Slice C (the
+  `FullRights` populate forks) and Slice S (the reverse-leg `#`-temp keymap spill) read the profile;
+  Slice B routes the survey through `archetype.Grant` and reconciles declared-vs-probed. The graph is
+  `A → {C, S, B}` and A is done.
+
+## 2026-06-15 (later) — Slice C BUILT: the `FullRights` populate forks (PreservedFromSource + sink-resident resume), live-wired + Docker-witnessed
+
+The highest-operator-value slice (REVERSE_LEG_WORK_PLAN §3 Slice C; DATABASE_ARCHETYPES.md §2/§6
+Slices C+D). On a `FullRights` sink the populate now uses the profile's better mechanisms; the
+`ManagedDml` cloud path stays **byte-identical to the J5-proven behavior**. Built end-to-end (the
+operator chose the full live-wire) and warm-witnessed (pure + Docker).
+
+- **C1 — the `PreservedFromSource` default fork (the headline unlock).** The single seam is the pure
+  `DataLoadPlan.build`: it now takes an `IdentityPolicy` (`Structural | PreferPreservedKeys`, new in
+  Core). `build = buildWith Structural` (`ofKind` — byte-identical). `buildWith PreferPreservedKeys`
+  writes the SOURCE key directly for IDENTITY PKs too ⇒ **every kind is `PreservedFromSource` ⇒ the
+  whole capture / surrogate-remap / FK-repoint machinery is skipped downstream by construction** (it
+  already branches on `AssignedBySink`). The realization needs ZERO changes: `PreservedFromSource`
+  already routes to `Bulk.copyRows`, whose `KeepIdentity` preserves the source surrogate — and
+  `KeepIdentity`'s implicit ALTER requirement is *exactly* what makes the fork correct only on a
+  `FullRights` sink (the DML-only cloud lacks it; the `copyRowsSinkMinted` lane stays its path). So
+  the fork is a one-line plan-build change with the engine's existing per-disposition machinery
+  carrying it the rest of the way.
+- **C2 — the resume chooser reads the archetype.** `ReverseLegRealization.choose` gained a
+  `sinkResidentResumeAvailable` flag. The cloud-shaped refusal "`--streaming` + `--resumable`: the
+  progress table needs CREATE TABLE the data grant forbids" was hardcoded; it now stands ONLY for a
+  `ManagedDml`/undeclared sink (byte-identical). A `FullRights` sink (CREATE TABLE permitted) **admits**
+  `--resumable` on the materialized G10 sink-resident-progress envelope instead of refusing — the
+  durable, queryable, filename↔digest-coupling-free checkpoint the on-prem class actually supports.
+- **The threading (the compile-order wall).** `TransferRun`/`MovementSpec`/`LoadOpts`/`PlanAction` all
+  compile BEFORE the `Archetype` vocabulary (`MovementSurface.fs`), so the archetype's engine-relevant
+  bits cross the boundary as a **Core** carrier `SinkLoadCapability { IdentityPolicy; SinkResidentResume }`.
+  `resolveFlowSpec` (the one site that sees both the sink `Environment` and `CapabilityProfile`)
+  projects it from `Environment.effectiveArchetype` (FullRights ⇒ `PreferPreservedKeys` +
+  sink-resident; else `structural`), threads it through `MovementSpec → LoadOpts → Program.fs →
+  RunFaces → MigrationRun/TransferRun → WriteOptions → runCore`. Every widely-called public Transfer
+  entry kept its signature byte-identical via additive `*With` variants (`runWithRenamesWith`,
+  `runReconcilingWithRenamesWith`, `runReverseLegThroughConnectionsWith`, `executeWithDataWith`,
+  `executeWithDataAndRecordWith`) — the old entries delegate with `Structural`, so the 60+ existing
+  test callers are untouched.
+- **Gate.** Only a `FullRights` sink takes the forks (its `CapabilityProfile.IdentityInsert` /
+  `DdlPermitted`); the probed-grant VERIFICATION that refuses a mis-declared FullRights lacking
+  IDENTITY_INSERT is Slice B's reconciliation (the declared archetype is trusted here; B confirms it).
+- **Witness.** PURE: `Slice C1: buildWith Structural = build` (byte-identical) and
+  `buildWith PreferPreservedKeys` flips the IDENTITY-PK to `PreservedFromSource` with **zero
+  AssignedBySink kinds remaining** (`DataLoadPlanTests`); `Slice C2` — FullRights admits
+  streaming+resumable as Materialized while ManagedDml still refuses by name (`ReverseLegBoundaryTests`).
+  DOCKER (warm, 13 green incl. the new cell, 35 s — real execution, not the silent-skip trap): the
+  full multi-kind reverse-leg graph run with `PreferPreservedKeys` PRESERVES every source key
+  (`preservedKeyCount = 12`, the exact INVERSE of the keystone's `= 0` under AssignedBySink minting),
+  drops nothing, and every FK edge's business-key join holds (`ReverseLegCanaryTests`). Broad pure
+  regression: 407 green, 0 failed.
+- **Net.** The on-prem populate stops being forced into the cloud-shaped capture/remap and gets the
+  keys-preserved + sink-resident-resume path its grant permits; the cloud path is byte-identical. The
+  fork lives at one pure seam and rides the engine's existing per-disposition branches.
+
+## 2026-06-15 (later) — Slice S BUILT: the at-scale keymap spill (`#`-temp + server-side `UPDATE…JOIN`), armed-but-inert + equivalence-witnessed
+
+The completeness/headroom slice (REVERSE_LEG_WORK_PLAN §3 Slice S; DATABASE_ARCHETYPES.md §1/§3 H3).
+The reverse leg's `AssignedBySink` keymap (source surrogate → sink-minted surrogate) is RESIDENT
+today (`PackedSurrogateRemap`, ~40 B/entry). **The 2026-06-15 sizing proves the resident map FITS at
+production** — 75 MB for the estate, ~4–8 GB extrapolated to 200 M FK-target rows, ≪ the 64 GB host —
+so this is **not a current necessity**; it ships **armed but inert**, the resident path byte-identical
+until the operator lowers the threshold or the estate outgrows it. Recorded as an operator-directed
+build-for-safety, not overstated.
+
+- **The spill mechanism (BUILT + Docker-equivalence-witnessed).** `KeymapSpill.fs` (`SqlKeymap`): a
+  session `#`-temp keymap table `(KindKey, SourceKey, AssignedKey)` (temp tables ARE permitted under
+  the DML-only grant — J5 P5) populated from captured pairs (`captureMany`, batched + parameterized,
+  keep-first via `WHERE NOT EXISTS`), and a set-based server-side **`UPDATE…JOIN`** re-point
+  (`repointJoin`) — the at-scale replacement for the resident per-row `tryFind` + per-row UPDATE
+  (a per-row SQL lookup against a spilled keymap would be N round-trips at 200 M; the set-based join
+  is the whole point). NVARCHAR keys so the store is TOTAL over the same shapes `PackedSurrogateRemap`
+  handles (integral fast path + non-integral fallback).
+- **The chooser (BUILT + pure-witnessed).** `KeymapResidence.choose : threshold option -> estimate ->
+  Resident | Spilled` — pure, total, testable without a connection (the `ReverseLegRealization.choose`
+  discipline). `None` threshold = unbounded = ALWAYS resident (the inert default, byte-identical);
+  `Some n` spills strictly above `n`. `describe` narrates the armed spill (no silent path change).
+- **Witness.** PURE (`KeymapSpillPure`): the chooser's inert default + threshold boundary + the
+  armed-spill narration. DOCKER (`KeymapSpillEquivalenceTests`, 983 ms — real execution, the
+  per-test-duration check, not the silent-skip trap): **the spilled `UPDATE…JOIN` re-point produces a
+  byte-identical sink state to the resident per-row re-point** over the same captured keymap and FK
+  rows — including leaving an unmatched FK (no captured target) untouched, exactly as the resident
+  path's no-capture row stands. This is the work plan's "spill-on vs resident → byte-identical sink
+  state" witness at the mechanism grain (the spill is observationally pure).
+- **Honest boundary (the named follow-on).** The spill is delivered as a real, witnessed, threshold-
+  armed mechanism, and the live streaming hot-loop is left UNTOUCHED (zero risk to the 62-Docker +
+  reconcile + journal baseline). The remaining live-cutover — having `writePlanStreaming` capture
+  AssignedBySink pairs DIRECTLY to the `#`-temp (bounding phase-1 RAM) and route the phase-2
+  deferred-FK re-point through `repointJoin` (with a per-kind source re-stream into a join-staging,
+  since deferred FKs are NULLed in phase-1) — is the named follow-on. It arms when the estate
+  approaches the RAM ceiling, which the sizing shows it will not at the confirmed 200 M scale. The
+  resident path (phase-1 capture + journal replay + per-row phase-2) stays the proven default; the
+  spill mechanism + chooser + threshold are the at-scale architecture, built and proven, ready to
+  wire when the number that would force it materializes.
+- **Net.** The one unbounded-RAM hole in the streaming path has a built, equivalence-proven,
+  threshold-gated answer — inert at today's scale, byte-identical, ready to arm. Not overstated: the
+  resident map fits; this is headroom.
+
+## 2026-06-15 (later) — Slice B BUILT: the survey VERIFIES the archetype (A44 — the J5 covenant generalized)
+
+The last archetype slice (REVERSE_LEG_WORK_PLAN §3 Slice B; DATABASE_ARCHETYPES.md §5/§6 Slice B).
+The declared archetype stops being a trusted label and becomes a **verified claim**: what the
+operator declares, the `CapabilitySurvey` confirms against probed `fn_my_permissions` evidence — the
+one-time J5 spike generalized into a standing, per-class gate. Pure-witnessed; byte-identical for every
+existing (undeclared-archetype) config.
+
+- **Part 1 — route the required-capability derivation through the archetype's derived grant.**
+  `CapabilitySurvey.requiredBy` (sink role) now reads `Environment.effectiveArchetype ∘ Archetype.grant`
+  instead of the raw `Grant` facet. **Byte-identical** for every config to date: an undeclared
+  archetype is inferred from `grant`, and `Archetype.grant ∘ Archetype.ofGrant = id` (Slice A's
+  round-trip), so the derived grant equals the hand-set one. An archetype-DECLARED sink derives its
+  grant from the class (the archetype subsumes `Grant`). Witnessed: an `archetype: full-rights` sink
+  yields the SAME required set as a `grant: schema+data` sink; `managed-dml` mirrors `data`.
+- **Part 2 — the declared-vs-probed archetype reconciliation.** `reconcileArchetype : Archetype ->
+  GrantEvidence -> ArchetypeFinding list` (pure, DB-free — the covenant is testable without a
+  connection). Findings are a closed DU surfaced as a REPORT FIELD (`EnvironmentReport.ArchetypeFindings`,
+  like `UserDirectory` — NOT a `Capability` variant, so the `required ⇔ surveyed` totality is
+  untouched), narrated via `advisoryLines` (R6 — a warning, never a gate):
+  - `RequiredCapabilityDenied` — a declared `FullRights` whose probe lacks CREATE TABLE or ALTER
+    (IDENTITY_INSERT): the engine would have assumed `PreservedFromSource` + a sink-resident checkpoint
+    the grant cannot support. A blocking-class mismatch, named.
+  - `SoftCapabilityAbsent` — the **on-prem `FullRights`-minus-DMV split** (observed 2026-06-15): full
+    DDL/DML present, `VIEW DATABASE PERFORMANCE STATE` absent. Classifies correctly as `FullRights`
+    with ONE probe degraded (the fast sizing probe falls to `COUNT_BIG`), NOT a misdeclaration — the
+    exact reason §5 carries each capability as its own verified flag, not a bundle inferred from the
+    label.
+  - `ForbiddenCapabilityPermitted` — a declared `ManagedDml` that UNEXPECTEDLY permits IDENTITY_INSERT
+    / CREATE TABLE: safer than declared (the simpler `PreservedFromSource` path is available), but a
+    divergence surfaced so the operator sees it.
+  - Runs ONLY on an EXPLICITLY declared archetype (an inferred one is not a claim to verify) and only
+    when the grant probe succeeded — so an undeclared place is byte-identical (no findings).
+- **Witness (pure, 31 green `CapabilitySurvey*` incl. the totality guard; 389 green across the touched
+  areas + the registry/axiom/pillar-9 guards).** Part 1's byte-identical routing; the four
+  reconciliation cases (FullRights clean / FullRights-missing-DDL mismatch / FullRights-minus-DMV split
+  / ManagedDml-permitting-IDENTITY_INSERT surfaced / ManagedDml-clean); and `advisoryLines` surfacing a
+  finding on an otherwise-unblocked place.
+- **Net.** The four archetype slices are complete (A → C → S → B). The capability class is a named,
+  closed, reusable disposition (A); the `FullRights` populate gets its keys-preserved + sink-resident
+  path (C); the at-scale spill is built, equivalence-proven, and armed-but-inert (S); and the declared
+  archetype is now a verified claim, not a trusted label (B). `expressible ⇔ reachable` holds for the
+  target's capability class.

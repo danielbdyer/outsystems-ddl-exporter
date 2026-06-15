@@ -49,6 +49,7 @@
     <Compile Include="BenchSink.fs" />
     <Compile Include="Preflight.fs" />
     <Compile Include="PackedSurrogateRemap.fs" />
+    <Compile Include="KeymapSpill.fs" />
     <Compile Include="SurrogateCapture.fs" />
     <Compile Include="CaptureJournal.fs" />
     <Compile Include="RenameProjection.fs" />

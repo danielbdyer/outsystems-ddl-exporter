@@ -44,6 +44,7 @@ let private allRenditions : Rendition list = [ Rendition.Physical; Rendition.Log
 let private allRenditionOpts : Rendition option list = None :: (allRenditions |> List.map Some)
 let private allScopeOpts : Scope option list = [ None; Some Scope.Schema; Some Scope.Data; Some Scope.All ]
 let private allGrantOpts : Grant option list = [ None; Some Grant.SchemaAndData; Some Grant.DataOnly ]
+let private allArchetypeOpts : Archetype option list = [ None; Some Archetype.FullRights; Some Archetype.ManagedDml ]
 
 /// The closed `from` alphabet, as constructed-valid origins. `Env` is split out
 /// (it needs a live source env) so the generator can wire it consistently.
@@ -60,7 +61,7 @@ let private allOriginDraws : OriginDraw list =
 /// A direct (live) environment with a chosen rendition — the up-leg endpoints.
 let private directEnv (name: string) (grant: Grant option) (rendition: Rendition option) : Environment =
     { Name = name; Access = Access.Direct (ConnectionRef.EnvVar (name + "_CONN"))
-      Grant = grant; Store = None; Rendition = rendition }
+      Grant = grant; Store = None; Rendition = rendition; Archetype = None }
 
 let private genOpt (xs: 'a list) : Gen<'a> = Gen.elements xs
 
@@ -156,12 +157,13 @@ let ``A44 clause 1 — renderEnvironment ∘ parseEnvironment = id on every reac
     for access in accesses do
       for grant in allGrantOpts do
         for rendition in allRenditionOpts do
-          for store in [ None; Some "lifecycle/e.json" ] do
-            let env = { Name = "e"; Access = access; Grant = grant; Store = store; Rendition = rendition }
-            let cfg = { ProjectionConfig.empty with Environments = Map.ofList [ "e", env ] }
-            match ProjectionConfig.parse (ProjectionConfig.render cfg) with
-            | Ok back -> Assert.Equal<Environment>(env, Map.find "e" back.Environments)
-            | Error es -> Assert.Fail(sprintf "round-trip failed for %A: %A" env es)
+          for archetype in allArchetypeOpts do
+            for store in [ None; Some "lifecycle/e.json" ] do
+              let env = { Name = "e"; Access = access; Grant = grant; Store = store; Rendition = rendition; Archetype = archetype }
+              let cfg = { ProjectionConfig.empty with Environments = Map.ofList [ "e", env ] }
+              match ProjectionConfig.parse (ProjectionConfig.render cfg) with
+              | Ok back -> Assert.Equal<Environment>(env, Map.find "e" back.Environments)
+              | Error es -> Assert.Fail(sprintf "round-trip failed for %A: %A" env es)
 
 [<Fact>]
 let ``A44 clause 1 — renderFlow ∘ parseFlow = id on every from × scope × shape × tables`` () =
