@@ -329,7 +329,7 @@ module Transfer =
                 |> Set.ofList
             // The Source→Sink-minted surrogate map, accumulated as
             // AssignedBySink kinds insert; the PACKED realization-layer store
-            // (Dictionary<int64,int64> per kind — the 288M-row estate's
+            // (Dictionary<int64,int64> per kind — the hundreds-of-millions-row estate's
             // FK-target tables would not fit the string-keyed immutable Map).
             // Threaded through the topological Phase-1 loop so referencers
             // re-point against captures made by their (earlier-ordered)
@@ -824,7 +824,7 @@ module Transfer =
             // writes to the sink is at risk; DryRun and `allowCdc = true` skip
             // the check. The refusal is fail-loud (a structured error), never a
             // silent proceed — writing against a CDC-tracked sink during a
-            // UAT-preview is exactly the surprise R6 guards against.
+            // Managed-environment preview is exactly the surprise R6 guards against.
             // G0 (AC-G0) — the pre-plan Execute gates compose through ONE
             // mandatory `Preflight.all`, in precedence order (CDC first, then the
             // spanning connection/grant/permission gate G1/G2), short-circuiting on

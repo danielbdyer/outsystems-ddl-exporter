@@ -725,7 +725,7 @@ blessing protocol), WP7/WP8, WP9. J5 still trumps everything.
 To the next agent.
 
 **A new program opened today and its first slice is DONE.** The operator
-ran the full-export flow end-to-end in a corporate estate and mapped the
+ran the full-export flow end-to-end in a managed OutSystems environment and mapped the
 problem series; the resulting research record and nine-package program
 live in `V1_FULL_EXPORT_RECONCILIATION_PLAN.md` — read it BEFORE touching
 anything on the full-export surface; it captures the code-truth findings
@@ -1578,7 +1578,7 @@ isometry norm — ‖δ‖ = capture count = row count, exactly), and
 `ReverseLegBoundaryTests.fs` (the CLI reconcile/user-map refusal live +
 four reserved Skip-stub contracts carrying their promotion triggers).
 
-What this collapses: the J5 real-UAT spike is now a re-run of a proven
+What this collapses: the J5 managed-environment spike is now a re-run of a proven
 suite against a real connection — P1/P2/P3/P6 are answered on mock
 infrastructure. What genuinely remains for J5: the actual OutSystems grant
 envelope (and the G1 object-scope-DENY gap, pinned), platform triggers on
@@ -1613,7 +1613,7 @@ re-open trigger is a reverse leg over an estate with no authored model.
 stay opt-in; the inert combination carries a named note +
 `moduleFilter.flagsInert` diagnostic. Do not re-open.
 
-The remaining queue is now: **J5** (real-UAT execute — operator-gated on a
+The remaining queue is now: **J5** (managed-environment execute — operator-gated on a
 writable connection; the one true critical-path item), **B9** (IRBuilders
 α′ Python pass), D5–D7 instrument slices, §C modeling decisions, §E/§F
 speculative items. Small operational note: `scripts/test.sh`'s failed-name
@@ -1633,7 +1633,7 @@ one per `PlanAction`), and a 379-line `Program.fs` that is exactly usage +
 solution builds clean, CLI smoke verified live, pure pool green. If you
 split `RunFaces` further into family files, it is now a self-contained move.
 
-So the remaining queue is operator-gated on both ends: **J5** (real-UAT
+So the remaining queue is operator-gated on both ends: **J5** (managed-environment
 execute — needs a writable connection) and the **A7 polarity decision**
 (asked of the operator at this session's close; check the conversation /
 their next instruction before assuming). The reverse-leg runner arm stays
@@ -1669,7 +1669,7 @@ re-open the "unify the ALTER surface" framing).
 
 What's actually left, in the order I'd take it:
 
-1. **J5 (real-UAT execute, OPEN-2)** is the cutover-critical path and is
+1. **J5 (managed-environment execute, OPEN-2)** is the cutover-critical path and is
    blocked on the OPERATOR — a writable connection for the ops spike +
    `--execute` under R6 with `--preview-row-cap`. If the operator shows up
    with an environment, drop everything else.
@@ -1808,7 +1808,7 @@ isolation.)
 
 **Do not build Wave 5 speculatively.** This is the load-bearing call and it's deliberate (IR grows
 under evidence, not speculation). Wave 5 is either *blocked* or *defer-with-trigger*:
-- **5.1** (Transfer D-exec, real UAT load) is blocked on **OPEN-2** — does OutSystems Cloud UAT
+- **5.1** (Transfer D-exec, managed OutSystems environment load) is blocked on **OPEN-2** — does a managed OutSystems environment
   expose a writable SQL connection to entity tables, or is it platform-API-only? That's an ops
   spike, not an engineering task. The one buildable crumb is `--preview-row-cap` on `TransferArgs`.
 - **5.2–5.9** each carry a named trigger (5.2 AssignedBySink: a real sink-minted-key load; 5.3
@@ -2233,7 +2233,7 @@ The Core (`Projection.Core`) carries the DataIntent kernel; the Pipeline carries
 
 (3) **L3 axiom promotion cycle (verifiability-triangle audit refresh).** Two candidates from chapter C's pattern repetition: **L3-CC-AcceptanceAnnotation** (every operator-visible structural finding with an addressable acceptance path carries the annotation; the finding remains visible) and **L3-CC-ApplyLayerLocality** (operator overlays apply at the layer carrying the typed identity the override is keyed by). Promoting requires a verifiability-triangle audit dispatch (5 agents per `DECISIONS 2026-05-12 — Verifiability-triangle audit methodology`). Estimate: ~3-5 days for the audit + ~1 week for codification + per-axiom property tests.
 
-(4) **`LiveOssysConnection` cluster.** Blocked on operator corp-network access. When access opens, the cluster (live OSSYS path + multi-env + UAT-users + user-reflow strategy + extraction-time knobs) lands as a follow-up chapter and closes Phase B's functional-equivalence arm (per `CHAPTER_B_4_CLOSE.md` §"Phase B exit gate status"). Estimate: 4-6 weeks; not chapter-D candidate unless operator surfaces access pre-cutover.
+(4) **`LiveOssysConnection` cluster.** Blocked on operator managed-environment access. When access opens, the cluster (live OSSYS path + multi-env + UAT-users + user-reflow strategy + extraction-time knobs) lands as a follow-up chapter and closes Phase B's functional-equivalence arm (per `CHAPTER_B_4_CLOSE.md` §"Phase B exit gate status"). Estimate: 4-6 weeks; not chapter-D candidate unless operator surfaces access pre-cutover.
 
 (5) **TransformGroup DU expansion + per-emitter filtering.** Today's C.4 chain-filter only excludes PASSES whose tags intersect disabled groups. If operator-pull surfaces for "toggle MigrationDependencies emission off without using `EmissionPolicy.EmitData = false`," that's a new `TransformGroup` variant + new emitter-side filtering mechanism. Estimate: ~3-5 days focused slice (the structural seam already exists; the work is the closed-DU expansion + the emitter-side filter at the chain boundary).
 

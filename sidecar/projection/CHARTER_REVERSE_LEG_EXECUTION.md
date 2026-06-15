@@ -3,7 +3,7 @@
 > **What this is.** The forward charter *and* the consolidated knowledge base for taking
 > reverse-leg DML movement of legacy application data — the **B→A** load that re-keys an
 > OutSystems estate into a managed OutSystems environment — from
-> "engine proven on mock" to "an operator trusts running it against ~288M real rows."
+> "engine proven on mock" to "an operator trusts running it against hundreds of millions of real rows."
 >
 > It is the synthesis of two deep background discovery sweeps (2026-06-15): a J5-foundation
 > sweep (12 + critic + 6 fill agents) and an execution-maturity sweep (7 + critic + 6 fill
@@ -66,8 +66,8 @@ witnessed), **ARMED** (designed, build deferred behind a named numeric wake-cond
 
 ## 1. What J5 is, and why it exists
 
-J5 is the capability spike originally written as the **Cloud UAT Capability Playbook**
-(`J5_UAT_CAPABILITY_PLAYBOOK.md`, now deprecated): a SQL ops spike that runs a risk-ordered ladder of
+J5 is the capability spike originally written as the **Managed-Environment Capability Playbook**
+(`J5_MANAGED_ENV_CAPABILITY_PLAYBOOK.md`, now deprecated): a SQL ops spike that runs a risk-ordered ladder of
 capability probes against real OSUSR entity tables **in a managed OutSystems environment** to
 discover *which identity disposition the managed DML-only grant even permits*. The premise: a
 DML-only managed surface may forbid `IDENTITY_INSERT`, which forecloses `PreservedFromSource` and
@@ -86,9 +86,9 @@ to a throwaway entity table and test IDENTITY_INSERT/INSERT").
   copy-paste **SQL script** against a throwaway `CREATE TABLE dbo.OSUSR_PROBE_J5` sandbox created by
   a DDL-rights login. Destructive probes (P6 TRUNCATE, P8 ALTER NOCHECK) ran live; it ended with
   `DROP TABLE`.
-- **v2** (`J5_UAT_CAPABILITY_PLAYBOOK.md`, commit `237140ae`) is a **playbook, not a script**. It
+- **v2** (`J5_MANAGED_ENV_CAPABILITY_PLAYBOOK.md`, commit `237140ae`) is a **playbook, not a script**. It
   *defers* the sandbox DDL and binds probes at runtime to real OSUSR tables via a Phase-0 binding
-  sheet. Commit `450e5c43` then stripped the deployment-context (corporate-network) framing.
+  sheet. Commit `450e5c43` then stripped the deployment-context framing.
 - **The headline change is the operating model — who constructs, who executes, what travels.** The
   agent constructs SQL; the **operator executes every statement**; full-fidelity results stay inside
   the probe session; only the sanitized §7 findings ledger (verdicts + standard SQL Server error
@@ -163,13 +163,13 @@ mechanism — *capture the assigned key on insert; that capture is simultaneousl
 the FK-remap table.*
 
 **The repo-vs-reality gap (now closed).** At the moment of the run the repo recorded none of this:
-§7 was a blank template (`J5_UAT_CAPABILITY_PLAYBOOK.md:342-358`) and no closing DECISIONS entry
+§7 was a blank template (`J5_MANAGED_ENV_CAPABILITY_PLAYBOOK.md:342-358`) and no closing DECISIONS entry
 existed. Per operator decision the gap is closed by **deprecating** the playbook and relocating the
 ledger to the canonical stores — this compendium and the `DECISIONS.md` 2026-06-15 closing entry —
 not by populating §7 (Step 0, done).
 
 **The "collapse letter."** The 2026-06-10 LE-3 addendum (`HANDOFF.md:1581-1586`) had already narrowed
-the residual: *"the J5 real-UAT spike is now a re-run of a proven suite against a real connection —
+the residual: *"the J5 managed-environment spike is now a re-run of a proven suite against a real connection —
 P1/P2/P3/P6 are answered on mock infrastructure,"* leaving four real-connection items: the actual
 grant envelope + the **G1** object-scope-DENY gap; platform triggers on OSUSR tables (force OUTPUT
 INTO, survey P5); and P7 batch ceilings over a real wire. The operator's run settles the grant envelope
@@ -177,7 +177,7 @@ and the capability set; the genuine residuals that remain are below.
 
 ## 7. Residuals after the run
 
-- **P7b — throughput over the real wire** (the ≥20k rows/sec / ≤4h confirmation). *Load-bearing.*
+- **P7b — throughput over the real wire** (the throughput-floor / cutover-window confirmation). *Load-bearing.*
 - **P10 / OPEN-7 — user directory** readable + email-keyed (confirms ReconciledByRule is available).
 - **G1 — object-scope DENY** check (P1b): does any per-table DENY diverge from the database grant?
 - **P5 estate survey** — which OSUSR tables carry platform triggers (the capture ladder handles them;
@@ -328,14 +328,14 @@ canary is realizable against the real estate (pending the real-wire throughput b
 
 ## 1. The throughput math (settled)
 
-Target: **~288M rows** in a **≤4h** window ⇒ **≥20k rows/sec** sustained, worst-case all-FK-referenced
+Target: **hundreds of millions of rows** in **the cutover window** ⇒ **the throughput floor** sustained, worst-case all-FK-referenced
 shape (`AUDIT_2026_06_10_REVERSE_LEG_DML_PROOF.md:170-200`). Three measured points:
 
-| Lane | rows/sec | 288M extrapolation | Status |
+| Lane | rows/sec | Full-estate extrapolation | Status |
 |---|---|---|---|
-| Per-row `INSERT…OUTPUT` (baseline) | ~271 | **~12 days** | F2 — **superseded** as the shipped path; survives as the per-row bottleneck *reference* P7b benchmarks against |
-| 1000-row `VALUES` MERGE | ~5,700 | ~14h | **Refuted** — parse-bound at the TVC 1000-row cap |
-| **Bulk-staged `MERGE…OUTPUT`, 50k chunks** | **~27,000** | **~3.0h** | **Shipped lane** — clears the window, but **loopback-only** |
+| Per-row `INSERT…OUTPUT` (baseline) | ~271 | **days** | F2 — **superseded** as the shipped path; survives as the per-row bottleneck *reference* P7b benchmarks against |
+| 1000-row `VALUES` MERGE | ~5,700 | ~½ day | **Refuted** — parse-bound at the TVC 1000-row cap |
+| **Bulk-staged `MERGE…OUTPUT`, 50k chunks** | **~27,000** | **hours** | **Shipped lane** — clears the window, but **loopback-only** |
 
 **The "271 contradiction," resolved.** The audit body states ~271 as a LIVE finding; the same-day
 evening addendum titles itself "F2 superseded by the set-based lane" (`:184`), echoed in `DECISIONS.md:21336-21351`.
@@ -360,9 +360,9 @@ automatically.
 ## 4. The remap and its ceiling
 
 `PackedSurrogateRemap` — a mutable `Dictionary<int64,int64>` per kind (~40 B/entry), explicitly chosen
-over the string-keyed immutable `Map` because the 288M-row estate's FK-target tables "would not fit"
-(`TransferRun.fs:330-337`; `PackedSurrogateRemap.fs:15-43`). Resident ceiling ≈ **6 GB at ~150M FK-target
-rows**. Above that, the **sink-resident keymap / server-side `UPDATE…JOIN` spill** is the named next step
+over the string-keyed immutable `Map` because the hundreds-of-millions-of-rows estate's FK-target tables "would not fit"
+(`TransferRun.fs:330-337`; `PackedSurrogateRemap.fs:15-43`). Resident ceiling ≈ **~40 B per FK-target row (the
+worst-case majority-FK-referenced shape)**. Above that, the **sink-resident keymap / server-side `UPDATE…JOIN` spill** is the named next step
 — **DESIGNED-only** (`AUDIT_2026_06_10_REVERSE_LEG_DML_PROOF.md:247-249`), gated on the estate survey.
 
 ## 5. Streaming, the journal, and the three batch knobs
@@ -419,11 +419,11 @@ Wired to the production CLI (`RunFaces.runReverseLegTransfer` → `runReverseLeg
 unbreakable-cycle, composite-surrogate, unmapped-orphan (materialized arm).
 
 - **GAP:** no real-wire run (largest exercised: 4 kinds × 25,000 = 100,000 rows, plus a 16-kind × 250
-  mesh; tests print a 288M extrapolation but no 288M run). Reverse leg loads kinds **sequentially** — the
+  mesh; tests print a full-estate extrapolation but no full-estate run). Reverse leg loads kinds **sequentially** — the
   level-parallel loader exists on the **seed lane only** (`Deploy.executeLeveledSeed`, `executeBatchParallel`,
   `ParallelSafe` token minted by `TopologicalOrder.levels`, `resolveParallelism` env→DMV→4 stack), measured
   2.59–2.85×. Bringing it to the reverse leg is a **PORT** (reuse, gated by the cross-kind remap dependency),
-  not a green-field build. P4 "transfer wavefronts" are **ARMED**, wake = real-wire bench < 20k rows/sec.
+  not a green-field build. P4 "transfer wavefronts" are **ARMED**, wake = real-wire bench below the throughput floor.
 
 ## 2. Resume / checkpoint / idempotency — **PARTIAL**
 
@@ -439,8 +439,8 @@ Crash-resume at chunk granularity is witnessed (`ReverseLegStreamingTests.fs:87-
   streaming-execute by name) — not to build idempotency. Caveat: idempotence is keyed to the same plan-marker
   **and** a byte-identical source slice (changed source ⇒ drift refusal). The journal is client-side NDJSON
   *because the DML-only grant forbids the `CREATE TABLE` a sink-resident progress table would need*.
-- **ARMED:** journal compaction — resume loads the **entire ~9–10 GB NDJSON** into memory at 288M
-  (`CaptureJournal.fs:66-74`); wake = any real resume > ~10M pairs. Envelope spill (`RunState.Envelopes`
+- **ARMED:** journal compaction — resume loads the **entire NDJSON** (tens of bytes per captured pair, GBs at
+  full-estate scale) into memory (`CaptureJournal.fs:66-74`); wake = any real resume > ~10M pairs. Envelope spill (`RunState.Envelopes`
   accumulates in memory) — ARMED, same scale wake.
 - **GAP:** the built resume is *journal-replay on re-run*, **not live socket-drop reconnect/retry**
   mid-transfer. **Risk:** the journal filename **is** its content digest (`transfer-<digest16>.ndjson`,
@@ -512,7 +512,7 @@ a straight load today. Reconcile∘streaming is unbuilt; the streaming arm has o
 no pre-write halt (NM-31, `TransferRun.fs:1483-1490`). The design-time `UserFkReflowPass.discover` exists and
 writes `ComposeState.UserRemap` (all four strategies; `UserFkReflowPass.fs:195-348`) but is a **production
 no-op** — `IsUserFk` is always false and there is no live user-population reader (a CHAPTER-4.2 deferral); the
-discovered map is discarded at emit and never persisted. So at 200M rows the User rekey is achievable only via
+discovered map is discarded at emit and never persisted. So at hundreds-of-millions-of-rows scale the User rekey is achievable only via
 the **runtime** AssignedBySink path (`PackedSurrogateRemap` + `CaptureJournal`), which does **not** exercise
 the reconcile-by-email discovery pass the "golden" discipline (Part V §4) describes. Wiring reconcile +
 `validate-user-map` onto the reverse leg is Phase 2.
@@ -541,7 +541,7 @@ deferred cutover gate (`CUTOVER_READINESS_BRIEF.md`).
 
 `Policy.fs:101-109` defines `type DataVerification = Standard | ValidateBeforeApply` (a closed DU). The
 operator decision C2: *"CDC-silence stays canonical; EXCEPT validate-before-apply is the conservative
-fallback/override until J5 proves the CDC path on real UAT… revisit auto-fallback after J5."* NM-73 (WP6.6)
+fallback/override until J5 proves the CDC path on a managed OutSystems environment… revisit auto-fallback after J5."* NM-73 (WP6.6)
 **built and shipped the manual opt-in override** (default `Standard`, byte-identical to pre-NM-73), but the
 **auto-fallback** (CDC-failure → automatic EXCEPT) is explicitly deferred until after J5. So J5's CDC verdict
 (OPEN-3) is the thing that arms the automation — Phase 5.
@@ -565,7 +565,7 @@ fallback/override until J5 proves the CDC path on real UAT… revisit auto-fallb
 Dependency-ordered. Each phase has an exit test.
 
 ### Step 0 — Relocate the ledger to the canonical stores *(discharges the preemption)*
-- **Deprecate `J5_UAT_CAPABILITY_PLAYBOOK.md`** rather than populate its §7 template — the spike has
+- **Deprecate `J5_MANAGED_ENV_CAPABILITY_PLAYBOOK.md`** rather than populate its §7 template — the spike has
   run, so its intent is fulfilled; banner added, content relocated. *(done 2026-06-15)*
 - **Write the canonical `DECISIONS.md` entry** closing OPEN-1/2/3/5/6/7, with the Part II §7 residuals
   named. *(done 2026-06-15 — "J5 managed-environment capability spike RUN…")*
@@ -576,7 +576,7 @@ Dependency-ordered. Each phase has an exit test.
 
 ### Phase 1 — Close the real-wire loop *(mostly measurement)*
 - Run the set-based streaming lane against a real managed OutSystems environment at representative scale → measure rows/sec (**P7b**).
-  **Exit:** ≥20k/s sustained, or the escape hatches (parallel wavefronts P4, 50k-chunk sweep, sink-resident
+  **Exit:** the throughput floor sustained, or the escape hatches (parallel wavefronts P4, 50k-chunk sweep, sink-resident
   spill) are triggered with a plan.
 - **Estate survey**: row-count + FK-fan-in (gates resident-map vs sink-resident spill) + the P5 trigger map
   across OSUSR tables + the **G1** object-scope-DENY check (P1b).
@@ -610,9 +610,9 @@ Dependency-ordered. Each phase has an exit test.
 
 ## Decisions needed from the operator
 
-1. **Scale shape** — is ~200M the whole estate or the largest table? How many rows live in **FK-target**
+1. **Scale shape** — is the hundreds-of-millions-of-rows figure the whole estate or the largest table? How many rows live in **FK-target**
    tables (decides resident remap vs sink-resident spill), and how many **users** (the reconcile set)?
-2. **Transfer-host memory budget** — sets the ~6 GB packed-remap spill trigger.
+2. **Transfer-host memory budget** — sets the packed-remap spill trigger.
 3. **The two un-run probes** — hand the operator the **P10** user-directory metadata probe now (read-only;
    confirms ReconciledByRule available) and design the **P7b** throughput harness for Phase 1.
 
@@ -623,7 +623,7 @@ Dependency-ordered. Each phase has an exit test.
 - **Journal-filename ↔ content-digest coupling** — a byte change silently orphans journals (defeats resume).
 - **Warm-container memory-grant stall** — the batch-size-independent `RESOURCE_SEMAPHORE` wait; diagnose via
   DMVs, not the batch knob.
-- **Resident remap ceiling** (~6 GB at ~150M FK-target rows) — bounds host RAM, not correctness; spill is
+- **Resident remap ceiling** (~40 B per FK-target row, the worst-case majority-FK-referenced shape) — bounds host RAM, not correctness; spill is
   designed-only.
 - **Schema-identity skip is schema-only and name-only-unsound** — no data-plane skip; facet-only changes read
   as `‖δ‖ = 0`.

@@ -1,4 +1,4 @@
-# J5 — Cloud UAT Capability Playbook (generic; agent-constructed, operator-executed)
+# J5 — Managed-Environment Capability Playbook (generic; agent-constructed, operator-executed)
 
 > **DEPRECATED 2026-06-15 — provenance only.** The J5 spike has been **run against a real
 > managed OutSystems environment**; this playbook's intent is fulfilled. (The grant posture
@@ -13,7 +13,7 @@
 > (`J5_UAT_SQL_PROBE_SHEET.md`) was superseded by this playbook; this playbook is now
 > superseded by the run.
 
-> **What this is.** The J5 ops spike (real-UAT execute, OPEN-2) as a **playbook**, not a
+> **What this is.** The J5 ops spike (managed-environment execute, OPEN-2) as a **playbook**, not a
 > script: a risk-ordered ladder of SQL capability probes that an agent **binds to
 > existing OSUSR tables** selected with the operator from the model at hand. No
 > sandbox DDL is created — the prerequisite throwaway table from the v1 probe sheet is
@@ -41,7 +41,7 @@ The loop, per statement or small statement group:
    selected tables and presents the exact SQL to the operator, together with: what it
    probes, the expected outcome, and — for anything that persists — the pre-staged
    revert statement in the same message.
-2. **The operator executes** in the Cloud UAT SQL surface and pastes back the full
+2. **The operator executes** in the managed OutSystems environment SQL surface and pastes back the full
    resultset / error text to the agent. Full fidelity is fine here — this exchange
    stays within the probe session.
 3. **The agent adjudicates**: advance to the next rung, issue a sideways exploration

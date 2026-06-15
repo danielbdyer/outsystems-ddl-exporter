@@ -287,7 +287,7 @@ Hold the spine. Chapter C is mostly mechanical wiring against a substrate that a
 
 ## 📍 Next-agent orientation — DO THIS FIRST
 
-> **You're picking up V2 after chapter B.4 closed.** All 8 slices shipped; the chapter-close ritual ran; Phase B's *structural* exit gate is green. The functional-equivalence arm waits on `LiveOssysConnection` (operator's V1 corporate-network HEAD; named blocker).
+> **You're picking up V2 after chapter B.4 closed.** All 8 slices shipped; the chapter-close ritual ran; Phase B's *structural* exit gate is green. The functional-equivalence arm waits on `LiveOssysConnection` (operator's V1 managed-environment HEAD; named blocker).
 >
 > **Read these, in this order (~30 min):**
 >
@@ -342,7 +342,7 @@ Plus one hygiene commit during the chapter: **canary volume reduction** (`Genera
 Verify each at the next chapter close per the ritual. See `DECISIONS.md` Active deferrals index for the canonical list with trigger conditions.
 
 - **Faker emitter promotion** — trigger STRUCTURALLY MET since chapter B.3 close. Chapter B.4 did NOT promote (cutover-window priority routed structural work to the CLI surface). Re-evaluate at chapter B.5 / Chapter C open under concrete consumer demand.
-- **`LiveOssysConnection` variant + cluster** (multi-env + UAT-users + axis 10 user reflow + axis 14 extraction knobs) — trigger: operator's V1 corporate-network HEAD becomes accessible. Lights the functional-equivalence arm of Phase B's exit gate.
+- **`LiveOssysConnection` variant + cluster** (multi-env + UAT-users + axis 10 user reflow + axis 14 extraction knobs) — trigger: operator's V1 managed-environment HEAD becomes accessible. Lights the functional-equivalence arm of Phase B's exit gate.
 - **Standalone `projection extract` + `projection profile` subcommands** — dropped at chapter-mid rescope; reserved code paths in §6 event categories still fire from `full-export`'s orchestration. Re-open if operator workflow demands them.
 - **`data-twin` CLI verb micro-chapter** — wraps existing `DockerImageEmitter` (chapter 3.x); surfaces when dev-team dockerized-replica workflow demands.
 - **Spectre.Console `TtyRenderer` + dual-channel `--json-out` routing micro-chapter** — per §15.3. Trigger: operator reports NDJSON-only stderr as unfriendly for interactive runs.

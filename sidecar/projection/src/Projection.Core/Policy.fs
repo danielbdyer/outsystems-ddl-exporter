@@ -98,7 +98,7 @@ module DeleteScopePolicy =
 /// the MERGE overwrites. First apply over an empty target proceeds; an
 /// idempotent re-apply stays silent; a *drifted* re-apply throws. Per C2,
 /// CDC-silence stays canonical; this is the opt-in fallback until J5
-/// proves the CDC path on real UAT. Modeled as a closed DU (not a bool)
+/// proves the CDC path on a managed OutSystems environment. Modeled as a closed DU (not a bool)
 /// so a future third verification posture lands as a named variant.
 [<RequireQualifiedAccess>]
 type DataVerification =

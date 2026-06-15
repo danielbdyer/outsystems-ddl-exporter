@@ -2,7 +2,7 @@
 
 `projection.sample.json` is the canonical cloud-insertion estate: the model read **live**
 from your cloud OutSystems environment, an on-prem publish path, and the three data
-producers (`golden` / `preview` / `synth`) landing in a cloud UAT sink. JSON carries no
+producers (`golden` / `preview` / `synth`) landing in a managed OutSystems environment sink. JSON carries no
 comments, so every key is explained below. (Start instead from `projection init` for the
 minimal scaffold; this sample is the real shape.) Walkthrough: `../GETTING_STARTED.md`;
 design: `../THE_CLI.md`.
@@ -55,7 +55,7 @@ no V1) and shares that one read across every flow.
 | `onprem-dev` / `onprem-qa` / `onprem-uat` | `bundle` → `./dist/...` | `schema+data` | `logical` | emit SSDT files for the on-prem Octopus pipeline (the schema delivery path) |
 | `onprem-legacy` | `direct` (`file:./secrets/onprem-legacy.conn`) | *(none)* | `logical` | the hosted on-prem model the migration team loads — the **B** source of the reverse leg |
 | `cloud-qa` | `direct` (`file:./secrets/cloud-qa.conn`) | *(none)* | `physical` | the cloud QA cell — the `peer` source for golden data |
-| `cloud-uat` | `direct` (`file:./secrets/cloud-uat.conn`) | `data` | `physical` | the cloud UAT **sink** — DML-only cloud insertion (R6) |
+| `cloud-uat` | `direct` (`file:./secrets/cloud-uat.conn`) | `data` | `physical` | the managed OutSystems environment **sink** — DML-only cloud insertion (R6) |
 
 ### Why the grants differ — source vs. sink (not dev vs. prod)
 

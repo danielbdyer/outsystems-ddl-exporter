@@ -1095,8 +1095,8 @@ preview/migration capability, not a cutover-gate dependency. Develops on
 
 **What it is.** A *Transfer* loads row data from one database substrate into
 another over one shared schema: `Ingestion(Source) → Projection(Sink)`. The
-motivating instances: (a) the blank-UAT preview — ingest from the staging SQL
-Server (re-bound as Source) and project into an OutSystems Cloud UAT database
+motivating instances: (a) the managed-environment preview — ingest from the staging SQL
+Server (re-bound as Source) and project into a managed OutSystems environment
 (Sink); and (b) the **Dev→UAT User re-key** — load Dev data into UAT,
 re-keying every User-FK from the Dev surrogate to the *pre-existing* UAT
 surrogate (operator's headline case). It is the **H-050 adjunction extended
@@ -1138,13 +1138,13 @@ dual-environment profiling).
 | E | `AssignedBySink` — assigned-key capture (`OUTPUT`/correlation) feeding `SurrogateRemapContext`, catalog-wide FK re-point | ⚪ later chapter |
 
 **Per-phase risks:**
-- *Platform write surface (OPEN-2)* → whether the OutSystems Cloud UAT DB
+- *Platform write surface (OPEN-2)* → whether the managed OutSystems environment
   permits direct SQL writes to entity-backing tables is the single biggest
   external dependency; confirm before Slice D.
 - *Connection apparatus scope (OPEN-7)* → environment count + platform/license
   concurrency (V1's "four connections, two concurrent") gates how rich
   `TransferConnections` must be; confirm before Slice C′.
-- *R6 boundary* → the execute path is a new write path; stays UAT-preview +
+- *R6 boundary* → the execute path is a new write path; stays managed-environment preview +
   dry-run-default and requires the R6 amendment before Slice D ships.
 - *Identity disposition mix* → a realistic UAT load mixes `PreservedFromSource`
   (business keys), `ReconciledByRule` (Users; Slice C′), and possibly

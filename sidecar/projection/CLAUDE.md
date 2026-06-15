@@ -62,7 +62,7 @@ bottleneck sweep on the measurement substrate `PERF_HARNESS.md` designs.
 | Area you are about to touch | Read first |
 |---|---|
 | any Wave-6 / algebra / diff slice | `WAVE_6_ALGEBRA.md` (the equation to balance) + `AXIOMS.md` T12–T16/A43 + the debrief's cluster |
-| the transfer / reverse leg / 288M program | `AUDIT_2026_06_10_REVERSE_LEG_DML_PROOF.md` + `DECISIONS` 2026-06-10/11 entries (streaming realization, capability descent, the selector) |
+| the transfer / reverse leg / hundreds-of-millions-of-rows program | `AUDIT_2026_06_10_REVERSE_LEG_DML_PROOF.md` + `DECISIONS` 2026-06-10/11 entries (streaming realization, capability descent, the selector) |
 | operator-facing copy, CLI, display | `THE_VOICE.md` + `THE_STORYBOARD.md` + `THE_VOICE_INTEGRATION.md`; `THE_INSTRUMENT.md` / `DYNAMIC_DISPLAY.md` / `REPORTING_HORIZON.md` for the display program |
 | `projection.json` / flows / verbs | `THE_CONFIG_CONTROL_PLANE.md` (A44: expressible ⇔ reachable) |
 | cloud insertion / data producers | `THE_DATA_PRODUCERS.md` + `PREFLIGHT_CLOUD_INSERTION.md` |

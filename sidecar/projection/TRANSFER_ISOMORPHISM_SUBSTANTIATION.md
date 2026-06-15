@@ -150,7 +150,7 @@ re-point (`TransferRun.fs:155-182`), and changes **no IR and no lexicon**.
 
 **Trigger (IR grows under evidence — do not pre-build).** Build it only when
 **both** fire: (a) survey **P4** confirms `MERGE` + `OUTPUT INTO @table` is
-permitted under the real UAT grant; **and** (b) a real `AssignedBySink` load at
+permitted under the managed-environment grant; **and** (b) a real `AssignedBySink` load at
 volume makes per-row round-trips the measured bottleneck (OPEN-5). Until then
 the shipped per-row `INSERT … OUTPUT` is correct and sufficient.
 
@@ -168,7 +168,7 @@ throughput/correlation refinement, scoped precisely.
 - **No new architecture or lexicon.** `PRESCOPE_TRANSFER.md` +
   `SurrogateRemap.fs` + `TransferRun.fs` + `DataLoadPlan.fs` remain canonical;
   the locked terms (`DECISIONS 2026-05-24`) are used as-is.
-- **R6 holds.** Transfer stays UAT-preview, dry-run-default; `--execute` stays
+- **R6 holds.** Transfer stays managed-environment preview, dry-run-default; `--execute` stays
   gated by `PROJECTION_ALLOW_EXECUTE=1`. The survey is an ops spike, not a write
   path.
 - **D9 holds.** Connection references stay out of `Config`; the survey uses the
