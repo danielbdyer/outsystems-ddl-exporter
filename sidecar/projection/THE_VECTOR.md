@@ -36,11 +36,31 @@
 
 ---
 
+## Build addendum — 2026-06-15 (Wave 0 + Wave 1 BUILT — the keystone landed)
+
+> The study below is now partly **executed**, not just proposed. Per the house dated-note discipline, this
+> supersedes the "still unbuilt" claim in the reconciliation addendum that follows.
+>
+> - **Wave 0 (honesty) — BUILT.** M1′ + M2 + M16 + M15 + count corrections. `Tolerance.fs` gained the two
+>   Decision tolerances; the matrix dropped Decision to `◑ L2-partial`. (DECISIONS 2026-06-15 "THE VECTOR Wave 0
+>   BUILT".)
+> - **Wave 1 — M1, the keystone — BUILT.** `PhysicalForeignKey.IsTrusted` + overlay-aware
+>   `PhysicalSchema.ofCatalogWith` (with `ofCatalog = ofCatalogWith empty`, byte-identical) route the FK-trust
+>   (`NoCheckFk`) and unique-promotion (`EnforceUnique`) decisions through the general comparator; a Docker
+>   decision-readback canary (agreement + falsifiability, ~3 s real) witnesses it; M1′ retired (both tolerances,
+>   per-axis, proven). **The matrix's Decision cell is now an EARNED `✅ L3`** (L2 4/5; tolerances 9, 3 open).
+>   So §2.4's "silent fifth column" and §2.5's "unfalsifiable by construction" are **closed for the Decision
+>   axis**: it is now *showable*, not asserted. (DECISIONS 2026-06-15 "THE VECTOR Wave 1 BUILT".)
+> - **Still ahead.** Waves 2–3 (the fan-out waves: the `CatalogDiff` trio M11/M13/M12, M3, M20, then M7/M8/M9/
+>   M17/M6/M19). The §6 move catalog stands for those.
+
 ## Reconciliation addendum — 2026-06-15 (main moved; the study reconciled)
 
 > Written against `db01c23d`; `main` has since advanced 19 commits (PR #613 — this study — among them, now
 > merged). The reconciliation is **focused, and the core is intact.** Per the house amendment discipline this is
-> recorded as a dated note, not a silent rewrite of the body.
+> recorded as a dated note, not a silent rewrite of the body. **(Superseded in part by the Build addendum above:
+> M1 and Wave 0 are no longer unbuilt — the "still unbuilt / still 8 variants / no `IsTrusted`" facts below were
+> true on main at the time of writing and are now overtaken by Wave 0 + Wave 1.)**
 
 **Still valid, verified byte-for-byte.** The keystone and every honesty finding hold: `PhysicalSchema.fs`
 (`PhysicalForeignKey` still has no `IsTrusted`; `ofCatalog` still takes no `DecisionOverlay`), `Tolerance.fs`

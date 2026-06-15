@@ -52,6 +52,9 @@ let ``Unsupported.compute names match current ToleratedDivergence variants`` () 
     // M1′ + M2 (THE VECTOR, Wave 0, 2026-06-15) added the two Decision-axis
     // tolerances (FkTrustUnreflected / UniquePromotionUnreflected) +
     // TriggerBodyUnparsedDropped (the named CreateTrigger text-render drop).
+    // M1 (THE VECTOR, Wave 1, 2026-06-15) RETIRED the two Decision-axis
+    // tolerances (FK-trust / unique-promotion now round-trip through the general
+    // comparator), so they no longer appear in the unsupported set.
     let result = Unsupported.compute () |> Set.ofList
     let expected =
         Set.ofList
@@ -59,13 +62,11 @@ let ``Unsupported.compute names match current ToleratedDivergence variants`` () 
               "CompositePkFkUnreflected"
               "DecimalScaleTolerated"
               "EmptyTextNormalizedToNull"
-              "FkTrustUnreflected"
               "HeaderCommentsOmitted"
               "IndexOptionsUnreflected"
               "PostDeployForeignKeysSplit"
               "StaticPopulationsUnreflected"
-              "TriggerBodyUnparsedDropped"
-              "UniquePromotionUnreflected" ]
+              "TriggerBodyUnparsedDropped" ]
     Assert.Equal<Set<string>> (expected, result)
 
 [<Fact>]

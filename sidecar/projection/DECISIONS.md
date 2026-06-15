@@ -23957,3 +23957,87 @@ provider error, then independently verified (ACCEPT).
   is restored on all five axes. **Next: Wave 1 (M1, the keystone) — `PhysicalForeignKey.IsTrusted` +
   overlay-aware `PhysicalSchema.ofCatalogWith` + the decision-readback property, which auto-retires M1′
   and turns Decision back to an earned faithful.**
+
+---
+
+## 2026-06-15 (later still) — THE VECTOR Wave 1 BUILT: M1, the keystone — the Decision-readback adjunction (the honest tolerance becomes an earned green)
+
+The second chapter of THE VECTOR (`THE_VECTOR.md` §6 M1 / §7 Wave 1; mechanics in `THE_VECTOR_UNABRIDGED.md`
+Part III). Wave 0 made the Decision axis **honest** (`◑ L2-partial`, two named tolerances); Wave 1 makes it
+**true** — it routes the recovered FK-trust and unique-promotion decisions through the *general*
+`PhysicalSchema.diff` comparator, so the matrix's Decision cell is *showable*, not asserted. Built **inline**
+(a single coupled move with a Docker witness; worktree-isolated fan-out would have cost more in cold builds
+than it saved — Waves 2–3 are the fan-out waves). Ships with Wave 0 in **one PR** (Wave 0 was committed but
+never merged; this branch fast-forwarded onto it).
+
+- **M1 — `PhysicalForeignKey.IsTrusted` + the overlay-aware projection.** Added `IsTrusted : bool` to the
+  closed `PhysicalForeignKey` record (both construction sites fixed: `PhysicalSchema.toPhysicalForeignKeys`
+  and `PhysicalSchemaReader.toPhysicalForeignKeys`; `ReadSide`'s internal `FkRow`/`FkCoordinates` carry
+  `IsNotTrusted` and are a different record, untouched). `PhysicalSchema.ofCatalog` became overlay-aware the
+  way the SSDT emitter already is (the `statements`/`statementsWith` precedent): a new
+  `ofCatalogWith : DecisionOverlay -> Catalog -> PhysicalSchema` is the core, and `ofCatalog c =
+  ofCatalogWith DecisionOverlay.empty c` — **byte-identical at `empty`** (the ~30 call sites and the read-back
+  leg are unchanged). `toPhysicalForeignKeys` sets `IsTrusted = r.IsConstraintTrusted && not (Set.contains
+  r.SsKey overlay.NoCheckFk)`; `toPhysicalIndexes` sets `IsUnique = isUnique || Set.contains idx.SsKey
+  overlay.EnforceUnique` — each mirrors the emitter's own predicate (`untrustedFkAlters` / `indexStatements`),
+  so the source projection and the `ReadSide`-recovered read-back agree on the decision (the read leg recovers
+  `sys.foreign_keys.is_not_trusted` at `ReadSide.fs:1171` and `sys.indexes.is_unique` via `readIndexes`).
+- **Compile-order move (the only structural change).** `PhysicalSchema.fs` moved in `Projection.Core.fsproj`
+  from compile-order ~58 to just after `DecisionOverlay.fs` (~94), since `ofCatalogWith` now consumes
+  `DecisionOverlay` (whose `ofComposeState` depends on `ComposeState` + the strategy DUs, deep in the chain —
+  so `DecisionOverlay` could not move up). Dependency-safe: no Core file references `PhysicalSchema` *in code*
+  before its new slot (Coordinates / CatalogDiff / Catalog / Tolerance / CanaryResidual cite it in docstrings
+  only). Verified by a clean Debug **and** Release build.
+- **The decision-readback witness (Docker, real — not a no-op).** New
+  `CanaryRoundTripTests."M1 (decision-readback adjunction): NoCheckFk + EnforceUnique survive emit / deploy /
+  read-back through PhysicalSchema.diff"`. One overlay carries both intents (`NoCheckFk(ref)` +
+  `EnforceUnique(idx)`); emit → deploy → read-back, then **two arms**: (1) AGREEMENT — `ofCatalogWith overlay
+  source` ≡ `ofCatalog readback` on the FK-trust and index-uniqueness axes (empty diff); (2) FALSIFIABILITY —
+  *without* the overlay reflection (`ofCatalog source`) the SAME read-back DIVERGES on exactly those axes,
+  proving the comparator is no longer blind (the precise over-claim M1′ named — before M1 both diffs were
+  empty). Confirmed green at a **real ~3.0 s duration** (TRX-verified, not the 0.4 ms soft-skip) against the
+  warm container.
+- **M1′ retired — per-axis, honestly, both proven.** Both Decision tolerances were retired only after the
+  Docker witness proved both sub-axes round-trip: `FkTrustUnreflected` (FK trust via `NoCheckFk`) AND
+  `UniquePromotionUnreflected` (unique promotion via `EnforceUnique` — `ReadSide` recovers `is_unique`, proven
+  by the witness, not taken on faith). The closed-DU cascade in reverse, 11 → 9 variants: `Tolerance.fs` (DU +
+  `coverage` + `allKnown` + `name`, replaced by a retirement comment per the dead-algebra precedent),
+  `ToleranceTests.fs` (generator + the 11→9 count + the `M1prime + M2` named test rewritten to M2-only),
+  `SsdtExtendedPropertyEmissionTests.fs` (match arms + count), `ManifestUnsupportedTests.fs` (the expected-names
+  set). Deleting the two `@ladder … Decision OpenGap` tags is the honesty mechanism: `matrix-status.sh`
+  **auto-flips Decision from `◑ L2-partial` to `✅ faithful` / `✅ L3`** with no script change. The matrix now
+  reads **rungs L1/L2/L3 = 5/4/5** (L2 was 3/5), **tolerances 9, 3 open** (the three remaining Schema OpenGaps:
+  `IndexOptionsUnreflected`, `CompositePkFkUnreflected`, `TriggerBodyUnparsedDropped`). The `@ladder`
+  cross-check passes (no untagged/orphan variant). Also corrected the generator's stale caveat (the "3-axis
+  Decision adjunction, debrief G12" is now witnessed, so it left the *unwitnessed* example list).
+- **Caught a latent Wave 0 red (the full-pure-pool lesson).** `MatrixLadderTests."D1: exactly two tolerances
+  are open"` pins the matrix open-gap count by reading the committed matrix. Wave 0 added three OpenGap
+  tolerances (matrix → "5 open") but did **not** update this test (still "2 open"), so it was red since Wave 0 —
+  the full pure pool surfaces it; a focused run would not. Updated to "exactly **three**" / `"3 open"` (the
+  honest post-M1 count) with the full M1′→M1 history in the comment. (This is why the pure-pool count is now an
+  honest 3357/0, matching Wave 0's *claimed* figure for the first time.)
+- **A real divergence M1 surfaced (named, scoped, flagged — NOT silenced).** With FK trust now in the
+  comparator, two `TransferCanaryTests` (`multi-table FK chain` + `deferred self-referential FK`) failed: the
+  rendered diff showed the *only* divergence is FK trust — source `trusted=true` (inline FK), sink
+  `trusted=false`. Cause: `Transfer.Execute` bulk-loads via `SqlBulkCopy` WITHOUT `CHECK_CONSTRAINTS` (the
+  high-throughput path), which SQL Server records by marking the sink's FKs `is_not_trusted = 1`. The FK
+  *structure*, columns, rows, and indexes all round-trip. This is the keystone working — a previously-invisible
+  trust divergence is now visible. **Resolution (in-scope):** the transfer canary witnesses DATA +
+  SCHEMA-STRUCTURE fidelity, so it normalizes the trust bit on both sides before comparing
+  (`TransferCanaryFixtures.trustNormalizedFks` — a precise exclusion: only `IsTrusted` is normalized, so a
+  genuine *structural* FK divergence still fails; the `isSchemaEqual`-ignores-rows precedent). FK-trust
+  round-trip is witnessed on the schema surface (the M1 canary above). **OPEN QUESTION for the operator /
+  transfer-path owner:** should `Transfer.Execute` re-validate FKs (`WITH CHECK CHECK CONSTRAINT`) after the
+  bulk load to re-trust the sink — trading load throughput for trust fidelity at the reverse leg's
+  hundreds-of-millions-of-rows scale? Deferred to the operator; not decided here.
+- **Witness (all green).** Debug + **Release** builds clean (0/0). Pure pool **3357 passed / 0 failed** (210
+  skip). **Docker pool 244 / 244** (incl. the M1 decision-readback canary, the transfer canaries, and the
+  bulk-load scale tests — `ReverseLegScale` / `GeneratorScale` / `DacpacPublishEquivalence`). Byte-identity
+  guards (`GoldenEmissionTests` + `AdjunctionLawTests`) green. `matrix-status.sh` regenerated (gate=PASS;
+  Decision `✅`; L2 4/5; tolerances 9, 3 open; `@ladder` cross-check passes). `verifiability-gate.sh` exit 0.
+- **Exit criterion (Wave 1) — MET.** The live canary witnesses `NoCheckFk` / `EnforceUnique` survival through
+  emit → deploy → read-back **through the general comparator**; the Decision cell is *showable*, not asserted,
+  and has flipped to an earned `✅ L3`. The fifth column is true. **Next: Wave 2 (the fan-out wave) — the
+  `CatalogDiff.fs` trio (M11 → M13 → M12, one serialized implementer — shared file), plus M3 and M20 (each its
+  own surface, parallel). Drive it as a Workflow: worktree-isolated implementers + one adversarial verifier per
+  move + one integrator owning the build/matrix/gates.**

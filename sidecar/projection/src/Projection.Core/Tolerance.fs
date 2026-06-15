@@ -165,46 +165,27 @@ type ToleratedDivergence =
     /// @ladder DecimalScaleTolerated Data AcceptedFaithful
     | DecimalScaleTolerated
 
-    /// M1′ (THE VECTOR, Wave 0 honesty) — the **Decision-axis** round-trip
-    /// cannot observe whether an FK's *trust* decision survived. The engine's
-    /// `DecisionOverlay.NoCheckFk` records the references decided
-    /// `EnforceConstraint (ScriptWithNoCheck _)` (emit the FK but `WITH NOCHECK`,
-    /// i.e. untrusted), `SsdtDdlEmitter` emits the `WITH NOCHECK` clause, and the
-    /// read leg recovers `sys.foreign_keys.is_not_trusted` into
-    /// `Reference.IsConstraintTrusted` (`ReadSide.fs:1171`). But the canary's
-    /// comparison primitive `PhysicalForeignKey` carries **no trust field**, so
-    /// `PhysicalSchema.diff` is structurally blind to it: a NOCHECK decision that
-    /// failed to round-trip (emitted trusted, or read back trusted) yields an
-    /// EMPTY diff. The only live Decision witness today
-    /// (`CanaryRoundTripTests.fs` — "decision adjunction: emitted-then-read-back
-    /// schema reproduces the DecisionOverlay") covers only the *nullability*
-    /// sub-axis; its own docstring admits FK readback is unwitnessed. Without
-    /// this variant the matrix marks Decision ✅-faithful **by construction** (no
-    /// Decision tolerance exists to cap it) — an over-claim the named-erasure law
-    /// forbids: an erasure that is real but absent from the closed set means the
-    /// set is not closed over that axis. Named here so the Decision axis drops to
-    /// an honest ◑ L2-partial. **Retiring it:** M1 (Wave 1) — add `IsTrusted` to
-    /// `PhysicalForeignKey`, make `PhysicalSchema.ofCatalog` overlay-aware, and
-    /// route the recovered trust through the general comparator; deleting this
-    /// tag then auto-flips Decision back to faithful.
-    /// @ladder FkTrustUnreflected Decision OpenGap
-    | FkTrustUnreflected
-
-    /// M1′ (THE VECTOR, Wave 0 honesty) — the **Decision-axis** round-trip
-    /// cannot observe whether a *unique-index promotion* decision survived.
-    /// `DecisionOverlay.EnforceUnique` records the index keys the
-    /// `UniqueIndexPass` decided to promote to UNIQUE and the emitter writes a
-    /// UNIQUE index; but `PhysicalSchema.toPhysicalIndexes` derives `IsUnique`
-    /// from the catalog's static `idx.Uniqueness` **alone** — it never consults
-    /// the overlay — so an `EnforceUnique` decision the emitter applied is
-    /// invisible to `PhysicalSchema.diff` (unique-index readback is also outside
-    /// today's ReadSide scope boundary; see the nullability-only Decision
-    /// witness). The same over-claim as `FkTrustUnreflected`: a real Decision
-    /// erasure with no named surface. **Retiring it:** M1 (Wave 1) —
-    /// `toPhysicalIndexes` sets `IsUnique = isUnique || overlay.EnforceUnique`
-    /// and the readback closes; deleting this tag auto-flips Decision back.
-    /// @ladder UniquePromotionUnreflected Decision OpenGap
-    | UniquePromotionUnreflected
+    // FkTrustUnreflected + UniquePromotionUnreflected (M1′, THE VECTOR Wave 0
+    // honesty) were RETIRED by M1 (THE VECTOR Wave 1, 2026-06-15) — the
+    // Decision-axis keystone. `PhysicalForeignKey.IsTrusted` + the overlay-aware
+    // `PhysicalSchema.ofCatalogWith` now route the FK-trust (`NoCheckFk`) and
+    // unique-promotion (`EnforceUnique`) decisions through the GENERAL
+    // `PhysicalSchema.diff` comparator: the source projection reflects the
+    // decision and the read leg recovers it (`sys.foreign_keys.is_not_trusted`
+    // at `ReadSide.fs:1171` / `sys.indexes.is_unique` via `readIndexes`), so a
+    // decision that failed to round-trip now surfaces as a real diff instead of
+    // an empty one. Witnessed on a real SQL Server (Docker, ~3 s — not a
+    // soft-skip) by `CanaryRoundTripTests."M1 (decision-readback adjunction):
+    // NoCheckFk + EnforceUnique survive emit / deploy / read-back through
+    // PhysicalSchema.diff"` — an AGREEMENT arm (source projection ≡ read-back on
+    // the FK/index axes) AND a FALSIFIABILITY arm (the un-routed comparator now
+    // SEES the divergence, proving the field is load-bearing). Both were
+    // `Decision OpenGap`; deleting their `@ladder` tags auto-flips the matrix's
+    // Decision axis from `◑ L2-partial` back to `✅ faithful` (the honesty
+    // mechanism — no axis can be hand-marked faithful while an open tolerance
+    // tags it). A retired OpenGap that closed leaves no DU variant behind (the
+    // dead-algebra-retirement precedent), uniform with the NM-16 kind-facet
+    // retirement above.
 
     /// M2 (THE VECTOR, Wave 0 honesty) — a `Statement.CreateTrigger` whose
     /// definition body fails to parse (`ScriptDomBuild.tryParseTriggerBody`
@@ -258,8 +239,6 @@ module ToleratedDivergence =
         | ToleratedDivergence.CompositePkFkUnreflected       -> ToleratedDivergence.CompositePkFkUnreflected
         | ToleratedDivergence.CharAnsiPaddingTolerated       -> ToleratedDivergence.CharAnsiPaddingTolerated
         | ToleratedDivergence.DecimalScaleTolerated          -> ToleratedDivergence.DecimalScaleTolerated
-        | ToleratedDivergence.FkTrustUnreflected             -> ToleratedDivergence.FkTrustUnreflected
-        | ToleratedDivergence.UniquePromotionUnreflected     -> ToleratedDivergence.UniquePromotionUnreflected
         | ToleratedDivergence.TriggerBodyUnparsedDropped     -> ToleratedDivergence.TriggerBodyUnparsedDropped
 
     /// Every empirically-grounded `ToleratedDivergence` variant.
@@ -284,8 +263,6 @@ module ToleratedDivergence =
                 coverage ToleratedDivergence.CompositePkFkUnreflected
                 coverage ToleratedDivergence.CharAnsiPaddingTolerated
                 coverage ToleratedDivergence.DecimalScaleTolerated
-                coverage ToleratedDivergence.FkTrustUnreflected
-                coverage ToleratedDivergence.UniquePromotionUnreflected
                 coverage ToleratedDivergence.TriggerBodyUnparsedDropped
             ]
 
@@ -304,8 +281,6 @@ module ToleratedDivergence =
         | ToleratedDivergence.CompositePkFkUnreflected     -> "CompositePkFkUnreflected"
         | ToleratedDivergence.CharAnsiPaddingTolerated     -> "CharAnsiPaddingTolerated"
         | ToleratedDivergence.DecimalScaleTolerated        -> "DecimalScaleTolerated"
-        | ToleratedDivergence.FkTrustUnreflected           -> "FkTrustUnreflected"
-        | ToleratedDivergence.UniquePromotionUnreflected   -> "UniquePromotionUnreflected"
         | ToleratedDivergence.TriggerBodyUnparsedDropped   -> "TriggerBodyUnparsedDropped"
 
     /// Parse a config token to its divergence, or `None` for an unrecognized

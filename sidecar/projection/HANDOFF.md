@@ -1,3 +1,69 @@
+# Handoff addendum — 2026-06-15, THE VECTOR WAVE 1 LANDED (the keystone M1 — the Decision axis is now an EARNED green); your job is WAVE 2 — the fan-out wave, and this time you ORCHESTRATE IT WITH A WORKFLOW
+
+To the next agent.
+
+**Your mission.** Build **Wave 2** of `THE_VECTOR.md` — five moves, cleanly partitionable, and the **first
+fan-out wave**. Wave 0 (honesty) and Wave 1 (the keystone) were single coupled moves done inline; Wave 2 is
+where worktree isolation finally pays. **Drive it as a `Workflow`** (the operator asked for this explicitly):
+worktree-isolated implementers, **one adversarial verifier per move**, and **one integrator** who alone owns
+the build / matrix / gates. Read `THE_VECTOR.md` §6 (the move catalog) + §7 (the wave roadmap) first; the moves
+below are the partition.
+
+**The five moves and how they partition (this is the workflow's shape).**
+1. **The `CatalogDiff.fs` trio — M11 → M13 → M12 — ONE serialized implementer** (shared file; they conflict if
+   parallel). M11 = the triangle-inequality law on `between`; M13 = drop the `Result` on `between` (it is total);
+   M12 = the groupoid inverse (`between a b` ∘ `between b a` = id). Order matters: M11, then M13, then M12.
+2. **M3 — `genCatalogPair` + the swept property** (its own surface — a generator + a property test). Independent;
+   runs parallel to the trio.
+3. **M20 — `GateLabel.MidWriteNotProtected` + the pure gate** (`Preflight.fs`). Independent; parallel.
+   So: **3 worktree implementers** (trio / M3 / M20) → **3 adversarial verifiers** (one each) → **1 integrator**
+   who cherry-picks/integrates, runs the one authoritative build, regenerates the matrix, and runs the gates.
+   Have implementers **commit to their worktree branch** and integrate via cherry-pick — NOT text-diff-apply
+   (Windows diffs lack the trailing newline `git apply` wants; that bit Wave 0).
+
+**What is DONE — do not redo (Wave 0 + Wave 1, both in this PR).** Wave 0: M1′ + M2 + M16 + M15 + count
+corrections (the honesty wave). Wave 1 (the 2026-06-15 "THE VECTOR Wave 1 BUILT" DECISIONS entry is the
+substance — read it): `PhysicalForeignKey.IsTrusted`; overlay-aware `PhysicalSchema.ofCatalogWith` (with
+`ofCatalog = ofCatalogWith empty`, byte-identical); the Docker decision-readback canary (agreement +
+falsifiability, ~3 s real); **M1′ retired** (both Decision tolerances, per-axis, proven); the matrix flipped
+**Decision → `✅ L3`, L2 4/5, tolerances 9 (3 open)**. The honest machine's fifth column is now true.
+
+**One open question Wave 1 surfaced and DEFERRED to the operator (do not silently decide it).** M1's new FK
+`IsTrusted` field revealed that `Transfer.Execute` bulk-loads via `SqlBulkCopy` WITHOUT `CHECK_CONSTRAINTS`,
+leaving the sink's FKs **untrusted** (`is_not_trusted = 1`) while the source is trusted. The transfer canary now
+normalizes the trust bit by name (`TransferCanaryFixtures.trustNormalizedFks` — a precise exclusion; structure
+still compared) and FK-trust round-trip is witnessed on the schema surface. **The question for the operator:**
+should the transfer re-validate FKs (`WITH CHECK CHECK CONSTRAINT`) after load to re-trust the sink, trading
+throughput for trust fidelity at hundreds-of-millions-of-rows scale? It's flagged in DECISIONS; surface it.
+
+**Build-discipline scars (heed them — they all bit this session).**
+1. **⚠️ Docker tests SILENTLY NO-OP on this Windows box** unless `$env:PROJECTION_MSSQL_CONN_STR=
+   "Server=localhost,11433;User Id=sa;Password=Projection@Strong1;TrustServerCertificate=True;Encrypt=False"`
+   (the warm container, up). Confirm a **real per-test duration in seconds** via the TRX, never the green count.
+2. **⚠️ Run bash scripts from the WORKTREE, not the main checkout.** `cd`-ing to
+   `C:/Users/danny/code/outsystems-ddl-exporter/sidecar/projection` lands in the MAIN checkout (a *different*
+   branch); `matrix-status.sh` then reads the wrong `Tolerance.fs` and overwrites the main checkout's matrix.
+   Run scripts by absolute path into the worktree: `bash "<worktree>/sidecar/projection/scripts/<x>.sh"`. (The
+   Bash tool resets cwd to the worktree root each call, so a bare `scripts/...` from there is also fine.)
+3. `dotnet` lives at `C:\Users\danny\AppData\Local\Microsoft\dotnet\dotnet.exe` (9.0.314; not on bash PATH).
+   Build/test via PowerShell, or `export PATH="/c/Users/danny/AppData/Local/Microsoft/dotnet:$PATH"` for
+   `scripts/test.sh`. **Never the pure + Docker pools in one `dotnet test`** (OOM) — use `test.sh fast` /
+   `docker`. Build **Release** too before claiming done (only it catches FS3511).
+4. **Run the FULL pure pool, not a focused subset** — Wave 0 left `MatrixLadderTests."exactly two tolerances are
+   open"` red (it never updated the count when it added OpenGaps), and only the full pool surfaces it. A change
+   to a comparison primitive (`PhysicalSchema`, `CatalogDiff`) ripples through every canary — run the **full
+   Docker pool** after it (244/244 is the bar), not just `~Canary`.
+5. **Closed-DU edits cascade — grep first, fix all sites, build once.** `M13` (drop `Result` on `between`)
+   changes every `CatalogDiff.between` call site; `grep -rn "CatalogDiff.between" src tests` before you touch it.
+
+**State.** Branch `claude/wizardly-wing-f7fb26`, Wave 0 + Wave 1 committed (this branch fast-forwarded onto
+Wave 0's commit `a71bdc34`, which was committed but **never merged to main** — the PR carries both). After
+Wave 2, chapter-close and extend the same PR (or open the Wave-2 PR atop it per the operator's call). Hold the
+spine: name every refusal, count every crossing, leave the books balanced — and this time, let the workflow
+carry the fan-out.
+
+---
+
 # Handoff addendum — 2026-06-15, THE VECTOR WAVE 0 LANDED (honesty & fitness); your job is WAVE 1 — the keystone M1, which turns the honest tolerance back into an earned green
 
 To the next agent.

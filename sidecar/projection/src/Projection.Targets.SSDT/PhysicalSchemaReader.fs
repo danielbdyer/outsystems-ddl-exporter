@@ -77,6 +77,16 @@ module PhysicalSchemaReader =
                 TargetSchema = tgtSchemaStr
                 TargetTable = tgtTableStr
                 TargetColumn = fk.TargetColumn
+                // THE VECTOR Wave 1 / M1 — the Decision-axis trust sub-axis. The
+                // emitter writes `ForeignKeyDef.IsConstraintTrusted = r
+                // .IsConstraintTrusted` (the source FK's own trust); the
+                // overlay's `NoCheckFk` decision is emitted as a separate
+                // post-CREATE-TABLE NOCHECK alter, not on the inline FK, so this
+                // AST-side reader (empty-overlay adjunction) reflects the source
+                // trust only — keeping `ofCatalog c = ofStatementStream (emit c)`
+                // exact on the FK axis (`AdjunctionLawTests`). The overlay-aware
+                // trust round-trip is witnessed through the live ReadSide canary.
+                IsTrusted = fk.IsConstraintTrusted
             })
 
     /// Project a typed `seq<Statement>` to a `PhysicalSchema`.

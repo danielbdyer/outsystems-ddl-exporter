@@ -55,7 +55,6 @@
     <Compile Include="ArtifactByKind.fs" />
     <Compile Include="CatalogDiff.fs" />
     <Compile Include="Lifecycle.fs" />
-    <Compile Include="PhysicalSchema.fs" />
     <Compile Include="Tolerance.fs" />
     <Compile Include="CanaryResidual.fs" />
     <Compile Include="UserIdentity.fs" />
@@ -92,6 +91,18 @@
     <Compile Include="QueryHints.fs" />
     <Compile Include="ComposeState.fs" />
     <Compile Include="DecisionOverlay.fs" />
+    <!--
+      THE VECTOR Wave 1 / M1 — PhysicalSchema.fs moved here (was compile-order
+      ~58, before Tolerance.fs) so `PhysicalSchema.ofCatalogWith` can consume the
+      `DecisionOverlay` defined just above: it reflects the FK-trust (`NoCheckFk`)
+      and unique-promotion (`EnforceUnique`) decision sub-axes in the round-trip
+      comparator, routing the recovered decision through the general comparator
+      (retiring the M1′ `FkTrustUnreflected` / `UniquePromotionUnreflected`
+      tolerances). The move is dependency-safe: no Core file references
+      PhysicalSchema *in code* before this point — Coordinates / CatalogDiff /
+      Catalog / Tolerance / CanaryResidual cite it in docstrings only.
+    -->
+    <Compile Include="PhysicalSchema.fs" />
     <Compile Include="PolicyExpr.fs" />
     <Compile Include="VersionedPolicy.fs" />
     <Compile Include="ApprovalWorkflow.fs" />
