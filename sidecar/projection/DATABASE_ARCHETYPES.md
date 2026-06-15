@@ -103,6 +103,20 @@ states intent **once** and the pipeline derives safe interaction:
    silent surprise mid-load.
 7. **The user-handling default.** `ManagedDml ⇒ ReconciledByRule` (the cloud owns its users — the
    Phase-2 reverse-leg re-key). `FullRights ⇒` preserve (same key space) unless reconcile is declared.
+8. **The keymap-spill mechanism (added 2026-06-15 — the direction-clarification insight).** The
+   resident packed remap (~40 B/FK-target-row) overflows at estate scale (≈ 8 GB at 200M), so a spill
+   is needed — but *which* spill is archetype-determined, NOT one build:
+   - `PreservedFromSource` sink (FullRights + IDENTITY_INSERT) ⇒ **no keymap at all** (keys written
+     directly; the spill question disappears).
+   - `AssignedBySink` + `CREATE TABLE` (FullRights without IDENTITY_INSERT) ⇒ a **persistent
+     sink-resident keymap table** + server-side `UPDATE…JOIN`.
+   - `AssignedBySink` + no `CREATE TABLE` (`ManagedDml` — the reverse-leg cloud sink) ⇒ a **session
+     `#`-temp keymap** (temp tables ARE permitted under DML — J5 P5) + server-side `UPDATE…JOIN`, or a
+     client-side disk-backed map. The charter's "sink-resident spill" must not be read as "always a
+     persistent table" — on the cloud it is the `#`-temp form.
+   This is the sharpest case for the archetype being first-class: the spill chooser must *read* the
+   sink's capability profile, because the same "200M won't fit in RAM" problem has three different
+   correct answers depending on the class.
 
 ---
 
@@ -208,6 +222,14 @@ verdicts: no ALTER, no IDENTITY_INSERT, AssignedBySink, SQL rollback); the probe
 *seed verification* for `FullRights`. The disposition decision (the archetype) holds across instances
 *of the same class*, so verifying it once de-risks every same-class cutover — the original J5 thesis,
 now structural.
+
+> **Verified against the real estate (2026-06-15).** The two archetypes are no longer hypothetical:
+> the **on-prem** sink probed `FullRights`-minus-DMV (CREATE TABLE / ALTER / IDENTITY_INSERT /
+> sink-resident progress all permitted; `VIEW DATABASE PERFORMANCE STATE` denied — the predicted
+> split), and the **cloud** sink is `ManagedDml` (J5). And the engine genuinely writes to *both*
+> (Flow P populate on-prem via direct-connect `migrate` + emit-artifacts; Flow R reverse leg into the
+> cloud), so the per-sink-archetype mechanism is not academic — it is the daily operating reality. The
+> sequenced build is `REVERSE_LEG_WORK_PLAN.md`.
 
 ---
 

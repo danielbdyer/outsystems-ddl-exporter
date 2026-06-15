@@ -672,7 +672,11 @@ The mechanisms are built or already exist; what remains is operator governance (
 - **`REVERSE_LEG_OPERATOR_PROBE_SHEET.md`** — 16 generic, runnable probes naming the per-table unknowns
   (schema shape, data fidelity, capability, archetype) + the results ledger. All catalog SQL validated.
 - **`PHASE_1_REAL_WIRE_HARNESS.md`** — the P7b throughput-bench procedure + the estate-sizing survey.
+- **`NEXT_BUILD_INPUTS.sql`** — the two-flow input pack (keymap sizing + the on-prem archetype probe).
 - **`DATABASE_ARCHETYPES.md`** — the target capability-class design (the archetype as a config disposition).
+- **`REVERSE_LEG_WORK_PLAN.md`** — the locked two-flow / two-archetype model + the sequenced forward
+  slices (A archetype → C FullRights populate forks → S reverse-leg `#`-temp spill → B survey-verify),
+  on top of the shipped Phases 2–4 + NM-58. The current build plan (`DECISIONS.md` 2026-06-15).
 
 ## Risk register (carried from the discovery)
 

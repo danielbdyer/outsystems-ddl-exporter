@@ -1,4 +1,65 @@
-# Handoff addendum — 2026-06-15, REVERSE-LEG EXECUTION (Phases 2–5 landed) + THE OPERATOR PROBE PACKAGE — your job is to DECODE the operator's probe results (attached with this handoff) and drive each staged item to completion
+# Handoff addendum — 2026-06-15, BUILD THE ARCHETYPE SLICES — the model is locked, the inputs are confirmed, the plan is written; your job is to build Slice A → C → S → B per REVERSE_LEG_WORK_PLAN.md
+
+To the next agent.
+
+**Your mission.** Build the four sequenced slices in **`REVERSE_LEG_WORK_PLAN.md`** — there is nothing
+left to discover; the operator's real-estate facts are all in, the model is locked, and the plan names
+each slice's mechanism, gate, and exit-test witness. Read `REVERSE_LEG_WORK_PLAN.md` first, then the
+2026-06-15 `DECISIONS.md` entries (they are the substance; the plan points). Then build, warm-witness,
+and write one DECISIONS entry per slice.
+
+**The locked model (what every slice assumes).** One engine, **two flows, two sink archetypes** — the
+real estate proved the archetype-as-config-disposition design:
+- **Flow P — populate the on-prem** (the engine writes in two ways: direct-connect `migrate` + emit
+  SSDT/data artifacts). Sink = on-prem = **`FullRights`-minus-DMV** (verified: CREATE TABLE, ALTER,
+  IDENTITY_INSERT, sink-resident progress; no `VIEW DATABASE PERFORMANCE STATE`). ⇒ `PreservedFromSource`
+  (no keymap) + sink-resident resume.
+- **Flow R — the reverse leg** (on-prem → the *empty* cloud it fills). Sink = cloud = **`ManagedDml`**
+  (J5). ⇒ `AssignedBySink` + keymap + the `#`-temp spill + client journal.
+- **Sizing:** estate-data on-prem = 2.0 M key-map-shaped rows (75 MB) / 3.5 M all-`dbo` (134 MB); host
+  = 64 GB. The resident map **fits even at ~200 M (~4–8 GB ≪ 64 GB)** — so **Slice S (the spill) is a
+  completeness/headroom build, not a current necessity**: ship it **armed-but-inert** (configurable
+  threshold, default off, byte-identical today). Do not overstate its need; the operator chose it for
+  scale-safety, recorded as a build-ahead-of-the-wake.
+
+**The slices (build order A → C → S → B; the graph is A → {C, S, B}).**
+1. **A — the `Archetype` config type** + `CapabilityProfile.of` + `Environment.Archetype` (default
+   inferred from `Grant`, byte-identical). Pure round-trip witness. The foundation; nothing branches yet.
+2. **C — the FullRights populate forks** (highest value): `PreservedFromSource` (write source keys
+   directly, *no* capture/remap) + sink-resident resume, gated on a `FullRights` sink; `ManagedDml`
+   keeps AssignedBySink + journal byte-identical. Docker witness: keys preserved on FullRights, old path
+   on ManagedDml.
+3. **S — the reverse-leg `#`-temp keymap spill** (armed scale-safety): a session `#`-temp keymap (temp
+   tables ARE permitted under DML — J5 P5) + server-side `UPDATE…JOIN` for phase-2, above a configurable
+   threshold. Equivalence canary: spill-on vs resident → **byte-identical** sink state.
+4. **B — the survey verifies the archetype** (A44; least urgent — the verdicts are known): route
+   `CapabilitySurvey` through `archetype.Grant` + declared-vs-probed reconciliation, so a
+   `FullRights`-minus-DMV surfaces as a named split.
+
+**What is SHIPPED — do not redo.** Phases 2–4 + NM-58 (reconcile ∘ streaming + the validate-user-map
+halt; force-journal + journal-address-drift refusals; the DryRun row-count preview; the reconcile-key
+robustness — blank-key exclusion + duplicate-target tiebreaker). 62 Docker + 184 pure green warm. The
+operator package (`REVERSE_LEG_OPERATOR_PROBE_SHEET.md`, `PHASE_1_REAL_WIRE_HARNESS.md`,
+`NEXT_BUILD_INPUTS.sql`) and the design (`DATABASE_ARCHETYPES.md`).
+
+**Build-discipline scars (heed them).**
+1. **⚠️ Docker tests SILENTLY NO-OP on this Windows box** unless `$env:PROJECTION_MSSQL_CONN_STR=
+   "Server=localhost,11433;User Id=sa;Password=Projection@Strong1;TrustServerCertificate=True;Encrypt=False"`
+   (the warm container). They pass as 0.4 ms `()` no-ops otherwise — **confirm via per-test TRX
+   durations (seconds, not ms)**, never the green count (survival-rule #12).
+2. `dotnet` is at `C:\Users\danny\AppData\Local\Microsoft\dotnet\dotnet.exe` (not on bash PATH) — build/
+   test via PowerShell; never the pure + Docker pools in one `dotnet test` (CLAUDE.md §4.1).
+3. **The archetype is total-over-the-engine** (closed DU, one `CapabilityProfile.of` site — the
+   `ArtifactByKind` discipline); `Grant` becomes a *derived* projection. Named refusals + a witness +
+   a DECISIONS entry per slice; promote the reserved Skip-stubs where they fit.
+
+**State.** Branch `claude/reverse-leg-execution-phases-2-5`, **PR #614** (open against `main`). Worktree
+at `sidecar/projection/.claude/worktrees/unruffled-diffie-801d9b`. Read the work plan, build the slices,
+keep the books balanced.
+
+---
+
+## Handoff addendum — 2026-06-15, REVERSE-LEG EXECUTION (Phases 2–5 landed) + THE OPERATOR PROBE PACKAGE — your job is to DECODE the operator's probe results (attached with this handoff) and drive each staged item to completion
 
 To the next agent.
 
