@@ -78,20 +78,49 @@ module Source =
                 do! c.OpenAsync()
                 return c
             }
+        // A connection open (or read) can throw — a malformed connection
+        // string, an unreachable endpoint, a refused login. The `Source` port's
+        // contract is `Task<Result<_>>`: a failure is a NAMED Error, never a
+        // raw exception escaping the boundary (an escaped exception crashes the
+        // CLI's `.GetAwaiter().GetResult()` instead of printing a clean refusal).
+        // `guard` wraps a capability body so every failure surfaces as the typed
+        // `source.live.connectionFailed` refusal.
+        let guard (code: string) (body: unit -> Task<Result<'a>>) : Task<Result<'a>> =
+            task {
+                try return! body ()
+                with ex ->
+                    return
+                        Result.failureOf
+                            (ValidationError.create code
+                                (System.String.Concat(
+                                    "live source ", conn, ": ", ex.Message)))
+            }
         { Identity       = "live:" + conn
           Capabilities   = Set.ofList [ ReadCatalog; Profile; Live ]
           ReadCatalog    =
             (fun () ->
-                task {
-                    use! cnn = openConnection ()
-                    return! ReadSide.read cnn
-                })
+                guard "source.live.connectionFailed" (fun () ->
+                    task {
+                        use! cnn = openConnection ()
+                        return! ReadSide.read cnn
+                    }))
           AcquireProfile =
             Some (fun catalog ->
-                task {
-                    use! cnn = openConnection ()
-                    return! LiveProfiler.attach cnn catalog Profile.empty
-                }) }
+                guard "source.live.profileFailed" (fun () ->
+                    task {
+                        use! cnn = openConnection ()
+                        // `ReadSide.read` marks every reconstructed data-bearing
+                        // kind `Modality.Static`, but `LiveProfiler` SKIPS static
+                        // kinds (`captureEvidenceCacheWith` filters `not isStaticKind`)
+                        // — so profiling a ReadSide-derived catalog as-is yields an
+                        // EMPTY evidence cache and the dealbreaker section is silently
+                        // never populated (the 4.4 trap). Strip the Static mark ONLY
+                        // (preserving authored marks — the N2 over-erasure precedent),
+                        // exactly as `Preflight.tighteningPreflight` and
+                        // `DataIntegrityChecker` do before they profile a live read.
+                        let profileCatalog = Catalog.stripStaticPopulations catalog
+                        return! LiveProfiler.attach cnn profileCatalog Profile.empty
+                    })) }
 
     /// Enrich a source with the `Profile` capability (the live / profilable
     /// form). The capability is the presence of the function — cf.

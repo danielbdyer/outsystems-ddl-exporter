@@ -103,15 +103,20 @@ module DataEmissionComposer =
         (catalog: Catalog)
         (profile: Profile)
         (migration: MigrationDependencyContext)
+        (bootstrapRows: Map<SsKey, StaticRow list>)
         (userRemap: UserRemapContext)
         : Result<SiblingArtifacts, EmitError> =
         use _ = Bench.scope "compose.data.dispatchSiblings"
         let staticSeeds =
             use _ = Bench.scope "compose.data.dispatchSiblings.staticSeeds"
             match composition with
-            | AllRemaining
-            | AllData         -> StaticSeedsEmitter.emitWithTopoWithVerification verification deleteScope topo catalog profile
-            | AllExceptStatic -> emptyArtifact catalog
+            // `AllData` means Bootstrap covers EVERYTHING (static included), so
+            // Static is skipped — else both lanes claim the static kinds and the
+            // partition law (`unionSiblings`) trips once Bootstrap is populated
+            // (the slice-ζ differentiation the prior MVP test anticipated).
+            | AllRemaining    -> StaticSeedsEmitter.emitWithTopoWithVerification verification deleteScope topo catalog profile
+            | AllExceptStatic
+            | AllData         -> emptyArtifact catalog
         let migrationDependencies =
             use _ = Bench.scope "compose.data.dispatchSiblings.migrationDeps"
             match composition with
@@ -120,7 +125,11 @@ module DataEmissionComposer =
             | AllData         -> emptyArtifact catalog
         let bootstrap =
             use _ = Bench.scope "compose.data.dispatchSiblings.bootstrap"
-            BootstrapEmitter.emitWithTopo topo catalog profile userRemap
+            // NM-73 — the drift-guard posture rides Bootstrap too (operator
+            // decision 2026-06-14); the hydrated row source is the bootstrap
+            // lane's content (the complement of Static ∪ Migration under
+            // AllRemaining; every kind under AllData).
+            BootstrapEmitter.emitWithTopoWithVerification verification topo catalog profile bootstrapRows userRemap
         match staticSeeds, migrationDependencies, bootstrap with
         | Ok s, Ok m, Ok b ->
             Ok { StaticSeeds = s; MigrationDependencies = m; Bootstrap = b }
@@ -215,7 +224,7 @@ module DataEmissionComposer =
         // Result), distinct from V2's `Result<'a> = Result<'a,
         // ValidationError list>` alias whose bind is in scope.
         let result =
-            match dispatchSiblings composition deleteScope verification topo catalog profile migration userRemap with
+            match dispatchSiblings composition deleteScope verification topo catalog profile migration Map.empty userRemap with
             | Ok siblings -> unionSiblings catalog siblings
             | Error e     -> Error e
         topoLineage |> Lineage.map (fun _ -> result)
@@ -327,7 +336,7 @@ module DataEmissionComposer =
         // the plain value; the emitters never see `Policy` (A18 amended).
         let deleteScope = policy.Emission.DeleteScope
         let verification = policy.Emission.DataVerification
-        match dispatchSiblings composition deleteScope verification topo catalog profile migration userRemap with
+        match dispatchSiblings composition deleteScope verification topo catalog profile migration Map.empty userRemap with
         | Error e -> Error e
         | Ok siblings ->
             match unionSiblings catalog siblings with
@@ -385,7 +394,7 @@ module DataEmissionComposer =
         let composition = policy.Emission.DataComposition
         let deleteScope = policy.Emission.DeleteScope
         let verification = policy.Emission.DataVerification
-        match dispatchSiblings composition deleteScope verification topo catalog profile migration userRemap with
+        match dispatchSiblings composition deleteScope verification topo catalog profile migration Map.empty userRemap with
         | Error e -> Error e
         | Ok siblings ->
             match unionSiblings catalog siblings with
@@ -406,6 +415,41 @@ module DataEmissionComposer =
             policy catalog profile
             MigrationDependencyContext.empty
             UserRemapContext.empty
+
+    /// Π_Data compose-rendered bundle WITH the hydrated Bootstrap row source
+    /// (WP6 step 3, completed 2026-06-14). The pipeline's hydration step
+    /// streams the bootstrap lane's rows (`Map<SsKey, StaticRow list>`) from
+    /// the live source — every data-bearing kind under `AllData`, the
+    /// complement of (Static ∪ Migration) under `AllRemaining` — and threads
+    /// them here so `Data/Bootstrap.sql` carries content. Byte-identical to
+    /// `composeRenderedBundleFull` when `bootstrapRows = Map.empty` (the
+    /// non-hydrated path). The non-Docker data-lane golden supplies an
+    /// in-memory `bootstrapRows`; the Docker golden supplies the live-hydrated
+    /// one — the same entry, the same render, differing only in the row source.
+    let composeRenderedBundleWithBootstrap
+        (policy: Policy)
+        (catalog: Catalog)
+        (profile: Profile)
+        (migration: MigrationDependencyContext)
+        (bootstrapRows: Map<SsKey, StaticRow list>)
+        (userRemap: UserRemapContext)
+        : Result<RenderedDataBundle, EmitError> =
+        use _ = Bench.scope "compose.data.composeRenderedBundleWithBootstrap"
+        let topoLineage = TopologicalOrderPass.runWith TreatAsCycle catalog
+        let topo = topoLineage.Value
+        let composition = policy.Emission.DataComposition
+        let deleteScope = policy.Emission.DeleteScope
+        let verification = policy.Emission.DataVerification
+        match dispatchSiblings composition deleteScope verification topo catalog profile migration bootstrapRows userRemap with
+        | Error e -> Error e
+        | Ok siblings ->
+            match unionSiblings catalog siblings with
+            | Error e -> Error e
+            | Ok union ->
+                Ok { Fused         = renderArtifactInTopoOrder topo union
+                     StaticSeeds   = renderArtifactInTopoOrder topo siblings.StaticSeeds
+                     MigrationData = renderArtifactInTopoOrder topo siblings.MigrationDependencies
+                     Bootstrap     = renderArtifactInTopoOrder topo siblings.Bootstrap }
 
     /// Per-level rendered scripts for parallel-safe deployment. Each
     /// `ParallelSafe<string>` group carries one kind's rendered SQL per
@@ -447,11 +491,18 @@ module DataEmissionComposer =
     /// `composeRenderedFull` are (a) per-level grouping via
     /// `TopologicalOrder.levels`, (b) structured return type, (c)
     /// empty-level dropping.
-    let composeRenderedLeveled
+    /// Level-aware sibling WITH the hydrated Bootstrap row source (Bootstrap-
+    /// always, 2026-06-14) — the store-leg counterpart of
+    /// `composeRenderedBundleWithBootstrap`, so the deployed leveled seed plan
+    /// carries the same Bootstrap rows the published bundle does (the parity
+    /// duty). Byte-identical to `composeRenderedLeveled` when
+    /// `bootstrapRows = Map.empty`.
+    let composeRenderedLeveledWithBootstrap
         (policy: Policy)
         (catalog: Catalog)
         (profile: Profile)
         (migration: MigrationDependencyContext)
+        (bootstrapRows: Map<SsKey, StaticRow list>)
         (userRemap: UserRemapContext)
         : Result<LeveledDeploymentText, EmitError> =
         use _ = Bench.scope "compose.data.composeRenderedLeveled"
@@ -463,7 +514,7 @@ module DataEmissionComposer =
         // the plain value; the emitters never see `Policy` (A18 amended).
         let deleteScope = policy.Emission.DeleteScope
         let verification = policy.Emission.DataVerification
-        match dispatchSiblings composition deleteScope verification topo catalog profile migration userRemap with
+        match dispatchSiblings composition deleteScope verification topo catalog profile migration bootstrapRows userRemap with
         | Error e -> Error e
         | Ok siblings ->
             match unionSiblings catalog siblings with
@@ -498,6 +549,19 @@ module DataEmissionComposer =
                 Bench.recordSample "compose.data.composeRenderedLeveled.phase1Levels" (int64 phase1.Length)
                 Bench.recordSample "compose.data.composeRenderedLeveled.phase2Levels" (int64 phase2.Length)
                 Ok { Phase1Levels = phase1; Phase2Levels = phase2 }
+
+    /// Level-aware sibling of `composeRenderedFull` — no Bootstrap row source
+    /// (`composeRenderedLeveledWithBootstrap` with `Map.empty`; byte-identical
+    /// to the pre-Bootstrap-always behaviour). The established call shape for
+    /// the canary / perf callers that do not hydrate a Bootstrap lane.
+    let composeRenderedLeveled
+        (policy: Policy)
+        (catalog: Catalog)
+        (profile: Profile)
+        (migration: MigrationDependencyContext)
+        (userRemap: UserRemapContext)
+        : Result<LeveledDeploymentText, EmitError> =
+        composeRenderedLeveledWithBootstrap policy catalog profile migration Map.empty userRemap
 
     /// Π_Data compose-rendered (canary-test convenience). Defaults
     /// migration + userRemap to empty.

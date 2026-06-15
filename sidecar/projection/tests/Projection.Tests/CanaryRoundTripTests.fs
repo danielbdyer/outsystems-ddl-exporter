@@ -772,7 +772,11 @@ let ``6.A.6 (schema round-trip): an untrusted FK survives emit / deploy / ReadSi
             { Kind.create childKey (nameSafe "Child")
                 (mkTableId "dbo" "OSUSR_RT6_CHILD")
                 [ mkAttr childIdKey "Id" true; mkAttr parentFkAttr "ParentId" false ]
-              with References = [ { Reference.create refKeyV (nameSafe "Parent") parentFkAttr parentKey with IsConstraintTrusted = false } ] }
+              // An untrusted FK that EXISTS (the NOCHECK case) — HasDbConstraint
+              // = true is required, else the catalog smart-constructor rejects
+              // the illegal (constraint-absent ∧ untrusted) quadrant
+              // (catalog.reference.illegalConstraintState).
+              with References = [ { Reference.create refKeyV (nameSafe "Parent") parentFkAttr parentKey with HasDbConstraint = true; IsConstraintTrusted = false } ] }
         let catalog =
             match Catalog.create [ { SsKey = ssKeySafe "OS_MOD_RT6"; Name = nameSafe "Rt6Mod"; Kinds = [ parent; child ]; IsActive = true; ExtendedProperties = [] } ] [] with
             | Ok c -> c | Error e -> failwithf "catalog %A" e

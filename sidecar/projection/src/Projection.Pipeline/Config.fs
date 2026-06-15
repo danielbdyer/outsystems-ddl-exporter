@@ -181,6 +181,15 @@ module Config =
         StaticSeeds           : bool
         MigrationDependencies : bool
         Bootstrap             : bool
+        /// Bootstrap-always (2026-06-14) — `emission.bootstrapAllData`. `false`
+        /// (the default) keeps the promoted-lane `AllRemaining` composition:
+        /// Bootstrap covers the NON-intersecting complement of (Static ∪
+        /// Migration), so nothing loads twice. `true` selects `AllData`:
+        /// Bootstrap covers EVERY data-bearing kind (Static + Migration lanes
+        /// skipped) — the full first-deploy snapshot (V1's
+        /// `AllEntitiesIncludingStatic`). Threads via `Config.dataCompositionOf`
+        /// to `EmissionPolicy.DataComposition`.
+        BootstrapAllData      : bool
         DecisionLog           : bool
         Opportunities         : bool
         Validations           : bool
@@ -322,6 +331,18 @@ module Config =
         Output       : OutputSection
     }
 
+    /// The single derivation of `DataComposition` from the config's data-lane
+    /// toggles — the one source of truth both `buildPolicyFromConfig` (which
+    /// emitters fire) and `Hydration.hydrateBootstrapRows` (which kinds the
+    /// Bootstrap lane streams) read, so the dispatch and the row-scope can never
+    /// drift. `bootstrapAllData` ⇒ `AllData` (Bootstrap covers everything);
+    /// else `staticSeeds` ⇒ `AllRemaining` (Bootstrap = complement); else
+    /// `AllExceptStatic` (Static skipped upstream).
+    let dataCompositionOf (cfg: Config) : DataComposition =
+        if cfg.Emission.BootstrapAllData then AllData
+        elif cfg.Emission.StaticSeeds then AllRemaining
+        else AllExceptStatic
+
     // -----------------------------------------------------------------------
     // Defaults — applied when a section is absent from the JSON.
     // -----------------------------------------------------------------------
@@ -355,6 +376,8 @@ module Config =
         StaticSeeds           = true
         MigrationDependencies = true
         Bootstrap             = true
+        // Bootstrap-always default: AllRemaining (complement), not AllData.
+        BootstrapAllData      = false
         DecisionLog           = true
         Opportunities         = true
         Validations           = true
@@ -1054,6 +1077,9 @@ module Config =
                                     match read "bootstrap" defaultEmission.Bootstrap with
                                     | Error es -> Error es
                                     | Ok boot ->
+                                        match read "bootstrapAllData" defaultEmission.BootstrapAllData with
+                                        | Error es -> Error es
+                                        | Ok bootAll ->
                                         match read "decisionLog" defaultEmission.DecisionLog with
                                         | Error es -> Error es
                                         | Ok dlog ->
@@ -1087,6 +1113,7 @@ module Config =
                                                         StaticSeeds = seeds
                                                         MigrationDependencies = migDeps
                                                         Bootstrap = boot
+                                                        BootstrapAllData = bootAll
                                                         DecisionLog = dlog
                                                         Opportunities = opps
                                                         Validations = vals

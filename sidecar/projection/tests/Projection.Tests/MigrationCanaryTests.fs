@@ -770,7 +770,11 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
             Compose.projectWithState policy Profile.empty EmissionFolders.empty TransformGroups.empty catalog
             |> fst
         let ddl = Compose.aggregateSsdt outputs.SsdtBundle
-        let seed = Map.find "Data/seed.sql" outputs.DataBundle
+        // The fused Data/seed.sql FILE is retired (per-lane artifacts, DECISIONS
+        // 2026-06-14); this single-static-lane catalog's idempotent MERGE is now
+        // the Data/StaticSeeds.sql lane. (The prior retirement missed this
+        // Docker-only AC-X1 pair.)
+        let seed = Map.find "Data/StaticSeeds.sql" outputs.DataBundle
         TaskSync.run (fun () ->
             fixture.WithEphemeralDatabase "X1FreshSeed" (fun conn _ ->
                 task {
@@ -831,7 +835,11 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
             Compose.projectWithState policy Profile.empty EmissionFolders.empty TransformGroups.empty catalog
             |> fst
         let ddl = Compose.aggregateSsdt outputs.SsdtBundle
-        let seed = Map.find "Data/seed.sql" outputs.DataBundle
+        // The fused Data/seed.sql FILE is retired (per-lane artifacts, DECISIONS
+        // 2026-06-14); this single-static-lane catalog's idempotent MERGE is now
+        // the Data/StaticSeeds.sql lane. (The prior retirement missed this
+        // Docker-only AC-X1 pair.)
+        let seed = Map.find "Data/StaticSeeds.sql" outputs.DataBundle
         let storePath =
             System.IO.Path.Combine(
                 System.IO.Path.GetTempPath(),
