@@ -129,9 +129,11 @@ INSERT denied → write surface closed.
 | **P10** | User-directory readability + email-keying (`OSSYS_USER`/`User`/`USERS`) — metadata-only | A | OPEN-7 | **ReconciledByRule** user re-key | `ReadSide.fs:1600,1632` |
 | **P11** | Explicit `BEGIN TRAN…COMMIT` + `LOCK_TIMEOUT` | C | OPEN-3, OPEN-5 | chunk-commit granularity vs CDC; the A3 scaffold | — |
 
-## 6. The operator's real-UAT ledger (2026-06-15) — source of truth until §7 is written
+## 6. The operator's real-UAT ledger (2026-06-15) — canonical here + in `DECISIONS.md`
 
-Recorded in the playbook's transportable form (verdicts + standard error numbers + roles):
+Recorded in the playbook's transportable form (verdicts + standard error numbers + roles). The
+playbook itself is **deprecated** (its §7 template is *not* populated); this section and the
+`DECISIONS.md` 2026-06-15 entry ("J5 Cloud UAT capability spike RUN…") are the canonical homes.
 
 | Probe | Verdict | Meaning |
 |---|---|---|
@@ -155,9 +157,11 @@ the very artifact needed for FK re-keying. The no-marker path and the AssignedBy
 mechanism — *capture the assigned key on insert; that capture is simultaneously the cleanup handle and
 the FK-remap table.*
 
-**The repo-vs-reality gap.** As of the run, the repo did **not** record any of this: §7 is a blank
-template (`J5_UAT_CAPABILITY_PLAYBOOK.md:342-358`), and no closing DECISIONS entry exists. Writing both
-is Step 0 of the charter.
+**The repo-vs-reality gap (now closed).** At the moment of the run the repo recorded none of this:
+§7 was a blank template (`J5_UAT_CAPABILITY_PLAYBOOK.md:342-358`) and no closing DECISIONS entry
+existed. Per operator decision the gap is closed by **deprecating** the playbook and relocating the
+ledger to the canonical stores — this compendium and the `DECISIONS.md` 2026-06-15 closing entry —
+not by populating §7 (Step 0, done).
 
 **The "collapse letter."** The 2026-06-10 LE-3 addendum (`HANDOFF.md:1581-1586`) had already narrowed
 the residual: *"the J5 real-UAT spike is now a re-run of a proven suite against a real connection —
@@ -555,12 +559,15 @@ fallback/override until J5 proves the CDC path on real UAT… revisit auto-fallb
 
 Dependency-ordered. Each phase has an exit test.
 
-### Step 0 — Land the ledger *(cheap; discharges the preemption)*
-- Populate `J5_UAT_CAPABILITY_PLAYBOOK.md` §7 from Part II §6 (verdicts + error numbers).
-- Write the `DECISIONS.md` entry closing OPEN-1/2/3/5/6/7, with the Part II §7 residuals named.
-- Flip the status surfaces: `AUDIT_2026_06_13` "J5 (ops-gated)" → run; arm the NM-73 auto-fallback "revisit
-  after J5" decision.
-- **Exit:** the repo's status surfaces agree with reality.
+### Step 0 — Relocate the ledger to the canonical stores *(discharges the preemption)*
+- **Deprecate `J5_UAT_CAPABILITY_PLAYBOOK.md`** rather than populate its §7 template — the spike has
+  run, so its intent is fulfilled; banner added, content relocated. *(done 2026-06-15)*
+- **Write the canonical `DECISIONS.md` entry** closing OPEN-1/2/3/5/6/7, with the Part II §7 residuals
+  named. *(done 2026-06-15 — "J5 Cloud UAT capability spike RUN…")*
+- **Remaining:** flip the status surfaces (`AUDIT_2026_06_13` "J5 (ops-gated)"; the `HANDOFF.md` /
+  `CONSTELLATION_BACKLOG.md` preemption letters) and arm the NM-73 auto-fallback once the CDC verdict
+  (OPEN-3) lands.
+- **Exit:** the canonical stores (DECISIONS + this compendium) carry the ledger; the playbook is deprecated.
 
 ### Phase 1 — Close the real-wire loop *(mostly measurement)*
 - Run the set-based streaming lane against real UAT at representative scale → measure rows/sec (**P7b**).

@@ -1,5 +1,16 @@
 # J5 — Cloud UAT Capability Playbook (generic; agent-constructed, operator-executed)
 
+> **DEPRECATED 2026-06-15 — provenance only.** The J5 spike has been **run against a real
+> Cloud UAT instance**; this playbook's intent is fulfilled. Do **not** populate the §7
+> ledger template below. Its information has been relocated to the canonical stores: the
+> findings ledger, the full P1–P11 probe taxonomy, the risk ladder, and the forward plan now
+> live in `CHARTER_REVERSE_LEG_EXECUTION.md` (Part II); the canonical **resolution of
+> OPEN-1/2/3/5/6/7** is recorded in `DECISIONS.md` (2026-06-15 — "J5 Cloud UAT capability
+> spike RUN…"). This file is retained as provenance for the methodology only — the operating
+> model, the safety covenant, and the risk ladder the spike was executed under. The v1 sheet
+> (`J5_UAT_SQL_PROBE_SHEET.md`) was superseded by this playbook; this playbook is now
+> superseded by the run.
+
 > **What this is.** The J5 ops spike (real-UAT execute, OPEN-2) as a **playbook**, not a
 > script: a risk-ordered ladder of SQL capability probes that an agent **binds to
 > existing OSUSR tables** selected with the operator from the model at hand. No

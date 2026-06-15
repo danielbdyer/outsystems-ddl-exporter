@@ -23223,3 +23223,59 @@ config-driven full-export IS that ingestion path; the trigger has fired.
   the touched classes 109/0; the live-path Docker class 4/4 against the warm container.
 - **Deferred (operator): supplemental bootstrap kinds** (`ossys_User` et al. beyond
   the catalog's own entities) stay deferred — untouched here.
+
+## 2026-06-15 (later) — J5 Cloud UAT capability spike RUN on real UAT; OPEN-1/2/3/5/6/7 resolved; the playbook deprecated
+
+J5 was the one ops-gated critical-path item — the spike whose findings ledger
+`J5_UAT_CAPABILITY_PLAYBOOK.md` §7 promised to feed, gating M5
+(`PREFLIGHT_CLOUD_INSERTION.md`), and the trigger for the "a writable UAT connection
+preempts everything" sequencing rule (`CONSTELLATION_BACKLOG.md` §5;
+`V1_FULL_EXPORT_RECONCILIATION_PLAN.md` #8). It could not be exercised in the dev/Docker
+environment (no OSSYS source). **The operator ran the capability ladder against a real
+Cloud UAT instance (2026-06-15)** and reported the findings ledger in the playbook's
+sanitized transportable form. This entry is the canonical closure; the full synthesis
+(the P1–P11 taxonomy, the ledger, the forward charter) lives in
+`CHARTER_REVERSE_LEG_EXECUTION.md` (Part II).
+
+- **The ledger (generic vocabulary).** Writes permitted: SELECT / INSERT / UPDATE / DELETE;
+  **no ALTER** grant. `AssignedBySink` works — INSERT omitting the IDENTITY column returns
+  the platform-minted key (P2). `SET IDENTITY_INSERT` **denied (error 1088)** (P3) — so a
+  single absent ALTER grant settles P3, ALTER NOCHECK (P8), and TRUNCATE (P6-TRUNCATE)
+  together. DELETE of the captured row restored baseline; transaction ROLLBACK clean —
+  **rollback channel = SQL** (P6/P11). `MERGE … OUTPUT INTO` returns source→assigned pairs
+  (P4); table-variable / temp-table available (P5); a 5-row batch inserts/captures/deletes
+  clean (P7a). **Operator constraint:** no schema change and no marker rows on real tables —
+  cleanup is by **captured key**, which is also the FK-remap handle.
+- **OPEN-1 (identity) — RESOLVED.** `AssignedBySink` is the live path; `PreservedFromSource`
+  is refused on this estate (IDENTITY_INSERT denied). The disposition is fixed for the
+  reverse leg: sink-minted keys, captured per-row, remapped.
+- **OPEN-2 (write surface) — RESOLVED.** Direct SQL writes are permitted (the single biggest
+  external dependency, confirmed). The estate is not a platform-API-only surface.
+- **OPEN-6 (constraints / rollback) — RESOLVED.** Rollback channel = SQL (DELETE permitted);
+  NOCHECK / TRUNCATE inferred-denied from the absent ALTER grant.
+- **OPEN-5 (bulk lane vs two-phase) — PARTIAL.** Set-based `MERGE…OUTPUT` capture + the
+  temp-table render target are available, so the shipped set-based lane is viable on real
+  UAT. The per-row-vs-set-based throughput (**P7b**) is **not yet measured on the real wire**;
+  the set-based lane stays canonical and the ~271 rows/sec per-row figure remains the
+  comparison floor (`AUDIT_2026_06_10_REVERSE_LEG_DML_PROOF.md` §0 F2).
+- **OPEN-3 (CDC) — PARTIAL.** Transaction / lock semantics confirmed (BEGIN TRAN, ROLLBACK,
+  LOCK_TIMEOUT); the CDC tracking path itself is not yet exercised on real UAT, so the
+  NM-73 EXCEPT *auto-fallback* stays deferred ("revisit after J5") until the CDC verdict —
+  the manual `emission.dataVerification` override already shipped.
+- **OPEN-7 (user directory / ReconciledByRule) — OPEN.** The user-directory readability +
+  email-keying that gates the `ReconciledByRule` user re-key (**P10**) was not probed; the
+  connection-apparatus scope (environments / concurrency) is unscoped.
+- **Named residuals (not closed, gate the charter not the disposition):** P7b real-wire
+  throughput; P10 user directory; G1 object-scope DENY (P1b); the estate-wide P5 trigger
+  survey; OPEN-3 CDC.
+- **The playbook is DEPRECATED, not populated (operator decision).** Rather than fill the §7
+  template, `J5_UAT_CAPABILITY_PLAYBOOK.md` is deprecated (banner added, provenance only) and
+  its information relocated to the canonical stores — this log and
+  `CHARTER_REVERSE_LEG_EXECUTION.md`. The v1 probe sheet was superseded by the playbook; the
+  playbook is now superseded by the run.
+- **What this unblocks.** The J5 preemption is **discharged** — the queued Constellation /
+  Lapidary program may resume with J5 settled. The reverse-leg disposition is fixed:
+  `AssignedBySink` + captured-key remap + SQL cleanup; `ReconciledByRule` for users (pending
+  P10); no `PreservedFromSource`. M5's prerequisite ledger now exists (here + the compendium).
+  Remaining status-surface flips (`AUDIT_2026_06_13` "J5 (ops-gated)"; the `HANDOFF.md` /
+  backlog preemption letters) and the NM-73 auto-fallback arming are follow-ons.
