@@ -39,8 +39,6 @@ type ToleratedDivergenceGen =
                 ToleratedDivergence.CompositePkFkUnreflected
                 ToleratedDivergence.CharAnsiPaddingTolerated
                 ToleratedDivergence.DecimalScaleTolerated
-                ToleratedDivergence.FkTrustUnreflected
-                ToleratedDivergence.UniquePromotionUnreflected
                 ToleratedDivergence.TriggerBodyUnparsedDropped
             ]
         |> Arb.fromGen
@@ -60,7 +58,7 @@ let ``Tolerance.permissive is not strict`` () =
     Assert.False (Tolerance.isStrict Tolerance.permissive)
 
 [<Fact>]
-let ``Closed-DU coverage: ToleratedDivergence.allKnown contains eleven variants (M1prime Decision + M2 trigger added)`` () =
+let ``Closed-DU coverage: ToleratedDivergence.allKnown contains nine variants (M1 retired the two Decision tolerances)`` () =
     // Per the closed-DU expansion empirical-test discipline (`DECISIONS
     // 2026-05-13`): when a new ToleratedDivergence variant lands, this
     // count assertion fires until allKnown is extended. The companion
@@ -95,7 +93,13 @@ let ``Closed-DU coverage: ToleratedDivergence.allKnown contains eleven variants 
     // observe (over-claim correction — Decision drops to ◑ L2-partial; both
     // auto-retire when M1 lands), and `TriggerBodyUnparsedDropped` names the
     // formerly-silent CreateTrigger text-render drop (Schema OpenGap).
-    Assert.Equal (11, Set.count ToleratedDivergence.allKnown)
+    // **M1 (THE VECTOR, Wave 1, 2026-06-15):** back to 9 — `FkTrustUnreflected`
+    // and `UniquePromotionUnreflected` are RETIRED. `PhysicalForeignKey
+    // .IsTrusted` + the overlay-aware `PhysicalSchema.ofCatalogWith` route the
+    // FK-trust / unique-promotion decisions through the general comparator
+    // (witnessed Docker-real by the M1 decision-readback test), so the Decision
+    // axis flips back from ◑ L2-partial to ✅ faithful.
+    Assert.Equal (9, Set.count ToleratedDivergence.allKnown)
 
 [<Fact>]
 let ``Tolerance.ofSet round-trips through divergences`` () =
@@ -282,30 +286,25 @@ let ``AC-D6: a representation-tolerant environment passes Char/Decimal divergenc
     Assert.False(Tolerance.tolerates ToleratedDivergence.DecimalScaleTolerated strict)
 
 // ---------------------------------------------------------------------------
-// M1′ + M2 (THE VECTOR, Wave 0 honesty) — the three new tolerances are named,
-// parseable, and present in the closed set. The two Decision-axis tolerances
-// (FkTrustUnreflected / UniquePromotionUnreflected) name the FK-trust and
-// unique-promotion sub-axes the round-trip comparator cannot yet observe — so
-// matrix-status.sh drops Decision from an over-claimed ✅-faithful to ◑
-// L2-partial (their `@ladder … Decision OpenGap` tags are cross-checked by the
-// generator). TriggerBodyUnparsedDropped names the formerly-silent CreateTrigger
-// text-render drop. All three auto-flip / retire when their fix lands (M1 / a
-// faithful trigger round-trip).
+// M2 (THE VECTOR, Wave 0 honesty) — `TriggerBodyUnparsedDropped` is named,
+// parseable, and present in the closed set. It names the formerly-silent
+// CreateTrigger text-render drop (Schema OpenGap), retired when a faithful
+// trigger body round-trips. (M1′'s two Decision-axis tolerances that this test
+// formerly also covered — `FkTrustUnreflected` / `UniquePromotionUnreflected` —
+// were RETIRED by M1, THE VECTOR Wave 1, 2026-06-15: their round-trip is now
+// witnessed through the general comparator — see the M1 decision-readback
+// canary in `CanaryRoundTripTests` — so the Decision axis is honestly faithful.)
 // ---------------------------------------------------------------------------
 
 [<Fact>]
-let ``M1prime + M2: the three new tolerances are named, parseable, and in allKnown`` () =
-    // DISCRIMINATING: each must be in the closed set AND round-trip through the
+let ``M2: the trigger-body tolerance is named, parseable, and in allKnown`` () =
+    // DISCRIMINATING: must be in the closed set AND round-trip through the
     // operator-facing token surface (name ⇒ tryParse). A mislabeled-but-wrong
-    // implementation that dropped one from `allKnown`/`name` would fail here.
-    for d in [ ToleratedDivergence.FkTrustUnreflected
-               ToleratedDivergence.UniquePromotionUnreflected
-               ToleratedDivergence.TriggerBodyUnparsedDropped ] do
-        Assert.True(Set.contains d ToleratedDivergence.allKnown, sprintf "%A must be in allKnown" d)
-        Assert.Equal<ToleratedDivergence option>(Some d, ToleratedDivergence.tryParse (ToleratedDivergence.name d))
-    Assert.Equal("FkTrustUnreflected", ToleratedDivergence.name ToleratedDivergence.FkTrustUnreflected)
-    Assert.Equal("UniquePromotionUnreflected", ToleratedDivergence.name ToleratedDivergence.UniquePromotionUnreflected)
-    Assert.Equal("TriggerBodyUnparsedDropped", ToleratedDivergence.name ToleratedDivergence.TriggerBodyUnparsedDropped)
+    // implementation that dropped it from `allKnown`/`name` would fail here.
+    let d = ToleratedDivergence.TriggerBodyUnparsedDropped
+    Assert.True(Set.contains d ToleratedDivergence.allKnown, sprintf "%A must be in allKnown" d)
+    Assert.Equal<ToleratedDivergence option>(Some d, ToleratedDivergence.tryParse (ToleratedDivergence.name d))
+    Assert.Equal("TriggerBodyUnparsedDropped", ToleratedDivergence.name d)
 
 // ---------------------------------------------------------------------------
 // matchedResidual — the per-run residual the canary collector resolves

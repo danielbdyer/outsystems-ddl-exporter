@@ -31,19 +31,21 @@ witness covers the axis. The **Ladder** column is the honest weakest-rung summar
 | **Data** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |
 | **Identity** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |
 | **Time** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |
-| **Decision** | ✅ | ◑ L2-partial | ✅ | `FkTrustUnreflected`, `UniquePromotionUnreflected` | ◑ L2-partial |
+| **Decision** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |
 
-**Rungs reached: L1 5/5 · L2 3/5 · L3 5/5.** Tolerance set:
-11 named, of which **5 open** (`OpenGap`). A cell cannot be
+**Rungs reached: L1 5/5 · L2 4/5 · L3 5/5.** Tolerance set:
+9 named, of which **3 open** (`OpenGap`). A cell cannot be
 hand-marked: L1/L3 require the witness test to exist; L2 requires the open tolerance
 to be retired from `Tolerance.fs`. The generator under-claims; it never over-claims.
 
 > **Witness/tolerance-present ≠ feature-complete.** L2 here is "no open *named*
 > tolerance on the axis." Silent drops with no named surface (the cross-schema FK
-> filter, debrief G4) and unwitnessed sub-axes (the 3-axis Decision adjunction,
-> debrief G12) are NOT auto-detected — they have no machine surface yet, and are
-> tracked in `DEBRIEF_2026_06_02` until E2/F2 give them a named diagnostic/witness.
+> filter, debrief G4) are NOT auto-detected — they have no machine surface yet, and are
+> tracked in `DEBRIEF_2026_06_02` until a named diagnostic/witness lands. The 3-axis
+> Decision adjunction (debrief G12) IS now witnessed — M1 (THE VECTOR Wave 1) routes
+> FK-trust + unique-promotion through the general `PhysicalSchema.diff` comparator,
+> so the Decision axis is honestly faithful, not asserted.
 > L3 here is "a composition witness exists for the axis," not "faithful under every
 > spanning axis" (T-VI atomicity/permissions ride the debrief until cluster A names them).
 
-_Self-reported · gate=PASS · L2 axioms live/C/D=79/6/1 · rungs L1/L2/L3=5/3/5 of 5 · tolerances 11 (5 open)_
+_Self-reported · gate=PASS · L2 axioms live/C/D=79/6/1 · rungs L1/L2/L3=5/4/5 of 5 · tolerances 9 (3 open)_

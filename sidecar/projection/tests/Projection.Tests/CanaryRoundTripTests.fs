@@ -915,3 +915,105 @@ let ``decision adjunction: emitted-then-read-back schema reproduces the Decision
         // undecided column did not — the engine's opinion survived the round-trip.
         Assert.Equal(Some false, colNullable "NOTE")
         Assert.Equal(Some true,  colNullable "MEMO")
+
+// ---------------------------------------------------------------------
+// M1 (THE VECTOR Wave 1 — the keystone) — the Decision-readback adjunction
+// THROUGH THE GENERAL COMPARATOR. The E3 / 6.A.8 / nullability witnesses
+// above prove the round-trip via BESPOKE per-axis assertions (read the
+// specific reconstructed index / FK / column and check its flag). M1 closes
+// the keystone: it routes the recovered FK-trust (`NoCheckFk`) and
+// unique-promotion (`EnforceUnique`) decisions through `PhysicalSchema.diff`
+// — the SAME general comparator the canary's R6 gate reads — by giving
+// `PhysicalForeignKey` an `IsTrusted` field and making
+// `PhysicalSchema.ofCatalogWith` overlay-aware. Two arms:
+//   (1) AGREEMENT — `ofCatalogWith overlay source` equals `ofCatalog
+//       readback` on the FK-trust and index-uniqueness axes (empty diff).
+//   (2) FALSIFIABILITY — WITHOUT the overlay reflection (`ofCatalog source`),
+//       the SAME read-back DIVERGES on exactly those axes. This is the proof
+//       the comparator is no longer blind — the precise over-claim the retired
+//       `FkTrustUnreflected` / `UniquePromotionUnreflected` tolerances named.
+//       Before M1 both diffs were empty; arm (2) is the regression guard that
+//       keeps the field load-bearing. Docker-gated (real ReadSide) —
+//       survival-rule #12: confirm a real duration, never the green count.
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``M1 (decision-readback adjunction): NoCheckFk + EnforceUnique survive emit / deploy / read-back through PhysicalSchema.diff`` () =
+    if skipIfNoDocker "m1-decision-readback-general-comparator" then
+        // Source: Parent (PK Id, Code) + a NON-unique index on Code; Child
+        // (PK Id, FK ParentId -> Parent) with a TRUSTED reference. Both
+        // Decision intents ride the OVERLAY (not the catalog): NoCheckFk(ref)
+        // makes the emitter write the FK WITH NOCHECK; EnforceUnique(idx)
+        // promotes the index to UNIQUE.
+        let parentKey = ssKeySafe "OS_KIND_M1_Parent"
+        let childKey = ssKeySafe "OS_KIND_M1_Child"
+        let parentIdKey = ssKeySafe "OS_ATTR_M1_Parent_Id"
+        let codeKey = ssKeySafe "OS_ATTR_M1_Parent_Code"
+        let childIdKey = ssKeySafe "OS_ATTR_M1_Child_Id"
+        let parentFkAttr = ssKeySafe "OS_ATTR_M1_Child_ParentId"
+        let refKeyV = ssKeySafe "OS_REF_M1_Child_Parent"
+        let idxKey = ssKeySafe "OS_IDX_M1_Parent_Code"
+        let mkAttr (k: SsKey) (col: string) (isPk: bool) : Attribute =
+            { Attribute.create k (nameSafe col) Integer with
+                Column = ColumnRealization.create (col.ToUpperInvariant()) (not isPk) |> Result.value
+                IsPrimaryKey = isPk; IsMandatory = isPk }
+        let parent =
+            { Kind.create parentKey (nameSafe "Parent")
+                (mkTableId "dbo" "OSUSR_M1_PARENT")
+                [ mkAttr parentIdKey "Id" true
+                  mkAttr codeKey "Code" false ]
+              with Indexes = [ Index.ofKeyColumns idxKey (nameSafe "IX_M1Parent_Code") [ codeKey ] ] }
+        let child =
+            { Kind.create childKey (nameSafe "Child")
+                (mkTableId "dbo" "OSUSR_M1_CHILD")
+                [ mkAttr childIdKey "Id" true; mkAttr parentFkAttr "ParentId" false ]
+              with References = [ Reference.create refKeyV (nameSafe "Parent") parentFkAttr parentKey ] }
+        let catalog =
+            match Catalog.create [ { SsKey = ssKeySafe "OS_MOD_M1"; Name = nameSafe "M1Mod"; Kinds = [ parent; child ]; IsActive = true; ExtendedProperties = [] } ] [] with
+            | Ok c -> c | Error e -> failwithf "catalog %A" e
+
+        // The overlay IS the engine's opinion on the two Decision sub-axes M1
+        // closes: emit the FK WITH NOCHECK + promote the index to UNIQUE.
+        let overlay =
+            { DecisionOverlay.empty with
+                NoCheckFk = Set.singleton refKeyV
+                EnforceUnique = Set.singleton idxKey }
+        let sql = SsdtDdlEmitter.statementsWith overlay catalog |> Render.toText
+        let rt = (Deploy.runWithReadback sql).GetAwaiter().GetResult()
+        Assert.True(rt.Report.Ok, sprintf "deploy: %A" rt.Report.Errors)
+        let readback =
+            match rt.Reconstructed with
+            | Some c -> c
+            | None -> failwith "deploy produced no reconstructed catalog"
+        let readbackPhys = PhysicalSchema.ofCatalog readback
+
+        // Positive anchor — the read-back actually carries the tightened state,
+        // so the AGREEMENT arm below is not vacuously empty (FK/index present).
+        (match readbackPhys.ForeignKeys |> Set.toList with
+         | [ f ] -> Assert.False(f.IsTrusted, "the single read-back FK must be untrusted (NOCHECK survived)")
+         | fks -> Assert.Fail(sprintf "expected exactly one read-back FK, got %d" (List.length fks)))
+        Assert.True(readbackPhys.Indexes |> Set.exists (fun i -> i.IsUnique),
+                    "read-back must carry a UNIQUE index (EnforceUnique survived)")
+
+        // (1) AGREEMENT — the decision-aware source projection equals the
+        //     read-back on the FK-trust and index-uniqueness axes THROUGH THE
+        //     GENERAL COMPARATOR. Scoped to the Decision axes: the full diff may
+        //     carry incidental divergences on unrelated axes (logical-name
+        //     bindings, etc.), which the existing E3 / 6.A.8 witnesses likewise
+        //     isolate via bespoke per-axis reads.
+        let agree = PhysicalSchema.diff (PhysicalSchema.ofCatalogWith overlay catalog) readbackPhys
+        Assert.Empty agree.MissingForeignKeys
+        Assert.Empty agree.ExtraForeignKeys
+        Assert.Empty agree.MissingIndexes
+        Assert.Empty agree.ExtraIndexes
+
+        // (2) FALSIFIABILITY — without routing the overlay into the source
+        //     projection, the comparator SEES the divergence on exactly the
+        //     FK-trust and uniqueness axes (source claims trusted + non-unique;
+        //     read-back recovered untrusted + unique). Before M1 these axes were
+        //     structurally blind and this diff was empty — the over-claim the
+        //     retired M1' tolerances named. This arm keeps `IsTrusted` /
+        //     `IsUnique` load-bearing in the comparator.
+        let blind = PhysicalSchema.diff (PhysicalSchema.ofCatalog catalog) readbackPhys
+        Assert.NotEmpty (blind.MissingForeignKeys @ blind.ExtraForeignKeys)
+        Assert.NotEmpty (blind.MissingIndexes @ blind.ExtraIndexes)

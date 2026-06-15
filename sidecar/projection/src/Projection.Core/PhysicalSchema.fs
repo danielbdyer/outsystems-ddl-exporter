@@ -39,7 +39,8 @@ namespace Projection.Core
 ///   - `Columns`: set of `(schema, table, column, type, nullable,
 ///     isPrimaryKey)` tuples.
 ///   - `ForeignKeys`: set of `(srcSchema, srcTable, srcCol,
-///     tgtSchema, tgtTable, tgtCol)` tuples (Session B addition).
+///     tgtSchema, tgtTable, tgtCol, isTrusted)` tuples (Session B addition;
+///     `isTrusted` is THE VECTOR Wave 1 / M1's Decision-axis trust sub-axis).
 ///
 /// **What's NOT compared.** SsKey identity, Module structure,
 /// Origin / Modality marks, static populations. Non-PK index
@@ -150,6 +151,19 @@ type PhysicalIndex =
 /// table coordinates and different column pairs. Comparing as a
 /// set of column-level entries handles composite cases by
 /// construction.
+///
+/// **`IsTrusted` — the Decision-axis trust sub-axis (THE VECTOR Wave 1 /
+/// M1).** `true` for a normally-enforced FK; `false` for a `WITH NOCHECK`
+/// (untrusted) FK. The decision arrives two ways, both reflected here so the
+/// general `diff` comparator observes a trust divergence:
+///   - the source `Reference.IsConstraintTrusted` (a deployed source FK that
+///     was already `WITH NOCHECK`, recovered at `ReadSide.fs:1171` from
+///     `sys.foreign_keys.is_not_trusted`), AND
+///   - a registered `EnforceConstraint (ScriptWithNoCheck _)` intervention,
+///     carried in `DecisionOverlay.NoCheckFk` and applied by `ofCatalogWith`.
+/// Before M1 this field did not exist, so `PhysicalSchema.diff` was
+/// structurally blind to FK trust — the over-claim the retired
+/// `ToleratedDivergence.FkTrustUnreflected` named.
 type PhysicalForeignKey =
     {
         SourceSchema : string
@@ -158,6 +172,9 @@ type PhysicalForeignKey =
         TargetSchema : string
         TargetTable : string
         TargetColumn : string
+        /// `true` ⇒ enforced/trusted; `false` ⇒ `WITH NOCHECK` (untrusted).
+        /// See the type docstring — the Decision-axis trust sub-axis.
+        IsTrusted : bool
     }
 
 /// A row's content fingerprint in physical-schema coordinates.
@@ -471,7 +488,17 @@ module PhysicalSchema =
     /// axis. Resolves each `IndexColumn`'s attribute SsKey to its physical
     /// column name (the same coordinate `toPhysicalColumns` keys on) and
     /// encodes the ordered key list so a reorder surfaces as a divergence.
-    let private toPhysicalIndexes (k: Kind) : PhysicalIndex list =
+    ///
+    /// THE VECTOR Wave 1 / M1 — `IsUnique` is additive over the overlay: an
+    /// index is UNIQUE iff the catalog already declared it unique OR a
+    /// registered `UniqueIndex` intervention decided `EnforceUnique`
+    /// (`DecisionOverlay.EnforceUnique`). This mirrors the emitter's own rule
+    /// at `SsdtDdlEmitter.indexStatements` (`isUnique || overlay.EnforceUnique`)
+    /// so the source projection and the read-back agree on the promotion (the
+    /// read leg recovers `sys.indexes.is_unique`), routing the unique-promotion
+    /// decision through the general comparator (retires
+    /// `ToleratedDivergence.UniquePromotionUnreflected`).
+    let private toPhysicalIndexes (overlay: DecisionOverlay) (k: Kind) : PhysicalIndex list =
         let schemaStr = SchemaName.value k.Physical.Schema
         let tableStr = TableName.value k.Physical.Table
         let colNameByKey =
@@ -491,7 +518,7 @@ module PhysicalSchema =
                 Schema = schemaStr
                 Table = tableStr
                 Name = Name.value idx.Name
-                IsUnique = IndexUniqueness.isUnique idx.Uniqueness
+                IsUnique = IndexUniqueness.isUnique idx.Uniqueness || Set.contains idx.SsKey overlay.EnforceUnique
                 KeyColumns = keyColumns
             })
 
@@ -603,6 +630,7 @@ module PhysicalSchema =
     /// `Attributes` (≈10 entries on avg, not worth the per-kind
     /// allocation of a separate map).
     let private toPhysicalForeignKeys
+        (overlay: DecisionOverlay)
         (kindByKey: Map<SsKey, Kind>)
         (targetPkColumnsByKey: Map<SsKey, string list>)
         (k: Kind)
@@ -634,6 +662,15 @@ module PhysicalSchema =
                         TargetSchema = SchemaName.value tk.Physical.Schema
                         TargetTable = TableName.value tk.Physical.Table
                         TargetColumn = tgtPkFirst
+                        // THE VECTOR Wave 1 / M1 — the Decision-axis trust
+                        // sub-axis. Untrusted iff the source FK is itself
+                        // `WITH NOCHECK` (`r.IsConstraintTrusted = false`,
+                        // recovered at `ReadSide.fs:1171`) OR a registered
+                        // intervention decided NOCHECK (`overlay.NoCheckFk`).
+                        // Mirrors the emitter's NOCHECK predicate
+                        // (`SsdtDdlEmitter.untrustedFkAlters`) so the source
+                        // projection and the read-back agree.
+                        IsTrusted = r.IsConstraintTrusted && not (Set.contains r.SsKey overlay.NoCheckFk)
                     }
             | _ ->
                 // Dropped: the source attribute is unresolvable, the target
@@ -647,12 +684,24 @@ module PhysicalSchema =
                 // not landed here.
                 None)
 
-    /// Project a Catalog to its `PhysicalSchema` view — the set of
-    /// `(schema, table, column, type, nullable, isPrimaryKey)`
-    /// tuples PLUS the set of `(src, tgt)` FK tuples reachable
-    /// through every Module's Kinds. Modules, Origin, Modality,
-    /// non-PK Indexes are projected out by construction.
-    let ofCatalog (c: Catalog) : PhysicalSchema =
+    /// Project a Catalog to its `PhysicalSchema` view under a
+    /// `DecisionOverlay` — the set of `(schema, table, column, type, nullable,
+    /// isPrimaryKey)` tuples PLUS the set of `(src, tgt, isTrusted)` FK tuples
+    /// reachable through every Module's Kinds. Modules, Origin, Modality are
+    /// projected out by construction.
+    ///
+    /// **THE VECTOR Wave 1 / M1 — the overlay-aware core.** The overlay
+    /// reflects the two Decision sub-axes the catalog does not itself bake in:
+    /// FK trust (`NoCheckFk` → `PhysicalForeignKey.IsTrusted`) and unique
+    /// promotion (`EnforceUnique` → `PhysicalIndex.IsUnique`). (Nullability
+    /// tightening is already baked into the catalog before projection, so it
+    /// round-trips without overlay threading.) At `DecisionOverlay.empty` this
+    /// is **byte-identical** to the pre-M1 projection — the T1 goldens
+    /// (`GoldenEmissionTests`) and `AdjunctionLawTests` are the guard. Mirrors
+    /// the `SsdtDdlEmitter.statements` / `statementsWith` precedent: the
+    /// emitter consults the same overlay at emission, so source projection and
+    /// read-back agree on the recovered decision.
+    let ofCatalogWith (overlay: DecisionOverlay) (c: Catalog) : PhysicalSchema =
         use _ = Bench.scope "physicalSchema.ofCatalog"
         let kinds = c.Modules |> List.collect (fun m -> m.Kinds)
         // Per session-35 — index lookups lifted once for FK projection
@@ -684,7 +733,7 @@ module PhysicalSchema =
             |> Set.ofList
         let foreignKeys =
             kinds
-            |> List.collect (toPhysicalForeignKeys kindByKey targetPkColumnsByKey)
+            |> List.collect (toPhysicalForeignKeys overlay kindByKey targetPkColumnsByKey)
             |> Set.ofList
         let rows =
             kinds
@@ -701,7 +750,7 @@ module PhysicalSchema =
             |> Set.ofList
         let indexes =
             kinds
-            |> List.collect toPhysicalIndexes
+            |> List.collect (toPhysicalIndexes overlay)
             |> Set.ofList
         {
             Columns = columns
@@ -711,6 +760,18 @@ module PhysicalSchema =
             Annotations = annotations
             Indexes = indexes
         }
+
+    /// Project a Catalog to its `PhysicalSchema` view with **no** decision
+    /// overlay — the `DecisionOverlay.empty` default of `ofCatalogWith`,
+    /// byte-identical to the pre-M1 projection and the function ~30 call sites
+    /// already use. The read-back leg (`ofCatalog` over a `ReadSide`-recovered
+    /// catalog) uses this form: the recovered `Reference.IsConstraintTrusted` /
+    /// `sys.indexes.is_unique` already carry the deployed decision, so no
+    /// overlay is needed to observe it. The source leg uses `ofCatalogWith` to
+    /// reflect a registered (not-yet-deployed) decision. Do NOT widen this
+    /// signature — `ofCatalogWith` is the overlay-aware entry point.
+    let ofCatalog (c: Catalog) : PhysicalSchema =
+        ofCatalogWith DecisionOverlay.empty c
 
     /// Diff two `PhysicalSchema` values across its axes (columns +
     /// FKs + per-row hashes + bindings + annotations + indexes). Per session-35 —
@@ -804,13 +865,14 @@ module PhysicalSchema =
                 c.IsIdentity
         let renderFk (f: PhysicalForeignKey) : string =
             sprintf
-                "  [%s].[%s].[%s] -> [%s].[%s].[%s]"
+                "  [%s].[%s].[%s] -> [%s].[%s].[%s] trusted=%b"
                 f.SourceSchema
                 f.SourceTable
                 f.SourceColumn
                 f.TargetSchema
                 f.TargetTable
                 f.TargetColumn
+                f.IsTrusted
         let renderRow (r: PhysicalRow) : string =
             sprintf
                 "  [%s].[%s] row hash=%s"

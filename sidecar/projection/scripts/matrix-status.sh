@@ -181,9 +181,11 @@ open_count=$(printf '%s\n' "$ladder_tags" | awk '$3=="OpenGap"' | grep -c . || t
   echo
   echo "> **Witness/tolerance-present ≠ feature-complete.** L2 here is \"no open *named*"
   echo "> tolerance on the axis.\" Silent drops with no named surface (the cross-schema FK"
-  echo "> filter, debrief G4) and unwitnessed sub-axes (the 3-axis Decision adjunction,"
-  echo "> debrief G12) are NOT auto-detected — they have no machine surface yet, and are"
-  echo "> tracked in \`DEBRIEF_2026_06_02\` until E2/F2 give them a named diagnostic/witness."
+  echo "> filter, debrief G4) are NOT auto-detected — they have no machine surface yet, and are"
+  echo "> tracked in \`DEBRIEF_2026_06_02\` until a named diagnostic/witness lands. The 3-axis"
+  echo "> Decision adjunction (debrief G12) IS now witnessed — M1 (THE VECTOR Wave 1) routes"
+  echo "> FK-trust + unique-promotion through the general \`PhysicalSchema.diff\` comparator,"
+  echo "> so the Decision axis is honestly faithful, not asserted."
   echo "> L3 here is \"a composition witness exists for the axis,\" not \"faithful under every"
   echo "> spanning axis\" (T-VI atomicity/permissions ride the debrief until cluster A names them)."
   echo

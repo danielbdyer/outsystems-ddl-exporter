@@ -77,7 +77,7 @@ let ``D1: an axis with only accepted tolerances reaches L3 (the generator discri
     Assert.DoesNotContain("L2-partial", data)
 
 [<Fact>]
-let ``D1: exactly two tolerances are open fidelity gaps today`` () =
+let ``D1: exactly three tolerances are open fidelity gaps today`` () =
     // The matrix's open-gap count is the codebase's named schema-fidelity debt.
     // Pinning it makes a silently-added OpenGap — or a silently-retired one
     // without regenerating — fail here. NM-16 (2026-06-13) added four kind-facet
@@ -87,4 +87,10 @@ let ``D1: exactly two tolerances are open fidelity gaps today`` () =
     // added CompositePkFkUnreflected (Schema OpenGap) → 6. NM-17 (2026-06-14)
     // RETIRED the four kind-facet OpenGaps by building the real `KindFacet`
     // diff channel → back to 2 (IndexOptionsUnreflected + CompositePkFkUnreflected).
-    Assert.Contains("2 open", generatedMatrix)
+    // M1′ (THE VECTOR Wave 0, 2026-06-15) added TriggerBodyUnparsedDropped (Schema
+    // OpenGap) + FkTrustUnreflected + UniquePromotionUnreflected (Decision OpenGap)
+    // → 5. M1 (THE VECTOR Wave 1, 2026-06-15) RETIRED the two Decision OpenGaps by
+    // routing FK-trust / unique-promotion through the general comparator → back to
+    // 3 (IndexOptionsUnreflected + CompositePkFkUnreflected + TriggerBodyUnparsedDropped,
+    // all Schema OpenGap; the Decision axis is now faithful).
+    Assert.Contains("3 open", generatedMatrix)

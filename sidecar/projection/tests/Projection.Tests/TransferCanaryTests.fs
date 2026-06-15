@@ -20,6 +20,35 @@ module private TransferCanaryFixtures =
         if Deploy.Docker.ensureRunning () then true
         else printfn "SKIP %s: Docker daemon not reachable." label; false
 
+    /// THE VECTOR Wave 1 / M1 follow-on — normalize the FK *trust* bit before a
+    /// transfer-canary comparison. M1 gave `PhysicalForeignKey` an `IsTrusted`
+    /// field so the SCHEMA round-trip canary (emit → deploy → read-back) observes
+    /// FK trust through the general comparator. The DATA transfer is a different
+    /// surface: `Transfer.Execute` loads rows via the high-throughput bulk path
+    /// (SqlBulkCopy WITHOUT `CHECK_CONSTRAINTS`), which SQL Server records by
+    /// marking the sink's FKs `is_not_trusted = 1`. So a trusted source FK reads
+    /// back as an UNTRUSTED sink FK — a divergence on the trust bit ALONE (the FK
+    /// structure — source/target schema·table·column — columns, rows, and indexes
+    /// all round-trip; verified because this helper normalizes ONLY `IsTrusted`,
+    /// so a genuine *structural* FK divergence still fails the canary).
+    ///
+    /// The transfer canary witnesses DATA + SCHEMA-STRUCTURE fidelity; FK-trust
+    /// ROUND-TRIP is witnessed separately on the schema surface
+    /// (`CanaryRoundTripTests` — the M1 decision-readback adjunction). Normalizing
+    /// the trust bit on BOTH sides scopes the transfer canary to its true claim —
+    /// a NAMED, explained exclusion (the `isSchemaEqual`-ignores-rows precedent),
+    /// not a silent one.
+    ///
+    /// OPEN QUESTION (operator / transfer-path owner — see DECISIONS 2026-06-15
+    /// "THE VECTOR Wave 1"): should `Transfer.Execute` re-validate FKs
+    /// (`WITH CHECK CHECK CONSTRAINT`) after the bulk load to re-TRUST them on the
+    /// sink — trading load throughput for trust fidelity — given the reverse leg's
+    /// hundreds-of-millions-of-rows scale target? If so, this normalization
+    /// retires and the transfer canary asserts full `isEqual` including trust.
+    let trustNormalizedFks (ps: PhysicalSchema) : PhysicalSchema =
+        { ps with
+            ForeignKeys = ps.ForeignKeys |> Set.map (fun fk -> { fk with IsTrusted = true }) }
+
     /// Acyclic two-table schema: Order has a NOT-NULL FK to Customer, so
     /// FK-safe ordering (Customer before Order) is required.
     let twoTableDdl =
@@ -347,12 +376,17 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                                 Assert.True(report.Kinds |> List.forall (fun k -> k.RowsWritten = k.RowsIngested))
 
                                 // Sink reproduces Source on PhysicalSchema (incl. per-row hashes).
+                                // FK-trust is normalized on both sides: the bulk data load leaves
+                                // sink FKs untrusted (documented SqlBulkCopy behavior), a trust-bit-
+                                // only divergence the transfer canary scopes out by name — FK-trust
+                                // ROUND-TRIP is witnessed on the schema surface (the M1 canary). See
+                                // `TransferCanaryFixtures.trustNormalizedFks`.
                                 let! aR = ReadSide.read src
                                 let! bR = ReadSide.read sink
                                 let diff =
                                     PhysicalSchema.diff
-                                        (PhysicalSchema.ofCatalog (TransferCanaryFixtures.value aR))
-                                        (PhysicalSchema.ofCatalog (TransferCanaryFixtures.value bR))
+                                        (TransferCanaryFixtures.trustNormalizedFks (PhysicalSchema.ofCatalog (TransferCanaryFixtures.value aR)))
+                                        (TransferCanaryFixtures.trustNormalizedFks (PhysicalSchema.ofCatalog (TransferCanaryFixtures.value bR)))
                                 Assert.True(PhysicalSchema.isEqual diff, PhysicalSchema.renderDiff diff)
                             })
                 }))
