@@ -10,18 +10,19 @@ open Projection.Targets.SSDT  // LINT-ALLOW: cross-target dependency for ScriptD
 // Per `CHAPTER_4_PRESCOPE_DATA_TRIUMVIRATE.md` §2.2: migration-dependency
 // status is operator intent, not catalog-resident evidence. The context
 // carries actual row data (not behavioral configuration), so it is
-// **Profile-shaped sibling input** rather than `Policy`. Adapter at
-// the boundary (NDJSON / CSV pickup directory; deferred until I/O
-// consumer demand surfaces) reads into this typed shape; the emitter
-// is pure F# in Core-adjacent.
+// **Profile-shaped sibling input** rather than `Policy`. The emitter is
+// pure F# in Core-adjacent; the boundary adapter lives at the pipeline
+// layer.
 //
-// **Slice ε scope (chapter 4.1.B).** The typed context shape lands;
-// the boundary adapter is deferred until a real ingestion path
-// surfaces (production migration teams may publish via a different
-// format or via an existing config surface — I/O choice deferred per
-// IR-grows-under-evidence). MVP consumers construct the context
-// programmatically; tests use `MigrationDependencyContext.empty` and
-// hand-rolled fixtures.
+// **Ingestion adapter (cashed out 2026-06-15).** The slice-ε boundary-
+// adapter deferral fired: `Projection.Pipeline.MigrationDependenciesBinding
+// .fromConfig` reads the operator-curated file at
+// `overrides.migrationDependencies.path` (JSON, logical-keyed — see that
+// module) into this typed shape, resolving logical `(Module, Entity)` to
+// `SsKey` against the catalog. The config-driven full-export run threads
+// the resolved context through the composer (publish + store-leg). Direct
+// consumers (canary / golden tests) still construct the context
+// programmatically or pass `MigrationDependencyContext.empty`.
 // ---------------------------------------------------------------------------
 
 /// One row of legacy-domain data the migration team is publishing

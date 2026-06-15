@@ -1,3 +1,69 @@
+# Handoff addendum — 2026-06-15, MIGRATION-CONTEXT WIRING — the data triumvirate is whole: the operator-curated Migration lane now has a real row source (JSON file → MigrationDependencyContext), threaded the same seam as Bootstrap, partition-disjoint, Docker-witnessed three lanes live
+
+To the next agent.
+
+You are inheriting a **clean, single-slice branch paused for review.** Branch
+`claude/migration-context-wiring`, one commit on top of `main` (`02bba071`, the
+merged live-source/Bootstrap chapter). The operator asked to commit this slice and
+stop for review before the next one. Everything below it is the prior chapter's
+letter history.
+
+**What shipped (don't redo) — handoff task 1, "migration-context wiring", complete
+and verified.** The production compose path used to thread
+`MigrationDependencyContext.empty`; the Migration lane had no row source. It does now:
+
+1. **`MigrationDependenciesBinding.fs`** (new, `Projection.Pipeline`) reads the
+   operator-curated file at `overrides.migrationDependencies.path` into a
+   `MigrationDependencyContext`. **Format = JSON, logical-keyed (operator decision):**
+   `{ "kinds": [ { "module", "entity", "rows": [ { "id", "values": {col:val} } ] } ] }`.
+   Resolves `(module, entity)` → `SsKey` via `CatalogResolution.tryKindByLogical`;
+   synthesizes row ids via `SsKey.synthesizedComposite "migration" […]`; values are
+   raw strings (`""` = NULL; number/bool coerce). No path ⇒ empty context (no-op).
+   Malformed / unresolved / unreadable ⇒ loud `pipeline.migrationDependencies.*`. This
+   cashes out the deferred slice-ε ingestion adapter.
+2. **Threaded the SAME seam Bootstrap rides** (parity): `readAndHydrateConfigModel`
+   returns `(Catalog * bootstrapRows * migration)`; publish
+   (`projectWithStateWithPinsAndBootstrap` → `composeRenderedBundleWithBootstrap`) and
+   store-leg (`projectSeedPlan` → `composeRenderedLeveledWithBootstrap`) both carry it.
+   Non-config callers delegate `…empty` (byte-identical).
+3. **Partition stays disjoint**: `hydrateBootstrapRowsExcluding migrationKinds` drops
+   (Static ∪ **Migration**) from the bootstrap complement under
+   `AllRemaining`/`AllExceptStatic`, so `OverlappingEmitterCoverage` can't trip. Under
+   `AllData` the Migration lane is skipped, so no exclusion needed.
+
+**Verified.** `MigrationDependenciesBindingTests` 7/7 (pure); `LiveSourceDockerTests`
+4/4 against the warm container incl. the new **"data triumvirate"** witness (Static +
+Migration + Bootstrap all populate live, disjoint — TRX-confirmed it ran, not
+skipped). 109/0 across the touched pure classes. DECISIONS 2026-06-15 entry written;
+`MigrationDependenciesEmitter` docstring updated.
+
+**What you should pick up next (operator's task list; both independent, larger
+slices).**
+- **Task 2 — the AllData double-stream cleanup (perf-only).** Under `AllData`,
+  `hydrateCatalog` still grafts static rows (unused — StaticSeeds is skipped under
+  AllData) AND `hydrateBootstrapRows` re-streams every kind incl. static. One-pass
+  unification (skip the static graft under AllData, or share one stream). Bench
+  before/after — correctness-first was the operator's call, so this is pure
+  optimization.
+- **Task 3 — reconciliation WP7–WP9** (`V1_FULL_EXPORT_RECONCILIATION_PLAN.md` §4–5):
+  WP7 SSDT byte-parity (GO → `"\nGO\n\n"`, per-table constraint formatting, IX/UIX
+  logical-name synthesis, FK 128-char cap, MS_Description pinning); WP8 `Order_Num`
+  Service-Studio ordering pass (C3); WP9 first-run-complete `projection.sample.json`
+  (which should now showcase the `migrationDependencies` file too), ossys-only
+  provenance-arm fix, `compare`-verb design slice. Independent — sequence per §5.
+
+**Watch-fors (this session's scars).** `dotnet` isn't on the bash PATH — prefix
+`export PATH="/c/Users/danny/AppData/Local/Microsoft/dotnet:$PATH"`. The Docker gate
+(`Deploy.Docker.ensureRunning`) probes a **Unix socket** that doesn't exist on
+Windows, so it soft-skips unless `PROJECTION_MSSQL_CONN_STR` is set — point it at the
+warm container (`Server=localhost,11433;User Id=sa;Password=Projection@Strong1;
+TrustServerCertificate=True;Encrypt=False`) and a 6 s / 4-test run is real; a 33 ms /
+4-test "pass" is a soft-skip (survival rule 12 — check the TRX, not the green count).
+Never run pure+Docker as one `dotnet test`. The warm container was "Up 48 min" — if a
+connection batch starts failing, restart it, don't assume a regression.
+
+---
+
 # Handoff addendum — 2026-06-14 (night), THE LIVE-SOURCE CHAPTER — both owed items CLOSED + VERIFIED: live-path Docker witnesses (+ two adapter fixes) and Bootstrap-always (live-hydrated, AllData via config); 3 pre-existing Docker breakages also fixed
 
 To the next agent.

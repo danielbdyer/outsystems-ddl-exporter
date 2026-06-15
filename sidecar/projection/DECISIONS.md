@@ -23171,3 +23171,55 @@ config-driven path (publish + store-leg), so `Data/Bootstrap.sql` is created
   `HydrationTests` covers the no-connection branches (data-off / no-ossys / the
   AllRemaining-excludes-static scoping). Pure pool 3314/0; the live-path Docker class
   3/3.
+
+## 2026-06-15 — Migration-context wiring: the deferred migration-ingestion adapter cashes out; the data triumvirate is whole
+
+The Bootstrap-always chapter left the production compose path threading
+`MigrationDependencyContext.empty` — the Static and Bootstrap lanes hydrated live,
+but the Migration lane had no row source. `overrides.migrationDependencies.path`
+parsed into config (`Config.fs`) but **nothing read it**: the
+`MigrationDependenciesEmitter`'s "boundary adapter deferred until a real ingestion
+path surfaces" note (the chapter-4.1.B slice-ε NDJSON-adapter deferral). The
+config-driven full-export IS that ingestion path; the trigger has fired.
+
+- **File format — JSON, logical-keyed (operator decision 2026-06-15).** The operator
+  authors rows under the logical `Module.Entity` coordinate (no raw `SsKey` GUIDs);
+  each row carries a stable `id` + logical-column → raw-value cells (the same
+  raw-string surface as `StaticRow.Values`; `""` is NULL):
+  `{ "kinds": [ { "module": …, "entity": …, "rows": [ { "id": …, "values": {…} } ] } ] }`.
+  The NDJSON shape the slice-ε deferral sketched is superseded by the operator's
+  logical-keyed JSON choice.
+- **The adapter — `MigrationDependenciesBinding.fromConfig catalog cfg`
+  (`Projection.Pipeline`).** Resolves `(module, entity)` → the kind's `SsKey` via the
+  shared `CatalogResolution.tryKindByLogical` (rename-invariant, A1 — resolution
+  against the pre-rename catalog is sound because the `SsKey` flows downstream);
+  synthesizes each row's `Identifier` (`SsKey.synthesizedComposite "migration"
+  [module; entity; id]`). No path ⇒ the empty context (no-op; byte-identical to the
+  prior threading). A path that is set but unreadable / malformed / names an
+  unresolved kind FAILS LOUD (`pipeline.migrationDependencies.*`) — the operator
+  declared the file, so we honor it strictly (no silent emptiness, §4).
+- **Threaded the SAME seam the Bootstrap rows ride** (publish + store-leg, for parity):
+  `readAndHydrateConfigModel` now returns `(Catalog * bootstrapRows * migration)`;
+  `runWithConfigCore` + `projectWithStateWithPinsAndBootstrap` →
+  `composeRenderedBundleWithBootstrap` (publish) and `projectSeedPlan` →
+  `composeRenderedLeveledWithBootstrap` (store-leg) carry it. Both legs thread the
+  SAME context, so the deployed Migration lane never drifts from the published one.
+  Every non-config caller delegates `MigrationDependencyContext.empty` (byte-identical,
+  zero churn) — the established default-supplying-wrapper idiom, not a back-compat shim.
+- **The partition law held structurally.** `hydrateBootstrapRows` →
+  `hydrateBootstrapRowsExcluding migrationKinds`: under `AllRemaining`/`AllExceptStatic`
+  the Bootstrap complement now excludes (Static ∪ **Migration**), so the three lanes
+  stay disjoint and the composer's `OverlappingEmitterCoverage` cannot trip once both
+  lanes populate. Under `AllData` the Migration lane is skipped (`dispatchSiblings`),
+  so the exclusion correctly does not apply. `Set.empty` (no migration file) is
+  byte-identical to the prior Static-only exclusion.
+- **Witnesses.** `MigrationDependenciesBindingTests` (7, pure) — no-path / valid
+  resolution / scalar-cell coercion (number/bool/null-as-empty) / unresolved-kind /
+  malformed-JSON / missing-id / missing-file fail-loud paths. `LiveSourceDockerTests`
+  "the data triumvirate: StaticSeeds + MigrationData + Bootstrap all populate live and
+  stay disjoint" — a live source feeds the Static + Bootstrap lanes, the file feeds the
+  Migration lane, all three `Data/*.sql` carry their own row and only their own
+  (`OverlappingEmitterCoverage` is the guard `mustOkEmit` would trip on). Pure pool of
+  the touched classes 109/0; the live-path Docker class 4/4 against the warm container.
+- **Deferred (operator): supplemental bootstrap kinds** (`ossys_User` et al. beyond
+  the catalog's own entities) stay deferred — untouched here.

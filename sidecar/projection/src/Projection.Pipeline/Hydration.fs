@@ -141,16 +141,28 @@ module Hydration =
     /// the bootstrap-eligible kinds' rows from the live OSSYS source into the
     /// `Map<SsKey, StaticRow list>` shape `DataLoadPlan.build` consumes — every
     /// data-bearing kind under `AllData`, the complement of (Static-marked ∪
-    /// Migration) under `AllRemaining`/`AllExceptStatic`. (Migration is empty in
-    /// the production path today; the complement excludes its kinds when it is
-    /// wired.) Disjoint from the Static lane's catalog-grafted populations, so
-    /// the composer's `OverlappingEmitterCoverage` partition law holds. Data-off
-    /// / no live OSSYS source / no eligible kinds ⇒ the empty Map (the
-    /// file-sourced skip is NAMED in `diagnostics`, never silent). Scoped via
-    /// `Ingestion.collectInOrderFor` — never the mark-everything `ReadSide.read`
-    /// (survival rule 8). A SECOND short-lived connection (the model-read
-    /// connection is use-disposed), mirroring `hydrateCatalog`.
-    let hydrateBootstrapRows (cfg: Config.Config) (catalog: Catalog) : Task<Result<Map<SsKey, StaticRow list>>> =
+    /// Migration) under `AllRemaining`/`AllExceptStatic`. Disjoint from the
+    /// Static lane's catalog-grafted populations AND the operator-curated
+    /// Migration lane, so the composer's `OverlappingEmitterCoverage` partition
+    /// law holds. Data-off / no live OSSYS source / no eligible kinds ⇒ the
+    /// empty Map (the file-sourced skip is NAMED in `diagnostics`, never
+    /// silent). Scoped via `Ingestion.collectInOrderFor` — never the
+    /// mark-everything `ReadSide.read` (survival rule 8). A SECOND short-lived
+    /// connection (the model-read connection is use-disposed), mirroring
+    /// `hydrateCatalog`.
+    ///
+    /// `migrationKinds` (migration-context wiring, 2026-06-15) is the set of
+    /// kind `SsKey`s the operator-curated Migration lane populates
+    /// (`MigrationDependenciesBinding.kindKeysOf`). Under `AllRemaining`/
+    /// `AllExceptStatic` those kinds are excluded from the Bootstrap complement
+    /// so the three lanes stay disjoint; under `AllData` the Migration lane is
+    /// skipped (`dispatchSiblings`) so the exclusion does not apply. `Set.empty`
+    /// (no migration file) is byte-identical to the prior Static-only exclusion.
+    let hydrateBootstrapRowsExcluding
+        (migrationKinds: Set<SsKey>)
+        (cfg: Config.Config)
+        (catalog: Catalog)
+        : Task<Result<Map<SsKey, StaticRow list>>> =
         task {
             if not (emitDataOf cfg) then
                 return Result.success Map.empty
@@ -165,7 +177,8 @@ module Hydration =
                         isDataBearing k
                         && (match composition with
                             | AllData -> true
-                            | AllRemaining | AllExceptStatic -> not (isStaticKind k)))
+                            | AllRemaining | AllExceptStatic ->
+                                not (isStaticKind k) && not (Set.contains k.SsKey migrationKinds)))
                     |> List.map (fun k -> k.SsKey)
                     |> Set.ofList
                 if Set.isEmpty eligible then
@@ -189,6 +202,14 @@ module Hydration =
                                 let! rows = Ingestion.collectInOrderFor eligible cnn catalog topo
                                 return Result.success rows
         }
+
+    /// No-migration-lane Bootstrap hydration (`hydrateBootstrapRowsExcluding`
+    /// with `Set.empty`) — byte-identical to the pre-migration-wiring behaviour.
+    /// The established call shape for callers without an operator-curated
+    /// Migration lane (canary / golden tests); the config-driven publish path
+    /// routes through `…Excluding` with the resolved migration kinds.
+    let hydrateBootstrapRows (cfg: Config.Config) (catalog: Catalog) : Task<Result<Map<SsKey, StaticRow list>>> =
+        hydrateBootstrapRowsExcluding Set.empty cfg catalog
 
     /// Registry metadata (pillar 9). Read-only observation — DataIntent
     /// (mirrors the OSSYS `CatalogReader` / Transfer `Ingestion` adapters).

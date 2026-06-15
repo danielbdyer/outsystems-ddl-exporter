@@ -696,6 +696,7 @@ module Compose =
         (profile: Profile)
         (folders: EmissionFolders)
         (groups: TransformGroups)
+        (migration: Projection.Targets.Data.MigrationDependencyContext)
         (bootstrapRows: Map<SsKey, StaticRow list>)
         (catalog: Catalog)
         : Outputs * ComposeState =
@@ -733,7 +734,13 @@ module Compose =
                 // carries content. `bootstrapRows = Map.empty` (the non-hydrated
                 // path, all callers but the config-driven publish path) is
                 // byte-identical to the prior `composeRenderedBundle`.
-                match DataComposer.composeRenderedBundleWithBootstrap fullPolicy finalState.Catalog profile Projection.Targets.Data.MigrationDependencyContext.empty bootstrapRows UserRemapContext.empty with
+                // Migration-context wiring (2026-06-15) — the operator-curated
+                // Migration lane rides the SAME seam; `MigrationDependency
+                // Context.empty` (no migration file) is byte-identical to the
+                // prior threading. The Bootstrap complement already excludes the
+                // migration kinds (`hydrateBootstrapRowsExcluding`), so the
+                // composer's `OverlappingEmitterCoverage` partition law holds.
+                match DataComposer.composeRenderedBundleWithBootstrap fullPolicy finalState.Catalog profile migration bootstrapRows UserRemapContext.empty with
                 | Ok bundle when not (System.String.IsNullOrWhiteSpace bundle.Fused) ->
                     // The PER-LANE files (`Data/StaticSeeds.sql` /
                     // `Data/MigrationData.sql` / `Data/Bootstrap.sql`) are the
@@ -769,7 +776,7 @@ module Compose =
         (groups: TransformGroups)
         (catalog: Catalog)
         : Outputs * ComposeState =
-        projectWithStateWithPinsAndBootstrap logicalEmissionPins fullPolicy profile folders groups Map.empty catalog
+        projectWithStateWithPinsAndBootstrap logicalEmissionPins fullPolicy profile folders groups Projection.Targets.Data.MigrationDependencyContext.empty Map.empty catalog
 
     /// The canonical `projectWithState` — no physical-rename pins (byte-identical
     /// default; the existing callers are unchanged).
@@ -1250,6 +1257,7 @@ module Compose =
         (cfg: Config.Config)
         (parsed: Result<Catalog>)
         (bootstrapRows: Map<SsKey, StaticRow list>)
+        (migration: Projection.Targets.Data.MigrationDependencyContext)
         (profile: Profile)
         : Result<RunReport> =
         match parsed with
@@ -1269,7 +1277,7 @@ module Compose =
                 match policyR, overridesR, foldersR, groupsR with
                 | Ok policy, Ok overrides, Ok folders, Ok groups ->
                     let outputs, finalState =
-                        projectWithStateWithPinsAndBootstrap pins policy profile folders groups bootstrapRows renamedCatalog
+                        projectWithStateWithPinsAndBootstrap pins policy profile folders groups migration bootstrapRows renamedCatalog
                     // `emission.dacpac: true` — compile the .dacpac over the SAME
                     // emitted catalog the SSDT step projected (the post-chain
                     // catalog under the identical platform-auto-index filter —
@@ -1442,18 +1450,33 @@ module Compose =
     /// — thread the same pair, so the deployed Bootstrap never drifts from the
     /// published one (the parity duty). Empty bootstrap Map on the file-sourced /
     /// data-off path (the named skip is in `Hydration.diagnostics`).
-    let readAndHydrateConfigModel (cfg: Config.Config) : Task<Result<Catalog * Map<SsKey, StaticRow list>>> =
+    /// Migration-context wiring (2026-06-15) — completes the data triumvirate.
+    /// The operator-curated Migration lane's rows are bound from
+    /// `overrides.migrationDependencies.path` against the read catalog
+    /// (rename-invariant `SsKey`, A1); the resolved context is threaded the
+    /// SAME seam the Bootstrap rows ride (publish + store-leg, for parity) and
+    /// its kinds are EXCLUDED from the Bootstrap complement so the three lanes
+    /// stay disjoint (the partition law). No path ⇒ the empty context (no-op;
+    /// byte-identical). A malformed / unresolvable file fails loud
+    /// (`pipeline.migrationDependencies.*`).
+    let readAndHydrateConfigModel
+        (cfg: Config.Config)
+        : Task<Result<Catalog * Map<SsKey, StaticRow list> * Projection.Targets.Data.MigrationDependencyContext>> =
         task {
             let! parsed = readConfigModel cfg
             match parsed with
             | Error es -> return Result.failure es
             | Ok catalog ->
-                match! Hydration.hydrateCatalog cfg catalog with
+                match MigrationDependenciesBinding.fromConfig catalog cfg with
                 | Error es -> return Result.failure es
-                | Ok hydrated ->
-                    match! Hydration.hydrateBootstrapRows cfg hydrated with
-                    | Error es      -> return Result.failure es
-                    | Ok bootRows   -> return Result.success (hydrated, bootRows)
+                | Ok migration ->
+                    match! Hydration.hydrateCatalog cfg catalog with
+                    | Error es -> return Result.failure es
+                    | Ok hydrated ->
+                        let migrationKinds = MigrationDependenciesBinding.kindKeysOf migration
+                        match! Hydration.hydrateBootstrapRowsExcluding migrationKinds cfg hydrated with
+                        | Error es      -> return Result.failure es
+                        | Ok bootRows   -> return Result.success (hydrated, bootRows, migration)
         }
 
     /// THE_CONFIG_CONTROL_PLANE §6 (S3) — project a **caller-supplied**
@@ -1603,15 +1626,14 @@ module Compose =
                                 // the Bootstrap lane's row source (Bootstrap-always).
                                 let! parsed = readAndHydrateConfigModel cfg
                                 match parsed with
-                                | Ok (catalog, bootRows) ->
+                                | Ok (catalog, bootRows, migration) ->
                                     emitStageMarker LogSink.Extract "extract.completed" LogSink.End
                                         (Map.ofList [ "moduleCount", box (List.length catalog.Modules) ])
-                                    return Ok (catalog, bootRows)
+                                    return Ok (catalog, bootRows, migration)
                                 | Error errors ->
                                     return Error errors
                             })
-                    let catalog = fst extracted
-                    let bootstrapRows = snd extracted
+                    let catalog, bootstrapRows, migration = extracted
                     let! profile =
                         Staged.stage Stages.profile (fun () ->
                             task {
@@ -1627,7 +1649,7 @@ module Compose =
                             task {
                                 // §7.5 emit — pass chain + sibling-Π emission +
                                 // artifact write.
-                                let result = runWithConfigCore cfg (Ok catalog) bootstrapRows profile
+                                let result = runWithConfigCore cfg (Ok catalog) bootstrapRows migration profile
                                 emitStageMarker LogSink.Emit "emit.completed" LogSink.End Map.empty
                                 return result
                             })
@@ -1677,6 +1699,7 @@ module Compose =
         (cfg: Config.Config)
         (parsed: Result<Catalog>)
         (bootstrapRows: Map<SsKey, StaticRow list>)
+        (migration: Projection.Targets.Data.MigrationDependencyContext)
         : Result<Catalog * DataComposer.LeveledDeploymentText> =
         match parsed |> Result.bind (applyRenames cfg) with
         | Error es -> Result.failure es
@@ -1694,9 +1717,11 @@ module Compose =
                         // Bootstrap-always — the store-leg threads the SAME
                         // Bootstrap rows the publish path does (parity duty), so
                         // the deployed leveled seed never drifts from the bundle.
+                        // Migration-context wiring (2026-06-15) — likewise the
+                        // SAME operator-curated Migration lane, for the same parity.
                         DataComposer.composeRenderedLeveledWithBootstrap
                             policy finalState.Catalog Profile.empty
-                            Projection.Targets.Data.MigrationDependencyContext.empty
+                            migration
                             bootstrapRows
                             UserRemapContext.empty
                     with
@@ -1721,7 +1746,7 @@ module Compose =
             let! parsed = readAndHydrateConfigModel cfg
             match parsed with
             | Error es -> return Result.failure es
-            | Ok (catalog, bootRows) -> return projectSeedPlan cfg (Ok catalog) bootRows
+            | Ok (catalog, bootRows, migration) -> return projectSeedPlan cfg (Ok catalog) bootRows migration
         }
 
     /// State A — the prior emission's schema, reconstructed from the durable

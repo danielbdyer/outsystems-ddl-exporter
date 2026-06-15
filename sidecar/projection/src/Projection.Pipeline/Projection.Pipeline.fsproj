@@ -32,6 +32,7 @@
     <Compile Include="FkSelectivityDiagnostics.fs" />
     <Compile Include="JointDependencyDiagnostics.fs" />
     <Compile Include="EmissionFoldersBinding.fs" />
+    <Compile Include="MigrationDependenciesBinding.fs" />
     <Compile Include="TransformGroupsBinding.fs" />
     <Compile Include="InsertionPolicyBinding.fs" />
     <Compile Include="LiveModelRead.fs" />
