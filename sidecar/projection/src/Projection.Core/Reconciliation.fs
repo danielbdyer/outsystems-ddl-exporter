@@ -32,6 +32,15 @@ type ReconciledIdentity =
         /// a non-unique reconcile key is a data-fidelity hazard the operator
         /// must see (the `MatchByColumn` / CSV `--user-map` reachable case).
         Ambiguous : (SsKey * SourceKey) list
+        /// NM-58 — Sink surrogates that LOST the deterministic match tiebreaker:
+        /// more than one Sink row shared a (non-blank) `MatchByColumn` value, so
+        /// the oldest (lowest-PK) row won the reconcile and these are the rows it
+        /// displaced. Surfaced, never silently dropped — a duplicated reconcile
+        /// key on the Sink side is the real-estate hazard the operator must see
+        /// (the production user directory's "duplicate email groups"); the
+        /// operator can supply a `ManualOverride` for the specific keys. Empty
+        /// for a unique key, a `ManualOverride`, or a non-reconciling Transfer.
+        AmbiguousTargetKeys : (SsKey * AssignedKey) list
     }
 
 /// How the operator reconciles Source surrogates to pre-existing Sink
@@ -75,6 +84,18 @@ module Reconciliation =
         let surrogateOf (row: StaticRow) : SourceKey option =
             Map.tryFind pkColumn row.Values |> Option.map SourceKey.ofString
 
+        // NM-58 — a BLANK match key is "no key", never "a key that is empty".
+        // The production user directory carries many rows with a blank/missing
+        // email; without this exclusion a blank SOURCE key would match a blank
+        // SINK key (`Map.ofList` would index ""), wrongly re-keying every
+        // blank-email source row onto one arbitrary blank-email sink row. Blank
+        // keys on either side are excluded so they fall to `Unmatched` (then the
+        // fallback / pre-write halt / declared drop), never a silent miss-match.
+        let isKey (v: string) : bool = not (System.String.IsNullOrWhiteSpace v)
+
+        // Sink surrogates displaced by the duplicate-key tiebreaker (NM-58).
+        let mutable ambiguousTargets : (SsKey * AssignedKey) list = []
+
         // `resolve src row` → the matched Sink surrogate for a Source row.
         // Recursive on `FallbackToAssigned`'s `primary` arm so nested fallback
         // chains compose; the fallback arm always returns `Some`, so any
@@ -85,16 +106,33 @@ module Reconciliation =
             | ReconciliationStrategy.ManualOverride overrides ->
                 fun src _ -> Map.tryFind src overrides
             | ReconciliationStrategy.MatchByColumn col ->
-                // Index the Sink by its match-column value → Sink surrogate.
-                let sinkIndex =
+                // Index the Sink by its (non-blank) match-column value → Sink
+                // surrogate. `sinkRows` arrive PK-ascending (`ReadSide` orders by
+                // PK), so on a DUPLICATE match key the FIRST entry is the oldest
+                // (lowest-PK) Sink row: the NAMED deterministic tiebreaker keeps
+                // it and records the rest as `ambiguousTargets` (NM-58) — never
+                // the prior silent, order-arbitrary `Map.ofList` last-wins.
+                let sinkPairs =
                     sinkRows
                     |> List.choose (fun r ->
                         match Map.tryFind col r.Values, Map.tryFind pkColumn r.Values with
-                        | Some matchValue, Some sinkSurrogate -> Some (matchValue, AssignedKey.ofString sinkSurrogate)
+                        | Some matchValue, Some sinkSurrogate when isKey matchValue ->
+                            Some (matchValue, AssignedKey.ofString sinkSurrogate)
                         | _ -> None)
+                let sinkIndex =
+                    sinkPairs
+                    |> List.groupBy fst
+                    |> List.map (fun (mv, group) ->
+                        let winner = snd (List.head group)
+                        group
+                        |> List.tail
+                        |> List.iter (fun (_, displaced) -> ambiguousTargets <- (kind, displaced) :: ambiguousTargets)
+                        mv, winner)
                     |> Map.ofList
                 fun _ row ->
-                    Map.tryFind col row.Values |> Option.bind (fun mv -> Map.tryFind mv sinkIndex)
+                    match Map.tryFind col row.Values with
+                    | Some mv when isKey mv -> Map.tryFind mv sinkIndex
+                    | _                     -> None
             | ReconciliationStrategy.FallbackToAssigned (fallback, primary) ->
                 let resolvePrimary = resolveBy primary
                 fun src row ->
@@ -124,7 +162,8 @@ module Reconciliation =
 
         { Remap     = remap
           Unmatched = unmatched |> List.sortBy (fun (_, SourceKey s) -> s)
-          Ambiguous = ambiguous |> List.sortBy (fun (_, SourceKey s) -> s) }
+          Ambiguous = ambiguous |> List.sortBy (fun (_, SourceKey s) -> s)
+          AmbiguousTargetKeys = ambiguousTargets |> List.sortBy (fun (_, AssignedKey a) -> a) }
 
     /// Translate the User kind's `UserMatchingStrategy` into the generic
     /// `ReconciliationStrategy` so all four operator-chosen user-match

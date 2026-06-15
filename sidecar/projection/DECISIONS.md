@@ -23536,3 +23536,68 @@ handling).
   in **`DATABASE_ARCHETYPES.md`**. Slice A is byte-identical (the archetype defaults to *inferred from
   the existing `Grant`*), so it can land without touching any current config. Sequenced behind the
   real-wire verification (the on-prem profile must be probed before its forks are trusted).
+
+## 2026-06-15 (later) — Operator probe results IN; the disposition decisions; NM-58 reconcile robustness (blank-key + duplicate-target tiebreaker)
+
+The operator ran the probe package (`REVERSE_LEG_OPERATOR_PROBE_SHEET.md` + `PHASE_1_REAL_WIRE_HARNESS.md`)
+against the real source (managed) and target (on-prem) databases. The verified findings, the decisions
+they settle, and the one CODE change they demanded.
+
+- **Findings (verified against the real estate).**
+  - **Identity:** the main entity tables are single-column **IDENTITY** PKs ⇒ `AssignedBySink` + capture/
+    remap is the path (confirms the built engine). No composite PK, no PK-less table, no computed/
+    rowversion column surfaced (A1/A2/A5 clean).
+  - **Reference/lookup tables** carry **non-identity** (business-key) PKs ⇒ they need
+    preserve/reconcile/reference handling, NOT mint-and-remap. This is already supported:
+    `IdentityDisposition.ofKind` returns `PreservedFromSource` for a non-IDENTITY PK (written directly,
+    no special grant), and the Phase-2 reconcile (`Reconciliation.reconcileKind`, any-kind) covers
+    reconcile-to-existing. **Decision:** declare the reference tables' dispositions per-kind (preserve
+    vs `--reconcile <table>:<col>`); no engine gap.
+  - **Cycles:** several natural bidirectional / "latest/current/primary" relationship cycles, **NOT hard
+    deadlocks** — the cycle-closing FKs are physically **nullable**. The operator proved the two-pass
+    repair on the dev dataset. This is **exactly** the engine's two-phase deferred-FK design (NULL the
+    nullable cycle FK in phase 1, re-point in phase 2); no `unbreakableCycleFk` refusal fires. Confirms
+    the design against the real schema.
+  - **Casing:** no raw-vs-lower delta on the reconcile key (B4B) ⇒ no normalization step needed.
+  - **Scale:** dev ≈ ≤10M rows; production ≈ 200M rows. **This wakes two staged items** — the
+    sink-resident keymap **spill** (the resident ~40 B/FK-target-row map may exceed the host budget at
+    200M; size it from the source-side B2, which succeeded) and **journal compaction** (a real resume
+    will exceed the ~10M-pair wake). Both move from STAGED to buildable-next; the spill needs the
+    FK-target row count to size.
+
+- **The on-prem DMV capability gap (recorded).** The on-prem **target** B1/B2 failed: the login lacks
+  **`VIEW DATABASE PERFORMANCE STATE`**, so `sys.dm_db_partition_stats` returns nothing (plain `SELECT`s
+  still work; the source/managed side had no issue). **Impact:** the *fast* (partition-stats) sizing
+  probes (B1/B2) are blocked on the on-prem target. **The engine is NOT affected** — `verify-data` and
+  profiling count via `COUNT_BIG(*)`, not DMVs (`DataIntegrityChecker` reuses `LiveProfiler`'s
+  `COUNT_BIG` `RowCount`), so post-load verification already works on a DMV-denied target (the
+  "verify-data DMV fallback" item is a **no-op** — confirmed, nothing to build). **Decision:** degrade
+  the *sizing probes* to an exact `COUNT_BIG(*)` scan (added to the probe sheet B1 + `NEXT_BUILD_INPUTS.sql`
+  Part 1c as the named fallback) OR request the DMV
+  grant; **record DMV-read as an independent on-prem capability gap** (a `FullRights`-minus-DMV target),
+  which is exactly why `DATABASE_ARCHETYPES.md` carries each capability as its own verified facet, not a
+  bundle (§5).
+
+- **The one demanded CODE change — NM-58 reconcile robustness (BUILT + witnessed).** The target user
+  directory has **~100 blank/missing emails + duplicate email groups**. Two hazards in
+  `Reconciliation.reconcileKind`'s `MatchByColumn`:
+  1. **Blank-key collision (a latent CORRECTNESS bug).** The prior `Map.ofList` indexed every match
+     value including `""`, so a blank SOURCE email would match a blank SINK row — wrongly re-keying
+     every blank-email source row onto one arbitrary blank sink row. **Fix:** a blank/whitespace match
+     key is "no key" — excluded on BOTH sides, so blank-email rows fall to `Unmatched` (then the
+     fallback / pre-write halt / declared drop), never a silent miss-match.
+  2. **Duplicate-target arbitrariness + silence.** `Map.ofList` resolved a duplicated sink match key by
+     last-wins (order-arbitrary, silent). **Fix:** a NAMED deterministic tiebreaker — the **oldest**
+     (lowest-PK; `sinkRows` arrive PK-ascending) sink row wins, and the displaced surrogates surface in
+     the new `ReconciledIdentity.AmbiguousTargetKeys` → `TransferReport.AmbiguousTargetMatchKeys`,
+     narrated ("…shared a reconcile key with an older record — the oldest was kept; supply an override
+     if the wrong one won"). The operator can `ManualOverride` the specific keys. Witnessed by two pure
+     `ReconciliationTests` (blank-exclusion; oldest-wins + displaced-surfacing); 59 pure + 29 Docker
+     (streaming reconcile + forward canary) green warm; the existing `narrateTransferReport` also now
+     surfaces the pre-existing `AmbiguousIdentities` (source-side NM-51), closing that silent gap too.
+
+- **Net.** The engine's structural design matched the real schema on every axis (identity, cycles,
+  shape); the only code change the results forced was the reconcile-key robustness (a real correctness
+  fix). The disposition mix (AssignedBySink for identity tables; preserve/reconcile for reference
+  tables; deferred nullable cycle FKs; conditional user reconcile) is decided. The DMV gap + the 200M
+  scale (spill / compaction wakes) are the named next items.

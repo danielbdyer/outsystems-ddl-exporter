@@ -58,6 +58,7 @@ bundle, and **verify** it against probed evidence (A44 — expressible ⇔ reach
 | Constraint / trigger bypass | `NOCHECK` / `DISABLE TRIGGER` (needs `ALTER`) | none — the capture-ladder descent handles triggers |
 | Wipe / refresh | `TRUNCATE` (fast; needs `ALTER`) | child-first `DELETE` (slower; the only DML-legal path) |
 | Rollback channel | SQL (full — `DELETE` / `TRUNCATE` / transaction) | SQL `DELETE` + transaction (J5-proven) |
+| **DMV read** (`VIEW DATABASE PERFORMANCE STATE`) | *expected* yet **independently grantable** — a least-privilege login can lack it even with full DDL/DML (observed on-prem, 2026-06-15) | not required (source counts probed via plain `SELECT`/aggregate) |
 | User handling | preserve, or reconcile by business key | `ReconciledByRule` (the directory pre-exists; never re-imported) |
 | Derived `Grant` facet | `SchemaAndData` | `DataOnly` |
 | Typical `Rendition` | `Logical` (B) | `Physical` (A) |
@@ -192,6 +193,14 @@ covenant generalized from a one-time spike into a standing, per-class gate:
 - An **unverifiable** grant (least-privilege denies `fn_my_permissions`) stays **blocking** (the
   existing `GrantUnreadable` / NM-55 posture) — an unprobed archetype claim is *unverified*, not
   *confirmed*.
+- **Capabilities are independent facets, not a bundle (observed 2026-06-15).** The on-prem target's
+  real grant was full DDL/DML **minus `VIEW DATABASE PERFORMANCE STATE`** — so it is a `FullRights`
+  archetype with one capability absent (DMV-read), degrading the DMV-based row-count/keymap-sizing
+  probes to a `COUNT_BIG` scan (`REVERSE_LEG_OPERATOR_PROBE_SHEET.md` B1) without changing the
+  identity/schema/resume forks. This is exactly why the `CapabilityProfile` must carry each capability
+  as its **own** verified flag, not infer them from a single archetype label — a real estate hands you
+  a "FullRights-minus-DMV" target, and the engine must degrade *that one probe* gracefully, not
+  mis-declare the whole class.
 
 This makes the archetype **expressible ⇔ reachable** (A44): what the operator can declare, the survey
 can prove (or refuse). The J5 ledger becomes the *seed profile* for `ManagedDml` (the verified

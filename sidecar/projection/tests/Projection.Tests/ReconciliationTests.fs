@@ -59,6 +59,37 @@ let ``reconcileKind records a duplicate Source surrogate as Ambiguous (NM-51), k
     // the first binding is kept
     Assert.Equal(Some (AssignedKey.ofString "18"), SurrogateRemapContext.tryFindAssigned userKey (SourceKey.ofString "280") result.Remap)
 
+// -- NM-58: the production user-directory hazards (blank + duplicate keys) ----
+
+[<Fact>]
+let ``NM-58 reconcileKind: a BLANK match key never matches — blank source and blank sink do not collide`` () =
+    // The production directory carries many blank/missing emails. A blank
+    // source key must land in Unmatched, NEVER silently match a blank sink row
+    // (the prior `Map.ofList` would have indexed "" and mapped every blank
+    // source row onto one arbitrary blank sink row — a fidelity hazard).
+    let source = [ row "280" [ "Email", "alice@x" ]; row "999" [ "Email", "" ] ]
+    let sink   = [ row "18" [ "Email", "alice@x" ]; row "20" [ "Email", "" ]; row "21" [ "Email", "   " ] ]
+    let result = Reconciliation.reconcileKind userKey idCol byEmail source sink
+    // alice matches; the blank-email source is UNMATCHED, not mapped onto 20/21.
+    Assert.Equal(Some (AssignedKey.ofString "18"), SurrogateRemapContext.tryFindAssigned userKey (SourceKey.ofString "280") result.Remap)
+    Assert.Equal<(SsKey * SourceKey) list>([ userKey, SourceKey.ofString "999" ], result.Unmatched)
+    Assert.Equal(None, SurrogateRemapContext.tryFindAssigned userKey (SourceKey.ofString "999") result.Remap)
+    // blank sink rows are not indexed, so they are not "duplicate targets" either.
+    Assert.Empty result.AmbiguousTargetKeys
+
+[<Fact>]
+let ``NM-58 reconcileKind: a duplicate Sink match key keeps the OLDEST (lowest-PK) row and surfaces the displaced surrogate`` () =
+    // Two sink rows share alice@x (a "duplicate email group"): the oldest (PK 18,
+    // first in PK order) wins deterministically; PK 30 is displaced and surfaced
+    // — never the prior silent, order-arbitrary `Map.ofList` last-wins.
+    let source = [ row "280" [ "Email", "alice@x" ] ]
+    let sink   = [ row "18" [ "Email", "alice@x" ]; row "19" [ "Email", "bob@x" ]; row "30" [ "Email", "alice@x" ] ]
+    let result = Reconciliation.reconcileKind userKey idCol byEmail source sink
+    // the oldest duplicate (18) wins the tiebreaker.
+    Assert.Equal(Some (AssignedKey.ofString "18"), SurrogateRemapContext.tryFindAssigned userKey (SourceKey.ofString "280") result.Remap)
+    // the displaced duplicate (30) is surfaced, not silent.
+    Assert.Equal<(SsKey * AssignedKey) list>([ userKey, AssignedKey.ofString "30" ], result.AmbiguousTargetKeys)
+
 // -- AC-I2 bridge: every UserMatchingStrategy reaches the Transfer re-key ---
 //
 // `Reconciliation.ofUserMatching` translates the User kind's

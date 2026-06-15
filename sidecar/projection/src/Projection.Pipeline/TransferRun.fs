@@ -145,6 +145,13 @@ module Transfer =
             /// kept). A data-fidelity hazard surfaced, not silently dropped.
             /// Empty for a non-reconciling Transfer or a unique reconcile key.
             AmbiguousIdentities : (SsKey * SourceKey) list
+            /// NM-58 — Sink surrogates displaced by the duplicate-key tiebreaker:
+            /// more than one Sink row shared a (non-blank) reconcile match key,
+            /// so the oldest (lowest-PK) won and these lost. Surfaced so the
+            /// operator can override the specific keys (the production user
+            /// directory's "duplicate email groups"). Empty for a unique key or
+            /// a non-reconciling Transfer.
+            AmbiguousTargetMatchKeys : (SsKey * AssignedKey) list
             /// Source rows dropped at plan-build because a targeted FK
             /// had no matched assigned counterpart — paired with the
             /// owning kind. Empty for a non-reconciling Transfer.
@@ -759,6 +766,7 @@ module Transfer =
             let mutable remap = SurrogateRemapContext.empty
             let mutable unmatched : (SsKey * SourceKey) list = []
             let mutable ambiguous : (SsKey * SourceKey) list = []
+            let mutable ambiguousTargets : (SsKey * AssignedKey) list = []
             for KeyValue (kind, strategy) in reconciliation do
                 match Catalog.tryFindKind kind catalog with
                 | None -> ()
@@ -777,8 +785,9 @@ module Transfer =
                                 | Error _ -> ambiguous <- (rk, src) :: ambiguous
                         unmatched <- unmatched @ result.Unmatched
                         ambiguous <- ambiguous @ result.Ambiguous
+                        ambiguousTargets <- ambiguousTargets @ result.AmbiguousTargetKeys
                     | [] -> ()
-            return { Remap = remap; Unmatched = unmatched; Ambiguous = ambiguous }
+            return { Remap = remap; Unmatched = unmatched; Ambiguous = ambiguous; AmbiguousTargetKeys = ambiguousTargets }
         }
 
     // -- orchestration ------------------------------------------------------
@@ -953,6 +962,7 @@ module Transfer =
                           UnbreakableCycleFks = plan.UnbreakableCycleFks
                           UnmatchedIdentities = reconciled.Unmatched
                           AmbiguousIdentities = reconciled.Ambiguous
+                          AmbiguousTargetMatchKeys = reconciled.AmbiguousTargetKeys
                           // Plan-build drops (reconcile misses) + write-time
                           // drops (AssignedBySink FK misses) both surface here.
                           SkippedReferences   = plan.SkippedReferences @ writeSkips
@@ -1113,6 +1123,7 @@ module Transfer =
                               UnbreakableCycleFks = plan.UnbreakableCycleFks
                               UnmatchedIdentities = []
                               AmbiguousIdentities = []
+                              AmbiguousTargetMatchKeys = []
                               SkippedReferences   = plan.SkippedReferences @ writeSkips
                               CaptureLaneDescents = laneDescents
                               // Synthetic load has no resumable G10 envelope.
@@ -1676,6 +1687,7 @@ module Transfer =
                                       UnbreakableCycleFks = plan.UnbreakableCycleFks
                                       UnmatchedIdentities = reconciled.Unmatched
                                       AmbiguousIdentities = reconciled.Ambiguous
+                                      AmbiguousTargetMatchKeys = reconciled.AmbiguousTargetKeys
                                       SkippedReferences   = plan.SkippedReferences
                                       CaptureLaneDescents = []
                                       // Streaming DryRun: no G10 resumable replay.
@@ -1722,6 +1734,7 @@ module Transfer =
                                           UnbreakableCycleFks = plan.UnbreakableCycleFks
                                           UnmatchedIdentities = reconciled.Unmatched
                                           AmbiguousIdentities = reconciled.Ambiguous
+                                          AmbiguousTargetMatchKeys = reconciled.AmbiguousTargetKeys
                                           SkippedReferences   = skips
                                           CaptureLaneDescents = descents
                                           // Streaming-journal resume is per-run by
