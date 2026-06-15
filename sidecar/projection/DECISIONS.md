@@ -23884,3 +23884,76 @@ existing (undeclared-archetype) config.
   path (C); the at-scale spill is built, equivalence-proven, and armed-but-inert (S); and the declared
   archetype is now a verified claim, not a trusted label (B). `expressible ⇔ reachable` holds for the
   target's capability class.
+
+## 2026-06-15 (later) — THE VECTOR Wave 0 BUILT: honesty & fitness (M1′ + M2 + M16 + M15 + count corrections)
+
+The first chapter of THE VECTOR (`THE_VECTOR.md` §7 / `THE_VECTOR_EXECUTION_KICKOFF.md` §8 Wave 0).
+**No new capability** — this wave only makes the engine tell the truth about itself and makes its
+guardrails un-rottable. The keystone (M1, Wave 1) builds on it; honesty before features. Orchestrated
+as a multi-agent workflow (worktree-isolated implementers, one adversarial verifier per move, an
+integrator); M1′+M2 was re-implemented by the integrator after its implementer hit a transient
+provider error, then independently verified (ACCEPT).
+
+- **M1′ — the two Decision-axis tolerances (the cheapest honesty correction in the codebase).** Added
+  `FkTrustUnreflected` + `UniquePromotionUnreflected` to the closed `ToleratedDivergence` DU, each
+  `@ladder … Decision OpenGap`. Before this, all 8 tolerances tagged Schema/Data — ZERO Decision — so
+  `matrix-status.sh` marked the **Decision axis `✅ faithful` by construction**, an over-claim: the
+  FK-trust sub-axis (`DecisionOverlay.NoCheckFk` → `WITH NOCHECK`; read back at `ReadSide.fs:1171`) and
+  the unique-promotion sub-axis (`DecisionOverlay.EnforceUnique`) are NOT reflected in the round-trip
+  comparator (`PhysicalForeignKey` has no trust field; `toPhysicalIndexes` ignores the overlay), and the
+  only live Decision witness covers nullability alone. The named-erasure law forbids a real erasure
+  absent from the closed set. **The matrix now drops Decision to `◑ L2-partial`** (L2 4/5 → 3/5) with no
+  script change — the generator under-claims. **Both auto-retire when M1 (Wave 1) lands.**
+- **M2 — name the silent `CreateTrigger` text-drop.** Added `TriggerBodyUnparsedDropped`
+  (`@ladder … Schema OpenGap`). `Render.fs` / `ScriptDomGenerate.fs` dropped an unparseable
+  `CreateTrigger` (`tryParseTriggerBody → None`, H-019) with a bare `()` justified by appeal to a canary
+  detector that does NOT cover the text path — the one **silent** named-erasure violation. (The `.dacpac`
+  path already refuses + names it, NM-24; only the text path was silent — the asymmetry this closes.)
+  The render site now emits an in-band marker comment naming the tolerance; the false justification is
+  removed. Witnessed by `DacpacEmitterTests` (M2: unparseable trigger named in-band, parseable trigger
+  carries no marker — discriminating).
+- **M16 — `citationOf` becomes a gated existence check; the matrix binds witnesses by Name.** The
+  `citationOf` helper in `AxiomTests.fs` was `ignore (file, name)` — the "verified-once-by-grep-at-first-
+  commit" debt. A new `[<Fact>]` (`M16: every axiom citation resolves to a live File::Name in the tree`)
+  parses every `citationOf "<file>" "<name>"` call-site and asserts each resolves on the tree (fails on a
+  drifted citation; verified non-vacuous by reproducing the failure against prose decoys). And
+  `matrix-status.sh` now binds each axis's L1/L3 witness by its **exact full test name** instead of a
+  loose substring grep (the old `data canary` substring could be satisfied by 8 tests; the named binding
+  by exactly one) — closing the substring-satisfaction hole. The open half of T-IV.
+- **M15 — architectural fitness functions in-assembly; the analyzer promoted to CI.** New
+  `ArchitectureFitnessTests.fs`: six reflection/registry Facts lifting the grep/bash guardrails into the
+  test assembly — the layer-dependency DAG (Core references nothing outward; Targets ⊥ Pipeline/Cli;
+  Adapters ⊥ Targets/Pipeline/Cli — lint Rules 20/21/22), every shipped emitter realizes the `Emitter`
+  port, every migrate-leg emitter is registered. `run-analyzers.sh` is promoted from opt-in/off-CI to a
+  PR-blocking gate (`.github/workflows/analyzers-projection.yml`, mirroring the lint/verifiability
+  workflows; .NET 9.0.314 + .NET 8 runtime for the analyzer tool). The analyzer gate runs green on this
+  tree. **`perf-gate.sh` is DELIBERATELY NOT promoted** — a shared CI runner's contention voids the μ+σ
+  timing verdict (survival-rule #13); deferred behind a dedicated/quiet self-hosted runner (the trigger).
+- **Count corrections.** Verified the canonical counts hold (112 citation sites, 42 Skip stubs, seven
+  emitter targets) and corrected the **writer "trinity" over-claim** in `AXIOMS.md`: `LineageTree` /
+  `Certificate` were retired 2026-06-04 (zero consumer, deleted from `src/`), so A24-amended now records
+  a **linear writer only** (`Lineage` + the `LineageDiagnostics` stack); the branching/terminal siblings
+  are doc-horizon, not shipped. A stale live citation to a non-existent `LineageTests.fs::H-005` was
+  neutralized to past tense.
+- **Pre-existing FS3511 fixed (drive-by, surfaced by this wave's Release-build check).** The landed
+  Slice S test (`KeymapSpillTests.fs`) carried `for … do` loops inside a `task { }` (one with an inner
+  `do!`) that fail Release compilation (FS3511) — pre-existing, never caught because CI runs
+  lint/verifiability (bash), not a Release build. Restructured to a synchronous `List.iter`/`List.choose`
+  + a single batched `do!` (survival-rule #5 extended; observationally identical — the test asserts final
+  FK state, not round-trip count). **Behavior verified on the warm container (Slice S equivalence test
+  green, 2 s — a real run, not a no-op).**
+- **Witness (all warm).** Debug + **Release** builds clean (0/0). Pure pool **3357 passed / 0 failed**.
+  Focused: `ToleranceTests` (eleven-variant closed-DU coverage + named-parseable + monotonicity props),
+  `SsdtExtendedPropertyEmissionTests` (the second exhaustive match site, count 8→11),
+  `ManifestUnsupportedTests` (the expected-names set), `DacpacEmitterTests` (M2 in-band marker),
+  `AxiomTests.M16` (citation gate), `ArchitectureFitnessTests` (all six M15 Facts), `KeymapSpill`
+  equivalence (Docker, warm) — all green and non-skipped. **`matrix-status.sh` regenerated** (gate=PASS;
+  rungs **L1/L2/L3 = 5/3/5**; tolerances **11, 5 open**; the `@ladder` cross-check passes — no untagged
+  variant). **`verifiability-gate.sh` clean** (exit 0; 79 live axioms; no phantom Bucket-A/B; a
+  pre-existing advisory WARN about 4 unbucketed deferrals, untouched by this wave).
+- **Exit criterion (Wave 0) — MET.** No green matrix cell is unfalsifiable-by-construction (Decision is
+  now honestly `◑ L2-partial`); every load-bearing layer/emitter guardrail is an in-assembly Fact; the
+  matrix binds witnesses by Name, not substring. The engine's "under-claims, never over-claims" guarantee
+  is restored on all five axes. **Next: Wave 1 (M1, the keystone) — `PhysicalForeignKey.IsTrusted` +
+  overlay-aware `PhysicalSchema.ofCatalogWith` + the decision-readback property, which auto-retires M1′
+  and turns Decision back to an earned faithful.**

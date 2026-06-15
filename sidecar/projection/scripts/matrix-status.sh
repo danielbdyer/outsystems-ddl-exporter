@@ -85,28 +85,40 @@ open_for_axis() {
 }
 
 # --- T-I: the round-trip ladder matrix -------------------------------------
-# "Axis|round-trip-witness-substring|migrate(A B)-witness-substring". A rung is
-# VERIFIED iff a backtick-quoted test name containing the substring exists under
-# tests/ (matches `let ``...``` and `member _.``...``` forms). Axis names match
-# the `@ladder` axis tokens so the tolerance set joins by axis.
-cells='Schema|PhysicalSchema diff|one execute evolves
-Data|data canary|executeWithData migrates the sink schema
-Identity|reload preserves SsKey|migrate-with-data re-keys
-Time|replayTo genesis|the full A->B loop
-Decision|reproduces the DecisionOverlay|migrate refuses a NOT-NULL tightening'
+# "Axis|round-trip-witness-FULL-NAME|migrate(A B)-witness-FULL-NAME". A rung is
+# VERIFIED iff the EXACT, FULL backtick-quoted test name exists under tests/.
+# The binding is structural, not a loose substring: `witness_status` matches the
+# whole name bounded by its `` `` `` delimiters (fixed-string, so the name's
+# regex metacharacters — `(`, `;`, `—`, `→`, `?`, `/`, `.` — are literal), so a
+# witness can NOT be satisfied by an accidental substring hit on an unrelated
+# test (e.g. the bare `data canary` prefix matches eight Transfer tests; only the
+# named `data canary: multi-table FK chain …` test is the Data L1 witness). Each
+# name below was confirmed to resolve to exactly one test on the current tree, so
+# the regenerated matrix keeps the same verdicts (L1 5/5). Matches `let ``…``` and
+# `member _.``…``` forms alike. Axis names match the `@ladder` axis tokens so the
+# tolerance set joins by axis.
+cells='Schema|M3: V2-internal closure — programmatic Catalog round-trips through emit / deploy / read with empty PhysicalSchema diff|migrate A B canary: one execute evolves A→B across three channels; B reproduces B, data survives, re-run is idempotent
+Data|data canary: multi-table FK chain round-trips with empty PhysicalSchema diff|migrate canary: executeWithData migrates the sink schema then loads rows from the source
+Identity|Identity round-trip: reload preserves SsKey across emit / deploy / ReadSide|AC-X2: one-command migrate-with-data re-keys Order FKs to the Sink'"'"'s email-matched identity (fails for Map.empty)
+Time|Time round-trip (replay): replayTo genesis recovers the genesis catalog|6.D.1: the full A->B loop — migrate, record, then reconstruct reproduces B (durable round-trip)
+Decision|decision adjunction: emitted-then-read-back schema reproduces the DecisionOverlay|G9: migrate refuses a NOT-NULL tightening on NULL-bearing data via a pre-flight, before any ALTER'
 
 witness_status() {
-  local pat="$1"
-  if grep -rhE "\`\`[^\`]*${pat}" "$TESTS" >/dev/null 2>&1; then echo "VERIFIED"; else echo "OPEN"; fi
+  # Exact, anchored full-name binding: the test name must appear verbatim,
+  # bounded by its `` `` `` delimiters. Fixed-string (`grep -F`) so the name's
+  # regex metacharacters are literal; the leading/trailing `` `` `` anchors the
+  # match to a whole backtick-quoted name, defeating accidental substring hits.
+  local name="$1"
+  if grep -rhF "\`\`${name}\`\`" "$TESTS" >/dev/null 2>&1; then echo "VERIFIED"; else echo "OPEN"; fi
 }
 icon()    { case "$1" in VERIFIED) echo "✅";; *) echo "⬚";; esac; }
 
 l1n=0; l2n=0; l3n=0; counted=0; rows=""
-while IFS='|' read -r axis rtpat mgpat; do
+while IFS='|' read -r axis rtname mgname; do
   [ -z "$axis" ] && continue
   counted=$((counted+1))
-  l1=$(witness_status "$rtpat")
-  l3=$(witness_status "$mgpat")
+  l1=$(witness_status "$rtname")
+  l3=$(witness_status "$mgname")
   opens="$(open_for_axis "$axis")"
   [ "$l1" = "VERIFIED" ] && l1n=$((l1n+1))
   [ "$l3" = "VERIFIED" ] && l3n=$((l3n+1))

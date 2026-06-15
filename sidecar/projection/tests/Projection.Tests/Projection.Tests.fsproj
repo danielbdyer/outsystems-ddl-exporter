@@ -251,6 +251,7 @@
     <Compile Include="SkeletonPurityTests.fs" />
     <Compile Include="PillarNineTests.fs" />
     <Compile Include="RegisteredAllTransformsBidirectionalTests.fs" />
+    <Compile Include="ArchitectureFitnessTests.fs" />
     <Compile Include="RegistryDigestRoundTripTests.fs" />
     <Compile Include="SsdtExtendedPropertyEmissionTests.fs" />
     <Compile Include="NullabilityRulesTests.fs" />

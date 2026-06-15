@@ -33,6 +33,8 @@ module Projection.Tests.AxiomTests
 // (when the citation is a string). The string form is the cheap audit
 // trail; direct delegations are the structural form.
 
+open System.IO
+open System.Text.RegularExpressions
 open Xunit
 open Projection.Core
 open Projection.Tests.Fixtures
@@ -53,10 +55,110 @@ let private citationOf (testFilePath: string) (testName: string) : unit =
     // The structural form would be to call the cited test directly,
     // but xUnit doesn't expose backtick-quoted test names as callable
     // F# values. The audit-trail discipline is "every cited test must
-    // exist at the named file::name" — the test names below were
-    // verified via `grep -rE 'let \`\`AN: ...' tests/Projection.Tests/`
-    // at AxiomTests.fs's first commit.
+    // exist at the named file::name". This was once a verified-once debt
+    // (a `grep` at AxiomTests.fs's first commit); it is now a LIVE GATE —
+    // see ``M16: every axiom citation resolves to a live File::Name in the
+    // tree`` below, which parses THIS file's `citationOf` call-sites and
+    // asserts each cited `file::name` exists on the tree. A drifted
+    // citation now fails a test, not a forgotten grep.
     ignore (testFilePath, testName)
+
+// ---------------------------------------------------------------------------
+// M16 — the citation gate. `citationOf` is the cheap string-typed audit trail,
+// but until M16 nothing enforced that the strings still resolve: a renamed or
+// deleted cited test would leave a `citationOf` call-site pointing at a ghost
+// (the "verified-once" debt — checked by grep at first commit, then never
+// again). This Fact retires that debt. It parses AxiomTests.fs itself,
+// extracts every `citationOf "<file>" "<name>"` pair, and asserts — for each —
+// that the referenced file exists under the projection root AND contains a
+// backtick-quoted test (`let ``<name>``` or `member _.``<name>``) by that
+// exact name. A drifted citation fails M16; the tree stays green because every
+// current citation resolves (110 pairs at this commit).
+// ---------------------------------------------------------------------------
+
+/// Walk up from the running test assembly to the projection root — the
+/// directory that contains `tests/Projection.Tests/AxiomTests.fs`. Mirrors
+/// the findUp idiom in MatrixLadderTests.fs (tolerant of any build depth:
+/// Debug/Release, net9.0) and the `Option.ofObj` null-discipline the
+/// Nullable-enabled test project requires.
+let private projectionRoot : string =
+    let sentinel = Path.Combine("tests", "Projection.Tests", "AxiomTests.fs")
+    let rec findUp (dir: DirectoryInfo option) : string option =
+        match dir with
+        | None -> None
+        | Some d ->
+            if File.Exists(Path.Combine(d.FullName, sentinel)) then Some d.FullName
+            else findUp (Option.ofObj d.Parent)
+    let start =
+        System.Reflection.Assembly.GetExecutingAssembly().Location
+        |> Path.GetDirectoryName
+        |> Option.ofObj
+        |> Option.map (fun d -> DirectoryInfo d)
+    match findUp start with
+    | Some root -> root
+    | None ->
+        // Fail loud rather than skip: AxiomTests.fs is committed at a fixed
+        // path under the projection root, so its absence above the test
+        // assembly is a real regression, not an environment gap.
+        failwith "projection root not found above the test assembly — expected tests/Projection.Tests/AxiomTests.fs"
+
+/// Every `citationOf "<file>" "<name>"` call-site pair, parsed from the
+/// source of AxiomTests.fs. The two string literals are matched across the
+/// optional newline the file uses between the path and the name argument.
+/// The definition site (`let private citationOf`) has no string-literal
+/// arguments, so the regex naturally skips it; the result is exactly the
+/// call-sites.
+let private parsedCitations () : (string * string) list =
+    let raw = File.ReadAllText(Path.Combine(projectionRoot, "tests", "Projection.Tests", "AxiomTests.fs"))
+    // Drop full-line comments before parsing. The `citationOf` token also
+    // appears in prose inside this file's own comments (e.g. the `citationOf
+    // "<file>" "<name>"` example just above) — a real call-site is never on a
+    // `//`-prefixed line, so stripping comment lines removes those decoys
+    // without touching any genuine call-site. (A call-site's path/name
+    // arguments may sit on their own lines, but none of those lines is a
+    // comment.) Replacing comment lines with blanks preserves line offsets.
+    let source =
+        raw.Split('\n')
+        |> Array.map (fun line -> if line.TrimStart().StartsWith("//") then "" else line)
+        |> String.concat "\n"
+    // `citationOf` then two double-quoted literals (file, then name). Citation
+    // names carry no embedded escaped quotes, so a simple non-quote run is a
+    // faithful and total parse of the literal.
+    let rx = Regex("citationOf\\s+\"([^\"]+)\"\\s+\"([^\"]+)\"")
+    [ for m in rx.Matches(source) -> (m.Groups.[1].Value, m.Groups.[2].Value) ]
+
+[<Fact>]
+let ``M16: every axiom citation resolves to a live File::Name in the tree`` () =
+    // Parse our own call-sites and prove each cited test still exists. This is
+    // the executable form of the "every cited test must exist at the named
+    // file::name" discipline — drift fails here, on the current tree, instead
+    // of rotting silently behind a one-time grep.
+    let citations = parsedCitations ()
+    // Guard: the parse must find the citation corpus (a refactor that broke the
+    // regex would otherwise vacuously pass with zero assertions).
+    Assert.True(
+        citations.Length >= 100,
+        sprintf "M16 parsed only %d citationOf call-sites — expected the full corpus (>=100). The regex or the call-site shape drifted." citations.Length)
+
+    let failures =
+        citations
+        |> List.choose (fun (relFile, testName) ->
+            let path = Path.Combine(projectionRoot, relFile.Replace('/', Path.DirectorySeparatorChar))
+            if not (File.Exists path) then
+                Some (sprintf "MISSING FILE  %s :: %s" relFile testName)
+            else
+                let content = File.ReadAllText path
+                // The cited test is a backtick-quoted member: `let ``Name``` or
+                // `member _.``Name```. Either form contains the literal ``<name>``.
+                let needle = "``" + testName + "``"
+                if content.Contains needle then None
+                else Some (sprintf "MISSING TEST  %s :: %s" relFile testName))
+
+    Assert.True(
+        List.isEmpty failures,
+        sprintf
+            "M16 citation gate: %d of %d cited tests no longer resolve on the tree (a drifted citation):\n%s"
+            failures.Length citations.Length (String.concat "\n" failures))
 
 // ===========================================================================
 // Group A — Identity (A1–A5)

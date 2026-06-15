@@ -49,6 +49,9 @@ let ``Unsupported.compute names match current ToleratedDivergence variants`` () 
     // two representation-only tolerances (Char/Decimal) that do not fire CDC.
     // NM-17 (2026-06-14) RETIRED the four NM-16 kind-facet diff-erasure
     // tolerances (now a real `KindFacet` diff channel in `CatalogDiff`).
+    // M1′ + M2 (THE VECTOR, Wave 0, 2026-06-15) added the two Decision-axis
+    // tolerances (FkTrustUnreflected / UniquePromotionUnreflected) +
+    // TriggerBodyUnparsedDropped (the named CreateTrigger text-render drop).
     let result = Unsupported.compute () |> Set.ofList
     let expected =
         Set.ofList
@@ -56,10 +59,13 @@ let ``Unsupported.compute names match current ToleratedDivergence variants`` () 
               "CompositePkFkUnreflected"
               "DecimalScaleTolerated"
               "EmptyTextNormalizedToNull"
+              "FkTrustUnreflected"
               "HeaderCommentsOmitted"
               "IndexOptionsUnreflected"
               "PostDeployForeignKeysSplit"
-              "StaticPopulationsUnreflected" ]
+              "StaticPopulationsUnreflected"
+              "TriggerBodyUnparsedDropped"
+              "UniquePromotionUnreflected" ]
     Assert.Equal<Set<string>> (expected, result)
 
 [<Fact>]

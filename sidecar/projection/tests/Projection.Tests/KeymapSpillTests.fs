@@ -83,16 +83,30 @@ type KeymapSpillEquivalenceTests(fixture: EphemeralContainerFixture) =
                     // (the essence of the streaming phase2Chunks loop): tryFind the
                     // FK's source value, UPDATE that row. An unmatched FK is left.
                     let remap = PackedSurrogateRemap.create ()
-                    for (s, a) in pairs do PackedSurrogateRemap.capture (SsKey.synthesizedComposite "OS_TEST" [ "Account" ] |> Result.value) s a remap
-                    let kKey = SsKey.synthesizedComposite "OS_TEST" [ "Account" ] |> Result.value
+                    // FS3511 (Release): a `for … do` loop inside `task { }` defeats
+                    // the task CE's static state-machine reduction (the second loop's
+                    // inner `do!` is the hard case). Survival-rule #5's remedy extended:
+                    // drive the synchronous capture with List.iter, and collapse the
+                    // async re-point to a synchronously-built statement list executed
+                    // in ONE batched `do!` — observationally identical (the test
+                    // asserts final FK state, not round-trip count). This pre-existing
+                    // pattern surfaced under THE VECTOR Wave 0's Release-build check
+                    // (the branch CI runs lint/verifiability, not a Release compile).
+                    let acctKey = SsKey.synthesizedComposite "OS_TEST" [ "Account" ] |> Result.value
+                    pairs |> List.iter (fun (s, a) -> PackedSurrogateRemap.capture acctKey s a remap)
+                    let kKey = acctKey
                     let! residentRows = fkState cnn "[dbo].[T_resident]"
-                    for (id, fk) in residentRows do
-                        match fk with
-                        | Some v ->
-                            match PackedSurrogateRemap.tryFind remap kKey (string v) with
-                            | Some assigned -> do! Deploy.executeBatch cnn (sprintf "UPDATE [dbo].[T_resident] SET [FK] = %s WHERE [ID] = %d;" assigned id)
-                            | None -> ()
-                        | None -> ()
+                    let residentUpdates =
+                        residentRows
+                        |> List.choose (fun (id, fk) ->
+                            match fk with
+                            | Some v ->
+                                PackedSurrogateRemap.tryFind remap kKey (string v)
+                                |> Option.map (fun assigned ->
+                                    sprintf "UPDATE [dbo].[T_resident] SET [FK] = %s WHERE [ID] = %d;" assigned id)
+                            | None -> None)
+                    if not (List.isEmpty residentUpdates) then
+                        do! Deploy.executeBatch cnn (String.concat " " residentUpdates)
 
                     // SPILLED re-point — capture the SAME pairs to the session
                     // #-temp keymap, then ONE server-side UPDATE…JOIN per kind.

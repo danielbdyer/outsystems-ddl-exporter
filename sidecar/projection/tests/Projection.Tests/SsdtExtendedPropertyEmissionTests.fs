@@ -199,11 +199,17 @@ let ``Chapter 4.1.A slice 8: Tolerance.CommentMetadataUnreflected variant retire
         | ToleratedDivergence.CompositePkFkUnreflected     -> ()
         | ToleratedDivergence.CharAnsiPaddingTolerated     -> ()
         | ToleratedDivergence.DecimalScaleTolerated        -> ()
+        | ToleratedDivergence.FkTrustUnreflected           -> ()
+        | ToleratedDivergence.UniquePromotionUnreflected   -> ()
+        | ToleratedDivergence.TriggerBodyUnparsedDropped   -> ()
     // AC-D6 (NEITHER→HELD) added the two representation-only tolerances;
     // NM-28 (2026-06-14) added CompositePkFkUnreflected; NM-17 (2026-06-14)
     // RETIRED the four NM-16 kind-facet diff-erasure tolerances (now a real
-    // `KindFacet` diff channel), dropping the count from 12 to 8.
-    Assert.Equal(8, Set.count ToleratedDivergence.allKnown)
+    // `KindFacet` diff channel), dropping the count from 12 to 8. M1′ + M2
+    // (THE VECTOR, Wave 0, 2026-06-15) added the two Decision-axis tolerances
+    // (FkTrustUnreflected / UniquePromotionUnreflected) + TriggerBodyUnparsedDropped,
+    // raising the count to 11.
+    Assert.Equal(11, Set.count ToleratedDivergence.allKnown)
 
 // ---------------------------------------------------------------------------
 // NM-70 (WP5) — the identity-annotation emit | omit gate.

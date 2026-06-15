@@ -1,0 +1,63 @@
+name: analyzers-projection
+
+# MOVE M15 (THE VECTOR, Wave 0 fitness) — promotes the custom
+# FSharp.Analyzers.SDK analyzer gate (`sidecar/projection/scripts/run-analyzers.sh`)
+# from opt-in/off-CI to a PR-blocking guardrail, mirroring the structure of
+# `lint-projection.yml` and `verifiability-projection.yml`.
+#
+# Today one analyzer ships (`Projection001NoUnsafeTimeInCore` — detects
+# `DateTime.Now` / `UtcNow` / `Guid.NewGuid` in `src/Projection.Core/`, the
+# determinism spine). The script builds the analyzer assembly + the consuming
+# projects, restores the pinned `fsharp-analyzers` tool, and runs the analyzer
+# against `Projection.Core`. As the analyzer set grows, the script's project
+# loop grows — this workflow needs no edit to track it.
+#
+# Unlike the two sibling guardrails (pure bash, no toolchain), this gate runs
+# `dotnet`, so it sets up the SDK explicitly:
+#   - .NET 9 (9.0.314) matches `sidecar/projection/global.json`'s pinned SDK
+#     (rollForward: disable), so the build uses the same compiler as local dev.
+#   - .NET 8 is also installed because the analyzer assembly + the
+#     `fsharp-analyzers` 0.30.0 tool target net8.0 (see
+#     `src/Projection.Analyzers/Projection.Analyzers.fsproj`); the tool's
+#     runtime must be present.
+#
+# NOTE — `scripts/perf-gate.sh` is DELIBERATELY NOT promoted here. The perf
+# gate's per-label timing verdict is only meaningful against a WARM, QUIET
+# host (the script itself soft-skips unless a warm SQL container is reachable);
+# a shared GitHub-hosted runner's CPU/IO contention voids the μ+σ timing
+# comparison (the script's own header documents the >2x cold/contended-host
+# inflation that false-trips the gate). Promote perf-gate to CI only behind a
+# DEDICATED / QUIET self-hosted runner (the named trigger), not a shared
+# ubuntu-latest — adding it here would be a flaky gate, not a fitness signal.
+
+on:
+  pull_request:
+    paths:
+      - 'sidecar/projection/**'
+      - '.github/workflows/analyzers-projection.yml'
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'sidecar/projection/**'
+
+jobs:
+  analyzers:
+    name: custom FSharp analyzers guardrail
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET (9 SDK matching global.json + 8 runtime for the analyzer tool)
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.314
+
+      - name: Run run-analyzers.sh
+        run: |
+          chmod +x sidecar/projection/scripts/run-analyzers.sh
+          sidecar/projection/scripts/run-analyzers.sh

@@ -160,6 +160,30 @@ let ``NM-24: DacpacEmitter.emit still succeeds for a catalog whose trigger body 
     Assert.NotEmpty bytes
 
 // ---------------------------------------------------------------------------
+// M2 (THE VECTOR, Wave 0 honesty) — the SSDT TEXT path is the sibling of the
+// NM-24 .dacpac refusal. The .dacpac path REFUSES an unparseable CreateTrigger;
+// the text path cannot refuse (`Render.toText` is a total fold to a string), so
+// it names the drop IN-BAND. The formerly-silent bare `()` at Render.fs /
+// ScriptDomGenerate.fs is now an honest marker comment naming the closed
+// tolerance `ToleratedDivergence.TriggerBodyUnparsedDropped` — a dropped trigger
+// leaves a trace in the script instead of vanishing.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``M2: an unparseable CreateTrigger is named in-band in the SSDT text, not silently dropped`` () =
+    // Same unparseable body as the NM-24 .dacpac witness; here through the text
+    // render fold. Pre-M2 this produced an empty emission (the silent drop).
+    let unparseable = Render.toText [ Statement.CreateTrigger "THIS IS NOT VALID TSQL @@ )(" ]
+    Assert.Contains("TriggerBodyUnparsedDropped", unparseable)
+    // DISCRIMINATING: a well-formed trigger renders its real CREATE TRIGGER and
+    // carries NO marker — so the test is not trivially always-true.
+    let parseable =
+        Render.toText
+            [ Statement.CreateTrigger
+                "CREATE TRIGGER [dbo].[trgWidget] ON [dbo].[WIDGET] AFTER INSERT AS BEGIN SET NOCOUNT ON END" ]
+    Assert.DoesNotContain("TriggerBodyUnparsedDropped", parseable)
+
+// ---------------------------------------------------------------------------
 // Content-equality via DacFx round-trip — slice α T1 amendment for binary
 // emitters. Per `DECISIONS 2026-05-11 — Chapter 3.x DacpacEmitter open`
 // commitment 3: same Catalog → DacFx model contains same Table objects
