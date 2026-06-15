@@ -23284,3 +23284,78 @@ synthesis (the P1–P11 taxonomy, the ledger, the forward charter) lives in
   P10); no `PreservedFromSource`. M5's prerequisite ledger now exists (here + the compendium).
   Remaining status-surface flips (`AUDIT_2026_06_13` "J5 (ops-gated)"; the `HANDOFF.md` /
   backlog preemption letters) and the NM-73 auto-fallback arming are follow-ons.
+
+## 2026-06-15 (later) — Phase 2: reconcile ∘ streaming on the reverse leg; the `reconcileUnsupported` refusal LIFTED; the validate-user-map pre-write halt reaches the streaming arm (NM-31 / N4 closed)
+
+The charter's (`CHARTER_REVERSE_LEG_EXECUTION.md` Part IX) **Phase 2** — wire user
+reconciliation onto the reverse leg — is landed. It is the highest-value buildable gap: it is
+what makes "re-key users" actually run on the B→A up-leg. The reverse leg now reconciles the
+operator-named kinds (the User family) to the pre-existing **sink** identities by business key
+(email) and re-keys every FK pointing at them, **without re-importing a single user row** (the
+"cloud owns its users" / golden discipline, `THE_DATA_PRODUCERS` §; Part V §4) — on the
+bounded-memory **streaming** realization, the estate-scale path. This was an integration, not a
+build: every primitive existed (`Reconciliation.reconcileKind` with the ByEmail/BySsKey/
+ManualOverride/Fallback strategies; `reconcileAgainstSink`; `validateUserMap`;
+`SurrogateRemapContext`; the packed remap; `DataLoadPlan.reclassifyReconciled`). The work was
+composing them onto the streaming path and lifting two refusals.
+
+- **The named refusal `transfer.reverseLeg.reconcileUnsupported` is LIFTED.** The CLI face
+  (`RunFaces.runReverseLegTransfer`) no longer refuses reconcile/user-map specs up front. It
+  now parses (`parseReconcileSpec` / `parseUserMapCsv`) and resolves
+  (`TransferSpec.resolveAllReconciliation`) them against the **physical sink contract**
+  (the rendition the up-leg writes into — `findKindByTable` matches physical names, consistent
+  with the forward face's live-read contract) exactly as the forward `transfer` face does. A
+  malformed or unresolvable spec still refuses BY NAME (arg-error exit 2) **before any
+  connection opens**; a well-formed resolvable spec is accepted. The CLI args (`opts.Reconcile`
+  / `opts.Rekey`) already flowed into the reverse-leg face — only the face refused them — so no
+  `MovementSpec` / `Program` / `MovementSurface` change was needed.
+
+- **The streaming reconcile leg (`runStreamingReconcilingWithRenames`).** Before the stream,
+  the runner reconciles the named kinds against the sink (read-only — safe in DryRun): it
+  materializes ONLY the reconciled kinds' source rows (the small User population; the
+  FK-target bulk never materializes), re-points them to the sink's names, and matches them to
+  the pre-existing sink rows. The resulting `SurrogateRemapContext` is threaded into
+  `writePlanStreaming` alongside the stream-captured `PackedSurrogateRemap`; the per-quantum
+  FK re-point consults a **combined lookup** over `assignedBySinkKinds ∪ reconciledKinds`
+  (disjoint by kind, so the fall-through never double-resolves). Reconciled kinds are
+  `reclassifyReconciled`'d to `ReconciledByRule` and **skipped in phase 1 / phase 2** of the
+  streaming load — the sink already owns their rows. The old `runStreamingWithRenames` is now
+  a thin straight-load wrapper (empty reconciliation, inert `allowDrops`) — byte-identical to
+  the pre-Phase-2 realization, so its five existing witnesses are unchanged.
+
+- **The validate-user-map pre-write halt on the streaming arm (NM-31 / N4 closed for
+  streaming).** The streaming arm previously had NO pre-write reconcile-orphan halt (the
+  `ReverseLegRealization` docstring named this asymmetry as the follow-on). It now runs the
+  SAME `validateUserMap allowDrops reconciled` gate the materialized AC-I5 path uses, in the
+  same precedence order (`executeGate` then the orphan halt). An unmapped source user is a
+  **pre-write refusal** (`transfer.unmappedIdentities`, the Sink untouched), not a post-write
+  drop — unless `--allow-drops` downgrades it to the reported-drop path. The `choose` selector
+  and the `ReverseLegRealization` type docstring's NM-31 caveat are updated: the arms are no
+  longer drop-asymmetric.
+
+- **No silent reconcile loss on the materialized arm.** Lifting the CLI refusal means a
+  reconcile request on an inadmissible streaming combination (`--tables` / `--resumable` /
+  WipeAndLoad) routes to the materialized arm. Rather than let it straight-load and **silently
+  drop the reconcile** (the cardinal sin), `runReverseLegThroughConnections` now threads the
+  reconciliation map through `runCore`'s existing reconcile leg (the same path the forward
+  `TransferCanaryTests` prove). Both arms reconcile; neither loses it silently.
+
+- **Witnessed.** Two Docker witnesses promoted from the reserved `ReverseLegBoundaryTests`
+  Skip-stub into `ReverseLegStreamingTests`: (a) *"User (Customer) reconciled by email on the
+  up-leg — identities re-keyed, never re-imported"* — pre-seeds the sink's own Customer
+  inventory, reverse-leg-reconciles by email, asserts Customer stays at 2 rows (no re-import,
+  ReconciledByRule, zero writes) while every Account/Invoice Customer-FK joins the sink's own
+  users by email; (b) *"validate-user-map pre-write halt"* — an unmatched source user refuses
+  `transfer.unmappedIdentities` with the sink untouched (zero Account/Invoice/Payment rows).
+  The three reverse-leg face refusal tests are rewritten (malformed → exit 2; unknown table →
+  exit 2; well-formed → accepted, NOT exit 2). Build clean; 37 reverse-leg suite tests +
+  184 pure transfer/movement/reconciliation tests green warm.
+
+- **What this does NOT close (the charter's named residuals stand).** This is the Docker-scale
+  composition; the real-wire bench (P7b, Phase 1), the live user-population *discovery* pass
+  (`UserFkReflowPass` is still a production no-op — the reconcile here reads the sink's user
+  inventory directly via `reconcileAgainstSink`, which is the runtime AssignedBySink/reconcile
+  path, not the design-time discovery pass), journal-on-execute forcing (Phase 3), the
+  movement dry-run + row-grained progress (Phase 4), and the cutover gates (Phase 5) remain.
+  Phase 2's exit test — "a reverse-leg move re-keys users by email with a pre-write orphan
+  halt, witnessed" — is met.

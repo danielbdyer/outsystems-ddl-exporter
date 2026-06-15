@@ -504,18 +504,27 @@ schema-identity skip is schema-only — and additionally unsound for non-name fa
 compares by name only; a changed trigger/CHECK/modality yields `‖δ‖ = 0` while the canary `PhysicalSchema.diff`
 *does* see it — `AUDIT_2026_06_13:89`, sev High).
 
-## 6. Two-phase rekey / users — **GAP (functional)**
+## 6. Two-phase rekey / users — **BUILT (Phase 2 landed 2026-06-15)**
 
-Entity-row rekey is BUILT (capture ladder + `PackedSurrogateRemap`; Part VI). **But user rekey on the reverse
-leg is REFUSED by name** — `transfer.reverseLeg.reconcileUnsupported` (`RunFaces.fs:787-792`): the B→A leg is
-a straight load today. Reconcile∘streaming is unbuilt; the streaming arm has only a *post*-write orphan exit-9,
-no pre-write halt (NM-31, `TransferRun.fs:1483-1490`). The design-time `UserFkReflowPass.discover` exists and
-writes `ComposeState.UserRemap` (all four strategies; `UserFkReflowPass.fs:195-348`) but is a **production
-no-op** — `IsUserFk` is always false and there is no live user-population reader (a CHAPTER-4.2 deferral); the
-discovered map is discarded at emit and never persisted. So at hundreds-of-millions-of-rows scale the User rekey is achievable only via
-the **runtime** AssignedBySink path (`PackedSurrogateRemap` + `CaptureJournal`), which does **not** exercise
-the reconcile-by-email discovery pass the "golden" discipline (Part V §4) describes. Wiring reconcile +
-`validate-user-map` onto the reverse leg is Phase 2.
+Entity-row rekey is BUILT (capture ladder + `PackedSurrogateRemap`; Part VI). **User rekey on the reverse leg
+is now BUILT** (`DECISIONS.md` 2026-06-15 — "Phase 2: reconcile ∘ streaming on the reverse leg"). The blanket
+`transfer.reverseLeg.reconcileUnsupported` refusal is **LIFTED**: the CLI face parses + resolves reconcile /
+user-map specs against the physical sink contract (a bad spec still refuses by name, exit 2, before any
+connection). The streaming runner (`runStreamingReconcilingWithRenames`) reconciles the named kinds (the User
+family by email) against the sink BEFORE the stream and re-keys every FK targeting them through a combined
+packed-∪-reconcile lookup, never re-importing a sink-owned row (`reclassifyReconciled` → `ReconciledByRule`,
+phase-1/2 skipped). The **`validate-user-map` pre-write halt now runs on the streaming arm** (NM-31 / N4 closed):
+an unmapped source user refuses `transfer.unmappedIdentities` with the sink untouched, unless `--allow-drops`
+downgrades it. The materialized arm reconciles through `runCore` too, so an inadmissible-combination request
+never silently drops the reconcile. Witnessed by `ReverseLegStreamingTests` (the re-key-never-re-imported pair
++ the pre-write halt).
+
+**The residual (still open):** the reconcile here is the **runtime** path — `reconcileAgainstSink` reads the
+sink's user inventory live and matches by the operator ruleset. The design-time `UserFkReflowPass.discover`
+(all four strategies; `UserFkReflowPass.fs:195-348`) remains a **production no-op** — `IsUserFk` is always
+false and the discovered map is discarded at emit (a CHAPTER-4.2 deferral). Populating that live
+user-population *discovery* reader is the remaining Phase-2 thread; the runtime reconcile path the charter's
+exit test names is built and witnessed.
 
 ---
 
@@ -552,9 +561,10 @@ fallback/override until J5 proves the CDC path on a managed OutSystems environme
   in the real estate; flag prominently (changes preflight refinement priority). *Residual probe (P1b).*
 - **G3** — streaming duplicate hazard. **Closed** whenever a `--journal` is supplied.
 - **G10** — the resumable/idempotent marker envelope (materialized arm). Built; not exercised on the reverse leg.
-- **N4 / AC-I5** — the pre-write `validate-user-map` gate. Present on the materialized arm; **absent on
-  streaming** (NM-31).
-- **NM-31** — streaming pre-write orphan halt (needs a streaming reconcile leg). Named follow-on.
+- **N4 / AC-I5** — the pre-write `validate-user-map` gate. Present on the materialized arm; **now also on
+  streaming** (Phase 2, 2026-06-15 — was NM-31).
+- **NM-31** — streaming pre-write orphan halt. **CLOSED** (Phase 2): `runStreamingReconcilingWithRenames` has
+  the reconcile leg + the `validateUserMap` halt; the realizations are no longer drop-asymmetric.
 - **NM-73** — EXCEPT validate-before-apply DataVerification override. Manual override shipped; auto-fallback
   J5-gated.
 
@@ -581,13 +591,17 @@ Dependency-ordered. Each phase has an exit test.
 - **Estate survey**: row-count + FK-fan-in (gates resident-map vs sink-resident spill) + the P5 trigger map
   across OSUSR tables + the **G1** object-scope-DENY check (P1b).
 
-### Phase 2 — Wire user reconciliation onto the reverse leg *(the "rekey users" gap)*
-- Build **reconcile∘streaming**: compose `Reconciliation.reconcileKind` (ByEmail/…) + `UserRemapContext` onto
-  the streaming path; lift `reconcileUnsupported`.
-- Add the **`validate-user-map` pre-write gate** on the streaming arm (close N4 / NM-31): halt before any DML
-  if an orphan user is unmapped.
-- Populate the discovery pass (live user-population reader; today a `Map.empty` stub).
-- **Exit:** a reverse-leg move re-keys users by email with a pre-write orphan halt, witnessed.
+### Phase 2 — Wire user reconciliation onto the reverse leg *(the "rekey users" gap)* — **DONE 2026-06-15**
+- ✅ Built **reconcile∘streaming**: composed `Reconciliation.reconcileKind` (ByEmail/…) + `reconcileAgainstSink`
+  + `SurrogateRemapContext` onto the streaming path (`runStreamingReconcilingWithRenames`); **lifted
+  `reconcileUnsupported`** at the CLI face. The materialized arm reconciles through `runCore` too (no silent
+  loss on inadmissible combos).
+- ✅ Added the **`validate-user-map` pre-write gate** on the streaming arm (closed N4 / NM-31): halts before any
+  DML on an unmapped orphan (`transfer.unmappedIdentities`), `--allow-drops` downgrades.
+- ⏳ **Residual:** the live user-population *discovery* pass (`UserFkReflowPass.discover`) is still a production
+  no-op; the runtime reconcile-against-sink path is built. Populating the discovery reader is the carry-over.
+- ✅ **Exit met:** a reverse-leg move re-keys users by email with a pre-write orphan halt, witnessed
+  (`ReverseLegStreamingTests` — re-key-never-re-imported + the pre-write halt; `DECISIONS.md` 2026-06-15).
 
 ### Phase 3 — Harden resume + idempotency for scale
 - **Force/default a journal** on `--streaming --execute` (close the duplicate hazard — the small lever).

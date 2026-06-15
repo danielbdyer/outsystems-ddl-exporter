@@ -24,22 +24,18 @@ open Projection.Targets.SSDT
 /// never a silent downgrade; a journal on an inadmissible combination
 /// likewise (the ledger belongs to the streaming realization).
 ///
-/// **NM-31 — the realizations are NOT drop-symmetric (capability
-/// asymmetry, NOT a silent drop).** The materialized arm threads
-/// `allowDrops` into the ENGINE: a reconciling run with unmatched
-/// orphans takes a PRE-WRITE halt (`validateUserMap` / `executeGate`,
-/// AC-I5 — the Sink stays untouched) gated on `allowDrops`. The
-/// streaming arm has NO reconcile leg (it is straight, non-reconciling
-/// Incremental), so it CANNOT offer a pre-write reconcile-orphan halt;
-/// `allowDrops` reaches only the run face's POST-write narration / exit
-/// (`narrateDropExit` — FK orphans surface as `SkippedReferences` + the
-/// exit-9 verdict AFTER the write). This is not a silent drop today —
-/// the streaming leg refuses reconcile up front, and its FK orphans are
-/// reported and exit-9'd — but the two arms are NOT interchangeable on
-/// the pre-write-halt capability, and `choose` presents them as if they
-/// were. Adding a pre-write halt to the streaming arm is the named
-/// follow-on (it needs a streaming reconcile leg); it is NOT attempted
-/// here.
+/// **NM-31 — CLOSED (Phase 2, 2026-06-15): the realizations are now
+/// drop-symmetric on the pre-write halt.** BOTH arms thread `allowDrops`
+/// + a reconciliation map into the ENGINE: a reconciling run with
+/// unmatched orphans takes a PRE-WRITE halt (`validateUserMap` /
+/// `executeGate`, AC-I5 — the Sink stays untouched) gated on
+/// `allowDrops`, whether realized streaming
+/// (`runStreamingReconcilingWithRenames`) or materialized (`runCore`'s
+/// reconcile leg). The streaming arm gained its reconcile leg (the named
+/// follow-on the prior note reserved), so `choose` no longer presents a
+/// false symmetry: a non-reconciling run carries an empty reconciliation
+/// (the halt never fires; FK orphans still surface POST-write as
+/// `SkippedReferences` + the exit-9 verdict via `narrateDropExit`).
 [<RequireQualifiedAccess>]
 type ReverseLegRealization =
     | Streaming of journalDirectory: string option
@@ -52,15 +48,12 @@ module ReverseLegRealization =
     /// realization or a NAMED refusal. The selector is deterministic from
     /// the request alone — testable without a connection.
     ///
-    /// **NM-31 caveat.** `choose` selects on admissibility (table subset /
-    /// resumable / emission), NOT on drop-halt capability. The two
-    /// realizations it returns are NOT symmetric on the pre-write orphan
-    /// halt: only `Materialized` threads `allowDrops` into a pre-write
-    /// engine halt (its reconcile leg); `Streaming` is non-reconciling, so
-    /// `allowDrops` reaches only post-write narration/exit. See the type
-    /// docstring above. The selector does not — and is not asked to —
-    /// reconcile that asymmetry; the streaming pre-write halt is a named
-    /// follow-on, not built here.
+    /// **NM-31 (closed).** `choose` selects on admissibility (table subset /
+    /// resumable / emission), NOT on drop-halt capability — and since Phase 2
+    /// it no longer needs to: both realizations carry the reconcile leg + the
+    /// `validateUserMap` pre-write halt (the streaming arm gained it), so the
+    /// arms are symmetric on the orphan halt. The selector picks the best
+    /// realization the request admits; reconcile rides whichever it picks.
     let choose
         (emission: EmissionMode)
         (resumable: bool)
@@ -1210,11 +1203,25 @@ module Transfer =
         (catalog: Catalog)
         (plan: DataLoadPlan)
         (journal: CaptureJournal option)
+        // Phase 2 (reconcile ∘ streaming) — the pre-built reconcile remap
+        // (Source→pre-existing-Sink surrogate, by the operator ruleset) and
+        // the kinds it reconciles. A reconciled kind is `ReconciledByRule`
+        // in `plan.Loads` (the sink already owns its rows): its phase-1
+        // insert is skipped, and every FK targeting it re-points through
+        // `reconcileRemap`. Empty / `Set.empty` is the straight-load path
+        // (byte-identical to the pre-reconcile streaming realization).
+        (reconcileRemap: SurrogateRemapContext)
+        (reconciledKinds: Set<SsKey>)
         : Task<Result<Map<SsKey, StreamedKind> * (SsKey * UnresolvedReference) list * LaneDescent list>> =
         let assignedBySinkKinds =
             plan.Loads
             |> List.choose (fun l -> if l.Disposition = IdentityDisposition.AssignedBySink then Some l.Kind else None)
             |> Set.ofList
+        // The FK-target set the re-point resolves against: AssignedBySink
+        // kinds (captured during the stream into the packed remap) UNION the
+        // reconciled kinds (matched before the stream into `reconcileRemap`).
+        // The two are disjoint by kind, so the combined lookup is unambiguous.
+        let remapTargetKinds = Set.union assignedBySinkKinds reconciledKinds
         let fkTargetKinds =
             Catalog.allKinds catalog
             |> List.collect (fun k -> k.References |> List.map (fun r -> r.TargetKind))
@@ -1222,17 +1229,28 @@ module Transfer =
         let remap = PackedSurrogateRemap.create ()
         let journalIndex = journal |> Option.map CaptureJournal.load
 
+        // The combined surrogate lookup: a target's assigned key is in the
+        // packed remap (AssignedBySink, stream-captured) OR the reconcile
+        // remap (ReconciledByRule, pre-matched). A kind lives in exactly one,
+        // so the fall-through never double-resolves.
+        let lookupAssigned (kindKey: SsKey) (sourceRaw: string) : string option =
+            match PackedSurrogateRemap.tryFind remap kindKey sourceRaw with
+            | Some assigned -> Some assigned
+            | None ->
+                SurrogateRemapContext.tryFindAssigned kindKey (SourceKey.ofString sourceRaw) reconcileRemap
+                |> Option.map AssignedKey.value
+
         // Q3: the re-point at the quantum grain — FK ordinals resolved
         // against the stream's renamed basis once per call (cheap; the
         // chunk behind it is 50k rows), cells re-pointed copy-on-write.
         let repoint (basis: RowBasis) (excluding: Set<Name>) (kind: Kind) (rows: RowQuantum list) : RemappedQuanta =
             let fkTargets =
-                SurrogateRemap.fkColumnsTargeting assignedBySinkKinds kind
+                SurrogateRemap.fkColumnsTargeting remapTargetKinds kind
                 |> Map.filter (fun col _ -> not (Set.contains col excluding))
             if Map.isEmpty fkTargets then { Rows = rows; Skipped = [] }
             else
                 SurrogateRemap.remapQuantumFksWith
-                    (PackedSurrogateRemap.tryFind remap)
+                    lookupAssigned
                     (SurrogateRemap.fkOrdinalsTargeting basis fkTargets)
                     rows
 
@@ -1348,6 +1366,13 @@ module Transfer =
             task {
                 match loads with
                 | [] -> return Result.success (totals, skips, descents)
+                | load :: rest when load.Disposition = IdentityDisposition.ReconciledByRule ->
+                    // Reconciled kinds skip the phase-1 insert — the sink
+                    // already owns their rows; only the FK re-point through
+                    // `reconcileRemap` (above) touches them. Counted as
+                    // loaded so the stage progress denominator stays whole.
+                    LogSink.recordStageProgress "load" (loaded + 1) loadTotal loadSw.ElapsedMilliseconds
+                    return! phase1 rest (loaded + 1) totals skips descents
                 | load :: rest ->
                     match Catalog.tryFindKind load.Kind catalog, Catalog.tryFindKind load.Kind ingestCatalog with
                     | Some kind, Some ingestKind ->
@@ -1426,7 +1451,9 @@ module Transfer =
                 match loads with
                 | [] -> return skips
                 | load :: rest ->
-                    if Set.isEmpty load.DeferredFkColumns then return! phase2 rest skips
+                    // Reconciled kinds are never inserted, so they have no
+                    // phase-2 deferred-FK re-stream either.
+                    if load.Disposition = IdentityDisposition.ReconciledByRule || Set.isEmpty load.DeferredFkColumns then return! phase2 rest skips
                     else
                         match Catalog.tryFindKind load.Kind catalog, Catalog.tryFindKind load.Kind ingestCatalog with
                         | Some kind, Some ingestKind ->
@@ -1467,34 +1494,41 @@ module Transfer =
             | RunAborted (refusal, None) -> return failwith refusal
         }
 
-    /// **The streaming realization** — bounded memory for the estate-scale
-    /// straight load (non-reconciling; Incremental semantics — the wipe and
-    /// reconcile envelopes stay on the materialized path). The optional
-    /// journal directory makes the run CHUNK-RESUMABLE: a journaled chunk
-    /// whose source fingerprint matches is skipped and its captured pairs
-    /// rebuild the remap; a fingerprint mismatch refuses by name
-    /// (`transfer.resume.sourceDrift`); a COMPLETED run re-runs as a full
-    /// skip — the streaming path's idempotent re-run (closing the G3
-    /// duplicate hazard whenever a journal is supplied). The resumed run's
-    /// report counts the resumed run's work; the journaled run reported its
-    /// own drops (exit-9 semantics are per-run). `DryRun` reports the plan
-    /// structure with zero counts — nothing is ingested.
+    /// **The streaming realization, reconcile-capable** — bounded memory for
+    /// the estate-scale load. The optional journal directory makes the run
+    /// CHUNK-RESUMABLE: a journaled chunk whose source fingerprint matches is
+    /// skipped and its captured pairs rebuild the remap; a fingerprint
+    /// mismatch refuses by name (`transfer.resume.sourceDrift`); a COMPLETED
+    /// run re-runs as a full skip — the streaming path's idempotent re-run
+    /// (closing the G3 duplicate hazard whenever a journal is supplied). The
+    /// resumed run's report counts the resumed run's work; the journaled run
+    /// reported its own drops (exit-9 semantics are per-run). `DryRun` reports
+    /// the plan structure (and the reconcile outcome — Unmatched/Ambiguous,
+    /// which `reconcileAgainstSink` reads read-only) with zero write counts.
     ///
-    /// **NM-31 — no `allowDrops` parameter, by construction.** This runner
-    /// is the straight, non-reconciling streaming realization: it has no
-    /// reconcile leg and therefore NO pre-write reconcile-orphan halt to
-    /// gate. FK orphans surface POST-write as `SkippedReferences` (the run
-    /// face's `narrateDropExit` applies `--allow-drops` to the exit code);
-    /// the materialized runner's pre-write `allowDrops` halt (AC-I5) has no
-    /// counterpart here. A streaming pre-write halt is the named follow-on,
-    /// gated on a streaming reconcile leg that does not yet exist.
-    let runStreamingWithRenames
+    /// **Phase 2 (the charter) — reconcile ∘ streaming + the validate-user-map
+    /// pre-write halt (closing NM-31 / N4 on the streaming arm).** When
+    /// `reconciliation` names kinds (the User family re-keyed by email), the
+    /// runner reconciles them against the sink BEFORE the stream (read-only):
+    /// each named kind's source rows are matched to the pre-existing sink rows
+    /// by the operator ruleset, producing the Source→Sink remap the stream
+    /// consults for every FK targeting a reconciled kind. The reconciled kinds
+    /// are `ReconciledByRule` (never re-imported — the sink owns them). The
+    /// `validateUserMap` gate then HALTS before any write if an orphan source
+    /// identity is unmatched (unless `--allow-drops`), so an unmapped user is a
+    /// pre-write refusal (`transfer.unmappedIdentities`), not a post-write
+    /// drop — the streaming counterpart of the materialized AC-I5 halt. An
+    /// empty `reconciliation` is the straight-load path (`allowDrops` inert,
+    /// the gate never fires), byte-identical to the pre-reconcile realization.
+    let runStreamingReconcilingWithRenames
         (mode: Mode)
         (allowCdc: bool)
+        (allowDrops: bool)
         (source: SqlConnection)
         (sink: SqlConnection)
         (sourceContract: Catalog)
         (sinkContract: Catalog)
+        (reconciliation: Map<SsKey, ReconciliationStrategy>)
         (journalDirectory: string option)
         : Task<Result<TransferReport>> =
         task {
@@ -1531,10 +1565,42 @@ module Transfer =
                 | Error es -> return Result.failure es
                 | Ok () ->
                     let topo = (TopologicalOrderPass.runWith TreatAsCycle sinkContract).Value
+                    let reconciledKinds = reconciliation |> Map.toSeq |> Seq.map fst |> Set.ofSeq
+                    // Reconcile the named kinds against the sink (read-only,
+                    // safe in DryRun): ingest each reconciled kind's SOURCE
+                    // rows (re-pointed to the sink's names — the only kinds
+                    // materialized; the estate-scale bulk streams), and match
+                    // them to the pre-existing SINK rows by the operator
+                    // ruleset. The reverse leg's User population is small,
+                    // so this is bounded; the FK-target bulk never materializes.
+                    let! reconciledSourceRows =
+                        task {
+                            let mutable acc : Map<SsKey, StaticRow list> = Map.empty
+                            for KeyValue (kind, _) in reconciliation do
+                                match Catalog.tryFindKind kind sourceContract with
+                                | Some ingestKind ->
+                                    let! rows = AsyncStream.toList (Ingestion.streamKindRows source ingestKind)
+                                    acc <- Map.add kind (RenameProjection.repointRows renameMap rows) acc
+                                | None -> ()
+                            return acc
+                        }
+                    let! reconciled = reconcileAgainstSink sink sinkContract reconciliation reconciledSourceRows
                     // Structure only — order, dispositions, deferred columns;
                     // the rows STREAM at write time (the whole point).
-                    let plan = DataLoadPlan.build sinkContract topo Map.empty SurrogateRemapContext.empty
-                    let preWrite = if mode = Execute then executeGate sinkContract plan else None
+                    // `reclassifyReconciled` marks the reconciled kinds skip-
+                    // insert so the stream never re-imports a sink-owned row.
+                    let plan =
+                        DataLoadPlan.build sinkContract topo Map.empty SurrogateRemapContext.empty
+                        |> DataLoadPlan.reclassifyReconciled reconciledKinds
+                    // Pre-write gates (Execute only), precedence-ordered:
+                    // structural unsatisfiability first, then the validate-
+                    // user-map orphan halt (AC-I5 / NM-31 — now ON streaming).
+                    let preWrite =
+                        if mode = Execute then
+                            match executeGate sinkContract plan with
+                            | Some refusal -> Some refusal
+                            | None         -> validateUserMap allowDrops reconciled
+                        else None
                     match preWrite with
                     | Some refusal -> return Result.failureOf refusal
                     | None ->
@@ -1544,8 +1610,8 @@ module Transfer =
                                     { Mode                = mode
                                       Kinds               = reportKinds mode plan
                                       UnbreakableCycleFks = plan.UnbreakableCycleFks
-                                      UnmatchedIdentities = []
-                                      AmbiguousIdentities = []
+                                      UnmatchedIdentities = reconciled.Unmatched
+                                      AmbiguousIdentities = reconciled.Ambiguous
                                       SkippedReferences   = plan.SkippedReferences
                                       CaptureLaneDescents = []
                                       // Streaming DryRun: no G10 resumable replay.
@@ -1556,7 +1622,7 @@ module Transfer =
                             let journal =
                                 journalDirectory
                                 |> Option.map (fun dir -> CaptureJournal.create dir (planMarker sinkContract plan))
-                            match! writePlanStreaming source sink sourceContract renameMap sinkContract plan journal with
+                            match! writePlanStreaming source sink sourceContract renameMap sinkContract plan journal reconciled.Remap reconciledKinds with
                             | Error es -> return Result.failure es
                             | Ok (totals, skips, descents) ->
                                 let kinds =
@@ -1573,8 +1639,8 @@ module Transfer =
                                         { Mode                = mode
                                           Kinds               = kinds
                                           UnbreakableCycleFks = plan.UnbreakableCycleFks
-                                          UnmatchedIdentities = []
-                                          AmbiguousIdentities = []
+                                          UnmatchedIdentities = reconciled.Unmatched
+                                          AmbiguousIdentities = reconciled.Ambiguous
                                           SkippedReferences   = skips
                                           CaptureLaneDescents = descents
                                           // Streaming-journal resume is per-run by
@@ -1585,21 +1651,42 @@ module Transfer =
                                           SyntheticUnsatisfiableFks = [] }
         }
 
+    /// The straight-load streaming realization — the non-reconciling default
+    /// (sibling-wrapper discipline: supplies the empty reconciliation +
+    /// inert `allowDrops` the caller did not name). FK orphans surface
+    /// POST-write as `SkippedReferences`; with no reconcile leg the validate-
+    /// user-map gate never fires. Byte-identical to the pre-Phase-2 runner.
+    let runStreamingWithRenames
+        (mode: Mode)
+        (allowCdc: bool)
+        (source: SqlConnection)
+        (sink: SqlConnection)
+        (sourceContract: Catalog)
+        (sinkContract: Catalog)
+        (journalDirectory: string option)
+        : Task<Result<TransferReport>> =
+        runStreamingReconcilingWithRenames mode allowCdc false source sink sourceContract sinkContract Map.empty journalDirectory
+
     /// The streaming reverse leg through the `TransferConnections`
     /// apparatus (D9) — the bounded-memory sibling of
     /// `runReverseLegThroughConnections` for the estate-scale B→A load.
     /// Both contracts arrive RENDERED from the one authored model
     /// (`CatalogRendition`); the optional journal directory makes the run
-    /// chunk-resumable. Straight load, Incremental semantics — the
-    /// reconcile / WipeAndLoad / table-subset combinations stay on the
-    /// materialized path (the CLI face refuses them by name).
+    /// chunk-resumable. Incremental semantics — the WipeAndLoad / table-
+    /// subset combinations stay on the materialized path (the CLI face
+    /// refuses them by name). **Phase 2: reconcile-capable** — a non-empty
+    /// `reconciliation` re-keys the named kinds (the User family by email)
+    /// with the `validateUserMap` pre-write halt (`allowDrops` gates it);
+    /// empty is the straight load.
     let runStreamingReverseLegThroughConnections
         (mode: Mode)
         (allowCdc: bool)
+        (allowDrops: bool)
         (journalDirectory: string option)
         (connections: TransferConnections)
         (logicalSourceContract: Catalog)
         (physicalSinkContract: Catalog)
+        (reconciliation: Map<SsKey, ReconciliationStrategy>)
         : Task<Result<TransferReport>> =
         task {
             match! ConnectionResolver.openSubstrate connections.Source with
@@ -1610,7 +1697,7 @@ module Transfer =
                 | Error es -> return Result.failure es
                 | Ok sink ->
                     use sink = sink
-                    return! runStreamingWithRenames mode allowCdc source sink logicalSourceContract physicalSinkContract journalDirectory
+                    return! runStreamingReconcilingWithRenames mode allowCdc allowDrops source sink logicalSourceContract physicalSinkContract reconciliation journalDirectory
         }
 
     /// Run a *reconciling* Transfer — the operator's headline case
@@ -1770,8 +1857,14 @@ module Transfer =
     /// construction, the precondition the identity-matched repoint needs. The
     /// declared table subset resolves against the source contract by logical
     /// entity name (`Name` is rendition-invariant); the write options thread
-    /// the same emission/resumable envelope the peer transfer honors. Straight
-    /// load — the reconcile + rename combination is the named follow-on.
+    /// the same emission/resumable envelope the peer transfer honors.
+    /// **Phase 2: reconcile-capable** — a non-empty `reconciliation` re-keys
+    /// the named kinds (the User family by business key) through `runCore`'s
+    /// reconcile leg (the same AC-I5 pre-write halt the forward path uses);
+    /// empty is the straight load. The streaming sibling
+    /// (`runStreamingReverseLegThroughConnections`) is preferred for the
+    /// estate-scale combinations; this materialized arm carries the table-
+    /// subset / WipeAndLoad / G10-resumable cases the selector routes here.
     let runReverseLegThroughConnections
         (mode: Mode)
         (emission: EmissionMode)
@@ -1782,6 +1875,7 @@ module Transfer =
         (connections: TransferConnections)
         (logicalSourceContract: Catalog)
         (physicalSinkContract: Catalog)
+        (reconciliation: Map<SsKey, ReconciliationStrategy>)
         : Task<Result<TransferReport>> =
         task {
             match CatalogDiff.between logicalSourceContract physicalSinkContract with
@@ -1801,7 +1895,7 @@ module Transfer =
                         | Error es -> return Result.failure es
                         | Ok sink ->
                             use sink = sink
-                            return! runCore mode allowCdc allowDrops source sink physicalSinkContract Map.empty (Some (logicalSourceContract, renameMap)) { WriteOptions.ofEmission emission with Resumable = resumable; LoadSet = loadSet }
+                            return! runCore mode allowCdc allowDrops source sink physicalSinkContract reconciliation (Some (logicalSourceContract, renameMap)) { WriteOptions.ofEmission emission with Resumable = resumable; LoadSet = loadSet }
         }
 
     // -- 6.A.1: the drop-set is fail-loud, not exit-0 -----------------------

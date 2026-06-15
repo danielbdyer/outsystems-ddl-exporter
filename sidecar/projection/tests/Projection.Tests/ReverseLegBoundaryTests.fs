@@ -33,31 +33,55 @@ let private tinyModel : Catalog =
             IsActive = true; ExtendedProperties = [] } ] []
     |> Result.value
 
-// -- the CLI face's named reverse-leg refusal (live) --------------------------
+// -- the CLI face's reconcile spec handling (Phase 2: the refusal is LIFTED) ---
+//
+// The blanket `transfer.reverseLeg.reconcileUnsupported` refusal that stood
+// here is gone (DECISIONS 2026-06-15 — reconcile ∘ reverse leg). The face now
+// parses + resolves reconcile/user-map specs against the physical sink
+// contract exactly as the forward face does. A bad spec still refuses by name
+// (arg error, exit 2) BEFORE any connection opens; a good spec is ACCEPTED and
+// proceeds to the apparatus (the full re-key witness is the Docker
+// `ReverseLegStreamingTests` 'reconcile ∘ streaming' pair). The reverse-leg
+// physical rendition of `tinyModel`'s one kind is `OSUSR_B_CUSTOMER([ID])`.
 
 [<Fact>]
-let ``reverse-leg face: a reconcile spec is REFUSED BY NAME (transfer.reverseLeg.reconcileUnsupported, exit 2) — never a silent straight-load`` () =
+let ``reverse-leg face: a MALFORMED reconcile spec refuses by name (arg error, exit 2) before any connection opens`` () =
     let model = tinyModel
     let exit =
         RunFaces.runReverseLegTransfer
             "env:L3B_SRC" "env:L3B_SINK"
             (Projection.Pipeline.CatalogRendition.logical model)
             (Projection.Pipeline.CatalogRendition.physical model)
-            [ "Customer=Email" ] None
+            [ "Customer" ] None   // no ':' — transfer.reconcile.specShape
             false true false EmissionMode.Incremental false false None [] []
     Assert.Equal(2, exit)
 
 [<Fact>]
-let ``reverse-leg face: a user-map is REFUSED BY NAME on the reverse leg (the rekey ∘ rendition composition is the named follow-on)`` () =
+let ``reverse-leg face: a reconcile spec naming an unknown table refuses by name (exit 2) before any connection opens`` () =
     let model = tinyModel
     let exit =
         RunFaces.runReverseLegTransfer
             "env:L3B_SRC" "env:L3B_SINK"
             (Projection.Pipeline.CatalogRendition.logical model)
             (Projection.Pipeline.CatalogRendition.physical model)
-            [] (Some "user-map.csv")
+            [ "OSUSR_NOPE:ID" ] None   // table not in the contract — transfer.reconcile.tableNotFound
             false true false EmissionMode.Incremental false false None [] []
     Assert.Equal(2, exit)
+
+[<Fact>]
+let ``reverse-leg face: a WELL-FORMED resolvable reconcile spec is ACCEPTED (no longer refused) — it passes the spec gate and reaches the apparatus`` () =
+    let model = tinyModel
+    let exit =
+        RunFaces.runReverseLegTransfer
+            "env:L3B_SRC" "env:L3B_SINK"
+            (Projection.Pipeline.CatalogRendition.logical model)
+            (Projection.Pipeline.CatalogRendition.physical model)
+            [ "OSUSR_B_CUSTOMER:ID" ] None   // resolves to MatchByColumn (Id)
+            false true false EmissionMode.Incremental false false None [] []
+    // Past the parse/resolve gate the run reaches connection-opening, which
+    // fails on the unset env vars — a connection-class exit, NEVER the arg/
+    // resolve exit 2. The point: reconcile is no longer refused at the face.
+    Assert.NotEqual(2, exit)
 
 // -- the realization SELECTOR: the best admissible realization, chosen pure --
 
@@ -118,8 +142,14 @@ let ``streaming face: an explicit --streaming with --tables refuses at the face 
 
 // -- reserved follow-on contracts (Skip stubs with promotion triggers) --------
 
-[<Fact(Skip = "Reserved: the reconcile ∘ rendition composition — 'User reconciled by email on the up-leg' (the cloud-owns-its-users reverse leg). The CLI face refuses today (transfer.reverseLeg.reconcileUnsupported); promotion trigger: ReconciledByRule threaded through runReverseLegThroughConnections with rendition-aware business-key resolution, then this test seeds the cloud sink's own user inventory and asserts the up-leg re-keys every user FK without re-importing a user row (the PE-3 join witness on the reverse leg).")>]
-let ``RESERVED — reverse leg with ReconciledByRule: User reconciled by email on the up-leg, identities re-keyed, never re-imported`` () = ()
+// PROMOTED 2026-06-15 (Phase 2 — reconcile ∘ reverse leg): the reserved
+// "User reconciled by email on the up-leg, identities re-keyed, never
+// re-imported" contract is now the live Docker witness
+// `ReverseLegStreamingTests.``reconcile ∘ streaming: User reconciled by email
+// on the up-leg — identities re-keyed, never re-imported``` (+ the
+// `validate-user-map pre-write halt` sibling). It moved to the streaming
+// suite because it needs the seeded-sink fixture; this pure boundary file
+// keeps only the face-level spec-gate refusals above.
 
 [<Fact(Skip = "Reserved: the contract-vs-live-shape preflight — a column the rendered logical contract names but live B lacks dies today inside the ingest SELECT with a raw SqlException (pinned by ReverseLegCanaryTests 'B-drift'). Promotion trigger: a named transfer.sourceShapeDrift refusal lands (compare the rendered contract against the live INFORMATION_SCHEMA before any read); then this test drops a column from live B and asserts the named refusal replaces the raw crash.")>]
 let ``RESERVED — B-drift refused by name: the rendered contract is checked against live B's shape before any row is read`` () = ()

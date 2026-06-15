@@ -778,19 +778,45 @@ let runReverseLegTransfer
     let collect = function Ok _ -> [] | Error es -> es
     let parsedSource = TransferSpec.parseConnectionSpec sourceSpec
     let parsedSink   = TransferSpec.parseConnectionSpec sinkSpec
-    let specErrors = collect parsedSource @ collect parsedSink
+    // Phase 2 (the charter): reconcile on the reverse leg is no longer
+    // refused — the User family re-keys by business key on the up-leg. The
+    // specs parse exactly as the forward face's; the named refusal that stood
+    // here is lifted (DECISIONS 2026-06-15 — reconcile ∘ reverse leg).
+    let parsedReconciles = reconcileSpecs |> List.map TransferSpec.parseReconcileSpec
+    let parsedUserMap : Result<TransferSpec.UserMapEntry list> =
+        match userMapPath with
+        | None -> Result.success []
+        | Some path ->
+            if not (System.IO.File.Exists path) then
+                Result.failureOf
+                    (ValidationError.create "transfer.userMap.fileMissing"
+                        (sprintf "user-map file '%s' not found." path))
+            else TransferSpec.parseUserMapCsv (System.IO.File.ReadAllText path)
+    let specErrors =
+        collect parsedSource @ collect parsedSink
+        @ (parsedReconciles |> List.collect collect)
+        @ collect parsedUserMap
     if not (List.isEmpty specErrors) then
         Console.Error.WriteLine "projection move (reverse leg): argument error:"
         printErrors Console.Error specErrors
         dumpBench "transfer"
         2
-    elif not (List.isEmpty reconcileSpecs) || Option.isSome userMapPath then
-        TtyRenderer.renderVoicedError
-            (ValidationError.create "transfer.reverseLeg.reconcileUnsupported"
-                "the B→A reverse leg is a straight load; reconciliation on the reverse leg is not yet supported (the reconcile + rename combination is the named follow-on).")
+    else
+
+    // Resolve the reconcile / user-map specs against the PHYSICAL sink
+    // contract (the rendition the reverse leg writes into; `findKindByTable`
+    // matches physical names, consistent with the forward face's live-read
+    // contract). A bad spec refuses by name before any connection opens.
+    let entries        = parsedReconciles |> List.map Result.value
+    let userMapEntries = Result.value parsedUserMap
+    let reconcile      = not (List.isEmpty entries) || not (List.isEmpty userMapEntries)
+    match TransferSpec.resolveAllReconciliation physicalSinkContract entries userMapEntries with
+    | Error es ->
+        Console.Error.WriteLine "projection move (reverse leg): reconcile resolution error:"
+        printErrors Console.Error es
         dumpBench "transfer"
         2
-    else
+    | Ok reconciliation ->
 
     // The realization SELECTOR (DECISIONS 2026-06-11): the engine chooses
     // the best realization the request admits — streaming whenever
@@ -823,7 +849,7 @@ let runReverseLegTransfer
         { Environment   = parseEnvironment "Sink" None
           Role          = SubstrateRole.Sink
           ConnectionRef = Result.value parsedSink }
-    match TransferConnections.create sourceSub sinkSub false with
+    match TransferConnections.create sourceSub sinkSub reconcile with
     | Error es ->
         Console.Error.WriteLine "projection move (reverse leg): apparatus invariant violation:"
         printErrors Console.Error es
@@ -835,18 +861,17 @@ let runReverseLegTransfer
     let runBody () =
         let result =
             match realization with
-            // NM-31: the streaming runner takes NO `allowDrops` — it is
-            // non-reconciling and offers no pre-write orphan halt (only the
-            // materialized arm threads `allowDrops` into the engine). For the
-            // streaming arm `allowDrops` reaches only the POST-write
-            // `narrateDropExit` below. This is a capability asymmetry, not a
-            // silent drop (FK orphans still surface + exit-9); see
-            // `ReverseLegRealization` / `runStreamingWithRenames`.
+            // Phase 2 (NM-31 closed on the streaming arm): both arms now thread
+            // `allowDrops` + `reconciliation` into the engine. A reconciling run
+            // takes the `validateUserMap` PRE-write orphan halt (AC-I5) on either
+            // arm; `allowDrops` downgrades it to the POST-write reported-drop path
+            // (`narrateDropExit`). A non-reconciling run carries an empty
+            // reconciliation, so the halt never fires (byte-identical straight load).
             | ReverseLegRealization.Streaming journal ->
-                (Transfer.runStreamingReverseLegThroughConnections mode allowCdc journal connections logicalSourceContract physicalSinkContract)
+                (Transfer.runStreamingReverseLegThroughConnections mode allowCdc allowDrops journal connections logicalSourceContract physicalSinkContract reconciliation)
                     .GetAwaiter().GetResult()
             | ReverseLegRealization.Materialized ->
-                (Transfer.runReverseLegThroughConnections mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract)
+                (Transfer.runReverseLegThroughConnections mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation)
                     .GetAwaiter().GetResult()
         match result with
         | Ok report ->
