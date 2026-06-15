@@ -1,3 +1,61 @@
+# Handoff addendum — 2026-06-15, THE VECTOR WAVE 0 LANDED (honesty & fitness); your job is WAVE 1 — the keystone M1, which turns the honest tolerance back into an earned green
+
+To the next agent.
+
+**Your mission.** Build **Wave 1 — M1, the Decision-readback adjunction** (the single highest-leverage
+move in `THE_VECTOR.md`; §6 M1, §7 Wave 1; mechanics in `THE_VECTOR_UNABRIDGED.md` Part III). Wave 0
+just made the engine honest about the Decision axis; M1 makes it *true*. When M1 lands, **delete the
+two `@ladder … Decision OpenGap` tags** (`FkTrustUnreflected`, `UniquePromotionUnreflected`) — the
+generator auto-flips Decision back to faithful. Honesty first (done), then the theorem (you).
+
+**The move, precisely (the surfaces are scouted and the join keys confirmed).**
+1. Add `IsTrusted : bool` to `PhysicalForeignKey` (`src/Projection.Core/PhysicalSchema.fs`). A normally-
+   enforced FK is `true`; a `WITH NOCHECK` FK is `false`. The widened set-difference in
+   `PhysicalSchema.diff` picks the field up with **no comparator change**.
+2. Make `ofCatalog` overlay-aware **the way the SSDT emitter already is** — copy the
+   `statements`/`statementsWith` precedent (`SsdtDdlEmitter.fs:880-886`): add
+   `ofCatalogWith : DecisionOverlay -> Catalog -> PhysicalSchema` (the overlay-aware core) and keep
+   `ofCatalog c = ofCatalogWith DecisionOverlay.empty c`. This preserves **byte-identity at `empty`** and
+   every one of the ~30 existing `ofCatalog c` call sites — guard with the T1 goldens
+   (`GoldenEmissionTests`) and `AdjunctionLawTests`. Do NOT change `ofCatalog`'s signature.
+3. In `toPhysicalForeignKeys`, set `IsTrusted = r.IsConstraintTrusted && not (Set.contains r.SsKey overlay.NoCheckFk)`
+   (the source half reads the overlay; the readback half is overlay-`empty` and `r.IsConstraintTrusted`
+   is already recovered from `sys.foreign_keys.is_not_trusted` at **`ReadSide.fs:1171`** — the read leg is
+   free). In `toPhysicalIndexes`, set `IsUnique = IndexUniqueness.isUnique idx.Uniqueness || Set.contains idx.SsKey overlay.EnforceUnique`.
+   (`Reference.SsKey` matches `overlay.NoCheckFk`; `Index.SsKey` matches `overlay.EnforceUnique` — both confirmed.)
+4. Add the **decision-readback property**: emit a `WITH NOCHECK` FK via the overlay → deploy → ReadSide →
+   `ofCatalog` on the readback yields `IsTrusted = false`, and `ofCatalogWith overlay` on the source agrees
+   — the diff is empty; a *trusted* FK round-trips `IsTrusted = true`; the no-cheat case (emitter didn't
+   actually emit NOCHECK) shows a non-empty diff. This routes the recovered decision through the **general
+   comparator** instead of the bespoke nullability-only test (`CanaryRoundTripTests.fs` ~886). It is
+   **Docker-gated** — see the scar below; confirm a real duration, never the green count.
+
+**Exit criterion (Wave 1).** The live canary witnesses `NoCheckFk`/`EnforceUnique` survival through
+emit → deploy → read-back; the matrix's Decision cell is *showable*, not asserted, and flips back to
+`✅` when you delete the two Decision tolerances.
+
+**State.** Branch `claude/sleepy-lumiere-43d5c9`. Wave 0 is committed and green: Debug + **Release**
+clean; pure pool 3357/0; `matrix-status.sh` regenerated (L1/L2/L3 = 5/3/5; Decision `◑ L2-partial`;
+tolerances 11, 5 open); `verifiability-gate.sh` clean; the analyzer gate green and now CI-promoted. The
+2026-06-15 `DECISIONS` entry "THE VECTOR Wave 0 BUILT" is the substance; this letter points. After Wave 1,
+chapter-close and the PR carries Wave 0 + Wave 1 together.
+
+**Build-discipline scars (heed them — M1's witness is Docker-gated).**
+1. **⚠️ Docker tests SILENTLY NO-OP on this Windows box** unless `$env:PROJECTION_MSSQL_CONN_STR=
+   "Server=localhost,11433;User Id=sa;Password=Projection@Strong1;TrustServerCertificate=True;Encrypt=False"`
+   (the warm container, currently up). They pass as ~0.4 ms `()` no-ops otherwise — **confirm via per-test
+   duration in seconds**, never the green count (survival-rule #12). M1's readback property is exactly such
+   a witness.
+2. `dotnet` is at `C:\Users\danny\AppData\Local\Microsoft\dotnet\dotnet.exe` (9.0.314; not on bash PATH) —
+   build/test via PowerShell; **never the pure + Docker pools in one `dotnet test`** (OOM). Build in
+   **Release too** before claiming done (Wave 0 found a pre-existing FS3511 only Release surfaces; CI runs
+   bash gates, not a Release compile).
+3. Default-empty overlay args **must preserve byte-identity at `empty`** — the goldens are the guard. Every
+   `AXIOMS.md` change carries its `AxiomTests.fs` witness in the same commit. Name every refusal; the
+   matrix under-claims by construction — keep it that way.
+
+---
+
 # Handoff addendum — 2026-06-15, BUILD THE ARCHETYPE SLICES — the model is locked, the inputs are confirmed, the plan is written; your job is to build Slice A → C → S → B per REVERSE_LEG_WORK_PLAN.md
 
 To the next agent.

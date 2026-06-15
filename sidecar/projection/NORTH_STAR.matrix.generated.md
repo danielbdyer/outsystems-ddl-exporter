@@ -10,10 +10,10 @@ _Derived from `tests/Projection.Tests/AxiomTests.fs` + `src/Projection.Core/Tole
 
 | Class | Meaning | Count |
 |---|---|---:|
-| Live | verified ("verified by …") or convention-enforced `[<Fact>]` | 78 |
+| Live | verified ("verified by …") or convention-enforced `[<Fact>]` | 79 |
 | Deferred C | weakness — `[<Fact(Skip … Bucket C …)>]` | 6 |
 | Deferred D | unnamed/unbacked — `[<Fact(Skip … Bucket D …)>]` | 1 |
-| **total axiom entries** | | **112** |
+| **total axiom entries** | | **113** |
 
 **Verifiability gate: `PASS`** — no deferral claims verified (no phantom Bucket-A/B); every deferral names its bucket.
 
@@ -27,14 +27,14 @@ witness covers the axis. The **Ladder** column is the honest weakest-rung summar
 
 | Axis | L1 witness | L2 faithful | L3 composed | Open tolerances | Ladder |
 |---|:--:|:--:|:--:|---|---|
-| **Schema** | ✅ | ◑ L2-partial | ✅ | `IndexOptionsUnreflected`, `CompositePkFkUnreflected` | ◑ L2-partial |
+| **Schema** | ✅ | ◑ L2-partial | ✅ | `IndexOptionsUnreflected`, `CompositePkFkUnreflected`, `TriggerBodyUnparsedDropped` | ◑ L2-partial |
 | **Data** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |
 | **Identity** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |
 | **Time** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |
-| **Decision** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |
+| **Decision** | ✅ | ◑ L2-partial | ✅ | `FkTrustUnreflected`, `UniquePromotionUnreflected` | ◑ L2-partial |
 
-**Rungs reached: L1 5/5 · L2 4/5 · L3 5/5.** Tolerance set:
-8 named, of which **2 open** (`OpenGap`). A cell cannot be
+**Rungs reached: L1 5/5 · L2 3/5 · L3 5/5.** Tolerance set:
+11 named, of which **5 open** (`OpenGap`). A cell cannot be
 hand-marked: L1/L3 require the witness test to exist; L2 requires the open tolerance
 to be retired from `Tolerance.fs`. The generator under-claims; it never over-claims.
 
@@ -46,4 +46,4 @@ to be retired from `Tolerance.fs`. The generator under-claims; it never over-cla
 > L3 here is "a composition witness exists for the axis," not "faithful under every
 > spanning axis" (T-VI atomicity/permissions ride the debrief until cluster A names them).
 
-_Self-reported · gate=PASS · L2 axioms live/C/D=78/6/1 · rungs L1/L2/L3=5/4/5 of 5 · tolerances 8 (2 open)_
+_Self-reported · gate=PASS · L2 axioms live/C/D=79/6/1 · rungs L1/L2/L3=5/3/5 of 5 · tolerances 11 (5 open)_

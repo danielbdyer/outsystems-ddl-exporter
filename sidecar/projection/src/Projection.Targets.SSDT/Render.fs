@@ -100,11 +100,23 @@ module Render =
             | Some fragment ->
                 sb.Append(ScriptDomGenerate.generateOne fragment).AppendLine() |> ignore
             | None ->
-                // `Blank` + `Comment` return None and are handled above.
-                // `CreateTrigger` also returns None when its definition
-                // fails to parse (H-019) — silently skipping is correct
-                // in that case (canary roundtrip surfaces regressions).
-                ()
+                // `Blank` + `Comment` + `BatchSeparator` are handled in the
+                // explicit arms above, so the only statement reaching this
+                // `None` is a `CreateTrigger` whose body failed to parse
+                // (`ScriptDomBuild.tryParseTriggerBody` → None, H-019). M2 (THE
+                // VECTOR, Wave 0): the prior bare `()` was a SILENT drop
+                // justified by appeal to a canary detector that does NOT cover
+                // the text path — the one named-erasure violation. Emit an
+                // in-band marker comment naming the closed tolerance
+                // `ToleratedDivergence.TriggerBodyUnparsedDropped` (Schema
+                // OpenGap) so the text artifact is honest, not silent; the
+                // `.dacpac` path refuses outright (NM-24). Static phrase only —
+                // the definition is not interpolated (static-phrase +
+                // structured-metadata discipline).
+                match s with
+                | CreateTrigger _ ->
+                    sb.Append("-- ").AppendLine("ToleratedDivergence.TriggerBodyUnparsedDropped: a CreateTrigger body failed to parse and was omitted from this SSDT text artifact (the .dacpac path refuses outright, NM-24).") |> ignore
+                | _ -> ()
 
     /// Fold a statement stream into a single SQL-text artifact. The
     /// canonical text realization of Π's output. Stream-aware bench

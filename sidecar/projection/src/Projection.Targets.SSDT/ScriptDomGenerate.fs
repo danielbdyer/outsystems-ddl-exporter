@@ -200,9 +200,17 @@ module ScriptDomGenerate =
                 | Some fragment ->
                     sb.Append(generateOne fragment) |> ignore
                 | None ->
-                    // `Blank` / `Comment` return None and are handled
-                    // explicitly above. `CreateTrigger` also returns
-                    // None when the definition fails to parse (H-019);
-                    // silently skipping is intentional in that case.
-                    ()
+                    // `Blank` / `Comment` are handled explicitly above, so the
+                    // only statement reaching this `None` is a `CreateTrigger`
+                    // whose body failed to parse (H-019). M2 (THE VECTOR, Wave
+                    // 0): the prior bare `()` was a SILENT drop — the named-
+                    // erasure law forbids it. Emit an in-band marker comment
+                    // naming the closed tolerance
+                    // `ToleratedDivergence.TriggerBodyUnparsedDropped` (Schema
+                    // OpenGap) so this text path matches `Render.toSql` and the
+                    // `.dacpac` refusal (NM-24). Static phrase only.
+                    match stmt with
+                    | CreateTrigger _ ->
+                        sb.Append(commentLine "ToleratedDivergence.TriggerBodyUnparsedDropped: a CreateTrigger body failed to parse and was omitted from this SSDT text artifact (the .dacpac path refuses outright, NM-24).") |> ignore
+                    | _ -> ()
         sb.ToString()

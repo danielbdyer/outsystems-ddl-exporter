@@ -424,6 +424,13 @@ A test failure points at a specific axiom; a code reviewer can verify a
 pass against the law it claims to satisfy. The discipline costs nothing and
 pays compound interest.
 
+The `citationOf "<file>" "<name>"` cross-references in `AxiomTests.fs` are now
+guarded by a **live citation gate** (M16): the `` ``M16: every axiom citation
+resolves to a live File::Name in the tree`` `` Fact parses every `citationOf`
+call-site and asserts each cited `file::name` still exists on the tree — so a
+renamed or deleted cited test fails a test, retiring the former "verified-once
+by grep" debt.
+
 ---
 
 # V2 Amendments
@@ -759,15 +766,27 @@ The algebraic reasoning, not just the rule:
   (chapter-Cluster-B; H-003). Tests are property-based via FsCheck
   over arbitrary integer payloads (the laws are payload-agnostic).
 
-**Writer-monad trinity (chapter-Cluster-B finale; 2026-05-22).** A24
-amended characterizes three structurally-related writer carriers, each
-satisfying the chronological-bind law:
+**Writer-monad trinity (chapter-Cluster-B finale; 2026-05-22; corrected
+2026-06-04).** A24 amended originally characterized three
+structurally-related writer carriers. **Only the linear writer ships.**
+The branching `LineageTree<'a>` and the terminal `Certificate<'a>` were
+**retired 2026-06-04** (DECISIONS `2026-06-04 — Retire the speculative
+writer-trinity / optics-duo / Kleisli-product algebra`): both were
+defined + law-tested on symmetry rather than consumer demand, found
+**zero production callers**, and were deleted from `src/`. They are
+**documentation horizon, not code** — the bullets below stand as the
+recorded design space, not as shipped algebra. The witness for this is
+the retirement stubs in `AxiomTests.fs` (`H-009` multi-target fanout,
+`H-063` free-monad scheduling — both naming the 2026-06-04 retirement).
+A24's law itself is unaffected: it holds over the shipped carriers
+`Lineage`, `Diagnostics`, `LineageDiagnostics`, and `Pass` (above).
 
-- **`Lineage<'a>` — the linear writer.** Append-only trail; the
-  in-flight carrier every pass returns. A24 is the original law over
+- **`Lineage<'a>` — the linear writer (SHIPPED).** Append-only trail;
+  the in-flight carrier every pass returns. A24 is the original law over
   this shape.
 
-- **`LineageTree<'a>` — the branching writer** (H-005; the **free
+- **`LineageTree<'a>` — the branching writer (DOC-HORIZON; retired
+  2026-06-04, zero consumer)** (H-005; the **free
   monad over the labeled-list functor** applied to `Lineage<'a>`).
   Leaves are `Lineage<'a>` carriers; Forks are labeled lists of
   subtrees. A24 holds within each leaf AND across the substitution
@@ -776,25 +795,32 @@ satisfying the chronological-bind law:
   via the `prepend` primitive — preserving chronological ordering
   across the bind. The bind operation is the free-monad bind:
   recursive leaf-substitution that preserves Fork structure. Monad-law
-  preservation under the free-monad construction is standard;
-  property-tested in `LineageTests.fs::H-005 LineageTree monad: ...`.
+  preservation under the free-monad construction is standard; it *was*
+  property-tested before the 2026-06-04 retirement (no `LineageTree`
+  test exists today — the type and its tests were deleted as zero-consumer
+  algebra; this bullet is the recorded design space, not a live citation).
 
-- **`Certificate<'a>` — the terminal projection** (H-004). Structural
+- **`Certificate<'a>` — the terminal projection (DOC-HORIZON; retired
+  2026-06-04, zero consumer)** (H-004). Structural
   isomorphism with `Lineage<Diagnostics<'a>>` via `ofLineageDiagnostics`
   / `toLineageDiagnostics`. The role at the consumer boundary: a
   `Certificate<SsdtBundle>` is a value plus its witness chain, where
   the witness chain satisfies A24-amended by inheritance from the
   isomorphic dual-writer carrier.
 
-The trinity is closed: every writer-carrier role in the pipeline has
-a named type. A24-amended holds across all three.
+As shipped, the writer surface is a **linear writer only**: `Lineage`
+(plus its dual-writer stack `LineageDiagnostics`) is the one carrier
+role realized in `src/`. A24-amended holds over every shipped carrier;
+the branching and terminal siblings remain doc-horizon (above) until a
+real consumer materializes.
 
 **Future-extensibility note.** When a third writer is introduced (e.g.,
 a perf-trace writer separating `Bench` samples from `Lineage` events;
 a constraint-set writer for the typed `Tolerance` taxonomy), the
 amendment generalizes: stacking the new writer atop
 `LineageDiagnostics` inherits A24 by the same construction. New
-carriers similarly extend by stacking atop the trinity (e.g., a
+carriers similarly extend by stacking (e.g., were the doc-horizon
+`LineageTree` ever rebuilt against a real consumer, a
 `LineageTreeDiagnostics<'a>` would be `LineageTree<Diagnostics<'a>>`,
 inheriting branching + dual-writer chronology). The chapter-close
 ritual adds the new writer's monad-law triple in the same commit that
