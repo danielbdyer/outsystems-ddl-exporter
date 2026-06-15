@@ -23449,3 +23449,47 @@ could not see "N rows would move" before committing a destructive estate-scale l
   All Phase 2–4 Docker witnesses were re-run with that env var set and confirmed real via
   per-test TRX durations (seconds, not ms). NEVER trust the green count for Docker-gated tests
   here — check the durations.
+
+## 2026-06-15 (later) — Phase 5 + Phase 1: the real-wire harness + estate survey package; the cutover gates are governance-gated, not code (R6)
+
+The charter's **Phase 5** (cutover gates) and **Phase 1** (the real wire). Unlike Phases 2–4,
+Phase 5 has **no buildable code lever that respects R6** — all three gates are real-wire /
+CDC-verdict / cutover-governance bound. The honest, high-value deliverable is the operator-ready
+**`PHASE_1_REAL_WIRE_HARNESS.md`** (the P7b throughput bench procedure + the read-only estate
+survey SQL) plus this cutover-readiness assessment. This is also exactly what the mission's
+Phase 1 asks ("you can't fake the wire — prep the harness + survey queries and flag it for the
+operator").
+
+- **The harness package (`PHASE_1_REAL_WIRE_HARNESS.md`).** Part A: the P7b throughput bench —
+  the shipped streaming reverse leg is already `Bench`-instrumented, so a real-wire run prints
+  rows/sec with no new code; the doc is the operator procedure + the escape-hatch plan (50k-chunk
+  sweep, parallel wavefronts port, sink-resident spill) if it lands materially below 20k. Part B:
+  six read-only survey queries — §1 row counts (sizes the run), §2 FK fan-in + `approx_remap_MB`
+  (resident remap vs spill), §3 trigger map (the capture-ladder descent map), §4 G1 object-scope
+  DENY (P1b — promotes the table-scope preflight if found), §5 P10 user directory (confirms
+  ReconciledByRule on the real estate — the Phase-2 reverse-leg re-key's real input), §6 CDC
+  (the verdict that arms NM-73). Part C: the hand-off checklist.
+
+- **Cutover-readiness assessment — why each Phase-5 gate is NOT a code change here.**
+  1. **Production-shaped dry-run** — the *mechanism* is the Phase-4 movement dry-run preview (row
+     counts + rekey-map preview, witnessed Docker); "production-shaped" means running it against
+     the **real estate** — a real-wire action (harness Part A/B), not a code lever.
+  2. **Grant gate advisory → hard** — the *mechanism already exists*: the standalone `projection
+     survey` verb HARD-STOPS (exit 7) on a blocked `CapabilitySurvey.blocked` report
+     (`Program.fs:314`); the in-flow G0c advisory only warns **by R6 design** (V2 owns no
+     production write path during dual-track). The "flip" is the operator wiring `projection
+     survey` into the **per-pair cutover CI as a required gate** — a *governance* action governed
+     by the N=10-consecutive-green-canary + operator-sign-off ladder (the load-bearing R6
+     commitment), NOT a blanket in-flow env flip. **A speculative in-flow flip was deliberately
+     NOT built** — it would be redundant with the existing survey hard-stop and would bypass the
+     per-pair canary governance R6 mandates. (This entry is the R6 amendment for the
+     not-built decision; the default advisory posture is unchanged, byte-identical.)
+  3. **NM-73 auto-fallback (CDC-silence → EXCEPT)** — explicitly CDC-verdict-gated ("revisit
+     after J5"); OPEN-3 is still PARTIAL (the CDC path is not yet exercised on a real managed
+     environment). The manual `emission.dataVerification = ValidateBeforeApply` override shipped
+     (NM-73 / WP6.6); the auto-fallback arms on the harness §6 CDC verdict, not before — building
+     it now would fire a deferral whose wake (the CDC verdict) has not landed.
+
+- **Net for Phase 5:** the gates' mechanisms are built or exist; what remains is operator/real-wire
+  governance, which the harness package unblocks. No code shipped for Phase 5 by design (R6); the
+  deliverable is the harness + this assessment.

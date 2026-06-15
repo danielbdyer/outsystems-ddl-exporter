@@ -589,12 +589,16 @@ Dependency-ordered. Each phase has an exit test.
   (OPEN-3) lands.
 - **Exit:** the canonical stores (DECISIONS + this compendium) carry the ledger; the playbook is deprecated.
 
-### Phase 1 — Close the real-wire loop *(mostly measurement)*
+### Phase 1 — Close the real-wire loop *(mostly measurement)* — **HARNESS PREPPED 2026-06-15; run is operator-gated**
 - Run the set-based streaming lane against a real managed OutSystems environment at representative scale → measure rows/sec (**P7b**).
   **Exit:** the throughput floor sustained, or the escape hatches (parallel wavefronts P4, 50k-chunk sweep, sink-resident
   spill) are triggered with a plan.
 - **Estate survey**: row-count + FK-fan-in (gates resident-map vs sink-resident spill) + the P5 trigger map
   across OSUSR tables + the **G1** object-scope-DENY check (P1b).
+- ✅ **The harness + survey SQL are prepped and operator-actionable: `PHASE_1_REAL_WIRE_HARNESS.md`** (the P7b
+  bench procedure + escape-hatch plan; six read-only survey queries; the hand-off checklist). The agent cannot
+  run the wire — this is staged for the operator. The streaming reconcile lane it exercises is built + witnessed
+  (Phases 2–4).
 
 ### Phase 2 — Wire user reconciliation onto the reverse leg *(the "rekey users" gap)* — **DONE 2026-06-15**
 - ✅ Built **reconcile∘streaming**: composed `Reconciliation.reconcileKind` (ByEmail/…) + `reconcileAgainstSink`
@@ -637,10 +641,18 @@ Dependency-ordered. Each phase has an exit test.
 - ✅ **Exit (preview half):** an operator can preview "N rows would move per kind, K users matched / J unmatched"
   before any DML (`ReverseLegStreamingTests` "Phase 4 dry-run preview"). The "watch it live" half is the staged bar.
 
-### Phase 5 — Cutover-readiness gates
-- ≥1 **full production-shaped dry-run** (the deferred cutover gate).
-- Flip the grant-refusal gate **advisory → hard pre-write stop** (per-pair at cutover, R6).
-- Arm the **NM-73 auto-fallback** (CDC-silence → EXCEPT) now that J5 settles the CDC path (OPEN-3).
+### Phase 5 — Cutover-readiness gates — **governance-gated, not code (assessed 2026-06-15)**
+All three are real-wire / CDC-verdict / cutover-governance bound — no buildable code lever that respects R6.
+The mechanisms are built or already exist; what remains is operator governance (which the Phase-1 harness unblocks).
+- ⏳ **Production-shaped dry-run** — the *mechanism* is the Phase-4 movement dry-run preview (built, witnessed);
+  "production-shaped" = run it against the real estate (`PHASE_1_REAL_WIRE_HARNESS.md`). A real-wire action.
+- ⏳ **Grant gate advisory → hard** — the *mechanism already exists*: `projection survey` HARD-STOPS (exit 7) on a
+  blocked capability (`Program.fs:314`); the in-flow advisory warns by R6 design. The "flip" is wiring `projection
+  survey` into the **per-pair cutover CI** — a governance action under the N=10-canary + sign-off ladder, NOT a
+  blanket in-flow env flip (a speculative flip was deliberately not built — it would bypass the per-pair
+  governance R6 mandates; see `DECISIONS.md` 2026-06-15 Phase-5 entry, the R6 amendment).
+- ⏳ **NM-73 auto-fallback** (CDC-silence → EXCEPT) — CDC-verdict-gated; OPEN-3 is still PARTIAL (CDC path not yet
+  exercised on the real wire). The manual override shipped; the auto-fallback arms on the harness §6 CDC verdict.
 
 ## Decisions needed from the operator
 
