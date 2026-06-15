@@ -227,3 +227,121 @@ type LiveSourceDockerTests(fixture: EphemeralContainerFixture) =
         Assert.Contains("MERGE", boot)
         Assert.Contains("OSUSR_BOOT_WIDGET", boot)
         Assert.Contains("Gadget", boot)
+
+    // -- Test 4 — the data triumvirate: all three lanes live + disjoint ----
+    //
+    // Migration-context wiring (2026-06-15). The three data lanes populate
+    // from THREE sources end-to-end:
+    //   * StaticSeeds  ← live OSSYS hydration of a Static-marked kind
+    //                     (`Hydration.hydrateCatalog`).
+    //   * MigrationData ← the operator-curated file at
+    //                     `overrides.migrationDependencies.path`
+    //                     (`MigrationDependenciesBinding.fromConfig`).
+    //   * Bootstrap    ← live OSSYS hydration of the complement
+    //                     (`Hydration.hydrateBootstrapRowsExcluding`, the
+    //                     migration kind excluded so the lanes stay disjoint).
+    // The composer's `OverlappingEmitterCoverage` partition law is the guard
+    // that the three lanes don't double-claim a kind — `mustOkEmit` trips on
+    // it. Each lane's `Data/*.sql` is asserted non-empty + carrying its row.
+    [<Fact>]
+    member _.``the data triumvirate: StaticSeeds + MigrationData + Bootstrap all populate live and stay disjoint`` () =
+        if not (skipIfNoDocker "data-triumvirate-live") then () else
+        let envVar = "PROJECTION_TEST_TRIUM_CONN"
+        let bundle =
+            fixture.WithEphemeralDatabase "TriumSrc" (fun cnn connStr ->
+                task {
+                    // Static lane source: a Static-marked kind, rows live.
+                    do!
+                        Deploy.executeBatch cnn
+                            ("CREATE TABLE [dbo].[OSUSR_TRIUM_COUNTRY] (" +
+                             "[ID] INT NOT NULL PRIMARY KEY, " +
+                             "[NAME] NVARCHAR(100) NOT NULL);")
+                    do!
+                        Deploy.executeBatch cnn
+                            ("INSERT INTO [dbo].[OSUSR_TRIUM_COUNTRY] ([ID], [NAME]) " +
+                             "VALUES (1, N'Atlantis');")
+                    // Bootstrap lane source: a non-static kind, rows live.
+                    do!
+                        Deploy.executeBatch cnn
+                            ("CREATE TABLE [dbo].[OSUSR_TRIUM_WIDGET] (" +
+                             "[ID] INT NOT NULL PRIMARY KEY, " +
+                             "[NAME] NVARCHAR(100) NOT NULL);")
+                    do!
+                        Deploy.executeBatch cnn
+                            ("INSERT INTO [dbo].[OSUSR_TRIUM_WIDGET] ([ID], [NAME]) " +
+                             "VALUES (1, N'Sprocket');")
+                    // A `Static`-marked Country, a non-static Widget (bootstrap),
+                    // and a non-static Role (migration; its rows come from the
+                    // file, never the DB — no Role table is deployed).
+                    let mkKind (entity: string) (table: string) (extraName: string) (modality: ModalityMark list) : Kind =
+                        { Kind.create (mkKey [entity]) (mkName entity)
+                            (TableId.create "dbo" table |> mustOk)
+                            [ { Attribute.create (mkKey [entity; "Id"]) (mkName "Id") Integer with
+                                  Column = ColumnRealization.create "ID" false |> Result.value
+                                  IsPrimaryKey = true; IsMandatory = true }
+                              { Attribute.create (mkKey [entity; extraName]) (mkName extraName) Text with
+                                  Column = ColumnRealization.create (extraName.ToUpperInvariant()) false |> Result.value
+                                  Length = Some 100; IsMandatory = true } ]
+                          with Modality = modality }
+                    let country = mkKind "Country" "OSUSR_TRIUM_COUNTRY" "Name" [ Static [] ]
+                    let widget  = mkKind "Widget"  "OSUSR_TRIUM_WIDGET"  "Name" []
+                    let role    = mkKind "Role"    "OSUSR_TRIUM_ROLE"    "Label" []
+                    let catalog : Catalog =
+                        { Modules =
+                            [ { SsKey = mkKey ["M"]; Name = mkName "M"
+                                Kinds = [ country; widget; role ]; IsActive = true; ExtendedProperties = [] } ]
+                          Sequences = [] }
+                    // The operator-curated migration file (logical-keyed JSON).
+                    let migJson =
+                        """{ "kinds": [ { "module": "M", "entity": "Role",
+                              "rows": [ { "id": "Admin", "values": { "Id": "1", "Label": "Administrator" } } ] } ] }"""
+                    let migPath =
+                        System.IO.Path.Combine(
+                            System.IO.Path.GetTempPath(),
+                            System.String.Concat("trium_mig_", System.Guid.NewGuid().ToString("N"), ".json"))
+                    System.IO.File.WriteAllText(migPath, migJson)
+                    System.Environment.SetEnvironmentVariable(envVar, connStr)
+                    try
+                        let cfg =
+                            { Config.defaultConfig with
+                                Model = { Config.defaultConfig.Model with
+                                            Ossys = Some ("env:" + envVar); Path = None }
+                                Overrides = { Config.defaultConfig.Overrides with
+                                                MigrationDependencies = Some { Path = migPath } } }
+                        // The pipeline's extract-stage seam, called directly.
+                        let migration = mustOk (MigrationDependenciesBinding.fromConfig catalog cfg)
+                        let migrationKinds = MigrationDependenciesBinding.kindKeysOf migration
+                        let! hydratedR = Hydration.hydrateCatalog cfg catalog
+                        let hydrated = mustOk hydratedR
+                        let! bootR = Hydration.hydrateBootstrapRowsExcluding migrationKinds cfg hydrated
+                        let bootstrapRows = mustOk bootR
+                        // The migration kind is NOT in the bootstrap source (disjoint).
+                        Assert.False(
+                            Map.containsKey role.SsKey bootstrapRows,
+                            "the migration kind leaked into the Bootstrap row source")
+                        let bundle =
+                            DataEmissionComposer.composeRenderedBundleWithBootstrap
+                                Policy.empty hydrated Profile.empty
+                                migration bootstrapRows UserRemapContext.empty
+                            |> mustOkEmit
+                        return bundle
+                    finally
+                        System.Environment.SetEnvironmentVariable(envVar, null)
+                        (try System.IO.File.Delete migPath with _ -> ())
+                })
+            |> fun t -> t.GetAwaiter().GetResult()
+        let files = DataEmissionComposer.RenderedDataBundle.perLaneFiles bundle
+        // All three per-lane files are emitted (≥1 row each) — the triumvirate.
+        Assert.True(Map.containsKey "Data/StaticSeeds.sql" files,   "Data/StaticSeeds.sql missing")
+        Assert.True(Map.containsKey "Data/MigrationData.sql" files, "Data/MigrationData.sql missing")
+        Assert.True(Map.containsKey "Data/Bootstrap.sql" files,     "Data/Bootstrap.sql missing")
+        // Each lane carries its own source's row, and only its own.
+        let staticSeeds = Map.find "Data/StaticSeeds.sql" files
+        Assert.Contains("OSUSR_TRIUM_COUNTRY", staticSeeds)
+        Assert.Contains("Atlantis", staticSeeds)
+        let migData = Map.find "Data/MigrationData.sql" files
+        Assert.Contains("OSUSR_TRIUM_ROLE", migData)
+        Assert.Contains("Administrator", migData)
+        let boot = Map.find "Data/Bootstrap.sql" files
+        Assert.Contains("OSUSR_TRIUM_WIDGET", boot)
+        Assert.Contains("Sprocket", boot)

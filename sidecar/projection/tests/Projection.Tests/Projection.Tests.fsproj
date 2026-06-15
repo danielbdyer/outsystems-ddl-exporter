@@ -69,6 +69,7 @@
     <Compile Include="FkSelectivityDiagnosticsTests.fs" />
     <Compile Include="JointDependencyDiagnosticsTests.fs" />
     <Compile Include="EmissionFoldersBindingTests.fs" />
+    <Compile Include="MigrationDependenciesBindingTests.fs" />
     <Compile Include="EmissionFoldersOverlayTests.fs" />
     <Compile Include="FullExportDataBundleTests.fs" />
     <Compile Include="TransformGroupsBindingTests.fs" />
