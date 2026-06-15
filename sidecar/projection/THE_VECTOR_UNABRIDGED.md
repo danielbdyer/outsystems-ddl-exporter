@@ -23,9 +23,72 @@
 >
 > **The standing fact for this reading.** The Reverse-Leg DML execution backlog is treated as **done** — the
 > movement engine (streaming, `CaptureJournal`, MERGE-OUTPUT sink-minting, packed surrogate remap,
-> `MigrationRun.execute`) is shipped, even where the tree does not yet reflect it. The interesting question is
+> `MigrationRun.execute`) has since **landed on `main`** (Phases 2–5, 2026-06-15) — the bracket is now realized in code, with a new *database-archetype* model alongside it; see the **Reconciliation addendum** immediately below. The interesting question is
 > not *build it* but *what its completion has now made ready to cash* — and, sharper, *what it has now made it
 > possible to corrupt in silence.*
+
+---
+
+## Reconciliation addendum — 2026-06-15 (main moved; the study reconciled)
+
+> Written against `db01c23d`; `main` has since advanced 19 commits (PR #613 — this study — among them, now
+> merged). The reconciliation is **focused, and the core is intact.** Per the house amendment discipline this is
+> recorded as a dated note, not a silent rewrite of the body.
+
+**Still valid, verified byte-for-byte.** The keystone and every honesty finding hold: `PhysicalSchema.fs`
+(`PhysicalForeignKey` still has no `IsTrusted`; `ofCatalog` still takes no `DecisionOverlay`), `Tolerance.fs`
+(still exactly 8 variants, all `@ladder` Schema/Data — zero Decision/Identity/Time), `NORTH_STAR.matrix.generated.md`
+(still L1 5/5 · L2 4/5), and `AXIOMS.md`/`AxiomTests.fs` (no drift) are unchanged on main; the counts (112
+citations, 42 Skips, seven emitter targets) stand. **M1 (the keystone) is still unbuilt and still the
+highest-leverage move; Wave 0's honesty moves are still unbuilt and still first.**
+
+**The reverse leg is no longer a bracket — it landed (Phases 2–5).** What the standing-fact note treated as "done
+even though the tree won't reflect it" is now realized in code, and two claims move:
+
+- **NM-31 is CLOSED.** The streaming write engine gained a real reconcile leg
+  (`TransferRun.runStreamingReconcilingWithRenames` + the streaming `validateUserMap` pre-write halt, AC-I5
+  sink-untouched); `ReverseLegRealization.choose` now honors `--resumable` via `sinkResidentResumeAvailable`. The
+  "streaming arm has no reconcile leg / `choose` presents a false symmetry" claim (§II.3) is **retired** — its
+  docstrings now read "NM-31 — CLOSED." *The two-write-engine duplication itself still stands — Phase 2 added
+  capability, it did not unify the engines, so that compression candidate (§V.1-adjacent) holds.*
+- **Resume / idempotency / dry-run hardened** (Phase 3: a streaming `--execute` without `--journal` is refused by
+  name; a journal-address-drift guard. Phase 4: a `COUNT_BIG` DryRun row-count preview). *This makes `M3` (the
+  real-wire swept change-algebra proof) more ready than the study assumed: the real inverse leg now exists **and
+  is hardened + witnessed** (reconcile + resume + dry-run), so the in-process→on-substrate promotion is a backend
+  swap, not a build.*
+
+**A new disposition the study did not anticipate: the database *archetype*.** `DATABASE_ARCHETYPES.md` +
+`MovementSurface.fs` introduce `Archetype = FullRights | ManagedDml` — the target's *capability class* lifted from
+scattered implicit behaviors into one closed DU that expands at a single total site (`CapabilityProfile.of`) to a
+per-capability bundle (`DdlPermitted`, `IdentityInsert`, `ResumeCheckpoint`, `WipeStrategy`…), with `Grant`
+demoted to a *derived projection* (`Archetype.grant ∘ ofGrant = id`, round-tripped in `ArchetypeTests.fs`) and
+reconciled against probed evidence (`CapabilitySurvey.reconcileArchetype → ArchetypeFinding`). The keymap-spill
+mechanism (`KeymapSpill.fs`) is archetype-determined (shipped armed-but-inert). It bears on the study two ways:
+
+- It **partially retires the Permissions inverse-space finding** (§VI.1 / `C1.F3` — "permissions are *gated* but
+  not an axis"): the capability *disposition* is now typed, declared (`Environment.Archetype` in
+  `projection.json`), projected, round-tripped, and verified — no longer "just a gate." *The residual gap stands:*
+  grants/roles/RLS as projected/diffed Catalog **content** (a `Grant` facet in the IR, `GRANT` in the `Statement`
+  DU, permission readback) are still absent — the archetype names *what the engine may do to a target*, not *what
+  grants live on its objects*.
+- It is a **worked example of Convergence 3** (convention → typed disposition, §IV.1): exactly the move the study
+  recommends, executed independently on the capability axis — closed DU + one total expansion site + a round-trip
+  law + a reconciliation finding. The thesis is being lived — and `CapabilityProfile.of` is now the **in-repo
+  precedent to copy** for `M4` (`ConstraintState`) and the Kind-V fitness functions (closed DU → one total
+  expansion site → derived projection → round-trip law → reconciliation finding).
+
+**Minor cited-detail drift.** NM-58 added `Reconciliation.ReconciledIdentity.AmbiguousTargetKeys` (blank-key
+exclusion + duplicate-target tiebreaker), surfaced as `TransferReport.AmbiguousTargetMatchKeys` — cite it if you
+enumerate the reconcile-report fields (Appendix C / §II.3). `ReverseLegRealization.choose` gained a
+`sinkResidentResumeAvailable` parameter. No axiom or tolerance drift.
+
+**Landed, at rest — not a concurrent track.** The archetype slices (A → C → S → B, per `REVERSE_LEG_WORK_PLAN.md`
++ the 2026-06-15 `DECISIONS.md` entries) are **merged and idle**; there is no in-flight program to coordinate
+with, so the VECTOR roadmap proceeds freely. They matter here only as **landed precedent**: they sit on surfaces
+largely disjoint from this study's (`MovementSurface`/`TransferRun`/`KeymapSpill` vs `PhysicalSchema`/`Tolerance`/
+the matrix), and where a VECTOR move does touch a surface the archetype work recently extended (`SurrogateRemap.fs`
+now carries `IdentityPolicy`; `CapabilitySurvey.fs` now carries `reconcileArchetype`), read that file's current
+shape first so the change composes with the landed work.
 
 ---
 
@@ -366,7 +429,7 @@ realization with a chunk-resume `CaptureJournal`, and CDC capture count as the d
 | `ChannelDiff<'change>` | `CatalogDiff.fs:62` | the one generic carrier (Added/Removed/Renamed/Changed) behind all five channels — four byte-identical records collapsed into one |
 | `Migration.plan / applyTo` | `Migration.fs` | the plan-time view + the pure T16 master equation; the `LossDeclaration` gate ranges over the complete `SchemaLoss` enumeration |
 | `MigrationRun.execute / executeWithData` | `MigrationRun.fs` | live `migrate A B`: emit→preflight→deploy→canary, `sp_rename`+ALTER minimum-viable touches, read-back B' and verify |
-| `Transfer.runCore` + `writePlan` / `writePlanStreaming` | `TransferRun.fs` | the data-direction adjunction leg; the two realizations (materialized-with-reconcile vs streaming-no-reconcile, NM-31) |
+| `Transfer.runCore` + `writePlan` / `writePlanStreaming` | `TransferRun.fs` | the data-direction adjunction leg; the two realizations (materialized vs streaming — both now reconcile-capable, NM-31 **closed 2026-06-15**) |
 | `SurrogateRemap` (`SourceKey`/`AssignedKey`, `remapRowFksWith`) | `SurrogateRemap.fs` | the generic identity-crossing carrier, A40-harmonized over an injected lookup |
 | `CaptureJournal` | `CaptureJournal.fs` | the client-side chunk-resume ledger; resume replays journaled pairs; drift refuses by name |
 | `ReadSide.read` | `ReadSide.fs` | the Ingest leg — best-effort, synthesizes attribute SsKeys, defaults V2-IR-only axes |
@@ -384,7 +447,7 @@ source a rename changes the key and lands in `Removed + Added` rather than `Rena
 *kind* identity from the V2.SsKey extended property, but attribute SsKeys still re-synthesize — so the residue is
 at the **attribute grain only** (§IV.3 will show why the chorus's first fix for this was wrong). Second, **two
 near-identical write engines** duplicate the two-phase orchestration across row carriers — a clean compression
-candidate, and the reason the streaming arm cannot yet offer the sink-untouched guarantee (NM-31). Third,
+candidate. (It was also the reason the streaming arm could not yet offer the sink-untouched guarantee — **NM-31, now closed 2026-06-15**; see the Reconciliation addendum.) Third,
 **`compose` recomputes `between` twice**, discarding the channel structure it already holds — an O(N log N)
 re-derivation where a true torsor `+` would patch the channels (Part V picks this up).
 

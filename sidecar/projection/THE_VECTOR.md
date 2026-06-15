@@ -4,7 +4,9 @@
 
 > **Companion.** This is the executive edition. The full annals — all nine lenses with their sixty-one
 > methodologies, the complete construct catalogue, the three adversarial verdicts, and the entire 123-row ranked
-> recommendation table — are in [`THE_VECTOR_UNABRIDGED.md`](THE_VECTOR_UNABRIDGED.md).
+> recommendation table — are in [`THE_VECTOR_UNABRIDGED.md`](THE_VECTOR_UNABRIDGED.md). **To *execute* this plan,**
+> see [`THE_VECTOR_EXECUTION_KICKOFF.md`](THE_VECTOR_EXECUTION_KICKOFF.md) — the operational contract (read order ·
+> environment scars · surface map · the gated wave plan).
 >
 > **What this is.** A planning masterwork: given the engine's concerns, the effective methodologies of
 > improvement that ameliorate the *quality of its execution* in service of the larger flows its verbs and
@@ -28,9 +30,67 @@
 >
 > **One standing fact for this reading.** The Reverse-Leg DML execution backlog is treated as **done** — the
 > movement engine (streaming, `CaptureJournal`, MERGE-OUTPUT sink-minting, packed surrogate remap,
-> `MigrationRun.execute`) is shipped, even where the tree does not yet reflect it. The interesting question is
+> `MigrationRun.execute`) has since **landed on `main`** (Phases 2–5, 2026-06-15) — the bracket is now realized in code, with a new *database-archetype* model alongside it; see the **Reconciliation addendum** immediately below. The interesting question is
 > not *build it* but *what its completion has now made ready to cash* — and, sharper, *what it has now made it
 > possible to corrupt in silence.*
+
+---
+
+## Reconciliation addendum — 2026-06-15 (main moved; the study reconciled)
+
+> Written against `db01c23d`; `main` has since advanced 19 commits (PR #613 — this study — among them, now
+> merged). The reconciliation is **focused, and the core is intact.** Per the house amendment discipline this is
+> recorded as a dated note, not a silent rewrite of the body.
+
+**Still valid, verified byte-for-byte.** The keystone and every honesty finding hold: `PhysicalSchema.fs`
+(`PhysicalForeignKey` still has no `IsTrusted`; `ofCatalog` still takes no `DecisionOverlay`), `Tolerance.fs`
+(still exactly 8 variants, all `@ladder` Schema/Data — zero Decision/Identity/Time), `NORTH_STAR.matrix.generated.md`
+(still L1 5/5 · L2 4/5), and `AXIOMS.md`/`AxiomTests.fs` (no drift) are unchanged on main; the counts (112
+citations, 42 Skips, seven emitter targets) stand. **M1 (the keystone) is still unbuilt and still the
+highest-leverage move; Wave 0's honesty moves are still unbuilt and still first.**
+
+**The reverse leg is no longer a bracket — it landed (Phases 2–5).** What the standing-fact note treated as "done
+even though the tree won't reflect it" is now realized in code, and two claims move:
+
+- **NM-31 is CLOSED.** The streaming write engine gained a real reconcile leg
+  (`TransferRun.runStreamingReconcilingWithRenames` + the streaming `validateUserMap` pre-write halt, AC-I5
+  sink-untouched); `ReverseLegRealization.choose` now honors `--resumable` via `sinkResidentResumeAvailable`. The
+  "streaming arm has no reconcile leg / `choose` presents a false symmetry" claim (§2.3) is **retired** — its
+  docstrings now read "NM-31 — CLOSED." *The two-write-engine duplication itself still stands — Phase 2 added
+  capability, it did not unify the engines, so that compression candidate holds.*
+- **Resume / idempotency / dry-run hardened** (Phase 3: a streaming `--execute` without `--journal` is refused by
+  name; a journal-address-drift guard. Phase 4: a `COUNT_BIG` DryRun row-count preview). *This makes `M3` (the
+  real-wire swept change-algebra proof) more ready than the study assumed: the real inverse leg now exists **and
+  is hardened + witnessed** (reconcile + resume + dry-run), so the in-process→on-substrate promotion is a backend
+  swap, not a build.*
+
+**A new disposition the study did not anticipate: the database *archetype*.** `DATABASE_ARCHETYPES.md` +
+`MovementSurface.fs` introduce `Archetype = FullRights | ManagedDml` — the target's *capability class* lifted from
+scattered implicit behaviors into one closed DU that expands at a single total site (`CapabilityProfile.of`), with
+`Grant` demoted to a *derived projection* (`Archetype.grant ∘ ofGrant = id`, round-tripped) and reconciled against
+probed evidence (`CapabilitySurvey.reconcileArchetype → ArchetypeFinding`). It bears on the study two ways:
+
+- It **partially retires the Permissions inverse-space finding** (§5.1 / `C1.F3` — "permissions are *gated* but
+  not an axis"): the capability *disposition* is now typed, declared, projected, round-tripped, and verified. *The
+  residual gap stands:* grants/roles/RLS as projected/diffed Catalog **content** are still absent — the archetype
+  names *what the engine may do to a target*, not *what grants live on its objects*.
+- It is a **worked example of Convergence 3** (convention → typed disposition, §3.2): exactly the move the study
+  recommends, executed independently on the capability axis — closed DU + one total expansion site + a round-trip
+  law + a reconciliation finding. The thesis is being lived — and `CapabilityProfile.of` is now the **in-repo
+  precedent to copy** for `M4` (`ConstraintState`) and the Kind-V fitness functions (closed DU → one total
+  expansion site → derived projection → round-trip law → reconciliation finding).
+
+**Minor cited-detail drift.** NM-58 added `Reconciliation.ReconciledIdentity.AmbiguousTargetKeys` (blank-key
+exclusion + duplicate-target tiebreaker), surfaced as `TransferReport.AmbiguousTargetMatchKeys`. No axiom or
+tolerance drift.
+
+**Landed, at rest — not a concurrent track.** The archetype slices (A → C → S → B, per `REVERSE_LEG_WORK_PLAN.md`
++ the 2026-06-15 `DECISIONS.md` entries) are **merged and idle**; there is no in-flight program to coordinate
+with, so the VECTOR roadmap proceeds freely. They matter here only as **landed precedent**: they sit on surfaces
+largely disjoint from this study's (`MovementSurface`/`TransferRun`/`KeymapSpill` vs `PhysicalSchema`/`Tolerance`/
+the matrix), and where a VECTOR move does touch a surface the archetype work recently extended (`SurrogateRemap.fs`
+now carries `IdentityPolicy`; `CapabilitySurvey.fs` now carries `reconcileArchetype`), read that file's current
+shape first so the change composes with the landed work.
 
 ---
 
@@ -259,7 +319,7 @@ will show the *fix* the chorus first proposed for it was wrong; the genuine resi
 only. Second, **two near-identical write engines** (`writePlan` materialized-with-reconcile vs
 `writePlanStreaming` bounded-memory-no-reconcile) duplicate the two-phase orchestration across row carriers — a
 clean compression candidate, and the reason the streaming arm cannot yet offer the sink-untouched guarantee
-(NM-31). Third, **`compose` recomputes `between` twice**, discarding the channel structure it already holds —
+(NM-31 — **closed 2026-06-15**; the streaming arm now has a reconcile leg, see the Reconciliation addendum). Third, **`compose` recomputes `between` twice**, discarding the channel structure it already holds —
 an O(N log N) re-derivation where a true torsor `+` would patch the channels (§4 picks this up).
 
 ### 2.4 Policy, the decision algebra, and the silent fifth column
