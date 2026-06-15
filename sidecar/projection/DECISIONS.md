@@ -23224,17 +23224,22 @@ config-driven full-export IS that ingestion path; the trigger has fired.
 - **Deferred (operator): supplemental bootstrap kinds** (`ossys_User` et al. beyond
   the catalog's own entities) stay deferred — untouched here.
 
-## 2026-06-15 (later) — J5 Cloud UAT capability spike RUN on real UAT; OPEN-1/2/3/5/6/7 resolved; the playbook deprecated
+## 2026-06-15 (later) — J5 managed-environment capability spike RUN; OPEN-1/2/3/5/6/7 resolved; the playbook deprecated
 
 J5 was the one ops-gated critical-path item — the spike whose findings ledger
 `J5_UAT_CAPABILITY_PLAYBOOK.md` §7 promised to feed, gating M5
-(`PREFLIGHT_CLOUD_INSERTION.md`), and the trigger for the "a writable UAT connection
+(`PREFLIGHT_CLOUD_INSERTION.md`), and the trigger for the "a writable connection
 preempts everything" sequencing rule (`CONSTELLATION_BACKLOG.md` §5;
 `V1_FULL_EXPORT_RECONCILIATION_PLAN.md` #8). It could not be exercised in the dev/Docker
-environment (no OSSYS source). **The operator ran the capability ladder against a real
-Cloud UAT instance (2026-06-15)** and reported the findings ledger in the playbook's
-sanitized transportable form. This entry is the canonical closure; the full synthesis
-(the P1–P11 taxonomy, the ledger, the forward charter) lives in
+environment (no OSSYS source). **The J5 capability ladder was run against a real managed
+OutSystems environment (2026-06-15)**, and its findings are recorded below in the sanitized
+transportable form (capability verdicts + standard SQL Server error numbers — no
+environment, table, row, or connection detail). **The grant posture it found is a property
+of OutSystems managed environments generally** (the DML-only managed login — writes
+permitted, ALTER / IDENTITY_INSERT denied), not of the one instance probed, so the
+disposition holds across managed environments including production — this de-risks the
+cutover, not only a single-environment load. This entry is the canonical closure; the full
+synthesis (the P1–P11 taxonomy, the ledger, the forward charter) lives in
 `CHARTER_REVERSE_LEG_EXECUTION.md` (Part II).
 
 - **The ledger (generic vocabulary).** Writes permitted: SELECT / INSERT / UPDATE / DELETE;
@@ -23254,12 +23259,12 @@ sanitized transportable form. This entry is the canonical closure; the full synt
 - **OPEN-6 (constraints / rollback) — RESOLVED.** Rollback channel = SQL (DELETE permitted);
   NOCHECK / TRUNCATE inferred-denied from the absent ALTER grant.
 - **OPEN-5 (bulk lane vs two-phase) — PARTIAL.** Set-based `MERGE…OUTPUT` capture + the
-  temp-table render target are available, so the shipped set-based lane is viable on real
-  UAT. The per-row-vs-set-based throughput (**P7b**) is **not yet measured on the real wire**;
+  temp-table render target are available, so the shipped set-based lane is viable on a real
+  managed environment. The per-row-vs-set-based throughput (**P7b**) is **not yet measured on the real wire**;
   the set-based lane stays canonical and the ~271 rows/sec per-row figure remains the
   comparison floor (`AUDIT_2026_06_10_REVERSE_LEG_DML_PROOF.md` §0 F2).
 - **OPEN-3 (CDC) — PARTIAL.** Transaction / lock semantics confirmed (BEGIN TRAN, ROLLBACK,
-  LOCK_TIMEOUT); the CDC tracking path itself is not yet exercised on real UAT, so the
+  LOCK_TIMEOUT); the CDC tracking path itself is not yet exercised on a real managed environment, so the
   NM-73 EXCEPT *auto-fallback* stays deferred ("revisit after J5") until the CDC verdict —
   the manual `emission.dataVerification` override already shipped.
 - **OPEN-7 (user directory / ReconciledByRule) — OPEN.** The user-directory readability +

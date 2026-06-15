@@ -2,12 +2,13 @@
 
 > **What this is.** The forward charter *and* the consolidated knowledge base for taking
 > reverse-leg DML movement of legacy application data — the **B→A** load that re-keys an
-> OutSystems estate into a real Cloud UAT (and ultimately production) target — from
+> OutSystems estate into a managed OutSystems environment — from
 > "engine proven on mock" to "an operator trusts running it against ~288M real rows."
 >
 > It is the synthesis of two deep background discovery sweeps (2026-06-15): a J5-foundation
 > sweep (12 + critic + 6 fill agents) and an execution-maturity sweep (7 + critic + 6 fill
-> agents), ~5M subagent tokens total, plus the operator's own real-UAT J5 run. Every claim
+> agents), ~5M subagent tokens total, plus the operator's own J5 run on a real managed OutSystems
+environment. Every claim
 > is `file:line`-grounded against HEAD. Parts II–VIII are the **compendium** (what is true);
 > Part IX is the **charter** (what we do about it); Part X is reference.
 >
@@ -36,7 +37,7 @@
 
 Two facts set the shape of everything that follows.
 
-**Reframe 1 — The gate is closed.** In the repo, J5 (the Cloud UAT capability spike) was the
+**Reframe 1 — The gate is closed.** In the repo, J5 (the managed-environment capability spike) was the
 one true critical-path item: "ops-gated, STILL-OPEN" (`AUDIT_2026_06_13_INVARIANT_NEAR_MISS_HUNT.md:315`),
 its §7 findings ledger a blank template, with **no `DECISIONS.md` entry closing
 OPEN-1/2/3/5/6/7** (OPEN-2 appears exactly once, `DECISIONS.md:21138`, and that is a *residual*
@@ -44,7 +45,7 @@ note that leaves it open, not a closure). The reason it never ran in-repo: "no O
 must be witnessed against a live estate" (`DECISIONS.md:22559-22561`). The capability questions,
 however, were already de-risked to a **re-run** — P1/P2/P3/P6 answered on mock/Docker, witnessed by
 four green `ReverseLeg*Tests.fs` suites (`HANDOFF.md:1581-1586`). **The operator has now run J5
-against a real Cloud UAT instance** (Part II §6) and produced the verdicts — answering the residual
+against a real managed OutSystems environment** (Part II §6) and produced the verdicts — answering the residual
 the whole program waited on.
 
 **Reframe 2 — The engine is largely already built.** This is an integration-and-validation effort,
@@ -65,15 +66,19 @@ witnessed), **ARMED** (designed, build deferred behind a named numeric wake-cond
 
 ## 1. What J5 is, and why it exists
 
-J5 is the **Cloud UAT Capability Playbook** (`J5_UAT_CAPABILITY_PLAYBOOK.md`): a real-UAT SQL ops
-spike that runs a risk-ordered ladder of capability probes against real OSUSR entity tables to
+J5 is the capability spike originally written as the **Cloud UAT Capability Playbook**
+(`J5_UAT_CAPABILITY_PLAYBOOK.md`, now deprecated): a SQL ops spike that runs a risk-ordered ladder of
+capability probes against real OSUSR entity tables **in a managed OutSystems environment** to
 discover *which identity disposition the managed DML-only grant even permits*. The premise: a
 DML-only managed surface may forbid `IDENTITY_INSERT`, which forecloses `PreservedFromSource` and
-forces `AssignedBySink` — and that single fact reshapes the entire data-movement strategy.
+forces `AssignedBySink` — and that single fact reshapes the entire data-movement strategy. The grant
+posture is a property of OutSystems **managed** environments generally (UAT, production), not of any
+one instance — so the disposition decision holds across them, de-risking the production cutover, not
+only a single-environment load.
 
 The probes originate in `TRANSFER_ISOMORPHISM_SUBSTANTIATION.md` §2 as a four-column table
 (`# | Probe | Resolves | Gates`), elaborating `EXECUTION_PLAN.md` §5.1's one-line sketch ("connect
-to a throwaway UAT entity table and test IDENTITY_INSERT/INSERT").
+to a throwaway entity table and test IDENTITY_INSERT/INSERT").
 
 ## 2. Lineage: v1 probe sheet → v2 capability playbook
 
@@ -129,18 +134,18 @@ INSERT denied → write surface closed.
 | **P10** | User-directory readability + email-keying (`OSSYS_USER`/`User`/`USERS`) — metadata-only | A | OPEN-7 | **ReconciledByRule** user re-key | `ReadSide.fs:1600,1632` |
 | **P11** | Explicit `BEGIN TRAN…COMMIT` + `LOCK_TIMEOUT` | C | OPEN-3, OPEN-5 | chunk-commit granularity vs CDC; the A3 scaffold | — |
 
-## 6. The operator's real-UAT ledger (2026-06-15) — canonical here + in `DECISIONS.md`
+## 6. The capability ledger (managed OutSystems environment, 2026-06-15) — canonical here + in `DECISIONS.md`
 
 Recorded in the playbook's transportable form (verdicts + standard error numbers + roles). The
 playbook itself is **deprecated** (its §7 template is *not* populated); this section and the
-`DECISIONS.md` 2026-06-15 entry ("J5 Cloud UAT capability spike RUN…") are the canonical homes.
+`DECISIONS.md` 2026-06-15 entry ("J5 managed-environment capability spike RUN…") are the canonical homes.
 
 | Probe | Verdict | Meaning |
 |---|---|---|
 | P1 write envelope | **permitted**: SELECT/INSERT/UPDATE/DELETE; **no ALTER** grant | OPEN-2 closed; estate is not read-only |
 | P2 identity-omitting INSERT + readback | **permitted** — DB mints the key | **AssignedBySink is the live path** |
 | P3 `SET IDENTITY_INSERT` | **denied (error 1088)** | **PreservedFromSource is dead** |
-| P6 DELETE of own row | **permitted** — count restored to baseline 220 | **rollback channel = SQL** |
+| P6 DELETE of own row | **permitted** — count restored to baseline | **rollback channel = SQL** |
 | P11 transaction roundtrip | **permitted** — ROLLBACK clean | transaction wrapper is a rollback channel |
 | P5 table-var / temp-table | **permitted** | SQL-side key-map render target available |
 | P4 `MERGE…OUTPUT INTO` | **permitted** — source→assigned pairs returned | set-based capture available (Contribution B (a) ✓) |
@@ -254,7 +259,7 @@ amino-acid/protein expository framing — not type names) that fold into operato
 - **Move (cross-substrate)** (structural move #10): rows flow source→sink, identity-reconciled,
   minimality CDC-measured — the data-plane projection of the whole migration.
 - **`validate-user-map` gate (N4 / AC-I5)** — the pre-flight for the user re-key: every orphan source
-  `UserId` must be mapped, and every target in the UAT allow-list, *before any SQL is emitted*; it must
+  `UserId` must be mapped, and every target in the allow-list, *before any SQL is emitted*; it must
   halt before emission. At the fitness snapshot it was **absent as a pre-write gate**
   (`isFullyMapped`/`unmatchedCount` existed but nothing gated on them); orphans surfaced only post-write
   via exit-9. Closing this is Phase 2 work.
@@ -529,7 +534,7 @@ arriving with J5 results discharges this preemption** — the program can now re
 
 R6: V2 emits-but-doesn't-ship during dual-track — it owns no production write path until the per-pair flip at
 cutover. This is why the grant-refusal gate is advisory today (Part VII §4) and why `PROJECTION_ALLOW_EXECUTE`
-exists as a separate authorization axis from `--go` intent. The full production-shaped UAT dry-run is a
+exists as a separate authorization axis from `--go` intent. The full production-shaped dry-run is a
 deferred cutover gate (`CUTOVER_READINESS_BRIEF.md`).
 
 ## 3. The DataVerification / EXCEPT-fallback thread (NM-73)
@@ -563,14 +568,14 @@ Dependency-ordered. Each phase has an exit test.
 - **Deprecate `J5_UAT_CAPABILITY_PLAYBOOK.md`** rather than populate its §7 template — the spike has
   run, so its intent is fulfilled; banner added, content relocated. *(done 2026-06-15)*
 - **Write the canonical `DECISIONS.md` entry** closing OPEN-1/2/3/5/6/7, with the Part II §7 residuals
-  named. *(done 2026-06-15 — "J5 Cloud UAT capability spike RUN…")*
+  named. *(done 2026-06-15 — "J5 managed-environment capability spike RUN…")*
 - **Remaining:** flip the status surfaces (`AUDIT_2026_06_13` "J5 (ops-gated)"; the `HANDOFF.md` /
   `CONSTELLATION_BACKLOG.md` preemption letters) and arm the NM-73 auto-fallback once the CDC verdict
   (OPEN-3) lands.
 - **Exit:** the canonical stores (DECISIONS + this compendium) carry the ledger; the playbook is deprecated.
 
 ### Phase 1 — Close the real-wire loop *(mostly measurement)*
-- Run the set-based streaming lane against real UAT at representative scale → measure rows/sec (**P7b**).
+- Run the set-based streaming lane against a real managed OutSystems environment at representative scale → measure rows/sec (**P7b**).
   **Exit:** ≥20k/s sustained, or the escape hatches (parallel wavefronts P4, 50k-chunk sweep, sink-resident
   spill) are triggered with a plan.
 - **Estate survey**: row-count + FK-fan-in (gates resident-map vs sink-resident spill) + the P5 trigger map
@@ -599,7 +604,7 @@ Dependency-ordered. Each phase has an exit test.
 - **Exit:** an operator can preview "N rows / M chunks would move, K would skip" and watch it live.
 
 ### Phase 5 — Cutover-readiness gates
-- ≥1 **full production-shaped UAT dry-run** (the deferred cutover gate).
+- ≥1 **full production-shaped dry-run** (the deferred cutover gate).
 - Flip the grant-refusal gate **advisory → hard pre-write stop** (per-pair at cutover, R6).
 - Arm the **NM-73 auto-fallback** (CDC-silence → EXCEPT) now that J5 settles the CDC path (OPEN-3).
 
@@ -667,6 +672,6 @@ Synthesized from two background discovery workflows (2026-06-15): the J5-foundat
 completeness critic + 6 fill agents) and the execution-maturity sweep (7 + critic + 6 fill), ~5M subagent
 tokens, every claim citation-backed and the inter-agent contradictions (the ~271 figure; streaming
 idempotence; batch/parallelism build-status; the CLI-wiring "still open" staleness) explicitly reconciled in
-the fill round. The operator's J5 ledger (Part II §6) was supplied verbally in-session and is not otherwise
-in the repo. Durable facts also recorded in the agent's session memory (`j5-cloud-uat-ledger`,
+the fill round. The J5 ledger (Part II §6) is the sanitized findings of the run on a managed OutSystems
+environment, recorded canonically here and in `DECISIONS.md`; it is not otherwise in the repo. Durable facts also recorded in the agent's session memory (`j5-cloud-uat-ledger`,
 `reverse-leg-execution-readiness`).
