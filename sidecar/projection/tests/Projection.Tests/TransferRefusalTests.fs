@@ -110,7 +110,7 @@ let ``executeGate: a clean single-PK AssignedBySink plan passes`` () =
 // runs through with `--allow-drops` (the 6.A.1 same-decision pattern).
 
 let private reconciledWith (unmatched: (SsKey * SourceKey) list) : ReconciledIdentity =
-    { Remap = SurrogateRemapContext.empty; Unmatched = unmatched; Ambiguous = [] }
+    { Remap = SurrogateRemapContext.empty; Unmatched = unmatched; Ambiguous = []; AmbiguousTargetKeys = [] }
 
 [<Fact>]
 let ``AC-I5: an unmatched Source identity refuses pre-write with transfer.unmappedIdentities`` () =

@@ -189,9 +189,23 @@ force a drop or an ambiguous match.
   GROUP BY s.name, t.name
   ORDER BY [rows] DESC;
   ```
+- **⚠️ DMV-denied fallback (a real on-prem gap, observed 2026-06-15).** `sys.dm_db_partition_stats`
+  needs **`VIEW DATABASE PERFORMANCE STATE`** (`VIEW SERVER STATE` on older versions). A least-privilege
+  login may lack it — the probe returns nothing while plain `SELECT`s still work. **It is a capability
+  gap to record, not a blocker:** fall back to an exact (table-scanning, so slower at scale) `COUNT_BIG`
+  per table, or request the DMV grant. Generate-and-run, one row per table:
+  ```sql
+  -- emit a COUNT_BIG statement per entity table; copy the output and run it.
+  SELECT 'SELECT ''' + s.name + '.' + t.name + ''' AS tbl, COUNT_BIG(*) AS rows FROM '
+         + QUOTENAME(s.name) + '.' + QUOTENAME(t.name) + ' UNION ALL'
+  FROM   sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id
+  WHERE  t.name LIKE '{{ENTITY_LIKE}}';
+  ```
 - **Read-out:** the SOURCE counts size the move; any non-zero TARGET count on a table you intend to
   load means "append" semantics — confirm the journal discipline (or a wipe) so a re-run does not
-  duplicate.
+  duplicate. **If the DMV is denied on the target, record it as an environment capability gap** (it
+  affects B2 keymap-sizing and `verify-data` stale-count validation too) and decide DMV-grant vs the
+  `COUNT_BIG` scan — see `DATABASE_ARCHETYPES.md` (DMV-readability is a capability facet).
 
 ### B2 — How many rows live in FK-target tables (the resident key-map RAM ceiling)?
 - **What I can't know:** the total rows in tables that are pointed *at* by a foreign key — the only

@@ -580,6 +580,20 @@ let narrateTransferReport (report: Transfer.TransferReport) : unit =
             report.UnmatchedIdentities.Length
         for (k, s) in report.UnmatchedIdentities do
             printfn "  %s source '%s'" (SsKey.rootOriginal k) (SourceKey.value s)
+    if not (List.isEmpty report.AmbiguousIdentities) then
+        printfn ""
+        printfn
+            "%d source record(s) had a non-unique reconcile key — the first binding was kept:"
+            report.AmbiguousIdentities.Length
+        for (k, s) in report.AmbiguousIdentities do
+            printfn "  %s source '%s'" (SsKey.rootOriginal k) (SourceKey.value s)
+    if not (List.isEmpty report.AmbiguousTargetMatchKeys) then
+        printfn ""
+        printfn
+            "%d target record(s) shared a reconcile key with an older record — the oldest was kept (supply an override if the wrong one won):"
+            report.AmbiguousTargetMatchKeys.Length
+        for (k, a) in report.AmbiguousTargetMatchKeys do
+            printfn "  %s target '%s' (displaced)" (SsKey.rootOriginal k) (AssignedKey.value a)
     if not (List.isEmpty report.SkippedReferences) then
         printfn ""
         printfn

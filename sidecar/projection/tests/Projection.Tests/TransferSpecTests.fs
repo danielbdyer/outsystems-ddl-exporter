@@ -24,6 +24,7 @@ let private reportWithReplay (replayed: int option) : Transfer.TransferReport =
       UnbreakableCycleFks = []
       UnmatchedIdentities = []
       AmbiguousIdentities = []
+      AmbiguousTargetMatchKeys = []
       SkippedReferences   = []
       CaptureLaneDescents = []
       ReplayedPriorDrops  = replayed
