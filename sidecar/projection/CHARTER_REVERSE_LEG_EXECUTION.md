@@ -661,6 +661,18 @@ The mechanisms are built or already exist; what remains is operator governance (
 2. **Transfer-host memory budget** — sets the packed-remap spill trigger.
 3. **The two un-run probes** — hand the operator the **P10** user-directory metadata probe now (read-only;
    confirms ReconciledByRule available) and design the **P7b** throughput harness for Phase 1.
+4. **Target archetype per environment** — classify each target as **full-rights** (on-prem: DDL + DML +
+   IDENTITY_INSERT — the schema+data home) or **managed-DML** (the J5 cloud profile). The class flips a
+   *bundle* of engine dispositions (identity strategy, resume mechanism, schema deploy, wipe, rollback),
+   so it should become a reusable, **verified** config disposition rather than a scatter of implicit
+   branches. Verify the on-prem profile with `REVERSE_LEG_OPERATOR_PROBE_SHEET.md` **Part E** (E1–E5);
+   the design + assumptions + slice plan are in **`DATABASE_ARCHETYPES.md`** (`DECISIONS.md` 2026-06-15).
+
+## Operator-actionable companions
+- **`REVERSE_LEG_OPERATOR_PROBE_SHEET.md`** — 16 generic, runnable probes naming the per-table unknowns
+  (schema shape, data fidelity, capability, archetype) + the results ledger. All catalog SQL validated.
+- **`PHASE_1_REAL_WIRE_HARNESS.md`** — the P7b throughput-bench procedure + the estate-sizing survey.
+- **`DATABASE_ARCHETYPES.md`** — the target capability-class design (the archetype as a config disposition).
 
 ## Risk register (carried from the discovery)
 

@@ -23493,3 +23493,46 @@ operator").
 - **Net for Phase 5:** the gates' mechanisms are built or exist; what remains is operator/real-wire
   governance, which the harness package unblocks. No code shipped for Phase 5 by design (R6); the
   deliverable is the harness + this assessment.
+
+## 2026-06-15 (later) — Database archetype as a config disposition (direction recorded; operator-prompted)
+
+The operator named a distinction the docs had blurred: there are **two classes of target database**,
+not one. **(1) On-prem SQL Server** — the migration team's own instance, which receives the emitted
+SSDT schema (`CREATE TABLE` / `ALTER`) AND hosts a database with the same schema + the migrated data
+(the `Logical` / B rendition); likely full DDL rights (operator to verify). **(2) Managed cloud SQL**
+— the J5-settled DML-only sink (`Physical` / A rendition; no ALTER / IDENTITY_INSERT / CREATE TABLE).
+These have materially different capability profiles, and the engine *already* branches on them — but
+the branch lives unevenly across a coarse binary `Grant` facet (`SchemaAndData | DataOnly`), a metadata
+`Rendition` facet, and a layer of **hardcoded cloud-shaped assumptions** (the client-side NDJSON
+journal exists *only because* the DML-only grant forbids the `CREATE TABLE` a sink-resident progress
+table would need; AssignedBySink is the reverse-leg default; `#`-temp staging; descent-only constraint
+handling).
+
+- **The direction.** Lift the target's capability **class** into one named, reusable **config
+  disposition** — an `Archetype` facet on `Environment` (sibling to `Grant` / `Rendition`) that
+  **expands** to a `CapabilityProfile` the pipeline reads instead of re-deciding per site. `FullRights`
+  (on-prem) ⇒ PreservedFromSource default, schema deploy, sink-resident resume, constraint bypass,
+  TRUNCATE. `ManagedDml` (cloud, the J5 profile) ⇒ AssignedBySink, client journal, capture-ladder
+  descent, child-first DELETE. The archetype **subsumes** `Grant` (which becomes a derived projection),
+  keeps `Rendition` orthogonal, and is **closed + total over the engine** (a new target class joins by
+  one DU case — the `ArtifactByKind` / `registered ⇔ executed` discipline applied to capability).
+- **Verify, don't trust (A44 — expressible ⇔ reachable).** The archetype is the operator's
+  *declaration*; the `CapabilitySurvey` *confirms* it against probed `fn_my_permissions` / write-probe
+  evidence, exactly as it reconciles the declared `Grant` today. A declared `FullRights` target missing
+  `CREATE TABLE` / `IDENTITY_INSERT`, or a `ManagedDml` target that unexpectedly permits them, is a
+  **named declared-vs-actual mismatch** — the J5 covenant (the disposition holds across same-class
+  instances) generalized from a one-time spike into a standing per-class gate. The J5 ledger is the
+  seed profile for `ManagedDml`; `REVERSE_LEG_OPERATOR_PROBE_SHEET.md` Part E (E1–E5: CREATE TABLE,
+  ALTER, IDENTITY_INSERT, schema parity, sink-resident progress — all validated against SQL Server 2022)
+  is the seed verification for `FullRights`.
+- **What it unlocks.** The on-prem path stops being forced into cloud-shaped assumptions and gains the
+  strategies its full grant permits (the highest-value: a **sink-resident progress table** retires the
+  Phase-3 address-drift/compaction hazards on this class; **PreservedFromSource** removes the entire
+  capture/remap/FK-repoint machinery when keys can be preserved). The cloud path stays byte-identical to
+  the J5-proven behavior.
+- **Status: design + assumptions recorded, not yet built.** The full design + the honest hardcoded-
+  assumption inventory (H1–H6) + the non-breaking slice plan (A: type + derive-from-Grant; B: survey
+  reconciliation; C: sink-resident resume fork; D: PreservedFromSource fork; E+: bypass/TRUNCATE) live
+  in **`DATABASE_ARCHETYPES.md`**. Slice A is byte-identical (the archetype defaults to *inferred from
+  the existing `Grant`*), so it can land without touching any current config. Sequenced behind the
+  real-wire verification (the on-prem profile must be probed before its forks are trusted).

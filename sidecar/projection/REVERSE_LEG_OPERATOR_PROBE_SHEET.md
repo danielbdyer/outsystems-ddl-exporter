@@ -14,6 +14,15 @@
 > **TARGET** (where it is being loaded). Most probes are **read-only catalog queries**; the few
 > **WRITE-PROBES** are explicitly transactional and roll back — *nothing persists*.
 >
+> **There are two *classes* of TARGET** (and the engine must interact with each differently — see
+> `DATABASE_ARCHETYPES.md`): a **full-rights** database (on-prem SQL Server the migration team owns —
+> DDL + DML, receives the emitted schema and a copy of the migrated data) and a **managed-DML** database
+> (a platform-managed sink — DML-only, no DDL/`ALTER`/`IDENTITY_INSERT`). Parts A–D are
+> **archetype-agnostic** (they probe schema/data/capability shape regardless of class). **Part E**
+> determines *which archetype a target is* — because that single fact reshapes the identity strategy,
+> the resume mechanism, the schema-deploy lane, and the rollback channel. The managed-DML profile was
+> settled by the earlier capability spike; the full-rights profile is what Part E verifies.
+>
 > **How to use it.** (1) Fill the Binding Sheet (§0) once. (2) Run each probe against the database
 > it names (SOURCE / TARGET / BOTH). (3) Record the verdict in the Ledger (§5). Only the **verdicts**
 > need to travel back — never table names, row data, or credentials.
@@ -382,6 +391,114 @@ load runs against will tolerate at scale.
 
 ---
 
+## Part E — Target archetype *(which capability class is this target?)*
+
+This is the single fact that reshapes the most: whether the target is a **full-rights** database (DDL +
+DML — the on-prem schema+data home) or a **managed-DML** database (the platform sink the earlier spike
+settled — DML-only, sink-mints keys, no DDL). The managed-DML profile is known; these probes **verify
+the full-rights profile** and, by elimination, classify any target. Each answer flips a *bundle* of
+engine dispositions, not one knob (see `DATABASE_ARCHETYPES.md` §1–§2). Run on the **TARGET**, as the
+migration principal.
+
+### E1 — `CREATE TABLE` / DDL rights *(the keystone)*
+- **What I can't know:** whether the principal may create objects in the target.
+- **What it unlocks:** schema deploy (the `migrate-with-data` lane), a **sink-resident progress table**
+  for resume (durable + queryable + no filename↔digest coupling — strictly better than the client-side
+  journal), and persistent server-side staging. This one verdict is the primary full-rights vs
+  managed-DML fork.
+- **Probe** (`CREATE TABLE` is a *database*-scope permission — note the `'DATABASE'` securable class):
+  ```sql
+  SELECT HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'CREATE TABLE')     AS can_create_table,
+         HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'CREATE PROCEDURE') AS can_create_proc;
+  -- Definitive (transactional — rolls back, nothing persists):
+  BEGIN TRAN;
+    CREATE TABLE dbo.__probe_create_rights (x INT);
+    SELECT 'CREATE TABLE OK' AS verdict;
+  ROLLBACK;
+  ```
+- **Read-out:** `can_create_table = 1` / the `CREATE` succeeds → **full-rights** (schema deploy +
+  sink-resident resume available). `0` / permission error → **managed-DML** (the client-side journal +
+  sink-minting path is required — the proven cloud profile).
+
+### E2 — `ALTER` rights *(constraint / trigger bypass, fast wipe)*
+- **What I can't know:** whether the principal may alter objects (disable constraints/triggers,
+  `TRUNCATE`).
+- **What it unlocks:** a **fast straight-load** path (`NOCHECK` constraints + disable triggers during the
+  load, instead of the capture-ladder descent) and `TRUNCATE`-based refresh (instead of child-first
+  `DELETE`).
+- **Probe (swap `{{SCHEMA}}` / `{{TABLE}}` for a representative table):**
+  ```sql
+  SELECT HAS_PERMS_BY_NAME(QUOTENAME('{{SCHEMA}}')+'.'+QUOTENAME('{{TABLE}}'),'OBJECT','ALTER')
+           AS can_alter_table;
+  ```
+- **Read-out:** `1` → constraint/trigger bypass + `TRUNCATE` available (the full-rights fast lane).
+  `0` → load through live constraints (the capture-ladder descent + child-first `DELETE` — the
+  managed-DML path).
+
+### E3 — `IDENTITY_INSERT` *(the identity-disposition fork)*
+- **What I can't know:** whether the principal may write explicit values into an auto-number column.
+- **What it unlocks:** **PreservedFromSource** — the source surrogate keys can be written *directly*, so
+  **no key capture, no remap, and no FK re-pointing are needed at all**. This is a dramatically simpler
+  and faster load than the sink-minting path; it is correct *only* if this is permitted.
+- **Probe (transactional — rolls back; swap `{{TABLE}}`/`{{PK}}` + one valid row):**
+  ```sql
+  BEGIN TRAN;
+    SET IDENTITY_INSERT {{SCHEMA}}.{{TABLE}} ON;
+    INSERT INTO {{SCHEMA}}.{{TABLE}} ({{PK}} /*, other required cols */)
+    VALUES            ( /* an explicit unused id */ /*, ... */);
+    SET IDENTITY_INSERT {{SCHEMA}}.{{TABLE}} OFF;
+    SELECT 'IDENTITY_INSERT OK' AS verdict;
+  ROLLBACK;
+  ```
+- **Read-out:** OK → **PreservedFromSource viable** (full-rights) — keys are preserved, FK values stay
+  valid, the whole capture/remap machinery is unnecessary. Denied (error 1088 / permission) →
+  **AssignedBySink** (the managed-DML path the engine ships). *A declared full-rights target that fails
+  this is a declared-vs-actual mismatch — surface it.*
+
+### E4 — Schema parity *(does the target host the same schema?)*
+- **What I can't know:** whether the on-prem target carries the same logical model as the source/cloud.
+- **What it unlocks:** confidence that the on-prem is the **same-schema home** (the verification
+  destination), and the structural input the post-load canary compares.
+- **Probe:**
+  ```sql
+  SELECT s.name AS [schema], t.name AS [table], c.name AS [column],
+         ty.name AS data_type, c.is_nullable, c.is_identity
+  FROM   sys.columns c
+  JOIN   sys.types   ty ON ty.user_type_id = c.user_type_id
+  JOIN   sys.tables  t  ON t.object_id = c.object_id
+  JOIN   sys.schemas s  ON s.schema_id = t.schema_id
+  WHERE  t.name LIKE '{{ENTITY_LIKE}}'
+  ORDER BY t.name, c.column_id;
+  ```
+- **Read-out:** diff this inventory against the emitted SSDT / the source rendition. Match (modulo the
+  rendition's name differences — compare by logical identity, not raw name) → the on-prem is the
+  same-schema home. The engine's canary does this exactly; this is the operator spot-check.
+
+### E5 — Sink-resident progress-table viability *(the resume upgrade)*
+- **What I can't know:** whether the target admits a small engine-owned bookkeeping table.
+- **What it unlocks:** a **sink-side resume checkpoint** — durable across a client crash, queryable
+  mid-run, and free of the client-journal's filename↔digest coupling (the Phase-3 address-drift and
+  compaction hazards simply do not exist on this archetype).
+- **Probe (transactional — rolls back; subsumes E1 + an INSERT):**
+  ```sql
+  BEGIN TRAN;
+    CREATE TABLE dbo.__progress_probe (kind SYSNAME, chunk_ix INT, committed_at DATETIME2);
+    INSERT INTO dbo.__progress_probe (kind, chunk_ix, committed_at) VALUES (N'probe', 0, SYSUTCDATETIME());
+    SELECT 'sink-resident progress OK' AS verdict;
+  ROLLBACK;
+  ```
+- **Read-out:** OK → the engine can checkpoint resume state **sink-side** (the full-rights upgrade).
+  Denied → the client-side journal is required (managed-DML) — which the engine already ships and
+  Phase 3 hardened.
+
+> **Classification rule.** E1 + E3 both **OK** ⇒ **full-rights** (and E2/E5 confirm the fast/durable
+> upgrades). E1 + E3 both **denied** ⇒ **managed-DML** (the J5 profile — declare it and the engine uses
+> the proven cloud path). A *split* result (e.g. `CREATE TABLE` yes but `IDENTITY_INSERT` no) is a
+> **distinct, valid archetype** — record it; the engine should treat each capability independently, not
+> assume the bundle.
+
+---
+
 ## Part D — Throughput *(the one measurement, not a query)*
 
 ### D1 — Does the set-based streaming lane sustain the throughput floor over the real wire?
@@ -422,6 +539,12 @@ load runs against will tolerate at scale.
 | C4 | change-tracking enabled | | |
 | C5 | memory grant / semaphore | | |
 | C6 | real-table write-probe | | |
+| E1 | CREATE TABLE / DDL | | |
+| E2 | ALTER rights | | |
+| E3 | IDENTITY_INSERT | | |
+| E4 | schema parity | | |
+| E5 | sink-resident progress | | |
+| — | **→ archetype verdict** | **full-rights / managed-DML / split** | drives the disposition bundle (`DATABASE_ARCHETYPES.md`) |
 | D1 | throughput rows/sec | | |
 
 **Then:** with A–C answered I finalize the per-table strategy, the refusal list, the memory/spill
