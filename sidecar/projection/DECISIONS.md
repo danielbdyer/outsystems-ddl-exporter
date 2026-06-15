@@ -23638,3 +23638,31 @@ direction is load-bearing.
   AssignedBySink. Part 2 (archetype) run on the **on-prem** (Flow P's sink) → its CREATE TABLE /
   IDENTITY_INSERT decide whether Flow P even has a keymap and which spill it would use. Builds are
   HELD until these land — building a spill now risks building the wrong one of the three mechanisms.
+
+## 2026-06-15 (later) — Confirmed: on-prem = FullRights(-minus-DMV); cloud sink is EMPTY; the codebase's job is the reverse leg
+
+Operator confirmations that close the archetype unknowns and lock the data topology.
+
+- **On-prem archetype = `FullRights`** (verified, not just declared): `CREATE TABLE`, `ALTER` on
+  `[dbo].[<table>]`, `SELECT/INSERT/UPDATE/DELETE`, **`IDENTITY_INSERT`**, and a **sink-resident
+  progress table** all permitted — minus **`VIEW DATABASE PERFORMANCE STATE`** (the earlier DMV gap).
+  So the on-prem is precisely the `FullRights`-minus-DMV split the §5 archetype note predicted. Part 2
+  is **answered**; nothing more to probe on the on-prem.
+- **The keystone topology fact: the cloud managed instance will NOT hold the estate data.** The estate
+  data is populated **into the on-prem** (by an upstream process), and the codebase then runs **the
+  last leg = the reverse leg = on-prem → cloud**. So:
+  - The **estate data lives on the on-prem** — which means the keymap sizing (`NEXT_BUILD_INPUTS.sql`
+    Part 1) must run on the **on-prem via the `COUNT_BIG` fallback (1c)** (DMV-denied there); the
+    cloud-DMV path is moot (no data on the cloud yet). *(Corrects the prior entry's "size on the cloud".)*
+  - The **reverse-leg sink = the (empty) cloud = `ManagedDml`** (J5): `AssignedBySink` (mints; no
+    `IDENTITY_INSERT`), so the keymap is needed, and the spill is the **`#`-temp** form (no CREATE
+    TABLE on the cloud). `PreservedFromSource` is dead on the cloud sink regardless of the on-prem's
+    IDENTITY_INSERT.
+  - The on-prem's `FullRights` is the **source** side of the reverse leg (read-only) — so it does NOT
+    change the reverse-leg sink's mechanism. Its forks (`PreservedFromSource`, sink-resident resume —
+    Slice C/D) are in scope **only if the codebase also WRITES INTO the on-prem** (a populate flow). The
+    open scope question: does this engine populate the on-prem, or only read it for the reverse leg?
+- **Net:** the reverse-leg path + its `#`-temp keymap spill are the codebase's confirmed job and are
+  fully scoped (mechanism determined; only the sizing/RAM-budget set the spill trigger). The on-prem
+  `FullRights` forks await the populate-scope answer. Still needed: Part 1c on the on-prem (FK-target
+  AssignedBySink row count) + the transfer-host RAM budget.
