@@ -24,7 +24,7 @@ open type Projection.Pipeline.CapabilitySurvey.Capability
 // reach all five capabilities — the "in-scope" surface the totality holds the
 // catalog to (the analog of Voice's `inScopeCodes`).
 let private env (name: string) (grant: Grant option) : Projection.Pipeline.Environment =
-    { Name = name; Access = Access.Direct (ConnectionRef.EnvVar (name + "_CONN")); Grant = grant; Store = None; Rendition = None }
+    { Name = name; Access = Access.Direct (ConnectionRef.EnvVar (name + "_CONN")); Grant = grant; Store = None; Rendition = None; Archetype = None }
 
 let private flow (name: string) (from: FlowSource) (toEnv: string) : Flow =
     { Name = name; From = from; To = toEnv; Rekey = None; Tables = []; Reconcile = []; Scope = None; Shape = None; Shaping = None }

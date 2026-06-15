@@ -129,8 +129,16 @@ module CapabilitySurvey =
             | FlowSource.Env _ -> set [ Reads ]
             | FlowSource.Model | FlowSource.Synthetic _ | FlowSource.NoData -> Set.empty
         | SubstrateRole.Sink ->
+            // Slice B — route through the ARCHETYPE's derived grant
+            // (`Environment.effectiveArchetype` ∘ `Archetype.grant`) instead of
+            // the raw `Grant` facet. Byte-identical for every existing config:
+            // an undeclared archetype is inferred from `grant`, and
+            // `Archetype.grant ∘ Archetype.ofGrant = id`, so the derived grant
+            // equals the hand-set one. An archetype-DECLARED sink derives its
+            // grant from the class (the archetype subsumes `Grant`).
             let targetGrant =
-                Map.tryFind flow.To config.Environments |> Option.bind (fun e -> e.Grant)
+                Map.tryFind flow.To config.Environments
+                |> Option.bind (fun e -> Environment.effectiveArchetype e |> Option.map Archetype.grant)
             sinkCapabilities targetGrant flow.From
 
     /// The (environment, role) bindings a flow exercises: its `to` is the Sink;
@@ -165,6 +173,65 @@ module CapabilitySurvey =
         |> Set.toList
         |> List.filter (fun c -> not (Capability.surveyedBy c evidence))
         |> List.sortBy Capability.permissionOf
+
+    /// Slice B — a declared-vs-probed ARCHETYPE finding (A44; the J5 covenant
+    /// generalized from a one-time spike into a standing per-class gate). The
+    /// declared archetype's `CapabilityProfile` says what the engine will ASSUME;
+    /// the probed grant says what is ACTUAL. A divergence is surfaced BY NAME,
+    /// never trusted blindly. Closed so the surfacing is total.
+    type ArchetypeFinding =
+        /// The declared archetype REQUIRES this capability but the probe denies
+        /// it — the engine would assume a path the grant cannot support (a
+        /// declared `FullRights` lacking CREATE TABLE / IDENTITY_INSERT would
+        /// have chosen `PreservedFromSource` + a sink-resident checkpoint).
+        | RequiredCapabilityDenied of capability: string
+        /// The declared archetype FORBIDS this capability but the probe permits
+        /// it — safer-than-declared, but a divergence the operator should see (a
+        /// `ManagedDml` sink that UNEXPECTEDLY permits IDENTITY_INSERT means the
+        /// simpler `PreservedFromSource` path is actually available).
+        | ForbiddenCapabilityPermitted of capability: string
+        /// An INDEPENDENTLY-GRANTABLE capability the archetype expects but that is
+        /// absent WITHOUT re-classing the archetype — the named SPLIT (the on-prem
+        /// `FullRights`-minus-DMV, observed 2026-06-15; DATABASE_ARCHETYPES.md §5):
+        /// surfaced + degrade-the-one-probe, NOT a refusal. This is exactly why
+        /// `CapabilityProfile` carries each capability as its own verified flag.
+        | SoftCapabilityAbsent of capability: string
+
+    // The database-scope permission names the archetype reconciliation probes.
+    // `ALTER` is the IDENTITY_INSERT viability proxy (IDENTITY_INSERT requires
+    // ALTER on the table — probe sheet E3); `VIEW DATABASE PERFORMANCE STATE` is
+    // the DMV-read the fast sizing probes need (the on-prem split, B1/B2).
+    let private createTablePermission = "CREATE TABLE"
+    let private identityInsertPermission = "ALTER"
+    let private dmvReadPermission = "VIEW DATABASE PERFORMANCE STATE"
+
+    /// Reconcile the DECLARED archetype against the probed grant (Slice B). Pure
+    /// + DB-free, so the J5 covenant is testable without a connection. A
+    /// `FullRights` declaration REQUIRES CREATE TABLE + IDENTITY_INSERT (a denial
+    /// is a blocking mismatch) and EXPECTS DMV-read — but DMV-read is
+    /// independently grantable, so its absence is the surfaced split, not a
+    /// refusal. A `ManagedDml` declaration FORBIDS CREATE TABLE + IDENTITY_INSERT
+    /// (their presence is surfaced — safer-than-declared). Deterministic order.
+    let reconcileArchetype (declared: Archetype) (grant: Preflight.GrantEvidence) : ArchetypeFinding list =
+        let has p = Preflight.coversPermissionAtDatabaseScope p grant
+        match declared with
+        | Archetype.FullRights ->
+            [ if not (has createTablePermission)   then yield RequiredCapabilityDenied createTablePermission
+              if not (has identityInsertPermission) then yield RequiredCapabilityDenied (identityInsertPermission + " (IDENTITY_INSERT)")
+              if not (has dmvReadPermission)        then yield SoftCapabilityAbsent dmvReadPermission ]
+        | Archetype.ManagedDml ->
+            [ if has createTablePermission   then yield ForbiddenCapabilityPermitted createTablePermission
+              if has identityInsertPermission then yield ForbiddenCapabilityPermitted (identityInsertPermission + " (IDENTITY_INSERT)") ]
+
+    /// The operator-facing line for one archetype finding (the advisory surface).
+    /// The finding TYPE already implies the class — `RequiredCapabilityDenied`
+    /// arises only for a declared `FullRights`, `ForbiddenCapabilityPermitted`
+    /// only for `ManagedDml` — so the line needs no separate class argument.
+    let describeFinding (finding: ArchetypeFinding) : string =
+        match finding with
+        | RequiredCapabilityDenied cap     -> sprintf "archetype mismatch — the declared class REQUIRES %s but the probe DENIES it (the engine would assume a path this grant cannot support)" cap
+        | ForbiddenCapabilityPermitted cap -> sprintf "archetype divergence — the declared class FORBIDS %s but the probe PERMITS it (safer than declared — a simpler path is available)" cap
+        | SoftCapabilityAbsent cap         -> sprintf "archetype split — %s absent (an independently-grantable capability; that one probe degrades, the class is unchanged)" cap
 
     /// The survey's verdict for one environment.
     type EnvironmentReport =
@@ -203,6 +270,14 @@ module CapabilitySurvey =
             /// (`CapabilitySurveyTotalityTests`). `absent` for a place with no
             /// live address (nothing probed).
             UserDirectory : ReadSide.UserDirectoryProbe
+            /// Slice B — the declared-vs-probed ARCHETYPE reconciliation findings,
+            /// computed ONLY when the place EXPLICITLY declares an `archetype`
+            /// (an inferred archetype is not a claim to verify). Empty for an
+            /// undeclared place (byte-identical to the pre-Slice-B survey) or a
+            /// place whose grant probe failed. A REPORT FIELD (like
+            /// `UserDirectory`), not a `Capability` variant — surfaced via
+            /// `advisoryLines`, so the `required ⇔ surveyed` totality is untouched.
+            ArchetypeFindings : ArchetypeFinding list
         }
 
     /// Does a report name a *blocked* capability — a connected place that is
@@ -227,7 +302,11 @@ module CapabilitySurvey =
     /// and PROCEEDS regardless (the advisory never changes an exit).
     let advisoryLines (reports: EnvironmentReport list) : string list =
         let blockedReports = reports |> List.filter blocked
-        if List.isEmpty blockedReports then []
+        // Slice B — places whose DECLARED archetype diverged from the probe.
+        // Independent of `blocked` (a place can be fully covered yet carry a
+        // FullRights-minus-DMV split, or a safer-than-declared ManagedDml).
+        let findingReports = reports |> List.filter (fun r -> not (List.isEmpty r.ArchetypeFindings))
+        if List.isEmpty blockedReports && List.isEmpty findingReports then []
         else
             [ yield "Advisory — capability survey found environment(s) that may not be able to do what this run asks (proceeding anyway; this is a warning, not a gate):"
               for r in blockedReports do
@@ -236,7 +315,12 @@ module CapabilitySurvey =
                   elif r.GrantUnreadable then
                       yield sprintf "  %s: grant unreadable (coverage unverified)" r.Name
                   else
-                      yield sprintf "  %s: missing %s" r.Name (r.Missing |> List.map Capability.text |> String.concat ", ") ]
+                      yield sprintf "  %s: missing %s" r.Name (r.Missing |> List.map Capability.text |> String.concat ", ")
+              // The declared-vs-probed archetype reconciliation (the J5 covenant
+              // generalized) — surfaced, never a gate; the run proceeds (R6).
+              for r in findingReports do
+                  for f in r.ArchetypeFindings do
+                      yield sprintf "  %s: %s" r.Name (describeFinding f) ]
 
     /// Probe ONE environment (boundary): reachability, the required-vs-actual
     /// reconciliation, the CDC axis. A `Bundle` / `Docker` place has no live
@@ -249,7 +333,8 @@ module CapabilitySurvey =
                 { Name = env.Name; Grant = env.Grant; Required = required
                   Connected = false; Reachable = false; Missing = []; GrantUnreadable = false; CdcTracked = false
                   CdcProbeFailed = false
-                  UserDirectory = ReadSide.UserDirectoryProbe.absent }
+                  UserDirectory = ReadSide.UserDirectoryProbe.absent
+                  ArchetypeFindings = [] }
             match env.Access with
             | Access.Bundle _ | Access.Docker -> return baseReport
             | Access.Direct connRef ->
@@ -274,6 +359,14 @@ module CapabilitySurvey =
                             match grantEv with
                             | Ok ev   -> reconcile required ev, false
                             | Error _ -> [], true
+                        // Slice B — the archetype reconciliation runs ONLY on an
+                        // EXPLICITLY declared archetype (the operator's claim to
+                        // verify) and only when the grant probe succeeded; an
+                        // inferred/undeclared place is byte-identical (no findings).
+                        let archetypeFindings =
+                            match env.Archetype, grantEv with
+                            | Some declared, Ok ev -> reconcileArchetype declared ev
+                            | _ -> []
                         // NM-54 — a failed CDC probe is NOT "no CDC"; it is an
                         // UNVERIFIED axis. Carry it as `CdcProbeFailed` (mirroring
                         // `GrantUnreadable`) so the survey surfaces the unreadable
@@ -287,7 +380,8 @@ module CapabilitySurvey =
                                 Connected = true; Reachable = true
                                 Missing = missing; GrantUnreadable = grantUnreadable
                                 CdcTracked = cdcTracked; CdcProbeFailed = cdcProbeFailed
-                                UserDirectory = userDir }
+                                UserDirectory = userDir
+                                ArchetypeFindings = archetypeFindings }
                     with _ -> return { baseReport with Connected = true }
         }
 

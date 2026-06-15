@@ -78,7 +78,16 @@ module DataLoadPlan =
     /// Transfer's "this kind is reconciled, skip its insert" —
     /// compose on top via `reclassifyReconciled` (Transfer-side
     /// concern; emit-side realizations don't need to call it).
-    let build
+    ///
+    /// Slice C1 — the disposition default is selected by an `IdentityPolicy`:
+    /// `buildWith` carries it; `build` fixes it to `Structural` (byte-identical).
+    /// A `PreferPreservedKeys` policy (a `FullRights` sink permitting
+    /// IDENTITY_INSERT) writes the source key directly for IDENTITY PKs too,
+    /// so the whole capture/remap/FK-repoint machinery is skipped downstream
+    /// (it already branches on `PreservedFromSource`). `reclassifyReconciled`
+    /// still composes on top.
+    let buildWith
+        (policy: IdentityPolicy)
         (catalog: Catalog)
         (topo: TopologicalOrder)
         (rawRowsByKind: Map<SsKey, StaticRow list>)
@@ -103,7 +112,7 @@ module DataLoadPlan =
                     let remapped = substitute k raw
                     let load =
                         { Kind              = key
-                          Disposition       = IdentityDisposition.ofKind k
+                          Disposition       = IdentityDisposition.byPolicy policy k
                           DeferredFkColumns = TopologicalOrder.deferredFkColumns members k
                           Rows              = remapped.Rows }
                     let owned = remapped.Skipped |> List.map (fun u -> key, u)
@@ -131,6 +140,18 @@ module DataLoadPlan =
         { Loads               = loads
           UnbreakableCycleFks = unbreakable
           SkippedReferences   = skipped }
+
+    /// The structural-policy build — `ofKind` from the PK shape, byte-identical
+    /// to every path before Slice C. The emit-side realizations and the
+    /// ManagedDml/undeclared transfer paths call this; only a `FullRights` sink
+    /// reaches `buildWith IdentityPolicy.PreferPreservedKeys`.
+    let build
+        (catalog: Catalog)
+        (topo: TopologicalOrder)
+        (rawRowsByKind: Map<SsKey, StaticRow list>)
+        (remap: SurrogateRemapContext)
+        : DataLoadPlan =
+        buildWith IdentityPolicy.Structural catalog topo rawRowsByKind remap
 
     /// Override the disposition of the reconciled kinds to
     /// `ReconciledByRule` and zero their `Rows` (the rows already

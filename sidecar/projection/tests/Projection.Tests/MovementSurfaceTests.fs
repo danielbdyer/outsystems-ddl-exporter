@@ -460,7 +460,7 @@ let private liveDev = Destination.Live (ConnectionRef.EnvVar "DEV_CONN")
 let private baseLive = MovementSpec.forDestination liveDev
 let private defaultOpts : LoadOpts =
     { Declaration = DeclareNone; Emission = EmissionMode.Incremental
-      Reconcile = []; Rekey = None; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; Store = None; Env = None; Tables = []; Seed = None; Scale = None }
+      Reconcile = []; Rekey = None; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; Store = None; Env = None; Tables = []; Seed = None; Scale = None; SinkCapability = SinkLoadCapability.structural }
 
 [<Fact>]
 let ``planMovement: --fresh selects WipeAndLoad on the transfer path`` () =

@@ -157,11 +157,11 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         // align — the original residual's premise, now honored structurally).
         needCatalog modelOssys model (fun cat ->
             withRun "projection reverse-leg" (fun () ->
-                runReverseLegTransfer src sink (CatalogRendition.logical cat) (CatalogRendition.physical cat) opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Streaming opts.Journal opts.Tables surveyAdvisory))
+                runReverseLegTransfer src sink (CatalogRendition.logical cat) (CatalogRendition.physical cat) opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Streaming opts.Journal opts.Tables opts.SinkCapability surveyAdvisory))
     | PlanAction.MigrateWithData (model, modelOssys, sink, src, opts) ->
         needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat ->
             withRun "projection migrate --with-data" (fun () ->
-                runMigrateWithData shapedCat sink src opts.Reconcile opts.Rekey opts.Declaration opts.AllowCdc opts.Store opts.Env)))
+                runMigrateWithData shapedCat sink src opts.Reconcile opts.Rekey opts.Declaration opts.AllowCdc opts.Store opts.Env opts.SinkCapability)))
     | PlanAction.SynthesizeAndLoad (model, modelOssys, profile, conn, opts, execute, modelSection) ->
         withRun "projection synth-load" (fun () -> runSyntheticLoad model modelOssys profile conn opts execute modelSection)
     | PlanAction.CaptureProfile (conn, out) -> runCaptureProfile conn out

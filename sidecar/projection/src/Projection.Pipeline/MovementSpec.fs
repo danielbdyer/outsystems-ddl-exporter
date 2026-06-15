@@ -141,6 +141,10 @@ type MovementSpec =
         Store       : string option
         /// Environment label for the timeline / episode.
         Env         : string option
+        /// Slice C — the sink's capability-derived engine inputs, set by
+        /// `resolveFlowSpec` from the target environment's effective `Archetype`.
+        /// `structural` default (byte-identical); only a `FullRights` sink forks.
+        SinkCapability : SinkLoadCapability
         Commit      : bool
     }
 
@@ -171,6 +175,7 @@ module MovementSpec =
             Scale       = None
             Store       = None
             Env         = None
+            SinkCapability = SinkLoadCapability.structural
             Commit      = false
         }
 
@@ -299,6 +304,11 @@ type LoadOpts =
         Seed        : uint64 option
         /// D8 — the synthesis volume factor; honored on the synthetic load only.
         Scale       : decimal option
+        /// Slice C — the sink's capability-derived engine inputs (the identity
+        /// policy + sink-resident-resume availability), projected from the sink
+        /// `Environment`'s effective `Archetype` at flow resolution. `structural`
+        /// = the byte-identical default (a ManagedDml or undeclared sink).
+        SinkCapability : SinkLoadCapability
     }
 
 /// The engine face a parsed `Intent` routes to, named with the cfg-resolved

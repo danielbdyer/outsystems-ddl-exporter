@@ -376,6 +376,60 @@ type ReverseLegCanaryTests(fixture: EphemeralContainerFixture) =
                         [ ("inv-1", Some "alice@x"); ("inv-2", None); ("inv-3", Some "bob@x") ], aInvCust)
                 })
 
+    // ------------------------------------------------------------------
+    // Slice C1 — the FullRights populate fork: PreferPreservedKeys writes
+    // the SOURCE key directly (Bulk.copyRows + KeepIdentity) for IDENTITY
+    // PKs too, so the whole capture/remap/FK-repoint machinery is skipped.
+    // The exact INVERSE of the keystone above: every key preserved (not
+    // minted), zero AssignedBySink, joins still hold. Witnesses the work
+    // plan's Slice C exit test on the same multi-kind graph.
+    // ------------------------------------------------------------------
+
+    [<Fact>]
+    member this.``Slice C1: a FullRights populate (PreferPreservedKeys) preserves every source key — zero remap, joins hold — the inverse of the AssignedBySink keystone`` () =
+        if not (ReverseLegFixtures.skipIfNoDocker "L3SliceC1") then () else
+        this.WithReverseLegEstates "L3SliceC1" ReverseLegFixtures.seedClean
+            (fun src _ sink _ logicalContract physicalContract ->
+                task {
+                    let! reportR =
+                        Transfer.runWithRenamesWith IdentityPolicy.PreferPreservedKeys Transfer.Execute true src sink logicalContract physicalContract
+                    let report = ReverseLegFixtures.value reportR
+
+                    // The fork: EVERY kind is PreservedFromSource — the source key
+                    // is written directly, NOT minted. No capture, no remap, no
+                    // FK re-point (the dramatically simpler load); nothing skipped.
+                    Assert.Equal(4, report.Kinds.Length)
+                    for k in report.Kinds do
+                        Assert.Equal(IdentityDisposition.PreservedFromSource, k.Disposition)
+                    Assert.Empty(report.SkippedReferences)
+
+                    // Every source key (>= 1000) is PRESERVED in the sink — the
+                    // INVERSE of the keystone (AssignedBySink ⇒ preservedKeyCount = 0).
+                    // 2 + 3 + 3 + 4 = 12 rows, each carrying its source identity.
+                    let! preserved = ReverseLegFixtures.preservedKeyCount sink
+                    Assert.Equal(12, preserved)
+
+                    let! customers = ReverseLegFixtures.countRows sink "[dbo].[OSUSR_L3_CUSTOMER]"
+                    let! accounts  = ReverseLegFixtures.countRows sink "[dbo].[OSUSR_L3_ACCOUNT]"
+                    let! invoices  = ReverseLegFixtures.countRows sink "[dbo].[OSUSR_L3_INVOICE]"
+                    let! payments  = ReverseLegFixtures.countRows sink "[dbo].[OSUSR_L3_PAYMENT]"
+                    Assert.Equal(2, customers)
+                    Assert.Equal(3, accounts)
+                    Assert.Equal(3, invoices)
+                    Assert.Equal(4, payments)
+
+                    // Joins hold: every FK edge's business-key join in A equals B's
+                    // — the FK values stayed valid because the keys were preserved
+                    // (no re-point needed). Nothing dropped, so no `minusOrphan`.
+                    let! (bAccCust, bInvAcc, bInvCust, bPayInv, bPayAcc) = ReverseLegFixtures.sourceEdgeJoins src
+                    let! (aAccCust, aInvAcc, aInvCust, aPayInv, aPayAcc) = ReverseLegFixtures.sinkEdgeJoins sink
+                    Assert.Equal<(string * string option) list>(bAccCust, aAccCust)
+                    Assert.Equal<(string * string option) list>(bInvAcc, aInvAcc)
+                    Assert.Equal<(string * string option) list>(bInvCust, aInvCust)
+                    Assert.Equal<(string * string option) list>(bPayInv, aPayInv)
+                    Assert.Equal<(string * string option) list>(bPayAcc, aPayAcc)
+                })
+
     [<Fact>]
     member this.``LE-3 apparatus: the same full-shape leg through runReverseLegThroughConnections, and a WipeAndLoad re-run leaves no duplicates`` () =
         if not (ReverseLegFixtures.skipIfNoDocker "L3Apparatus") then () else

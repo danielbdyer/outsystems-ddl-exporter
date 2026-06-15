@@ -787,6 +787,7 @@ let runReverseLegTransfer
     (streaming: bool)
     (journalDirectory: string option)
     (tables: string list)
+    (sinkCapability: SinkLoadCapability)
     (surveyAdvisory: string list)
     : int =
     let collect = function Ok _ -> [] | Error es -> es
@@ -838,7 +839,7 @@ let runReverseLegTransfer
     // path for the combinations streaming does not yet support. An
     // explicit --streaming on an inadmissible combination refuses BY
     // NAME, never a silent downgrade.
-    match ReverseLegRealization.choose emission resumable tables streaming journalDirectory with
+    match ReverseLegRealization.choose emission resumable tables streaming journalDirectory sinkCapability.SinkResidentResume with
     | Error errors ->
         errors |> List.iter TtyRenderer.renderVoicedError
         dumpBench "transfer"
@@ -895,7 +896,7 @@ let runReverseLegTransfer
                 (Transfer.runStreamingReverseLegThroughConnections mode allowCdc allowDrops journal connections logicalSourceContract physicalSinkContract reconciliation)
                     .GetAwaiter().GetResult()
             | ReverseLegRealization.Materialized ->
-                (Transfer.runReverseLegThroughConnections mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation)
+                (Transfer.runReverseLegThroughConnectionsWith sinkCapability.IdentityPolicy mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation)
                     .GetAwaiter().GetResult()
         match result with
         | Ok report ->
@@ -1879,7 +1880,7 @@ let runMigrateExecute (target: Catalog) (connSpec: string) (declaration: LossDec
 /// AC-I5 `validate-user-map` pre-write halt gates first; absent, it is a
 /// straight load. Schema is fail-loud + minimum-viable; the data leg runs
 /// only if the schema verified.
-let runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec: string) (reconcileSpecs: string list) (userMapPath: string option) (declaration: LossDeclaration) (allowCdc: bool) (storePath: string option) (envLabel: string option) : int =
+let runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec: string) (reconcileSpecs: string list) (userMapPath: string option) (declaration: LossDeclaration) (allowCdc: bool) (storePath: string option) (envLabel: string option) (sinkCapability: SinkLoadCapability) : int =
     if System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" <> "1" then
         TtyRenderer.renderVoicedError (ValidationError.create "gate.intent" "PROJECTION_ALLOW_EXECUTE is not set in the environment.")
         dumpBench "migrate"
@@ -1988,7 +1989,7 @@ let runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec: string)
                                             | Ok tl ->
                                                 let at = System.DateTimeOffset.UtcNow
                                                 let! recorded =
-                                                    MigrationRun.executeWithDataAndRecord declaration Transfer.Execute allowCdc
+                                                    MigrationRun.executeWithDataAndRecordWith sinkCapability.IdentityPolicy declaration Transfer.Execute allowCdc
                                                         sinkSourceA target reconciliation store tl env at None dataSource sink
                                                 match recorded with
                                                 | Ok (o, chain) ->
@@ -2000,7 +2001,7 @@ let runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec: string)
                                                 | Error e -> return reportMigrationError e
                                         | None ->
                                         let! outcome =
-                                            MigrationRun.executeWithData declaration Transfer.Execute allowCdc
+                                            MigrationRun.executeWithDataWith sinkCapability.IdentityPolicy declaration Transfer.Execute allowCdc
                                                 sinkSourceA target reconciliation dataSource sink
                                         match outcome with
                                         | Ok o when o.Schema.Verified ->

@@ -670,7 +670,12 @@ module MigrationRun =
     /// (identity-matched, never ordinal) before the write. A no-renames diff
     /// yields an empty rename map ⇒ identity repoint ⇒ byte-identical to the
     /// straight load.
-    let executeWithData
+    /// Slice C1 — the policy-bearing migrate-with-data: a `FullRights` sink
+    /// threads `IdentityPolicy.PreferPreservedKeys` so the populate preserves
+    /// source keys (no capture/remap). `executeWithData` fixes `Structural`
+    /// (byte-identical; the existing callers + the ManagedDml shape).
+    let executeWithDataWith
+        (identityPolicy: IdentityPolicy)
         (declaration: LossDeclaration)
         (mode: Transfer.Mode)
         (allowCdc: bool)
@@ -694,16 +699,28 @@ module MigrationRun =
                         // derives from `CatalogDiff.between sinkSource target`; a
                         // no-renames diff repoints by identity (== the straight load).
                         if Map.isEmpty reconciliation then
-                            Transfer.runWithRenames mode allowCdc dataSource sink sinkSource target
+                            Transfer.runWithRenamesWith identityPolicy mode allowCdc dataSource sink sinkSource target
                         else
                             // allowDrops = false: enforce the AC-I5 pre-write validate-user-map
                             // halt on the reconciling migrate-with-data path (the reconcile+migrate
                             // composition, AC-I7, is the follow-on; --allow-drops flows here then).
-                            Transfer.runReconcilingWithRenames mode allowCdc dataSource sink sinkSource target reconciliation
+                            Transfer.runReconcilingWithRenamesWith identityPolicy mode allowCdc dataSource sink sinkSource target reconciliation
                     match transferResult with
                     | Ok report -> return Ok { Schema = schema; Transfer = report }
                     | Error es -> return Error (DataTransferFailed es)
         }
+
+    let executeWithData
+        (declaration: LossDeclaration)
+        (mode: Transfer.Mode)
+        (allowCdc: bool)
+        (sinkSource: Catalog)
+        (target: Catalog)
+        (reconciliation: Map<SsKey, ReconciliationStrategy>)
+        (dataSource: SqlConnection)
+        (sink: SqlConnection)
+        : System.Threading.Tasks.Task<Result<MigrationDataOutcome, MigrationError>> =
+        executeWithDataWith IdentityPolicy.Structural declaration mode allowCdc sinkSource target reconciliation dataSource sink
 
     /// **X5 — the in-place migrate-with-data, MEASURED and RECORDED.** The
     /// protein P-6 chain is `migrate-schema → Move-data → Measure-CDC →
@@ -722,7 +739,8 @@ module MigrationRun =
     /// `record` (coordinate from `nextCoordinate`), so the timeline carries the
     /// data-plane observation. Additive — `execute` (and its G9 gate) and
     /// `executeWithData` are untouched.
-    let executeWithDataAndRecord
+    let executeWithDataAndRecordWith
+        (identityPolicy: IdentityPolicy)
         (declaration: LossDeclaration)
         (mode: Transfer.Mode)
         (allowCdc: bool)
@@ -752,9 +770,9 @@ module MigrationRun =
                     // A5 — the data source is at A (`sinkSource`); re-point rows
                     // A→B through the rename-aware Transfer (see `executeWithData`).
                     if Map.isEmpty reconciliation then
-                        Transfer.runWithRenames mode allowCdc dataSource sink sinkSource target
+                        Transfer.runWithRenamesWith identityPolicy mode allowCdc dataSource sink sinkSource target
                     else
-                        Transfer.runReconcilingWithRenames mode allowCdc dataSource sink sinkSource target reconciliation
+                        Transfer.runReconcilingWithRenamesWith identityPolicy mode allowCdc dataSource sink sinkSource target reconciliation
                 match transferResult with
                 | Error es -> return Error (DataTransferFailed es)
                 | Ok report ->
@@ -769,3 +787,20 @@ module MigrationRun =
                         | Ok chain -> return Ok ({ Schema = schema; Transfer = report }, chain)
                         | Error e -> return Error (ExecutionFailed (sprintf "data load succeeded but recording the episode failed: %A" e))
         }
+
+    let executeWithDataAndRecord
+        (declaration: LossDeclaration)
+        (mode: Transfer.Mode)
+        (allowCdc: bool)
+        (sinkSource: Catalog)
+        (target: Catalog)
+        (reconciliation: Map<SsKey, ReconciliationStrategy>)
+        (path: string)
+        (timeline: Timeline)
+        (environment: Environment)
+        (at: System.DateTimeOffset)
+        (refactorLogRef: string option)
+        (dataSource: SqlConnection)
+        (sink: SqlConnection)
+        : System.Threading.Tasks.Task<Result<MigrationDataOutcome * EpisodicLifecycle, MigrationError>> =
+        executeWithDataAndRecordWith IdentityPolicy.Structural declaration mode allowCdc sinkSource target reconciliation path timeline environment at refactorLogRef dataSource sink

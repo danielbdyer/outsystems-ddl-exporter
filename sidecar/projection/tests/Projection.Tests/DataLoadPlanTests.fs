@@ -84,6 +84,26 @@ let ``DataLoadPlan: identity PK is AssignedBySink, business PK is PreservedFromS
     Assert.Equal(IdentityDisposition.PreservedFromSource, (loadFor customerKey plan).Disposition)
     Assert.Equal(IdentityDisposition.AssignedBySink, (loadFor invoiceKey plan).Disposition)
 
+// --- Slice C1 — the FullRights disposition fork (buildWith PreferPreservedKeys) ---
+
+[<Fact>]
+let ``Slice C1: buildWith Structural = build — the byte-identical default`` () =
+    let structural = DataLoadPlan.buildWith IdentityPolicy.Structural catalog topo Map.empty SurrogateRemapContext.empty
+    Assert.Equal<DataLoadPlan>(build Map.empty, structural)
+
+[<Fact>]
+let ``Slice C1: buildWith PreferPreservedKeys flips an IDENTITY PK to PreservedFromSource — no AssignedBySink kind remains (capture/remap entirely skipped)`` () =
+    let plan = DataLoadPlan.buildWith IdentityPolicy.PreferPreservedKeys catalog topo Map.empty SurrogateRemapContext.empty
+    // The IDENTITY-PK Invoice is now written with its source key preserved
+    // (Bulk.copyRows + KeepIdentity — viable on a FullRights sink), not minted.
+    Assert.Equal(IdentityDisposition.PreservedFromSource, (loadFor invoiceKey plan).Disposition)
+    // The business-PK Customer was already PreservedFromSource (unchanged).
+    Assert.Equal(IdentityDisposition.PreservedFromSource, (loadFor customerKey plan).Disposition)
+    // The KEY consequence: zero AssignedBySink kinds ⇒ the whole capture +
+    // surrogate-remap + FK-repoint machinery (which branches on AssignedBySink)
+    // is skipped downstream by construction — the dramatically simpler load.
+    Assert.True(plan.Loads |> List.forall (fun l -> l.Disposition <> IdentityDisposition.AssignedBySink))
+
 [<Fact>]
 let ``DataLoadPlan: nullable same-cycle FK is deferred, non-nullable is not`` () =
     let plan = build Map.empty

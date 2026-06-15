@@ -67,6 +67,40 @@ type IdentityDisposition =
     | PreservedFromSource
     | ReconciledByRule
 
+/// The identity-disposition POLICY a plan-build applies (DATABASE_ARCHETYPES.md
+/// §2.1; REVERSE_LEG_WORK_PLAN Slice C1). `Structural` is the default — `ofKind`
+/// from the PK shape (byte-identical to every path to date). `PreferPreservedKeys`
+/// is the FullRights fork: the sink permits IDENTITY_INSERT, so write the SOURCE
+/// surrogate directly even for an IDENTITY PK — no capture, no remap, no FK
+/// re-point (the dramatically simpler load that `Bulk.copyRows`'s `KeepIdentity`
+/// realizes; its implicit ALTER requirement is exactly what gates it to a
+/// `FullRights` sink). Core cannot see the Pipeline `Archetype`; this policy is
+/// the projection of `CapabilityProfile.IdentityInsert` that crosses the
+/// assembly boundary into the engine.
+[<RequireQualifiedAccess>]
+type IdentityPolicy =
+    | Structural
+    | PreferPreservedKeys
+
+/// The sink-capability inputs the data-load ENGINE (Core / early-Pipeline)
+/// consumes, projected from the Pipeline `CapabilityProfile` at flow resolution.
+/// Core (and `TransferRun`, which compiles before the `Archetype` vocabulary)
+/// cannot see `CapabilityProfile`, so the two engine-relevant bits cross the
+/// compile boundary as this record: the identity-disposition policy (C1) and
+/// whether a sink-resident progress table is available for resume (C2 — the
+/// `ReverseLegRealization.choose` chooser reads it). `structural` is the
+/// byte-identical default (every existing caller).
+type SinkLoadCapability =
+    { IdentityPolicy     : IdentityPolicy
+      SinkResidentResume : bool }
+
+[<RequireQualifiedAccess>]
+module SinkLoadCapability =
+    /// The default: structural disposition + no sink-resident resume — the
+    /// byte-identical pre-Slice-C behavior (a ManagedDml or undeclared sink).
+    let structural : SinkLoadCapability =
+        { IdentityPolicy = IdentityPolicy.Structural; SinkResidentResume = false }
+
 [<RequireQualifiedAccess>]
 module IdentityDisposition =
 
@@ -81,6 +115,19 @@ module IdentityDisposition =
             |> List.exists (fun a -> a.IsPrimaryKey && a.IsIdentity)
         if pkIsIdentity then IdentityDisposition.AssignedBySink
         else IdentityDisposition.PreservedFromSource
+
+    /// Classify a kind under an `IdentityPolicy` (Slice C1). `Structural` is
+    /// `ofKind` (byte-identical). `PreferPreservedKeys` writes the source key
+    /// directly for EVERY kind — an IDENTITY PK becomes `PreservedFromSource`
+    /// (viable because the `FullRights` sink permits IDENTITY_INSERT, so the
+    /// source surrogate is preserved via `KeepIdentity`); a business PK was
+    /// already `PreservedFromSource`. `ReconciledByRule` still composes on top
+    /// via `reclassifyReconciled` (the operator's reconcile choice, applied after
+    /// the build default — `byPolicy` never returns it, exactly as `ofKind`).
+    let byPolicy (policy: IdentityPolicy) (kind: Kind) : IdentityDisposition =
+        match policy with
+        | IdentityPolicy.Structural          -> ofKind kind
+        | IdentityPolicy.PreferPreservedKeys -> IdentityDisposition.PreservedFromSource
 
     /// NM-26 — the SINGLE-SOURCED `SET IDENTITY_INSERT` bracketing
     /// predicate shared by every data emitter (`StaticPopulationEmitter`,
