@@ -8,20 +8,35 @@
      {{ENTITY_LIKE}}  a LIKE pattern matching your entity tables (e.g. 'APP\_%' ESCAPE '\', or '%')
      {{SCHEMA}}.{{TABLE}}  one representative IDENTITY-PK entity table (for the ALTER/IDENTITY probes)
 
+   TWO FLOWS, TWO SINKS (a "sink" = the DB the engine WRITES INTO):
+     Flow R — REVERSE LEG / up-leg (on-prem -> cloud): sink = the cloud managed env.
+              Already characterised: ManagedDml (J5 — sink mints keys, no CREATE TABLE /
+              ALTER / IDENTITY_INSERT). No new archetype probe needed for this sink.
+     Flow P — POPULATE / extract (cloud -> on-prem): sink = the on-prem SQL Server.
+              UNKNOWN archetype — Part 2 probes it (FullRights vs ...). If FullRights +
+              IDENTITY_INSERT, this flow uses PreservedFromSource (NO keymap at all).
+
    WHAT EACH PART UNLOCKS
-     Part 1  -> the sink-resident keymap SPILL sizing (resident vs spill decision at 200M)
-     Part 2  -> the ARCHETYPE verdict for the on-prem target (Slice A + the C/D forks)
-     (verify-data needs NOTHING new: the engine counts via COUNT_BIG, not DMVs, so it
-      already works on the DMV-denied target — no input required, no build required.)
+     Part 1 -> the keymap SPILL sizing. The keymap holds ~40 B per AssignedBySink (single-
+               IDENTITY-PK) FK-target row being inserted. It is the SAME estate data on both
+               renditions, so run Part 1 on whichever DB has DMV access (your CLOUD/managed).
+               This count sizes Flow R's keymap (cloud sink mints -> always AssignedBySink),
+               and Flow P's keymap IFF the on-prem sink turns out AssignedBySink (Part 2).
+               NOTE: Flow R's sink is the cloud, which forbids CREATE TABLE — so its spill is
+               a SESSION '#'-temp keymap + server-side UPDATE...JOIN, not a persistent table.
+     Part 2 -> the on-prem ARCHETYPE (Flow P's sink): CREATE TABLE / ALTER / IDENTITY_INSERT /
+               sink-resident-progress. Drives Slice A + the C/D forks for the populate flow.
+     (verify-data needs NOTHING new: the engine counts via COUNT_BIG, not DMVs, so it already
+      works on the DMV-denied on-prem — no input required, no build required.)
    ============================================================================= */
 
 
 /* -----------------------------------------------------------------------------
-   PART 1 — KEYMAP SPILL SIZING
-   Run on the SOURCE (the database rows are READ from). The resident key-map holds
-   ~40 bytes PER ROW of each AssignedBySink (single-IDENTITY-PK) table that is also
-   a foreign-key TARGET — those are the only minted keys with a downstream consumer.
-   Sum(rows) * 40 = the resident RAM ceiling; compare to the transfer-host budget.
+   PART 1 — KEYMAP SPILL SIZING  (run on whichever DB has DMV access — your CLOUD/managed)
+   The resident key-map holds ~40 bytes PER ROW of each AssignedBySink (single-IDENTITY-PK)
+   table that is also a foreign-key TARGET — those are the only minted keys with a downstream
+   consumer. It is the SAME estate data on both renditions, so the count is direction-agnostic;
+   measure it where the DMV works. Sum(rows) * 40 = the resident RAM ceiling vs the host budget.
    ----------------------------------------------------------------------------- */
 
 -- 1a — the set of AssignedBySink FK-target tables (catalog only; no DMV needed).
@@ -43,7 +58,7 @@ WHERE  t.name LIKE '{{ENTITY_LIKE}}'
 ORDER BY t.name;
 --> PASTE BACK: the table count (how many such tables). Names not needed.
 
--- 1b — DMV sizing (use on the MANAGED source, where the DMV is granted).
+-- 1b — DMV sizing (run on the CLOUD/managed DB, where the DMV is granted — the on-prem lacks it).
 WITH fk_targets AS (SELECT DISTINCT referenced_object_id AS oid FROM sys.foreign_keys),
      identity_pk AS (
         SELECT t.object_id AS oid
@@ -85,8 +100,10 @@ WHERE  t.name LIKE '{{ENTITY_LIKE}}';
 
 
 /* -----------------------------------------------------------------------------
-   PART 2 — ON-PREM ARCHETYPE VERDICT  (run on the ON-PREM TARGET as the principal)
-   Settles the FullRights vs managed-DML fork that drives Slice A + the C/D forks.
+   PART 2 — ON-PREM ARCHETYPE VERDICT  (run on the ON-PREM SQL Server — Flow P's SINK)
+   The cloud sink (Flow R) is already J5 = ManagedDml; this probes the OTHER sink, the
+   on-prem the populate flow writes into. Settles FullRights vs ... — which drives Slice A
+   + the C/D forks for the populate flow (and whether it uses PreservedFromSource, no keymap).
    The write-probes are transactional and ROLL BACK — nothing persists.
    ----------------------------------------------------------------------------- */
 SET NOCOUNT ON;

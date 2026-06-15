@@ -23601,3 +23601,40 @@ they settle, and the one CODE change they demanded.
   fix). The disposition mix (AssignedBySink for identity tables; preserve/reconcile for reference
   tables; deferred nullable cycle FKs; conditional user reconcile) is decided. The DMV gap + the 200M
   scale (spill / compaction wakes) are the named next items.
+
+## 2026-06-15 (later) — Direction clarified: TWO flows, two sinks; the keymap-spill mechanism is archetype-determined
+
+The operator flagged a Source/Target conflation worth fixing precisely. Resolved: there are **two
+load flows**, and the builds are **sink-centric** (a "sink" = the DB the engine writes into), so the
+direction is load-bearing.
+
+- **Flow R — the reverse leg / "up-leg" (on-prem → cloud).** The charter's subject. **Sink = the
+  cloud managed env** (A/Physical), `ManagedDml` (J5: mints keys, no CREATE TABLE / ALTER /
+  IDENTITY_INSERT). Source = on-prem (B/Logical), read-only. Grounded in `MovementSurface.fs`'s
+  Rendition doc ("Physical … A — the up-leg sink; Logical … B — the legacy reverse leg's source").
+- **Flow P — populate / extract (cloud → on-prem).** **Sink = the on-prem SQL Server.** Archetype
+  UNKNOWN (`NEXT_BUILD_INPUTS.sql` Part 2 probes it). The operator's probe framing (Source=cloud,
+  Target=on-prem) is this flow — the *opposite* of the reverse leg, which is why it read as a
+  conflation. The DMV gap they found is on this sink.
+
+- **The design nuance this surfaces — the keymap-spill MECHANISM is itself archetype-driven** (a new
+  H-row for `DATABASE_ARCHETYPES.md` §2). The resident packed remap (~40 B/FK-target-row) overflows at
+  200M (≈ 8 GB), so a spill is needed — but *which* spill depends on the sink's archetype:
+  - **`PreservedFromSource` sink** (FullRights on-prem with IDENTITY_INSERT): **no keymap at all** —
+    keys are written directly; the spill question disappears for Flow P if the on-prem permits it.
+  - **`AssignedBySink` + CREATE TABLE** (FullRights on-prem without IDENTITY_INSERT): a **persistent
+    sink-resident keymap table** + server-side `UPDATE…JOIN` (the charter's named "sink-resident spill").
+  - **`AssignedBySink` + no CREATE TABLE** (the `ManagedDml` cloud — Flow R's sink): a persistent
+    sink table is **forbidden**, so the spill must be a **session `#`-temp keymap** (temp tables ARE
+    permitted under the DML grant — J5 P5) + server-side `UPDATE…JOIN`, OR a client-side disk-backed
+    map. The charter's "sink-resident spill" must NOT be read as "always a persistent table"; on the
+    cloud it is the `#`-temp form.
+  So the spill is **not one build** — it is per-archetype. This is exactly why the archetype must be a
+  first-class disposition the spill chooser reads (`DATABASE_ARCHETYPES.md`), not an assumption.
+
+- **What I need, re-mapped (`NEXT_BUILD_INPUTS.sql` relabelled for both flows):** Part 1 (keymap
+  sizing — the estate FK-target AssignedBySink row count, same data both sides) run on the **cloud**
+  (DMV works) + the host RAM budget → sizes Flow R's keymap and Flow P's IFF the on-prem is
+  AssignedBySink. Part 2 (archetype) run on the **on-prem** (Flow P's sink) → its CREATE TABLE /
+  IDENTITY_INSERT decide whether Flow P even has a keymap and which spill it would use. Builds are
+  HELD until these land — building a spill now risks building the wrong one of the three mechanisms.
