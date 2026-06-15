@@ -82,6 +82,22 @@ module ReverseLegRealization =
         elif admissible then Result.success (ReverseLegRealization.Streaming journalDirectory)
         else Result.success ReverseLegRealization.Materialized
 
+    /// Phase 3 — the duplicate-hazard gate (the charter's "small lever"). A
+    /// streaming realization with NO journal, run for real (`executeGated`),
+    /// has no idempotent envelope: any re-run re-streams and DOUBLES every
+    /// sink-minted (AssignedBySink) kind. This refuses that shape BY NAME so
+    /// the operator must supply `--journal <dir>` (making the run resumable +
+    /// idempotent by construction). Pure and total: a DryRun (not gated), a
+    /// journal-bearing stream, and the materialized arm (its own G10 envelope)
+    /// all pass. Tested without a connection.
+    let executeJournalGate (realization: ReverseLegRealization) (executeGated: bool) : ValidationError option =
+        match realization, executeGated with
+        | ReverseLegRealization.Streaming None, true ->
+            Some
+                (ValidationError.create "transfer.reverseLeg.streamingExecuteRequiresJournal"
+                    "a streaming --execute needs --journal <dir>: without it a re-run re-streams and DOUBLES every sink-minted kind (no idempotent envelope). Pass --journal <dir> to make the load resumable + idempotent.")
+        | _ -> None
+
 /// The Transfer orchestrator — `Compose`'s data-direction sibling. Binds
 /// the two legs of the adjunction across two substrates: `Ingestion`
 /// (Source → rows) then a Projection-onto-Sink realization (rows → Sink),
@@ -1622,6 +1638,23 @@ module Transfer =
                             let journal =
                                 journalDirectory
                                 |> Option.map (fun dir -> CaptureJournal.create dir (planMarker sinkContract plan))
+                            // Phase 3 — the address-drift guard: if THIS run's
+                            // journal file is absent but the directory holds a
+                            // prior run's journal under a different plan marker,
+                            // resuming would silently orphan it and DOUBLE
+                            // committed work. Refuse by name instead.
+                            let addressDrift =
+                                journal
+                                |> Option.map CaptureJournal.siblingJournalsUnderDrift
+                                |> Option.defaultValue []
+                            if not (List.isEmpty addressDrift) then
+                                return Result.failureOf
+                                    (ValidationError.create "transfer.resume.journalAddressDrift"
+                                        (sprintf
+                                            "the journal directory holds %d journal(s) under a DIFFERENT plan marker (e.g. %s) but none for this run — the plan changed since the journaled run, so resuming would silently re-stream and DOUBLE committed work. Clear the journal directory to reload from scratch, or restore the prior plan to resume."
+                                            (List.length addressDrift)
+                                            (addressDrift |> List.truncate 1 |> List.map (fun f -> System.IO.Path.GetFileName f |> nonNull) |> String.concat ", ")))
+                            else
                             match! writePlanStreaming source sink sourceContract renameMap sinkContract plan journal reconciled.Remap reconciledKinds with
                             | Error es -> return Result.failure es
                             | Ok (totals, skips, descents) ->

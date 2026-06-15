@@ -128,6 +128,44 @@ let ``selector: --journal on an inadmissible request refuses by name — the led
     | Error es -> Assert.Equal("transfer.reverseLeg.journalRequiresStreaming", (List.head es).Code)
     | Ok other -> Assert.Fail(sprintf "expected the journal refusal, got %A" other)
 
+// -- Phase 3: the duplicate-hazard gate + the journal-address-drift guard ------
+
+[<Fact>]
+let ``Phase 3 gate: a journal-less streaming EXECUTE refuses by name; DryRun / journal-bearing / materialized pass`` () =
+    let gate r e = Projection.Pipeline.ReverseLegRealization.executeJournalGate r e
+    // journal-less streaming, gated execute → the named refusal
+    match gate (Projection.Pipeline.ReverseLegRealization.Streaming None) true with
+    | Some err -> Assert.Equal("transfer.reverseLeg.streamingExecuteRequiresJournal", err.Code)
+    | None -> Assert.Fail "expected the streaming-execute-requires-journal refusal"
+    // the same shape as a DryRun (not gated) is exempt — nothing is written
+    Assert.True((gate (Projection.Pipeline.ReverseLegRealization.Streaming None) false).IsNone)
+    // a journal-bearing stream is idempotent-capable → passes
+    Assert.True((gate (Projection.Pipeline.ReverseLegRealization.Streaming (Some "/j")) true).IsNone)
+    // the materialized arm carries its own G10 envelope → passes
+    Assert.True((gate Projection.Pipeline.ReverseLegRealization.Materialized true).IsNone)
+
+// (The face wiring of `executeJournalGate` mirrors the already-face-tested
+// `streamingTablesUnsupported` refusal; the gate's logic is proven purely
+// above, env-var-free, so the face path is not re-tested with a global
+// PROJECTION_ALLOW_EXECUTE mutation that could flake concurrent suites.)
+
+[<Fact>]
+let ``Phase 3 address-drift: a sibling journal under a different marker signals drift; own-file-present or empty dir does not`` () =
+    let dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "rl-drift-" + System.Guid.NewGuid().ToString("N").Substring(0, 8))
+    try
+        let j = Projection.Pipeline.CaptureJournal.create dir "marker-A"
+        // a fresh dir holding only this (not-yet-written) journal → no drift
+        Assert.Empty(Projection.Pipeline.CaptureJournal.siblingJournalsUnderDrift j)
+        // a PRIOR run's journal under a different marker, our file still absent → drift
+        let stray = Projection.Pipeline.CaptureJournal.create dir "marker-B"
+        System.IO.File.WriteAllText(Projection.Pipeline.CaptureJournal.filePath stray, "")
+        Assert.NotEmpty(Projection.Pipeline.CaptureJournal.siblingJournalsUnderDrift j)
+        // once our OWN journal exists (a real resume), no drift
+        System.IO.File.WriteAllText(Projection.Pipeline.CaptureJournal.filePath j, "")
+        Assert.Empty(Projection.Pipeline.CaptureJournal.siblingJournalsUnderDrift j)
+    finally
+        if System.IO.Directory.Exists dir then System.IO.Directory.Delete(dir, true)
+
 [<Fact>]
 let ``streaming face: an explicit --streaming with --tables refuses at the face with exit 2`` () =
     let model = tinyModel

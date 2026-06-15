@@ -433,18 +433,21 @@ Crash-resume at chunk granularity is witnessed (`ReverseLegStreamingTests.fs:87-
 
 - **Idempotent re-migration already exists — conditionally.** A completed journaled streaming run re-runs
   as a **full SKIP** with zero duplicates (`TransferRun.fs:1253-1270`; witnessed `…StreamingTests.fs:149-174`),
-  closing the **G3** duplicate hazard *whenever a journal is supplied*. **GAP (the lever):** `--streaming
-  --execute` **without** `--journal` is accepted and **doubles every AssignedBySink kind** (`TransferRun.fs:89`;
-  `MovementSurface.fs:1171`). The open work is to **force or default a journal** (or refuse journal-less
-  streaming-execute by name) — not to build idempotency. Caveat: idempotence is keyed to the same plan-marker
+  closing the **G3** duplicate hazard *whenever a journal is supplied*. **CLOSED (Phase 3, 2026-06-15):**
+  `--streaming --execute` **without** `--journal` is now **refused by name**
+  (`transfer.reverseLeg.streamingExecuteRequiresJournal`, the pure `ReverseLegRealization.executeJournalGate`) —
+  so every streaming execute carries a journal and is idempotent by construction; the duplicate hazard is closed
+  by construction, not merely "whenever a journal is supplied." Caveat: idempotence is keyed to the same plan-marker
   **and** a byte-identical source slice (changed source ⇒ drift refusal). The journal is client-side NDJSON
   *because the DML-only grant forbids the `CREATE TABLE` a sink-resident progress table would need*.
 - **ARMED:** journal compaction — resume loads the **entire NDJSON** (tens of bytes per captured pair, GBs at
   full-estate scale) into memory (`CaptureJournal.fs:66-74`); wake = any real resume > ~10M pairs. Envelope spill (`RunState.Envelopes`
   accumulates in memory) — ARMED, same scale wake.
-- **GAP:** the built resume is *journal-replay on re-run*, **not live socket-drop reconnect/retry**
-  mid-transfer. **Risk:** the journal filename **is** its content digest (`transfer-<digest16>.ndjson`,
-  `CaptureJournal.fs:60`) — any byte change orphans every existing journal into a silent fresh run.
+- **GAP (STAGED):** the built resume is *journal-replay on re-run*, **not live socket-drop reconnect/retry**
+  mid-transfer (Phase-1 real-wire co-requisite). **Risk (mitigated, Phase 3):** the journal filename **is** its
+  content digest (`transfer-<digest16>.ndjson`, `CaptureJournal.fs`) — a byte change still orphans the prior
+  journal, but the orphaning is no longer *silent*: `CaptureJournal.siblingJournalsUnderDrift` + the
+  `transfer.resume.journalAddressDrift` refusal halt a would-be fresh-run-over-orphaned-journal by name.
 
 ## 3. Operator progress — **PARTIAL**
 
@@ -603,13 +606,22 @@ Dependency-ordered. Each phase has an exit test.
 - ✅ **Exit met:** a reverse-leg move re-keys users by email with a pre-write orphan halt, witnessed
   (`ReverseLegStreamingTests` — re-key-never-re-imported + the pre-write halt; `DECISIONS.md` 2026-06-15).
 
-### Phase 3 — Harden resume + idempotency for scale
-- **Force/default a journal** on `--streaming --execute` (close the duplicate hazard — the small lever).
-- **Journal compaction** (stop the full-NDJSON load at resume) + decouple the resume-address from the content
-  digest (the filename-coupling risk).
-- **Live connection resilience**: socket-drop reconnect/retry mid-transfer (distinct from re-run replay).
-- **Exit:** a killed connection resumes from the last committed chunk with no duplicates, at scale-representative
-  journal size.
+### Phase 3 — Harden resume + idempotency for scale — **buildable levers DONE 2026-06-15; two STAGED**
+- ✅ **Forced a journal** on `--streaming --execute` (closed the duplicate hazard — the small lever):
+  `transfer.reverseLeg.streamingExecuteRequiresJournal` (the pure `ReverseLegRealization.executeJournalGate`).
+  A journal-less streaming execute now refuses by name; every streaming execute is idempotent by construction.
+- ✅ **Address-drift guard** for the filename-coupling risk: `transfer.resume.journalAddressDrift`
+  (`CaptureJournal.siblingJournalsUnderDrift`) — a marker/schema byte-change that orphans the prior journal now
+  refuses by name instead of silently re-streaming. (This converts the silence into a refusal; it does not
+  re-address the journal — multi-transfer-per-dir coexistence is preserved.)
+- ⏳ **STAGED — journal compaction** (stop the full-NDJSON load at resume): ARMED, wake = any real resume
+  > ~10M captured pairs. Not built — Docker scale is KB; a speculative scale-build has no witness.
+- ⏳ **STAGED — live socket-drop reconnect/retry** mid-transfer (distinct from re-run replay): needs a real
+  dropped connection to prove — a Phase-1 real-wire co-requisite, not Docker-witnessable.
+- **Exit:** the duplicate hazard is closed by construction (every streaming execute carries a journal);
+  the killed-connection-resumes-no-duplicates witness already holds at chunk granularity
+  (`ReverseLegStreamingTests` "chunk resume"). The scale-representative journal size + live socket-drop are the
+  staged real-wire residuals.
 
 ### Phase 4 — Movement dry-run + row-grained progress
 - **Movement dry-run**: row-count estimate, rekey-map preview, resume-state preview, for `migrate-with-data`.

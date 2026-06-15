@@ -23359,3 +23359,53 @@ composing them onto the streaming path and lifting two refusals.
   movement dry-run + row-grained progress (Phase 4), and the cutover gates (Phase 5) remain.
   Phase 2's exit test — "a reverse-leg move re-keys users by email with a pre-write orphan
   halt, witnessed" — is met.
+
+## 2026-06-15 (later) — Phase 3: harden resume + idempotency — force a journal on streaming execute; the journal-address-drift guard
+
+The charter's **Phase 3** buildable levers (`CHARTER_REVERSE_LEG_EXECUTION.md` Part IX). Both
+close a SILENT duplicate/re-run hazard with a NAMED refusal — the cardinal-sin discipline
+("a silent erasure is strictly worse than no claim," here a silent *duplication*).
+
+- **The duplicate-hazard close — force `--journal` on a streaming `--execute`
+  (`transfer.reverseLeg.streamingExecuteRequiresJournal`).** A journal-less streaming execute
+  has no idempotent envelope: any re-run re-streams and DOUBLES every AssignedBySink kind
+  (the G3 hazard, open whenever no journal is supplied). The CLI face now refuses that exact
+  shape by name and forces the operator to name a journal directory — making every streaming
+  execute resumable + idempotent by construction. The gate is the pure, total
+  `ReverseLegRealization.executeJournalGate` (Streaming-None × executeGated → refusal; DryRun,
+  journal-bearing, and the materialized G10 arm all pass), tested without a connection. The
+  ENGINE still supports journal-less execute (the test seam + the materialized arm); only the
+  production face forces it — so the existing engine witnesses are unchanged. This is "force a
+  journal," the smallest of the three lever options the charter named (force / default /
+  refuse) — chosen over defaulting because defaulting would guess a filesystem location and
+  silently change the write path; the named refusal is the honest, friction-light boundary.
+
+- **The journal-address-drift guard (`transfer.resume.journalAddressDrift`).** The journal is
+  addressed by the plan-marker digest (`transfer-<digest>.ndjson`), so a `planMarker`/schema
+  byte-change between a crashed run and its resume orphans the prior journal: THIS run's file
+  is absent, the prior is present under a different digest, and — unguarded — the run silently
+  starts fresh and re-streams (DOUBLING under AssignedBySink). The risk register named this
+  ("any byte change silently orphans journals"). `CaptureJournal.siblingJournalsUnderDrift`
+  detects the signature (own file absent + sibling `transfer-*.ndjson` present) and the
+  streaming execute refuses by name BEFORE any write rather than orphaning the prior journal.
+  Additive + fresh-run-only: a clean resume (own file present) and a true fresh run (empty
+  dir) both pass, so the resume / idempotent-re-run / source-drift witnesses are unchanged.
+  This does not re-address the journal (the digest filename stays — it preserves
+  multi-transfer-per-directory coexistence); it converts the *silence* into a named refusal,
+  which is the actual hazard.
+
+- **Witnessed.** Pure: `ReverseLegBoundaryTests` "Phase 3 gate" (executeJournalGate totality) +
+  "Phase 3 address-drift" (siblingJournalsUnderDrift signature). Docker:
+  `ReverseLegStreamingTests` "Phase 3 address-drift" — a stray journal orphans the run's own,
+  the execute refuses `transfer.resume.journalAddressDrift`, the sink stays untouched. Build
+  clean; 19 reverse-leg boundary+streaming tests green warm.
+
+- **STAGED, not built (the evidence discipline — IR/levers grow at the wake, not before).**
+  Two Phase-3 items remain deferred behind a wake the Docker harness cannot reach:
+  (1) **journal compaction** — resume loads the whole NDJSON into the index; ARMED, **wake =
+  any real resume > ~10M captured pairs** (`CaptureJournal.fs`); at Docker scale the index is
+  KB, so building compaction now would be a speculative scale-build with no witness.
+  (2) **live socket-drop reconnect/retry mid-transfer** (distinct from the built journal-replay
+  on re-run) — **needs a real dropped connection to prove**; it is a Phase-1 real-wire
+  co-requisite, not a Docker-witnessable lever. Both stay named with their wake; the built
+  levers above close the duplicate hazard that gated the rest.

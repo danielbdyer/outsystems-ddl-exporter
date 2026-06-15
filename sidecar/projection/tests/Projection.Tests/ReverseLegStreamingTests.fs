@@ -263,6 +263,34 @@ type ReverseLegStreamingTests(fixture: EphemeralContainerFixture) =
                 })
 
     [<Fact>]
+    member this.``Phase 3 address-drift: a streaming execute whose own journal is orphaned by a prior run's journal refuses by name (transfer.resume.journalAddressDrift) — never a silent re-run`` () =
+        if not (ReverseLegFixtures.skipIfNoDocker "L3AddrDrift") then () else
+        let journalDir = this.FreshJournalDir "addrdrift"
+        // A PRIOR run's journal under a DIFFERENT plan marker (a stray
+        // transfer-*.ndjson). This run's own marker resolves to a different
+        // filename, so its file is absent while the stray is present — the
+        // address-drift signature that, unguarded, silently re-streams.
+        System.IO.File.WriteAllText(
+            System.IO.Path.Combine(journalDir, "transfer-0000deadbeef0000.ndjson"), "")
+        this.WithEstates "L3AddrDrift" ReverseLegFixtures.seedClean
+            (fun src sink logicalContract physicalContract ->
+                task {
+                    let! reportR =
+                        Transfer.runStreamingWithRenames Transfer.Execute true src sink
+                            logicalContract physicalContract (Some journalDir)
+                    match reportR with
+                    | Error es ->
+                        Assert.True(
+                            es |> List.exists (fun e -> e.Code = "transfer.resume.journalAddressDrift"),
+                            sprintf "expected transfer.resume.journalAddressDrift, got %A" (es |> List.map (fun e -> e.Code)))
+                    | Ok _ -> Assert.Fail("expected the journal-address-drift refusal")
+
+                    // The refusal lands BEFORE any write — the sink is untouched.
+                    let! accounts = ReverseLegFixtures.countRows sink "[dbo].[OSUSR_L3_ACCOUNT]"
+                    Assert.Equal(0, accounts)
+                })
+
+    [<Fact>]
     member this.``resume guard: source drift under the journal refuses by name (transfer.resume.sourceDrift) — never a silent re-run over changed data`` () =
         if not (ReverseLegFixtures.skipIfNoDocker "L3Drift") then () else
         let journalDir = this.FreshJournalDir "drift"

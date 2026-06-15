@@ -841,6 +841,16 @@ let runReverseLegTransfer
         7
     else
 
+    // Phase 3 — the duplicate-hazard close (the charter's "small lever"): a
+    // journal-less streaming EXECUTE has no idempotent envelope, so refuse by
+    // name (the pure `executeJournalGate`) and force `--journal <dir>`.
+    match ReverseLegRealization.executeJournalGate realization executeGated with
+    | Some refusal ->
+        TtyRenderer.renderVoicedError refusal
+        dumpBench "transfer"
+        2
+    | None ->
+
     let sourceSub : Substrate =
         { Environment   = parseEnvironment "Source" None
           Role          = SubstrateRole.Source
