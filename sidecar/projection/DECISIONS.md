@@ -23666,3 +23666,33 @@ Operator confirmations that close the archetype unknowns and lock the data topol
   fully scoped (mechanism determined; only the sizing/RAM-budget set the spill trigger). The on-prem
   `FullRights` forks await the populate-scope answer. Still needed: Part 1c on the on-prem (FK-target
   AssignedBySink row count) + the transfer-host RAM budget.
+
+## 2026-06-15 (later) — Sizing + dual on-prem-write CONFIRMED; the two-flow / two-archetype model locked; the work plan
+
+The last operator inputs. The model is now fully determined and recorded; `REVERSE_LEG_WORK_PLAN.md`
+is the sequenced build plan.
+
+- **Keymap sizing (estate-data on-prem, the reverse-leg source).** **2.0 M** key-map-shaped rows
+  (FK-target, single-IDENTITY-PK) ⇒ **75 MB** resident packed remap (~37.5 B/row); **3.5 M** all-`dbo`
+  rows ⇒ **134 MB**. Transfer host = **64 GB RAM**. **The resident map fits comfortably even
+  extrapolated to production (~200 M ⇒ ~4–8 GB ≪ 64 GB).** So the spill is **NOT forced by the
+  numbers** — it is a *completeness* build (it closes the one unbounded-RAM hole in the otherwise
+  bounded-memory streaming path) and *headroom* (estates/hosts beyond this one). **Operator decision:
+  build the at-scale spill anyway, to be safe** — recorded as a conscious build-ahead-of-the-wake, with
+  a **configurable trigger defaulted inert at current scale** so it is armed + witnessed, not dead code.
+- **Dual on-prem-write CONFIRMED — Flow P IS a codebase job.** The engine writes into the on-prem two
+  ways: **(a) direct-connect** — the engine connects and applies data live (a `migrate` command,
+  diff-based, no schema change); **(b) emit-artifacts** — export SSDT + data, the operator deploys the
+  SSDT + static seeds + applies the data. So the on-prem-as-sink (`FullRights`) forks are **in scope**:
+  `PreservedFromSource` (write source keys directly via IDENTITY_INSERT — **no keymap** for the populate
+  flow) and **sink-resident resume** (CREATE TABLE permitted). This closes the open scope question.
+- **The two-flow / two-archetype model — LOCKED, and it validates the archetype design.** The codebase
+  writes to **two different sink classes**, so the per-sink mechanism MUST be archetype-driven:
+  - **Flow P — populate the on-prem** (direct-connect `migrate` OR emit-artifacts). Sink = on-prem =
+    **`FullRights`-minus-DMV**. Mechanism: `PreservedFromSource` (no keymap) + sink-resident resume.
+  - **Flow R — the reverse leg** (on-prem → cloud). Sink = empty cloud = **`ManagedDml`**. Mechanism:
+    `AssignedBySink` + keymap + `#`-temp spill + client-side journal.
+  This is the real-estate proof of `DATABASE_ARCHETYPES.md`: one engine, two sink archetypes, the
+  capability profile picking the safe mechanism per target. The work plan (`REVERSE_LEG_WORK_PLAN.md`)
+  sequences Slice A (the type) → B (survey-verify) → C (the FullRights populate forks) → S (the
+  reverse-leg `#`-temp spill), all on top of the already-shipped Phases 2–4 + NM-58.

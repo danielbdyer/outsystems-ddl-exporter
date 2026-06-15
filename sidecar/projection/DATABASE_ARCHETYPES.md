@@ -223,6 +223,14 @@ verdicts: no ALTER, no IDENTITY_INSERT, AssignedBySink, SQL rollback); the probe
 *of the same class*, so verifying it once de-risks every same-class cutover — the original J5 thesis,
 now structural.
 
+> **Verified against the real estate (2026-06-15).** The two archetypes are no longer hypothetical:
+> the **on-prem** sink probed `FullRights`-minus-DMV (CREATE TABLE / ALTER / IDENTITY_INSERT /
+> sink-resident progress all permitted; `VIEW DATABASE PERFORMANCE STATE` denied — the predicted
+> split), and the **cloud** sink is `ManagedDml` (J5). And the engine genuinely writes to *both*
+> (Flow P populate on-prem via direct-connect `migrate` + emit-artifacts; Flow R reverse leg into the
+> cloud), so the per-sink-archetype mechanism is not academic — it is the daily operating reality. The
+> sequenced build is `REVERSE_LEG_WORK_PLAN.md`.
+
 ---
 
 ## §6 — Migration path (non-breaking slices)
