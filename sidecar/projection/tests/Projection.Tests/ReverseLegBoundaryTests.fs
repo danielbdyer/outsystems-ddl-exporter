@@ -33,31 +33,55 @@ let private tinyModel : Catalog =
             IsActive = true; ExtendedProperties = [] } ] []
     |> Result.value
 
-// -- the CLI face's named reverse-leg refusal (live) --------------------------
+// -- the CLI face's reconcile spec handling (Phase 2: the refusal is LIFTED) ---
+//
+// The blanket `transfer.reverseLeg.reconcileUnsupported` refusal that stood
+// here is gone (DECISIONS 2026-06-15 — reconcile ∘ reverse leg). The face now
+// parses + resolves reconcile/user-map specs against the physical sink
+// contract exactly as the forward face does. A bad spec still refuses by name
+// (arg error, exit 2) BEFORE any connection opens; a good spec is ACCEPTED and
+// proceeds to the apparatus (the full re-key witness is the Docker
+// `ReverseLegStreamingTests` 'reconcile ∘ streaming' pair). The reverse-leg
+// physical rendition of `tinyModel`'s one kind is `OSUSR_B_CUSTOMER([ID])`.
 
 [<Fact>]
-let ``reverse-leg face: a reconcile spec is REFUSED BY NAME (transfer.reverseLeg.reconcileUnsupported, exit 2) — never a silent straight-load`` () =
+let ``reverse-leg face: a MALFORMED reconcile spec refuses by name (arg error, exit 2) before any connection opens`` () =
     let model = tinyModel
     let exit =
         RunFaces.runReverseLegTransfer
             "env:L3B_SRC" "env:L3B_SINK"
             (Projection.Pipeline.CatalogRendition.logical model)
             (Projection.Pipeline.CatalogRendition.physical model)
-            [ "Customer=Email" ] None
+            [ "Customer" ] None   // no ':' — transfer.reconcile.specShape
             false true false EmissionMode.Incremental false false None [] []
     Assert.Equal(2, exit)
 
 [<Fact>]
-let ``reverse-leg face: a user-map is REFUSED BY NAME on the reverse leg (the rekey ∘ rendition composition is the named follow-on)`` () =
+let ``reverse-leg face: a reconcile spec naming an unknown table refuses by name (exit 2) before any connection opens`` () =
     let model = tinyModel
     let exit =
         RunFaces.runReverseLegTransfer
             "env:L3B_SRC" "env:L3B_SINK"
             (Projection.Pipeline.CatalogRendition.logical model)
             (Projection.Pipeline.CatalogRendition.physical model)
-            [] (Some "user-map.csv")
+            [ "OSUSR_NOPE:ID" ] None   // table not in the contract — transfer.reconcile.tableNotFound
             false true false EmissionMode.Incremental false false None [] []
     Assert.Equal(2, exit)
+
+[<Fact>]
+let ``reverse-leg face: a WELL-FORMED resolvable reconcile spec is ACCEPTED (no longer refused) — it passes the spec gate and reaches the apparatus`` () =
+    let model = tinyModel
+    let exit =
+        RunFaces.runReverseLegTransfer
+            "env:L3B_SRC" "env:L3B_SINK"
+            (Projection.Pipeline.CatalogRendition.logical model)
+            (Projection.Pipeline.CatalogRendition.physical model)
+            [ "OSUSR_B_CUSTOMER:ID" ] None   // resolves to MatchByColumn (Id)
+            false true false EmissionMode.Incremental false false None [] []
+    // Past the parse/resolve gate the run reaches connection-opening, which
+    // fails on the unset env vars — a connection-class exit, NEVER the arg/
+    // resolve exit 2. The point: reconcile is no longer refused at the face.
+    Assert.NotEqual(2, exit)
 
 // -- the realization SELECTOR: the best admissible realization, chosen pure --
 
@@ -104,6 +128,44 @@ let ``selector: --journal on an inadmissible request refuses by name — the led
     | Error es -> Assert.Equal("transfer.reverseLeg.journalRequiresStreaming", (List.head es).Code)
     | Ok other -> Assert.Fail(sprintf "expected the journal refusal, got %A" other)
 
+// -- Phase 3: the duplicate-hazard gate + the journal-address-drift guard ------
+
+[<Fact>]
+let ``Phase 3 gate: a journal-less streaming EXECUTE refuses by name; DryRun / journal-bearing / materialized pass`` () =
+    let gate r e = Projection.Pipeline.ReverseLegRealization.executeJournalGate r e
+    // journal-less streaming, gated execute → the named refusal
+    match gate (Projection.Pipeline.ReverseLegRealization.Streaming None) true with
+    | Some err -> Assert.Equal("transfer.reverseLeg.streamingExecuteRequiresJournal", err.Code)
+    | None -> Assert.Fail "expected the streaming-execute-requires-journal refusal"
+    // the same shape as a DryRun (not gated) is exempt — nothing is written
+    Assert.True((gate (Projection.Pipeline.ReverseLegRealization.Streaming None) false).IsNone)
+    // a journal-bearing stream is idempotent-capable → passes
+    Assert.True((gate (Projection.Pipeline.ReverseLegRealization.Streaming (Some "/j")) true).IsNone)
+    // the materialized arm carries its own G10 envelope → passes
+    Assert.True((gate Projection.Pipeline.ReverseLegRealization.Materialized true).IsNone)
+
+// (The face wiring of `executeJournalGate` mirrors the already-face-tested
+// `streamingTablesUnsupported` refusal; the gate's logic is proven purely
+// above, env-var-free, so the face path is not re-tested with a global
+// PROJECTION_ALLOW_EXECUTE mutation that could flake concurrent suites.)
+
+[<Fact>]
+let ``Phase 3 address-drift: a sibling journal under a different marker signals drift; own-file-present or empty dir does not`` () =
+    let dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "rl-drift-" + System.Guid.NewGuid().ToString("N").Substring(0, 8))
+    try
+        let j = Projection.Pipeline.CaptureJournal.create dir "marker-A"
+        // a fresh dir holding only this (not-yet-written) journal → no drift
+        Assert.Empty(Projection.Pipeline.CaptureJournal.siblingJournalsUnderDrift j)
+        // a PRIOR run's journal under a different marker, our file still absent → drift
+        let stray = Projection.Pipeline.CaptureJournal.create dir "marker-B"
+        System.IO.File.WriteAllText(Projection.Pipeline.CaptureJournal.filePath stray, "")
+        Assert.NotEmpty(Projection.Pipeline.CaptureJournal.siblingJournalsUnderDrift j)
+        // once our OWN journal exists (a real resume), no drift
+        System.IO.File.WriteAllText(Projection.Pipeline.CaptureJournal.filePath j, "")
+        Assert.Empty(Projection.Pipeline.CaptureJournal.siblingJournalsUnderDrift j)
+    finally
+        if System.IO.Directory.Exists dir then System.IO.Directory.Delete(dir, true)
+
 [<Fact>]
 let ``streaming face: an explicit --streaming with --tables refuses at the face with exit 2`` () =
     let model = tinyModel
@@ -118,8 +180,14 @@ let ``streaming face: an explicit --streaming with --tables refuses at the face 
 
 // -- reserved follow-on contracts (Skip stubs with promotion triggers) --------
 
-[<Fact(Skip = "Reserved: the reconcile ∘ rendition composition — 'User reconciled by email on the up-leg' (the cloud-owns-its-users reverse leg). The CLI face refuses today (transfer.reverseLeg.reconcileUnsupported); promotion trigger: ReconciledByRule threaded through runReverseLegThroughConnections with rendition-aware business-key resolution, then this test seeds the cloud sink's own user inventory and asserts the up-leg re-keys every user FK without re-importing a user row (the PE-3 join witness on the reverse leg).")>]
-let ``RESERVED — reverse leg with ReconciledByRule: User reconciled by email on the up-leg, identities re-keyed, never re-imported`` () = ()
+// PROMOTED 2026-06-15 (Phase 2 — reconcile ∘ reverse leg): the reserved
+// "User reconciled by email on the up-leg, identities re-keyed, never
+// re-imported" contract is now the live Docker witness
+// `ReverseLegStreamingTests.``reconcile ∘ streaming: User reconciled by email
+// on the up-leg — identities re-keyed, never re-imported``` (+ the
+// `validate-user-map pre-write halt` sibling). It moved to the streaming
+// suite because it needs the seeded-sink fixture; this pure boundary file
+// keeps only the face-level spec-gate refusals above.
 
 [<Fact(Skip = "Reserved: the contract-vs-live-shape preflight — a column the rendered logical contract names but live B lacks dies today inside the ingest SELECT with a raw SqlException (pinned by ReverseLegCanaryTests 'B-drift'). Promotion trigger: a named transfer.sourceShapeDrift refusal lands (compare the rendered contract against the live INFORMATION_SCHEMA before any read); then this test drops a column from live B and asserts the named refusal replaces the raw crash.")>]
 let ``RESERVED — B-drift refused by name: the rendered contract is checked against live B's shape before any row is read`` () = ()

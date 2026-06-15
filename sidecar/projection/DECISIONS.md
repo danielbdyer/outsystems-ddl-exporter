@@ -23284,3 +23284,255 @@ synthesis (the P1–P11 taxonomy, the ledger, the forward charter) lives in
   P10); no `PreservedFromSource`. M5's prerequisite ledger now exists (here + the compendium).
   Remaining status-surface flips (`AUDIT_2026_06_13` "J5 (ops-gated)"; the `HANDOFF.md` /
   backlog preemption letters) and the NM-73 auto-fallback arming are follow-ons.
+
+## 2026-06-15 (later) — Phase 2: reconcile ∘ streaming on the reverse leg; the `reconcileUnsupported` refusal LIFTED; the validate-user-map pre-write halt reaches the streaming arm (NM-31 / N4 closed)
+
+The charter's (`CHARTER_REVERSE_LEG_EXECUTION.md` Part IX) **Phase 2** — wire user
+reconciliation onto the reverse leg — is landed. It is the highest-value buildable gap: it is
+what makes "re-key users" actually run on the B→A up-leg. The reverse leg now reconciles the
+operator-named kinds (the User family) to the pre-existing **sink** identities by business key
+(email) and re-keys every FK pointing at them, **without re-importing a single user row** (the
+"cloud owns its users" / golden discipline, `THE_DATA_PRODUCERS` §; Part V §4) — on the
+bounded-memory **streaming** realization, the estate-scale path. This was an integration, not a
+build: every primitive existed (`Reconciliation.reconcileKind` with the ByEmail/BySsKey/
+ManualOverride/Fallback strategies; `reconcileAgainstSink`; `validateUserMap`;
+`SurrogateRemapContext`; the packed remap; `DataLoadPlan.reclassifyReconciled`). The work was
+composing them onto the streaming path and lifting two refusals.
+
+- **The named refusal `transfer.reverseLeg.reconcileUnsupported` is LIFTED.** The CLI face
+  (`RunFaces.runReverseLegTransfer`) no longer refuses reconcile/user-map specs up front. It
+  now parses (`parseReconcileSpec` / `parseUserMapCsv`) and resolves
+  (`TransferSpec.resolveAllReconciliation`) them against the **physical sink contract**
+  (the rendition the up-leg writes into — `findKindByTable` matches physical names, consistent
+  with the forward face's live-read contract) exactly as the forward `transfer` face does. A
+  malformed or unresolvable spec still refuses BY NAME (arg-error exit 2) **before any
+  connection opens**; a well-formed resolvable spec is accepted. The CLI args (`opts.Reconcile`
+  / `opts.Rekey`) already flowed into the reverse-leg face — only the face refused them — so no
+  `MovementSpec` / `Program` / `MovementSurface` change was needed.
+
+- **The streaming reconcile leg (`runStreamingReconcilingWithRenames`).** Before the stream,
+  the runner reconciles the named kinds against the sink (read-only — safe in DryRun): it
+  materializes ONLY the reconciled kinds' source rows (the small User population; the
+  FK-target bulk never materializes), re-points them to the sink's names, and matches them to
+  the pre-existing sink rows. The resulting `SurrogateRemapContext` is threaded into
+  `writePlanStreaming` alongside the stream-captured `PackedSurrogateRemap`; the per-quantum
+  FK re-point consults a **combined lookup** over `assignedBySinkKinds ∪ reconciledKinds`
+  (disjoint by kind, so the fall-through never double-resolves). Reconciled kinds are
+  `reclassifyReconciled`'d to `ReconciledByRule` and **skipped in phase 1 / phase 2** of the
+  streaming load — the sink already owns their rows. The old `runStreamingWithRenames` is now
+  a thin straight-load wrapper (empty reconciliation, inert `allowDrops`) — byte-identical to
+  the pre-Phase-2 realization, so its five existing witnesses are unchanged.
+
+- **The validate-user-map pre-write halt on the streaming arm (NM-31 / N4 closed for
+  streaming).** The streaming arm previously had NO pre-write reconcile-orphan halt (the
+  `ReverseLegRealization` docstring named this asymmetry as the follow-on). It now runs the
+  SAME `validateUserMap allowDrops reconciled` gate the materialized AC-I5 path uses, in the
+  same precedence order (`executeGate` then the orphan halt). An unmapped source user is a
+  **pre-write refusal** (`transfer.unmappedIdentities`, the Sink untouched), not a post-write
+  drop — unless `--allow-drops` downgrades it to the reported-drop path. The `choose` selector
+  and the `ReverseLegRealization` type docstring's NM-31 caveat are updated: the arms are no
+  longer drop-asymmetric.
+
+- **No silent reconcile loss on the materialized arm.** Lifting the CLI refusal means a
+  reconcile request on an inadmissible streaming combination (`--tables` / `--resumable` /
+  WipeAndLoad) routes to the materialized arm. Rather than let it straight-load and **silently
+  drop the reconcile** (the cardinal sin), `runReverseLegThroughConnections` now threads the
+  reconciliation map through `runCore`'s existing reconcile leg (the same path the forward
+  `TransferCanaryTests` prove). Both arms reconcile; neither loses it silently.
+
+- **Witnessed.** Two Docker witnesses promoted from the reserved `ReverseLegBoundaryTests`
+  Skip-stub into `ReverseLegStreamingTests`: (a) *"User (Customer) reconciled by email on the
+  up-leg — identities re-keyed, never re-imported"* — pre-seeds the sink's own Customer
+  inventory, reverse-leg-reconciles by email, asserts Customer stays at 2 rows (no re-import,
+  ReconciledByRule, zero writes) while every Account/Invoice Customer-FK joins the sink's own
+  users by email; (b) *"validate-user-map pre-write halt"* — an unmatched source user refuses
+  `transfer.unmappedIdentities` with the sink untouched (zero Account/Invoice/Payment rows).
+  The three reverse-leg face refusal tests are rewritten (malformed → exit 2; unknown table →
+  exit 2; well-formed → accepted, NOT exit 2). Build clean; 37 reverse-leg suite tests +
+  184 pure transfer/movement/reconciliation tests green warm.
+
+- **What this does NOT close (the charter's named residuals stand).** This is the Docker-scale
+  composition; the real-wire bench (P7b, Phase 1), the live user-population *discovery* pass
+  (`UserFkReflowPass` is still a production no-op — the reconcile here reads the sink's user
+  inventory directly via `reconcileAgainstSink`, which is the runtime AssignedBySink/reconcile
+  path, not the design-time discovery pass), journal-on-execute forcing (Phase 3), the
+  movement dry-run + row-grained progress (Phase 4), and the cutover gates (Phase 5) remain.
+  Phase 2's exit test — "a reverse-leg move re-keys users by email with a pre-write orphan
+  halt, witnessed" — is met.
+
+## 2026-06-15 (later) — Phase 3: harden resume + idempotency — force a journal on streaming execute; the journal-address-drift guard
+
+The charter's **Phase 3** buildable levers (`CHARTER_REVERSE_LEG_EXECUTION.md` Part IX). Both
+close a SILENT duplicate/re-run hazard with a NAMED refusal — the cardinal-sin discipline
+("a silent erasure is strictly worse than no claim," here a silent *duplication*).
+
+- **The duplicate-hazard close — force `--journal` on a streaming `--execute`
+  (`transfer.reverseLeg.streamingExecuteRequiresJournal`).** A journal-less streaming execute
+  has no idempotent envelope: any re-run re-streams and DOUBLES every AssignedBySink kind
+  (the G3 hazard, open whenever no journal is supplied). The CLI face now refuses that exact
+  shape by name and forces the operator to name a journal directory — making every streaming
+  execute resumable + idempotent by construction. The gate is the pure, total
+  `ReverseLegRealization.executeJournalGate` (Streaming-None × executeGated → refusal; DryRun,
+  journal-bearing, and the materialized G10 arm all pass), tested without a connection. The
+  ENGINE still supports journal-less execute (the test seam + the materialized arm); only the
+  production face forces it — so the existing engine witnesses are unchanged. This is "force a
+  journal," the smallest of the three lever options the charter named (force / default /
+  refuse) — chosen over defaulting because defaulting would guess a filesystem location and
+  silently change the write path; the named refusal is the honest, friction-light boundary.
+
+- **The journal-address-drift guard (`transfer.resume.journalAddressDrift`).** The journal is
+  addressed by the plan-marker digest (`transfer-<digest>.ndjson`), so a `planMarker`/schema
+  byte-change between a crashed run and its resume orphans the prior journal: THIS run's file
+  is absent, the prior is present under a different digest, and — unguarded — the run silently
+  starts fresh and re-streams (DOUBLING under AssignedBySink). The risk register named this
+  ("any byte change silently orphans journals"). `CaptureJournal.siblingJournalsUnderDrift`
+  detects the signature (own file absent + sibling `transfer-*.ndjson` present) and the
+  streaming execute refuses by name BEFORE any write rather than orphaning the prior journal.
+  Additive + fresh-run-only: a clean resume (own file present) and a true fresh run (empty
+  dir) both pass, so the resume / idempotent-re-run / source-drift witnesses are unchanged.
+  This does not re-address the journal (the digest filename stays — it preserves
+  multi-transfer-per-directory coexistence); it converts the *silence* into a named refusal,
+  which is the actual hazard.
+
+- **Witnessed.** Pure: `ReverseLegBoundaryTests` "Phase 3 gate" (executeJournalGate totality) +
+  "Phase 3 address-drift" (siblingJournalsUnderDrift signature). Docker:
+  `ReverseLegStreamingTests` "Phase 3 address-drift" — a stray journal orphans the run's own,
+  the execute refuses `transfer.resume.journalAddressDrift`, the sink stays untouched. Build
+  clean; 19 reverse-leg boundary+streaming tests green warm.
+
+- **STAGED, not built (the evidence discipline — IR/levers grow at the wake, not before).**
+  Two Phase-3 items remain deferred behind a wake the Docker harness cannot reach:
+  (1) **journal compaction** — resume loads the whole NDJSON into the index; ARMED, **wake =
+  any real resume > ~10M captured pairs** (`CaptureJournal.fs`); at Docker scale the index is
+  KB, so building compaction now would be a speculative scale-build with no witness.
+  (2) **live socket-drop reconnect/retry mid-transfer** (distinct from the built journal-replay
+  on re-run) — **needs a real dropped connection to prove**; it is a Phase-1 real-wire
+  co-requisite, not a Docker-witnessable lever. Both stay named with their wake; the built
+  levers above close the duplicate hazard that gated the rest.
+
+## 2026-06-15 (later) — Phase 4: the movement dry-run row-count estimate (streaming preview); the live progress bar STAGED
+
+The charter's **Phase 4** buildable lever. The materialized reverse-leg DryRun already reports
+real per-kind row counts (it materializes the rows); the **streaming** DryRun ingested nothing
+(the rows stream at write time), so its preview reported zero rows-would-move — an operator
+could not see "N rows would move" before committing a destructive estate-scale load.
+
+- **The streaming DryRun row-count estimate (`countKindRows`).** The streaming DryRun arm of
+  `runStreamingReconcilingWithRenames` now estimates each kind's rows-would-move with a cheap
+  EXACT count (`COUNT_BIG(*)` aggregate — one round-trip per kind, no row scan) and reports it
+  as `RowsIngested`. A **reconciled** kind previews 0 (ReconciledByRule — the sink owns it; it
+  is re-keyed, not re-imported), every other kind previews its source count, `RowsWritten`
+  stays 0 (a preview writes nothing), and the reconcile outcome (`UnmatchedIdentities` /
+  `AmbiguousIdentities`, from Phase 2) rides the same report — the **rekey-map preview**. So the
+  operator now previews per-kind "N rows would move" + "K users matched / J unmatched" before
+  any DML, on the estate-scale path.
+
+- **Witnessed.** `ReverseLegStreamingTests` "Phase 4 dry-run preview": a streaming DryRun on the
+  seeded estate previews Account=3 / Invoice=3 / Payment=4 (exact source counts), the reconciled
+  Customer kind previews 0, every `RowsWritten` is 0, `UnmatchedIdentities` is empty (full match),
+  and the sink is unchanged. **Run for real against the warm container** (`PROJECTION_MSSQL_CONN_STR`),
+  per-test duration ~1.2s — NOT a no-op (see the env note below). Build clean.
+
+- **STAGED — the live row-grained progress bar.** The denominator the parked
+  `SpectreProgressAdapter : IProgressRunner` (Tier-3, `REPORTING_HORIZON.md` / `DYNAMIC_DISPLAY.md`)
+  needs — rows-total per kind — now exists (the same `countKindRows`). But the live ETA bar is a
+  TTY rendering surface whose **wake is the real-wire multi-hour run**: a 40-second Docker test
+  has nothing to watch, and a deterministic witness for a live bar is not Docker-shaped. Wiring
+  the parked adapter to the row denominator + a durable reconnect-surviving surface is the
+  remaining Phase-4 thread, gated on Phase 1's real wire. The stage-grained `--watch` board and
+  the row-count preview ship now; the live row bar stays parked with its wake named.
+
+- **⚠️ Process note (cost real time this session; memory `local-windows-dev-env` updated).** On
+  the Windows dev box, `DockerDaemon.ensureRunning()` checks only a **Linux** socket, so every
+  `EphemeralContainerFixture` test SILENTLY NO-OPs (a 0.4ms `()` pass — the survival-rule-#12
+  trap) unless `PROJECTION_MSSQL_CONN_STR` points at the warm `projection-mssql-warm` container.
+  All Phase 2–4 Docker witnesses were re-run with that env var set and confirmed real via
+  per-test TRX durations (seconds, not ms). NEVER trust the green count for Docker-gated tests
+  here — check the durations.
+
+## 2026-06-15 (later) — Phase 5 + Phase 1: the real-wire harness + estate survey package; the cutover gates are governance-gated, not code (R6)
+
+The charter's **Phase 5** (cutover gates) and **Phase 1** (the real wire). Unlike Phases 2–4,
+Phase 5 has **no buildable code lever that respects R6** — all three gates are real-wire /
+CDC-verdict / cutover-governance bound. The honest, high-value deliverable is the operator-ready
+**`PHASE_1_REAL_WIRE_HARNESS.md`** (the P7b throughput bench procedure + the read-only estate
+survey SQL) plus this cutover-readiness assessment. This is also exactly what the mission's
+Phase 1 asks ("you can't fake the wire — prep the harness + survey queries and flag it for the
+operator").
+
+- **The harness package (`PHASE_1_REAL_WIRE_HARNESS.md`).** Part A: the P7b throughput bench —
+  the shipped streaming reverse leg is already `Bench`-instrumented, so a real-wire run prints
+  rows/sec with no new code; the doc is the operator procedure + the escape-hatch plan (50k-chunk
+  sweep, parallel wavefronts port, sink-resident spill) if it lands materially below 20k. Part B:
+  six read-only survey queries — §1 row counts (sizes the run), §2 FK fan-in + `approx_remap_MB`
+  (resident remap vs spill), §3 trigger map (the capture-ladder descent map), §4 G1 object-scope
+  DENY (P1b — promotes the table-scope preflight if found), §5 P10 user directory (confirms
+  ReconciledByRule on the real estate — the Phase-2 reverse-leg re-key's real input), §6 CDC
+  (the verdict that arms NM-73). Part C: the hand-off checklist.
+
+- **Cutover-readiness assessment — why each Phase-5 gate is NOT a code change here.**
+  1. **Production-shaped dry-run** — the *mechanism* is the Phase-4 movement dry-run preview (row
+     counts + rekey-map preview, witnessed Docker); "production-shaped" means running it against
+     the **real estate** — a real-wire action (harness Part A/B), not a code lever.
+  2. **Grant gate advisory → hard** — the *mechanism already exists*: the standalone `projection
+     survey` verb HARD-STOPS (exit 7) on a blocked `CapabilitySurvey.blocked` report
+     (`Program.fs:314`); the in-flow G0c advisory only warns **by R6 design** (V2 owns no
+     production write path during dual-track). The "flip" is the operator wiring `projection
+     survey` into the **per-pair cutover CI as a required gate** — a *governance* action governed
+     by the N=10-consecutive-green-canary + operator-sign-off ladder (the load-bearing R6
+     commitment), NOT a blanket in-flow env flip. **A speculative in-flow flip was deliberately
+     NOT built** — it would be redundant with the existing survey hard-stop and would bypass the
+     per-pair canary governance R6 mandates. (This entry is the R6 amendment for the
+     not-built decision; the default advisory posture is unchanged, byte-identical.)
+  3. **NM-73 auto-fallback (CDC-silence → EXCEPT)** — explicitly CDC-verdict-gated ("revisit
+     after J5"); OPEN-3 is still PARTIAL (the CDC path is not yet exercised on a real managed
+     environment). The manual `emission.dataVerification = ValidateBeforeApply` override shipped
+     (NM-73 / WP6.6); the auto-fallback arms on the harness §6 CDC verdict, not before — building
+     it now would fire a deferral whose wake (the CDC verdict) has not landed.
+
+- **Net for Phase 5:** the gates' mechanisms are built or exist; what remains is operator/real-wire
+  governance, which the harness package unblocks. No code shipped for Phase 5 by design (R6); the
+  deliverable is the harness + this assessment.
+
+## 2026-06-15 (later) — Database archetype as a config disposition (direction recorded; operator-prompted)
+
+The operator named a distinction the docs had blurred: there are **two classes of target database**,
+not one. **(1) On-prem SQL Server** — the migration team's own instance, which receives the emitted
+SSDT schema (`CREATE TABLE` / `ALTER`) AND hosts a database with the same schema + the migrated data
+(the `Logical` / B rendition); likely full DDL rights (operator to verify). **(2) Managed cloud SQL**
+— the J5-settled DML-only sink (`Physical` / A rendition; no ALTER / IDENTITY_INSERT / CREATE TABLE).
+These have materially different capability profiles, and the engine *already* branches on them — but
+the branch lives unevenly across a coarse binary `Grant` facet (`SchemaAndData | DataOnly`), a metadata
+`Rendition` facet, and a layer of **hardcoded cloud-shaped assumptions** (the client-side NDJSON
+journal exists *only because* the DML-only grant forbids the `CREATE TABLE` a sink-resident progress
+table would need; AssignedBySink is the reverse-leg default; `#`-temp staging; descent-only constraint
+handling).
+
+- **The direction.** Lift the target's capability **class** into one named, reusable **config
+  disposition** — an `Archetype` facet on `Environment` (sibling to `Grant` / `Rendition`) that
+  **expands** to a `CapabilityProfile` the pipeline reads instead of re-deciding per site. `FullRights`
+  (on-prem) ⇒ PreservedFromSource default, schema deploy, sink-resident resume, constraint bypass,
+  TRUNCATE. `ManagedDml` (cloud, the J5 profile) ⇒ AssignedBySink, client journal, capture-ladder
+  descent, child-first DELETE. The archetype **subsumes** `Grant` (which becomes a derived projection),
+  keeps `Rendition` orthogonal, and is **closed + total over the engine** (a new target class joins by
+  one DU case — the `ArtifactByKind` / `registered ⇔ executed` discipline applied to capability).
+- **Verify, don't trust (A44 — expressible ⇔ reachable).** The archetype is the operator's
+  *declaration*; the `CapabilitySurvey` *confirms* it against probed `fn_my_permissions` / write-probe
+  evidence, exactly as it reconciles the declared `Grant` today. A declared `FullRights` target missing
+  `CREATE TABLE` / `IDENTITY_INSERT`, or a `ManagedDml` target that unexpectedly permits them, is a
+  **named declared-vs-actual mismatch** — the J5 covenant (the disposition holds across same-class
+  instances) generalized from a one-time spike into a standing per-class gate. The J5 ledger is the
+  seed profile for `ManagedDml`; `REVERSE_LEG_OPERATOR_PROBE_SHEET.md` Part E (E1–E5: CREATE TABLE,
+  ALTER, IDENTITY_INSERT, schema parity, sink-resident progress — all validated against SQL Server 2022)
+  is the seed verification for `FullRights`.
+- **What it unlocks.** The on-prem path stops being forced into cloud-shaped assumptions and gains the
+  strategies its full grant permits (the highest-value: a **sink-resident progress table** retires the
+  Phase-3 address-drift/compaction hazards on this class; **PreservedFromSource** removes the entire
+  capture/remap/FK-repoint machinery when keys can be preserved). The cloud path stays byte-identical to
+  the J5-proven behavior.
+- **Status: design + assumptions recorded, not yet built.** The full design + the honest hardcoded-
+  assumption inventory (H1–H6) + the non-breaking slice plan (A: type + derive-from-Grant; B: survey
+  reconciliation; C: sink-resident resume fork; D: PreservedFromSource fork; E+: bypass/TRUNCATE) live
+  in **`DATABASE_ARCHETYPES.md`**. Slice A is byte-identical (the archetype defaults to *inferred from
+  the existing `Grant`*), so it can land without touching any current config. Sequenced behind the
+  real-wire verification (the on-prem profile must be probed before its forks are trusted).

@@ -1,3 +1,65 @@
+# Handoff addendum — 2026-06-15, REVERSE-LEG EXECUTION (Phases 2–5 landed) + THE OPERATOR PROBE PACKAGE — your job is to DECODE the operator's probe results (attached with this handoff) and drive each staged item to completion
+
+To the next agent.
+
+**Your mission in one sentence.** The reverse-leg data-load engine is built and witnessed at Docker
+scale through Phase 4; what remained was everything that needs the operator's real databases. The
+operator has now **run the probes and is bringing you the results** (attached beneath this handoff —
+the filled-in ledgers from `REVERSE_LEG_OPERATOR_PROBE_SHEET.md`, the `PHASE_1_REAL_WIRE_HARNESS.md`
+throughput bench, and the Part E archetype verdict). **Take those results and turn each "staged /
+gated" item into a built, witnessed one.** This letter is the decoder: result → what it unlocks →
+the slice to build.
+
+**Where you are standing.** Branch `claude/unruffled-diffie-801d9b`, 7 commits on top of the charter
+base (`74e9b597`). Read `CHARTER_REVERSE_LEG_EXECUTION.md` first (Part VII = code state; Part IX =
+the phase ladder with the ✅/⏳ status I left). Phases 2–4 are **built + warm-witnessed** (reconcile ∘
+streaming with the validate-user-map halt; force-journal + address-drift guard; the movement dry-run
+row-count preview). Phases 1/5 are operator/real-wire/CDC-gated — the harness + probe sheet are how
+they unblock. The three operator-facing companions are `REVERSE_LEG_OPERATOR_PROBE_SHEET.md`,
+`PHASE_1_REAL_WIRE_HARNESS.md`, `DATABASE_ARCHETYPES.md`.
+
+**The decoder — consume the attached results like this:**
+
+| Operator result (probe) | What it unlocks → your slice |
+|---|---|
+| **Part E archetype verdict** (E1 CREATE TABLE, E3 IDENTITY_INSERT) | **The biggest fork.** *FullRights* (both OK) ⇒ build `DATABASE_ARCHETYPES.md` Slice A (the `Archetype` type + `CapabilityProfile.of`, derived from `Grant` — byte-identical) **with its first consumer**: Slice C (sink-resident progress table — retires the Phase-3 journal hazards on-prem) and/or Slice D (PreservedFromSource — removes the whole capture/remap/FK-repoint path when keys can be preserved). *ManagedDml* (both denied) ⇒ the engine already ships this; declare it + move on. *Split* ⇒ treat each capability independently. **Do not build the archetype type with no consumer** (zero-consumer rule); build it the moment a fork needs it. |
+| **D1 throughput (P7b)** rows/sec vs floor | ≥ floor ⇒ record in DECISIONS (amend the ~271/~27k/~35.5k ladder) + proceed to the cutover gates. Materially < 20k ⇒ trigger an escape hatch *with a plan*: the 50k-chunk sweep, the **parallel wavefronts port** (reuse `Deploy.executeLeveledSeed`/`ParallelSafe` on the reverse leg — port, not build), or the sink-resident spill (sized by B2). |
+| **B1 row counts + B2 FK-target rows / `approx_keymap_MB`** | vs the transfer-host memory budget ⇒ resident remap (fast) **or** build the sink-resident keymap / server-side `UPDATE…JOIN` **spill** (DESIGNED-only today — this result is its wake). Also: if a real resume will exceed ~10M captured pairs, that is the wake for **journal compaction** (Phase 3 staged). |
+| **B3 orphan FK rows** | the expected drop count ⇒ set `--allow-drops` expectations / decide clean-vs-accept; confirm the exit-9 + `SkippedReferences` report matches. |
+| **B4 reconcile-key quality** (dup / null / casing of email) | dups ⇒ build a tiebreaker; nulls ⇒ those users hit the validate-user-map halt (expected); **casing mismatch ⇒ the reconcile matches raw strings (ordinal Map) — if source/sink email casing differs, build a normalization step** or the match silently misses. |
+| **A1–A5 schema shape** | the disposition mix + the refusal list. Composite-PK (A2) / no-PK (A1) / non-nullable cycle FK (A3) ⇒ each refuses by name — plan handling. A5 non-insertable columns ⇒ confirm the engine excludes them for those tables. |
+| **C1 object-scope DENY** | if any planned-write table is missing a permission ⇒ **promote the reserved Skip-stub** `ReverseLegBoundaryTests."object-scope DENY refused by name before any write"` (descend `Preflight.captureGrantEvidence` to table scope). |
+| **C3 triggers** | the capture-ladder descent map ⇒ confirm those descents appear in the run report (expected, not a regression); scrutinize any INSTEAD OF. |
+| **C4 CDC enabled?** | the verdict that **arms NM-73 auto-fallback** (Phase 5): CDC live ⇒ wire CDC-silence → EXCEPT automatic fallback (the manual override already ships). |
+| **C5 memory semaphore** | the chunk-size ceiling ⇒ pre-size `CaptureChunkSize` / drop-indexes-during-load to avoid the RESOURCE_SEMAPHORE stall. |
+| **C6 real-table write-probe** | if it errored ⇒ the exact constraint/trigger/permission to handle before a real run (the single most important pre-run fact). |
+| **E4 schema parity / shape drift** | if the rendered contract and live shape diverge ⇒ promote the reserved Skip-stub `ReverseLegBoundaryTests."B-drift refused by name"` (a named `transfer.sourceShapeDrift` preflight). |
+
+**Build discipline (the scars from this session — heed them).**
+1. **⚠️ Docker tests SILENTLY NO-OP on the Windows box.** `DockerDaemon.ensureRunning()` checks a
+   *Linux* socket, so every `EphemeralContainerFixture` test passes as a 0.4ms `()` no-op unless
+   `PROJECTION_MSSQL_CONN_STR` is set. Run them with
+   `$env:PROJECTION_MSSQL_CONN_STR="Server=localhost,11433;User Id=sa;Password=Projection@Strong1;TrustServerCertificate=True;Encrypt=False"`
+   (the warm container; `scripts/warm-sql.sh conn` prints it) and **confirm via per-test TRX durations
+   (seconds, not ms)** — never trust the green count. This is survival-rule #12 in operational form.
+2. **`dotnet` is not on the bash PATH;** it lives at `C:\Users\danny\AppData\Local\Microsoft\dotnet\dotnet.exe`.
+   Use PowerShell to build/test. Pure pools and Docker pools separately (CLAUDE.md §4.1).
+3. **Every refusal named; nothing silent.** Each new gate ships as a named `ValidationError` + a pure
+   witness; promote the reserved Skip-stubs rather than writing from zero; DECISIONS entry per slice.
+4. **The archetype is zero-consumer until its fork** — build the type *with* Slice C/D, not before
+   (the dead-algebra retirement precedent).
+
+**What NOT to redo (already built + witnessed, warm).** Reconcile ∘ streaming + the streaming
+validate-user-map halt (Phase 2); the force-journal + address-drift refusals (Phase 3); the streaming
+DryRun row-count preview (Phase 4). 62 reverse-leg + forward-reconcile Docker tests + 184 pure tests
+green for real against the warm container. The DECISIONS 2026-06-15 entries (Phases 2–5 + the
+archetype direction) are the substance; this letter only points.
+
+Hold the spine — name every refusal, count every crossing, and turn each probe result into a settled
+disposition.
+
+---
+
 # Handoff addendum — 2026-06-15, MIGRATION-CONTEXT WIRING — the data triumvirate is whole: the operator-curated Migration lane now has a real row source (JSON file → MigrationDependencyContext), threaded the same seam as Bootstrap, partition-disjoint, Docker-witnessed three lanes live
 
 To the next agent.

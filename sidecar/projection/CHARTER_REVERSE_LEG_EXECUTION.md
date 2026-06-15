@@ -433,18 +433,21 @@ Crash-resume at chunk granularity is witnessed (`ReverseLegStreamingTests.fs:87-
 
 - **Idempotent re-migration already exists — conditionally.** A completed journaled streaming run re-runs
   as a **full SKIP** with zero duplicates (`TransferRun.fs:1253-1270`; witnessed `…StreamingTests.fs:149-174`),
-  closing the **G3** duplicate hazard *whenever a journal is supplied*. **GAP (the lever):** `--streaming
-  --execute` **without** `--journal` is accepted and **doubles every AssignedBySink kind** (`TransferRun.fs:89`;
-  `MovementSurface.fs:1171`). The open work is to **force or default a journal** (or refuse journal-less
-  streaming-execute by name) — not to build idempotency. Caveat: idempotence is keyed to the same plan-marker
+  closing the **G3** duplicate hazard *whenever a journal is supplied*. **CLOSED (Phase 3, 2026-06-15):**
+  `--streaming --execute` **without** `--journal` is now **refused by name**
+  (`transfer.reverseLeg.streamingExecuteRequiresJournal`, the pure `ReverseLegRealization.executeJournalGate`) —
+  so every streaming execute carries a journal and is idempotent by construction; the duplicate hazard is closed
+  by construction, not merely "whenever a journal is supplied." Caveat: idempotence is keyed to the same plan-marker
   **and** a byte-identical source slice (changed source ⇒ drift refusal). The journal is client-side NDJSON
   *because the DML-only grant forbids the `CREATE TABLE` a sink-resident progress table would need*.
 - **ARMED:** journal compaction — resume loads the **entire NDJSON** (tens of bytes per captured pair, GBs at
   full-estate scale) into memory (`CaptureJournal.fs:66-74`); wake = any real resume > ~10M pairs. Envelope spill (`RunState.Envelopes`
   accumulates in memory) — ARMED, same scale wake.
-- **GAP:** the built resume is *journal-replay on re-run*, **not live socket-drop reconnect/retry**
-  mid-transfer. **Risk:** the journal filename **is** its content digest (`transfer-<digest16>.ndjson`,
-  `CaptureJournal.fs:60`) — any byte change orphans every existing journal into a silent fresh run.
+- **GAP (STAGED):** the built resume is *journal-replay on re-run*, **not live socket-drop reconnect/retry**
+  mid-transfer (Phase-1 real-wire co-requisite). **Risk (mitigated, Phase 3):** the journal filename **is** its
+  content digest (`transfer-<digest16>.ndjson`, `CaptureJournal.fs`) — a byte change still orphans the prior
+  journal, but the orphaning is no longer *silent*: `CaptureJournal.siblingJournalsUnderDrift` + the
+  `transfer.resume.journalAddressDrift` refusal halt a would-be fresh-run-over-orphaned-journal by name.
 
 ## 3. Operator progress — **PARTIAL**
 
@@ -470,10 +473,12 @@ tables/columns add·drop·rename, the change-norm `‖δ‖`, statement/rename c
 `SkippedReferences` (FK orphans), unbreakable cycles, capture-lane descents. Declared-loss gates
 (`--allow-drops`, `--allow-cdc`); grant-refusal at plan time for schema-into-`grant:data` (exit 9).
 
-- **GAP:** the combined `migrate-with-data` path (the headline reverse leg with rekeying) has **no DryRun
-  arm** (`RunFaces.fs:1833`, always `Transfer.Execute`). `RowsWritten` is forced to 0 in DryRun (`:790`) and
-  the streaming DryRun ingests nothing — so **no row-count estimate**, **no DML/row preview**, **no
-  rekey-map preview**, **no resume-state preview** ("which chunks would skip vs re-move"). The grant-refusal
+- **PARTLY CLOSED (Phase 4, 2026-06-15):** the streaming reverse-leg DryRun previously ingested nothing, so it
+  gave **no row-count estimate**. It now reports per-kind "N rows would move" via a cheap exact `COUNT_BIG(*)`
+  (`countKindRows`), with the reconciled kind at 0 and the **rekey-map preview** (`UnmatchedIdentities` /
+  `AmbiguousIdentities`) on the same report. Still **STAGED**: the **resume-state preview** ("which chunks would
+  skip vs re-move") and the **live row-grained ETA bar** (the parked `SpectreProgressAdapter` — its denominator
+  now exists, but the live rendering's wake is the real-wire run). The grant-refusal
   "gate" on the live move is **advisory-only** today (R6 dual-track: the survey warns then proceeds); it flips
   to a hard per-pair stop at cutover.
 
@@ -504,18 +509,27 @@ schema-identity skip is schema-only — and additionally unsound for non-name fa
 compares by name only; a changed trigger/CHECK/modality yields `‖δ‖ = 0` while the canary `PhysicalSchema.diff`
 *does* see it — `AUDIT_2026_06_13:89`, sev High).
 
-## 6. Two-phase rekey / users — **GAP (functional)**
+## 6. Two-phase rekey / users — **BUILT (Phase 2 landed 2026-06-15)**
 
-Entity-row rekey is BUILT (capture ladder + `PackedSurrogateRemap`; Part VI). **But user rekey on the reverse
-leg is REFUSED by name** — `transfer.reverseLeg.reconcileUnsupported` (`RunFaces.fs:787-792`): the B→A leg is
-a straight load today. Reconcile∘streaming is unbuilt; the streaming arm has only a *post*-write orphan exit-9,
-no pre-write halt (NM-31, `TransferRun.fs:1483-1490`). The design-time `UserFkReflowPass.discover` exists and
-writes `ComposeState.UserRemap` (all four strategies; `UserFkReflowPass.fs:195-348`) but is a **production
-no-op** — `IsUserFk` is always false and there is no live user-population reader (a CHAPTER-4.2 deferral); the
-discovered map is discarded at emit and never persisted. So at hundreds-of-millions-of-rows scale the User rekey is achievable only via
-the **runtime** AssignedBySink path (`PackedSurrogateRemap` + `CaptureJournal`), which does **not** exercise
-the reconcile-by-email discovery pass the "golden" discipline (Part V §4) describes. Wiring reconcile +
-`validate-user-map` onto the reverse leg is Phase 2.
+Entity-row rekey is BUILT (capture ladder + `PackedSurrogateRemap`; Part VI). **User rekey on the reverse leg
+is now BUILT** (`DECISIONS.md` 2026-06-15 — "Phase 2: reconcile ∘ streaming on the reverse leg"). The blanket
+`transfer.reverseLeg.reconcileUnsupported` refusal is **LIFTED**: the CLI face parses + resolves reconcile /
+user-map specs against the physical sink contract (a bad spec still refuses by name, exit 2, before any
+connection). The streaming runner (`runStreamingReconcilingWithRenames`) reconciles the named kinds (the User
+family by email) against the sink BEFORE the stream and re-keys every FK targeting them through a combined
+packed-∪-reconcile lookup, never re-importing a sink-owned row (`reclassifyReconciled` → `ReconciledByRule`,
+phase-1/2 skipped). The **`validate-user-map` pre-write halt now runs on the streaming arm** (NM-31 / N4 closed):
+an unmapped source user refuses `transfer.unmappedIdentities` with the sink untouched, unless `--allow-drops`
+downgrades it. The materialized arm reconciles through `runCore` too, so an inadmissible-combination request
+never silently drops the reconcile. Witnessed by `ReverseLegStreamingTests` (the re-key-never-re-imported pair
++ the pre-write halt).
+
+**The residual (still open):** the reconcile here is the **runtime** path — `reconcileAgainstSink` reads the
+sink's user inventory live and matches by the operator ruleset. The design-time `UserFkReflowPass.discover`
+(all four strategies; `UserFkReflowPass.fs:195-348`) remains a **production no-op** — `IsUserFk` is always
+false and the discovered map is discarded at emit (a CHAPTER-4.2 deferral). Populating that live
+user-population *discovery* reader is the remaining Phase-2 thread; the runtime reconcile path the charter's
+exit test names is built and witnessed.
 
 ---
 
@@ -552,9 +566,10 @@ fallback/override until J5 proves the CDC path on a managed OutSystems environme
   in the real estate; flag prominently (changes preflight refinement priority). *Residual probe (P1b).*
 - **G3** — streaming duplicate hazard. **Closed** whenever a `--journal` is supplied.
 - **G10** — the resumable/idempotent marker envelope (materialized arm). Built; not exercised on the reverse leg.
-- **N4 / AC-I5** — the pre-write `validate-user-map` gate. Present on the materialized arm; **absent on
-  streaming** (NM-31).
-- **NM-31** — streaming pre-write orphan halt (needs a streaming reconcile leg). Named follow-on.
+- **N4 / AC-I5** — the pre-write `validate-user-map` gate. Present on the materialized arm; **now also on
+  streaming** (Phase 2, 2026-06-15 — was NM-31).
+- **NM-31** — streaming pre-write orphan halt. **CLOSED** (Phase 2): `runStreamingReconcilingWithRenames` has
+  the reconcile leg + the `validateUserMap` halt; the realizations are no longer drop-asymmetric.
 - **NM-73** — EXCEPT validate-before-apply DataVerification override. Manual override shipped; auto-fallback
   J5-gated.
 
@@ -574,39 +589,70 @@ Dependency-ordered. Each phase has an exit test.
   (OPEN-3) lands.
 - **Exit:** the canonical stores (DECISIONS + this compendium) carry the ledger; the playbook is deprecated.
 
-### Phase 1 — Close the real-wire loop *(mostly measurement)*
+### Phase 1 — Close the real-wire loop *(mostly measurement)* — **HARNESS PREPPED 2026-06-15; run is operator-gated**
 - Run the set-based streaming lane against a real managed OutSystems environment at representative scale → measure rows/sec (**P7b**).
   **Exit:** the throughput floor sustained, or the escape hatches (parallel wavefronts P4, 50k-chunk sweep, sink-resident
   spill) are triggered with a plan.
 - **Estate survey**: row-count + FK-fan-in (gates resident-map vs sink-resident spill) + the P5 trigger map
   across OSUSR tables + the **G1** object-scope-DENY check (P1b).
+- ✅ **The harness + survey SQL are prepped and operator-actionable: `PHASE_1_REAL_WIRE_HARNESS.md`** (the P7b
+  bench procedure + escape-hatch plan; six read-only survey queries; the hand-off checklist). The agent cannot
+  run the wire — this is staged for the operator. The streaming reconcile lane it exercises is built + witnessed
+  (Phases 2–4).
 
-### Phase 2 — Wire user reconciliation onto the reverse leg *(the "rekey users" gap)*
-- Build **reconcile∘streaming**: compose `Reconciliation.reconcileKind` (ByEmail/…) + `UserRemapContext` onto
-  the streaming path; lift `reconcileUnsupported`.
-- Add the **`validate-user-map` pre-write gate** on the streaming arm (close N4 / NM-31): halt before any DML
-  if an orphan user is unmapped.
-- Populate the discovery pass (live user-population reader; today a `Map.empty` stub).
-- **Exit:** a reverse-leg move re-keys users by email with a pre-write orphan halt, witnessed.
+### Phase 2 — Wire user reconciliation onto the reverse leg *(the "rekey users" gap)* — **DONE 2026-06-15**
+- ✅ Built **reconcile∘streaming**: composed `Reconciliation.reconcileKind` (ByEmail/…) + `reconcileAgainstSink`
+  + `SurrogateRemapContext` onto the streaming path (`runStreamingReconcilingWithRenames`); **lifted
+  `reconcileUnsupported`** at the CLI face. The materialized arm reconciles through `runCore` too (no silent
+  loss on inadmissible combos).
+- ✅ Added the **`validate-user-map` pre-write gate** on the streaming arm (closed N4 / NM-31): halts before any
+  DML on an unmapped orphan (`transfer.unmappedIdentities`), `--allow-drops` downgrades.
+- ⏳ **Residual:** the live user-population *discovery* pass (`UserFkReflowPass.discover`) is still a production
+  no-op; the runtime reconcile-against-sink path is built. Populating the discovery reader is the carry-over.
+- ✅ **Exit met:** a reverse-leg move re-keys users by email with a pre-write orphan halt, witnessed
+  (`ReverseLegStreamingTests` — re-key-never-re-imported + the pre-write halt; `DECISIONS.md` 2026-06-15).
 
-### Phase 3 — Harden resume + idempotency for scale
-- **Force/default a journal** on `--streaming --execute` (close the duplicate hazard — the small lever).
-- **Journal compaction** (stop the full-NDJSON load at resume) + decouple the resume-address from the content
-  digest (the filename-coupling risk).
-- **Live connection resilience**: socket-drop reconnect/retry mid-transfer (distinct from re-run replay).
-- **Exit:** a killed connection resumes from the last committed chunk with no duplicates, at scale-representative
-  journal size.
+### Phase 3 — Harden resume + idempotency for scale — **buildable levers DONE 2026-06-15; two STAGED**
+- ✅ **Forced a journal** on `--streaming --execute` (closed the duplicate hazard — the small lever):
+  `transfer.reverseLeg.streamingExecuteRequiresJournal` (the pure `ReverseLegRealization.executeJournalGate`).
+  A journal-less streaming execute now refuses by name; every streaming execute is idempotent by construction.
+- ✅ **Address-drift guard** for the filename-coupling risk: `transfer.resume.journalAddressDrift`
+  (`CaptureJournal.siblingJournalsUnderDrift`) — a marker/schema byte-change that orphans the prior journal now
+  refuses by name instead of silently re-streaming. (This converts the silence into a refusal; it does not
+  re-address the journal — multi-transfer-per-dir coexistence is preserved.)
+- ⏳ **STAGED — journal compaction** (stop the full-NDJSON load at resume): ARMED, wake = any real resume
+  > ~10M captured pairs. Not built — Docker scale is KB; a speculative scale-build has no witness.
+- ⏳ **STAGED — live socket-drop reconnect/retry** mid-transfer (distinct from re-run replay): needs a real
+  dropped connection to prove — a Phase-1 real-wire co-requisite, not Docker-witnessable.
+- **Exit:** the duplicate hazard is closed by construction (every streaming execute carries a journal);
+  the killed-connection-resumes-no-duplicates witness already holds at chunk granularity
+  (`ReverseLegStreamingTests` "chunk resume"). The scale-representative journal size + live socket-drop are the
+  staged real-wire residuals.
 
-### Phase 4 — Movement dry-run + row-grained progress
-- **Movement dry-run**: row-count estimate, rekey-map preview, resume-state preview, for `migrate-with-data`.
-- **Row-grained progress/ETA**: feed the parked `SpectreProgressAdapter` a rows-written/rows-remaining
-  denominator + a durable surface surviving a reconnect.
-- **Exit:** an operator can preview "N rows / M chunks would move, K would skip" and watch it live.
+### Phase 4 — Movement dry-run + row-grained progress — **preview DONE 2026-06-15; live bar STAGED**
+- ✅ **Movement dry-run row-count estimate**: the streaming DryRun now reports per-kind "N rows would move"
+  via a cheap exact `COUNT_BIG(*)` (`countKindRows`) — a reconciled kind previews 0 (re-keyed, not re-imported),
+  `RowsWritten` 0, and the rekey-map preview (`UnmatchedIdentities` / `AmbiguousIdentities`) rides the same
+  report. (The materialized DryRun already reported counts; this closes the streaming-DryRun-ingests-nothing GAP.)
+- ⏳ **STAGED — row-grained progress/ETA** (the live bar): the denominator the parked
+  `SpectreProgressAdapter : IProgressRunner` needs now exists (`countKindRows`), but the live ETA rendering is a
+  TTY surface whose wake is the **real-wire multi-hour run** — a Docker test has nothing to watch. Wiring the
+  parked adapter + a durable reconnect-surviving surface is the carry-over, gated on Phase 1's real wire.
+- ✅ **Exit (preview half):** an operator can preview "N rows would move per kind, K users matched / J unmatched"
+  before any DML (`ReverseLegStreamingTests` "Phase 4 dry-run preview"). The "watch it live" half is the staged bar.
 
-### Phase 5 — Cutover-readiness gates
-- ≥1 **full production-shaped dry-run** (the deferred cutover gate).
-- Flip the grant-refusal gate **advisory → hard pre-write stop** (per-pair at cutover, R6).
-- Arm the **NM-73 auto-fallback** (CDC-silence → EXCEPT) now that J5 settles the CDC path (OPEN-3).
+### Phase 5 — Cutover-readiness gates — **governance-gated, not code (assessed 2026-06-15)**
+All three are real-wire / CDC-verdict / cutover-governance bound — no buildable code lever that respects R6.
+The mechanisms are built or already exist; what remains is operator governance (which the Phase-1 harness unblocks).
+- ⏳ **Production-shaped dry-run** — the *mechanism* is the Phase-4 movement dry-run preview (built, witnessed);
+  "production-shaped" = run it against the real estate (`PHASE_1_REAL_WIRE_HARNESS.md`). A real-wire action.
+- ⏳ **Grant gate advisory → hard** — the *mechanism already exists*: `projection survey` HARD-STOPS (exit 7) on a
+  blocked capability (`Program.fs:314`); the in-flow advisory warns by R6 design. The "flip" is wiring `projection
+  survey` into the **per-pair cutover CI** — a governance action under the N=10-canary + sign-off ladder, NOT a
+  blanket in-flow env flip (a speculative flip was deliberately not built — it would bypass the per-pair
+  governance R6 mandates; see `DECISIONS.md` 2026-06-15 Phase-5 entry, the R6 amendment).
+- ⏳ **NM-73 auto-fallback** (CDC-silence → EXCEPT) — CDC-verdict-gated; OPEN-3 is still PARTIAL (CDC path not yet
+  exercised on the real wire). The manual override shipped; the auto-fallback arms on the harness §6 CDC verdict.
 
 ## Decisions needed from the operator
 
@@ -615,6 +661,18 @@ Dependency-ordered. Each phase has an exit test.
 2. **Transfer-host memory budget** — sets the packed-remap spill trigger.
 3. **The two un-run probes** — hand the operator the **P10** user-directory metadata probe now (read-only;
    confirms ReconciledByRule available) and design the **P7b** throughput harness for Phase 1.
+4. **Target archetype per environment** — classify each target as **full-rights** (on-prem: DDL + DML +
+   IDENTITY_INSERT — the schema+data home) or **managed-DML** (the J5 cloud profile). The class flips a
+   *bundle* of engine dispositions (identity strategy, resume mechanism, schema deploy, wipe, rollback),
+   so it should become a reusable, **verified** config disposition rather than a scatter of implicit
+   branches. Verify the on-prem profile with `REVERSE_LEG_OPERATOR_PROBE_SHEET.md` **Part E** (E1–E5);
+   the design + assumptions + slice plan are in **`DATABASE_ARCHETYPES.md`** (`DECISIONS.md` 2026-06-15).
+
+## Operator-actionable companions
+- **`REVERSE_LEG_OPERATOR_PROBE_SHEET.md`** — 16 generic, runnable probes naming the per-table unknowns
+  (schema shape, data fidelity, capability, archetype) + the results ledger. All catalog SQL validated.
+- **`PHASE_1_REAL_WIRE_HARNESS.md`** — the P7b throughput-bench procedure + the estate-sizing survey.
+- **`DATABASE_ARCHETYPES.md`** — the target capability-class design (the archetype as a config disposition).
 
 ## Risk register (carried from the discovery)
 

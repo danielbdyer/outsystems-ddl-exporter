@@ -61,6 +61,31 @@ module CaptureJournal =
 
     let filePath (journal: CaptureJournal) : string = journal.FilePath
 
+    /// Phase 3 — the address-drift guard. The journal is addressed by the
+    /// plan-marker digest (`transfer-<digest>.ndjson`), so if the marker
+    /// changes between a crashed run and its resume — a `planMarker`/schema
+    /// byte-change — THIS run's file is absent yet the directory still holds
+    /// the prior run's `transfer-*.ndjson`. Left unguarded that silently
+    /// orphans the prior journal and starts fresh (re-doing, or under
+    /// AssignedBySink DOUBLING, committed work). This returns the sibling
+    /// journals that signal the drift: NON-EMPTY only when THIS journal's own
+    /// file is ABSENT (a would-be fresh run) AND other `transfer-*.ndjson`
+    /// exist beside it. Empty when the own file is present (a clean resume) or
+    /// the directory is genuinely empty (a true fresh run). The streaming
+    /// execute refuses by name on a non-empty result rather than orphaning
+    /// the prior journal — the silence the risk register names is killed.
+    let siblingJournalsUnderDrift (journal: CaptureJournal) : string list =
+        if File.Exists journal.FilePath then []
+        else
+            match Path.GetDirectoryName journal.FilePath with
+            | null | "" -> []
+            | dir when not (Directory.Exists dir) -> []
+            | dir ->
+                Directory.GetFiles(dir, "transfer-*.ndjson")
+                |> Array.filter (fun f -> not (System.String.Equals(f, journal.FilePath, System.StringComparison.OrdinalIgnoreCase)))
+                |> Array.sort
+                |> Array.toList
+
     /// Every journaled chunk, indexed by (kind root, chunk index). A
     /// missing or empty journal is an empty index (a fresh run).
     let load (journal: CaptureJournal) : Dictionary<string * int, ChunkRecord> =
