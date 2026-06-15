@@ -1,3 +1,76 @@
+# Handoff addendum — 2026-06-14 (night), THE LIVE-SOURCE CHAPTER — both owed items CLOSED + VERIFIED: live-path Docker witnesses (+ two adapter fixes) and Bootstrap-always (live-hydrated, AllData via config); 3 pre-existing Docker breakages also fixed
+
+To the next agent.
+
+You are inheriting a **closed chapter**. The two items the predecessor letter
+(below) left owed are both **shipped and Docker-verified**, the design question
+behind Bootstrap was **resolved with the operator**, and three pre-existing
+Docker-pool breakages surfaced along the way are fixed. Everything is on branch
+`claude/projection-invariant-audit-b6iknj` as **4 commits on top of `main`**
+(`739e2505`); a fresh PR was opened (the predecessor's #607/#608 are merged). The
+plan that drove this — `PLAN_2026_06_14_LIVE_SOURCE_AND_BOOTSTRAP.md` — is now
+fully executed.
+
+**What shipped (don't redo).**
+
+1. **Live-path Docker witnesses + two adapter fixes** (commit `063f4e37`).
+   `tests/.../LiveSourceDockerTests.fs` proves `live:`-ref catalog readback and
+   `compare` live-profiling end-to-end. Writing them exposed two latent defects in
+   the build-only-verified adapter: (a) **the 4.4 trap** — `Source.ofLive`'s
+   profile path profiled a ReadSide-derived (all-`Static`) catalog, which
+   `LiveProfiler` skips, so the dealbreaker section was silently always empty;
+   fixed with `Catalog.stripStaticPopulations` (the `Preflight`/`DataIntegrity
+   Checker` precedent). (b) **connection exceptions escaped** the `Source` port's
+   `Task<Result<_>>` boundary; now wrapped as the named `source.live.connection
+   Failed` / `.profileFailed` refusals. The stale `RefTests` "live ref fails loud
+   (adapter pending)" (red since the adapter shipped) now asserts the real contract.
+
+2. **Bootstrap-always** (B1 `dbcf0ef4` composer; B2 `c081fe6e` pipeline). The
+   operator's model (verbatim, recorded in DECISIONS): *Bootstrap = all the data,
+   with a flag to make it the non-intersecting complement.* That maps onto the
+   existing `DataComposition` DU — `AllData` (everything) vs `AllRemaining`
+   (complement of Static ∪ Migration, the default). **DynamicData is a deprecated
+   V1 term** — V2's Bootstrap is V1's `AllEntitiesIncludingStatic` snapshot. The
+   `BootstrapEmitter` now renders a real row source; `Hydration.hydrateBootstrap
+   Rows` streams the bootstrap-eligible kinds live (scoped per composition,
+   disjoint from Static so the partition law holds); `emission.bootstrapAllData`
+   makes `AllData` reachable; NM-73's drift guard rides Bootstrap too (operator
+   decision). `Data/Bootstrap.sql` golden re-blessed (DECISIONS-noted) + a Docker
+   hydration witness. A latent `AllData`-dispatch bug (Static fired under AllData,
+   would trip `OverlappingEmitterCoverage` once Bootstrap is populated) was fixed.
+
+3. **3 pre-existing Docker breakages** (commit `ae3e54b6`, NOT regressions from
+   this work — the full Docker pool just hadn't been run): two `MigrationCanary
+   Tests` AC-X1 looked up the retired fused `Data/seed.sql` (the per-lane
+   retirement missed them — `FullExportDataBundleTests` was updated, these
+   Docker-only tests weren't) → now `Data/StaticSeeds.sql`; `CanaryRoundTripTests`
+   6.A.6 built a `Reference` in the illegal constraint-state quadrant → added
+   `HasDbConstraint = true`.
+
+**Verified:** pure pool **3314/0** (211 skip); the live-path Docker class **3/3**;
+the 3 fixed tests green focused; the full Docker pool re-run was the green gate.
+
+**What you might pick up next (all deferred, none blocking).**
+- **Supplemental bootstrap kinds** — V1's snapshot injects `ossys_User` et al.
+  beyond the catalog's own entities; deferred per operator. The `UserRemapContext`
+  plumbing through Bootstrap already exists.
+- **Migration-context wiring** — the production compose path still threads
+  `MigrationDependencyContext.empty`; `hydrateBootstrapRows` already excludes
+  migration kinds from the bootstrap complement, so confirm the partition
+  end-to-end when migration is wired.
+- **The `AllData` double-stream** — under `AllData`, `hydrateCatalog` still grafts
+  static rows (unused, StaticSeeds skipped) AND `hydrateBootstrapRows` re-streams
+  them; a one-pass unification is a perf-only cleanup (correctness-first was the
+  operator's call).
+- **The wider reconciliation program** — `V1_FULL_EXPORT_RECONCILIATION_PLAN.md`
+  WP7 (SSDT byte-parity), WP8 (`Order_Num`), WP9 (config samples + the `compare`
+  verb's design slice) remain.
+
+Hold the spine — read the plan, run the tests warm, and note that the live path now
+has its Docker witness and Bootstrap is no longer a hollow lane.
+
+---
+
 # Handoff addendum — 2026-06-14 (evening), THE LIVE-SOURCE CHAPTER — campaign owed-work CLOSED + operator data-artifact direction; live-source adapter + compare-profiling SHIPPED build-verified; OWED: Docker smoke tests for the live path + Bootstrap-always (has a real open question)
 
 To the next agent.
