@@ -106,7 +106,7 @@ Per the chapter-close ritual operating discipline (`CLAUDE.md`):
 - V2 profile probes produce functionally-equivalent Profile data
 - ≥1 full end-to-end production dry-run
 
-The functional-equivalence arm's blocker is named: operator's V1 corporate-network HEAD owns the live OSSYS connection path today. When access opens, the cluster (multi-env + UAT-users + `LiveOssysConnection` variant + extraction-time knobs) lands as a follow-up chapter and the functional-equivalence arm closes.
+The functional-equivalence arm's blocker is named: operator's V1 managed-environment HEAD owns the live OSSYS connection path today. When access opens, the cluster (multi-env + UAT-users + `LiveOssysConnection` variant + extraction-time knobs) lands as a follow-up chapter and the functional-equivalence arm closes.
 
 ## What's NOT in this chapter (deferred-with-trigger)
 

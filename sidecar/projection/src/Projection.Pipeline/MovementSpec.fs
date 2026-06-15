@@ -247,7 +247,7 @@ type FlowRunOpts =
         /// `RowCount` per kind (D8; design §7). `None` = full scale (1.0).
         Scale      : decimal option
         /// `--streaming` — the bounded-memory chunked realization for the
-        /// estate-scale reverse leg (the 288M-row program). Honored on the
+        /// estate-scale reverse leg (the hundreds-of-millions-row program). Honored on the
         /// B→A reverse leg only; the face refuses unsupported combinations
         /// by name. Default false (byte-identical).
         Streaming  : bool

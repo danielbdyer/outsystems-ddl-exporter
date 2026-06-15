@@ -286,7 +286,7 @@ trigger definitions remain TODO). See `DECISIONS 2026-06-13` and
 
 **Row 57 stays 🟡 DIVERGENCE** (the single-`Reference` conflation stands — it
 is what enables symmetric closure, topological ordering, and FK reflow), but
-the conflation's downstream hazard named by the operator's corporate run is
+the conflation's downstream hazard named by the operator's managed-environment run is
 now structurally controlled: a symmetric-closure inverse (`DerivedFrom(_,
 "inverse")`, inheriting `HasDbConstraint`/`IsConstraintTrusted` per chapter
 4.6 slice α) was indistinguishable from a storage-backed edge at every

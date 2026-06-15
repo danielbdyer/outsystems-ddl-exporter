@@ -25,6 +25,10 @@ module internal ReverseLegScaleFixtures =
 
     let value (r: Result<'a>) : 'a = Result.value r
 
+    /// Estate-scale extrapolation basis for the sustained/streaming envelope
+    /// projections (hundreds of millions of rows).
+    let estateProjectionRows = 288_000_000.0
+
     let nm (s: string) : Name = Name.create s |> Result.value
     let kKey (i: int) : SsKey = SsKey.synthesizedComposite "L3S_KIND" [ string i ] |> Result.value
     let aKey (ki: int) (attr: string) : SsKey = SsKey.synthesizedComposite "L3S_ATTR" [ string ki; attr ] |> Result.value
@@ -203,7 +207,7 @@ type ReverseLegScaleTests(fixture: EphemeralContainerFixture) =
 
 
     [<Fact>]
-    member _.``Tier 4 sustained envelope: a 4-kind chain at 100k rows measures the steady-state set-based capture rate — the number the 288M-row window extrapolates from`` () =
+    member _.``Tier 4 sustained envelope: a 4-kind chain at 100k rows measures the steady-state set-based capture rate — the number the estate-scale window extrapolates from`` () =
         if not (ReverseLegScaleFixtures.skipIfNoDocker "L3Sustained") then () else
         let nKinds = 4
         let rowsPerKind = 25_000
@@ -232,9 +236,9 @@ type ReverseLegScaleTests(fixture: EphemeralContainerFixture) =
                                 let rowsPerSec = float totalRows / sw.Elapsed.TotalSeconds
                                 Bench.recordSample "transfer.reverseLeg.sustained.legMs" sw.ElapsedMilliseconds
                                 printfn
-                                    "REVERSE-LEG SUSTAINED ENVELOPE: %d rows (%d kinds × %d) in %d ms ⇒ %.0f rows/sec ⇒ 288M rows ≈ %.1f h at this rate"
+                                    "REVERSE-LEG SUSTAINED ENVELOPE: %d rows (%d kinds × %d) in %d ms ⇒ %.0f rows/sec ⇒ estate ≈ %.1f h at this rate"
                                     totalRows nKinds rowsPerKind sw.ElapsedMilliseconds rowsPerSec
-                                    (288_000_000.0 / rowsPerSec / 3600.0)
+                                    (ReverseLegScaleFixtures.estateProjectionRows / rowsPerSec / 3600.0)
 
                                 // Fidelity at volume: every chain edge's checksum
                                 // matches; every surrogate is sink-minted.
@@ -292,9 +296,9 @@ type ReverseLegScaleTests(fixture: EphemeralContainerFixture) =
                                 let rowsPerSec = float totalRows / sw.Elapsed.TotalSeconds
                                 Bench.recordSample "transfer.reverseLeg.streaming.legMs" sw.ElapsedMilliseconds
                                 printfn
-                                    "REVERSE-LEG STREAMING ENVELOPE: %d rows in %d ms ⇒ %.0f rows/sec ⇒ 288M rows ≈ %.1f h (bounded memory)"
+                                    "REVERSE-LEG STREAMING ENVELOPE: %d rows in %d ms ⇒ %.0f rows/sec ⇒ estate ≈ %.1f h (bounded memory)"
                                     totalRows sw.ElapsedMilliseconds rowsPerSec
-                                    (288_000_000.0 / rowsPerSec / 3600.0)
+                                    (ReverseLegScaleFixtures.estateProjectionRows / rowsPerSec / 3600.0)
 
                                 for i in 1 .. nKinds - 1 do
                                     let! bChain =

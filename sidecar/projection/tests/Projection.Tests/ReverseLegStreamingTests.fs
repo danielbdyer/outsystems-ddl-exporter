@@ -1,6 +1,6 @@
 namespace Projection.Tests
 
-// The streaming realization + chunk resume (the 288M-row program, slices
+// The streaming realization + chunk resume (the hundreds-of-millions-row program, slices
 // A+C): `Transfer.runStreamingWithRenames` moves the LE-3 estate with
 // bounded memory (per-kind chunks; only the packed remap and the chunk in
 // flight are resident) and, given a journal directory, resumes a crashed

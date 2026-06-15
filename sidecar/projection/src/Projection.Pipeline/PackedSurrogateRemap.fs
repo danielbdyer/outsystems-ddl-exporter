@@ -11,7 +11,7 @@ open Projection.Core
 /// `AssignedBySink` capture path at estate scale. `SurrogateRemapContext`
 /// (the pure Core carrier) holds an immutable string-keyed Map — right for
 /// plan-side / operator-supplied remaps, but at 10⁸ FK-target rows (the
-/// 288M-row estate with its huge tables FK-referenced) the boxed-string
+/// hundreds-of-millions-row estate with its huge tables FK-referenced) the boxed-string
 /// tree costs ~250B/entry and O(log n) string compares per lookup.
 /// IDENTITY surrogates are integral, so assignments pack into
 /// `Dictionary<int64, int64>` (~40B/entry, O(1)); a non-integral raw (an

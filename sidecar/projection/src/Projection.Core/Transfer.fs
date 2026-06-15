@@ -42,7 +42,7 @@ type SubstrateRole =
 // ---------------------------------------------------------------------------
 
 /// A logical environment identity. The multi-environment dimension the V1
-/// corporate remote carries. The **active cutover rotation is Dev → Qa → Uat**
+/// managed-environment remote carries. The **active cutover rotation is Dev → Qa → Uat**
 /// (the operator's three live stages); `Prod` is the eventual target, carried
 /// for forward-readiness but **not yet in rotation**. `Named` is the open
 /// escape hatch for a one-off stage.

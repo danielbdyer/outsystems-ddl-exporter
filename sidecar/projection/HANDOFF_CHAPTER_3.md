@@ -33,7 +33,7 @@
 
 Verify each at chapter close. See `DECISIONS.md` Active deferrals index for the canonical list with trigger conditions.
 
-- **`LiveOssysConnection` variant of `SnapshotSource` + cluster** — multi-env + UAT-users + axis 10 (user reflow + `ManualOverride` CSV-loader) + axis 14 (extraction-time knobs). Trigger: operator's V1 corporate-network HEAD becomes accessible. Light the functional-equivalence arm of Phase B's exit gate.
+- **`LiveOssysConnection` variant of `SnapshotSource` + cluster** — multi-env + UAT-users + axis 10 (user reflow + `ManualOverride` CSV-loader) + axis 14 (extraction-time knobs). Trigger: operator's V1 managed-environment HEAD becomes accessible. Light the functional-equivalence arm of Phase B's exit gate.
 - **Standalone `projection extract` + `projection profile` CLI subcommands** — Dropped at chapter-mid rescope; reserved code paths in §6 event categories still fire from `full-export`'s orchestration.
 - **`data-twin` CLI verb micro-chapter** — Wraps the existing `DockerImageEmitter`; surfaces as its own micro-chapter when dev-team dockerized-replica workflow demands.
 - **`Spectre.Console` TtyRenderer + dual-channel `--json-out` routing micro-chapter** — Per §15.3 post-chapter framing + the 2026-05-20 gap audit. Slice 6.5 ships channel-1-only `LogSink`; TtyRenderer is the optional channel-2 layer on top. Trigger: operator reports NDJSON-only stderr emission as unfriendly for interactive runs.
@@ -623,7 +623,7 @@ The SCHEMA-axis is ready modulo named residuals; the gating axes are DATA + IDEN
 
 3. **DATA-axis cutover-blocker closure** — V2_DRIVER's "highest-leverage single deliverable in the entire chapter sequence" is CDC-silence-on-idempotent-redeploy. Chapter 4.1.B in flight; the cdc-silence-cross-emitter slice (earlier 2026-05-18) shipped a structural fix. The next move is a property test asserting CDC-silence invariant across every static-population fixture. Estimated ~300 LOC; high stakes.
 
-4. **IDENTITY-axis cutover-blocker** — chapter 4.2 slice ε's user-matching property tests (already shipped) + the UAT-CLI verb (`5.13.uat-cli` in BACKLOG, ~1500 LOC). User CSV matching strategies + a real UAT dry-run.
+4. **IDENTITY-axis cutover-blocker** — chapter 4.2 slice ε's user-matching property tests (already shipped) + the UAT-CLI verb (`5.13.uat-cli` in BACKLOG, ~1500 LOC). User CSV matching strategies + a managed OutSystems environment dry-run.
 
 5. **Row 56 partition-scheme axis** (the only remaining SCHEMA residual that needs IR design). Closed-DU `DataSpace = Filegroup of name | PartitionScheme of name × columns : SsKey list` + per-partition compression list. Triggered when a partitioned-index fixture surfaces in operator-reality canary; until then, deferred-with-trigger.
 

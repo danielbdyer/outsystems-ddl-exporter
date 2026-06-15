@@ -25,7 +25,7 @@
 ## 0. The finish line — what "done" means
 
 The cloud-insertion capability is complete when **all three producers write production-like data
-into a live cloud OutSystems environment (`cloud-uat`, disposition A, `grant: data` DML-only) under
+into a managed OutSystems environment (`cloud-uat`, disposition A, `grant: data` DML-only) under
 R6, each proven by its data canary**, and specifically when:
 
 1. **`synthetic`** — generated-from-profile load, `π ∘ σ ≈ id` green (**DONE**).
@@ -39,7 +39,7 @@ R6, each proven by its data canary**, and specifically when:
    migration team's, off-engine); proven by the **B→A round-trip canary**.
 4. **The gate is real** — the capability survey resolves the per-kind disposition mix (incl. **P10**
    user-directory for the re-key), wired into the run verbs (advisory per R6, S3).
-5. **The real-UAT execute path is unblocked** — **OPEN-2** (is the cloud UAT a writable SQL
+5. **The managed-environment execute path is unblocked** — **OPEN-2** (is the managed OutSystems environment a writable SQL
    connection?) resolved by the ops spike; `--execute` gated by `--go` + `PROJECTION_ALLOW_EXECUTE`,
    dry-run default, preview row-cap. *(The legacy B→A leg additionally needs cross-rendition
    write-target resolution, M1.5; synthetic/peer do not.)*
@@ -102,7 +102,7 @@ reachable from the production path) · **DESIGN-ONLY** (spec'd, no code) · **MI
 | **M2** ✅ | **`peer` / `golden` cloud→cloud.** PE-1 user exclusion + email re-key (incl. two correctness fixes: the wipe never deletes a ReconciledByRule kind; the LoadSet keeps reconcile-source kinds); PE-2 `validate-user-map` halts before DML; **PE-3 the re-key canary** (cloud→cloud). *(Built directly on the engine + reconcile — the offline canary did not require the M1 env flag; survey P10 + cell name-coincidence are real-cloud concerns.)* | M0 | `THE_DATA_PRODUCERS` §6 PE-1..3; AC-I2/I5; P-3 | J2 |
 | **M3** ✅ | **`legacy` / `preview` — the B→A reverse leg.** LE-1 the reverse-leg transfer (logical on-prem source → physical cloud sink; same model, no foreign ingest) — done via `runWithRenames`; **LE-2 the B→A round-trip canary** — GREEN (`TransferCanaryTests` `M3/LE-2`: logical `[dbo].[Customer].[Email]` → physical `[dbo].[OSUSR_XF_CUSTOMER].[CONTACT]`, data round-trips by SsKey). *(Authored SsKey-stable contracts, per the rename-canary precedent — ReadSide SsKeys are name-derived.)* **M3.b flow-recognition face LANDED (2026-06-09):** `Command.reverseLegOf` (pure, tested) recognizes a flow as the reverse leg from the M1 rendition flag (live logical source → live physical sink) + resolves its two conns; `TransferRun.runReverseLeg` delegates to `runWithRenames` given the two contracts. **Runner arm LANDED (2026-06-10, J3 closed):** `CatalogRendition.logical`/`.physical` render the two contracts from the one authored model; `PlanAction.RunReverseLeg` carries the model (plan-time refusal when absent); `Transfer.runReverseLegThroughConnections` + the CLI face run the leg; LE-1 rendered-contracts canary GREEN. | M1.5 | `THE_DATA_PRODUCERS` §6 LE-1/2; LE-2 canary | J3 |
 | **M4** ✅ | **The gate is real.** **G0a DONE:** `runCore`'s pre-plan Execute gates (CDC → spanning G1/G2) compose through one mandatory `Preflight.all` (= CONFIRMED A1's first production caller); codes + precedence preserved (CDC canary + AC-I5/PE-1 + classify suite green). **G0b DONE:** the P10 user-directory probe (`ReadSide.userDirectoryReadability` + `EnvironmentReport.UserDirectory` — a field, not a `Capability` variant; totality preserved; Docker witness `UserDirectoryProbeTests`). **G0c DONE:** the survey surfaced as a STDERR advisory in the run-flow path (`runTransfer`), warn-not-stop per R6 (the standalone verb keeps exit-7); `CapabilitySurvey.advisoryLines`/`blocked` (pure, tested). | M0 | `TransferRun.fs` `Preflight.all`; `CapabilitySurvey.fs`; DECISIONS 2026-06-09 (S3); CONFIRMED A1 | J4 |
-| **M5** | **Real-UAT execute (OPEN-2).** The ops spike — a throwaway-UAT `Microsoft.Data.SqlClient` connection probing `IDENTITY_INSERT`/INSERT/grants (resolves OPEN-1/2/3/5/6 + the disposition mix); then `--execute` under R6 with `--preview-row-cap`. *(Synthetic/peer execute needs no M1.5; legacy-into-real-UAT additionally needs M1.5 + M3.)* | M4 | PRESCOPE Slice D / §13; EXEC 5.1; OPEN-2 | J5 |
+| **M5** | **Managed-environment execute (OPEN-2).** The ops spike — a throwaway-UAT `Microsoft.Data.SqlClient` connection probing `IDENTITY_INSERT`/INSERT/grants (resolves OPEN-1/2/3/5/6 + the disposition mix); then `--execute` under R6 with `--preview-row-cap`. *(Synthetic/peer execute needs no M1.5; legacy-into-a-managed-environment additionally needs M1.5 + M3.)* | M4 | PRESCOPE Slice D / §13; EXEC 5.1; OPEN-2 | J5 |
 | **M6** | **Follow-ons (pull under a consumer).** cyclic `AssignedBySink` (6.A.2) + composite-identity capture (6.A.3); `MERGE…OUTPUT` set-based capture (Contribution B — trigger-gated on P4 + measured per-row bottleneck); synthetic `--rows N` / `--seed` (= D8); scoped-delete CLI exposure (A3); user-map walkable Surface (D7); `UserRemapContext→SurrogateRemapContext` merge. | M2/M3/M5 | PRESCOPE §13; CONFIRMED A3/D7/D8/G | J6 |
 
 ---
@@ -146,8 +146,8 @@ M2 / M3 / M5 ──► M6 (follow-ons, each pulled under a consumer)
    P10 probe gates M2's re-key (real cloud only)
 ```
 
-- **Critical path to "all producers proven offline"** (ephemeral / Docker, no real UAT): `M1 → {M2 ; M1.5 → M3}` — the two new canaries (PE-3, LE-2). **M2 is reachable now** (same-rendition OSUSR→OSUSR, no M1.5); M3 needs M1.5 (cross-rendition target resolution).
-- **Critical path to "real cloud-UAT preview working"**: `M4 → M5`, gated by **OPEN-2** (the biggest external dependency). Synthetic/peer into real UAT need no M1.5; only `legacy`-into-real-UAT additionally needs M1.5 + M3. Confirm OPEN-2 *first*.
+- **Critical path to "all producers proven offline"** (ephemeral / Docker, no managed OutSystems environment): `M1 → {M2 ; M1.5 → M3}` — the two new canaries (PE-3, LE-2). **M2 is reachable now** (same-rendition OSUSR→OSUSR, no M1.5); M3 needs M1.5 (cross-rendition target resolution).
+- **Critical path to "managed-environment preview working"**: `M4 → M5`, gated by **OPEN-2** (the biggest external dependency). Synthetic/peer into a managed OutSystems environment need no M1.5; only `legacy`-into-a-managed-environment additionally needs M1.5 + M3. Confirm OPEN-2 *first*.
 - **M2's re-key against a *real* cloud is gated by survey P10** (user-directory readability) — and by `OSUSR_*` name coincidence across cells (eSpace-id question, OPEN-2 class); the **offline** PE-3 canary (matching OSUSR names on two ephemeral DBs) needs neither.
 
 ---
@@ -157,7 +157,7 @@ M2 / M3 / M5 ──► M6 (follow-ons, each pulled under a consumer)
 | # | Item | Why it matters | Disposition |
 |---|---|---|---|
 | **D-1** | **Producer modelling (M1).** | How `peer`/`legacy` are distinguished and routed. | **SETTLED (2026-06-09):** an env-metadata flag **`rendition: physical \| logical`**, *not* a `FlowSource` variant. Both producers move the same `SsKey` model; the source's rendition (physical peer cell vs logical on-prem) is the cut. "estate" rejected as the name. |
-| **OPEN-2** | Does cloud UAT expose a **writable SQL connection** to entity tables (vs platform-API-only)? | Blocks all real-UAT execute (M5). The whole disposition mix (`PreservedFromSource` vs `AssignedBySink`) depends on it. | **Blocks M5. Confirm first** via the ops spike. |
+| **OPEN-2** | Does the managed OutSystems environment expose a **writable SQL connection** to entity tables (vs platform-API-only)? | Blocks all managed-environment execute (M5). The whole disposition mix (`PreservedFromSource` vs `AssignedBySink`) depends on it. | **Blocks M5. Confirm first** via the ops spike. |
 | **OPEN-1** | UAT blank vs pre-populated with Users; permits `IDENTITY_INSERT`? | Sets the per-kind disposition mix and whether `peer` users are excluded vs reconciled. | Resolved by survey P3 + P10 (M4). |
 | **OPEN-3/5/6** | UAT CDC-tracked? · bulk-lane two-phase cycle-breaking · CHECK/computed/trigger schema (`NOCHECK`) | Affect the executor's safety + batching. | Resolved by survey P11/P7/P8 (M4); 6.A.2 cyclic is M6. |
 | **OPEN-7** | Connection-apparatus scope (how many envs, concurrency). | Sizes `TransferConnections`. | Low; design at M5. |

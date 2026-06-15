@@ -30,7 +30,7 @@ substrate into another, governed by a single logical schema. The motivating
 instance: freeze the schema the pipeline already derives, hand the copy to
 the partner team **as usual**, and then use that *same* schema to pull rows
 out of the staging SQL Server (today the *target* of emission) and load them
-**into an OutSystems Cloud UAT database** as a temporary, pre-eject preview.
+**into a managed OutSystems environment** as a temporary, pre-eject preview.
 
 **Why the pipeline already half-contains it.** The forward pipeline was
 built around a structural law the codebase has already named and
@@ -125,12 +125,12 @@ during emission, freeze the schema and hand the copy to the team **as
 usual**, then — using that **same produced schema** as the `SchemaContract`
 — run a **Transfer**: ingest from the staging DB (today the *sink* of
 Projection, here re-bound as the **Source**) and project the rows into an
-**OutSystems Cloud UAT database** (the **Sink**). This is explicitly a
+**managed OutSystems environment** (the **Sink**). This is explicitly a
 **temporary preview data-load** before the wholesale "eject," targeting
-**one UAT cloud DB only**; dev/qa eject normally later.
+**one managed OutSystems environment only**; dev/qa eject normally later.
 
 ```
-staging SQL Server ──Ingestion──▶ (SchemaContract) ──two-phase Projection──▶ OutSystems Cloud UAT
+staging SQL Server ──Ingestion──▶ (SchemaContract) ──two-phase Projection──▶ managed OutSystems environment
        (Source)                                                                   (Sink)
 ```
 
@@ -280,7 +280,7 @@ is read first, then written. The reified shape (credentials always out-of-band
 per D9):
 
 - **`Environment`** — a logical environment identity (DEV / TEST / UAT / PROD,
-  or a named string). The multi-environment dimension the V1 corporate remote
+  or a named string). The multi-environment dimension the V1 managed-environment remote
   already carries (the deferred "Multi-environment config" cluster).
 - **`Substrate`** — an `Environment` bound to a `SubstrateRole` (`Source` /
   `Sink`) with a `ConnectionRef` (a *reference* — env-var name or file path —
@@ -535,7 +535,7 @@ disposition, not derivable from `IsIdentity`.
 2. **Match by operator ruleset.** `UserMatchingStrategy = ByEmail | BySsKey |
    ManualOverride of Map<SourceUserId,TargetUserId> | FallbackToSystemUser`
    reconciles source identities to pre-existing sink identities. This is the
-   "operator-configured rulesets" the V1 corporate remote already implements.
+   "operator-configured rulesets" the V1 managed-environment remote already implements.
 3. **Build the remap into `SurrogateRemapContext`** — same carrier as
    `AssignedBySink`; the difference is *when* and *how* the `AssignedKey` is
    discovered (matched-before-insert here vs captured-during-insert there).
@@ -555,13 +555,13 @@ connection apparatus — not a from-scratch capability.
 
 ### 6.4 Decision to surface
 
-> **OPEN-1.** For the UAT preview, is the target guaranteed blank, and does the
-> OutSystems Cloud UAT DB permit direct writes / `IDENTITY_INSERT` on the
+> **OPEN-1.** For the managed-environment preview, is the target guaranteed blank, and does the
+> managed OutSystems environment permit direct writes / `IDENTITY_INSERT` on the
 > entity-backing tables? If yes → `PreservedFromSource` is sufficient. If the
 > target is **non-empty with pre-existing Users** (the realistic UAT case) →
 > `ReconciledByRule` for the User kind (live dual-profile + ruleset match) is
 > required; if the platform mints its own keys for newly-loaded entity rows →
-> `AssignedBySink` with assigned-key capture. A real UAT load may mix all three
+> `AssignedBySink` with assigned-key capture. A managed-environment load may mix all three
 > dispositions across kinds.
 
 ---
@@ -620,8 +620,8 @@ emits-but-doesn't-ship; V1 owns the production write path; the canary asserts
 V1 ≈ V2 modulo named tolerances. A Transfer is a **new write path** and must be
 framed so it does **not** violate R6:
 
-- **It targets UAT preview, not production.** The operator's scenario is
-  explicit and bounded: one UAT cloud DB, temporary, pre-eject. A
+- **It targets managed-environment preview, not production.** The operator's scenario is
+  explicit and bounded: one managed OutSystems environment, temporary, pre-eject. A
   development/preview write, categorically outside the production write path V1
   owns.
 - **It is opt-in and separately gated.** A distinct CLI verb, a distinct
@@ -793,9 +793,9 @@ Slices sized to the repo's cadence. **Slice 1 is shipped.**
   "LiveOssysConnection" concerns** into the epic. Prerequisite for a useful
   Slice D against a non-blank UAT.
 
-- **Slice D — execute against UAT (gated).** `--execute` against a real UAT
+- **Slice D — execute against UAT (gated).** `--execute` against a managed-environment
   connection, behind the R6 governance amendment, dry-run default, preview row
-  cap, CDC-safety check. Operator sign-off gate. A real UAT load mixes
+  cap, CDC-safety check. Operator sign-off gate. A managed-environment load mixes
   dispositions: `PreservedFromSource` for business-key kinds, `ReconciledByRule`
   for Users (Slice C′), and — if the platform mints keys — `AssignedBySink`
   (Slice E).
@@ -873,7 +873,7 @@ evidence."
 **Explicitly NOT shifting:**
 - No new pipeline; no forking of `Pipeline.fs`'s export flow.
 - No connection/credential fields in `Config` (D9 holds).
-- No production write path; Transfer stays UAT-preview + dry-run-default (R6).
+- No production write path; Transfer stays managed-environment preview + dry-run-default (R6).
 - No axiom cashed mid-flight; the adjunction-data axiom is scaffolded only.
 
 ---
@@ -916,13 +916,13 @@ cleanly onto existing structural prior art:
   apparatus bind, and what concurrency does the platform/license permit (the
   V1 "four connections, two concurrent")? Gates how rich the `TransferConnections`
   reification needs to be (§4.1).
-- **OPEN-2 (platform write surface).** Does the OutSystems Cloud UAT DB expose
+- **OPEN-2 (platform write surface).** Does the managed OutSystems environment expose
   a writable connection to the entity-backing tables at all, or must the load
   go through a platform API? The whole approach assumes direct SQL write access
-  to the UAT database. *This is the single biggest external dependency and
+  to the managed OutSystems environment. *This is the single biggest external dependency and
   should be confirmed first.*
 - **OPEN-3 (CDC).** Is the UAT target or its downstream CDC-tracked? (§8.4.)
-- **OPEN-4 (governance).** R6 amendment scope — confirm "UAT preview, not
+- **OPEN-4 (governance).** R6 amendment scope — confirm "managed-environment preview, not
   production" framing and dry-run-by-default before any execute path.
 - **OPEN-5 (bulk lane vs. two-phase).** The high-throughput `Bulk` lane does
   **not** today implement two-phase cycle-breaking (it relies on topological
@@ -956,7 +956,7 @@ read-back round-trip (the canary, which *is* H-050 at runtime), and a key-remap
 template now generalized to all kinds (`SurrogateRemapContext`, slice 1). A
 Transfer is the *same direction-neutral plan* (A35/A36) re-sourced via
 Ingestion and re-sinked via Projection — the H-050 adjunction extended from
-schema to data across two substrates. For the operator's blank-UAT preview,
+schema to data across two substrates. For the operator's managed-environment preview,
 `PreservedFromSource` sidesteps the only deep problem (surrogate remap)
 entirely, leaving a bounded build: a Transfer plan, an Ingestion adapter, a
 two-endpoint connection seam outside `Config` (D9), a Transfer orchestrator in
@@ -964,6 +964,6 @@ two-endpoint connection seam outside `Config` (D9), a Transfer orchestrator in
 `AssignedBySink` use — the persisted `SchemaContract`. The epic's North Star is
 the **data-level canary** (Slice C): the data analog of the schema canary,
 proving the adjunction round-trips data before any UAT write. The chief
-external unknown is whether the OutSystems Cloud UAT database permits direct SQL
+external unknown is whether the managed OutSystems environment permits direct SQL
 writes (OPEN-2), and the chief internal commitment is an R6 governance amendment
-scoping this as a UAT-only, dry-run-by-default, preview write path.
+scoping this as a managed-environment-only, dry-run-by-default, preview write path.

@@ -10,7 +10,7 @@
 > the matrix), `CONFIRMED_BACKLOG_2026_06_09.md` (the what's-left ledger), `DECISIONS.md`
 > (each work package's law changes land there first, per CLAUDE.md §5).
 >
-> Provenance: produced from an operator end-to-end run in a corporate OutSystems environment
+> Provenance: produced from an operator end-to-end run in a managed OutSystems environment
 > (the "event ledger" in §1) plus eight parallel research sweeps over both trunks, with every
 > load-bearing claim spot-verified against code on this date. File:line citations are to the
 > tree at commit `7ee8f9e`.
@@ -30,7 +30,7 @@
 
 ---
 
-## 1 — The operator's event ledger (2026-06-12 corporate run)
+## 1 — The operator's event ledger (2026-06-12 managed-environment run)
 
 Each issue was encountered sequentially; the series is causally coherent and reproducible:
 
@@ -307,7 +307,7 @@ Each issue was encountered sequentially; the series is causally coherent and rep
 8. **MS_Description**: V1 uses the effective (logical/override) table name and emission
    column name. V2 reads `k.Physical`/column realization — logical in the default chain
    because `LogicalTable/ColumnEmission` substitute first; physical names can escape via the
-   S6.3 physical-rename-pin exemption (the prime suspect for the corporate observation —
+   S6.3 physical-rename-pin exemption (the prime suspect for the managed-environment observation —
    needs a pinning property test).
 
 ### 2.F — Config surfaces (V2 view)
@@ -405,7 +405,7 @@ Each issue was encountered sequentially; the series is causally coherent and rep
 - `model.path` is already demoted to optional fallback; retirement is R6-gated (N green
   differential runs + operator sign-off). This plan does not retire it; it makes the samples
   ossys-first and fixes the provenance arm so ossys-only configs are first-class.
-- Armed/deferred items this plan lands on (triggers now fired by the corporate run):
+- Armed/deferred items this plan lands on (triggers now fired by the managed-environment run):
   provenance-typed Static (`ReadbackPopulated`); static-seed parent-handling ("surfaces under
   concrete operator demand"); constraint-name round-trip (matrix row 57); staged-bulk MERGE
   (perf trigger, conditional).
@@ -499,7 +499,7 @@ emitter already realizes).
 - **`ModuleFilter.apply` stays as the semantic seam** (double enforcement — V1's own
   precedent). DECISIONS amendment reframes the 2026-05-16 "filtering is an IR concern"
   stance: scope pushdown is adapter-side extraction-cost reduction for declared scopes; the
-  IR filter remains the correctness owner. Trigger: the corporate estate-scale run.
+  IR filter remains the correctness owner. Trigger: the managed-environment estate-scale run.
 
 **Tests.** Docker-gated equivalence property:
 `scopedRead(scope) ≡ ModuleFilter.apply(scope) ∘ fullRead` over the fixture estate. Bench
@@ -573,7 +573,7 @@ Ordered by dependency:
 6. **Deviances**: `DeleteScope` already transcends `NOT MATCHED BY SOURCE` (matrix row).
    **EXCEPT validate-before-apply** lands as an **opt-in** data-emission mode (C2:
    CDC-silence stays canonical; EXCEPT is the conservative fallback/override until J5
-   proves the CDC path on real UAT — opt-in via config, e.g.
+   proves the CDC path on a managed OutSystems environment — opt-in via config, e.g.
    `emission.dataVerification: "validateBeforeApply"`, typed-AST EXCEPT prelude + THROW).
    Row batching stays under its armed perf trigger, now reachable — adopt V1's batched-MERGE
    shape when it fires. `BaselineSeeds` layout stays retired.
@@ -646,7 +646,7 @@ slice. J5 preempts at any point.
 deployable-reference predicate; FK pass + emitter + diagnostics exclusions; the
 `HasDbConstraint` carve-out; dead-branch retirement; narrowed diagnostics; the property
 tests and the post-chain canary; matrix row amendments. Rationale: this is the cluster that
-turns the operator's scoped corporate run from SQL-validation-failure to green, and every
+turns the operator's scoped managed-environment run from SQL-validation-failure to green, and every
 other package's tests get more honest once the constraint surface is correct.
 
 **Slice 2 (next): WP4 + WP7-GO** (threading + the two-line `BatchSeparator` fix with golden

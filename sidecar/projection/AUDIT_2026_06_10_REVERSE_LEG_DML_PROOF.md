@@ -47,12 +47,12 @@ B→A end-to-end in ~14.8 s on the warm container
 `transfer.reverseLeg.scale.legMs`). That covers ingest + plan + per-row
 `INSERT … OUTPUT` + FK re-point. Extrapolated: 100k rows ≈ 6 min, 1M rows ≈
 60+ min, on local-loopback latency — a real network hop multiplies the
-per-row round-trip cost. **Per-row capture is fine for the mock/UAT-preview
+per-row round-trip cost. **Per-row capture is fine for the mock/managed-environment preview
 scale; it will not survive a large production estate.** This is exactly the
 bench evidence the trigger-gated `MERGE … OUTPUT` set-based capture
 (TRANSFER_ISOMORPHISM_SUBSTANTIATION §3) was waiting for: trigger (b)
 [measured bottleneck] is now satisfied; trigger (a) [survey P4 under the
-real UAT grant] remains.
+managed-environment grant] remains.
 
 ---
 
@@ -119,7 +119,7 @@ upsert) is unscoped.
 
 ---
 
-## 4. What genuinely remains for J5 (the real-UAT spike, now collapsed)
+## 4. What genuinely remains for J5 (the managed-environment spike, now collapsed)
 
 P1 (grant enumeration), P2 (insert-omitting-identity + read-back), P3
 (IDENTITY_INSERT expected-denied), P6 (DELETE-based clear) are **answered on

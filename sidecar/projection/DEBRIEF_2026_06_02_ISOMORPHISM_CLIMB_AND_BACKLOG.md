@@ -561,7 +561,7 @@ durable. This is the Schema + Time axes reaching L2-faithful and L3-composed.
   dependency — do not ship B1 without the pre-flight suite), C1 (so the diff
   doesn't silently no-op FK/index/sequence changes the operator expects).**
   **Gating:** the CLI wiring is survey-independent; the *live execution against
-  real UAT* (EXECUTION_PLAN 5.1) is survey-dependent (OPEN-2).
+  a managed OutSystems environment* (EXECUTION_PLAN 5.1) is survey-dependent (OPEN-2).
 
 **Why B1 sits behind A and C1.** The North-Star covenant promise #8 is "moves the
 whole estate touching only what changed … atomic-or-resumable … refuses rather

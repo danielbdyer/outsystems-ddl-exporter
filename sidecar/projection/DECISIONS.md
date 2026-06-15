@@ -219,12 +219,12 @@ table before continuing.
 | **Type providers** (`JsonProvider` for `osm_model.json`) | Session 14 (CLAUDE.md, F# feature surface — consciously deferred) | OSSYS adapter ships and JSON-shape evolution becomes a maintenance burden | OSSYS adapter ships at session 18 with hand-written DTOs; JSON-shape evolution has not yet surfaced as a burden (session 25) |
 | **`ICatalogReader` interface** (Position B → A) | 2026-05-13 (Anticipation vs. speculation in abstraction extraction) | A second *catalog* source materializes (DACPAC, OData, in-memory test reader; distinct from a second *variant* of an existing OSSYS source) | **Reaffirmed at chapter 3.2 open (axis 6) / close (2026-05-10).** `SnapshotRowsets` is a second *variant* of the OSSYS source, not a second source — per `CHAPTER_3_2_OPEN.md` axis 6, the Position B → A trigger does NOT fire. `ReadSide.read` is a profile/data reader, not a catalog reader (out of scope). The trigger condition was sharpened at chapter 3.2 close to make the variant-vs-source distinction explicit. OSSYS adapter still uses `parse : SnapshotSource -> Task<Result<Catalog>>` (Position B); interface lift remains deferred until DACPAC / OData / in-memory test reader materializes (chapter 3.7 slice ξ candidate; chapter-3.x DacpacEmitter may surface the second source). |
 | **`SnapshotRowsets` variant of `SnapshotSource`** | 2026-05-17 (OSSYS adapter parse signature, session-20 amendment) | The JSON-projection-lossiness class needs unblocking — A1 SsKey bound resolution; `EspaceKind` distinction; `isSystemEntity` evidence; future class members (per `DECISIONS 2026-05-19 — naming the two classes of resolution patterns explicitly`) | **Cashed out — chapter 3.2 (commits 6dab9cd / 0354727 / d5d1812 / 6eae21f / a74b904). Variant implemented end-to-end across five slices: (1) SnapshotRowsets variant + RowsetBundle DTO + SsKey at all three levels; (2) reference rowsets (`#RefResolved + #FkReality`); (3) `EspaceKind` activation (Origin three-way real); (4) `IsSystemEntity` → `ModalityMark.SystemOwned`; (5) cross-source parity tests. A1's JSON-projection-lossiness bound resolved structurally (`OssysOriginal` Guid carriage). Three class members landed: SsKey at every level; EspaceKind; IsSystemEntity. Future class members (per-table column structure rowset 6; check constraints rowset 7; triggers rowset 18 — documented not-carried-forward) surface under fixture pressure as further deferred slices. See cash-out entry `2026-05-10 — SnapshotRowsets variant chapter 3.2 close` below.** |
-| **`LiveOssysConnection` variant of `SnapshotSource` + cluster (multi-env + UAT-users + user-reflow strategy + extraction-time knobs)** | 2026-05-17 (OSSYS adapter parse signature) | V2 needs to operate without V1's chain in the loop entirely (real DB-touching variant) | Reserved in `SnapshotSource` DU (`CatalogReader.fs:58-62`); chapter-3+ when canary's deployment-validation arc materializes (session 25). **Updated 2026-05-19 (chapter B.4 rescope):** the operator's V1 corporate-network remote HEAD owns the live OSSYS path today; V2 picks this up under a follow-up chapter when the corporate-network access path is available, which also lights the functional-equivalence arm of Phase B's exit gate (the structural arm closes in chapter B.4 against `SnapshotJson` / `SnapshotRowsets`). **Updated 2026-05-19 (axis-survey supplement):** this chapter also absorbs axis 10 (user reflow strategy + `ManualOverride` CSV-loader; `Policy.UserMatchingStrategy` DU + `ManualOverride` already exist structurally at `Policy.fs:323+343`; missing the CSV file-format adapter at `Projection.Adapters.UserMap.UserMapLoader` per the chapter-4.2 deferral) + axis 14 (sampling threshold + command timeout + sampling cap — V1 has these on SqlOptions). The V1 corporate-network HEAD has multi-env + UAT-users + user-reflow-strategy + extraction-time-knobs all done together; V2 picks the cluster up as a unit. |
+| **`LiveOssysConnection` variant of `SnapshotSource` + cluster (multi-env + UAT-users + user-reflow strategy + extraction-time knobs)** | 2026-05-17 (OSSYS adapter parse signature) | V2 needs to operate without V1's chain in the loop entirely (real DB-touching variant) | Reserved in `SnapshotSource` DU (`CatalogReader.fs:58-62`); chapter-3+ when canary's deployment-validation arc materializes (session 25). **Updated 2026-05-19 (chapter B.4 rescope):** the operator's V1 managed-environment remote HEAD owns the live OSSYS path today; V2 picks this up under a follow-up chapter when the managed-environment access path is available, which also lights the functional-equivalence arm of Phase B's exit gate (the structural arm closes in chapter B.4 against `SnapshotJson` / `SnapshotRowsets`). **Updated 2026-05-19 (axis-survey supplement):** this chapter also absorbs axis 10 (user reflow strategy + `ManualOverride` CSV-loader; `Policy.UserMatchingStrategy` DU + `ManualOverride` already exist structurally at `Policy.fs:323+343`; missing the CSV file-format adapter at `Projection.Adapters.UserMap.UserMapLoader` per the chapter-4.2 deferral) + axis 14 (sampling threshold + command timeout + sampling cap — V1 has these on SqlOptions). The V1 managed-environment HEAD has multi-env + UAT-users + user-reflow-strategy + extraction-time-knobs all done together; V2 picks the cluster up as a unit. |
 | **Static-seed parent-handling behavior** (dispersed from struck DynamicDataSection) | 2026-05-19 (axis-survey supplement) | A real operator workflow surfaces with FK-parent handling requirements that diverge from V2's static-seed-emitter default. V1's `StaticSeedParentHandlingMode` enum (`Include` / etc.) lived under V1's `DynamicData` config umbrella — V2 stripped the umbrella per the conflation strike. If a workflow demands operator-configurable parent handling, the static-seed emitter gains an `Options` parameter at that slice time. Today V2's behavior is hardcoded. | Not an operator-overlay axis (not surfaced through Policy DU); internal-to-emitter. Surfaces under concrete operator demand. See `DECISIONS 2026-05-19 (chapter B.4 hygiene strike + axis-survey supplement)` entry below. |
 | **`Spectre.Console` TtyRenderer + dual-channel `--json-out` routing micro-chapter** | 2026-05-20 (logging-format implementation gap audit) | Operator runs the CLI + reports NDJSON-only stderr emission as unfriendly for interactive runs (verbatim from `docs/logging-format.md` §15.3 post-chapter framing). Substrate sketched in §15.1 (two-channel diagram) + §15.3 (`Projection.Cli/TtyRenderer.fs` F# adapter shape). The micro-chapter pairs with the `data-twin` CLI verb row above — both operator-facing UX-layer surfaces over established structural substrate. | Deferred at 2026-05-20. Slice 6.5 ships the channel-1-only `LogSink` (the structural commitment); channel-2 TtyRenderer is the optional layer on top. Per the contract: "Channel 2 (`--pretty`) is a quality-of-life feature on top of the structural commitment, never a substitute for it." See `DECISIONS 2026-05-20 (logging-format implementation gap audit)` entry below. |
 | **Standalone `projection extract` + `projection profile` CLI subcommands** | 2026-05-19 (chapter B.4 rescope — chapter-mid scope change) | A concrete operator-paced workflow surfaces that needs catalog-extract or profile-attach as a stand-alone step independent of `full-export` (e.g., a CI lane that materializes the snapshot without emitting; a profile-cache refresh job). The chapter-B.4-open's slice plan named both subcommands at slices 6 + 7; the rescope drops them after operator framing produced no workflow demand independent of full-export. | Deferred at chapter B.4 (2026-05-19). Today `full-export` is the only operator-touchable CLI subcommand. Reserved code paths in the logging-format contract still name `extract.*` + `profile.*` event categories (these fire from `full-export`'s orchestration); promoting them to standalone subcommands requires only a CLI surface (no Core change). See `DECISIONS 2026-05-19 (slice B.4.{4-7}.rescope)` entry below. |
-| **Multi-environment configuration (DEV / TEST / UAT / PROD) + UAT-users logic** | 2026-05-19 (chapter B.4 rescope) | V2 brings the operator's V1 corporate-network remote HEAD into V2's tree — both components are fully done in V1 today; the V2 carbon-copy path is gated on access to the V1 implementation. Pairs with the `LiveOssysConnection` deferral above (live OSSYS connectivity is the bridge that lets multi-environment / UAT-users be exercised end-to-end). | Deferred at chapter B.4. Today `full-export` uses a single-environment config shape; multi-environment + UAT-users carbon-copy lands when V1 remote HEAD is available. See `DECISIONS 2026-05-19 (slice B.4.{4-7}.rescope)` entry below. |
-| **`data-twin` CLI verb wrapping `DockerImageEmitter`** | 2026-05-19 (chapter B.4 rescope) | Operator's dev-team workflow surfaces concretely (one-click `docker pull` + `docker run` to stand up a SQL Server replica seeded from the projected schema). The substrate already shipped at chapter 3.x close — `DockerImageEmitter.emit : Catalog -> Result<DockerImageContext>` produces `{ Dockerfile; DacpacBytes; EntrypointScript; Readme }` ready for `docker build .`. The verb is a CLI wrapper over the existing emitter. | Deferred at chapter B.4. Surfaces under its own small chapter when the operator-paced dev-team workflow demands it; sequencing after the V1 corporate-network material lands so the verb is designed against the full operator-paced workflow context. The DACPAC binary emission lives under this verb (NOT under `full-export`'s output set per the rescope). See `DECISIONS 2026-05-19 (slice B.4.{4-7}.rescope)` entry below and `CHAPTER_3_X_CLOSE.md` for the DockerImageEmitter substrate. |
+| **Multi-environment configuration (DEV / TEST / UAT / PROD) + UAT-users logic** | 2026-05-19 (chapter B.4 rescope) | V2 brings the operator's V1 managed-environment remote HEAD into V2's tree — both components are fully done in V1 today; the V2 carbon-copy path is gated on access to the V1 implementation. Pairs with the `LiveOssysConnection` deferral above (live OSSYS connectivity is the bridge that lets multi-environment / UAT-users be exercised end-to-end). | Deferred at chapter B.4. Today `full-export` uses a single-environment config shape; multi-environment + UAT-users carbon-copy lands when V1 remote HEAD is available. See `DECISIONS 2026-05-19 (slice B.4.{4-7}.rescope)` entry below. |
+| **`data-twin` CLI verb wrapping `DockerImageEmitter`** | 2026-05-19 (chapter B.4 rescope) | Operator's dev-team workflow surfaces concretely (one-click `docker pull` + `docker run` to stand up a SQL Server replica seeded from the projected schema). The substrate already shipped at chapter 3.x close — `DockerImageEmitter.emit : Catalog -> Result<DockerImageContext>` produces `{ Dockerfile; DacpacBytes; EntrypointScript; Readme }` ready for `docker build .`. The verb is a CLI wrapper over the existing emitter. | Deferred at chapter B.4. Surfaces under its own small chapter when the operator-paced dev-team workflow demands it; sequencing after the V1 managed-environment material lands so the verb is designed against the full operator-paced workflow context. The DACPAC binary emission lives under this verb (NOT under `full-export`'s output set per the rescope). See `DECISIONS 2026-05-19 (slice B.4.{4-7}.rescope)` entry below and `CHAPTER_3_X_CLOSE.md` for the DockerImageEmitter substrate. |
 | **`MetadataContractOverrides` wiring into V2 `MetadataSnapshotRunner` mappers** | 2026-05-19 (slice B.4.5.metadata-contract-overrides) | A real V1-source drift event surfaces a strict column in V2 production extraction producing NULL where V2's mapper expects non-NULL. Today V2 has zero direct wiring carry-over from V1 (V1's sole consumer `AttributeJsonResultSetProcessor.IsColumnOptional("AttributeJson", "AttributesJson")` reads the V1-SUNSET `attrJson` rowset that V2 skips at `MetadataSnapshotRunner.fs:778`). Per IR-grows-under-evidence: pick the relaxable column on real drift, not speculatively. | Mechanism shipped at slice 5 (`MetadataContractOverrides.fs`); structurally available + tested; wiring deferred. Cash-out shape: thread `MetadataContractOverrides` through `runAndParse` as a parameter; introduce `readStringRelaxable resultSet column ordinal overrides` helper that consults `isColumnOptional` and dispatches to `readString` or `readStringOpt`; refactor the affected mapper to use the helper. See `DECISIONS 2026-05-19 (slice B.4.5.metadata-contract-overrides)` entry below. |
 | **`OverlayAxis.Extraction` candidate (sixth variant)** | 2026-05-19 (slice B.4.5.metadata-contract-overrides) | A second consumer of operator-intent-at-the-extraction-boundary materializes beyond `MetadataContractOverrides`. Today the only candidate is `MetadataContractOverrides` itself; per chapter A.4.7 open Q9 trigger-fires discipline, a single candidate doesn't yet warrant a sixth `OverlayAxis` variant. Slice 7 decides at TransformRegistry wiring time whether to stretch `Tightening` with a docstring note OR add the sixth variant when the second consumer materializes. | Open. The MetadataContractOverrides `OverlayAxis` classification at slice 7 sets the precedent: either stretches `Tightening` (operator-decision-about-constraint-enforcement; explicit docstring note that extraction-time contract relaxation is structurally distinct from emission-time tightening) OR adds the sixth variant. The deferral records the open question so future agents see the deliberate ambiguity. |
 | **`Microsoft.SqlServer.Dac` (DacFx) adoption in `Projection.Targets.SSDT.DacpacEmitter`** | 2026-05-10 (Tier-3 codification: text-builder-as-first-instinct discipline) | Chapter 3.x DacpacEmitter opens. **Hard requirement, not preference**: the .dacpac file format is a Microsoft-proprietary ZIP-with-manifest-XML structure — hand-rolling it via `System.IO.Compression.ZipArchive` + manual XML composition is the prototypical "text-builder-as-first-instinct" failure mode. DacFx (`Microsoft.SqlServer.Dac` NuGet) IS the canonical use-case-specific library; per pillar 7, no LINT-ALLOW will excuse a hand-rolled .dacpac. The chapter-3.x agent reads this entry at chapter open and writes the cash-out below the Active deferrals table on adoption. | **Cashed out — chapter 3.x slice α (2026-05-11) adopts `Microsoft.SqlServer.DacFx` v162.x in `Projection.Targets.SSDT`.** Pure F# wrapper (empirical condition: `use TSqlModel`, `model.AddObjects`, `DacPackageExtensions.BuildPackage` — four `IDisposable`-aware calls F# handles natively). No C# subproject; pre-scope §6.2 bias yielded under empirical pressure. See `2026-05-11 — Chapter 3.x DacpacEmitter open` entry below. |
@@ -18147,7 +18147,7 @@ The rescope reflects three operator inputs from the chapter-mid alignment conver
 
 2. **"DACPAC binary needs to be its own command — something like 'data-twin' — a one-shot SQL Server replica that's ready to be dockerized for the dev team."** The substrate already shipped at chapter 3.x close — `DockerImageEmitter.emit : Catalog -> Result<DockerImageContext>` produces `{ Dockerfile; DacpacBytes; EntrypointScript; Readme }` ready for `docker build .` (see `CHAPTER_3_X_CLOSE.md` slice δ_dock). What's missing is the CLI verb that surfaces it. That verb lives in its own chapter, not as a flag under `full-export`.
 
-3. **"Multi-environment + UAT-users are fully done in my V1 corporate-network remote HEAD; defer the environment concerns for now."** V2 picks them up via carbon-copy under a follow-up chapter when the V1 implementation is accessible. Pairs with `LiveOssysConnection` deferral (the bridge that lets multi-environment / UAT-users be exercised end-to-end). Chapter B.4's `full-export` uses a single-environment config shape against snapshot connectivity for now.
+3. **"Multi-environment + UAT-users are fully done in my V1 managed-environment remote HEAD; defer the environment concerns for now."** V2 picks them up via carbon-copy under a follow-up chapter when the V1 implementation is accessible. Pairs with `LiveOssysConnection` deferral (the bridge that lets multi-environment / UAT-users be exercised end-to-end). Chapter B.4's `full-export` uses a single-environment config shape against snapshot connectivity for now.
 
 4. **"V1's diagnostic JSONs are noisy and cluttered — V2's need to be actionable."** V2's chapter-4.3 Operational Diagnostics emitters (`DecisionLogEmitter` / `OpportunitiesEmitter` / `ValidationsEmitter`) write per-finding entries but inherit V1's noise: every finding emitted equally; no severity sort; no clustering by axis; no cap on noisy axes; no operator-targeted "here's the config edit that would address this" payload. The new slice 6 operationalizes the logging-format contract's §12 `suggestedConfig` discipline on the artifact side AND clusters/caps the output so operators can act on the JSONs without re-running the CLI.
 
@@ -18162,13 +18162,13 @@ Phase B's exit criterion per `V2_PRODUCTION_CUTOVER.md §8.2` requires (a) L3 ca
 **The rescope splits the gate into two arms:**
 
 - **Structural arm (chapter B.4 closes this):** (a) L3 catalog includes L3-X11 + L3-X12; (d) logging format documented; (e structural) V2 `full-export` runs end-to-end against snapshot connectivity producing SSDT + seeds + migration + actionable diagnostics with conforming event stream + cluster-capped JSON artifacts. Verified by the Docker-gated `full-export` integration test + property tests on the actionable-diagnostics enrichment.
-- **Functional-equivalence arm (deferred to a follow-up chapter):** (b) V2 vs V1 `osm_model.json` byte-comparison against live OSSYS; (c) V2 vs V1 Profile JSON byte-comparison against live OSSYS; (e functional) production dry-run on a real OS instance. Gated on the `LiveOssysConnection` deferral closing — which gates on the operator's V1 corporate-network remote HEAD being accessible to V2.
+- **Functional-equivalence arm (deferred to a follow-up chapter):** (b) V2 vs V1 `osm_model.json` byte-comparison against live OSSYS; (c) V2 vs V1 Profile JSON byte-comparison against live OSSYS; (e functional) production dry-run on a real OS instance. Gated on the `LiveOssysConnection` deferral closing — which gates on the operator's V1 managed-environment remote HEAD being accessible to V2.
 
 The structural arm is what chapter B.4 ships; the functional arm waits on the live OSSYS path. V2_PRODUCTION_CUTOVER's §8.2 exit-criterion language stands — the gate's two arms close in two chapters, not one.
 
 ### Why splitting is the right call (and not "ship a half gate")
 
-The functional-equivalence arm is inherently gated on infrastructure outside V2's control: V1's corporate-network HEAD owns the live OSSYS connection, multi-environment config, UAT-users logic. Trying to land all of it in chapter B.4 would (a) front-load uncertainty on V2's structural commitments, (b) force speculative carbon-copy of V1 implementations the agent cannot read today, (c) create back-pressure on the structural deliverables (SSDT emit + actionable diagnostics) that ARE accessible today and that ARE the operator-touchable surface for the cutover dry-run. Splitting the gate lets the structural arm close on schedule; the functional arm closes when its blocker (corporate-network access path) lifts. Per the chapter-close-ritual discipline: closing a chapter with a partial exit gate is acceptable when the partial closure is structurally complete AND the deferred portion has a named blocker AND the deferred portion has its own re-open trigger (here: `LiveOssysConnection` row in the Active deferrals index).
+The functional-equivalence arm is inherently gated on infrastructure outside V2's control: V1's managed-environment HEAD owns the live OSSYS connection, multi-environment config, UAT-users logic. Trying to land all of it in chapter B.4 would (a) front-load uncertainty on V2's structural commitments, (b) force speculative carbon-copy of V1 implementations the agent cannot read today, (c) create back-pressure on the structural deliverables (SSDT emit + actionable diagnostics) that ARE accessible today and that ARE the operator-touchable surface for the cutover dry-run. Splitting the gate lets the structural arm close on schedule; the functional arm closes when its blocker (managed-environment access path) lifts. Per the chapter-close-ritual discipline: closing a chapter with a partial exit gate is acceptable when the partial closure is structurally complete AND the deferred portion has a named blocker AND the deferred portion has its own re-open trigger (here: `LiveOssysConnection` row in the Active deferrals index).
 
 ### Discipline reinforced
 
@@ -18180,7 +18180,7 @@ The functional-equivalence arm is inherently gated on infrastructure outside V2'
 
 - `CHAPTER_B_4_OPEN.md` updated to reflect new 7-slice plan, dropped subcommands, new actionable-diagnostics slice, rescoped full-export, expanded Out-of-scope section.
 - `sidecar/projection/docs/logging-format.md` §1 + §18 updated to reflect new consumer set + new slice table.
-- Active deferrals index — three new rows landed (standalone extract+profile subcommands; multi-environment + UAT-users; data-twin CLI verb); `LiveOssysConnection` row updated with the corporate-network-access framing.
+- Active deferrals index — three new rows landed (standalone extract+profile subcommands; multi-environment + UAT-users; data-twin CLI verb); `LiveOssysConnection` row updated with the managed-environment-access framing.
 - `CHAPTER_3_X_CLOSE.md` already documents the `DockerImageEmitter` substrate (slice δ_dock) — the `data-twin` verb's chapter will pick that up as the wrapped surface.
 
 ## 2026-05-19 (slice B.4.4.module-filter-port) — ModuleFilter carbon-copied from V1 to Projection.Core; V1's IsSystemModule per-module flag translates to V2's per-kind ModalityMark.SystemOwned aggregate; ValidationOverrides axis routed to slice 5 not here
@@ -18373,7 +18373,7 @@ The principal endorsed three new axes and asked for a broader survey. Revised ax
 
 - **Axis 9 (revised) — Insertion semantics.** Operator picks `Policy.InsertionPolicy` per emission target (SchemaOnly / InsertNew / Merge / TruncateAndInsert). The V2 DU exists structurally at `Policy.fs:77`; missing only the config-binding layer (same shape as Chapter C's tightening slice — config strings → registered intervention). **Sequencing: Chapter C slice as `OverlayAxis.Insertion` cash-out.** Replaces the now-struck "DynamicData" framing with the principled axis name.
 
-- **Axis 10 — User reflow strategy + manual override map.** Operator picks primary strategy (`ByEmail | BySsKey | Regex`) + fallback assignment + supplies a CSV override map. V2's substrate exists (`Policy.UserMatchingStrategy` DU + `ManualOverride` + the user-FK reflow pass); `Projection.Adapters.UserMap.UserMapLoader` is a chapter-4.2 deferral. **Sequencing: deferred to LiveOssysConnection chapter alongside multi-env + UAT-users (the V1 corporate-network HEAD has all three done together; V2 picks them up as a unit when the corporate-network access path is available).**
+- **Axis 10 — User reflow strategy + manual override map.** Operator picks primary strategy (`ByEmail | BySsKey | Regex`) + fallback assignment + supplies a CSV override map. V2's substrate exists (`Policy.UserMatchingStrategy` DU + `ManualOverride` + the user-FK reflow pass); `Projection.Adapters.UserMap.UserMapLoader` is a chapter-4.2 deferral. **Sequencing: deferred to LiveOssysConnection chapter alongside multi-env + UAT-users (the V1 managed-environment HEAD has all three done together; V2 picks them up as a unit when the managed-environment access path is available).**
 
 **Lower-leverage axes catalogued (fold-into-existing or wait-for-trigger; not elevated to standalone slices):**
 
@@ -18400,7 +18400,7 @@ Axis 8 absorbed into slice 6 (actionable-diagnostics) design; axes 10 + 14 place
 
 ### Active deferrals — updates
 
-**Updated:** `LiveOssysConnection` row absorbs axis 10 (user reflow strategy + manual override map) + axis 14 (sampling threshold + command timeout) explicitly. The corporate-network V1 HEAD has multi-env + UAT-users + user-reflow-strategy + extraction-time-knobs all done together; V2 picks the cluster up as a unit when the access path is available.
+**Updated:** `LiveOssysConnection` row absorbs axis 10 (user reflow strategy + manual override map) + axis 14 (sampling threshold + command timeout) explicitly. The managed-environment V1 HEAD has multi-env + UAT-users + user-reflow-strategy + extraction-time-knobs all done together; V2 picks the cluster up as a unit when the access path is available.
 
 **New row:** `Static-seed parent-handling behavior` — V1's `StaticSeedParentHandlingMode` enum dispersed from the struck DynamicDataSection. Today V2's static-seed emitter has hardcoded behavior; if a real operator workflow surfaces with FK-parent handling requirements that diverge from V2's default, the trigger fires + the emitter gains an `Options` parameter. No operator-overlay axis (not surfaced through Policy DU); internal-to-emitter.
 
@@ -18694,7 +18694,7 @@ End-to-end CLI smoke (run via `dotnet projection.dll full-export --config ...`) 
 
 ### Out of scope (per chapter B.4 spec)
 
-- **`LiveOssysConnection`** — deferred; the operator's V1 corporate-network HEAD owns the live path. Slice 7 reads `SnapshotJson` / `SnapshotRowsets` only.
+- **`LiveOssysConnection`** — deferred; the operator's V1 managed-environment HEAD owns the live path. Slice 7 reads `SnapshotJson` / `SnapshotRowsets` only.
 - **Standalone `extract` + `profile` subcommands** — dropped at chapter-mid rescope per `DECISIONS 2026-05-19 (slice B.4.{4-7}.rescope)`.
 - **`--pretty` + Spectre TtyRenderer + `--json-out` routing** — deferred to its own micro-chapter per §15.3 + the 2026-05-20 gap-audit entry. Trigger: operator reports NDJSON-only stderr as unfriendly for interactive runs.
 - **DACPAC binary emission + `data-twin` CLI verb** — separate chapter; `DockerImageEmitter` substrate already shipped at chapter 3.x close.
@@ -18725,7 +18725,7 @@ Slice 7 closes the **structural** arm of Phase B's exit criterion per `V2_PRODUC
 | Functional-equivalence vs V1 osm_model.json against live OSSYS | NOT THIS CHAPTER — waits on `LiveOssysConnection` (deferred) |
 | ≥1 full end-to-end production dry-run | NOT THIS CHAPTER — waits on operator scheduling |
 
-The **functional-equivalence arm** + production dry-run move to a follow-up chapter when the operator's corporate-network access path opens. Chapter B.4's close ritual finalizes the structural arm.
+The **functional-equivalence arm** + production dry-run move to a follow-up chapter when the operator's managed-environment access path opens. Chapter B.4's close ritual finalizes the structural arm.
 
 ### Cross-references
 
@@ -19517,7 +19517,7 @@ The operator-PO chose Path C from the prior session's three-paths offer: registe
 The pipeline runs one leg today — Projection (Π) lowering a `Catalog` onto a
 staging SQL Server. The operator wants to freeze that schema, hand it to the
 partner team as usual, and then use the *same* schema to pull rows from
-staging and load them into an OutSystems Cloud UAT database as a temporary,
+staging and load them into a managed OutSystems environment as a temporary,
 pre-eject preview. The original feasibility study framed this as "reverse
 import" (`PRESCOPE_REVERSE_IMPORT.md`).
 
@@ -19583,7 +19583,7 @@ from schema to data. Naming it "reverse" obscured that the hard machinery
    two connection endpoints live **outside `Config`** (D9) as env vars
    (`PROJECTION_TRANSFER_SOURCE_CONN_STR` / `..._SINK_CONN_STR`) or
    CLI-flag file paths; dry-run is the default and `--execute` is gated behind
-   an R6 amendment (UAT-preview, not production write path).
+   an R6 amendment (managed-environment preview, not production write path).
 
 5. **The doc is renamed** `PRESCOPE_REVERSE_IMPORT.md → PRESCOPE_TRANSFER.md`
    and rewritten around this vocabulary; it is the epic's epistemic anchor
@@ -19654,7 +19654,7 @@ canonical real case those two miss: **cross-environment User re-key**. The same
 human is user Id 280 in Dev and Id 18 in UAT; loading Dev data into UAT must
 re-key every User-FK from the Dev surrogate to the *pre-existing* UAT surrogate.
 That is neither preservation (280 is wrong in UAT) nor sink-assignment (UAT
-mints no new key — Id 18 already exists). The operator's V1 corporate remote
+mints no new key — Id 18 already exists). The operator's V1 managed-environment remote
 already implements this: up to four source-database connections, two
 concurrent, fully profiling both environments' users and matching them by
 operator-configured rulesets.
@@ -19947,7 +19947,7 @@ string composition at the diagnostic boundary). `L3-X7` /
 
 > **STATUS: PROPOSAL — NOT YET ENACTED.** This entry drafts the missing formal
 > R6 authorization for `transfer --execute` so it is ready for operator review.
-> It is **not load-bearing until the operator confirms the UAT-preview framing**
+> It is **not load-bearing until the operator confirms the managed-environment preview framing**
 > (the OPEN-4 dependency). The defensive engineering half (the CDC pre-flight)
 > is built and verified now (Wave-3 slice 3.1); the authorization half waits on
 > sign-off. Until enacted, the status quo holds: `--execute` is gated only by
@@ -19961,7 +19961,7 @@ DECISIONS entry that authorizes it *within* R6. That is an unscoped exception to
 a non-negotiable rule.
 
 **Proposed scope (for sign-off).** `transfer --execute` is authorized **only**
-for **UAT-preview** use, under all of:
+for **managed-environment preview** use, under all of:
 1. **Dry-run default.** `transfer` defaults to `DryRun` (no sink writes); `--execute` is opt-in. *(shipped)*
 2. **Env gate.** `--execute` requires `PROJECTION_ALLOW_EXECUTE=1` (exit-7 refusal otherwise). *(shipped)*
 3. **CDC precondition.** An `--execute` run pre-flights the sink for
@@ -19970,15 +19970,15 @@ for **UAT-preview** use, under all of:
    preview would generate unintended capture instances. *(shipped — Wave-3 slice 3.1;
    `Transfer.cdcTrackedTables` + the `transfer.cdcTrackedSink` refusal;
    `TransferCanaryTests` "3.1: CDC pre-flight …" verifies refusal + override vs real SQL Server.)*
-4. **Per-run operator sign-off.** Each `--execute` against a real UAT sink is a
+4. **Per-run operator sign-off.** Each `--execute` against a managed-environment sink is a
    recorded decision keyed to (env × artifact-type), reusing the `approve` verb +
    `ApprovalStore` (Wave-3 slice 3.2) — NOT a standing grant. *(mechanism shipped;
    the policy that --execute consult it is part of THIS proposal.)*
-5. **Production write path remains V1's.** This authorization covers UAT-preview
+5. **Production write path remains V1's.** This authorization covers managed-environment preview
    only; it does not move the production write path to V2. The four-environment
    cutover and the N=10-green + sign-off flip gate are unchanged.
 
-**What sign-off unblocks.** With operator confirmation of the UAT-preview
+**What sign-off unblocks.** With operator confirmation of the managed-environment preview
 framing, this entry becomes the enacted R6 amendment, the `transfer --execute`
 exception is formally scoped, and slice 3.1's `AXIOMS.md` data-level-adjunction
 candidate can promote. Without it, `--execute` should be treated as
@@ -21087,7 +21087,7 @@ So S3's shape: `Preflight.all` becomes the single mandatory composition the verb
 
 ## 2026-06-09 — The three cloud-insertion data producers (`synthetic` / `legacy` / `peer`); A and B are dispositions, not times; `golden` re-keys users
 
-Resolved a multi-turn operator co-design of the **data origins that feed cloud insertion** — writing production-like rows *up* into a live cloud OutSystems environment (`cloud-uat`, a `direct` sink with `grant: data`, DML-only). Captured in the new design doc **`THE_DATA_PRODUCERS.md`** (sibling to `THE_SYNTHETIC_DATA_DESIGN.md` + `PRESCOPE_TRANSFER.md`); this entry is the resolved-questions record.
+Resolved a multi-turn operator co-design of the **data origins that feed cloud insertion** — writing production-like rows *up* into a managed OutSystems environment (`cloud-uat`, a `direct` sink with `grant: data`, DML-only). Captured in the new design doc **`THE_DATA_PRODUCERS.md`** (sibling to `THE_SYNTHETIC_DATA_DESIGN.md` + `PRESCOPE_TRANSFER.md`); this entry is the resolved-questions record.
 
 **1. The producer trinity is the cut.** Three origins feed cloud insertion, distinguished by *what the origin IS* and *which rendition it bears* — all three move the **same `SsKey` model** (none is foreign schema): **`synthetic`** (data generated to match a captured `Profile`, `σ : Profile ⟶ Data` — **BUILT**, `THE_SYNTHETIC_DATA_DESIGN.md`); **`legacy`** (the **B→A reverse leg** — the logical on-prem rendition the migration team populated, piped back up into the physical cloud; the `preview` flow); **`peer`** (a **peer cell at the same (physical) rendition** — e.g. `cloud-qa`; same model, only surrogates differ; the `golden` flow). The `legacy`↔`peer` distinction is the **source's rendition** (logical reverse-leg vs same-rendition physical peer), not foreign-vs-same schema. Identity is reconciled the same way for both (by `SsKey` / business key — it is the same model); `peer` re-keys because surrogates differ across cells, `legacy` reconciles on the reverse leg. *(Item 1's earlier "legacy = foreign schema, identity must be discovered" framing was wrong — see the course correction below.)*
 
@@ -21876,7 +21876,7 @@ speed, and the gate ceilings tolerate downward movement).
 ## 2026-06-12 — Slice 1 of the full-export reconciliation: inverse references become logical-only edges; the FK decision layer reads `HasDbConstraint`
 
 Context: `V1_FULL_EXPORT_RECONCILIATION_PLAN.md` (the 2026-06-12 parity
-research record; WP1 + WP2 land here). The operator's corporate run
+research record; WP1 + WP2 land here). The operator's managed-environment run
 surfaced two constraint-surface defects with one root: V2 lost V1's
 distinction between deployable and logical-only references.
 
@@ -22270,7 +22270,7 @@ terminators and the `GO` batch separator.
 `MigrationDependenciesEmitter` mirror (its `kindToScript` is the algebraic
 twin) is deferred to the slice that introduces a migration-row golden kind
 (WP6 step 5), where it lands with its own golden witness. The static lane
-is the one the operator's corporate run exercises.
+is the one the operator's managed-environment run exercises.
 
 **7. Golden witness.** `GoldenCatalog` gained `Tier` — a static lookup with
 an IDENTITY PK and authored rows — the first `AssignedBySink` static in the
@@ -23223,3 +23223,64 @@ config-driven full-export IS that ingestion path; the trigger has fired.
   the touched classes 109/0; the live-path Docker class 4/4 against the warm container.
 - **Deferred (operator): supplemental bootstrap kinds** (`ossys_User` et al. beyond
   the catalog's own entities) stay deferred — untouched here.
+
+## 2026-06-15 (later) — J5 managed-environment capability spike RUN; OPEN-1/2/3/5/6/7 resolved; the playbook deprecated
+
+J5 was the one ops-gated critical-path item — the spike whose findings ledger
+`J5_MANAGED_ENV_CAPABILITY_PLAYBOOK.md` §7 promised to feed, gating M5
+(`PREFLIGHT_CLOUD_INSERTION.md`), and the trigger for the "a writable connection
+preempts everything" sequencing rule (`CONSTELLATION_BACKLOG.md` §5;
+`V1_FULL_EXPORT_RECONCILIATION_PLAN.md` #8). It could not be exercised in the dev/Docker
+environment (no OSSYS source). **The J5 capability ladder was run against a real managed
+OutSystems environment (2026-06-15)**, and its findings are recorded below in the sanitized
+transportable form (capability verdicts + standard SQL Server error numbers — no
+environment, table, row, or connection detail). **The grant posture it found is a property
+of OutSystems managed environments generally** (the DML-only managed login — writes
+permitted, ALTER / IDENTITY_INSERT denied), not of the one instance probed, so the
+disposition holds across managed environments including production — this de-risks the
+cutover, not only a single-environment load. This entry is the canonical closure; the full
+synthesis (the P1–P11 taxonomy, the ledger, the forward charter) lives in
+`CHARTER_REVERSE_LEG_EXECUTION.md` (Part II).
+
+- **The ledger (generic vocabulary).** Writes permitted: SELECT / INSERT / UPDATE / DELETE;
+  **no ALTER** grant. `AssignedBySink` works — INSERT omitting the IDENTITY column returns
+  the platform-minted key (P2). `SET IDENTITY_INSERT` **denied (error 1088)** (P3) — so a
+  single absent ALTER grant settles P3, ALTER NOCHECK (P8), and TRUNCATE (P6-TRUNCATE)
+  together. DELETE of the captured row restored baseline; transaction ROLLBACK clean —
+  **rollback channel = SQL** (P6/P11). `MERGE … OUTPUT INTO` returns source→assigned pairs
+  (P4); table-variable / temp-table available (P5); a 5-row batch inserts/captures/deletes
+  clean (P7a). **Operator constraint:** no schema change and no marker rows on real tables —
+  cleanup is by **captured key**, which is also the FK-remap handle.
+- **OPEN-1 (identity) — RESOLVED.** `AssignedBySink` is the live path; `PreservedFromSource`
+  is refused on this estate (IDENTITY_INSERT denied). The disposition is fixed for the
+  reverse leg: sink-minted keys, captured per-row, remapped.
+- **OPEN-2 (write surface) — RESOLVED.** Direct SQL writes are permitted (the single biggest
+  external dependency, confirmed). The estate is not a platform-API-only surface.
+- **OPEN-6 (constraints / rollback) — RESOLVED.** Rollback channel = SQL (DELETE permitted);
+  NOCHECK / TRUNCATE inferred-denied from the absent ALTER grant.
+- **OPEN-5 (bulk lane vs two-phase) — PARTIAL.** Set-based `MERGE…OUTPUT` capture + the
+  temp-table render target are available, so the shipped set-based lane is viable on a real
+  managed environment. The per-row-vs-set-based throughput (**P7b**) is **not yet measured on the real wire**;
+  the set-based lane stays canonical and the ~271 rows/sec per-row figure remains the
+  comparison floor (`AUDIT_2026_06_10_REVERSE_LEG_DML_PROOF.md` §0 F2).
+- **OPEN-3 (CDC) — PARTIAL.** Transaction / lock semantics confirmed (BEGIN TRAN, ROLLBACK,
+  LOCK_TIMEOUT); the CDC tracking path itself is not yet exercised on a real managed environment, so the
+  NM-73 EXCEPT *auto-fallback* stays deferred ("revisit after J5") until the CDC verdict —
+  the manual `emission.dataVerification` override already shipped.
+- **OPEN-7 (user directory / ReconciledByRule) — OPEN.** The user-directory readability +
+  email-keying that gates the `ReconciledByRule` user re-key (**P10**) was not probed; the
+  connection-apparatus scope (environments / concurrency) is unscoped.
+- **Named residuals (not closed, gate the charter not the disposition):** P7b real-wire
+  throughput; P10 user directory; G1 object-scope DENY (P1b); the estate-wide P5 trigger
+  survey; OPEN-3 CDC.
+- **The playbook is DEPRECATED, not populated (operator decision).** Rather than fill the §7
+  template, `J5_MANAGED_ENV_CAPABILITY_PLAYBOOK.md` is deprecated (banner added, provenance only) and
+  its information relocated to the canonical stores — this log and
+  `CHARTER_REVERSE_LEG_EXECUTION.md`. The v1 probe sheet was superseded by the playbook; the
+  playbook is now superseded by the run.
+- **What this unblocks.** The J5 preemption is **discharged** — the queued Constellation /
+  Lapidary program may resume with J5 settled. The reverse-leg disposition is fixed:
+  `AssignedBySink` + captured-key remap + SQL cleanup; `ReconciledByRule` for users (pending
+  P10); no `PreservedFromSource`. M5's prerequisite ledger now exists (here + the compendium).
+  Remaining status-surface flips (`AUDIT_2026_06_13` "J5 (ops-gated)"; the `HANDOFF.md` /
+  backlog preemption letters) and the NM-73 auto-fallback arming are follow-ons.

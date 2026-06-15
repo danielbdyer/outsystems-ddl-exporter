@@ -486,7 +486,7 @@ runner `scripts/test.sh` (never one `dotnet test`); TRX-first failure capture.
 - **Goal:** Author the **missing formal R6 authorization** for the Transfer `--execute` write path (only
   an env-var gate `PROJECTION_ALLOW_EXECUTE=1` / exit-7 exists today — no superseding DECISIONS entry), and
   add a CDC pre-flight that refuses execute against a CDC-tracked sink.
-- **Files:** `DECISIONS.md` (the R6 amendment — scope = UAT-preview-only, dry-run default, CDC precondition,
+- **Files:** `DECISIONS.md` (the R6 amendment — scope = managed-environment-preview-only, dry-run default, CDC precondition,
   per-run sign-off; supersedes the implicit "scoped around R6" prose); `src/Projection.Pipeline/TransferRun.fs`
   (CDC pre-flight: query `sys.tables.is_tracked_by_cdc` on the sink; in `Execute` mode refuse unless
   `--allow-cdc`); `AXIOMS.md` (scaffold the **data-level adjunction axiom candidate**: for
@@ -495,9 +495,9 @@ runner `scripts/test.sh` (never one `dotnet test`); TRX-first failure capture.
   CDC table); `AxiomTests.fs` data-level-adjunction entry (Bucket A, citing the existing `TransferCanaryTests`
   data canary).
 - **Governance:** **the R6 amendment is the load-bearing deliverable** — R6 is non-negotiable without it.
-  `DECISIONS` gist — *"R6 amended: Transfer --execute authorized for UAT-preview only, dry-run default,
+  `DECISIONS` gist — *"R6 amended: Transfer --execute authorized for managed-environment preview only, dry-run default,
   CDC-precondition, per-run operator sign-off; production write path remains V1's."*
-- **Risks:** depends on OPEN-4 (operator confirms the UAT-preview framing) — organizational but cheap. The
+- **Risks:** depends on OPEN-4 (operator confirms the managed-environment preview framing) — organizational but cheap. The
   CDC check is defensive code buildable now regardless.
 
 #### 3.2 — Close the R6 approval loop (persist `ApprovalRegistry`)
@@ -737,11 +737,11 @@ runner `scripts/test.sh` (never one `dotnet test`); TRX-first failure capture.
 ### Wave 5 — Blocked / defer-with-trigger
 *Specs kept lighter (first slice + trigger). Build only when the named trigger fires.*
 
-#### 5.1 — Transfer D-exec (real UAT load)
-- **Status:** **blocked: OPEN-2** (does OutSystems Cloud UAT expose a writable SQL connection to entity tables,
+#### 5.1 — Transfer D-exec (managed-environment load)
+- **Status:** **blocked: OPEN-2** (does the managed OutSystems environment expose a writable SQL connection to entity tables,
   or is it platform-API-only?). Secondary: OPEN-1 (blank vs pre-existing), OPEN-6 (CHECK/trigger collisions).
 - **First action:** an **ops spike** — attempt a `Microsoft.Data.SqlClient` connection to a throwaway UAT entity
-  table and test `IDENTITY_INSERT`/INSERT. If forbidden, the whole D-exec/E-real-UAT path re-architects around
+  table and test `IDENTITY_INSERT`/INSERT. If forbidden, the whole D-exec/E-managed-environment path re-architects around
   the platform API and the dry-run/preview remains the deliverable.
 - **Buildable now:** add `--preview-row-cap` to `TransferArgs.fs` so the first real run is bounded. The execute
   itself needs 3.1 (R6 amendment) + the OPEN-2 resolution.
@@ -1535,9 +1535,9 @@ that point "replace V1" is not a promise — it is a continuously-checked theore
 3. **`osm verify-data` vs `Reconciliation.fs` overlap (4.4).** Decide reuse vs. new module before building.
 
 **Open external gates (organizational, not engineering):**
-- **OPEN-2** (the big one): does OutSystems Cloud UAT expose a writable SQL connection to entity-backing tables, or
-  is it platform-API-only? Gates Transfer D-exec (5.1) + real-UAT Slice E. **Resolve first** via the ops spike (5.1).
-- **UAT access + a live UAT database connection:** gates the T-30 dry-run itself (the reflow capability — slice 3.3 — is LANDED as opt-in in transfer/full-export; the run against a real UAT sink is access-blocked). No CSV inventory needed: transfer reads the live UAT sink.
+- **OPEN-2** (the big one): does the managed OutSystems environment expose a writable SQL connection to entity-backing tables, or
+  is it platform-API-only? Gates Transfer D-exec (5.1) + managed-environment Slice E. **Resolve first** via the ops spike (5.1).
+- **UAT access + a live UAT database connection:** gates the T-30 dry-run itself (the reflow capability — slice 3.3 — is LANDED as opt-in in transfer/full-export; the run against a managed OutSystems environment is access-blocked). No CSV inventory needed: transfer reads the live UAT sink.
 - **OPEN-1 / OPEN-3 / OPEN-6:** disposition mix (blank vs pre-existing), UAT CDC-tracking, CHECK/trigger collisions
   — all secondary to OPEN-2.
 

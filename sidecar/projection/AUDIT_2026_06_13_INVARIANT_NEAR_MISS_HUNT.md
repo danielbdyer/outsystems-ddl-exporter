@@ -249,7 +249,7 @@ these load-bearing comments are wrong and will cost the next agent.*
 the reconciliation plan itself marks **fired**, making them owed, not speculative.*
 
 - **NM-70 · WP5 `EmissionPolicy.IdentityAnnotations: emit|omit` gate — named follow-on, entirely unwired.** `Policy.fs:99-114` (no field). The `Projection.*` rename shipped; the gate and its "named downgrade" diagnostic did not; annotations emit unconditionally. *High open.*
-- **NM-71 · WP9 `projection compare` verb — trigger fired (corporate run, event-ledger #1), unimplemented.** No `DiffSource`, no `compare` in the verb table. *High open.*
+- **NM-71 · WP9 `projection compare` verb — trigger fired (managed-environment run, event-ledger #1), unimplemented.** No `DiffSource`, no `compare` in the verb table. *High open.*
 - **NM-72 · WP8 `Order_Num` / Service-Studio column ordering — unimplemented; trigger named "crucial business case."** No `Order : int option` on `Attribute`; emission order is SsKey-derived, diverging from the operator's stated requirement. *High open.*
 - **NM-73 · WP6.6 EXCEPT validate-before-apply (`emission.dataVerification`) — the operator-requested conservative fallback until J5, unbuilt.** The safety override C2 promised is currently unavailable. *High open.*
 - **NM-74 · Per-lane `Data/*.sql` emit gated on `≥ 2 lanes`; the plan said unconditional, so the single-lane golden never pins per-lane bytes.** `Pipeline.fs:613`. The four-artifact integration pin the plan demanded is not satisfiable on the golden path. *Cat 1 · Med.*

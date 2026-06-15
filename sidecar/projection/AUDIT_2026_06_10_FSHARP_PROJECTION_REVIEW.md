@@ -80,7 +80,7 @@ The codebase's signature near-miss pattern was NOT half-built features but
   **EMPTY as of this branch** — every item either pre-shipped (2026-06-09) or
   shipped here (§⓪′ of the backlog).
 - **Cloud-insertion cutover (the big one)**: unchanged — all three producer
-  canaries green; **J5** (real-UAT execute, OPEN-2) is the critical path and
+  canaries green; **J5** (managed-environment execute, OPEN-2) is the critical path and
   is operator-gated on a writable connection; then the R6 N=10 ladder.
 - **Reverse-leg runner arm (J3 residual)**: deliberately unforced pending a
   contract source (shared authored model in both renditions, or
