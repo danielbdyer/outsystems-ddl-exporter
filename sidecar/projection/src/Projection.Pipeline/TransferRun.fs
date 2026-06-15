@@ -1201,6 +1201,26 @@ module Transfer =
         { Ingested : int
           Written  : int }
 
+    /// Phase 4 — the movement DryRun row-count estimate. The streaming
+    /// realization ingests nothing on DryRun (the rows STREAM at write
+    /// time), so its preview reported zero rows-would-move; the operator
+    /// could not see "N rows would move" before committing. This is the
+    /// cheap exact count (`COUNT_BIG(*)` aggregate — one round-trip per
+    /// kind, no row scan) the streaming DryRun reports as `RowsIngested`,
+    /// the materialized DryRun's row count without the materialization. The
+    /// SQL is terminal text over a validated `TableId` (the file's
+    /// LINT-ALLOW boundary). `int` of the aggregate is faithful for the
+    /// preview surface (`KindOutcome.RowsIngested : int`).
+    let private countKindRows (cnn: SqlConnection) (kind: Kind) : Task<int> =
+        task {
+            use cmd = cnn.CreateCommand()
+            cmd.CommandText <-
+                sprintf "SELECT COUNT_BIG(*) FROM [%s].[%s];"
+                    (TableId.schemaText kind.Physical) (TableId.tableText kind.Physical)
+            let! scalar = cmd.ExecuteScalarAsync()
+            return int (unbox<int64> scalar)
+        }
+
     /// The bounded-memory realization of the straight-load plan: per kind,
     /// the source streams in `CaptureChunkSize` chunks through
     /// rename-repoint → FK-repoint (deferred excluded) → the capture
@@ -1621,10 +1641,38 @@ module Transfer =
                     | Some refusal -> return Result.failureOf refusal
                     | None ->
                         if mode <> Execute then
+                            // Phase 4 — the movement DryRun preview. Estimate
+                            // each kind's rows-would-move with a cheap exact
+                            // COUNT (no ingestion): a reconciled kind moves
+                            // nothing (ReconciledByRule — the sink owns it), so
+                            // it previews 0; every other kind previews its
+                            // source count. RowsWritten stays 0 (a preview), and
+                            // the reconcile outcome (Unmatched / Ambiguous) rides
+                            // the same report — the rekey-map preview.
+                            let! previewKinds =
+                                task {
+                                    let mutable acc : KindOutcome list = []
+                                    for l in plan.Loads do
+                                        let! estimate =
+                                            task {
+                                                if l.Disposition = IdentityDisposition.ReconciledByRule then return 0
+                                                else
+                                                    match Catalog.tryFindKind l.Kind sourceContract with
+                                                    | Some srcKind -> return! countKindRows source srcKind
+                                                    | None -> return 0
+                                            }
+                                        acc <-
+                                            { Kind              = l.Kind
+                                              Disposition       = l.Disposition
+                                              RowsIngested      = estimate
+                                              DeferredFkColumns = l.DeferredFkColumns
+                                              RowsWritten       = 0 } :: acc
+                                    return List.rev acc
+                                }
                             return
                                 Result.success
                                     { Mode                = mode
-                                      Kinds               = reportKinds mode plan
+                                      Kinds               = previewKinds
                                       UnbreakableCycleFks = plan.UnbreakableCycleFks
                                       UnmatchedIdentities = reconciled.Unmatched
                                       AmbiguousIdentities = reconciled.Ambiguous

@@ -262,6 +262,50 @@ type ReverseLegStreamingTests(fixture: EphemeralContainerFixture) =
                     Assert.Equal(0, payments)
                 })
 
+    // -- Phase 4 (the charter): movement dry-run preview -----------------------
+    //
+    // The streaming realization ingests nothing on DryRun, so its preview used
+    // to report zero rows-would-move. Phase 4 estimates each kind's rows with a
+    // cheap exact COUNT (no row scan): a reconciled kind previews 0 (the sink
+    // owns it), the rest preview their source counts, and the reconcile outcome
+    // (Unmatched / Ambiguous) rides the same report — the rekey-map preview. A
+    // preview writes nothing.
+    [<Fact>]
+    member this.``Phase 4 dry-run preview: a streaming DryRun estimates rows-would-move per kind (reconciled kind previews 0) and writes nothing`` () =
+        if not (ReverseLegFixtures.skipIfNoDocker "L3DryRunPreview") then () else
+        this.WithEstates "L3DryRunPreview" ReverseLegFixtures.seedClean
+            (fun src sink logicalContract physicalContract ->
+                task {
+                    // Seed the sink's own users so the rekey preview shows a full match.
+                    do! Deploy.executeBatch sink
+                            "INSERT INTO [dbo].[OSUSR_L3_CUSTOMER] ([EMAIL]) VALUES (N'alice@x'),(N'bob@x');"
+
+                    let! reportR =
+                        Transfer.runStreamingReconcilingWithRenames
+                            Transfer.DryRun true false src sink
+                            logicalContract physicalContract this.reconcileCustomerByEmail None
+                    let report = ReverseLegFixtures.value reportR
+                    Assert.Equal(Transfer.DryRun, report.Mode)
+
+                    let rowsOf k = report.Kinds |> List.find (fun x -> x.Kind = ReverseLegFixtures.kKey k)
+                    // The reconciled User kind previews 0 rows-would-move (ReconciledByRule).
+                    Assert.Equal(IdentityDisposition.ReconciledByRule, (rowsOf "Customer").Disposition)
+                    Assert.Equal(0, (rowsOf "Customer").RowsIngested)
+                    // The rest preview their EXACT source counts (no ingestion).
+                    Assert.Equal(3, (rowsOf "Account").RowsIngested)
+                    Assert.Equal(3, (rowsOf "Invoice").RowsIngested)
+                    Assert.Equal(4, (rowsOf "Payment").RowsIngested)
+                    // A preview writes nothing, and the rekey preview shows a full match.
+                    Assert.True(report.Kinds |> List.forall (fun x -> x.RowsWritten = 0))
+                    Assert.Empty(report.UnmatchedIdentities)
+
+                    // The sink is unchanged — only the 2 pre-seeded users, no movement.
+                    let! customers = ReverseLegFixtures.countRows sink "[dbo].[OSUSR_L3_CUSTOMER]"
+                    let! accounts  = ReverseLegFixtures.countRows sink "[dbo].[OSUSR_L3_ACCOUNT]"
+                    Assert.Equal(2, customers)
+                    Assert.Equal(0, accounts)
+                })
+
     [<Fact>]
     member this.``Phase 3 address-drift: a streaming execute whose own journal is orphaned by a prior run's journal refuses by name (transfer.resume.journalAddressDrift) — never a silent re-run`` () =
         if not (ReverseLegFixtures.skipIfNoDocker "L3AddrDrift") then () else

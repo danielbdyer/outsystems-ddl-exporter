@@ -473,10 +473,12 @@ tables/columns add·drop·rename, the change-norm `‖δ‖`, statement/rename c
 `SkippedReferences` (FK orphans), unbreakable cycles, capture-lane descents. Declared-loss gates
 (`--allow-drops`, `--allow-cdc`); grant-refusal at plan time for schema-into-`grant:data` (exit 9).
 
-- **GAP:** the combined `migrate-with-data` path (the headline reverse leg with rekeying) has **no DryRun
-  arm** (`RunFaces.fs:1833`, always `Transfer.Execute`). `RowsWritten` is forced to 0 in DryRun (`:790`) and
-  the streaming DryRun ingests nothing — so **no row-count estimate**, **no DML/row preview**, **no
-  rekey-map preview**, **no resume-state preview** ("which chunks would skip vs re-move"). The grant-refusal
+- **PARTLY CLOSED (Phase 4, 2026-06-15):** the streaming reverse-leg DryRun previously ingested nothing, so it
+  gave **no row-count estimate**. It now reports per-kind "N rows would move" via a cheap exact `COUNT_BIG(*)`
+  (`countKindRows`), with the reconciled kind at 0 and the **rekey-map preview** (`UnmatchedIdentities` /
+  `AmbiguousIdentities`) on the same report. Still **STAGED**: the **resume-state preview** ("which chunks would
+  skip vs re-move") and the **live row-grained ETA bar** (the parked `SpectreProgressAdapter` — its denominator
+  now exists, but the live rendering's wake is the real-wire run). The grant-refusal
   "gate" on the live move is **advisory-only** today (R6 dual-track: the survey warns then proceeds); it flips
   to a hard per-pair stop at cutover.
 
@@ -623,11 +625,17 @@ Dependency-ordered. Each phase has an exit test.
   (`ReverseLegStreamingTests` "chunk resume"). The scale-representative journal size + live socket-drop are the
   staged real-wire residuals.
 
-### Phase 4 — Movement dry-run + row-grained progress
-- **Movement dry-run**: row-count estimate, rekey-map preview, resume-state preview, for `migrate-with-data`.
-- **Row-grained progress/ETA**: feed the parked `SpectreProgressAdapter` a rows-written/rows-remaining
-  denominator + a durable surface surviving a reconnect.
-- **Exit:** an operator can preview "N rows / M chunks would move, K would skip" and watch it live.
+### Phase 4 — Movement dry-run + row-grained progress — **preview DONE 2026-06-15; live bar STAGED**
+- ✅ **Movement dry-run row-count estimate**: the streaming DryRun now reports per-kind "N rows would move"
+  via a cheap exact `COUNT_BIG(*)` (`countKindRows`) — a reconciled kind previews 0 (re-keyed, not re-imported),
+  `RowsWritten` 0, and the rekey-map preview (`UnmatchedIdentities` / `AmbiguousIdentities`) rides the same
+  report. (The materialized DryRun already reported counts; this closes the streaming-DryRun-ingests-nothing GAP.)
+- ⏳ **STAGED — row-grained progress/ETA** (the live bar): the denominator the parked
+  `SpectreProgressAdapter : IProgressRunner` needs now exists (`countKindRows`), but the live ETA rendering is a
+  TTY surface whose wake is the **real-wire multi-hour run** — a Docker test has nothing to watch. Wiring the
+  parked adapter + a durable reconnect-surviving surface is the carry-over, gated on Phase 1's real wire.
+- ✅ **Exit (preview half):** an operator can preview "N rows would move per kind, K users matched / J unmatched"
+  before any DML (`ReverseLegStreamingTests` "Phase 4 dry-run preview"). The "watch it live" half is the staged bar.
 
 ### Phase 5 — Cutover-readiness gates
 - ≥1 **full production-shaped dry-run** (the deferred cutover gate).

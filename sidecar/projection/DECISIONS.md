@@ -23409,3 +23409,43 @@ close a SILENT duplicate/re-run hazard with a NAMED refusal — the cardinal-sin
   on re-run) — **needs a real dropped connection to prove**; it is a Phase-1 real-wire
   co-requisite, not a Docker-witnessable lever. Both stay named with their wake; the built
   levers above close the duplicate hazard that gated the rest.
+
+## 2026-06-15 (later) — Phase 4: the movement dry-run row-count estimate (streaming preview); the live progress bar STAGED
+
+The charter's **Phase 4** buildable lever. The materialized reverse-leg DryRun already reports
+real per-kind row counts (it materializes the rows); the **streaming** DryRun ingested nothing
+(the rows stream at write time), so its preview reported zero rows-would-move — an operator
+could not see "N rows would move" before committing a destructive estate-scale load.
+
+- **The streaming DryRun row-count estimate (`countKindRows`).** The streaming DryRun arm of
+  `runStreamingReconcilingWithRenames` now estimates each kind's rows-would-move with a cheap
+  EXACT count (`COUNT_BIG(*)` aggregate — one round-trip per kind, no row scan) and reports it
+  as `RowsIngested`. A **reconciled** kind previews 0 (ReconciledByRule — the sink owns it; it
+  is re-keyed, not re-imported), every other kind previews its source count, `RowsWritten`
+  stays 0 (a preview writes nothing), and the reconcile outcome (`UnmatchedIdentities` /
+  `AmbiguousIdentities`, from Phase 2) rides the same report — the **rekey-map preview**. So the
+  operator now previews per-kind "N rows would move" + "K users matched / J unmatched" before
+  any DML, on the estate-scale path.
+
+- **Witnessed.** `ReverseLegStreamingTests` "Phase 4 dry-run preview": a streaming DryRun on the
+  seeded estate previews Account=3 / Invoice=3 / Payment=4 (exact source counts), the reconciled
+  Customer kind previews 0, every `RowsWritten` is 0, `UnmatchedIdentities` is empty (full match),
+  and the sink is unchanged. **Run for real against the warm container** (`PROJECTION_MSSQL_CONN_STR`),
+  per-test duration ~1.2s — NOT a no-op (see the env note below). Build clean.
+
+- **STAGED — the live row-grained progress bar.** The denominator the parked
+  `SpectreProgressAdapter : IProgressRunner` (Tier-3, `REPORTING_HORIZON.md` / `DYNAMIC_DISPLAY.md`)
+  needs — rows-total per kind — now exists (the same `countKindRows`). But the live ETA bar is a
+  TTY rendering surface whose **wake is the real-wire multi-hour run**: a 40-second Docker test
+  has nothing to watch, and a deterministic witness for a live bar is not Docker-shaped. Wiring
+  the parked adapter to the row denominator + a durable reconnect-surviving surface is the
+  remaining Phase-4 thread, gated on Phase 1's real wire. The stage-grained `--watch` board and
+  the row-count preview ship now; the live row bar stays parked with its wake named.
+
+- **⚠️ Process note (cost real time this session; memory `local-windows-dev-env` updated).** On
+  the Windows dev box, `DockerDaemon.ensureRunning()` checks only a **Linux** socket, so every
+  `EphemeralContainerFixture` test SILENTLY NO-OPs (a 0.4ms `()` pass — the survival-rule-#12
+  trap) unless `PROJECTION_MSSQL_CONN_STR` points at the warm `projection-mssql-warm` container.
+  All Phase 2–4 Docker witnesses were re-run with that env var set and confirmed real via
+  per-test TRX durations (seconds, not ms). NEVER trust the green count for Docker-gated tests
+  here — check the durations.
