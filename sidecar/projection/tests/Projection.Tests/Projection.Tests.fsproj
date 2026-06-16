@@ -43,6 +43,7 @@
     <Compile Include="ViewTests.fs" />
     <Compile Include="ExplainViewTests.fs" />
     <Compile Include="TtyRendererTests.fs" />
+    <Compile Include="TotalityFunctor.fs" />
     <Compile Include="VoiceTotalityTests.fs" />
     <Compile Include="WatchTests.fs" />
     <Compile Include="CapabilitySurveyTests.fs" />

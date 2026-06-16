@@ -4,6 +4,7 @@ open Xunit
 open Projection.Core
 open Projection.Pipeline
 open Projection.Cli
+open Projection.Tests.TotalityFunctor
 
 /// THE VOICE — the `code ⇔ copy` totality test (`THE_VOICE_INTEGRATION.md` §5/§7
 /// slice 1; `DECISIONS 2026-06-06`). The sibling of the registry's
@@ -151,28 +152,33 @@ let private samplePayload : Voice.Payload =
           "schemaWarnings", box "the After deployment carries an added index (verify.schema.indexAdded)" ]
 
 // ---------------------------------------------------------------------------
-// code ⇔ copy totality
+// code ⇔ copy totality — the `X ⊆ Y ∧ Y ⊆ X ⇒ X = Y` core via the totality
+// functor: in-scope codes and voiced copy coincide exactly, codes distinct.
 // ---------------------------------------------------------------------------
 
-[<Fact>]
-let ``Voice totality: every in-scope LIVE code has a copy entry (code → copy)`` () =
-    let missing = Set.difference inScopeCodes voicedCodes
-    Assert.True(Set.isEmpty missing, sprintf "in-scope codes with no Voice copy: %A" (Set.toList missing))
+let private codeCopySpec : TotalitySpec<string, Voice.Copy, string> =
+    { Left = inScopeCodes
+      Right = voicedCodes
+      LeftLabel = "in-scope code"
+      RightLabel = "Voice copy entry"
+      Members = Voice.all
+      Project = fun c -> c.Code }
 
 [<Fact>]
-let ``Voice totality: every copy entry maps to an in-scope code (copy → code)`` () =
-    let extra = Set.difference voicedCodes inScopeCodes
-    Assert.True(Set.isEmpty extra, sprintf "Voice entries with no in-scope code: %A" (Set.toList extra))
+let ``Voice totality: code ⇔ copy is bidirectional (every in-scope LIVE code has copy, every copy maps to an in-scope code)`` () =
+    // `X ⊆ Y ∧ Y ⊆ X ⇒ X = Y`: in-scope codes (`code → copy`) and voiced copy
+    // (`copy → code`) coincide exactly — the operator copy cannot drift from the
+    // events by construction.
+    assertBidirectionalSubset codeCopySpec
+
+[<Fact>]
+let ``Voice totality: codes are distinct (the projection is injective)`` () =
+    assertProjectionDistinct codeCopySpec
 
 [<Fact>]
 let ``Voice totality: no copy is authored for a code the engine cannot emit`` () =
     let phantom = Set.difference voicedCodes knownEmittableCodes
     Assert.True(Set.isEmpty phantom, sprintf "Voice entries for non-emittable codes: %A" (Set.toList phantom))
-
-[<Fact>]
-let ``Voice totality: codes are distinct`` () =
-    let codes = Voice.all |> List.map (fun c -> c.Code)
-    Assert.Equal<string list>(List.distinct codes, codes)
 
 [<Fact>]
 let ``Voice totality: every entry cites a recognized THE_VOICE section`` () =

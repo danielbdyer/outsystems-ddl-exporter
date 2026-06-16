@@ -3,6 +3,7 @@ module Projection.Tests.CapabilitySurveyTotalityTests
 open Xunit
 open Projection.Core
 open Projection.Pipeline
+open Projection.Tests.TotalityFunctor
 open type Projection.Pipeline.CapabilitySurvey.Capability
 
 /// THE CAPABILITY SURVEY — the `required ⇔ surveyed` totality test (S2;
@@ -54,33 +55,30 @@ let private requiredCapabilities (cfg: ProjectionConfig) : Set<CapabilitySurvey.
 let private surveyedCapabilities : Set<CapabilitySurvey.Capability> = Set.ofList CapabilitySurvey.Capability.all
 
 // ---------------------------------------------------------------------------
-// required ⇔ surveyed
+// required ⇔ surveyed — the `X ⊆ Y ∧ Y ⊆ X ⇒ X = Y` core via the totality
+// functor: every required capability is probeable, no probe is dead, and the
+// permission projection over the closed `Capability` DU is injective.
 // ---------------------------------------------------------------------------
 
-[<Fact>]
-let ``CapabilitySurvey.Capability totality: every required capability is one the survey knows to probe (required ⊆ surveyed)`` () =
-    let unprobeable = Set.difference (requiredCapabilities representativeConfig) surveyedCapabilities
-    Assert.True(
-        Set.isEmpty unprobeable,
-        sprintf "flows require capabilities the survey cannot probe: %A" (Set.toList unprobeable))
+let private requiredSurveyedSpec : TotalitySpec<CapabilitySurvey.Capability, CapabilitySurvey.Capability, string> =
+    { Left = requiredCapabilities representativeConfig
+      Right = surveyedCapabilities
+      LeftLabel = "required capability"
+      RightLabel = "surveyed capability"
+      Members = CapabilitySurvey.Capability.all
+      Project = CapabilitySurvey.Capability.permissionOf }
 
 [<Fact>]
-let ``CapabilitySurvey.Capability totality: every surveyed capability is reachable as a real flow requirement (surveyed ⊆ required)`` () =
-    // No dead probe — every capability the catalog can probe is exercised by some
-    // realizable flow shape. The representative config reaches all five.
-    let dead = Set.difference surveyedCapabilities (requiredCapabilities representativeConfig)
-    Assert.True(
-        Set.isEmpty dead,
-        sprintf "the survey probes capabilities no flow requires (dead probes): %A" (Set.toList dead))
-
-[<Fact>]
-let ``CapabilitySurvey.Capability totality: the catalog is exactly the required surface for the representative estate`` () =
-    Assert.Equal<Set<CapabilitySurvey.Capability>>(surveyedCapabilities, requiredCapabilities representativeConfig)
+let ``CapabilitySurvey.Capability totality: required ⇔ surveyed is bidirectional (every required capability is probeable, no probe is dead, the catalog is exactly the required surface)`` () =
+    // `X ⊆ Y ∧ Y ⊆ X ⇒ X = Y`: the harvested requirement surface and the survey
+    // catalog coincide exactly — every required capability is one the survey knows
+    // to probe, every surveyed capability is reachable as a real flow requirement
+    // (no dead probe), so the catalog is exactly the required surface.
+    assertBidirectionalSubset requiredSurveyedSpec
 
 [<Fact>]
 let ``CapabilitySurvey.Capability totality: permission names are distinct (no two capabilities collide on one probe)`` () =
-    let names = CapabilitySurvey.Capability.all |> List.map CapabilitySurvey.Capability.permissionOf
-    Assert.Equal<string list>(List.distinct names, names)
+    assertProjectionDistinct requiredSurveyedSpec
 
 [<Fact>]
 let ``CapabilitySurvey.Capability totality: the probe is total — every capability resolves to a non-empty permission name`` () =
