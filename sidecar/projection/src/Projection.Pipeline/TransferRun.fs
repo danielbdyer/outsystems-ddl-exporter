@@ -577,13 +577,35 @@ module Transfer =
                 |> List.ofSeq
         }
 
+    /// The CAPABILITY recognizer for the FK re-trust — the ALTER cannot run
+    /// because the sink login holds no ALTER on the object (a `ManagedDml` /
+    /// `grant: data` cloud sink, granted only SELECT/INSERT/UPDATE/DELETE).
+    /// 1088 / 4902 ("cannot find the object … because it does not exist or you do
+    /// not have permissions" — the ALTER-TABLE permission/visibility form) and
+    /// 229 (ALTER permission denied) DESCEND to the named
+    /// `FkTrustNotRestoredOnBulkLoad` tolerance. Everything else — notably a
+    /// constraint conflict (547) — PROPAGATES: a re-validation that fails on the
+    /// DATA is the loud fidelity signal, never masked (mirrors
+    /// `SurrogateCapture.isCapabilityRefusal`).
+    let private isAlterCapabilityRefusal (ex: SqlException) : bool =
+        ex.Number = 1088 || ex.Number = 4902 || ex.Number = 229
+
     /// Restore the trust the bulk load stripped — re-validate each FK in the
     /// pre-load snapshot (`wasTrusted`) with `ALTER TABLE … WITH CHECK CHECK
     /// CONSTRAINT` (one child×parent-PK semi-join per FK). After a faithful
-    /// transfer the data satisfies each FK so it succeeds; a FAILURE is a LOUD
-    /// signal the load was not faithful — a post-load integrity assertion, never
-    /// silent corruption. The gate is `WriteOptions.RetrustForeignKeys` (default
-    /// on); the opt-out is the named `ToleratedDivergence.FkTrustNotRestoredOnBulkLoad`.
+    /// transfer the data satisfies each FK so it succeeds; a CONSTRAINT failure
+    /// is a LOUD signal the load was not faithful — a post-load integrity
+    /// assertion, never silent corruption.
+    ///
+    /// A sink that cannot ALTER at all — the `ManagedDml` cloud archetype
+    /// (`grant: data`; no ALTER anywhere in the write path) — DESCENDS the
+    /// capability ladder: the re-trust is skipped, the FKs stay as the bulk load
+    /// left them (untrusted), and the disposition is surfaced via the
+    /// `retrust-skipped` stage — the named `ToleratedDivergence.FkTrustNotRestoredOnBulkLoad`,
+    /// never silent. (Re-trust is a `FullRights` capability; on a DML-only login
+    /// the ALTER is not available, exactly as the J5 archetype model records.)
+    /// The gate is `WriteOptions.RetrustForeignKeys` (default on); the explicit
+    /// opt-out is the same named tolerance.
     let private restoreFkTrust (sink: SqlConnection) (wasTrusted: (string * string * string) list) : Task<unit> =
         task {
             if List.isEmpty wasTrusted then return () else
@@ -595,8 +617,15 @@ module Transfer =
                     System.String.Concat(
                         "ALTER TABLE ", Render.quote sch, ".", Render.quote tbl,
                         " WITH CHECK CHECK CONSTRAINT ", Render.quote fk, ";"))
-            do! Deploy.executeBatch sink (String.concat "\n" stmts)
-            LogSink.recordStageProgress "retrust" (List.length wasTrusted) (List.length wasTrusted) 0L
+            try
+                do! Deploy.executeBatch sink (String.concat "\n" stmts)
+                LogSink.recordStageProgress "retrust" (List.length wasTrusted) (List.length wasTrusted) 0L
+            with :? SqlException as ex when isAlterCapabilityRefusal ex ->
+                // Capability descent — the sink login cannot ALTER (a ManagedDml /
+                // data-grant cloud sink). No ALTER ⇒ no re-validation: descend to
+                // the named FkTrustNotRestoredOnBulkLoad tolerance, surfaced via
+                // the retrust-skipped stage, never silent.
+                LogSink.recordStageProgress "retrust-skipped" 0 (List.length wasTrusted) 0L
         }
 
     /// The durable phase-marker table — records which transfers completed, so a
