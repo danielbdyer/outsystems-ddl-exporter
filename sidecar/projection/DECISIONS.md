@@ -24096,3 +24096,98 @@ realization-selector / "downgrades never silent" commitments.
   (`writePlanStreaming`, composing with `ReverseLegRealization.choose` + the capability-descent ladder) and
   `runSynthetic`; expose the `RetrustForeignKeys` opt-out on the CLI face. Until then those realizations exhibit
   the named `FkTrustNotRestoredOnBulkLoad`.
+
+---
+
+## 2026-06-15 (later still) — THE VECTOR Wave 2 BUILT: the reversible algebra, the real-wire proof, and the transactionality honest-naming (M11/M12/M13 + M3 + M20)
+
+The third chapter of THE VECTOR (`THE_VECTOR.md` §6 / §7 Wave 2) — the **first fan-out wave**. Wave 0
+(honesty) and Wave 1 (the keystone M1) were single coupled moves done inline; Wave 2 is five moves across
+three file-disjoint surfaces. **Orchestrated as a `Workflow`** (the operator asked for it explicitly): three
+worktree-isolated implementers (the `CatalogDiff` trio / M3 / M20), **one default-skeptical adversarial
+verifier per move** (prompted to refute correctness AND non-vacuity), and **one integrator** (the main loop)
+who alone owned the authoritative build, the matrix, and the gates. All three verifiers returned ACCEPT
+(high confidence); integration was via `git cherry-pick` of the implementers' committed branches (never
+text-diff-apply — the Windows trailing-newline trap that bit Wave 0).
+
+- **M13 — `CatalogDiff.between` is now total** (`Catalog -> Catalog -> CatalogDiff`; the vestigial
+  `Result<_, EmitError>` dropped — `Ok` was the only inhabited branch). `compose` reads the displacement
+  directly (`between (source d1) (target d2)`). The signature cascade adapted **13 src call sites + ~120 test
+  sites across 16 files**: match-on-`Ok/Error` sites bind directly (the dead `Error` branch removed — `between`
+  never errored); Result-typed boundaries Ok-wrap to PRESERVE their downstream signatures (the
+  `Comparison<Catalog,_>.Between` field mirrors its `physicalSchema` sibling; `Lifecycle`/`Episode`
+  `evolutionChain`/`netDiff` keep their `Result<_, EmitError>` shape — minimal blast radius, no cascade into
+  `reconstructLatest`). The now-unused `sequenceEmit` was removed from both `Lifecycle.fs` and `Episode.fs`.
+- **M11 — the triangle inequality, made a theorem.** `norm (compose d1 d2) ≤ norm d1 + norm d2` over adjacent
+  diffs (a Fact with a strict churn-cancel case — A→B adds an attribute, B→C removes it, so `net 0 < path 2` —
+  plus an equality case; and a swept `[<Property>]` over 100 generated adjacent triples). **The norm is now a
+  provable METRIC**, not merely a non-negative count — the missing metric law that "minimality is measured"
+  (the CDC-norm, T15) quietly depended on.
+- **M12 — the groupoid inverse.** `CatalogDiff.inverse d = between (target d) (source d)` + the freed rollback
+  witness (`applyDiff (inverse d) (target d) = source d`, order-insensitive over the captured surface) + the
+  groupoid law (`compose d (inverse d) = identity at source`). The partial groupoid is completed: every arrow
+  is invertible on its composability class. The existing `compose` fail-loud-on-non-adjacent invariant survives.
+- **M3 — the swept change-algebra proof** (THE VECTOR §5.2, "the highest-value unfired proof in the system").
+  New self-contained `ChangeAlgebraSweepTests.fs`: `genCatalogPair : Gen<Catalog*Catalog>` (A perturbed into B
+  by a generated, valid-by-construction edit list — kind add/remove/rename + attribute add/remove/reshape; no
+  refs/indexes so no edit can strand an FK/index, every B through the smart constructors) and three swept
+  `[<Property>]` tests: the **T16 master equation** in-process (`isEmpty (between B (applyDiff (between A B) A))`),
+  the **no-cheat** base-threading property (applying the A→B delta to a base C with an extra kind keeps that
+  kind — catches a `fun _ d -> target d` cheat), and **norm consistency** (`norm = 0 ⟺ isEmpty`, `norm = Σ`
+  channel counts). Raises the round-trip law from fixture-witnessed to property-witnessed; the live-deploy
+  backend stays separately gated. **Honest scope note (verifier-caught):** the sweep exercises the
+  kind-presence/rename + attribute channels; the FK / index / sequence / **kind-facet (`ChangedKinds`)**
+  channels are 0-pinned in the sweep (covered by the C1 fixtures in `CatalogDiffTests`), so M3 is NOT cited as
+  property-proof for those channels.
+- **M20 — the Transactionality honest-naming half** (THE VECTOR §5.1). `GateLabel.MidWriteNotProtected` (the
+  named destructive class for a mid-write crash on an unprotected write path) + its **exit-9** classify arm
+  (`transfer.midWriteNotProtected` / `migrate.midWriteNotProtected`) + a pure gate `transactionalityViolations`
+  (mirroring `permissionViolations`: a `TransactionProtection = Atomic | Resumable | Unprotected` DU →
+  `TransactionalityViolation list`; protected ⇒ empty, Unprotected ⇒ named per write) + `transactionalityPreflight`.
+  The closed-DU cascade is complete (labelText, `Voice.gateStatement`, both totality lists). **The live atomic
+  `BEGIN TRAN` wrapper STAYS DEFERRED** per the recorded `Preflight.fs` A3 survey-gate — this is the
+  honest-naming half only; a mid-write crash is now a named refusal, not the generic exit-3 `UnclassifiedRefusal`.
+- **M11/M12 axiom witnesses (T-II).** The two "deepen the algebra" laws earn executable-axiom coverage:
+  `AxiomTests.fs` T13 gains the M12 inverse (the partial groupoid completed); T15 gains the M11 triangle
+  inequality (`‖·‖` is a metric). `citationOf` binds each to the live `CatalogDiffTests` test; the M16 gate
+  verifies resolution; `AXIOMS.md` T13/T15 carry the dated amendment notes.
+- **Witness (all green, integrator-authoritative).** Debug + **Release** 0/0. Pure pool **3372 / 0** (210
+  skipped). **Docker pool 246 / 246** (real durations — ReverseLegScale Tier-4 streaming 56 s; not a no-op).
+  `AxiomTests` 79/0 (incl. the M16 citation gate). **`matrix-status.sh` regenerated byte-identically**
+  (gate=PASS; rungs L1/L2/L3 = 5/4/5; tolerances 10, 3 open; `@ladder` cross-check passes) — Wave 2 added/retired
+  no tolerance and renamed no witness, so the under-claiming guarantee is undisturbed. `verifiability-gate.sh`
+  exit 0 (zero phantom Bucket-A/B; the pre-existing 4-unbucketed-deferral WARN is untouched).
+- **Exit criterion (Wave 2) — MET.** The groupoid laws are green; `applyDiff (inverse d) (target d) = source d`
+  is a stated rollback witness; the master equation is swept over generated displacements; the norm is a proven
+  metric; the destructive failure mode is classified, not generic. **Next: Wave 3 (compression & idiom) —
+  M7 (diff `ChannelSpec`) · M8 (`JsonDocumentWriter` seam) · M9 (binding algebra) · M17 (totality functor) ·
+  M6 (`[<Struct>]` surrogate keys) · M19 (`row` UoM) · the `Changed → Reshaped` rename — the widest fan-out.**
+
+## 2026-06-15 (later still) — Option-C re-trust: capability descent on the no-ALTER (ManagedDml) sink (a pre-existing bug Wave 2's full Docker pool surfaced)
+
+Surfaced — NOT caused — by THE VECTOR Wave 2's full Docker-pool run (the trio change to `CatalogDiff` is a
+comparison primitive, so the integrator ran the **full** 246-test pool, not just `~Canary`). A pre-existing bug
+in the Wave-1 follow-on (option C, `c7133c5d`), **confirmed by running the failing test on the base commit**
+(identical failure, identical `restoreFkTrust` stack — my Wave 2 diff does not touch the re-trust logic).
+
+- **The bug.** `restoreFkTrust` (`TransferRun.fs`) runs `ALTER TABLE … WITH CHECK CHECK CONSTRAINT`
+  **unconditionally** on the materialized reverse-leg path when `RetrustForeignKeys` is on (the default). On a
+  **`ManagedDml` / `grant: data` cloud sink** (granted only SELECT/INSERT/UPDATE/DELETE — no ALTER anywhere in
+  the write path, the J5 archetype) the ALTER fails with **SQL error 1088** ("Cannot find the object … because
+  it does not exist or you do not have permissions"), failing the whole transfer. Option C's docstring assumed
+  the re-trust is "guaranteed to succeed after a faithful transfer" — true on a `FullRights` sink, but the
+  ManagedDml archetype cannot ALTER at all. The follow-on only ran `TransferCanaryTests` (a FullRights sink),
+  never `ReverseLegCanaryTests`, so the **DML-only-principal canary's "no ALTER anywhere in the write path"
+  contract was silently broken** — the exact "run the FULL Docker pool" discipline this caught.
+- **The fix (capability descent, mirroring `SurrogateCapture.isCapabilityRefusal`).** The re-trust ALTER now
+  DESCENDS on the ALTER-permission/visibility error family (1088 / 4902 / 229) to the **already-existing named
+  `ToleratedDivergence.FkTrustNotRestoredOnBulkLoad`**: the FKs stay as the bulk load left them (untrusted),
+  surfaced via the `retrust-skipped` stage, never silent. A constraint conflict (547) still **PROPAGATES** — a
+  re-validation that fails on the DATA is the loud fidelity signal option C intends, never masked. Re-trust is a
+  `FullRights` capability; on a DML-only login the ALTER is simply not available, exactly as the J5 archetype
+  model records. The error number (1088, not the assumed 4902) was confirmed empirically against the warm
+  container before narrowing the predicate.
+- **Witness.** `ReverseLegCanaryTests` + `TransferCanaryTests` **36/36** warm (the DML-only principal now green
+  via descent; the FullRights re-trust canaries still re-trust — no regression), then the full Docker pool
+  246/246. Bounded to `restoreFkTrust` (no archetype re-threading; the reactive descent needs no proactive
+  capability probe, sidestepping the CONTROL-implies-ALTER subtlety a grant-evidence gate would face).

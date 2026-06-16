@@ -36,7 +36,7 @@
 
 ---
 
-## Build addendum — 2026-06-15 (Wave 0 + Wave 1 BUILT — the keystone landed)
+## Build addendum — 2026-06-15 (Waves 0–2 BUILT — the keystone landed, the reversible algebra completed)
 
 > The study below is now partly **executed**, not just proposed. Per the house dated-note discipline, this
 > supersedes the "still unbuilt" claim in the reconciliation addendum that follows.
@@ -51,8 +51,17 @@
 >   per-axis, proven). **The matrix's Decision cell is now an EARNED `✅ L3`** (L2 4/5; tolerances 9, 3 open).
 >   So §2.4's "silent fifth column" and §2.5's "unfalsifiable by construction" are **closed for the Decision
 >   axis**: it is now *showable*, not asserted. (DECISIONS 2026-06-15 "THE VECTOR Wave 1 BUILT".)
-> - **Still ahead.** Waves 2–3 (the fan-out waves: the `CatalogDiff` trio M11/M13/M12, M3, M20, then M7/M8/M9/
->   M17/M6/M19). The §6 move catalog stands for those.
+> - **Wave 2 — the reversible algebra + the real-wire proof + transactionality naming — BUILT.** The
+>   `CatalogDiff` trio (M13 made `between` total; M11 the triangle inequality → the norm is a proven *metric*;
+>   M12 the groupoid inverse + the freed rollback witness), M3 (`genCatalogPair` + the swept T16 / no-cheat /
+>   norm properties — the round-trip raised from fixture- to property-witnessed), and M20
+>   (`GateLabel.MidWriteNotProtected` + the pure `transactionalityViolations` gate; the live atomic wrapper stays
+>   deferred). M11/M12 earned their `AxiomTests` T13/T15 witnesses. Docker 246/246; matrix byte-identical (no
+>   tolerance moved — the under-claim holds). A pre-existing option-C re-trust bug (an unconditional ALTER on a
+>   no-ALTER `ManagedDml` sink) was surfaced by the full-pool run and fixed by capability descent. (DECISIONS
+>   2026-06-15 "THE VECTOR Wave 2 BUILT".)
+> - **Still ahead.** Wave 3 (the widest fan-out: M7/M8/M9/M17/M6/M19 + the zero-risk `Changed → Reshaped`
+>   rename). The §6 move catalog stands for those.
 
 ## Reconciliation addendum — 2026-06-15 (main moved; the study reconciled)
 

@@ -1,3 +1,101 @@
+# Handoff addendum — 2026-06-15, THE VECTOR WAVE 2 LANDED (the reversible algebra is complete, the change-algebra round-trip is property-witnessed, the destructive failure mode is named); your job is WAVE 3 — the widest fan-out, again as a WORKFLOW
+
+To the next agent.
+
+**Your mission.** Build **Wave 3** of `THE_VECTOR.md` — the **compression & idiom** wave (§6 Kind III/V + the
+corollaries; §7 Wave 3). Seven moves, mostly file-disjoint — the **widest fan-out** of the program. Drive it
+as a `Workflow` exactly as Waves 2 did (worktree-isolated implementers · one default-skeptical adversarial
+verifier per move · one integrator who alone owns the build / matrix / gates). Read `THE_VECTOR.md` §6 (the
+move catalog) + §7 (Wave 3) first; the moves below are the partition.
+
+**The seven moves and how they partition (the workflow's shape).**
+1. **M7 — the diff `ChannelSpec`** + **the `Changed → Reshaped` rename — ONE serialized implementer** (both live
+   in `CatalogDiff.fs` / the `ChannelDiff` channel structure; they conflict if split, like Wave 2's trio). M7
+   reifies the kind-scoped diff channel as a value `ChannelSpec<'entity,'facet> = { entitiesOf; keyOf; nameOf;
+   changedFacets; mkChange; applyFacet }` and collapses the four `*Diff` builders + four `apply*Diff` patchers
+   into one fold per direction (the source comment "mirrors `attributeDiff` EXACTLY" is the fired trigger). The
+   rename is the zero-risk `ChannelDiff.Changed → Reshaped` field rename so the diff and migration layers speak
+   one word — a closed-record/field cascade: `grep -rn "\.Changed" src tests` near `ChannelDiff`/`*Diff` first.
+   **Heads-up: `CatalogDiff.fs` was heavily rewritten by Wave 2 (M11/M12/M13) — `between` is now total, and
+   `inverse`/the M11/M12 tests are new. Read its current shape before you touch it.**
+2. **M8 — the `JsonDocumentWriter` seam.** One pair of helpers (`writeToNode : (Utf8JsonWriter -> unit) -> JsonNode`
+   + a node→indented-string renderer) retires the `Utf8JsonWriter → MemoryStream → byte[] → JsonNode.Parse`
+   dance duplicated across `JsonEmitter` / `DistributionsEmitter` / `CatalogCodec` / `ProfileCodec` (≥4 sites).
+   Own surface. Parallel.
+3. **M9 — the binding algebra.** FsToolkit `validation { }` at the nine `*Binding` sites; collapse the three
+   bind-convergences (the 4-Result tuple in `runWithConfigCore`, the 3-Result tuples in the two shaped-catalog
+   runners) into one `bind-all`, structurally closing the model-read-vs-live `applyModuleFilter` divergence.
+   Own surface (`Projection.Pipeline` bindings). Parallel. **The riskiest seam — read `THE_CONFIG_CONTROL_PLANE.md`
+   §6 first.**
+4. **M17 — the totality-test functor.** The four structurally-identical totality tests
+   (`CapabilitySurvey`/`Voice`/`Transform`/`ManifestPredicate`) → one parameterized module + four ~10-line
+   instantiations. Own surface (test project). Parallel.
+5. **M6 — `[<Struct>]` (+ optional smart ctor) on `SourceKey`/`AssignedKey`.** One-word copy over the string ref
+   (identical to `RowQuantum`'s rationale); removes per-row DU-wrapper allocation on the FK re-point loop.
+   **measure-then-promote** per the `CONSTELLATION §9.7` ritual — ship the bench rationale, not just the
+   attribute. Own surface. Parallel.
+6. **M19 — `[<Measure>] row` on the data-norm deltas** (`cdcDelta`/`RowCountDeltas`/`NullCountDeltas`), the
+   natural sibling of the shipped `[<Measure>] ms`. Own surface. Parallel.
+
+So: **2 implementers for the M7+rename pair and M9 (the two with cascades), the rest highly parallel** → one
+adversarial verifier each → one integrator. Have implementers **commit to their worktree branch** and integrate
+via **`git cherry-pick`** — NOT text-diff-apply (the Windows trailing-newline trap). Wave 2's integrator
+cherry-picked four branches cleanly; the only reconcile was a one-line helper (M3 funnelled `between` through a
+single helper so the M13 signature change was a one-line fix). Ask your implementers to do the same wherever a
+move couples to another's surface.
+
+**What is DONE — do not redo (Waves 0 + 1 + 2, all in this PR).** Wave 0 (honesty: M1′+M2+M16+M15). Wave 1
+(the keystone M1 — Decision is an EARNED ✅ L3). Wave 2 (this letter's predecessor): **M13** (`CatalogDiff.between`
+is now total, the `Result` dropped — 13 src + ~120 test sites adapted); **M11** (the triangle inequality → the
+norm is a proven *metric*); **M12** (the groupoid inverse + the rollback witness + the groupoid law); **M3**
+(`genCatalogPair` + the swept T16/no-cheat/norm properties — round-trip is now property-witnessed); **M20**
+(`GateLabel.MidWriteNotProtected` + the pure `transactionalityViolations` gate — the live atomic wrapper stays
+deferred). M11/M12 earned their `AxiomTests` T13/T15 witnesses. Read the 2026-06-15 "THE VECTOR Wave 2 BUILT"
+DECISIONS entry — it is the substance; this letter points.
+
+**One bug Wave 2's full-pool run surfaced and FIXED (do not be surprised).** The trio change to `CatalogDiff`
+is a comparison primitive, so the integrator ran the **full** Docker pool (246), not just `~Canary` — and it
+caught a **pre-existing option-C bug** (confirmed on the base commit): `restoreFkTrust` ran an unconditional
+`ALTER … WITH CHECK CHECK CONSTRAINT` on the materialized reverse-leg path, which fails on a **no-ALTER
+`ManagedDml` cloud sink** (SQL 1088). Fixed by **capability descent** — the re-trust now descends on the
+ALTER-permission family (1088/4902/229) to the named `FkTrustNotRestoredOnBulkLoad` tolerance, propagating
+constraint conflicts (547). **The materialized path is now capability-gated; the option-C Wave-2 follow-on
+(wire re-trust into `writePlanStreaming` / `runSynthetic` + the CLI flag) still stands** and is a clean Wave-3
+pick-up if it fits your slice.
+
+**Matrix on `main`+this PR.** gate=PASS · rungs L1/L2/L3 = 5/4/5 · tolerances 10 (3 open — the Schema OpenGaps
+`IndexOptionsUnreflected` / `CompositePkFkUnreflected` / `TriggerBodyUnparsedDropped`; the 10th is the option-C
+`FkTrustNotRestoredOnBulkLoad`, AcceptedFaithful). **Wave 2 added/retired no tolerance and renamed no witness,
+so the matrix regenerated byte-identically** — Wave 3's compression moves should do the same (they're
+idiom/compression, not new erasures); if `matrix-status.sh` shows a diff after a Wave-3 move, something
+unintended changed — investigate before committing.
+
+**Build-discipline scars (heed them — they all bit this session).**
+1. **⚠️ Docker tests SILENTLY NO-OP on this Windows box** unless `$env:PROJECTION_MSSQL_CONN_STR=
+   "Server=localhost,11433;User Id=sa;Password=Projection@Strong1;TrustServerCertificate=True;Encrypt=False"`
+   (the warm container, up). Confirm a **real per-test duration in seconds** via the TRX, never the green count.
+2. **⚠️ Run bash scripts from the WORKTREE, not the main checkout** (the Bash tool resets cwd to the worktree
+   root each call, so a bare `scripts/…` from there is fine; an absolute path into the worktree is safest).
+3. `dotnet` is at `C:\Users\danny\AppData\Local\Microsoft\dotnet\dotnet.exe` (9.0.314; not on bash PATH). Build
+   **Release too** before claiming done (only it catches FS3511). **Never the pure + Docker pools in one
+   `dotnet test`** (OOM) — `test.sh fast` / `docker`.
+4. **Run the FULL Docker pool (246/246 is the bar), not just `~Canary`** — a change to a comparison primitive
+   (`CatalogDiff`, `PhysicalSchema`) ripples through every canary, and the *only* failure Wave 2 found was a
+   non-canary reverse-leg test the option-C author had never run. **On any `Failed: N>0`, read the TRX** (the
+   console interleaves and lies) and decide regression-vs-pre-existing by running the one test on the base.
+5. **Closed-DU / closed-record edits cascade — grep first, fix all sites, build once** (the build is your
+   completeness backstop: the test project is one assembly, so a missed site fails compilation). M7's rename and
+   M9's binding collapse are both cascades.
+
+**State.** Branch `claude/romantic-bohr-e270dd`; Waves 0+1 (from PR #620, merged) + Wave 2 sit on this branch as
+five commits (the trio, M20, M3, the option-C fix, the M11/M12 axiom witnesses) atop `main` `dda83a8f`. Debug +
+**Release** 0/0; pure pool **3372/0**; **Docker 246/246**; `AxiomTests` 79/0; `matrix-status.sh` gate=PASS
+(byte-identical); `verifiability-gate.sh` exit 0. After Wave 3, chapter-close and extend the same PR (or open the
+Wave-3 PR atop it per the operator's call). Hold the spine: name every refusal, count every crossing, leave the
+books balanced — and let the workflow carry the fan-out.
+
+---
+
 # Handoff addendum — 2026-06-15, THE VECTOR WAVE 1 LANDED (the keystone M1 — the Decision axis is now an EARNED green); your job is WAVE 2 — the fan-out wave, and this time you ORCHESTRATE IT WITH A WORKFLOW
 
 To the next agent.
