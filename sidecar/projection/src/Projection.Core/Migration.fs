@@ -101,7 +101,7 @@ module Migration =
             |> Map.toList
             |> List.sortBy (fun (k, _) -> SsKey.rootOriginal k)
             |> List.collect (fun (kindKey, ad) ->
-                ad.Changed
+                ad.Reshaped
                 |> List.sortBy (fun c -> SsKey.rootOriginal c.AttributeKey)
                 |> List.map (fun c -> (kindKey, c.AttributeKey, c.Facets)))
         { Channels = CatalogDiff.channelCounts diff

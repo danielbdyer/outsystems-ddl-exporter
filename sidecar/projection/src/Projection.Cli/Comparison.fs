@@ -99,7 +99,7 @@ let renderCatalogLanes (d: CatalogDiff) : View.View list =
         CatalogDiff.attributeDiffs d
         |> Map.toList
         |> List.collect (fun (_, ad) ->
-            ad.Changed
+            ad.Reshaped
             |> List.map (fun c -> sprintf "%s · %s" (SsKey.rootOriginal c.AttributeKey) (facetsText c.Facets)))
     let lane glyph label st items =
         if List.isEmpty items then [] else [ View.Lane(glyph, label, st, items) ]

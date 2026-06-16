@@ -191,8 +191,8 @@ let ``CatalogDiff: a column type change surfaces as an attribute-level Changed e
         Assert.Empty(ad.Added)
         Assert.Empty(ad.Removed)
         Assert.Empty(ad.Renamed)
-        Assert.Equal(1, List.length ad.Changed)
-        let change = List.head ad.Changed
+        Assert.Equal(1, List.length ad.Reshaped)
+        let change = List.head ad.Reshaped
         Assert.Equal(customerNameKey, change.AttributeKey)
         Assert.Contains(AttributeFacet.DataType, change.Facets)
 
@@ -245,7 +245,7 @@ let ``CatalogDiff: a column widening (length change) names the Length facet (TEX
     let target = catalogWithCustomerName (fun a -> { a with Length = Some 256 })
     let diff = CatalogDiff.between sampleCatalog target
     let ad = (CatalogDiff.attributeDiffOf customerKey diff).Value
-    let change = List.head ad.Changed
+    let change = List.head ad.Reshaped
     Assert.Contains(AttributeFacet.Length, change.Facets)
     Assert.DoesNotContain(AttributeFacet.DataType, change.Facets)
 
@@ -256,7 +256,7 @@ let ``CatalogDiff: a nullability change names the Nullability facet`` () =
             { a with Column = { a.Column with IsNullable = true } })
     let diff = CatalogDiff.between sampleCatalog target
     let ad = (CatalogDiff.attributeDiffOf customerKey diff).Value
-    Assert.Contains(AttributeFacet.Nullability, (List.head ad.Changed).Facets)
+    Assert.Contains(AttributeFacet.Nullability, (List.head ad.Reshaped).Facets)
 
 [<Fact>]
 let ``CatalogDiff: a dropped attribute surfaces in AttributeDiff.Removed`` () =
@@ -301,7 +301,7 @@ let ``S9.19: a DECIMAL(10,2) -> DECIMAL(18,4) change names BOTH the Precision an
             { a with Precision = Some 10; Scale = Some 2 })
     let diff = CatalogDiff.between source target
     let ad = (CatalogDiff.attributeDiffOf customerKey diff).Value
-    let change = List.head ad.Changed
+    let change = List.head ad.Reshaped
     Assert.Equal(customerNameKey, change.AttributeKey)
     Assert.Contains(AttributeFacet.Precision, change.Facets)
     Assert.Contains(AttributeFacet.Scale, change.Facets)
@@ -815,7 +815,7 @@ let ``C1: an FK trust change (WITH NOCHECK) names the Trust facet and round-trip
     let b = catalogOfKinds [ customer; orderUntrusted; country ]
     let diff = CatalogDiff.between a b
     let rd = (CatalogDiff.referenceDiffOf orderKey diff).Value
-    let change = List.head rd.Changed
+    let change = List.head rd.Reshaped
     Assert.Equal(orderRefToCustomer, change.ReferenceKey)
     Assert.Contains(ReferenceFacet.Trust, change.Facets)
     let reconstructed = CatalogDiff.applyDiff a diff
@@ -852,7 +852,7 @@ let ``C1: an index uniqueness change names the Uniqueness facet and round-trips`
     let a = catalogOfKinds [ { customer with Indexes = [ { customerEmailIdx with Uniqueness = NotUnique } ] }; order; country ]
     let b = catalogOfKinds [ { customer with Indexes = [ customerEmailIdx ] }; order; country ]
     let diff = CatalogDiff.between a b
-    let change = List.head (CatalogDiff.indexDiffOf customerKey diff).Value.Changed
+    let change = List.head (CatalogDiff.indexDiffOf customerKey diff).Value.Reshaped
     Assert.Contains(IndexFacet.Uniqueness, change.Facets)
     let reconstructed = CatalogDiff.applyDiff a diff
     Assert.True(CatalogDiff.isEmpty (CatalogDiff.between b reconstructed))
@@ -864,7 +864,7 @@ let ``C1: an index option change (ALLOW_PAGE_LOCKS) names the Options facet and 
     let a = catalogOfKinds [ { customer with Indexes = [ customerEmailIdx ] }; order; country ]
     let b = catalogOfKinds [ { customer with Indexes = [ { customerEmailIdx with AllowPageLocks = false } ] }; order; country ]
     let diff = CatalogDiff.between a b
-    Assert.Contains(IndexFacet.Options, (List.head (CatalogDiff.indexDiffOf customerKey diff).Value.Changed).Facets)
+    Assert.Contains(IndexFacet.Options, (List.head (CatalogDiff.indexDiffOf customerKey diff).Value.Reshaped).Facets)
     let reconstructed = CatalogDiff.applyDiff a diff
     let rebuiltIdx =
         (Catalog.tryFindKind customerKey reconstructed).Value.Indexes
@@ -889,7 +889,7 @@ let ``C1: a reshaped sequence (increment change) names the Increment facet and r
     let a = Catalog.create [ salesModule ] [ orderNumberSeq ] |> Result.value
     let b = Catalog.create [ salesModule ] [ { orderNumberSeq with Increment = Some 10m } ] |> Result.value
     let diff = CatalogDiff.between a b
-    Assert.Contains(SequenceFacet.Increment, (List.head (CatalogDiff.sequenceDiff diff).Changed).Facets)
+    Assert.Contains(SequenceFacet.Increment, (List.head (CatalogDiff.sequenceDiff diff).Reshaped).Facets)
     let reconstructed = CatalogDiff.applyDiff a diff
     Assert.True(CatalogDiff.isEmpty (CatalogDiff.between b reconstructed))
 

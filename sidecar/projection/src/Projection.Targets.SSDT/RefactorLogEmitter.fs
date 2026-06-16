@@ -243,7 +243,7 @@ module RefactorLogEmitter =
     /// emitter just projects the diff. Disjoint from `SchemaMigrationEmitter`
     /// (shape changes → ALTER) by *operation*, not by attribute: rename
     /// (logical `Name`) and reshape (shape facets) are independent axes
-    /// (`AttributeDiff.Renamed` vs `.Changed`), so one column may be both.
+    /// (`AttributeDiff.Renamed` vs `.Reshaped`), so one column may be both.
     /// The two channels still never double-emit the *same operation* — this
     /// emits the sp_rename; `SchemaMigrationEmitter` emits the ALTER COLUMN
     /// against the target attribute. (Tested: RefactorLogEmitterTests

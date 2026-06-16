@@ -53,25 +53,26 @@ type AttributeChange =
 /// The structurally-identical carrier behind every per-channel diff
 /// (attributes / references / indexes / sequences). `Added` / `Removed`
 /// are entity `SsKey`s present in only the target / source; `Renamed`
-/// carries a same-`SsKey` `Name` change; `Changed` names survivors whose
+/// carries a same-`SsKey` `Name` change; `Reshaped` names survivors whose
 /// emitted shape differs, the channel's own change-evidence type filling
 /// `'change`. The four channels were four byte-identical records before;
 /// they are now one generic with four named instantiations (the aliases
 /// below), so field access and the public type names are unchanged for
-/// every consumer.
+/// every consumer. (`Reshaped` was `Changed` before §3.3/§6 — the diff and
+/// migration layers now speak one word for the reshape axis.)
 type ChannelDiff<'change> =
     {
-        Added   : Set<SsKey>
-        Removed : Set<SsKey>
-        Renamed : Map<SsKey, RenameRecord>
-        Changed : 'change list
+        Added    : Set<SsKey>
+        Removed  : Set<SsKey>
+        Renamed  : Map<SsKey, RenameRecord>
+        Reshaped : 'change list
     }
 
 /// Per-kind attribute-level diff for a kind present in BOTH catalogs.
 /// `Added` / `Removed` are attribute `SsKey`s present in only the target /
 /// source; `Renamed` carries a same-`SsKey` `Name` change (edge-case-2 of
 /// the chapter-3.5 prescope — a renamed attribute on an unrenamed kind);
-/// `Changed` names attributes whose emitted column shape differs facet by
+/// `Reshaped` names attributes whose emitted column shape differs facet by
 /// facet. An empty `AttributeDiff` (all four empty) means the kind's
 /// attributes are identical; `between` stores only non-empty diffs.
 type AttributeDiff = ChannelDiff<AttributeChange>
@@ -84,7 +85,7 @@ type AttributeDiff = ChannelDiff<AttributeChange>
 // silently no-op'd any FK / index / sequence change between A and B. C1 adds
 // the three missing change channels so the round-trip law
 // `applyDiff (between A B) A = B` holds on them too. Each channel mirrors the
-// `AttributeDiff` shape (Added / Removed / Renamed / Changed, keyed by SsKey),
+// `AttributeDiff` shape (Added / Removed / Renamed / Reshaped, keyed by SsKey),
 // and applyDiff PATCHES the base record's fields / COPIES whole records from
 // the recorded target — it never reconstructs via a smart constructor, so the
 // `{ create … with … }` default-substitution bomb cannot bite here.
@@ -296,7 +297,7 @@ module CatalogDiff =
 
     /// The empty channel diff — all four fields empty — over any change type.
     let private emptyChannelDiff<'change> : ChannelDiff<'change> =
-        { Added = Set.empty; Removed = Set.empty; Renamed = Map.empty; Changed = [] }
+        { Added = Set.empty; Removed = Set.empty; Renamed = Map.empty; Reshaped = [] }
 
     /// A channel diff is empty iff all four fields are empty. One predicate
     /// for every channel (the four byte-identical `*DiffIsEmpty` collapsed).
@@ -304,50 +305,22 @@ module CatalogDiff =
         Set.isEmpty d.Added
         && Set.isEmpty d.Removed
         && Map.isEmpty d.Renamed
-        && List.isEmpty d.Changed
+        && List.isEmpty d.Reshaped
 
-    /// The attribute-level diff between a kind's source and target
-    /// realizations (the kind's `SsKey` is present in both catalogs).
-    /// Attributes match by `SsKey`: present-in-target-only → `Added`,
-    /// present-in-source-only → `Removed`; a shared `SsKey` whose `Name`
-    /// differs → `Renamed` (independent of facet changes), whose emitted
-    /// shape differs → `Changed`. Source-ordered `Changed` for determinism.
-    let private attributeDiff (sourceKind: Kind) (targetKind: Kind) : AttributeDiff =
-        let srcByKey = sourceKind.Attributes |> List.map (fun a -> a.SsKey, a) |> Map.ofList
-        let tgtByKey = targetKind.Attributes |> List.map (fun a -> a.SsKey, a) |> Map.ofList
-        let srcKeys = srcByKey |> Map.toSeq |> Seq.map fst |> Set.ofSeq
-        let tgtKeys = tgtByKey |> Map.toSeq |> Seq.map fst |> Set.ofSeq
-        let added = Set.difference tgtKeys srcKeys
-        let removed = Set.difference srcKeys tgtKeys
-        let renamed =
-            Set.intersect srcKeys tgtKeys
-            |> Set.fold
-                (fun acc key ->
-                    let s = Map.find key srcByKey
-                    let t = Map.find key tgtByKey
-                    if s.Name <> t.Name then
-                        Map.add key { OldName = s.Name; NewName = t.Name; PassVersion = version } acc
-                    else acc)
-                Map.empty
-        // Source order preserves determinism (T1) — the kind's attribute
-        // list is the canonical order, not the Set's hash order.
-        let changed =
-            sourceKind.Attributes
-            |> List.choose (fun s ->
-                match Map.tryFind s.SsKey tgtByKey with
-                | Some t ->
-                    let facets = changedFacets s t
-                    if Set.isEmpty facets then None
-                    else Some { AttributeKey = s.SsKey; Facets = facets }
-                | None -> None)
-        { Added = added; Removed = removed; Renamed = renamed; Changed = changed }
-
-    // -- C1: reference / index / sequence channel diffs ----------------------
+    // -- M7: the ChannelSpec — the descriptor IS data, traversed once --------
     //
-    // Each mirrors `attributeDiff` exactly: partition the SsKeys (Added /
-    // Removed), thread same-SsKey `Name` changes into `Renamed`, and name the
-    // changed facets for survivors whose shape differs. `Changed` is computed
-    // in source-list order for T1 determinism (not Set hash order).
+    // The four per-channel diffs (attributes / references / indexes /
+    // sequences) were four byte-identical builders + four byte-identical apply
+    // patchers, differing ONLY in their entity accessor, facet detector, change
+    // constructor, and change-key accessor (the source comment read "mirrors
+    // `attributeDiff` EXACTLY"). M7 reifies that variation as a value: one
+    // `ChannelSpec` per channel, ONE generic `buildChannel` fold over it, ONE
+    // generic `applyChannel` patcher. ASYMMETRY: the sequence channel is
+    // CATALOG-level (`'container = Catalog`), the other three KIND-level
+    // (`'container = Kind`); the spec's container is generic, so each spec
+    // supplies its own `entitiesOf` and the build/apply folds are container-
+    // agnostic. The facet detectors (`changedFacets` etc., kept below) are the
+    // only per-channel logic that genuinely varies; everything else is one fold.
 
     let private changedReferenceFacets (s: Reference) (t: Reference) : Set<ReferenceFacet> =
         [ if s.TargetKind <> t.TargetKind then ReferenceFacet.Target
@@ -358,33 +331,6 @@ module CatalogDiff =
           if s.HasDbConstraint <> t.HasDbConstraint then ReferenceFacet.DbConstraint
           if s.IsConstraintTrusted <> t.IsConstraintTrusted then ReferenceFacet.Trust ]
         |> Set.ofList
-
-    let private referenceDiff (sourceKind: Kind) (targetKind: Kind) : ReferenceDiff =
-        let srcByKey = sourceKind.References |> List.map (fun r -> r.SsKey, r) |> Map.ofList
-        let tgtByKey = targetKind.References |> List.map (fun r -> r.SsKey, r) |> Map.ofList
-        let srcKeys = srcByKey |> Map.toSeq |> Seq.map fst |> Set.ofSeq
-        let tgtKeys = tgtByKey |> Map.toSeq |> Seq.map fst |> Set.ofSeq
-        let renamed =
-            Set.intersect srcKeys tgtKeys
-            |> Set.fold
-                (fun acc key ->
-                    let s = Map.find key srcByKey
-                    let t = Map.find key tgtByKey
-                    if s.Name <> t.Name then Map.add key { OldName = s.Name; NewName = t.Name; PassVersion = version } acc
-                    else acc)
-                Map.empty
-        let changed =
-            sourceKind.References
-            |> List.choose (fun s ->
-                match Map.tryFind s.SsKey tgtByKey with
-                | Some t ->
-                    let facets = changedReferenceFacets s t
-                    if Set.isEmpty facets then None else Some { ReferenceKey = s.SsKey; Facets = facets }
-                | None -> None)
-        { Added = Set.difference tgtKeys srcKeys
-          Removed = Set.difference srcKeys tgtKeys
-          Renamed = renamed
-          Changed = changed }
 
     let private changedIndexFacets (s: Index) (t: Index) : Set<IndexFacet> =
         [ if s.Columns <> t.Columns then IndexFacet.Columns
@@ -398,33 +344,6 @@ module CatalogDiff =
              || s.IgnoreDuplicateKey <> t.IgnoreDuplicateKey || s.IsDisabled <> t.IsDisabled
              || s.DataCompression <> t.DataCompression then IndexFacet.Options ]
         |> Set.ofList
-
-    let private indexDiff (sourceKind: Kind) (targetKind: Kind) : IndexDiff =
-        let srcByKey = sourceKind.Indexes |> List.map (fun i -> i.SsKey, i) |> Map.ofList
-        let tgtByKey = targetKind.Indexes |> List.map (fun i -> i.SsKey, i) |> Map.ofList
-        let srcKeys = srcByKey |> Map.toSeq |> Seq.map fst |> Set.ofSeq
-        let tgtKeys = tgtByKey |> Map.toSeq |> Seq.map fst |> Set.ofSeq
-        let renamed =
-            Set.intersect srcKeys tgtKeys
-            |> Set.fold
-                (fun acc key ->
-                    let s = Map.find key srcByKey
-                    let t = Map.find key tgtByKey
-                    if s.Name <> t.Name then Map.add key { OldName = s.Name; NewName = t.Name; PassVersion = version } acc
-                    else acc)
-                Map.empty
-        let changed =
-            sourceKind.Indexes
-            |> List.choose (fun s ->
-                match Map.tryFind s.SsKey tgtByKey with
-                | Some t ->
-                    let facets = changedIndexFacets s t
-                    if Set.isEmpty facets then None else Some { IndexKey = s.SsKey; Facets = facets }
-                | None -> None)
-        { Added = Set.difference tgtKeys srcKeys
-          Removed = Set.difference srcKeys tgtKeys
-          Renamed = renamed
-          Changed = changed }
 
     /// NM-17 — the kind-OWN facets that differ between a kind's source and
     /// target realization. Presence/name is the top-level partition; children
@@ -449,32 +368,233 @@ module CatalogDiff =
           if (s.CacheMode, s.CacheSize) <> (t.CacheMode, t.CacheSize) then SequenceFacet.Cache ]
         |> Set.ofList
 
-    let private sequenceDiffBetween (source: Catalog) (target: Catalog) : SequenceDiff =
-        let srcByKey = source.Sequences |> List.map (fun s -> s.SsKey, s) |> Map.ofList
-        let tgtByKey = target.Sequences |> List.map (fun s -> s.SsKey, s) |> Map.ofList
-        let srcKeys = srcByKey |> Map.toSeq |> Seq.map fst |> Set.ofSeq
+    // -- M7: the per-facet appliers (the apply side of each channel's facet
+    //    surface). Patch ONE facet of `dest` from `src`; every other field
+    //    rides through. `dest` is an existing record value, so `{ dest with … }`
+    //    replaces a single field — no smart-constructor reconstruction, so the
+    //    `{ create … with … }` default-substitution bomb cannot bite (the
+    //    discipline §6 of the C1 debrief). Each is the `applyFacet` field of its
+    //    channel's `ChannelSpec` below, shared between build and apply.
+
+    /// Patch one column-shape facet of `dest` from `src` (the recorded target's
+    /// attribute). applyDiff's power exactly matches the facet set `between`
+    /// detects, so no un-captured field is silently reconstructed.
+    let private applyFacet (src: Attribute) (facet: AttributeFacet) (dest: Attribute) : Attribute =
+        match facet with
+        | AttributeFacet.DataType     -> { dest with Type = src.Type }
+        | AttributeFacet.Nullability  -> dest |> Lens.over CatalogLenses.columnOf (fun col -> { col with IsNullable = src.Column.IsNullable })
+        | AttributeFacet.PrimaryKey   -> { dest with IsPrimaryKey = src.IsPrimaryKey }
+        | AttributeFacet.Length       -> { dest with Length = src.Length }
+        | AttributeFacet.Precision    -> { dest with Precision = src.Precision }
+        | AttributeFacet.Scale        -> { dest with Scale = src.Scale }
+        | AttributeFacet.Identity     -> { dest with IsIdentity = src.IsIdentity }
+        | AttributeFacet.DefaultValue -> { dest with DefaultValue = src.DefaultValue; DefaultName = src.DefaultName }
+        | AttributeFacet.Computed     -> { dest with Computed = src.Computed }
+
+    let private applyReferenceFacet (src: Reference) (facet: ReferenceFacet) (dest: Reference) : Reference =
+        match facet with
+        | ReferenceFacet.Target          -> { dest with TargetKind = src.TargetKind }
+        | ReferenceFacet.SourceAttribute -> { dest with SourceAttribute = src.SourceAttribute }
+        | ReferenceFacet.OnDelete        -> { dest with OnDelete = src.OnDelete }
+        | ReferenceFacet.OnUpdate        -> { dest with OnUpdate = src.OnUpdate }
+        | ReferenceFacet.UserFk          -> { dest with IsUserFk = src.IsUserFk }
+        | ReferenceFacet.DbConstraint    -> { dest with HasDbConstraint = src.HasDbConstraint }
+        | ReferenceFacet.Trust           -> { dest with IsConstraintTrusted = src.IsConstraintTrusted }
+
+    let private applyIndexFacet (src: Index) (facet: IndexFacet) (dest: Index) : Index =
+        match facet with
+        | IndexFacet.Columns         -> { dest with Columns = src.Columns }
+        | IndexFacet.Uniqueness      -> { dest with Uniqueness = src.Uniqueness }
+        | IndexFacet.IncludedColumns -> { dest with IncludedColumns = src.IncludedColumns }
+        | IndexFacet.Filter          -> { dest with Filter = src.Filter }
+        | IndexFacet.DataSpace       -> { dest with DataSpace = src.DataSpace }
+        | IndexFacet.Options ->
+            { dest with
+                IsPlatformAuto = src.IsPlatformAuto
+                FillFactor = src.FillFactor
+                IsPadded = src.IsPadded
+                AllowRowLocks = src.AllowRowLocks
+                AllowPageLocks = src.AllowPageLocks
+                NoRecomputeStatistics = src.NoRecomputeStatistics
+                IgnoreDuplicateKey = src.IgnoreDuplicateKey
+                IsDisabled = src.IsDisabled
+                DataCompression = src.DataCompression }
+
+    let private applySequenceFacet (src: Sequence) (facet: SequenceFacet) (dest: Sequence) : Sequence =
+        match facet with
+        | SequenceFacet.Schema     -> { dest with Schema = src.Schema }
+        | SequenceFacet.DataType   -> { dest with DataType = src.DataType }
+        | SequenceFacet.StartValue -> { dest with StartValue = src.StartValue }
+        | SequenceFacet.Increment  -> { dest with Increment = src.Increment }
+        | SequenceFacet.Minimum    -> { dest with Minimum = src.Minimum }
+        | SequenceFacet.Maximum    -> { dest with Maximum = src.Maximum }
+        | SequenceFacet.Cycle      -> { dest with IsCycleEnabled = src.IsCycleEnabled }
+        | SequenceFacet.Cache      -> { dest with CacheMode = src.CacheMode; CacheSize = src.CacheSize }
+
+    /// M7 — the kind-scoped channel reified as data: the four accessors that
+    /// vary per channel, plus the facet detector, change constructor /
+    /// destructor, and rename-applier. `'container` is `Kind` for the
+    /// attribute / reference / index channels and `Catalog` for sequences;
+    /// `entitiesOf` projects the channel's entity list out of either. One spec
+    /// value drives both `buildChannel` (observation) and `applyChannel`
+    /// (action), so the two stay structurally locked together by construction.
+    type private ChannelSpec<'container, 'entity, 'facet, 'change
+                                when 'facet: comparison> =
+        {
+            /// Project the channel's entity list out of its container.
+            entitiesOf    : 'container -> 'entity list
+            /// The entity's stable identity (the diff matches on it).
+            keyOf         : 'entity -> SsKey
+            /// The entity's logical name (a `Name` change ⇒ `Renamed`).
+            nameOf        : 'entity -> Name
+            /// The facets whose emitted shape differs (empty ⇒ unchanged).
+            changedFacets : 'entity -> 'entity -> Set<'facet>
+            /// Construct the channel's change-evidence record.
+            mkChange      : SsKey -> Set<'facet> -> 'change
+            /// The key a change-evidence record is keyed by.
+            keyOfChange   : 'change -> SsKey
+            /// The facet set a change-evidence record carries.
+            facetsOf      : 'change -> Set<'facet>
+            /// Apply one facet of `src` onto `dest` (only that facet moves).
+            applyFacet    : 'entity -> 'facet -> 'entity -> 'entity
+            /// Rename an entity to a new `Name` (every other field rides through).
+            renameTo      : Name -> 'entity -> 'entity
+        }
+
+    /// M7 — ONE channel-diff fold, driven by a `ChannelSpec`. Replaces the four
+    /// byte-identical `attributeDiff` / `referenceDiff` / `indexDiff` /
+    /// `sequenceDiffBetween` builders. Entities match by `SsKey`: present-in-
+    /// target-only → `Added`, present-in-source-only → `Removed`; a shared
+    /// `SsKey` whose `Name` differs → `Renamed` (independent of facet changes);
+    /// a shared `SsKey` whose emitted shape differs → `Reshaped`. The `Reshaped`
+    /// list is built in SOURCE-LIST order (the canonical order, not the Set's
+    /// hash order) to preserve T1 determinism.
+    let private buildChannel
+        (spec: ChannelSpec<'container, 'entity, 'facet, 'change>)
+        (source: 'container)
+        (target: 'container)
+        : ChannelDiff<'change>
+        =
+        let srcEntities = spec.entitiesOf source
+        let tgtByKey = spec.entitiesOf target |> List.map (fun e -> spec.keyOf e, e) |> Map.ofList
+        let srcKeys = srcEntities |> List.map spec.keyOf |> Set.ofList
         let tgtKeys = tgtByKey |> Map.toSeq |> Seq.map fst |> Set.ofSeq
+        let srcByKey = srcEntities |> List.map (fun e -> spec.keyOf e, e) |> Map.ofList
         let renamed =
             Set.intersect srcKeys tgtKeys
             |> Set.fold
                 (fun acc key ->
                     let s = Map.find key srcByKey
                     let t = Map.find key tgtByKey
-                    if s.Name <> t.Name then Map.add key { OldName = s.Name; NewName = t.Name; PassVersion = version } acc
+                    if spec.nameOf s <> spec.nameOf t then
+                        Map.add key { OldName = spec.nameOf s; NewName = spec.nameOf t; PassVersion = version } acc
                     else acc)
                 Map.empty
-        let changed =
-            source.Sequences
+        // Source order preserves determinism (T1) — the container's entity
+        // list is the canonical order, not the Set's hash order.
+        let reshaped =
+            srcEntities
             |> List.choose (fun s ->
-                match Map.tryFind s.SsKey tgtByKey with
+                match Map.tryFind (spec.keyOf s) tgtByKey with
                 | Some t ->
-                    let facets = changedSequenceFacets s t
-                    if Set.isEmpty facets then None else Some { SequenceKey = s.SsKey; Facets = facets }
+                    let facets = spec.changedFacets s t
+                    if Set.isEmpty facets then None
+                    else Some (spec.mkChange (spec.keyOf s) facets)
                 | None -> None)
         { Added = Set.difference tgtKeys srcKeys
           Removed = Set.difference srcKeys tgtKeys
           Renamed = renamed
-          Changed = changed }
+          Reshaped = reshaped }
+
+    let private attributeSpec : ChannelSpec<Kind, Attribute, AttributeFacet, AttributeChange> =
+        { entitiesOf = fun (k: Kind) -> k.Attributes
+          keyOf = fun a -> a.SsKey
+          nameOf = fun a -> a.Name
+          changedFacets = changedFacets
+          mkChange = fun key facets -> { AttributeKey = key; Facets = facets }
+          keyOfChange = fun c -> c.AttributeKey
+          facetsOf = fun c -> c.Facets
+          applyFacet = applyFacet
+          renameTo = fun n a -> { a with Name = n } }
+
+    let private referenceSpec : ChannelSpec<Kind, Reference, ReferenceFacet, ReferenceChange> =
+        { entitiesOf = fun (k: Kind) -> k.References
+          keyOf = fun r -> r.SsKey
+          nameOf = fun r -> r.Name
+          changedFacets = changedReferenceFacets
+          mkChange = fun key facets -> { ReferenceKey = key; Facets = facets }
+          keyOfChange = fun c -> c.ReferenceKey
+          facetsOf = fun c -> c.Facets
+          applyFacet = applyReferenceFacet
+          renameTo = fun n r -> { r with Name = n } }
+
+    let private indexSpec : ChannelSpec<Kind, Index, IndexFacet, IndexChange> =
+        { entitiesOf = fun (k: Kind) -> k.Indexes
+          keyOf = fun i -> i.SsKey
+          nameOf = fun i -> i.Name
+          changedFacets = changedIndexFacets
+          mkChange = fun key facets -> { IndexKey = key; Facets = facets }
+          keyOfChange = fun c -> c.IndexKey
+          facetsOf = fun c -> c.Facets
+          applyFacet = applyIndexFacet
+          renameTo = fun n i -> { i with Name = n } }
+
+    let private sequenceSpec : ChannelSpec<Catalog, Sequence, SequenceFacet, SequenceChange> =
+        { entitiesOf = fun (c: Catalog) -> c.Sequences
+          keyOf = fun s -> s.SsKey
+          nameOf = fun s -> s.Name
+          changedFacets = changedSequenceFacets
+          mkChange = fun key facets -> { SequenceKey = key; Facets = facets }
+          keyOfChange = fun c -> c.SequenceKey
+          facetsOf = fun c -> c.Facets
+          applyFacet = applySequenceFacet
+          renameTo = fun n s -> { s with Name = n } }
+
+    let private attributeDiff (sourceKind: Kind) (targetKind: Kind) : AttributeDiff =
+        buildChannel attributeSpec sourceKind targetKind
+
+    let private referenceDiff (sourceKind: Kind) (targetKind: Kind) : ReferenceDiff =
+        buildChannel referenceSpec sourceKind targetKind
+
+    let private indexDiff (sourceKind: Kind) (targetKind: Kind) : IndexDiff =
+        buildChannel indexSpec sourceKind targetKind
+
+    let private sequenceDiffBetween (source: Catalog) (target: Catalog) : SequenceDiff =
+        buildChannel sequenceSpec source target
+
+    /// M7 — ONE channel-apply patcher, driven by the SAME `ChannelSpec` as
+    /// `buildChannel`. Replaces the four byte-identical `applyAttributeDiff` /
+    /// `applyReferenceDiff` / `applyIndexDiff` / `applySequenceDiff` patchers.
+    /// Removed entities drop; surviving entities are renamed (`Renamed`) and
+    /// facet-patched (`Reshaped`) from the recorded target; `Added` entries are
+    /// COPIED whole from the target container, appended in target order. New
+    /// facet values + new entities source from `targetContainer` (the recorded
+    /// target Kind / Catalog); `None` (no recorded target) contributes no adds.
+    /// No smart-constructor reconstruction → the `{ create … with … }` default-
+    /// substitution bomb cannot bite.
+    let private applyChannel
+        (spec: ChannelSpec<'container, 'entity, 'facet, 'change>)
+        (d: ChannelDiff<'change>)
+        (targetContainer: 'container option)
+        (baseEntities: 'entity list)
+        : 'entity list
+        =
+        let tgtEntities = targetContainer |> Option.map spec.entitiesOf |> Option.defaultValue []
+        let tgtByKey (key: SsKey) : 'entity option =
+            tgtEntities |> List.tryFind (fun e -> spec.keyOf e = key)
+        let survivors =
+            baseEntities
+            |> List.filter (fun e -> not (Set.contains (spec.keyOf e) d.Removed))
+            |> List.map (fun e ->
+                let renamed1 =
+                    match Map.tryFind (spec.keyOf e) d.Renamed with
+                    | Some r -> spec.renameTo r.NewName e
+                    | None -> e
+                match d.Reshaped |> List.tryFind (fun c -> spec.keyOfChange c = spec.keyOf e), tgtByKey (spec.keyOf e) with
+                | Some change, Some src -> Set.fold (fun acc f -> spec.applyFacet src f acc) renamed1 (spec.facetsOf change)
+                | _ -> renamed1)
+        let added = tgtEntities |> List.filter (fun e -> Set.contains (spec.keyOf e) d.Added)
+        survivors @ added
 
     /// Smart constructor — total partitioning of `source ∪ target`
     /// SsKeys. Every key in either Catalog is in exactly one of the
@@ -750,165 +870,19 @@ module CatalogDiff =
     // self-contained diff (inline payloads, no stored source/target) would
     // widen the surface; deferred under IR-grows-under-evidence.
 
-    /// Patch one column-shape facet of `dest` from `src` (the recorded
-    /// target's attribute). Only the named facet moves; every other field of
-    /// `dest` rides through — applyDiff's power exactly matches the facet set
-    /// `between` detects, so no un-captured field is silently reconstructed.
-    let private applyFacet (src: Attribute) (facet: AttributeFacet) (dest: Attribute) : Attribute =
-        match facet with
-        | AttributeFacet.DataType     -> { dest with Type = src.Type }
-        | AttributeFacet.Nullability  -> dest |> Lens.over CatalogLenses.columnOf (fun col -> { col with IsNullable = src.Column.IsNullable })
-        | AttributeFacet.PrimaryKey   -> { dest with IsPrimaryKey = src.IsPrimaryKey }
-        | AttributeFacet.Length       -> { dest with Length = src.Length }
-        | AttributeFacet.Precision    -> { dest with Precision = src.Precision }
-        | AttributeFacet.Scale        -> { dest with Scale = src.Scale }
-        | AttributeFacet.Identity     -> { dest with IsIdentity = src.IsIdentity }
-        | AttributeFacet.DefaultValue -> { dest with DefaultValue = src.DefaultValue; DefaultName = src.DefaultName }
-        | AttributeFacet.Computed     -> { dest with Computed = src.Computed }
-
     /// NM-17 — patch one kind-OWN facet of `dest` from `src` (the recorded
     /// target kind). Mirrors `applyFacet`; only the named facet moves, every
     /// other field of `dest` rides through. `dest` is an existing `Kind`
     /// value, so `{ dest with … }` replaces a single field (no smart-ctor
-    /// reconstruction → no default-substitution bomb).
+    /// reconstruction → no default-substitution bomb). (Not a `ChannelSpec`
+    /// channel: the kind-OWN facets are a `Set<KindFacet>`, not an
+    /// Added/Removed/Renamed/Reshaped channel; applied directly in `applyDiff`.)
     let private applyKindFacet (src: Kind) (facet: KindFacet) (dest: Kind) : Kind =
         match facet with
         | KindFacet.Modality     -> { dest with Modality = src.Modality }
         | KindFacet.Triggers     -> { dest with Triggers = src.Triggers }
         | KindFacet.ColumnChecks -> { dest with ColumnChecks = src.ColumnChecks }
         | KindFacet.IsActive     -> { dest with IsActive = src.IsActive }
-
-    /// Apply a per-kind `AttributeDiff` to a kind's base attribute list,
-    /// sourcing new attributes / new facet values from the recorded target
-    /// kind. Removed attrs drop; surviving attrs are renamed (`Renamed`) and
-    /// facet-patched (`Changed`); `Added` attrs append in target order.
-    let private applyAttributeDiff
-        (ad: AttributeDiff)
-        (targetKind: Kind option)
-        (baseAttrs: Attribute list)
-        : Attribute list =
-        let tgtAttr (key: SsKey) : Attribute option =
-            targetKind |> Option.bind (fun k -> k.Attributes |> List.tryFind (fun a -> a.SsKey = key))
-        let survivors =
-            baseAttrs
-            |> List.filter (fun a -> not (Set.contains a.SsKey ad.Removed))
-            |> List.map (fun a ->
-                let renamed1 =
-                    match Map.tryFind a.SsKey ad.Renamed with
-                    | Some r -> { a with Name = r.NewName }
-                    | None -> a
-                match ad.Changed |> List.tryFind (fun c -> c.AttributeKey = a.SsKey), tgtAttr a.SsKey with
-                | Some change, Some src -> Set.fold (fun acc f -> applyFacet src f acc) renamed1 change.Facets
-                | _ -> renamed1)
-        let added =
-            match targetKind with
-            | Some tk -> tk.Attributes |> List.filter (fun a -> Set.contains a.SsKey ad.Added)
-            | None    -> []
-        survivors @ added
-
-    // -- C1: apply the reference / index / sequence channels -----------------
-    //
-    // Each mirrors `applyAttributeDiff`. Changed survivors are PATCHED facet by
-    // facet from the recorded target record; Added entries are COPIED whole from
-    // the target. No smart-constructor reconstruction → the `{ create … with … }`
-    // default-substitution bomb cannot bite (the discipline §6 of the debrief).
-
-    let private applyReferenceFacet (src: Reference) (facet: ReferenceFacet) (dest: Reference) : Reference =
-        match facet with
-        | ReferenceFacet.Target          -> { dest with TargetKind = src.TargetKind }
-        | ReferenceFacet.SourceAttribute -> { dest with SourceAttribute = src.SourceAttribute }
-        | ReferenceFacet.OnDelete        -> { dest with OnDelete = src.OnDelete }
-        | ReferenceFacet.OnUpdate        -> { dest with OnUpdate = src.OnUpdate }
-        | ReferenceFacet.UserFk          -> { dest with IsUserFk = src.IsUserFk }
-        | ReferenceFacet.DbConstraint    -> { dest with HasDbConstraint = src.HasDbConstraint }
-        | ReferenceFacet.Trust           -> { dest with IsConstraintTrusted = src.IsConstraintTrusted }
-
-    let private applyReferenceDiff (rd: ReferenceDiff) (targetKind: Kind option) (baseRefs: Reference list) : Reference list =
-        let tgtRef (key: SsKey) : Reference option =
-            targetKind |> Option.bind (fun k -> k.References |> List.tryFind (fun r -> r.SsKey = key))
-        let survivors =
-            baseRefs
-            |> List.filter (fun r -> not (Set.contains r.SsKey rd.Removed))
-            |> List.map (fun r ->
-                let renamed1 =
-                    match Map.tryFind r.SsKey rd.Renamed with
-                    | Some rec1 -> { r with Name = rec1.NewName }
-                    | None -> r
-                match rd.Changed |> List.tryFind (fun c -> c.ReferenceKey = r.SsKey), tgtRef r.SsKey with
-                | Some change, Some src -> Set.fold (fun acc f -> applyReferenceFacet src f acc) renamed1 change.Facets
-                | _ -> renamed1)
-        let added =
-            match targetKind with
-            | Some tk -> tk.References |> List.filter (fun r -> Set.contains r.SsKey rd.Added)
-            | None    -> []
-        survivors @ added
-
-    let private applyIndexFacet (src: Index) (facet: IndexFacet) (dest: Index) : Index =
-        match facet with
-        | IndexFacet.Columns         -> { dest with Columns = src.Columns }
-        | IndexFacet.Uniqueness      -> { dest with Uniqueness = src.Uniqueness }
-        | IndexFacet.IncludedColumns -> { dest with IncludedColumns = src.IncludedColumns }
-        | IndexFacet.Filter          -> { dest with Filter = src.Filter }
-        | IndexFacet.DataSpace       -> { dest with DataSpace = src.DataSpace }
-        | IndexFacet.Options ->
-            { dest with
-                IsPlatformAuto = src.IsPlatformAuto
-                FillFactor = src.FillFactor
-                IsPadded = src.IsPadded
-                AllowRowLocks = src.AllowRowLocks
-                AllowPageLocks = src.AllowPageLocks
-                NoRecomputeStatistics = src.NoRecomputeStatistics
-                IgnoreDuplicateKey = src.IgnoreDuplicateKey
-                IsDisabled = src.IsDisabled
-                DataCompression = src.DataCompression }
-
-    let private applyIndexDiff (idd: IndexDiff) (targetKind: Kind option) (baseIndexes: Index list) : Index list =
-        let tgtIndex (key: SsKey) : Index option =
-            targetKind |> Option.bind (fun k -> k.Indexes |> List.tryFind (fun i -> i.SsKey = key))
-        let survivors =
-            baseIndexes
-            |> List.filter (fun i -> not (Set.contains i.SsKey idd.Removed))
-            |> List.map (fun i ->
-                let renamed1 =
-                    match Map.tryFind i.SsKey idd.Renamed with
-                    | Some rec1 -> { i with Name = rec1.NewName }
-                    | None -> i
-                match idd.Changed |> List.tryFind (fun c -> c.IndexKey = i.SsKey), tgtIndex i.SsKey with
-                | Some change, Some src -> Set.fold (fun acc f -> applyIndexFacet src f acc) renamed1 change.Facets
-                | _ -> renamed1)
-        let added =
-            match targetKind with
-            | Some tk -> tk.Indexes |> List.filter (fun i -> Set.contains i.SsKey idd.Added)
-            | None    -> []
-        survivors @ added
-
-    let private applySequenceFacet (src: Sequence) (facet: SequenceFacet) (dest: Sequence) : Sequence =
-        match facet with
-        | SequenceFacet.Schema     -> { dest with Schema = src.Schema }
-        | SequenceFacet.DataType   -> { dest with DataType = src.DataType }
-        | SequenceFacet.StartValue -> { dest with StartValue = src.StartValue }
-        | SequenceFacet.Increment  -> { dest with Increment = src.Increment }
-        | SequenceFacet.Minimum    -> { dest with Minimum = src.Minimum }
-        | SequenceFacet.Maximum    -> { dest with Maximum = src.Maximum }
-        | SequenceFacet.Cycle      -> { dest with IsCycleEnabled = src.IsCycleEnabled }
-        | SequenceFacet.Cache      -> { dest with CacheMode = src.CacheMode; CacheSize = src.CacheSize }
-
-    let private applySequenceDiff (sd: SequenceDiff) (target: Catalog) (baseSeqs: Sequence list) : Sequence list =
-        let tgtSeq (key: SsKey) : Sequence option =
-            target.Sequences |> List.tryFind (fun s -> s.SsKey = key)
-        let survivors =
-            baseSeqs
-            |> List.filter (fun s -> not (Set.contains s.SsKey sd.Removed))
-            |> List.map (fun s ->
-                let renamed1 =
-                    match Map.tryFind s.SsKey sd.Renamed with
-                    | Some rec1 -> { s with Name = rec1.NewName }
-                    | None -> s
-                match sd.Changed |> List.tryFind (fun c -> c.SequenceKey = s.SsKey), tgtSeq s.SsKey with
-                | Some change, Some src -> Set.fold (fun acc f -> applySequenceFacet src f acc) renamed1 change.Facets
-                | _ -> renamed1)
-        let added = target.Sequences |> List.filter (fun s -> Set.contains s.SsKey sd.Added)
-        survivors @ added
 
     /// 6.A.11 — apply a `CatalogDiff` to a base `Catalog`, reconstructing the
     /// target modulo the captured surface. Total: trusts the delta (no
@@ -929,15 +903,15 @@ module CatalogDiff =
             let tgtKind = Catalog.tryFindKind k.SsKey tgt
             let withAttrs =
                 match Map.tryFind k.SsKey data.AttributeDiffs with
-                | Some ad -> { renamed1 with Attributes = applyAttributeDiff ad tgtKind renamed1.Attributes }
+                | Some ad -> { renamed1 with Attributes = applyChannel attributeSpec ad tgtKind renamed1.Attributes }
                 | None -> renamed1
             let withRefs =
                 match Map.tryFind k.SsKey data.ReferenceDiffs with
-                | Some rd -> { withAttrs with References = applyReferenceDiff rd tgtKind withAttrs.References }
+                | Some rd -> { withAttrs with References = applyChannel referenceSpec rd tgtKind withAttrs.References }
                 | None -> withAttrs
             let withIndexes =
                 match Map.tryFind k.SsKey data.IndexDiffs with
-                | Some idd -> { withRefs with Indexes = applyIndexDiff idd tgtKind withRefs.Indexes }
+                | Some idd -> { withRefs with Indexes = applyChannel indexSpec idd tgtKind withRefs.Indexes }
                 | None -> withRefs
             // NM-17 — patch the kind's own facets from the recorded target.
             match Map.tryFind k.SsKey data.KindFacetDiffs, tgtKind with
@@ -985,7 +959,7 @@ module CatalogDiff =
         // kind-scoped, so they reconstruct at the Catalog, not inside a Kind).
         { baseCatalog with
             Modules = modulesWithAdds
-            Sequences = applySequenceDiff data.SequenceDiff tgt baseCatalog.Sequences }
+            Sequences = applyChannel sequenceSpec data.SequenceDiff (Some tgt) baseCatalog.Sequences }
 
     // -- 6.H.3 (prework): the norm ‖·‖, the channel projection π, and compose
     //    — the derivative algebra's measurement + composition layer, made
@@ -1041,19 +1015,19 @@ module CatalogDiff =
             AddedAttributes   = sumAttr (fun ad -> Set.count ad.Added)
             RemovedAttributes = sumAttr (fun ad -> Set.count ad.Removed)
             RenamedAttributes = sumAttr (fun ad -> Map.count ad.Renamed)
-            ChangedAttributes = sumAttr (fun ad -> List.length ad.Changed)
+            ChangedAttributes = sumAttr (fun ad -> List.length ad.Reshaped)
             AddedReferences   = sumRef (fun rd -> Set.count rd.Added)
             RemovedReferences = sumRef (fun rd -> Set.count rd.Removed)
             RenamedReferences = sumRef (fun rd -> Map.count rd.Renamed)
-            ChangedReferences = sumRef (fun rd -> List.length rd.Changed)
+            ChangedReferences = sumRef (fun rd -> List.length rd.Reshaped)
             AddedIndexes      = sumIdx (fun idd -> Set.count idd.Added)
             RemovedIndexes    = sumIdx (fun idd -> Set.count idd.Removed)
             RenamedIndexes    = sumIdx (fun idd -> Map.count idd.Renamed)
-            ChangedIndexes    = sumIdx (fun idd -> List.length idd.Changed)
+            ChangedIndexes    = sumIdx (fun idd -> List.length idd.Reshaped)
             AddedSequences    = Set.count data.SequenceDiff.Added
             RemovedSequences  = Set.count data.SequenceDiff.Removed
             RenamedSequences  = Map.count data.SequenceDiff.Renamed
-            ChangedSequences  = List.length data.SequenceDiff.Changed
+            ChangedSequences  = List.length data.SequenceDiff.Reshaped
         }
 
     /// The norm ‖δ‖ — total move count, the sum of the channel counts (T15,

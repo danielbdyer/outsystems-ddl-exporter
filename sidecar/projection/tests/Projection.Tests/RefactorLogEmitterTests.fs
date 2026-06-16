@@ -304,7 +304,7 @@ let ``CatalogDiff: a renamed-and-reshaped column lands in BOTH Renamed and Chang
     | None -> Assert.Fail "expected an attribute diff on customer"
     | Some ad ->
         Assert.True(Map.containsKey customerNameKey ad.Renamed)
-        let changed = ad.Changed |> List.filter (fun c -> c.AttributeKey = customerNameKey)
+        let changed = ad.Reshaped |> List.filter (fun c -> c.AttributeKey = customerNameKey)
         Assert.Equal(1, List.length changed)
         Assert.Contains(AttributeFacet.DataType, (List.head changed).Facets)
 
