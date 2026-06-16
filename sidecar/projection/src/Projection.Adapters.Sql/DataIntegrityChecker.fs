@@ -4,13 +4,21 @@ open System.Threading.Tasks
 open Microsoft.Data.SqlClient
 open Projection.Core
 
+/// M19 (THE VECTOR Wave 3) — the data-norm unit. The row-count and null-count
+/// deltas carry real load-bearing row quantities; `[<Measure>] row` is the
+/// natural sibling of the shipped `[<Measure>] ms` (`Run.fs`), ruling out at
+/// compile time the addition of a row-delta to a millisecond-delta (or any
+/// non-row count), at zero runtime cost.
+[<Measure>]
+type row
+
 /// One kind's exact row-count divergence between two deployments of the same
 /// schema contract.
 type RowCountDelta =
     {
         Kind   : SsKey
-        Before : int64
-        After  : int64
+        Before : int64<row>
+        After  : int64<row>
     }
 
 /// One attribute's exact null-count divergence between two deployments.
@@ -18,8 +26,8 @@ type NullCountDelta =
     {
         Kind      : SsKey
         Attribute : SsKey
-        Before    : int64
-        After     : int64
+        Before    : int64<row>
+        After     : int64<row>
     }
 
 /// Post-deploy data-integrity diff between two deployments of the same schema
@@ -73,7 +81,7 @@ module DataIntegrityChecker =
                 | Some b, Some a ->
                     let rows =
                         if b.RowCount <> a.RowCount then
-                            { Kind = kindKey; Before = b.RowCount; After = a.RowCount } :: rows
+                            { Kind = kindKey; Before = b.RowCount * 1L<row>; After = a.RowCount * 1L<row> } :: rows
                         else rows
                     // Per-attribute null-count divergences — union of both sides'
                     // attribute keys so a column that lost / gained its NullCount
@@ -89,7 +97,7 @@ module DataIntegrityChecker =
                             let bn = Map.tryFind attrKey b.NullCounts |> Option.defaultValue 0L
                             let an = Map.tryFind attrKey a.NullCounts |> Option.defaultValue 0L
                             if bn <> an then
-                                { Kind = kindKey; Attribute = attrKey; Before = bn; After = an } :: acc
+                                { Kind = kindKey; Attribute = attrKey; Before = bn * 1L<row>; After = an * 1L<row> } :: acc
                             else acc) nulls
                     rows, nulls, warns
                 | Some _, None ->

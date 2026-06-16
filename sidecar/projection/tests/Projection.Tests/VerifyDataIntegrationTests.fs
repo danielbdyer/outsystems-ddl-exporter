@@ -93,8 +93,8 @@ type VerifyDataIntegrationTests(fixture: EphemeralContainerFixture) =
         Assert.Equal(1, report.RowCountDeltas.Length)
         let delta = List.head report.RowCountDeltas
         Assert.Equal(ssKeyOfTable contract "OSUSR_VD_ITEMS", delta.Kind)
-        Assert.Equal(3L, delta.Before)
-        Assert.Equal(6L, delta.After)
+        Assert.Equal(3L<row>, delta.Before)
+        Assert.Equal(6L<row>, delta.After)
         // No false positives: the untouched ORDERS table is absent, and the
         // inserted rows carry non-null NAME so no null-count divergence fires.
         Assert.Empty(report.NullCountDeltas)
@@ -127,9 +127,9 @@ type VerifyDataIntegrationTests(fixture: EphemeralContainerFixture) =
         let nullDelta =
             report.NullCountDeltas
             |> List.find (fun d -> d.Kind = ordersKey && d.Attribute = noteKey)
-        Assert.Equal(0L, nullDelta.Before)
-        Assert.Equal(1L, nullDelta.After)
+        Assert.Equal(0L<row>, nullDelta.Before)
+        Assert.Equal(1L<row>, nullDelta.After)
         // The row count moved too (2 -> 3 on ORDERS).
         let rowDelta = report.RowCountDeltas |> List.find (fun d -> d.Kind = ordersKey)
-        Assert.Equal(2L, rowDelta.Before)
-        Assert.Equal(3L, rowDelta.After)
+        Assert.Equal(2L<row>, rowDelta.Before)
+        Assert.Equal(3L<row>, rowDelta.After)
