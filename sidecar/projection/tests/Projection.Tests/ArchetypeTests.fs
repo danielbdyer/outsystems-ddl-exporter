@@ -59,7 +59,7 @@ let ``CapabilityProfile — the derived Grant is a projection of the archetype (
 
 let private envWith (grant: Grant option) (archetype: Archetype option) : Environment =
     { Name = "e"; Access = Access.Direct (ConnectionRef.EnvVar "E_CONN")
-      Grant = grant; Store = None; Rendition = None; Archetype = archetype }
+      Grant = grant; Store = None; Rendition = None; Archetype = archetype; AtomicDeploy = None; Revert = None }
 
 [<Fact>]
 let ``effectiveArchetype — a declared archetype wins over the grant inference`` () =

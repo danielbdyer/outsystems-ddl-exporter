@@ -655,7 +655,7 @@ let runTransfer
     (emission: EmissionMode)
     (resumable: bool)
     (tables: string list)
-    (autoRevert: bool)
+    (revertPolicy: RevertPolicy)
     (revertDir: string option)
     (surveyAdvisory: string list)
     : int =
@@ -723,9 +723,12 @@ let runTransfer
     let mode = if executeGated then Transfer.Execute else Transfer.DryRun
     let resolveReconciliation (contract: Catalog) =
         TransferSpec.resolveAllReconciliation contract entries userMapEntries
+    // M23 — collapse the revert policy to the engine's (autoRevert, dir) levers;
+    // a Script/Auto policy with no explicit --revert-dir defaults to the cwd.
+    let revertAuto, revertOut = RevertPolicy.toEngine (revertDir |> Option.orElse (Some ".")) revertPolicy
     let runBody () =
         let result =
-            (Transfer.runThroughConnectionsResumable mode emission resumable allowCdc allowDrops tables connections resolveReconciliation autoRevert revertDir)
+            (Transfer.runThroughConnectionsResumable mode emission resumable allowCdc allowDrops tables connections resolveReconciliation revertAuto revertOut)
                 .GetAwaiter().GetResult()
         match result with
         | Ok report ->
@@ -789,7 +792,7 @@ let runReverseLegTransfer
     (streaming: bool)
     (journalDirectory: string option)
     (tables: string list)
-    (autoRevert: bool)
+    (revertPolicy: RevertPolicy)
     (revertDir: string option)
     (sinkCapability: SinkLoadCapability)
     (surveyAdvisory: string list)
@@ -887,6 +890,8 @@ let runReverseLegTransfer
     | Ok connections ->
 
     let mode = if executeGated then Transfer.Execute else Transfer.DryRun
+    // M23 — collapse the revert policy to the engine's (autoRevert, dir) levers.
+    let revertAuto, revertOut = RevertPolicy.toEngine (revertDir |> Option.orElse (Some ".")) revertPolicy
     let runBody () =
         let result =
             match realization with
@@ -900,7 +905,7 @@ let runReverseLegTransfer
                 (Transfer.runStreamingReverseLegThroughConnections mode allowCdc allowDrops journal connections logicalSourceContract physicalSinkContract reconciliation)
                     .GetAwaiter().GetResult()
             | ReverseLegRealization.Materialized ->
-                (Transfer.runReverseLegThroughConnectionsWith sinkCapability.IdentityPolicy mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation autoRevert revertDir)
+                (Transfer.runReverseLegThroughConnectionsWith sinkCapability.IdentityPolicy mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation revertAuto revertOut)
                     .GetAwaiter().GetResult()
         match result with
         | Ok report ->
