@@ -960,6 +960,9 @@ module Voice =
         | Preflight.UndeclaredDestructiveChange ->
             View.Bad, "This change drops a database object. Approve the removal, or halt.",
             Some(View.Action "Approve the removal: --allow-drops (accept all) or --declare-drop <token> for each, or halt.")
+        | Preflight.MidWriteNotProtected ->
+            View.Bad, "The write path is neither atomic nor resumable, so a mid-write failure would leave a half-populated target. The run stopped before any write. Wrap the write path in a transaction, make it resumable, or halt.",
+            Some(View.Action "Wrap the write path in a transaction, make it resumable, or halt.")
         | Preflight.DataViolatesTightening ->
             View.Bad, "The existing data violates the tightening. Correct the data, relax the constraint, or halt.",
             Some(View.Action "Correct the data, relax the constraint, or halt.")

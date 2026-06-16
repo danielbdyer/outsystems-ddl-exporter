@@ -574,6 +574,7 @@ let private allGateLabels : Preflight.GateLabel list =
       Preflight.CdcTrackedSink
       Preflight.SchemaReadFailed
       Preflight.UndeclaredDestructiveChange
+      Preflight.MidWriteNotProtected
       Preflight.UnclassifiedRefusal ]
 
 [<Fact>]

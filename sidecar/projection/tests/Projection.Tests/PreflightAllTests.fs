@@ -272,6 +272,7 @@ let ``G0: labelText renders every GateLabel variant (closed-DU totality)`` () =
           Preflight.CdcTrackedSink
           Preflight.SchemaReadFailed
           Preflight.UndeclaredDestructiveChange
+          Preflight.MidWriteNotProtected
           Preflight.UnclassifiedRefusal ]
     for l in labels do
         Assert.False(System.String.IsNullOrWhiteSpace(Preflight.labelText l))
@@ -329,3 +330,94 @@ let ``G0: refusalOf classifies the FIRST error code (the gate's primary refusal)
     Assert.Equal("transfer.insufficientGrant", refusal.Error.Code)
     Assert.Equal(7, refusal.ExitCode)
     Assert.Equal(Preflight.InsufficientGrant, refusal.Label)
+
+// -- M20 · Transactionality (T-VI spanning) — the honest-naming half ----------
+//
+// THE VECTOR §5.1 / M20. A half-populated target after a mid-Phase-2 crash on an
+// unprotected (non-atomic, non-resumable) write path was the GENERIC
+// `UnclassifiedRefusal` (exit 3). M20 NAMES it: a closed-DU variant
+// (`MidWriteNotProtected`), its exit-9 classify arm (the destructive-failure
+// class), and a PURE gate. The live atomic `BEGIN TRAN` wrapper stays deferred
+// (the A3 scaffold in Preflight.fs is the survey's to resolve) — these witness
+// the classification half only.
+
+[<Fact>]
+let ``M20 (T-VI spanning): classify maps transfer.midWriteNotProtected to (9, MidWriteNotProtected)`` () =
+    // The transactionality axis classifies as the destructive-failure class
+    // (exit 9), no longer the generic (3, UnclassifiedRefusal).
+    let exit, label = Preflight.classify "transfer.midWriteNotProtected"
+    Assert.Equal(9, exit)
+    Assert.Equal(Preflight.MidWriteNotProtected, label)
+    Assert.NotEqual(3, exit)
+
+[<Fact>]
+let ``M20 (T-VI spanning): classify maps the migrate.midWriteNotProtected form identically`` () =
+    // The SAME axis under the migrate namespace classifies identically — the same
+    // exit, the same label.
+    let exit, label = Preflight.classify "migrate.midWriteNotProtected"
+    Assert.Equal(9, exit)
+    Assert.Equal(Preflight.MidWriteNotProtected, label)
+
+[<Fact>]
+let ``M20 (T-VI spanning): labelText covers MidWriteNotProtected`` () =
+    // The named axis has an operator-facing rendering — the reporting surface can
+    // name WHICH axis refused.
+    Assert.Equal("mid-write not protected", Preflight.labelText Preflight.MidWriteNotProtected)
+    Assert.False(System.String.IsNullOrWhiteSpace(Preflight.labelText Preflight.MidWriteNotProtected))
+
+// A small set of planned destructive writes the transactionality gate reasons
+// over (an Insert and a Delete on two objects).
+let private plannedDestructiveWrites : Preflight.PlannedWrite list =
+    [ { Schema = "dbo"; Table = "Customer"; Action = Preflight.Insert }
+      { Schema = "dbo"; Table = "Order"; Action = Preflight.Delete } ]
+
+[<Fact>]
+let ``M20 (T-VI spanning): transactionalityViolations is non-empty and named under Unprotected`` () =
+    // An unprotected write path yields one violation per planned destructive write
+    // — a mid-write crash would leave each half-applied.
+    let violations =
+        Preflight.transactionalityViolations Preflight.Unprotected plannedDestructiveWrites
+    Assert.Equal(2, List.length violations)
+    // Named: each violation locates the object + action it would leave half-applied.
+    let objects = violations |> List.map (fun v -> v.Object)
+    Assert.Contains("dbo.Customer", objects)
+    Assert.Contains("dbo.Order", objects)
+    // Deterministic — sorted by object then action.
+    Assert.Equal<string list>([ "dbo.Customer"; "dbo.Order" ], objects)
+
+[<Fact>]
+let ``M20 (T-VI spanning): transactionalityViolations is empty under Atomic and Resumable`` () =
+    // A protected path (whole-write rollback OR idempotent re-run) yields no
+    // violation — the mid-write crash is survived.
+    Assert.Empty(Preflight.transactionalityViolations Preflight.Atomic plannedDestructiveWrites)
+    Assert.Empty(Preflight.transactionalityViolations Preflight.Resumable plannedDestructiveWrites)
+
+[<Fact>]
+let ``M20 (T-VI spanning): transactionalityPreflight is Ok when the path is protected`` () =
+    // Atomic and Resumable both pass the gate — no refusal.
+    match Preflight.transactionalityPreflight Preflight.Atomic plannedDestructiveWrites with
+    | Ok () -> ()
+    | Error e -> Assert.Fail(sprintf "expected Ok under Atomic, got %A" e)
+    match Preflight.transactionalityPreflight Preflight.Resumable plannedDestructiveWrites with
+    | Ok () -> ()
+    | Error e -> Assert.Fail(sprintf "expected Ok under Resumable, got %A" e)
+
+[<Fact>]
+let ``M20 (T-VI spanning): transactionalityPreflight refuses migrate.midWriteNotProtected under Unprotected`` () =
+    // An unprotected path refuses with the named code — which classifies to exit 9
+    // (the destructive-failure axis), never the generic exit 3.
+    match Preflight.transactionalityPreflight Preflight.Unprotected plannedDestructiveWrites with
+    | Error [ e ] ->
+        Assert.Equal("migrate.midWriteNotProtected", e.Code)
+        let exit, label = Preflight.classify e.Code
+        Assert.Equal(9, exit)
+        Assert.Equal(Preflight.MidWriteNotProtected, label)
+    | other -> Assert.Fail(sprintf "expected a single-error refusal, got %A" other)
+
+[<Fact>]
+let ``M20 (T-VI spanning): an empty plan never refuses, even Unprotected`` () =
+    // No planned destructive write means nothing to leave half-applied — the gate
+    // is vacuously Ok regardless of protection.
+    match Preflight.transactionalityPreflight Preflight.Unprotected [] with
+    | Ok () -> ()
+    | Error e -> Assert.Fail(sprintf "an empty plan must pass, got %A" e)
