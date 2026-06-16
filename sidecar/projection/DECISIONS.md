@@ -24041,3 +24041,58 @@ never merged; this branch fast-forwarded onto it).
   `CatalogDiff.fs` trio (M11 → M13 → M12, one serialized implementer — shared file), plus M3 and M20 (each its
   own surface, parallel). Drive it as a Workflow: worktree-isolated implementers + one adversarial verifier per
   move + one integrator owning the build/matrix/gates.**
+
+## 2026-06-15 (later still) — Wave 1 follow-on: the FK-trust transfer-leg OPEN QUESTION RESOLVED (operator-authorized; option C — re-trust by default + opt-out lever)
+
+Resolves the **OPEN QUESTION** the Wave 1 entry (just above) deferred to the operator / transfer-path owner:
+should `Transfer.Execute` re-trust the sink's FKs after the bulk load? **Operator decision (2026-06-15): yes —
+re-trust by default, with a per-run opt-out lever (option C).** Recorded ahead of implementation per the
+amendment-first discipline (`CLAUDE.md` §5); the move touches the transfer realization path and the
+realization-selector / "downgrades never silent" commitments.
+
+- **Mechanism (verified post-merge against the landed M1).** `Bulk.copyCore` (`Bulk.fs:107/127/140`) builds
+  `SqlBulkCopy` with only `KeepIdentity`/`KeepNulls` — never `SqlBulkCopyOptions.CheckConstraints` — both for
+  throughput AND because the two-phase deferred-FK load (Phase 1 inserts cycle-deferred FKs unenforced; Phase 2
+  re-points) makes during-load checking structurally impossible. So re-trust MUST be a post-Phase-2 step;
+  flipping the bulk option is not on the table.
+- **The decision (as built).** The transfer SNAPSHOTS the as-deployed FK trust BEFORE the load
+  (`trustedFksOnLoadedTables` — the FKs that are `is_not_trusted = 0` on the plan's loaded tables) and, after the
+  load, re-validates exactly those with `ALTER TABLE … WITH CHECK CHECK CONSTRAINT` (`restoreFkTrust`). One
+  semi-join per FK (child × parent PK), one-time, and **guaranteed to succeed after a faithful transfer**
+  (reconciling drops remove the referencing row too — no dangling refs survive; row-equality already proves FK
+  satisfaction); a re-validation that *fails* is a LOUD integrity signal, never silent. **The snapshot is the
+  fidelity guard:** an FK deployed UNTRUSTED (a `NoCheckFk` decision — the very thing M1 made faithful) is absent
+  from the snapshot, so the restore never re-trusts it — preserving the decision and never re-validating data the
+  operator chose not to validate. (A blanket "re-trust every untrusted FK" would have corrupted exactly that,
+  undermining the M1 keystone — caught and fixed during the build.) The opt-out lever
+  (`WriteOptions.RetrustForeignKeys = false`) keeps raw load throughput at the reverse leg's
+  hundreds-of-millions-of-rows scale; the opt-out is named, never silent.
+- **Implementation (BUILT — inline, this session).**
+  1. **Lever:** `RetrustForeignKeys : bool` on `Transfer.WriteOptions` (default `true` in `WriteOptions.def`,
+     inherited by `resumable`/`ofEmission`). Threaded via `runCore` (every public entry passes its `WriteOptions`
+     through it); a `Transfer.runWithOptions` test seam exposes it. The CLI flag rides with the Wave-2 streaming
+     follow-on.
+  2. **Snapshot + restore (materialized path):** `trustedFksOnLoadedTables` (pre-load) + `restoreFkTrust`
+     (post-load), hooked in `runCore` either side of the write block (Execute + lever-on only). Realization-layer
+     policy (A36); the restored count is logged via `LogSink` (`"retrust"` stage) — no `TransferReport` field
+     (the success path restores fidelity; it is not a divergence to report). **Scope: the MATERIALIZED write
+     path.** The streaming reverse-leg (`writePlanStreaming`) and synthetic-load (`runSynthetic`) realizations
+     are a named Wave-2 follow-on — until wired they exhibit `FkTrustNotRestoredOnBulkLoad`, not a silent gap.
+  3. **Canary on-path:** `trustNormalizedFks` retired in `TransferCanaryTests.RoundTrips` → it asserts full
+     `PhysicalSchema.isEqual` incl. trust (the helper survives only for the off-path).
+  4. **Tolerance + new canaries:** closed variant `FkTrustNotRestoredOnBulkLoad` —
+     **`@ladder … Decision AcceptedFaithful`** (NOT Data/OpenGap: FK trust is the Decision sub-axis per M1, and
+     the default config is faithful so it does not de-rate the matrix; it is NOT `FkTrustUnreflected`, the
+     M1-deleted comparator-blind tag). Two new Docker canaries: the OFF-path (`RetrustForeignKeys = false` leaves
+     the sink untrusted, only-trust-diverges, tolerance named) and the NoCheckFk-PRESERVATION witness (an
+     as-deployed untrusted FK survives a default re-trust transfer untrusted on both sides — the guard against a
+     blanket re-trust).
+- **Witness (all green).** Debug + Release builds clean (0/0). Pure focused 45/45 (ToleranceTests count 9→10,
+  SsdtExtendedPropertyEmissionTests, ManifestUnsupportedTests, MatrixLadderTests). Docker `TransferCanaryTests`
+  24/24, **0 skipped** (real run, ~17 s) — incl. the on-path full-`isEqual` canaries, the off-path, and the
+  preservation witness. `matrix-status.sh` regenerated: gate=PASS, rungs L1/L2/L3 5/4/5, **tolerances 10, 3 open**
+  (Decision stays ✅ — the new tolerance is AcceptedFaithful), `@ladder` cross-check passes.
+- **Wave-2 follow-on (named, not silent).** Wire the snapshot/restore into the streaming reverse-leg
+  (`writePlanStreaming`, composing with `ReverseLegRealization.choose` + the capability-descent ladder) and
+  `runSynthetic`; expose the `RetrustForeignKeys` opt-out on the CLI face. Until then those realizations exhibit
+  the named `FkTrustNotRestoredOnBulkLoad`.

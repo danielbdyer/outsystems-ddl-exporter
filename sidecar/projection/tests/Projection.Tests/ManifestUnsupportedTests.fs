@@ -62,6 +62,7 @@ let ``Unsupported.compute names match current ToleratedDivergence variants`` () 
               "CompositePkFkUnreflected"
               "DecimalScaleTolerated"
               "EmptyTextNormalizedToNull"
+              "FkTrustNotRestoredOnBulkLoad"
               "HeaderCommentsOmitted"
               "IndexOptionsUnreflected"
               "PostDeployForeignKeysSplit"

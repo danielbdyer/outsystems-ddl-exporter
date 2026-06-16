@@ -526,6 +526,79 @@ module Transfer =
                             (System.String.Concat("DELETE FROM ", Render.tableQualified kind.Physical, ";"))  // LINT-ALLOW: terminal SQL-text boundary; table name is a validated TableId via Render.tableQualified
         }
 
+    // -- Option C (operator-authorized 2026-06-15): FK-trust restoration --------
+    //
+    // `SqlBulkCopy` (no `CHECK_CONSTRAINTS`) marks every FK on a bulk-loaded table
+    // `is_not_trusted = 1`. The faithful post-transfer state is the AS-DEPLOYED
+    // trust state — the sink schema deploy already honored every FK-trust decision
+    // (a normal FK trusted; a `NoCheckFk` decision deployed `WITH NOCHECK` →
+    // untrusted). So the restore SNAPSHOTS which FKs were trusted BEFORE the load
+    // and re-validates exactly those afterward. Critically this PRESERVES a
+    // `NoCheckFk` decision (the very fidelity M1 established): an FK untrusted
+    // before the load is absent from the snapshot, so the restore never re-trusts
+    // it — never overriding the operator's decision, never re-validating data the
+    // operator chose not to validate.
+
+    /// The plan's loaded (inserted-into) tables, lower-cased `schema.table`.
+    let private loadedTableKeys (catalog: Catalog) (plan: DataLoadPlan) : Set<string> =
+        plan.Loads
+        |> List.choose (fun l -> Catalog.tryFindKind l.Kind catalog)
+        |> List.map (fun k ->
+            (TableId.schemaText k.Physical).ToLowerInvariant() + "." + (TableId.tableText k.Physical).ToLowerInvariant())
+        |> Set.ofList
+
+    /// Pre-load snapshot — the `(schema, table, fk)` of every ENABLED + TRUSTED
+    /// FK on a loaded table, read from `sys.foreign_keys` (the deployed truth).
+    /// An FK the schema deployed UNTRUSTED (`is_not_trusted = 1` — a `NoCheckFk`
+    /// decision) is excluded, so the restore never touches it.
+    let private trustedFksOnLoadedTables (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) : Task<(string * string * string) list> =
+        task {
+            let loaded = loadedTableKeys catalog plan
+            if Set.isEmpty loaded then return [] else
+            let trusted = System.Collections.Generic.List<string * string * string>()
+            use cmd = sink.CreateCommand()
+            cmd.CommandText <-
+                "SELECT s.name, t.name, fk.name \
+                 FROM sys.foreign_keys fk \
+                 JOIN sys.tables t ON fk.parent_object_id = t.object_id \
+                 JOIN sys.schemas s ON t.schema_id = s.schema_id \
+                 WHERE fk.is_not_trusted = 0 AND fk.is_disabled = 0;"
+            use! reader = cmd.ExecuteReaderAsync()
+            let mutable go = true
+            while go do
+                let! has = reader.ReadAsync()
+                if has then trusted.Add(reader.GetString 0, reader.GetString 1, reader.GetString 2)
+                else go <- false
+            reader.Close()
+            return
+                trusted
+                |> Seq.filter (fun (sch, tbl, _) ->
+                    Set.contains (sch.ToLowerInvariant() + "." + tbl.ToLowerInvariant()) loaded)
+                |> List.ofSeq
+        }
+
+    /// Restore the trust the bulk load stripped — re-validate each FK in the
+    /// pre-load snapshot (`wasTrusted`) with `ALTER TABLE … WITH CHECK CHECK
+    /// CONSTRAINT` (one child×parent-PK semi-join per FK). After a faithful
+    /// transfer the data satisfies each FK so it succeeds; a FAILURE is a LOUD
+    /// signal the load was not faithful — a post-load integrity assertion, never
+    /// silent corruption. The gate is `WriteOptions.RetrustForeignKeys` (default
+    /// on); the opt-out is the named `ToleratedDivergence.FkTrustNotRestoredOnBulkLoad`.
+    let private restoreFkTrust (sink: SqlConnection) (wasTrusted: (string * string * string) list) : Task<unit> =
+        task {
+            if List.isEmpty wasTrusted then return () else
+            let stmts =
+                wasTrusted
+                |> List.map (fun (sch, tbl, fk) ->
+                    // LINT-ALLOW: terminal SQL-text boundary; identifiers are sys.* catalog-view
+                    // names (deployed truth), each quoted via Render.quote.
+                    System.String.Concat(
+                        "ALTER TABLE ", Render.quote sch, ".", Render.quote tbl,
+                        " WITH CHECK CHECK CONSTRAINT ", Render.quote fk, ";"))
+            do! Deploy.executeBatch sink (String.concat "\n" stmts)
+            LogSink.recordStageProgress "retrust" (List.length wasTrusted) (List.length wasTrusted) 0L
+        }
+
     /// The durable phase-marker table — records which transfers completed, so a
     /// re-run of an already-finished transfer is a no-op (idempotent).
     ///
@@ -833,11 +906,24 @@ module Transfer =
           /// applies. `Structural` (the `def` default) is byte-identical; a
           /// `FullRights` sink threads `PreferPreservedKeys` so IDENTITY-PK kinds
           /// preserve their source keys (no capture/remap).
-          IdentityPolicy : IdentityPolicy }
+          IdentityPolicy : IdentityPolicy
+          /// Option C (operator-authorized 2026-06-15) — re-trust the sink's FKs
+          /// after the bulk load. `SqlBulkCopy` (no `CHECK_CONSTRAINTS`) leaves
+          /// them `is_not_trusted = 1`; `true` (the `def` default) re-validates
+          /// each untrusted FK on a loaded table with `WITH CHECK CHECK
+          /// CONSTRAINT`, restoring trust so the sink rounds-trips faithfully —
+          /// the post-load scan is one semi-join per FK, guaranteed to succeed
+          /// after a faithful transfer (a failure is a LOUD integrity signal, not
+          /// silent corruption). `false` keeps raw load throughput at the reverse
+          /// leg's hundreds-of-millions-of-rows scale and leaves the FKs
+          /// untrusted — the NAMED `ToleratedDivergence.FkTrustNotRestoredOnBulkLoad`.
+          /// Covers the MATERIALIZED write path (`writePlan`); the streaming
+          /// reverse-leg path is a named Wave-2 follow-on.
+          RetrustForeignKeys : bool }
 
     [<RequireQualifiedAccess>]
     module WriteOptions =
-        let def : WriteOptions = { Emission = EmissionMode.Incremental; Resumable = false; LoadSet = None; IdentityPolicy = IdentityPolicy.Structural }
+        let def : WriteOptions = { Emission = EmissionMode.Incremental; Resumable = false; LoadSet = None; IdentityPolicy = IdentityPolicy.Structural; RetrustForeignKeys = true }
         let resumable : WriteOptions = { def with Resumable = true }
         let ofEmission (mode: EmissionMode) : WriteOptions = { def with Emission = mode }
 
@@ -948,6 +1034,17 @@ module Transfer =
             match preWrite with
             | Some refusal -> return Result.failureOf refusal
             | None ->
+                // Option C — snapshot the AS-DEPLOYED FK trust BEFORE the load, so
+                // the post-load restore re-validates only the FKs the bulk load
+                // strips (a NoCheckFk decision — untrusted as-deployed — is absent
+                // from the snapshot and so preserved). Materialized path only; the
+                // streaming reverse-leg is a named Wave-2 follow-on.
+                let! preTrustedFks =
+                    task {
+                        if mode = Execute && writeOpts.RetrustForeignKeys
+                        then return! trustedFksOnLoadedTables sink catalog plan
+                        else return []
+                    }
                 let! writeSkips, laneDescents, replayedPriorDrops =
                     task {
                         if mode <> Execute then return [], [], None
@@ -970,6 +1067,11 @@ module Transfer =
                                 let! (skips, descents) = writePlan sink catalog plan
                                 return skips, descents, None
                     }
+                // Option C — restore the trust the bulk load stripped (exactly the
+                // pre-load snapshot, so NoCheckFk decisions are preserved). A
+                // re-validation that fails is a loud integrity signal, not silent.
+                if mode = Execute && writeOpts.RetrustForeignKeys then
+                    do! restoreFkTrust sink preTrustedFks
                 return
                     Result.success
                         { Mode                = mode
@@ -1041,6 +1143,25 @@ module Transfer =
         (catalog: Catalog)
         : Task<Result<TransferReport>> =
         runCore mode allowCdc false source sink catalog Map.empty None (WriteOptions.ofEmission emission)
+
+    /// **A Transfer under explicit `WriteOptions`.** The general test seam that
+    /// exposes every write-seam lever — including option C's `RetrustForeignKeys`
+    /// (default on; pass `{ WriteOptions.def with RetrustForeignKeys = false }` to
+    /// keep the bulk load's untrusted FKs, the named `FkTrustNotRestoredOnBulkLoad`
+    /// opt-out). Non-reconciling.
+    ///
+    /// NM-40: TEST-ONLY SEAM — exercises the WriteOptions branch without the
+    /// connection apparatus. Production routes through the `*ThroughConnections*`
+    /// family; the only callers are canary tests.
+    let runWithOptions
+        (mode: Mode)
+        (writeOpts: WriteOptions)
+        (allowCdc: bool)
+        (source: SqlConnection)
+        (sink: SqlConnection)
+        (catalog: Catalog)
+        : Task<Result<TransferReport>> =
+        runCore mode allowCdc false source sink catalog Map.empty None writeOpts
 
     /// **Synthetic load (THE_SYNTHETIC_DATA_DESIGN §8, slice S2).** The
     /// synthetic source has **no source DB**: rows are *generated* by the pure
