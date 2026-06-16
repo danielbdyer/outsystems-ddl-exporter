@@ -1860,6 +1860,11 @@ B` + `applyDiff threads the passed-in catalog … (no-cheat)`.
 the schema/data history. Witness: `Lifecycle.reconstructLatest` (fold
 applyDiff). The `compose : Delta → Delta → Delta` operator (diff∘diff) is **SHIPPED**
 as `CatalogDiff.compose` (6.H.3, 2026-06-01); A-Lifecycle-4 promoted to Bucket A.
+**M12 (THE VECTOR Wave 2, SHIPPED):** the groupoid INVERSE
+`CatalogDiff.inverse d = between (target d) (source d)` completes the partial
+groupoid — every arrow is invertible on its composability class
+(`applyDiff (inverse d) (target d) = source d`, the freed rollback witness;
+`compose d (inverse d) = identity at source`, the groupoid law).
 **Latent (2026-06-01 morphology research):** `reconstructLatest` runs only over
 **in-memory values in tests** — there is **no durable episode** to integrate
 over (`CatalogSnapshot` is schema-only, single-plane, never serialized). The
@@ -1892,6 +1897,12 @@ CDC capture series, 6.F.3-data, ⬚); the value-level `π`/`Delta` stay concrete
 `CatalogDiff` (temporal multi-version use, 6.H), **not** the data leg, whose δ is
 substrate-fused (no `RowDiff` value; `WAVE_6_ALGEBRA.md` §12.4) — per the
 noun/verb reification principle (§12.3).
+**M11 (THE VECTOR Wave 2, SHIPPED):** `‖·‖` is now a proven METRIC — the
+triangle inequality `‖compose d1 d2‖ ≤ ‖d1‖ + ‖d2‖` (subadditive; churn cancels,
+so net ≤ path) is a green property over generated adjacent triples. So
+"minimality is measured" rests on a genuine metric, not merely a non-negative
+count — the missing metric law of the norm `between`/`compose`/`norm` already
+computed both sides of (`pathLength` vs `‖net‖`).
 
 **T16 — the Project square (the master equation; the adjunction lifted to
 displacements).** `run( emit(B ⊖ A), realize(A) ) = realize(B)` modulo

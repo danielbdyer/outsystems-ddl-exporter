@@ -72,7 +72,7 @@ let ``6.H.2: reconstructLatestSchema over the persisted chain reproduces the sto
         let reconstructed = EpisodicLifecycle.reconstructLatestSchema loaded |> mustOk
         // The FTC over the loaded chain reproduces the stored latest schema
         // (modulo the diff's captured surface).
-        Assert.True(CatalogDiff.isEmpty (CatalogDiff.between targetCatalog reconstructed |> mustOk)))
+        Assert.True(CatalogDiff.isEmpty (CatalogDiff.between targetCatalog reconstructed)))
 
 [<Fact>]
 let ``6.H.2: every plane but the Profile survives the round-trip (coordinate, schema, data, refactorlog)`` () =

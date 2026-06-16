@@ -104,10 +104,7 @@ module Compare =
     /// contradict. With no A-profile the dealbreaker section is empty and
     /// `DataEvidenceAvailable = false`.
     let compute (source: Operand) (target: Operand) : CompareReport =
-        let schemaDelta =
-            match CatalogDiff.between target.Catalog source.Catalog with
-            | Ok d -> Some d
-            | Error _ -> None
+        let schemaDelta = Some (CatalogDiff.between target.Catalog source.Catalog)
         let dealbreakers, evidence =
             match source.Profile with
             | Some profile ->

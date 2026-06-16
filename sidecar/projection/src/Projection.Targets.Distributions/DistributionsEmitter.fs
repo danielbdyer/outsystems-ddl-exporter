@@ -1,6 +1,5 @@
 namespace Projection.Targets.Distributions
 
-open System.IO
 open System.Text.Json
 open System.Text.Json.Nodes
 open Projection.Core
@@ -202,15 +201,7 @@ module DistributionsEmitter =
     /// stream-position mutation is needed (the byte-buffer is
     /// passed directly via the span overload).
     let private kindJsonNode (profile: Profile) (k: Kind) : JsonNode =
-        use stream = new MemoryStream()
-        do
-            use writer = new Utf8JsonWriter(stream, (JsonOptions.compact ()))
-            writeKind writer profile k
-            writer.Flush()
-        let bytes = stream.ToArray()
-        match JsonNode.Parse(System.ReadOnlySpan<byte>(bytes)) with
-        | null  -> invalidOp "DistributionsEmitter.kindJsonNode: writer produced empty stream (unreachable; writeKind always emits an object)"
-        | node  -> node
+        JsonWriting.writeToNode (fun writer -> writeKind writer profile k)
 
     /// Π port realization (chapter 3.5 slice γ; chapter-3.7 slice ε
     /// pillar-1 cash-out). Profile-consuming Π; per
@@ -282,9 +273,7 @@ module DistributionsEmitter =
                     err)
         | Ok artifact ->
             let slices = ArtifactByKind.toMap artifact
-            use stream = new MemoryStream()
-            do
-                use w = new Utf8JsonWriter(stream, (JsonOptions.indented ()))
+            JsonWriting.writeToString (fun w ->
                 w.WriteStartObject()
                 w.WriteString("emitter", emitterName)
                 w.WriteNumber("version", version)
@@ -314,9 +303,7 @@ module DistributionsEmitter =
                     w.WriteEndArray()
                     w.WriteEndObject()
                 w.WriteEndArray()
-                w.WriteEndObject()
-                w.Flush()
-            System.Text.Encoding.UTF8.GetString(stream.ToArray())
+                w.WriteEndObject())
 
     /// The "wide" alias mentioned in the codification refinement: an
     /// emitter that consumes the enriched IR. Provided for symmetry

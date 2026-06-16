@@ -1,6 +1,7 @@
 namespace Projection.Pipeline
 
 open Projection.Core
+open FsToolkit.ErrorHandling
 
 /// Chapter C slice C.2 — operator-supplied acknowledgements that
 /// source-side defects (missing primary keys; unresolved circular
@@ -136,14 +137,11 @@ module SpecialCircumstancesBinding =
         (catalog: Catalog)
         (cfg: Config.Config)
         : Result<SpecialCircumstances> =
-        let pksR     = bindAllowMissingPrimaryKey catalog cfg.Overrides.AllowMissingPrimaryKey
-        let cyclesR  = bindAllowedCycles catalog cfg.Overrides.CircularDependencies
-        match pksR, cyclesR with
-        | Ok pks, Ok cycles ->
-            Result.success {
+        validation {
+            let! pks    = bindAllowMissingPrimaryKey catalog cfg.Overrides.AllowMissingPrimaryKey
+            and! cycles = bindAllowedCycles catalog cfg.Overrides.CircularDependencies
+            return {
                 AllowedMissingPrimaryKeys = pks
                 AllowedCycles             = cycles
             }
-        | Error es1, Error es2 -> Error (es1 @ es2)
-        | Error es, _          -> Error es
-        | _, Error es          -> Error es
+        }

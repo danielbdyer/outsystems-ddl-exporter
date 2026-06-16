@@ -974,6 +974,17 @@ let ``T13: evolution over time is composition — replay = fold ⊕ along the ti
     citationOf
         "tests/Projection.Tests/CatalogDiffTests.fs"
         "compose: applyDiff (compose d1 d2) A = applyDiff d2 (applyDiff d1 A) (functor law)"
+    // M12 (THE VECTOR Wave 2) — the groupoid INVERSE completes the partial
+    // groupoid: `inverse d = between (target d) (source d)` is the rollback arrow
+    // (`applyDiff (inverse d) (target d) = source d`), and `compose d (inverse d)`
+    // is the identity at source — so every arrow is invertible on its
+    // composability class.
+    citationOf
+        "tests/Projection.Tests/CatalogDiffTests.fs"
+        "M12 (groupoid inverse): applyDiff (inverse d) (target d) reproduces source — the rollback witness"
+    citationOf
+        "tests/Projection.Tests/CatalogDiffTests.fs"
+        "M12 (groupoid law): compose d (inverse d) = identity at source"
     citationOf
         "tests/Projection.Tests/LifecycleTests.fs"
         "6.H.3: netDiff equals fold compose over the evolution chain (3 snapshots)"
@@ -1038,6 +1049,16 @@ let ``T15: CDC is the norm — emit is an isometry; ‖δ‖=0 ⟹ zero capture 
     citationOf
         "tests/Projection.Tests/CdcSilenceTests.fs"
         "Slice γ sensitivity: changed-content redeploy DOES fire CDC capture rows — proves the canary mechanism is real (not silent for unrelated reasons)"
+    // M11 (THE VECTOR Wave 2) — the norm is a genuine METRIC: the triangle
+    // inequality ‖compose d1 d2‖ ≤ ‖d1‖ + ‖d2‖ (subadditivity over composition,
+    // churn cancels) makes "minimality is measured" (the CDC-norm) rest on a real
+    // metric, not merely a non-negative count.
+    citationOf
+        "tests/Projection.Tests/CatalogDiffTests.fs"
+        "M11 (triangle inequality): ‖compose d1 d2‖ ≤ ‖d1‖ + ‖d2‖ — norm is a metric"
+    citationOf
+        "tests/Projection.Tests/CatalogDiffTests.fs"
+        "M11 (triangle inequality, swept): ‖between A C‖ ≤ ‖between A B‖ + ‖between B C‖ over adjacent triples"
 
 // T16 — PROMOTED to Bucket A (6.D.1, 2026-06-01): the one-command `migrate A B`
 // composition exists and round-trips. `Migration.applyTo (plan A B) A ≡ B` is

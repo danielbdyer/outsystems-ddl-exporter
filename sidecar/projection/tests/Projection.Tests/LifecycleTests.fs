@@ -158,14 +158,14 @@ let ``A-Lifecycle (6.A.11 / H-007): reconstructLatest derives the latest snapsho
     let latest = (Lifecycle.latest devChain).Catalog
     // The reconstruction (fold applyDiff genesis) reproduces the stored latest
     // (the customer-rename evolution) over the captured surface.
-    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between latest reconstructed |> mustOk))
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between latest reconstructed))
     // And it is NOT genesis — the rename was actually applied.
-    Assert.False(CatalogDiff.isEmpty (CatalogDiff.between sampleCatalog reconstructed |> mustOk))
+    Assert.False(CatalogDiff.isEmpty (CatalogDiff.between sampleCatalog reconstructed))
 
 [<Fact>]
 let ``reconstructLatest: a genesis-only lifecycle reconstructs C0`` () =
     let reconstructed = Lifecycle.reconstructLatest devGenesis |> mustOk
-    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between sampleCatalog reconstructed |> mustOk))
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between sampleCatalog reconstructed))
 
 // 6.H.3 — netDiff (the integral ∫δ as a single delta) + its equality to
 // fold-compose over the evolution chain (the FTC's companion). A 3-snapshot
@@ -174,7 +174,7 @@ let ``reconstructLatest: a genesis-only lifecycle reconstructs C0`` () =
 let ``6.H.3: netDiff applied to genesis reproduces latest (the integral)`` () =
     let nd = Lifecycle.netDiff devChain |> mustOk
     let reconstructed = CatalogDiff.applyDiff sampleCatalog nd
-    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between targetCatalog reconstructed |> mustOk))
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between targetCatalog reconstructed))
 
 [<Fact>]
 let ``6.H.3: netDiff equals fold compose over the evolution chain (3 snapshots)`` () =
@@ -195,8 +195,8 @@ let ``6.H.3: netDiff equals fold compose over the evolution chain (3 snapshots)`
     let viaFold = CatalogDiff.applyDiff sampleCatalog folded
     let viaNet = CatalogDiff.applyDiff sampleCatalog nd
     // Both reproduce the latest (sampleCatalog again, here) over the captured surface.
-    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between viaFold viaNet |> mustOk))
-    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between sampleCatalog viaNet |> mustOk))
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between viaFold viaNet))
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between sampleCatalog viaNet))
 
 // P4 — CatalogDiff.compose now has a PRODUCTION caller: Lifecycle.netDiff folds
 // it over the evolution chain. This test asserts the production net-diff (the
@@ -215,11 +215,11 @@ let ``P4 (6.H.3): production netDiff (compose fold) equals direct between(genesi
     // functor law.
     let genesis = (Lifecycle.head chainLc).Catalog
     let latest = (Lifecycle.latest chainLc).Catalog
-    let direct = CatalogDiff.between genesis latest |> mustOk
+    let direct = CatalogDiff.between genesis latest
     // The composed net-diff equals the direct diff on the captured surface.
     Assert.True(CatalogDiff.isEmpty (CatalogDiff.between
                                         (CatalogDiff.applyDiff genesis viaCompose)
-                                        (CatalogDiff.applyDiff genesis direct) |> mustOk))
+                                        (CatalogDiff.applyDiff genesis direct)))
     // And the channel norms agree (round-trip churn cancels; net is empty here).
     Assert.Equal(CatalogDiff.norm direct, CatalogDiff.norm viaCompose)
 
@@ -232,11 +232,11 @@ let ``P4 (6.H.3): production netDiff over a non-trivial-net 3-snapshot chain equ
     let chainLc = Lifecycle.append c2 devChain |> mustResultOk
     let viaCompose = Lifecycle.netDiff chainLc |> mustOk
     let genesis = (Lifecycle.head chainLc).Catalog
-    let direct = CatalogDiff.between genesis (Lifecycle.latest chainLc).Catalog |> mustOk
+    let direct = CatalogDiff.between genesis (Lifecycle.latest chainLc).Catalog
     // Both reconstruct the latest (Patron) from genesis.
     Assert.True(CatalogDiff.isEmpty (CatalogDiff.between
                                         (CatalogDiff.applyDiff genesis viaCompose)
-                                        targetCatalog |> mustOk))
+                                        targetCatalog))
     Assert.Equal(CatalogDiff.norm direct, CatalogDiff.norm viaCompose)
     // The net is genuinely non-empty (the rename survived the fold).
     Assert.False(CatalogDiff.isEmpty viaCompose)
@@ -264,12 +264,12 @@ let ``NM-45: CatalogDiff.compose returns None (fail-loud) on non-adjacent diffs`
     // NOT meet d2's SOURCE (genesis/Customer) on the captured surface, so the
     // groupoid composition is undefined — `compose` returns None. This is the
     // exact fail-loud signal netDiff's None branch now names rather than masks.
-    let d1 = CatalogDiff.between sampleCatalog targetCatalog |> mustOk
-    let d2 = CatalogDiff.between sampleCatalog sampleCatalog |> mustOk
+    let d1 = CatalogDiff.between sampleCatalog targetCatalog
+    let d2 = CatalogDiff.between sampleCatalog sampleCatalog
     Assert.True(Option.isNone (CatalogDiff.compose d1 d2),
                 "compose must fail loud (None) when d1.target does not meet d2.source")
     // ...and the ADJACENT pair composes (Some) — the precondition is genuine.
-    let d2adj = CatalogDiff.between targetCatalog sampleCatalog |> mustOk
+    let d2adj = CatalogDiff.between targetCatalog sampleCatalog
     Assert.True(Option.isSome (CatalogDiff.compose d1 d2adj),
                 "compose must be defined (Some) on an adjacent pair")
 

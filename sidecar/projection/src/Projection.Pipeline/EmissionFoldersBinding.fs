@@ -1,6 +1,7 @@
 namespace Projection.Pipeline
 
 open Projection.Core
+open FsToolkit.ErrorHandling
 
 /// Chapter C slice C.3 — operator-supplied emission-folder targeting.
 /// The binder resolves textual config entries (`Overrides
@@ -161,13 +162,11 @@ module EmissionFoldersBinding =
         (catalog: Catalog)
         (entry: Config.EmissionFolderEntry)
         : Result<SsKey * string> =
-        let keyR    = resolveKindByLogical catalog entry.Ref
-        let folderR = validateFolder entry.Ref entry.Folder
-        match keyR, folderR with
-        | Ok key, Ok folder    -> Result.success (key, folder)
-        | Error es1, Error es2 -> Error (es1 @ es2)
-        | Error es, _          -> Error es
-        | _, Error es          -> Error es
+        validation {
+            let! key    = resolveKindByLogical catalog entry.Ref
+            and! folder = validateFolder entry.Ref entry.Folder
+            return (key, folder)
+        }
 
     /// Build the typed `EmissionFolders` runtime value from a parsed
     /// `Config`. Aggregates all binder errors so the operator sees

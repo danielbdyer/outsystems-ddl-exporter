@@ -1,7 +1,6 @@
 namespace Projection.Targets.Json
 
 open System.Globalization
-open System.Text
 open System.Text.Json
 open Projection.Core
 
@@ -237,11 +236,7 @@ module ProfileCodec =
 
     /// `Profile → JSON`. Deterministic (T1).
     let serialize (profile: Profile) : string =
-        use stream = new System.IO.MemoryStream()
-        (use jw = new Utf8JsonWriter(stream, JsonOptions.indented ())
-         wProfile jw profile
-         jw.Flush())
-        Encoding.UTF8.GetString(stream.ToArray())
+        JsonWriting.writeToString (fun jw -> wProfile jw profile)
 
     // ======================================================================
     // DECODE — leaves rebuilt through smart constructors (A39).

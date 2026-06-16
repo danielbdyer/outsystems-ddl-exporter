@@ -133,7 +133,7 @@ module SchemaMigrationEmitter =
                     else None)
             // ALTER COLUMN (shape) or refusal. Source-ordered `Changed`.
             let alterResults =
-                ad.Changed
+                ad.Reshaped
                 |> List.map (fun change ->
                     let nonShape = Set.difference change.Facets shapeFacets
                     if not (Set.isEmpty nonShape) then
@@ -248,7 +248,7 @@ module SchemaMigrationEmitter =
             // Changed: Trust-only → reproduce WITH NOCHECK; other shape changes →
             // DROP + ADD CONSTRAINT under --allow-drops, else refuse.
             let changeStmts, changeRefusals =
-                rd.Changed
+                rd.Reshaped
                 |> List.fold
                     (fun (stmts, refusals) (change: ReferenceChange) ->
                         match Map.tryFind change.ReferenceKey refByKey with
@@ -318,7 +318,7 @@ module SchemaMigrationEmitter =
             let changeStmts, changeRefusals =
                 if allowDrops then
                     let stmts =
-                        idd.Changed
+                        idd.Reshaped
                         |> List.collect (fun (c: IndexChange) ->
                             match sourceIndexName c.IndexKey, targetKind.Indexes |> List.tryFind (fun i -> i.SsKey = c.IndexKey) with
                             | Some oldName, Some newIdx ->
@@ -327,7 +327,7 @@ module SchemaMigrationEmitter =
                     stmts, []
                 else
                     [],
-                    (idd.Changed
+                    (idd.Reshaped
                      |> List.map (fun (c: IndexChange) ->
                         diag DiagnosticSeverity.Error "migration.unsupportedIndexChange"
                             "Index change needs DROP+CREATE INDEX; refused — pass --allow-drops to emit it." c.IndexKey targetKind))
@@ -370,7 +370,7 @@ module SchemaMigrationEmitter =
         let changeStmts, changeRefusals =
             if allowDrops then
                 let stmts =
-                    sd.Changed
+                    sd.Reshaped
                     |> List.collect (fun (c: SequenceChange) ->
                         match sourceSeq c.SequenceKey, targetCatalog.Sequences |> List.tryFind (fun s -> s.SsKey = c.SequenceKey) with
                         | Some oldSeq, Some newSeq -> [ dropOf oldSeq; Statement.CreateSequence newSeq ]
@@ -378,7 +378,7 @@ module SchemaMigrationEmitter =
                 stmts, []
             else
                 [],
-                (sd.Changed
+                (sd.Reshaped
                  |> List.map (fun (c: SequenceChange) ->
                     seqDiag "migration.unsupportedSequenceChange"
                         "Sequence change needs DROP+CREATE (or ALTER SEQUENCE); refused — pass --allow-drops to emit it." c.SequenceKey))

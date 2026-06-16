@@ -99,7 +99,7 @@ let renderCatalogLanes (d: CatalogDiff) : View.View list =
         CatalogDiff.attributeDiffs d
         |> Map.toList
         |> List.collect (fun (_, ad) ->
-            ad.Changed
+            ad.Reshaped
             |> List.map (fun c -> sprintf "%s · %s" (SsKey.rootOriginal c.AttributeKey) (facetsText c.Facets)))
     let lane glyph label st items =
         if List.isEmpty items then [] else [ View.Lane(glyph, label, st, items) ]
@@ -145,7 +145,7 @@ let renderPhysicalDiff (d: PhysicalSchemaDiff) : View.View =
 /// `Catalog` comparison — a genuine torsor: `Apply = Some applyDiff` (the
 /// delta replays to reconstruct the target; Weyl-proven).
 let catalog : Comparison<Catalog, CatalogDiff> =
-    { Between = (fun a b -> CatalogDiff.between a b |> Result.mapError (fun _ -> "the two models could not be compared"))
+    { Between = (fun a b -> Ok (CatalogDiff.between a b))
       IsEmpty = CatalogDiff.isEmpty
       Render  = renderCatalogDiff
       Apply   = Some (fun d a -> CatalogDiff.applyDiff a d) }

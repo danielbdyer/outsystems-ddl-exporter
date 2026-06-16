@@ -101,7 +101,7 @@ module Migration =
             |> Map.toList
             |> List.sortBy (fun (k, _) -> SsKey.rootOriginal k)
             |> List.collect (fun (kindKey, ad) ->
-                ad.Changed
+                ad.Reshaped
                 |> List.sortBy (fun c -> SsKey.rootOriginal c.AttributeKey)
                 |> List.map (fun c -> (kindKey, c.AttributeKey, c.Facets)))
         { Channels = CatalogDiff.channelCounts diff
@@ -193,10 +193,8 @@ module Migration =
     /// exactly the removals the operator did not name. Threads the Π-side
     /// `EmitError` (`between`'s error).
     let plan (declaration: LossDeclaration) (source: Catalog) (target: Catalog) : Result<MigrationPlan, EmitError> =
-        match CatalogDiff.between source target with
-        | Error e -> Error e
-        | Ok diff ->
-            Ok { Diff = diff; Preview = previewOf diff; Violations = undeclaredLosses declaration diff }
+        let diff = CatalogDiff.between source target
+        Ok { Diff = diff; Preview = previewOf diff; Violations = undeclaredLosses declaration diff }
 
     /// True iff the plan carries no undeclared losses — safe to execute / publish.
     let isSafe (p: MigrationPlan) : bool = List.isEmpty p.Violations

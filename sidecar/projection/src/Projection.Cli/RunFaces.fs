@@ -939,7 +939,7 @@ let narrateIntegrityReport (report: IntegrityReport) : unit =
                 box (report.RowCountDeltas
                      |> List.map (fun d ->
                          sprintf "%-40s before=%d after=%d (change=%+d)"
-                             (SsKey.rootOriginal d.Kind) d.Before d.After (d.After - d.Before))
+                             (SsKey.rootOriginal d.Kind) (int64 d.Before) (int64 d.After) (int64 (d.After - d.Before)))
                      |> joined)
               if not (List.isEmpty report.NullCountDeltas) then
                 "nullDeltas",
@@ -947,7 +947,7 @@ let narrateIntegrityReport (report: IntegrityReport) : unit =
                      |> List.map (fun d ->
                          sprintf "%-40s %-30s before=%d after=%d (change=%+d)"
                              (SsKey.rootOriginal d.Kind) (SsKey.rootOriginal d.Attribute)
-                             d.Before d.After (d.After - d.Before))
+                             (int64 d.Before) (int64 d.After) (int64 (d.After - d.Before)))
                      |> joined)
               if not (List.isEmpty report.Warnings) then
                 "schemaWarnings",

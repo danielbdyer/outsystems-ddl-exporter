@@ -355,6 +355,81 @@ module Preflight =
     // witness; it is deliberately NOT half-implemented here because its
     // granularity is the survey's to resolve and its correctness needs a live
     // container to witness. See `DEBRIEF_2026_06_02_…` cluster A (A3).
+    //
+    // THE VECTOR §5.1 / M20 — the HONEST-NAMING half. The live atomic wrapper
+    // above stays deferred (the A3 scaffold is the survey's to resolve). What
+    // lands NOW is the named refusal: the typed protection capability, the pure
+    // gate that turns an unprotected destructive write path into one named
+    // violation per planned write, and the paired `migrate.midWriteNotProtected`
+    // refusal. This is the classification half — it does not wrap
+    // `MigrationRun.execute`; the live `BEGIN TRAN` is still the survey's (A3,
+    // above) to resolve. The pure gate is the buildable scaffold the wrapper
+    // will consume once its granularity is fixed.
+
+    /// The write path's protection against a mid-write crash — the typed
+    /// capability the transactionality gate reasons over. `Atomic`: the whole
+    /// write commits or rolls back (a `BEGIN TRAN` wrapper). `Resumable`: a
+    /// partial write is idempotently re-runnable (the surrogate-keyed upsert).
+    /// `Unprotected`: neither — a crash part-way through Phase 2 leaves a
+    /// half-populated target. Closed DU so the gate stays total over it.
+    type TransactionProtection =
+        | Atomic
+        | Resumable
+        | Unprotected
+
+    /// One planned destructive write that, on an unprotected path, would be left
+    /// half-applied by a mid-write crash. Mirrors `PermissionViolation`: the
+    /// object the violation is located on, and the action that would not be
+    /// protected.
+    type TransactionalityViolation =
+        {
+            Object : string
+            Action : WriteAction
+        }
+
+    /// Pure: under an `Unprotected` write path, every planned destructive write
+    /// is a violation — a mid-write crash would leave it half-applied. `Atomic`
+    /// (whole-write rollback) and `Resumable` (idempotent re-run) protect the
+    /// path, so neither yields a violation. Deterministic — sorted by object then
+    /// action. DB-free and testable. Mirrors `permissionViolations`.
+    let transactionalityViolations
+        (protection: TransactionProtection)
+        (planned: PlannedWrite list)
+        : TransactionalityViolation list =
+        match protection with
+        | Atomic | Resumable -> []
+        | Unprotected ->
+            planned
+            |> List.map (fun w -> { Object = objectKey w; Action = w.Action })
+            |> List.distinct
+            |> List.sortBy (fun v -> v.Object, permissionName v.Action)
+
+    let private describeTransactionality (violations: TransactionalityViolation list) : string =
+        violations
+        |> List.map (fun v -> sprintf "%s on %s" (permissionName v.Action) v.Object)
+        |> String.concat "; "
+        |> sprintf "transactionality pre-flight failed before any write — this would leave a half-populated target on a mid-write crash; the write path is neither atomic nor resumable, so these planned writes would be left half-applied: %s. Wrap the write path in a transaction (atomic) or make it resumable before executing."
+
+    /// A3 — refuse `migrate.midWriteNotProtected` when the planned destructive
+    /// writes run on an `Unprotected` path (neither atomic nor resumable), BEFORE
+    /// any write — a mid-write crash would otherwise leave a half-populated
+    /// target rather than a named refusal. Pure: takes the typed protection
+    /// capability + the planned writes, no I/O. Mirrors `permissionPreflight`.
+    ///
+    /// This is the HONEST-NAMING half (THE VECTOR §5.1 / M20). The live atomic
+    /// `BEGIN TRAN` wrapper that would make the path `Atomic` stays survey-gated
+    /// (the A3 scaffold above); this gate names the refusal so an unprotected
+    /// path classifies as the destructive-failure axis (exit 9) rather than the
+    /// generic `UnclassifiedRefusal` (exit 3).
+    let transactionalityPreflight
+        (protection: TransactionProtection)
+        (planned: PlannedWrite list)
+        : Result<unit> =
+        match transactionalityViolations protection planned with
+        | [] -> Ok ()
+        | violations ->
+            Result.failureOf
+                (ValidationError.create "migrate.midWriteNotProtected" (describeTransactionality violations))
 
     // -- The composition -----------------------------------------------------
 
@@ -411,6 +486,14 @@ module Preflight =
         | CdcTrackedSink
         | SchemaReadFailed
         | UndeclaredDestructiveChange
+        /// The named destructive class for a mid-write crash on an unprotected
+        /// (non-atomic, non-resumable) write path: a failure part-way through
+        /// Phase 2 leaves a half-populated target rather than an unchanged or
+        /// resumable one. Naming it replaces the generic `UnclassifiedRefusal`
+        /// (exit 3) with the destructive-failure axis (exit 9). The honest name;
+        /// the live atomic `BEGIN TRAN` wrapper stays survey-gated (see the A3
+        /// scaffold above) — this is the classification half only.
+        | MidWriteNotProtected
         /// The named default for a code outside the known gate vocabulary — a
         /// generic refusal. NOT a silent pass: it still carries the generic
         /// non-zero refusal exit (3), so an unmapped gate fails loud.
@@ -427,6 +510,7 @@ module Preflight =
         | CdcTrackedSink              -> "CDC-tracked sink"
         | SchemaReadFailed            -> "schema read failed"
         | UndeclaredDestructiveChange -> "undeclared destructive change"
+        | MidWriteNotProtected        -> "mid-write not protected"
         | UnclassifiedRefusal         -> "unclassified refusal"
 
     /// The closed `code → (exit, label)` mapping. TOTAL over the gate code
@@ -460,6 +544,12 @@ module Preflight =
             6, SchemaReadFailed
         elif code.StartsWith "migrate.undeclaredDestructive" then
             9, UndeclaredDestructiveChange
+        elif code.StartsWith "transfer.midWriteNotProtected" || code = "migrate.midWriteNotProtected" then
+            // The transactionality axis (A3): a mid-write crash on an
+            // unprotected write path. The same destructive-failure class as the
+            // other exit-9 axes — a half-populated target is a destructive
+            // outcome, not a generic refusal.
+            9, MidWriteNotProtected
         else
             3, UnclassifiedRefusal
 

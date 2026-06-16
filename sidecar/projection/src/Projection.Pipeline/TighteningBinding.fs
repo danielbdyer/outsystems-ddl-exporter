@@ -1,6 +1,7 @@
 namespace Projection.Pipeline
 
 open Projection.Core
+open FsToolkit.ErrorHandling
 
 /// Chapter C slice C.1 — operator config → `TighteningPolicy` binder.
 /// Converts `Config.TighteningSection` (textual operator surface)
@@ -80,16 +81,14 @@ module TighteningBinding =
         (catalog: Catalog)
         (entry: Config.TighteningAttributeOverride)
         : Result<TighteningOverride> =
-        match resolveAttributeRef catalog entry.AttributeRef with
-        | Error es -> Error es
-        | Ok ssKey ->
-            match parseOverrideAction entry.Action with
-            | Error es -> Error es
-            | Ok action ->
-                Result.success {
-                    AttributeKey = ssKey
-                    Action       = action
-                }
+        result {
+            let! ssKey  = resolveAttributeRef catalog entry.AttributeRef
+            let! action = parseOverrideAction entry.Action
+            return {
+                AttributeKey = ssKey
+                Action       = action
+            }
+        }
 
     /// Build a `TighteningIntervention.Nullability` from a config
     /// entry. Defaults: `NullBudget = 0.0` (strict), `Allow
@@ -101,17 +100,14 @@ module TighteningBinding =
         : Result<TighteningIntervention> =
         let nullBudget = defaultArg entry.NullBudget 0m
         let allowMand = defaultArg entry.AllowMandatoryRelaxation false
-        let overridesR =
-            entry.NullabilityOverrides
-            |> List.map (bindOverride catalog)
-            |> Result.aggregate
-        match overridesR with
-        | Error es -> Error es
-        | Ok overrides ->
-            match NullabilityTighteningConfig.create nullBudget allowMand overrides with
-            | Error es -> Error es
-            | Ok config ->
-                Result.success (TighteningIntervention.Nullability (entry.Id, config))
+        result {
+            let! overrides =
+                entry.NullabilityOverrides
+                |> List.map (bindOverride catalog)
+                |> Result.aggregate
+            let! config = NullabilityTighteningConfig.create nullBudget allowMand overrides
+            return TighteningIntervention.Nullability (entry.Id, config)
+        }
 
     let private bindUniqueIndex
         (entry: Config.TighteningInterventionEntry)

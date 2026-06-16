@@ -43,6 +43,7 @@
     <Compile Include="ViewTests.fs" />
     <Compile Include="ExplainViewTests.fs" />
     <Compile Include="TtyRendererTests.fs" />
+    <Compile Include="TotalityFunctor.fs" />
     <Compile Include="VoiceTotalityTests.fs" />
     <Compile Include="WatchTests.fs" />
     <Compile Include="CapabilitySurveyTests.fs" />
@@ -88,6 +89,7 @@
     <Compile Include="AxiomTests.fs" />
     <Compile Include="ArtifactByKindTests.fs" />
     <Compile Include="CatalogDiffTests.fs" />
+    <Compile Include="ChangeAlgebraSweepTests.fs" />
     <Compile Include="ComparisonTests.fs" />
     <Compile Include="LifecycleTests.fs" />
     <Compile Include="EpisodeTests.fs" />

@@ -1,7 +1,5 @@
 namespace Projection.Targets.Json
 
-open System.IO
-open System.Text
 open System.Text.Json
 open System.Text.Json.Nodes
 open Projection.Core
@@ -157,15 +155,7 @@ module JsonEmitter =
     /// stream-position mutation is needed (the byte-buffer is
     /// passed directly via the span overload).
     let private kindJsonNode (k: Kind) : JsonNode =
-        use stream = new MemoryStream()
-        do
-            use writer = new Utf8JsonWriter(stream, (JsonOptions.compact ()))
-            writeKind writer k
-            writer.Flush()
-        let bytes = stream.ToArray()
-        match JsonNode.Parse(System.ReadOnlySpan<byte>(bytes)) with
-        | null  -> invalidOp "JsonEmitter.kindJsonNode: writer produced empty stream (unreachable; writeKind always emits an object)"
-        | node  -> node
+        JsonWriting.writeToNode (fun writer -> writeKind writer k)
 
     /// Π port realization (chapter 3.5 slice β; chapter-3.7 slice ε
     /// pillar-1 cash-out). Per A18, `Catalog` only — no Profile, no
@@ -241,12 +231,7 @@ module JsonEmitter =
                     "JsonEmitter.emit: ArtifactByKind invariant breach: %A"
                     err)
         | Ok node ->
-            use stream = new MemoryStream()
-            do
-                use writer = new Utf8JsonWriter(stream, (JsonOptions.indented ()))
-                node.WriteTo(writer)
-                writer.Flush()
-            Encoding.UTF8.GetString(stream.ToArray())
+            JsonWriting.renderNodeToString node
 
     // -----------------------------------------------------------------------
     // Slice 5.13.sibling-emitter-registry-json — `registeredMetadata`

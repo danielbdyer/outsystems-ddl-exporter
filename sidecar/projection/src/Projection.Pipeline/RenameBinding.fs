@@ -2,6 +2,7 @@ namespace Projection.Pipeline
 
 open Projection.Core
 open Projection.Core.Passes
+open FsToolkit.ErrorHandling
 
 /// Boundary translation from `Config.TableRename` (JSON-shape, raw strings)
 /// to `TableRename.RenameSpec` (Core-shape, typed value objects).
@@ -22,13 +23,11 @@ module RenameBinding =
         ValidationError.create (sprintf "pipeline.renameBinding.%s" code) message
 
     let private bindLogicalKey (l: Config.LogicalName) : Result<TableRename.RenameKey> =
-        let moduleNameR = Name.create l.Module
-        let entityNameR = Name.create l.Entity
-        match moduleNameR, entityNameR with
-        | Ok m,    Ok e    -> Result.success (TableRename.Logical (m, e))
-        | Error a, Error b -> Result.failure (a @ b)
-        | Error a, _       -> Result.failure a
-        | _,       Error b -> Result.failure b
+        validation {
+            let! m = Name.create l.Module
+            and! e = Name.create l.Entity
+            return TableRename.Logical (m, e)
+        }
 
     let private bindPhysicalKey (p: Config.PhysicalName) : Result<TableRename.RenameKey> =
         TableId.create p.Schema p.Table
@@ -43,13 +42,11 @@ module RenameBinding =
         TableId.create p.Schema p.Table
 
     let private bindOne (cr: Config.TableRename) : Result<TableRename.RenameSpec> =
-        let keyR    = bindKey cr.From
-        let targetR = bindTarget cr.To
-        match keyR, targetR with
-        | Ok k,    Ok t    -> Result.success { TableRename.Key = k; TableRename.Target = t }
-        | Error a, Error b -> Result.failure (a @ b)
-        | Error a, _       -> Result.failure a
-        | _,       Error b -> Result.failure b
+        validation {
+            let! k = bindKey cr.From
+            and! t = bindTarget cr.To
+            return { TableRename.Key = k; TableRename.Target = t }
+        }
 
     /// Convert a list of config-shape renames into typed Core-shape
     /// `RenameSpec`s. Errors aggregate.

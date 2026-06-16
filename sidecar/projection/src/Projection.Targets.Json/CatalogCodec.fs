@@ -1,7 +1,6 @@
 namespace Projection.Targets.Json
 
 open System.Globalization
-open System.Text
 open System.Text.Json
 open Projection.Core
 open FsToolkit.ErrorHandling
@@ -404,11 +403,7 @@ module CatalogCodec =
     /// Serialize a `Catalog` to deterministic JSON text. Pure (no I/O).
     let serialize (catalog: Catalog) : string =
         use _ = Bench.scope "codec.catalog.serialize"
-        use stream = new System.IO.MemoryStream()
-        (use jw = new Utf8JsonWriter(stream, JsonOptions.indented ())
-         wCatalog jw catalog
-         jw.Flush())
-        Encoding.UTF8.GetString(stream.ToArray())
+        JsonWriting.writeToString (fun jw -> wCatalog jw catalog)
 
     // ======================================================================
     // DECODE — each `readX : JsonElement -> Result<X>` reads one JSON value.

@@ -352,7 +352,7 @@ type Statement =
     | AlterTableAddColumn of table: TableId * column: ColumnDef
     /// 6.A.12 — `ALTER TABLE <table> ALTER COLUMN <column> <type> NULL|NOT NULL`.
     /// The minimum-viable-touch for a changed column SHAPE
-    /// (`CatalogDiff.AttributeDiffs[k].Changed` over DataType / Length /
+    /// (`CatalogDiff.AttributeDiffs[k].Reshaped` over DataType / Length /
     /// Precision / Scale / Nullability). ScriptDom builds via
     /// `AlterTableAlterColumnStatement` with `AlterTableAlterColumnOption
     /// .Null | .NotNull` carrying nullability. NOT a rename (renames are

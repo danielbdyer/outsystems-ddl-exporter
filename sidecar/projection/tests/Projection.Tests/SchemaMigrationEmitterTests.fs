@@ -34,7 +34,7 @@ let private withCustomerName (f: Attribute -> Attribute) : Catalog =
 
 /// Emit the migration of `sampleCatalog → target`.
 let private migrationOf (target: Catalog) : Statement list * DiagnosticEntry list =
-    let diff = CatalogDiff.between sampleCatalog target |> mustOk
+    let diff = CatalogDiff.between sampleCatalog target
     let m = SchemaMigrationEmitter.emit diff
     m.Value, m.Entries
 
@@ -117,7 +117,7 @@ let ``migration: an identity facet change is refused fail-loud`` () =
 
 [<Fact>]
 let ``migration: an identical diff emits no statements and no diagnostics`` () =
-    let diff = CatalogDiff.between sampleCatalog sampleCatalog |> mustOk
+    let diff = CatalogDiff.between sampleCatalog sampleCatalog
     let m = SchemaMigrationEmitter.emit diff
     Assert.Empty(m.Value)
     Assert.Empty(m.Entries)
@@ -138,7 +138,7 @@ let ``migration: a rename alone emits no ALTER (renames are the RefactorLog chan
 // is BOTH renamed (logical Name change → RefactorLog channel) AND reshaped (a
 // Length shape facet → ALTER COLUMN channel) in the same diff. The two
 // emission channels are disjoint by axis (RefactorLogEmitter reads
-// `AttributeDiff.Renamed`; SchemaMigrationEmitter reads `AttributeDiff.Changed`),
+// `AttributeDiff.Renamed`; SchemaMigrationEmitter reads `AttributeDiff.Reshaped`),
 // so the rename must ride the RefactorLog ONLY and the reshape the ALTER ONLY —
 // neither channel carries the other's content. A "skip the ALTER if the column
 // is also renamed" (or vice-versa) coupling would FAIL this test (the
@@ -151,12 +151,12 @@ let ``S6.3: a simultaneously renamed AND reshaped attribute splits cleanly acros
     // is set (None → Some 256). One attribute, two orthogonal moves, one diff.
     let target =
         withCustomerName (fun a -> { a with Name = nm "FullName"; Length = Some 256 })
-    let diff = CatalogDiff.between sampleCatalog target |> mustOk
+    let diff = CatalogDiff.between sampleCatalog target
 
     // The diff itself records BOTH moves on the same attribute key.
     let ad = CatalogDiff.attributeDiffOf customerKey diff |> Option.get
     Assert.True(ad.Renamed |> Map.containsKey customerNameKey)
-    Assert.True(ad.Changed |> List.exists (fun c ->
+    Assert.True(ad.Reshaped |> List.exists (fun c ->
         c.AttributeKey = customerNameKey && Set.contains AttributeFacet.Length c.Facets))
 
     // SchemaMigration channel: exactly the ALTER COLUMN for the shape change,
@@ -228,7 +228,7 @@ let ``S10.4: a Computed facet change is refused fail-loud (no ALTER emitted)`` (
 // ---------------------------------------------------------------------------
 
 let private migrationBetween (source: Catalog) (target: Catalog) : Statement list * DiagnosticEntry list =
-    let m = SchemaMigrationEmitter.emit (CatalogDiff.between source target |> mustOk)
+    let m = SchemaMigrationEmitter.emit (CatalogDiff.between source target)
     m.Value, m.Entries
 
 let private catalogOf (kinds: Kind list) (seqs: Sequence list) : Catalog =
@@ -309,7 +309,7 @@ let ``C1 emit: a dropped sequence refuses fail-loud (migration.destructiveSequen
 // ---------------------------------------------------------------------------
 
 let private dropsBetween (source: Catalog) (target: Catalog) : Statement list * DiagnosticEntry list =
-    let m = SchemaMigrationEmitter.emitWith true (CatalogDiff.between source target |> mustOk)
+    let m = SchemaMigrationEmitter.emitWith true (CatalogDiff.between source target)
     m.Value, m.Entries
 
 let private noError (entries: DiagnosticEntry list) =

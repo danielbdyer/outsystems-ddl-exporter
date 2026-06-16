@@ -106,21 +106,21 @@ let ``EpisodicLifecycle: head is genesis, latest is the last appended`` () =
 let ``EpisodicLifecycle.reconstructLatestSchema derives the latest schema via fold applyDiff`` () =
     let reconstructed = EpisodicLifecycle.reconstructLatestSchema devChain |> mustOk
     // Agrees with the stored latest schema modulo the captured surface.
-    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between targetCatalog reconstructed |> mustOk))
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between targetCatalog reconstructed))
     // And is genuinely the evolved schema, not genesis.
-    Assert.False(CatalogDiff.isEmpty (CatalogDiff.between sampleCatalog reconstructed |> mustOk))
+    Assert.False(CatalogDiff.isEmpty (CatalogDiff.between sampleCatalog reconstructed))
 
 [<Fact>]
 let ``EpisodicLifecycle.reconstructLatestSchema on a genesis-only lifecycle is genesis`` () =
     let reconstructed = EpisodicLifecycle.reconstructLatestSchema devGenesis |> mustOk
-    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between sampleCatalog reconstructed |> mustOk))
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between sampleCatalog reconstructed))
 
 [<Fact>]
 let ``EpisodicLifecycle.netSchemaDiff is the net displacement genesis to latest (one rename)`` () =
     let nd = EpisodicLifecycle.netSchemaDiff devChain |> mustOk
     Assert.Equal(1, CatalogDiff.norm nd)
     let reconstructed = CatalogDiff.applyDiff sampleCatalog nd
-    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between targetCatalog reconstructed |> mustOk))
+    Assert.True(CatalogDiff.isEmpty (CatalogDiff.between targetCatalog reconstructed))
 
 [<Fact>]
 let ``EpisodicLifecycle.schemaEvolutionChain has one edge per consecutive pair`` () =

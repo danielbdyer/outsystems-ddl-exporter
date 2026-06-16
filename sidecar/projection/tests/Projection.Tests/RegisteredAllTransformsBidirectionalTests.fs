@@ -33,6 +33,7 @@ open Projection.Core
 open Projection.Core.Passes
 open Projection.Pipeline
 open Projection.Tests.Fixtures
+open Projection.Tests.TotalityFunctor
 
 
 // ---------------------------------------------------------------------------
@@ -388,22 +389,34 @@ let ``NM-43 (forward): every chainSteps step name is registered in RegisteredTra
         Set.isEmpty unregistered,
         sprintf "chainSteps that execute but are not in RegisteredTransforms.all: %A" (Set.toList unregistered))
 
+// The `registered ⇔ executed` core for the chain-projected partition, via the
+// totality functor: the chainStep names (`executed`) and the chain-projected
+// registry names (`RegisteredTransforms.all` minus the metadata-only strategies,
+// = `registered`) coincide exactly — `X ⊆ Y ∧ Y ⊆ X ⇒ X = Y`. A registration
+// whose name typo'd away from its chainStep, or a chainStep removed while a
+// metadata entry lingered, surfaces here as a partition that no longer matches.
+// The distinctness projection (`Metadata.Name` over `chainSteps`) gates the
+// comparison: no two chainSteps may collide on one name.
+let private chainExecutedSpec : TotalitySpec<string, ChainStep, string> =
+    { Left = Set.difference coreRegistryNames strategyRegistrationNames
+      Right = chainStepNames
+      LeftLabel = "chain-projected registration"
+      RightLabel = "executed chainStep"
+      Members = RegisteredTransforms.chainSteps
+      Project = fun s -> s.Metadata.Name }
+
 [<Fact>]
-let ``NM-43 (reverse): every chain-projected entry in RegisteredTransforms.all is an executed chainStep`` () =
+let ``NM-43 (reverse): registered ⇔ executed is bidirectional for the chain-projected partition (every registration executes, every chainStep is registered)`` () =
     // `RegisteredTransforms.all` projects from exactly two sources — the chain
     // (`chainSteps |> map metadata`) and the metadata-only strategies
-    // (`StrategyRegistrations.all`). The chain-projected partition is therefore
-    // `all` minus the strategy registrations; every name in it MUST be a live
-    // chainStep. A registration whose name typo'd away from its chainStep, or a
-    // chainStep removed while a metadata entry lingered, surfaces here as an
-    // entry that registers but no longer executes.
-    let chainProjected = Set.difference coreRegistryNames strategyRegistrationNames
-    let registeredButNotExecuted = Set.difference chainProjected chainStepNames
-    Assert.True(
-        Set.isEmpty registeredButNotExecuted,
-        sprintf
-            "RegisteredTransforms.all entries that register (non-strategy) but execute via no chainStep: %A"
-            (Set.toList registeredButNotExecuted))
+    // (`StrategyRegistrations.all`). The chain-projected partition is `all` minus
+    // the strategy registrations; via the functor it must coincide with the live
+    // chainStep names in both directions (`X ⊆ Y ∧ Y ⊆ X ⇒ X = Y`).
+    assertBidirectionalSubset chainExecutedSpec
+
+[<Fact>]
+let ``NM-43: chainStep names are distinct (the projection is injective)`` () =
+    assertProjectionDistinct chainExecutedSpec
 
 [<Fact>]
 let ``NM-43: the chain projection is EXACTLY closed — all = chainSteps ∪ strategies, partitioned`` () =

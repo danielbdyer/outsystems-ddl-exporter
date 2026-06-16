@@ -95,14 +95,14 @@ let ``H-050 emitter determinism (property): permuting modules produces the same 
 
 [<Fact>]
 let ``H-050 CatalogDiff reflexivity: between c c puts every key in Unchanged`` () =
-    let diff = CatalogDiff.between sampleCatalog sampleCatalog |> mustOk
+    let diff = CatalogDiff.between sampleCatalog sampleCatalog
     Assert.Equal<Set<SsKey>>(allKindKeys sampleCatalog, CatalogDiff.unchanged diff)
     Assert.True(CatalogDiff.isEmpty diff)
 
 [<Property>]
 let ``H-050 CatalogDiff reflexivity (property): permuted module ordering still diffs to fully-Unchanged`` (seed: int) =
     let permuted = shuffleModules seed sampleCatalog
-    let diff = CatalogDiff.between sampleCatalog permuted |> mustOk
+    let diff = CatalogDiff.between sampleCatalog permuted
     let allKeys = allKindKeys sampleCatalog
     CatalogDiff.unchanged diff = allKeys
     && CatalogDiff.added diff = Set.empty

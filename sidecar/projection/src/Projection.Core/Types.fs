@@ -107,7 +107,8 @@ type Property = Catalog -> bool
 type RelationalProperty = Catalog -> Catalog -> bool
 
 /// Pattern Diff — evolution as value. Stage 0 reserves the alias;
-/// chapter 3.5 fills the implementation of
-/// `CatalogDiff.between : Catalog -> Catalog -> Result<CatalogDiff,
-/// EmitError>` per the A36 candidate exhaustiveness invariant.
+/// chapter 3.5 fills the implementation. The total smart constructor is
+/// `CatalogDiff.between : Catalog -> Catalog -> CatalogDiff` (it cannot
+/// fail over any Catalog pair); this `Result`-typed alias is the wider
+/// `DiffOf` shape that call sites threading an `EmitError` `Ok`-wrap into.
 type DiffOf<'value> = 'value -> 'value -> Result<CatalogDiff, EmitError>

@@ -81,7 +81,7 @@ let private fkRenameTarget : Catalog =
 
 [<Fact>]
 let ``T11 (diff-typed inputs): RefactorLogEmitter.emit key-set equals target Catalog.allKinds`` () =
-    let diff = CatalogDiff.between sampleCatalog targetCatalog |> mustOk
+    let diff = CatalogDiff.between sampleCatalog targetCatalog
     let expected =
         Catalog.allKinds targetCatalog
         |> List.map (fun k -> k.SsKey)
@@ -91,7 +91,7 @@ let ``T11 (diff-typed inputs): RefactorLogEmitter.emit key-set equals target Cat
 
 [<Fact>]
 let ``RefactorLogEmitter: identity diff produces empty entries for every kind`` () =
-    let diff = CatalogDiff.between sampleCatalog sampleCatalog |> mustOk
+    let diff = CatalogDiff.between sampleCatalog sampleCatalog
     let artifact = RefactorLogEmitter.emit diff |> mustOk
     let entries = ArtifactByKind.toMap artifact
     Assert.All(
@@ -100,7 +100,7 @@ let ``RefactorLogEmitter: identity diff produces empty entries for every kind`` 
 
 [<Fact>]
 let ``RefactorLogEmitter: one-rename diff produces one SqlTable entry on the renamed kind`` () =
-    let diff = CatalogDiff.between sampleCatalog targetCatalog |> mustOk
+    let diff = CatalogDiff.between sampleCatalog targetCatalog
     let artifact = RefactorLogEmitter.emit diff |> mustOk
     let entries = ArtifactByKind.toMap artifact
     // Renamed kind: `customer` (SsKey unchanged; Name "Customer" → "Patron")
@@ -117,7 +117,7 @@ let ``RefactorLogEmitter: one-rename diff produces one SqlTable entry on the ren
 
 [<Fact>]
 let ``RefactorLogEmitter: unrenamed kinds produce empty entries`` () =
-    let diff = CatalogDiff.between sampleCatalog targetCatalog |> mustOk
+    let diff = CatalogDiff.between sampleCatalog targetCatalog
     let artifact = RefactorLogEmitter.emit diff |> mustOk
     let entries = ArtifactByKind.toMap artifact
     Assert.Empty(Map.find orderKey entries)
@@ -132,7 +132,7 @@ let ``RefactorLogEmitter: unrenamed kinds produce empty entries`` () =
 
 [<Fact>]
 let ``T1: RefactorLogEmitter produces stable OperationKey across repeat invocations`` () =
-    let diff = CatalogDiff.between sampleCatalog targetCatalog |> mustOk
+    let diff = CatalogDiff.between sampleCatalog targetCatalog
     let runs =
         [ for _ in 1 .. 10 -> RefactorLogEmitter.emit diff |> mustOk ]
     let head =
@@ -153,7 +153,7 @@ let ``T1: RefactorLogEmitter produces stable OperationKey across repeat invocati
 
 [<Fact>]
 let ``RefactorLogEmitter: OperationKey is UUIDv5 (version digit 5)`` () =
-    let diff = CatalogDiff.between sampleCatalog targetCatalog |> mustOk
+    let diff = CatalogDiff.between sampleCatalog targetCatalog
     let artifact = RefactorLogEmitter.emit diff |> mustOk
     let entry =
         artifact
@@ -172,7 +172,7 @@ let ``RefactorLogEmitter: OperationKey is UUIDv5 (version digit 5)`` () =
 [<Fact>]
 let ``RefactorLogEmitter: Added kind produces empty entries (it's a CREATE not a rename)`` () =
     let empty = Catalog.create [] [] |> mustResultOk
-    let diff = CatalogDiff.between empty sampleCatalog |> mustOk
+    let diff = CatalogDiff.between empty sampleCatalog
     let artifact = RefactorLogEmitter.emit diff |> mustOk
     let entries = ArtifactByKind.toMap artifact
     Assert.All(
@@ -182,7 +182,7 @@ let ``RefactorLogEmitter: Added kind produces empty entries (it's a CREATE not a
 [<Fact>]
 let ``RefactorLogEmitter: Removed kind produces no artifact entry (target is empty)`` () =
     let empty = Catalog.create [] [] |> mustResultOk
-    let diff = CatalogDiff.between sampleCatalog empty |> mustOk
+    let diff = CatalogDiff.between sampleCatalog empty
     let artifact = RefactorLogEmitter.emit diff |> mustOk
     // Target catalog is empty; artifact's keyset is empty per T11.
     Assert.Empty(ArtifactByKind.keys artifact)
@@ -197,7 +197,7 @@ let ``RefactorLogEmitter: Removed kind produces no artifact entry (target is emp
 
 [<Fact>]
 let ``RefactorLogEmitter: a column rename produces a SqlSimpleColumn entry`` () =
-    let diff = CatalogDiff.between sampleCatalog columnRenameTarget |> mustOk
+    let diff = CatalogDiff.between sampleCatalog columnRenameTarget
     let artifact = RefactorLogEmitter.emit diff |> mustOk
     let customerEntries = Map.find customerKey (ArtifactByKind.toMap artifact)
     let columnEntry =
@@ -214,7 +214,7 @@ let ``RefactorLogEmitter: a column rename produces a SqlSimpleColumn entry`` () 
 [<Fact>]
 let ``RefactorLogEmitter: a column rename's OperationKey is deterministic`` () =
     let key () =
-        let diff = CatalogDiff.between sampleCatalog columnRenameTarget |> mustOk
+        let diff = CatalogDiff.between sampleCatalog columnRenameTarget
         let artifact = RefactorLogEmitter.emit diff |> mustOk
         (Map.find customerKey (ArtifactByKind.toMap artifact)
          |> List.find (fun e -> e.ElementType = SqlSimpleColumn)).OperationKey
@@ -222,7 +222,7 @@ let ``RefactorLogEmitter: a column rename's OperationKey is deterministic`` () =
 
 [<Fact>]
 let ``RefactorLogEmitter: no column rename produces no SqlSimpleColumn entry`` () =
-    let diff = CatalogDiff.between sampleCatalog sampleCatalog |> mustOk
+    let diff = CatalogDiff.between sampleCatalog sampleCatalog
     let artifact = RefactorLogEmitter.emit diff |> mustOk
     let allColumnEntries =
         ArtifactByKind.toMap artifact
@@ -242,7 +242,7 @@ let ``RefactorLogEmitter: no column rename produces no SqlSimpleColumn entry`` (
 
 [<Fact>]
 let ``RefactorLogEmitter: a foreign-key rename produces a SqlForeignKey entry`` () =
-    let diff = CatalogDiff.between sampleCatalog fkRenameTarget |> mustOk
+    let diff = CatalogDiff.between sampleCatalog fkRenameTarget
     let artifact = RefactorLogEmitter.emit diff |> mustOk
     let orderEntries = Map.find orderKey (ArtifactByKind.toMap artifact)
     let fkEntry =
@@ -260,7 +260,7 @@ let ``RefactorLogEmitter: a foreign-key rename produces a SqlForeignKey entry`` 
 [<Fact>]
 let ``RefactorLogEmitter: a foreign-key rename's OperationKey is deterministic`` () =
     let key () =
-        let diff = CatalogDiff.between sampleCatalog fkRenameTarget |> mustOk
+        let diff = CatalogDiff.between sampleCatalog fkRenameTarget
         let artifact = RefactorLogEmitter.emit diff |> mustOk
         (Map.find orderKey (ArtifactByKind.toMap artifact)
          |> List.find (fun e -> e.ElementType = SqlForeignKey)).OperationKey
@@ -268,7 +268,7 @@ let ``RefactorLogEmitter: a foreign-key rename's OperationKey is deterministic``
 
 [<Fact>]
 let ``RefactorLogEmitter: no foreign-key rename produces no SqlForeignKey entry`` () =
-    let diff = CatalogDiff.between sampleCatalog sampleCatalog |> mustOk
+    let diff = CatalogDiff.between sampleCatalog sampleCatalog
     let artifact = RefactorLogEmitter.emit diff |> mustOk
     let allFkEntries =
         ArtifactByKind.toMap artifact
@@ -299,18 +299,18 @@ let private renameReshapeTarget : Catalog =
 
 [<Fact>]
 let ``CatalogDiff: a renamed-and-reshaped column lands in BOTH Renamed and Changed`` () =
-    let diff = CatalogDiff.between sampleCatalog renameReshapeTarget |> mustOk
+    let diff = CatalogDiff.between sampleCatalog renameReshapeTarget
     match CatalogDiff.attributeDiffOf customerKey diff with
     | None -> Assert.Fail "expected an attribute diff on customer"
     | Some ad ->
         Assert.True(Map.containsKey customerNameKey ad.Renamed)
-        let changed = ad.Changed |> List.filter (fun c -> c.AttributeKey = customerNameKey)
+        let changed = ad.Reshaped |> List.filter (fun c -> c.AttributeKey = customerNameKey)
         Assert.Equal(1, List.length changed)
         Assert.Contains(AttributeFacet.DataType, (List.head changed).Facets)
 
 [<Fact>]
 let ``composition: rename → one SqlSimpleColumn AND reshape → one ALTER COLUMN, disjoint`` () =
-    let diff = CatalogDiff.between sampleCatalog renameReshapeTarget |> mustOk
+    let diff = CatalogDiff.between sampleCatalog renameReshapeTarget
     // The refactorlog rename channel: exactly one SqlSimpleColumn entry.
     let artifact = RefactorLogEmitter.emit diff |> mustOk
     let columnRenames =

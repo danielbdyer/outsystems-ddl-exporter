@@ -64,10 +64,7 @@ type SchemaMigrationCanaryTests(fixture: EphemeralContainerFixture) =
                             "INSERT INTO [dbo].[MIG_CUSTOMER] ([ID],[EMAIL]) VALUES (1, N'alice@example.com');"
 
                     // The implied emission differential: diff → minimal ALTER.
-                    let diff =
-                        match CatalogDiff.between source target with
-                        | Ok d -> d
-                        | Error e -> failwithf "between: %A" e
+                    let diff = CatalogDiff.between source target
                     let migration = SchemaMigrationEmitter.emit diff
 
                     // No fail-loud refusals — a pure widening is emittable.

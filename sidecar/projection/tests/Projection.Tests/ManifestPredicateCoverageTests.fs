@@ -6,6 +6,7 @@ open Projection.Core
 open Projection.Core.Passes
 open Projection.Targets.SSDT
 open Projection.Tests.Fixtures
+open Projection.Tests.TotalityFunctor
 
 // Chapter A.4.7' slice η — shim restoring the Lineage<Catalog> shape.
 let private ciRun (c: Catalog) : Lineage<Catalog> =
@@ -36,11 +37,27 @@ let ``PredicateName.all is alphabetically sorted (canonical order for emit)`` ()
     let sorted = names |> List.sort
     Assert.Equal<string list> (sorted, names)
 
+/// The closed-set spec for the `PredicateName ⇔ coverage` distinctness core: the
+/// projection `toString` over the closed `PredicateName` DU is injective. The
+/// `Left`/`Right` set-equality half is exercised by the manifest-emission test
+/// below (emitted coverage names ⇔ the catalog); here only the distinctness half
+/// is needed, so the two sides are the same catalog projection.
+let private predicateNameSpec : TotalitySpec<string, PredicateName, string> =
+    let catalogNames = PredicateName.all |> List.map PredicateName.toString |> Set.ofList
+    { Left = catalogNames
+      Right = catalogNames
+      LeftLabel = "PredicateName"
+      RightLabel = "PredicateName"
+      Members = PredicateName.all
+      Project = PredicateName.toString }
+
 [<Fact>]
 let ``PredicateName.toString round-trips through PredicateName.all`` () =
-    // Every variant in `all` produces a unique non-empty name.
+    // Every variant in `all` produces a unique non-empty name. Distinctness via
+    // the totality functor (`X ⊆ Y ∧ Y ⊆ X ⇒ X = Y`'s injective-key precondition);
+    // non-emptiness stays here as the test-specific extra.
+    assertProjectionDistinct predicateNameSpec
     let names = PredicateName.all |> List.map PredicateName.toString
-    Assert.Equal (List.length names, List.length (List.distinct names))
     Assert.All (names, fun n -> Assert.False (System.String.IsNullOrWhiteSpace n))
 
 // ---------------------------------------------------------------------------
@@ -164,13 +181,24 @@ let ``Manifest predicateCounts emits all 16 predicate variants in canonical sort
     let counts = requireChild "predicateCounts" pc.["predicateCounts"]
     let countsArr = counts.AsArray()
     Assert.Equal (16, countsArr.Count)
-    // Verify sorted-by-name order (matches PredicateName.all order)
     let expectedNames = PredicateName.all |> List.map PredicateName.toString
     let actualNames =
         [ for i in 0 .. countsArr.Count - 1 ->
             let entry = requireChild "predicateCounts.entry" countsArr.[i]
             let nameNode = requireChild "predicateCounts.entry.name" entry.["name"]
             nameNode.GetValue<string>() ]
+    // `PredicateName ⇔ coverage` (`X ⊆ Y ∧ Y ⊆ X ⇒ X = Y`): the emitted coverage
+    // names and the closed-DU catalog coincide exactly — every catalog predicate
+    // is emitted, no emitted name is off-catalog. Via the totality functor.
+    assertBidirectionalSubset
+        { Left = Set.ofList actualNames
+          Right = Set.ofList expectedNames
+          LeftLabel = "emitted coverage name"
+          RightLabel = "PredicateName catalog name"
+          Members = PredicateName.all
+          Project = PredicateName.toString }
+    // The sorted-by-name ORDER (stronger than set-equality) stays here as the
+    // test-specific extra — the manifest's canonical-order byte-determinism.
     Assert.Equal<string list> (expectedNames, actualNames)
 
 [<Fact>]

@@ -1,6 +1,5 @@
 namespace Projection.Targets.OperationalDiagnostics
 
-open System.IO
 open System.Text.Json
 open System.Text.Json.Nodes
 open Projection.Core
@@ -129,21 +128,14 @@ module SuggestConfigEmitter =
         let suggestions =
             if ApprovalRegistry.isSuppressed policyDigest approvals then []
             else collect diagnostics
-        use stream = new MemoryStream()
-        do
-            use writer = new Utf8JsonWriter(stream, JsonOptions.compact ())
+        JsonWriting.writeToNode (fun writer ->
             writer.WriteStartObject()
             writer.WritePropertyName("suggestedEdits")
             writer.WriteStartArray()
             for s in suggestions do
                 writeSuggestion writer s
             writer.WriteEndArray()
-            writer.WriteEndObject()
-            writer.Flush()
-        let bytes = stream.ToArray()
-        match JsonNode.Parse(System.ReadOnlySpan<byte>(bytes)) with
-        | null -> invalidOp "SuggestConfigEmitter.emit: produced unparseable JSON (unreachable)"
-        | n    -> n
+            writer.WriteEndObject())
 
     /// The `empty`-registry default: no approval gating (byte-identical to the
     /// pre-Wave-3 output). See `emitWith`.

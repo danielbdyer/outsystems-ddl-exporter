@@ -45,8 +45,8 @@ let ``diff: flags exactly the diverging kind's row-count delta`` () =
     Assert.Equal(1, report.RowCountDeltas.Length)
     let d = List.head report.RowCountDeltas
     Assert.Equal(items, d.Kind)
-    Assert.Equal(3L, d.Before)
-    Assert.Equal(6L, d.After)
+    Assert.Equal(3L<row>, d.Before)
+    Assert.Equal(6L<row>, d.After)
     Assert.False(DataIntegrityChecker.isClean report)
 
 [<Fact>]
@@ -59,8 +59,8 @@ let ``diff: flags a per-attribute null-count delta (row count unchanged)`` () =
     let d = List.head report.NullCountDeltas
     Assert.Equal(orders, d.Kind)
     Assert.Equal(noteAttr, d.Attribute)
-    Assert.Equal(0L, d.Before)
-    Assert.Equal(1L, d.After)
+    Assert.Equal(0L<row>, d.Before)
+    Assert.Equal(1L<row>, d.After)
 
 [<Fact>]
 let ``diff: kind present in only one cache surfaces a warning`` () =
