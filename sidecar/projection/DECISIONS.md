@@ -24583,3 +24583,42 @@ failure branch, the `WriteOptions.AutoRevert`/`RevertArtifactDir` fields threade
 `src/Projection.Pipeline/PackedSurrogateRemap.fs` (`assignedKeysByKind`); `tests/Projection.Tests/TransferCanaryTests.fs`
 (the two Build A canaries); the §4 hold-out in the 2026-06-16 hold-out survey; M21 (the schema-leg twin) + M22 (the
 atomic envelope).
+
+---
+
+## 2026-06-16 (later still) — M24: the M22/M23 flags become config-based dispositions (sensible defaults, not command clutter) + follow-on C (atomic on migrate-with-data)
+
+**Operator review.** "Make sure sensible defaults are applied and it's not just cluttering the command substrate; make
+it config-based." The bare per-run flags (`--atomic`/`--auto-revert`/`--revert-dir`) were re-homed into the A44 control
+plane as **config-resident dispositions with capability-derived defaults**, the CLI flag surviving only as a rare
+override. Two operator decisions (AskUserQuestion): atomic **derives ON for direct+FullRights**; revert is a
+**per-environment policy**.
+
+**Resolved (code; commit `9ebb0989` + this follow-on).**
+- **Atomic** is now DERIVED in `resolveFlowSpec` (`MovementSurface.fs`): `Access.Direct + Archetype.FullRights → ON`,
+  else inert. Opt out via env `"atomicDeploy": false` or per-run `--no-atomic` (the `--atomic` opt-in flag is retired —
+  the common local case needs no flag). So a local full-access `migrate` is atomic-by-default (the safe change).
+- **Revert** is a per-environment `"revert": script|auto|off` policy (`RevertPolicy` DU; default `Script` = emit the
+  revert .sql, never auto-delete). `--auto-revert` forces `Auto`; `--revert-dir` overrides the artifact dir (else the
+  cwd). It collapses to the engine's `(autoRevert, revertArtifactDir)` at the face boundary (`RevertPolicy.toEngine`).
+- New `Environment` config fields `atomicDeploy`/`revert` thread through the **parse∘render isomorphism** (A44 — the
+  `MovementIsomorphismTests` env round-trip covers them) and the `FlowRunOpts`/`MovementSpec`/`LoadOpts` records.
+- **Follow-on C** — `migrate --with-data`'s SCHEMA leg now honors the derived atomic (`executeWithDataWith` /
+  `executeWithDataAndRecordWith` gained an `atomic` param → `executeWith atomic`; threaded from `opts.Atomic`). The
+  with-data DATA leg's revert is a further follow-on (it runs through `Transfer.runWithRenamesWith`, not the
+  ThroughConnections faces).
+- Witnesses: three `MovementSurfaceTests` (atomic derived-ON / `--auto-revert`→`Auto` / revert-dir) + the A44 env
+  isomorphism. Gates: Debug+Release 0/0; pure pool PASS.
+
+**Follow-on D — DEFERRED with a hard gate (the streaming reverse-leg's M23 arm).** `writePlanStreaming` (the
+estate-scale, hundreds-of-millions-row path) resumes via its `CaptureJournal` today; an active compensating
+DELETE-by-captured-key there is mechanically feasible (replay the journal into a remap → `buildRevertScript` at the
+streaming `Error` branch → `runRevert`). It is **intentionally NOT shipped here**: a wrong `DELETE` at estate scale is
+unrecoverable, so per the engine's discipline ("every correctness claim a property test") it MUST land WITH a
+deterministic streaming-failure canary — which is not constructible-and-verifiable at the tail of this session. The
+materialized transfer + both schema legs carry full M22/M23 compensation; streaming retains its journal-resume safety.
+D is the single remaining named follow-on; ship it with its canary.
+
+**Cross-references.** `src/Projection.Pipeline/{MovementSpec.fs (RevertPolicy), MovementSurface.fs (parse/render/derive),
+MigrationRun.fs (executeWithData* atomic)}`; `src/Projection.Cli/{RunFaces.fs, Program.fs}`; `MovementSurfaceTests` +
+`MovementIsomorphismTests`. M22 (the atomic envelope) + M23 (the data-leg revert) are the dispositions this re-homes.

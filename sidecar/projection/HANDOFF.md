@@ -1,3 +1,36 @@
+# Handoff addendum — 2026-06-16 (later still), M24 LANDED — the migrate dispositions are now CONFIG-BASED (sensible defaults, not command clutter): atomic derives ON for direct+FullRights; revert is a per-environment policy. Follow-on C done (atomic on migrate-with-data). Follow-on D (streaming compensating-undo) DEFERRED behind a canary gate
+
+To the next agent.
+
+**The flags became config dispositions (operator review: "sensible defaults, not clutter, config-based").** Commit
+`9ebb0989` + this follow-on re-homed M22/M23's bare flags into the A44 control plane:
+- **`--atomic` is retired as an opt-in.** Atomic now DERIVES ON for a `direct`+`FullRights` sink (the common local
+  `migrate` needs no flag), inert otherwise. Opt out via env `"atomicDeploy": false` or per-run `--no-atomic`. Derived
+  in `resolveFlowSpec` from access + archetype.
+- **`revert` is a per-environment policy** (`"revert": script|auto|off`; default `script` = emit the revert .sql, never
+  auto-delete). `--auto-revert` forces `auto`; `--revert-dir` overrides the dir. `RevertPolicy.toEngine` collapses it to
+  the engine's `(autoRevert, revertArtifactDir)` at the face.
+- New `Environment` fields `atomicDeploy`/`revert` round-trip through the A44 parse∘render isomorphism (the env
+  `MovementIsomorphismTests` covers them). Witnesses: three new `MovementSurfaceTests`.
+- **Follow-on C — DONE.** `migrate --with-data`'s schema leg honors the derived atomic (`executeWithData*` gained an
+  `atomic` param). The with-data DATA-leg revert is a small further follow-on (it routes through
+  `Transfer.runWithRenamesWith`, not the ThroughConnections faces).
+
+**Follow-on D — DEFERRED behind a HARD canary gate (do not skip it).** The streaming reverse-leg's M23 arm
+(`writePlanStreaming`, the estate-scale hundreds-of-millions-row path) is mechanically feasible: at the streaming
+`Error` branch (`TransferRun.fs` ~1968) replay the `CaptureJournal` into a `PackedSurrogateRemap` (the journal's `spec`
+fold; map `record.Kind` root → SsKey via the catalog), call the existing `buildRevertScript` + `runRevert`, and add
+`autoRevert`/`revertDir` params to `runStreamingReverseLegThroughConnections` + its delegators + the RunFaces streaming
+call. **It MUST ship with a deterministic streaming-failure canary** — a wrong DELETE-by-captured-key at estate scale is
+unrecoverable, so the engine's "every correctness claim a property test" discipline forbids shipping it untested. I
+declined to ship it untested at the tail of this session. Streaming retains its journal-resume safety meanwhile; the
+materialized transfer + both schema legs carry full M22/M23/M24 compensation.
+
+**State.** Branch `claude/vector-wave-4-5`. Config redesign committed (`9ebb0989`); follow-on C is working-tree
+(uncommitted — about to commit). Debug+Release 0/0; pure pool PASS; matrix unaffected. Hold the spine.
+
+---
+
 # Handoff addendum — 2026-06-16 (later still), M22 + M23 + the CLI flag-surfacing LANDED — the migrate "we can't go wrong" envelope, scoped to the real topology: the Atomic `BEGIN TRAN` (`--atomic`) is a LOCAL full-access lever (production schema is ADO/Octopus/SSDT, not direct-connect); the data leg got M21's twin (`--auto-revert`, else emit the precise revert script). Both opt-in, both default-off, both canary-green, and both now wired through the A44 control plane (operator-usable + witness-tested)
 
 To the next agent.

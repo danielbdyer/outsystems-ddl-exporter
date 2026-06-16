@@ -813,6 +813,7 @@ module MigrationRun =
     /// (byte-identical; the existing callers + the ManagedDml shape).
     let executeWithDataWith
         (identityPolicy: IdentityPolicy)
+        (atomic: bool)
         (declaration: LossDeclaration)
         (mode: Transfer.Mode)
         (allowCdc: bool)
@@ -823,7 +824,9 @@ module MigrationRun =
         (sink: SqlConnection)
         : System.Threading.Tasks.Task<Result<MigrationDataOutcome, MigrationError>> =
         task {
-            let! schemaResult = execute allowCdc declaration sinkSource target sink
+            // M22 (follow-on C) — the schema leg of migrate-with-data honors the
+            // derived `--atomic` envelope; the data leg's safety is its own arm.
+            let! schemaResult = executeWith atomic allowCdc declaration sinkSource target sink
             match schemaResult with
             | Error e -> return Error e
             | Ok schema ->
@@ -857,7 +860,7 @@ module MigrationRun =
         (dataSource: SqlConnection)
         (sink: SqlConnection)
         : System.Threading.Tasks.Task<Result<MigrationDataOutcome, MigrationError>> =
-        executeWithDataWith IdentityPolicy.Structural declaration mode allowCdc sinkSource target reconciliation dataSource sink
+        executeWithDataWith IdentityPolicy.Structural false declaration mode allowCdc sinkSource target reconciliation dataSource sink
 
     /// **X5 — the in-place migrate-with-data, MEASURED and RECORDED.** The
     /// protein P-6 chain is `migrate-schema → Move-data → Measure-CDC →
@@ -878,6 +881,7 @@ module MigrationRun =
     /// `executeWithData` are untouched.
     let executeWithDataAndRecordWith
         (identityPolicy: IdentityPolicy)
+        (atomic: bool)
         (declaration: LossDeclaration)
         (mode: Transfer.Mode)
         (allowCdc: bool)
@@ -893,7 +897,8 @@ module MigrationRun =
         (sink: SqlConnection)
         : System.Threading.Tasks.Task<Result<MigrationDataOutcome * EpisodicLifecycle, MigrationError>> =
         task {
-            let! schemaResult = execute allowCdc declaration sinkSource target sink
+            // M22 (follow-on C) — atomic schema leg (see `executeWithDataWith`).
+            let! schemaResult = executeWith atomic allowCdc declaration sinkSource target sink
             match schemaResult with
             | Error e -> return Error e
             | Ok schema ->
@@ -940,4 +945,4 @@ module MigrationRun =
         (dataSource: SqlConnection)
         (sink: SqlConnection)
         : System.Threading.Tasks.Task<Result<MigrationDataOutcome * EpisodicLifecycle, MigrationError>> =
-        executeWithDataAndRecordWith IdentityPolicy.Structural declaration mode allowCdc sinkSource target reconciliation path timeline environment at refactorLogRef dataSource sink
+        executeWithDataAndRecordWith IdentityPolicy.Structural false declaration mode allowCdc sinkSource target reconciliation path timeline environment at refactorLogRef dataSource sink
