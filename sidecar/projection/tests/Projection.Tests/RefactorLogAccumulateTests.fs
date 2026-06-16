@@ -67,7 +67,7 @@ let private targetOrderRenamed : Catalog =
     IRBuilders.mkCatalog [ { salesModule with Kinds = [ customer; renamedOrder; country ] } ]
 
 let private emitRenameEntries (target: Catalog) : RefactorLogEntry list =
-    let diff = CatalogDiff.between sampleCatalog target |> mustOk
+    let diff = CatalogDiff.between sampleCatalog target
     RefactorLogEmitter.emit diff |> mustOk |> RefactorLogEmitter.flatten
 
 // ===========================================================================
@@ -75,7 +75,7 @@ let private emitRenameEntries (target: Catalog) : RefactorLogEntry list =
 // ===========================================================================
 
 let private customerArtifact () : ArtifactByKind<RefactorLogEntry list> =
-    let diff = CatalogDiff.between sampleCatalog targetCustomerRenamed |> mustOk
+    let diff = CatalogDiff.between sampleCatalog targetCustomerRenamed
     RefactorLogEmitter.emit diff |> mustOk
 
 let private changeDateTimeOf (xml: string) : string =
@@ -205,7 +205,7 @@ let ``AC-P6 dedup: empty prior yields the current emission unchanged`` () =
 [<Fact>]
 let ``AC-P6 dedup: accumulateArtifact agrees with accumulate over flatten`` () =
     let prior = emitRenameEntries targetCustomerRenamed
-    let diff = CatalogDiff.between sampleCatalog targetOrderRenamed |> mustOk
+    let diff = CatalogDiff.between sampleCatalog targetOrderRenamed
     let artifact = RefactorLogEmitter.emit diff |> mustOk
     let viaArtifact = RefactorLogEmitter.accumulateArtifact prior artifact
     let viaFlat = RefactorLogEmitter.accumulate prior (RefactorLogEmitter.flatten artifact)
@@ -249,7 +249,7 @@ let ``AC-P6 full-history: every operation in the rendered log carries the episod
         let renamedOrder = { order with Name = nameOf "Receipt" }
         IRBuilders.mkCatalog [ { salesModule with Kinds = [ renamedCustomer; renamedOrder; country ] } ]
     let artifact =
-        RefactorLogEmitter.emit (CatalogDiff.between sampleCatalog twoRenameTarget |> mustOk) |> mustOk
+        RefactorLogEmitter.emit (CatalogDiff.between sampleCatalog twoRenameTarget) |> mustOk
     let at = DateTimeOffset(2026, 6, 3, 12, 0, 0, TimeSpan.Zero)
     let xml = RefactorLogRender.toRefactorLogXmlAt at artifact
     let stamps =

@@ -487,17 +487,19 @@ module CatalogDiff =
     /// O(N log N) with O(log N) `Catalog.tryFindKind` lookups.
     /// Total: O(N log N) where N = |source ∪ target|.
     ///
-    /// Returns `Result<CatalogDiff, EmitError>` for shape uniformity
-    /// with the rest of the emitter pipeline; the smart constructor
-    /// itself is total over Catalog inputs (Catalog has no failure
-    /// modes the diff would surface) — `Ok` is the only inhabited
-    /// branch today. The Result wrapper preserves room for future
-    /// variants (e.g., a `DiffMismatchedSchema` failure if the diff
-    /// expands to detect schema-level incompatibilities).
+    /// Returns a `CatalogDiff` directly — the constructor is **total**.
+    /// It cannot fail over any pair of Catalog inputs (Catalog has no
+    /// failure modes the diff would surface), so the displacement is the
+    /// only inhabited result; there is no `Error` branch to thread. The
+    /// vestigial `Result<CatalogDiff, EmitError>` wrapper (carried for an
+    /// imagined future `DiffMismatchedSchema` failure that never arrived)
+    /// is dropped: `compose`, `inverse`, and the groupoid laws read
+    /// cleanly off a total displacement, and call sites that genuinely
+    /// thread an `EmitError` `Ok`-wrap at their own boundary.
     let between
         (source: Catalog)
         (target: Catalog)
-        : Result<CatalogDiff, EmitError>
+        : CatalogDiff
         =
         let srcKeys = allKindKeys source
         let tgtKeys = allKindKeys target
@@ -576,21 +578,20 @@ module CatalogDiff =
                 Map.empty
         // C1 — sequences are catalog-level, not kind-scoped.
         let sequenceDiff = sequenceDiffBetween source target
-        Ok
-            (CatalogDiff
-                {
-                    Source = source
-                    Target = target
-                    Renamed = renamed
-                    Added = added
-                    Removed = removed
-                    Unchanged = unchanged
-                    AttributeDiffs = attributeDiffs
-                    ReferenceDiffs = referenceDiffs
-                    IndexDiffs = indexDiffs
-                    SequenceDiff = sequenceDiff
-                    KindFacetDiffs = kindFacetDiffs
-                })
+        CatalogDiff
+            {
+                Source = source
+                Target = target
+                Renamed = renamed
+                Added = added
+                Removed = removed
+                Unchanged = unchanged
+                AttributeDiffs = attributeDiffs
+                ReferenceDiffs = referenceDiffs
+                IndexDiffs = indexDiffs
+                SequenceDiff = sequenceDiff
+                KindFacetDiffs = kindFacetDiffs
+            }
 
     let source (CatalogDiff d) : Catalog = d.Source
     let target (CatalogDiff d) : Catalog = d.Target
@@ -1079,12 +1080,14 @@ module CatalogDiff =
     /// (A-Lifecycle-4) follows — both groupings recompute
     /// `between (source d1) (target dₙ)`.
     let compose (d1: CatalogDiff) (d2: CatalogDiff) : CatalogDiff option =
-        let composable =
-            match between (target d1) (source d2) with
-            | Ok bridge -> isEmpty bridge
-            | Error _   -> false
-        if not composable then None
-        else
-            match between (source d1) (target d2) with
-            | Ok net  -> Some net
-            | Error _ -> None
+        let composable = isEmpty (between (target d1) (source d2))
+        if not composable then None else Some (between (source d1) (target d2))
+
+    /// M12 — the groupoid inverse: the displacement that returns target to
+    /// source. `inverse d = between (target d) (source d)`. By the round-trip
+    /// law (`applyDiff` / `between` peer), applying `inverse d` to `target d`
+    /// reproduces `source d` modulo the captured surface; and `compose d
+    /// (inverse d)` is the identity at `source d` (the groupoid law). The
+    /// inverse always exists — `between` is total — so the partial groupoid's
+    /// `Some`-side is closed under inversion.
+    let inverse (d: CatalogDiff) : CatalogDiff = between (target d) (source d)

@@ -328,7 +328,7 @@ let ``X3.T1: the recorded chain reconstructs the latest schema from genesis (fre
         let latest = EpisodicLifecycle.latest reloaded |> Episode.schema
         // The net displacement reconstructed → stored-latest must be empty (the
         // reconstruction reproduces the stored latest).
-        let netToReconstructed = CatalogDiff.between reconstructed latest |> mustEmitOk
+        let netToReconstructed = CatalogDiff.between reconstructed latest
         Assert.True(CatalogDiff.isEmpty netToReconstructed, "reconstructLatestSchema must reproduce the stored latest schema")
 
         // The intermediate prior state is also reconstructible: the second

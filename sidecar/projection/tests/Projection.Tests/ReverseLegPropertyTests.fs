@@ -374,9 +374,8 @@ let ``rendition invariance: the B->A rename map is the IDENTITY — logical Name
     Prop.forAll (Arb.fromGen (genTransferCatalog true)) (fun model ->
         let logical = CatalogRendition.logical model
         let physical = CatalogRendition.physical model
-        match CatalogDiff.between logical physical with
-        | Error _ -> false
-        | Ok diff -> RenameProjection.renames diff |> List.isEmpty)
+        let diff = CatalogDiff.between logical physical
+        RenameProjection.renames diff |> List.isEmpty)
     |> Check.QuickThrowOnFailure
 
 [<Fact>]

@@ -53,7 +53,7 @@ let private targetCatalog : Catalog =
     IRBuilders.mkCatalog [ renamedSalesModule ]
 
 let private renderOnce () : string =
-    let diff = CatalogDiff.between sampleCatalog targetCatalog |> mustOk
+    let diff = CatalogDiff.between sampleCatalog targetCatalog
     let artifact = RefactorLogEmitter.emit diff |> mustOk
     RefactorLogRender.toRefactorLogXml artifact
 
@@ -117,7 +117,7 @@ let ``RefactorLogRender: rename Operation Key matches UuidV5-derived OperationKe
     // Cross-check the rendered Key against the emitter's typed entry —
     // they must agree because the renderer takes the entry's
     // `OperationKey` directly.
-    let diff = CatalogDiff.between sampleCatalog targetCatalog |> mustOk
+    let diff = CatalogDiff.between sampleCatalog targetCatalog
     let artifact = RefactorLogEmitter.emit diff |> mustOk
     let entry =
         artifact
@@ -156,7 +156,7 @@ let ``RefactorLogRender: rename Operation has five Property children with the ex
 
 [<Fact>]
 let ``RefactorLogRender: identity diff produces an Operations element with no Operation children`` () =
-    let diff = CatalogDiff.between sampleCatalog sampleCatalog |> mustOk
+    let diff = CatalogDiff.between sampleCatalog sampleCatalog
     let artifact = RefactorLogEmitter.emit diff |> mustOk
     let xml = RefactorLogRender.toRefactorLogXml artifact
     let doc = parseDoc xml

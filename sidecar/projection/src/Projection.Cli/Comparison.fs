@@ -145,7 +145,7 @@ let renderPhysicalDiff (d: PhysicalSchemaDiff) : View.View =
 /// `Catalog` comparison — a genuine torsor: `Apply = Some applyDiff` (the
 /// delta replays to reconstruct the target; Weyl-proven).
 let catalog : Comparison<Catalog, CatalogDiff> =
-    { Between = (fun a b -> CatalogDiff.between a b |> Result.mapError (fun _ -> "the two models could not be compared"))
+    { Between = (fun a b -> Ok (CatalogDiff.between a b))
       IsEmpty = CatalogDiff.isEmpty
       Render  = renderCatalogDiff
       Apply   = Some (fun d a -> CatalogDiff.applyDiff a d) }

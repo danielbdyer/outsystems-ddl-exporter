@@ -429,16 +429,14 @@ let ``J3: the rendered pair is SsKey-aligned by construction; the repoint is the
         |> List.collect (fun k -> k.SsKey :: (k.Attributes |> List.map (fun a -> a.SsKey)))
         |> Set.ofList
     Assert.Equal<Set<SsKey>>(keysOf j3AuthoredModel, keysOf logical)
-    match CatalogDiff.between logical j3AuthoredModel with
-    | Error es -> Assert.Fail(sprintf "the rendition diff must succeed: %A" es)
-    | Ok diff ->
-        // Both renditions carry the SAME logical `Name`s (the passes touch only
-        // the physical-realization slots), so the B→A rename map is EMPTY — the
-        // identity repoint. The rendition difference rides each contract's
-        // physical coordinates at its own SQL boundary (source reads by B's
-        // names, sink writes by A's), the LE-2-proven mechanism.
-        let renameMap = RenameProjection.renames diff |> RenameProjection.renameMap
-        Assert.True(Map.isEmpty renameMap)
+    let diff = CatalogDiff.between logical j3AuthoredModel
+    // Both renditions carry the SAME logical `Name`s (the passes touch only
+    // the physical-realization slots), so the B→A rename map is EMPTY — the
+    // identity repoint. The rendition difference rides each contract's
+    // physical coordinates at its own SQL boundary (source reads by B's
+    // names, sink writes by A's), the LE-2-proven mechanism.
+    let renameMap = RenameProjection.renames diff |> RenameProjection.renameMap
+    Assert.True(Map.isEmpty renameMap)
 
 // -- planMovement routing (the pure surface→engine map) --------------------
 

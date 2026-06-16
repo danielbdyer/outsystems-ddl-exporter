@@ -52,29 +52,27 @@ module ChangeManifest =
     /// episode's Decision anchor + realized data movement. Threads the Π-side
     /// `EmitError` (`between`'s error type).
     let between (fromEpisode: Episode) (toEpisode: Episode) : Result<ChangeManifest, EmitError> =
-        match CatalogDiff.between fromEpisode.Schema toEpisode.Schema with
-        | Error e -> Error e
-        | Ok diff ->
-            Ok
-                { From = fromEpisode.Coordinate
-                  To = toEpisode.Coordinate
-                  Channels = CatalogDiff.channelCounts diff
-                  SchemaNorm = CatalogDiff.norm diff
-                  RefactorLogRef = toEpisode.RefactorLogRef
-                  CdcCaptureCount = toEpisode.Data.CdcCaptureCount
-                  // The tolerance residual is the named-divergence list the To-
-                  // episode's canary accepted on this edge — `Set` rendered to a
-                  // name-sorted list for T1 byte-determinism. `Tolerance.strict`
-                  // (a faithful run) ⇒ empty.
-                  ToleranceResidual =
-                    toEpisode.Tolerances
-                    |> Tolerance.divergences
-                    |> Set.toList
-                    |> List.sortBy ToleratedDivergence.name
-                  // The applied-transforms outcome is the To-episode's per-
-                  // artifact overlay enumeration, threaded through unchanged
-                  // (already (SsKey × OverlayAxis option)-sorted at its source).
-                  AppliedTransforms = toEpisode.AppliedTransforms }
+        let diff = CatalogDiff.between fromEpisode.Schema toEpisode.Schema
+        Ok
+            { From = fromEpisode.Coordinate
+              To = toEpisode.Coordinate
+              Channels = CatalogDiff.channelCounts diff
+              SchemaNorm = CatalogDiff.norm diff
+              RefactorLogRef = toEpisode.RefactorLogRef
+              CdcCaptureCount = toEpisode.Data.CdcCaptureCount
+              // The tolerance residual is the named-divergence list the To-
+              // episode's canary accepted on this edge — `Set` rendered to a
+              // name-sorted list for T1 byte-determinism. `Tolerance.strict`
+              // (a faithful run) ⇒ empty.
+              ToleranceResidual =
+                toEpisode.Tolerances
+                |> Tolerance.divergences
+                |> Set.toList
+                |> List.sortBy ToleratedDivergence.name
+              // The applied-transforms outcome is the To-episode's per-
+              // artifact overlay enumeration, threaded through unchanged
+              // (already (SsKey × OverlayAxis option)-sorted at its source).
+              AppliedTransforms = toEpisode.AppliedTransforms }
 
     /// The change-manifest **series**: one manifest per edge across an
     /// `EpisodicLifecycle` — the sprint-by-sprint record of what each release

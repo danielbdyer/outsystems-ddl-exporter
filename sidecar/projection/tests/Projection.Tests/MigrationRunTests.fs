@@ -126,11 +126,11 @@ let ``6.D.1: the full A->B loop — migrate, record, then reconstruct reproduces
         let chain = MigrationRun.record path (tl "dev") coord (Some "reflog#1") (DataObservation.create 12 (Some "lsn:0x0C")) artifacts |> mustOk
         // The FTC over the recorded chain reproduces B (genesis ⊕ δ = target).
         let reconstructed = EpisodicLifecycle.reconstructLatestSchema chain |> mustOk
-        Assert.True(CatalogDiff.isEmpty (CatalogDiff.between reshapedTarget reconstructed |> mustOk))
+        Assert.True(CatalogDiff.isEmpty (CatalogDiff.between reshapedTarget reconstructed))
         // And it survives a reload from disk — durable provenance.
         let reloaded = LifecycleStore.load path |> mustOk
         let reReconstructed = EpisodicLifecycle.reconstructLatestSchema reloaded |> mustOk
-        Assert.True(CatalogDiff.isEmpty (CatalogDiff.between reshapedTarget reReconstructed |> mustOk)))
+        Assert.True(CatalogDiff.isEmpty (CatalogDiff.between reshapedTarget reReconstructed)))
 
 // ===========================================================================
 // The snapshot⊖snapshot loop — previewFromStore sources state A from the
@@ -190,7 +190,7 @@ let private physicalRenameTarget : Catalog =
 
 [<Fact>]
 let ``live: renameStatements emits sp_rename + a logical-name re-bind for a physical table rename`` () =
-    let diff = CatalogDiff.between sampleCatalog physicalRenameTarget |> mustOk
+    let diff = CatalogDiff.between sampleCatalog physicalRenameTarget
     let stmts = MigrationRun.renameStatements diff
     Assert.Equal(2, List.length stmts)
     // (1) the physical rename; (2) the V2.LogicalName re-bind to the new name.
@@ -211,7 +211,7 @@ let private columnRenameTarget : Catalog =
 
 [<Fact>]
 let ``live: a column rename emits sp_rename COLUMN + a column-level logical re-bind`` () =
-    let diff = CatalogDiff.between sampleCatalog columnRenameTarget |> mustOk
+    let diff = CatalogDiff.between sampleCatalog columnRenameTarget
     let stmts = MigrationRun.renameStatements diff
     Assert.Equal(2, List.length stmts)
     // (1) the physical column rename; (2) the column-level V2.LogicalName re-bind.
@@ -225,7 +225,7 @@ let ``live: a column rename emits sp_rename COLUMN + a column-level logical re-b
 let ``live: a logical-only rename re-binds the logical name without an sp_rename`` () =
     // renamedTarget changes the logical Name but keeps customer's Physical.Table:
     // the physical object stays, but its V2.LogicalName binding must still update.
-    let diff = CatalogDiff.between sampleCatalog renamedTarget |> mustOk
+    let diff = CatalogDiff.between sampleCatalog renamedTarget
     let one = List.exactlyOne (MigrationRun.renameStatements diff)
     Assert.DoesNotContain("sp_rename", one)   // no physical rename
     Assert.Contains("sp_updateextendedproperty", one)
@@ -284,7 +284,7 @@ let ``AC-P8: recordVerified persists a verified execute; the store reloads and r
         // Reload from disk and reconstruct: B' reproduces B (T16 through 6.H).
         let reloaded = LifecycleStore.load path |> mustOk
         let reReconstructed = EpisodicLifecycle.reconstructLatestSchema reloaded |> mustOk
-        Assert.True(CatalogDiff.isEmpty (CatalogDiff.between reshapedTarget reReconstructed |> mustOk)))
+        Assert.True(CatalogDiff.isEmpty (CatalogDiff.between reshapedTarget reReconstructed)))
 
 [<Fact>]
 let ``AC-P8: a second recordVerified appends at the next monotonic ordinal (timeline advances)`` () =

@@ -1290,13 +1290,10 @@ module Transfer =
         (sinkContract: Catalog)
         : Task<Result<TransferReport>> =
         task {
-            match CatalogDiff.between sourceContract sinkContract with
-            | Error e ->
-                return Result.failureOf (ValidationError.create "transfer.renameDiffFailed" (sprintf "%A" e))
-            | Ok diff ->
-                let renameMap =
-                    RenameProjection.renames diff |> RenameProjection.renameMap
-                return! runCore mode allowCdc false source sink sinkContract Map.empty (Some (sourceContract, renameMap)) { WriteOptions.def with IdentityPolicy = identityPolicy }
+            let diff = CatalogDiff.between sourceContract sinkContract
+            let renameMap =
+                RenameProjection.renames diff |> RenameProjection.renameMap
+            return! runCore mode allowCdc false source sink sinkContract Map.empty (Some (sourceContract, renameMap)) { WriteOptions.def with IdentityPolicy = identityPolicy }
         }
 
     let runWithRenames
@@ -1729,170 +1726,167 @@ module Transfer =
         (journalDirectory: string option)
         : Task<Result<TransferReport>> =
         task {
-            match CatalogDiff.between sourceContract sinkContract with
-            | Error e ->
-                return Result.failureOf (ValidationError.create "transfer.renameDiffFailed" (sprintf "%A" e))
-            | Ok diff ->
-                let renameMap = RenameProjection.renames diff |> RenameProjection.renameMap
-                let cdcGate : Task<Result<unit>> =
+            let diff = CatalogDiff.between sourceContract sinkContract
+            let renameMap = RenameProjection.renames diff |> RenameProjection.renameMap
+            let cdcGate : Task<Result<unit>> =
+                task {
+                    if mode = Execute && not allowCdc then
+                        // NM-54 — unverifiable CDC state is UNSAFE: refuse on probe failure.
+                        match! ReadSide.cdcTrackedTables sink with
+                        | Error es -> return Result.failure es
+                        | Ok tracked ->
+                            if List.isEmpty tracked then return Ok ()
+                            else
+                                return
+                                    Result.failureOf
+                                        (ValidationError.create
+                                            "transfer.cdcTrackedSink"
+                                            (sprintf
+                                                "Sink has %d CDC-tracked table(s) (e.g. %s); refusing --execute. Pass --allow-cdc to override."
+                                                (List.length tracked)
+                                                (tracked |> List.truncate 3 |> String.concat ", ")))
+                    else return Ok ()
+                }
+            let spanningGate : Task<Result<unit>> =
+                task {
+                    if mode = Execute then return! spanningPreflight source sink sinkContract
+                    else return Ok ()
+                }
+            match! Preflight.all [ cdcGate; spanningGate ] with
+            | Error es -> return Result.failure es
+            | Ok () ->
+                let topo = (TopologicalOrderPass.runWith TreatAsCycle sinkContract).Value
+                let reconciledKinds = reconciliation |> Map.toSeq |> Seq.map fst |> Set.ofSeq
+                // Reconcile the named kinds against the sink (read-only,
+                // safe in DryRun): ingest each reconciled kind's SOURCE
+                // rows (re-pointed to the sink's names — the only kinds
+                // materialized; the estate-scale bulk streams), and match
+                // them to the pre-existing SINK rows by the operator
+                // ruleset. The reverse leg's User population is small,
+                // so this is bounded; the FK-target bulk never materializes.
+                let! reconciledSourceRows =
                     task {
-                        if mode = Execute && not allowCdc then
-                            // NM-54 — unverifiable CDC state is UNSAFE: refuse on probe failure.
-                            match! ReadSide.cdcTrackedTables sink with
-                            | Error es -> return Result.failure es
-                            | Ok tracked ->
-                                if List.isEmpty tracked then return Ok ()
-                                else
-                                    return
-                                        Result.failureOf
-                                            (ValidationError.create
-                                                "transfer.cdcTrackedSink"
-                                                (sprintf
-                                                    "Sink has %d CDC-tracked table(s) (e.g. %s); refusing --execute. Pass --allow-cdc to override."
-                                                    (List.length tracked)
-                                                    (tracked |> List.truncate 3 |> String.concat ", ")))
-                        else return Ok ()
+                        let mutable acc : Map<SsKey, StaticRow list> = Map.empty
+                        for KeyValue (kind, _) in reconciliation do
+                            match Catalog.tryFindKind kind sourceContract with
+                            | Some ingestKind ->
+                                let! rows = AsyncStream.toList (Ingestion.streamKindRows source ingestKind)
+                                acc <- Map.add kind (RenameProjection.repointRows renameMap rows) acc
+                            | None -> ()
+                        return acc
                     }
-                let spanningGate : Task<Result<unit>> =
-                    task {
-                        if mode = Execute then return! spanningPreflight source sink sinkContract
-                        else return Ok ()
-                    }
-                match! Preflight.all [ cdcGate; spanningGate ] with
-                | Error es -> return Result.failure es
-                | Ok () ->
-                    let topo = (TopologicalOrderPass.runWith TreatAsCycle sinkContract).Value
-                    let reconciledKinds = reconciliation |> Map.toSeq |> Seq.map fst |> Set.ofSeq
-                    // Reconcile the named kinds against the sink (read-only,
-                    // safe in DryRun): ingest each reconciled kind's SOURCE
-                    // rows (re-pointed to the sink's names — the only kinds
-                    // materialized; the estate-scale bulk streams), and match
-                    // them to the pre-existing SINK rows by the operator
-                    // ruleset. The reverse leg's User population is small,
-                    // so this is bounded; the FK-target bulk never materializes.
-                    let! reconciledSourceRows =
-                        task {
-                            let mutable acc : Map<SsKey, StaticRow list> = Map.empty
-                            for KeyValue (kind, _) in reconciliation do
-                                match Catalog.tryFindKind kind sourceContract with
-                                | Some ingestKind ->
-                                    let! rows = AsyncStream.toList (Ingestion.streamKindRows source ingestKind)
-                                    acc <- Map.add kind (RenameProjection.repointRows renameMap rows) acc
-                                | None -> ()
-                            return acc
-                        }
-                    let! reconciled = reconcileAgainstSink sink sinkContract reconciliation reconciledSourceRows
-                    // Structure only — order, dispositions, deferred columns;
-                    // the rows STREAM at write time (the whole point).
-                    // `reclassifyReconciled` marks the reconciled kinds skip-
-                    // insert so the stream never re-imports a sink-owned row.
-                    let plan =
-                        DataLoadPlan.build sinkContract topo Map.empty SurrogateRemapContext.empty
-                        |> DataLoadPlan.reclassifyReconciled reconciledKinds
-                    // Pre-write gates (Execute only), precedence-ordered:
-                    // structural unsatisfiability first, then the validate-
-                    // user-map orphan halt (AC-I5 / NM-31 — now ON streaming).
-                    let preWrite =
-                        if mode = Execute then
-                            match executeGate sinkContract plan with
-                            | Some refusal -> Some refusal
-                            | None         -> validateUserMap allowDrops reconciled
-                        else None
-                    match preWrite with
-                    | Some refusal -> return Result.failureOf refusal
-                    | None ->
-                        if mode <> Execute then
-                            // Phase 4 — the movement DryRun preview. Estimate
-                            // each kind's rows-would-move with a cheap exact
-                            // COUNT (no ingestion): a reconciled kind moves
-                            // nothing (ReconciledByRule — the sink owns it), so
-                            // it previews 0; every other kind previews its
-                            // source count. RowsWritten stays 0 (a preview), and
-                            // the reconcile outcome (Unmatched / Ambiguous) rides
-                            // the same report — the rekey-map preview.
-                            let! previewKinds =
-                                task {
-                                    let mutable acc : KindOutcome list = []
-                                    for l in plan.Loads do
-                                        let! estimate =
-                                            task {
-                                                if l.Disposition = IdentityDisposition.ReconciledByRule then return 0
-                                                else
-                                                    match Catalog.tryFindKind l.Kind sourceContract with
-                                                    | Some srcKind -> return! countKindRows source srcKind
-                                                    | None -> return 0
-                                            }
-                                        acc <-
-                                            { Kind              = l.Kind
-                                              Disposition       = l.Disposition
-                                              RowsIngested      = estimate
-                                              DeferredFkColumns = l.DeferredFkColumns
-                                              RowsWritten       = 0 } :: acc
-                                    return List.rev acc
-                                }
+                let! reconciled = reconcileAgainstSink sink sinkContract reconciliation reconciledSourceRows
+                // Structure only — order, dispositions, deferred columns;
+                // the rows STREAM at write time (the whole point).
+                // `reclassifyReconciled` marks the reconciled kinds skip-
+                // insert so the stream never re-imports a sink-owned row.
+                let plan =
+                    DataLoadPlan.build sinkContract topo Map.empty SurrogateRemapContext.empty
+                    |> DataLoadPlan.reclassifyReconciled reconciledKinds
+                // Pre-write gates (Execute only), precedence-ordered:
+                // structural unsatisfiability first, then the validate-
+                // user-map orphan halt (AC-I5 / NM-31 — now ON streaming).
+                let preWrite =
+                    if mode = Execute then
+                        match executeGate sinkContract plan with
+                        | Some refusal -> Some refusal
+                        | None         -> validateUserMap allowDrops reconciled
+                    else None
+                match preWrite with
+                | Some refusal -> return Result.failureOf refusal
+                | None ->
+                    if mode <> Execute then
+                        // Phase 4 — the movement DryRun preview. Estimate
+                        // each kind's rows-would-move with a cheap exact
+                        // COUNT (no ingestion): a reconciled kind moves
+                        // nothing (ReconciledByRule — the sink owns it), so
+                        // it previews 0; every other kind previews its
+                        // source count. RowsWritten stays 0 (a preview), and
+                        // the reconcile outcome (Unmatched / Ambiguous) rides
+                        // the same report — the rekey-map preview.
+                        let! previewKinds =
+                            task {
+                                let mutable acc : KindOutcome list = []
+                                for l in plan.Loads do
+                                    let! estimate =
+                                        task {
+                                            if l.Disposition = IdentityDisposition.ReconciledByRule then return 0
+                                            else
+                                                match Catalog.tryFindKind l.Kind sourceContract with
+                                                | Some srcKind -> return! countKindRows source srcKind
+                                                | None -> return 0
+                                        }
+                                    acc <-
+                                        { Kind              = l.Kind
+                                          Disposition       = l.Disposition
+                                          RowsIngested      = estimate
+                                          DeferredFkColumns = l.DeferredFkColumns
+                                          RowsWritten       = 0 } :: acc
+                                return List.rev acc
+                            }
+                        return
+                            Result.success
+                                { Mode                = mode
+                                  Kinds               = previewKinds
+                                  UnbreakableCycleFks = plan.UnbreakableCycleFks
+                                  UnmatchedIdentities = reconciled.Unmatched
+                                  AmbiguousIdentities = reconciled.Ambiguous
+                                  AmbiguousTargetMatchKeys = reconciled.AmbiguousTargetKeys
+                                  SkippedReferences   = plan.SkippedReferences
+                                  CaptureLaneDescents = []
+                                  // Streaming DryRun: no G10 resumable replay.
+                                  ReplayedPriorDrops  = None
+                                  // NM-21 — streaming Transfer ingests source rows, not σ.
+                                  SyntheticUnsatisfiableFks = [] }
+                    else
+                        let journal =
+                            journalDirectory
+                            |> Option.map (fun dir -> CaptureJournal.create dir (planMarker sinkContract plan))
+                        // Phase 3 — the address-drift guard: if THIS run's
+                        // journal file is absent but the directory holds a
+                        // prior run's journal under a different plan marker,
+                        // resuming would silently orphan it and DOUBLE
+                        // committed work. Refuse by name instead.
+                        let addressDrift =
+                            journal
+                            |> Option.map CaptureJournal.siblingJournalsUnderDrift
+                            |> Option.defaultValue []
+                        if not (List.isEmpty addressDrift) then
+                            return Result.failureOf
+                                (ValidationError.create "transfer.resume.journalAddressDrift"
+                                    (sprintf
+                                        "the journal directory holds %d journal(s) under a DIFFERENT plan marker (e.g. %s) but none for this run — the plan changed since the journaled run, so resuming would silently re-stream and DOUBLE committed work. Clear the journal directory to reload from scratch, or restore the prior plan to resume."
+                                        (List.length addressDrift)
+                                        (addressDrift |> List.truncate 1 |> List.map (fun f -> System.IO.Path.GetFileName f |> nonNull) |> String.concat ", ")))
+                        else
+                        match! writePlanStreaming source sink sourceContract renameMap sinkContract plan journal reconciled.Remap reconciledKinds with
+                        | Error es -> return Result.failure es
+                        | Ok (totals, skips, descents) ->
+                            let kinds =
+                                plan.Loads
+                                |> List.map (fun l ->
+                                    let t = Map.tryFind l.Kind totals |> Option.defaultValue { Ingested = 0; Written = 0 }
+                                    { Kind              = l.Kind
+                                      Disposition       = l.Disposition
+                                      RowsIngested      = t.Ingested
+                                      DeferredFkColumns = l.DeferredFkColumns
+                                      RowsWritten       = t.Written })
                             return
                                 Result.success
                                     { Mode                = mode
-                                      Kinds               = previewKinds
+                                      Kinds               = kinds
                                       UnbreakableCycleFks = plan.UnbreakableCycleFks
                                       UnmatchedIdentities = reconciled.Unmatched
                                       AmbiguousIdentities = reconciled.Ambiguous
                                       AmbiguousTargetMatchKeys = reconciled.AmbiguousTargetKeys
-                                      SkippedReferences   = plan.SkippedReferences
-                                      CaptureLaneDescents = []
-                                      // Streaming DryRun: no G10 resumable replay.
+                                      SkippedReferences   = skips
+                                      CaptureLaneDescents = descents
+                                      // Streaming-journal resume is per-run by
+                                      // design (the journaled run reported its
+                                      // own drops); no G10 marker replay here.
                                       ReplayedPriorDrops  = None
                                       // NM-21 — streaming Transfer ingests source rows, not σ.
                                       SyntheticUnsatisfiableFks = [] }
-                        else
-                            let journal =
-                                journalDirectory
-                                |> Option.map (fun dir -> CaptureJournal.create dir (planMarker sinkContract plan))
-                            // Phase 3 — the address-drift guard: if THIS run's
-                            // journal file is absent but the directory holds a
-                            // prior run's journal under a different plan marker,
-                            // resuming would silently orphan it and DOUBLE
-                            // committed work. Refuse by name instead.
-                            let addressDrift =
-                                journal
-                                |> Option.map CaptureJournal.siblingJournalsUnderDrift
-                                |> Option.defaultValue []
-                            if not (List.isEmpty addressDrift) then
-                                return Result.failureOf
-                                    (ValidationError.create "transfer.resume.journalAddressDrift"
-                                        (sprintf
-                                            "the journal directory holds %d journal(s) under a DIFFERENT plan marker (e.g. %s) but none for this run — the plan changed since the journaled run, so resuming would silently re-stream and DOUBLE committed work. Clear the journal directory to reload from scratch, or restore the prior plan to resume."
-                                            (List.length addressDrift)
-                                            (addressDrift |> List.truncate 1 |> List.map (fun f -> System.IO.Path.GetFileName f |> nonNull) |> String.concat ", ")))
-                            else
-                            match! writePlanStreaming source sink sourceContract renameMap sinkContract plan journal reconciled.Remap reconciledKinds with
-                            | Error es -> return Result.failure es
-                            | Ok (totals, skips, descents) ->
-                                let kinds =
-                                    plan.Loads
-                                    |> List.map (fun l ->
-                                        let t = Map.tryFind l.Kind totals |> Option.defaultValue { Ingested = 0; Written = 0 }
-                                        { Kind              = l.Kind
-                                          Disposition       = l.Disposition
-                                          RowsIngested      = t.Ingested
-                                          DeferredFkColumns = l.DeferredFkColumns
-                                          RowsWritten       = t.Written })
-                                return
-                                    Result.success
-                                        { Mode                = mode
-                                          Kinds               = kinds
-                                          UnbreakableCycleFks = plan.UnbreakableCycleFks
-                                          UnmatchedIdentities = reconciled.Unmatched
-                                          AmbiguousIdentities = reconciled.Ambiguous
-                                          AmbiguousTargetMatchKeys = reconciled.AmbiguousTargetKeys
-                                          SkippedReferences   = skips
-                                          CaptureLaneDescents = descents
-                                          // Streaming-journal resume is per-run by
-                                          // design (the journaled run reported its
-                                          // own drops); no G10 marker replay here.
-                                          ReplayedPriorDrops  = None
-                                          // NM-21 — streaming Transfer ingests source rows, not σ.
-                                          SyntheticUnsatisfiableFks = [] }
         }
 
     /// The straight-load streaming realization — the non-reconciling default
@@ -1991,13 +1985,10 @@ module Transfer =
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
         : Task<Result<TransferReport>> =
         task {
-            match CatalogDiff.between sourceContract sinkContract with
-            | Error e ->
-                return Result.failureOf (ValidationError.create "transfer.renameDiffFailed" (sprintf "%A" e))
-            | Ok diff ->
-                let renameMap =
-                    RenameProjection.renames diff |> RenameProjection.renameMap
-                return! runCore mode allowCdc false source sink sinkContract reconciliation (Some (sourceContract, renameMap)) { WriteOptions.def with IdentityPolicy = identityPolicy }
+            let diff = CatalogDiff.between sourceContract sinkContract
+            let renameMap =
+                RenameProjection.renames diff |> RenameProjection.renameMap
+            return! runCore mode allowCdc false source sink sinkContract reconciliation (Some (sourceContract, renameMap)) { WriteOptions.def with IdentityPolicy = identityPolicy }
         }
 
     let runReconcilingWithRenames
@@ -2138,24 +2129,21 @@ module Transfer =
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
         : Task<Result<TransferReport>> =
         task {
-            match CatalogDiff.between logicalSourceContract physicalSinkContract with
-            | Error e ->
-                return Result.failureOf (ValidationError.create "transfer.renameDiffFailed" (sprintf "%A" e))
-            | Ok diff ->
-                let renameMap =
-                    RenameProjection.renames diff |> RenameProjection.renameMap
-                match resolveLoadSet logicalSourceContract tables with
+            let diff = CatalogDiff.between logicalSourceContract physicalSinkContract
+            let renameMap =
+                RenameProjection.renames diff |> RenameProjection.renameMap
+            match resolveLoadSet logicalSourceContract tables with
+            | Error es -> return Result.failure es
+            | Ok loadSet ->
+                match! ConnectionResolver.openSubstrate connections.Source with
                 | Error es -> return Result.failure es
-                | Ok loadSet ->
-                    match! ConnectionResolver.openSubstrate connections.Source with
+                | Ok source ->
+                    use source = source
+                    match! ConnectionResolver.openSubstrate connections.Sink with
                     | Error es -> return Result.failure es
-                    | Ok source ->
-                        use source = source
-                        match! ConnectionResolver.openSubstrate connections.Sink with
-                        | Error es -> return Result.failure es
-                        | Ok sink ->
-                            use sink = sink
-                            return! runCore mode allowCdc allowDrops source sink physicalSinkContract reconciliation (Some (logicalSourceContract, renameMap)) { WriteOptions.ofEmission emission with Resumable = resumable; LoadSet = loadSet; IdentityPolicy = identityPolicy }
+                    | Ok sink ->
+                        use sink = sink
+                        return! runCore mode allowCdc allowDrops source sink physicalSinkContract reconciliation (Some (logicalSourceContract, renameMap)) { WriteOptions.ofEmission emission with Resumable = resumable; LoadSet = loadSet; IdentityPolicy = identityPolicy }
         }
 
     /// The structural-policy reverse leg (byte-identical; the ManagedDml cloud

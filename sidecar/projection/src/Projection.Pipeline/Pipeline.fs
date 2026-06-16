@@ -1875,12 +1875,10 @@ module Compose =
         match priorSchemaFromStore path with
         | Error e -> Error e
         | Ok prior ->
-            match CatalogDiff.between prior emitted with
-            | Error e -> Error (DisplacementFailed e)
-            | Ok displacement ->
-                match priorAccumulatedRefactorLog path with
-                | Error e -> Error e
-                | Ok priorLog ->
+            let displacement = CatalogDiff.between prior emitted
+            match priorAccumulatedRefactorLog path with
+            | Error e -> Error e
+            | Ok priorLog ->
                     match RefactorLogEmitter.emit displacement with
                     | Error e -> Error (DisplacementFailed e)
                     | Ok currentArtifact ->

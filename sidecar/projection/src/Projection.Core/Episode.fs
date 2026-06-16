@@ -157,16 +157,6 @@ and EpisodicLifecycleData =
 [<RequireQualifiedAccess>]
 module EpisodicLifecycle =
 
-    /// Short-circuiting sequence over the Π-side `EmitError` algebra (mirrors
-    /// `Lifecycle.sequenceEmit` — the schema-plane diff threads the same error).
-    let private sequenceEmit (results: Result<'a, EmitError> list) : Result<'a list, EmitError> =
-        let rec loop acc remaining =
-            match remaining with
-            | []           -> Ok (List.rev acc)
-            | Ok v :: rest -> loop (v :: acc) rest
-            | Error e :: _ -> Error e
-        loop [] results
-
     /// Open a timeline at its genesis episode (E₀). Total — a single episode is
     /// trivially monotone.
     let genesis (timeline: Timeline) (episode: Episode) : EpisodicLifecycle =
@@ -208,7 +198,7 @@ module EpisodicLifecycle =
         data.Episodes
         |> List.pairwise
         |> List.map (fun (prior, next) -> CatalogDiff.between prior.Schema next.Schema)
-        |> sequenceEmit
+        |> Ok
 
     /// The FTC over the durable chain: `fold applyDiff E₀.Schema [δ₀; δ₁; …]`,
     /// reconstructing the latest schema from genesis + the per-edge deltas. The
@@ -242,7 +232,7 @@ module EpisodicLifecycle =
         let (EpisodicLifecycle data) = lifecycle
         let genesisSchema = (List.head data.Episodes).Schema
         let latestSchema = (List.last data.Episodes).Schema
-        let directNetDiff () = CatalogDiff.between genesisSchema latestSchema
+        let directNetDiff () = Ok (CatalogDiff.between genesisSchema latestSchema)
         match schemaEvolutionChain lifecycle with
         | Error e -> Error e
         | Ok []   -> directNetDiff ()

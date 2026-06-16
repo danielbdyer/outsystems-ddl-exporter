@@ -14,9 +14,7 @@ type private FsResult<'a, 'b> = Microsoft.FSharp.Core.Result<'a, 'b>
 
 let private mustOk r = match r with Ok v -> v | Error es -> failwithf "fixture: %A" es
 let private betweenOk (a: Catalog) (b: Catalog) : CatalogDiff =
-    match CatalogDiff.between a b with
-    | FsResult.Ok d -> d
-    | FsResult.Error e -> failwithf "between: %A" e
+    CatalogDiff.between a b
 let private nm (s: string) : Name = Name.create s |> mustOk
 let private kKey (s: string) : SsKey = SsKey.synthesizedComposite "OS_RP_KIND" [ s ] |> mustOk
 let private aKey (s: string) : SsKey = SsKey.synthesizedComposite "OS_RP_ATTR" [ s ] |> mustOk

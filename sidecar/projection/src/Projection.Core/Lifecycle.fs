@@ -64,18 +64,6 @@ and LifecycleData =
 [<RequireQualifiedAccess>]
 module Lifecycle =
 
-    /// Short-circuiting sequence over the Π-side `EmitError` algebra.
-    /// `Result.collect` covers the `ValidationError list` arity; this is
-    /// its `EmitError` peer, used to thread `CatalogDiff.between` across
-    /// the evolution chain.
-    let private sequenceEmit (results: Result<'a, EmitError> list) : Result<'a list, EmitError> =
-        let rec loop acc remaining =
-            match remaining with
-            | []              -> Ok (List.rev acc)
-            | Ok v :: rest    -> loop (v :: acc) rest
-            | Error e :: _    -> Error e
-        loop [] results
-
     /// Open a timeline at its genesis snapshot (C₀). Total — a single
     /// snapshot is trivially monotone.
     let genesis (timeline: Timeline) (snapshot: CatalogSnapshot) : Lifecycle =
@@ -117,7 +105,7 @@ module Lifecycle =
         data.Snapshots
         |> List.pairwise
         |> List.map (fun (prior, next) -> CatalogDiff.between prior.Catalog next.Catalog)
-        |> sequenceEmit
+        |> Ok
 
     /// L3-L1 (replayability) in materialized form: recover the `Catalog`
     /// stored at a `Version`. Lookup is by ordinal (the position's
@@ -176,7 +164,7 @@ module Lifecycle =
         let (Lifecycle data) = lifecycle
         let genesisCatalog = (List.head data.Snapshots).Catalog
         let latestCatalog = (List.last data.Snapshots).Catalog
-        let directNetDiff () = CatalogDiff.between genesisCatalog latestCatalog
+        let directNetDiff () = Ok (CatalogDiff.between genesisCatalog latestCatalog)
         match evolutionChain lifecycle with
         | Error e -> Error e
         | Ok []   -> directNetDiff ()

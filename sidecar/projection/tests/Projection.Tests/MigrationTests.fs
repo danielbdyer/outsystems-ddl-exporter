@@ -61,7 +61,7 @@ let ``T16: applyTo (plan A B) A = B — migrate A B reproduces the target (maste
         let plan = Migration.plan DeclareAll sampleCatalog target |> mustOk
         let reproduced = Migration.applyTo plan sampleCatalog
         // B reproduced modulo the diff's captured surface.
-        Assert.True(CatalogDiff.isEmpty (CatalogDiff.between target reproduced |> mustOk))
+        Assert.True(CatalogDiff.isEmpty (CatalogDiff.between target reproduced))
 
 [<Fact>]
 let ``T16: migrate A A is idempotent — zero minimum-viable touches`` () =
