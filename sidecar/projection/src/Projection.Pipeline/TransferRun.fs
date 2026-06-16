@@ -338,7 +338,61 @@ module Transfer =
     /// against the completed remap. `PreservedFromSource` /
     /// `ReconciledByRule` loads are byte-identical to the pre-§5.2 path —
     /// the re-point is a no-op when no `AssignedBySink` kind is in scope.
-    let private writePlan (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) : Task<(SsKey * UnresolvedReference) list * LaneDescent list> =
+    /// Build A — the child-first `DELETE`-by-captured-key revert script for a
+    /// failed load. For each `AssignedBySink` kind, in the REVERSE of the
+    /// parent-first insert order (children first, so an FK never blocks a delete),
+    /// delete the sink-minted rows by their captured assigned PKs. Pre-existing
+    /// rows are untouched — only minted keys are targeted — so this is a precise
+    /// undo, not a wipe. Empty when nothing was captured. The IN list is chunked to
+    /// stay within SQL Server's statement limits; integral keys inline, a
+    /// non-integral fallback key renders as an escaped `N'…'` literal.
+    let private buildRevertScript (catalog: Catalog) (plan: DataLoadPlan) (remap: PackedSurrogateRemap) : string list =
+        let assignedByKind = PackedSurrogateRemap.assignedKeysByKind remap
+        let renderKey (k: string) : string =
+            match System.Int64.TryParse k with
+            | true, _ -> k
+            | false, _ -> System.String.Concat("N'", k.Replace("'", "''"), "'")
+        plan.Loads
+        |> List.rev
+        |> List.collect (fun load ->
+            if load.Disposition <> IdentityDisposition.AssignedBySink then []
+            else
+                match Map.tryFind load.Kind assignedByKind, Catalog.tryFindKind load.Kind catalog with
+                | Some (_ :: _ as keys), Some kind ->
+                    match kind.Attributes |> List.tryFind (fun a -> a.IsPrimaryKey && a.IsIdentity) with
+                    | Some pk ->
+                        let table = Render.tableQualified kind.Physical
+                        let pkCol = Render.quote (ColumnRealization.columnNameText pk.Column)
+                        keys
+                        |> List.chunkBySize 1000
+                        |> List.map (fun chunk ->
+                            sprintf "DELETE FROM %s WHERE %s IN (%s);" table pkCol (chunk |> List.map renderKey |> String.concat ", "))
+                    | None -> []
+                | _ -> [])
+
+    /// Build A — act on the revert script after a failed load: always write it to
+    /// the artifact dir when one is configured (the operator's reviewable backstop),
+    /// and EXECUTE it when `autoRevert` is set (best-effort per statement — the
+    /// artifact remains the fallback if a delete itself fails). No-op on an empty
+    /// script. The caller re-raises the original failure afterward: the load failed;
+    /// this only ensures the partial sink-minted rows are reverted or scripted.
+    let private runRevert (sink: SqlConnection) (autoRevert: bool) (artifactDir: string option) (script: string list) : Task<unit> =
+        task {
+            if not (List.isEmpty script) then
+                match artifactDir with
+                | Some dir ->
+                    try
+                        System.IO.Directory.CreateDirectory dir |> ignore
+                        System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "transfer-revert.sql"), String.concat "\n" script)
+                    with _ -> ()
+                | None -> ()
+                if autoRevert then
+                    for stmt in script do
+                        try do! Deploy.executeBatch sink stmt
+                        with _ -> ()
+        }
+
+    let private writePlan (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) (autoRevert: bool) (revertArtifactDir: string option) : Task<(SsKey * UnresolvedReference) list * LaneDescent list> =
         task {
             let assignedBySinkKinds =
                 plan.Loads
@@ -478,6 +532,13 @@ module Transfer =
                 // The body never returns Error; total match, named.
                 return invalidOp "writePlan: the load body cannot stop"
             | RunAborted (_, Some ex) ->
+                // Build A — the data-leg compensating-undo / revert-script. The
+                // `remap` holds the keys the sink minted so far; revert by captured
+                // key (child-first), executing it (autoRevert) or writing it as an
+                // artifact, then re-raise the ORIGINAL failure (the load DID fail;
+                // pre-existing rows are untouched). With both levers off this is
+                // byte-identical to the prior bare re-raise.
+                do! runRevert sink autoRevert revertArtifactDir (buildRevertScript catalog plan remap)
                 System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw()
                 return Unchecked.defaultof<_>
             | RunAborted (refusal, None) -> return failwith refusal
@@ -713,7 +774,7 @@ module Transfer =
     /// drop-set — re-listing the exact `UnresolvedReference`s would need a codec
     /// that ripples too far; the count replays the VERDICT, and the report marks
     /// it as a replay, not as freshly-observed drops).
-    let private writePlanResumable (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) (topo: TopologicalOrder) (loadSet: Set<SsKey> option) : Task<(SsKey * UnresolvedReference) list * LaneDescent list * int option> =
+    let private writePlanResumable (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) (topo: TopologicalOrder) (loadSet: Set<SsKey> option) (autoRevert: bool) (revertArtifactDir: string option) : Task<(SsKey * UnresolvedReference) list * LaneDescent list * int option> =
         task {
             do! Deploy.executeBatch sink progressTableSql
             let marker = planMarker catalog plan
@@ -725,7 +786,7 @@ module Transfer =
                 return [], [], Some priorDrops
             | None ->
                 do! wipeFkOrdered sink catalog plan topo loadSet
-                let! (writeSkips, laneDescents) = writePlan sink catalog plan
+                let! (writeSkips, laneDescents) = writePlan sink catalog plan autoRevert revertArtifactDir
                 // The drop count = plan-build drops + this write's drops; the same
                 // sum `SkippedReferences` (and thus `hasDrops`) sees this run.
                 let dropCount = plan.SkippedReferences.Length + writeSkips.Length
@@ -948,11 +1009,26 @@ module Transfer =
           /// untrusted — the NAMED `ToleratedDivergence.FkTrustNotRestoredOnBulkLoad`.
           /// Covers the MATERIALIZED write path (`writePlan`); the streaming
           /// reverse-leg path is a named Wave-2 follow-on.
-          RetrustForeignKeys : bool }
+          RetrustForeignKeys : bool
+          /// Build A — the data-leg compensating-undo. On a mid-load failure the
+          /// captured (sink-minted) keys give the precise `DELETE`-by-captured-key
+          /// revert. `true` → the engine EXECUTES that revert automatically (the
+          /// opt-in `--auto-revert`); `false` (the `def` default) → it does NOT
+          /// auto-delete — instead, when `RevertArtifactDir` is set, it writes the
+          /// precise revert script to an artifact for the operator to review/run.
+          /// Either way the original failure still propagates (the load failed) and
+          /// pre-existing rows are never touched (only minted keys are targeted).
+          AutoRevert : bool
+          /// Where the revert script is written when `AutoRevert = false` (and, as
+          /// a record, when it is `true`). `None` (the `def` default) writes no
+          /// artifact — byte-identical to the pre-Build-A path. `Some dir` → the
+          /// child-first `DELETE`-by-captured-key script lands at
+          /// `<dir>/transfer-revert.sql` on a failed load.
+          RevertArtifactDir : string option }
 
     [<RequireQualifiedAccess>]
     module WriteOptions =
-        let def : WriteOptions = { Emission = EmissionMode.Incremental; Resumable = false; LoadSet = None; IdentityPolicy = IdentityPolicy.Structural; RetrustForeignKeys = true }
+        let def : WriteOptions = { Emission = EmissionMode.Incremental; Resumable = false; LoadSet = None; IdentityPolicy = IdentityPolicy.Structural; RetrustForeignKeys = true; AutoRevert = false; RevertArtifactDir = None }
         let resumable : WriteOptions = { def with Resumable = true }
         let ofEmission (mode: EmissionMode) : WriteOptions = { def with Emission = mode }
 
@@ -1085,15 +1161,15 @@ module Transfer =
                                 // Restricted to the LoadSet so an excluded family
                                 // (golden user-exclusion) is untouched, not wiped.
                                 do! wipeFkOrdered sink catalog plan topo writeOpts.LoadSet
-                                let! (skips, descents) = writePlan sink catalog plan
+                                let! (skips, descents) = writePlan sink catalog plan writeOpts.AutoRevert writeOpts.RevertArtifactDir
                                 return skips, descents, None
                             | EmissionMode.Incremental, true ->
                                 // G10 — resumable/idempotent envelope. NM-53 — the
                                 // third component REPLAYS a prior no-op run's drop
                                 // count so exit-9 is not silently lost on re-run.
-                                return! writePlanResumable sink catalog plan topo writeOpts.LoadSet
+                                return! writePlanResumable sink catalog plan topo writeOpts.LoadSet writeOpts.AutoRevert writeOpts.RevertArtifactDir
                             | EmissionMode.Incremental, false ->
-                                let! (skips, descents) = writePlan sink catalog plan
+                                let! (skips, descents) = writePlan sink catalog plan writeOpts.AutoRevert writeOpts.RevertArtifactDir
                                 return skips, descents, None
                     }
                 // Option C — restore the trust the bulk load stripped (exactly the
@@ -1277,9 +1353,9 @@ module Transfer =
                                 | EmissionMode.WipeAndLoad ->
                                     // σ generation has no declared subset — wipe all.
                                     do! wipeFkOrdered sink catalog plan topo None
-                                    return! writePlan sink catalog plan
+                                    return! writePlan sink catalog plan false None
                                 | EmissionMode.Incremental ->
-                                    return! writePlan sink catalog plan
+                                    return! writePlan sink catalog plan false None
                         }
                     return
                         Result.success
@@ -2078,6 +2154,8 @@ module Transfer =
         (tables: string list)
         (connections: TransferConnections)
         (resolveReconciliation: Catalog -> Result<Map<SsKey, ReconciliationStrategy>>)
+        (autoRevert: bool)
+        (revertDir: string option)
         : Task<Result<TransferReport>> =
         task {
             match! ConnectionResolver.openSubstrate connections.Source with
@@ -2097,7 +2175,7 @@ module Transfer =
                             match resolveReconciliation contract with
                             | Error es -> return Result.failure es
                             | Ok reconciliation ->
-                                return! runCore mode allowCdc allowDrops source sink contract reconciliation None { WriteOptions.ofEmission emission with Resumable = resumable; LoadSet = loadSet }
+                                return! runCore mode allowCdc allowDrops source sink contract reconciliation None { WriteOptions.ofEmission emission with Resumable = resumable; LoadSet = loadSet; AutoRevert = autoRevert; RevertArtifactDir = revertDir }
         }
 
     /// The non-resumable form (every existing caller's behavior — byte-identical
@@ -2111,7 +2189,7 @@ module Transfer =
         (connections: TransferConnections)
         (resolveReconciliation: Catalog -> Result<Map<SsKey, ReconciliationStrategy>>)
         : Task<Result<TransferReport>> =
-        runThroughConnectionsResumable mode emission false allowCdc allowDrops tables connections resolveReconciliation
+        runThroughConnectionsResumable mode emission false allowCdc allowDrops tables connections resolveReconciliation false None
 
     /// The incremental-MERGE default (the existing callers' behavior); the
     /// `--how` CLI surface selects `WipeAndLoad` via the `WithEmission` form.
@@ -2156,6 +2234,8 @@ module Transfer =
         (logicalSourceContract: Catalog)
         (physicalSinkContract: Catalog)
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
+        (autoRevert: bool)
+        (revertDir: string option)
         : Task<Result<TransferReport>> =
         task {
             let diff = CatalogDiff.between logicalSourceContract physicalSinkContract
@@ -2172,7 +2252,7 @@ module Transfer =
                     | Error es -> return Result.failure es
                     | Ok sink ->
                         use sink = sink
-                        return! runCore mode allowCdc allowDrops source sink physicalSinkContract reconciliation (Some (logicalSourceContract, renameMap)) { WriteOptions.ofEmission emission with Resumable = resumable; LoadSet = loadSet; IdentityPolicy = identityPolicy }
+                        return! runCore mode allowCdc allowDrops source sink physicalSinkContract reconciliation (Some (logicalSourceContract, renameMap)) { WriteOptions.ofEmission emission with Resumable = resumable; LoadSet = loadSet; IdentityPolicy = identityPolicy; AutoRevert = autoRevert; RevertArtifactDir = revertDir }
         }
 
     /// The structural-policy reverse leg (byte-identical; the ManagedDml cloud
@@ -2190,7 +2270,7 @@ module Transfer =
         (physicalSinkContract: Catalog)
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
         : Task<Result<TransferReport>> =
-        runReverseLegThroughConnectionsWith IdentityPolicy.Structural mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation
+        runReverseLegThroughConnectionsWith IdentityPolicy.Structural mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation false None
 
     // -- 6.A.1: the drop-set is fail-loud, not exit-0 -----------------------
     //

@@ -1035,3 +1035,5 @@ module Voice =
         | RefusedByCdc t            -> sprintf "the schema change would run against a CDC-tracked database (%d table(s))" (List.length t)
         | RefusedByCdcUnverifiable msg -> sprintf "the CDC state could not be verified, so the schema change did not run — %s" msg
         | StoreReadFailed msg       -> sprintf "the run history could not be read — %s" msg
+        | ExecutionRolledBack (msg, n) -> sprintf "the migration could not be applied and was rolled back to its original state (%d rename(s) reverted) — %s" n msg
+        | PartialWriteUnrecovered (msg, _) -> sprintf "the migration failed part-way and could not be fully rolled back, so some changes remain — %s" msg

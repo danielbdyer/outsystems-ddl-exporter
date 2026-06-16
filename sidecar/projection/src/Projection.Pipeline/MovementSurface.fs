@@ -784,6 +784,9 @@ module Command =
           Resumable   = spec.Resumable
           Streaming   = spec.Streaming
           Journal     = spec.Journal
+          Atomic      = spec.Atomic
+          AutoRevert  = spec.AutoRevert
+          RevertDir   = spec.RevertDir
           Store       = spec.Store
           Env         = spec.Env
           Tables      = spec.Tables
@@ -1203,6 +1206,9 @@ module Command =
                         Resumable = opts.Resumable
                         Streaming = opts.Streaming
                         Journal = opts.Journal
+                        Atomic = opts.Atomic
+                        AutoRevert = opts.AutoRevert
+                        RevertDir = opts.RevertDir
                         // D8 — the synthesis knobs ride the per-run intent
                         // (seed/volume vary at the moment of action, never config).
                         Seed = opts.Seed
@@ -1351,6 +1357,9 @@ module Command =
                       Resumable  = List.contains "--resumable" rest
                       Streaming  = List.contains "--streaming" rest
                       Journal    = flagValue rest "--journal"
+                      Atomic     = List.contains "--atomic" rest
+                      AutoRevert = List.contains "--auto-revert" rest
+                      RevertDir  = flagValue rest "--revert-dir"
                       Seed       = seed
                       Scale      = scale }
                 Result.success (Intent.Flow (Map.find first cfg.Flows, opts))

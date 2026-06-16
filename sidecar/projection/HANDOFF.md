@@ -1,3 +1,105 @@
+# Handoff addendum — 2026-06-16 (later still), M22 + M23 + the CLI flag-surfacing LANDED — the migrate "we can't go wrong" envelope, scoped to the real topology: the Atomic `BEGIN TRAN` (`--atomic`) is a LOCAL full-access lever (production schema is ADO/Octopus/SSDT, not direct-connect); the data leg got M21's twin (`--auto-revert`, else emit the precise revert script). Both opt-in, both default-off, both canary-green, and both now wired through the A44 control plane (operator-usable + witness-tested)
+
+To the next agent.
+
+**Two builds landed this session (engines tested; one mechanical step remains).** The operator drove `migrate A B`
+toward promise 8 across both legs, and a mid-session topology correction re-scoped the Atomic work — heed it.
+
+**M22 — the Atomic `BEGIN TRAN` envelope (opt-in `--atomic`, LOCAL full-access only).** `MigrationRun.executeWith
+(atomic) …` wraps the schema deploy in `SET XACT_ABORT ON; BEGIN TRAN … COMMIT/ROLLBACK`; on failure it rolls back the
+whole deploy and reuses M21's `compensateToSource` to verify A and supply the verdict (M21 is the fallback). The §10
+capability conjunct was validated by the operator's probe (`ATOMIC_ENVELOPE_VALIDATION.md` §4: `ALTER ANY SCHEMA`,
+transactional DDL, ROLLBACK reverts). **TOPOLOGY (do not lose this):** production on-prem schema ships as SSDT material
+via **ADO branches → pipelines → Octopus** — the engine does NOT direct-connect to deploy production schema, so the
+giant-TRAN is **not** a production path. `--atomic` is a **local full-access** lever (dev/test; the `FullRights`
+archetype; the warm container is exactly this). For production the atomicity concern is DATA-only. Witness: the
+`MigrationCanaryTests` M22 canaries — the part-way ALTER that M21 could only NAME as a residual now rolls back CLEANLY
+under `--atomic`. `execute = executeWith false`, so non-atomic is byte-identical.
+
+**M23 — the data-leg compensating-undo (opt-in `--auto-revert`, else emit the revert script).** `TransferRun.writePlan`'s
+failure path now builds a child-first `DELETE`-by-captured-key revert (`buildRevertScript` over the new
+`PackedSurrogateRemap.assignedKeysByKind`). `WriteOptions.AutoRevert = true` executes it; `false` (default) writes the
+precise revert SQL to `RevertArtifactDir/transfer-revert.sql` for the operator — the operator's exact spec. Only
+sink-minted keys are targeted (pre-existing rows untouched); the original failure still propagates. This is the
+J5-evidence channel for the managed cloud + production data. Witness: two `TransferCanaryTests` Build A canaries
+(auto-revert OFF → script written, rows kept; ON → rows deleted). Both `WriteOptions` fields default-off, so the whole
+transfer subsystem is byte-identical for existing callers (TransferCanaryTests 25/25).
+
+**The CLI flag-surfacing — LANDED this session (the A44 control-plane wiring).** `--atomic`, `--auto-revert`, and
+`--revert-dir` are now operator-usable end-to-end. The fields thread through the full control plane: parsed at
+`MovementSurface.fs` `Command.parse` (`List.contains "--atomic"` etc.) → `FlowRunOpts` → `resolveFlowSpec` →
+`MovementSpec` → `optsOf` → `LoadOpts` → the run faces (`runMigrateExecute` gained an `atomic` param;
+`runTransfer`/`runReverseLegTransfer` gained `autoRevert`/`revertDir`) → the engine (`MigrationRun.executeWith`;
+`Transfer.run*ThroughConnectionsWith` → `WriteOptions.AutoRevert`/`RevertArtifactDir`). Witnessed by three new
+`MovementSurfaceTests` (`--atomic` threads onto the migrate `LoadOpts`; default-off; `--auto-revert`/`--revert-dir`
+thread onto the transfer `LoadOpts`) — the A44 expressible⇔reachable proof. All defaults are off (byte-identical).
+The `Program.fs` usage help lists them. **Remaining (one named follow-on):** the STREAMING reverse-leg
+(`writePlanStreaming`) does not yet carry M23's compensating arm (it resumes via journal); `--auto-revert` is wired to
+the materialized transfer + reverse-leg paths (where `writePlan` lives), and the streaming entry is intentionally
+untouched. Also un-wired by choice: `--atomic` on `migrate --with-data` (the composed local schema+data case — the
+schema leg there can take `--atomic` as a small follow-on).
+
+**Build-discipline scars (this session).** `dotnet` not on bash PATH (`export PATH=…/dotnet`). **`static let` cannot
+follow members** (FS0960) — the new canary catalogs are local `let`s inside their members. Adding a `MigrationError`
+case cascades to `Voice.migrationStopDetail` + `RunFaces.reportMigrationError` + the Voice totality sample. Threading a
+field through `WriteOptions` cascades to `writePlan`/`writePlanResumable`/`runCore`/`runSynthetic` — the single-assembly
+warnings-as-errors build is the backstop. Server-side `BEGIN TRAN` via `executeBatch` works for the schema leg; a
+client `SqlTransaction` would be needed to span schema+data in one transaction (deliberately NOT taken — see M22).
+
+**State.** Branch `claude/vector-wave-4-5` (M21+M22+M23 are working-tree atop Wave-4/5 — operator drives commits).
+Debug + **Release** 0/0 (FS3511-safe); pure pool PASS; **Docker `MigrationCanaryTests` (M21+M22) + `TransferCanaryTests`
+(M23) all green** on `projection-mssql-warm`; `matrix-status.sh` gate=PASS, **rungs 5/4/5 + tolerances 10/3-open
+UNCHANGED** (M21/M22/M23 strengthened the T-VI footer (a), no ladder cell moved). `ATOMIC_ENVELOPE_VALIDATION.md` holds
+the giant-TRAN trigger's resolution protocol (capability conjunct PASS; P7b + cost probes pending). Hold the spine.
+
+---
+
+# Handoff addendum — 2026-06-16 (later), M21 LANDED — the `migrate A B` failure path now rides M12's groupoid inverse: a mid-deploy crash rolls back to A or names the residual, never a silent partial ("refuses without damage" made executable). The Atomic giant-`BEGIN TRAN` and the permissions-content axis stay §10 deferred — their triggers have not fired
+
+To the next agent.
+
+**What landed (M21 — operator-authorized, disciplined-composition path).** The operator asked to take `migrate A B`
+to the covenant's promise 8 ("atomic-or-resumable, refusing rather than corrupting") and chose — explicitly, via the
+opening question — the **disciplined composition** over firing the §10 moat triggers. So the one genuinely-missing arm
+of the migrate envelope is now built: the **compensating-undo rollback**. Before M21, `MigrationRun.execute`'s deploy
+stage caught a mid-deploy exception and returned a bare `ExecutionFailed`, leaving partial DDL applied. Now
+`compensateToSource` reads the live partial state `B''`, realizes the **rename channel** of M12's inverse
+(`CatalogDiff.between B'' A` — data-preserving, metadata-only, always-invertible), and re-verifies against A: clean →
+`ExecutionRolledBack`; a non-rename residual it must not auto-invert → `PartialWriteUnrecovered (residual)`, **named**
+for the operator. Two new `MigrationError` cases; explicit loud CLI arms (exit 9, no silent downgrade); the Voice +
+the totality test carry both. Read the 2026-06-16 (later) "M21" DECISIONS entry — it is the substance; this points.
+
+**What this is NOT (heed the boundary — do not erase it).** M21 is **not** the Atomic giant `BEGIN TRAN` envelope.
+That wrapper — which would make the failed-deploy state unreachable by wrapping the whole `deploy` in one transaction —
+stays **§10 deferred**, trigger un-fired: it is gated on the managed-login long-transaction grant survey + the open P7b
+throughput (a giant transaction over the estate holds schema-mod locks for the whole window and is CDC-hostile). The J5
+managed-env evidence (ROLLBACK clean, but DML-only + AssignedBySink + cleanup-by-captured-key) points to the
+**compensating channel M21 builds**, not the giant transaction. If you ever build the Atomic envelope, M21 becomes its
+fallback for the managed-login-denied case — do not delete it. Likewise the **permissions-content axis** stays moat
+(fires only at the eject — a flow that publishes grants). Building either without its trigger violates "IR grows under
+evidence".
+
+**If you have appetite.** The honest next reaches are still the named moat (`THE_VECTOR_EXECUTION_KICKOFF.md` §10) —
+and only when a trigger fires. The nearest non-moat deepening M21 opens: if you want the `PartialWriteUnrecovered`
+arm's *deterministic* witness (today the second canary is robust-to-batch-semantics, asserting only the invariant), a
+focused test that forces a guaranteed-persistent non-rename residual would pin which arm SQL Server's batch-abort takes
+— a small, real strengthening, not a new dimension.
+
+**Build-discipline scars (unchanged, still bite).** `dotnet` is NOT on the bash PATH (`export
+PATH="$PATH:/c/Users/danny/AppData/Local/Microsoft/dotnet"` before `scripts/test.sh`). F# 9 nullness on. **`static let`
+cannot follow members in a type** — the M21 canary catalogs are local `let`s inside their test members for this reason
+(FS0960). Adding a `MigrationError` DU case cascades to `Voice.migrationStopDetail` (exhaustive) + the CLI report arm +
+the Voice totality sample list — the single-assembly warnings-as-errors build is the backstop.
+
+**State.** Branch `claude/vector-wave-4-5` (M21 sits as working-tree changes atop the Wave-4/5 changes — the operator
+drives commits). Debug + **Release** 0/0; pure pool `AxiomTests` + `VoiceTotalityTests` green (M16 citation gate green
+on the two new T13 citations); **Docker `MigrationCanaryTests`/`SchemaMigrationCanaryTests` 23/23** (2 new M21 canaries
++ 21 unregressed) on `projection-mssql-warm`; `matrix-status.sh` gate=PASS, **rungs 5/4/5 + tolerances 10/3-open
+UNCHANGED** (M21 strengthened the T-VI footer (a) line, no ladder cell moved). Hold the spine: name every refusal,
+count every crossing, leave the books balanced.
+
+---
+
 # Handoff addendum — 2026-06-16, THE VECTOR WAVE 5 LANDED — **THE VECTOR IS COMPLETE** (the last open fidelity adjudication closed: authored-attribute identity now round-trips at the attribute grain; transactionality + permissions honestly named against the J5 evidence; the totality synthesis written); the only remaining frontier is the moat, which stays cut with named triggers
 
 To the next agent.

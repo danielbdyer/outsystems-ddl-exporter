@@ -655,6 +655,8 @@ let runTransfer
     (emission: EmissionMode)
     (resumable: bool)
     (tables: string list)
+    (autoRevert: bool)
+    (revertDir: string option)
     (surveyAdvisory: string list)
     : int =
     let collect = function Ok _ -> [] | Error es -> es
@@ -723,7 +725,7 @@ let runTransfer
         TransferSpec.resolveAllReconciliation contract entries userMapEntries
     let runBody () =
         let result =
-            (Transfer.runThroughConnectionsResumable mode emission resumable allowCdc allowDrops tables connections resolveReconciliation)
+            (Transfer.runThroughConnectionsResumable mode emission resumable allowCdc allowDrops tables connections resolveReconciliation autoRevert revertDir)
                 .GetAwaiter().GetResult()
         match result with
         | Ok report ->
@@ -787,6 +789,8 @@ let runReverseLegTransfer
     (streaming: bool)
     (journalDirectory: string option)
     (tables: string list)
+    (autoRevert: bool)
+    (revertDir: string option)
     (sinkCapability: SinkLoadCapability)
     (surveyAdvisory: string list)
     : int =
@@ -896,7 +900,7 @@ let runReverseLegTransfer
                 (Transfer.runStreamingReverseLegThroughConnections mode allowCdc allowDrops journal connections logicalSourceContract physicalSinkContract reconciliation)
                     .GetAwaiter().GetResult()
             | ReverseLegRealization.Materialized ->
-                (Transfer.runReverseLegThroughConnectionsWith sinkCapability.IdentityPolicy mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation)
+                (Transfer.runReverseLegThroughConnectionsWith sinkCapability.IdentityPolicy mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation autoRevert revertDir)
                     .GetAwaiter().GetResult()
         match result with
         | Ok report ->
@@ -1693,6 +1697,26 @@ let reportMigrationError (e: MigrationError) : int =
         // ride beneath (the raw header line is retired).
         printErrors Console.Error es
         6
+    | ExecutionRolledBack (msg, n) ->
+        // M21 — the destructive write failed but the compensating-undo arm
+        // (M12's groupoid inverse) returned the substrate to A; no changes
+        // remain. A clean named refusal on the destructive axis (exit 9), not a
+        // corruption — "refuses without damage."
+        TtyRenderer.renderGate "projection migrate"
+            (Preflight.refusalOf
+                [ ValidationError.create "migrate.executionRolledBack"
+                    (sprintf "the migration was rolled back to its original state (%d rename(s) reverted): %s" n msg) ])
+        9
+    | PartialWriteUnrecovered (msg, residual) ->
+        // M21 — the loudest honest outcome: a non-rename residual could not be
+        // safely auto-inverted (the inverse would be a destructive op the engine
+        // refuses by policy). Name the residual; never claim success. Exit 9
+        // (destructive axis) with the exact divergence from A surfaced.
+        TtyRenderer.renderGate "projection migrate"
+            (Preflight.refusalOf
+                [ ValidationError.create "migrate.partialWriteUnrecovered" msg ])
+        Console.Error.WriteLine(PhysicalSchema.renderDiff residual)
+        9
     | other ->
         renderMigrateStopped other
         2
@@ -1770,7 +1794,7 @@ let tighteningPreflight
 /// is supplied, a verified execute durably records the episode onto the timeline
 /// (AC-P8) so the next sprint's diff loads it as the prior; absent, behavior is
 /// unchanged and a one-line note says no episode was persisted.
-let runMigrateExecute (target: Catalog) (connSpec: string) (declaration: LossDeclaration) (allowCdc: bool) (storePath: string option) (envLabel: string option) : int =
+let runMigrateExecute (target: Catalog) (connSpec: string) (declaration: LossDeclaration) (allowCdc: bool) (atomic: bool) (storePath: string option) (envLabel: string option) : int =
     if System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" <> "1" then
         TtyRenderer.renderVoicedError (ValidationError.create "gate.intent" "PROJECTION_ALLOW_EXECUTE is not set in the environment.")
         dumpBench "migrate"
@@ -1830,7 +1854,7 @@ let runMigrateExecute (target: Catalog) (connSpec: string) (declaration: LossDec
                                             let at = System.DateTimeOffset.UtcNow
                                             let! recorded =
                                                 MigrationRun.executeAndRecord
-                                                    allowCdc declaration sourceA target store tl env at None cnn
+                                                    atomic allowCdc declaration sourceA target store tl env at None cnn
                                             match recorded with
                                             | Ok (o, Some chain) ->
                                                 printfn "Applied and verified — the database now matches the model. %d statement(s) applied; recorded to %s (%d episode(s) on timeline %s)."
@@ -1847,7 +1871,7 @@ let runMigrateExecute (target: Catalog) (connSpec: string) (declaration: LossDec
                                         // brackets the execute with the change-
                                         // measure ‖·‖; an idempotent redeploy
                                         // surfaces zero statements AND zero captures.
-                                        let! outcome = MigrationRun.executeAndMeasureCdc allowCdc declaration sourceA target cnn
+                                        let! outcome = MigrationRun.executeAndMeasureCdc atomic allowCdc declaration sourceA target cnn
                                         match outcome with
                                         | Ok (o, cdcDelta) when o.Verified ->
                                             printfn "Applied and verified — the database now matches the model. %d statement(s) applied; %d row(s) captured."

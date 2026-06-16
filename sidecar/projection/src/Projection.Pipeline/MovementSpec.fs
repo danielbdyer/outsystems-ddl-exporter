@@ -131,6 +131,12 @@ type MovementSpec =
         Streaming   : bool
         /// The chunk-resume journal directory (streaming only; `--journal`).
         Journal     : string option
+        /// M22 — `--atomic`: wrap the schema deploy in `BEGIN TRAN` (LOCAL migrate).
+        Atomic      : bool
+        /// M23 — `--auto-revert`: execute the data-leg compensating-undo on failure.
+        AutoRevert  : bool
+        /// M23 — `--revert-dir`: where the revert script artifact is written.
+        RevertDir   : string option
         /// D8 — the synthesis PRNG seed (`--seed <n>`). Honored on the synthetic
         /// load; inert elsewhere. `None` = the fixed default seed.
         Seed        : uint64 option
@@ -171,6 +177,9 @@ module MovementSpec =
             Resumable   = false
             Streaming   = false
             Journal     = None
+            Atomic      = false
+            AutoRevert  = false
+            RevertDir   = None
             Seed        = None
             Scale       = None
             Store       = None
@@ -259,6 +268,16 @@ type FlowRunOpts =
         /// `--journal <dir>` — the chunk-resume journal directory for a
         /// streaming run (`CaptureJournal`). `None` = no resume ledger.
         Journal    : string option
+        /// M22 — `--atomic`: wrap the schema deploy in `BEGIN TRAN` (LOCAL
+        /// full-access migrate only; see `MigrationRun.executeWith`). Default false.
+        Atomic     : bool
+        /// M23 — `--auto-revert`: on a failed data load, EXECUTE the
+        /// compensating DELETE-by-captured-key (else, with `--revert-dir`, emit the
+        /// revert script as an artifact). Default false.
+        AutoRevert : bool
+        /// M23 — `--revert-dir <dir>`: where the revert script is written on a
+        /// failed load. `None` = no artifact.
+        RevertDir  : string option
     }
 
 /// The operator intents (THE_CLI.md §2). `Flow` is the hero — the daily
@@ -296,6 +315,12 @@ type LoadOpts =
         Streaming   : bool
         /// The chunk-resume journal directory (streaming only).
         Journal     : string option
+        /// M22 — `--atomic`: wrap the schema deploy in `BEGIN TRAN` (LOCAL migrate).
+        Atomic      : bool
+        /// M23 — `--auto-revert`: execute the data-leg compensating-undo on failure.
+        AutoRevert  : bool
+        /// M23 — `--revert-dir`: where the revert script artifact is written.
+        RevertDir   : string option
         Store       : string option
         Env         : string option
         /// Declared table subset for the data leg (item 5); empty = all.

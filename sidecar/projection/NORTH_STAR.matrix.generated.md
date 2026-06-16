@@ -49,11 +49,19 @@ to be retired from `Tolerance.fs`. The generator under-claims; it never over-cla
 > spanning axis" (T-VI). The two T-VI dimensions that are NOT round-trip axes are named
 > here so the five-row ladder above is not read as the whole basis:
 > **(a) Transactionality/Rollback** — a mid-write crash is a *named* refusal
-> (`GateLabel.MidWriteNotProtected`, THE VECTOR Wave 2) and the compensating-undo arm is
-> the groupoid `inverse`; the live atomic `BEGIN TRAN` wrapper stays deferred — the J5
-> managed-env evidence (ROLLBACK clean, but DML-only + AssignedBySink + cleanup-by-captured
-> -key) points to the compensating channel, and the giant-transaction-over-estate is gated
-> on the still-open P7b throughput. **(b) Permissions** — the A2 pre-flight *gates* on
+> (`GateLabel.MidWriteNotProtected`, THE VECTOR Wave 2), and the compensating-undo arm is
+> now BUILT and live-witnessed (M21, 2026-06-16): a mid-deploy failure rides the groupoid
+> `inverse` (`CatalogDiff.inverse`, rename channel) to return the substrate to A
+> (`ExecutionRolledBack`, verified by read-back) or names the residual
+> (`PartialWriteUnrecovered` — refuse-don't-corrupt, never a silent partial), witnessed
+> by the `MigrationCanaryTests` M21 canaries on the warm container. The **data leg** has the
+> twin (M23): a failed transfer reverts the sink-minted rows by captured key — executed
+> (`--auto-revert`) or emitted as a precise revert script artifact — `TransferCanaryTests`.
+> The atomic `BEGIN TRAN` wrapper is BUILT as an opt-in `--atomic` (M22) but **scoped to
+> LOCAL full-access databases** — production schema ships via ADO/Octopus/SSDT (not
+> direct-connect) and the managed cloud is DML-only, so for those targets the compensating
+> channel (M21/M23) is the arm; the estate-scale giant transaction stays gated on P7b
+> throughput. **(b) Permissions** — the A2 pre-flight *gates* on
 > grants (it refuses a write-denied sink) but grants/roles/RLS are NOT a projected axis (no
 > `Grant` IR facet, no `GRANT` in the `Statement` DU, no permission channel in
 > `CatalogDiff`, no readback): the engine can *refuse* but cannot *project / diff /

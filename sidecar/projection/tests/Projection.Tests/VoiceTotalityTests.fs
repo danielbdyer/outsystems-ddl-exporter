@@ -356,6 +356,10 @@ let ``Voice canary.cdcCaptured: the failed proof carries its measure on the find
 let ``Voice migrationStopDetail: every easily-constructed arm yields a plain located cause`` () =
     // The match is exhaustive over the closed DU at compile time; this witness
     // pins the register of the constructible arms (no DU dump, no shout).
+    // M21 — a residual diff value for the unrecovered arm (its detail ignores the
+    // residual, so an empty A⊖A diff suffices to construct the case).
+    let emptyCat = Catalog.create [] [] |> Result.value
+    let emptyDiff = PhysicalSchema.diff (PhysicalSchema.ofCatalog emptyCat) (PhysicalSchema.ofCatalog emptyCat)
     let cases : (MigrationError * string) list =
         [ ExecutionFailed "the server closed the connection", "could not be applied"
           RefusedByTightening "4 rows exceed the new limit",  "tightening"
@@ -363,7 +367,9 @@ let ``Voice migrationStopDetail: every easily-constructed arm yields a plain loc
           DataTransferFailed [],                              "data load"
           SchemaReadFailed [],                                "deployed schema"
           RefusedByCdc [ "dbo.Order" ],                       "CDC-tracked"
-          RefusedByCdcUnverifiable "sys.tables not readable",  "CDC state could not be verified" ]
+          RefusedByCdcUnverifiable "sys.tables not readable",  "CDC state could not be verified"
+          ExecutionRolledBack ("the ALTER failed", 1),        "rolled back to its original state"
+          PartialWriteUnrecovered ("the ALTER failed", emptyDiff), "could not be fully rolled back" ]
     for e, expected in cases do
         let detail = Voice.migrationStopDetail e
         Assert.Contains(expected, detail)

@@ -67,6 +67,26 @@ type MigrationError =
     /// not be loaded — a malformed/corrupt `LifecycleStore`. Fail-closed: a
     /// snapshot⊖snapshot plan never proceeds on an unreadable prior.
     | StoreReadFailed of message: string
+    /// M21 — the live **compensating-undo** arm (rides M12's `CatalogDiff.inverse`).
+    /// A mid-deploy failure left the substrate at a partial B'' between A and B; the
+    /// engine realized the inverse of the live displacement (`CatalogDiff.between
+    /// B'' A`) on the rename channel and a read-back **confirms it is back at A** —
+    /// no changes remain, the data is intact. `failure` is the original execution
+    /// error; `renamesUndone` is the count of metadata-only renames reverted. This
+    /// is the covenant's "refuses *without damage*": the migration did not complete,
+    /// but it corrupted nothing. The Atomic `BEGIN TRAN` envelope (which would make
+    /// this `RunStopped` impossible) stays §10-deferred (managed-login grant survey
+    /// + P7b throughput); this is the buildable, J5-evidence-backed alternative.
+    | ExecutionRolledBack of failure: string * renamesUndone: int
+    /// M21 — a mid-deploy failure left an applied **non-rename** residual (an
+    /// ALTER/ADD the engine will not auto-invert, because the inverse would be a
+    /// destructive op it refuses by policy). Compensation reverted what it safely
+    /// could (the rename channel); the **named residual** is the exact divergence
+    /// from A that remains. The engine REFUSES to report success and names the
+    /// corruption surface rather than attempting an unsafe inverse — "refuse rather
+    /// than corrupt" made literal. The operator resumes (re-diff from the partial
+    /// state) or repairs the named residual by hand.
+    | PartialWriteUnrecovered of failure: string * residual: PhysicalSchemaDiff
 
 /// The result of a **live** `migrate A B` execution: the plan + artifacts it
 /// ran, the schema read back from the database after execution (`B'`), and the
@@ -434,6 +454,68 @@ module MigrationRun =
     /// passes; a NULL-bearing tightening refuses with
     /// `migrate.dataViolatesTightening` — the column stays nullable,
     /// no DDL runs.
+    /// **M21 — the live compensating-undo arm (rides M12's groupoid inverse).**
+    /// On a deploy-stage failure the substrate sits at a *partial* B'' somewhere
+    /// between A and B. This realizes the inverse of the live displacement —
+    /// `CatalogDiff.between B'' A`, which is exactly M12's `inverse (between A B'')`
+    /// — on the **rename channel only** (the metadata-only, data-preserving,
+    /// always-invertible moves: `sp_rename` + the logical-name re-bind). The ALTER
+    /// channel is deliberately NOT auto-inverted: the inverse of an applied widen /
+    /// add is a narrow / drop, a destructive op the engine refuses by policy, so
+    /// inverting it here would *compound* the damage. Instead we read back, diff
+    /// against A, and return one of two HONEST verdicts — never a partial silently
+    /// claimed as success:
+    ///   - `ExecutionRolledBack` — the read-back confirms the substrate is back at A.
+    ///   - `PartialWriteUnrecovered residual` — a non-rename residual remains; the
+    ///     exact divergence from A is named for the operator.
+    /// Best-effort per compensating statement: the read-back, not the apply, is the
+    /// judge — a failed undo statement just leaves more residual to name. This is
+    /// the buildable alternative to the §10-deferred Atomic `BEGIN TRAN` envelope
+    /// (which would make the failed-deploy state unreachable); per the J5 managed-env
+    /// evidence (DML-only, AssignedBySink, cleanup-by-captured-key) the compensating
+    /// channel — not a giant transaction — is the evidence-backed arm to build now.
+    let private compensateToSource
+        (failure: string)
+        (source: Catalog)
+        (cnn: SqlConnection)
+        : System.Threading.Tasks.Task<MigrationError> =
+        task {
+            match! ReadSide.read cnn with
+            | Error es ->
+                // Cannot even read the partial state back — the worst case; surface
+                // the original failure plus the read failure, never claim a rollback.
+                let readMsg = es |> List.map (fun e -> e.Message) |> String.concat "; "
+                return ExecutionFailed (sprintf "%s; additionally the post-failure read-back failed, so the partial state is unverifiable: %s" failure readMsg)
+            | Ok live ->
+                let residualBefore =
+                    PhysicalSchema.diff (PhysicalSchema.ofCatalog source) (PhysicalSchema.ofCatalog live)
+                if PhysicalSchema.isSchemaEqual residualBefore then
+                    // Nothing applied, or the failed batch self-rolled-back: already at A.
+                    return ExecutionRolledBack (failure, 0)
+                else
+                    // M12 — the inverse of the live displacement A→B'' is `between B'' A`.
+                    // Realize only its rename channel (data-preserving, invertible).
+                    let undo = renameStatements (CatalogDiff.between live source)
+                    let mutable undone = 0
+                    for stmt in undo do
+                        try
+                            do! Deploy.executeBatch cnn stmt
+                            undone <- undone + 1
+                        with _ -> ()
+                    match! ReadSide.read cnn with
+                    | Error _ ->
+                        // The compensation ran but we cannot confirm the result — name
+                        // the last-known residual rather than claim a clean rollback.
+                        return PartialWriteUnrecovered (failure, residualBefore)
+                    | Ok live2 ->
+                        let residualAfter =
+                            PhysicalSchema.diff (PhysicalSchema.ofCatalog source) (PhysicalSchema.ofCatalog live2)
+                        if PhysicalSchema.isSchemaEqual residualAfter then
+                            return ExecutionRolledBack (failure, undone)
+                        else
+                            return PartialWriteUnrecovered (failure, residualAfter)
+        }
+
     let private safetyGates
         (allowCdc: bool)
         (hasDdl: bool)
@@ -470,7 +552,23 @@ module MigrationRun =
                         return Error (RefusedByTightening msg)
         }
 
-    let execute
+    /// **M22 — the Atomic `BEGIN TRAN` envelope (opt-in, LOCAL full-access only).**
+    /// When `atomic` is set AND there is DDL to apply, the schema-deploy stage is
+    /// wrapped in `SET XACT_ABORT ON; BEGIN TRANSACTION;` … `COMMIT TRANSACTION;`,
+    /// so a mid-deploy failure rolls the WHOLE deploy back atomically (`XACT_ABORT
+    /// ON` auto-rolls-back on a run-time error; the explicit `IF @@TRANCOUNT > 0
+    /// ROLLBACK` is belt-and-suspenders). M21's `compensateToSource` then VERIFIES
+    /// the read-back is at A and supplies the verdict (`ExecutionRolledBack` when
+    /// the rollback restored A — the common case; `PartialWriteUnrecovered` only if
+    /// the rollback somehow left a residual — M21 as the envelope's fallback). The
+    /// envelope is the §10 wrapper, fired for the local full-access case only
+    /// (`DECISIONS 2026-06-16 M22`; `ATOMIC_ENVELOPE_VALIDATION.md`): production
+    /// schema is ADO/Octopus/SSDT-deployed (not direct-connect) and the managed
+    /// cloud is DML-only, so this DDL envelope is a LOCAL lever. The data leg's
+    /// safety is the separate `--auto-revert` arm, NOT this transaction.
+    /// `atomic = false` is byte-identical to the prior `execute` (M21 only).
+    let executeWith
+        (atomic: bool)
         (allowCdc: bool)
         (declaration: LossDeclaration)
         (source: Catalog)
@@ -516,7 +614,14 @@ module MigrationRun =
                                 let sw = System.Diagnostics.Stopwatch.StartNew()
                                 let hasAlter = not (System.String.IsNullOrWhiteSpace alterSql)
                                 let totalWrites = List.length renameSql + (if hasAlter then 1 else 0)
+                                // M22 — open the Atomic envelope only when opted-in AND
+                                // there is DDL to wrap (an idempotent no-DDL run needs no
+                                // transaction). `XACT_ABORT ON` makes a run-time error
+                                // roll the whole transaction back automatically.
+                                let opened = atomic && hasDdl
                                 try
+                                    if opened then
+                                        do! Deploy.executeBatch cnn "SET XACT_ABORT ON; BEGIN TRANSACTION;"
                                     let mutable applied = 0
                                     for stmt in renameSql do
                                         do! Deploy.executeBatch cnn stmt
@@ -526,8 +631,24 @@ module MigrationRun =
                                         do! Deploy.executeBatch cnn alterSql
                                         applied <- applied + 1
                                         LogSink.recordStageProgress "deploy" applied totalWrites sw.ElapsedMilliseconds
+                                    if opened then
+                                        do! Deploy.executeBatch cnn "COMMIT TRANSACTION;"
                                     return Ok ()
-                                with ex -> return Error (ExecutionFailed ex.Message)
+                                with ex ->
+                                    // M22 — if the envelope is open, roll the whole deploy
+                                    // back atomically first (a no-op if XACT_ABORT already
+                                    // did). Then M21's compensateToSource VERIFIES the
+                                    // read-back is at A and supplies the verdict: a clean
+                                    // rollback → ExecutionRolledBack; a residual →
+                                    // PartialWriteUnrecovered (M21 as the envelope's
+                                    // fallback). For atomic = false this is exactly M21:
+                                    // ride the groupoid inverse over the applied rename
+                                    // prefix; refuse-don't-corrupt; never a silent partial.
+                                    if opened then
+                                        try do! Deploy.executeBatch cnn "IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;"
+                                        with _ -> ()
+                                    let! verdict = compensateToSource ex.Message source cnn
+                                    return Error verdict
                             })
                     let! outcome =
                         Staged.stage Stages.canary (fun () ->
@@ -565,6 +686,18 @@ module MigrationRun =
                 | RunAborted (refusal, None) -> failwith refusal
         }
 
+    /// The non-atomic migrate (M21 only) — byte-identical to the pre-M22 `execute`.
+    /// Every existing caller keeps this signature; only the opt-in `--atomic` path
+    /// calls `executeWith true`.
+    let execute
+        (allowCdc: bool)
+        (declaration: LossDeclaration)
+        (source: Catalog)
+        (target: Catalog)
+        (cnn: SqlConnection)
+        : System.Threading.Tasks.Task<Result<MigrationOutcome, MigrationError>> =
+        executeWith false allowCdc declaration source target cnn
+
     /// **X4 — the in-place migrate's CDC-measure leg.** The criterion
     /// ("redeploy an unchanged model: zero ALTERs AND zero CDC captures, BOTH
     /// measured") asks the engine to *measure* CDC-silence, not merely assert
@@ -575,6 +708,7 @@ module MigrationRun =
     /// criterion measured; the meter is proven live by any interleaved DML
     /// showing nonzero. Additive — `execute` (and its G9 gate) is untouched.
     let executeAndMeasureCdc
+        (atomic: bool)
         (allowCdc: bool)
         (declaration: LossDeclaration)
         (source: Catalog)
@@ -583,11 +717,12 @@ module MigrationRun =
         : System.Threading.Tasks.Task<Result<MigrationOutcome * int, MigrationError>> =
         task {
             // NM-54 — the CDC measure surfaces its probe Error (a refused axis
-            // can't be measured) rather than fabricating 0.
+            // can't be measured) rather than fabricating 0. M22 — `atomic` threads
+            // the opt-in `BEGIN TRAN` envelope (LOCAL full-access; see `executeWith`).
             match! Deploy.cdcCaptureTotal cnn with
             | Error es -> return Error (SchemaReadFailed es)
             | Ok baseline ->
-                let! result = execute allowCdc declaration source target cnn
+                let! result = executeWith atomic allowCdc declaration source target cnn
                 match result with
                 | Error e -> return Error e
                 | Ok outcome ->
@@ -609,6 +744,7 @@ module MigrationRun =
     /// `ExecutionFailed` (the write landed but provenance did not — fail-loud so
     /// the operator knows the episode is unpersisted).
     let executeAndRecord
+        (atomic: bool)
         (allowCdc: bool)
         (declaration: LossDeclaration)
         (source: Catalog)
@@ -621,7 +757,8 @@ module MigrationRun =
         (cnn: SqlConnection)
         : System.Threading.Tasks.Task<Result<MigrationOutcome * EpisodicLifecycle option, MigrationError>> =
         task {
-            let! result = execute allowCdc declaration source target cnn
+            // M22 — `atomic` threads the opt-in `BEGIN TRAN` envelope (see `executeWith`).
+            let! result = executeWith atomic allowCdc declaration source target cnn
             match result with
             | Error e -> return Error e
             | Ok outcome ->

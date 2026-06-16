@@ -28,7 +28,7 @@ let private usageLines : string list =
         "  write (and needs PROJECTION_ALLOW_EXECUTE=1). Conn refs are env:/file: only (D9)."
         ""
         "USAGE:"
-        "    projection <flow> [--go] [--fresh] [--allow-drops] [--allow-cdc] [--resumable]   the daily surface"
+        "    projection <flow> [--go] [--fresh] [--allow-drops] [--allow-cdc] [--resumable] [--atomic] [--auto-revert]   the daily surface"
         "    projection                                           list flows (name: from → to)"
         "    projection check  ( <source.sql> [--cdc-silence] | drift --model <m> --to <t>"
         "                      | data --before <t> --after <t> | ready )"
@@ -52,6 +52,10 @@ let private usageLines : string list =
         "  --allow-drops accepts declared loss; --allow-cdc overrides the CDC-tracked-sink"
         "  pre-flight gate; --resumable routes the data leg through the resumable upsert"
         "  envelope; a schema-from-model flow against a data-only target is refused."
+        "  --atomic wraps the schema deploy in one transaction (LOCAL full-access DBs"
+        "  only — production schema ships via the SSDT/Octopus pipeline, not direct-"
+        "  connect). --auto-revert deletes a failed data load's sink-minted rows by"
+        "  captured key; without it, --revert-dir <dir> writes the precise revert script."
         ""
         "CHECK — assert fidelity.  fidelity canary (default; --cdc-silence adds the redeploy"
         "  silence assertion) · drift (deployed vs model) · data (row/null counts) · ready"
@@ -146,7 +150,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         // events, so their streams now open with `config.runStart` and
         // close with the §10 terminal — and the run is capturable.
         withRun "projection transfer" (fun () ->
-            runTransfer src sink None None opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Tables surveyAdvisory)
+            runTransfer src sink None None opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Tables opts.AutoRevert opts.RevertDir surveyAdvisory)
     | PlanAction.RunReverseLeg (model, modelOssys, src, sink, opts, execute) ->
         // G2 routed the B→A legacy reverse leg distinctly; J3 (the contract
         // source) is CLOSED — the two SsKey-aligned contracts are the ONE
@@ -157,7 +161,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         // align — the original residual's premise, now honored structurally).
         needCatalog modelOssys model (fun cat ->
             withRun "projection reverse-leg" (fun () ->
-                runReverseLegTransfer src sink (CatalogRendition.logical cat) (CatalogRendition.physical cat) opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Streaming opts.Journal opts.Tables opts.SinkCapability surveyAdvisory))
+                runReverseLegTransfer src sink (CatalogRendition.logical cat) (CatalogRendition.physical cat) opts.Reconcile opts.Rekey execute opts.AllowCdc (opts.Declaration = DeclareAll) opts.Emission opts.Resumable opts.Streaming opts.Journal opts.Tables opts.AutoRevert opts.RevertDir opts.SinkCapability surveyAdvisory))
     | PlanAction.MigrateWithData (model, modelOssys, sink, src, opts) ->
         needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat ->
             withRun "projection migrate --with-data" (fun () ->
@@ -174,7 +178,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
     | PlanAction.Migrate (model, modelOssys, conn, opts) ->
         needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat ->
             withRun "projection migrate" (fun () ->
-                runMigrateExecute shapedCat conn opts.Declaration opts.AllowCdc opts.Store opts.Env)))
+                runMigrateExecute shapedCat conn opts.Declaration opts.AllowCdc opts.Atomic opts.Store opts.Env)))
     // check --------------------------------------------------------------
     | PlanAction.CheckCanary (ddl, false) -> withRun "projection check" (fun () -> runCanary ddl)
     | PlanAction.CheckCanary (ddl, true)  -> withRun "projection check --cdc-silence" (fun () -> runCanaryCdcSilence ddl)

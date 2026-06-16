@@ -425,6 +425,236 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
                         | _ -> ()
                 }))
 
+    // -- M21 — the live compensating-undo rollback arm (rides M12's inverse) --
+    //
+    // State A: table MIGAB_RB (ID pk, EMAIL nullable). State B RENAMES the kind to
+    // table MIGAB_RB2 AND adds REQ as a NOT-NULL column. On a POPULATED table,
+    // `ALTER TABLE … ADD REQ INT NOT NULL` (no default) is rejected by SQL Server —
+    // a deterministic mid-deploy failure AFTER the (metadata-only) table rename has
+    // applied. The covenant's promise 8 made literal: a mid-write crash returns the
+    // substrate to A (rides `CatalogDiff.inverse`), never a half-migrated state.
+    [<Fact>]
+    member _.``M21 canary: a mid-deploy ALTER failure rides the groupoid inverse to roll back to A — rename undone, data survives, no corruption`` () =
+        // State A: table MIGAB_RB (ID pk, EMAIL nullable). State B RENAMES the kind
+        // to table MIGAB_RB2 AND adds REQ as a NOT-NULL column — `ADD REQ INT NOT
+        // NULL` (no default) is rejected on a populated table, a deterministic
+        // mid-deploy failure AFTER the metadata-only table rename has applied.
+        let catalogRbA : Catalog =
+            let k =
+                Kind.create (mkKey "Rb") (nm "Account")
+                    (mkTableId "dbo" "MIGAB_RB")
+                    [ mkAttr "Rb.Id" "ID" Integer None true false
+                      mkAttr "Rb.Email" "EMAIL" Text (Some 50) false true ]
+            Catalog.create [ { SsKey = mkKey "RbMod"; Name = nm "RbMod"; Kinds = [ k ]; IsActive = true; ExtendedProperties = [] } ] []
+            |> Result.value
+        let catalogRbB : Catalog =
+            let k =
+                Kind.create (mkKey "Rb") (nm "Ledger")
+                    (mkTableId "dbo" "MIGAB_RB2")
+                    [ mkAttr "Rb.Id" "ID" Integer None true false
+                      mkAttr "Rb.Email" "EMAIL" Text (Some 50) false true
+                      mkAttr "Rb.Req" "REQ" Integer None false false ]
+            Catalog.create [ { SsKey = mkKey "RbMod"; Name = nm "RbMod"; Kinds = [ k ]; IsActive = true; ExtendedProperties = [] } ] []
+            |> Result.value
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "MigrateRollback" (fun conn _ ->
+                task {
+                    // Deploy A and seed a row (so the NOT-NULL add will fail).
+                    do! Deploy.executeBatch conn (SsdtDdlEmitter.statements catalogRbA |> Render.toText)
+                    do! Deploy.executeBatch conn
+                            "INSERT INTO [dbo].[MIGAB_RB] ([ID],[EMAIL]) VALUES (1, N'frank@example.com');"
+
+                    // migrate A→B: the table rename applies, then ADD REQ NOT NULL fails.
+                    let! outcome = MigrationRun.execute true DeclareNone catalogRbA catalogRbB conn
+                    match outcome with
+                    | Error (MigrationError.ExecutionRolledBack (_, undone)) ->
+                        // (1) the compensating-undo reverted at least the table rename.
+                        Assert.True(undone >= 1, sprintf "expected ≥1 rename reverted, got %d" undone)
+                    | other ->
+                        Assert.Fail(sprintf "expected ExecutionRolledBack, got %A" other)
+
+                    // (2) the substrate is back at A: the original table name exists,
+                    // the B name does not.
+                    let! orig =
+                        scalarString conn
+                            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'MIGAB_RB';"
+                    Assert.Equal("1", orig)
+                    let! renamed =
+                        scalarString conn
+                            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'MIGAB_RB2';"
+                    Assert.Equal("0", renamed)
+                    // (3) the failed change left nothing — REQ does not exist.
+                    let! req =
+                        scalarString conn
+                            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='MIGAB_RB' AND COLUMN_NAME='REQ';"
+                    Assert.Equal("0", req)
+                    // (4) DATA SURVIVED — the compensating rename is metadata-only,
+                    // never a drop+recreate.
+                    let! email = scalarString conn "SELECT [EMAIL] FROM [dbo].[MIGAB_RB] WHERE [ID]=1;"
+                    Assert.Equal("frank@example.com", email)
+
+                    // (5) resumable-by-construction: re-migrate A→B against the
+                    // restored DB behaves identically (the inverse left a clean A).
+                    let! again = MigrationRun.execute true DeclareNone catalogRbA catalogRbB conn
+                    match again with
+                    | Error (MigrationError.ExecutionRolledBack _) -> ()
+                    | other -> Assert.Fail(sprintf "re-run after rollback should refuse identically, got %A" other)
+                }))
+
+    // M21 — the covenant invariant, robust to SQL batch semantics. A migrate whose
+    // ALTER channel fails part-way through the batch (here: a nullable ADD that
+    // succeeds, then a NOT-NULL ADD that fails) leaves EITHER a clean rollback OR a
+    // NAMED residual — NEVER a silent success, and the data ALWAYS survives. This
+    // is "completes verifiably or refuses without damage" made executable: which
+    // arm fires depends on whether the failed batch self-rolled-back the earlier
+    // statement, but in both arms the engine is honest and corrupts nothing.
+    [<Fact>]
+    member _.``M21 canary: a part-way ALTER failure never silently corrupts — clean rollback or named residual, data survives`` () =
+        // A→B with NO rename: B adds NOTE (nullable, succeeds) and MUST (NOT NULL,
+        // fails on the populated table). Which honest arm fires depends on whether
+        // the failed batch self-rolled-back the earlier ADD; the invariant holds
+        // either way.
+        let catalogPrA : Catalog =
+            let k =
+                Kind.create (mkKey "Pr") (nm "Parcel")
+                    (mkTableId "dbo" "MIGAB_PR")
+                    [ mkAttr "Pr.Id" "ID" Integer None true false
+                      mkAttr "Pr.Email" "EMAIL" Text (Some 50) false true ]
+            Catalog.create [ { SsKey = mkKey "PrMod"; Name = nm "PrMod"; Kinds = [ k ]; IsActive = true; ExtendedProperties = [] } ] []
+            |> Result.value
+        let catalogPrB : Catalog =
+            let k =
+                Kind.create (mkKey "Pr") (nm "Parcel")
+                    (mkTableId "dbo" "MIGAB_PR")
+                    [ mkAttr "Pr.Id" "ID" Integer None true false
+                      mkAttr "Pr.Email" "EMAIL" Text (Some 50) false true
+                      mkAttr "Pr.Note" "NOTE" Text (Some 50) false true     // nullable ADD — succeeds
+                      mkAttr "Pr.Must" "MUST" Integer None false false ]    // NOT-NULL ADD — fails on populated table
+            Catalog.create [ { SsKey = mkKey "PrMod"; Name = nm "PrMod"; Kinds = [ k ]; IsActive = true; ExtendedProperties = [] } ] []
+            |> Result.value
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "MigratePartial" (fun conn _ ->
+                task {
+                    do! Deploy.executeBatch conn (SsdtDdlEmitter.statements catalogPrA |> Render.toText)
+                    do! Deploy.executeBatch conn
+                            "INSERT INTO [dbo].[MIGAB_PR] ([ID],[EMAIL]) VALUES (1, N'gwen@example.com');"
+
+                    let! outcome = MigrationRun.execute true DeclareNone catalogPrA catalogPrB conn
+                    // THE INVARIANT: never Ok (a partial write claimed as success), and
+                    // never a verdict outside the two honest arms.
+                    match outcome with
+                    | Ok _ ->
+                        Assert.Fail("a part-way ALTER failure must never report success")
+                    | Error (MigrationError.ExecutionRolledBack _) -> ()
+                    | Error (MigrationError.PartialWriteUnrecovered (_, residual)) ->
+                        // the residual is NAMED, not empty — the engine refuses to
+                        // silently swallow the applied non-rename change.
+                        Assert.False(PhysicalSchema.isSchemaEqual residual, "PartialWriteUnrecovered must carry a non-empty residual")
+                    | other -> Assert.Fail(sprintf "expected a rollback or a named residual, got %A" other)
+
+                    // DATA SURVIVES regardless of which honest arm fired.
+                    let! email = scalarString conn "SELECT [EMAIL] FROM [dbo].[MIGAB_PR] WHERE [ID]=1;"
+                    Assert.Equal("gwen@example.com", email)
+                    // The failed NOT-NULL column never exists (it was rejected).
+                    let! must =
+                        scalarString conn
+                            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='MIGAB_PR' AND COLUMN_NAME='MUST';"
+                    Assert.Equal("0", must)
+                }))
+
+    // -- M22 — the Atomic BEGIN TRAN envelope (opt-in, LOCAL full-access) ------
+    //
+    // The warm container is a LOCAL full-access SQL Server — exactly the class
+    // M22 is scoped to (production schema is ADO/Octopus/SSDT-deployed, not
+    // direct-connect; the managed cloud is DML-only). These prove the envelope.
+
+    [<Fact>]
+    member _.``M22 canary: --atomic rolls the WHOLE deploy back on a part-way ALTER failure (rename + NOTE both reverted) — the case M21 could not fully recover`` () =
+        // The SAME shape as the M21 part-way canary, but with a table rename added
+        // AND run under --atomic. Under M21 (non-atomic) the committed NOTE column
+        // would remain (PartialWriteUnrecovered, named); under --atomic the SQL
+        // ROLLBACK reverts the rename AND the NOTE — a clean ExecutionRolledBack.
+        let catalogAtA : Catalog =
+            let k =
+                Kind.create (mkKey "At") (nm "Acct")
+                    (mkTableId "dbo" "MIGAB_AT")
+                    [ mkAttr "At.Id" "ID" Integer None true false
+                      mkAttr "At.Email" "EMAIL" Text (Some 50) false true ]
+            Catalog.create [ { SsKey = mkKey "AtMod"; Name = nm "AtMod"; Kinds = [ k ]; IsActive = true; ExtendedProperties = [] } ] []
+            |> Result.value
+        let catalogAtB : Catalog =
+            let k =
+                Kind.create (mkKey "At") (nm "Acct2")
+                    (mkTableId "dbo" "MIGAB_AT2")                          // a table rename …
+                    [ mkAttr "At.Id" "ID" Integer None true false
+                      mkAttr "At.Email" "EMAIL" Text (Some 50) false true
+                      mkAttr "At.Note" "NOTE" Text (Some 50) false true    // … a nullable ADD that would commit …
+                      mkAttr "At.Must" "MUST" Integer None false false ]   // … and a NOT-NULL ADD that fails.
+            Catalog.create [ { SsKey = mkKey "AtMod"; Name = nm "AtMod"; Kinds = [ k ]; IsActive = true; ExtendedProperties = [] } ] []
+            |> Result.value
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "MigrateAtomic" (fun conn _ ->
+                task {
+                    do! Deploy.executeBatch conn (SsdtDdlEmitter.statements catalogAtA |> Render.toText)
+                    do! Deploy.executeBatch conn
+                            "INSERT INTO [dbo].[MIGAB_AT] ([ID],[EMAIL]) VALUES (1, N'hank@example.com');"
+
+                    // --atomic: the envelope wraps rename + both ADDs; the failing
+                    // NOT-NULL ADD rolls the WHOLE transaction back.
+                    let! outcome = MigrationRun.executeWith true true DeclareNone catalogAtA catalogAtB conn
+                    match outcome with
+                    | Error (MigrationError.ExecutionRolledBack _) -> ()
+                    | other -> Assert.Fail(sprintf "expected a clean ExecutionRolledBack under --atomic, got %A" other)
+
+                    // The rename was reverted by the transaction (not by M21's
+                    // compensating rename) — the original table name is back.
+                    let! orig =
+                        scalarString conn "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME='MIGAB_AT';"
+                    Assert.Equal("1", orig)
+                    let! renamed =
+                        scalarString conn "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME='MIGAB_AT2';"
+                    Assert.Equal("0", renamed)
+                    // THE DISCRIMINATOR vs M21: the committed-then-rolled-back NOTE
+                    // column is GONE (M21 would have left it as a named residual).
+                    let! note =
+                        scalarString conn "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='MIGAB_AT' AND COLUMN_NAME='NOTE';"
+                    Assert.Equal("0", note)
+                    let! must =
+                        scalarString conn "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='MIGAB_AT' AND COLUMN_NAME='MUST';"
+                    Assert.Equal("0", must)
+                    // Data survives the atomic rollback.
+                    let! email = scalarString conn "SELECT [EMAIL] FROM [dbo].[MIGAB_AT] WHERE [ID]=1;"
+                    Assert.Equal("hank@example.com", email)
+                }))
+
+    [<Fact>]
+    member _.``M22 canary: a clean --atomic migrate commits and verifies (the envelope is invisible on success)`` () =
+        if not (Deploy.Docker.ensureRunning ()) then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "MigrateAtomicOk" (fun conn _ ->
+                task {
+                    do! Deploy.executeBatch conn (SsdtDdlEmitter.statements catalogA |> Render.toText)
+                    do! Deploy.executeBatch conn
+                            "INSERT INTO [dbo].[MIGAB_CUSTOMER] ([ID],[EMAIL]) VALUES (1, N'iris@example.com');"
+
+                    // The same three-channel A→B as the headline canary, but --atomic:
+                    // the envelope commits and the result is byte-identical to non-atomic.
+                    let! outcome = MigrationRun.executeWith true true DeclareNone catalogA catalogB conn
+                    match outcome with
+                    | Error e -> Assert.Fail(sprintf "clean --atomic migrate failed: %A" e)
+                    | Ok result ->
+                        Assert.True(result.Verified, sprintf "B' did not reproduce B:\n%s" (PhysicalSchema.renderDiff result.SchemaDiff))
+                        // The commit landed: table renamed, LOYALTY added, data intact.
+                        let! patron =
+                            scalarString conn "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME='MIGAB_PATRON';"
+                        Assert.Equal("1", patron)
+                        let! email = scalarString conn "SELECT [EMAIL] FROM [dbo].[MIGAB_PATRON] WHERE [ID]=1;"
+                        Assert.Equal("iris@example.com", email)
+                }))
+
     // -- AC-X4 — the redeploy protein: redeploy an unchanged model; pass iff
     //    zero ALTERs AND zero CDC captures, BOTH MEASURED ----------------------
     //
@@ -469,7 +699,7 @@ type MigrationCanaryTests(fixture: EphemeralContainerFixture) =
                                 "INSERT INTO [dbo].[MIGAB_CUSTOMER] ([ID],[EMAIL]) VALUES (1, N'a@x.com'), (2, N'b@x.com');"
 
                         // LEG 1 — idempotent redeploy (A→A) measures BOTH legs zero.
-                        let! measured = MigrationRun.executeAndMeasureCdc false DeclareNone catalogA catalogA conn
+                        let! measured = MigrationRun.executeAndMeasureCdc false false DeclareNone catalogA catalogA conn
                         match measured with
                         | Error e -> Assert.Fail(sprintf "idempotent redeploy should succeed, got %A" e)
                         | Ok (o, cdcDelta) ->
