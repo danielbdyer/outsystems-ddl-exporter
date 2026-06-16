@@ -25,12 +25,18 @@ namespace Projection.Core
 /// same form `StaticRow.Values` uses). The orientation marker prevents
 /// passing a `SourceKey` where an `AssignedKey` is expected — the
 /// surrogate-remap analog of `SourceUserId` / `TargetUserId`.
+/// M6 (THE VECTOR Wave 3) — `[<Struct>]` for the same reason `RowQuantum`
+/// earned it (`Catalog.fs`, §9.7 carrier-cost): this pair is consumed
+/// per-referencer-row in `remapRowFksWith` on the estate-transfer hot path,
+/// so the one-word struct copy retires the per-row DU-wrapper allocation.
+[<Struct>]
 type SourceKey = SourceKey of string
 
 /// A surrogate primary-key value as assigned by the target identity
 /// space — sink-minted at insert time in the Transfer flow, sink-pre-
 /// existing for a reconciled match, or operator-supplied in a static-
 /// artifact remap. Sibling to `SourceKey`; consumed by every FK re-point.
+[<Struct>]
 type AssignedKey = AssignedKey of string
 
 [<RequireQualifiedAccess>]
