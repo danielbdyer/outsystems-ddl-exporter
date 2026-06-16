@@ -24,7 +24,8 @@ fold; map `record.Kind` root → SsKey via the catalog), call the existing `buil
 call. **It MUST ship with a deterministic streaming-failure canary** — a wrong DELETE-by-captured-key at estate scale is
 unrecoverable, so the engine's "every correctness claim a property test" discipline forbids shipping it untested. I
 declined to ship it untested at the tail of this session. Streaming retains its journal-resume safety meanwhile; the
-materialized transfer + both schema legs carry full M22/M23/M24 compensation.
+materialized transfer + both schema legs carry full M22/M23/M24 compensation. **The pickup-cold instruction set is
+`FOLLOWON_STREAMING_REVERT.md`** — exact seams, the journal-replay helper, and the canary the gate requires.
 
 **State.** Branch `claude/vector-wave-4-5`. Config redesign committed (`9ebb0989`); follow-on C is working-tree
 (uncommitted — about to commit). Debug+Release 0/0; pure pool PASS; matrix unaffected. Hold the spine.
