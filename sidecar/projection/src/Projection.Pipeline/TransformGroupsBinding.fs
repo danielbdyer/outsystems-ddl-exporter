@@ -172,9 +172,8 @@ module TransformGroupsBinding =
         : Result<TransformGroups> =
         cfg.Policy.TransformGroups
         |> List.map (fun entry ->
-            match parseGroupName entry.Name with
-            | Error es -> Error es
-            | Ok group -> Result.success (group, entry.Enabled))
+            parseGroupName entry.Name
+            |> Result.map (fun group -> (group, entry.Enabled)))
         |> Result.aggregate
         |> Result.map (fun pairs ->
             // Wave-3 (uat-users collapse, 2026-05-30) — `UserReflow` is

@@ -14,6 +14,7 @@ open Projection.Targets.SSDT
 open Projection.Targets.Json
 open Projection.Targets.Distributions
 open Projection.Targets.OperationalDiagnostics
+open FsToolkit.ErrorHandling
 
 /// End-to-end pipeline composition: V1 `osm_model.json` →
 /// `Projection.Adapters.Osm.CatalogReader.parse` → V2 Catalog →
@@ -1131,10 +1132,9 @@ module Compose =
         (cfg: Config.Config)
         (catalog: Catalog)
         : Result<Policy> =
-        let tighteningR = TighteningBinding.fromConfig catalog cfg.Policy.Tightening
-        let insertionR  = InsertionPolicyBinding.fromConfig cfg
-        match tighteningR, insertionR with
-        | Ok tightening, Ok insertion ->
+        validation {
+            let! tightening = TighteningBinding.fromConfig catalog cfg.Policy.Tightening
+            and! insertion  = InsertionPolicyBinding.fromConfig cfg
             // AC-X1 — translate the config's data-emission toggles into the
             // EmissionPolicy. `staticSeeds` / `migrationDependencies` /
             // `bootstrap` turning on enables `EmitData`; `DataComposition`
@@ -1162,7 +1162,7 @@ module Compose =
                 cfg.Emission.DecisionLog
                 || cfg.Emission.Opportunities
                 || cfg.Emission.Validations
-            Result.success {
+            return {
                 Policy.empty with
                     Tightening = tightening
                     Insertion  = insertion
@@ -1193,10 +1193,34 @@ module Compose =
                                      // prepends the symmetric-EXCEPT THROW guard).
                                      DataVerification = cfg.Emission.DataVerification }
             }
-        | _ ->
-            let tighteningErrs = match tighteningR with Ok _ -> [] | Error es -> es
-            let insertionErrs  = match insertionR  with Ok _ -> [] | Error es -> es
-            Result.failure (tighteningErrs @ insertionErrs)
+        }
+
+    /// THE_CONFIG_CONTROL_PLANE §6 — the SINGLE shaping-overlay bind-all
+    /// combinator. Binds the policy / emission-folders / transform-groups
+    /// triple against an already-rename-applied catalog, accumulating every
+    /// binder's `ValidationError`s (FsToolkit `validation { }`; the
+    /// applicative `and!` concatenates in `policy @ folders @ groups` order).
+    ///
+    /// **Convergence-by-construction (the §6 named risk).** The two non-bundle
+    /// shaping sites that thread *exactly this triple* — `projectWithConfig`
+    /// (the bundle emit) and `applyShapingToCatalog` (the migrate / preview
+    /// catalog shape) — BOTH funnel through here, so their bind-set + error-
+    /// accumulation mechanism is structurally identical and cannot drift apart.
+    /// `runWithConfigCore` threads a SUPERSET (it additionally binds
+    /// `SpecialCircumstancesBinding` — the overrides axis — interleaved in its
+    /// native `policy @ overrides @ folders @ groups` order), so it keeps its
+    /// own `validation { }` block rather than this triple; the binding SET it
+    /// threads is unchanged from before this compression.
+    let private bindShapingTriple
+        (shaping: Config.Config)
+        (renamedCatalog: Catalog)
+        : Result<Policy * EmissionFolders * TransformGroups> =
+        validation {
+            let! policy  = buildPolicyFromConfig shaping renamedCatalog
+            and! folders = EmissionFoldersBinding.fromConfig renamedCatalog shaping
+            and! groups  = TransformGroupsBinding.fromConfig shaping
+            return (policy, folders, groups)
+        }
 
     /// Open the out-of-band source connection and enrich `Profile.empty`
     /// via the `LiveProfiler` adapter. An unreachable / malformed
@@ -1270,12 +1294,22 @@ module Compose =
             match applyRenames cfg catalog with
             | Error errors -> Result.failure errors
             | Ok renamedCatalog ->
-                let policyR    = buildPolicyFromConfig cfg renamedCatalog
-                let overridesR = SpecialCircumstancesBinding.fromConfig renamedCatalog cfg
-                let foldersR   = EmissionFoldersBinding.fromConfig renamedCatalog cfg
-                let groupsR    = TransformGroupsBinding.fromConfig cfg
-                match policyR, overridesR, foldersR, groupsR with
-                | Ok policy, Ok overrides, Ok folders, Ok groups ->
+                // THE_CONFIG_CONTROL_PLANE §6 — `runWithConfigCore` threads the
+                // SUPERSET binding set (the `policy/folders/groups` triple PLUS
+                // the `SpecialCircumstances` overrides axis the live/migrate
+                // sites omit). The `validation { }` applicative accumulates in
+                // the historical `policy @ overrides @ folders @ groups` order;
+                // the binding SET is unchanged from before the M9 compression.
+                let boundR =
+                    validation {
+                        let! policy    = buildPolicyFromConfig cfg renamedCatalog
+                        and! overrides = SpecialCircumstancesBinding.fromConfig renamedCatalog cfg
+                        and! folders   = EmissionFoldersBinding.fromConfig renamedCatalog cfg
+                        and! groups    = TransformGroupsBinding.fromConfig cfg
+                        return (policy, overrides, folders, groups)
+                    }
+                match boundR with
+                | Ok (policy, overrides, folders, groups) ->
                     let outputs, finalState =
                         projectWithStateWithPinsAndBootstrap pins policy profile folders groups migration bootstrapRows renamedCatalog
                     // `emission.dacpac: true` — compile the .dacpac over the SAME
@@ -1349,12 +1383,7 @@ module Compose =
                     // hash its canonical form into the live-path input digest.
                     | Ok paths    -> Result.success { Paths = paths; Diagnostics = diagnostics; Manifest = outputs.Manifest; Trail = outputs.Trail; PassDiagnostics = outputs.PassEntries; ReadCatalog = catalog }
                     | Error errors -> Result.failure errors
-                | _ ->
-                    let policyErrs    = match policyR    with Ok _ -> [] | Error es -> es
-                    let overridesErrs = match overridesR with Ok _ -> [] | Error es -> es
-                    let foldersErrs   = match foldersR   with Ok _ -> [] | Error es -> es
-                    let groupsErrs    = match groupsR    with Ok _ -> [] | Error es -> es
-                    Result.failure (policyErrs @ overridesErrs @ foldersErrs @ groupsErrs)
+                | Error errors -> Result.failure errors
 
     /// Full end-to-end driven by a parsed `Config`. Reads `Model.Path`,
     /// applies config-driven catalog rewrites (rename), binds operator
@@ -1512,18 +1541,14 @@ module Compose =
         match applyRenames shaping catalog with
         | Error errors -> Result.failure errors
         | Ok renamedCatalog ->
-            match buildPolicyFromConfig shaping renamedCatalog,
-                  EmissionFoldersBinding.fromConfig renamedCatalog shaping,
-                  TransformGroupsBinding.fromConfig shaping with
-            | Ok policy, Ok folders, Ok groups ->
+            // §6 — the SHARED triple bind-all (drift-proof with
+            // `applyShapingToCatalog`, which threads the identical set).
+            match bindShapingTriple shaping renamedCatalog with
+            | Ok (policy, folders, groups) ->
                 let outputs, _ =
                     projectWithStateWithPins pins policy Profile.empty folders groups renamedCatalog
                 Result.success outputs
-            | p, f, g ->
-                Result.failure
-                    ((match p with Error e -> e | _ -> [])
-                     @ (match f with Error e -> e | _ -> [])
-                     @ (match g with Error e -> e | _ -> []))
+            | Error errors -> Result.failure errors
 
     /// THE_CONFIG_CONTROL_PLANE §6 (S3) — the overlay-aware sibling of
     /// `runFromCatalog`: project a caller-supplied catalog through the
@@ -1589,18 +1614,14 @@ module Compose =
         match applyRenames shaping catalog with
         | Error errors -> Result.failure errors
         | Ok renamedCatalog ->
-            match buildPolicyFromConfig shaping renamedCatalog,
-                  EmissionFoldersBinding.fromConfig renamedCatalog shaping,
-                  TransformGroupsBinding.fromConfig shaping with
-            | Ok policy, Ok folders, Ok groups ->
+            // §6 — the SHARED triple bind-all (drift-proof with
+            // `projectWithConfig`, which threads the identical set).
+            match bindShapingTriple shaping renamedCatalog with
+            | Ok (policy, folders, groups) ->
                 let _, finalState =
                     projectWithStateWithPins pins policy Profile.empty folders groups renamedCatalog
                 Result.success finalState.Catalog
-            | p, f, g ->
-                Result.failure
-                    ((match p with Error e -> e | _ -> [])
-                     @ (match f with Error e -> e | _ -> [])
-                     @ (match g with Error e -> e | _ -> []))
+            | Error errors -> Result.failure errors
 
     let runWithConfig (cfg: Config.Config) : Task<Result<RunReport>> =
         task {
@@ -1704,10 +1725,11 @@ module Compose =
         match parsed |> Result.bind (applyRenames cfg) with
         | Error es -> Result.failure es
         | Ok catalog ->
-            match buildPolicyFromConfig cfg catalog,
-                  EmissionFoldersBinding.fromConfig catalog cfg,
-                  TransformGroupsBinding.fromConfig cfg with
-            | Ok policy, Ok folders, Ok groups ->
+            // §6 — the SHARED triple bind-all. The store-leg threads the SAME
+            // policy/folders/groups set the publish path binds, so the deployed
+            // leveled seed never drifts from the bundle (the parity duty).
+            match bindShapingTriple cfg catalog with
+            | Ok (policy, folders, groups) ->
                 let _, finalState =
                     projectWithState policy Profile.empty folders groups catalog
                 if not policy.Emission.EmitData then
@@ -1731,12 +1753,7 @@ module Compose =
                         // catalog never fails the composer (the keyset is
                         // `Catalog.allKinds`).
                         invalidOp (sprintf "Compose.projectSeedPlan: DataEmissionComposer.composeRenderedLeveled: %A" err)
-            | p, f, g ->
-                let errs =
-                    (match p with Error e -> e | _ -> [])
-                    @ (match f with Error e -> e | _ -> [])
-                    @ (match g with Error e -> e | _ -> [])
-                Result.failure errs
+            | Error errs -> Result.failure errs
 
     let private emittedSeedPlan (cfg: Config.Config) : Task<Result<Catalog * DataComposer.LeveledDeploymentText>> =
         task {

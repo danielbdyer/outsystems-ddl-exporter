@@ -4,6 +4,7 @@ open System.IO
 open System.Text.Json
 open Projection.Core
 open Projection.Targets.Data
+open FsToolkit.ErrorHandling
 
 /// The migration-dependency file adapter (the boundary the
 /// `MigrationDependenciesEmitter` docstring deferred until a real
@@ -108,11 +109,11 @@ module MigrationDependenciesBinding =
             | JsonValueKind.Object ->
                 v.EnumerateObject()
                 |> Seq.map (fun prop ->
-                    match Name.create prop.Name, cellValue prop.Name prop.Value with
-                    | Ok name, Ok value    -> Result.success (name, value)
-                    | Error es, Error es2  -> Error (es @ es2)
-                    | Error es, _          -> Error es
-                    | _, Error es          -> Error es)
+                    validation {
+                        let! name  = Name.create prop.Name
+                        and! value = cellValue prop.Name prop.Value
+                        return (name, value)
+                    })
                 |> Result.aggregate
                 |> Result.map Map.ofList
             | _ ->
@@ -138,10 +139,11 @@ module MigrationDependenciesBinding =
                 Result.failureOf (
                     bindError "kindMissingCoordinate"
                         (sprintf "every migration kind entry needs a non-blank string '%s'." key))
-        match getReqStr "module", getReqStr "entity" with
-        | Ok moduleName, Ok entityName ->
+        validation {
+            let! moduleName = getReqStr "module"
+            and! entityName = getReqStr "entity"
             let kindLabel = sprintf "%s.%s" moduleName entityName
-            let rowsR =
+            let! rows =
                 match element.TryGetProperty("rows") with
                 | false, _ -> Result.success []
                 | true, v ->
@@ -155,9 +157,8 @@ module MigrationDependenciesBinding =
                         Result.failureOf (
                             bindError "rowsNotArray"
                                 (sprintf "migration kind %s 'rows' must be an array." kindLabel))
-            rowsR |> Result.map (fun rows -> { Module = moduleName; Entity = entityName; Rows = rows })
-        | m, e ->
-            Error ((match m with Error es -> es | _ -> []) @ (match e with Error es -> es | _ -> []))
+            return { Module = moduleName; Entity = entityName; Rows = rows }
+        }
 
     /// Parse the document text into the raw (pre-resolution) kind list.
     /// Root must be an object with an optional `kinds` array.
