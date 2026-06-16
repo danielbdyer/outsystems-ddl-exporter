@@ -36,7 +36,7 @@
 
 ---
 
-## Build addendum — 2026-06-15 (Waves 0–2 BUILT — the keystone landed, the reversible algebra completed)
+## Build addendum — 2026-06-15 (Waves 0–3 BUILT — the keystone landed, the reversible algebra completed, the engine compressed)
 
 > The study below is now partly **executed**, not just proposed. Per the house dated-note discipline, this
 > supersedes the "still unbuilt" claim in the reconciliation addendum that follows.
@@ -60,8 +60,16 @@
 >   tolerance moved — the under-claim holds). A pre-existing option-C re-trust bug (an unconditional ALTER on a
 >   no-ALTER `ManagedDml` sink) was surfaced by the full-pool run and fixed by capability descent. (DECISIONS
 >   2026-06-15 "THE VECTOR Wave 2 BUILT".)
-> - **Still ahead.** Wave 3 (the widest fan-out: M7/M8/M9/M17/M6/M19 + the zero-risk `Changed → Reshaped`
->   rename). The §6 move catalog stands for those.
+> - **Wave 3 — compression & idiom — BUILT.** M7 (the diff `ChannelSpec` — four builders + four patchers → one
+>   `buildChannel`/`applyChannel` over four spec values) + the `Changed → Reshaped` rename; M8 (the `JsonWriting`
+>   seam retiring the `Utf8JsonWriter → JsonNode` dance across 6 sites, byte-identical); M9 (FsToolkit
+>   `validation { }` collapsing the binding algebra + one drift-proof `bindShapingTriple`, mechanism-only); M17
+>   (the totality-test functor — one law, four ~10-line instantiations); M6 (`[<Struct>]` on `SourceKey`/`AssignedKey`);
+>   M19 (`[<Measure>] row` on the data-norm deltas). Net-smaller, every byte/law unchanged. Docker 246/246; matrix
+>   byte-identical (no tolerance moved). (DECISIONS 2026-06-15 "THE VECTOR Wave 3 BUILT".)
+> - **Still ahead.** Wave 4 — the corollary cashes & gated deepenings: M18 (`ChangeManifest.toJson`), M14 (the
+>   `Traversal` optic, after the compile-order split), M4 (`ConstraintState` DU, behind the store-migration story),
+>   M5 (digest projection) + the persisted-state-evolution discipline. The §6 move catalog stands for those.
 
 ## Reconciliation addendum — 2026-06-15 (main moved; the study reconciled)
 

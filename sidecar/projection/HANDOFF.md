@@ -1,3 +1,88 @@
+# Handoff addendum — 2026-06-15, THE VECTOR WAVE 3 LANDED (the engine is measurably smaller — the descriptor is data, the JSON dance has one home, the binding algebra is a CE, the totality proof is one functor); your job is WAVE 4 — the corollary cashes & the gated deepenings (the operator payoff)
+
+To the next agent.
+
+**Your mission.** Build **Wave 4** of `THE_VECTOR.md` — the last wave: **corollary cashes & gated deepenings**
+(§6 corollaries + Kind II/IV; §7 Wave 4). This wave is DIFFERENT from 2–3: it is smaller, and several moves are
+**gated behind a prerequisite or a compile-order fix**, so the order matters more than the parallelism. Read
+`THE_VECTOR.md` §6 (M18/M14/M4/M5 + "the cross-cutting prerequisite") + §7 Wave 4 first.
+
+**The moves, in dependency order (NOT all parallel).**
+1. **The cross-cutting prerequisite FIRST — the persisted-state-evolution discipline** (§6 "the cross-cutting
+   prerequisite"). Before M4/M5 touch any serialized form, write it down: name **NM-34** (a missing field reads as
+   `None`) as the de-facto store-codec contract; check whether the journal/episode formats carry a version stamp;
+   make "this change touches a serialized form" a gating checklist item. This is a DECISIONS-codification move, not
+   code — but it GATES M4 and M5. Do it first so they can proceed honestly.
+2. **M18 — `ChangeManifest.toJson`** (§5.2, "the lowest-risk corollary on the board"). `ReportRun` has `render` (human
+   prose) and no `toJson`; the CDC-capture-count data norm (T15) is a real measured value flowing to `ReportRun.render`
+   as prose only. The typed total `ChangeManifest` already exists and is sorted-for-T1; only the second lens (machine)
+   is missing. Add `toJson` so the SSIS consumer can diff the change-manifest sprint-over-sprint. Own surface
+   (`ChangeManifest` / `ReportRun`). **Independent — do this one regardless; it needs no prerequisite.**
+3. **M5 — retire `VersionedPolicy.digestOf`'s `sprintf "%A"`** (§6 Kind II). Replace the F# structural-printer digest
+   (determinism-by-luck) with an explicit length-prefixed token projection (the `TransformRegistry.digest` discipline
+   next door is the precedent). **Becomes a PREREQUISITE the moment the digest is persisted into episodes** — so
+   sequence it under the persisted-state discipline (step 1). Own surface (`VersionedPolicy`).
+4. **M4 — `ConstraintState` DU** (§6 Kind II, **top-scored, tied with M1**). Collapse the `(HasDbConstraint,
+   IsConstraintTrusted)` `bool × bool` quadrant into a 3-variant `ConstraintState` DU
+   (`NoConstraint | Trusted | Untrusted`), eliminating the illegal `(false, true)` state. **It CHANGES THE CATALOG
+   CODEC**, so it sequences BEHIND the store-migration story (step 1) — the `CapabilityProfile.of` archetype work
+   (closed DU → one total expansion site → derived projection → round-trip law → reconciliation finding) is the
+   in-repo precedent to copy. The largest move of the wave; treat it like the M1 keystone (its own care).
+5. **M14 — the `Traversal` optic — GATED, do NOT schedule until the compile-order split is resolved** (§4.2/§6
+   Kind IV). It unifies the single-focus `Lens` with the hand-rolled `Catalog.mapKinds`/`CatalogTraversal.mapKinds`
+   bulk-map, but the duplication's named cause is a compile-order split; fix that first or leave M14 deferred (record
+   the deferral honestly — "not yet, and here is the trigger" is the discipline).
+
+**How to drive it.** M18 + the persisted-state discipline + M5 are a clean small workflow (or just inline — they're
+modest). M4 deserves its own careful pass (codec change + the round-trip law + the reconciliation finding), like a
+mini-keystone. M14 stays deferred behind its gate. **If you Workflow it, heed the orchestration lesson below.**
+
+**⚠️ ORCHESTRATION LESSON (cost real integration time in Wave 3 — heed it).** The Workflow's worktree-isolated
+implementers branch off the **session-start commit**, NOT your advancing branch HEAD. In a multi-wave session this
+means **later waves' worktrees lack earlier waves' commits.** Consequences: (1) `git cherry-pick` still works (it
+applies each move's OWN delta, valid against its base), so integration is fine — but where a move touches a file an
+earlier wave modified, expect a 3-way merge to resolve (combine both); (2) the **adversarial verifiers' base is
+wrong** if you pass them your current HEAD — they will diff against a non-ancestor and raise FALSE blockers that are
+really the earlier wave's ABSENCE from the implementer's base (Wave 3's M7 verifier "rejected" the move for
+"deleting `inverse`/M11/M12" that were simply not in M7's `dda83a8f` base). **Mitigations:** pass the verifier the
+implementers' REAL base (the session-start commit, e.g. `git rev-parse <branch>^`), or have it self-detect via
+`git merge-base`; and always confirm a "rejection" against the move's REAL delta (`git diff <realBase>..<branch>`)
+before believing it. Cherry-pick + the full build/pools are the true safety net.
+
+**What is DONE — do not redo (Waves 0–3, all in this PR).** Wave 0 (honesty). Wave 1 (the keystone M1 — Decision is
+EARNED ✅ L3). Wave 2 (the reversible algebra: M13 total `between` · M11 metric · M12 groupoid inverse · M3 swept
+T16 · M20 transactionality naming · the M11/M12 axiom witnesses · the option-C re-trust capability-descent fix).
+Wave 3 (compression: M7 `ChannelSpec`+`Changed→Reshaped` · M8 `JsonWriting` seam · M9 binding `validation` CE · M17
+totality functor · M6 `[<Struct>]` keys · M19 `[<Measure>] row`). Read the 2026-06-15 "THE VECTOR Wave 3 BUILT"
+DECISIONS entry — it is the substance; this letter points.
+
+**Matrix on this PR.** gate=PASS · rungs L1/L2/L3 = 5/4/5 · tolerances 10 (3 open Schema OpenGaps + the option-C
+`FkTrustNotRestoredOnBulkLoad` AcceptedFaithful). Waves 2–3 moved no tolerance and renamed no witness, so the matrix
+is byte-identical to its post-Wave-1 state — the under-claim holds. **M4 is the first Wave-4 move that COULD move a
+cell** (it touches the trust quadrant the Decision axis depends on); regenerate the matrix carefully after it.
+
+**Build-discipline scars (unchanged — heed them).**
+1. **⚠️ Docker tests SILENTLY NO-OP** unless `$env:PROJECTION_MSSQL_CONN_STR=
+   "Server=localhost,11433;User Id=sa;Password=Projection@Strong1;TrustServerCertificate=True;Encrypt=False"`
+   (the warm container). Confirm a **real per-test duration in seconds** via the TRX, never the green count.
+2. **Run bash scripts from the WORKTREE** (the Bash tool resets cwd to the worktree root). `dotnet` is at
+   `C:\Users\danny\AppData\Local\Microsoft\dotnet\dotnet.exe` (9.0.314; not on bash PATH). Build **Release** too
+   (FS3511). Never the pure + Docker pools in one `dotnet test` (OOM) — `test.sh fast` / `docker`.
+3. **Run the FULL Docker pool (246/246 is the bar), not just `~Canary`** — a comparison-primitive change ripples
+   through every canary (it caught the pre-existing option-C reverse-leg bug in Wave 2). On any `Failed: N>0`, read
+   the TRX, and decide regression-vs-pre-existing by running the one test on the base.
+4. **Closed-DU/closed-record edits cascade — grep first, fix all sites, build once** (the single-assembly build is
+   your completeness backstop). M4's `ConstraintState` is exactly such a cascade (and a CODEC change — the goldens +
+   the store round-trip tests are the guard).
+
+**State.** Branch `claude/romantic-bohr-e270dd`; Waves 0–3 sit on this branch as fourteen commits atop `main`
+`dda83a8f`. Debug + **Release** 0/0; pure pool green; **Docker 246/246**; `AxiomTests` 79/0; `matrix-status.sh`
+gate=PASS (byte-identical); `verifiability-gate.sh` exit 0. After Wave 4, the §7 vector is fully cashed (modulo the
+honestly-deferred M14 + the moat). Chapter-close and extend the same PR (or open the Wave-4 PR atop it). Hold the
+spine: name every refusal, count every crossing, leave the books balanced.
+
+---
+
 # Handoff addendum — 2026-06-15, THE VECTOR WAVE 2 LANDED (the reversible algebra is complete, the change-algebra round-trip is property-witnessed, the destructive failure mode is named); your job is WAVE 3 — the widest fan-out, again as a WORKFLOW
 
 To the next agent.

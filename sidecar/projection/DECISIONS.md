@@ -24191,3 +24191,76 @@ in the Wave-1 follow-on (option C, `c7133c5d`), **confirmed by running the faili
   via descent; the FullRights re-trust canaries still re-trust — no regression), then the full Docker pool
   246/246. Bounded to `restoreFkTrust` (no archetype re-threading; the reactive descent needs no proactive
   capability probe, sidestepping the CONTROL-implies-ALTER subtlety a grant-evidence gate would face).
+
+---
+
+## 2026-06-15 (later still) — THE VECTOR Wave 3 BUILT: compression & idiom (M7+rename / M8 / M9 / M17 / M6 / M19 — the engine measurably smaller)
+
+The fourth chapter of THE VECTOR (`THE_VECTOR.md` §6 Kind III/V + corollaries; §7 Wave 3) — the **widest
+fan-out**. Seven moves across six file-disjoint surfaces. The four substantial moves were orchestrated as a
+`Workflow` (worktree-isolated implementers + one adversarial verifier each); the two attribute-only moves (M6/M19)
+were done inline by the integrator (no cold-build tax for two-line changes). All behavior-preserving — the engine
+shrinks while every output byte and every law is unchanged.
+
+- **M7 — the diff `ChannelSpec` + the `Changed → Reshaped` rename.** The four byte-identical per-channel diff
+  builders (`attributeDiff`/`referenceDiff`/`indexDiff`/`sequenceDiffBetween`) and four apply-patchers collapse to
+  one `buildChannel` fold + one `applyChannel` patcher over four `ChannelSpec` values (the kind-vs-catalog
+  container asymmetry absorbed by a generic `entitiesOf`); the four old private builder names survive as thin
+  wrappers so `between`'s call sites are untouched. The zero-risk rename makes the diff + migration layers speak
+  one word — `ChannelDiff<'change>.Changed → Reshaped` (the `ChannelCounts.Changed*` move-count fields and the
+  unrelated `PolicyAxisDiff.Changed` bool are correctly NOT renamed). Net −26 LOC; behavior preserved by
+  construction (T1 source-order, sparse non-empty storage, rename⊥reshape independence all intact).
+- **M8 — the `JsonDocumentWriter` seam.** One `[<RequireQualifiedAccess>] module JsonWriting` in `PinnedWriting.fs`
+  (`writeToNode` compact→JsonNode · `renderNodeToString` node→indented · `writeToString` imperative→indented)
+  retires the `Utf8JsonWriter → MemoryStream → byte[] → JsonNode.Parse` dance duplicated across 6 sites
+  (JsonEmitter / CatalogCodec / ProfileCodec / DistributionsEmitter / DecisionLogEmitter / SuggestConfigEmitter),
+  each routed to the form that preserves its EXACT compact/indented options. **Byte-identical** (GoldenEmission +
+  codec round-trips green); the out-of-lane default-option sites (LogSink/RunLedger) correctly left untouched.
+- **M9 — the binding algebra (FsToolkit `validation { }`).** The hand-rolled four-way `Ok/Error` applicative match
+  + `bindError`/`aggregate` skeleton across the binding modules collapses to `validation { }` / `result { }` (the
+  documented-but-unused CE at `Result.fs:151`; error accumulation byte-identical — FsToolkit 4.18.0 `Validation`
+  appends left-to-right exactly as the hand-rolled code did). The three (in fact FOUR — `projectSeedPlan` folded
+  in) shaping convergences now share one `bindShapingTriple` combinator so they CANNOT drift. **Mechanism-only —
+  behavior preserved EXACTLY:** every path threads the same binding set (the live/migrate/store legs still OMIT
+  `SpecialCircumstances`; `applyModuleFilter` stays at the read seam). The §6 latent divergences are **left as
+  pre-existing for the operator to adjudicate** — M9 makes the convergence drift-proof, it does NOT unify the
+  binding sets by fiat (the named safety mandate honored).
+- **M17 — the totality-test functor.** The four structurally-identical totality tests
+  (`CapabilitySurvey`/`Voice`/`Transform`/`ManifestPredicate`) extract their shared bidirectional-subset +
+  distinctness law (`X ⊆ Y ∧ Y ⊆ X ⇒ X = Y`) into a new `TotalityFunctor.fs` (`assertBidirectionalSubset` /
+  `assertProjectionDistinct` / `assertTotality`), each test reduced to a ~10-line typed instantiation. Every
+  test-specific extra (Voice's banned-word discipline, CapabilitySurvey's coarse-upper-bound, RegisteredAllTransforms'
+  skeleton-purity + overlay-exercise, ManifestPredicate's determinism + aggregation) stays verbatim — no assertion
+  lost; the functor is same-or-stronger (it adds the entailed equality for two sites). A fifth totality axis is now
+  a one-line application.
+- **M6 — `[<Struct>]` on `SourceKey`/`AssignedKey`** (inline). The one-word struct copy over the string ref for the
+  surrogate orientation pair consumed per-referencer-row in `remapRowFksWith` — same rationale `RowQuantum` earned
+  (§9.7 carrier-cost; the measured trigger has a second consumer on the same hot path). The type surface is
+  unchanged, so consumers are untouched.
+- **M19 — `[<Measure>] row` on the data-norm deltas** (inline). `RowCountDelta`/`NullCountDelta` `Before`/`After`
+  become `int64<row>` — the natural sibling of the shipped `[<Measure>] ms`, ruling out at compile time the
+  addition of a row-delta to a millisecond-delta. Tagged at construction (`* 1L<row>`), stripped via `int64` at the
+  RunFaces formatting boundary (the exact `ms` idiom). Zero runtime cost.
+- **Orchestration note (a learning, recorded for future multi-wave sessions).** The four worktree implementers
+  branched off the SESSION-START commit (`dda83a8f`), NOT the integrator's advancing branch HEAD — so they lacked
+  the Wave-2 commits. This is benign for `git cherry-pick` (it applies each move's OWN delta, valid against its
+  base) but it (a) made the **adversarial verifiers' base wrong** (I passed `00292f9d`; the branches were off
+  `dda83a8f`), so the M7 verifier raised false "deleted `inverse` / reverted `between` / deleted M11/M12/M3" blockers
+  that were really Wave-2's ABSENCE from M7's base — disproven by checking M7's real delta `dda83a8f..147f6255`
+  (exactly the 9-file rename+ChannelSpec, zero touches to `between`/`inverse`); and (b) required 3-way conflict
+  resolution where a move overlapped a Wave-2-modified file (M7's `CatalogDiffTests.fs` — combine Wave-2's
+  total `between` with M7's `.Reshaped`; M17's `VoiceTotalityTests.fs` auto-merged with M20's `MidWriteNotProtected`
+  surviving; M9's `Pipeline.fs` auto-merged). **For a multi-wave session, later waves' worktrees branch off the
+  session origin — plan the integration (cherry-pick + verifier base) accordingly.**
+- **Witness (all green, integrator-authoritative).** Debug + **Release** 0/0. Pure pool green (real durations —
+  R4 18 s). **Docker pool 246/246** (real durations — ReverseLegScale Tier-4 streaming 62.8 s; not a no-op).
+  `AxiomTests` 79/0 (M11/M12 witnesses + M16 citation gate intact — Wave 2 survived M7's merge).
+  **`matrix-status.sh` regenerated byte-identically** (gate=PASS; rungs L1/L2/L3 = 5/4/5; tolerances 10, 3 open) —
+  Wave 3 is compression/idiom, adding/retiring no tolerance and renaming no matrix-bound witness, so the under-claim
+  is undisturbed. `verifiability-gate.sh` exit 0.
+- **Exit criterion (Wave 3) — MET.** The descriptor-duplication is retired at the three ripe sites (M7/M8/M9); the
+  totality proof is one functor; the data norm is unit-typed; the surrogate pair is a struct. The engine is
+  measurably smaller and every byte/law is unchanged. **Remaining (THE VECTOR §7 Wave 4): the corollary cashes +
+  gated deepenings — M18 (`ChangeManifest.toJson`), M14 (the `Traversal` optic, after the compile-order split),
+  M4 (`ConstraintState` DU, behind the store-migration story), M5 (digest projection) — plus the persisted-state
+  -evolution discipline written down (NM-34 as the store-codec contract).**
