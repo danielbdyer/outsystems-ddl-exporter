@@ -1,6 +1,5 @@
 namespace Projection.Targets.OperationalDiagnostics
 
-open System.IO
 open System.Text.Json
 open System.Text.Json.Nodes
 open Projection.Core
@@ -91,15 +90,7 @@ module internal DiagnosticDocument =
     /// the Π port; strings emerge only at the terminal writer
     /// step.
     let kindJsonNode (kind: Kind) (entries: DiagnosticEntry list) : JsonNode =
-        use stream = new MemoryStream()
-        do
-            use writer = new Utf8JsonWriter(stream, (JsonOptions.compact ()))
-            writeKindDocument writer kind entries
-            writer.Flush()
-        let bytes = stream.ToArray()
-        match JsonNode.Parse(System.ReadOnlySpan<byte>(bytes)) with
-        | null -> invalidOp "DiagnosticDocument.kindJsonNode: writer produced empty stream (unreachable; writeKindDocument always emits an object)"
-        | node -> node
+        JsonWriting.writeToNode (fun writer -> writeKindDocument writer kind entries)
 
     /// Partition entries by their `SsKey` field. Entries with `SsKey =
     /// Some k` group into the per-kind map; entries with `SsKey = None`
