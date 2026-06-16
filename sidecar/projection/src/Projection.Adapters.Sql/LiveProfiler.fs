@@ -838,7 +838,7 @@ module LiveProfiler =
                                     { ReferenceKey = reference.SsKey
                                       HasOrphan    = orphanCount > 0L
                                       OrphanCount  = orphanCount
-                                      IsNoCheck    = not reference.IsConstraintTrusted
+                                      IsNoCheck    = not (Reference.isConstraintTrusted reference)
                                       ProbeStatus  = ProbeStatus.observed rowCount }
                                 | _ -> ambiguous
                             | _ -> ambiguous))

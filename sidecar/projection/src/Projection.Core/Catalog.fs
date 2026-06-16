@@ -691,6 +691,89 @@ type Attribute = {
 }
 
 
+/// The constraint-state of a `Reference` (M4 — THE VECTOR §6 Kind II).
+/// Collapses the `(HasDbConstraint, IsConstraintTrusted)` `bool × bool`
+/// quadrant — a 4-state space encoding a 3-state semantic reality — into a
+/// closed DU. The illegal quadrant `(HasDbConstraint = false,
+/// IsConstraintTrusted = false)` ("untrusted without a constraint", the G14
+/// debrief finding) typechecked but is semantically impossible: trust is only
+/// meaningful when a DB constraint exists (`¬trusted ⟹ hasDbConstraint`). The
+/// DU forbids it by construction — promoting the prior *runtime* invariant
+/// (`Reference.isConstraintStateConsistent` + the aggregate-root rejection) to
+/// a *type theorem*. Mirrors `IndexUniqueness` (Slice 2a), the sibling
+/// quadrant→DU collapse on the same record family, and follows the archetype
+/// `CapabilityProfile.of` precedent (closed DU → derived projection →
+/// round-trip law).
+///
+/// **Ordering carries semantics**: a trusted constraint is "stronger than" an
+/// untrusted one is "stronger than" no constraint. Strategy / emission
+/// surfaces pattern-match the variant directly; sites that need the boolean
+/// projection use `ConstraintState.hasDbConstraint` / `isConstraintTrusted`.
+/// The codec keeps the legacy boolean pair on the wire (`toLegacyBooleans` on
+/// write, `ofLegacyBooleans` on read) so serialized catalogs round-trip
+/// byte-identically — no store migration (the `IndexUniqueness` wire precedent).
+///
+/// `[<RequireQualifiedAccess>]` — the `TrustedConstraint` case name otherwise
+/// collides with `ProbeOutcome.TrustedConstraint`; qualification also makes the
+/// variants unforgeable at every match site.
+[<RequireQualifiedAccess>]
+type ConstraintState =
+    /// No backing SQL Server FK constraint — the reference is logical-only (an
+    /// OutSystems-model FK with no `FOREIGN KEY` clause). Trust is N/A
+    /// (vacuously trusted). Boolean projection: `(false, true)`. The
+    /// `Reference.create` default (V1's COALESCE-to-0 `HasFK`).
+    | NoDbConstraint
+    /// A real, TRUSTED FK constraint — created normally, or re-validated after
+    /// a `WITH NOCHECK` insert. Boolean projection: `(true, true)`. The V1
+    /// default for a reflected constraint.
+    | TrustedConstraint
+    /// A real but UNTRUSTED FK constraint (`WITH NOCHECK` — created over
+    /// existing unvalidated rows). Boolean projection: `(true, false)`; fires
+    /// the post-CREATE-TABLE NOCHECK alter (`SsdtDdlEmitter.untrustedFkAlters`).
+    /// Carries from V1 `#FkReality.IsNoCheck = 1`.
+    | UntrustedConstraint
+
+[<RequireQualifiedAccess>]
+module ConstraintState =
+
+    /// True iff a real DB constraint backs the reference (`Trusted` /
+    /// `Untrusted`). Sites that only need the boolean "is there a constraint?"
+    /// projection use this without pattern-matching.
+    let hasDbConstraint (s: ConstraintState) : bool =
+        match s with
+        | ConstraintState.TrustedConstraint | ConstraintState.UntrustedConstraint -> true
+        | ConstraintState.NoDbConstraint -> false
+
+    /// True iff the constraint is trusted. `NoDbConstraint` is *vacuously*
+    /// trusted (trust is N/A absent a constraint) — the canonical `(false,
+    /// true)` projection.
+    let isConstraintTrusted (s: ConstraintState) : bool =
+        match s with
+        | ConstraintState.UntrustedConstraint -> false
+        | ConstraintState.NoDbConstraint | ConstraintState.TrustedConstraint -> true
+
+    /// Build a `ConstraintState` from the legacy `(hasDbConstraint,
+    /// isConstraintTrusted)` boolean pair. Adapters reading external formats
+    /// (V1 JSON, SQL reflection rows, the codec) project their booleans through
+    /// this helper to reach the typed surface. The illegal combination
+    /// `(false, false)` ("untrusted without a constraint") normalizes to
+    /// `NoDbConstraint` — a constraint-less reference is vacuously trusted (the
+    /// prior `Reference.withConstraintState` normalization, now total and at the
+    /// type level).
+    let ofLegacyBooleans (hasDbConstraint: bool) (isConstraintTrusted: bool) : ConstraintState =
+        match hasDbConstraint, isConstraintTrusted with
+        | false, _     -> ConstraintState.NoDbConstraint
+        | true,  true  -> ConstraintState.TrustedConstraint
+        | true,  false -> ConstraintState.UntrustedConstraint
+
+    /// The legacy `(hasDbConstraint, isConstraintTrusted)` boolean pair — the
+    /// derived projection the codec writes to the wire. Round-trip law:
+    /// `ofLegacyBooleans ∘ toLegacyBooleans = id` on every variant (witnessed in
+    /// `ReferenceConstraintStateTests`).
+    let toLegacyBooleans (s: ConstraintState) : bool * bool =
+        hasDbConstraint s, isConstraintTrusted s
+
+
 /// A directional reference (A10). Symmetry, if needed by a target surface,
 /// is introduced by the symmetric-closure pass and the resulting reference
 /// carries a `Derived` SsKey with reason `"inverse"`.
@@ -717,19 +800,6 @@ type Reference = {
     /// otherwise. Slice η emitters consume this flag to gate User-
     /// FK column rewriting at row-emission time.
     IsUserFk        : bool
-    /// True iff this reference is backed by a real SQL Server FK
-    /// constraint (a `FOREIGN KEY ... REFERENCES` clause). V1's
-    /// `hasDbConstraint` int-flag (COALESCE'd from
-    /// `outsystems_model_export.sql:730` HasFK column). When false,
-    /// the reference exists only at the OutSystems model level
-    /// (logical-only FK); when true, a corresponding DB constraint
-    /// materializes the reference at the storage layer.
-    ///
-    /// Chapter 4.6 slice α — IR fidelity lift retiring chapter 4.4's
-    /// `HasLogicalForeignKeyWithoutDbConstraint` +
-    /// `HasLogicalForeignKeyWithDbConstraint` always-false
-    /// PredicateName variants.
-    HasDbConstraint : bool
     /// Optional ON UPDATE referential action. `None` = unstated (V1
     /// default; SQL Server emits no ON UPDATE clause, server-default
     /// NO ACTION applies). `Some action` = operator-supplied explicit
@@ -739,17 +809,17 @@ type Reference = {
     ///
     /// Slice 5.13.fk-features-emit (matrix row 58 cash-out).
     OnUpdate        : ReferenceAction option
-    /// Whether the FK constraint is currently TRUSTED at the deployed
-    /// target (i.e., the FK was created normally OR re-validated after
-    /// a WITH NOCHECK insert). `true` (default) preserves V1's default
-    /// emission shape. `false` carries from V1's
-    /// `#FkReality.IsNoCheck = 1` and triggers a post-CREATE-TABLE
-    /// `ALTER TABLE ... WITH NOCHECK CHECK CONSTRAINT [<fk>]`
-    /// statement so V2's emission round-trips against a deployed
-    /// target carrying NOCHECK'd FKs.
-    ///
-    /// Slice 5.13.fk-features-emit (matrix row 59 cash-out).
-    IsConstraintTrusted : bool
+    /// The constraint-state of this reference (M4 — THE VECTOR §6 Kind II):
+    /// the `ConstraintState` DU that replaced the prior `(HasDbConstraint,
+    /// IsConstraintTrusted)` boolean pair (chapter 4.6 slice α IR lift +
+    /// slice 5.13.fk-features-emit row 59). `NoDbConstraint` = logical-only
+    /// FK (V1's COALESCE-to-0 `HasFK`); `TrustedConstraint` = a real trusted
+    /// constraint (the V1 default); `UntrustedConstraint` = `WITH NOCHECK`
+    /// (from V1 `#FkReality.IsNoCheck = 1`), firing the post-CREATE-TABLE
+    /// NOCHECK alter. The illegal "untrusted without a constraint" quadrant is
+    /// unrepresentable. Boolean-projection sites use `Reference.hasDbConstraint`
+    /// / `Reference.isConstraintTrusted`.
+    ConstraintState : ConstraintState
 }
 
 
@@ -1255,36 +1325,42 @@ module Reference =
             TargetKind          = targetKind
             OnDelete            = NoAction
             IsUserFk            = false
-            HasDbConstraint     = false
             OnUpdate            = None
-            IsConstraintTrusted = true
+            ConstraintState     = ConstraintState.NoDbConstraint
         }
 
-    /// G14 — the constraint-state invariant. Trust is only meaningful when a
-    /// DB constraint exists: an *untrusted* (`WITH NOCHECK`) reference must be
-    /// backed by a real constraint, since the emitter's NOCHECK alter
-    /// (`SsdtDdlEmitter.untrustedFkAlters`) fires on `not IsConstraintTrusted`
-    /// and would otherwise target a non-existent constraint. Formally
-    /// `¬IsConstraintTrusted ⟹ HasDbConstraint`. The illegal quadrant the
-    /// debrief (G14) names is `(HasDbConstraint=false ∧ IsConstraintTrusted=false)`
-    /// — "untrusted without a constraint." (The `(false, true)` default is the
-    /// canonical *vacuous-trust* no-constraint state, the boolean projection of
-    /// a `NoDbConstraint` variant — consistent.)
-    let isConstraintStateConsistent (r: Reference) : bool =
-        r.IsConstraintTrusted || r.HasDbConstraint
+    /// Boolean projection: is this reference backed by a real DB constraint?
+    /// (M4 — the derived `(HasDbConstraint, _)` accessor over the
+    /// `ConstraintState` DU; sites that read the old field now call this.)
+    let hasDbConstraint (r: Reference) : bool =
+        ConstraintState.hasDbConstraint r.ConstraintState
 
-    /// The sanctioned way to set the `(HasDbConstraint, IsConstraintTrusted)`
-    /// pair from external evidence (V1 JSON / ReadSide / codec). Normalizes the
-    /// illegal quadrant to the canonical vacuous-trust state: a reference with
-    /// no DB constraint is `IsConstraintTrusted = true` (trust is N/A), never
-    /// independently untrusted. Routing every producer through this makes the
-    /// illegal quadrant unreachable in practice (witnessed in
-    /// `ReferenceConstraintStateTests`).
+    /// Boolean projection: is this reference's constraint trusted?
+    /// (M4 — the derived `(_, IsConstraintTrusted)` accessor; `NoDbConstraint`
+    /// projects to vacuously-trusted `true`.)
+    let isConstraintTrusted (r: Reference) : bool =
+        ConstraintState.isConstraintTrusted r.ConstraintState
+
+    /// G14 — the constraint-state invariant, now a **theorem** rather than a
+    /// runtime check: `¬trusted ⟹ hasDbConstraint` holds for every
+    /// `ConstraintState` variant by construction (the illegal "untrusted
+    /// without a constraint" quadrant is unrepresentable since M4). Retained as
+    /// a total predicate (always `true`) so the witness in
+    /// `ReferenceConstraintStateTests` and the aggregate-root proof read
+    /// explicitly rather than vacuously.
+    let isConstraintStateConsistent (r: Reference) : bool =
+        match r.ConstraintState with
+        | ConstraintState.NoDbConstraint | ConstraintState.TrustedConstraint | ConstraintState.UntrustedConstraint -> true
+
+    /// The sanctioned way to set the constraint-state from the legacy
+    /// `(hasDbConstraint, isConstraintTrusted)` boolean pair external evidence
+    /// supplies (V1 JSON / ReadSide / codec). Delegates to
+    /// `ConstraintState.ofLegacyBooleans`, which normalizes the illegal
+    /// `(false, false)` quadrant to `NoDbConstraint` (vacuous trust). Since M4
+    /// the illegal quadrant is unrepresentable at the type, so this is total by
+    /// construction (witnessed in `ReferenceConstraintStateTests`).
     let withConstraintState (hasDbConstraint: bool) (isConstraintTrusted: bool) (r: Reference) : Reference =
-        if hasDbConstraint then
-            { r with HasDbConstraint = true; IsConstraintTrusted = isConstraintTrusted }
-        else
-            { r with HasDbConstraint = false; IsConstraintTrusted = true }
+        { r with ConstraintState = ConstraintState.ofLegacyBooleans hasDbConstraint isConstraintTrusted }
 
     /// The reserved SsKey derivation reason the symmetric-closure pass
     /// stamps on synthesized inverse references (the first reserved
@@ -1791,18 +1867,14 @@ module Catalog =
                                     "Reference %A on Kind %A has TargetKind %A absent from the catalog."
                                     r.SsKey k.SsKey r.TargetKind))
                     // NM-12 — G14: the illegal trust quadrant
-                    // (HasDbConstraint=false ∧ IsConstraintTrusted=false) is
-                    // unreachable at the aggregate root. Every ingest boundary
-                    // (ReadSide / codec / V1) normalizes through
-                    // `Reference.withConstraintState`; `Catalog.create` rejects
-                    // anything that bypassed it, so the quadrant cannot enter the IR.
-                    if not (Reference.isConstraintStateConsistent r) then
-                        refAcc.Add(
-                            ValidationError.create
-                                "catalog.reference.illegalConstraintState"
-                                (sprintf
-                                    "Reference %A on Kind %A is in the illegal constraint-state quadrant (HasDbConstraint=false, IsConstraintTrusted=false); an untrusted constraint requires the constraint to exist. Set it through Reference.withConstraintState."
-                                    r.SsKey k.SsKey))
+                    // (HasDbConstraint=false ∧ IsConstraintTrusted=false) is now
+                    // UNREPRESENTABLE — `Reference.ConstraintState` is a closed
+                    // 3-variant DU (M4 — THE VECTOR §6 Kind II), so the prior
+                    // runtime rejection here became dead code and was retired.
+                    // The invariant `¬trusted ⟹ hasDbConstraint` is a type
+                    // theorem (`Reference.isConstraintStateConsistent` is now
+                    // total `true`); the witness moved to the round-trip law in
+                    // `ReferenceConstraintStateTests`.
                 for idx in k.Indexes do
                     for col in idx.Columns do
                         if not (Set.contains col.Attribute attrKeys) then

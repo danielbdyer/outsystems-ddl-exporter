@@ -237,7 +237,7 @@ module SchemaMigrationEmitter =
                     (fun (stmts, refusals) r ->
                         match SsdtDdlEmitter.foreignKeyDefOf targetCatalog targetKind r with
                         | Some fk ->
-                            let trust = if not r.IsConstraintTrusted then nocheckSteps fk else []
+                            let trust = if not (Reference.isConstraintTrusted r) then nocheckSteps fk else []
                             stmts @ (Statement.AlterTableAddForeignKey (table, fk) :: trust), refusals
                         | None ->
                             stmts,
@@ -252,7 +252,7 @@ module SchemaMigrationEmitter =
                 |> List.fold
                     (fun (stmts, refusals) (change: ReferenceChange) ->
                         match Map.tryFind change.ReferenceKey refByKey with
-                        | Some r when change.Facets = Set.singleton ReferenceFacet.Trust && not r.IsConstraintTrusted ->
+                        | Some r when change.Facets = Set.singleton ReferenceFacet.Trust && not (Reference.isConstraintTrusted r) ->
                             match SsdtDdlEmitter.foreignKeyDefOf targetCatalog targetKind r with
                             | Some fk -> stmts @ nocheckSteps fk, refusals
                             | None -> stmts, refusals
@@ -260,7 +260,7 @@ module SchemaMigrationEmitter =
                             // DROP the old constraint (source name), ADD the new.
                             match sourceFkName change.ReferenceKey, SsdtDdlEmitter.foreignKeyDefOf targetCatalog targetKind r with
                             | Some oldName, Some newFk ->
-                                let trust = if not r.IsConstraintTrusted then nocheckSteps newFk else []
+                                let trust = if not (Reference.isConstraintTrusted r) then nocheckSteps newFk else []
                                 stmts @ [ Statement.AlterTableDropConstraint (table, oldName); Statement.AlterTableAddForeignKey (table, newFk) ] @ trust, refusals
                             | _ -> stmts, refusals
                         | _ ->

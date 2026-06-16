@@ -230,6 +230,22 @@ let ``NM-70: default (emit) renders the Projection.SsKey + Projection.LogicalNam
     Assert.Contains("@name = N'Projection.LogicalName'", body)
 
 [<Fact>]
+let ``THE VECTOR Wave 5: Projection.SsKey is emitted at the COLUMN level (the attribute-grain identity ReadSide recovers)`` () =
+    // The attribute-grain sibling of the table-level kind SsKey (Wave 4.1).
+    // The column-level Projection.SsKey carries the serialized attribute identity
+    // so ReadSide recovers it via `recoverAttributeSsKey` instead of synthesizing
+    // READSIDE_ATTR — closing the authored-attribute round-trip gap (§5.1).
+    let body = customerSsdtBodyWithIdentityAnnotations true sampleCatalog
+    // A COLUMN-level extended-property block names @level2type = N'COLUMN'; assert
+    // a Projection.SsKey statement carries one WITHIN ONE STATEMENT (the negative
+    // lookahead forbids crossing into the next sp_addextendedproperty, so a
+    // table-level SsKey can't false-match a later column property's @level2type).
+    Assert.Matches(
+        System.Text.RegularExpressions.Regex(
+            @"@name = N'Projection\.SsKey',(?:(?!sp_addextendedproperty)[\s\S])*?@level2type = N'COLUMN'"),
+        body)
+
+[<Fact>]
 let ``NM-70: emit-on path is byte-identical to the default emitSlices body`` () =
     // The gate's `true` branch must not perturb the default emission.
     let gated   = customerSsdtBodyWithIdentityAnnotations true sampleCatalog

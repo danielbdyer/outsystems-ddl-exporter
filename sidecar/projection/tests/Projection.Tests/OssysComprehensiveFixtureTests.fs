@@ -107,7 +107,7 @@ let ``Referential actions: Cascade, SetNull, and NoAction all resolve`` () =
 let ``Untrusted (WITH NOCHECK) FK lands with IsConstraintTrusted=false`` () =
     withCatalog "comp-untrusted-fk" (fun catalog ->
         let movement = kindNamed "StockMovement" catalog
-        Assert.False((refNamed "SupplierId" movement).IsConstraintTrusted))
+        Assert.False(Reference.isConstraintTrusted (refNamed "SupplierId" movement)))
 
 [<Fact>]
 let ``ON UPDATE CASCADE flows into Reference.OnUpdate`` () =

@@ -102,6 +102,13 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:116:ScalarGallery.Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'Id'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'AlarmAt',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
@@ -109,7 +116,21 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:121:ScalarGallery.AlarmAt',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'AlarmAt'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Amount',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'Amount'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:120:ScalarGallery.Amount',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
     @level2type = N'COLUMN', @level2name = N'Amount'
@@ -130,6 +151,13 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:118:ScalarGallery.Code',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'Code'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'DueDate',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
@@ -137,7 +165,21 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:121:ScalarGallery.DueDate',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'DueDate'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'ExternalKey',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'ExternalKey'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:125:ScalarGallery.ExternalKey',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
     @level2type = N'COLUMN', @level2name = N'ExternalKey'
@@ -158,7 +200,21 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:122:ScalarGallery.FreeText',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'FreeText'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'IsActive',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'IsActive'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:122:ScalarGallery.IsActive',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
     @level2type = N'COLUMN', @level2name = N'IsActive'
@@ -172,7 +228,21 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:119:ScalarGallery.Notes',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'Notes'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'OccurredOn',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'OccurredOn'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:124:ScalarGallery.OccurredOn',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
     @level2type = N'COLUMN', @level2name = N'OccurredOn'
@@ -186,7 +256,21 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:121:ScalarGallery.Payload',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'Payload'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Tally',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'Tally'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:119:ScalarGallery.Tally',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
     @level2type = N'COLUMN', @level2name = N'Tally'

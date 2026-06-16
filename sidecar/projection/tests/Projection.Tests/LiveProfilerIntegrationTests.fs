@@ -154,8 +154,7 @@ module private LiveProfilerFixtures =
                 IsMandatory  = true }
         let fkReference =
             { Reference.create childFkKey (mkName "FK_Parent") childParentAttrKey itemsKindKey with
-                HasDbConstraint = true
-                IsConstraintTrusted = true }
+                ConstraintState = ConstraintState.TrustedConstraint }
         { Kind.create childKindKey (mkName "Children")
             (TableId.create "dbo" "OSUSR_LP_CHILDREN" |> Result.value)
             [ idAttr; parentAttr ]

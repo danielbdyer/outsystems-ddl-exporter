@@ -29,7 +29,7 @@ let private mkRef (ownerKey: SsKey) (targetKey: SsKey) (attrName: string) : Refe
     let attrKey = kindAttrKey ownerKey attrName
     let refKey  = kindAttrKey ownerKey (attrName + "_ref")
     { Reference.create refKey (Name.create attrName |> Result.value) attrKey targetKey with
-        HasDbConstraint = true }
+        ConstraintState = ConstraintState.TrustedConstraint }
 
 let private mkIndex (ownerKey: SsKey) (name: string) (attrKey: SsKey) (fillFactor: int option) : Index =
     let col = IndexColumn.create attrKey Ascending

@@ -95,9 +95,8 @@ module SymmetricClosure =
                     sourceKind.SsKey
                   with
                     IsUserFk            = r.IsUserFk
-                    HasDbConstraint     = r.HasDbConstraint
                     OnUpdate            = r.OnUpdate
-                    IsConstraintTrusted = r.IsConstraintTrusted }
+                    ConstraintState     = r.ConstraintState }
 
     let private hasInverseAlready (refs: Reference list) (key: SsKey) : bool =
         refs |> List.exists (fun r -> r.SsKey = key)

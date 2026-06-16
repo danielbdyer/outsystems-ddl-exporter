@@ -163,6 +163,7 @@
     <Compile Include="PreflightTests.fs" />
     <Compile Include="PreflightAllTests.fs" />
     <Compile Include="ModelFidelityTests.fs" />
+    <Compile Include="ReportRunTests.fs" />
     <Compile Include="CompareTests.fs" />
     <Compile Include="CanaryResidualTests.fs" />
     <Compile Include="RenameProjectionTests.fs" />

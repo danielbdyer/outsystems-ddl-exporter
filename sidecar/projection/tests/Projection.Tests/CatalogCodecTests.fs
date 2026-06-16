@@ -149,8 +149,7 @@ let private richCatalog () : Catalog =
             OnDelete = ReferenceAction.SetNull
             OnUpdate = Some ReferenceAction.Cascade
             IsUserFk = false
-            HasDbConstraint = true
-            IsConstraintTrusted = false }
+            ConstraintState = ConstraintState.UntrustedConstraint }
 
     let richIndex =
         { Index.create (key 15) (nm "IX_Patron_Name") [ { Attribute = nameAttr; Direction = IndexColumnDirection.Descending } ] with
@@ -200,7 +199,7 @@ let private richCatalog () : Catalog =
         { Reference.create (key 22) (nm "PatronFk") visitPatronAttr patronKey with
             OnDelete = ReferenceAction.Restrict
             OnUpdate = Some ReferenceAction.NoAction
-            HasDbConstraint = true }
+            ConstraintState = ConstraintState.TrustedConstraint }
 
     let visit =
         { Kind.create visitKey (nm "Visit") (tableId "dbo" "Visit") [ visitPatron ] with
@@ -449,19 +448,24 @@ let ``decode re-proves the A39 aggregate invariant (dangling FK target)`` () =
     |> expectError "dangling FK target — A39 re-validation on decode"
 
 [<Fact>]
-let ``NM-12: Catalog.create rejects the illegal constraint-state quadrant`` () =
-    // A self-reference in the illegal (no-constraint, untrusted) quadrant, set via
-    // a raw record-`with` that bypasses `withConstraintState`. The aggregate root
-    // must refuse it (G14), so the quadrant cannot enter the IR by any path.
+let ``NM-12 / M4: the illegal constraint-state quadrant is unrepresentable — the legacy (false,false) pair normalizes to NoDbConstraint and the catalog accepts it`` () =
+    // Pre-M4 this quadrant (constraint-absent ∧ untrusted) was rejected at runtime
+    // by Catalog.create. Since M4 it is UNREPRESENTABLE — `ConstraintState` is a
+    // closed 3-variant DU with no illegal member. The only ingest path for the
+    // legacy boolean pair is `withConstraintState` / `ofLegacyBooleans`, which
+    // normalizes `(false, false)` to `NoDbConstraint` (vacuous trust). The catalog
+    // therefore accepts the normalized reference — there is no illegal state left
+    // to reject (the runtime check became dead code and was retired).
     let attr = Attribute.create (key 1) (nm "Col") PrimitiveType.Text
-    let badRef =
-        { Reference.create (key 2) (nm "FK_self") attr.SsKey (key 3) with
-            HasDbConstraint = false; IsConstraintTrusted = false }
-    let kind = { Kind.create (key 3) (nm "K") (tableId "dbo" "K") [ attr ] with References = [ badRef ] }
+    let normalizedRef =
+        Reference.create (key 2) (nm "FK_self") attr.SsKey (key 3)
+        |> Reference.withConstraintState false false
+    Assert.Equal(ConstraintState.NoDbConstraint, normalizedRef.ConstraintState)
+    let kind = { Kind.create (key 3) (nm "K") (tableId "dbo" "K") [ attr ] with References = [ normalizedRef ] }
     let m = { SsKey = key 1000; Name = nm "M"; Kinds = [ kind ]; IsActive = true; ExtendedProperties = [] }
     match Catalog.create [ m ] [] with
-    | Ok _ -> Assert.True(false, "expected Catalog.create to reject the illegal constraint-state quadrant")
-    | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "catalog.reference.illegalConstraintState")
+    | Ok _ -> ()
+    | Error es -> Assert.True(false, sprintf "Catalog.create must accept the normalized reference; got %A" es)
 
 [<Fact>]
 let ``NM-14: Catalog.create rejects a (Type, SqlStorage) mismatch`` () =

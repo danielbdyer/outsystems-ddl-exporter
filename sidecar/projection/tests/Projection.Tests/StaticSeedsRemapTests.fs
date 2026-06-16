@@ -59,7 +59,7 @@ let private orderUserIdAttr =
 
 let private orderUserRef =
     { Reference.create (mkKey ["Order"; "UserRef"]) (mkName "UserRef") (mkKey ["Order"; "USER_ID"]) userKey with
-        HasDbConstraint = true }
+        ConstraintState = ConstraintState.TrustedConstraint }
 
 let private mkOrderRow (rowKey: string) (id: string) (userId: string) : StaticRow =
     { Identifier = mkKey ["Order"; "Row"; rowKey]

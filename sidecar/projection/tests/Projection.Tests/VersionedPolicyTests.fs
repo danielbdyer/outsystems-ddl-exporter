@@ -56,6 +56,48 @@ let ``H-085: changing Insertion produces a different digest`` () =
     Assert.NotEqual<string>(VersionedPolicy.digestOf p1, VersionedPolicy.digestOf p2)
 
 // ---------------------------------------------------------------------------
+// M5 (THE VECTOR §6 Kind II) — the canonical projection is determinism-by-
+// CONSTRUCTION: every axis (including the two `%A` could only reach
+// structurally — Tightening interventions and the recursive UserMatching) is
+// projected explicitly, and a same-id config flip changes the digest.
+// ---------------------------------------------------------------------------
+
+let private fkIntervention (id: string) (enableCreation: bool) : TighteningIntervention =
+    ForeignKey (id, ForeignKeyTighteningConfig.create enableCreation false false false false)
+
+[<Fact>]
+let ``M5: changing Tightening (registering an intervention) produces a different digest`` () =
+    let p1 = Policy.empty
+    let p2 = { Policy.empty with Tightening = { Interventions = [ fkIntervention "v1-style-fk" true ] } }
+    Assert.NotEqual<string>(VersionedPolicy.digestOf p1, VersionedPolicy.digestOf p2)
+
+[<Fact>]
+let ``M5: changing UserMatching produces a different digest`` () =
+    let p1 = Policy.empty                                   // ByEmail (the default)
+    let p2 = { Policy.empty with UserMatching = BySsKey }
+    Assert.NotEqual<string>(VersionedPolicy.digestOf p1, VersionedPolicy.digestOf p2)
+
+[<Fact>]
+let ``M5: a same-id intervention config flip changes the digest (material, not cosmetic)`` () =
+    // Same intervention id, different config — the `%A` form caught this only
+    // incidentally; the explicit projection makes it structural.
+    let p1 = { Policy.empty with Tightening = { Interventions = [ fkIntervention "fk" true  ] } }
+    let p2 = { Policy.empty with Tightening = { Interventions = [ fkIntervention "fk" false ] } }
+    Assert.NotEqual<string>(VersionedPolicy.digestOf p1, VersionedPolicy.digestOf p2)
+
+[<Fact>]
+let ``M5: the digest is order-independent on Selection sets (a set has no order)`` () =
+    // Set equality makes the two policies equal; the projection sorts the
+    // serialized identities, so the digest is stable regardless of insertion
+    // order — the property the `%A` set-printer happened to satisfy, now by
+    // construction.
+    let s1 = Set.ofList [ customerKey; orderKey ]
+    let s2 = Set.ofList [ orderKey; customerKey ]
+    let p1 = { Policy.empty with Selection = IncludeOnly s1 }
+    let p2 = { Policy.empty with Selection = IncludeOnly s2 }
+    Assert.Equal<string>(VersionedPolicy.digestOf p1, VersionedPolicy.digestOf p2)
+
+// ---------------------------------------------------------------------------
 // SemVer.applyBump — the version-bump algebra
 // ---------------------------------------------------------------------------
 

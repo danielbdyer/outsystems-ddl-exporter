@@ -285,7 +285,7 @@ module SsdtDdlEmitter =
                     // ALTER TABLE NOCHECK statement emitted by
                     // `untrustedFkAlters` (sibling helper below).
                     OnUpdate            = r.OnUpdate |> Option.map toReferenceActionSql
-                    IsConstraintTrusted = r.IsConstraintTrusted
+                    IsConstraintTrusted = Reference.isConstraintTrusted r
                 }
         | _ -> None
 
@@ -624,6 +624,17 @@ module SsdtDdlEmitter =
                 if emitIdentityAnnotations then
                     yield Statement.SetExtendedProperty (
                         ColumnProperty (table, columnName), "Projection.LogicalName", Some (Name.value attr.Name))
+
+                    // THE VECTOR Wave 5 — `Projection.SsKey` at the COLUMN level
+                    // (the attribute-grain sibling of the table-level kind SsKey,
+                    // SsdtDdlEmitter ~607). Closes the authored-attribute round-trip
+                    // gap (§3.3/§5.1): ReadSide recovers the persisted attribute
+                    // identity via `recoverAttributeSsKey` instead of synthesizing
+                    // `READSIDE_ATTR` from physical coordinates, so an authored
+                    // column RENAME round-trips as `Renamed` (identity survives,
+                    // A1) rather than `Removed + Added`. Gated with its sibling.
+                    yield Statement.SetExtendedProperty (
+                        ColumnProperty (table, columnName), "Projection.SsKey", Some (SsKey.serialize attr.SsKey))
 
                 for ep in attr.ExtendedProperties do
                     yield Statement.SetExtendedProperty (
@@ -1023,7 +1034,7 @@ module SsdtDdlEmitter =
             |> List.choose (fun r ->
                 if Set.contains r.SsKey overlay.DropFk then
                     let severity, code, message =
-                        if r.HasDbConstraint then
+                        if Reference.hasDbConstraint r then
                             DiagnosticSeverity.Warning,
                             "decision.fkDropped",
                             "Foreign key dropped by decision: a tightening Decision (DoNotEnforce) removed this FK constraint at emission. The source enforced it; the emitted schema does not."

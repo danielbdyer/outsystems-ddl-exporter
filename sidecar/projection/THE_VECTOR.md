@@ -36,7 +36,7 @@
 
 ---
 
-## Build addendum — 2026-06-15 (Waves 0–3 BUILT — the keystone landed, the reversible algebra completed, the engine compressed)
+## Build addendum — 2026-06-15/16 (Waves 0–5 BUILT — THE VECTOR is COMPLETE: the keystone landed, the reversible algebra completed, the engine compressed, the corollaries cashed, the open adjudications closed; the only remaining frontier is the named, trigger-gated moat. See `THE_VECTOR_SYNTHESIS.md`.)
 
 > The study below is now partly **executed**, not just proposed. Per the house dated-note discipline, this
 > supersedes the "still unbuilt" claim in the reconciliation addendum that follows.
@@ -67,9 +67,33 @@
 >   (the totality-test functor — one law, four ~10-line instantiations); M6 (`[<Struct>]` on `SourceKey`/`AssignedKey`);
 >   M19 (`[<Measure>] row` on the data-norm deltas). Net-smaller, every byte/law unchanged. Docker 246/246; matrix
 >   byte-identical (no tolerance moved). (DECISIONS 2026-06-15 "THE VECTOR Wave 3 BUILT".)
-> - **Still ahead.** Wave 4 — the corollary cashes & gated deepenings: M18 (`ChangeManifest.toJson`), M14 (the
->   `Traversal` optic, after the compile-order split), M4 (`ConstraintState` DU, behind the store-migration story),
->   M5 (digest projection) + the persisted-state-evolution discipline. The §6 move catalog stands for those.
+> - **Wave 4 — corollary cashes & the trust-quadrant type theorem — BUILT (2026-06-16).** M18
+>   (`ChangeManifest.toJson` — the CDC-norm made a machine-queryable contract for the SSIS consumer; `toJson` only,
+>   the `fromJson` inverse deferred-with-trigger absent a read-back consumer); M5 (the policy digest retires
+>   `sprintf "%A"` for an explicit length-prefixed `canonicalToken` projection — determinism-by-construction; not
+>   persisted into episodes, so no migration); M4 (the `ConstraintState` DU — the `(HasDbConstraint,
+>   IsConstraintTrusted)` quadrant's illegal `(false,false)` state is now **unrepresentable**, a type theorem
+>   promoting the prior runtime G14 check; the `IndexUniqueness` projection precedent keeps the wire byte-identical,
+>   so no store migration; T16 round-trip preserved via the `DbConstraint`-before-`Trust` facet order). The
+>   **persisted-state-evolution discipline** is codified (NM-34 as the store-codec contract; the serialized-form
+>   gating checklist) — both M4 and M5 cleared it with no migration. **M14 (the `Traversal` optic) HONESTLY
+>   DEFERRED** — its compile-order-split gate is unfired; "not yet, here is the trigger" is its completion state.
+>   Pure pool 3629/0; Docker 246/246; `AxiomTests` 79/0; matrix byte-identical (no tolerance moved). (DECISIONS
+>   2026-06-16 "THE VECTOR Wave 4 BUILT".) **THE VECTOR's defined four-wave plan is fully cashed.**
+> - **Wave 5 — the open fidelity adjudications — BUILT (2026-06-16, operator-authorized past the defined plan).**
+>   The **ReadSide authored-*attribute* round-trip** (T-V/T-I; §3.3/§5.1) — *adjudicated and FIXED*: the emitter
+>   persisted `Projection.SsKey` only at the table level and ReadSide synthesized `READSIDE_ATTR` for attributes, so
+>   an authored column rename landed in `Removed + Added`; the fix is the treatise's prescription (per-column
+>   `Projection.SsKey` emission + `recoverAttributeSsKey` through `buildAttribute`/`buildReference`), **NOT** the
+>   echo-chamber's flat-synthesis change; goldens re-blessed (+700 additive lines). **Transactionality** (T-VI) — the
+>   J5 evidence fires the trigger AWAY from a giant `BEGIN TRAN` (DML-only + AssignedBySink + compensating-undo via
+>   M12's inverse; giant-transaction-over-estate gated on the still-open P7b throughput), so the wrapper stays
+>   deferred and is named in the matrix footer. **Permissions** (T-VI) — named honestly in the matrix footer (gated
+>   by the A2 pre-flight but not a projected axis), **not** forced into a round-trip `ToleratedDivergence` (a
+>   category error — the discipline correcting the treatise). The **totality synthesis** is written
+>   (`THE_VECTOR_SYNTHESIS.md`). Pure pool 3631/0; Docker 247/247 (246 + the attribute-recovery canary); matrix gate=PASS (footer extended, no cell moved).
+>   (DECISIONS 2026-06-16 "THE VECTOR Wave 5 BUILT".) **THE VECTOR is complete — the gap from the witnessed floor to
+>   the bullseye is closed to within the named, trigger-gated moat.**
 
 ## Reconciliation addendum — 2026-06-15 (main moved; the study reconciled)
 

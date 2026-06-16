@@ -1017,9 +1017,8 @@ let private fkFeaturesBKind (onUpdate: ReferenceAction option) (trusted: bool) :
         { Reference.create
             fkFeaturesCrossRef (mkName "FkToA") fkFeaturesBFkAttr fkFeaturesAKey with
             OnDelete            = Cascade
-            HasDbConstraint     = true
             OnUpdate            = onUpdate
-            IsConstraintTrusted = trusted }
+            ConstraintState     = ConstraintState.ofLegacyBooleans true trusted }
     { Kind.create
         fkFeaturesBKey
         (mkName "BKind")

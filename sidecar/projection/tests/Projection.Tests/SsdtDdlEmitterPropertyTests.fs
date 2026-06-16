@@ -255,9 +255,8 @@ let private fkChildKind (onUpdate: ReferenceAction option) (trusted: bool) : Kin
     let reference =
         { Reference.create fkRefKey (mkName "FkToParent") fkChildFkKey fkParentKey with
             OnDelete            = Cascade
-            HasDbConstraint     = true
             OnUpdate            = onUpdate
-            IsConstraintTrusted = trusted }
+            ConstraintState     = ConstraintState.ofLegacyBooleans true trusted }
     { Kind.create fkChildKey (mkName "PropFkChild")
         (mkTableId "dbo" "OSUSR_PFC_CHILD")
         [ { Attribute.create fkChildPkKey (mkName "Id") Integer with

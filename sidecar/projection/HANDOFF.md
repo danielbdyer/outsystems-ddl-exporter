@@ -1,3 +1,111 @@
+# Handoff addendum — 2026-06-16, THE VECTOR WAVE 5 LANDED — **THE VECTOR IS COMPLETE** (the last open fidelity adjudication closed: authored-attribute identity now round-trips at the attribute grain; transactionality + permissions honestly named against the J5 evidence; the totality synthesis written); the only remaining frontier is the moat, which stays cut with named triggers
+
+To the next agent.
+
+**THE VECTOR is complete.** The defined four-wave plan (Waves 0–4) plus the operator-authorized fifth wave (the
+residual OPEN fidelity adjudications) are all cashed. What remains is the **moat** — and the moat is *named, not
+unfinished*: each item is cut with a re-open trigger (`THE_VECTOR_EXECUTION_KICKOFF.md` §10). Per the engine's
+own discipline, naming a trigger-gated absence IS its completion. Read `THE_VECTOR_SYNTHESIS.md` for what the whole
+program accomplished and why it matters *per se*, and the 2026-06-16 "THE VECTOR Wave 5 BUILT" DECISIONS entry for
+the substance.
+
+**What Wave 5 closed.**
+1. **The ReadSide authored-*attribute* round-trip** (T-V/T-I — the treatise's single explicitly-open fidelity
+   question). Adjudicated (it failed — attributes were SYNTHESIZED `READSIDE_ATTR` from physical coordinates, so an
+   authored column rename landed in `Removed + Added`), then **fixed per the treatise's prescription, not the
+   echo-chamber's**: per-column `Projection.SsKey` emission (the attribute-grain sibling of the table-level kind
+   SsKey) + `recoverAttributeSsKey` threaded through `buildAttribute` AND `buildReference`. Goldens re-blessed
+   (+700 additive lines, all column `Projection.SsKey`). An authored column rename now round-trips as `Renamed`.
+2. **Transactionality** (T-VI) — the deferral trigger fired and points AWAY from a giant `BEGIN TRAN`: the J5
+   managed-env evidence (DML-only, AssignedBySink, rollback = DELETE-by-captured-key) favors the compensating-undo
+   channel (M12's `inverse`); the giant-transaction-over-estate is gated on the still-open P7b throughput. Named in
+   the matrix footer; **no speculative build** (the correct outcome).
+3. **Permissions** (T-VI) — named honestly in the **matrix footer**, NOT as a round-trip `ToleratedDivergence` (a
+   category error — permissions is gated by the A2 pre-flight but not a projected/diffed axis). The full axis fires
+   only at the eject (publish grants) — moat.
+
+**If you have appetite, the honest frontier is the MOAT** — and only when a trigger fires: a second `Ingest`
+source (DACPAC reader), a branching pass (`LineageTree` consumer), a flow that publishes grants (full permissions
+axis), a container pool (Docker N≥20 real-wire sweep), or a real divergence between the four move enumerations
+(`SchemaMove` unification). Building any of these *without* its trigger violates "IR grows under evidence" and
+dilutes the closed set of falsifiable cells the whole program strengthened. Don't.
+
+**Build-discipline scars (heed them).** `dotnet` is NOT on the bash PATH (`export
+PATH="$PATH:/c/Users/danny/AppData/Local/Microsoft/dotnet"` before `scripts/test.sh`). F# 9 nullness is on. A
+`bool×bool`→DU collapse keeps the wire byte-identical by projecting to the legacy pair at the codec boundary (the
+`IndexUniqueness` precedent — M4). Adding an identity extended property re-blesses the goldens (`GOLDEN_RECORD=1` +
+a DECISIONS note); confirm the `git diff` is additive-only before blessing.
+
+**State.** Branch `claude/vector-wave-4-5` (off `main` `6c28130f`). Waves 4 + 5 sit as working-tree changes (not
+yet committed — the operator drives commits). Debug + **Release** 0/0; **pure pool 3631/0**; `AxiomTests` 79/0;
+`matrix-status.sh` gate=PASS (5/4/5, 10 tolerances, 3 open — footer extended with the two T-VI dimension names, no
+ladder cell moved); `verifiability-gate.sh` exit 0; **Docker pool 247/247** (246 + the new attribute-recovery canary, 0 skipped;
+no canary regressed from the new column-level emit). Hold the spine: name every refusal, count every crossing,
+leave the books balanced.
+
+---
+
+# Handoff addendum — 2026-06-16, THE VECTOR WAVE 4 LANDED (the provenance ledger has its machine lens, the digest is determinism-by-construction, the constraint-trust quadrant is a type theorem — THE VECTOR's defined four-wave plan is fully cashed); your job is WAVE 5 — the residual OPEN fidelity adjudications (operator-authorized, past the defined plan)
+
+To the next agent.
+
+**Where you are.** THE VECTOR's defined plan (`THE_VECTOR.md` §7, Waves 0–4) is **fully cashed** modulo the
+honestly-deferred M14. Wave 4 landed M18 (`ChangeManifest.toJson` — the CDC-norm queryable), M5 (the policy digest
+is determinism-by-construction, no `sprintf "%A"`), and M4 (the `ConstraintState` DU — the illegal trust quadrant
+is now *unrepresentable*, a type theorem; wire byte-identical via the `IndexUniqueness` projection precedent, so no
+store migration). The persisted-state-evolution discipline is codified (NM-34 = the store-codec contract; the
+serialized-form gating checklist). Read the 2026-06-16 "THE VECTOR Wave 4 BUILT" DECISIONS entry — it is the
+substance; this letter points.
+
+**Your mission (Wave 5 — operator-authorized, past the defined plan).** The operator chose to continue past the
+four-wave plan to **close the residual OPEN fidelity adjudications** the treatise left dangling — the items that
+genuinely close an L-rung toward the full fidelity algebra, as distinct from the moat (which STAYS CUT with named
+triggers — do not build it). Three buildable items:
+1. **The ReadSide authored-schema *attribute* round-trip adjudication** (T-V/T-I — the treatise's single explicitly
+   -open fidelity question; §3.3 / §5.1 / Appendix B). `recoverKindSsKey` recovers authored *kind* identity via the
+   `V2.SsKey` extended property, but **attributes** are not covered — so on a V2-authored source an attribute rename
+   may land in `Removed + Added` rather than `Renamed`. RESOLVE IT: build a witness that determines whether authored
+   -attribute round-trip holds today; **if it fails**, the fix is per-attribute `V2.SsKey` extended-property emission
+   + recovery (`recoverAttributeSsKey`) — **NOT** changing the flat-synthesis fallback (that was the echo-chamber
+   regression the adversarial layer killed). If it already holds, name it and close the adjudication.
+2. **Transactionality completion** (T-VI). Wave 2 landed M20 (the `GateLabel.MidWriteNotProtected` naming) + M12
+   (the groupoid `inverse` — the compensating-undo prerequisite). The live atomic `BEGIN TRAN` wrapper was deferred
+   on "the managed-login grant survey resolves" — **check whether the J5 managed-env ledger fired that trigger**
+   (`J5_MANAGED_ENV_CAPABILITY_PLAYBOOK.md` + the j5 memory). If fired, build the atomic-or-compensating arm on
+   M12's inverse; if not, name it honestly-deferred with the precondition.
+3. **Permissions interim honesty** (T-VI). Add the `PermissionsGatedNotProjected` tolerance (the sixth matrix row at
+   L2-partial) — the honest-naming half the treatise endorses (§5.1), so the A2 pre-flight gate's existence stops
+   making a whole dimension *look* closed. NOT the full permissions axis (that needs the eject — moat).
+
+Then the operator wants **the totality synthesis**: what the whole Vector backlog accomplishes and why it matters
+per se. Write it as the capstone.
+
+**The moat stays cut (do NOT build).** DACPAC reader (needs a 2nd catalog source), `LineageTree` consumer (needs a
+branching pass), full Permissions axis (needs the eject), Docker N≥20 real-wire sweep (needs a container pool), the
+full `SchemaMove` unification (no fired divergence). Building these violates the stated intent; naming them IS the
+completion. See `THE_VECTOR_EXECUTION_KICKOFF.md` §10.
+
+**Build-discipline scars (heed them — they bit this session).**
+1. **`dotnet` is NOT on the bash PATH** — `scripts/test.sh` fails its build step unless you `export
+   PATH="$PATH:/c/Users/danny/AppData/Local/Microsoft/dotnet"` first (or build via PowerShell with the full path
+   `C:\Users\danny\AppData\Local\Microsoft\dotnet\dotnet.exe`).
+2. **F# 9 NULLNESS is on** — `JsonNode` indexers yield `JsonNode | null`; narrow with a match before `.GetValue`,
+   and assign JSON null per-branch to the nullable setter (don't unify a `null` into a non-null `JsonNode` value).
+3. **Closed-record field removal cascades widely** — M4's `(HasDbConstraint, IsConstraintTrusted)` → `ConstraintState`
+   touched ~22 test files. The single-assembly build (FS-warnings-as-errors) is the completeness backstop: build,
+   fix every flagged site, rebuild. Watch for **DU case-name collisions** (M4's `TrustedConstraint` collided with
+   `ProbeOutcome.TrustedConstraint` → `[<RequireQualifiedAccess>]` resolved it).
+4. **A `bool×bool`→DU collapse keeps the wire byte-identical** by projecting to the legacy boolean pair at the codec
+   boundary (the `IndexUniqueness` precedent) — that is why M4 needed no store migration and the goldens stayed green.
+
+**State.** Branch `claude/vector-wave-4-5` (off `main` `6c28130f` = the merged Wave-3 PR #622). Wave 4 sits as
+working-tree changes (not yet committed — the operator drives commits). Debug + **Release** 0/0; **pure pool
+3629/0**; `AxiomTests` 79/0; `matrix-status.sh` gate=PASS byte-identical (5/4/5, 10 tolerances, 3 open);
+`verifiability-gate.sh` exit 0; **Docker pool 246/246**. Hold the spine: name every refusal, count every crossing,
+leave the books balanced.
+
+---
+
 # Handoff addendum — 2026-06-15, THE VECTOR WAVE 3 LANDED (the engine is measurably smaller — the descriptor is data, the JSON dance has one home, the binding algebra is a CE, the totality proof is one functor); your job is WAVE 4 — the corollary cashes & the gated deepenings (the operator payoff)
 
 To the next agent.

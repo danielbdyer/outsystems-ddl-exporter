@@ -75,6 +75,32 @@ module ReadSide =
             "READSIDE_ATTR"
             (sprintf "%s.%s.%s" schema table column)
 
+    /// Recover an attribute's SsKey from the persisted COLUMN-level
+    /// `Projection.SsKey` extended property when present (THE VECTOR Wave 5;
+    /// A1: identity survives rename), else the `READSIDE_ATTR` synthesis above
+    /// (pre-V2-emission / non-V2 schemas, or a malformed stored value — a
+    /// synthesized key is always valid, so a bad value degrades gracefully).
+    /// The attribute-grain sibling of `recoverKindSsKey`. Shared by
+    /// `buildAttribute` (an attribute's own identity) and `buildReference`
+    /// (an FK's **source-attribute** identity) so a reconstructed FK's
+    /// `SourceAttribute` MATCHES the reconstructed attribute's `SsKey` — the
+    /// same internal-resolution guarantee `recoverKindSsKey` gives the target
+    /// kind. Without it, an authored column rename changes the synthesized
+    /// `READSIDE_ATTR` key and the attribute lands in `Removed + Added` rather
+    /// than `Renamed` (the §5.1 T-V/T-I attribute-grain faithfulness gap).
+    let private recoverAttributeSsKey
+        (columnSsKeys: Map<string * string * string, string>)
+        (schema: string)
+        (table: string)
+        (column: string)
+        : Result<SsKey> =
+        match Map.tryFind (schema, table, column) columnSsKeys with
+        | Some serialized ->
+            match SsKey.deserialize serialized with
+            | Ok recovered -> Result.success recovered
+            | Error _ -> attributeSsKey schema table column
+        | None -> attributeSsKey schema table column
+
     /// Per-column metadata row read from INFORMATION_SCHEMA.COLUMNS.
     /// Carries every axis V2's IR cares about (post-session-32):
     /// type name, nullability, length, precision, scale.
@@ -639,6 +665,7 @@ module ReadSide =
 
     let private buildAttribute
         (columnLogicalNames: Map<string * string * string, string>)
+        (columnSsKeys: Map<string * string * string, string>)
         (row: ColumnRow)
         (primaryKeySet: Set<string * string * string>)
         (identitySet: Set<string * string * string>)
@@ -647,7 +674,9 @@ module ReadSide =
         match result with
         | Error errors -> Result.failure errors
         | Ok ptype ->
-            match attributeSsKey row.Schema row.Table row.Column with
+            // THE VECTOR Wave 5 — recover the persisted attribute SsKey (column
+            // `Projection.SsKey`) instead of synthesizing `READSIDE_ATTR`.
+            match recoverAttributeSsKey columnSsKeys row.Schema row.Table row.Column with
             | Error errors -> Result.failure errors
             | Ok attrKey ->
                 // Slice D.1.b — hydrate Attribute.Name from the
@@ -1056,6 +1085,7 @@ module ReadSide =
         (tableLogicalNames: Map<string * string, string>)
         (columnLogicalNames: Map<string * string * string, string>)
         (tableSsKeys: Map<string * string, string>)
+        (columnSsKeys: Map<string * string * string, string>)
         (schema: string)
         (table: string)
         (columnRows: list<ColumnRow>)
@@ -1069,7 +1099,7 @@ module ReadSide =
         let attrResults =
             columnRows
             |> Bench.iterMap "readside.buildAttribute" (fun row ->
-                buildAttribute columnLogicalNames row primaryKeySet identitySet)
+                buildAttribute columnLogicalNames columnSsKeys row primaryKeySet identitySet)
         result {
             let! attributes = Result.aggregate attrResults
             // Wave 4.1 — recover the persisted SsKey (see `recoverKindSsKey`).
@@ -1134,13 +1164,18 @@ module ReadSide =
     /// reconstructed Catalog's References resolve internally.
     let private buildReference
         (tableSsKeys: Map<string * string, string>)
+        (columnSsKeys: Map<string * string * string, string>)
         (fk: FkRow)
         : Result<Reference> =
         // Chapter-3.6: `result { }` CE replaces the prior 4-deep
         // nested-match chain. Same short-circuit semantics; reads
         // as the algebraic spec.
         result {
-            let! srcAttrKey = attributeSsKey fk.SourceSchema fk.SourceTable fk.SourceColumn
+            // THE VECTOR Wave 5 — recover the persisted source-attribute SsKey
+            // (column `Projection.SsKey`) the same way buildAttribute does, so
+            // the FK's SourceAttribute MATCHES the reconstructed attribute's
+            // SsKey (the attribute-grain sibling of the 6.A.5 target-kind fix).
+            let! srcAttrKey = recoverAttributeSsKey columnSsKeys fk.SourceSchema fk.SourceTable fk.SourceColumn
             // 6.A.5 — recover the target kind's SsKey the same way buildKind
             // does (persisted V2.SsKey, else synthesis) so the FK resolves
             // against the reconstructed target Kind in PhysicalSchema.
@@ -1175,6 +1210,7 @@ module ReadSide =
     /// (schema, table) coordinates. Per session-31 Session B.
     let private attachReferences
         (tableSsKeys: Map<string * string, string>)
+        (columnSsKeys: Map<string * string * string, string>)
         (fkGroups: Map<string * string, FkRow list>)
         (k: Kind)
         : Result<Kind> =
@@ -1182,7 +1218,7 @@ module ReadSide =
         | None -> Result.success k
         | Some fks ->
             result {
-                let! refs = fks |> List.map (buildReference tableSsKeys) |> Result.aggregate
+                let! refs = fks |> List.map (buildReference tableSsKeys columnSsKeys) |> Result.aggregate
                 return { k with References = refs }
             }
 
@@ -1393,7 +1429,8 @@ module ReadSide =
               * list<FkRow>
               * Map<string * string, string>
               * Map<string * string * string, string>
-              * Map<string * string, string>> =
+              * Map<string * string, string>
+              * Map<string * string * string, string>> =
         task {
             use _ = Bench.scope "readside.readSchemaCombined"
             use cmd = cnn.CreateCommand()
@@ -1448,13 +1485,14 @@ module ReadSide =
                    AND ep.name IN (N'Projection.LogicalName', N'V2.LogicalName') \
                    AND t.is_ms_shipped = 0; \
                  SELECT \
-                    SCHEMA_NAME(t.schema_id), t.name, \
+                    SCHEMA_NAME(t.schema_id), t.name, c.name, \
                     CAST(ep.value AS NVARCHAR(MAX)) \
                  FROM sys.extended_properties ep \
                  JOIN sys.tables t ON t.object_id = ep.major_id \
+                 LEFT JOIN sys.columns c \
+                   ON c.object_id = ep.major_id AND c.column_id = ep.minor_id \
                  WHERE ep.class = 1 \
                    AND ep.name IN (N'Projection.SsKey', N'V2.SsKey') \
-                   AND ep.minor_id = 0 \
                    AND t.is_ms_shipped = 0"
             use! reader = cmd.ExecuteReaderAsync()
 
@@ -1538,15 +1576,26 @@ module ReadSide =
                         let column = reader.GetString 2
                         columnLogical[(schema, table, column)] <- value)
 
-            // Result set 6: V2.SsKey extended properties (Wave 4.1).
-            // Table-level only (minor_id = 0); the serialized identity
-            // recovered here lets buildKind deserialize the original SsKey
-            // instead of synthesizing READSIDE_KIND (A1: identity survives
-            // rename).
+            // Result set 6: V2.SsKey extended properties. Column 2
+            // (sys.columns.name) is NULL for table-level entries (LEFT JOIN);
+            // when present, the row is column-level. The TABLE serialized
+            // identity lets buildKind deserialize the original kind SsKey
+            // instead of synthesizing READSIDE_KIND (Wave 4.1); the COLUMN
+            // serialized identity lets buildAttribute recover the original
+            // attribute SsKey instead of synthesizing READSIDE_ATTR (THE VECTOR
+            // Wave 5 — A1: identity survives rename, now at the attribute grain).
             let! _ = reader.NextResultAsync()
             let tableSsKeys = System.Collections.Generic.Dictionary<string * string, string>()
+            let columnSsKeys = System.Collections.Generic.Dictionary<string * string * string, string>()
             do! drainRows reader (fun reader ->
-                    tableSsKeys[(reader.GetString 0, reader.GetString 1)] <- reader.GetString 2)
+                    let schema = reader.GetString 0
+                    let table = reader.GetString 1
+                    let value = reader.GetString 3
+                    if reader.IsDBNull 2 then
+                        tableSsKeys[(schema, table)] <- value
+                    else
+                        let column = reader.GetString 2
+                        columnSsKeys[(schema, table, column)] <- value)
 
             return
                 List.ofSeq columnRows,
@@ -1555,7 +1604,8 @@ module ReadSide =
                 List.ofSeq fkRows,
                 tableLogical |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq,
                 columnLogical |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq,
-                tableSsKeys |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
+                tableSsKeys |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq,
+                columnSsKeys |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
         }
 
     /// Wave-3 slice 3.1 — names every user table the deployed database is
@@ -1734,13 +1784,13 @@ module ReadSide =
                 // by one `SqlCommand` instead of 4 separate
                 // `ExecuteReaderAsync` calls. ~150-300ms saved per
                 // canary-readback on the warm container.
-                let! columnRows, primaryKeySet, identitySet, fkRows, tableLogicalNames, columnLogicalNames, tableSsKeys =
+                let! columnRows, primaryKeySet, identitySet, fkRows, tableLogicalNames, columnLogicalNames, tableSsKeys, columnSsKeys =
                     readSchemaCombined cnn
                 let kindResults =
                     columnRows
                     |> List.groupBy (fun row -> row.Schema, row.Table)
                     |> Bench.iterMap "readside.kindGroup" (fun ((schema, table), rows) ->
-                        buildKind tableLogicalNames columnLogicalNames tableSsKeys schema table rows primaryKeySet identitySet)
+                        buildKind tableLogicalNames columnLogicalNames tableSsKeys columnSsKeys schema table rows primaryKeySet identitySet)
                 match Result.aggregate kindResults with
                 | Error errors -> return Result.failure errors
                 | Ok kinds ->
@@ -1750,7 +1800,7 @@ module ReadSide =
                         |> Map.ofList
                     let kindsWithRefsResults =
                         kinds
-                        |> Bench.iterMap "readside.attachReferences" (attachReferences tableSsKeys fkGroups)
+                        |> Bench.iterMap "readside.attachReferences" (attachReferences tableSsKeys columnSsKeys fkGroups)
                     match Result.aggregate kindsWithRefsResults with
                     | Error errors -> return Result.failure errors
                     | Ok kindsWithRefs0 ->

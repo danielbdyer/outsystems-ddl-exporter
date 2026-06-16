@@ -587,7 +587,7 @@ let ``6.A.5 (schema round-trip): a UNIQUE index + a NOCHECK FK survive deploy / 
             //     (not the create-default true).
             let childBack = kindByTable "OSUSR_RT5_CHILD"
             match childBack.References with
-            | [ r ] -> Assert.False(r.IsConstraintTrusted, "NOCHECK FK must read back untrusted, not the create-default true")
+            | [ r ] -> Assert.False(Reference.isConstraintTrusted r, "NOCHECK FK must read back untrusted, not the create-default true")
             | rs -> Assert.Fail(sprintf "expected exactly one reconstructed FK, got %d" (List.length rs))
         | None -> Assert.Fail "deploy produced no reconstructed catalog"
 
@@ -706,7 +706,7 @@ let ``E3: Ingest(deploy(Project(C, overlay))) reproduces the decision overlay on
                   mkAttr parentFkAttr "ParentId" false false Integer ]
               with References =
                     [ { Reference.create refKeyV (nameSafe "Parent") parentFkAttr parentKey with
-                          HasDbConstraint = true; IsConstraintTrusted = false } ] }
+                          ConstraintState = ConstraintState.UntrustedConstraint } ] }
         let catalog =
             match Catalog.create [ { SsKey = ssKeySafe "OS_MOD_F2"; Name = nameSafe "F2Mod"; Kinds = [ parent; child ]; IsActive = true; ExtendedProperties = [] } ] [] with
             | Ok c -> c | Error e -> failwithf "catalog %A" e
@@ -734,7 +734,7 @@ let ``E3: Ingest(deploy(Project(C, overlay))) reproduces the decision overlay on
             // (3) FK-trust: the NOCHECK source FK reads back untrusted.
             let childBack = kindByTable "OSUSR_F2_CHILD"
             match childBack.References with
-            | [ r ] -> Assert.False(r.IsConstraintTrusted, "NOCHECK FK must read back untrusted, not the create-default true")
+            | [ r ] -> Assert.False(Reference.isConstraintTrusted r, "NOCHECK FK must read back untrusted, not the create-default true")
             | rs -> Assert.Fail(sprintf "expected exactly one reconstructed FK, got %d" (List.length rs))
         | None -> Assert.Fail "deploy produced no reconstructed catalog"
 
@@ -776,7 +776,7 @@ let ``6.A.6 (schema round-trip): an untrusted FK survives emit / deploy / ReadSi
               // = true is required, else the catalog smart-constructor rejects
               // the illegal (constraint-absent ∧ untrusted) quadrant
               // (catalog.reference.illegalConstraintState).
-              with References = [ { Reference.create refKeyV (nameSafe "Parent") parentFkAttr parentKey with HasDbConstraint = true; IsConstraintTrusted = false } ] }
+              with References = [ { Reference.create refKeyV (nameSafe "Parent") parentFkAttr parentKey with ConstraintState = ConstraintState.UntrustedConstraint } ] }
         let catalog =
             match Catalog.create [ { SsKey = ssKeySafe "OS_MOD_RT6"; Name = nameSafe "Rt6Mod"; Kinds = [ parent; child ]; IsActive = true; ExtendedProperties = [] } ] [] with
             | Ok c -> c | Error e -> failwithf "catalog %A" e
@@ -791,7 +791,7 @@ let ``6.A.6 (schema round-trip): an untrusted FK survives emit / deploy / ReadSi
             // the emit→deploy→ReadSide round-trip is now faithful on FK-trust.
             Assert.Equal(1, (PhysicalSchema.ofCatalog c).ForeignKeys |> Set.count)
             match childBack.References with
-            | [ r ] -> Assert.False(r.IsConstraintTrusted, "emitted FK must read back untrusted (WITH NOCHECK reproduced)")
+            | [ r ] -> Assert.False(Reference.isConstraintTrusted r, "emitted FK must read back untrusted (WITH NOCHECK reproduced)")
             | rs -> Assert.Fail(sprintf "expected exactly one reconstructed FK, got %d" (List.length rs))
         | None -> Assert.Fail "deploy produced no reconstructed catalog"
 
@@ -838,6 +838,55 @@ let ``4.1: V2.SsKey persistence — ReadSide recovers OssysOriginal identities (
                 // a READSIDE_KIND synthesis.
                 Assert.Equal<SsKey>(custKey, k.SsKey)
             | None -> Assert.Fail "OSUSR_SSK_CUSTOMER not found in reconstructed catalog"
+        | None -> Assert.Fail "deploy produced no reconstructed catalog"
+
+/// THE VECTOR Wave 5 — the ATTRIBUTE-grain sibling of the kind-level Wave-4.1
+/// witness above. After emit (which now persists COLUMN-level `Projection.SsKey`)
+/// → deploy → read, the recovered ATTRIBUTE SsKeys must be the authored
+/// `OssysOriginal` GUIDs — recovered from the persisted column extended
+/// property via `recoverAttributeSsKey`, NOT `Synthesized "READSIDE_ATTR"` from
+/// physical coordinates. This closes the §5.1 / §3.3 T-V/T-I attribute-grain
+/// faithfulness gap (the adjudication the treatise left open): with the
+/// attribute identity preserved across the wire, an authored column RENAME
+/// round-trips as `Renamed` rather than `Removed + Added`.
+[<Fact>]
+let ``Wave 5: column Projection.SsKey persistence — ReadSide recovers OssysOriginal ATTRIBUTE identities (A1 at the attribute grain)`` () =
+    if skipIfNoDocker "v2sskey-attribute-persistence-roundtrip" then
+        let custKey    = SsKey.ossysOriginal (System.Guid.Parse "33333333-3333-3333-3333-333333333333")
+        let custIdKey  = SsKey.ossysOriginal (System.Guid.Parse "44444444-4444-4444-4444-444444444444")
+        let custCodeKey = SsKey.ossysOriginal (System.Guid.Parse "55555555-5555-5555-5555-555555555555")
+        let customer =
+            Kind.create custKey (nameSafe "Customer")
+                (mkTableId "dbo" "OSUSR_SSK_ATTR_CUSTOMER")
+                [ { Attribute.create custIdKey (nameSafe "Id") Integer with
+                      Column = ColumnRealization.create ("ID") (false) |> Result.value
+                      IsPrimaryKey = true; IsMandatory = true }
+                  { Attribute.create custCodeKey (nameSafe "Code") Integer with
+                      Column = ColumnRealization.create ("CODE") (true) |> Result.value } ]
+        let catalog =
+            match Catalog.create [ { SsKey = ssKeySafe "OS_MOD_SSK_ATTR"; Name = nameSafe "SskAttrMod"; Kinds = [ customer ]; IsActive = true; ExtendedProperties = [] } ] [] with
+            | Ok c -> c | Error e -> failwithf "catalog %A" e
+
+        let sql = SsdtDdlEmitter.statements catalog |> Render.toText
+        let readback = (Deploy.runWithReadback sql).GetAwaiter().GetResult()
+        Assert.True(readback.Report.Ok, sprintf "deploy: %A" readback.Report.Errors)
+        match readback.Reconstructed with
+        | Some reconstructed ->
+            let recovered =
+                reconstructed.Modules
+                |> List.collect (fun m -> m.Kinds)
+                |> List.tryFind (fun k -> TableId.tableText k.Physical = "OSUSR_SSK_ATTR_CUSTOMER")
+            match recovered with
+            | Some k ->
+                let attrKeyByName name =
+                    k.Attributes
+                    |> List.tryFind (fun a -> Name.value a.Name = name)
+                    |> Option.map (fun a -> a.SsKey)
+                // The recovered ATTRIBUTE identities are the persisted OssysOriginal
+                // GUIDs, not a READSIDE_ATTR synthesis from physical coordinates.
+                Assert.Equal<SsKey option>(Some custIdKey, attrKeyByName "Id")
+                Assert.Equal<SsKey option>(Some custCodeKey, attrKeyByName "Code")
+            | None -> Assert.Fail "OSUSR_SSK_ATTR_CUSTOMER not found in reconstructed catalog"
         | None -> Assert.Fail "deploy produced no reconstructed catalog"
 
 // ---------------------------------------------------------------------

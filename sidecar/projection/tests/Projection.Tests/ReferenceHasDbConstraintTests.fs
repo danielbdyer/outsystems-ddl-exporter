@@ -77,7 +77,7 @@ let ``Adapter pickup: parseReference captures hasDbConstraint = 1 as HasDbConstr
     | Ok catalog ->
         let widget = Catalog.allKinds catalog |> List.find (fun k -> Name.value k.Name = "Widget")
         Assert.Single widget.References |> ignore
-        Assert.True widget.References.[0].HasDbConstraint
+        Assert.True (Reference.hasDbConstraint widget.References.[0])
     | Error errs ->
         Assert.Fail (sprintf "parseJsonString failed: %A" errs)
 
@@ -87,7 +87,7 @@ let ``Adapter pickup: parseReference captures hasDbConstraint = 0 as HasDbConstr
     match parseJson envelope with
     | Ok catalog ->
         let widget = Catalog.allKinds catalog |> List.find (fun k -> Name.value k.Name = "Widget")
-        Assert.False widget.References.[0].HasDbConstraint
+        Assert.False (Reference.hasDbConstraint widget.References.[0])
     | Error errs ->
         Assert.Fail (sprintf "parseJsonString failed: %A" errs)
 
@@ -133,7 +133,7 @@ let ``Adapter pickup: missing hasDbConstraint defaults to false (V1 COALESCE par
     match parseJson envelope with
     | Ok catalog ->
         let widget = Catalog.allKinds catalog |> List.find (fun k -> Name.value k.Name = "Widget")
-        Assert.False widget.References.[0].HasDbConstraint
+        Assert.False (Reference.hasDbConstraint widget.References.[0])
     | Error errs ->
         Assert.Fail (sprintf "parseJsonString failed: %A" errs)
 
@@ -147,7 +147,7 @@ let private mkRef (hasDb: bool) : Reference =
         (mkName "FK")
         (mkKey "Attr.A")
         (mkKey "K.Target")
-      with HasDbConstraint = hasDb }
+      with ConstraintState = ConstraintState.ofLegacyBooleans hasDb true }
 
 let private mkKindWith (label: string) (refs: Reference list) : Kind =
     let baseKind =
@@ -215,5 +215,5 @@ let ``SymmetricClosure: inverse Reference inherits HasDbConstraint from the forw
             (mkKey "K.Source")
           with
             IsUserFk        = r.IsUserFk
-            HasDbConstraint = r.HasDbConstraint }
-    Assert.Equal (r.HasDbConstraint, inverse.HasDbConstraint)
+            ConstraintState = r.ConstraintState }
+    Assert.Equal (Reference.hasDbConstraint r, Reference.hasDbConstraint inverse)

@@ -275,7 +275,7 @@ module ForeignKeyRules =
             //    is enforced before and regardless of every remaining
             //    gate. Reads the IR flag directly; the dead
             //    TrustedConstraint probe approximation is retired.
-            if reference.HasDbConstraint then
+            if Reference.hasDbConstraint reference then
                 mkDecision
                     (ForeignKeyOutcome.EnforceConstraint
                         DatabaseConstraintPresent)
