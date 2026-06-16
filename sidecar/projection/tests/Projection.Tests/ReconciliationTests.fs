@@ -165,7 +165,7 @@ let private orderKey = mkKey [ "Order" ]
 let private userIdKey = mkKey [ "Order"; "USER_ID" ]
 let private orderUserRef =
     { Reference.create (mkKey [ "Order"; "UserRef" ]) (mkName "UserRef") userIdKey userKey with
-        HasDbConstraint = true }
+        ConstraintState = ConstraintState.TrustedConstraint }
 let private orderKind : Kind =
     { Kind.create orderKey (mkName "Order") (TableId.create "dbo" "OSUSR_ORDER" |> Result.value)
         [ { Attribute.create (mkKey [ "Order"; "ID" ]) (mkName "ID") Integer with

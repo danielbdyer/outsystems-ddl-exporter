@@ -329,9 +329,12 @@ module CatalogCodec =
         wField jw "targetKind" wSsKey r.TargetKind
         wField jw "onDelete" wReferenceAction r.OnDelete
         jw.WriteBoolean("isUserFk", r.IsUserFk)
-        jw.WriteBoolean("hasDbConstraint", r.HasDbConstraint)
+        // M4 — the `ConstraintState` DU projects to the legacy boolean pair on
+        // the wire (`IndexUniqueness`'s `(isUnique, isPrimaryKey)` precedent), so
+        // serialized catalogs round-trip byte-identically (no store migration).
+        jw.WriteBoolean("hasDbConstraint", Reference.hasDbConstraint r)
         wOpt jw "onUpdate" wReferenceAction r.OnUpdate
-        jw.WriteBoolean("isConstraintTrusted", r.IsConstraintTrusted)
+        jw.WriteBoolean("isConstraintTrusted", Reference.isConstraintTrusted r)
         jw.WriteEndObject()
 
     let private wIndex (jw: Utf8JsonWriter) (i: Index) : unit =
@@ -785,9 +788,10 @@ module CatalogCodec =
                 { Reference.create ssKey name sourceAttribute targetKind with
                     OnDelete = onDelete
                     IsUserFk = isUserFk
-                    HasDbConstraint = hasDbConstraint
                     OnUpdate = onUpdate
-                    IsConstraintTrusted = isConstraintTrusted }
+                    // M4 — reconstruct the DU from the legacy boolean pair
+                    // (`ofLegacyBooleans` normalizes the illegal quadrant).
+                    ConstraintState = ConstraintState.ofLegacyBooleans hasDbConstraint isConstraintTrusted }
         }
 
     let private readIndex (el: JsonElement) : Result<Index> =

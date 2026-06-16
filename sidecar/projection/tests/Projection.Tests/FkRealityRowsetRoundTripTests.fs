@@ -224,13 +224,13 @@ let ``A.4.7'-prelude.row17-18: V1 #FkReality.UpdateAction = "SET_DEFAULT" degrad
 let ``A.4.7'-prelude.row17-18: ReferenceRow.IsConstraintTrusted = true populates Reference.IsConstraintTrusted = true`` () =
     let cat = parseToCatalog (buildBundle (fkReferenceRow None true))
     let reference = findOrderReference cat
-    Assert.True(reference.IsConstraintTrusted)
+    Assert.True(Reference.isConstraintTrusted reference)
 
 [<Fact>]
 let ``A.4.7'-prelude.row17-18: ReferenceRow.IsConstraintTrusted = false populates Reference.IsConstraintTrusted = false (NOCHECK state preserved)`` () =
     let cat = parseToCatalog (buildBundle (fkReferenceRow None false))
     let reference = findOrderReference cat
-    Assert.False(reference.IsConstraintTrusted)
+    Assert.False(Reference.isConstraintTrusted reference)
 
 // ---------------------------------------------------------------------------
 // Combined: both axes together (the production cutover scenario where
@@ -243,4 +243,4 @@ let ``A.4.7'-prelude.row17-18: both OnUpdate and IsConstraintTrusted round-trip 
         parseToCatalog (buildBundle (fkReferenceRow (Some "CASCADE") false))
     let reference = findOrderReference cat
     Assert.Equal(Some Cascade, reference.OnUpdate)
-    Assert.False(reference.IsConstraintTrusted)
+    Assert.False(Reference.isConstraintTrusted reference)

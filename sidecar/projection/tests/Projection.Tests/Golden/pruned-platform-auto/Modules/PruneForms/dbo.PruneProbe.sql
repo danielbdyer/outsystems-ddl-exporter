@@ -37,7 +37,21 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:113:PruneProbe.Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'PruneProbe',
+    @level2type = N'COLUMN', @level2name = N'Id'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Code',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'PruneProbe',
+    @level2type = N'COLUMN', @level2name = N'Code'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:115:PruneProbe.Code',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'PruneProbe',
     @level2type = N'COLUMN', @level2name = N'Code'

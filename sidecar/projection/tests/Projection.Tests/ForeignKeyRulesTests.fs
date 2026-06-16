@@ -102,7 +102,7 @@ let ``missingTarget: target kind absent from catalog ⇒ DoNotEnforce(MissingTar
 // ---------------------------------------------------------------------------
 
 let private sourceBackedRef : Reference =
-    { orderRef with HasDbConstraint = true }
+    { orderRef with ConstraintState = ConstraintState.ofLegacyBooleans true (Reference.isConstraintTrusted orderRef) }
 
 [<Fact>]
 let ``hasDbConstraint: source-backed reference ⇒ EnforceConstraint(DatabaseConstraintPresent) with no profile at all`` () =
@@ -149,7 +149,7 @@ let ``hasDbConstraint: MissingTarget outranks the carve-out (a scoped export can
     let danglingTargetKey = ssKey "OS_KIND_NoSuchKind"
     let danglingBacked : Reference =
         { Reference.create (ssKey "OS_REF_Order_DanglingBacked") (name "Dangling") orderCustomerFkKey danglingTargetKey
-            with HasDbConstraint = true }
+            with ConstraintState = ConstraintState.TrustedConstraint }
     let cfg = mkConfig true true true
     let decision = decide cfg sampleCatalog order danglingBacked Profile.empty
     Assert.Equal(

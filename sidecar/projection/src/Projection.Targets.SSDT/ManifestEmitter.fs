@@ -312,12 +312,12 @@ module PredicateName =
             // `Reference.HasDbConstraint : bool`. Kind has a
             // logical-only FK iff any of its references is
             // unbacked by a DB constraint.
-            k.References |> List.exists (fun r -> not r.HasDbConstraint)
+            k.References |> List.exists (fun r -> not (Reference.hasDbConstraint r))
         | PredicateName.HasLogicalForeignKeyWithDbConstraint ->
             // Chapter 4.6 slice α — sibling: kind has a DB-constraint-
             // backed FK iff any of its references is DB-constraint
             // backed.
-            k.References |> List.exists (fun r -> r.HasDbConstraint)
+            k.References |> List.exists (fun r -> Reference.hasDbConstraint r)
 
 
 /// Slice β (chapter 4.4) — per-table predicate satisfaction entry.

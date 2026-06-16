@@ -670,7 +670,7 @@ module PhysicalSchema =
                         // Mirrors the emitter's NOCHECK predicate
                         // (`SsdtDdlEmitter.untrustedFkAlters`) so the source
                         // projection and the read-back agree.
-                        IsTrusted = r.IsConstraintTrusted && not (Set.contains r.SsKey overlay.NoCheckFk)
+                        IsTrusted = Reference.isConstraintTrusted r && not (Set.contains r.SsKey overlay.NoCheckFk)
                     }
             | _ ->
                 // Dropped: the source attribute is unresolvable, the target

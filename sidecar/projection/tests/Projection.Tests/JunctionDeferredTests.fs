@@ -33,7 +33,7 @@ let private mkRef (ownerKey: SsKey) (targetKey: SsKey) (name: string) : Referenc
     let attrKey = synthKey (SsKey.rootOriginal ownerKey) name
     let refKey  = synthKey (SsKey.rootOriginal ownerKey) (name + "_ref")
     { Reference.create refKey (Name.create name |> Result.value) attrKey targetKey with
-        HasDbConstraint = true }
+        ConstraintState = ConstraintState.TrustedConstraint }
 
 let private buildJunctionCatalog () : Catalog =
     let author =

@@ -110,7 +110,7 @@ let ``fixture guard: closure mints two inverses on User, inheriting HasDbConstra
         |> List.find (fun k -> k.SsKey = userKey)
     let inverses = user.References |> List.filter Reference.isInverse
     Assert.Equal(2, List.length inverses)
-    Assert.All(inverses, fun r -> Assert.True r.HasDbConstraint)
+    Assert.All(inverses, fun r -> Assert.True (Reference.hasDbConstraint r))
     Assert.All(inverses, fun r -> Assert.False (Reference.isDeployable r))
 
 // ---------------------------------------------------------------------

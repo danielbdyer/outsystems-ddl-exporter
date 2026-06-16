@@ -237,7 +237,10 @@ module OssysJsonReader =
                     Result.success (Some
                         { Reference.create rKey rName srcKey tgtKey with
                             OnDelete        = rule
-                            HasDbConstraint = hasDbConstraint })
+                            // M4 — the JSON source carries only hasDbConstraint;
+                            // trust defaults to true (a reflected FK is trusted
+                            // unless IsNoCheck), normalized via the DU constructor.
+                            ConstraintState = ConstraintState.ofLegacyBooleans hasDbConstraint true })
                 | _ ->
                     // Propagate underlying errors via
                     // `propagateOrFallback` — uniform with the four

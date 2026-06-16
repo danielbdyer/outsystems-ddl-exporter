@@ -41,7 +41,7 @@ let private mkRefCascade (ownerKey: SsKey) (targetKey: SsKey) : Reference =
     let refKey  = synthKey ownerRoot "ref"
     { Reference.create refKey (Name.create "fk" |> Result.value) attrKey targetKey with
         OnDelete        = Cascade
-        HasDbConstraint = true }
+        ConstraintState = ConstraintState.TrustedConstraint }
 
 // Linear cascade chain: D → C → B → A. From D's perspective, deleting
 // any ancestor in {C, B, A} cascade-kills D. |Reachable from D| = 3.

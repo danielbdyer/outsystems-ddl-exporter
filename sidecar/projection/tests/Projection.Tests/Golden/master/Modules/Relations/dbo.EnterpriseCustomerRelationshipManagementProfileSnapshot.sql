@@ -23,3 +23,10 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
     @level1type = N'TABLE', @level1name = N'EnterpriseCustomerRelationshipManagementProfileSnapshot',
     @level2type = N'COLUMN', @level2name = N'Id'
 
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:115:EcrmSnapshot.Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'EnterpriseCustomerRelationshipManagementProfileSnapshot',
+    @level2type = N'COLUMN', @level2name = N'Id'
+

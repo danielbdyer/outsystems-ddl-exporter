@@ -820,11 +820,10 @@ module ComprehensiveCanaryTests =
                 IsMandatory = true }
         let bRefA =
             { Reference.create (mkSs "REF-B-A") (mkNm "FK_B_A") bAKeyAttr aKey with
-                HasDbConstraint     = true
-                IsConstraintTrusted = false }
+                ConstraintState = ConstraintState.UntrustedConstraint }
         let bSelfRef =
             { Reference.create (mkSs "REF-B-SELF") (mkNm "FK_B_Self") bIdAttrKey bKey with
-                HasDbConstraint = true }
+                ConstraintState = ConstraintState.TrustedConstraint }
         let kindB =
             { Kind.create bKey (mkNm "B")
                 (TableId.create "dbo" "OSUSR_CANARY_B" |> Result.value)

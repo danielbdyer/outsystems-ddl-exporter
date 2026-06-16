@@ -45,8 +45,8 @@ let private invoice  = kindOf ["Invoice"]  "OSUSR_INVOICE"  [ pk ["Invoice"] "ID
 
 // A has a NULLABLE FK to B (deferrable); B has a NON-NULLABLE FK to A
 // (cannot defer → diagnostic). Together a 2-cycle.
-let private aBRef = { Reference.create (mkKey ["A"; "BRef"]) (mkName "BRef") (mkKey ["A"; "B_ID"]) bKey with HasDbConstraint = true }
-let private bARef = { Reference.create (mkKey ["B"; "ARef"]) (mkName "ARef") (mkKey ["B"; "A_ID"]) aKey with HasDbConstraint = true }
+let private aBRef = { Reference.create (mkKey ["A"; "BRef"]) (mkName "BRef") (mkKey ["A"; "B_ID"]) bKey with ConstraintState = ConstraintState.TrustedConstraint }
+let private bARef = { Reference.create (mkKey ["B"; "ARef"]) (mkName "ARef") (mkKey ["B"; "A_ID"]) aKey with ConstraintState = ConstraintState.TrustedConstraint }
 let private kindA = kindOf ["A"] "OSUSR_A" [ pk ["A"] "ID" false; fkAttr ["A"] "B_ID" true ]  [ aBRef ]
 let private kindB = kindOf ["B"] "OSUSR_B" [ pk ["B"] "ID" false; fkAttr ["B"] "A_ID" false ] [ bARef ]
 

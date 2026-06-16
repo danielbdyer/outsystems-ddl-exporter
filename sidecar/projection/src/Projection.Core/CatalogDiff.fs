@@ -328,8 +328,11 @@ module CatalogDiff =
           if s.OnDelete <> t.OnDelete then ReferenceFacet.OnDelete
           if s.OnUpdate <> t.OnUpdate then ReferenceFacet.OnUpdate
           if s.IsUserFk <> t.IsUserFk then ReferenceFacet.UserFk
-          if s.HasDbConstraint <> t.HasDbConstraint then ReferenceFacet.DbConstraint
-          if s.IsConstraintTrusted <> t.IsConstraintTrusted then ReferenceFacet.Trust ]
+          // M4 — the two facets project the `ConstraintState` DU back to its
+          // boolean dimensions, preserving the channel structure the C1 diff +
+          // the SSDT migration emitter (`ReferenceFacet.Trust`) depend on.
+          if Reference.hasDbConstraint s <> Reference.hasDbConstraint t then ReferenceFacet.DbConstraint
+          if Reference.isConstraintTrusted s <> Reference.isConstraintTrusted t then ReferenceFacet.Trust ]
         |> Set.ofList
 
     let private changedIndexFacets (s: Index) (t: Index) : Set<IndexFacet> =
@@ -398,8 +401,19 @@ module CatalogDiff =
         | ReferenceFacet.OnDelete        -> { dest with OnDelete = src.OnDelete }
         | ReferenceFacet.OnUpdate        -> { dest with OnUpdate = src.OnUpdate }
         | ReferenceFacet.UserFk          -> { dest with IsUserFk = src.IsUserFk }
-        | ReferenceFacet.DbConstraint    -> { dest with HasDbConstraint = src.HasDbConstraint }
-        | ReferenceFacet.Trust           -> { dest with IsConstraintTrusted = src.IsConstraintTrusted }
+        // M4 — set one boolean dimension of the `ConstraintState` DU per facet,
+        // preserving the other from `dest`, then renormalize through
+        // `ofLegacyBooleans`. The `DbConstraint`-before-`Trust` tag order (the
+        // `Set.fold` iteration order) makes the combined `NoDbConstraint →
+        // UntrustedConstraint` transition reconstruct exactly: a lone `Trust`
+        // facet never targets a `NoDbConstraint` dest (it always co-occurs with
+        // a `DbConstraint` facet), and `DbConstraint` lands first.
+        | ReferenceFacet.DbConstraint    ->
+            { dest with ConstraintState =
+                            ConstraintState.ofLegacyBooleans (Reference.hasDbConstraint src) (Reference.isConstraintTrusted dest) }
+        | ReferenceFacet.Trust           ->
+            { dest with ConstraintState =
+                            ConstraintState.ofLegacyBooleans (Reference.hasDbConstraint dest) (Reference.isConstraintTrusted src) }
 
     let private applyIndexFacet (src: Index) (facet: IndexFacet) (dest: Index) : Index =
         match facet with

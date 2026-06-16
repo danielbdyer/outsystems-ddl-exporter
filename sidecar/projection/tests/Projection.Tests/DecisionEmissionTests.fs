@@ -305,7 +305,7 @@ let ``decision-drop audit splits by HasDbConstraint: Warning fkDropped for sourc
               mkAttr (akey "B.AId2") "AId2" false ]
           with References =
                 [ { Reference.create refToA (nm "A") (akey "B.AId") aKey
-                      with HasDbConstraint = true }
+                      with ConstraintState = ConstraintState.TrustedConstraint }
                   Reference.create refToA2 (nm "A") (akey "B.AId2") aKey ] }
     let catalog =
         match Catalog.create [ { SsKey = kkey "Mod"; Name = nm "FdMod"; Kinds = [ a; b ]; IsActive = true; ExtendedProperties = [] } ] [] with

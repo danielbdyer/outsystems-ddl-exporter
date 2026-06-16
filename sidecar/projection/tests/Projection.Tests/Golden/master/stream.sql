@@ -27,6 +27,13 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:120:Assignment.ProjectId',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Assignment',
+    @level2type = N'COLUMN', @level2name = N'ProjectId'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'ResourceId',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'Assignment',
@@ -34,7 +41,21 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:121:Assignment.ResourceId',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Assignment',
+    @level2type = N'COLUMN', @level2name = N'ResourceId'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Role',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Assignment',
+    @level2type = N'COLUMN', @level2name = N'Role'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:115:Assignment.Role',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'Assignment',
     @level2type = N'COLUMN', @level2name = N'Role'
@@ -72,6 +93,13 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:112:ChangeLog.Id',
+    @level0type = N'SCHEMA', @level0name = N'audit',
+    @level1type = N'TABLE', @level1name = N'ChangeLog',
+    @level2type = N'COLUMN', @level2name = N'Id'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'At',
     @level0type = N'SCHEMA', @level0name = N'audit',
     @level1type = N'TABLE', @level1name = N'ChangeLog',
@@ -79,7 +107,21 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:112:ChangeLog.At',
+    @level0type = N'SCHEMA', @level0name = N'audit',
+    @level1type = N'TABLE', @level1name = N'ChangeLog',
+    @level2type = N'COLUMN', @level2name = N'At'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'UserId',
+    @level0type = N'SCHEMA', @level0name = N'audit',
+    @level1type = N'TABLE', @level1name = N'ChangeLog',
+    @level2type = N'COLUMN', @level2name = N'UserId'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:116:ChangeLog.UserId',
     @level0type = N'SCHEMA', @level0name = N'audit',
     @level1type = N'TABLE', @level1name = N'ChangeLog',
     @level2type = N'COLUMN', @level2name = N'UserId'
@@ -115,6 +157,13 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:110:Country.Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Country',
+    @level2type = N'COLUMN', @level2name = N'Id'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Code',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'Country',
@@ -122,7 +171,21 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:112:Country.Code',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Country',
+    @level2type = N'COLUMN', @level2name = N'Code'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Label',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Country',
+    @level2type = N'COLUMN', @level2name = N'Label'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:113:Country.Label',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'Country',
     @level2type = N'COLUMN', @level2name = N'Label'
@@ -157,7 +220,21 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:111:Customer.Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Customer',
+    @level2type = N'COLUMN', @level2name = N'Id'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Name',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Customer',
+    @level2type = N'COLUMN', @level2name = N'Name'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:113:Customer.Name',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'Customer',
     @level2type = N'COLUMN', @level2name = N'Name'
@@ -185,6 +262,13 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S
 GO
 
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'EnterpriseCustomerRelationshipManagementProfileSnapshot',
+    @level2type = N'COLUMN', @level2name = N'Id'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:115:EcrmSnapshot.Id',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'EnterpriseCustomerRelationshipManagementProfileSnapshot',
     @level2type = N'COLUMN', @level2name = N'Id'
@@ -259,7 +343,21 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:113:Engagement.Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Engagement',
+    @level2type = N'COLUMN', @level2name = N'Id'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'AltCustomerId',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Engagement',
+    @level2type = N'COLUMN', @level2name = N'AltCustomerId'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:124:Engagement.AltCustomerId',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'Engagement',
     @level2type = N'COLUMN', @level2name = N'AltCustomerId'
@@ -273,7 +371,21 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:120:Engagement.CreatedBy',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Engagement',
+    @level2type = N'COLUMN', @level2name = N'CreatedBy'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'CustomerId',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Engagement',
+    @level2type = N'COLUMN', @level2name = N'CustomerId'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:121:Engagement.CustomerId',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'Engagement',
     @level2type = N'COLUMN', @level2name = N'CustomerId'
@@ -287,6 +399,13 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:119:Engagement.ParentId',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Engagement',
+    @level2type = N'COLUMN', @level2name = N'ParentId'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Subject',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'Engagement',
@@ -294,7 +413,21 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:118:Engagement.Subject',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Engagement',
+    @level2type = N'COLUMN', @level2name = N'Subject'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'UpdatedBy',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Engagement',
+    @level2type = N'COLUMN', @level2name = N'UpdatedBy'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:120:Engagement.UpdatedBy',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'Engagement',
     @level2type = N'COLUMN', @level2name = N'UpdatedBy'
@@ -327,7 +460,21 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:113:Heap.LoggedAt',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Heap',
+    @level2type = N'COLUMN', @level2name = N'LoggedAt'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Message',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Heap',
+    @level2type = N'COLUMN', @level2name = N'Message'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:112:Heap.Message',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'Heap',
     @level2type = N'COLUMN', @level2name = N'Message'
@@ -364,7 +511,21 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:19:Ledger.Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'InterdepartmentalResourceAllocationAuthorizationLedger',
+    @level2type = N'COLUMN', @level2name = N'Id'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'PrimaryResponsibleEnterpriseCustomerRelationshipManagerId',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'InterdepartmentalResourceAllocationAuthorizationLedger',
+    @level2type = N'COLUMN', @level2name = N'PrimaryResponsibleEnterpriseCustomerRelationshipManagerId'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:116:Ledger.ManagerId',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'InterdepartmentalResourceAllocationAuthorizationLedger',
     @level2type = N'COLUMN', @level2name = N'PrimaryResponsibleEnterpriseCustomerRelationshipManagerId'
@@ -402,6 +563,13 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:110:RegionA.Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'RegionA',
+    @level2type = N'COLUMN', @level2name = N'Id'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Name',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'RegionA',
@@ -409,7 +577,21 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:112:RegionA.Name',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'RegionA',
+    @level2type = N'COLUMN', @level2name = N'Name'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'PartnerId',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'RegionA',
+    @level2type = N'COLUMN', @level2name = N'PartnerId'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:117:RegionA.PartnerId',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'RegionA',
     @level2type = N'COLUMN', @level2name = N'PartnerId'
@@ -447,6 +629,13 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:110:RegionB.Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'RegionB',
+    @level2type = N'COLUMN', @level2name = N'Id'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Name',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'RegionB',
@@ -454,7 +643,21 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:112:RegionB.Name',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'RegionB',
+    @level2type = N'COLUMN', @level2name = N'Name'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'PartnerId',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'RegionB',
+    @level2type = N'COLUMN', @level2name = N'PartnerId'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:117:RegionB.PartnerId',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'RegionB',
     @level2type = N'COLUMN', @level2name = N'PartnerId'
@@ -565,6 +768,13 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:116:ScalarGallery.Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'Id'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'AlarmAt',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
@@ -572,7 +782,21 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:121:ScalarGallery.AlarmAt',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'AlarmAt'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Amount',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'Amount'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:120:ScalarGallery.Amount',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
     @level2type = N'COLUMN', @level2name = N'Amount'
@@ -593,6 +817,13 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:118:ScalarGallery.Code',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'Code'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'DueDate',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
@@ -600,7 +831,21 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:121:ScalarGallery.DueDate',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'DueDate'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'ExternalKey',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'ExternalKey'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:125:ScalarGallery.ExternalKey',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
     @level2type = N'COLUMN', @level2name = N'ExternalKey'
@@ -621,7 +866,21 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:122:ScalarGallery.FreeText',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'FreeText'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'IsActive',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'IsActive'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:122:ScalarGallery.IsActive',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
     @level2type = N'COLUMN', @level2name = N'IsActive'
@@ -635,7 +894,21 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:119:ScalarGallery.Notes',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'Notes'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'OccurredOn',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'OccurredOn'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:124:ScalarGallery.OccurredOn',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
     @level2type = N'COLUMN', @level2name = N'OccurredOn'
@@ -649,7 +922,21 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:121:ScalarGallery.Payload',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'Payload'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Tally',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScalarGallery',
+    @level2type = N'COLUMN', @level2name = N'Tally'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:119:ScalarGallery.Tally',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScalarGallery',
     @level2type = N'COLUMN', @level2name = N'Tally'
@@ -705,6 +992,13 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:115:ScopedLookup.Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScopedLookup',
+    @level2type = N'COLUMN', @level2name = N'Id'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'TenantId',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScopedLookup',
@@ -712,7 +1006,21 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:121:ScopedLookup.TenantId',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScopedLookup',
+    @level2type = N'COLUMN', @level2name = N'TenantId'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Value',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'ScopedLookup',
+    @level2type = N'COLUMN', @level2name = N'Value'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:118:ScopedLookup.Value',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'ScopedLookup',
     @level2type = N'COLUMN', @level2name = N'Value'
@@ -753,7 +1061,21 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:17:Tier.Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Tier',
+    @level2type = N'COLUMN', @level2name = N'Id'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Name',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'Tier',
+    @level2type = N'COLUMN', @level2name = N'Name'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:19:Tier.Name',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'Tier',
     @level2type = N'COLUMN', @level2name = N'Name'
@@ -794,7 +1116,21 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:17:User.Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'User',
+    @level2type = N'COLUMN', @level2name = N'Id'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Email',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'User',
+    @level2type = N'COLUMN', @level2name = N'Email'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:110:User.Email',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'User',
     @level2type = N'COLUMN', @level2name = N'Email'

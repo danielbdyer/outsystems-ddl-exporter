@@ -32,7 +32,21 @@ EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value
 
 GO
 
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:17:User.Id',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'User',
+    @level2type = N'COLUMN', @level2name = N'Id'
+
+GO
+
 EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.LogicalName', @value = N'Email',
+    @level0type = N'SCHEMA', @level0name = N'dbo',
+    @level1type = N'TABLE', @level1name = N'User',
+    @level2type = N'COLUMN', @level2name = N'Email'
+
+GO
+
+EXECUTE [sys].[sp_addextendedproperty] @name = N'Projection.SsKey', @value = N'S9:GOLD_ATTR1:110:User.Email',
     @level0type = N'SCHEMA', @level0name = N'dbo',
     @level1type = N'TABLE', @level1name = N'User',
     @level2type = N'COLUMN', @level2name = N'Email'

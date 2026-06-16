@@ -24264,3 +24264,154 @@ shrinks while every output byte and every law is unchanged.
   gated deepenings — M18 (`ChangeManifest.toJson`), M14 (the `Traversal` optic, after the compile-order split),
   M4 (`ConstraintState` DU, behind the store-migration story), M5 (digest projection) — plus the persisted-state
   -evolution discipline written down (NM-34 as the store-codec contract).**
+
+## 2026-06-16 — THE VECTOR Wave 4 BUILT: corollary cashes & the trust-quadrant type theorem (M18 / M5 / M4) + the persisted-state-evolution discipline (M14 honestly deferred)
+
+The last chapter of THE VECTOR's defined plan (`THE_VECTOR.md` §6 corollaries + Kind II; §7 Wave 4) — the
+**operator payoff**. Smaller than Waves 2–3 but with one mini-keystone (M4). Built inline (not orchestrated):
+the environment's Docker-no-op-on-Windows + the worktree-base scar from Wave 3 make a careful inline pass more
+reliable than a fan-out for moves that share `Catalog.fs` / the codec. All behavior-preserving on the wire.
+
+- **The cross-cutting prerequisite FIRST — the persisted-state-evolution discipline (codified).** Before any
+  serialized-form change, the contract is named: **NM-34 — a missing field reads as `None` / the additive default
+  — IS the store-codec contract.** Every durable surface (the catalog codec, the `LifecycleStore`/episode NDJSON,
+  the `CaptureJournal`) evolves *additively*: a new field is optional-on-read (older stores omit it → default);
+  a field is never repurposed or removed without a version stamp. **The gating checklist for any future move that
+  touches a serialized form:** (1) does an older store still decode (missing field → sensible default)? (2) does
+  the new code's output still decode on older code (additive only, or version-gated)? (3) is the round-trip
+  witnessed? This discipline GATES M4 and M5 — and both cleared it *without* needing a migration, see below.
+- **M18 — `ChangeManifest.toJson` (the CDC-norm made machine-queryable).** `ReportRun` had `render` (operator
+  prose) and no machine lens; the CDC-capture-count data norm (T15) flowed to the SSIS consumer as prose only.
+  `ReportRun.toJson` / `toJsonString` add the second lens over the same T1-ordered `ReportBundle` — a structured,
+  byte-deterministic document (timeline · episodeCount · pathLength · per-edge {from/to coordinates · schemaNorm ·
+  cdcCaptureCount · refactorLogRef · the 20 named move-channels · the name-sorted tolerance residual · the applied-
+  transforms with canonical `SsKey.serialize` identities}). Typed-`JsonNode` emission (pillar 1), mirroring
+  `ModelFidelity`'s sibling report codec. **`toJson` ONLY** — there is no read-back consumer (the `report` verb
+  reads the lifecycle STORE, not a recorded change-report), so per IR-grows-under-evidence the `fromJson` inverse
+  is deferred-with-trigger (a verb that reads a recorded change-report back materializes). Witness:
+  `ReportRunTests.fs` (5 facts — masthead, per-edge displacement + data norm, present-and-null Decision anchor,
+  the two provenance planes, byte-determinism).
+- **M5 — retire the `sprintf "%A"` policy digest (determinism-by-construction).** `VersionedPolicy.digestOf`'s
+  canonical representation was the F# structural printer — *determinism-by-luck* (compiler-version-dependent shape),
+  exactly the failure `TransformRegistry.digest` forbids (NM-60). Replaced with an explicit `canonicalToken`
+  projection: every axis projected field-by-field, every closed DU to a fixed token, every free-text / identity
+  field LENGTH-PREFIXED (`<utf8-byte-count>:value`, injective), sets sorted by serialized identity, lists in
+  operator order; hashed at the SHA256 boundary. **Changes the digest VALUE** vs the `%A` form, but **no digest is
+  persisted into episodes** (the Episode store records CDC counts, not policy digests — `Episode.fs DataObservation`),
+  and `GoldenEmissionTests` excludes the manifest's `VersionedPolicy` stamp — so the persisted-state checklist is
+  cleared (no migration). Witness: `VersionedPolicyTests` M5 facts (Tightening / UserMatching distinguished, same-id
+  config flip distinguished, Selection-set order-independence) + the 28 pre-existing digest tests still green.
+- **M4 — the `ConstraintState` DU (the trust-quadrant becomes a TYPE THEOREM). The mini-keystone.** The
+  `(HasDbConstraint, IsConstraintTrusted)` `bool × bool` quadrant — a 4-state space encoding a 3-state reality;
+  the illegal `(false, false)` ("untrusted without a constraint", G14) was *runtime-rejected* at the aggregate root.
+  Collapsed into a closed 3-variant `[<RequireQualifiedAccess>] ConstraintState` DU
+  (`NoDbConstraint | TrustedConstraint | UntrustedConstraint`) — **the illegal quadrant is now unrepresentable**, so
+  the prior runtime check became dead code and was retired; `isConstraintStateConsistent` is now a total type
+  theorem. This is the exact **`IndexUniqueness` (Slice 2a)** precedent — sibling quadrant→DU collapse on the same
+  record family — and the **`CapabilityProfile.of` archetype** shape (closed DU → derived projection → round-trip
+  law). **The wire stays byte-identical:** the codec keeps the legacy `(hasDbConstraint, isConstraintTrusted)`
+  boolean pair (`toLegacyBooleans` on write, `ofLegacyBooleans` on read) — so serialized catalogs round-trip
+  unchanged and the persisted-state checklist is cleared with **no migration**. The `CatalogDiff` `DbConstraint` /
+  `Trust` facets project through the booleans, preserving the C1 channel structure; the `DbConstraint`-before-`Trust`
+  `Set.fold` tag order makes the combined `NoDbConstraint → UntrustedConstraint` transition reconstruct exactly
+  (T16 round-trip preserved — `AxiomTests` 79/0). The cascade — ~6 `src` sites (codec, diff, PhysicalSchema, the
+  SSDT emitters, the OSSYS adapters) + ~22 test files — was compiler-guided (FS-warnings-as-errors as the
+  completeness backstop). The obsolete `NM-12: Catalog.create rejects the illegal quadrant` test was repurposed to
+  witness the M4 outcome (the legacy `(false,false)` normalizes to `NoDbConstraint` and the catalog *accepts* it —
+  there is no illegal state left to reject). New round-trip law in `ReferenceConstraintStateTests`:
+  `ofLegacyBooleans ∘ toLegacyBooleans = id` on every variant + the unrepresentability property.
+- **M14 — the `Traversal` optic — HONESTLY DEFERRED (trigger unfired).** M14 would unify the single-focus `Lens`
+  with the hand-rolled `Catalog.mapKinds` / `CatalogTraversal.mapKinds` bulk-map, but its named gate — *resolving the
+  compile-order split* between `Optics.fs` and `Catalog.fs` that is the duplication's cause — **has not fired**, and
+  resolving it is itself a non-trivial structural refactor with no independent forcing function. Per "not yet, and
+  here is the trigger," M14 stays deferred-with-trigger; its re-open condition is the compile-order split being
+  resolved for an independent reason. This deferral *is* M14's correct completion state.
+- **Witness (all integrator-authoritative, this tree).** Debug + **Release** 0/0 (no FS3511). **Full pure pool
+  3629/0** (210 skipped — the Docker no-ops + unfired-trigger skips). `AxiomTests` 79/0 (the change-algebra
+  round-trip survives the M4 facet projection). **`matrix-status.sh` regenerated BYTE-IDENTICALLY** (gate=PASS;
+  rungs L1/L2/L3 = 5/4/5; tolerances 10, 3 open) — M4 is a type refactor with a byte-identical wire and moves no
+  tolerance, so the under-claim is undisturbed (as the Wave-3 handoff predicted M4 *could* move a cell, the careful
+  regen confirms it does not). `verifiability-gate.sh` exit 0. **Docker canary pool 246/246** (scar #3 — a
+  comparison-primitive change ripples through every canary; M4 touches the `Reference` comparison + the codec, so
+  the full pool — not just `~Canary` — was the bar).
+- **Exit criterion (Wave 4) — MET.** The provenance ledger has its machine lens (M18); the digest is determinism-by
+  -construction (M5); the constraint-trust quadrant's illegal state is unrepresentable at the type (M4); the
+  persisted-state-evolution discipline is codified and every Wave-4 serialized-form change cleared its checklist
+  with no migration. **THE VECTOR's defined four-wave plan (§7) is fully cashed**, modulo the honestly-deferred M14.
+  The operator has chosen to continue past the defined plan: a **Wave 5** that closes the residual *open* fidelity
+  adjudications the treatise left dangling (the ReadSide authored-attribute round-trip, the transactionality T-VI
+  honesty, the permissions interim tolerance) — distinct from the moat, which stays cut with named triggers.
+
+## 2026-06-16 — THE VECTOR Wave 5 BUILT: the open fidelity adjudications closed (the authored-attribute round-trip RESOLVED + fixed; transactionality + permissions honestly named against the J5 evidence) + the totality synthesis
+
+Operator-authorized continuation **past** THE VECTOR's defined four-wave plan, to close the residual *open*
+fidelity adjudications that genuinely advance the full fidelity algebra (`THE_VECTOR.md` §3.3 / §5.1 / Appendix B)
+— as distinct from the moat, which stays cut with named triggers. The intent: the gap to the bullseye is not a
+field of missing features but a small, named set of places where the engine says more than it can show; Wave 5
+closes the last *buildable* such place and names the rest honestly.
+
+- **The ReadSide authored-*attribute* round-trip — ADJUDICATED (it failed) and FIXED.** The treatise's single
+  explicitly-open fidelity question (T-V/T-I, §3.3). **Resolved by reading the code:** the emitter persisted
+  `Projection.SsKey` only at the TABLE level (`SsdtDdlEmitter.fs:607`, Wave 4.1 kind recovery) — the COLUMN level
+  got only `Projection.LogicalName`, no SsKey — and ReadSide's `attributeSsKey` SYNTHESIZED the attribute key from
+  `READSIDE_ATTR + [schema;table;column]`. So an authored column **rename** changed the synthesized key and the
+  attribute landed in `Removed + Added`, not `Renamed` — the attribute-grain faithfulness leak. **The fix is the
+  treatise's prescription, NOT the echo-chamber's:** per-attribute identity emission + recovery (a per-column
+  `Projection.SsKey` extended property), **not** changing the flat-synthesis fallback (the four-lens "fix" the
+  adversarial layer killed — OSSYS `[module;entity]` vs ReadSide `[schema;table]` namespaces can't be reconciled by
+  segmentation). Built: (emit) column-level `Projection.SsKey` carrying `SsKey.serialize attr.SsKey`, gated with its
+  `Projection.LogicalName` sibling; (read) `recoverAttributeSsKey` (the attribute-grain twin of `recoverKindSsKey`)
+  threaded through `buildAttribute` AND `buildReference` (so a recovered FK's `SourceAttribute` MATCHES the
+  reconstructed attribute — the attribute-grain `6.A.5`), reading a new column-level branch of the `V2.SsKey`
+  result set (the SQL gained the `LEFT JOIN sys.columns` + dropped `minor_id = 0`, mirroring the LogicalName result
+  set). Graceful degradation preserved: a missing / malformed column property falls back to `READSIDE_ATTR`
+  synthesis, so non-V2 schemas read unchanged. **The goldens were re-blessed** (`GOLDEN_RECORD=1`): +700 lines
+  across 17 files, **all insertions**, each exactly a column-level `Projection.SsKey` `sp_addextendedproperty`
+  (`@level2type = N'COLUMN'`) — the additive identity annotation, no other drift (`git diff` confirmed). Witnesses:
+  `SsdtExtendedPropertyEmissionTests` (a statement-bounded regex asserts a COLUMN-level `Projection.SsKey` is
+  emitted) + the Docker canary `CanaryRoundTripTests."Wave 5: column Projection.SsKey persistence — ReadSide
+  recovers OssysOriginal ATTRIBUTE identities"` (an authored `OssysOriginal` attribute GUID survives emit → deploy
+  → read as itself, not a `READSIDE_ATTR` synthesis). *This closes the T-V/T-I attribute-grain adjudication: an
+  authored column rename now round-trips as `Renamed`.*
+- **Transactionality (T-VI) — the trigger fired and points AWAY from the giant wrapper; honestly named.** The live
+  atomic `BEGIN TRAN` wrapper was deferred on "whether the managed login permits one giant transaction vs forces
+  resumable-upsert" (`Preflight.fs`). The **J5 managed-environment run** (DECISIONS 2026-06-15) resolves it: the
+  managed login is **DML-only (no ALTER)**, the identity path is **AssignedBySink**, and the rollback channel is
+  **"DELETE by captured `[Id]`" (transaction ROLLBACK clean on small batches)** — i.e. the evidence points to the
+  **compensating-undo channel** (which `M12`'s groupoid `inverse` + the `CaptureJournal`'s captured keys already
+  model), and the giant-transaction-over-the-~288M-row-estate question is gated on the **still-open P7b
+  throughput**. So building a giant `BEGIN TRAN` wrapper now would be both premature and contrary to the evidence;
+  it **stays deferred** with the trigger sharpened. The honest naming (already half-present in the matrix footer)
+  was made precise: a mid-write crash is a *named* refusal (`GateLabel.MidWriteNotProtected`, Wave 2), the
+  compensating arm is the inverse, the wrapper is deferred on P7b. *No code beyond the footer — the correct outcome
+  is the honest disposition, not a speculative build.*
+- **Permissions (T-VI) — honestly named in the CORRECT home (a category error avoided).** The treatise proposed a
+  `PermissionsGatedNotProjected` `ToleratedDivergence`. **Examined against the code, that is the wrong home:**
+  `ToleratedDivergence` is for *round-trip divergences the canary absorbs*, and the matrix's `@ladder` axis is one
+  of the FIVE round-trip axes — but permissions is **not a round-trip axis** (the A2 pre-flight *gates* on grants
+  but there is no `Grant` IR facet, no `GRANT` in the `Statement` DU, no permission channel in `CatalogDiff`, no
+  readback). Forcing a non-round-trip dimension into the round-trip ladder / DU would itself misrepresent fidelity
+  — ironic for an honesty move. So the honest realization is in the matrix's existing **"unwitnessed sub-axes"
+  footer** (`matrix-status.sh`), strengthened to name precisely that permissions is *gated but not projected* (the
+  gate's existence must not be read as the axis being closed) and that the full axis fires only when a flow must
+  *publish* grants (the eject). *This is the discipline correcting the treatise — the named-erasure law applied to
+  the engine's own honesty surface.*
+- **The totality synthesis — written.** `THE_VECTOR_SYNTHESIS.md` — what the whole program (Waves 0–5) accomplished
+  and why it matters *per se* (the operator's capstone ask): the six waves are one instruction executed six times
+  (extend the named surfaces until claim = demonstration); the deeper point is that a system that can *prove* its
+  own correctness continuously is a different *kind* of object than one that is merely correct; and the refusals
+  (the killed echo-chamber, the deferred `SchemaMove` unification, the named-not-built moat) are the respect.
+- **Witness (integrator-authoritative, this tree).** Debug + **Release** 0/0. **Full pure pool 3631/0** (+2 vs
+  Wave 4: the column-SsKey emit test + the goldens re-blessed; the attribute-recovery canary is Docker-gated → in
+  the 210 skips). Goldens re-blessed (+700 additive lines, all column `Projection.SsKey`). **`matrix-status.sh`
+  gate=PASS** (rungs 5/4/5, tolerances 10/3-open — UNCHANGED; the footer gained the two T-VI dimension names, no
+  ladder cell moved — the attribute fix strengthens the *Identity* axis at the attribute grain without a tolerance
+  change). `verifiability-gate.sh` exit 0. **Docker canary pool 247/247** (246 + the new attribute-recovery canary,
+  0 skipped — it RAN and passed on a real database; no canary regressed from the new column-level emit, which every
+  canary now deploys + reads back).
+- **Exit criterion (Wave 5) — MET.** The last *buildable* open fidelity adjudication (authored-attribute identity
+  round-trip) is closed and witnessed; the two non-buildable T-VI dimensions (transactionality, permissions) are
+  named honestly against the evidence rather than built speculatively; the moat stays cut with named triggers; and
+  the totality synthesis is written. **THE VECTOR is complete** — the gap from the witnessed floor to the bullseye
+  is closed to within a small, named, trigger-gated remainder (the moat). The books are balanced, and the balance
+  is checkable.

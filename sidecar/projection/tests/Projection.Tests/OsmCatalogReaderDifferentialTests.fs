@@ -346,7 +346,7 @@ let private expectedReferenceCatalog : Catalog =
               { Attribute.create userAccountIdAttrKey (mkName "AccountId") Integer with Column = ColumnRealization.create ("ACCOUNTID") (false) |> Result.value; IsMandatory = true; SqlStorage = Some SqlStorageType.BigInt }
           ]
           References = [
-              { Reference.create userAccountReferenceKey (mkName "AccountId") userAccountIdAttrKey accountKindKey with HasDbConstraint = true }
+              { Reference.create userAccountReferenceKey (mkName "AccountId") userAccountIdAttrKey accountKindKey with ConstraintState = ConstraintState.TrustedConstraint }
           ]
           Indexes    = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [

@@ -170,7 +170,7 @@ let private rpOrderKind (ownerName: string) (ownerCol: string) : Kind =
       with
         References =
             [ { Reference.create (aKey "Order.OwnerRef") (nm "OwnerRef") rpOwnerAttrKey rpUserKey with
-                  HasDbConstraint = true } ] }
+                  ConstraintState = ConstraintState.TrustedConstraint } ] }
 
 let private rpCatOf (k: Kind list) : Catalog =
     IRBuilders.mkCatalog [ IRBuilders.mkModule (kKey "Mod") (nm "M") k ]

@@ -187,7 +187,21 @@ open_count=$(printf '%s\n' "$ladder_tags" | awk '$3=="OpenGap"' | grep -c . || t
   echo "> FK-trust + unique-promotion through the general \`PhysicalSchema.diff\` comparator,"
   echo "> so the Decision axis is honestly faithful, not asserted."
   echo "> L3 here is \"a composition witness exists for the axis,\" not \"faithful under every"
-  echo "> spanning axis\" (T-VI atomicity/permissions ride the debrief until cluster A names them)."
+  echo "> spanning axis\" (T-VI). The two T-VI dimensions that are NOT round-trip axes are named"
+  echo "> here so the five-row ladder above is not read as the whole basis:"
+  echo "> **(a) Transactionality/Rollback** — a mid-write crash is a *named* refusal"
+  echo "> (\`GateLabel.MidWriteNotProtected\`, THE VECTOR Wave 2) and the compensating-undo arm is"
+  echo "> the groupoid \`inverse\`; the live atomic \`BEGIN TRAN\` wrapper stays deferred — the J5"
+  echo "> managed-env evidence (ROLLBACK clean, but DML-only + AssignedBySink + cleanup-by-captured"
+  echo "> -key) points to the compensating channel, and the giant-transaction-over-estate is gated"
+  echo "> on the still-open P7b throughput. **(b) Permissions** — the A2 pre-flight *gates* on"
+  echo "> grants (it refuses a write-denied sink) but grants/roles/RLS are NOT a projected axis (no"
+  echo "> \`Grant\` IR facet, no \`GRANT\` in the \`Statement\` DU, no permission channel in"
+  echo "> \`CatalogDiff\`, no readback): the engine can *refuse* but cannot *project / diff /"
+  echo "> round-trip* a permission decision, so the gate's existence must not be read as the axis"
+  echo "> being closed. The full permissions axis fires only when a flow must *publish* grants (the"
+  echo "> eject). Both are out-of-ladder by construction (a non-round-trip dimension is a category"
+  echo "> error in a round-trip \`ToleratedDivergence\`), named here per THE VECTOR Wave 5 honesty."
   echo
   # Deterministic footer (T1): no wall-clock stamp — the artifact is a pure
   # function of the proof surfaces, so `git diff` on it = a coverage shift, and

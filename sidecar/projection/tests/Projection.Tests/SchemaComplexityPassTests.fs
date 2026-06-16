@@ -24,7 +24,7 @@ let private mkRef (ownerKey: SsKey) (targetKey: SsKey) : Reference =
     let attrKey = synthKey (SsKey.rootOriginal ownerKey) "fk"
     let refKey  = synthKey (SsKey.rootOriginal ownerKey) "fk_ref"
     { Reference.create refKey (Name.create "fk" |> Result.value) attrKey targetKey with
-        HasDbConstraint = true }
+        ConstraintState = ConstraintState.TrustedConstraint }
 
 let private mkSimpleKind (key: SsKey) : Kind =
     Kind.create

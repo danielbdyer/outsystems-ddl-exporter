@@ -46,6 +46,20 @@ to be retired from `Tolerance.fs`. The generator under-claims; it never over-cla
 > FK-trust + unique-promotion through the general `PhysicalSchema.diff` comparator,
 > so the Decision axis is honestly faithful, not asserted.
 > L3 here is "a composition witness exists for the axis," not "faithful under every
-> spanning axis" (T-VI atomicity/permissions ride the debrief until cluster A names them).
+> spanning axis" (T-VI). The two T-VI dimensions that are NOT round-trip axes are named
+> here so the five-row ladder above is not read as the whole basis:
+> **(a) Transactionality/Rollback** — a mid-write crash is a *named* refusal
+> (`GateLabel.MidWriteNotProtected`, THE VECTOR Wave 2) and the compensating-undo arm is
+> the groupoid `inverse`; the live atomic `BEGIN TRAN` wrapper stays deferred — the J5
+> managed-env evidence (ROLLBACK clean, but DML-only + AssignedBySink + cleanup-by-captured
+> -key) points to the compensating channel, and the giant-transaction-over-estate is gated
+> on the still-open P7b throughput. **(b) Permissions** — the A2 pre-flight *gates* on
+> grants (it refuses a write-denied sink) but grants/roles/RLS are NOT a projected axis (no
+> `Grant` IR facet, no `GRANT` in the `Statement` DU, no permission channel in
+> `CatalogDiff`, no readback): the engine can *refuse* but cannot *project / diff /
+> round-trip* a permission decision, so the gate's existence must not be read as the axis
+> being closed. The full permissions axis fires only when a flow must *publish* grants (the
+> eject). Both are out-of-ladder by construction (a non-round-trip dimension is a category
+> error in a round-trip `ToleratedDivergence`), named here per THE VECTOR Wave 5 honesty.
 
 _Self-reported · gate=PASS · L2 axioms live/C/D=79/6/1 · rungs L1/L2/L3=5/4/5 of 5 · tolerances 10 (3 open)_
