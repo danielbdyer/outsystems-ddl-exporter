@@ -39,6 +39,7 @@ type ToleratedDivergenceGen =
                 ToleratedDivergence.CompositePkFkUnreflected
                 ToleratedDivergence.CharAnsiPaddingTolerated
                 ToleratedDivergence.DecimalScaleTolerated
+                ToleratedDivergence.FkTrustNotRestoredOnBulkLoad
                 ToleratedDivergence.TriggerBodyUnparsedDropped
             ]
         |> Arb.fromGen
@@ -58,7 +59,7 @@ let ``Tolerance.permissive is not strict`` () =
     Assert.False (Tolerance.isStrict Tolerance.permissive)
 
 [<Fact>]
-let ``Closed-DU coverage: ToleratedDivergence.allKnown contains nine variants (M1 retired the two Decision tolerances)`` () =
+let ``Closed-DU coverage: ToleratedDivergence.allKnown contains ten variants (option C added FkTrustNotRestoredOnBulkLoad)`` () =
     // Per the closed-DU expansion empirical-test discipline (`DECISIONS
     // 2026-05-13`): when a new ToleratedDivergence variant lands, this
     // count assertion fires until allKnown is extended. The companion
@@ -99,7 +100,12 @@ let ``Closed-DU coverage: ToleratedDivergence.allKnown contains nine variants (M
     // FK-trust / unique-promotion decisions through the general comparator
     // (witnessed Docker-real by the M1 decision-readback test), so the Decision
     // axis flips back from ◑ L2-partial to ✅ faithful.
-    Assert.Equal (9, Set.count ToleratedDivergence.allKnown)
+    // **Option C (Wave 1 follow-on, 2026-06-15):** 10 — `FkTrustNotRestoredOnBulkLoad`
+    // (Decision, AcceptedFaithful) names the transfer-leg OPT-OUT: `Transfer.Execute`
+    // re-trusts the sink's FKs by default, so this fires only when the operator
+    // sets `WriteOptions.RetrustForeignKeys = false`. AcceptedFaithful, so the
+    // Decision axis stays ✅ and the open-gap count stays 3.
+    Assert.Equal (10, Set.count ToleratedDivergence.allKnown)
 
 [<Fact>]
 let ``Tolerance.ofSet round-trips through divergences`` () =

@@ -34,7 +34,7 @@ witness covers the axis. The **Ladder** column is the honest weakest-rung summar
 | **Decision** | ✅ | ✅ faithful | ✅ | — | ✅ L3 |
 
 **Rungs reached: L1 5/5 · L2 4/5 · L3 5/5.** Tolerance set:
-9 named, of which **3 open** (`OpenGap`). A cell cannot be
+10 named, of which **3 open** (`OpenGap`). A cell cannot be
 hand-marked: L1/L3 require the witness test to exist; L2 requires the open tolerance
 to be retired from `Tolerance.fs`. The generator under-claims; it never over-claims.
 
@@ -48,4 +48,4 @@ to be retired from `Tolerance.fs`. The generator under-claims; it never over-cla
 > L3 here is "a composition witness exists for the axis," not "faithful under every
 > spanning axis" (T-VI atomicity/permissions ride the debrief until cluster A names them).
 
-_Self-reported · gate=PASS · L2 axioms live/C/D=79/6/1 · rungs L1/L2/L3=5/4/5 of 5 · tolerances 9 (3 open)_
+_Self-reported · gate=PASS · L2 axioms live/C/D=79/6/1 · rungs L1/L2/L3=5/4/5 of 5 · tolerances 10 (3 open)_

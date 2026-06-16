@@ -199,6 +199,7 @@ let ``Chapter 4.1.A slice 8: Tolerance.CommentMetadataUnreflected variant retire
         | ToleratedDivergence.CompositePkFkUnreflected     -> ()
         | ToleratedDivergence.CharAnsiPaddingTolerated     -> ()
         | ToleratedDivergence.DecimalScaleTolerated        -> ()
+        | ToleratedDivergence.FkTrustNotRestoredOnBulkLoad -> ()
         | ToleratedDivergence.TriggerBodyUnparsedDropped   -> ()
     // AC-D6 (NEITHER→HELD) added the two representation-only tolerances;
     // NM-28 (2026-06-14) added CompositePkFkUnreflected; NM-17 (2026-06-14)
@@ -209,7 +210,9 @@ let ``Chapter 4.1.A slice 8: Tolerance.CommentMetadataUnreflected variant retire
     // raising the count to 11. **M1 (THE VECTOR, Wave 1, 2026-06-15) RETIRED the
     // two Decision-axis tolerances** — the round-trip now observes FK-trust /
     // unique-promotion through the general comparator — dropping the count to 9.
-    Assert.Equal(9, Set.count ToleratedDivergence.allKnown)
+    // **Option C (Wave 1 follow-on, 2026-06-15):** 10 — FkTrustNotRestoredOnBulkLoad
+    // (Decision, AcceptedFaithful) names the transfer-leg re-trust opt-out.
+    Assert.Equal(10, Set.count ToleratedDivergence.allKnown)
 
 // ---------------------------------------------------------------------------
 // NM-70 (WP5) — the identity-annotation emit | omit gate.

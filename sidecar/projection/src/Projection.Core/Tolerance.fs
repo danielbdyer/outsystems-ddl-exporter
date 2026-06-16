@@ -187,6 +187,34 @@ type ToleratedDivergence =
     // dead-algebra-retirement precedent), uniform with the NM-16 kind-facet
     // retirement above.
 
+    /// Wave 1 follow-on (option C, operator-authorized 2026-06-15) — the data
+    /// transfer's bulk load (`Bulk.copyCore` via `SqlBulkCopy` WITHOUT
+    /// `CHECK_CONSTRAINTS`) leaves the sink's FKs `is_not_trusted = 1`. By
+    /// DEFAULT `Transfer.Execute` re-validates them post-load (`WITH CHECK CHECK
+    /// CONSTRAINT`, `WriteOptions.RetrustForeignKeys = true`), so the sink
+    /// rounds-trips TRUSTED and **no divergence fires** — the transfer canary
+    /// asserts full `isEqual` incl. trust. This tolerance names the OPT-OUT:
+    /// when an operator sets `RetrustForeignKeys = false` to keep raw load
+    /// throughput at the reverse leg's hundreds-of-millions-of-rows scale, the
+    /// sink's FKs stay untrusted — a trust-bit-ONLY divergence (FK structure,
+    /// columns, rows, and indexes all round-trip; nothing structural is absorbed).
+    /// M1 put FK trust on the **Decision** sub-axis (`NoCheckFk` →
+    /// `PhysicalForeignKey.IsTrusted`), so this is a Decision-axis divergence. It
+    /// is `AcceptedFaithful`, NOT `OpenGap`: the engine's DEFAULT config is
+    /// faithful (Decision stays `✅`), and the opt-out is a NAMED, witnessed
+    /// operator choice — the off-path transfer canary asserts it fires, and
+    /// `Tolerance.matchedResidual` surfaces it per-run. (Successor name to the
+    /// M1-retired `FkTrustUnreflected`: that was the comparator being BLIND to
+    /// trust; this is the transfer DECIDING not to restore it — distinct
+    /// concepts, do not conflate.) Retiring it is not anticipated: it is the
+    /// named home for a deliberate operator trade, alive as long as the opt-out
+    /// exists. NB: the streaming reverse-leg (`writePlanStreaming`) and
+    /// synthetic-load (`runSynthetic`) realizations do not yet wire the re-trust
+    /// step, so they currently always exhibit this tolerance — a named Wave-2
+    /// follow-on, not a silent gap.
+    /// @ladder FkTrustNotRestoredOnBulkLoad Decision AcceptedFaithful
+    | FkTrustNotRestoredOnBulkLoad
+
     /// M2 (THE VECTOR, Wave 0 honesty) — a `Statement.CreateTrigger` whose
     /// definition body fails to parse (`ScriptDomBuild.tryParseTriggerBody`
     /// returns `None`, H-019) is dropped from the SSDT **text** artifact at
@@ -239,6 +267,7 @@ module ToleratedDivergence =
         | ToleratedDivergence.CompositePkFkUnreflected       -> ToleratedDivergence.CompositePkFkUnreflected
         | ToleratedDivergence.CharAnsiPaddingTolerated       -> ToleratedDivergence.CharAnsiPaddingTolerated
         | ToleratedDivergence.DecimalScaleTolerated          -> ToleratedDivergence.DecimalScaleTolerated
+        | ToleratedDivergence.FkTrustNotRestoredOnBulkLoad   -> ToleratedDivergence.FkTrustNotRestoredOnBulkLoad
         | ToleratedDivergence.TriggerBodyUnparsedDropped     -> ToleratedDivergence.TriggerBodyUnparsedDropped
 
     /// Every empirically-grounded `ToleratedDivergence` variant.
@@ -263,6 +292,7 @@ module ToleratedDivergence =
                 coverage ToleratedDivergence.CompositePkFkUnreflected
                 coverage ToleratedDivergence.CharAnsiPaddingTolerated
                 coverage ToleratedDivergence.DecimalScaleTolerated
+                coverage ToleratedDivergence.FkTrustNotRestoredOnBulkLoad
                 coverage ToleratedDivergence.TriggerBodyUnparsedDropped
             ]
 
@@ -281,6 +311,7 @@ module ToleratedDivergence =
         | ToleratedDivergence.CompositePkFkUnreflected     -> "CompositePkFkUnreflected"
         | ToleratedDivergence.CharAnsiPaddingTolerated     -> "CharAnsiPaddingTolerated"
         | ToleratedDivergence.DecimalScaleTolerated        -> "DecimalScaleTolerated"
+        | ToleratedDivergence.FkTrustNotRestoredOnBulkLoad -> "FkTrustNotRestoredOnBulkLoad"
         | ToleratedDivergence.TriggerBodyUnparsedDropped   -> "TriggerBodyUnparsedDropped"
 
     /// Parse a config token to its divergence, or `None` for an unrecognized

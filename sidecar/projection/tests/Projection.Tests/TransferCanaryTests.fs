@@ -20,31 +20,23 @@ module private TransferCanaryFixtures =
         if Deploy.Docker.ensureRunning () then true
         else printfn "SKIP %s: Docker daemon not reachable." label; false
 
-    /// THE VECTOR Wave 1 / M1 follow-on — normalize the FK *trust* bit before a
-    /// transfer-canary comparison. M1 gave `PhysicalForeignKey` an `IsTrusted`
-    /// field so the SCHEMA round-trip canary (emit → deploy → read-back) observes
-    /// FK trust through the general comparator. The DATA transfer is a different
-    /// surface: `Transfer.Execute` loads rows via the high-throughput bulk path
-    /// (SqlBulkCopy WITHOUT `CHECK_CONSTRAINTS`), which SQL Server records by
-    /// marking the sink's FKs `is_not_trusted = 1`. So a trusted source FK reads
-    /// back as an UNTRUSTED sink FK — a divergence on the trust bit ALONE (the FK
-    /// structure — source/target schema·table·column — columns, rows, and indexes
-    /// all round-trip; verified because this helper normalizes ONLY `IsTrusted`,
-    /// so a genuine *structural* FK divergence still fails the canary).
+    /// Normalize the FK *trust* bit to `true` on both sides of a comparison.
+    /// M1 gave `PhysicalForeignKey` an `IsTrusted` field, so the high-throughput
+    /// bulk load (SqlBulkCopy WITHOUT `CHECK_CONSTRAINTS`, leaving the sink's FKs
+    /// `is_not_trusted = 1`) is a trust-bit-ONLY divergence — FK structure
+    /// (source/target schema·table·column), columns, rows, and indexes all
+    /// round-trip; this helper normalizes ONLY `IsTrusted`, so a genuine
+    /// *structural* FK divergence still fails.
     ///
-    /// The transfer canary witnesses DATA + SCHEMA-STRUCTURE fidelity; FK-trust
-    /// ROUND-TRIP is witnessed separately on the schema surface
-    /// (`CanaryRoundTripTests` — the M1 decision-readback adjunction). Normalizing
-    /// the trust bit on BOTH sides scopes the transfer canary to its true claim —
-    /// a NAMED, explained exclusion (the `isSchemaEqual`-ignores-rows precedent),
-    /// not a silent one.
-    ///
-    /// OPEN QUESTION (operator / transfer-path owner — see DECISIONS 2026-06-15
-    /// "THE VECTOR Wave 1"): should `Transfer.Execute` re-validate FKs
-    /// (`WITH CHECK CHECK CONSTRAINT`) after the bulk load to re-TRUST them on the
-    /// sink — trading load throughput for trust fidelity — given the reverse leg's
-    /// hundreds-of-millions-of-rows scale target? If so, this normalization
-    /// retires and the transfer canary asserts full `isEqual` including trust.
+    /// RESOLVED (operator, 2026-06-15 — option C; see DECISIONS "Wave 1 follow-on:
+    /// the FK-trust transfer-leg OPEN QUESTION RESOLVED"). The default
+    /// `Transfer.Execute` now RE-TRUSTS the sink's FKs post-load
+    /// (`WriteOptions.RetrustForeignKeys = true`), so the on-path `RoundTrips`
+    /// canary asserts FULL `isEqual` including trust — it no longer calls this
+    /// helper. The helper survives to serve the OPT-OUT witness: the off-path
+    /// canary runs with `RetrustForeignKeys = false` and uses this to prove the
+    /// ONLY residual divergence is trust (everything else round-trips), the named
+    /// `ToleratedDivergence.FkTrustNotRestoredOnBulkLoad`.
     let trustNormalizedFks (ps: PhysicalSchema) : PhysicalSchema =
         { ps with
             ForeignKeys = ps.ForeignKeys |> Set.map (fun fk -> { fk with IsTrusted = true }) }
@@ -63,6 +55,16 @@ module private TransferCanaryFixtures =
         "INSERT INTO [dbo].[OSUSR_XF_CUSTOMER] ([ID],[NAME]) VALUES (1,N'Alice'),(2,N'Bob'); " +
         "INSERT INTO [dbo].[OSUSR_XF_ORDER] ([ID],[CUSTOMER_ID],[AMOUNT]) VALUES " +
         "(10,1,100),(11,2,200),(12,1,300);"
+
+    /// The twoTable schema whose FK is deployed UNTRUSTED — a `NoCheckFk`
+    /// decision: created normally, then disabled and re-enabled `WITH NOCHECK`
+    /// so it stays ENABLED (enforces new DML) but reads `is_not_trusted = 1`.
+    /// Used to prove option C's re-trust PRESERVES an as-deployed untrusted FK
+    /// (it restores only the trust the bulk load strips, never a NoCheckFk).
+    let untrustedFkDdl =
+        twoTableDdl +
+        " ALTER TABLE [dbo].[OSUSR_XF_ORDER] NOCHECK CONSTRAINT [FK_XfOrder_Customer]; " +
+        "ALTER TABLE [dbo].[OSUSR_XF_ORDER] WITH NOCHECK CHECK CONSTRAINT [FK_XfOrder_Customer];"
 
     /// Self-referential FK (a 1-cycle): MANAGER_ID is nullable, so it
     /// defers — phase 1 inserts with NULL, phase 2 re-points it.
@@ -375,18 +377,21 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                                 let report = TransferCanaryFixtures.value reportR
                                 Assert.True(report.Kinds |> List.forall (fun k -> k.RowsWritten = k.RowsIngested))
 
-                                // Sink reproduces Source on PhysicalSchema (incl. per-row hashes).
-                                // FK-trust is normalized on both sides: the bulk data load leaves
-                                // sink FKs untrusted (documented SqlBulkCopy behavior), a trust-bit-
-                                // only divergence the transfer canary scopes out by name — FK-trust
-                                // ROUND-TRIP is witnessed on the schema surface (the M1 canary). See
-                                // `TransferCanaryFixtures.trustNormalizedFks`.
+                                // Sink reproduces Source on PhysicalSchema in FULL — per-row hashes
+                                // AND FK trust. Option C (operator-authorized 2026-06-15): the default
+                                // `Transfer.Execute` re-trusts the sink's FKs after the bulk load
+                                // (`WriteOptions.RetrustForeignKeys = true`), restoring the trust bit
+                                // the high-throughput `SqlBulkCopy` left `is_not_trusted = 1`. So the
+                                // canary asserts full `isEqual` INCLUDING trust — no `trustNormalizedFks`
+                                // normalization (retired here per its own docstring's promise). The
+                                // opt-out (re-trust off) is witnessed by the `FkTrustNotRestoredOnBulkLoad`
+                                // off-path canary below.
                                 let! aR = ReadSide.read src
                                 let! bR = ReadSide.read sink
                                 let diff =
                                     PhysicalSchema.diff
-                                        (TransferCanaryFixtures.trustNormalizedFks (PhysicalSchema.ofCatalog (TransferCanaryFixtures.value aR)))
-                                        (TransferCanaryFixtures.trustNormalizedFks (PhysicalSchema.ofCatalog (TransferCanaryFixtures.value bR)))
+                                        (PhysicalSchema.ofCatalog (TransferCanaryFixtures.value aR))
+                                        (PhysicalSchema.ofCatalog (TransferCanaryFixtures.value bR))
                                 Assert.True(PhysicalSchema.isEqual diff, PhysicalSchema.renderDiff diff)
                             })
                 }))
@@ -398,6 +403,107 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
     [<Fact>]
     member this.``data canary: deferred self-referential FK is re-pointed in phase 2`` () =
         this.RoundTrips "XferSelf" TransferCanaryFixtures.selfRefDdl TransferCanaryFixtures.selfRefSeed
+
+    // Option C off-path — the opt-out witness. With `RetrustForeignKeys = false`
+    // the bulk load's untrusted sink FKs are LEFT untrusted: the named, accepted
+    // `FkTrustNotRestoredOnBulkLoad` Decision-axis tolerance, not a silent drop.
+    // Discriminating against the default (re-trust on, asserted by `RoundTrips`):
+    // the RAW diff is non-empty (trust differs), the source reads trusted / the
+    // sink untrusted, and normalizing ONLY trust empties the diff (nothing
+    // structural diverges — the bulk data + FK structure still round-trip).
+    [<Fact>]
+    member _.``data canary (option C off-path): RetrustForeignKeys=false leaves sink FKs untrusted — named FkTrustNotRestoredOnBulkLoad`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "XferNoRetrust") then () else
+        // The opt-out is a named, closed tolerance — not a silent divergence.
+        Assert.Contains(ToleratedDivergence.FkTrustNotRestoredOnBulkLoad, ToleratedDivergence.allKnown)
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "XferNoRetrustSrc" (fun src _ ->
+                task {
+                    do! Deploy.executeBatch src TransferCanaryFixtures.twoTableDdl
+                    do! Deploy.executeBatch src TransferCanaryFixtures.twoTableSeed
+                    return!
+                        fixture.WithEphemeralDatabase "XferNoRetrustSink" (fun sink _ ->
+                            task {
+                                do! Deploy.executeBatch sink TransferCanaryFixtures.twoTableDdl
+
+                                let! contractR = ReadSide.read src
+                                let contract = TransferCanaryFixtures.value contractR
+
+                                // Opt out of re-trust — keep the bulk load's untrusted FKs.
+                                let opts = { Transfer.WriteOptions.def with RetrustForeignKeys = false }
+                                let! reportR = Transfer.runWithOptions Transfer.Execute opts true src sink contract
+                                let _ = TransferCanaryFixtures.value reportR
+
+                                let! aR = ReadSide.read src
+                                let! bR = ReadSide.read sink
+                                let srcPs = PhysicalSchema.ofCatalog (TransferCanaryFixtures.value aR)
+                                let sinkPs = PhysicalSchema.ofCatalog (TransferCanaryFixtures.value bR)
+
+                                // Source FK trusted; sink FK untrusted (the opt-out divergence).
+                                Assert.True(srcPs.ForeignKeys |> Set.forall (fun fk -> fk.IsTrusted),
+                                            "source FKs should read trusted")
+                                Assert.True(sinkPs.ForeignKeys |> Set.exists (fun fk -> not fk.IsTrusted),
+                                            "with re-trust off the sink FK should read untrusted")
+
+                                // RAW diff is non-empty (trust differs)...
+                                let rawDiff = PhysicalSchema.diff srcPs sinkPs
+                                Assert.False(PhysicalSchema.isEqual rawDiff,
+                                             "with re-trust off the FK-trust divergence must surface")
+                                // ...and normalizing ONLY trust empties it (nothing structural diverges).
+                                let normDiff =
+                                    PhysicalSchema.diff
+                                        (TransferCanaryFixtures.trustNormalizedFks srcPs)
+                                        (TransferCanaryFixtures.trustNormalizedFks sinkPs)
+                                Assert.True(PhysicalSchema.isEqual normDiff, PhysicalSchema.renderDiff normDiff)
+                            })
+                }))
+
+    // Option C — the NoCheckFk-PRESERVATION witness (the fidelity guard on the
+    // re-trust step). A source FK deployed UNTRUSTED (a NoCheckFk decision — the
+    // very thing M1 made faithful) must survive a DEFAULT (re-trust ON) transfer
+    // as UNTRUSTED on the sink. The restore re-validates only the trust the bulk
+    // load STRIPS (the pre-load snapshot), never an as-deployed untrusted FK.
+    // Discriminating: a blanket "re-trust every untrusted FK" would trust the
+    // sink FK — diverging from the source AND overriding the operator's NoCheckFk
+    // decision (re-validating data they chose not to validate).
+    [<Fact>]
+    member _.``data canary (option C): an as-deployed UNTRUSTED FK (NoCheckFk) is PRESERVED through a default re-trust transfer`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "XferUntrustedFk") then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "XferUntrustedFkSrc" (fun src _ ->
+                task {
+                    do! Deploy.executeBatch src TransferCanaryFixtures.untrustedFkDdl
+                    do! Deploy.executeBatch src TransferCanaryFixtures.twoTableSeed
+                    return!
+                        fixture.WithEphemeralDatabase "XferUntrustedFkSink" (fun sink _ ->
+                            task {
+                                // Sink FK also deployed UNTRUSTED (as-deployed parity).
+                                do! Deploy.executeBatch sink TransferCanaryFixtures.untrustedFkDdl
+
+                                let! contractR = ReadSide.read src
+                                let contract = TransferCanaryFixtures.value contractR
+
+                                // Default transfer — re-trust ON.
+                                let! reportR = Transfer.run Transfer.Execute true src sink contract
+                                let _ = TransferCanaryFixtures.value reportR
+
+                                let! aR = ReadSide.read src
+                                let! bR = ReadSide.read sink
+                                let srcPs = PhysicalSchema.ofCatalog (TransferCanaryFixtures.value aR)
+                                let sinkPs = PhysicalSchema.ofCatalog (TransferCanaryFixtures.value bR)
+
+                                // The as-deployed untrusted FK is preserved on BOTH sides — the
+                                // restore touched only the load-stripped trust (none here), NOT
+                                // the NoCheckFk decision.
+                                Assert.True(srcPs.ForeignKeys |> Set.forall (fun fk -> not fk.IsTrusted),
+                                            "source FK should read as-deployed untrusted")
+                                Assert.True(sinkPs.ForeignKeys |> Set.forall (fun fk -> not fk.IsTrusted),
+                                            "re-trust must PRESERVE the as-deployed untrusted FK, not blanket-trust it")
+                                // Full isEqual incl. trust — both untrusted, everything else round-trips.
+                                let diff = PhysicalSchema.diff srcPs sinkPs
+                                Assert.True(PhysicalSchema.isEqual diff, PhysicalSchema.renderDiff diff)
+                            })
+                }))
 
     // Wave-3 slice 3.1 — the CDC pre-flight. An Execute transfer against a
     // Sink with CDC-tracked tables is refused unless --allow-cdc. Gracefully
