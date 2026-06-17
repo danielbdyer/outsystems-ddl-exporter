@@ -384,6 +384,26 @@ module SyntheticData =
             kind.References
             |> List.map (fun ref -> ref.SourceAttribute, ref.TargetKind)
             |> Map.ofList
+        // §6.3 (F5) — SourceAttribute → ReferenceKey, for the captured FK
+        // selectivity lookup. The selectivity's count-DESC frequencies weight the
+        // SYNTHETIC parent pool BY RANK (the most-referenced synthetic parent ←
+        // the highest source frequency), reproducing the fan-out SKEW without the
+        // real parent keys the synthetic pool does not share. `None` (no evidence
+        // / all-zero support) keeps the uniform draw — byte-identical to pre-F5.
+        let refKeyByAttr =
+            kind.References
+            |> List.map (fun ref -> ref.SourceAttribute, ref.SsKey)
+            |> Map.ofList
+        let fkSelectivityWeights (sourceAttr: SsKey) (poolLen: int) : int64 list option =
+            match Map.tryFind sourceAttr refKeyByAttr with
+            | None -> None
+            | Some refKey ->
+                match Profile.tryFindForeignKeySelectivity refKey profile with
+                | Some sel when not (List.isEmpty sel.Frequencies) ->
+                    let counts = sel.Frequencies |> List.map snd |> List.toArray
+                    let weights = [ for i in 0 .. poolLen - 1 -> if i < counts.Length then counts.[i] else 0L ]
+                    if weights |> List.sumBy (fun c -> if c > 0L then c else 0L) > 0L then Some weights else None
+                | _ -> None
         // NM-21 — name the unsatisfiable FKs once per kind (row-independent):
         // a non-nullable FK column whose target PK pool is empty is forced to
         // NULL below; σ now emits a `synthetic.fk.unsatisfiable` diagnostic so
@@ -432,8 +452,18 @@ module SyntheticData =
                                 // surfaces it but Core no longer emits it silently.
                                 None
                             else
-                                let j = int (nextDraw () % uint64 (List.length pool))
-                                Some pool.[j]
+                                // §6.3 (F5) — selectivity-weighted draw when the skew
+                                // evidence is present; uniform otherwise (byte-identical
+                                // to pre-F5). Both consume exactly one Rng draw, so the
+                                // stream stays in lockstep regardless of which path runs.
+                                match fkSelectivityWeights attr.SsKey (List.length pool) with
+                                | Some weights ->
+                                    let j, s = weightedIndex weights state
+                                    state <- s
+                                    Some pool.[min j (List.length pool - 1)]
+                                | None ->
+                                    let j = int (nextDraw () % uint64 (List.length pool))
+                                    Some pool.[j]
                         else
                             let nulled, s = drawsNull profile attr.SsKey state
                             state <- s

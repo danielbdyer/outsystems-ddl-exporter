@@ -153,6 +153,39 @@ let ``F1: a Multiplier VolumeTarget scales the observed count and ignores the gl
     Assert.Equal(50, m.[custKey].Length)
 
 [<Fact>]
+let ``F5: a skewed ForeignKeySelectivity reproduces the fan-out skew (rank-0 parent dominates)`` () =
+    // A dedicated profile: 3 customers, 300 orders, and a heavily-skewed
+    // selectivity on Order→Customer (rank-0 parent carries 280/300 of the
+    // children). σ maps the count-DESC frequencies onto the synthetic pool BY
+    // RANK, so the rank-0 synthetic customer ("1") must dominate the FK values —
+    // far above the ~100 a uniform draw over 3 parents would give.
+    let f5Profile =
+        { Profile.empty with
+            Columns = [ col custId 3L 0L; col ordId 300L 0L ]
+            ForeignKeySelectivities =
+                [ ForeignKeySelectivity.create ordRefC [ ("a", 280L); ("b", 15L); ("c", 5L) ] 3L false (probe 300L) |> mkOk ] }
+    let m = SyntheticData.generate catalog f5Profile cfg 42UL
+    let custIds = valuesOf m custKey "Id"
+    Assert.Equal(3, custIds.Length)
+    let ordCustVals = valuesOf m ordKey "CustomerId"
+    Assert.Equal(300, ordCustVals.Length)                       // no null budget → every FK drawn
+    let top = List.head custIds                                  // rank-0 synthetic parent
+    let topCount = ordCustVals |> List.filter (fun v -> v = top) |> List.length
+    Assert.True(topCount > 200, sprintf "expected the rank-0 parent to dominate (>200/300), got %d" topCount)
+
+[<Fact>]
+let ``F5: with no selectivity evidence the FK draw stays uniform (no parent dominates)`` () =
+    // The same shape WITHOUT a selectivity: the uniform draw spreads ~evenly, so
+    // no single parent approaches the skewed case's dominance — the byte-identical
+    // pre-F5 behavior holds when the evidence is absent.
+    let noSelProfile =
+        { Profile.empty with Columns = [ col custId 3L 0L; col ordId 300L 0L ] }
+    let m = SyntheticData.generate catalog noSelProfile cfg 42UL
+    let ordCustVals = valuesOf m ordKey "CustomerId"
+    let maxShare = [ "1"; "2"; "3" ] |> List.map (fun p -> ordCustVals |> List.filter (fun v -> v = p) |> List.length) |> List.max
+    Assert.True(maxShare < 160, sprintf "expected a roughly uniform spread (<160/300 for the top parent), got %d" maxShare)
+
+[<Fact>]
 let ``PK uniqueness holds across the generated population`` () =
     let m = SyntheticData.generate catalog profile cfg 3UL
     let custIds = valuesOf m custKey "Id"
