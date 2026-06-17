@@ -147,3 +147,57 @@ let ``F0c-propose: a proposed correction drives Synthesize for the typed PII col
     Assert.Contains("Email", cfg.SynthesizeColumns)
     Assert.Contains("FullName", cfg.SynthesizeColumns)
     Assert.DoesNotContain("Status", cfg.SynthesizeColumns)
+
+// -- F-Faker: coordinate addressing + the Faker correction entry --------------
+
+let private coord m e a = AttributeCoordinate.create m e a
+let private fakerSpec g : FakerSpec = { Generator = g; Locale = Option.None }
+
+[<Fact>]
+let ``F-Faker: a coordinate resolves to the attribute SsKey (case-insensitive)`` () =
+    Assert.Equal(Ok emailKey, AttributeCoordinate.resolve catalog (coord "m" "customer" "email"))
+
+[<Fact>]
+let ``F-Faker: a coordinate naming no attribute is a named not-found refusal`` () =
+    match AttributeCoordinate.resolve catalog (coord "M" "Customer" "Nope") with
+    | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "synthetic.coordinate.notFound")
+    | Ok _ -> Assert.Fail("expected a not-found refusal")
+
+[<Fact>]
+let ``F-Faker: a Faker (fresh-fake) binding routes its column to Synthesize (privacy substrate)`` () =
+    let corr = Correction.create [ CorrectionEntry.Faker (coord "M" "Customer" "Email", fakerSpec FakerGenerator.Email) ] |> mkOk
+    let got = Correction.applyToConfig catalog corr SyntheticConfig.defaultConfig
+    Assert.Contains("Email", got.SynthesizeColumns)
+    Assert.DoesNotContain("Email", got.PreserveColumns)
+
+[<Fact>]
+let ``F-Faker: a Faker MASK binding routes its column to Preserve (it obscures σ's real value)`` () =
+    let corr = Correction.create [ CorrectionEntry.Faker (coord "M" "Customer" "Status", fakerSpec (FakerGenerator.Mask MaskRule.Redact)) ] |> mkOk
+    let got = Correction.applyToConfig catalog corr SyntheticConfig.defaultConfig
+    Assert.Contains("Status", got.PreserveColumns)
+    Assert.DoesNotContain("Status", got.SynthesizeColumns)
+
+[<Fact>]
+let ``F-Faker: two Faker bindings on the same coordinate conflict`` () =
+    match Correction.create
+              [ CorrectionEntry.Faker (coord "M" "Customer" "Email", fakerSpec FakerGenerator.Email)
+                CorrectionEntry.Faker (coord "M" "Customer" "Email", fakerSpec FakerGenerator.UserName) ] with
+    | Ok _ -> Assert.Fail("expected a synthetic.correction.conflict refusal")
+    | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "synthetic.correction.conflict")
+
+[<Fact>]
+let ``F-Faker: a Faker (coordinate) and a Pii (SsKey) on the same column do NOT conflict at the ctor`` () =
+    // Different keying (coordinate vs SsKey) — the catalog-free ctor cannot see the
+    // overlap; the realization applies Faker AFTER Pii (the more-specific wins, §5).
+    let r =
+        Correction.create
+            [ CorrectionEntry.Pii (emailKey, PiiKind.Email)
+              CorrectionEntry.Faker (coord "M" "Customer" "Email", fakerSpec FakerGenerator.Email) ]
+    Assert.True((match r with Ok _ -> true | Error _ -> false))
+
+[<Fact>]
+let ``F-Faker: unresolvedFakerCoordinates names a coordinate that does not resolve, empty when all resolve`` () =
+    let good = Correction.create [ CorrectionEntry.Faker (coord "M" "Customer" "Email", fakerSpec FakerGenerator.Email) ] |> mkOk
+    Assert.Empty(Correction.unresolvedFakerCoordinates catalog good)
+    let bad = Correction.create [ CorrectionEntry.Faker (coord "M" "Customer" "Ghost", fakerSpec FakerGenerator.Email) ] |> mkOk
+    Assert.Equal<AttributeCoordinate list>([ coord "M" "Customer" "Ghost" ], Correction.unresolvedFakerCoordinates catalog bad)

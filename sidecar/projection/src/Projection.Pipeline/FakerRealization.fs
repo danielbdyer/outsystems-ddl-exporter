@@ -98,3 +98,176 @@ module FakerRealization =
                                     | Option.None -> acc
                                 else acc) row.Values
                         { row with Values = values }))
+
+    // ======================================================================
+    // FUZZING §5 (slice F-Faker) — the coordinate-addressed, tunable Faker
+    // realization. The WIDE generator catalog, seeded per row identity, bound to
+    // a column LOCATION the operator hand-authored by `(module, entity, attribute)`
+    // coordinate. Person-based generators read one materialized `Bogus.Person`
+    // per (row, locale) (referential consistency); fresh-draw generators re-seed
+    // per (row, column) (order-independent); mask/constant are deterministic.
+    // ======================================================================
+
+    /// A locale-aware faker for one cell. The global `Randomizer.Seed` is set
+    /// immediately before construction (single-threaded → deterministic). An
+    /// unregistered locale falls back to the default — the locale is the
+    /// operator's tuning knob, not a structural input.
+    let private fakerOfLocale (locale: string) (seed: int) : Bogus.Faker =
+        Bogus.Randomizer.Seed <- System.Random(seed)
+        try Bogus.Faker(locale)
+        with _ -> Bogus.Faker()
+
+    /// A stable host-independent seed from (row identity, column name) (FNV-1a) —
+    /// the per-cell seed for FRESH-DRAW generators, so each cell depends only on
+    /// (row, column), independent of the order columns realize in.
+    let private seedOfCell (rowKey: SsKey) (column: Name) : int =
+        let s = SsKey.serialize rowKey + " " + Name.value column
+        let mutable h = 2166136261u
+        for ch in s do h <- (h ^^^ uint32 (uint16 ch)) * 16777619u
+        int h
+
+    let private localeOf (spec: FakerSpec) : string = defaultArg spec.Locale "en"
+
+    /// A fixed reference date so `PastDate`/`FutureDate` are reproducible (NOT a
+    /// clock read — Bogus's default `DateTime.Now` reference would make the
+    /// realization non-reproducible; a fixed anchor keeps it seeded-deterministic).
+    let private refDate = System.DateTime(2020, 1, 1, 0, 0, 0, System.DateTimeKind.Utc)
+
+    let private inv = System.Globalization.CultureInfo.InvariantCulture
+
+    /// FUZZING §5 — format-preserving masking of the σ-Preserved real value.
+    let private applyMask (rule: MaskRule) (value: string) : string =
+        let n = value.Length
+        match rule with
+        | MaskRule.Redact -> System.String('*', n)
+        | MaskRule.KeepLast k ->
+            if k <= 0 then System.String('*', n)
+            elif k >= n then value
+            else System.String('*', n - k) + value.Substring(n - k)
+        | MaskRule.KeepFirst k ->
+            if k <= 0 then System.String('*', n)
+            elif k >= n then value
+            else value.Substring(0, k) + System.String('*', n - k)
+        | MaskRule.Hash ->
+            let mutable h = 2166136261u
+            for ch in value do h <- (h ^^^ uint32 (uint16 ch)) * 16777619u
+            h.ToString("x8")
+
+    /// Whether a generator reads the row's one coherent `Bogus.Person` (so its
+    /// fields are referentially consistent across the row) vs. a fresh draw.
+    let private isPersonBased (g: FakerGenerator) : bool =
+        match g with
+        | FakerGenerator.FullName | FakerGenerator.FirstName | FakerGenerator.LastName
+        | FakerGenerator.UserName | FakerGenerator.Email | FakerGenerator.Phone
+        | FakerGenerator.StreetAddress | FakerGenerator.City | FakerGenerator.ZipCode
+        | FakerGenerator.FullAddress -> true
+        | _ -> false
+
+    /// A person-based generator → a field of the row's one materialized person.
+    let private personField (p: Bogus.Person) (g: FakerGenerator) : string =
+        match g with
+        | FakerGenerator.FullName      -> p.FullName
+        | FakerGenerator.FirstName     -> p.FirstName
+        | FakerGenerator.LastName      -> p.LastName
+        | FakerGenerator.UserName      -> p.UserName
+        | FakerGenerator.Email         -> p.Email
+        | FakerGenerator.Phone         -> p.Phone
+        | FakerGenerator.StreetAddress -> p.Address.Street
+        | FakerGenerator.City          -> p.Address.City
+        | FakerGenerator.ZipCode       -> p.Address.ZipCode
+        | FakerGenerator.FullAddress   -> sprintf "%s, %s %s" p.Address.Street p.Address.City p.Address.ZipCode
+        | _                            -> p.FullName  // unreachable (isPersonBased gate); defensive
+
+    /// A fresh-draw / mask / constant generator → the cell value. Self-contained:
+    /// the faker is constructed, drawn, and discarded within this call (held
+    /// across no other faker construction → Bogus global-seed-safe).
+    let private freshOrValue (rowKey: SsKey) (column: Name) (existing: string) (spec: FakerSpec) : string =
+        match spec.Generator with
+        | FakerGenerator.Constant v -> v
+        | FakerGenerator.Mask rule  -> applyMask rule existing
+        | g ->
+            let f = fakerOfLocale (localeOf spec) (seedOfCell rowKey column)
+            match g with
+            | FakerGenerator.Country    -> f.Address.Country()
+            | FakerGenerator.Company    -> f.Company.CompanyName()
+            | FakerGenerator.JobTitle   -> f.Name.JobTitle()
+            | FakerGenerator.Url        -> f.Internet.Url()
+            | FakerGenerator.DomainName -> f.Internet.DomainName()
+            | FakerGenerator.Word       -> f.Lorem.Word()
+            | FakerGenerator.Sentence   -> f.Lorem.Sentence()
+            | FakerGenerator.Paragraph  -> f.Lorem.Paragraph()
+            | FakerGenerator.Guid       -> (f.Random.Guid()).ToString()
+            | FakerGenerator.IntBetween (lo, hi) ->
+                let lo2, hi2 = if lo <= hi then lo, hi else hi, lo
+                string (f.Random.Int(lo2, hi2))
+            | FakerGenerator.DecimalBetween (lo, hi) ->
+                let lo2, hi2 = if lo <= hi then lo, hi else hi, lo
+                (f.Random.Decimal(lo2, hi2)).ToString(inv)
+            | FakerGenerator.PastDate   -> (f.Date.Between(refDate.AddYears(-2), refDate)).ToString("yyyy-MM-dd HH:mm:ss", inv)
+            | FakerGenerator.FutureDate -> (f.Date.Between(refDate, refDate.AddYears(2))).ToString("yyyy-MM-dd HH:mm:ss", inv)
+            | _ -> existing  // unreachable (person/mask/constant handled above); defensive
+
+    /// Realize one row's bound cells. Person-based groups process FIRST (each
+    /// faker's person fully materialized before the next faker construction —
+    /// Bogus's global `Randomizer.Seed` footgun); fresh-draw/value cells follow.
+    let private realizeRow (rowKey: SsKey) (bindings: (Name * FakerSpec) list) (values: Map<Name, string>) : Map<Name, string> =
+        let present = bindings |> List.filter (fun (n, _) -> Map.containsKey n values)
+        if List.isEmpty present then values
+        else
+            let afterPerson =
+                present
+                |> List.filter (fun (_, s) -> isPersonBased s.Generator)
+                |> List.groupBy (fun (_, s) -> localeOf s)
+                |> List.fold (fun (acc: Map<Name, string>) (locale, group) ->
+                    let f = fakerOfLocale locale (seedOf rowKey)
+                    let p = f.Person  // materialize the coherent individual under the row seed
+                    group |> List.fold (fun acc2 (colName, spec) ->
+                        Map.add colName (personField p spec.Generator) acc2) acc) values
+            present
+            |> List.filter (fun (_, s) -> not (isPersonBased s.Generator))
+            |> List.fold (fun (acc: Map<Name, string>) (colName, spec) ->
+                Map.add colName (freshOrValue rowKey colName acc.[colName] spec) acc) afterPerson
+
+    /// FUZZING §5 — the coordinate-addressed Faker pass. Resolve each `Faker`
+    /// binding → (owning kind SsKey, column Name) against the catalog (the
+    /// synthetic flow already refused unresolved coordinates BY NAME), then rewrite
+    /// ONLY the owning kind's rows by column name. Empty Faker set → the dataset
+    /// verbatim (byte-identical).
+    let realizeFaker
+        (catalog: Catalog)
+        (correction: Correction)
+        (dataset: Map<SsKey, StaticRow list>)
+        : Map<SsKey, StaticRow list> =
+        let bindings : (SsKey * Name * FakerSpec) list =
+            Correction.entries correction
+            |> List.choose (function
+                | CorrectionEntry.Faker (loc, spec) ->
+                    match AttributeCoordinate.resolveColumn catalog loc with
+                    | Some (kindKey, attrName) -> Some (kindKey, attrName, spec)
+                    | Option.None              -> Option.None
+                | _ -> Option.None)
+        if List.isEmpty bindings then dataset
+        else
+            let byKind = bindings |> List.groupBy (fun (k, _, _) -> k) |> Map.ofList
+            dataset
+            |> Map.map (fun kindKey rows ->
+                match Map.tryFind kindKey byKind with
+                | Option.None -> rows
+                | Some kindBindings ->
+                    let colSpecs = kindBindings |> List.map (fun (_, n, s) -> n, s)
+                    rows |> List.map (fun row ->
+                        { row with Values = realizeRow row.Identifier colSpecs row.Values }))
+
+    /// The full boundary realization: the PiiKind pass (F2) THEN the coordinate
+    /// -addressed Faker pass (F-Faker), so a column carrying BOTH a `Pii`
+    /// correction and a `Faker` binding takes the more-specific Faker value
+    /// (applied last). Identity when the correction has neither (byte-identical to
+    /// the pre-F0c load — the π∘σ≈id canary's contract).
+    let realize
+        (catalog: Catalog)
+        (correction: Correction)
+        (dataset: Map<SsKey, StaticRow list>)
+        : Map<SsKey, StaticRow list> =
+        dataset
+        |> realizePii catalog correction
+        |> realizeFaker catalog correction

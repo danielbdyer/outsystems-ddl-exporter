@@ -64,6 +64,7 @@
     <Compile Include="FakerRealization.fs" />
     <Compile Include="SyntheticLoadRun.fs" />
     <Compile Include="ProfileCaptureRun.fs" />
+    <Compile Include="CorrectionProposeRun.fs" />
     <Compile Include="MovementSpec.fs" />
     <Compile Include="MovementSurface.fs" />
     <Compile Include="CapabilitySurvey.fs" />

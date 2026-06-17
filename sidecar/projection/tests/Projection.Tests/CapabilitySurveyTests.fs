@@ -61,7 +61,7 @@ let private env (name: string) (grant: Grant option) : Projection.Pipeline.Envir
     { Name = name; Access = Access.Direct (ConnectionRef.EnvVar (name + "_CONN")); Grant = grant; Store = None; Rendition = None; Archetype = None; AtomicDeploy = None; Revert = None }
 
 let private flow (name: string) (from: FlowSource) (toEnv: string) : Flow =
-    { Name = name; From = from; To = toEnv; Rekey = None; Tables = []; Reconcile = []; Scope = None; Shape = None; Shaping = None }
+    { Name = name; From = from; To = toEnv; Rekey = None; Tables = []; Reconcile = []; Scope = None; Shape = None; Shaping = None; Strategy = None; Resumable = false; Streaming = false; Journal = None }
 
 let private cfgWith (envs: Projection.Pipeline.Environment list) (flows: Flow list) : ProjectionConfig =
     { ProjectionConfig.empty with
@@ -114,7 +114,7 @@ let ``NM-57: an unspecified-grant sink requires NOTHING (conservative None defau
     for src, label in
         [ FlowSource.Env "staging", "live"
           FlowSource.Model,         "model"
-          FlowSource.Synthetic None, "synthetic"
+          FlowSource.Synthetic (None, None), "synthetic"
           FlowSource.NoData,        "no-data" ] do
         let cfg = cfgWith [ sinkUndeclared; liveSource ] [ flow ("f-" + label) src "mystery" ]
         let f = Map.find ("f-" + label) cfg.Flows

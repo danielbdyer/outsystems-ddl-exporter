@@ -188,6 +188,12 @@ type MovementSpec =
         /// D8 — the synthesis volume factor (`--scale <f>`). Honored on the
         /// synthetic load; inert elsewhere. `None` = full scale (1.0).
         Scale       : decimal option
+        /// F0c-I/O (FUZZING §2) — the blessed correction-artifact reference
+        /// (`file:<path>`), resolved from the flow's `correction` field or the
+        /// `--correction` per-run override. Honored on the synthetic load (it
+        /// threads `Profile ⊕ Correction` into σ AND drives the boundary Faker
+        /// realization); inert elsewhere. `None` = the faithful section.
+        Correction  : string option
         /// Durable provenance store; fills from the target's config or `--store`.
         Store       : string option
         /// Environment label for the timeline / episode.
@@ -227,6 +233,7 @@ module MovementSpec =
             RevertDir   = None
             Seed        = None
             Scale       = None
+            Correction  = None
             Store       = None
             Env         = None
             SinkCapability = SinkLoadCapability.structural
@@ -249,7 +256,13 @@ module MovementSpec =
 type FlowSource =
     | Env of env: string
     | Model
-    | Synthetic of profile: string option
+    /// Generated to match a captured profile (THE_SYNTHETIC_DATA_DESIGN). The
+    /// optional `correction` (FUZZING §2 / slice F0c-I/O) is the durable
+    /// blessed-correction artifact reference (`file:<path>`) — the operator's
+    /// named, closed departures from naive fidelity (PII typing → Faker
+    /// realization, fidelity overrides, volume). `None` = no correction (σ stays
+    /// the faithful section; byte-identical to the pre-F0c flow).
+    | Synthetic of profile: string option * correction: string option
     | NoData
 
 /// A named movement (THE_CLI.md §4.2): a `Move` from a source to a target
@@ -284,6 +297,23 @@ type Flow =
         /// (`Config.overlay`) for THIS flow's emission only. Parsed from a nested
         /// `"shaping"` object via `Config.parseLenient`.
         Shaping : Config.Config option
+        // AUDIT (config-primary) — the flow's declared EXECUTION PROFILE, so the
+        // flow is a complete recipe and the daily run collapses to `projection
+        // <flow> [--go]`. Each is the DECLARATIVE baseline; the matching CLI flag
+        // is the per-run override (kept, not deprecated). `None`/`false` = the
+        // established default (byte-identical to the pre-audit behavior).
+        /// The data-load strategy (`"merge"` | `"replace"` | `"fresh"`). `None` =
+        /// `Merge` (the norm-minimal default); `--fresh` forces `Fresh` per run.
+        Strategy : Strategy option
+        /// Route the data leg through the resumable / idempotent-upsert envelope
+        /// (G10). `--resumable` forces it on per run. Default false.
+        Resumable : bool
+        /// The bounded-memory streaming realization (the estate-scale reverse
+        /// leg). `--streaming` forces it on per run. Default false.
+        Streaming : bool
+        /// The chunk-resume journal directory (paired with streaming).
+        /// `--journal <dir>` overrides per run. `None` = no resume ledger.
+        Journal : string option
     }
 
 /// The per-run intent that finishes a resolved flow (THE_CLI.md §3) — the
@@ -305,6 +335,10 @@ type FlowRunOpts =
         /// `--scale <f>` — the synthesis volume factor over the profiled
         /// `RowCount` per kind (D8; design §7). `None` = full scale (1.0).
         Scale      : decimal option
+        /// `--correction <ref>` — the per-run blessed-correction override
+        /// (F0c-I/O; FUZZING §2). Overrides the flow's declared `correction`
+        /// when set. `None` = the flow's declared correction (or none).
+        Correction : string option
         /// `--streaming` — the bounded-memory chunked realization for the
         /// estate-scale reverse leg (the hundreds-of-millions-row program). Honored on the
         /// B→A reverse leg only; the face refuses unsupported combinations
@@ -342,6 +376,11 @@ type Intent =
     /// (THE_SYNTHETIC_DATA_DESIGN §2.2). The capture step the synthetic flow
     /// replays from.
     | Profile of args: string list
+    /// `synth-correct --out <path>` — propose a FIRST-DRAFT blessed-correction
+    /// artifact from the configured model's catalog (FUZZING §2.2, slice
+    /// F0c-I/O): heuristic PII typing for the operator to review / fine-tune /
+    /// BLESS. The durable sibling of `profile` — both write a reviewable hinge.
+    | SynthCorrect of args: string list
     /// `compare <A> <B>` — NM-71/WP9: the read-only multi-environment readiness
     /// check (schema delta + data dealbreakers). Advisory; no writes.
     | Compare of args: string list
@@ -375,6 +414,9 @@ type LoadOpts =
         Seed        : uint64 option
         /// D8 — the synthesis volume factor; honored on the synthetic load only.
         Scale       : decimal option
+        /// F0c-I/O — the blessed correction-artifact reference; honored on the
+        /// synthetic load only (the runner resolves + decodes it). `None` = none.
+        Correction  : string option
         /// Slice C — the sink's capability-derived engine inputs (the identity
         /// policy + sink-resident-resume availability), projected from the sink
         /// `Environment`'s effective `Archetype` at flow resolution. `structural`
@@ -434,7 +476,7 @@ type PlanAction =
     /// synthetic` flow emitted the FULL estate, silently ignoring `model.modules`.
     /// An empty `model.modules` is the all-permissive identity, so the default
     /// synthetic load stays byte-identical.
-    | SynthesizeAndLoad of model: ModelSource * modelOssys: string option * profile: string * conn: string * opts: LoadOpts * execute: bool * modelSection: Config.ModelSection
+    | SynthesizeAndLoad of model: ModelSource * modelOssys: string option * profile: string * conn: string * opts: LoadOpts * execute: bool * modelSection: Config.ModelSection * syntheticSection: Config.SyntheticSection
     /// live, --go, data source → cross-substrate migrate-with-data.
     | MigrateWithData of model: ModelSource * modelOssys: string option * sink: string * source: string * opts: LoadOpts
     /// live, --go, config model → publish bundle + load the seed.
@@ -475,6 +517,12 @@ type PlanAction =
     /// capture the durable Profile from a live environment to a file
     /// (THE_SYNTHETIC_DATA_DESIGN §2.2): read → profile → serialize.
     | CaptureProfile of conn: string * out: string
+    /// propose a FIRST-DRAFT blessed-correction artifact to a file (FUZZING
+    /// §2.2, slice F0c-I/O): resolve the model's catalog → `CorrectionProposer
+    /// .propose` (heuristic PII typing) → `CorrectionCodec.serialize` → write.
+    /// The model is read live from OSSYS when `modelOssys` is set (primary;
+    /// V1-free) else from the model file. The operator reviews / edits / blesses.
+    | ProposeCorrection of model: ModelSource * modelOssys: string option * out: string
     // shared -------------------------------------------------------------
     /// a named refusal — a coded `ValidationError` (voiced) + its exit code.
     | Refused of exit: int * error: ValidationError

@@ -241,6 +241,13 @@ type ProjectionConfig =
         /// §5 — one isomorphic surface behind two views. Nothing CONSUMES this
         /// yet at S1; S2 reads `Shaping.Model`; S3 threads it into emission.
         Shaping      : Config.Config
+        /// THE_SYNTHETIC_DATA_DESIGN §11 — the synthetic-load policy block
+        /// (`"synthetic": {…}`), the DECLARATIVE baseline a `from: synthetic`
+        /// flow rests on (τ / preserve / synthesize / scale / seed). A movement
+        /// -vocabulary citizen (rendered by `renderConfig`, so `parse ∘ render =
+        /// id` covers it). Absent ⇒ `Config.defaultSyntheticSection` (the
+        /// built-in `SyntheticConfig.defaultConfig` holds; byte-identical).
+        Synthetic    : Config.SyntheticSection
         /// The file the config was loaded from (S6.2 — `fromFile` sets `Some
         /// path`; `parse`/`empty` set `None`). It is LOAD PROVENANCE, not a JSON
         /// field — `renderConfig` never emits it, so the `parse ∘ render` round
@@ -257,7 +264,7 @@ module ProjectionConfig =
 
     let empty : ProjectionConfig =
         { Environments = Map.empty; Flows = Map.empty; Model = None; ModelOssys = None; Defaults = Map.empty
-          Shaping = Config.defaultConfig; SourcePath = None }
+          Shaping = Config.defaultConfig; Synthetic = Config.defaultSyntheticSection; SourcePath = None }
 
     let private err (code: string) (message: string) : ValidationError =
         ValidationError.create code message
@@ -276,6 +283,39 @@ module ProjectionConfig =
             | s when String.IsNullOrWhiteSpace s -> None
             | s -> Some (s.Trim())
         | _ -> None
+
+    /// A string-array property → a trimmed, non-empty `string list` (absent ⇒ []).
+    let private getStringArray (el: JsonElement) (name: string) : string list =
+        match el.TryGetProperty name with
+        | true, a when a.ValueKind = JsonValueKind.Array ->
+            [ for v in a.EnumerateArray() do
+                if v.ValueKind = JsonValueKind.String then
+                    match Option.ofObj (v.GetString()) with
+                    | Some s when not (String.IsNullOrWhiteSpace s) -> yield s.Trim()
+                    | _ -> () ]
+        | _ -> []
+
+    /// THE_SYNTHETIC_DATA_DESIGN §11 — parse the top-level `"synthetic"` block to a
+    /// `SyntheticSection` (the declarative baseline a `from: synthetic` flow rests
+    /// on). Absent / non-object ⇒ the default (every knob None/[]). Lenient: a
+    /// malformed number is simply absent (the CLI / built-in default fills it) —
+    /// the block is an OVERRIDE layer, not a structural requirement.
+    let private parseSynthetic (root: JsonElement) : Config.SyntheticSection =
+        match root.TryGetProperty "synthetic" with
+        | true, s when s.ValueKind = JsonValueKind.Object ->
+            let num (name: string) : JsonElement option =
+                match s.TryGetProperty name with
+                | true, v when v.ValueKind = JsonValueKind.Number -> Some v
+                | _ -> None
+            let int64Of name   = num name |> Option.bind (fun (v: JsonElement) -> match v.TryGetInt64()   with true, n -> Some n | _ -> None)
+            let decimalOf name = num name |> Option.bind (fun (v: JsonElement) -> match v.TryGetDecimal() with true, d -> Some d | _ -> None)
+            let uint64Of name  = num name |> Option.bind (fun (v: JsonElement) -> match v.TryGetUInt64()  with true, n -> Some n | _ -> None)
+            { PreserveCardinalityMax = int64Of "preserveCardinalityMax"
+              Preserve               = getStringArray s "preserve"
+              Synthesize             = getStringArray s "synthesize"
+              Scale                  = decimalOf "scale"
+              Seed                   = uint64Of "seed" }
+        | _ -> Config.defaultSyntheticSection
 
     /// The reach facet: `bundle` needs an `out` folder; `direct` needs a
     /// D9-safe `conn` reference; `docker` is bare.
@@ -379,7 +419,7 @@ module ProjectionConfig =
         | Some f ->
             match f.ToLowerInvariant() with
             | "model"     -> FlowSource.Model
-            | "synthetic" -> FlowSource.Synthetic (getString el "profile")
+            | "synthetic" -> FlowSource.Synthetic (getString el "profile", getString el "correction")
             | "none"      -> FlowSource.NoData
             | _           -> FlowSource.Env f
 
@@ -429,6 +469,27 @@ module ProjectionConfig =
             Config.parseLenient (s.GetRawText()) |> Result.map Some
         | _ -> Result.success None
 
+    /// A boolean flag property → its value (absent / non-bool ⇒ false).
+    let private getBool (el: JsonElement) (name: string) : bool =
+        match el.TryGetProperty name with
+        | true, v when v.ValueKind = JsonValueKind.True -> true
+        | _ -> false
+
+    /// The data-load strategy this move declares (AUDIT, config-primary): an
+    /// optional per-flow `"strategy": "merge" | "replace" | "fresh"`. Absent =
+    /// `None` (the `Merge` default; `--fresh` forces `Fresh` per run). Closed; an
+    /// unknown value is a NAMED refusal (mirrors `parseFlowScope`).
+    let private parseFlowStrategy (name: string) (el: JsonElement) : Result<Strategy option> =
+        match getString el "strategy" with
+        | None -> Result.success None
+        | Some raw ->
+            match raw.ToLowerInvariant() with
+            | "merge"   -> Result.success (Some Strategy.Merge)
+            | "replace" -> Result.success (Some Strategy.Replace)
+            | "fresh"   -> Result.success (Some Strategy.Fresh)
+            | other ->
+                Result.failureOf (err "cli.config.flowStrategyUnknown" (sprintf "flow '%s' strategy '%s' is not merge | replace | fresh." name other))
+
     let private parseFlow (name: string) (el: JsonElement) : Result<Flow> =
         if el.ValueKind <> JsonValueKind.Object then
             Result.failureOf (err "cli.config.flowShape" (sprintf "flow '%s' must be a JSON object." name))
@@ -469,12 +530,17 @@ module ProjectionConfig =
                     | true, r when r.ValueKind <> JsonValueKind.Null ->
                         Result.failureOf (err "cli.config.flowReconcileShape" (sprintf "flow '%s' 'reconcile' must be an array of \"<table>:<match-column>\" strings." name))
                     | _ -> Result.success []
-                match parseFlowScope name el, parseFlowShape name el, parseFlowShaping el, reconcileR with
-                | Error es, _, _, _ | _, Error es, _, _ | _, _, Error es, _ | _, _, _, Error es -> Result.failure es
-                | Ok scope, Ok shape, Ok shaping, Ok reconcile ->
+                match parseFlowScope name el, parseFlowShape name el, parseFlowShaping el, reconcileR, parseFlowStrategy name el with
+                | Error es, _, _, _, _ | _, Error es, _, _, _ | _, _, Error es, _, _ | _, _, _, Error es, _ | _, _, _, _, Error es -> Result.failure es
+                | Ok scope, Ok shape, Ok shaping, Ok reconcile, Ok strategy ->
                     Result.success
                         { Name = name; From = parseFlowSource el; To = toEnv; Rekey = getString el "rekey"
-                          Tables = tables; Reconcile = reconcile; Scope = scope; Shape = shape; Shaping = shaping }
+                          Tables = tables; Reconcile = reconcile; Scope = scope; Shape = shape; Shaping = shaping
+                          // AUDIT (config-primary) — the flow's declared execution profile.
+                          Strategy = strategy
+                          Resumable = getBool el "resumable"
+                          Streaming = getBool el "streaming"
+                          Journal = getString el "journal" }
 
     /// Parse the `projection.json` document text into a `ProjectionConfig`.
     /// Aggregates every per-environment / per-flow error so the operator
@@ -489,7 +555,7 @@ module ProjectionConfig =
     /// than let it parse, render, and list while reaching nothing (A44:
     /// expressible ⇔ reachable). THE_CLI.md §3.
     let reservedFlowVerbs : Set<string> =
-        set [ "check"; "explain"; "seal"; "report"; "profile"; "init"; "diff"; "compare" ]
+        set [ "check"; "explain"; "seal"; "report"; "profile"; "synth-correct"; "init"; "diff"; "compare" ]
 
     let parse (json: string) : Result<ProjectionConfig> =
         if String.IsNullOrWhiteSpace json then Result.success empty
@@ -573,6 +639,9 @@ module ProjectionConfig =
                           ModelOssys = legacyModelOssys
                           Defaults = defaults
                           Shaping = shaping
+                          // §11 — the synthetic-load policy baseline (a movement
+                          // -vocabulary citizen; rendered, so it round-trips).
+                          Synthetic = parseSynthetic root
                           // `parse` has no file provenance; `fromFile` overlays it.
                           SourcePath = None }
         with ex ->
@@ -650,6 +719,15 @@ module ProjectionConfig =
         | Shape.Skeleton -> "skeleton"
         | Shape.Manifest -> "manifest"
 
+    /// The data-load strategy field (dual of `parseFlowStrategy`): the canonical
+    /// token. Emitted only when `Some` — `Merge` (the default) round-trips through
+    /// the absent arm (mirrors `scope`/`shape`).
+    let private renderStrategy (s: Strategy) : string =
+        match s with
+        | Strategy.Merge   -> "merge"
+        | Strategy.Replace -> "replace"
+        | Strategy.Fresh   -> "fresh"
+
     /// Render one `Environment` to its `JsonObject` — the dual of
     /// `parseEnvironment`. `access` + its companion (`out` for bundle, `conn`
     /// for direct; docker is bare) reconstruct the reach; `grant`/`store`/
@@ -684,7 +762,10 @@ module ProjectionConfig =
          // model flow omits `from` — round-trips through the default arm.
          | FlowSource.Model              -> ()
          | FlowSource.NoData             -> setStr o "from" "none"
-         | FlowSource.Synthetic profile  -> setStr o "from" "synthetic"; setOptStr o "profile" profile
+         | FlowSource.Synthetic (profile, correction) ->
+             setStr o "from" "synthetic"
+             setOptStr o "profile" profile
+             setOptStr o "correction" correction
          | FlowSource.Env e              -> setStr o "from" e)
         setOptStr o "scope" (flow.Scope |> Option.map renderScope)
         setOptStr o "shape" (flow.Shape |> Option.map renderShape)
@@ -699,6 +780,12 @@ module ProjectionConfig =
             let a = JsonArray()
             for r in flow.Reconcile do a.Add(JsonValue.Create r)
             o.["reconcile"] <- a)
+        // AUDIT (config-primary) — the execution profile. Each omits its default
+        // (Merge / false / None) so an existing flow round-trips byte-identically.
+        setOptStr o "strategy" (flow.Strategy |> Option.map renderStrategy)
+        (if flow.Resumable then o.["resumable"] <- JsonValue.Create true)
+        (if flow.Streaming then o.["streaming"] <- JsonValue.Create true)
+        setOptStr o "journal" flow.Journal
         o
 
     /// Render a whole movement config to its `projection.json` DOM — the inverse
@@ -722,6 +809,23 @@ module ProjectionConfig =
             let d = JsonObject()
             for KeyValue (k, v) in cfg.Defaults do setStr d k v
             root.["defaults"] <- d)
+        // §11 — the synthetic-load policy block. Omitted when it is the default
+        // (every knob absent), so a config with no `synthetic` round-trips to no
+        // `synthetic` key (`parse ∘ render = id`).
+        (if cfg.Synthetic <> Config.defaultSyntheticSection then
+            let s = JsonObject()
+            (match cfg.Synthetic.PreserveCardinalityMax with Some n -> s.["preserveCardinalityMax"] <- JsonValue.Create n | None -> ())
+            (if not (List.isEmpty cfg.Synthetic.Preserve) then
+                let a = JsonArray()
+                for v in cfg.Synthetic.Preserve do a.Add(JsonValue.Create v)
+                s.["preserve"] <- a)
+            (if not (List.isEmpty cfg.Synthetic.Synthesize) then
+                let a = JsonArray()
+                for v in cfg.Synthetic.Synthesize do a.Add(JsonValue.Create v)
+                s.["synthesize"] <- a)
+            (match cfg.Synthetic.Scale with Some d -> s.["scale"] <- JsonValue.Create d | None -> ())
+            (match cfg.Synthetic.Seed with Some n -> s.["seed"] <- JsonValue.Create n | None -> ())
+            root.["synthetic"] <- s)
         root
 
     /// Render a movement config to its `projection.json` text — the round-trip
@@ -822,6 +926,7 @@ module Command =
           Tables      = spec.Tables
           Seed        = spec.Seed
           Scale       = spec.Scale
+          Correction  = spec.Correction
           SinkCapability = spec.SinkCapability }
 
     // --- the pure movement routing (the surface→engine map) ----------------
@@ -878,7 +983,7 @@ module Command =
                         | Ok src -> dataMove src false
                         | Error es -> PlanAction.Refused (6, List.head es)
                     | DataOrigin.Synthetic profile when not schemaOnly ->
-                        PlanAction.SynthesizeAndLoad (spec.Model, modelOssys, profile, conn, opts, false, cfg.Shaping.Model)
+                        PlanAction.SynthesizeAndLoad (spec.Model, modelOssys, profile, conn, opts, false, cfg.Shaping.Model, cfg.Synthetic)
                     | _ ->
                         if hasModel then PlanAction.PreviewSchema (spec.Model, modelOssys, conn, opts.Declaration)
                         else modelMissing "projection: "
@@ -892,7 +997,7 @@ module Command =
                             elif hasModel then PlanAction.MigrateWithData (spec.Model, modelOssys, conn, src, opts)
                             else modelMissing "projection: "
                     | DataOrigin.Synthetic profile when not schemaOnly ->
-                        if dataOnly then PlanAction.SynthesizeAndLoad (spec.Model, modelOssys, profile, conn, opts, true, cfg.Shaping.Model)
+                        if dataOnly then PlanAction.SynthesizeAndLoad (spec.Model, modelOssys, profile, conn, opts, true, cfg.Shaping.Model, cfg.Synthetic)
                         else PlanAction.Refused (2, err "cli.move.syntheticScope" "a synthetic load moves data only; point the flow at a data-granting target (grant: data).")
                     | _ when dataOnly ->
                         PlanAction.Refused (2, err "cli.move.scopeDataNoSource" "a DML-only load needs a data source (a flow whose `from` is a live environment).")
@@ -941,7 +1046,15 @@ module Command =
             | None, _ -> []
             | Some _, PlanAction.RunReverseLeg _ -> []
             | Some _, _ -> [ "--journal accepted; this action has no journaled write seam (unjournaled write applied)." ]
-        { Notes = unhonoredNotes spec @ freshNote @ resumableNote @ synthesisNote @ streamingNote @ journalNote; Action = action }
+        // F0c-I/O — the blessed correction is consumed only by the synthetic load
+        // (it threads `Profile ⊕ Correction` into σ + drives Faker realization);
+        // on any other action it is noted, never silently dropped.
+        let correctionNote =
+            match spec.Correction, action with
+            | None, _ -> []
+            | Some _, PlanAction.SynthesizeAndLoad _ -> []
+            | Some _, _ -> [ "correction accepted; this action has no synthesis leg (no correction applied)." ]
+        { Notes = unhonoredNotes spec @ freshNote @ resumableNote @ synthesisNote @ streamingNote @ journalNote @ correctionNote; Action = action }
 
     /// Route a `check` verb tail to its proof-plane action — purely.
     let planCheck (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
@@ -1104,8 +1217,8 @@ module Command =
         match source with
         | FlowSource.Model       -> Result.success DataOrigin.Model
         | FlowSource.NoData      -> Result.success DataOrigin.NoData
-        | FlowSource.Synthetic (Some profile) -> Result.success (DataOrigin.Synthetic profile)
-        | FlowSource.Synthetic None ->
+        | FlowSource.Synthetic (Some profile, _) -> Result.success (DataOrigin.Synthetic profile)
+        | FlowSource.Synthetic (None, _) ->
             Result.failureOf (err "cli.flow.syntheticNoProfile" "flow source `synthetic` needs a `profile` (e.g. \"profile\": \"file:legacy.profile.json\") — the evidence the generator replays.")
         | FlowSource.Env e ->
             match Map.tryFind e cfg.Environments with
@@ -1209,6 +1322,11 @@ module Command =
                 let revertResolved =
                     if opts.AutoRevert then RevertPolicy.Auto
                     else toEnv.Revert |> Option.defaultValue RevertPolicy.def
+                // AUDIT (config-primary) — the data-load strategy: `--fresh` forces
+                // `Fresh` per run, else the flow's declared `strategy`, else `Merge`.
+                let resolvedStrategy =
+                    if opts.Fresh then Strategy.Fresh
+                    else flow.Strategy |> Option.defaultValue Strategy.Merge
                 Result.success
                     { baseSpec with
                         // S2/S6.2 — the model is read from the canonical
@@ -1235,9 +1353,12 @@ module Command =
                         // renditions + origin, never parsed). `planMovement`
                         // routes `UpLegacy` to the reverse-leg runner.
                         Direction = directionOf cfg flow
-                        Strategy = (if opts.Fresh then Strategy.Fresh else Strategy.Merge)
+                        // AUDIT — config strategy + `--fresh` override (above). A
+                        // `Fresh` move forces A = ∅ (genesis); merge/replace keep
+                        // the auto-derived baseline.
+                        Strategy = resolvedStrategy
                         Data     = data
-                        Baseline = (if opts.Fresh then Baseline.Empty else Baseline.Auto)
+                        Baseline = (if resolvedStrategy = Strategy.Fresh then Baseline.Empty else Baseline.Auto)
                         Rekey    = flow.Rekey
                         // J2 — the flow's declarative MatchByColumn re-key rules
                         // (e.g. the golden flow's User-by-email reconcile) ride
@@ -1246,9 +1367,13 @@ module Command =
                         Tables   = flow.Tables
                         AllowDrops = opts.AllowDrops
                         AllowCdc = opts.AllowCdc
-                        Resumable = opts.Resumable
-                        Streaming = opts.Streaming
-                        Journal = opts.Journal
+                        // AUDIT (config-primary) — the execution profile: the flow's
+                        // declared baseline, with the CLI flag as the per-run override
+                        // (`--resumable`/`--streaming` force ON; `--journal` overrides
+                        // the dir). Absent config + absent flag = byte-identical.
+                        Resumable = (flow.Resumable || opts.Resumable)
+                        Streaming = (flow.Streaming || opts.Streaming)
+                        Journal = (opts.Journal |> Option.orElse flow.Journal)
                         Atomic = atomicResolved
                         RevertPolicy = revertResolved
                         RevertDir = opts.RevertDir
@@ -1256,6 +1381,19 @@ module Command =
                         // (seed/volume vary at the moment of action, never config).
                         Seed = opts.Seed
                         Scale = opts.Scale
+                        // F0c-I/O — the blessed correction-artifact ref: the
+                        // `--correction` per-run override WINS when set, else the
+                        // flow's declared `correction` (a synthetic source's
+                        // sibling of `profile`). A non-synthetic flow has no
+                        // declared correction, so `--correction` alone still
+                        // threads (noted as inert by `planMovement` if the action
+                        // has no synthesis leg).
+                        Correction =
+                            (opts.Correction
+                             |> Option.orElse
+                                 (match flow.From with
+                                  | FlowSource.Synthetic (_, c) -> c
+                                  | _ -> None))
                         // The target's durable timeline: a live --go records an
                         // episode into it (which `report` later diffs). F4.
                         Store    = toEnv.Store
@@ -1347,6 +1485,31 @@ module Command =
                     | Error es -> PlanAction.Refused (6, List.head es)
         { Notes = []; Action = action }
 
+    /// Route a `synth-correct` verb tail (FUZZING §2.2, slice F0c-I/O):
+    /// `synth-correct --out <path>` proposes a first-draft blessed-correction
+    /// artifact from the CONFIGURED model's catalog (the proposer types PII by
+    /// attribute name, so it needs the catalog — the `Profile` keys by `SsKey`
+    /// and carries no names). The model resolves the way every model-bearing
+    /// action does: live OSSYS (`model.ossys`) primary, the model file fallback;
+    /// a config with neither is a named refusal (there is nothing to propose
+    /// from). The durable sibling of `profile` — both write a reviewable hinge.
+    let planSynthCorrect (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
+        let valueOf = flagValue args
+        let modelOssys = cfg.Shaping.Model.Ossys
+        let modelSource =
+            match cfg.Shaping.Model.Path with
+            | Some m -> ModelSource.ModelFile m
+            | None   -> ModelSource.Unspecified
+        let hasModel = modelSource <> ModelSource.Unspecified || Option.isSome modelOssys
+        let action =
+            match valueOf "--out" with
+            | None ->
+                PlanAction.Refused (2, err "cli.synthCorrect.noOut" "projection synth-correct: requires --out <path> (the correction artifact file to write).")
+            | Some out ->
+                if hasModel then PlanAction.ProposeCorrection (modelSource, modelOssys, out)
+                else PlanAction.Refused (2, err "cli.synthCorrect.noModel" "projection synth-correct: no model is configured (set `model` or `model.ossys` in projection.json) — the correction is proposed from the model's catalog.")
+        { Notes = []; Action = action }
+
     /// The closed secondary-verb set (THE_CLI.md §3). A first token outside
     /// this set is read as a flow name; an unknown one is refused, naming both.
     /// NM-10 — single-sourced from `ProjectionConfig.reservedFlowVerbs` (the
@@ -1371,6 +1534,7 @@ module Command =
         | "report" :: rest  -> Result.success (Intent.Report rest)
         | "compare" :: rest -> Result.success (Intent.Compare rest)
         | "profile" :: rest -> Result.success (Intent.Profile rest)
+        | "synth-correct" :: rest -> Result.success (Intent.SynthCorrect rest)
         | first :: rest when Map.containsKey first cfg.Flows ->
             // D8 — the value-bearing synthesis knobs. A malformed value is a
             // refusal (named, never a silent fall-through to the default).
@@ -1404,7 +1568,8 @@ module Command =
                       AutoRevert = List.contains "--auto-revert" rest
                       RevertDir  = flagValue rest "--revert-dir"
                       Seed       = seed
-                      Scale      = scale }
+                      Scale      = scale
+                      Correction = flagValue rest "--correction" }
                 Result.success (Intent.Flow (Map.find first cfg.Flows, opts))
         | first :: _ when secondaryVerbs.Contains first ->
             // a known verb with a malformed tail falls through its own branch;
@@ -1428,3 +1593,4 @@ module Command =
         | Intent.Report args       -> planReport cfg args
         | Intent.Compare args      -> planCompare cfg args
         | Intent.Profile args      -> planProfile cfg args
+        | Intent.SynthCorrect args -> planSynthCorrect cfg args

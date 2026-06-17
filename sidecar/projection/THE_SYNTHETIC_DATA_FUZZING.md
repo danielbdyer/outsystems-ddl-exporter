@@ -1,11 +1,12 @@
 # THE_SYNTHETIC_DATA_FUZZING.md — high-fidelity, coverage-correcting, anonymizing synthesis governed by a blessed correction artifact
 
-> **Status: DESIGN + IN BUILD (2026-06-16, operator co-design).** Seven slices built this session (PR #625):
+> **Status: DESIGN + IN BUILD (2026-06-16, operator co-design).** Seven slices built one session (PR #625):
 > **F0a** (correction Core substrate), **F0b** (durable codec), **F1** (arbitrary-scale volume), **F0c-propose**
 > (heuristic PII proposer), **F5a** (FK-selectivity skew), **F5b** (joint-distribution correlation), and **F2**
-> (Faker boundary realization). See §7 for per-slice status + commits. **Remaining (designed, not built):
-> F0c-I/O** (the operator surface — durable write + `synth-correct` verb + flow wiring that ties F2 + the blessed
-> artifact into the load), **F3** (coverage), **F4** (boundary rotation), **F6** (distribution fitting). This is
+> (Faker boundary realization). Then **F0c-I/O** (the operator surface — durable write + `synth-correct` verb +
+> `correction: file:<path>` flow wiring that ties F2 + the blessed artifact into the load end-to-end). See §7 for
+> per-slice status + commits. **Remaining (designed, not built):** **F3** (coverage), **F4** (boundary rotation),
+> **F6** (distribution fitting). This is
 > the design surface for the *advanced* synthetic-data program the operator named: *"production-alike data at
 > arbitrary sizes from
 > advanced at-scale inferences, professional distribution-analysis quality, round-robin rotation in
@@ -133,7 +134,7 @@ design §6). Each entry is a *named divergence* with its rationale (the Refactor
 | `PiiClass of SsKey × PiiKind` | the coarse hybrid-by-cardinality proxy (`SyntheticData.fs` :254) | explicit PII typing (`Email` / `PersonName` / `Phone` / `Address` / `FreeText` / `Reference` / `None`) drives realization |
 | `CoverageFloor of SsKey × CoverageRule` | the source's frequency shape | "include all important values even if patchy/absent in source" — exhaustive permutation, variety injection, or a minimum distinct-count floor |
 | `Fidelity of SsKey × ValueFidelityMode` | the per-column preserve/synthesize/**rotate** decision | operator override of the default fidelity mode (adds the new `Rotate` mode, §4) |
-| `FakerFieldSet of SsKey list × FakerProfile` | several columns at once | coherent field-set replacement (e.g. `{First, Last, Email}` → one fake *person*, referentially consistent) |
+| `Faker of AttributeCoordinate × FakerSpec` **(BUILT, F-Faker)** | the σ realization of a SPECIFIC column-LOCATION | coordinate-addressed (`module/entity/attribute`, hand-authorable) tunable Faker binding — the wide generator catalog + `MaskRule` + `Constant`, locale-tunable; person-based generators are referentially consistent per row (`{First, Last, Email}` → one coherent person). Resolved to `SsKey` at load; an unresolved coordinate is a named refusal |
 | `Volume of SsKey × VolumeTarget` | the `Scale`-over-observed default (`SyntheticData.fs` :463) | absolute-N / total-corpus-size / multiplier targeting (§3) |
 | `DistributionOverride of SsKey × ShapeHint` | the captured numeric/categorical shape | operator-supplied or fitted shape (parametric family, histogram) — §6 |
 
@@ -240,8 +241,22 @@ email derives from the name). The token therefore encodes the **entity identity*
 `SYNTH_ROW` SsKey, `SyntheticData.fs` :451), so the *same* fake person appears consistently wherever that
 entity is referenced across tables — coherence across the FK graph, not per-column noise.
 
-**Locale / format control** rides the `FakerProfile` on the correction entry (locale, format mask,
-nullability already from the profile). All of it is boundary config; **Core stays pure.**
+**Locale / format control** rides the `FakerSpec` on the correction entry (the optional Bogus locale; the
+generator and its parameters tune the shape). All of it is boundary config; **Core stays pure.**
+
+> **BUILT (F-Faker, 2026-06-16) — the coordinate-addressed, tunable extension.** The operator names a
+> SPECIFIC column location by `AttributeCoordinate (module/entity/attribute)` (hand-authorable — OSSYS
+> attribute `SsKey`s are opaque GUIDs), resolved against the catalog at load (a not-found / ambiguous
+> coordinate, and an unresolved coordinate at run start, are NAMED refusals). A `FakerSpec` binds the WIDE
+> `FakerGenerator` catalog (person / address / company / internet / lorem / guid / int+decimal ranges /
+> dates), `MaskRule` (redact / keepLast / keepFirst / hash — format-preserving masking of σ's PRESERVED
+> value), or a `Constant` override. `applyToConfig` routes a fresh-fake generator ⇒ Synthesize (the privacy
+> substrate; σ never emits a real value) and a `Mask` ⇒ Preserve (it has the real value to obscure).
+> `FakerRealization.realize` runs the F2 PiiKind pass THEN the F-Faker pass (the more-specific Faker wins);
+> person-based generators read one materialized `Bogus.Person` per (row, locale) for referential
+> consistency, fresh-draw generators re-seed per (row, column) for order-independence, both Bogus-global
+> -seed-safe. Determinism + the privacy contract hold; the π∘σ≈id canary stayed green (the realization is a
+> post-σ boundary pass, identity when the correction is empty).
 
 ---
 
@@ -299,9 +314,10 @@ faithfulness-ladder witness.
 |---|---|---|---|---|
 | **F0a** | **Correction Core substrate** | hinge | the `PiiKind` / `CorrectionEntry` closed DUs + smart-constructed `Correction` (conflict refusal) + the pure `Profile ⊕ Correction` fold onto `SyntheticConfig` (`SyntheticCorrection.fs`) | ✅ **landed** 2026-06-16 (`9e67158f`) |
 | **F0b** | **Durable CorrectionCodec** | hinge | total / deterministic / re-validating `Correction ↔ JSON` (`CorrectionCodec.fs`); round-trip law + A39 decode refusal | ✅ **landed** 2026-06-16 (`d530badd`) |
-| **F0c** | **Operator surface** | CLI / flow | `correction: file:<path>` flow wiring + the `synth-correct` propose verb (the A44 control-plane cascade) | ⬜ remaining |
+| **F0c** | **Operator surface** | CLI / flow | `correction: file:<path>` flow wiring (A44 cascade: `FlowSource.Synthetic` gains `correction`; `MovementSpec`/`FlowRunOpts`/`LoadOpts` gain `Correction`; `--correction` override) threading `Profile ⊕ Correction` into σ AND `FakerRealization.realizePii` between σ and the load; the `synth-correct --out` propose verb (`CorrectionProposeRun` → codec → file); durable write | ✅ **landed** 2026-06-16 (F0c-I/O) |
 | **F1** | **Explicit PII typing + per-kind volume** | σ + config | `Pii` correction ⇒ Synthesize (F0a fold); `Volume` correction + `VolumeTarget` (Absolute/Multiplier) consumed by `rowCountFor` — arbitrary scale | ✅ **landed** 2026-06-16 (`147421de`) |
-| **F2** | **Faker assimilation (boundary)** | boundary | `FakerRealization.realizePii` — seeded-deterministic Bogus realization over PII-typed columns (one coherent fake person per row → referential consistency); Bogus stays OUTSIDE Core | ✅ **landed** 2026-06-16 (Bogus dep) — wiring into the synthetic-load runner pends F0c-I/O |
+| **F2** | **Faker assimilation (boundary)** | boundary | `FakerRealization.realizePii` — seeded-deterministic Bogus realization over PII-typed columns (one coherent fake person per row → referential consistency); Bogus stays OUTSIDE Core | ✅ **landed** 2026-06-16 (Bogus dep); **wired** by F0c-I/O |
+| **F-Faker** | **Coordinate-addressed, tunable Faker** | hinge + boundary | `AttributeCoordinate (module/entity/attribute)` + catalog resolver (named not-found / ambiguity refusals); the wide `FakerGenerator` catalog (person / address / company / internet / lorem / guid / int+decimal ranges / dates) + `MaskRule` (redact / keepLast / keepFirst / hash) + `Constant` override; `CorrectionEntry.Faker of AttributeCoordinate × FakerSpec` (coordinate-keyed, hand-authorable; locale tunable); `applyToConfig` routes generate⇒Synthesize, mask⇒Preserve; `FakerRealization.realizeFaker`/`realize` (Pii then Faker; person-cached coherence + per-cell fresh draws; Bogus-global-seed-safe); the synthetic flow refuses an unresolved coordinate BY NAME | ✅ **landed** 2026-06-16 (F-Faker) |
 | **F3** | **Coverage corrections** | σ | `CoverageFloor` (exhaustive permutation / variety injection / distinct-floor) + the **L2-cov** canary | ⬜ (an operator coverage need) |
 | **F4** | **Anonymizing rotation** | **boundary** | corpus-row permutation (linkage-breaking) over real rows — **NOT** a Core `ValueFidelityMode` (§4 revision: `Preserve` is already linkage-free in marginal-only σ) | ⬜ (a named threat model) |
 | **F5a** | **Wire σ to `ForeignKeySelectivity`** | σ | rank-mapped skewed FK fan-out (was uniform) | ✅ **landed** 2026-06-16 (`3f552f45`) |
@@ -315,13 +331,17 @@ the Faker boundary realization (coherent fake person per row). The operator can 
 artifact (programmatically / by file), have a first draft proposed, drive PII typing + arbitrary scale +
 skewed/correlated FK fan-out through σ, and realize PII columns to production-alike fakes.
 
+**Landed (F0c-I/O, 2026-06-16):** the operator surface ties the whole loop together end-to-end. Durable write
+(`CorrectionCodec.serialize` → file) + the `synth-correct --out <path>` propose verb (`CorrectionProposeRun`
+resolves the model's catalog → `CorrectionProposer.propose` → codec → file) + `correction: file:<path>` flow
+wiring: the A44 cascade threads the blessed `Correction` through `FlowSource.Synthetic` (+ `--correction` per-run
+override) → `MovementSpec`/`FlowRunOpts`/`LoadOpts.Correction` → `SyntheticLoadRun.run`, which resolves+decodes the
+artifact, folds `Profile ⊕ Correction` onto the config (`applyToConfig`), AND injects `FakerRealization.realizePii`
+as a pure `rows → rows` transform between σ and the load. Empty/absent correction ⇒ identity ⇒ byte-identical (the
+π∘σ≈id canary stayed green). Witnessed by `MovementSurfaceTests` (the A44 expressible⇔reachable proof) +
+`MovementIsomorphismTests` (the `correction` field's parse∘render round-trip).
+
 **Remaining (designed, not built) — the honest frontier:**
-- **F0c-I/O** — the operator surface: durable write (`CorrectionCodec.serialize` → file), the `synth-correct`
-  propose verb (`CorrectionProposer` → codec → file), and `correction: file:<path>` flow wiring that threads the
-  blessed `Correction` into the synthetic-load runner (the A44 cascade through `FlowSource`/`FlowRunOpts`/
-  `MovementSpec`/`LoadOpts` + ~16 literal sites) AND calls `FakerRealization.realizePii` between σ and the load.
-  **This is what makes the whole loop operator-usable end-to-end** — until it lands, F2's realization and the
-  blessed artifact are reachable only programmatically (and in tests).
 - **F3** — coverage corrections (`CoverageFloor`: exhaustive permutation / variety injection / distinct-floor)
   + the L2-cov canary — the "ensure all important values are included" quality gate.
 - **F4** — boundary anonymizing rotation (needs a named threat model; §4).

@@ -2109,7 +2109,7 @@ let runProjectLivePreview (target: Catalog) (connSpec: string) (declaration: Los
 /// front-end). `execute = false` previews (DryRun); `execute = true` writes,
 /// gated by `PROJECTION_ALLOW_EXECUTE=1` (R6), and is fail-loud on dropped
 /// rows (mirrors `runTransfer`).
-let runSyntheticLoad (model: ModelSource) (modelOssys: string option) (profileRef: string) (connSpec: string) (opts: LoadOpts) (execute: bool) (modelSection: Config.ModelSection) : int =
+let runSyntheticLoad (model: ModelSource) (modelOssys: string option) (profileRef: string) (connSpec: string) (opts: LoadOpts) (execute: bool) (modelSection: Config.ModelSection) (syntheticSection: Config.SyntheticSection) : int =
     let executeGated =
         if execute then System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" = "1" else false
     if execute && not executeGated then
@@ -2124,16 +2124,15 @@ let runSyntheticLoad (model: ModelSource) (modelOssys: string option) (profileRe
         match model with
         | ModelSource.ModelFile p | ModelSource.ConfigFile p -> Some p
         | ModelSource.Unspecified -> None
-    // D8 — the per-run synthesis knobs: `--scale <f>` overlays the volume factor
-    // on the default hybrid-by-cardinality config; `--seed <n>` selects the PRNG
-    // seed. Absent, both fall to the fixed defaults (byte-identical replay).
-    let syntheticConfig =
-        { SyntheticConfig.defaultConfig with
-            Scale = opts.Scale |> Option.defaultValue SyntheticConfig.defaultConfig.Scale }
-    let seed = opts.Seed |> Option.defaultValue SyntheticLoadRun.defaultSeed
+    // §11 — the base SyntheticConfig + seed resolve from the declarative
+    // `synthetic` config block (τ / preserve / synthesize / scale / seed), with the
+    // per-run `--scale` / `--seed` CLI flags overriding it (config-primary). The
+    // blessed `correction` is layered on top inside `SyntheticLoadRun.run`.
+    let syntheticConfig = SyntheticLoadRun.resolveConfig syntheticSection opts.Scale
+    let seed = SyntheticLoadRun.resolveSeed syntheticSection opts.Seed
     let result =
         (SyntheticLoadRun.run
-            modelOssys modelFile profileRef connSpec opts.Emission opts.AllowCdc
+            modelOssys modelFile profileRef opts.Correction connSpec opts.Emission opts.AllowCdc
             syntheticConfig seed executeGated modelSection)
             .GetAwaiter().GetResult()
     let exitCode =
@@ -2175,4 +2174,30 @@ let runCaptureProfile (connSpec: string) (outPath: string) : int =
             elif anyCode "connectionSpec" || anyCode "connection" then 6
             else 3
     dumpBench "profile"
+    exitCode
+
+/// `projection synth-correct --out <path>` — propose a first-draft blessed
+/// -correction artifact from the configured model's catalog (FUZZING §2.2,
+/// slice F0c-I/O). Read-only (no execute gate); resolves the catalog (live
+/// OSSYS primary, the model file fallback), proposes heuristic PII typing, and
+/// writes the serialized form for the operator to review / edit / bless.
+let runProposeCorrection (model: ModelSource) (modelOssys: string option) (outPath: string) : int =
+    let modelFile =
+        match model with
+        | ModelSource.ModelFile p | ModelSource.ConfigFile p -> Some p
+        | ModelSource.Unspecified -> None
+    let result = (CorrectionProposeRun.proposeToFile modelOssys modelFile outPath).GetAwaiter().GetResult()
+    let exitCode =
+        match result with
+        | Ok () ->
+            eprintfn "Correction proposal written to %s." outPath
+            0
+        | Error errors ->
+            printErrors Console.Error errors
+            let anyCode (prefix: string) =
+                errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith prefix)
+            if anyCode "correction.writeFailed" then 1
+            elif anyCode "model." then 2
+            else 3
+    dumpBench "synth-correct"
     exitCode

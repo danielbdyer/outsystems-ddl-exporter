@@ -1323,6 +1323,12 @@ module Transfer =
         (profile: Profile)
         (config: SyntheticConfig)
         (seed: uint64)
+        // F0c-I/O — the boundary realization injected as a pure `rows → rows`
+        // transform (the Faker PII pass over the generated tokens). Passed as a
+        // closure so Core σ stays pure AND `TransferRun` stays Faker-agnostic
+        // (`FakerRealization` compiles AFTER this file). `id` for callers that
+        // bless no correction → byte-identical (the π∘σ≈id canary's contract).
+        (realize: Map<SsKey, StaticRow list> -> Map<SsKey, StaticRow list>)
         : Task<Result<TransferReport>> =
         task {
             // CDC pre-flight (Execute only) — mirror runCore's sink gate.
@@ -1375,7 +1381,11 @@ module Transfer =
                 // σ — pure generation in place of ingestion. Rows are already in
                 // target identity space, so the remap is empty (identity).
                 let rows, syntheticDiags = SyntheticData.generateWithDiagnostics catalog profile config seed
-                let plan = DataLoadPlan.build catalog topo rows SurrogateRemapContext.empty
+                // F0c-I/O — realize the boundary corrections (Faker over the PII
+                // tokens σ emitted) BEFORE planning the load. Identity when the
+                // correction is empty (byte-identical to the pre-F0c load).
+                let realizedRows = realize rows
+                let plan = DataLoadPlan.build catalog topo realizedRows SurrogateRemapContext.empty
                 let preWrite = if mode = Execute then executeGate catalog plan else None
                 match preWrite with
                 | Some refusal -> return Result.failureOf refusal
