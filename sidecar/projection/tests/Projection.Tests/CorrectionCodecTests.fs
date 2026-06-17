@@ -56,6 +56,13 @@ let ``round-trip: a mixed multi-entry correction (Pii + Fidelity, distinct colum
     Assert.True(roundTrips (corr entries))
 
 [<Fact>]
+let ``round-trip: both VolumeTarget arms (absolute + multiplier)`` () =
+    let entries =
+        [ CorrectionEntry.Volume (aKey 0, VolumeTarget.Absolute 100)
+          CorrectionEntry.Volume (aKey 1, VolumeTarget.Multiplier 2.5M) ]
+    Assert.True(roundTrips (corr entries))
+
+[<Fact>]
 let ``A39: decode REFUSES a hand-edited artifact with a conflicting double-correction`` () =
     // Two pii entries for the SAME column — a valid `serialize` could never
     // produce this (the smart ctor forbids it), but a hand edit can. Decode
@@ -97,7 +104,11 @@ let private genEntry (i: int) : Gen<CorrectionEntry> =
                           PiiKind.Address; PiiKind.FreeText; PiiKind.Reference ]
                 return CorrectionEntry.Pii (col, k) }
           gen { let! m = Gen.elements [ ValueFidelityMode.Preserve; ValueFidelityMode.Synthesize ]
-                return CorrectionEntry.Fidelity (col, m) } ]
+                return CorrectionEntry.Fidelity (col, m) }
+          gen { let! rows = Gen.choose (0, 100000)
+                return CorrectionEntry.Volume (col, VolumeTarget.Absolute rows) }
+          gen { let! r = Gen.choose (1, 500)
+                return CorrectionEntry.Volume (col, VolumeTarget.Multiplier (decimal r / 10M)) } ]
 
 // Distinct column index per entry → conflict-free by construction, so
 // `Correction.create` always succeeds (the law is over VALID corrections).

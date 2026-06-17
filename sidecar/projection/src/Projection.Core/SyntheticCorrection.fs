@@ -47,6 +47,9 @@ type CorrectionEntry =
     | Pii of column: SsKey * kind: PiiKind
     /// Operator override of a column's value-fidelity mode (Preserve / Synthesize).
     | Fidelity of column: SsKey * mode: ValueFidelityMode
+    /// §6.2 (slice F1) — a per-KIND volume target (absolute / multiplier),
+    /// generating at arbitrary scale decoupled from the source corpus size.
+    | Volume of kind: SsKey * target: VolumeTarget
 
 /// §2 — the blessed correction artifact: a set of named correction entries
 /// layered onto the captured `Profile` / default `SyntheticConfig`. Smart-
@@ -73,6 +76,9 @@ module Correction =
         match entry with
         | CorrectionEntry.Pii (col, _)      -> "fidelity", col
         | CorrectionEntry.Fidelity (col, _) -> "fidelity", col
+        // Volume is keyed by KIND, in its own class — it never conflicts with a
+        // fidelity correction on a column (different class AND different SsKey space).
+        | CorrectionEntry.Volume (kind, _)  -> "volume", kind
 
     /// Smart constructor. Refuses a conflicting double-correction (two entries in
     /// the same conflict class for one column); a blessed artifact's intent must
@@ -135,4 +141,9 @@ module Correction =
                 | Some name ->
                     match mode with
                     | ValueFidelityMode.Synthesize -> { cfg with SynthesizeColumns = Set.add name cfg.SynthesizeColumns }
-                    | ValueFidelityMode.Preserve   -> { cfg with PreserveColumns   = Set.add name cfg.PreserveColumns }) config
+                    | ValueFidelityMode.Preserve   -> { cfg with PreserveColumns   = Set.add name cfg.PreserveColumns }
+            | CorrectionEntry.Volume (kind, target) ->
+                // §6.2 — keyed by KIND SsKey; rowCountFor consults it directly (no
+                // Name resolution). A kind not in the catalog simply never generates,
+                // so a stale Volume target is inert (drift-by-SsKey).
+                { cfg with VolumeByKind = Map.add kind target cfg.VolumeByKind }) config

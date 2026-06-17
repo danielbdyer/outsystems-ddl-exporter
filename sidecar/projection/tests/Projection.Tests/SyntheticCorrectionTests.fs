@@ -106,3 +106,29 @@ let ``F0/§2.3: applyToConfig is order-independent (corrections are a set of dec
     let got2 = Correction.applyToConfig catalog (Correction.create (List.rev entries) |> mkOk) SyntheticConfig.defaultConfig
     Assert.Equal<Set<string>>(got1.SynthesizeColumns, got2.SynthesizeColumns)
     Assert.Equal<Set<string>>(got1.PreserveColumns, got2.PreserveColumns)
+
+[<Fact>]
+let ``F1/§6.2: a Volume correction lands in VolumeByKind (keyed by kind, no name resolution)`` () =
+    let k = kindKey ["C"]
+    let corr = Correction.create [ CorrectionEntry.Volume (k, VolumeTarget.Absolute 500) ] |> mkOk
+    let got = Correction.applyToConfig catalog corr SyntheticConfig.defaultConfig
+    match Map.tryFind k got.VolumeByKind with
+    | Some (VolumeTarget.Absolute 500) -> ()
+    | other -> Assert.Fail(sprintf "expected Some (Absolute 500), got %A" other)
+
+[<Fact>]
+let ``F1/§2: two Volume corrections for one kind conflict`` () =
+    let k = kindKey ["C"]
+    match Correction.create
+              [ CorrectionEntry.Volume (k, VolumeTarget.Absolute 1)
+                CorrectionEntry.Volume (k, VolumeTarget.Multiplier 2M) ] with
+    | Ok _ -> Assert.Fail("expected a synthetic.correction.conflict refusal")
+    | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "synthetic.correction.conflict")
+
+[<Fact>]
+let ``F1/§2: a Volume (kind) and a fidelity (column) correction on the same SsKey do NOT conflict (distinct classes)`` () =
+    let r =
+        Correction.create
+            [ CorrectionEntry.Volume (emailKey, VolumeTarget.Absolute 10)
+              CorrectionEntry.Pii (emailKey, PiiKind.Email) ]
+    Assert.True((match r with Ok _ -> true | Error _ -> false))

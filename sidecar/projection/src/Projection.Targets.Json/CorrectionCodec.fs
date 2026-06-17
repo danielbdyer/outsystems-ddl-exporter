@@ -1,5 +1,6 @@
 namespace Projection.Targets.Json
 
+open System.Globalization
 open System.Text.Json
 open Projection.Core
 
@@ -48,6 +49,19 @@ module CorrectionCodec =
         | ValueFidelityMode.Preserve   -> "preserve"
         | ValueFidelityMode.Synthesize -> "synthesize"
 
+    let private inv (d: decimal) : string = d.ToString(CultureInfo.InvariantCulture)
+
+    let private wVolumeTarget (jw: Utf8JsonWriter) (target: VolumeTarget) : unit =
+        jw.WriteStartObject()
+        match target with
+        | VolumeTarget.Absolute rows ->
+            jw.WriteString("target", "absolute")
+            jw.WriteNumber("rows", rows)
+        | VolumeTarget.Multiplier factor ->
+            jw.WriteString("target", "multiplier")
+            jw.WriteString("factor", inv factor)
+        jw.WriteEndObject()
+
     let private wEntry (jw: Utf8JsonWriter) (entry: CorrectionEntry) : unit =
         jw.WriteStartObject()
         match entry with
@@ -61,6 +75,12 @@ module CorrectionCodec =
             jw.WritePropertyName "column"
             wSsKeyVal jw col
             jw.WriteString("mode", fidelityString mode)
+        | CorrectionEntry.Volume (kind, target) ->
+            jw.WriteString("entry", "volume")
+            jw.WritePropertyName "kind"
+            wSsKeyVal jw kind
+            jw.WritePropertyName "target"
+            wVolumeTarget jw target
         jw.WriteEndObject()
 
     let private wCorrection (jw: Utf8JsonWriter) (correction: Correction) : unit =
@@ -127,6 +147,27 @@ module CorrectionCodec =
             | "synthesize" -> Ok ValueFidelityMode.Synthesize
             | o -> fail "correctionCodec.fidelity.unknown" (sprintf "unknown ValueFidelityMode '%s'" o))
 
+    let private asInt (el: JsonElement) : Result<int> =
+        if el.ValueKind = JsonValueKind.Number then
+            match el.TryGetInt32() with
+            | true, n -> Ok n
+            | _ -> fail "correctionCodec.expectedInt" "number is not an int32"
+        else fail "correctionCodec.expectedInt" (sprintf "expected number, got %A" el.ValueKind)
+
+    let private asDecimal (el: JsonElement) : Result<decimal> =
+        asString el
+        |> Result.bind (fun s ->
+            match System.Decimal.TryParse(s, NumberStyles.Number, CultureInfo.InvariantCulture) with
+            | true, d -> Ok d
+            | _ -> fail "correctionCodec.expectedDecimal" (sprintf "not an invariant-culture decimal: '%s'" s))
+
+    let private readVolumeTarget (el: JsonElement) : Result<VolumeTarget> =
+        field el "target" asString
+        |> Result.bind (function
+            | "absolute"   -> field el "rows" asInt |> Result.map VolumeTarget.Absolute
+            | "multiplier" -> field el "factor" asDecimal |> Result.map VolumeTarget.Multiplier
+            | o -> fail "correctionCodec.volumeTarget.unknown" (sprintf "unknown VolumeTarget '%s'" o))
+
     let private readEntry (el: JsonElement) : Result<CorrectionEntry> =
         field el "entry" asString
         |> Result.bind (function
@@ -140,6 +181,11 @@ module CorrectionCodec =
                 |> Result.bind (fun col ->
                     field el "mode" readFidelity
                     |> Result.map (fun mode -> CorrectionEntry.Fidelity (col, mode)))
+            | "volume" ->
+                field el "kind" readSsKey
+                |> Result.bind (fun kind ->
+                    field el "target" readVolumeTarget
+                    |> Result.map (fun target -> CorrectionEntry.Volume (kind, target)))
             | o -> fail "correctionCodec.entry.unknown" (sprintf "unknown correction entry '%s'" o))
 
     let private readCorrection (el: JsonElement) : Result<Correction> =

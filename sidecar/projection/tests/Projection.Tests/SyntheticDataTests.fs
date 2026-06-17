@@ -137,6 +137,22 @@ let ``volume scales by the configured factor`` () =
     Assert.Equal(125, m.[ordKey].Length)
 
 [<Fact>]
+let ``F1: an Absolute VolumeTarget overrides the profiled RowCount for its kind only`` () =
+    let cfg' = { cfg with VolumeByKind = Map.ofList [ custKey, VolumeTarget.Absolute 7 ] }
+    let m = SyntheticData.generate catalog profile cfg' 1UL
+    Assert.Equal(7, m.[custKey].Length)     // arbitrary scale, decoupled from the observed 100
+    Assert.Equal(250, m.[ordKey].Length)    // untargeted kind keeps the observed RowCount
+
+[<Fact>]
+let ``F1: a Multiplier VolumeTarget scales the observed count and ignores the global Scale`` () =
+    // ordKey is targeted (×2 over observed 250 = 500, Scale ignored); custKey is
+    // untargeted, so it still honors the global Scale (100 × 0.5 = 50).
+    let cfg' = { cfg with Scale = 0.5M; VolumeByKind = Map.ofList [ ordKey, VolumeTarget.Multiplier 2M ] }
+    let m = SyntheticData.generate catalog profile cfg' 1UL
+    Assert.Equal(500, m.[ordKey].Length)
+    Assert.Equal(50, m.[custKey].Length)
+
+[<Fact>]
 let ``PK uniqueness holds across the generated population`` () =
     let m = SyntheticData.generate catalog profile cfg 3UL
     let custIds = valuesOf m custKey "Id"

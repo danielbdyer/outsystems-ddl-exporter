@@ -53,29 +53,43 @@ type ValueFidelityMode =
     | Preserve
     | Synthesize
 
+/// THE_SYNTHETIC_DATA_FUZZING.md §6.2 — the per-kind volume target (slice F1):
+/// generate at ARBITRARY scale, decoupled from the source corpus row count.
+/// `Absolute` sets an exact synthetic row count for the kind; `Multiplier`
+/// scales the observed `RowCount`. A kind with no target falls back to the
+/// config's global `Scale`, so existing callers are byte-identical.
+[<RequireQualifiedAccess>]
+type VolumeTarget =
+    | Absolute of rows: int
+    | Multiplier of factor: decimal
+
 /// The hybrid-by-cardinality policy (design §2.1) plus the volume axis
 /// (design §7). `PreserveCardinalityMax` is τ — categoricals with
 /// `DistinctCount ≤ τ` and not truncated are preserved; the rest are
 /// synthesized. `PreserveColumns` / `SynthesizeColumns` are per-column
 /// overrides keyed by the attribute's logical `Name` text. `Scale` is the
-/// volume factor over the profiled `RowCount` per kind (1.0 = full).
+/// global volume factor over the profiled `RowCount` per kind (1.0 = full);
+/// `VolumeByKind` is the per-kind override (FUZZING §6.2, slice F1) — empty =
+/// every kind uses `Scale`.
 type SyntheticConfig = {
     PreserveCardinalityMax : int64
     PreserveColumns        : Set<string>
     SynthesizeColumns      : Set<string>
     Scale                  : decimal
+    VolumeByKind           : Map<SsKey, VolumeTarget>
 }
 
 [<RequireQualifiedAccess>]
 module SyntheticConfig =
 
     /// The conservative default (design §2.1: "default τ conservative,
-    /// recommend ≤ 50"): τ = 50, no overrides, full scale.
+    /// recommend ≤ 50"): τ = 50, no overrides, full scale, no per-kind volume.
     let defaultConfig : SyntheticConfig =
         { PreserveCardinalityMax = 50L
           PreserveColumns        = Set.empty
           SynthesizeColumns      = Set.empty
-          Scale                  = 1M }
+          Scale                  = 1M
+          VolumeByKind           = Map.empty }
 
 
 /// NM-21 — a named lineage event σ emits when a **non-nullable** FK column
@@ -465,8 +479,12 @@ module SyntheticData =
             kind.Attributes
             |> List.choose (fun a -> Profile.tryFindColumn a.SsKey profile |> Option.map (fun c -> c.RowCount))
             |> function [] -> 0L | xs -> List.max xs
-        let scaled = decimal observed * config.Scale
-        max 0 (int (System.Decimal.Truncate scaled))
+        // §6.2 — a per-kind VolumeTarget overrides the global Scale (slice F1);
+        // absent, the observed × Scale default holds (byte-identical to pre-F1).
+        match Map.tryFind kind.SsKey config.VolumeByKind with
+        | Some (VolumeTarget.Absolute rows)     -> max 0 rows
+        | Some (VolumeTarget.Multiplier factor) -> max 0 (int (System.Decimal.Truncate (decimal observed * factor)))
+        | None                                  -> max 0 (int (System.Decimal.Truncate (decimal observed * config.Scale)))
 
     /// Pass 1 — mint every kind's PK pool (raw PK values, one per generated
     /// row). PKs are independent of FKs, so this completes before any row is
