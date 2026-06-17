@@ -241,6 +241,13 @@ type ProjectionConfig =
         /// §5 — one isomorphic surface behind two views. Nothing CONSUMES this
         /// yet at S1; S2 reads `Shaping.Model`; S3 threads it into emission.
         Shaping      : Config.Config
+        /// THE_SYNTHETIC_DATA_DESIGN §11 — the synthetic-load policy block
+        /// (`"synthetic": {…}`), the DECLARATIVE baseline a `from: synthetic`
+        /// flow rests on (τ / preserve / synthesize / scale / seed). A movement
+        /// -vocabulary citizen (rendered by `renderConfig`, so `parse ∘ render =
+        /// id` covers it). Absent ⇒ `Config.defaultSyntheticSection` (the
+        /// built-in `SyntheticConfig.defaultConfig` holds; byte-identical).
+        Synthetic    : Config.SyntheticSection
         /// The file the config was loaded from (S6.2 — `fromFile` sets `Some
         /// path`; `parse`/`empty` set `None`). It is LOAD PROVENANCE, not a JSON
         /// field — `renderConfig` never emits it, so the `parse ∘ render` round
@@ -257,7 +264,7 @@ module ProjectionConfig =
 
     let empty : ProjectionConfig =
         { Environments = Map.empty; Flows = Map.empty; Model = None; ModelOssys = None; Defaults = Map.empty
-          Shaping = Config.defaultConfig; SourcePath = None }
+          Shaping = Config.defaultConfig; Synthetic = Config.defaultSyntheticSection; SourcePath = None }
 
     let private err (code: string) (message: string) : ValidationError =
         ValidationError.create code message
@@ -276,6 +283,39 @@ module ProjectionConfig =
             | s when String.IsNullOrWhiteSpace s -> None
             | s -> Some (s.Trim())
         | _ -> None
+
+    /// A string-array property → a trimmed, non-empty `string list` (absent ⇒ []).
+    let private getStringArray (el: JsonElement) (name: string) : string list =
+        match el.TryGetProperty name with
+        | true, a when a.ValueKind = JsonValueKind.Array ->
+            [ for v in a.EnumerateArray() do
+                if v.ValueKind = JsonValueKind.String then
+                    match Option.ofObj (v.GetString()) with
+                    | Some s when not (String.IsNullOrWhiteSpace s) -> yield s.Trim()
+                    | _ -> () ]
+        | _ -> []
+
+    /// THE_SYNTHETIC_DATA_DESIGN §11 — parse the top-level `"synthetic"` block to a
+    /// `SyntheticSection` (the declarative baseline a `from: synthetic` flow rests
+    /// on). Absent / non-object ⇒ the default (every knob None/[]). Lenient: a
+    /// malformed number is simply absent (the CLI / built-in default fills it) —
+    /// the block is an OVERRIDE layer, not a structural requirement.
+    let private parseSynthetic (root: JsonElement) : Config.SyntheticSection =
+        match root.TryGetProperty "synthetic" with
+        | true, s when s.ValueKind = JsonValueKind.Object ->
+            let num (name: string) : JsonElement option =
+                match s.TryGetProperty name with
+                | true, v when v.ValueKind = JsonValueKind.Number -> Some v
+                | _ -> None
+            let int64Of name   = num name |> Option.bind (fun (v: JsonElement) -> match v.TryGetInt64()   with true, n -> Some n | _ -> None)
+            let decimalOf name = num name |> Option.bind (fun (v: JsonElement) -> match v.TryGetDecimal() with true, d -> Some d | _ -> None)
+            let uint64Of name  = num name |> Option.bind (fun (v: JsonElement) -> match v.TryGetUInt64()  with true, n -> Some n | _ -> None)
+            { PreserveCardinalityMax = int64Of "preserveCardinalityMax"
+              Preserve               = getStringArray s "preserve"
+              Synthesize             = getStringArray s "synthesize"
+              Scale                  = decimalOf "scale"
+              Seed                   = uint64Of "seed" }
+        | _ -> Config.defaultSyntheticSection
 
     /// The reach facet: `bundle` needs an `out` folder; `direct` needs a
     /// D9-safe `conn` reference; `docker` is bare.
@@ -573,6 +613,9 @@ module ProjectionConfig =
                           ModelOssys = legacyModelOssys
                           Defaults = defaults
                           Shaping = shaping
+                          // §11 — the synthetic-load policy baseline (a movement
+                          // -vocabulary citizen; rendered, so it round-trips).
+                          Synthetic = parseSynthetic root
                           // `parse` has no file provenance; `fromFile` overlays it.
                           SourcePath = None }
         with ex ->
@@ -725,6 +768,23 @@ module ProjectionConfig =
             let d = JsonObject()
             for KeyValue (k, v) in cfg.Defaults do setStr d k v
             root.["defaults"] <- d)
+        // §11 — the synthetic-load policy block. Omitted when it is the default
+        // (every knob absent), so a config with no `synthetic` round-trips to no
+        // `synthetic` key (`parse ∘ render = id`).
+        (if cfg.Synthetic <> Config.defaultSyntheticSection then
+            let s = JsonObject()
+            (match cfg.Synthetic.PreserveCardinalityMax with Some n -> s.["preserveCardinalityMax"] <- JsonValue.Create n | None -> ())
+            (if not (List.isEmpty cfg.Synthetic.Preserve) then
+                let a = JsonArray()
+                for v in cfg.Synthetic.Preserve do a.Add(JsonValue.Create v)
+                s.["preserve"] <- a)
+            (if not (List.isEmpty cfg.Synthetic.Synthesize) then
+                let a = JsonArray()
+                for v in cfg.Synthetic.Synthesize do a.Add(JsonValue.Create v)
+                s.["synthesize"] <- a)
+            (match cfg.Synthetic.Scale with Some d -> s.["scale"] <- JsonValue.Create d | None -> ())
+            (match cfg.Synthetic.Seed with Some n -> s.["seed"] <- JsonValue.Create n | None -> ())
+            root.["synthetic"] <- s)
         root
 
     /// Render a movement config to its `projection.json` text — the round-trip
@@ -882,7 +942,7 @@ module Command =
                         | Ok src -> dataMove src false
                         | Error es -> PlanAction.Refused (6, List.head es)
                     | DataOrigin.Synthetic profile when not schemaOnly ->
-                        PlanAction.SynthesizeAndLoad (spec.Model, modelOssys, profile, conn, opts, false, cfg.Shaping.Model)
+                        PlanAction.SynthesizeAndLoad (spec.Model, modelOssys, profile, conn, opts, false, cfg.Shaping.Model, cfg.Synthetic)
                     | _ ->
                         if hasModel then PlanAction.PreviewSchema (spec.Model, modelOssys, conn, opts.Declaration)
                         else modelMissing "projection: "
@@ -896,7 +956,7 @@ module Command =
                             elif hasModel then PlanAction.MigrateWithData (spec.Model, modelOssys, conn, src, opts)
                             else modelMissing "projection: "
                     | DataOrigin.Synthetic profile when not schemaOnly ->
-                        if dataOnly then PlanAction.SynthesizeAndLoad (spec.Model, modelOssys, profile, conn, opts, true, cfg.Shaping.Model)
+                        if dataOnly then PlanAction.SynthesizeAndLoad (spec.Model, modelOssys, profile, conn, opts, true, cfg.Shaping.Model, cfg.Synthetic)
                         else PlanAction.Refused (2, err "cli.move.syntheticScope" "a synthetic load moves data only; point the flow at a data-granting target (grant: data).")
                     | _ when dataOnly ->
                         PlanAction.Refused (2, err "cli.move.scopeDataNoSource" "a DML-only load needs a data source (a flow whose `from` is a live environment).")

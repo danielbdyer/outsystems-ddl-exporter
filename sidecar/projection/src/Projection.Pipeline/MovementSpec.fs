@@ -459,7 +459,7 @@ type PlanAction =
     /// synthetic` flow emitted the FULL estate, silently ignoring `model.modules`.
     /// An empty `model.modules` is the all-permissive identity, so the default
     /// synthetic load stays byte-identical.
-    | SynthesizeAndLoad of model: ModelSource * modelOssys: string option * profile: string * conn: string * opts: LoadOpts * execute: bool * modelSection: Config.ModelSection
+    | SynthesizeAndLoad of model: ModelSource * modelOssys: string option * profile: string * conn: string * opts: LoadOpts * execute: bool * modelSection: Config.ModelSection * syntheticSection: Config.SyntheticSection
     /// live, --go, data source → cross-substrate migrate-with-data.
     | MigrateWithData of model: ModelSource * modelOssys: string option * sink: string * source: string * opts: LoadOpts
     /// live, --go, config model → publish bundle + load the seed.

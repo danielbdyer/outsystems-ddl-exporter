@@ -148,6 +148,20 @@ let ``A44 clause 1 — parse ∘ render = id on the movement config DOM (faithfu
     |> Check.QuickThrowOnFailure
 
 [<Fact>]
+let ``A44 clause 1 — the synthetic policy block round-trips (parse ∘ render = id)`` () =
+    // §11 — the `synthetic` block is a movement-vocabulary citizen (rendered), so
+    // it must round-trip: default (omitted) + each populated facet.
+    let sections =
+        [ Config.defaultSyntheticSection
+          { Config.defaultSyntheticSection with Scale = Some 1.5M; Seed = Some 7UL }
+          { Config.defaultSyntheticSection with PreserveCardinalityMax = Some 25L; Preserve = [ "Status"; "Country" ]; Synthesize = [ "Email" ] } ]
+    for section in sections do
+        let cfg = { ProjectionConfig.empty with Synthetic = section }
+        match ProjectionConfig.parse (ProjectionConfig.render cfg) with
+        | Ok back -> Assert.Equal<Config.SyntheticSection>(section, back.Synthetic)
+        | Error es -> Assert.Fail(sprintf "round-trip failed for %A: %A" section es)
+
+[<Fact>]
 let ``A44 clause 1 — renderEnvironment ∘ parseEnvironment = id on every reach × facet`` () =
     // A worked, exhaustive pinning that complements the property: every access
     // form × grant × rendition × store round-trips through the env vocabulary.

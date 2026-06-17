@@ -18,10 +18,32 @@ open Projection.Targets.Json
 module SyntheticLoadRun =
 
     /// The fixed default seed (design §7: "an optional `--seed`, default a
-    /// fixed seed"). A `--seed` / `synthetic` config surface is a named
-    /// follow-on; until then synthesis is reproducible from this constant.
+    /// fixed seed") — the floor when neither the `synthetic` config block nor
+    /// `--seed` sets one.
     [<Literal>]
     let defaultSeed : uint64 = 0x5117_8E5D_0000_0001UL
+
+    /// §11 — resolve the base `SyntheticConfig` from the declarative `synthetic`
+    /// config block, with the per-run `--scale` override winning over the block's
+    /// `scale`, over the built-in default (config is the primary surface; the CLI
+    /// is the per-run knob). The richer per-column blessed intent is layered ON
+    /// TOP by `Correction.applyToConfig` (FUZZING §2), so this is only the coarse
+    /// baseline (τ / preserve / synthesize / scale).
+    let resolveConfig (section: Config.SyntheticSection) (scaleOverride: decimal option) : SyntheticConfig =
+        { SyntheticConfig.defaultConfig with
+            PreserveCardinalityMax =
+                section.PreserveCardinalityMax |> Option.defaultValue SyntheticConfig.defaultConfig.PreserveCardinalityMax
+            PreserveColumns   = Set.ofList section.Preserve
+            SynthesizeColumns = Set.ofList section.Synthesize
+            Scale =
+                scaleOverride
+                |> Option.orElse section.Scale
+                |> Option.defaultValue SyntheticConfig.defaultConfig.Scale }
+
+    /// §11 — resolve the PRNG seed: `--seed` (per-run) wins over the block's
+    /// `seed`, over the fixed `defaultSeed`.
+    let resolveSeed (section: Config.SyntheticSection) (seedOverride: uint64 option) : uint64 =
+        seedOverride |> Option.orElse section.Seed |> Option.defaultValue defaultSeed
 
     /// Resolve a profile reference to a `Profile`. Accepts the durable
     /// `file:<path>` form (design §2.2) and a bare path; reads the file and

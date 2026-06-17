@@ -808,10 +808,10 @@ let private specOfIn cfg name opts = Command.resolveFlowSpec cfg (Map.find name 
 [<Fact>]
 let ``synthetic flow (data-only target) → SynthesizeAndLoad; preview vs --go`` () =
     match synthAction "preview-synth" preview with
-    | PlanAction.SynthesizeAndLoad (ModelSource.ModelFile "model.json", None, "file:legacy.profile.json", "env:CLOUD_UAT_CONN", _, false, _) -> ()
+    | PlanAction.SynthesizeAndLoad (ModelSource.ModelFile "model.json", None, "file:legacy.profile.json", "env:CLOUD_UAT_CONN", _, false, _, _) -> ()
     | other -> Assert.Fail(sprintf "expected preview SynthesizeAndLoad, got %A" other)
     match synthAction "preview-synth" commit with
-    | PlanAction.SynthesizeAndLoad (_, None, "file:legacy.profile.json", "env:CLOUD_UAT_CONN", _, true, _) -> ()
+    | PlanAction.SynthesizeAndLoad (_, None, "file:legacy.profile.json", "env:CLOUD_UAT_CONN", _, true, _, _) -> ()
     | other -> Assert.Fail(sprintf "expected executing SynthesizeAndLoad, got %A" other)
 
 // NM-08/09 — a module-scoped synthetic config. Before the fix, the synthetic
@@ -837,7 +837,7 @@ let ``NM-08/09: a module-scoped synthetic flow threads model.modules into the ac
     let action =
         (Command.planFlow synthScopedCfg (Map.find "preview-synth" synthScopedCfg.Flows) preview).Action
     match action with
-    | PlanAction.SynthesizeAndLoad (_, _, _, _, _, false, modelSection) ->
+    | PlanAction.SynthesizeAndLoad (_, _, _, _, _, false, modelSection, _) ->
         // The configured scope rides on the action…
         Assert.Equal<Config.ModuleSelector list>(
             [ Config.ModuleSelector.Whole "AppCore" ], modelSection.Modules)
@@ -854,7 +854,7 @@ let ``NM-08/09: an unscoped synthetic flow carries the identity filter (byte-ide
     // Empty `model.modules` is the all-permissive identity, so the default
     // synthetic load stays byte-identical — the fix narrows ONLY when scoped.
     match synthAction "preview-synth" preview with
-    | PlanAction.SynthesizeAndLoad (_, _, _, _, _, false, modelSection) ->
+    | PlanAction.SynthesizeAndLoad (_, _, _, _, _, false, modelSection, _) ->
         Assert.Empty(modelSection.Modules)
         let opts =
             ModuleFilterBinding.fromConfig modelSection
@@ -877,7 +877,7 @@ let ``synthetic flow without a profile is Refused (named, not silent)`` () =
 [<Fact>]
 let ``synthetic flow preview works under all-scope; --go to a non-data target is Refused`` () =
     match synthAction "synth-all" preview with
-    | PlanAction.SynthesizeAndLoad (_, _, _, "env:CLOUD_ALL_CONN", _, false, _) -> ()
+    | PlanAction.SynthesizeAndLoad (_, _, _, "env:CLOUD_ALL_CONN", _, false, _, _) -> ()
     | other -> Assert.Fail(sprintf "expected all-scope preview SynthesizeAndLoad, got %A" other)
     match synthAction "synth-all" commit with
     | PlanAction.Refused (2, e) -> Assert.Equal("cli.move.syntheticScope", e.Code)
@@ -909,14 +909,14 @@ let ``F0c-I/O: parse captures the synthetic source's correction alongside the pr
 [<Fact>]
 let ``F0c-I/O: a flow's declared correction threads onto the SynthesizeAndLoad LoadOpts`` () =
     match synthCorrAction "corrected-synth" preview with
-    | PlanAction.SynthesizeAndLoad (_, _, "file:legacy.profile.json", "env:CLOUD_UAT_CONN", opts, false, _) ->
+    | PlanAction.SynthesizeAndLoad (_, _, "file:legacy.profile.json", "env:CLOUD_UAT_CONN", opts, false, _, _) ->
         Assert.Equal(Some "file:corr.json", opts.Correction)
     | other -> Assert.Fail(sprintf "expected corrected SynthesizeAndLoad, got %A" other)
 
 [<Fact>]
 let ``F0c-I/O: an uncorrected synthetic flow carries no correction (byte-identical default)`` () =
     match synthCorrAction "preview-synth" preview with
-    | PlanAction.SynthesizeAndLoad (_, _, _, _, opts, false, _) -> Assert.Equal(None, opts.Correction)
+    | PlanAction.SynthesizeAndLoad (_, _, _, _, opts, false, _, _) -> Assert.Equal(None, opts.Correction)
     | other -> Assert.Fail(sprintf "expected SynthesizeAndLoad, got %A" other)
 
 [<Fact>]
@@ -925,11 +925,11 @@ let ``F0c-I/O: --correction per-run override wins over the flow's declared corre
     // (iteration: bless a different artifact for one run).
     let overridden = { preview with Correction = Some "file:override.json" }
     match synthCorrAction "corrected-synth" overridden with
-    | PlanAction.SynthesizeAndLoad (_, _, _, _, opts, _, _) -> Assert.Equal(Some "file:override.json", opts.Correction)
+    | PlanAction.SynthesizeAndLoad (_, _, _, _, opts, _, _, _) -> Assert.Equal(Some "file:override.json", opts.Correction)
     | other -> Assert.Fail(sprintf "expected SynthesizeAndLoad, got %A" other)
     // …and threads onto an otherwise-uncorrected flow too.
     match synthCorrAction "preview-synth" overridden with
-    | PlanAction.SynthesizeAndLoad (_, _, _, _, opts, _, _) -> Assert.Equal(Some "file:override.json", opts.Correction)
+    | PlanAction.SynthesizeAndLoad (_, _, _, _, opts, _, _, _) -> Assert.Equal(Some "file:override.json", opts.Correction)
     | other -> Assert.Fail(sprintf "expected SynthesizeAndLoad, got %A" other)
 
 [<Fact>]
@@ -967,6 +967,44 @@ let ``F0c-I/O: synth-correct without a configured model is Refused (named)`` () 
     | PlanAction.Refused (2, e) -> Assert.Equal("cli.synthCorrect.noModel", e.Code)
     | other -> Assert.Fail(sprintf "expected no-model refusal, got %A" other)
 
+// -- §11: the config-driven synthetic policy block ----------------------------
+
+[<Fact>]
+let ``§11: a synthetic config block parses into ProjectionConfig.Synthetic`` () =
+    let cfg =
+        ProjectionConfig.parse """
+        { "synthetic": { "preserveCardinalityMax": 25, "preserve": ["Status"], "synthesize": ["Email"], "scale": 2.5, "seed": 7 } }
+        """ |> mustOk
+    Assert.Equal(Some 25L, cfg.Synthetic.PreserveCardinalityMax)
+    Assert.Equal<string list>([ "Status" ], cfg.Synthetic.Preserve)
+    Assert.Equal<string list>([ "Email" ], cfg.Synthetic.Synthesize)
+    Assert.Equal(Some 2.5M, cfg.Synthetic.Scale)
+    Assert.Equal(Some 7UL, cfg.Synthetic.Seed)
+
+[<Fact>]
+let ``§11: an absent synthetic block is the default baseline (byte-identical)`` () =
+    let cfg = ProjectionConfig.parse """{ "flows": {} }""" |> mustOk
+    Assert.Equal(Config.defaultSyntheticSection, cfg.Synthetic)
+
+[<Fact>]
+let ``§11: resolveConfig threads the block onto SyntheticConfig; --scale overrides the block`` () =
+    let section =
+        { Config.defaultSyntheticSection with
+            PreserveCardinalityMax = Some 25L; Preserve = [ "Status" ]; Synthesize = [ "Email" ]; Scale = Some 2M }
+    let cfg = SyntheticLoadRun.resolveConfig section Option.None
+    Assert.Equal(25L, cfg.PreserveCardinalityMax)
+    Assert.Contains("Status", cfg.PreserveColumns)
+    Assert.Contains("Email", cfg.SynthesizeColumns)
+    Assert.Equal(2M, cfg.Scale)
+    Assert.Equal(9M, (SyntheticLoadRun.resolveConfig section (Some 9M)).Scale)   // --scale wins
+
+[<Fact>]
+let ``§11: resolveSeed precedence — --seed > config block > default`` () =
+    let section = { Config.defaultSyntheticSection with Seed = Some 42UL }
+    Assert.Equal(99UL, SyntheticLoadRun.resolveSeed section (Some 99UL))                                    // CLI wins
+    Assert.Equal(42UL, SyntheticLoadRun.resolveSeed section Option.None)                                    // config block
+    Assert.Equal(SyntheticLoadRun.defaultSeed, SyntheticLoadRun.resolveSeed Config.defaultSyntheticSection Option.None)  // default
+
 [<Fact>]
 let ``synthetic flow threads the live-OSSYS model source (primary) when configured`` () =
     let cfg =
@@ -981,7 +1019,7 @@ let ``synthetic flow threads the live-OSSYS model source (primary) when configur
     Assert.Equal(Some "env:ONPREM_OSSYS_CONN", cfg.ModelOssys)
     match (Command.planFlow cfg (Map.find "preview-synth" cfg.Flows) preview).Action with
     // modelOssys (primary) rides in the action; the model file remains the fallback.
-    | PlanAction.SynthesizeAndLoad (ModelSource.ModelFile "model.json", Some "env:ONPREM_OSSYS_CONN", _, _, _, false, _) -> ()
+    | PlanAction.SynthesizeAndLoad (ModelSource.ModelFile "model.json", Some "env:ONPREM_OSSYS_CONN", _, _, _, false, _, _) -> ()
     | other -> Assert.Fail(sprintf "expected SynthesizeAndLoad carrying the live-OSSYS primary, got %A" other)
 
 // -- live-OSSYS model primary across the whole flow surface -----------------
@@ -1209,7 +1247,7 @@ let ``planMovement: seed/scale thread into the synthetic load's LoadOpts (D8)`` 
             Seed = Some 7UL
             Scale = Some 0.5M }
     match planOf spec with
-    | PlanAction.SynthesizeAndLoad (_, _, _, _, opts, false, _) ->
+    | PlanAction.SynthesizeAndLoad (_, _, _, _, opts, false, _, _) ->
         Assert.Equal(Some 7UL, opts.Seed)
         Assert.Equal(Some 0.5M, opts.Scale)
     | other -> Assert.Fail(sprintf "expected SynthesizeAndLoad, got %A" other)

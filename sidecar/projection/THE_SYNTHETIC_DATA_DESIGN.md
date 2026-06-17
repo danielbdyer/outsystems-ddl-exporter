@@ -5,9 +5,13 @@ The CLI surface is wired end to end: `ProfileCodec` (durable round-trip),
 `SyntheticLoadRun` + `DataOrigin.Synthetic of profile` + `PlanAction
 .SynthesizeAndLoad` (the `from: synthetic, profile: file:<path>` flow), and the
 capture verb `projection profile <env> --out <path>` (`ProfileCaptureRun` +
-`Intent.Profile` + `PlanAction.CaptureProfile`). Remaining polish, not blocking:
-a `--seed` / `synthetic` config block (today a fixed default seed + the default
-hybrid-by-cardinality policy), and all-scope synthetic `--go` (refused-named;
+`Intent.Profile` + `PlanAction.CaptureProfile`). The `--seed` / `--scale` knobs
+and the **`synthetic` config block** (§11 — `preserveCardinalityMax` / `preserve`
+/ `synthesize` / `scale` / `seed`, the declarative baseline a `from: synthetic`
+flow rests on, with the CLI flags as the per-run override; `Config.SyntheticSection`
+→ `ProjectionConfig.Synthetic`, parse + render round-trip, resolved by
+`SyntheticLoadRun.resolveConfig`/`resolveSeed`) are **BUILT (2026-06-16)**.
+Remaining polish, not blocking: all-scope synthetic `--go` (refused-named;
 synthetic is a data-only load — point it at a data-granting target).
 This is the first-principles design for the synthetic (`--data synthetic` / `from: synthetic`)
 data source — the one genuine net-new feature remaining from `THE_CLI.md` §12. The two design

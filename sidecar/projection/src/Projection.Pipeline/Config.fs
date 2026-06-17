@@ -69,6 +69,24 @@ module Config =
         OnlyActiveAttributes   : bool
     }
 
+    /// THE_SYNTHETIC_DATA_DESIGN §11 — the synthetic-load policy block
+    /// (`"synthetic": {…}` in projection.json). The DECLARATIVE baseline for a
+    /// `from: synthetic` flow: the hybrid-by-cardinality τ
+    /// (`preserveCardinalityMax`), the per-column preserve/synthesize overrides
+    /// (by logical NAME), the global volume `scale`, and the reproducibility
+    /// `seed`. Each is an OVERRIDE of the built-in `SyntheticConfig.defaultConfig`;
+    /// the per-run `--scale` / `--seed` CLI flags override THIS in turn (config is
+    /// the primary surface; the CLI is the per-run knob). The richer per-column
+    /// BLESSED intent (PII typing → Faker, fidelity, volume) rides the per-flow
+    /// `correction` artifact (FUZZING §2), not here — a global block stays coarse.
+    type SyntheticSection = {
+        PreserveCardinalityMax : int64 option
+        Preserve               : string list
+        Synthesize             : string list
+        Scale                  : decimal option
+        Seed                   : uint64 option
+    }
+
     type ProfileSection = {
         Path : string option
     }
@@ -408,6 +426,12 @@ module Config =
     /// shaping `model`) substitutes it so the document does not fail. The
     /// field values mirror `parseModel`'s defaults (`includeSystemModules` /
     /// `includeInactiveModules` false, `onlyActiveAttributes` true).
+    /// The no-policy synthetic baseline (every knob absent → the built-in
+    /// `SyntheticConfig.defaultConfig` holds). Public — `ProjectionConfig.empty`
+    /// and a `projection.json` with no `synthetic` block both rest on it.
+    let defaultSyntheticSection : SyntheticSection =
+        { PreserveCardinalityMax = None; Preserve = []; Synthesize = []; Scale = None; Seed = None }
+
     let private defaultModelSection : ModelSection = {
         Path                   = None
         Ossys                  = None

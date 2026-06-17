@@ -58,7 +58,9 @@ let private usageLines : string list =
         "  connect). --auto-revert deletes a failed data load's sink-minted rows by"
         "  captured key; without it, --revert-dir <dir> writes the precise revert script."
         "  --correction <ref> overlays a blessed-correction artifact on a synthetic flow"
-        "  (file:<path>; PII→Faker realization, fidelity + volume overrides)."
+        "  (file:<path>; PII→Faker realization, fidelity + volume overrides). The"
+        "  synthetic policy (preserveCardinalityMax/preserve/synthesize/scale/seed) lives"
+        "  in the projection.json `synthetic` block; --seed/--scale override it per run."
         ""
         "CHECK — assert fidelity.  fidelity canary (default; --cdc-silence adds the redeploy"
         "  silence assertion) · drift (deployed vs model) · data (row/null counts) · ready"
@@ -169,8 +171,8 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat ->
             withRun "projection migrate --with-data" (fun () ->
                 runMigrateWithData shapedCat sink src opts.Reconcile opts.Rekey opts.Declaration opts.AllowCdc opts.Atomic opts.Store opts.Env opts.SinkCapability)))
-    | PlanAction.SynthesizeAndLoad (model, modelOssys, profile, conn, opts, execute, modelSection) ->
-        withRun "projection synth-load" (fun () -> runSyntheticLoad model modelOssys profile conn opts execute modelSection)
+    | PlanAction.SynthesizeAndLoad (model, modelOssys, profile, conn, opts, execute, modelSection, syntheticSection) ->
+        withRun "projection synth-load" (fun () -> runSyntheticLoad model modelOssys profile conn opts execute modelSection syntheticSection)
     | PlanAction.CaptureProfile (conn, out) -> runCaptureProfile conn out
     | PlanAction.ProposeCorrection (model, modelOssys, out) -> runProposeCorrection model modelOssys out
     | PlanAction.PublishAndLoad (c, conn, store, env) ->
