@@ -66,8 +66,9 @@ module Preflight =
                 else None))
         |> List.sortBy (fun v -> SsKey.rootOriginal v.AttributeKey)
 
-    /// Render the violations as the operator-facing refusal message.
-    let private describe (violations: TighteningViolation list) : string =
+    /// Render the violations as the operator-facing refusal message. Public so the
+    /// interactive relax gate can title its prompt with the same §5 finding.
+    let describe (violations: TighteningViolation list) : string =
         match violations with
         | [] -> "no tightening violations"
         | first :: _ ->
@@ -107,16 +108,36 @@ module Preflight =
     let tighteningOverlay (source: Catalog) (target: Catalog) : DecisionOverlay =
         { DecisionOverlay.empty with EnforceNotNull = tightenedToNotNull source target }
 
-    /// Run the pre-flight against a live source: capture the per-attribute
-    /// null-count evidence (read-only — safe before any write) and refuse with
-    /// `migrate.dataViolatesTightening` if the overlay tightens any NULL-bearing
-    /// column. A clean source returns `Ok ()`; the named refusal replaces the
-    /// silent mid-load crash.
-    let tighteningPreflight
+    /// Relax a tightening: set the named attributes' columns back to NULLABLE in
+    /// the target catalog, so the emitted schema FITS NULL-bearing data — the
+    /// operator's "loosen the tightening to defer the source-data fix" (the
+    /// steward override). Pure `Catalog → Catalog`; flips only `Column.IsNullable`
+    /// on the named attributes (identity + count preserved, so the kind's
+    /// smart-ctor invariants hold), so the migration's A→B diff no longer narrows
+    /// them and `tighteningPreflight` passes. NOT a silent edit: the caller MUST
+    /// record the relaxation as a tracked, named override (the stewardship
+    /// principle — every departure from the team's model is a tracked exception).
+    let relaxTightening (keys: Set<SsKey>) (target: Catalog) : Catalog =
+        if Set.isEmpty keys then target
+        else
+            target
+            |> Catalog.mapKinds (fun k ->
+                { k with
+                    Attributes =
+                        k.Attributes
+                        |> List.map (fun a ->
+                            if Set.contains a.SsKey keys then
+                                { a with Column = { a.Column with IsNullable = true } }
+                            else a) })
+
+    /// Like `tighteningPreflight` but RETURNS the violations (the attributes the
+    /// caller may relax) rather than collapsing to a refusal string — the surface
+    /// the interactive relax gate consumes. `Ok []` is a clean source.
+    let tighteningViolations
         (cnn: SqlConnection)
         (catalog: Catalog)
         (overlay: DecisionOverlay)
-        : Task<Result<unit>> =
+        : Task<Result<TighteningViolation list>> =
         task {
             // `LiveProfiler` skips `Modality.Static` kinds — but `ReadSide`
             // marks every row-carrying reconstructed table Static, which would
@@ -127,13 +148,27 @@ module Preflight =
             let profileCatalog = catalog |> Catalog.stripStaticPopulations
             match! LiveProfiler.captureEvidenceCache cnn profileCatalog with
             | Error es -> return Result.failure es
-            | Ok cache ->
-                match dataViolatesTightening cache overlay with
-                | [] -> return Ok ()
-                | violations ->
-                    return
-                        Result.failureOf
-                            (ValidationError.create "migrate.dataViolatesTightening" (describe violations))
+            | Ok cache -> return Ok (dataViolatesTightening cache overlay)
+        }
+
+    /// Run the pre-flight against a live source: capture the per-attribute
+    /// null-count evidence (read-only — safe before any write) and refuse with
+    /// `migrate.dataViolatesTightening` if the overlay tightens any NULL-bearing
+    /// column. A clean source returns `Ok ()`; the named refusal replaces the
+    /// silent mid-load crash. (Delegates to `tighteningViolations`.)
+    let tighteningPreflight
+        (cnn: SqlConnection)
+        (catalog: Catalog)
+        (overlay: DecisionOverlay)
+        : Task<Result<unit>> =
+        task {
+            match! tighteningViolations cnn catalog overlay with
+            | Error es -> return Result.failure es
+            | Ok [] -> return Ok ()
+            | Ok violations ->
+                return
+                    Result.failureOf
+                        (ValidationError.create "migrate.dataViolatesTightening" (describe violations))
         }
 
     // -- A1 — connection pre-flight (T-VI spanning) --------------------------

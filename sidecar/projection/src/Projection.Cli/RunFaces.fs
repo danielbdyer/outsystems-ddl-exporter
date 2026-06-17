@@ -1789,17 +1789,52 @@ let tighteningPreflight
     (sourceA: Catalog)
     (target: Catalog)
     (dataCnn: Microsoft.Data.SqlClient.SqlConnection)
-    : System.Threading.Tasks.Task<Result<unit, int>> =
+    : System.Threading.Tasks.Task<Result<Catalog, int>> =
     task {
         let overlay = Preflight.tighteningOverlay sourceA target
-        if Set.isEmpty overlay.EnforceNotNull then return Ok ()
+        if Set.isEmpty overlay.EnforceNotNull then return Ok target
         else
-            match! Preflight.tighteningPreflight dataCnn sourceA overlay with
-            | Ok () -> return Ok ()
+            match! Preflight.tighteningViolations dataCnn sourceA overlay with
             | Error es ->
-                // §5 Data-compat gate — the existing data violates the tightening.
-                TtyRenderer.renderGate "projection migrate" (Preflight.refusalOf es)
-                return Error 9
+                printErrors Console.Error es
+                return Error (Preflight.refusalOf es).ExitCode
+            | Ok [] -> return Ok target
+            | Ok violations ->
+                // §5 Data-compat gate — the live data violates the model's
+                // narrowing to NOT NULL. The operator is the STEWARD of the
+                // team's model: HALT (the default, and the only headless outcome)
+                // remediates the data and re-runs; RELAX-ONCE loosens those columns
+                // to nullable so the emitted schema fits the data, deferring the
+                // source fix — a NAMED, tracked override, never a silent edit.
+                let refusal =
+                    Preflight.refusalOf
+                        [ ValidationError.create "migrate.dataViolatesTightening" (Preflight.describe violations) ]
+                let halt () =
+                    TtyRenderer.renderGate "projection migrate" refusal
+                    Error 9
+                // LINT-ALLOW: register-clean intervention labels at the CLI boundary
+                // (THE_VOICE §1 — plain imperative, no pronouns, no system-shout).
+                let haltChoice : Intervene.Choice<bool> =
+                    { Code = "migrate.dataViolatesTightening"
+                      Label = "Halt — remediate the data, then re-run"
+                      Value = false }
+                let relaxChoice : Intervene.Choice<bool> =
+                    { Code = "migrate.tighteningRelaxed"
+                      Label = "Relax once — emit a nullable schema that fits the data"
+                      Value = true }
+                match Intervene.chooseOrDefault (Preflight.describe violations) [ haltChoice; relaxChoice ] haltChoice with
+                | Intervene.Chosen true ->
+                    let keys = violations |> List.map (fun v -> v.AttributeKey) |> Set.ofList
+                    let relaxed = Preflight.relaxTightening keys target
+                    // Tracked override on channel 1 / the ledger — never silent.
+                    LogSink.emit (EventProjection.tighteningRelaxedEnvelope keys)
+                    // LINT-ALLOW: register-clean operator acknowledgment at the boundary.
+                    eprintfn
+                        "projection migrate: relaxed %d column(s) to nullable to fit the data; the model still declares NOT NULL — remediate the source and re-tighten."
+                        (Set.count keys)
+                    return Ok relaxed
+                | Intervene.Chosen false
+                | Intervene.Degraded _ -> return halt ()
     }
 
 /// `projection migrate --to <modelB.json> --conn <env|file:ref> --execute
@@ -1854,7 +1889,11 @@ let runMigrateExecute (target: Catalog) (connSpec: string) (declaration: LossDec
                                 // data before any write (probe the in-place cnn).
                                 match! tighteningPreflight sourceA target cnn with
                                 | Error code -> return code
-                                | Ok () ->
+                                | Ok effectiveTarget ->
+                                    // Relax-once (if chosen) loosened the tightening:
+                                    // deploy the EFFECTIVE target so the schema fits
+                                    // the data. Clean / halt-headless returns `target`.
+                                    let target = effectiveTarget
                                     match storePath with
                                     | Some store ->
                                         // AC-P8 — durable provenance. After a verified
@@ -2003,7 +2042,11 @@ let runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec: string)
                                     // NOT NULL. Probe the data source before any write.
                                     match! tighteningPreflight sinkSourceA target dataSource with
                                     | Error code -> return code
-                                    | Ok () ->
+                                    | Ok effectiveTarget ->
+                                      // Relax-once (if chosen) loosened the tightening:
+                                      // the EFFECTIVE target (contract B) is what the
+                                      // re-key resolves against and the load deploys.
+                                      let target = effectiveTarget
                                       // AC-X2 — resolve the re-key map against
                                       // contract B (reuse the transfer verb's
                                       // resolver). Non-empty ⇒ executeWithData

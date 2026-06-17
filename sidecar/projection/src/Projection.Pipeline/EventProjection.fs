@@ -268,3 +268,16 @@ module EventProjection =
         else
             LogSink.envelope LogSink.Info LogSink.Canary "canary.cdcCaptured"
                 (Map.ofList [ "capturedRows", box capturedRows ])
+
+    /// §5 — project an operator's tightening RELAXATION into a tracked event: the
+    /// columns left NULLABLE (against the model's NOT NULL) so the emitted schema
+    /// fits NULL-bearing data, deferring the source-data fix. A NAMED override on
+    /// channel 1 / the ledger — the stewardship principle: a departure from the
+    /// team's model is never silent. `Warn` (an override worth seeing), Deploy
+    /// category (it shapes what is deployed).
+    let tighteningRelaxedEnvelope (relaxedKeys: Set<SsKey>) : LogSink.Envelope =
+        let columns = relaxedKeys |> Set.toList |> List.map SsKey.rootOriginal
+        { LogSink.envelope LogSink.Warn LogSink.Deploy "migrate.tighteningRelaxed"
+            (Map.ofList
+                [ "relaxedColumns", box (List.length columns)
+                  "columns", box (String.concat ", " columns) ]) with Phase = LogSink.End }
