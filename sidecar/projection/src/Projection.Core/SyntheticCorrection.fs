@@ -147,3 +147,42 @@ module Correction =
                 // Name resolution). A kind not in the catalog simply never generates,
                 // so a stale Volume target is inert (drift-by-SsKey).
                 { cfg with VolumeByKind = Map.add kind target cfg.VolumeByKind }) config
+
+
+/// THE_SYNTHETIC_DATA_FUZZING.md §2.2 (slice F0c-propose) — propose a FIRST-DRAFT
+/// `Correction` from the catalog: heuristic PII typing by column-name stem, for the
+/// operator to review / fine-tune / BLESS. Pure (no I/O, no clock); the durable
+/// artifact and the CLI `synth-correct` verb that writes it are the remaining F0c
+/// I/O work. Conservative by design — it UNDER-claims (only well-known PII stems
+/// classify; everything else stays unclassified), so the operator ADDS what the
+/// heuristic misses rather than having to UNDO over-claims. The blessed artifact
+/// is the operator's, never the heuristic's.
+[<RequireQualifiedAccess>]
+module CorrectionProposer =
+
+    /// Lowercased-substring → `PiiKind`, most-specific first. Only canonical PII
+    /// column-name stems classify; an unmatched name is `PiiKind.None` (no entry).
+    let private classify (logical: string) : PiiKind =
+        let n = logical.ToLowerInvariant()
+        let has (sub: string) : bool = n.Contains sub
+        if   has "email" || has "e_mail" then PiiKind.Email
+        elif has "phone" || has "mobile" then PiiKind.Phone
+        elif has "address" || has "street" || has "postal" || has "zip" then PiiKind.Address
+        elif has "firstname" || has "lastname" || has "fullname" || has "surname" || has "givenname" then PiiKind.PersonName
+        else PiiKind.None
+
+    /// Propose the PII-typing corrections for a catalog — one `Pii` entry per
+    /// attribute whose name matches a PII stem. Attribute `SsKey`s are distinct,
+    /// so the smart ctor always succeeds (the `Error` arm is unreachable; the
+    /// defensive `empty` keeps the proposer total).
+    let propose (catalog: Catalog) : Correction =
+        let entries =
+            Catalog.allKinds catalog
+            |> List.collect (fun k -> k.Attributes)
+            |> List.choose (fun a ->
+                match classify (Name.value a.Name) with
+                | PiiKind.None -> Option.None
+                | kind         -> Some (CorrectionEntry.Pii (a.SsKey, kind)))
+        match Correction.create entries with
+        | Ok c    -> c
+        | Error _ -> Correction.empty

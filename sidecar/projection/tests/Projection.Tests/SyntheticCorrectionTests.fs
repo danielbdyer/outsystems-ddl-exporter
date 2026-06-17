@@ -132,3 +132,18 @@ let ``F1/§2: a Volume (kind) and a fidelity (column) correction on the same SsK
             [ CorrectionEntry.Volume (emailKey, VolumeTarget.Absolute 10)
               CorrectionEntry.Pii (emailKey, PiiKind.Email) ]
     Assert.True((match r with Ok _ -> true | Error _ -> false))
+
+[<Fact>]
+let ``F0c-propose: heuristic PII typing classifies known stems and leaves the rest unclassified`` () =
+    // The fixture catalog has Email (→ Email), FullName (→ PersonName), Status (→ none).
+    let entries = Correction.entries (CorrectionProposer.propose catalog)
+    Assert.Contains(entries, fun e -> e = CorrectionEntry.Pii (emailKey, PiiKind.Email))
+    Assert.Contains(entries, fun e -> e = CorrectionEntry.Pii (nameKey, PiiKind.PersonName))
+    Assert.DoesNotContain(entries, fun e -> match e with CorrectionEntry.Pii (k, _) -> k = statusKey | _ -> false)
+
+[<Fact>]
+let ``F0c-propose: a proposed correction drives Synthesize for the typed PII columns`` () =
+    let cfg = Correction.applyToConfig catalog (CorrectionProposer.propose catalog) SyntheticConfig.defaultConfig
+    Assert.Contains("Email", cfg.SynthesizeColumns)
+    Assert.Contains("FullName", cfg.SynthesizeColumns)
+    Assert.DoesNotContain("Status", cfg.SynthesizeColumns)
