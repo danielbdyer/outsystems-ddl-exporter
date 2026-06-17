@@ -66,6 +66,13 @@ module Preflight =
                 else None))
         |> List.sortBy (fun v -> SsKey.rootOriginal v.AttributeKey)
 
+    /// A stable, human-readable identity for a tightening violation — the
+    /// physical kind + column (`OSUSR_X_ORDER.Notes`). The key the relax-ALWAYS
+    /// persistence writes to / matches against in `projection.json`, so a future
+    /// headless run honors a previously-blessed relaxation without prompting.
+    let violationKey (v: TighteningViolation) : string =
+        sprintf "%s.%s" (SsKey.rootOriginal v.KindKey) (SsKey.rootOriginal v.AttributeKey)
+
     /// Render the violations as the operator-facing refusal message. Public so the
     /// interactive relax gate can title its prompt with the same §5 finding.
     let describe (violations: TighteningViolation list) : string =

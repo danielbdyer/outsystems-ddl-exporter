@@ -1777,6 +1777,14 @@ let migratePreflights (label: string) (cnn: Microsoft.Data.SqlClient.SqlConnecti
     }
 
 /// G7 — the Decision↔Data tightening pre-flight, wired into the migrate verbs.
+/// The operator's response at the §5 tightening gate (the relax-decision the
+/// Intervene choice carries): halt, relax just this run, or relax + persist the
+/// blessing to projection.json so future headless runs honor it.
+type private RelaxDecision =
+    | Halt
+    | RelaxOnce
+    | RelaxAlways
+
 /// Derives the narrowing-to-NOT-NULL overlay from the A→B displacement and, when
 /// it is NON-EMPTY, probes the live data source's null counts via
 /// `Preflight.tighteningPreflight`, refusing (exit 9 / migrate.dataViolatesTightening)
@@ -1801,40 +1809,63 @@ let tighteningPreflight
             | Ok [] -> return Ok target
             | Ok violations ->
                 // §5 Data-compat gate — the live data violates the model's
-                // narrowing to NOT NULL. The operator is the STEWARD of the
-                // team's model: HALT (the default, and the only headless outcome)
-                // remediates the data and re-runs; RELAX-ONCE loosens those columns
-                // to nullable so the emitted schema fits the data, deferring the
-                // source fix — a NAMED, tracked override, never a silent edit.
-                let refusal =
-                    Preflight.refusalOf
-                        [ ValidationError.create "migrate.dataViolatesTightening" (Preflight.describe violations) ]
-                let halt () =
-                    TtyRenderer.renderGate "projection migrate" refusal
-                    Error 9
-                // LINT-ALLOW: register-clean intervention labels at the CLI boundary
-                // (THE_VOICE §1 — plain imperative, no pronouns, no system-shout).
-                let haltChoice : Intervene.Choice<bool> =
-                    { Code = "migrate.dataViolatesTightening"
-                      Label = "Halt — remediate the data, then re-run"
-                      Value = false }
-                let relaxChoice : Intervene.Choice<bool> =
-                    { Code = "migrate.tighteningRelaxed"
-                      Label = "Relax once — emit a nullable schema that fits the data"
-                      Value = true }
-                match Intervene.chooseOrDefault (Preflight.describe violations) [ haltChoice; relaxChoice ] haltChoice with
-                | Intervene.Chosen true ->
-                    let keys = violations |> List.map (fun v -> v.AttributeKey) |> Set.ofList
-                    let relaxed = Preflight.relaxTightening keys target
-                    // Tracked override on channel 1 / the ledger — never silent.
+                // narrowing to NOT NULL. The operator is the STEWARD of the team's
+                // model: HALT (the default, and the headless fallback when no
+                // blessing exists) remediates the data; RELAX loosens those columns
+                // to nullable so the emitted schema fits the data — a NAMED, tracked
+                // override, never a silent edit; RELAX-ALWAYS also records the
+                // blessing in projection.json so a future HEADLESS run honors it.
+                let keys = violations |> List.map (fun v -> v.AttributeKey) |> Set.ofList
+                let violationIds = violations |> List.map Preflight.violationKey |> Set.ofList
+                // The relaxation, applied + TRACKED (channel 1 / the ledger).
+                let applyRelaxation () : Result<Catalog, int> =
                     LogSink.emit (EventProjection.tighteningRelaxedEnvelope keys)
                     // LINT-ALLOW: register-clean operator acknowledgment at the boundary.
                     eprintfn
                         "projection migrate: relaxed %d column(s) to nullable to fit the data; the model still declares NOT NULL — remediate the source and re-tighten."
                         (Set.count keys)
-                    return Ok relaxed
-                | Intervene.Chosen false
-                | Intervene.Degraded _ -> return halt ()
+                    Ok (Preflight.relaxTightening keys target)
+                let halt () : Result<Catalog, int> =
+                    TtyRenderer.renderGate "projection migrate"
+                        (Preflight.refusalOf
+                            [ ValidationError.create "migrate.dataViolatesTightening" (Preflight.describe violations) ])
+                    Error 9
+                // Headless honoring (A44): a previously-blessed relaxation covering
+                // EVERY violating column lets any run proceed — relaxed + tracked —
+                // without prompting. The persisted exception is the reachable
+                // equivalent of the interactive choice ("downgrades never silent").
+                let configFile = RelaxationStore.configPath ()
+                if Set.isSubset violationIds (RelaxationStore.read configFile) then
+                    return applyRelaxation ()
+                else
+                    // LINT-ALLOW: register-clean intervention labels at the CLI boundary
+                    // (THE_VOICE §1 — plain imperative, no pronouns, no system-shout).
+                    let haltChoice : Intervene.Choice<RelaxDecision> =
+                        { Code = "migrate.dataViolatesTightening"
+                          Label = "Halt — remediate the data, then re-run"
+                          Value = Halt }
+                    let relaxOnceChoice : Intervene.Choice<RelaxDecision> =
+                        { Code = "migrate.tighteningRelaxed"
+                          Label = "Relax once — emit a nullable schema that fits the data"
+                          Value = RelaxOnce }
+                    let relaxAlwaysChoice : Intervene.Choice<RelaxDecision> =
+                        { Code = "migrate.tighteningRelaxed"
+                          Label = "Relax always — also record this in projection.json"
+                          Value = RelaxAlways }
+                    match Intervene.chooseOrDefault
+                            (Preflight.describe violations)
+                            [ haltChoice; relaxOnceChoice; relaxAlwaysChoice ]
+                            haltChoice with
+                    | Intervene.Chosen RelaxOnce -> return applyRelaxation ()
+                    | Intervene.Chosen RelaxAlways ->
+                        // LINT-ALLOW: register-clean boundary acknowledgment.
+                        if RelaxationStore.persist configFile violationIds then
+                            eprintfn "projection migrate: recorded the relaxation in %s — future runs honor it without prompting." configFile
+                        else
+                            eprintfn "projection migrate: could not write %s; relaxed for this run only." configFile
+                        return applyRelaxation ()
+                    | Intervene.Chosen Halt
+                    | Intervene.Degraded _ -> return halt ()
     }
 
 /// `projection migrate --to <modelB.json> --conn <env|file:ref> --execute
