@@ -1865,6 +1865,19 @@ as `CatalogDiff.compose` (6.H.3, 2026-06-01); A-Lifecycle-4 promoted to Bucket A
 groupoid — every arrow is invertible on its composability class
 (`applyDiff (inverse d) (target d) = source d`, the freed rollback witness;
 `compose d (inverse d) = identity at source`, the groupoid law).
+**M21 (THE VECTOR follow-on, 2026-06-16, SHIPPED):** the inverse is now realized
+**live** as the `migrate A B` compensating-undo arm. On a mid-deploy failure
+`MigrationRun.execute` rides `CatalogDiff.inverse` (the data-preserving rename
+channel only — the ALTER channel is *not* auto-inverted, since its inverse is a
+destructive op the engine refuses by policy) to return the deployed substrate to
+A, verified by read-back (`ExecutionRolledBack`), and **refuses while naming the
+exact residual** (`PartialWriteUnrecovered`) when a non-rename change cannot be
+safely undone — "refuses without damage", never a silent partial. Witnessed by
+the `MigrationCanaryTests` M21 canaries on real SQL Server (T13 citations). The
+§10 Atomic `BEGIN TRAN` envelope (which would make the failed-deploy state
+unreachable) stays deferred — gated on the managed-login long-transaction grant
+survey + P7b throughput; per the J5 managed-env evidence the compensating channel
+is the buildable arm.
 **Latent (2026-06-01 morphology research):** `reconstructLatest` runs only over
 **in-memory values in tests** — there is **no durable episode** to integrate
 over (`CatalogSnapshot` is schema-only, single-plane, never serialized). The

@@ -2,6 +2,49 @@ namespace Projection.Pipeline
 
 open Projection.Core
 
+/// M23 — the data-leg revert policy a sink environment carries (`"revert"` in
+/// `projection.json`). On a failed data load: `Script` (the safe default) writes
+/// the precise `DELETE`-by-captured-key revert .sql to an artifact for the
+/// operator to review/run; `Auto` executes it immediately (the `--auto-revert`
+/// arm); `Off` does neither (re-run is the recovery). A per-environment
+/// disposition — config-resident, with a per-run CLI override. At the engine
+/// boundary it collapses to `WriteOptions.(AutoRevert, RevertArtifactDir)`.
+[<RequireQualifiedAccess>]
+type RevertPolicy =
+    | Script
+    | Auto
+    | Off
+
+[<RequireQualifiedAccess>]
+module RevertPolicy =
+    /// The default when an environment names no `revert` policy: emit the script
+    /// (never auto-delete; never silently skip) — the safe, operator-reviewable arm.
+    let def : RevertPolicy = RevertPolicy.Script
+
+    /// Parse the `"revert"` config token. Total + fail-loud on an unknown token.
+    let tryParse (raw: string) : Result<RevertPolicy, string> =
+        match raw.Trim().ToLowerInvariant() with
+        | "script" -> Ok RevertPolicy.Script
+        | "auto"   -> Ok RevertPolicy.Auto
+        | "off"    -> Ok RevertPolicy.Off
+        | other    -> Error (sprintf "unknown revert policy '%s' (expected: script | auto | off)" other)
+
+    /// The canonical token (the render dual of `tryParse`; `tryParse ∘ token = id`).
+    let token (p: RevertPolicy) : string =
+        match p with
+        | RevertPolicy.Script -> "script"
+        | RevertPolicy.Auto   -> "auto"
+        | RevertPolicy.Off    -> "off"
+
+    /// Collapse a policy + resolved artifact dir to the engine's two write
+    /// levers: `(autoRevert, revertArtifactDir)`. `Auto` executes AND records the
+    /// script; `Script` records only; `Off` neither.
+    let toEngine (dir: string option) (p: RevertPolicy) : bool * string option =
+        match p with
+        | RevertPolicy.Auto   -> true,  dir
+        | RevertPolicy.Script -> false, dir
+        | RevertPolicy.Off    -> false, None
+
 // THE_CLI.md §13 — the typed surface the four operator verbs project onto.
 // One `MovementSpec` is the whole emission family: every current verb
 // (emit / skeleton / deploy / full-export / transfer / migrate) is a point
@@ -131,6 +174,14 @@ type MovementSpec =
         Streaming   : bool
         /// The chunk-resume journal directory (streaming only; `--journal`).
         Journal     : string option
+        /// M22 — the RESOLVED atomic schema-deploy disposition (derived: ON for a
+        /// direct full-access sink; env `atomicDeploy` + `--no-atomic` override).
+        Atomic      : bool
+        /// M23 — the RESOLVED data-leg revert policy (the sink's `revert`, or the
+        /// `--auto-revert` override, or the `Script` default).
+        RevertPolicy : RevertPolicy
+        /// M23 — the revert artifact dir override (`--revert-dir`); `None` derives.
+        RevertDir   : string option
         /// D8 — the synthesis PRNG seed (`--seed <n>`). Honored on the synthetic
         /// load; inert elsewhere. `None` = the fixed default seed.
         Seed        : uint64 option
@@ -171,6 +222,9 @@ module MovementSpec =
             Resumable   = false
             Streaming   = false
             Journal     = None
+            Atomic      = false
+            RevertPolicy = RevertPolicy.def
+            RevertDir   = None
             Seed        = None
             Scale       = None
             Store       = None
@@ -259,6 +313,17 @@ type FlowRunOpts =
         /// `--journal <dir>` — the chunk-resume journal directory for a
         /// streaming run (`CaptureJournal`). `None` = no resume ledger.
         Journal    : string option
+        /// M22 — `--no-atomic`: opt OUT of the atomic schema-deploy envelope per
+        /// run (atomic is ON by default for a direct full-access sink — derived
+        /// from the archetype, overridable in config). Default false (= atomic on).
+        NoAtomic   : bool
+        /// M23 — `--auto-revert`: force the data-leg revert policy to `Auto`
+        /// (execute the compensating DELETE-by-captured-key) for this run,
+        /// overriding the sink's configured `revert`. Default false.
+        AutoRevert : bool
+        /// M23 — `--revert-dir <dir>`: override where the revert script is written
+        /// on a failed load. `None` = derive from the run artifact dir.
+        RevertDir  : string option
     }
 
 /// The operator intents (THE_CLI.md §2). `Flow` is the hero — the daily
@@ -296,6 +361,12 @@ type LoadOpts =
         Streaming   : bool
         /// The chunk-resume journal directory (streaming only).
         Journal     : string option
+        /// M22 — the resolved atomic schema-deploy disposition (see `MovementSpec.Atomic`).
+        Atomic      : bool
+        /// M23 — the resolved data-leg revert policy (see `MovementSpec.RevertPolicy`).
+        RevertPolicy : RevertPolicy
+        /// M23 — the revert artifact dir override (`--revert-dir`); `None` derives.
+        RevertDir   : string option
         Store       : string option
         Env         : string option
         /// Declared table subset for the data leg (item 5); empty = all.

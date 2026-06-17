@@ -190,6 +190,14 @@ type Environment =
         /// `Environment.effectiveArchetype`. Nothing branches on it until Slices
         /// B/C/S — Slice A is byte-identical by construction.
         Archetype : Archetype option
+        /// M22 — opt OUT of the atomic schema-deploy envelope for this place
+        /// (`"atomicDeploy": false`). `None` = the derived default (ON for a direct
+        /// full-access sink, inert otherwise). A capability override, not a gate.
+        AtomicDeploy : bool option
+        /// M23 — the data-leg revert policy for this sink (`"revert": script|auto|
+        /// off`). `None` = the `Script` default (emit the revert script, never
+        /// auto-delete). Per-environment, overridable per run (`--auto-revert`).
+        Revert : RevertPolicy option
     }
 
 [<RequireQualifiedAccess>]
@@ -337,14 +345,30 @@ module ProjectionConfig =
                     match getString el "archetype" with
                     | None   -> Result.success None
                     | Some a -> parseArchetype name a |> Result.map Some
-                match renditionR, archetypeR with
-                | Error e, _ | _, Error e -> Result.failure e
-                | Ok rendition, Ok archetype ->
+                // M22 — `atomicDeploy` (JSON bool): the opt-out override for the
+                // derived atomic schema deploy. `None` = derive from the archetype.
+                let atomicDeploy =
+                    match el.TryGetProperty "atomicDeploy" with
+                    | true, v when v.ValueKind = JsonValueKind.True  -> Some true
+                    | true, v when v.ValueKind = JsonValueKind.False -> Some false
+                    | _ -> None
+                // M23 — `revert` (script|auto|off): the per-environment data-leg
+                // revert policy. Unknown token is a named refusal, never dropped.
+                let revertR : Result<RevertPolicy option> =
+                    match getString el "revert" with
+                    | None   -> Result.success None
+                    | Some r ->
+                        match RevertPolicy.tryParse r with
+                        | Ok p    -> Result.success (Some p)
+                        | Error m -> Result.failureOf (err "cli.config.revert" (sprintf "environment '%s': %s." name m))
+                match renditionR, archetypeR, revertR with
+                | Error e, _, _ | _, Error e, _ | _, _, Error e -> Result.failure e
+                | Ok rendition, Ok archetype, Ok revert ->
                     match getString el "grant" with
-                    | None -> Result.success { Name = name; Access = access; Grant = None; Store = store; Rendition = rendition; Archetype = archetype }
+                    | None -> Result.success { Name = name; Access = access; Grant = None; Store = store; Rendition = rendition; Archetype = archetype; AtomicDeploy = atomicDeploy; Revert = revert }
                     | Some g ->
                         match parseGrant name g with
-                        | Ok grant -> Result.success { Name = name; Access = access; Grant = Some grant; Store = store; Rendition = rendition; Archetype = archetype }
+                        | Ok grant -> Result.success { Name = name; Access = access; Grant = Some grant; Store = store; Rendition = rendition; Archetype = archetype; AtomicDeploy = atomicDeploy; Revert = revert }
                         | Error e  -> Result.failure e
 
     /// The content origin: `from` names an environment (the Move), or one of
@@ -640,6 +664,12 @@ module ProjectionConfig =
         setOptStr o "store" env.Store
         setOptStr o "rendition" (env.Rendition |> Option.map renderRendition)
         setOptStr o "archetype" (env.Archetype |> Option.map renderArchetype)
+        // M22/M23 — the dual of `parseEnvironment`'s atomicDeploy/revert (A44):
+        // emitted only when present, so the derived-default arms round-trip absent.
+        (match env.AtomicDeploy with
+         | Some b -> o.["atomicDeploy"] <- System.Text.Json.Nodes.JsonValue.Create(b)
+         | None   -> ())
+        setOptStr o "revert" (env.Revert |> Option.map RevertPolicy.token)
         o
 
     /// Render one `Flow` to its `JsonObject` — the dual of `parseFlow`. `from`
@@ -784,6 +814,9 @@ module Command =
           Resumable   = spec.Resumable
           Streaming   = spec.Streaming
           Journal     = spec.Journal
+          Atomic      = spec.Atomic
+          RevertPolicy = spec.RevertPolicy
+          RevertDir   = spec.RevertDir
           Store       = spec.Store
           Env         = spec.Env
           Tables      = spec.Tables
@@ -1163,6 +1196,19 @@ module Command =
                         match cfg.Shaping.Model.Path with
                         | Some m -> ModelSource.ModelFile m
                         | None   -> ModelSource.Unspecified
+                // M22 — derive the atomic schema-deploy disposition: ON for a
+                // direct full-access sink, OFF otherwise; the env `atomicDeploy`
+                // config overrides the default; `--no-atomic` overrides per run.
+                let atomicDefault =
+                    match toEnv.Access, Environment.effectiveArchetype toEnv with
+                    | Access.Direct _, Some Archetype.FullRights -> true
+                    | _ -> false
+                let atomicResolved = (toEnv.AtomicDeploy |> Option.defaultValue atomicDefault) && not opts.NoAtomic
+                // M23 — resolve the revert policy: `--auto-revert` forces Auto,
+                // else the sink's configured `revert`, else the Script default.
+                let revertResolved =
+                    if opts.AutoRevert then RevertPolicy.Auto
+                    else toEnv.Revert |> Option.defaultValue RevertPolicy.def
                 Result.success
                     { baseSpec with
                         // S2/S6.2 — the model is read from the canonical
@@ -1203,6 +1249,9 @@ module Command =
                         Resumable = opts.Resumable
                         Streaming = opts.Streaming
                         Journal = opts.Journal
+                        Atomic = atomicResolved
+                        RevertPolicy = revertResolved
+                        RevertDir = opts.RevertDir
                         // D8 — the synthesis knobs ride the per-run intent
                         // (seed/volume vary at the moment of action, never config).
                         Seed = opts.Seed
@@ -1351,6 +1400,9 @@ module Command =
                       Resumable  = List.contains "--resumable" rest
                       Streaming  = List.contains "--streaming" rest
                       Journal    = flagValue rest "--journal"
+                      NoAtomic   = List.contains "--no-atomic" rest
+                      AutoRevert = List.contains "--auto-revert" rest
+                      RevertDir  = flagValue rest "--revert-dir"
                       Seed       = seed
                       Scale      = scale }
                 Result.success (Intent.Flow (Map.find first cfg.Flows, opts))

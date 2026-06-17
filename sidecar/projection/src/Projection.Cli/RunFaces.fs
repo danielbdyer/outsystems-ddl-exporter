@@ -655,6 +655,8 @@ let runTransfer
     (emission: EmissionMode)
     (resumable: bool)
     (tables: string list)
+    (revertPolicy: RevertPolicy)
+    (revertDir: string option)
     (surveyAdvisory: string list)
     : int =
     let collect = function Ok _ -> [] | Error es -> es
@@ -721,9 +723,12 @@ let runTransfer
     let mode = if executeGated then Transfer.Execute else Transfer.DryRun
     let resolveReconciliation (contract: Catalog) =
         TransferSpec.resolveAllReconciliation contract entries userMapEntries
+    // M23 — collapse the revert policy to the engine's (autoRevert, dir) levers;
+    // a Script/Auto policy with no explicit --revert-dir defaults to the cwd.
+    let revertAuto, revertOut = RevertPolicy.toEngine (revertDir |> Option.orElse (Some ".")) revertPolicy
     let runBody () =
         let result =
-            (Transfer.runThroughConnectionsResumable mode emission resumable allowCdc allowDrops tables connections resolveReconciliation)
+            (Transfer.runThroughConnectionsResumable mode emission resumable allowCdc allowDrops tables connections resolveReconciliation revertAuto revertOut)
                 .GetAwaiter().GetResult()
         match result with
         | Ok report ->
@@ -787,6 +792,8 @@ let runReverseLegTransfer
     (streaming: bool)
     (journalDirectory: string option)
     (tables: string list)
+    (revertPolicy: RevertPolicy)
+    (revertDir: string option)
     (sinkCapability: SinkLoadCapability)
     (surveyAdvisory: string list)
     : int =
@@ -883,6 +890,8 @@ let runReverseLegTransfer
     | Ok connections ->
 
     let mode = if executeGated then Transfer.Execute else Transfer.DryRun
+    // M23 — collapse the revert policy to the engine's (autoRevert, dir) levers.
+    let revertAuto, revertOut = RevertPolicy.toEngine (revertDir |> Option.orElse (Some ".")) revertPolicy
     let runBody () =
         let result =
             match realization with
@@ -896,7 +905,7 @@ let runReverseLegTransfer
                 (Transfer.runStreamingReverseLegThroughConnections mode allowCdc allowDrops journal connections logicalSourceContract physicalSinkContract reconciliation)
                     .GetAwaiter().GetResult()
             | ReverseLegRealization.Materialized ->
-                (Transfer.runReverseLegThroughConnectionsWith sinkCapability.IdentityPolicy mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation)
+                (Transfer.runReverseLegThroughConnectionsWith sinkCapability.IdentityPolicy mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation revertAuto revertOut)
                     .GetAwaiter().GetResult()
         match result with
         | Ok report ->
@@ -1693,6 +1702,26 @@ let reportMigrationError (e: MigrationError) : int =
         // ride beneath (the raw header line is retired).
         printErrors Console.Error es
         6
+    | ExecutionRolledBack (msg, n) ->
+        // M21 — the destructive write failed but the compensating-undo arm
+        // (M12's groupoid inverse) returned the substrate to A; no changes
+        // remain. A clean named refusal on the destructive axis (exit 9), not a
+        // corruption — "refuses without damage."
+        TtyRenderer.renderGate "projection migrate"
+            (Preflight.refusalOf
+                [ ValidationError.create "migrate.executionRolledBack"
+                    (sprintf "the migration was rolled back to its original state (%d rename(s) reverted): %s" n msg) ])
+        9
+    | PartialWriteUnrecovered (msg, residual) ->
+        // M21 — the loudest honest outcome: a non-rename residual could not be
+        // safely auto-inverted (the inverse would be a destructive op the engine
+        // refuses by policy). Name the residual; never claim success. Exit 9
+        // (destructive axis) with the exact divergence from A surfaced.
+        TtyRenderer.renderGate "projection migrate"
+            (Preflight.refusalOf
+                [ ValidationError.create "migrate.partialWriteUnrecovered" msg ])
+        Console.Error.WriteLine(PhysicalSchema.renderDiff residual)
+        9
     | other ->
         renderMigrateStopped other
         2
@@ -1770,7 +1799,7 @@ let tighteningPreflight
 /// is supplied, a verified execute durably records the episode onto the timeline
 /// (AC-P8) so the next sprint's diff loads it as the prior; absent, behavior is
 /// unchanged and a one-line note says no episode was persisted.
-let runMigrateExecute (target: Catalog) (connSpec: string) (declaration: LossDeclaration) (allowCdc: bool) (storePath: string option) (envLabel: string option) : int =
+let runMigrateExecute (target: Catalog) (connSpec: string) (declaration: LossDeclaration) (allowCdc: bool) (atomic: bool) (storePath: string option) (envLabel: string option) : int =
     if System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" <> "1" then
         TtyRenderer.renderVoicedError (ValidationError.create "gate.intent" "PROJECTION_ALLOW_EXECUTE is not set in the environment.")
         dumpBench "migrate"
@@ -1830,7 +1859,7 @@ let runMigrateExecute (target: Catalog) (connSpec: string) (declaration: LossDec
                                             let at = System.DateTimeOffset.UtcNow
                                             let! recorded =
                                                 MigrationRun.executeAndRecord
-                                                    allowCdc declaration sourceA target store tl env at None cnn
+                                                    atomic allowCdc declaration sourceA target store tl env at None cnn
                                             match recorded with
                                             | Ok (o, Some chain) ->
                                                 printfn "Applied and verified — the database now matches the model. %d statement(s) applied; recorded to %s (%d episode(s) on timeline %s)."
@@ -1847,7 +1876,7 @@ let runMigrateExecute (target: Catalog) (connSpec: string) (declaration: LossDec
                                         // brackets the execute with the change-
                                         // measure ‖·‖; an idempotent redeploy
                                         // surfaces zero statements AND zero captures.
-                                        let! outcome = MigrationRun.executeAndMeasureCdc allowCdc declaration sourceA target cnn
+                                        let! outcome = MigrationRun.executeAndMeasureCdc atomic allowCdc declaration sourceA target cnn
                                         match outcome with
                                         | Ok (o, cdcDelta) when o.Verified ->
                                             printfn "Applied and verified — the database now matches the model. %d statement(s) applied; %d row(s) captured."
@@ -1880,7 +1909,7 @@ let runMigrateExecute (target: Catalog) (connSpec: string) (declaration: LossDec
 /// AC-I5 `validate-user-map` pre-write halt gates first; absent, it is a
 /// straight load. Schema is fail-loud + minimum-viable; the data leg runs
 /// only if the schema verified.
-let runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec: string) (reconcileSpecs: string list) (userMapPath: string option) (declaration: LossDeclaration) (allowCdc: bool) (storePath: string option) (envLabel: string option) (sinkCapability: SinkLoadCapability) : int =
+let runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec: string) (reconcileSpecs: string list) (userMapPath: string option) (declaration: LossDeclaration) (allowCdc: bool) (atomic: bool) (storePath: string option) (envLabel: string option) (sinkCapability: SinkLoadCapability) : int =
     if System.Environment.GetEnvironmentVariable "PROJECTION_ALLOW_EXECUTE" <> "1" then
         TtyRenderer.renderVoicedError (ValidationError.create "gate.intent" "PROJECTION_ALLOW_EXECUTE is not set in the environment.")
         dumpBench "migrate"
@@ -1989,7 +2018,7 @@ let runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec: string)
                                             | Ok tl ->
                                                 let at = System.DateTimeOffset.UtcNow
                                                 let! recorded =
-                                                    MigrationRun.executeWithDataAndRecordWith sinkCapability.IdentityPolicy declaration Transfer.Execute allowCdc
+                                                    MigrationRun.executeWithDataAndRecordWith sinkCapability.IdentityPolicy atomic declaration Transfer.Execute allowCdc
                                                         sinkSourceA target reconciliation store tl env at None dataSource sink
                                                 match recorded with
                                                 | Ok (o, chain) ->
@@ -2001,7 +2030,7 @@ let runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec: string)
                                                 | Error e -> return reportMigrationError e
                                         | None ->
                                         let! outcome =
-                                            MigrationRun.executeWithDataWith sinkCapability.IdentityPolicy declaration Transfer.Execute allowCdc
+                                            MigrationRun.executeWithDataWith sinkCapability.IdentityPolicy atomic declaration Transfer.Execute allowCdc
                                                 sinkSourceA target reconciliation dataSource sink
                                         match outcome with
                                         | Ok o when o.Schema.Verified ->

@@ -24415,3 +24415,210 @@ closes the last *buildable* such place and names the rest honestly.
   the totality synthesis is written. **THE VECTOR is complete** — the gap from the witnessed floor to the bullseye
   is closed to within a small, named, trigger-gated remainder (the moat). The books are balanced, and the balance
   is checkable.
+
+---
+
+## 2026-06-16 (later) — M21: the live compensating-undo rollback arm (the `migrate A B` failure path rides M12's groupoid inverse; "refuses without damage" made executable)
+
+**Operator-authorized (the `migrate A B` "we can't go wrong" composition).** Past the THE VECTOR close, the operator
+chose the **disciplined-composition** path (AskUserQuestion, 2026-06-16): compose the `migrate A B` envelope's missing
+failure-path arm — the compensating-undo rollback riding M12's groupoid `inverse` — and witness it on the warm Docker
+container, while **leaving the §10 giant `BEGIN TRAN` and the full permissions-content axis named-deferred** (their
+triggers have not fired). This entry records that arm (M21).
+
+**The gap (verified, not restated).** `AxiomTests T13` cited M12's rollback witness only at the **pure** level
+(`applyDiff (inverse d) (target d) = source`, `CatalogDiffTests`). But `MigrationRun.execute`'s deploy stage caught a
+mid-deploy exception and returned a bare `ExecutionFailed` — **leaving partial DDL applied, with no compensation and no
+honesty about recoverability**. So the operator covenant's promise 8 ("atomic-or-resumable, refusing rather than
+corrupting") was, on the schema leg, only *resumable-by-re-diff*: there was no rollback and a partial write could sit
+silent.
+
+**Resolved (code).** On a deploy-stage failure `MigrationRun.compensateToSource` now:
+1. reads the live (partial) schema `B''` and diffs it against A;
+2. if already at A (nothing applied / the failed batch self-rolled-back) → `ExecutionRolledBack (failure, 0)`;
+3. else realizes the **rename channel** of M12's inverse — `renameStatements (CatalogDiff.between B'' A)`, the
+   data-preserving, metadata-only, always-invertible undo — best-effort per statement;
+4. re-reads and re-diffs against A: equal → `ExecutionRolledBack (failure, n)`; non-empty → `PartialWriteUnrecovered
+   (failure, residual)`.
+
+Two new `MigrationError` cases carry these verdicts; the deploy stage's `with ex ->` invokes the compensation. The
+ALTER channel is **deliberately not auto-inverted** — the inverse of an applied widen/add is a narrow/drop, a
+destructive op the engine refuses by policy, so inverting it here would *compound* damage. Instead the residual is
+**named** for the operator (refuse-don't-corrupt), never a silent partial and never an unsafe auto-undo. The CLI
+(`RunFaces.reportMigrationError`) gets explicit loud arms for both (exit 9, the destructive-failure axis) rather than
+the generic `other → 2` — no silent downgrade. The Voice (`migrationStopDetail`, exhaustive over the closed DU) gets
+both plain located causes.
+
+**The §10 boundary (why this is NOT the deferred giant TRAN).** The Atomic `BEGIN TRAN` envelope — wrap the whole
+deploy so SQL Server reverts atomically — stays §10-deferred. Its trigger ("the managed-login grant survey resolves",
+per `Preflight.fs` A3 + P7b throughput) has **not** fired: a giant transaction over a hundreds-of-millions-of-rows
+estate holds schema-modification locks for the whole window (the open P7b throughput risk), may exceed a managed
+login's transaction grant, and is hostile to a CDC-tracked sink. The **J5 managed-env evidence** (ROLLBACK clean, but
+DML-only + AssignedBySink + cleanup-by-captured-key) points to the **compensating channel** — exactly the arm M21
+builds — not the giant transaction. So M21 is the buildable, evidence-backed alternative; the Atomic envelope remains
+the eventual apex (when P7b + the grant survey resolve it would wrap `deploy` and M21 becomes its fallback for the
+managed-login-denied case). Building M21 fires no §10 trigger and adds no speculative IR — it composes existing
+primitives (`CatalogDiff.inverse`, `renameStatements`, `ReadSide.read`, `PhysicalSchema.diff`) on the failure path.
+
+**Witness (warm Docker).** `MigrationCanaryTests` gains two M21 canaries: (a) a table rename applies, then `ADD … NOT
+NULL` (no default) fails on a populated table → `ExecutionRolledBack`, table restored to A's name, REQ absent, the
+seeded row survives, the re-run refuses identically; (b) the covenant invariant — a part-way ALTER failure NEVER
+reports success, leaves either a clean rollback or a named non-empty residual, and the data always survives (robust to
+SQL batch-abort semantics). Both pass on `projection-mssql-warm`. `AxiomTests T13` now cites both (M16 citation gate
+green). `AXIOMS.md` M12 records the live realization (same-commit witness rule).
+
+**Gates.** Debug + **Release** build 0/0 (FS3511-safe: single-binder `for`, `mutable`, no tuple `let!`). Pure pool:
+`AxiomTests` + `VoiceTotalityTests` green. Docker: full `MigrationCanaryTests`/`SchemaMigrationCanaryTests` 23/23
+(2 new + 21 unregressed). `matrix-status.sh` gate=PASS, **rungs 5/4/5 + tolerances 10/3-open UNCHANGED** — M21 is a
+T-VI footer dimension (transactionality/rollback), not a round-trip ladder cell, so no cell moved; the footer (a) line
+now reads "BUILT and live-witnessed" rather than "the groupoid `inverse`". `verifiability-gate.sh` unaffected.
+
+**Cross-references.** `src/Projection.Pipeline/MigrationRun.fs` (`compensateToSource`, the deploy `with ex ->`, the two
+`MigrationError` cases); `src/Projection.Cli/{Voice.fs,RunFaces.fs}`; `tests/Projection.Tests/MigrationCanaryTests.fs`
+(the M21 canaries); `AXIOMS.md` M12/M21 + `AxiomTests.fs` T13; `NORTH_STAR.matrix.generated.md` footer (a);
+`Preflight.fs` A3 (the still-deferred Atomic wrapper) + the J5 memory ledger. Boundary unchanged: the giant `BEGIN
+TRAN` and the permissions-content axis stay §10 deferred-with-trigger.
+
+---
+
+## 2026-06-16 (later still) — M22: the Atomic `BEGIN TRAN` envelope, scoped to LOCAL full-access databases (production schema is ADO/Octopus/SSDT-deployed, not direct-connect); OPT-IN `--atomic`, M21 as its fallback
+
+**This entry is written BEFORE the code, per the load-bearing-commitment rule (a §10 deferral is standing law; breaking
+it requires the amendment first).** The §10 "live atomic `BEGIN TRAN` wrapper" deferral — open since THE VECTOR Wave 2
+— is hereby fired **for the local full-access case only**, behind an opt-in flag.
+
+**Topology clarification (operator, 2026-06-16) — this re-scopes the envelope.** Production on-prem schema is NOT
+direct-connect-deployed: it ships as **SSDT material through ADO branches + pipelines + Octopus Deploy**. So the engine
+must NOT direct-connect to deploy production schema, and a giant-`BEGIN TRAN`-over-direct-DDL is **not** the production
+path. Consequences: **(a)** for *production* environments the engine's atomicity concern is **data-only** (schema is
+out-of-band); **(b)** the full **schema+data atomic** direct-connect outcome is a **LOCAL database** feature — dev/test
+instances where the engine has full access (the `FullRights` archetype; the warm Docker container is exactly this class).
+The managed OutSystems cloud is DML-only (its data safety is the M21 data-leg twin, the `--auto-revert` slice).
+
+**What fired the trigger.** The §10 capability conjunct ("can the login hold transactional DDL + does ROLLBACK revert
+it") is validated on a **full-access SQL Server** (`ATOMIC_ENVELOPE_VALIDATION.md` §4, 2026-06-16; the operator confirmed
+on their full-access instance): `sys.fn_my_permissions` shows `ALTER ANY SCHEMA`; an in-transaction smoke test ran
+`CREATE TABLE` + `ALTER TABLE`, reported `@@TRANCOUNT=1` / `XACT_STATE()=1` (active **and committable** after the DDL),
+and `OBJECT_ID(...)=NULL` after `ROLLBACK`. That capability is exactly what a local full-access dev database has, so the
+envelope is sound there. The operator authorized the build.
+
+**Why opt-in, not default.** Even locally, a transaction over a large load holds locks for its window; and the envelope
+is meaningless against the two *non-local* targets (production = Octopus/SSDT schema; managed cloud = DML-only). So
+`--atomic` is **expressible-but-not-default** (A44): reachable, opted into for local full-access runs, never forced.
+This keeps "IR grows under evidence" honest — the capability evidence fired for the full-access class; the envelope is
+scoped to exactly that class.
+
+**Scope (deliberate; resolved with the operator 2026-06-16).** `--atomic` is a **local full-access** lever that wraps
+the direct-connect migrate's **schema deploy only** in `SET XACT_ABORT ON; BEGIN TRAN … COMMIT/ROLLBACK`. The data leg
+is **NOT** in the same transaction — its safety is the composable `--auto-revert` arm (M21's data-leg twin). Rationale:
+keeps the data load out of a long lock window, and the `--auto-revert` arm is reused for production + managed-cloud data
+targets (where this DDL envelope does not apply). A single transaction spanning schema+data would need a client
+`SqlTransaction` threaded through `Deploy`+`Bulk`+capture (`Bulk.copyCore` passes `null` today) — deliberately not taken.
+The *production* atomicity concern is the **data leg** (`--auto-revert`), NOT this envelope.
+
+**Resolved (code).** `MigrationRun.executeWith (atomic: bool) …` wraps the deploy stage in `SET XACT_ABORT ON; BEGIN
+TRANSACTION;` … `COMMIT TRANSACTION;`. On any mid-deploy failure it issues `IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;`
+(belt-and-suspenders — `XACT_ABORT ON` already auto-rolls-back on a run-time error), then reuses M21's
+`compensateToSource` to **verify** the read-back is at A: clean → `ExecutionRolledBack`, residual → `PartialWriteUnrecovered`.
+So **M21 is the Atomic envelope's fallback**: if the transaction can't be held or `ROLLBACK` leaves a residual, the
+compensating-undo + named-residual still fires. The two compose — the envelope removes the *partial-state* window, M21
+removes the *silent-corruption* window. `execute` (and every existing caller) is unchanged: `execute = executeWith false`;
+`executeAndRecordWith` / `executeAndMeasureCdcWith` carry the flag, the no-`With` forms delegate `false`.
+
+**The discriminating witness.** The Docker canary proves the case M21 *could not* fully recover: the part-way ALTER
+scenario (a nullable ADD that commits, then a NOT-NULL ADD that fails) — under M21 it yields `PartialWriteUnrecovered`
+(the committed NOTE column remains, named); under `--atomic` the same scenario yields a **clean `ExecutionRolledBack`**
+(SQL `ROLLBACK` reverts the NOTE too). Plus a clean `--atomic` migrate that commits + verifies.
+
+**Cross-references.** `ATOMIC_ENVELOPE_VALIDATION.md` (the trigger's resolution protocol + the §4 probe result);
+`Preflight.fs` A3 scaffold (the deferral this discharges, for the schema leg, opt-in); `THE_VECTOR_EXECUTION_KICKOFF.md`
+§10 row 2; the matrix footer (a). The P7b conjunct and the data-leg/estate-scale single-transaction question remain
+deferred.
+
+---
+
+## 2026-06-16 (later still) — M23: the data-leg compensating-undo / revert-script (the M21 twin for the transfer path; opt-in `--auto-revert`, else emit the precise revert SQL as an artifact)
+
+**The production + managed-cloud data safety.** M21 gave the SCHEMA leg "refuse rather than corrupt" (rollback-to-A or
+named residual); this gives the DATA leg the same, for the path that actually runs against the managed OutSystems cloud
+(DML-only) and on-prem data. The transfer's failure path previously **re-threw** with no cleanup (`TransferRun.writePlan`
+`RunAborted (_, Some ex) -> …Throw()`), leaving the sink-minted rows partial; recovery was resume-only (G10/journal).
+
+**Resolved (code).** On a mid-load failure `writePlan` now builds the **child-first `DELETE`-by-captured-key revert**
+(`buildRevertScript`) from the `PackedSurrogateRemap` (new `assignedKeysByKind` accessor — the second consumer of the
+remap's contents beyond `tryFind`): for each `AssignedBySink` kind, in the reverse of the parent-first insert order,
+`DELETE … WHERE <pk> IN (<captured assigned keys>)`. Only sink-minted keys are targeted, so pre-existing rows are
+untouched (a precise undo, not a wipe). Two opt-in behaviors on `WriteOptions` (both **default OFF** → existing callers
+byte-identical):
+- **`AutoRevert = true`** (the operator's `--auto-revert`) → the engine EXECUTES the revert automatically.
+- **`AutoRevert = false` (default)** → it does NOT auto-delete; when `RevertArtifactDir` is set it writes the precise
+  revert script to `<dir>/transfer-revert.sql` for the operator to review/run. *(This is the operator's stated spec: opt
+  in to automatic; otherwise emit the exact revert script as an artifact.)*
+In both cases the original failure still propagates (the load DID fail). `runRevert` always writes the artifact when a
+dir is configured (a reviewable record even in auto mode), best-effort per statement.
+
+**Why compensation, not a giant data-TRAN.** This is the J5-evidence channel (DML-only, AssignedBySink,
+cleanup-by-captured-key) — the data-leg analog of M12's inverse. The §4 hold-out (the `WriteProtection.Atomic` giant
+data-transaction wrapper) stays deferred; for the managed cloud it is disfavored, and for local full-access the
+operator chose schema-`--atomic` + data-`--auto-revert` (composed), NOT one transaction spanning both (`M22`).
+
+**Scope + the named follow-on.** The compensation covers the MATERIALIZED `writePlan` path (the canary's path, and the
+default reverse-leg realization). The STREAMING reverse-leg path (`writePlanStreaming`) resumes via its journal and gets
+the compensating arm as a named follow-on. **CLI surfacing** of both `--auto-revert`/`--revert-dir` (transfer faces) and `--atomic`
+(migrate faces) **LANDED 2026-06-16** as the structured A44 control-plane change: the flags thread
+`Command.parse` (`MovementSurface.fs`) → `FlowRunOpts` → `resolveFlowSpec` → `MovementSpec` → `optsOf` → `LoadOpts` →
+the run faces (`runMigrateExecute` +`atomic`; `runTransfer`/`runReverseLegTransfer` +`autoRevert`/`revertDir`) → the
+engine (`executeWith`; `Transfer.run*ThroughConnectionsWith` → `WriteOptions`). Three `MovementSurfaceTests` witness it
+(the A44 expressible⇔reachable proof); all defaults off (byte-identical); `Program.fs` help lists the flags. Named
+follow-on: the STREAMING reverse-leg's M23 arm (`writePlanStreaming` resumes via journal; `--auto-revert` covers the
+materialized paths) and `--atomic` on `migrate --with-data`'s schema leg.
+
+**Witness (warm Docker).** `TransferCanaryTests` gains two Build A canaries on the AssignedBySink fixture (USER minted,
+ORDER fails on a dropped column): auto-revert OFF → the revert script is written and the minted USER rows REMAIN;
+auto-revert ON → the minted rows are DELETED by captured key. Both pass; the full class is 25/25 (no regression from the
+default-off threading), pure pool PASS.
+
+**Cross-references.** `src/Projection.Pipeline/TransferRun.fs` (`buildRevertScript`, `runRevert`, the `writePlan`
+failure branch, the `WriteOptions.AutoRevert`/`RevertArtifactDir` fields threaded through `writePlanResumable`/`runCore`);
+`src/Projection.Pipeline/PackedSurrogateRemap.fs` (`assignedKeysByKind`); `tests/Projection.Tests/TransferCanaryTests.fs`
+(the two Build A canaries); the §4 hold-out in the 2026-06-16 hold-out survey; M21 (the schema-leg twin) + M22 (the
+atomic envelope).
+
+---
+
+## 2026-06-16 (later still) — M24: the M22/M23 flags become config-based dispositions (sensible defaults, not command clutter) + follow-on C (atomic on migrate-with-data)
+
+**Operator review.** "Make sure sensible defaults are applied and it's not just cluttering the command substrate; make
+it config-based." The bare per-run flags (`--atomic`/`--auto-revert`/`--revert-dir`) were re-homed into the A44 control
+plane as **config-resident dispositions with capability-derived defaults**, the CLI flag surviving only as a rare
+override. Two operator decisions (AskUserQuestion): atomic **derives ON for direct+FullRights**; revert is a
+**per-environment policy**.
+
+**Resolved (code; commit `9ebb0989` + this follow-on).**
+- **Atomic** is now DERIVED in `resolveFlowSpec` (`MovementSurface.fs`): `Access.Direct + Archetype.FullRights → ON`,
+  else inert. Opt out via env `"atomicDeploy": false` or per-run `--no-atomic` (the `--atomic` opt-in flag is retired —
+  the common local case needs no flag). So a local full-access `migrate` is atomic-by-default (the safe change).
+- **Revert** is a per-environment `"revert": script|auto|off` policy (`RevertPolicy` DU; default `Script` = emit the
+  revert .sql, never auto-delete). `--auto-revert` forces `Auto`; `--revert-dir` overrides the artifact dir (else the
+  cwd). It collapses to the engine's `(autoRevert, revertArtifactDir)` at the face boundary (`RevertPolicy.toEngine`).
+- New `Environment` config fields `atomicDeploy`/`revert` thread through the **parse∘render isomorphism** (A44 — the
+  `MovementIsomorphismTests` env round-trip covers them) and the `FlowRunOpts`/`MovementSpec`/`LoadOpts` records.
+- **Follow-on C** — `migrate --with-data`'s SCHEMA leg now honors the derived atomic (`executeWithDataWith` /
+  `executeWithDataAndRecordWith` gained an `atomic` param → `executeWith atomic`; threaded from `opts.Atomic`). The
+  with-data DATA leg's revert is a further follow-on (it runs through `Transfer.runWithRenamesWith`, not the
+  ThroughConnections faces).
+- Witnesses: three `MovementSurfaceTests` (atomic derived-ON / `--auto-revert`→`Auto` / revert-dir) + the A44 env
+  isomorphism. Gates: Debug+Release 0/0; pure pool PASS.
+
+**Follow-on D — DEFERRED with a hard gate (the streaming reverse-leg's M23 arm).** `writePlanStreaming` (the
+estate-scale, hundreds-of-millions-row path) resumes via its `CaptureJournal` today; an active compensating
+DELETE-by-captured-key there is mechanically feasible (replay the journal into a remap → `buildRevertScript` at the
+streaming `Error` branch → `runRevert`). It is **intentionally NOT shipped here**: a wrong `DELETE` at estate scale is
+unrecoverable, so per the engine's discipline ("every correctness claim a property test") it MUST land WITH a
+deterministic streaming-failure canary — which is not constructible-and-verifiable at the tail of this session. The
+materialized transfer + both schema legs carry full M22/M23 compensation; streaming retains its journal-resume safety.
+D is the single remaining named follow-on; ship it with its canary.
+
+**Cross-references.** `src/Projection.Pipeline/{MovementSpec.fs (RevertPolicy), MovementSurface.fs (parse/render/derive),
+MigrationRun.fs (executeWithData* atomic)}`; `src/Projection.Cli/{RunFaces.fs, Program.fs}`; `MovementSurfaceTests` +
+`MovementIsomorphismTests`. M22 (the atomic envelope) + M23 (the data-leg revert) are the dispositions this re-homes.

@@ -97,3 +97,24 @@ module PackedSurrogateRemap =
         let packed = remap.Packed.Values |> Seq.sumBy (fun d -> d.Count)
         let fallback = remap.Fallback.Values |> Seq.sumBy (fun d -> d.Count)
         packed + fallback
+
+    /// The ASSIGNED (sink-minted) keys captured per kind — the second consumer of
+    /// the remap's contents beyond `tryFind` (the data-leg compensating-undo,
+    /// Build A): these are exactly the rows the sink minted, so a
+    /// `DELETE … WHERE <pk> IN (assigned)` reverts a failed load by captured key
+    /// without touching pre-existing data. Packed (integral) assignments render to
+    /// their decimal string; the fallback's assigned raws pass through verbatim.
+    /// Deterministic per kind (sorted) so the generated revert script is stable.
+    let assignedKeysByKind (remap: PackedSurrogateRemap) : Map<SsKey, string list> =
+        let packed =
+            remap.Packed
+            |> Seq.map (fun kv ->
+                kv.Key, (kv.Value.Values |> Seq.map string |> Seq.sort |> List.ofSeq))
+        let fallback =
+            remap.Fallback
+            |> Seq.map (fun kv ->
+                kv.Key, (kv.Value.Values |> Seq.sort |> List.ofSeq))
+        Seq.append packed fallback
+        |> Seq.groupBy fst
+        |> Seq.map (fun (k, groups) -> k, (groups |> Seq.collect snd |> List.ofSeq))
+        |> Map.ofSeq

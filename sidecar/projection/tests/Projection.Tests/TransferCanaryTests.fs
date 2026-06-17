@@ -458,6 +458,93 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                             })
                 }))
 
+    // -- Build A — the data-leg compensating-undo / revert-script -----------
+    //
+    // A failed AssignedBySink load: USER (IDENTITY PK, FK-targeted by ORDER) is
+    // captured first (the sink mints 1,2 into the empty sink), THEN ORDER's load
+    // fails because the sink's AMOUNT column was dropped (the bulk copy has no
+    // destination column). At failure the remap holds USER's minted keys, so the
+    // revert is a precise child-first DELETE-by-captured-key on USER — pre-existing
+    // rows would be untouched. Two modes prove the operator's spec:
+    //   • default (--auto-revert OFF): write the precise revert SCRIPT to an
+    //     artifact and leave the sink for the operator to review/run;
+    //   • --auto-revert ON: execute the DELETE-by-captured-key automatically.
+    // Either way the original failure still propagates (the load DID fail).
+
+    [<Fact>]
+    member _.``data canary (Build A): a failed load with auto-revert OFF writes the precise revert script and leaves the sink`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "XferRevertScript") then () else
+        let dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "v2-revert-canary-script")
+        let scriptPath = System.IO.Path.Combine(dir, "transfer-revert.sql")
+        (try System.IO.File.Delete scriptPath with _ -> ())
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "XferRevScriptSrc" (fun src _ ->
+                task {
+                    do! Deploy.executeBatch src TransferCanaryFixtures.assignedBySinkDdl
+                    do! Deploy.executeBatch src TransferCanaryFixtures.assignedBySinkSourceSeed
+                    return!
+                        fixture.WithEphemeralDatabase "XferRevScriptSink" (fun sink _ ->
+                            task {
+                                do! Deploy.executeBatch sink TransferCanaryFixtures.assignedBySinkDdl
+                                // Force ORDER's load to fail AFTER USER is captured.
+                                do! Deploy.executeBatch sink "ALTER TABLE [dbo].[OSUSR_AS_ORDER] DROP COLUMN [AMOUNT];"
+                                let! contractR = ReadSide.read src
+                                let contract = TransferCanaryFixtures.value contractR
+                                let opts = { Transfer.WriteOptions.def with AutoRevert = false; RevertArtifactDir = Some dir }
+                                let! threw =
+                                    task {
+                                        try
+                                            let! _ = Transfer.runWithOptions Transfer.Execute opts true src sink contract
+                                            return false
+                                        with _ -> return true
+                                    }
+                                Assert.True(threw, "the transfer should have failed on the dropped AMOUNT column")
+                                // The precise revert script was written (default = no auto-delete).
+                                Assert.True(System.IO.File.Exists scriptPath, sprintf "expected a revert script at %s" scriptPath)
+                                let script = System.IO.File.ReadAllText scriptPath
+                                Assert.Contains("DELETE FROM", script)
+                                Assert.Contains("OSUSR_AS_USER", script)
+                                // The minted USER rows REMAIN — the operator runs the script.
+                                use cmd = sink.CreateCommand()
+                                cmd.CommandText <- "SELECT COUNT(*) FROM [dbo].[OSUSR_AS_USER];"
+                                let! users = cmd.ExecuteScalarAsync()
+                                Assert.Equal(2, System.Convert.ToInt32 users)
+                            })
+                }))
+
+    [<Fact>]
+    member _.``data canary (Build A): a failed load with auto-revert ON deletes the sink-minted rows by captured key`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "XferRevertAuto") then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "XferRevAutoSrc" (fun src _ ->
+                task {
+                    do! Deploy.executeBatch src TransferCanaryFixtures.assignedBySinkDdl
+                    do! Deploy.executeBatch src TransferCanaryFixtures.assignedBySinkSourceSeed
+                    return!
+                        fixture.WithEphemeralDatabase "XferRevAutoSink" (fun sink _ ->
+                            task {
+                                do! Deploy.executeBatch sink TransferCanaryFixtures.assignedBySinkDdl
+                                do! Deploy.executeBatch sink "ALTER TABLE [dbo].[OSUSR_AS_ORDER] DROP COLUMN [AMOUNT];"
+                                let! contractR = ReadSide.read src
+                                let contract = TransferCanaryFixtures.value contractR
+                                let opts = { Transfer.WriteOptions.def with AutoRevert = true }
+                                let! threw =
+                                    task {
+                                        try
+                                            let! _ = Transfer.runWithOptions Transfer.Execute opts true src sink contract
+                                            return false
+                                        with _ -> return true
+                                    }
+                                Assert.True(threw, "the transfer should have failed on the dropped AMOUNT column")
+                                // --auto-revert executed the DELETE-by-captured-key: the
+                                // sink-minted USER rows are gone (no residue from the failed load).
+                                use cmd = sink.CreateCommand()
+                                cmd.CommandText <- "SELECT COUNT(*) FROM [dbo].[OSUSR_AS_USER];"
+                                let! users = cmd.ExecuteScalarAsync()
+                                Assert.Equal(0, System.Convert.ToInt32 users)
+                            })
+                }))
+
     // Option C — the NoCheckFk-PRESERVATION witness (the fidelity guard on the
     // re-trust step). A source FK deployed UNTRUSTED (a NoCheckFk decision — the
     // very thing M1 made faithful) must survive a DEFAULT (re-trust ON) transfer

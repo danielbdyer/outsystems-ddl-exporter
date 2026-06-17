@@ -985,6 +985,20 @@ let ``T13: evolution over time is composition — replay = fold ⊕ along the ti
     citationOf
         "tests/Projection.Tests/CatalogDiffTests.fs"
         "M12 (groupoid law): compose d (inverse d) = identity at source"
+    // M21 (THE VECTOR follow-on, 2026-06-16) — the inverse realized LIVE: a
+    // mid-deploy failure rides `CatalogDiff.inverse` (the rename channel) to
+    // return the deployed substrate to A, verified by read-back, and refuses
+    // (names the residual) when a non-rename change cannot be safely auto-undone.
+    // The pure rollback arrow above is now a live compensating-undo arm on the
+    // `migrate A B` failure path — "refuses without damage", not just an algebraic
+    // existence. The §10 Atomic `BEGIN TRAN` envelope stays deferred; this is the
+    // J5-evidence-backed compensating channel.
+    citationOf
+        "tests/Projection.Tests/MigrationCanaryTests.fs"
+        "M21 canary: a mid-deploy ALTER failure rides the groupoid inverse to roll back to A — rename undone, data survives, no corruption"
+    citationOf
+        "tests/Projection.Tests/MigrationCanaryTests.fs"
+        "M21 canary: a part-way ALTER failure never silently corrupts — clean rollback or named residual, data survives"
     citationOf
         "tests/Projection.Tests/LifecycleTests.fs"
         "6.H.3: netDiff equals fold compose over the evolution chain (3 snapshots)"

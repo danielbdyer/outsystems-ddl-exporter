@@ -58,7 +58,7 @@ let ``CapabilitySurvey.Capability.all is Reads plus every write action; permissi
 // --- the flow-shape derivation (requiredBy) --------------------------------
 
 let private env (name: string) (grant: Grant option) : Projection.Pipeline.Environment =
-    { Name = name; Access = Access.Direct (ConnectionRef.EnvVar (name + "_CONN")); Grant = grant; Store = None; Rendition = None; Archetype = None }
+    { Name = name; Access = Access.Direct (ConnectionRef.EnvVar (name + "_CONN")); Grant = grant; Store = None; Rendition = None; Archetype = None; AtomicDeploy = None; Revert = None }
 
 let private flow (name: string) (from: FlowSource) (toEnv: string) : Flow =
     { Name = name; From = from; To = toEnv; Rekey = None; Tables = []; Reconcile = []; Scope = None; Shape = None; Shaping = None }
@@ -228,7 +228,7 @@ let ``advisoryLines: the advisory reads the SAME blocked predicate the verb's ga
 // --- Slice B — the survey VERIFIES the archetype (A44; the J5 covenant) -------
 
 let private envArch (name: string) (archetype: Archetype option) : Projection.Pipeline.Environment =
-    { Name = name; Access = Access.Direct (ConnectionRef.EnvVar (name + "_CONN")); Grant = None; Store = None; Rendition = None; Archetype = archetype }
+    { Name = name; Access = Access.Direct (ConnectionRef.EnvVar (name + "_CONN")); Grant = None; Store = None; Rendition = None; Archetype = archetype; AtomicDeploy = None; Revert = None }
 
 /// A database-scope `GrantEvidence` from a permission-name list (object-key "").
 let private grantOf (perms: string list) : Preflight.GrantEvidence =

@@ -53,7 +53,7 @@ let ``reverse-leg face: a MALFORMED reconcile spec refuses by name (arg error, e
             (Projection.Pipeline.CatalogRendition.logical model)
             (Projection.Pipeline.CatalogRendition.physical model)
             [ "Customer" ] None   // no ':' — transfer.reconcile.specShape
-            false true false EmissionMode.Incremental false false None [] SinkLoadCapability.structural []
+            false true false EmissionMode.Incremental false false None [] Projection.Pipeline.RevertPolicy.Script None SinkLoadCapability.structural []
     Assert.Equal(2, exit)
 
 [<Fact>]
@@ -65,7 +65,7 @@ let ``reverse-leg face: a reconcile spec naming an unknown table refuses by name
             (Projection.Pipeline.CatalogRendition.logical model)
             (Projection.Pipeline.CatalogRendition.physical model)
             [ "OSUSR_NOPE:ID" ] None   // table not in the contract — transfer.reconcile.tableNotFound
-            false true false EmissionMode.Incremental false false None [] SinkLoadCapability.structural []
+            false true false EmissionMode.Incremental false false None [] Projection.Pipeline.RevertPolicy.Script None SinkLoadCapability.structural []
     Assert.Equal(2, exit)
 
 [<Fact>]
@@ -77,7 +77,7 @@ let ``reverse-leg face: a WELL-FORMED resolvable reconcile spec is ACCEPTED (no 
             (Projection.Pipeline.CatalogRendition.logical model)
             (Projection.Pipeline.CatalogRendition.physical model)
             [ "OSUSR_B_CUSTOMER:ID" ] None   // resolves to MatchByColumn (Id)
-            false true false EmissionMode.Incremental false false None [] SinkLoadCapability.structural []
+            false true false EmissionMode.Incremental false false None [] Projection.Pipeline.RevertPolicy.Script None SinkLoadCapability.structural []
     // Past the parse/resolve gate the run reaches connection-opening, which
     // fails on the unset env vars — a connection-class exit, NEVER the arg/
     // resolve exit 2. The point: reconcile is no longer refused at the face.
@@ -196,7 +196,7 @@ let ``streaming face: an explicit --streaming with --tables refuses at the face 
             (Projection.Pipeline.CatalogRendition.logical model)
             (Projection.Pipeline.CatalogRendition.physical model)
             [] None
-            false true false EmissionMode.Incremental false true None [ "Customer" ] SinkLoadCapability.structural []
+            false true false EmissionMode.Incremental false true None [ "Customer" ] Projection.Pipeline.RevertPolicy.Script None SinkLoadCapability.structural []
     Assert.Equal(2, exit)
 
 // -- reserved follow-on contracts (Skip stubs with promotion triggers) --------

@@ -28,7 +28,7 @@ open Projection.Pipeline
 
 let private mustOk r = match r with Ok v -> v | Error es -> failwithf "fixture: %A" es
 
-let private preview : FlowRunOpts = { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; Seed = None; Scale = None }
+let private preview : FlowRunOpts = { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; NoAtomic = false; AutoRevert = false; RevertDir = None; Seed = None; Scale = None }
 let private commit  : FlowRunOpts = { preview with Go = true }
 
 // ---------------------------------------------------------------------------
@@ -61,7 +61,7 @@ let private allOriginDraws : OriginDraw list =
 /// A direct (live) environment with a chosen rendition — the up-leg endpoints.
 let private directEnv (name: string) (grant: Grant option) (rendition: Rendition option) : Environment =
     { Name = name; Access = Access.Direct (ConnectionRef.EnvVar (name + "_CONN"))
-      Grant = grant; Store = None; Rendition = rendition; Archetype = None }
+      Grant = grant; Store = None; Rendition = rendition; Archetype = None; AtomicDeploy = None; Revert = None }
 
 let private genOpt (xs: 'a list) : Gen<'a> = Gen.elements xs
 
@@ -159,7 +159,7 @@ let ``A44 clause 1 — renderEnvironment ∘ parseEnvironment = id on every reac
         for rendition in allRenditionOpts do
           for archetype in allArchetypeOpts do
             for store in [ None; Some "lifecycle/e.json" ] do
-              let env = { Name = "e"; Access = access; Grant = grant; Store = store; Rendition = rendition; Archetype = archetype }
+              let env = { Name = "e"; Access = access; Grant = grant; Store = store; Rendition = rendition; Archetype = archetype; AtomicDeploy = None; Revert = None }
               let cfg = { ProjectionConfig.empty with Environments = Map.ofList [ "e", env ] }
               match ProjectionConfig.parse (ProjectionConfig.render cfg) with
               | Ok back -> Assert.Equal<Environment>(env, Map.find "e" back.Environments)
