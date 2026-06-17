@@ -84,7 +84,7 @@ let private genVariant : Gen<ProjectionConfig * Flow> =
             | OriginDraw.NoData    -> FlowSource.NoData, [ sink ]
             | OriginDraw.Synthetic -> FlowSource.Synthetic (Some "file:p.profile.json", None), [ sink ]
             | OriginDraw.FromEnv   -> FlowSource.Env "src", [ src; sink ]
-        let flow = { Name = "v"; From = from; To = "sink"; Rekey = None; Tables = []; Reconcile = []; Scope = scope; Shape = None; Shaping = None }
+        let flow = { Name = "v"; From = from; To = "sink"; Rekey = None; Tables = []; Reconcile = []; Scope = scope; Shape = None; Shaping = None; Strategy = None; Resumable = false; Streaming = false; Journal = None }
         let cfg =
             { ProjectionConfig.empty with
                 Environments = envs |> List.map (fun e -> e.Name, e) |> Map.ofList
@@ -148,6 +148,28 @@ let ``A44 clause 1 — parse ∘ render = id on the movement config DOM (faithfu
     |> Check.QuickThrowOnFailure
 
 [<Fact>]
+let ``A44 clause 1 — the flow execution profile round-trips (strategy/resumable/streaming/journal)`` () =
+    // AUDIT — the flow's declared execution profile is a movement-vocabulary
+    // citizen (rendered), so it round-trips: default (omitted) + each facet.
+    let baseEnvs =
+        [ directEnv "sink" None None; directEnv "src" None None ]
+        |> List.map (fun e -> e.Name, e) |> Map.ofList
+    let profiles =
+        [ None, false, false, None
+          Some Strategy.Merge, false, false, None
+          Some Strategy.Replace, true, false, Some "lifecycle/j"
+          Some Strategy.Fresh, true, true, Some "j2" ]
+    for (strat, resumable, streaming, journal) in profiles do
+        let flow =
+            { Name = "f"; From = FlowSource.Env "src"; To = "sink"; Rekey = None; Tables = []; Reconcile = []
+              Scope = Some Scope.Data; Shape = None; Shaping = None
+              Strategy = strat; Resumable = resumable; Streaming = streaming; Journal = journal }
+        let cfg = { ProjectionConfig.empty with Environments = baseEnvs; Flows = Map.ofList [ "f", flow ] }
+        match ProjectionConfig.parse (ProjectionConfig.render cfg) with
+        | Ok back -> Assert.Equal<Flow>(flow, Map.find "f" back.Flows)
+        | Error es -> Assert.Fail(sprintf "round-trip failed for %A: %A" flow es)
+
+[<Fact>]
 let ``A44 clause 1 — the synthetic policy block round-trips (parse ∘ render = id)`` () =
     // §11 — the `synthetic` block is a movement-vocabulary citizen (rendered), so
     // it must round-trip: default (omitted) + each populated facet.
@@ -200,7 +222,7 @@ let ``A44 clause 1 — renderFlow ∘ parseFlow = id on every from × scope × s
         for shape in shapeOpts do
           for tables in tableSets do
             for rekey in [ None; Some "file:users.csv" ] do
-              let flow = { Name = "f"; From = from; To = "sink"; Rekey = rekey; Tables = tables; Reconcile = []; Scope = scope; Shape = shape; Shaping = None }
+              let flow = { Name = "f"; From = from; To = "sink"; Rekey = rekey; Tables = tables; Reconcile = []; Scope = scope; Shape = shape; Shaping = None; Strategy = None; Resumable = false; Streaming = false; Journal = None }
               let cfg = { ProjectionConfig.empty with Environments = baseEnvs; Flows = Map.ofList [ "f", flow ] }
               match ProjectionConfig.parse (ProjectionConfig.render cfg) with
               | Ok back -> Assert.Equal<Flow>(flow, Map.find "f" back.Flows)
@@ -260,7 +282,7 @@ let ``A44 clause 3 — the reverse leg (B→A) routes to RunReverseLeg; a peer (
                 // J3 — the reverse leg renders its contracts from the authored
                 // model, so the legacy variant carries one (plan-time gate).
                 Shaping = { ProjectionConfig.empty.Shaping with Model = { ProjectionConfig.empty.Shaping.Model with Path = Some "model.json" } } }
-        let flow = { Name = "leg"; From = FlowSource.Env "src"; To = "sink"; Rekey = None; Tables = []; Reconcile = []; Scope = Some Scope.Data; Shape = None; Shaping = None }
+        let flow = { Name = "leg"; From = FlowSource.Env "src"; To = "sink"; Rekey = None; Tables = []; Reconcile = []; Scope = Some Scope.Data; Shape = None; Shaping = None; Strategy = None; Resumable = false; Streaming = false; Journal = None }
         cfg, flow
     let legacyCfg, legacyFlow = mk Rendition.Logical Rendition.Physical
     Assert.Equal(MovementDirection.UpLegacy, (Command.resolveFlowSpec legacyCfg legacyFlow commit |> mustOk).Direction)

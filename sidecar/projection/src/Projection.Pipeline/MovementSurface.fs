@@ -469,6 +469,27 @@ module ProjectionConfig =
             Config.parseLenient (s.GetRawText()) |> Result.map Some
         | _ -> Result.success None
 
+    /// A boolean flag property → its value (absent / non-bool ⇒ false).
+    let private getBool (el: JsonElement) (name: string) : bool =
+        match el.TryGetProperty name with
+        | true, v when v.ValueKind = JsonValueKind.True -> true
+        | _ -> false
+
+    /// The data-load strategy this move declares (AUDIT, config-primary): an
+    /// optional per-flow `"strategy": "merge" | "replace" | "fresh"`. Absent =
+    /// `None` (the `Merge` default; `--fresh` forces `Fresh` per run). Closed; an
+    /// unknown value is a NAMED refusal (mirrors `parseFlowScope`).
+    let private parseFlowStrategy (name: string) (el: JsonElement) : Result<Strategy option> =
+        match getString el "strategy" with
+        | None -> Result.success None
+        | Some raw ->
+            match raw.ToLowerInvariant() with
+            | "merge"   -> Result.success (Some Strategy.Merge)
+            | "replace" -> Result.success (Some Strategy.Replace)
+            | "fresh"   -> Result.success (Some Strategy.Fresh)
+            | other ->
+                Result.failureOf (err "cli.config.flowStrategyUnknown" (sprintf "flow '%s' strategy '%s' is not merge | replace | fresh." name other))
+
     let private parseFlow (name: string) (el: JsonElement) : Result<Flow> =
         if el.ValueKind <> JsonValueKind.Object then
             Result.failureOf (err "cli.config.flowShape" (sprintf "flow '%s' must be a JSON object." name))
@@ -509,12 +530,17 @@ module ProjectionConfig =
                     | true, r when r.ValueKind <> JsonValueKind.Null ->
                         Result.failureOf (err "cli.config.flowReconcileShape" (sprintf "flow '%s' 'reconcile' must be an array of \"<table>:<match-column>\" strings." name))
                     | _ -> Result.success []
-                match parseFlowScope name el, parseFlowShape name el, parseFlowShaping el, reconcileR with
-                | Error es, _, _, _ | _, Error es, _, _ | _, _, Error es, _ | _, _, _, Error es -> Result.failure es
-                | Ok scope, Ok shape, Ok shaping, Ok reconcile ->
+                match parseFlowScope name el, parseFlowShape name el, parseFlowShaping el, reconcileR, parseFlowStrategy name el with
+                | Error es, _, _, _, _ | _, Error es, _, _, _ | _, _, Error es, _, _ | _, _, _, Error es, _ | _, _, _, _, Error es -> Result.failure es
+                | Ok scope, Ok shape, Ok shaping, Ok reconcile, Ok strategy ->
                     Result.success
                         { Name = name; From = parseFlowSource el; To = toEnv; Rekey = getString el "rekey"
-                          Tables = tables; Reconcile = reconcile; Scope = scope; Shape = shape; Shaping = shaping }
+                          Tables = tables; Reconcile = reconcile; Scope = scope; Shape = shape; Shaping = shaping
+                          // AUDIT (config-primary) — the flow's declared execution profile.
+                          Strategy = strategy
+                          Resumable = getBool el "resumable"
+                          Streaming = getBool el "streaming"
+                          Journal = getString el "journal" }
 
     /// Parse the `projection.json` document text into a `ProjectionConfig`.
     /// Aggregates every per-environment / per-flow error so the operator
@@ -693,6 +719,15 @@ module ProjectionConfig =
         | Shape.Skeleton -> "skeleton"
         | Shape.Manifest -> "manifest"
 
+    /// The data-load strategy field (dual of `parseFlowStrategy`): the canonical
+    /// token. Emitted only when `Some` — `Merge` (the default) round-trips through
+    /// the absent arm (mirrors `scope`/`shape`).
+    let private renderStrategy (s: Strategy) : string =
+        match s with
+        | Strategy.Merge   -> "merge"
+        | Strategy.Replace -> "replace"
+        | Strategy.Fresh   -> "fresh"
+
     /// Render one `Environment` to its `JsonObject` — the dual of
     /// `parseEnvironment`. `access` + its companion (`out` for bundle, `conn`
     /// for direct; docker is bare) reconstruct the reach; `grant`/`store`/
@@ -745,6 +780,12 @@ module ProjectionConfig =
             let a = JsonArray()
             for r in flow.Reconcile do a.Add(JsonValue.Create r)
             o.["reconcile"] <- a)
+        // AUDIT (config-primary) — the execution profile. Each omits its default
+        // (Merge / false / None) so an existing flow round-trips byte-identically.
+        setOptStr o "strategy" (flow.Strategy |> Option.map renderStrategy)
+        (if flow.Resumable then o.["resumable"] <- JsonValue.Create true)
+        (if flow.Streaming then o.["streaming"] <- JsonValue.Create true)
+        setOptStr o "journal" flow.Journal
         o
 
     /// Render a whole movement config to its `projection.json` DOM — the inverse
@@ -1281,6 +1322,11 @@ module Command =
                 let revertResolved =
                     if opts.AutoRevert then RevertPolicy.Auto
                     else toEnv.Revert |> Option.defaultValue RevertPolicy.def
+                // AUDIT (config-primary) — the data-load strategy: `--fresh` forces
+                // `Fresh` per run, else the flow's declared `strategy`, else `Merge`.
+                let resolvedStrategy =
+                    if opts.Fresh then Strategy.Fresh
+                    else flow.Strategy |> Option.defaultValue Strategy.Merge
                 Result.success
                     { baseSpec with
                         // S2/S6.2 — the model is read from the canonical
@@ -1307,9 +1353,12 @@ module Command =
                         // renditions + origin, never parsed). `planMovement`
                         // routes `UpLegacy` to the reverse-leg runner.
                         Direction = directionOf cfg flow
-                        Strategy = (if opts.Fresh then Strategy.Fresh else Strategy.Merge)
+                        // AUDIT — config strategy + `--fresh` override (above). A
+                        // `Fresh` move forces A = ∅ (genesis); merge/replace keep
+                        // the auto-derived baseline.
+                        Strategy = resolvedStrategy
                         Data     = data
-                        Baseline = (if opts.Fresh then Baseline.Empty else Baseline.Auto)
+                        Baseline = (if resolvedStrategy = Strategy.Fresh then Baseline.Empty else Baseline.Auto)
                         Rekey    = flow.Rekey
                         // J2 — the flow's declarative MatchByColumn re-key rules
                         // (e.g. the golden flow's User-by-email reconcile) ride
@@ -1318,9 +1367,13 @@ module Command =
                         Tables   = flow.Tables
                         AllowDrops = opts.AllowDrops
                         AllowCdc = opts.AllowCdc
-                        Resumable = opts.Resumable
-                        Streaming = opts.Streaming
-                        Journal = opts.Journal
+                        // AUDIT (config-primary) — the execution profile: the flow's
+                        // declared baseline, with the CLI flag as the per-run override
+                        // (`--resumable`/`--streaming` force ON; `--journal` overrides
+                        // the dir). Absent config + absent flag = byte-identical.
+                        Resumable = (flow.Resumable || opts.Resumable)
+                        Streaming = (flow.Streaming || opts.Streaming)
+                        Journal = (opts.Journal |> Option.orElse flow.Journal)
                         Atomic = atomicResolved
                         RevertPolicy = revertResolved
                         RevertDir = opts.RevertDir

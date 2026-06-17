@@ -675,7 +675,7 @@ let ``flow golden: the table subset is honored on the transfer opts (item 5)`` (
 
 [<Fact>]
 let ``flow tables on a non-transfer action is noted (data-transfer leg only)`` () =
-    let bt = { Name = "bt"; From = FlowSource.Model; To = "onprem-uat"; Rekey = None; Tables = [ "Customer" ]; Reconcile = []; Scope = None; Shape = None; Shaping = None }
+    let bt = { Name = "bt"; From = FlowSource.Model; To = "onprem-uat"; Rekey = None; Tables = [ "Customer" ]; Reconcile = []; Scope = None; Shape = None; Shaping = None; Strategy = None; Resumable = false; Streaming = false; Journal = None }
     Assert.Contains((Command.planFlow flowCfg bt preview).Notes, fun (n: string) -> n.Contains "data-transfer leg only")
 
 [<Fact>]
@@ -1004,6 +1004,54 @@ let ``§11: resolveSeed precedence — --seed > config block > default`` () =
     Assert.Equal(99UL, SyntheticLoadRun.resolveSeed section (Some 99UL))                                    // CLI wins
     Assert.Equal(42UL, SyntheticLoadRun.resolveSeed section Option.None)                                    // config block
     Assert.Equal(SyntheticLoadRun.defaultSeed, SyntheticLoadRun.resolveSeed Config.defaultSyntheticSection Option.None)  // default
+
+// -- AUDIT: the flow execution-profile config fields --------------------------
+
+let private execEnvs =
+    """ "environments": { "src": { "access": "direct", "conn": "env:SRC" },
+                          "sink": { "access": "direct", "conn": "env:SINK", "grant": "data" } } """
+
+[<Fact>]
+let ``AUDIT: a flow declares its execution profile (strategy/resumable/streaming/journal) → MovementSpec`` () =
+    let cfg =
+        ProjectionConfig.parse (sprintf """
+        { %s, "flows": { "leg": { "from": "src", "to": "sink", "scope": "data",
+                                   "strategy": "replace", "resumable": true, "streaming": true, "journal": "lifecycle/j" } },
+          "model": "model.json" }""" execEnvs) |> mustOk
+    let spec = Command.resolveFlowSpec cfg (Map.find "leg" cfg.Flows) preview |> mustOk
+    Assert.Equal(Strategy.Replace, spec.Strategy)
+    Assert.True(spec.Resumable)
+    Assert.True(spec.Streaming)
+    Assert.Equal(Some "lifecycle/j", spec.Journal)
+
+[<Fact>]
+let ``AUDIT: an undeclared execution profile is the established default (byte-identical)`` () =
+    let cfg =
+        ProjectionConfig.parse (sprintf """{ %s, "flows": { "f": { "from": "src", "to": "sink", "scope": "data" } }, "model": "model.json" }""" execEnvs) |> mustOk
+    let spec = Command.resolveFlowSpec cfg (Map.find "f" cfg.Flows) preview |> mustOk
+    Assert.Equal(Strategy.Merge, spec.Strategy)
+    Assert.False(spec.Resumable)
+    Assert.False(spec.Streaming)
+    Assert.Equal(None, spec.Journal)
+
+[<Fact>]
+let ``AUDIT: CLI flags override the flow's declared execution profile (per-run)`` () =
+    let cfg =
+        ProjectionConfig.parse (sprintf """{ %s, "flows": { "f": { "from": "src", "to": "sink", "scope": "data" } }, "model": "model.json" }""" execEnvs) |> mustOk
+    // --fresh forces Fresh (+ the genesis baseline); --resumable/--streaming force on; --journal sets the dir.
+    let opts = { preview with Fresh = true; Resumable = true; Streaming = true; Journal = Some "j2" }
+    let spec = Command.resolveFlowSpec cfg (Map.find "f" cfg.Flows) opts |> mustOk
+    Assert.Equal(Strategy.Fresh, spec.Strategy)
+    Assert.Equal(Baseline.Empty, spec.Baseline)
+    Assert.True(spec.Resumable)
+    Assert.True(spec.Streaming)
+    Assert.Equal(Some "j2", spec.Journal)
+
+[<Fact>]
+let ``AUDIT: an unknown flow strategy is a named refusal (never silent)`` () =
+    match ProjectionConfig.parse (sprintf """{ %s, "flows": { "f": { "from": "src", "to": "sink", "strategy": "obliterate" } } }""" execEnvs) with
+    | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "cli.config.flowStrategyUnknown")
+    | Ok _ -> Assert.Fail("expected a flow-strategy refusal")
 
 [<Fact>]
 let ``synthetic flow threads the live-OSSYS model source (primary) when configured`` () =

@@ -297,6 +297,23 @@ type Flow =
         /// (`Config.overlay`) for THIS flow's emission only. Parsed from a nested
         /// `"shaping"` object via `Config.parseLenient`.
         Shaping : Config.Config option
+        // AUDIT (config-primary) — the flow's declared EXECUTION PROFILE, so the
+        // flow is a complete recipe and the daily run collapses to `projection
+        // <flow> [--go]`. Each is the DECLARATIVE baseline; the matching CLI flag
+        // is the per-run override (kept, not deprecated). `None`/`false` = the
+        // established default (byte-identical to the pre-audit behavior).
+        /// The data-load strategy (`"merge"` | `"replace"` | `"fresh"`). `None` =
+        /// `Merge` (the norm-minimal default); `--fresh` forces `Fresh` per run.
+        Strategy : Strategy option
+        /// Route the data leg through the resumable / idempotent-upsert envelope
+        /// (G10). `--resumable` forces it on per run. Default false.
+        Resumable : bool
+        /// The bounded-memory streaming realization (the estate-scale reverse
+        /// leg). `--streaming` forces it on per run. Default false.
+        Streaming : bool
+        /// The chunk-resume journal directory (paired with streaming).
+        /// `--journal <dir>` overrides per run. `None` = no resume ledger.
+        Journal : string option
     }
 
 /// The per-run intent that finishes a resolved flow (THE_CLI.md §3) — the
