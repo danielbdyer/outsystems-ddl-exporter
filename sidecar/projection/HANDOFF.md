@@ -1,3 +1,53 @@
+# Handoff addendum — 2026-06-16 (later still), FOLLOW-ON D LANDED — the streaming reverse-leg's compensating-undo (M23's arm on `writePlanStreaming`, the estate-scale path) is built WITH its gate canary; the migrate "we can't go wrong" envelope (M21/M22/M23/M24 + D) is now COMPLETE. The frontier from here is the named moat only — do not build it without a fired trigger
+
+To the next agent.
+
+**D is done, and it taught the instruction set a lesson — carry the lesson forward.** `FOLLOWON_STREAMING_REVERT.md`
+told you to hang the compensating-undo off the streaming call site's `Error es` arm, claiming the streaming path
+"returns a `Result.failure`, not a throw." **It throws.** Per the `staged` CE (`RunSpine.fs`): a stage body that THROWS
+→ `RunAborted (_, Some ex)` → `writePlanStreaming` re-raises (its `ExceptionDispatchInfo.Throw`, ~line 1790); one that
+RETURNS `Error e` → `RunStopped e` → the `Result.failure` you see at the call site — and that only ever comes from the
+resume **source-drift** refusal. The canary's own crash (a dropped sink column → `SqlBulkCopy` throws) is an exception,
+so an `Error`-arm-only revert would have compensated NOTHING. Writing the canary first is what surfaced this. The seam
+that shipped: a `try/with` around the `writePlanStreaming` call in `runStreamingReconcilingWithRenames` — a crash
+reverts-then-re-raises; a named `Error es` returns WITHOUT reverting (a drift refusal wrote nothing new this run, so a
+DELETE-by-captured-key would destroy PRIOR-run committed rows — never do that). If you ever revisit the streaming faces,
+**do not "simplify" the revert back onto the `Error` arm.**
+
+**What D is.** `replayJournalToRemap` + `runRevertFromJournal` (new `let private`s beside `buildRevertScript`/`runRevert`
+in `TransferRun.fs`) reconstruct the M23 remap from the off-box `CaptureJournal` (the streaming path's durable
+sink-minted-key ledger) and run the SAME `buildRevertScript` + `runRevert` the materialized arm runs. `autoRevert`/`revertDir`
+thread through `runStreamingReconcilingWithRenames` + `runStreamingReverseLegThroughConnections` (the straight-load
+`runStreamingWithRenames` passes inert `false None`); the RunFaces `Streaming` branch now passes the `revertAuto`/`revertOut`
+already derived via `RevertPolicy.toEngine`. Both levers inert → byte-identical to pre-D. The gate is two
+"streaming data canary (D)" witnesses in `TransferCanaryTests` (a pre-existing sink row proves the revert targets ONLY
+captured minted keys).
+
+**What remains is the MOAT, and it is named-not-unfinished.** Read `HOLDOUT_INVENTORY_2026_06_16.md` — the per-feature
+trigger-gated study. The only items the study flags as actionable now are **(#10) the Faker / synthetic-data emitter**
+(its trigger FIRED ~4 weeks ago — "bring to principal-PO"; the highest-confidence un-cashed trigger), **(#9)
+policy-version plane → Episode** (half-fired — M5 landed Wave 4; only the consumer-need remains), and **(#3) the
+CDC / OPEN-3 estate survey** (now runnable — J5 lifted the blocker). Everything else is honestly far / infra-gated
+(P7b, computed-column S7) / consumer-gated (`Tolerance` config). **Naming a trigger-gated absence IS its completion
+here — do not build moat without a fired trigger.** Surface the options to the operator; let them choose.
+
+**Build-discipline scars (unchanged, still bite).** `dotnet` is NOT on the bash/PowerShell PATH on this box (it lives
+at `C:\Users\danny\AppData\Local\Microsoft\dotnet`; `export PATH="$PATH:/c/Users/danny/AppData/Local/Microsoft/dotnet"`
+before `scripts/test.sh`). Never run the pure + Docker pools as one `dotnet test` (OOM). The warm container had been up
+11h this session — a batch of connection / pre-login failures means it died or its memory pool degraded
+(`scripts/warm-sql.sh restart`), NOT a regression (two `TransferCanaryTests` showed stale FAILED from a prior session
+and were 27/27 green on a fresh focused run). `static let` cannot follow members (FS0960). The streaming `try/with` is
+FS3511-safe only because it binds single values (no tuple `let!`, no `let rec` in `task`).
+
+**State.** Branch `claude/thirsty-fermat-0612fd` (a worktree off `main` `48af1895`, the merged PR #624 baseline). D +
+its canary + the docs (this letter, the DECISIONS "Follow-on D BUILT" entry, the `FOLLOWON_STREAMING_REVERT.md` status)
+sit as WORKING-TREE changes — the operator drives commits (the D code + its canary MUST commit together per the §0 gate).
+Debug + **Release** 0/0; pure pool 0 failed (3387 passed / 210 standing skips); **`TransferCanaryTests` 27/27**; lint
+clean (27 rules); `matrix-status.sh` gate=PASS, rungs 5/4/5, tolerances 10/3-open UNCHANGED. Hold the spine: name every
+refusal, count every crossing, leave the books balanced — and never ship a destructive op untested.
+
+---
+
 # Handoff addendum — 2026-06-16 (later still), M24 LANDED — the migrate dispositions are now CONFIG-BASED (sensible defaults, not command clutter): atomic derives ON for direct+FullRights; revert is a per-environment policy. Follow-on C done (atomic on migrate-with-data). Follow-on D (streaming compensating-undo) DEFERRED behind a canary gate
 
 To the next agent.

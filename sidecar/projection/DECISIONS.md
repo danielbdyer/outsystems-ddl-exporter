@@ -24622,3 +24622,62 @@ D is the single remaining named follow-on; ship it with its canary.
 **Cross-references.** `src/Projection.Pipeline/{MovementSpec.fs (RevertPolicy), MovementSurface.fs (parse/render/derive),
 MigrationRun.fs (executeWithData* atomic)}`; `src/Projection.Cli/{RunFaces.fs, Program.fs}`; `MovementSurfaceTests` +
 `MovementIsomorphismTests`. M22 (the atomic envelope) + M23 (the data-leg revert) are the dispositions this re-homes.
+
+## 2026-06-16 (later still) — Follow-on D BUILT: the STREAMING reverse-leg's compensating-undo (M23's arm on the estate-scale path) — and a CORRECTED seam (the failure is a THROW, not a returned `Result.failure`); landed WITH its gate canary
+
+**What landed.** The one remaining named follow-on of the migrate "we can't go wrong" envelope. `writePlanStreaming`
+(the hundreds-of-millions-row path) now carries the M23 data-leg compensating-undo, mirroring the materialized
+`writePlan` arm: on a mid-stream crash the partial sink-minted rows are reverted (`--auto-revert` / `revert: auto`) or
+scripted (`revert: script`, the default) by a child-first `DELETE`-by-captured-key, then the original failure
+re-propagates. Reuses the M23 primitives `buildRevertScript` + `runRevert` VERBATIM — only the remap source differs.
+
+**The remap source: the off-box journal.** The streaming path's durable record of every sink-minted key is the
+`CaptureJournal` (NDJSON; only fully-committed chunks are appended — a crashed chunk is neither journaled nor captured).
+Two new `let private`s next to `buildRevertScript`/`runRevert`: `replayJournalToRemap (catalog) (journal)` rebuilds a
+`PackedSurrogateRemap` from the journal, mapping each record's root-string `Kind` back to the catalog `SsKey` (the
+inverse of the `SsKey.rootOriginal` the journal stores) and folding its `Pairs` in via `PackedSurrogateRemap.capture`
+(the same fold `CaptureJournal.spec`'s Apply runs at resume); `runRevertFromJournal` composes replay → buildRevertScript
+→ runRevert, with a `None`-journal safe no-op.
+
+**The seam CORRECTION (heed this — the instruction set was imprecise).** `FOLLOWON_STREAMING_REVERT.md` prescribed
+hanging the compensation off the streaming call site's `Error es` arm, on the claim that "the streaming path returns a
+`Result.failure` (not a throw, unlike `writePlan`)." **That is wrong for the failure D exists to compensate.** Per the
+`staged` CE (`RunSpine.fs`): a stage body that THROWS → `RunAborted (_, Some ex)`; one that RETURNS `Error e` →
+`RunStopped e`. `writePlanStreaming` re-throws on `RunAborted` (its line ~1790, `ExceptionDispatchInfo.Throw`) and
+returns `Result.failure` ONLY on `RunStopped` — which arises solely from the resume **source-drift** refusal. The
+canary's own forcing mechanism (a dropped sink column → `SqlBulkCopy` throws; confirmed by the existing
+`ReverseLegStreamingTests` resume test's `Assert.ThrowsAnyAsync`) is therefore an EXCEPTION, which an `Error`-arm-only
+revert would bypass entirely. So D's compensation hangs off a `try/with` wrapping the `writePlanStreaming` call in
+`runStreamingReconcilingWithRenames`: a crash reverts-then-re-raises; a NAMED `Error es` returns WITHOUT reverting —
+deliberately, because a source-drift refusal on resume wrote nothing new this run, so a DELETE-by-captured-key would
+destroy PRIOR-run committed rows (the one thing the undo must never do). This is the writing-the-canary-first discipline
+catching the spec: the floor test would have falsely passed against the wrong seam.
+
+**The threading.** `autoRevert`/`revertDir` added to `runStreamingReconcilingWithRenames` + `runStreamingReverseLegThroughConnections`;
+`runStreamingWithRenames` keeps its surface and passes the inert `false None` (the straight load names no policy); the
+RunFaces `ReverseLegRealization.Streaming` branch now passes the `revertAuto`/`revertOut` already derived via
+`RevertPolicy.toEngine` (previously only the `Materialized` branch consumed them). Both levers inert →
+byte-identical to the pre-D streaming realization.
+
+**The gate (§0 — non-negotiable, MET).** Two `TransferCanaryTests` "streaming data canary (D)" witnesses, mirroring the
+materialized Build-A pair, drive the streaming path into a forced mid-stream crash (USER streams + mints + journals,
+then ORDER's chunk crashes on a dropped `AMOUNT` column). A PRE-EXISTING sink USER row (minted before the transfer)
+makes the "pre-existing untouched" claim concrete: auto-revert OFF → the journal-replayed revert SCRIPT is written and
+all rows remain; auto-revert ON → only the journal-captured minted keys are DELETED and the pre-existing row survives.
+Both green on `projection-mssql-warm`.
+
+**Gates.** Debug + **Release** 0/0 (the `task { try … with … }` is FS3511-safe — single-value binds only); pure pool
+0 failed (3387 passed / 210 standing skips); **`TransferCanaryTests` 27/27** (the 2 new + 25 unregressed); lint clean
+(27 rules); `matrix-status.sh` gate=PASS, rungs 5/4/5, tolerances 10/3-open **UNCHANGED** (D is a compensation arm, not
+a fidelity/axiom dimension — it moves no ladder cell).
+
+**Still out of scope (the related minor follow-on, §4).** `migrate --with-data`'s DATA leg still does not carry
+`--auto-revert` (it routes through `Transfer.runWithRenamesWith`, not the `*ThroughConnections*` faces); its schema leg
+already honors `--atomic` via M24 follow-on C. A small, separate follow-on — not part of D.
+
+**Cross-references.** `src/Projection.Pipeline/TransferRun.fs` (`replayJournalToRemap`, `runRevertFromJournal`, the
+`runStreamingReconcilingWithRenames` try/with seam, the threaded streaming faces); `src/Projection.Cli/RunFaces.fs`
+(the Streaming branch); `tests/Projection.Tests/{TransferCanaryTests.fs (the two D canaries), ReverseLegStreamingTests.fs
+(callers threaded)}`; `FOLLOWON_STREAMING_REVERT.md` (the now-cashed instruction set); `RunSpine.fs` (the
+`RunAborted`/`RunStopped` mapping that grounds the seam correction). The migrate envelope (M21/M22/M23/M24 + D) is now
+complete; the remaining frontier is the named moat (`HOLDOUT_INVENTORY_2026_06_16.md`).

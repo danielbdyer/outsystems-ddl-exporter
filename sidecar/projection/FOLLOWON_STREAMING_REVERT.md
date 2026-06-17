@@ -1,9 +1,14 @@
-# Follow-on D — the streaming reverse-leg's compensating-undo (M23 arm), DEFERRED behind a canary gate
+# Follow-on D — the streaming reverse-leg's compensating-undo (M23 arm), ✅ BUILT (with its gate canary)
 
-> **Status: NOT BUILT — deferred behind a HARD gate (2026-06-16).** This is the one named follow-on left from the
-> migrate "we can't go wrong" envelope (M21/M22/M23/M24). The materialized transfer + both schema legs carry full
-> compensation; the **streaming** reverse-leg (`writePlanStreaming`, the estate-scale hundreds-of-millions-row path)
-> retains only its `CaptureJournal` resume-safety. This doc is the pickup-cold instruction set.
+> **Status: BUILT (2026-06-16, later still) — shipped WITH its deterministic streaming-failure canary.** See
+> `DECISIONS.md` "Follow-on D BUILT" for the substance. The migrate "we can't go wrong" envelope
+> (M21/M22/M23/M24 + D) is now complete. This doc is retained as the provenance of the instruction set, with ONE
+> correction recorded inline below (§2.2) and in DECISIONS: the streaming failure is a **THROW**, not a returned
+> `Result.failure`, so the compensation hangs off a `try/with` around the `writePlanStreaming` call (the exception
+> path), NOT the `Error es` match arm — which catches only the named resume source-drift refusal (and deliberately
+> must NOT revert, lest it delete prior-run committed rows). The §2 seams below are otherwise as built; the §3 canary
+> is realized as the two "streaming data canary (D)" witnesses in `TransferCanaryTests`. The §4 minor follow-on
+> (`migrate --with-data` DATA-leg revert) remains out of scope.
 
 ## 0 — The gate (read first; do not skip)
 
