@@ -114,14 +114,25 @@ module SyntheticLoadRun =
                     match filtered with
                     | Error es -> return Result.failure es
                     | Ok catalog ->
+                    // F-Faker — refuse BY NAME any blessed Faker coordinate that
+                    // does NOT resolve against the model (a rename / typo), before
+                    // generating: a hand-authored binding that points nowhere is an
+                    // operator error to surface, never a silent no-op (the
+                    // hand-authored-coordinate analogue of "refuse rather than corrupt").
+                    match Correction.unresolvedFakerCoordinates catalog correction with
+                    | (bad :: _) as unresolved ->
+                        return Result.failureOf
+                            (ValidationError.create "synthetic.correction.unresolvedCoordinate"
+                                (sprintf "%d blessed Faker coordinate(s) name a location not in the model (e.g. %s/%s/%s); re-point them or update the artifact." (List.length unresolved) bad.Module bad.Entity bad.Attribute))
+                    | [] ->
                     // F0c-I/O — fold the blessed corrections onto the config (the
                     // PURE `Profile ⊕ Correction` hinge: Pii ⇒ Synthesize, fidelity
                     // overrides, per-kind volume) AND build the boundary realization
-                    // (Faker over the PII tokens σ emits, seeded per row identity).
+                    // (Faker over the σ tokens / preserved values, seeded per row).
                     // Both are identity when the correction is empty, so an
                     // uncorrected load is byte-identical to the pre-F0c flow.
                     let effectiveConfig = Correction.applyToConfig catalog correction config
-                    let realize = FakerRealization.realizePii catalog correction
+                    let realize = FakerRealization.realize catalog correction
                     let sub : Substrate =
                         { Environment   = Environment.Named "synthetic-sink"
                           Role          = SubstrateRole.Sink

@@ -76,3 +76,64 @@ let ``F2: distinct rows (distinct seeds) yield distinct fake identities`` () =
 let ``F2: an empty correction returns the dataset verbatim`` () =
     let realized = FakerRealization.realizePii catalog Correction.empty dataset
     Assert.Equal<Map<SsKey, StaticRow list>>(dataset, realized)
+
+// -- F-Faker: the coordinate-addressed, tunable generators -------------------
+
+let private coord m e a = AttributeCoordinate.create m e a
+let private fk m e a g : CorrectionEntry = CorrectionEntry.Faker (coord m e a, { Generator = g; Locale = Option.None })
+
+[<Fact>]
+let ``F-Faker: a coordinate-bound Email generator realizes only that column to an email shape`` () =
+    let corr = Correction.create [ fk "M" "Person" "Email" FakerGenerator.Email ] |> mkOk
+    let realized = FakerRealization.realize catalog corr dataset
+    Assert.All(valuesOf realized "Email",  fun e -> Assert.Contains("@", e))
+    Assert.All(valuesOf realized "Status", fun s -> Assert.Equal("Active", s))   // unbound untouched
+
+[<Fact>]
+let ``F-Faker: a Constant generator overrides every cell with the fixed value`` () =
+    let corr = Correction.create [ fk "M" "Person" "Status" (FakerGenerator.Constant "REDACTED") ] |> mkOk
+    Assert.All(valuesOf (FakerRealization.realizeFaker catalog corr dataset) "Status", fun s -> Assert.Equal("REDACTED", s))
+
+[<Fact>]
+let ``F-Faker: a Mask (Redact) stars the preserved value; KeepLast keeps the tail`` () =
+    // the dataset's Status cell is the real value "Active" (6 chars).
+    let redact = Correction.create [ fk "M" "Person" "Status" (FakerGenerator.Mask MaskRule.Redact) ] |> mkOk
+    Assert.All(valuesOf (FakerRealization.realizeFaker catalog redact dataset) "Status", fun s -> Assert.Equal("******", s))
+    let keep = Correction.create [ fk "M" "Person" "Status" (FakerGenerator.Mask (MaskRule.KeepLast 2)) ] |> mkOk
+    Assert.All(valuesOf (FakerRealization.realizeFaker catalog keep dataset) "Status", fun s -> Assert.Equal("****ve", s))
+
+[<Fact>]
+let ``F-Faker: IntBetween realizes a parseable integer within range`` () =
+    let corr = Correction.create [ fk "M" "Person" "Status" (FakerGenerator.IntBetween (10, 20)) ] |> mkOk
+    Assert.All(valuesOf (FakerRealization.realizeFaker catalog corr dataset) "Status", fun s ->
+        match System.Int32.TryParse s with
+        | true, v -> Assert.InRange(v, 10, 20)
+        | _ -> Assert.Fail(sprintf "not an int: %s" s))
+
+[<Fact>]
+let ``F-Faker: referential consistency — FirstName is part of the row's FullName (one coherent person)`` () =
+    // two PERSON-based generators on the SAME row read one materialized person.
+    let corr = Correction.create [ fk "M" "Person" "Email" FakerGenerator.FirstName; fk "M" "Person" "FullName" FakerGenerator.FullName ] |> mkOk
+    let realized = FakerRealization.realizeFaker catalog corr dataset
+    for r in realized.[kKey] do
+        let first = Map.find (name "Email") r.Values     // the Email column now holds a FirstName
+        let full  = Map.find (name "FullName") r.Values
+        Assert.Contains(first, full)
+
+[<Fact>]
+let ``F-Faker: determinism — the same dataset realizes byte-identically`` () =
+    let corr = Correction.create [ fk "M" "Person" "Email" FakerGenerator.Email; fk "M" "Person" "FullName" FakerGenerator.FullName ] |> mkOk
+    Assert.Equal<Map<SsKey, StaticRow list>>(FakerRealization.realize catalog corr dataset, FakerRealization.realize catalog corr dataset)
+
+[<Fact>]
+let ``F-Faker: realize applies Faker AFTER Pii (the more-specific binding wins)`` () =
+    // Pii(Email) → a fake email; Faker(Email, Constant) overwrites it (applied last).
+    let corr =
+        Correction.create
+            [ CorrectionEntry.Pii (emailKey, PiiKind.Email)
+              fk "M" "Person" "Email" (FakerGenerator.Constant "OVERRIDE") ] |> mkOk
+    Assert.All(valuesOf (FakerRealization.realize catalog corr dataset) "Email", fun e -> Assert.Equal("OVERRIDE", e))
+
+[<Fact>]
+let ``F-Faker: an empty Faker set returns the dataset verbatim`` () =
+    Assert.Equal<Map<SsKey, StaticRow list>>(dataset, FakerRealization.realizeFaker catalog Correction.empty dataset)

@@ -176,3 +176,47 @@ type SyntheticLoadTests(fixture: EphemeralContainerFixture) =
                         let! custCount = SyntheticLoadFixtures.countRows sink "[dbo].[SYN_CUSTOMER]"
                         Assert.Equal(0, custCount)
                 }))
+
+    // F0c-I/O + F-Faker end-to-end: a coordinate-addressed Faker binding realizes
+    // a column through the ACTUAL load (the warm-pool faithfulness witness for the
+    // boundary realization — the pure FakerRealizationTests prove the transform;
+    // this proves the realized values land in the sink via `Transfer.runSynthetic`).
+    [<Fact>]
+    member _.``F-Faker: a coordinate Faker binding realizes a column through the actual load``() =
+        let label = "syntheticFaker"
+        if not (SyntheticLoadFixtures.skipIfNoDocker label) then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase label (fun sink _ ->
+                task {
+                    do! Deploy.executeBatch sink SyntheticLoadFixtures.ddl
+                    // Bind Faker(Email) to Customer/Status BY COORDINATE: applyToConfig
+                    // forces Status → Synthesize (σ emits a token), realize rewrites it
+                    // to an email shape. The whole F0c-I/O + F-Faker path, end to end.
+                    let corr =
+                        Correction.create
+                            [ CorrectionEntry.Faker
+                                (AttributeCoordinate.create "M" "Customer" "Status",
+                                 { Generator = FakerGenerator.Email; Locale = Option.None }) ]
+                        |> SyntheticLoadFixtures.value
+                    let cfg = Correction.applyToConfig SyntheticLoadFixtures.catalog corr SyntheticConfig.defaultConfig
+                    let realize = FakerRealization.realize SyntheticLoadFixtures.catalog corr
+                    let! report =
+                        Transfer.runSynthetic
+                            Transfer.Execute EmissionMode.Incremental true
+                            sink SyntheticLoadFixtures.catalog SyntheticLoadFixtures.profile cfg 42UL realize
+                    match report with
+                    | Error es -> Assert.True(false, sprintf "runSynthetic failed: %A" es)
+                    | Ok _ ->
+                        use cmd = sink.CreateCommand()
+                        cmd.CommandText <- "SELECT [STATUS] FROM [dbo].[SYN_CUSTOMER];"
+                        use! reader = cmd.ExecuteReaderAsync()
+                        let statuses = System.Collections.Generic.List<string>()
+                        let mutable more = reader.Read()
+                        while more do
+                            statuses.Add(reader.GetString 0)
+                            more <- reader.Read()
+                        Assert.True(statuses.Count > 0, "expected loaded rows")
+                        Assert.All(statuses, fun (s: string) ->
+                            Assert.Contains("@", s)             // realized to an email shape
+                            Assert.False(s.StartsWith "syn:"))  // the σ token was replaced
+                }))

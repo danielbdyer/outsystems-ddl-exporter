@@ -63,6 +63,28 @@ let ``round-trip: both VolumeTarget arms (absolute + multiplier)`` () =
     Assert.True(roundTrips (corr entries))
 
 [<Fact>]
+let ``round-trip: a Faker binding covering generators, mask rules, constant, and locale`` () =
+    let c m e a g loc = CorrectionEntry.Faker (AttributeCoordinate.create m e a, { Generator = g; Locale = loc })
+    // distinct coordinates → conflict-free; covers the parameterized arms + locale.
+    let entries =
+        [ c "App" "User" "Email"   FakerGenerator.Email                        (Some "en")
+          c "App" "User" "Name"    FakerGenerator.FullName                     Option.None
+          c "App" "User" "Age"     (FakerGenerator.IntBetween (18, 99))        Option.None
+          c "App" "User" "Score"   (FakerGenerator.DecimalBetween (0M, 9.99M)) Option.None
+          c "App" "User" "TaxId"   (FakerGenerator.Mask (MaskRule.KeepLast 4)) Option.None
+          c "App" "User" "Pin"     (FakerGenerator.Mask MaskRule.Hash)         Option.None
+          c "App" "User" "Region"  (FakerGenerator.Constant "REDACTED")        Option.None
+          c "App" "User" "Bio"     FakerGenerator.Paragraph                    (Some "de") ]
+    Assert.True(roundTrips (corr entries))
+
+[<Fact>]
+let ``decode REFUSES an unknown FakerGenerator (no silent drop)`` () =
+    let json = """{"version":1,"entries":[{"entry":"faker","module":"A","entity":"B","attribute":"C","faker":{"generator":"telepathy"}}]}"""
+    match CorrectionCodec.deserialize json with
+    | Ok _ -> Assert.Fail("expected an unknown-generator refusal")
+    | Error es -> Assert.Contains(es, fun (e: ValidationError) -> e.Code = "correctionCodec.fakerGenerator.unknown")
+
+[<Fact>]
 let ``A39: decode REFUSES a hand-edited artifact with a conflicting double-correction`` () =
     // Two pii entries for the SAME column — a valid `serialize` could never
     // produce this (the smart ctor forbids it), but a hand edit can. Decode
@@ -95,6 +117,28 @@ let rec private seqGen (gs: Gen<'a> list) : Gen<'a list> =
                          let! xs = seqGen rest
                          return x :: xs }
 
+let private genFakerGenerator : Gen<FakerGenerator> =
+    Gen.oneof
+        [ Gen.elements
+            [ FakerGenerator.FullName; FakerGenerator.FirstName; FakerGenerator.LastName; FakerGenerator.UserName
+              FakerGenerator.Email; FakerGenerator.Phone
+              FakerGenerator.StreetAddress; FakerGenerator.City; FakerGenerator.ZipCode; FakerGenerator.Country; FakerGenerator.FullAddress
+              FakerGenerator.Company; FakerGenerator.JobTitle
+              FakerGenerator.Url; FakerGenerator.DomainName
+              FakerGenerator.Word; FakerGenerator.Sentence; FakerGenerator.Paragraph
+              FakerGenerator.Guid; FakerGenerator.PastDate; FakerGenerator.FutureDate ]
+          gen { let! lo = Gen.choose (0, 100) in let! hi = Gen.choose (0, 100) in return FakerGenerator.IntBetween (lo, hi) }
+          gen { let! lo = Gen.choose (0, 1000) in let! hi = Gen.choose (0, 1000) in return FakerGenerator.DecimalBetween (decimal lo / 10M, decimal hi / 10M) }
+          Gen.elements [ MaskRule.Redact; MaskRule.KeepLast 4; MaskRule.KeepFirst 2; MaskRule.Hash ] |> Gen.map FakerGenerator.Mask
+          Gen.elements [ "X"; "REDACTED"; "n/a" ] |> Gen.map FakerGenerator.Constant ]
+
+let private genFakerSpec : Gen<FakerSpec> =
+    gen {
+        let! g = genFakerGenerator
+        let! loc = Gen.elements [ Option.None; Some "en"; Some "de" ]
+        return { Generator = g; Locale = loc }
+    }
+
 let private genEntry (i: int) : Gen<CorrectionEntry> =
     let col = aKey i
     Gen.oneof
@@ -108,7 +152,11 @@ let private genEntry (i: int) : Gen<CorrectionEntry> =
           gen { let! rows = Gen.choose (0, 100000)
                 return CorrectionEntry.Volume (col, VolumeTarget.Absolute rows) }
           gen { let! r = Gen.choose (1, 500)
-                return CorrectionEntry.Volume (col, VolumeTarget.Multiplier (decimal r / 10M)) } ]
+                return CorrectionEntry.Volume (col, VolumeTarget.Multiplier (decimal r / 10M)) }
+          // F-Faker — a unique coordinate per index keeps the correction conflict-free
+          // (Faker keys by coordinate, in its own class).
+          gen { let! spec = genFakerSpec
+                return CorrectionEntry.Faker (AttributeCoordinate.create (sprintf "M%d" i) (sprintf "E%d" i) (sprintf "A%d" i), spec) } ]
 
 // Distinct column index per entry → conflict-free by construction, so
 // `Correction.create` always succeeds (the law is over VALID corrections).

@@ -134,7 +134,7 @@ design §6). Each entry is a *named divergence* with its rationale (the Refactor
 | `PiiClass of SsKey × PiiKind` | the coarse hybrid-by-cardinality proxy (`SyntheticData.fs` :254) | explicit PII typing (`Email` / `PersonName` / `Phone` / `Address` / `FreeText` / `Reference` / `None`) drives realization |
 | `CoverageFloor of SsKey × CoverageRule` | the source's frequency shape | "include all important values even if patchy/absent in source" — exhaustive permutation, variety injection, or a minimum distinct-count floor |
 | `Fidelity of SsKey × ValueFidelityMode` | the per-column preserve/synthesize/**rotate** decision | operator override of the default fidelity mode (adds the new `Rotate` mode, §4) |
-| `FakerFieldSet of SsKey list × FakerProfile` | several columns at once | coherent field-set replacement (e.g. `{First, Last, Email}` → one fake *person*, referentially consistent) |
+| `Faker of AttributeCoordinate × FakerSpec` **(BUILT, F-Faker)** | the σ realization of a SPECIFIC column-LOCATION | coordinate-addressed (`module/entity/attribute`, hand-authorable) tunable Faker binding — the wide generator catalog + `MaskRule` + `Constant`, locale-tunable; person-based generators are referentially consistent per row (`{First, Last, Email}` → one coherent person). Resolved to `SsKey` at load; an unresolved coordinate is a named refusal |
 | `Volume of SsKey × VolumeTarget` | the `Scale`-over-observed default (`SyntheticData.fs` :463) | absolute-N / total-corpus-size / multiplier targeting (§3) |
 | `DistributionOverride of SsKey × ShapeHint` | the captured numeric/categorical shape | operator-supplied or fitted shape (parametric family, histogram) — §6 |
 
@@ -241,8 +241,22 @@ email derives from the name). The token therefore encodes the **entity identity*
 `SYNTH_ROW` SsKey, `SyntheticData.fs` :451), so the *same* fake person appears consistently wherever that
 entity is referenced across tables — coherence across the FK graph, not per-column noise.
 
-**Locale / format control** rides the `FakerProfile` on the correction entry (locale, format mask,
-nullability already from the profile). All of it is boundary config; **Core stays pure.**
+**Locale / format control** rides the `FakerSpec` on the correction entry (the optional Bogus locale; the
+generator and its parameters tune the shape). All of it is boundary config; **Core stays pure.**
+
+> **BUILT (F-Faker, 2026-06-16) — the coordinate-addressed, tunable extension.** The operator names a
+> SPECIFIC column location by `AttributeCoordinate (module/entity/attribute)` (hand-authorable — OSSYS
+> attribute `SsKey`s are opaque GUIDs), resolved against the catalog at load (a not-found / ambiguous
+> coordinate, and an unresolved coordinate at run start, are NAMED refusals). A `FakerSpec` binds the WIDE
+> `FakerGenerator` catalog (person / address / company / internet / lorem / guid / int+decimal ranges /
+> dates), `MaskRule` (redact / keepLast / keepFirst / hash — format-preserving masking of σ's PRESERVED
+> value), or a `Constant` override. `applyToConfig` routes a fresh-fake generator ⇒ Synthesize (the privacy
+> substrate; σ never emits a real value) and a `Mask` ⇒ Preserve (it has the real value to obscure).
+> `FakerRealization.realize` runs the F2 PiiKind pass THEN the F-Faker pass (the more-specific Faker wins);
+> person-based generators read one materialized `Bogus.Person` per (row, locale) for referential
+> consistency, fresh-draw generators re-seed per (row, column) for order-independence, both Bogus-global
+> -seed-safe. Determinism + the privacy contract hold; the π∘σ≈id canary stayed green (the realization is a
+> post-σ boundary pass, identity when the correction is empty).
 
 ---
 
@@ -302,7 +316,8 @@ faithfulness-ladder witness.
 | **F0b** | **Durable CorrectionCodec** | hinge | total / deterministic / re-validating `Correction ↔ JSON` (`CorrectionCodec.fs`); round-trip law + A39 decode refusal | ✅ **landed** 2026-06-16 (`d530badd`) |
 | **F0c** | **Operator surface** | CLI / flow | `correction: file:<path>` flow wiring (A44 cascade: `FlowSource.Synthetic` gains `correction`; `MovementSpec`/`FlowRunOpts`/`LoadOpts` gain `Correction`; `--correction` override) threading `Profile ⊕ Correction` into σ AND `FakerRealization.realizePii` between σ and the load; the `synth-correct --out` propose verb (`CorrectionProposeRun` → codec → file); durable write | ✅ **landed** 2026-06-16 (F0c-I/O) |
 | **F1** | **Explicit PII typing + per-kind volume** | σ + config | `Pii` correction ⇒ Synthesize (F0a fold); `Volume` correction + `VolumeTarget` (Absolute/Multiplier) consumed by `rowCountFor` — arbitrary scale | ✅ **landed** 2026-06-16 (`147421de`) |
-| **F2** | **Faker assimilation (boundary)** | boundary | `FakerRealization.realizePii` — seeded-deterministic Bogus realization over PII-typed columns (one coherent fake person per row → referential consistency); Bogus stays OUTSIDE Core | ✅ **landed** 2026-06-16 (Bogus dep) — wiring into the synthetic-load runner pends F0c-I/O |
+| **F2** | **Faker assimilation (boundary)** | boundary | `FakerRealization.realizePii` — seeded-deterministic Bogus realization over PII-typed columns (one coherent fake person per row → referential consistency); Bogus stays OUTSIDE Core | ✅ **landed** 2026-06-16 (Bogus dep); **wired** by F0c-I/O |
+| **F-Faker** | **Coordinate-addressed, tunable Faker** | hinge + boundary | `AttributeCoordinate (module/entity/attribute)` + catalog resolver (named not-found / ambiguity refusals); the wide `FakerGenerator` catalog (person / address / company / internet / lorem / guid / int+decimal ranges / dates) + `MaskRule` (redact / keepLast / keepFirst / hash) + `Constant` override; `CorrectionEntry.Faker of AttributeCoordinate × FakerSpec` (coordinate-keyed, hand-authorable; locale tunable); `applyToConfig` routes generate⇒Synthesize, mask⇒Preserve; `FakerRealization.realizeFaker`/`realize` (Pii then Faker; person-cached coherence + per-cell fresh draws; Bogus-global-seed-safe); the synthetic flow refuses an unresolved coordinate BY NAME | ✅ **landed** 2026-06-16 (F-Faker) |
 | **F3** | **Coverage corrections** | σ | `CoverageFloor` (exhaustive permutation / variety injection / distinct-floor) + the **L2-cov** canary | ⬜ (an operator coverage need) |
 | **F4** | **Anonymizing rotation** | **boundary** | corpus-row permutation (linkage-breaking) over real rows — **NOT** a Core `ValueFidelityMode` (§4 revision: `Preserve` is already linkage-free in marginal-only σ) | ⬜ (a named threat model) |
 | **F5a** | **Wire σ to `ForeignKeySelectivity`** | σ | rank-mapped skewed FK fan-out (was uniform) | ✅ **landed** 2026-06-16 (`3f552f45`) |

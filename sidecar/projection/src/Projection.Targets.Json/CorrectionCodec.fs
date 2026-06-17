@@ -62,6 +62,50 @@ module CorrectionCodec =
             jw.WriteString("factor", inv factor)
         jw.WriteEndObject()
 
+    // -- FUZZING §5 (slice F-Faker): the coordinate-addressed Faker binding ----
+
+    let private wMaskRule (jw: Utf8JsonWriter) (rule: MaskRule) : unit =
+        jw.WriteStartObject()
+        match rule with
+        | MaskRule.Redact      -> jw.WriteString("rule", "redact")
+        | MaskRule.KeepLast n  -> jw.WriteString("rule", "keepLast");  jw.WriteNumber("n", n)
+        | MaskRule.KeepFirst n -> jw.WriteString("rule", "keepFirst"); jw.WriteNumber("n", n)
+        | MaskRule.Hash        -> jw.WriteString("rule", "hash")
+        jw.WriteEndObject()
+
+    let private wFakerSpec (jw: Utf8JsonWriter) (spec: FakerSpec) : unit =
+        jw.WriteStartObject()
+        (match spec.Generator with
+         | FakerGenerator.FullName       -> jw.WriteString("generator", "fullName")
+         | FakerGenerator.FirstName      -> jw.WriteString("generator", "firstName")
+         | FakerGenerator.LastName       -> jw.WriteString("generator", "lastName")
+         | FakerGenerator.UserName       -> jw.WriteString("generator", "userName")
+         | FakerGenerator.Email          -> jw.WriteString("generator", "email")
+         | FakerGenerator.Phone          -> jw.WriteString("generator", "phone")
+         | FakerGenerator.StreetAddress  -> jw.WriteString("generator", "streetAddress")
+         | FakerGenerator.City           -> jw.WriteString("generator", "city")
+         | FakerGenerator.ZipCode        -> jw.WriteString("generator", "zipCode")
+         | FakerGenerator.Country        -> jw.WriteString("generator", "country")
+         | FakerGenerator.FullAddress    -> jw.WriteString("generator", "fullAddress")
+         | FakerGenerator.Company        -> jw.WriteString("generator", "company")
+         | FakerGenerator.JobTitle       -> jw.WriteString("generator", "jobTitle")
+         | FakerGenerator.Url            -> jw.WriteString("generator", "url")
+         | FakerGenerator.DomainName     -> jw.WriteString("generator", "domainName")
+         | FakerGenerator.Word           -> jw.WriteString("generator", "word")
+         | FakerGenerator.Sentence       -> jw.WriteString("generator", "sentence")
+         | FakerGenerator.Paragraph      -> jw.WriteString("generator", "paragraph")
+         | FakerGenerator.Guid           -> jw.WriteString("generator", "guid")
+         | FakerGenerator.IntBetween (lo, hi) ->
+             jw.WriteString("generator", "intBetween"); jw.WriteNumber("lo", lo); jw.WriteNumber("hi", hi)
+         | FakerGenerator.DecimalBetween (lo, hi) ->
+             jw.WriteString("generator", "decimalBetween"); jw.WriteString("lo", inv lo); jw.WriteString("hi", inv hi)
+         | FakerGenerator.PastDate       -> jw.WriteString("generator", "pastDate")
+         | FakerGenerator.FutureDate     -> jw.WriteString("generator", "futureDate")
+         | FakerGenerator.Mask rule      -> jw.WriteString("generator", "mask"); jw.WritePropertyName "mask"; wMaskRule jw rule
+         | FakerGenerator.Constant value -> jw.WriteString("generator", "constant"); jw.WriteString("value", value))
+        (match spec.Locale with Some l -> jw.WriteString("locale", l) | None -> ())
+        jw.WriteEndObject()
+
     let private wEntry (jw: Utf8JsonWriter) (entry: CorrectionEntry) : unit =
         jw.WriteStartObject()
         match entry with
@@ -81,6 +125,13 @@ module CorrectionCodec =
             wSsKeyVal jw kind
             jw.WritePropertyName "target"
             wVolumeTarget jw target
+        | CorrectionEntry.Faker (loc, spec) ->
+            jw.WriteString("entry", "faker")
+            jw.WriteString("module", loc.Module)
+            jw.WriteString("entity", loc.Entity)
+            jw.WriteString("attribute", loc.Attribute)
+            jw.WritePropertyName "faker"
+            wFakerSpec jw spec
         jw.WriteEndObject()
 
     let private wCorrection (jw: Utf8JsonWriter) (correction: Correction) : unit =
@@ -168,6 +219,69 @@ module CorrectionCodec =
             | "multiplier" -> field el "factor" asDecimal |> Result.map VolumeTarget.Multiplier
             | o -> fail "correctionCodec.volumeTarget.unknown" (sprintf "unknown VolumeTarget '%s'" o))
 
+    // -- FUZZING §5 (slice F-Faker): the coordinate-addressed Faker binding ----
+
+    /// An optional string field — absent or JSON null ⇒ `None` (the locale's
+    /// "use the default" form); a present non-string is a typed refusal.
+    let private readOptString (el: JsonElement) (name: string) : Result<string option> =
+        match el.TryGetProperty name with
+        | true, v when v.ValueKind = JsonValueKind.String ->
+            match v.GetString() with
+            | null -> Ok None
+            | s    -> Ok (Some s)
+        | true, v when v.ValueKind = JsonValueKind.Null -> Ok None
+        | true, v -> fail "correctionCodec.expectedString" (sprintf "field '%s': expected string, got %A" name v.ValueKind)
+        | _ -> Ok None
+
+    let private readMaskRule (el: JsonElement) : Result<MaskRule> =
+        field el "rule" asString
+        |> Result.bind (function
+            | "redact"    -> Ok MaskRule.Redact
+            | "keepLast"  -> field el "n" asInt |> Result.map MaskRule.KeepLast
+            | "keepFirst" -> field el "n" asInt |> Result.map MaskRule.KeepFirst
+            | "hash"      -> Ok MaskRule.Hash
+            | o -> fail "correctionCodec.maskRule.unknown" (sprintf "unknown MaskRule '%s'" o))
+
+    let private readFakerGenerator (el: JsonElement) : Result<FakerGenerator> =
+        field el "generator" asString
+        |> Result.bind (function
+            | "fullName"       -> Ok FakerGenerator.FullName
+            | "firstName"      -> Ok FakerGenerator.FirstName
+            | "lastName"       -> Ok FakerGenerator.LastName
+            | "userName"       -> Ok FakerGenerator.UserName
+            | "email"          -> Ok FakerGenerator.Email
+            | "phone"          -> Ok FakerGenerator.Phone
+            | "streetAddress"  -> Ok FakerGenerator.StreetAddress
+            | "city"           -> Ok FakerGenerator.City
+            | "zipCode"        -> Ok FakerGenerator.ZipCode
+            | "country"        -> Ok FakerGenerator.Country
+            | "fullAddress"    -> Ok FakerGenerator.FullAddress
+            | "company"        -> Ok FakerGenerator.Company
+            | "jobTitle"       -> Ok FakerGenerator.JobTitle
+            | "url"            -> Ok FakerGenerator.Url
+            | "domainName"     -> Ok FakerGenerator.DomainName
+            | "word"           -> Ok FakerGenerator.Word
+            | "sentence"       -> Ok FakerGenerator.Sentence
+            | "paragraph"      -> Ok FakerGenerator.Paragraph
+            | "guid"           -> Ok FakerGenerator.Guid
+            | "intBetween"     ->
+                field el "lo" asInt |> Result.bind (fun lo ->
+                    field el "hi" asInt |> Result.map (fun hi -> FakerGenerator.IntBetween (lo, hi)))
+            | "decimalBetween" ->
+                field el "lo" asDecimal |> Result.bind (fun lo ->
+                    field el "hi" asDecimal |> Result.map (fun hi -> FakerGenerator.DecimalBetween (lo, hi)))
+            | "pastDate"       -> Ok FakerGenerator.PastDate
+            | "futureDate"     -> Ok FakerGenerator.FutureDate
+            | "mask"           -> field el "mask" readMaskRule |> Result.map FakerGenerator.Mask
+            | "constant"       -> field el "value" asString |> Result.map FakerGenerator.Constant
+            | o -> fail "correctionCodec.fakerGenerator.unknown" (sprintf "unknown FakerGenerator '%s'" o))
+
+    let private readFakerSpec (el: JsonElement) : Result<FakerSpec> =
+        readFakerGenerator el
+        |> Result.bind (fun g ->
+            readOptString el "locale"
+            |> Result.map (fun locale -> { Generator = g; Locale = locale }))
+
     let private readEntry (el: JsonElement) : Result<CorrectionEntry> =
         field el "entry" asString
         |> Result.bind (function
@@ -186,6 +300,15 @@ module CorrectionCodec =
                 |> Result.bind (fun kind ->
                     field el "target" readVolumeTarget
                     |> Result.map (fun target -> CorrectionEntry.Volume (kind, target)))
+            | "faker" ->
+                field el "module" asString
+                |> Result.bind (fun m ->
+                    field el "entity" asString
+                    |> Result.bind (fun e ->
+                        field el "attribute" asString
+                        |> Result.bind (fun a ->
+                            field el "faker" readFakerSpec
+                            |> Result.map (fun spec -> CorrectionEntry.Faker (AttributeCoordinate.create m e a, spec)))))
             | o -> fail "correctionCodec.entry.unknown" (sprintf "unknown correction entry '%s'" o))
 
     let private readCorrection (el: JsonElement) : Result<Correction> =
