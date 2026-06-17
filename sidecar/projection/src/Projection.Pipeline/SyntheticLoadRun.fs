@@ -41,6 +41,32 @@ module SyntheticLoadRun =
             with ex ->
                 Result.failureOf (ValidationError.create "synthetic.profileRef.readFailed" ex.Message)
 
+    /// Resolve a correction reference to a `Correction` (F0c-I/O; FUZZING §2).
+    /// `None` (no `correction` field, no `--correction`) is the empty correction
+    /// — the identity of the `Profile ⊕ Correction` fold AND of the Faker
+    /// realization, so an uncorrected synthetic load is byte-identical to the
+    /// pre-F0c flow. The durable artifact rides the `file:<path>` form (or a bare
+    /// path) and decodes through `CorrectionCodec` (re-proving the no-conflicting
+    /// -double-correction invariant on load — a hand-edited artifact is REFUSED,
+    /// not silently last-write-wins).
+    let resolveCorrection (correctionRef: string option) : Result<Correction> =
+        match correctionRef with
+        | None -> Result.success Correction.empty
+        | Some raw ->
+            let path =
+                if raw.StartsWith("file:", System.StringComparison.OrdinalIgnoreCase)
+                then raw.Substring 5
+                else raw
+            if System.String.IsNullOrWhiteSpace path then
+                Result.failureOf (ValidationError.create "synthetic.correctionRef.blank" "synthetic correction reference is blank.")
+            elif not (System.IO.File.Exists path) then
+                Result.failureOf
+                    (ValidationError.create "synthetic.correctionRef.missing" (sprintf "synthetic correction file '%s' not found." path))
+            else
+                try CorrectionCodec.deserialize (System.IO.File.ReadAllText path)
+                with ex ->
+                    Result.failureOf (ValidationError.create "synthetic.correctionRef.readFailed" ex.Message)
+
     /// Drive a synthetic load. `execute = false` previews (DryRun, no write);
     /// `execute = true` generates and loads to the sink. The target schema B is
     /// resolved by `ModelResolution` — live OSSYS when `modelOssys` is set
@@ -60,6 +86,7 @@ module SyntheticLoadRun =
         (modelOssys: string option)
         (modelFile: string option)
         (profileRef: string)
+        (correctionRef: string option)
         (connSpec: string)
         (emission: EmissionMode)
         (allowCdc: bool)
@@ -69,10 +96,11 @@ module SyntheticLoadRun =
         (modelSection: Config.ModelSection)
         : Task<Result<Transfer.TransferReport>> =
         task {
-            match resolveProfile profileRef, TransferSpec.parseConnectionSpec connSpec with
-            | Error es, _ -> return Result.failure es
-            | _, Error es -> return Result.failure es
-            | Ok profile, Ok connRef ->
+            match resolveProfile profileRef, resolveCorrection correctionRef, TransferSpec.parseConnectionSpec connSpec with
+            | Error es, _, _ -> return Result.failure es
+            | _, Error es, _ -> return Result.failure es
+            | _, _, Error es -> return Result.failure es
+            | Ok profile, Ok correction, Ok connRef ->
                 match! ModelResolution.resolveCatalog modelOssys modelFile with
                 | Error es -> return Result.failure es
                 | Ok rawCatalog ->
@@ -86,6 +114,14 @@ module SyntheticLoadRun =
                     match filtered with
                     | Error es -> return Result.failure es
                     | Ok catalog ->
+                    // F0c-I/O — fold the blessed corrections onto the config (the
+                    // PURE `Profile ⊕ Correction` hinge: Pii ⇒ Synthesize, fidelity
+                    // overrides, per-kind volume) AND build the boundary realization
+                    // (Faker over the PII tokens σ emits, seeded per row identity).
+                    // Both are identity when the correction is empty, so an
+                    // uncorrected load is byte-identical to the pre-F0c flow.
+                    let effectiveConfig = Correction.applyToConfig catalog correction config
+                    let realize = FakerRealization.realizePii catalog correction
                     let sub : Substrate =
                         { Environment   = Environment.Named "synthetic-sink"
                           Role          = SubstrateRole.Sink
@@ -95,5 +131,5 @@ module SyntheticLoadRun =
                     | Ok sink ->
                         use sink = sink
                         let mode = if execute then Transfer.Execute else Transfer.DryRun
-                        return! Transfer.runSynthetic mode emission allowCdc sink catalog profile config seed
+                        return! Transfer.runSynthetic mode emission allowCdc sink catalog profile effectiveConfig seed realize
         }

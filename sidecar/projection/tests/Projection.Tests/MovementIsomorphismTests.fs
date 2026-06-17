@@ -28,7 +28,7 @@ open Projection.Pipeline
 
 let private mustOk r = match r with Ok v -> v | Error es -> failwithf "fixture: %A" es
 
-let private preview : FlowRunOpts = { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; NoAtomic = false; AutoRevert = false; RevertDir = None; Seed = None; Scale = None }
+let private preview : FlowRunOpts = { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; NoAtomic = false; AutoRevert = false; RevertDir = None; Seed = None; Scale = None; Correction = None }
 let private commit  : FlowRunOpts = { preview with Go = true }
 
 // ---------------------------------------------------------------------------
@@ -82,7 +82,7 @@ let private genVariant : Gen<ProjectionConfig * Flow> =
             match origin with
             | OriginDraw.Model     -> FlowSource.Model, [ sink ]
             | OriginDraw.NoData    -> FlowSource.NoData, [ sink ]
-            | OriginDraw.Synthetic -> FlowSource.Synthetic (Some "file:p.profile.json"), [ sink ]
+            | OriginDraw.Synthetic -> FlowSource.Synthetic (Some "file:p.profile.json", None), [ sink ]
             | OriginDraw.FromEnv   -> FlowSource.Env "src", [ src; sink ]
         let flow = { Name = "v"; From = from; To = "sink"; Rekey = None; Tables = []; Reconcile = []; Scope = scope; Shape = None; Shaping = None }
         let cfg =
@@ -169,7 +169,11 @@ let ``A44 clause 1 — renderEnvironment ∘ parseEnvironment = id on every reac
 let ``A44 clause 1 — renderFlow ∘ parseFlow = id on every from × scope × shape × tables`` () =
     let froms =
         [ FlowSource.Model; FlowSource.NoData
-          FlowSource.Synthetic (Some "file:p.json"); FlowSource.Synthetic None
+          // F0c-I/O — the synthetic source's `correction` field round-trips
+          // alongside `profile`: present, absent, and profile-without-correction.
+          FlowSource.Synthetic (Some "file:p.json", None)
+          FlowSource.Synthetic (Some "file:p.json", Some "file:corr.json")
+          FlowSource.Synthetic (None, None)
           FlowSource.Env "src" ]
     let tableSets = [ []; [ "Customer" ]; [ "Customer"; "Order" ] ]
     let shapeOpts = [ None; Some Shape.Bundle; Some Shape.Ssdt; Some Shape.Skeleton; Some Shape.Manifest ]

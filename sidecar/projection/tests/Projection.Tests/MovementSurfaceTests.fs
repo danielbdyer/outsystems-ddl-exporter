@@ -127,7 +127,7 @@ let ``config parses a flow's declared table subset`` () =
 [<Fact>]
 let ``config parses a synthetic flow with a profile`` () =
     let f = Map.find "synth" (ProjectionConfig.parse envFlowJson |> mustOk).Flows
-    Assert.Equal(FlowSource.Synthetic (Some "onprem-legacy"), f.From)
+    Assert.Equal(FlowSource.Synthetic (Some "onprem-legacy", None), f.From)
 
 [<Fact>]
 let ``config defaults a flow with no from to the model`` () =
@@ -269,7 +269,7 @@ let ``reverseLegOf: a logical source to a non-live (bundle) physical sink is NOT
 // can never drift.
 
 let private previewOpts : FlowRunOpts =
-    { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; NoAtomic = false; AutoRevert = false; RevertDir = None; Seed = None; Scale = None }
+    { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; NoAtomic = false; AutoRevert = false; RevertDir = None; Seed = None; Scale = None; Correction = None }
 
 let private dirOf (cfg: ProjectionConfig) name =
     match Command.resolveFlowSpec cfg (Map.find name cfg.Flows) previewOpts with
@@ -360,7 +360,7 @@ let ``provenance arm: an ossys-only config WITHOUT a store stays non-provenance 
 let ``direction: the legacy flow routes through planFlow to RunReverseLeg under --go --scope data`` () =
     // The flow's grant is `data`, so the grant gate passes; the derived UpLegacy
     // direction routes the committed data move to the reverse-leg runner.
-    let commitData = { Go = true; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; NoAtomic = false; AutoRevert = false; RevertDir = None; Seed = None; Scale = None }
+    let commitData = { Go = true; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; NoAtomic = false; AutoRevert = false; RevertDir = None; Seed = None; Scale = None; Correction = None }
     let flow = { Map.find "legacy" reverseCfg.Flows with Scope = Some Scope.Data }
     match (Command.planFlow reverseCfg flow commitData).Action with
     | PlanAction.RunReverseLeg (_, _, "env:ONPREM_LEGACY_CONN", "env:CLOUD_UAT_CONN", _, true) -> ()
@@ -381,7 +381,7 @@ let ``J3: a legacy flow with NO model refuses at PLAN time (the contracts render
           "flows": { "legacy": { "from": "onprem-legacy", "to": "cloud-uat" } }
         }
         """ |> mustOk
-    let commitData = { Go = true; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; NoAtomic = false; AutoRevert = false; RevertDir = None; Seed = None; Scale = None }
+    let commitData = { Go = true; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; NoAtomic = false; AutoRevert = false; RevertDir = None; Seed = None; Scale = None; Correction = None }
     let flow = { Map.find "legacy" modelless.Flows with Scope = Some Scope.Data }
     match (Command.planFlow modelless flow commitData).Action with
     | PlanAction.Refused (1, e) -> Assert.Equal("cli.move.modelMissing", e.Code)
@@ -458,7 +458,7 @@ let private liveDev = Destination.Live (ConnectionRef.EnvVar "DEV_CONN")
 let private baseLive = MovementSpec.forDestination liveDev
 let private defaultOpts : LoadOpts =
     { Declaration = DeclareNone; Emission = EmissionMode.Incremental
-      Reconcile = []; Rekey = None; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; Atomic = false; RevertPolicy = RevertPolicy.def; RevertDir = None; Store = None; Env = None; Tables = []; Seed = None; Scale = None; SinkCapability = SinkLoadCapability.structural }
+      Reconcile = []; Rekey = None; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; Atomic = false; RevertPolicy = RevertPolicy.def; RevertDir = None; Store = None; Env = None; Tables = []; Seed = None; Scale = None; Correction = None; SinkCapability = SinkLoadCapability.structural }
 
 [<Fact>]
 let ``planMovement: --fresh selects WipeAndLoad on the transfer path`` () =
@@ -636,7 +636,7 @@ let private flowCfg =
     }
     """ |> mustOk
 
-let private preview = { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; NoAtomic = false; AutoRevert = false; RevertDir = None; Seed = None; Scale = None }
+let private preview = { Go = false; Fresh = false; AllowDrops = false; AllowCdc = false; Resumable = false; Streaming = false; Journal = None; NoAtomic = false; AutoRevert = false; RevertDir = None; Seed = None; Scale = None; Correction = None }
 let private commit  = { preview with Go = true }
 let private flowOf name = Map.find name flowCfg.Flows
 let private specOf name opts = Command.resolveFlowSpec flowCfg (flowOf name) opts
@@ -882,6 +882,90 @@ let ``synthetic flow preview works under all-scope; --go to a non-data target is
     match synthAction "synth-all" commit with
     | PlanAction.Refused (2, e) -> Assert.Equal("cli.move.syntheticScope", e.Code)
     | other -> Assert.Fail(sprintf "expected synthetic-scope refusal, got %A" other)
+
+// -- F0c-I/O: the blessed-correction wiring (FUZZING §2) ---------------------
+
+let private synthCorrCfg =
+    ProjectionConfig.parse """
+    {
+      "environments": {
+        "cloud-uat": { "access": "direct", "conn": "env:CLOUD_UAT_CONN", "grant": "data" }
+      },
+      "flows": {
+        "preview-synth":  { "from": "synthetic", "profile": "file:legacy.profile.json", "to": "cloud-uat" },
+        "corrected-synth":{ "from": "synthetic", "profile": "file:legacy.profile.json", "correction": "file:corr.json", "to": "cloud-uat" }
+      },
+      "model": "model.json"
+    }
+    """ |> mustOk
+
+let private synthCorrAction name opts = (Command.planFlow synthCorrCfg (Map.find name synthCorrCfg.Flows) opts).Action
+
+[<Fact>]
+let ``F0c-I/O: parse captures the synthetic source's correction alongside the profile (FlowSource)`` () =
+    let f = Map.find "corrected-synth" synthCorrCfg.Flows
+    Assert.Equal(FlowSource.Synthetic (Some "file:legacy.profile.json", Some "file:corr.json"), f.From)
+
+[<Fact>]
+let ``F0c-I/O: a flow's declared correction threads onto the SynthesizeAndLoad LoadOpts`` () =
+    match synthCorrAction "corrected-synth" preview with
+    | PlanAction.SynthesizeAndLoad (_, _, "file:legacy.profile.json", "env:CLOUD_UAT_CONN", opts, false, _) ->
+        Assert.Equal(Some "file:corr.json", opts.Correction)
+    | other -> Assert.Fail(sprintf "expected corrected SynthesizeAndLoad, got %A" other)
+
+[<Fact>]
+let ``F0c-I/O: an uncorrected synthetic flow carries no correction (byte-identical default)`` () =
+    match synthCorrAction "preview-synth" preview with
+    | PlanAction.SynthesizeAndLoad (_, _, _, _, opts, false, _) -> Assert.Equal(None, opts.Correction)
+    | other -> Assert.Fail(sprintf "expected SynthesizeAndLoad, got %A" other)
+
+[<Fact>]
+let ``F0c-I/O: --correction per-run override wins over the flow's declared correction`` () =
+    // The override is consumed even on a flow that declares its own correction
+    // (iteration: bless a different artifact for one run).
+    let overridden = { preview with Correction = Some "file:override.json" }
+    match synthCorrAction "corrected-synth" overridden with
+    | PlanAction.SynthesizeAndLoad (_, _, _, _, opts, _, _) -> Assert.Equal(Some "file:override.json", opts.Correction)
+    | other -> Assert.Fail(sprintf "expected SynthesizeAndLoad, got %A" other)
+    // …and threads onto an otherwise-uncorrected flow too.
+    match synthCorrAction "preview-synth" overridden with
+    | PlanAction.SynthesizeAndLoad (_, _, _, _, opts, _, _) -> Assert.Equal(Some "file:override.json", opts.Correction)
+    | other -> Assert.Fail(sprintf "expected SynthesizeAndLoad, got %A" other)
+
+[<Fact>]
+let ``F0c-I/O: a correction on a non-synthetic action is noted, never silently dropped`` () =
+    // `--correction` on a model flow (no synthesis leg) is accepted + NOTED.
+    let cfg =
+        ProjectionConfig.parse """
+        { "environments": { "uat": { "access": "direct", "conn": "env:UAT_CONN" } },
+          "flows": { "deploy": { "from": "model", "to": "uat" } },
+          "model": "model.json" }
+        """ |> mustOk
+    let plan = Command.planFlow cfg (Map.find "deploy" cfg.Flows) { preview with Correction = Some "file:c.json" }
+    Assert.Contains(plan.Notes, fun (n: string) -> n.Contains "correction accepted")
+
+[<Fact>]
+let ``F0c-I/O: synth-correct routes to ProposeCorrection with the configured model`` () =
+    match Command.parse synthCorrCfg [ "synth-correct"; "--out"; "corr.json" ] with
+    | Ok (Intent.SynthCorrect args) ->
+        match (Command.plan synthCorrCfg (Intent.SynthCorrect args)).Action with
+        | PlanAction.ProposeCorrection (ModelSource.ModelFile "model.json", None, "corr.json") -> ()
+        | other -> Assert.Fail(sprintf "expected ProposeCorrection, got %A" other)
+    | other -> Assert.Fail(sprintf "expected Intent.SynthCorrect, got %A" other)
+
+[<Fact>]
+let ``F0c-I/O: synth-correct without --out is Refused (named)`` () =
+    match (Command.plan synthCorrCfg (Intent.SynthCorrect [])).Action with
+    | PlanAction.Refused (2, e) -> Assert.Equal("cli.synthCorrect.noOut", e.Code)
+    | other -> Assert.Fail(sprintf "expected no-out refusal, got %A" other)
+
+[<Fact>]
+let ``F0c-I/O: synth-correct without a configured model is Refused (named)`` () =
+    let noModelCfg =
+        ProjectionConfig.parse """{ "environments": {}, "flows": {} }""" |> mustOk
+    match (Command.plan noModelCfg (Intent.SynthCorrect [ "--out"; "corr.json" ])).Action with
+    | PlanAction.Refused (2, e) -> Assert.Equal("cli.synthCorrect.noModel", e.Code)
+    | other -> Assert.Fail(sprintf "expected no-model refusal, got %A" other)
 
 [<Fact>]
 let ``synthetic flow threads the live-OSSYS model source (primary) when configured`` () =

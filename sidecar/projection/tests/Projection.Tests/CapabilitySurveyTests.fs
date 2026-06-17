@@ -114,7 +114,7 @@ let ``NM-57: an unspecified-grant sink requires NOTHING (conservative None defau
     for src, label in
         [ FlowSource.Env "staging", "live"
           FlowSource.Model,         "model"
-          FlowSource.Synthetic None, "synthetic"
+          FlowSource.Synthetic (None, None), "synthetic"
           FlowSource.NoData,        "no-data" ] do
         let cfg = cfgWith [ sinkUndeclared; liveSource ] [ flow ("f-" + label) src "mystery" ]
         let f = Map.find ("f-" + label) cfg.Flows

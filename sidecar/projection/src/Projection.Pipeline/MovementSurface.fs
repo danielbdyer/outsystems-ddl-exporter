@@ -379,7 +379,7 @@ module ProjectionConfig =
         | Some f ->
             match f.ToLowerInvariant() with
             | "model"     -> FlowSource.Model
-            | "synthetic" -> FlowSource.Synthetic (getString el "profile")
+            | "synthetic" -> FlowSource.Synthetic (getString el "profile", getString el "correction")
             | "none"      -> FlowSource.NoData
             | _           -> FlowSource.Env f
 
@@ -489,7 +489,7 @@ module ProjectionConfig =
     /// than let it parse, render, and list while reaching nothing (A44:
     /// expressible ⇔ reachable). THE_CLI.md §3.
     let reservedFlowVerbs : Set<string> =
-        set [ "check"; "explain"; "seal"; "report"; "profile"; "init"; "diff"; "compare" ]
+        set [ "check"; "explain"; "seal"; "report"; "profile"; "synth-correct"; "init"; "diff"; "compare" ]
 
     let parse (json: string) : Result<ProjectionConfig> =
         if String.IsNullOrWhiteSpace json then Result.success empty
@@ -684,7 +684,10 @@ module ProjectionConfig =
          // model flow omits `from` — round-trips through the default arm.
          | FlowSource.Model              -> ()
          | FlowSource.NoData             -> setStr o "from" "none"
-         | FlowSource.Synthetic profile  -> setStr o "from" "synthetic"; setOptStr o "profile" profile
+         | FlowSource.Synthetic (profile, correction) ->
+             setStr o "from" "synthetic"
+             setOptStr o "profile" profile
+             setOptStr o "correction" correction
          | FlowSource.Env e              -> setStr o "from" e)
         setOptStr o "scope" (flow.Scope |> Option.map renderScope)
         setOptStr o "shape" (flow.Shape |> Option.map renderShape)
@@ -822,6 +825,7 @@ module Command =
           Tables      = spec.Tables
           Seed        = spec.Seed
           Scale       = spec.Scale
+          Correction  = spec.Correction
           SinkCapability = spec.SinkCapability }
 
     // --- the pure movement routing (the surface→engine map) ----------------
@@ -941,7 +945,15 @@ module Command =
             | None, _ -> []
             | Some _, PlanAction.RunReverseLeg _ -> []
             | Some _, _ -> [ "--journal accepted; this action has no journaled write seam (unjournaled write applied)." ]
-        { Notes = unhonoredNotes spec @ freshNote @ resumableNote @ synthesisNote @ streamingNote @ journalNote; Action = action }
+        // F0c-I/O — the blessed correction is consumed only by the synthetic load
+        // (it threads `Profile ⊕ Correction` into σ + drives Faker realization);
+        // on any other action it is noted, never silently dropped.
+        let correctionNote =
+            match spec.Correction, action with
+            | None, _ -> []
+            | Some _, PlanAction.SynthesizeAndLoad _ -> []
+            | Some _, _ -> [ "correction accepted; this action has no synthesis leg (no correction applied)." ]
+        { Notes = unhonoredNotes spec @ freshNote @ resumableNote @ synthesisNote @ streamingNote @ journalNote @ correctionNote; Action = action }
 
     /// Route a `check` verb tail to its proof-plane action — purely.
     let planCheck (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
@@ -1104,8 +1116,8 @@ module Command =
         match source with
         | FlowSource.Model       -> Result.success DataOrigin.Model
         | FlowSource.NoData      -> Result.success DataOrigin.NoData
-        | FlowSource.Synthetic (Some profile) -> Result.success (DataOrigin.Synthetic profile)
-        | FlowSource.Synthetic None ->
+        | FlowSource.Synthetic (Some profile, _) -> Result.success (DataOrigin.Synthetic profile)
+        | FlowSource.Synthetic (None, _) ->
             Result.failureOf (err "cli.flow.syntheticNoProfile" "flow source `synthetic` needs a `profile` (e.g. \"profile\": \"file:legacy.profile.json\") — the evidence the generator replays.")
         | FlowSource.Env e ->
             match Map.tryFind e cfg.Environments with
@@ -1256,6 +1268,19 @@ module Command =
                         // (seed/volume vary at the moment of action, never config).
                         Seed = opts.Seed
                         Scale = opts.Scale
+                        // F0c-I/O — the blessed correction-artifact ref: the
+                        // `--correction` per-run override WINS when set, else the
+                        // flow's declared `correction` (a synthetic source's
+                        // sibling of `profile`). A non-synthetic flow has no
+                        // declared correction, so `--correction` alone still
+                        // threads (noted as inert by `planMovement` if the action
+                        // has no synthesis leg).
+                        Correction =
+                            (opts.Correction
+                             |> Option.orElse
+                                 (match flow.From with
+                                  | FlowSource.Synthetic (_, c) -> c
+                                  | _ -> None))
                         // The target's durable timeline: a live --go records an
                         // episode into it (which `report` later diffs). F4.
                         Store    = toEnv.Store
@@ -1347,6 +1372,31 @@ module Command =
                     | Error es -> PlanAction.Refused (6, List.head es)
         { Notes = []; Action = action }
 
+    /// Route a `synth-correct` verb tail (FUZZING §2.2, slice F0c-I/O):
+    /// `synth-correct --out <path>` proposes a first-draft blessed-correction
+    /// artifact from the CONFIGURED model's catalog (the proposer types PII by
+    /// attribute name, so it needs the catalog — the `Profile` keys by `SsKey`
+    /// and carries no names). The model resolves the way every model-bearing
+    /// action does: live OSSYS (`model.ossys`) primary, the model file fallback;
+    /// a config with neither is a named refusal (there is nothing to propose
+    /// from). The durable sibling of `profile` — both write a reviewable hinge.
+    let planSynthCorrect (cfg: ProjectionConfig) (args: string list) : ExecutionPlan =
+        let valueOf = flagValue args
+        let modelOssys = cfg.Shaping.Model.Ossys
+        let modelSource =
+            match cfg.Shaping.Model.Path with
+            | Some m -> ModelSource.ModelFile m
+            | None   -> ModelSource.Unspecified
+        let hasModel = modelSource <> ModelSource.Unspecified || Option.isSome modelOssys
+        let action =
+            match valueOf "--out" with
+            | None ->
+                PlanAction.Refused (2, err "cli.synthCorrect.noOut" "projection synth-correct: requires --out <path> (the correction artifact file to write).")
+            | Some out ->
+                if hasModel then PlanAction.ProposeCorrection (modelSource, modelOssys, out)
+                else PlanAction.Refused (2, err "cli.synthCorrect.noModel" "projection synth-correct: no model is configured (set `model` or `model.ossys` in projection.json) — the correction is proposed from the model's catalog.")
+        { Notes = []; Action = action }
+
     /// The closed secondary-verb set (THE_CLI.md §3). A first token outside
     /// this set is read as a flow name; an unknown one is refused, naming both.
     /// NM-10 — single-sourced from `ProjectionConfig.reservedFlowVerbs` (the
@@ -1371,6 +1421,7 @@ module Command =
         | "report" :: rest  -> Result.success (Intent.Report rest)
         | "compare" :: rest -> Result.success (Intent.Compare rest)
         | "profile" :: rest -> Result.success (Intent.Profile rest)
+        | "synth-correct" :: rest -> Result.success (Intent.SynthCorrect rest)
         | first :: rest when Map.containsKey first cfg.Flows ->
             // D8 — the value-bearing synthesis knobs. A malformed value is a
             // refusal (named, never a silent fall-through to the default).
@@ -1404,7 +1455,8 @@ module Command =
                       AutoRevert = List.contains "--auto-revert" rest
                       RevertDir  = flagValue rest "--revert-dir"
                       Seed       = seed
-                      Scale      = scale }
+                      Scale      = scale
+                      Correction = flagValue rest "--correction" }
                 Result.success (Intent.Flow (Map.find first cfg.Flows, opts))
         | first :: _ when secondaryVerbs.Contains first ->
             // a known verb with a malformed tail falls through its own branch;
@@ -1428,3 +1480,4 @@ module Command =
         | Intent.Report args       -> planReport cfg args
         | Intent.Compare args      -> planCompare cfg args
         | Intent.Profile args      -> planProfile cfg args
+        | Intent.SynthCorrect args -> planSynthCorrect cfg args

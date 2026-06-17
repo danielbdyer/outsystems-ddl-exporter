@@ -38,6 +38,7 @@ let private usageLines : string list =
         "                       | migrate --to <b> ( --from <a> | --from empty | --store <s> ) [--allow-drops] )"
         "    projection seal ( --store <path> | approve <version> --approver <name> ... )"
         "    projection report <flow>        the on-prem migration-team change bundle"
+        "    projection synth-correct --out <path>   propose a blessed-correction artifact (review/edit/bless)"
         "    projection inspect <runId> [<runId>]  a stored run, or what moved between two runs"
         "    projection init                 scaffold a projection.json"
         "    projection setup [--conn <ref>] read back what is configured (history, writes, board);"
@@ -56,6 +57,8 @@ let private usageLines : string list =
         "  only — production schema ships via the SSDT/Octopus pipeline, not direct-"
         "  connect). --auto-revert deletes a failed data load's sink-minted rows by"
         "  captured key; without it, --revert-dir <dir> writes the precise revert script."
+        "  --correction <ref> overlays a blessed-correction artifact on a synthetic flow"
+        "  (file:<path>; PII→Faker realization, fidelity + volume overrides)."
         ""
         "CHECK — assert fidelity.  fidelity canary (default; --cdc-silence adds the redeploy"
         "  silence assertion) · drift (deployed vs model) · data (row/null counts) · ready"
@@ -169,6 +172,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
     | PlanAction.SynthesizeAndLoad (model, modelOssys, profile, conn, opts, execute, modelSection) ->
         withRun "projection synth-load" (fun () -> runSyntheticLoad model modelOssys profile conn opts execute modelSection)
     | PlanAction.CaptureProfile (conn, out) -> runCaptureProfile conn out
+    | PlanAction.ProposeCorrection (model, modelOssys, out) -> runProposeCorrection model modelOssys out
     | PlanAction.PublishAndLoad (c, conn, store, env) ->
         let run () = runFullExportLoad c conn None store env
         // The load flow runs the same publish pipeline, so it streams the same
@@ -322,8 +326,9 @@ let private flowSourceText (s: FlowSource) : string =
     match s with
     | FlowSource.Env e           -> e
     | FlowSource.Model           -> "model"
-    | FlowSource.Synthetic None  -> "synthetic"
-    | FlowSource.Synthetic (Some p) -> sprintf "synthetic(%s)" p
+    | FlowSource.Synthetic (None, _)   -> "synthetic"
+    | FlowSource.Synthetic (Some p, Some c) -> sprintf "synthetic(%s + %s)" p c
+    | FlowSource.Synthetic (Some p, None)   -> sprintf "synthetic(%s)" p
     | FlowSource.NoData          -> "none"
 
 /// `projection` with no args lists the flows as `name: from → to (spec)` —

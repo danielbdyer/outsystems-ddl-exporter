@@ -136,7 +136,7 @@ type SyntheticCanaryTests(fixture: EphemeralContainerFixture) =
                                         let! loadReport =
                                             Transfer.runSynthetic
                                                 Transfer.Execute EmissionMode.Incremental true
-                                                sink catalogA profileP SyntheticConfig.defaultConfig 7UL
+                                                sink catalogA profileP SyntheticConfig.defaultConfig 7UL id
                                         match loadReport with
                                         | Error es -> Assert.True(false, sprintf "synthetic load failed: %A" es)
                                         | Ok _ ->

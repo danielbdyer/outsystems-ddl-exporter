@@ -1,11 +1,12 @@
 # THE_SYNTHETIC_DATA_FUZZING.md — high-fidelity, coverage-correcting, anonymizing synthesis governed by a blessed correction artifact
 
-> **Status: DESIGN + IN BUILD (2026-06-16, operator co-design).** Seven slices built this session (PR #625):
+> **Status: DESIGN + IN BUILD (2026-06-16, operator co-design).** Seven slices built one session (PR #625):
 > **F0a** (correction Core substrate), **F0b** (durable codec), **F1** (arbitrary-scale volume), **F0c-propose**
 > (heuristic PII proposer), **F5a** (FK-selectivity skew), **F5b** (joint-distribution correlation), and **F2**
-> (Faker boundary realization). See §7 for per-slice status + commits. **Remaining (designed, not built):
-> F0c-I/O** (the operator surface — durable write + `synth-correct` verb + flow wiring that ties F2 + the blessed
-> artifact into the load), **F3** (coverage), **F4** (boundary rotation), **F6** (distribution fitting). This is
+> (Faker boundary realization). Then **F0c-I/O** (the operator surface — durable write + `synth-correct` verb +
+> `correction: file:<path>` flow wiring that ties F2 + the blessed artifact into the load end-to-end). See §7 for
+> per-slice status + commits. **Remaining (designed, not built):** **F3** (coverage), **F4** (boundary rotation),
+> **F6** (distribution fitting). This is
 > the design surface for the *advanced* synthetic-data program the operator named: *"production-alike data at
 > arbitrary sizes from
 > advanced at-scale inferences, professional distribution-analysis quality, round-robin rotation in
@@ -299,7 +300,7 @@ faithfulness-ladder witness.
 |---|---|---|---|---|
 | **F0a** | **Correction Core substrate** | hinge | the `PiiKind` / `CorrectionEntry` closed DUs + smart-constructed `Correction` (conflict refusal) + the pure `Profile ⊕ Correction` fold onto `SyntheticConfig` (`SyntheticCorrection.fs`) | ✅ **landed** 2026-06-16 (`9e67158f`) |
 | **F0b** | **Durable CorrectionCodec** | hinge | total / deterministic / re-validating `Correction ↔ JSON` (`CorrectionCodec.fs`); round-trip law + A39 decode refusal | ✅ **landed** 2026-06-16 (`d530badd`) |
-| **F0c** | **Operator surface** | CLI / flow | `correction: file:<path>` flow wiring + the `synth-correct` propose verb (the A44 control-plane cascade) | ⬜ remaining |
+| **F0c** | **Operator surface** | CLI / flow | `correction: file:<path>` flow wiring (A44 cascade: `FlowSource.Synthetic` gains `correction`; `MovementSpec`/`FlowRunOpts`/`LoadOpts` gain `Correction`; `--correction` override) threading `Profile ⊕ Correction` into σ AND `FakerRealization.realizePii` between σ and the load; the `synth-correct --out` propose verb (`CorrectionProposeRun` → codec → file); durable write | ✅ **landed** 2026-06-16 (F0c-I/O) |
 | **F1** | **Explicit PII typing + per-kind volume** | σ + config | `Pii` correction ⇒ Synthesize (F0a fold); `Volume` correction + `VolumeTarget` (Absolute/Multiplier) consumed by `rowCountFor` — arbitrary scale | ✅ **landed** 2026-06-16 (`147421de`) |
 | **F2** | **Faker assimilation (boundary)** | boundary | `FakerRealization.realizePii` — seeded-deterministic Bogus realization over PII-typed columns (one coherent fake person per row → referential consistency); Bogus stays OUTSIDE Core | ✅ **landed** 2026-06-16 (Bogus dep) — wiring into the synthetic-load runner pends F0c-I/O |
 | **F3** | **Coverage corrections** | σ | `CoverageFloor` (exhaustive permutation / variety injection / distinct-floor) + the **L2-cov** canary | ⬜ (an operator coverage need) |
@@ -315,13 +316,17 @@ the Faker boundary realization (coherent fake person per row). The operator can 
 artifact (programmatically / by file), have a first draft proposed, drive PII typing + arbitrary scale +
 skewed/correlated FK fan-out through σ, and realize PII columns to production-alike fakes.
 
+**Landed (F0c-I/O, 2026-06-16):** the operator surface ties the whole loop together end-to-end. Durable write
+(`CorrectionCodec.serialize` → file) + the `synth-correct --out <path>` propose verb (`CorrectionProposeRun`
+resolves the model's catalog → `CorrectionProposer.propose` → codec → file) + `correction: file:<path>` flow
+wiring: the A44 cascade threads the blessed `Correction` through `FlowSource.Synthetic` (+ `--correction` per-run
+override) → `MovementSpec`/`FlowRunOpts`/`LoadOpts.Correction` → `SyntheticLoadRun.run`, which resolves+decodes the
+artifact, folds `Profile ⊕ Correction` onto the config (`applyToConfig`), AND injects `FakerRealization.realizePii`
+as a pure `rows → rows` transform between σ and the load. Empty/absent correction ⇒ identity ⇒ byte-identical (the
+π∘σ≈id canary stayed green). Witnessed by `MovementSurfaceTests` (the A44 expressible⇔reachable proof) +
+`MovementIsomorphismTests` (the `correction` field's parse∘render round-trip).
+
 **Remaining (designed, not built) — the honest frontier:**
-- **F0c-I/O** — the operator surface: durable write (`CorrectionCodec.serialize` → file), the `synth-correct`
-  propose verb (`CorrectionProposer` → codec → file), and `correction: file:<path>` flow wiring that threads the
-  blessed `Correction` into the synthetic-load runner (the A44 cascade through `FlowSource`/`FlowRunOpts`/
-  `MovementSpec`/`LoadOpts` + ~16 literal sites) AND calls `FakerRealization.realizePii` between σ and the load.
-  **This is what makes the whole loop operator-usable end-to-end** — until it lands, F2's realization and the
-  blessed artifact are reachable only programmatically (and in tests).
 - **F3** — coverage corrections (`CoverageFloor`: exhaustive permutation / variety injection / distinct-floor)
   + the L2-cov canary — the "ensure all important values are included" quality gate.
 - **F4** — boundary anonymizing rotation (needs a named threat model; §4).

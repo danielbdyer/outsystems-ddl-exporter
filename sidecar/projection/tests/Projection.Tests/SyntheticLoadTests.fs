@@ -135,6 +135,7 @@ type SyntheticLoadTests(fixture: EphemeralContainerFixture) =
                             SyntheticLoadFixtures.profile
                             SyntheticConfig.defaultConfig
                             42UL
+                            id
                     match report with
                     | Error es -> Assert.True(false, sprintf "runSynthetic failed: %A" es)
                     | Ok _ ->
@@ -164,6 +165,7 @@ type SyntheticLoadTests(fixture: EphemeralContainerFixture) =
                             SyntheticLoadFixtures.profile
                             SyntheticConfig.defaultConfig
                             42UL
+                            id
                     match report with
                     | Error es -> Assert.True(false, sprintf "runSynthetic dry-run failed: %A" es)
                     | Ok r ->
