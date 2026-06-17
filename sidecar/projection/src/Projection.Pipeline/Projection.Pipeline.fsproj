@@ -61,6 +61,7 @@
     <Compile Include="ReportRun.fs" />
     <Compile Include="TransferSpec.fs" />
     <Compile Include="ModelResolution.fs" />
+    <Compile Include="FakerRealization.fs" />
     <Compile Include="SyntheticLoadRun.fs" />
     <Compile Include="ProfileCaptureRun.fs" />
     <Compile Include="MovementSpec.fs" />
@@ -74,6 +75,10 @@
   <ItemGroup>
     <PackageReference Include="Testcontainers.MsSql" Version="3.10.0" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
+    <!-- F2 (THE_SYNTHETIC_DATA_FUZZING §5) — the Faker boundary realization.
+         Bogus is RNG-based, so it lives OUTSIDE Core (T1); FakerRealization seeds
+         it deterministically per row identity, so the realization is reproducible. -->
+    <PackageReference Include="Bogus" Version="35.6.1" />
   </ItemGroup>
 
   <ItemGroup>

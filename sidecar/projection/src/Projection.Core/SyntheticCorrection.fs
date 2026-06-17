@@ -96,10 +96,7 @@ module Correction =
             Result.failureOf
                 (ValidationError.create
                     "synthetic.correction.conflict"
-                    (String.concat "" [
-                        "conflicting "; axis; " corrections for column "; SsKey.serialize col
-                        " — a column carries at most one correction per axis "
-                        "(a blessed artifact's intent must be unambiguous)" ]))
+                    (sprintf "conflicting %s corrections for column %s — a column carries at most one correction per axis (a blessed artifact's intent must be unambiguous)" axis (SsKey.serialize col)))  // LINT-ALLOW: terminal operator-facing diagnostic text at the ValidationError message boundary; no structured / SQL / typed-AST artifact applies to a free-text refusal reason
 
     /// The entries, in construction order (a stable projection for codecs /
     /// diagnostics; the SEMANTICS are order-independent — see `applyToConfig`).

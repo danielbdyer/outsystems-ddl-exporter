@@ -1,11 +1,13 @@
 # THE_SYNTHETIC_DATA_FUZZING.md — high-fidelity, coverage-correcting, anonymizing synthesis governed by a blessed correction artifact
 
-> **Status: DESIGN + IN BUILD (2026-06-16, operator co-design).** The spine is built — **F0a** (the
-> blessed-correction Core substrate), **F0b** (the durable codec, round-trip law green), and **F1** (per-kind
-> arbitrary-scale volume) landed this session (see §7 for the per-slice status + commits). The remaining
-> slices (F0c operator surface, F2 Faker, F3 coverage, F4 boundary rotation, F5 evidence-wiring, F6 fitting)
-> are designed, not built. This is the design surface for the *advanced* synthetic-data program the operator
-> named: *"production-alike data at arbitrary sizes from
+> **Status: DESIGN + IN BUILD (2026-06-16, operator co-design).** Seven slices built this session (PR #625):
+> **F0a** (correction Core substrate), **F0b** (durable codec), **F1** (arbitrary-scale volume), **F0c-propose**
+> (heuristic PII proposer), **F5a** (FK-selectivity skew), **F5b** (joint-distribution correlation), and **F2**
+> (Faker boundary realization). See §7 for per-slice status + commits. **Remaining (designed, not built):
+> F0c-I/O** (the operator surface — durable write + `synth-correct` verb + flow wiring that ties F2 + the blessed
+> artifact into the load), **F3** (coverage), **F4** (boundary rotation), **F6** (distribution fitting). This is
+> the design surface for the *advanced* synthetic-data program the operator named: *"production-alike data at
+> arbitrary sizes from
 > advanced at-scale inferences, professional distribution-analysis quality, round-robin rotation in
 > anonymizing ways, PII selection/fine-tuning + Faker assimilation for PII elements… extremely high
 > quality synthetic data (as much quality as can be naturally derived from the quality of the source)
@@ -299,24 +301,32 @@ faithfulness-ladder witness.
 | **F0b** | **Durable CorrectionCodec** | hinge | total / deterministic / re-validating `Correction ↔ JSON` (`CorrectionCodec.fs`); round-trip law + A39 decode refusal | ✅ **landed** 2026-06-16 (`d530badd`) |
 | **F0c** | **Operator surface** | CLI / flow | `correction: file:<path>` flow wiring + the `synth-correct` propose verb (the A44 control-plane cascade) | ⬜ remaining |
 | **F1** | **Explicit PII typing + per-kind volume** | σ + config | `Pii` correction ⇒ Synthesize (F0a fold); `Volume` correction + `VolumeTarget` (Absolute/Multiplier) consumed by `rowCountFor` — arbitrary scale | ✅ **landed** 2026-06-16 (`147421de`) |
-| **F2** | **Faker assimilation (boundary)** | boundary | seeded-deterministic Bogus realization over PII-typed columns; `FakerFieldSet` referential consistency | ⬜ (F1 PII typing exists) |
+| **F2** | **Faker assimilation (boundary)** | boundary | `FakerRealization.realizePii` — seeded-deterministic Bogus realization over PII-typed columns (one coherent fake person per row → referential consistency); Bogus stays OUTSIDE Core | ✅ **landed** 2026-06-16 (Bogus dep) — wiring into the synthetic-load runner pends F0c-I/O |
 | **F3** | **Coverage corrections** | σ | `CoverageFloor` (exhaustive permutation / variety injection / distinct-floor) + the **L2-cov** canary | ⬜ (an operator coverage need) |
 | **F4** | **Anonymizing rotation** | **boundary** | corpus-row permutation (linkage-breaking) over real rows — **NOT** a Core `ValueFidelityMode` (§4 revision: `Preserve` is already linkage-free in marginal-only σ) | ⬜ (a named threat model) |
 | **F5a** | **Wire σ to `ForeignKeySelectivity`** | σ | rank-mapped skewed FK fan-out (was uniform) | ✅ **landed** 2026-06-16 (`3f552f45`) |
 | **F5b** | **Wire σ to `JointDistribution`** | σ | correlated FK-tuple synthesis (L3) — per-position rank-mapped, co-occurrence preserved on synthetic keys | ✅ **landed** 2026-06-16 |
 | **F6** | **Distribution enrichment** | π + σ | `ShapeHint` evidence axis (histograms / fitted families / multimodality) at π + richer `sampleNumeric` | ⬜ (the "professional fitting" lift; largest) |
 
-**Landed this session:** F0a + F0b + F1 + F0c-propose + F5a + F5b — the blessed-correction spine (carrier +
-smart ctor + fold), its durable codec (round-trip law), the heuristic PII proposer, per-kind arbitrary-scale
-volume, and σ wired to BOTH captured FK-fidelity axes (selectivity skew + joint correlation). The operator can
-author + bless a correction artifact (programmatically / by file), have a first draft proposed, and drive PII
-typing + arbitrary scale + skewed/correlated FK fan-out through σ.
+**Landed (2026-06-16, PR #625):** F0a + F0b + F1 + F0c-propose + F5a + F5b + **F2** — the blessed-correction
+spine (carrier + smart ctor + fold), its durable codec (round-trip law), the heuristic PII proposer, per-kind
+arbitrary-scale volume, σ wired to BOTH captured FK-fidelity axes (selectivity skew + joint correlation), and
+the Faker boundary realization (coherent fake person per row). The operator can author + bless a correction
+artifact (programmatically / by file), have a first draft proposed, drive PII typing + arbitrary scale +
+skewed/correlated FK fan-out through σ, and realize PII columns to production-alike fakes.
 
-**Recommended next:** **F2** (Faker, needs a Bogus NuGet dep) is the highest-visibility production-alike PII
-win; **F0c-I/O** (durable write + `synth-correct` verb + `correction: file:` flow wiring — the A44 cascade) is
-the operator-surface that makes the blessed loop end-to-end; **F3** (coverage corrections + L2-cov canary) is
-the "ensure all values included" quality gate. **F6** (professional distribution fitting) is last — largest,
-π + σ.
+**Remaining (designed, not built) — the honest frontier:**
+- **F0c-I/O** — the operator surface: durable write (`CorrectionCodec.serialize` → file), the `synth-correct`
+  propose verb (`CorrectionProposer` → codec → file), and `correction: file:<path>` flow wiring that threads the
+  blessed `Correction` into the synthetic-load runner (the A44 cascade through `FlowSource`/`FlowRunOpts`/
+  `MovementSpec`/`LoadOpts` + ~16 literal sites) AND calls `FakerRealization.realizePii` between σ and the load.
+  **This is what makes the whole loop operator-usable end-to-end** — until it lands, F2's realization and the
+  blessed artifact are reachable only programmatically (and in tests).
+- **F3** — coverage corrections (`CoverageFloor`: exhaustive permutation / variety injection / distinct-floor)
+  + the L2-cov canary — the "ensure all important values are included" quality gate.
+- **F4** — boundary anonymizing rotation (needs a named threat model; §4).
+- **F6** — professional distribution fitting (a `ShapeHint` evidence axis at π — histograms / fitted families /
+  multimodality — + richer `sampleNumeric` at σ). Largest; π + σ.
 
 ---
 
