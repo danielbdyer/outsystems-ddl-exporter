@@ -1,3 +1,33 @@
+# Handoff addendum — 2026-06-16 (latest), THE ADVANCED SYNTHETIC-DATA PROGRAM is under way — follow-on D shipped, then the operator named a high-fidelity "fuzzing" program and SEVEN slices landed (F0a/F0b/F1/F0c-propose/F5a/F5b/F2, all gated, PR #625). The next move is F0c-I/O — the operator surface that ties the blessed loop together end-to-end
+
+To the next agent.
+
+**Read `THE_SYNTHETIC_DATA_FUZZING.md` first** (the §7 slice table is the live status). This session did two things: shipped **follow-on D** (the streaming reverse-leg compensating-undo — see the letter below; the migrate envelope is now complete), then the operator pivoted to **"what remains"**, where the headline finding was that **the σ synthetic-data emitter is already BUILT** (`THE_SYNTHETIC_DATA_DESIGN.md`, 2026-06-08) — the Faker deferral row + `HOLDOUT_INVENTORY` #10 are STALE. From that we co-designed an advanced program and built seven slices.
+
+**The spine you're standing on.** Synthesis is now `σ : Profile × Correction ⟶ Data` such that `π∘σ ≈ id MODULO the blessed Correction` — the engine's own core-adjunction shape ("identity, modulo named, closed erasures") applied to the synthesis section. Two planes, kept apart: **π / boundary** (heavy inference + Faker — may use float/RNG) and **pure-Core σ** (T1: no float/RNG/clock; Faker is seeded from σ's deterministic tokens at the boundary so determinism survives). The **blessed correction artifact** is the durable, operator-blessed override/intent hinge (the synthesis sibling of the RefactorLog + the Tolerance registry).
+
+**What landed (PR #625; each independently gated — Debug+Release 0/0, pure pool 0-failed, Docker `π∘σ≈id` canary green throughout):**
+- **F0a** `Correction` Core carrier + smart-ctor conflict refusal + `Profile ⊕ Correction` fold (`SyntheticCorrection.fs`).
+- **F0b** durable `CorrectionCodec` (round-trip law, A39 decode-refusal) — the artifact persists.
+- **F1** per-kind `VolumeTarget` (Absolute/Multiplier) — arbitrary scale, decoupled from the corpus.
+- **F0c-propose** pure heuristic `CorrectionProposer` — first-draft PII typing.
+- **F5a** σ ← captured `ForeignKeySelectivity` (rank-mapped FK skew).
+- **F5b** σ ← captured `JointDistribution` (correlated FK-tuple synthesis, L3).
+- **F2** `FakerRealization.realizePii` (Bogus, on Pipeline) — coherent fake person per row, seeded from row identity (referential consistency + determinism); Bogus stays OUTSIDE Core.
+
+**Your next move: F0c-I/O — the operator surface.** Everything above is reachable only programmatically / in tests. F0c-I/O makes the blessed loop real end-to-end: (1) durable WRITE (`CorrectionCodec.serialize` → file); (2) the `synth-correct <profile> --out` propose verb (`CorrectionProposer` → codec → file); (3) `correction: file:<path>` flow wiring threading the blessed `Correction` through the synthetic flow AND calling `FakerRealization.realizePii` between σ and the load. It is the **A44 compiler-guided cascade** — adding a field to `FlowSource`/`FlowRunOpts`/`MovementSpec`/`LoadOpts` ripples through the parse∘render isomorphism + ~16 literal sites; the build is your guide. Witness via `MovementSurfaceTests` (the A44 expressible⇔reachable proof). After F0c-I/O: **F3** (coverage corrections + L2-cov canary — the operator's "ensure all important values are included" ask), **F6** (distribution fitting — a `ShapeHint` π axis + richer `sampleNumeric`; the largest), **F4** (boundary rotation — needs a named threat model).
+
+**Scars that bit this session (heed them):**
+- **`dotnet` is NOT on PATH** (bash or PowerShell). Bash: `export PATH="$PATH:/c/Users/danny/AppData/Local/Microsoft/dotnet"`. PowerShell: call `C:\Users\danny\AppData\Local\Microsoft\dotnet\dotnet.exe` by full path. Build/test from the worktree root (`...\sidecar\projection`) — the `cwd` drifts; use absolute project paths in PowerShell.
+- **`lint-discipline.sh --ci` reports a long-standing ~209-site whole-tree baseline** (Run.fs/ReportRun.fs/EventProjection.fs etc. — pre-existing, none from this work). It is NOT the operative gate (that's the pre-commit scoped scan, which isn't installed in this worktree — run `scripts/install-hooks.sh` if you want it). Do **not** chase the baseline; just ensure your NEW files carry markers. **Core has a `core-sprintf` rule** (Targets don't) — a dynamic `ValidationError` message in Core needs a per-line `LINT-ALLOW: <substantive, ≥30-char, "terminal"/"boundary"-token>` (sprintf AND String.concat are both banned in Core). And **`lint | tail; echo $?` captures tail's exit, not lint's** — verify lint via a direct exit capture.
+- **Bogus determinism**: `Bogus.Person`'s ctor takes a locale string (not a Randomizer). Seed via the global `Bogus.Randomizer.Seed <- System.Random(seed)` immediately before `Bogus.Faker()`, per row (single-threaded realization → deterministic). `f.Person` is one cached coherent individual.
+- **Every σ change must keep the Docker `π∘σ≈id` canary green** — it asserts counts / zero-orphans / categorical-sets (NOT fan-out skew or FK values), and each σ addition (F1/F5a/F5b) is byte-identical when its evidence is absent. Run `scripts/test.sh focus 'Synthetic'` (warm container) after any σ touch.
+- **F# backtick test names cannot contain `@`** (FS1104 — "email has @" → "email has an at-sign").
+
+**State.** Branch `claude/thirsty-fermat-0612fd` → PR #625 (D + the 7 synthetic slices). Latest commit `fa15126a` (F2). Debug+Release 0/0; pure pool 3418 passed / 0 failed / 210 standing skips; Docker Synthetic* 55/55 incl. the canary + the new Faker tests. F2's realization is built but **not yet wired into the load** (F0c-I/O). Hold the spine: name every refusal, count every crossing, leave the books balanced — and don't chase the lint baseline.
+
+---
+
 # Handoff addendum — 2026-06-16 (later still), FOLLOW-ON D LANDED — the streaming reverse-leg's compensating-undo (M23's arm on `writePlanStreaming`, the estate-scale path) is built WITH its gate canary; the migrate "we can't go wrong" envelope (M21/M22/M23/M24 + D) is now COMPLETE. The frontier from here is the named moat only — do not build it without a fired trigger
 
 To the next agent.
