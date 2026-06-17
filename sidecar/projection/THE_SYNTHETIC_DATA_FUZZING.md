@@ -1,7 +1,11 @@
 # THE_SYNTHETIC_DATA_FUZZING.md — high-fidelity, coverage-correcting, anonymizing synthesis governed by a blessed correction artifact
 
-> **Status: DESIGN (2026-06-16, operator co-design).** Not built. This is the design surface for the
-> *advanced* synthetic-data program the operator named: *"production-alike data at arbitrary sizes from
+> **Status: DESIGN + IN BUILD (2026-06-16, operator co-design).** The spine is built — **F0a** (the
+> blessed-correction Core substrate), **F0b** (the durable codec, round-trip law green), and **F1** (per-kind
+> arbitrary-scale volume) landed this session (see §7 for the per-slice status + commits). The remaining
+> slices (F0c operator surface, F2 Faker, F3 coverage, F4 boundary rotation, F5 evidence-wiring, F6 fitting)
+> are designed, not built. This is the design surface for the *advanced* synthetic-data program the operator
+> named: *"production-alike data at arbitrary sizes from
 > advanced at-scale inferences, professional distribution-analysis quality, round-robin rotation in
 > anonymizing ways, PII selection/fine-tuning + Faker assimilation for PII elements… extremely high
 > quality synthetic data (as much quality as can be naturally derived from the quality of the source)
@@ -183,26 +187,37 @@ property-test asserting the floor is met *and* that uncorrected columns still sa
 
 ---
 
-## 4. Anonymizing rotation — the third fidelity mode
+## 4. Anonymizing rotation — a BOUNDARY operation, not a Core-σ mode (corrected 2026-06-16)
 
-v1 has two value-fidelity modes (`ValueFidelityMode`, `SyntheticData.fs` :52): `Preserve` (emit real
-low-card reference values) and `Synthesize` (fresh tokens, never a real value). This program adds a third,
-pure-Core mode:
+> **Correctness revision.** An earlier draft made anonymizing rotation a third `ValueFidelityMode` in
+> pure-Core σ. That is a category error, and the reason is illuminating: **Core σ is marginal-only — it
+> never sees a real source row.** It rebuilds each row *independently* from the captured `Profile`
+> marginals, so the existing `Preserve` mode *already* emits real values with **no row-linkage to the
+> source** (a synthesized row's combination of values is assembled from independent per-column draws, not
+> copied from any real row). There is nothing in Core for a `Rotate` mode to anonymize that `Preserve`
+> hasn't already broken.
 
-- **`Rotate` — anonymizing permutation.** Emit *real* values but *permute their row-assignment* (a
-  deterministic shuffle, splitmix64-seeded) so the **column marginal is exact** while **row-linkage is
-  broken** — the value is real, but it no longer belongs to its original row. This is the "round-robin
-  rotation in anonymizing ways" the operator named: maximal marginal fidelity with linkage anonymization.
+**Where rotation genuinely lives: the boundary.** "Round-robin rotation in anonymizing ways" — *permute
+the real corpus rows so each emitted row keeps a real, internally-coherent value-combination but no longer
+belongs to its original subject* — operates over the **actual corpus rows**, which exist only on the
+π/boundary plane (the same plane as Faker, §5). So rotation is a **boundary realization** over real rows
+(a deterministic, seeded permutation that breaks the subject↔row linkage), governed by a blessed correction
+entry (e.g. a `Rotate` / `Anonymize` `FakerFieldSet` sibling), **not** a Core `ValueFidelityMode`. Its
+witness is a **linkage-breaking property** at the boundary: no emitted row reproduces a real subject's full
+quasi-identifier tuple, while each column's marginal is exact (rotation is a permutation).
 
-The privacy model gains a **linkage-breaking property test**: after `Rotate`, no synthetic row reproduces a
-real row's *combination* of rotated values (within the field-set), while each rotated column's marginal
-matches the source within ε. Stronger anonymization variants (k-anonymity over a quasi-identifier set;
-differential-privacy noise on numeric columns) are named here as **future `CoverageRule`/privacy variants,
-deferred until the operator names the threat model** — IR grows under evidence.
+This is the same discipline as Faker assimilation: **the heavy, corpus-touching work stays at the boundary;
+Core σ stays a pure marginal replay.** Core's contribution to anonymization is `Synthesize` (fresh tokens)
+and `Preserve` (real values, already linkage-free by independent synthesis); the corpus-rotation channel is
+boundary-only.
+
+Stronger anonymization variants (k-anonymity over a quasi-identifier set; differential-privacy noise on
+numeric columns) are named as **future boundary/evidence variants, deferred until the operator names the
+threat model** — IR grows under evidence.
 
 > **Open adjustment to confirm with the operator (privacy posture).** Whether the privacy bar is
-> linkage-breaking-rotation only, or extends to k-anonymity / DP-noise. The doc reserves the slots; the
-> threat model decides which fire.
+> linkage-breaking corpus-rotation only, or extends to k-anonymity / DP-noise. The doc reserves the slots;
+> the threat model decides which fire.
 
 ---
 
@@ -278,25 +293,27 @@ Sequenced so the **blessed-correction substrate lands first** (it is the spine e
 then the operator-priority quality work. Each slice is independently shippable, green, and carries its
 faithfulness-ladder witness.
 
-| # | Slice | Plane | Ships | Trigger / gate |
+| # | Slice | Plane | Ships | Status |
 |---|---|---|---|---|
-| **F0** | **Correction artifact substrate** | hinge | the typed `Correction` DU + smart ctors + durable codec (round-trip law) + `Profile ⊕ Correction` pure fold + `correction: file:<path>` flow wiring + `synth-correct` propose verb | the spine; the operator blesses the first artifact |
-| **F1** | **Explicit PII typing + volume targeting** | σ + config | `PiiClass` + `VolumeTarget` corrections consumed by σ; absolute-N / total-size volume | F0 |
-| **F2** | **Faker assimilation (boundary)** | boundary | seeded-deterministic Bogus realization over PII-typed columns; `FakerFieldSet` referential consistency | F1 (PII typing exists) |
-| **F3** | **Coverage corrections** | σ | `CoverageFloor` (exhaustive permutation / variety injection / distinct-floor) + the **L2-cov** canary | F0; an operator coverage need |
-| **F4** | **Anonymizing rotation** | σ | the `Rotate` `ValueFidelityMode` + the linkage-breaking privacy property | F0 |
-| **F5** | **Wire σ to captured evidence** | σ | consume `ForeignKeySelectivity` (skew) + `JointDistribution` (L3 correlation) | already-captured evidence (§6.3) |
-| **F6** | **Distribution enrichment** | π + σ | `ShapeHint` evidence axis (histograms / fitted families / multimodality) at π + richer `sampleNumeric` | the "professional fitting" need; largest |
+| **F0a** | **Correction Core substrate** | hinge | the `PiiKind` / `CorrectionEntry` closed DUs + smart-constructed `Correction` (conflict refusal) + the pure `Profile ⊕ Correction` fold onto `SyntheticConfig` (`SyntheticCorrection.fs`) | ✅ **landed** 2026-06-16 (`9e67158f`) |
+| **F0b** | **Durable CorrectionCodec** | hinge | total / deterministic / re-validating `Correction ↔ JSON` (`CorrectionCodec.fs`); round-trip law + A39 decode refusal | ✅ **landed** 2026-06-16 (`d530badd`) |
+| **F0c** | **Operator surface** | CLI / flow | `correction: file:<path>` flow wiring + the `synth-correct` propose verb (the A44 control-plane cascade) | ⬜ remaining |
+| **F1** | **Explicit PII typing + per-kind volume** | σ + config | `Pii` correction ⇒ Synthesize (F0a fold); `Volume` correction + `VolumeTarget` (Absolute/Multiplier) consumed by `rowCountFor` — arbitrary scale | ✅ **landed** 2026-06-16 (`147421de`) |
+| **F2** | **Faker assimilation (boundary)** | boundary | seeded-deterministic Bogus realization over PII-typed columns; `FakerFieldSet` referential consistency | ⬜ (F1 PII typing exists) |
+| **F3** | **Coverage corrections** | σ | `CoverageFloor` (exhaustive permutation / variety injection / distinct-floor) + the **L2-cov** canary | ⬜ (an operator coverage need) |
+| **F4** | **Anonymizing rotation** | **boundary** | corpus-row permutation (linkage-breaking) over real rows — **NOT** a Core `ValueFidelityMode` (§4 revision: `Preserve` is already linkage-free in marginal-only σ) | ⬜ (a named threat model) |
+| **F5** | **Wire σ to captured evidence** | σ | consume `ForeignKeySelectivity` (skew) + `JointDistribution` (L3 correlation) — evidence already captured | ⬜ (cheap; §6.3) |
+| **F6** | **Distribution enrichment** | π + σ | `ShapeHint` evidence axis (histograms / fitted families / multimodality) at π + richer `sampleNumeric` | ⬜ (the "professional fitting" lift; largest) |
 
-**Recommended first build:** **F0** (the correction-artifact substrate). It is the spine the operator's
-whole vision hangs on, it is the smallest coherent unit, and nothing downstream is well-shaped without it.
-F1 follows immediately (the first visible operator win: explicit PII typing + arbitrary scale).
+**Landed this session:** F0a + F0b + F1 — the blessed-correction spine (carrier + smart ctor + fold), its
+durable codec (round-trip law), and per-kind arbitrary-scale volume. The operator can author + bless a
+correction artifact (programmatically / by file) and drive PII typing + arbitrary scale through the existing σ.
 
-> **Note on the operator's "inference is the core" instinct.** F6 (professional fitting) is sequenced last
-> not because it is least important but because it is largest and depends on the substrate (F0) and the
-> evidence-wiring pattern (F5). If the operator wants the *fitting quality* proven earliest, F5 (wire σ to
-> the joint + selectivity evidence π already captures) is the cheapest way to demonstrate richer fidelity
-> before the heavier F6 — surface this when sequencing.
+**Recommended next:** **F5** (wire σ to the `ForeignKeySelectivity` + `JointDistribution` evidence π already
+captures) is the cheapest fidelity lift and demonstrates richer quality before the heavier F6; **F2** (Faker)
+is the highest-visibility production-alike PII win; **F0c** (flow wiring + `synth-correct` verb) is the
+operator-surface that makes the blessed loop end-to-end. F6 (professional fitting) is last — largest, and
+depends on F5's evidence-wiring pattern.
 
 ---
 
