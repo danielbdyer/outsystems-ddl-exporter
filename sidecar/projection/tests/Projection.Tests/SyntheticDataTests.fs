@@ -186,6 +186,45 @@ let ``F5: with no selectivity evidence the FK draw stays uniform (no parent domi
     Assert.True(maxShare < 160, sprintf "expected a roughly uniform spread (<160/300 for the top parent), got %d" maxShare)
 
 [<Fact>]
+let ``F5b: a JointDistribution preserves FK co-occurrence in the synthetic data (correlated, not independent)`` () =
+    // Booking has FKs to two DISTINCT parents (Customer, Region). The joint says
+    // customer-rank-0 ALWAYS co-occurs with region-rank-0 and rank-1 with rank-1
+    // (never crossed). σ must reproduce that pairing on the synthetic keys.
+    let jCustK   = kindKey ["JC"]
+    let jCustIdK = attrKey ["JC"; "Id"]
+    let jRegK    = kindKey ["JR"]
+    let jRegIdK  = attrKey ["JR"; "Id"]
+    let jBkK     = kindKey ["JB"]
+    let jBkIdK   = attrKey ["JB"; "Id"]
+    let jBkCustK = attrKey ["JB"; "CustomerId"]
+    let jBkRegK  = attrKey ["JB"; "RegionId"]
+    let jCustomer = Kind.create jCustK (name "JCustomer") (mkTableId "dbo" "JCUST")   [ attr jCustIdK "Id" Integer true false ]
+    let jRegion   = Kind.create jRegK  (name "JRegion")   (mkTableId "dbo" "JREGION") [ attr jRegIdK  "Id" Integer true false ]
+    let jBooking =
+        { Kind.create jBkK (name "JBooking") (mkTableId "dbo" "JBOOK")
+            [ attr jBkIdK   "Id"         Integer true  false
+              attr jBkCustK "CustomerId" Integer false false
+              attr jBkRegK  "RegionId"   Integer false false ] with
+            References =
+                [ Reference.create (refKey ["JB"; "Customer"]) (name "Customer") jBkCustK jCustK
+                  Reference.create (refKey ["JB"; "Region"])   (name "Region")   jBkRegK  jRegK ] }
+    let jCat = Catalog.create [ mkModule (modKey "JM") (name "JM") [ jCustomer; jRegion; jBooking ] ] [] |> mkOk
+    let jProf =
+        { Profile.empty with
+            Columns = [ col jCustIdK 2L 0L; col jRegIdK 2L 0L; col jBkIdK 200L 0L ]
+            JointDistributions =
+                [ JointDistribution.create jBkK [ jBkCustK; jBkRegK ]
+                    [ ("i:500|i:700", 100L); ("i:501|i:701", 100L) ] 2L false (probe 200L) |> mkOk ] }
+    let m = SyntheticData.generate jCat jProf cfg 7UL
+    let pairs =
+        m.[jBkK] |> List.map (fun r -> Map.tryFind (name "CustomerId") r.Values, Map.tryFind (name "RegionId") r.Values)
+    // Every booking pairs equal-rank parents (both "1" or both "2") — never crossed.
+    Assert.All(pairs, fun (c, rg) -> Assert.Equal(c, rg))
+    // Both correlated combinations actually appear (the draw isn't degenerate).
+    Assert.Contains(pairs, fun p -> p = (Some "1", Some "1"))
+    Assert.Contains(pairs, fun p -> p = (Some "2", Some "2"))
+
+[<Fact>]
 let ``PK uniqueness holds across the generated population`` () =
     let m = SyntheticData.generate catalog profile cfg 3UL
     let custIds = valuesOf m custKey "Id"

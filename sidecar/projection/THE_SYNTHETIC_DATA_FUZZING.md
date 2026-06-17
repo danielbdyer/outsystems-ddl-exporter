@@ -302,18 +302,21 @@ faithfulness-ladder witness.
 | **F2** | **Faker assimilation (boundary)** | boundary | seeded-deterministic Bogus realization over PII-typed columns; `FakerFieldSet` referential consistency | ⬜ (F1 PII typing exists) |
 | **F3** | **Coverage corrections** | σ | `CoverageFloor` (exhaustive permutation / variety injection / distinct-floor) + the **L2-cov** canary | ⬜ (an operator coverage need) |
 | **F4** | **Anonymizing rotation** | **boundary** | corpus-row permutation (linkage-breaking) over real rows — **NOT** a Core `ValueFidelityMode` (§4 revision: `Preserve` is already linkage-free in marginal-only σ) | ⬜ (a named threat model) |
-| **F5** | **Wire σ to captured evidence** | σ | consume `ForeignKeySelectivity` (skew) + `JointDistribution` (L3 correlation) — evidence already captured | ⬜ (cheap; §6.3) |
+| **F5a** | **Wire σ to `ForeignKeySelectivity`** | σ | rank-mapped skewed FK fan-out (was uniform) | ✅ **landed** 2026-06-16 (`3f552f45`) |
+| **F5b** | **Wire σ to `JointDistribution`** | σ | correlated FK-tuple synthesis (L3) — per-position rank-mapped, co-occurrence preserved on synthetic keys | ✅ **landed** 2026-06-16 |
 | **F6** | **Distribution enrichment** | π + σ | `ShapeHint` evidence axis (histograms / fitted families / multimodality) at π + richer `sampleNumeric` | ⬜ (the "professional fitting" lift; largest) |
 
-**Landed this session:** F0a + F0b + F1 — the blessed-correction spine (carrier + smart ctor + fold), its
-durable codec (round-trip law), and per-kind arbitrary-scale volume. The operator can author + bless a
-correction artifact (programmatically / by file) and drive PII typing + arbitrary scale through the existing σ.
+**Landed this session:** F0a + F0b + F1 + F0c-propose + F5a + F5b — the blessed-correction spine (carrier +
+smart ctor + fold), its durable codec (round-trip law), the heuristic PII proposer, per-kind arbitrary-scale
+volume, and σ wired to BOTH captured FK-fidelity axes (selectivity skew + joint correlation). The operator can
+author + bless a correction artifact (programmatically / by file), have a first draft proposed, and drive PII
+typing + arbitrary scale + skewed/correlated FK fan-out through σ.
 
-**Recommended next:** **F5** (wire σ to the `ForeignKeySelectivity` + `JointDistribution` evidence π already
-captures) is the cheapest fidelity lift and demonstrates richer quality before the heavier F6; **F2** (Faker)
-is the highest-visibility production-alike PII win; **F0c** (flow wiring + `synth-correct` verb) is the
-operator-surface that makes the blessed loop end-to-end. F6 (professional fitting) is last — largest, and
-depends on F5's evidence-wiring pattern.
+**Recommended next:** **F2** (Faker, needs a Bogus NuGet dep) is the highest-visibility production-alike PII
+win; **F0c-I/O** (durable write + `synth-correct` verb + `correction: file:` flow wiring — the A44 cascade) is
+the operator-surface that makes the blessed loop end-to-end; **F3** (coverage corrections + L2-cov canary) is
+the "ensure all values included" quality gate. **F6** (professional distribution fitting) is last — largest,
+π + σ.
 
 ---
 
