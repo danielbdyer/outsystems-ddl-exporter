@@ -902,7 +902,11 @@ let runReverseLegTransfer
             // (`narrateDropExit`). A non-reconciling run carries an empty
             // reconciliation, so the halt never fires (byte-identical straight load).
             | ReverseLegRealization.Streaming journal ->
-                (Transfer.runStreamingReverseLegThroughConnections mode allowCdc allowDrops journal connections logicalSourceContract physicalSinkContract reconciliation)
+                // D — the streaming arm now carries the same per-environment revert
+                // policy the materialized branch consumes (`revertAuto`/`revertOut`
+                // derived above via `RevertPolicy.toEngine`): a mid-stream crash
+                // reverts (auto) or scripts (script) the partial sink-minted rows.
+                (Transfer.runStreamingReverseLegThroughConnections mode allowCdc allowDrops journal connections logicalSourceContract physicalSinkContract reconciliation revertAuto revertOut)
                     .GetAwaiter().GetResult()
             | ReverseLegRealization.Materialized ->
                 (Transfer.runReverseLegThroughConnectionsWith sinkCapability.IdentityPolicy mode emission resumable allowCdc allowDrops tables connections logicalSourceContract physicalSinkContract reconciliation revertAuto revertOut)

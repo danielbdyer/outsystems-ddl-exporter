@@ -1,3 +1,83 @@
+# Handoff addendum — 2026-06-16 (latest), THE ADVANCED SYNTHETIC-DATA PROGRAM is under way — follow-on D shipped, then the operator named a high-fidelity "fuzzing" program and SEVEN slices landed (F0a/F0b/F1/F0c-propose/F5a/F5b/F2, all gated, PR #625). The next move is F0c-I/O — the operator surface that ties the blessed loop together end-to-end
+
+To the next agent.
+
+**Read `THE_SYNTHETIC_DATA_FUZZING.md` first** (the §7 slice table is the live status). This session did two things: shipped **follow-on D** (the streaming reverse-leg compensating-undo — see the letter below; the migrate envelope is now complete), then the operator pivoted to **"what remains"**, where the headline finding was that **the σ synthetic-data emitter is already BUILT** (`THE_SYNTHETIC_DATA_DESIGN.md`, 2026-06-08) — the Faker deferral row + `HOLDOUT_INVENTORY` #10 are STALE. From that we co-designed an advanced program and built seven slices.
+
+**The spine you're standing on.** Synthesis is now `σ : Profile × Correction ⟶ Data` such that `π∘σ ≈ id MODULO the blessed Correction` — the engine's own core-adjunction shape ("identity, modulo named, closed erasures") applied to the synthesis section. Two planes, kept apart: **π / boundary** (heavy inference + Faker — may use float/RNG) and **pure-Core σ** (T1: no float/RNG/clock; Faker is seeded from σ's deterministic tokens at the boundary so determinism survives). The **blessed correction artifact** is the durable, operator-blessed override/intent hinge (the synthesis sibling of the RefactorLog + the Tolerance registry).
+
+**What landed (PR #625; each independently gated — Debug+Release 0/0, pure pool 0-failed, Docker `π∘σ≈id` canary green throughout):**
+- **F0a** `Correction` Core carrier + smart-ctor conflict refusal + `Profile ⊕ Correction` fold (`SyntheticCorrection.fs`).
+- **F0b** durable `CorrectionCodec` (round-trip law, A39 decode-refusal) — the artifact persists.
+- **F1** per-kind `VolumeTarget` (Absolute/Multiplier) — arbitrary scale, decoupled from the corpus.
+- **F0c-propose** pure heuristic `CorrectionProposer` — first-draft PII typing.
+- **F5a** σ ← captured `ForeignKeySelectivity` (rank-mapped FK skew).
+- **F5b** σ ← captured `JointDistribution` (correlated FK-tuple synthesis, L3).
+- **F2** `FakerRealization.realizePii` (Bogus, on Pipeline) — coherent fake person per row, seeded from row identity (referential consistency + determinism); Bogus stays OUTSIDE Core.
+
+**Your next move: F0c-I/O — the operator surface.** Everything above is reachable only programmatically / in tests. F0c-I/O makes the blessed loop real end-to-end: (1) durable WRITE (`CorrectionCodec.serialize` → file); (2) the `synth-correct <profile> --out` propose verb (`CorrectionProposer` → codec → file); (3) `correction: file:<path>` flow wiring threading the blessed `Correction` through the synthetic flow AND calling `FakerRealization.realizePii` between σ and the load. It is the **A44 compiler-guided cascade** — adding a field to `FlowSource`/`FlowRunOpts`/`MovementSpec`/`LoadOpts` ripples through the parse∘render isomorphism + ~16 literal sites; the build is your guide. Witness via `MovementSurfaceTests` (the A44 expressible⇔reachable proof). After F0c-I/O: **F3** (coverage corrections + L2-cov canary — the operator's "ensure all important values are included" ask), **F6** (distribution fitting — a `ShapeHint` π axis + richer `sampleNumeric`; the largest), **F4** (boundary rotation — needs a named threat model).
+
+**Scars that bit this session (heed them):**
+- **`dotnet` is NOT on PATH** (bash or PowerShell). Bash: `export PATH="$PATH:/c/Users/danny/AppData/Local/Microsoft/dotnet"`. PowerShell: call `C:\Users\danny\AppData\Local\Microsoft\dotnet\dotnet.exe` by full path. Build/test from the worktree root (`...\sidecar\projection`) — the `cwd` drifts; use absolute project paths in PowerShell.
+- **`lint-discipline.sh --ci` reports a long-standing ~209-site whole-tree baseline** (Run.fs/ReportRun.fs/EventProjection.fs etc. — pre-existing, none from this work). It is NOT the operative gate (that's the pre-commit scoped scan, which isn't installed in this worktree — run `scripts/install-hooks.sh` if you want it). Do **not** chase the baseline; just ensure your NEW files carry markers. **Core has a `core-sprintf` rule** (Targets don't) — a dynamic `ValidationError` message in Core needs a per-line `LINT-ALLOW: <substantive, ≥30-char, "terminal"/"boundary"-token>` (sprintf AND String.concat are both banned in Core). And **`lint | tail; echo $?` captures tail's exit, not lint's** — verify lint via a direct exit capture.
+- **Bogus determinism**: `Bogus.Person`'s ctor takes a locale string (not a Randomizer). Seed via the global `Bogus.Randomizer.Seed <- System.Random(seed)` immediately before `Bogus.Faker()`, per row (single-threaded realization → deterministic). `f.Person` is one cached coherent individual.
+- **Every σ change must keep the Docker `π∘σ≈id` canary green** — it asserts counts / zero-orphans / categorical-sets (NOT fan-out skew or FK values), and each σ addition (F1/F5a/F5b) is byte-identical when its evidence is absent. Run `scripts/test.sh focus 'Synthetic'` (warm container) after any σ touch.
+- **F# backtick test names cannot contain `@`** (FS1104 — "email has @" → "email has an at-sign").
+
+**State.** Branch `claude/thirsty-fermat-0612fd` → PR #625 (D + the 7 synthetic slices). Latest commit `fa15126a` (F2). Debug+Release 0/0; pure pool 3418 passed / 0 failed / 210 standing skips; Docker Synthetic* 55/55 incl. the canary + the new Faker tests. F2's realization is built but **not yet wired into the load** (F0c-I/O). Hold the spine: name every refusal, count every crossing, leave the books balanced — and don't chase the lint baseline.
+
+---
+
+# Handoff addendum — 2026-06-16 (later still), FOLLOW-ON D LANDED — the streaming reverse-leg's compensating-undo (M23's arm on `writePlanStreaming`, the estate-scale path) is built WITH its gate canary; the migrate "we can't go wrong" envelope (M21/M22/M23/M24 + D) is now COMPLETE. The frontier from here is the named moat only — do not build it without a fired trigger
+
+To the next agent.
+
+**D is done, and it taught the instruction set a lesson — carry the lesson forward.** `FOLLOWON_STREAMING_REVERT.md`
+told you to hang the compensating-undo off the streaming call site's `Error es` arm, claiming the streaming path
+"returns a `Result.failure`, not a throw." **It throws.** Per the `staged` CE (`RunSpine.fs`): a stage body that THROWS
+→ `RunAborted (_, Some ex)` → `writePlanStreaming` re-raises (its `ExceptionDispatchInfo.Throw`, ~line 1790); one that
+RETURNS `Error e` → `RunStopped e` → the `Result.failure` you see at the call site — and that only ever comes from the
+resume **source-drift** refusal. The canary's own crash (a dropped sink column → `SqlBulkCopy` throws) is an exception,
+so an `Error`-arm-only revert would have compensated NOTHING. Writing the canary first is what surfaced this. The seam
+that shipped: a `try/with` around the `writePlanStreaming` call in `runStreamingReconcilingWithRenames` — a crash
+reverts-then-re-raises; a named `Error es` returns WITHOUT reverting (a drift refusal wrote nothing new this run, so a
+DELETE-by-captured-key would destroy PRIOR-run committed rows — never do that). If you ever revisit the streaming faces,
+**do not "simplify" the revert back onto the `Error` arm.**
+
+**What D is.** `replayJournalToRemap` + `runRevertFromJournal` (new `let private`s beside `buildRevertScript`/`runRevert`
+in `TransferRun.fs`) reconstruct the M23 remap from the off-box `CaptureJournal` (the streaming path's durable
+sink-minted-key ledger) and run the SAME `buildRevertScript` + `runRevert` the materialized arm runs. `autoRevert`/`revertDir`
+thread through `runStreamingReconcilingWithRenames` + `runStreamingReverseLegThroughConnections` (the straight-load
+`runStreamingWithRenames` passes inert `false None`); the RunFaces `Streaming` branch now passes the `revertAuto`/`revertOut`
+already derived via `RevertPolicy.toEngine`. Both levers inert → byte-identical to pre-D. The gate is two
+"streaming data canary (D)" witnesses in `TransferCanaryTests` (a pre-existing sink row proves the revert targets ONLY
+captured minted keys).
+
+**What remains is the MOAT, and it is named-not-unfinished.** Read `HOLDOUT_INVENTORY_2026_06_16.md` — the per-feature
+trigger-gated study. The only items the study flags as actionable now are **(#10) the Faker / synthetic-data emitter**
+(its trigger FIRED ~4 weeks ago — "bring to principal-PO"; the highest-confidence un-cashed trigger), **(#9)
+policy-version plane → Episode** (half-fired — M5 landed Wave 4; only the consumer-need remains), and **(#3) the
+CDC / OPEN-3 estate survey** (now runnable — J5 lifted the blocker). Everything else is honestly far / infra-gated
+(P7b, computed-column S7) / consumer-gated (`Tolerance` config). **Naming a trigger-gated absence IS its completion
+here — do not build moat without a fired trigger.** Surface the options to the operator; let them choose.
+
+**Build-discipline scars (unchanged, still bite).** `dotnet` is NOT on the bash/PowerShell PATH on this box (it lives
+at `C:\Users\danny\AppData\Local\Microsoft\dotnet`; `export PATH="$PATH:/c/Users/danny/AppData/Local/Microsoft/dotnet"`
+before `scripts/test.sh`). Never run the pure + Docker pools as one `dotnet test` (OOM). The warm container had been up
+11h this session — a batch of connection / pre-login failures means it died or its memory pool degraded
+(`scripts/warm-sql.sh restart`), NOT a regression (two `TransferCanaryTests` showed stale FAILED from a prior session
+and were 27/27 green on a fresh focused run). `static let` cannot follow members (FS0960). The streaming `try/with` is
+FS3511-safe only because it binds single values (no tuple `let!`, no `let rec` in `task`).
+
+**State.** Branch `claude/thirsty-fermat-0612fd` (a worktree off `main` `48af1895`, the merged PR #624 baseline). D +
+its canary + the docs (this letter, the DECISIONS "Follow-on D BUILT" entry, the `FOLLOWON_STREAMING_REVERT.md` status)
+sit as WORKING-TREE changes — the operator drives commits (the D code + its canary MUST commit together per the §0 gate).
+Debug + **Release** 0/0; pure pool 0 failed (3387 passed / 210 standing skips); **`TransferCanaryTests` 27/27**; lint
+clean (27 rules); `matrix-status.sh` gate=PASS, rungs 5/4/5, tolerances 10/3-open UNCHANGED. Hold the spine: name every
+refusal, count every crossing, leave the books balanced — and never ship a destructive op untested.
+
+---
+
 # Handoff addendum — 2026-06-16 (later still), M24 LANDED — the migrate dispositions are now CONFIG-BASED (sensible defaults, not command clutter): atomic derives ON for direct+FullRights; revert is a per-environment policy. Follow-on C done (atomic on migrate-with-data). Follow-on D (streaming compensating-undo) DEFERRED behind a canary gate
 
 To the next agent.

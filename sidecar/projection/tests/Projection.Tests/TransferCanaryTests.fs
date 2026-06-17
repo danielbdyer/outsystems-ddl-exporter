@@ -545,6 +545,107 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                             })
                 }))
 
+    // -- D — the STREAMING arm of the data-leg compensating-undo ------------
+    //
+    // The estate-scale sibling of the materialized "Build A" canaries above, and
+    // the GATE for follow-on D (a wrong DELETE-by-captured-key at 10⁸ rows is
+    // unrecoverable, so it must not land untested). The streaming reverse leg
+    // (`runStreamingReconcilingWithRenames`, the hundreds-of-millions-row path)
+    // mints USER's surrogates as it streams and journals each completed chunk's
+    // captured (source → assigned) pairs to the off-box CaptureJournal. ORDER's
+    // load then CRASHES (its sink AMOUNT column was dropped). On a streaming crash
+    // `writePlanStreaming` RE-RAISES (it returns `Result.failure` ONLY on a NAMED
+    // resume-drift refusal) — so D's compensation hangs off the EXCEPTION path,
+    // not an `Error` match arm: it replays the journal into a remap and runs the
+    // SAME M23 `buildRevertScript`/`runRevert` the materialized arm runs. A
+    // PRE-EXISTING sink USER row (minted before the transfer) proves the revert
+    // targets ONLY the captured minted keys — never pre-existing data. Two modes
+    // mirror the materialized pair.
+
+    [<Fact>]
+    member _.``streaming data canary (D): a failed streaming load with auto-revert OFF writes the journal-replayed revert script and leaves the sink (pre-existing rows untouched)`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "XferStreamRevertScript") then () else
+        let dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "v2-stream-revert-script-" + System.Guid.NewGuid().ToString("N").Substring(0, 8))
+        let journalDir = System.IO.Path.Combine(dir, "journal")
+        let scriptPath = System.IO.Path.Combine(dir, "transfer-revert.sql")
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "XferStreamRevScriptSrc" (fun src _ ->
+                task {
+                    do! Deploy.executeBatch src TransferCanaryFixtures.assignedBySinkDdl
+                    do! Deploy.executeBatch src TransferCanaryFixtures.assignedBySinkSourceSeed
+                    return!
+                        fixture.WithEphemeralDatabase "XferStreamRevScriptSink" (fun sink _ ->
+                            task {
+                                do! Deploy.executeBatch sink TransferCanaryFixtures.assignedBySinkDdl
+                                // A PRE-EXISTING minted USER row (the sink mints ID 1);
+                                // the streaming load then mints 2,3 for the source users.
+                                do! Deploy.executeBatch sink "INSERT INTO [dbo].[OSUSR_AS_USER] ([EMAIL]) VALUES (N'preexisting@x');"
+                                // Force ORDER's chunk write to crash AFTER USER streams + journals.
+                                do! Deploy.executeBatch sink "ALTER TABLE [dbo].[OSUSR_AS_ORDER] DROP COLUMN [AMOUNT];"
+                                let! contractR = ReadSide.read src
+                                let contract = TransferCanaryFixtures.value contractR
+                                let! threw =
+                                    task {
+                                        try
+                                            let! _ =
+                                                Transfer.runStreamingReconcilingWithRenames
+                                                    Transfer.Execute true false src sink contract contract Map.empty
+                                                    (Some journalDir) false (Some dir)
+                                            return false
+                                        with _ -> return true
+                                    }
+                                Assert.True(threw, "the streaming transfer should have crashed on the dropped AMOUNT column")
+                                // The precise journal-replayed revert script was written (default = no auto-delete).
+                                Assert.True(System.IO.File.Exists scriptPath, sprintf "expected a revert script at %s" scriptPath)
+                                let script = System.IO.File.ReadAllText scriptPath
+                                Assert.Contains("DELETE FROM", script)
+                                Assert.Contains("OSUSR_AS_USER", script)
+                                // The minted USER rows REMAIN (the operator runs the script):
+                                // 1 pre-existing + 2 minted = 3, and the pre-existing row is intact.
+                                let! total = TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_AS_USER]"
+                                Assert.Equal(3, total)
+                                let! preexisting = TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_AS_USER] WHERE [EMAIL] = N'preexisting@x'"
+                                Assert.Equal(1, preexisting)
+                            })
+                }))
+
+    [<Fact>]
+    member _.``streaming data canary (D): a failed streaming load with auto-revert ON deletes the journal-captured minted rows and leaves pre-existing rows`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "XferStreamRevertAuto") then () else
+        let journalDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "v2-stream-revert-auto-" + System.Guid.NewGuid().ToString("N").Substring(0, 8))
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "XferStreamRevAutoSrc" (fun src _ ->
+                task {
+                    do! Deploy.executeBatch src TransferCanaryFixtures.assignedBySinkDdl
+                    do! Deploy.executeBatch src TransferCanaryFixtures.assignedBySinkSourceSeed
+                    return!
+                        fixture.WithEphemeralDatabase "XferStreamRevAutoSink" (fun sink _ ->
+                            task {
+                                do! Deploy.executeBatch sink TransferCanaryFixtures.assignedBySinkDdl
+                                do! Deploy.executeBatch sink "INSERT INTO [dbo].[OSUSR_AS_USER] ([EMAIL]) VALUES (N'preexisting@x');"
+                                do! Deploy.executeBatch sink "ALTER TABLE [dbo].[OSUSR_AS_ORDER] DROP COLUMN [AMOUNT];"
+                                let! contractR = ReadSide.read src
+                                let contract = TransferCanaryFixtures.value contractR
+                                let! threw =
+                                    task {
+                                        try
+                                            let! _ =
+                                                Transfer.runStreamingReconcilingWithRenames
+                                                    Transfer.Execute true false src sink contract contract Map.empty
+                                                    (Some journalDir) true None
+                                            return false
+                                        with _ -> return true
+                                    }
+                                Assert.True(threw, "the streaming transfer should have crashed on the dropped AMOUNT column")
+                                // --auto-revert executed the journal-replayed DELETE-by-captured-key:
+                                // the sink-minted USER rows (2,3) are gone; ONLY the pre-existing row remains.
+                                let! total = TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_AS_USER]"
+                                Assert.Equal(1, total)
+                                let! preexisting = TransferCanaryFixtures.countRows sink "[dbo].[OSUSR_AS_USER] WHERE [EMAIL] = N'preexisting@x'"
+                                Assert.Equal(1, preexisting)
+                            })
+                }))
+
     // Option C — the NoCheckFk-PRESERVATION witness (the fidelity guard on the
     // re-trust step). A source FK deployed UNTRUSTED (a NoCheckFk decision — the
     // very thing M1 made faithful) must survive a DEFAULT (re-trust ON) transfer

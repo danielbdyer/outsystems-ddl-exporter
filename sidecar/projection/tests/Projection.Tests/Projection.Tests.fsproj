@@ -128,6 +128,8 @@
     <Compile Include="ProfileTests.fs" />
     <Compile Include="AttributeDistributionTests.fs" />
     <Compile Include="SyntheticDataTests.fs" />
+    <Compile Include="SyntheticCorrectionTests.fs" />
+    <Compile Include="FakerRealizationTests.fs" />
     <Compile Include="PolicyTests.fs" />
     <Compile Include="PolicyExprTests.fs" />
     <Compile Include="VersionedPolicyTests.fs" />
@@ -303,6 +305,7 @@
     <Compile Include="JsonEmitterTests.fs" />
     <Compile Include="CatalogCodecTests.fs" />
     <Compile Include="ProfileCodecTests.fs" />
+    <Compile Include="CorrectionCodecTests.fs" />
     <Compile Include="DistributionsEmitterTests.fs" />
     <Compile Include="SiblingEmitterContractTests.fs" />
     <Compile Include="DiagnosticsEndToEndTests.fs" />

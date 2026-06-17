@@ -201,7 +201,7 @@ type ReverseLegStreamingTests(fixture: EphemeralContainerFixture) =
                     let! reportR =
                         Transfer.runStreamingReconcilingWithRenames
                             Transfer.Execute true false src sink
-                            logicalContract physicalContract this.reconcileCustomerByEmail None
+                            logicalContract physicalContract this.reconcileCustomerByEmail None false None
                     let report = ReverseLegFixtures.value reportR
                     Assert.Empty(report.SkippedReferences)
                     Assert.Empty(report.UnmatchedIdentities)
@@ -243,7 +243,7 @@ type ReverseLegStreamingTests(fixture: EphemeralContainerFixture) =
                     let! reportR =
                         Transfer.runStreamingReconcilingWithRenames
                             Transfer.Execute true false src sink
-                            logicalContract physicalContract this.reconcileCustomerByEmail None
+                            logicalContract physicalContract this.reconcileCustomerByEmail None false None
                     // AC-I5 / NM-31 on the streaming arm: a PRE-write refusal by
                     // name, not a post-write drop.
                     match reportR with
@@ -283,7 +283,7 @@ type ReverseLegStreamingTests(fixture: EphemeralContainerFixture) =
                     let! reportR =
                         Transfer.runStreamingReconcilingWithRenames
                             Transfer.DryRun true false src sink
-                            logicalContract physicalContract this.reconcileCustomerByEmail None
+                            logicalContract physicalContract this.reconcileCustomerByEmail None false None
                     let report = ReverseLegFixtures.value reportR
                     Assert.Equal(Transfer.DryRun, report.Mode)
 

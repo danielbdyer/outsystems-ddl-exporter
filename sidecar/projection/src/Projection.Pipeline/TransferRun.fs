@@ -392,6 +392,41 @@ module Transfer =
                         with _ -> ()
         }
 
+    /// D — the STREAMING arm's remap source for the data-leg compensating-undo.
+    /// The materialized `writePlan` reverts from an in-memory `PackedSurrogateRemap`;
+    /// the estate-scale streaming path's durable record of every sink-minted key is
+    /// the off-box `CaptureJournal` (NDJSON, only fully-committed chunks appended —
+    /// a crashed chunk is neither journaled nor captured). Replay every journaled
+    /// chunk's `(source → assigned)` pairs back into a fresh remap, mapping each
+    /// record's root-string `Kind` to the catalog's `SsKey` (the inverse of the
+    /// `SsKey.rootOriginal` the journal stores). The per-record capture mirrors
+    /// `CaptureJournal.spec`'s Apply (the journal grain's effectful remap fold the
+    /// resume path uses); reconstructed here over ALL kinds rather than one at a time.
+    let private replayJournalToRemap (catalog: Catalog) (journal: CaptureJournal) : PackedSurrogateRemap =
+        let remap = PackedSurrogateRemap.create ()
+        let rootToKey =
+            Catalog.allKinds catalog
+            |> List.map (fun k -> SsKey.rootOriginal k.SsKey, k.SsKey)
+            |> Map.ofList
+        for KeyValue (_, record) in CaptureJournal.load journal do
+            match Map.tryFind record.Kind rootToKey with
+            | Some ssKey -> record.Pairs |> Array.iter (fun p -> if p.Length = 2 then PackedSurrogateRemap.capture ssKey p[0] p[1] remap)
+            | None -> ()
+        remap
+
+    /// D — act on the streaming reverse-leg's compensating-undo after a partial
+    /// load: reconstruct the remap from the journal, then run the SAME M23
+    /// `buildRevertScript` + `runRevert` the materialized arm runs (only the remap
+    /// source differs — journal-replayed vs in-memory). A `None` journal is a safe
+    /// no-op: with no journal there are no recorded captures to revert (streaming
+    /// execute requires `--journal` anyway, so on a real run `journal` is `Some`).
+    let private runRevertFromJournal (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) (journal: CaptureJournal option) (autoRevert: bool) (revertDir: string option) : Task<unit> =
+        task {
+            match journal with
+            | Some j -> do! runRevert sink autoRevert revertDir (buildRevertScript catalog plan (replayJournalToRemap catalog j))
+            | None   -> ()
+        }
+
     let private writePlan (sink: SqlConnection) (catalog: Catalog) (plan: DataLoadPlan) (autoRevert: bool) (revertArtifactDir: string option) : Task<(SsKey * UnresolvedReference) list * LaneDescent list> =
         task {
             let assignedBySinkKinds =
@@ -1829,6 +1864,13 @@ module Transfer =
         (sinkContract: Catalog)
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
         (journalDirectory: string option)
+        // D — the streaming arm of the data-leg compensating-undo (M23 on the
+        // estate-scale path). On a mid-stream crash the partial sink-minted rows
+        // are reverted (autoRevert) or scripted (revertDir), reconstructing the
+        // remap from the off-box journal. Both inert (false / None) → byte-identical
+        // to the pre-D streaming realization.
+        (autoRevert: bool)
+        (revertDir: string option)
         : Task<Result<TransferReport>> =
         task {
             let diff = CatalogDiff.between sourceContract sinkContract
@@ -1964,7 +2006,31 @@ module Transfer =
                                         (List.length addressDrift)
                                         (addressDrift |> List.truncate 1 |> List.map (fun f -> System.IO.Path.GetFileName f |> nonNull) |> String.concat ", ")))
                         else
-                        match! writePlanStreaming source sink sourceContract renameMap sinkContract plan journal reconciled.Remap reconciledKinds with
+                        // D — the streaming data-leg compensating-undo. A mid-stream
+                        // chunk crash RE-RAISES out of `writePlanStreaming` (its
+                        // `RunAborted (_, Some ex)` branch re-throws — unlike the
+                        // materialized arm, whose own failure point is the same
+                        // exception branch but is INSIDE `writePlan`). The streaming
+                        // failure manifests as a thrown exception, NOT a returned
+                        // `Result.failure` — so the compensation hangs off a `with`,
+                        // not the `Error` match arm. Replay the off-box journal into a
+                        // remap and run the SAME M23 revert the materialized arm runs,
+                        // then re-raise the ORIGINAL crash. A NAMED `Error es` (the
+                        // resume source-drift refusal) returns below WITHOUT reverting:
+                        // that run only skipped/replayed journaled chunks and wrote
+                        // nothing new, so deleting by captured key would destroy
+                        // PRIOR-run committed rows — the one thing the undo must never do.
+                        let! streamed =
+                            task {
+                                try
+                                    let! r = writePlanStreaming source sink sourceContract renameMap sinkContract plan journal reconciled.Remap reconciledKinds
+                                    return r
+                                with ex ->
+                                    do! runRevertFromJournal sink sinkContract plan journal autoRevert revertDir
+                                    System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw()
+                                    return Unchecked.defaultof<_>
+                            }
+                        match streamed with
                         | Error es -> return Result.failure es
                         | Ok (totals, skips, descents) ->
                             let kinds =
@@ -2008,7 +2074,10 @@ module Transfer =
         (sinkContract: Catalog)
         (journalDirectory: string option)
         : Task<Result<TransferReport>> =
-        runStreamingReconcilingWithRenames mode allowCdc false source sink sourceContract sinkContract Map.empty journalDirectory
+        // The straight load supplies the inert revert levers (`false None`) the
+        // caller did not name — D's compensating-undo is reachable only through the
+        // reconciling / reverse-leg faces that carry the per-environment policy.
+        runStreamingReconcilingWithRenames mode allowCdc false source sink sourceContract sinkContract Map.empty journalDirectory false None
 
     /// The streaming reverse leg through the `TransferConnections`
     /// apparatus (D9) — the bounded-memory sibling of
@@ -2030,6 +2099,11 @@ module Transfer =
         (logicalSourceContract: Catalog)
         (physicalSinkContract: Catalog)
         (reconciliation: Map<SsKey, ReconciliationStrategy>)
+        // D — the per-environment revert policy, collapsed at the RunFaces face
+        // (`RevertPolicy.toEngine`) to (autoRevert, dir); previously only the
+        // materialized reverse-leg face consumed them.
+        (autoRevert: bool)
+        (revertDir: string option)
         : Task<Result<TransferReport>> =
         task {
             match! ConnectionResolver.openSubstrate connections.Source with
@@ -2040,7 +2114,7 @@ module Transfer =
                 | Error es -> return Result.failure es
                 | Ok sink ->
                     use sink = sink
-                    return! runStreamingReconcilingWithRenames mode allowCdc allowDrops source sink logicalSourceContract physicalSinkContract reconciliation journalDirectory
+                    return! runStreamingReconcilingWithRenames mode allowCdc allowDrops source sink logicalSourceContract physicalSinkContract reconciliation journalDirectory autoRevert revertDir
         }
 
     /// Run a *reconciling* Transfer — the operator's headline case

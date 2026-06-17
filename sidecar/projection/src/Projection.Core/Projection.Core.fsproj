@@ -60,6 +60,7 @@
     <Compile Include="UserIdentity.fs" />
     <Compile Include="Profile.fs" />
     <Compile Include="SyntheticData.fs" />
+    <Compile Include="SyntheticCorrection.fs" />
     <Compile Include="Policy.fs" />
     <Compile Include="EmissionMode.fs" />
     <Compile Include="SurrogateRemap.fs" />

@@ -137,6 +137,94 @@ let ``volume scales by the configured factor`` () =
     Assert.Equal(125, m.[ordKey].Length)
 
 [<Fact>]
+let ``F1: an Absolute VolumeTarget overrides the profiled RowCount for its kind only`` () =
+    let cfg' = { cfg with VolumeByKind = Map.ofList [ custKey, VolumeTarget.Absolute 7 ] }
+    let m = SyntheticData.generate catalog profile cfg' 1UL
+    Assert.Equal(7, m.[custKey].Length)     // arbitrary scale, decoupled from the observed 100
+    Assert.Equal(250, m.[ordKey].Length)    // untargeted kind keeps the observed RowCount
+
+[<Fact>]
+let ``F1: a Multiplier VolumeTarget scales the observed count and ignores the global Scale`` () =
+    // ordKey is targeted (×2 over observed 250 = 500, Scale ignored); custKey is
+    // untargeted, so it still honors the global Scale (100 × 0.5 = 50).
+    let cfg' = { cfg with Scale = 0.5M; VolumeByKind = Map.ofList [ ordKey, VolumeTarget.Multiplier 2M ] }
+    let m = SyntheticData.generate catalog profile cfg' 1UL
+    Assert.Equal(500, m.[ordKey].Length)
+    Assert.Equal(50, m.[custKey].Length)
+
+[<Fact>]
+let ``F5: a skewed ForeignKeySelectivity reproduces the fan-out skew (rank-0 parent dominates)`` () =
+    // A dedicated profile: 3 customers, 300 orders, and a heavily-skewed
+    // selectivity on Order→Customer (rank-0 parent carries 280/300 of the
+    // children). σ maps the count-DESC frequencies onto the synthetic pool BY
+    // RANK, so the rank-0 synthetic customer ("1") must dominate the FK values —
+    // far above the ~100 a uniform draw over 3 parents would give.
+    let f5Profile =
+        { Profile.empty with
+            Columns = [ col custId 3L 0L; col ordId 300L 0L ]
+            ForeignKeySelectivities =
+                [ ForeignKeySelectivity.create ordRefC [ ("a", 280L); ("b", 15L); ("c", 5L) ] 3L false (probe 300L) |> mkOk ] }
+    let m = SyntheticData.generate catalog f5Profile cfg 42UL
+    let custIds = valuesOf m custKey "Id"
+    Assert.Equal(3, custIds.Length)
+    let ordCustVals = valuesOf m ordKey "CustomerId"
+    Assert.Equal(300, ordCustVals.Length)                       // no null budget → every FK drawn
+    let top = List.head custIds                                  // rank-0 synthetic parent
+    let topCount = ordCustVals |> List.filter (fun v -> v = top) |> List.length
+    Assert.True(topCount > 200, sprintf "expected the rank-0 parent to dominate (>200/300), got %d" topCount)
+
+[<Fact>]
+let ``F5: with no selectivity evidence the FK draw stays uniform (no parent dominates)`` () =
+    // The same shape WITHOUT a selectivity: the uniform draw spreads ~evenly, so
+    // no single parent approaches the skewed case's dominance — the byte-identical
+    // pre-F5 behavior holds when the evidence is absent.
+    let noSelProfile =
+        { Profile.empty with Columns = [ col custId 3L 0L; col ordId 300L 0L ] }
+    let m = SyntheticData.generate catalog noSelProfile cfg 42UL
+    let ordCustVals = valuesOf m ordKey "CustomerId"
+    let maxShare = [ "1"; "2"; "3" ] |> List.map (fun p -> ordCustVals |> List.filter (fun v -> v = p) |> List.length) |> List.max
+    Assert.True(maxShare < 160, sprintf "expected a roughly uniform spread (<160/300 for the top parent), got %d" maxShare)
+
+[<Fact>]
+let ``F5b: a JointDistribution preserves FK co-occurrence in the synthetic data (correlated, not independent)`` () =
+    // Booking has FKs to two DISTINCT parents (Customer, Region). The joint says
+    // customer-rank-0 ALWAYS co-occurs with region-rank-0 and rank-1 with rank-1
+    // (never crossed). σ must reproduce that pairing on the synthetic keys.
+    let jCustK   = kindKey ["JC"]
+    let jCustIdK = attrKey ["JC"; "Id"]
+    let jRegK    = kindKey ["JR"]
+    let jRegIdK  = attrKey ["JR"; "Id"]
+    let jBkK     = kindKey ["JB"]
+    let jBkIdK   = attrKey ["JB"; "Id"]
+    let jBkCustK = attrKey ["JB"; "CustomerId"]
+    let jBkRegK  = attrKey ["JB"; "RegionId"]
+    let jCustomer = Kind.create jCustK (name "JCustomer") (mkTableId "dbo" "JCUST")   [ attr jCustIdK "Id" Integer true false ]
+    let jRegion   = Kind.create jRegK  (name "JRegion")   (mkTableId "dbo" "JREGION") [ attr jRegIdK  "Id" Integer true false ]
+    let jBooking =
+        { Kind.create jBkK (name "JBooking") (mkTableId "dbo" "JBOOK")
+            [ attr jBkIdK   "Id"         Integer true  false
+              attr jBkCustK "CustomerId" Integer false false
+              attr jBkRegK  "RegionId"   Integer false false ] with
+            References =
+                [ Reference.create (refKey ["JB"; "Customer"]) (name "Customer") jBkCustK jCustK
+                  Reference.create (refKey ["JB"; "Region"])   (name "Region")   jBkRegK  jRegK ] }
+    let jCat = Catalog.create [ mkModule (modKey "JM") (name "JM") [ jCustomer; jRegion; jBooking ] ] [] |> mkOk
+    let jProf =
+        { Profile.empty with
+            Columns = [ col jCustIdK 2L 0L; col jRegIdK 2L 0L; col jBkIdK 200L 0L ]
+            JointDistributions =
+                [ JointDistribution.create jBkK [ jBkCustK; jBkRegK ]
+                    [ ("i:500|i:700", 100L); ("i:501|i:701", 100L) ] 2L false (probe 200L) |> mkOk ] }
+    let m = SyntheticData.generate jCat jProf cfg 7UL
+    let pairs =
+        m.[jBkK] |> List.map (fun r -> Map.tryFind (name "CustomerId") r.Values, Map.tryFind (name "RegionId") r.Values)
+    // Every booking pairs equal-rank parents (both "1" or both "2") — never crossed.
+    Assert.All(pairs, fun (c, rg) -> Assert.Equal(c, rg))
+    // Both correlated combinations actually appear (the draw isn't degenerate).
+    Assert.Contains(pairs, fun p -> p = (Some "1", Some "1"))
+    Assert.Contains(pairs, fun p -> p = (Some "2", Some "2"))
+
+[<Fact>]
 let ``PK uniqueness holds across the generated population`` () =
     let m = SyntheticData.generate catalog profile cfg 3UL
     let custIds = valuesOf m custKey "Id"
