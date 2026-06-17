@@ -254,3 +254,17 @@ module EventProjection =
                   (Map.ofList [ "axisCounts",   box axisCounts
                                 "renderedDiff", box (PhysicalSchema.renderDiff diff) ]) with
                   Phase = LogSink.ErrorPhase } ]
+
+    /// §6 — project the CDC-silence measure into a structured `canary.*` event so
+    /// the data norm rides channel 1 (machine-readable + panel-readable), the
+    /// sibling of the operator-facing Voice surface the faces render. `0` is the
+    /// silence proof (`canary.cdcSilent`, the green hush of an idempotent
+    /// redeploy); any captured rows is `canary.cdcCaptured` carrying the count.
+    /// Both carry `capturedRows` so `LogSink.cdcMeasure` reads one key.
+    let cdcMeasureEnvelope (capturedRows: int) : LogSink.Envelope =
+        if capturedRows = 0 then
+            { LogSink.envelope LogSink.Info LogSink.Canary "canary.cdcSilent"
+                (Map.ofList [ "capturedRows", box 0 ]) with Phase = LogSink.End }
+        else
+            LogSink.envelope LogSink.Info LogSink.Canary "canary.cdcCaptured"
+                (Map.ofList [ "capturedRows", box capturedRows ])

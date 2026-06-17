@@ -58,6 +58,16 @@ let buildSummaryView (command: string) (code: int) : View.View =
             | Some (path, count) ->
                 View.Field("actionable", sprintf "%d edit(s) %s top: %s (%d)" edits Theme.dot path count, View.Warn)
             | None -> View.Field("actionable", sprintf "%d edit(s) suggested" edits, View.Warn)
+    // §6 — the Measure proof: the data norm (CDC capture count) made plain. A
+    // CDC-silent leg is the green hush of an idempotent redeploy ("unchanged");
+    // a captured count names exactly how many rows changed (rows changed = the
+    // CDC count). Rendered only when the run had a CDC-measured leg
+    // (`LogSink.cdcMeasure` is `Some`), so a measure-less run shows today's panel.
+    let measure =
+        match LogSink.cdcMeasure () with
+        | Some 0 -> [ View.Field("data", "unchanged · CDC captured 0 rows", View.Ok) ]
+        | Some n -> [ View.Field("data", sprintf "CDC captured %s rows" (Theme.humane n), View.Neutral) ]
+        | None   -> []
     // Principle #5 — end with the next action.
     let nextAction = if edits > 0 then [ View.Action "projection suggest-config --apply" ] else []
     let cutover =
@@ -69,7 +79,7 @@ let buildSummaryView (command: string) (code: int) : View.View =
                 "cutover", r.ConsecutiveGreen, r.Threshold,
                 sprintf "%d / %d green %s %s" r.ConsecutiveGreen r.Threshold Theme.arrow gate) ]
         | None -> []
-    View.Panel(command, [ verdict; transforms; actionable ] @ nextAction @ cutover)
+    View.Panel(command, [ verdict; transforms ] @ measure @ [ actionable ] @ nextAction @ cutover)
 
 let renderSummaryTo (console: IAnsiConsole) (command: string) (code: int) : unit =
     View.write console (buildSummaryView command code)

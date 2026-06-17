@@ -384,11 +384,10 @@ module Watch =
         | Done _   -> sprintf "%s  %s" Theme.ok                       (Theme.green text)
         | Halted _ -> sprintf "%s  %s" (Theme.red Theme.bad)          (Theme.red text)
 
-    /// Project the board onto a Spectre renderable — the live target the
-    /// `LiveDisplayContext` updates in place. The optional run-title header frames
-    /// the arc above; the done-frame (the §13 follow-on + the recorded-run
-    /// identity) closes it below once the run reaches its terminal stage.
-    let toRenderable (board: Board) : IRenderable =
+    /// The board's rows — the optional run-title header above, the stage arc, and
+    /// the done-frame (the §13 follow-on + recorded-run identity) once the run
+    /// reaches its terminal stage.
+    let private boardRows (board: Board) : IRenderable list =
         let titleRow =
             match titleText board with
             | Some t -> [ Markup(Theme.muted (Markup.Escape t)) :> IRenderable ]
@@ -404,7 +403,18 @@ module Watch =
                     else Theme.ok, Theme.green
                 [ Markup(sprintf "%s  %s" glyph (paint (Markup.Escape t))) :> IRenderable ]
             | None   -> []
-        Rows(titleRow @ stageRows @ doneRow) :> IRenderable
+        titleRow @ stageRows @ doneRow
+
+    /// Project the board onto a Spectre renderable — the live target the
+    /// `LiveDisplayContext` updates in place.
+    let toRenderable (board: Board) : IRenderable =
+        Rows(boardRows board) :> IRenderable
+
+    /// Like `toRenderable`, but with leading header rows above the arc — the
+    /// cutover timeline strip (`DYNAMIC_DISPLAY` §4: where this run sits on the
+    /// path to the R6 gate). An empty header is the bare board (unchanged).
+    let toRenderableWith (header: IRenderable list) (board: Board) : IRenderable =
+        Rows(header @ boardRows board) :> IRenderable
 
     // -- the live shell --------------------------------------------------------
 
@@ -436,14 +446,39 @@ module Watch =
     /// because the run is synchronous + single-threaded and channel 1 is nulled
     /// (no contention). A future concurrent / async emitter would move the dwell to
     /// a drain loop on a render thread (`THE_VOICE_BUILD_MAP.md` §4.3).
-    let renderWatch (spine: RunSpine) (floorMs: int64) (body: unit -> int) : int =
-        let console =
-            AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(Console.Error)))
+    /// The cutover timeline strip line (pretty markup) — the canary-history dots
+    /// with the present marker, the R6 gate meter, and the ratio (`●●●●✕●●▸
+    /// ▇▇▇▇▇▇▇░░░ 7/10`). Pure over (cells, filled, total) so the content is
+    /// testable without a ledger or a console.
+    let cutoverStripText (cells: string list) (filled: int) (total: int) : string =
+        let present = if List.isEmpty cells then None else Some(List.length cells - 1)
+        sprintf "%s   %s   %s"
+            (Theme.timelineMarkup cells present)
+            (Theme.meter filled total)
+            (Theme.muted (sprintf "%d/%d" filled total))
+
+    /// The timeline header rows for the live board — read once from the configured
+    /// ledger (`PROJECTION_LEDGER_DIR`). Absent ledger / no canary history ⇒ no
+    /// header (the bare arc). The history is the PRIOR runs; this run's verdict is
+    /// appended after it ends (`OperatorConsole.withRun`).
+    let private cutoverHeader () : IRenderable list =
+        match RunLedger.configuredDir () with
+        | Some dir ->
+            let records = RunLedger.read dir
+            let cells = records |> List.choose (fun r -> r.Canary)
+            if List.isEmpty cells then []
+            else
+                let r = RunLedger.readiness records
+                [ Markup(cutoverStripText cells r.ConsecutiveGreen r.Threshold) :> IRenderable ]
+        | None -> []
+
+    let renderWatchOn (console: IAnsiConsole) (spine: RunSpine) (floorMs: int64) (body: unit -> int) : int =
         let board = ref (seededOf spine)
+        let header = cutoverHeader ()
         let sw = System.Diagnostics.Stopwatch.StartNew()
         let mutable lastRenderAt = 0L
         let mutable code = 0
-        console.Live(toRenderable board.Value).Start(fun ctx ->
+        console.Live(toRenderableWith header board.Value).Start(fun ctx ->
             let subscriber (env: LogSink.Envelope) =
                 let board', changed = applyEnvelope board.Value env
                 if changed then
@@ -452,13 +487,29 @@ module Watch =
                     let sleep = dwellMs floorMs lastRenderAt now
                     if sleep > 0L then System.Threading.Thread.Sleep(int sleep)
                     lastRenderAt <- sw.ElapsedMilliseconds
-                    ctx.UpdateTarget(toRenderable board.Value)
+                    ctx.UpdateTarget(toRenderableWith header board.Value)
                     ctx.Refresh()
             LogSink.addSubscriber subscriber
-            LogSink.setWriter System.IO.TextWriter.Null
+            // Suppress channel 1 (NDJSON) for the live region via the SCOPED
+            // `withWriter` — it saves the PRIOR writer and restores it on exit,
+            // rather than hardcoding `Console.Error`. This is what lets the board
+            // compose UNDER an outer `--pretty` null (`OperatorConsole.withRun`
+            // nulls channel 1 for the whole bracket): the prior is already Null,
+            // so it stays Null and the bracket's terminal `summary.runComplete`
+            // is suppressed too — no NDJSON leaks between the board and the
+            // verdict panel. Standalone (publish faces, no outer null) the prior
+            // is `Console.Error`, restored unchanged — the established behavior.
             try
-                code <- body ()
+                code <- LogSink.withWriter System.IO.TextWriter.Null body
             finally
-                LogSink.clearSubscribers ()
-                LogSink.setWriter Console.Error)
+                LogSink.clearSubscribers ())
         code
+
+    /// Production wrapper — the live board on stderr (channel 2), mirroring
+    /// `TtyRenderer`'s console creation. Tests drive `renderWatchOn` with a
+    /// `Spectre.Console.Testing.TestConsole` to assert the board (and the
+    /// channel-1 suppression / prior-writer restoration) without a real TTY.
+    let renderWatch (spine: RunSpine) (floorMs: int64) (body: unit -> int) : int =
+        let console =
+            AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(Console.Error)))
+        renderWatchOn console spine floorMs body

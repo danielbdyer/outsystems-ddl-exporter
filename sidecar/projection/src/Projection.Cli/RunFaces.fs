@@ -164,6 +164,10 @@ let runFullExportLoad
                     let code =
                         match work.GetAwaiter().GetResult() with
                         | Ok (report, legOpt, cdcDelta) ->
+                            // §6 — the CDC measure rides channel 1 (structured) so
+                            // the verdict panel reads the data norm; the console
+                            // gets the Voice surface below.
+                            LogSink.emit (EventProjection.cdcMeasureEnvelope cdcDelta)
                             // §4/§6 — the publish-and-load verdict, voiced by code
                             // (`load.completed`): statement first, the CDC measure
                             // as the grounding evidence beneath.
@@ -325,11 +329,11 @@ let runDeploy (shaping: Config.Config) (catalog: Catalog) : int =
                 match cause with
                 | Some ex -> raise ex
                 | None    -> failwith refusal
-        // --watch + a real TTY → a live deploy stage (§13). The schema deploy is
+        // --pretty + a real TTY → a live deploy stage (§13). The schema deploy is
         // one aggregated batch (no per-table count to honestly report), so the
         // board shows the stage going Applying → Deploy complete, not a bar.
         let exitCode =
-            if Watch.shouldWatch watchMode.Value then
+            if Watch.shouldWatch prettyMode.Value then
                 Watch.renderWatch Spines.deploy (Watch.resolveDwellMs ()) runBody
             else runBody ()
         dumpBench "deploy"
@@ -460,6 +464,10 @@ let runCanaryCdcSilence (sourceDdlPath: string) : int =
         let exitCode =
             match result with
             | Ok (report, cdcDelta) ->
+                // §6 — the CDC measure rides channel 1 (structured) so the verdict
+                // panel + ledger read the data norm; the console gets the Voice
+                // surface below. Sibling of the canary diff projection.
+                LogSink.emit (EventProjection.cdcMeasureEnvelope cdcDelta)
                 TtyRenderer.renderVoicedTo Console.Out "canary.deployed"
                     (Map.ofList
                         [ "sourceTables", box report.SourceReport.TablesCreated
@@ -757,11 +765,11 @@ let runTransfer
     // config is in scope) and threaded in as `surveyAdvisory`; a dry-run carries
     // no advisory (the empty list), so the preview path is byte-identical.
     if executeGated then for line in surveyAdvisory do Console.Error.WriteLine line
-    // --watch + a real TTY → the live data-load board (§13); the transfer leg
+    // --pretty + a real TTY → the live data-load board (§13); the transfer leg
     // streams the "load" stage with per-table progress. Only on a real --execute
     // (a dry-run writes no rows, so the load stage would never advance).
     let exitCode =
-        if executeGated && Watch.shouldWatch watchMode.Value then
+        if executeGated && Watch.shouldWatch prettyMode.Value then
             Watch.renderWatch Spines.transfer (Watch.resolveDwellMs ()) runBody
         else runBody ()
     dumpBench "transfer"
@@ -922,7 +930,7 @@ let runReverseLegTransfer
     // and same advisory-only posture as the peer transfer's Execute path.
     if executeGated then for line in surveyAdvisory do Console.Error.WriteLine line
     let exitCode =
-        if executeGated && Watch.shouldWatch watchMode.Value then
+        if executeGated && Watch.shouldWatch prettyMode.Value then
             Watch.renderWatch Spines.transfer (Watch.resolveDwellMs ()) runBody
         else runBody ()
     dumpBench "transfer"
@@ -1893,10 +1901,10 @@ let runMigrateExecute (target: Catalog) (connSpec: string) (declaration: LossDec
                                         | Error e -> return reportMigrationError e
         }
     let runBody () = work.GetAwaiter().GetResult()
-    // --watch + a real TTY → the live stage board (§13), pre-seeded with the
+    // --pretty + a real TTY → the live stage board (§13), pre-seeded with the
     // migrate leg's arc (build → apply → verify) the executor streams.
     let code =
-        if Watch.shouldWatch watchMode.Value then
+        if Watch.shouldWatch prettyMode.Value then
             Watch.renderWatch Spines.migrate (Watch.resolveDwellMs ()) runBody
         else runBody ()
     dumpBench "migrate"
@@ -2047,10 +2055,10 @@ let runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec: string)
                                         | Error e -> return reportMigrationError e
         }
     let runBody () = work.GetAwaiter().GetResult()
-    // --watch + a real TTY → the live board (§13) across the whole arc: the
+    // --pretty + a real TTY → the live board (§13) across the whole arc: the
     // schema leg (build → apply → verify) and the data leg's load.
     let code =
-        if Watch.shouldWatch watchMode.Value then
+        if Watch.shouldWatch prettyMode.Value then
             Watch.renderWatch Spines.migrateData (Watch.resolveDwellMs ()) runBody
         else runBody ()
     dumpBench "migrate"

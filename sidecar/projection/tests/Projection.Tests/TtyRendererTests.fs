@@ -58,6 +58,28 @@ let ``Tier-3: verdict panel shows a red canary on divergence`` () =
 let ``Tier-3: shouldRender is false when --pretty not requested`` () =
     Assert.False(TtyRenderer.shouldRender false)
 
+[<Fact>]
+let ``Tier-3: panel shows the CDC-silence measure — the green hush of an idempotent redeploy`` () =
+    // §6 — a CDC-silent leg (`cdcMeasureEnvelope 0`) is reachable from LogSink
+    // run-state, so the verdict panel renders the data-norm proof.
+    let text =
+        renderToString "projection migrate" 0 (fun () ->
+            LogSink.emit (EventProjection.cdcMeasureEnvelope 0))
+    Assert.Contains("unchanged", text)
+    Assert.Contains("CDC captured 0 rows", text)
+
+[<Fact>]
+let ``Tier-3: panel shows the CDC capture count, humane, when rows changed`` () =
+    let text =
+        renderToString "projection migrate" 0 (fun () ->
+            LogSink.emit (EventProjection.cdcMeasureEnvelope 2140))
+    Assert.Contains("CDC captured 2,140 rows", text)   // humane numerals
+
+[<Fact>]
+let ``Tier-3: a run with no CDC-measured leg shows no data line`` () =
+    let text = renderToString "projection check" 0 (fun () -> ())
+    Assert.DoesNotContain("CDC captured", text)
+
 let private renderBoard (r: RunLedger.Readiness) (recent: string list) : string =
     use sw = new StringWriter()
     let console =

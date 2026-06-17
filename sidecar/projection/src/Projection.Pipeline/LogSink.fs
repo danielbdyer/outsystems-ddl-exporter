@@ -765,6 +765,22 @@ module LogSink =
             let s = state.Value
             s.TransformRegistered, s.TransformApplied, s.TransformDeclined)
 
+    /// §6 — the run's CDC-silence measure (the data norm) from the accumulated
+    /// `canary.cdc*` events: `Some 0` when the silence proof fired
+    /// (`canary.cdcSilent`), `Some n` when `canary.cdcCaptured` carried n rows,
+    /// else `None` (the run had no CDC-measured leg). The verdict panel reads it
+    /// to show "the rows changed = the CDC capture count" (the §6 proof), the
+    /// sibling of `canaryVerdict` / `transformCounts`.
+    let cdcMeasure () : int option =
+        lock lockObj (fun () ->
+            state.Value.Envelopes
+            |> Seq.tryPick (fun e ->
+                if e.Code = "canary.cdcCaptured" || e.Code = "canary.cdcSilent" then
+                    match Map.tryFind "capturedRows" e.Payload with
+                    | Some (:? int as n) -> Some n
+                    | _ -> if e.Code = "canary.cdcSilent" then Some 0 else None
+                else None))
+
     /// Polish (P4) — the highest-impact suggested config edit: the `path`
     /// suggested by the most events, with its count. The verdict panel shows
     /// it so the operator sees the single biggest lever at a glance.
