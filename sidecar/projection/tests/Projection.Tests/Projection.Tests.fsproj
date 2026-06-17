@@ -304,6 +304,7 @@
     <Compile Include="JsonEmitterTests.fs" />
     <Compile Include="CatalogCodecTests.fs" />
     <Compile Include="ProfileCodecTests.fs" />
+    <Compile Include="CorrectionCodecTests.fs" />
     <Compile Include="DistributionsEmitterTests.fs" />
     <Compile Include="SiblingEmitterContractTests.fs" />
     <Compile Include="DiagnosticsEndToEndTests.fs" />
