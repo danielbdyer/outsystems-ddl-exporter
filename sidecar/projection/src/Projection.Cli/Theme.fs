@@ -23,6 +23,11 @@ let dotFilled = "●"
 // the affordance survives `NO_COLOR`.
 let collapsed = "▸"
 let expanded  = "▾"
+/// The width-cap tail (#11): a value truncated to the console's usable columns
+/// ends in this, the visible signal that the pretty lens dropped a tail the
+/// machine lens (`toJson`) still carries. One column, universal — survives
+/// `NO_COLOR` like every glyph here.
+let ellipsis  = "…"
 
 // --- Semantic Spectre markup (pretty channel) ------------------------------
 let green  (s: string) : string = "[green]"  + s + "[/]"

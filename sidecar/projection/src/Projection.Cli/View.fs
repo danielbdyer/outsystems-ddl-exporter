@@ -186,15 +186,39 @@ let private marker (depth: int) (hasChildren: bool) : string =
     elif depth >= 1 then Theme.expanded
     else Theme.collapsed
 
+/// The WIDTH cap (#11) — the dual of the §12 breadth cap (`laneCap`). Truncate a
+/// plain value to a column budget, tailing it with `…` when it overflows, so a
+/// long line tails instead of wrapping mid-cell on a narrow terminal. It runs on
+/// the RAW value BEFORE markup escaping/coloring, so a color tag is never cut — the
+/// markup stays well-formed by construction (the same fault #2/#3 contain, here
+/// avoided outright). The budget is in columns; for the BMP data these surfaces
+/// carry, `String.Length` is the column count. A budget below one collapses to the
+/// bare tail (the line is already at its margin); an empty value stays empty. The
+/// machine lens NEVER sees this — width is a pretty-lens concern only, so `toJson`
+/// keeps the full, untruncated value (the one-substrate law the `laneCap` tests pin).
+let private truncateTo (budget: int) (s: string) : string =
+    if budget < 1 then (if s = "" then "" else Theme.ellipsis)
+    elif s.Length <= budget then s
+    else s.Substring(0, budget - 1) + Theme.ellipsis
+
+/// Columns a status glyph occupies in `styled` output — the glyph plus its trailing
+/// space, or nothing for `Neutral` (which emits no glyph). The width budget
+/// subtracts this so a truncated value still fits beside its glyph.
+let private glyphCols (st: Status) : int = if glyphOf st = "" then 0 else 2
+
 let rec private writeBlock (console: IAnsiConsole) (opts: RenderOptions) (indent: string) (v: View) : unit =
     match v with
     | Doc blocks -> for b in blocks do writeBlock console opts indent b
     | Blank -> console.WriteLine()
     | Panel (title, fields) -> writePanel console title fields
     | Hero (st, text) ->
-        console.MarkupLine(sprintf "%s%s  %s" indent (colorOf st (glyphOf st)) (Theme.bold (Markup.Escape text)))
+        // indent + glyph (when statusful) + a 2-space gutter, then the bold text.
+        let budget = opts.Width - indent.Length - (if glyphOf st = "" then 0 else 1) - 2
+        console.MarkupLine(sprintf "%s%s  %s" indent (colorOf st (glyphOf st)) (Theme.bold (Markup.Escape (truncateTo budget text))))
     | Field (label, value, st) ->
-        console.MarkupLine(sprintf "%s%s   %s" indent (Theme.muted (Markup.Escape label)) (styled st value))
+        // indent + label + a 3-space gutter + the status glyph; the value takes the rest.
+        let budget = opts.Width - indent.Length - label.Length - 3 - glyphCols st
+        console.MarkupLine(sprintf "%s%s   %s" indent (Theme.muted (Markup.Escape label)) (styled st (truncateTo budget value)))
     | Meter (label, filled, total, suffix) ->
         console.MarkupLine(
             sprintf "%s%s   %s   %s"
@@ -225,8 +249,13 @@ let rec private writeBlock (console: IAnsiConsole) (opts: RenderOptions) (indent
         // keeps what the human capped.
         let n = List.length items
         let m = marker opts.Depth (n > 0)
+        // Width cap (#11): truncate the LABEL, not the whole headline, so the glyph
+        // and the load-bearing humane count survive the cut — a long lane name tails
+        // with `…`, the count never falls off the line.
+        let count = Theme.humane n
+        let label' = truncateTo (opts.Width - indent.Length - 2 - (glyph.Length + 1) - 2 - count.Length) label
         console.MarkupLine(
-            sprintf "%s%s %s" indent m (colorOf st (Markup.Escape (sprintf "%s %s  %s" glyph label (Theme.humane n)))))
+            sprintf "%s%s %s" indent m (colorOf st (Markup.Escape (sprintf "%s %s  %s" glyph label' count))))
         if opts.Depth >= 1 then
             for item in items |> List.truncate opts.LaneCap do
                 console.MarkupLine(sprintf "%s   %s %s" indent (Theme.muted Theme.dot) (Markup.Escape item))
@@ -236,15 +265,17 @@ let rec private writeBlock (console: IAnsiConsole) (opts: RenderOptions) (indent
                         (Theme.muted (sprintf "and %s more" (Theme.humane (n - opts.LaneCap)))))
     | Disclosure (headline, st, detail) ->
         let m = marker opts.Depth (not (List.isEmpty detail))
-        console.MarkupLine(sprintf "%s%s %s" indent m (styled st headline))
+        // marker + space, then the styled headline (glyph + space + text when statusful).
+        let budget = opts.Width - indent.Length - 2 - glyphCols st
+        console.MarkupLine(sprintf "%s%s %s" indent m (styled st (truncateTo budget headline)))
         if opts.Depth >= 1 then
             for child in detail do writeBlock console { opts with Depth = opts.Depth - 1 } (indent + "  ") child
         elif not (List.isEmpty detail) then
             console.MarkupLine(
                 sprintf "%s  %s %s" indent (Theme.muted Theme.collapsed)
                     (Theme.muted (sprintf "%d more" (List.length detail))))
-    | Note text -> console.MarkupLine(sprintf "%s%s" indent (Theme.muted (Markup.Escape text)))
-    | Action text -> console.MarkupLine(sprintf "%s%s %s" indent Theme.arrow (Theme.accent (Markup.Escape text)))
+    | Note text -> console.MarkupLine(sprintf "%s%s" indent (Theme.muted (Markup.Escape (truncateTo (opts.Width - indent.Length) text))))
+    | Action text -> console.MarkupLine(sprintf "%s%s %s" indent Theme.arrow (Theme.accent (Markup.Escape (truncateTo (opts.Width - indent.Length - 2) text))))
 
 /// Render with an explicit policy (#4) — the single carrier #11 (width) and #15
 /// (breadth) read. `opts.Width` is respected verbatim (the caller owns the

@@ -37,6 +37,20 @@ let private plainWith (opts: View.RenderOptions) (v: View.View) : string =
     View.writeWith opts console v
     sw.ToString()
 
+/// Render the plain lens at a chosen console width — the #11 width budget flows
+/// from `console.Profile.Width`, so pinning the terminal narrow exercises the width
+/// cap (truncation) the default 200-wide helpers never trip.
+let private plainAtWidth (width: int) (v: View.View) : string =
+    use sw = new StringWriter()
+    let console =
+        AnsiConsole.Create(
+            AnsiConsoleSettings(
+                Ansi = AnsiSupport.No, ColorSystem = ColorSystemSupport.NoColors,
+                Out = AnsiConsoleOutput(sw)))
+    console.Profile.Width <- width
+    View.write console v
+    sw.ToString()
+
 let private json (v: View.View) : JsonElement =
     JsonDocument.Parse((View.toJson v).ToJsonString()).RootElement.Clone()
 
@@ -279,6 +293,48 @@ let ``RenderOptions: writeWith threads the depth — a deeper Depth reveals what
     // the Depth field flows through writeWith's carrier, not a bare int parameter.
     Assert.DoesNotContain("deep", plainWith { View.defaultOptions with Depth = 0 } v)
     Assert.Contains("deep", plainWith { View.defaultOptions with Depth = 2 } v)
+
+// --- responsive width (#11 — the width cap, dual of the §12 breadth cap) -----
+// Discriminating predicate: a value wider than the console is TRUNCATED with `…`
+// on the pretty lens (one line, no mid-cell wrap), while `toJson` keeps the full
+// untruncated value — width is a pretty-lens concern only, the same law `laneCap`
+// obeys. The budget flows from `console.Profile.Width`, so it bites on a narrow
+// terminal and never on the wide (200-col) one the other tests pin.
+
+[<Fact>]
+let ``View: a long Field value truncates to the console width with an ellipsis and does not wrap — json keeps the full value (#11)`` () =
+    let full = "dropping index IX_Order_Stale on dbo.OrderHeader and three dependent constraints"
+    let v = View.Field("detail", full, View.Bad)
+    let p = plainAtWidth 40 v
+    let lines = p.TrimEnd().Split('\n') |> Array.map (fun s -> s.TrimEnd('\r'))
+    Assert.Single(lines) |> ignore                  // did NOT wrap to a second line
+    Assert.Contains("…", p)                         // the truncation tail is shown
+    Assert.DoesNotContain("constraints", p)         // the dropped tail is gone from the pretty lens
+    for ln in lines do
+        Assert.True(ln.Length <= 40, sprintf "rendered line over the 40-col budget: %d cols (%s)" ln.Length ln)
+    // json — the SAME value, full and untruncated (width is pretty-only)
+    Assert.Equal(full, (json v).GetProperty("value").GetString())
+
+[<Fact>]
+let ``View: a long Lane label truncates but the humane count survives the width cut — json keeps the full label + items (#11)`` () =
+    let longName = "rename OrderHeaderArchiveStagingTableFromTheLegacyEstate"
+    let items = [ for i in 1 .. 7 -> sprintf "table-%d" i ]
+    let v = View.Lane("⟲", longName, View.Ok, items)
+    let head = (plainAtWidth 40 v).TrimEnd().Split('\n').[0].TrimEnd('\r')
+    Assert.True(head.Length <= 40, sprintf "headline over the 40-col budget: %d cols (%s)" head.Length head)
+    Assert.Contains("…", head)        // the label was cut to fit
+    Assert.EndsWith("7", head)        // the load-bearing humane count survived the cut
+    // json keeps the full label and every item — width is pretty-only
+    let j = json v
+    Assert.Equal(longName, j.GetProperty("label").GetString())
+    Assert.Equal(7, j.GetProperty("items").EnumerateArray() |> Seq.length)
+
+[<Fact>]
+let ``View: at a wide console a Field value renders whole — the width cap bites only when it must (#11)`` () =
+    let full = "dropping index IX_Order_Stale on dbo.OrderHeader and three dependent constraints"
+    let p = plainAtWidth 200 (View.Field("detail", full, View.Bad))
+    Assert.Contains(full, p)          // the whole value is present
+    Assert.DoesNotContain("…", p)     // no truncation tail at 200 cols
 
 // --- the one-substrate law over the whole DU (the totality lock) -----------
 // Discriminating predicate: the pretty lens and the JSON lens are each TOTAL

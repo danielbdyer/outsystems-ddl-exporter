@@ -107,6 +107,31 @@ keeps the full list (breadth is pretty-only); a deeper `Depth` reveals a nested
 leaf the default collapses. The carrier is threaded provably, and the machine lens
 is proven blind to it.
 
+### Shipped next (2026-06-18) — #11: responsive width (the width cap, #4's first consumer)
+
+**The dual of the breadth cap.** `laneCap` caps how MANY items a lane shows; #11
+caps how WIDE a line may be. A `View.truncateTo budget s` helper tails a value with
+`Theme.ellipsis` (`…`) when it overflows the column budget (`RenderOptions.Width`,
+defaulted from `console.Profile.Width`), applied to the prose line renderers —
+`Field` value, `Hero` / `Note` / `Action` text, the `Disclosure` headline, and the
+`Lane` headline (where it truncates the *label* so the load-bearing humane count
+never falls off the line). It runs on the RAW value **before** markup
+escaping/coloring, so a color tag is never cut — the same fault #2/#3 contain, here
+avoided by construction. The panel `Grid` measures its own columns, so panel rows
+are untouched (lower blast radius).
+
+**Width is pretty-only.** `toJson` is unchanged — it never truncates, so the
+machine lens keeps the full value the human lens tailed (the one-substrate law, the
+same the `laneCap` tests pin). Three law-citing `ViewTests`: a long `Field` value
+tails with `…` on ONE line at a 40-column console (no wrap) while json keeps it
+whole; a long `Lane` label is cut but the count survives; and at 200 columns the
+value renders whole — the cap bites only when it must, so every existing
+wide-console assertion (board, gate, survey, explain) stands unregressed.
+
+**Deferred.** `Lane`/`Disclosure` *item* lines and `Trail` steps are not yet
+width-capped (the latter is #15's territory); the meter stays a fixed gauge (a
+gauge, not prose — the doc's call). Recorded so the edge is named.
+
 ---
 
 ## 1 — The map (all 25, by theme)
@@ -126,7 +151,7 @@ Status key: **● shipped** · **◐ partial / starved** · **○ not started** 
 | 8 | Sealed `Color` palette | B | ✕ |
 | 9 | High-contrast / colorblind theme | B | ✕ |
 | 10 | Screen-reader narration lens | B | ✕ |
-| 11 | **Responsive width** | B | ○ |
+| 11 | **Responsive width** | B | ● |
 | 12 | `View.Table` primitive | C. New primitives | ○ |
 | 13 | Fold `Bench.renderTable` into the substrate | C | ○ |
 | 14 | Trend surfaces (use `Theme.sparkline`) | C | ○ |
@@ -246,7 +271,7 @@ compile-time totality witness by making `writePanel` match a closed `PanelRow`
 > Section scoped to **responsive width** per operator direction (2026-06-18).
 > `NO_COLOR` shipped (#7). #8–#10 de-scoped (§1 table).
 
-### 11 · Responsive width  ○
+### 11 · Responsive width  ●  *(landed 2026-06-18; see §0)*
 
 **Problem.** Everything assumes ≥ `View.plainWidth` (100) columns. The meter is a
 fixed 10 cells (`Theme.meter`); long `Field` values aren't truncated or wrapped;
@@ -276,6 +301,16 @@ the source of truth.
   value with a `…` and *does not* wrap to a second line; the machine lens
   (`toJson`) keeps the **full** untruncated value (width is a pretty-lens concern
   only — the same law `laneCap` obeys in `ViewTests`).
+
+**As shipped.** `View.truncateTo budget s` tails a value with `Theme.ellipsis`
+(`…`) when it overflows, run on the RAW value **before** escaping/coloring (so a
+markup tag is never cut), at the prose line renderers — `Field` value, `Hero` /
+`Note` / `Action` text, `Disclosure` headline, and the `Lane` headline (truncating
+the *label*, never the trailing count). Budget = `opts.Width` (#4's
+`RenderOptions.Width`, defaulted from `console.Profile.Width`) less the indent,
+label, gutters, and glyph. `toJson` is untouched — width never reaches the machine
+lens. *Deferred:* `Lane`/`Disclosure` **item** lines and `Trail` steps (the latter
+is #15); the meter stays a fixed gauge (a gauge, not prose).
 
 ---
 
