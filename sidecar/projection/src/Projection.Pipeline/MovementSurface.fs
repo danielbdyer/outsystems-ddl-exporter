@@ -217,6 +217,17 @@ module Environment =
 // `FlowSource`, `Flow`, and `FlowRunOpts` live in MovementSpec.fs (the types
 // file) — `Intent.Flow` carries them, so they precede it in compile order.
 
+/// Data-portability — a named SLICE FLOW: the complete cross-environment
+/// recipe `slice-run <name>` executes — extract the named `Slice` from the
+/// `Source` and apply it to the `Target`. `Source`/`Target` are connection refs
+/// (`env:<VAR>` / `file:<path>` / `live:<connStr>`); `Slice` names an entry in
+/// the `slices` block. The whole recipe lives in projection.json (config-
+/// primary); the CLI just names it.
+type SliceFlowSpec =
+    { Source : string
+      Slice  : string
+      Target : string }
+
 /// The parsed `projection.json`: named environments (places) and flows
 /// (source→target Move recipes), the default authored model (so a flow needs
 /// no model path), plus a global defaults block.
@@ -265,6 +276,11 @@ type ProjectionConfig =
         /// omitted when empty), so `parse ∘ render = id` covers it. Empty ⇒ no
         /// `slices` key (byte-identical).
         Slices       : Map<string, SliceSpec>
+        /// Data-portability — named SLICE FLOWS (`"sliceFlows": { "<name>":
+        /// { source, slice, target } }`): the complete extract→apply recipes
+        /// `slice-run <name>` executes. A movement-vocabulary citizen (rendered,
+        /// so `parse ∘ render = id`); empty ⇒ no key.
+        SliceFlows   : Map<string, SliceFlowSpec>
         /// The file the config was loaded from (S6.2 — `fromFile` sets `Some
         /// path`; `parse`/`empty` set `None`). It is LOAD PROVENANCE, not a JSON
         /// field — `renderConfig` never emits it, so the `parse ∘ render` round
@@ -282,7 +298,7 @@ module ProjectionConfig =
     let empty : ProjectionConfig =
         { Environments = Map.empty; Flows = Map.empty; Model = None; ModelOssys = None; Defaults = Map.empty
           Shaping = Config.defaultConfig; Synthetic = Config.defaultSyntheticSection
-          TighteningRelaxations = []; Slices = Map.empty; SourcePath = None }
+          TighteningRelaxations = []; Slices = Map.empty; SliceFlows = Map.empty; SourcePath = None }
 
     let private err (code: string) (message: string) : ValidationError =
         ValidationError.create code message
@@ -350,6 +366,23 @@ module ProjectionConfig =
                 | Error es ->
                     failwithf "slice '%s' is invalid: %s"
                         p.Name (es |> List.map (fun e -> e.Code) |> String.concat ", "))
+            |> Map.ofSeq
+        | _ -> Map.empty
+
+    /// Data-portability — parse the `"sliceFlows"` block to the named
+    /// `SliceFlowSpec` map (source ref + slice name + target ref). A flow
+    /// missing a required field fails the config parse (outer `try` →
+    /// `cli.config.parseFailed`). Absent ⇒ the empty map.
+    let private parseSliceFlows (root: JsonElement) : Map<string, SliceFlowSpec> =
+        match root.TryGetProperty "sliceFlows" with
+        | true, flowsEl when flowsEl.ValueKind = JsonValueKind.Object ->
+            flowsEl.EnumerateObject()
+            |> Seq.map (fun p ->
+                let req (field: string) =
+                    match getString p.Value field with
+                    | Some v -> v
+                    | None   -> failwithf "sliceFlow '%s': missing required field '%s'" p.Name field
+                p.Name, { Source = req "source"; Slice = req "slice"; Target = req "target" })
             |> Map.ofSeq
         | _ -> Map.empty
 
@@ -684,6 +717,8 @@ module ProjectionConfig =
                           // Data-portability — the named use-case slice definitions
                           // (movement-vocabulary citizen; rendered, so it round-trips).
                           Slices = parseSlices root
+                          // Data-portability — the named extract→apply slice flows.
+                          SliceFlows = parseSliceFlows root
                           // `parse` has no file provenance; `fromFile` overlays it.
                           SourcePath = None }
         with ex ->
@@ -885,6 +920,17 @@ module ProjectionConfig =
             for KeyValue (name, spec) in cfg.Slices do
                 s.[name] <- System.Text.Json.Nodes.JsonNode.Parse(Projection.Targets.Json.SliceCodec.serialize spec)
             root.["slices"] <- s)
+        // Data-portability — the named extract→apply slice flows. Omitted when
+        // empty, so a config with no slice flows round-trips to no key (A44).
+        (if not (Map.isEmpty cfg.SliceFlows) then
+            let f = JsonObject()
+            for KeyValue (name, sf) in cfg.SliceFlows do
+                let o = JsonObject()
+                setStr o "source" sf.Source
+                setStr o "slice"  sf.Slice
+                setStr o "target" sf.Target
+                f.[name] <- o
+            root.["sliceFlows"] <- f)
         root
 
     /// Render a movement config to its `projection.json` text — the round-trip

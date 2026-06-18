@@ -1285,6 +1285,15 @@ let ``render: a config with no slices round-trips to no slices key`` () =
     Assert.DoesNotContain("slices", ProjectionConfig.render cfg)
 
 [<Fact>]
+let ``render: a config's slice flows round-trip (data-portability; parse-render = id)`` () =
+    let cfg =
+        { ProjectionConfig.empty with
+            SliceFlows = Map.ofList [ "refreshUat", { Source = "env:PROD_CONN"; Slice = "westCoast"; Target = "env:UAT_CONN" } ] }
+    match ProjectionConfig.parse (ProjectionConfig.render cfg) with
+    | Ok back -> Assert.Equal<Map<string, SliceFlowSpec>>(cfg.SliceFlows, back.SliceFlows)
+    | Error es -> Assert.Fail(sprintf "round-trip failed: %A" es)
+
+[<Fact>]
 let ``parse: --seed and --scale set the per-run intent (D8)`` () =
     let (_, o) = parseFlowIntent [ "golden"; "--seed"; "7"; "--scale"; "0.5" ]
     Assert.Equal(Some 7UL, o.Seed)

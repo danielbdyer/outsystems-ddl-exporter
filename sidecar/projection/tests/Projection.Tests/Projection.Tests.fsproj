@@ -28,6 +28,7 @@
     <Compile Include="LiveSourceDockerTests.fs" />
     <Compile Include="ClosureOracleDockerTests.fs" />
     <Compile Include="SliceApplyDockerTests.fs" />
+    <Compile Include="SliceRunDockerTests.fs" />
     <Compile Include="ScaffoldingTests.fs" />
     <Compile Include="ResultTests.fs" />
     <Compile Include="LedgerTests.fs" />

@@ -397,6 +397,8 @@ let main argv =
         runSliceApply false (argv |> Array.toList |> List.tail)
     | _ when argv.Length >= 1 && argv.[0] = "slice-reset" ->
         runSliceApply true (argv |> Array.toList |> List.tail)
+    | _ when argv.Length >= 1 && argv.[0] = "slice-run" ->
+        runSliceFlow (argv |> Array.toList |> List.tail)
     | _ ->
         match discoverConfig () with
         | Error es ->

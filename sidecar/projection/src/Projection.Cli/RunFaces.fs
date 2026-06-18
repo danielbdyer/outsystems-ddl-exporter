@@ -2454,3 +2454,50 @@ let runSliceApply (reset: bool) (args: string list) : int =
     | _ ->
         eprintfn "usage: projection %s --golden <path> --target <ref> [--out <path> | --go]" (if reset then "slice-reset" else "slice-apply")
         1
+
+/// `projection slice-run <name> [--go]` — run a named extract→apply slice flow
+/// from projection.json's `sliceFlows` block (flow-binding). Extract the slice
+/// from its source and apply it to its target in ONE command. `--go` lands the
+/// rows; otherwise a live preview (extract + plan, no write).
+let runSliceFlow (args: string list) : int =
+    let arr = List.toArray args
+    let hasFlag (flag: string) : bool = Array.contains flag arr
+    match arr |> Array.tryFind (fun a -> not (a.StartsWith "-")) with
+    | None -> eprintfn "usage: projection slice-run <name> [--go]"; 1
+    | Some name ->
+        match ProjectionConfig.fromFile "projection.json" with
+        | Error es -> printErrors Console.Error es; 6
+        | Ok cfg ->
+            match Map.tryFind name cfg.SliceFlows with
+            | None ->
+                eprintfn "unknown slice flow '%s' — declare it in projection.json under \"sliceFlows\"." name
+                2
+            | Some sf ->
+                match Map.tryFind sf.Slice cfg.Slices with
+                | None ->
+                    eprintfn "slice flow '%s' references unknown slice '%s' (add it to \"slices\")." name sf.Slice
+                    2
+                | Some spec ->
+                    let execute = hasFlag "--go"
+                    let result =
+                        (SliceFlowRun.run sf.Source spec sf.Target execute (hasFlag "--allow-cdc")).GetAwaiter().GetResult()
+                    let code =
+                        match result with
+                        | Ok report ->
+                            let skipped = List.length report.SkippedReferences
+                            eprintfn
+                                "Slice flow '%s' %s: %s → %s."
+                                name (if execute then "applied" else "previewed") sf.Source sf.Target
+                            if skipped > 0 then
+                                eprintfn "  WARNING: %d reference(s) skipped as unresolved orphans." skipped
+                                9
+                            else 0
+                        | Error errors ->
+                            printErrors Console.Error errors
+                            let anyCode (prefix: string) =
+                                errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith prefix)
+                            if anyCode "slice.schemaParity" || anyCode "slice.root" then 2
+                            elif anyCode "connection" || anyCode "slice.apply" then 6
+                            else 3
+                    dumpBench "slice-run"
+                    code
