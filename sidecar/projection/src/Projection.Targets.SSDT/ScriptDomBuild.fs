@@ -69,6 +69,12 @@ module ScriptDomBuild =
         id.QuoteType <- QuoteType.SquareBracket
         id
 
+    /// F10 (audit 2026-06-17) — the OS-native autonumber's IDENTITY
+    /// `(seed, increment)`. The default an identity column emits when the IR
+    /// carries no reflected seed (`ColumnRealization.Identity = None`), so the
+    /// emission stays byte-identical to the prior `IDENTITY(1, 1)` hardcode.
+    let private osNativeIdentity : int64 * int64 = (1L, 1L)
+
     /// `[schema].[name]` schema-qualified identifier list. ScriptDom's
     /// `MultiPartIdentifier` carries an ordered `Identifiers` list; we
     /// build it from the typed `TableId`.
@@ -383,15 +389,20 @@ module ScriptDomBuild =
             let nullCons = NullableConstraintDefinition()
             nullCons.Nullable <- c.Nullable
             col.Constraints.Add(nullCons)
-            // IDENTITY(1,1) when applicable. ScriptDom carries
-            // `IdentityOptions` directly on the column.
+            // IDENTITY when applicable. ScriptDom carries `IdentityOptions`
+            // directly on the column. F10 (audit 2026-06-17): the seed/increment
+            // are now IR-driven — `c.Identity` carries `(seed, increment)`;
+            // `None` is the OS-native default `osNativeIdentity = (1L, 1L)`, so
+            // a column with no reflected seed emits `IDENTITY(1, 1)` exactly as
+            // before, while a reflected non-default seed is no longer normalized.
             if c.IsIdentity then
+                let (seed, increment) = Option.defaultValue osNativeIdentity c.Identity
                 let identity = IdentityOptions()
                 let seedLit = IntegerLiteral()
-                seedLit.Value <- "1"
+                seedLit.Value <- string seed
                 identity.IdentitySeed <- seedLit
                 let incLit = IntegerLiteral()
-                incLit.Value <- "1"
+                incLit.Value <- string increment
                 identity.IdentityIncrement <- incLit
                 col.IdentityOptions <- identity
             // DEFAULT clause (slice 5.13.column-features-emit): when the

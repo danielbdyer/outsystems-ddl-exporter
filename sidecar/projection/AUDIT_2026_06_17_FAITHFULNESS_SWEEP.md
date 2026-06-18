@@ -34,6 +34,9 @@ for the full branch picture. Dispositions so far:
 - **F1 collation — ✅ DONE** (2026-06-17, individual heavy commit): full faithful carry
   (IR field + OSSYS read wiring + `COLLATE` emission), golden-neutral, witnessed both sides.
   See the F1 disposition below.
+- **F10 IDENTITY — ✅ DONE** (2026-06-17, individual heavy commit): IDENTITY seed/increment
+  is now IR-driven (`ColumnRealization.Identity`, default `(1,1)`) not a hardcode; golden-
+  neutral; the read-side seed population is the named bound. See the F10 disposition below.
 - **Still pending.** **Bounded/medium** (F7-config-preserve = extend
   `renderConfig`+parse+the A44 generator to round-trip `tighteningRelaxations`, **touches the A44
   canary**; F6 follow-on = the advisory-tuning config for all four `H-07x` passes) · **heavy**
@@ -255,7 +258,20 @@ operator adjudication.
 - **F10 — `IDENTITY(1,1)` hardcoded** · Low · High — Lane 6 B1 (`ScriptDomBuild.fs:371-379`).
   Faithful for OS-native autonumbers; normalizes external/reflected identity seeds.
   **Action:** carry seed/increment in the IR if external tables are in scope; else note
-  the bound. **Disposition:**
+  the bound. **Disposition:** ✅ DONE (heavy commit, 2026-06-17) — the IR now carries it AND
+  the bound is noted. `ColumnRealization.Identity : (int64 * int64) option` (mirrors the F1
+  Collation carry — smart ctors default `None`, only the ~4 record-literal sites changed);
+  `ColumnDef.Identity` threads it; `ScriptDomBuild` emits `IDENTITY(seed, increment)` from
+  the IR with a named `osNativeIdentity = (1L, 1L)` default replacing the bare `"1"`/`"1"`
+  hardcode. So the emission is IR-driven and the IR can express a non-default seed, but
+  `None` (every column today) emits `IDENTITY(1, 1)` **byte-identically** (goldens unmoved).
+  THE BOUND (noted, not silent): no read path yet populates a non-default seed — OS-native
+  autonumbers are `(1,1)`, and neither the OSSYS rowset extraction nor ReadSide reads
+  `sys.identity_columns.seed_value/increment_value`. The re-open TRIGGER is an external/
+  reflected identity column whose deployed seed ≠ `(1,1)` entering scope; wiring that read
+  (sibling to the F1 ReadSide-collation follow-on) populates `Identity` and the emission
+  already honors it. Witnesses: `ScriptDomRoundTripTests` (`IDENTITY(1000,5)` vs the default
+  `IDENTITY(1,1)`, asserted on the re-parsed `IdentityOptions`).
 - **F11 — email/phone/text-width imposition** · Low · High — Lane 6 A3
   (`OssysTranslation.fs:362-364`, `textLength` 306-310). V1-parity faithful but an
   undiagnosed inference relative to raw source. **Action:** ledger entry; optional

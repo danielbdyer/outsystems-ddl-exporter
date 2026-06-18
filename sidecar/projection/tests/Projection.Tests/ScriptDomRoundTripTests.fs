@@ -58,6 +58,7 @@ let private sampleColumns : ColumnDef list =
     [
         {
             Collation = None
+            Identity = None
             Name = "Id"
             Type = Integer
             SqlStorage = None
@@ -69,6 +70,7 @@ let private sampleColumns : ColumnDef list =
         }
         {
             Collation = None
+            Identity = None
             Name = "Name"
             Type = Text
             SqlStorage = None
@@ -80,6 +82,7 @@ let private sampleColumns : ColumnDef list =
         }
         {
             Collation = None
+            Identity = None
             Name = "Score"
             Type = Decimal
             SqlStorage = None
@@ -152,6 +155,7 @@ let ``ScriptDom CreateTable emit names the schema and table`` () =
 
 let private columnNamed (name: string) (collation: string option) : ColumnDef =
     { Collation = collation
+      Identity = None
       Name = name; Type = Text; SqlStorage = None
       Length = Some 100; Precision = None; Scale = None
       Nullable = false; IsIdentity = false; IsPrimaryKey = false
@@ -177,6 +181,38 @@ let ``F1: a column carrying a Collation emits a COLLATE clause naming that colla
 let ``F1: a column with no Collation emits no COLLATE clause (byte-identical to pre-F1)`` () =
     let col = firstColumnOf [ columnNamed "Label" None ]
     Assert.Null(col.Collation)
+
+// ---------------------------------------------------------------------------
+// F10 (audit 2026-06-17) — IDENTITY seed/increment is IR-driven, not a (1,1)
+// hardcode. A reflected non-default seed rides through `ColumnDef.Identity` to
+// `IDENTITY(seed, increment)`; absence emits the OS-native `IDENTITY(1, 1)`
+// byte-identically. Asserted on the re-parsed AST's `IdentityOptions`.
+// ---------------------------------------------------------------------------
+
+let private identityColumn (identity: (int64 * int64) option) : ColumnDef =
+    { Collation = None
+      Identity = identity
+      Name = "Id"; Type = Integer; SqlStorage = None
+      Length = None; Precision = None; Scale = None
+      Nullable = false; IsIdentity = true; IsPrimaryKey = false
+      DefaultValue = None; DefaultName = None
+      Computed = None; Provenance = "Id" }
+
+let private identitySeedIncrement (col: ColumnDefinition) : string * string =
+    let opts = nonNull col.IdentityOptions
+    (opts.IdentitySeed :?> IntegerLiteral).Value, (opts.IdentityIncrement :?> IntegerLiteral).Value
+
+[<Fact>]
+let ``F10: an identity column carrying a non-default seed emits IDENTITY(seed, increment)`` () =
+    let col = firstColumnOf [ identityColumn (Some (1000L, 5L)) ]
+    Assert.NotNull(col.IdentityOptions)
+    Assert.Equal<string * string>(("1000", "5"), identitySeedIncrement col)
+
+[<Fact>]
+let ``F10: an identity column with no seed emits the OS-native IDENTITY(1, 1) (byte-identical)`` () =
+    let col = firstColumnOf [ identityColumn None ]
+    Assert.NotNull(col.IdentityOptions)
+    Assert.Equal<string * string>(("1", "1"), identitySeedIncrement col)
 
 [<Fact>]
 let ``ScriptDom CreateTable emit carries every column with its data type`` () =

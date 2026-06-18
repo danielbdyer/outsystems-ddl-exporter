@@ -83,6 +83,12 @@ type ColumnDef =
         /// collation; `None` emits nothing (database default — byte-
         /// identical to pre-F1 output).
         Collation : string option
+        /// F10 (audit 2026-06-17) — IDENTITY (seed, increment) for an identity
+        /// column (`IsIdentity = true`). `None` is the OS-native default
+        /// (1, 1) — the realization layer emits `IDENTITY(1, 1)`, byte-identical
+        /// to the prior hardcode. `Some (s, i)` emits `IDENTITY(s, i)` so a
+        /// reflected non-default seed is not silently normalized.
+        Identity : (int64 * int64) option
         /// The originating attribute's display name + SsKey root,
         /// preserved so `Render.toText` can keep the diffable-form
         /// trailing comment that the v1 emitter carried.

@@ -708,6 +708,10 @@ module ReadSide =
                                     // .COLLATION_NAME) is the named follow-on. None
                                     // keeps ReadSide byte-identical.
                                     Collation = None
+                                    // F10 — likewise the deployed-target identity
+                                    // seed/increment (sys.identity_columns) is the
+                                    // named follow-on; None = OS-native (1,1).
+                                    Identity = None
                                 }
                             IsPrimaryKey = primaryKeySet.Contains coord
                             IsMandatory = not row.Nullable
