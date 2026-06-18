@@ -24,6 +24,19 @@ let private plainToDepth (depth: int) (v: View.View) : string =
 
 let private plain (v: View.View) : string = plainToDepth View.defaultDepth v
 
+/// Render at an explicit `RenderOptions` (the #4 carrier) — the same NoColors plain
+/// lens, but through `writeWith` so a test can pin a custom breadth / depth / width.
+let private plainWith (opts: View.RenderOptions) (v: View.View) : string =
+    use sw = new StringWriter()
+    let console =
+        AnsiConsole.Create(
+            AnsiConsoleSettings(
+                Ansi = AnsiSupport.No, ColorSystem = ColorSystemSupport.NoColors,
+                Out = AnsiConsoleOutput(sw)))
+    console.Profile.Width <- 200
+    View.writeWith opts console v
+    sw.ToString()
+
 let private json (v: View.View) : JsonElement =
     JsonDocument.Parse((View.toJson v).ToJsonString()).RootElement.Clone()
 
@@ -235,6 +248,37 @@ let ``View: a Lane humanizes its true count in the header (THE_VOICE §12)`` () 
     let items = [ for i in 1 .. 2140 -> sprintf "c%04d" i ]
     let v = View.Lane("+", "add", View.Ok, items)
     Assert.Contains("2,140", plainToDepth 0 v)   // the count scales; the sentence does not
+
+// --- the RenderOptions carrier (#4 — one threaded policy, not scattered consts) -
+// Discriminating predicate: the pretty-lens knobs (depth, breadth, width) ride ONE
+// `RenderOptions` value through `writeWith`, so a caller overrides the breadth cap
+// or the depth without touching a module constant — and the machine lens (`toJson`)
+// reads NONE of them, because a cap is a pretty-lens concern (the one-substrate law).
+
+[<Fact>]
+let ``RenderOptions: writeWith threads the breadth cap — a custom LaneCap overrides the default, json keeps the full list`` () =
+    // 10 items render whole under the default cap (12); an explicit LaneCap of 3
+    // proves the breadth knob is read from RenderOptions, not the old module const.
+    let items = [ for i in 1 .. 10 -> sprintf "Item%02d" i ]
+    let v = View.Lane("+", "add", View.Ok, items)
+    let p = plainWith { View.defaultOptions with Depth = 1; LaneCap = 3 } v
+    Assert.Contains("Item03", p)
+    Assert.DoesNotContain("Item04", p)
+    Assert.Contains("and 7 more", p)        // 10 − LaneCap(3) = 7, named
+    // the machine lens ignores the cap — breadth is a pretty-lens concern only
+    let kept = (json v).GetProperty("items").EnumerateArray() |> Seq.length
+    Assert.Equal(10, kept)
+
+[<Fact>]
+let ``RenderOptions: writeWith threads the depth — a deeper Depth reveals what the default collapses`` () =
+    let v =
+        View.Disclosure(
+            "Details", View.Neutral,
+            [ View.Disclosure("Inner", View.Neutral, [ View.Field("leaf", "deep", View.Bad) ]) ])
+    // the nested leaf sits two levels down: collapsed at Depth 0, revealed at Depth 2 —
+    // the Depth field flows through writeWith's carrier, not a bare int parameter.
+    Assert.DoesNotContain("deep", plainWith { View.defaultOptions with Depth = 0 } v)
+    Assert.Contains("deep", plainWith { View.defaultOptions with Depth = 2 } v)
 
 // --- the one-substrate law over the whole DU (the totality lock) -----------
 // Discriminating predicate: the pretty lens and the JSON lens are each TOTAL

@@ -146,6 +146,39 @@ let defaultDepth = 1
 [<Literal>]
 let laneCap = 12
 
+/// The plain-sink width pin, and `RenderOptions`'s default width budget. Spectre
+/// auto-sizes to the terminal, but a redirected sink (pipe / file) reports no
+/// width and collapses the board / gate grids mid-cell — so the factory pins a
+/// redirected console to this. (Previously inlined as a bare `100` at every render
+/// site.) `RenderOptions.Width` defaults here too: the factory pin and the
+/// truncation budget (#11) share one constant.
+[<Literal>]
+let plainWidth = 100
+
+/// The render-policy carrier (#4) — the pretty-lens knobs gathered into one value
+/// so width (#11), depth, and breadth thread as a record instead of a bare
+/// `int depth` plus scattered module constants. The structured lens (`toJson`)
+/// reads NONE of these: every field is a pretty-lens concern — the one-substrate
+/// law, where a cap or a truncation never reaches the machine tree. `Color` is
+/// deliberately absent: the color channel is resolved once, in the console factory
+/// (#5/#7), so a field here would be a zero-consumer duplicate (CLAUDE.md §5); it
+/// joins this record at the first render-time color gate, not speculatively before
+/// one exists.
+type RenderOptions =
+    { /// Disclosure depth — levels revealed before a node collapses behind `▸ N more`.
+      Depth: int
+      /// Breadth cap — the most `Lane` items rendered before the `and N more` tail.
+      LaneCap: int
+      /// Width budget (columns) the pretty lens truncates cells to (#11); the
+      /// machine lens ignores it (width is a pretty-only concern).
+      Width: int }
+
+/// The calm defaults — depth 1, breadth 12, width 100 — each formerly a bare
+/// module constant. `write` / `writeToDepth` start from these and override Width
+/// from the live console, so a real terminal's width flows into the budget.
+let defaultOptions : RenderOptions =
+    { Depth = defaultDepth; LaneCap = laneCap; Width = plainWidth }
+
 /// The disclosure marker for a node with children: open (`▾`) when this level
 /// is being revealed, closed (`▸`) when it is collapsed, blank when childless.
 let private marker (depth: int) (hasChildren: bool) : string =
@@ -153,9 +186,9 @@ let private marker (depth: int) (hasChildren: bool) : string =
     elif depth >= 1 then Theme.expanded
     else Theme.collapsed
 
-let rec private writeBlock (console: IAnsiConsole) (depth: int) (indent: string) (v: View) : unit =
+let rec private writeBlock (console: IAnsiConsole) (opts: RenderOptions) (indent: string) (v: View) : unit =
     match v with
-    | Doc blocks -> for b in blocks do writeBlock console depth indent b
+    | Doc blocks -> for b in blocks do writeBlock console opts indent b
     | Blank -> console.WriteLine()
     | Panel (title, fields) -> writePanel console title fields
     | Hero (st, text) ->
@@ -191,21 +224,21 @@ let rec private writeBlock (console: IAnsiConsole) (depth: int) (indent: string)
         // remainder). The full list always rides `toJson` — the machine lens
         // keeps what the human capped.
         let n = List.length items
-        let m = marker depth (n > 0)
+        let m = marker opts.Depth (n > 0)
         console.MarkupLine(
             sprintf "%s%s %s" indent m (colorOf st (Markup.Escape (sprintf "%s %s  %s" glyph label (Theme.humane n)))))
-        if depth >= 1 then
-            for item in items |> List.truncate laneCap do
+        if opts.Depth >= 1 then
+            for item in items |> List.truncate opts.LaneCap do
                 console.MarkupLine(sprintf "%s   %s %s" indent (Theme.muted Theme.dot) (Markup.Escape item))
-            if n > laneCap then
+            if n > opts.LaneCap then
                 console.MarkupLine(
                     sprintf "%s   %s %s" indent (Theme.muted Theme.collapsed)
-                        (Theme.muted (sprintf "and %s more" (Theme.humane (n - laneCap)))))
+                        (Theme.muted (sprintf "and %s more" (Theme.humane (n - opts.LaneCap)))))
     | Disclosure (headline, st, detail) ->
-        let m = marker depth (not (List.isEmpty detail))
+        let m = marker opts.Depth (not (List.isEmpty detail))
         console.MarkupLine(sprintf "%s%s %s" indent m (styled st headline))
-        if depth >= 1 then
-            for child in detail do writeBlock console (depth - 1) (indent + "  ") child
+        if opts.Depth >= 1 then
+            for child in detail do writeBlock console { opts with Depth = opts.Depth - 1 } (indent + "  ") child
         elif not (List.isEmpty detail) then
             console.MarkupLine(
                 sprintf "%s  %s %s" indent (Theme.muted Theme.collapsed)
@@ -213,15 +246,26 @@ let rec private writeBlock (console: IAnsiConsole) (depth: int) (indent: string)
     | Note text -> console.MarkupLine(sprintf "%s%s" indent (Theme.muted (Markup.Escape text)))
     | Action text -> console.MarkupLine(sprintf "%s%s %s" indent Theme.arrow (Theme.accent (Markup.Escape text)))
 
+/// Render with an explicit policy (#4) — the single carrier #11 (width) and #15
+/// (breadth) read. `opts.Width` is respected verbatim (the caller owns the
+/// budget); `write` / `writeToDepth` below are the thin defaults over it that pull
+/// Width from the live console.
+let writeWith (opts: RenderOptions) (console: IAnsiConsole) (v: View) : unit =
+    writeBlock console opts "  " v
+
 /// Render to a chosen disclosure depth — the dig revealed `depth` levels down,
 /// deeper nodes collapsed behind their `▸ N more` affordance. The interactive
-/// `→`/`←` of Explore and the `--depth` flag both ride this.
+/// `→`/`←` of Explore and the `--depth` flag both ride this. Width defaults from
+/// the live console (`console.Profile.Width`) — a redirected sink is pinned to
+/// `plainWidth` by the factory, a TTY reports its real width — so #11's truncation
+/// budget tracks the actual terminal.
 let writeToDepth (console: IAnsiConsole) (depth: int) (v: View) : unit =
-    writeBlock console depth "  " v
+    writeWith { defaultOptions with Depth = depth; Width = console.Profile.Width } console v
 
 /// Render at the calm default depth — a colored console is the pretty lens, a
 /// `NoColors` console is the plain lens. One renderer, two outputs.
-let write (console: IAnsiConsole) (v: View) : unit = writeToDepth console defaultDepth v
+let write (console: IAnsiConsole) (v: View) : unit =
+    writeWith { defaultOptions with Width = console.Profile.Width } console v
 
 // --- The console factory (one sink → one configured console) ---------------
 // The render sites used to each re-derive the same facts about a sink: is it
@@ -245,13 +289,6 @@ let private envColorOverride () : bool option =
         | null | "" | "0" -> None
         | _               -> Some true
     | _ -> Some false
-
-/// The plain-sink width pin. Spectre auto-sizes to the terminal, but a
-/// redirected sink (pipe / file) reports no width and collapses the board / gate
-/// grids mid-cell — so a redirected console is pinned wide enough to keep them
-/// intact. (Previously inlined as a bare `100` at every render site.)
-[<Literal>]
-let plainWidth = 100
 
 /// Build a configured console for a sink. `redirected` is whether THIS writer is
 /// a pipe/file — the caller knows it (`Console.IsErrorRedirected` for stderr,

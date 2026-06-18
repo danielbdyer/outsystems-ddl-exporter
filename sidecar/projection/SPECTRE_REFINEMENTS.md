@@ -80,6 +80,33 @@ tail of a run.
 > export `PROJECTION_MSSQL_CONN_STR` when running the pure pool here — several
 > "pure" extraction canaries open a live connection).
 
+### Shipped next (2026-06-18) — #4: the `RenderOptions` carrier (the enabling refactor)
+
+**One policy value, not scattered constants.** `defaultDepth`, `laneCap`, and the
+width pin were three module `[<Literal>]`s and `writeToDepth` threaded a bare
+`int depth`. They are now one `RenderOptions { Depth; LaneCap; Width }` threaded
+through a new `writeWith opts console v`; `write` / `writeToDepth` stay as thin
+wrappers that default `Width` from the live `console.Profile.Width` — so a real
+terminal's width (or the factory's redirected-sink pin) flows into the budget.
+`writeBlock` reads `opts.Depth` / `opts.LaneCap`; the `Disclosure` recursion
+decrements via `{ opts with Depth = opts.Depth - 1 }`. **No behavior change**: the
+machine lens reads none of it (the one-substrate law), and `Width` is threaded but
+not yet *read* by the renderer — #11 is its first consumer, the doc-sanctioned
+enabling-refactor exception.
+
+**`Color` deliberately cut.** The §4 sketch listed `{ Depth; LaneCap; Width;
+Color }`, but the color channel is already resolved once in the console factory
+(#5/#7); a `RenderOptions.Color` field would be a zero-consumer duplicate
+(CLAUDE.md §5, "carriers reify eagerly, verbs at the second consumer"). It joins
+the record at the first render-time color gate, not before one exists — recorded
+so the cut is honest and re-openable, the same discipline as the de-scoped #8–#10.
+
+**The test (`ViewTests`).** Two law-citing facts drive `writeWith` directly: a
+custom `LaneCap` caps a lane where the module default (12) would not, and `toJson`
+keeps the full list (breadth is pretty-only); a deeper `Depth` reveals a nested
+leaf the default collapses. The carrier is threaded provably, and the machine lens
+is proven blind to it.
+
 ---
 
 ## 1 — The map (all 25, by theme)
@@ -92,7 +119,7 @@ Status key: **● shipped** · **◐ partial / starved** · **○ not started** 
 | 1 | Close the `Panel` drift hole | A. Substrate integrity | ● |
 | 2 | Unforgeable markup (a `Markup` newtype) | A | ○ |
 | 3 | Defensive render (markup-fault → plain fallback) | A | ○ |
-| 4 | A `RenderOptions` record | A | ○ |
+| 4 | A `RenderOptions` record | A | ● |
 | 5 | One console/channel factory | A | ● |
 | 6 | Totality + property test over the DU | A | ● |
 | 7 | Honor `NO_COLOR` / `CLICOLOR_FORCE` | B. Color & accessibility | ● |
@@ -173,7 +200,7 @@ an exception. A display bug today can turn exit 0 into a crash.
 fault degrades to plain text and never fails the run it describes. Pairs with #2
 (which removes most of the *cause*) — keep both: #2 prevents, #3 contains.
 
-### 4 · A `RenderOptions` record  ○  *(the enabling refactor)*
+### 4 · A `RenderOptions` record  ●  *(landed 2026-06-18; the enabling refactor — see §0)*
 
 **Problem.** `defaultDepth`, `laneCap`, the implicit width, and the color policy
 are scattered `[<Literal>]`s and inlined constants. `writeToDepth` threads a bare
@@ -187,6 +214,15 @@ it *before* #11 — #11 is its first consumer.
 **Cheat sheet.** Keep `write` / `writeToDepth` as today's thin wrappers over a new
 `writeWith (opts) (console) (v)` so existing callers (and every test) are
 unbroken; `defaultDepth` / `laneCap` / `plainWidth` become the record's defaults.
+
+**As shipped.** `RenderOptions { Depth; LaneCap; Width }` threaded through
+`writeWith opts console v`; `write` / `writeToDepth` default `Width` from
+`console.Profile.Width` (the live terminal, or the factory's redirected-sink pin).
+The `Disclosure` recursion decrements via `{ opts with Depth = opts.Depth - 1 }`.
+**`Color` was cut**: the channel is already resolved once in the console factory
+(#5/#7), so a field here would be a zero-consumer duplicate (CLAUDE.md §5) — it
+joins the record at the first render-time color gate. No behavior change: `Width`
+is threaded but unread by the renderer until #11.
 
 ### 5 · One console/channel factory  ● *(shipped — see §0)*
 

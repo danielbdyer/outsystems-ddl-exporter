@@ -24681,3 +24681,29 @@ already honors `--atomic` via M24 follow-on C. A small, separate follow-on — n
 (callers threaded)}`; `FOLLOWON_STREAMING_REVERT.md` (the now-cashed instruction set); `RunSpine.fs` (the
 `RunAborted`/`RunStopped` mapping that grounds the seam correction). The migrate envelope (M21/M22/M23/M24 + D) is now
 complete; the remaining frontier is the named moat (`HOLDOUT_INVENTORY_2026_06_16.md`).
+
+## 2026-06-18 — SPECTRE #4: the `RenderOptions` render-interface carrier (a shared `View.write` signature change)
+
+**What & why.** The pretty-lens render policy — disclosure depth, the `Lane` breadth cap, the width budget — was three
+scattered module `[<Literal>]`s (`defaultDepth` / `laneCap` / `plainWidth`) plus a bare `int depth` threaded through
+`writeToDepth`. It is now ONE `RenderOptions { Depth; LaneCap; Width }` threaded through a new
+`View.writeWith opts console v`; `View.write` / `View.writeToDepth` keep their exact signatures as thin wrappers that
+default `Width` from the live `console.Profile.Width` (a TTY's real width, or the factory's redirected-sink pin). The
+recursive `writeBlock` reads `opts.Depth` / `opts.LaneCap`, and the `Disclosure` recursion decrements via
+`{ opts with Depth = opts.Depth - 1 }`. Recorded here (per `SPECTRE_REFINEMENTS.md` §4 batching) because it is a shared
+render-interface change — the carrier #11 (responsive width) and #15 (`Trail` cap) rebase onto, landed alone so each
+consumer's diff stays a clean cherry.
+
+**The `Color` deviation, named.** The §4 sketch listed `{ Depth; LaneCap; Width; Color }`. `Color` was **omitted**: the
+color channel is already resolved once in the console factory (`View.consoleFor` / `envColorOverride`, #5/#7), so a
+`RenderOptions.Color` field would be a zero-consumer duplicate — the standing law "carriers reify eagerly, verbs at the
+second consumer" (CLAUDE.md §5; the dead-algebra-retirement precedent). It joins the record at the first render-time
+color gate, not before one exists. The deviation is from the *sketch*, not a load-bearing decision; recorded so it is
+honest and re-openable.
+
+**Gate.** CLI builds 0/0 under `TreatWarningsAsErrors`; pure pool green (3521 passed, 31s) with two new law-citing
+`ViewTests` driving `writeWith` (a custom `LaneCap` caps where the default would not + `toJson` keeps the full list; a
+deeper `Depth` reveals a nested leaf the default collapses). No behavior change — `Width` is threaded but unread by the
+renderer until #11 consumes it. **Cross-references:** `src/Projection.Cli/View.fs` (`RenderOptions`, `defaultOptions`,
+`writeWith`, the threaded `writeBlock`); `tests/Projection.Tests/ViewTests.fs` (the two carrier tests); `SPECTRE_REFINEMENTS.md`
+§0 + §4 (● flipped).
