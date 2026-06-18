@@ -60,6 +60,29 @@ module Closure =
     let empty : ClosureState =
         { Rows = Map.empty; Requested = Map.empty }
 
+    /// A mandatory (non-nullable) foreign key in the closed set whose parent
+    /// row is **absent** — the closure-completeness violation (Slice 2). In a
+    /// healthy extraction this list is empty: the walk follows every populated
+    /// parent FK, so a dangling mandatory FK means the *source itself* is
+    /// referentially broken (a populated FK pointing at a non-existent parent)
+    /// or the parent was un-fetchable (a composite / PK-less parent kind the
+    /// Slice 1a single-PK walk does not follow into). `OrphanKeyCount` is the
+    /// number of distinct parent key values that did not resolve.
+    type DanglingMandatoryFk =
+        { Kind           : SsKey
+          Column         : Name
+          Target         : SsKey
+          OrphanKeyCount : int }
+
+    /// The closure report — the structured artifact proving (or refuting) that
+    /// the slice is a self-contained, valid-in-itself database. `RowsByKind`
+    /// is the per-kind census; `DanglingMandatory` is **empty iff** every
+    /// mandatory FK resolves within the slice (the closure-completeness
+    /// invariant, FR3). Slice 4 adds the frontier/depth/fuel facets.
+    type ClosureReport =
+        { RowsByKind        : (SsKey * int) list
+          DanglingMandatory : DanglingMandatoryFk list }
+
     /// The single-column primary-key attribute `Name` of a kind, if it has
     /// exactly the OutSystems-canonical single PK. `None` for a PK-less kind
     /// or a composite key (composite keys are Slice 5 territory) — such a kind
@@ -191,7 +214,62 @@ module Closure =
             |> List.map snd
             |> List.sortBy (fun r -> r.Identifier))
 
-    /// The total row count across the closed set — a cheap closure summary
-    /// (the structured `ClosureReport` is Slice 2).
+    /// The total row count across the closed set — a cheap closure summary.
     let rowCount (state: ClosureState) : int =
         state.Rows |> Map.fold (fun n _ m -> n + Map.count m) 0
+
+    /// The PK values present for a kind in the closed set.
+    let private closedKeysOf (target: SsKey) (state: ClosureState) : Set<string> =
+        state.Rows
+        |> Map.tryFind target
+        |> Option.defaultValue Map.empty
+        |> fun m -> m |> Map.toSeq |> Seq.map fst |> Set.ofSeq
+
+    /// Build the **closure report**: the per-kind census plus every dangling
+    /// mandatory FK (the completeness invariant, FR3). Pure over the final
+    /// closed state — `DanglingMandatory` is empty iff every populated,
+    /// non-nullable FK resolves within the slice. Deterministic: sorted by
+    /// owning kind then column (T1).
+    let report (catalog: Catalog) (state: ClosureState) : ClosureReport =
+        let census =
+            state.Rows
+            |> Map.toList
+            |> List.map (fun (k, rows) -> k, Map.count rows)
+        let dangling =
+            [ for (kindKey, rowsByPk) in Map.toList state.Rows do
+                match Catalog.tryFindKind kindKey catalog with
+                | None -> ()
+                | Some kind ->
+                    for r in kind.References do
+                        match Kind.tryFindAttribute r.SourceAttribute kind with
+                        | Some fkAttr when fkAttr.IsMandatory ->
+                            let parentKeys = closedKeysOf r.TargetKind state
+                            let orphans =
+                                rowsByPk
+                                |> Map.toSeq
+                                |> Seq.choose (fun (_, row) ->
+                                    let v = StaticRow.valueOrEmpty fkAttr.Name row
+                                    if v <> "" && not (Set.contains v parentKeys) then Some v else None)
+                                |> Set.ofSeq
+                            if not (Set.isEmpty orphans) then
+                                yield { Kind = kindKey
+                                        Column = fkAttr.Name
+                                        Target = r.TargetKind
+                                        OrphanKeyCount = Set.count orphans }
+                        | _ -> () ]
+            |> List.sortBy (fun d -> SsKey.rootOriginal d.Kind, Name.value d.Column)
+        { RowsByKind = census; DanglingMandatory = dangling }
+
+    /// The named refusal for an incomplete closure — `None` when the slice is
+    /// referentially closed on every mandatory edge, else a single
+    /// `ValidationError` (the specifics live in the structured `ClosureReport`,
+    /// not the message — sites emit codes, the report carries the detail). The
+    /// Execute path gates on this (Slice 1b's `runClosure`); a `DryRun` reports
+    /// it without refusing, so the operator can see the closure before acting.
+    let completenessRefusal (report: ClosureReport) : ValidationError option =
+        if List.isEmpty report.DanglingMandatory then None
+        else
+            Some
+                (ValidationError.create
+                    "closure.danglingMandatoryFk"
+                    "The closure has one or more dangling mandatory foreign keys (a populated, non-nullable FK whose parent row is absent from the slice). The slice is not referentially self-contained; see the closure report for the owning kinds and columns.")

@@ -190,6 +190,30 @@ let ``Closure over all roots is referentially closed — DataLoadPlan.build is c
     // and — every FK target present in the set — no structural surprises.
     Assert.Empty(plan.UnbreakableCycleFks)
 
+// -- Slice 2: the closure report + completeness invariant -----------------
+
+[<Fact>]
+let ``Closure report on a referentially-closed slice names no dangling mandatory FK`` () =
+    let state = runWalk sourceDb (rootOrders [ "1000"; "1001"; "1002" ])
+    let report = Closure.report catalog state
+    Assert.Empty(report.DanglingMandatory)
+    Assert.True((Closure.completenessRefusal report).IsNone)
+
+[<Fact>]
+let ``Closure report names the dangling mandatory FK when a required parent is absent`` () =
+    // Country removed: User.COUNTRY_ID (mandatory) dangles for user 100.
+    let dbNoCountry = sourceDb |> Map.add countryKey []
+    let state = runWalk dbNoCountry (rootOrders [ "1000" ])
+    let report = Closure.report catalog state
+    let dangling = Assert.Single(report.DanglingMandatory)
+    Assert.Equal(userKey, dangling.Kind)
+    Assert.Equal(mkName "COUNTRY_ID", dangling.Column)
+    Assert.Equal(countryKey, dangling.Target)
+    Assert.Equal(1, dangling.OrphanKeyCount)
+    match Closure.completenessRefusal report with
+    | Some e -> Assert.Equal("closure.danglingMandatoryFk", e.Code)
+    | None   -> Assert.Fail "expected a completeness refusal for the dangling mandatory FK"
+
 [<Fact>]
 let ``Closure terminates when a required parent is missing from the source`` () =
     // Remove every Country: user 100 still requests country 10, the oracle
