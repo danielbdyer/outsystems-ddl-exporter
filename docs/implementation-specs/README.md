@@ -70,6 +70,22 @@ Each specification follows a consistent format:
 - [M4.1-performance-benchmarking.md](./M4.1-performance-benchmarking.md) - Scale testing framework
 - [M4.2-security-validation.md](./M4.2-security-validation.md) - Permission and compliance validation
 
+### Milestone 5: Data Portability — Scoped Referential Subsetting & Transfer
+
+Lift a use-case-scoped, referentially-complete subset of rows between environments,
+with collision-safe surrogate remapping for DML-only on-prem targets. See the design
+overview [`design-data-portability-subsetting.md`](../design-data-portability-subsetting.md),
+the [glossary](../data-portability-glossary.md), and the
+[`data-slice` verb](../verbs/data-slice.md).
+
+- [M5.0-data-portability-closure-selector.md](./M5.0-data-portability-closure-selector.md) - **🔴 Critical Path**: `data-portability.json` config + the scoped closure selector (root predicates, per-edge up/down/stop, key-scoped parent pull, completeness invariant)
+- [M5.1-capture-and-remap-loader.md](./M5.1-capture-and-remap-loader.md) - **🔴 Critical Path**: capture-and-remap load that replaces `SET IDENTITY_INSERT` (`#Map_*` temp tables, `OUTPUT` key capture, FK resolution by join, two-phase cycles)
+- [M5.2-natural-key-resolution.md](./M5.2-natural-key-resolution.md) - **🔴 Critical Path**: declared + profile-inferred natural keys driving reuse-vs-insert (hard dependency of M5.1)
+- [M5.3-golden-transfer-verification.md](./M5.3-golden-transfer-verification.md) - **🟡 Basic**: golden/transfer duality + post-load verification (counts, new-orphan delta, natural-key uniqueness)
+
+**Recommended order**: M5.0 → M5.2 → M5.1 → M5.3 (selector and natural keys before
+the loader that consumes both).
+
 ### Additional Sections
 - [Section-1-policy-telemetry.md](./Section-1-policy-telemetry.md) - Policy matrix and decision telemetry
 - [Section-2-smo-emission.md](./Section-2-smo-emission.md) - SMO validation and edge cases
