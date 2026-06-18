@@ -77,7 +77,8 @@ let private attrRow
       IsComputed           = isComputed
       ComputedDefinition   = computedDef
       DefaultConstraintName = defaultConstraintName
-      Order                = None }
+      Order                = None
+      Collation            = None }
 
 let private buildBundle (attrs: OssysRowsetTypes.AttributeRow list) : OssysRowsetTypes.RowsetBundle =
     { OssysRowsetTypes.RowsetBundle.empty with

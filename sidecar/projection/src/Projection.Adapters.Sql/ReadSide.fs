@@ -701,6 +701,13 @@ module ReadSide =
                                 {
                                     ColumnName = columnName
                                     IsNullable = row.Nullable
+                                    // F1 (audit 2026-06-17) — the deployed-target
+                                    // reader does not yet SELECT collation_name
+                                    // (the audited drop was the OSSYS ingest path);
+                                    // reading it here (INFORMATION_SCHEMA.COLUMNS
+                                    // .COLLATION_NAME) is the named follow-on. None
+                                    // keeps ReadSide byte-identical.
+                                    Collation = None
                                 }
                             IsPrimaryKey = primaryKeySet.Contains coord
                             IsMandatory = not row.Nullable

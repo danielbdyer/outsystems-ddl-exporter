@@ -115,7 +115,8 @@ module OssysJsonReader =
                     { SsKey        = k
                       Name         = n
                       Type         = p
-                      Column       = { ColumnName = physicalColumnName; IsNullable = not mandatory }
+                      // F1 (audit 2026-06-17): the JSON source does not expose collation.
+                      Column       = { ColumnName = physicalColumnName; IsNullable = not mandatory; Collation = None }
                       IsPrimaryKey = identifier
                       IsMandatory  = mandatory
                       Length       = lengthOpt

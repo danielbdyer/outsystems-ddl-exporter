@@ -31,6 +31,9 @@ for the full branch picture. Dispositions so far:
   into `all` — is now wired into the totality view. Binding tests added. Gates: fast 3476/0; the
   three registry totality classes (bidirectional 21, completeness 12, digest 7) green. The fuller
   execution↔registration *binding* for F2's emit-seam prune is **audit F3**.
+- **F1 collation — ✅ DONE** (2026-06-17, individual heavy commit): full faithful carry
+  (IR field + OSSYS read wiring + `COLLATE` emission), golden-neutral, witnessed both sides.
+  See the F1 disposition below.
 - **Still pending.** **Bounded/medium** (F7-config-preserve = extend
   `renderConfig`+parse+the A44 generator to round-trip `tighteningRelaxations`, **touches the A44
   canary**; F6 follow-on = the advisory-tuning config for all four `H-07x` passes) · **heavy**
@@ -110,7 +113,23 @@ operator adjudication.
   `COLLATE` faithfully; **or** register it as a closed `Tolerance` + loud adapter
   `Diagnostic`. Verified fix surface: `Catalog.fs:496` (add field), the SSDT emitter
   column path, and the two adapter readers.
-- **Disposition:**
+- **Disposition:** ✅ DONE (heavy commit, 2026-06-17) — the **full faithful carry** (the
+  preferred option; the `Tolerance` fallback was rejected as ill-fitting — collation is an
+  ingest-boundary drop, not a canary *comparison* divergence). Added
+  `ColumnRealization.Collation : string option` (`Catalog.fs`); `create`/`fromTyped` keep
+  their 2-arg shape and default `None`, so the ~291 smart-ctor call sites are untouched and
+  only ~4 record-literal sites changed. READ: the OSSYS rowset path now carries
+  `sys.columns.collation_name` — `AttributeRow.Collation` (`OssysRowsetTypes`), populated
+  from `cr.CollationName` in the `MetadataSnapshotRunner` reality join, threaded into
+  `ColumnRealization` by `OssysRowsetReader`. EMIT: `ColumnDef.Collation`
+  (`Statement.fs`) → a `COLLATE <name>` clause via `ScriptDom`'s
+  `ColumnDefinition.Collation` (`ScriptDomBuild`). Witnesses: emit-side
+  (`ScriptDomRoundTripTests` — COLLATE present↔absent, parse-verified) + read-side
+  (`OsmRowsetReaderTests` — collation threads to `ColumnRealization.Collation`, non-collated
+  stays `None`). **Golden-neutral**: `None` emits nothing → existing goldens byte-identical
+  (master + pruned-platform-auto pass). Follow-on (named, not silent): the deployed-target
+  **ReadSide** path still defaults `Collation = None` — reading `INFORMATION_SCHEMA.COLUMNS
+  .COLLATION_NAME` there is the next slice; the JSON source does not expose collation.
 
 ### F2 — `filterPlatformAutoIndexes`: unregistered, silent, operator-intent catalog mutation on the live path · High · High — Lane 4 F1
 - **Provenance:** def `Policy.fs:599-613`; live invocations `Pipeline.fs:582` (main emit)

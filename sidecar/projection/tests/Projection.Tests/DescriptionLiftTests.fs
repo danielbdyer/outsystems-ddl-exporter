@@ -255,6 +255,7 @@ let private kindRowWith (description: string option) : OssysRowsetTypes.KindRow 
 
 let private idAttrRowWith (description: string option) : OssysRowsetTypes.AttributeRow =
     {
+        Collation = None
         AttrId       = 111
         EntityId     = 11
         AttrName     = "Id"

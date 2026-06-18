@@ -76,6 +76,13 @@ type ColumnDef =
         /// `CreateTableStatementBuilder.cs:362-365` (column.IsComputed
         /// + column.ComputedExpression).
         Computed : ComputedColumnConfig option
+        /// F1 (audit 2026-06-17) — the column's SQL Server collation
+        /// (`ColumnRealization.Collation`). When `Some name`, the
+        /// realization layer emits a `COLLATE <name>` clause after the
+        /// data type so a fresh deploy re-states the team's chosen
+        /// collation; `None` emits nothing (database default — byte-
+        /// identical to pre-F1 output).
+        Collation : string option
         /// The originating attribute's display name + SsKey root,
         /// preserved so `Render.toText` can keep the diffable-form
         /// trailing comment that the v1 emitter carried.

@@ -496,6 +496,15 @@ type PhysicalRealization = TableId
 type ColumnRealization = {
     ColumnName : ColumnName
     IsNullable : bool
+    /// F1 (audit 2026-06-17) — the column's SQL Server collation, when the
+    /// source declares a non-default one (`sys.columns.collation_name`, read by
+    /// the OSSYS rowset adapter). `None` means "no collation opinion" — the
+    /// emitter writes no `COLLATE` clause and the column inherits the database
+    /// default, byte-identical to pre-F1 output. `Some name` is carried
+    /// faithfully through to the emitted `COLLATE <name>` so a fresh deploy no
+    /// longer silently loses the team's chosen collation. The JSON source does
+    /// not expose collation, so that path stays `None`.
+    Collation  : string option
 }
 
 /// Smart constructors and projections for `ColumnRealization`. Lifted
@@ -528,12 +537,20 @@ module ColumnRealization =
     /// is a raw string.
     let create (columnName: string) (isNullable: bool) : Result<ColumnRealization> =
         ColumnName.create columnName
-        |> Result.map (fun cn -> { ColumnName = cn; IsNullable = isNullable })
+        |> Result.map (fun cn -> { ColumnName = cn; IsNullable = isNullable; Collation = None })
 
     /// Build a `ColumnRealization` from an already-validated `ColumnName`.
     /// Total — no validation needed since the input is already typed.
     let fromTyped (columnName: ColumnName) (isNullable: bool) : ColumnRealization =
-        { ColumnName = columnName; IsNullable = isNullable }
+        { ColumnName = columnName; IsNullable = isNullable; Collation = None }
+
+    /// F1 (audit 2026-06-17) — carry a source-declared collation onto an
+    /// already-built `ColumnRealization`. The adapter read path uses this when
+    /// `sys.columns.collation_name` is present; `None` is the identity (no
+    /// collation opinion). Keeps `create`/`fromTyped` at their 2-arg shape so
+    /// the ~300 callers that have no collation evidence are untouched.
+    let withCollation (collation: string option) (c: ColumnRealization) : ColumnRealization =
+        { c with Collation = collation }
 
 
 /// Reference action at the target side. Mirrored from the standard
@@ -1250,7 +1267,8 @@ module Attribute =
             // sibling.
             Column               =
                 { ColumnName = ColumnName.create (IdentifierBudget.fit (Name.value name)) |> Result.value
-                  IsNullable = false }
+                  IsNullable = false
+                  Collation = None }
             IsPrimaryKey         = false
             IsMandatory          = false
             Length               = None

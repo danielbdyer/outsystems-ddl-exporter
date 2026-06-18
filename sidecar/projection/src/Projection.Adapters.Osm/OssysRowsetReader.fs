@@ -54,8 +54,11 @@ module OssysRowsetReader =
                 { SsKey        = k
                   Name         = n
                   Type         = p
+                  // F1 (audit 2026-06-17): carry the source-declared collation
+                  // (sys.columns.collation_name) so the emit re-states COLLATE.
                   Column       = { ColumnName = physicalColumnName
-                                   IsNullable = not row.IsMandatory }
+                                   IsNullable = not row.IsMandatory
+                                   Collation  = row.Collation }
                   IsPrimaryKey = row.IsIdentifier
                   IsMandatory  = row.IsMandatory
                   Length       = row.Length

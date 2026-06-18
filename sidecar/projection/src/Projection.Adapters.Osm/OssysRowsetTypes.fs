@@ -153,6 +153,13 @@ module OssysRowsetTypes =
             /// `CanonicalizeIdentity` pass consumes for emission column
             /// ordering `(PK first, then Order ascending, then SsKey)`.
             Order : int option
+            /// F1 (audit 2026-06-17) — V1 `#ColumnReality.CollationName`
+            /// (`sys.columns.collation_name`). The column's deployed SQL Server
+            /// collation when non-default; `None` when the source carries no
+            /// collation (database default) or the rowset path's source-side
+            /// reflection didn't fire. Threads to `ColumnRealization.Collation`
+            /// so a fresh deploy re-emits the team's chosen `COLLATE`.
+            Collation : string option
         }
 
     /// V1 rowset 4 — `#RefResolved` resolved-reference rows; chapter

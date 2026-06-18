@@ -1038,10 +1038,10 @@ module MetadataSnapshotRunner =
         let attributes =
             snapshot.Attributes
             |> List.map (fun a ->
-                let realityIsComputed, realityComputedDef, realityDefaultName =
+                let realityIsComputed, realityComputedDef, realityDefaultName, realityCollation =
                     match Map.tryFind a.AttrId columnRealityByAttrId with
-                    | Some cr -> cr.IsComputed, cr.ComputedDefinition, cr.DefaultConstraintName
-                    | None    -> false, None, None
+                    | Some cr -> cr.IsComputed, cr.ComputedDefinition, cr.DefaultConstraintName, cr.CollationName
+                    | None    -> false, None, None, None
                 {
                     AttrId               = a.AttrId
                     EntityId             = a.EntityId
@@ -1065,6 +1065,8 @@ module MetadataSnapshotRunner =
                     // WP8 / NM-72 — carry the authored Service-Studio
                     // order through to the rowset reader.
                     Order                 = a.Order
+                    // F1 (audit 2026-06-17) — carry the deployed collation.
+                    Collation             = realityCollation
                 } : OssysRowsetTypes.AttributeRow)
 
         // Slice 5.13.fk-reality-join — JOIN OssysReferenceRow with

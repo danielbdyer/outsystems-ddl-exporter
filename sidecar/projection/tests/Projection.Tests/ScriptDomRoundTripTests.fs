@@ -57,6 +57,7 @@ let private parseSql (sql: string) : TSqlFragment * ParseError list =
 let private sampleColumns : ColumnDef list =
     [
         {
+            Collation = None
             Name = "Id"
             Type = Integer
             SqlStorage = None
@@ -67,6 +68,7 @@ let private sampleColumns : ColumnDef list =
             Provenance = "Id"
         }
         {
+            Collation = None
             Name = "Name"
             Type = Text
             SqlStorage = None
@@ -77,6 +79,7 @@ let private sampleColumns : ColumnDef list =
             Provenance = "Name"
         }
         {
+            Collation = None
             Name = "Score"
             Type = Decimal
             SqlStorage = None
@@ -138,6 +141,42 @@ let ``ScriptDom CreateTable emit names the schema and table`` () =
         |> Seq.map (fun i -> i.Value)
         |> List.ofSeq
     Assert.Equal<string list>(["dbo"; "Customer"], identifiers)
+
+// ---------------------------------------------------------------------------
+// F1 (audit 2026-06-17) — collation faithfulness. A source-declared collation
+// rides through `ColumnDef.Collation` to a `COLLATE <name>` clause; absence
+// emits nothing (byte-identical to pre-F1). Asserted via the parsed AST's
+// `ColumnDefinition.Collation` identifier (no substring search, per the
+// no-string-concatenation discipline).
+// ---------------------------------------------------------------------------
+
+let private columnNamed (name: string) (collation: string option) : ColumnDef =
+    { Collation = collation
+      Name = name; Type = Text; SqlStorage = None
+      Length = Some 100; Precision = None; Scale = None
+      Nullable = false; IsIdentity = false; IsPrimaryKey = false
+      DefaultValue = None; DefaultName = None
+      Computed = None; Provenance = name }
+
+let private firstColumnOf (cols: ColumnDef list) : ColumnDefinition =
+    let fragment = (ScriptDomBuild.buildCreateTable sampleTable cols None [] [] None).Value
+    let emitted = ScriptDomGenerate.generateOne fragment
+    let reparsed, errors = parseSql emitted
+    Assert.Empty(errors)
+    let script = reparsed :?> TSqlScript
+    let stmt = script.Batches.[0].Statements.[0] :?> CreateTableStatement
+    stmt.Definition.ColumnDefinitions.[0]
+
+[<Fact>]
+let ``F1: a column carrying a Collation emits a COLLATE clause naming that collation`` () =
+    let col = firstColumnOf [ columnNamed "Label" (Some "SQL_Latin1_General_CP1_CI_AS") ]
+    Assert.NotNull(col.Collation)
+    Assert.Equal<string>("SQL_Latin1_General_CP1_CI_AS", (nonNull col.Collation).Value)
+
+[<Fact>]
+let ``F1: a column with no Collation emits no COLLATE clause (byte-identical to pre-F1)`` () =
+    let col = firstColumnOf [ columnNamed "Label" None ]
+    Assert.Null(col.Collation)
 
 [<Fact>]
 let ``ScriptDom CreateTable emit carries every column with its data type`` () =

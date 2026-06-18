@@ -67,6 +67,7 @@ let private userKindRow (sskey: System.Guid option) : OssysRowsetTypes.KindRow =
 
 let private idAttrRow (sskey: System.Guid option) : OssysRowsetTypes.AttributeRow =
     {
+        Collation = None
         AttrId       = 111
         EntityId     = 11
         AttrName     = "Id"
@@ -91,6 +92,7 @@ let private idAttrRow (sskey: System.Guid option) : OssysRowsetTypes.AttributeRo
 
 let private emailAttrRow (sskey: System.Guid option) : OssysRowsetTypes.AttributeRow =
     {
+        Collation = None
         AttrId       = 112
         EntityId     = 11
         AttrName     = "Email"
@@ -163,6 +165,42 @@ let ``SnapshotRowsets: bundle without SsKey Guids parses with synthesized-form S
         Assert.Fail (sprintf "Expected Ok; got Error: %A" errors)
     | Ok actual ->
         Assert.Equal<Catalog>(expectedCatalogSynthesized, actual)
+
+// ---------------------------------------------------------------------------
+// F1 (audit 2026-06-17) — a source-declared collation (sys.columns
+// .collation_name, carried on AttributeRow.Collation) threads through the
+// rowset reader to ColumnRealization.Collation, so the emit can re-state it.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``F1: a rowset attribute's collation threads through to ColumnRealization.Collation`` () =
+    let collatedEmail : OssysRowsetTypes.AttributeRow =
+        { emailAttrRow None with Collation = Some "SQL_Latin1_General_CP1_CI_AS" }
+    let bundle : OssysRowsetTypes.RowsetBundle =
+        {
+            Modules    = [ moduleRow None ]
+            Kinds      = [ userKindRow None ]
+            Attributes = [ idAttrRow None; collatedEmail ]
+            References = []
+            Indexes      = []
+            IndexColumns = []
+            Triggers     = []
+            ColumnChecks = []
+        }
+    match parseSync (CatalogReader.SnapshotRowsets bundle) with
+    | Error errors -> Assert.Fail (sprintf "Expected Ok; got Error: %A" errors)
+    | Ok catalog ->
+        let emailAttr =
+            Catalog.allKinds catalog
+            |> List.collect (fun k -> k.Attributes)
+            |> List.find (fun a -> ColumnRealization.columnNameText a.Column = "EMAIL")
+        Assert.Equal<string option>(Some "SQL_Latin1_General_CP1_CI_AS", emailAttr.Column.Collation)
+        // The non-collated Id column stays None (no imposition).
+        let idAttr =
+            Catalog.allKinds catalog
+            |> List.collect (fun k -> k.Attributes)
+            |> List.find (fun a -> ColumnRealization.columnNameText a.Column = "ID")
+        Assert.Equal<string option>(None, idAttr.Column.Collation)
 
 // ---------------------------------------------------------------------------
 // Scenario 2 — Guid-carrying SsKey (the load-bearing addition; A1
@@ -421,6 +459,7 @@ let private accountKindRow (sskey: System.Guid option) : OssysRowsetTypes.KindRo
 
 let private accountIdRow (sskey: System.Guid option) : OssysRowsetTypes.AttributeRow =
     {
+        Collation = None
         AttrId       = 211
         EntityId     = 21
         AttrName     = "Id"
@@ -451,6 +490,7 @@ let private userIdRow : OssysRowsetTypes.AttributeRow = idAttrRow None
 
 let private userAccountIdRow : OssysRowsetTypes.AttributeRow =
     {
+        Collation = None
         AttrId       = 113
         EntityId     = 11
         AttrName     = "AccountId"
@@ -695,6 +735,7 @@ let private billingAccountKindRow : OssysRowsetTypes.KindRow =
 
 let private billingAccountIdRow : OssysRowsetTypes.AttributeRow =
     {
+        Collation = None
         AttrId       = 311
         EntityId     = 31
         AttrName     = "Id"
@@ -871,6 +912,7 @@ let private systemKindRow : OssysRowsetTypes.KindRow =
 
 let private systemAuditIdRow : OssysRowsetTypes.AttributeRow =
     {
+        Collation = None
         AttrId       = 411
         EntityId     = 41
         AttrName     = "Id"

@@ -364,6 +364,20 @@ module ScriptDomBuild =
                 match c.SqlStorage with
                 | Some storage -> dataTypeReferenceFromStorage storage
                 | None         -> dataTypeReference c.Type c.Length c.Precision c.Scale
+            // F1 (audit 2026-06-17) — re-state a source-declared collation as a
+            // `COLLATE <name>` clause after the data type. ScriptDom carries it
+            // as `ColumnDefinition.Collation : Identifier`; collation names are
+            // valid identifiers emitted unquoted (e.g.,
+            // `COLLATE SQL_Latin1_General_CP1_CI_AS`). `None` leaves it null —
+            // no clause, the column inherits the database default (byte-
+            // identical to pre-F1).
+            match c.Collation with
+            | Some name when not (System.String.IsNullOrWhiteSpace name) ->
+                let collId = Identifier()
+                collId.Value <- name
+                collId.QuoteType <- QuoteType.NotQuoted
+                col.Collation <- collId
+            | _ -> ()
             // Nullability — ScriptDom NULL/NOT NULL constraint is a
             // `NullableConstraintDefinition` on `Constraints`.
             let nullCons = NullableConstraintDefinition()
