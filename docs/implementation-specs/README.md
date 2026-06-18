@@ -84,7 +84,10 @@ the [glossary](../data-portability-glossary.md), and the
 - [M5.3-golden-transfer-verification.md](./M5.3-golden-transfer-verification.md) - **🟡 Basic**: golden/transfer duality + post-load verification (counts, new-orphan delta, natural-key uniqueness)
 
 **Recommended order**: M5.0 → M5.2 → M5.1 → M5.3 (selector and natural keys before
-the loader that consumes both).
+the loader that consumes both). **Start here:**
+[M5-HANDOFF.md](./M5-HANDOFF.md) — implementation briefing with the reuse map
+(file:line), house idioms, contract-freeze signatures, parallelization plan,
+de-risking spikes, and tracer-bullet checkpoints.
 
 ### Additional Sections
 - [Section-1-policy-telemetry.md](./Section-1-policy-telemetry.md) - Policy matrix and decision telemetry
