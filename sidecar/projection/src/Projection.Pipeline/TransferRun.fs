@@ -1418,6 +1418,93 @@ module Transfer =
                               SyntheticUnsatisfiableFks = syntheticDiags }
         }
 
+    /// **Live golden apply** (data-portability — the Execute vehicle of
+    /// `slice-apply`). The sibling of `runSynthetic`: instead of generating
+    /// rows from σ, it takes a pre-built `Map<SsKey, StaticRow list>` (a golden
+    /// dataset already mapped onto the TARGET catalog) and runs the SAME Execute
+    /// path — the sink CDC gate, the grant preflight, `executeGate`, then
+    /// `writePlan` (the capture-and-hoist write: for an AssignedBySink kind it
+    /// INSERTs without the PK, captures the sink-minted key, and repoints child
+    /// FKs — exactly the managed-cloud path, no IDENTITY_INSERT). `DryRun` plans
+    /// + reports without writing; the orphan / cycle diagnostics ride the report
+    /// (`SkippedReferences` = post-load orphans, the verification the spec's DoD
+    /// names). This is the ADDITIVE (Incremental MERGE) form; the authoritative
+    /// scoped-delete RESET stays the emitted T-SQL artifact (`SliceApplyRun.emit`),
+    /// which carries the bounded `WHEN NOT MATCHED BY SOURCE … DELETE` arm.
+    let runGoldenApply
+        (mode: Mode)
+        (allowCdc: bool)
+        (sink: SqlConnection)
+        (catalog: Catalog)
+        (rows: Map<SsKey, StaticRow list>)
+        : Task<Result<TransferReport>> =
+        task {
+            let! cdcGate =
+                task {
+                    if mode = Execute && not allowCdc then
+                        match! ReadSide.cdcTrackedTables sink with
+                        | Error es -> return Result.failure es
+                        | Ok tracked ->
+                            if List.isEmpty tracked then return Ok ()
+                            else
+                                return
+                                    Result.failureOf
+                                        (ValidationError.create
+                                            "slice.apply.cdcTrackedSink"
+                                            (sprintf
+                                                "Sink has %d CDC-tracked table(s) (e.g. %s); refusing --go. Pass --allow-cdc to override."
+                                                (List.length tracked)
+                                                (tracked |> List.truncate 3 |> String.concat ", ")))
+                    else return Ok ()
+                }
+            match cdcGate with
+            | Error e -> return Result.failure e
+            | Ok () ->
+            let! grantGate =
+                task {
+                    if mode = Execute then
+                        match! Preflight.captureGrantEvidence sink with
+                        | Error es ->
+                            return
+                                Result.failure
+                                    (es |> List.map (fun e -> ValidationError.create "slice.apply.grantProbeFailed" e.Message))
+                        | Ok grant ->
+                            match Preflight.permissionPreflight grant (plannedTransferWrites catalog) with
+                            | Ok () -> return Ok ()
+                            | Error es ->
+                                return
+                                    Result.failure
+                                        (es |> List.map (fun e -> ValidationError.create "slice.apply.insufficientGrant" e.Message))
+                    else return Ok ()
+                }
+            match grantGate with
+            | Error es -> return Result.failure es
+            | Ok () ->
+                let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
+                let plan = DataLoadPlan.build catalog topo rows SurrogateRemapContext.empty
+                let preWrite = if mode = Execute then executeGate catalog plan else None
+                match preWrite with
+                | Some refusal -> return Result.failureOf refusal
+                | None ->
+                    let! writeSkips, laneDescents =
+                        task {
+                            if mode <> Execute then return [], []
+                            else return! writePlan sink catalog plan false None
+                        }
+                    return
+                        Result.success
+                            { Mode                = mode
+                              Kinds               = reportKinds mode plan
+                              UnbreakableCycleFks = plan.UnbreakableCycleFks
+                              UnmatchedIdentities = []
+                              AmbiguousIdentities = []
+                              AmbiguousTargetMatchKeys = []
+                              SkippedReferences   = plan.SkippedReferences @ writeSkips
+                              CaptureLaneDescents = laneDescents
+                              ReplayedPriorDrops  = None
+                              SyntheticUnsatisfiableFks = [] }
+        }
+
     /// 6.B.2 — RefactorLog-aware Transfer. The source is at schema A
     /// (`sourceContract`); the sink is at schema B (`sinkContract`). A rename
     /// (table or column) means the two contracts differ on physical

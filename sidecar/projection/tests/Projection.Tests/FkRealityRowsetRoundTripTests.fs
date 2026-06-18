@@ -100,7 +100,8 @@ let private customerIdAttrRow : OssysRowsetTypes.AttributeRow =
       IsComputed           = false
       ComputedDefinition   = None
       DefaultConstraintName = None
-      Order                = None }
+      Order                = None
+      Collation            = None }
 
 let private orderIdAttrRow : OssysRowsetTypes.AttributeRow =
     { customerIdAttrRow with
@@ -127,7 +128,8 @@ let private orderCustomerFkAttrRow : OssysRowsetTypes.AttributeRow =
       IsComputed           = false
       ComputedDefinition   = None
       DefaultConstraintName = None
-      Order                = None }
+      Order                = None
+      Collation            = None }
 
 let private fkReferenceRow
     (onUpdate: string option)

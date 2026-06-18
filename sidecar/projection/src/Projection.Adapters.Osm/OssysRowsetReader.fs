@@ -54,8 +54,14 @@ module OssysRowsetReader =
                 { SsKey        = k
                   Name         = n
                   Type         = p
+                  // F1 (audit 2026-06-17): carry the source-declared collation
+                  // (sys.columns.collation_name) so the emit re-states COLLATE.
+                  // F10: the rowset path does not yet read a non-default identity
+                  // seed (OS-native autonumbers are (1,1)) — None = default.
                   Column       = { ColumnName = physicalColumnName
-                                   IsNullable = not row.IsMandatory }
+                                   IsNullable = not row.IsMandatory
+                                   Collation  = row.Collation
+                                   Identity   = None }
                   IsPrimaryKey = row.IsIdentifier
                   IsMandatory  = row.IsMandatory
                   Length       = row.Length

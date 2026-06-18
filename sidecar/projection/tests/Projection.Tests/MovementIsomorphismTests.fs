@@ -184,6 +184,39 @@ let ``A44 clause 1 — the synthetic policy block round-trips (parse ∘ render 
         | Error es -> Assert.Fail(sprintf "round-trip failed for %A: %A" section es)
 
 [<Fact>]
+let ``A44 clause 1 — F7: the tightening relaxations block round-trips (parse ∘ render = id)`` () =
+    // F7 (audit 2026-06-17) — the blessed `tighteningRelaxations` is a
+    // movement-vocabulary citizen (rendered), so it must round-trip: empty
+    // (omitted) + a populated blessing set. A render-then-parse cycle used to
+    // DROP the blessing (renderConfig never emitted it); this pins that closed.
+    let blessings =
+        [ []
+          [ "OSUSR_X_ORDER.Notes" ]
+          [ "OSUSR_X_ORDER.Notes"; "OSUSR_X_ORDER.Memo"; "OSUSR_Y_TICKET.Body" ] ]
+    for ids in blessings do
+        let cfg = { ProjectionConfig.empty with TighteningRelaxations = ids }
+        match ProjectionConfig.parse (ProjectionConfig.render cfg) with
+        | Ok back -> Assert.Equal<string list>(ids, back.TighteningRelaxations)
+        | Error es -> Assert.Fail(sprintf "round-trip failed for %A: %A" ids es)
+
+[<Fact>]
+let ``A44 clause 1 — F7: a blessing rides ALONGSIDE the movement vocabulary (no key dropped either way)`` () =
+    // The blessing must not displace the flows/environments it shares the file
+    // with — the RelaxationStore surgical-merge invariant, now also true through
+    // the typed render.
+    let env = { Name = "sink"; Access = Access.Bundle "dist/out"; Grant = None; Store = None
+                Rendition = None; Archetype = None; AtomicDeploy = None; Revert = None }
+    let cfg =
+        { ProjectionConfig.empty with
+            Environments = Map.ofList [ "sink", env ]
+            TighteningRelaxations = [ "OSUSR_X_ORDER.Notes" ] }
+    match ProjectionConfig.parse (ProjectionConfig.render cfg) with
+    | Ok back ->
+        Assert.Equal<string list>([ "OSUSR_X_ORDER.Notes" ], back.TighteningRelaxations)
+        Assert.True(Map.containsKey "sink" back.Environments, "the environment must survive alongside the blessing")
+    | Error es -> Assert.Fail(sprintf "round-trip failed: %A" es)
+
+[<Fact>]
 let ``A44 clause 1 — renderEnvironment ∘ parseEnvironment = id on every reach × facet`` () =
     // A worked, exhaustive pinning that complements the property: every access
     // form × grant × rendition × store round-trips through the env vocabulary.

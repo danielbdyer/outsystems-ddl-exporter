@@ -72,3 +72,29 @@ let canaryDotsMarkup (verdicts: string list) : string =
     verdicts
     |> List.map (fun v -> if v = "green" then green dotFilled else red bad)
     |> String.concat ""
+
+/// The cutover timeline strip (universal) — canary history dots (`●` green /
+/// `✕` red, newest last) with an optional PRESENT marker flagging the run
+/// "you are here": `●●●●✕●●▸●`. The marker is the collapsed-affordance glyph
+/// (paired, so it survives `NO_COLOR`); an out-of-range / absent `present`
+/// renders the bare strip. The spine of all three display tempos
+/// (`DYNAMIC_DISPLAY` §4) — where this run sits on the arc to the R6 gate.
+let timeline (verdicts: string list) (present: int option) : string =
+    verdicts
+    |> List.mapi (fun idx v ->
+        let g = if v = "green" then dotFilled else bad
+        match present with
+        | Some p when p = idx -> g + collapsed
+        | _ -> g)
+    |> String.concat ""
+
+/// The timeline strip as Spectre-colored markup (pretty channel) — the present
+/// marker rides the accent color, the dots their semantic green/red.
+let timelineMarkup (verdicts: string list) (present: int option) : string =
+    verdicts
+    |> List.mapi (fun idx v ->
+        let g = if v = "green" then green dotFilled else red bad
+        match present with
+        | Some p when p = idx -> g + accent collapsed
+        | _ -> g)
+    |> String.concat ""

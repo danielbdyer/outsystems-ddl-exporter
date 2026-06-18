@@ -522,7 +522,11 @@ module LiveProfiler =
                                 column.Values
                                 |> Array.choose CachedValue.tryDecimal
                             let sampleSize = int64 nonNullValues.Length
-                            if sampleSize < 5L then None
+                            // F15 (audit 2026-06-17) — single source of truth: the
+                            // statistical sample-size floor is owned by
+                            // `NumericDistribution.sampleSizeFloor` (Profile.fs), not a
+                            // re-inlined `5L`.
+                            if sampleSize < NumericDistribution.sampleSizeFloor then None
                             else
                                 let sorted = nonNullValues |> Array.sort
                                 let min_  = sorted.[0]

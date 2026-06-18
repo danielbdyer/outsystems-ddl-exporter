@@ -52,6 +52,31 @@ let ``View: one document renders to plain AND json over the same value`` () =
     Assert.Equal(10, meter.GetProperty("total").GetInt32())
 
 [<Fact>]
+let ``View: Timeline renders the strip + R6 meter and carries the full series in json`` () =
+    let v = View.Timeline("cutover", [ "green"; "green"; "red"; "green" ], 3, 10, Some 3)
+    // pretty/plain lens — dots, present marker, R6 meter, ratio
+    let p = plain v
+    Assert.Contains("●", p)          // green dot glyph
+    Assert.Contains("✕", p)          // red verdict glyph
+    Assert.Contains("▸", p)          // present marker (collapsed glyph)
+    Assert.Contains("▇", p)          // R6 meter
+    Assert.Contains("3/10", p)
+    // json lens — SAME value: the full series + present index survive
+    let j = json v
+    Assert.Equal("timeline", j.GetProperty("kind").GetString())
+    let cells = j.GetProperty("cells").EnumerateArray() |> Seq.map (fun e -> nonNull (e.GetString())) |> Seq.toList
+    Assert.Equal<string list>([ "green"; "green"; "red"; "green" ], cells)
+    Assert.Equal(3, j.GetProperty("filled").GetInt32())
+    Assert.Equal(10, j.GetProperty("total").GetInt32())
+    Assert.Equal(3, j.GetProperty("present").GetInt32())
+
+[<Fact>]
+let ``View: Timeline without a present marker omits present from json`` () =
+    let j = json (View.Timeline("cutover", [ "green"; "green" ], 2, 10, None))
+    let found, _ = j.TryGetProperty("present")
+    Assert.False(found)
+
+[<Fact>]
 let ``View: Status drives the glyph — Bad shows the cross, no color needed`` () =
     let p = plain (View.Field("outcome", "FAILED", View.Bad))
     Assert.Contains("FAILED", p)

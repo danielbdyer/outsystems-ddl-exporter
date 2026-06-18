@@ -359,6 +359,13 @@ module OssysTranslation =
         | "image"          -> Result.success (Binary, SqlStorageType.Image)
         | "longtext"       -> Result.success (Text, SqlStorageType.NVarChar Max)
         | "text"           -> Result.success (Text, SqlStorageType.NVarChar (textLength length))
+        // F11 (audit 2026-06-17) — IMPOSED V1-parity widths. When the source
+        // declares no length, `email`/`phone` carry V1's default budgets (250 /
+        // 20) rather than `(MAX)`. This is a faithful V1-parity inference, NOT a
+        // source-declared fact: a steward who needs the raw width carried (no
+        // imposition) overrides via the explicit declared `length`, which always
+        // wins (`boundedOr`). Ledgered as a known imposition; a per-imposition
+        // diagnostic is the optional follow-on.
         | "email"          -> Result.success (Text, SqlStorageType.VarChar (boundedOr (Bounded 250) length))
         | "phonenumber" | "phone" ->
             Result.success (Text, SqlStorageType.VarChar (boundedOr (Bounded 20) length))

@@ -76,6 +76,19 @@ type ColumnDef =
         /// `CreateTableStatementBuilder.cs:362-365` (column.IsComputed
         /// + column.ComputedExpression).
         Computed : ComputedColumnConfig option
+        /// F1 (audit 2026-06-17) — the column's SQL Server collation
+        /// (`ColumnRealization.Collation`). When `Some name`, the
+        /// realization layer emits a `COLLATE <name>` clause after the
+        /// data type so a fresh deploy re-states the team's chosen
+        /// collation; `None` emits nothing (database default — byte-
+        /// identical to pre-F1 output).
+        Collation : string option
+        /// F10 (audit 2026-06-17) — IDENTITY (seed, increment) for an identity
+        /// column (`IsIdentity = true`). `None` is the OS-native default
+        /// (1, 1) — the realization layer emits `IDENTITY(1, 1)`, byte-identical
+        /// to the prior hardcode. `Some (s, i)` emits `IDENTITY(s, i)` so a
+        /// reflected non-default seed is not silently normalized.
+        Identity : (int64 * int64) option
         /// The originating attribute's display name + SsKey root,
         /// preserved so `Render.toText` can keep the diffable-form
         /// trailing comment that the v1 emitter carried.

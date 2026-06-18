@@ -69,6 +69,12 @@ module ScriptDomBuild =
         id.QuoteType <- QuoteType.SquareBracket
         id
 
+    /// F10 (audit 2026-06-17) — the OS-native autonumber's IDENTITY
+    /// `(seed, increment)`. The default an identity column emits when the IR
+    /// carries no reflected seed (`ColumnRealization.Identity = None`), so the
+    /// emission stays byte-identical to the prior `IDENTITY(1, 1)` hardcode.
+    let private osNativeIdentity : int64 * int64 = (1L, 1L)
+
     /// `[schema].[name]` schema-qualified identifier list. ScriptDom's
     /// `MultiPartIdentifier` carries an ordered `Identifiers` list; we
     /// build it from the typed `TableId`.
@@ -163,8 +169,11 @@ module ScriptDomBuild =
             let s =
                 match precision, scale with
                 | Some _, Some v -> v
+                // F5 — scale 0 when the source omits it (the V1-donor parity default,
+                // `config/type-mapping.default.json`). Was 4 on the no-precision arm —
+                // the inconsistency with `SqlStorageType.ofPrimitiveType`/`ofSqlType`.
                 | Some _, None   -> 0
-                | None, _        -> 4
+                | None, _        -> 0
             let pLit = IntegerLiteral()
             pLit.Value <- string p
             r.Parameters.Add(pLit)
@@ -361,20 +370,39 @@ module ScriptDomBuild =
                 match c.SqlStorage with
                 | Some storage -> dataTypeReferenceFromStorage storage
                 | None         -> dataTypeReference c.Type c.Length c.Precision c.Scale
+            // F1 (audit 2026-06-17) — re-state a source-declared collation as a
+            // `COLLATE <name>` clause after the data type. ScriptDom carries it
+            // as `ColumnDefinition.Collation : Identifier`; collation names are
+            // valid identifiers emitted unquoted (e.g.,
+            // `COLLATE SQL_Latin1_General_CP1_CI_AS`). `None` leaves it null —
+            // no clause, the column inherits the database default (byte-
+            // identical to pre-F1).
+            match c.Collation with
+            | Some name when not (System.String.IsNullOrWhiteSpace name) ->
+                let collId = Identifier()
+                collId.Value <- name
+                collId.QuoteType <- QuoteType.NotQuoted
+                col.Collation <- collId
+            | _ -> ()
             // Nullability — ScriptDom NULL/NOT NULL constraint is a
             // `NullableConstraintDefinition` on `Constraints`.
             let nullCons = NullableConstraintDefinition()
             nullCons.Nullable <- c.Nullable
             col.Constraints.Add(nullCons)
-            // IDENTITY(1,1) when applicable. ScriptDom carries
-            // `IdentityOptions` directly on the column.
+            // IDENTITY when applicable. ScriptDom carries `IdentityOptions`
+            // directly on the column. F10 (audit 2026-06-17): the seed/increment
+            // are now IR-driven — `c.Identity` carries `(seed, increment)`;
+            // `None` is the OS-native default `osNativeIdentity = (1L, 1L)`, so
+            // a column with no reflected seed emits `IDENTITY(1, 1)` exactly as
+            // before, while a reflected non-default seed is no longer normalized.
             if c.IsIdentity then
+                let (seed, increment) = Option.defaultValue osNativeIdentity c.Identity
                 let identity = IdentityOptions()
                 let seedLit = IntegerLiteral()
-                seedLit.Value <- "1"
+                seedLit.Value <- string seed
                 identity.IdentitySeed <- seedLit
                 let incLit = IntegerLiteral()
-                incLit.Value <- "1"
+                incLit.Value <- string increment
                 identity.IdentityIncrement <- incLit
                 col.IdentityOptions <- identity
             // DEFAULT clause (slice 5.13.column-features-emit): when the

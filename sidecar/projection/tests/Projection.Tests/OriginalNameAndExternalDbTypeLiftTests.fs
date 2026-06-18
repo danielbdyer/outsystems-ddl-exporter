@@ -195,6 +195,7 @@ let private mkAttrRow
         (externalDbType: string option)
         : OssysRowsetTypes.AttributeRow =
     {
+        Collation = None
         AttrId              = attrId
         EntityId            = 11
         AttrName            = attrName

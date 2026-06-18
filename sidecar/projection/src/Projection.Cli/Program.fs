@@ -76,8 +76,8 @@ let private usageLines : string list =
         "  policy-version decision)."
         ""
         "Every verb persists a bench snapshot to bench/<verb>/<utc-iso>.json; -v surfaces the"
-        "table. --pretty / --json force the channel (default AUTO: a TTY gets the panel, a pipe"
-        "gets NDJSON). --watch shows the live stage board on a folder-bundle flow run."
+        "table. --pretty / --json force the channel (default AUTO: a TTY gets the live stage"
+        "board + verdict panel, a pipe gets NDJSON)."
         ""
         "Exit codes:"
         "    0  succeeded"
@@ -136,9 +136,9 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
     | PlanAction.PublishBundle (c, dir, store, env) ->
         let verbosity = if verboseMode.Value then LogSink.Verbosity.Verbose else LogSink.Verbosity.Quiet
         let run () = runFullExport c (Some dir) verbosity Set.empty store env
-        // --watch + a real TTY → the live stage board (§13), pre-seeded with the
+        // --pretty + a real TTY → the live stage board (§13), pre-seeded with the
         // pipeline's planned stages so the whole arc is visible from the first frame.
-        if Watch.shouldWatch watchMode.Value then Watch.renderWatch Spines.pipeline (Watch.resolveDwellMs ()) run
+        if Watch.shouldWatch prettyMode.Value then Watch.renderWatch Spines.pipeline (Watch.resolveDwellMs ()) run
         else run ()
     | PlanAction.EmitSkeleton (model, modelOssys, dir) ->
         needCatalog modelOssys model (fun cat -> withRun "projection project" (fun () -> runEmitSkeletonOnly cat dir))
@@ -180,8 +180,8 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
     | PlanAction.PublishAndLoad (c, conn, store, env) ->
         let run () = runFullExportLoad c conn None store env
         // The load flow runs the same publish pipeline, so it streams the same
-        // stage arc; --watch shows the live board (§13).
-        if Watch.shouldWatch watchMode.Value then Watch.renderWatch Spines.pipeline (Watch.resolveDwellMs ()) run
+        // stage arc; --pretty shows the live board (§13).
+        if Watch.shouldWatch prettyMode.Value then Watch.renderWatch Spines.pipeline (Watch.resolveDwellMs ()) run
         else run ()
     | PlanAction.Migrate (model, modelOssys, conn, opts) ->
         needCatalog modelOssys model (fun cat -> withShaped shaping cat (fun shapedCat ->
@@ -365,13 +365,16 @@ let main argv =
     //   -v / --verbose : surface depth (the bench table, etc.).
     let has flag = Array.contains flag argv
     verboseMode := has "-v" || has "--verbose"
-    watchMode := has "--watch"
     let forceJson = has "--json" || has "--no-pretty"
     let forcePretty = has "--pretty"
     // "operator wants pretty" — explicit, or auto when stderr is a real TTY
     // and NDJSON wasn't forced. `TtyRenderer.shouldRender` re-checks the TTY
-    // so a forced --pretty into a pipe still won't spray ANSI.
+    // so a forced --pretty into a pipe still won't spray ANSI. Pretty drives the
+    // live stage board (`Watch`) DURING a run and the verdict panel after it.
     prettyMode := forcePretty || (not forceJson && not Console.IsErrorRedirected)
+    // `--watch` is DEPRECATED (2026-06-17 — folded into `--pretty`/auto-TTY; the
+    // live board is what pretty shows). Still stripped so an old habit doesn't
+    // error, but it no longer carries its own behavior.
     let globalFlags = set [ "--pretty"; "--json"; "--no-pretty"; "-v"; "--verbose"; "--watch" ]
     let argv = argv |> Array.filter (fun a -> not (Set.contains a globalFlags))
     match argv with
@@ -385,6 +388,17 @@ let main argv =
     | [| "setup" |] -> runSetup None
     | [| "setup"; "--conn"; ref |] -> runSetup (Some ref)
     | [| "survey" |] -> runSurvey ()
+    // Standalone data-portability verb (Slice 3) — read-only extract of a
+    // use-case-scoped referential closure to a portable golden dataset. Parsed
+    // directly here (like survey/inspect), not through the movement vocabulary.
+    | _ when argv.Length >= 1 && argv.[0] = "slice-extract" ->
+        runSliceExtract (argv |> Array.toList |> List.tail)
+    | _ when argv.Length >= 1 && argv.[0] = "slice-apply" ->
+        runSliceApply false (argv |> Array.toList |> List.tail)
+    | _ when argv.Length >= 1 && argv.[0] = "slice-reset" ->
+        runSliceApply true (argv |> Array.toList |> List.tail)
+    | _ when argv.Length >= 1 && argv.[0] = "slice-run" ->
+        runSliceFlow (argv |> Array.toList |> List.tail)
     | _ ->
         match discoverConfig () with
         | Error es ->

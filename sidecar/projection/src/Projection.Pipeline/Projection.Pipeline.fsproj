@@ -39,6 +39,7 @@
     <Compile Include="Hydration.fs" />
     <Compile Include="ModelFidelity.fs" />
     <Compile Include="Compare.fs" />
+    <Compile Include="EmissionSeam.fs" />
     <Compile Include="Pipeline.fs" />
     <Compile Include="PolicyDiff.fs" />
     <Compile Include="Bulk.fs" />
@@ -65,6 +66,9 @@
     <Compile Include="SyntheticLoadRun.fs" />
     <Compile Include="ProfileCaptureRun.fs" />
     <Compile Include="CorrectionProposeRun.fs" />
+    <Compile Include="SliceExtractRun.fs" />
+    <Compile Include="SliceApplyRun.fs" />
+    <Compile Include="SliceFlowRun.fs" />
     <Compile Include="MovementSpec.fs" />
     <Compile Include="MovementSurface.fs" />
     <Compile Include="CapabilitySurvey.fs" />

@@ -432,3 +432,66 @@ let ``NM-43: the chain projection is EXACTLY closed — all = chainSteps ∪ str
         sprintf
             "a strategy registration name collides with a chainStep name: %A"
             (Set.toList (Set.intersect chainStepNames strategyRegistrationNames)))
+
+// ---------------------------------------------------------------------------
+// F2 + F13 (audit 2026-06-17) — the two formerly-untracked Catalog→Catalog
+// mutators are now in the totality view. F2's emit-seam index prune
+// (`filterPlatformAutoIndexes`) gains a fresh OperatorIntent Emission metadata
+// entry. F13's static-row hydration was ALREADY authored as a DataIntent
+// adapter (`fullExportHydration`, whose `staticRowHydration` site describes the
+// graft) but was never wired into `RegisteredAllTransforms.all` — so it was
+// registered-in-isolation, invisible to the unified totality view; the wiring
+// now names it there. Both execute at their own boundary sites (emit seam /
+// pre-chain hydration), like DacpacEmitter / CatalogReader, so they are
+// registered-as-metadata rather than chain-bound (the fuller chain lift that
+// would bind execution↔registration for the emit-seam filter is audit F3).
+// ---------------------------------------------------------------------------
+
+let private siteHasClassification (name: string) (pred: Classification -> bool) : bool =
+    RegisteredAllTransforms.all
+    |> List.tryFind (fun m -> m.Name = name)
+    |> Option.map (fun m -> m.Sites |> List.exists (fun s -> pred s.Classification))
+    |> Option.defaultValue false
+
+[<Fact>]
+let ``F2 (audit): filterPlatformAutoIndexes is registered as an OperatorIntent Emission mutator`` () =
+    Assert.Contains("filterPlatformAutoIndexes", allNames)
+    Assert.True(
+        siteHasClassification "filterPlatformAutoIndexes" (function OperatorIntent Emission -> true | _ -> false),
+        "filterPlatformAutoIndexes must carry an OperatorIntent Emission site (the IncludePlatformAutoIndexes toggle is operator policy)")
+
+[<Fact>]
+let ``F13 (audit): the static-row hydration adapter (which grafts) is in the totality view as a DataIntent mutator`` () =
+    Assert.Contains("fullExportHydration", allNames)
+    Assert.True(
+        siteHasClassification "fullExportHydration" (function DataIntent -> true | _ -> false),
+        "fullExportHydration must carry a DataIntent site (boundary row carriage + graft, no operator overlay)")
+
+// ---------------------------------------------------------------------------
+// E5 (F3, audit 2026-06-17) — the post-chain EMISSION SEAM is now a BOUND
+// source, like the emit phase (E1) and the read adapter (E2). The Pipeline
+// applies its post-chain Catalog→Catalog rewrites through `EmissionSeam.apply`,
+// whose `rewrites` list ALSO projects the seam's `metadata` and `executedNames`
+// — so `registered ⇔ executed` holds for the seam by construction. These pin
+// both halves: (a) every executed seam rewrite is registered in
+// `RegisteredAllTransforms.all` (no orphan post-chain mutation), and (b) the
+// seam's own registration set equals its executed set (no phantom registration,
+// no unregistered rewrite). This closes the F2 counterexample's whole class: a
+// post-chain mutator can no longer run outside a bound source.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``E5 (F3): every EmissionSeam rewrite executes through a registered transform (no orphan post-chain mutation)`` () =
+    for name in EmissionSeam.executedNames do
+        Assert.True(
+            Set.contains name allNames,
+            sprintf "emission-seam rewrite '%s' executes (EmissionSeam.apply) but is not in RegisteredAllTransforms.all" name)
+
+[<Fact>]
+let ``E5 (F3): the EmissionSeam registration set equals its executed set (registered <-> executed for the seam)`` () =
+    let executed = EmissionSeam.executedNames |> Set.ofList
+    let registered = EmissionSeam.metadata |> List.map (fun m -> m.Name) |> Set.ofList
+    Assert.Equal<Set<string>>(executed, registered)
+    // Non-empty — the test actually exercises the binding (a vacuous seam would
+    // pass both arms trivially).
+    Assert.NotEmpty EmissionSeam.executedNames

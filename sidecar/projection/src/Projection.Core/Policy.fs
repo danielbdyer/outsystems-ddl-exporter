@@ -503,6 +503,16 @@ module SelectionPolicy =
     /// that want to operate on the selected subset; structural passes
     /// continue to operate on the full catalog (per A33: sort/order
     /// passes see all kinds, emission filters afterwards).
+    ///
+    /// F12 (audit 2026-06-17) — DORMANT, unregistered. This is a
+    /// `Catalog → Catalog` operator-intent mutation (a Selection-axis
+    /// pruning) with NO pipeline wiring today, so it does not yet need a
+    /// `RegisteredAllTransforms` entry. TRIGGER: the day a live path invokes
+    /// this, it MUST register as `OperatorIntent (OverlayAxis Selection)` and
+    /// bind execution↔registration in a test (mirror `LogicalTableEmission` /
+    /// the F2 `filterPlatformAutoIndexes` lift) — a selection that silently
+    /// drops kinds is the exact untracked-operator-intent pattern the sweep
+    /// hunts.
     let filterCatalog (policy: SelectionPolicy) (c: Catalog) : Catalog =
         c
         |> Lens.over CatalogLenses.modules (

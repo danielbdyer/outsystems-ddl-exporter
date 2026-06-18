@@ -71,7 +71,17 @@ module RegisteredAllTransforms =
         @ [ Compose.readStep.Metadata
             ConstraintFormatter.registeredMetadata
             DacpacEmitter.registeredMetadata
-            StaticPopulationEmitter.registeredMetadata ]
+            StaticPopulationEmitter.registeredMetadata
+            // F13 (audit 2026-06-17) — the static-row hydration adapter
+            // (`fullExportHydration`) was already authored but never wired into
+            // this totality view — registered-in-isolation; the wiring closes it.
+            Hydration.registeredMetadata ]
+        // F2 + F3 (audit 2026-06-17) — the post-chain EMISSION SEAM's registered
+        // rewrites, projected from the SAME `EmissionSeam.rewrites` the Pipeline
+        // executes (`EmissionSeam.apply`). Splicing the seam's metadata here, and
+        // pairing it with the bidirectional E5 test, makes the emit seam a BOUND
+        // source of the totality proof (closing the F2 counterexample's class).
+        @ EmissionSeam.metadata
         @ RegisteredDataTransforms.all
         @ RegisteredTransforms.all
         // Transfer epic (bidirectional data load) — the reader leg

@@ -26,6 +26,9 @@
     <Compile Include="TaskSync.fs" />
     <Compile Include="EphemeralContainerFixture.fs" />
     <Compile Include="LiveSourceDockerTests.fs" />
+    <Compile Include="ClosureOracleDockerTests.fs" />
+    <Compile Include="SliceApplyDockerTests.fs" />
+    <Compile Include="SliceRunDockerTests.fs" />
     <Compile Include="ScaffoldingTests.fs" />
     <Compile Include="ResultTests.fs" />
     <Compile Include="LedgerTests.fs" />
@@ -43,9 +46,12 @@
     <Compile Include="ViewTests.fs" />
     <Compile Include="ExplainViewTests.fs" />
     <Compile Include="TtyRendererTests.fs" />
+    <Compile Include="InterveneTests.fs" />
+    <Compile Include="RelaxationStoreTests.fs" />
     <Compile Include="TotalityFunctor.fs" />
     <Compile Include="VoiceTotalityTests.fs" />
     <Compile Include="WatchTests.fs" />
+    <Compile Include="WatchInjectionTests.fs" />
     <Compile Include="CapabilitySurveyTests.fs" />
     <Compile Include="CapabilitySurveyTotalityTests.fs" />
     <Compile Include="FullExportCliTests.fs" />
@@ -113,6 +119,10 @@
     <Compile Include="ReferenceConstraintStateTests.fs" />
     <Compile Include="StaticSeedsEmitterTests.fs" />
     <Compile Include="StaticSeedsRemapTests.fs" />
+    <Compile Include="ClosureTests.fs" />
+    <Compile Include="GoldenCodecTests.fs" />
+    <Compile Include="SliceApplyTests.fs" />
+    <Compile Include="SliceCodecTests.fs" />
     <Compile Include="MigrationDependenciesEmitterTests.fs" />
     <Compile Include="BootstrapEmitterTests.fs" />
     <Compile Include="DataEmissionComposerTests.fs" />
@@ -151,6 +161,7 @@
     <Compile Include="DataLoadPlanTests.fs" />
     <Compile Include="TransferRegistrationsTests.fs" />
     <Compile Include="ReconciliationTests.fs" />
+    <Compile Include="ReconciliationCompositeKeyTests.fs" />
     <Compile Include="ConnectionResolverTests.fs" />
     <Compile Include="TransferSpecTests.fs" />
     <Compile Include="CaptureJournalTests.fs" />
@@ -193,6 +204,8 @@
     <Compile Include="OsmCatalogReaderDifferentialTests.fs" />
     <Compile Include="OsmRowsetReaderTests.fs" />
     <Compile Include="ColumnRealitySourceSidePopulationTests.fs" />
+    <Compile Include="ColumnRealityDivergenceTests.fs" />
+    <Compile Include="AdvisoryTuningTests.fs" />
     <Compile Include="FkRealityRowsetRoundTripTests.fs" />
     <Compile Include="LiveProfilerIntegrationTests.fs" />
     <Compile Include="DataIntegrityCheckerTests.fs" />
@@ -333,6 +346,7 @@
     <PackageReference Include="xunit" Version="2.5.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
     <PackageReference Include="FsCheck.Xunit" Version="2.16.6" />
+    <PackageReference Include="Spectre.Console.Testing" Version="0.54.0" />
   </ItemGroup>
 
   <ItemGroup>

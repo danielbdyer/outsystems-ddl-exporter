@@ -18,7 +18,9 @@
     <Compile Include="Voice.fs" />
     <Compile Include="TtyRenderer.fs" />
     <Compile Include="Watch.fs" />
+    <Compile Include="Intervene.fs" />
     <Compile Include="OperatorConsole.fs" />
+    <Compile Include="RelaxationStore.fs" />
     <Compile Include="RunFaces.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

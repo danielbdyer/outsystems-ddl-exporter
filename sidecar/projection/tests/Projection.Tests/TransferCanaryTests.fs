@@ -1069,6 +1069,193 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                     Assert.Equal(3, rowCount)
                 }))
 
+    // G7 relax — the CLI gate honored END-TO-END against a live CDC-tracked
+    // sink. The G7 witness above proves the gate REFUSES; this proves the
+    // steward's two reachable answers through the REAL CLI seam
+    // (`RunFaces.tighteningPreflight`, which composes `Intervene` + the
+    // `RelaxationStore` blessing) against a CDC-tracked OSUSR_TG_TICKET:
+    //   1. NO blessing, headless → the gate degrades to the named Halt fallback
+    //      (Error 9); no DDL runs (NOTE still nullable, 3 rows intact). The
+    //      default a steward gets when nothing is blessed.
+    //   2. A persisted blessing covering the violating column (the A44-reachable
+    //      equivalent of relax-ALWAYS) → the SAME headless run PROCEEDS, relaxing
+    //      NOTE back to nullable so the emitted schema FITS the NULL-bearing
+    //      data. The relaxed target then matches the deployed reality, so the
+    //      live migrate is a faithful no-op: zero ALTERs and a MEASURED CDC delta
+    //      of 0 (CDC-silent — the relaxation introduces no spurious capture; the
+    //      meter is proven live by AC-X4, the same `executeAndMeasureCdc`
+    //      primitive).
+    // Discrimination: a gate that ignored the blessing would Halt leg 2 too; one
+    // that relaxed WITHOUT the blessing would proceed in leg 1. The
+    // PROJECTION_CONFIG blessing is the ONLY thing that flips the outcome.
+    [<Fact>]
+    member _.``G7 relax witness: a persisted blessing lets the CLI gate proceed on a CDC-tracked sink — NOTE stays nullable, data preserved, CDC-silent`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "G7RelaxCdc") then () else
+        let prevConfig = System.Environment.GetEnvironmentVariable "PROJECTION_CONFIG"
+        let configFile =
+            Path.Combine(Path.GetTempPath(), "proj-relax-cdc-" + System.Guid.NewGuid().ToString("N") + ".json")
+        try
+            System.Environment.SetEnvironmentVariable("PROJECTION_CONFIG", configFile)
+            TaskSync.run (fun () ->
+                fixture.WithEphemeralDatabase "G7RelaxCdc" (fun cnn _ ->
+                    task {
+                        do! Deploy.executeBatch cnn TransferCanaryFixtures.tighteningDdl
+                        do! Deploy.executeBatch cnn TransferCanaryFixtures.tighteningSeed
+
+                        // State A — the deployed USER schema (NOTE nullable,
+                        // NULL-bearing), read live BEFORE CDC is enabled. (Reading
+                        // after enable would pull the whole `cdc.*` system schema
+                        // into the catalog, and a name-based narrow would catch the
+                        // CDC change-table's mirror NOTE column too.)
+                        let! sourceAR = ReadSide.read cnn
+                        let sourceA = TransferCanaryFixtures.value sourceAR
+
+                        // State B — the SAME catalog with NOTE narrowed to NOT NULL.
+                        let narrowNote (a: Attribute) : Attribute =
+                            if ColumnRealization.columnNameText a.Column = "NOTE"
+                            then { a with Column = ColumnRealization.create "NOTE" false |> Result.value }
+                            else a
+                        let target =
+                            let mods =
+                                sourceA.Modules
+                                |> List.map (fun m ->
+                                    { m with Kinds = m.Kinds |> List.map (fun k -> { k with Attributes = k.Attributes |> List.map narrowNote }) })
+                            Catalog.create mods [] |> Result.value
+
+                        // CDC-track the sink (skip if the container can't enable it).
+                        let! enabled =
+                            task {
+                                try
+                                    do! Deploy.executeBatch cnn "EXEC sys.sp_cdc_enable_db;"
+                                    do! Deploy.executeBatch cnn "EXEC sys.sp_cdc_enable_table @source_schema = N'dbo', @source_name = N'OSUSR_TG_TICKET', @role_name = NULL, @supports_net_changes = 0;"
+                                    use cmd = cnn.CreateCommand()
+                                    cmd.CommandText <- "SELECT COUNT(*) FROM sys.tables WHERE is_tracked_by_cdc = 1 AND name = N'OSUSR_TG_TICKET';"
+                                    let! c = cmd.ExecuteScalarAsync()
+                                    return (System.Convert.ToInt32 c) > 0
+                                with _ -> return false
+                            }
+                        if not enabled then
+                            printfn "SKIP G7RelaxCdc: container did not enable CDC (flag not set)"
+                        else
+                            // LEG 1 — NO blessing, headless: the CLI gate degrades to
+                            // the named Halt fallback (Error 9). No DDL runs.
+                            Assert.True(
+                                Set.isEmpty (Projection.Cli.RelaxationStore.read configFile),
+                                "fixture: the config must carry no blessing yet")
+                            let! halted = Projection.Cli.RunFaces.tighteningPreflight sourceA target cnn
+                            match halted with
+                            | Error code -> Assert.Equal(9, code)
+                            | Ok _ -> Assert.Fail("with no blessing the headless gate must Halt (Error 9), not proceed")
+                            // No DDL ran — NOTE still nullable, all three rows intact.
+                            let! nullableAfterHalt =
+                                TransferCanaryFixtures.scalarStr cnn
+                                    "SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='OSUSR_TG_TICKET' AND COLUMN_NAME='NOTE';"
+                            Assert.Equal("YES", nullableAfterHalt)
+                            let! rowsAfterHalt = TransferCanaryFixtures.countRows cnn "[dbo].[OSUSR_TG_TICKET]"
+                            Assert.Equal(3, rowsAfterHalt)
+
+                            // Persist the blessing — the EXACT violation keys the gate
+                            // matches against (the A44-reachable relax-ALWAYS outcome).
+                            let overlay = Preflight.tighteningOverlay sourceA target
+                            let! violR = Preflight.tighteningViolations cnn sourceA overlay
+                            let violations = TransferCanaryFixtures.value violR
+                            Assert.NotEmpty violations
+                            let ids = violations |> List.map Preflight.violationKey
+                            Assert.True(
+                                Projection.Cli.RelaxationStore.persist configFile ids,
+                                "fixture: the blessing must persist")
+
+                            // LEG 2 — WITH the blessing: the same headless gate now
+                            // PROCEEDS, relaxing NOTE back to nullable.
+                            let! relaxed = Projection.Cli.RunFaces.tighteningPreflight sourceA target cnn
+                            let effectiveTarget =
+                                match relaxed with
+                                | Ok cat -> cat
+                                | Error code -> failwithf "with the blessing the gate must proceed; got Error %d" code
+                            // The relaxed target no longer narrows — the gate is satisfied.
+                            Assert.True(
+                                Set.isEmpty (Preflight.tightenedToNotNull sourceA effectiveTarget),
+                                "the relaxed target must no longer narrow NOTE to NOT NULL")
+
+                            // Apply A→effectiveTarget live on the CDC-tracked sink and
+                            // measure (allowCdc=true — the sink is CDC-tracked). The
+                            // relaxed target matches the deployed reality, so this is a
+                            // faithful no-op: zero ALTERs, CDC-silent.
+                            let! measured =
+                                MigrationRun.executeAndMeasureCdc false true DeclareNone sourceA effectiveTarget cnn
+                            match measured with
+                            | Error e -> Assert.Fail(sprintf "the relaxed migrate must proceed, got %A" e)
+                            | Ok (o, cdcDelta) ->
+                                Assert.Empty(o.Artifacts.SchemaStatements)   // zero ALTERs — relaxed == deployed
+                                Assert.Equal(0, cdcDelta)                    // CDC-silent, MEASURED (meter live: AC-X4)
+
+                            // Data preserved, NOTE still nullable — the relaxation held.
+                            let! nullableAfter =
+                                TransferCanaryFixtures.scalarStr cnn
+                                    "SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='OSUSR_TG_TICKET' AND COLUMN_NAME='NOTE';"
+                            Assert.Equal("YES", nullableAfter)
+                            let! rowCount = TransferCanaryFixtures.countRows cnn "[dbo].[OSUSR_TG_TICKET]"
+                            Assert.Equal(3, rowCount)
+                    }))
+        finally
+            System.Environment.SetEnvironmentVariable("PROJECTION_CONFIG", prevConfig)
+            (try File.Delete configFile with _ -> ())
+
+    // F4 (audit 2026-06-17) — INGEST FORWARD-COMPLETENESS. The adjunction proof
+    // (AdjunctionLawTests) is pure, and the Docker canary reads via ReadSide on
+    // one fixture; neither ENUMERATES the physical facets of a deployed column to
+    // assert each is either carried into the Catalog OR a named, closed ingest
+    // erasure. So a facet silently dropped at ingest (the F1 collation / F10
+    // identity-seed class) was invisible to the round-trip proof. This closes the
+    // loop for the ReadSide (deployed-target) ingest leg: deploy a column-rich
+    // source, read it back, and hold every facet to the ledger.
+    //
+    // THE FACET LEDGER (ReadSide ingest):
+    //   CARRIED — column name, nullability (asserted to round-trip below).
+    //   ERASED  — collation (F1 ReadSide follow-on: INFORMATION_SCHEMA.COLUMNS
+    //             .COLLATION_NAME not yet read) and identity seed/increment (F10
+    //             ReadSide follow-on: sys.identity_columns not yet read). Each is
+    //             `None` in the Catalog; the asserts below are the TRIPWIRES —
+    //             when a follow-on wires the read, the `None` assertion fails,
+    //             forcing the facet to move CARRIED and this ledger to update.
+    //             (Through the OSSYS rowset path collation IS already carried —
+    //             F1, witnessed in OsmRowsetReaderTests; this is the ReadSide leg.)
+    [<Fact>]
+    member _.``F4 forward-completeness: each deployed column facet is carried into the Catalog or a named ReadSide ingest erasure`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "F4Completeness") then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "F4Completeness" (fun cnn _ ->
+                task {
+                    do! Deploy.executeBatch cnn
+                            ("CREATE TABLE [dbo].[OSUSR_F4_WIDGET] (" +
+                             "[ID] INT NOT NULL IDENTITY(1,1) PRIMARY KEY, " +
+                             "[LABEL] NVARCHAR(100) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL, " +
+                             "[NOTE] NVARCHAR(50) NULL);")
+                    let! catR = ReadSide.read cnn
+                    let catalog = TransferCanaryFixtures.value catR
+                    let attrs =
+                        Catalog.allKinds catalog |> List.collect (fun k -> k.Attributes)
+                    let byCol (name: string) : Attribute =
+                        attrs |> List.find (fun a -> ColumnRealization.columnNameEquals name a.Column)
+                    let id    = byCol "ID"
+                    let label = byCol "LABEL"
+                    let note  = byCol "NOTE"
+
+                    // CARRIED — nullability round-trips (the discriminator: a read
+                    // that lost it would collapse every column to one polarity).
+                    Assert.False(id.Column.IsNullable, "ID deployed NOT NULL must read back NOT NULL")
+                    Assert.False(label.Column.IsNullable, "LABEL deployed NOT NULL must read back NOT NULL")
+                    Assert.True(note.Column.IsNullable, "NOTE deployed NULL must read back nullable")
+
+                    // ERASED (named ReadSide ingest erasures) — the TRIPWIRES.
+                    // LABEL carries a non-default COLLATE on the wire, but ReadSide
+                    // does not read collation_name yet (F1 follow-on).
+                    Assert.Equal<string option>(None, label.Column.Collation)
+                    // ID is IDENTITY(1,1) on the wire, but ReadSide does not read
+                    // sys.identity_columns seed/increment yet (F10 follow-on).
+                    Assert.Equal<(int64 * int64) option>(None, id.Column.Identity)
+                }))
+
     // G1 — the transfer spanning pre-flight (connection), WIRED into the
     // Execute path. Driving `Transfer.run Execute` against a dead/unreachable
     // sink refuses with `transfer.connectionUnavailable` BEFORE any write.

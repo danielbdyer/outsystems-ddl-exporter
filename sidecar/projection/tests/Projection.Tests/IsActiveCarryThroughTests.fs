@@ -310,6 +310,7 @@ let private kindRowWith (isActive: bool) (entityId: int) (espaceId: int) (entity
 let private attrRowWith (isActive: bool) (attrId: int) (entityId: int) (attrName: string)
         : OssysRowsetTypes.AttributeRow =
     {
+        Collation = None
         AttrId       = attrId
         EntityId     = entityId
         AttrName     = attrName

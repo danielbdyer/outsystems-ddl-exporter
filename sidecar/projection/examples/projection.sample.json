@@ -10,6 +10,7 @@
   "emission": { "ssdt": true, "dacpac": true },
 
   "policy": {
+    "_comment": "OPT-IN, not baseline. Omit this whole block for faithful vanilla emission (the default skeleton imposes no tightening). Each interventions entry is a TRACKED operator override of the team's model — shown here only to illustrate the shape.",
     "tightening": { "interventions": [ { "kind": "nullability", "id": "n1", "nullBudget": 0.0 } ] }
   },
 

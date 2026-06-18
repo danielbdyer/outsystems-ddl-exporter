@@ -156,6 +156,13 @@ module SsdtDdlEmitter =
             // shape). The realization layer emits `[col] AS (expression)
             // [PERSISTED]` when Computed is Some.
             Computed     = a.Computed
+            // F1 (audit 2026-06-17) — carry the source-declared collation so
+            // the realization layer re-emits `COLLATE <name>`; `None` (the
+            // common case) emits nothing, byte-identical to pre-F1.
+            Collation    = a.Column.Collation
+            // F10 (audit 2026-06-17) — carry the IDENTITY seed/increment;
+            // `None` (the common case) emits the OS-native `IDENTITY(1, 1)`.
+            Identity     = a.Column.Identity
             Provenance   = ""
         }
 

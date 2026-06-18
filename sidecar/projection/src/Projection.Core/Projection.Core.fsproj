@@ -116,6 +116,17 @@
          Pure over LineageEvent + DiagnosticEntry + OverlayAxis. -->
     <Compile Include="ConflictDetector.fs" />
     <Compile Include="TransformRegistry.fs" />
+    <!-- SliceSpec.fs: the declarative "use case" — roots (entity + predicate)
+         + per-relationship traversal directives. Logical/environment-
+         indifferent; consumed by Closure.fs (directive-aware walk) and the
+         slice codec/verb. Depends only on Catalog.fs identity types. -->
+    <Compile Include="SliceSpec.fs" />
+    <!-- Closure.fs: the use-case-scoped referential-closure engine (data-
+         portability front-end). Pure planner over the FK graph (Catalog.fs);
+         materializes the `Map<SsKey, StaticRow list>` DataLoadPlan consumes,
+         so it compiles just before it. Zero I/O — the adapter oracle executes
+         the fetches it plans. -->
+    <Compile Include="Closure.fs" />
     <Compile Include="DataLoadPlan.fs" />
     <Compile Include="Reconciliation.fs" />
     <Compile Include="StrategyRegistrations.fs" />
@@ -133,6 +144,7 @@
     <Compile Include="Passes/TopologicalOrderPass.fs" />
     <!-- H-071 through H-076 pass implementations — compiled after
          ComposeState.fs; return types from the files above. -->
+    <Compile Include="Passes/AdvisoryTuning.fs" />
     <Compile Include="Passes/CentralityPass.fs" />
     <Compile Include="Passes/BoundedContextPass.fs" />
     <Compile Include="Passes/ProfileAnomalyPass.fs" />
