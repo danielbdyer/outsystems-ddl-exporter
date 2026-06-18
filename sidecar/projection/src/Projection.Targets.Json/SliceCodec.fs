@@ -159,10 +159,13 @@ module SliceCodec =
             use doc = parsed
             let root = doc.RootElement
             let ver =
-                match prop root "version" with
-                | Ok v when v.ValueKind = JsonValueKind.Number -> Ok (v.GetInt32())
-                | Ok _    -> fail "slice.version" "field 'version' is not a number"
-                | Error e -> Error e
+                // Optional for hand-authoring (a `slices` block in projection.json
+                // need not repeat it); render always emits it, so the round-trip
+                // holds. Absent ⇒ the current schema version.
+                match root.TryGetProperty "version" with
+                | true, v when v.ValueKind = JsonValueKind.Number -> Ok (v.GetInt32())
+                | true, _ -> fail "slice.version" "field 'version' is not a number"
+                | _       -> Ok SliceSpec.CurrentVersion
             let roots =
                 match root.TryGetProperty "roots" with
                 | true, v when v.ValueKind = JsonValueKind.Array ->

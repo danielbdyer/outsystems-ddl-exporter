@@ -2355,7 +2355,16 @@ let runSliceExtract (args: string list) : int =
         // precedence; else the thin single-root `--root [--where]` form.
         let runner =
             match flagValue "--slice" with
-            | Some slicePath -> Some (SliceExtractRun.extractSpecFromFile src slicePath out)
+            | Some sliceRef ->
+                // A NAMED slice declared in projection.json (the config-primary
+                // home) wins; else `--slice` is treated as a file path.
+                let named =
+                    match ProjectionConfig.fromFile "projection.json" with
+                    | Ok cfg   -> Map.tryFind sliceRef cfg.Slices
+                    | Error _  -> None
+                match named with
+                | Some spec -> Some (SliceExtractRun.extractSpec src spec out)
+                | None      -> Some (SliceExtractRun.extractSpecFromFile src sliceRef out)
             | None ->
                 match flagValue "--root" with
                 | Some root -> Some (SliceExtractRun.extract src root (flagValue "--where") out)

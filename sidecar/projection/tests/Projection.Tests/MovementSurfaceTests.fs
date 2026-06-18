@@ -1264,6 +1264,27 @@ let ``render: a flow's reconcile rules round-trip (J2; parse-render = id)`` () =
     | Error es -> Assert.Fail(sprintf "round-trip failed: %A" es)
 
 [<Fact>]
+let ``render: a config's named slices round-trip (data-portability; parse-render = id)`` () =
+    let nm s = Name.create s |> mustOk
+    let spec =
+        SliceSpec.create 1
+            [ { Entity = EntityCoordinate.create "Sales" "Order"
+                Predicate = Predicate.And [ Predicate.Equals (nm "REGION", "West")
+                                            Predicate.In (nm "STATUS", [ "open"; "shipped" ]) ] } ]
+            [ { From = EntityCoordinate.ofEntity "Order"; Relationship = "UserRef"; Direction = TraversalDirection.Stop }
+              { From = EntityCoordinate.ofEntity "Order"; Relationship = "Lines"; Direction = TraversalDirection.Down 2 } ]
+        |> mustOk
+    let cfg = { ProjectionConfig.empty with Slices = Map.ofList [ "westCoast", spec ] }
+    match ProjectionConfig.parse (ProjectionConfig.render cfg) with
+    | Ok back -> Assert.Equal<Map<string, SliceSpec>>(cfg.Slices, back.Slices)
+    | Error es -> Assert.Fail(sprintf "round-trip failed: %A" es)
+
+[<Fact>]
+let ``render: a config with no slices round-trips to no slices key`` () =
+    let cfg = ProjectionConfig.empty
+    Assert.DoesNotContain("slices", ProjectionConfig.render cfg)
+
+[<Fact>]
 let ``parse: --seed and --scale set the per-run intent (D8)`` () =
     let (_, o) = parseFlowIntent [ "golden"; "--seed"; "7"; "--scale"; "0.5" ]
     Assert.Equal(Some 7UL, o.Seed)
