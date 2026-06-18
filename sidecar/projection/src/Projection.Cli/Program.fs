@@ -388,6 +388,11 @@ let main argv =
     | [| "setup" |] -> runSetup None
     | [| "setup"; "--conn"; ref |] -> runSetup (Some ref)
     | [| "survey" |] -> runSurvey ()
+    // Standalone data-portability verb (Slice 3) — read-only extract of a
+    // use-case-scoped referential closure to a portable golden dataset. Parsed
+    // directly here (like survey/inspect), not through the movement vocabulary.
+    | _ when argv.Length >= 1 && argv.[0] = "slice-extract" ->
+        runSliceExtract (argv |> Array.toList |> List.tail)
     | _ ->
         match discoverConfig () with
         | Error es ->

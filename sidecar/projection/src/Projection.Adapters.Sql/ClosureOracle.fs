@@ -96,12 +96,15 @@ module ClosureOracle =
         whereSql, addParams
 
     /// Resolve a logical `EntityCoordinate` to a `Kind` in this catalog —
-    /// matching by entity `Name` (the cross-environment bridge). Module
-    /// disambiguation is deferred (the live-readback / single-module case);
-    /// returns the first entity-name match.
+    /// matching by entity `Name` (the cross-environment bridge) OR the physical
+    /// table name (so an operator can address a root by logical entity on an
+    /// OSSYS source or by physical table on a raw-DB readback). Module
+    /// disambiguation is deferred (the single-module / live-readback case);
+    /// returns the first match.
     let resolveEntity (catalog: Catalog) (coord: EntityCoordinate) : Kind option =
         Catalog.allKinds catalog
-        |> List.tryFind (fun k -> Name.value k.Name = coord.Entity)
+        |> List.tryFind (fun k ->
+            Name.value k.Name = coord.Entity || TableId.tableText k.Physical = coord.Entity)
 
     /// Fetch the ROOT rows of `kind` selected by a typed `Predicate` — the
     /// "use case" seed (`Orders WHERE Region = 'West'`). The predicate is

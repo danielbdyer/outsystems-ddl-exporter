@@ -19,6 +19,7 @@ open Xunit
 open Projection.Core
 open Projection.Pipeline
 open Projection.Adapters.Sql
+open Projection.Targets.Json
 
 [<Xunit.Collection("Docker-SqlServer")>]
 type ClosureOracleDockerTests(fixture: EphemeralContainerFixture) =
@@ -102,3 +103,54 @@ type ClosureOracleDockerTests(fixture: EphemeralContainerFixture) =
         Assert.Equal<Set<string>>(Set.ofList [ "100" ], users)     // its parent user, key-scoped (not 200/300)
         Assert.Equal<Set<string>>(Set.ofList [ "10" ], countries)  // transitively, its country (not 20)
         Assert.Equal(0, dangling)                                  // referentially closed
+
+    // -- Slice 3 — the slice-extract VERB end-to-end ----------------------
+
+    [<Fact>]
+    member _.``slice-extract writes a portable golden of the referential closure`` () =
+        if not (skipIfNoDocker "slice-extract-verb") then () else
+        let census, dangling, golden =
+            fixture.WithEphemeralDatabase "SliceExtractVerb" (fun cnn connStr ->
+                task {
+                    do! Deploy.executeBatch cnn
+                            ("CREATE TABLE [dbo].[OSUSR_SX_COUNTRY] (" +
+                             "[ID] INT NOT NULL PRIMARY KEY, [NAME] NVARCHAR(50) NOT NULL);")
+                    do! Deploy.executeBatch cnn
+                            ("CREATE TABLE [dbo].[OSUSR_SX_USER] (" +
+                             "[ID] INT NOT NULL PRIMARY KEY, [COUNTRY_ID] INT NOT NULL " +
+                             "CONSTRAINT [FK_SX_USER_COUNTRY] REFERENCES [dbo].[OSUSR_SX_COUNTRY]([ID]));")
+                    do! Deploy.executeBatch cnn
+                            ("CREATE TABLE [dbo].[OSUSR_SX_ORDER] (" +
+                             "[ID] INT NOT NULL PRIMARY KEY, [USER_ID] INT NOT NULL " +
+                             "CONSTRAINT [FK_SX_ORDER_USER] REFERENCES [dbo].[OSUSR_SX_USER]([ID]));")
+                    do! Deploy.executeBatch cnn
+                            ("INSERT INTO [dbo].[OSUSR_SX_COUNTRY] ([ID],[NAME]) VALUES (10,'US'),(20,'CA');")
+                    do! Deploy.executeBatch cnn
+                            ("INSERT INTO [dbo].[OSUSR_SX_USER] ([ID],[COUNTRY_ID]) VALUES (100,10),(300,10);")
+                    do! Deploy.executeBatch cnn
+                            ("INSERT INTO [dbo].[OSUSR_SX_ORDER] ([ID],[USER_ID]) VALUES (1000,100),(1002,300);")
+                    let outPath =
+                        System.IO.Path.Combine(System.IO.Path.GetTempPath(), System.IO.Path.GetRandomFileName())
+                    // Root = a single order, by a raw predicate on the physical PK.
+                    let! r = SliceExtractRun.extract ("live:" + connStr) "OSUSR_SX_ORDER" (Some "[ID] = 1000") outPath
+                    let golden = if System.IO.File.Exists outPath then System.IO.File.ReadAllText outPath else ""
+                    if System.IO.File.Exists outPath then System.IO.File.Delete outPath
+                    match r with
+                    | Ok (census, dangling) -> return census, dangling, golden
+                    | Error es              -> return (es |> List.map (fun e -> e.Code, 0)), -1, golden
+                })
+            |> fun t -> t.GetAwaiter().GetResult()
+        // Referentially self-contained: order 1000 → user 100 → country 10
+        // (and NOT order 1002 / user 300 / country 20). 3 rows total.
+        if dangling < 0 then Assert.Fail (sprintf "slice-extract failed: %A" census)
+        Assert.Equal(0, dangling)
+        Assert.Equal(3, census |> List.sumBy snd)
+        // The golden parses and carries the root order's key.
+        match GoldenCodec.deserialize golden with
+        | Ok ds ->
+            let hasValue (v: string) =
+                ds.Entities |> List.exists (fun e -> e.Rows |> List.exists (Map.exists (fun _ cell -> cell = v)))
+            Assert.True(hasValue "1000", "golden missing the root order id")
+            Assert.True(hasValue "100", "golden missing the closed user id")
+            Assert.False(hasValue "1002", "golden wrongly included an out-of-slice order")
+        | Error es -> Assert.Fail (sprintf "golden did not parse: %A" es)

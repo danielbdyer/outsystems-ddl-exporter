@@ -2317,3 +2317,43 @@ let runProposeCorrection (model: ModelSource) (modelOssys: string option) (outPa
             else 3
     dumpBench "synth-correct"
     exitCode
+
+/// `projection slice-extract --source <ref> --root <Entity> [--where <sql>]
+/// --out <path>` — extract a use-case-scoped, referentially-closed data slice
+/// from a live source and write the portable golden dataset (Slice 3). Read-
+/// only against the source; the closure census prints to stderr, and a
+/// dangling-mandatory-FK warning flags a slice that is not referentially self-
+/// contained (the golden is still written — completeness is gated at apply).
+let runSliceExtract (args: string list) : int =
+    let arr = List.toArray args
+    let flagValue (flag: string) : string option =
+        arr
+        |> Array.tryFindIndex ((=) flag)
+        |> Option.bind (fun i -> if i + 1 < arr.Length then Some arr.[i + 1] else None)
+    match flagValue "--source", flagValue "--root", flagValue "--out" with
+    | Some src, Some root, Some out ->
+        let whereRaw = flagValue "--where"
+        let result = (SliceExtractRun.extract src root whereRaw out).GetAwaiter().GetResult()
+        let exitCode =
+            match result with
+            | Ok (census, dangling) ->
+                eprintfn "Slice golden written to %s." out
+                for (entity, n) in census do eprintfn "  %s: %d row(s)" entity n
+                if dangling > 0 then
+                    eprintfn
+                        "  WARNING: %d dangling mandatory FK(s) — the slice is NOT referentially self-contained (gated at apply)."
+                        dangling
+                0
+            | Error errors ->
+                printErrors Console.Error errors
+                let anyCode (prefix: string) =
+                    errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith prefix)
+                if anyCode "slice.writeFailed" then 1
+                elif anyCode "slice.root" then 2
+                elif anyCode "connectionSpec" || anyCode "connection" then 6
+                else 3
+        dumpBench "slice-extract"
+        exitCode
+    | _ ->
+        eprintfn "usage: projection slice-extract --source <ref> --root <Entity> [--where <sql>] --out <path>"
+        1
