@@ -19,15 +19,21 @@ for the full branch picture. Dispositions so far:
   `let private` constants (the audit overstated "bare literals"). Residue is small: name the
   `QueryHintPass` "interpret as 80" inline assumption + soften the "no operator opinion"
   rationale on the 4 advisory `H-07x` passes. Low priority.
-- **Everything else — pending.** Triage for the next agent: **safe/quick** (F8 test, F11/F12
-  notes, F14 sample comment, F15 DRY) · **bounded/medium** (F2 + F13 register the unregistered
-  mutators — was mid-investigation at `RegisteredAllTransforms.all`; F7-config-preserve = extend
+- **Safe/quick batch — ✅ DONE** (2026-06-17, one verified commit): **F8** (the conservation
+  guard test), **F11** (in-code ledger of the imposed email/phone widths), **F12** (dormant
+  `filterCatalog` flagged with its registration trigger), **F14** (`_comment` on the sample's
+  opt-in tightening block), **F15** (`sampleSizeFloor` single-sourced), and **F6 partial** (the
+  `QueryHintPass` "interpret as 80" named + its rationale softened). Per-finding dispositions
+  below. Gates: fast pure pool 3474/0; DeployableReference 12/0; QueryHint 6/0.
+- **Still pending.** **Bounded/medium** (F2 + F13 register the unregistered mutators — was
+  mid-investigation at `RegisteredAllTransforms.all`; F7-config-preserve = extend
   `renderConfig`+parse+the A44 generator to round-trip `tighteningRelaxations`, **touches the A44
-  canary**) · **heavy** (F1 collation → IR field + adapter read + `COLLATE` emission + **golden
-  re-bless**; F3 totality → route post-chain rewrites through the registered chain seam,
-  **structural**; F4 ingest round-trip → a **Docker** forward-completeness test; F10 IDENTITY
-  seed/increment → IR field + goldens; F7-audit A37 promotion). Do the heavy four as individual
-  verified commits, never one batch.
+  canary**; F6 follow-on = the advisory-tuning config for all four `H-07x` passes) · **heavy**
+  (F1 collation → IR field + adapter read + `COLLATE` emission + **golden re-bless**; F3 totality
+  → route post-chain rewrites through the registered chain seam, **structural**; F4 ingest
+  round-trip → a **Docker** forward-completeness test; F10 IDENTITY seed/increment → IR field +
+  goldens; F7-audit A37 promotion). Do the heavy four as individual verified commits, never one
+  batch.
 
 ## Why this audit ran
 
@@ -174,7 +180,13 @@ operator adjudication.
 - **Recommended action:** lift to an optional advisory-tuning config the operator can
   override; soften the rationale to "default operator opinion, overridable." (These are
   advisory/diagnostic outputs, not the faithful projection — but the label is wrong.)
-- **Disposition:**
+- **Disposition:** ◑ PARTIAL (safe-batch, 2026-06-17). `QueryHintPass`: the unstated
+  "interpret as 80" is now a named `assumedServerDefaultFillFactor` constant surfaced in
+  the operator-facing diagnostic, and the site rationale changed from "no operator opinion"
+  to "a default operator opinion, overridable." REMAINING follow-on: lift the tuning
+  constants of all four `H-07x` passes (SchemaComplexity weights/caps, ProfileAnomaly `2σ`,
+  Centrality PageRank) to an optional advisory-tuning config, and soften the other three
+  rationales the same way. Bounded, no goldens — a clean next batch.
 
 ### F7 — "Named erasures" are partly open-ended, not closed · Med · High — Lane 6 C2
 - **Provenance:** A37 ("Π-erased axes named") is still a *Candidate* (`AXIOMS.md:1310-1315`);
@@ -195,7 +207,12 @@ operator adjudication.
   5 verified emission sites (`SsdtDdlEmitter.fs:319,373,986,1033,1078`). A future 6th
   reference-consuming site without the filter would leak inverses as real constraints.
   **Action:** add a structural guard/test that every reference-consuming emission site
-  filters `isDeployable`. **Disposition:**
+  filters `isDeployable`. **Disposition:** ✅ DONE (safe-batch, 2026-06-17). Added the
+  CONSERVATION guard `F8 conservation: emitted constraints number exactly the deployable
+  references…` (`DeployableReferenceTests.fs`): pins the run-level invariant (created FK
+  constraints == deployable references; no ALTER names a never-created constraint) rather
+  than the drifting 5-site list, so a future 6th site that leaks an inverse breaks it. 12
+  green.
 - **F9 — Adapter carries logical OSSYS nullability/identity, discards fetched deployed
   `#ColumnReality`** · Low-Med · Med — Lane 6 A5 (`OssysRowsetReader.fs:57-64` vs
   `MetadataSnapshotRunner.fs:214,220`). Depends which "source" the steward owns; physical
@@ -208,10 +225,19 @@ operator adjudication.
 - **F11 — email/phone/text-width imposition** · Low · High — Lane 6 A3
   (`OssysTranslation.fs:362-364`, `textLength` 306-310). V1-parity faithful but an
   undiagnosed inference relative to raw source. **Action:** ledger entry; optional
-  diagnostic. **Disposition:**
+  diagnostic. **Disposition:** ✅ DONE (safe-batch, 2026-06-17). Ledgered IN-CODE at
+  `OssysTranslation.parseSemanticType` (the email/phone arms): a named comment marks the
+  250/20 widths as IMPOSED V1-parity inferences (the source declares no width), notes the
+  explicit declared `length` always overrides, and flags the per-imposition diagnostic as
+  the optional follow-on.
 - **F12 — `SelectionPolicy.filterCatalog` dormant unregistered mutator** · Low · High —
   Lane 4 F3 (`Policy.fs:506-510`, no pipeline wiring). **Action:** register as
   `OperatorIntent Selection` when wired; track the trigger in DECISIONS. **Disposition:**
+  ✅ DONE (safe-batch, 2026-06-17). Flagged IN-CODE at `SelectionPolicy.filterCatalog`:
+  named DORMANT/unregistered with the explicit re-open TRIGGER — the first live invocation
+  MUST register as `OperatorIntent (OverlayAxis Selection)` and bind execution↔registration
+  in a test (mirroring the F2 `filterPlatformAutoIndexes` lift). No wiring today, so no
+  registry entry is owed yet; the trigger now lives at the definition site.
 - **F13 — `Hydration.graftStaticPopulations` unregistered adapter-side mutation** · Low ·
   Med — Lane 4 F4 (`Hydration.fs:43-54`). Benign `DataIntent` row carriage, but a
   model-touching transform absent from the registry. **Action:** register as an
@@ -219,10 +245,18 @@ operator adjudication.
 - **F14 — `examples/projection.sample.json` ships an opt-in nullability intervention** ·
   Low(doc) · High — Lane 3 F6 (`:12-14`). Tracked + registered (consistent with the
   principle) but a copy-paste sharp edge. **Action:** add a clarifying comment that the
-  `tightening` block is opt-in, not baseline. **Disposition:**
+  `tightening` block is opt-in, not baseline. **Disposition:** ✅ DONE (safe-batch,
+  2026-06-17). Added a `_comment` key inside `policy` (the parser ignores unknown keys, so
+  it is safe for an operator who copies the file): "OPT-IN, not baseline. Omit this whole
+  block for faithful vanilla emission… each interventions entry is a TRACKED operator
+  override."
 - **F15 — Minor DRY** · Low · Med — Lane 5 F6. `NumericDistribution.sampleSizeFloor=5`
   re-inlined as `5L` at `LiveProfiler.fs:525`; LiveProfiler caps (50/50/100) as separate
-  literals. **Action:** single source of truth. **Disposition:**
+  literals. **Action:** single source of truth. **Disposition:** ✅ DONE (safe-batch,
+  2026-06-17). `LiveProfiler.fs:525` now references `NumericDistribution.sampleSizeFloor`
+  (the owner in `Profile.fs`) instead of a re-inlined `5L`. The 50/50/100 LiveProfiler
+  capture caps are a separate, smaller DRY left as a noted follow-on (distinct concern —
+  capture limits, not a shared statistical floor).
 
 ---
 

@@ -30,6 +30,14 @@ module QueryHintPass =
     let private highSelectivityThreshold : int64   = 100L   // DistinctCount ≥ this
     let private suggestedFillFactor      : int     = 70
     let private suggestedFillFactorStr   : string  = "70"
+    // F6 (audit 2026-06-17) — name the assumption, don't bury it in prose. When
+    // an index declares no explicit FillFactor it runs at the SQL Server
+    // instance default, which this advisory ASSUMES is the install default of
+    // 100 (SQL Server ships fill factor 0/100 = pack full). The suggestion to
+    // lower to 70 is an ADVISORY default-operator-opinion, overridable — not the
+    // faithful projection. (A configurable advisory-tuning override is the F6
+    // follow-on; this just makes the embedded number a named, auditable value.)
+    let private assumedServerDefaultFillFactor : int = 100
 
     let run (catalog: Catalog) (profile: Profile) : Lineage<Diagnostics<QueryHintReport>> =
         use _ = Bench.scope "pass.queryHint"
@@ -56,8 +64,9 @@ module QueryHintPass =
                 | None -> None
                 | Some (sourceKind, ref_) ->
                     // Find an index on sourceKind covering the FK attribute
-                    // that has no explicit fill factor (i.e., using server
-                    // default, which we interpret as 80).
+                    // that has no explicit fill factor (i.e., running at the
+                    // server default, which this advisory assumes is the install
+                    // default `assumedServerDefaultFillFactor`).
                     let idxOpt =
                         sourceKind.Indexes
                         |> List.tryFind (fun idx ->
@@ -86,8 +95,8 @@ module QueryHintPass =
                       Note  = Some (sprintf "High FK selectivity: DistinctCount=%d" sel.DistinctCount) }
                 { DiagnosticEntry.create passName DiagnosticSeverity.Info
                     "topology.queryHint.fillFactor"
-                    (sprintf "Index %s has no fill factor; high FK selectivity (DistinctCount=%d) suggests fill factor %d"
-                        (SsKey.rootOriginal idxKey) sel.DistinctCount suggestedFillFactor)
+                    (sprintf "Index %s has no explicit fill factor (assumed server default %d); high FK selectivity (DistinctCount=%d) suggests lowering it to %d"
+                        (SsKey.rootOriginal idxKey) assumedServerDefaultFillFactor sel.DistinctCount suggestedFillFactor)
                   with SsKey = Some idxKey; SuggestedConfig = Some suggestedConfig })
 
         let touched = allKinds |> List.map (fun k -> k.SsKey)
@@ -100,6 +109,6 @@ module QueryHintPass =
           Sites =
             [ { SiteName       = "fillFactorHint"
                 Classification = DataIntent
-                Rationale      = "FK selectivity from Profile drives fill-factor SuggestedConfig hints for high-cardinality indexes. Profile evidence only; no operator opinion." } ]
+                Rationale      = "FK selectivity from Profile drives fill-factor SuggestedConfig hints for high-cardinality indexes. Advisory only (a default operator opinion, overridable) — it never enters the faithful projection; the tuning constants are named at the pass head." } ]
           Run    = fun c -> run c profile
           Status = Active }

@@ -170,6 +170,53 @@ let ``untrusted forward FKs emit one ALTER pair each; inherited-untrusted invers
         Assert.Equal("OSUSR_DR_TASK", TableId.tableText tid))
 
 // ---------------------------------------------------------------------
+// F8 (audit 2026-06-17) — the CONSERVATION guard against a FUTURE
+// reference-consuming emission site that forgets the `isDeployable`
+// filter. SymmetricClosure mints inverses (classified DataIntent);
+// faithfulness rests on EVERY constraint-emission site filtering them
+// out (5 sites today in SsdtDdlEmitter.fs). Rather than pin the site
+// list (which drifts), this pins the INVARIANT: across the WHOLE emitted
+// statement stream, the constraints CREATED number exactly the
+// DEPLOYABLE references, and every constraint an ALTER touches was
+// actually created. A 6th site that leaked an inverse would either
+// overshoot the created count or name a never-created constraint — so it
+// breaks conservation even on a shape that carries inverses.
+// ---------------------------------------------------------------------
+
+[<Fact>]
+let ``F8 conservation: emitted constraints number exactly the deployable references; no ALTER names a never-created constraint`` () =
+    // Untrusted forward refs so the stream carries BOTH the CreateTable FK
+    // list AND the disable/no-check ALTER pair — two of the five sites at once.
+    let catalog = closed (corporateShape true false)
+    let stmts = SsdtDdlEmitter.statements catalog |> List.ofSeq
+    // Constraints CREATED (the CreateTable inline FK list).
+    let createdFkNames =
+        stmts
+        |> List.collect (function
+            | Statement.CreateTable (_, _, _, fks, _, _) -> fks |> List.map (fun fk -> fk.Name)
+            | _ -> [])
+        |> Set.ofList
+    // Constraints REFERENCED by every constraint-touching ALTER.
+    let referencedConstraintNames =
+        stmts
+        |> List.choose (function
+            | Statement.AlterTableDisableConstraint (_, name) -> Some name
+            | Statement.AlterTableNoCheckConstraint (_, name) -> Some name
+            | _ -> None)
+    // Deployable references in the (post-closure) catalog — the inverses are
+    // present but non-deployable, so they must NOT be among the created FKs.
+    let deployableRefCount =
+        Catalog.allKinds catalog
+        |> List.collect (fun k -> k.References)
+        |> List.filter Reference.isDeployable
+        |> List.length
+    Assert.Equal(deployableRefCount, Set.count createdFkNames)
+    Assert.All(referencedConstraintNames, fun name ->
+        Assert.True(
+            Set.contains name createdFkNames,
+            sprintf "ALTER references constraint %s which was never created — an inverse leaked past isDeployable" name))
+
+// ---------------------------------------------------------------------
 // WP1 — the FK pass (v3) decision domain excludes the inverse class.
 // ---------------------------------------------------------------------
 
