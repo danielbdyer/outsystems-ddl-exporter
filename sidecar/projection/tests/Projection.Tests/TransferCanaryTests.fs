@@ -1201,6 +1201,61 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
             System.Environment.SetEnvironmentVariable("PROJECTION_CONFIG", prevConfig)
             (try File.Delete configFile with _ -> ())
 
+    // F4 (audit 2026-06-17) — INGEST FORWARD-COMPLETENESS. The adjunction proof
+    // (AdjunctionLawTests) is pure, and the Docker canary reads via ReadSide on
+    // one fixture; neither ENUMERATES the physical facets of a deployed column to
+    // assert each is either carried into the Catalog OR a named, closed ingest
+    // erasure. So a facet silently dropped at ingest (the F1 collation / F10
+    // identity-seed class) was invisible to the round-trip proof. This closes the
+    // loop for the ReadSide (deployed-target) ingest leg: deploy a column-rich
+    // source, read it back, and hold every facet to the ledger.
+    //
+    // THE FACET LEDGER (ReadSide ingest):
+    //   CARRIED — column name, nullability (asserted to round-trip below).
+    //   ERASED  — collation (F1 ReadSide follow-on: INFORMATION_SCHEMA.COLUMNS
+    //             .COLLATION_NAME not yet read) and identity seed/increment (F10
+    //             ReadSide follow-on: sys.identity_columns not yet read). Each is
+    //             `None` in the Catalog; the asserts below are the TRIPWIRES —
+    //             when a follow-on wires the read, the `None` assertion fails,
+    //             forcing the facet to move CARRIED and this ledger to update.
+    //             (Through the OSSYS rowset path collation IS already carried —
+    //             F1, witnessed in OsmRowsetReaderTests; this is the ReadSide leg.)
+    [<Fact>]
+    member _.``F4 forward-completeness: each deployed column facet is carried into the Catalog or a named ReadSide ingest erasure`` () =
+        if not (TransferCanaryFixtures.skipIfNoDocker "F4Completeness") then () else
+        TaskSync.run (fun () ->
+            fixture.WithEphemeralDatabase "F4Completeness" (fun cnn _ ->
+                task {
+                    do! Deploy.executeBatch cnn
+                            ("CREATE TABLE [dbo].[OSUSR_F4_WIDGET] (" +
+                             "[ID] INT NOT NULL IDENTITY(1,1) PRIMARY KEY, " +
+                             "[LABEL] NVARCHAR(100) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL, " +
+                             "[NOTE] NVARCHAR(50) NULL);")
+                    let! catR = ReadSide.read cnn
+                    let catalog = TransferCanaryFixtures.value catR
+                    let attrs =
+                        Catalog.allKinds catalog |> List.collect (fun k -> k.Attributes)
+                    let byCol (name: string) : Attribute =
+                        attrs |> List.find (fun a -> ColumnRealization.columnNameEquals name a.Column)
+                    let id    = byCol "ID"
+                    let label = byCol "LABEL"
+                    let note  = byCol "NOTE"
+
+                    // CARRIED — nullability round-trips (the discriminator: a read
+                    // that lost it would collapse every column to one polarity).
+                    Assert.False(id.Column.IsNullable, "ID deployed NOT NULL must read back NOT NULL")
+                    Assert.False(label.Column.IsNullable, "LABEL deployed NOT NULL must read back NOT NULL")
+                    Assert.True(note.Column.IsNullable, "NOTE deployed NULL must read back nullable")
+
+                    // ERASED (named ReadSide ingest erasures) — the TRIPWIRES.
+                    // LABEL carries a non-default COLLATE on the wire, but ReadSide
+                    // does not read collation_name yet (F1 follow-on).
+                    Assert.Equal<string option>(None, label.Column.Collation)
+                    // ID is IDENTITY(1,1) on the wire, but ReadSide does not read
+                    // sys.identity_columns seed/increment yet (F10 follow-on).
+                    Assert.Equal<(int64 * int64) option>(None, id.Column.Identity)
+                }))
+
     // G1 — the transfer spanning pre-flight (connection), WIRED into the
     // Execute path. Driving `Transfer.run Execute` against a dead/unreachable
     // sink refuses with `transfer.connectionUnavailable` BEFORE any write.

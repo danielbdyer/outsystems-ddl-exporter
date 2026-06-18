@@ -41,6 +41,13 @@ for the full branch picture. Dispositions so far:
   rewrites are now a fourth BOUND source (`EmissionSeam`) covered by the `registered ⇔
   executed` proof (E5), closing the F2 counterexample's class. Golden-neutral. See the F3
   disposition below.
+- **F4 ingest round-trip — ✅ DONE** (2026-06-17, individual heavy commit): a Docker
+  forward-completeness facet-ledger test (source DDL → ReadSide → Catalog) holds every
+  physical facet to carried-or-named-erased, closing the adjunction-proof ingest gap. See
+  the F4 disposition below.
+- **The heavy four (F1, F3, F4, F10) are all DONE.** Remaining: F6 follow-on (advisory-tuning
+  config), F7-config-preserve + F7-audit (A37 promotion), F9 (deployed-reality nullability/
+  identity divergence diagnostic) — all bounded/medium, no heavy structural or golden work.
 - **Still pending.** **Bounded/medium** (F7-config-preserve = extend
   `renderConfig`+parse+the A44 generator to round-trip `tighteningRelaxations`, **touches the A44
   canary**; F6 follow-on = the advisory-tuning config for all four `H-07x` passes) · **heavy**
@@ -201,7 +208,18 @@ operator adjudication.
 - **Recommended action:** add a forward-completeness check `source DDL → ReadSide/OSSYS →
   Catalog` asserting every physical facet (collation, identity seed, deployed
   nullability) is present in the Catalog **or** named in a closed erasure set.
-- **Disposition:**
+- **Disposition:** ✅ DONE (heavy commit, 2026-06-17). Added the Docker test `F4
+  forward-completeness: each deployed column facet is carried into the Catalog or a named
+  ReadSide ingest erasure` (`TransferCanaryTests`). It deploys a column-rich source (a NOT
+  NULL identity PK, a NOT NULL column with a non-default `COLLATE`, a nullable column), reads
+  it back through the ReadSide ingest, and holds every facet to an explicit LEDGER: **carried**
+  (column name, nullability — asserted to round-trip), **erased** (collation = F1's ReadSide
+  follow-on; identity seed/increment = F10's — each asserted `None`, the TRIPWIRE that fires
+  when a follow-on wires the read, forcing the facet to move CARRIED and the ledger to
+  update). This is the ReadSide leg; the OSSYS rowset leg's collation completeness is already
+  witnessed by F1 (`OsmRowsetReaderTests`). Closes the "a deviation at ingest is invisible to
+  the round-trip proof" gap by making the facet set explicit and tested. 1 green (warm
+  container); purely additive (no production change, no goldens).
 
 ---
 
