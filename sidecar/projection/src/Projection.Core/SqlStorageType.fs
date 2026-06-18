@@ -118,7 +118,11 @@ module SqlStorageType =
     let ofPrimitiveType (pt: PrimitiveType) : SqlStorageType =
         match pt with
         | Integer  -> SqlStorageType.Int
-        | Decimal  -> SqlStorageType.Decimal (18, 4)
+        // F5 — DECIMAL(18,0): the V1-donor parity default for a precision/scale-less
+        // decimal (`config/type-mapping.default.json` → decimal precision 18, scale 0;
+        // currency is its own (37,8) at the adapter). Was (18,4) here — the
+        // inconsistency with the facet-resolution + adapter paths, both (18,0).
+        | Decimal  -> SqlStorageType.Decimal (18, 0)
         | Text     -> SqlStorageType.NVarChar Max
         | Boolean  -> SqlStorageType.Bit
         | DateTime -> SqlStorageType.DateTime2 None
