@@ -77,8 +77,7 @@ let renderSummaryTo (console: IAnsiConsole) (command: string) (code: int) : unit
 /// Render the verdict panel to stderr (channel 2 — the panel is a rendering
 /// of events; stdout stays the narration surface).
 let renderSummary (command: string) (code: int) : unit =
-    let console =
-        AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(Console.Error)))
+    let console = View.consoleTo Console.Error
     renderSummaryTo console command code
 
 // --- the readiness board as a View -----------------------------------------
@@ -272,12 +271,10 @@ let buildSurveyView (reports: CapabilitySurvey.EnvironmentReport list) : View.Vi
     View.Doc([ View.Blank; verdict; View.Blank ] @ (reports |> List.map field))
 
 let renderReadinessBoard (r: RunLedger.Readiness) (recent: string list) (ledgerPath: string) : unit =
-    // The board renders on every `readiness` (not just on a TTY). Pin a width
-    // when piped (Spectre's auto-width collapses lines on a non-TTY); it still
-    // strips color for the non-terminal sink.
-    let console =
-        AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(Console.Out)))
-    if Console.IsOutputRedirected then console.Profile.Width <- 100
+    // The board renders on every `readiness` (not just on a TTY). The factory
+    // pins a width when piped (Spectre's auto-width collapses lines on a non-TTY)
+    // and still strips color for the non-terminal sink.
+    let console = View.consoleTo Console.Out
     renderReadinessBoardTo console r recent ledgerPath
 
 // --- the answer surface — render any View to stdout (INSTRUMENT slice 1) ----
@@ -291,9 +288,7 @@ let renderAnswer (asJson: bool) (depth: int) (v: View.View) : unit =
     if asJson then
         Console.Out.WriteLine((View.toJson v).ToJsonString())
     else
-        let console =
-            AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(Console.Out)))
-        if Console.IsOutputRedirected then console.Profile.Width <- 100
+        let console = View.consoleTo Console.Out
         View.writeToDepth console depth v
 
 /// Voice a refusal to STDERR (the §5 channel split — errors never on stdout).
@@ -302,9 +297,7 @@ let renderAnswer (asJson: bool) (depth: int) (v: View.View) : unit =
 /// answer — so a refusal speaks in the operator register, not raw prose.
 let renderVoicedError (error: Projection.Core.ValidationError) : unit =
     let view = Surface.render (Voice.errorSurface error)
-    let console =
-        AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(Console.Error)))
-    if Console.IsErrorRedirected then console.Profile.Width <- 100
+    let console = View.consoleTo Console.Error
     View.writeToDepth console View.defaultDepth view
 
 // --- the Gate surface — a refusal as a stop-and-confirm (INSTRUMENT slice 3) -
@@ -330,9 +323,7 @@ let buildGateView (command: string) (refusal: Preflight.GateRefusal) : View.View
 /// Render the Gate to stderr (a refusal is an event surface; stdout stays the
 /// answer/narration surface).
 let renderGate (command: string) (refusal: Preflight.GateRefusal) : unit =
-    let console =
-        AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(Console.Error)))
-    if Console.IsErrorRedirected then console.Profile.Width <- 100
+    let console = View.consoleTo Console.Error
     View.write console (buildGateView command refusal)
 
 // --- the error surface — refusals & errors as voice (slice 4) ---------------
@@ -348,13 +339,10 @@ let buildErrorsView (errors: ValidationError list) : View.View =
 /// NDJSON (`config.validationFailed` etc.) remains the machine channel, unchanged.
 let renderErrorsTo (writer: System.IO.TextWriter) (errors: ValidationError list) : unit =
     if not (List.isEmpty errors) then
-        let console =
-            AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(writer)))
-        // Pin a width when the sink is not a real terminal (piped / file) so the
-        // grid cells don't collapse; color is stripped for the non-terminal sink.
-        let isStderr = System.Object.ReferenceEquals(writer, Console.Error)
-        if (not isStderr) || Console.IsErrorRedirected then
-            console.Profile.Width <- 100
+        // The factory pins a width when the sink is not a real terminal (piped /
+        // file) so the grid cells don't collapse; color is stripped for the
+        // non-terminal sink.
+        let console = View.consoleTo writer
         View.write console (buildErrorsView errors)
 
 /// Render a `ValidationError list` to stderr (the common case).
@@ -378,11 +366,5 @@ let renderVoicedTo (writer: System.IO.TextWriter) (code: string) (payload: Voice
         match Voice.surfaceOf code payload with
         | Some surface -> surface
         | None         -> Voice.fallbackSurface code payload
-    let console =
-        AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(writer)))
-    let redirected =
-        if System.Object.ReferenceEquals(writer, Console.Error) then Console.IsErrorRedirected
-        elif System.Object.ReferenceEquals(writer, Console.Out) then Console.IsOutputRedirected
-        else true
-    if redirected then console.Profile.Width <- 100
+    let console = View.consoleTo writer
     View.write console (Surface.render surface)

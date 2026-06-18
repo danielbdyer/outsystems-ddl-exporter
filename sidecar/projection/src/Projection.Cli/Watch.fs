@@ -437,8 +437,11 @@ module Watch =
     /// (no contention). A future concurrent / async emitter would move the dwell to
     /// a drain loop on a render thread (`THE_VOICE_BUILD_MAP.md` §4.3).
     let renderWatch (spine: RunSpine) (floorMs: int64) (body: unit -> int) : int =
-        let console =
-            AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(Console.Error)))
+        // The live board only runs on a real terminal (`shouldWatch` gates on
+        // a non-redirected stderr), so the factory pins no width here; it does
+        // honor `NO_COLOR` / `CLICOLOR_FORCE` so a no-color operator watching a
+        // run gets the plain board, the same as the verdict panel.
+        let console = View.consoleTo Console.Error
         let board = ref (seededOf spine)
         let sw = System.Diagnostics.Stopwatch.StartNew()
         let mutable lastRenderAt = 0L

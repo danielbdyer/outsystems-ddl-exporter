@@ -184,6 +184,65 @@ let writeToDepth (console: IAnsiConsole) (depth: int) (v: View) : unit =
 /// `NoColors` console is the plain lens. One renderer, two outputs.
 let write (console: IAnsiConsole) (v: View) : unit = writeToDepth console defaultDepth v
 
+// --- The console factory (one sink → one configured console) ---------------
+// The render sites used to each re-derive the same facts about a sink: is it
+// redirected (→ pin a width so grids don't collapse), and what does the color
+// channel want. That logic lived inlined — a bare `100` and a `ReferenceEquals`
+// redirect check — at six call sites in `TtyRenderer` plus `Watch`. It lives
+// here once now, and is the single place the published color conventions are
+// honored (the contract `Theme` names but nothing read).
+
+/// The published color conventions the `Theme` contract names. `NO_COLOR` (set
+/// to any non-empty value, per no-color.org) suppresses color even on a real
+/// terminal — the accessibility signal wins; `CLICOLOR_FORCE` (set and not "0")
+/// forces color even into a redirected sink. Read at the boundary (rendering is
+/// not Core). `Some false` → force plain; `Some true` → force color; `None` →
+/// let Spectre detect from the sink. NO_COLOR is checked first, so it wins when
+/// both are set — a declared preference for no color is never overridden.
+let private envColorOverride () : bool option =
+    match System.Environment.GetEnvironmentVariable "NO_COLOR" with
+    | null | "" ->
+        match System.Environment.GetEnvironmentVariable "CLICOLOR_FORCE" with
+        | null | "" | "0" -> None
+        | _               -> Some true
+    | _ -> Some false
+
+/// The plain-sink width pin. Spectre auto-sizes to the terminal, but a
+/// redirected sink (pipe / file) reports no width and collapses the board / gate
+/// grids mid-cell — so a redirected console is pinned wide enough to keep them
+/// intact. (Previously inlined as a bare `100` at every render site.)
+[<Literal>]
+let plainWidth = 100
+
+/// Build a configured console for a sink. `redirected` is whether THIS writer is
+/// a pipe/file — the caller knows it (`Console.IsErrorRedirected` for stderr,
+/// `IsOutputRedirected` for stdout, always true for an in-memory writer). A
+/// redirected sink gets its width pinned (and Spectre strips its color of its own
+/// accord); `NO_COLOR` / `CLICOLOR_FORCE` then override the color channel per the
+/// published conventions.
+let consoleFor (writer: System.IO.TextWriter) (redirected: bool) : IAnsiConsole =
+    let settings = AnsiConsoleSettings(Out = AnsiConsoleOutput(writer))
+    (match envColorOverride () with
+     | Some false -> settings.ColorSystem <- ColorSystemSupport.NoColors
+     | Some true  -> settings.Ansi <- AnsiSupport.Yes
+     | None       -> ())
+    let console = AnsiConsole.Create settings
+    if redirected then console.Profile.Width <- plainWidth
+    console
+
+/// Whether a writer is a non-terminal sink: an in-memory / file writer, OR
+/// `Console.Out` / `Console.Error` when that standard stream is redirected. The
+/// `ReferenceEquals` redirect check the render sites used to inline.
+let private redirectedFor (writer: System.IO.TextWriter) : bool =
+    if   System.Object.ReferenceEquals(writer, System.Console.Error) then System.Console.IsErrorRedirected
+    elif System.Object.ReferenceEquals(writer, System.Console.Out)   then System.Console.IsOutputRedirected
+    else true
+
+/// Build a configured console for a writer, deriving the redirect state from the
+/// writer itself — the single entry point every render site now calls.
+let consoleTo (writer: System.IO.TextWriter) : IAnsiConsole =
+    consoleFor writer (redirectedFor writer)
+
 // --- The structured lens (toJson; a --query walks this) --------------------
 
 let rec toJson (v: View) : JsonNode =
