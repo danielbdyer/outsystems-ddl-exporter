@@ -885,7 +885,7 @@ module ReadSide =
     /// `SqlCommand` and `SqlDataReader` open on first pull and
     /// dispose on EOF or exception. Callers must drain to `None`
     /// (or accept that abandoned streams clean up at GC).
-    let readRowsStream (cnn: SqlConnection) (kind: Kind) : AsyncStream<RowQuantum> =
+    let private readRowsStreamCore (cnn: SqlConnection) (kind: Kind) (extraWhere: (string * (SqlCommand -> unit)) option) : AsyncStream<RowQuantum> =
         // Bracket-quoting flows through ScriptDom's
         // `Identifier.EncodeIdentifier` (canonical, vendor-supplied
         // SQL-identifier encoder). Eliminates the prior `sprintf
@@ -919,10 +919,18 @@ module ReadSide =
             System.String.Join(  // LINT-ALLOW: terminal SQL-text-emission boundary; segments are typed (each via Identifier.EncodeIdentifier)
                 ".",
                 [| encode (TableId.schemaText kind.Physical); encode (TableId.tableText kind.Physical) |])
+        // Slice 1b (closure oracle): an optional `WHERE <key> IN (@k…)` clause
+        // for the key-scoped read. `None` → byte-identical to the prior
+        // full-table scan.
+        let whereText =
+            match extraWhere with
+            | Some (w, _) -> System.String.Concat(" WHERE ", w)  // LINT-ALLOW: terminal SQL-text boundary; w is built from encoded identifiers + parameter placeholders
+            | None        -> ""
         let cmdText =
             System.String.Concat(  // LINT-ALLOW: terminal SQL-text-emission boundary; columns/qualified/encode results are typed safe segments
                 "SELECT ", columns,
                 " FROM ", qualified,
+                whereText,
                 " ORDER BY ", encode pkCol)
         let attrs = List.toArray kind.Attributes
         let mutable cmdOpt : SqlCommand option = None
@@ -945,6 +953,9 @@ module ReadSide =
                 let cmd = cnn.CreateCommand()
                 cmd.CommandText <- cmdText
                 cmd.CommandTimeout <- CommandTimeoutPolicy.resolve ()
+                match extraWhere with
+                | Some (_, addParams) -> addParams cmd
+                | None -> ()
                 cmdOpt <- Some cmd
                 let! reader = cmd.ExecuteReaderAsync()
                 readerOpt <- Some reader
@@ -991,6 +1002,43 @@ module ReadSide =
         pull
         |> AsyncStream.probe (sprintf "readside.readRowsStream.%s.%s" (TableId.schemaText kind.Physical) (TableId.tableText kind.Physical))
         |> AsyncStream.probe "readside.readRowsStream.all"
+
+    /// Stream a table's full row set, positional against `Kind.rowBasis kind`.
+    /// Thin wrapper over `readRowsStreamCore` with no predicate — byte-
+    /// identical to the pre-Slice-1b behaviour.
+    let readRowsStream (cnn: SqlConnection) (kind: Kind) : AsyncStream<RowQuantum> =
+        readRowsStreamCore cnn kind None
+
+    /// Slice 1b — the **key-scoped** read the closure oracle drives: stream
+    /// only the rows of `kind` whose `keyColumn` (a logical attribute `Name`,
+    /// resolved to its physical column against THIS catalog's `kind` — the
+    /// cross-environment plane separation) is in `keys`. Renders
+    /// `… WHERE <col> IN (@k0,@k1,…)` with the key values bound as PARAMETERS
+    /// (no literal injection; implicit conversion handles integer PKs). An
+    /// empty `keys` yields a guaranteed-empty read (`WHERE 1 = 0`). The caller
+    /// chunks large key sets.
+    let readRowsKeyedStream (cnn: SqlConnection) (kind: Kind) (keyColumn: Name) (keys: string list) : AsyncStream<RowQuantum> =
+        let encode = Microsoft.SqlServer.TransactSql.ScriptDom.Identifier.EncodeIdentifier
+        let physicalKeyCol =
+            kind.Attributes
+            |> List.tryFind (fun a -> a.Name = keyColumn)
+            |> Option.map (fun a -> encode (ColumnRealization.columnNameText a.Column))
+            |> Option.defaultWith (fun () ->
+                failwithf "ReadSide.readRowsKeyedStream: kind %A has no attribute named %A" kind.SsKey keyColumn)
+        let keyArr = List.toArray keys
+        let whereSql =
+            if keyArr.Length = 0 then "1 = 0"  // LINT-ALLOW: terminal SQL-text boundary; constant-false predicate for an empty key set
+            else
+                let placeholders =
+                    keyArr
+                    |> Array.mapi (fun i _ -> System.String.Concat("@k", string i))  // LINT-ALLOW: terminal SQL-text boundary; parameter placeholder token
+                    |> String.concat ", "  // LINT-ALLOW: terminal SQL-text boundary; @k<int> placeholder tokens
+                System.String.Concat(physicalKeyCol, " IN (", placeholders, ")")  // LINT-ALLOW: terminal SQL-text boundary; physicalKeyCol encoded, placeholders are parameter tokens
+        let addParams (cmd: SqlCommand) =
+            keyArr
+            |> Array.iteri (fun i k ->
+                cmd.Parameters.AddWithValue(System.String.Concat("@k", string i), box k) |> ignore)
+        readRowsStreamCore cnn kind (Some (whereSql, addParams))
 
     /// The IR-grain boundary (Q2): rebuild `StaticRow`s from an in-flight
     /// quantum stream — the Map mint plus the `READSIDE_ROW` row identity

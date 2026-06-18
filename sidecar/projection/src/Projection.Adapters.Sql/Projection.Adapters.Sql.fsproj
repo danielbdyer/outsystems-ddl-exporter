@@ -17,6 +17,7 @@
     <Compile Include="LiveProfiler.fs" />
     <Compile Include="DataIntegrityChecker.fs" />
     <Compile Include="ReadSide.fs" />
+    <Compile Include="ClosureOracle.fs" />
     <Compile Include="Ingestion.fs" />
   </ItemGroup>
 
