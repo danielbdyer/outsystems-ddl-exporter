@@ -42,12 +42,12 @@ let renderCatalogDiff (d: CatalogDiff) : View.View =
     let chan a r rn ch = sprintf "%s added · %s dropped · %s renamed · %s changed" (h a) (h r) (h rn) (h ch)
     View.Panel(
         "changes",
-        [ View.Field("total changes", h n, (if n = 0 then View.Ok else View.Warn))
-          View.Field("tables", sprintf "%s added · %s dropped · %s renamed" (h c.AddedKinds) (h c.RemovedKinds) (h c.RenamedKinds), View.Neutral)
-          View.Field("columns", chan c.AddedAttributes c.RemovedAttributes c.RenamedAttributes c.ChangedAttributes, View.Neutral)
-          View.Field("relationships", chan c.AddedReferences c.RemovedReferences c.RenamedReferences c.ChangedReferences, View.Neutral)
-          View.Field("indexes", chan c.AddedIndexes c.RemovedIndexes c.RenamedIndexes c.ChangedIndexes, View.Neutral)
-          View.Field("sequences", chan c.AddedSequences c.RemovedSequences c.RenamedSequences c.ChangedSequences, View.Neutral) ])
+        [ View.PanelRow.Labeled("total changes", h n, (if n = 0 then View.Ok else View.Warn))
+          View.PanelRow.Labeled("tables", sprintf "%s added · %s dropped · %s renamed" (h c.AddedKinds) (h c.RemovedKinds) (h c.RenamedKinds), View.Neutral)
+          View.PanelRow.Labeled("columns", chan c.AddedAttributes c.RemovedAttributes c.RenamedAttributes c.ChangedAttributes, View.Neutral)
+          View.PanelRow.Labeled("relationships", chan c.AddedReferences c.RemovedReferences c.RenamedReferences c.ChangedReferences, View.Neutral)
+          View.PanelRow.Labeled("indexes", chan c.AddedIndexes c.RemovedIndexes c.RenamedIndexes c.ChangedIndexes, View.Neutral)
+          View.PanelRow.Labeled("sequences", chan c.AddedSequences c.RemovedSequences c.RenamedSequences c.ChangedSequences, View.Neutral) ])
 
 // --- the statement: the plain lead line of a change (INSTRUMENT slice 1) ----
 
@@ -129,11 +129,11 @@ let renderCatalogChange (d: CatalogDiff) : View.View =
 /// −missing / +extra counts.
 let renderPhysicalDiff (d: PhysicalSchemaDiff) : View.View =
     let isEq = PhysicalSchema.isEqual d
-    let axis label (missing: int) (extra: int) : View.View =
-        View.Field(label, sprintf "−%d +%d" missing extra, (if missing + extra > 0 then View.Warn else View.Neutral))
+    let axis label (missing: int) (extra: int) : View.PanelRow =
+        View.PanelRow.Labeled(label, sprintf "−%d +%d" missing extra, (if missing + extra > 0 then View.Warn else View.Neutral))
     View.Panel(
         "physical Δ",
-        [ View.Field("status", (if isEq then "identical" else "diverged"), (if isEq then View.Ok else View.Bad))
+        [ View.PanelRow.Labeled("status", (if isEq then "identical" else "diverged"), (if isEq then View.Ok else View.Bad))
           axis "columns" d.MissingColumns.Length d.ExtraColumns.Length
           axis "foreignKeys" d.MissingForeignKeys.Length d.ExtraForeignKeys.Length
           axis "indexes" d.MissingIndexes.Length d.ExtraIndexes.Length

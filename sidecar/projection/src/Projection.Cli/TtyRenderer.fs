@@ -38,34 +38,34 @@ let buildSummaryView (command: string) (code: int) : View.View =
                 "summary.runComplete",
                 Map.ofList [ "outcome", box (if code = 0 then "succeeded" else "failed") ]
         match Voice.verdict codeForVerdict payload with
-        | Some (st, t) -> View.Field("verdict", t, st)
+        | Some (st, t) -> View.PanelRow.Labeled("verdict", t, st)
         | None ->
-            View.Field(
+            View.PanelRow.Labeled(
                 "verdict",
                 (if code = 0 then "The run completed without error." else "Stopped before completion."),
                 (if code = 0 then View.Ok else View.Bad))
     let transforms =
-        View.Field(
+        View.PanelRow.Labeled(
             "transforms",
             sprintf "%d registered %s %d applied %s %d declined" registered Theme.dot applied Theme.dot declined,
             View.Neutral)
     let edits = LogSink.suggestedConfigEdits ()
     let actionable =
-        if edits = 0 then View.Field("actionable", "none", View.Ok)
+        if edits = 0 then View.PanelRow.Labeled("actionable", "none", View.Ok)
         else
             // Impact-ranked — name the single biggest lever first.
             match LogSink.topSuggestion () with
             | Some (path, count) ->
-                View.Field("actionable", sprintf "%d edit(s) %s top: %s (%d)" edits Theme.dot path count, View.Warn)
-            | None -> View.Field("actionable", sprintf "%d edit(s) suggested" edits, View.Warn)
+                View.PanelRow.Labeled("actionable", sprintf "%d edit(s) %s top: %s (%d)" edits Theme.dot path count, View.Warn)
+            | None -> View.PanelRow.Labeled("actionable", sprintf "%d edit(s) suggested" edits, View.Warn)
     // Principle #5 — end with the next action.
-    let nextAction = if edits > 0 then [ View.Action "projection suggest-config --apply" ] else []
+    let nextAction = if edits > 0 then [ View.PanelRow.Next "projection suggest-config --apply" ] else []
     let cutover =
         match RunLedger.configuredDir () with
         | Some dir ->
             let r = RunLedger.read dir |> RunLedger.readiness
             let gate = if r.Eligible then "ELIGIBLE" else "not yet"
-            [ View.Meter(
+            [ View.PanelRow.Gauge(
                 "cutover", r.ConsecutiveGreen, r.Threshold,
                 sprintf "%d / %d green %s %s" r.ConsecutiveGreen r.Threshold Theme.arrow gate) ]
         | None -> []

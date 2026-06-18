@@ -55,6 +55,31 @@ correct, cosmetic only.
 > in the `Some true` arm. The NO_COLOR path (`ColorSystem <- NoColors`) is the
 > tested, load-bearing one.
 
+### Shipped next (2026-06-18) — #1 + #6: the substrate drift hole, closed and locked
+
+**The `PanelRow` type (#1).** `Panel of title * View list` let a non-row block be
+placed in a panel and then **silently dropped** by `writePanel` (`| _ -> ()`)
+while `toJson` kept it — the pretty and JSON lenses diverging on one value, the
+exact thing this module exists to forbid. The fix makes it unrepresentable: a
+closed `Panel of title * PanelRow list`, where `PanelRow` is `Labeled | Gauge |
+Next` (named distinctly from the `View` DU's `Field | Meter | Action` so a bare
+`View.Field` stays unambiguous everywhere). `writePanel` is now **total over
+`PanelRow`** — the `| _ -> ()` is gone and the compiler is the guarantee. The
+JSON wire format is byte-identical (the rows still serialize as
+`field`/`meter`/`action` kinds).
+
+**The DU totality lock (#6).** Two new `ViewTests`: one asserts a `Panel` renders
+*every* row to both lenses (the drift, pinned); one walks **one instance of every
+`View` case** through plain (shallow + deep) and JSON, asserting neither lens
+throws and the kind tag matches — exhaustive by construction, so a future case
+that forgets a `writeBlock` or `toJson` arm fails in the pure pool, not at the
+tail of a run.
+
+> Pure pool green with the warm SQL container wired in
+> (`eval "$(scripts/warm-sql.sh start)"`; `fast` does **not** auto-detect it, so
+> export `PROJECTION_MSSQL_CONN_STR` when running the pure pool here — several
+> "pure" extraction canaries open a live connection).
+
 ---
 
 ## 1 — The map (all 25, by theme)
@@ -64,12 +89,12 @@ Status key: **● shipped** · **◐ partial / starved** · **○ not started** 
 
 | # | Item | Theme | Status |
 |---|---|---|---|
-| 1 | Close the `Panel` drift hole | A. Substrate integrity | ○ |
+| 1 | Close the `Panel` drift hole | A. Substrate integrity | ● |
 | 2 | Unforgeable markup (a `Markup` newtype) | A | ○ |
 | 3 | Defensive render (markup-fault → plain fallback) | A | ○ |
 | 4 | A `RenderOptions` record | A | ○ |
 | 5 | One console/channel factory | A | ● |
-| 6 | Totality + property test over the DU | A | ○ |
+| 6 | Totality + property test over the DU | A | ● |
 | 7 | Honor `NO_COLOR` / `CLICOLOR_FORCE` | B. Color & accessibility | ● |
 | 8 | Sealed `Color` palette | B | ✕ |
 | 9 | High-contrast / colorblind theme | B | ✕ |
@@ -99,7 +124,7 @@ Status key: **● shipped** · **◐ partial / starved** · **○ not started** 
 
 ## A — Substrate integrity (the `View` ADT engine)
 
-### 1 · Close the `Panel` drift hole  ○  *(highest-value correctness fix)*
+### 1 · Close the `Panel` drift hole  ●  *(landed 2026-06-18; see §0)*
 
 **Problem.** `View.writePanel` matches only `Field` / `Meter` / `Action` and ends
 on `| _ -> ()` — every other child is *silently dropped from the pretty lens*. But
@@ -165,7 +190,7 @@ unbroken; `defaultDepth` / `laneCap` / `plainWidth` become the record's defaults
 
 ### 5 · One console/channel factory  ● *(shipped — see §0)*
 
-### 6 · Totality + property test over the DU  ○
+### 6 · Totality + property test over the DU  ●  *(landed 2026-06-18; see §0)*
 
 **Problem.** No test asserts that *every* `View` case both renders and serializes
 without throwing, nor that `toJson`'s `kind` set is total over the DU. The `| _ ->
