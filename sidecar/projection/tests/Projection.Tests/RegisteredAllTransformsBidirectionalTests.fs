@@ -466,3 +466,32 @@ let ``F13 (audit): the static-row hydration adapter (which grafts) is in the tot
     Assert.True(
         siteHasClassification "fullExportHydration" (function DataIntent -> true | _ -> false),
         "fullExportHydration must carry a DataIntent site (boundary row carriage + graft, no operator overlay)")
+
+// ---------------------------------------------------------------------------
+// E5 (F3, audit 2026-06-17) — the post-chain EMISSION SEAM is now a BOUND
+// source, like the emit phase (E1) and the read adapter (E2). The Pipeline
+// applies its post-chain Catalog→Catalog rewrites through `EmissionSeam.apply`,
+// whose `rewrites` list ALSO projects the seam's `metadata` and `executedNames`
+// — so `registered ⇔ executed` holds for the seam by construction. These pin
+// both halves: (a) every executed seam rewrite is registered in
+// `RegisteredAllTransforms.all` (no orphan post-chain mutation), and (b) the
+// seam's own registration set equals its executed set (no phantom registration,
+// no unregistered rewrite). This closes the F2 counterexample's whole class: a
+// post-chain mutator can no longer run outside a bound source.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``E5 (F3): every EmissionSeam rewrite executes through a registered transform (no orphan post-chain mutation)`` () =
+    for name in EmissionSeam.executedNames do
+        Assert.True(
+            Set.contains name allNames,
+            sprintf "emission-seam rewrite '%s' executes (EmissionSeam.apply) but is not in RegisteredAllTransforms.all" name)
+
+[<Fact>]
+let ``E5 (F3): the EmissionSeam registration set equals its executed set (registered <-> executed for the seam)`` () =
+    let executed = EmissionSeam.executedNames |> Set.ofList
+    let registered = EmissionSeam.metadata |> List.map (fun m -> m.Name) |> Set.ofList
+    Assert.Equal<Set<string>>(executed, registered)
+    // Non-empty — the test actually exercises the binding (a vacuous seam would
+    // pass both arms trivially).
+    Assert.NotEmpty EmissionSeam.executedNames

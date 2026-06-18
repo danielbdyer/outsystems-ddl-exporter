@@ -574,12 +574,13 @@ module Compose =
             PassChainAdapter.compose filteredChain (ComposeState.initial catalog)
         let composedState   = LineageDiagnostics.payload composed
         let passEntries     = LineageDiagnostics.entries composed
-        // Chapter 4.9 slice δ — apply EmissionPolicy.filterPlatformAutoIndexes
-        // at the post-chain seam. The filter is `OperatorIntent of Emission`
-        // per pillar 9; lives outside the registered pass chain because
-        // its evidence is policy, not catalog-derived. Identity when
-        // `IncludePlatformAutoIndexes = true` (V1 parity default).
-        let emittedCatalog = EmissionPolicy.filterPlatformAutoIndexes policy composedState.Catalog
+        // Chapter 4.9 slice δ + F3 (audit 2026-06-17) — apply the post-chain
+        // emission-seam rewrites via the ONE bound `EmissionSeam.apply` (today:
+        // `filterPlatformAutoIndexes`, `OperatorIntent Emission`). Routing
+        // through the seam binds execution↔registration so the totality proof
+        // covers it; identity when `IncludePlatformAutoIndexes = true` (V1
+        // parity default).
+        let emittedCatalog = EmissionSeam.apply policy composedState.Catalog
         // E1 (`DECISIONS 2026-06-04`) — the sibling-Π emit phase is the
         // registry-driven `emitSteps` fold over a seed `Outputs`. Each step
         // writes its one field; the SSDT step computes `decisionOverlay`
@@ -1322,7 +1323,10 @@ module Compose =
                     let dacpacR : Result<byte[] option> =
                         if not cfg.Emission.Dacpac then Result.success None
                         else
-                            EmissionPolicy.filterPlatformAutoIndexes policy.Emission finalState.Catalog
+                            // F3 (audit 2026-06-17) — same bound emission seam as
+                            // the main path, so the dacpac arm cannot drift to a
+                            // different (unregistered) post-chain rewrite set.
+                            EmissionSeam.apply policy.Emission finalState.Catalog
                             |> DacpacEmitter.emit
                             |> Result.map Some
                     match dacpacR with

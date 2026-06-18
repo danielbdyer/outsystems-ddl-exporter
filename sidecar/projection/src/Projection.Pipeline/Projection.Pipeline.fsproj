@@ -39,6 +39,7 @@
     <Compile Include="Hydration.fs" />
     <Compile Include="ModelFidelity.fs" />
     <Compile Include="Compare.fs" />
+    <Compile Include="EmissionSeam.fs" />
     <Compile Include="Pipeline.fs" />
     <Compile Include="PolicyDiff.fs" />
     <Compile Include="Bulk.fs" />

@@ -37,6 +37,10 @@ for the full branch picture. Dispositions so far:
 - **F10 IDENTITY — ✅ DONE** (2026-06-17, individual heavy commit): IDENTITY seed/increment
   is now IR-driven (`ColumnRealization.Identity`, default `(1,1)`) not a hardcode; golden-
   neutral; the read-side seed population is the named bound. See the F10 disposition below.
+- **F3 totality — ✅ DONE** (2026-06-17, individual heavy commit): the post-chain emission
+  rewrites are now a fourth BOUND source (`EmissionSeam`) covered by the `registered ⇔
+  executed` proof (E5), closing the F2 counterexample's class. Golden-neutral. See the F3
+  disposition below.
 - **Still pending.** **Bounded/medium** (F7-config-preserve = extend
   `renderConfig`+parse+the A44 generator to round-trip `tighteningRelaxations`, **touches the A44
   canary**; F6 follow-on = the advisory-tuning config for all four `H-07x` passes) · **heavy**
@@ -167,7 +171,24 @@ operator adjudication.
 - **Recommended action:** route every post-chain catalog rewrite through the registered
   chain seam so "the chain is the only mutator" is structurally true; then the existing
   proof becomes a run-level totality guarantee. (Closes the whole class — high leverage.)
-- **Disposition:**
+- **Disposition:** ✅ DONE (heavy commit, 2026-06-17). Introduced a fourth BOUND source —
+  the post-chain **`EmissionSeam`** (`src/Projection.Pipeline/EmissionSeam.fs`). Every
+  post-chain `Catalog → Catalog` rewrite is a `{ Metadata; Transform }` entry in one
+  `rewrites` list; `apply` folds exactly those transforms and `metadata` / `executedNames`
+  project from the SAME list, so `registered ⇔ executed` holds for the seam **by
+  construction** (the E1 discipline). Both Pipeline call sites (main emit `:582` + dacpac
+  `:1325`) now route through `EmissionSeam.apply` instead of a bare
+  `filterPlatformAutoIndexes` call, and `RegisteredAllTransforms.all` splices
+  `EmissionSeam.metadata`. New bidirectional tests `E5` pin both halves (every executed
+  rewrite registered; the seam's registration set = its executed set, non-vacuously). The
+  F2 counterexample is now structurally impossible: a post-chain mutator added outside the
+  seam is an orphan `apply` would never run, and one added inside is automatically registered.
+  **Golden-neutral** — `apply [filterPlatformAutoIndexes]` is byte-identical to the prior
+  bare call (master + the seam-exercising pruned-platform-auto goldens pass). Residual bound
+  (named): nothing structurally *forbids* a future bare post-chain call — the seam is the
+  sanctioned route + the E5 test + the lint discipline, the same enforcement level the pass
+  chain itself has; a `NoUnregisteredPostChainMutator` analyzer would be the belt-and-braces
+  follow-on.
 
 ### F4 — Round-trip / adjunction tests don't close the loop through the OSSYS ingest adapter · High · High — Lane 6 C1
 - **Provenance:** `AdjunctionLawTests.fs:160-197` reads via `PhysicalSchemaReader`/
