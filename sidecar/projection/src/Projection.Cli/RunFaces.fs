@@ -2330,33 +2330,43 @@ let runSliceExtract (args: string list) : int =
         arr
         |> Array.tryFindIndex ((=) flag)
         |> Option.bind (fun i -> if i + 1 < arr.Length then Some arr.[i + 1] else None)
-    match flagValue "--source", flagValue "--root", flagValue "--out" with
-    | Some src, Some root, Some out ->
-        let whereRaw = flagValue "--where"
-        let result = (SliceExtractRun.extract src root whereRaw out).GetAwaiter().GetResult()
-        let exitCode =
-            match result with
-            | Ok (census, dangling) ->
-                eprintfn "Slice golden written to %s." out
-                for (entity, n) in census do eprintfn "  %s: %d row(s)" entity n
-                if dangling > 0 then
-                    eprintfn
-                        "  WARNING: %d dangling mandatory FK(s) — the slice is NOT referentially self-contained (gated at apply)."
-                        dangling
-                0
-            | Error errors ->
-                printErrors Console.Error errors
-                let anyCode (prefix: string) =
-                    errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith prefix)
-                if anyCode "slice.writeFailed" then 1
-                elif anyCode "slice.root" then 2
-                elif anyCode "connectionSpec" || anyCode "connection" then 6
-                else 3
-        dumpBench "slice-extract"
-        exitCode
-    | _ ->
-        eprintfn "usage: projection slice-extract --source <ref> --root <Entity> [--where <sql>] --out <path>"
-        1
+    let usage = "usage: projection slice-extract --source <ref> (--slice <file> | --root <Entity> [--where <sql>]) --out <path>"
+    let reportResult (out: string) (result: Result<(string * int) list * int>) : int =
+        match result with
+        | Ok (census, dangling) ->
+            eprintfn "Slice golden written to %s." out
+            for (entity, n) in census do eprintfn "  %s: %d row(s)" entity n
+            if dangling > 0 then
+                eprintfn
+                    "  WARNING: %d dangling mandatory FK(s) — the slice is NOT referentially self-contained (gated at apply)."
+                    dangling
+            0
+        | Error errors ->
+            printErrors Console.Error errors
+            let anyCode (prefix: string) =
+                errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith prefix)
+            if anyCode "slice.writeFailed" then 1
+            elif anyCode "slice.root" || anyCode "slice.spec" || anyCode "slice." then 2
+            elif anyCode "connectionSpec" || anyCode "connection" then 6
+            else 3
+    match flagValue "--source", flagValue "--out" with
+    | Some src, Some out ->
+        // Config-driven (`--slice <file>`, the multi-root SliceSpec) takes
+        // precedence; else the thin single-root `--root [--where]` form.
+        let runner =
+            match flagValue "--slice" with
+            | Some slicePath -> Some (SliceExtractRun.extractSpecFromFile src slicePath out)
+            | None ->
+                match flagValue "--root" with
+                | Some root -> Some (SliceExtractRun.extract src root (flagValue "--where") out)
+                | None      -> None
+        match runner with
+        | Some t ->
+            let code = reportResult out (t.GetAwaiter().GetResult())
+            dumpBench "slice-extract"
+            code
+        | None -> eprintfn "%s" usage; 1
+    | _ -> eprintfn "%s" usage; 1
 
 /// `projection slice-apply --golden <p> --target <ref> --out <sql>` (additive
 /// capture-and-remap MERGE) and `projection slice-reset … --delete-scope

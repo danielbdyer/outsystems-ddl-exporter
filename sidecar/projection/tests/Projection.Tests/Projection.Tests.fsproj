@@ -120,6 +120,7 @@
     <Compile Include="ClosureTests.fs" />
     <Compile Include="GoldenCodecTests.fs" />
     <Compile Include="SliceApplyTests.fs" />
+    <Compile Include="SliceCodecTests.fs" />
     <Compile Include="MigrationDependenciesEmitterTests.fs" />
     <Compile Include="BootstrapEmitterTests.fs" />
     <Compile Include="DataEmissionComposerTests.fs" />

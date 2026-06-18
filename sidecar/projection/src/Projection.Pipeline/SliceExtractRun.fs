@@ -81,3 +81,59 @@ module SliceExtractRun =
                             with ex ->
                                 return Result.failureOf (ValidationError.create "slice.writeFailed" ex.Message)
         }
+
+    /// Extract a MULTI-root slice from a `SliceSpec` (the config-driven form):
+    /// every root's predicate seeds the walk, under the spec's traversal
+    /// directives. Returns `(censusByEntity, danglingMandatoryCount)`.
+    let extractSpec (connSpec: string) (spec: SliceSpec) (outPath: string) : Task<Result<(string * int) list * int>> =
+        task {
+            match! openSource connSpec with
+            | Error es -> return Error es
+            | Ok cnn ->
+                use cnn = cnn
+                match! ReadSide.read cnn with
+                | Error es -> return Error es
+                | Ok catalog ->
+                    // Resolve every root entity first (pure); refuse on the first miss.
+                    let resolved = spec.Roots |> List.map (fun r -> r, ClosureOracle.resolveEntity catalog r.Entity)
+                    match resolved |> List.tryPick (fun (r, k) -> if Option.isNone k then Some r.Entity else None) with
+                    | Some missing ->
+                        return
+                            Result.failureOf
+                                (ValidationError.create "slice.root.unknown"
+                                    (sprintf "root entity '%s' was not found in the source catalog."
+                                        (EntityCoordinate.render missing)))
+                    | None ->
+                        let mutable rootFetches : Closure.FetchedRows list = []
+                        // `for pair in …` (not a tuple-pattern `for`) — FS3511-safe.
+                        for pair in resolved do
+                            match snd pair with
+                            | Some kind ->
+                                let! fr = ClosureOracle.fetchRootsByPredicate cnn kind (fst pair).Predicate
+                                rootFetches <- fr :: rootFetches
+                            | None -> ()
+                        let! state = ClosureOracle.walk cnn catalog spec.Directives rootFetches
+                        let golden = GoldenDataset.ofClosure catalog state
+                        let report = Closure.report catalog state
+                        let census = golden.Entities |> List.map (fun e -> e.Entity, List.length e.Rows)
+                        try
+                            System.IO.File.WriteAllText(outPath, GoldenCodec.serialize golden)
+                            return Result.success (census, List.length report.DanglingMandatory)
+                        with ex ->
+                            return Result.failureOf (ValidationError.create "slice.writeFailed" ex.Message)
+        }
+
+    /// The config-driven entry: read a versioned slice-definition file
+    /// (`SliceCodec`, re-validated on decode), then `extractSpec`.
+    let extractSpecFromFile (connSpec: string) (slicePath: string) (outPath: string) : Task<Result<(string * int) list * int>> =
+        task {
+            let json =
+                try Ok (System.IO.File.ReadAllText slicePath)
+                with ex -> Result.failureOf (ValidationError.create "slice.spec.read" ex.Message)
+            match json with
+            | Error es -> return Error es
+            | Ok j ->
+                match SliceCodec.deserialize j with
+                | Error es -> return Error es
+                | Ok spec -> return! extractSpec connSpec spec outPath
+        }

@@ -15,6 +15,7 @@
     <Compile Include="ProfileCodec.fs" />
     <Compile Include="CorrectionCodec.fs" />
     <Compile Include="GoldenCodec.fs" />
+    <Compile Include="SliceCodec.fs" />
   </ItemGroup>
 
   <ItemGroup>
