@@ -45,17 +45,20 @@ for the full branch picture. Dispositions so far:
   forward-completeness facet-ledger test (source DDL → ReadSide → Catalog) holds every
   physical facet to carried-or-named-erased, closing the adjunction-proof ingest gap. See
   the F4 disposition below.
-- **The heavy four (F1, F3, F4, F10) are all DONE.** Remaining: F6 follow-on (advisory-tuning
-  config), F7-config-preserve + F7-audit (A37 promotion), F9 (deployed-reality nullability/
-  identity divergence diagnostic) — all bounded/medium, no heavy structural or golden work.
-- **Still pending.** **Bounded/medium** (F7-config-preserve = extend
-  `renderConfig`+parse+the A44 generator to round-trip `tighteningRelaxations`, **touches the A44
-  canary**; F6 follow-on = the advisory-tuning config for all four `H-07x` passes) · **heavy**
-  (F1 collation → IR field + adapter read + `COLLATE` emission + **golden re-bless**; F3 totality
-  → route post-chain rewrites through the registered chain seam, **structural**; F4 ingest
-  round-trip → a **Docker** forward-completeness test; F10 IDENTITY seed/increment → IR field +
-  goldens; F7-audit A37 promotion). Do the heavy four as individual verified commits, never one
-  batch.
+- **The heavy four (F1, F3, F4, F10) are all DONE** (individual verified commits, Docker where
+  the live path was touched).
+- **Bounded F6 / F7-config-preserve / F9 — ✅ DONE** (2026-06-17): F6 (centralized
+  `AdvisoryTuning` config + softened rationales), F7-config-preserve (`renderConfig` round-trips
+  `tighteningRelaxations`, A44-neutral), F9 (logical-vs-deployed `#ColumnReality` divergence
+  diagnostic). See their dispositions below.
+- **EVERYTHING IS DONE except A37** — and A37 (the named-erasure axiom promotion, the *only* part
+  of audit F7 still open) is **deliberately GATED**, not deferred-by-neglect: its promotion
+  criterion is "TBD at chapter 3.4 close" (`AXIOMS.md`), a chapter-close ritual obligation, not
+  code landable here. F1 + the F4 facet ledger move the ingest-erasure set toward closure;
+  promote A37 at the chapter gate. Several dispositions also name **runtime-override / read-wiring
+  triggers** (the F6 advisory-tuning runtime knob; the F1/F10 ReadSide collation/identity-seed
+  reads; the F2/F3 `NoUnregisteredPostChainMutator` analyzer) — each is a *named* follow-on with
+  an explicit trigger, not a silent gap.
 
 ## Why this audit ran
 
