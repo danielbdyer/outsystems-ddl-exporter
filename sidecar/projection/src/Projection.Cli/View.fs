@@ -23,12 +23,35 @@ type Status =
     | Pending
     | Neutral
 
+/// The closed set of rows a `Panel` lays out in its two-column grid — a labeled
+/// value, a ratio gauge, or the next-action line. Typed (not just `View list`) so
+/// a non-row block cannot be placed in a panel and then silently dropped by the
+/// renderer: the prior `Panel of View list` let `writePanel` render three cases
+/// and `| _ -> ()` the rest, while `toJson` kept them — the human and machine
+/// lenses diverging on the one value, the precise drift this module exists to
+/// forbid. A closed `PanelRow` makes that unrepresentable (the house "closed DU
+/// makes a law unforgeable" discipline, CLAUDE.md §6).
+/// The cases carry their own names (`Labeled` / `Gauge` / `Next`), distinct from
+/// the `View` DU's `Field` / `Meter` / `Action`, so a bare `View.Field` stays
+/// unambiguous everywhere. The JSON lens still emits the historical
+/// `field` / `meter` / `action` kinds — the wire format is unchanged; only the
+/// in-memory constructor names are panel-specific.
+[<RequireQualifiedAccess>]
+type PanelRow =
+    /// A labeled value (`Status` supplies glyph + color); the historical `field`.
+    | Labeled of label: string * value: string * Status
+    /// A ratio gauge with a trailing suffix; the historical `meter`.
+    | Gauge of label: string * filled: int * total: int * suffix: string
+    /// The next-action row; the historical `action`.
+    | Next of string
+
 type View =
     /// A sequence of blocks, rendered as lines (the board shape).
     | Doc of View list
     /// A bordered panel with a header, containing field/meter/action rows
-    /// (the verdict-panel shape).
-    | Panel of title: string * View list
+    /// (the verdict-panel shape). The rows are a closed `PanelRow` so the panel
+    /// cannot carry a block the renderer would silently drop (see `PanelRow`).
+    | Panel of title: string * PanelRow list
     /// The lead verdict line — glyph + emphasized text.
     | Hero of Status * string
     /// A labeled value. `value` is plain; `Status` supplies glyph + color.
@@ -90,21 +113,22 @@ let private styled status (value: string) : string =
 
 // --- The pretty/plain lens (write to any IAnsiConsole) ---------------------
 
-let private writePanel (console: IAnsiConsole) (title: string) (fields: View list) : unit =
+let private writePanel (console: IAnsiConsole) (title: string) (rows: PanelRow list) : unit =
     let grid = Grid()
     grid.AddColumn() |> ignore
     grid.AddColumn() |> ignore
-    for f in fields do
-        match f with
-        | Field (label, value, st) ->
+    // Total over `PanelRow` — every row a panel can hold has a render arm; there
+    // is no `| _ -> ()` to silently swallow one (the drift the closed type ended).
+    for r in rows do
+        match r with
+        | PanelRow.Labeled (label, value, st) ->
             grid.AddRow(Theme.muted (Markup.Escape label), styled st value) |> ignore
-        | Meter (label, filled, total, suffix) ->
+        | PanelRow.Gauge (label, filled, total, suffix) ->
             grid.AddRow(
                 Theme.muted (Markup.Escape label),
                 sprintf "%s   %s" (Theme.meter filled total) (Markup.Escape suffix)) |> ignore
-        | Action text ->
+        | PanelRow.Next text ->
             grid.AddRow(Theme.muted "next", Theme.accent (Markup.Escape text)) |> ignore
-        | _ -> ()   // panels carry field/meter/action rows
     let panel = Spectre.Console.Panel(grid)
     panel.Header <- PanelHeader(sprintf " %s " (Markup.Escape title))
     panel.Border <- BoxBorder.Rounded
@@ -199,6 +223,65 @@ let writeToDepth (console: IAnsiConsole) (depth: int) (v: View) : unit =
 /// `NoColors` console is the plain lens. One renderer, two outputs.
 let write (console: IAnsiConsole) (v: View) : unit = writeToDepth console defaultDepth v
 
+// --- The console factory (one sink → one configured console) ---------------
+// The render sites used to each re-derive the same facts about a sink: is it
+// redirected (→ pin a width so grids don't collapse), and what does the color
+// channel want. That logic lived inlined — a bare `100` and a `ReferenceEquals`
+// redirect check — at six call sites in `TtyRenderer` plus `Watch`. It lives
+// here once now, and is the single place the published color conventions are
+// honored (the contract `Theme` names but nothing read).
+
+/// The published color conventions the `Theme` contract names. `NO_COLOR` (set
+/// to any non-empty value, per no-color.org) suppresses color even on a real
+/// terminal — the accessibility signal wins; `CLICOLOR_FORCE` (set and not "0")
+/// forces color even into a redirected sink. Read at the boundary (rendering is
+/// not Core). `Some false` → force plain; `Some true` → force color; `None` →
+/// let Spectre detect from the sink. NO_COLOR is checked first, so it wins when
+/// both are set — a declared preference for no color is never overridden.
+let private envColorOverride () : bool option =
+    match System.Environment.GetEnvironmentVariable "NO_COLOR" with
+    | null | "" ->
+        match System.Environment.GetEnvironmentVariable "CLICOLOR_FORCE" with
+        | null | "" | "0" -> None
+        | _               -> Some true
+    | _ -> Some false
+
+/// The plain-sink width pin. Spectre auto-sizes to the terminal, but a
+/// redirected sink (pipe / file) reports no width and collapses the board / gate
+/// grids mid-cell — so a redirected console is pinned wide enough to keep them
+/// intact. (Previously inlined as a bare `100` at every render site.)
+[<Literal>]
+let plainWidth = 100
+
+/// Build a configured console for a sink. `redirected` is whether THIS writer is
+/// a pipe/file — the caller knows it (`Console.IsErrorRedirected` for stderr,
+/// `IsOutputRedirected` for stdout, always true for an in-memory writer). A
+/// redirected sink gets its width pinned (and Spectre strips its color of its own
+/// accord); `NO_COLOR` / `CLICOLOR_FORCE` then override the color channel per the
+/// published conventions.
+let consoleFor (writer: System.IO.TextWriter) (redirected: bool) : IAnsiConsole =
+    let settings = AnsiConsoleSettings(Out = AnsiConsoleOutput(writer))
+    (match envColorOverride () with
+     | Some false -> settings.ColorSystem <- ColorSystemSupport.NoColors
+     | Some true  -> settings.Ansi <- AnsiSupport.Yes
+     | None       -> ())
+    let console = AnsiConsole.Create settings
+    if redirected then console.Profile.Width <- plainWidth
+    console
+
+/// Whether a writer is a non-terminal sink: an in-memory / file writer, OR
+/// `Console.Out` / `Console.Error` when that standard stream is redirected. The
+/// `ReferenceEquals` redirect check the render sites used to inline.
+let private redirectedFor (writer: System.IO.TextWriter) : bool =
+    if   System.Object.ReferenceEquals(writer, System.Console.Error) then System.Console.IsErrorRedirected
+    elif System.Object.ReferenceEquals(writer, System.Console.Out)   then System.Console.IsOutputRedirected
+    else true
+
+/// Build a configured console for a writer, deriving the redirect state from the
+/// writer itself — the single entry point every render site now calls.
+let consoleTo (writer: System.IO.TextWriter) : IAnsiConsole =
+    consoleFor writer (redirectedFor writer)
+
 // --- The structured lens (toJson; a --query walks this) --------------------
 
 let rec toJson (v: View) : JsonNode =
@@ -214,7 +297,22 @@ let rec toJson (v: View) : JsonNode =
         a
     match v with
     | Doc blocks -> obj [ "kind", s "doc"; "blocks", arr blocks ]
-    | Panel (title, fields) -> obj [ "kind", s "panel"; "title", s title; "fields", arr fields ]
+    | Panel (title, rows) ->
+        // The "fields" array keeps the SAME field/meter/action kinds the prior
+        // `Panel of View list` emitted — the machine lens is byte-identical; only
+        // the in-memory type became closed.
+        let a = JsonArray()
+        for r in rows do
+            let rowObj =
+                match r with
+                | PanelRow.Labeled (label, value, st) ->
+                    obj [ "kind", s "field"; "label", s label; "value", s value; "status", s (statusTag st) ]
+                | PanelRow.Gauge (label, filled, total, suffix) ->
+                    obj [ "kind", s "meter"; "label", s label; "filled", i filled; "total", i total; "suffix", s suffix ]
+                | PanelRow.Next text ->
+                    obj [ "kind", s "action"; "text", s text ]
+            a.Add(rowObj)
+        obj [ "kind", s "panel"; "title", s title; "fields", a ]
     | Hero (st, text) -> obj [ "kind", s "hero"; "status", s (statusTag st); "text", s text ]
     | Field (label, value, st) ->
         obj [ "kind", s "field"; "label", s label; "value", s value; "status", s (statusTag st) ]

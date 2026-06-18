@@ -510,6 +510,9 @@ module Watch =
     /// `Spectre.Console.Testing.TestConsole` to assert the board (and the
     /// channel-1 suppression / prior-writer restoration) without a real TTY.
     let renderWatch (spine: RunSpine) (floorMs: int64) (body: unit -> int) : int =
-        let console =
-            AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(Console.Error)))
+        // The live board only runs on a real terminal (`shouldWatch` gates on a
+        // non-redirected stderr), so the factory pins no width here; it does honor
+        // `NO_COLOR` / `CLICOLOR_FORCE` so a no-color operator watching a run gets
+        // the plain board, the same as the verdict panel.
+        let console = View.consoleTo Console.Error
         renderWatchOn console spine floorMs body

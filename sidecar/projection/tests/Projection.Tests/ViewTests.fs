@@ -235,3 +235,65 @@ let ``View: a Lane humanizes its true count in the header (THE_VOICE §12)`` () 
     let items = [ for i in 1 .. 2140 -> sprintf "c%04d" i ]
     let v = View.Lane("+", "add", View.Ok, items)
     Assert.Contains("2,140", plainToDepth 0 v)   // the count scales; the sentence does not
+
+// --- the one-substrate law over the whole DU (the totality lock) -----------
+// Discriminating predicate: the pretty lens and the JSON lens are each TOTAL
+// over the `View` DU — a case that forgets its render arm or its `toJson` arm
+// fails HERE, in the pure pool, not in production at the tail of a run. The
+// `Panel` row test pins the specific drift the typed `PanelRow` ended: the prior
+// `Panel of View list` let `writePanel` render three cases and `| _ -> ()` the
+// rest, while `toJson` kept them — the two lenses diverging on one value.
+
+[<Fact>]
+let ``View: a Panel renders EVERY row to both lenses — no row silently dropped`` () =
+    let v =
+        View.Panel(
+            "verdict",
+            [ View.PanelRow.Labeled("outcome", "succeeded", View.Ok)
+              View.PanelRow.Gauge("cutover", 7, 10, "7 / 10 green")
+              View.PanelRow.Next("projection suggest-config --apply") ])
+    // pretty/plain lens — all three rows are present (the dropped-row bug would
+    // lose the gauge and the next-action here).
+    let p = plain v
+    Assert.Contains("outcome", p)
+    Assert.Contains("succeeded", p)
+    Assert.Contains("▇", p)                                   // the gauge
+    Assert.Contains("projection suggest-config --apply", p)   // the next-action row
+    // json lens — the SAME value; "fields" carries every row, by its historical
+    // kind, in order. The typed PanelRow makes a fourth, droppable kind impossible
+    // to construct in the first place.
+    let j = json v
+    Assert.Equal("panel", j.GetProperty("kind").GetString())
+    let kinds =
+        j.GetProperty("fields").EnumerateArray()
+        |> Seq.map (fun e -> nonNull (e.GetProperty("kind").GetString()))
+        |> Seq.toList
+    Assert.Equal<string list>([ "field"; "meter"; "action" ], kinds)
+
+[<Fact>]
+let ``View: every case renders to plain AND json without throwing (DU totality)`` () =
+    // One instance per `View` case — exhaustive by construction. If a case is
+    // added without a `writeBlock` arm or a `toJson` arm, this list won't compile
+    // (the author must add the case) and the loop will catch a throwing lens.
+    let cases : (string * View.View) list =
+        [ "doc",        View.Doc [ View.Note "child" ]
+          "panel",      View.Panel("p", [ View.PanelRow.Labeled("k", "v", View.Ok) ])
+          "hero",       View.Hero(View.Ok, "ELIGIBLE")
+          "field",      View.Field("k", "v", View.Warn)
+          "meter",      View.Meter("m", 3, 10, "3 / 10")
+          "dots",       View.Dots("history", [ "green"; "red" ])
+          "trail",      View.Trail("steps", [ "naming", Some "rename"; "fk", None ])
+          "lane",       View.Lane("+", "add", View.Ok, [ "A"; "B" ])
+          "disclosure", View.Disclosure("Details", View.Neutral, [ View.Field("exit", "9", View.Bad) ])
+          "note",       View.Note "a footnote"
+          "action",     View.Action "do the thing"
+          "blank",      View.Blank ]
+    for (expectedKind, v) in cases do
+        // human lens — renders at shallow and deep without throwing
+        let shallow = plainToDepth 0 v
+        let deep = plainToDepth 3 v
+        Assert.False(isNull (box shallow), sprintf "%s: shallow render was null" expectedKind)
+        Assert.False(isNull (box deep), sprintf "%s: deep render was null" expectedKind)
+        // machine lens — serializes, and its kind tag is what the consumer expects
+        let j = json v
+        Assert.Equal(expectedKind, nonNull (j.GetProperty("kind").GetString()))

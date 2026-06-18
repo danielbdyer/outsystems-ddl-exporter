@@ -38,26 +38,26 @@ let buildSummaryView (command: string) (code: int) : View.View =
                 "summary.runComplete",
                 Map.ofList [ "outcome", box (if code = 0 then "succeeded" else "failed") ]
         match Voice.verdict codeForVerdict payload with
-        | Some (st, t) -> View.Field("verdict", t, st)
+        | Some (st, t) -> View.PanelRow.Labeled("verdict", t, st)
         | None ->
-            View.Field(
+            View.PanelRow.Labeled(
                 "verdict",
                 (if code = 0 then "The run completed without error." else "Stopped before completion."),
                 (if code = 0 then View.Ok else View.Bad))
     let transforms =
-        View.Field(
+        View.PanelRow.Labeled(
             "transforms",
             sprintf "%d registered %s %d applied %s %d declined" registered Theme.dot applied Theme.dot declined,
             View.Neutral)
     let edits = LogSink.suggestedConfigEdits ()
     let actionable =
-        if edits = 0 then View.Field("actionable", "none", View.Ok)
+        if edits = 0 then View.PanelRow.Labeled("actionable", "none", View.Ok)
         else
             // Impact-ranked — name the single biggest lever first.
             match LogSink.topSuggestion () with
             | Some (path, count) ->
-                View.Field("actionable", sprintf "%d edit(s) %s top: %s (%d)" edits Theme.dot path count, View.Warn)
-            | None -> View.Field("actionable", sprintf "%d edit(s) suggested" edits, View.Warn)
+                View.PanelRow.Labeled("actionable", sprintf "%d edit(s) %s top: %s (%d)" edits Theme.dot path count, View.Warn)
+            | None -> View.PanelRow.Labeled("actionable", sprintf "%d edit(s) suggested" edits, View.Warn)
     // §6 — the Measure proof: the data norm (CDC capture count) made plain. A
     // CDC-silent leg is the green hush of an idempotent redeploy ("unchanged");
     // a captured count names exactly how many rows changed (rows changed = the
@@ -65,17 +65,17 @@ let buildSummaryView (command: string) (code: int) : View.View =
     // (`LogSink.cdcMeasure` is `Some`), so a measure-less run shows today's panel.
     let measure =
         match LogSink.cdcMeasure () with
-        | Some 0 -> [ View.Field("data", "unchanged · CDC captured 0 rows", View.Ok) ]
-        | Some n -> [ View.Field("data", sprintf "CDC captured %s rows" (Theme.humane n), View.Neutral) ]
+        | Some 0 -> [ View.PanelRow.Labeled("data", "unchanged · CDC captured 0 rows", View.Ok) ]
+        | Some n -> [ View.PanelRow.Labeled("data", sprintf "CDC captured %s rows" (Theme.humane n), View.Neutral) ]
         | None   -> []
     // Principle #5 — end with the next action.
-    let nextAction = if edits > 0 then [ View.Action "projection suggest-config --apply" ] else []
+    let nextAction = if edits > 0 then [ View.PanelRow.Next "projection suggest-config --apply" ] else []
     let cutover =
         match RunLedger.configuredDir () with
         | Some dir ->
             let r = RunLedger.read dir |> RunLedger.readiness
             let gate = if r.Eligible then "ELIGIBLE" else "not yet"
-            [ View.Meter(
+            [ View.PanelRow.Gauge(
                 "cutover", r.ConsecutiveGreen, r.Threshold,
                 sprintf "%d / %d green %s %s" r.ConsecutiveGreen r.Threshold Theme.arrow gate) ]
         | None -> []
@@ -87,8 +87,7 @@ let renderSummaryTo (console: IAnsiConsole) (command: string) (code: int) : unit
 /// Render the verdict panel to stderr (channel 2 — the panel is a rendering
 /// of events; stdout stays the narration surface).
 let renderSummary (command: string) (code: int) : unit =
-    let console =
-        AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(Console.Error)))
+    let console = View.consoleTo Console.Error
     renderSummaryTo console command code
 
 // --- the readiness board as a View -----------------------------------------
@@ -282,12 +281,10 @@ let buildSurveyView (reports: CapabilitySurvey.EnvironmentReport list) : View.Vi
     View.Doc([ View.Blank; verdict; View.Blank ] @ (reports |> List.map field))
 
 let renderReadinessBoard (r: RunLedger.Readiness) (recent: string list) (ledgerPath: string) : unit =
-    // The board renders on every `readiness` (not just on a TTY). Pin a width
-    // when piped (Spectre's auto-width collapses lines on a non-TTY); it still
-    // strips color for the non-terminal sink.
-    let console =
-        AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(Console.Out)))
-    if Console.IsOutputRedirected then console.Profile.Width <- 100
+    // The board renders on every `readiness` (not just on a TTY). The factory
+    // pins a width when piped (Spectre's auto-width collapses lines on a non-TTY)
+    // and still strips color for the non-terminal sink.
+    let console = View.consoleTo Console.Out
     renderReadinessBoardTo console r recent ledgerPath
 
 // --- the answer surface — render any View to stdout (INSTRUMENT slice 1) ----
@@ -301,9 +298,7 @@ let renderAnswer (asJson: bool) (depth: int) (v: View.View) : unit =
     if asJson then
         Console.Out.WriteLine((View.toJson v).ToJsonString())
     else
-        let console =
-            AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(Console.Out)))
-        if Console.IsOutputRedirected then console.Profile.Width <- 100
+        let console = View.consoleTo Console.Out
         View.writeToDepth console depth v
 
 /// Voice a refusal to STDERR (the §5 channel split — errors never on stdout).
@@ -312,9 +307,7 @@ let renderAnswer (asJson: bool) (depth: int) (v: View.View) : unit =
 /// answer — so a refusal speaks in the operator register, not raw prose.
 let renderVoicedError (error: Projection.Core.ValidationError) : unit =
     let view = Surface.render (Voice.errorSurface error)
-    let console =
-        AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(Console.Error)))
-    if Console.IsErrorRedirected then console.Profile.Width <- 100
+    let console = View.consoleTo Console.Error
     View.writeToDepth console View.defaultDepth view
 
 // --- the Gate surface — a refusal as a stop-and-confirm (INSTRUMENT slice 3) -
@@ -340,9 +333,7 @@ let buildGateView (command: string) (refusal: Preflight.GateRefusal) : View.View
 /// Render the Gate to stderr (a refusal is an event surface; stdout stays the
 /// answer/narration surface).
 let renderGate (command: string) (refusal: Preflight.GateRefusal) : unit =
-    let console =
-        AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(Console.Error)))
-    if Console.IsErrorRedirected then console.Profile.Width <- 100
+    let console = View.consoleTo Console.Error
     View.write console (buildGateView command refusal)
 
 // --- the error surface — refusals & errors as voice (slice 4) ---------------
@@ -358,13 +349,10 @@ let buildErrorsView (errors: ValidationError list) : View.View =
 /// NDJSON (`config.validationFailed` etc.) remains the machine channel, unchanged.
 let renderErrorsTo (writer: System.IO.TextWriter) (errors: ValidationError list) : unit =
     if not (List.isEmpty errors) then
-        let console =
-            AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(writer)))
-        // Pin a width when the sink is not a real terminal (piped / file) so the
-        // grid cells don't collapse; color is stripped for the non-terminal sink.
-        let isStderr = System.Object.ReferenceEquals(writer, Console.Error)
-        if (not isStderr) || Console.IsErrorRedirected then
-            console.Profile.Width <- 100
+        // The factory pins a width when the sink is not a real terminal (piped /
+        // file) so the grid cells don't collapse; color is stripped for the
+        // non-terminal sink.
+        let console = View.consoleTo writer
         View.write console (buildErrorsView errors)
 
 /// Render a `ValidationError list` to stderr (the common case).
@@ -388,11 +376,5 @@ let renderVoicedTo (writer: System.IO.TextWriter) (code: string) (payload: Voice
         match Voice.surfaceOf code payload with
         | Some surface -> surface
         | None         -> Voice.fallbackSurface code payload
-    let console =
-        AnsiConsole.Create(AnsiConsoleSettings(Out = AnsiConsoleOutput(writer)))
-    let redirected =
-        if System.Object.ReferenceEquals(writer, Console.Error) then Console.IsErrorRedirected
-        elif System.Object.ReferenceEquals(writer, Console.Out) then Console.IsOutputRedirected
-        else true
-    if redirected then console.Profile.Width <- 100
+    let console = View.consoleTo writer
     View.write console (Surface.render surface)
