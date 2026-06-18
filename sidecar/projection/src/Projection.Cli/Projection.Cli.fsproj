@@ -13,6 +13,7 @@
   <ItemGroup>
     <Compile Include="Theme.fs" />
     <Compile Include="View.fs" />
+    <Compile Include="Query.fs" />
     <Compile Include="Surface.fs" />
     <Compile Include="Comparison.fs" />
     <Compile Include="Voice.fs" />

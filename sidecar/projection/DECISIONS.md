@@ -24707,3 +24707,31 @@ deeper `Depth` reveals a nested leaf the default collapses). No behavior change 
 renderer until #11 consumes it. **Cross-references:** `src/Projection.Cli/View.fs` (`RenderOptions`, `defaultOptions`,
 `writeWith`, the threaded `writeBlock`); `tests/Projection.Tests/ViewTests.fs` (the two carrier tests); `SPECTRE_REFINEMENTS.md`
 §0 + §4 (● flipped).
+
+## 2026-06-18 — SPECTRE #17: the `--query` lens — a bounded JSONPath-subset walker over `View.toJson`, wired as a global flag
+
+**What & why.** `View.toJson` always carried the full answer document and the `View.fs` header promised "a `--query` walks
+this" — but no walker existed. New module `Projection.Cli.Query` (`walk` / `render`) selects a slice of that tree for the
+operator who wants one field, not the whole forest. Output is JSON text on stdout (the answer channel), so it composes with
+`jq` and friends. A new operator-facing CLI contract, recorded for the same reason as the NO_COLOR env contract (#5/#7).
+
+**The bounded grammar (the named scope-creep gate).** Deliberately NOT a full JSONPath engine (SPECTRE §5 risk register):
+object-key access, array index (`blocks[0]`), the wildcard (`blocks[]`), and ONE flat equality filter
+(`blocks[?status=warn]`), with a key after a filter mapping over the survivors (`[?status=warn].value`). A bracket-aware
+split keeps a spaced/dotted filter value whole. It grows at the second real query, not before. Every operation is TOTAL — a
+key miss, an out-of-range index, a key into a scalar each yield `null`, never an exception — so the walker can never crash
+the answer it filters.
+
+**The wiring decision — a global ref, not a threaded arg.** The cheat-sheet suggested adding a `query: string option` arg to
+`renderAnswer`. But `--query` filters EVERY answer surface (survey / explain / diff / migrate-preview), so threading it
+through each verb is the wrong shape. Instead it rides a `TtyRenderer.queryPath` ref that `Program.main` sets from a
+`--query <path>` value flag — the established global-CLI-state pattern (`OperatorConsole.verboseMode` / `prettyMode`), with
+ZERO per-verb ripple. The ref lives in `TtyRenderer` (not beside the others in `OperatorConsole`) only because `renderAnswer`
+— its single reader — compiles before that module. `compare`'s own `Compare.toJsonString` path is NOT a `View` answer, so
+`--query` does not apply there (named, not a gap).
+
+**Gate.** CLI 0/0 under `TreatWarningsAsErrors`; pure pool green (28s) with nine law-citing `QueryTests` (each grammar shape,
+total-on-miss, the spaced-filter split, the one-substrate tie-in). End-to-end smoke: `survey --query kind` → `"doc"`;
+`survey --query 'blocks[?kind=hero]'` → the hero block. **Cross-references:** `src/Projection.Cli/Query.fs` (the walker);
+`src/Projection.Cli/TtyRenderer.fs` (`queryPath` + `renderAnswer`); `src/Projection.Cli/Program.fs` (the `--query` strip +
+usage); `tests/Projection.Tests/QueryTests.fs`; `SPECTRE_REFINEMENTS.md` §0 + §17 (● flipped).

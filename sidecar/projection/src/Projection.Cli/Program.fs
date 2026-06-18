@@ -77,7 +77,8 @@ let private usageLines : string list =
         ""
         "Every verb persists a bench snapshot to bench/<verb>/<utc-iso>.json; -v surfaces the"
         "table. --pretty / --json force the channel (default AUTO: a TTY gets the live stage"
-        "board + verdict panel, a pipe gets NDJSON)."
+        "board + verdict panel, a pipe gets NDJSON). --query <path> narrows any answer to a"
+        "JSONPath-subset slice of its structured form (e.g. --query 'blocks[?status=warn]')."
         ""
         "Exit codes:"
         "    0  succeeded"
@@ -363,6 +364,21 @@ let main argv =
     //     (a real TTY gets the Spectre panel, a pipe gets clean NDJSON — the
     //     operator never thinks about format).
     //   -v / --verbose : surface depth (the bench table, etc.).
+    // `--query <path>` (#17) — a GLOBAL value flag: narrows any answer surface to a
+    // JSONPath-subset slice of its `View.toJson`. Extracted here (flag + its value)
+    // before verb dispatch so per-verb argv shapes are unchanged, and set on the
+    // renderer's global so every `renderAnswer` honors it (like --pretty/--verbose).
+    let queryArg, argv =
+        match Array.tryFindIndex ((=) "--query") argv with
+        | Some i ->
+            let value = if i + 1 < argv.Length then Some argv.[i + 1] else None
+            let rest =
+                match value with
+                | Some _ -> Array.append argv.[.. i - 1] argv.[i + 2 ..]
+                | None   -> Array.append argv.[.. i - 1] argv.[i + 1 ..]
+            value, rest
+        | None -> None, argv
+    TtyRenderer.queryPath := queryArg
     let has flag = Array.contains flag argv
     verboseMode := has "-v" || has "--verbose"
     let forceJson = has "--json" || has "--no-pretty"

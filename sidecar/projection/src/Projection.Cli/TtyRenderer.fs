@@ -289,17 +289,34 @@ let renderReadinessBoard (r: RunLedger.Readiness) (recent: string list) (ledgerP
 
 // --- the answer surface — render any View to stdout (INSTRUMENT slice 1) ----
 
+/// The global `--query` selector (#17), set by `Program.main` from the `--query
+/// <path>` flag. When present, the answer surface emits the JSONPath-subset slice
+/// of `View.toJson` (`Query.render`) instead of the pretty or full-JSON lens — the
+/// structured lens narrowed to what the operator asked for. `None` (the default)
+/// leaves the answer untouched. It is a global — like `OperatorConsole.verboseMode`
+/// / `prettyMode` — because it filters EVERY answer regardless of verb; it lives
+/// here, not beside those, only because `renderAnswer` (its single reader) compiles
+/// before `OperatorConsole`.
+let queryPath : string option ref = ref None
+
 /// Render any `View` to stdout — the "answer" surface (stdout carries the answer;
 /// structured events stay on stderr). Pretty (color) on a TTY; plain when piped
 /// (width pinned so lines don't collapse); the dig is revealed to `depth` levels.
 /// `--format json` emits the same document as structure (`View.toJson`) — always
-/// the full tree — so the human and machine lenses are the one value.
+/// the full tree — so the human and machine lenses are the one value. `--query`
+/// (`queryPath`) walks that SAME tree to a slice — the structured lens, narrowed.
 let renderAnswer (asJson: bool) (depth: int) (v: View.View) : unit =
-    if asJson then
-        Console.Out.WriteLine((View.toJson v).ToJsonString())
-    else
-        let console = View.consoleTo Console.Out
-        View.writeToDepth console depth v
+    match queryPath.Value with
+    | Some path ->
+        // The query walks the SAME `toJson` the json lens emits — one substrate,
+        // narrowed. JSON text, so it stays on stdout (the answer channel).
+        Console.Out.WriteLine(Query.render path (View.toJson v))
+    | None ->
+        if asJson then
+            Console.Out.WriteLine((View.toJson v).ToJsonString())
+        else
+            let console = View.consoleTo Console.Out
+            View.writeToDepth console depth v
 
 /// Voice a refusal to STDERR (the §5 channel split — errors never on stdout).
 /// The coded `ValidationError` becomes a register-correct `Surface` via

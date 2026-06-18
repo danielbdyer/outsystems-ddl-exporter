@@ -132,6 +132,32 @@ wide-console assertion (board, gate, survey, explain) stands unregressed.
 width-capped (the latter is #15's territory); the meter stays a fixed gauge (a
 gauge, not prose — the doc's call). Recorded so the edge is named.
 
+### Shipped next (2026-06-18) — #17: the `--query` lens (the structured tree, redeemed)
+
+**A walker over the lens already paid for.** `View.toJson` always carried the full
+document and the `View.fs` header *promised* "a `--query` walks this" — but nothing
+did. Now `Projection.Cli.Query` (`walk` / `render`) is a TOTAL, BOUNDED
+JSONPath-subset walker: object keys (`kind`, `blocks`), array index (`blocks[0]`),
+the wildcard (`blocks[]`), and one flat equality filter (`blocks[?status=warn]`),
+with a key after a filter mapping over the survivors (`[?status=warn].value`). A
+bracket-aware split keeps a spaced/dotted filter value whole. Every op is total — a
+key miss, an out-of-range index, a key into a scalar each yield `null`, never a
+throw, so the walker can't crash the answer it filters. Deliberately NOT a full
+JSONPath engine (the §5 scope-creep risk) — it grows at the second real query.
+
+**Global, by a ref — not a threaded arg.** `--query` filters EVERY answer surface
+(survey, explain, diff, migrate-preview), so rather than thread a `query` arg
+through each verb (the cheat-sheet's literal suggestion), it rides a
+`TtyRenderer.queryPath` ref that `Program.main` sets from a `--query <path>` value
+flag — the same global-CLI-state pattern as `verboseMode` / `prettyMode`, with zero
+per-verb ripple. `renderAnswer` reads it and emits `Query.render path (View.toJson v)`
+to stdout (the answer channel). One substrate: the query walks the SAME tree the
+json lens emits.
+
+**Nine law-citing `QueryTests`** cover each grammar shape, the total-on-miss
+guarantee, the spaced-filter-value split, and the one-substrate tie-in; `--query`
+is documented in `--help`.
+
 ---
 
 ## 1 — The map (all 25, by theme)
@@ -157,7 +183,7 @@ Status key: **● shipped** · **◐ partial / starved** · **○ not started** 
 | 14 | Trend surfaces (use `Theme.sparkline`) | C | ○ |
 | 15 | `Trail` gets cap-and-name + depth | C | ○ |
 | 16 | Unify the collapsed-affordance vocabulary | C | ○ |
-| 17 | Implement `--query` over `toJson` | D. The query lens | ▢ |
+| 17 | Implement `--query` over `toJson` | D. The query lens | ● |
 | 18 | Per-node addressing (`ViewPath`) | D | ○ |
 | 19 | Emit the intra-stage `summary.stageProgress` events | E. The Watch board | ◐ |
 | 20 | Move the dwell off the emitting thread | E | ○ |
@@ -378,7 +404,7 @@ depth < 1). Inconsistent affordance.
 
 ## D — The query / structured lens
 
-### 17 · Implement `--query`  ▢  *(redeems an already-paid-for lens)*
+### 17 · Implement `--query`  ●  *(landed 2026-06-18; see §0)*
 
 **Problem.** `View.toJson` exists and the code **promises** "a `--query` walks
 this" in `View.fs`'s header and in `RunFaces.explainView`'s doc — but there is no
@@ -396,6 +422,17 @@ strip that already handles `--pretty` / `--watch` / `--format`). `renderAnswer
 (asJson) (depth) (v)` is the choke point — add a `query: string option` arg and
 walk `View.toJson v` before `WriteLine`. Output is JSON text, so it stays on
 stdout (the answer channel).
+
+**As shipped.** A new `Projection.Cli.Query` module — `walk` / `render`, a TOTAL
+JSONPath-subset walker over the `JsonNode` `toJson` produces: object keys, array
+index (`blocks[0]`), the wildcard (`blocks[]`), and one flat equality filter
+(`blocks[?status=warn]`), with a key after a filter mapping over the survivors. A
+miss yields `null`, never a throw. The wiring differs from the cheat-sheet's
+"add a `query` arg": `--query` is a GLOBAL (it filters every answer regardless of
+verb), so it rides a `TtyRenderer.queryPath` ref that `Program.main` sets from the
+`--query <path>` flag — the `verboseMode` / `prettyMode` pattern, ZERO per-verb
+threading. The ref lives in `TtyRenderer` (not beside the others in
+`OperatorConsole`) only because `renderAnswer` — its single reader — compiles first.
 
 ### 18 · Per-node addressing (`ViewPath`)  ○
 
@@ -615,7 +652,7 @@ Rough triage to spend a time-box well. Effort: **S** ≈ an hour, **M** ≈ a se
 |---|---|---|---|
 | #1 PanelRow + #6 | **High** | S | A *live* lens-drift bug; the test is the proof. Do first. |
 | #19 stageProgress | Med | M–L | **Premise corrected** — transfer/migration already emit; only full-export's stages remain, an adapter-deep change (not the one-liner). |
-| #17 `--query` | **High** | M | Redeems a lens already paid for in `toJson`. |
+| #17 `--query` | **High** | M | **● shipped** — `Query` walker over `toJson`, global `--query` flag. |
 | #23 Explore TUI | **High** | L | The marquee; gated by #18 + #20. |
 | #4 RenderOptions | Med (enabler) | M | Unblocks #11/#15/#18; land alone. |
 | #11 responsive width | Med | M | User-visible; the carried accessibility item. |
