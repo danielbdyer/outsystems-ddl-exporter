@@ -393,6 +393,10 @@ let main argv =
     // directly here (like survey/inspect), not through the movement vocabulary.
     | _ when argv.Length >= 1 && argv.[0] = "slice-extract" ->
         runSliceExtract (argv |> Array.toList |> List.tail)
+    | _ when argv.Length >= 1 && argv.[0] = "slice-apply" ->
+        runSliceApply false (argv |> Array.toList |> List.tail)
+    | _ when argv.Length >= 1 && argv.[0] = "slice-reset" ->
+        runSliceApply true (argv |> Array.toList |> List.tail)
     | _ ->
         match discoverConfig () with
         | Error es ->

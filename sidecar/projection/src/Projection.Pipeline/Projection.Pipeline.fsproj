@@ -67,6 +67,7 @@
     <Compile Include="ProfileCaptureRun.fs" />
     <Compile Include="CorrectionProposeRun.fs" />
     <Compile Include="SliceExtractRun.fs" />
+    <Compile Include="SliceApplyRun.fs" />
     <Compile Include="MovementSpec.fs" />
     <Compile Include="MovementSurface.fs" />
     <Compile Include="CapabilitySurvey.fs" />
