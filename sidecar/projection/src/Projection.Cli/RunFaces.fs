@@ -2389,44 +2389,68 @@ let runSliceApply (reset: bool) (args: string list) : int =
         |> Array.tryFindIndex ((=) flag)
         |> Option.bind (fun i -> if i + 1 < arr.Length then Some arr.[i + 1] else None)
     let hasFlag (flag: string) : bool = Array.contains flag arr
-    match flagValue "--golden", flagValue "--target", flagValue "--out" with
-    | Some golden, Some target, Some out ->
+    let exitForErrors (errors: ValidationError list) : int =
+        printErrors Console.Error errors
+        let anyCode (prefix: string) = errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith prefix)
+        if anyCode "slice.schemaParity" || anyCode "slice.golden" then 2
+        elif anyCode "slice.writeFailed" || anyCode "slice.emitFailed" then 1
+        elif anyCode "slice.apply.cdcTrackedSink" || anyCode "slice.apply.insufficientGrant" then 7
+        elif anyCode "connection" || anyCode "slice.apply.grantProbeFailed" then 6
+        else 3
+    match flagValue "--golden", flagValue "--target" with
+    | Some golden, Some target ->
         if reset && not (hasFlag "--allow-drops") then
             eprintfn "slice-reset performs a scoped DELETE on the target. Re-run with --allow-drops to acknowledge the loss."
             7
-        else
-            let deleteScope : DeleteScopePolicy option =
-                if not reset then None
-                else
-                    let terms =
-                        match flagValue "--delete-scope" with
-                        | Some spec ->
-                            spec.Split(',')
-                            |> Array.toList
-                            |> List.choose (fun kv ->
-                                match kv.Split('=') with
-                                | [| c; v |] -> Some ({ Column = c; Value = v } : DeleteScopeTerm)
-                                | _          -> None)
-                        | None -> []
-                    Some ({ Terms = terms } : DeleteScopePolicy)
-            let result = (SliceApplyRun.applyToFile target golden deleteScope out).GetAwaiter().GetResult()
-            let exitCode =
+        elif (not reset) && hasFlag "--go" then
+            // LIVE additive apply — Execute the capture-and-hoist write (the
+            // golden lands in the target; no IDENTITY_INSERT).
+            let result = (SliceApplyRun.applyLive target golden true (hasFlag "--allow-cdc")).GetAwaiter().GetResult()
+            let code =
                 match result with
-                | Ok n ->
-                    eprintfn "Slice %s artifact written to %s (%d row(s))." (if reset then "reset" else "load") out n
-                    0
-                | Error errors ->
-                    printErrors Console.Error errors
-                    let anyCode (prefix: string) =
-                        errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith prefix)
-                    if anyCode "slice.schemaParity" || anyCode "slice.golden" then 2
-                    elif anyCode "slice.writeFailed" || anyCode "slice.emitFailed" then 1
-                    elif anyCode "connection" then 6
-                    else 3
-            dumpBench (if reset then "slice-reset" else "slice-apply")
-            exitCode
+                | Ok report ->
+                    let skipped = List.length report.SkippedReferences
+                    eprintfn "Slice applied to %s (live)." target
+                    if skipped > 0 then
+                        eprintfn "  WARNING: %d reference(s) skipped as unresolved orphans." skipped
+                        9
+                    else 0
+                | Error errors -> exitForErrors errors
+            dumpBench "slice-apply"
+            code
+        else
+            // EMIT the self-contained T-SQL artifact (additive or reset) to --out.
+            match flagValue "--out" with
+            | None ->
+                let resetFlags = if reset then "--delete-scope COL=VAL[,...] --allow-drops " else ""
+                eprintfn
+                    "usage: projection %s --golden <path> --target <ref> %s--out <path>%s"
+                    (if reset then "slice-reset" else "slice-apply")
+                    resetFlags
+                    (if reset then "" else "   (or add --go to apply live)")
+                1
+            | Some out ->
+                let deleteScope : DeleteScopePolicy option =
+                    if not reset then None
+                    else
+                        let terms =
+                            match flagValue "--delete-scope" with
+                            | Some spec ->
+                                spec.Split(',')
+                                |> Array.toList
+                                |> List.choose (fun kv ->
+                                    match kv.Split('=') with
+                                    | [| c; v |] -> Some ({ Column = c; Value = v } : DeleteScopeTerm)
+                                    | _          -> None)
+                            | None -> []
+                        Some ({ Terms = terms } : DeleteScopePolicy)
+                let result = (SliceApplyRun.applyToFile target golden deleteScope out).GetAwaiter().GetResult()
+                let code =
+                    match result with
+                    | Ok n -> eprintfn "Slice %s artifact written to %s (%d row(s))." (if reset then "reset" else "load") out n; 0
+                    | Error errors -> exitForErrors errors
+                dumpBench (if reset then "slice-reset" else "slice-apply")
+                code
     | _ ->
-        let verb = if reset then "slice-reset" else "slice-apply"
-        let resetFlags = if reset then "--delete-scope COL=VAL[,...] --allow-drops " else ""
-        eprintfn "usage: projection %s --golden <path> --target <ref> %s--out <path>" verb resetFlags
+        eprintfn "usage: projection %s --golden <path> --target <ref> [--out <path> | --go]" (if reset then "slice-reset" else "slice-apply")
         1

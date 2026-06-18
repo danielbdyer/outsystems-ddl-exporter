@@ -139,3 +139,34 @@ module SliceApplyRun =
                                 with ex ->
                                     return Result.failureOf (ValidationError.create "slice.writeFailed" ex.Message)
         }
+
+    /// **Live apply** (the `--go` Execute vehicle): read the golden, read the
+    /// target schema, map onto it (schema-parity-gated), and run the capture-
+    /// and-hoist write via `Transfer.runGoldenApply` — the rows land in the
+    /// target with no IDENTITY_INSERT (AssignedBySink mints + repoints). `execute
+    /// = false` plans + reports without writing (a live preview). Additive; the
+    /// authoritative scoped-delete reset stays the emitted T-SQL artifact.
+    let applyLive (connSpec: string) (goldenPath: string) (execute: bool) (allowCdc: bool) : Task<Result<Transfer.TransferReport>> =
+        task {
+            let goldenJson =
+                try Ok (System.IO.File.ReadAllText goldenPath)
+                with ex -> Result.failureOf (ValidationError.create "slice.golden.read" ex.Message)
+            match goldenJson with
+            | Error es -> return Error es
+            | Ok json ->
+                match GoldenCodec.deserialize json with
+                | Error es -> return Error es
+                | Ok golden ->
+                    match! openTarget connSpec with
+                    | Error es -> return Error es
+                    | Ok cnn ->
+                        use cnn = cnn
+                        match! ReadSide.read cnn with
+                        | Error es -> return Error es
+                        | Ok catalog ->
+                            match mapToTarget catalog golden with
+                            | Error es -> return Error es
+                            | Ok rows ->
+                                let mode = if execute then Transfer.Mode.Execute else Transfer.Mode.DryRun
+                                return! Transfer.runGoldenApply mode allowCdc cnn catalog rows
+        }
