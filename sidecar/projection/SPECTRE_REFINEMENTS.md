@@ -419,25 +419,170 @@ made interactive.
 
 ---
 
-## 2 — Sequencing (the cut order)
+## 2 — How to run this: the DAG, the contention map, the waves
 
-The dependency spine, shortest path to the most value:
+### 2.1 The dependency DAG
 
-1. **#4 `RenderOptions`** — the enabling refactor; #11, #15, #18 all consume it.
-2. **#1 `PanelRow` + #6 property test** — close the live drift bug, lock the
-   substrate (one commit; the test is the proof).
-3. **#11 responsive width** — first `RenderOptions` consumer; user-visible.
-4. **#2 unforgeable markup + #3 defensive render** — kill the markup-crash class.
-5. **#19 `stageProgress` emit** — wake the built-but-starved ETA board (parallel
-   track; no dependency on the above).
-6. **#17 `--query`** — redeem the structured lens (parallel track).
-7. **#20 dwell off-thread → #18 `ViewPath` → #23 Explore TUI** — the interactive
-   arc, in order; #24 / #25 fall out once #23 stands.
+What blocks what. An item with no arrow into it can start *now*.
 
-Items #12–#16, #21, #22 are independent quality cuts, takeable any time a related
-surface is already hot (the "audit during the work" discipline, CLAUDE.md §6).
+```
+  (close the live bug first — independent of everything)
+  #1 PanelRow ──► #6 totality test
 
-## 3 — Standing notes for anyone cutting here
+  (the substrate enabler — one signature change everything rebases onto)
+  #4 RenderOptions ──┬──► #11 responsive width
+                     ├──► #15 Trail cap + depth
+                     └──► #18 ViewPath ──► #23 Explore TUI ──┬──► #24 diff verb
+                                              ▲              └──► #25 explain dig
+  #20 dwell off-thread ─────────────────────┘  (the concurrency substrate
+                                                 #23's input/render loop reuses)
+  #15 ───────────────────────────────────────────────────────► #25 (deep trail ≠ wall)
+
+  (new primitives — serialized only by their shared file, View.fs)
+  #12 View.Table ──► #13 bench fold
+  #14 trend / Spark ;  #16 collapsed affordance   (each standalone)
+
+  (fully independent — different files entirely, see 2.2)
+  #2 unforgeable markup ;  #3 defensive render
+  #17 --query ;  #19 stageProgress emit ;  #21 spine ;  #22 stage-copy fallback
+```
+
+The **longest chain** (the critical path) is `#4 → #18 → #23 → #25`. Everything
+else is shorter and most of it is leaf work. Start the critical path early even
+though it's not the highest single-item value — it's the only thing that gates the
+marquee (#23).
+
+### 2.2 The file-contention map (why parallelism is bounded)
+
+Parallelism here is limited by **one file, not by logic**: `View.fs` is the
+single-writer hot spot — the DU, `writeBlock`, `writePanel`, and `toJson` all live
+there, so every substrate/primitive item edits it and they **cannot** be split
+across concurrent agents without colliding. The strategy is to recognize that the
+*other* lanes touch entirely disjoint files and let those run free.
+
+| Lane | Items | Files touched | Parallel-safe with… |
+|---|---|---|---|
+| **Substrate** (serial within) | #1 #4 #11 #15 #16 #18 #2 #3 | `View.fs` (+ `Theme.fs` for #2; tests) | everything in other lanes |
+| **Primitives** (serial within, shares `View.fs`) | #12 #13 #14 | `View.fs`, `TtyRenderer.fs`, `OperatorConsole.fs` | Watch, Query lanes |
+| **Watch / Pipeline** | #19 #20 #21 #22 | `Watch.fs`, `LogSink.fs`, Pipeline producers, `Voice.fs` | Substrate, Primitives, Query |
+| **Query** | #17 | `Program.fs`, `TtyRenderer.renderAnswer`, a new walker module | every other lane |
+| **Verbs / Explore** | #23 #24 #25 | new `Navigator` module, `RunFaces.fs` | Substrate (after its deps land) |
+
+The Substrate and Primitives lanes both edit `View.fs`, so they are **one serial
+queue** in practice. Watch, Query, and (most of) Verbs are genuinely concurrent.
+
+### 2.3 The parallel wave plan (2–3 agents / worktrees)
+
+Run agents in separate git worktrees (`isolation: "worktree"`) so each lane has its
+own tree; merge per wave. The split is by *file ownership*, which is what keeps the
+merges clean.
+
+**Wave 1 — close the bug, wake the board, redeem the lens (3 lanes, no overlap):**
+- *Agent A (View.fs owner):* **#1 + #6** — close the live drift hole, lock it.
+- *Agent B (Watch/Pipeline owner):* **#19** — wake the starved ETA board; then **#22** (stage-copy totality) while warm.
+- *Agent C (Program/Query owner):* **#17** — implement `--query`.
+
+**Wave 2 — the enabler and its first fruit:**
+- *Agent A:* **#4 `RenderOptions`** (the signature change — land it alone, it
+  rebases the rest), then **#11 responsive width** (its first consumer) and the
+  cheap **#16**.
+- *Agent B:* **#20 dwell off-thread** then **#21 spine** (the concurrency substrate
+  #23 will reuse).
+- *Agent C:* fold back; begin **#18 `ViewPath`** on top of A's `#4` (coordinate the
+  `View.fs` handoff — A passes the baton, C does not edit `View.fs` until A merges).
+
+**Wave 3 — primitives and the interactive arc:**
+- *Agent A:* **#2 + #3** (markup safety), **#12 → #13** (table + bench fold), **#14**
+  (trends), **#15** (Trail).
+- *Agent B/C converge:* **#23 Explore TUI** (needs #18, #20) → **#24**, **#25** fall
+  out.
+
+> **The one coordination rule:** `View.fs` has exactly one editor per wave. When a
+> lane needs it and another holds it, the holder merges first and passes the baton.
+> Everything else merges in any order.
+
+## 3 — Value × effort, and the quick-win shortlist
+
+Rough triage to spend a time-box well. Effort: **S** ≈ an hour, **M** ≈ a session,
+**L** ≈ multi-session.
+
+| Item | Value | Effort | Note |
+|---|---|---|---|
+| #1 PanelRow + #6 | **High** | S | A *live* lens-drift bug; the test is the proof. Do first. |
+| #19 stageProgress | **High** | M | Apparatus is built; one emit site per long stage lights it up. |
+| #17 `--query` | **High** | M | Redeems a lens already paid for in `toJson`. |
+| #23 Explore TUI | **High** | L | The marquee; gated by #18 + #20. |
+| #4 RenderOptions | Med (enabler) | M | Unblocks #11/#15/#18; land alone. |
+| #11 responsive width | Med | M | User-visible; the carried accessibility item. |
+| #2 markup safety | Med | M–L | Kills a crash class; ripple across call sites. |
+| #20 dwell off-thread | Med | M–L | Unblocks concurrency; hardest to test. |
+| #14 trends | Med | S–M | `Theme.sparkline` already exists, zero callers. |
+| #24 diff verb | Med | S | Thin once `Comparison` + ledger are in hand. |
+| #25 explain dig | Med | M | Needs #15 so a deep trail isn't a wall. |
+| #21 spine | Med | M | `--watch` for the other verbs. |
+| #12 → #13 table | Med | M / S | #13 is cheap once #12 exists. |
+| #18 ViewPath | Med | M | Build *with* #23, not speculatively. |
+| #3 defensive render | Med | S | Cheap insurance against a markup crash. |
+| #22 stage-copy fallback | Med | S | A totality test; mirrors NM-47. |
+| #15 Trail cap | Low | S | Near-free after #4. |
+| #16 collapsed affordance | Low | S | One-line + a test. |
+
+**Quick-win shortlist** (S-effort, ship in a sitting, no deep deps): **#1+#6, #16,
+#22, #3, #24**. A good "warm up or wind down" set when a larger lane is mid-flight.
+
+## 4 — Commit & PR batching
+
+- **One thematic PR per wave-lane**, not per item — but **one commit per landable
+  unit** (feature + its test together; never a "tests later" commit — the test *is*
+  the codification here). #628 is the template: factory + doc in one PR.
+- **#4 lands in its own commit/PR.** It changes the shared `write`/`writeToDepth`
+  signatures; isolating it makes the rebase for every consumer a clean cherry, and
+  makes the blast radius reviewable.
+- **Land #1 and #6 in the same commit** (the doc and the house law both say so).
+- **Write a one-line `DECISIONS.md` entry** for the two items that touch standing
+  surface area: **#4** (a shared render-interface change) and, retroactively, the
+  **NO_COLOR / CLICOLOR_FORCE** convention shipped in #5/#7 (a new operator-facing
+  env contract worth recording). The rest are refinements whose test is their
+  codification — no entry needed (CLAUDE.md §6).
+
+## 5 — Risk register
+
+- **#2 (markup newtype) ripple.** Touches every `Theme.*` color call. *Mitigate:*
+  migrate incrementally — keep the `string` helpers as thin shims that escape +
+  wrap during the transition, delete them once call sites move; let the compiler
+  drive the list.
+- **#20 (dwell off-thread) is the hardest to test** — it's real concurrency over
+  Spectre `Live`. *Mitigate:* keep the queue/drain logic pure and unit-test *that*;
+  the thread + `ctx.Refresh()` shell stays thin and is exercised by an integration
+  smoke, not asserted frame-by-frame.
+- **#23 (TUI input loop).** `Console.ReadKey` blocks and the terminal must be
+  restored on exit/exception. *Mitigate:* the reducer is pure and property-tested;
+  the impure loop is a thin `try/finally` that restores the console — the same
+  discipline as `Watch.renderWatch`'s `finally`.
+- **#17 (`--query`) scope creep.** A full JSONPath engine is a rabbit hole.
+  *Mitigate:* bound it to the surface-shaped subset (`.blocks[]`, `.<key>`, index,
+  one flat `[?status=warn]` filter) and say so in the verb's doc; grow at the
+  second real query, not before.
+- **#19 (progress emit) perf.** Emitting inside a hot per-row loop can add
+  overhead. *Mitigate:* emit every N rows (not per row), and remember a perf-gate
+  verdict is **void if anything else runs on the host** (CLAUDE.md §4.13) — measure
+  the emit cost solo.
+
+## 6 — Definition of done (every item)
+
+A cut is finished when **all** of these hold — no exceptions, this is the bar:
+
+1. Builds clean under `TreatWarningsAsErrors` (`dotnet build src/Projection.Cli/Projection.Cli.fsproj`).
+2. `scripts/test.sh fast` green (launch bare in background; poll `test.sh status`).
+3. If it adds or changes a `View` case: it ships its `toJson` arm **and** a test
+   asserting the machine lens keeps what the human lens caps/collapses/truncates
+   (the `laneCap` / `Disclosure` tests are the template).
+4. The test's backticked name **cites the law** it proves.
+5. Its row in the §1 map is flipped to ● — **citing symbols, never line numbers**
+   (CLAUDE.md §8; a restated line number is a defect).
+6. The commit carries the required trailer; the PR is updated.
+
+## 7 — Standing notes for anyone cutting here
 
 - **`TreatWarningsAsErrors` + `Nullable=enable`.** `GetEnvironmentVariable` returns
   `string | null`; match `null | "" -> …` (the `envColorOverride` / `Watch.resolveDwellMs`
