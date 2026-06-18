@@ -5,6 +5,15 @@
 > grounded gap analysis showing how much of the required machinery **already
 > ships** in this repository.
 
+> **Document set.** This is the design overview. See also:
+> [`data-portability-glossary.md`](./data-portability-glossary.md) (vocabulary →
+> code anchors); the [`data-slice` verb](./verbs/data-slice.md) (operator-facing
+> contract); and the Milestone 5 implementation specs —
+> [M5.0 closure selector](./implementation-specs/M5.0-data-portability-closure-selector.md),
+> [M5.1 capture-and-remap loader](./implementation-specs/M5.1-capture-and-remap-loader.md),
+> [M5.2 natural-key resolution](./implementation-specs/M5.2-natural-key-resolution.md),
+> [M5.3 golden/transfer & verification](./implementation-specs/M5.3-golden-transfer-verification.md).
+
 ## 1. The idea, de-abstracted
 
 Certain sections of the application should be **baselineable and resettable**:
@@ -213,6 +222,44 @@ NULL, capture keys, then `UPDATE` the FK once the partner's key exists.
 - **D4 — Golden/transfer duality + verification.** Promote a transfer to a
   committed golden dataset; post-load verification via the profiler (expected
   closure counts, zero new orphans).
+
+## 6a. Decision tree: which mode am I using?
+
+```
+Do you need the data in another live environment right now?
+├─ Yes, transient lift-and-shift ............ TRANSFER  (emit load.capture-remap.sql, apply)
+└─ No, I want a reviewable baseline
+   ├─ First time capturing it ............... GOLDEN    (--golden writes a committed dataset)
+   └─ Already extracted a good transfer ..... PROMOTE   (--promote, no re-query)
+
+Is the target already populated?
+├─ Yes ..... natural key REQUIRED (declared or profile-confirmed) → reuse-vs-insert (M5.2/M5.1)
+└─ No ...... insert-only path may proceed without a confirmed key
+
+Does the closure contain an FK cycle?
+└─ Always handled by the existing two-phase insert-then-update (M5.1 reuses PhasedDynamicEntityInsertGenerator)
+```
+
+## 6b. Implementation checklist (by milestone)
+
+**M5.0 — closure selector**
+- [ ] `DataPortabilityOptions` records + `DataPortabilityOptionsDeserializer` (mirror `CircularDependencyConfigDeserializer`)
+- [ ] Root predicates plumbed into `SqlDynamicEntityDataProvider.ExtractTableAsync`
+- [ ] `DataSliceSelector`: key-scoped up-closure (static **and** dynamic parents), bounded down-closure, `stop` frontier
+- [ ] `ClosureReport` + completeness invariant (no dangling mandatory FK)
+
+**M5.1 — capture-and-remap loader**
+- [ ] `CaptureRemapLoadGenerator` (no `IDENTITY_INSERT`; `#Stage_*`/`#Map_*`; `OUTPUT` capture; FK resolve by join)
+- [ ] Two-phase cycles via reused `PhasedDynamicEntityInsertGenerator` shape, resolving through partner maps
+
+**M5.2 — natural keys**
+- [ ] `NaturalKeyResolver` (declared) + validation against the model
+- [ ] Profile-inferred proposals from `UniqueCandidateProfile` / `CompositeUniqueCandidateProfile`
+
+**M5.3 — golden/transfer + verification**
+- [ ] `DataSliceMaterializer` (transfer/golden) + deterministic golden writer
+- [ ] Promote path; post-load `SliceVerificationReport` via `MultiTargetSqlDataProfiler`
+- [ ] LoadHarness apply+verify driver
 
 ## 7. Open questions
 
