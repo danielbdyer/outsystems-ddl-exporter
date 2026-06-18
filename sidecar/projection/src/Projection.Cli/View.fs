@@ -113,6 +113,20 @@ let private styled status (value: string) : string =
 
 // --- The pretty/plain lens (write to any IAnsiConsole) ---------------------
 
+/// Write a markup line defensively (#3). `MarkupLine` THROWS (an
+/// `InvalidOperationException`) on malformed markup — a stray `[`, an unknown style
+/// — and the verdict panel renders at the very END of an otherwise-successful run,
+/// the worst place to take an exception (a display bug turning exit 0 into a crash).
+/// On a markup fault, degrade to the line with its markup stripped (`Markup.Remove`),
+/// or the raw text if even that won't parse — so a render fault never fails the run
+/// it describes. #2 removes most of the CAUSE (unescaped data reaching a `Theme.*`);
+/// this CONTAINS it — keep both (one prevents, one contains).
+let safeMarkupLine (console: IAnsiConsole) (markup: string) : unit =
+    try console.MarkupLine markup
+    with :? System.InvalidOperationException ->
+        let plain = try Markup.Remove markup with :? System.InvalidOperationException -> markup
+        console.WriteLine plain
+
 let private writePanel (console: IAnsiConsole) (title: string) (rows: PanelRow list) : unit =
     let grid = Grid()
     grid.AddColumn() |> ignore
@@ -132,7 +146,20 @@ let private writePanel (console: IAnsiConsole) (title: string) (rows: PanelRow l
     let panel = Spectre.Console.Panel(grid)
     panel.Header <- PanelHeader(sprintf " %s " (Markup.Escape title))
     panel.Border <- BoxBorder.Rounded
-    console.Write(panel)
+    // Defensive (#3): the cells above are escaped-by-construction, but a future
+    // unescaped `Theme.*` in a cell would otherwise crash the verdict panel at the
+    // end of a good run; on a markup fault, degrade to plain rows under the title.
+    try console.Write(panel)
+    with :? System.InvalidOperationException ->
+        safeMarkupLine console (Theme.bold (Markup.Escape title))
+        for r in rows do
+            match r with
+            | PanelRow.Labeled (label, value, _) ->
+                safeMarkupLine console (sprintf "  %s   %s" (Markup.Escape label) (Markup.Escape value))
+            | PanelRow.Gauge (label, filled, total, suffix) ->
+                safeMarkupLine console (sprintf "  %s   %s   %s" (Markup.Escape label) (Theme.meter filled total) (Markup.Escape suffix))
+            | PanelRow.Next text ->
+                safeMarkupLine console (sprintf "  next   %s" (Markup.Escape text))
 
 /// The calm default render depth — "one level open" (the essence + the first
 /// level of the dig; deeper levels collapsed behind their affordance). The
@@ -214,32 +241,32 @@ let rec private writeBlock (console: IAnsiConsole) (opts: RenderOptions) (indent
     | Hero (st, text) ->
         // indent + glyph (when statusful) + a 2-space gutter, then the bold text.
         let budget = opts.Width - indent.Length - (if glyphOf st = "" then 0 else 1) - 2
-        console.MarkupLine(sprintf "%s%s  %s" indent (colorOf st (glyphOf st)) (Theme.bold (Markup.Escape (truncateTo budget text))))
+        safeMarkupLine console (sprintf "%s%s  %s" indent (colorOf st (glyphOf st)) (Theme.bold (Markup.Escape (truncateTo budget text))))
     | Field (label, value, st) ->
         // indent + label + a 3-space gutter + the status glyph; the value takes the rest.
         let budget = opts.Width - indent.Length - label.Length - 3 - glyphCols st
-        console.MarkupLine(sprintf "%s%s   %s" indent (Theme.muted (Markup.Escape label)) (styled st (truncateTo budget value)))
+        safeMarkupLine console (sprintf "%s%s   %s" indent (Theme.muted (Markup.Escape label)) (styled st (truncateTo budget value)))
     | Meter (label, filled, total, suffix) ->
-        console.MarkupLine(
+        safeMarkupLine console (
             sprintf "%s%s   %s   %s"
                 indent (Theme.muted (Markup.Escape label)) (Theme.meter filled total) (Markup.Escape suffix))
     | Dots (label, verdicts) ->
-        console.MarkupLine(sprintf "%s%s   %s" indent (Theme.muted (Markup.Escape label)) (Theme.canaryDotsMarkup verdicts))
+        safeMarkupLine console (sprintf "%s%s   %s" indent (Theme.muted (Markup.Escape label)) (Theme.canaryDotsMarkup verdicts))
     | Timeline (label, cells, filled, total, present) ->
         // The strip + the R6 gate meter on one line — the present marker rides
         // the dots, the cutover ratio trails (e.g. `●●●●✕●●▸  ▇▇▇▇▇▇▇░░░  7/10`).
-        console.MarkupLine(
+        safeMarkupLine console (
             sprintf "%s%s   %s   %s   %s"
                 indent (Theme.muted (Markup.Escape label))
                 (Theme.timelineMarkup cells present)
                 (Theme.meter filled total)
                 (Theme.muted (sprintf "%d/%d" filled total)))
     | Trail (label, steps) ->
-        console.MarkupLine(sprintf "%s%s" indent (Theme.muted (Markup.Escape label)))
+        safeMarkupLine console (sprintf "%s%s" indent (Theme.muted (Markup.Escape label)))
         for (step, detail) in steps do
             match detail with
-            | Some d -> console.MarkupLine(sprintf "%s%s %s %s %s" indent Theme.arrow (Markup.Escape step) Theme.dot (Markup.Escape d))
-            | None   -> console.MarkupLine(sprintf "%s%s %s" indent Theme.arrow (Markup.Escape step))
+            | Some d -> safeMarkupLine console (sprintf "%s%s %s %s %s" indent Theme.arrow (Markup.Escape step) Theme.dot (Markup.Escape d))
+            | None   -> safeMarkupLine console (sprintf "%s%s %s" indent Theme.arrow (Markup.Escape step))
     | Lane (glyph, label, st, items) ->
         // A lane is a pre-baked disclosure of one move: the summary line always
         // shows (the true count, humane); the items reveal at depth ≥ 1, capped
@@ -254,28 +281,28 @@ let rec private writeBlock (console: IAnsiConsole) (opts: RenderOptions) (indent
         // with `…`, the count never falls off the line.
         let count = Theme.humane n
         let label' = truncateTo (opts.Width - indent.Length - 2 - (glyph.Length + 1) - 2 - count.Length) label
-        console.MarkupLine(
+        safeMarkupLine console (
             sprintf "%s%s %s" indent m (colorOf st (Markup.Escape (sprintf "%s %s  %s" glyph label' count))))
         if opts.Depth >= 1 then
             for item in items |> List.truncate opts.LaneCap do
-                console.MarkupLine(sprintf "%s   %s %s" indent (Theme.muted Theme.dot) (Markup.Escape item))
+                safeMarkupLine console (sprintf "%s   %s %s" indent (Theme.muted Theme.dot) (Markup.Escape item))
             if n > opts.LaneCap then
-                console.MarkupLine(
+                safeMarkupLine console (
                     sprintf "%s   %s %s" indent (Theme.muted Theme.collapsed)
                         (Theme.muted (sprintf "and %s more" (Theme.humane (n - opts.LaneCap)))))
     | Disclosure (headline, st, detail) ->
         let m = marker opts.Depth (not (List.isEmpty detail))
         // marker + space, then the styled headline (glyph + space + text when statusful).
         let budget = opts.Width - indent.Length - 2 - glyphCols st
-        console.MarkupLine(sprintf "%s%s %s" indent m (styled st (truncateTo budget headline)))
+        safeMarkupLine console (sprintf "%s%s %s" indent m (styled st (truncateTo budget headline)))
         if opts.Depth >= 1 then
             for child in detail do writeBlock console { opts with Depth = opts.Depth - 1 } (indent + "  ") child
         elif not (List.isEmpty detail) then
-            console.MarkupLine(
+            safeMarkupLine console (
                 sprintf "%s  %s %s" indent (Theme.muted Theme.collapsed)
                     (Theme.muted (sprintf "%d more" (List.length detail))))
-    | Note text -> console.MarkupLine(sprintf "%s%s" indent (Theme.muted (Markup.Escape (truncateTo (opts.Width - indent.Length) text))))
-    | Action text -> console.MarkupLine(sprintf "%s%s %s" indent Theme.arrow (Theme.accent (Markup.Escape (truncateTo (opts.Width - indent.Length - 2) text))))
+    | Note text -> safeMarkupLine console (sprintf "%s%s" indent (Theme.muted (Markup.Escape (truncateTo (opts.Width - indent.Length) text))))
+    | Action text -> safeMarkupLine console (sprintf "%s%s %s" indent Theme.arrow (Theme.accent (Markup.Escape (truncateTo (opts.Width - indent.Length - 2) text))))
 
 /// Render with an explicit policy (#4) — the single carrier #11 (width) and #15
 /// (breadth) read. `opts.Width` is respected verbatim (the caller owns the

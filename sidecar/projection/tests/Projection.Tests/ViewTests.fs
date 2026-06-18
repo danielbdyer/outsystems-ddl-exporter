@@ -397,3 +397,26 @@ let ``View: every case renders to plain AND json without throwing (DU totality)`
         // machine lens — serializes, and its kind tag is what the consumer expects
         let j = json v
         Assert.Equal(expectedKind, nonNull (j.GetProperty("kind").GetString()))
+
+// --- defensive render (#3 — a markup fault degrades to plain, never crashes) -
+// Discriminating predicate: `MarkupLine` THROWS on malformed markup, and the
+// verdict panel renders at the END of a good run — the worst place to crash.
+// `safeMarkupLine` must CONTAIN the fault: degrade to plain text, never throw.
+
+[<Fact>]
+let ``View: a malformed markup line degrades to plain text — a render fault never fails the run (#3)`` () =
+    use sw = new StringWriter()
+    let console =
+        AnsiConsole.Create(
+            AnsiConsoleSettings(
+                Ansi = AnsiSupport.No, ColorSystem = ColorSystemSupport.NoColors,
+                Out = AnsiConsoleOutput(sw)))
+    console.Profile.Width <- 200
+    // `[badstyle]…[/]` is invalid Spectre markup (unknown style) and the trailing
+    // `[` is an unbalanced tag — `MarkupLine` would throw on either. safeMarkupLine
+    // must contain the fault and still surface the text, plain.
+    View.safeMarkupLine console "[badstyle]contained[/] and a stray [ bracket"
+    let out = sw.ToString()
+    Assert.Contains("contained", out)   // the styled text survived, plain
+    Assert.Contains("bracket", out)     // including past the unbalanced '['
+    // reaching here at all means no exception escaped — the run was not failed

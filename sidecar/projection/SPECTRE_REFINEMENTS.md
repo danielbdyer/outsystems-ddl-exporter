@@ -158,6 +158,25 @@ json lens emits.
 guarantee, the spaced-filter-value split, and the one-substrate tie-in; `--query`
 is documented in `--help`.
 
+### Shipped next (2026-06-18) — #3: defensive render (the markup-crash class, contained)
+
+**A render fault can no longer fail the run it describes.** `console.MarkupLine`
+THROWS on malformed markup (a stray `[`, an unknown style), and the verdict panel
+renders at the very END of an otherwise-successful run — the worst place to take an
+exception. `View.safeMarkupLine` wraps the line render: on
+`InvalidOperationException` it degrades to the line with its markup stripped
+(`Markup.Remove`), or the raw text if even that won't parse — never a throw. Every
+`writeBlock` line renderer routes through it; `writePanel`'s panel write is wrapped
+to degrade to plain rows under the title. A test feeds it an unknown style + an
+unbalanced `[` and asserts the text survives, plain, with no throw.
+
+**The discipline still holds — this is the net, not the fix.** A grep confirms all
+28 `Theme.*` color-helper call sites (`View.fs` ×20, `Watch.fs` ×8) already
+`Markup.Escape` their data, so there is no LIVE markup bug today; #3 contains the
+class against a future slip, and #2 (the `Markup` newtype) would make the escaping
+unforgeable at the type level — its ripple is exactly those two files. Kept both, as
+the doc directs: #2 prevents the cause, #3 contains the effect.
+
 ---
 
 ## 1 — The map (all 25, by theme)
@@ -169,7 +188,7 @@ Status key: **● shipped** · **◐ partial / starved** · **○ not started** 
 |---|---|---|---|
 | 1 | Close the `Panel` drift hole | A. Substrate integrity | ● |
 | 2 | Unforgeable markup (a `Markup` newtype) | A | ○ |
-| 3 | Defensive render (markup-fault → plain fallback) | A | ○ |
+| 3 | Defensive render (markup-fault → plain fallback) | A | ● |
 | 4 | A `RenderOptions` record | A | ● |
 | 5 | One console/channel factory | A | ● |
 | 6 | Totality + property test over the DU | A | ● |
@@ -240,7 +259,7 @@ an unescaped value *cannot* reach the pretty lens. The house derive-macro again.
 / `Markup(` site; the VO-lift compiler-gap note in CLAUDE.md §6 is the same shape
 (`String.Concat` accepts `object`; markup accepts any `string`).
 
-### 3 · Defensive render  ○
+### 3 · Defensive render  ●  *(landed 2026-06-18; see §0)*
 
 **Problem.** `console.MarkupLine` **throws** on malformed markup. The verdict panel
 renders at the very *end* of an otherwise-successful run — the worst place to take
@@ -250,6 +269,14 @@ an exception. A display bug today can turn exit 0 into a crash.
 (`Markup.Escape`d / unstyled) line on `InvalidOperationException`, so a rendering
 fault degrades to plain text and never fails the run it describes. Pairs with #2
 (which removes most of the *cause*) — keep both: #2 prevents, #3 contains.
+
+**As shipped.** `View.safeMarkupLine console markup` — try `MarkupLine`, and on
+`InvalidOperationException` degrade to `Markup.Remove`d plain text (or the raw line
+if even that won't parse). Every `writeBlock` line renderer routes through it, and
+`writePanel`'s `console.Write(panel)` is wrapped to degrade to plain rows — the
+verdict panel can no longer crash a good run. (The live `Watch` board renders via
+Spectre `Live`, not this path, but its cells are escaped-by-construction —
+`rowMarkup`'s `Markup.Escape` at the source — so it has no fault to contain.)
 
 ### 4 · A `RenderOptions` record  ●  *(landed 2026-06-18; the enabling refactor — see §0)*
 
