@@ -31,13 +31,15 @@ module SchemaComplexityPass =
     /// without constructing a throwaway `registered` metadata value.
     let name : string = passName
 
-    // Composite score weights — NOT [<Literal>] on decimal per
-    // cctor-bomb discipline.
-    let private weightCyclomatic  : decimal = 0.20m
-    let private weightCoupling    : decimal = 0.20m
-    let private weightCohesion    : decimal = 0.15m
-    let private weightDepth       : decimal = 0.25m
-    let private weightNullability : decimal = 0.20m
+    // Composite score weights — advisory tuning (a default operator opinion,
+    // overridable), single-sourced from `AdvisoryTuning.defaults`. NOT
+    // [<Literal>] on decimal per cctor-bomb discipline.
+    let private tuning = AdvisoryTuning.defaults.SchemaComplexity
+    let private weightCyclomatic  : decimal = tuning.WeightCyclomatic
+    let private weightCoupling    : decimal = tuning.WeightCoupling
+    let private weightCohesion    : decimal = tuning.WeightCohesion
+    let private weightDepth       : decimal = tuning.WeightDepth
+    let private weightNullability : decimal = tuning.WeightNullability
 
     /// Normalize a raw value to [0, 1] given an expected maximum.
     /// Values above `cap` clamp to 1.0.
@@ -111,12 +113,12 @@ module SchemaComplexityPass =
         // Normalize each component to [0, 1] with heuristic caps.
         // These caps are "typical large schema" reference points, not
         // strict thresholds — scores above cap clamp to 1.0.
-        let cyclomaticN  = normalize 500.0m (decimal cyclomatic)
-        let couplingN    = normalize   5.0m coupling
+        let cyclomaticN  = normalize tuning.CapCyclomatic (decimal cyclomatic)
+        let couplingN    = normalize tuning.CapCoupling coupling
         // Cohesion: high cohesion = low complexity; invert.
         let cohesionN    = 1.0m - System.Math.Min(1.0m, System.Math.Max(0.0m, cohesion))
-        let depthN       = normalize  20.0m (decimal depth)
-        let nullabilityN = normalize   1.0m nullabilityRatio
+        let depthN       = normalize tuning.CapDepth (decimal depth)
+        let nullabilityN = normalize tuning.CapNullability nullabilityRatio
 
         let overallScore =
             weightCyclomatic  * cyclomaticN +
@@ -150,6 +152,6 @@ module SchemaComplexityPass =
           Sites =
             [ { SiteName       = "complexityMetrics"
                 Classification = DataIntent
-                Rationale      = "Composite schema complexity scoring over FK graph + IR attribute statistics. All inputs are catalog/topology-derived; no operator opinion." } ]
+                Rationale      = "Composite schema complexity scoring over FK graph + IR attribute statistics. Advisory only — the inputs are catalog/topology-derived, but the weight vector + normalization caps are a DEFAULT OPERATOR OPINION (overridable, named in `AdvisoryTuning.defaults`); the score never enters the faithful projection." } ]
           Run    = fun c -> run c topoDefault
           Status = Active }

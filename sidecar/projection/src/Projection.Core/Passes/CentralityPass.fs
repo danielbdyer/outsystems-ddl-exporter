@@ -28,12 +28,13 @@ module CentralityPass =
     let private passName : string = "centrality"
 
     // PageRank constants — decimal per T1 byte-determinism discipline.
-    // NOT [<Literal>] on decimals: CLR cctor limitation
-    // (InvalidProgramException on decimal Literal in F#). Per
-    // `DECISIONS 2026-05-09 — FP strict mode discipline`.
-    let private dampingFactor   : decimal = 0.85m
-    let private convergenceEps  : decimal = 0.000001m
-    let private maxIterations   : int     = 100
+    // PageRank tuning — advisory (a default operator opinion, overridable),
+    // single-sourced from `AdvisoryTuning.defaults.Centrality`. NOT [<Literal>]
+    // on decimals: CLR cctor limitation (InvalidProgramException on decimal
+    // Literal in F#). Per `DECISIONS 2026-05-09 — FP strict mode discipline`.
+    let private dampingFactor   : decimal = AdvisoryTuning.defaults.Centrality.DampingFactor
+    let private convergenceEps  : decimal = AdvisoryTuning.defaults.Centrality.ConvergenceEps
+    let private maxIterations   : int     = AdvisoryTuning.defaults.Centrality.MaxIterations
 
     /// Run personalized PageRank on the FK graph encoded in
     /// `TopologicalOrder.Edges`. The FK graph is directed:
@@ -163,6 +164,6 @@ module CentralityPass =
           Sites =
             [ { SiteName       = "pageRankCentrality"
                 Classification = DataIntent
-                Rationale      = "Personalized PageRank over the FK adjacency graph. Rank is determined by graph topology alone; no operator opinion in the computation." } ]
+                Rationale      = "Personalized PageRank over the FK adjacency graph. Advisory only — the rank is determined by graph topology, but the PageRank tuning (damping, convergence ε, max iterations) is a DEFAULT OPERATOR OPINION (overridable, named in `AdvisoryTuning.defaults.Centrality`); the ranking never enters the faithful projection." } ]
           Run    = run
           Status = Active }

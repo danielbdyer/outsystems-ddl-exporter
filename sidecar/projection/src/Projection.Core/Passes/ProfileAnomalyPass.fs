@@ -25,9 +25,11 @@ module ProfileAnomalyPass =
     [<Literal>]
     let private passName : string = "profileAnomaly"
 
-    // Anomaly threshold: 2 standard deviations above the mean.
-    // NOT [<Literal>] on decimal per cctor-bomb discipline.
-    let private sigmaThreshold : decimal = 2.0m
+    // Anomaly threshold: N standard deviations above the mean — advisory tuning
+    // (a default operator opinion, overridable), single-sourced from
+    // `AdvisoryTuning.defaults` (the default is 2σ). NOT [<Literal>] on decimal
+    // per cctor-bomb discipline.
+    let private sigmaThreshold : decimal = AdvisoryTuning.defaults.ProfileAnomalySigma
 
     /// Compute mean and population standard deviation of a decimal list.
     /// Returns (0m, 0m) for empty or single-element lists (σ undefined).
@@ -136,9 +138,9 @@ module ProfileAnomalyPass =
           Sites =
             [ { SiteName       = "nullRateAnomaly"
                 Classification = DataIntent
-                Rationale      = "Per-column null rate vs table-mean + 2σ threshold. Driven by Profile.ColumnProfiles (empirical evidence); no operator opinion." }
+                Rationale      = "Per-column null rate vs table-mean + Nσ threshold. Advisory only — the null rates are Profile.ColumnProfiles empirical evidence, but the σ multiplier is a DEFAULT OPERATOR OPINION (overridable, `AdvisoryTuning.defaults.ProfileAnomalySigma`, default 2σ); the flag never enters the faithful projection." }
               { SiteName       = "cvAnomaly"
                 Classification = DataIntent
-                Rationale      = "Per-column coefficient of variation vs table-mean CV + 2σ threshold. Driven by NumericDistribution.Moments (empirical evidence); no operator opinion." } ]
+                Rationale      = "Per-column coefficient of variation vs table-mean CV + Nσ threshold. Advisory only — the CVs are NumericDistribution.Moments empirical evidence, but the σ multiplier is a DEFAULT OPERATOR OPINION (overridable, `AdvisoryTuning.defaults.ProfileAnomalySigma`, default 2σ); the flag never enters the faithful projection." } ]
           Run    = fun c -> run c profile
           Status = Active }

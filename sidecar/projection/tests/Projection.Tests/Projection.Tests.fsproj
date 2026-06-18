@@ -197,6 +197,7 @@
     <Compile Include="OsmRowsetReaderTests.fs" />
     <Compile Include="ColumnRealitySourceSidePopulationTests.fs" />
     <Compile Include="ColumnRealityDivergenceTests.fs" />
+    <Compile Include="AdvisoryTuningTests.fs" />
     <Compile Include="FkRealityRowsetRoundTripTests.fs" />
     <Compile Include="LiveProfilerIntegrationTests.fs" />
     <Compile Include="DataIntegrityCheckerTests.fs" />

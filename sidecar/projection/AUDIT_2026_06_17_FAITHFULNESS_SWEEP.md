@@ -256,13 +256,22 @@ operator adjudication.
 - **Recommended action:** lift to an optional advisory-tuning config the operator can
   override; soften the rationale to "default operator opinion, overridable." (These are
   advisory/diagnostic outputs, not the faithful projection — but the label is wrong.)
-- **Disposition:** ◑ PARTIAL (safe-batch, 2026-06-17). `QueryHintPass`: the unstated
-  "interpret as 80" is now a named `assumedServerDefaultFillFactor` constant surfaced in
-  the operator-facing diagnostic, and the site rationale changed from "no operator opinion"
-  to "a default operator opinion, overridable." REMAINING follow-on: lift the tuning
-  constants of all four `H-07x` passes (SchemaComplexity weights/caps, ProfileAnomaly `2σ`,
-  Centrality PageRank) to an optional advisory-tuning config, and soften the other three
-  rationales the same way. Bounded, no goldens — a clean next batch.
+- **Disposition:** ✅ DONE (safe-batch + follow-on, 2026-06-17). **Safe-batch**:
+  `QueryHintPass`'s unstated "interpret as 80" became a named
+  `assumedServerDefaultFillFactor` constant surfaced in the operator diagnostic; rationale
+  softened. **Follow-on (this batch)**: lifted the other three passes' tuning into the
+  centralized `AdvisoryTuning` config surface (`src/Projection.Core/Passes/AdvisoryTuning.fs`)
+  — a named, typed, discoverable `T` with `defaults` carrying today's values (SchemaComplexity
+  weights `[0.20,0.20,0.15,0.25,0.20]` + caps `[500,5,20,1]`; ProfileAnomaly `2σ`; Centrality
+  PageRank `0.85/1e-6/100`). The three passes now single-source from `AdvisoryTuning.defaults`
+  (including SchemaComplexity's formerly-inline caps), and each rationale changed from "no
+  operator opinion" to "advisory only … a DEFAULT OPERATOR OPINION (overridable, named in
+  `AdvisoryTuning.defaults`); never enters the faithful projection." **Golden-neutral** —
+  values byte-identical, advisory outputs unchanged (fast pool green). The RUNTIME operator
+  override (threading a non-default `T` through the passes' `run`/`registered`) is the named
+  follow-on, deferred deliberately: it touches ~27 pass call sites for a Low advisory finding,
+  and the faithfulness value is in the centralization + honest labeling, not a knob no
+  operator has asked to turn. Promote when an operator needs a non-default advisory profile.
 
 ### F7 — "Named erasures" are partly open-ended, not closed · Med · High — Lane 6 C2
 - **Provenance:** A37 ("Π-erased axes named") is still a *Candidate* (`AXIOMS.md:1310-1315`);

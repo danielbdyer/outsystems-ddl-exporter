@@ -133,6 +133,7 @@
     <Compile Include="Passes/TopologicalOrderPass.fs" />
     <!-- H-071 through H-076 pass implementations — compiled after
          ComposeState.fs; return types from the files above. -->
+    <Compile Include="Passes/AdvisoryTuning.fs" />
     <Compile Include="Passes/CentralityPass.fs" />
     <Compile Include="Passes/BoundedContextPass.fs" />
     <Compile Include="Passes/ProfileAnomalyPass.fs" />
