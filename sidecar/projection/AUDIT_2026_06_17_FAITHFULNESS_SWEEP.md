@@ -271,7 +271,21 @@ operator adjudication.
   collation "must be a named tolerance" (i.e. isn't yet).
 - **Recommended action:** promote the ingest-boundary erasure set to closed, enforced
   witnesses; promote A37 once closed.
-- **Disposition:**
+- **Disposition:** ◑ PARTIAL (2026-06-17). **F7-config-preserve — ✅ DONE**: `renderConfig`
+  (`MovementSurface.fs`) now round-trips `tighteningRelaxations` — added
+  `ProjectionConfig.TighteningRelaxations : string list`, parsed via `getStringArray` and
+  emitted when non-empty (omitted when `[]`, so a blessing-free config round-trips to no key
+  — A44-neutral). The relax-ALWAYS blessing is now a first-class movement-vocabulary citizen,
+  no longer lost on a render→parse cycle; the `RelaxationStore` surgical merge still targets
+  the same key (no conflict). Witnesses: `MovementIsomorphismTests` — `A44 clause 1 — F7: the
+  tightening relaxations block round-trips` + `… rides ALONGSIDE the movement vocabulary`; the
+  A44 property canary (`parse ∘ render = id`) holds. **A37 promotion — ⏸ GATED, not forced**:
+  A37 ("Π-erased axes named") is still a *Candidate* whose promotion criterion is "TBD at
+  chapter 3.4 close" (`AXIOMS.md`) — it awaits the chapter gate (a finalized statement + an
+  `AxiomTests` witness + the canonically-named erasure predicate), NOT any code I can land
+  here. F1 (collation carried) and the F4 facet-ledger move the ingest-erasure set toward
+  closure, but A37's promotion stays a chapter-close ritual obligation. Left as a forward-dated
+  gate, deliberately not promoted prematurely.
 
 ---
 

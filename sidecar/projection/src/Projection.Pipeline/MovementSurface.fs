@@ -248,6 +248,15 @@ type ProjectionConfig =
         /// id` covers it). Absent ⇒ `Config.defaultSyntheticSection` (the
         /// built-in `SyntheticConfig.defaultConfig` holds; byte-identical).
         Synthetic    : Config.SyntheticSection
+        /// F7 (audit 2026-06-17) — the operator-blessed tightening relaxations
+        /// (`tighteningRelaxations`: a `kind.column` string array; the
+        /// relax-ALWAYS persistence). Formerly written ONLY by `RelaxationStore`'s
+        /// surgical JSON merge, alongside the movement vocabulary but invisible to
+        /// `renderConfig` — so a render-then-parse cycle DROPPED a blessing,
+        /// breaking A44 (`parse ∘ render = id`) for this key. Now a first-class
+        /// movement-vocabulary citizen: rendered when non-empty (omitted when `[]`,
+        /// so a config with no blessings round-trips to no key), parsed back here.
+        TighteningRelaxations : string list
         /// The file the config was loaded from (S6.2 — `fromFile` sets `Some
         /// path`; `parse`/`empty` set `None`). It is LOAD PROVENANCE, not a JSON
         /// field — `renderConfig` never emits it, so the `parse ∘ render` round
@@ -264,7 +273,8 @@ module ProjectionConfig =
 
     let empty : ProjectionConfig =
         { Environments = Map.empty; Flows = Map.empty; Model = None; ModelOssys = None; Defaults = Map.empty
-          Shaping = Config.defaultConfig; Synthetic = Config.defaultSyntheticSection; SourcePath = None }
+          Shaping = Config.defaultConfig; Synthetic = Config.defaultSyntheticSection
+          TighteningRelaxations = []; SourcePath = None }
 
     let private err (code: string) (message: string) : ValidationError =
         ValidationError.create code message
@@ -642,6 +652,9 @@ module ProjectionConfig =
                           // §11 — the synthetic-load policy baseline (a movement
                           // -vocabulary citizen; rendered, so it round-trips).
                           Synthetic = parseSynthetic root
+                          // F7 — the blessed tightening relaxations (movement-
+                          // vocabulary citizen; rendered, so it round-trips).
+                          TighteningRelaxations = getStringArray root "tighteningRelaxations"
                           // `parse` has no file provenance; `fromFile` overlays it.
                           SourcePath = None }
         with ex ->
@@ -809,6 +822,14 @@ module ProjectionConfig =
             let d = JsonObject()
             for KeyValue (k, v) in cfg.Defaults do setStr d k v
             root.["defaults"] <- d)
+        // F7 (audit 2026-06-17) — the blessed tightening relaxations. Omitted
+        // when empty, so a config with no blessings round-trips to no key
+        // (`parse ∘ render = id`); emitted as the `kind.column` string array the
+        // `RelaxationStore` surgical merge also targets (same key, no conflict).
+        (if not (List.isEmpty cfg.TighteningRelaxations) then
+            let a = JsonArray()
+            for k in cfg.TighteningRelaxations do a.Add(JsonValue.Create k)
+            root.["tighteningRelaxations"] <- a)
         // §11 — the synthetic-load policy block. Omitted when it is the default
         // (every knob absent), so a config with no `synthetic` round-trips to no
         // `synthetic` key (`parse ∘ render = id`).
