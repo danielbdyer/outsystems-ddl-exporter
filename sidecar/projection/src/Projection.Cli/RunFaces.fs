@@ -1868,6 +1868,57 @@ let tighteningPreflight
                     | Intervene.Degraded _ -> return halt ()
     }
 
+/// The migrate EXECUTE leg — apply A→B (the durable-record arm with a
+/// `--lifecycle-store`, else the CDC-measure arm) and verify. Extracted so the
+/// §5 tightening gate's INTERACTIVE prompt runs on plain stderr BEFORE the live
+/// board: a Spectre `Live` region and an interactive prompt cannot share the
+/// terminal, so only this leg streams under the board (#9).
+let private runMigrateExecuteLeg
+    (atomic: bool)
+    (allowCdc: bool)
+    (declaration: LossDeclaration)
+    (sourceA: Catalog)
+    (target: Catalog)
+    (storePath: string option)
+    (envLabel: string option)
+    (cnn: Microsoft.Data.SqlClient.SqlConnection)
+    : System.Threading.Tasks.Task<int> =
+    task {
+        match storePath with
+        | Some store ->
+            let env = parseEnvironment "DEV" envLabel
+            match Timeline.create (Projection.Core.Environment.name env) with
+            | Error es ->
+                printErrors Console.Error es
+                return 2
+            | Ok tl ->
+                let at = System.DateTimeOffset.UtcNow
+                let! recorded =
+                    MigrationRun.executeAndRecord atomic allowCdc declaration sourceA target store tl env at None cnn
+                match recorded with
+                | Ok (o, Some chain) ->
+                    printfn "Applied and verified — the database now matches the model. %d statement(s) applied; recorded to %s (%d episode(s) on timeline %s)."
+                        (List.length o.Artifacts.SchemaStatements) store
+                        (EpisodicLifecycle.episodes chain |> List.length) (Timeline.name tl)
+                    return 0
+                | Ok (_, None) ->
+                    Console.Error.WriteLine "The changes were applied, but the read-back does not match the model. No run was recorded."
+                    return 9
+                | Error e -> return reportMigrationError e
+        | None ->
+            let! outcome = MigrationRun.executeAndMeasureCdc atomic allowCdc declaration sourceA target cnn
+            match outcome with
+            | Ok (o, cdcDelta) when o.Verified ->
+                printfn "Applied and verified — the database now matches the model. %d statement(s) applied; %d row(s) captured."
+                    (List.length o.Artifacts.SchemaStatements) cdcDelta
+                eprintfn "projection migrate: note — no --lifecycle-store supplied; no episode persisted (the next diff has no prior to load)."
+                return 0
+            | Ok _ ->
+                Console.Error.WriteLine "The changes were applied, but the read-back does not match the model."
+                return 9
+            | Error e -> return reportMigrationError e
+    }
+
 /// `projection migrate --to <modelB.json> --conn <env|file:ref> --execute
 /// [--allow-drops] [--allow-cdc] [--lifecycle-store <path>] [--env <label>]` —
 /// B1, the LIVE in-place L3 execution (Promise 8). Reads the deployed state A,
@@ -1925,60 +1976,76 @@ let runMigrateExecute (target: Catalog) (connSpec: string) (declaration: LossDec
                                     // deploy the EFFECTIVE target so the schema fits
                                     // the data. Clean / halt-headless returns `target`.
                                     let target = effectiveTarget
-                                    match storePath with
-                                    | Some store ->
-                                        // AC-P8 — durable provenance. After a verified
-                                        // execute, persist the episode onto the timeline
-                                        // so the next sprint's diff loads it as the prior
-                                        // (the emission→snapshot→diff loop closes here).
-                                        let env = parseEnvironment "DEV" envLabel
-                                        let timeline = Timeline.create (Projection.Core.Environment.name env)
-                                        match timeline with
-                                        | Error es ->
-                                            printErrors Console.Error es
-                                            return 2
-                                        | Ok tl ->
-                                            let at = System.DateTimeOffset.UtcNow
-                                            let! recorded =
-                                                MigrationRun.executeAndRecord
-                                                    atomic allowCdc declaration sourceA target store tl env at None cnn
-                                            match recorded with
-                                            | Ok (o, Some chain) ->
-                                                printfn "Applied and verified — the database now matches the model. %d statement(s) applied; recorded to %s (%d episode(s) on timeline %s)."
-                                                    (List.length o.Artifacts.SchemaStatements) store
-                                                    (EpisodicLifecycle.episodes chain |> List.length) (Timeline.name tl)
-                                                return 0
-                                            | Ok (_, None) ->
-                                                Console.Error.WriteLine "The changes were applied, but the read-back does not match the model. No run was recorded."
-                                                return 9
-                                            | Error e -> return reportMigrationError e
-                                    | None ->
-                                        // X4 — measure CDC-silence, don't just
-                                        // assert no DDL ran. `executeAndMeasureCdc`
-                                        // brackets the execute with the change-
-                                        // measure ‖·‖; an idempotent redeploy
-                                        // surfaces zero statements AND zero captures.
-                                        let! outcome = MigrationRun.executeAndMeasureCdc atomic allowCdc declaration sourceA target cnn
-                                        match outcome with
-                                        | Ok (o, cdcDelta) when o.Verified ->
-                                            printfn "Applied and verified — the database now matches the model. %d statement(s) applied; %d row(s) captured."
-                                                (List.length o.Artifacts.SchemaStatements) cdcDelta
-                                            eprintfn "projection migrate: note — no --lifecycle-store supplied; no episode persisted (the next diff has no prior to load)."
-                                            return 0
-                                        | Ok _ ->
-                                            Console.Error.WriteLine "The changes were applied, but the read-back does not match the model."
-                                            return 9
-                                        | Error e -> return reportMigrationError e
+                                    // #9 — the §5 gate prompt (above) ran on plain
+                                    // stderr BEFORE the board; ONLY the execute leg
+                                    // streams under the live board (a Spectre Live
+                                    // region and an interactive prompt cannot share
+                                    // the terminal).
+                                    let executeBody () =
+                                        (runMigrateExecuteLeg atomic allowCdc declaration sourceA target storePath envLabel cnn)
+                                            .GetAwaiter().GetResult()
+                                    return
+                                        if Watch.shouldWatch prettyMode.Value then
+                                            Watch.renderWatch Spines.migrate (Watch.resolveDwellMs ()) executeBody
+                                        else executeBody ()
         }
-    let runBody () = work.GetAwaiter().GetResult()
-    // --pretty + a real TTY → the live stage board (§13), pre-seeded with the
-    // migrate leg's arc (build → apply → verify) the executor streams.
-    let code =
-        if Watch.shouldWatch prettyMode.Value then
-            Watch.renderWatch Spines.migrate (Watch.resolveDwellMs ()) runBody
-        else runBody ()
+    let code = work.GetAwaiter().GetResult()
     dumpBench "migrate"
     code
+
+/// The migrate-with-data EXECUTE leg — apply the sink schema A→B, then load rows
+/// from the source over contract B (durable-record arm with a `--lifecycle-store`,
+/// else the straight load) and verify. Extracted for the same reason as
+/// `runMigrateExecuteLeg` (#9): the §5 gate prompt runs on plain stderr BEFORE
+/// the board; only this leg streams under the live board.
+let private runMigrateWithDataLeg
+    identityPolicy
+    (atomic: bool)
+    (allowCdc: bool)
+    (declaration: LossDeclaration)
+    (sinkSourceA: Catalog)
+    (target: Catalog)
+    reconciliation
+    (storePath: string option)
+    (envLabel: string option)
+    (dataSource: Microsoft.Data.SqlClient.SqlConnection)
+    (sink: Microsoft.Data.SqlClient.SqlConnection)
+    : System.Threading.Tasks.Task<int> =
+    task {
+        match storePath with
+        | Some store ->
+            let env = parseEnvironment "DEV" envLabel
+            match Timeline.create (Projection.Core.Environment.name env) with
+            | Error es ->
+                printErrors Console.Error es
+                return 2
+            | Ok tl ->
+                let at = System.DateTimeOffset.UtcNow
+                let! recorded =
+                    MigrationRun.executeWithDataAndRecordWith identityPolicy atomic declaration Transfer.Execute allowCdc
+                        sinkSourceA target reconciliation store tl env at None dataSource sink
+                match recorded with
+                | Ok (o, chain) ->
+                    printfn "Schema applied and data loaded — %d table(s) transferred; recorded to %s (%d row(s) captured; %d episode(s) on timeline %s)."
+                        (List.length o.Transfer.Kinds) store
+                        (EpisodicLifecycle.latest chain).Data.CdcCaptureCount
+                        (EpisodicLifecycle.episodes chain |> List.length) (Timeline.name tl)
+                    return 0
+                | Error e -> return reportMigrationError e
+        | None ->
+            let! outcome =
+                MigrationRun.executeWithDataWith identityPolicy atomic declaration Transfer.Execute allowCdc
+                    sinkSourceA target reconciliation dataSource sink
+            match outcome with
+            | Ok o when o.Schema.Verified ->
+                printfn "Schema verified and data loaded — %d table(s) transferred."
+                    (List.length o.Transfer.Kinds)
+                return 0
+            | Ok _ ->
+                Console.Error.WriteLine "The schema changes were applied, but the read-back does not match the model. The data load was skipped."
+                return 9
+            | Error e -> return reportMigrationError e
+    }
 
 /// `projection migrate --to <modelB.json> --sink-conn <ref> --source-conn <ref>
 /// --execute [--reconcile <table>:<match-column>]... [--user-map <csv>]
@@ -2088,53 +2155,20 @@ let runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec: string)
                                           printErrors Console.Error es
                                           return 2
                                       | Ok reconciliation ->
-                                        match storePath with
-                                        | Some store ->
-                                            // X5 — measure the data movement (CDC ‖·‖)
-                                            // and RECORD the episode durably. A
-                                            // CDC-tracked sink confounds the schema
-                                            // Verified flag, so the record gates on
-                                            // schema-applied + transfer-OK and carries
-                                            // the measured capture count.
-                                            let env = parseEnvironment "DEV" envLabel
-                                            match Timeline.create (Projection.Core.Environment.name env) with
-                                            | Error es ->
-                                                printErrors Console.Error es
-                                                return 2
-                                            | Ok tl ->
-                                                let at = System.DateTimeOffset.UtcNow
-                                                let! recorded =
-                                                    MigrationRun.executeWithDataAndRecordWith sinkCapability.IdentityPolicy atomic declaration Transfer.Execute allowCdc
-                                                        sinkSourceA target reconciliation store tl env at None dataSource sink
-                                                match recorded with
-                                                | Ok (o, chain) ->
-                                                    printfn "Schema applied and data loaded — %d table(s) transferred; recorded to %s (%d row(s) captured; %d episode(s) on timeline %s)."
-                                                        (List.length o.Transfer.Kinds) store
-                                                        (EpisodicLifecycle.latest chain).Data.CdcCaptureCount
-                                                        (EpisodicLifecycle.episodes chain |> List.length) (Timeline.name tl)
-                                                    return 0
-                                                | Error e -> return reportMigrationError e
-                                        | None ->
-                                        let! outcome =
-                                            MigrationRun.executeWithDataWith sinkCapability.IdentityPolicy atomic declaration Transfer.Execute allowCdc
-                                                sinkSourceA target reconciliation dataSource sink
-                                        match outcome with
-                                        | Ok o when o.Schema.Verified ->
-                                            printfn "Schema verified and data loaded — %d table(s) transferred."
-                                                (List.length o.Transfer.Kinds)
-                                            return 0
-                                        | Ok _ ->
-                                            Console.Error.WriteLine "The schema changes were applied, but the read-back does not match the model. The data load was skipped."
-                                            return 9
-                                        | Error e -> return reportMigrationError e
+                                        // #9 — the §5 gate prompt (above) ran on plain
+                                        // stderr BEFORE the board; only the data-load
+                                        // leg streams under the live board (a Spectre
+                                        // Live region and an interactive prompt cannot
+                                        // share the terminal).
+                                        let executeBody () =
+                                            (runMigrateWithDataLeg sinkCapability.IdentityPolicy atomic allowCdc declaration sinkSourceA target reconciliation storePath envLabel dataSource sink)
+                                                .GetAwaiter().GetResult()
+                                        return
+                                            if Watch.shouldWatch prettyMode.Value then
+                                                Watch.renderWatch Spines.migrateData (Watch.resolveDwellMs ()) executeBody
+                                            else executeBody ()
         }
-    let runBody () = work.GetAwaiter().GetResult()
-    // --pretty + a real TTY → the live board (§13) across the whole arc: the
-    // schema leg (build → apply → verify) and the data leg's load.
-    let code =
-        if Watch.shouldWatch prettyMode.Value then
-            Watch.renderWatch Spines.migrateData (Watch.resolveDwellMs ()) runBody
-        else runBody ()
+    let code = work.GetAwaiter().GetResult()
     dumpBench "migrate"
     code
 
