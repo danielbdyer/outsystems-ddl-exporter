@@ -116,6 +116,12 @@
          Pure over LineageEvent + DiagnosticEntry + OverlayAxis. -->
     <Compile Include="ConflictDetector.fs" />
     <Compile Include="TransformRegistry.fs" />
+    <!-- Closure.fs: the use-case-scoped referential-closure engine (data-
+         portability front-end). Pure planner over the FK graph (Catalog.fs);
+         materializes the `Map<SsKey, StaticRow list>` DataLoadPlan consumes,
+         so it compiles just before it. Zero I/O — the adapter oracle executes
+         the fetches it plans. -->
+    <Compile Include="Closure.fs" />
     <Compile Include="DataLoadPlan.fs" />
     <Compile Include="Reconciliation.fs" />
     <Compile Include="StrategyRegistrations.fs" />

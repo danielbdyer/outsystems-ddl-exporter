@@ -116,6 +116,7 @@
     <Compile Include="ReferenceConstraintStateTests.fs" />
     <Compile Include="StaticSeedsEmitterTests.fs" />
     <Compile Include="StaticSeedsRemapTests.fs" />
+    <Compile Include="ClosureTests.fs" />
     <Compile Include="MigrationDependenciesEmitterTests.fs" />
     <Compile Include="BootstrapEmitterTests.fs" />
     <Compile Include="DataEmissionComposerTests.fs" />
