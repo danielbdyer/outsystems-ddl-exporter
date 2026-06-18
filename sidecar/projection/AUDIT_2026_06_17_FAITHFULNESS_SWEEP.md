@@ -25,8 +25,13 @@ for the full branch picture. Dispositions so far:
   opt-in tightening block), **F15** (`sampleSizeFloor` single-sourced), and **F6 partial** (the
   `QueryHintPass` "interpret as 80" named + its rationale softened). Per-finding dispositions
   below. Gates: fast pure pool 3474/0; DeployableReference 12/0; QueryHint 6/0.
-- **Still pending.** **Bounded/medium** (F2 + F13 register the unregistered mutators — was
-  mid-investigation at `RegisteredAllTransforms.all`; F7-config-preserve = extend
+- **Bounded F2/F13 batch — ✅ DONE** (2026-06-17, one verified commit): `filterPlatformAutoIndexes`
+  (F2) gains an `OperatorIntent Emission` metadata entry in `RegisteredAllTransforms.all`; the
+  static-row hydration adapter (F13, `fullExportHydration`) — already authored but never assembled
+  into `all` — is now wired into the totality view. Binding tests added. Gates: fast 3476/0; the
+  three registry totality classes (bidirectional 21, completeness 12, digest 7) green. The fuller
+  execution↔registration *binding* for F2's emit-seam prune is **audit F3**.
+- **Still pending.** **Bounded/medium** (F7-config-preserve = extend
   `renderConfig`+parse+the A44 generator to round-trip `tighteningRelaxations`, **touches the A44
   canary**; F6 follow-on = the advisory-tuning config for all four `H-07x` passes) · **heavy**
   (F1 collation → IR field + adapter read + `COLLATE` emission + **golden re-bless**; F3 totality
@@ -118,7 +123,17 @@ operator adjudication.
 - **Recommended action:** lift into the registered chain (mirror `LogicalTableEmission`)
   or register as a `Pipeline`-stage entry in `RegisteredAllTransforms.all`; bind its
   execution to its registration in a test; at minimum emit lineage.
-- **Disposition:**
+- **Disposition:** ✅ DONE (bounded F2/F13 batch, 2026-06-17) — the **register** option.
+  `filterPlatformAutoIndexes` now has a `RegisteredTransformMetadata.emitter` entry
+  (`filterPlatformAutoIndexesMetadata`, `OperatorIntent Emission`) wired into
+  `RegisteredAllTransforms.all`, mirroring the conditional emitters (DacpacEmitter /
+  ConstraintFormatter — "registered-as-metadata, executed at their own emit-seam site").
+  The metadata lives at the Pipeline assembly point, not Core (Policy.fs compiles before
+  TransformRegistry.fs). Binding test: `F2 (audit): filterPlatformAutoIndexes is registered
+  as an OperatorIntent Emission mutator`. NOTE: this closes "unregistered" — the FULLER
+  structural lift (route the post-chain prune through the registered chain seam so
+  execution↔registration is *bound*, and emit a per-prune LineageEvent) is **audit F3**,
+  which this finding is the live counterexample for; tackle there. No goldens moved.
 
 ### F3 — The totality test cannot catch a mutator outside the bound sources · High · High — Lane 4 F2
 - **Provenance:** `RegisteredAllTransforms.fs:54-88` (registry projected from
@@ -241,7 +256,14 @@ operator adjudication.
 - **F13 — `Hydration.graftStaticPopulations` unregistered adapter-side mutation** · Low ·
   Med — Lane 4 F4 (`Hydration.fs:43-54`). Benign `DataIntent` row carriage, but a
   model-touching transform absent from the registry. **Action:** register as an
-  Adapter/`DataIntent` site (sibling to `ossysCatalogReader`). **Disposition:**
+  Adapter/`DataIntent` site (sibling to `ossysCatalogReader`). **Disposition:** ✅ DONE
+  (bounded F2/F13 batch, 2026-06-17). The audit slightly overstated: the graft was already
+  *authored* as a `DataIntent` adapter registration (`Hydration.registeredMetadata` =
+  `fullExportHydration`, whose `staticRowHydration` site explicitly describes grafting rows
+  onto the Static populations). The real gap was that this metadata was **never assembled
+  into `RegisteredAllTransforms.all`** — registered in isolation, invisible to the unified
+  totality view. Wired it into `all`; binding test `F13 (audit): the static-row hydration
+  adapter (which grafts) is in the totality view as a DataIntent mutator`. No goldens moved.
 - **F14 — `examples/projection.sample.json` ships an opt-in nullability intervention** ·
   Low(doc) · High — Lane 3 F6 (`:12-14`). Tracked + registered (consistent with the
   principle) but a copy-paste sharp edge. **Action:** add a clarifying comment that the

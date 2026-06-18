@@ -432,3 +432,37 @@ let ``NM-43: the chain projection is EXACTLY closed — all = chainSteps ∪ str
         sprintf
             "a strategy registration name collides with a chainStep name: %A"
             (Set.toList (Set.intersect chainStepNames strategyRegistrationNames)))
+
+// ---------------------------------------------------------------------------
+// F2 + F13 (audit 2026-06-17) — the two formerly-untracked Catalog→Catalog
+// mutators are now in the totality view. F2's emit-seam index prune
+// (`filterPlatformAutoIndexes`) gains a fresh OperatorIntent Emission metadata
+// entry. F13's static-row hydration was ALREADY authored as a DataIntent
+// adapter (`fullExportHydration`, whose `staticRowHydration` site describes the
+// graft) but was never wired into `RegisteredAllTransforms.all` — so it was
+// registered-in-isolation, invisible to the unified totality view; the wiring
+// now names it there. Both execute at their own boundary sites (emit seam /
+// pre-chain hydration), like DacpacEmitter / CatalogReader, so they are
+// registered-as-metadata rather than chain-bound (the fuller chain lift that
+// would bind execution↔registration for the emit-seam filter is audit F3).
+// ---------------------------------------------------------------------------
+
+let private siteHasClassification (name: string) (pred: Classification -> bool) : bool =
+    RegisteredAllTransforms.all
+    |> List.tryFind (fun m -> m.Name = name)
+    |> Option.map (fun m -> m.Sites |> List.exists (fun s -> pred s.Classification))
+    |> Option.defaultValue false
+
+[<Fact>]
+let ``F2 (audit): filterPlatformAutoIndexes is registered as an OperatorIntent Emission mutator`` () =
+    Assert.Contains("filterPlatformAutoIndexes", allNames)
+    Assert.True(
+        siteHasClassification "filterPlatformAutoIndexes" (function OperatorIntent Emission -> true | _ -> false),
+        "filterPlatformAutoIndexes must carry an OperatorIntent Emission site (the IncludePlatformAutoIndexes toggle is operator policy)")
+
+[<Fact>]
+let ``F13 (audit): the static-row hydration adapter (which grafts) is in the totality view as a DataIntent mutator`` () =
+    Assert.Contains("fullExportHydration", allNames)
+    Assert.True(
+        siteHasClassification "fullExportHydration" (function DataIntent -> true | _ -> false),
+        "fullExportHydration must carry a DataIntent site (boundary row carriage + graft, no operator overlay)")

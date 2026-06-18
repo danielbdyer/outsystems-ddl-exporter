@@ -213,6 +213,10 @@ module Hydration =
 
     /// Registry metadata (pillar 9). Read-only observation — DataIntent
     /// (mirrors the OSSYS `CatalogReader` / Transfer `Ingestion` adapters).
+    /// The `staticRowHydration` site covers `graftStaticPopulations` (the
+    /// pre-chain Catalog→Catalog graft). F13 (audit 2026-06-17): this metadata
+    /// existed but was never assembled into `RegisteredAllTransforms.all` — it
+    /// is now wired in, so the graft is visible to the unified totality view.
     let registeredMetadata : RegisteredTransformMetadata =
         RegisteredTransformMetadata.adapter "fullExportHydration" Data
             [ TransformSite.dataIntent "staticRowHydration"

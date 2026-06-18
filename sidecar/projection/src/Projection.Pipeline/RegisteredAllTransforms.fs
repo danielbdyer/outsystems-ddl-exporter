@@ -51,6 +51,23 @@ module RegisteredAllTransforms =
     /// to filter to DataIntent-only entries; **overlay-exercise
     /// consumers** use `TransformRegistry.overlayView` for the
     /// complementary set. Both views project from this single source.
+    /// F2 (audit 2026-06-17) — registry visibility for the post-chain
+    /// emit-seam index pruning. `EmissionPolicy.filterPlatformAutoIndexes`
+    /// (Core) prunes `IsPlatformAuto` indexes when
+    /// `IncludePlatformAutoIndexes = false`; it executes at the emit seam
+    /// (`Pipeline.fs` main-emit + dacpac) like the other conditional emitters
+    /// (DacpacEmitter, ConstraintFormatter — "registered-as-metadata, executed
+    /// at their own sites"). It is an `OperatorIntent Emission` mutation (the
+    /// toggle is operator policy), so it registers here. The metadata cannot
+    /// co-locate with the Core function (Policy.fs compiles before
+    /// TransformRegistry.fs), so it lives at the Pipeline assembly point. The
+    /// fuller structural lift — routing it through the registered chain seam so
+    /// execution↔registration is bound, not just both-present — is audit F3.
+    let private filterPlatformAutoIndexesMetadata : RegisteredTransformMetadata =
+        RegisteredTransformMetadata.emitter "filterPlatformAutoIndexes" Schema
+            [ TransformSite.operatorIntent "platformAutoIndexPruning" Emission
+                "Prune indexes marked IsPlatformAuto=true from the emitted catalog when Policy.Emission.IncludePlatformAutoIndexes=false (chapter 4.8 slice γ; V1-parity default keeps them). Applied at the emit seam (post-chain), executed at its own site like DacpacEmitter. OperatorIntent Emission: the IncludePlatformAutoIndexes toggle is operator-supplied emission policy, not source evidence." ]
+
     let all : RegisteredTransformMetadata list =
         // E1 (`DECISIONS 2026-06-04`) — the full-export emit phase's six
         // sibling-Π emitters (SSDT / Json / Distributions / Remediation /
@@ -71,7 +88,14 @@ module RegisteredAllTransforms =
         @ [ Compose.readStep.Metadata
             ConstraintFormatter.registeredMetadata
             DacpacEmitter.registeredMetadata
-            StaticPopulationEmitter.registeredMetadata ]
+            StaticPopulationEmitter.registeredMetadata
+            // F2 / F13 (audit 2026-06-17) — two Catalog→Catalog mutators that
+            // run at their own boundary sites. F2: the emit-seam index prune
+            // (fresh metadata). F13: the static-row hydration adapter
+            // (`fullExportHydration`) was already authored but never wired into
+            // this totality view — registered-in-isolation; the wiring closes it.
+            filterPlatformAutoIndexesMetadata
+            Hydration.registeredMetadata ]
         @ RegisteredDataTransforms.all
         @ RegisteredTransforms.all
         // Transfer epic (bidirectional data load) — the reader leg
