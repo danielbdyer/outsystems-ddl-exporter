@@ -191,39 +191,4 @@ The current `01-topological-ordering.md` (569 lines) contains content for ALL st
 
 ---
 
-## 🚚 Data Portability (Milestone 5) — Scoped Referential Subsetting & Transfer
-
-A feature family that **reuses** the topological-ordering, SCC/cycle, and
-dynamic-extraction primitives above to lift a use-case-scoped, referentially-complete
-row subset between environments, with collision-safe surrogate remapping for DML-only
-on-prem targets.
-
-#### data-portability-closure-selector (M5.0)
-- **Future Namespace**: `DataPortability`
-- **Pipeline Stage**: Stage 1 (Selection) + Stage 2 (Snapshot)
-- **Reuses**: `SqlDynamicEntityDataProvider` BFS/closure walk, `RelationshipModel` graph
-- **New**: `data-portability.json` config, per-edge directives, key-scoped closure, completeness invariant
-- **Status**: 🚧 Specified ([M5.0](../../implementation-specs/M5.0-data-portability-closure-selector.md))
-
-#### capture-and-remap-loader (M5.1)
-- **Future Class**: `CaptureRemapLoadGenerator`
-- **Pipeline Stage**: Stage 5 (Emission) + Stage 6 (Insertion)
-- **Reuses**: `EntityDependencySorter`, `PhasedDynamicEntityInsertGenerator` (two-phase cycles), `#UserRemap`/`OUTPUT` idiom
-- **New**: replaces `SET IDENTITY_INSERT` with `#Map_*` capture-and-remap (DML-only)
-- **Status**: 🚧 Specified ([M5.1](../../implementation-specs/M5.1-capture-and-remap-loader.md))
-
-#### natural-key-resolution (M5.2)
-- **Future Class**: `NaturalKeyResolver`
-- **Reuses**: `UniqueCandidateProfile` / `CompositeUniqueCandidateProfile`
-- **New**: declared + profile-inferred natural keys → reuse-vs-insert
-- **Status**: 🚧 Specified ([M5.2](../../implementation-specs/M5.2-natural-key-resolution.md))
-
-#### golden-transfer-verification (M5.3)
-- **Future Class**: `DataSliceMaterializer`
-- **Reuses**: `MultiTargetSqlDataProfiler`, `Osm.LoadHarness`
-- **New**: golden/transfer duality, post-load verification (counts, new-orphan delta)
-- **Status**: 🚧 Specified ([M5.3](../../implementation-specs/M5.3-golden-transfer-verification.md))
-
----
-
 **Last updated**: 2025-01-23
