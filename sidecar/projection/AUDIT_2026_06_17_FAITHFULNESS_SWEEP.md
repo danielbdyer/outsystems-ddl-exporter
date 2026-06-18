@@ -7,6 +7,28 @@
 > that deferred work — promote to a canonical `AUDIT_*` + DECISIONS entries when we
 > action it. Do not treat any verdict here as load-bearing law until adjudicated.
 
+## Continuation status (2026-06-17 handoff)
+
+Remediation execution is **in progress** — see `HANDOFF_2026_06_17_OPERATOR_INTERVENTION.md`
+for the full branch picture. Dispositions so far:
+
+- **F5 — ✅ DONE** (`c196164a`): the decimal default is settled by the V1-donor parity
+  contract (`config/type-mapping.default.json`: decimal → (18,0), currency → (37,8)); the
+  `(18,4)` outliers aligned to (18,0). 149 tests green, no golden movement.
+- **F6 — mostly already addressed**: the advisory-pass thresholds are *already* named
+  `let private` constants (the audit overstated "bare literals"). Residue is small: name the
+  `QueryHintPass` "interpret as 80" inline assumption + soften the "no operator opinion"
+  rationale on the 4 advisory `H-07x` passes. Low priority.
+- **Everything else — pending.** Triage for the next agent: **safe/quick** (F8 test, F11/F12
+  notes, F14 sample comment, F15 DRY) · **bounded/medium** (F2 + F13 register the unregistered
+  mutators — was mid-investigation at `RegisteredAllTransforms.all`; F7-config-preserve = extend
+  `renderConfig`+parse+the A44 generator to round-trip `tighteningRelaxations`, **touches the A44
+  canary**) · **heavy** (F1 collation → IR field + adapter read + `COLLATE` emission + **golden
+  re-bless**; F3 totality → route post-chain rewrites through the registered chain seam,
+  **structural**; F4 ingest round-trip → a **Docker** forward-completeness test; F10 IDENTITY
+  seed/increment → IR field + goldens; F7-audit A37 promotion). Do the heavy four as individual
+  verified commits, never one batch.
+
 ## Why this audit ran
 
 Operator framing (stewardship principle): *"It's my dev team's decision and not mine
@@ -134,7 +156,14 @@ operator adjudication.
   all four sites; emit a diagnostic when scale is imposed. The consistency fix is
   unambiguous; the **value (4 vs 0) is a steward decision** to raise with the team
   (financial vs counter semantics).
-- **Disposition:**
+- **Disposition:** ✅ DONE (commit `c196164a`, 2026-06-17). The value question is settled by
+  the V1-donor parity contract (`config/type-mapping.default.json`): **decimal → (18,0)**,
+  **currency → (37,8)** — so `(18,4)` was simply the outlier, not a real fork. Aligned
+  `SqlStorageType.ofPrimitiveType` and `ScriptDomBuild`'s no-precision arm to (18,0);
+  currency (37,8) unchanged. 149 storage/emission/golden tests green, **no golden movement**
+  (the bare-PrimitiveType fallback is never reached by a real catalog). The named-constant
+  single-sourcing + an "imposed default" diagnostic remain a minor follow-on; the
+  operator-prompt extension is moot since the config always supplies a default.
 
 ### F6 — Advisory `H-07x` passes embed tuning judgment as bare constants while self-classifying "no operator opinion" · Med · High — Lane 5 F1–F4
 - **Provenance:** `SchemaComplexityPass.fs:36-40,114-119` (weight vector + caps);
