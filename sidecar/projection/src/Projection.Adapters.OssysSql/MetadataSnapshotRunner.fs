@@ -964,6 +964,52 @@ module MetadataSnapshotRunner =
             | _ -> None
         | _ -> None
 
+    /// F9 (audit 2026-06-17) — NAME the logical-vs-deployed divergences instead
+    /// of discarding them. The adapter carries the LOGICAL Service-Studio facets
+    /// (`IsMandatory` → nullability, `IsAutoNumber` → identity); the SAME snapshot
+    /// fetched the DEPLOYED `#ColumnReality` (`cr.IsNullable`, `cr.IsIdentity`),
+    /// which `toBundle` reads for collation/computed/default but never compares
+    /// for nullability/identity. This pure pass surfaces each divergence as an
+    /// operator-facing `Warning` — the carried value is UNCHANGED (the audit's
+    /// "operator call": the operator decides which source is authoritative, the
+    /// engine does not auto-resolve). Deterministic — ordered by attribute id.
+    let columnRealityDivergences (snapshot: MetadataSnapshot) : DiagnosticEntry list =
+        let realityByAttrId =
+            snapshot.ColumnReality |> List.map (fun cr -> cr.AttrId, cr) |> Map.ofList
+        snapshot.Attributes
+        |> List.sortBy (fun a -> a.AttrId)
+        |> List.collect (fun a ->
+            match Map.tryFind a.AttrId realityByAttrId with
+            | None -> []
+            | Some cr ->
+                let logicalNullable = not a.IsMandatory
+                [ if logicalNullable <> cr.IsNullable then
+                    { DiagnosticEntry.create
+                        "adapter:OSSYS" DiagnosticSeverity.Warning
+                        "adapter.ossys.columnReality.nullabilityDivergence"
+                        (sprintf "Column %s (attr %d): the logical OSSYS model declares it %s but the deployed schema is %s. The engine carries the LOGICAL value; remediate the source or confirm which is authoritative."
+                            a.PhysicalCol a.AttrId
+                            (if logicalNullable then "nullable" else "NOT NULL")
+                            (if cr.IsNullable then "nullable" else "NOT NULL"))
+                      with Metadata =
+                            Map.ofList
+                                [ "attrId", string a.AttrId
+                                  "physicalColumn", a.PhysicalCol
+                                  "logicalNullable", string logicalNullable
+                                  "deployedNullable", string cr.IsNullable ] }
+                  if a.IsAutoNumber <> cr.IsIdentity then
+                    { DiagnosticEntry.create
+                        "adapter:OSSYS" DiagnosticSeverity.Warning
+                        "adapter.ossys.columnReality.identityDivergence"
+                        (sprintf "Column %s (attr %d): the logical OSSYS model declares identity=%b but the deployed schema has identity=%b. The engine carries the LOGICAL value."
+                            a.PhysicalCol a.AttrId a.IsAutoNumber cr.IsIdentity)
+                      with Metadata =
+                            Map.ofList
+                                [ "attrId", string a.AttrId
+                                  "physicalColumn", a.PhysicalCol
+                                  "logicalIdentity", string a.IsAutoNumber
+                                  "deployedIdentity", string cr.IsIdentity ] } ])
+
     let toBundle (snapshot: MetadataSnapshot) : OssysRowsetTypes.RowsetBundle =
         use _ = Bench.scope "adapter.osm.extract.toBundle"
         let physicalByEntity =

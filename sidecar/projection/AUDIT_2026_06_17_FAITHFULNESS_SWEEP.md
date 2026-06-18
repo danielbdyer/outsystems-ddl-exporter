@@ -307,7 +307,19 @@ operator adjudication.
   `#ColumnReality`** · Low-Med · Med — Lane 6 A5 (`OssysRowsetReader.fs:57-64` vs
   `MetadataSnapshotRunner.fs:214,220`). Depends which "source" the steward owns; physical
   evidence is read then ignored, undiagnosed. **Action:** operator call + diagnostic on
-  divergence. **Disposition:**
+  divergence. **Disposition:** ✅ DONE (2026-06-17). Added the pure
+  `MetadataSnapshotRunner.columnRealityDivergences : MetadataSnapshot -> DiagnosticEntry list`
+  — it compares the LOGICAL Service-Studio facets (`a.IsMandatory` → nullability,
+  `a.IsAutoNumber` → identity) against the DEPLOYED `#ColumnReality` the SAME snapshot
+  fetched (`cr.IsNullable`, `cr.IsIdentity`) and surfaces each disagreement as a named
+  `Warning` (`adapter.ossys.columnReality.{nullability,identity}Divergence`) with structural
+  Metadata. The CARRIED value is unchanged — diagnostic only, no auto-resolve (the audit's
+  "operator call": the operator decides which source is authoritative). Surfaced at the
+  production read site (`LiveModelRead.fromConnectionWith`, through which every live OSSYS
+  read funnels) as a loud channel-2 warning — sibling to the tightening-relax acknowledgment;
+  it only fires on a real divergence, so agreement is byte-identical. Witnesses:
+  `ColumnRealityDivergenceTests` (fires on each facet, silent on agreement, total over the
+  no-reality case, two distinct diagnostics when both diverge). 5 green; golden-neutral.
 - **F10 — `IDENTITY(1,1)` hardcoded** · Low · High — Lane 6 B1 (`ScriptDomBuild.fs:371-379`).
   Faithful for OS-native autonumbers; normalizes external/reflected identity seeds.
   **Action:** carry seed/increment in the IR if external tables are in scope; else note

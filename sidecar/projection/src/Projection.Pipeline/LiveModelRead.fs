@@ -46,6 +46,15 @@ module LiveModelRead =
             match! MetadataSnapshotRunner.runAsync cnn parameters with
             | Error es -> return Result.failure es
             | Ok snapshot ->
+                // F9 (audit 2026-06-17) — surface, never silently discard, every
+                // logical-vs-deployed `#ColumnReality` divergence the snapshot
+                // carries (the adapter keeps the LOGICAL value; the operator is
+                // told so they can confirm which source is authoritative). The
+                // carried value is unchanged — diagnostic only, no auto-resolve.
+                for d in MetadataSnapshotRunner.columnRealityDivergences snapshot do
+                    // LINT-ALLOW: operator-facing boundary warning (channel 2),
+                    // sibling to the tightening-relax acknowledgment.
+                    eprintfn "%s: %s" d.Code d.Message
                 let bundle = MetadataSnapshotRunner.toBundle snapshot
                 // Slice 4 — under a pushed scope, prune reference rows
                 // whose target entity the server-side narrowing excluded
