@@ -75,16 +75,14 @@ let dumpBench (tag: string) : unit =
 /// verb's middle is sparse. `full-export` is NOT wrapped here — it
 /// self-brackets via `FullExportRun`. NDJSON goes to stderr (channel 1);
 /// the verb's human narration stays on stdout (the §5 split).
-/// Tier-3 — `--pretty` is a global channel-2 flag, stripped from argv in
-/// `main` and recorded here. When set (and stderr is a real TTY), `withRun`
-/// suppresses the NDJSON stream and renders a Spectre verdict panel instead.
+/// Tier-3 — `--pretty` is the global channel-2 flag (stripped from argv in
+/// `main`, recorded here). When set — explicitly, or AUTO when stderr is a real
+/// TTY and NDJSON wasn't forced — channel 1 (NDJSON) is suppressed and the run
+/// renders on the Spectre surface instead: the live stage board (`Watch`) DURING
+/// the run, then the verdict panel as the resolved final frame. (`--watch` was
+/// folded into this 2026-06-17 — the board is simply what pretty shows while a
+/// run is in flight; the standalone flag is deprecated.)
 let prettyMode = ref false
-
-/// Tier-3 — `--watch` opts into the live stage board (`Watch`, the §13 Watch
-/// surface). Opt-in (default behavior unchanged), stripped from argv in `main`.
-/// When set + a real TTY, `dispatchFullExport` runs the export under a live board
-/// on stderr instead of the terminal-summary-only path.
-let watchMode = ref false
 
 // The per-face stage arcs retired 2026-06-12 (card S2): the live Watch board
 // pre-seeds from the declared `Spines` (`RunSpine` — one definition site per

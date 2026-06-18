@@ -1,0 +1,241 @@
+# AUDIT 2026-06-17 — Faithfulness / No-Silent-Tightening Sweep
+
+> **STATUS: branch-local working register (NOT yet canonical).** Lives on
+> `claude/vector-wave-4-5`. Operator (2026-06-17) approved **all** findings for
+> execution, **parked until after** the three active build threads (`Intervene.fs`
+> seam, `--pretty` Slice 1, Wizard W0). This is the temporary holding document for
+> that deferred work — promote to a canonical `AUDIT_*` + DECISIONS entries when we
+> action it. Do not treat any verdict here as load-bearing law until adjudicated.
+
+## Continuation status (2026-06-17 handoff)
+
+Remediation execution is **in progress** — see `HANDOFF_2026_06_17_OPERATOR_INTERVENTION.md`
+for the full branch picture. Dispositions so far:
+
+- **F5 — ✅ DONE** (`c196164a`): the decimal default is settled by the V1-donor parity
+  contract (`config/type-mapping.default.json`: decimal → (18,0), currency → (37,8)); the
+  `(18,4)` outliers aligned to (18,0). 149 tests green, no golden movement.
+- **F6 — mostly already addressed**: the advisory-pass thresholds are *already* named
+  `let private` constants (the audit overstated "bare literals"). Residue is small: name the
+  `QueryHintPass` "interpret as 80" inline assumption + soften the "no operator opinion"
+  rationale on the 4 advisory `H-07x` passes. Low priority.
+- **Everything else — pending.** Triage for the next agent: **safe/quick** (F8 test, F11/F12
+  notes, F14 sample comment, F15 DRY) · **bounded/medium** (F2 + F13 register the unregistered
+  mutators — was mid-investigation at `RegisteredAllTransforms.all`; F7-config-preserve = extend
+  `renderConfig`+parse+the A44 generator to round-trip `tighteningRelaxations`, **touches the A44
+  canary**) · **heavy** (F1 collation → IR field + adapter read + `COLLATE` emission + **golden
+  re-bless**; F3 totality → route post-chain rewrites through the registered chain seam,
+  **structural**; F4 ingest round-trip → a **Docker** forward-completeness test; F10 IDENTITY
+  seed/increment → IR field + goldens; F7-audit A37 promotion). Do the heavy four as individual
+  verified commits, never one batch.
+
+## Why this audit ran
+
+Operator framing (stewardship principle): *"It's my dev team's decision and not mine
+to adjust the data model… I'm just a steward of their data model… It should be pure
+vanilla output/emission with **tracked** exceptions of when we are overriding it,
+period."* — i.e. the faithful **skeleton** (`Project(catalog, Policy.empty, profile)`)
+is the floor; every deviation must be a **registered, classified `OperatorIntent`
+overlay** (`TransformRegistry.fs`, `OverlayAxis = Selection|Emission|Insertion|
+Tightening|Ordering`). "Trustability, formal verifiability, and provenance are
+first-class." The sweep hunts **obscured/opaque tightening** (any model deviation that
+isn't a faithfully-tracked exception), transforms that belong in the registry but
+aren't, and **subjectivity smuggled into objective code**.
+
+Method: 6 parallel read-only audit agents over disjoint lanes — (1) nullability
+provenance, (2) sibling structural passes, (3) default policy/config posture,
+(4) registry completeness, (5) subjectivity/magic-numbers, (6) ingest+emission
+boundary. Findings below carry each agent's **severity · confidence**, provenance,
+verdict, and recommended action. A `Disposition:` line is left blank under each for
+operator adjudication.
+
+---
+
+## ✅ Tier 0 — Clean bills of health (no action; recorded as proofs)
+
+- **T0.1 — Nullability never tightens silently** (Lane 1). Adapter sets
+  `IsNullable = not mandatory` (`OssysRowsetReader.fs:58`, `OssysJsonReader.fs:118`);
+  `Composition.fanOut` short-circuits to identity under `Policy.empty` without
+  consulting catalog/profile (`Composition.fs:136-140`, gated by
+  `TighteningPolicy.nullabilityInterventions`, empty per `Policy.fs:788/922`); the pass
+  is `OperatorIntent Tightening` (`NullabilityPass.fs:71`), excluded from `skeletonView`;
+  additive-only emission `Nullable = a.Column.IsNullable && not enforceNotNull`
+  (`SsdtDdlEmitter.fs:129`); proven at true execution by `SkeletonPurityTests.fs:57-83`.
+- **T0.2 — Unique / FK / categorical / topo passes** (Lane 2). All `OperatorIntent`,
+  Policy-gated via the same `fanOut` short-circuit, skeleton-excluded; the topo pass's
+  mixed-classification (`sortKahn`=DataIntent, `selfLoop`=OperatorIntent Ordering) in
+  `TransformRegistry.fs:54-57` matches `TopologicalOrderPass.fs:527-532` exactly.
+- **T0.3 — Default out-of-box run = faithful skeleton** (Lane 3). `Policy.empty` is the
+  only baseline (`Policy.fs:918-923`); omitted `policy` ⇒ `TighteningPolicy.empty`
+  (`Config.fs:412-416`, `TighteningBinding.fs:170`); the shipped `runInit` writes no
+  `policy` block (`Program.fs:276-289`). Tested at three layers:
+  `TighteningBindingTests.fs:85`, pipeline byte-identity `Pipeline.fs:1522-1538`,
+  property-axiom H-052 `PillarNineTests.fs:92` (via `AxiomTests.fs:1438`).
+- **T0.4 — Emitters inject no collation/ANSI/filegroup opinion; JSON emitter is a pure
+  projection** (Lane 6 B3/B4). `Projection.Targets.SSDT` grep for
+  `COLLATE/ANSI_NULLS/filegroup` is clean; `JsonEmitter.fs:29-60` renders exactly the
+  Catalog.
+- **T0.5 — Discipline templates done right** (Lane 5 contrast cases): `Tolerance.fs`
+  (named, closed `ToleratedDivergence` variants, fail-closed parse); the
+  `*TighteningConfig`s (thresholds operator-supplied + validated + reasoned); the
+  blessed `CorrectionProposer.classify` (`SyntheticCorrection.fs:322-329` — the only
+  name-pattern heuristic, handled as an operator-blessed *proposal*). Hold the Tier-2
+  items to these.
+
+---
+
+## 🔴 Tier 1 — HIGH: real faithfulness gaps
+
+### F1 — Collation silently dropped at ingest · High · High *(VERIFIED 2026-06-17)*
+- **Provenance:** read at `MetadataSnapshotRunner.fs:219` (comment: *"no V2 consumer"*);
+  **no Catalog home** — `ColumnRealization` carries only `ColumnName`+`IsNullable`
+  (`Catalog.fs:496-499`, verified); **no emission** — grep `COLLATE`/`Collation` over
+  `Projection.Targets.SSDT` returns nothing (verified). `ADMIRE.md:2597-2615` documents
+  the `onDisk`-envelope drop as a prose deferral.
+- **Concern:** on a fresh deploy the team's chosen non-default collation is genuinely
+  lost; this is **not** a closed named erasure (no `Tolerance` entry, no diagnostic).
+  `AUDIT_2026_05_31` already classes collation as an L1-not-L2 silent erasure.
+- **Recommended action:** give collation a typed `ColumnRealization` home + emit
+  `COLLATE` faithfully; **or** register it as a closed `Tolerance` + loud adapter
+  `Diagnostic`. Verified fix surface: `Catalog.fs:496` (add field), the SSDT emitter
+  column path, and the two adapter readers.
+- **Disposition:**
+
+### F2 — `filterPlatformAutoIndexes`: unregistered, silent, operator-intent catalog mutation on the live path · High · High — Lane 4 F1
+- **Provenance:** def `Policy.fs:599-613`; live invocations `Pipeline.fs:582` (main emit)
+  and `:1325` (dacpac). `Catalog → Catalog` pruning of `IsPlatformAuto` indexes when
+  `IncludePlatformAutoIndexes=false`; **no LineageEvent, no Diagnostic, unregistered.**
+- **Concern:** its own comment (`Pipeline.fs:577-582`) calls it `OperatorIntent Emission`
+  but self-exempts ("evidence is policy, not catalog") — a rationale that doesn't hold,
+  since `LogicalTableEmission` is also policy-driven and **is** registered. Exact
+  untracked-operator-intent pattern.
+- **Recommended action:** lift into the registered chain (mirror `LogicalTableEmission`)
+  or register as a `Pipeline`-stage entry in `RegisteredAllTransforms.all`; bind its
+  execution to its registration in a test; at minimum emit lineage.
+- **Disposition:**
+
+### F3 — The totality test cannot catch a mutator outside the bound sources · High · High — Lane 4 F2
+- **Provenance:** `RegisteredAllTransforms.fs:54-88` (registry projected from
+  chain/emit/read sources); `RegisteredAllTransformsBidirectionalTests.fs:323-361`
+  (iterates only `Compose.emitSteps`/`readStep`/`chainSteps`). The `>= 21` count is a
+  floor, not a closure.
+- **Concern:** `registered ⇔ executed` is proven only over the three bound surfaces; any
+  `Catalog → Catalog` running elsewhere is invisible. **F2 is the live counterexample.**
+- **Recommended action:** route every post-chain catalog rewrite through the registered
+  chain seam so "the chain is the only mutator" is structurally true; then the existing
+  proof becomes a run-level totality guarantee. (Closes the whole class — high leverage.)
+- **Disposition:**
+
+### F4 — Round-trip / adjunction tests don't close the loop through the OSSYS ingest adapter · High · High — Lane 6 C1
+- **Provenance:** `AdjunctionLawTests.fs:160-197` reads via `PhysicalSchemaReader`/
+  `PhysicalSchema.ofCatalog`, never `CatalogReader.parse`; the Docker canary
+  (`CanaryRoundTripTests.fs`) uses ReadSide; the full Docker adjunction is `Skip`-ped
+  (`AdjunctionLawTests.fs:211-219`). `AUDIT_2026_05_31:82` already flags ISO as
+  one-directional.
+- **Concern:** a deviation introduced at ingest (F1 collation, F9 nullability) is
+  invisible to the adjunction proof.
+- **Recommended action:** add a forward-completeness check `source DDL → ReadSide/OSSYS →
+  Catalog` asserting every physical facet (collation, identity seed, deployed
+  nullability) is present in the Catalog **or** named in a closed erasure set.
+- **Disposition:**
+
+---
+
+## 🟠 Tier 2 — MEDIUM: imposed shape & mislabeled subjectivity
+
+### F5 — Inconsistent imposed decimal precision/scale (likely latent bug) · Med · High *(VERIFIED 2026-06-17)*
+- **Provenance (4 sites, two answers):**
+  - `(18,4)`: `SqlStorageType.ofPrimitiveType:121`; `ScriptDomBuild.dataTypeReference:167`
+    (bare-`PrimitiveType`, no facets).
+  - `(18,0)`: `SqlStorageType.ofSqlType`→`resolvePrecisionScale:186-187`;
+    `OssysTranslation.fs:351` (facet path, scale absent). Currency hardcoded `(37,8)`
+    at `OssysTranslation.fs:352`.
+- **Concern:** fabricates precision/scale the source never declared, **and the paths
+  disagree** for the same input — a probable latent bug, not just style.
+- **Recommended action:** one named constant `defaultDecimalPrecisionScale` referenced by
+  all four sites; emit a diagnostic when scale is imposed. The consistency fix is
+  unambiguous; the **value (4 vs 0) is a steward decision** to raise with the team
+  (financial vs counter semantics).
+- **Disposition:** ✅ DONE (commit `c196164a`, 2026-06-17). The value question is settled by
+  the V1-donor parity contract (`config/type-mapping.default.json`): **decimal → (18,0)**,
+  **currency → (37,8)** — so `(18,4)` was simply the outlier, not a real fork. Aligned
+  `SqlStorageType.ofPrimitiveType` and `ScriptDomBuild`'s no-precision arm to (18,0);
+  currency (37,8) unchanged. 149 storage/emission/golden tests green, **no golden movement**
+  (the bare-PrimitiveType fallback is never reached by a real catalog). The named-constant
+  single-sourcing + an "imposed default" diagnostic remain a minor follow-on; the
+  operator-prompt extension is moot since the config always supplies a default.
+
+### F6 — Advisory `H-07x` passes embed tuning judgment as bare constants while self-classifying "no operator opinion" · Med · High — Lane 5 F1–F4
+- **Provenance:** `SchemaComplexityPass.fs:36-40,114-119` (weight vector + caps);
+  `QueryHintPass.fs:30-32,59-60` (fill-factor heuristic + an unstated "interpret as 80");
+  `ProfileAnomalyPass.fs:30` (`2σ`); `CentralityPass.fs:34-36` (PageRank `0.85`/ε/maxIter).
+- **Concern:** the exact "subjectivity mislabeled objective" unease — each is a chosen
+  judgment presented under a `DataIntent`/"no operator opinion" rationale.
+- **Recommended action:** lift to an optional advisory-tuning config the operator can
+  override; soften the rationale to "default operator opinion, overridable." (These are
+  advisory/diagnostic outputs, not the faithful projection — but the label is wrong.)
+- **Disposition:**
+
+### F7 — "Named erasures" are partly open-ended, not closed · Med · High — Lane 6 C2
+- **Provenance:** A37 ("Π-erased axes named") is still a *Candidate* (`AXIOMS.md:1310-1315`);
+  collation/`onDisk` are prose deferrals with re-open triggers (`ADMIRE.md:2525,2597-2619`),
+  not closed `Tolerance`/`AxiomTests` witnesses; `WAVE_6_ONTOLOGY.md:363,446-448` says
+  collation "must be a named tolerance" (i.e. isn't yet).
+- **Recommended action:** promote the ingest-boundary erasure set to closed, enforced
+  witnesses; promote A37 once closed.
+- **Disposition:**
+
+---
+
+## 🟡 Tier 3 — LOW / watch-items
+
+- **F8 — SymmetricClosure faithfulness rests on `Reference.isDeployable`** applied at
+  *every* emission site · Low(watch) · High — Lane 2 F5. Adds inverse references in the
+  skeleton (classified `DataIntent`); kept faithful only by the deployability filter at
+  5 verified emission sites (`SsdtDdlEmitter.fs:319,373,986,1033,1078`). A future 6th
+  reference-consuming site without the filter would leak inverses as real constraints.
+  **Action:** add a structural guard/test that every reference-consuming emission site
+  filters `isDeployable`. **Disposition:**
+- **F9 — Adapter carries logical OSSYS nullability/identity, discards fetched deployed
+  `#ColumnReality`** · Low-Med · Med — Lane 6 A5 (`OssysRowsetReader.fs:57-64` vs
+  `MetadataSnapshotRunner.fs:214,220`). Depends which "source" the steward owns; physical
+  evidence is read then ignored, undiagnosed. **Action:** operator call + diagnostic on
+  divergence. **Disposition:**
+- **F10 — `IDENTITY(1,1)` hardcoded** · Low · High — Lane 6 B1 (`ScriptDomBuild.fs:371-379`).
+  Faithful for OS-native autonumbers; normalizes external/reflected identity seeds.
+  **Action:** carry seed/increment in the IR if external tables are in scope; else note
+  the bound. **Disposition:**
+- **F11 — email/phone/text-width imposition** · Low · High — Lane 6 A3
+  (`OssysTranslation.fs:362-364`, `textLength` 306-310). V1-parity faithful but an
+  undiagnosed inference relative to raw source. **Action:** ledger entry; optional
+  diagnostic. **Disposition:**
+- **F12 — `SelectionPolicy.filterCatalog` dormant unregistered mutator** · Low · High —
+  Lane 4 F3 (`Policy.fs:506-510`, no pipeline wiring). **Action:** register as
+  `OperatorIntent Selection` when wired; track the trigger in DECISIONS. **Disposition:**
+- **F13 — `Hydration.graftStaticPopulations` unregistered adapter-side mutation** · Low ·
+  Med — Lane 4 F4 (`Hydration.fs:43-54`). Benign `DataIntent` row carriage, but a
+  model-touching transform absent from the registry. **Action:** register as an
+  Adapter/`DataIntent` site (sibling to `ossysCatalogReader`). **Disposition:**
+- **F14 — `examples/projection.sample.json` ships an opt-in nullability intervention** ·
+  Low(doc) · High — Lane 3 F6 (`:12-14`). Tracked + registered (consistent with the
+  principle) but a copy-paste sharp edge. **Action:** add a clarifying comment that the
+  `tightening` block is opt-in, not baseline. **Disposition:**
+- **F15 — Minor DRY** · Low · Med — Lane 5 F6. `NumericDistribution.sampleSizeFloor=5`
+  re-inlined as `5L` at `LiveProfiler.fs:525`; LiveProfiler caps (50/50/100) as separate
+  literals. **Action:** single source of truth. **Disposition:**
+
+---
+
+## Operator triage read (2026-06-17)
+
+- **Genuine bug:** F5 (conflicting decimal defaults) — *verified*.
+- **Genuine silent deviations a steward cares about most:** F1 (collation, *verified*),
+  F2 (unregistered index prune).
+- **Highest-leverage structural fixes** (catch the whole class): F3 (totality blind
+  spot), F4 (ingest round-trip not closed).
+- **Labeling/discipline:** F6, F7. **Bounded/benign:** Tier 3.
+
+## Execution note
+
+All approved; parked until the three build threads land. F1 and F5 are verified with
+their fix surfaces mapped above and are ready for quick work when we return to this.

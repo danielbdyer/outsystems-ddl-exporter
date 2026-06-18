@@ -37,6 +37,12 @@ type View =
     | Meter of label: string * filled: int * total: int * suffix: string
     /// Canary-history dots (green ● / red ✕).
     | Dots of label: string * verdicts: string list
+    /// The cutover timeline header — the canary-history strip (`cells`, newest
+    /// last) with an optional `present` marker, beside the R6 gate meter
+    /// (`filled`/`total`). The spine of the display (`DYNAMIC_DISPLAY` §4): where
+    /// this run sits on the arc to cutover. `toJson` carries the strip as
+    /// structure so the machine lens keeps the full series + present index.
+    | Timeline of label: string * cells: string list * filled: int * total: int * present: int option
     /// A label over an ordered step list (explain's transform trail).
     | Trail of label: string * steps: (string * string option) list
     /// A move-lane: a glyph + label + a status badge (the move's reversibility),
@@ -138,6 +144,15 @@ let rec private writeBlock (console: IAnsiConsole) (depth: int) (indent: string)
                 indent (Theme.muted (Markup.Escape label)) (Theme.meter filled total) (Markup.Escape suffix))
     | Dots (label, verdicts) ->
         console.MarkupLine(sprintf "%s%s   %s" indent (Theme.muted (Markup.Escape label)) (Theme.canaryDotsMarkup verdicts))
+    | Timeline (label, cells, filled, total, present) ->
+        // The strip + the R6 gate meter on one line — the present marker rides
+        // the dots, the cutover ratio trails (e.g. `●●●●✕●●▸  ▇▇▇▇▇▇▇░░░  7/10`).
+        console.MarkupLine(
+            sprintf "%s%s   %s   %s   %s"
+                indent (Theme.muted (Markup.Escape label))
+                (Theme.timelineMarkup cells present)
+                (Theme.meter filled total)
+                (Theme.muted (sprintf "%d/%d" filled total)))
     | Trail (label, steps) ->
         console.MarkupLine(sprintf "%s%s" indent (Theme.muted (Markup.Escape label)))
         for (step, detail) in steps do
@@ -209,6 +224,19 @@ let rec toJson (v: View) : JsonNode =
         let a = JsonArray()
         for x in verdicts do a.Add(s x)
         obj [ "kind", s "dots"; "label", s label; "verdicts", a ]
+    | Timeline (label, cells, filled, total, present) ->
+        // The full series + present index ride the structure regardless of the
+        // pretty marker — the machine lens never loses the arc.
+        let a = JsonArray()
+        for x in cells do a.Add(s x)
+        let o = JsonObject()
+        o.["kind"] <- s "timeline"
+        o.["label"] <- s label
+        o.["cells"] <- a
+        o.["filled"] <- i filled
+        o.["total"] <- i total
+        (match present with Some p -> o.["present"] <- i p | None -> ())
+        o :> JsonNode
     | Trail (label, steps) ->
         let a = JsonArray()
         for (step, detail) in steps do

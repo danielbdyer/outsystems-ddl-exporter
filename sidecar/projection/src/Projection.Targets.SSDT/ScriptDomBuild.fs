@@ -163,8 +163,11 @@ module ScriptDomBuild =
             let s =
                 match precision, scale with
                 | Some _, Some v -> v
+                // F5 — scale 0 when the source omits it (the V1-donor parity default,
+                // `config/type-mapping.default.json`). Was 4 on the no-precision arm —
+                // the inconsistency with `SqlStorageType.ofPrimitiveType`/`ofSqlType`.
                 | Some _, None   -> 0
-                | None, _        -> 4
+                | None, _        -> 0
             let pLit = IntegerLiteral()
             pLit.Value <- string p
             r.Parameters.Add(pLit)

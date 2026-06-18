@@ -225,6 +225,32 @@ let ``G7: tighteningOverlay carries the narrowed set as EnforceNotNull, empty ot
     let nonTightening = Preflight.tighteningOverlay (tnnCatalog noteK "NOTE" true) (tnnCatalog noteK "NOTE" true)
     Assert.True(Set.isEmpty nonTightening.EnforceNotNull)
 
+// G7 relax — the steward's loosen-to-fit-the-data override: `relaxTightening`
+// sets the named columns back to nullable so the migration no longer narrows
+// them (the §5 gate then passes), and the relaxation is a NAMED tracked event.
+
+[<Fact>]
+let ``G7 relax: relaxTightening loosens the named column so it no longer narrows`` () =
+    let noteK = tnnAttrKey "Note"
+    let target = tnnCatalog noteK "NOTE" false   // B: the model declares NOT NULL
+    let relaxed = Preflight.relaxTightening (Set.singleton noteK) target
+    // From a nullable source A, the relaxed target no longer narrows — the gate passes.
+    Assert.Empty(Preflight.tightenedToNotNull (tnnCatalog noteK "NOTE" true) relaxed)
+
+[<Fact>]
+let ``G7 relax: relaxTightening with no keys is identity (the tightening still stands)`` () =
+    let noteK = tnnAttrKey "Note"
+    let relaxed = Preflight.relaxTightening Set.empty (tnnCatalog noteK "NOTE" false)
+    Assert.Equal<Set<SsKey>>(Set.singleton noteK, Preflight.tightenedToNotNull (tnnCatalog noteK "NOTE" true) relaxed)
+
+[<Fact>]
+let ``G7 relax: the relaxation is tracked as a named migrate.tighteningRelaxed event`` () =
+    let env = EventProjection.tighteningRelaxedEnvelope (Set.singleton (tnnAttrKey "Note"))
+    Assert.Equal<string>("migrate.tighteningRelaxed", env.Code)
+    match Map.tryFind "relaxedColumns" env.Payload with
+    | Some v -> Assert.Equal<int>(1, (v :?> int))
+    | None -> Assert.Fail "the tracked envelope omits relaxedColumns"
+
 // ---------------------------------------------------------------------------
 // G2 (transfer) — `plannedTransferWrites` is private to the Transfer module,
 // so the pure decision the transfer gate consumes is `permissionViolations`

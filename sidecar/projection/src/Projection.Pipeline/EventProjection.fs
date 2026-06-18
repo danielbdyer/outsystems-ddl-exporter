@@ -254,3 +254,30 @@ module EventProjection =
                   (Map.ofList [ "axisCounts",   box axisCounts
                                 "renderedDiff", box (PhysicalSchema.renderDiff diff) ]) with
                   Phase = LogSink.ErrorPhase } ]
+
+    /// §6 — project the CDC-silence measure into a structured `canary.*` event so
+    /// the data norm rides channel 1 (machine-readable + panel-readable), the
+    /// sibling of the operator-facing Voice surface the faces render. `0` is the
+    /// silence proof (`canary.cdcSilent`, the green hush of an idempotent
+    /// redeploy); any captured rows is `canary.cdcCaptured` carrying the count.
+    /// Both carry `capturedRows` so `LogSink.cdcMeasure` reads one key.
+    let cdcMeasureEnvelope (capturedRows: int) : LogSink.Envelope =
+        if capturedRows = 0 then
+            { LogSink.envelope LogSink.Info LogSink.Canary "canary.cdcSilent"
+                (Map.ofList [ "capturedRows", box 0 ]) with Phase = LogSink.End }
+        else
+            LogSink.envelope LogSink.Info LogSink.Canary "canary.cdcCaptured"
+                (Map.ofList [ "capturedRows", box capturedRows ])
+
+    /// §5 — project an operator's tightening RELAXATION into a tracked event: the
+    /// columns left NULLABLE (against the model's NOT NULL) so the emitted schema
+    /// fits NULL-bearing data, deferring the source-data fix. A NAMED override on
+    /// channel 1 / the ledger — the stewardship principle: a departure from the
+    /// team's model is never silent. `Warn` (an override worth seeing), Deploy
+    /// category (it shapes what is deployed).
+    let tighteningRelaxedEnvelope (relaxedKeys: Set<SsKey>) : LogSink.Envelope =
+        let columns = relaxedKeys |> Set.toList |> List.map SsKey.rootOriginal
+        { LogSink.envelope LogSink.Warn LogSink.Deploy "migrate.tighteningRelaxed"
+            (Map.ofList
+                [ "relaxedColumns", box (List.length columns)
+                  "columns", box (String.concat ", " columns) ]) with Phase = LogSink.End }

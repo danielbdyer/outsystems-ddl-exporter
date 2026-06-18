@@ -20,3 +20,10 @@ let ``Theme.sparkline maps min..max across the bar ramp`` () =
 [<Fact>]
 let ``Theme.canaryDots renders green filled + red cross, newest last`` () =
     Assert.Equal("●●✕●", Theme.canaryDots [ "green"; "green"; "red"; "green" ])
+
+[<Fact>]
+let ``Theme.timeline strips dots with a NO_COLOR-safe present marker`` () =
+    // green ● / red ✕, newest last; the present cell is flagged with ▸.
+    Assert.Equal("●✕●▸", Theme.timeline [ "green"; "red"; "green" ] (Some 2))
+    Assert.Equal("●✕●", Theme.timeline [ "green"; "red"; "green" ] None)
+    Assert.Equal("●✕●", Theme.timeline [ "green"; "red"; "green" ] (Some 9))   // out-of-range → bare strip
