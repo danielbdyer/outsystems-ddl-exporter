@@ -416,25 +416,34 @@ zero-consumer build (CLAUDE.md §5: "verbs at the second consumer").
 
 ## E — The live Watch board
 
-### 19 · Emit the intra-stage `summary.stageProgress` events  ◐  *(the board is built and starved)*
+### 19 · Emit the intra-stage `summary.stageProgress` events  ◐  *(the long paths emit; full-export's stages don't)*
 
-**Problem.** `Watch.apply` *fully handles* `summary.stageProgress` → `Active
-(Progress)` → `progressText` / `etaText`, and `LogSink` even has the emitter
-helper. But **no producer calls it** — grep finds `stageProgress` only in
-`RunSpine`, `LogSink` (the helper definition), and `Watch` (the consumer). The
-entire ETA/progress apparatus renders today but is fed nothing. The hard part is
-done; the board shows only `started`/`completed`.
+**Status correction (2026-06-18 — the premise was stale).** The original problem
+statement said *"no producer calls it — grep finds `stageProgress` only in
+`RunSpine`, `LogSink`, and `Watch`."* That is **no longer true**, and was the
+load-bearing assumption behind the "single highest leverage, one emit site"
+framing. The estate-scale paths — where an ETA matters most — now DO emit it:
+`TransferRun` calls `LogSink.recordStageProgress "load"` from its bulk-load loops
+(and `"retrust"` / `"retrust-skipped"`), and `MigrationRun` calls it `"deploy"`.
+The board is live for transfer + migration; `WatchTests` / `MigrationCanaryTests`
+pin the producer→fold path. The apparatus is *not* starved.
 
-**Fix.** Instrument the per-table loops (the ingestion / bulk / emission loops,
-off the existing `Bench.streamProbe` samples) to emit `summary.stageProgress`
-with `done` / `total` / `elapsedMs`. This is the single highest leverage item on
-the board — render-ready apparatus waiting for one emit site per long stage.
+**The real remaining gap — and why it isn't a quick win.** What still emits no
+intra-stage progress is **full-export** (`Pipeline.runWithConfig`'s `extract` /
+`profile` / `emit` brackets). But its per-table work is NOT at the Pipeline
+boundary the original framing assumed: `profile` probes inside
+`Adapters.Sql.LiveProfiler.attach` (adapter layer); `emit`'s per-kind statement
+build is in pure Core, and the file write is a *bulk* `Compose.writeWith` staging
+move with no per-file loop at the boundary. So lighting full-export is a deeper,
+adapter-touching change that needs a live-SQL (Docker) test — not the one-liner the
+doc promised. Sequence it WITH #21 (the other runs onto the spine) and the
+profile-probe instrumentation, not as a warm-up.
 
-**Cheat sheet.** The `Progress` honesty rule is already enforced in `Watch.etaText`
-(no rate ⇒ no estimate) and the unknown-denominator case in `progressText` (`Total
-≤ 0` ⇒ plain count-up). So a producer that can't count ahead may emit `total = 0`
-safely. Pure work is in Core/Pipeline; keep the emit at the Pipeline boundary, not
-in Core.
+**Cheat sheet (still current).** The `Progress` honesty rule is already enforced in
+`Watch.etaText` (no rate ⇒ no estimate) and the unknown-denominator case in
+`progressText` (`Total ≤ 0` ⇒ plain count-up). So a producer that can't count ahead
+may emit `total = 0` safely. Keep the emit at the Pipeline/adapter boundary, not in
+pure Core. The producer pattern to copy is the `TransferRun` "load" loop.
 
 ### 20 · Move the dwell off the emitting thread  ○
 
@@ -605,7 +614,7 @@ Rough triage to spend a time-box well. Effort: **S** ≈ an hour, **M** ≈ a se
 | Item | Value | Effort | Note |
 |---|---|---|---|
 | #1 PanelRow + #6 | **High** | S | A *live* lens-drift bug; the test is the proof. Do first. |
-| #19 stageProgress | **High** | M | Apparatus is built; one emit site per long stage lights it up. |
+| #19 stageProgress | Med | M–L | **Premise corrected** — transfer/migration already emit; only full-export's stages remain, an adapter-deep change (not the one-liner). |
 | #17 `--query` | **High** | M | Redeems a lens already paid for in `toJson`. |
 | #23 Explore TUI | **High** | L | The marquee; gated by #18 + #20. |
 | #4 RenderOptions | Med (enabler) | M | Unblocks #11/#15/#18; land alone. |
