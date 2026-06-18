@@ -157,6 +157,7 @@
     <Compile Include="DataLoadPlanTests.fs" />
     <Compile Include="TransferRegistrationsTests.fs" />
     <Compile Include="ReconciliationTests.fs" />
+    <Compile Include="ReconciliationCompositeKeyTests.fs" />
     <Compile Include="ConnectionResolverTests.fs" />
     <Compile Include="TransferSpecTests.fs" />
     <Compile Include="CaptureJournalTests.fs" />

@@ -61,6 +61,10 @@ type ReconciledIdentity =
 [<RequireQualifiedAccess>]
 type ReconciliationStrategy =
     | MatchByColumn of column: Name
+    /// A COMPOSITE natural/business key (data-portability Slice 5): match on the
+    /// tuple of several columns' values. The declared/inferred multi-column key
+    /// that drives reuse-vs-insert when a single column is not unique.
+    | MatchByColumns of columns: Name list
     | ManualOverride of map: Map<SourceKey, AssignedKey>
     | FallbackToAssigned of fallback: AssignedKey * primary: ReconciliationStrategy
 
@@ -133,6 +137,37 @@ module Reconciliation =
                     match Map.tryFind col row.Values with
                     | Some mv when isKey mv -> Map.tryFind mv sinkIndex
                     | _                     -> None
+            | ReconciliationStrategy.MatchByColumns cols ->
+                // The COMPOSITE-key sibling of `MatchByColumn`: match on the
+                // TUPLE of the columns' (all non-blank) values. Keyed by the
+                // value LIST — comparable, so no string concatenation in Core
+                // (the determinism layer's no-concat rule). Same oldest-row-wins
+                // tiebreaker on a duplicate composite key (NM-58).
+                let compositeKey (r: StaticRow) : string list option =
+                    let present = cols |> List.choose (fun c -> Map.tryFind c r.Values)
+                    if not (List.isEmpty cols)
+                       && List.length present = List.length cols
+                       && List.forall isKey present
+                    then Some present
+                    else None
+                let sinkIndex =
+                    sinkRows
+                    |> List.choose (fun r ->
+                        match compositeKey r, Map.tryFind pkColumn r.Values with
+                        | Some k, Some sinkSurrogate -> Some (k, AssignedKey.ofString sinkSurrogate)
+                        | _ -> None)
+                    |> List.groupBy fst
+                    |> List.map (fun (k, group) ->
+                        let winner = snd (List.head group)
+                        group
+                        |> List.tail
+                        |> List.iter (fun (_, displaced) -> ambiguousTargets <- (kind, displaced) :: ambiguousTargets)
+                        k, winner)
+                    |> Map.ofList
+                fun _ row ->
+                    match compositeKey row with
+                    | Some k -> Map.tryFind k sinkIndex
+                    | None   -> None
             | ReconciliationStrategy.FallbackToAssigned (fallback, primary) ->
                 let resolvePrimary = resolveBy primary
                 fun src row ->
