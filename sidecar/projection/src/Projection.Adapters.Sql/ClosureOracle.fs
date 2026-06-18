@@ -51,26 +51,92 @@ module ClosureOracle =
     let fetchRootsByKey (cnn: SqlConnection) (sourceCatalog: Catalog) (kind: SsKey) (pkColumn: Name) (keys: Set<string>) : Task<Closure.FetchedRows> =
         fetch cnn sourceCatalog { Kind = kind; KeyColumn = pkColumn; Keys = keys }
 
+    /// Resolve a logical attribute `Name` to its physical, bracket-encoded
+    /// column against THIS catalog's `kind` — the cross-environment plane
+    /// crossing (each side resolves physical names via its own catalog).
+    let private physicalOf (kind: Kind) (col: Name) : string =
+        let encode = Microsoft.SqlServer.TransactSql.ScriptDom.Identifier.EncodeIdentifier
+        kind.Attributes
+        |> List.tryFind (fun a -> a.Name = col)
+        |> Option.map (fun a -> encode (ColumnRealization.columnNameText a.Column))
+        |> Option.defaultWith (fun () ->
+            failwithf "ClosureOracle.renderPredicate: kind %A has no attribute %A" kind.SsKey col)
+
+    /// Render a typed `Predicate` to a `(whereSql, addParams)` pair against the
+    /// kind — logical columns resolved to physical, values bound as PARAMETERS
+    /// (no literal injection). The `Raw` arm is a verbatim escape hatch
+    /// (LINT-ALLOW). `All`/empty `And` → `1 = 1`; empty `In` → `1 = 0`.
+    let renderPredicate (kind: Kind) (p: Predicate) : string * (SqlCommand -> unit) =
+        // Predicate values are always raw strings (the catalog's value form);
+        // bound as parameters. Stored as string (non-null) to satisfy F#9
+        // nullness on `AddWithValue`'s `obj` argument.
+        let pars = System.Collections.Generic.List<string * string>()
+        let nextName () = System.String.Concat("@p", string pars.Count)  // LINT-ALLOW: terminal SQL-text boundary; parameter placeholder token
+        let rec go (p: Predicate) : string =
+            match p with
+            | Predicate.All -> "1 = 1"  // LINT-ALLOW: terminal SQL-text boundary; constant-true predicate
+            | Predicate.Raw sql -> sql  // LINT-ALLOW: terminal SQL-text boundary; operator-supplied raw-predicate escape hatch
+            | Predicate.Equals (c, v) ->
+                let nm = nextName () in pars.Add(nm, v)
+                System.String.Concat(physicalOf kind c, " = ", nm)  // LINT-ALLOW: terminal SQL-text boundary; column encoded, value parameterized
+            | Predicate.In (c, vs) ->
+                if List.isEmpty vs then "1 = 0"  // LINT-ALLOW: terminal SQL-text boundary; constant-false predicate for an empty set
+                else
+                    let names = vs |> List.map (fun v -> let nm = nextName () in pars.Add(nm, v); nm)
+                    System.String.Concat(physicalOf kind c, " IN (", String.concat ", " names, ")")  // LINT-ALLOW: terminal SQL-text boundary; column encoded, values parameterized
+            | Predicate.And ps ->
+                if List.isEmpty ps then "1 = 1"  // LINT-ALLOW: terminal SQL-text boundary; constant-true predicate
+                else
+                    ps
+                    |> List.map (fun sub -> System.String.Concat("(", go sub, ")"))
+                    |> String.concat " AND "  // LINT-ALLOW: terminal SQL-text boundary; sub-predicates already bounded/parameterized
+        let whereSql = go p
+        let addParams (cmd: SqlCommand) =
+            for (nm, v) in pars do cmd.Parameters.AddWithValue(nm, v) |> ignore
+        whereSql, addParams
+
+    /// Resolve a logical `EntityCoordinate` to a `Kind` in this catalog —
+    /// matching by entity `Name` (the cross-environment bridge). Module
+    /// disambiguation is deferred (the live-readback / single-module case);
+    /// returns the first entity-name match.
+    let resolveEntity (catalog: Catalog) (coord: EntityCoordinate) : Kind option =
+        Catalog.allKinds catalog
+        |> List.tryFind (fun k -> Name.value k.Name = coord.Entity)
+
+    /// Fetch the ROOT rows of `kind` selected by a typed `Predicate` — the
+    /// "use case" seed (`Orders WHERE Region = 'West'`). The predicate is
+    /// pushed to SQL (logical → physical) and read live.
+    let fetchRootsByPredicate (cnn: SqlConnection) (kind: Kind) (predicate: Predicate) : Task<Closure.FetchedRows> =
+        task {
+            let whereSql, addParams = renderPredicate kind predicate
+            let stream =
+                ReadSide.readRowsWhereStream cnn kind whereSql addParams
+                |> ReadSide.materializeStream kind
+            let! rows = AsyncStream.toList stream
+            return ({ Kind = kind.SsKey; Rows = rows } : Closure.FetchedRows)
+        }
+
     /// Drive the closure to its referential fixed point from a set of already-
-    /// fetched root rows, reading parents live via `fetch`. Bounded by a hard
-    /// hop cap (Slice 4 promotes this to the named `closure.fuelExhausted`
-    /// refusal carried on the report). Returns the closed state; the caller
-    /// derives `Closure.materialize` / `Closure.report` from it.
-    let walk (cnn: SqlConnection) (sourceCatalog: Catalog) (roots: Closure.FetchedRows list) : Task<Closure.ClosureState> =
+    /// fetched root rows, under the slice's traversal `directives` (`Stop`
+    /// frontiers are not expanded), reading parents live via `fetch`. Bounded
+    /// by a hard hop cap (the runaway backstop). Returns the closed state; the
+    /// caller derives `Closure.materialize` / `Closure.reportWith` from it.
+    let walk (cnn: SqlConnection) (sourceCatalog: Catalog) (directives: RelationshipDirective list) (roots: Closure.FetchedRows list) : Task<Closure.ClosureState> =
         task {
             let mutable state = Closure.empty
             let mutable pending = roots
             let mutable fuel = 100000
             let mutable running = true
             while running do
-                // `Closure.step` is pure: fold the fetched rows in, plan the
-                // next hop's parent fetches. An empty plan IS the fixed point.
-                let state', fetches = Closure.step sourceCatalog state pending
+                // Pure planner: fold the fetched rows in, plan the next hop's
+                // parent fetches (honouring `Stop` frontiers). Empty IS the
+                // fixed point.
+                let state', fetches = Closure.stepWith directives sourceCatalog state pending
                 state <- state'
                 if List.isEmpty fetches then
                     running <- false
                 elif fuel <= 0 then
-                    failwith "closure walk did not reach a fixed point (hop fuel exhausted)"
+                    failwith "closure.fuelExhausted: closure walk did not reach a fixed point within the hop cap"
                 else
                     let mutable fetched : Closure.FetchedRows list = []
                     for fc in fetches do

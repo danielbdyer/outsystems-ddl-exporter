@@ -190,6 +190,44 @@ let ``Closure over all roots is referentially closed — DataLoadPlan.build is c
     // and — every FK target present in the set — no structural surprises.
     Assert.Empty(plan.UnbreakableCycleFks)
 
+// -- Slice 4: traversal directives (Stop frontiers) + SliceSpec -----------
+
+let private runWalkWith (directives: RelationshipDirective list) (db: Map<SsKey, StaticRow list>) (roots: Closure.FetchedRows list) : Closure.ClosureState =
+    let oracle = oracleOver db
+    let rec loop fuel state fetched =
+        if fuel <= 0 then failwith "closure did not reach a fixed point (fuel exhausted)"
+        let state', fetches = Closure.stepWith directives catalog state fetched
+        if List.isEmpty fetches then state'
+        else loop (fuel - 1) state' (fetches |> List.map oracle)
+    loop 100 Closure.empty roots
+
+[<Fact>]
+let ``A Stop directive frontiers an edge — the parent subtree is not pulled`` () =
+    // Stop the Order→User edge: the order is closed, but its user (and thus
+    // the user's country) are NOT pulled. The frontier is the operator's
+    // bounded blast radius.
+    let stopUser : RelationshipDirective =
+        { From = EntityCoordinate.ofEntity "Order"; Relationship = "UserRef"; Direction = TraversalDirection.Stop }
+    let state = runWalkWith [ stopUser ] sourceDb (rootOrders [ "1000" ])
+    Assert.Equal<Set<string>>(Set.ofList [ "1000" ], closedKeys state orderKey)
+    Assert.Empty(closedKeys state userKey)
+    Assert.Empty(closedKeys state countryKey)
+
+[<Fact>]
+let ``SliceSpec.create refuses empty roots, duplicate directives, and negative depth`` () =
+    let aRoot : RootSpec = { Entity = EntityCoordinate.ofEntity "Order"; Predicate = Predicate.All }
+    let dir d : RelationshipDirective = { From = EntityCoordinate.ofEntity "Order"; Relationship = "UserRef"; Direction = d }
+    match SliceSpec.create 1 [] [] with
+    | Ok _ -> Assert.Fail "expected refusal for empty roots"
+    | Error es -> Assert.Equal("slice.roots.empty", (List.head es).Code)
+    match SliceSpec.create 1 [ aRoot ] [ dir TraversalDirection.Up; dir TraversalDirection.Stop ] with
+    | Ok _ -> Assert.Fail "expected refusal for duplicate directive"
+    | Error es -> Assert.Equal("slice.directive.duplicate", (List.head es).Code)
+    match SliceSpec.create 1 [ aRoot ] [ dir (TraversalDirection.Down -1) ] with
+    | Ok _ -> Assert.Fail "expected refusal for negative depth"
+    | Error es -> Assert.Equal("slice.directive.negativeDepth", (List.head es).Code)
+    Assert.True((SliceSpec.create 1 [ aRoot ] [ dir TraversalDirection.Stop ]).IsOk)
+
 // -- Slice 2: the closure report + completeness invariant -----------------
 
 [<Fact>]

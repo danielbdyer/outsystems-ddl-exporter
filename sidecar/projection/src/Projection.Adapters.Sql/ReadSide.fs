@@ -1040,6 +1040,15 @@ module ReadSide =
                 cmd.Parameters.AddWithValue(System.String.Concat("@k", string i), box k) |> ignore)
         readRowsStreamCore cnn kind (Some (whereSql, addParams))
 
+    /// Slice 3/4 — stream the rows of `kind` matching a caller-rendered `WHERE`
+    /// fragment (with its parameter binder). The closure oracle renders a typed
+    /// `Predicate` (resolving logical columns to THIS catalog's physical
+    /// columns) and feeds the result here — the predicated ROOT read. An empty
+    /// `whereSql` is the full table.
+    let readRowsWhereStream (cnn: SqlConnection) (kind: Kind) (whereSql: string) (addParams: SqlCommand -> unit) : AsyncStream<RowQuantum> =
+        if whereSql = "" then readRowsStreamCore cnn kind None
+        else readRowsStreamCore cnn kind (Some (whereSql, addParams))
+
     /// The IR-grain boundary (Q2): rebuild `StaticRow`s from an in-flight
     /// quantum stream — the Map mint plus the `READSIDE_ROW` row identity
     /// (`<schema>.<table>.<rowIdx>`, exactly the pre-Q2 synthesis). This is

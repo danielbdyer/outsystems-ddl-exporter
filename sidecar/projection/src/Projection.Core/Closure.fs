@@ -135,21 +135,35 @@ module Closure =
     /// From a batch of freshly-closed rows, derive the next hop's fetches: for
     /// each populated FK on each new row, request its parent by PK value,
     /// excluding any key already closed or already requested.
+    /// True iff a `Stop` directive frontiers this edge — the operator's
+    /// explicit "do not pull this parent's subtree". (A stopped MANDATORY edge
+    /// becomes a dangling mandatory FK, which the closure report names; a
+    /// stopped nullable edge is clean — the column can be nulled at load.)
+    let private isStopped (directives: RelationshipDirective list) (kind: Kind) (r: Reference) : bool =
+        directives
+        |> List.exists (fun d ->
+            d.From.Entity = Name.value kind.Name
+            && d.Relationship = Name.value r.Name
+            && d.Direction = TraversalDirection.Stop)
+
     let private nextFetches
+        (directives: RelationshipDirective list)
         (catalog: Catalog)
         (state: ClosureState)
         (newRowsByKind: (Kind * StaticRow list) list)
         : ClosureState * RowKeyFetch list =
-        // Gather candidate (targetKind, parentKeyValue) demands.
+        // Gather candidate (targetKind, parentKeyValue) demands, honouring the
+        // traversal directives: a `Stop` edge is a frontier and is not followed.
         let demands =
             [ for (kind, rows) in newRowsByKind do
                 for r in kind.References do
-                    match Kind.tryFindAttribute r.SourceAttribute kind with
-                    | None -> ()
-                    | Some fkAttr ->
-                        for row in rows do
-                            let v = StaticRow.valueOrEmpty fkAttr.Name row
-                            if v <> "" then yield r.TargetKind, v ]
+                    if not (isStopped directives kind r) then
+                        match Kind.tryFindAttribute r.SourceAttribute kind with
+                        | None -> ()
+                        | Some fkAttr ->
+                            for row in rows do
+                                let v = StaticRow.valueOrEmpty fkAttr.Name row
+                                if v <> "" then yield r.TargetKind, v ]
         // Group by target kind, subtract what is already closed / in flight.
         let byTarget =
             demands
@@ -182,11 +196,13 @@ module Closure =
                             st', { Kind = target; KeyColumn = parentPk; Keys = fresh } :: fetches)
             (state, [])
 
-    /// One closure step: fold the oracle's fetched rows into the state, then
-    /// emit the next batch of parent fetches. The driver loops `oracle ∘ step`
+    /// One closure step under a set of traversal directives: fold the oracle's
+    /// fetched rows into the state, then emit the next batch of parent fetches,
+    /// skipping any `Stop`-frontier edge. The driver loops `oracle ∘ stepWith`
     /// until the returned fetch list is empty — that empty list **is** the
     /// referential fixed point.
-    let step
+    let stepWith
+        (directives: RelationshipDirective list)
         (catalog: Catalog)
         (state: ClosureState)
         (fetched: FetchedRows list)
@@ -199,7 +215,16 @@ module Closure =
                     | st', Some kindRows -> st', kindRows :: acc
                     | st', None          -> st', acc)
                 (state, [])
-        nextFetches catalog state1 newRows
+        nextFetches directives catalog state1 newRows
+
+    /// The all-`Up` closure step (no frontiers) — the Slice-1 behaviour, and
+    /// the referential-completeness default (`stepWith []`).
+    let step
+        (catalog: Catalog)
+        (state: ClosureState)
+        (fetched: FetchedRows list)
+        : ClosureState * RowKeyFetch list =
+        stepWith [] catalog state fetched
 
     /// Materialize the closed set as the `Map<SsKey, StaticRow list>` the load
     /// engine consumes (the same shape `DataLoadPlan.build` takes — the closed

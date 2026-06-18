@@ -116,6 +116,11 @@
          Pure over LineageEvent + DiagnosticEntry + OverlayAxis. -->
     <Compile Include="ConflictDetector.fs" />
     <Compile Include="TransformRegistry.fs" />
+    <!-- SliceSpec.fs: the declarative "use case" — roots (entity + predicate)
+         + per-relationship traversal directives. Logical/environment-
+         indifferent; consumed by Closure.fs (directive-aware walk) and the
+         slice codec/verb. Depends only on Catalog.fs identity types. -->
+    <Compile Include="SliceSpec.fs" />
     <!-- Closure.fs: the use-case-scoped referential-closure engine (data-
          portability front-end). Pure planner over the FK graph (Catalog.fs);
          materializes the `Map<SsKey, StaticRow list>` DataLoadPlan consumes,
