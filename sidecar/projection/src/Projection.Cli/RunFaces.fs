@@ -1322,20 +1322,9 @@ let runInspect (idA: string) (idB: string option) (asJson: bool) : int =
                 eprintfn "Run %s is not in the store at %s." idA dir
                 1
             | Some r ->
-                let view = buildInspectView r
-                // Interactive on a real terminal — the dig-as-motion Navigator (#11/#18);
-                // piped / --json / --query render the SAME document one-shot (the headless
-                // lens). The predicate matches the answer channel's: a redirected stdout,
-                // a machine format, or a query all mean "no TUI, give me the document".
-                let interactive =
-                    Intervene.isInteractive ()
-                    && not System.Console.IsOutputRedirected
-                    && not asJson
-                    && Option.isNone TtyRenderer.queryPath.Value
-                if interactive then Navigator.run view
-                else
-                    TtyRenderer.renderAnswer asJson View.defaultDepth view
-                    0
+                // The dig-as-motion Navigator on a real terminal (#11/#18); piped / --json
+                // / --query render the SAME document one-shot (L2 `present` owns the choice).
+                Navigator.present asJson View.defaultDepth (buildInspectView r)
         | Some idB ->
             match load idA, load idB with
             | None, _ ->
@@ -1388,8 +1377,9 @@ let runDiff (refAText: string) (refBText: string) (asJson: bool) (depth: int) : 
                 Console.Error.WriteLine(sprintf "projection diff: %s" e)
                 2
             | Ok d ->
-                TtyRenderer.renderAnswer asJson depth (Comparison.renderCatalogChange d)
-                0
+                // L2 — the changeset becomes a CONTROL surface: dig the move-lanes live on
+                // a terminal, the same document one-shot when piped / --json / --query.
+                Navigator.present asJson depth (Comparison.renderCatalogChange d)
 
 /// `projection compare <A> <B>` — NM-71/WP9: the read-only multi-environment
 /// readiness check. Resolves both operands to catalogs (the `Ref` machinery,

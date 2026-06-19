@@ -218,3 +218,22 @@ let run (tree: View.View) : int = driveLoop 1 0 (fun _ -> tree)
 /// the per-frame I/O (a closure the caller owns, so this module stays free of `Run`).
 let runHistory (count: int) (start: int) (loadAt: int -> View.View) : int =
     driveLoop count start loadAt
+
+/// Present any answer `View` the live way (L2 — the read surfaces become control
+/// surfaces): on a real terminal, OPEN the Navigator (dig-as-motion); otherwise render
+/// the SAME document one-shot through `renderAnswer` (so a pipe / `--json` / `--query`
+/// still gets the calm answer — the one-substrate fallback, unchanged). The single
+/// predicate every navigable face shares: a redirected stdout, a machine format, or a
+/// query all mean "no TUI, give me the document" — and `isInteractive` already requires
+/// real stdin+stderr, so `ReadKey` can never hit a non-TTY. Verbs call THIS instead of
+/// `renderAnswer` to gain interactivity uniformly (inspect / diff today).
+let present (asJson: bool) (depth: int) (view: View.View) : int =
+    let interactive =
+        Intervene.isInteractive ()
+        && not Console.IsOutputRedirected
+        && not asJson
+        && Option.isNone TtyRenderer.queryPath.Value
+    if interactive then run view
+    else
+        TtyRenderer.renderAnswer asJson depth view
+        0

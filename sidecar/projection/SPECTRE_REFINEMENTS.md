@@ -802,10 +802,18 @@ alignment is unchanged and the width budgets still read `indent.Length`) and imp
 indent` whenever `OpenPath ≠ Some []`, so the whole pure pool stays green (3556/0), and a
 `ViewTests` pins both the caret-on-a-leaf and the no-caret-when-calm halves.
 
-**What rides on this shell next (separate cluster items, not #23 gaps).** The focus/filter
-(L1) and the diff control-surface (L2). The Navigator holds a **cursor over data the
-`View` already carries**, never a second copy of run state (DYNAMIC_DISPLAY §7 discipline
-6) — so those are cursor axes added to the `Model`, not new state.
+**L2 — the read surfaces are control surfaces (shipped same day).** `Navigator.present`
+is the one predicate every navigable face shares: on a real terminal it OPENS the dig;
+piped / `--json` / `--query` render the same document one-shot through `renderAnswer` (the
+headless fallback, byte-unchanged). Both `inspect` and `diff` route through it now — so the
+changeset is dug LIVE (the move-lanes scrub under `↑`/`↓`, each focused lane expanding via
+`OpenPath`), while a pipe still gets the calm answer (verified: a piped `diff` returns
+through the headless path, never hanging on `ReadKey`). `explain` is the obvious next
+caller; the move-lanes go richer when delta-grade widens `Lane` to per-item status.
+
+**What rides on this shell next.** The focus/filter (L1). The Navigator holds a **cursor
+over data the `View` already carries**, never a second copy of run state (DYNAMIC_DISPLAY
+§7 discipline 6) — a cursor axis added to the `Model`, not new state.
 
 ### 24 · A `diff <runA> <runB>` verb  ●  *(already reachable via `Ref`; premise stale)*
 
