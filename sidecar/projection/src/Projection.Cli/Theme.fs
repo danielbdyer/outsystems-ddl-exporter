@@ -23,6 +23,11 @@ let dotFilled = "●"
 // the affordance survives `NO_COLOR`.
 let collapsed = "▸"
 let expanded  = "▾"
+/// The cursor caret (#23 Navigator / #18 `--open`) — marks the focused node (the
+/// `OpenPath = Some []` tip) in a left gutter, so the cursor is visible even on a
+/// LEAF (a `Field`/`Hero` has no disclosure marker). Glyph-first (it survives
+/// `NO_COLOR`); the pretty lens accents it.
+let cursor    = "❯"
 /// The width-cap tail (#11): a value truncated to the console's usable columns
 /// ends in this, the visible signal that the pretty lens dropped a tail the
 /// machine lens (`toJson`) still carries. One column, universal — survives

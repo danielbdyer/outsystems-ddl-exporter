@@ -409,6 +409,17 @@ let ``View: OpenPath opens an addressed leaf-container (a Lane) even at ambient 
     Assert.DoesNotContain("ORDER-MOVE", plainWith { View.defaultOptions with Depth = 0 } v)
     Assert.Contains("ORDER-MOVE", plainWith { View.defaultOptions with Depth = 0; OpenPath = Some [ 0 ] } v)
 
+[<Fact>]
+let ``View: the OpenPath tip wears the cursor caret — even a leaf — and no calm render does (#23)`` () =
+    // Two leaf Fields. OpenPath = Some [1] exhausts the path AT block 1, so beta is the
+    // cursor TIP (its OpenPath becomes Some []) and wears the caret; alpha (off-path) does
+    // not. The caret is visible even though beta is a leaf with no disclosure marker.
+    let v = View.Doc [ View.Field ("alpha", "A", View.Ok); View.Field ("beta", "B", View.Bad) ]
+    let cursored = plainWith { View.defaultOptions with Depth = 0; OpenPath = Some [ 1 ] } v
+    Assert.Contains(Theme.cursor, cursored)          // the focused leaf is marked
+    // Byte-identity guard: no open path → no caret anywhere (the calm render is untouched).
+    Assert.DoesNotContain(Theme.cursor, plainWith { View.defaultOptions with Depth = 0 } v)
+
 // --- the one-substrate law over the whole DU (the totality lock) -----------
 // Discriminating predicate: the pretty lens and the JSON lens are each TOTAL
 // over the `View` DU — a case that forgets its render arm or its `toJson` arm

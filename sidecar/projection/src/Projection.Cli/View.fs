@@ -271,6 +271,18 @@ let private truncateTo (budget: int) (s: string) : string =
 let private glyphCols (st: Status) : int = if glyphOf st = "" then 0 else 2
 
 let rec private writeBlock (console: IAnsiConsole) (opts: RenderOptions) (indent: string) (v: View) : unit =
+    // #23 — the cursor caret: the focused node (the `OpenPath` tip, `Some []`) gets a
+    // left-gutter `❯` hugging its content, so the cursor is visible even on a LEAF (a
+    // `Field`/`Hero` carries no disclosure marker). The caret REPLACES the indent's last
+    // two columns (content stays column-aligned) while the width budgets keep reading
+    // `indent.Length` — the caret renders at the same width as the two spaces it took. With
+    // `OpenPath ≠ Some []` (every non-cursor node, and every `--open`-less render) `lead =
+    // indent`, byte-identical. `lead` prefixes only a node's OWN headline line, never its
+    // children (each child computes its own) nor a node's sub-rows (steps / items / hints).
+    let lead =
+        if opts.OpenPath = Some [] && indent.Length >= 2
+        then indent.[0 .. indent.Length - 3] + Theme.accent Theme.cursor + " "
+        else indent
     match v with
     | Doc blocks ->
         // #18 — thread the surgical-reveal path through the (transparent) block sequence:
@@ -282,27 +294,27 @@ let rec private writeBlock (console: IAnsiConsole) (opts: RenderOptions) (indent
     | Hero (st, text) ->
         // indent + glyph (when statusful) + a 2-space gutter, then the bold text.
         let budget = opts.Width - indent.Length - (if glyphOf st = "" then 0 else 1) - 2
-        safeMarkupLine console (sprintf "%s%s  %s" indent (colorOf st (glyphOf st)) (Theme.bold (Markup.Escape (truncateTo budget text))))
+        safeMarkupLine console (sprintf "%s%s  %s" lead (colorOf st (glyphOf st)) (Theme.bold (Markup.Escape (truncateTo budget text))))
     | Field (label, value, st) ->
         // indent + label + a 3-space gutter + the status glyph; the value takes the rest.
         let budget = opts.Width - indent.Length - label.Length - 3 - glyphCols st
-        safeMarkupLine console (sprintf "%s%s   %s" indent (Theme.muted (Markup.Escape label)) (styled st (truncateTo budget value)))
+        safeMarkupLine console (sprintf "%s%s   %s" lead (Theme.muted (Markup.Escape label)) (styled st (truncateTo budget value)))
     | Meter (label, filled, total, suffix) ->
         safeMarkupLine console (
             sprintf "%s%s   %s   %s"
-                indent (Theme.muted (Markup.Escape label)) (Theme.meter filled total) (Markup.Escape suffix))
+                lead (Theme.muted (Markup.Escape label)) (Theme.meter filled total) (Markup.Escape suffix))
     | Dots (label, verdicts) ->
-        safeMarkupLine console (sprintf "%s%s   %s" indent (Theme.muted (Markup.Escape label)) (Theme.canaryDotsMarkup verdicts))
+        safeMarkupLine console (sprintf "%s%s   %s" lead (Theme.muted (Markup.Escape label)) (Theme.canaryDotsMarkup verdicts))
     | Spark (label, values) ->
         // The series as `▁▂▃▄▅▆▇█` (universal glyphs, safe — no escape); accent-colored
         // for the pretty channel, plain on NoColors. The numbers ride `toJson`.
-        safeMarkupLine console (sprintf "%s%s   %s" indent (Theme.muted (Markup.Escape label)) (Theme.accent (Theme.sparkline values)))
+        safeMarkupLine console (sprintf "%s%s   %s" lead (Theme.muted (Markup.Escape label)) (Theme.accent (Theme.sparkline values)))
     | Timeline (label, cells, filled, total, present) ->
         // The strip + the R6 gate meter on one line — the present marker rides
         // the dots, the cutover ratio trails (e.g. `●●●●✕●●▸  ▇▇▇▇▇▇▇░░░  7/10`).
         safeMarkupLine console (
             sprintf "%s%s   %s   %s   %s"
-                indent (Theme.muted (Markup.Escape label))
+                lead (Theme.muted (Markup.Escape label))
                 (Theme.timelineMarkup cells present)
                 (Theme.meter filled total)
                 (Theme.muted (sprintf "%d/%d" filled total)))
@@ -330,7 +342,7 @@ let rec private writeBlock (console: IAnsiConsole) (opts: RenderOptions) (indent
         // chain always rides `toJson` — the machine lens never caps.
         let n = List.length steps
         let m = marker (revealed opts) (n > 0)
-        safeMarkupLine console (sprintf "%s%s %s" indent m (Theme.muted (Markup.Escape label)))
+        safeMarkupLine console (sprintf "%s%s %s" lead m (Theme.muted (Markup.Escape label)))
         if revealed opts then
             for (step, detail) in steps |> List.truncate opts.LaneCap do
                 match detail with
@@ -359,7 +371,7 @@ let rec private writeBlock (console: IAnsiConsole) (opts: RenderOptions) (indent
         let count = Theme.humane n
         let label' = truncateTo (opts.Width - indent.Length - 2 - (glyph.Length + 1) - 2 - count.Length) label
         safeMarkupLine console (
-            sprintf "%s%s %s" indent m (colorOf st (Markup.Escape (sprintf "%s %s  %s" glyph label' count))))
+            sprintf "%s%s %s" lead m (colorOf st (Markup.Escape (sprintf "%s %s  %s" glyph label' count))))
         if revealed opts then
             for item in items |> List.truncate opts.LaneCap do
                 safeMarkupLine console (sprintf "%s   %s %s" indent (Theme.muted Theme.dot) (Markup.Escape item))
@@ -380,7 +392,7 @@ let rec private writeBlock (console: IAnsiConsole) (opts: RenderOptions) (indent
         let m = marker rev (not (List.isEmpty detail))
         // marker + space, then the styled headline (glyph + space + text when statusful).
         let budget = opts.Width - indent.Length - 2 - glyphCols st
-        safeMarkupLine console (sprintf "%s%s %s" indent m (styled st (truncateTo budget headline)))
+        safeMarkupLine console (sprintf "%s%s %s" lead m (styled st (truncateTo budget headline)))
         if rev then
             // #18 — the on-path child keeps the open path (descendInto), every sibling
             // drops a Depth level. With OpenPath = None this is exactly the old depth-1
@@ -390,8 +402,8 @@ let rec private writeBlock (console: IAnsiConsole) (opts: RenderOptions) (indent
             safeMarkupLine console (
                 sprintf "%s  %s %s" indent (Theme.muted Theme.collapsed)
                     (Theme.muted (sprintf "%d more" (List.length detail))))
-    | Note text -> safeMarkupLine console (sprintf "%s%s" indent (Theme.muted (Markup.Escape (truncateTo (opts.Width - indent.Length) text))))
-    | Action text -> safeMarkupLine console (sprintf "%s%s %s" indent Theme.arrow (Theme.accent (Markup.Escape (truncateTo (opts.Width - indent.Length - 2) text))))
+    | Note text -> safeMarkupLine console (sprintf "%s%s" lead (Theme.muted (Markup.Escape (truncateTo (opts.Width - indent.Length) text))))
+    | Action text -> safeMarkupLine console (sprintf "%s%s %s" lead Theme.arrow (Theme.accent (Markup.Escape (truncateTo (opts.Width - indent.Length - 2) text))))
 
 /// Render with an explicit policy (#4) — the single carrier #11 (width) and #15
 /// (breadth) read. `opts.Width` is respected verbatim (the caller owns the

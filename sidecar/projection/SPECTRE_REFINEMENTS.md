@@ -793,11 +793,19 @@ Fix named are ALL delivered: `↑`/`↓` cursor, `→`/`Enter` dig, run-history 
 `PgUp`/`PgDn`, since `←`/`→` are the dig). Headless parity holds (no id → newest run's
 document one-shot on pipe / `--json` / `--query`).
 
-**What rides on this shell next (separate cluster items, not #23 gaps).** The leaf-cursor
-caret (mark the `OpenPath = Some []` tip so a cursor on a leaf `Field` is visible), the
-focus/filter (L1), and the diff control-surface (L2). The Navigator holds a **cursor over
-data the `View` already carries**, never a second copy of run state (DYNAMIC_DISPLAY §7
-discipline 6) — so those are cursor axes added to the `Model`, not new state.
+**The cursor caret (shipped same day).** The `OpenPath = Some []` tip now wears a
+left-gutter `❯` (`Theme.cursor` — accented for the pretty lens but glyph-first, so it
+survives `NO_COLOR`), making the cursor visible even on a LEAF `Field`/`Hero` that carries
+no disclosure marker. It HUGS the content (replaces the indent's last two columns, so
+alignment is unchanged and the width budgets still read `indent.Length`) and improves
+`--open` too — the focused node is now marked. Byte-identical without an open path: `lead =
+indent` whenever `OpenPath ≠ Some []`, so the whole pure pool stays green (3556/0), and a
+`ViewTests` pins both the caret-on-a-leaf and the no-caret-when-calm halves.
+
+**What rides on this shell next (separate cluster items, not #23 gaps).** The focus/filter
+(L1) and the diff control-surface (L2). The Navigator holds a **cursor over data the
+`View` already carries**, never a second copy of run state (DYNAMIC_DISPLAY §7 discipline
+6) — so those are cursor axes added to the `Model`, not new state.
 
 ### 24 · A `diff <runA> <runB>` verb  ●  *(already reachable via `Ref`; premise stale)*
 
