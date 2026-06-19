@@ -284,7 +284,7 @@ Status key: **● shipped** · **◐ partial / starved** · **○ not started** 
 | 20 | Move the dwell off the emitting thread | E | ○ |
 | 21 | Instrument the other runs onto the spine | E | ◐ |
 | 22 | Loud fallback for stage copy | E | ● |
-| 23 | Build the Explore TUI | F. Explore + history | ▢ |
+| 23 | Build the Explore TUI | F. Explore + history | ◐ |
 | 24 | A `diff <runA> <runB>` verb | F | ● |
 | 25 | `explain <ssKey>` provenance drill-down | F | ◐ |
 | 26 | **The Threshold** — earned milestone flourishes | G. Earned moments | ▢ |
@@ -740,7 +740,7 @@ current set IS complete).
 
 ## F — Explore + run history
 
-### 23 · Build the Explore TUI  ▢  *(the marquee gap)*
+### 23 · Build the Explore TUI  ◐  *(shipped 2026-06-18 — the dig-as-motion core; the run-history walk is the follow-on)*
 
 **Problem.** The interactive inspector (DYNAMIC_DISPLAY §3.3) is named and unbuilt.
 Every dependency exists: the `View` engine, `Comparison`, `RunLedger`, and (once
@@ -753,10 +753,42 @@ the tree bounds) — the codebase's whole ethos applied to a TUI. `←`/`→` wa
 history (the ledger); `↑`/`↓` moves the cursor; `→`/`Enter` deepens the
 `ViewPath`.
 
-**Cheat sheet.** The Navigator holds a **cursor over data the `View` already
-carries**, never a second copy of run state (DYNAMIC_DISPLAY §7 discipline 6). The
-render thread / input loop concurrency is the same shape #20 sets up — sequence
-#20 first.
+**As shipped — the dig-as-motion core (`Navigator.fs` + `buildInspectView`).** The dig
+stops being a re-run (`--depth`/`--open`) and becomes a MOTION: `↑`/`↓` move the cursor
+among siblings, `→`/`Enter` dig in, `←` retreat. The cursor IS the open path — exactly
+one spine open at a time (the dug thread), the rest calm — so the whole TUI is a thin
+loop around two PURE functions: `step` and `project : Model -> RenderOptions`, which
+feeds the cursor path straight into `OpenPath` (#18) with NO remap (the cursor indices
+ARE the render child-indices — `Navigator.children` enumerates the same `Doc`-blocks /
+`Disclosure`-detail lists `writeBlock` iterates, so cursor and reveal can never desync).
+`step` is property-tested TOTAL over `ConsoleKey` and CLAMPING — the cursor can never
+leave the tree (9 `NavigatorTests`; an adversarial pass added an exhaustive BFS over
+thousands of trees, including empty `Doc`, leaf roots, empty-detail `Disclosure`s).
+
+**`inspect` joined the substrate (the one-substrate dividend).** `runInspect` was a
+`printfn` dump with no machine lens — the very drift this chapter fights. It is now
+`buildInspectView : Run.Run -> View` (a `Doc` of the verdict essence over diggable
+`Disclosure`s), so `inspect <id>` gains the json / `--query` lens for free
+(smoke-verified end-to-end: pretty / `--json` / `--query` all over one value), opens
+the Navigator on a real terminal, and renders the same document one-shot when piped /
+`--json` / `--query`.
+
+**Two deliberate deviations from the sketch.** (1) CLEAR-and-redraw on `Console.Out`,
+NOT a Spectre `Live` region — a `Live` region plus a blocking `ReadKey` is the
+terminal-exclusivity hazard; clear-and-redraw is simpler and dodges it. (2) Built
+WITHOUT #20 — the cheat sheet said "sequence #20 first," but the Navigator's `ReadKey`
+loop is its OWN concurrency shape, independent of the Watch `Channel` path (verified:
+it never runs under a board, and the interactive predicate requires stdin+stdout+stderr
+all be real terminals before the loop is reachable, so a non-TTY can never hang it).
+`Ctrl-C` is delivered as a keypress (`TreatControlCAsInput`) so the loop quits CLEANLY
+through `finally`, restoring the terminal.
+
+**What's still ◐ (the follow-on surface).** The `←`/`→` run-history walk over the
+ledger (#10's time axis — `inspect` with no id, scrub prev/next run) is the next slice;
+the leaf-cursor caret, the focus/filter (L1), and the diff control-surface (L2) ride on
+this same shell. The Navigator holds a **cursor over data the `View` already carries**,
+never a second copy of run state (DYNAMIC_DISPLAY §7 discipline 6) — so those are cursor
+axes added to the `Model`, not new state.
 
 ### 24 · A `diff <runA> <runB>` verb  ●  *(already reachable via `Ref`; premise stale)*
 

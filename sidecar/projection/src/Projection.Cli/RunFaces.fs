@@ -1221,7 +1221,65 @@ let runSetup (connRef: string option) : int =
 /// NOTE: the card named this verb `diff <runA> <runB>`; that name is held
 /// by the shipped catalog-refs diff, so the run-grain projection lands
 /// under `inspect` — one noun per surface, the collision named here.
-let runInspect (idA: string) (idB: string option) : int =
+/// A stored run as a navigable `View` (#18/#11) — the inspect surface joins the
+/// one substrate (it gained the json / `--query` lens the old printf face never
+/// had — the one-substrate law). A `Doc` of the essence (a `Hero` verdict + the
+/// counts) over diggable `Disclosure`s (transforms / artifacts / ledgers / bench),
+/// which the Navigator's `→` opens one at a time. `toJson` carries the whole tree.
+let buildInspectView (r: Run.Run) : View.View =
+    let outcomeStatus =
+        match r.Outcome.ToLowerInvariant() with
+        | "ok" | "success" | "succeeded" | "green" -> View.Ok
+        | "error" | "failed" | "failure" | "red" -> View.Bad
+        | _ -> View.Neutral
+    let header =
+        [ View.Hero (outcomeStatus, sprintf "%s — %s" r.RunId r.Command)
+          View.Field ("at", r.Ts, View.Neutral)
+          View.Field (
+              "outcome",
+              r.Outcome + (match r.Canary with Some c -> sprintf "   ·   canary %s" c | None -> ""),
+              outcomeStatus)
+          View.Field ("events", string (List.length r.Events), View.Neutral) ]
+    let transforms =
+        View.Disclosure (
+            sprintf "transforms   ·   %d registered, %d applied, %d declined" r.Registered r.Applied r.Declined,
+            View.Neutral,
+            [ View.Field ("registered", string r.Registered, View.Neutral)
+              View.Field ("applied", string r.Applied, View.Neutral)
+              View.Field ("declined", string r.Declined, View.Neutral) ])
+    let artifacts =
+        let arts = r.Artifacts |> Map.toList
+        View.Disclosure (
+            sprintf "artifacts   ·   %d" (List.length arts),
+            View.Neutral,
+            (if List.isEmpty arts then [ View.Note "none" ]
+             else arts |> List.map (fun (k, _) -> View.Field (k, "", View.Neutral))))
+    let ledgers =
+        match r.Ledgers with
+        | [] -> []
+        | ls ->
+            [ View.Disclosure (
+                  sprintf "ledgers extended   ·   %d" (List.length ls),
+                  View.Neutral,
+                  (ls
+                   |> List.map (fun l ->
+                       match l with
+                       | Run.JournalRef d -> View.Field ("journal", d, View.Neutral)
+                       | Run.EpisodeRef (t, o) -> View.Field ("episode", sprintf "%s ordinal %d" t o, View.Neutral)))) ]
+    let bench =
+        match r.Bench with
+        | None -> []
+        | Some b ->
+            let top = b.Stats |> List.sortByDescending (fun s -> s.TotalMs) |> List.truncate 8
+            if List.isEmpty top then []
+            else
+                [ View.Disclosure (
+                      sprintf "slowest labels   ·   top %d" (List.length top),
+                      View.Neutral,
+                      (top |> List.map (fun s -> View.Field (s.Label, sprintf "%d ms" s.TotalMs, View.Neutral)))) ]
+    View.Doc (header @ [ transforms; artifacts ] @ ledgers @ bench)
+
+let runInspect (idA: string) (idB: string option) (asJson: bool) : int =
     match Run.storeDir () with
     | None ->
         eprintfn "No run store is configured. Set PROJECTION_LEDGER_DIR to capture runs, then inspect by run id."
@@ -1235,28 +1293,24 @@ let runInspect (idA: string) (idB: string option) : int =
                 eprintfn "Run %s is not in the store at %s." idA dir
                 1
             | Some r ->
-                printfn "Run %s — %s" r.RunId r.Command
-                printfn "  at %s — %s%s" r.Ts r.Outcome (match r.Canary with Some c -> sprintf " (canary %s)" c | None -> "")
-                printfn "  transforms: %d registered, %d applied, %d declined" r.Registered r.Applied r.Declined
-                printfn "  events: %d   artifacts: %s"
-                    (List.length r.Events)
-                    (if Map.isEmpty r.Artifacts then "none" else r.Artifacts |> Map.toList |> List.map fst |> String.concat ", ")
-                (match r.Ledgers with
-                 | [] -> ()
-                 | ledgers ->
-                     printfn "  ledgers extended:"
-                     for l in ledgers do
-                         match l with
-                         | Run.JournalRef d -> printfn "    journal %s" d
-                         | Run.EpisodeRef (t, o) -> printfn "    episode %s ordinal %d" t o)
-                (match r.Bench with
-                 | None -> ()
-                 | Some b ->
-                     let top = b.Stats |> List.sortByDescending (fun s -> s.TotalMs) |> List.truncate 5
-                     if not (List.isEmpty top) then
-                         printfn "  slowest labels:"
-                         for s in top do printfn "    %-44s %6d ms" s.Label s.TotalMs)
-                0
+                let view = buildInspectView r
+                // Interactive on a real terminal — the dig-as-motion Navigator (#11/#18);
+                // piped / --json / --query render the SAME document one-shot (the headless
+                // lens). The predicate matches the answer channel's: a redirected stdout,
+                // a machine format, or a query all mean "no TUI, give me the document".
+                let interactive =
+                    Intervene.isInteractive ()
+                    && not System.Console.IsOutputRedirected
+                    && not asJson
+                    && Option.isNone TtyRenderer.queryPath.Value
+                if interactive then
+                    // The Navigator's ambient depth is 0 — everything collapsed beneath the
+                    // dug spine, so `→` REVEALS (the crisp one-thread motion); `OpenPath`
+                    // (the cursor) is the only thing open.
+                    Navigator.run 0 view
+                else
+                    TtyRenderer.renderAnswer asJson View.defaultDepth view
+                    0
         | Some idB ->
             match load idA, load idB with
             | None, _ ->

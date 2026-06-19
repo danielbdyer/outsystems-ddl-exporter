@@ -429,8 +429,8 @@ let main argv =
         0
     | [||] -> runList ()
     | [| "init" |] -> runInit ()
-    | [| "inspect"; runId |] -> runInspect runId None
-    | [| "inspect"; runA; runB |] -> runInspect runA (Some runB)
+    | [| "inspect"; runId |] -> runInspect runId None forceJson
+    | [| "inspect"; runA; runB |] -> runInspect runA (Some runB) forceJson
     | [| "setup" |] -> runSetup None
     | [| "setup"; "--conn"; ref |] -> runSetup (Some ref)
     | [| "survey" |] -> runSurvey ()
