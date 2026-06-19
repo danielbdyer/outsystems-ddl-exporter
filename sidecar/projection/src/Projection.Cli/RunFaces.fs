@@ -1512,8 +1512,11 @@ let runExplain (configPath: string) (ssKeyText: string) (asJson: bool) (depth: i
             let diags =
                 (report.Diagnostics @ report.PassDiagnostics)
                 |> List.filter (fun d -> match d.SsKey with Some k -> matchesKey k | None -> false)
-            TtyRenderer.renderAnswer asJson depth (explainView ssKeyText trail diags)
-            if List.isEmpty trail && List.isEmpty diags then 1 else 0
+            // L2 — explain is a read surface too: dig the transform trail + findings live
+            // on a terminal, one-shot when piped. `present` returns 0; the empty-match case
+            // keeps its 1 exit (the "nothing found" signal) after the view is shown either way.
+            let shown = Navigator.present asJson depth (explainView ssKeyText trail diags)
+            if List.isEmpty trail && List.isEmpty diags then 1 else shown
 
 /// P4 (REPORTING_HORIZON polish) — `suggest-config <config> [--apply <out>]`.
 /// Run the projection, collect every actionable `SuggestedConfig` from the
