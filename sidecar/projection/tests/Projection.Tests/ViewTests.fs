@@ -114,7 +114,7 @@ let ``View: the board build carries its data into json (consumer round-trip)`` (
     let r : RunLedger.Readiness =
         { TotalRuns = 10; CanaryRuns = 10; ConsecutiveGreen = 10
           LastCanary = Some "green"; Threshold = 10; Eligible = true }
-    let v = TtyRenderer.buildReadinessView r [ "green"; "red"; "green" ] "/x/runs.jsonl"
+    let v = TtyRenderer.buildReadinessView r [ "green"; "red"; "green" ] [] "/x/runs.jsonl"
     let blocks = (json v).GetProperty("blocks").EnumerateArray() |> Seq.toList
     let kinds = blocks |> List.map (fun b -> nonNull (b.GetProperty("kind").GetString()))
     Assert.Contains("hero", kinds)
@@ -415,6 +415,7 @@ let ``View: every case renders to plain AND json without throwing (DU totality)`
           "field",      View.Field("k", "v", View.Warn)
           "meter",      View.Meter("m", 3, 10, "3 / 10")
           "dots",       View.Dots("history", [ "green"; "red" ])
+          "spark",      View.Spark("trend", [ 3; 5; 2; 8 ])
           "timeline",   View.Timeline("cutover", [ "green"; "red" ], 3, 10, Some 1)
           "table",      View.Table([ "env"; "grant" ], [ [ "uat", View.Ok; "covered", View.Ok ]; [ "prod", View.Warn; "missing", View.Warn ] ])
           "trail",      View.Trail("steps", [ "naming", Some "rename"; "fk", None ])
@@ -523,3 +524,36 @@ let ``Bench surface: benchView is a Table carrying the per-label stats in both l
         |> Seq.find (fun b -> nonNull (b.GetProperty("kind").GetString()) = "table")
     let firstCell = (table.GetProperty("rows").EnumerateArray() |> Seq.head).EnumerateArray() |> Seq.head
     Assert.Equal("emit.statements", nonNull (firstCell.GetProperty("text").GetString()))
+
+// --- trend surfaces (#14 — Theme.sparkline gets its first producer) ----------
+// Discriminating predicate: a Spark compresses a numeric series into one ▁▂▃▄▅▆▇█
+// line for the human, while `toJson` keeps the raw numbers the glyph hid — one
+// value, two lenses. The readiness board is its first consumer: the changeset trend
+// joins the canary dots.
+
+[<Fact>]
+let ``View: a Spark renders the series as a sparkline (plain) and carries the raw numbers (json) (#14)`` () =
+    let v = View.Spark("changes / run", [ 1; 4; 2; 8; 3 ])
+    // pretty/plain lens — the label + at least one sparkline bar glyph
+    let p = plain v
+    Assert.Contains("changes / run", p)
+    Assert.True(
+        [ "▁"; "▂"; "▃"; "▄"; "▅"; "▆"; "▇"; "█" ] |> List.exists (fun g -> p.Contains g),
+        sprintf "no sparkline glyph in %s" p)
+    // json lens — the SAME value: the raw series the glyph compressed
+    let j = json v
+    Assert.Equal("spark", j.GetProperty("kind").GetString())
+    let vals = j.GetProperty("values").EnumerateArray() |> Seq.map (fun e -> e.GetInt32()) |> Seq.toList
+    Assert.Equal<int list>([ 1; 4; 2; 8; 3 ], vals)
+
+[<Fact>]
+let ``View: the readiness board renders the changeset sparkline beside the dots (#14 consumer)`` () =
+    let r : RunLedger.Readiness =
+        { TotalRuns = 12; CanaryRuns = 12; ConsecutiveGreen = 5
+          LastCanary = Some "green"; Threshold = 10; Eligible = false }
+    let v = TtyRenderer.buildReadinessView r [ "green"; "green" ] [ 40; 22; 9; 3 ] "/x/runs.jsonl"
+    let kinds =
+        (json v).GetProperty("blocks").EnumerateArray()
+        |> Seq.map (fun b -> nonNull (b.GetProperty("kind").GetString())) |> Seq.toList
+    Assert.Contains("spark", kinds)     // the changeset trend joined the board
+    Assert.Contains("dots", kinds)      // beside the canary dots

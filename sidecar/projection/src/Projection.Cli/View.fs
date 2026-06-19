@@ -60,6 +60,11 @@ type View =
     | Meter of label: string * filled: int * total: int * suffix: string
     /// Canary-history dots (green ● / red ✕).
     | Dots of label: string * verdicts: string list
+    /// A sparkline of a numeric series — min..max mapped across `▁▂▃▄▅▆▇█`
+    /// (`Theme.sparkline`). A trend at a glance (changeset size / coverage /
+    /// warnings over runs). `toJson` carries the raw series so the machine lens
+    /// keeps the numbers the glyph compresses.
+    | Spark of label: string * values: int list
     /// The cutover timeline header — the canary-history strip (`cells`, newest
     /// last) with an optional `present` marker, beside the R6 gate meter
     /// (`filled`/`total`). The spine of the display (`DYNAMIC_DISPLAY` §4): where
@@ -259,6 +264,10 @@ let rec private writeBlock (console: IAnsiConsole) (opts: RenderOptions) (indent
                 indent (Theme.muted (Markup.Escape label)) (Theme.meter filled total) (Markup.Escape suffix))
     | Dots (label, verdicts) ->
         safeMarkupLine console (sprintf "%s%s   %s" indent (Theme.muted (Markup.Escape label)) (Theme.canaryDotsMarkup verdicts))
+    | Spark (label, values) ->
+        // The series as `▁▂▃▄▅▆▇█` (universal glyphs, safe — no escape); accent-colored
+        // for the pretty channel, plain on NoColors. The numbers ride `toJson`.
+        safeMarkupLine console (sprintf "%s%s   %s" indent (Theme.muted (Markup.Escape label)) (Theme.accent (Theme.sparkline values)))
     | Timeline (label, cells, filled, total, present) ->
         // The strip + the R6 gate meter on one line — the present marker rides
         // the dots, the cutover ratio trails (e.g. `●●●●✕●●▸  ▇▇▇▇▇▇▇░░░  7/10`).
@@ -464,6 +473,12 @@ let rec toJson (v: View) : JsonNode =
         let a = JsonArray()
         for x in verdicts do a.Add(s x)
         obj [ "kind", s "dots"; "label", s label; "verdicts", a ]
+    | Spark (label, values) ->
+        // The raw series rides the machine lens — the sparkline glyph compresses it,
+        // `toJson` keeps the numbers (the one-substrate law).
+        let a = JsonArray()
+        for x in values do a.Add(i x)
+        obj [ "kind", s "spark"; "label", s label; "values", a ]
     | Timeline (label, cells, filled, total, present) ->
         // The full series + present index ride the structure regardless of the
         // pretty marker — the machine lens never loses the arc.

@@ -1135,8 +1135,13 @@ let runReadiness () : int =
             let r = RunLedger.readiness records
             let recent =
                 records |> List.choose (fun e -> e.Canary) |> List.rev |> List.truncate 16 |> List.rev
+            // #14 — the changeset trend: registered transforms per run over the last 16
+            // runs, as a sparkline beside the dots (a settling model trends down toward
+            // cutover). Same window as `recent`.
+            let series =
+                records |> List.map (fun e -> e.Registered) |> List.rev |> List.truncate 16 |> List.rev
             // Human channel — the themed cutover board (color on a TTY, plain piped).
-            TtyRenderer.renderReadinessBoard r recent (RunLedger.ledgerPath dir)
+            TtyRenderer.renderReadinessBoard r recent series (RunLedger.ledgerPath dir)
             // Machine channel — one structured summary.readiness event (CI gates
             // on `eligible`).
             LogSink.emit

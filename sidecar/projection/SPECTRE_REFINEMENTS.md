@@ -239,6 +239,20 @@ had. Core's `Bench.renderTable` is untouched (still read by `PerfHarnessScenario
 orphaned — the doc's "keep Core's table" honored. This is `View.Table`'s first
 PRODUCTION consumer, so the primitive is no longer test-only.
 
+### Shipped next (2026-06-18) — #14: trend surfaces (the dead sparkline gets a producer)
+
+**`Theme.sparkline` finally has a caller.** A `Spark of label * values: int list`
+case — `writeBlock` renders the series as `▁▂▃▄▅▆▇█` (accent-colored, plain on
+NoColors); `toJson` keeps the raw numbers the glyph compressed (one substrate). Its
+consumer is the readiness board: a `changes / run` sparkline beside the canary dots,
+of the per-run REGISTERED transform count — a settling model (fewer changes toward
+cutover) reads as a falling line, a readiness signal in its own right. **Data note
+(the doc's premise was partly off, like #19/#24):** `RunLedger` stores no
+profile-time / coverage / warnings — its `LedgerRecord` carries `Registered` /
+`Applied` / `Declined` — so the realistic series is the changeset count, not the
+metrics the doc imagined. The board signature took one new `series: int list` param
+(6 sites threaded, renders only at ≥ 2 points). The DU totality test gained `spark`.
+
 ---
 
 ## 1 — The map (all 25, by theme)
@@ -261,7 +275,7 @@ Status key: **● shipped** · **◐ partial / starved** · **○ not started** 
 | 11 | **Responsive width** | B | ● |
 | 12 | `View.Table` primitive | C. New primitives | ● |
 | 13 | Fold `Bench.renderTable` into the substrate | C | ● |
-| 14 | Trend surfaces (use `Theme.sparkline`) | C | ○ |
+| 14 | Trend surfaces (use `Theme.sparkline`) | C | ● |
 | 15 | `Trail` gets cap-and-name + depth | C | ● |
 | 16 | Unify the collapsed-affordance vocabulary | C | ● |
 | 17 | Implement `--query` over `toJson` | D. The query lens | ● |
@@ -492,7 +506,7 @@ read by the perf scenarios (`PerfHarnessScenarios`, `GeneratorScaleTests`, `Benc
 — so the Core boundary holds and nothing is orphaned. The `View.Table`'s first
 production consumer.
 
-### 14 · Trend surfaces — `Theme.sparkline` has zero callers  ○
+### 14 · Trend surfaces — `Theme.sparkline` has zero callers  ●  *(landed 2026-06-18; see §0)*
 
 **Problem.** `Theme.sparkline` is built and **unused** (grep confirms: defined in
 `Theme.fs`, referenced nowhere). `RunLedger` already accumulates the per-run
@@ -506,6 +520,16 @@ only the block + the surface are missing.
 **Cheat sheet.** The readiness board (`TtyRenderer.buildReadinessView`) is the
 natural host — it already renders `Dots` (canary history); a sparkline of
 profile-time over the same runs sits beside it.
+
+**As shipped.** A `Spark of label * values: int list` case (`toJson` keeps the raw
+series; `writeBlock` renders `Theme.sparkline` accent-colored, plain on NoColors).
+The readiness board is its consumer — a `changes / run` sparkline beside the canary
+dots, of the per-run REGISTERED transform count (a settling model trends down toward
+cutover). **Data note (the premise was partly off):** the doc imagined "profile-time
+/ coverage / warnings", but `RunLedger`'s `LedgerRecord` stores none of those — only
+`Registered` / `Applied` / `Declined` — so the realistic series is the changeset
+count. The board signature widened by one `series: int list` param (6 sites,
+threaded; renders only at ≥ 2 points). The DU totality test gained `spark`.
 
 ### 15 · `Trail` gets cap-and-name + depth  ●  *(landed 2026-06-18; see §0)*
 

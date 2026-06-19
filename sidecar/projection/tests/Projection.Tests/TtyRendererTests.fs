@@ -89,7 +89,7 @@ let private renderBoard (r: RunLedger.Readiness) (recent: string list) : string 
                 ColorSystem = ColorSystemSupport.NoColors,
                 Out = AnsiConsoleOutput(sw)))
     console.Profile.Width <- 200
-    TtyRenderer.renderReadinessBoardTo console r recent "/x/runs.jsonl"
+    TtyRenderer.renderReadinessBoardTo console r recent [] "/x/runs.jsonl"
     sw.ToString()
 
 [<Fact>]
