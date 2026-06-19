@@ -200,6 +200,18 @@ affordance rather than adding new information (the unification is of FORM, the
 deliberate consistency the item asks for — noted honestly, not hidden). A `ViewTests`
 assertion pins the hint and the singular grammar (`1 item`, never `1 items`).
 
+### Shipped next (2026-06-18) — #15: `Trail` gets the `Lane` discipline (a long chain isn't a wall)
+
+**The transform chain caps and reveals like a move-lane.** `View.Trail` (explain's
+transform chain) rendered flat at any depth — a thousand-step chain a wall. Its
+`writeBlock` arm now mirrors `Lane`: the label carries the `▾`/`▸` marker, the steps
+reveal at `opts.Depth ≥ 1` capped at `opts.LaneCap` with an `and N more` tail, and a
+collapsed trail hints `▸ N step(s)` (the #16 affordance). `toJson` is untouched — the
+full chain always rides the machine lens (the one-substrate law). The `ExplainViewTests`
+assert the json lens only, so the change was free there; a new `ViewTests` pins the
+cap, the collapse, and the full-chain-in-json law. (`LaneCap` kept its name — the #4
+rename-to-`BreadthCap` is a deferred cosmetic.)
+
 ---
 
 ## 1 — The map (all 25, by theme)
@@ -223,7 +235,7 @@ Status key: **● shipped** · **◐ partial / starved** · **○ not started** 
 | 12 | `View.Table` primitive | C. New primitives | ○ |
 | 13 | Fold `Bench.renderTable` into the substrate | C | ○ |
 | 14 | Trend surfaces (use `Theme.sparkline`) | C | ○ |
-| 15 | `Trail` gets cap-and-name + depth | C | ○ |
+| 15 | `Trail` gets cap-and-name + depth | C | ● |
 | 16 | Unify the collapsed-affordance vocabulary | C | ● |
 | 17 | Implement `--query` over `toJson` | D. The query lens | ● |
 | 18 | Per-node addressing (`ViewPath`) | D | ○ |
@@ -449,7 +461,7 @@ only the block + the surface are missing.
 natural host — it already renders `Dots` (canary history); a sparkline of
 profile-time over the same runs sits beside it.
 
-### 15 · `Trail` gets cap-and-name + depth  ○
+### 15 · `Trail` gets cap-and-name + depth  ●  *(landed 2026-06-18; see §0)*
 
 **Problem.** `View.Trail` (explain's transform chain, `RunFaces.explainView`)
 renders flat regardless of depth — a long chain is a wall, with none of the §12
@@ -458,6 +470,14 @@ renders flat regardless of depth — a long chain is a wall, with none of the §
 **Fix.** Give `Trail` the same cap-and-name tail and depth-gated reveal `Lane`
 has in `writeBlock`. Falls out almost free once #4's `RenderOptions.LaneCap`
 (rename → `BreadthCap`) is the shared knob.
+
+**As shipped.** The `Trail` arm now mirrors `Lane`: the label carries the `▾`/`▸`
+marker, the steps reveal at `opts.Depth ≥ 1` capped at `opts.LaneCap` with an `and N
+more` tail, and a collapsed trail hints `▸ N step(s)` (the #16 affordance). `toJson`
+is untouched — the full chain always rides the machine lens. (`LaneCap` kept its
+name; the #4 rename-to-`BreadthCap` is a future cosmetic, not done here.) The
+`ExplainViewTests` assert the json lens only, so they were unaffected; a new
+`ViewTests` pins the cap + collapse + the full-chain-in-json law.
 
 ### 16 · Unify the collapsed-affordance vocabulary  ●  *(landed 2026-06-18; see §0)*
 

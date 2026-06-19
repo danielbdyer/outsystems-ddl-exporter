@@ -262,11 +262,27 @@ let rec private writeBlock (console: IAnsiConsole) (opts: RenderOptions) (indent
                 (Theme.meter filled total)
                 (Theme.muted (sprintf "%d/%d" filled total)))
     | Trail (label, steps) ->
-        safeMarkupLine console (sprintf "%s%s" indent (Theme.muted (Markup.Escape label)))
-        for (step, detail) in steps do
-            match detail with
-            | Some d -> safeMarkupLine console (sprintf "%s%s %s %s %s" indent Theme.arrow (Markup.Escape step) Theme.dot (Markup.Escape d))
-            | None   -> safeMarkupLine console (sprintf "%s%s %s" indent Theme.arrow (Markup.Escape step))
+        // #15 — the transform chain gets the same depth-gated reveal + breadth cap a
+        // `Lane` has: the label always shows (with the ▾/▸ marker); the steps reveal
+        // at depth ≥ 1, capped at `opts.LaneCap` with an `and N more` tail so a long
+        // chain isn't a wall; collapsed (depth < 1) it hints `▸ N steps`. The full
+        // chain always rides `toJson` — the machine lens never caps.
+        let n = List.length steps
+        let m = marker opts.Depth (n > 0)
+        safeMarkupLine console (sprintf "%s%s %s" indent m (Theme.muted (Markup.Escape label)))
+        if opts.Depth >= 1 then
+            for (step, detail) in steps |> List.truncate opts.LaneCap do
+                match detail with
+                | Some d -> safeMarkupLine console (sprintf "%s%s %s %s %s" indent Theme.arrow (Markup.Escape step) Theme.dot (Markup.Escape d))
+                | None   -> safeMarkupLine console (sprintf "%s%s %s" indent Theme.arrow (Markup.Escape step))
+            if n > opts.LaneCap then
+                safeMarkupLine console (
+                    sprintf "%s   %s %s" indent (Theme.muted Theme.collapsed)
+                        (Theme.muted (sprintf "and %s more" (Theme.humane (n - opts.LaneCap)))))
+        elif n > 0 then
+            safeMarkupLine console (
+                sprintf "%s   %s %s" indent (Theme.muted Theme.collapsed)
+                    (Theme.muted (sprintf "%s step%s" (Theme.humane n) (if n = 1 then "" else "s"))))
     | Lane (glyph, label, st, items) ->
         // A lane is a pre-baked disclosure of one move: the summary line always
         // shows (the true count, humane); the items reveal at depth ≥ 1, capped

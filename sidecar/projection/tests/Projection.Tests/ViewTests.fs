@@ -243,6 +243,24 @@ let ``View: a collapsed Lane hints its item count — the affordance matches a c
     Assert.DoesNotContain("1 items", single)
 
 [<Fact>]
+let ``View: a Trail caps its steps and names the remainder, collapses at depth 0 — json keeps the full chain (#15)`` () =
+    // The transform chain gains the Lane discipline: capped + depth-gated on the
+    // pretty lens, full on the machine lens — a long chain is no longer a wall.
+    let steps = [ for i in 1 .. 20 -> (sprintf "Pass%02d" i, None) ]
+    let v = View.Trail("transforms", steps)
+    // depth 1 — the chain reveals, capped at laneCap(12) with a named remainder
+    let deep = plainToDepth 1 v
+    Assert.Contains("Pass01", deep)
+    Assert.DoesNotContain("Pass20", deep)
+    Assert.Contains("and 8 more", deep)        // 20 − laneCap(12) = 8, named
+    // depth 0 — the chain collapses to a hint, like a collapsed Lane
+    let shallow = plainToDepth 0 v
+    Assert.DoesNotContain("Pass01", shallow)
+    Assert.Contains("20 steps", shallow)
+    // json — the full 20-step chain rides regardless (the machine lens never caps)
+    Assert.Equal(20, (json v).GetProperty("steps").EnumerateArray() |> Seq.length)
+
+[<Fact>]
 let ``View: a Lane renders its items (plain) and carries glyph/status/items (json)`` () =
     let v = View.Lane("⟲", "rename", View.Ok, [ "OrderHeader → SalesOrder"; "OrderDetail → SalesOrderLine" ])
     // pretty/plain lens — the label + both items
