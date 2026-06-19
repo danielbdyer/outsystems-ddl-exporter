@@ -152,7 +152,7 @@ let ``Watch board: an active stage breathes the phase's spinner frame (#20)`` ()
     // the static ▸, so a long-running stage visibly pulses as the drain loop advances `phase`.
     let active, _ = Watch.apply Watch.empty "extract.started" Map.empty   // one Active stage
     let console = new TestConsole()
-    console.Write(Watch.toRenderableWith [] 2 active)
+    console.Write(Watch.toRenderableWith [] 2 false active)   // header, phase 2, not stalled
     let out = console.Output
     Assert.Contains(Theme.spinner 2, out)               // the active line wears the phase-2 frame
     Assert.DoesNotContain(Theme.spinner 3, out)         // and only that frame (phase is fixed per render)

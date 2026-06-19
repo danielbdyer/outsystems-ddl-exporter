@@ -730,8 +730,18 @@ an idle wake — and the idle wake only fires when there's an active stage (no i
 the dwell stays a floor on CHANGES, never added to the pulse. `rowMarkup`/`boardRows`/
 `toRenderableWith` thread `phase` (a static render — stored boards, `toRenderable`, tests —
 passes 0). Pinned by `Theme.spinner` (cycle + total) and a board-render test (an active line
-wears the phase's frame). **Still follow-on:** the stall-aware ETA (degrade the estimate to
-"stalled" when progress goes quiet) — the drain loop already has the `lastRenderAt` it needs.
+wears the phase's frame).
+
+**The stall-aware ETA rides it too (shipped same day — #20 breathing complete).** When an
+ACTIVE stage goes quiet past `stallThresholdMs` (3s of wall-clock with no new frame, measured
+by the drain loop off `lastRenderAt`), the board calls it `stalled`: the estimate degrades
+from `~Ns remaining` to `stalled` (`progressTextStalled` — the honest §13 rule, never a
+frozen countdown that keeps lying), and the spinner FREEZES + mutes (motion stops, so the
+operator sees the stall both ways). `stalled` threads beside `phase` with NO test churn —
+`progressText`/`lineText` keep their signatures as `false`-wrappers over new
+`progressTextStalled`/`lineTextWith` siblings. Pinned by a stall test (`stalled` replaces the
+ETA, the count still shows, it threads into the active line). #20 and its breathing are
+DONE: off-thread dwell · spinner · stall-aware ETA.
 
 ### 21 · Instrument the other runs onto the spine  ◐
 
