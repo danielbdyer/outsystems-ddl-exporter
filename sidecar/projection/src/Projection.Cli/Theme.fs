@@ -28,6 +28,17 @@ let expanded  = "▾"
 /// LEAF (a `Field`/`Hero` has no disclosure marker). Glyph-first (it survives
 /// `NO_COLOR`); the pretty lens accents it.
 let cursor    = "❯"
+
+/// The breathing spinner frames (#20 follow-on) — a braille cycle the live board's
+/// ACTIVE stage line shows in place of the static `▸`, advanced on the drain loop's
+/// periodic wake so a long-running stage visibly breathes between events. A glyph
+/// cycle (not color), so it reads on `NO_COLOR`; the pretty lens accents it.
+let private spinnerFrames = [| "⠋"; "⠙"; "⠹"; "⠸"; "⠼"; "⠴"; "⠦"; "⠧"; "⠇"; "⠏" |]
+
+/// The spinner frame for a render tick — `phase` (a monotonically-advancing counter)
+/// maps onto the cycle. Total over any non-negative `phase`.
+let spinner (phase: int) : string =
+    spinnerFrames.[(abs phase) % spinnerFrames.Length]
 /// The width-cap tail (#11): a value truncated to the console's usable columns
 /// ends in this, the visible signal that the pretty lens dropped a tail the
 /// machine lens (`toJson`) still carries. One column, universal — survives

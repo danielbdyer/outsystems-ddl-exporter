@@ -145,3 +145,14 @@ let ``renderWatchOn propagates a body exception as itself and never hangs (#20 t
         | None -> Assert.True(false, "renderWatchOn must propagate the body's exception")
     finally
         Environment.SetEnvironmentVariable("PROJECTION_WATCH_DWELL_MS", null)
+
+[<Fact>]
+let ``Watch board: an active stage breathes the phase's spinner frame (#20)`` () =
+    // The breathing spinner — an Active stage line renders `Theme.spinner phase` in place of
+    // the static ▸, so a long-running stage visibly pulses as the drain loop advances `phase`.
+    let active, _ = Watch.apply Watch.empty "extract.started" Map.empty   // one Active stage
+    let console = new TestConsole()
+    console.Write(Watch.toRenderableWith [] 2 active)
+    let out = console.Output
+    Assert.Contains(Theme.spinner 2, out)               // the active line wears the phase-2 frame
+    Assert.DoesNotContain(Theme.spinner 3, out)         // and only that frame (phase is fixed per render)

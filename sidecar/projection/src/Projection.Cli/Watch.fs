@@ -376,23 +376,25 @@ module Watch =
         board.Title
         |> Option.map (fun cmd -> statementText "watch.runTitle" (Map.ofList [ "command", box cmd ]))
 
-    let private rowMarkup (line: StageLine) : string =
+    // `phase` advances the ACTIVE line's breathing spinner (#20 follow-on); every other
+    // state ignores it (its glyph is fixed). A static render passes phase 0.
+    let private rowMarkup (phase: int) (line: StageLine) : string =
         let text = Markup.Escape(lineText line)
         match line.State with
-        | Pending  -> sprintf "%s  %s" (Theme.muted Theme.pending)   (Theme.muted text)
-        | Active _ -> sprintf "%s  %s" (Theme.accent Theme.collapsed) (Theme.bold text)
-        | Done _   -> sprintf "%s  %s" Theme.ok                       (Theme.green text)
-        | Halted _ -> sprintf "%s  %s" (Theme.red Theme.bad)          (Theme.red text)
+        | Pending  -> sprintf "%s  %s" (Theme.muted Theme.pending)        (Theme.muted text)
+        | Active _ -> sprintf "%s  %s" (Theme.accent (Theme.spinner phase)) (Theme.bold text)
+        | Done _   -> sprintf "%s  %s" Theme.ok                           (Theme.green text)
+        | Halted _ -> sprintf "%s  %s" (Theme.red Theme.bad)              (Theme.red text)
 
     /// The board's rows — the optional run-title header above, the stage arc, and
     /// the done-frame (the §13 follow-on + recorded-run identity) once the run
     /// reaches its terminal stage.
-    let private boardRows (board: Board) : IRenderable list =
+    let private boardRows (phase: int) (board: Board) : IRenderable list =
         let titleRow =
             match titleText board with
             | Some t -> [ Markup(Theme.muted (Markup.Escape t)) :> IRenderable ]
             | None   -> []
-        let stageRows = board.Stages |> List.map (fun s -> Markup(rowMarkup s) :> IRenderable)
+        let stageRows = board.Stages |> List.map (fun s -> Markup(rowMarkup phase s) :> IRenderable)
         let doneRow =
             match doneFrameText board with
             | Some t ->
@@ -406,15 +408,22 @@ module Watch =
         titleRow @ stageRows @ doneRow
 
     /// Project the board onto a Spectre renderable — the live target the
-    /// `LiveDisplayContext` updates in place.
+    /// `LiveDisplayContext` updates in place. A STATIC render (stored board, tests)
+    /// passes spinner phase 0; the live drain loop threads the advancing phase.
     let toRenderable (board: Board) : IRenderable =
-        Rows(boardRows board) :> IRenderable
+        Rows(boardRows 0 board) :> IRenderable
+
+    /// True iff a stage is in progress — the live drain loop pulses the spinner only
+    /// when there is an active line to breathe (no idle churn otherwise).
+    let hasActiveStage (board: Board) : bool =
+        board.Stages |> List.exists (fun s -> match s.State with Active _ -> true | _ -> false)
 
     /// Like `toRenderable`, but with leading header rows above the arc — the
     /// cutover timeline strip (`DYNAMIC_DISPLAY` §4: where this run sits on the
-    /// path to the R6 gate). An empty header is the bare board (unchanged).
-    let toRenderableWith (header: IRenderable list) (board: Board) : IRenderable =
-        Rows(header @ boardRows board) :> IRenderable
+    /// path to the R6 gate). An empty header is the bare board (unchanged). `phase`
+    /// advances the active line's breathing spinner (#20 follow-on).
+    let toRenderableWith (header: IRenderable list) (phase: int) (board: Board) : IRenderable =
+        Rows(header @ boardRows phase board) :> IRenderable
 
     // -- the live shell --------------------------------------------------------
 
@@ -487,7 +496,7 @@ module Watch =
         // House-NEW concurrency primitive (grep: the first BlockingCollection in src) — its
         // re-open is gated by the live board going off-thread (CLAUDE.md §7; DECISIONS 2026-06-19).
         let queue = new System.Collections.Concurrent.BlockingCollection<LogSink.Envelope>()
-        console.Live(toRenderableWith header board.Value).Start(fun ctx ->
+        console.Live(toRenderableWith header 0 board.Value).Start(fun ctx ->
             // Enqueue-and-return: the subscriber holds emit's lock only for the `Add`. A late
             // emit after `CompleteAdding` throws — swallowed; no such emit exists in practice
             // (the body's `withWriter` returns before the queue is completed). FORWARD NOTE:
@@ -505,6 +514,9 @@ module Watch =
                     finally queue.CompleteAdding())
             try
                 let mutable draining = true
+                // The breathing spinner's render tick (#20 follow-on) — advanced on EVERY
+                // render (a folded frame OR an idle wake), so the active stage visibly breathes.
+                let mutable phase = 0
                 while draining do
                     let mutable env = Unchecked.defaultof<LogSink.Envelope>
                     if queue.TryTake(&env, 100) then
@@ -514,10 +526,18 @@ module Watch =
                             let sleep = dwellMs floorMs lastRenderAt sw.ElapsedMilliseconds
                             if sleep > 0L then System.Threading.Thread.Sleep(int sleep)
                             lastRenderAt <- sw.ElapsedMilliseconds
-                            ctx.UpdateTarget(toRenderableWith header board.Value)
+                            phase <- phase + 1
+                            ctx.UpdateTarget(toRenderableWith header phase board.Value)
                             ctx.Refresh()
                     elif queue.IsCompleted then
                         draining <- false
+                    elif hasActiveStage board.Value then
+                        // Idle wake (no new frame in 100ms) with a stage in progress — advance
+                        // the spinner and refresh so the active line breathes between events. No
+                        // fold, no dwell sleep (the dwell is a floor on CHANGES, not added here).
+                        phase <- phase + 1
+                        ctx.UpdateTarget(toRenderableWith header phase board.Value)
+                        ctx.Refresh()
                 // Join the producer for its exit code — `GetAwaiter().GetResult()` so a body
                 // exception propagates as ITSELF, not wrapped in `AggregateException`.
                 code <- bodyTask.GetAwaiter().GetResult()

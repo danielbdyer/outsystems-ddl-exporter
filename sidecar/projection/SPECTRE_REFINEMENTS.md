@@ -720,8 +720,18 @@ render `IOException` (broken pipe / closed terminal) can't orphan the body with 
 pinned to `Null` — the one fix a 5-lens adversarial concurrency pass surfaced (lock-held +
 frame-loss certified clean by happens-before trace). Gate: pure pool 3558/0; the 4
 `WatchInjectionTests` unchanged + `emit never sleeps (#20)` (timing, wide margin) +
-`propagates a body exception as itself and never hangs` (the teardown path). **Follow-on
-(NOT #20):** the breathing spinner + stall-aware ETA ride the drain loop's 100ms wake.
+`propagates a body exception as itself and never hangs` (the teardown path).
+
+**The breathing spinner rides it (shipped same day).** The drain loop's 100ms idle wake now
+advances a spinner `phase`: an ACTIVE stage line renders `Theme.spinner phase` (a braille
+cycle, glyph-first so it reads on `NO_COLOR`) in place of the static `▸`, so a long-running
+stage visibly BREATHES between events. `phase` advances on EVERY render — a folded frame OR
+an idle wake — and the idle wake only fires when there's an active stage (no idle churn);
+the dwell stays a floor on CHANGES, never added to the pulse. `rowMarkup`/`boardRows`/
+`toRenderableWith` thread `phase` (a static render — stored boards, `toRenderable`, tests —
+passes 0). Pinned by `Theme.spinner` (cycle + total) and a board-render test (an active line
+wears the phase's frame). **Still follow-on:** the stall-aware ETA (degrade the estimate to
+"stalled" when progress goes quiet) — the drain loop already has the `lastRenderAt` it needs.
 
 ### 21 · Instrument the other runs onto the spine  ◐
 
