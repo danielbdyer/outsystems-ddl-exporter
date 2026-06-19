@@ -146,3 +146,174 @@ let ``Comparison lanes: a changed attribute facet lands in a reshape lane badged
         | Some (View.Warn, items) -> Assert.NotEmpty items
         | other -> Assert.Fail(sprintf "expected a Warn reshape lane, got %A" other)
     | Error e -> Assert.Fail e
+
+// --- delta-grade: every channel the diff computes reaches the walkable lanes -
+// Discriminating predicate: `CatalogDiff` computes the reference / index /
+// sequence / attribute-add-remove-rename / kind-facet channels (C1 + NM-17), but
+// the pre-delta-grade `renderCatalogLanes` surfaced ONLY kind moves + attribute
+// reshapes — every other channel rode through invisibly. These pin each channel
+// onto its move-lane, channel-qualified, so the L2 Navigator can dig it live. A
+// naive renderer drops the channel (its change is silent in the walkable diff).
+
+/// Swap the `Sales` module's kinds for a target catalog (the move fixture seam).
+let private withKinds (kinds: Kind list) : Catalog =
+    Catalog.create [ { salesModule with Kinds = kinds } ] [] |> Result.value
+
+let private laneItems (label: string) (d: CatalogDiff) : string list =
+    Comparison.renderCatalogLanes d
+    |> List.tryPick (function View.Lane(_, l, _, items) when l = label -> Some items | _ -> None)
+    |> Option.defaultValue []
+
+[<Fact>]
+let ``delta-grade lanes: a reshaped reference surfaces in the reshape lane (the relationship channel)`` () =
+    // Order's FK to Customer gains ON DELETE CASCADE — a ReferenceFacet.OnDelete reshape.
+    let order' = { order with References = order.References |> List.map (fun r -> { r with OnDelete = Cascade }) }
+    match Comparison.catalog.Between sampleCatalog (withKinds [ customer; order'; country ]) with
+    | Ok d -> Assert.Contains(laneItems "reshape" d, fun (s: string) -> s.StartsWith "relationship ")
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``delta-grade lanes: an added index surfaces in the add lane (the index channel)`` () =
+    let customer' = { customer with Indexes = [ Index.ofKeyColumns (idxKey ["Customer"; "Name"]) (mkName "IX_Customer_Name") [ customerNameKey ] ] }
+    match Comparison.catalog.Between sampleCatalog (withKinds [ customer'; order; country ]) with
+    | Ok d -> Assert.Contains(laneItems "add" d, fun (s: string) -> s.StartsWith "index ")
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``delta-grade lanes: an added sequence surfaces in the add lane (the sequence channel)`` () =
+    let seq_ =
+        Sequence.create (testKey "OS_SEQ_Test") (mkName "SEQ_Test") "dbo" "bigint"
+            (Some 1M) (Some 1M) (Some 1M) (Some 99M) false NoCache None
+        |> Result.value
+    let target = Catalog.create [ salesModule ] [ seq_ ] |> Result.value
+    match Comparison.catalog.Between sampleCatalog target with
+    | Ok d -> Assert.Contains(laneItems "add" d, fun (s: string) -> s.StartsWith "sequence ")
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``delta-grade lanes: an added column surfaces in the add lane (the attribute channel)`` () =
+    let customer' = { customer with Attributes = customer.Attributes @ [ Attribute.create (attrKey ["Customer"; "Email"]) (mkName "Email") Text ] }
+    match Comparison.catalog.Between sampleCatalog (withKinds [ customer'; order; country ]) with
+    | Ok d -> Assert.Contains(laneItems "add" d, fun (s: string) -> s.StartsWith "column ")
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``delta-grade lanes: a removed column surfaces in the remove lane (the attribute channel)`` () =
+    let customer' = { customer with Attributes = customer.Attributes |> List.filter (fun a -> a.SsKey <> customerTenantKey) }
+    match Comparison.catalog.Between sampleCatalog (withKinds [ customer'; order; country ]) with
+    | Ok d -> Assert.Contains(laneItems "remove" d, fun (s: string) -> s.StartsWith "column ")
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``delta-grade lanes: a renamed column surfaces in the rename lane carrying old then new`` () =
+    let customer' = { customer with Attributes = customer.Attributes |> List.map (fun a -> if a.SsKey = customerNameKey then { a with Name = mkName "FullName" } else a) }
+    match Comparison.catalog.Between sampleCatalog (withKinds [ customer'; order; country ]) with
+    | Ok d -> Assert.Contains(laneItems "rename" d, fun (s: string) -> s.StartsWith "column " && s.Contains "→" && s.Contains "FullName")
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``delta-grade lanes: a changed kind-own facet surfaces in the reshape lane (the table itself)`` () =
+    // Customer drops its TenantScoped modality — a KindFacet.Modality reshape of the table.
+    let customer' = { customer with Modality = [] }
+    match Comparison.catalog.Between sampleCatalog (withKinds [ customer'; order; country ]) with
+    | Ok d -> Assert.Contains(laneItems "reshape" d, fun (s: string) -> s.StartsWith "table " && s.Contains "modality")
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``delta-grade one-substrate: a surfaced reference reshape rides the json lens too`` () =
+    let order' = { order with References = order.References |> List.map (fun r -> { r with OnDelete = Cascade }) }
+    match Comparison.catalog.Between sampleCatalog (withKinds [ customer; order'; country ]) with
+    | Ok d ->
+        let j = (View.toJson (Comparison.renderCatalogChange d)).ToJsonString()
+        Assert.Contains("relationship", j)   // the machine lens carries the richer lane item
+    | Error e -> Assert.Fail e
+
+// --- delta-grade: before/after EVIDENCE on the reshape lanes -----------------
+// Discriminating predicate: an ALTER reshape shows the VALUE it moved between
+// (`type text → integer`), resolved from the diff's retained source/target — not
+// merely WHICH facet changed. A naive renderer names the facet but drops the
+// evidence, so the operator can't read the ALTER from the lane.
+
+[<Fact>]
+let ``delta-grade evidence: an attribute type reshape shows before then after (the column ALTER)`` () =
+    let target = reshapeTarget (fun a -> { a with Type = Integer })   // Customer.Name: Text → Integer
+    match Comparison.catalog.Between sampleCatalog target with
+    | Ok d -> Assert.Contains(laneItems "reshape" d, fun (s: string) -> s.Contains "type text → integer")
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``delta-grade evidence: a nullability reshape shows not null then null`` () =
+    let target = reshapeTarget (fun a -> { a with Column = ColumnRealization.create "NAME" true |> Result.value })
+    match Comparison.catalog.Between sampleCatalog target with
+    | Ok d -> Assert.Contains(laneItems "reshape" d, fun (s: string) -> s.Contains "nullability not null → null")
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``delta-grade evidence: a reference on-delete reshape shows the action moved (the FK ALTER)`` () =
+    let order' = { order with References = order.References |> List.map (fun r -> { r with OnDelete = Cascade }) }
+    match Comparison.catalog.Between sampleCatalog (withKinds [ customer; order'; country ]) with
+    | Ok d -> Assert.Contains(laneItems "reshape" d, fun (s: string) -> s.Contains "on delete no action → cascade")
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``delta-grade evidence one-substrate: the before-after value rides the json lens`` () =
+    let target = reshapeTarget (fun a -> { a with Type = Integer })
+    match Comparison.catalog.Between sampleCatalog target with
+    | Ok d ->
+        let j = (View.toJson (Comparison.renderCatalogChange d)).ToJsonString()
+        Assert.Contains("type text", j)   // the value (not just the facet word) reaches the machine lens
+    | Error e -> Assert.Fail e
+
+/// Render the change document through the plain (NoColors) lens, deep enough to
+/// reveal every lane's items — the human-lens side of the one-substrate law.
+let private renderChangeDeep (d: CatalogDiff) : string =
+    use sw = new System.IO.StringWriter()
+    let console =
+        Spectre.Console.AnsiConsole.Create(
+            Spectre.Console.AnsiConsoleSettings(
+                Ansi = Spectre.Console.AnsiSupport.No,
+                ColorSystem = Spectre.Console.ColorSystemSupport.NoColors,
+                Out = Spectre.Console.AnsiConsoleOutput(sw)))
+    console.Profile.Width <- 200
+    View.writeToDepth console 4 (Comparison.renderCatalogChange d)
+    sw.ToString()
+
+[<Fact>]
+let ``delta-grade render: a rich change renders every channel by name, with before-after evidence (human lens)`` () =
+    let customer' =
+        { customer with
+            Modality = []   // reshape table: modality
+            Attributes =
+                (customer.Attributes
+                 |> List.choose (fun a ->
+                     if a.SsKey = customerTenantKey then None                              // remove column TenantId
+                     elif a.SsKey = customerNameKey then Some { a with Type = Integer }     // reshape column Name: type
+                     else Some a))
+                @ [ Attribute.create (attrKey ["Customer"; "Email"]) (mkName "Email") Text ]  // add column Email
+            Indexes = [ Index.ofKeyColumns (idxKey ["Customer"; "Name"]) (mkName "IX_Customer_Name") [ customerNameKey ] ] }
+    let order' = { order with References = order.References |> List.map (fun r -> { r with OnDelete = Cascade }) }
+    let seq_ =
+        Sequence.create (testKey "OS_SEQ_Ticket") (mkName "SEQ_Ticket") "dbo" "bigint"
+            (Some 1M) (Some 1M) (Some 1M) (Some 99M) false NoCache None |> Result.value
+    let target = Catalog.create [ { salesModule with Kinds = [ customer'; order'; country ] } ] [ seq_ ] |> Result.value
+    match Comparison.catalog.Between sampleCatalog target with
+    | Ok d ->
+        let r = renderChangeDeep d
+        Assert.Contains("column Customer.Name: type text → integer", r)                  // attribute evidence, by name
+        Assert.Contains("relationship Order.Customer: on delete no action → cascade", r) // FK evidence, by name
+        Assert.Contains("column Customer.Email", r)                                      // added column
+        Assert.Contains("index Customer.IX_Customer_Name", r)                            // added index
+        Assert.Contains("sequence SEQ_Ticket", r)                                        // added sequence
+        Assert.Contains("table Customer: modality", r)                                   // kind-facet reshape
+        Assert.Contains("column Customer.TenantId", r)                                   // removed column
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``delta-grade legibility: lanes name entities by their Name, never the raw SsKey`` () =
+    let target = reshapeTarget (fun a -> { a with Type = Integer })
+    match Comparison.catalog.Between sampleCatalog target with
+    | Ok d ->
+        let items = laneItems "reshape" d
+        Assert.Contains(items, fun (s: string) -> s.StartsWith "column Customer.Name:")   // the clean qualified Name
+        Assert.True(items |> List.forall (fun s -> not (s.Contains "OS_ATTR")), "no raw synthesized key leaks into a lane")
+    | Error e -> Assert.Fail e
