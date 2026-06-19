@@ -247,6 +247,12 @@ module Watch =
     /// long enough to read a stage line, short enough not to drag the run).
     let defaultDwellMs : int64 = 120L
 
+    /// How long an ACTIVE stage may go without a new frame before the board calls it
+    /// `stalled` (#20) — the estimate stops counting down and the spinner freezes. Wall-clock
+    /// since the last change, measured by the drain loop. Generous (a few seconds) so normal
+    /// inter-event gaps never read as a stall; honest once the work has genuinely gone quiet.
+    let stallThresholdMs : int64 = 3000L
+
     /// The sleep to enforce before showing the next frame: the remainder of the
     /// floor not already covered by the time since the last frame. A stage that
     /// already ran longer than the floor yields `0` (never delayed); the result is
@@ -275,12 +281,19 @@ module Watch =
     /// non-positive `Total` is an unknown denominator (a lazily-streamed producer
     /// that cannot count ahead) — then it is a plain count-up, `142 applied`, no
     /// fraction, no estimate (§13 — show the count without a misstated bar).
-    let progressText (p: Progress) : string =
+    let progressTextStalled (stalled: bool) (p: Progress) : string =
         if p.Total <= 0 then sprintf "%s applied" (Theme.humane p.Done)
+        elif stalled then
+            // The estimate degrades HONESTLY (#20 / §13): a stage that has gone quiet shows
+            // `stalled`, never a frozen `~Ns remaining` that keeps lying as the clock runs.
+            sprintf "%s of %s · stalled" (Theme.humane p.Done) (Theme.humane p.Total)
         else
             match etaText p with
             | Some eta -> sprintf "%s of %s · %s" (Theme.humane p.Done) (Theme.humane p.Total) eta
             | None     -> sprintf "%s of %s" (Theme.humane p.Done) (Theme.humane p.Total)
+
+    /// The progress fragment with no stall (the calm default — every existing caller).
+    let progressText (p: Progress) : string = progressTextStalled false p
 
     /// The voiced text of a `Voice` statement code, filled from the payload. The
     /// board reuses the §13 stage copy (`<stage>.started` gerund; the resultative
@@ -297,15 +310,16 @@ module Watch =
     /// The operator line for a stage — the gerund while active, the resultative
     /// (with the measured duration) once complete. Pure + voiced, so it is
     /// testable against the twelve-rule banned list.
-    let lineText (line: StageLine) : string =
+    let lineTextWith (stalled: bool) (line: StageLine) : string =
         // The gerund names the stage (its identity on the board); the glyph
-        // carries the state (faint `○` pending, `▸` active, `✓` done).
+        // carries the state (faint `○` pending, `▸` active, `✓` done). `stalled`
+        // degrades only the ACTIVE+progress estimate (the drain loop's wall-clock signal).
         match line.State with
         | Pending -> statementText (line.Key + ".started") Map.empty
         | Active prog ->
             let baseText = statementText (line.Key + ".started") Map.empty
             match prog with
-            | Some p -> sprintf "%s · %s" baseText (progressText p)
+            | Some p -> sprintf "%s · %s" baseText (progressTextStalled stalled p)
             | None   -> baseText
         | Done dur ->
             let baseText = statementText "summary.stageCompleted" (Map.ofList [ "stage", box line.Key ])
@@ -319,6 +333,9 @@ module Watch =
             match dur with
             | Some ms -> sprintf "%s · %s" baseText (secondsText ms)
             | None    -> baseText
+
+    /// The stage line with no stall (the calm default — every existing caller / test).
+    let lineText (line: StageLine) : string = lineTextWith false line
 
     /// The run's terminal stage — the last line on the board (the arc's final
     /// stage). `None` for an empty board. The done-frame's follow-on is keyed off
@@ -376,23 +393,30 @@ module Watch =
         board.Title
         |> Option.map (fun cmd -> statementText "watch.runTitle" (Map.ofList [ "command", box cmd ]))
 
-    let private rowMarkup (line: StageLine) : string =
-        let text = Markup.Escape(lineText line)
+    // `phase` advances the ACTIVE line's breathing spinner (#20 follow-on); every other
+    // state ignores it (its glyph is fixed). A static render passes phase 0.
+    let private rowMarkup (phase: int) (stalled: bool) (line: StageLine) : string =
+        let text = Markup.Escape(lineTextWith stalled line)
         match line.State with
-        | Pending  -> sprintf "%s  %s" (Theme.muted Theme.pending)   (Theme.muted text)
-        | Active _ -> sprintf "%s  %s" (Theme.accent Theme.collapsed) (Theme.bold text)
-        | Done _   -> sprintf "%s  %s" Theme.ok                       (Theme.green text)
-        | Halted _ -> sprintf "%s  %s" (Theme.red Theme.bad)          (Theme.red text)
+        | Pending  -> sprintf "%s  %s" (Theme.muted Theme.pending)        (Theme.muted text)
+        | Active _ ->
+            // A live stage spins (accent + bold); a STALLED one freezes the spinner (a fixed
+            // frame) and goes muted — the motion stops and the text reads `stalled`, so the
+            // operator sees the stall both ways. `stalled` is only ever true for an active line.
+            let glyph = if stalled then Theme.muted (Theme.spinner 0) else Theme.accent (Theme.spinner phase)
+            sprintf "%s  %s" glyph (if stalled then Theme.muted text else Theme.bold text)
+        | Done _   -> sprintf "%s  %s" Theme.ok                           (Theme.green text)
+        | Halted _ -> sprintf "%s  %s" (Theme.red Theme.bad)              (Theme.red text)
 
     /// The board's rows — the optional run-title header above, the stage arc, and
     /// the done-frame (the §13 follow-on + recorded-run identity) once the run
     /// reaches its terminal stage.
-    let private boardRows (board: Board) : IRenderable list =
+    let private boardRows (phase: int) (stalled: bool) (board: Board) : IRenderable list =
         let titleRow =
             match titleText board with
             | Some t -> [ Markup(Theme.muted (Markup.Escape t)) :> IRenderable ]
             | None   -> []
-        let stageRows = board.Stages |> List.map (fun s -> Markup(rowMarkup s) :> IRenderable)
+        let stageRows = board.Stages |> List.map (fun s -> Markup(rowMarkup phase stalled s) :> IRenderable)
         let doneRow =
             match doneFrameText board with
             | Some t ->
@@ -406,15 +430,22 @@ module Watch =
         titleRow @ stageRows @ doneRow
 
     /// Project the board onto a Spectre renderable — the live target the
-    /// `LiveDisplayContext` updates in place.
+    /// `LiveDisplayContext` updates in place. A STATIC render (stored board, tests)
+    /// passes spinner phase 0; the live drain loop threads the advancing phase.
     let toRenderable (board: Board) : IRenderable =
-        Rows(boardRows board) :> IRenderable
+        Rows(boardRows 0 false board) :> IRenderable
+
+    /// True iff a stage is in progress — the live drain loop pulses the spinner only
+    /// when there is an active line to breathe (no idle churn otherwise).
+    let hasActiveStage (board: Board) : bool =
+        board.Stages |> List.exists (fun s -> match s.State with Active _ -> true | _ -> false)
 
     /// Like `toRenderable`, but with leading header rows above the arc — the
     /// cutover timeline strip (`DYNAMIC_DISPLAY` §4: where this run sits on the
-    /// path to the R6 gate). An empty header is the bare board (unchanged).
-    let toRenderableWith (header: IRenderable list) (board: Board) : IRenderable =
-        Rows(header @ boardRows board) :> IRenderable
+    /// path to the R6 gate). An empty header is the bare board (unchanged). `phase`
+    /// advances the active line's breathing spinner (#20 follow-on).
+    let toRenderableWith (header: IRenderable list) (phase: int) (stalled: bool) (board: Board) : IRenderable =
+        Rows(header @ boardRows phase stalled board) :> IRenderable
 
     // -- the live shell --------------------------------------------------------
 
@@ -434,18 +465,6 @@ module Watch =
             | true, v when v >= 0L -> v
             | _ -> defaultDwellMs
 
-    /// Run `body` under a live stage board on stderr, driven by the `LogSink` stage
-    /// stream. The board updates in place as stages fill in; each visible
-    /// transition is held ≥ the dwell floor before the next is shown. Channel 1
-    /// (NDJSON to stderr) is suppressed for the duration so it does not interleave
-    /// with the live region; the subscriber renders exactly what channel 1 would
-    /// have written (one substrate, two lenses).
-    ///
-    /// **Scope assumption (synchronous run).** The subscriber enforces the dwell by
-    /// sleeping the emitting thread, which holds the `LogSink` lock briefly — safe
-    /// because the run is synchronous + single-threaded and channel 1 is nulled
-    /// (no contention). A future concurrent / async emitter would move the dwell to
-    /// a drain loop on a render thread (`THE_VOICE_BUILD_MAP.md` §4.3).
     /// The cutover timeline strip line (pretty markup) — the canary-history dots
     /// with the present marker, the R6 gate meter, and the ratio (`●●●●✕●●▸
     /// ▇▇▇▇▇▇▇░░░ 7/10`). Pure over (cells, filled, total) so the content is
@@ -472,36 +491,91 @@ module Watch =
                 [ Markup(cutoverStripText cells r.ConsecutiveGreen r.Threshold) :> IRenderable ]
         | None -> []
 
+    /// Run `body` under a live stage board on stderr, driven by the `LogSink` stage
+    /// stream. The board updates in place as stages fill in; each visible transition is
+    /// held ≥ the dwell floor before the next is shown. Channel 1 (NDJSON) is suppressed
+    /// for the duration so it does not interleave with the live region; the board renders
+    /// exactly what channel 1 would have written (one substrate, two lenses).
+    ///
+    /// **The dwell is OFF the emitting thread (#20).** The subscriber only ENQUEUES an
+    /// envelope (fast, inside emit's lock) and returns, so `emit` NEVER sleeps under the
+    /// `LogSink` lock — the board is safe for a future concurrent realization stream. The
+    /// drain loop on the ctx-affine Live thread folds the board, sleeps the dwell remainder,
+    /// and refreshes; `body` runs on a BACKGROUND thread (it is the producer). Everything
+    /// but the queue stays drain-loop-local (`board` / `sw` / `lastRenderAt`), so there is
+    /// no shared-state race — the queue (FIFO, thread-safe) carries the order `emit`'s single
+    /// lock already serialized. Teardown: `body`'s `finally` completes the queue, the loop
+    /// drains the remainder (the done-frame is never lost), `clearSubscribers` runs, then we
+    /// JOIN `body` for its exit code — so the caller still sees one synchronous, deterministic
+    /// call (`Live.Start` blocks here), which is why `WatchInjectionTests` can assert on the
+    /// final board with the dwell pinned to 0.
     let renderWatchOn (console: IAnsiConsole) (spine: RunSpine) (floorMs: int64) (body: unit -> int) : int =
         let board = ref (seededOf spine)
         let header = cutoverHeader ()
         let sw = System.Diagnostics.Stopwatch.StartNew()
         let mutable lastRenderAt = 0L
         let mutable code = 0
-        console.Live(toRenderableWith header board.Value).Start(fun ctx ->
-            let subscriber (env: LogSink.Envelope) =
-                let board', changed = applyEnvelope board.Value env
-                if changed then
-                    board.Value <- board'
-                    let now = sw.ElapsedMilliseconds
-                    let sleep = dwellMs floorMs lastRenderAt now
-                    if sleep > 0L then System.Threading.Thread.Sleep(int sleep)
-                    lastRenderAt <- sw.ElapsedMilliseconds
-                    ctx.UpdateTarget(toRenderableWith header board.Value)
-                    ctx.Refresh()
-            LogSink.addSubscriber subscriber
-            // Suppress channel 1 (NDJSON) for the live region via the SCOPED
-            // `withWriter` — it saves the PRIOR writer and restores it on exit,
-            // rather than hardcoding `Console.Error`. This is what lets the board
-            // compose UNDER an outer `--pretty` null (`OperatorConsole.withRun`
-            // nulls channel 1 for the whole bracket): the prior is already Null,
-            // so it stays Null and the bracket's terminal `summary.runComplete`
-            // is suppressed too — no NDJSON leaks between the board and the
-            // verdict panel. Standalone (publish faces, no outer null) the prior
-            // is `Console.Error`, restored unchanged — the established behavior.
+        // House-NEW concurrency primitive (grep: the first BlockingCollection in src) — its
+        // re-open is gated by the live board going off-thread (CLAUDE.md §7; DECISIONS 2026-06-19).
+        let queue = new System.Collections.Concurrent.BlockingCollection<LogSink.Envelope>()
+        console.Live(toRenderableWith header 0 false board.Value).Start(fun ctx ->
+            // Enqueue-and-return: the subscriber holds emit's lock only for the `Add`. A late
+            // emit after `CompleteAdding` throws — swallowed; no such emit exists in practice
+            // (the body's `withWriter` returns before the queue is completed). FORWARD NOTE:
+            // when the concurrent realization stream this off-thread move enables actually
+            // lands, re-check this swallow — a second emitter racing the
+            // [CompleteAdding .. clearSubscribers] window could drop a frame silently.
+            LogSink.addSubscriber (fun env -> try queue.Add env with _ -> ())
+            // `body` on a background thread — it is the producer; the drain loop below owns
+            // THIS (ctx-affine) thread. `withWriter Null` nulls channel 1 for the body's span
+            // (saved/restored — so the board composes under an outer `--pretty` null exactly
+            // as before); the `finally` completes the queue to signal the drain to finish.
+            let bodyTask =
+                System.Threading.Tasks.Task.Run(fun () ->
+                    try LogSink.withWriter System.IO.TextWriter.Null body
+                    finally queue.CompleteAdding())
             try
-                code <- LogSink.withWriter System.IO.TextWriter.Null body
+                let mutable draining = true
+                // The breathing spinner's render tick (#20 follow-on) — advanced on EVERY
+                // render (a folded frame OR an idle wake), so the active stage visibly breathes.
+                let mutable phase = 0
+                while draining do
+                    let mutable env = Unchecked.defaultof<LogSink.Envelope>
+                    if queue.TryTake(&env, 100) then
+                        let board', changed = applyEnvelope board.Value env
+                        if changed then
+                            board.Value <- board'
+                            let sleep = dwellMs floorMs lastRenderAt sw.ElapsedMilliseconds
+                            if sleep > 0L then System.Threading.Thread.Sleep(int sleep)
+                            lastRenderAt <- sw.ElapsedMilliseconds
+                            phase <- phase + 1
+                            // a fold JUST happened — never stalled
+                            ctx.UpdateTarget(toRenderableWith header phase false board.Value)
+                            ctx.Refresh()
+                    elif queue.IsCompleted then
+                        draining <- false
+                    elif hasActiveStage board.Value then
+                        // Idle wake (no new frame in 100ms) with a stage in progress — advance
+                        // the spinner and refresh so the active line breathes between events. No
+                        // fold, no dwell sleep (the dwell is a floor on CHANGES, not added here).
+                        // If the active stage has gone quiet past the threshold, render it STALLED
+                        // (frozen spinner + the estimate degrades to `stalled`) — honest, not a
+                        // countdown that keeps lying while nothing moves.
+                        let stalled = sw.ElapsedMilliseconds - lastRenderAt > stallThresholdMs
+                        phase <- phase + 1
+                        ctx.UpdateTarget(toRenderableWith header phase stalled board.Value)
+                        ctx.Refresh()
+                // Join the producer for its exit code — `GetAwaiter().GetResult()` so a body
+                // exception propagates as ITSELF, not wrapped in `AggregateException`.
+                code <- bodyTask.GetAwaiter().GetResult()
             finally
+                // Reap the producer on EVERY exit path. The happy path joined above; this also
+                // covers a RENDER throw — `ctx.UpdateTarget`/`Refresh` can raise `IOException`
+                // on a TTY whose pipe broke / terminal closed mid-run — which would otherwise
+                // bypass the join and ORPHAN the body on a pool thread with the global writer
+                // pinned to `Null`. Swallowed so the render exception stays primary; the body's
+                // own bracket records its outcome regardless.
+                (try bodyTask.GetAwaiter().GetResult() |> ignore with _ -> ())
                 LogSink.clearSubscribers ())
         code
 

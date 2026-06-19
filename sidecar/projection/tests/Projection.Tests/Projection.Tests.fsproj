@@ -44,7 +44,9 @@
     <Compile Include="RunHistoryTests.fs" />
     <Compile Include="ThemeTests.fs" />
     <Compile Include="ViewTests.fs" />
+    <Compile Include="QueryTests.fs" />
     <Compile Include="ExplainViewTests.fs" />
+    <Compile Include="NavigatorTests.fs" />
     <Compile Include="TtyRendererTests.fs" />
     <Compile Include="InterveneTests.fs" />
     <Compile Include="RelaxationStoreTests.fs" />

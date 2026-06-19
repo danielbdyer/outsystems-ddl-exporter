@@ -1,5 +1,13 @@
 module Projection.Cli.RunFaces
 
+// STOPGAP (2026-06-18 — pre-existing, NOT part of the Spectre render chapter): `task{}`
+// bodies in this file (a tightening-violation check; the streaming-load loop) trip
+// FS3511 (an `await` inside a branch/loop) under Release's static state-machine
+// optimization, which TreatWarningsAsErrors promotes to an error — breaking the Release
+// build (and the perf-gate). The code is correct (dynamic state-machine fallback).
+// Suppressed to unblock Release; the proper restructure is tracked as a separate task.
+#nowarn "3511"
+
 // LINT-ALLOW-FILE: CLI run-face operator-facing prose and terminal SQL-text at
 //   the CLI boundary use string composition; the structural argument surface is
 //   the typed MovementSpec / Intent (Projection.Pipeline).
@@ -1135,8 +1143,13 @@ let runReadiness () : int =
             let r = RunLedger.readiness records
             let recent =
                 records |> List.choose (fun e -> e.Canary) |> List.rev |> List.truncate 16 |> List.rev
+            // #14 — the changeset trend: registered transforms per run over the last 16
+            // runs, as a sparkline beside the dots (a settling model trends down toward
+            // cutover). Same window as `recent`.
+            let series =
+                records |> List.map (fun e -> e.Registered) |> List.rev |> List.truncate 16 |> List.rev
             // Human channel — the themed cutover board (color on a TTY, plain piped).
-            TtyRenderer.renderReadinessBoard r recent (RunLedger.ledgerPath dir)
+            TtyRenderer.renderReadinessBoard r recent series (RunLedger.ledgerPath dir)
             // Machine channel — one structured summary.readiness event (CI gates
             // on `eligible`).
             LogSink.emit
@@ -1208,7 +1221,94 @@ let runSetup (connRef: string option) : int =
 /// NOTE: the card named this verb `diff <runA> <runB>`; that name is held
 /// by the shipped catalog-refs diff, so the run-grain projection lands
 /// under `inspect` — one noun per surface, the collision named here.
-let runInspect (idA: string) (idB: string option) : int =
+/// A stored run as a navigable `View` (#18/#11) — the inspect surface joins the
+/// one substrate (it gained the json / `--query` lens the old printf face never
+/// had — the one-substrate law). A `Doc` of the essence (a `Hero` verdict + the
+/// counts) over diggable `Disclosure`s (transforms / artifacts / ledgers / bench),
+/// which the Navigator's `→` opens one at a time. `toJson` carries the whole tree.
+let buildInspectView (r: Run.Run) : View.View =
+    let outcomeStatus =
+        match r.Outcome.ToLowerInvariant() with
+        | "ok" | "success" | "succeeded" | "green" -> View.Ok
+        | "error" | "failed" | "failure" | "red" -> View.Bad
+        | _ -> View.Neutral
+    let header =
+        [ View.Hero (outcomeStatus, sprintf "%s — %s" r.RunId r.Command)
+          View.Field ("at", r.Ts, View.Neutral)
+          View.Field (
+              "outcome",
+              r.Outcome + (match r.Canary with Some c -> sprintf "   ·   canary %s" c | None -> ""),
+              outcomeStatus)
+          View.Field ("events", string (List.length r.Events), View.Neutral) ]
+    let transforms =
+        View.Disclosure (
+            sprintf "transforms   ·   %d registered, %d applied, %d declined" r.Registered r.Applied r.Declined,
+            View.Neutral,
+            [ View.Field ("registered", string r.Registered, View.Neutral)
+              View.Field ("applied", string r.Applied, View.Neutral)
+              View.Field ("declined", string r.Declined, View.Neutral) ])
+    let artifacts =
+        let arts = r.Artifacts |> Map.toList
+        View.Disclosure (
+            sprintf "artifacts   ·   %d" (List.length arts),
+            View.Neutral,
+            (if List.isEmpty arts then [ View.Note "none" ]
+             else arts |> List.map (fun (k, _) -> View.Field (k, "", View.Neutral))))
+    let ledgers =
+        match r.Ledgers with
+        | [] -> []
+        | ls ->
+            [ View.Disclosure (
+                  sprintf "ledgers extended   ·   %d" (List.length ls),
+                  View.Neutral,
+                  (ls
+                   |> List.map (fun l ->
+                       match l with
+                       | Run.JournalRef d -> View.Field ("journal", d, View.Neutral)
+                       | Run.EpisodeRef (t, o) -> View.Field ("episode", sprintf "%s ordinal %d" t o, View.Neutral)))) ]
+    let bench =
+        match r.Bench with
+        | None -> []
+        | Some b ->
+            let top = b.Stats |> List.sortByDescending (fun s -> s.TotalMs) |> List.truncate 8
+            if List.isEmpty top then []
+            else
+                [ View.Disclosure (
+                      sprintf "slowest labels   ·   top %d" (List.length top),
+                      View.Neutral,
+                      (top |> List.map (fun s -> View.Field (s.Label, sprintf "%d ms" s.TotalMs, View.Neutral)))) ]
+    View.Doc (header @ [ transforms; artifacts ] @ ledgers @ bench)
+
+/// `inspect` with NO id (#10 — the time axis) — open the LATEST run and walk the
+/// ledger with `PgUp`/`PgDn`. The runs are sorted newest-first (ISO `Ts` sorts
+/// chronologically as text); the interactive Navigator scrubs them, each frame
+/// re-`buildInspectView`'d on demand (the I/O closure the Navigator stays free of).
+/// Piped / `--json` / `--query` render the newest run's document one-shot — same
+/// one-substrate fallback as `inspect <id>`.
+let runInspectHistory (asJson: bool) : int =
+    match Run.storeDir () with
+    | None ->
+        eprintfn "No run store is configured. Set PROJECTION_LEDGER_DIR to capture runs, then inspect."
+        4
+    | Some dir ->
+        match Run.list dir |> List.sortByDescending (fun r -> r.Ts) with
+        | [] ->
+            eprintfn "No runs in the store at %s." dir
+            1
+        | (newest :: _) as runs ->
+            let interactive =
+                Intervene.isInteractive ()
+                && not System.Console.IsOutputRedirected
+                && not asJson
+                && Option.isNone TtyRenderer.queryPath.Value
+            if interactive then
+                let arr = List.toArray runs
+                Navigator.runHistory arr.Length 0 (fun i -> buildInspectView arr.[i])
+            else
+                TtyRenderer.renderAnswer asJson View.defaultDepth (buildInspectView newest)
+                0
+
+let runInspect (idA: string) (idB: string option) (asJson: bool) : int =
     match Run.storeDir () with
     | None ->
         eprintfn "No run store is configured. Set PROJECTION_LEDGER_DIR to capture runs, then inspect by run id."
@@ -1222,28 +1322,9 @@ let runInspect (idA: string) (idB: string option) : int =
                 eprintfn "Run %s is not in the store at %s." idA dir
                 1
             | Some r ->
-                printfn "Run %s — %s" r.RunId r.Command
-                printfn "  at %s — %s%s" r.Ts r.Outcome (match r.Canary with Some c -> sprintf " (canary %s)" c | None -> "")
-                printfn "  transforms: %d registered, %d applied, %d declined" r.Registered r.Applied r.Declined
-                printfn "  events: %d   artifacts: %s"
-                    (List.length r.Events)
-                    (if Map.isEmpty r.Artifacts then "none" else r.Artifacts |> Map.toList |> List.map fst |> String.concat ", ")
-                (match r.Ledgers with
-                 | [] -> ()
-                 | ledgers ->
-                     printfn "  ledgers extended:"
-                     for l in ledgers do
-                         match l with
-                         | Run.JournalRef d -> printfn "    journal %s" d
-                         | Run.EpisodeRef (t, o) -> printfn "    episode %s ordinal %d" t o)
-                (match r.Bench with
-                 | None -> ()
-                 | Some b ->
-                     let top = b.Stats |> List.sortByDescending (fun s -> s.TotalMs) |> List.truncate 5
-                     if not (List.isEmpty top) then
-                         printfn "  slowest labels:"
-                         for s in top do printfn "    %-44s %6d ms" s.Label s.TotalMs)
-                0
+                // The dig-as-motion Navigator on a real terminal (#11/#18); piped / --json
+                // / --query render the SAME document one-shot (L2 `present` owns the choice).
+                Navigator.present asJson View.defaultDepth (buildInspectView r)
         | Some idB ->
             match load idA, load idB with
             | None, _ ->
@@ -1296,8 +1377,9 @@ let runDiff (refAText: string) (refBText: string) (asJson: bool) (depth: int) : 
                 Console.Error.WriteLine(sprintf "projection diff: %s" e)
                 2
             | Ok d ->
-                TtyRenderer.renderAnswer asJson depth (Comparison.renderCatalogChange d)
-                0
+                // L2 — the changeset becomes a CONTROL surface: dig the move-lanes live on
+                // a terminal, the same document one-shot when piped / --json / --query.
+                Navigator.present asJson depth (Comparison.renderCatalogChange d)
 
 /// `projection compare <A> <B>` — NM-71/WP9: the read-only multi-environment
 /// readiness check. Resolves both operands to catalogs (the `Ref` machinery,
@@ -1430,8 +1512,11 @@ let runExplain (configPath: string) (ssKeyText: string) (asJson: bool) (depth: i
             let diags =
                 (report.Diagnostics @ report.PassDiagnostics)
                 |> List.filter (fun d -> match d.SsKey with Some k -> matchesKey k | None -> false)
-            TtyRenderer.renderAnswer asJson depth (explainView ssKeyText trail diags)
-            if List.isEmpty trail && List.isEmpty diags then 1 else 0
+            // L2 — explain is a read surface too: dig the transform trail + findings live
+            // on a terminal, one-shot when piped. `present` returns 0; the empty-match case
+            // keeps its 1 exit (the "nothing found" signal) after the view is shown either way.
+            let shown = Navigator.present asJson depth (explainView ssKeyText trail diags)
+            if List.isEmpty trail && List.isEmpty diags then 1 else shown
 
 /// P4 (REPORTING_HORIZON polish) — `suggest-config <config> [--apply <out>]`.
 /// Run the projection, collect every actionable `SuggestedConfig` from the

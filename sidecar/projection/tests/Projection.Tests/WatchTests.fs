@@ -330,6 +330,21 @@ let ``Watch progress: an unknown total is a plain count-up — no fraction, no e
     Assert.DoesNotContain("of 0", text)
     Assert.DoesNotContain("remaining", text)
 
+[<Fact>]
+let ``Watch progress: a stalled active stage degrades the estimate to 'stalled', not a frozen countdown (#20)`` () =
+    let p : Watch.Progress = { Done = 142; Total = 300; ElapsedMs = 4000L }
+    // live: the honest estimate shows
+    let live = Watch.progressTextStalled false p
+    Assert.Contains("remaining", live)
+    Assert.DoesNotContain("stalled", live)
+    // stalled: the estimate degrades to `stalled` — never a countdown that keeps lying
+    let stalled = Watch.progressTextStalled true p
+    Assert.Contains("stalled", stalled)
+    Assert.DoesNotContain("remaining", stalled)
+    Assert.Contains("142 of 300", stalled)   // the honest count still shows
+    // it threads into the active stage line
+    Assert.Contains("stalled", Watch.lineTextWith true { Key = "load"; State = Watch.Active(Some p) })
+
 // ---------------------------------------------------------------------------
 // the run frame — the title header + the terminal done-frame (§13 D1)
 // ---------------------------------------------------------------------------

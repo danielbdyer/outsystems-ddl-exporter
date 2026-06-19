@@ -94,3 +94,65 @@ let ``renderWatchOn suppresses channel 1 during the body and restores the prior 
     finally
         LogSink.setWriter Console.Error
         Environment.SetEnvironmentVariable("PROJECTION_WATCH_DWELL_MS", null)
+
+[<Fact>]
+let ``renderWatchOn keeps the dwell OFF the emitting thread — emit never sleeps (#20)`` () =
+    // The #20 contract: an emit only ENQUEUES and returns; it never sleeps the emitting
+    // thread (the OLD design slept it INSIDE the LogSink lock). Proof by timing with a wide
+    // margin — a 200ms dwell + two board-CHANGING emits. The old inline-sleep design would
+    // block the body for ~2 dwells (~400ms); the off-thread design returns the emits in ~0ms
+    // (the drain loop, not the body, pays the dwell). The threshold is one FULL dwell, so
+    // scheduler jitter can never false-fail (the off-thread body is ~0, an order under it).
+    let console = new TestConsole()
+    console.Profile.Capabilities.Interactive <- true
+    let bodyEmitMs = ref 0L
+    Watch.renderWatchOn console Spines.pipeline 200L (fun () ->
+        let sw = System.Diagnostics.Stopwatch.StartNew()
+        // each unique "<key>.started" appends a stage → applyEnvelope changed=true → the dwell
+        // path. Info/Transform clears the emit filter (same shape as the suppression test).
+        for k in [ "alpha"; "beta" ] do
+            LogSink.emit (LogSink.envelope LogSink.Info LogSink.Transform (k + ".started") Map.empty)
+        sw.Stop()
+        bodyEmitMs.Value <- sw.ElapsedMilliseconds
+        0)
+    |> ignore
+    Assert.True(
+        bodyEmitMs.Value < 200L,
+        sprintf "emit blocked the body for %dms — the dwell must be off the emitting thread (#20)" bodyEmitMs.Value)
+
+[<Fact>]
+let ``renderWatchOn propagates a body exception as itself and never hangs (#20 teardown)`` () =
+    // The teardown contract behind the off-thread reap: when the body (now on a background
+    // task) throws, the call propagates the ORIGINAL exception — `GetAwaiter().GetResult()`
+    // unwraps it rather than surfacing an `AggregateException` — and returns (no deadlock, the
+    // producer is reaped, subscribers cleared in the finally). Every other test runs a
+    // non-throwing body, so this is the only cover for the failure path.
+    Environment.SetEnvironmentVariable("PROJECTION_WATCH_DWELL_MS", "0")
+    try
+        let console = new TestConsole()
+        console.Profile.Capabilities.Interactive <- true
+        let boom = InvalidOperationException("body boom")
+        let thrown =
+            try
+                Watch.renderWatchOn console Spines.pipeline 0L (fun () ->
+                    LogSink.emit (LogSink.envelope LogSink.Info LogSink.Transform "alpha.started" Map.empty)
+                    raise boom)
+                |> ignore
+                None
+            with e -> Some e
+        match thrown with
+        | Some e -> Assert.Same(boom, e)   // the original exception, NOT an AggregateException wrap
+        | None -> Assert.True(false, "renderWatchOn must propagate the body's exception")
+    finally
+        Environment.SetEnvironmentVariable("PROJECTION_WATCH_DWELL_MS", null)
+
+[<Fact>]
+let ``Watch board: an active stage breathes the phase's spinner frame (#20)`` () =
+    // The breathing spinner — an Active stage line renders `Theme.spinner phase` in place of
+    // the static ▸, so a long-running stage visibly pulses as the drain loop advances `phase`.
+    let active, _ = Watch.apply Watch.empty "extract.started" Map.empty   // one Active stage
+    let console = new TestConsole()
+    console.Write(Watch.toRenderableWith [] 2 false active)   // header, phase 2, not stalled
+    let out = console.Output
+    Assert.Contains(Theme.spinner 2, out)               // the active line wears the phase-2 frame
+    Assert.DoesNotContain(Theme.spinner 3, out)         // and only that frame (phase is fixed per render)

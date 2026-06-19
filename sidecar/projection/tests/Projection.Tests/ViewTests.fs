@@ -24,6 +24,33 @@ let private plainToDepth (depth: int) (v: View.View) : string =
 
 let private plain (v: View.View) : string = plainToDepth View.defaultDepth v
 
+/// Render at an explicit `RenderOptions` (the #4 carrier) — the same NoColors plain
+/// lens, but through `writeWith` so a test can pin a custom breadth / depth / width.
+let private plainWith (opts: View.RenderOptions) (v: View.View) : string =
+    use sw = new StringWriter()
+    let console =
+        AnsiConsole.Create(
+            AnsiConsoleSettings(
+                Ansi = AnsiSupport.No, ColorSystem = ColorSystemSupport.NoColors,
+                Out = AnsiConsoleOutput(sw)))
+    console.Profile.Width <- 200
+    View.writeWith opts console v
+    sw.ToString()
+
+/// Render the plain lens at a chosen console width — the #11 width budget flows
+/// from `console.Profile.Width`, so pinning the terminal narrow exercises the width
+/// cap (truncation) the default 200-wide helpers never trip.
+let private plainAtWidth (width: int) (v: View.View) : string =
+    use sw = new StringWriter()
+    let console =
+        AnsiConsole.Create(
+            AnsiConsoleSettings(
+                Ansi = AnsiSupport.No, ColorSystem = ColorSystemSupport.NoColors,
+                Out = AnsiConsoleOutput(sw)))
+    console.Profile.Width <- width
+    View.write console v
+    sw.ToString()
+
 let private json (v: View.View) : JsonElement =
     JsonDocument.Parse((View.toJson v).ToJsonString()).RootElement.Clone()
 
@@ -87,7 +114,7 @@ let ``View: the board build carries its data into json (consumer round-trip)`` (
     let r : RunLedger.Readiness =
         { TotalRuns = 10; CanaryRuns = 10; ConsecutiveGreen = 10
           LastCanary = Some "green"; Threshold = 10; Eligible = true }
-    let v = TtyRenderer.buildReadinessView r [ "green"; "red"; "green" ] "/x/runs.jsonl"
+    let v = TtyRenderer.buildReadinessView r [ "green"; "red"; "green" ] [] "/x/runs.jsonl"
     let blocks = (json v).GetProperty("blocks").EnumerateArray() |> Seq.toList
     let kinds = blocks |> List.map (fun b -> nonNull (b.GetProperty("kind").GetString()))
     Assert.Contains("hero", kinds)
@@ -201,6 +228,39 @@ let ``View: a Lane collapses its items shallow, shows them one level deep`` () =
     Assert.Contains("OrderHeader → SalesOrder", plainToDepth 1 v)
 
 [<Fact>]
+let ``View: a collapsed Lane hints its item count — the affordance matches a collapsed Disclosure (#16)`` () =
+    // A collapsed Lane no longer leaves its items implied: it shows the same `▸ N
+    // items` affordance a collapsed Disclosure shows (`▸ N more`), so the two node
+    // kinds speak one collapsed-affordance vocabulary.
+    let items = [ "OrderHeader → SalesOrder"; "OrderDetail → SalesOrderLine"; "Customer → Account" ]
+    let shallow = plainToDepth 0 (View.Lane("⟲", "rename", View.Ok, items))
+    Assert.DoesNotContain("OrderHeader → SalesOrder", shallow)   // the item CONTENT stays hidden
+    Assert.Contains("3 items", shallow)                          // the count + affordance is hinted
+    Assert.Contains("▸", shallow)                                // with the openable marker
+    // singular reads correctly — "1 item", never "1 items"
+    let single = plainToDepth 0 (View.Lane("−", "remove", View.Bad, [ "OnlyOne" ]))
+    Assert.Contains("1 item", single)
+    Assert.DoesNotContain("1 items", single)
+
+[<Fact>]
+let ``View: a Trail caps its steps and names the remainder, collapses at depth 0 — json keeps the full chain (#15)`` () =
+    // The transform chain gains the Lane discipline: capped + depth-gated on the
+    // pretty lens, full on the machine lens — a long chain is no longer a wall.
+    let steps = [ for i in 1 .. 20 -> (sprintf "Pass%02d" i, None) ]
+    let v = View.Trail("transforms", steps)
+    // depth 1 — the chain reveals, capped at laneCap(12) with a named remainder
+    let deep = plainToDepth 1 v
+    Assert.Contains("Pass01", deep)
+    Assert.DoesNotContain("Pass20", deep)
+    Assert.Contains("and 8 more", deep)        // 20 − laneCap(12) = 8, named
+    // depth 0 — the chain collapses to a hint, like a collapsed Lane
+    let shallow = plainToDepth 0 v
+    Assert.DoesNotContain("Pass01", shallow)
+    Assert.Contains("20 steps", shallow)
+    // json — the full 20-step chain rides regardless (the machine lens never caps)
+    Assert.Equal(20, (json v).GetProperty("steps").EnumerateArray() |> Seq.length)
+
+[<Fact>]
 let ``View: a Lane renders its items (plain) and carries glyph/status/items (json)`` () =
     let v = View.Lane("⟲", "rename", View.Ok, [ "OrderHeader → SalesOrder"; "OrderDetail → SalesOrderLine" ])
     // pretty/plain lens — the label + both items
@@ -235,6 +295,130 @@ let ``View: a Lane humanizes its true count in the header (THE_VOICE §12)`` () 
     let items = [ for i in 1 .. 2140 -> sprintf "c%04d" i ]
     let v = View.Lane("+", "add", View.Ok, items)
     Assert.Contains("2,140", plainToDepth 0 v)   // the count scales; the sentence does not
+
+// --- the RenderOptions carrier (#4 — one threaded policy, not scattered consts) -
+// Discriminating predicate: the pretty-lens knobs (depth, breadth, width) ride ONE
+// `RenderOptions` value through `writeWith`, so a caller overrides the breadth cap
+// or the depth without touching a module constant — and the machine lens (`toJson`)
+// reads NONE of them, because a cap is a pretty-lens concern (the one-substrate law).
+
+[<Fact>]
+let ``RenderOptions: writeWith threads the breadth cap — a custom LaneCap overrides the default, json keeps the full list`` () =
+    // 10 items render whole under the default cap (12); an explicit LaneCap of 3
+    // proves the breadth knob is read from RenderOptions, not the old module const.
+    let items = [ for i in 1 .. 10 -> sprintf "Item%02d" i ]
+    let v = View.Lane("+", "add", View.Ok, items)
+    let p = plainWith { View.defaultOptions with Depth = 1; LaneCap = 3 } v
+    Assert.Contains("Item03", p)
+    Assert.DoesNotContain("Item04", p)
+    Assert.Contains("and 7 more", p)        // 10 − LaneCap(3) = 7, named
+    // the machine lens ignores the cap — breadth is a pretty-lens concern only
+    let kept = (json v).GetProperty("items").EnumerateArray() |> Seq.length
+    Assert.Equal(10, kept)
+
+[<Fact>]
+let ``RenderOptions: writeWith threads the depth — a deeper Depth reveals what the default collapses`` () =
+    let v =
+        View.Disclosure(
+            "Details", View.Neutral,
+            [ View.Disclosure("Inner", View.Neutral, [ View.Field("leaf", "deep", View.Bad) ]) ])
+    // the nested leaf sits two levels down: collapsed at Depth 0, revealed at Depth 2 —
+    // the Depth field flows through writeWith's carrier, not a bare int parameter.
+    Assert.DoesNotContain("deep", plainWith { View.defaultOptions with Depth = 0 } v)
+    Assert.Contains("deep", plainWith { View.defaultOptions with Depth = 2 } v)
+
+// --- responsive width (#11 — the width cap, dual of the §12 breadth cap) -----
+// Discriminating predicate: a value wider than the console is TRUNCATED with `…`
+// on the pretty lens (one line, no mid-cell wrap), while `toJson` keeps the full
+// untruncated value — width is a pretty-lens concern only, the same law `laneCap`
+// obeys. The budget flows from `console.Profile.Width`, so it bites on a narrow
+// terminal and never on the wide (200-col) one the other tests pin.
+
+[<Fact>]
+let ``View: a long Field value truncates to the console width with an ellipsis and does not wrap — json keeps the full value (#11)`` () =
+    let full = "dropping index IX_Order_Stale on dbo.OrderHeader and three dependent constraints"
+    let v = View.Field("detail", full, View.Bad)
+    let p = plainAtWidth 40 v
+    let lines = p.TrimEnd().Split('\n') |> Array.map (fun s -> s.TrimEnd('\r'))
+    Assert.Single(lines) |> ignore                  // did NOT wrap to a second line
+    Assert.Contains("…", p)                         // the truncation tail is shown
+    Assert.DoesNotContain("constraints", p)         // the dropped tail is gone from the pretty lens
+    for ln in lines do
+        Assert.True(ln.Length <= 40, sprintf "rendered line over the 40-col budget: %d cols (%s)" ln.Length ln)
+    // json — the SAME value, full and untruncated (width is pretty-only)
+    Assert.Equal(full, (json v).GetProperty("value").GetString())
+
+[<Fact>]
+let ``View: a long Lane label truncates but the humane count survives the width cut — json keeps the full label + items (#11)`` () =
+    let longName = "rename OrderHeaderArchiveStagingTableFromTheLegacyEstate"
+    let items = [ for i in 1 .. 7 -> sprintf "table-%d" i ]
+    let v = View.Lane("⟲", longName, View.Ok, items)
+    let head = (plainAtWidth 40 v).TrimEnd().Split('\n').[0].TrimEnd('\r')
+    Assert.True(head.Length <= 40, sprintf "headline over the 40-col budget: %d cols (%s)" head.Length head)
+    Assert.Contains("…", head)        // the label was cut to fit
+    Assert.EndsWith("7", head)        // the load-bearing humane count survived the cut
+    // json keeps the full label and every item — width is pretty-only
+    let j = json v
+    Assert.Equal(longName, j.GetProperty("label").GetString())
+    Assert.Equal(7, j.GetProperty("items").EnumerateArray() |> Seq.length)
+
+[<Fact>]
+let ``View: at a wide console a Field value renders whole — the width cap bites only when it must (#11)`` () =
+    let full = "dropping index IX_Order_Stale on dbo.OrderHeader and three dependent constraints"
+    let p = plainAtWidth 200 (View.Field("detail", full, View.Bad))
+    Assert.Contains(full, p)          // the whole value is present
+    Assert.DoesNotContain("…", p)     // no truncation tail at 200 cols
+
+// --- surgical reveal (#18 — ViewPath / OpenPath: open one branch, leave the rest) -
+// Discriminating predicate: an OpenPath force-reveals EXACTLY the addressed child-index
+// branch (each element a level deeper), while every sibling stays at the ambient Depth —
+// the dig's "open just this node, deeply, leave the rest collapsed". With OpenPath = None
+// (every existing caller) the render reduces to today's Depth gate, byte-identical (the
+// whole existing suite is that net). toJson never sees it — a path is pretty-only, like depth.
+
+[<Fact>]
+let ``View: OpenPath force-reveals exactly the addressed branch while siblings stay calm (#18)`` () =
+    let v =
+        View.Doc [
+            View.Disclosure("alpha", View.Neutral, [ View.Field("a", "ALPHA-DETAIL", View.Ok) ])
+            View.Disclosure("beta",  View.Neutral, [ View.Field("b", "BETA-DETAIL", View.Bad) ]) ]
+    // ambient depth 0, no open path → BOTH collapse (this IS today's behavior)
+    let calm = plainWith { View.defaultOptions with Depth = 0 } v
+    Assert.DoesNotContain("ALPHA-DETAIL", calm)
+    Assert.DoesNotContain("BETA-DETAIL", calm)
+    // OpenPath [1] at ambient depth 0 → block 1 (beta) opens, block 0 (alpha) stays collapsed
+    let opened = plainWith { View.defaultOptions with Depth = 0; OpenPath = Some [ 1 ] } v
+    Assert.DoesNotContain("ALPHA-DETAIL", opened)   // the sibling stayed calm — surgical
+    Assert.Contains("BETA-DETAIL", opened)          // the addressed branch opened
+
+[<Fact>]
+let ``View: OpenPath threads through nesting — Some [i;j] opens a branch two levels down (#18)`` () =
+    let v =
+        View.Doc [
+            View.Disclosure("outer", View.Neutral, [
+                View.Disclosure("inner", View.Neutral, [ View.Field("leaf", "DEEP-LEAF", View.Bad) ]) ]) ]
+    // the leaf needs two levels; ambient Depth 0 and even 1 leave it collapsed
+    Assert.DoesNotContain("DEEP-LEAF", plainWith { View.defaultOptions with Depth = 0 } v)
+    Assert.DoesNotContain("DEEP-LEAF", plainWith { View.defaultOptions with Depth = 1 } v)
+    // OpenPath [0;0] force-reveals outer then its inner — the leaf shows with NO global --depth bump
+    Assert.Contains("DEEP-LEAF", plainWith { View.defaultOptions with Depth = 0; OpenPath = Some [ 0; 0 ] } v)
+
+[<Fact>]
+let ``View: OpenPath opens an addressed leaf-container (a Lane) even at ambient depth 0 (#18)`` () =
+    let v = View.Doc [ View.Lane("⟲", "rename", View.Ok, [ "ORDER-MOVE"; "CUSTOMER-MOVE" ]) ]
+    Assert.DoesNotContain("ORDER-MOVE", plainWith { View.defaultOptions with Depth = 0 } v)
+    Assert.Contains("ORDER-MOVE", plainWith { View.defaultOptions with Depth = 0; OpenPath = Some [ 0 ] } v)
+
+[<Fact>]
+let ``View: the OpenPath tip wears the cursor caret — even a leaf — and no calm render does (#23)`` () =
+    // Two leaf Fields. OpenPath = Some [1] exhausts the path AT block 1, so beta is the
+    // cursor TIP (its OpenPath becomes Some []) and wears the caret; alpha (off-path) does
+    // not. The caret is visible even though beta is a leaf with no disclosure marker.
+    let v = View.Doc [ View.Field ("alpha", "A", View.Ok); View.Field ("beta", "B", View.Bad) ]
+    let cursored = plainWith { View.defaultOptions with Depth = 0; OpenPath = Some [ 1 ] } v
+    Assert.Contains(Theme.cursor, cursored)          // the focused leaf is marked
+    // Byte-identity guard: no open path → no caret anywhere (the calm render is untouched).
+    Assert.DoesNotContain(Theme.cursor, plainWith { View.defaultOptions with Depth = 0 } v)
 
 // --- the one-substrate law over the whole DU (the totality lock) -----------
 // Discriminating predicate: the pretty lens and the JSON lens are each TOTAL
@@ -282,6 +466,9 @@ let ``View: every case renders to plain AND json without throwing (DU totality)`
           "field",      View.Field("k", "v", View.Warn)
           "meter",      View.Meter("m", 3, 10, "3 / 10")
           "dots",       View.Dots("history", [ "green"; "red" ])
+          "spark",      View.Spark("trend", [ 3; 5; 2; 8 ])
+          "timeline",   View.Timeline("cutover", [ "green"; "red" ], 3, 10, Some 1)
+          "table",      View.Table([ "env"; "grant" ], [ [ "uat", View.Ok; "covered", View.Ok ]; [ "prod", View.Warn; "missing", View.Warn ] ])
           "trail",      View.Trail("steps", [ "naming", Some "rename"; "fk", None ])
           "lane",       View.Lane("+", "add", View.Ok, [ "A"; "B" ])
           "disclosure", View.Disclosure("Details", View.Neutral, [ View.Field("exit", "9", View.Bad) ])
@@ -297,3 +484,127 @@ let ``View: every case renders to plain AND json without throwing (DU totality)`
         // machine lens — serializes, and its kind tag is what the consumer expects
         let j = json v
         Assert.Equal(expectedKind, nonNull (j.GetProperty("kind").GetString()))
+
+// --- defensive render (#3 — a markup fault degrades to plain, never crashes) -
+// Discriminating predicate: `MarkupLine` THROWS on malformed markup, and the
+// verdict panel renders at the END of a good run — the worst place to crash.
+// `safeMarkupLine` must CONTAIN the fault: degrade to plain text, never throw.
+
+[<Fact>]
+let ``View: a malformed markup line degrades to plain text — a render fault never fails the run (#3)`` () =
+    use sw = new StringWriter()
+    let console =
+        AnsiConsole.Create(
+            AnsiConsoleSettings(
+                Ansi = AnsiSupport.No, ColorSystem = ColorSystemSupport.NoColors,
+                Out = AnsiConsoleOutput(sw)))
+    console.Profile.Width <- 200
+    // `[badstyle]…[/]` is invalid Spectre markup (unknown style) and the trailing
+    // `[` is an unbalanced tag — `MarkupLine` would throw on either. safeMarkupLine
+    // must contain the fault and still surface the text, plain.
+    View.safeMarkupLine console "[badstyle]contained[/] and a stray [ bracket"
+    let out = sw.ToString()
+    Assert.Contains("contained", out)   // the styled text survived, plain
+    Assert.Contains("bracket", out)     // including past the unbalanced '['
+    // reaching here at all means no exception escaped — the run was not failed
+
+[<Fact>]
+let ``View: a value carrying markup metacharacters renders them literally — the data-escaping discipline (#2/#3 guard)`` () =
+    // A table literally named `Order[Archive]`, or a value with a `[bold]`-looking
+    // token, must render its brackets as TEXT, not as a Spectre style tag — the
+    // discipline every writeBlock data site follows (Markup.Escape before colorize).
+    // This is the guard a future #2 (the Markup newtype) keeps green: a DOUBLE-escape
+    // would render `[[`, an UNDER-escape would throw the data into #3's plain
+    // fallback (a different string) — either way this assertion catches it.
+    let p = plain (View.Field("table", "Order[Archive] is [bold]gone", View.Bad))
+    Assert.Contains("Order[Archive] is [bold]gone", p)   // brackets intact, ONCE — not `[[`, not stripped
+
+// --- the Table primitive (#12 — aligned columns, one lens) -------------------
+// Discriminating predicate: a Table renders aligned columns to the human and
+// carries the full grid (headers + every cell + per-cell status) to the machine —
+// one value, two lenses. A cell's status drives its glyph so the matrix reads on a
+// NoColors console; `toJson` keeps the status tags a `--query` can filter on.
+
+[<Fact>]
+let ``View: a Table renders headers + cells (plain) and carries the grid with per-cell status (json) (#12)`` () =
+    let v =
+        View.Table(
+            [ "environment"; "grant" ],
+            [ [ "cloud-uat", View.Ok;   "covered", View.Ok ]
+              [ "prod",      View.Warn; "missing INSERT", View.Warn ] ])
+    // pretty/plain lens — the headers and every cell's text are present
+    let p = plain v
+    Assert.Contains("environment", p)        // a header
+    Assert.Contains("cloud-uat", p)          // a cell
+    Assert.Contains("missing INSERT", p)     // a cell carrying spaces
+    Assert.Contains("✓", p)                  // the Ok cell's glyph — status reads without color
+    // json lens — the SAME grid: headers + rows + per-cell status
+    let j = json v
+    Assert.Equal("table", j.GetProperty("kind").GetString())
+    let headers =
+        j.GetProperty("headers").EnumerateArray() |> Seq.map (fun e -> nonNull (e.GetString())) |> Seq.toList
+    Assert.Equal<string list>([ "environment"; "grant" ], headers)
+    let rows = j.GetProperty("rows").EnumerateArray() |> Seq.toList
+    Assert.Equal(2, rows |> List.length)
+    let prodGrant = (rows.[1].EnumerateArray() |> Seq.toList).[1]
+    Assert.Equal("missing INSERT", prodGrant.GetProperty("text").GetString())
+    Assert.Equal("warn", prodGrant.GetProperty("status").GetString())
+
+[<Fact>]
+let ``Bench surface: benchView is a Table carrying the per-label stats in both lenses (#13)`` () =
+    let stats : Projection.Core.Bench.Stats list =
+        [ { Label = "emit.statements"; Count = 3; TotalMs = 120L; MinMs = 30L; MaxMs = 50L
+            MeanMs = 40.0; P50Ms = 40L; P95Ms = 50L; P99Ms = 50L } ]
+    let v = TtyRenderer.benchView stats
+    // structure — a Doc whose Table maps each Stats record to a row of cells
+    match v with
+    | View.Doc blocks ->
+        match blocks |> List.tryPick (function View.Table(h, r) -> Some(h, r) | _ -> None) with
+        | Some (headers, rows) ->
+            Assert.Contains("label", headers)
+            Assert.Contains("total ms", headers)
+            Assert.Equal(1, List.length rows)
+            Assert.Equal<string>("emit.statements", fst rows.[0].[0])
+            Assert.Equal<string>("120", fst rows.[0].[2])   // the total-ms cell
+        | None -> Assert.Fail "benchView has no Table block"
+    | other -> Assert.Fail(sprintf "benchView is not a Doc: %A" other)
+    // machine lens — the perf surface is --query-able now: the numbers ride toJson
+    let j = json v
+    let table =
+        j.GetProperty("blocks").EnumerateArray()
+        |> Seq.find (fun b -> nonNull (b.GetProperty("kind").GetString()) = "table")
+    let firstCell = (table.GetProperty("rows").EnumerateArray() |> Seq.head).EnumerateArray() |> Seq.head
+    Assert.Equal("emit.statements", nonNull (firstCell.GetProperty("text").GetString()))
+
+// --- trend surfaces (#14 — Theme.sparkline gets its first producer) ----------
+// Discriminating predicate: a Spark compresses a numeric series into one ▁▂▃▄▅▆▇█
+// line for the human, while `toJson` keeps the raw numbers the glyph hid — one
+// value, two lenses. The readiness board is its first consumer: the changeset trend
+// joins the canary dots.
+
+[<Fact>]
+let ``View: a Spark renders the series as a sparkline (plain) and carries the raw numbers (json) (#14)`` () =
+    let v = View.Spark("changes / run", [ 1; 4; 2; 8; 3 ])
+    // pretty/plain lens — the label + at least one sparkline bar glyph
+    let p = plain v
+    Assert.Contains("changes / run", p)
+    Assert.True(
+        [ "▁"; "▂"; "▃"; "▄"; "▅"; "▆"; "▇"; "█" ] |> List.exists (fun g -> p.Contains g),
+        sprintf "no sparkline glyph in %s" p)
+    // json lens — the SAME value: the raw series the glyph compressed
+    let j = json v
+    Assert.Equal("spark", j.GetProperty("kind").GetString())
+    let vals = j.GetProperty("values").EnumerateArray() |> Seq.map (fun e -> e.GetInt32()) |> Seq.toList
+    Assert.Equal<int list>([ 1; 4; 2; 8; 3 ], vals)
+
+[<Fact>]
+let ``View: the readiness board renders the changeset sparkline beside the dots (#14 consumer)`` () =
+    let r : RunLedger.Readiness =
+        { TotalRuns = 12; CanaryRuns = 12; ConsecutiveGreen = 5
+          LastCanary = Some "green"; Threshold = 10; Eligible = false }
+    let v = TtyRenderer.buildReadinessView r [ "green"; "green" ] [ 40; 22; 9; 3 ] "/x/runs.jsonl"
+    let kinds =
+        (json v).GetProperty("blocks").EnumerateArray()
+        |> Seq.map (fun b -> nonNull (b.GetProperty("kind").GetString())) |> Seq.toList
+    Assert.Contains("spark", kinds)     // the changeset trend joined the board
+    Assert.Contains("dots", kinds)      // beside the canary dots

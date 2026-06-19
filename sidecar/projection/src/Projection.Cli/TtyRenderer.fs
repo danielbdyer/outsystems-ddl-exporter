@@ -94,7 +94,7 @@ let renderSummary (command: string) (code: int) : unit =
 
 /// Build the cutover-readiness board `View` — hero answer first, then the R6
 /// meter, the canary-history dots, the run totals, the ledger note.
-let buildReadinessView (r: RunLedger.Readiness) (recent: string list) (ledgerPath: string) : View.View =
+let buildReadinessView (r: RunLedger.Readiness) (recent: string list) (series: int list) (ledgerPath: string) : View.View =
     let toGo = max 0 (r.Threshold - r.ConsecutiveGreen)
     let hero =
         if r.Eligible then
@@ -118,6 +118,10 @@ let buildReadinessView (r: RunLedger.Readiness) (recent: string list) (ledgerPat
             | None ->
                 [ View.Note(sprintf "The lever %s a round-trip verification has not yet run; the first green check opens the streak." Theme.dot) ]
     let history = if List.isEmpty recent then [] else [ View.Dots("history", recent) ]
+    // #14 — the changeset trend beside the dots: how much the model is still moving
+    // per run, as a sparkline. A settling model (fewer changes toward cutover) reads
+    // as a falling line. Needs ≥ 2 points to be a trend; otherwise it stays silent.
+    let trend = if List.length series >= 2 then [ View.Spark("changes / run", series) ] else []
     // The timeline read in words — the dots' shape said plainly (§8 / Appendix
     // A.5): how the recent checks landed, and which run is the present one.
     let timeline =
@@ -138,6 +142,7 @@ let buildReadinessView (r: RunLedger.Readiness) (recent: string list) (ledgerPat
           View.Meter("cutover", r.ConsecutiveGreen, r.Threshold, sprintf "%d / %d green" r.ConsecutiveGreen r.Threshold) ]
         @ lever
         @ history
+        @ trend
         @ timeline
         @ [ View.Field(
               "runs",
@@ -150,9 +155,10 @@ let renderReadinessBoardTo
     (console: IAnsiConsole)
     (r: RunLedger.Readiness)
     (recent: string list)
+    (series: int list)
     (ledgerPath: string)
     : unit =
-    View.write console (buildReadinessView r recent ledgerPath)
+    View.write console (buildReadinessView r recent series ledgerPath)
 
 // --- the Setup readback as a View (§14 / Appendix A.6) ---------------------
 
@@ -280,26 +286,74 @@ let buildSurveyView (reports: CapabilitySurvey.EnvironmentReport list) : View.Vi
             View.Hero(View.Warn, sprintf "%d environment(s) need attention before a live run." needAttention)
     View.Doc([ View.Blank; verdict; View.Blank ] @ (reports |> List.map field))
 
-let renderReadinessBoard (r: RunLedger.Readiness) (recent: string list) (ledgerPath: string) : unit =
+/// The perf bench table as a `View` (#13) — the perf surface joins the one lens:
+/// color on a TTY, plain when piped, structured via `--format` / `--query`. Core's
+/// `Bench.renderTable` stays (the perf-gate's plain dump reads it); this is the
+/// Cli-side projection so the `-v` dump is a `View.Table`, not a separate text path
+/// with no machine lens. Cells are `Neutral` — bench numbers are evidence, never a
+/// verdict, so no status glyph colors them.
+let benchView (stats: Bench.Stats list) : View.View =
+    let headers = [ "label"; "count"; "total ms"; "min"; "mean"; "p50"; "p95"; "p99"; "max" ]
+    let row (s: Bench.Stats) : (string * View.Status) list =
+        [ s.Label,                 View.Neutral
+          string s.Count,          View.Neutral
+          string s.TotalMs,        View.Neutral
+          string s.MinMs,          View.Neutral
+          sprintf "%.1f" s.MeanMs, View.Neutral
+          string s.P50Ms,          View.Neutral
+          string s.P95Ms,          View.Neutral
+          string s.P99Ms,          View.Neutral
+          string s.MaxMs,          View.Neutral ]
+    View.Doc [ View.Note "Bench (sorted by total time)"; View.Table(headers, stats |> List.map row) ]
+
+let renderReadinessBoard (r: RunLedger.Readiness) (recent: string list) (series: int list) (ledgerPath: string) : unit =
     // The board renders on every `readiness` (not just on a TTY). The factory
     // pins a width when piped (Spectre's auto-width collapses lines on a non-TTY)
     // and still strips color for the non-terminal sink.
     let console = View.consoleTo Console.Out
-    renderReadinessBoardTo console r recent ledgerPath
+    renderReadinessBoardTo console r recent series ledgerPath
 
 // --- the answer surface — render any View to stdout (INSTRUMENT slice 1) ----
+
+/// The global `--query` selector (#17), set by `Program.main` from the `--query
+/// <path>` flag. When present, the answer surface emits the JSONPath-subset slice
+/// of `View.toJson` (`Query.render`) instead of the pretty or full-JSON lens — the
+/// structured lens narrowed to what the operator asked for. `None` (the default)
+/// leaves the answer untouched. It is a global — like `OperatorConsole.verboseMode`
+/// / `prettyMode` — because it filters EVERY answer regardless of verb; it lives
+/// here, not beside those, only because `renderAnswer` (its single reader) compiles
+/// before `OperatorConsole`.
+let queryPath : string option ref = ref None
+
+/// The global `--open <path>` selector (#18) — the headless half of the dig. When
+/// `Some path`, the answer surface force-reveals exactly that child-index branch
+/// (`View.RenderOptions.OpenPath`) while every other branch stays at the ambient
+/// `--depth` — a focus tool that composes with `--depth` and `--query`. `None` (the
+/// default) leaves the render at the calm whole-tree-to-depth, byte-identical.
+let openPath : int list option ref = ref None
 
 /// Render any `View` to stdout — the "answer" surface (stdout carries the answer;
 /// structured events stay on stderr). Pretty (color) on a TTY; plain when piped
 /// (width pinned so lines don't collapse); the dig is revealed to `depth` levels.
 /// `--format json` emits the same document as structure (`View.toJson`) — always
-/// the full tree — so the human and machine lenses are the one value.
+/// the full tree — so the human and machine lenses are the one value. `--query`
+/// (`queryPath`) walks that SAME tree to a slice — the structured lens, narrowed.
 let renderAnswer (asJson: bool) (depth: int) (v: View.View) : unit =
-    if asJson then
-        Console.Out.WriteLine((View.toJson v).ToJsonString())
-    else
-        let console = View.consoleTo Console.Out
-        View.writeToDepth console depth v
+    match queryPath.Value with
+    | Some path ->
+        // The query walks the SAME `toJson` the json lens emits — one substrate,
+        // narrowed. JSON text, so it stays on stdout (the answer channel).
+        Console.Out.WriteLine(Query.render path (View.toJson v))
+    | None ->
+        if asJson then
+            Console.Out.WriteLine((View.toJson v).ToJsonString())
+        else
+            let console = View.consoleTo Console.Out
+            // #11/#18 — `depth` is the calm ambient; `--open` (openPath) force-reveals one
+            // branch beyond it. With both at their defaults this is exactly `writeToDepth`.
+            View.writeWith
+                { View.defaultOptions with Depth = depth; Width = console.Profile.Width; OpenPath = openPath.Value }
+                console v
 
 /// Voice a refusal to STDERR (the §5 channel split — errors never on stdout).
 /// The coded `ValidationError` becomes a register-correct `Surface` via

@@ -24681,3 +24681,95 @@ already honors `--atomic` via M24 follow-on C. A small, separate follow-on — n
 (callers threaded)}`; `FOLLOWON_STREAMING_REVERT.md` (the now-cashed instruction set); `RunSpine.fs` (the
 `RunAborted`/`RunStopped` mapping that grounds the seam correction). The migrate envelope (M21/M22/M23/M24 + D) is now
 complete; the remaining frontier is the named moat (`HOLDOUT_INVENTORY_2026_06_16.md`).
+
+## 2026-06-18 — SPECTRE #4: the `RenderOptions` render-interface carrier (a shared `View.write` signature change)
+
+**What & why.** The pretty-lens render policy — disclosure depth, the `Lane` breadth cap, the width budget — was three
+scattered module `[<Literal>]`s (`defaultDepth` / `laneCap` / `plainWidth`) plus a bare `int depth` threaded through
+`writeToDepth`. It is now ONE `RenderOptions { Depth; LaneCap; Width }` threaded through a new
+`View.writeWith opts console v`; `View.write` / `View.writeToDepth` keep their exact signatures as thin wrappers that
+default `Width` from the live `console.Profile.Width` (a TTY's real width, or the factory's redirected-sink pin). The
+recursive `writeBlock` reads `opts.Depth` / `opts.LaneCap`, and the `Disclosure` recursion decrements via
+`{ opts with Depth = opts.Depth - 1 }`. Recorded here (per `SPECTRE_REFINEMENTS.md` §4 batching) because it is a shared
+render-interface change — the carrier #11 (responsive width) and #15 (`Trail` cap) rebase onto, landed alone so each
+consumer's diff stays a clean cherry.
+
+**The `Color` deviation, named.** The §4 sketch listed `{ Depth; LaneCap; Width; Color }`. `Color` was **omitted**: the
+color channel is already resolved once in the console factory (`View.consoleFor` / `envColorOverride`, #5/#7), so a
+`RenderOptions.Color` field would be a zero-consumer duplicate — the standing law "carriers reify eagerly, verbs at the
+second consumer" (CLAUDE.md §5; the dead-algebra-retirement precedent). It joins the record at the first render-time
+color gate, not before one exists. The deviation is from the *sketch*, not a load-bearing decision; recorded so it is
+honest and re-openable.
+
+**Gate.** CLI builds 0/0 under `TreatWarningsAsErrors`; pure pool green (3521 passed, 31s) with two new law-citing
+`ViewTests` driving `writeWith` (a custom `LaneCap` caps where the default would not + `toJson` keeps the full list; a
+deeper `Depth` reveals a nested leaf the default collapses). No behavior change — `Width` is threaded but unread by the
+renderer until #11 consumes it. **Cross-references:** `src/Projection.Cli/View.fs` (`RenderOptions`, `defaultOptions`,
+`writeWith`, the threaded `writeBlock`); `tests/Projection.Tests/ViewTests.fs` (the two carrier tests); `SPECTRE_REFINEMENTS.md`
+§0 + §4 (● flipped).
+
+## 2026-06-18 — SPECTRE #17: the `--query` lens — a bounded JSONPath-subset walker over `View.toJson`, wired as a global flag
+
+**What & why.** `View.toJson` always carried the full answer document and the `View.fs` header promised "a `--query` walks
+this" — but no walker existed. New module `Projection.Cli.Query` (`walk` / `render`) selects a slice of that tree for the
+operator who wants one field, not the whole forest. Output is JSON text on stdout (the answer channel), so it composes with
+`jq` and friends. A new operator-facing CLI contract, recorded for the same reason as the NO_COLOR env contract (#5/#7).
+
+**The bounded grammar (the named scope-creep gate).** Deliberately NOT a full JSONPath engine (SPECTRE §5 risk register):
+object-key access, array index (`blocks[0]`), the wildcard (`blocks[]`), and ONE flat equality filter
+(`blocks[?status=warn]`), with a key after a filter mapping over the survivors (`[?status=warn].value`). A bracket-aware
+split keeps a spaced/dotted filter value whole. It grows at the second real query, not before. Every operation is TOTAL — a
+key miss, an out-of-range index, a key into a scalar each yield `null`, never an exception — so the walker can never crash
+the answer it filters.
+
+**The wiring decision — a global ref, not a threaded arg.** The cheat-sheet suggested adding a `query: string option` arg to
+`renderAnswer`. But `--query` filters EVERY answer surface (survey / explain / diff / migrate-preview), so threading it
+through each verb is the wrong shape. Instead it rides a `TtyRenderer.queryPath` ref that `Program.main` sets from a
+`--query <path>` value flag — the established global-CLI-state pattern (`OperatorConsole.verboseMode` / `prettyMode`), with
+ZERO per-verb ripple. The ref lives in `TtyRenderer` (not beside the others in `OperatorConsole`) only because `renderAnswer`
+— its single reader — compiles before that module. `compare`'s own `Compare.toJsonString` path is NOT a `View` answer, so
+`--query` does not apply there (named, not a gap).
+
+**Gate.** CLI 0/0 under `TreatWarningsAsErrors`; pure pool green (28s) with nine law-citing `QueryTests` (each grammar shape,
+total-on-miss, the spaced-filter split, the one-substrate tie-in). End-to-end smoke: `survey --query kind` → `"doc"`;
+`survey --query 'blocks[?kind=hero]'` → the hero block. **Cross-references:** `src/Projection.Cli/Query.fs` (the walker);
+`src/Projection.Cli/TtyRenderer.fs` (`queryPath` + `renderAnswer`); `src/Projection.Cli/Program.fs` (the `--query` strip +
+usage); `tests/Projection.Tests/QueryTests.fs`; `SPECTRE_REFINEMENTS.md` §0 + §17 (● flipped).
+
+## 2026-06-19 — SPECTRE #20: the live board's dwell moves OFF the emitting thread (the first concurrency primitive)
+
+**What & why.** `Watch.renderWatchOn`'s subscriber enforced the dwell with `Thread.Sleep` INSIDE the subscriber, which
+`LogSink.emit` invokes while holding `lockObj` — so every emit blocked for the dwell, safe ONLY because the run was
+synchronous + single-threaded (the old code said exactly that). #20 moves the dwell off that thread so the board is safe for
+a future concurrent realization stream. The subscriber is now strictly enqueue-and-return (`fun env -> try queue.Add env
+with _ -> ()`) onto an unbounded `System.Collections.Concurrent.BlockingCollection<Envelope>`; the enqueue stays inside
+emit's lock so global envelope order is preserved (the single lock already serialized it; the collection is FIFO). `body`
+runs on a `Task.Run` background thread (it is the producer); a drain loop INSIDE `console.Live(...).Start` — on the
+ctx-affine thread, the only one that may touch `LiveDisplayContext` — folds the board, sleeps the dwell remainder, and
+refreshes. `LogSink` is UNTOUCHED (the channel-1/channel-2 contract holds; `LogSinkSubscriberTests` pass trivially).
+
+**The house-NEW concurrency primitive (the named trigger, CLAUDE.md §7).** `BlockingCollection` is the FIRST
+Channel/ConcurrentQueue/BlockingCollection in `src` (grep-confirmed zero before). The codebase was deliberately synchronous;
+this primitive's re-open trigger was "a live surface that must not block the emitter," which #20 fires. Chose
+`BlockingCollection` over `System.Threading.Channels` because the drain loop wants a SYNCHRONOUS timed take
+(`TryTake(&env, 100)`) — the 100ms timeout is the periodic wake the breathing spinner / stall-ETA (the #20 follow-on) will
+ride, with no async/CancellationToken dance. Cross-thread surface is the queue ALONE: `board` / `sw` / `lastRenderAt` are
+touched only by the drain (Start) thread, the bg body only enqueues — no shared-state race.
+
+**Determinism + teardown.** `Live.Start` invokes its callback synchronously; the callback drains to `IsCompleted` then
+`bodyTask.GetAwaiter().GetResult()` (unwraps the body exception as ITSELF, not `AggregateException`) — so `renderWatchOn`
+returns ONLY after the body joined and every frame drained (the done-frame is never lost; the tests assert on the final
+board with dwell=0). The body's `finally` calls `CompleteAdding` so the drain always terminates; an OUTER `finally` REAPS
+the body (a second `GetResult`, swallowed) THEN clears subscribers — so even a RENDER throw (`ctx.UpdateTarget`/`Refresh`
+can raise `IOException` on a TTY whose pipe broke mid-run) cannot orphan the body on a pool thread with the global writer
+pinned to `Null`. That reap is the one fix a 5-lens adversarial concurrency pass (lock-held / frame-loss / determinism /
+thread-affinity / teardown-exn) surfaced (MEDIUM, SHIP_WITH_FIXES); lock-held and frame-loss were certified clean with
+explicit happens-before traces. A forward note in the source marks the swallowed-`Add` window for re-check when the
+concurrent emitter that motivated this actually lands.
+
+**Gate.** CLI 0/0 under `TreatWarningsAsErrors`; pure pool green (3558/0) with the 4 existing `WatchInjectionTests` unchanged
++ two new ones — `emit never sleeps (#20)` (a 200ms dwell + two board-changing emits; the body's emit span stays under one
+dwell, an order below the old ~2-dwell inline block) and `propagates a body exception as itself and never hangs` (the
+teardown path no other test covered). **Cross-references:** `src/Projection.Cli/Watch.fs` (`renderWatchOn` rewrite + the
+reap); `tests/Projection.Tests/WatchInjectionTests.fs`; `SPECTRE_REFINEMENTS.md` §20. Follow-on: the breathing spinner +
+stall-aware ETA on the drain loop's 100ms wake.
