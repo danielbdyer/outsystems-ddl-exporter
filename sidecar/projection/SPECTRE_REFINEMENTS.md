@@ -105,7 +105,7 @@ Status key: **● shipped** · **◐ partial / starved** · **○ not started** 
 | 14 | Trend surfaces (use `Theme.sparkline`) | C | ○ |
 | 15 | `Trail` gets cap-and-name + depth | C | ○ |
 | 16 | Unify the collapsed-affordance vocabulary | C | ○ |
-| 17 | Implement `--query` over `toJson` | D. The query lens | ▢ |
+| 17 | Implement `--query` over `toJson` | D. The query lens | ● |
 | 18 | Per-node addressing (`ViewPath`) | D | ○ |
 | 19 | Emit the intra-stage `summary.stageProgress` events | E. The Watch board | ◐ |
 | 20 | Move the dwell off the emitting thread | E | ○ |
@@ -307,7 +307,24 @@ depth < 1). Inconsistent affordance.
 
 ## D — The query / structured lens
 
-### 17 · Implement `--query`  ▢  *(redeems an already-paid-for lens)*
+### 17 · Implement `--query`  ●  *(landed 2026-06-18)*
+
+**Landed.** A global `--query <path>` flag (extracted in `Program.main` before the
+boolean-flag pass so its value can't be mistaken for a flag; a malformed path
+exits 2 at the boundary) sets `TtyRenderer.queryMode`, which `renderAnswer`
+consults — so every answer surface (diff / explain / survey …) gains it for free,
+no `PlanAction` ripple. The walker is `View.query` / `View.validateQuery`: a pure,
+JSONPath-*subset* fold over the `toJson` tree supporting `.key`, `[n]`, `[]`
+(wildcard), and `[?k=v]` (flat equality filter) — the surface-shaped subset, not a
+full engine (it grows at the next real query, CLAUDE.md §5). Matched nodes print
+one-per-line (jq-like). Seven `ViewTests` cover key / wildcard / index / filter /
+empty-match / malformed-path / `validateQuery`. *Not a full JSONPath* (no
+recursive descent, slices, or `*` over objects) — named here so the boundary is
+honest.
+
+---
+
+#### Original survey note (kept for provenance)
 
 **Problem.** `View.toJson` exists and the code **promises** "a `--query` walks
 this" in `View.fs`'s header and in `RunFaces.explainView`'s doc — but there is no

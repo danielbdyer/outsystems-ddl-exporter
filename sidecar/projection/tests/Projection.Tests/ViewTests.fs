@@ -272,9 +272,10 @@ let ``View: a Panel renders EVERY row to both lenses — no row silently dropped
 
 [<Fact>]
 let ``View: every case renders to plain AND json without throwing (DU totality)`` () =
-    // One instance per `View` case — exhaustive by construction. If a case is
-    // added without a `writeBlock` arm or a `toJson` arm, this list won't compile
-    // (the author must add the case) and the loop will catch a throwing lens.
+    // One instance per `View` case. Keep it in sync as cases are added — the merge
+    // that introduced `Timeline` is the standing reminder: a case here that forgets
+    // its `writeBlock` or `toJson` arm fails the loop below in the pure pool, not
+    // at the tail of a run.
     let cases : (string * View.View) list =
         [ "doc",        View.Doc [ View.Note "child" ]
           "panel",      View.Panel("p", [ View.PanelRow.Labeled("k", "v", View.Ok) ])
@@ -282,6 +283,7 @@ let ``View: every case renders to plain AND json without throwing (DU totality)`
           "field",      View.Field("k", "v", View.Warn)
           "meter",      View.Meter("m", 3, 10, "3 / 10")
           "dots",       View.Dots("history", [ "green"; "red" ])
+          "timeline",   View.Timeline("cutover", [ "green"; "red" ], 1, 10, Some 1)
           "trail",      View.Trail("steps", [ "naming", Some "rename"; "fk", None ])
           "lane",       View.Lane("+", "add", View.Ok, [ "A"; "B" ])
           "disclosure", View.Disclosure("Details", View.Neutral, [ View.Field("exit", "9", View.Bad) ])
@@ -297,3 +299,58 @@ let ``View: every case renders to plain AND json without throwing (DU totality)`
         // machine lens — serializes, and its kind tag is what the consumer expects
         let j = json v
         Assert.Equal(expectedKind, nonNull (j.GetProperty("kind").GetString()))
+
+// --- the query lens (#17) --------------------------------------------------
+// Discriminating predicate: `--query` walks the SAME `toJson` tree the JSON lens
+// emits, so a path projects the machine view without a parallel print path. A
+// malformed path is a named Error, never a crash; a valid path that matches
+// nothing is `Ok []`. The walker is pure over `JsonNode`, so it is tested here
+// without the CLI boundary.
+
+let private queryStrings (path: string) (v: View.View) : string list =
+    match View.query path (View.toJson v) with
+    | Ok nodes -> nodes |> List.map (fun (n: System.Text.Json.Nodes.JsonNode) -> n.ToJsonString())
+    | Error e  -> failwithf "query %s errored: %s" path e
+
+[<Fact>]
+let ``query: a key selects an object member`` () =
+    let v = View.Doc [ View.Hero(View.Ok, "ELIGIBLE") ]
+    Assert.Equal<string list>([ "\"doc\"" ], queryStrings ".kind" v)
+
+[<Fact>]
+let ``query: a wildcard fans out over an array (.blocks[].status)`` () =
+    let v = View.Doc [ View.Field("a", "x", View.Ok); View.Field("b", "y", View.Warn) ]
+    Assert.Equal<string list>([ "\"ok\""; "\"warn\"" ], queryStrings ".blocks[].status" v)
+
+[<Fact>]
+let ``query: an index selects one array element`` () =
+    let v = View.Doc [ View.Note "first"; View.Note "second" ]
+    Assert.Equal<string list>([ "\"note\"" ], queryStrings ".blocks[1].kind" v)
+
+[<Fact>]
+let ``query: a filter keeps only the matching array elements ([?status=warn])`` () =
+    let v =
+        View.Doc [ View.Field("a", "x", View.Ok)
+                   View.Field("b", "y", View.Warn)
+                   View.Field("c", "z", View.Warn) ]
+    match View.query ".blocks[?status=warn]" (View.toJson v) with
+    | Ok nodes -> Assert.Equal(2, List.length nodes)
+    | Error e  -> failwithf "errored: %s" e
+
+[<Fact>]
+let ``query: a well-formed path that matches nothing is Ok empty`` () =
+    match View.query ".nope[].nada" (View.toJson (View.Note "x")) with
+    | Ok []  -> ()
+    | Ok xs  -> failwithf "expected empty, got %d" (List.length xs)
+    | Error e -> failwithf "expected Ok [], got Error %s" e
+
+[<Fact>]
+let ``query: a malformed path is a named Error, not a crash`` () =
+    match View.query ".blocks[oops" (View.toJson (View.Note "x")) with
+    | Error _ -> ()
+    | Ok _    -> failwith "expected Error for an unclosed bracket"
+
+[<Fact>]
+let ``query: validateQuery accepts a leading-dot path and rejects a bare key`` () =
+    Assert.True(match View.validateQuery ".blocks[].status" with Ok () -> true | _ -> false)
+    Assert.True(match View.validateQuery "blocks" with Error _ -> true | _ -> false)

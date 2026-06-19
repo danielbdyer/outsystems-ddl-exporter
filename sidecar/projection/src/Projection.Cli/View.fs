@@ -359,3 +359,108 @@ let rec toJson (v: View) : JsonNode =
     | Note text -> obj [ "kind", s "note"; "text", s text ]
     | Action text -> obj [ "kind", s "action"; "text", s text ]
     | Blank -> obj [ "kind", s "blank" ]
+
+// --- The query lens (a JSONPath subset over toJson; #17) -------------------
+// `toJson` is the structured lens; `--query` walks it. The grammar is the
+// surface-shaped subset the operator surfaces actually need — object keys, an
+// array index, the `[]` wildcard (map over an array), and a flat equality
+// filter `[?k=v]` — not a full JSONPath. It grows at the next real query
+// (CLAUDE.md §5 — verbs at the second consumer). The walk is pure over the
+// `JsonNode` the document already produces, so the human (`write`) and machine
+// (`toJson` / `--query`) lenses stay projections of one value.
+
+type private QuerySeg =
+    | Key of string
+    | Index of int
+    | Wildcard
+    | Filter of key: string * value: string
+
+/// Parse a `--query` path (`.blocks[].status`, `.fields[0].value`,
+/// `.blocks[?status=warn]`) into its segments, or a legible error. Paths lead
+/// with `.` or `[` (the jq convention); a malformed path is named, never a crash.
+let private parseQuery (path: string) : Result<QuerySeg list, string> =
+    let segs = ResizeArray<QuerySeg>()
+    let n = path.Length
+    let mutable i = 0
+    let mutable err = None
+    while i < n && Option.isNone err do
+        match path.[i] with
+        | '.' ->
+            let start = i + 1
+            let mutable j = start
+            while j < n && path.[j] <> '.' && path.[j] <> '[' do j <- j + 1
+            if j = start then err <- Some "empty key after '.'"
+            else
+                segs.Add(Key(path.Substring(start, j - start)))
+                i <- j
+        | '[' ->
+            match path.IndexOf(']', i) with
+            | -1 -> err <- Some "unclosed '[' in query path"
+            | close ->
+                let inner = path.Substring(i + 1, close - i - 1)
+                if inner = "" then segs.Add Wildcard
+                elif inner.StartsWith "?" then
+                    let body = inner.Substring 1
+                    match body.IndexOf '=' with
+                    | -1 -> err <- Some "filter needs the form [?key=value]"
+                    | eq -> segs.Add(Filter(body.Substring(0, eq), body.Substring(eq + 1)))
+                else
+                    match System.Int32.TryParse inner with
+                    | true, idx -> segs.Add(Index idx)
+                    | _          -> err <- Some(sprintf "bad array index '%s'" inner)
+                i <- close + 1
+        | c -> err <- Some(sprintf "unexpected '%c' (a query path leads with '.' or '[')" c)
+    match err with
+    | Some e -> Result.Error e
+    | None   -> Result.Ok(List.ofSeq segs)
+
+let private matchesFilter (k: string) (value: string) (node: JsonNode) : bool =
+    match node with
+    | :? JsonObject as o ->
+        match o.TryGetPropertyValue k with
+        | true, fv ->
+            match Option.ofObj fv with
+            // Compare the stringified value, with one layer of JSON quoting
+            // stripped so `[?status=warn]` matches the string "warn" and
+            // `[?filled=7]` matches the number 7.
+            | Some nn -> nn.ToJsonString().Trim('"') = value
+            | None    -> false
+        | _ -> false
+    | _ -> false
+
+let private applySeg (seg: QuerySeg) (node: JsonNode) : JsonNode list =
+    match seg with
+    | Key k ->
+        match node with
+        | :? JsonObject as o ->
+            match o.TryGetPropertyValue k with
+            | true, v -> Option.ofObj v |> Option.toList
+            | _       -> []
+        | _ -> []
+    | Index idx ->
+        match node with
+        | :? JsonArray as a when idx >= 0 && idx < a.Count -> Option.ofObj a.[idx] |> Option.toList
+        | _ -> []
+    | Wildcard ->
+        match node with
+        | :? JsonArray as a -> a |> Seq.choose Option.ofObj |> List.ofSeq
+        | _ -> []
+    | Filter (k, value) ->
+        match node with
+        | :? JsonArray as a -> a |> Seq.choose Option.ofObj |> Seq.filter (matchesFilter k value) |> List.ofSeq
+        | _ -> []
+
+/// Validate a `--query` path's syntax without a document — the boundary
+/// (`Program.main`) calls this to refuse a malformed path early with a clean
+/// exit, rather than letting it silently match nothing.
+let validateQuery (path: string) : Result<unit, string> =
+    parseQuery path |> Result.map ignore
+
+/// Walk a `--query` path over a document's `toJson` tree, returning the matched
+/// nodes (jq-like: zero, one, or many — a `[]` wildcard or `[?…]` filter fans
+/// out). A malformed path is an `Error`; a well-formed path that matches nothing
+/// is `Ok []`.
+let query (path: string) (root: JsonNode) : Result<JsonNode list, string> =
+    match parseQuery path with
+    | Result.Error e -> Result.Error e
+    | Result.Ok segs -> Result.Ok(segs |> List.fold (fun nodes seg -> nodes |> List.collect (applySeg seg)) [ root ])
