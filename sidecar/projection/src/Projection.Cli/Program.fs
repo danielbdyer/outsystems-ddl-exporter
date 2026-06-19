@@ -78,6 +78,8 @@ let private usageLines : string list =
         "Every verb persists a bench snapshot to bench/<verb>/<utc-iso>.json; -v surfaces the"
         "table. --pretty / --json force the channel (default AUTO: a TTY gets the live stage"
         "board + verdict panel, a pipe gets NDJSON)."
+        "--query <path> projects an answer's structure (jq-like: .blocks[].status,"
+        "  .fields[0].value, .blocks[?status=warn]) — the machine lens, sharpened to a path."
         ""
         "Exit codes:"
         "    0  succeeded"
@@ -363,6 +365,28 @@ let main argv =
     //     (a real TTY gets the Spectre panel, a pipe gets clean NDJSON — the
     //     operator never thinks about format).
     //   -v / --verbose : surface depth (the bench table, etc.).
+    // `--query <path>` — the structured-lens flag (#17), a global VALUE-flag.
+    // Extracted FIRST, before the boolean-flag detection below, so its value
+    // (`.blocks[].status`) can never be mistaken for a `--pretty` / `--json`
+    // token. A malformed path is refused here with a clean exit (2), never a
+    // crash on the answer surface; both tokens are stripped so the per-verb argv
+    // shape is unchanged. Sets `TtyRenderer.queryMode`, which `renderAnswer`
+    // (the one answer-surface choke point) consults.
+    let queryError, argv =
+        match Array.tryFindIndex ((=) "--query") argv with
+        | Some idx when idx + 1 < argv.Length ->
+            let path = argv.[idx + 1]
+            let stripped = Array.append argv.[.. idx - 1] argv.[idx + 2 ..]
+            match View.validateQuery path with
+            | Ok ()   -> TtyRenderer.queryMode := Some path; (None, stripped)
+            | Error e -> (Some e, stripped)
+        | Some _ -> (Some "--query needs a path argument, e.g. --query .blocks[].status", argv)
+        | None   -> (None, argv)
+    match queryError with
+    | Some e ->
+        Console.Error.WriteLine(sprintf "projection: --query: %s" e)
+        exit 2
+    | None -> ()
     let has flag = Array.contains flag argv
     verboseMode := has "-v" || has "--verbose"
     let forceJson = has "--json" || has "--no-pretty"

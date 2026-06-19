@@ -153,15 +153,36 @@ let private marker (depth: int) (hasChildren: bool) : string =
     elif depth >= 1 then Theme.expanded
     else Theme.collapsed
 
+/// Truncate a cell's text to the width that remains on its line, with a `…`
+/// tail — the width dual of the §12 breadth cap (`laneCap`). `prefix` is the
+/// visible characters already spent on the line (indent + label + glyph +
+/// gutters); the rest is the budget for `text`. A non-positive budget (an
+/// unknown / pinned-narrow width) or a string that already fits is a no-op — so
+/// a wide terminal (tests pin 200) is untouched, and a redirected sink (pinned to
+/// `plainWidth`) only trims what would have wrapped. Truncation is a pretty-lens
+/// concern only; `toJson` always carries the full, untrimmed string.
+let private fit (width: int) (prefix: int) (text: string) : string =
+    let budget = width - prefix
+    if budget <= 0 || text.Length <= budget then text
+    elif budget = 1 then "…"
+    else text.Substring(0, budget - 1) + "…"
+
 let rec private writeBlock (console: IAnsiConsole) (depth: int) (indent: string) (v: View) : unit =
     match v with
     | Doc blocks -> for b in blocks do writeBlock console depth indent b
     | Blank -> console.WriteLine()
     | Panel (title, fields) -> writePanel console title fields
     | Hero (st, text) ->
-        console.MarkupLine(sprintf "%s%s  %s" indent (colorOf st (glyphOf st)) (Theme.bold (Markup.Escape text)))
+        let g = glyphOf st
+        let body = fit console.Profile.Width (indent.Length + g.Length + 2) text
+        console.MarkupLine(sprintf "%s%s  %s" indent (colorOf st g) (Theme.bold (Markup.Escape body)))
     | Field (label, value, st) ->
-        console.MarkupLine(sprintf "%s%s   %s" indent (Theme.muted (Markup.Escape label)) (styled st value))
+        // `styled` prepends `glyph + space` (nothing for Neutral); the label
+        // column + its 3-space gutter precede it. Fit the value to what remains.
+        let g = glyphOf st
+        let glyphPart = if g = "" then 0 else g.Length + 1
+        let body = fit console.Profile.Width (indent.Length + label.Length + 3 + glyphPart) value
+        console.MarkupLine(sprintf "%s%s   %s" indent (Theme.muted (Markup.Escape label)) (styled st body))
     | Meter (label, filled, total, suffix) ->
         console.MarkupLine(
             sprintf "%s%s   %s   %s"
@@ -203,15 +224,21 @@ let rec private writeBlock (console: IAnsiConsole) (depth: int) (indent: string)
                         (Theme.muted (sprintf "and %s more" (Theme.humane (n - laneCap)))))
     | Disclosure (headline, st, detail) ->
         let m = marker depth (not (List.isEmpty detail))
-        console.MarkupLine(sprintf "%s%s %s" indent m (styled st headline))
+        let g = glyphOf st
+        let glyphPart = if g = "" then 0 else g.Length + 1
+        let body = fit console.Profile.Width (indent.Length + m.Length + 1 + glyphPart) headline
+        console.MarkupLine(sprintf "%s%s %s" indent m (styled st body))
         if depth >= 1 then
             for child in detail do writeBlock console (depth - 1) (indent + "  ") child
         elif not (List.isEmpty detail) then
             console.MarkupLine(
                 sprintf "%s  %s %s" indent (Theme.muted Theme.collapsed)
                     (Theme.muted (sprintf "%d more" (List.length detail))))
-    | Note text -> console.MarkupLine(sprintf "%s%s" indent (Theme.muted (Markup.Escape text)))
-    | Action text -> console.MarkupLine(sprintf "%s%s %s" indent Theme.arrow (Theme.accent (Markup.Escape text)))
+    | Note text ->
+        console.MarkupLine(sprintf "%s%s" indent (Theme.muted (Markup.Escape (fit console.Profile.Width indent.Length text))))
+    | Action text ->
+        let body = fit console.Profile.Width (indent.Length + Theme.arrow.Length + 1) text
+        console.MarkupLine(sprintf "%s%s %s" indent Theme.arrow (Theme.accent (Markup.Escape body)))
 
 /// Render to a chosen disclosure depth — the dig revealed `depth` levels down,
 /// deeper nodes collapsed behind their `▸ N more` affordance. The interactive
@@ -359,3 +386,108 @@ let rec toJson (v: View) : JsonNode =
     | Note text -> obj [ "kind", s "note"; "text", s text ]
     | Action text -> obj [ "kind", s "action"; "text", s text ]
     | Blank -> obj [ "kind", s "blank" ]
+
+// --- The query lens (a JSONPath subset over toJson; #17) -------------------
+// `toJson` is the structured lens; `--query` walks it. The grammar is the
+// surface-shaped subset the operator surfaces actually need — object keys, an
+// array index, the `[]` wildcard (map over an array), and a flat equality
+// filter `[?k=v]` — not a full JSONPath. It grows at the next real query
+// (CLAUDE.md §5 — verbs at the second consumer). The walk is pure over the
+// `JsonNode` the document already produces, so the human (`write`) and machine
+// (`toJson` / `--query`) lenses stay projections of one value.
+
+type private QuerySeg =
+    | Key of string
+    | Index of int
+    | Wildcard
+    | Filter of key: string * value: string
+
+/// Parse a `--query` path (`.blocks[].status`, `.fields[0].value`,
+/// `.blocks[?status=warn]`) into its segments, or a legible error. Paths lead
+/// with `.` or `[` (the jq convention); a malformed path is named, never a crash.
+let private parseQuery (path: string) : Result<QuerySeg list, string> =
+    let segs = ResizeArray<QuerySeg>()
+    let n = path.Length
+    let mutable i = 0
+    let mutable err = None
+    while i < n && Option.isNone err do
+        match path.[i] with
+        | '.' ->
+            let start = i + 1
+            let mutable j = start
+            while j < n && path.[j] <> '.' && path.[j] <> '[' do j <- j + 1
+            if j = start then err <- Some "empty key after '.'"
+            else
+                segs.Add(Key(path.Substring(start, j - start)))
+                i <- j
+        | '[' ->
+            match path.IndexOf(']', i) with
+            | -1 -> err <- Some "unclosed '[' in query path"
+            | close ->
+                let inner = path.Substring(i + 1, close - i - 1)
+                if inner = "" then segs.Add Wildcard
+                elif inner.StartsWith "?" then
+                    let body = inner.Substring 1
+                    match body.IndexOf '=' with
+                    | -1 -> err <- Some "filter needs the form [?key=value]"
+                    | eq -> segs.Add(Filter(body.Substring(0, eq), body.Substring(eq + 1)))
+                else
+                    match System.Int32.TryParse inner with
+                    | true, idx -> segs.Add(Index idx)
+                    | _          -> err <- Some(sprintf "bad array index '%s'" inner)
+                i <- close + 1
+        | c -> err <- Some(sprintf "unexpected '%c' (a query path leads with '.' or '[')" c)
+    match err with
+    | Some e -> Result.Error e
+    | None   -> Result.Ok(List.ofSeq segs)
+
+let private matchesFilter (k: string) (value: string) (node: JsonNode) : bool =
+    match node with
+    | :? JsonObject as o ->
+        match o.TryGetPropertyValue k with
+        | true, fv ->
+            match Option.ofObj fv with
+            // Compare the stringified value, with one layer of JSON quoting
+            // stripped so `[?status=warn]` matches the string "warn" and
+            // `[?filled=7]` matches the number 7.
+            | Some nn -> nn.ToJsonString().Trim('"') = value
+            | None    -> false
+        | _ -> false
+    | _ -> false
+
+let private applySeg (seg: QuerySeg) (node: JsonNode) : JsonNode list =
+    match seg with
+    | Key k ->
+        match node with
+        | :? JsonObject as o ->
+            match o.TryGetPropertyValue k with
+            | true, v -> Option.ofObj v |> Option.toList
+            | _       -> []
+        | _ -> []
+    | Index idx ->
+        match node with
+        | :? JsonArray as a when idx >= 0 && idx < a.Count -> Option.ofObj a.[idx] |> Option.toList
+        | _ -> []
+    | Wildcard ->
+        match node with
+        | :? JsonArray as a -> a |> Seq.choose Option.ofObj |> List.ofSeq
+        | _ -> []
+    | Filter (k, value) ->
+        match node with
+        | :? JsonArray as a -> a |> Seq.choose Option.ofObj |> Seq.filter (matchesFilter k value) |> List.ofSeq
+        | _ -> []
+
+/// Validate a `--query` path's syntax without a document — the boundary
+/// (`Program.main`) calls this to refuse a malformed path early with a clean
+/// exit, rather than letting it silently match nothing.
+let validateQuery (path: string) : Result<unit, string> =
+    parseQuery path |> Result.map ignore
+
+/// Walk a `--query` path over a document's `toJson` tree, returning the matched
+/// nodes (jq-like: zero, one, or many — a `[]` wildcard or `[?…]` filter fans
+/// out). A malformed path is an `Error`; a well-formed path that matches nothing
+/// is `Ok []`.
+let query (path: string) (root: JsonNode) : Result<JsonNode list, string> =
+    match parseQuery path with
+    | Result.Error e -> Result.Error e
+    | Result.Ok segs -> Result.Ok(segs |> List.fold (fun nodes seg -> nodes |> List.collect (applySeg seg)) [ root ])
