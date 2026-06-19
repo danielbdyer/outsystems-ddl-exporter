@@ -287,6 +287,7 @@ Status key: **● shipped** · **◐ partial / starved** · **○ not started** 
 | 23 | Build the Explore TUI | F. Explore + history | ● |
 | 24 | A `diff <runA> <runB>` verb | F | ● |
 | 25 | `explain <ssKey>` provenance drill-down | F | ◐ |
+| 27 | **Delta-grade diff** — every channel + before/after evidence, by name | F | ● |
 | 26 | **The Threshold** — earned milestone flourishes | G. Earned moments | ▢ |
 
 > **Added (2026-06-18, operator direction — "give the interface a little sparkle"):**
@@ -879,6 +880,55 @@ lens the event stream uses (so the two can't drift). It stops at the trail.
 finding, and suggested fix for one `SsKey`, progressively disclosed (so a deep
 trail isn't a wall — needs #15), and walkable inside Explore (#23, #18). The dig,
 made interactive.
+
+### 27 · Delta-grade diff  ●  *(shipped 2026-06-19 — the DIFF cluster; the walkable changeset gets every channel + before/after evidence, by name)*
+
+**Problem.** `CatalogDiff` computes a RICH delta — per-kind attribute / reference /
+index channels (C1) + the catalog sequence channel + the kind-OWN facets (NM-17),
+each Added / Removed / Renamed / Reshaped(facets) — and RETAINS both source + target
+catalogs. But `Comparison.renderCatalogLanes` surfaced only KIND moves + attribute
+RESHAPES (as facet-names). References, indexes, sequences, attribute add/remove/rename,
+and kind-facets all rode through INVISIBLE to the walkable changeset; and a reshape
+named WHICH facet moved, never the value it moved between.
+
+**As shipped (Cli-only — `Comparison.fs`; zero Core touch; rides the shipped L2 Navigator).**
+- *Every channel reaches the move lanes.* `renderCatalogLanes` folds kinds + columns +
+  relationships + indexes + sequences + kind-own facets into the same four HOMOGENEOUS
+  move-lanes (rename / reshape / add / remove — the reversibility badge IS the move,
+  never per-item, per the operator's "don't widen `Lane` to per-item status"). Items are
+  channel-qualified (`column Customer.Email`, `relationship Order.Customer`,
+  `index Customer.IX_…`, `sequence SEQ_…`). The Navigator digs the richer lanes live for
+  free (`Navigator.present` reads whatever the diff produces).
+- *Before/after EVIDENCE on the ALTER surfaces.* Attribute + reference reshapes carry the
+  value moved — `column Customer.Qty: type text → integer`, `relationship Order.Customer:
+  on delete no action → cascade` — resolved from the retained source/target
+  (`attributeEvidence` / `referenceEvidence`). Option-valued facets (default / computed)
+  render the presence transition. Index reshapes keep the facet-name form (their facets
+  are lists / grouped knobs — a before→after would be a wall); sequence / kind-facet too.
+- *Legible by NAME, not SsKey.* `rootOriginal` of an `OssysOriginal` key is a bare GUID
+  (`CatalogReader`), so a per-column changeset keyed by `rootOriginal` would be a GUID-wall
+  on a real estate. The lanes name by `Name` (a per-side SsKey → Name `nameIndex`, built
+  once — discover-once/derive-pure; `rootOriginal` fallback), matching the rename lane that
+  already did. **No new `View` case** — the richer items ride the existing `Lane`, so
+  `toJson` carries them and the one-substrate law holds by construction.
+
+**Tests (14, `ComparisonTests`).** One per newly-surfaced channel landing in its move-lane;
+before/after evidence for type / nullability / FK-on-delete; a render-level test asserting
+the full multi-channel document renders BY NAME with evidence (the human-lens side of
+one-substrate); a legibility test pinning Name-not-SsKey; + one-substrate json witnesses.
+Full pure pool **3575/0**.
+
+**Cheat sheet / the follow-ons named.**
+- *Concrete storage width is a Core modulus, not a render gap.* `changedFacets` compares the
+  semantic `PrimitiveType` (`Integer`), not the concrete storage type, so `int → bigint`
+  produces NO facet — the literal handoff example needs a `CatalogDiff` facet (`AttributeFacet`
+  + `changedFacets` + the apply patch), out of this Cli-only scope.
+- *Other operator surfaces still show `rootOriginal` (GUIDs).* `explain` / the reconciliation
+  reports / the bench dump name entities by `rootOriginal` (`RunFaces`). The diff now diverges
+  toward legibility; a shared `SsKey.displayName cat`-style projection unifying every surface
+  is the clean follow-on (kept out of scope — it touches every operator face).
+- *Before/after for index / sequence / kind-facet reshapes* (the structural channels) is
+  deferred — facet-name is the right grain until a consumer wants the list-level diff.
 
 ---
 
