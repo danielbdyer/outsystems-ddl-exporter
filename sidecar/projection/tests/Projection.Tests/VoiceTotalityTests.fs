@@ -468,6 +468,42 @@ let ``Voice stageName: an unknown stage passes through unchanged`` () =
     Assert.Equal<string>("somethingNew", Voice.stageName "somethingNew")
 
 // ---------------------------------------------------------------------------
+// #22 — the WATCH BOARD's codes are voiced BY CONSTRUCTION. `Watch.statementText`
+// falls back to the RAW event code on a Voice miss (`emit.foo.started` shown to a
+// human). The `inScopeCodes` set above pins the codes voiced TODAY, but it is
+// hand-maintained; THIS derives the board's codes from the declared spines
+// (`Spines` × `RunSpine.keys`), so a NEW spine stage that forgets its copy fails
+// HERE, in the pure pool — never by leaking an identifier to an operator at render.
+// ---------------------------------------------------------------------------
+
+/// Every stage key the board can render a line for — DERIVED from the declared
+/// spines, not a hand-list, so a stage is covered the moment it joins a spine. The
+/// umbrella root (`RunSpine.rootKey`) is elided: the board never watches it.
+let private boardStageKeys : Set<string> =
+    [ Spines.pipeline; Spines.migrate; Spines.migrateData
+      Spines.deploy; Spines.canary; Spines.transfer ]
+    |> List.collect RunSpine.keys
+    |> Set.ofList
+
+[<Fact>]
+let ``Voice totality: every board stage's .started gerund is voiced — no spine stage leaks its raw code (#22)`` () =
+    // The board renders `statementText (line.Key + ".started")` per stage; a Voice
+    // miss would show the raw `<key>.started` identifier to the operator.
+    Assert.False(Set.isEmpty boardStageKeys, "no board stage keys derived — the spine wiring changed")
+    for key in boardStageKeys do
+        let code = key + ".started"
+        Assert.True(
+            (Voice.lookup code).IsSome,
+            sprintf "board stage code %s is unvoiced — it would leak to the operator (#22)" code)
+
+[<Fact>]
+let ``Voice totality: the board's frame codes are all voiced — completed, halted, title, done (#22)`` () =
+    // The non-per-stage codes `Watch.statementText` builds: the resultative, the
+    // halted line, and the run-title / run-done frames. A miss leaks any of them.
+    for code in [ "summary.stageCompleted"; "watch.stageHalted"; "watch.runTitle"; "watch.runDone" ] do
+        Assert.True((Voice.lookup code).IsSome, sprintf "board frame code %s is unvoiced (#22)" code)
+
+// ---------------------------------------------------------------------------
 // the error frame routing (THE_VOICE.md §10 / §14) is total
 // ---------------------------------------------------------------------------
 

@@ -177,6 +177,19 @@ class against a future slip, and #2 (the `Markup` newtype) would make the escapi
 unforgeable at the type level — its ripple is exactly those two files. Kept both, as
 the doc directs: #2 prevents the cause, #3 contains the effect.
 
+### Shipped next (2026-06-18) — #22: stage-copy totality (the board can't leak a raw code)
+
+**Derived from the spines, not a hand-list.** `Watch.statementText` falls back to
+the RAW event code (`emit.foo.started`) on a Voice miss — a register leak to a
+human. The fix is the doc's "cheaper and stronger" option: two `VoiceTotalityTests`
+derive the board's stage codes from the declared spines themselves (`Spines` ×
+`RunSpine.keys`) and assert every `<stageKey>.started`, plus the frame codes
+`summary.stageCompleted` / `watch.stageHalted` / `watch.runTitle` / `watch.runDone`,
+is voiced. Because the keys come from the spine SOURCE (not the hand-maintained
+`inScopeCodes` set), a new spine stage that forgets its copy fails in the pure pool —
+it can never leak `<key>.started` to an operator at render. No production change; the
+current set is proven complete.
+
 ---
 
 ## 1 — The map (all 25, by theme)
@@ -207,7 +220,7 @@ Status key: **● shipped** · **◐ partial / starved** · **○ not started** 
 | 19 | Emit the intra-stage `summary.stageProgress` events | E. The Watch board | ◐ |
 | 20 | Move the dwell off the emitting thread | E | ○ |
 | 21 | Instrument the other runs onto the spine | E | ◐ |
-| 22 | Loud fallback for stage copy | E | ○ |
+| 22 | Loud fallback for stage copy | E | ● |
 | 23 | Build the Explore TUI | F. Explore + history | ▢ |
 | 24 | A `diff <runA> <runB>` verb | F | ▢ |
 | 25 | `explain <ssKey>` provenance drill-down | F | ◐ |
@@ -530,7 +543,7 @@ empty for Migration / Transfer / Eject / Drift.
 and emit the same `<stage>.started` / `summary.stageCompleted` envelopes from
 their run faces. THE_VOICE_BUILD_MAP slice 2's remainder.
 
-### 22 · Loud fallback for stage copy  ○
+### 22 · Loud fallback for stage copy  ●  *(landed 2026-06-18; see §0)*
 
 **Problem.** `Watch.statementText` does `match Voice.lookup code with Some c -> …
 | None -> code` — on a miss it shows the **raw event code** (`emit.foo.started`) to
@@ -541,6 +554,15 @@ the operator. The answer path already learned this lesson (NM-47's
 totality test pinning every stage key's `.started` / `summary.stageCompleted` /
 `watch.*` code as voiced, so a new stage can never leak an identifier to a human.
 Mirror the existing `code ⇔ copy` totality test.
+
+**As shipped.** The "cheaper and stronger" option: two `VoiceTotalityTests` derive
+the board's codes FROM THE SPINES (`Spines` × `RunSpine.keys`) — not a hand-list —
+and assert every `<stageKey>.started`, plus `summary.stageCompleted` /
+`watch.stageHalted` / `watch.runTitle` / `watch.runDone`, is voiced. A new spine
+stage that forgets its copy now fails in the pure pool, never by leaking
+`<key>.started` to an operator at render. No production change — `statementText`'s
+fallback stays, but the derived test proves it unreachable for board codes (and the
+current set IS complete).
 
 ---
 
