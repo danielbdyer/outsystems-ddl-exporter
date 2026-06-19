@@ -153,15 +153,36 @@ let private marker (depth: int) (hasChildren: bool) : string =
     elif depth >= 1 then Theme.expanded
     else Theme.collapsed
 
+/// Truncate a cell's text to the width that remains on its line, with a `…`
+/// tail — the width dual of the §12 breadth cap (`laneCap`). `prefix` is the
+/// visible characters already spent on the line (indent + label + glyph +
+/// gutters); the rest is the budget for `text`. A non-positive budget (an
+/// unknown / pinned-narrow width) or a string that already fits is a no-op — so
+/// a wide terminal (tests pin 200) is untouched, and a redirected sink (pinned to
+/// `plainWidth`) only trims what would have wrapped. Truncation is a pretty-lens
+/// concern only; `toJson` always carries the full, untrimmed string.
+let private fit (width: int) (prefix: int) (text: string) : string =
+    let budget = width - prefix
+    if budget <= 0 || text.Length <= budget then text
+    elif budget = 1 then "…"
+    else text.Substring(0, budget - 1) + "…"
+
 let rec private writeBlock (console: IAnsiConsole) (depth: int) (indent: string) (v: View) : unit =
     match v with
     | Doc blocks -> for b in blocks do writeBlock console depth indent b
     | Blank -> console.WriteLine()
     | Panel (title, fields) -> writePanel console title fields
     | Hero (st, text) ->
-        console.MarkupLine(sprintf "%s%s  %s" indent (colorOf st (glyphOf st)) (Theme.bold (Markup.Escape text)))
+        let g = glyphOf st
+        let body = fit console.Profile.Width (indent.Length + g.Length + 2) text
+        console.MarkupLine(sprintf "%s%s  %s" indent (colorOf st g) (Theme.bold (Markup.Escape body)))
     | Field (label, value, st) ->
-        console.MarkupLine(sprintf "%s%s   %s" indent (Theme.muted (Markup.Escape label)) (styled st value))
+        // `styled` prepends `glyph + space` (nothing for Neutral); the label
+        // column + its 3-space gutter precede it. Fit the value to what remains.
+        let g = glyphOf st
+        let glyphPart = if g = "" then 0 else g.Length + 1
+        let body = fit console.Profile.Width (indent.Length + label.Length + 3 + glyphPart) value
+        console.MarkupLine(sprintf "%s%s   %s" indent (Theme.muted (Markup.Escape label)) (styled st body))
     | Meter (label, filled, total, suffix) ->
         console.MarkupLine(
             sprintf "%s%s   %s   %s"
@@ -203,15 +224,21 @@ let rec private writeBlock (console: IAnsiConsole) (depth: int) (indent: string)
                         (Theme.muted (sprintf "and %s more" (Theme.humane (n - laneCap)))))
     | Disclosure (headline, st, detail) ->
         let m = marker depth (not (List.isEmpty detail))
-        console.MarkupLine(sprintf "%s%s %s" indent m (styled st headline))
+        let g = glyphOf st
+        let glyphPart = if g = "" then 0 else g.Length + 1
+        let body = fit console.Profile.Width (indent.Length + m.Length + 1 + glyphPart) headline
+        console.MarkupLine(sprintf "%s%s %s" indent m (styled st body))
         if depth >= 1 then
             for child in detail do writeBlock console (depth - 1) (indent + "  ") child
         elif not (List.isEmpty detail) then
             console.MarkupLine(
                 sprintf "%s  %s %s" indent (Theme.muted Theme.collapsed)
                     (Theme.muted (sprintf "%d more" (List.length detail))))
-    | Note text -> console.MarkupLine(sprintf "%s%s" indent (Theme.muted (Markup.Escape text)))
-    | Action text -> console.MarkupLine(sprintf "%s%s %s" indent Theme.arrow (Theme.accent (Markup.Escape text)))
+    | Note text ->
+        console.MarkupLine(sprintf "%s%s" indent (Theme.muted (Markup.Escape (fit console.Profile.Width indent.Length text))))
+    | Action text ->
+        let body = fit console.Profile.Width (indent.Length + Theme.arrow.Length + 1) text
+        console.MarkupLine(sprintf "%s%s %s" indent Theme.arrow (Theme.accent (Markup.Escape body)))
 
 /// Render to a chosen disclosure depth — the dig revealed `depth` levels down,
 /// deeper nodes collapsed behind their `▸ N more` affordance. The interactive

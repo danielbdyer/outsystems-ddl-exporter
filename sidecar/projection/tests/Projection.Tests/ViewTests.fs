@@ -354,3 +354,43 @@ let ``query: a malformed path is a named Error, not a crash`` () =
 let ``query: validateQuery accepts a leading-dot path and rejects a bare key`` () =
     Assert.True(match View.validateQuery ".blocks[].status" with Ok () -> true | _ -> false)
     Assert.True(match View.validateQuery "blocks" with Error _ -> true | _ -> false)
+
+// --- responsive width (#11) ------------------------------------------------
+// Discriminating predicate: a cell too wide for the console is truncated with a
+// `…` and stays on ONE line (no wrap) — the width dual of the §12 breadth cap;
+// but the machine lens (`toJson`) keeps the FULL value, since truncation is a
+// pretty-lens concern only. A wide console leaves the value whole (the no-op
+// path that keeps every existing assertion, which renders at width 200, intact).
+
+let private plainAtWidth (width: int) (v: View.View) : string =
+    use sw = new StringWriter()
+    let console =
+        AnsiConsole.Create(
+            AnsiConsoleSettings(
+                Ansi = AnsiSupport.No, ColorSystem = ColorSystemSupport.NoColors,
+                Out = AnsiConsoleOutput(sw)))
+    console.Profile.Width <- width
+    View.writeToDepth console View.defaultDepth v
+    sw.ToString()
+
+[<Fact>]
+let ``View: a narrow console truncates a long field value with … on one line — json keeps it whole (#11)`` () =
+    let longValue = "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo"
+    let v = View.Field("k", longValue, View.Neutral)
+    let out = plainAtWidth 40 v
+    Assert.Contains("…", out)                       // truncated
+    Assert.Contains("alpha", out)                   // a prefix survived
+    Assert.DoesNotContain(longValue, out)           // the full value did not render
+    // one visible line — the truncation prevented the wrap a 66-char value would
+    // otherwise force at width 40.
+    let lines = out.Split('\n') |> Array.filter (fun l -> l.TrimEnd('\r').Trim() <> "")
+    Assert.Equal(1, lines.Length)
+    // the machine lens carries the FULL value — width is a pretty-lens concern.
+    Assert.Equal(longValue, nonNull ((json v).GetProperty("value").GetString()))
+
+[<Fact>]
+let ``View: a wide console leaves the value whole — truncation is width-gated (#11)`` () =
+    let v = View.Field("k", "a readable value", View.Ok)
+    let out = plainAtWidth 200 v
+    Assert.Contains("a readable value", out)
+    Assert.DoesNotContain("…", out)

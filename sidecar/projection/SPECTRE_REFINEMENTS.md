@@ -99,7 +99,7 @@ Status key: **● shipped** · **◐ partial / starved** · **○ not started** 
 | 8 | Sealed `Color` palette | B | ✕ |
 | 9 | High-contrast / colorblind theme | B | ✕ |
 | 10 | Screen-reader narration lens | B | ✕ |
-| 11 | **Responsive width** | B | ○ |
+| 11 | **Responsive width** | B | ● |
 | 12 | `View.Table` primitive | C. New primitives | ○ |
 | 13 | Fold `Bench.renderTable` into the substrate | C | ○ |
 | 14 | Trend surfaces (use `Theme.sparkline`) | C | ○ |
@@ -173,7 +173,14 @@ an exception. A display bug today can turn exit 0 into a crash.
 fault degrades to plain text and never fails the run it describes. Pairs with #2
 (which removes most of the *cause*) — keep both: #2 prevents, #3 contains.
 
-### 4 · A `RenderOptions` record  ○  *(the enabling refactor)*
+### 4 · A `RenderOptions` record  ○  *(deferred — see note; build at the second consumer)*
+
+> **Deferred 2026-06-18.** #11 (responsive width) was its stated first consumer,
+> but #11 reads `console.Profile.Width` directly inside `writeBlock` — it needed
+> no record. Per the house "carriers reify at the second consumer" law (CLAUDE.md
+> §5), `RenderOptions` is held until #15 (`Trail` cap) or #18 (`ViewPath`) makes a
+> *second* render parameter real; building it now for one consumer would be a
+> speculative carrier. The original rationale stands for when that day comes:
 
 **Problem.** `defaultDepth`, `laneCap`, the implicit width, and the color policy
 are scattered `[<Literal>]`s and inlined constants. `writeToDepth` threads a bare
@@ -210,7 +217,23 @@ compile-time totality witness by making `writePanel` match a closed `PanelRow`
 > Section scoped to **responsive width** per operator direction (2026-06-18).
 > `NO_COLOR` shipped (#7). #8–#10 de-scoped (§1 table).
 
-### 11 · Responsive width  ○
+### 11 · Responsive width  ●  *(landed 2026-06-18)*
+
+**Landed.** A pure `View.fit (width) (prefix) (text)` helper — the width dual of
+the `laneCap` breadth cap — truncates a too-wide cell with a `…`, and `writeBlock`
+applies it to the text-bearing arms (`Hero` / `Field` / `Note` / `Action` /
+`Disclosure` headline), with prefix math accounting for the indent, label column,
+and glyph. It reads `console.Profile.Width` directly (a redirected sink is pinned
+to `plainWidth`; a TTY reports its real width; an unknown width yields a
+non-positive budget → no-op), so **#4 was not needed** and stays deferred (below).
+`toJson` keeps the full untrimmed string — truncation is a pretty-lens concern.
+Two `ViewTests`: a width-40 console truncates a 66-char value onto one line while
+the machine lens keeps it whole; a width-200 console leaves it untouched. `Lane`
+and `Trail` headlines are not yet fit (short labels; `Trail` is capped by #15).
+
+---
+
+#### Original survey note (kept for provenance)
 
 **Problem.** Everything assumes ≥ `View.plainWidth` (100) columns. The meter is a
 fixed 10 cells (`Theme.meter`); long `Field` values aren't truncated or wrapped;
