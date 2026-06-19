@@ -287,6 +287,12 @@ Status key: **● shipped** · **◐ partial / starved** · **○ not started** 
 | 23 | Build the Explore TUI | F. Explore + history | ▢ |
 | 24 | A `diff <runA> <runB>` verb | F | ● |
 | 25 | `explain <ssKey>` provenance drill-down | F | ◐ |
+| 26 | **The Threshold** — earned milestone flourishes | G. Earned moments | ▢ |
+
+> **Added (2026-06-18, operator direction — "give the interface a little sparkle"):**
+> #26, a new theme. The cutover journey has earned moments (the R6 gate opening, the
+> eject freeze) the calm interface leaves unmarked; #26 marks them with a tasteful,
+> one-substrate flourish. The brainstorm + spec is §26 below.
 
 > **De-scoped (2026-06-18, operator direction):** #8 sealed palette, #9
 > high-contrast theme, #10 screen-reader narration. Recorded here so the cut is
@@ -739,6 +745,72 @@ lens the event stream uses (so the two can't drift). It stops at the trail.
 finding, and suggested fix for one `SsKey`, progressively disclosed (so a deep
 trail isn't a wall — needs #15), and walkable inside Explore (#23, #18). The dig,
 made interactive.
+
+---
+
+## G — Earned moments (the sparkle)
+
+> Added 2026-06-18 on operator direction ("give the interface a little sparkle …
+> focus on what vibrancy calls out to you"). The one theme that is about *delight*
+> rather than correctness — but held to the same law: a flourish that drifts from the
+> record would violate the prime directive, so the flourish IS a record.
+
+### 26 · The Threshold — earned milestone flourishes  ▢
+
+**The idea.** The system shepherds a model toward cutover — a one-way door (the
+eject, after which there is no upstream to re-derive from). That journey has *earned
+moments*: the R6 gate opening (N consecutive green → eligible), the eject freezing,
+the streak climbing. The calm, no-drama interface reports them in the same monotone
+as run 2. #26 marks them — once, when the line is *crossed* — with a tasteful,
+distinct flourish. The vibrancy is earned CONTRAST: in a muted interface, one earned
+moment glows like a summit register, not a party.
+
+**Why it belongs here (the discipline that makes it native).**
+- **One substrate — even delight is accountable.** The flourish is a
+  `View.Milestone of event: string * Status * lines: string list` case with a
+  `toJson` arm, so the machine lens RECORDS it (`{"kind":"milestone",
+  "event":"cutover-eligible","atRun":10}` — `--query`-able, ledger-able). The moment
+  is real on both lenses; a celebration that drifted from the record would break the
+  one law this module keeps. This celebration *is* the record.
+- **No drama (THE_VOICE register).** Statement-first ("Ten consecutive green checks.
+  This pair is ready for cutover."), semantic-not-decorative, glyph-survives-`NO_COLOR`
+  (a `✦` + a `Theme.rule` hairline carries the frame, not color alone). No confetti,
+  no exclamation — earned quiet.
+- **Fire ONCE on crossing, not every check.** `buildReadinessView` is stateless, so
+  the *transition* (run N-1 not-yet, run N eligible) is detected at the `RunFaces`
+  ledger-read site that already holds the full `records` list (the same seam #14's
+  series threads through) — one predicate, no new state. Idempotent: a re-check while
+  already-eligible shows the calm board, not the flourish.
+
+**The earned moments (the trigger set).** The R6 gate opens (`ConsecutiveGreen` first
+reaches `Threshold`); the eject seals (the append-forever freeze — arguably the most
+sacred moment in the system); optionally a mid-climb streak marker (5 of 10).
+
+**The slices.**
+1. *The substrate (clean):* the `Milestone` case + `toJson` + `writeBlock` (the framed
+   flourish; a `Theme.rule` token for the hairline) + the DU-totality entry + a
+   both-lenses test. Self-contained, low-risk.
+2. *The first trigger:* fire-once-on-crossing at the readiness site (the gate opening) —
+   the transition predicate + a test pinning the fire-ONCE law.
+3. *The second trigger:* the eject freeze (the one-way door) — the moment that most
+   earns it.
+
+**Adjacent sparks (same instinct, lighter — fold in or spin out).**
+- *Storytelling sparkline:* color #14's `Spark` bars by trend (settling greens,
+  churning ambers) — the changeset trend gets a mood. A `Spark` variant + a color map.
+- *Horizon on the timeline:* the cutover strip shows where you've been (`●●●✕●●▸`);
+  append the distance still to go as faint future dots (`▸●●●○○○`) — a journey wants a
+  destination, not just a past.
+- *First light on the live board:* when the final stage completes clean, let the Watch
+  board's `✓`s settle left-to-right, once. Motion = life. Gated on #20 (the off-thread
+  dwell) — a reason to want #20, not a thing to rush.
+
+**Cheat sheet.** Mind #1 — a `Milestone` is a top-level `Doc` block, never a
+`PanelRow` (the drift hole stays closed). Mind #11 — the framed lines are prose, so
+they truncate like a `Field`; the frame (`Theme.rule`) scales to width. The
+`Milestone` event names join the `Voice` register if they carry copy (the `code ⇔
+copy` totality, #22) — but the lines can be authored at the call site for slice 1,
+voiced later.
 
 ---
 
