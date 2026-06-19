@@ -232,7 +232,7 @@ Status key: **● shipped** · **◐ partial / starved** · **○ not started** 
 | 21 | Instrument the other runs onto the spine | E | ◐ |
 | 22 | Loud fallback for stage copy | E | ● |
 | 23 | Build the Explore TUI | F. Explore + history | ▢ |
-| 24 | A `diff <runA> <runB>` verb | F | ▢ |
+| 24 | A `diff <runA> <runB>` verb | F | ● |
 | 25 | `explain <ssKey>` provenance drill-down | F | ◐ |
 
 > **De-scoped (2026-06-18, operator direction):** #8 sealed palette, #9
@@ -604,16 +604,22 @@ carries**, never a second copy of run state (DYNAMIC_DISPLAY §7 discipline 6). 
 render thread / input loop concurrency is the same shape #20 sets up — sequence
 #20 first.
 
-### 24 · A `diff <runA> <runB>` verb  ▢
+### 24 · A `diff <runA> <runB>` verb  ●  *(already reachable via `Ref`; premise stale)*
 
-**Problem.** `Comparison<Catalog, CatalogDiff>` is built and Weyl-proven,
-`RunLedger` holds the history, and `Comparison.changeSurface` already renders a
-diff statement-first. Only the verb that picks two runs from the ledger and
-renders `between` them is missing (REPORTING_HORIZON Tier-4).
+**Status correction (2026-06-18 — the premise was stale).** The "missing verb" is
+NOT missing. `Ref.parse` resolves a `@runId` to the stored run's catalog (`Ref.fs`:
+`if s.StartsWith("@") then RunArtifact …`), and the existing `diff <a> <b>`
+(`RunFaces.runDiff`) resolves BOTH operands through that same `Ref` machinery before
+`Comparison.catalog.Between` and `renderAnswer`. So the run-to-run diff the item asks
+for is **`projection diff @runA @runB`** today — the uniform-operand design (`Ref.fs`
+header: "every verb becomes `verb <ref>…` and they compose, `diff model.json
+@run-9`") already delivers it; a dedicated verb would be redundant. `CompareTests`
+exercises the `@runId` operand shape on the sibling `compare`.
 
-**Fix.** A thin `RunFaces` verb: resolve two run ids → load their catalogs →
-`Comparison.summary Comparison.catalog a b` → `renderAnswer`. Once #23 lands, this
-is the `←`/`→` time-axis of Explore, not a separate surface.
+**What a dedicated surface would still add — and why it waits.** Only the Explore
+time-axis (#23's `←`/`→` over the ledger) is the genuinely-new affordance, and that
+is a #23 consumer, not a separate verb. So #24's remaining value folds into #23, not
+a standalone build (CLAUDE.md §5 — no zero-consumer verb).
 
 ### 25 · `explain <ssKey>` provenance drill-down  ◐
 
@@ -726,7 +732,7 @@ Rough triage to spend a time-box well. Effort: **S** ≈ an hour, **M** ≈ a se
 | #2 markup safety | Med | M–L | Kills a crash class; ripple across call sites. |
 | #20 dwell off-thread | Med | M–L | Unblocks concurrency; hardest to test. |
 | #14 trends | Med | S–M | `Theme.sparkline` already exists, zero callers. |
-| #24 diff verb | Med | S | Thin once `Comparison` + ledger are in hand. |
+| #24 diff verb | — | — | **● already reachable** — `diff @runA @runB` via the `Ref` uniformity; the new part folds into #23. |
 | #25 explain dig | Med | M | Needs #15 so a deep trail isn't a wall. |
 | #21 spine | Med | M | `--watch` for the other verbs. |
 | #12 → #13 table | Med | M / S | #13 is cheap once #12 exists. |
