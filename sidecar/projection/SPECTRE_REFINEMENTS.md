@@ -212,6 +212,21 @@ assert the json lens only, so the change was free there; a new `ViewTests` pins 
 cap, the collapse, and the full-chain-in-json law. (`LaneCap` kept its name — the #4
 rename-to-`BreadthCap` is a deferred cosmetic.)
 
+### Shipped next (2026-06-18) — #12: the `View.Table` primitive (the matrix gets a substrate)
+
+**The first new `View` case since the chapter opened.** `Table of headers *
+(string * Status) list list` — aligned columns over rows of (cell-text, status)
+cells. `writeBlock` renders a Spectre `Table` with each cell `styled` by its status
+(glyph + color, so the matrix reads on a `NoColors` console), wrapped defensively
+(#3 — a malformed cell degrades to plain space-joined rows). `toJson` carries the
+full grid — headers, every cell, its status — so a `--query` walks
+`.rows[][?status=warn]` exactly as the human reads it (one substrate). **Panel-legality
+decided** (the #1 cheat-sheet): a `Table` is NOT a `PanelRow`, only a top-level `Doc`
+block — the drift hole stays closed by construction. The DU totality test gained
+`table` AND `timeline` (the latter a pre-existing hand-list gap). The production
+consumer follows in #13 (the bench fold); the `buildSurveyView` column conversion is
+a deferred follow-on (its packed value needs a real column rethink).
+
 ---
 
 ## 1 — The map (all 25, by theme)
@@ -232,7 +247,7 @@ Status key: **● shipped** · **◐ partial / starved** · **○ not started** 
 | 9 | High-contrast / colorblind theme | B | ✕ |
 | 10 | Screen-reader narration lens | B | ✕ |
 | 11 | **Responsive width** | B | ● |
-| 12 | `View.Table` primitive | C. New primitives | ○ |
+| 12 | `View.Table` primitive | C. New primitives | ● |
 | 13 | Fold `Bench.renderTable` into the substrate | C | ○ |
 | 14 | Trend surfaces (use `Theme.sparkline`) | C | ○ |
 | 15 | `Trail` gets cap-and-name + depth | C | ● |
@@ -422,7 +437,7 @@ is #15); the meter stays a fixed gauge (a gauge, not prose).
 
 ## C — New `View` primitives
 
-### 12 · `View.Table`  ○
+### 12 · `View.Table`  ●  *(landed 2026-06-18; see §0)*
 
 **Problem.** The capability "matrix" (`TtyRenderer.buildSurveyView`) renders each
 environment as a `Field` line, not aligned columns — the doc calls it a matrix but
@@ -434,6 +449,16 @@ First consumers: `buildSurveyView`, then #13.
 
 **Cheat sheet.** Mind #1 — a `Table` inside a `Panel` must be a `PanelRow` or it
 hits the same drift hole. Decide whether `Table` is panel-legal before building.
+
+**As shipped.** `Table of headers * (string * Status) list list` — `toJson` carries
+headers + every cell + its status (a `--query` can walk `.rows`); `writeBlock` renders
+an aligned Spectre `Table`, each cell `styled` by its status (so the matrix reads on a
+NoColors console), wrapped defensively (#3). **Panel-legality decided:** a `Table` is
+NOT a `PanelRow` — it is a top-level `Doc` block — so the §1 drift hole stays closed.
+The first PRODUCTION consumer is the bench fold (#13); the `buildSurveyView` conversion
+(decomposing its packed reachability/grant/CDC/users value into columns) is a larger
+rethink, deferred as a clean follow-on. The DU totality test now also covers `timeline`
+(a pre-existing hand-list gap, fixed in passing).
 
 ### 13 · Fold `Bench.renderTable` into the substrate  ○
 

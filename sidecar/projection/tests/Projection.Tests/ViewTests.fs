@@ -415,6 +415,8 @@ let ``View: every case renders to plain AND json without throwing (DU totality)`
           "field",      View.Field("k", "v", View.Warn)
           "meter",      View.Meter("m", 3, 10, "3 / 10")
           "dots",       View.Dots("history", [ "green"; "red" ])
+          "timeline",   View.Timeline("cutover", [ "green"; "red" ], 3, 10, Some 1)
+          "table",      View.Table([ "env"; "grant" ], [ [ "uat", View.Ok; "covered", View.Ok ]; [ "prod", View.Warn; "missing", View.Warn ] ])
           "trail",      View.Trail("steps", [ "naming", Some "rename"; "fk", None ])
           "lane",       View.Lane("+", "add", View.Ok, [ "A"; "B" ])
           "disclosure", View.Disclosure("Details", View.Neutral, [ View.Field("exit", "9", View.Bad) ])
@@ -464,3 +466,34 @@ let ``View: a value carrying markup metacharacters renders them literally — th
     // fallback (a different string) — either way this assertion catches it.
     let p = plain (View.Field("table", "Order[Archive] is [bold]gone", View.Bad))
     Assert.Contains("Order[Archive] is [bold]gone", p)   // brackets intact, ONCE — not `[[`, not stripped
+
+// --- the Table primitive (#12 — aligned columns, one lens) -------------------
+// Discriminating predicate: a Table renders aligned columns to the human and
+// carries the full grid (headers + every cell + per-cell status) to the machine —
+// one value, two lenses. A cell's status drives its glyph so the matrix reads on a
+// NoColors console; `toJson` keeps the status tags a `--query` can filter on.
+
+[<Fact>]
+let ``View: a Table renders headers + cells (plain) and carries the grid with per-cell status (json) (#12)`` () =
+    let v =
+        View.Table(
+            [ "environment"; "grant" ],
+            [ [ "cloud-uat", View.Ok;   "covered", View.Ok ]
+              [ "prod",      View.Warn; "missing INSERT", View.Warn ] ])
+    // pretty/plain lens — the headers and every cell's text are present
+    let p = plain v
+    Assert.Contains("environment", p)        // a header
+    Assert.Contains("cloud-uat", p)          // a cell
+    Assert.Contains("missing INSERT", p)     // a cell carrying spaces
+    Assert.Contains("✓", p)                  // the Ok cell's glyph — status reads without color
+    // json lens — the SAME grid: headers + rows + per-cell status
+    let j = json v
+    Assert.Equal("table", j.GetProperty("kind").GetString())
+    let headers =
+        j.GetProperty("headers").EnumerateArray() |> Seq.map (fun e -> nonNull (e.GetString())) |> Seq.toList
+    Assert.Equal<string list>([ "environment"; "grant" ], headers)
+    let rows = j.GetProperty("rows").EnumerateArray() |> Seq.toList
+    Assert.Equal(2, rows |> List.length)
+    let prodGrant = (rows.[1].EnumerateArray() |> Seq.toList).[1]
+    Assert.Equal("missing INSERT", prodGrant.GetProperty("text").GetString())
+    Assert.Equal("warn", prodGrant.GetProperty("status").GetString())

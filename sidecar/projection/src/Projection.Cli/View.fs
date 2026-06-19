@@ -66,6 +66,13 @@ type View =
     /// this run sits on the arc to cutover. `toJson` carries the strip as
     /// structure so the machine lens keeps the full series + present index.
     | Timeline of label: string * cells: string list * filled: int * total: int * present: int option
+    /// An aligned grid — column `headers` over `rows`, each row a list of
+    /// (cell-text, `Status`) cells (the cell's status drives its glyph + color, so a
+    /// matrix reads on a `NoColors` console too). The capability matrix and the bench
+    /// table are tables, not stacked `Field`s. Deliberately NOT a `PanelRow` (a
+    /// `Table` is a top-level `Doc` block, never a panel cell), so the §1 drift hole
+    /// stays closed. `toJson` carries headers + every cell + its status.
+    | Table of headers: string list * rows: (string * Status) list list
     /// A label over an ordered step list (explain's transform trail).
     | Trail of label: string * steps: (string * string option) list
     /// A move-lane: a glyph + label + a status badge (the move's reversibility),
@@ -261,6 +268,22 @@ let rec private writeBlock (console: IAnsiConsole) (opts: RenderOptions) (indent
                 (Theme.timelineMarkup cells present)
                 (Theme.meter filled total)
                 (Theme.muted (sprintf "%d/%d" filled total)))
+    | Table (headers, rows) ->
+        // An aligned Spectre table; the cell's status drives its glyph + color via
+        // `styled` (a Neutral cell is plain text). Spectre measures its own column
+        // widths, so #11's width cap doesn't apply here (as for `Panel`). Wrapped
+        // defensively (#3): a malformed cell degrades to plain space-joined rows
+        // rather than crashing the run.
+        let t = Spectre.Console.Table()
+        t.Border <- TableBorder.Rounded
+        for h in headers do t.AddColumn(Theme.muted (Markup.Escape h)) |> ignore
+        for row in rows do
+            t.AddRow(row |> List.map (fun (text, st) -> styled st text) |> List.toArray) |> ignore
+        try console.Write(t)
+        with :? System.InvalidOperationException ->
+            safeMarkupLine console (sprintf "%s%s" indent (Theme.muted (Markup.Escape (String.concat "   " headers))))
+            for row in rows do
+                safeMarkupLine console (sprintf "%s%s" indent (row |> List.map (fun (text, st) -> styled st text) |> String.concat "   "))
     | Trail (label, steps) ->
         // #15 — the transform chain gets the same depth-gated reveal + breadth cap a
         // `Lane` has: the label always shows (with the ▾/▸ marker); the steps reveal
@@ -454,6 +477,17 @@ let rec toJson (v: View) : JsonNode =
         o.["total"] <- i total
         (match present with Some p -> o.["present"] <- i p | None -> ())
         o :> JsonNode
+    | Table (headers, rows) ->
+        // The full grid rides the structure — headers, every cell, its status — so
+        // a `--query` can walk `.rows[][?status=warn]` exactly as the human reads it.
+        let h = JsonArray()
+        for x in headers do h.Add(s x)
+        let rs = JsonArray()
+        for row in rows do
+            let cells = JsonArray()
+            for (text, st) in row do cells.Add(obj [ "text", s text; "status", s (statusTag st) ])
+            rs.Add(cells)
+        obj [ "kind", s "table"; "headers", h; "rows", rs ]
     | Trail (label, steps) ->
         let a = JsonArray()
         for (step, detail) in steps do
