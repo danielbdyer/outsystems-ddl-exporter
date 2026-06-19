@@ -1279,6 +1279,35 @@ let buildInspectView (r: Run.Run) : View.View =
                       (top |> List.map (fun s -> View.Field (s.Label, sprintf "%d ms" s.TotalMs, View.Neutral)))) ]
     View.Doc (header @ [ transforms; artifacts ] @ ledgers @ bench)
 
+/// `inspect` with NO id (#10 — the time axis) — open the LATEST run and walk the
+/// ledger with `PgUp`/`PgDn`. The runs are sorted newest-first (ISO `Ts` sorts
+/// chronologically as text); the interactive Navigator scrubs them, each frame
+/// re-`buildInspectView`'d on demand (the I/O closure the Navigator stays free of).
+/// Piped / `--json` / `--query` render the newest run's document one-shot — same
+/// one-substrate fallback as `inspect <id>`.
+let runInspectHistory (asJson: bool) : int =
+    match Run.storeDir () with
+    | None ->
+        eprintfn "No run store is configured. Set PROJECTION_LEDGER_DIR to capture runs, then inspect."
+        4
+    | Some dir ->
+        match Run.list dir |> List.sortByDescending (fun r -> r.Ts) with
+        | [] ->
+            eprintfn "No runs in the store at %s." dir
+            1
+        | (newest :: _) as runs ->
+            let interactive =
+                Intervene.isInteractive ()
+                && not System.Console.IsOutputRedirected
+                && not asJson
+                && Option.isNone TtyRenderer.queryPath.Value
+            if interactive then
+                let arr = List.toArray runs
+                Navigator.runHistory arr.Length 0 (fun i -> buildInspectView arr.[i])
+            else
+                TtyRenderer.renderAnswer asJson View.defaultDepth (buildInspectView newest)
+                0
+
 let runInspect (idA: string) (idB: string option) (asJson: bool) : int =
     match Run.storeDir () with
     | None ->
@@ -1303,11 +1332,7 @@ let runInspect (idA: string) (idB: string option) (asJson: bool) : int =
                     && not System.Console.IsOutputRedirected
                     && not asJson
                     && Option.isNone TtyRenderer.queryPath.Value
-                if interactive then
-                    // The Navigator's ambient depth is 0 — everything collapsed beneath the
-                    // dug spine, so `→` REVEALS (the crisp one-thread motion); `OpenPath`
-                    // (the cursor) is the only thing open.
-                    Navigator.run 0 view
+                if interactive then Navigator.run view
                 else
                     TtyRenderer.renderAnswer asJson View.defaultDepth view
                     0

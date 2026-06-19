@@ -39,7 +39,7 @@ let private usageLines : string list =
         "    projection seal ( --store <path> | approve <version> --approver <name> ... )"
         "    projection report <flow>        the on-prem migration-team change bundle"
         "    projection synth-correct --out <path>   propose a blessed-correction artifact (review/edit/bless)"
-        "    projection inspect <runId> [<runId>]  a stored run, or what moved between two runs"
+        "    projection inspect [<runId> [<runId>]]  a stored run (no id = latest; arrows dig, PgUp/PgDn walk runs)"
         "    projection init                 scaffold a projection.json"
         "    projection setup [--conn <ref>] read back what is configured (history, writes, board);"
         "                                    --conn also probes a target (reachable + ALTER grant)"
@@ -429,6 +429,7 @@ let main argv =
         0
     | [||] -> runList ()
     | [| "init" |] -> runInit ()
+    | [| "inspect" |] -> runInspectHistory forceJson
     | [| "inspect"; runId |] -> runInspect runId None forceJson
     | [| "inspect"; runA; runB |] -> runInspect runA (Some runB) forceJson
     | [| "setup" |] -> runSetup None

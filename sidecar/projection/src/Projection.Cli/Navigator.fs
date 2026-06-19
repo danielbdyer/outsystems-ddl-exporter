@@ -142,7 +142,17 @@ let step (key: ConsoleKey) (model: Model) : Model =
 
 // --- The impure shell (the ReadKey loop; thin, the I/O boundary) -----------
 
-let private legend = "↑↓ move   →/Enter dig   ← back   q quit"
+let private navLegend = "↑↓ move   →/Enter dig   ← back   q quit"
+
+/// The position header — only in history mode (#10): where this run sits in the
+/// ledger (newest-first) and the time-axis keys. A single run shows nothing here
+/// (its identity is the `Hero` in the tree).
+let private header (console: IAnsiConsole) (idx: int) (count: int) : unit =
+    if count > 1 then
+        let line = sprintf "run %d/%d   PgUp newer · PgDn older" (idx + 1) count
+        (try console.MarkupLine(Theme.muted (Markup.Escape line))
+         with :? System.InvalidOperationException -> console.WriteLine(line))
+        console.WriteLine()
 
 /// The footer chrome — the breadcrumb to the cursor, then the key legend, muted.
 /// Built as plain markup (not a `View`) so it sits BELOW the rendered tree without
@@ -150,24 +160,27 @@ let private legend = "↑↓ move   →/Enter dig   ← back   q quit"
 let private footer (console: IAnsiConsole) (model: Model) : unit =
     let crumb = breadcrumb model |> List.map Markup.Escape |> String.concat (" " + Theme.arrow + " ")
     console.WriteLine()
-    let line = if crumb = "" then legend else crumb + "    " + Markup.Escape legend
+    let line = if crumb = "" then navLegend else crumb + "    " + Markup.Escape navLegend
     try console.MarkupLine(Theme.muted line)
-    with :? System.InvalidOperationException -> console.WriteLine(legend)
+    with :? System.InvalidOperationException -> console.WriteLine(navLegend)
 
-/// Drive the inspector interactively over `tree` at ambient `depth`. CLEAR-and-
-/// redraw on `Console.Out` each frame — the pure `step` / `project` do the thinking;
-/// this shell only paints and reads a key. Returns 0. The caller owns the
-/// interactive/headless choice — `run` assumes a real terminal (it `Console.Clear()`s).
+/// The shared CLEAR-and-redraw loop (the only I/O boundary). `count` frames addressed
+/// by `loadAt` (0 = newest); the cursor digs ONE frame, `PgUp`/`PgDn` scrub the time
+/// axis (#10) — pure shell I/O (the reducer never sees a run; each frame re-inits the
+/// cursor at the new tree's root). The pure `step` / `project` do all the thinking.
 ///
-/// Terminal restore is honest: cursor visibility is hidden for the loop and restored
-/// in `finally`, AND `TreatControlCAsInput` is set so a Ctrl-C is delivered as a
-/// KEYPRESS rather than killing the process — the loop catches it and quits CLEANLY
-/// THROUGH `finally` (without that, a default Ctrl-C during `ReadKey` would terminate
-/// the process with the caret still hidden). Both terminal modes are saved and
-/// restored, each guarded (a non-interactive sink throws on get/set — we ignore it).
-let run (depth: int) (tree: View.View) : int =
+/// Terminal restore is honest: cursor visibility is hidden for the loop and restored in
+/// `finally`, AND `TreatControlCAsInput` is set so a Ctrl-C is delivered as a KEYPRESS
+/// rather than killing the process — the loop catches it and quits CLEANLY THROUGH
+/// `finally` (without that, a default Ctrl-C during `ReadKey` terminates the process with
+/// the caret still hidden). Both terminal modes are saved and restored, each guarded (a
+/// non-interactive sink throws on get/set — we ignore it). The caller owns the
+/// interactive/headless choice; `driveLoop` assumes a real terminal (it `Console.Clear()`s).
+let private driveLoop (count: int) (start: int) (loadAt: int -> View.View) : int =
     let console = View.consoleTo Console.Out
-    let mutable model = init depth tree
+    let clamp i = max 0 (min i (count - 1))
+    let mutable idx = clamp start
+    let mutable model = init 0 (loadAt idx)
     let priorCursor = try Console.CursorVisible with _ -> true
     let priorCtrlC = try Console.TreatControlCAsInput with _ -> false
     try
@@ -176,11 +189,18 @@ let run (depth: int) (tree: View.View) : int =
         let mutable go = true
         while go do
             (try Console.Clear() with _ -> console.WriteLine())
-            View.writeWith { project model with Width = console.Profile.Width } console tree
+            header console idx count
+            View.writeWith { project model with Width = console.Profile.Width } console model.Tree
             footer console model
             let key = Console.ReadKey(true)
             if key.Modifiers.HasFlag(ConsoleModifiers.Control) && key.Key = ConsoleKey.C then
                 go <- false   // Ctrl-C quits cleanly — `finally` restores the terminal
+            elif key.Key = ConsoleKey.PageDown && idx < count - 1 then
+                idx <- idx + 1                       // down the newest-first list → an OLDER run
+                model <- init 0 (loadAt idx)         // fresh cursor at the new run's root
+            elif key.Key = ConsoleKey.PageUp && idx > 0 then
+                idx <- idx - 1                       // up the list → a NEWER run
+                model <- init 0 (loadAt idx)
             else
                 model <- step key.Key model
                 if model.Done then go <- false
@@ -189,3 +209,12 @@ let run (depth: int) (tree: View.View) : int =
         (try Console.TreatControlCAsInput <- priorCtrlC with _ -> ())
         (try Console.CursorVisible <- priorCursor with _ -> ())
         console.WriteLine()
+
+/// Drive the inspector over ONE `tree` (the single-run `inspect <id>`).
+let run (tree: View.View) : int = driveLoop 1 0 (fun _ -> tree)
+
+/// Drive the inspector over a run HISTORY (#10) — `count` runs addressed by `loadAt`
+/// (0 = newest), starting at `start`. `PgUp`/`PgDn` walk the time axis; `loadAt` does
+/// the per-frame I/O (a closure the caller owns, so this module stays free of `Run`).
+let runHistory (count: int) (start: int) (loadAt: int -> View.View) : int =
+    driveLoop count start loadAt

@@ -284,7 +284,7 @@ Status key: **● shipped** · **◐ partial / starved** · **○ not started** 
 | 20 | Move the dwell off the emitting thread | E | ○ |
 | 21 | Instrument the other runs onto the spine | E | ◐ |
 | 22 | Loud fallback for stage copy | E | ● |
-| 23 | Build the Explore TUI | F. Explore + history | ◐ |
+| 23 | Build the Explore TUI | F. Explore + history | ● |
 | 24 | A `diff <runA> <runB>` verb | F | ● |
 | 25 | `explain <ssKey>` provenance drill-down | F | ◐ |
 | 26 | **The Threshold** — earned milestone flourishes | G. Earned moments | ▢ |
@@ -740,7 +740,7 @@ current set IS complete).
 
 ## F — Explore + run history
 
-### 23 · Build the Explore TUI  ◐  *(shipped 2026-06-18 — the dig-as-motion core; the run-history walk is the follow-on)*
+### 23 · Build the Explore TUI  ●  *(shipped 2026-06-18 — dig-as-motion + the run-history walk; all three nav axes)*
 
 **Problem.** The interactive inspector (DYNAMIC_DISPLAY §3.3) is named and unbuilt.
 Every dependency exists: the `View` engine, `Comparison`, `RunLedger`, and (once
@@ -783,12 +783,21 @@ all be real terminals before the loop is reachable, so a non-TTY can never hang 
 `Ctrl-C` is delivered as a keypress (`TreatControlCAsInput`) so the loop quits CLEANLY
 through `finally`, restoring the terminal.
 
-**What's still ◐ (the follow-on surface).** The `←`/`→` run-history walk over the
-ledger (#10's time axis — `inspect` with no id, scrub prev/next run) is the next slice;
-the leaf-cursor caret, the focus/filter (L1), and the diff control-surface (L2) ride on
-this same shell. The Navigator holds a **cursor over data the `View` already carries**,
-never a second copy of run state (DYNAMIC_DISPLAY §7 discipline 6) — so those are cursor
-axes added to the `Model`, not new state.
+**The time axis (#10 — shipped same day).** `inspect` with NO id opens the LATEST run and
+`PgUp`/`PgDn` scrub older/newer through the ledger (newest-first by ISO `Ts`). The walk is
+pure SHELL I/O — each frame re-`buildInspectView`s on demand via a `loadAt` closure the
+Navigator stays free of (no `Run` dependency in `Navigator.fs`), so the reducer never sees
+a run and `step` stays pure and unchanged; the single-run and history shells share one
+`driveLoop` (`run tree` = `driveLoop 1 0 (fun _ -> tree)`). So the three Explore axes the
+Fix named are ALL delivered: `↑`/`↓` cursor, `→`/`Enter` dig, run-history walk (on
+`PgUp`/`PgDn`, since `←`/`→` are the dig). Headless parity holds (no id → newest run's
+document one-shot on pipe / `--json` / `--query`).
+
+**What rides on this shell next (separate cluster items, not #23 gaps).** The leaf-cursor
+caret (mark the `OpenPath = Some []` tip so a cursor on a leaf `Field` is visible), the
+focus/filter (L1), and the diff control-surface (L2). The Navigator holds a **cursor over
+data the `View` already carries**, never a second copy of run state (DYNAMIC_DISPLAY §7
+discipline 6) — so those are cursor axes added to the `Model`, not new state.
 
 ### 24 · A `diff <runA> <runB>` verb  ●  *(already reachable via `Ref`; premise stale)*
 
