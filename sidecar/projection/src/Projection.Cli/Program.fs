@@ -79,6 +79,8 @@ let private usageLines : string list =
         "table. --pretty / --json force the channel (default AUTO: a TTY gets the live stage"
         "board + verdict panel, a pipe gets NDJSON). --query <path> narrows any answer to a"
         "JSONPath-subset slice of its structured form (e.g. --query 'blocks[?status=warn]')."
+        "--open <path> force-reveals just that dotted child-index branch of a pretty answer"
+        "(e.g. --open 1.0), the rest staying at --depth — the headless half of the dig."
         ""
         "Exit codes:"
         "    0  succeeded"
@@ -379,6 +381,34 @@ let main argv =
             value, rest
         | None -> None, argv
     TtyRenderer.queryPath := queryArg
+    // `--open 1.0.2` (#18) — a GLOBAL value flag: force-reveals exactly that dotted
+    // child-index branch of the answer (the headless half of the dig), every other
+    // branch at the ambient `--depth`. A malformed path is ignored (the answer renders
+    // calm rather than failing the run). Same flag+value strip as `--query`.
+    let openArg, argv =
+        match Array.tryFindIndex ((=) "--open") argv with
+        | Some i ->
+            let value = if i + 1 < argv.Length then Some argv.[i + 1] else None
+            let rest =
+                match value with
+                | Some _ -> Array.append argv.[.. i - 1] argv.[i + 2 ..]
+                | None   -> Array.append argv.[.. i - 1] argv.[i + 1 ..]
+            value, rest
+        | None -> None, argv
+    TtyRenderer.openPath :=
+        openArg
+        |> Option.bind (fun s ->
+            let parsed = s.Split('.') |> Array.map (fun p -> System.Int32.TryParse p)
+            // A path is a dotted list of NON-NEGATIVE child indices; every component must
+            // parse AND be ≥ 0 (`Split` never yields an empty array, so an empty / non-numeric
+            // / negative component all land here as malformed → None → the answer renders calm).
+            // The `≥ 0` clamp matters for #23: child indices come from `List.iteri`, so a
+            // negative head can never match one — but a future BARE-node answer surface would
+            // see `revealed` fire on a `Some [-1]` root; rejecting it at the door keeps `--open`
+            // honest (only real coordinates) regardless of what consumes `OpenPath` next.
+            if Array.forall (fun (ok, n) -> ok && n >= 0) parsed
+            then Some (parsed |> Array.map snd |> Array.toList)
+            else None)
     let has flag = Array.contains flag argv
     verboseMode := has "-v" || has "--verbose"
     let forceJson = has "--json" || has "--no-pretty"

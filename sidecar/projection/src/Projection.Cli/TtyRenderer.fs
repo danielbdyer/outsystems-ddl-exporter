@@ -325,6 +325,13 @@ let renderReadinessBoard (r: RunLedger.Readiness) (recent: string list) (series:
 /// before `OperatorConsole`.
 let queryPath : string option ref = ref None
 
+/// The global `--open <path>` selector (#18) — the headless half of the dig. When
+/// `Some path`, the answer surface force-reveals exactly that child-index branch
+/// (`View.RenderOptions.OpenPath`) while every other branch stays at the ambient
+/// `--depth` — a focus tool that composes with `--depth` and `--query`. `None` (the
+/// default) leaves the render at the calm whole-tree-to-depth, byte-identical.
+let openPath : int list option ref = ref None
+
 /// Render any `View` to stdout — the "answer" surface (stdout carries the answer;
 /// structured events stay on stderr). Pretty (color) on a TTY; plain when piped
 /// (width pinned so lines don't collapse); the dig is revealed to `depth` levels.
@@ -342,7 +349,11 @@ let renderAnswer (asJson: bool) (depth: int) (v: View.View) : unit =
             Console.Out.WriteLine((View.toJson v).ToJsonString())
         else
             let console = View.consoleTo Console.Out
-            View.writeToDepth console depth v
+            // #11/#18 — `depth` is the calm ambient; `--open` (openPath) force-reveals one
+            // branch beyond it. With both at their defaults this is exactly `writeToDepth`.
+            View.writeWith
+                { View.defaultOptions with Depth = depth; Width = console.Profile.Width; OpenPath = openPath.Value }
+                console v
 
 /// Voice a refusal to STDERR (the §5 channel split — errors never on stdout).
 /// The coded `ValidationError` becomes a register-correct `Surface` via

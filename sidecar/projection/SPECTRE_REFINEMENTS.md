@@ -279,7 +279,7 @@ Status key: **● shipped** · **◐ partial / starved** · **○ not started** 
 | 15 | `Trail` gets cap-and-name + depth | C | ● |
 | 16 | Unify the collapsed-affordance vocabulary | C | ● |
 | 17 | Implement `--query` over `toJson` | D. The query lens | ● |
-| 18 | Per-node addressing (`ViewPath`) | D | ○ |
+| 18 | Per-node addressing (`ViewPath`) | D | ● |
 | 19 | Emit the intra-stage `summary.stageProgress` events | E. The Watch board | ◐ |
 | 20 | Move the dwell off the emitting thread | E | ○ |
 | 21 | Instrument the other runs onto the spine | E | ◐ |
@@ -606,20 +606,60 @@ verb), so it rides a `TtyRenderer.queryPath` ref that `Program.main` sets from t
 threading. The ref lives in `TtyRenderer` (not beside the others in
 `OperatorConsole`) only because `renderAnswer` — its single reader — compiles first.
 
-### 18 · Per-node addressing (`ViewPath`)  ○
+### 18 · Per-node addressing (`ViewPath`)  ●  *(shipped 2026-06-18 — the NAVIGATE keystone; `--open` is its first consumer)*
 
-**Problem.** `writeToDepth` decrements a single `int` uniformly, so sibling
-`Disclosure`s open *together*. There is no way to "open just this node, deeply,
+**Problem.** `writeToDepth` decremented a single `int` uniformly, so sibling
+`Disclosure`s opened *together*. There was no way to "open just this node, deeply,
 leave the rest collapsed" — and the Explore Navigator (#23) needs exactly that.
 
-**Fix.** A `ViewPath = int list` (child indices) carried in `RenderOptions` (#4)
-naming the open branch; `writeBlock` reveals a node iff its path is a prefix of
-the open path. The `int depth` becomes a degenerate `ViewPath` (open everything to
-N), so existing callers are unbroken.
+**Fix (as designed).** A path of child indices, carried in `RenderOptions` (#4),
+naming the one open branch; `writeBlock` reveals a node along it.
 
-**Cheat sheet.** This is the prerequisite for #23 — build it as part of the
-Navigator slice, not before; a `ViewPath` with no interactive consumer is a
-zero-consumer build (CLAUDE.md §5: "verbs at the second consumer").
+**As shipped — the refinement: depth and path COEXIST (not depth-as-degenerate-path).**
+The sketch folded depth *into* the path (an `int depth` becoming "open everything to
+N"). The build kept them as two orthogonal carriers instead: `RenderOptions` gained
+`OpenPath: int list option` *alongside* `Depth`, and a container reveals its children
+iff `Depth >= 1 OR it is on the open path` (`revealed`, View.fs). This is strictly more
+conservative — with `OpenPath = None` (every existing caller) the three new private
+helpers reduce to EXACTLY the prior `Depth` gate, so the whole prior render is
+byte-identical *without* rewriting depth semantics:
+- `revealed` → `opts.Depth >= 1` (the `Option.isSome None` disjunct is `false`).
+- `descendInto` → the `Some (h :: rest)` arm is unreachable under `None`, so every
+  descent falls to `{ opts with Depth = (if decrement then Depth - 1 else Depth) }` —
+  unchanged opts for `Doc` (transparent), `Depth - 1` for `Disclosure`, exactly as before.
+- `marker` → glyph-identical at the same `Depth >= 1` boundary.
+
+`OpenPath` force-reveals *along its branch* on top of the ambient `Depth`: the addressed
+child keeps the `Depth` (the path is its own reveal budget) and advances the path
+(`descendInto` drops the matched head); every sibling leaves the open branch
+(`OpenPath = None`) and reverts to the ambient `Depth` — the rest stays calm. `Some []`
+opens the addressed node, after which its children fall back to ambient depth (no leak
+past the addressed point). `toJson` never sees it — and this is enforced by the *type
+system*, not convention: `toJson : View -> JsonNode` has no `RenderOptions` parameter, so
+the path is syntactically unreachable from the structured lens (the one-substrate law).
+
+**First consumer — `--open`, the headless half of the dig (so this is NOT a
+zero-consumer build).** The cheat sheet warned "a `ViewPath` with no interactive consumer
+is a zero-consumer build." It ships *with* one: `projection <verb> --open 1.0`
+force-reveals exactly that dotted child-index branch of any pretty answer, the rest at
+`--depth` — a focus lens an operator drives today, composing with `--depth` and `--query`.
+`TtyRenderer.openPath` carries it; `renderAnswer` threads it into `writeWith` in exactly
+one place (the pretty/plain `else`); the `--query` / `--json` branches take the structured
+lens and ignore it. The parse (`Program.fs`) is total over a non-throwing `Int32.TryParse`
+and accepts only a dotted list of NON-NEGATIVE indices — every other input (empty,
+non-numeric, negative, overflow) is malformed → ignored → the answer renders calm, never
+failing the run. This is the substrate the #23 Navigator's `→`/`Enter` will drive next —
+its SECOND consumer.
+
+**Tests + verification.** Three law-citing `ViewTests` pin the surgical-reveal predicate:
+`OpenPath [1]` opens block 1 while block 0 stays collapsed (siblings stay calm); `OpenPath
+[0;0]` threads two levels down to a leaf with NO `--depth` bump; `OpenPath [0]` opens an
+addressed `Lane`'s items at ambient depth 0. Byte-identity (`OpenPath = None` unchanged) is
+pinned by the whole pre-existing suite (worktree pure pool 3546 green, 0 failed). A
+five-lens adversarial pass (byte-identity, surgical-reveal, parse-safety, the one-substrate
+law, depth/path coexistence) found no defect — the `h >= 0` parse clamp above is the one
+hardening it surfaced, taken prospectively for #23 (where a bare-node answer surface could
+otherwise see `revealed` fire on a negative root index).
 
 ---
 

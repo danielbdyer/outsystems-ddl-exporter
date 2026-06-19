@@ -210,19 +210,44 @@ type RenderOptions =
       LaneCap: int
       /// Width budget (columns) the pretty lens truncates cells to (#11); the
       /// machine lens ignores it (width is a pretty-only concern).
-      Width: int }
+      Width: int
+      /// The surgical-reveal path (#18). `Some path` force-reveals exactly the
+      /// branch the child-index `path` names — each element a level down — while every
+      /// OTHER branch stays at the ambient `Depth` (the rest stays calm); `Some []`
+      /// opens the addressed node itself. `None` (the default every existing caller
+      /// passes) is the calm whole-tree-to-`Depth` case, so the render is byte-identical
+      /// without it. The dig's `→`/`←` (#11) and the Navigator drive it; `toJson`
+      /// ignores it (a path is a pretty-lens concern, like depth).
+      OpenPath: int list option }
 
 /// The calm defaults — depth 1, breadth 12, width 100 — each formerly a bare
 /// module constant. `write` / `writeToDepth` start from these and override Width
 /// from the live console, so a real terminal's width flows into the budget.
 let defaultOptions : RenderOptions =
-    { Depth = defaultDepth; LaneCap = laneCap; Width = plainWidth }
+    { Depth = defaultDepth; LaneCap = laneCap; Width = plainWidth; OpenPath = None }
 
-/// The disclosure marker for a node with children: open (`▾`) when this level
-/// is being revealed, closed (`▸`) when it is collapsed, blank when childless.
-let private marker (depth: int) (hasChildren: bool) : string =
+/// Whether a container reveals its children here — the calm `Depth` gate, OR a forced
+/// open because this node is on the surgical-reveal path (#18). With `OpenPath = None`
+/// this reduces to EXACTLY today's `Depth >= 1`, so every existing caller is byte-identical.
+let private revealed (opts: RenderOptions) : bool =
+    opts.Depth >= 1 || Option.isSome opts.OpenPath
+
+/// The render policy a container hands its child at index `i` (#18). The ON-path child
+/// keeps the `Depth` (the path is its own reveal budget) and advances the path; every
+/// other child leaves the open branch (`OpenPath = None`) and drops one `Depth` level
+/// when the container is depth-decrementing (`decrement = true` for `Disclosure`; `Doc`
+/// is transparent and passes `false`). With `OpenPath = None` this is EXACTLY today's
+/// `{ opts with Depth = opts.Depth - 1 }` (or, for `Doc`, the unchanged `opts`).
+let private descendInto (opts: RenderOptions) (decrement: bool) (i: int) : RenderOptions =
+    match opts.OpenPath with
+    | Some (h :: rest) when h = i -> { opts with OpenPath = Some rest }
+    | _ -> { opts with OpenPath = None; Depth = (if decrement then opts.Depth - 1 else opts.Depth) }
+
+/// The disclosure marker for a node with children: open (`▾`) when this level is being
+/// revealed (by depth or by the open path), closed (`▸`) when collapsed, blank when childless.
+let private marker (isRevealed: bool) (hasChildren: bool) : string =
     if not hasChildren then " "
-    elif depth >= 1 then Theme.expanded
+    elif isRevealed then Theme.expanded
     else Theme.collapsed
 
 /// The WIDTH cap (#11) — the dual of the §12 breadth cap (`laneCap`). Truncate a
@@ -247,7 +272,11 @@ let private glyphCols (st: Status) : int = if glyphOf st = "" then 0 else 2
 
 let rec private writeBlock (console: IAnsiConsole) (opts: RenderOptions) (indent: string) (v: View) : unit =
     match v with
-    | Doc blocks -> for b in blocks do writeBlock console opts indent b
+    | Doc blocks ->
+        // #18 — thread the surgical-reveal path through the (transparent) block sequence:
+        // the on-path child continues the path, the rest render at the ambient policy.
+        // With OpenPath = None this is exactly the old `for b in blocks`.
+        blocks |> List.iteri (fun i b -> writeBlock console (descendInto opts false i) indent b)
     | Blank -> console.WriteLine()
     | Panel (title, fields) -> writePanel console title fields
     | Hero (st, text) ->
@@ -300,9 +329,9 @@ let rec private writeBlock (console: IAnsiConsole) (opts: RenderOptions) (indent
         // chain isn't a wall; collapsed (depth < 1) it hints `▸ N steps`. The full
         // chain always rides `toJson` — the machine lens never caps.
         let n = List.length steps
-        let m = marker opts.Depth (n > 0)
+        let m = marker (revealed opts) (n > 0)
         safeMarkupLine console (sprintf "%s%s %s" indent m (Theme.muted (Markup.Escape label)))
-        if opts.Depth >= 1 then
+        if revealed opts then
             for (step, detail) in steps |> List.truncate opts.LaneCap do
                 match detail with
                 | Some d -> safeMarkupLine console (sprintf "%s%s %s %s %s" indent Theme.arrow (Markup.Escape step) Theme.dot (Markup.Escape d))
@@ -323,7 +352,7 @@ let rec private writeBlock (console: IAnsiConsole) (opts: RenderOptions) (indent
         // remainder). The full list always rides `toJson` — the machine lens
         // keeps what the human capped.
         let n = List.length items
-        let m = marker opts.Depth (n > 0)
+        let m = marker (revealed opts) (n > 0)
         // Width cap (#11): truncate the LABEL, not the whole headline, so the glyph
         // and the load-bearing humane count survive the cut — a long lane name tails
         // with `…`, the count never falls off the line.
@@ -331,7 +360,7 @@ let rec private writeBlock (console: IAnsiConsole) (opts: RenderOptions) (indent
         let label' = truncateTo (opts.Width - indent.Length - 2 - (glyph.Length + 1) - 2 - count.Length) label
         safeMarkupLine console (
             sprintf "%s%s %s" indent m (colorOf st (Markup.Escape (sprintf "%s %s  %s" glyph label' count))))
-        if opts.Depth >= 1 then
+        if revealed opts then
             for item in items |> List.truncate opts.LaneCap do
                 safeMarkupLine console (sprintf "%s   %s %s" indent (Theme.muted Theme.dot) (Markup.Escape item))
             if n > opts.LaneCap then
@@ -347,12 +376,16 @@ let rec private writeBlock (console: IAnsiConsole) (opts: RenderOptions) (indent
                 sprintf "%s   %s %s" indent (Theme.muted Theme.collapsed)
                     (Theme.muted (sprintf "%s item%s" (Theme.humane n) (if n = 1 then "" else "s"))))
     | Disclosure (headline, st, detail) ->
-        let m = marker opts.Depth (not (List.isEmpty detail))
+        let rev = revealed opts
+        let m = marker rev (not (List.isEmpty detail))
         // marker + space, then the styled headline (glyph + space + text when statusful).
         let budget = opts.Width - indent.Length - 2 - glyphCols st
         safeMarkupLine console (sprintf "%s%s %s" indent m (styled st (truncateTo budget headline)))
-        if opts.Depth >= 1 then
-            for child in detail do writeBlock console { opts with Depth = opts.Depth - 1 } (indent + "  ") child
+        if rev then
+            // #18 — the on-path child keeps the open path (descendInto), every sibling
+            // drops a Depth level. With OpenPath = None this is exactly the old depth-1
+            // recursion, so the existing dig stays byte-identical.
+            detail |> List.iteri (fun i child -> writeBlock console (descendInto opts true i) (indent + "  ") child)
         elif not (List.isEmpty detail) then
             safeMarkupLine console (
                 sprintf "%s  %s %s" indent (Theme.muted Theme.collapsed)

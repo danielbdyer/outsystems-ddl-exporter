@@ -369,6 +369,46 @@ let ``View: at a wide console a Field value renders whole — the width cap bite
     Assert.Contains(full, p)          // the whole value is present
     Assert.DoesNotContain("…", p)     // no truncation tail at 200 cols
 
+// --- surgical reveal (#18 — ViewPath / OpenPath: open one branch, leave the rest) -
+// Discriminating predicate: an OpenPath force-reveals EXACTLY the addressed child-index
+// branch (each element a level deeper), while every sibling stays at the ambient Depth —
+// the dig's "open just this node, deeply, leave the rest collapsed". With OpenPath = None
+// (every existing caller) the render reduces to today's Depth gate, byte-identical (the
+// whole existing suite is that net). toJson never sees it — a path is pretty-only, like depth.
+
+[<Fact>]
+let ``View: OpenPath force-reveals exactly the addressed branch while siblings stay calm (#18)`` () =
+    let v =
+        View.Doc [
+            View.Disclosure("alpha", View.Neutral, [ View.Field("a", "ALPHA-DETAIL", View.Ok) ])
+            View.Disclosure("beta",  View.Neutral, [ View.Field("b", "BETA-DETAIL", View.Bad) ]) ]
+    // ambient depth 0, no open path → BOTH collapse (this IS today's behavior)
+    let calm = plainWith { View.defaultOptions with Depth = 0 } v
+    Assert.DoesNotContain("ALPHA-DETAIL", calm)
+    Assert.DoesNotContain("BETA-DETAIL", calm)
+    // OpenPath [1] at ambient depth 0 → block 1 (beta) opens, block 0 (alpha) stays collapsed
+    let opened = plainWith { View.defaultOptions with Depth = 0; OpenPath = Some [ 1 ] } v
+    Assert.DoesNotContain("ALPHA-DETAIL", opened)   // the sibling stayed calm — surgical
+    Assert.Contains("BETA-DETAIL", opened)          // the addressed branch opened
+
+[<Fact>]
+let ``View: OpenPath threads through nesting — Some [i;j] opens a branch two levels down (#18)`` () =
+    let v =
+        View.Doc [
+            View.Disclosure("outer", View.Neutral, [
+                View.Disclosure("inner", View.Neutral, [ View.Field("leaf", "DEEP-LEAF", View.Bad) ]) ]) ]
+    // the leaf needs two levels; ambient Depth 0 and even 1 leave it collapsed
+    Assert.DoesNotContain("DEEP-LEAF", plainWith { View.defaultOptions with Depth = 0 } v)
+    Assert.DoesNotContain("DEEP-LEAF", plainWith { View.defaultOptions with Depth = 1 } v)
+    // OpenPath [0;0] force-reveals outer then its inner — the leaf shows with NO global --depth bump
+    Assert.Contains("DEEP-LEAF", plainWith { View.defaultOptions with Depth = 0; OpenPath = Some [ 0; 0 ] } v)
+
+[<Fact>]
+let ``View: OpenPath opens an addressed leaf-container (a Lane) even at ambient depth 0 (#18)`` () =
+    let v = View.Doc [ View.Lane("⟲", "rename", View.Ok, [ "ORDER-MOVE"; "CUSTOMER-MOVE" ]) ]
+    Assert.DoesNotContain("ORDER-MOVE", plainWith { View.defaultOptions with Depth = 0 } v)
+    Assert.Contains("ORDER-MOVE", plainWith { View.defaultOptions with Depth = 0; OpenPath = Some [ 0 ] } v)
+
 // --- the one-substrate law over the whole DU (the totality lock) -----------
 // Discriminating predicate: the pretty lens and the JSON lens are each TOTAL
 // over the `View` DU — a case that forgets its render arm or its `toJson` arm
