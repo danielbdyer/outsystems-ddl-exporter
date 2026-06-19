@@ -435,3 +435,14 @@ let ``View: a malformed markup line degrades to plain text — a render fault ne
     Assert.Contains("contained", out)   // the styled text survived, plain
     Assert.Contains("bracket", out)     // including past the unbalanced '['
     // reaching here at all means no exception escaped — the run was not failed
+
+[<Fact>]
+let ``View: a value carrying markup metacharacters renders them literally — the data-escaping discipline (#2/#3 guard)`` () =
+    // A table literally named `Order[Archive]`, or a value with a `[bold]`-looking
+    // token, must render its brackets as TEXT, not as a Spectre style tag — the
+    // discipline every writeBlock data site follows (Markup.Escape before colorize).
+    // This is the guard a future #2 (the Markup newtype) keeps green: a DOUBLE-escape
+    // would render `[[`, an UNDER-escape would throw the data into #3's plain
+    // fallback (a different string) — either way this assertion catches it.
+    let p = plain (View.Field("table", "Order[Archive] is [bold]gone", View.Bad))
+    Assert.Contains("Order[Archive] is [bold]gone", p)   // brackets intact, ONCE — not `[[`, not stripped

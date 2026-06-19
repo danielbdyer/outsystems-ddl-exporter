@@ -282,6 +282,24 @@ an unescaped value *cannot* reach the pretty lens. The house derive-macro again.
 / `Markup(` site; the VO-lift compiler-gap note in CLAUDE.md §6 is the same shape
 (`String.Concat` accepts `object`; markup accepts any `string`).
 
+**As scoped (2026-06-18 — verified, not yet built).** A grep of every `Theme.*`
+color-helper call confirms the discipline currently HOLDS: all 28 sites (`View.fs`
+×20, `Watch.fs` ×8 — incl. `rowMarkup`'s `Markup.Escape` at line one) already escape
+their data or pass a safe glyph. So there is **no live markup bug today**, and #3 now
+CONTAINS the crash class regardless — #2 is pure type-level hardening (make the
+escaping unforgeable), ripple bounded to those two files. The migration recipe, with
+the one real pitfall named:
+- A `Markup` private newtype with TWO smart constructors — `Markup.ofText s` (escapes
+  raw data) and `Markup.raw s` (trusted: a glyph, or already-composed markup) — plus
+  `Markup.value` for the final `safeMarkupLine`.
+- `Theme.green`/etc. take and return `Markup` (wrap with `raw`); `colorOf` / `styled`
+  compose `Markup`s (the glyph is `raw`, the value is `ofText`).
+- **The pitfall:** the existing sites do `Markup.Escape x` → migrate one-for-one to
+  `Markup.ofText x`; but a site already escaped and then re-wrapped DOUBLE-escapes,
+  and most pure-pool data has no metacharacters, so the pool may NOT catch it. The
+  special-char guard (`ViewTests` — `Order[Archive]` rendering its `[` literally,
+  escaped ONCE) now exists; migrate under its cover and it stays green.
+
 ### 3 · Defensive render  ●  *(landed 2026-06-18; see §0)*
 
 **Problem.** `console.MarkupLine` **throws** on malformed markup. The verdict panel
