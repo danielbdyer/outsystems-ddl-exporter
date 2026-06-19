@@ -227,6 +227,18 @@ block — the drift hole stays closed by construction. The DU totality test gain
 consumer follows in #13 (the bench fold); the `buildSurveyView` column conversion is
 a deferred follow-on (its packed value needs a real column rethink).
 
+### Shipped next (2026-06-18) — #13: the bench table folds into the substrate (the Table's first consumer)
+
+**The perf surface joins the one lens.** `TtyRenderer.benchView : Bench.Stats list ->
+View` builds a `Doc` (a header `Note` + a `View.Table` #12) over the nine bench columns,
+cells `Neutral` (numbers are evidence, not a verdict). `OperatorConsole.dumpBench`'s `-v`
+dump renders it through the View engine instead of `printfn`-ing a raw ASCII table — so
+the bench gains color on a TTY, plain when piped, and the json / `--query` lens it never
+had. Core's `Bench.renderTable` is untouched (still read by `PerfHarnessScenarios` /
+`GeneratorScaleTests` / `BenchTests`), so the Core/Cli boundary holds and nothing is
+orphaned — the doc's "keep Core's table" honored. This is `View.Table`'s first
+PRODUCTION consumer, so the primitive is no longer test-only.
+
 ---
 
 ## 1 — The map (all 25, by theme)
@@ -248,7 +260,7 @@ Status key: **● shipped** · **◐ partial / starved** · **○ not started** 
 | 10 | Screen-reader narration lens | B | ✕ |
 | 11 | **Responsive width** | B | ● |
 | 12 | `View.Table` primitive | C. New primitives | ● |
-| 13 | Fold `Bench.renderTable` into the substrate | C | ○ |
+| 13 | Fold `Bench.renderTable` into the substrate | C | ● |
 | 14 | Trend surfaces (use `Theme.sparkline`) | C | ○ |
 | 15 | `Trail` gets cap-and-name + depth | C | ● |
 | 16 | Unify the collapsed-affordance vocabulary | C | ● |
@@ -470,6 +482,15 @@ doesn't share `Theme`.
 lens. Watch the `Projection.Core.Bench` boundary — `renderTable` lives in Core;
 the `View` projection belongs in `Cli`. Keep Core's table (it's used by the perf
 gate's plain dump) and add a `Cli`-side `benchView : Bench.Stats list -> View`.
+
+**As shipped.** `TtyRenderer.benchView : Bench.Stats list -> View` builds a `Doc`
+(a header `Note` + a `View.Table` #12) — the nine bench columns, cells `Neutral`
+(numbers are evidence, not a verdict). `OperatorConsole.dumpBench`'s `-v` dump now
+renders it through the View engine (`View.write (View.consoleTo Console.Out)`), so the
+perf surface gains color / json / `--query`. Core's `Bench.renderTable` stays — still
+read by the perf scenarios (`PerfHarnessScenarios`, `GeneratorScaleTests`, `BenchTests`)
+— so the Core boundary holds and nothing is orphaned. The `View.Table`'s first
+production consumer.
 
 ### 14 · Trend surfaces — `Theme.sparkline` has zero callers  ○
 

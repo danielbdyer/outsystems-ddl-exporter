@@ -62,9 +62,12 @@ let dumpBench (tag: string) : unit =
         // Calm by default (REPORTING_HORIZON polish) — the table is depth,
         // shown only under -v. The snapshot is always persisted.
         if verboseMode.Value then
+            // #13 — the `-v` bench dump joins the View lens (a `View.Table` via
+            // `TtyRenderer.benchView`, so it gains color/json/`--query`); Core's
+            // `Bench.renderTable` stays for the perf scenarios. The factory pins the
+            // width and strips color for a piped sink.
             printfn ""
-            printfn "Bench (sorted by total time):"
-            printfn "%s" (Bench.renderTable stats)
+            View.write (View.consoleTo System.Console.Out) (TtyRenderer.benchView stats)
             printfn ""
             printfn "  bench snapshot: %s" path
 

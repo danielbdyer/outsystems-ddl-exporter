@@ -280,6 +280,26 @@ let buildSurveyView (reports: CapabilitySurvey.EnvironmentReport list) : View.Vi
             View.Hero(View.Warn, sprintf "%d environment(s) need attention before a live run." needAttention)
     View.Doc([ View.Blank; verdict; View.Blank ] @ (reports |> List.map field))
 
+/// The perf bench table as a `View` (#13) — the perf surface joins the one lens:
+/// color on a TTY, plain when piped, structured via `--format` / `--query`. Core's
+/// `Bench.renderTable` stays (the perf-gate's plain dump reads it); this is the
+/// Cli-side projection so the `-v` dump is a `View.Table`, not a separate text path
+/// with no machine lens. Cells are `Neutral` — bench numbers are evidence, never a
+/// verdict, so no status glyph colors them.
+let benchView (stats: Bench.Stats list) : View.View =
+    let headers = [ "label"; "count"; "total ms"; "min"; "mean"; "p50"; "p95"; "p99"; "max" ]
+    let row (s: Bench.Stats) : (string * View.Status) list =
+        [ s.Label,                 View.Neutral
+          string s.Count,          View.Neutral
+          string s.TotalMs,        View.Neutral
+          string s.MinMs,          View.Neutral
+          sprintf "%.1f" s.MeanMs, View.Neutral
+          string s.P50Ms,          View.Neutral
+          string s.P95Ms,          View.Neutral
+          string s.P99Ms,          View.Neutral
+          string s.MaxMs,          View.Neutral ]
+    View.Doc [ View.Note "Bench (sorted by total time)"; View.Table(headers, stats |> List.map row) ]
+
 let renderReadinessBoard (r: RunLedger.Readiness) (recent: string list) (ledgerPath: string) : unit =
     // The board renders on every `readiness` (not just on a TTY). The factory
     // pins a width when piped (Spectre's auto-width collapses lines on a non-TTY)

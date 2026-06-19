@@ -497,3 +497,29 @@ let ``View: a Table renders headers + cells (plain) and carries the grid with pe
     let prodGrant = (rows.[1].EnumerateArray() |> Seq.toList).[1]
     Assert.Equal("missing INSERT", prodGrant.GetProperty("text").GetString())
     Assert.Equal("warn", prodGrant.GetProperty("status").GetString())
+
+[<Fact>]
+let ``Bench surface: benchView is a Table carrying the per-label stats in both lenses (#13)`` () =
+    let stats : Projection.Core.Bench.Stats list =
+        [ { Label = "emit.statements"; Count = 3; TotalMs = 120L; MinMs = 30L; MaxMs = 50L
+            MeanMs = 40.0; P50Ms = 40L; P95Ms = 50L; P99Ms = 50L } ]
+    let v = TtyRenderer.benchView stats
+    // structure — a Doc whose Table maps each Stats record to a row of cells
+    match v with
+    | View.Doc blocks ->
+        match blocks |> List.tryPick (function View.Table(h, r) -> Some(h, r) | _ -> None) with
+        | Some (headers, rows) ->
+            Assert.Contains("label", headers)
+            Assert.Contains("total ms", headers)
+            Assert.Equal(1, List.length rows)
+            Assert.Equal<string>("emit.statements", fst rows.[0].[0])
+            Assert.Equal<string>("120", fst rows.[0].[2])   // the total-ms cell
+        | None -> Assert.Fail "benchView has no Table block"
+    | other -> Assert.Fail(sprintf "benchView is not a Doc: %A" other)
+    // machine lens — the perf surface is --query-able now: the numbers ride toJson
+    let j = json v
+    let table =
+        j.GetProperty("blocks").EnumerateArray()
+        |> Seq.find (fun b -> nonNull (b.GetProperty("kind").GetString()) = "table")
+    let firstCell = (table.GetProperty("rows").EnumerateArray() |> Seq.head).EnumerateArray() |> Seq.head
+    Assert.Equal("emit.statements", nonNull (firstCell.GetProperty("text").GetString()))
