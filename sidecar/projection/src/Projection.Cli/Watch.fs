@@ -434,18 +434,6 @@ module Watch =
             | true, v when v >= 0L -> v
             | _ -> defaultDwellMs
 
-    /// Run `body` under a live stage board on stderr, driven by the `LogSink` stage
-    /// stream. The board updates in place as stages fill in; each visible
-    /// transition is held ≥ the dwell floor before the next is shown. Channel 1
-    /// (NDJSON to stderr) is suppressed for the duration so it does not interleave
-    /// with the live region; the subscriber renders exactly what channel 1 would
-    /// have written (one substrate, two lenses).
-    ///
-    /// **Scope assumption (synchronous run).** The subscriber enforces the dwell by
-    /// sleeping the emitting thread, which holds the `LogSink` lock briefly — safe
-    /// because the run is synchronous + single-threaded and channel 1 is nulled
-    /// (no contention). A future concurrent / async emitter would move the dwell to
-    /// a drain loop on a render thread (`THE_VOICE_BUILD_MAP.md` §4.3).
     /// The cutover timeline strip line (pretty markup) — the canary-history dots
     /// with the present marker, the R6 gate meter, and the ratio (`●●●●✕●●▸
     /// ▇▇▇▇▇▇▇░░░ 7/10`). Pure over (cells, filled, total) so the content is
@@ -472,36 +460,75 @@ module Watch =
                 [ Markup(cutoverStripText cells r.ConsecutiveGreen r.Threshold) :> IRenderable ]
         | None -> []
 
+    /// Run `body` under a live stage board on stderr, driven by the `LogSink` stage
+    /// stream. The board updates in place as stages fill in; each visible transition is
+    /// held ≥ the dwell floor before the next is shown. Channel 1 (NDJSON) is suppressed
+    /// for the duration so it does not interleave with the live region; the board renders
+    /// exactly what channel 1 would have written (one substrate, two lenses).
+    ///
+    /// **The dwell is OFF the emitting thread (#20).** The subscriber only ENQUEUES an
+    /// envelope (fast, inside emit's lock) and returns, so `emit` NEVER sleeps under the
+    /// `LogSink` lock — the board is safe for a future concurrent realization stream. The
+    /// drain loop on the ctx-affine Live thread folds the board, sleeps the dwell remainder,
+    /// and refreshes; `body` runs on a BACKGROUND thread (it is the producer). Everything
+    /// but the queue stays drain-loop-local (`board` / `sw` / `lastRenderAt`), so there is
+    /// no shared-state race — the queue (FIFO, thread-safe) carries the order `emit`'s single
+    /// lock already serialized. Teardown: `body`'s `finally` completes the queue, the loop
+    /// drains the remainder (the done-frame is never lost), `clearSubscribers` runs, then we
+    /// JOIN `body` for its exit code — so the caller still sees one synchronous, deterministic
+    /// call (`Live.Start` blocks here), which is why `WatchInjectionTests` can assert on the
+    /// final board with the dwell pinned to 0.
     let renderWatchOn (console: IAnsiConsole) (spine: RunSpine) (floorMs: int64) (body: unit -> int) : int =
         let board = ref (seededOf spine)
         let header = cutoverHeader ()
         let sw = System.Diagnostics.Stopwatch.StartNew()
         let mutable lastRenderAt = 0L
         let mutable code = 0
+        // House-NEW concurrency primitive (grep: the first BlockingCollection in src) — its
+        // re-open is gated by the live board going off-thread (CLAUDE.md §7; DECISIONS 2026-06-19).
+        let queue = new System.Collections.Concurrent.BlockingCollection<LogSink.Envelope>()
         console.Live(toRenderableWith header board.Value).Start(fun ctx ->
-            let subscriber (env: LogSink.Envelope) =
-                let board', changed = applyEnvelope board.Value env
-                if changed then
-                    board.Value <- board'
-                    let now = sw.ElapsedMilliseconds
-                    let sleep = dwellMs floorMs lastRenderAt now
-                    if sleep > 0L then System.Threading.Thread.Sleep(int sleep)
-                    lastRenderAt <- sw.ElapsedMilliseconds
-                    ctx.UpdateTarget(toRenderableWith header board.Value)
-                    ctx.Refresh()
-            LogSink.addSubscriber subscriber
-            // Suppress channel 1 (NDJSON) for the live region via the SCOPED
-            // `withWriter` — it saves the PRIOR writer and restores it on exit,
-            // rather than hardcoding `Console.Error`. This is what lets the board
-            // compose UNDER an outer `--pretty` null (`OperatorConsole.withRun`
-            // nulls channel 1 for the whole bracket): the prior is already Null,
-            // so it stays Null and the bracket's terminal `summary.runComplete`
-            // is suppressed too — no NDJSON leaks between the board and the
-            // verdict panel. Standalone (publish faces, no outer null) the prior
-            // is `Console.Error`, restored unchanged — the established behavior.
+            // Enqueue-and-return: the subscriber holds emit's lock only for the `Add`. A late
+            // emit after `CompleteAdding` throws — swallowed; no such emit exists in practice
+            // (the body's `withWriter` returns before the queue is completed). FORWARD NOTE:
+            // when the concurrent realization stream this off-thread move enables actually
+            // lands, re-check this swallow — a second emitter racing the
+            // [CompleteAdding .. clearSubscribers] window could drop a frame silently.
+            LogSink.addSubscriber (fun env -> try queue.Add env with _ -> ())
+            // `body` on a background thread — it is the producer; the drain loop below owns
+            // THIS (ctx-affine) thread. `withWriter Null` nulls channel 1 for the body's span
+            // (saved/restored — so the board composes under an outer `--pretty` null exactly
+            // as before); the `finally` completes the queue to signal the drain to finish.
+            let bodyTask =
+                System.Threading.Tasks.Task.Run(fun () ->
+                    try LogSink.withWriter System.IO.TextWriter.Null body
+                    finally queue.CompleteAdding())
             try
-                code <- LogSink.withWriter System.IO.TextWriter.Null body
+                let mutable draining = true
+                while draining do
+                    let mutable env = Unchecked.defaultof<LogSink.Envelope>
+                    if queue.TryTake(&env, 100) then
+                        let board', changed = applyEnvelope board.Value env
+                        if changed then
+                            board.Value <- board'
+                            let sleep = dwellMs floorMs lastRenderAt sw.ElapsedMilliseconds
+                            if sleep > 0L then System.Threading.Thread.Sleep(int sleep)
+                            lastRenderAt <- sw.ElapsedMilliseconds
+                            ctx.UpdateTarget(toRenderableWith header board.Value)
+                            ctx.Refresh()
+                    elif queue.IsCompleted then
+                        draining <- false
+                // Join the producer for its exit code — `GetAwaiter().GetResult()` so a body
+                // exception propagates as ITSELF, not wrapped in `AggregateException`.
+                code <- bodyTask.GetAwaiter().GetResult()
             finally
+                // Reap the producer on EVERY exit path. The happy path joined above; this also
+                // covers a RENDER throw — `ctx.UpdateTarget`/`Refresh` can raise `IOException`
+                // on a TTY whose pipe broke / terminal closed mid-run — which would otherwise
+                // bypass the join and ORPHAN the body on a pool thread with the global writer
+                // pinned to `Null`. Swallowed so the render exception stays primary; the body's
+                // own bracket records its outcome regardless.
+                (try bodyTask.GetAwaiter().GetResult() |> ignore with _ -> ())
                 LogSink.clearSubscribers ())
         code
 

@@ -24735,3 +24735,41 @@ total-on-miss, the spaced-filter split, the one-substrate tie-in). End-to-end sm
 `survey --query 'blocks[?kind=hero]'` → the hero block. **Cross-references:** `src/Projection.Cli/Query.fs` (the walker);
 `src/Projection.Cli/TtyRenderer.fs` (`queryPath` + `renderAnswer`); `src/Projection.Cli/Program.fs` (the `--query` strip +
 usage); `tests/Projection.Tests/QueryTests.fs`; `SPECTRE_REFINEMENTS.md` §0 + §17 (● flipped).
+
+## 2026-06-19 — SPECTRE #20: the live board's dwell moves OFF the emitting thread (the first concurrency primitive)
+
+**What & why.** `Watch.renderWatchOn`'s subscriber enforced the dwell with `Thread.Sleep` INSIDE the subscriber, which
+`LogSink.emit` invokes while holding `lockObj` — so every emit blocked for the dwell, safe ONLY because the run was
+synchronous + single-threaded (the old code said exactly that). #20 moves the dwell off that thread so the board is safe for
+a future concurrent realization stream. The subscriber is now strictly enqueue-and-return (`fun env -> try queue.Add env
+with _ -> ()`) onto an unbounded `System.Collections.Concurrent.BlockingCollection<Envelope>`; the enqueue stays inside
+emit's lock so global envelope order is preserved (the single lock already serialized it; the collection is FIFO). `body`
+runs on a `Task.Run` background thread (it is the producer); a drain loop INSIDE `console.Live(...).Start` — on the
+ctx-affine thread, the only one that may touch `LiveDisplayContext` — folds the board, sleeps the dwell remainder, and
+refreshes. `LogSink` is UNTOUCHED (the channel-1/channel-2 contract holds; `LogSinkSubscriberTests` pass trivially).
+
+**The house-NEW concurrency primitive (the named trigger, CLAUDE.md §7).** `BlockingCollection` is the FIRST
+Channel/ConcurrentQueue/BlockingCollection in `src` (grep-confirmed zero before). The codebase was deliberately synchronous;
+this primitive's re-open trigger was "a live surface that must not block the emitter," which #20 fires. Chose
+`BlockingCollection` over `System.Threading.Channels` because the drain loop wants a SYNCHRONOUS timed take
+(`TryTake(&env, 100)`) — the 100ms timeout is the periodic wake the breathing spinner / stall-ETA (the #20 follow-on) will
+ride, with no async/CancellationToken dance. Cross-thread surface is the queue ALONE: `board` / `sw` / `lastRenderAt` are
+touched only by the drain (Start) thread, the bg body only enqueues — no shared-state race.
+
+**Determinism + teardown.** `Live.Start` invokes its callback synchronously; the callback drains to `IsCompleted` then
+`bodyTask.GetAwaiter().GetResult()` (unwraps the body exception as ITSELF, not `AggregateException`) — so `renderWatchOn`
+returns ONLY after the body joined and every frame drained (the done-frame is never lost; the tests assert on the final
+board with dwell=0). The body's `finally` calls `CompleteAdding` so the drain always terminates; an OUTER `finally` REAPS
+the body (a second `GetResult`, swallowed) THEN clears subscribers — so even a RENDER throw (`ctx.UpdateTarget`/`Refresh`
+can raise `IOException` on a TTY whose pipe broke mid-run) cannot orphan the body on a pool thread with the global writer
+pinned to `Null`. That reap is the one fix a 5-lens adversarial concurrency pass (lock-held / frame-loss / determinism /
+thread-affinity / teardown-exn) surfaced (MEDIUM, SHIP_WITH_FIXES); lock-held and frame-loss were certified clean with
+explicit happens-before traces. A forward note in the source marks the swallowed-`Add` window for re-check when the
+concurrent emitter that motivated this actually lands.
+
+**Gate.** CLI 0/0 under `TreatWarningsAsErrors`; pure pool green (3558/0) with the 4 existing `WatchInjectionTests` unchanged
++ two new ones — `emit never sleeps (#20)` (a 200ms dwell + two board-changing emits; the body's emit span stays under one
+dwell, an order below the old ~2-dwell inline block) and `propagates a body exception as itself and never hangs` (the
+teardown path no other test covered). **Cross-references:** `src/Projection.Cli/Watch.fs` (`renderWatchOn` rewrite + the
+reap); `tests/Projection.Tests/WatchInjectionTests.fs`; `SPECTRE_REFINEMENTS.md` §20. Follow-on: the breathing spinner +
+stall-aware ETA on the drain loop's 100ms wake.

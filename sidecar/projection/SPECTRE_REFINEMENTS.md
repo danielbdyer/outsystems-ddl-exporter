@@ -281,7 +281,7 @@ Status key: **● shipped** · **◐ partial / starved** · **○ not started** 
 | 17 | Implement `--query` over `toJson` | D. The query lens | ● |
 | 18 | Per-node addressing (`ViewPath`) | D | ● |
 | 19 | Emit the intra-stage `summary.stageProgress` events | E. The Watch board | ◐ |
-| 20 | Move the dwell off the emitting thread | E | ○ |
+| 20 | Move the dwell off the emitting thread | E | ● |
 | 21 | Instrument the other runs onto the spine | E | ◐ |
 | 22 | Loud fallback for stage copy | E | ● |
 | 23 | Build the Explore TUI | F. Explore + history | ● |
@@ -694,17 +694,34 @@ profile-probe instrumentation, not as a warm-up.
 may emit `total = 0` safely. Keep the emit at the Pipeline/adapter boundary, not in
 pure Core. The producer pattern to copy is the `TransferRun` "load" loop.
 
-### 20 · Move the dwell off the emitting thread  ○
+### 20 · Move the dwell off the emitting thread  ●  *(shipped 2026-06-19 — the first concurrency primitive; DECISIONS 2026-06-19)*
 
-**Problem.** `Watch.renderWatch` enforces the dwell with `Thread.Sleep` **on the
-emitting thread, holding the `LogSink` lock** — its own doc flags this is safe
-*only* because the run is synchronous + single-threaded. The board would serialize
-any future concurrent realization stream.
+**Problem.** `Watch.renderWatch` enforced the dwell with `Thread.Sleep` **on the
+emitting thread, holding the `LogSink` lock** — its own doc flagged this safe *only*
+because the run is synchronous + single-threaded. The board would serialize any future
+concurrent realization stream.
 
-**Fix.** Move the dwell to a drain loop on a render thread (THE_VOICE_BUILD_MAP
-§4.3): the subscriber enqueues board transitions; the render thread pops, sleeps
-the floor remainder, and `ctx.Refresh()`es. Do this *before* any parallel emitter
-lands, not after a hang.
+**Fix.** Move the dwell to a drain loop on a render thread (THE_VOICE_BUILD_MAP §4.3):
+the subscriber enqueues board transitions; the render thread pops, sleeps the floor
+remainder, and `ctx.Refresh()`es. Do this *before* any parallel emitter lands.
+
+**As shipped.** The subscriber is now strictly enqueue-and-return onto an unbounded
+`BlockingCollection<Envelope>` (the FIRST concurrency primitive in `src` — DECISIONS
+2026-06-19, CLAUDE.md §7), so `emit` never sleeps under the `LogSink` lock; `body` runs on
+a `Task.Run` background thread (the producer) and a drain loop INSIDE `Live.Start` (the
+ctx-affine thread) folds, sleeps the dwell remainder, and refreshes. The cross-thread
+surface is the queue ALONE (`board`/`sw`/`lastRenderAt` stay drain-loop-local), and the
+single `LogSink` lock already serialized envelope order, which the FIFO queue preserves.
+`LogSink` is UNTOUCHED. Determinism holds because `Live.Start` is synchronous and the
+callback joins `body` (`GetAwaiter().GetResult()`, exception-as-itself) after draining
+every frame — so the done-frame is never lost and the tests still assert on the final
+board (dwell=0). An OUTER `finally` REAPS `body` before clearing subscribers, so even a
+render `IOException` (broken pipe / closed terminal) can't orphan the body with the writer
+pinned to `Null` — the one fix a 5-lens adversarial concurrency pass surfaced (lock-held +
+frame-loss certified clean by happens-before trace). Gate: pure pool 3558/0; the 4
+`WatchInjectionTests` unchanged + `emit never sleeps (#20)` (timing, wide margin) +
+`propagates a body exception as itself and never hangs` (the teardown path). **Follow-on
+(NOT #20):** the breathing spinner + stall-aware ETA ride the drain loop's 100ms wake.
 
 ### 21 · Instrument the other runs onto the spine  ◐
 
