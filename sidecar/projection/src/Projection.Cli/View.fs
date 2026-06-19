@@ -290,6 +290,14 @@ let rec private writeBlock (console: IAnsiConsole) (opts: RenderOptions) (indent
                 safeMarkupLine console (
                     sprintf "%s   %s %s" indent (Theme.muted Theme.collapsed)
                         (Theme.muted (sprintf "and %s more" (Theme.humane (n - opts.LaneCap)))))
+        elif n > 0 then
+            // #16 — a collapsed lane hints what it holds with the same `▸ N items`
+            // affordance a collapsed Disclosure shows (`▸ N more`), so the items are
+            // not left implied by the header count alone (the collapsed-affordance
+            // vocabulary, unified across the two node kinds).
+            safeMarkupLine console (
+                sprintf "%s   %s %s" indent (Theme.muted Theme.collapsed)
+                    (Theme.muted (sprintf "%s item%s" (Theme.humane n) (if n = 1 then "" else "s"))))
     | Disclosure (headline, st, detail) ->
         let m = marker opts.Depth (not (List.isEmpty detail))
         // marker + space, then the styled headline (glyph + space + text when statusful).

@@ -190,6 +190,16 @@ is voiced. Because the keys come from the spine SOURCE (not the hand-maintained
 it can never leak `<key>.started` to an operator at render. No production change; the
 current set is proven complete.
 
+### Shipped next (2026-06-18) — #16: the collapsed-affordance vocabulary, unified
+
+**A collapsed `Lane` now hints what it holds.** Its arm gains an `elif n > 0` branch
+showing `▸ N item(s)` (pluralized), the same `▸`-affordance a collapsed `Disclosure`
+shows as `▸ N more` — so the two node kinds speak one collapsed-affordance language.
+The Lane headline already carries the count, so the hint reinforces the openable
+affordance rather than adding new information (the unification is of FORM, the
+deliberate consistency the item asks for — noted honestly, not hidden). A `ViewTests`
+assertion pins the hint and the singular grammar (`1 item`, never `1 items`).
+
 ---
 
 ## 1 — The map (all 25, by theme)
@@ -214,7 +224,7 @@ Status key: **● shipped** · **◐ partial / starved** · **○ not started** 
 | 13 | Fold `Bench.renderTable` into the substrate | C | ○ |
 | 14 | Trend surfaces (use `Theme.sparkline`) | C | ○ |
 | 15 | `Trail` gets cap-and-name + depth | C | ○ |
-| 16 | Unify the collapsed-affordance vocabulary | C | ○ |
+| 16 | Unify the collapsed-affordance vocabulary | C | ● |
 | 17 | Implement `--query` over `toJson` | D. The query lens | ● |
 | 18 | Per-node addressing (`ViewPath`) | D | ○ |
 | 19 | Emit the intra-stage `summary.stageProgress` events | E. The Watch board | ◐ |
@@ -431,7 +441,7 @@ renders flat regardless of depth — a long chain is a wall, with none of the §
 has in `writeBlock`. Falls out almost free once #4's `RenderOptions.LaneCap`
 (rename → `BreadthCap`) is the shared knob.
 
-### 16 · Unify the collapsed-affordance vocabulary  ○
+### 16 · Unify the collapsed-affordance vocabulary  ●  *(landed 2026-06-18; see §0)*
 
 **Problem.** A collapsed `Disclosure` shows `▸ N more`; a collapsed `Lane` hides
 its items *silently* (the `Lane` arm of `writeBlock` prints only the header at
@@ -439,6 +449,14 @@ depth < 1). Inconsistent affordance.
 
 **Fix.** A collapsed `Lane` should also hint `▸ N items`. One-line change in the
 `Lane` arm; pin it with a `ViewTests` assertion.
+
+**As shipped.** The collapsed `Lane` arm gains an `elif n > 0` branch hinting
+`▸ N item(s)` (pluralized — `1 item`, not `1 items`), the same `▸`-affordance a
+collapsed Disclosure shows. *Honest note:* the Lane HEADLINE already carries the
+count, so the hint reinforces the openable affordance rather than adding new
+information — the unification is of FORM (both collapsed nodes show a secondary `▸`
+hint line), the deliberate consistency the item asks for. A `ViewTests` assertion
+pins the hint and the singular grammar.
 
 ---
 

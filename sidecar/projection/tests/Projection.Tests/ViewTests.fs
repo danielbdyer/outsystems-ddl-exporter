@@ -228,6 +228,21 @@ let ``View: a Lane collapses its items shallow, shows them one level deep`` () =
     Assert.Contains("OrderHeader → SalesOrder", plainToDepth 1 v)
 
 [<Fact>]
+let ``View: a collapsed Lane hints its item count — the affordance matches a collapsed Disclosure (#16)`` () =
+    // A collapsed Lane no longer leaves its items implied: it shows the same `▸ N
+    // items` affordance a collapsed Disclosure shows (`▸ N more`), so the two node
+    // kinds speak one collapsed-affordance vocabulary.
+    let items = [ "OrderHeader → SalesOrder"; "OrderDetail → SalesOrderLine"; "Customer → Account" ]
+    let shallow = plainToDepth 0 (View.Lane("⟲", "rename", View.Ok, items))
+    Assert.DoesNotContain("OrderHeader → SalesOrder", shallow)   // the item CONTENT stays hidden
+    Assert.Contains("3 items", shallow)                          // the count + affordance is hinted
+    Assert.Contains("▸", shallow)                                // with the openable marker
+    // singular reads correctly — "1 item", never "1 items"
+    let single = plainToDepth 0 (View.Lane("−", "remove", View.Bad, [ "OnlyOne" ]))
+    Assert.Contains("1 item", single)
+    Assert.DoesNotContain("1 items", single)
+
+[<Fact>]
 let ``View: a Lane renders its items (plain) and carries glyph/status/items (json)`` () =
     let v = View.Lane("⟲", "rename", View.Ok, [ "OrderHeader → SalesOrder"; "OrderDetail → SalesOrderLine" ])
     // pretty/plain lens — the label + both items
