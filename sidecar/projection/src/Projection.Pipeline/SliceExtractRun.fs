@@ -1,5 +1,15 @@
 namespace Projection.Pipeline
 
+// STOPGAP (2026-06-18 — pre-existing, NOT part of the Spectre render chapter): the
+// `extractSpec` task below trips FS3511 (an `await`/`let!` inside a `for` loop) under
+// Release's static-state-machine optimization, which TreatWarningsAsErrors promotes to
+// an error — breaking the whole Release build (and the perf-gate) downstream. The code
+// is correct: FS3511 falls back to a dynamic state machine, and this is the small
+// root-resolution loop, not a hot path. Suppressed here to unblock Release; the proper
+// fix (hoist the await-loop into a module-level recursive `task` helper, minding the
+// reverse list order the loop builds) is tracked as a separate task.
+#nowarn "3511"
+
 open System.Threading.Tasks
 open Microsoft.Data.SqlClient
 open Projection.Core

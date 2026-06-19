@@ -1,5 +1,13 @@
 module Projection.Cli.RunFaces
 
+// STOPGAP (2026-06-18 — pre-existing, NOT part of the Spectre render chapter): `task{}`
+// bodies in this file (a tightening-violation check; the streaming-load loop) trip
+// FS3511 (an `await` inside a branch/loop) under Release's static state-machine
+// optimization, which TreatWarningsAsErrors promotes to an error — breaking the Release
+// build (and the perf-gate). The code is correct (dynamic state-machine fallback).
+// Suppressed to unblock Release; the proper restructure is tracked as a separate task.
+#nowarn "3511"
+
 // LINT-ALLOW-FILE: CLI run-face operator-facing prose and terminal SQL-text at
 //   the CLI boundary use string composition; the structural argument surface is
 //   the typed MovementSpec / Intent (Projection.Pipeline).
