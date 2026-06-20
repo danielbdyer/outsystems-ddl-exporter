@@ -24898,3 +24898,37 @@ run/apply narration (`RunFaces`). Pure pool green throughout (+6 tests).
 `moduleOfItem` + the grouped `lane`); `RunFaces.fs` (`catalogNameIndex`/`nameOf`/
 `integrityPayload`/`narrateIntegrityReport`/`runVerifyData`); `tests/Projection.Tests/`
 `ComparisonTests.fs` + `NarrationDisplayTests.fs`; `SPECTRE_REFINEMENTS.md` §27 (Scale wave).
+
+## 2026-06-20 (later) — SPECTRE displayName chapter FINISHED (#J): one shared `Catalog.nameIndex`; the transfer report + suggest-config named
+
+**Why recorded.** Completes the cross-surface legibility chapter (#I started it) — and
+adds a Core primitive + a `TransferReport` field, so it crosses the Cli-only grain the
+earlier polish kept. The goal: ONE shared SsKey→Name projection so every operator face
+reads tables by `Name`, never the GUID `rootOriginal`.
+
+- **The shared primitive.** `Catalog.nameIndex : Catalog -> Map<SsKey,string>` (+
+  `displayName`) in Core — a flat index over kinds / columns / references / indexes /
+  sequences. A4 holds: it is a TERMINAL DISPLAY projection, never lookup-by-name;
+  identity stays the SsKey. `Comparison.nameIndex` and the `RunFaces` narration helper
+  (formerly `catalogNameIndex`) now delegate to it — the three copies consolidated.
+- **The transfer report.** Its load plan / cycle FKs / unmatched + ambiguous identities
+  / dropped refs were GUID-walled, and the transfer FACE holds no catalog (the report is
+  produced deep in the engine, which reads the contract internally). Rather than thread a
+  catalog up to the Cli, `TransferReport` gained a `Names : Map<SsKey,string>` index,
+  populated from the contract catalog at each of the 5 construction sites
+  (`Catalog.nameIndex catalog` for the materialized paths, `sourceContract` for the
+  streaming paths). `narrateTransferReport` / `narrateDropExit` resolve through it; an
+  empty map (the test default, and any unpopulated path) falls back to `rootOriginal`,
+  byte-identical to pre-displayName behaviour. **It is additive metadata only — no engine
+  logic reads `Names`, so transfer behaviour is unchanged** (Docker `TransferCanary`
+  29/29, real multi-second runs).
+- **suggest-config** names the touched nodes via its `report.ReadCatalog`. **explain**
+  was found already-fine (its `rootOriginal` is the substring MATCH key, not display).
+
+**Gate.** Pure pool 3599/0 (+4 `NarrationDisplayTests`: `Catalog.nameIndex` resolution;
+verify-data row + null payloads; the transfer load-plan narration — all proven with
+OssysOriginal GUID keys, since the synthesized fixtures can't catch a name-wall). Docker
+`TransferCanary` 29/29. **Cross-references:** `src/Projection.Core/Catalog.fs`
+(`nameIndex`/`displayName`); `src/Projection.Pipeline/TransferRun.fs` (`TransferReport.Names`);
+`src/Projection.Cli/RunFaces.fs` + `Comparison.fs`; `tests/Projection.Tests/NarrationDisplayTests.fs`;
+`SPECTRE_REFINEMENTS.md` §27 (Scale wave / #J).

@@ -930,7 +930,7 @@ Full pure pool **3575/0**.
 - *Before/after for index / sequence / kind-facet reshapes* (the structural channels) is
   deferred — facet-name is the right grain until a consumer wants the list-level diff.
 
-#### Polish (2026-06-19/20 — nine slices on top of #27; `DECISIONS 2026-06-19/20`)
+#### Polish (2026-06-19/20 — ten slices on top of #27; `DECISIONS 2026-06-19/20`)
 
 The DIFF cluster's polish wave — more detail, more safety, more scannable, more
 scopable. #A–#D + the rollup are pure-`Comparison.fs`; the scoping verbs add a thin
@@ -996,21 +996,26 @@ total, leads with what matters, and offers a path to ALL of it — never a silen
   touched — the in-place navigability the prior follow-on flagged as the hard marquee,
   delivered cleanly. A small / single-module lane stays the flat `Lane`.
 - **#I — cross-surface legibility (the displayName chapter, started).** The run/apply
-  narration is SsKey-keyed (GUID walls on a real estate). `RunFaces` gained a shared
-  `catalogNameIndex` / `nameOf`; `verify-data` now names tables/columns by `Name` (the
-  contract is threaded out of the read task as `(report, contract)`; the payload build
-  is extracted as the pure, testable `integrityPayload`). `explain` was already fine
-  (its `rootOriginal` is only the match key, not display). **Still GUID-walled (need
-  their upstream catalog threaded to the narration):** `narrateTransferReport` (the
-  load plan / cycle FKs / unmatched identities — 3 call sites) and `suggest-config`.
+  narration is SsKey-keyed (GUID walls on a real estate). `verify-data` now names
+  tables/columns by `Name` (the contract threaded out of the read task as
+  `(report, contract)`; the payload build extracted as the pure, testable
+  `integrityPayload`). `explain` was already fine (its `rootOriginal` is the match key).
+- **#J — the displayName chapter FINISHED.** One shared **`Catalog.nameIndex`** (Core)
+  now backs every face — `Comparison.nameIndex` + the `RunFaces` narration delegate to
+  it (the three copies consolidated). The **transfer report** names by `Name`: the
+  transfer face holds no catalog (the report is built deep in the engine), so
+  `TransferReport` gained a `Names : Map<SsKey,string>` index, populated from the
+  contract catalog at each construction site, resolved in `narrateTransferReport` /
+  `narrateDropExit` (empty ⇒ `rootOriginal` fallback). Additive metadata only — the
+  transfer behaviour is unchanged (Docker `TransferCanary` 29/29). `suggest-config`
+  names via `report.ReadCatalog`. A4 holds — `nameIndex` is a terminal DISPLAY
+  projection; identity stays the SsKey.
 
-**Still-named follow-ons:** finish the displayName chapter — thread the catalog into
-`narrateTransferReport` (3 sites) + `suggest-config` (it holds `report.ReadCatalog`),
-reusing `catalogNameIndex`/`nameOf` (consider hoisting them — and `Comparison.nameIndex`
-— to a shared `Catalog.nameIndex` in Core); the L1 `/`-filter; concrete storage width
-(`int → bigint`, a Core diff-modulus, DECISIONS-gated); a `--stat`-only summary mode
-(the rollup is its always-on form). The narration faces are stdout/Voice-based — extract
-a pure payload builder (as `integrityPayload`) to keep them testable.
+**Still-named follow-ons:** the L1 `/`-filter on the Navigator `Model` (very powerful
+now that #H gives a grouped tree to filter); concrete storage width (`int → bigint`, a
+Core diff-modulus, DECISIONS-gated); a `--stat`-only summary mode (the #F rollup is its
+always-on form); resume-from-refusal (operator-deferred — its architecture is in the
+older `HANDOFF` letter).
 
 ---
 
