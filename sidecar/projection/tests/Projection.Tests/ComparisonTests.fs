@@ -434,6 +434,50 @@ let ``delta-grade polish: a purely additive change raises no danger callout and 
         | other -> Assert.Fail(sprintf "expected a calm Ok statement, got %A" other)
     | Error e -> Assert.Fail e
 
+// --- the danger callout at SCALE (310 tables ⇒ hundreds of concerns) ---------
+// Discriminating predicate: past ~12 data-touching concerns the flat callout would
+// bury the risk SHAPE behind "and N more"; instead it groups by category (how many
+// dropped / null → not null / cascade / …), each diggable, with a loud total. A
+// naive renderer caps at 12 and silently hides the rest — the worst place to.
+
+/// A wide kind whose `n` `C1..Cn` columns are all NULLABLE (so a tighten is a
+/// `null → not null` danger), in its own module.
+let private wideCatalog (cols: int list) (nullable: bool) : Catalog =
+    let attrs =
+        cols |> List.map (fun i ->
+            { Attribute.create (attrKey ["Wide"; sprintf "C%d" i]) (mkName (sprintf "C%d" i)) Text with
+                Column = ColumnRealization.create (sprintf "C%d" i) nullable |> Result.value })
+    let wide = Kind.create (kindKey ["Wide"]) (mkName "Wide") (mkTableId "dbo" "OSUSR_W_WIDE") attrs
+    Catalog.create [ IRBuilders.mkModule (modKey "W") (mkName "W") [ wide ] ] [] |> Result.value
+
+[<Fact>]
+let ``delta-grade polish: at scale the danger callout groups by risk category with a loud total`` () =
+    // Source: 20 nullable columns. Target: drop C1..C10, tighten C11..C20 to NOT NULL
+    // ⇒ 10 "dropped" + 10 "null → not null" = 20 concerns (> the flat threshold).
+    let src = wideCatalog [ 1 .. 20 ] true
+    let tgt = wideCatalog [ 11 .. 20 ] false
+    match Comparison.catalog.Between src tgt with
+    | Ok d ->
+        match Comparison.dangerLane d with
+        | [ View.Disclosure (headline, View.Bad, detail) ] ->
+            Assert.Contains("may rewrite or lose data", headline)
+            Assert.Contains("20", headline)                                  // the loud total, not a hidden "and N more"
+            let cats = detail |> List.choose (function View.Disclosure (h, _, _) -> Some h | _ -> None)
+            Assert.Contains(cats, fun (h: string) -> h.StartsWith "dropped" && h.Contains "10")
+            Assert.Contains(cats, fun (h: string) -> h.StartsWith "null → not null" && h.Contains "10")
+        | other -> Assert.Fail(sprintf "expected a grouped danger Disclosure at scale, got %A" other)
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``delta-grade polish: a small danger set stays a flat callout lane (below the grouping threshold)`` () =
+    // Two concerns ⇒ flat lane, the historical shape (the grouping is a scale affordance).
+    match Comparison.catalog.Between nullableName sampleCatalog with
+    | Ok d ->
+        match Comparison.dangerLane d with
+        | [ View.Lane (_, "may rewrite or lose data", View.Bad, _) ] -> ()
+        | other -> Assert.Fail(sprintf "expected a flat danger lane for a small set, got %A" other)
+    | Error e -> Assert.Fail e
+
 [<Fact>]
 let ``delta-grade polish: the danger callout rides the machine lens (one substrate)`` () =
     match Comparison.catalog.Between nullableName sampleCatalog with
