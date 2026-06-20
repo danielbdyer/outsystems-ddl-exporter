@@ -66,24 +66,107 @@ let labelOf (v: View.View) : string =
     | View.Action t -> t
     | View.Blank -> ""
 
+// --- The filter (L1): a PROJECTION of the tree, never a second copy ---------
+// `/` filters the dig to the branches matching a substring — the canonical
+// at-scale move (DYNAMIC_DISPLAY §7.6: a cursor over the data the `View` already
+// carries, not a copy of state). `filterView` PRUNES the tree to the matching
+// branches; the Model holds only the filter STRING, and the filtered tree is
+// derived on demand (`effectiveTree`). The cursor then navigates the pruned tree
+// exactly as it navigates the full one — the same `step`, no special case.
+
+/// Case-insensitive substring test. An empty query matches everything (so a
+/// just-opened filter shows the whole tree until the first character is typed).
+let private hits (q: string) (s: string) : bool =
+    q = "" || s.IndexOf(q, System.StringComparison.OrdinalIgnoreCase) >= 0
+
+/// Prune a `View` to the branches matching `q`, or `None` when nothing under it
+/// matches. A container keeps its matching children (a `Disclosure` / `Lane` /
+/// `Trail` whose OWN label matches keeps its full body); a leaf keeps itself iff
+/// its text matches. Total over the `View` DU — the renderer's dual. `Blank` never
+/// matches (filtering drops the spacers). Pure; the structured lens is untouched
+/// (a filter is a pretty/interactive concern, like depth and the cursor).
+let rec filterView (q: string) (v: View.View) : View.View option =
+    let keptOf (xs: View.View list) = xs |> List.choose (filterView q)
+    match v with
+    | View.Doc blocks ->
+        match keptOf blocks with [] -> None | kept -> Some (View.Doc kept)
+    | View.Disclosure (h, st, detail) ->
+        if hits q h then Some v
+        else match keptOf detail with [] -> None | kept -> Some (View.Disclosure (h, st, kept))
+    | View.Lane (g, label, st, items) ->
+        if hits q label then Some v
+        else match items |> List.filter (hits q) with [] -> None | kept -> Some (View.Lane (g, label, st, kept))
+    | View.Trail (label, steps) ->
+        if hits q label then Some v
+        else
+            match steps |> List.filter (fun (s, d) -> hits q s || (match d with Some x -> hits q x | None -> false)) with
+            | []   -> None
+            | kept -> Some (View.Trail (label, kept))
+    | View.Table (headers, rows) ->
+        match rows |> List.filter (List.exists (fun (text, _) -> hits q text)) with
+        | []   -> None
+        | kept -> Some (View.Table (headers, kept))
+    | View.Panel (title, rows) ->
+        let rowHit =
+            function
+            | View.PanelRow.Labeled (l, value, _) -> hits q l || hits q value
+            | View.PanelRow.Gauge (l, _, _, suffix) -> hits q l || hits q suffix
+            | View.PanelRow.Next t -> hits q t
+        if hits q title || List.exists rowHit rows then Some v else None
+    | View.Hero (_, t)            -> if hits q t then Some v else None
+    | View.Field (l, value, _)    -> if hits q l || hits q value then Some v else None
+    | View.Note t                 -> if hits q t then Some v else None
+    | View.Action t               -> if hits q t then Some v else None
+    | View.Meter (l, _, _, suffix)-> if hits q l || hits q suffix then Some v else None
+    | View.Dots (l, _)            -> if hits q l then Some v else None
+    | View.Spark (l, _)           -> if hits q l then Some v else None
+    | View.Timeline (l, _, _, _, _) -> if hits q l then Some v else None
+    | View.Blank                  -> None
+
 // --- The Model + the pure reducer ------------------------------------------
 
 /// The navigator state — the carried `Tree`, the open/cursor `Path` (its tip is
 /// the selected, deepest-open node), the calm ambient `Depth` beneath the dug
-/// spine, and the quit sentinel. No copy of run state lives here — only a cursor.
+/// spine, the quit sentinel, and the L1 filter axis. `Filter` is a STRING (the
+/// substring being matched), never a copy of the tree — the filtered tree is
+/// derived (`effectiveTree`). `Editing` is true while the filter is being typed
+/// (keystrokes append) vs. navigated (keystrokes move the cursor). No copy of run
+/// state lives here — only a cursor and a filter string.
 type Model =
     { Tree: View.View
       Path: int list
       Depth: int
-      Done: bool }
+      Done: bool
+      Filter: string option
+      Editing: bool }
+
+/// The first-child path for a tree (or the empty path for a bare leaf) — where the
+/// cursor opens, and where it RESETS when the filter changes the tree under it.
+let private rootPathOf (tree: View.View) : int list =
+    if List.isEmpty (children tree) then [] else [ 0 ]
 
 /// Open on the first top-level node (so something is always selected), or the
 /// empty path when the tree has no navigable children (a bare leaf).
 let init (depth: int) (tree: View.View) : Model =
     { Tree = tree
-      Path = (if List.isEmpty (children tree) then [] else [ 0 ])
+      Path = rootPathOf tree
       Depth = depth
-      Done = false }
+      Done = false
+      Filter = None
+      Editing = false }
+
+/// The tree the cursor navigates and the shell renders: the full `Tree`, or — when
+/// a non-empty filter is active — that tree PRUNED to the matching branches
+/// (`filterView`), with an honest "no matches" note when the filter excludes
+/// everything. An empty / absent filter is the whole tree (no pruning, so the
+/// spacers survive). Derived, never stored — the one-substrate discipline for the
+/// interactive layer (a filter is a cursor over the data, not a second copy).
+let effectiveTree (model: Model) : View.View =
+    match model.Filter with
+    | None | Some "" -> model.Tree
+    | Some q ->
+        filterView q model.Tree
+        |> Option.defaultValue (View.Doc [ View.Note (sprintf "no matches for \"%s\"" q) ])
 
 /// The render policy for the current frame: the dug spine is `OpenPath`, laid over
 /// the calm ambient `Depth`. `Width` is the shell's to set (it owns the live
@@ -92,7 +175,8 @@ let init (depth: int) (tree: View.View) : Model =
 let project (model: Model) : View.RenderOptions =
     { View.defaultOptions with Depth = model.Depth; OpenPath = Some model.Path }
 
-/// The node labels along `Path` — the breadcrumb to the cursor.
+/// The node labels along `Path` — the breadcrumb to the cursor, over the tree the
+/// cursor actually navigates (the filtered tree when a filter is active).
 let breadcrumb (model: Model) : string list =
     let rec walk (node: View.View) (path: int list) (acc: string list) =
         match path with
@@ -103,7 +187,7 @@ let breadcrumb (model: Model) : string list =
                 let child = List.item i kids
                 walk child rest (labelOf child :: acc)
             else List.rev acc
-    walk model.Tree model.Path []
+    walk (effectiveTree model) model.Path []
 
 let private parentOf (path: int list) : int list =
     match List.rev path with
@@ -119,6 +203,7 @@ let private withTip (path: int list) (tip: int) : int list = parentOf path @ [ t
 /// vi keys (h/j/k/l) mirror the arrows. `→` descends to the FIRST child (extends
 /// the dug spine one level); `←` pops to the parent (retracts it).
 let step (key: ConsoleKey) (model: Model) : Model =
+    let tree = effectiveTree model              // navigate the filtered tree, same logic
     match key with
     | ConsoleKey.UpArrow | ConsoleKey.K ->
         match List.tryLast model.Path with
@@ -127,22 +212,62 @@ let step (key: ConsoleKey) (model: Model) : Model =
     | ConsoleKey.DownArrow | ConsoleKey.J ->
         match List.tryLast model.Path with
         | Some tip ->
-            let siblings = childCount model.Tree (parentOf model.Path)
+            let siblings = childCount tree (parentOf model.Path)
             if tip + 1 < siblings then { model with Path = withTip model.Path (tip + 1) } else model
         | None ->
-            if childCount model.Tree [] > 0 then { model with Path = [ 0 ] } else model
+            if childCount tree [] > 0 then { model with Path = [ 0 ] } else model
     | ConsoleKey.RightArrow | ConsoleKey.Enter | ConsoleKey.L ->
-        if childCount model.Tree model.Path > 0 then { model with Path = model.Path @ [ 0 ] } else model
+        if childCount tree model.Path > 0 then { model with Path = model.Path @ [ 0 ] } else model
     | ConsoleKey.LeftArrow | ConsoleKey.Backspace | ConsoleKey.H ->
         match model.Path with
         | [] -> model
         | _ -> { model with Path = parentOf model.Path }
-    | ConsoleKey.Q | ConsoleKey.Escape -> { model with Done = true }
+    | ConsoleKey.Q -> { model with Done = true }       // q always quits
+    | ConsoleKey.Escape ->
+        // Escape clears an active filter FIRST (a layered exit), and only quits when
+        // there is no filter to clear — so a filtered dig doesn't quit on the first Esc.
+        match model.Filter with
+        | Some _ -> { model with Filter = None; Editing = false; Path = rootPathOf model.Tree }
+        | None   -> { model with Done = true }
     | _ -> model
+
+// --- The filter reducers (pure; the shell routes keystrokes here while typing) --
+// Every filter change RESETS the cursor to the root of the resulting (pruned) tree,
+// because the prior path may not exist under the new filter — the same safety the
+// time-axis walk uses (a fresh tree gets a fresh cursor).
+
+/// The model with the filter set to `q`, the cursor reset to the new tree's root.
+let private withFilter (q: string) (model: Model) : Model =
+    let m = { model with Filter = Some q }
+    { m with Path = rootPathOf (effectiveTree m) }
+
+/// Enter filter-entry: keep any current filter text (so `/` re-edits), start typing,
+/// reset the cursor to the resulting root.
+let beginFilter (model: Model) : Model =
+    { (withFilter (defaultArg model.Filter "") model) with Editing = true }
+
+/// Append a typed character to the live filter.
+let typeFilter (c: char) (model: Model) : Model =
+    withFilter ((defaultArg model.Filter "") + string c) model
+
+/// Delete the last filter character; backspace on an EMPTY filter exits filtering
+/// entirely (the natural "undo the slash").
+let backspaceFilter (model: Model) : Model =
+    match model.Filter with
+    | Some s when s.Length > 0 -> withFilter (s.Substring(0, s.Length - 1)) model
+    | _ -> { model with Filter = None; Editing = false; Path = rootPathOf model.Tree }
+
+/// Commit the filter — stop typing, KEEP it; the cursor now navigates the pruned
+/// tree (the path already sits at the filtered root from the last keystroke).
+let commitFilter (model: Model) : Model = { model with Editing = false }
+
+/// Cancel filtering entirely — clear the filter, restore the full tree, reset the cursor.
+let cancelFilter (model: Model) : Model =
+    { model with Filter = None; Editing = false; Path = rootPathOf model.Tree }
 
 // --- The impure shell (the ReadKey loop; thin, the I/O boundary) -----------
 
-let private navLegend = "↑↓ move   →/Enter dig   ← back   q quit"
+let private navLegend = "↑↓ move   →/Enter dig   ← back   / filter   q quit"
 
 /// The position header — only in history mode (#10): where this run sits in the
 /// ledger (newest-first) and the time-axis keys. A single run shows nothing here
@@ -154,12 +279,24 @@ let private header (console: IAnsiConsole) (idx: int) (count: int) : unit =
          with :? System.InvalidOperationException -> console.WriteLine(line))
         console.WriteLine()
 
-/// The footer chrome — the breadcrumb to the cursor, then the key legend, muted.
-/// Built as plain markup (not a `View`) so it sits BELOW the rendered tree without
-/// joining the navigable structure.
+/// The footer chrome — the filter line (when filtering), the breadcrumb to the
+/// cursor, then the key legend, muted. Built as plain markup (not a `View`) so it
+/// sits BELOW the rendered tree without joining the navigable structure.
 let private footer (console: IAnsiConsole) (model: Model) : unit =
-    let crumb = breadcrumb model |> List.map Markup.Escape |> String.concat (" " + Theme.arrow + " ")
     console.WriteLine()
+    // The filter line: a live `/foo▌` prompt while typing, or a committed
+    // `filter: foo` with the Esc-clears hint once locked. Absent when not filtering.
+    (match model.Filter with
+     | Some q when model.Editing ->
+         let line = sprintf "/%s▌   (Enter keep · Esc clear · Backspace edit)" q
+         (try console.MarkupLine(Theme.accent (Markup.Escape line))
+          with :? System.InvalidOperationException -> console.WriteLine(line))
+     | Some q ->
+         let line = sprintf "filter: %s   (/ edit · Esc clear)" q
+         (try console.MarkupLine(Theme.accent (Markup.Escape line))
+          with :? System.InvalidOperationException -> console.WriteLine(line))
+     | None -> ())
+    let crumb = breadcrumb model |> List.map Markup.Escape |> String.concat (" " + Theme.arrow + " ")
     let line = if crumb = "" then navLegend else crumb + "    " + Markup.Escape navLegend
     try console.MarkupLine(Theme.muted line)
     with :? System.InvalidOperationException -> console.WriteLine(navLegend)
@@ -190,11 +327,21 @@ let private driveLoop (count: int) (start: int) (loadAt: int -> View.View) : int
         while go do
             (try Console.Clear() with _ -> console.WriteLine())
             header console idx count
-            View.writeWith { project model with Width = console.Profile.Width } console model.Tree
+            View.writeWith { project model with Width = console.Profile.Width } console (effectiveTree model)
             footer console model
             let key = Console.ReadKey(true)
             if key.Modifiers.HasFlag(ConsoleModifiers.Control) && key.Key = ConsoleKey.C then
                 go <- false   // Ctrl-C quits cleanly — `finally` restores the terminal
+            elif model.Editing then
+                // Filter-typing mode: printable chars append, the rest are control.
+                match key.Key with
+                | ConsoleKey.Enter     -> model <- commitFilter model
+                | ConsoleKey.Escape    -> model <- cancelFilter model
+                | ConsoleKey.Backspace -> model <- backspaceFilter model
+                | _ when not (Char.IsControl key.KeyChar) -> model <- typeFilter key.KeyChar model
+                | _ -> ()    // ignore arrows / other control keys while typing
+            elif key.KeyChar = '/' then
+                model <- beginFilter model                                  // `/` opens the filter
             elif key.Key = ConsoleKey.PageDown && idx < count - 1 then
                 idx <- idx + 1                       // down the newest-first list → an OLDER run
                 model <- init 0 (loadAt idx)         // fresh cursor at the new run's root
