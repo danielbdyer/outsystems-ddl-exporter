@@ -317,3 +317,328 @@ let ``delta-grade legibility: lanes name entities by their Name, never the raw S
         Assert.Contains(items, fun (s: string) -> s.StartsWith "column Customer.Name:")   // the clean qualified Name
         Assert.True(items |> List.forall (fun s -> not (s.Contains "OS_ATTR")), "no raw synthesized key leaks into a lane")
     | Error e -> Assert.Fail e
+
+// --- the FK target/source name-wall (delta-grade polish #A) ------------------
+// Discriminating predicate: the FK `target` / `source column` reshape facets name
+// a CROSS-entity SsKey. For an OssysOriginal key, `rootOriginal` is a bare 32-char
+// GUID — so a retarget rendered `target <hex> → <hex>`, illegible exactly where the
+// operator must read "this FK now points at a DIFFERENT table." The fix resolves
+// those keys through the per-side name index (as the qualifier already does). The
+// synthesized-key fixtures above CANNOT catch this (their `rootOriginal` IS a name),
+// so this uses OssysOriginal (GUID) keys, where the regression would show.
+
+/// A minimal OssysOriginal-keyed kind (a GUID identity, a readable Name) — the
+/// real-estate shape where `rootOriginal` is a hex wall.
+let private ossysKind (g: System.Guid) (label: string) : Kind =
+    Kind.create (SsKey.ossysOriginal g) (mkName label) (mkTableId "dbo" ("OSUSR_X_" + label))
+        [ Attribute.create (attrKey [label; "Id"]) (mkName "Id") Integer ]
+
+let private accountKey = System.Guid("a0000000-0000-0000-0000-000000000001")
+let private vendorKey  = System.Guid("b0000000-0000-0000-0000-000000000002")
+
+/// An `Order`-like kind whose one FK points at `target`; the two target kinds are
+/// OssysOriginal-keyed (`Account` / `Vendor`) and both present, so a retarget is a
+/// single `ReferenceFacet.Target` reshape with both sides resolvable by name.
+let private orderTo (target: System.Guid) : Catalog =
+    let ord =
+        { Kind.create (kindKey ["OrderX"]) (mkName "OrderX") (mkTableId "dbo" "OSUSR_X_ORDER")
+            [ Attribute.create (attrKey ["OrderX"; "Id"]) (mkName "Id") Integer
+              Attribute.create (attrKey ["OrderX"; "AccountId"]) (mkName "AccountId") Integer ]
+            with References = [ Reference.create (refKey ["OrderX"; "Acct"]) (mkName "Acct") (attrKey ["OrderX"; "AccountId"]) (SsKey.ossysOriginal target) ] }
+    Catalog.create [ IRBuilders.mkModule (modKey "X") (mkName "X") [ ord; ossysKind accountKey "Account"; ossysKind vendorKey "Vendor" ] ] []
+    |> Result.value
+
+[<Fact>]
+let ``delta-grade polish: an FK retarget names the tables, never the raw GUID (the name-wall fix)`` () =
+    match Comparison.catalog.Between (orderTo accountKey) (orderTo vendorKey) with
+    | Ok d ->
+        let items = laneItems "reshape" d
+        Assert.Contains(items, fun (s: string) -> s.Contains "target Account → Vendor")            // names, the readable ALTER
+        Assert.True(items |> List.forall (fun s -> not (s.Contains "a0000000")), "no GUID hex leaks into the FK evidence")
+    | Error e -> Assert.Fail e
+
+// --- the structural-channel reshape evidence (delta-grade polish #B) ---------
+// Discriminating predicate: the index / sequence / kind-facet reshapes named
+// WHICH facet moved but not the VALUE — yet `uniqueness not unique → unique`
+// (apply FAILS on existing duplicates), `start 1 → 1000` (a key-space jump), and
+// `active yes → no` (a deactivation) are operationally different from their
+// reverses. These carry the before → after the merged delta-grade deferred for
+// the structural channels.
+
+[<Fact>]
+let ``delta-grade polish: an index uniqueness reshape shows not unique then unique`` () =
+    let idxWith (u: IndexUniqueness) =
+        { Index.ofKeyColumns (idxKey ["Customer"; "Name"]) (mkName "IX_Customer_Name") [ customerNameKey ] with Uniqueness = u }
+    let custWith u = { customer with Indexes = [ idxWith u ] }
+    match Comparison.catalog.Between (withKinds [ custWith NotUnique; order; country ]) (withKinds [ custWith Unique; order; country ]) with
+    | Ok d -> Assert.Contains(laneItems "reshape" d, fun (s: string) -> s.Contains "index Customer.IX_Customer_Name: uniqueness not unique → unique")
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``delta-grade polish: a sequence start reshape shows the value moved`` () =
+    let seqWith (start: decimal) =
+        Sequence.create (testKey "OS_SEQ_Start") (mkName "SEQ_Start") "dbo" "bigint"
+            (Some start) (Some 1M) (Some 1M) (Some 99999M) false NoCache None |> Result.value
+    let src = Catalog.create [ salesModule ] [ seqWith 1M ]    |> Result.value
+    let tgt = Catalog.create [ salesModule ] [ seqWith 1000M ] |> Result.value
+    match Comparison.catalog.Between src tgt with
+    | Ok d -> Assert.Contains(laneItems "reshape" d, fun (s: string) -> s.Contains "sequence SEQ_Start: start 1 → 1000")
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``delta-grade polish: a kind activation reshape shows active yes then no`` () =
+    let customer' = { customer with IsActive = false }
+    match Comparison.catalog.Between sampleCatalog (withKinds [ customer'; order; country ]) with
+    | Ok d -> Assert.Contains(laneItems "reshape" d, fun (s: string) -> s.Contains "table Customer: active yes → no")
+    | Error e -> Assert.Fail e
+
+// --- the data-risk surface + honest statement (delta-grade polish #C) --------
+// Discriminating predicate: a change that can REWRITE or LOSE row data on apply (a
+// null → not null, a dropped column, a uniqueness gained) is pulled into a SEPARATE
+// "review these first" callout AND counted in the lead statement — so a zero-drop
+// migration that adds a NOT NULL column no longer leads CALM. A naive renderer
+// buries the risky change in the one amber reshape bucket and leads "no removals".
+
+let private dangerItems (d: CatalogDiff) : string list =
+    Comparison.dangerLane d |> List.collect (function View.Lane(_, _, _, items) -> items | _ -> [])
+
+/// Customer.Name made nullable — so a diff TOWARD sampleCatalog is a `null → not
+/// null` tightening (the dangerous direction: existing null rows fail / need backfill).
+let private nullableName : Catalog =
+    reshapeTarget (fun a -> { a with Column = ColumnRealization.create "NAME" true |> Result.value })
+
+[<Fact>]
+let ``delta-grade polish: a null to not-null tightening leads amber with may-rewrite, and is in the danger callout`` () =
+    match Comparison.catalog.Between nullableName sampleCatalog with
+    | Ok d ->
+        match Comparison.catalogStatement d with
+        | View.Hero(View.Warn, text) -> Assert.Contains("may rewrite or lose data", text)
+        | other -> Assert.Fail(sprintf "expected a Warn statement naming the data risk, got %A" other)
+        Assert.Contains(dangerItems d, fun (s: string) -> s.Contains "column Customer.Name" && s.Contains "nullability null → not null")
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``delta-grade polish: a dropped column is named data-lost in the danger callout`` () =
+    let customer' = { customer with Attributes = customer.Attributes |> List.filter (fun a -> a.SsKey <> customerTenantKey) }
+    match Comparison.catalog.Between sampleCatalog (withKinds [ customer'; order; country ]) with
+    | Ok d -> Assert.Contains(dangerItems d, fun (s: string) -> s.Contains "column Customer.TenantId" && s.Contains "data lost")
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``delta-grade polish: a purely additive change raises no danger callout and leads calm`` () =
+    match Comparison.catalog.Between emptyCatalog sampleCatalog with
+    | Ok d ->
+        Assert.Empty(Comparison.dangerLane d)                                  // nothing touches data
+        match Comparison.catalogStatement d with
+        | View.Hero(View.Ok, text) -> Assert.Contains("no removals", text)     // still calm
+        | other -> Assert.Fail(sprintf "expected a calm Ok statement, got %A" other)
+    | Error e -> Assert.Fail e
+
+// --- the danger callout at SCALE (310 tables ⇒ hundreds of concerns) ---------
+// Discriminating predicate: past ~12 data-touching concerns the flat callout would
+// bury the risk SHAPE behind "and N more"; instead it groups by category (how many
+// dropped / null → not null / cascade / …), each diggable, with a loud total. A
+// naive renderer caps at 12 and silently hides the rest — the worst place to.
+
+/// A wide kind whose `n` `C1..Cn` columns are all NULLABLE (so a tighten is a
+/// `null → not null` danger), in its own module.
+let private wideCatalog (cols: int list) (nullable: bool) : Catalog =
+    let attrs =
+        cols |> List.map (fun i ->
+            { Attribute.create (attrKey ["Wide"; sprintf "C%d" i]) (mkName (sprintf "C%d" i)) Text with
+                Column = ColumnRealization.create (sprintf "C%d" i) nullable |> Result.value })
+    let wide = Kind.create (kindKey ["Wide"]) (mkName "Wide") (mkTableId "dbo" "OSUSR_W_WIDE") attrs
+    Catalog.create [ IRBuilders.mkModule (modKey "W") (mkName "W") [ wide ] ] [] |> Result.value
+
+[<Fact>]
+let ``delta-grade polish: at scale the danger callout groups by risk category with a loud total`` () =
+    // Source: 20 nullable columns. Target: drop C1..C10, tighten C11..C20 to NOT NULL
+    // ⇒ 10 "dropped" + 10 "null → not null" = 20 concerns (> the flat threshold).
+    let src = wideCatalog [ 1 .. 20 ] true
+    let tgt = wideCatalog [ 11 .. 20 ] false
+    match Comparison.catalog.Between src tgt with
+    | Ok d ->
+        match Comparison.dangerLane d with
+        | [ View.Disclosure (headline, View.Bad, detail) ] ->
+            Assert.Contains("may rewrite or lose data", headline)
+            Assert.Contains("20", headline)                                  // the loud total, not a hidden "and N more"
+            let cats = detail |> List.choose (function View.Disclosure (h, _, _) -> Some h | _ -> None)
+            Assert.Contains(cats, fun (h: string) -> h.StartsWith "dropped" && h.Contains "10")
+            Assert.Contains(cats, fun (h: string) -> h.StartsWith "null → not null" && h.Contains "10")
+        | other -> Assert.Fail(sprintf "expected a grouped danger Disclosure at scale, got %A" other)
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``delta-grade polish: a small danger set stays a flat callout lane (below the grouping threshold)`` () =
+    // Two concerns ⇒ flat lane, the historical shape (the grouping is a scale affordance).
+    match Comparison.catalog.Between nullableName sampleCatalog with
+    | Ok d ->
+        match Comparison.dangerLane d with
+        | [ View.Lane (_, "may rewrite or lose data", View.Bad, _) ] -> ()
+        | other -> Assert.Fail(sprintf "expected a flat danger lane for a small set, got %A" other)
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``delta-grade polish: the danger callout rides the machine lens (one substrate)`` () =
+    match Comparison.catalog.Between nullableName sampleCatalog with
+    | Ok d ->
+        let j = (View.toJson (Comparison.renderCatalogChange d)).ToJsonString()
+        Assert.Contains("may rewrite or lose data", j)   // the callout reaches the structured lens
+    | Error e -> Assert.Fail e
+
+// --- channel scoping (`diff --only <channel>`) ------------------------------
+// Discriminating predicate: `--only columns` keeps ONLY the column items across
+// every move-lane (and the danger callout), so an operator reviews one channel of
+// a huge diff. A naive renderer shows the whole changeset regardless.
+
+/// Every lane item across a rendered lane list (the danger callout + the move lanes).
+let private allLaneItems (views: View.View list) : string list =
+    views |> List.collect (function View.Lane(_, _, _, items) -> items | _ -> [])
+
+/// A multi-channel diff: a column reshape (Customer.Name) + an FK reshape (Order→Customer).
+let private multiChannel : CatalogDiff =
+    let customer' = { customer with Attributes = customer.Attributes |> List.map (fun a -> if a.SsKey = customerNameKey then { a with Type = Integer } else a) }
+    let order'    = { order with References = order.References |> List.map (fun r -> { r with OnDelete = Cascade }) }
+    match Comparison.catalog.Between sampleCatalog (withKinds [ customer'; order'; country ]) with
+    | Ok d -> d
+    | Error e -> failwith e
+
+[<Fact>]
+let ``delta-grade polish: --only columns keeps only the column items`` () =
+    let items = allLaneItems (Comparison.renderCatalogLanesScoped (Some "columns") multiChannel)
+    Assert.NotEmpty items
+    Assert.True(items |> List.forall (fun (s: string) -> s.StartsWith "column "), "only column items survive --only columns")
+
+[<Fact>]
+let ``delta-grade polish: --only relationships keeps only the relationship items`` () =
+    let items = allLaneItems (Comparison.renderCatalogLanesScoped (Some "relationships") multiChannel)
+    Assert.NotEmpty items
+    Assert.True(items |> List.forall (fun (s: string) -> s.StartsWith "relationship "), "only relationship items survive --only relationships")
+
+[<Fact>]
+let ``delta-grade polish: --only a channel with no changes yields no lanes`` () =
+    // multiChannel touches columns + relationships only — scoping to indexes is empty.
+    Assert.Empty(Comparison.renderCatalogLanesScoped (Some "indexes") multiChannel)
+
+[<Fact>]
+let ``delta-grade polish: --only scopes the danger callout too`` () =
+    // A column rewrite (null → not null) + an FK cascade are both data-touching;
+    // --only relationships keeps only the FK danger.
+    match Comparison.catalog.Between nullableName (withKinds [ customer; { order with References = order.References |> List.map (fun r -> { r with OnDelete = Cascade }) }; country ]) with
+    | Ok d ->
+        let danger = allLaneItems (Comparison.dangerLaneScoped (Some "relationships") d)
+        Assert.NotEmpty danger                                                          // the FK danger survives
+        Assert.True(danger |> List.forall (fun (s: string) -> s.StartsWith "relationship "), "the callout scopes with the lanes")
+        // the unscoped callout carries BOTH the column and the FK danger (proves --only narrowed it)
+        Assert.Contains(allLaneItems (Comparison.dangerLane d), fun (s: string) -> s.StartsWith "column ")
+    | Error e -> Assert.Fail e
+
+// --- the per-module "top movers" rollup (at-scale orientation) --------------
+// Discriminating predicate: a diff spanning ≥ 2 modules carries a per-module
+// change tally, churn-sorted, so "which module is hot" reads at a glance. A naive
+// renderer makes the operator read every lane to find the mass. A single-module
+// diff shows no rollup (it needs none).
+
+let private invoice : Kind =
+    Kind.create (kindKey ["Invoice"]) (mkName "Invoice") (mkTableId "dbo" "OSUSR_B_INVOICE")
+        [ Attribute.create (attrKey ["Invoice"; "Id"]) (mkName "Id") Integer ]
+
+/// A two-module catalog: Sales (the standard kinds) + Billing (one Invoice kind).
+let private twoModule (salesKinds: Kind list) (invoiceKind: Kind) : Catalog =
+    Catalog.create
+        [ { salesModule with Kinds = salesKinds }
+          IRBuilders.mkModule (modKey "Billing") (mkName "Billing") [ invoiceKind ] ] []
+    |> Result.value
+
+/// The rollup table rows (module, count) from a rendered change, or None.
+let private rollupRows (d: CatalogDiff) : string list option =
+    match Comparison.renderCatalogChange d with
+    | View.Doc blocks ->
+        blocks
+        |> List.tryPick (function
+            | View.Table (h, rows) when h = [ "module"; "changes" ] ->
+                Some (rows |> List.map (fun cells -> fst (List.head cells)))
+            | _ -> None)
+    | _ -> None
+
+[<Fact>]
+let ``delta-grade polish: a multi-module diff carries a per-module rollup, churn-sorted`` () =
+    // Sales: Customer.Name type change + drop TenantId = 2 changes. Billing: +1 column = 1.
+    let salesTgt =
+        { customer with
+            Attributes =
+                customer.Attributes
+                |> List.filter (fun a -> a.SsKey <> customerTenantKey)
+                |> List.map (fun a -> if a.SsKey = customerNameKey then { a with Type = Integer } else a) }
+    let invoiceTgt = { invoice with Attributes = invoice.Attributes @ [ Attribute.create (attrKey ["Invoice"; "Amount"]) (mkName "Amount") Decimal ] }
+    let src = twoModule [ customer; order; country ] invoice
+    let tgt = twoModule [ salesTgt; order; country ] invoiceTgt
+    match Comparison.catalog.Between src tgt with
+    | Ok d ->
+        match rollupRows d with
+        | Some mods -> Assert.Equal<string list>([ "Sales"; "Billing" ], mods)   // hotter module first
+        | None -> Assert.Fail "expected a per-module rollup table"
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``delta-grade polish: a single-module diff shows no per-module rollup`` () =
+    match Comparison.catalog.Between sampleCatalog (reshapeTarget (fun a -> { a with Type = Integer })) with
+    | Ok d -> Assert.True((rollupRows d).IsNone, "a one-module diff needs no rollup")
+    | Error e -> Assert.Fail e
+
+// --- the navigable module-grouped lane at SCALE (the marquee) ----------------
+// Discriminating predicate: a move-lane carrying many items across ≥ 2 modules
+// becomes a navigable Disclosure TREE grouped by module (hottest first) instead of
+// a flat 12-item wall — so a 400-FK lane is module headlines you drill, not 12
+// arbitrary lines + "and 388 more". A small / single-module lane stays flat.
+
+[<Fact>]
+let ``delta-grade polish: at scale a move-lane groups by module into a navigable tree`` () =
+    // Sales/Customer +8 columns, Billing/Invoice +8 columns ⇒ 16 add-column items
+    // across 2 modules (> the flat threshold).
+    let customer' = { customer with Attributes = customer.Attributes @ [ for i in 1..8 -> Attribute.create (attrKey ["Customer"; sprintf "X%d" i]) (mkName (sprintf "X%d" i)) Text ] }
+    let invoice'  = { invoice  with Attributes = invoice.Attributes  @ [ for i in 1..8 -> Attribute.create (attrKey ["Invoice";  sprintf "Y%d" i]) (mkName (sprintf "Y%d" i)) Text ] }
+    let src = twoModule [ customer;  order; country ] invoice
+    let tgt = twoModule [ customer'; order; country ] invoice'
+    match Comparison.catalog.Between src tgt with
+    | Ok d ->
+        let addNode =
+            Comparison.renderCatalogLanes d
+            |> List.tryPick (function View.Disclosure (h, st, detail) when h.StartsWith "add" -> Some (st, h, detail) | _ -> None)
+        match addNode with
+        | Some (View.Ok, headline, detail) ->
+            Assert.Contains("16", headline)                                  // the loud total
+            let mods = detail |> List.choose (function View.Disclosure (h, _, _) -> Some h | _ -> None)
+            Assert.Contains(mods, fun (h: string) -> h.StartsWith "Sales" && h.Contains "8")
+            Assert.Contains(mods, fun (h: string) -> h.StartsWith "Billing" && h.Contains "8")
+        | other -> Assert.Fail(sprintf "expected a grouped add Disclosure, got %A" other)
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``delta-grade polish: a small multi-module lane stays flat (grouping is a scale affordance)`` () =
+    // The rollup fixture: ≥ 2 modules but few items per lane ⇒ flat Lanes, no grouping.
+    let salesTgt = { customer with Attributes = customer.Attributes |> List.map (fun a -> if a.SsKey = customerNameKey then { a with Type = Integer } else a) }
+    let invoiceTgt = { invoice with Attributes = invoice.Attributes @ [ Attribute.create (attrKey ["Invoice"; "Amount"]) (mkName "Amount") Decimal ] }
+    match Comparison.catalog.Between (twoModule [ customer; order; country ] invoice) (twoModule [ salesTgt; order; country ] invoiceTgt) with
+    | Ok d ->
+        let nodes = Comparison.renderCatalogLanes d
+        Assert.True(nodes |> List.forall (function View.Lane _ -> true | _ -> false), "small lanes stay flat Lanes")
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``delta-grade polish: lane items sort by name, so a capped lane is scannable (not SsKey order)`` () =
+    // Two columns added in a deliberately non-alphabetical source order; the lane
+    // must present them name-sorted, not in the Set's SsKey order.
+    let customer' =
+        { customer with
+            Attributes =
+                customer.Attributes
+                @ [ Attribute.create (attrKey ["Customer"; "Zeta"]) (mkName "Zeta") Text
+                    Attribute.create (attrKey ["Customer"; "Alpha"]) (mkName "Alpha") Text ] }
+    match Comparison.catalog.Between sampleCatalog (withKinds [ customer'; order; country ]) with
+    | Ok d ->
+        let adds = laneItems "add" d
+        let iAlpha = adds |> List.findIndex (fun (s: string) -> s.Contains "Customer.Alpha")
+        let iZeta  = adds |> List.findIndex (fun (s: string) -> s.Contains "Customer.Zeta")
+        Assert.True(iAlpha < iZeta, "Alpha sorts before Zeta in the add lane")
+    | Error e -> Assert.Fail e

@@ -489,7 +489,7 @@ type PlanAction =
     | CheckData of before: string * after: string
     | CheckReady
     // explain ------------------------------------------------------------
-    | ExplainDiff of refA: string * refB: string * asJson: bool * depth: int option
+    | ExplainDiff of refA: string * refB: string * asJson: bool * depth: int option * channel: string option * onlyModule: string option
     | Compare of refA: string * refB: string * asJson: bool
     | ExplainPolicy of configA: string * configB: string
     | ExplainNode of config: string * ssKey: string * asJson: bool * depth: int option

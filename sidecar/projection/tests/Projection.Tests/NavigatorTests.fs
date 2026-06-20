@@ -23,7 +23,8 @@ let private tree =
         View.Field ("tail", "T", View.Neutral) ]                 // [2]      leaf
 
 let private model path =
-    { Navigator.Tree = tree; Navigator.Path = path; Navigator.Depth = 0; Navigator.Done = false }
+    { Navigator.Tree = tree; Navigator.Path = path; Navigator.Depth = 0; Navigator.Done = false
+      Navigator.Filter = None; Navigator.Editing = false }
 
 // --- The navigable-shape helpers -------------------------------------------
 
@@ -106,3 +107,64 @@ let ``Navigator: the breadcrumb names the nodes along the cursor path`` () =
     // alpha → a2 → deep : the labels of [1], [1;1], [1;1;0]
     Assert.Equal<string list>([ "alpha"; "a2"; "deep" ], Navigator.breadcrumb (model [ 1; 1; 0 ]))
     Assert.Equal<string list>([], Navigator.breadcrumb (model []))   // root: no crumb
+
+// --- L1 filter: a PROJECTION of the tree, never a second copy ---------------
+// The governing law: the filtered tree is DERIVED from the carried tree + a filter
+// STRING (`effectiveTree`), and the cursor navigates it with the SAME `step` — so
+// the in-bounds safety invariant extends to the filtered tree for free.
+
+let private filtered q path =
+    { (model path) with Navigator.Filter = Some q }
+
+[<Fact>]
+let ``Navigator filter: filterView keeps a branch whose descendant matches and prunes the rest`` () =
+    // "deep" matches only the [1;1;0] leaf — so the alpha spine survives, head/tail go.
+    match Navigator.filterView "deep" tree with
+    | Some (View.Doc [ View.Disclosure ("alpha", _, [ View.Disclosure ("a2", _, [ View.Field ("deep", _, _) ]) ]) ]) -> ()
+    | other -> Assert.Fail(sprintf "expected the pruned alpha→a2→deep spine, got %A" other)
+
+[<Fact>]
+let ``Navigator filter: a label match keeps the whole subtree`` () =
+    // "alpha" matches the disclosure headline ⇒ its full body is kept (not pruned).
+    match Navigator.filterView "alpha" tree with
+    | Some (View.Doc [ View.Disclosure ("alpha", _, [ View.Field ("a1", _, _); View.Disclosure ("a2", _, _) ]) ]) -> ()
+    | other -> Assert.Fail(sprintf "expected alpha's full body kept, got %A" other)
+
+[<Fact>]
+let ``Navigator filter: effectiveTree is the full tree unfiltered, the pruned tree filtered, a note on no match`` () =
+    Assert.Equal(3, Navigator.childCount (Navigator.effectiveTree (model [])) [])          // unfiltered: 3 blocks
+    Assert.Equal(1, Navigator.childCount (Navigator.effectiveTree (filtered "deep" [])) [])  // filtered: 1 spine
+    match Navigator.effectiveTree (filtered "zzz" []) with
+    | View.Doc [ View.Note n ] -> Assert.Contains("no matches", n)                          // honest empty
+    | other -> Assert.Fail(sprintf "expected a no-matches note, got %A" other)
+
+[<Fact>]
+let ``Navigator filter: typeFilter accumulates and keeps the cursor on a real node`` () =
+    let m =
+        Navigator.beginFilter (model [ 1; 1; 0 ])
+        |> Navigator.typeFilter 'd' |> Navigator.typeFilter 'e' |> Navigator.typeFilter 'e' |> Navigator.typeFilter 'p'
+    Assert.Equal<string option>(Some "deep", m.Filter)
+    Assert.True(m.Editing)
+    Assert.True(Navigator.nodeAt (Navigator.effectiveTree m) m.Path |> Option.isSome, "cursor stays on a real node in the filtered tree")
+
+[<Fact>]
+let ``Navigator filter: backspace on an empty filter exits filtering`` () =
+    let m = Navigator.beginFilter (model [ 0 ]) |> Navigator.backspaceFilter
+    Assert.Equal<string option>(None, m.Filter)
+    Assert.False(m.Editing)
+
+[<Fact>]
+let ``Navigator filter: step navigates the FILTERED tree and never leaves it (#11 extends)`` () =
+    for start in [ [ 0 ]; [ 0; 0 ] ] do
+        for k in allKeys do
+            let m = Navigator.step k (filtered "deep" start)
+            Assert.True(
+                Navigator.nodeAt (Navigator.effectiveTree m) m.Path |> Option.isSome,
+                sprintf "key %A from filtered %A left the tree at %A" k start m.Path)
+
+[<Fact>]
+let ``Navigator filter: Esc clears an active filter first, then quits (a layered exit)`` () =
+    let cleared = Navigator.step ConsoleKey.Escape (filtered "deep" [ 0; 0 ])
+    Assert.Equal<string option>(None, cleared.Filter)        // the filter is cleared…
+    Assert.False(cleared.Done)                               // …not quit
+    Assert.True((Navigator.step ConsoleKey.Escape cleared).Done)   // a second Esc (no filter) quits

@@ -188,6 +188,13 @@ module Transfer =
             /// structure rather than letting σ's NULL pass silently. Empty for
             /// an ingested Transfer (only the σ path can raise it).
             SyntheticUnsatisfiableFks : SyntheticDiagnostic list
+            /// Display-name index (`SsKey -> Name`) for the kinds/columns this
+            /// report names — built from the contract catalog at construction, so a
+            /// consumer (the CLI narration) reads tables by `Name`, not the GUID
+            /// `rootOriginal`. Empty ⇒ the consumer falls back to `rootOriginal`
+            /// (byte-identical to pre-displayName behaviour). It is terminal DISPLAY
+            /// metadata only — no engine logic reads it (A4: identity stays the SsKey).
+            Names : Map<SsKey, string>
         }
 
     // -- Projection-onto-Sink realization -----------------------------------
@@ -1227,7 +1234,8 @@ module Transfer =
                           ReplayedPriorDrops  = replayedPriorDrops
                           // NM-21 — only the σ path can raise these; ingested
                           // Transfer never draws against a synthetic pool.
-                          SyntheticUnsatisfiableFks = [] }
+                          SyntheticUnsatisfiableFks = []
+                          Names = Catalog.nameIndex catalog }
         }
 
     /// Run a Transfer over one shared `Catalog` (the schema contract):
@@ -1415,7 +1423,8 @@ module Transfer =
                               // Synthetic load has no resumable G10 envelope.
                               ReplayedPriorDrops  = None
                               // NM-21 — σ's named unsatisfiable-FK lineage.
-                              SyntheticUnsatisfiableFks = syntheticDiags }
+                              SyntheticUnsatisfiableFks = syntheticDiags
+                              Names = Catalog.nameIndex catalog }
         }
 
     /// **Live golden apply** (data-portability — the Execute vehicle of
@@ -1502,7 +1511,8 @@ module Transfer =
                               SkippedReferences   = plan.SkippedReferences @ writeSkips
                               CaptureLaneDescents = laneDescents
                               ReplayedPriorDrops  = None
-                              SyntheticUnsatisfiableFks = [] }
+                              SyntheticUnsatisfiableFks = []
+                              Names = Catalog.nameIndex catalog }
         }
 
     /// 6.B.2 — RefactorLog-aware Transfer. The source is at schema A
@@ -2081,7 +2091,8 @@ module Transfer =
                                   // Streaming DryRun: no G10 resumable replay.
                                   ReplayedPriorDrops  = None
                                   // NM-21 — streaming Transfer ingests source rows, not σ.
-                                  SyntheticUnsatisfiableFks = [] }
+                                  SyntheticUnsatisfiableFks = []
+                                  Names = Catalog.nameIndex sourceContract }
                     else
                         let journal =
                             journalDirectory
@@ -2154,7 +2165,8 @@ module Transfer =
                                       // own drops); no G10 marker replay here.
                                       ReplayedPriorDrops  = None
                                       // NM-21 — streaming Transfer ingests source rows, not σ.
-                                      SyntheticUnsatisfiableFks = [] }
+                                      SyntheticUnsatisfiableFks = []
+                                      Names = Catalog.nameIndex sourceContract }
         }
 
     /// The straight-load streaming realization — the non-reconciling default

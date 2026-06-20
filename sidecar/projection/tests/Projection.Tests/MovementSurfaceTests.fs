@@ -1432,8 +1432,14 @@ let ``parse: top-level diff <a> <b> aliases explain diff (A6)`` () =
 [<Fact>]
 let ``parse: top-level diff routes through plan to ExplainDiff (A6)`` () =
     match (Command.plan flowCfg (Command.parse flowCfg [ "diff"; "a"; "b"; "--format"; "json" ] |> mustOk)).Action with
-    | PlanAction.ExplainDiff ("a", "b", true, _) -> ()
+    | PlanAction.ExplainDiff ("a", "b", true, _, None, None) -> ()        // no scope flags ⇒ unscoped
     | other -> Assert.Fail(sprintf "expected ExplainDiff, got %A" other)
+
+[<Fact>]
+let ``parse: diff --only and --module thread the scope into ExplainDiff`` () =
+    match (Command.plan flowCfg (Command.parse flowCfg [ "diff"; "a"; "b"; "--only"; "columns"; "--module"; "Sales" ] |> mustOk)).Action with
+    | PlanAction.ExplainDiff ("a", "b", false, _, Some "columns", Some "Sales") -> ()
+    | other -> Assert.Fail(sprintf "expected a scoped ExplainDiff, got %A" other)
 
 [<Fact>]
 let ``parse: top-level diff and explain diff produce the SAME action (A6 alias)`` () =

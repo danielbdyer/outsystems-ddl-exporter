@@ -24773,3 +24773,199 @@ dwell, an order below the old ~2-dwell inline block) and `propagates a body exce
 teardown path no other test covered). **Cross-references:** `src/Projection.Cli/Watch.fs` (`renderWatchOn` rewrite + the
 reap); `tests/Projection.Tests/WatchInjectionTests.fs`; `SPECTRE_REFINEMENTS.md` §20. Follow-on: the breathing spinner +
 stall-aware ETA on the drain loop's 100ms wake.
+
+## 2026-06-19 (later) — SPECTRE delta-grade diff POLISH: the FK name-wall fix, structural-channel before/after, the data-risk surface + honest statement, deterministic ordering
+
+**Why recorded.** The diff is the migrate-preview surface; its lane vocabulary +
+risk framing are an operator-facing contract, so widening them earns an entry even
+though the test is the codification (CLAUDE.md §6). Four pure `Comparison.fs` slices
+on top of the merged delta-grade (#27); zero Core/SQL touch; no new `View` case; one
+substrate (every item rides `toJson` verbatim). Pure pool 3584/0 (+10 `ComparisonTests`).
+
+- **#A — FK name-wall (a real defect in the merged #27).** `referenceEvidence` rendered
+  the `target` / `source column` facets via `SsKey.rootOriginal` — a bare 32-char GUID
+  for `OssysOriginal` keys — so an FK retarget read `target <hex> → <hex>` on a real
+  OSSYS estate, illegible exactly where the operator must read "this FK now points at a
+  DIFFERENT table" (a silent row-reparenting risk). Fixed by threading the per-side name
+  resolvers (`nm srcNames` / `nm tgtNames`) into `referenceEvidence`, as the qualifier
+  already did. Proven with OssysOriginal (GUID) fixtures — the synthesized-key fixtures
+  cannot catch it (their `rootOriginal` IS a name).
+- **#B — before/after for the structural channels.** Index `uniqueness` (`not unique →
+  unique` FAILS on apply if duplicates exist), sequence scalars (`start 1 → 1000`), and
+  kind `active` (`yes → no`) now carry the value (`indexEvidence` / `sequenceEvidence` /
+  `kindFacetEvidence`). The list/grouped facets stay facet-name (a before→after would be
+  a wall). Retired the now-dead `channelReshapes` (dead-algebra retirement).
+- **#C — the data-risk surface + an honest statement.** `dataDrops` (a dropped
+  table/column loses rows) + `rewrites` (a type conversion, `null → not null`, a cascade
+  added, a uniqueness gained — per-channel predicates over the retained source/target)
+  drive: (1) a "review these first" callout, a single `Bad`-badged lane promoted to the
+  TOP of the substantiation — a SEPARATE surface, so the move-lanes stay HOMOGENEOUS (the
+  operator's rejection of per-item lane status holds); (2) an honest `catalogStatement`
+  that leads amber on a data-touching RESHAPE, not just a removal, and counts it
+  (`N changes · D drops · R may rewrite data · review`). The "drops"-only wording is
+  preserved for the removal-only case (the existing statement tests hold).
+- **#D — deterministic item ordering.** Lane items `List.sort` in the canonical assembly,
+  so the noun-prefixed items group by channel then sort by name — the capped first 12 are
+  the scannable first 12, not an arbitrary SsKey-order 12. Both lenses see one order (T1).
+
+**Deferred (named).** The at-scale navigability (navigable `Lane` items + module→kind
+`Disclosure` grouping; the `OpenPath`-invariant + Kind→module work); the L1 `/`-filter;
+the scoping verbs (`diff --only` / `--module` / `--stat`); the cross-surface
+`SsKey.displayName cat` projection (explain / reconciliation / bench still name by GUID);
+concrete storage width (`int → bigint`, a Core diff-modulus, DECISIONS-gated).
+
+**Cross-references:** `src/Projection.Cli/Comparison.fs`; `tests/Projection.Tests/ComparisonTests.fs`;
+`SPECTRE_REFINEMENTS.md` §27 (the Polish subsection).
+
+## 2026-06-19 (later still) — SPECTRE delta-grade diff POLISH #E/#F: the scoping verbs (`--only` / `--module`) + the per-module rollup
+
+**Why recorded.** #E adds two operator-facing CLI flags (a new contract worth
+recording, per the config-thin doctrine — both are per-run overrides, not config);
+#F changes the diff surface for multi-module diffs. Pure-Cli + a thin DU/parse thread;
+no Core/SQL touch. Pure pool 3591/0 (+18 tests across the wave).
+
+- **#E — `diff --only <channel>` / `--module <name>`.** At scale an operator scopes
+  rather than scrolls. `--only` scopes the DISPLAY: `Comparison.keepChannel` /
+  `channelNoun` filter each move-lane's items + the danger callout to one channel
+  (columns / relationships / indexes / sequences / tables), dropping empty lanes —
+  robust because every item is noun-prefixed by its channel (the format the collectors
+  own). The statement, the per-module rollup, and the ‖δ‖ panel stay WHOLE for
+  orientation. `--module` scopes the COMPUTATION: `runDiff` keeps the named module's
+  kinds (case-insensitive; sequences are catalog-level → dropped) before
+  `CatalogDiff.between` — a smaller diff. The raw record scope (`{ cat with Modules =
+  … }`, bypassing `Catalog.create`) is safe because the diff only OBSERVES catalogs (no
+  re-validation / FK closure needed). `Comparison` gained `renderCatalogLanesScoped` /
+  `dangerLaneScoped` / `changeSurfaceScoped` / `renderCatalogChangeScoped` (the
+  historical unscoped functions are `None` wrappers — every existing test holds);
+  `PlanAction.ExplainDiff` gained `channel: string option * onlyModule: string option`,
+  threaded MovementSurface parse → Program dispatch → `runDiff`; `--help` documents both.
+- **#F — the per-module rollup.** `Comparison.moduleRollup` aggregates each lane item
+  against its owning kind's module (`Catalog.allModulesKinds`) into a churn-sorted
+  `module · changes` `View.Table`, placed before the ‖δ‖ panel and shown only when the
+  diff spans ≥ 2 modules. Deterministic (ties break by name, T1); reuses `View.Table`
+  (no new case); the structured lens carries it. Pairs with `--module`: orient on the
+  hot module, then scope to dig it.
+
+**Deferred (named).** The FULL navigable module→kind `Disclosure` TREE (the rollup +
+`--module` cover orient-then-drill; the in-place navigable tree is the remaining
+marquee, touching the `OpenPath`=child-index invariant); the cross-surface
+`SsKey.displayName cat` projection; concrete storage width (Core, DECISIONS-gated); a
+`--stat`-only summary mode (the rollup is its always-on form).
+
+**Cross-references:** `src/Projection.Cli/Comparison.fs` · `RunFaces.fs` (`runDiff`) ·
+`Program.fs` · `src/Projection.Pipeline/MovementSpec.fs` (`ExplainDiff`) ·
+`MovementSurface.fs` (parse); `tests/Projection.Tests/ComparisonTests.fs` +
+`MovementSurfaceTests.fs`; `SPECTRE_REFINEMENTS.md` §27 (Polish #E/#F).
+
+## 2026-06-20 — SPECTRE delta-grade diff SCALE wave (#G/#H/#I): intentional at ~310 tables — danger by category, navigable module-grouped lanes, cross-surface legibility started
+
+**Why recorded.** The operator named the real target — a ~310-table OSSYS estate where
+one channel can carry hundreds of FK concerns at once — and asked that every
+change-render surface be INTENTIONAL about that volume. The governing principle: each
+list surface states its true total, leads with what matters, and offers a path to ALL
+of it, never a silent 12-item wall. #G/#H are pure `Comparison.fs`; #I touches the
+run/apply narration (`RunFaces`). Pure pool green throughout (+6 tests).
+
+- **#G — the danger callout scales by risk CATEGORY.** Past a threshold (12) the flat
+  callout would bury the risk SHAPE behind "and N more" — the worst place to truncate.
+  `dataDrops`/`rewrites` now carry `(category, text)`; above the threshold the callout
+  groups by category (dropped / type change / null → not null / primary key change /
+  identity change / cascade delete / uniqueness gained), each a diggable `Disclosure`
+  sub-group with its count, the loud total on top. The operator reads the risk PROFILE
+  then drills. A small set stays the flat lane (the grouping is a scale affordance).
+- **#H — the navigable module-grouped move-lane (the at-scale marquee).** A move-lane
+  that is LARGE and spans ≥ 2 modules renders as a navigable `Disclosure` TREE grouped
+  by module (hottest first; `moduleOfItem` extracts the kind name from the noun-prefixed
+  item and resolves via `Catalog.allModulesKinds`). Default depth shows the module
+  profile; digging reveals the items. **Crucially this needs NO Navigator change** — the
+  tree is built from `Disclosure`s, which `Navigator.children` already nests, so the dig
+  works natively and the `OpenPath`=child-index invariant is never touched (the prior
+  follow-on flagged the in-place navigable tree as the hard marquee — delivered without
+  the risk). A small / single-module lane stays the flat `Lane`.
+- **#I — cross-surface legibility (the displayName chapter, started).** The run/apply
+  narration faces are SsKey-keyed and showed GUID walls (`rootOriginal` of an
+  `OssysOriginal` key). `RunFaces` gained a shared `catalogNameIndex` / `nameOf`;
+  `verify-data` now names tables/columns by `Name` — the contract catalog is threaded
+  OUT of the read task (`return Ok (report, contract)`) into the narration, and the
+  payload build is extracted as the pure, unit-testable `integrityPayload` (avoiding a
+  Voice/Console-capture test). `explain` was found already-fine (its `rootOriginal` is
+  only the substring MATCH key, not display). **Deferred (named):** `narrateTransferReport`
+  (the load plan / cycle FKs / unmatched identities — 3 sites, each needs its upstream
+  catalog threaded) and `suggest-config` (holds `report.ReadCatalog`); a shared
+  `Catalog.nameIndex` in Core would unify `catalogNameIndex` + `Comparison.nameIndex`.
+
+**Cross-references:** `src/Projection.Cli/Comparison.fs` (`dangerLaneScoped` categories,
+`moduleOfItem` + the grouped `lane`); `RunFaces.fs` (`catalogNameIndex`/`nameOf`/
+`integrityPayload`/`narrateIntegrityReport`/`runVerifyData`); `tests/Projection.Tests/`
+`ComparisonTests.fs` + `NarrationDisplayTests.fs`; `SPECTRE_REFINEMENTS.md` §27 (Scale wave).
+
+## 2026-06-20 (later) — SPECTRE displayName chapter FINISHED (#J): one shared `Catalog.nameIndex`; the transfer report + suggest-config named
+
+**Why recorded.** Completes the cross-surface legibility chapter (#I started it) — and
+adds a Core primitive + a `TransferReport` field, so it crosses the Cli-only grain the
+earlier polish kept. The goal: ONE shared SsKey→Name projection so every operator face
+reads tables by `Name`, never the GUID `rootOriginal`.
+
+- **The shared primitive.** `Catalog.nameIndex : Catalog -> Map<SsKey,string>` (+
+  `displayName`) in Core — a flat index over kinds / columns / references / indexes /
+  sequences. A4 holds: it is a TERMINAL DISPLAY projection, never lookup-by-name;
+  identity stays the SsKey. `Comparison.nameIndex` and the `RunFaces` narration helper
+  (formerly `catalogNameIndex`) now delegate to it — the three copies consolidated.
+- **The transfer report.** Its load plan / cycle FKs / unmatched + ambiguous identities
+  / dropped refs were GUID-walled, and the transfer FACE holds no catalog (the report is
+  produced deep in the engine, which reads the contract internally). Rather than thread a
+  catalog up to the Cli, `TransferReport` gained a `Names : Map<SsKey,string>` index,
+  populated from the contract catalog at each of the 5 construction sites
+  (`Catalog.nameIndex catalog` for the materialized paths, `sourceContract` for the
+  streaming paths). `narrateTransferReport` / `narrateDropExit` resolve through it; an
+  empty map (the test default, and any unpopulated path) falls back to `rootOriginal`,
+  byte-identical to pre-displayName behaviour. **It is additive metadata only — no engine
+  logic reads `Names`, so transfer behaviour is unchanged** (Docker `TransferCanary`
+  29/29, real multi-second runs).
+- **suggest-config** names the touched nodes via its `report.ReadCatalog`. **explain**
+  was found already-fine (its `rootOriginal` is the substring MATCH key, not display).
+
+**Gate.** Pure pool 3599/0 (+4 `NarrationDisplayTests`: `Catalog.nameIndex` resolution;
+verify-data row + null payloads; the transfer load-plan narration — all proven with
+OssysOriginal GUID keys, since the synthesized fixtures can't catch a name-wall). Docker
+`TransferCanary` 29/29. **Cross-references:** `src/Projection.Core/Catalog.fs`
+(`nameIndex`/`displayName`); `src/Projection.Pipeline/TransferRun.fs` (`TransferReport.Names`);
+`src/Projection.Cli/RunFaces.fs` + `Comparison.fs`; `tests/Projection.Tests/NarrationDisplayTests.fs`;
+`SPECTRE_REFINEMENTS.md` §27 (Scale wave / #J).
+
+## 2026-06-20 (later still) — SPECTRE #K: the L1 `/`-filter on the interactive Navigator (a projection of the tree, never a second copy)
+
+**Why recorded.** Completes the interactive at-scale toolkit (orient #F · scope #E ·
+drill #H · filter #K) and extends the Navigator's load-bearing safety law. Pure-Cli
+(`Navigator.fs`); pure pool 3606/0 (+7 `NavigatorTests`).
+
+- **The discipline (DYNAMIC_DISPLAY §7.6): a cursor/filter over the data the `View`
+  already carries, NEVER a second copy of state.** `Navigator.Model` gained `Filter:
+  string option` (the substring) and `Editing: bool` (typing vs. navigating) — both small
+  view-state, like the cursor `Path`. The filtered tree is DERIVED, not stored:
+  `effectiveTree model` returns the carried `Tree`, or — when a non-empty filter is
+  active — that tree PRUNED by the pure `filterView` (a "no matches" `Note` when the
+  filter excludes everything).
+- **The cursor navigates the filtered tree with the SAME `step`.** `step` (and
+  `breadcrumb`) read `effectiveTree model` instead of `model.Tree`, so the in-bounds
+  CLAMPING invariant — the cursor can never leave the tree — extends to the pruned tree
+  for free, with NO change to the `OpenPath`=child-index invariant and no new render path.
+  `step` stays TOTAL over `ConsoleKey` (filter text-entry is char-based, handled in the
+  shell, not in `step`). Every filter change RESETS the cursor to the new tree's root
+  (the prior path may not exist under the new pruning — the same safety the time-axis walk
+  uses).
+- **`filterView : string -> View -> View option`** is total over the DU (the renderer's
+  dual): a container keeps its matching children; a `Disclosure`/`Lane`/`Trail` whose own
+  LABEL matches keeps its full body; a leaf keeps itself iff its text matches; `Blank`
+  (the spacers) drop. Pure — the structured lens (`toJson`) is untouched; a filter is a
+  pretty/interactive concern, like depth and the cursor.
+- **The shell routes by mode.** `/` opens the filter; while `Editing`, printable chars
+  append LIVE (the tree re-prunes each keystroke), Backspace deletes (empty ⇒ exit
+  filtering), Enter commits, Esc cancels. In nav mode Esc is a LAYERED exit — it clears an
+  active filter FIRST, and only quits when there is none (so a filtered dig doesn't quit
+  on the first Esc). The footer shows the live `/foo▌` prompt or the committed `filter:
+  foo` line.
+
+**Cross-references:** `src/Projection.Cli/Navigator.fs` (`filterView` / `effectiveTree` /
+the filter reducers / `step` / `driveLoop`); `tests/Projection.Tests/NavigatorTests.fs`;
+`SPECTRE_REFINEMENTS.md` §27 (Scale wave / #K).

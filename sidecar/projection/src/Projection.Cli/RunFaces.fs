@@ -559,7 +559,21 @@ let dispositionName (d: IdentityDisposition) : string =
     | IdentityDisposition.AssignedBySink      -> "assigned by the target"
     | IdentityDisposition.PreservedFromSource -> "preserved from source"
 
+// --- name resolution for the run/apply narration surfaces -------------------
+// The reconciliation / integrity / load-plan reports are keyed by `SsKey`, and
+// `SsKey.rootOriginal` is a bare GUID for an `OssysOriginal` key — so on a real
+// OSSYS estate these surfaces were a wall of hex. The diff surface already names
+// by `Name`; these faces share the SAME `Catalog.nameIndex` primitive (Core).
+// `rootOriginal` is the honest fallback for a key absent from the index.
+
+let private nameOf (names: Map<SsKey, string>) (key: SsKey) : string =
+    Map.tryFind key names |> Option.defaultValue (SsKey.rootOriginal key)
+
+/// The load-plan / cycle-FK / unmatched-identity narration, named by the transfer
+/// report's own `Names` index (populated from the engine's contract catalog;
+/// empty ⇒ `rootOriginal` fallback, byte-identical to pre-displayName behaviour).
 let narrateTransferReport (report: Transfer.TransferReport) : unit =
+    let nm = nameOf report.Names
     // §4 Move — lead with the finding (rows moved, in dependency order); the
     // load plan rides beneath. Dependency order is the engine's guarantee that
     // a row never lands before the rows it points to.
@@ -573,7 +587,7 @@ let narrateTransferReport (report: Transfer.TransferReport) : unit =
     printfn "The load plan (%d table(s)):" report.Kinds.Length
     for k in report.Kinds do
         printfn "  %-40s %-22s ingested=%d written=%d deferred-fk-columns=%d"
-            (SsKey.rootOriginal k.Kind)
+            (nm k.Kind)
             (dispositionName k.Disposition)
             k.RowsIngested
             k.RowsWritten
@@ -586,30 +600,30 @@ let narrateTransferReport (report: Transfer.TransferReport) : unit =
         for u in report.UnbreakableCycleFks do
             printfn
                 "  %s.%s → %s"
-                (SsKey.rootOriginal u.Kind)
+                (nm u.Kind)
                 (Name.value u.Column)
-                (SsKey.rootOriginal u.Target)
+                (nm u.Target)
     if not (List.isEmpty report.UnmatchedIdentities) then
         printfn ""
         printfn
             "%d identity(ies) unmatched — source records with no match in the target:"
             report.UnmatchedIdentities.Length
         for (k, s) in report.UnmatchedIdentities do
-            printfn "  %s source '%s'" (SsKey.rootOriginal k) (SourceKey.value s)
+            printfn "  %s source '%s'" (nm k) (SourceKey.value s)
     if not (List.isEmpty report.AmbiguousIdentities) then
         printfn ""
         printfn
             "%d source record(s) had a non-unique reconcile key — the first binding was kept:"
             report.AmbiguousIdentities.Length
         for (k, s) in report.AmbiguousIdentities do
-            printfn "  %s source '%s'" (SsKey.rootOriginal k) (SourceKey.value s)
+            printfn "  %s source '%s'" (nm k) (SourceKey.value s)
     if not (List.isEmpty report.AmbiguousTargetMatchKeys) then
         printfn ""
         printfn
             "%d target record(s) shared a reconcile key with an older record — the oldest was kept (supply an override if the wrong one won):"
             report.AmbiguousTargetMatchKeys.Length
         for (k, a) in report.AmbiguousTargetMatchKeys do
-            printfn "  %s target '%s' (displaced)" (SsKey.rootOriginal k) (AssignedKey.value a)
+            printfn "  %s target '%s' (displaced)" (nm k) (AssignedKey.value a)
     if not (List.isEmpty report.SkippedReferences) then
         printfn ""
         printfn
@@ -618,9 +632,9 @@ let narrateTransferReport (report: Transfer.TransferReport) : unit =
         for (owner, r) in report.SkippedReferences do
             printfn
                 "  %s.%s → %s (unmatched source '%s')"
-                (SsKey.rootOriginal owner)
+                (nm owner)
                 (Name.value r.Column)
-                (SsKey.rootOriginal r.Target)
+                (nm r.Target)
                 (SourceKey.value r.UnresolvedSource)
     // NM-53 — a resumable G10 no-op re-run replays the prior run's drop count
     // (the marker persists the count, not the exact references), so the re-run
@@ -645,9 +659,10 @@ let private narrateDropExit (allowDrops: bool) (report: Transfer.TransferReport)
             (sprintf
                 "%d row(s) would be dropped — a relationship points to an unmatched record. Pass --allow-drops to accept the loss, or resolve the records."
                 (Transfer.droppedRowCount report))
+        let nm = nameOf report.Names
         let kindCount (label: string) (keys: SsKey seq) =
             keys
-            |> Seq.countBy SsKey.rootOriginal
+            |> Seq.countBy nm
             |> Seq.iter (fun (k, n) ->
                 Console.Error.WriteLine (sprintf "  %s %s: %d" label k n))
         kindCount "dropped in" (report.SkippedReferences |> List.map fst)
@@ -957,34 +972,39 @@ let runReverseLegTransfer
 /// demoted into counted disclosures beneath. The newline joins are data
 /// marshalling into the envelope payload, not prose — the catalog owns the
 /// framing and the disclosure headlines.
-let narrateIntegrityReport (report: IntegrityReport) : unit =
+/// The §6 divergence payload, tables/columns named by `Name` (the contract IS the
+/// before deployment's catalog), not the GUID `rootOriginal` they used to show.
+/// Pure (no I/O) so the legibility is unit-testable without the Voice / Console.
+let integrityPayload (contract: Catalog) (report: IntegrityReport) : Voice.Payload =
+    let names = Catalog.nameIndex contract
+    let joined (lines: string list) = lines |> String.concat "\n"
+    [ if not (List.isEmpty report.RowCountDeltas) then
+        "rowDeltas",
+        box (report.RowCountDeltas
+             |> List.map (fun d ->
+                 sprintf "%-40s before=%d after=%d (change=%+d)"
+                     (nameOf names d.Kind) (int64 d.Before) (int64 d.After) (int64 (d.After - d.Before)))
+             |> joined)
+      if not (List.isEmpty report.NullCountDeltas) then
+        "nullDeltas",
+        box (report.NullCountDeltas
+             |> List.map (fun d ->
+                 sprintf "%-40s %-30s before=%d after=%d (change=%+d)"
+                     (nameOf names d.Kind) (nameOf names d.Attribute)
+                     (int64 d.Before) (int64 d.After) (int64 (d.After - d.Before)))
+             |> joined)
+      if not (List.isEmpty report.Warnings) then
+        "schemaWarnings",
+        box (report.Warnings
+             |> List.map (fun w -> sprintf "%s (%s)" w.Message w.Code)
+             |> joined) ]
+    |> Map.ofList
+
+let narrateIntegrityReport (contract: Catalog) (report: IntegrityReport) : unit =
     if DataIntegrityChecker.isClean report then
         TtyRenderer.renderVoicedTo Console.Out "verifyData.matched" Map.empty
     else
-        let joined (lines: string list) = lines |> String.concat "\n"
-        let payload : Voice.Payload =
-            [ if not (List.isEmpty report.RowCountDeltas) then
-                "rowDeltas",
-                box (report.RowCountDeltas
-                     |> List.map (fun d ->
-                         sprintf "%-40s before=%d after=%d (change=%+d)"
-                             (SsKey.rootOriginal d.Kind) (int64 d.Before) (int64 d.After) (int64 (d.After - d.Before)))
-                     |> joined)
-              if not (List.isEmpty report.NullCountDeltas) then
-                "nullDeltas",
-                box (report.NullCountDeltas
-                     |> List.map (fun d ->
-                         sprintf "%-40s %-30s before=%d after=%d (change=%+d)"
-                             (SsKey.rootOriginal d.Kind) (SsKey.rootOriginal d.Attribute)
-                             (int64 d.Before) (int64 d.After) (int64 (d.After - d.Before)))
-                     |> joined)
-              if not (List.isEmpty report.Warnings) then
-                "schemaWarnings",
-                box (report.Warnings
-                     |> List.map (fun w -> sprintf "%s (%s)" w.Message w.Code)
-                     |> joined) ]
-            |> Map.ofList
-        TtyRenderer.renderVoicedTo Console.Out "verifyData.diverged" payload
+        TtyRenderer.renderVoicedTo Console.Out "verifyData.diverged" (integrityPayload contract report)
 
 let runVerifyData (beforeSpec: string) (afterSpec: string) : int =
     let collect = function Ok _ -> [] | Error es -> es
@@ -1021,12 +1041,18 @@ let runVerifyData (beforeSpec: string) (afterSpec: string) : int =
             let! contractR = ReadSide.read before
             match contractR with
             | Error es -> return Result.failure es
-            | Ok contract -> return! DataIntegrityChecker.compare before after contract
+            | Ok contract ->
+                // Carry the contract OUT alongside the report so the narration can
+                // name tables/columns (the report itself is SsKey-keyed only).
+                let! cmp = DataIntegrityChecker.compare before after contract
+                match cmp with
+                | Ok report -> return Ok (report, contract)
+                | Error es  -> return Result.failure es
         }
     let exitCode =
         match work.GetAwaiter().GetResult() with
-        | Ok report ->
-            narrateIntegrityReport report
+        | Ok (report, contract) ->
+            narrateIntegrityReport contract report
             // The gate fails closed: any divergence is a non-zero exit so a
             // CI step / cutover gate trips on data drift.
             if DataIntegrityChecker.isClean report then 0 else 8
@@ -1357,9 +1383,24 @@ let runInspect (idA: string) (idB: string option) (asJson: bool) : int =
 /// the first surface of the instrument). Resolves both refs through `Ref`
 /// (file / `@runId` / `json:` / `live:`) and renders the catalog change: the
 /// plain verdict that leads, then the per-channel dig beneath. `--format json`
-/// emits the same `View` as structure.
-let runDiff (refAText: string) (refBText: string) (asJson: bool) (depth: int) : int =
+/// emits the same `View` as structure. `--module <name>` scopes the COMPUTATION
+/// to one module (a smaller, reviewable diff); `--only <channel>` scopes the
+/// DISPLAY to one channel (columns / relationships / indexes / sequences / tables).
+let runDiff (refAText: string) (refBText: string) (asJson: bool) (depth: int) (channel: string option) (onlyModule: string option) : int =
     let resolve (s: string) = (Ref.resolveCatalog (Ref.parse s)).GetAwaiter().GetResult()
+    // `--module <name>` keeps only the named module's kinds before diffing —
+    // sequences are catalog-level, so a module scope drops them. Case-insensitive
+    // name match; a name that matches nothing yields an empty scope (the diff reads
+    // "no differences") — the operator's signal to correct the flag. The raw record
+    // update is safe here: the diff only OBSERVES the catalogs (no re-validation /
+    // FK closure needed — `CatalogDiff.between` compares by SsKey).
+    let scopeModule (cat: Catalog) : Catalog =
+        match onlyModule with
+        | None -> cat
+        | Some name ->
+            { cat with
+                Modules   = cat.Modules |> List.filter (fun m -> System.String.Equals(Name.value m.Name, name, System.StringComparison.OrdinalIgnoreCase))
+                Sequences = [] }
     match resolve refAText with
     | Error errs ->
         Console.Error.WriteLine "projection diff: could not resolve the first reference:"
@@ -1372,14 +1413,14 @@ let runDiff (refAText: string) (refBText: string) (asJson: bool) (depth: int) : 
             printErrors Console.Error errs
             2
         | Ok b ->
-            match Comparison.catalog.Between a b with
+            match Comparison.catalog.Between (scopeModule a) (scopeModule b) with
             | Error e ->
                 Console.Error.WriteLine(sprintf "projection diff: %s" e)
                 2
             | Ok d ->
                 // L2 — the changeset becomes a CONTROL surface: dig the move-lanes live on
                 // a terminal, the same document one-shot when piped / --json / --query.
-                Navigator.present asJson depth (Comparison.renderCatalogChange d)
+                Navigator.present asJson depth (Comparison.renderCatalogChangeScoped channel d)
 
 /// `projection compare <A> <B>` — NM-71/WP9: the read-only multi-environment
 /// readiness check. Resolves both operands to catalogs (the `Ref` machinery,
@@ -1536,6 +1577,9 @@ let runSuggestConfig (configPath: string) (applyTo: string option) : int =
             printErrors Console.Error errs
             2
         | Ok report ->
+            // Name the touched nodes by `Name` (the projection's read catalog), not the
+            // GUID `rootOriginal` — the same legibility the diff + verify-data carry.
+            let names = Catalog.nameIndex report.ReadCatalog
             let merged =
                 (report.Diagnostics @ report.PassDiagnostics)
                 |> List.choose (fun e -> e.SuggestedConfig |> Option.map (fun c -> c, e.SsKey))
@@ -1544,7 +1588,7 @@ let runSuggestConfig (configPath: string) (applyTo: string option) : int =
                     let c0 = fst (List.head items)
                     let ssKeys =
                         items
-                        |> List.choose (fun (_, k) -> k |> Option.map SsKey.rootOriginal)
+                        |> List.choose (fun (_, k) -> k |> Option.map (nameOf names))
                         |> List.distinct
                     {| Path = path; Value = c0.Value; Note = c0.Note
                        Count = List.length items; SsKeys = ssKeys |})

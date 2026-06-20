@@ -32,7 +32,9 @@ let private usageLines : string list =
         "    projection                                           list flows (name: from → to)"
         "    projection check  ( <source.sql> [--cdc-silence] | drift --model <m> --to <t>"
         "                      | data --before <t> --after <t> | ready )"
-        "    projection diff <a> <b> [--format json] [--depth N]   change between two refs"
+        "    projection diff <a> <b> [--format json] [--depth N] [--only <channel>] [--module <name>]"
+        "                      change between two refs (--only columns|relationships|indexes|"
+        "                      sequences|tables scopes the display; --module scopes the diff)"
         "    projection explain ( diff <a> <b> [--format json] [--depth N] | policy <a> <b>"
         "                       | node <config> <ssKey> | suggest <config> [--apply <out>] | registry"
         "                       | migrate --to <b> ( --from <a> | --from empty | --store <s> ) [--allow-drops] )"
@@ -197,7 +199,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
     | PlanAction.CheckData (before, after) -> runVerifyData before after
     | PlanAction.CheckReady                -> runReadiness ()
     // explain ------------------------------------------------------------
-    | PlanAction.ExplainDiff (a, b, asJson, depthOpt) -> runDiff a b asJson (defaultArg depthOpt View.defaultDepth)
+    | PlanAction.ExplainDiff (a, b, asJson, depthOpt, channel, onlyModule) -> runDiff a b asJson (defaultArg depthOpt View.defaultDepth) channel onlyModule
     | PlanAction.Compare (a, b, asJson)      -> runCompare a b asJson
     | PlanAction.ExplainPolicy (a, b)        -> runPolicyDiff a b
     | PlanAction.ExplainNode (c, k, asJson, depthOpt) -> runExplain c k asJson (defaultArg depthOpt View.defaultDepth)

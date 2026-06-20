@@ -930,6 +930,107 @@ Full pure pool **3575/0**.
 - *Before/after for index / sequence / kind-facet reshapes* (the structural channels) is
   deferred — facet-name is the right grain until a consumer wants the list-level diff.
 
+#### Polish (2026-06-19/20 — eleven slices on top of #27; `DECISIONS 2026-06-19/20`)
+
+The DIFF cluster's polish wave — more detail, more safety, more scannable, more
+scopable. #A–#D + the rollup are pure-`Comparison.fs`; the scoping verbs add a thin
+DU/parse thread. No new `View` case for #A–#E (the rollup reuses `Table`); one
+substrate throughout (every item rides `toJson`). Pure pool **3589/0** (+18 law-citing
+tests across `ComparisonTests` + `MovementSurfaceTests`).
+
+- **#A — the FK name-wall fix (a real defect).** `referenceEvidence` rendered the
+  `target` / `source column` facets via `SsKey.rootOriginal` — a bare GUID for
+  `OssysOriginal` keys, so an FK retarget read `target <hex> → <hex>`, illegible exactly
+  where the operator must read "this FK now points at a DIFFERENT table." Now threaded
+  through the per-side name resolvers (`nm srcNames` / `nm tgtNames`), as the qualifier
+  already was. Proven with OssysOriginal fixtures (the synthesized-key fixtures can't
+  catch it — their `rootOriginal` IS a name).
+- **#B — before/after for the structural channels** (closes the §27 follow-on). Index
+  `uniqueness` (`not unique → unique` FAILS on apply if dupes exist), sequence scalars
+  (`start 1 → 1000` — opposite risk from `1000 → 1`), and kind `active` (`yes → no`, a
+  deactivation) now carry the value. The list/grouped facets (index columns, modality,
+  triggers, checks, cache) stay facet-name — a before→after there would be a wall.
+  Retired the now-dead `channelReshapes`.
+- **#C — the data-risk surface + an honest statement.** Pulls the genuinely
+  DATA-TOUCHING subset out by name — `dataDrops` (a dropped table/column loses rows) +
+  `rewrites` (a type conversion, `null → not null`, a cascade added, a uniqueness
+  gained). They drive (1) a "review these first" callout — a single `Bad`-badged lane
+  promoted to the TOP of the substantiation (a SEPARATE surface, so the move-lanes stay
+  homogeneous), and (2) an honest `catalogStatement` that leads amber on a data-touching
+  RESHAPE, not just a removal: a zero-drop migration that adds a NOT NULL column used to
+  lead CALM ("no removals") — now `N changes · K may rewrite data · review`.
+- **#D — deterministic item ordering.** Lane items `List.sort` in the canonical assembly
+  (noun-prefixed, so channel-grouped then name-ordered) — the capped first 12 are now the
+  scannable first 12, not an arbitrary SsKey-order 12. Both lenses see one order (T1).
+- **#E — the scoping verbs.** At scale an operator scopes rather than scrolls. `--only
+  <channel>` scopes the DISPLAY (keeps one channel's lane items + danger callout via
+  `keepChannel`/`channelNoun`; the statement + ‖δ‖ panel + rollup stay whole for
+  orientation); `--module <name>` scopes the COMPUTATION (keeps the named module's kinds
+  before `Between` — a smaller diff). `Comparison` gained `*Scoped` variants (the
+  historical functions are `None` wrappers, every test holds); `ExplainDiff` gained
+  `channel`/`onlyModule` options threaded parse→dispatch→`runDiff`; `--help` documents both.
+- **#F — the per-module "top movers" rollup.** A diff spanning ≥ 2 modules carries a
+  churn-sorted `module · changes` `View.Table` (`moduleRollup`, kind→module via
+  `Catalog.allModulesKinds`) just before the ‖δ‖ panel — "which module is hot" at a
+  glance, pairing with `--module` (see it → dig it). Absent for single-module diffs.
+
+##### Scale wave (2026-06-20 — intentional at ~310 tables / hundreds of concurrent concerns)
+
+The operator named the real target: a ~310-table estate, where one channel can carry
+hundreds of FK concerns at once. The principle: every list surface states its true
+total, leads with what matters, and offers a path to ALL of it — never a silent
+12-item wall.
+
+- **#G — the danger callout scales by risk CATEGORY.** Past a threshold (12) the
+  "may rewrite or lose data" callout groups by category (dropped / type change /
+  null → not null / primary key change / identity change / cascade delete / uniqueness
+  gained) — each a diggable sub-group with its count, the loud total on top — so 347
+  concerns read as their risk PROFILE, not 12 arbitrary lines. `dataDrops`/`rewrites`
+  now carry `(category, text)`; small sets stay the flat callout lane.
+- **#H — the navigable module-grouped move-lane (the at-scale MARQUEE).** A move-lane
+  that is LARGE and spans ≥ 2 modules renders as a navigable `Disclosure` TREE grouped
+  by module (hottest first; `moduleOfItem` extracts the kind name and resolves via
+  `Catalog.allModulesKinds`) — default depth shows the module profile, digging reveals
+  the items. **No Navigator change needed:** the tree is `Disclosure`s, which
+  `Navigator.children` already nests, so the `OpenPath`=child-index invariant is never
+  touched — the in-place navigability the prior follow-on flagged as the hard marquee,
+  delivered cleanly. A small / single-module lane stays the flat `Lane`.
+- **#I — cross-surface legibility (the displayName chapter, started).** The run/apply
+  narration is SsKey-keyed (GUID walls on a real estate). `verify-data` now names
+  tables/columns by `Name` (the contract threaded out of the read task as
+  `(report, contract)`; the payload build extracted as the pure, testable
+  `integrityPayload`). `explain` was already fine (its `rootOriginal` is the match key).
+- **#J — the displayName chapter FINISHED.** One shared **`Catalog.nameIndex`** (Core)
+  now backs every face — `Comparison.nameIndex` + the `RunFaces` narration delegate to
+  it (the three copies consolidated). The **transfer report** names by `Name`: the
+  transfer face holds no catalog (the report is built deep in the engine), so
+  `TransferReport` gained a `Names : Map<SsKey,string>` index, populated from the
+  contract catalog at each construction site, resolved in `narrateTransferReport` /
+  `narrateDropExit` (empty ⇒ `rootOriginal` fallback). Additive metadata only — the
+  transfer behaviour is unchanged (Docker `TransferCanary` 29/29). `suggest-config`
+  names via `report.ReadCatalog`. A4 holds — `nameIndex` is a terminal DISPLAY
+  projection; identity stays the SsKey.
+- **#K — the L1 `/`-filter (the at-scale companion to #H).** `/` filters the live dig
+  to the branches matching a substring. The law (DYNAMIC_DISPLAY §7.6): the `Navigator.Model`
+  holds only the filter STRING; the filtered tree is DERIVED (`effectiveTree` over the
+  pure, total `filterView`), and the cursor navigates it with the SAME `step` — so the
+  in-bounds safety invariant extends to the filtered tree for free, NO Navigator
+  invariant touched, no second copy of state. `filterView` prunes the `View` to matching
+  branches (a `Disclosure`/`Lane`/`Trail` whose own label matches keeps its full body; a
+  leaf keeps itself iff its text matches; `Blank` drops). The shell routes by mode: `/`
+  opens, printable chars append live, Backspace deletes (empty ⇒ exit), Enter commits,
+  Esc is a LAYERED exit (clears an active filter first, quits only when there's none).
+  Pairs with #E (`--module`) + #F (rollup) + #H (grouped tree) — orient, scope, drill,
+  filter. 7 `NavigatorTests`; pure pool 3606/0.
+
+**Still-named follow-ons:** concrete storage width (`int → bigint`, a Core diff-modulus,
+DECISIONS-gated — the literal handoff example, needs an `AttributeFacet` + `changedFacets`
+change); a `--stat`-only summary mode (the #F rollup is its always-on form); a HEADLESS
+filter (`diff --grep <substring>`, the #K `/`-filter's one-shot sibling — `filterView` is
+already pure and reusable); resume-from-refusal (operator-deferred — its architecture is
+in the older `HANDOFF` letter). The interactive at-scale toolkit is now complete: orient
+(#F rollup) · scope (#E `--module`/`--only`) · drill (#H grouped tree) · filter (#K).
+
 ---
 
 ## G — Earned moments (the sparkle)
