@@ -489,6 +489,59 @@ let ``delta-grade polish: --only scopes the danger callout too`` () =
         Assert.Contains(allLaneItems (Comparison.dangerLane d), fun (s: string) -> s.StartsWith "column ")
     | Error e -> Assert.Fail e
 
+// --- the per-module "top movers" rollup (at-scale orientation) --------------
+// Discriminating predicate: a diff spanning ≥ 2 modules carries a per-module
+// change tally, churn-sorted, so "which module is hot" reads at a glance. A naive
+// renderer makes the operator read every lane to find the mass. A single-module
+// diff shows no rollup (it needs none).
+
+let private invoice : Kind =
+    Kind.create (kindKey ["Invoice"]) (mkName "Invoice") (mkTableId "dbo" "OSUSR_B_INVOICE")
+        [ Attribute.create (attrKey ["Invoice"; "Id"]) (mkName "Id") Integer ]
+
+/// A two-module catalog: Sales (the standard kinds) + Billing (one Invoice kind).
+let private twoModule (salesKinds: Kind list) (invoiceKind: Kind) : Catalog =
+    Catalog.create
+        [ { salesModule with Kinds = salesKinds }
+          IRBuilders.mkModule (modKey "Billing") (mkName "Billing") [ invoiceKind ] ] []
+    |> Result.value
+
+/// The rollup table rows (module, count) from a rendered change, or None.
+let private rollupRows (d: CatalogDiff) : string list option =
+    match Comparison.renderCatalogChange d with
+    | View.Doc blocks ->
+        blocks
+        |> List.tryPick (function
+            | View.Table (h, rows) when h = [ "module"; "changes" ] ->
+                Some (rows |> List.map (fun cells -> fst (List.head cells)))
+            | _ -> None)
+    | _ -> None
+
+[<Fact>]
+let ``delta-grade polish: a multi-module diff carries a per-module rollup, churn-sorted`` () =
+    // Sales: Customer.Name type change + drop TenantId = 2 changes. Billing: +1 column = 1.
+    let salesTgt =
+        { customer with
+            Attributes =
+                customer.Attributes
+                |> List.filter (fun a -> a.SsKey <> customerTenantKey)
+                |> List.map (fun a -> if a.SsKey = customerNameKey then { a with Type = Integer } else a) }
+    let invoiceTgt = { invoice with Attributes = invoice.Attributes @ [ Attribute.create (attrKey ["Invoice"; "Amount"]) (mkName "Amount") Decimal ] }
+    let src = twoModule [ customer; order; country ] invoice
+    let tgt = twoModule [ salesTgt; order; country ] invoiceTgt
+    match Comparison.catalog.Between src tgt with
+    | Ok d ->
+        match rollupRows d with
+        | Some mods -> Assert.Equal<string list>([ "Sales"; "Billing" ], mods)   // hotter module first
+        | None -> Assert.Fail "expected a per-module rollup table"
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``delta-grade polish: a single-module diff shows no per-module rollup`` () =
+    match Comparison.catalog.Between sampleCatalog (reshapeTarget (fun a -> { a with Type = Integer })) with
+    | Ok d -> Assert.True((rollupRows d).IsNone, "a one-module diff needs no rollup")
+    | Error e -> Assert.Fail e
+
 [<Fact>]
 let ``delta-grade polish: lane items sort by name, so a capped lane is scannable (not SsKey order)`` () =
     // Two columns added in a deliberately non-alphabetical source order; the lane

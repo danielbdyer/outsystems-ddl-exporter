@@ -587,15 +587,61 @@ let renderCatalogLanes (d: CatalogDiff) : View.View list = renderCatalogLanesSco
 /// reversibility, progressively disclosed) with the per-channel ‖δ‖ panel
 /// beneath. The statement/substantiation shape every later surface reuses
 /// (`THE_VOICE.md` §1 rule 3).
+// --- the per-module "top movers" rollup (at-scale orientation) --------------
+// On a real estate a diff spans many modules; "which module is hot" is the first
+// triage question, answerable today only by reading every lane. A per-module
+// change tally — sorted by churn — answers it at a glance and pairs with the
+// `--module` scope (see the hot module → `diff --module <it>` to dig it). Shown
+// only when the diff touches ≥ 2 modules (a single-module diff needs no rollup).
+
+/// Kind `SsKey` → owning module name, for one catalog (`Catalog.allModulesKinds`).
+let private kindModuleIndex (cat: Catalog) : Map<SsKey, string> =
+    Catalog.allModulesKinds cat |> List.map (fun (m, k) -> k.SsKey, Name.value m.Name) |> Map.ofList
+
+/// The per-module change tally as a `View.Table` (module · changes, churn-sorted),
+/// or `[]` when the diff touches fewer than two modules. Counts each lane item
+/// (an add / drop / rename / reshape) against its owning kind's module; sequences
+/// are catalog-level (not module-scoped) and excluded. Deterministic: ties break
+/// by module name (T1). The machine lens carries the full table (it is a `Table`).
+let moduleRollup (d: CatalogDiff) : View.View list =
+    let srcMods = kindModuleIndex (CatalogDiff.source d)
+    let tgtMods = kindModuleIndex (CatalogDiff.target d)
+    let viaSrc k = Map.tryFind k srcMods |> Option.defaultValue "(unknown)"
+    let viaTgt k = Map.tryFind k tgtMods |> Option.defaultValue "(unknown)"
+    let either k = Map.tryFind k srcMods |> Option.orElseWith (fun () -> Map.tryFind k tgtMods) |> Option.defaultValue "(unknown)"
+    let channelTally (diffs: Map<SsKey, ChannelDiff<'c>>) (kk: SsKey) : (string * int) =
+        let cd = diffs.[kk]
+        either kk, (Set.count cd.Added + Set.count cd.Removed + Map.count cd.Renamed + List.length cd.Reshaped)
+    let contribs =
+        [ for k in CatalogDiff.added d   do yield viaTgt k, 1
+          for k in CatalogDiff.removed d do yield viaSrc k, 1
+          for KeyValue(k, _) in CatalogDiff.renamed d do yield viaSrc k, 1
+          for KeyValue(kk, _) in CatalogDiff.attributeDiffs d do yield channelTally (CatalogDiff.attributeDiffs d) kk
+          for KeyValue(kk, _) in CatalogDiff.referenceDiffs d do yield channelTally (CatalogDiff.referenceDiffs d) kk
+          for KeyValue(kk, _) in CatalogDiff.indexDiffs d     do yield channelTally (CatalogDiff.indexDiffs d) kk
+          for KeyValue(kk, _) in CatalogDiff.kindFacetDiffs d do yield either kk, 1 ]
+    let perModule =
+        contribs
+        |> List.groupBy fst
+        |> List.map (fun (m, xs) -> m, List.sumBy snd xs)
+        |> List.filter (fun (_, n) -> n > 0)
+        |> List.sortBy (fun (m, n) -> (-n, m))            // churn desc, then name (T1)
+    if List.length perModule < 2 then []
+    else
+        let rows = perModule |> List.map (fun (m, n) -> [ (m, View.Neutral); (Theme.humane n, View.Neutral) ])
+        [ View.Blank
+          View.Note "by module (most-changed first)"
+          View.Table([ "module"; "changes" ], rows) ]
+
 let changeSurfaceScoped (chan: string option) (d: CatalogDiff) : Surface.Surface =
     { Statement      = catalogStatement d
       // The danger callout leads the substantiation ("review these first"), then
       // the full move-lanes, then the per-channel ‖δ‖ panel — statement-first
       // safety: honest verdict, the risky subset, the whole change, the counts.
-      // `chan` (`--only`) scopes the lanes + callout to one channel; the statement
-      // and the ‖δ‖ panel stay WHOLE (the operator keeps the full verdict + counts
-      // for orientation while reviewing one channel).
-      Substantiation = dangerLaneScoped chan d @ renderCatalogLanesScoped chan d @ [ View.Blank; renderCatalogDiff d ]
+      // `chan` (`--only`) scopes the lanes + callout to one channel; the statement,
+      // the per-module rollup, and the ‖δ‖ panel stay WHOLE (the operator keeps the
+      // full verdict + orientation while reviewing one channel).
+      Substantiation = dangerLaneScoped chan d @ renderCatalogLanesScoped chan d @ moduleRollup d @ [ View.Blank; renderCatalogDiff d ]
       Action         = None }
 
 let changeSurface (d: CatalogDiff) : Surface.Surface = changeSurfaceScoped None d

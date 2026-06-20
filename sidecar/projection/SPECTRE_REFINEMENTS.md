@@ -930,11 +930,13 @@ Full pure pool **3575/0**.
 - *Before/after for index / sequence / kind-facet reshapes* (the structural channels) is
   deferred — facet-name is the right grain until a consumer wants the list-level diff.
 
-#### Polish (2026-06-19, later — four pure-`Comparison.fs` slices on top of #27; `DECISIONS 2026-06-19`)
+#### Polish (2026-06-19, later — six slices on top of #27; `DECISIONS 2026-06-19`)
 
-The DIFF cluster's first polish wave — more detail, more safety, more scannable, still
-zero Core/SQL touch, no new `View` case, one substrate throughout (every item rides
-`toJson` verbatim). Pure pool **3584/0** (+10 law-citing `ComparisonTests`).
+The DIFF cluster's polish wave — more detail, more safety, more scannable, more
+scopable. #A–#D + the rollup are pure-`Comparison.fs`; the scoping verbs add a thin
+DU/parse thread. No new `View` case for #A–#E (the rollup reuses `Table`); one
+substrate throughout (every item rides `toJson`). Pure pool **3589/0** (+18 law-citing
+tests across `ComparisonTests` + `MovementSurfaceTests`).
 
 - **#A — the FK name-wall fix (a real defect).** `referenceEvidence` rendered the
   `target` / `source column` facets via `SsKey.rootOriginal` — a bare GUID for
@@ -960,15 +962,26 @@ zero Core/SQL touch, no new `View` case, one substrate throughout (every item ri
 - **#D — deterministic item ordering.** Lane items `List.sort` in the canonical assembly
   (noun-prefixed, so channel-grouped then name-ordered) — the capped first 12 are now the
   scannable first 12, not an arbitrary SsKey-order 12. Both lenses see one order (T1).
+- **#E — the scoping verbs.** At scale an operator scopes rather than scrolls. `--only
+  <channel>` scopes the DISPLAY (keeps one channel's lane items + danger callout via
+  `keepChannel`/`channelNoun`; the statement + ‖δ‖ panel + rollup stay whole for
+  orientation); `--module <name>` scopes the COMPUTATION (keeps the named module's kinds
+  before `Between` — a smaller diff). `Comparison` gained `*Scoped` variants (the
+  historical functions are `None` wrappers, every test holds); `ExplainDiff` gained
+  `channel`/`onlyModule` options threaded parse→dispatch→`runDiff`; `--help` documents both.
+- **#F — the per-module "top movers" rollup.** A diff spanning ≥ 2 modules carries a
+  churn-sorted `module · changes` `View.Table` (`moduleRollup`, kind→module via
+  `Catalog.allModulesKinds`) just before the ‖δ‖ panel — "which module is hot" at a
+  glance, pairing with `--module` (see it → dig it). Absent for single-module diffs.
 
-**Still-named follow-ons (the bigger waves, teed up in `HANDOFF.md`):** the at-scale
-*navigability* — make `Lane` items navigable in the Navigator + group large lanes by
-module→kind as a `Disclosure` tree (the marquee at-scale win; touches the `OpenPath`=
-child-index invariant + needs a Kind→module derivation); the L1 `/`-filter; the scoping
-verbs (`diff --only <channel>` / `--module` / `--stat` per-table histogram); the
-cross-surface `SsKey.displayName cat` projection (the diff names by `Name` now; `explain`
-/ reconciliation / bench still show GUIDs); and concrete storage width (`int → bigint`, a
-Core diff-modulus change, DECISIONS-gated).
+**Still-named follow-ons:** the FULL at-scale *navigability* — make `Lane` items navigable
+in the Navigator + group large lanes by module→kind as a `Disclosure` TREE (the rollup #F
++ `--module` #E now cover orient-then-drill; the navigable in-place tree is the remaining
+marquee, touching the `OpenPath`=child-index invariant); the L1 `/`-filter; the
+cross-surface `SsKey.displayName cat` projection (the diff names by `Name` now; `explain` /
+reconciliation / bench still show GUIDs — broad, touches many faces); concrete storage
+width (`int → bigint`, a Core diff-modulus, DECISIONS-gated); a `--stat`-only summary mode
+(the rollup is its always-on form for multi-module diffs).
 
 ---
 
