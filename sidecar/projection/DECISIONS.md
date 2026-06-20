@@ -24816,3 +24816,43 @@ concrete storage width (`int → bigint`, a Core diff-modulus, DECISIONS-gated).
 
 **Cross-references:** `src/Projection.Cli/Comparison.fs`; `tests/Projection.Tests/ComparisonTests.fs`;
 `SPECTRE_REFINEMENTS.md` §27 (the Polish subsection).
+
+## 2026-06-19 (later still) — SPECTRE delta-grade diff POLISH #E/#F: the scoping verbs (`--only` / `--module`) + the per-module rollup
+
+**Why recorded.** #E adds two operator-facing CLI flags (a new contract worth
+recording, per the config-thin doctrine — both are per-run overrides, not config);
+#F changes the diff surface for multi-module diffs. Pure-Cli + a thin DU/parse thread;
+no Core/SQL touch. Pure pool 3591/0 (+18 tests across the wave).
+
+- **#E — `diff --only <channel>` / `--module <name>`.** At scale an operator scopes
+  rather than scrolls. `--only` scopes the DISPLAY: `Comparison.keepChannel` /
+  `channelNoun` filter each move-lane's items + the danger callout to one channel
+  (columns / relationships / indexes / sequences / tables), dropping empty lanes —
+  robust because every item is noun-prefixed by its channel (the format the collectors
+  own). The statement, the per-module rollup, and the ‖δ‖ panel stay WHOLE for
+  orientation. `--module` scopes the COMPUTATION: `runDiff` keeps the named module's
+  kinds (case-insensitive; sequences are catalog-level → dropped) before
+  `CatalogDiff.between` — a smaller diff. The raw record scope (`{ cat with Modules =
+  … }`, bypassing `Catalog.create`) is safe because the diff only OBSERVES catalogs (no
+  re-validation / FK closure needed). `Comparison` gained `renderCatalogLanesScoped` /
+  `dangerLaneScoped` / `changeSurfaceScoped` / `renderCatalogChangeScoped` (the
+  historical unscoped functions are `None` wrappers — every existing test holds);
+  `PlanAction.ExplainDiff` gained `channel: string option * onlyModule: string option`,
+  threaded MovementSurface parse → Program dispatch → `runDiff`; `--help` documents both.
+- **#F — the per-module rollup.** `Comparison.moduleRollup` aggregates each lane item
+  against its owning kind's module (`Catalog.allModulesKinds`) into a churn-sorted
+  `module · changes` `View.Table`, placed before the ‖δ‖ panel and shown only when the
+  diff spans ≥ 2 modules. Deterministic (ties break by name, T1); reuses `View.Table`
+  (no new case); the structured lens carries it. Pairs with `--module`: orient on the
+  hot module, then scope to dig it.
+
+**Deferred (named).** The FULL navigable module→kind `Disclosure` TREE (the rollup +
+`--module` cover orient-then-drill; the in-place navigable tree is the remaining
+marquee, touching the `OpenPath`=child-index invariant); the cross-surface
+`SsKey.displayName cat` projection; concrete storage width (Core, DECISIONS-gated); a
+`--stat`-only summary mode (the rollup is its always-on form).
+
+**Cross-references:** `src/Projection.Cli/Comparison.fs` · `RunFaces.fs` (`runDiff`) ·
+`Program.fs` · `src/Projection.Pipeline/MovementSpec.fs` (`ExplainDiff`) ·
+`MovementSurface.fs` (parse); `tests/Projection.Tests/ComparisonTests.fs` +
+`MovementSurfaceTests.fs`; `SPECTRE_REFINEMENTS.md` §27 (Polish #E/#F).
