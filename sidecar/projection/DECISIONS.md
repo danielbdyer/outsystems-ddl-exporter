@@ -24773,3 +24773,46 @@ dwell, an order below the old ~2-dwell inline block) and `propagates a body exce
 teardown path no other test covered). **Cross-references:** `src/Projection.Cli/Watch.fs` (`renderWatchOn` rewrite + the
 reap); `tests/Projection.Tests/WatchInjectionTests.fs`; `SPECTRE_REFINEMENTS.md` §20. Follow-on: the breathing spinner +
 stall-aware ETA on the drain loop's 100ms wake.
+
+## 2026-06-19 (later) — SPECTRE delta-grade diff POLISH: the FK name-wall fix, structural-channel before/after, the data-risk surface + honest statement, deterministic ordering
+
+**Why recorded.** The diff is the migrate-preview surface; its lane vocabulary +
+risk framing are an operator-facing contract, so widening them earns an entry even
+though the test is the codification (CLAUDE.md §6). Four pure `Comparison.fs` slices
+on top of the merged delta-grade (#27); zero Core/SQL touch; no new `View` case; one
+substrate (every item rides `toJson` verbatim). Pure pool 3584/0 (+10 `ComparisonTests`).
+
+- **#A — FK name-wall (a real defect in the merged #27).** `referenceEvidence` rendered
+  the `target` / `source column` facets via `SsKey.rootOriginal` — a bare 32-char GUID
+  for `OssysOriginal` keys — so an FK retarget read `target <hex> → <hex>` on a real
+  OSSYS estate, illegible exactly where the operator must read "this FK now points at a
+  DIFFERENT table" (a silent row-reparenting risk). Fixed by threading the per-side name
+  resolvers (`nm srcNames` / `nm tgtNames`) into `referenceEvidence`, as the qualifier
+  already did. Proven with OssysOriginal (GUID) fixtures — the synthesized-key fixtures
+  cannot catch it (their `rootOriginal` IS a name).
+- **#B — before/after for the structural channels.** Index `uniqueness` (`not unique →
+  unique` FAILS on apply if duplicates exist), sequence scalars (`start 1 → 1000`), and
+  kind `active` (`yes → no`) now carry the value (`indexEvidence` / `sequenceEvidence` /
+  `kindFacetEvidence`). The list/grouped facets stay facet-name (a before→after would be
+  a wall). Retired the now-dead `channelReshapes` (dead-algebra retirement).
+- **#C — the data-risk surface + an honest statement.** `dataDrops` (a dropped
+  table/column loses rows) + `rewrites` (a type conversion, `null → not null`, a cascade
+  added, a uniqueness gained — per-channel predicates over the retained source/target)
+  drive: (1) a "review these first" callout, a single `Bad`-badged lane promoted to the
+  TOP of the substantiation — a SEPARATE surface, so the move-lanes stay HOMOGENEOUS (the
+  operator's rejection of per-item lane status holds); (2) an honest `catalogStatement`
+  that leads amber on a data-touching RESHAPE, not just a removal, and counts it
+  (`N changes · D drops · R may rewrite data · review`). The "drops"-only wording is
+  preserved for the removal-only case (the existing statement tests hold).
+- **#D — deterministic item ordering.** Lane items `List.sort` in the canonical assembly,
+  so the noun-prefixed items group by channel then sort by name — the capped first 12 are
+  the scannable first 12, not an arbitrary SsKey-order 12. Both lenses see one order (T1).
+
+**Deferred (named).** The at-scale navigability (navigable `Lane` items + module→kind
+`Disclosure` grouping; the `OpenPath`-invariant + Kind→module work); the L1 `/`-filter;
+the scoping verbs (`diff --only` / `--module` / `--stat`); the cross-surface
+`SsKey.displayName cat` projection (explain / reconciliation / bench still name by GUID);
+concrete storage width (`int → bigint`, a Core diff-modulus, DECISIONS-gated).
+
+**Cross-references:** `src/Projection.Cli/Comparison.fs`; `tests/Projection.Tests/ComparisonTests.fs`;
+`SPECTRE_REFINEMENTS.md` §27 (the Polish subsection).

@@ -930,6 +930,46 @@ Full pure pool **3575/0**.
 - *Before/after for index / sequence / kind-facet reshapes* (the structural channels) is
   deferred — facet-name is the right grain until a consumer wants the list-level diff.
 
+#### Polish (2026-06-19, later — four pure-`Comparison.fs` slices on top of #27; `DECISIONS 2026-06-19`)
+
+The DIFF cluster's first polish wave — more detail, more safety, more scannable, still
+zero Core/SQL touch, no new `View` case, one substrate throughout (every item rides
+`toJson` verbatim). Pure pool **3584/0** (+10 law-citing `ComparisonTests`).
+
+- **#A — the FK name-wall fix (a real defect).** `referenceEvidence` rendered the
+  `target` / `source column` facets via `SsKey.rootOriginal` — a bare GUID for
+  `OssysOriginal` keys, so an FK retarget read `target <hex> → <hex>`, illegible exactly
+  where the operator must read "this FK now points at a DIFFERENT table." Now threaded
+  through the per-side name resolvers (`nm srcNames` / `nm tgtNames`), as the qualifier
+  already was. Proven with OssysOriginal fixtures (the synthesized-key fixtures can't
+  catch it — their `rootOriginal` IS a name).
+- **#B — before/after for the structural channels** (closes the §27 follow-on). Index
+  `uniqueness` (`not unique → unique` FAILS on apply if dupes exist), sequence scalars
+  (`start 1 → 1000` — opposite risk from `1000 → 1`), and kind `active` (`yes → no`, a
+  deactivation) now carry the value. The list/grouped facets (index columns, modality,
+  triggers, checks, cache) stay facet-name — a before→after there would be a wall.
+  Retired the now-dead `channelReshapes`.
+- **#C — the data-risk surface + an honest statement.** Pulls the genuinely
+  DATA-TOUCHING subset out by name — `dataDrops` (a dropped table/column loses rows) +
+  `rewrites` (a type conversion, `null → not null`, a cascade added, a uniqueness
+  gained). They drive (1) a "review these first" callout — a single `Bad`-badged lane
+  promoted to the TOP of the substantiation (a SEPARATE surface, so the move-lanes stay
+  homogeneous), and (2) an honest `catalogStatement` that leads amber on a data-touching
+  RESHAPE, not just a removal: a zero-drop migration that adds a NOT NULL column used to
+  lead CALM ("no removals") — now `N changes · K may rewrite data · review`.
+- **#D — deterministic item ordering.** Lane items `List.sort` in the canonical assembly
+  (noun-prefixed, so channel-grouped then name-ordered) — the capped first 12 are now the
+  scannable first 12, not an arbitrary SsKey-order 12. Both lenses see one order (T1).
+
+**Still-named follow-ons (the bigger waves, teed up in `HANDOFF.md`):** the at-scale
+*navigability* — make `Lane` items navigable in the Navigator + group large lanes by
+module→kind as a `Disclosure` tree (the marquee at-scale win; touches the `OpenPath`=
+child-index invariant + needs a Kind→module derivation); the L1 `/`-filter; the scoping
+verbs (`diff --only <channel>` / `--module` / `--stat` per-table histogram); the
+cross-surface `SsKey.displayName cat` projection (the diff names by `Name` now; `explain`
+/ reconciliation / bench still show GUIDs); and concrete storage width (`int → bigint`, a
+Core diff-modulus change, DECISIONS-gated).
+
 ---
 
 ## G — Earned moments (the sparkle)
