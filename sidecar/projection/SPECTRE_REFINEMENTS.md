@@ -930,7 +930,7 @@ Full pure pool **3575/0**.
 - *Before/after for index / sequence / kind-facet reshapes* (the structural channels) is
   deferred — facet-name is the right grain until a consumer wants the list-level diff.
 
-#### Polish (2026-06-19/20 — ten slices on top of #27; `DECISIONS 2026-06-19/20`)
+#### Polish (2026-06-19/20 — eleven slices on top of #27; `DECISIONS 2026-06-19/20`)
 
 The DIFF cluster's polish wave — more detail, more safety, more scannable, more
 scopable. #A–#D + the rollup are pure-`Comparison.fs`; the scoping verbs add a thin
@@ -1010,12 +1010,26 @@ total, leads with what matters, and offers a path to ALL of it — never a silen
   transfer behaviour is unchanged (Docker `TransferCanary` 29/29). `suggest-config`
   names via `report.ReadCatalog`. A4 holds — `nameIndex` is a terminal DISPLAY
   projection; identity stays the SsKey.
+- **#K — the L1 `/`-filter (the at-scale companion to #H).** `/` filters the live dig
+  to the branches matching a substring. The law (DYNAMIC_DISPLAY §7.6): the `Navigator.Model`
+  holds only the filter STRING; the filtered tree is DERIVED (`effectiveTree` over the
+  pure, total `filterView`), and the cursor navigates it with the SAME `step` — so the
+  in-bounds safety invariant extends to the filtered tree for free, NO Navigator
+  invariant touched, no second copy of state. `filterView` prunes the `View` to matching
+  branches (a `Disclosure`/`Lane`/`Trail` whose own label matches keeps its full body; a
+  leaf keeps itself iff its text matches; `Blank` drops). The shell routes by mode: `/`
+  opens, printable chars append live, Backspace deletes (empty ⇒ exit), Enter commits,
+  Esc is a LAYERED exit (clears an active filter first, quits only when there's none).
+  Pairs with #E (`--module`) + #F (rollup) + #H (grouped tree) — orient, scope, drill,
+  filter. 7 `NavigatorTests`; pure pool 3606/0.
 
-**Still-named follow-ons:** the L1 `/`-filter on the Navigator `Model` (very powerful
-now that #H gives a grouped tree to filter); concrete storage width (`int → bigint`, a
-Core diff-modulus, DECISIONS-gated); a `--stat`-only summary mode (the #F rollup is its
-always-on form); resume-from-refusal (operator-deferred — its architecture is in the
-older `HANDOFF` letter).
+**Still-named follow-ons:** concrete storage width (`int → bigint`, a Core diff-modulus,
+DECISIONS-gated — the literal handoff example, needs an `AttributeFacet` + `changedFacets`
+change); a `--stat`-only summary mode (the #F rollup is its always-on form); a HEADLESS
+filter (`diff --grep <substring>`, the #K `/`-filter's one-shot sibling — `filterView` is
+already pure and reusable); resume-from-refusal (operator-deferred — its architecture is
+in the older `HANDOFF` letter). The interactive at-scale toolkit is now complete: orient
+(#F rollup) · scope (#E `--module`/`--only`) · drill (#H grouped tree) · filter (#K).
 
 ---
 

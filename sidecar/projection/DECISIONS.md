@@ -24932,3 +24932,40 @@ OssysOriginal GUID keys, since the synthesized fixtures can't catch a name-wall)
 (`nameIndex`/`displayName`); `src/Projection.Pipeline/TransferRun.fs` (`TransferReport.Names`);
 `src/Projection.Cli/RunFaces.fs` + `Comparison.fs`; `tests/Projection.Tests/NarrationDisplayTests.fs`;
 `SPECTRE_REFINEMENTS.md` §27 (Scale wave / #J).
+
+## 2026-06-20 (later still) — SPECTRE #K: the L1 `/`-filter on the interactive Navigator (a projection of the tree, never a second copy)
+
+**Why recorded.** Completes the interactive at-scale toolkit (orient #F · scope #E ·
+drill #H · filter #K) and extends the Navigator's load-bearing safety law. Pure-Cli
+(`Navigator.fs`); pure pool 3606/0 (+7 `NavigatorTests`).
+
+- **The discipline (DYNAMIC_DISPLAY §7.6): a cursor/filter over the data the `View`
+  already carries, NEVER a second copy of state.** `Navigator.Model` gained `Filter:
+  string option` (the substring) and `Editing: bool` (typing vs. navigating) — both small
+  view-state, like the cursor `Path`. The filtered tree is DERIVED, not stored:
+  `effectiveTree model` returns the carried `Tree`, or — when a non-empty filter is
+  active — that tree PRUNED by the pure `filterView` (a "no matches" `Note` when the
+  filter excludes everything).
+- **The cursor navigates the filtered tree with the SAME `step`.** `step` (and
+  `breadcrumb`) read `effectiveTree model` instead of `model.Tree`, so the in-bounds
+  CLAMPING invariant — the cursor can never leave the tree — extends to the pruned tree
+  for free, with NO change to the `OpenPath`=child-index invariant and no new render path.
+  `step` stays TOTAL over `ConsoleKey` (filter text-entry is char-based, handled in the
+  shell, not in `step`). Every filter change RESETS the cursor to the new tree's root
+  (the prior path may not exist under the new pruning — the same safety the time-axis walk
+  uses).
+- **`filterView : string -> View -> View option`** is total over the DU (the renderer's
+  dual): a container keeps its matching children; a `Disclosure`/`Lane`/`Trail` whose own
+  LABEL matches keeps its full body; a leaf keeps itself iff its text matches; `Blank`
+  (the spacers) drop. Pure — the structured lens (`toJson`) is untouched; a filter is a
+  pretty/interactive concern, like depth and the cursor.
+- **The shell routes by mode.** `/` opens the filter; while `Editing`, printable chars
+  append LIVE (the tree re-prunes each keystroke), Backspace deletes (empty ⇒ exit
+  filtering), Enter commits, Esc cancels. In nav mode Esc is a LAYERED exit — it clears an
+  active filter FIRST, and only quits when there is none (so a filtered dig doesn't quit
+  on the first Esc). The footer shows the live `/foo▌` prompt or the committed `filter:
+  foo` line.
+
+**Cross-references:** `src/Projection.Cli/Navigator.fs` (`filterView` / `effectiveTree` /
+the filter reducers / `step` / `driveLoop`); `tests/Projection.Tests/NavigatorTests.fs`;
+`SPECTRE_REFINEMENTS.md` §27 (Scale wave / #K).
