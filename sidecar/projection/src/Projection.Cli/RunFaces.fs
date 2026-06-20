@@ -563,25 +563,17 @@ let dispositionName (d: IdentityDisposition) : string =
 // The reconciliation / integrity / load-plan reports are keyed by `SsKey`, and
 // `SsKey.rootOriginal` is a bare GUID for an `OssysOriginal` key — so on a real
 // OSSYS estate these surfaces were a wall of hex. The diff surface already names
-// by `Name` (its own `nameIndex`); these helpers bring the same legibility to the
-// narration faces that hold a `Catalog`. Built once per narration; `rootOriginal`
-// is the honest fallback for a key absent from the catalog.
-
-let private catalogNameIndex (c: Catalog) : Map<SsKey, string> =
-    seq {
-        for k in Catalog.allKinds c do
-            yield k.SsKey, Name.value k.Name
-            for a in k.Attributes do yield a.SsKey, Name.value a.Name
-            for r in k.References  do yield r.SsKey, Name.value r.Name
-            for i in k.Indexes     do yield i.SsKey, Name.value i.Name
-        for s in c.Sequences do yield s.SsKey, Name.value s.Name
-    }
-    |> Map.ofSeq
+// by `Name`; these faces share the SAME `Catalog.nameIndex` primitive (Core).
+// `rootOriginal` is the honest fallback for a key absent from the index.
 
 let private nameOf (names: Map<SsKey, string>) (key: SsKey) : string =
     Map.tryFind key names |> Option.defaultValue (SsKey.rootOriginal key)
 
+/// The load-plan / cycle-FK / unmatched-identity narration, named by the transfer
+/// report's own `Names` index (populated from the engine's contract catalog;
+/// empty ⇒ `rootOriginal` fallback, byte-identical to pre-displayName behaviour).
 let narrateTransferReport (report: Transfer.TransferReport) : unit =
+    let nm = nameOf report.Names
     // §4 Move — lead with the finding (rows moved, in dependency order); the
     // load plan rides beneath. Dependency order is the engine's guarantee that
     // a row never lands before the rows it points to.
@@ -595,7 +587,7 @@ let narrateTransferReport (report: Transfer.TransferReport) : unit =
     printfn "The load plan (%d table(s)):" report.Kinds.Length
     for k in report.Kinds do
         printfn "  %-40s %-22s ingested=%d written=%d deferred-fk-columns=%d"
-            (SsKey.rootOriginal k.Kind)
+            (nm k.Kind)
             (dispositionName k.Disposition)
             k.RowsIngested
             k.RowsWritten
@@ -608,30 +600,30 @@ let narrateTransferReport (report: Transfer.TransferReport) : unit =
         for u in report.UnbreakableCycleFks do
             printfn
                 "  %s.%s → %s"
-                (SsKey.rootOriginal u.Kind)
+                (nm u.Kind)
                 (Name.value u.Column)
-                (SsKey.rootOriginal u.Target)
+                (nm u.Target)
     if not (List.isEmpty report.UnmatchedIdentities) then
         printfn ""
         printfn
             "%d identity(ies) unmatched — source records with no match in the target:"
             report.UnmatchedIdentities.Length
         for (k, s) in report.UnmatchedIdentities do
-            printfn "  %s source '%s'" (SsKey.rootOriginal k) (SourceKey.value s)
+            printfn "  %s source '%s'" (nm k) (SourceKey.value s)
     if not (List.isEmpty report.AmbiguousIdentities) then
         printfn ""
         printfn
             "%d source record(s) had a non-unique reconcile key — the first binding was kept:"
             report.AmbiguousIdentities.Length
         for (k, s) in report.AmbiguousIdentities do
-            printfn "  %s source '%s'" (SsKey.rootOriginal k) (SourceKey.value s)
+            printfn "  %s source '%s'" (nm k) (SourceKey.value s)
     if not (List.isEmpty report.AmbiguousTargetMatchKeys) then
         printfn ""
         printfn
             "%d target record(s) shared a reconcile key with an older record — the oldest was kept (supply an override if the wrong one won):"
             report.AmbiguousTargetMatchKeys.Length
         for (k, a) in report.AmbiguousTargetMatchKeys do
-            printfn "  %s target '%s' (displaced)" (SsKey.rootOriginal k) (AssignedKey.value a)
+            printfn "  %s target '%s' (displaced)" (nm k) (AssignedKey.value a)
     if not (List.isEmpty report.SkippedReferences) then
         printfn ""
         printfn
@@ -640,9 +632,9 @@ let narrateTransferReport (report: Transfer.TransferReport) : unit =
         for (owner, r) in report.SkippedReferences do
             printfn
                 "  %s.%s → %s (unmatched source '%s')"
-                (SsKey.rootOriginal owner)
+                (nm owner)
                 (Name.value r.Column)
-                (SsKey.rootOriginal r.Target)
+                (nm r.Target)
                 (SourceKey.value r.UnresolvedSource)
     // NM-53 — a resumable G10 no-op re-run replays the prior run's drop count
     // (the marker persists the count, not the exact references), so the re-run
@@ -667,9 +659,10 @@ let private narrateDropExit (allowDrops: bool) (report: Transfer.TransferReport)
             (sprintf
                 "%d row(s) would be dropped — a relationship points to an unmatched record. Pass --allow-drops to accept the loss, or resolve the records."
                 (Transfer.droppedRowCount report))
+        let nm = nameOf report.Names
         let kindCount (label: string) (keys: SsKey seq) =
             keys
-            |> Seq.countBy SsKey.rootOriginal
+            |> Seq.countBy nm
             |> Seq.iter (fun (k, n) ->
                 Console.Error.WriteLine (sprintf "  %s %s: %d" label k n))
         kindCount "dropped in" (report.SkippedReferences |> List.map fst)
@@ -983,7 +976,7 @@ let runReverseLegTransfer
 /// before deployment's catalog), not the GUID `rootOriginal` they used to show.
 /// Pure (no I/O) so the legibility is unit-testable without the Voice / Console.
 let integrityPayload (contract: Catalog) (report: IntegrityReport) : Voice.Payload =
-    let names = catalogNameIndex contract
+    let names = Catalog.nameIndex contract
     let joined (lines: string list) = lines |> String.concat "\n"
     [ if not (List.isEmpty report.RowCountDeltas) then
         "rowDeltas",
@@ -1584,6 +1577,9 @@ let runSuggestConfig (configPath: string) (applyTo: string option) : int =
             printErrors Console.Error errs
             2
         | Ok report ->
+            // Name the touched nodes by `Name` (the projection's read catalog), not the
+            // GUID `rootOriginal` — the same legibility the diff + verify-data carry.
+            let names = Catalog.nameIndex report.ReadCatalog
             let merged =
                 (report.Diagnostics @ report.PassDiagnostics)
                 |> List.choose (fun e -> e.SuggestedConfig |> Option.map (fun c -> c, e.SsKey))
@@ -1592,7 +1588,7 @@ let runSuggestConfig (configPath: string) (applyTo: string option) : int =
                     let c0 = fst (List.head items)
                     let ssKeys =
                         items
-                        |> List.choose (fun (_, k) -> k |> Option.map SsKey.rootOriginal)
+                        |> List.choose (fun (_, k) -> k |> Option.map (nameOf names))
                         |> List.distinct
                     {| Path = path; Value = c0.Value; Note = c0.Note
                        Count = List.length items; SsKeys = ssKeys |})

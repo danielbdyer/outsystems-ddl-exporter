@@ -241,16 +241,10 @@ let private findChild (entitiesOf: Kind -> 'e list) (keyOf: 'e -> SsKey) (kindKe
 // collector; `rootOriginal` is the fallback for a key absent from the catalog
 // (defensive — every diffed key resolves in its own side).
 
-let private nameIndex (cat: Catalog) : Map<SsKey, string> =
-    seq {
-        for k in Catalog.allKinds cat do
-            yield k.SsKey, Name.value k.Name
-            for a in k.Attributes do yield a.SsKey, Name.value a.Name
-            for r in k.References  do yield r.SsKey, Name.value r.Name
-            for i in k.Indexes     do yield i.SsKey, Name.value i.Name
-        for s in cat.Sequences do yield s.SsKey, Name.value s.Name
-    }
-    |> Map.ofSeq
+// The flat SsKey → Name index is the shared `Catalog.nameIndex` primitive (Core) —
+// the diff, the run/apply narration (`RunFaces`), and the transfer report all resolve
+// through ONE projection now (the displayName chapter's consolidation).
+let private nameIndex (cat: Catalog) : Map<SsKey, string> = Catalog.nameIndex cat
 
 let private nm (names: Map<SsKey, string>) (key: SsKey) : string =
     Map.tryFind key names |> Option.defaultValue (SsKey.rootOriginal key)

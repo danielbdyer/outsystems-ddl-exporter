@@ -1800,6 +1800,31 @@ module Catalog =
         use _ = Bench.scope "ir.catalog.scan.allKinds"
         c.Modules |> List.collect (fun m -> m.Kinds)
 
+    /// A flat `SsKey -> Name` index over every named entity — kinds, attributes,
+    /// references, indexes, sequences. The shared legibility primitive: an
+    /// operator-facing surface keyed by `SsKey` resolves through this rather than
+    /// `SsKey.rootOriginal` (a bare GUID for an `OssysOriginal` key), so a real
+    /// OSSYS estate reads by `Name`, not hex. Built once per surface; the diff
+    /// (`Comparison`), the run/apply narration (`RunFaces`), and the transfer
+    /// report all share it. A4 holds — this is a terminal DISPLAY projection, never
+    /// a lookup-by-name; identity stays the `SsKey`.
+    let nameIndex (c: Catalog) : Map<SsKey, string> =
+        seq {
+            for k in allKinds c do
+                yield k.SsKey, Name.value k.Name
+                for a in k.Attributes do yield a.SsKey, Name.value a.Name
+                for r in k.References  do yield r.SsKey, Name.value r.Name
+                for i in k.Indexes     do yield i.SsKey, Name.value i.Name
+            for s in c.Sequences do yield s.SsKey, Name.value s.Name
+        }
+        |> Map.ofSeq
+
+    /// The display name of an entity by `SsKey` — its `Name` via `nameIndex`, or
+    /// the `rootOriginal` projection as the honest fallback for a key absent from
+    /// the catalog. For a single lookup; build a `nameIndex` once for many.
+    let displayName (c: Catalog) (key: SsKey) : string =
+        Map.tryFind key (nameIndex c) |> Option.defaultValue (SsKey.rootOriginal key)
+
     /// Smart constructor enforcing the catalog-wide aggregate
     /// invariants. Per session-36 audit (Agent 3 #10/#12, Agent 1 #19):
     ///   1. Module SsKeys are disjoint (A11).
