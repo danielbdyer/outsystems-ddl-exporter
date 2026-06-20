@@ -190,10 +190,16 @@ let private attributeEvidence (s: Attribute) (t: Attribute) (f: AttributeFacet) 
     | AttributeFacet.Computed     -> sprintf "computed %s" (presence (Option.isSome s.Computed) (Option.isSome t.Computed))
 
 /// One reference (FK) facet's `word before → after` evidence (the FK ALTER surface).
-let private referenceEvidence (s: Reference) (t: Reference) (f: ReferenceFacet) : string =
+/// The `Target` / `SourceAttribute` facets name a CROSS-entity SsKey (a target kind,
+/// a source column) — resolved through the per-side name resolvers (`resolveSrc` /
+/// `resolveTgt`, the partially-applied `nm srcNames` / `nm tgtNames`), NEVER
+/// `SsKey.rootOriginal`: an `OssysOriginal` key's `rootOriginal` is a bare GUID, and
+/// an FK retarget rendered `target <guid> → <guid>` is illegible exactly where the
+/// operator most needs to read "this relationship now points at a different table."
+let private referenceEvidence (resolveSrc: SsKey -> string) (resolveTgt: SsKey -> string) (s: Reference) (t: Reference) (f: ReferenceFacet) : string =
     match f with
-    | ReferenceFacet.Target          -> sprintf "target %s → %s" (SsKey.rootOriginal s.TargetKind) (SsKey.rootOriginal t.TargetKind)
-    | ReferenceFacet.SourceAttribute -> sprintf "source column %s → %s" (SsKey.rootOriginal s.SourceAttribute) (SsKey.rootOriginal t.SourceAttribute)
+    | ReferenceFacet.Target          -> sprintf "target %s → %s" (resolveSrc s.TargetKind) (resolveTgt t.TargetKind)
+    | ReferenceFacet.SourceAttribute -> sprintf "source column %s → %s" (resolveSrc s.SourceAttribute) (resolveTgt t.SourceAttribute)
     | ReferenceFacet.OnDelete        -> sprintf "on delete %s → %s" (referenceActionText s.OnDelete) (referenceActionText t.OnDelete)
     | ReferenceFacet.OnUpdate        -> sprintf "on update %s → %s" (referenceActionOpt s.OnUpdate) (referenceActionOpt t.OnUpdate)
     | ReferenceFacet.UserFk          -> sprintf "user fk %s → %s" (yesNo s.IsUserFk) (yesNo t.IsUserFk)
@@ -345,7 +351,7 @@ let renderCatalogLanes (d: CatalogDiff) : View.View list =
             |> List.map (fun c ->
                 match find source c.ReferenceKey, find target c.ReferenceKey with
                 | Some s, Some t ->
-                    let body = c.Facets |> Set.toList |> List.map (referenceEvidence s t) |> String.concat ", "
+                    let body = c.Facets |> Set.toList |> List.map (referenceEvidence (nm srcNames) (nm tgtNames) s t) |> String.concat ", "
                     sprintf "relationship %s.%s: %s" (nm srcNames kk) (Name.value s.Name) body
                 | _ ->
                     sprintf "relationship %s.%s: %s" (nm srcNames kk) (nm srcNames c.ReferenceKey) (facetsJoin referenceFacetText c.Facets)))

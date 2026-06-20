@@ -317,3 +317,42 @@ let ``delta-grade legibility: lanes name entities by their Name, never the raw S
         Assert.Contains(items, fun (s: string) -> s.StartsWith "column Customer.Name:")   // the clean qualified Name
         Assert.True(items |> List.forall (fun s -> not (s.Contains "OS_ATTR")), "no raw synthesized key leaks into a lane")
     | Error e -> Assert.Fail e
+
+// --- the FK target/source name-wall (delta-grade polish #A) ------------------
+// Discriminating predicate: the FK `target` / `source column` reshape facets name
+// a CROSS-entity SsKey. For an OssysOriginal key, `rootOriginal` is a bare 32-char
+// GUID — so a retarget rendered `target <hex> → <hex>`, illegible exactly where the
+// operator must read "this FK now points at a DIFFERENT table." The fix resolves
+// those keys through the per-side name index (as the qualifier already does). The
+// synthesized-key fixtures above CANNOT catch this (their `rootOriginal` IS a name),
+// so this uses OssysOriginal (GUID) keys, where the regression would show.
+
+/// A minimal OssysOriginal-keyed kind (a GUID identity, a readable Name) — the
+/// real-estate shape where `rootOriginal` is a hex wall.
+let private ossysKind (g: System.Guid) (label: string) : Kind =
+    Kind.create (SsKey.ossysOriginal g) (mkName label) (mkTableId "dbo" ("OSUSR_X_" + label))
+        [ Attribute.create (attrKey [label; "Id"]) (mkName "Id") Integer ]
+
+let private accountKey = System.Guid("a0000000-0000-0000-0000-000000000001")
+let private vendorKey  = System.Guid("b0000000-0000-0000-0000-000000000002")
+
+/// An `Order`-like kind whose one FK points at `target`; the two target kinds are
+/// OssysOriginal-keyed (`Account` / `Vendor`) and both present, so a retarget is a
+/// single `ReferenceFacet.Target` reshape with both sides resolvable by name.
+let private orderTo (target: System.Guid) : Catalog =
+    let ord =
+        { Kind.create (kindKey ["OrderX"]) (mkName "OrderX") (mkTableId "dbo" "OSUSR_X_ORDER")
+            [ Attribute.create (attrKey ["OrderX"; "Id"]) (mkName "Id") Integer
+              Attribute.create (attrKey ["OrderX"; "AccountId"]) (mkName "AccountId") Integer ]
+            with References = [ Reference.create (refKey ["OrderX"; "Acct"]) (mkName "Acct") (attrKey ["OrderX"; "AccountId"]) (SsKey.ossysOriginal target) ] }
+    Catalog.create [ IRBuilders.mkModule (modKey "X") (mkName "X") [ ord; ossysKind accountKey "Account"; ossysKind vendorKey "Vendor" ] ] []
+    |> Result.value
+
+[<Fact>]
+let ``delta-grade polish: an FK retarget names the tables, never the raw GUID (the name-wall fix)`` () =
+    match Comparison.catalog.Between (orderTo accountKey) (orderTo vendorKey) with
+    | Ok d ->
+        let items = laneItems "reshape" d
+        Assert.Contains(items, fun (s: string) -> s.Contains "target Account → Vendor")            // names, the readable ALTER
+        Assert.True(items |> List.forall (fun s -> not (s.Contains "a0000000")), "no GUID hex leaks into the FK evidence")
+    | Error e -> Assert.Fail e
