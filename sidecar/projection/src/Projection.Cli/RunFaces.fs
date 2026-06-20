@@ -1357,9 +1357,24 @@ let runInspect (idA: string) (idB: string option) (asJson: bool) : int =
 /// the first surface of the instrument). Resolves both refs through `Ref`
 /// (file / `@runId` / `json:` / `live:`) and renders the catalog change: the
 /// plain verdict that leads, then the per-channel dig beneath. `--format json`
-/// emits the same `View` as structure.
-let runDiff (refAText: string) (refBText: string) (asJson: bool) (depth: int) : int =
+/// emits the same `View` as structure. `--module <name>` scopes the COMPUTATION
+/// to one module (a smaller, reviewable diff); `--only <channel>` scopes the
+/// DISPLAY to one channel (columns / relationships / indexes / sequences / tables).
+let runDiff (refAText: string) (refBText: string) (asJson: bool) (depth: int) (channel: string option) (onlyModule: string option) : int =
     let resolve (s: string) = (Ref.resolveCatalog (Ref.parse s)).GetAwaiter().GetResult()
+    // `--module <name>` keeps only the named module's kinds before diffing —
+    // sequences are catalog-level, so a module scope drops them. Case-insensitive
+    // name match; a name that matches nothing yields an empty scope (the diff reads
+    // "no differences") — the operator's signal to correct the flag. The raw record
+    // update is safe here: the diff only OBSERVES the catalogs (no re-validation /
+    // FK closure needed — `CatalogDiff.between` compares by SsKey).
+    let scopeModule (cat: Catalog) : Catalog =
+        match onlyModule with
+        | None -> cat
+        | Some name ->
+            { cat with
+                Modules   = cat.Modules |> List.filter (fun m -> System.String.Equals(Name.value m.Name, name, System.StringComparison.OrdinalIgnoreCase))
+                Sequences = [] }
     match resolve refAText with
     | Error errs ->
         Console.Error.WriteLine "projection diff: could not resolve the first reference:"
@@ -1372,14 +1387,14 @@ let runDiff (refAText: string) (refBText: string) (asJson: bool) (depth: int) : 
             printErrors Console.Error errs
             2
         | Ok b ->
-            match Comparison.catalog.Between a b with
+            match Comparison.catalog.Between (scopeModule a) (scopeModule b) with
             | Error e ->
                 Console.Error.WriteLine(sprintf "projection diff: %s" e)
                 2
             | Ok d ->
                 // L2 — the changeset becomes a CONTROL surface: dig the move-lanes live on
                 // a terminal, the same document one-shot when piped / --json / --query.
-                Navigator.present asJson depth (Comparison.renderCatalogChange d)
+                Navigator.present asJson depth (Comparison.renderCatalogChangeScoped channel d)
 
 /// `projection compare <A> <B>` — NM-71/WP9: the read-only multi-environment
 /// readiness check. Resolves both operands to catalogs (the `Ref` machinery,

@@ -377,6 +377,31 @@ let private rewrites (d: CatalogDiff) : string list =
 /// rewrites. The "review these first" list.
 let private dangers (d: CatalogDiff) : string list = dataDrops d @ rewrites d
 
+// --- channel scoping (`diff --only <channel>`) ------------------------------
+// At scale an operator reviews ONE channel at a time ("just the column changes").
+// `--only <channel>` keeps the lane items of one channel — robust because every
+// item is noun-prefixed by its channel (`column …` / `relationship …` / …), the
+// format these collectors own, not parsed external data.
+
+/// Map an operator's channel word (singular / plural / synonym) to its item noun.
+/// An unrecognized value falls through as-is (it simply matches nothing — the
+/// operator sees an empty scope and corrects the flag).
+let private channelNoun (s: string) : string =
+    match s.Trim().ToLowerInvariant() with
+    | "table" | "tables" | "kind" | "kinds"                                   -> "table"
+    | "column" | "columns" | "attribute" | "attributes" | "field" | "fields" -> "column"
+    | "relationship" | "relationships" | "fk" | "fks" | "reference" | "references" -> "relationship"
+    | "index" | "indexes" | "indices"                                         -> "index"
+    | "sequence" | "sequences"                                                -> "sequence"
+    | other                                                                   -> other
+
+/// Keep only the items of the requested channel (`None` = every channel). Matches
+/// the noun prefix, so it scopes lanes AND the danger callout uniformly.
+let private keepChannel (chan: string option) (items: string list) : string list =
+    match chan with
+    | None   -> items
+    | Some c -> let noun = channelNoun c + " " in items |> List.filter (fun (s: string) -> s.StartsWith noun)
+
 // --- the statement: the plain lead line of a change (INSTRUMENT slice 1) ----
 
 /// The statement of a catalog change — the one plain line that leads the surface
@@ -407,10 +432,12 @@ let catalogStatement (d: CatalogDiff) : View.View =
 /// top of the substantiation, as a single `Bad`-badged lane named honestly. Empty
 /// (no lane) when nothing touches data. A SEPARATE surface, so the move-lanes stay
 /// homogeneous (the operator's rejection of per-item lane status holds).
-let dangerLane (d: CatalogDiff) : View.View list =
-    match dangers d with
+let dangerLaneScoped (chan: string option) (d: CatalogDiff) : View.View list =
+    match keepChannel chan (dangers d) with
     | []    -> []
     | items -> [ View.Lane("!", "may rewrite or lose data", View.Bad, items) ]
+
+let dangerLane (d: CatalogDiff) : View.View list = dangerLaneScoped None d
 
 /// The move-typed lanes of a catalog change — rename / reshape / add / remove,
 /// each a `View.Lane` badged by reversibility: rename + add are reversible-safe
@@ -422,7 +449,7 @@ let dangerLane (d: CatalogDiff) : View.View list =
 /// by channel + owning kind, so a multi-channel lane reads. The diff already
 /// computed all of this (`CatalogDiff` C1 + NM-17); this surfaces it onto the
 /// walkable changeset the L2 Navigator digs.
-let renderCatalogLanes (d: CatalogDiff) : View.View list =
+let renderCatalogLanesScoped (chan: string option) (d: CatalogDiff) : View.View list =
     let source    = CatalogDiff.source d
     let target    = CatalogDiff.target d
     let srcNames  = nameIndex source
@@ -544,28 +571,41 @@ let renderCatalogLanes (d: CatalogDiff) : View.View list =
     // scannable order a capped lane needs. Sorted in the canonical assembly (not the
     // pretty path), so BOTH lenses see one deterministic order (T1; one substrate).
     let lane glyph label st items =
-        if List.isEmpty items then [] else [ View.Lane(glyph, label, st, List.sort items) ]
+        let items' = keepChannel chan items
+        if List.isEmpty items' then [] else [ View.Lane(glyph, label, st, List.sort items') ]
     lane "⟲" "rename" View.Ok renames
     @ lane "~" "reshape" View.Warn reshapes
     @ lane "+" "add" View.Ok adds
     @ lane "−" "remove" View.Bad removes
+
+/// The move-typed lanes, unscoped — every channel (the historical signature; the
+/// tests + the default render path call this).
+let renderCatalogLanes (d: CatalogDiff) : View.View list = renderCatalogLanesScoped None d
 
 /// A catalog change as a `Surface` — the statement over the substantiation: the
 /// move-typed lanes (kind moves: rename / add / remove, each badged by
 /// reversibility, progressively disclosed) with the per-channel ‖δ‖ panel
 /// beneath. The statement/substantiation shape every later surface reuses
 /// (`THE_VOICE.md` §1 rule 3).
-let changeSurface (d: CatalogDiff) : Surface.Surface =
+let changeSurfaceScoped (chan: string option) (d: CatalogDiff) : Surface.Surface =
     { Statement      = catalogStatement d
       // The danger callout leads the substantiation ("review these first"), then
       // the full move-lanes, then the per-channel ‖δ‖ panel — statement-first
       // safety: honest verdict, the risky subset, the whole change, the counts.
-      Substantiation = dangerLane d @ renderCatalogLanes d @ [ View.Blank; renderCatalogDiff d ]
+      // `chan` (`--only`) scopes the lanes + callout to one channel; the statement
+      // and the ‖δ‖ panel stay WHOLE (the operator keeps the full verdict + counts
+      // for orientation while reviewing one channel).
+      Substantiation = dangerLaneScoped chan d @ renderCatalogLanesScoped chan d @ [ View.Blank; renderCatalogDiff d ]
       Action         = None }
+
+let changeSurface (d: CatalogDiff) : Surface.Surface = changeSurfaceScoped None d
 
 /// A catalog change rendered statement-first: the plain verdict, then the
 /// substantiation — the move-typed lanes and the per-channel ‖δ‖ panel, revealed
-/// on demand.
+/// on demand. `chan` scopes to one channel (`diff --only columns`).
+let renderCatalogChangeScoped (chan: string option) (d: CatalogDiff) : View.View =
+    Surface.render (changeSurfaceScoped chan d)
+
 let renderCatalogChange (d: CatalogDiff) : View.View =
     Surface.render (changeSurface d)
 

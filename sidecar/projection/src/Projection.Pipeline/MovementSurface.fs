@@ -1209,7 +1209,7 @@ module Command =
             | None -> None
         let action =
             match args with
-            | "diff" :: a :: b :: _ -> PlanAction.ExplainDiff (a, b, (valueOf "--format" = Some "json"), depthOpt)
+            | "diff" :: a :: b :: _ -> PlanAction.ExplainDiff (a, b, (valueOf "--format" = Some "json"), depthOpt, valueOf "--only", valueOf "--module")
             | "policy" :: a :: b :: _ -> PlanAction.ExplainPolicy (a, b)
             | "node" :: c :: k :: _   -> PlanAction.ExplainNode (c, k, (valueOf "--format" = Some "json"), depthOpt)
             | "suggest" :: c :: _     -> PlanAction.ExplainSuggest (c, valueOf "--apply")

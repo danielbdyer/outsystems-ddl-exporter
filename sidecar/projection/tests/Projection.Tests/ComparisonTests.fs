@@ -442,6 +442,53 @@ let ``delta-grade polish: the danger callout rides the machine lens (one substra
         Assert.Contains("may rewrite or lose data", j)   // the callout reaches the structured lens
     | Error e -> Assert.Fail e
 
+// --- channel scoping (`diff --only <channel>`) ------------------------------
+// Discriminating predicate: `--only columns` keeps ONLY the column items across
+// every move-lane (and the danger callout), so an operator reviews one channel of
+// a huge diff. A naive renderer shows the whole changeset regardless.
+
+/// Every lane item across a rendered lane list (the danger callout + the move lanes).
+let private allLaneItems (views: View.View list) : string list =
+    views |> List.collect (function View.Lane(_, _, _, items) -> items | _ -> [])
+
+/// A multi-channel diff: a column reshape (Customer.Name) + an FK reshape (Order→Customer).
+let private multiChannel : CatalogDiff =
+    let customer' = { customer with Attributes = customer.Attributes |> List.map (fun a -> if a.SsKey = customerNameKey then { a with Type = Integer } else a) }
+    let order'    = { order with References = order.References |> List.map (fun r -> { r with OnDelete = Cascade }) }
+    match Comparison.catalog.Between sampleCatalog (withKinds [ customer'; order'; country ]) with
+    | Ok d -> d
+    | Error e -> failwith e
+
+[<Fact>]
+let ``delta-grade polish: --only columns keeps only the column items`` () =
+    let items = allLaneItems (Comparison.renderCatalogLanesScoped (Some "columns") multiChannel)
+    Assert.NotEmpty items
+    Assert.True(items |> List.forall (fun (s: string) -> s.StartsWith "column "), "only column items survive --only columns")
+
+[<Fact>]
+let ``delta-grade polish: --only relationships keeps only the relationship items`` () =
+    let items = allLaneItems (Comparison.renderCatalogLanesScoped (Some "relationships") multiChannel)
+    Assert.NotEmpty items
+    Assert.True(items |> List.forall (fun (s: string) -> s.StartsWith "relationship "), "only relationship items survive --only relationships")
+
+[<Fact>]
+let ``delta-grade polish: --only a channel with no changes yields no lanes`` () =
+    // multiChannel touches columns + relationships only — scoping to indexes is empty.
+    Assert.Empty(Comparison.renderCatalogLanesScoped (Some "indexes") multiChannel)
+
+[<Fact>]
+let ``delta-grade polish: --only scopes the danger callout too`` () =
+    // A column rewrite (null → not null) + an FK cascade are both data-touching;
+    // --only relationships keeps only the FK danger.
+    match Comparison.catalog.Between nullableName (withKinds [ customer; { order with References = order.References |> List.map (fun r -> { r with OnDelete = Cascade }) }; country ]) with
+    | Ok d ->
+        let danger = allLaneItems (Comparison.dangerLaneScoped (Some "relationships") d)
+        Assert.NotEmpty danger                                                          // the FK danger survives
+        Assert.True(danger |> List.forall (fun (s: string) -> s.StartsWith "relationship "), "the callout scopes with the lanes")
+        // the unscoped callout carries BOTH the column and the FK danger (proves --only narrowed it)
+        Assert.Contains(allLaneItems (Comparison.dangerLane d), fun (s: string) -> s.StartsWith "column ")
+    | Error e -> Assert.Fail e
+
 [<Fact>]
 let ``delta-grade polish: lane items sort by name, so a capped lane is scannable (not SsKey order)`` () =
     // Two columns added in a deliberately non-alphabetical source order; the lane
