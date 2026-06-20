@@ -441,3 +441,21 @@ let ``delta-grade polish: the danger callout rides the machine lens (one substra
         let j = (View.toJson (Comparison.renderCatalogChange d)).ToJsonString()
         Assert.Contains("may rewrite or lose data", j)   // the callout reaches the structured lens
     | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``delta-grade polish: lane items sort by name, so a capped lane is scannable (not SsKey order)`` () =
+    // Two columns added in a deliberately non-alphabetical source order; the lane
+    // must present them name-sorted, not in the Set's SsKey order.
+    let customer' =
+        { customer with
+            Attributes =
+                customer.Attributes
+                @ [ Attribute.create (attrKey ["Customer"; "Zeta"]) (mkName "Zeta") Text
+                    Attribute.create (attrKey ["Customer"; "Alpha"]) (mkName "Alpha") Text ] }
+    match Comparison.catalog.Between sampleCatalog (withKinds [ customer'; order; country ]) with
+    | Ok d ->
+        let adds = laneItems "add" d
+        let iAlpha = adds |> List.findIndex (fun (s: string) -> s.Contains "Customer.Alpha")
+        let iZeta  = adds |> List.findIndex (fun (s: string) -> s.Contains "Customer.Zeta")
+        Assert.True(iAlpha < iZeta, "Alpha sorts before Zeta in the add lane")
+    | Error e -> Assert.Fail e

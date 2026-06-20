@@ -537,8 +537,14 @@ let renderCatalogLanes (d: CatalogDiff) : View.View list =
         @ channelRemoves "index" srcNames idxDiffs
         @ seqRemoves
 
+    // Sort each lane's items (#D): the per-channel collectors emit in `Set` / `Map`
+    // (SsKey) order, arbitrary to a human, so at scale the capped first 12 are an
+    // arbitrary 12. The items are noun-prefixed (`column …` / `index …` / `table …`),
+    // so a plain `List.sort` groups by channel AND orders by name within — the
+    // scannable order a capped lane needs. Sorted in the canonical assembly (not the
+    // pretty path), so BOTH lenses see one deterministic order (T1; one substrate).
     let lane glyph label st items =
-        if List.isEmpty items then [] else [ View.Lane(glyph, label, st, items) ]
+        if List.isEmpty items then [] else [ View.Lane(glyph, label, st, List.sort items) ]
     lane "⟲" "rename" View.Ok renames
     @ lane "~" "reshape" View.Warn reshapes
     @ lane "+" "add" View.Ok adds
