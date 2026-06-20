@@ -49,27 +49,6 @@ let renderCatalogDiff (d: CatalogDiff) : View.View =
           View.PanelRow.Labeled("indexes", chan c.AddedIndexes c.RemovedIndexes c.RenamedIndexes c.ChangedIndexes, View.Neutral)
           View.PanelRow.Labeled("sequences", chan c.AddedSequences c.RemovedSequences c.RenamedSequences c.ChangedSequences, View.Neutral) ])
 
-// --- the statement: the plain lead line of a change (INSTRUMENT slice 1) ----
-
-/// The statement of a catalog change — the one plain line that leads the surface
-/// (`THE_VOICE.md` §1 rule 3 — statement first, the substantiation beneath). A
-/// destructive change leads amber ("review first"); an additive / no-op change
-/// leads calm. The substantiation (the move-lanes + the per-channel ‖δ‖ panel,
-/// progressively disclosed) is shown beneath. (Copy itself is the Act-2 diff
-/// surface — payload-shaped, voiced to the twelve-rule register in a later
-/// slice; this rename only aligns the field vocabulary, per `DECISIONS 2026-06-06`.)
-let catalogStatement (d: CatalogDiff) : View.View =
-    let c = CatalogDiff.channelCounts d
-    let removed =
-        c.RemovedKinds + c.RemovedAttributes + c.RemovedReferences
-        + c.RemovedIndexes + c.RemovedSequences
-    let n = CatalogDiff.norm d
-    if n = 0 then View.Hero(View.Ok, "No differences found. The two states are identical.")
-    elif removed > 0 then
-        View.Hero(View.Warn, sprintf "%d changes · %d drops · review before applying" n removed)
-    else
-        View.Hero(View.Ok, sprintf "%d changes · no removals" n)
-
 // --- the per-channel facet vocabulary (which facet of a reshape changed) ----
 // One word per facet, in the plain register (`THE_VOICE.md` §2.1 — the engine's
 // `‖δ‖` / facet DU never reaches the operator as a glyph). The before/after
@@ -301,6 +280,138 @@ let private channelRenames (noun: string) (names: Map<SsKey, string>) (diffs: Ma
         |> List.map (fun (_, r) ->
             sprintf "%s %s.%s → %s" noun (nm names kk) (Name.value r.OldName) (Name.value r.NewName)))
 
+// --- the data-risk classification (delta-grade polish #C) -------------------
+// The reshape lane is ONE amber bucket — a harmless `default added` sits beside a
+// `null → not null` that fails or rewrites every null row. These predicates pull
+// the genuinely DATA-TOUCHING subset (a change that can rewrite or LOSE existing
+// row data on apply) out by name, for the honest statement count and the "review
+// these first" callout. The homogeneous-lane rule is respected: the danger lives
+// in a SEPARATE surface, never as a per-item status inside a lane.
+
+/// An attribute facet transition that rewrites or risks existing row data: a type
+/// conversion (truncation / cast failure), `null → not null` (rows with null fail
+/// or need backfill), a primary-key change, an identity change. (A length / scale
+/// NARROWING is also a truncation risk — deferred: it needs an option-aware
+/// comparison; named, not silently dropped.)
+let private attrFacetRewrites (s: Attribute) (t: Attribute) (f: AttributeFacet) : bool =
+    match f with
+    | AttributeFacet.DataType    -> true
+    | AttributeFacet.Nullability -> s.Column.IsNullable && not t.Column.IsNullable
+    | AttributeFacet.PrimaryKey  -> true
+    | AttributeFacet.Identity    -> true
+    | _ -> false
+
+/// A reference facet transition that risks data: gaining `ON DELETE CASCADE` (a
+/// future delete now cascades to child rows).
+let private refFacetRewrites (s: Reference) (t: Reference) (f: ReferenceFacet) : bool =
+    match f with
+    | ReferenceFacet.OnDelete -> s.OnDelete <> Cascade && t.OnDelete = Cascade
+    | _ -> false
+
+/// An index facet transition that fails on existing data: gaining uniqueness (a
+/// `unique` / `primary key` index errors on apply if duplicates already exist).
+let private idxFacetRewrites (s: Index) (t: Index) (f: IndexFacet) : bool =
+    match f with
+    | IndexFacet.Uniqueness -> not (IndexUniqueness.isUnique s.Uniqueness) && IndexUniqueness.isUnique t.Uniqueness
+    | _ -> false
+
+/// The data-bearing DROPS — a dropped table or column loses its rows. (A dropped
+/// FK / index / sequence is structural, not row-data loss, so it stays in the
+/// remove lane only; the callout is specifically about DATA.)
+let private dataDrops (d: CatalogDiff) : string list =
+    let srcNames = nameIndex (CatalogDiff.source d)
+    let droppedTables =
+        CatalogDiff.removed d |> Set.toList
+        |> List.map (fun k -> sprintf "table %s — dropped, data lost" (nm srcNames k))
+    let droppedColumns =
+        CatalogDiff.attributeDiffs d |> Map.toList
+        |> List.collect (fun (kk, ad) ->
+            ad.Removed |> Set.toList
+            |> List.map (fun ak -> sprintf "column %s.%s — dropped, data lost" (nm srcNames kk) (nm srcNames ak)))
+    droppedTables @ droppedColumns
+
+/// The RESHAPES whose transition rewrites or can fail on existing rows — the
+/// column / FK / index reshapes that touch data (a type conversion, `null → not
+/// null`, a cascade added, a uniqueness gained). Distinct from `dataDrops`: a
+/// reshape keeps the entity, a drop removes it. Pure over the diff's retained
+/// source / target; deterministic (the per-channel walks iterate `Set` / `Map`
+/// order, T1).
+let private rewrites (d: CatalogDiff) : string list =
+    let source   = CatalogDiff.source d
+    let target   = CatalogDiff.target d
+    let srcNames = nameIndex source
+    let tgtNames = nameIndex target
+    let attrRewrites =
+        CatalogDiff.attributeDiffs d |> Map.toList
+        |> List.collect (fun (kk, ad) ->
+            let find = findChild (fun (k: Kind) -> k.Attributes) (fun (a: Attribute) -> a.SsKey) kk
+            ad.Reshaped |> List.collect (fun c ->
+                match find source c.AttributeKey, find target c.AttributeKey with
+                | Some s, Some t ->
+                    c.Facets |> Set.toList |> List.filter (attrFacetRewrites s t)
+                    |> List.map (fun f -> sprintf "column %s.%s — %s" (nm srcNames kk) (Name.value s.Name) (attributeEvidence s t f))
+                | _ -> []))
+    let refRewrites =
+        CatalogDiff.referenceDiffs d |> Map.toList
+        |> List.collect (fun (kk, rd) ->
+            let find = findChild (fun (k: Kind) -> k.References) (fun (r: Reference) -> r.SsKey) kk
+            rd.Reshaped |> List.collect (fun c ->
+                match find source c.ReferenceKey, find target c.ReferenceKey with
+                | Some s, Some t ->
+                    c.Facets |> Set.toList |> List.filter (refFacetRewrites s t)
+                    |> List.map (fun f -> sprintf "relationship %s.%s — %s" (nm srcNames kk) (Name.value s.Name) (referenceEvidence (nm srcNames) (nm tgtNames) s t f))
+                | _ -> []))
+    let idxRewrites =
+        CatalogDiff.indexDiffs d |> Map.toList
+        |> List.collect (fun (kk, idd) ->
+            let find = findChild (fun (k: Kind) -> k.Indexes) (fun (i: Index) -> i.SsKey) kk
+            idd.Reshaped |> List.collect (fun c ->
+                match find source c.IndexKey, find target c.IndexKey with
+                | Some s, Some t ->
+                    c.Facets |> Set.toList |> List.filter (idxFacetRewrites s t)
+                    |> List.map (fun f -> sprintf "index %s.%s — %s" (nm srcNames kk) (Name.value s.Name) (indexEvidence s t f))
+                | _ -> []))
+    attrRewrites @ refRewrites @ idxRewrites
+
+/// The full callout set — data-bearing drops first (the heaviest), then the
+/// rewrites. The "review these first" list.
+let private dangers (d: CatalogDiff) : string list = dataDrops d @ rewrites d
+
+// --- the statement: the plain lead line of a change (INSTRUMENT slice 1) ----
+
+/// The statement of a catalog change — the one plain line that leads the surface
+/// (`THE_VOICE.md` §1 rule 3 — statement first, the substantiation beneath). It
+/// leads amber when the change can hurt: a removal, OR a data-touching reshape (a
+/// `null → not null`, a type conversion, a cascade added, a uniqueness gained).
+/// Counting the data-touch set is the #C honesty fix — a zero-drop migration that
+/// adds a NOT NULL column used to lead CALM ("no removals") while being genuinely
+/// risky; now it reads "N changes · K may rewrite or lose data · review."
+let catalogStatement (d: CatalogDiff) : View.View =
+    let c = CatalogDiff.channelCounts d
+    let removed =
+        c.RemovedKinds + c.RemovedAttributes + c.RemovedReferences
+        + c.RemovedIndexes + c.RemovedSequences
+    let n = CatalogDiff.norm d
+    let r = List.length (rewrites d)
+    if n = 0 then View.Hero(View.Ok, "No differences found. The two states are identical.")
+    elif removed > 0 && r > 0 then
+        View.Hero(View.Warn, sprintf "%d changes · %d drops · %d may rewrite data · review before applying" n removed r)
+    elif removed > 0 then
+        View.Hero(View.Warn, sprintf "%d changes · %d drops · review before applying" n removed)
+    elif r > 0 then
+        View.Hero(View.Warn, sprintf "%d changes · %d may rewrite or lose data · review before applying" n r)
+    else
+        View.Hero(View.Ok, sprintf "%d changes · no removals" n)
+
+/// The "review these first" callout — the data-touching changes promoted to the
+/// top of the substantiation, as a single `Bad`-badged lane named honestly. Empty
+/// (no lane) when nothing touches data. A SEPARATE surface, so the move-lanes stay
+/// homogeneous (the operator's rejection of per-item lane status holds).
+let dangerLane (d: CatalogDiff) : View.View list =
+    match dangers d with
+    | []    -> []
+    | items -> [ View.Lane("!", "may rewrite or lose data", View.Bad, items) ]
+
 /// The move-typed lanes of a catalog change — rename / reshape / add / remove,
 /// each a `View.Lane` badged by reversibility: rename + add are reversible-safe
 /// (Ok); reshape may rewrite data (Warn — review); remove destroys structure
@@ -440,7 +551,10 @@ let renderCatalogLanes (d: CatalogDiff) : View.View list =
 /// (`THE_VOICE.md` §1 rule 3).
 let changeSurface (d: CatalogDiff) : Surface.Surface =
     { Statement      = catalogStatement d
-      Substantiation = renderCatalogLanes d @ [ View.Blank; renderCatalogDiff d ]
+      // The danger callout leads the substantiation ("review these first"), then
+      // the full move-lanes, then the per-channel ‖δ‖ panel — statement-first
+      // safety: honest verdict, the risky subset, the whole change, the counts.
+      Substantiation = dangerLane d @ renderCatalogLanes d @ [ View.Blank; renderCatalogDiff d ]
       Action         = None }
 
 /// A catalog change rendered statement-first: the plain verdict, then the

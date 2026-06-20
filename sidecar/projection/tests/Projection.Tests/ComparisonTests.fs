@@ -391,3 +391,53 @@ let ``delta-grade polish: a kind activation reshape shows active yes then no`` (
     match Comparison.catalog.Between sampleCatalog (withKinds [ customer'; order; country ]) with
     | Ok d -> Assert.Contains(laneItems "reshape" d, fun (s: string) -> s.Contains "table Customer: active yes → no")
     | Error e -> Assert.Fail e
+
+// --- the data-risk surface + honest statement (delta-grade polish #C) --------
+// Discriminating predicate: a change that can REWRITE or LOSE row data on apply (a
+// null → not null, a dropped column, a uniqueness gained) is pulled into a SEPARATE
+// "review these first" callout AND counted in the lead statement — so a zero-drop
+// migration that adds a NOT NULL column no longer leads CALM. A naive renderer
+// buries the risky change in the one amber reshape bucket and leads "no removals".
+
+let private dangerItems (d: CatalogDiff) : string list =
+    Comparison.dangerLane d |> List.collect (function View.Lane(_, _, _, items) -> items | _ -> [])
+
+/// Customer.Name made nullable — so a diff TOWARD sampleCatalog is a `null → not
+/// null` tightening (the dangerous direction: existing null rows fail / need backfill).
+let private nullableName : Catalog =
+    reshapeTarget (fun a -> { a with Column = ColumnRealization.create "NAME" true |> Result.value })
+
+[<Fact>]
+let ``delta-grade polish: a null to not-null tightening leads amber with may-rewrite, and is in the danger callout`` () =
+    match Comparison.catalog.Between nullableName sampleCatalog with
+    | Ok d ->
+        match Comparison.catalogStatement d with
+        | View.Hero(View.Warn, text) -> Assert.Contains("may rewrite or lose data", text)
+        | other -> Assert.Fail(sprintf "expected a Warn statement naming the data risk, got %A" other)
+        Assert.Contains(dangerItems d, fun (s: string) -> s.Contains "column Customer.Name" && s.Contains "nullability null → not null")
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``delta-grade polish: a dropped column is named data-lost in the danger callout`` () =
+    let customer' = { customer with Attributes = customer.Attributes |> List.filter (fun a -> a.SsKey <> customerTenantKey) }
+    match Comparison.catalog.Between sampleCatalog (withKinds [ customer'; order; country ]) with
+    | Ok d -> Assert.Contains(dangerItems d, fun (s: string) -> s.Contains "column Customer.TenantId" && s.Contains "data lost")
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``delta-grade polish: a purely additive change raises no danger callout and leads calm`` () =
+    match Comparison.catalog.Between emptyCatalog sampleCatalog with
+    | Ok d ->
+        Assert.Empty(Comparison.dangerLane d)                                  // nothing touches data
+        match Comparison.catalogStatement d with
+        | View.Hero(View.Ok, text) -> Assert.Contains("no removals", text)     // still calm
+        | other -> Assert.Fail(sprintf "expected a calm Ok statement, got %A" other)
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``delta-grade polish: the danger callout rides the machine lens (one substrate)`` () =
+    match Comparison.catalog.Between nullableName sampleCatalog with
+    | Ok d ->
+        let j = (View.toJson (Comparison.renderCatalogChange d)).ToJsonString()
+        Assert.Contains("may rewrite or lose data", j)   // the callout reaches the structured lens
+    | Error e -> Assert.Fail e
