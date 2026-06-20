@@ -24856,3 +24856,45 @@ marquee, touching the `OpenPath`=child-index invariant); the cross-surface
 `Program.fs` · `src/Projection.Pipeline/MovementSpec.fs` (`ExplainDiff`) ·
 `MovementSurface.fs` (parse); `tests/Projection.Tests/ComparisonTests.fs` +
 `MovementSurfaceTests.fs`; `SPECTRE_REFINEMENTS.md` §27 (Polish #E/#F).
+
+## 2026-06-20 — SPECTRE delta-grade diff SCALE wave (#G/#H/#I): intentional at ~310 tables — danger by category, navigable module-grouped lanes, cross-surface legibility started
+
+**Why recorded.** The operator named the real target — a ~310-table OSSYS estate where
+one channel can carry hundreds of FK concerns at once — and asked that every
+change-render surface be INTENTIONAL about that volume. The governing principle: each
+list surface states its true total, leads with what matters, and offers a path to ALL
+of it, never a silent 12-item wall. #G/#H are pure `Comparison.fs`; #I touches the
+run/apply narration (`RunFaces`). Pure pool green throughout (+6 tests).
+
+- **#G — the danger callout scales by risk CATEGORY.** Past a threshold (12) the flat
+  callout would bury the risk SHAPE behind "and N more" — the worst place to truncate.
+  `dataDrops`/`rewrites` now carry `(category, text)`; above the threshold the callout
+  groups by category (dropped / type change / null → not null / primary key change /
+  identity change / cascade delete / uniqueness gained), each a diggable `Disclosure`
+  sub-group with its count, the loud total on top. The operator reads the risk PROFILE
+  then drills. A small set stays the flat lane (the grouping is a scale affordance).
+- **#H — the navigable module-grouped move-lane (the at-scale marquee).** A move-lane
+  that is LARGE and spans ≥ 2 modules renders as a navigable `Disclosure` TREE grouped
+  by module (hottest first; `moduleOfItem` extracts the kind name from the noun-prefixed
+  item and resolves via `Catalog.allModulesKinds`). Default depth shows the module
+  profile; digging reveals the items. **Crucially this needs NO Navigator change** — the
+  tree is built from `Disclosure`s, which `Navigator.children` already nests, so the dig
+  works natively and the `OpenPath`=child-index invariant is never touched (the prior
+  follow-on flagged the in-place navigable tree as the hard marquee — delivered without
+  the risk). A small / single-module lane stays the flat `Lane`.
+- **#I — cross-surface legibility (the displayName chapter, started).** The run/apply
+  narration faces are SsKey-keyed and showed GUID walls (`rootOriginal` of an
+  `OssysOriginal` key). `RunFaces` gained a shared `catalogNameIndex` / `nameOf`;
+  `verify-data` now names tables/columns by `Name` — the contract catalog is threaded
+  OUT of the read task (`return Ok (report, contract)`) into the narration, and the
+  payload build is extracted as the pure, unit-testable `integrityPayload` (avoiding a
+  Voice/Console-capture test). `explain` was found already-fine (its `rootOriginal` is
+  only the substring MATCH key, not display). **Deferred (named):** `narrateTransferReport`
+  (the load plan / cycle FKs / unmatched identities — 3 sites, each needs its upstream
+  catalog threaded) and `suggest-config` (holds `report.ReadCatalog`); a shared
+  `Catalog.nameIndex` in Core would unify `catalogNameIndex` + `Comparison.nameIndex`.
+
+**Cross-references:** `src/Projection.Cli/Comparison.fs` (`dangerLaneScoped` categories,
+`moduleOfItem` + the grouped `lane`); `RunFaces.fs` (`catalogNameIndex`/`nameOf`/
+`integrityPayload`/`narrateIntegrityReport`/`runVerifyData`); `tests/Projection.Tests/`
+`ComparisonTests.fs` + `NarrationDisplayTests.fs`; `SPECTRE_REFINEMENTS.md` §27 (Scale wave).

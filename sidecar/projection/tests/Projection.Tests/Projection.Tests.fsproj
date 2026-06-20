@@ -99,6 +99,7 @@
     <Compile Include="CatalogDiffTests.fs" />
     <Compile Include="ChangeAlgebraSweepTests.fs" />
     <Compile Include="ComparisonTests.fs" />
+    <Compile Include="NarrationDisplayTests.fs" />
     <Compile Include="LifecycleTests.fs" />
     <Compile Include="EpisodeTests.fs" />
     <Compile Include="ChangeManifestTests.fs" />

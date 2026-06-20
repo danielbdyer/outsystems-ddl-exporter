@@ -930,7 +930,7 @@ Full pure pool **3575/0**.
 - *Before/after for index / sequence / kind-facet reshapes* (the structural channels) is
   deferred — facet-name is the right grain until a consumer wants the list-level diff.
 
-#### Polish (2026-06-19, later — six slices on top of #27; `DECISIONS 2026-06-19`)
+#### Polish (2026-06-19/20 — nine slices on top of #27; `DECISIONS 2026-06-19/20`)
 
 The DIFF cluster's polish wave — more detail, more safety, more scannable, more
 scopable. #A–#D + the rollup are pure-`Comparison.fs`; the scoping verbs add a thin
@@ -974,14 +974,43 @@ tests across `ComparisonTests` + `MovementSurfaceTests`).
   `Catalog.allModulesKinds`) just before the ‖δ‖ panel — "which module is hot" at a
   glance, pairing with `--module` (see it → dig it). Absent for single-module diffs.
 
-**Still-named follow-ons:** the FULL at-scale *navigability* — make `Lane` items navigable
-in the Navigator + group large lanes by module→kind as a `Disclosure` TREE (the rollup #F
-+ `--module` #E now cover orient-then-drill; the navigable in-place tree is the remaining
-marquee, touching the `OpenPath`=child-index invariant); the L1 `/`-filter; the
-cross-surface `SsKey.displayName cat` projection (the diff names by `Name` now; `explain` /
-reconciliation / bench still show GUIDs — broad, touches many faces); concrete storage
-width (`int → bigint`, a Core diff-modulus, DECISIONS-gated); a `--stat`-only summary mode
-(the rollup is its always-on form for multi-module diffs).
+##### Scale wave (2026-06-20 — intentional at ~310 tables / hundreds of concurrent concerns)
+
+The operator named the real target: a ~310-table estate, where one channel can carry
+hundreds of FK concerns at once. The principle: every list surface states its true
+total, leads with what matters, and offers a path to ALL of it — never a silent
+12-item wall.
+
+- **#G — the danger callout scales by risk CATEGORY.** Past a threshold (12) the
+  "may rewrite or lose data" callout groups by category (dropped / type change /
+  null → not null / primary key change / identity change / cascade delete / uniqueness
+  gained) — each a diggable sub-group with its count, the loud total on top — so 347
+  concerns read as their risk PROFILE, not 12 arbitrary lines. `dataDrops`/`rewrites`
+  now carry `(category, text)`; small sets stay the flat callout lane.
+- **#H — the navigable module-grouped move-lane (the at-scale MARQUEE).** A move-lane
+  that is LARGE and spans ≥ 2 modules renders as a navigable `Disclosure` TREE grouped
+  by module (hottest first; `moduleOfItem` extracts the kind name and resolves via
+  `Catalog.allModulesKinds`) — default depth shows the module profile, digging reveals
+  the items. **No Navigator change needed:** the tree is `Disclosure`s, which
+  `Navigator.children` already nests, so the `OpenPath`=child-index invariant is never
+  touched — the in-place navigability the prior follow-on flagged as the hard marquee,
+  delivered cleanly. A small / single-module lane stays the flat `Lane`.
+- **#I — cross-surface legibility (the displayName chapter, started).** The run/apply
+  narration is SsKey-keyed (GUID walls on a real estate). `RunFaces` gained a shared
+  `catalogNameIndex` / `nameOf`; `verify-data` now names tables/columns by `Name` (the
+  contract is threaded out of the read task as `(report, contract)`; the payload build
+  is extracted as the pure, testable `integrityPayload`). `explain` was already fine
+  (its `rootOriginal` is only the match key, not display). **Still GUID-walled (need
+  their upstream catalog threaded to the narration):** `narrateTransferReport` (the
+  load plan / cycle FKs / unmatched identities — 3 call sites) and `suggest-config`.
+
+**Still-named follow-ons:** finish the displayName chapter — thread the catalog into
+`narrateTransferReport` (3 sites) + `suggest-config` (it holds `report.ReadCatalog`),
+reusing `catalogNameIndex`/`nameOf` (consider hoisting them — and `Comparison.nameIndex`
+— to a shared `Catalog.nameIndex` in Core); the L1 `/`-filter; concrete storage width
+(`int → bigint`, a Core diff-modulus, DECISIONS-gated); a `--stat`-only summary mode
+(the rollup is its always-on form). The narration faces are stdout/Voice-based — extract
+a pure payload builder (as `integrityPayload`) to keep them testable.
 
 ---
 

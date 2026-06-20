@@ -559,6 +559,28 @@ let dispositionName (d: IdentityDisposition) : string =
     | IdentityDisposition.AssignedBySink      -> "assigned by the target"
     | IdentityDisposition.PreservedFromSource -> "preserved from source"
 
+// --- name resolution for the run/apply narration surfaces -------------------
+// The reconciliation / integrity / load-plan reports are keyed by `SsKey`, and
+// `SsKey.rootOriginal` is a bare GUID for an `OssysOriginal` key — so on a real
+// OSSYS estate these surfaces were a wall of hex. The diff surface already names
+// by `Name` (its own `nameIndex`); these helpers bring the same legibility to the
+// narration faces that hold a `Catalog`. Built once per narration; `rootOriginal`
+// is the honest fallback for a key absent from the catalog.
+
+let private catalogNameIndex (c: Catalog) : Map<SsKey, string> =
+    seq {
+        for k in Catalog.allKinds c do
+            yield k.SsKey, Name.value k.Name
+            for a in k.Attributes do yield a.SsKey, Name.value a.Name
+            for r in k.References  do yield r.SsKey, Name.value r.Name
+            for i in k.Indexes     do yield i.SsKey, Name.value i.Name
+        for s in c.Sequences do yield s.SsKey, Name.value s.Name
+    }
+    |> Map.ofSeq
+
+let private nameOf (names: Map<SsKey, string>) (key: SsKey) : string =
+    Map.tryFind key names |> Option.defaultValue (SsKey.rootOriginal key)
+
 let narrateTransferReport (report: Transfer.TransferReport) : unit =
     // §4 Move — lead with the finding (rows moved, in dependency order); the
     // load plan rides beneath. Dependency order is the engine's guarantee that
@@ -957,34 +979,39 @@ let runReverseLegTransfer
 /// demoted into counted disclosures beneath. The newline joins are data
 /// marshalling into the envelope payload, not prose — the catalog owns the
 /// framing and the disclosure headlines.
-let narrateIntegrityReport (report: IntegrityReport) : unit =
+/// The §6 divergence payload, tables/columns named by `Name` (the contract IS the
+/// before deployment's catalog), not the GUID `rootOriginal` they used to show.
+/// Pure (no I/O) so the legibility is unit-testable without the Voice / Console.
+let integrityPayload (contract: Catalog) (report: IntegrityReport) : Voice.Payload =
+    let names = catalogNameIndex contract
+    let joined (lines: string list) = lines |> String.concat "\n"
+    [ if not (List.isEmpty report.RowCountDeltas) then
+        "rowDeltas",
+        box (report.RowCountDeltas
+             |> List.map (fun d ->
+                 sprintf "%-40s before=%d after=%d (change=%+d)"
+                     (nameOf names d.Kind) (int64 d.Before) (int64 d.After) (int64 (d.After - d.Before)))
+             |> joined)
+      if not (List.isEmpty report.NullCountDeltas) then
+        "nullDeltas",
+        box (report.NullCountDeltas
+             |> List.map (fun d ->
+                 sprintf "%-40s %-30s before=%d after=%d (change=%+d)"
+                     (nameOf names d.Kind) (nameOf names d.Attribute)
+                     (int64 d.Before) (int64 d.After) (int64 (d.After - d.Before)))
+             |> joined)
+      if not (List.isEmpty report.Warnings) then
+        "schemaWarnings",
+        box (report.Warnings
+             |> List.map (fun w -> sprintf "%s (%s)" w.Message w.Code)
+             |> joined) ]
+    |> Map.ofList
+
+let narrateIntegrityReport (contract: Catalog) (report: IntegrityReport) : unit =
     if DataIntegrityChecker.isClean report then
         TtyRenderer.renderVoicedTo Console.Out "verifyData.matched" Map.empty
     else
-        let joined (lines: string list) = lines |> String.concat "\n"
-        let payload : Voice.Payload =
-            [ if not (List.isEmpty report.RowCountDeltas) then
-                "rowDeltas",
-                box (report.RowCountDeltas
-                     |> List.map (fun d ->
-                         sprintf "%-40s before=%d after=%d (change=%+d)"
-                             (SsKey.rootOriginal d.Kind) (int64 d.Before) (int64 d.After) (int64 (d.After - d.Before)))
-                     |> joined)
-              if not (List.isEmpty report.NullCountDeltas) then
-                "nullDeltas",
-                box (report.NullCountDeltas
-                     |> List.map (fun d ->
-                         sprintf "%-40s %-30s before=%d after=%d (change=%+d)"
-                             (SsKey.rootOriginal d.Kind) (SsKey.rootOriginal d.Attribute)
-                             (int64 d.Before) (int64 d.After) (int64 (d.After - d.Before)))
-                     |> joined)
-              if not (List.isEmpty report.Warnings) then
-                "schemaWarnings",
-                box (report.Warnings
-                     |> List.map (fun w -> sprintf "%s (%s)" w.Message w.Code)
-                     |> joined) ]
-            |> Map.ofList
-        TtyRenderer.renderVoicedTo Console.Out "verifyData.diverged" payload
+        TtyRenderer.renderVoicedTo Console.Out "verifyData.diverged" (integrityPayload contract report)
 
 let runVerifyData (beforeSpec: string) (afterSpec: string) : int =
     let collect = function Ok _ -> [] | Error es -> es
@@ -1021,12 +1048,18 @@ let runVerifyData (beforeSpec: string) (afterSpec: string) : int =
             let! contractR = ReadSide.read before
             match contractR with
             | Error es -> return Result.failure es
-            | Ok contract -> return! DataIntegrityChecker.compare before after contract
+            | Ok contract ->
+                // Carry the contract OUT alongside the report so the narration can
+                // name tables/columns (the report itself is SsKey-keyed only).
+                let! cmp = DataIntegrityChecker.compare before after contract
+                match cmp with
+                | Ok report -> return Ok (report, contract)
+                | Error es  -> return Result.failure es
         }
     let exitCode =
         match work.GetAwaiter().GetResult() with
-        | Ok report ->
-            narrateIntegrityReport report
+        | Ok (report, contract) ->
+            narrateIntegrityReport contract report
             // The gate fails closed: any divergence is a non-zero exit so a
             // CI step / cutover gate trips on data drift.
             if DataIntegrityChecker.isClean report then 0 else 8
