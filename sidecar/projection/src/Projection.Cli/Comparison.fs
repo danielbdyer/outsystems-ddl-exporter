@@ -206,6 +206,45 @@ let private referenceEvidence (resolveSrc: SsKey -> string) (resolveTgt: SsKey -
     | ReferenceFacet.DbConstraint    -> sprintf "db constraint %s → %s" (yesNo (Reference.hasDbConstraint s)) (yesNo (Reference.hasDbConstraint t))
     | ReferenceFacet.Trust           -> sprintf "trust %s → %s" (yesNo (Reference.isConstraintTrusted s)) (yesNo (Reference.isConstraintTrusted t))
 
+let private decimalOpt (o: decimal option) : string = match o with Some n -> string n | None -> "—"
+
+/// An index's uniqueness, in plain words — the operationally-critical facet: a
+/// `unique → not unique` drops a constraint (duplicates can now land) and the
+/// reverse FAILS on apply if duplicates already exist.
+let private uniquenessText (u: IndexUniqueness) : string =
+    match u with NotUnique -> "not unique" | Unique -> "unique" | PrimaryKey -> "primary key"
+
+/// One index facet's evidence. `Uniqueness` carries before → after (a clean
+/// 3-state); the list / grouped facets (columns / included / filter / data space /
+/// options) keep the facet-NAME form — a before→after of a column list would be a
+/// wall, so they stay the deferred name (the merged delta-grade's stated reason).
+let private indexEvidence (s: Index) (t: Index) (f: IndexFacet) : string =
+    match f with
+    | IndexFacet.Uniqueness -> sprintf "uniqueness %s → %s" (uniquenessText s.Uniqueness) (uniquenessText t.Uniqueness)
+    | other                 -> indexFacetText other
+
+/// One sequence facet's evidence — the scalar facets carry before → after
+/// (`start 1 → 1000`, opposite risks from `1000 → 1`); `Cache` (mode + size,
+/// grouped) keeps the facet name.
+let private sequenceEvidence (s: Sequence) (t: Sequence) (f: SequenceFacet) : string =
+    match f with
+    | SequenceFacet.Schema     -> sprintf "schema %s → %s" s.Schema t.Schema
+    | SequenceFacet.DataType   -> sprintf "type %s → %s" s.DataType t.DataType
+    | SequenceFacet.StartValue -> sprintf "start %s → %s" (decimalOpt s.StartValue) (decimalOpt t.StartValue)
+    | SequenceFacet.Increment  -> sprintf "increment %s → %s" (decimalOpt s.Increment) (decimalOpt t.Increment)
+    | SequenceFacet.Minimum    -> sprintf "minimum %s → %s" (decimalOpt s.Minimum) (decimalOpt t.Minimum)
+    | SequenceFacet.Maximum    -> sprintf "maximum %s → %s" (decimalOpt s.Maximum) (decimalOpt t.Maximum)
+    | SequenceFacet.Cycle      -> sprintf "cycle %s → %s" (yesNo s.IsCycleEnabled) (yesNo t.IsCycleEnabled)
+    | SequenceFacet.Cache      -> sequenceFacetText SequenceFacet.Cache
+
+/// One kind-OWN facet's evidence. `IsActive` carries before → after (`active yes →
+/// no` is a deactivation an operator must SEE, not infer from the bare word); the
+/// list-shaped facets (modality / triggers / checks) keep the facet name.
+let private kindFacetEvidence (s: Kind) (t: Kind) (f: KindFacet) : string =
+    match f with
+    | KindFacet.IsActive -> sprintf "active %s → %s" (yesNo s.IsActive) (yesNo t.IsActive)
+    | other              -> kindFacetText other
+
 /// Resolve a child entity within a kind by SsKey, in a given catalog — the
 /// before/after lookup for reshape evidence. Partially applied per kind at the
 /// call site (`let find = findChild … kk` → `find source key` / `find target key`).
@@ -262,26 +301,6 @@ let private channelRenames (noun: string) (names: Map<SsKey, string>) (diffs: Ma
         |> List.map (fun (_, r) ->
             sprintf "%s %s.%s → %s" noun (nm names kk) (Name.value r.OldName) (Name.value r.NewName)))
 
-/// A per-kind channel's reshaped items in the FACET-NAME form — `noun
-/// Kind.Entity: facet, facet`. Used for the structural channels (index) whose
-/// facets are lists / grouped knobs, where a before→after value would be a wall;
-/// attributes and references carry the richer before/after evidence instead.
-/// `keyOf` / `facetsOf` project the change record (annotated at the call sites
-/// because `.Facets` is shared across the four change records).
-let private channelReshapes
-    (noun: string)
-    (names: Map<SsKey, string>)
-    (render: 'f -> string)
-    (keyOf: 'c -> SsKey)
-    (facetsOf: 'c -> Set<'f>)
-    (diffs: Map<SsKey, ChannelDiff<'c>>)
-    : string list =
-    diffs |> Map.toList
-    |> List.collect (fun (kk, cd) ->
-        cd.Reshaped
-        |> List.map (fun c ->
-            sprintf "%s %s.%s: %s" noun (nm names kk) (nm names (keyOf c)) (facetsJoin render (facetsOf c))))
-
 /// The move-typed lanes of a catalog change — rename / reshape / add / remove,
 /// each a `View.Lane` badged by reversibility: rename + add are reversible-safe
 /// (Ok); reshape may rewrite data (Warn — review); remove destroys structure
@@ -316,15 +335,27 @@ let renderCatalogLanes (d: CatalogDiff) : View.View list =
     let seqRenames =
         seqd.Renamed |> Map.toList
         |> List.map (fun (_, r) -> sprintf "sequence %s → %s" (Name.value r.OldName) (Name.value r.NewName))
+    let findSeq (cat: Catalog) (key: SsKey) = cat.Sequences |> List.tryFind (fun s -> s.SsKey = key)
     let seqReshapes =
         seqd.Reshaped
-        |> List.map (fun c -> sprintf "sequence %s: %s" (nm srcNames c.SequenceKey) (facetsJoin sequenceFacetText c.Facets))
+        |> List.map (fun c ->
+            match findSeq source c.SequenceKey, findSeq target c.SequenceKey with
+            | Some s, Some t ->
+                sprintf "sequence %s: %s" (nm srcNames c.SequenceKey) (c.Facets |> Set.toList |> List.map (sequenceEvidence s t) |> String.concat ", ")
+            | _ ->
+                sprintf "sequence %s: %s" (nm srcNames c.SequenceKey) (facetsJoin sequenceFacetText c.Facets))
 
     // Kind-OWN facets (modality / triggers / checks / activation) — a reshape of
-    // the table itself, not its children.
+    // the table itself, not its children. `active` carries before → after; the
+    // list-shaped facets keep the name.
     let kindFacetReshapes =
         CatalogDiff.kindFacetDiffs d |> Map.toList
-        |> List.map (fun (kk, facets) -> sprintf "table %s: %s" (nm srcNames kk) (facetsJoin kindFacetText facets))
+        |> List.map (fun (kk, facets) ->
+            match Catalog.tryFindKind kk source, Catalog.tryFindKind kk target with
+            | Some s, Some t ->
+                sprintf "table %s: %s" (nm srcNames kk) (facets |> Set.toList |> List.map (kindFacetEvidence s t) |> String.concat ", ")
+            | _ ->
+                sprintf "table %s: %s" (nm srcNames kk) (facetsJoin kindFacetText facets))
 
     // The two ALTER surfaces an operator reviews — columns and FKs — carry the
     // before/after EVIDENCE (`text → integer`), resolved from the retained
@@ -355,6 +386,18 @@ let renderCatalogLanes (d: CatalogDiff) : View.View list =
                     sprintf "relationship %s.%s: %s" (nm srcNames kk) (Name.value s.Name) body
                 | _ ->
                     sprintf "relationship %s.%s: %s" (nm srcNames kk) (nm srcNames c.ReferenceKey) (facetsJoin referenceFacetText c.Facets)))
+    let idxReshapes =
+        idxDiffs |> Map.toList
+        |> List.collect (fun (kk, idd) ->
+            let find = findChild (fun (k: Kind) -> k.Indexes) (fun (i: Index) -> i.SsKey) kk
+            idd.Reshaped
+            |> List.map (fun c ->
+                match find source c.IndexKey, find target c.IndexKey with
+                | Some s, Some t ->
+                    let body = c.Facets |> Set.toList |> List.map (indexEvidence s t) |> String.concat ", "
+                    sprintf "index %s.%s: %s" (nm srcNames kk) (Name.value s.Name) body
+                | _ ->
+                    sprintf "index %s.%s: %s" (nm srcNames kk) (nm srcNames c.IndexKey) (facetsJoin indexFacetText c.Facets)))
 
     // Assemble each move across every channel, in the count-panel's channel order
     // (tables, columns, relationships, indexes, sequences).
@@ -367,7 +410,7 @@ let renderCatalogLanes (d: CatalogDiff) : View.View list =
     let reshapes =
         attrReshapes
         @ refReshapes
-        @ channelReshapes "index" srcNames indexFacetText (fun (c: IndexChange) -> c.IndexKey) (fun (c: IndexChange) -> c.Facets) idxDiffs
+        @ idxReshapes
         @ seqReshapes
         @ kindFacetReshapes
     let adds =

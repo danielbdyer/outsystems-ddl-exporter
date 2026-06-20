@@ -356,3 +356,38 @@ let ``delta-grade polish: an FK retarget names the tables, never the raw GUID (t
         Assert.Contains(items, fun (s: string) -> s.Contains "target Account → Vendor")            // names, the readable ALTER
         Assert.True(items |> List.forall (fun s -> not (s.Contains "a0000000")), "no GUID hex leaks into the FK evidence")
     | Error e -> Assert.Fail e
+
+// --- the structural-channel reshape evidence (delta-grade polish #B) ---------
+// Discriminating predicate: the index / sequence / kind-facet reshapes named
+// WHICH facet moved but not the VALUE — yet `uniqueness not unique → unique`
+// (apply FAILS on existing duplicates), `start 1 → 1000` (a key-space jump), and
+// `active yes → no` (a deactivation) are operationally different from their
+// reverses. These carry the before → after the merged delta-grade deferred for
+// the structural channels.
+
+[<Fact>]
+let ``delta-grade polish: an index uniqueness reshape shows not unique then unique`` () =
+    let idxWith (u: IndexUniqueness) =
+        { Index.ofKeyColumns (idxKey ["Customer"; "Name"]) (mkName "IX_Customer_Name") [ customerNameKey ] with Uniqueness = u }
+    let custWith u = { customer with Indexes = [ idxWith u ] }
+    match Comparison.catalog.Between (withKinds [ custWith NotUnique; order; country ]) (withKinds [ custWith Unique; order; country ]) with
+    | Ok d -> Assert.Contains(laneItems "reshape" d, fun (s: string) -> s.Contains "index Customer.IX_Customer_Name: uniqueness not unique → unique")
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``delta-grade polish: a sequence start reshape shows the value moved`` () =
+    let seqWith (start: decimal) =
+        Sequence.create (testKey "OS_SEQ_Start") (mkName "SEQ_Start") "dbo" "bigint"
+            (Some start) (Some 1M) (Some 1M) (Some 99999M) false NoCache None |> Result.value
+    let src = Catalog.create [ salesModule ] [ seqWith 1M ]    |> Result.value
+    let tgt = Catalog.create [ salesModule ] [ seqWith 1000M ] |> Result.value
+    match Comparison.catalog.Between src tgt with
+    | Ok d -> Assert.Contains(laneItems "reshape" d, fun (s: string) -> s.Contains "sequence SEQ_Start: start 1 → 1000")
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``delta-grade polish: a kind activation reshape shows active yes then no`` () =
+    let customer' = { customer with IsActive = false }
+    match Comparison.catalog.Between sampleCatalog (withKinds [ customer'; order; country ]) with
+    | Ok d -> Assert.Contains(laneItems "reshape" d, fun (s: string) -> s.Contains "table Customer: active yes → no")
+    | Error e -> Assert.Fail e
