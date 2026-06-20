@@ -489,6 +489,28 @@ let dangerLane (d: CatalogDiff) : View.View list = dangerLaneScoped None d
 /// by channel + owning kind, so a multi-channel lane reads. The diff already
 /// computed all of this (`CatalogDiff` C1 + NM-17); this surfaces it onto the
 /// walkable changeset the L2 Navigator digs.
+/// Above this many items a flat lane caps at 12 and buries the rest behind "and N
+/// more"; instead the lane groups by module into a navigable `Disclosure` tree (a
+/// 310-table estate can put hundreds of changes in one channel). Only groups when
+/// the items span ≥ 2 modules — a single-module lane gains nothing from one group.
+[<Literal>]
+let private laneGroupThreshold = 12
+
+/// The owning module of a lane item, by extracting its kind name — the token after
+/// the channel noun, up to the qualifier `.` — and resolving it against a
+/// name→module map. Sequences are catalog-level (no module). The item format is
+/// owned by the collectors here (`<noun> <Kind>[.<entity>]…`), so the extraction is
+/// reliable; an unresolved name (or a sequence) falls to its own bucket. A
+/// `ComparisonTests` grouping case pins it against format drift.
+let private moduleOfItem (nameToModule: Map<string, string>) (item: string) : string =
+    let parts = item.Split(' ')
+    if parts.Length < 2 then "(other)"
+    elif parts.[0] = "sequence" then "(sequences)"
+    else
+        let tok = parts.[1]
+        let kindName = match tok.IndexOf('.') with | -1 -> tok | i -> tok.Substring(0, i)
+        Map.tryFind kindName nameToModule |> Option.defaultValue "(other)"
+
 let renderCatalogLanesScoped (chan: string option) (d: CatalogDiff) : View.View list =
     let source    = CatalogDiff.source d
     let target    = CatalogDiff.target d
@@ -604,15 +626,37 @@ let renderCatalogLanesScoped (chan: string option) (d: CatalogDiff) : View.View 
         @ channelRemoves "index" srcNames idxDiffs
         @ seqRemoves
 
-    // Sort each lane's items (#D): the per-channel collectors emit in `Set` / `Map`
-    // (SsKey) order, arbitrary to a human, so at scale the capped first 12 are an
-    // arbitrary 12. The items are noun-prefixed (`column …` / `index …` / `table …`),
-    // so a plain `List.sort` groups by channel AND orders by name within — the
-    // scannable order a capped lane needs. Sorted in the canonical assembly (not the
-    // pretty path), so BOTH lenses see one deterministic order (T1; one substrate).
+    // The kind name → owning module map, from BOTH catalogs (an added kind lives only
+    // in the target), for the at-scale grouping (#H).
+    let nameToModule =
+        (Catalog.allModulesKinds source @ Catalog.allModulesKinds target)
+        |> List.map (fun (m, k) -> Name.value k.Name, Name.value m.Name)
+        |> Map.ofList
+    // Build one move's lane. Items are sorted in the canonical assembly (#D —
+    // noun-prefixed, so channel-grouped then name-ordered; both lenses one order, T1).
+    // SMALL or single-module ⇒ a flat `Lane` (the historical shape, capped at 12).
+    // LARGE and multi-module ⇒ a navigable `Disclosure` TREE grouped by module (#H):
+    // a 400-FK lane stops being a 12-item wall and becomes module headlines you drill
+    // — the Navigator digs Disclosures natively, so no Navigator change is needed.
     let lane glyph label st items =
-        let items' = keepChannel chan items
-        if List.isEmpty items' then [] else [ View.Lane(glyph, label, st, List.sort items') ]
+        let items' = keepChannel chan items |> List.sort
+        match items' with
+        | [] -> []
+        | _ ->
+            let modules = items' |> List.map (moduleOfItem nameToModule) |> List.distinct
+            if List.length items' <= laneGroupThreshold || List.length modules < 2 then
+                [ View.Lane(glyph, label, st, items') ]
+            else
+                let groups =
+                    items'
+                    |> List.groupBy (moduleOfItem nameToModule)
+                    |> List.map (fun (m, xs) -> m, List.sort xs)
+                    |> List.sortBy (fun (m, xs) -> (-List.length xs, m))        // hottest module first, then name (T1)
+                let detail =
+                    groups |> List.map (fun (m, xs) ->
+                        View.Disclosure(sprintf "%s  %s" m (Theme.humane (List.length xs)), st, xs |> List.map View.Note))
+                // The status carries the move's glyph + colour on the headline; the count is loud.
+                [ View.Disclosure(sprintf "%s  %s" label (Theme.humane (List.length items')), st, detail) ]
     lane "⟲" "rename" View.Ok renames
     @ lane "~" "reshape" View.Warn reshapes
     @ lane "+" "add" View.Ok adds

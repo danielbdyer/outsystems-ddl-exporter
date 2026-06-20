@@ -586,6 +586,45 @@ let ``delta-grade polish: a single-module diff shows no per-module rollup`` () =
     | Ok d -> Assert.True((rollupRows d).IsNone, "a one-module diff needs no rollup")
     | Error e -> Assert.Fail e
 
+// --- the navigable module-grouped lane at SCALE (the marquee) ----------------
+// Discriminating predicate: a move-lane carrying many items across ≥ 2 modules
+// becomes a navigable Disclosure TREE grouped by module (hottest first) instead of
+// a flat 12-item wall — so a 400-FK lane is module headlines you drill, not 12
+// arbitrary lines + "and 388 more". A small / single-module lane stays flat.
+
+[<Fact>]
+let ``delta-grade polish: at scale a move-lane groups by module into a navigable tree`` () =
+    // Sales/Customer +8 columns, Billing/Invoice +8 columns ⇒ 16 add-column items
+    // across 2 modules (> the flat threshold).
+    let customer' = { customer with Attributes = customer.Attributes @ [ for i in 1..8 -> Attribute.create (attrKey ["Customer"; sprintf "X%d" i]) (mkName (sprintf "X%d" i)) Text ] }
+    let invoice'  = { invoice  with Attributes = invoice.Attributes  @ [ for i in 1..8 -> Attribute.create (attrKey ["Invoice";  sprintf "Y%d" i]) (mkName (sprintf "Y%d" i)) Text ] }
+    let src = twoModule [ customer;  order; country ] invoice
+    let tgt = twoModule [ customer'; order; country ] invoice'
+    match Comparison.catalog.Between src tgt with
+    | Ok d ->
+        let addNode =
+            Comparison.renderCatalogLanes d
+            |> List.tryPick (function View.Disclosure (h, st, detail) when h.StartsWith "add" -> Some (st, h, detail) | _ -> None)
+        match addNode with
+        | Some (View.Ok, headline, detail) ->
+            Assert.Contains("16", headline)                                  // the loud total
+            let mods = detail |> List.choose (function View.Disclosure (h, _, _) -> Some h | _ -> None)
+            Assert.Contains(mods, fun (h: string) -> h.StartsWith "Sales" && h.Contains "8")
+            Assert.Contains(mods, fun (h: string) -> h.StartsWith "Billing" && h.Contains "8")
+        | other -> Assert.Fail(sprintf "expected a grouped add Disclosure, got %A" other)
+    | Error e -> Assert.Fail e
+
+[<Fact>]
+let ``delta-grade polish: a small multi-module lane stays flat (grouping is a scale affordance)`` () =
+    // The rollup fixture: ≥ 2 modules but few items per lane ⇒ flat Lanes, no grouping.
+    let salesTgt = { customer with Attributes = customer.Attributes |> List.map (fun a -> if a.SsKey = customerNameKey then { a with Type = Integer } else a) }
+    let invoiceTgt = { invoice with Attributes = invoice.Attributes @ [ Attribute.create (attrKey ["Invoice"; "Amount"]) (mkName "Amount") Decimal ] }
+    match Comparison.catalog.Between (twoModule [ customer; order; country ] invoice) (twoModule [ salesTgt; order; country ] invoiceTgt) with
+    | Ok d ->
+        let nodes = Comparison.renderCatalogLanes d
+        Assert.True(nodes |> List.forall (function View.Lane _ -> true | _ -> false), "small lanes stay flat Lanes")
+    | Error e -> Assert.Fail e
+
 [<Fact>]
 let ``delta-grade polish: lane items sort by name, so a capped lane is scannable (not SsKey order)`` () =
     // Two columns added in a deliberately non-alphabetical source order; the lane
