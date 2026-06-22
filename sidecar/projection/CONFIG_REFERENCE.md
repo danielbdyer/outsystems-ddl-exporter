@@ -122,13 +122,13 @@ Every key, with type · required? · default. Unknown keys are ignored; type mis
 
 ## A robust worked example
 
-A config that exercises every major axis — module + entity scoping, both rename forms, an emission-folder redirect, a nullability tightening intervention, and the emission toggles. The committed, copy-pasteable version is **`examples/model.config.sample.json`** (validated: it parses against the live `Config` loader and `explain node` runs the pipeline over it). The `//` annotations below are illustrative — the real file is comment-free JSON.
+A config that exercises every major axis — module + entity scoping, both rename forms, an emission-folder redirect, a nullability tightening intervention, and the emission toggles. This is the **shaping-only view** shown in isolation — the `model` / `overrides` / `emission` / `policy` sections with no `environments`/`flows` estate. It is a strict **subset of the unified [`examples/projection.sample.json`](examples/projection.sample.json)** (same sections, same loader): a daily run discovers `projection.json`; the analysis verbs (`explain` / `suggest` / `policy diff`) accept either this shaping-only form or the full `projection.json` by path. The `//` annotations are illustrative — strip them for real JSON.
 
 ```jsonc
-// model-shaping config — copy examples/model.config.sample.json (this view is annotated)
+// the model-shaping view in isolation (a subset of projection.json) — annotated; strip comments for real JSON
 {
   "model": {
-    "ossys": "file:./secrets/cloud-dev.conn",     // primary: read the model live from cloud-dev (env:/file: ref)
+    "ossys": "file:./secrets/cloud-dev.conn",     // a standalone live source (env:/file: ref). In a unified projection.json, prefer `env: "<name>"` (names an environment); the analysis verbs read via ossys/path, not env.
     "path":  "extracted/osm_model.json",          // fallback if no live connection
 
     "modules": [
@@ -195,8 +195,10 @@ A config that exercises every major axis — module + entity scoping, both renam
 Verify it before relying on it — `explain node` runs the pipeline with these overlays and reports one node's decisions:
 
 ```bash
-projection explain node ./model.config.json "Sales.Customer"     # confirm the rename + tightening fired
-projection explain suggest ./model.config.json                    # ranked edits this config is missing
+projection explain node ./projection.json "Sales.Customer"     # confirm the rename + tightening fired
+projection explain suggest ./projection.json                    # ranked edits this config is missing
 ```
+
+The analysis verbs read the **shaping view** of whatever config you point them at — `projection.json` works directly (its `environments`/`flows` are ignored here), or a shaping-only file like the one above. They resolve the model through `model.ossys`/`model.path`, **not** `model.env` (that needs the estate registry, which these registry-less verbs do not load — so a unified `projection.json` exercises them via its `path` fallback or an explicit `ossys`).
 
 (Real connection strings stay in `./secrets/*.conn`, gitignored — `model.ossys` only names the `file:` reference.)

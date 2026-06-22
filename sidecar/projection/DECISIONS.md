@@ -25083,3 +25083,38 @@ agreed shape **'cloud-dev'** (proving the default fired) and stops only at the a
 fallback) and a `readiness` block with NO `schema` (defaulted) — `cloud-dev`'s connection is named
 once, in `environments`. `THE_CONFIG_CONTROL_PLANE` / `CONFIG_REFERENCE` / `CROSS_ENVIRONMENT_READINESS`
 §4 updated; `model.config.sample.json` (registry-less shaping file) correctly keeps `model.ossys`.
+
+---
+
+## 2026-06-22 — Collapse the two config samples to one (`projection.json` is the single surface)
+
+**Decision.** Delete `examples/model.config.sample.json`; keep `examples/projection.sample.json`
+as the **single** worked config. The shaping-only view (the `model`/`overrides`/`emission`/`policy`
+sections in isolation) lives **inline in `CONFIG_REFERENCE.md`** as the annotated reference, not as
+a second committed file. The analysis verbs' doc examples (`explain` / `suggest`) now point at
+`./projection.json`. **Supersedes** the `model.env` entry's note above that the sample file is kept.
+
+**Context (operator question).** "Why do we have both `projection.json` and `model.config.json`?
+Should they not be the same file?" They were introduced the same day (2026-06-09) as two VIEWS of
+ONE schema (THE_CONFIG_CONTROL_PLANE — "one isomorphic surface behind two views"): `projection.json`
+unified (movement + shaping), `model.config.json` the shaping-only subset the analysis verbs take by
+path. Verified the schema is already one: the strict shaping loader (`Config.parseRootWith`) reads
+only the shaping sections and **ignores unknown top-level keys** (`environments`/`flows`/`readiness`),
+and the D9 credential scan flags `password`/`connection string`/`api key`/… but **not a bare `conn`**
+(`Config.fs:527-538`) — so `Config.fromFile` parses `projection.json` directly. The two-file split was
+therefore redundant at the schema level; only the *sample files* and an asymmetry in the docs
+remained. The operator chose: collapse to one sample.
+
+**Caveat preserved (named, not hidden).** The analysis verbs (`explain`/`suggest`/`policy diff`) load
+via `Config.fromFile` — the **registry-less** strict view — so they resolve the model through
+`model.ossys`/`model.path`, **not** `model.env` (which needs the `environments` registry the movement
+loader carries). A unified `projection.json` with `model.env` exercises them via its `path` fallback
+or an explicit `ossys`; the inline `CONFIG_REFERENCE` shaping example uses `ossys` for exactly this
+reason. Making the analysis verbs default-discover `projection.json` and resolve `env` (the deeper
+"unify discovery" option) was considered and **deferred** — not chosen this round; re-open if the
+registry-less model read on the analysis path becomes friction.
+
+**Touched.** Deleted `examples/model.config.sample.json`; `CONFIG_REFERENCE.md` (the worked example
+reframed as the inline shaping-only view + the `explain` examples retargeted + the analysis-verb model-
+source note); `V1_FULL_EXPORT_RECONCILIATION_PLAN.md` (dangling reference retargeted). No code change;
+no `.fsproj`/test referenced the deleted file (build/tests unaffected).
