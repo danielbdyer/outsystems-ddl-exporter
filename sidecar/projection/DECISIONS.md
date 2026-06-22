@@ -25118,3 +25118,54 @@ registry-less model read on the analysis path becomes friction.
 reframed as the inline shaping-only view + the `explain` examples retargeted + the analysis-verb model-
 source note); `V1_FULL_EXPORT_RECONCILIATION_PLAN.md` (dangling reference retargeted). No code change;
 no `.fsproj`/test referenced the deleted file (build/tests unaffected).
+
+---
+
+## 2026-06-22 — Robust operator-forward sample + circularDependencies → logical (espace-safe) + nullability-coercion decision
+
+**Context.** Collapsing to one sample (above) risked dropping the shaping configuration the old
+`model.config.sample.json` demonstrated. Operator review then surfaced four points on the sample's
+shaping surface. Resolved:
+
+**(a) `circularDependencies` keys on LOGICAL `{ module, entity }` now, not physical table names.**
+Operator catch: the cycle `tableOrdering[].tableName` resolved against the **physical** OSUSR table
+(`SpecialCircumstancesBinding.resolveKindByPhysicalTable` → `k.Physical.Table`), which differs per
+espace — so a cycle keyed on it would not match across the estate. It was the **lone** physical-keyed
+override (every sibling — `allowMissingPrimaryKey`, `emissionFolders`, the logical `tableRenames` form —
+resolves `{ module, entity }` → SsKey). Changed the config shape to `allowedCycles[].order[] =
+{ module, entity, position }`, bound via `CatalogResolution.tryKindByLogical` (the espace-safe sibling
+resolver). Clean break (V2 pre-production). `ConfigTests` + `SpecialCircumstancesBindingTests` updated;
+`CatalogResolution.tryKindByPhysicalTable` retained (still exercised by `TransferSpecTests`).
+
+**(b) The sample is now robust + operator-forward.** Folded the LIVE shaping surface into
+`examples/projection.sample.json`: the full `overrides` set (logical + physical `tableRenames`,
+two `emissionFolders` incl. `ServiceCenter.User → Modules/UserExtension_CS`, `allowMissingPrimaryKey`,
+logical `circularDependencies`), `model` filter flags, `emission` lanes, `policy` (insertion +
+tightening + **both** transformGroups — they run by default, listed to show the menu), `profiler`,
+`output`. Dead config NOT restored — confirmed against the parsers: `model.validationOverrides`
+(NM-04), `policy.selection` / `policy.userMatching` (NM-03), `typeMapping` / `cache` (NM-05) are
+removed; `CONFIG_REFERENCE.md` had drifted (still documented all five) and is now corrected
+(tables + inline example).
+
+**(c) `transformGroups` semantics clarified.** Two groups exist (`Tightening`, `UserReflow`,
+`Classification.fs`); a missing group defaults to **enabled** (`TransformGroupsBinding` — override, not
+whitelist). The sample now lists both explicitly with a comment, instead of the prior single redundant
+`Tightening` entry that read as a whitelist.
+
+**(d) `emissionFolders`** redirects one entity's `.sql` from `Modules/<Module>/` to any relative
+folder, basename preserved (`EmissionFoldersBinding`) — so `ServiceCenter.User → Modules/UserExtension_CS`
+works (added to the sample). Folder is bundle-root-relative; absolute paths / `..` / backslashes refused.
+
+**DECISION — nullable→NOT NULL coercion is removed (the team's modeling call, not the tool's).**
+Operator: "NULL columns should never be coerced to a NOT NULL column … useful as a statistic but not
+for coercing from a configuration standpoint." So the **nullability TIGHTENING** (the config-driven
+`nullable → NOT NULL` promotion) is to be removed; null-density stays only as a profiling **statistic**.
+The sample no longer shows a nullability intervention (swapped to `foreignKey` — `enableCreation`, an
+uncontested "emit the model's declared FKs"). **Implementation deferred to its own focused change** —
+blast radius mapped: `NullabilityPass` + `NullabilityRules` (a registered tightening pass — one of four),
+`NullabilityTighteningConfig`, the config `kind:"nullability"` + `nullBudget`, `TighteningBinding`,
+`SuggestConfigEmitter`'s budget-raise suggestion, and the V1-parity suite
+(`V1NullabilityParityTests`, `OssysTighteningNullabilityParityTests`, `NullabilityPassTests`,
+`NullabilityRulesTests`). Removing it touches the registered-transform invariant
+(`RegisteredAllTransformsBidirectionalTests`) and deletes V1-parity coverage — a deliberate teardown,
+done separately, not bundled here.

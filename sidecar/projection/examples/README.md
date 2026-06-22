@@ -50,9 +50,11 @@ fallback (cutover safety; live wins per `ModelResolution.chooseOrigin`).
 | Top-level key | Meaning |
 |---|---|
 | `model` | the canonical model object. `env` names the **primary** environment — here the **cloud-dev** cell, where the development team authors the schema — so the connection is named once, not inlined (use `ossys` only for a standalone source with no registry); `path` is the fallback; `modules` scopes which modules/entities are in scope. |
-| `overrides` | entity/table renames (`tableRenames`), emission-folder overrides, etc. (`../CONFIG_REFERENCE.md`). |
-| `emission` | which artifact kinds the bundle emits — `ssdt` (the schema) plus `staticSeeds` / `migrationDependencies` / `bootstrap` (the data lanes). |
+| `overrides` | naming + structural directives, all optional: `tableRenames` (logical or physical source → new name), `emissionFolders` (redirect an entity's `.sql`), `allowMissingPrimaryKey` (PK exemptions), `circularDependencies` (cycle ordering). Keyed to the sample's own entities — swap for yours (`../CONFIG_REFERENCE.md`). |
+| `emission` | which artifact kinds the bundle emits — `ssdt` (the schema) plus `staticSeeds` / `migrationDependencies` / `bootstrap` (the data lanes). Each defaults true. |
 | `policy` | tightening interventions (nullability / unique / FK budgets) — **opt-in**, see the `_comment`. |
+| `profiler` | source-data evidence for tightening — `provider: "live"` profiles the source DB (via `PROJECTION_MSSQL_CONN_STR`); `"fixture"` (default) carries none. |
+| `output` | `dir` — where the emitted artifacts land (`out/`). |
 | `environments` | the **places** (address + permissions + rendition + archetype). |
 | `readiness` | the cutover-readiness set — confirm a group of environments resolve to one shape (`check shape`). |
 | `flows` | the **movements** (named `source → target` recipes). |

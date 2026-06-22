@@ -169,9 +169,9 @@ let private fullConfigJson = """{
         "staticData":            { "path": "overrides/static.json" },
         "circularDependencies": {
             "allowedCycles": [
-                { "tableOrdering": [
-                    { "tableName": "OSUSR_ORG",  "position": 100 },
-                    { "tableName": "OSUSR_USER", "position": 200 }
+                { "order": [
+                    { "module": "AppCore", "entity": "Organization", "position": 100 },
+                    { "module": "AppCore", "entity": "User",         "position": 200 }
                 ] }
             ],
             "strictMode": false

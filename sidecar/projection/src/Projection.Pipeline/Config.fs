@@ -140,12 +140,16 @@ module Config =
     }
 
     type CircularDependencyEntry = {
-        TableName : string
-        Position  : int
+        // Logical { module, entity } — espace-safe (the physical OSUSR table
+        // name differs per environment; the logical pair is invariant, resolved
+        // to the kind's SsKey via `CatalogResolution.tryKindByLogical`).
+        Module   : string
+        Entity   : string
+        Position : int
     }
 
     type CircularDependencyCycle = {
-        TableOrdering : CircularDependencyEntry list
+        Order : CircularDependencyEntry list
     }
 
     type CircularDependenciesSection = {
@@ -892,25 +896,28 @@ module Config =
             parseFilePathOverride element |> Result.map Some
 
     let private parseCircularDependencyEntry (element: JsonElement) : Result<CircularDependencyEntry> =
-        match getString element "tableName" with
+        match getString element "module" with
         | Error es -> Error es
-        | Ok t ->
-            match getIntOr element "position" 0 with
+        | Ok m ->
+            match getString element "entity" with
             | Error es -> Error es
-            | Ok p -> Result.success { TableName = t; Position = p }
+            | Ok e ->
+                match getIntOr element "position" 0 with
+                | Error es -> Error es
+                | Ok p -> Result.success { Module = m; Entity = e; Position = p }
 
     let private parseCircularDependencyCycle (element: JsonElement) : Result<CircularDependencyCycle> =
-        match element.TryGetProperty("tableOrdering") with
-        | false, _ -> Result.success { TableOrdering = [] }
+        match element.TryGetProperty("order") with
+        | false, _ -> Result.success { Order = [] }
         | true, v when v.ValueKind = JsonValueKind.Array ->
             v.EnumerateArray()
             |> Seq.toList
             |> List.map parseCircularDependencyEntry
             |> Result.aggregate
-            |> Result.map (fun entries -> { TableOrdering = entries })
+            |> Result.map (fun entries -> { Order = entries })
         | _ ->
             Result.failureOf (
-                configError "typeMismatch" "circularDependencies.allowedCycles[].tableOrdering must be an array.")
+                configError "typeMismatch" "circularDependencies.allowedCycles[].order must be an array.")
 
     let private parseCircularDependencies (root: JsonElement) : Result<CircularDependenciesSection option> =
         match tryGetProperty root "circularDependencies" with

@@ -7,21 +7,66 @@
       "Sales",
       "Billing",
       { "name": "ServiceCenter", "entities": ["User", "Organization"] }
-    ]
+    ],
+    "includeSystemModules": false,
+    "includeInactiveModules": false,
+    "onlyActiveAttributes": true
   },
 
   "overrides": {
+    "_comment": "Naming + structural directives, keyed to THIS sample's entities (Sales / Billing / ServiceCenter) — swap the refs for your own. Every section is optional; omit one to take the faithful default. A rename 'from' is EITHER logical { module, entity } OR physical { schema, table } (never both).",
     "tableRenames": [
-      { "from": { "module": "Sales", "entity": "Customer" }, "to": { "schema": "dbo", "table": "Customer" } }
+      { "from": { "module": "Sales", "entity": "Customer" }, "to": { "schema": "dbo", "table": "Customer" } },
+      { "from": { "schema": "dbo", "table": "OSUSR_SAL_ORDER" }, "to": { "schema": "dbo", "table": "OrderHeader" } }
+    ],
+    "emissionFolders": [
+      { "ref": { "module": "Sales", "entity": "Country" }, "folder": "Static/Reference" },
+      { "ref": { "module": "ServiceCenter", "entity": "User" }, "folder": "Modules/UserExtension_CS" }
+    ],
+    "allowMissingPrimaryKey": [
+      { "module": "Sales", "entity": "LegacyAuditLog" }
+    ],
+    "circularDependencies": {
+      "allowedCycles": [
+        { "order": [
+          { "module": "ServiceCenter", "entity": "Organization", "position": 100 },
+          { "module": "ServiceCenter", "entity": "User",         "position": 200 }
+        ] }
+      ],
+      "strictMode": false
+    }
+  },
+
+  "emission": {
+    "_comment": "Which artifacts the publish bundle emits. ssdt = the schema; staticSeeds / migrationDependencies / bootstrap = the data lanes. Each defaults true; set false to suppress one.",
+    "ssdt": true,
+    "dacpac": true,
+    "json": true,
+    "staticSeeds": true,
+    "migrationDependencies": true,
+    "bootstrap": true
+  },
+
+  "policy": {
+    "_comment": "OPT-IN overlays. Omit this block for faithful vanilla emission. 'tightening.interventions' are TRACKED operator decisions (kinds: foreignKey / uniqueIndex / categoricalUniqueness); each carries a kind + id. 'transformGroups' BOTH run by default — a missing group is enabled — so list one with enabled:false only to suppress it.",
+    "insertion": "SchemaOnly",
+    "tightening": {
+      "interventions": [
+        { "kind": "foreignKey", "id": "create-model-fks", "enableCreation": true }
+      ]
+    },
+    "transformGroups": [
+      { "name": "Tightening", "enabled": true },
+      { "name": "UserReflow", "enabled": true }
     ]
   },
 
-  "emission": { "ssdt": true, "dacpac": true, "staticSeeds": true, "migrationDependencies": true, "bootstrap": true },
-
-  "policy": {
-    "_comment": "OPT-IN, not baseline. Omit this whole block for faithful vanilla emission (the default skeleton imposes no tightening). Each interventions entry is a TRACKED operator override of the team's model — shown here only to illustrate the shape.",
-    "tightening": { "interventions": [ { "kind": "nullability", "id": "promote-mandatory-where-clean", "nullBudget": 0.0 } ] }
+  "profiler": {
+    "_comment": "Source-data evidence. 'live' profiles the source DB (connection from PROJECTION_MSSQL_CONN_STR, never the config — D9) for the readiness data-dealbreaker checks and evidence-based tightening; 'fixture' (the default) carries none.",
+    "provider": "live"
   },
+
+  "output": { "dir": "out/" },
 
   "environments": {
     "cloud-dev":   { "access": "direct", "conn": "file:./secrets/cloud-dev.conn", "rendition": "physical", "archetype": "managed-dml" },

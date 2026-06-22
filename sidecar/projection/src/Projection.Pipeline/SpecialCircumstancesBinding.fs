@@ -71,34 +71,32 @@ module SpecialCircumstancesBinding =
                         "overrides.allowMissingPrimaryKey entry %s.%s did not match any catalog kind."
                         ref.Module ref.Entity))
 
-    /// Resolve a single cycle entry's physical `TableName` to the
-    /// matching kind's `SsKey`. Cycle entries reference kinds by
-    /// physical name (`Schema.Table`-style; the existing
-    /// `CircularDependencyEntry` shape carries `TableName : string`).
-    /// Currently matches against `k.Physical.Table` ignoring schema —
-    /// V1's circular-dependency cycle entries don't disambiguate
-    /// schemas. Promote to schema-qualified matching when a real
-    /// multi-schema cycle surfaces (IR-grows-under-evidence).
-    let private resolveKindByPhysicalTable
+    /// Resolve a single cycle entry's LOGICAL { module, entity } to the
+    /// matching kind's `SsKey` (espace-safe — the physical OSUSR table name
+    /// differs per environment, so a cycle keyed on it would not match across
+    /// the estate; the logical pair is invariant). Mirrors
+    /// `resolveKindByLogical` (the allowMissingPrimaryKey sibling) with a
+    /// cycle-specific refusal code.
+    let private resolveCycleKindByLogical
         (catalog: Catalog)
-        (tableName: string)
+        (entry: Config.CircularDependencyEntry)
         : Result<SsKey> =
-        match CatalogResolution.tryKindByPhysicalTable catalog tableName with
+        match CatalogResolution.tryKindByLogical catalog entry.Module entry.Entity with
         | Some key -> Result.success key
         | None ->
             Result.failureOf (
                 bindError
                     "allowedCycle.unresolved"
                     (sprintf
-                        "overrides.circularDependencies.allowedCycles entry tableName='%s' did not match any catalog kind."
-                        tableName))
+                        "overrides.circularDependencies.allowedCycles entry %s.%s did not match any catalog kind."
+                        entry.Module entry.Entity))
 
     let private bindCycle
         (catalog: Catalog)
         (cycle: Config.CircularDependencyCycle)
         : Result<Set<SsKey>> =
-        cycle.TableOrdering
-        |> List.map (fun e -> resolveKindByPhysicalTable catalog e.TableName)
+        cycle.Order
+        |> List.map (resolveCycleKindByLogical catalog)
         |> Result.aggregate
         |> Result.map Set.ofList
 

@@ -5,7 +5,7 @@ There is **one** configuration surface — a single `projection.json` that is th
 | View | What it controls | Namespaces |
 |---|---|---|
 | **movement** | *where* a model/data moves — places + recipes | `environments`, `flows`, `readiness` (the cross-environment cutover gate — `CROSS_ENVIRONMENT_READINESS.md`), `defaults` |
-| **model shaping** (this doc) | *what the model IS* before it moves — module/entity scope, entity/table renames, emission toggles, tightening policy, type mappings | `model`, `overrides`, `emission`, `policy`, `profiler`, `cache`, `typeMapping`, `output` |
+| **model shaping** (this doc) | *what the model IS* before it moves — module/entity scope, entity/table renames, emission toggles, tightening policy | `model`, `overrides`, `emission`, `policy`, `profiler`, `output` |
 
 The shaping namespaces fold in as **sibling top-level keys** of the same `projection.json`. A movement-only file leniently defaults every shaping section (so it never fails `modelNoSource`); a file that authors shaping sees them applied. The strict `Config.parse`/`fromFile` loader (this doc's schema) and the lenient movement loader (`MovementSurface.fs`) read the **same** document. The only genuine collision is the two `model` keys, reconciled into one `model` object (legacy top-level `model: "<path>"` maps to `model.path`; `modelOssys` to `model.ossys`).
 
@@ -56,7 +56,6 @@ Every key, with type · required? · default. Unknown keys are ignored; type mis
 | `includeSystemModules` | bool | no | `false` | include OutSystems system modules |
 | `includeInactiveModules` | bool | no | `false` | include inactive modules |
 | `onlyActiveAttributes` | bool | no | `true` | keep only active attributes |
-| `validationOverrides` | object | no | `{}` | `{ "allowMissingSchema": ["Mod::*"] }` — suppress missing-schema validation for the listed schemas |
 
 > **`model.env` — the schema source as an environment reference.** Like `flow.from` and
 > `readiness.schema`, `env` points into the `environments` registry **by name** rather than
@@ -75,7 +74,7 @@ Every key, with type · required? · default. Unknown keys are ignored; type mis
 | `tableRenames` | array | `[]` | each `{ "from": <source>, "to": { "schema": "dbo", "table": "NEW" } }`. `from` is **either** logical `{ "module": "M", "entity": "E" }` **or** physical `{ "schema": "S", "table": "T" }` (not both — `renameSourceAmbiguous` / `renameSourceMissing` otherwise) |
 | `emissionFolders` | array | `[]` | `{ "ref": { "module": "M", "entity": "E" }, "folder": "Static/Reference" }` — redirect an entity's SSDT `.sql` from `Modules/<M>/` to a custom folder |
 | `allowMissingPrimaryKey` | array | `[]` | `[{ "module": "M", "entity": "E" }, …]` — entities exempt from PK enforcement |
-| `circularDependencies` | object | — | `{ "allowedCycles": [{ "tableOrdering": [{ "tableName": "T", "position": N }, …] }], "strictMode": bool }` |
+| `circularDependencies` | object | — | `{ "allowedCycles": [{ "order": [{ "module": "M", "entity": "E", "position": N }, …] }], "strictMode": bool }` — manual cycle ordering keyed by **logical** `{ module, entity }` (espace-safe; resolved to the kind's SsKey, like the other overrides) |
 | `migrationDependencies` | object | — | `{ "path": "overrides/mig.json" }` — a custom migration-dependency graph |
 | `staticData` | object | — | `{ "path": "overrides/static.json" }` — static-data seed config |
 
@@ -92,9 +91,7 @@ Every key, with type · required? · default. Unknown keys are ignored; type mis
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `selection` | string | `"IncludeAll"` | kind-selection policy |
 | `insertion` | string | `"SchemaOnly"` | data-insertion policy |
-| `userMatching` | object | `{ "strategy": "ByEmail", "fallback": "NoFallback" }` | user re-key strategy + fallback |
 | `transformGroups` | array | `[]` (all on) | `[{ "name": "Tightening", "enabled": true }, …]` — toggle whole transform groups |
 | `tightening` | object | — | `{ "interventions": [ … ] }` — the nullability / uniqueIndex / foreignKey / categoricalUniqueness rules (below) |
 
@@ -105,13 +102,11 @@ Every key, with type · required? · default. Unknown keys are ignored; type mis
 - `kind: "foreignKey"` — `enableCreation`, `allowCrossSchema`, `allowCrossCatalog`, `treatMissingDeleteRuleAsIgnore`, `allowNoCheckCreation` (bool)
 - `kind: "categoricalUniqueness"` — `minDistinctCountForUniqueness` (int)
 
-### `typeMapping` · `profiler` · `cache` · `output`
+### `profiler` · `output`
 
 | Section | Keys | Default |
 |---|---|---|
-| `typeMapping` | `path` (rules JSON) · `default` (string) · `overrides` `{ "OutSystemsType": "SqlType" }` | `{}` |
-| `profiler` | `provider` `"fixture"` \| `"live"` (live reads `PROJECTION_MSSQL_CONN_STR`) · `mockFolder` | `{ provider: "fixture" }` |
-| `cache` | `root` · `refresh` · `ttlSeconds` | `.artifacts/cache` · `false` · `7200` |
+| `profiler` | `provider` `"fixture"` \| `"live"` (live profiles the source DB via `PROJECTION_MSSQL_CONN_STR` — D9, never the config — so tightening has null-density evidence) | `{ provider: "fixture" }` |
 | `output` | `dir` | `out/` |
 
 **Parser refusals** (`pipeline.config.*`): `jsonInvalid`, `fileNotFound`, `fileReadError`, `missingProperty`, `modelNoSource` (none of `model.env` / `model.ossys` / `model.path`), `typeMismatch`, `nullProperty`, `nullArrayElement`, `credentialPropertyForbidden` (D9), `renameSourceAmbiguous`, `renameSourceMissing`.
@@ -137,14 +132,13 @@ A config that exercises every major axis — module + entity scoping, both renam
     ],
     "includeSystemModules": false,
     "includeInactiveModules": false,
-    "onlyActiveAttributes": true,
-    "validationOverrides": { "allowMissingSchema": ["Mod::*"] }
+    "onlyActiveAttributes": true
   },
 
   "overrides": {
     "tableRenames": [
-      { "from": { "module": "Sales", "entity": "Customer" }, "to": { "schema": "dbo", "table": "CUSTOMER" } },
-      { "from": { "schema": "dbo", "table": "OSUSR_SAL_ORDER" }, "to": { "schema": "dbo", "table": "ORDER_HEADER" } }
+      { "from": { "module": "Sales", "entity": "Customer" }, "to": { "schema": "dbo", "table": "Customer" } },
+      { "from": { "schema": "dbo", "table": "OSUSR_SAL_ORDER" }, "to": { "schema": "dbo", "table": "OrderHeader" } }
     ],
     "emissionFolders": [
       { "ref": { "module": "Sales", "entity": "Country" }, "folder": "Static/Reference" }
@@ -154,9 +148,9 @@ A config that exercises every major axis — module + entity scoping, both renam
     ],
     "circularDependencies": {
       "allowedCycles": [
-        { "tableOrdering": [
-            { "tableName": "OSUSR_SVC_ORG",  "position": 100 },
-            { "tableName": "OSUSR_SVC_USER", "position": 200 }
+        { "order": [
+            { "module": "ServiceCenter", "entity": "Organization", "position": 100 },
+            { "module": "ServiceCenter", "entity": "User",         "position": 200 }
         ] }
       ],
       "strictMode": false
@@ -169,9 +163,7 @@ A config that exercises every major axis — module + entity scoping, both renam
   },
 
   "policy": {
-    "selection": "IncludeAll",
     "insertion": "SchemaOnly",
-    "userMatching": { "strategy": "ByEmail", "fallback": "NoFallback" },
     "tightening": {
       "interventions": [
         {
