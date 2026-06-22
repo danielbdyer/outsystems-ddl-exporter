@@ -113,7 +113,7 @@ collisions are the two `model` ones — folded into one `model` namespace.
   },
   "model":     { "env": "cloud-dev", "modules": ["Sales", { "name": "Ops", "entities": ["Order"] }] },
   "overrides": { "tableRenames": [ { "from": { "module": "Sales", "entity": "Cust" }, "to": { "schema": "dbo", "table": "Customer" } } ] },
-  "policy":    { "tightening": { "interventions": [ { "kind": "nullability", "id": "n1", "nullBudget": 0.0 } ] } },
+  "policy":    { "tightening": { "interventions": [ { "kind": "foreignKey", "id": "fk1", "enableCreation": true } ] } },
   "emission":  { "ssdt": true, "dacpac": true },
   "readiness": { "confirm": ["cloud-dev", "cloud-qa", "cloud-uat"] },
   "flows": {

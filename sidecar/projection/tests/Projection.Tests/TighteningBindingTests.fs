@@ -106,7 +106,11 @@ let ``C.1: fromConfig with empty interventions list yields empty policy`` () =
 // ----------------------------------------------------------------------
 
 [<Fact>]
-let ``C.1: nullability intervention with no overrides binds with defaults`` () =
+let ``C.1: a nullability intervention is DROPPED — config-driven coercion disabled (DECISIONS 2026-06-22)`` () =
+    // nullable→NOT NULL coercion is the team's modeling decision, not the tool's:
+    // fromConfig creates NO intervention for kind:"nullability" (a no-op; the run
+    // proceeds, not refused). The pass mechanism remains (NullabilityPassTests
+    // exercise it directly) but is unreachable from config.
     let catalog = loadCatalog ()
     let entry = emptyEntry "nullability" "v1-style"
     let result =
@@ -114,35 +118,22 @@ let ``C.1: nullability intervention with no overrides binds with defaults`` () =
             catalog
             (Some { Interventions = [ entry ] })
     match result with
-    | Ok policy ->
-        Assert.Equal(1, List.length policy.Interventions)
-        match List.head policy.Interventions with
-        | TighteningIntervention.Nullability (id, config) ->
-            Assert.Equal("v1-style", id)
-            Assert.Equal(0m, config.NullBudget)
-            Assert.False(config.AllowMandatoryRelaxation)
-            Assert.Equal<TighteningOverride list>([], config.Overrides)
-        | other -> failwithf "expected Nullability, got %A" other
-    | Error es -> failwithf "expected Ok, got %A" es
+    | Ok policy -> Assert.Equal<TighteningIntervention list>([], policy.Interventions)
+    | Error es -> failwithf "expected Ok (nullability dropped, not refused), got %A" es
 
 [<Fact>]
-let ``C.1: nullability intervention with explicit nullBudget and allowMandatoryRelaxation honored`` () =
+let ``C.1: a dropped nullability intervention leaves its siblings intact`` () =
     let catalog = loadCatalog ()
-    let entry =
-        { emptyEntry "nullability" "ops" with
-            NullBudget = Some 0.001m
-            AllowMandatoryRelaxation = Some true }
     let result =
         TighteningBinding.fromConfig
             catalog
-            (Some { Interventions = [ entry ] })
+            (Some { Interventions = [ emptyEntry "nullability" "n"; emptyEntry "foreignKey" "fk" ] })
     match result with
     | Ok policy ->
+        Assert.Equal(1, List.length policy.Interventions)
         match List.head policy.Interventions with
-        | TighteningIntervention.Nullability (_, config) ->
-            Assert.Equal(0.001m, config.NullBudget)
-            Assert.True(config.AllowMandatoryRelaxation)
-        | other -> failwithf "expected Nullability, got %A" other
+        | TighteningIntervention.ForeignKey (id, _) -> Assert.Equal("fk", id)
+        | other -> failwithf "expected only ForeignKey, got %A" other
     | Error es -> failwithf "expected Ok, got %A" es
 
 [<Fact>]
@@ -210,101 +201,12 @@ let ``C.1: categoricalUniqueness intervention threads minDistinctCount`` () =
     | Error es -> failwithf "expected Ok, got %A" es
 
 // ----------------------------------------------------------------------
-// Override resolution
+// Override resolution — REMOVED. Per-attribute `keepNullable` overrides were a
+// sub-feature of the nullability intervention, which fromConfig now drops
+// (DECISIONS 2026-06-22). The override-resolution machinery remains in
+// TighteningBinding ("okay to remain there") but is unreachable from config, so
+// its config-path tests are retired with the feature.
 // ----------------------------------------------------------------------
-
-[<Fact>]
-let ``C.1: override attributeRef resolves via logical Module.Entity.Attribute form`` () =
-    let catalog = loadCatalog ()
-    let entry =
-        { emptyEntry "nullability" "v1-style" with
-            NullabilityOverrides = [
-                { AttributeRef = "AppCore.User.MiddleName"; Action = "keepNullable" }
-            ] }
-    let result =
-        TighteningBinding.fromConfig
-            catalog
-            (Some { Interventions = [ entry ] })
-    match result with
-    | Ok policy ->
-        match List.head policy.Interventions with
-        | TighteningIntervention.Nullability (_, config) ->
-            Assert.Equal(1, List.length config.Overrides)
-            Assert.Equal(KeepNullable, (List.head config.Overrides).Action)
-        | other -> failwithf "expected Nullability, got %A" other
-    | Error es -> failwithf "expected Ok, got %A" es
-
-[<Fact>]
-let ``C.1: override attributeRef resolves via physical Schema.Table.Column form`` () =
-    let catalog = loadCatalog ()
-    let entry =
-        { emptyEntry "nullability" "v1-style" with
-            NullabilityOverrides = [
-                { AttributeRef = "dbo.OSUSR_APPCORE_USER.MIDDLENAME"; Action = "keepNullable" }
-            ] }
-    let result =
-        TighteningBinding.fromConfig
-            catalog
-            (Some { Interventions = [ entry ] })
-    match result with
-    | Ok policy ->
-        match List.head policy.Interventions with
-        | TighteningIntervention.Nullability (_, config) ->
-            Assert.Equal(1, List.length config.Overrides)
-        | other -> failwithf "expected Nullability, got %A" other
-    | Error es -> failwithf "expected Ok, got %A" es
-
-[<Fact>]
-let ``C.1: unresolvable override attributeRef surfaces structured error`` () =
-    let catalog = loadCatalog ()
-    let entry =
-        { emptyEntry "nullability" "v1-style" with
-            NullabilityOverrides = [
-                { AttributeRef = "NoSuchModule.NoSuchEntity.NoSuchAttribute"
-                  Action       = "keepNullable" }
-            ] }
-    let result =
-        TighteningBinding.fromConfig
-            catalog
-            (Some { Interventions = [ entry ] })
-    match result with
-    | Ok _ -> failwith "expected Error"
-    | Error es ->
-        Assert.Contains(es, fun e -> e.Code = "pipeline.tightening.overrideRef.unresolved")
-
-[<Fact>]
-let ``C.1: malformed override attributeRef (not 3-part) surfaces structured error`` () =
-    let catalog = loadCatalog ()
-    let entry =
-        { emptyEntry "nullability" "v1-style" with
-            NullabilityOverrides = [
-                { AttributeRef = "TooFew"; Action = "keepNullable" }
-            ] }
-    let result =
-        TighteningBinding.fromConfig
-            catalog
-            (Some { Interventions = [ entry ] })
-    match result with
-    | Ok _ -> failwith "expected Error"
-    | Error es ->
-        Assert.Contains(es, fun e -> e.Code = "pipeline.tightening.overrideRef.shape")
-
-[<Fact>]
-let ``C.1: unknown override action surfaces structured error`` () =
-    let catalog = loadCatalog ()
-    let entry =
-        { emptyEntry "nullability" "v1-style" with
-            NullabilityOverrides = [
-                { AttributeRef = "AppCore.User.MiddleName"; Action = "forceNotNull" }
-            ] }
-    let result =
-        TighteningBinding.fromConfig
-            catalog
-            (Some { Interventions = [ entry ] })
-    match result with
-    | Ok _ -> failwith "expected Error"
-    | Error es ->
-        Assert.Contains(es, fun e -> e.Code = "pipeline.tightening.overrideAction.unknown")
 
 [<Fact>]
 let ``C.1: unknown intervention kind surfaces structured error`` () =
@@ -324,7 +226,7 @@ let ``C.1: unknown intervention kind surfaces structured error`` () =
 // ----------------------------------------------------------------------
 
 [<Fact>]
-let ``C.1: all four intervention kinds in one config produce all four typed interventions`` () =
+let ``C.1: nullability is dropped; the other three intervention kinds bind in order`` () =
     let catalog = loadCatalog ()
     let section : Config.TighteningSection =
         { Interventions =
@@ -335,7 +237,9 @@ let ``C.1: all four intervention kinds in one config produce all four typed inte
     let result = TighteningBinding.fromConfig catalog (Some section)
     match result with
     | Ok policy ->
-        Assert.Equal(4, List.length policy.Interventions)
+        // nullability is filtered (config-driven coercion disabled); the other
+        // three bind, preserving order.
+        Assert.Equal(3, List.length policy.Interventions)
         let kinds =
             policy.Interventions
             |> List.map (function
@@ -343,5 +247,5 @@ let ``C.1: all four intervention kinds in one config produce all four typed inte
                 | TighteningIntervention.UniqueIndex _ -> "u"
                 | TighteningIntervention.ForeignKey _ -> "f"
                 | TighteningIntervention.CategoricalUniqueness _ -> "c")
-        Assert.Equal<string list>([ "n"; "u"; "f"; "c" ], kinds)
+        Assert.Equal<string list>([ "u"; "f"; "c" ], kinds)
     | Error es -> failwithf "expected Ok, got %A" es

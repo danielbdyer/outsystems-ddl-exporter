@@ -93,14 +93,15 @@ Every key, with type · required? · default. Unknown keys are ignored; type mis
 |---|---|---|---|
 | `insertion` | string | `"SchemaOnly"` | data-insertion policy |
 | `transformGroups` | array | `[]` (all on) | `[{ "name": "Tightening", "enabled": true }, …]` — toggle whole transform groups |
-| `tightening` | object | — | `{ "interventions": [ … ] }` — the nullability / uniqueIndex / foreignKey / categoricalUniqueness rules (below) |
+| `tightening` | object | — | `{ "interventions": [ … ] }` — the uniqueIndex / foreignKey / categoricalUniqueness rules (below) |
 
 **`tightening.interventions[]`** — each carries `kind` + `id` + kind-specific fields:
 
-- `kind: "nullability"` — `nullBudget` (decimal 0–1), `allowMandatoryRelaxation` (bool), `overrides: [{ "attributeRef": "ServiceCenter.User.MiddleName", "action": "keepNullable" }]`
 - `kind: "uniqueIndex"` — `enforceSingleColumnUnique`, `enforceMultiColumnUnique` (bool)
 - `kind: "foreignKey"` — `enableCreation`, `allowCrossSchema`, `allowCrossCatalog`, `treatMissingDeleteRuleAsIgnore`, `allowNoCheckCreation` (bool)
 - `kind: "categoricalUniqueness"` — `minDistinctCountForUniqueness` (int)
+
+> **`kind: "nullability"` is disabled** (DECISIONS 2026-06-22). Config-driven nullable→NOT NULL coercion is the team's modeling decision, not the tool's — a nullability intervention is *accepted but creates no intervention* (a no-op; the run is not refused). Null-density is still profiled as a **statistic** (informational / synthetics). Declare a column mandatory in the OutSystems model instead.
 
 ### `profiler` · `output`
 
@@ -166,18 +167,13 @@ A config that exercises every major axis — module + entity scoping, both renam
     "insertion": "SchemaOnly",
     "tightening": {
       "interventions": [
-        {
-          "kind": "nullability",
-          "id": "promote-mandatory-where-clean",
-          "nullBudget": 0.001,
-          "allowMandatoryRelaxation": false,
-          "overrides": [
-            { "attributeRef": "ServiceCenter.User.MiddleName", "action": "keepNullable" }
-          ]
-        }
+        { "kind": "foreignKey", "id": "create-model-fks", "enableCreation": true }
       ]
     },
-    "transformGroups": [ { "name": "Tightening", "enabled": true } ]
+    "transformGroups": [
+      { "name": "Tightening", "enabled": true },
+      { "name": "UserReflow", "enabled": true }
+    ]
   },
 
   "output": { "dir": "out/" }

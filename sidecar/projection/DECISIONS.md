@@ -25169,3 +25169,20 @@ blast radius mapped: `NullabilityPass` + `NullabilityRules` (a registered tighte
 `NullabilityRulesTests`). Removing it touches the registered-transform invariant
 (`RegisteredAllTransformsBidirectionalTests`) and deletes V1-parity coverage — a deliberate teardown,
 done separately, not bundled here.
+
+**Resolution (same day) — neutralized as a config NO-OP, not a teardown.** Operator refined: "make
+it a no-op that creates no intervention … it is okay to remain there … not shown as an example."
+So instead of the teardown, `TighteningBinding.fromConfig` now **filters** `kind:"nullability"`
+interventions — a config nullability intervention is accepted but **creates no intervention** (the run
+proceeds, it is NOT refused). The `NullabilityPass` / `NullabilityRules` mechanism + their direct unit
+tests + the V1-parity suite **REMAIN intact** (they construct the policy directly, bypassing the config
+binding, so they stay green) — the coercion is simply **unreachable from config**. This is the minimal
+honest change: it disables the config-driven coercion without a teardown, and the registered-transform
+invariant is untouched (the pass still runs; it just receives no nullability intervention → no-op).
+Null-density remains a profiling **statistic** (informational / synthetics), as the operator wants.
+Only the config-path tests retired: `TighteningBindingTests`' nullability-binding + override-resolution
+cases (the override machinery `resolveAttributeRef`/`bindOverride` was a nullability sub-feature, now
+config-unreachable; it remains in `TighteningBinding`). Docs scrubbed of the `nullability` kind +
+`nullBudget` (`CONFIG_REFERENCE` tightening kinds + inline example, `THE_CONFIG_CONTROL_PLANE` example);
+the sample's `policy.tightening` shows `foreignKey`. Pure pool green (3630/0). If config-driven
+nullability tightening is ever wanted back, un-filter the one line in `fromConfig`.
