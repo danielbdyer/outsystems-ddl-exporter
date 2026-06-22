@@ -1,42 +1,53 @@
 {
-  "model": { "ossys": "file:./secrets/ossys.conn" },
-
-  "overrides": {
-    "tableRenames": [
-      { "from": { "module": "Sales", "entity": "Cust" }, "to": { "schema": "dbo", "table": "Customer" } }
+  "model": {
+    "_comment": "Schema source, named once. 'env' points into the environments registry by name (live OSSYS read, espace-safe) — the canonical environment the whole estate derives from. 'path' is the extracted-file fallback. Use 'ossys' instead of 'env' only for a standalone connection with no registry.",
+    "env": "cloud-dev",
+    "path": "extracted/osm_model.json",
+    "modules": [
+      "Sales",
+      "Billing",
+      { "name": "ServiceCenter", "entities": ["User", "Organization"] }
     ]
   },
 
-  "emission": { "ssdt": true, "dacpac": true },
+  "overrides": {
+    "tableRenames": [
+      { "from": { "module": "Sales", "entity": "Customer" }, "to": { "schema": "dbo", "table": "Customer" } }
+    ]
+  },
+
+  "emission": { "ssdt": true, "dacpac": true, "staticSeeds": true, "migrationDependencies": true, "bootstrap": true },
 
   "policy": {
     "_comment": "OPT-IN, not baseline. Omit this whole block for faithful vanilla emission (the default skeleton imposes no tightening). Each interventions entry is a TRACKED operator override of the team's model — shown here only to illustrate the shape.",
-    "tightening": { "interventions": [ { "kind": "nullability", "id": "n1", "nullBudget": 0.0 } ] }
+    "tightening": { "interventions": [ { "kind": "nullability", "id": "promote-mandatory-where-clean", "nullBudget": 0.0 } ] }
   },
 
   "environments": {
-    "onprem-dev":    { "access": "bundle", "out": "./dist/onprem-dev", "grant": "schema+data", "rendition": "logical" },
-    "onprem-qa":     { "access": "bundle", "out": "./dist/onprem-qa",  "grant": "schema+data", "rendition": "logical" },
-    "onprem-uat":    { "access": "bundle", "out": "./dist/onprem-uat", "grant": "schema+data", "rendition": "logical", "store": "lifecycle/onprem-uat.json" },
+    "cloud-dev":   { "access": "direct", "conn": "file:./secrets/cloud-dev.conn", "rendition": "physical", "archetype": "managed-dml" },
+    "cloud-qa":    { "access": "direct", "conn": "file:./secrets/cloud-qa.conn",  "rendition": "physical", "archetype": "managed-dml", "grant": "data" },
+    "cloud-uat":   { "access": "direct", "conn": "file:./secrets/cloud-uat.conn", "rendition": "physical", "archetype": "managed-dml", "grant": "data", "store": "lifecycle/cloud-uat.json", "revert": "script" },
 
-    "onprem-legacy": { "access": "direct", "conn": "file:./secrets/onprem-legacy.conn", "rendition": "logical" },
+    "on-prem-dev": { "access": "bundle", "out": "./dist/on-prem-dev", "rendition": "logical", "archetype": "full-rights", "grant": "schema+data", "store": "lifecycle/on-prem-dev.json" },
+    "on-prem-qa":  { "access": "bundle", "out": "./dist/on-prem-qa",  "rendition": "logical", "archetype": "full-rights", "grant": "schema+data" },
 
-    "cloud-qa":      { "access": "direct", "conn": "file:./secrets/cloud-qa.conn", "rendition": "physical" },
+    "on-prem-uat": { "access": "direct", "conn": "file:./secrets/on-prem-uat.conn", "rendition": "logical", "archetype": "full-rights" }
+  },
 
-    "cloud-uat":     { "access": "direct", "conn": "file:./secrets/cloud-uat.conn", "grant": "data", "rendition": "physical", "store": "lifecycle/cloud-uat.json" }
+  "readiness": {
+    "_comment": "The agreed shape defaults to model.env (cloud-dev) — name 'schema' here only to override it. 'confirm' lists the environments checked against that shape.",
+    "confirm": ["cloud-dev", "cloud-qa", "cloud-uat"]
   },
 
   "flows": {
-    "publish":  { "from": "model", "to": "onprem-uat" },
+    "publish":    { "from": "cloud-dev", "to": "on-prem-dev" },
 
-    "skeleton": { "from": "model", "to": "onprem-dev", "shape": "skeleton" },
+    "publish-qa": { "from": "cloud-dev", "to": "on-prem-qa" },
 
-    "audit":    { "from": "model", "to": "onprem-dev", "shaping": { "model": { "modules": ["Ops"] } } },
+    "golden":     { "from": "cloud-qa", "to": "cloud-uat", "scope": "data", "tables": ["Customer", "Order", "OrderLine"], "rekey": "file:./secrets/uat-users.csv", "strategy": "replace" },
 
-    "golden":   { "from": "cloud-qa", "to": "cloud-uat", "scope": "data", "tables": ["Customer", "Order", "OrderLine"], "rekey": "file:./secrets/users.csv" },
+    "reverse":    { "from": "on-prem-uat", "to": "cloud-uat", "scope": "data", "strategy": "merge", "streaming": true, "resumable": true, "journal": "lifecycle/reverse-uat.ndjson" },
 
-    "preview":  { "from": "onprem-legacy", "to": "cloud-uat", "scope": "data" },
-
-    "synth":    { "from": "synthetic", "to": "cloud-uat", "profile": "cloud-qa" }
+    "synth":      { "from": "synthetic", "to": "cloud-qa", "profile": "on-prem-uat" }
   }
 }

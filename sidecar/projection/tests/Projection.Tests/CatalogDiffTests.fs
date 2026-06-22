@@ -104,6 +104,96 @@ let ``CatalogDiff partitions are pairwise disjoint`` () =
     Assert.Empty(Set.intersect removed unchanged)
 
 // ---------------------------------------------------------------------------
+// Espace-invariance (CROSS_ENVIRONMENT_READINESS.md §2; the AXIOMS
+// espace-invariance entry).
+//
+// `CatalogDiff` compares LOGICAL identity (`SsKey`) + logical `Name` + the
+// structural facet set (`changedFacets` / `KindFacet`) — it NEVER compares the
+// physical realization (the `OSUSR_{espace}_…` table name or the physical
+// column name). So two OutSystems environments hosting the SAME model — same
+// OSSYS GUID (`OssysOriginal`) at kind AND attribute grain, same logical names,
+// same facets — but DIFFERENT espace physical coordinates diff to the ZERO
+// delta. THIS is what makes the cross-environment readiness check (`check
+// shape`) espace-safe with NO rendition projection: stable identity (the
+// `ossys:` operand) composed with a physical-agnostic diff. The sensitivity
+// counter-test proves the diff is not merely blind.
+// ---------------------------------------------------------------------------
+
+// Fixed OSSYS identity — GUIDs stable across environments (LifeTime preserves
+// SS_KEY at every grain, operator-confirmed 2026-06-21); only the espace
+// PREFIX of the physical realization varies per environment.
+let private espGuidMod   = System.Guid.Parse "a0000000-0000-4000-8000-000000000001"
+let private espGuidUser  = System.Guid.Parse "a0000000-0000-4000-8000-000000000002"
+let private espGuidId    = System.Guid.Parse "a0000000-0000-4000-8000-000000000003"
+let private espGuidEmail = System.Guid.Parse "a0000000-0000-4000-8000-000000000004"
+
+/// The SAME logical model (identity + logical names + facets) realized under a
+/// given espace prefix — `OSUSR_<prefix>_USER` with physical columns
+/// `<prefix>_ID` / `<prefix>_EMAIL`. The identity GUIDs and logical names are
+/// prefix-invariant; only `Kind.Physical` and `Attribute.Column` vary.
+let private espaceCatalog (prefix: string) : Catalog =
+    let idAttr =
+        { Attribute.create (SsKey.ossysOriginal espGuidId) (mkName "Id") Integer with
+            Column = ColumnRealization.create (sprintf "%s_ID" prefix) false |> Result.value
+            IsPrimaryKey = true; IsMandatory = true; IsIdentity = true
+            SqlStorage = Some SqlStorageType.BigInt }
+    let emailAttr =
+        { Attribute.create (SsKey.ossysOriginal espGuidEmail) (mkName "Email") Text with
+            Column = ColumnRealization.create (sprintf "%s_EMAIL" prefix) false |> Result.value
+            IsMandatory = true; Length = Some 250
+            SqlStorage = Some (SqlStorageType.NVarChar (Bounded 250)) }
+    let userKind : Kind =
+        { SsKey = SsKey.ossysOriginal espGuidUser
+          Name  = mkName "User"
+          Origin = Native
+          Modality = []
+          Physical = mkTableId "dbo" (sprintf "OSUSR_%s_USER" prefix)
+          Attributes = [ idAttr; emailAttr ]
+          References = []
+          Indexes = []
+          Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
+    { Modules =
+        [ { SsKey = SsKey.ossysOriginal espGuidMod
+            Name  = mkName "AppCore"
+            Kinds = [ userKind ]; IsActive = true; ExtendedProperties = [] } ]
+      Sequences = [] }
+
+[<Fact>]
+let ``espace-invariance: CatalogDiff is blind to OSUSR physical coordinates — same OSSYS identity, different espace ⇒ zero delta`` () =
+    // dev → OSUSR_ABC_USER (cols ABC_ID / ABC_EMAIL); qa → OSUSR_XF_USER (XF_ID / XF_EMAIL).
+    // Same GUIDs, logical names, facets; only the espace physical coordinates differ.
+    let dev = espaceCatalog "ABC"
+    let qa  = espaceCatalog "XF"
+    let diff = CatalogDiff.between dev qa
+    Assert.True(CatalogDiff.isEmpty diff, sprintf "espace-only difference must diff to zero; got %A" diff)
+    Assert.Equal(0, CatalogDiff.norm diff)
+
+[<Fact>]
+let ``espace-invariance sensitivity: a real logical divergence (attribute type change) DOES surface`` () =
+    let dev = espaceCatalog "ABC"
+    // qa with Email retyped Text → Integer: a real facet (DataType) divergence,
+    // NOT an espace artifact — it MUST reach the verdict (else the diff is blind).
+    let qaRetyped =
+        let c = espaceCatalog "XF"
+        { c with
+            Modules =
+                c.Modules
+                |> List.map (fun m ->
+                    { m with
+                        Kinds =
+                            m.Kinds
+                            |> List.map (fun k ->
+                                { k with
+                                    Attributes =
+                                        k.Attributes
+                                        |> List.map (fun a ->
+                                            if Name.value a.Name = "Email" then { a with Type = Integer }
+                                            else a) }) }) }
+    let diff = CatalogDiff.between dev qaRetyped
+    Assert.False(CatalogDiff.isEmpty diff)
+    Assert.True(CatalogDiff.norm diff > 0)
+
+// ---------------------------------------------------------------------------
 // Determinism — same inputs → same diff.
 // ---------------------------------------------------------------------------
 

@@ -1,9 +1,9 @@
 {
   "model": {
-    "ossys": "file:./secrets/ossys.conn",
+    "ossys": "file:./secrets/cloud-dev.conn",
     "path": "extracted/osm_model.json",
     "modules": [
-      "AppCore",
+      "Sales",
       { "name": "ServiceCenter", "entities": ["User", "Organization"] }
     ],
     "includeSystemModules": false,
@@ -14,20 +14,20 @@
 
   "overrides": {
     "tableRenames": [
-      { "from": { "module": "AppCore", "entity": "Customer" }, "to": { "schema": "dbo", "table": "CUSTOMER" } },
-      { "from": { "schema": "dbo", "table": "OSUSR_ABC_ORDER" }, "to": { "schema": "dbo", "table": "ORDER_HEADER" } }
+      { "from": { "module": "Sales", "entity": "Customer" }, "to": { "schema": "dbo", "table": "CUSTOMER" } },
+      { "from": { "schema": "dbo", "table": "OSUSR_SAL_ORDER" }, "to": { "schema": "dbo", "table": "ORDER_HEADER" } }
     ],
     "emissionFolders": [
-      { "ref": { "module": "AppCore", "entity": "Country" }, "folder": "Static/Reference" }
+      { "ref": { "module": "Sales", "entity": "Country" }, "folder": "Static/Reference" }
     ],
     "allowMissingPrimaryKey": [
-      { "module": "AppCore", "entity": "LegacyAuditLog" }
+      { "module": "Sales", "entity": "LegacyAuditLog" }
     ],
     "circularDependencies": {
       "allowedCycles": [
         { "tableOrdering": [
-            { "tableName": "OSUSR_ABC_ORG",  "position": 100 },
-            { "tableName": "OSUSR_ABC_USER", "position": 200 }
+            { "tableName": "OSUSR_SVC_ORG",  "position": 100 },
+            { "tableName": "OSUSR_SVC_USER", "position": 200 }
         ] }
       ],
       "strictMode": false
@@ -51,7 +51,7 @@
           "nullBudget": 0.001,
           "allowMandatoryRelaxation": false,
           "overrides": [
-            { "attributeRef": "AppCore.User.MiddleName", "action": "keepNullable" }
+            { "attributeRef": "ServiceCenter.User.MiddleName", "action": "keepNullable" }
           ]
         }
       ]

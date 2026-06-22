@@ -63,38 +63,48 @@ and no secrets.
 projection init        # writes a starter projection.json (refuses to overwrite an existing one)
 ```
 
-The scaffold reads the **model live** from your cloud OutSystems environment and defines two
-**environments** (places) and two **flows** (movements):
+The scaffold reads the **model live** from your `cloud-dev` environment and defines the
+**environments** (places), a **readiness** set (the cloud cells that must resolve to one shape),
+and the **flows** (movements):
 
 ```jsonc
 {
-  "modelOssys": "env:OSSYS_CONN",
+  "model": { "env": "cloud-dev" },
   "environments": {
-    "local":      { "access": "docker" },
-    "onprem-dev": { "access": "bundle", "out": "./dist/onprem-dev", "grant": "schema+data", "rendition": "logical" }
+    "cloud-dev":   { "access": "direct", "conn": "file:./secrets/cloud-dev.conn", "rendition": "physical", "archetype": "managed-dml" },
+    "cloud-qa":    { "access": "direct", "conn": "file:./secrets/cloud-qa.conn",  "rendition": "physical", "archetype": "managed-dml" },
+    "local":       { "access": "docker" },
+    "on-prem-dev": { "access": "bundle", "out": "./dist/on-prem-dev", "grant": "schema+data", "rendition": "logical", "archetype": "full-rights", "store": "./lifecycle/on-prem-dev.json" }
   },
+  "readiness": { "confirm": ["cloud-dev", "cloud-qa"] },
+  "emission": { "ssdt": true, "dacpac": true },
   "flows": {
-    "try":     { "from": "model", "to": "local" },
-    "publish": { "from": "model", "to": "onprem-dev" }
+    "try":      { "from": "cloud-dev", "to": "local" },
+    "skeleton": { "from": "cloud-dev", "to": "local", "shape": "skeleton" },
+    "publish":  { "from": "cloud-dev", "to": "on-prem-dev" }
   }
 }
 ```
 
-Put your cloud OutSystems connection string in `./secrets/ossys.conn` — the model is read
-**live** from it (OutSystems metadata → native `SsKey`; no V1, no exported file). The engine
-reads the file directly; nothing to `source`. `modelOssys` is the primary model source; a
-`model: "osm_model.json"` file is the configured fallback (`model.json` is a second-class
-citizen — use it only when no live connection is available). See §6 for the `file:` ref details.
+Put each environment's connection string in `./secrets/<name>.conn` — the model is read
+**live** from `cloud-dev` (OutSystems metadata → native `SsKey`; no V1, no exported file).
+`model.env` *names* that environment: the connection lives once in `environments.cloud-dev.conn`
+and the model reads through it (no duplicated conn-ref). `model.path` (an `osm_model.json` file)
+is the configured fallback (use it only when no live connection is available). The cutover gate's
+`readiness.schema` defaults to `model.env`, so the agreed shape is that same `cloud-dev` without
+restating it. The cloud cells carry `archetype: managed-dml` and the on-prem tiers
+`full-rights` — the capability class the engine derives safe interaction from
+(`DATABASE_ARCHETYPES.md`). See §6 for the `file:` ref details.
 
 ```bash
 mkdir -p secrets && chmod 700 secrets
-cp examples/secret.conn.example secrets/ossys.conn   # then replace it with the real string
+for n in cloud-dev cloud-qa; do cp examples/secret.conn.example "secrets/$n.conn"; done   # then replace each placeholder
 ```
 
 List what is configured (the resolved `source → target` of each flow):
 
 ```bash
-projection                 # → try: model → local · publish: model → onprem-dev
+projection                 # → try / skeleton: cloud-dev → local · publish: cloud-dev → on-prem-dev
 ```
 
 **Preview** the `try` flow — it reads the live model and deploys into a throwaway Docker
@@ -241,7 +251,7 @@ Every secret is read straight from `./secrets/` at run time — **no `source`, n
 committed `projection.json` names only `file:` references; `secrets/` and `*.conn` are
 `.gitignore`d, so credentials never enter the repository.
 
-The full six-environment estate (publish / golden / preview / synth, all `file:` refs) is
+The full six-environment estate (publish / golden / reverse / synth, all `file:` refs) is
 `examples/projection.sample.json` — `cp` it to `./projection.json` and create one
 `secrets/<name>.conn` per `direct` environment it names.
 
@@ -267,8 +277,8 @@ Preview is the default and is always safe. A live write needs **two** independen
 config can never commit on its own:
 
 ```bash
-projection uat                                   # preview — reads A, shows B ⊖ A, writes nothing
-PROJECTION_ALLOW_EXECUTE=1 projection uat --go   # apply — needs BOTH the env var and --go
+projection golden                                   # preview — reads A, shows B ⊖ A, writes nothing
+PROJECTION_ALLOW_EXECUTE=1 projection golden --go   # apply — needs BOTH the env var and --go
 ```
 
 - **`--go`** is your intent, stated at the moment (never persisted in a file).
@@ -328,7 +338,7 @@ Common first-run snags:
 
 ## 10. Where to go next
 
-- **`examples/`** — a fuller annotated `projection.sample.json` (a four-environment estate).
+- **`examples/`** — a fuller annotated `projection.sample.json` (a six-environment estate).
 - **`CONFIG_REFERENCE.md`** — the *model-shaping* config (separate from `projection.json`):
   modules/entities in scope, entity/table naming overrides, emission toggles, tightening policy.
 - **`THE_CLI.md`** — the surface's design and the full secondary-verb set (`check` / `explain`

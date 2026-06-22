@@ -24969,3 +24969,117 @@ drill #H · filter #K) and extends the Navigator's load-bearing safety law. Pure
 **Cross-references:** `src/Projection.Cli/Navigator.fs` (`filterView` / `effectiveTree` /
 the filter reducers / `step` / `driveLoop`); `tests/Projection.Tests/NavigatorTests.fs`;
 `SPECTRE_REFINEMENTS.md` §27 (Scale wave / #K).
+
+## 2026-06-21 — Cross-environment readiness (`check shape`) + espace-invariance (A1-corollary)
+
+**Decision.** Ship a config-primary, read-only cutover-readiness gate that proves a set of
+OutSystems environments resolve to ONE shape before the migration runs — espace-safe by
+construction. Design surface: `CROSS_ENVIRONMENT_READINESS.md`; law: `AXIOMS.md` A1-corollary.
+
+**Context.** OutSystems espacing makes the physical `OSUSR_{key}_…` table/column names differ per
+environment, so a naive cross-env compare (live `ReadSide` read → SsKeys SYNTHESIZED from the
+physical name) reports the same entity as unrelated (add+drop). The operator confirmed (2026-06-21)
+the native OSSYS SS_KEY GUID is stable across the estate's environments at BOTH the kind AND
+attribute grain.
+
+**Shipped (S1–S5):**
+- **`ossys:<conn-ref>` operand** (`Ref` / `Source.ofOssys`) — reads each env's model via
+  `LiveModelRead` → native GUID (`OssysOriginal`) identity, the espace-safe source. `Source` was
+  moved ahead of `LiveModelRead` in the Pipeline compile order.
+- **Espace-invariance (AXIOMS A1-corollary).** `CatalogDiff` ignores physical table/column NAMES
+  (it compares logical `SsKey` + `Name` + facets), so once identity aligns the espace coordinates
+  fall out of the comparison. **But the two-DB canary caught that `CatalogDiff` ALSO compares three
+  physical-realization artifacts OutSystems names after the table — the default-constraint name
+  (`DefaultName`), `Triggers`, `ColumnChecks` — which vary per espace.** Fix: the readiness gate
+  normalizes them away first (`Readiness.toLogicalShape`: drop the constraint name [keep the default
+  VALUE]; drop triggers + column checks — the engine regenerates them deterministically from the
+  logical model on emission). So `CatalogRendition.logical` (the reverse leg's table/column rename)
+  is NOT reused; the narrower `toLogicalShape` is the readiness normalization.
+- **`readiness` config block** (`schema` + `confirm`) + the **`check shape`** verb + the pure N-way
+  aggregator (`Readiness.fs`: per-env Ready/Paused/Blocked — stricter than `Compare.isCompatible`,
+  a schema delta BLOCKS; data dealbreakers via `ModelFidelity`; THE_VOICE text + `readiness.json`).
+  Read-only gate: exit 0 ready / 5 not ready / 6 unreadable env.
+
+**Witnesses.** `CatalogDiffTests` (table/column-name zero-delta + type-change sensitivity);
+`ReadinessTests` (the verdict logic + the default-constraint-name normalization);
+`ReadinessConfigTests` (parse + verb routing + A44 round-trip); and the **two-DB warm-Docker canary**
+in `OssysComprehensiveFixtureTests` (two espace-variant OSSYS DBs of one model — same GUIDs,
+`OSUSR_*`→`OSUSR_X*` — read as ONE shape; sensitivity: a different model is not ready). The canary's
+two espace DBs are built by a GUID-preserving physical-name rewrite of the committed edge-case OSSYS
+seed (no `OssysFixtureSynthesizer` change needed).
+
+**Example.** `examples/projection.sample.json` is now a realistic six-environment estate
+(cloud-dev/qa/uat + on-prem-dev/qa/uat) exercising this gate + the producer trinity: the model is
+read live from cloud-dev, schema publishes down via SSDT bundles, data lands in the cloud via
+golden / reverse / synth.
+
+**Consistency sweep (T1–T4, 2026-06-22).** The same standard was carried to the rest of the
+surface, from a three-subagent inventory: (T1) `compare` / `diff` now match the gate's
+espace-safety — a NAMED advisory when both operands are `live:` (two physical `ReadSide` reads
+do not share identity across environments — a silent-wrongness gap, now closed) plus the
+`toLogicalShape` normalization when both are `ossys:` (`Ref.bothLive` / `bothOssys`;
+`toLogicalShape` made public). (T2) the `projection init` scaffold + GETTING_STARTED moved to the
+new conventions (`on-prem-*`, `archetype`, env-to-env, a real `readiness` block; validated by
+running `init`). (T3) THE_CLI §4/§8/§10/§11 + the CLI `--help` refreshed (the six-env worked
+config, the `compare` verb + the `ossys:` operand legend, `check shape`'s exit codes, the
+proteins). (T4) `model.config.sample.json` + its `CONFIG_REFERENCE` embedded copy realigned to
+the estate vocabulary (and fixed a latent `attributeRef` that named `AppCore.User` when `User`
+lives in `ServiceCenter`); the `readiness` namespace added to `CONFIG_REFERENCE`; the worked
+configs in `THE_CONFIG_CONTROL_PLANE` / `THE_SYNTHETIC_DATA_DESIGN` / `THE_DATA_PRODUCERS` aligned
+(`preview`→`reverse`, `onprem-`→`on-prem-`). Deliberately untouched: the append-only ledgers and
+the V1-cutover "four environments" framing in KICKOFF/README (a different estate, not a contradiction).
+
+---
+
+## 2026-06-22 — `model.env`: the schema source as an environment reference (+ `readiness.schema` default)
+
+**Decision.** The schema-source block `model` gains an `env` field that names a place in the
+`environments` registry — the canonical environment the whole estate's schema derives from —
+instead of inlining a connection. It resolves to that environment's live OSSYS `conn`, so the
+connection is **named once**. `readiness.schema` now **defaults to `model.env`** when a `readiness`
+block omits it.
+
+**Context.** The operator noticed `examples/projection.sample.json` named `cloud-dev` three times:
+`model.ossys` (a literal conn-ref), `environments.cloud-dev.conn` (the same literal), and
+`readiness.schema` ("cloud-dev"). The schema model is GLOBAL (one source for all flows' emission),
+while `flow.from` is per-flow (the data origin) — so the fix is a single global primary-env
+designation, not per-flow derivation. The real smell: `model` was the **only** config field that
+inlined a connection instead of referencing the `environments` registry by name — `flow.from`,
+`flow.profile`, `readiness.schema`/`confirm` all already name environments. `model` was the odd
+limb not attached to the spine.
+
+**Design (transparent sugar, dependency flows optional→mandatory).**
+- **`model.env` resolves into `Shaping.Model.Ossys`** — `env: "cloud-dev"` yields exactly the
+  `ossys` cloud-dev's `conn` declares, so every downstream consumer (`Pipeline.readConfigModel`,
+  `Hydration`, `FullExportRun`) is unchanged — no behavioural fork from the explicit-`ossys` form.
+  The `ossys:` operand machinery that `check shape` already uses to turn an env into a live OSSYS
+  read is the proven precedent.
+- **Resolution lives in `ProjectionConfig.parse`** (MovementSurface) — the ONLY surface carrying
+  the registry. The pure `Config.ModelSection` is **untouched**: `env` is semantically a
+  movement-surface concept (it can't be honored without the registry the pure type lacks), so it
+  is read from the canonical `model` object there (`Config` ignores the unread key) and resolved,
+  not added to `Config`. `connRefToSpec` was hoisted above `parse` (and `renderConnRef` now
+  delegates to it — one fewer duplicate).
+- **`readiness.schema` defaults to `model.env`.** The optional readiness gate defers to the
+  mandatory model source — the dependency flows optional→mandatory, never the reverse (the reverse
+  — `model` deriving from the optional `readiness` block — would leave a registry-less config with
+  no schema source). On render the resolved `schema` is emitted explicitly, so `parse ∘ render` is
+  stable at the config value (A44 holds; the render just fills the default in).
+- **Named refusals (total, no silent drop):** `cli.config.modelEnvAndOssys` (`env` + a live
+  `ossys`/`modelOssys` both set — two ways to name the one live source, could disagree),
+  `cli.config.modelEnvUnknown` (names an environment absent from the registry, with the known set
+  listed), `cli.config.modelEnvNotDirect` (names a `bundle`/`docker` place with no live OSSYS
+  connection to read). `model.env` + `model.path` is allowed — `path` stays the fallback, exactly
+  as `ossys` + `path` already coexists.
+
+**Witnesses.** `ReadinessConfigTests` (+7): `env` resolves to the env's conn as `Shaping.Model.Ossys`;
+the readiness default; an explicit `schema` still overrides; A44 stability of a defaulted-schema
+config; the three named refusals. Pure config-surface suites green (210: Movement/Config/Readiness/Ref).
+End-to-end: `PROJECTION_CONFIG=examples/projection.sample.json projection check shape` reaches the
+agreed shape **'cloud-dev'** (proving the default fired) and stops only at the absent secret file
+(`transfer.connection.refMissing`, D9 — secrets out-of-band), confirming parse + resolution + default.
+
+**Example.** `examples/projection.sample.json` now uses `model.env: "cloud-dev"` (with `path` as the
+fallback) and a `readiness` block with NO `schema` (defaulted) — `cloud-dev`'s connection is named
+once, in `environments`. `THE_CONFIG_CONTROL_PLANE` / `CONFIG_REFERENCE` / `CROSS_ENVIRONMENT_READINESS`
+§4 updated; `model.config.sample.json` (registry-less shaping file) correctly keeps `model.ossys`.

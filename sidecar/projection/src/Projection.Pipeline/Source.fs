@@ -61,6 +61,12 @@ module Source =
             match System.Environment.GetEnvironmentVariable(conn.Substring(4)) with
             | null | "" -> conn
             | v -> v
+        elif conn.StartsWith("file:") then
+            // The D9 file ref — the connection string is the file's trimmed
+            // contents (out-of-band, gitignored). A read failure falls through
+            // to the raw value so the open fails loudly, never silently wrong.
+            let path = conn.Substring(5)
+            try (System.IO.File.ReadAllText path).Trim() with _ -> conn
         else conn
 
     /// The live OSSYS adapter — the *verb* for the `Source` port. Reads the
@@ -121,6 +127,50 @@ module Source =
                         let profileCatalog = Catalog.stripStaticPopulations catalog
                         return! LiveProfiler.attach cnn profileCatalog Profile.empty
                     })) }
+
+    /// The live OSSYS **model-read** adapter — the espace-safe sibling of
+    /// `ofLive`. Where `ofLive` reads the deployed PHYSICAL schema via
+    /// `ReadSide` (which SYNTHESIZES SsKeys from physical coordinates, so two
+    /// environments' reads never align — `CatalogRendition.fs`), `ofOssys` reads
+    /// the model from the OutSystems OSSYS metamodel via `LiveModelRead`,
+    /// yielding the native GUID (`OssysOriginal`) `SsKey` at BOTH the kind and
+    /// attribute grain (`OsmRowsetReaderTests` "WITH SsKey Guids"). That GUID is
+    /// stable across environments (LifeTime preserves SS_KEY), so a
+    /// cross-environment compare keyed on it is espace-safe
+    /// (`CROSS_ENVIRONMENT_READINESS.md`). `conn` is a D9 connection reference
+    /// (`env:<var>` / `file:<path>`). Carries ReadCatalog (the OSSYS model) +
+    /// Profile (the live data — the readiness gate's dealbreaker evidence).
+    let ofOssys (conn: string) : Source =
+        { Identity       = "ossys:" + conn
+          Capabilities   = Set.ofList [ ReadCatalog; Profile; Live ]
+          ReadCatalog    =
+            (fun () ->
+                task {
+                    try return! LiveModelRead.fromConnSpec conn
+                    with ex ->
+                        return
+                            Result.failureOf
+                                (ValidationError.create "source.ossys.readFailed"
+                                    (System.String.Concat("ossys source ", conn, ": ", ex.Message)))
+                })
+          // The data-dealbreaker evidence for the readiness gate: profile the
+          // env's live data (the OSUSR_* tables) under the OSSYS-read catalog.
+          // The Static marks are stripped first (the 4.4 trap — `LiveProfiler`
+          // skips static kinds, so a marked catalog profiles to an empty cache).
+          AcquireProfile =
+            Some (fun catalog ->
+                task {
+                    try
+                        use cnn = new SqlConnection(resolveConnString conn)
+                        do! cnn.OpenAsync()
+                        let profileCatalog = Catalog.stripStaticPopulations catalog
+                        return! LiveProfiler.attach cnn profileCatalog Profile.empty
+                    with ex ->
+                        return
+                            Result.failureOf
+                                (ValidationError.create "source.ossys.profileFailed"
+                                    (System.String.Concat("ossys source ", conn, ": ", ex.Message)))
+                }) }
 
     /// Enrich a source with the `Profile` capability (the live / profilable
     /// form). The capability is the presence of the function — cf.

@@ -59,6 +59,54 @@ let private withCatalog (label: string) (assertion: Catalog -> unit) : unit =
         | Error errors -> Assert.Fail (sprintf "comprehensive fixture extraction failed: %A" errors)
         | Ok catalog   -> assertion catalog
 
+// --- Espace-invariance, end-to-end (CROSS_ENVIRONMENT_READINESS.md §4/§7) ----
+// Two espace-variant deployments of ONE model: identical OSSYS metadata (same
+// SS_Key GUIDs, same logical names, same structure) but DIFFERENT physical
+// `OSUSR_*` table names — exactly what OutSystems espacing produces across
+// environments. Read BOTH via the real OSSYS path (MetadataSnapshotRunner →
+// Catalog with `OssysOriginal` GUIDs) and assert they diff to ZERO: the
+// espace-invariance law, proven end-to-end against a real SQL Server. (The S2
+// property `CatalogDiffTests` covers both kind + attribute grain in-memory;
+// this is the two-real-DB belt-and-suspenders the readiness gate rests on.)
+
+let private extractSeed (label: string) (seed: string) : Result<Catalog> =
+    TaskSync.run (fun () ->
+        task {
+            return!
+                Deploy.withBootstrappedDatabase label seed (fun cnn ->
+                    task {
+                        match! MetadataSnapshotRunner.runAsync cnn MetadataSnapshotRunner.defaultParameters with
+                        | Error errors -> return Result.failure errors
+                        | Ok snapshot ->
+                            return! CatalogReader.parse (CatalogReader.SnapshotRowsets (MetadataSnapshotRunner.toBundle snapshot))
+                    })
+        })
+
+[<Fact>]
+let ``espace-invariance (Docker): two espace-variant OSSYS DBs of one model are READY (one shape)`` () =
+    if skipIfNoDocker "espace-invariance" then
+        let seedA = MetadataExtractionSql.readEdgeCaseSeed ()
+        // The sibling espace cell: every `OSUSR_*` physical table renamed (the
+        // espace key shifts) — and with it the auto-generated default / trigger /
+        // check NAMES OutSystems derives from the table name — while GUIDs +
+        // logical names + columns + structure are held fixed. The GUID literals
+        // carry no `OSUSR_`, so they are untouched.
+        let seedB = seedA.Replace("OSUSR_", "OSUSR_X")
+        Assert.NotEqual<string>(seedA, seedB)   // the transform actually diverged the physical names
+        match extractSeed "EspaceInvA" seedA, extractSeed "EspaceInvB" seedB with
+        | Ok a, Ok b ->
+            // The readiness gate normalizes the espace-variant physical-realization
+            // artifacts (constraint names / triggers / checks) and sees ONE shape.
+            let opA : Compare.Operand = { Label = "cell-A"; Catalog = a; Profile = None }
+            let opB : Compare.Operand = { Label = "cell-B"; Catalog = b; Profile = None }
+            let report = Readiness.compute "cell-A" opA [ "cell-B", opB ]
+            Assert.True(Readiness.isReady report, sprintf "espace-variant cells must be ONE shape (READY); got %A" report)
+            // sensitivity: a genuinely different (empty) model is NOT ready.
+            let opEmpty : Compare.Operand =
+                { Label = "empty"; Catalog = Catalog.create [] [] |> Result.value; Profile = None }
+            Assert.False(Readiness.isReady (Readiness.compute "cell-A" opA [ "empty", opEmpty ]))
+        | a, b -> Assert.Fail (sprintf "espace-variant extraction failed: %A / %A" a b)
+
 // --- Composite primary key ------------------------------------------
 
 [<Fact>]
