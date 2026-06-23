@@ -25221,3 +25221,33 @@ new way of thinking." The one operator-facing example using it (THE_CONFIG_CONTR
 flow) now reads `from: cloud-dev` (the model's environment) + `scope: schema`. The `FlowSource.Model`
 feature itself stays (semantics + tests unchanged); only the doc examples prefer a named environment,
 matching the `model.env` direction.
+
+---
+
+## 2026-06-22 — Config completeness: synthetic block + slice definitions added; espace/consistency debt surfaced in reconcile / tighteningRelaxations / sliceFlows
+
+**Context.** Operator config-completeness review: "Do we have a good synthetic configuration? What
+else are we missing or haven't fine-tuned?" Inventoried the config surface vs the sample.
+
+**Added (clean, espace-safe):**
+- **`synthetic` block** (THE_SYNTHETIC_DATA_DESIGN §11) — `preserveCardinalityMax` / `preserve` /
+  `synthesize` / `scale` / `seed`. The `synth` flow previously named a profile but tuned nothing; it
+  now also carries a `correction` ref (the richer per-column PII→Faker intent, `propose-correction`-gen).
+- **`slices`** — a worked DEFINITION (`us-customers`: a Customer root predicate + a down-traversal to
+  Orders). Slices are LOGICAL (module/entity, column names) — espace-safe by construction (`SliceSpec.fs`).
+
+**Surfaced, deliberately NOT added (they conflict with this chapter's espace-safety + env-reference thesis):**
+- **`reconcile` (`<table>:<col>`)** keys on the PHYSICAL table (`TransferSpec.parseReconcileSpec` — "the
+  physical table to reconcile") — espace-fragile, exactly the wart fixed for `circularDependencies`. The
+  `golden` flow already shows user re-keying via `rekey` (a CSV map).
+- **`tighteningRelaxations`** keys on the physical violation key (`Preflight.violationKey` →
+  `OSUSR_X_ORDER.Notes`), blesses tightening violations (mostly nullability — now disabled), and is
+  machine-written (`RelaxationStore`). Physical + largely moot + not hand-authored.
+- **`sliceFlows` `source`/`target`** are raw conn-refs (`TransferSpec.parseConnectionSpec`; env:/file:/
+  live:), not env names — re-introducing the conn-ref duplication `model.env` removed. So no `sliceFlow`
+  was added; the slice definition stands alone (runnable via `slice-extract`).
+
+**Recommendation (decision pending).** A second config-espace-safety sweep — `reconcile` to accept a
+logical `module.entity:col` (like `circularDependencies` / `tableRenames`), `sliceFlows` to accept env
+names (like `flow.from`) — would let all three join the sample espace-safely. Until then they stay out
+of the operator-forward sample rather than showcase physical / conn-ref-fragile config.

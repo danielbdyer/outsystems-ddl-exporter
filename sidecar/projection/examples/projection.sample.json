@@ -93,6 +93,27 @@
 
     "reverse":    { "from": "on-prem-uat", "to": "cloud-uat", "scope": "data", "strategy": "merge", "streaming": true, "resumable": true, "journal": "lifecycle/reverse-uat.ndjson" },
 
-    "synth":      { "from": "synthetic", "to": "cloud-qa", "profile": "on-prem-uat" }
+    "synth":      { "from": "synthetic", "to": "cloud-qa", "profile": "on-prem-uat", "correction": "file:./corrections/uat.correction.json" }
+  },
+
+  "synthetic": {
+    "_comment": "How `from: synthetic` generates data (THE_SYNTHETIC_DATA_DESIGN §11). Hybrid by cardinality: a column with ≤ preserveCardinalityMax distinct values keeps its real distribution; above that it is synthesized. 'preserve'/'synthesize' override per logical column NAME. --seed/--scale are the per-run overrides; the per-flow 'correction' carries the richer per-column PII→Faker intent (generate a first draft with `projection propose-correction`).",
+    "preserveCardinalityMax": 50,
+    "preserve":   ["Status", "Country", "Currency"],
+    "synthesize": ["Email", "FullName", "Phone"],
+    "scale": 1.0,
+    "seed": 42
+  },
+
+  "slices": {
+    "us-customers": {
+      "version": 1,
+      "roots": [
+        { "entity": { "module": "Sales", "entity": "Customer" }, "predicate": { "op": "in", "column": "Country", "values": ["US", "CA"] } }
+      ],
+      "directives": [
+        { "from": { "module": "Sales", "entity": "Order" }, "relationship": "Customer", "direction": { "kind": "down", "depth": 2 } }
+      ]
+    }
   }
 }

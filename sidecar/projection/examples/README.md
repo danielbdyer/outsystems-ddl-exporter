@@ -52,12 +52,14 @@ fallback (cutover safety; live wins per `ModelResolution.chooseOrigin`).
 | `model` | the canonical model object. `env` names the **primary** environment — here the **cloud-dev** cell, where the development team authors the schema — so the connection is named once, not inlined (use `ossys` only for a standalone source with no registry); `path` is the fallback; `modules` scopes which modules/entities are in scope. |
 | `overrides` | naming + structural directives, all optional: `tableRenames` (logical or physical source → new name), `emissionFolders` (redirect an entity's `.sql`), `allowMissingPrimaryKey` (PK exemptions), `circularDependencies` (cycle ordering). Keyed to the sample's own entities — swap for yours (`../CONFIG_REFERENCE.md`). |
 | `emission` | which artifact kinds the bundle emits — `ssdt` (the schema) plus `staticSeeds` / `migrationDependencies` / `bootstrap` (the data lanes). Each defaults true. |
-| `policy` | tightening interventions (nullability / unique / FK budgets) — **opt-in**, see the `_comment`. |
-| `profiler` | source-data evidence for tightening — `provider: "live"` profiles the source DB (via `PROJECTION_MSSQL_CONN_STR`); `"fixture"` (default) carries none. |
+| `policy` | tightening interventions (`foreignKey` / `uniqueIndex` / `categoricalUniqueness`) — **opt-in**, see the `_comment`. (`nullability` coercion is disabled — the model's declared nullability is authoritative.) |
+| `profiler` | source-data evidence — `provider: "live"` profiles the source DB (via `PROJECTION_MSSQL_CONN_STR`); `"fixture"` (default) carries none. |
 | `output` | `dir` — where the emitted artifacts land (`out/`). |
 | `environments` | the **places** (address + permissions + rendition + archetype). |
 | `readiness` | the cutover-readiness set — confirm a group of environments resolve to one shape (`check shape`). |
 | `flows` | the **movements** (named `source → target` recipes). |
+| `synthetic` | how `from: synthetic` generates data — hybrid-by-cardinality (`preserveCardinalityMax`), per-column `preserve`/`synthesize` (by logical name), `scale`, `seed`. The per-flow `correction` (on the `synth` flow) carries the richer per-column PII→Faker intent. (`../THE_SYNTHETIC_DATA_DESIGN.md` §11.) |
+| `slices` | data-portability **use cases** — a logical subgraph (`roots` + traversal `directives`) to extract and apply. **Logical** (module/entity, column names) — espace-safe by construction. Run via `slice-extract`. |
 
 ## The estate — six environments
 
