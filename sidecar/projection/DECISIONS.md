@@ -25251,3 +25251,29 @@ else are we missing or haven't fine-tuned?" Inventoried the config surface vs th
 logical `module.entity:col` (like `circularDependencies` / `tableRenames`), `sliceFlows` to accept env
 names (like `flow.from`) — would let all three join the sample espace-safely. Until then they stay out
 of the operator-forward sample rather than showcase physical / conn-ref-fragile config.
+
+---
+
+## 2026-06-22 — Config espace-safety sweep #2: reconcile (logical) + sliceFlows (env names)
+
+**Decision (resolving the "pending" note above).** Operator chose the sweep. Make `reconcile` +
+`sliceFlows` espace-safe, then add them to the sample; `tighteningRelaxations` stays out (moot
+post-nullability + machine-written).
+
+- **`reconcile`** now accepts a LOGICAL `Module.Entity:Col` (resolved via
+  `CatalogResolution.tryKindByLogical` → kind; the column by logical attribute `Name`) alongside the
+  physical `<table>:col` (kept working). `TransferSpec.resolveReconciliation` tries logical-first when
+  the table ref carries a `.`, physical fallback — espace-safe, like `circularDependencies` /
+  `tableRenames`. The `golden` flow now uses `reconcile: ["ServiceCenter.User:Email"]`.
+- **`sliceFlows`** `source`/`target` now accept an ENVIRONMENT NAME (resolved to its live conn via the
+  registry — `Access.Direct` or bundle-`conn`) alongside a conn-ref (env:/file:/live:, passed through).
+  Resolved in `runSliceFlow` (the CLI layer carrying the registry), mirroring `flow.from` / `model.env`
+  — no conn-ref duplication. The sample's `sliceFlows.us-customers-to-qa` uses env names (cloud-uat →
+  cloud-qa).
+
+**Witnesses.** `TransferSpecTests` (logical `Module.Entity` reconcile resolves to the same kind +
+column-by-`Name`, case-insensitive); end-to-end `slice-run us-customers-to-qa` resolves `cloud-uat` →
+its conn (fails only on the absent secret). Pure pool green. Both forms (logical/physical,
+env-name/conn-ref) work, so existing CLI usage is unbroken. The sample now exercises the full operator
+config surface except `tighteningRelaxations` (deliberately omitted) and the dead fields
+(`validationOverrides` / `policy.selection` / `userMatching` / `typeMapping` / `cache`).

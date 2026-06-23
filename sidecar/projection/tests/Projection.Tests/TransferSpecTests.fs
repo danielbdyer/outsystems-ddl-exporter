@@ -155,6 +155,17 @@ let ``resolveReconciliation matches table and column names case-insensitively`` 
         |> mustOk
     Assert.True(Map.containsKey userKey map)
 
+[<Fact>]
+let ``resolveReconciliation accepts a LOGICAL Module.Entity table ref (espace-safe)`` () =
+    // The physical OSUSR table name differs per espace; a logical "Module.Entity"
+    // ref resolves via CatalogResolution.tryKindByLogical to the same kind, and
+    // the column by logical attribute Name. (Sweep #2 — DECISIONS 2026-06-22.)
+    let map =
+        TransferSpec.resolveReconciliation catalog
+            [ { TransferSpec.ReconcileEntry.Table = "M.User"; MatchColumn = "Email" } ]
+        |> mustOk
+    Assert.Equal(Some (ReconciliationStrategy.MatchByColumn (mkName "EMAIL")), Map.tryFind userKey map)
+
 // -- F3 / plane N3: the one physical-name resolution policy ---------------
 // `CatalogResolution`'s physical lookups had drifted to case-sensitive `=`
 // while `TransferSpec`'s matched case-insensitively. SQL Server treats

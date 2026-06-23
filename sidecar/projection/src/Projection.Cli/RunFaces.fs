@@ -2670,9 +2670,25 @@ let runSliceFlow (args: string list) : int =
                     eprintfn "slice flow '%s' references unknown slice '%s' (add it to \"slices\")." name sf.Slice
                     2
                 | Some spec ->
+                    // A sliceFlow endpoint is an ENVIRONMENT NAME (resolved to its
+                    // live conn — espace-safe, like flow.from / model.env) or a
+                    // conn-ref (env:/file:/live:, passed through verbatim).
+                    let resolveEndpoint (s: string) : Result<string> =
+                        if s.Contains ":" then Result.success s
+                        else
+                            match Map.tryFind s cfg.Environments with
+                            | Some env ->
+                                match env.Access with
+                                | Access.Direct r -> Result.success (Command.connSpecOf r)
+                                | Access.Bundle (_, Some r) -> Result.success (Command.connSpecOf r)
+                                | _ -> Result.failureOf (ValidationError.create "cli.sliceFlow.envNotLive" (sprintf "sliceFlow '%s' endpoint env '%s' has no live connection (use access:direct, or add a `conn` to the bundle environment)." name s))
+                            | None -> Result.failureOf (ValidationError.create "cli.sliceFlow.endpointUnknown" (sprintf "sliceFlow '%s' endpoint '%s' is neither a known environment nor a conn-ref (env:/file:/live:)." name s))
+                    match resolveEndpoint sf.Source, resolveEndpoint sf.Target with
+                    | Error es, _ | _, Error es -> printErrors Console.Error es; dumpBench "slice-run"; 6
+                    | Ok srcConn, Ok tgtConn ->
                     let execute = hasFlag "--go"
                     let result =
-                        (SliceFlowRun.run sf.Source spec sf.Target execute (hasFlag "--allow-cdc")).GetAwaiter().GetResult()
+                        (SliceFlowRun.run srcConn spec tgtConn execute (hasFlag "--allow-cdc")).GetAwaiter().GetResult()
                     let code =
                         match result with
                         | Ok report ->

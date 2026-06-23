@@ -90,6 +90,23 @@ module TransferSpec =
         kind.Attributes
         |> List.tryFind (fun a -> ColumnRealization.columnNameEquals column a.Column)
 
+    /// Find the kind at the LOGICAL `Module.Entity` coordinate (espace-safe — the
+    /// physical OSUSR table name differs per environment, so a reconcile keyed on
+    /// it would not match across the estate). Reuses
+    /// `CatalogResolution.tryKindByLogical`, then recovers the `Kind` by its
+    /// stable `SsKey`.
+    let private findKindByLogical (moduleName: string) (entityName: string) (catalog: Catalog) : Kind option =
+        CatalogResolution.tryKindByLogical catalog moduleName entityName
+        |> Option.bind (fun key ->
+            Catalog.allModulesKinds catalog |> List.map snd |> List.tryFind (fun k -> k.SsKey = key))
+
+    /// Find an attribute by its LOGICAL `Name` (case-insensitive). A logical
+    /// reconcile names logical attributes; `findAttributeByColumn` is the
+    /// physical fallback (columns are espace-stable either way).
+    let private findAttributeByName (attrName: string) (kind: Kind) : Attribute option =
+        kind.Attributes
+        |> List.tryFind (fun a -> System.String.Equals(Name.value a.Name, attrName, System.StringComparison.OrdinalIgnoreCase))
+
     /// Resolve parsed `ReconcileEntry`s against the reconstructed
     /// `Catalog` into the `Map<SsKey, ReconciliationStrategy>` that
     /// `Transfer.runReconciling` consumes. Aggregates every spec error so
@@ -99,17 +116,32 @@ module TransferSpec =
         (entries: ReconcileEntry list)
         : Result<Map<SsKey, ReconciliationStrategy>> =
         let resolveOne (e: ReconcileEntry) : Result<SsKey * ReconciliationStrategy> =
-            match findKindByTable e.Table catalog with
+            // The table ref resolves LOGICALLY ("Module.Entity", espace-safe) when
+            // it carries a '.', else by PHYSICAL table name (the legacy form, kept
+            // working). The match column resolves by logical attribute Name OR
+            // physical Column — both espace-stable.
+            let kindOpt =
+                match e.Table.IndexOf '.' with
+                | dot when dot > 0 ->
+                    match findKindByLogical (e.Table.Substring(0, dot)) (e.Table.Substring(dot + 1)) catalog with
+                    | Some _ as k -> k
+                    | None -> findKindByTable e.Table catalog
+                | _ -> findKindByTable e.Table catalog
+            match kindOpt with
             | None ->
                 Result.failureOf
                     (specInvalid "transfer.reconcile.tableNotFound"
-                        (sprintf "reconcile: no kind found for table '%s' in the contract." e.Table))
+                        (sprintf "reconcile: no kind found for '%s' (tried logical Module.Entity and physical table name)." e.Table))
             | Some k ->
-                match findAttributeByColumn e.MatchColumn k with
+                let attrOpt =
+                    match findAttributeByName e.MatchColumn k with
+                    | Some _ as a -> a
+                    | None -> findAttributeByColumn e.MatchColumn k
+                match attrOpt with
                 | None ->
                     Result.failureOf
                         (specInvalid "transfer.reconcile.columnNotFound"
-                            (sprintf "reconcile: kind for '%s' has no attribute with column '%s'." e.Table e.MatchColumn))
+                            (sprintf "reconcile: kind for '%s' has no attribute with name/column '%s'." e.Table e.MatchColumn))
                 | Some a ->
                     Result.success (k.SsKey, ReconciliationStrategy.MatchByColumn a.Name)
         let resolved = entries |> List.map resolveOne

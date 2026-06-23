@@ -117,15 +117,21 @@ channel). `conn` is always an `env:<VAR>` / `file:<path>` reference — never a 
 |---|---|---|
 | `publish` | cloud-dev → on-prem-dev | emit the SSDT **bundle** — schema + static seeds + migration data + bootstrap, read live from cloud-dev's model — into `./dist/on-prem-dev` for the Octopus pipeline. `on-prem-dev` carries a `store`, so this fires the **publish-with-provenance** path (the full-export bundle + episode store). |
 | `publish-qa` | cloud-dev → on-prem-qa | the **same** schema version landing for the QA tier (the cloud cells are kept in sync, so one schema serves all three). |
-| `golden` | cloud-qa → cloud-uat | the **peer** producer (A→A): copy a `tables` subset, **re-keying user FKs** to UAT's own users by email (`rekey`); `scope: data` (no schema), `strategy: replace`. |
+| `golden` | cloud-qa → cloud-uat | the **peer** producer (A→A): copy a `tables` subset, **re-keying user FKs** to UAT's own users — `reconcile: ["ServiceCenter.User:Email"]` matches by email (logical `Module.Entity:Col`, espace-safe), with `rekey` (a CSV map) for explicit overrides; `scope: data` (no schema), `strategy: replace`. |
 | `reverse` | on-prem-uat → cloud-uat | the **legacy B→A reverse leg** (cloud insertion): pipe the migration team's data up from the logical on-prem model — **read live via on-prem-uat's `conn`** — into the physical cloud. `scope: data` (the schema is mirrored ahead + validated at run time, then only data moves); `streaming` + `resumable` + a client-side `journal`; `strategy: merge` (CDC-minimal). |
-| `synth` | synthetic → cloud-qa | generate data matching **on-prem-uat**'s data profile and load it into the lower cloud cell — privacy-safe production-shaped data, no real rows cross (`../THE_DATA_PRODUCERS.md`). |
+| `synth` | synthetic → cloud-qa | generate data matching **on-prem-uat**'s data profile and load it into the lower cloud cell — privacy-safe production-shaped data, no real rows cross. Tuned by the `synthetic` block (cardinality / preserve / synthesize / scale / seed) + a per-flow `correction` (per-column PII→Faker). (`../THE_DATA_PRODUCERS.md`; `../THE_SYNTHETIC_DATA_DESIGN.md` §11.) |
 
 Flow keys: `to` (required), `from` (an env name or `synthetic` / `none`), `profile` (the env to
 profile for `synthetic`), `tables` (a subset — "golden" data), `rekey` (a `file:` user-FK map),
-`scope` (`schema`/`data`/`both` — the move's projection, decoupled from `grant`), `strategy`
+`reconcile` (`["Module.Entity:Col"]` — match-by-column re-key, logical/espace-safe), `scope`
+(`schema`/`data`/`both` — the move's projection, decoupled from `grant`), `strategy`
 (`merge`/`replace`/`fresh`), `streaming` / `resumable` / `journal` (the estate-scale reverse-leg
-levers), `shape` (`bundle`/`ssdt`/`skeleton`), `shaping` (a per-flow shaping override).
+levers), `correction` (a per-column synthetic-intent file), `shape` (`bundle`/`ssdt`/`skeleton`),
+`shaping` (a per-flow shaping override).
+
+Beyond flows, the sample carries `synthetic` (the `from: synthetic` tuning baseline — §11) and
+`slices` / `sliceFlows` (data-portability use cases: a logical subgraph to extract and apply;
+`sliceFlows` endpoints take an environment **name** or a conn-ref). Both are logical/espace-safe.
 
 ## The cutover-readiness gate — `check shape`
 

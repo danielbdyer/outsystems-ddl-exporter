@@ -89,7 +89,7 @@
 
     "publish-qa": { "from": "cloud-dev", "to": "on-prem-qa" },
 
-    "golden":     { "from": "cloud-qa", "to": "cloud-uat", "scope": "data", "tables": ["Customer", "Order", "OrderLine"], "rekey": "file:./secrets/uat-users.csv", "strategy": "replace" },
+    "golden":     { "from": "cloud-qa", "to": "cloud-uat", "scope": "data", "tables": ["Customer", "Order", "OrderLine"], "reconcile": ["ServiceCenter.User:Email"], "rekey": "file:./secrets/uat-users.csv", "strategy": "replace" },
 
     "reverse":    { "from": "on-prem-uat", "to": "cloud-uat", "scope": "data", "strategy": "merge", "streaming": true, "resumable": true, "journal": "lifecycle/reverse-uat.ndjson" },
 
@@ -115,5 +115,9 @@
         { "from": { "module": "Sales", "entity": "Order" }, "relationship": "Customer", "direction": { "kind": "down", "depth": 2 } }
       ]
     }
+  },
+
+  "sliceFlows": {
+    "us-customers-to-qa": { "source": "cloud-uat", "slice": "us-customers", "target": "cloud-qa" }
   }
 }

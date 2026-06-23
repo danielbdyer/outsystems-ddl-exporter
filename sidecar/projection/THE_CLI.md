@@ -138,14 +138,17 @@ A flow is a named `Move`: rows (and optionally schema) flow from a `from` enviro
 | `from` | the **source environment** name (env-to-env is the norm) — or `synthetic` / `none` (`model` still resolves the configured model, but a named env is preferred) | the model |
 | `to` | the target environment (the destination) | required |
 | `scope` | the move's projection — `schema` / `data` / `both` (decoupled from the target's `grant`) | grant-derived |
-| `rekey` | a user-map file → **Reidentify** (peer/golden user re-key by email) | off |
+| `rekey` | a user-map file → **Reidentify** (an explicit user→user CSV map) | off |
+| `reconcile` | match-by-column re-key → **MatchByColumn** (e.g. match UAT users by email). Each entry is `"Module.Entity:Col"` (**logical, espace-safe**) or `"<table>:col"` (physical, legacy) | off |
 | `tables` | a declared subset (the partial golden-data refresh) | all |
 | `profile` | for `from: synthetic` — a source environment to profile for better synthetic data | off |
 
 The estate-scale reverse-leg knobs (`strategy` · `streaming` · `resumable` · `journal`) and the
 per-flow `shape` / `shaping` overrides are in `../CONFIG_REFERENCE.md` and the worked
 `examples/README.md`. Environments also carry an **`archetype`** (`managed-dml` for the cloud
-cells / `full-rights` for on-prem — `../DATABASE_ARCHETYPES.md`).
+cells / `full-rights` for on-prem — `../DATABASE_ARCHETYPES.md`). The `synthetic` block tunes
+`from: synthetic` generation; `slices` / `sliceFlows` are the data-portability use-case recipes
+(logical, espace-safe — `sliceFlows` endpoints take an environment name or a conn-ref).
 
 ### 4.3 Worked `projection.json`
 
