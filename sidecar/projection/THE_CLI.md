@@ -103,9 +103,12 @@ the *movements* (named source→target recipes, each conceptually a `Move`).
 Each environment carries two permission facets and an address:
 
 - **`access`** — how the target is *reached*:
-  - `bundle` — no direct write. Produce an SSDT bundle (CREATE files + RefactorLog +
-    pre/post-deploy scripts + data scripts) into `out`, for **Octopus** to apply.
-  - `direct` — a live connection (`conn`) the engine writes to.
+  - `bundle` — file production: write an SSDT bundle (CREATE files + RefactorLog +
+    pre/post-deploy scripts + data scripts) into `out`, for **Octopus** to apply. MAY
+    also carry a `conn` — a live READ connection to the real target database — so a
+    bundle place is *also* a reverse-leg read source (schema goes DOWN as files; data
+    is read UP live). The `conn` never changes how schema is written (still the bundle).
+  - `direct` — a live connection (`conn`) the engine writes to (and reads from).
   - `docker` — an ephemeral one-touch database, deployed and verified.
 - **`grant`** — what may *change* there (a refusal gate, ontology axis 9):
   - `schema+data` — DDL+DML permitted; the full create/alter + data.
@@ -157,9 +160,9 @@ The full worked file is `examples/projection.sample.json` (six environments, ann
     "cloud-qa":    { "access": "direct", "conn": "file:./secrets/cloud-qa.conn",  "rendition": "physical", "archetype": "managed-dml", "grant": "data" },  // peer source + synth sink
     "cloud-uat":   { "access": "direct", "conn": "file:./secrets/cloud-uat.conn", "rendition": "physical", "archetype": "managed-dml", "grant": "data", "store": "lifecycle/cloud-uat.json" },  // cloud-insertion sink (R6, DML-only)
 
-    "on-prem-dev": { "access": "bundle", "out": "dist/on-prem-dev", "rendition": "logical", "archetype": "full-rights", "grant": "schema+data", "store": "lifecycle/on-prem-dev.json" },  // SSDT → Octopus
-    "on-prem-qa":  { "access": "bundle", "out": "dist/on-prem-qa",  "rendition": "logical", "archetype": "full-rights", "grant": "schema+data" },
-    "on-prem-uat": { "access": "direct", "conn": "file:./secrets/on-prem-uat.conn", "rendition": "logical", "archetype": "full-rights" }  // the reverse-leg source (live)
+    "on-prem-dev": { "access": "bundle", "out": "dist/on-prem-dev", "conn": "file:./secrets/on-prem-dev.conn", "rendition": "logical", "archetype": "full-rights", "grant": "schema+data", "store": "lifecycle/on-prem-dev.json" },  // SSDT → Octopus (write); conn = live read
+    "on-prem-qa":  { "access": "bundle", "out": "dist/on-prem-qa",  "conn": "file:./secrets/on-prem-qa.conn",  "rendition": "logical", "archetype": "full-rights", "grant": "schema+data" },
+    "on-prem-uat": { "access": "bundle", "out": "dist/on-prem-uat", "conn": "file:./secrets/on-prem-uat.conn", "rendition": "logical", "archetype": "full-rights", "grant": "schema+data" }  // bundle write + conn = the reverse-leg read source
   },
   "readiness": { "confirm": ["cloud-dev", "cloud-qa", "cloud-uat"] },             // the cutover-readiness gate (check shape); 'schema' defaults to model.env (cloud-dev)
   "flows": {

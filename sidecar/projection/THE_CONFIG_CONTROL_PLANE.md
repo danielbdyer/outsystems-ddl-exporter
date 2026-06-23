@@ -118,7 +118,7 @@ collisions are the two `model` ones — folded into one `model` namespace.
   "readiness": { "confirm": ["cloud-dev", "cloud-qa", "cloud-uat"] },
   "flows": {
     "golden": { "from": "cloud-qa", "to": "cloud-uat", "scope": "data", "tables": ["Customer"], "rekey": "file:./secrets/users.csv" },
-    "audit":  { "from": "model", "to": "docker", "shaping": { "model": { "modules": ["Ops"] } } }
+    "audit":  { "from": "cloud-dev", "to": "docker", "scope": "schema", "shaping": { "model": { "modules": ["Ops"] } } }
   }
 }
 ```

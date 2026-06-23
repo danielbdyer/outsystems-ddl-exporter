@@ -48,7 +48,7 @@ let ``config parses a direct source environment (no grant)`` () =
 [<Fact>]
 let ``config parses a bundle target with schema+data grant`` () =
     let e = Map.find "onprem-uat" (ProjectionConfig.parse envFlowJson |> mustOk).Environments
-    Assert.Equal(Access.Bundle "dist/onprem-uat", e.Access)
+    Assert.Equal(Access.Bundle ("dist/onprem-uat", None), e.Access)
     Assert.Equal(Some Grant.SchemaAndData, e.Grant)
 
 [<Fact>]
@@ -749,7 +749,27 @@ let ``flow scope unknown value is a named refusal (cli.config.flowScopeUnknown)`
 
 [<Fact>]
 let ``flow with a non-direct source is refused`` () =
+    // onprem-uat here is access:bundle WITHOUT a conn — no live read path.
     Assert.Contains("cli.flow.fromNotDirect", errCodes (specOf "badsrc" preview))
+
+[<Fact>]
+let ``flow source: a bundle env WITH a conn is a live read source (the reverse-leg read path)`` () =
+    // The write/read tension resolved: schema is published DOWN as a file bundle
+    // (access:bundle, out), but the real on-prem database is read UP live via the
+    // optional `conn` — so a bundle env is a valid reverse-leg source.
+    let json = """
+{
+  "environments": {
+    "on-prem-uat": { "access": "bundle", "out": "dist/on-prem-uat", "conn": "env:ON_PREM_UAT_CONN", "rendition": "logical", "grant": "schema+data" },
+    "cloud-uat":   { "access": "direct", "conn": "env:CLOUD_UAT_CONN", "rendition": "physical", "grant": "data" }
+  },
+  "flows": { "reverse": { "from": "on-prem-uat", "to": "cloud-uat", "scope": "data" } }
+}
+"""
+    let cfg = ProjectionConfig.parse json |> mustOk
+    match Command.resolveFlowSpec cfg (Map.find "reverse" cfg.Flows) preview with
+    | Ok _    -> ()  // resolves — the bundle env's `conn` is accepted as the read source
+    | Error es -> Assert.Fail(sprintf "expected the bundle env's conn to resolve as a read source; got %A" es)
 
 [<Fact>]
 let ``flow --fresh selects the wipe-and-load posture and an empty baseline`` () =

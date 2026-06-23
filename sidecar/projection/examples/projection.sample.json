@@ -73,10 +73,10 @@
     "cloud-qa":    { "access": "direct", "conn": "file:./secrets/cloud-qa.conn",  "rendition": "physical", "archetype": "managed-dml", "grant": "data" },
     "cloud-uat":   { "access": "direct", "conn": "file:./secrets/cloud-uat.conn", "rendition": "physical", "archetype": "managed-dml", "grant": "data", "store": "lifecycle/cloud-uat.json", "revert": "script" },
 
-    "on-prem-dev": { "access": "bundle", "out": "./dist/on-prem-dev", "rendition": "logical", "archetype": "full-rights", "grant": "schema+data", "store": "lifecycle/on-prem-dev.json" },
-    "on-prem-qa":  { "access": "bundle", "out": "./dist/on-prem-qa",  "rendition": "logical", "archetype": "full-rights", "grant": "schema+data" },
+    "on-prem-dev": { "access": "bundle", "out": "./dist/on-prem-dev", "conn": "file:./secrets/on-prem-dev.conn", "rendition": "logical", "archetype": "full-rights", "grant": "schema+data", "store": "lifecycle/on-prem-dev.json" },
+    "on-prem-qa":  { "access": "bundle", "out": "./dist/on-prem-qa",  "conn": "file:./secrets/on-prem-qa.conn",  "rendition": "logical", "archetype": "full-rights", "grant": "schema+data" },
 
-    "on-prem-uat": { "access": "direct", "conn": "file:./secrets/on-prem-uat.conn", "rendition": "logical", "archetype": "full-rights" }
+    "on-prem-uat": { "access": "bundle", "out": "./dist/on-prem-uat", "conn": "file:./secrets/on-prem-uat.conn", "rendition": "logical", "archetype": "full-rights", "grant": "schema+data" }
   },
 
   "readiness": {

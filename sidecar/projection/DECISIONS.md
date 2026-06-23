@@ -25186,3 +25186,38 @@ config-unreachable; it remains in `TighteningBinding`). Docs scrubbed of the `nu
 `nullBudget` (`CONFIG_REFERENCE` tightening kinds + inline example, `THE_CONFIG_CONTROL_PLANE` example);
 the sample's `policy.tightening` shows `foreignKey`. Pure pool green (3630/0). If config-driven
 nullability tightening is ever wanted back, un-filter the one line in `fromConfig`.
+
+---
+
+## 2026-06-22 — Bundle environments gain an optional read `conn` (the write/read tension), + flow examples name environments
+
+**Context (operator).** "The file bundle WRITE is correct for the publish flows. However the reverse
+leg should allow direct connection READS because it's possible. This is a tension I'd like to resolve."
+An on-prem environment is a real database: schema goes DOWN to it as an SSDT file bundle (Octopus
+applies), and data is read UP from it live (the reverse leg). The old `access` facet conflated the two
+— `bundle` (file write, no conn) XOR `direct` (live conn) — forcing a choice; a reverse-leg source must
+be `Access.Direct` (`dataOriginOfSource`), so a bundle env could not be read.
+
+**Decision — decouple WRITE from READ.** `Access.Bundle of out: string` → `Bundle of out: string *
+readConn: ConnectionRef option`. A bundle place WRITES the SSDT bundle to `out` (publish → Octopus,
+unchanged); its optional `conn` is a live READ connection, so the real database is a reverse-leg source
+/ `compare` operand. `access` governs the write; `conn` the read. The write path is untouched.
+
+**Wired.** `parseAccess` (bundle reads `out` + optional D9-checked `conn`); `renderEnvironment` (emits
+`conn` when present — A44 round-trip extended, `MovementIsomorphismTests`); the read-source resolvers
+accept `Bundle (_, Some r)` — `dataOriginOfSource` (flow `from`), `reverseLegOf` (the B→A classifier),
+`resolveLiveConn` (compare/diff operands). Write/OSSYS-only sites stay `Direct`-only (`model.env`,
+`check shape`, atomic-deploy). Error codes `cli.flow.fromNotDirect` / `cli.env.notLive` kept (messages
+updated to name the bundle-`conn` read path). Tests: a bundle env WITH a `conn` resolves as a reverse
+source (`MovementSurfaceTests`); the existing bundle-WITHOUT-conn refusal (`badsrc`) still holds.
+
+**Estate (six, unchanged count).** `examples/projection.sample.json` — all three on-prem tiers are now
+`access: bundle` + `out` + `conn` (SSDT down as files; data up live), `full-rights`, `schema+data`, so
+any of them can be a reverse-leg source. THE_CLI + examples/README updated (the dual role; the
+source/sink prose — on-prem-uat is a bundle sink + conn source now, no longer "source-only").
+
+**Flow examples name environments.** Per the operator: `from: "model"` "doesn't quite make sense in the
+new way of thinking." The one operator-facing example using it (THE_CONFIG_CONTROL_PLANE's `audit`
+flow) now reads `from: cloud-dev` (the model's environment) + `scope: schema`. The `FlowSource.Model`
+feature itself stays (semantics + tests unchanged); only the doc examples prefer a named environment,
+matching the `model.env` direction.

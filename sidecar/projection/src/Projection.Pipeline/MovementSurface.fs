@@ -21,7 +21,14 @@ open Projection.Core
 /// gate; `Direct` is a live connection; `Docker` is the ephemeral one-touch.
 [<RequireQualifiedAccess>]
 type Access =
-    | Bundle of out: string
+    /// A file-production target: the SSDT bundle (CREATE files + RefactorLog +
+    /// pre/post-deploy + data scripts) is WRITTEN to `out`, for Octopus to apply.
+    /// `readConn` (optional, env:/file:) is a live connection to the real target
+    /// database — present so a bundle place can ALSO be a direct READ source
+    /// (the reverse leg, `compare`) even though its WRITE path is the file bundle.
+    /// Resolves the write/read tension: schema goes DOWN as files; data is read
+    /// UP live. THE_CLI §4.1.
+    | Bundle of out: string * readConn: ConnectionRef option
     | Direct of ConnectionRef
     | Docker
 
@@ -441,8 +448,21 @@ module ProjectionConfig =
             match a.ToLowerInvariant() with
             | "bundle" ->
                 match getString el "out" with
-                | Some out -> Result.success (Access.Bundle out)
                 | None -> Result.failureOf (err "cli.config.envBundleNoOut" (sprintf "environment '%s' is access:bundle but sets no 'out' folder." envName))
+                | Some out ->
+                    // A bundle place WRITES SSDT files to `out`; it MAY also carry a
+                    // `conn` (env:/file:, D9) — a live READ connection so the real
+                    // target database serves as a reverse-leg source / `compare`
+                    // operand, even though its write path is the file bundle.
+                    match getString el "conn" with
+                    | None -> Result.success (Access.Bundle (out, None))
+                    | Some conn ->
+                        if looksLikeSecret conn then
+                            Result.failureOf (err "cli.config.envSecretInline" (sprintf "environment '%s' conn looks like an inline secret; use env:<VAR> or file:<path> (D9)." envName))
+                        else
+                            match TransferSpec.parseConnectionSpec conn with
+                            | Ok r    -> Result.success (Access.Bundle (out, Some r))
+                            | Error e -> Result.failure e
             | "direct" ->
                 match getString el "conn" with
                 | None -> Result.failureOf (err "cli.config.envDirectNoConn" (sprintf "environment '%s' is access:direct but sets no 'conn'." envName))
@@ -896,7 +916,10 @@ module ProjectionConfig =
     let renderEnvironment (env: Environment) : JsonObject =
         let o = JsonObject()
         (match env.Access with
-         | Access.Bundle out -> setStr o "access" "bundle"; setStr o "out" out
+         | Access.Bundle (out, conn) ->
+             setStr o "access" "bundle"
+             setStr o "out" out
+             (match conn with Some r -> setStr o "conn" (renderConnRef r) | None -> ())
          | Access.Direct r   -> setStr o "access" "direct"; setStr o "conn" (renderConnRef r)
          | Access.Docker     -> setStr o "access" "docker")
         setOptStr o "grant" (env.Grant |> Option.map renderGrant)
@@ -1058,7 +1081,8 @@ module Command =
             | Some env ->
                 match env.Access with
                 | Access.Direct r -> Result.success (connSpecOf r)
-                | _ -> Result.failureOf (err "cli.env.notLive" (sprintf "environment '%s' is not access:direct (no live connection)." raw))
+                | Access.Bundle (_, Some r) -> Result.success (connSpecOf r)
+                | _ -> Result.failureOf (err "cli.env.notLive" (sprintf "environment '%s' has no live connection (set access:direct, or add a `conn` to the bundle environment)." raw))
             | None ->
                 let known = cfg.Environments |> Map.toList |> List.map fst |> String.concat ", "
                 let suffix = if known = "" then "no environments configured." else sprintf "known environments: %s." known
@@ -1395,9 +1419,9 @@ module Command =
     /// A `to` environment's reach → the `Destination` the engine lands at.
     let private destinationOfAccess (access: Access) : Destination =
         match access with
-        | Access.Bundle out -> Destination.Folder out
-        | Access.Direct r   -> Destination.Live r
-        | Access.Docker     -> Destination.Docker
+        | Access.Bundle (out, _) -> Destination.Folder out
+        | Access.Direct r        -> Destination.Live r
+        | Access.Docker          -> Destination.Docker
 
     /// M3.b (pure) — recognize a flow as a B→A reverse leg from the M1 `rendition`
     /// flag: `Some` exactly when the flow reads from a live `logical` source (B)
@@ -1424,6 +1448,9 @@ module Command =
             | Some env ->
                 match env.Access with
                 | Access.Direct r -> Some (env, connSpecOf r)
+                // A bundle place with a read `conn` is a live reverse-leg source:
+                // schema was published DOWN as files; data is read UP live.
+                | Access.Bundle (_, Some r) -> Some (env, connSpecOf r)
                 | _ -> None
             | None -> None
         match flow.From with
@@ -1453,7 +1480,11 @@ module Command =
             | Some env ->
                 match env.Access with
                 | Access.Direct r -> Result.success (DataOrigin.FromTarget (connSpecOf r))
-                | _ -> Result.failureOf (err "cli.flow.fromNotDirect" (sprintf "flow source '%s' must be access:direct (a live place to read rows from)." e))
+                // A bundle place with a read `conn` is a live read source (the
+                // reverse leg reads UP from the real on-prem database, even though
+                // schema is published DOWN to it as a file bundle).
+                | Access.Bundle (_, Some r) -> Result.success (DataOrigin.FromTarget (connSpecOf r))
+                | _ -> Result.failureOf (err "cli.flow.fromNotDirect" (sprintf "flow source '%s' has no live connection to read rows from — use access:direct, or add a `conn` to the bundle environment (the reverse-leg read path)." e))
 
     /// G2 — DERIVE the movement direction (a binding, never parsed) from the
     /// flow's source/sink renditions + content origin (THE_CONFIG_CONTROL_PLANE
@@ -1670,7 +1701,7 @@ module Command =
         // `out/` / cwd, so a flow whose bundle dir was none of those lost it).
         let bundleOutOf (envName: string) : string option =
             Map.tryFind envName cfg.Environments
-            |> Option.bind (fun e -> match e.Access with Access.Bundle out -> Some out | _ -> None)
+            |> Option.bind (fun e -> match e.Access with Access.Bundle (out, _) -> Some out | _ -> None)
         let storeOf () : Result<string * string option> =
             match flagValue args "--store" with
             | Some s -> Result.success (s, None)
