@@ -324,10 +324,11 @@ Each issue was encountered sequentially; the series is causally coherent and rep
 - `model.modules` already parses both string and `{name, entities}` shapes
   (`Config.fs:45-47, 632-664`) — the v2 shape exists; the **sample doesn't show it** and the
   scope never reaches the adapter (2.C).
-- `examples/projection.sample.json` shows environments/flows but no `model.modules`, no
-  include flags, no physical→physical rename example; `examples/model.config.sample.json`
-  shows the full shaping surface but is a separate file. The samples don't demonstrate
-  per-flow `shaping.model` (the existing per-source-model mechanism).
+- `examples/projection.sample.json` shows environments/flows but no
+  include flags, no physical→physical rename example; the full shaping surface is documented
+  inline in `CONFIG_REFERENCE.md` (the once-separate `model.config.sample.json` was folded in,
+  2026-06-22). The samples don't demonstrate per-flow `shaping.model` (the existing
+  per-source-model mechanism).
 - V1's per-module `allowMissingPrimaryKey`/`allowMissingSchema` narrowing maps to V2's
   top-level `overrides.allowMissingPrimaryKey` + `model.validationOverrides.allowMissingSchema`
   (the latter currently consumer-less).

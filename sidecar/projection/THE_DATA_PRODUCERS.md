@@ -235,7 +235,7 @@ Slices:
 **Gate:** survey probe P10 (user-directory readable / how keyed).
 **Acceptance:** PE-3 green; a re-keyed row captures **one** CDC Update, never Delete+Insert.
 
-### `legacy` (the `preview` flow) — the reverse (B→A) leg of the same model
+### `legacy` (the `reverse` flow) — the reverse (B→A) leg of the same model
 Not foreign-schema ingest. The migration team has already loaded the data into the hosted
 **logical** model (B); `legacy` pipes it **up into the physical** cloud (A). For the engine this
 is a direction-neutral Transfer with **source rendition = logical, sink rendition = physical** of
@@ -268,7 +268,7 @@ the same `SsKey` model. Slices:
     See `DECISIONS 2026-06-10 — J3 residual CLOSED`.
 - **LE-2 — the reverse-leg (B→A) round-trip canary.** Pipe B→A, read back, assert the data
   round-trips. **No foreign-schema tolerances** — same model both ways.
-**Note:** `synthetic` profiled from the same on-prem data (`profile: onprem-...`) is the
+**Note:** `synthetic` profiled from the same on-prem data (`profile: on-prem-...`) is the
 privacy-safe preview; `legacy` is the real-row reverse leg. They share the sink and the rendition;
 they differ in whether real rows cross.
 **Acceptance:** LE-2 green; the B→A round-trip preserves the data (no silent drop); identity

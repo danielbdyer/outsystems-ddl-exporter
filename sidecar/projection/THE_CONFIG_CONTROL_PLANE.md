@@ -14,9 +14,11 @@ there are two disjoint surfaces:
 
 - **Movement** (`ProjectionConfig`, `MovementSurface.fs:76-90`): `environments`, `flows`,
   `model` (string path), `modelOssys`, `defaults`. Reached by `projection <flow>`.
-- **Model-shaping** (`Config`, `Config.fs:283-293`): `model` (object: path/ossys/modules/…),
+- **Model-shaping** (`Config`, `Config.fs:283-293`): `model` (object: env/ossys/path/modules/…),
   `overrides`, `emission`, `policy`, `typeMapping`, `profiler`, `cache`, `output`. Reached
-  today only by the `explain` verbs (`Config.fromFile`) and `FullExportRun`.
+  today only by the `explain` verbs (`Config.fromFile`) and `FullExportRun`. (`model.env` — the
+  schema source as an `environments` *reference* — is resolved by the movement surface, the only
+  view carrying the registry, into `model.ossys`; see `CROSS_ENVIRONMENT_READINESS.md` §4.)
 
 **The defect:** `resolveFlowSpec` (`MovementSurface.fs:605`) only ever builds
 `ModelSource.ModelFile`/`Unspecified` — never `ConfigFile` — so the
@@ -105,23 +107,28 @@ collisions are the two `model` ones — folded into one `model` namespace.
 ```jsonc
 {
   "environments": {
-    "cloud-qa":  { "access": "direct", "conn": "file:./secrets/cloud-qa.conn",  "rendition": "physical" },
-    "cloud-uat": { "access": "direct", "conn": "file:./secrets/cloud-uat.conn", "grant": "data", "rendition": "physical" }
+    "cloud-dev": { "access": "direct", "conn": "file:./secrets/cloud-dev.conn", "rendition": "physical", "archetype": "managed-dml" },
+    "cloud-qa":  { "access": "direct", "conn": "file:./secrets/cloud-qa.conn",  "rendition": "physical", "archetype": "managed-dml" },
+    "cloud-uat": { "access": "direct", "conn": "file:./secrets/cloud-uat.conn", "grant": "data", "rendition": "physical", "archetype": "managed-dml" }
   },
-  "model":     { "ossys": "file:./secrets/ossys.conn", "modules": ["Sales", { "name": "Ops", "entities": ["Order"] }] },
+  "model":     { "env": "cloud-dev", "modules": ["Sales", { "name": "Ops", "entities": ["Order"] }] },
   "overrides": { "tableRenames": [ { "from": { "module": "Sales", "entity": "Cust" }, "to": { "schema": "dbo", "table": "Customer" } } ] },
-  "policy":    { "tightening": { "interventions": [ { "kind": "nullability", "id": "n1", "nullBudget": 0.0 } ] } },
+  "policy":    { "tightening": { "interventions": [ { "kind": "foreignKey", "id": "fk1", "enableCreation": true } ] } },
   "emission":  { "ssdt": true, "dacpac": true },
+  "readiness": { "confirm": ["cloud-dev", "cloud-qa", "cloud-uat"] },
   "flows": {
     "golden": { "from": "cloud-qa", "to": "cloud-uat", "scope": "data", "tables": ["Customer"], "rekey": "file:./secrets/users.csv" },
-    "audit":  { "from": "model", "to": "docker", "shaping": { "model": { "modules": ["Ops"] } } }
+    "audit":  { "from": "cloud-dev", "to": "docker", "scope": "schema", "shaping": { "model": { "modules": ["Ops"] } } }
   }
 }
 ```
 
 **Shaping is global** (applies to every flow's emission — the singular control plane); a flow
 MAY carry an opt-in `shaping: {…}` that deep-overrides the global blocks for that flow only
-(DECIDED). `scope` is the decoupled per-flow move-projection (DECIDED).
+(DECIDED). `scope` is the decoupled per-flow move-projection (DECIDED). The global `model.env`
+names the canonical schema source **once** by reference into `environments` (here `cloud-dev`);
+`readiness.schema` defaults to it — so the unified example above restates no connection
+(DECIDED 2026-06-22).
 
 ### Collision reconciliation (the only two)
 

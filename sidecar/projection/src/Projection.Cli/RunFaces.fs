@@ -1387,6 +1387,16 @@ let runInspect (idA: string) (idB: string option) (asJson: bool) : int =
 /// to one module (a smaller, reviewable diff); `--only <channel>` scopes the
 /// DISPLAY to one channel (columns / relationships / indexes / sequences / tables).
 let runDiff (refAText: string) (refBText: string) (asJson: bool) (depth: int) (channel: string option) (onlyModule: string option) : int =
+    let refA, refB = Ref.parse refAText, Ref.parse refBText
+    // Espace posture (CROSS_ENVIRONMENT_READINESS.md): two `live:` (physical)
+    // OutSystems reads do not share identity — `ReadSide` synthesizes SsKeys from
+    // the physical name, so the same entity in two environments will not align.
+    // Name it (never a silent, wrong diff); steer to the espace-safe operands.
+    if Ref.bothLive refA refB then
+        Console.Error.WriteLine "projection diff: comparing two `live:` reads by PHYSICAL identity is espace-unsafe — SsKeys are synthesized from physical names and will not align across OutSystems environments. Use `ossys:<conn>` operands (native GUID identity) for a cross-environment diff, or `projection check shape` for the readiness gate."
+    // Both OSSYS-sourced ⇒ the operator wants the espace-safe LOGICAL shape:
+    // normalize away the realization-name artifacts `CatalogDiff` compares.
+    let norm (c: Catalog) : Catalog = if Ref.bothOssys refA refB then Readiness.toLogicalShape c else c
     let resolve (s: string) = (Ref.resolveCatalog (Ref.parse s)).GetAwaiter().GetResult()
     // `--module <name>` keeps only the named module's kinds before diffing —
     // sequences are catalog-level, so a module scope drops them. Case-insensitive
@@ -1413,7 +1423,7 @@ let runDiff (refAText: string) (refBText: string) (asJson: bool) (depth: int) (c
             printErrors Console.Error errs
             2
         | Ok b ->
-            match Comparison.catalog.Between (scopeModule a) (scopeModule b) with
+            match Comparison.catalog.Between (scopeModule (norm a)) (scopeModule (norm b)) with
             | Error e ->
                 Console.Error.WriteLine(sprintf "projection diff: %s" e)
                 2
@@ -1433,6 +1443,12 @@ let runDiff (refAText: string) (refBText: string) (asJson: bool) (depth: int) (c
 /// stays honestly advisory-silent; a live env supplies it. A profiling failure
 /// degrades to advisory-silent (never aborts — the schema delta still leads).
 let runCompare (refAText: string) (refBText: string) (asJson: bool) : int =
+    let refA, refB = Ref.parse refAText, Ref.parse refBText
+    // Espace posture — see `runDiff`. Two `live:` reads of OutSystems environments
+    // do not share identity; name the hazard rather than emit a silently-wrong compare.
+    if Ref.bothLive refA refB then
+        Console.Error.WriteLine "projection compare: comparing two `live:` reads by PHYSICAL identity is espace-unsafe — SsKeys are synthesized from physical names and will not align across OutSystems environments. Use `ossys:<conn>` operands (native GUID identity) for a cross-environment comparison, or `projection check shape` for the readiness gate."
+    let norm (c: Catalog) : Catalog = if Ref.bothOssys refA refB then Readiness.toLogicalShape c else c
     let resolve (s: string) = (Ref.resolveCatalog (Ref.parse s)).GetAwaiter().GetResult()
     let resolveSrc (s: string) = (Ref.resolveSource (Ref.parse s)).GetAwaiter().GetResult()
     match resolveSrc refAText with
@@ -1463,13 +1479,60 @@ let runCompare (refAText: string) (refBText: string) (asJson: bool) : int =
                         match (acquire a).GetAwaiter().GetResult() with
                         | Ok p -> Some p
                         | Error _ -> None
-                let source : Compare.Operand = { Label = refAText; Catalog = a; Profile = profileA }
-                let target : Compare.Operand = { Label = refBText; Catalog = b; Profile = None }
+                let source : Compare.Operand = { Label = refAText; Catalog = norm a; Profile = profileA }
+                let target : Compare.Operand = { Label = refBText; Catalog = norm b; Profile = None }
                 let report = Compare.compute source target
                 if asJson then printfn "%s" (Compare.toJsonString report)
                 else Compare.render report |> List.iter (fun line -> printfn "%s" line)
                 System.IO.File.WriteAllText("compare.json", Compare.toJsonString report)
                 0
+
+/// `projection check shape` — the espace-safe cross-environment readiness gate
+/// (CROSS_ENVIRONMENT_READINESS.md §4/§5). Reads the agreed shape + every
+/// `confirm` environment via OSSYS (`Source.ofOssys` → native GUID identity, so
+/// the comparison is espace-safe), profiles each env's data, rolls a
+/// `Readiness.ReadinessReport`, prints the roll-up (or `--format json`), writes
+/// `readiness.json`, and exits 0 (estate ready) / 5 (not ready — a real schema
+/// divergence or a data dealbreaker) / 6 (an env could not be read). Read-only.
+let runCheckShape (agreedLabel: string) (agreedRef: string) (confirm: (string * string) list) (asJson: bool) : int =
+    let readCatalog (refStr: string) = (Source.read (Source.ofOssys refStr)).GetAwaiter().GetResult()
+    match readCatalog agreedRef with
+    | Error errs ->
+        Console.Error.WriteLine(sprintf "projection check shape: could not read the agreed shape '%s':" agreedLabel)
+        printErrors Console.Error errs
+        6
+    | Ok agreedCatalog ->
+        let agreedOperand : Compare.Operand = { Label = agreedLabel; Catalog = agreedCatalog; Profile = None }
+        // Each confirm env: its OSSYS catalog (schema) + a profile of its live
+        // data (the dealbreaker evidence). A profile failure degrades to
+        // advisory-silent (the schema verdict still leads), never aborts.
+        let resolveEnv (label: string, refStr: string) : Result<string * Compare.Operand> =
+            let src = Source.ofOssys refStr
+            match (Source.read src).GetAwaiter().GetResult() with
+            | Error errs -> Result.failure errs
+            | Ok catalog ->
+                let profile =
+                    match Source.profile src with
+                    | None -> None
+                    | Some acquire ->
+                        match (acquire catalog).GetAwaiter().GetResult() with
+                        | Ok p    -> Some p
+                        | Error _ -> None
+                Result.success (label, ({ Label = label; Catalog = catalog; Profile = profile } : Compare.Operand))
+        let resolved = confirm |> List.map resolveEnv
+        let readErrors = resolved |> List.collect (function Error es -> es | Ok _ -> [])
+        match readErrors with
+        | _ :: _ ->
+            Console.Error.WriteLine "projection check shape: could not read one or more confirm environments:"
+            printErrors Console.Error readErrors
+            6
+        | [] ->
+            let envs = resolved |> List.choose (function Ok v -> Some v | Error _ -> None)
+            let report = Readiness.compute agreedLabel agreedOperand envs
+            if asJson then printfn "%s" (Readiness.toJsonString report)
+            else Readiness.render report |> List.iter (fun line -> printfn "%s" line)
+            System.IO.File.WriteAllText("readiness.json", Readiness.toJsonString report)
+            if Readiness.isReady report then 0 else 5
 
 /// NM-37 — the explain story as a `View` (the masterful base #3 substrate),
 /// built PURELY from the filtered transform trail + findings so it is testable
@@ -2607,9 +2670,25 @@ let runSliceFlow (args: string list) : int =
                     eprintfn "slice flow '%s' references unknown slice '%s' (add it to \"slices\")." name sf.Slice
                     2
                 | Some spec ->
+                    // A sliceFlow endpoint is an ENVIRONMENT NAME (resolved to its
+                    // live conn — espace-safe, like flow.from / model.env) or a
+                    // conn-ref (env:/file:/live:, passed through verbatim).
+                    let resolveEndpoint (s: string) : Result<string> =
+                        if s.Contains ":" then Result.success s
+                        else
+                            match Map.tryFind s cfg.Environments with
+                            | Some env ->
+                                match env.Access with
+                                | Access.Direct r -> Result.success (Command.connSpecOf r)
+                                | Access.Bundle (_, Some r) -> Result.success (Command.connSpecOf r)
+                                | _ -> Result.failureOf (ValidationError.create "cli.sliceFlow.envNotLive" (sprintf "sliceFlow '%s' endpoint env '%s' has no live connection (use access:direct, or add a `conn` to the bundle environment)." name s))
+                            | None -> Result.failureOf (ValidationError.create "cli.sliceFlow.endpointUnknown" (sprintf "sliceFlow '%s' endpoint '%s' is neither a known environment nor a conn-ref (env:/file:/live:)." name s))
+                    match resolveEndpoint sf.Source, resolveEndpoint sf.Target with
+                    | Error es, _ | _, Error es -> printErrors Console.Error es; dumpBench "slice-run"; 6
+                    | Ok srcConn, Ok tgtConn ->
                     let execute = hasFlag "--go"
                     let result =
-                        (SliceFlowRun.run sf.Source spec sf.Target execute (hasFlag "--allow-cdc")).GetAwaiter().GetResult()
+                        (SliceFlowRun.run srcConn spec tgtConn execute (hasFlag "--allow-cdc")).GetAwaiter().GetResult()
                     let code =
                         match result with
                         | Ok report ->

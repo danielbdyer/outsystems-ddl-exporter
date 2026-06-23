@@ -21,7 +21,14 @@ open Projection.Core
 /// gate; `Direct` is a live connection; `Docker` is the ephemeral one-touch.
 [<RequireQualifiedAccess>]
 type Access =
-    | Bundle of out: string
+    /// A file-production target: the SSDT bundle (CREATE files + RefactorLog +
+    /// pre/post-deploy + data scripts) is WRITTEN to `out`, for Octopus to apply.
+    /// `readConn` (optional, env:/file:) is a live connection to the real target
+    /// database — present so a bundle place can ALSO be a direct READ source
+    /// (the reverse leg, `compare`) even though its WRITE path is the file bundle.
+    /// Resolves the write/read tension: schema goes DOWN as files; data is read
+    /// UP live. THE_CLI §4.1.
+    | Bundle of out: string * readConn: ConnectionRef option
     | Direct of ConnectionRef
     | Docker
 
@@ -231,6 +238,15 @@ type SliceFlowSpec =
 /// The parsed `projection.json`: named environments (places) and flows
 /// (source→target Move recipes), the default authored model (so a flow needs
 /// no model path), plus a global defaults block.
+/// CROSS_ENVIRONMENT_READINESS.md §4 — the `readiness` block: confirm a set of
+/// environments resolve to one agreed shape (espace-safe, via OSSYS identity)
+/// with their data conforming. `Schema` is the agreed source environment's name;
+/// `Confirm` the environment names checked against it. A movement-vocabulary
+/// citizen (rendered, so `parse ∘ render = id`); absent ⇒ `None`.
+type ReadinessSpec =
+    { Schema  : string
+      Confirm : string list }
+
 type ProjectionConfig =
     {
         /// THE_CLI.md §4.1 — named places with access/grant.
@@ -281,6 +297,10 @@ type ProjectionConfig =
         /// `slice-run <name>` executes. A movement-vocabulary citizen (rendered,
         /// so `parse ∘ render = id`); empty ⇒ no key.
         SliceFlows   : Map<string, SliceFlowSpec>
+        /// CROSS_ENVIRONMENT_READINESS.md §4 — the `readiness` block (the agreed
+        /// shape + the environments to confirm against it). A movement-vocabulary
+        /// citizen (rendered, so `parse ∘ render = id`); absent ⇒ `None`.
+        Readiness    : ReadinessSpec option
         /// The file the config was loaded from (S6.2 — `fromFile` sets `Some
         /// path`; `parse`/`empty` set `None`). It is LOAD PROVENANCE, not a JSON
         /// field — `renderConfig` never emits it, so the `parse ∘ render` round
@@ -298,10 +318,22 @@ module ProjectionConfig =
     let empty : ProjectionConfig =
         { Environments = Map.empty; Flows = Map.empty; Model = None; ModelOssys = None; Defaults = Map.empty
           Shaping = Config.defaultConfig; Synthetic = Config.defaultSyntheticSection
-          TighteningRelaxations = []; Slices = Map.empty; SliceFlows = Map.empty; SourcePath = None }
+          TighteningRelaxations = []; Slices = Map.empty; SliceFlows = Map.empty; Readiness = None; SourcePath = None }
 
     let private err (code: string) (message: string) : ValidationError =
         ValidationError.create code message
+
+    /// Reconstruct the out-of-band connection-spec text (`env:<VAR>` /
+    /// `file:<path>`) from a resolved `ConnectionRef` — the dual of
+    /// `TransferSpec.parseConnectionSpec`, hoisted above `parse` so `model.env`
+    /// resolution can reach it. `renderConnRef` (the rendering dual) delegates
+    /// here; `Command.connSpecOf` is the same total function in the sibling
+    /// module (a separate compile scope can't share it without hoisting above
+    /// both, out of scope for this slice). D9 holds by shape — never a secret.
+    let private connRefToSpec (r: ConnectionRef) : string =
+        match r with
+        | ConnectionRef.EnvVar n -> "env:" + n
+        | ConnectionRef.File p   -> "file:" + p
 
     /// D9 belt: reject a value that looks like an inline secret rather than
     /// a reference (a connection string pasted into the config).
@@ -386,6 +418,26 @@ module ProjectionConfig =
             |> Map.ofSeq
         | _ -> Map.empty
 
+    /// CROSS_ENVIRONMENT_READINESS.md §4 — parse the `"readiness"` block. A
+    /// present block names its agreed shape via `schema` (an environment), OR
+    /// omits it to DEFAULT to `model.env` (`defaultSchema`) — the optional gate
+    /// defers to the mandatory model source, so the canonical environment is
+    /// named once. The `confirm` array (the environments to check) defaults to
+    /// empty. A present block with neither an explicit `schema` nor a
+    /// `model.env` to default from fails the config parse (outer `try` →
+    /// `cli.config.parseFailed`), never a silent drop. Absent ⇒ `None` (no
+    /// `readiness` key; byte-identical). On render the resolved `schema` is
+    /// emitted explicitly, so `parse ∘ render` is stable at the config value.
+    let private parseReadiness (defaultSchema: string option) (root: JsonElement) : ReadinessSpec option =
+        match root.TryGetProperty "readiness" with
+        | true, r when r.ValueKind = JsonValueKind.Object ->
+            match getString r "schema", defaultSchema with
+            | Some schema, _ -> Some { Schema = schema; Confirm = getStringArray r "confirm" }
+            | None, Some def -> Some { Schema = def;    Confirm = getStringArray r "confirm" }
+            | None, None ->
+                failwith "readiness block sets no 'schema' and there is no model.env to default it from — name the agreed shape's environment (or set model.env)."
+        | _ -> None
+
     /// The reach facet: `bundle` needs an `out` folder; `direct` needs a
     /// D9-safe `conn` reference; `docker` is bare.
     let private parseAccess (envName: string) (el: JsonElement) : Result<Access> =
@@ -396,8 +448,21 @@ module ProjectionConfig =
             match a.ToLowerInvariant() with
             | "bundle" ->
                 match getString el "out" with
-                | Some out -> Result.success (Access.Bundle out)
                 | None -> Result.failureOf (err "cli.config.envBundleNoOut" (sprintf "environment '%s' is access:bundle but sets no 'out' folder." envName))
+                | Some out ->
+                    // A bundle place WRITES SSDT files to `out`; it MAY also carry a
+                    // `conn` (env:/file:, D9) — a live READ connection so the real
+                    // target database serves as a reverse-leg source / `compare`
+                    // operand, even though its write path is the file bundle.
+                    match getString el "conn" with
+                    | None -> Result.success (Access.Bundle (out, None))
+                    | Some conn ->
+                        if looksLikeSecret conn then
+                            Result.failureOf (err "cli.config.envSecretInline" (sprintf "environment '%s' conn looks like an inline secret; use env:<VAR> or file:<path> (D9)." envName))
+                        else
+                            match TransferSpec.parseConnectionSpec conn with
+                            | Ok r    -> Result.success (Access.Bundle (out, Some r))
+                            | Error e -> Result.failure e
             | "direct" ->
                 match getString el "conn" with
                 | None -> Result.failureOf (err "cli.config.envDirectNoConn" (sprintf "environment '%s' is access:direct but sets no 'conn'." envName))
@@ -701,7 +766,44 @@ module ProjectionConfig =
                         { shaping.Model with
                             Path  = (match shaping.Model.Path  with Some _ as p -> p | None -> legacyModel)
                             Ossys = (match shaping.Model.Ossys with Some _ as o -> o | None -> legacyModelOssys) }
-                    let shaping = { shaping with Model = reconciledModel }
+                    // CROSS_ENVIRONMENT_READINESS §4 (model-from-environment) —
+                    // `model.env` points the schema source into the `environments`
+                    // registry BY NAME (like `flow.from` / `readiness.schema`),
+                    // instead of inlining a connection. It is a movement-surface
+                    // concept — it resolves against the registry the pure `Config`
+                    // does not carry — so it is read here from the canonical
+                    // `model` object (Config ignores the unread key) and resolved
+                    // into `Shaping.Model.Ossys`, the live OSSYS source downstream
+                    // consumers already read. The resolution is TRANSPARENT:
+                    // `env: "cloud-dev"` yields exactly the `ossys` that env's
+                    // `conn` declares, so nothing downstream changes. Refusals are
+                    // named — `env` + a live `ossys` (two ways to name one source),
+                    // an unknown environment, or a non-direct (bundle/docker) one.
+                    let modelEnv =
+                        match root.TryGetProperty "model" with
+                        | true, m when m.ValueKind = JsonValueKind.Object -> getString m "env"
+                        | _ -> None
+                    let resolvedModelR : Result<Config.ModelSection> =
+                        match modelEnv with
+                        | None -> Result.success reconciledModel
+                        | Some envName ->
+                            match reconciledModel.Ossys with
+                            | Some _ ->
+                                Result.failureOf (err "cli.config.modelEnvAndOssys" (sprintf "model sets both 'env' (\"%s\") and a live 'ossys'/'modelOssys' source — two ways to name the one live schema source. Use 'env' to point into the environments registry, or 'ossys' for a standalone connection, not both." envName))
+                            | None ->
+                                match Map.tryFind envName environments with
+                                | None ->
+                                    let known = environments |> Map.toList |> List.map fst |> String.concat ", "
+                                    let suffix = if known = "" then "no environments are configured." else sprintf "known environments: %s." known
+                                    Result.failureOf (err "cli.config.modelEnvUnknown" (sprintf "model.env names environment '%s', which is not declared in 'environments'; %s" envName suffix))
+                                | Some env ->
+                                    match env.Access with
+                                    | Access.Direct r -> Result.success { reconciledModel with Ossys = Some (connRefToSpec r) }
+                                    | _ -> Result.failureOf (err "cli.config.modelEnvNotDirect" (sprintf "model.env names environment '%s', but it is not access:direct — a bundle/docker place has no live OSSYS connection to read the model from. Point model.env at a direct environment." envName))
+                    match resolvedModelR with
+                    | Error es -> Result.failure es
+                    | Ok resolvedModel ->
+                    let shaping = { shaping with Model = resolvedModel }
                     Result.success
                         { Environments = environments; Flows = flows
                           Model = legacyModel
@@ -719,6 +821,9 @@ module ProjectionConfig =
                           Slices = parseSlices root
                           // Data-portability — the named extract→apply slice flows.
                           SliceFlows = parseSliceFlows root
+                          // CROSS_ENVIRONMENT_READINESS §4 — the readiness block;
+                          // an omitted `schema` defaults to `model.env`.
+                          Readiness = parseReadiness modelEnv root
                           // `parse` has no file provenance; `fromFile` overlays it.
                           SourcePath = None }
         with ex ->
@@ -753,10 +858,9 @@ module ProjectionConfig =
 
     /// The `conn` reference field text (the dual of `parseConnectionSpec`):
     /// `env:<VAR>` / `file:<path>` — never an inline secret (D9 holds by shape).
-    let private renderConnRef (r: ConnectionRef) : string =
-        match r with
-        | ConnectionRef.EnvVar n -> "env:" + n
-        | ConnectionRef.File p   -> "file:" + p
+    /// Delegates to `connRefToSpec` (the same total function, hoisted above
+    /// `parse` for `model.env` resolution).
+    let private renderConnRef (r: ConnectionRef) : string = connRefToSpec r
 
     /// The grant refusal-gate field (dual of `parseGrant`): the canonical token.
     let private renderGrant (g: Grant) : string =
@@ -812,7 +916,10 @@ module ProjectionConfig =
     let renderEnvironment (env: Environment) : JsonObject =
         let o = JsonObject()
         (match env.Access with
-         | Access.Bundle out -> setStr o "access" "bundle"; setStr o "out" out
+         | Access.Bundle (out, conn) ->
+             setStr o "access" "bundle"
+             setStr o "out" out
+             (match conn with Some r -> setStr o "conn" (renderConnRef r) | None -> ())
          | Access.Direct r   -> setStr o "access" "direct"; setStr o "conn" (renderConnRef r)
          | Access.Docker     -> setStr o "access" "docker")
         setOptStr o "grant" (env.Grant |> Option.map renderGrant)
@@ -931,6 +1038,18 @@ module ProjectionConfig =
                 setStr o "target" sf.Target
                 f.[name] <- o
             root.["sliceFlows"] <- f)
+        // CROSS_ENVIRONMENT_READINESS §4 — the readiness block. Omitted when
+        // absent, so a config with no `readiness` round-trips to no key (A44).
+        (match cfg.Readiness with
+         | Some rs ->
+             let o = JsonObject()
+             setStr o "schema" rs.Schema
+             (if not (List.isEmpty rs.Confirm) then
+                 let a = JsonArray()
+                 for c in rs.Confirm do a.Add(JsonValue.Create c)
+                 o.["confirm"] <- a)
+             root.["readiness"] <- o
+         | None -> ())
         root
 
     /// Render a movement config to its `projection.json` text — the round-trip
@@ -962,7 +1081,8 @@ module Command =
             | Some env ->
                 match env.Access with
                 | Access.Direct r -> Result.success (connSpecOf r)
-                | _ -> Result.failureOf (err "cli.env.notLive" (sprintf "environment '%s' is not access:direct (no live connection)." raw))
+                | Access.Bundle (_, Some r) -> Result.success (connSpecOf r)
+                | _ -> Result.failureOf (err "cli.env.notLive" (sprintf "environment '%s' has no live connection (set access:direct, or add a `conn` to the bundle environment)." raw))
             | None ->
                 let known = cfg.Environments |> Map.toList |> List.map fst |> String.concat ", "
                 let suffix = if known = "" then "no environments configured." else sprintf "known environments: %s." known
@@ -1176,6 +1296,31 @@ module Command =
                 | Some b, Some a -> (match connOf b, connOf a with | Ok bc, Ok ac -> PlanAction.CheckData (bc, ac) | (Error es, _) | (_, Error es) -> PlanAction.Refused (6, List.head es))
                 | _ -> PlanAction.Refused (2, err "cli.check.dataArgs" "projection check data: requires --before <environment> --after <environment>.")
             | "ready" :: _ -> PlanAction.CheckReady
+            | "shape" :: _ ->
+                match cfg.Readiness with
+                | None ->
+                    PlanAction.Refused (2, err "cli.check.shapeNoBlock" "projection check shape: no `readiness` block in projection.json (set readiness.schema + readiness.confirm).")
+                | Some rs ->
+                    // Resolve each env name to (label, D9 conn-ref) for the OSSYS
+                    // read; a non-direct or unknown env is a NAMED refusal.
+                    let refOf (envName: string) : Result<string * string> =
+                        match Map.tryFind envName cfg.Environments with
+                        | Some env ->
+                            match env.Access with
+                            | Access.Direct r -> Result.success (envName, connSpecOf r)
+                            | _ -> Result.failureOf (err "cli.check.shapeNotDirect" (sprintf "readiness environment '%s' is not access:direct (no live OSSYS connection to read)." envName))
+                        | None -> Result.failureOf (err "cli.check.shapeUnknownEnv" (sprintf "readiness environment '%s' is not defined." envName))
+                    let agreedR = refOf rs.Schema
+                    let confirmRs = rs.Confirm |> List.map refOf
+                    let errors =
+                        (match agreedR with Error es -> es | Ok _ -> [])
+                        @ (confirmRs |> List.collect (function Error es -> es | Ok _ -> []))
+                    match errors with
+                    | e :: _ -> PlanAction.Refused (6, e)
+                    | [] ->
+                        let agreed = match agreedR with Ok v -> v | Error _ -> (rs.Schema, "")
+                        let confirm = confirmRs |> List.choose (function Ok v -> Some v | Error _ -> None)
+                        PlanAction.CheckShape (fst agreed, snd agreed, confirm, (valueOf "--format" = Some "json"))
             | _ ->
                 match args |> List.tryFind (fun a -> not (a.StartsWith "--") && a <> "fidelity") with
                 | Some path -> PlanAction.CheckCanary (path, List.contains "--cdc-silence" args)
@@ -1274,9 +1419,9 @@ module Command =
     /// A `to` environment's reach → the `Destination` the engine lands at.
     let private destinationOfAccess (access: Access) : Destination =
         match access with
-        | Access.Bundle out -> Destination.Folder out
-        | Access.Direct r   -> Destination.Live r
-        | Access.Docker     -> Destination.Docker
+        | Access.Bundle (out, _) -> Destination.Folder out
+        | Access.Direct r        -> Destination.Live r
+        | Access.Docker          -> Destination.Docker
 
     /// M3.b (pure) — recognize a flow as a B→A reverse leg from the M1 `rendition`
     /// flag: `Some` exactly when the flow reads from a live `logical` source (B)
@@ -1303,6 +1448,9 @@ module Command =
             | Some env ->
                 match env.Access with
                 | Access.Direct r -> Some (env, connSpecOf r)
+                // A bundle place with a read `conn` is a live reverse-leg source:
+                // schema was published DOWN as files; data is read UP live.
+                | Access.Bundle (_, Some r) -> Some (env, connSpecOf r)
                 | _ -> None
             | None -> None
         match flow.From with
@@ -1332,7 +1480,11 @@ module Command =
             | Some env ->
                 match env.Access with
                 | Access.Direct r -> Result.success (DataOrigin.FromTarget (connSpecOf r))
-                | _ -> Result.failureOf (err "cli.flow.fromNotDirect" (sprintf "flow source '%s' must be access:direct (a live place to read rows from)." e))
+                // A bundle place with a read `conn` is a live read source (the
+                // reverse leg reads UP from the real on-prem database, even though
+                // schema is published DOWN to it as a file bundle).
+                | Access.Bundle (_, Some r) -> Result.success (DataOrigin.FromTarget (connSpecOf r))
+                | _ -> Result.failureOf (err "cli.flow.fromNotDirect" (sprintf "flow source '%s' has no live connection to read rows from — use access:direct, or add a `conn` to the bundle environment (the reverse-leg read path)." e))
 
     /// G2 — DERIVE the movement direction (a binding, never parsed) from the
     /// flow's source/sink renditions + content origin (THE_CONFIG_CONTROL_PLANE
@@ -1549,7 +1701,7 @@ module Command =
         // `out/` / cwd, so a flow whose bundle dir was none of those lost it).
         let bundleOutOf (envName: string) : string option =
             Map.tryFind envName cfg.Environments
-            |> Option.bind (fun e -> match e.Access with Access.Bundle out -> Some out | _ -> None)
+            |> Option.bind (fun e -> match e.Access with Access.Bundle (out, _) -> Some out | _ -> None)
         let storeOf () : Result<string * string option> =
             match flagValue args "--store" with
             | Some s -> Result.success (s, None)

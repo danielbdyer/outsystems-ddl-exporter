@@ -1398,6 +1398,36 @@ let ``H-070: refinement-type lite (no escaping constraint)`` () = ()
 //   - H-098 (PolicyStateMachineTests model-impl agreement)
 //   - H-099 (deferred-with-stub; explicit perf-driven trigger)
 
+// ---------------------------------------------------------------------------
+// Espace-invariance (CROSS_ENVIRONMENT_READINESS.md §2) — Bucket A.
+//
+// Two OutSystems environments hosting the same model are the same SHAPE
+// regardless of their per-environment OSUSR physical coordinates, at kind AND
+// attribute grain. Holds by composition: A1 (`OssysOriginal` identity is
+// cross-environment-stable — LifeTime preserves SS_KEY at every grain) + a
+// physical-agnostic `CatalogDiff` (it compares logical identity + `Name` +
+// facets, NEVER `Kind.Physical` or the physical column name). This is the law
+// the cross-environment readiness check (`check shape`) rests on; no rendition
+// projection is required. Witness: the CatalogDiffTests espace-invariance pair
+// (the zero-delta property + the type-change sensitivity counter-test).
+// ---------------------------------------------------------------------------
+[<Fact>]
+let ``Espace-invariance: CatalogDiff is physical-agnostic over OSSYS identity (CROSS_ENVIRONMENT_READINESS §2)`` () =
+    citationOf
+        "tests/Projection.Tests/CatalogDiffTests.fs"
+        "espace-invariance: CatalogDiff is blind to OSUSR physical coordinates — same OSSYS identity, different espace ⇒ zero delta"
+    citationOf
+        "tests/Projection.Tests/CatalogDiffTests.fs"
+        "espace-invariance sensitivity: a real logical divergence (attribute type change) DOES surface"
+    // The realization-artifact normalization (the caveat the two-DB canary forced):
+    citationOf
+        "tests/Projection.Tests/ReadinessTests.fs"
+        "compute: catalogs differing ONLY in espace-variant default-constraint names are READY"
+    // The end-to-end two-DB Docker canary (Docker-gated):
+    citationOf
+        "tests/Projection.Tests/OssysComprehensiveFixtureTests.fs"
+        "espace-invariance (Docker): two espace-variant OSSYS DBs of one model are READY (one shape)"
+
 [<Fact>]
 let ``H-050 adjunction law: in-process reader + emitter determinism + CatalogDiff reflexivity`` () =
     citationOf

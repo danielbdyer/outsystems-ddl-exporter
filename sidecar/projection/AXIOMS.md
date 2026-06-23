@@ -1226,6 +1226,48 @@ reflow) reads V1-stamped extended properties. Chapter 3.5's
 cross-version reach (V1-deployed kind ↔ V2-emitted kind via
 `identityKey`) opens at chapter 4.2.
 
+## A1-corollary — Espace-invariance (cross-environment shape equality, 2026-06-21)
+
+**Statement.** Two OutSystems environments hosting the same model are the
+**same shape** — at the **kind AND attribute grain** — regardless of their
+per-environment physical (`OSUSR_{espace}_…`) coordinates. Formally: for
+catalogs `A`, `B` read from two environments of one model that differ only in
+physical-realization slots (table physical name, column physical name),
+`CatalogDiff.between A B` is the zero delta (`isEmpty = true`, `norm = 0`).
+
+**Why it holds (composition, not new algebra).**
+1. `OssysOriginal g` honors A1 **unconditionally** (the four-variant `SsKey`
+   amendment): the native OutSystems SS_KEY GUID is stable across the estate's
+   environments at every grain (LifeTime promotion preserves it; operator-
+   confirmed 2026-06-21). An OSSYS read (`LiveModelRead`) yields it; a physical
+   `ReadSide` read does NOT (it synthesizes the key from the espace-varying
+   physical name — A1-bounded).
+2. `CatalogDiff` ignores physical table/column NAMES: it matches by `SsKey`,
+   reports a rename only on a logical-`Name` change, and never compares
+   `Kind.Physical` or the physical column name. **Caveat (the two-DB canary
+   forced it):** its facet set DOES compare three physical-REALIZATION artifacts
+   OutSystems names *after* the physical table — the default-constraint name
+   (`DefaultName`, inside the `DefaultValue` facet), `Triggers`, and
+   `ColumnChecks`. Those vary per espace, so the readiness gate normalizes them
+   away first (`Readiness.toLogicalShape`: drop the constraint name — keep the
+   default VALUE; drop triggers + column checks, which the engine regenerates
+   deterministically from the logical model on emission).
+
+So once identity aligns (read via OSSYS) AND the realization-name artifacts are
+normalized, the espace-varying coordinates are invisible to the diff. The
+reverse leg's `CatalogRendition.logical` (table/column rename) is NOT the tool
+here — `CatalogDiff` already ignores those names; the narrower `toLogicalShape`
+is. This is the L2 law under the L3 operator promise "the estate's environments
+are provably one shape," and the foundation of the `check shape`
+cross-environment readiness gate (`CROSS_ENVIRONMENT_READINESS.md`).
+
+  *Witnesses (Bucket A).* `CatalogDiffTests` — the table/column-name zero-delta
+  property + the type-change sensitivity counter-test; `ReadinessTests` — the
+  realization-artifact (default-constraint-name) normalization; and the
+  `OssysComprehensiveFixtureTests` **two-DB Docker canary** (two espace-variant
+  OSSYS DBs of one model read as ONE shape) — the canary that forced the caveat
+  above. Cited from `AxiomTests.fs`.
+
 ## A35 — Π's output is a deterministic statement stream (chapter-3.1 close, 2026-05-30)
 
 **Cashed at chapter 3.1 close** (per `DECISIONS 2026-05-28 — Session

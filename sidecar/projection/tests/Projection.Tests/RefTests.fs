@@ -28,6 +28,7 @@ let private minimalModel = """{
 let ``Ref: parse reads the revision syntax`` () =
     Assert.Equal(Ref.RunArtifact "01ABC", Ref.parse "@01ABC")
     Assert.Equal(Ref.Live "uat", Ref.parse "live:uat")
+    Assert.Equal(Ref.Ossys "cloud-dev", Ref.parse "ossys:cloud-dev")
     Assert.Equal(Ref.Json "{}", Ref.parse "json:{}")
     Assert.Equal(Ref.File "model.json", Ref.parse "model.json")
 
@@ -69,3 +70,24 @@ let ``Ref: a live ref resolves through the adapter and fails loud as a NAMED Err
     | Ok _     -> Assert.Fail "live should fail on an unreachable endpoint, not silently succeed"
     | Error es ->
         Assert.Contains(es, fun e -> e.Code = "source.live.connectionFailed")
+
+[<Fact>]
+let ``Ref: an ossys ref reads the OSSYS metamodel and refuses a non-D9 conn ref by name`` () =
+    // The `ossys:` operand reads the model from the OutSystems OSSYS metamodel
+    // (LiveModelRead → native GUID `OssysOriginal` SsKey at kind AND attribute
+    // grain) — the espace-safe identity source for cross-environment readiness
+    // (CROSS_ENVIRONMENT_READINESS.md). A conn ref that is not an out-of-band
+    // reference (env:/file:) is refused by name (D9), never silently resolved.
+    match TaskSync.run (fun () -> Ref.resolveCatalog (Ref.parse "ossys:not-a-ref")) with
+    | Ok _    -> Assert.Fail "ossys should refuse a non-D9 conn ref, not silently succeed"
+    | Error es -> Assert.Contains(es, fun e -> e.Code = "model.ossys.connRef")
+
+[<Fact>]
+let ``Ref: bothOssys / bothLive classify the cross-environment operand posture`` () =
+    // Both OSSYS ⇒ espace-safe (the `compare`/`diff` run faces normalize to the
+    // logical shape); both `live:` ⇒ espace-UNSAFE (a named advisory fires).
+    Assert.True(Ref.bothOssys (Ref.parse "ossys:cloud-dev") (Ref.parse "ossys:cloud-qa"))
+    Assert.False(Ref.bothOssys (Ref.parse "ossys:cloud-dev") (Ref.parse "live:cloud-qa"))
+    Assert.True(Ref.bothLive (Ref.parse "live:a") (Ref.parse "live:b"))
+    Assert.False(Ref.bothLive (Ref.parse "ossys:a") (Ref.parse "live:b"))
+    Assert.False(Ref.bothLive (Ref.parse "file:a.json") (Ref.parse "file:b.json"))

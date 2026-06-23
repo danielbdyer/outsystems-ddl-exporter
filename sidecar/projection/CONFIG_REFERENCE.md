@@ -4,8 +4,8 @@ There is **one** configuration surface — a single `projection.json` that is th
 
 | View | What it controls | Namespaces |
 |---|---|---|
-| **movement** | *where* a model/data moves — places + recipes | `environments`, `flows`, `defaults` |
-| **model shaping** (this doc) | *what the model IS* before it moves — module/entity scope, entity/table renames, emission toggles, tightening policy, type mappings | `model`, `overrides`, `emission`, `policy`, `profiler`, `cache`, `typeMapping`, `output` |
+| **movement** | *where* a model/data moves — places + recipes | `environments`, `flows`, `readiness` (the cross-environment cutover gate — `CROSS_ENVIRONMENT_READINESS.md`), `defaults` |
+| **model shaping** (this doc) | *what the model IS* before it moves — module/entity scope, entity/table renames, emission toggles, tightening policy | `model`, `overrides`, `emission`, `policy`, `profiler`, `output` |
 
 The shaping namespaces fold in as **sibling top-level keys** of the same `projection.json`. A movement-only file leniently defaults every shaping section (so it never fails `modelNoSource`); a file that authors shaping sees them applied. The strict `Config.parse`/`fromFile` loader (this doc's schema) and the lenient movement loader (`MovementSurface.fs`) read the **same** document. The only genuine collision is the two `model` keys, reconciled into one `model` object (legacy top-level `model: "<path>"` maps to `model.path`; `modelOssys` to `model.ossys`).
 
@@ -49,13 +49,23 @@ Every key, with type · required? · default. Unknown keys are ignored; type mis
 
 | Key | Type | Req? | Default | Meaning |
 |---|---|---|---|---|
-| `path` | string | one of path/ossys | — | path to an exported `osm_model.json` (the fallback source) |
-| `ossys` | string | one of path/ossys | — | a live OSSYS connection **reference** (`env:`/`file:`) — the primary source when set |
-| `modules` | array | no | `[]` (all) | **in-scope selector.** Each entry is a bare string `"AppCore"` (whole module) **or** an object `{ "name": "ServiceCenter", "entities": ["User","Organization"] }` (entity-level filter) |
+| `env` | string | one of env/ossys/path | — | the **primary-environment reference** — names an entry in `environments` (the canonical source the estate derives from). Resolves to that env's live OSSYS `conn` (espace-safe, native GUIDs), so the connection is **named once**. Unified-config only (needs an `environments` registry). Mutually exclusive with `ossys`. |
+| `ossys` | string | one of env/ossys/path | — | a live OSSYS connection **reference** (`env:<VAR>` / `file:<path>`) — a *standalone* primary source for a registry-less config (the model-shaping file). Prefer `env` in the unified `projection.json`. |
+| `path` | string | one of env/ossys/path | — | path to an exported `osm_model.json` (the fallback source) |
+| `modules` | array | no | `[]` (all) | **in-scope selector.** Each entry is a bare string `"Sales"` (whole module) **or** an object `{ "name": "ServiceCenter", "entities": ["User","Organization"] }` (entity-level filter) |
 | `includeSystemModules` | bool | no | `false` | include OutSystems system modules |
 | `includeInactiveModules` | bool | no | `false` | include inactive modules |
 | `onlyActiveAttributes` | bool | no | `true` | keep only active attributes |
-| `validationOverrides` | object | no | `{}` | `{ "allowMissingSchema": ["Mod::*"] }` — suppress missing-schema validation for the listed schemas |
+
+> **`model.env` — the schema source as an environment reference.** Like `flow.from` and
+> `readiness.schema`, `env` points into the `environments` registry **by name** rather than
+> inlining a connection that would duplicate the environment's own `conn`. It is resolved by the
+> movement surface (`ProjectionConfig.parse`), which is the only surface carrying the registry,
+> into the same `model.ossys` the live read consumes — so the resolution is transparent (no
+> behavioural fork from the explicit-`ossys` form). When a `readiness` block omits its `schema`,
+> that **defaults to `model.env`** — the canonical environment named once serves both emission and
+> the cutover gate. (Do not confuse the `env` *field*, an environment name, with the `env:<VAR>`
+> *conn-ref scheme* used inside `ossys` / `conn` values.) See `CROSS_ENVIRONMENT_READINESS.md` §4.
 
 ### `overrides` — naming and structural directives
 
@@ -64,7 +74,7 @@ Every key, with type · required? · default. Unknown keys are ignored; type mis
 | `tableRenames` | array | `[]` | each `{ "from": <source>, "to": { "schema": "dbo", "table": "NEW" } }`. `from` is **either** logical `{ "module": "M", "entity": "E" }` **or** physical `{ "schema": "S", "table": "T" }` (not both — `renameSourceAmbiguous` / `renameSourceMissing` otherwise) |
 | `emissionFolders` | array | `[]` | `{ "ref": { "module": "M", "entity": "E" }, "folder": "Static/Reference" }` — redirect an entity's SSDT `.sql` from `Modules/<M>/` to a custom folder |
 | `allowMissingPrimaryKey` | array | `[]` | `[{ "module": "M", "entity": "E" }, …]` — entities exempt from PK enforcement |
-| `circularDependencies` | object | — | `{ "allowedCycles": [{ "tableOrdering": [{ "tableName": "T", "position": N }, …] }], "strictMode": bool }` |
+| `circularDependencies` | object | — | `{ "allowedCycles": [{ "order": [{ "module": "M", "entity": "E", "position": N }, …] }], "strictMode": bool }` — manual cycle ordering keyed by **logical** `{ module, entity }` (espace-safe; resolved to the kind's SsKey, like the other overrides) |
 | `migrationDependencies` | object | — | `{ "path": "overrides/mig.json" }` — a custom migration-dependency graph |
 | `staticData` | object | — | `{ "path": "overrides/static.json" }` — static-data seed config |
 
@@ -81,69 +91,67 @@ Every key, with type · required? · default. Unknown keys are ignored; type mis
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `selection` | string | `"IncludeAll"` | kind-selection policy |
 | `insertion` | string | `"SchemaOnly"` | data-insertion policy |
-| `userMatching` | object | `{ "strategy": "ByEmail", "fallback": "NoFallback" }` | user re-key strategy + fallback |
 | `transformGroups` | array | `[]` (all on) | `[{ "name": "Tightening", "enabled": true }, …]` — toggle whole transform groups |
-| `tightening` | object | — | `{ "interventions": [ … ] }` — the nullability / uniqueIndex / foreignKey / categoricalUniqueness rules (below) |
+| `tightening` | object | — | `{ "interventions": [ … ] }` — the uniqueIndex / foreignKey / categoricalUniqueness rules (below) |
 
 **`tightening.interventions[]`** — each carries `kind` + `id` + kind-specific fields:
 
-- `kind: "nullability"` — `nullBudget` (decimal 0–1), `allowMandatoryRelaxation` (bool), `overrides: [{ "attributeRef": "AppCore.User.MiddleName", "action": "keepNullable" }]`
 - `kind: "uniqueIndex"` — `enforceSingleColumnUnique`, `enforceMultiColumnUnique` (bool)
 - `kind: "foreignKey"` — `enableCreation`, `allowCrossSchema`, `allowCrossCatalog`, `treatMissingDeleteRuleAsIgnore`, `allowNoCheckCreation` (bool)
 - `kind: "categoricalUniqueness"` — `minDistinctCountForUniqueness` (int)
 
-### `typeMapping` · `profiler` · `cache` · `output`
+> **`kind: "nullability"` is disabled** (DECISIONS 2026-06-22). Config-driven nullable→NOT NULL coercion is the team's modeling decision, not the tool's — a nullability intervention is *accepted but creates no intervention* (a no-op; the run is not refused). Null-density is still profiled as a **statistic** (informational / synthetics). Declare a column mandatory in the OutSystems model instead.
+
+### `profiler` · `output`
 
 | Section | Keys | Default |
 |---|---|---|
-| `typeMapping` | `path` (rules JSON) · `default` (string) · `overrides` `{ "OutSystemsType": "SqlType" }` | `{}` |
-| `profiler` | `provider` `"fixture"` \| `"live"` (live reads `PROJECTION_MSSQL_CONN_STR`) · `mockFolder` | `{ provider: "fixture" }` |
-| `cache` | `root` · `refresh` · `ttlSeconds` | `.artifacts/cache` · `false` · `7200` |
+| `profiler` | `provider` `"fixture"` \| `"live"` (live profiles the source DB via `PROJECTION_MSSQL_CONN_STR` — D9, never the config — so tightening has null-density evidence) | `{ provider: "fixture" }` |
 | `output` | `dir` | `out/` |
 
-**Parser refusals** (`pipeline.config.*`): `jsonInvalid`, `fileNotFound`, `fileReadError`, `missingProperty`, `modelNoSource` (neither `model.path` nor `model.ossys`), `typeMismatch`, `nullProperty`, `nullArrayElement`, `credentialPropertyForbidden` (D9), `renameSourceAmbiguous`, `renameSourceMissing`.
+**Parser refusals** (`pipeline.config.*`): `jsonInvalid`, `fileNotFound`, `fileReadError`, `missingProperty`, `modelNoSource` (none of `model.env` / `model.ossys` / `model.path`), `typeMismatch`, `nullProperty`, `nullArrayElement`, `credentialPropertyForbidden` (D9), `renameSourceAmbiguous`, `renameSourceMissing`.
+
+**`model.env` resolution refusals** (`cli.config.*`, movement surface): `modelEnvAndOssys` (`env` + `ossys` both set — two ways to name the one live source), `modelEnvUnknown` (`env` names an environment absent from `environments`), `modelEnvNotDirect` (`env` names a `bundle`/`docker` place with no live OSSYS connection to read).
 
 ---
 
 ## A robust worked example
 
-A config that exercises every major axis — module + entity scoping, both rename forms, an emission-folder redirect, a nullability tightening intervention, and the emission toggles. The committed, copy-pasteable version is **`examples/model.config.sample.json`** (validated: it parses against the live `Config` loader and `explain node` runs the pipeline over it). The `//` annotations below are illustrative — the real file is comment-free JSON.
+A config that exercises every major axis — module + entity scoping, both rename forms, an emission-folder redirect, a nullability tightening intervention, and the emission toggles. This is the **shaping-only view** shown in isolation — the `model` / `overrides` / `emission` / `policy` sections with no `environments`/`flows` estate. It is a strict **subset of the unified [`examples/projection.sample.json`](examples/projection.sample.json)** (same sections, same loader): a daily run discovers `projection.json`; the analysis verbs (`explain` / `suggest` / `policy diff`) accept either this shaping-only form or the full `projection.json` by path. The `//` annotations are illustrative — strip them for real JSON.
 
 ```jsonc
-// model-shaping config — copy examples/model.config.sample.json (this view is annotated)
+// the model-shaping view in isolation (a subset of projection.json) — annotated; strip comments for real JSON
 {
   "model": {
-    "ossys": "file:./secrets/ossys.conn",        // primary: read the model live (env:/file: ref)
+    "ossys": "file:./secrets/cloud-dev.conn",     // a standalone live source (env:/file: ref). In a unified projection.json, prefer `env: "<name>"` (names an environment); the analysis verbs read via ossys/path, not env.
     "path":  "extracted/osm_model.json",          // fallback if no live connection
 
     "modules": [
-      "AppCore",                                  // whole module
+      "Sales",                                    // whole module
       { "name": "ServiceCenter", "entities": ["User", "Organization"] }  // entity-level
     ],
     "includeSystemModules": false,
     "includeInactiveModules": false,
-    "onlyActiveAttributes": true,
-    "validationOverrides": { "allowMissingSchema": ["Mod::*"] }
+    "onlyActiveAttributes": true
   },
 
   "overrides": {
     "tableRenames": [
-      { "from": { "module": "AppCore", "entity": "Customer" }, "to": { "schema": "dbo", "table": "CUSTOMER" } },
-      { "from": { "schema": "dbo", "table": "OSUSR_ABC_ORDER" }, "to": { "schema": "dbo", "table": "ORDER_HEADER" } }
+      { "from": { "module": "Sales", "entity": "Customer" }, "to": { "schema": "dbo", "table": "Customer" } },
+      { "from": { "schema": "dbo", "table": "OSUSR_SAL_ORDER" }, "to": { "schema": "dbo", "table": "OrderHeader" } }
     ],
     "emissionFolders": [
-      { "ref": { "module": "AppCore", "entity": "Country" }, "folder": "Static/Reference" }
+      { "ref": { "module": "Sales", "entity": "Country" }, "folder": "Static/Reference" }
     ],
     "allowMissingPrimaryKey": [
-      { "module": "AppCore", "entity": "LegacyAuditLog" }
+      { "module": "Sales", "entity": "LegacyAuditLog" }
     ],
     "circularDependencies": {
       "allowedCycles": [
-        { "tableOrdering": [
-            { "tableName": "OSUSR_ABC_ORG",  "position": 100 },
-            { "tableName": "OSUSR_ABC_USER", "position": 200 }
+        { "order": [
+            { "module": "ServiceCenter", "entity": "Organization", "position": 100 },
+            { "module": "ServiceCenter", "entity": "User",         "position": 200 }
         ] }
       ],
       "strictMode": false
@@ -156,23 +164,16 @@ A config that exercises every major axis — module + entity scoping, both renam
   },
 
   "policy": {
-    "selection": "IncludeAll",
     "insertion": "SchemaOnly",
-    "userMatching": { "strategy": "ByEmail", "fallback": "NoFallback" },
     "tightening": {
       "interventions": [
-        {
-          "kind": "nullability",
-          "id": "promote-mandatory-where-clean",
-          "nullBudget": 0.001,
-          "allowMandatoryRelaxation": false,
-          "overrides": [
-            { "attributeRef": "AppCore.User.MiddleName", "action": "keepNullable" }
-          ]
-        }
+        { "kind": "foreignKey", "id": "create-model-fks", "enableCreation": true }
       ]
     },
-    "transformGroups": [ { "name": "Tightening", "enabled": true } ]
+    "transformGroups": [
+      { "name": "Tightening", "enabled": true },
+      { "name": "UserReflow", "enabled": true }
+    ]
   },
 
   "output": { "dir": "out/" }
@@ -182,8 +183,10 @@ A config that exercises every major axis — module + entity scoping, both renam
 Verify it before relying on it — `explain node` runs the pipeline with these overlays and reports one node's decisions:
 
 ```bash
-projection explain node ./model.config.json "AppCore.Customer"   # confirm the rename + tightening fired
-projection explain suggest ./model.config.json                    # ranked edits this config is missing
+projection explain node ./projection.json "Sales.Customer"     # confirm the rename + tightening fired
+projection explain suggest ./projection.json                    # ranked edits this config is missing
 ```
+
+The analysis verbs read the **shaping view** of whatever config you point them at — `projection.json` works directly (its `environments`/`flows` are ignored here), or a shaping-only file like the one above. They resolve the model through `model.ossys`/`model.path`, **not** `model.env` (that needs the estate registry, which these registry-less verbs do not load — so a unified `projection.json` exercises them via its `path` fallback or an explicit `ossys`).
 
 (Real connection strings stay in `./secrets/*.conn`, gitignored — `model.ossys` only names the `file:` reference.)

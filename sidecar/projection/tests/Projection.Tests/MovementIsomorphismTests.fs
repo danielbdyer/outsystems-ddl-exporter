@@ -204,7 +204,7 @@ let ``A44 clause 1 — F7: a blessing rides ALONGSIDE the movement vocabulary (n
     // The blessing must not displace the flows/environments it shares the file
     // with — the RelaxationStore surgical-merge invariant, now also true through
     // the typed render.
-    let env = { Name = "sink"; Access = Access.Bundle "dist/out"; Grant = None; Store = None
+    let env = { Name = "sink"; Access = Access.Bundle ("dist/out", None); Grant = None; Store = None
                 Rendition = None; Archetype = None; AtomicDeploy = None; Revert = None }
     let cfg =
         { ProjectionConfig.empty with
@@ -221,7 +221,10 @@ let ``A44 clause 1 — renderEnvironment ∘ parseEnvironment = id on every reac
     // A worked, exhaustive pinning that complements the property: every access
     // form × grant × rendition × store round-trips through the env vocabulary.
     let accesses =
-        [ Access.Bundle "dist/out"; Access.Direct (ConnectionRef.EnvVar "E_CONN")
+        [ Access.Bundle ("dist/out", None)
+          // a bundle place WITH a read conn (the reverse-leg read path) must round-trip too
+          Access.Bundle ("dist/out", Some (ConnectionRef.File "file:./onprem.conn"))
+          Access.Direct (ConnectionRef.EnvVar "E_CONN")
           Access.Direct (ConnectionRef.File "file:./e.conn"); Access.Docker ]
     for access in accesses do
       for grant in allGrantOpts do

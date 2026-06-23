@@ -31,10 +31,16 @@ let private usageLines : string list =
         "    projection <flow> [--go] [--fresh] [--allow-drops] [--allow-cdc] [--resumable] [--atomic] [--auto-revert]   the daily surface"
         "    projection                                           list flows (name: from → to)"
         "    projection check  ( <source.sql> [--cdc-silence] | drift --model <m> --to <t>"
-        "                      | data --before <t> --after <t> | ready )"
+        "                      | data --before <t> --after <t> | ready | shape )"
+        "                      shape = the cross-environment readiness gate (the `readiness` set"
+        "                      resolves to one espace-safe shape + zero data dealbreakers)"
         "    projection diff <a> <b> [--format json] [--depth N] [--only <channel>] [--module <name>]"
         "                      change between two refs (--only columns|relationships|indexes|"
         "                      sequences|tables scopes the display; --module scopes the diff)"
+        "                      refs <a>/<b>: <file> | json:<…> | @<runId> | live:<conn> (physical) |"
+        "                      ossys:<conn> (OSSYS native-GUID identity — espace-safe for cross-env)"
+        "    projection compare <a> <b> [--format json]    read-only readiness between two refs:"
+        "                      schema delta + data dealbreakers (same ref forms as diff) → compare.json"
         "    projection explain ( diff <a> <b> [--format json] [--depth N] | policy <a> <b>"
         "                       | node <config> <ssKey> | suggest <config> [--apply <out>] | registry"
         "                       | migrate --to <b> ( --from <a> | --from empty | --store <s> ) [--allow-drops] )"
@@ -90,8 +96,8 @@ let private usageLines : string list =
         "    2  parse error (model JSON / spec / config-parse)"
         "    3  execution error (SQL rejected the change; connection open; unbreakable cycle)"
         "    4  Docker unavailable (a docker target; check fidelity)"
-        "    5  fidelity divergence (check canary / check drift)"
-        "    6  config error (file missing / unparseable / D9; connection-ref resolve)"
+        "    5  fidelity divergence (check canary / check drift; check shape not-ready)"
+        "    6  config error (file missing / unparseable / D9; connection-ref resolve; check shape env unreadable)"
         "    7  gate refusal (--go without PROJECTION_ALLOW_EXECUTE=1; permission pre-flight)"
         "    8  data divergence (check data row / null)"
         "    9  refused, fail-loud (undeclared drop; inexpressible ALTER; tightening; verify-failed)"
@@ -198,6 +204,7 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
     | PlanAction.CheckDrift (m, conn)      -> runDrift m conn
     | PlanAction.CheckData (before, after) -> runVerifyData before after
     | PlanAction.CheckReady                -> runReadiness ()
+    | PlanAction.CheckShape (al, ar, confirm, asJson) -> runCheckShape al ar confirm asJson
     // explain ------------------------------------------------------------
     | PlanAction.ExplainDiff (a, b, asJson, depthOpt, channel, onlyModule) -> runDiff a b asJson (defaultArg depthOpt View.defaultDepth) channel onlyModule
     | PlanAction.Compare (a, b, asJson)      -> runCompare a b asJson
@@ -272,36 +279,41 @@ let private runInit () : int =
         // views. The movement view is `environments` (access bundle|direct|docker;
         // grant; conn is env:/file:) + `flows` (from/to; opt-in `shape`/`shaping`).
         // The shaping view folds in as sibling namespaces: the canonical `model`
-        // OBJECT (path/ossys/modules — `ossys` is the LIVE primary, `path` the file
-        // fallback, ModelResolution.chooseOrigin), plus `overrides`/`emission`/
-        // `policy` (defaulted when absent). Flows now bake the shaping into the
-        // publish (ConfigFile→PublishBundle/PublishAndLoad) for store-bearing sinks.
-        // A SOURCE-only env carries no grant; only a SINK does. The parser ignores
-        // unknown keys.
+        // OBJECT (env/ossys/path/modules — `env` NAMES the primary environment
+        // [resolving to its live OSSYS conn, so the connection is named once, in
+        // `environments`], `path` the file fallback, ModelResolution.chooseOrigin),
+        // plus `overrides`/`emission`/`policy` (defaulted when absent). The
+        // readiness gate's `schema` defaults to `model.env`. Flows now bake the
+        // shaping into the publish (ConfigFile→PublishBundle/PublishAndLoad) for
+        // store-bearing sinks. A SOURCE-only env carries no grant; only a SINK
+        // does. The parser ignores unknown keys.
         let scaffold =
             "{\n" +
-            "  \"model\": { \"ossys\": \"file:./secrets/ossys.conn\" },\n" +
+            "  \"model\": { \"env\": \"cloud-dev\" },\n" +
             "  \"environments\": {\n" +
-            "    \"local\":      { \"access\": \"docker\" },\n" +
-            "    \"onprem-dev\": { \"access\": \"bundle\", \"out\": \"./dist/onprem-dev\", \"grant\": \"schema+data\", \"rendition\": \"logical\", \"store\": \"./lifecycle/onprem-dev.json\" }\n" +
+            "    \"cloud-dev\":   { \"access\": \"direct\", \"conn\": \"file:./secrets/cloud-dev.conn\", \"rendition\": \"physical\", \"archetype\": \"managed-dml\" },\n" +
+            "    \"cloud-qa\":    { \"access\": \"direct\", \"conn\": \"file:./secrets/cloud-qa.conn\",  \"rendition\": \"physical\", \"archetype\": \"managed-dml\" },\n" +
+            "    \"local\":       { \"access\": \"docker\" },\n" +
+            "    \"on-prem-dev\": { \"access\": \"bundle\", \"out\": \"./dist/on-prem-dev\", \"grant\": \"schema+data\", \"rendition\": \"logical\", \"archetype\": \"full-rights\", \"store\": \"./lifecycle/on-prem-dev.json\" }\n" +
             "  },\n" +
+            "  \"readiness\": { \"confirm\": [\"cloud-dev\", \"cloud-qa\"] },\n" +
             "  \"emission\": { \"ssdt\": true, \"dacpac\": true },\n" +
             "  \"flows\": {\n" +
-            "    \"try\":      { \"from\": \"model\", \"to\": \"local\" },\n" +
-            "    \"skeleton\": { \"from\": \"model\", \"to\": \"local\", \"shape\": \"skeleton\" },\n" +
-            "    \"publish\":  { \"from\": \"model\", \"to\": \"onprem-dev\" }\n" +
+            "    \"try\":      { \"from\": \"cloud-dev\", \"to\": \"local\" },\n" +
+            "    \"skeleton\": { \"from\": \"cloud-dev\", \"to\": \"local\", \"shape\": \"skeleton\" },\n" +
+            "    \"publish\":  { \"from\": \"cloud-dev\", \"to\": \"on-prem-dev\" }\n" +
             "  }\n" +
             "}\n"
         File.WriteAllText(path, scaffold)
         printfn "projection init: wrote %s." path
-        printfn "  Next: put your cloud OutSystems connection string in ./secrets/ossys.conn — the"
-        printfn "        model is read LIVE from it (the file's contents ARE the connection string; D9,"
-        printfn "        gitignored, never committed). The engine reads the file directly — no shell"
-        printfn "        export. Then `projection` lists the flows; `projection try` previews into a"
-        printfn "        throwaway Docker database; `projection publish` emits the on-prem SSDT bundle."
-        printfn "        For the cloud-insertion flows (golden / preview / synth into a data-only cloud"
-        printfn "        sink) see examples/projection.sample.json. A live write needs both --go and"
-        printfn "        PROJECTION_ALLOW_EXECUTE=1."
+        printfn "  Next: put each environment's connection string in ./secrets/<name>.conn (the file's"
+        printfn "        contents ARE the connection string; D9, gitignored, never committed) — the model"
+        printfn "        is read LIVE from cloud-dev. Then `projection` lists the flows; `projection check"
+        printfn "        shape` confirms the cloud cells resolve to one shape; `projection try` previews"
+        printfn "        into a throwaway Docker database; `projection publish` emits the on-prem SSDT"
+        printfn "        bundle. For the full six-environment estate + the cloud-insertion producers"
+        printfn "        (golden / reverse / synth into a data-only cloud sink) see"
+        printfn "        examples/projection.sample.json. A live write needs both --go and PROJECTION_ALLOW_EXECUTE=1."
         0
 
 /// Discover `projection.json` (or `PROJECTION_CONFIG`) — absent is the empty

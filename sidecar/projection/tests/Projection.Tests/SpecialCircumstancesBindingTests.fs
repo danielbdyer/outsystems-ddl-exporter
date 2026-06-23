@@ -182,12 +182,12 @@ let ``C.2: AllowMissingPrimaryKey aggregates errors across multiple unresolved e
 // ----------------------------------------------------------------------
 
 [<Fact>]
-let ``C.2: AllowedCycles resolves physical TableName entries to SsKey set`` () =
+let ``C.2: AllowedCycles resolves logical { module, entity } entries to SsKey set`` () =
     let catalog = loadCatalog ()
     let cycle : Config.CircularDependencyCycle = {
-        TableOrdering = [
-            { TableName = "OSUSR_APPCORE_USER"; Position = 1 }
-            { TableName = "OSUSR_APPCORE_ORG";  Position = 2 }
+        Order = [
+            { Module = "AppCore"; Entity = "User";         Position = 1 }
+            { Module = "AppCore"; Entity = "Organization"; Position = 2 }
         ]
     }
     let overrides =
@@ -203,11 +203,11 @@ let ``C.2: AllowedCycles resolves physical TableName entries to SsKey set`` () =
     | Error errs -> Assert.Fail(sprintf "expected Ok, got %A" errs)
 
 [<Fact>]
-let ``C.2: AllowedCycles unresolved TableName surfaces structured error`` () =
+let ``C.2: AllowedCycles unresolved logical ref surfaces structured error`` () =
     let catalog = loadCatalog ()
     let cycle : Config.CircularDependencyCycle = {
-        TableOrdering = [
-            { TableName = "OSUSR_DOES_NOT_EXIST"; Position = 1 }
+        Order = [
+            { Module = "Ghost"; Entity = "Nope"; Position = 1 }
         ]
     }
     let overrides =
@@ -229,7 +229,7 @@ let ``C.2: AllowedCycles unresolved TableName surfaces structured error`` () =
 let ``C.2: errors aggregate across both allowMissingPk and allowedCycles axes`` () =
     let catalog = loadCatalog ()
     let cycle : Config.CircularDependencyCycle = {
-        TableOrdering = [ { TableName = "OSUSR_NOPE"; Position = 1 } ]
+        Order = [ { Module = "Ghost"; Entity = "Nope2"; Position = 1 } ]
     }
     let overrides =
         { emptyOverrides with

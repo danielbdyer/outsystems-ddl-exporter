@@ -1,42 +1,123 @@
 {
-  "model": { "ossys": "file:./secrets/ossys.conn" },
+  "model": {
+    "_comment": "Schema source, named once. 'env' points into the environments registry by name (live OSSYS read, espace-safe) — the canonical environment the whole estate derives from. 'path' is the extracted-file fallback. Use 'ossys' instead of 'env' only for a standalone connection with no registry.",
+    "env": "cloud-dev",
+    "path": "extracted/osm_model.json",
+    "modules": [
+      "Sales",
+      "Billing",
+      { "name": "ServiceCenter", "entities": ["User", "Organization"] }
+    ],
+    "includeSystemModules": false,
+    "includeInactiveModules": false,
+    "onlyActiveAttributes": true
+  },
 
   "overrides": {
+    "_comment": "Naming + structural directives, keyed to THIS sample's entities (Sales / Billing / ServiceCenter) — swap the refs for your own. Every section is optional; omit one to take the faithful default. A rename 'from' is EITHER logical { module, entity } OR physical { schema, table } (never both).",
     "tableRenames": [
-      { "from": { "module": "Sales", "entity": "Cust" }, "to": { "schema": "dbo", "table": "Customer" } }
+      { "from": { "module": "Sales", "entity": "Customer" }, "to": { "schema": "dbo", "table": "Customer" } },
+      { "from": { "schema": "dbo", "table": "OSUSR_SAL_ORDER" }, "to": { "schema": "dbo", "table": "OrderHeader" } }
+    ],
+    "emissionFolders": [
+      { "ref": { "module": "Sales", "entity": "Country" }, "folder": "Static/Reference" },
+      { "ref": { "module": "ServiceCenter", "entity": "User" }, "folder": "Modules/UserExtension_CS" }
+    ],
+    "allowMissingPrimaryKey": [
+      { "module": "Sales", "entity": "LegacyAuditLog" }
+    ],
+    "circularDependencies": {
+      "allowedCycles": [
+        { "order": [
+          { "module": "ServiceCenter", "entity": "Organization", "position": 100 },
+          { "module": "ServiceCenter", "entity": "User",         "position": 200 }
+        ] }
+      ],
+      "strictMode": false
+    }
+  },
+
+  "emission": {
+    "_comment": "Which artifacts the publish bundle emits. ssdt = the schema; staticSeeds / migrationDependencies / bootstrap = the data lanes. Each defaults true; set false to suppress one.",
+    "ssdt": true,
+    "dacpac": true,
+    "json": true,
+    "staticSeeds": true,
+    "migrationDependencies": true,
+    "bootstrap": true
+  },
+
+  "policy": {
+    "_comment": "OPT-IN overlays. Omit this block for faithful vanilla emission. 'tightening.interventions' are TRACKED operator decisions (kinds: foreignKey / uniqueIndex / categoricalUniqueness); each carries a kind + id. 'transformGroups' BOTH run by default — a missing group is enabled — so list one with enabled:false only to suppress it.",
+    "insertion": "SchemaOnly",
+    "tightening": {
+      "interventions": [
+        { "kind": "foreignKey", "id": "create-model-fks", "enableCreation": true }
+      ]
+    },
+    "transformGroups": [
+      { "name": "Tightening", "enabled": true },
+      { "name": "UserReflow", "enabled": true }
     ]
   },
 
-  "emission": { "ssdt": true, "dacpac": true },
-
-  "policy": {
-    "_comment": "OPT-IN, not baseline. Omit this whole block for faithful vanilla emission (the default skeleton imposes no tightening). Each interventions entry is a TRACKED operator override of the team's model — shown here only to illustrate the shape.",
-    "tightening": { "interventions": [ { "kind": "nullability", "id": "n1", "nullBudget": 0.0 } ] }
+  "profiler": {
+    "_comment": "Source-data evidence. 'live' profiles the source DB (connection from PROJECTION_MSSQL_CONN_STR, never the config — D9) for the readiness data-dealbreaker checks and evidence-based tightening; 'fixture' (the default) carries none.",
+    "provider": "live"
   },
 
+  "output": { "dir": "out/" },
+
   "environments": {
-    "onprem-dev":    { "access": "bundle", "out": "./dist/onprem-dev", "grant": "schema+data", "rendition": "logical" },
-    "onprem-qa":     { "access": "bundle", "out": "./dist/onprem-qa",  "grant": "schema+data", "rendition": "logical" },
-    "onprem-uat":    { "access": "bundle", "out": "./dist/onprem-uat", "grant": "schema+data", "rendition": "logical", "store": "lifecycle/onprem-uat.json" },
+    "cloud-dev":   { "access": "direct", "conn": "file:./secrets/cloud-dev.conn", "rendition": "physical", "archetype": "managed-dml" },
+    "cloud-qa":    { "access": "direct", "conn": "file:./secrets/cloud-qa.conn",  "rendition": "physical", "archetype": "managed-dml", "grant": "data" },
+    "cloud-uat":   { "access": "direct", "conn": "file:./secrets/cloud-uat.conn", "rendition": "physical", "archetype": "managed-dml", "grant": "data", "store": "lifecycle/cloud-uat.json", "revert": "script" },
 
-    "onprem-legacy": { "access": "direct", "conn": "file:./secrets/onprem-legacy.conn", "rendition": "logical" },
+    "on-prem-dev": { "access": "bundle", "out": "./dist/on-prem-dev", "conn": "file:./secrets/on-prem-dev.conn", "rendition": "logical", "archetype": "full-rights", "grant": "schema+data", "store": "lifecycle/on-prem-dev.json" },
+    "on-prem-qa":  { "access": "bundle", "out": "./dist/on-prem-qa",  "conn": "file:./secrets/on-prem-qa.conn",  "rendition": "logical", "archetype": "full-rights", "grant": "schema+data" },
 
-    "cloud-qa":      { "access": "direct", "conn": "file:./secrets/cloud-qa.conn", "rendition": "physical" },
+    "on-prem-uat": { "access": "bundle", "out": "./dist/on-prem-uat", "conn": "file:./secrets/on-prem-uat.conn", "rendition": "logical", "archetype": "full-rights", "grant": "schema+data" }
+  },
 
-    "cloud-uat":     { "access": "direct", "conn": "file:./secrets/cloud-uat.conn", "grant": "data", "rendition": "physical", "store": "lifecycle/cloud-uat.json" }
+  "readiness": {
+    "_comment": "The agreed shape defaults to model.env (cloud-dev) — name 'schema' here only to override it. 'confirm' lists the environments checked against that shape.",
+    "confirm": ["cloud-dev", "cloud-qa", "cloud-uat"]
   },
 
   "flows": {
-    "publish":  { "from": "model", "to": "onprem-uat" },
+    "publish":    { "from": "cloud-dev", "to": "on-prem-dev" },
 
-    "skeleton": { "from": "model", "to": "onprem-dev", "shape": "skeleton" },
+    "publish-qa": { "from": "cloud-dev", "to": "on-prem-qa" },
 
-    "audit":    { "from": "model", "to": "onprem-dev", "shaping": { "model": { "modules": ["Ops"] } } },
+    "golden":     { "from": "cloud-qa", "to": "cloud-uat", "scope": "data", "tables": ["Customer", "Order", "OrderLine"], "reconcile": ["ServiceCenter.User:Email"], "rekey": "file:./secrets/uat-users.csv", "strategy": "replace" },
 
-    "golden":   { "from": "cloud-qa", "to": "cloud-uat", "scope": "data", "tables": ["Customer", "Order", "OrderLine"], "rekey": "file:./secrets/users.csv" },
+    "reverse":    { "from": "on-prem-uat", "to": "cloud-uat", "scope": "data", "strategy": "merge", "streaming": true, "resumable": true, "journal": "lifecycle/reverse-uat.ndjson" },
 
-    "preview":  { "from": "onprem-legacy", "to": "cloud-uat", "scope": "data" },
+    "synth":      { "from": "synthetic", "to": "cloud-qa", "profile": "on-prem-uat", "correction": "file:./corrections/uat.correction.json" }
+  },
 
-    "synth":    { "from": "synthetic", "to": "cloud-uat", "profile": "cloud-qa" }
+  "synthetic": {
+    "_comment": "How `from: synthetic` generates data (THE_SYNTHETIC_DATA_DESIGN §11). Hybrid by cardinality: a column with ≤ preserveCardinalityMax distinct values keeps its real distribution; above that it is synthesized. 'preserve'/'synthesize' override per logical column NAME. --seed/--scale are the per-run overrides; the per-flow 'correction' carries the richer per-column PII→Faker intent (generate a first draft with `projection propose-correction`).",
+    "preserveCardinalityMax": 50,
+    "preserve":   ["Status", "Country", "Currency"],
+    "synthesize": ["Email", "FullName", "Phone"],
+    "scale": 1.0,
+    "seed": 42
+  },
+
+  "slices": {
+    "us-customers": {
+      "version": 1,
+      "roots": [
+        { "entity": { "module": "Sales", "entity": "Customer" }, "predicate": { "op": "in", "column": "Country", "values": ["US", "CA"] } }
+      ],
+      "directives": [
+        { "from": { "module": "Sales", "entity": "Order" }, "relationship": "Customer", "direction": { "kind": "down", "depth": 2 } }
+      ]
+    }
+  },
+
+  "sliceFlows": {
+    "us-customers-to-qa": { "source": "cloud-uat", "slice": "us-customers", "target": "cloud-qa" }
   }
 }

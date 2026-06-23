@@ -181,6 +181,8 @@
     <Compile Include="ModelFidelityTests.fs" />
     <Compile Include="ReportRunTests.fs" />
     <Compile Include="CompareTests.fs" />
+    <Compile Include="ReadinessTests.fs" />
+    <Compile Include="ReadinessConfigTests.fs" />
     <Compile Include="CanaryResidualTests.fs" />
     <Compile Include="RenameProjectionTests.fs" />
     <Compile Include="UserFkReflowPassTests.fs" />

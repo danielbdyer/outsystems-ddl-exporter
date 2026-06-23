@@ -488,6 +488,11 @@ type PlanAction =
     | CheckDrift of model: string * conn: string
     | CheckData of before: string * after: string
     | CheckReady
+    /// `check shape` — the espace-safe cross-environment readiness gate
+    /// (CROSS_ENVIRONMENT_READINESS.md). The agreed shape (an env's OSSYS model)
+    /// and the confirm set, each as (label, D9 conn-ref); the runner reads every
+    /// env via OSSYS (native GUID identity) and rolls a `ReadinessReport`.
+    | CheckShape of agreedLabel: string * agreedRef: string * confirm: (string * string) list * asJson: bool
     // explain ------------------------------------------------------------
     | ExplainDiff of refA: string * refB: string * asJson: bool * depth: int option * channel: string option * onlyModule: string option
     | Compare of refA: string * refB: string * asJson: bool

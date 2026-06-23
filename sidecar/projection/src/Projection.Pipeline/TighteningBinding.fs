@@ -169,7 +169,16 @@ module TighteningBinding =
         match section with
         | None -> Result.success TighteningPolicy.empty
         | Some s ->
+            // DECISIONS 2026-06-22 — config-driven nullable→NOT NULL coercion is
+            // disabled (the team's declared nullability is authoritative, not the
+            // tool's). A `kind:"nullability"` intervention creates NO intervention
+            // (a no-op), so the run proceeds without coercion. The `bindNullability`
+            // path + `NullabilityPass`/`NullabilityRules` REMAIN (still exercised by
+            // their direct unit tests) but are no longer reachable from config;
+            // null-density stays as a profiling statistic only. The kind is dropped
+            // here (not refused) so an existing config does not hard-fail.
             s.Interventions
+            |> List.filter (fun e -> e.Kind <> "nullability")
             |> List.map (bindEntry catalog)
             |> Result.aggregate
             |> Result.map (fun interventions -> { Interventions = interventions })

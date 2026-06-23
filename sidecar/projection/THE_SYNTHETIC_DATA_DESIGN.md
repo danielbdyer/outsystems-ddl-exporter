@@ -297,11 +297,11 @@ model path → live OSSYS read) is tracked in `V1_INPUT_DEPRECATION.md`.
 ```jsonc
 {
   "environments": {
-    "onprem-legacy": { "access": "direct", "conn": "env:ONPREM_LEGACY_CONN" },
-    "cloud-uat":     { "access": "direct", "conn": "env:CLOUD_UAT_CONN", "grant": "data" }
+    "on-prem-uat": { "access": "direct", "conn": "env:ON_PREM_UAT_CONN", "rendition": "logical" },
+    "cloud-uat":   { "access": "direct", "conn": "env:CLOUD_UAT_CONN", "grant": "data", "rendition": "physical" }
   },
   "flows": {
-    "preview-synth": { "from": "synthetic", "profile": "file:legacy.profile.json", "to": "cloud-uat" }
+    "preview-synth": { "from": "synthetic", "profile": "file:uat.profile.json", "to": "cloud-uat" }
   },
   "synthetic": {                 // the hybrid-by-cardinality policy + volume
     "preserveCardinalityMax": 50,
@@ -313,7 +313,7 @@ model path → live OSSYS read) is tracked in `V1_INPUT_DEPRECATION.md`.
 ```
 
 ```
-projection profile onprem-legacy --out legacy.profile.json   # capture (once)
+projection profile on-prem-uat --out uat.profile.json        # capture (once)
 projection preview-synth                                       # synthesize → preview (pure replay)
 projection preview-synth --go --seed 7                        # apply, reproducibly
 ```

@@ -20,6 +20,7 @@ module Ref =
         | Json of json: string
         | RunArtifact of runId: string
         | Live of conn: string
+        | Ossys of conn: string
 
     /// Parse a reference string — the revision syntax (cf. a git revision:
     /// `HEAD` / `<sha>` / `<path>`). `@<id>` is a stored run; `live:<conn>` a
@@ -27,6 +28,7 @@ module Ref =
     let parse (s: string) : Ref =
         if s.StartsWith("@") then RunArtifact(s.Substring(1))
         elif s.StartsWith("live:") then Live(s.Substring(5))
+        elif s.StartsWith("ossys:") then Ossys(s.Substring(6))
         elif s.StartsWith("json:") then Json(s.Substring(5))
         else File s
 
@@ -37,6 +39,21 @@ module Ref =
         | Json _ -> "json:inline"
         | RunArtifact id -> "@" + id
         | Live c -> "live:" + c
+        | Ossys c -> "ossys:" + c
+
+    /// Both operands are OSSYS-sourced (`ossys:`) ⇒ a cross-environment compare
+    /// is espace-SAFE by identity (native GUID), and the caller should normalize
+    /// to the logical shape (`Readiness.toLogicalShape`) to drop the
+    /// realization-name artifacts `CatalogDiff` compares (CROSS_ENVIRONMENT_READINESS.md).
+    let bothOssys (a: Ref) (b: Ref) : bool =
+        match a, b with Ossys _, Ossys _ -> true | _ -> false
+
+    /// Both operands are physical `live:` reads ⇒ a cross-environment compare is
+    /// espace-UNSAFE: `ReadSide` synthesizes SsKeys from the physical name, so the
+    /// same entity in two OutSystems environments will not align (the `compare`/
+    /// `diff` run faces surface this as a named advisory, never a silent result).
+    let bothLive (a: Ref) (b: Ref) : bool =
+        match a, b with Live _, Live _ -> true | _ -> false
 
     let private fail (code: string) (msg: string) : Result<'a> =
         Result.failure [ ValidationError.create code msg ]
@@ -65,6 +82,12 @@ module Ref =
                 // back via ReadSide over the connection; `env:VAR` resolves the
                 // connection string from the environment.
                 return! Source.read (Source.ofLive conn)
+            | Ossys conn ->
+                // The OSSYS model-read adapter (`Source.ofOssys`) reads the model
+                // from the OutSystems metamodel — native GUID (`OssysOriginal`)
+                // SsKey at kind AND attribute grain, the espace-safe identity for
+                // cross-environment readiness (CROSS_ENVIRONMENT_READINESS.md).
+                return! Source.read (Source.ofOssys conn)
         }
 
     /// Resolve a reference to its capability-typed `Source` — the catalog read
@@ -80,6 +103,7 @@ module Ref =
             | File path -> return Result.success (Source.ofFile path)
             | Json json -> return Result.success (Source.ofJson json)
             | Live conn -> return Result.success (Source.ofLive conn)
+            | Ossys conn -> return Result.success (Source.ofOssys conn)
             | RunArtifact runId ->
                 match Run.configuredDir () with
                 | None -> return fail "ref.noRunsDir" "set PROJECTION_RUNS_DIR to resolve @runId references"

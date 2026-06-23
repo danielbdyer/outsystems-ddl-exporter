@@ -103,9 +103,12 @@ the *movements* (named source→target recipes, each conceptually a `Move`).
 Each environment carries two permission facets and an address:
 
 - **`access`** — how the target is *reached*:
-  - `bundle` — no direct write. Produce an SSDT bundle (CREATE files + RefactorLog +
-    pre/post-deploy scripts + data scripts) into `out`, for **Octopus** to apply.
-  - `direct` — a live connection (`conn`) the engine writes to.
+  - `bundle` — file production: write an SSDT bundle (CREATE files + RefactorLog +
+    pre/post-deploy scripts + data scripts) into `out`, for **Octopus** to apply. MAY
+    also carry a `conn` — a live READ connection to the real target database — so a
+    bundle place is *also* a reverse-leg read source (schema goes DOWN as files; data
+    is read UP live). The `conn` never changes how schema is written (still the bundle).
+  - `direct` — a live connection (`conn`) the engine writes to (and reads from).
   - `docker` — an ephemeral one-touch database, deployed and verified.
 - **`grant`** — what may *change* there (a refusal gate, ontology axis 9):
   - `schema+data` — DDL+DML permitted; the full create/alter + data.
@@ -116,7 +119,7 @@ Each environment carries two permission facets and an address:
   - `physical` — the frozen **OSUSR** cloud rendition (**A**, the up-leg sink). A *peer*
     source (the `golden` cloud→cloud move) is physical.
   - `logical` — the hosted **on-prem** rendition (**B**, the migration team's load target).
-    A *legacy* source (the `preview` B→A reverse leg, `THE_DATA_PRODUCERS` LE-1) is logical.
+    A *legacy* source (the `reverse` B→A reverse leg, `THE_DATA_PRODUCERS` LE-1) is logical.
   - *absent* — unspecified (the default). The established same-rendition surface never sets
     it; it marks the rendition only where the reverse leg picks source=logical / sink=physical.
     It does **not** narrow `access`/`grant`; it is metadata the reverse-leg wiring reads.
@@ -132,46 +135,54 @@ A flow is a named `Move`: rows (and optionally schema) flow from a `from` enviro
 
 | Field | Meaning | Default |
 |---|---|---|
-| `from` | the source environment (where B's content originates) — or `model` / `synthetic` / `none` | the model |
+| `from` | the **source environment** name (env-to-env is the norm) — or `synthetic` / `none` (`model` still resolves the configured model, but a named env is preferred) | the model |
 | `to` | the target environment (the destination) | required |
-| `rekey` | a user-map file → **Reidentify** (Dev-cloud → UAT identity reconciliation) | off |
+| `scope` | the move's projection — `schema` / `data` / `both` (decoupled from the target's `grant`) | grant-derived |
+| `rekey` | a user-map file → **Reidentify** (an explicit user→user CSV map) | off |
+| `reconcile` | match-by-column re-key → **MatchByColumn** (e.g. match UAT users by email). Each entry is `"Module.Entity:Col"` (**logical, espace-safe**) or `"<table>:col"` (physical, legacy) | off |
 | `tables` | a declared subset (the partial golden-data refresh) | all |
 | `profile` | for `from: synthetic` — a source environment to profile for better synthetic data | off |
 
+The estate-scale reverse-leg knobs (`strategy` · `streaming` · `resumable` · `journal`) and the
+per-flow `shape` / `shaping` overrides are in `../CONFIG_REFERENCE.md` and the worked
+`examples/README.md`. Environments also carry an **`archetype`** (`managed-dml` for the cloud
+cells / `full-rights` for on-prem — `../DATABASE_ARCHETYPES.md`). The `synthetic` block tunes
+`from: synthetic` generation; `slices` / `sliceFlows` are the data-portability use-case recipes
+(logical, espace-safe — `sliceFlows` endpoints take an environment name or a conn-ref).
+
 ### 4.3 Worked `projection.json`
+
+The full worked file is `examples/projection.sample.json` (six environments, annotated in
+`examples/README.md`); a faithful condensation:
 
 ```jsonc
 {
+  "model": { "env": "cloud-dev" },                                                // the model is read LIVE from cloud-dev (named into the registry — one source of truth)
   "environments": {
-    "cloud-dev":     { "access": "direct", "conn": "env:CLOUD_DEV_CONN" },     // sources: read-only reach
-    "cloud-qa":      { "access": "direct", "conn": "env:CLOUD_QA_CONN"  },
-    "onprem-legacy": { "access": "direct", "conn": "env:ONPREM_LEGACY_CONN" },
+    "cloud-dev":   { "access": "direct", "conn": "file:./secrets/cloud-dev.conn", "rendition": "physical", "archetype": "managed-dml" },  // model source + readiness shape
+    "cloud-qa":    { "access": "direct", "conn": "file:./secrets/cloud-qa.conn",  "rendition": "physical", "archetype": "managed-dml", "grant": "data" },  // peer source + synth sink
+    "cloud-uat":   { "access": "direct", "conn": "file:./secrets/cloud-uat.conn", "rendition": "physical", "archetype": "managed-dml", "grant": "data", "store": "lifecycle/cloud-uat.json" },  // cloud-insertion sink (R6, DML-only)
 
-    "onprem-dev":    { "access": "bundle", "out": "dist/onprem-dev", "grant": "schema+data" },  // SSDT → Octopus
-    "onprem-qa":     { "access": "bundle", "out": "dist/onprem-qa",  "grant": "schema+data" },
-    "onprem-uat":    { "access": "bundle", "out": "dist/onprem-uat", "grant": "schema+data" },
-
-    "cloud-uat":     { "access": "direct", "conn": "env:CLOUD_UAT_CONN", "grant": "data" },     // direct, DML-only
-
-    "docker":        { "access": "docker", "grant": "schema+data" }
+    "on-prem-dev": { "access": "bundle", "out": "dist/on-prem-dev", "conn": "file:./secrets/on-prem-dev.conn", "rendition": "logical", "archetype": "full-rights", "grant": "schema+data", "store": "lifecycle/on-prem-dev.json" },  // SSDT → Octopus (write); conn = live read
+    "on-prem-qa":  { "access": "bundle", "out": "dist/on-prem-qa",  "conn": "file:./secrets/on-prem-qa.conn",  "rendition": "logical", "archetype": "full-rights", "grant": "schema+data" },
+    "on-prem-uat": { "access": "bundle", "out": "dist/on-prem-uat", "conn": "file:./secrets/on-prem-uat.conn", "rendition": "logical", "archetype": "full-rights", "grant": "schema+data" }  // bundle write + conn = the reverse-leg read source
   },
+  "readiness": { "confirm": ["cloud-dev", "cloud-qa", "cloud-uat"] },             // the cutover-readiness gate (check shape); 'schema' defaults to model.env (cloud-dev)
   "flows": {
-    "dev":     { "from": "cloud-dev",     "to": "onprem-dev" },                            // lift-and-shift, unchanged
-    "qa":      { "from": "cloud-qa",      "to": "onprem-qa"  },
-    "uat":     { "from": "cloud-dev",     "to": "onprem-uat", "rekey": "file:users.csv" }, // dev-cloud → UAT, rekeyed
-    "golden":  { "from": "cloud-qa",      "to": "cloud-uat",  "tables": ["Customer","Order"] }, // peer cell → cloud; users excluded, their FKs re-keyed by email (THE_DATA_PRODUCERS §2)
-    "preview": { "from": "onprem-legacy", "to": "cloud-uat" }                              // on-prem legacy → cloud
+    "publish": { "from": "cloud-dev",   "to": "on-prem-dev" },                                                       // SSDT bundle (schema + seeds + bootstrap)
+    "golden":  { "from": "cloud-qa",    "to": "cloud-uat",  "scope": "data", "tables": ["Customer","Order"], "rekey": "file:./secrets/uat-users.csv" },  // peer cell → cloud; users re-keyed by email (THE_DATA_PRODUCERS §2)
+    "reverse": { "from": "on-prem-uat", "to": "cloud-uat",  "scope": "data", "streaming": true, "resumable": true }, // legacy B→A reverse leg (cloud insertion)
+    "synth":   { "from": "synthetic",   "to": "cloud-qa",   "profile": "on-prem-uat" }                               // privacy-safe production-shaped data
   }
 }
 ```
 
 ```
-projection uat                   # cloud-dev → onprem-uat, rekeyed — preview the SSDT bundle
-projection uat --go              # produce the bundle (bundle = file production; see §7)
-projection dev --fresh --go      # from-scratch reset of onprem-dev (one target, deliberate)
-projection golden --go           # cloud-qa → cloud-uat, subset (a gated live write)
-projection preview               # onprem-legacy → cloud-uat — preview legacy data in UAT shape
-projection docker-spin           # a flow whose `to` is docker
+projection check shape           # confirm the cloud cells resolve to ONE espace-safe shape (the cutover gate)
+projection publish --go          # emit the on-prem-dev SSDT bundle (bundle = file production; see §7)
+projection golden --go           # cloud-qa → cloud-uat, subset, re-keyed (a gated live write)
+projection reverse --go          # on-prem-uat → cloud-uat — the B→A reverse leg
+projection synth --go            # synthetic (profiled from on-prem-uat) → cloud-qa
 ```
 
 ### 4.4 Discovery and precedence
@@ -262,10 +273,18 @@ check                         # canary: round-trip fidelity on an ephemeral pair
 check drift <flow>            # the deployed target vs the model
 check data  <flow>            # row-count + null-count integrity
 check ready                   # the run-ledger readiness gauge
+check shape                   # the CROSS-ENVIRONMENT readiness gate: the `readiness` set resolves
+                              #   to one espace-safe shape + zero data dealbreakers (CROSS_ENVIRONMENT_READINESS.md)
 
 explain <flow>                # the dry-run plan: what B ⊖ A would change, before it lands
 explain diff <a> <b>          # the change between two models
 explain policy <a> <b>        # how two policies project differently
+
+diff <a> <b>                  # the catalog change between two refs (the navigable changeset)
+compare <a> <b>               # read-only readiness: schema delta + data dealbreakers → compare.json
+                              #   refs <a>/<b>: <file> | json:<…> | @<runId> | live:<conn> (physical,
+                              #   ReadSide) | ossys:<conn> (OSSYS native-GUID identity — espace-safe;
+                              #   the espace-safe choice for a CROSS-ENVIRONMENT compare/diff)
 
 seal <flow>                   # eject / freeze: record this published state as a durable episode
 seal approve <version>        # record a policy-version approval decision
@@ -311,8 +330,8 @@ fallback is visible at the moment it is chosen.
 | 2 | parse error (model JSON; spec; config-parse) |
 | 3 | execution error (SQL rejected the change; connection open; unbreakable cycle) |
 | 4 | Docker unavailable (`access: docker`; `check`) |
-| 5 | fidelity divergence (`check` canary / `check drift`) |
-| 6 | config error (file missing / unparseable / D9; connection-ref resolve) |
+| 5 | fidelity divergence (`check` canary / `check drift`) · **`check shape` not-ready** (a real schema divergence or a data dealbreaker across the `readiness` set) |
+| 6 | config error (file missing / unparseable / D9; connection-ref resolve) · **`check shape` environment unreadable** |
 | 7 | gate refusal (`--go` without `PROJECTION_ALLOW_EXECUTE=1`; permission pre-flight) |
 | 8 | data divergence (`check data` row / null) |
 | 9 | refused, fail-loud (undeclared drop; **`grant: data` vs a schema change**; schema-disagreement on a data flow; tightening; verify-failed) |
@@ -334,25 +353,26 @@ Where each of the ten axes (`THE_USE_CASE_ONTOLOGY.md` §4.1) lands in this desi
 | 7. Consumer / terminus | `access`: bundle → Octopus · direct DB · docker; `report` → the migration team |
 | 8. Ordering | engine-internal (schema before data; FK two-phase; rename before reshape) |
 | 9. Gate / safety | `grant` refusal · `--go` × `PROJECTION_ALLOW_EXECUTE=1` · `--allow-drops` · pre-flight refusals |
-| 10. Measurement & proof | the norm `‖δ‖` surfaced (§9); `check`; `report` |
+| 10. Measurement & proof | the norm `‖δ‖` surfaced (§9); `check` / `check shape`; `report` |
 
 Proteins (`THE_USE_CASE_ONTOLOGY.md` §3), each a sentence:
 
 ```
-P-1  Dev lift-and-shift     projection dev --go
-P-2  QA  lift-and-shift     projection qa --go
-P-3  UAT with re-key        projection uat --go            (rekey lives in the flow)
-P-4  Migration-team bundle  report uat                     (the change since the last seal)
-P-5  Idempotent redeploy    projection dev --go            (re-run; B⊖A = 0 ⇒ CDC-silent)
-P-6  In-place migrate       projection dev --go            (same command; A is non-empty)
-P-7  Eject / freeze         seal dev
-P-8  Drift detection        check drift dev
+P-1  Dev lift-and-shift     projection publish --go         (cloud-dev → on-prem-dev, the schema down-leg)
+P-2  QA  lift-and-shift     projection publish-qa --go      (the same schema version, one tier on)
+P-3  UAT with re-key        projection golden --go          (the user re-key lives in the golden flow)
+P-4  Migration-team bundle  report publish                  (the change since the last seal)
+P-5  Idempotent redeploy    projection publish --go         (re-run; B⊖A = 0 ⇒ CDC-silent)
+P-6  In-place migrate       projection publish --go         (same command; A is non-empty)
+P-7  Eject / freeze         seal publish
+P-8  Drift detection        check drift publish
 P-9  Self-check canary      check
      —
-     Docker one-touch       projection <flow-to-docker>
+     Cross-env readiness    projection check shape          (the cloud cells resolve to one espace-safe shape)
+     Docker one-touch       projection <flow-to-docker>     (e.g. the scaffold's `try`)
      Cloud golden data      projection golden --go
-     Legacy preview         projection preview
-     Synthetic (profiled)   a flow with from: synthetic, profile: onprem-legacy
+     Legacy reverse leg     projection reverse              (on-prem-uat → cloud-uat, B→A)
+     Synthetic (profiled)   projection synth                (from: synthetic, profile: on-prem-uat)
 ```
 
 P-5 and P-6 collapsing into the **identical** command as P-1 is the headline: the operator
