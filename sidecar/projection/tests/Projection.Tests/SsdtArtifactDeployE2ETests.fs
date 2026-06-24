@@ -75,14 +75,24 @@ let private mkProduct () : Kind =
       Indexes = []; Description = None; IsActive = true
       Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
-// A STATIC kind exercising the non-Integer/Text DATA TYPES end-to-end:
-// Decimal → DECIMAL(18,2), DateTime → DATETIME2, Boolean → BIT. The value codec
-// renders "12.34" bare, the temporal raw as a quoted literal, "true" → 1.
+// A STATIC kind exercising the full DATA-TYPE zoo + NULL + text escaping
+// end-to-end: Decimal→DECIMAL(18,2), DateTime→DATETIME2, Boolean→BIT, Date→DATE,
+// Time→TIME, Binary→VARBINARY, Guid→UNIQUEIDENTIFIER. `Note` is a nullable column
+// carrying the empty-string→NULL convention; `Label` carries a single-quote +
+// non-ASCII Unicode (the codec's `N'…'` with `''`-doubling, proving injection-safe
+// NVARCHAR). The value codec renders each from its raw string form.
 let private measurementKey = mkKey [ "Sales"; "Measurement" ]
 let private mkMeasurement () : Kind =
     let row =
         { Identifier = mkKey [ "Sales"; "Measurement"; "Row"; "M1" ]
-          Values = Map.ofList [ mkName "Id", "1"; mkName "Amount", "12.34"; mkName "RecordedAt", "2026-05-10 12:30:00.0000000"; mkName "IsActive", "true" ] }
+          Values =
+            Map.ofList
+                [ mkName "Id", "1"; mkName "Amount", "12.34"
+                  mkName "RecordedAt", "2026-05-10 12:30:00.0000000"; mkName "IsActive", "true"
+                  mkName "EffectiveDate", "2026-05-10"; mkName "Duration", "12:30:00"
+                  mkName "Payload", "0xCAFEBABE"; mkName "Ref", "0F0E0D0C-0B0A-0908-0706-050403020100"
+                  mkName "Note", ""                        // empty raw → NULL
+                  mkName "Label", "O'Brien ✓" ] }          // single-quote + non-ASCII Unicode
     { SsKey = measurementKey; Name = mkName "Measurement"; Origin = Native
       Modality = [ Static [ row ] ]
       Physical = mkTableId "dbo" "OSUSR_E2E_MEASUREMENT"
@@ -90,7 +100,13 @@ let private mkMeasurement () : Kind =
         [ { Attribute.create (mkKey [ "Sales"; "Measurement"; "Id" ]) (mkName "Id") Integer with Column = col "ID"; IsPrimaryKey = true; IsMandatory = true }
           { Attribute.create (mkKey [ "Sales"; "Measurement"; "Amount" ]) (mkName "Amount") Decimal with Column = col "AMOUNT"; IsMandatory = true; Precision = Some 18; Scale = Some 2 }
           { Attribute.create (mkKey [ "Sales"; "Measurement"; "RecordedAt" ]) (mkName "RecordedAt") DateTime with Column = col "RECORDEDAT"; IsMandatory = true }
-          { Attribute.create (mkKey [ "Sales"; "Measurement"; "IsActive" ]) (mkName "IsActive") Boolean with Column = col "ISACTIVE"; IsMandatory = true } ]
+          { Attribute.create (mkKey [ "Sales"; "Measurement"; "IsActive" ]) (mkName "IsActive") Boolean with Column = col "ISACTIVE"; IsMandatory = true }
+          { Attribute.create (mkKey [ "Sales"; "Measurement"; "EffectiveDate" ]) (mkName "EffectiveDate") Date with Column = col "EFFECTIVEDATE"; IsMandatory = true }
+          { Attribute.create (mkKey [ "Sales"; "Measurement"; "Duration" ]) (mkName "Duration") Time with Column = col "DURATION"; IsMandatory = true }
+          { Attribute.create (mkKey [ "Sales"; "Measurement"; "Payload" ]) (mkName "Payload") Binary with Column = col "PAYLOAD"; IsMandatory = true }
+          { Attribute.create (mkKey [ "Sales"; "Measurement"; "Ref" ]) (mkName "Ref") Guid with Column = col "REF"; IsMandatory = true }
+          { Attribute.create (mkKey [ "Sales"; "Measurement"; "Note" ]) (mkName "Note") Text with Column = colNull "NOTE" }
+          { Attribute.create (mkKey [ "Sales"; "Measurement"; "Label" ]) (mkName "Label") Text with Column = col "LABEL"; IsMandatory = true } ]
       References = []; Indexes = []; Description = None; IsActive = true
       Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
@@ -254,6 +270,18 @@ type SsdtArtifactDeployE2ETests(fixture: EphemeralContainerFixture) =
                         Assert.Equal("1", isActive)
                         let! recordedDate = scalar cnn "SELECT CONVERT(VARCHAR(10), [RECORDEDAT], 23) FROM [dbo].[OSUSR_E2E_MEASUREMENT] WHERE [ID] = 1;"
                         Assert.Equal("2026-05-10", recordedDate)
+                        let! effDate = scalar cnn "SELECT CONVERT(VARCHAR(10), [EFFECTIVEDATE], 23) FROM [dbo].[OSUSR_E2E_MEASUREMENT] WHERE [ID] = 1;"
+                        Assert.Equal("2026-05-10", effDate)          // Date → DATE
+                        let! duration = scalar cnn "SELECT CONVERT(VARCHAR(8), [DURATION]) FROM [dbo].[OSUSR_E2E_MEASUREMENT] WHERE [ID] = 1;"
+                        Assert.Equal("12:30:00", duration)           // Time → TIME
+                        let! payload = scalar cnn "SELECT CONVERT(VARCHAR(20), [PAYLOAD], 1) FROM [dbo].[OSUSR_E2E_MEASUREMENT] WHERE [ID] = 1;"
+                        Assert.Equal("0xCAFEBABE", payload)          // Binary → VARBINARY
+                        let! guidRef = scalar cnn "SELECT CAST([REF] AS VARCHAR(40)) FROM [dbo].[OSUSR_E2E_MEASUREMENT] WHERE [ID] = 1;"
+                        Assert.Equal("0F0E0D0C-0B0A-0908-0706-050403020100", guidRef)   // Guid → UNIQUEIDENTIFIER (SQL Server reads back uppercase)
+                        let! noteIsNull = scalar cnn "SELECT CASE WHEN [NOTE] IS NULL THEN 'NULL' ELSE 'SET' END FROM [dbo].[OSUSR_E2E_MEASUREMENT] WHERE [ID] = 1;"
+                        Assert.Equal("NULL", noteIsNull)             // empty raw → NULL convention
+                        let! label = scalar cnn "SELECT CAST([LABEL] AS NVARCHAR(50)) FROM [dbo].[OSUSR_E2E_MEASUREMENT] WHERE [ID] = 1;"
+                        Assert.Equal("O'Brien ✓", label)             // quote-doubling + non-ASCII Unicode round-trip
                         // 4) idempotency: re-run post-deploy + bootstrap → counts unchanged (MERGE is upsert)
                         do! Deploy.executeBatch cnn postDeploy
                         do! Deploy.executeBatch cnn bundle.Bootstrap
