@@ -298,6 +298,7 @@
     <Compile Include="DacpacEmitterTests.fs" />
     <Compile Include="DacpacRoundTripTests.fs" />
     <Compile Include="DacpacPublishEquivalenceTests.fs" />
+    <Compile Include="SsdtArtifactDeployE2ETests.fs" />
     <Compile Include="DockerImageEmitterTests.fs" />
     <Compile Include="CoordinatesStage2Tests.fs" />
     <Compile Include="ManifestEmitterTests.fs" />
