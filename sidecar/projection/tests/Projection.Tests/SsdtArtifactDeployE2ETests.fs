@@ -28,6 +28,8 @@ let private mkKey (parts: string list) : SsKey =
 
 let private col (physical: string) : ColumnRealization =
     ColumnRealization.create physical false |> Result.value
+let private colNull (physical: string) : ColumnRealization =
+    ColumnRealization.create physical true |> Result.value
 
 // A STATIC-seed kind (Country) — populated from `Modality.Static`.
 let private countryKey = mkKey [ "Sales"; "Country" ]
@@ -67,10 +69,48 @@ let private mkProduct () : Kind =
       References = []; Indexes = []; Description = None; IsActive = true
       Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
+// A SELF-REFERENTIAL kind (Org: Id PK, Name, ParentId → Org, nullable) — the
+// classic TWO-PHASE bootstrap: phase-1 inserts every row with ParentId NULL (it
+// can't FK to a row not yet inserted), phase-2 UPDATEs it. A naive single-phase
+// insert would violate the self-FK the schema enforces.
+let private orgKey = mkKey [ "Sales"; "Org" ]
+let private mkOrg () : Kind =
+    { SsKey = orgKey; Name = mkName "Org"; Origin = Native; Modality = []
+      Physical = mkTableId "dbo" "OSUSR_E2E_ORG"
+      Attributes =
+        [ { Attribute.create (mkKey [ "Sales"; "Org"; "Id" ]) (mkName "Id") Integer with Column = col "ID"; IsPrimaryKey = true; IsMandatory = true }
+          { Attribute.create (mkKey [ "Sales"; "Org"; "Name" ]) (mkName "Name") Text with Column = col "NAME"; IsMandatory = true }
+          { Attribute.create (mkKey [ "Sales"; "Org"; "ParentId" ]) (mkName "ParentId") Integer with Column = colNull "PARENTID" } ]
+      References = [ Reference.create (mkKey [ "Sales"; "Org"; "ParentRef" ]) (mkName "ParentRef") (mkKey [ "Sales"; "Org"; "ParentId" ]) orgKey ]
+      Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
+
+// A MUTUAL A↔B cycle (AccountA.PeerBId → AccountB, AccountB.PeerAId → AccountA,
+// both nullable) — exercises the GLOBAL-phase interleave: EVERY kind's phase-1
+// runs before ANY kind's phase-2, so both sides exist before either FK is set.
+let private accountAKey = mkKey [ "Sales"; "AccountA" ]
+let private accountBKey = mkKey [ "Sales"; "AccountB" ]
+let private mkAccountA () : Kind =
+    { SsKey = accountAKey; Name = mkName "AccountA"; Origin = Native; Modality = []
+      Physical = mkTableId "dbo" "OSUSR_E2E_ACCOUNTA"
+      Attributes =
+        [ { Attribute.create (mkKey [ "Sales"; "AccountA"; "Id" ]) (mkName "Id") Integer with Column = col "ID"; IsPrimaryKey = true; IsMandatory = true }
+          { Attribute.create (mkKey [ "Sales"; "AccountA"; "PeerBId" ]) (mkName "PeerBId") Integer with Column = colNull "PEERBID" } ]
+      References = [ Reference.create (mkKey [ "Sales"; "AccountA"; "PeerBRef" ]) (mkName "PeerBRef") (mkKey [ "Sales"; "AccountA"; "PeerBId" ]) accountBKey ]
+      Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
+let private mkAccountB () : Kind =
+    { SsKey = accountBKey; Name = mkName "AccountB"; Origin = Native; Modality = []
+      Physical = mkTableId "dbo" "OSUSR_E2E_ACCOUNTB"
+      Attributes =
+        [ { Attribute.create (mkKey [ "Sales"; "AccountB"; "Id" ]) (mkName "Id") Integer with Column = col "ID"; IsPrimaryKey = true; IsMandatory = true }
+          { Attribute.create (mkKey [ "Sales"; "AccountB"; "PeerAId" ]) (mkName "PeerAId") Integer with Column = colNull "PEERAID" } ]
+      References = [ Reference.create (mkKey [ "Sales"; "AccountB"; "PeerARef" ]) (mkName "PeerARef") (mkKey [ "Sales"; "AccountB"; "PeerAId" ]) accountAKey ]
+      Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
+
 let private e2eCatalog () : Catalog =
     let m : Module =
         { SsKey = mkKey [ "Sales" ]; Name = mkName "Sales"
-          Kinds = [ mkCountry (); mkRole (); mkProduct () ]; IsActive = true; ExtendedProperties = [] }
+          Kinds = [ mkCountry (); mkRole (); mkProduct (); mkOrg (); mkAccountA (); mkAccountB () ]
+          IsActive = true; ExtendedProperties = [] }
     { Modules = [ m ]; Sequences = [] }
 
 let private migrationCtx () : MigrationDependencyContext =
@@ -83,14 +123,29 @@ let private bootstrapRows () : Map<SsKey, StaticRow list> =
         [ productKey,
           [ { Identifier = mkKey [ "Sales"; "Product"; "Row"; "Widget" ]; Values = Map.ofList [ mkName "Id", "1"; mkName "Name", "Widget" ] }
             { Identifier = mkKey [ "Sales"; "Product"; "Row"; "Gadget" ]; Values = Map.ofList [ mkName "Id", "2"; mkName "Name", "Gadget" ] }
-            { Identifier = mkKey [ "Sales"; "Product"; "Row"; "Gizmo" ];  Values = Map.ofList [ mkName "Id", "3"; mkName "Name", "Gizmo" ] } ] ]
+            { Identifier = mkKey [ "Sales"; "Product"; "Row"; "Gizmo" ];  Values = Map.ofList [ mkName "Id", "3"; mkName "Name", "Gizmo" ] } ]
+          // self-referential hierarchy — HQ is its OWN parent (Id=1, ParentId=1),
+          // East/West point at HQ. Inserting any of these in a single phase would
+          // violate the self-FK (the parent row isn't there yet), so two-phase is
+          // mandatory: phase-1 MERGEs every row with ParentId NULL, phase-2 UPDATEs it.
+          orgKey,
+          [ { Identifier = mkKey [ "Sales"; "Org"; "Row"; "HQ" ];   Values = Map.ofList [ mkName "Id", "1"; mkName "Name", "HQ";   mkName "ParentId", "1" ] }
+            { Identifier = mkKey [ "Sales"; "Org"; "Row"; "East" ]; Values = Map.ofList [ mkName "Id", "2"; mkName "Name", "East"; mkName "ParentId", "1" ] }
+            { Identifier = mkKey [ "Sales"; "Org"; "Row"; "West" ]; Values = Map.ofList [ mkName "Id", "3"; mkName "Name", "West"; mkName "ParentId", "1" ] } ]
+          // mutual A↔B cycle — A1.PeerBId → B10, B10.PeerAId → A1. The composer must
+          // GLOBALLY interleave: BOTH rows land (phase-1, FKs NULL) before EITHER FK
+          // is set (phase-2), or one side's FK would dangle.
+          accountAKey,
+          [ { Identifier = mkKey [ "Sales"; "AccountA"; "Row"; "A1" ]; Values = Map.ofList [ mkName "Id", "1"; mkName "PeerBId", "10" ] } ]
+          accountBKey,
+          [ { Identifier = mkKey [ "Sales"; "AccountB"; "Row"; "B10" ]; Values = Map.ofList [ mkName "Id", "10"; mkName "PeerAId", "1" ] } ] ]
 
 [<Xunit.Collection("Docker-SqlServer")>]
 type SsdtArtifactDeployE2ETests(fixture: EphemeralContainerFixture) =
     interface IClassFixture<EphemeralContainerFixture>
 
     [<Fact>]
-    member _.``E2E: dacpac publish + post-deploy (static+migration) + separate bootstrap MERGE loads every lane idempotently`` () =
+    member _.``E2E: dacpac publish + post-deploy (static+migration) + bootstrap two-phase (self-ref + mutual-cycle FK) loads every lane idempotently`` () =
         if not (Deploy.Docker.ensureRunning ()) then
             printfn "SKIP E2E SSDT deploy: Docker daemon not reachable."
         else
@@ -144,6 +199,18 @@ type SsdtArtifactDeployE2ETests(fixture: EphemeralContainerFixture) =
                         Assert.Equal("3", cProduct)   // bootstrap
                         let! adminLabel = scalar cnn "SELECT [LABEL] FROM [dbo].[OSUSR_E2E_ROLE] WHERE [ID] = 1;"
                         Assert.Equal("Administrator", adminLabel)
+                        // 3b) TWO-PHASE bootstrap — the self-FK / cyclic FK rows could not have
+                        // loaded single-phase; a non-NULL FK here is proof phase-2 re-pointed it.
+                        let! cOrg = scalar cnn "SELECT COUNT(*) FROM [dbo].[OSUSR_E2E_ORG];"
+                        Assert.Equal("3", cOrg)
+                        let! eastParent = scalar cnn "SELECT CAST([PARENTID] AS VARCHAR(10)) FROM [dbo].[OSUSR_E2E_ORG] WHERE [ID] = 2;"
+                        Assert.Equal("1", eastParent)        // child → HQ, set in phase-2
+                        let! hqParent = scalar cnn "SELECT CAST([PARENTID] AS VARCHAR(10)) FROM [dbo].[OSUSR_E2E_ORG] WHERE [ID] = 1;"
+                        Assert.Equal("1", hqParent)          // self-referential root, re-pointed in phase-2
+                        let! aPeer = scalar cnn "SELECT CAST([PEERBID] AS VARCHAR(10)) FROM [dbo].[OSUSR_E2E_ACCOUNTA] WHERE [ID] = 1;"
+                        Assert.Equal("10", aPeer)            // A → B, set in phase-2
+                        let! bPeer = scalar cnn "SELECT CAST([PEERAID] AS VARCHAR(10)) FROM [dbo].[OSUSR_E2E_ACCOUNTB] WHERE [ID] = 10;"
+                        Assert.Equal("1", bPeer)             // B → A, the mutual side
                         // 4) idempotency: re-run post-deploy + bootstrap → counts unchanged (MERGE is upsert)
                         do! Deploy.executeBatch cnn postDeploy
                         do! Deploy.executeBatch cnn bundle.Bootstrap
