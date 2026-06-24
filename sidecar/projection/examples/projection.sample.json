@@ -14,7 +14,8 @@
   },
 
   "overrides": {
-    "_comment": "Naming + structural directives, keyed to THIS sample's entities (Sales / Billing / ServiceCenter) — swap the refs for your own. Every section is optional; omit one to take the faithful default. A rename 'from' is EITHER logical { module, entity } OR physical { schema, table } (never both).",
+    "_comment": "Naming + structural directives, keyed to THIS sample's entities (Sales / Billing / ServiceCenter) — swap the refs for your own. Every section is optional; omit one to take the faithful default. A rename 'from' is EITHER logical { module, entity } OR physical { schema, table } (never both). 'migrationDependencies.path' names a separate operator-curated row inventory (see examples/migration-dependencies.sample.json) that feeds the MigrationData lane; those kinds are excluded from the bootstrap complement so the lanes stay disjoint.",
+    "migrationDependencies": { "path": "overrides/migration-dependencies.json" },
     "tableRenames": [
       { "from": { "module": "Sales", "entity": "Customer" }, "to": { "schema": "dbo", "table": "Customer" } },
       { "from": { "schema": "dbo", "table": "OSUSR_SAL_ORDER" }, "to": { "schema": "dbo", "table": "OrderHeader" } }
@@ -38,13 +39,16 @@
   },
 
   "emission": {
-    "_comment": "Which artifacts the publish bundle emits. ssdt = the schema; staticSeeds / migrationDependencies / bootstrap = the data lanes. Each defaults true; set false to suppress one.",
+    "_comment": "WHAT the publish bundle emits, and HOW the data lanes write. ssdt = the schema; staticSeeds / migrationDependencies / bootstrap = the three data lanes (each defaults true; set one false to suppress that lane). The lanes are disjoint by construction: bootstrap covers the complement of (static ∪ migration), so no row loads twice. 'bootstrapAllData':true flips bootstrap to cover EVERY data-bearing kind — the full first-deploy snapshot (V1's AllEntitiesIncludingStatic) — and skips the static+migration lanes (default false). 'dataVerification':'validateBeforeApply' prepends a symmetric-EXCEPT drift guard (THROW 50000 on drift) ahead of every data MERGE; 'standard' (default) emits the MERGEs alone (byte-identical, CDC-silent on idempotent redeploy). 'deleteScope' adds a convergent 'WHEN NOT MATCHED BY SOURCE … DELETE' arm (a tenant/partition gate) to the static+migration MERGEs — omit it for the upsert-only default; bootstrap is additive-only and ignores it.",
     "ssdt": true,
     "dacpac": true,
     "json": true,
     "staticSeeds": true,
     "migrationDependencies": true,
-    "bootstrap": true
+    "bootstrap": true,
+    "bootstrapAllData": false,
+    "dataVerification": "standard",
+    "deleteScope": { "terms": [ { "column": "TenantId", "value": 42 } ] }
   },
 
   "policy": {

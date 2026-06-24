@@ -30,6 +30,52 @@ let private hasCode (code: string) (errors: ValidationError list) : bool =
     errors |> List.exists (fun e -> e.Code = code)
 
 // -----------------------------------------------------------------------
+// Wave-3 slice 3.4 — `emission.tolerance`: the per-run accepted-divergence
+// set (the R6 equivalence-up-to-quotient), now WIRED. FAIL-CLOSED parse: an
+// unrecognized token is a named error, never a silent widening of the
+// accepted set (which would corrupt the canary's quotient semantics).
+// -----------------------------------------------------------------------
+
+let private withTolerance (tokensJson: string) : string =
+    sprintf """{ "model": { "path": "model.json" }, "emission": { "tolerance": %s } }""" tokensJson
+
+[<Fact>]
+let ``Config.parse: emission.tolerance parses known divergence tokens into the configured set`` () =
+    let cfg = Config.parse (withTolerance """["EmptyTextNormalizedToNull", "DecimalScaleTolerated"]""") |> mustOk
+    match cfg.Emission.Tolerance with
+    | None -> failwith "expected Some tolerance"
+    | Some t ->
+        Assert.True(Tolerance.tolerates ToleratedDivergence.EmptyTextNormalizedToNull t)
+        Assert.True(Tolerance.tolerates ToleratedDivergence.DecimalScaleTolerated t)
+        Assert.False(Tolerance.tolerates ToleratedDivergence.HeaderCommentsOmitted t)
+
+[<Fact>]
+let ``Config.parse: emission.tolerance with an unknown token fails FAIL-CLOSED (never silently widens)`` () =
+    let errors = Config.parse (withTolerance """["NotARealDivergence"]""") |> mustFail
+    Assert.True(
+        errors |> List.exists (fun e -> e.Message.Contains "NotARealDivergence" || e.Code.Contains "invalidValue"),
+        sprintf "expected a fail-closed unknown-token error; got %A" (errors |> List.map (fun e -> e.Code)))
+
+[<Fact>]
+let ``Config.parse: emission.tolerance absent is None (permissive dual-track default applies downstream)`` () =
+    let cfg = Config.parse """{ "model": { "path": "model.json" } }""" |> mustOk
+    Assert.True(Option.isNone cfg.Emission.Tolerance)
+
+[<Fact>]
+let ``Config.parse: emission.tolerance empty array is strict (accept nothing)`` () =
+    let cfg = Config.parse (withTolerance "[]") |> mustOk
+    match cfg.Emission.Tolerance with
+    | Some t -> Assert.True(Tolerance.isStrict t)
+    | None -> failwith "expected Some strict tolerance for []"
+
+[<Fact>]
+let ``Config.parse: emission.tolerance non-array fails with a typeMismatch`` () =
+    let errors = Config.parse (withTolerance "\"EmptyTextNormalizedToNull\"") |> mustFail
+    Assert.True(
+        errors |> List.exists (fun e -> e.Code.Contains "typeMismatch" || e.Message.Contains "must be an array"),
+        sprintf "expected a typeMismatch for a non-array tolerance; got %A" (errors |> List.map (fun e -> e.Code)))
+
+// -----------------------------------------------------------------------
 // Minimal valid config: only model.path is structurally required.
 // -----------------------------------------------------------------------
 

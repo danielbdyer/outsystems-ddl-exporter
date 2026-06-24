@@ -50,8 +50,8 @@ fallback (cutover safety; live wins per `ModelResolution.chooseOrigin`).
 | Top-level key | Meaning |
 |---|---|
 | `model` | the canonical model object. `env` names the **primary** environment — here the **cloud-dev** cell, where the development team authors the schema — so the connection is named once, not inlined (use `ossys` only for a standalone source with no registry); `path` is the fallback; `modules` scopes which modules/entities are in scope. |
-| `overrides` | naming + structural directives, all optional: `tableRenames` (logical or physical source → new name), `emissionFolders` (redirect an entity's `.sql`), `allowMissingPrimaryKey` (PK exemptions), `circularDependencies` (cycle ordering). Keyed to the sample's own entities — swap for yours (`../CONFIG_REFERENCE.md`). |
-| `emission` | which artifact kinds the bundle emits — `ssdt` (the schema) plus `staticSeeds` / `migrationDependencies` / `bootstrap` (the data lanes). Each defaults true. |
+| `overrides` | naming + structural directives, all optional: `tableRenames` (logical or physical source → new name), `emissionFolders` (redirect an entity's `.sql`), `allowMissingPrimaryKey` (PK exemptions), `circularDependencies` (cycle ordering), `migrationDependencies.path` (the MigrationData lane's row inventory → `migration-dependencies.sample.json`). Keyed to the sample's own entities — swap for yours (`../CONFIG_REFERENCE.md`). |
+| `emission` | WHAT the bundle emits and HOW the data lanes write — `ssdt` (the schema) plus the three data lanes `staticSeeds` / `migrationDependencies` / `bootstrap` (each defaults true; disjoint — bootstrap is the complement of static ∪ migration). `bootstrapAllData` flips bootstrap to the full first-deploy snapshot; `dataVerification: "validateBeforeApply"` adds an EXCEPT drift guard before each data MERGE; `deleteScope` adds a convergent DELETE arm (a tenant/partition gate); `tolerance` is the R6 cutover knob — the per-run ACCEPTED-divergence set (named `ToleratedDivergence` tokens) the fidelity report + episode provenance record (omit for the permissive dual-track default; `[]` = strict). |
 | `policy` | tightening interventions (`foreignKey` / `uniqueIndex` / `categoricalUniqueness`) — **opt-in**, see the `_comment`. (`nullability` coercion is disabled — the model's declared nullability is authoritative.) |
 | `profiler` | source-data evidence — `provider: "live"` profiles the source DB (via `PROJECTION_MSSQL_CONN_STR`); `"fixture"` (default) carries none. |
 | `output` | `dir` — where the emitted artifacts land (`out/`). |
@@ -176,6 +176,29 @@ projection explain diff @<prior> @<new>  # ad-hoc: the schema delta between two 
 
 `report` emits the refactorlog deltas + change-manifest + move/CDC counts — primarily a textual
 hand-off artifact, anchored on the last seal (`../THE_CLI.md` §8).
+
+## Drift detection — diff two publish dirs
+
+Every full-export publish writes a faithful **`catalog.snapshot.json`** into its out dir — the
+round-tripping `CatalogCodec` form, **full fidelity** (column width / precision / identity /
+FK-trust / sequences), unlike the lossy `projection.json` the bundle emits for SSDT consumers
+(which has no reader). So to see "what changed in the model" between two publishes, just diff their
+directories — no extra step, no new verb:
+
+```bash
+projection publish                              # emits the bundle (incl. catalog.snapshot.json) to dist/on-prem-dev
+cp -r dist/on-prem-dev dist/baseline            # keep this publish as the baseline
+# … the model evolves: entities added, columns retyped, FKs changed …
+projection publish                              # the new publish to dist/on-prem-dev
+projection diff dist/baseline dist/on-prem-dev  # the precise per-table/column/FK/index change report
+```
+
+`diff` resolves a **directory** operand to the `catalog.snapshot.json` inside it and auto-detects
+the codec format (its `codecVersion` marker), reading both back losslessly. Any revision ref also
+works directly, so you can compare a past publish against the **live** model right now:
+`projection diff dist/baseline ossys:env:CLOUD_DEV_CONN` (native-GUID, espace-safe). No store, no
+flow required — the drift report falls out of the two emissions. (For the durable, anchored
+changelog over time, use the `seal` → `report` provenance pair above instead.)
 
 ## Running them
 

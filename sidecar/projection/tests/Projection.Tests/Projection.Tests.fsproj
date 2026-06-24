@@ -41,6 +41,7 @@
     <Compile Include="RunTests.fs" />
     <Compile Include="SourceTests.fs" />
     <Compile Include="RefTests.fs" />
+    <Compile Include="SnapshotRoundTripTests.fs" />
     <Compile Include="RunHistoryTests.fs" />
     <Compile Include="ThemeTests.fs" />
     <Compile Include="ViewTests.fs" />

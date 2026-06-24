@@ -76,6 +76,15 @@ module Compose =
             /// Distinct from `manifest.json` (the V1-mirror SSDT
             /// manifest in `SsdtBundle`).
             Json : JsonNode
+            /// The FAITHFUL, round-trippable catalog snapshot (`CatalogCodec`) —
+            /// the persisted form of THIS export's model, written as
+            /// `catalog.snapshot.json` alongside the bundle. Unlike `Json` (the
+            /// lossy SSDT-consumer `projection.json`, which has no reader), this
+            /// round-trips losslessly, so diffing two publish dirs
+            /// (`diff before/ after/`) renders the precise model change. Seeded
+            /// directly like `Fidelity` / `Manifest` (not a sibling-Π emit step),
+            /// and written unconditionally on every bundle emission.
+            CatalogSnapshot : string
             /// Distributions JSON from `DistributionsEmitter`, consuming
             /// the acquired `Profile` (live source-environment evidence
             /// when `profiler.provider = "live"`; `Profile.empty`
@@ -250,6 +259,12 @@ module Compose =
         let fidelityJson = "fidelity.json"
         [<Literal>]
         let fidelityText = "fidelity.txt"
+        /// The FAITHFUL, round-trippable catalog snapshot (`CatalogCodec`) — the
+        /// persisted model of THIS export, for drift-diffing two publish dirs
+        /// (`diff A/ B/`). Read back losslessly by `Source.ofFile` via its
+        /// `codecVersion` marker (kept in sync with the literal in `Source.ofFile`).
+        [<Literal>]
+        let catalogSnapshot = "catalog.snapshot.json"
 
     /// Aggregate the SSDT bundle's per-table SQL files into one
     /// concatenated SQL string (manifest.json excluded; iterates the
@@ -402,6 +417,12 @@ module Compose =
         /// suppressed and the `emission.identityAnnotations.omitted` named
         /// downgrade diagnostic is emitted at the SSDT emit step.
         EmitIdentityAnnotations : bool
+        /// Wave-3 slice 3.4 (now WIRED) — the per-run accepted-divergence set
+        /// lifted from `EmissionPolicy.ConfiguredTolerance` at the composition
+        /// seam, so `fidelityOf` resolves the tolerance residual against the
+        /// OPERATOR's configured set (`emission.tolerance`) rather than the
+        /// hardcoded `Tolerance.permissive`. Default-permissive ⇒ byte-identical.
+        ConfiguredTolerance : Tolerance
     }
 
     /// One registered emit step: its metadata (the pillar-9 classification
@@ -470,11 +491,16 @@ module Compose =
                     coll)
             CanaryResidual.empty
 
-    let private emittedToleranceResidual (catalog: Catalog) : Tolerance =
-        CanaryResidual.resolve Tolerance.permissive (emittedResidualCollector catalog)
+    /// Wave-3 3.4 (now WIRED) — the per-run tolerance residual, resolved against
+    /// the operator's CONFIGURED accepted set (`emission.tolerance` →
+    /// `EmissionPolicy.ConfiguredTolerance`) rather than a hardcoded constant.
+    /// `Tolerance.permissive` (the default when `emission.tolerance` is absent)
+    /// reports every fired divergence — byte-identical to the prior behavior.
+    let private emittedToleranceResidual (configured: Tolerance) (catalog: Catalog) : Tolerance =
+        CanaryResidual.resolve configured (emittedResidualCollector catalog)
 
-    let private emittedAcceptedDivergences (catalog: Catalog) : ToleratedDivergence list =
-        CanaryResidual.resolvedDivergences Tolerance.permissive (emittedResidualCollector catalog)
+    let private emittedAcceptedDivergences (configured: Tolerance) (catalog: Catalog) : ToleratedDivergence list =
+        CanaryResidual.resolvedDivergences configured (emittedResidualCollector catalog)
 
     let private fidelityOf (ctx: EmitContext) : ModelFidelity.ModelFidelityReport =
         let categoricalDecisions =
@@ -485,7 +511,7 @@ module Compose =
             ctx.EmittedCatalog
             ctx.Profile
             categoricalDecisions
-            (emittedAcceptedDivergences ctx.EmittedCatalog)
+            (emittedAcceptedDivergences ctx.ConfiguredTolerance ctx.EmittedCatalog)
 
     /// The fold seed. Every artifact field is a placeholder the matching
     /// `EmitStep` overwrites (the `registered ⇔ executed` invariant
@@ -504,6 +530,10 @@ module Compose =
           // `runWithConfigCore` seam when `emission.dacpac` opts in, not by an
           // unconditional `EmitStep`.
           Dacpac            = None
+          // The faithful, round-trippable snapshot of the emitted model — seeded
+          // directly (like `Manifest` / `Fidelity`), written on every bundle
+          // emission so two publish dirs can be diffed precisely.
+          CatalogSnapshot   = CatalogCodec.serialize ctx.EmittedCatalog
           Manifest          = ManifestEmitter.build ctx.EmittedCatalog
           Trail             = ctx.Trail
           PassEntries       = ctx.PassEntries
@@ -605,7 +635,10 @@ module Compose =
               // step; `true` (default) ⇒ the `Projection.*` properties emit
               // (byte-identical). The named-downgrade diagnostic is emitted at
               // the `runWithConfigCore` diagnostics merge, not here.
-              EmitIdentityAnnotations = policy.EmitIdentityAnnotations }
+              EmitIdentityAnnotations = policy.EmitIdentityAnnotations
+              // Wave-3 3.4 — lift the operator's accepted-divergence set so the
+              // residual resolves against it (default-permissive ⇒ byte-identical).
+              ConfiguredTolerance = policy.ConfiguredTolerance }
         let outputs =
             emitSteps
             |> List.fold (fun acc step -> step.Emit emitContext acc) (seedOutputs emitContext)
@@ -940,6 +973,11 @@ module Compose =
         writeFile fidelityJsonStaging (ModelFidelity.toJsonString outputs.Fidelity)
         let fidelityTextStaging = Path.Combine(stagingDir, ArtifactPath.fidelityText)
         writeFile fidelityTextStaging (String.concat "\n" (ModelFidelity.render outputs.Fidelity))
+        // The FAITHFUL catalog snapshot (`CatalogCodec`) — the persisted, round-
+        // trippable model for drift-diffing two publish dirs (`diff A/ B/`).
+        // Default-on like fidelity; written on every bundle emission. T1-deterministic.
+        let catalogSnapshotStaging = Path.Combine(stagingDir, ArtifactPath.catalogSnapshot)
+        writeFile catalogSnapshotStaging outputs.CatalogSnapshot
         // The compiled .dacpac (operator-gated; absent by default). A binary
         // artifact: written directly rather than through the text `FileWriter`
         // seam, inside the same staging directory so the atomic-replace
@@ -958,7 +996,8 @@ module Compose =
         let suggestConfigFinal = Path.Combine(outputDir, ArtifactPath.suggestConfig)
         let fidelityJsonFinal  = Path.Combine(outputDir, ArtifactPath.fidelityJson)
         let fidelityTextFinal  = Path.Combine(outputDir, ArtifactPath.fidelityText)
-        bundleFinalPaths @ dataFinalPaths @ dacpacFinalPaths @ [ jsonFinal; distributionsFinal; remediationFinal; summaryFinal; suggestConfigFinal; fidelityJsonFinal; fidelityTextFinal ]
+        let catalogSnapshotFinal = Path.Combine(outputDir, ArtifactPath.catalogSnapshot)
+        bundleFinalPaths @ dataFinalPaths @ dacpacFinalPaths @ [ jsonFinal; distributionsFinal; remediationFinal; summaryFinal; suggestConfigFinal; fidelityJsonFinal; fidelityTextFinal; catalogSnapshotFinal ]
 
     let private safeCleanupStaging (stagingDir: string) : unit =
         if Directory.Exists stagingDir then
@@ -1192,7 +1231,12 @@ module Compose =
                                      // the operator's drift-guard posture (default
                                      // Standard = byte-identical; ValidateBeforeApply
                                      // prepends the symmetric-EXCEPT THROW guard).
-                                     DataVerification = cfg.Emission.DataVerification }
+                                     DataVerification = cfg.Emission.DataVerification
+                                     // Wave-3 3.4 — `emission.tolerance` threads the
+                                     // operator's accepted-divergence set into the
+                                     // per-run residual; absent ⇒ the permissive
+                                     // dual-track default (byte-identical reporting).
+                                     ConfiguredTolerance = defaultArg cfg.Emission.Tolerance Tolerance.permissive }
             }
         }
 
@@ -1972,7 +2016,7 @@ module Compose =
                     match emittedR with
                     | Error errors -> Result.failure errors
                     | Ok emitted ->
-                        match runStoreLeg path timeline environment at None DataObservation.empty (emittedToleranceResidual emitted) appliedTransforms emitted with
+                        match runStoreLeg path timeline environment at None DataObservation.empty (emittedToleranceResidual (defaultArg cfg.Emission.Tolerance Tolerance.permissive) emitted) appliedTransforms emitted with
                         | Ok leg -> Result.success (Some leg)
                         | Error storeErr -> Result.failureOf (mapStoreErr storeErr)
             }
@@ -2039,7 +2083,10 @@ module Compose =
             // (NM-32/33 final hop): the accepted-divergences the emitted catalog
             // structurally invokes, computed from its static data. The diff-vs-prior
             // leg (`storeLegFromConfig`) is where the real overlay enumeration threads.
-            match runStoreLeg path timeline environment at None data (emittedToleranceResidual emitted) [] emitted with
+            // This data-load leg is config-less (unit-testable), so it resolves against
+            // `Tolerance.permissive` (report every fired divergence) — the schema-publish
+            // store leg is where the operator's `emission.tolerance` threads (Wave-3 3.4).
+            match runStoreLeg path timeline environment at None data (emittedToleranceResidual Tolerance.permissive emitted) [] emitted with
             | Ok leg -> Result.success (Some leg, cdcDelta)
             | Error storeErr -> Result.failureOf (mapStoreErr storeErr)
         | _ -> Result.success (None, cdcDelta)
