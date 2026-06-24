@@ -322,6 +322,7 @@
     <Compile Include="GoldenEmissionTests.fs" />
     <Compile Include="DataLaneGoldenTests.fs" />
     <Compile Include="JsonEmitterTests.fs" />
+    <Compile Include="SsdtArtifactEmitterTests.fs" />
     <Compile Include="CatalogCodecTests.fs" />
     <Compile Include="ProfileCodecTests.fs" />
     <Compile Include="CorrectionCodecTests.fs" />

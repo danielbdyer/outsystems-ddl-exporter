@@ -217,6 +217,15 @@ module DacpacEmitter =
                 "emitter.dacpac.failed"
                 (String.Concat("DacFx emission failed: ", ex.Message))
 
+    // NB (2026-06-24): DacFx 162.5.57's `PackageMetadata` exposes no
+    // `PostDeploymentScript` — a model-built `.dacpac` is schema-only by
+    // construction (the `TSqlModel` carries no scripts). The operator's
+    // post-deploy data (static seeds + migration) is embedded ONLY by the
+    // `.sqlproj`/`Microsoft.Build.Sql` build (which inlines the `:r`-included
+    // lanes at build), not programmatically here. `PostDeployEmitter` renders the
+    // script; `SqlprojEmitter` references it; the integration test deploys the
+    // schema dacpac then runs the post-deploy + bootstrap lanes as scripts.
+
     // -----------------------------------------------------------------------
     // Slice A.4.7'-prelude.dacpac-registry — `registeredMetadata`
     // entry for the DacpacEmitter sibling-Π realization. Closes the
