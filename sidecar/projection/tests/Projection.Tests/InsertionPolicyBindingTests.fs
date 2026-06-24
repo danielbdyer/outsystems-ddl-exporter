@@ -33,7 +33,7 @@ let private mkConfig (insertion: string) : Config.Config =
         Emission    = {
             Ssdt = true; Dacpac = true; Json = true; Distributions = true
             StaticSeeds = true; MigrationDependencies = true; Bootstrap = true; BootstrapAllData = false
-            DecisionLog = true; Opportunities = true; Validations = true; IncludePlatformAutoIndexes = true; DeleteScope = None; RenderConstraintsElegant = true; EmitIdentityAnnotations = true; DataVerification = Projection.Core.DataVerification.Standard
+            DecisionLog = true; Opportunities = true; Validations = true; IncludePlatformAutoIndexes = true; DeleteScope = None; RenderConstraintsElegant = true; EmitIdentityAnnotations = true; DataVerification = Projection.Core.DataVerification.Standard; Tolerance = None
         }
         Policy      = {
             Insertion       = insertion
@@ -142,4 +142,35 @@ let ``NM-70: buildPolicyFromConfig threads emission.identityAnnotations = false 
     let cfg = mkConfig "SchemaOnly" |> withIdentityAnnotations false
     match Compose.buildPolicyFromConfig cfg emptyCatalog with
     | Ok policy -> Assert.False(policy.Emission.EmitIdentityAnnotations)
+    | Error errs -> Assert.Fail(sprintf "expected Ok policy, got %A" errs)
+
+// ----------------------------------------------------------------------
+// Wave-3 slice 3.4 — emission.tolerance threads to EmissionPolicy
+// .ConfiguredTolerance via buildPolicyFromConfig (the seam that resolves the
+// per-run residual the Model Fidelity Report + episode provenance record).
+// ----------------------------------------------------------------------
+
+[<Fact>]
+let ``Wave-3 3.4: buildPolicyFromConfig threads emission.tolerance into EmissionPolicy.ConfiguredTolerance`` () =
+    let baseCfg = mkConfig "SchemaOnly"
+    let cfg =
+        { baseCfg with
+            Emission =
+                { baseCfg.Emission with
+                    Tolerance = Some (Projection.Core.Tolerance.ofSet (Set.ofList [ Projection.Core.ToleratedDivergence.EmptyTextNormalizedToNull ])) } }
+    match Compose.buildPolicyFromConfig cfg emptyCatalog with
+    | Ok policy ->
+        Assert.True(Projection.Core.Tolerance.tolerates Projection.Core.ToleratedDivergence.EmptyTextNormalizedToNull policy.Emission.ConfiguredTolerance)
+        Assert.False(Projection.Core.Tolerance.tolerates Projection.Core.ToleratedDivergence.DecimalScaleTolerated policy.Emission.ConfiguredTolerance)
+    | Error errs -> Assert.Fail(sprintf "expected Ok policy, got %A" errs)
+
+[<Fact>]
+let ``Wave-3 3.4: buildPolicyFromConfig defaults ConfiguredTolerance to permissive when emission.tolerance is absent`` () =
+    // mkConfig leaves emission.tolerance = None (absent); the default must be the
+    // permissive dual-track posture (byte-identical to the prior hardcoded value).
+    let cfg = mkConfig "SchemaOnly"
+    match Compose.buildPolicyFromConfig cfg emptyCatalog with
+    | Ok policy ->
+        Assert.True(Projection.Core.Tolerance.tolerates Projection.Core.ToleratedDivergence.EmptyTextNormalizedToNull policy.Emission.ConfiguredTolerance)
+        Assert.True(Projection.Core.Tolerance.tolerates Projection.Core.ToleratedDivergence.HeaderCommentsOmitted policy.Emission.ConfiguredTolerance)
     | Error errs -> Assert.Fail(sprintf "expected Ok policy, got %A" errs)

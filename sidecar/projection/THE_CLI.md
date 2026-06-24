@@ -280,9 +280,10 @@ explain <flow>                # the dry-run plan: what B ⊖ A would change, bef
 explain diff <a> <b>          # the change between two models
 explain policy <a> <b>        # how two policies project differently
 
-diff <a> <b>                  # the catalog change between two refs (the navigable changeset)
+diff <a> <b>                  # the catalog change between two refs (the navigable changeset);
+                              #   a ref may be a publish DIR → its catalog.snapshot.json (`diff outA outB`)
 compare <a> <b>               # read-only readiness: schema delta + data dealbreakers → compare.json
-                              #   refs <a>/<b>: <file> | json:<…> | @<runId> | live:<conn> (physical,
+                              #   refs <a>/<b>: <file/dir> | json:<…> | @<runId> | live:<conn> (physical,
                               #   ReadSide) | ossys:<conn> (OSSYS native-GUID identity — espace-safe;
                               #   the espace-safe choice for a CROSS-ENVIRONMENT compare/diff)
 
@@ -307,6 +308,17 @@ appended refactorlog = an **episode**). So:
 
 This lights up the ontology's **provenance plane** (`Accumulate`) — the plane the prior
 design left dark — and gives `report` an anchor instead of leaving it floating.
+
+**Every publish drops a faithful `catalog.snapshot.json` — diff two of them for drift.** Where
+`seal`/`report` anchor on a durable `store` (and `report` renders the recorded move-counts since
+the last seal), every full-export bundle ALSO writes a single FAITHFUL catalog file into its out
+dir — the round-tripping `CatalogCodec` form, **not** the lossy `projection.json` (which drops
+column width / precision / identity / FK-trust and has no reader). So two publishes to different
+directories are diffable with no extra step: `diff outA outB` (a directory operand resolves the
+`catalog.snapshot.json` inside it) reads both back **losslessly** (the `codecVersion` marker is
+auto-detected) and renders the precise per-table / per-column / per-FK / per-index change report.
+No verb, no store, no flow, no live target required — the drift report falls out of the two
+emissions. (It is just another bundle artifact, like `fidelity.json`; goldens are unaffected.)
 
 ---
 

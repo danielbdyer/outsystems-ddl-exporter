@@ -1,0 +1,25 @@
+{
+  "_comment": "The MigrationData lane's row inventory — referenced from projection.json by overrides.migrationDependencies.path. These are operator-authored rows the migration needs (system / lookup / reference rows that other entities FK to) which the live model does NOT carry as Static populations. Logical-keyed: each kind names a { module, entity } coordinate (rename-invariant — resolved to the kind's stable SsKey), each row a stable 'id' plus logical-column -> raw-value cells. Cell values are raw strings (RawValueCodec applies the per-column SQL type at MERGE construction); \"\" means NULL. These kinds are excluded from the bootstrap complement so a row never loads twice. Keyed to the projection.sample.json estate (Sales / ServiceCenter) — swap for your own entities. Authoritative format: src/Projection.Pipeline/MigrationDependenciesBinding.fs.",
+  "kinds": [
+    {
+      "_comment": "A root organization that Users reference — seeded so the User -> Organization FK resolves on first deploy (the ServiceCenter.Organization <-> User cycle in the sample's circularDependencies).",
+      "module": "ServiceCenter",
+      "entity": "Organization",
+      "rows": [
+        { "id": "root",     "values": { "Id": "1", "Name": "Headquarters",    "IsActive": "true" } },
+        { "id": "partners", "values": { "Id": "2", "Name": "Partner Network", "IsActive": "true" } }
+      ]
+    },
+    {
+      "_comment": "An order-status lookup that Sales.Order points at — an enum-like reference table not marked Static in the model, so it is curated here rather than seeded from live data.",
+      "module": "Sales",
+      "entity": "OrderStatus",
+      "rows": [
+        { "id": "draft",     "values": { "Id": "1", "Label": "Draft",     "SortOrder": "10" } },
+        { "id": "confirmed", "values": { "Id": "2", "Label": "Confirmed", "SortOrder": "20" } },
+        { "id": "shipped",   "values": { "Id": "3", "Label": "Shipped",   "SortOrder": "30" } },
+        { "id": "cancelled", "values": { "Id": "4", "Label": "Cancelled", "SortOrder": "99" } }
+      ]
+    }
+  ]
+}

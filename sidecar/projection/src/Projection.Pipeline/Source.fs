@@ -1,10 +1,12 @@
 namespace Projection.Pipeline
 
+open System.IO
 open System.Threading.Tasks
 open Microsoft.Data.SqlClient
 open Projection.Core
 open Projection.Adapters.Osm
 open Projection.Adapters.Sql
+open Projection.Targets.Json
 
 /// Frontier base — the capability-typed input boundary. A `Source` resolves a
 /// `Catalog` from somewhere (a snapshot file, an inline JSON model, a live
@@ -42,9 +44,58 @@ module Source =
           ReadCatalog    = (fun () -> CatalogReader.parse src)
           AcquireProfile = None }
 
-    /// A static-model source from a snapshot file — reads only, no profiling.
+    /// A static-model source from a FAITHFUL `CatalogCodec` snapshot file
+    /// (`projection snapshot` output) — reads losslessly, no profiling. The
+    /// codec round-trips the full IR (length / precision / identity / FK-trust /
+    /// sequences), unlike the V1 `osm_model.json` reader, so a `diff` between two
+    /// snapshots is precise. A read / decode failure is the named
+    /// `source.snapshot.readFailed`.
+    let ofSnapshot (path: string) : Source =
+        { Identity       = "snapshot:" + path
+          Capabilities   = Set.ofList [ ReadCatalog ]
+          ReadCatalog    =
+            (fun () ->
+                try Task.FromResult (CatalogCodec.deserialize (File.ReadAllText path))
+                with ex ->
+                    Task.FromResult (
+                        Result.failureOf (
+                            ValidationError.create "source.snapshot.readFailed"
+                                (System.String.Concat("snapshot ", path, ": ", ex.Message)))))
+          AcquireProfile = None }
+
+    /// Cheap discriminator: a `CatalogCodec` snapshot writes its top-level
+    /// `codecVersion` marker FIRST (`CatalogCodec.wCatalog`), so it lands in the
+    /// opening bytes; a V1 `osm_model.json` never carries it. Read only the head
+    /// (no full parse) so the common V1 path pays almost nothing.
+    let private looksLikeCodecSnapshot (path: string) : bool =
+        try
+            use fs = File.OpenRead path
+            use sr = new StreamReader(fs)
+            let buf = Array.zeroCreate<char> 256
+            let n = sr.Read(buf, 0, buf.Length)
+            System.String(buf, 0, n).Contains "\"codecVersion\""
+        with _ -> false
+
+    /// The conventional faithful-snapshot filename a bundle emits (kept in sync
+    /// with `Pipeline.Compose.ArtifactPath.catalogSnapshot`; duplicated as a
+    /// literal because `Source.fs` compiles before `Pipeline.fs`).
+    let [<Literal>] private bundleSnapshotName = "catalog.snapshot.json"
+
+    /// A static-model source from a snapshot file — or a publish DIRECTORY.
+    /// **Directory-aware**: a path that is an existing directory resolves to the
+    /// bundle's `catalog.snapshot.json` inside it, so `diff outA outB` (two
+    /// full-export publish dirs) compares their faithful snapshots directly.
+    /// **Faithful-aware**: a `CatalogCodec` snapshot (top-level `codecVersion`)
+    /// reads losslessly through the codec; any other file keeps the V1
+    /// `osm_model.json` reader. The marker never appears in a V1 snapshot, so
+    /// this cannot mis-route one — and it transparently upgrades
+    /// `diff a/ b/` (or `diff a.snapshot.json b.snapshot.json`) to a precise compare.
     let ofFile (path: string) : Source =
-        snapshot ("file:" + path) (CatalogReader.SnapshotFile path)
+        let resolved =
+            if Directory.Exists path then Path.Combine(path, bundleSnapshotName)
+            else path
+        if looksLikeCodecSnapshot resolved then ofSnapshot resolved
+        else snapshot ("file:" + resolved) (CatalogReader.SnapshotFile resolved)
 
     /// A static-model source from an inline JSON model — reads only.
     let ofJson (json: string) : Source =

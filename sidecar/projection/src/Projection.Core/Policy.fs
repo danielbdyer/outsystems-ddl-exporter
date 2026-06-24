@@ -162,6 +162,15 @@ type EmissionPolicy = {
     /// MERGE. Lifted to the data emit seam as a plain value (A18 — the
     /// emitter never reads `Policy`). See the `DataVerification` DU.
     DataVerification : DataVerification
+    /// Wave-3 slice 3.4 (now WIRED) — the per-run ACCEPTED-divergence set (the
+    /// R6 equivalence-up-to-quotient). It resolves the per-run tolerance residual
+    /// (`CanaryResidual.resolve`) feeding the Model Fidelity Report's ACCEPTED
+    /// DIVERGENCES section + the recorded episode provenance. `Tolerance.permissive`
+    /// (the constructor default) reports every fired divergence (the dual-track
+    /// posture, byte-identical to the prior hardcoded value); an operator's
+    /// `emission.tolerance` narrows it. Pure value (A18 — the residual seam reads
+    /// it at the Pipeline layer, never the emitter).
+    ConfiguredTolerance : Tolerance
 }
 
 
@@ -568,7 +577,11 @@ module EmissionPolicy =
                   EmitIdentityAnnotations = true
                   // NM-73 — CDC-silence-canonical default; the EXCEPT drift
                   // guard is the operator's opt-in conservative override.
-                  DataVerification = DataVerification.Standard }
+                  DataVerification = DataVerification.Standard
+                  // Wave-3 3.4 — the permissive dual-track default (reports every
+                  // fired divergence; byte-identical to the prior hardcoded value);
+                  // `emission.tolerance` narrows it via `withConfiguredTolerance`.
+                  ConfiguredTolerance = Tolerance.permissive }
 
     /// Replace `IncludePlatformAutoIndexes` while preserving the rest
     /// of the policy. Chapter 4.8 slice γ. Operators set to `false` to
@@ -597,6 +610,13 @@ module EmissionPolicy =
     /// conservative override). Sibling to `withEmitIdentityAnnotations`.
     let withDataVerification (verification: DataVerification) (policy: EmissionPolicy) : EmissionPolicy =
         { policy with DataVerification = verification }
+
+    /// Wave-3 slice 3.4 (now WIRED) — replace the per-run accepted-divergence
+    /// `ConfiguredTolerance` while preserving the rest of the policy. The
+    /// `buildPolicyFromConfig` binder calls this with the parsed `emission.tolerance`
+    /// (default `Tolerance.permissive` when absent). Sibling to `withDataVerification`.
+    let withConfiguredTolerance (tolerance: Tolerance) (policy: EmissionPolicy) : EmissionPolicy =
+        { policy with ConfiguredTolerance = tolerance }
 
     /// Project a catalog by the `IncludePlatformAutoIndexes` toggle. When
     /// the policy says `true` (V1 default), returns the catalog

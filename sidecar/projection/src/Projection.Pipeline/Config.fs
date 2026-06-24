@@ -245,6 +245,15 @@ module Config =
         /// drift guard (`THROW 50000` on drift). Threads to
         /// `EmissionPolicy.DataVerification`.
         DataVerification : DataVerification
+        /// Wave-3 slice 3.4 (now WIRED) — `emission.tolerance`: the per-run
+        /// ACCEPTED-divergence set (the R6 equivalence-up-to-quotient). A list of
+        /// `ToleratedDivergence` name tokens, parsed FAIL-CLOSED via
+        /// `Tolerance.parse`. `None` (absent) ⇒ the dual-track permissive default
+        /// downstream (the residual reports every fired divergence); a present
+        /// list constrains the recorded accepted set (`[]` ⇒ strict). Threads to
+        /// `EmissionPolicy.ConfiguredTolerance` → the Model Fidelity Report's
+        /// ACCEPTED DIVERGENCES section + the recorded episode's tolerance residual.
+        Tolerance : Tolerance option
     }
 
     // NM-03 (2026-06-13) — `policy.selection` and `policy.userMatching` were
@@ -411,6 +420,10 @@ module Config =
         EmitIdentityAnnotations = true
         // NM-73 — CDC-silence-canonical default (byte-identical).
         DataVerification = DataVerification.Standard
+        // Wave-3 3.4 — absent ⇒ the permissive dual-track default downstream
+        // (the residual reports every fired divergence; byte-identical to the
+        // prior hardcoded `Tolerance.permissive`).
+        Tolerance = None
     }
 
     let private defaultPolicy : PolicySection = {
@@ -1082,6 +1095,36 @@ module Config =
         | Some _ ->
             Result.failureOf (ValidationError.create "config.emission.deleteScope.shape" "emission.deleteScope must be an object with a 'terms' array.")
 
+    /// Wave-3 slice 3.4 (now WIRED) — parse `emission.tolerance`: an array of
+    /// `ToleratedDivergence` name tokens → `Tolerance option`. Absent ⇒ `None`
+    /// (the permissive dual-track default applies downstream). Present ⇒
+    /// `Tolerance.parse` (FAIL-CLOSED: an unrecognized token is a named config
+    /// error, never silently ignored — silently widening the accepted set would
+    /// corrupt the R6 quotient semantics). An empty `[]` parses to `Tolerance.strict`.
+    let private parseTolerance (element: JsonElement) : Result<Tolerance option> =
+        match tryGetProperty element "tolerance" with
+        | None -> Result.success None
+        | Some arr when arr.ValueKind = JsonValueKind.Array ->
+            let tokens =
+                arr.EnumerateArray()
+                |> Seq.choose (fun t ->
+                    if t.ValueKind = JsonValueKind.String then Option.ofObj (t.GetString()) else None)
+                |> List.ofSeq
+            match Tolerance.parse tokens with
+            | Ok tol -> Result.success (Some tol)
+            | Error (ToleranceError.UnknownDivergence token) ->
+                let known =
+                    ToleratedDivergence.allKnown
+                    |> Set.toList
+                    |> List.map ToleratedDivergence.name
+                    |> String.concat ", "
+                Result.failureOf (
+                    configError "invalidValue"
+                        (sprintf "emission.tolerance: unknown divergence token '%s'. Known tokens: %s." token known))
+        | Some _ ->
+            Result.failureOf (
+                configError "typeMismatch" "emission.tolerance must be an array of divergence-name strings.")
+
     let private parseEmission (root: JsonElement) : Result<EmissionSection> =
         match tryGetProperty root "emission" with
         | None -> Result.success defaultEmission
@@ -1136,6 +1179,9 @@ module Config =
                                                     match parseDeleteScope element with
                                                     | Error es -> Error es
                                                     | Ok deleteScope ->
+                                                    match parseTolerance element with
+                                                    | Error es -> Error es
+                                                    | Ok tolerance ->
                                                     Result.success {
                                                         Ssdt = ssdt
                                                         Dacpac = dacpac
@@ -1153,6 +1199,7 @@ module Config =
                                                         RenderConstraintsElegant = renderElegant
                                                         EmitIdentityAnnotations = identityAnnotations
                                                         DataVerification = dataVerification
+                                                        Tolerance = tolerance
                                                     }
 
     let private getOptionalBool (element: JsonElement) (name: string) : Result<bool option> =

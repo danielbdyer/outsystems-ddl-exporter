@@ -25277,3 +25277,85 @@ its conn (fails only on the absent secret). Pure pool green. Both forms (logical
 env-name/conn-ref) work, so existing CLI usage is unbroken. The sample now exercises the full operator
 config surface except `tighteningRelaxations` (deliberately omitted) and the dead fields
 (`validationOverrides` / `policy.selection` / `userMatching` / `typeMapping` / `cache`).
+
+---
+
+## 2026-06-23 — Faithful `catalog.snapshot.json` bundle artifact + `Source.ofFile` codec auto-detect (the persist→diff seam)
+
+**Decision.** Realize the operator-facing "two full-export publishes to different dirs, diffed
+PRECISELY" capability. The diff ENGINE (`CatalogDiff.between` — total, pure, full schema coverage:
+kinds / attrs / refs / indexes / sequences / kind-facets), the faithful round-trip codec
+(`CatalogCodec.serialize` / `deserialize` — T1, total, law-tested), and the precise renderer
+(`Comparison.renderCatalogChangeScoped`, wired to `diff`) were ALL already built. The only missing
+seam (audit 2026-06-23): nothing wrote a faithful catalog file, and the `diff` / `compare`
+file-operand read path went through the LOSSY V1 `CatalogReader` (`Source.ofFile` →
+`CatalogReader.SnapshotFile`), never `CatalogCodec` — so a `file:` / `@runId` diff silently lost
+column width / precision / identity / FK-trust fidelity, and there was no producer.
+
+- **Producer — folded into the bundle, NOT a new verb.** A `snapshot` verb was built first
+  (lowest-risk producer), then **removed** on operator steer (the snapshot folds into the publish
+  lifecycle). `Compose.Outputs` gains `CatalogSnapshot : string`, seeded in `seedOutputs` via
+  `CatalogCodec.serialize ctx.EmittedCatalog` (exactly like `Manifest` / `Fidelity`) and written by
+  `writeAllToStaging` to `ArtifactPath.catalogSnapshot = "catalog.snapshot.json"`, unconditionally on
+  every bundle emission. Goldens are UNAFFECTED — `GoldenEmissionTests.emitScenario` compares only the
+  SSDT `.sql` bundle + Data bundle + `stream.sql`, not the auxiliary JSON artifacts — so no re-bless
+  (only `ComposeAtomicWriteTests`' artifact count 10→11).
+- **Faithful read.** `Source.ofSnapshot` (codec) + `Source.ofFile` now (a) resolves a DIRECTORY
+  operand to its `catalog.snapshot.json` (so `diff outA outB` compares two publish dirs), and
+  (b) AUTO-DETECTS a codec snapshot by its top-level `codecVersion` marker (cheap 256-char head sniff)
+  and reads it through `CatalogCodec.deserialize`; any other file keeps the V1 `osm_model.json` reader
+  unchanged (the marker never appears in a V1 snapshot, so no mis-route).
+
+**Why a bundle artifact, not a verb.** Operator preference (2026-06-23): "not crazy about a new verb
+for no reason when it folds pretty nicely into the lifecycle." Every publish already produces an out
+dir; dropping the faithful snapshot there makes two publishes diffable with zero extra steps. It is
+`fidelity.json`'s sibling — a provenance artifact, default-on, no toggle. `seal` / `report` (the
+`LifecycleStore` episode timeline) remain the durable, anchored-changelog path; the bundle snapshot is
+the store-free, dir-vs-dir drift path (the two kept disjoint on purpose).
+
+**Witnesses.** `SnapshotRoundTripTests` (a codec snapshot drifts to zero through `Source.ofFile`; a
+DIRECTORY resolves its snapshot; a V1 `osm_model.json` still routes to the V1 reader; two snapshots of
+a one-kind change → `CatalogDiff.channelCounts.AddedKinds = 1`; a full `Compose.projectWithConfig`
+emits a faithful, reloadable `CatalogSnapshot`). `ComposeAtomicWriteTests` artifact count 10→11. Pure
+pool green (3632 / 0) twice (verb build, then bundle-fold). CLI smoke: `diff` reads a codec snapshot
+and renders the precise panel. Additive + isolated; routing / voice / config / source / codec / golden
+totality suites unbroken.
+
+---
+
+## 2026-06-23 — `emission.tolerance` wired into the per-run residual (Wave-3 slice 3.4 cash-out)
+
+**Decision.** Consume the operator's accepted-divergence set. `Tolerance.parse` (fail-closed) shipped
+at Wave-3 3.4 but had no production caller — the config carried no per-environment divergence axis, so
+`Pipeline.emittedToleranceResidual` / `emittedAcceptedDivergences` hardcoded `Tolerance.permissive`, and
+the FLAGs on `runStoreLeg` / `emittedResidualCollector` named the missing wiring ("`Tolerance.permissive`
+is the accepted set until an operator tolerance config is wired (then it becomes that configured value)").
+This closes that FLAG.
+
+- **Config.** New `emission.tolerance : Tolerance option` — an array of `ToleratedDivergence` name tokens
+  parsed via `Tolerance.parse` (FAIL-CLOSED: an unknown token is `pipeline.config.invalidValue`, never a
+  silent widen). Absent ⇒ `None`; `[]` ⇒ `Tolerance.strict`.
+- **Thread.** `EmissionPolicy.ConfiguredTolerance : Tolerance` (constructor default `Tolerance.permissive`)
+  ← `buildPolicyFromConfig` (`defaultArg cfg.Emission.Tolerance Tolerance.permissive`) → lifted to
+  `EmitContext.ConfiguredTolerance` → `emittedToleranceResidual` / `emittedAcceptedDivergences` resolve
+  against it (replacing the hardcoded permissive). The schema-publish store leg (`storeLegFromConfig`)
+  threads `cfg.Emission.Tolerance`; the config-less data-load leg (`recordLoad`) stays permissive
+  (preserved behavior).
+- **Default = permissive (absent).** Byte-identical to the prior hardcoded value — the residual reports
+  every fired divergence (the honest dual-track posture). An operator NARROWS it per environment (`[]` =
+  strict PROD; a named subset = the accepted set). NM-32/33's residual is now operator-resolved, not a
+  placeholder.
+
+**Scope note (what this is NOT).** The canary VERDICT (`PhysicalSchema.isEqual`) stays strict-on-quotient
+by design — the tolerances are baked into the `PhysicalSchema` projection (structural omission), so the
+comparison surface already IS "modulo tolerance." This wiring makes the configured tolerance load-bearing
+for the recorded RESIDUAL (the fidelity report's ACCEPTED DIVERGENCES + episode provenance + the @ladder
+matrix honesty), which is precisely what "`Tolerance.parse` is unwired" named. A verdict-level "fail iff a
+fired divergence ∉ configured tolerance" (which needs the canary to collect its round-trip residual —
+`CanaryResidual.collect` is still aspirational) is a larger, separate slice.
+
+**Witnesses.** `ConfigTests` (5: known tokens parse; unknown token fails FAIL-CLOSED; absent ⇒ None; `[]`
+⇒ strict; non-array ⇒ typeMismatch). `InsertionPolicyBindingTests` (2: `buildPolicyFromConfig` threads
+`emission.tolerance` into `ConfiguredTolerance`; absent ⇒ permissive). Pure pool green (3632 / 0).
+Default-permissive ⇒ byte-identical; routing / fidelity / residual / golden suites unbroken. Five
+binding-test `EmissionSection` fixtures gained `Tolerance = None`.
