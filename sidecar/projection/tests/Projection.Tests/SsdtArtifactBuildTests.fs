@@ -114,46 +114,61 @@ let ``Sqlproj build: the emitted Microsoft.Build.Sql project builds to a .dacpac
 
 // ----------------------------------------------------------------------------
 // #4 — consume a REAL publish. The test above hand-assembles the dir; this one
-// runs the actual operator path (`Compose.runWithConfig` with `emission.sqlproj`)
-// and `dotnet build`s the bundle it drops to disk — proving the WIRED publish
-// output is itself a buildable SSDT project (no hand-assembly drift). Schema-only
-// (the OSM model carries no static rows); the data/post-deploy `:r` build is
-// covered by the hand-assembled test above + the Docker deploy E2E.
+// runs the actual operator path (`Compose.runWithConfig` with `emission.sqlproj`
+// + an `overrides.migrationDependencies` row file) and `dotnet build`s the bundle
+// it drops to disk — proving the WIRED publish output is itself a buildable SSDT
+// project (no hand-assembly drift), INCLUDING the post-deploy `:r`-ing a REAL data
+// lane (the migration rows the publish rendered to `Data/MigrationData.sql`).
 // ----------------------------------------------------------------------------
 
-/// One module / one entity (IDENTITY Id) — the smallest model the operator path
-/// publishes (shared shape with `DacpacWireTests`).
+/// One module / one entity (Role: IDENTITY Id + Label) — a NON-static kind so its
+/// rows ride the MIGRATION lane (shared shape with the migration-binding tests).
 let private realModelJson : string =
     """{
   "exportedAtUtc": "2026-06-10T00:00:00.0000000+00:00",
   "modules": [
-    { "name": "Packaging", "isSystem": false, "isActive": true,
+    { "name": "AppCore", "isSystem": false, "isActive": true,
       "entities": [
-        { "name": "Parcel", "physicalName": "OSUSR_PKG_PARCEL", "isStatic": false, "isExternal": false, "isActive": true, "db_catalog": null, "db_schema": "dbo",
-          "attributes": [ { "name": "Id", "physicalName": "ID", "originalName": null, "dataType": "rtIdentifier", "length": null, "precision": null, "scale": null, "default": null, "isMandatory": true, "isIdentifier": true, "isAutoNumber": true, "isActive": true, "isReference": 0, "refEntityId": null, "refEntity_name": null, "refEntity_physicalName": null, "reference_deleteRuleCode": null, "reference_hasDbConstraint": 0, "external_dbType": null, "physical_isPresentButInactive": 0 } ],
+        { "name": "Role", "physicalName": "OSUSR_APPCORE_ROLE", "isStatic": false, "isExternal": false, "isActive": true, "db_catalog": null, "db_schema": "dbo",
+          "attributes": [
+            { "name": "Id", "physicalName": "ID", "originalName": null, "dataType": "Identifier", "length": null, "precision": null, "scale": null, "default": null, "isMandatory": true, "isIdentifier": true, "isAutoNumber": true, "isActive": true, "isReference": 0, "refEntityId": null, "refEntity_name": null, "refEntity_physicalName": null, "reference_deleteRuleCode": null, "reference_hasDbConstraint": 0, "external_dbType": null, "physical_isPresentButInactive": 0 },
+            { "name": "Label", "physicalName": "LABEL", "originalName": null, "dataType": "Text", "length": 100, "precision": null, "scale": null, "default": null, "isMandatory": true, "isIdentifier": false, "isAutoNumber": false, "isActive": true, "isReference": 0, "refEntityId": null, "refEntity_name": null, "refEntity_physicalName": null, "reference_deleteRuleCode": null, "reference_hasDbConstraint": 0, "external_dbType": null, "physical_isPresentButInactive": 0 } ],
           "relationships": [], "indexes": [], "triggers": [] } ] }
   ]
 }"""
 
+/// The `overrides.migrationDependencies` row file — logical `Module.Entity` → rows,
+/// the operator-curated MIGRATION lane the publish renders to `Data/MigrationData.sql`.
+let private migrationOverrideJson : string =
+    """{ "kinds": [ { "module": "AppCore", "entity": "Role",
+          "rows": [ { "id": "Admin",   "values": { "Id": "1", "Label": "Administrator" } },
+                    { "id": "Auditor", "values": { "Id": "2", "Label": "Auditor" } } ] } ] }"""
+
 [<Fact>]
-let ``Sqlproj build: a real emission.sqlproj publish drops a buildable bundle`` () =
+let ``Sqlproj build: a real emission.sqlproj publish (with migration data) drops a buildable bundle`` () =
     let outDir = Path.Combine(Path.GetTempPath(), "proj-realpub-" + Guid.NewGuid().ToString("N"))
     let modelPath = Path.Combine(Path.GetTempPath(), "proj-realpub-model-" + Guid.NewGuid().ToString("N") + ".json")
+    let migPath = Path.Combine(Path.GetTempPath(), "proj-realpub-mig-" + Guid.NewGuid().ToString("N") + ".json")
     File.WriteAllText(modelPath, realModelJson)
-    // Minimal emission so the publish dir carries only Modules/**.sql + the wired
-    // .sqlproj (the data lanes are off; the .json/.txt artifacts the glob ignores).
+    File.WriteAllText(migPath, migrationOverrideJson)
+    // Real operator config: schema + the wired .sqlproj + the MIGRATION data lane
+    // (fed by the override row file). staticSeeds/bootstrap off so the only data
+    // lane is MigrationData; the .json/.txt artifacts the schema glob ignores.
     let cfgJson =
         sprintf
-            """{ "model": { "path": "%s" }, "output": { "dir": "%s" }, "emission": { "ssdt": true, "sqlproj": true, "json": false, "distributions": false, "opportunities": false, "decisionLog": false, "validations": false, "staticSeeds": false, "migrationDependencies": false, "bootstrap": false } }"""
+            """{ "model": { "path": "%s" }, "output": { "dir": "%s" }, "overrides": { "migrationDependencies": { "path": "%s" } }, "emission": { "ssdt": true, "sqlproj": true, "migrationDependencies": true, "staticSeeds": false, "bootstrap": false, "json": false, "distributions": false, "opportunities": false, "decisionLog": false, "validations": false } }"""
             (modelPath.Replace("\\", "\\\\"))
             (outDir.Replace("\\", "\\\\"))
+            (migPath.Replace("\\", "\\\\"))
     try
         let cfg = Config.parse cfgJson |> Result.value
         let _report = (Compose.runWithConfig cfg).GetAwaiter().GetResult() |> Result.value
-        // the WIRE dropped the project
-        let sqlprojPath = Path.Combine(outDir, SqlprojEmitter.fileName)
-        Assert.True(File.Exists sqlprojPath, "the publish wrote ProjectionCatalog.sqlproj")
-        // build the REAL published bundle (the schema Modules + the wired .sqlproj)
+        // the WIRE dropped the project + post-deploy + a REAL migration data lane
+        Assert.True(File.Exists(Path.Combine(outDir, SqlprojEmitter.fileName)), "the publish wrote ProjectionCatalog.sqlproj")
+        Assert.True(File.Exists(Path.Combine(outDir, PostDeployEmitter.fileName)), "the publish wrote Script.PostDeployment.sql")
+        Assert.True(File.Exists(Path.Combine(outDir, "Data", "MigrationData.sql")), "the publish rendered the migration rows to Data/MigrationData.sql")
+        // build the REAL published bundle — SSDT compiles the schema AND resolves
+        // the post-deploy `:r Data/MigrationData.sql`, validating the MERGE T-SQL.
         writeFile outDir "nuget.config" nugetConfig
         let psi = ProcessStartInfo("dotnet", sprintf "build %s -c Debug --nologo" SqlprojEmitter.fileName)
         psi.WorkingDirectory <- outDir
@@ -173,4 +188,5 @@ let ``Sqlproj build: a real emission.sqlproj publish drops a buildable bundle`` 
             Assert.True(File.Exists(Path.Combine(outDir, "bin", "Debug", "ProjectionCatalog.dacpac")), "the published .sqlproj built a .dacpac")
     finally
         try File.Delete modelPath with _ -> ()
+        try File.Delete migPath with _ -> ()
         try if Directory.Exists outDir then Directory.Delete(outDir, true) with _ -> ()
