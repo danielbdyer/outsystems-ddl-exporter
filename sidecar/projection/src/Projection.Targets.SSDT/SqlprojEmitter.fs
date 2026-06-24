@@ -23,11 +23,12 @@ open System.Xml
 module SqlprojEmitter =
 
     /// The Microsoft.Build.Sql SDK version the emitted project pins, so a
-    /// `dotnet build` of the bundle restores a known SDK. Pinned to the GA line;
-    /// bump under a real build-failure trigger (the gated `.sqlproj`-build test
-    /// is the canary).
+    /// `dotnet build` of the bundle restores a known SDK. Pinned to the latest GA
+    /// (verified buildable 2026-06-24 — inline `Sdk="…/2.2.0"` + a `nuget.config`
+    /// resolves the SDK and produces a `.dacpac`); bump under a real build-failure
+    /// trigger (the gated `.sqlproj`-build test is the canary).
     [<Literal>]
-    let sdkVersion : string = "1.0.0"
+    let sdkVersion : string = "2.2.0"
 
     /// The Sql160 database schema provider (matches the `TSqlModel`/ScriptDom
     /// Sql160 pin the rest of the SSDT target uses).
