@@ -198,6 +198,12 @@ module Config =
     type EmissionSection = {
         Ssdt                  : bool
         Dacpac                : bool
+        /// `emission.sqlproj` — drop the SDK-style `Microsoft.Build.Sql`
+        /// `.sqlproj` + its `Script.PostDeployment.sql` (the post-deploy
+        /// `:r`-includes the static-seed + migration lanes), so a normal publish
+        /// is a buildable SSDT project. Default `false` (additive — no change to
+        /// the observable bundle).
+        Sqlproj               : bool
         Json                  : bool
         Distributions         : bool
         StaticSeeds           : bool
@@ -402,6 +408,9 @@ module Config =
         // observable default bundle byte-for-byte; an explicit
         // `emission: { "dacpac": true }` opts into the compiled package.
         Dacpac                = false
+        // Sqlproj defaults OFF: additive deployable artifact; `false` keeps the
+        // bundle byte-for-byte, `emission: { "sqlproj": true }` opts in.
+        Sqlproj               = false
         Json                  = true
         Distributions         = true
         StaticSeeds           = true
@@ -1136,6 +1145,11 @@ module Config =
                 match read "dacpac" defaultEmission.Dacpac with
                 | Error es -> Error es
                 | Ok dacpac ->
+                    // `emission.sqlproj` (2026-06-24) — flat rung (sibling of
+                    // `dacpac` on the deployable axis); default false.
+                    match read "sqlproj" defaultEmission.Sqlproj with
+                    | Error es -> Error es
+                    | Ok sqlproj ->
                     match read "json" defaultEmission.Json with
                     | Error es -> Error es
                     | Ok json ->
@@ -1185,6 +1199,7 @@ module Config =
                                                     Result.success {
                                                         Ssdt = ssdt
                                                         Dacpac = dacpac
+                                                        Sqlproj = sqlproj
                                                         Json = json
                                                         Distributions = dist
                                                         StaticSeeds = seeds

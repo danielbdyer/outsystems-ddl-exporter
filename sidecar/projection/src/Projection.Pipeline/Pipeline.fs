@@ -117,6 +117,12 @@ module Compose =
             /// content-equal across runs, NOT byte-stable (slice ζ deferral —
             /// see `DacpacEmitter`'s header).
             Dacpac : byte[] option
+            /// The SDK-style `.sqlproj` + its `Script.PostDeployment.sql`
+            /// (`emission.sqlproj: true`), so a normal publish drops a buildable
+            /// SSDT project whose post-deploy `:r`-includes the data lanes. `None`
+            /// (the default) writes neither — byte-identical to the pre-wire bundle.
+            Sqlproj : string option
+            PostDeploy : string option
             /// The typed SSDT manifest built during projection (the same
             /// value serialized into `manifest.json` within `SsdtBundle`).
             /// Surfaced here so consumers — `runWithConfig`'s `RunReport`,
@@ -252,6 +258,13 @@ module Compose =
         /// sibling of `projection.json` on the deployable axis.
         [<Literal>]
         let dacpac = "projection.dacpac"
+        /// The SDK-style SSDT project + its post-deploy (`emission.sqlproj: true`).
+        /// Mirror `SqlprojEmitter.fileName` / `PostDeployEmitter.fileName` — the
+        /// `.sqlproj`-build test pins both names, so a drift surfaces there.
+        [<Literal>]
+        let sqlproj = "ProjectionCatalog.sqlproj"
+        [<Literal>]
+        let postDeploy = "Script.PostDeployment.sql"
         /// The Model Fidelity Report — structured (`fidelity.json`) + the
         /// rolled-up operator text (`fidelity.txt`). Default-on; emitted
         /// alongside the other run artifacts on full-export and migrate.
@@ -530,6 +543,10 @@ module Compose =
           // `runWithConfigCore` seam when `emission.dacpac` opts in, not by an
           // unconditional `EmitStep`.
           Dacpac            = None
+          // Operator-gated SSDT project (`emission.sqlproj`); populated at the
+          // `runWithConfigCore` seam alongside `Dacpac`, not by an `EmitStep`.
+          Sqlproj           = None
+          PostDeploy        = None
           // The faithful, round-trippable snapshot of the emitted model — seeded
           // directly (like `Manifest` / `Fidelity`), written on every bundle
           // emission so two publish dirs can be diffed precisely.
@@ -988,6 +1005,17 @@ module Compose =
             | Some bytes ->
                 File.WriteAllBytes(Path.Combine(stagingDir, ArtifactPath.dacpac), bytes)
                 [ Path.Combine(outputDir, ArtifactPath.dacpac) ]
+        // The SDK-style SSDT project + its post-deploy (operator-gated, absent by
+        // default). Text artifacts written into the same staging dir so the
+        // atomic-replace contract covers them; final paths projected post-swap.
+        let sqlprojFinalPaths =
+            [ ArtifactPath.sqlproj,    outputs.Sqlproj
+              ArtifactPath.postDeploy, outputs.PostDeploy ]
+            |> List.choose (fun (rel, body) ->
+                body
+                |> Option.map (fun b ->
+                    writeFile (Path.Combine(stagingDir, rel)) b
+                    Path.Combine(outputDir, rel)))
         // Final-path projection (under the eventual outputDir, post-swap)
         let jsonFinal          = Path.Combine(outputDir, ArtifactPath.json)
         let distributionsFinal = Path.Combine(outputDir, ArtifactPath.distributions)
@@ -997,7 +1025,7 @@ module Compose =
         let fidelityJsonFinal  = Path.Combine(outputDir, ArtifactPath.fidelityJson)
         let fidelityTextFinal  = Path.Combine(outputDir, ArtifactPath.fidelityText)
         let catalogSnapshotFinal = Path.Combine(outputDir, ArtifactPath.catalogSnapshot)
-        bundleFinalPaths @ dataFinalPaths @ dacpacFinalPaths @ [ jsonFinal; distributionsFinal; remediationFinal; summaryFinal; suggestConfigFinal; fidelityJsonFinal; fidelityTextFinal; catalogSnapshotFinal ]
+        bundleFinalPaths @ dataFinalPaths @ dacpacFinalPaths @ sqlprojFinalPaths @ [ jsonFinal; distributionsFinal; remediationFinal; summaryFinal; suggestConfigFinal; fidelityJsonFinal; fidelityTextFinal; catalogSnapshotFinal ]
 
     let private safeCleanupStaging (stagingDir: string) : unit =
         if Directory.Exists stagingDir then
@@ -1377,6 +1405,27 @@ module Compose =
                     | Error errors -> Result.failure errors
                     | Ok dacpac ->
                     let outputs = { outputs with Dacpac = dacpac }
+                    // `emission.sqlproj: true` — drop a buildable SDK-style SSDT
+                    // project (the `.sqlproj` + its post-deploy) over the data
+                    // lanes the publish already emitted, so the operator's
+                    // `dotnet build`/`sqlpackage` path is one config flag, not a
+                    // manual assembly. Derived from the ACTUAL data-lane file set
+                    // (`outputs.DataBundle`), so the post-deploy `:r` includes can
+                    // never dangle. The Bootstrap lane is a SEPARATE post-publish
+                    // step: `None`'d out of the schema build, but NOT `:r`-included
+                    // by the post-deploy (operator runs it after publish).
+                    let outputs =
+                        if not cfg.Emission.Sqlproj then outputs
+                        else
+                            let dataLanes =
+                                outputs.DataBundle |> Map.toList |> List.map fst |> List.sort
+                            let postDeployLanes =
+                                dataLanes |> List.filter (fun p -> p <> "Data/Bootstrap.sql")
+                            let postDeploy =
+                                if List.isEmpty postDeployLanes then None
+                                else Some (PostDeployEmitter.renderIncludes postDeployLanes)
+                            let sqlproj = SqlprojEmitter.emit dataLanes (Option.isSome postDeploy)
+                            { outputs with Sqlproj = Some sqlproj; PostDeploy = postDeploy }
                     let diagnostics =
                         // A7 (no-silent-drop) — surface the inert module-filter
                         // flags on the structured diagnostic stream.

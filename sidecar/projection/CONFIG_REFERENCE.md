@@ -84,6 +84,7 @@ Every key, with type · required? · default. Unknown keys are ignored; type mis
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
+| `sqlproj` | bool | `false` | `true` also emits an SDK-style `Microsoft.Build.Sql` project — `ProjectionCatalog.sqlproj` + `Script.PostDeployment.sql` — so the publish bundle is a buildable SSDT project (`dotnet build`/`sqlpackage` → `.dacpac`). The post-deploy `:r`-includes the static-seed + migration lanes; the **bootstrap** lane is `None`'d out of the schema build but stays a SEPARATE post-publish step (not in the post-deploy). The `.sqlproj` pins `Microsoft.Build.Sql/2.2.0` (needs a `nuget.config` to restore). Additive — the default writes neither file. Proven by the gated `.sqlproj`-build test + the Docker deploy E2E |
 | `bootstrapAllData` | bool | `false` | `true` flips `bootstrap` to cover EVERY data-bearing kind — the full first-deploy snapshot (V1's `AllEntitiesIncludingStatic`) — and skips the static + migration lanes. Threads via `Config.dataCompositionOf` → `EmissionPolicy.DataComposition` (`AllData`) |
 | `dataVerification` | string | `"standard"` | `"validateBeforeApply"` prepends a symmetric-`EXCEPT` drift guard (`THROW 50000` on drift) ahead of every data MERGE; `"standard"` emits the MERGEs alone (byte-identical, CDC-silent on idempotent redeploy). Any other value is a loud `pipeline.config.invalidValue` (NM-73 / WP6.6) |
 | `tolerance` | array | — (none) | The per-run **ACCEPTED-divergence set** (the R6 equivalence-up-to-quotient): a list of `ToleratedDivergence` name tokens (e.g. `["EmptyTextNormalizedToNull", "DecimalScaleTolerated"]`), parsed **FAIL-CLOSED** — an unknown token is a named `pipeline.config.invalidValue`, never a silent widening. Resolves the per-run tolerance residual surfaced in the Model Fidelity Report's ACCEPTED DIVERGENCES section + the recorded episode provenance. Omit ⇒ the **permissive** dual-track default (the residual reports every fired divergence; byte-identical to the prior behavior); `[]` ⇒ **strict** (accept nothing). Known tokens: `HeaderCommentsOmitted`, `PostDeployForeignKeysSplit`, `IndexOptionsUnreflected`, `StaticPopulationsUnreflected`, `EmptyTextNormalizedToNull`, `CompositePkFkUnreflected`, `CharAnsiPaddingTolerated`, `DecimalScaleTolerated`, `FkTrustNotRestoredOnBulkLoad`, `TriggerBodyUnparsedDropped`. Wave-3 slice 3.4 (now wired) |
@@ -164,7 +165,7 @@ A config that exercises every major axis — module + entity scoping, both renam
   },
 
   "emission": {
-    "ssdt": true, "dacpac": true, "json": true, "staticSeeds": true,
+    "ssdt": true, "dacpac": true, "sqlproj": true, "json": true, "staticSeeds": true,
     "distributions": false, "opportunities": false
   },
 
