@@ -31,7 +31,9 @@ let private col (physical: string) : ColumnRealization =
 let private colNull (physical: string) : ColumnRealization =
     ColumnRealization.create physical true |> Result.value
 
-// A STATIC-seed kind (Country) — populated from `Modality.Static`.
+// A STATIC-seed kind (Country) — populated from `Modality.Static`. Id is an
+// IDENTITY PK (the OutSystems convention), so seeding explicit Ids forces the
+// static MERGE to bracket `SET IDENTITY_INSERT ON/OFF` — proven by the deploy.
 let private countryKey = mkKey [ "Sales"; "Country" ]
 let private mkCountry () : Kind =
     let row idVal code label =
@@ -41,7 +43,7 @@ let private mkCountry () : Kind =
       Modality = [ Static [ row "1" "US" "United States"; row "2" "CA" "Canada" ] ]
       Physical = mkTableId "dbo" "OSUSR_E2E_COUNTRY"
       Attributes =
-        [ { Attribute.create (mkKey [ "Sales"; "Country"; "Id" ]) (mkName "Id") Integer with Column = col "ID"; IsPrimaryKey = true; IsMandatory = true }
+        [ { Attribute.create (mkKey [ "Sales"; "Country"; "Id" ]) (mkName "Id") Integer with Column = col "ID"; IsPrimaryKey = true; IsMandatory = true; IsIdentity = true }
           { Attribute.create (mkKey [ "Sales"; "Country"; "Code" ]) (mkName "Code") Text with Column = col "CODE"; IsMandatory = true }
           { Attribute.create (mkKey [ "Sales"; "Country"; "Label" ]) (mkName "Label") Text with Column = col "LABEL"; IsMandatory = true } ]
       References = []; Indexes = []; Description = None; IsActive = true
@@ -59,13 +61,36 @@ let private mkRole () : Kind =
       Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
 // A non-static kind whose rows ride the BOOTSTRAP lane (hydrated `bootstrapRows`).
+// CountryId is a CROSS-LANE FK → Country (a STATIC seed): the post-deploy (static)
+// runs before the bootstrap, so the FK resolves; the wrong lane order would fail.
 let private productKey = mkKey [ "Sales"; "Product" ]
 let private mkProduct () : Kind =
     { SsKey = productKey; Name = mkName "Product"; Origin = Native; Modality = []
       Physical = mkTableId "dbo" "OSUSR_E2E_PRODUCT"
       Attributes =
         [ { Attribute.create (mkKey [ "Sales"; "Product"; "Id" ]) (mkName "Id") Integer with Column = col "ID"; IsPrimaryKey = true; IsMandatory = true }
-          { Attribute.create (mkKey [ "Sales"; "Product"; "Name" ]) (mkName "Name") Text with Column = col "NAME"; IsMandatory = true } ]
+          { Attribute.create (mkKey [ "Sales"; "Product"; "Name" ]) (mkName "Name") Text with Column = col "NAME"; IsMandatory = true }
+          { Attribute.create (mkKey [ "Sales"; "Product"; "CountryId" ]) (mkName "CountryId") Integer with Column = col "COUNTRYID"; IsMandatory = true } ]
+      References = [ Reference.create (mkKey [ "Sales"; "Product"; "CountryRef" ]) (mkName "CountryRef") (mkKey [ "Sales"; "Product"; "CountryId" ]) countryKey ]
+      Indexes = []; Description = None; IsActive = true
+      Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
+
+// A STATIC kind exercising the non-Integer/Text DATA TYPES end-to-end:
+// Decimal → DECIMAL(18,2), DateTime → DATETIME2, Boolean → BIT. The value codec
+// renders "12.34" bare, the temporal raw as a quoted literal, "true" → 1.
+let private measurementKey = mkKey [ "Sales"; "Measurement" ]
+let private mkMeasurement () : Kind =
+    let row =
+        { Identifier = mkKey [ "Sales"; "Measurement"; "Row"; "M1" ]
+          Values = Map.ofList [ mkName "Id", "1"; mkName "Amount", "12.34"; mkName "RecordedAt", "2026-05-10 12:30:00.0000000"; mkName "IsActive", "true" ] }
+    { SsKey = measurementKey; Name = mkName "Measurement"; Origin = Native
+      Modality = [ Static [ row ] ]
+      Physical = mkTableId "dbo" "OSUSR_E2E_MEASUREMENT"
+      Attributes =
+        [ { Attribute.create (mkKey [ "Sales"; "Measurement"; "Id" ]) (mkName "Id") Integer with Column = col "ID"; IsPrimaryKey = true; IsMandatory = true }
+          { Attribute.create (mkKey [ "Sales"; "Measurement"; "Amount" ]) (mkName "Amount") Decimal with Column = col "AMOUNT"; IsMandatory = true; Precision = Some 18; Scale = Some 2 }
+          { Attribute.create (mkKey [ "Sales"; "Measurement"; "RecordedAt" ]) (mkName "RecordedAt") DateTime with Column = col "RECORDEDAT"; IsMandatory = true }
+          { Attribute.create (mkKey [ "Sales"; "Measurement"; "IsActive" ]) (mkName "IsActive") Boolean with Column = col "ISACTIVE"; IsMandatory = true } ]
       References = []; Indexes = []; Description = None; IsActive = true
       Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
 
@@ -109,7 +134,7 @@ let private mkAccountB () : Kind =
 let private e2eCatalog () : Catalog =
     let m : Module =
         { SsKey = mkKey [ "Sales" ]; Name = mkName "Sales"
-          Kinds = [ mkCountry (); mkRole (); mkProduct (); mkOrg (); mkAccountA (); mkAccountB () ]
+          Kinds = [ mkCountry (); mkRole (); mkProduct (); mkMeasurement (); mkOrg (); mkAccountA (); mkAccountB () ]
           IsActive = true; ExtendedProperties = [] }
     { Modules = [ m ]; Sequences = [] }
 
@@ -121,9 +146,9 @@ let private migrationCtx () : MigrationDependencyContext =
 let private bootstrapRows () : Map<SsKey, StaticRow list> =
     Map.ofList
         [ productKey,
-          [ { Identifier = mkKey [ "Sales"; "Product"; "Row"; "Widget" ]; Values = Map.ofList [ mkName "Id", "1"; mkName "Name", "Widget" ] }
-            { Identifier = mkKey [ "Sales"; "Product"; "Row"; "Gadget" ]; Values = Map.ofList [ mkName "Id", "2"; mkName "Name", "Gadget" ] }
-            { Identifier = mkKey [ "Sales"; "Product"; "Row"; "Gizmo" ];  Values = Map.ofList [ mkName "Id", "3"; mkName "Name", "Gizmo" ] } ]
+          [ { Identifier = mkKey [ "Sales"; "Product"; "Row"; "Widget" ]; Values = Map.ofList [ mkName "Id", "1"; mkName "Name", "Widget"; mkName "CountryId", "1" ] }
+            { Identifier = mkKey [ "Sales"; "Product"; "Row"; "Gadget" ]; Values = Map.ofList [ mkName "Id", "2"; mkName "Name", "Gadget"; mkName "CountryId", "2" ] }
+            { Identifier = mkKey [ "Sales"; "Product"; "Row"; "Gizmo" ];  Values = Map.ofList [ mkName "Id", "3"; mkName "Name", "Gizmo"; mkName "CountryId", "1" ] } ]
           // self-referential hierarchy — HQ is its OWN parent (Id=1, ParentId=1),
           // East/West point at HQ. Inserting any of these in a single phase would
           // violate the self-FK (the parent row isn't there yet), so two-phase is
@@ -145,7 +170,7 @@ type SsdtArtifactDeployE2ETests(fixture: EphemeralContainerFixture) =
     interface IClassFixture<EphemeralContainerFixture>
 
     [<Fact>]
-    member _.``E2E: dacpac publish + post-deploy (static+migration) + bootstrap two-phase (self-ref + mutual-cycle FK) loads every lane idempotently`` () =
+    member _.``E2E: dacpac publish + post-deploy + two-phase bootstrap (self-ref + cycle) + IDENTITY_INSERT + cross-lane FK + decimal/datetime/bit types, idempotent`` () =
         if not (Deploy.Docker.ensureRunning ()) then
             printfn "SKIP E2E SSDT deploy: Docker daemon not reachable."
         else
@@ -211,6 +236,24 @@ type SsdtArtifactDeployE2ETests(fixture: EphemeralContainerFixture) =
                         Assert.Equal("10", aPeer)            // A → B, set in phase-2
                         let! bPeer = scalar cnn "SELECT CAST([PEERAID] AS VARCHAR(10)) FROM [dbo].[OSUSR_E2E_ACCOUNTB] WHERE [ID] = 10;"
                         Assert.Equal("1", bPeer)             // B → A, the mutual side
+                        // 3c) IDENTITY-PK static seed — Country.Id is IDENTITY, so seeding explicit
+                        // Ids forced the static MERGE to bracket SET IDENTITY_INSERT; count=2 above
+                        // already proves it deployed, and sys.columns confirms the column shape.
+                        let! countryIdentity = scalar cnn "SELECT CAST(c.is_identity AS INT) FROM sys.columns c WHERE c.object_id = OBJECT_ID('dbo.OSUSR_E2E_COUNTRY') AND c.name = 'ID';"
+                        Assert.Equal("1", countryIdentity)
+                        // 3d) CROSS-LANE FK — Product (bootstrap) → Country (static seed). The static
+                        // lane (post-deploy) ran before the bootstrap, so the FK resolved.
+                        let! widgetCountry = scalar cnn "SELECT CAST([COUNTRYID] AS VARCHAR(10)) FROM [dbo].[OSUSR_E2E_PRODUCT] WHERE [ID] = 1;"
+                        Assert.Equal("1", widgetCountry)
+                        let! gadgetCountryCode = scalar cnn "SELECT co.[CODE] FROM [dbo].[OSUSR_E2E_PRODUCT] p JOIN [dbo].[OSUSR_E2E_COUNTRY] co ON co.[ID] = p.[COUNTRYID] WHERE p.[ID] = 2;"
+                        Assert.Equal("CA", gadgetCountryCode)   // Gadget → Canada, the FK join resolves
+                        // 3e) NON-Integer/Text TYPES round-trip codec → deploy: Decimal(18,2), DateTime2, Bit.
+                        let! amount = scalar cnn "SELECT CAST([AMOUNT] AS VARCHAR(20)) FROM [dbo].[OSUSR_E2E_MEASUREMENT] WHERE [ID] = 1;"
+                        Assert.Equal("12.34", amount)
+                        let! isActive = scalar cnn "SELECT CAST([ISACTIVE] AS INT) FROM [dbo].[OSUSR_E2E_MEASUREMENT] WHERE [ID] = 1;"
+                        Assert.Equal("1", isActive)
+                        let! recordedDate = scalar cnn "SELECT CONVERT(VARCHAR(10), [RECORDEDAT], 23) FROM [dbo].[OSUSR_E2E_MEASUREMENT] WHERE [ID] = 1;"
+                        Assert.Equal("2026-05-10", recordedDate)
                         // 4) idempotency: re-run post-deploy + bootstrap → counts unchanged (MERGE is upsert)
                         do! Deploy.executeBatch cnn postDeploy
                         do! Deploy.executeBatch cnn bundle.Bootstrap
