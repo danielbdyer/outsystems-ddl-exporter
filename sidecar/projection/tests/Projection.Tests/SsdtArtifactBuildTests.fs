@@ -111,3 +111,66 @@ let ``Sqlproj build: the emitted Microsoft.Build.Sql project builds to a .dacpac
             Assert.True(File.Exists dacpac, sprintf "expected a built .dacpac at %s\nbuild output:\n%s" dacpac combined)
     finally
         try Directory.Delete(dir, true) with _ -> ()
+
+// ----------------------------------------------------------------------------
+// #4 — consume a REAL publish. The test above hand-assembles the dir; this one
+// runs the actual operator path (`Compose.runWithConfig` with `emission.sqlproj`)
+// and `dotnet build`s the bundle it drops to disk — proving the WIRED publish
+// output is itself a buildable SSDT project (no hand-assembly drift). Schema-only
+// (the OSM model carries no static rows); the data/post-deploy `:r` build is
+// covered by the hand-assembled test above + the Docker deploy E2E.
+// ----------------------------------------------------------------------------
+
+/// One module / one entity (IDENTITY Id) — the smallest model the operator path
+/// publishes (shared shape with `DacpacWireTests`).
+let private realModelJson : string =
+    """{
+  "exportedAtUtc": "2026-06-10T00:00:00.0000000+00:00",
+  "modules": [
+    { "name": "Packaging", "isSystem": false, "isActive": true,
+      "entities": [
+        { "name": "Parcel", "physicalName": "OSUSR_PKG_PARCEL", "isStatic": false, "isExternal": false, "isActive": true, "db_catalog": null, "db_schema": "dbo",
+          "attributes": [ { "name": "Id", "physicalName": "ID", "originalName": null, "dataType": "rtIdentifier", "length": null, "precision": null, "scale": null, "default": null, "isMandatory": true, "isIdentifier": true, "isAutoNumber": true, "isActive": true, "isReference": 0, "refEntityId": null, "refEntity_name": null, "refEntity_physicalName": null, "reference_deleteRuleCode": null, "reference_hasDbConstraint": 0, "external_dbType": null, "physical_isPresentButInactive": 0 } ],
+          "relationships": [], "indexes": [], "triggers": [] } ] }
+  ]
+}"""
+
+[<Fact>]
+let ``Sqlproj build: a real emission.sqlproj publish drops a buildable bundle`` () =
+    let outDir = Path.Combine(Path.GetTempPath(), "proj-realpub-" + Guid.NewGuid().ToString("N"))
+    let modelPath = Path.Combine(Path.GetTempPath(), "proj-realpub-model-" + Guid.NewGuid().ToString("N") + ".json")
+    File.WriteAllText(modelPath, realModelJson)
+    // Minimal emission so the publish dir carries only Modules/**.sql + the wired
+    // .sqlproj (the data lanes are off; the .json/.txt artifacts the glob ignores).
+    let cfgJson =
+        sprintf
+            """{ "model": { "path": "%s" }, "output": { "dir": "%s" }, "emission": { "ssdt": true, "sqlproj": true, "json": false, "distributions": false, "opportunities": false, "decisionLog": false, "validations": false, "staticSeeds": false, "migrationDependencies": false, "bootstrap": false } }"""
+            (modelPath.Replace("\\", "\\\\"))
+            (outDir.Replace("\\", "\\\\"))
+    try
+        let cfg = Config.parse cfgJson |> Result.value
+        let _report = (Compose.runWithConfig cfg).GetAwaiter().GetResult() |> Result.value
+        // the WIRE dropped the project
+        let sqlprojPath = Path.Combine(outDir, SqlprojEmitter.fileName)
+        Assert.True(File.Exists sqlprojPath, "the publish wrote ProjectionCatalog.sqlproj")
+        // build the REAL published bundle (the schema Modules + the wired .sqlproj)
+        writeFile outDir "nuget.config" nugetConfig
+        let psi = ProcessStartInfo("dotnet", sprintf "build %s -c Debug --nologo" SqlprojEmitter.fileName)
+        psi.WorkingDirectory <- outDir
+        psi.RedirectStandardOutput <- true
+        psi.RedirectStandardError <- true
+        psi.UseShellExecute <- false
+        let proc =
+            match Process.Start psi with
+            | null -> failwith "could not start `dotnet`"
+            | p -> p
+        let combined = proc.StandardOutput.ReadToEnd() + "\n" + proc.StandardError.ReadToEnd()
+        proc.WaitForExit()
+        if combined.Contains "Could not resolve SDK" || combined.Contains "Unable to resolve 'Microsoft.Build.Sql" then
+            printfn "SKIP real-publish .sqlproj build: Microsoft.Build.Sql SDK not restorable here."
+        else
+            Assert.True(proc.ExitCode = 0, sprintf "dotnet build of the published .sqlproj failed (exit %d):\n%s" proc.ExitCode combined)
+            Assert.True(File.Exists(Path.Combine(outDir, "bin", "Debug", "ProjectionCatalog.dacpac")), "the published .sqlproj built a .dacpac")
+    finally
+        try File.Delete modelPath with _ -> ()
+        try if Directory.Exists outDir then Directory.Delete(outDir, true) with _ -> ()
