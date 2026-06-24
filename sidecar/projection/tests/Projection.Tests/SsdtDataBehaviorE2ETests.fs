@@ -20,6 +20,10 @@ open Projection.Tests.Fixtures   // mkName, mkTableId
 //     absent from the source is DELETED; a row OUT of scope survives.
 //   • dataVerification=validateBeforeApply → the symmetric-EXCEPT drift guard
 //     (`THROW 50000` prelude): silent when aligned, ABORTS the batch on drift.
+// And two STRUCTURAL constraints proven ENFORCED post-deploy:
+//   • a composite PK (Id keyed on two columns) — the MERGE keys on both, and a
+//     duplicate pair is rejected.
+//   • a UNIQUE index — it deploys and a duplicate value is rejected.
 // These compose the actual emitter output with the behaviour on, so the SQL
 // under test is what an operator's `projection.json` would emit.
 // ============================================================================
@@ -87,6 +91,45 @@ let private settingCatalog () : Catalog =
           References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     { Modules = [ { SsKey = mkKey [ "Ops" ]; Name = mkName "Ops"; Kinds = [ kind ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
 
+// ---- composite-PK fixture: OrderLine keyed on (OrderId, ProductId)
+let private orderLineKey = mkKey [ "Sales"; "OrderLine" ]
+let private orderLineCatalog () : Catalog =
+    let row o p q =
+        { Identifier = mkKey [ "Sales"; "OrderLine"; "Row"; o + "-" + p ]
+          Values = Map.ofList [ mkName "OrderId", o; mkName "ProductId", p; mkName "Qty", q ] }
+    let kind : Kind =
+        { SsKey = orderLineKey; Name = mkName "OrderLine"; Origin = Native
+          Modality = [ Static [ row "1" "10" "5"; row "1" "20" "3" ] ]
+          Physical = mkTableId "dbo" "OSUSR_E2E_ORDERLINE"
+          Attributes =
+            [ { Attribute.create (mkKey [ "Sales"; "OrderLine"; "OrderId" ]) (mkName "OrderId") Integer with Column = col "ORDERID"; IsPrimaryKey = true; IsMandatory = true }
+              { Attribute.create (mkKey [ "Sales"; "OrderLine"; "ProductId" ]) (mkName "ProductId") Integer with Column = col "PRODUCTID"; IsPrimaryKey = true; IsMandatory = true }
+              { Attribute.create (mkKey [ "Sales"; "OrderLine"; "Qty" ]) (mkName "Qty") Integer with Column = col "QTY"; IsMandatory = true } ]
+          References = []; Indexes = []; Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
+    { Modules = [ { SsKey = mkKey [ "Sales" ]; Name = mkName "Sales"; Kinds = [ kind ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
+
+// ---- unique-index fixture: Coupon with a UNIQUE index on Code
+let private couponKey = mkKey [ "Sales"; "Coupon" ]
+let private couponCatalog () : Catalog =
+    let codeKey = mkKey [ "Sales"; "Coupon"; "Code" ]
+    let row idv code =
+        { Identifier = mkKey [ "Sales"; "Coupon"; "Row"; code ]
+          Values = Map.ofList [ mkName "Id", idv; mkName "Code", code ] }
+    let kind : Kind =
+        { SsKey = couponKey; Name = mkName "Coupon"; Origin = Native
+          Modality = [ Static [ row "1" "SAVE10"; row "2" "SAVE20" ] ]
+          Physical = mkTableId "dbo" "OSUSR_E2E_COUPON"
+          Attributes =
+            [ { Attribute.create (mkKey [ "Sales"; "Coupon"; "Id" ]) (mkName "Id") Integer with Column = col "ID"; IsPrimaryKey = true; IsMandatory = true }
+              // bounded length → NVARCHAR(50): a MAX column can't be an index key
+              { Attribute.create codeKey (mkName "Code") Text with Column = col "CODE"; IsMandatory = true; Length = Some 50 } ]
+          References = []
+          Indexes =
+            [ { Index.create (mkKey [ "Sales"; "Coupon"; "UQ_Code" ]) (mkName "UQ_COUPON_CODE") (IndexColumn.ascendingList [ codeKey ]) with
+                  Uniqueness = IndexUniqueness.Unique } ]
+          Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
+    { Modules = [ { SsKey = mkKey [ "Sales" ]; Name = mkName "Sales"; Kinds = [ kind ]; IsActive = true; ExtendedProperties = [] } ]; Sequences = [] }
+
 [<Xunit.Collection("Docker-SqlServer")>]
 type SsdtDataBehaviorE2ETests(fixture: EphemeralContainerFixture) =
     interface IClassFixture<EphemeralContainerFixture>
@@ -152,4 +195,61 @@ type SsdtDataBehaviorE2ETests(fixture: EphemeralContainerFixture) =
                         // the MERGE never ran — the drifted value still stands
                         let! v2 = scalar cnn "SELECT [VAL] FROM [dbo].[OSUSR_E2E_SETTING] WHERE [ID] = 1;"
                         Assert.Equal("Bob", v2)
+                    }))
+
+    [<Fact>]
+    member _.``E2E: composite-PK kind deploys, the MERGE keys on both columns, and a duplicate pair is rejected`` () =
+        if not (Deploy.Docker.ensureRunning ()) then
+            printfn "SKIP composite-PK E2E: Docker daemon not reachable."
+        else
+            let catalog = orderLineCatalog ()
+            let policy = { Policy.empty with Emission = EmissionPolicy.combined }
+            let seeds = staticSeeds policy catalog
+            TaskSync.run (fun () ->
+                fixture.WithEphemeralDatabase "CompositePk" (fun cnn connStr ->
+                    task {
+                        deploySchema connStr catalog
+                        do! Deploy.executeBatch cnn seeds
+                        let! cnt = scalar cnn "SELECT COUNT(*) FROM [dbo].[OSUSR_E2E_ORDERLINE];"
+                        Assert.Equal("2", cnt)                  // both composite-keyed rows seeded
+                        // the composite PK (OrderId, ProductId) is ENFORCED — (1,10) already exists
+                        let! threw =
+                            task {
+                                try
+                                    do! Deploy.executeBatch cnn "INSERT INTO [dbo].[OSUSR_E2E_ORDERLINE] ([ORDERID],[PRODUCTID],[QTY]) VALUES (1,10,9);"
+                                    return false
+                                with :? SqlException as ex -> return ex.Number = 2627 || ex.Number = 2601
+                            }
+                        Assert.True(threw, "the composite PK must reject a duplicate (OrderId, ProductId)")
+                        // the MERGE keys on BOTH columns → idempotent, still 2 rows
+                        do! Deploy.executeBatch cnn seeds
+                        let! cnt2 = scalar cnn "SELECT COUNT(*) FROM [dbo].[OSUSR_E2E_ORDERLINE];"
+                        Assert.Equal("2", cnt2)
+                    }))
+
+    [<Fact>]
+    member _.``E2E: a UNIQUE index deploys and is enforced — a duplicate value is rejected`` () =
+        if not (Deploy.Docker.ensureRunning ()) then
+            printfn "SKIP unique-index E2E: Docker daemon not reachable."
+        else
+            let catalog = couponCatalog ()
+            let policy = { Policy.empty with Emission = EmissionPolicy.combined }
+            let seeds = staticSeeds policy catalog
+            TaskSync.run (fun () ->
+                fixture.WithEphemeralDatabase "UniqueIndex" (fun cnn connStr ->
+                    task {
+                        deploySchema connStr catalog
+                        do! Deploy.executeBatch cnn seeds
+                        // the unique index deployed on CODE
+                        let! isUnique = scalar cnn "SELECT CAST(i.is_unique AS INT) FROM sys.indexes i WHERE i.object_id = OBJECT_ID('dbo.OSUSR_E2E_COUPON') AND i.name = 'UQ_COUPON_CODE';"
+                        Assert.Equal("1", isUnique)
+                        // and it is ENFORCED — a duplicate CODE is rejected
+                        let! threw =
+                            task {
+                                try
+                                    do! Deploy.executeBatch cnn "INSERT INTO [dbo].[OSUSR_E2E_COUPON] ([ID],[CODE]) VALUES (3,'SAVE10');"
+                                    return false
+                                with :? SqlException as ex -> return ex.Number = 2601 || ex.Number = 2627
+                            }
+                        Assert.True(threw, "the unique index must reject a duplicate CODE")
                     }))
