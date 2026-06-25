@@ -147,6 +147,39 @@ module ScriptDomGenerate =
         generator.GenerateScript(script :> TSqlFragment, &text)
         text |> Option.ofObj |> Option.defaultValue "" |> pinNewlines
 
+    /// Render a list of data statements (`Statement.Merge` / `Statement.Update`
+    /// / `Statement.SetIdentityInsert`) as ONE deploy-ready `GO` batch — the
+    /// data lane's SINGLE terminal-text boundary. Each statement is rendered via
+    /// its typed AST and `;`-terminated (`generateOne` omits the trailing `;`
+    /// SQL Server requires after a MERGE), framed by `\n`, closed by the sqlcmd
+    /// `GO` separator (no ScriptDom AST equivalent). The emitters hand typed
+    /// `Statement` values and never compose SQL text themselves.
+    ///
+    /// BYTE-IDENTICAL to the prior per-emitter `String.Concat(generateOne …,
+    /// ";\nGO\n")` framing: same per-statement `generateOne`, same `;` + `GO`
+    /// literals, same `\n` joins — so the golden-locked inline data format is
+    /// preserved. (Distinct from `generateBatch`, which renders a single
+    /// `TSqlScript` whose generator-emitted inter-statement spacing differs from
+    /// this hand-framing and would re-bless the goldens.)
+    let renderDataBatch (statements: Statement list) : string =
+        use _ = Bench.scope "scriptDom.renderDataBatch"
+        let sb = StringBuilder()
+        for s in statements do
+            match ScriptDomBuild.buildStatement s with
+            | Some frag ->
+                // LINT-ALLOW: the data lane's terminal-text boundary — each typed
+                // ScriptDom render gets SQL Server's required statement terminator
+                // `;` (generateOne emits none on a single-statement render) + the
+                // `\n` frame; StringBuilder is the BCL accumulation primitive, the
+                // `;`/`\n` are statement framing, not composed SQL structure.
+                sb.Append(generateOne frag).Append(";\n") |> ignore
+            | None -> ()
+        // LINT-ALLOW: the sqlcmd `GO` batch separator — not T-SQL syntax (no
+        // ScriptDom AST equivalent), so the literal `GO` IS the canonical form
+        // per BatchSplitter's `^GO$` recognition rule; appended once at the
+        // terminal batch boundary.
+        sb.Append("GO\n").ToString()
+
     /// The M22 atomic-deploy envelope OPENER — `SET XACT_ABORT ON; BEGIN
     /// TRANSACTION;` — rendered from typed nodes as one batch. MigrationRun's
     /// streaming deploy can't use `ScriptDomBuild.buildAtomicBatch` (it

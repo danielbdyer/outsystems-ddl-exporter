@@ -163,48 +163,24 @@ module StaticSeedsEmitter =
                 { args with StagedSource = Some (StagedMerge.stagedTempName k) }
         else
         Bench.recordSample "emit.staticSeeds.inline" 1L
-        let mergeStmt = (ScriptDomBuild.buildMergeStatement args).Value
-        // ScriptDomGenerate.generateOne emits the MERGE without a
-        // trailing `;` (semicolons appear between statements in a
-        // batch, not after a single-statement render). SQL Server
-        // REQUIRES MERGE to terminate with `;` (SqlException: "A
-        // MERGE statement must be terminated by a semi-colon (;)").
-        // The terminal-text boundary appends `;` + `GO`.
-        let mergeText =
-            ScriptDomGenerate.generateOne (mergeStmt :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement)
+        // The inline MERGE as a typed `Statement` batch. The terminal `;` + `GO`
+        // framing lives in `ScriptDomGenerate.renderDataBatch` (the data lane's
+        // ONE terminal-text boundary), not here — the emitter hands typed
+        // `Statement` values. WP6 step 1 (DECISIONS 2026-06-13): an IDENTITY-PK
+        // static kind (`IdentityDisposition.AssignedBySink`) seeds explicit PK
+        // values, so the MERGE's WHEN-NOT-MATCHED INSERT writes the IDENTITY
+        // column and SQL Server requires `SET IDENTITY_INSERT [t] ON`. The toggle
+        // is SESSION-scoped and the leveled deploy opens a fresh connection per
+        // GO-segment, so the bracket MUST stay ONE GO batch (no internal GO) —
+        // `renderDataBatch` emits the three statements as a single GO batch.
         let mergeBatch =
-          if not bracketIdentity then
-            System.String.Concat(  // LINT-ALLOW: terminal MERGE statement-terminator + GO-batch suffix on the rendered MERGE; segments are typed (output of `ScriptDomGenerate.generateOne` from typed AST + SQL Server's required MERGE statement-terminator + V1 batch-separator literal); BCL `String.Concat` is the right primitive at this terminal-text boundary
-                mergeText, ";\nGO\n")
-          else
-            // WP6 step 1 (DECISIONS 2026-06-13) — an IDENTITY-PK static
-            // kind (`IdentityDisposition.AssignedBySink`) seeds explicit PK
-            // values, so the MERGE's WHEN-NOT-MATCHED INSERT writes into the
-            // IDENTITY column and SQL Server requires `SET IDENTITY_INSERT
-            // [t] ON` to be active for it. The toggle is SESSION-scoped, and
-            // the leveled load leg (`Deploy.executeBatchParallel`) opens a
-            // FRESH connection per GO-segment — so the bracket MUST stay ONE
-            // GO batch (no internal GO): a GO between the toggle and the
-            // MERGE would land them on different connections and the toggle
-            // would not apply. One batch is correct for both the fused
-            // `Data/seed.sql` artifact (one sqlcmd session) and the leveled
-            // deploy (one connection per segment), and it keeps the bracket
-            // INSIDE `RenderedPhase1` so the fused-≡-leveled partition law
-            // holds. `generateOne` does NOT terminate a `SET IDENTITY_INSERT`
-            // statement (verified against the recorded bytes — the
-            // statement-terminator behavior is statement-type-specific, not
-            // governed by `IncludeSemicolons`), and MERGE requires its
-            // IMMEDIATELY-preceding statement to be `;`-terminated, so every
-            // segment gets an explicit `;` (the MERGE's manual `;` is the
-            // same documented ScriptDom MERGE-terminator quirk).
-            let setIdentityInsert (enabled: bool) : string =
-                ScriptDomGenerate.generateOne
-                    (ScriptDomBuild.buildSetIdentityInsert table enabled
-                     :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement)
-            System.String.Concat(  // LINT-ALLOW: terminal IDENTITY_INSERT-bracketed MERGE batch as a single GO segment (WP6 step 1); every segment is the typed ScriptDom render of `SET IDENTITY_INSERT` / the MERGE; the SQL Server statement terminators + the V1 `GO` batch separator are the terminal-text literals; BCL `String.Concat` is the right primitive at this terminal-text boundary
-                setIdentityInsert true, ";\n",
-                mergeText, ";\n",
-                setIdentityInsert false, ";\nGO\n")
+            if not bracketIdentity then
+                ScriptDomGenerate.renderDataBatch [ Statement.Merge args ]
+            else
+                ScriptDomGenerate.renderDataBatch
+                    [ Statement.SetIdentityInsert (table, true)
+                      Statement.Merge args
+                      Statement.SetIdentityInsert (table, false) ]
         // NM-73 — prepend the validate-before-apply drift guard as its OWN
         // GO batch before the MERGE (mirrors V1 `ValidateThenApply` ordering:
         // the guard THROWs before the MERGE batch can run). `Standard` is
@@ -256,10 +232,9 @@ module StaticSeedsEmitter =
               SetCells   = setCells
               WhereCells = whereCells
               CdcAware   = cdcAware }
-        let updateStmt = (ScriptDomBuild.buildUpdateStatement args).Value
-        System.String.Concat(  // LINT-ALLOW: terminal UPDATE statement-terminator + GO-batch suffix on the rendered Phase-2 UPDATE (chapter 4.1.B slice δ); segments are typed (output of `ScriptDomGenerate.generateOne` from `ScriptDomBuild.buildUpdateStatement` typed AST + SQL Server's statement-terminator + V1 batch-separator literal); same architectural shape as `renderMerge`'s terminal-text boundary
-            ScriptDomGenerate.generateOne (updateStmt :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement),
-            ";\nGO\n")
+        // The Phase-2 UPDATE as a typed `Statement` batch — terminal framing in
+        // `renderDataBatch` (the data lane's one terminal-text boundary).
+        ScriptDomGenerate.renderDataBatch [ Statement.Update args ]
 
     /// Build one `DataInsertScript` for a kind. Empty-population kinds
     /// produce a no-op script (empty Phase1Merges, empty Rendered);

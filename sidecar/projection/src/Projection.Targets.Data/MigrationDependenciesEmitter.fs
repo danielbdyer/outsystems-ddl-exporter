@@ -191,28 +191,20 @@ module MigrationDependenciesEmitter =
                 { args with StagedSource = Some (StagedMerge.stagedTempName k) }
         else
         Bench.recordSample "emit.migrationDeps.inline" 1L
-        let mergeStmt = (ScriptDomBuild.buildMergeStatement args).Value
-        let mergeText =
-            ScriptDomGenerate.generateOne (mergeStmt :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement)
+        // The inline MERGE as a typed `Statement` batch — terminal `;` + `GO`
+        // framing lives in `ScriptDomGenerate.renderDataBatch` (the data lane's
+        // one terminal-text boundary), not here. NM-25 (mirror StaticSeedsEmitter
+        // WP6 step 1): an IDENTITY-PK migration kind brackets the MERGE with
+        // `SET IDENTITY_INSERT [t] ON/OFF` in the SAME GO batch (the toggle is
+        // session-scoped; the leveled deploy opens a connection per GO).
         let mergeBatch =
-          if not bracketIdentity then
-            System.String.Concat(  // LINT-ALLOW: terminal MERGE statement-terminator + GO-batch suffix on the rendered MERGE (chapter 4.1.B slice ε); segments are typed (output of `ScriptDomGenerate.generateOne` from typed AST + SQL Server's required MERGE statement-terminator + V1 batch-separator literal); same architectural shape as StaticSeedsEmitter's terminal-text boundary
-                mergeText, ";\nGO\n")
-          else
-            // NM-25 — mirror StaticSeedsEmitter (WP6 step 1). An IDENTITY-PK
-            // migration kind (`IdentityDisposition.AssignedBySink`) seeds explicit
-            // PK values, so the MERGE's WHEN-NOT-MATCHED INSERT writes into the
-            // IDENTITY column and requires `SET IDENTITY_INSERT [t] ON`. The toggle
-            // is SESSION-scoped and the leveled load opens a fresh connection per
-            // GO-segment, so the bracket MUST stay ONE GO batch (no internal GO).
-            let setIdentityInsert (enabled: bool) : string =
-                ScriptDomGenerate.generateOne
-                    (ScriptDomBuild.buildSetIdentityInsert table enabled
-                     :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement)
-            System.String.Concat(  // LINT-ALLOW: terminal IDENTITY_INSERT-bracketed MERGE batch as a single GO segment (NM-25, mirrors StaticSeedsEmitter WP6 step 1); every segment is the typed ScriptDom render of `SET IDENTITY_INSERT` / the MERGE; the SQL Server statement terminators + the V1 `GO` batch separator are the terminal-text literals
-                setIdentityInsert true, ";\n",
-                mergeText, ";\n",
-                setIdentityInsert false, ";\nGO\n")
+            if not bracketIdentity then
+                ScriptDomGenerate.renderDataBatch [ Statement.Merge args ]
+            else
+                ScriptDomGenerate.renderDataBatch
+                    [ Statement.SetIdentityInsert (table, true)
+                      Statement.Merge args
+                      Statement.SetIdentityInsert (table, false) ]
         // NM-73 — prepend the validate-before-apply drift guard as its OWN GO
         // batch before the MERGE (mirrors StaticSeedsEmitter). `Standard` is
         // byte-identical; `ValidateBeforeApply` parses V1's symmetric-EXCEPT
@@ -257,10 +249,9 @@ module MigrationDependenciesEmitter =
               SetCells   = setCells
               WhereCells = whereCells
               CdcAware   = cdcAware }
-        let updateStmt = (ScriptDomBuild.buildUpdateStatement args).Value
-        System.String.Concat(  // LINT-ALLOW: terminal UPDATE statement-terminator + GO-batch suffix on the rendered Phase-2 UPDATE (chapter 4.1.B slice ε); segments are typed (output of `ScriptDomGenerate.generateOne` from `ScriptDomBuild.buildUpdateStatement` typed AST + SQL Server's statement-terminator + V1 batch-separator literal); same architectural shape as StaticSeedsEmitter.renderUpdate
-            ScriptDomGenerate.generateOne (updateStmt :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement),
-            ";\nGO\n")
+        // The Phase-2 UPDATE as a typed `Statement` batch — terminal framing in
+        // `renderDataBatch` (the data lane's one terminal-text boundary).
+        ScriptDomGenerate.renderDataBatch [ Statement.Update args ]
 
     // -------------------------------------------------------------------
     // User-FK rewrite (chapter 4.2 slice η).
