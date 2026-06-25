@@ -130,6 +130,120 @@ module StaticSeedsEmitter =
                 Map.tryFind a.Name values
                 |> Option.defaultValue SqlLiteral.NullLit)
 
+    // -------------------------------------------------------------------
+    // Staged-source form (the error-8623-safe MERGE for large kinds). The
+    // inline `USING (VALUES …)` constructor exceeds the optimizer's
+    // plan-complexity limit at ~30k rows (measured 2026-06-25; a MERGE's
+    // limit is lower than a plain INSERT's because it adds join + match /
+    // insert / delete arms). Above the threshold, rows stage through a
+    // `#temp` in one atomic, GO-free batch; below, the inline form stands
+    // (byte-identical — fixtures are ≤3 rows).
+    // -------------------------------------------------------------------
+
+    /// The row-count line above which a kind's MERGE / phase-2 stages through a
+    /// `#temp`. Step 5 makes this config-driven; the constant keeps every golden
+    /// (≤3 rows) on the inline path.
+    let private stagingRowThreshold : int = 1000
+
+    /// Deterministic staging-`#temp` name for a kind — `#seed_<physical table>`.
+    /// `TableId.tableText` extracts the underlying string from the `TableName` VO
+    /// (a raw `k.Physical.Table` would stringify the whole value object —
+    /// `TableName "X"` — and the embedded space/quotes are a SQL syntax error).
+    let private stagedTempName (k: Kind) : string =
+        System.String.Concat("#seed_", TableId.tableText k.Physical)
+
+    /// Staging `ColumnDef`s for a set of attributes: the target's SQL types with
+    /// every constraint stripped — nullable, no identity / PK / default / computed.
+    /// The `#temp` only carries rows (deferred-FK NULLs and empty→NULL values stage
+    /// cleanly because all columns are nullable); the MERGE / UPDATE into the real
+    /// target enforces its constraints.
+    let private stagingColumnDefsOf (attrs: Attribute list) : ColumnDef list =
+        attrs
+        |> List.map (fun a ->
+            { Name         = ColumnRealization.columnNameText a.Column
+              Type         = a.Type
+              SqlStorage   = a.SqlStorage
+              Length       = a.Length
+              Precision    = a.Precision
+              Scale        = a.Scale
+              Nullable     = true
+              IsIdentity   = false
+              IsPrimaryKey = false
+              DefaultValue = None
+              DefaultName  = None
+              Computed     = None
+              Collation    = a.Column.Collation
+              Identity     = None
+              Provenance   = "" })
+
+    /// The `#temp` staging columns for a kind's phase-1 MERGE (all writable columns).
+    let private stagingColumnDefs (k: Kind) : ColumnDef list =
+        stagingColumnDefsOf (writableAttributes k)
+
+    /// Wrap staged statements in ONE atomic, GO-free batch: `SET XACT_ABORT ON;
+    /// BEGIN TRY; BEGIN TRAN; <stmts>; COMMIT TRAN; END TRY BEGIN CATCH
+    /// IF @@TRANCOUNT>0 ROLLBACK; THROW; END CATCH`. All-or-nothing; any `#temp`
+    /// created inside is rolled back (DDL is transactional) on failure — never
+    /// leaked — and one GO-free batch keeps the `#temp` + transaction on one
+    /// connection (the leveled-deploy parallel path opens a connection per GO).
+    let private wrapAtomicBatch (stmts: string list) : string =
+        let body = stmts |> List.map (fun s -> System.String.Concat(s, ";")) |> String.concat "\n"
+        System.String.Concat(  // LINT-ALLOW: terminal staged-batch framing — DATA statements are typed ScriptDom renders; the control-flow scaffolding (SET XACT_ABORT / BEGIN TRY / TRAN / CATCH / ROLLBACK / THROW) is the documented terminal-text boundary; ONE GO-free batch so the `#temp` + transaction stay on one connection/session; BCL `String.Concat` is the right primitive here
+            "SET XACT_ABORT ON;\nBEGIN TRY\nBEGIN TRAN;\n",
+            body,
+            "\nCOMMIT TRAN;\nEND TRY\nBEGIN CATCH\nIF @@TRANCOUNT > 0 ROLLBACK TRAN;\nTHROW;\nEND CATCH;\nGO\n")
+
+    /// Assemble the staged phase-1 batch — ONE atomic, GO-free unit so the
+    /// `#temp` and the transaction stay on a single connection/session:
+    ///   SET XACT_ABORT ON; BEGIN TRY; BEGIN TRAN;
+    ///     drop-if-exists → CREATE #temp → batched INSERTs → [guard]
+    ///     → [IDENTITY_INSERT ON] → MERGE USING #temp → [OFF] → DROP;
+    ///   COMMIT TRAN; END TRY BEGIN CATCH ROLLBACK; THROW; END CATCH.
+    /// Atomic (all-or-nothing); the `#temp` is dropped on success, and rolled
+    /// back (DDL is transactional) on any failure — never leaked. `args` carries
+    /// the rows + columns and its `StagedSource = Some tempName` routes the
+    /// MERGE + guard to the `#temp`.
+    let private renderStagedPhase1
+        (verification: DataVerification)
+        (bracketIdentity: bool)
+        (table: TableId)
+        (k: Kind)
+        (args: ScriptDomBuild.MergeBuildArgs)
+        : string =
+        use _ = Bench.scope "emit.staticSeeds.renderStagedPhase1"
+        let tempName =
+            match args.StagedSource with
+            | Some n -> n
+            | None -> invalidOp "renderStagedPhase1: args.StagedSource must be Some"
+        let g (stmt: #Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement) : string =
+            ScriptDomGenerate.generateOne (stmt :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement)
+        let createText = g (ScriptDomBuild.buildCreateTempTable tempName (stagingColumnDefs k))
+        let insertTexts = ScriptDomBuild.buildInsertBatches tempName args.AllColumns args.Rows |> List.map g
+        let mergeText = g (ScriptDomBuild.buildMergeStatement args).Value
+        let guardTextOpt =
+            match verification with
+            | DataVerification.ValidateBeforeApply ->
+                Some (ScriptDomGenerate.generateOne (ScriptDomBuild.buildValidateBeforeApplyGuard args))
+            | DataVerification.Standard -> None
+        let identityOnOpt, identityOffOpt =
+            if bracketIdentity then
+                Some (g (ScriptDomBuild.buildSetIdentityInsert table true)),
+                Some (g (ScriptDomBuild.buildSetIdentityInsert table false))
+            else None, None
+        // Statements in deploy order; the optional pieces (guard, identity
+        // brackets) drop out cleanly via `List.choose id`.
+        let stmts =
+            [ Some (System.String.Concat("IF OBJECT_ID('tempdb..", tempName, "') IS NOT NULL DROP TABLE ", tempName))
+              Some createText ]
+            @ (insertTexts |> List.map Some)
+            @ [ guardTextOpt
+                identityOnOpt
+                Some mergeText
+                identityOffOpt
+                Some (System.String.Concat("DROP TABLE ", tempName)) ]
+            |> List.choose id
+        wrapAtomicBatch stmts
+
     /// Render the MERGE statement for a kind with its static populations
     /// via ScriptDom's typed-AST + `Sql160ScriptGenerator` pipeline.
     /// Per Tier-1 #1 (RawTextEmitter retirement arc cash-out): the
@@ -192,7 +306,15 @@ module StaticSeedsEmitter =
                 Rows        = typedRows |> List.map (typedValuesToSqlLiterals deferred (writableAttributes k))
                 CdcAware    = cdcAware
                 DeleteScope = deleteScope
+                StagedSource = None
             }
+        // Above the threshold the inline `USING (VALUES …)` MERGE hits SQL Server
+        // error 8623, so stage the rows through a `#temp`. Below, the inline form
+        // stands — byte-identical to the pre-staging output.
+        if List.length typedRows > stagingRowThreshold then
+            renderStagedPhase1 verification bracketIdentity table k
+                { args with StagedSource = Some (stagedTempName k) }
+        else
         let mergeStmt = (ScriptDomBuild.buildMergeStatement args).Value
         // ScriptDomGenerate.generateOne emits the MERGE without a
         // trailing `;` (semicolons appear between statements in a

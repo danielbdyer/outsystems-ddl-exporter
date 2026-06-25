@@ -109,6 +109,14 @@ module ScriptDomBuild =
         | None ->
             schemaObjectName (TableId.schemaText t) (TableId.tableText t)
 
+    /// `[#tempName]` as a one-identifier `SchemaObjectName` — a session-scoped
+    /// temp-table reference (no schema qualifier). The MERGE `USING` source when
+    /// rows are pre-staged into a `#temp` (the error-8623-safe form for large kinds).
+    let private tempSchemaObject (tempName: string) : SchemaObjectName =
+        let n = SchemaObjectName()
+        n.Identifiers.Add(bracketed tempName)
+        n
+
     /// Map V2's `PrimitiveType` to ScriptDom's `SqlDataTypeOption`.
     /// Closed-DU dispatch — adding a new variant lights up an
     /// exhaustiveness error here only.
@@ -818,6 +826,14 @@ module ScriptDomBuild =
             Rows        : SqlLiteral list list
             CdcAware    : bool
             DeleteScope : DeleteScope option
+            /// `Some "#seed_X"` → the MERGE (and the validate-before-apply guard)
+            /// draw their source from a pre-staged `#temp` table (`USING [#seed_X]`)
+            /// instead of the inline `USING (VALUES …)` constructor — the form that
+            /// sidesteps SQL Server error 8623 (the optimizer cannot plan a large
+            /// row-value constructor). `Rows` still carries the rows so the caller
+            /// can stage them into the `#temp`. `None` (the default) is byte-identical
+            /// to the pre-staging output.
+            StagedSource : string option
         }
 
     /// Build a `[Target|Source].[col]` qualified column reference.
@@ -947,18 +963,28 @@ module ScriptDomBuild =
         spec.Target <- targetRef
         spec.TableAlias <- bracketed "Target"
 
-        // Source: USING (VALUES (...), (...)) AS Source(c1, c2, ...)
-        let inline_ = InlineDerivedTable()
-        args.Rows
-        |> Bench.iterDo "emit.scriptDom.build.merge.row" (fun row ->
-            let rv = RowValue()
-            for cell in row do
-                rv.ColumnValues.Add(buildSqlLiteral cell)
-            inline_.RowValues.Add(rv))
-        inline_.Alias <- bracketed "Source"
-        for c in args.AllColumns do
-            inline_.Columns.Add(bracketed c)
-        spec.TableReference <- inline_ :> TableReference
+        // Source: either a pre-staged `#temp` (`USING [#temp] AS Source`) or the
+        // inline `USING (VALUES (...), (...)) AS Source(c1, c2, ...)`. Every other
+        // arm (ON, WHEN MATCHED/NOT MATCHED/NOT MATCHED BY SOURCE) references the
+        // `[Source]` alias identically, so only the table reference changes.
+        match args.StagedSource with
+        | Some tempName ->
+            let namedRef = NamedTableReference()
+            namedRef.SchemaObject <- tempSchemaObject tempName
+            namedRef.Alias <- bracketed "Source"
+            spec.TableReference <- namedRef :> TableReference
+        | None ->
+            let inline_ = InlineDerivedTable()
+            args.Rows
+            |> Bench.iterDo "emit.scriptDom.build.merge.row" (fun row ->
+                let rv = RowValue()
+                for cell in row do
+                    rv.ColumnValues.Add(buildSqlLiteral cell)
+                inline_.RowValues.Add(rv))
+            inline_.Alias <- bracketed "Source"
+            for c in args.AllColumns do
+                inline_.Columns.Add(bracketed c)
+            spec.TableReference <- inline_ :> TableReference
 
         // ON-clause: Target.[pk1] = Source.[pk1] [AND ...]
         let onTerms =
@@ -1023,6 +1049,67 @@ module ScriptDomBuild =
         Diagnostics.ofValue (buildMergeStatementCore args)
 
     // -----------------------------------------------------------------------
+    // Staged-source primitives — the error-8623-safe MERGE form. For a large
+    // kind the inline `USING (VALUES …)` constructor exceeds the query
+    // optimizer's plan-complexity limit (~30k rows). Instead: CREATE a `#temp`,
+    // batch-INSERT the rows into it (each INSERT a separate, optimizer-cheap
+    // statement), then `MERGE … USING #temp`. The DELETE arm + two-phase + guard
+    // stay correct precisely because the whole source lands in one `#temp`.
+    // -----------------------------------------------------------------------
+
+    /// SQL Server caps an `INSERT … VALUES` row constructor at 1000 rows; the
+    /// staged INSERTs chunk at this size. (The 8623 wall is the MERGE's single
+    /// huge constructor — many small INSERTs each compile independently.)
+    [<Literal>]
+    let stagedInsertChunk : int = 1000
+
+    /// `CREATE TABLE [#temp] ([c] <type> NULL, …)` — a plain staging heap. The
+    /// caller passes staging `ColumnDef`s (identity / PK / default / computed
+    /// already stripped, all nullable) so deferred-FK NULLs and empty→NULL values
+    /// stage cleanly; the MERGE into the real target enforces its constraints.
+    /// Column types mirror the target (the shared `columnDefinition`), so the
+    /// MERGE join needs no implicit conversion.
+    let buildCreateTempTable (tempName: string) (cols: ColumnDef list) : CreateTableStatement =
+        use _ = Bench.scope "emit.scriptDom.build.createTempTable"
+        let stmt = CreateTableStatement()
+        stmt.SchemaObjectName <- tempSchemaObject tempName
+        let def = TableDefinition()
+        for c in cols do
+            def.ColumnDefinitions.Add(columnDefinition c)
+        stmt.Definition <- def
+        stmt
+
+    /// `INSERT INTO [#temp] ([c1],[c2],…) VALUES (…),(…)`, chunked at
+    /// `stagedInsertChunk` rows per statement (the `VALUES`-constructor cap).
+    /// `colNames` order MUST match each row's `SqlLiteral` order. An empty
+    /// `rows` yields no statements.
+    let buildInsertBatches (tempName: string) (colNames: string list) (rows: SqlLiteral list list) : InsertStatement list =
+        use _ = Bench.scope "emit.scriptDom.build.insertBatches"
+        rows
+        |> List.chunkBySize stagedInsertChunk
+        |> List.map (fun chunk ->
+            let stmt = InsertStatement()
+            let spec = InsertSpecification()
+            let target = NamedTableReference()
+            target.SchemaObject <- tempSchemaObject tempName
+            spec.Target <- target
+            for c in colNames do
+                let colRef = ColumnReferenceExpression()
+                let mid = MultiPartIdentifier()
+                mid.Identifiers.Add(bracketed c)
+                colRef.MultiPartIdentifier <- mid
+                spec.Columns.Add(colRef)
+            let valuesSrc = ValuesInsertSource()
+            for row in chunk do
+                let rv = RowValue()
+                for cell in row do
+                    rv.ColumnValues.Add(buildSqlLiteral cell)
+                valuesSrc.RowValues.Add(rv)
+            spec.InsertSource <- valuesSrc
+            stmt.InsertSpecification <- spec
+            stmt)
+
+    // -----------------------------------------------------------------------
     // NM-73 — validate-before-apply drift guard (WP6.6, operator choice C2).
     // -----------------------------------------------------------------------
     // Carbon-copied semantics from V1's
@@ -1071,13 +1158,21 @@ module ScriptDomBuild =
     let buildValidateBeforeApplyGuard (args: MergeBuildArgs) : TSqlStatement =
         let targetText = tableIdText args.Target
         let colList = args.AllColumns |> List.map bracketText |> String.concat ", "
-        let valuesText =
-            args.Rows
-            |> List.map (fun row ->
-                row |> List.map literalText |> String.concat ", " |> sprintf "(%s)")
-            |> String.concat ", "
+        // The guard's source mirrors the MERGE's: a pre-staged `#temp` (the
+        // error-8623-safe form — and the guard's own `VALUES` would hit the same
+        // wall at scale) or the inline `VALUES`. The `valuesText` is computed only
+        // in the inline arm (it is O(rows) and unused when staged).
         let sourceSelect =
-            sprintf "SELECT %s FROM (VALUES %s) AS [Source] (%s)" colList valuesText colList
+            match args.StagedSource with
+            | Some tempName ->
+                sprintf "SELECT %s FROM %s AS [Source]" colList (bracketText tempName)
+            | None ->
+                let valuesText =
+                    args.Rows
+                    |> List.map (fun row ->
+                        row |> List.map literalText |> String.concat ", " |> sprintf "(%s)")
+                    |> String.concat ", "
+                sprintf "SELECT %s FROM (VALUES %s) AS [Source] (%s)" colList valuesText colList
         let targetSelect =
             sprintf "SELECT %s FROM %s AS [Existing]" colList targetText
         let message =
@@ -1102,6 +1197,54 @@ module ScriptDomBuild =
         | None ->
             invalidOp
                 (sprintf "NM-73: validate-before-apply guard template failed to parse for %s — programmer error, not a recoverable downgrade." targetText)
+
+    /// Set-based phase-2 re-point for a LARGE cyclic kind: one
+    /// `UPDATE [Target] SET [Target].[fk] = [src].[fk] … FROM <target> AS [Target]
+    /// INNER JOIN [#temp] AS [src] ON [Target].[pk] = [src].[pk] … [WHERE <cdc>]`
+    /// instead of N per-row UPDATEs (which a large cyclic kind would otherwise emit;
+    /// the per-row form is correct but bulky, and its own `VALUES`-free shape is
+    /// fine — this is the deterministic set-based escalation above the staging
+    /// threshold). The `#temp` already holds the REAL FK values (PK + deferred-FK
+    /// columns). Built via the parse-template path (the guard idiom): no row data,
+    /// only bracket-quoted identifiers + the change-detect predicate, so it always
+    /// parses. `cdcAware` adds the symmetric change-detect WHERE so an idempotent
+    /// redeploy doesn't churn CDC by re-writing identical FK values.
+    let buildUpdateFromTemp
+        (table: TableId)
+        (tempName: string)
+        (setCols: string list)
+        (pkCols: string list)
+        (cdcAware: bool)
+        : TSqlStatement =
+        let pair (c: string) = System.String.Concat("[Target].", bracketText c, " = [src].", bracketText c)
+        let setText = setCols |> List.map pair |> String.concat ", "
+        let onText  = pkCols  |> List.map pair |> String.concat " AND "
+        let whereText =
+            if cdcAware && not (List.isEmpty setCols) then
+                let perCol (c: string) =
+                    let b = bracketText c
+                    sprintf "([Target].%s <> [src].%s OR ([Target].%s IS NULL AND [src].%s IS NOT NULL) OR ([Target].%s IS NOT NULL AND [src].%s IS NULL))" b b b b b b
+                let preds = setCols |> List.map perCol |> String.concat " OR "
+                System.String.Concat(" WHERE (", preds, ")")
+            else ""
+        let template =
+            sprintf "UPDATE [Target] SET %s FROM %s AS [Target] INNER JOIN %s AS [src] ON %s%s"
+                setText (tableIdText table) (bracketText tempName) onText whereText
+        use reader = new System.IO.StringReader(template)
+        let frag, errors = threadLocalParser.Value.Parse(reader)
+        let errorCount = if isNull errors then 0 else errors.Count
+        let parsed =
+            if errorCount > 0 then None
+            else
+                match frag with
+                | :? TSqlScript as s ->
+                    s.Batches |> Seq.tryHead |> Option.bind (fun b -> b.Statements |> Seq.tryHead)
+                | _ -> None
+        match parsed with
+        | Some stmt -> stmt
+        | None ->
+            invalidOp
+                (sprintf "buildUpdateFromTemp: set-based UPDATE template failed to parse for %s — programmer error." (tableIdText table))
 
     // -----------------------------------------------------------------------
     // UPDATE statement (chapter 4.1.B slice δ; two-phase insertion /

@@ -63,6 +63,7 @@ let ``Slice ζ: buildMergeStatement returns Diagnostics with empty entries today
             Rows = [ [ pkLit ] ]
             CdcAware = false
             DeleteScope = None
+            StagedSource = None
         }
     let result = ScriptDomBuild.buildMergeStatement args
     Assert.Empty result.Entries
@@ -110,7 +111,92 @@ let private mergeArgs (deleteScope: ScriptDomBuild.DeleteScope option) : ScriptD
                 SqlLiteral.ofRaw Text    "a" ] ]
         CdcAware    = false
         DeleteScope = deleteScope
+        StagedSource = None
     }
+
+// ---------------------------------------------------------------------------
+// StagedSource — the error-8623-safe form. `Some "#seed_X"` makes the MERGE (and
+// the validate-before-apply guard) draw from a pre-staged `#temp` instead of an
+// inline `VALUES` constructor. `None` (the default) is byte-identical.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``StagedSource Some: the MERGE draws from the #temp, not an inline VALUES`` () =
+    let sql = renderMerge { mergeArgs None with StagedSource = Some "#seed_Widget" }
+    Assert.Contains("[#seed_Widget]", sql)     // USING the staged temp table
+    // the row literals now live in the #temp, not the MERGE — `N'a'` is the
+    // inline Name value, present in the VALUES form, absent in the staged form.
+    Assert.DoesNotContain("N'a'", sql)
+
+[<Fact>]
+let ``StagedSource None: the MERGE keeps the inline VALUES (byte-identical default)`` () =
+    let sql = renderMerge (mergeArgs None)
+    Assert.Contains("VALUES", sql)
+    Assert.DoesNotContain("#seed", sql)
+
+[<Fact>]
+let ``StagedSource Some: the validate-before-apply guard EXCEPTs the #temp, not a VALUES`` () =
+    let guard = ScriptDomBuild.buildValidateBeforeApplyGuard { mergeArgs None with StagedSource = Some "#seed_Widget" }
+    let sql = ScriptDomGenerate.generateOne guard
+    Assert.Contains("[#seed_Widget]", sql)
+    Assert.DoesNotContain("VALUES", sql)
+
+// ---------------------------------------------------------------------------
+// Staged-source primitives — `buildCreateTempTable` + `buildInsertBatches`
+// (the rows that feed the `MERGE … USING #temp`).
+// ---------------------------------------------------------------------------
+
+let private renderStmt (stmt: #Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement) : string =
+    ScriptDomGenerate.generateOne (stmt :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement)
+
+let private mkCol (name: string) (storage: SqlStorageType) : ColumnDef =
+    { Name = name; Type = Integer; SqlStorage = Some storage
+      Length = None; Precision = None; Scale = None
+      Nullable = true; IsIdentity = false; IsPrimaryKey = false
+      DefaultValue = None; DefaultName = None; Computed = None
+      Collation = None; Identity = None; Provenance = "" }
+
+[<Fact>]
+let ``buildCreateTempTable: a nullable, constraint-free staging heap with target column types`` () =
+    let cols = [ mkCol "Id" SqlStorageType.Int; mkCol "Name" (SqlStorageType.NVarChar (SqlLength.Bounded 50)) ]
+    let sql = renderStmt (ScriptDomBuild.buildCreateTempTable "#seed_X" cols)
+    Assert.Contains("CREATE TABLE [#seed_X]", sql)
+    Assert.Contains("[Id]", sql)
+    Assert.Contains("INT", sql)
+    Assert.Contains("[Name]", sql)
+    Assert.Contains("NVARCHAR", sql)
+    Assert.DoesNotContain("NOT NULL", sql)        // staging heap — every column nullable
+    Assert.DoesNotContain("IDENTITY", sql)        // no identity on the staging table
+    Assert.DoesNotContain("PRIMARY KEY", sql)     // no constraints
+
+[<Fact>]
+let ``buildInsertBatches: chunks at 1000 rows and targets the #temp`` () =
+    let rows = [ for i in 1 .. 2500 -> [ SqlLiteral.ofRaw Integer (string i) ] ]
+    let stmts = ScriptDomBuild.buildInsertBatches "#seed_X" [ "Id" ] rows
+    Assert.Equal(3, List.length stmts)            // 1000 + 1000 + 500
+    let sql = renderStmt (List.head stmts)
+    Assert.Contains("INSERT", sql)               // ScriptDom omits the optional INTO
+    Assert.Contains("[#seed_X]", sql)
+    Assert.Contains("VALUES", sql)
+
+[<Fact>]
+let ``buildInsertBatches: empty rows yields no statements`` () =
+    Assert.Empty(ScriptDomBuild.buildInsertBatches "#seed_X" [ "Id" ] [])
+
+[<Fact>]
+let ``buildUpdateFromTemp: set-based UPDATE FROM the #temp JOIN (CDC adds a WHERE)`` () =
+    let sql = ScriptDomGenerate.generateOne (ScriptDomBuild.buildUpdateFromTemp (mkTable "dbo" "Org") "#fk_Org" [ "ParentId" ] [ "Id" ] true)
+    Assert.Contains("UPDATE", sql)
+    Assert.Contains("[#fk_Org]", sql)        // the staged source
+    Assert.Contains("[Target]", sql)
+    Assert.Contains("[src]", sql)
+    Assert.Contains("WHERE", sql)            // cdcAware → change-detect predicate
+
+[<Fact>]
+let ``buildUpdateFromTemp: no CDC means no WHERE (unconditional re-point)`` () =
+    let sql = ScriptDomGenerate.generateOne (ScriptDomBuild.buildUpdateFromTemp (mkTable "dbo" "Org") "#fk_Org" [ "ParentId" ] [ "Id" ] false)
+    Assert.Contains("UPDATE", sql)
+    Assert.DoesNotContain("WHERE", sql)
 
 [<Fact>]
 let ``AC-D7/AC-G4: DeleteScope=None emits NO WHEN NOT MATCHED BY SOURCE arm`` () =

@@ -227,6 +227,7 @@ module MigrationDependenciesEmitter =
                 Rows        = typedRows |> List.map (typedValuesToSqlLiterals deferred (writableAttributes k))
                 CdcAware    = cdcAware
                 DeleteScope = deleteScope
+                StagedSource = None
             }
         let mergeStmt = (ScriptDomBuild.buildMergeStatement args).Value
         let mergeText =
