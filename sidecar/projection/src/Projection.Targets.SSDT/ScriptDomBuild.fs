@@ -1198,6 +1198,54 @@ module ScriptDomBuild =
             invalidOp
                 (sprintf "NM-73: validate-before-apply guard template failed to parse for %s — programmer error, not a recoverable downgrade." targetText)
 
+    /// Set-based phase-2 re-point for a LARGE cyclic kind: one
+    /// `UPDATE [Target] SET [Target].[fk] = [src].[fk] … FROM <target> AS [Target]
+    /// INNER JOIN [#temp] AS [src] ON [Target].[pk] = [src].[pk] … [WHERE <cdc>]`
+    /// instead of N per-row UPDATEs (which a large cyclic kind would otherwise emit;
+    /// the per-row form is correct but bulky, and its own `VALUES`-free shape is
+    /// fine — this is the deterministic set-based escalation above the staging
+    /// threshold). The `#temp` already holds the REAL FK values (PK + deferred-FK
+    /// columns). Built via the parse-template path (the guard idiom): no row data,
+    /// only bracket-quoted identifiers + the change-detect predicate, so it always
+    /// parses. `cdcAware` adds the symmetric change-detect WHERE so an idempotent
+    /// redeploy doesn't churn CDC by re-writing identical FK values.
+    let buildUpdateFromTemp
+        (table: TableId)
+        (tempName: string)
+        (setCols: string list)
+        (pkCols: string list)
+        (cdcAware: bool)
+        : TSqlStatement =
+        let pair (c: string) = System.String.Concat("[Target].", bracketText c, " = [src].", bracketText c)
+        let setText = setCols |> List.map pair |> String.concat ", "
+        let onText  = pkCols  |> List.map pair |> String.concat " AND "
+        let whereText =
+            if cdcAware && not (List.isEmpty setCols) then
+                let perCol (c: string) =
+                    let b = bracketText c
+                    sprintf "([Target].%s <> [src].%s OR ([Target].%s IS NULL AND [src].%s IS NOT NULL) OR ([Target].%s IS NOT NULL AND [src].%s IS NULL))" b b b b b b
+                let preds = setCols |> List.map perCol |> String.concat " OR "
+                System.String.Concat(" WHERE (", preds, ")")
+            else ""
+        let template =
+            sprintf "UPDATE [Target] SET %s FROM %s AS [Target] INNER JOIN %s AS [src] ON %s%s"
+                setText (tableIdText table) (bracketText tempName) onText whereText
+        use reader = new System.IO.StringReader(template)
+        let frag, errors = threadLocalParser.Value.Parse(reader)
+        let errorCount = if isNull errors then 0 else errors.Count
+        let parsed =
+            if errorCount > 0 then None
+            else
+                match frag with
+                | :? TSqlScript as s ->
+                    s.Batches |> Seq.tryHead |> Option.bind (fun b -> b.Statements |> Seq.tryHead)
+                | _ -> None
+        match parsed with
+        | Some stmt -> stmt
+        | None ->
+            invalidOp
+                (sprintf "buildUpdateFromTemp: set-based UPDATE template failed to parse for %s — programmer error." (tableIdText table))
+
     // -----------------------------------------------------------------------
     // UPDATE statement (chapter 4.1.B slice δ; two-phase insertion /
     // cycle-breaking).

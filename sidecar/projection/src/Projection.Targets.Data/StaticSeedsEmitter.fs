@@ -146,16 +146,19 @@ module StaticSeedsEmitter =
     let private stagingRowThreshold : int = 1000
 
     /// Deterministic staging-`#temp` name for a kind — `#seed_<physical table>`.
+    /// `TableId.tableText` extracts the underlying string from the `TableName` VO
+    /// (a raw `k.Physical.Table` would stringify the whole value object —
+    /// `TableName "X"` — and the embedded space/quotes are a SQL syntax error).
     let private stagedTempName (k: Kind) : string =
-        System.String.Concat("#seed_", k.Physical.Table)
+        System.String.Concat("#seed_", TableId.tableText k.Physical)
 
-    /// The `#temp` staging columns: the kind's WRITABLE columns with the target's
-    /// SQL types but every constraint stripped — nullable, no identity / PK /
-    /// default / computed. The `#temp` only carries rows (deferred-FK NULLs and
-    /// empty→NULL values stage cleanly because all columns are nullable); the
-    /// MERGE into the real target enforces its constraints.
-    let private stagingColumnDefs (k: Kind) : ColumnDef list =
-        writableAttributes k
+    /// Staging `ColumnDef`s for a set of attributes: the target's SQL types with
+    /// every constraint stripped — nullable, no identity / PK / default / computed.
+    /// The `#temp` only carries rows (deferred-FK NULLs and empty→NULL values stage
+    /// cleanly because all columns are nullable); the MERGE / UPDATE into the real
+    /// target enforces its constraints.
+    let private stagingColumnDefsOf (attrs: Attribute list) : ColumnDef list =
+        attrs
         |> List.map (fun a ->
             { Name         = ColumnRealization.columnNameText a.Column
               Type         = a.Type
@@ -172,6 +175,23 @@ module StaticSeedsEmitter =
               Collation    = a.Column.Collation
               Identity     = None
               Provenance   = "" })
+
+    /// The `#temp` staging columns for a kind's phase-1 MERGE (all writable columns).
+    let private stagingColumnDefs (k: Kind) : ColumnDef list =
+        stagingColumnDefsOf (writableAttributes k)
+
+    /// Wrap staged statements in ONE atomic, GO-free batch: `SET XACT_ABORT ON;
+    /// BEGIN TRY; BEGIN TRAN; <stmts>; COMMIT TRAN; END TRY BEGIN CATCH
+    /// IF @@TRANCOUNT>0 ROLLBACK; THROW; END CATCH`. All-or-nothing; any `#temp`
+    /// created inside is rolled back (DDL is transactional) on failure — never
+    /// leaked — and one GO-free batch keeps the `#temp` + transaction on one
+    /// connection (the leveled-deploy parallel path opens a connection per GO).
+    let private wrapAtomicBatch (stmts: string list) : string =
+        let body = stmts |> List.map (fun s -> System.String.Concat(s, ";")) |> String.concat "\n"
+        System.String.Concat(  // LINT-ALLOW: terminal staged-batch framing — DATA statements are typed ScriptDom renders; the control-flow scaffolding (SET XACT_ABORT / BEGIN TRY / TRAN / CATCH / ROLLBACK / THROW) is the documented terminal-text boundary; ONE GO-free batch so the `#temp` + transaction stay on one connection/session; BCL `String.Concat` is the right primitive here
+            "SET XACT_ABORT ON;\nBEGIN TRY\nBEGIN TRAN;\n",
+            body,
+            "\nCOMMIT TRAN;\nEND TRY\nBEGIN CATCH\nIF @@TRANCOUNT > 0 ROLLBACK TRAN;\nTHROW;\nEND CATCH;\nGO\n")
 
     /// Assemble the staged phase-1 batch — ONE atomic, GO-free unit so the
     /// `#temp` and the transaction stay on a single connection/session:
@@ -222,11 +242,7 @@ module StaticSeedsEmitter =
                 identityOffOpt
                 Some (System.String.Concat("DROP TABLE ", tempName)) ]
             |> List.choose id
-        let body = stmts |> List.map (fun s -> System.String.Concat(s, ";")) |> String.concat "\n"
-        System.String.Concat(  // LINT-ALLOW: terminal staged-batch framing — the DATA statements are typed (ScriptDom renders via `generateOne`); the control-flow scaffolding (SET XACT_ABORT / BEGIN TRY / TRAN / CATCH / ROLLBACK / THROW) is the documented terminal-text boundary, kept as ONE GO-free batch so the `#temp` + transaction stay on one connection/session; BCL `String.Concat` is the right primitive here
-            "SET XACT_ABORT ON;\nBEGIN TRY\nBEGIN TRAN;\n",
-            body,
-            "\nCOMMIT TRAN;\nEND TRY\nBEGIN CATCH\nIF @@TRANCOUNT > 0 ROLLBACK TRAN;\nTHROW;\nEND CATCH;\nGO\n")
+        wrapAtomicBatch stmts
 
     /// Render the MERGE statement for a kind with its static populations
     /// via ScriptDom's typed-AST + `Sql160ScriptGenerator` pipeline.
