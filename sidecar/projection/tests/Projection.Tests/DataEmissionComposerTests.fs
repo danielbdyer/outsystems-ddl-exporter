@@ -225,7 +225,7 @@ let ``T11: composer keyset equals Catalog.allKinds keyset for every DataComposit
 let ``hoisted-topo equivalence: composer-AllRemaining matches standalone StaticSeedsEmitter.emit`` () =
     let country = mkCountryKind ()
     let catalog = mkCatalog [ country ]
-    let standalone = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let standalone = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
     let composed = DataEmissionComposer.compose (policyWith AllRemaining) catalog Profile.empty |> mustOkEmit
     let s1 = ArtifactByKind.toMap standalone |> Map.find country.SsKey
     let s2 = ArtifactByKind.toMap composed |> Map.find country.SsKey
@@ -452,7 +452,7 @@ let ``Slice ι: T1 byte-determinism holds for composeRendered`` () =
 let ``Slice κ: DataInsertRow.Values is typed Map<Name, SqlLiteral>`` () =
     let country = mkCountryKind ()
     let catalog = mkCatalog [ country ]
-    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     let row = List.head script.Phase1Merges
     // Static-IR string "US" became typed `TextLit "US"` per

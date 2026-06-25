@@ -433,7 +433,7 @@ module ComprehensiveCanaryTests =
             // SCC; cycle resolver defers ParentId; Phase-2 UPDATE
             // fires. Surfaces `emit.staticSeeds.phase2Row` and
             // `emit.scriptDom.build.update`.
-            match StaticSeedsEmitter.emit suppCatalog suppProfile with
+            match StaticSeedsEmitter.emit DataEmitOptions.defaults suppCatalog suppProfile with
             | Ok _ -> ()
             | Error e -> failwithf "supplementary StaticSeedsEmitter.emit: %A" e
 
@@ -454,7 +454,7 @@ module ComprehensiveCanaryTests =
                                 [ mkSuppName "Id",       "1"
                                   mkSuppName "ParentId", "1"
                                   mkSuppName "Label",    "mig-self" ] } ] }
-            match MigrationDependenciesEmitter.emit suppCatalog suppProfile migCtx with
+            match MigrationDependenciesEmitter.emit DataEmitOptions.defaults suppCatalog suppProfile migCtx with
             | Ok _ -> ()
             | Error e -> failwithf "supplementary MigrationDependenciesEmitter.emit: %A" e
 

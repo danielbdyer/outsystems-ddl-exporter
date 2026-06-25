@@ -83,7 +83,7 @@ let ``UserRemapContext.empty is fully-mapped (no unmatched users) and unmatchedC
 [<Fact>]
 let ``BootstrapEmitter.emit produces one DataInsertScript per kind (T11 keyset)`` () =
     let catalog = mkCatalog [ mkKind "Customer"; mkKind "Order" ]
-    let artifact = BootstrapEmitter.emit catalog Profile.empty UserRemapContext.empty |> mustOkEmit
+    let artifact = BootstrapEmitter.emit DataEmitOptions.defaults catalog Profile.empty UserRemapContext.empty |> mustOkEmit
     let map = ArtifactByKind.toMap artifact
     Assert.Equal (2, Map.count map)
 
@@ -96,7 +96,7 @@ let ``WP6 step 2: BootstrapEmitter.emit with an empty row source renders empty p
     // output is empty per kind; the REASON is "no rows yet", not "stub".
     let customer = mkKind "Customer"
     let catalog = mkCatalog [ customer ]
-    let artifact = BootstrapEmitter.emit catalog Profile.empty UserRemapContext.empty |> mustOkEmit
+    let artifact = BootstrapEmitter.emit DataEmitOptions.defaults catalog Profile.empty UserRemapContext.empty |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find customer.SsKey
     Assert.Empty script.Phase1Merges
     Assert.Empty script.Phase2Updates
@@ -127,8 +127,8 @@ let ``WP6 step 2: BootstrapEmitter.emitFromPlan delegates to the static-seeds re
               [ { Identifier = mkKey ["TestModule"; "Customer"; "Row"; "1"]
                   Values = Map.ofList [ mkName "Id", "1"; mkName "Name", "Acme" ] } ] ]
     let plan = DataLoadPlan.build catalog topo rawRows SurrogateRemapContext.empty
-    let boot = BootstrapEmitter.emitFromPlan catalog Profile.empty plan |> mustOkEmit |> ArtifactByKind.toMap
-    let stat = StaticSeedsEmitter.emitFromPlan catalog Profile.empty plan |> mustOkEmit |> ArtifactByKind.toMap
+    let boot = BootstrapEmitter.emitFromPlan DataEmitOptions.defaults catalog Profile.empty plan |> mustOkEmit |> ArtifactByKind.toMap
+    let stat = StaticSeedsEmitter.emitFromPlan DataEmitOptions.defaults catalog Profile.empty plan |> mustOkEmit |> ArtifactByKind.toMap
     Assert.Equal<Map<SsKey, DataInsertScript>> (stat, boot)
     let script = Map.find customer.SsKey boot
     Assert.NotEmpty script.Phase1Merges
@@ -137,8 +137,8 @@ let ``WP6 step 2: BootstrapEmitter.emitFromPlan delegates to the static-seeds re
 [<Fact>]
 let ``T1: BootstrapEmitter.emit is byte-deterministic across repeat invocations`` () =
     let catalog = mkCatalog [ mkKind "Customer" ]
-    let r1 = BootstrapEmitter.emit catalog Profile.empty UserRemapContext.empty |> mustOkEmit
-    let r2 = BootstrapEmitter.emit catalog Profile.empty UserRemapContext.empty |> mustOkEmit
+    let r1 = BootstrapEmitter.emit DataEmitOptions.defaults catalog Profile.empty UserRemapContext.empty |> mustOkEmit
+    let r2 = BootstrapEmitter.emit DataEmitOptions.defaults catalog Profile.empty UserRemapContext.empty |> mustOkEmit
     let s1 = ArtifactByKind.toMap r1
     let s2 = ArtifactByKind.toMap r2
     Assert.Equal<Map<SsKey, DataInsertScript>> (s1, s2)

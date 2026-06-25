@@ -113,7 +113,7 @@ let private mustOkEmit (r: Result<'a, EmitError>) : 'a =
 [<Fact>]
 let ``StaticSeedsEmitter.emit produces one DataInsertScript per kind (T11 keyset)`` () =
     let catalog = mkCatalog [ mkCountryKind (); mkRegularKind () ]
-    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
     let map = ArtifactByKind.toMap artifact
     Assert.Equal (2, Map.count map)
 
@@ -121,7 +121,7 @@ let ``StaticSeedsEmitter.emit produces one DataInsertScript per kind (T11 keyset
 let ``StaticSeedsEmitter.emit produces empty Phase1Merges for non-static kinds`` () =
     let regular = mkRegularKind ()
     let catalog = mkCatalog [ regular ]
-    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find regular.SsKey
     Assert.Empty script.Phase1Merges
     Assert.Equal<string> ("", script.Rendered)
@@ -139,7 +139,7 @@ let ``StaticSeedsEmitter.emit: a kind above the staging threshold renders the at
               StaticCatalogFixtures.attr "Code" "CODE" Text ]
             [ for i in 1 .. 1001 -> string i, [ string i; sprintf "C%04d" i ] ]
     let kind = Catalog.allKinds catalog |> List.head
-    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
     let sql = (ArtifactByKind.toMap artifact |> Map.find kind.SsKey).RenderedPhase1
     Assert.Contains("SET XACT_ABORT ON", sql)               // atomic wrapper
     Assert.Contains("BEGIN TRAN", sql)
@@ -148,11 +148,61 @@ let ``StaticSeedsEmitter.emit: a kind above the staging threshold renders the at
     Assert.Contains("ROLLBACK", sql)                        // CATCH cleanup
     Assert.Contains("END CATCH", sql)
 
+// emission.dataStaging modes thread to the staging decision (Step 5).
+let private stagingTopo (catalog: Catalog) =
+    (Projection.Core.Passes.TopologicalOrderPass.runWith TreatAsCycle catalog).Value
+
+let private bigStgCatalog (n: int) : Catalog =
+    StaticCatalogFixtures.staticCatalog "STG" "StgMod" [ "Big" ] "Big" "STG_BIG"
+        [ StaticCatalogFixtures.pk "Id" "ID" Integer
+          StaticCatalogFixtures.attr "Code" "CODE" Text ]
+        [ for i in 1 .. n -> string i, [ string i; sprintf "C%05d" i ] ]
+
+let private renderedPhase1With (staging: DataStagingPolicy) (catalog: Catalog) : string =
+    let topo = stagingTopo catalog
+    let artifact =
+        StaticSeedsEmitter.emitWithTopo { DataEmitOptions.defaults with Verification = DataVerification.Standard; Staging = staging; DeleteScope = None } topo catalog Profile.empty
+        |> mustOkEmit
+    let kind = Catalog.allKinds catalog |> List.head
+    (ArtifactByKind.toMap artifact |> Map.find kind.SsKey).RenderedPhase1
+
+[<Fact>]
+let ``emission.dataStaging inline: a >threshold kind stays inline (the locked-down escape hatch)`` () =
+    let sql = renderedPhase1With { Mode = DataStagingMode.Inline; Threshold = 1000; IndexThreshold = 100000 } (bigStgCatalog 1500)
+    Assert.DoesNotContain("#seed_", sql)
+    Assert.DoesNotContain("BEGIN TRAN", sql)
+
+[<Fact>]
+let ``emission.dataStaging tempTable: a small kind stages anyway (forced staging)`` () =
+    let sql = renderedPhase1With { Mode = DataStagingMode.TempTable; Threshold = 1000; IndexThreshold = 100000 } (bigStgCatalog 3)
+    Assert.Contains("CREATE TABLE [#seed_", sql)
+
+[<Fact>]
+let ``emission.dataStaging auto: a raised threshold keeps a mid-size kind inline`` () =
+    let sql = renderedPhase1With { Mode = DataStagingMode.Auto; Threshold = 5000; IndexThreshold = 100000 } (bigStgCatalog 1500)
+    Assert.DoesNotContain("#seed_", sql)
+
+// indexThreshold (measured 2026-06-25): a staged kind above `IndexThreshold`
+// gets a CLUSTERED INDEX on the `#temp` PK (the ~35% MERGE-join speedup); below
+// it, no index (the conservative measured gate; default 100k).
+[<Fact>]
+let ``emission.dataStaging: a staged kind above indexThreshold gets the clustered #temp index`` () =
+    let sql = renderedPhase1With { Mode = DataStagingMode.Auto; Threshold = 1000; IndexThreshold = 1200 } (bigStgCatalog 1500)
+    Assert.Contains("CREATE TABLE [#seed_", sql)               // staged
+    Assert.Contains("CREATE CLUSTERED INDEX [ix_stg_STG_BIG]", sql)   // and indexed (1500 > 1200)
+    Assert.Contains("ON [#seed_STG_BIG]([ID])", sql)           // on the #temp PK
+
+[<Fact>]
+let ``emission.dataStaging: a staged kind below indexThreshold gets NO #temp index (the measured gate)`` () =
+    let sql = renderedPhase1With { Mode = DataStagingMode.TempTable; Threshold = 1000; IndexThreshold = 100000 } (bigStgCatalog 1500)
+    Assert.Contains("CREATE TABLE [#seed_", sql)               // staged (tempTable forces it)
+    Assert.DoesNotContain("CLUSTERED INDEX", sql)              // 1500 < 100000 → no index
+
 [<Fact>]
 let ``StaticSeedsEmitter.emit: a small kind stays on the inline path (no #temp, no transaction)`` () =
     let country = mkCountryKind ()
     let catalog = mkCatalog [ country ]
-    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
     let sql = (ArtifactByKind.toMap artifact |> Map.find country.SsKey).RenderedPhase1
     Assert.DoesNotContain("#seed_", sql)
     Assert.DoesNotContain("BEGIN TRAN", sql)
@@ -161,7 +211,7 @@ let ``StaticSeedsEmitter.emit: a small kind stays on the inline path (no #temp, 
 let ``StaticSeedsEmitter.emit populates Phase1Merges for Modality.Static kinds`` () =
     let country = mkCountryKind ()
     let catalog = mkCatalog [ country ]
-    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     Assert.Equal (2, List.length script.Phase1Merges)
 
@@ -169,7 +219,7 @@ let ``StaticSeedsEmitter.emit populates Phase1Merges for Modality.Static kinds``
 let ``StaticSeedsEmitter.emit Phase1Merges carry KindKey + Identifier from StaticRow`` () =
     let country = mkCountryKind ()
     let catalog = mkCatalog [ country ]
-    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     for row in script.Phase1Merges do
         Assert.Equal<SsKey> (country.SsKey, row.KindKey)
@@ -178,7 +228,7 @@ let ``StaticSeedsEmitter.emit Phase1Merges carry KindKey + Identifier from Stati
 let ``StaticSeedsEmitter.emit Phase2Updates is empty at slice α (no cycle-breaking yet)`` () =
     let country = mkCountryKind ()
     let catalog = mkCatalog [ country ]
-    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     Assert.Empty script.Phase2Updates
 
@@ -186,7 +236,7 @@ let ``StaticSeedsEmitter.emit Phase2Updates is empty at slice α (no cycle-break
 let ``StaticSeedsEmitter.emit Rendered MERGE shape contains V1-required clauses`` () =
     let country = mkCountryKind ()
     let catalog = mkCatalog [ country ]
-    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     // V1's six load-bearing MERGE clauses (per `StaticSeedSqlBuilder.cs:211-260`).
     // Per Tier-1 #1 (typed-AST MERGE via ScriptDom): formatting is the
@@ -208,7 +258,7 @@ let ``StaticSeedsEmitter.emit Rendered MERGE shape contains V1-required clauses`
 let ``StaticSeedsEmitter.emit Rendered does NOT carry change-detection predicate (slice α; CDC awareness lands at slice β)`` () =
     let country = mkCountryKind ()
     let catalog = mkCatalog [ country ]
-    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     // Slice α emits V1's WHEN MATCHED THEN UPDATE SET unconditional; the
     // change-detection-predicate (Target.col <> Source.col + null-aware
@@ -221,8 +271,8 @@ let ``StaticSeedsEmitter.emit Rendered does NOT carry change-detection predicate
 let ``T1: StaticSeedsEmitter.emit is byte-deterministic across repeat invocations`` () =
     let country = mkCountryKind ()
     let catalog = mkCatalog [ country ]
-    let r1 = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
-    let r2 = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let r1 = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
+    let r2 = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
     let s1 = ArtifactByKind.toMap r1 |> Map.find country.SsKey
     let s2 = ArtifactByKind.toMap r2 |> Map.find country.SsKey
     Assert.Equal<string> (s1.Rendered, s2.Rendered)
@@ -232,7 +282,7 @@ let ``T1: StaticSeedsEmitter.emit is byte-deterministic across repeat invocation
 let ``StaticSeedsEmitter.emit formats Text values with N-prefix + single-quote escaping`` () =
     let country = mkCountryKind ()
     let catalog = mkCatalog [ country ]
-    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     // Text columns get `N'...'` prefix per `Render.formatSqlLiteral`.
     Assert.Contains ("N'United States'", script.Rendered)
@@ -242,7 +292,7 @@ let ``StaticSeedsEmitter.emit formats Text values with N-prefix + single-quote e
 let ``StaticSeedsEmitter.emit formats Integer values without quotes`` () =
     let country = mkCountryKind ()
     let catalog = mkCatalog [ country ]
-    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     // Integer values are bare digits per `Render.formatSqlLiteral`.
     // Note: this fixture uses Code-as-Id ("US"/"CA") so the Id column
@@ -256,7 +306,7 @@ let ``T11: StaticSeedsEmitter.emit covers every catalog kind`` () =
     let country = mkCountryKind ()
     let regular = mkRegularKind ()
     let catalog = mkCatalog [ country; regular ]
-    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
     let map = ArtifactByKind.toMap artifact
     Assert.True (Map.containsKey country.SsKey map)
     Assert.True (Map.containsKey regular.SsKey map)
@@ -295,7 +345,7 @@ let ``Slice β: CdcAwareness.captureInstance returns Some when registered`` () =
 let ``Slice β: StaticSeedsEmitter without CDC keeps V1 unconditional WHEN MATCHED`` () =
     let country = mkCountryKind ()
     let catalog = mkCatalog [ country ]
-    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     // CdcAwareness.empty (no kinds enabled) → V1-shape MERGE.
     let r = normWs script.Rendered
@@ -308,7 +358,7 @@ let ``Slice β: StaticSeedsEmitter with CDC enabled emits change-detection predi
     let catalog = mkCatalog [ country ]
     let cdc = CdcAwareness.create (Set.ofList [ country.SsKey ]) Map.empty
     let profile = { Profile.empty with CdcAwareness = cdc }
-    let artifact = StaticSeedsEmitter.emit catalog profile |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog profile |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     // CDC-enabled → WHEN MATCHED AND ( ... ) THEN UPDATE SET.
     let r = normWs script.Rendered
@@ -322,7 +372,7 @@ let ``Slice β: change-detection predicate is nullable-aware (NULL-asymmetry bot
     let catalog = mkCatalog [ country ]
     let cdc = CdcAwareness.create (Set.ofList [ country.SsKey ]) Map.empty
     let profile = { Profile.empty with CdcAwareness = cdc }
-    let artifact = StaticSeedsEmitter.emit catalog profile |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog profile |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     // Per pre-scope §6: NULL ≠ NULL in SQL; the predicate covers both
     // null-asymmetry directions (target NULL vs source NOT NULL, and
@@ -340,7 +390,7 @@ let ``Slice β: change-detection predicate covers every non-key column`` () =
     let catalog = mkCatalog [ country ]
     let cdc = CdcAwareness.create (Set.ofList [ country.SsKey ]) Map.empty
     let profile = { Profile.empty with CdcAwareness = cdc }
-    let artifact = StaticSeedsEmitter.emit catalog profile |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog profile |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     let r = normWs script.Rendered
     // Both non-key columns (CODE + LABEL) appear in the predicate.
@@ -366,7 +416,7 @@ let ``Slice β: per-kind dispatch — only CDC-enabled kinds get the predicate``
     let catalog = mkCatalog [ country; region ]
     let cdc = CdcAwareness.create (Set.ofList [ country.SsKey ]) Map.empty
     let profile = { Profile.empty with CdcAwareness = cdc }
-    let artifact = StaticSeedsEmitter.emit catalog profile |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog profile |> mustOkEmit
     let map = ArtifactByKind.toMap artifact
     let countryScript = Map.find country.SsKey map
     let regionScript = Map.find region.SsKey map
@@ -384,8 +434,8 @@ let ``Slice β: T1 byte-determinism holds under CDC dispatch`` () =
     let catalog = mkCatalog [ country ]
     let cdc = CdcAwareness.create (Set.ofList [ country.SsKey ]) Map.empty
     let profile = { Profile.empty with CdcAwareness = cdc }
-    let r1 = StaticSeedsEmitter.emit catalog profile |> mustOkEmit
-    let r2 = StaticSeedsEmitter.emit catalog profile |> mustOkEmit
+    let r1 = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog profile |> mustOkEmit
+    let r2 = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog profile |> mustOkEmit
     let s1 = ArtifactByKind.toMap r1 |> Map.find country.SsKey
     let s2 = ArtifactByKind.toMap r2 |> Map.find country.SsKey
     Assert.Equal<string> (s1.Rendered, s2.Rendered)
@@ -465,7 +515,7 @@ let private mkRigidTreeKind () : Kind =
 let ``Slice δ: acyclic catalog produces empty DeferredFkSet on every Phase1 row`` () =
     let country = mkCountryKind ()
     let catalog = mkCatalog [ country ]
-    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     for row in script.Phase1Merges do
         Assert.True (Set.isEmpty row.DeferredFkSet)
@@ -475,7 +525,7 @@ let ``Slice δ: acyclic catalog produces empty DeferredFkSet on every Phase1 row
 let ``Slice δ: self-referencing nullable FK populates DeferredFkSet`` () =
     let tree = mkTreeKind ()
     let catalog = mkCatalog [ tree ]
-    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find tree.SsKey
     Assert.Equal (1, List.length script.Phase1Merges)
     let phase1 = List.head script.Phase1Merges
@@ -489,7 +539,7 @@ let ``Slice δ: self-referencing nullable FK populates DeferredFkSet`` () =
 let ``Slice δ: self-FK kind produces one Phase2Updates row per Phase1 row`` () =
     let tree = mkTreeKind ()
     let catalog = mkCatalog [ tree ]
-    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find tree.SsKey
     Assert.Equal (List.length script.Phase1Merges, List.length script.Phase2Updates)
     // Phase2 rows carry the same (KindKey, Identifier, DeferredFkSet)
@@ -502,7 +552,7 @@ let ``Slice δ: self-FK kind produces one Phase2Updates row per Phase1 row`` () 
 let ``Slice δ: NOT NULL FK in cycle is NOT deferred`` () =
     let rigid = mkRigidTreeKind ()
     let catalog = mkCatalog [ rigid ]
-    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find rigid.SsKey
     // Cycle membership holds (TopologicalOrderPass sees the self-edge
     // under TreatAsCycle), but the FK column is non-nullable so V1's
@@ -515,7 +565,7 @@ let ``Slice δ: NOT NULL FK in cycle is NOT deferred`` () =
 let ``Slice δ: Phase1 MERGE renders deferred column as NULL in VALUES`` () =
     let tree = mkTreeKind ()
     let catalog = mkCatalog [ tree ]
-    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find tree.SsKey
     let r = normWs script.Rendered
     // The MERGE's USING (VALUES (...)) row should carry NULL in the
@@ -531,7 +581,7 @@ let ``Slice δ: Phase1 MERGE renders deferred column as NULL in VALUES`` () =
 let ``Slice δ: Phase2 UPDATE references PK in WHERE + deferred column in SET`` () =
     let tree = mkTreeKind ()
     let catalog = mkCatalog [ tree ]
-    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find tree.SsKey
     let r = normWs script.Rendered
     Assert.Contains ("UPDATE [dbo].[OSUSR_TEST_TREE]", r)
@@ -581,7 +631,7 @@ let ``Slice δ: 2-cycle with both FKs nullable defers FK column on each kind`` (
           Indexes    = []
           Description = None; IsActive = true; Triggers = []; ColumnChecks = []; ExtendedProperties = [] }
     let catalog = mkCatalog [ aKind; bKind ]
-    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
     let m = ArtifactByKind.toMap artifact
     let aScript = Map.find aKey m
     let bScript = Map.find bKey m
@@ -596,8 +646,8 @@ let ``Slice δ: 2-cycle with both FKs nullable defers FK column on each kind`` (
 let ``T1 (slice δ): byte-determinism holds across repeat invocations under cycle-breaking`` () =
     let tree = mkTreeKind ()
     let catalog = mkCatalog [ tree ]
-    let r1 = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
-    let r2 = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let r1 = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
+    let r2 = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
     let s1 = ArtifactByKind.toMap r1 |> Map.find tree.SsKey
     let s2 = ArtifactByKind.toMap r2 |> Map.find tree.SsKey
     Assert.Equal<string> (s1.Rendered, s2.Rendered)
@@ -612,7 +662,7 @@ let ``Slice δ: slice α/β rows pre-existing carry empty DeferredFkSet (acyclic
     // non-cycle kinds.
     let country = mkCountryKind ()
     let catalog = mkCatalog [ country ]
-    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     Assert.All (script.Phase1Merges, fun row -> Assert.Empty row.DeferredFkSet)
     Assert.Empty script.Phase2Updates
@@ -671,7 +721,7 @@ let ``AC-D5: computed column is excluded from CDC-aware MERGE UPDATE SET + predi
     let catalog = mkCatalog [ country ]
     let cdc = CdcAwareness.create (Set.ofList [ country.SsKey ]) Map.empty
     let profile = { Profile.empty with CdcAwareness = cdc }
-    let artifact = StaticSeedsEmitter.emit catalog profile |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog profile |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     let r = normWs script.Rendered
     // CDC-aware: WHEN MATCHED AND ( ... ) THEN UPDATE SET.
@@ -699,7 +749,7 @@ let ``AC-D7: a delete-scope policy renders the scoped DELETE arm on a kind carry
     let catalog = mkCatalog [ country ]
     let scope : DeleteScopePolicy = { Terms = [ { Column = "CODE"; Value = "US" } ] }
     let artifact =
-        StaticSeedsEmitter.emitWithTopoWith (Some scope) (topoOf catalog) catalog Profile.empty
+        StaticSeedsEmitter.emitWithTopo { DataEmitOptions.defaults with DeleteScope = (Some scope) } (topoOf catalog) catalog Profile.empty
         |> mustOkEmit
     let r = normWs (ArtifactByKind.toMap artifact |> Map.find country.SsKey).Rendered
     Assert.Contains ("WHEN NOT MATCHED BY SOURCE AND [Target].[CODE] = N'US' THEN DELETE", r)
@@ -713,7 +763,7 @@ let ``AC-D7: scope term columns resolve case-insensitively (the physical-column 
     let catalog = mkCatalog [ country ]
     let scope : DeleteScopePolicy = { Terms = [ { Column = "code"; Value = "US" } ] }
     let artifact =
-        StaticSeedsEmitter.emitWithTopoWith (Some scope) (topoOf catalog) catalog Profile.empty
+        StaticSeedsEmitter.emitWithTopo { DataEmitOptions.defaults with DeleteScope = (Some scope) } (topoOf catalog) catalog Profile.empty
         |> mustOkEmit
     let r = normWs (ArtifactByKind.toMap artifact |> Map.find country.SsKey).Rendered
     Assert.Contains ("THEN DELETE", r)
@@ -726,7 +776,7 @@ let ``AC-D7: a kind missing the scope column keeps the upsert-only MERGE (faithf
     let catalog = mkCatalog [ country ]
     let scope : DeleteScopePolicy = { Terms = [ { Column = "TENANT_ID"; Value = "42" } ] }
     let artifact =
-        StaticSeedsEmitter.emitWithTopoWith (Some scope) (topoOf catalog) catalog Profile.empty
+        StaticSeedsEmitter.emitWithTopo { DataEmitOptions.defaults with DeleteScope = (Some scope) } (topoOf catalog) catalog Profile.empty
         |> mustOkEmit
     let r = normWs (ArtifactByKind.toMap artifact |> Map.find country.SsKey).Rendered
     Assert.DoesNotContain ("NOT MATCHED BY SOURCE", r)
@@ -735,9 +785,9 @@ let ``AC-D7: a kind missing the scope column keeps the upsert-only MERGE (faithf
 [<Fact>]
 let ``AC-D7: no scope is byte-identical to the established upsert-only emit`` () =
     let catalog = mkCatalog [ mkCountryKind () ]
-    let viaDefault = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let viaDefault = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
     let viaExplicitNone =
-        StaticSeedsEmitter.emitWithTopoWith None (topoOf catalog) catalog Profile.empty |> mustOkEmit
+        StaticSeedsEmitter.emitWithTopo { DataEmitOptions.defaults with DeleteScope = None } (topoOf catalog) catalog Profile.empty |> mustOkEmit
     Assert.Equal<Map<SsKey, DataInsertScript>>(ArtifactByKind.toMap viaDefault, ArtifactByKind.toMap viaExplicitNone)
 
 // -- NM-73 (WP6.6, C2): validate-before-apply drift guard --------------------
@@ -748,9 +798,9 @@ let ``AC-D7: no scope is byte-identical to the established upsert-only emit`` ()
 [<Fact>]
 let ``NM-73: Standard verification is byte-identical to the established emit`` () =
     let catalog = mkCatalog [ mkCountryKind () ]
-    let viaDefault = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let viaDefault = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
     let viaStandard =
-        StaticSeedsEmitter.emitWithTopoWithVerification DataVerification.Standard None (topoOf catalog) catalog Profile.empty
+        StaticSeedsEmitter.emitWithTopo { DataEmitOptions.defaults with Verification = DataVerification.Standard; DeleteScope = None } (topoOf catalog) catalog Profile.empty
         |> mustOkEmit
     Assert.Equal<Map<SsKey, DataInsertScript>>(ArtifactByKind.toMap viaDefault, ArtifactByKind.toMap viaStandard)
 
@@ -759,7 +809,7 @@ let ``NM-73: ValidateBeforeApply prepends the symmetric-EXCEPT THROW guard befor
     let country = mkCountryKind ()
     let catalog = mkCatalog [ country ]
     let artifact =
-        StaticSeedsEmitter.emitWithTopoWithVerification DataVerification.ValidateBeforeApply None (topoOf catalog) catalog Profile.empty
+        StaticSeedsEmitter.emitWithTopo { DataEmitOptions.defaults with Verification = DataVerification.ValidateBeforeApply; DeleteScope = None } (topoOf catalog) catalog Profile.empty
         |> mustOkEmit
     let rendered = (ArtifactByKind.toMap artifact |> Map.find country.SsKey).Rendered
     let r = normWs rendered
@@ -833,7 +883,7 @@ let private populationBrackets (catalog: Catalog) : bool =
 /// True iff `StaticSeedsEmitter.emit` renders a `SET IDENTITY_INSERT`
 /// bracket for the given kind.
 let private seedsBracket (catalog: Catalog) (kindKey: SsKey) : bool =
-    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
     let rendered = (ArtifactByKind.toMap artifact |> Map.find kindKey).Rendered
     rendered.Contains "IDENTITY_INSERT"
 

@@ -260,6 +260,14 @@ module Config =
         /// `EmissionPolicy.ConfiguredTolerance` → the Model Fidelity Report's
         /// ACCEPTED DIVERGENCES section + the recorded episode's tolerance residual.
         Tolerance : Tolerance option
+        /// 2026-06-25 — `emission.dataStaging`: the large-kind staging posture.
+        /// `{ "mode": "auto" | "inline" | "tempTable", "threshold": <int> }`.
+        /// `auto` (the default, threshold 1000) stages a static kind's MERGE /
+        /// Phase-2 through a `#temp` above the threshold (the error-8623-safe
+        /// form); `inline` pins the inline form (locked-down/managed env that
+        /// accepts the ~30k ceiling); `tempTable` always stages. Threads to
+        /// `EmissionPolicy.DataStaging`.
+        DataStaging : DataStagingPolicy
     }
 
     // NM-03 (2026-06-13) — `policy.selection` and `policy.userMatching` were
@@ -433,6 +441,9 @@ module Config =
         // (the residual reports every fired divergence; byte-identical to the
         // prior hardcoded `Tolerance.permissive`).
         Tolerance = None
+        // 2026-06-25 — absent ⇒ stage above 1000 rows (byte-identical to the
+        // prior hardcoded `stagingRowThreshold`).
+        DataStaging = DataStagingPolicy.auto
     }
 
     let private defaultPolicy : PolicySection = {
@@ -1134,6 +1145,50 @@ module Config =
             Result.failureOf (
                 configError "typeMismatch" "emission.tolerance must be an array of divergence-name strings.")
 
+    /// 2026-06-25 — `emission.dataStaging: { "mode": "auto"|"inline"|"tempTable",
+    /// "threshold": <int>, "indexThreshold": <int> }`. Absent ⇒
+    /// `DataStagingPolicy.auto` (stage above 1000 rows; index the `#temp` above
+    /// the measured 100k floor; byte-identical to the prior hardcoded threshold).
+    /// `mode` / `threshold` / `indexThreshold` are each optional within the
+    /// object. FAIL-CLOSED: an unrecognized mode or a non-positive threshold /
+    /// indexThreshold is a named config error.
+    let private parseDataStaging (element: JsonElement) : Result<DataStagingPolicy> =
+        match tryGetProperty element "dataStaging" with
+        | None -> Result.success DataStagingPolicy.auto
+        | Some staging when staging.ValueKind = JsonValueKind.Object ->
+            let modeResult =
+                match getOptionalString staging "mode" with
+                | Error es -> Error es
+                | Ok None                 -> Result.success DataStagingMode.Auto
+                | Ok (Some "auto")        -> Result.success DataStagingMode.Auto
+                | Ok (Some "inline")      -> Result.success DataStagingMode.Inline
+                | Ok (Some "tempTable")   -> Result.success DataStagingMode.TempTable
+                | Ok (Some other) ->
+                    Result.failureOf (
+                        configError "invalidValue"
+                            (sprintf "emission.dataStaging.mode must be \"auto\", \"inline\", or \"tempTable\"; got \"%s\"." other))
+            match modeResult with
+            | Error es -> Error es
+            | Ok mode ->
+                match getIntOr staging "threshold" DataStagingPolicy.auto.Threshold with
+                | Error es -> Error es
+                | Ok threshold when threshold < 1 ->
+                    Result.failureOf (
+                        configError "invalidValue"
+                            (sprintf "emission.dataStaging.threshold must be >= 1; got %d." threshold))
+                | Ok threshold ->
+                    match getIntOr staging "indexThreshold" DataStagingPolicy.auto.IndexThreshold with
+                    | Error es -> Error es
+                    | Ok indexThreshold when indexThreshold < 1 ->
+                        Result.failureOf (
+                            configError "invalidValue"
+                                (sprintf "emission.dataStaging.indexThreshold must be >= 1; got %d." indexThreshold))
+                    | Ok indexThreshold ->
+                        Result.success { Mode = mode; Threshold = threshold; IndexThreshold = indexThreshold }
+        | Some _ ->
+            Result.failureOf (
+                configError "typeMismatch" "emission.dataStaging must be an object with optional 'mode', 'threshold', and 'indexThreshold'.")
+
     let private parseEmission (root: JsonElement) : Result<EmissionSection> =
         match tryGetProperty root "emission" with
         | None -> Result.success defaultEmission
@@ -1196,6 +1251,9 @@ module Config =
                                                     match parseTolerance element with
                                                     | Error es -> Error es
                                                     | Ok tolerance ->
+                                                    match parseDataStaging element with
+                                                    | Error es -> Error es
+                                                    | Ok dataStaging ->
                                                     Result.success {
                                                         Ssdt = ssdt
                                                         Dacpac = dacpac
@@ -1215,6 +1273,7 @@ module Config =
                                                         EmitIdentityAnnotations = identityAnnotations
                                                         DataVerification = dataVerification
                                                         Tolerance = tolerance
+                                                        DataStaging = dataStaging
                                                     }
 
     let private getOptionalBool (element: JsonElement) (name: string) : Result<bool option> =

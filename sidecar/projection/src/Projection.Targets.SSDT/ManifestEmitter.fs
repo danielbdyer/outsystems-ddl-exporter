@@ -916,23 +916,24 @@ module ManifestEmitter =
                 conflictObj.Add("ssKey",    requireValue "conflict.ssKey"    (JsonValue.Create(SsKey.rootOriginal ssKey)))
             | AxisContradiction (axis, ssKey, code, message) ->
                 conflictObj.Add("kind",    requireValue "conflict.kind"    (JsonValue.Create("AxisContradiction")))
-                conflictObj.Add("axis",    requireValue "conflict.axis"    (JsonValue.Create(sprintf "%A" axis)))
+                conflictObj.Add("axis",    requireValue "conflict.axis"    (JsonValue.Create(OverlayAxis.name axis)))
                 conflictObj.Add("ssKey",   requireValue "conflict.ssKey"   (JsonValue.Create(SsKey.rootOriginal ssKey)))
                 conflictObj.Add("code",    requireValue "conflict.code"    (JsonValue.Create(code)))
                 conflictObj.Add("message", requireValue "conflict.message" (JsonValue.Create(message)))
             conflictsArr.Add(conflictObj)
         doc.Add("policyConflicts", conflictsArr)
         // §5.5 — per-artifact overlay enumeration. Each entry is
-        // `{ssKey, overlay}` where `overlay` is the OverlayAxis case name
-        // (rendered via `%A`, matching the AxisContradiction precedent above)
-        // or JSON `null` for a skeleton-only (DataIntent) artifact. Already
-        // sorted by `(SsKey, OverlayAxis option)` in `appliedTransforms`.
+        // `{ssKey, overlay}` where `overlay` is the `OverlayAxis.name` token
+        // (the canonical exhaustive-matched codec, matching the
+        // AxisContradiction precedent above) or JSON `null` for a
+        // skeleton-only (DataIntent) artifact. Already sorted by
+        // `(SsKey, OverlayAxis option)` in `appliedTransforms`.
         let appliedTransformsArr = JsonArray()
         for (ssKey, axisOpt) in manifest.AppliedTransforms do
             let entryObj = JsonObject()
             entryObj.Add("ssKey", requireValue "appliedTransforms.ssKey" (JsonValue.Create(SsKey.rootOriginal ssKey)))
             match axisOpt with
-            | Some axis -> entryObj.Add("overlay", requireValue "appliedTransforms.overlay" (JsonValue.Create(sprintf "%A" axis)))
+            | Some axis -> entryObj.Add("overlay", requireValue "appliedTransforms.overlay" (JsonValue.Create(OverlayAxis.name axis)))
             | None      -> entryObj.Add("overlay", (null: JsonNode | null))
             appliedTransformsArr.Add(entryObj)
         doc.Add("appliedTransforms", appliedTransformsArr)

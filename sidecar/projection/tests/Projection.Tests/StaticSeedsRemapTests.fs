@@ -121,7 +121,7 @@ let ``DataLoadPlan.build re-points a targeted FK value at the canonical Operator
         |> SurrogateRemapContext.capture userKey (SourceKey.ofString "280") (AssignedKey.ofString "18")
         |> mustOk
     let plan = planFor catalog (rawRowsFor (mkOrderRow "r1" "1" "280")) remap
-    let artifact = StaticSeedsEmitter.emitFromPlan catalog Profile.empty plan |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emitFromPlan DataEmitOptions.defaults catalog Profile.empty plan |> mustOkEmit
     let values = orderScript artifact |> singleRowValuesOf
     Assert.Equal("18", userIdLiteralOf values)
 
@@ -129,7 +129,7 @@ let ``DataLoadPlan.build re-points a targeted FK value at the canonical Operator
 let ``DataLoadPlan.build with the empty remap is the identity over rows (skeleton-purity)`` () =
     let catalog = mkCatalog [ userKind; mkOrderKind [] ]
     let plan = planFor catalog (rawRowsFor (mkOrderRow "r1" "1" "280")) SurrogateRemapContext.empty
-    let artifact = StaticSeedsEmitter.emitFromPlan catalog Profile.empty plan |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emitFromPlan DataEmitOptions.defaults catalog Profile.empty plan |> mustOkEmit
     let values = orderScript artifact |> singleRowValuesOf
     Assert.Equal("280", userIdLiteralOf values)
 
@@ -150,7 +150,7 @@ let ``DataLoadPlan.build drops a row whose targeted FK has no matched assigned i
             && r.Target = userKey
             && r.UnresolvedSource = SourceKey.ofString "280")
     // The realization just consumes the plan; no script for the dropped row.
-    let artifact = StaticSeedsEmitter.emitFromPlan catalog Profile.empty plan |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emitFromPlan DataEmitOptions.defaults catalog Profile.empty plan |> mustOkEmit
     let script = orderScript artifact
     Assert.Empty script.Phase1Merges
     Assert.Equal("", script.RenderedPhase1)
@@ -165,7 +165,7 @@ let ``DataLoadPlan.build leaves rows of non-targeted kinds untouched`` () =
         |> SurrogateRemapContext.capture (mkKey ["UnrelatedKind"]) (SourceKey.ofString "0") (AssignedKey.ofString "0")
         |> mustOk
     let plan = planFor catalog (rawRowsFor (mkOrderRow "r1" "1" "280")) remap
-    let artifact = StaticSeedsEmitter.emitFromPlan catalog Profile.empty plan |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emitFromPlan DataEmitOptions.defaults catalog Profile.empty plan |> mustOkEmit
     let values = orderScript artifact |> singleRowValuesOf
     Assert.Equal("280", userIdLiteralOf values)
 
@@ -175,6 +175,6 @@ let ``StaticSeedsEmitter.emit (legacy convenience) routes through DataLoadPlan.b
     // and builds the plan with empty remap. The Order kind's static populations
     // hold the row carrying USER_ID=280; no substitution applied; value preserved.
     let catalog = mkCatalog [ userKind; mkOrderKind [ mkOrderRow "r1" "1" "280" ] ]
-    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let artifact = StaticSeedsEmitter.emit DataEmitOptions.defaults catalog Profile.empty |> mustOkEmit
     let values = orderScript artifact |> singleRowValuesOf
     Assert.Equal("280", userIdLiteralOf values)

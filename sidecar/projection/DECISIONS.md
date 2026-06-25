@@ -25359,3 +25359,49 @@ fired divergence ∉ configured tolerance" (which needs the canary to collect it
 `emission.tolerance` into `ConfiguredTolerance`; absent ⇒ permissive). Pure pool green (3632 / 0).
 Default-permissive ⇒ byte-identical; routing / fidelity / residual / golden suites unbroken. Five
 binding-test `EmissionSection` fixtures gained `Tolerance = None`.
+
+---
+
+## 2026-06-25 — Staged-`#temp` MERGE completed across all 3 data lanes + measured `indexThreshold`
+
+**Context.** PR #637 landed staged-`#temp` MERGE phase-1 for `StaticSeedsEmitter` (the error-8623
+fix). This session finished the program: the typed atomic envelope, set-based phase-2, the
+`emission.dataStaging` config knob, the full-lane rollout, and the measured `#temp` index.
+
+**Decisions.**
+
+1. **Typed atomic envelope (Tier-1).** The `SET XACT_ABORT ON; BEGIN TRY/TRAN … CATCH ROLLBACK; THROW`
+   scaffolding — previously three hand-written string-concat sites — is now one typed
+   `ScriptDomBuild.buildAtomicBatch` (`PredicateSetStatement`/`TryCatchStatement`/`Begin|Commit|Rollback`/
+   `IfStatement @@TRANCOUNT>0`/`ThrowStatement`) rendered as ONE batch via `ScriptDomGenerate.generateBatch`.
+   The bare-MERGE-`;`-terminator quirk does NOT bite inside a multi-statement batch (verified by deploy).
+   `MigrationRun`'s M22 envelope uses the same primitives. Supreme-discipline #1/#2/#3 cash-out.
+
+2. **All three data lanes stage.** The generic staged rendering was EXTRACTED to a shared `StagedMerge`
+   module (Targets.Data) at its second consumer (the "verbs extract at the second consumer" discipline).
+   `StaticSeedsEmitter` = first consumer (byte-identical, goldens green); `MigrationDependenciesEmitter` =
+   second (its own `renderMerge`/`kindToScript` now branch on `DataStagingPolicy.shouldStage`, closing the
+   migration lane's 8623 wall); Bootstrap inherits via its StaticSeeds delegation. `emission.dataStaging`
+   `{ mode, threshold }` threads to all three through the composer's `DataEmitOptions`.
+
+3. **`indexThreshold` = 100000 (MEASURED, not guessed).** The gated A/B probe `MergeScaleMeasurement`
+   (extended to deploy each scale plain-vs-clustered-`#temp`-PK-index) measured the index winning **~33-37%
+   at 100k / 250k / 500k with NO crossover** (1M cliffed identically on both arms — the warm container's 4 GiB
+   `RESOURCE_SEMAPHORE` memory pool, not an index signal). Per the "ship no index until measured" discipline
+   (a prior speculative index was removed), the default `IndexThreshold = 100000` gates conservatively at the
+   proven-win floor (sub-100k untested). A *staged* kind above it gets a typed `CREATE CLUSTERED INDEX` on its
+   `#temp` PK (built after the bulk insert, dropped with the `#temp`; `ScriptDomBuild.buildClusteredTempIndex`)
+   so the MERGE merge-joins instead of hash-joining. Operator-tunable via `emission.dataStaging.indexThreshold`.
+
+4. **Data-emit API de-telescoped (operator-requested).** The three emitters' `emit*With/WithVerification/
+   WithStaging` families (8 functions on StaticSeeds alone) collapsed into ONE `DataEmitOptions
+   { DeleteScope; Verification; Staging }` record — each emitter now has `emit`/`emitFromPlan`/`emitWithTopo`
+   taking `opts`. A new axis is one record field, not a new function + re-defaulting cascade.
+
+**Witnesses (all DEPLOY-VERIFIED on the warm container — Docker E2E SOFT-SKIPS without
+`eval "$(scripts/warm-sql.sh conn)"`).** `StagedMergeDeployE2ETests` (staged phase-1 1500-row deploy +
+idempotency; set-based phase-2 self-ref FK re-point; atomicity = mid-batch dup-PK → whole-batch rollback +
+no `#temp` survives; MIGRATION-channel staged deploy; clustered-index staged deploy). `MigrationCanaryTests`
+25/25 (the typed M22 envelope). Pure pool green except the pre-existing `EndToEndPipelineTests.M1` CRLF
+golden (fails on the clean tree too — a local line-ending artifact, not this work). `CONFIG_REFERENCE.md` +
+`examples/projection.sample.json` + `ConfigTests` cover the `dataStaging` knob incl. `indexThreshold`.

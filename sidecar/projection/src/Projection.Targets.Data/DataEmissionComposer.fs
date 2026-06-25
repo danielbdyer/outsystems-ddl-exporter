@@ -97,8 +97,7 @@ module DataEmissionComposer =
     /// `compose`.
     let private dispatchSiblings
         (composition: DataComposition)
-        (deleteScope: DeleteScopePolicy option)
-        (verification: DataVerification)
+        (opts: DataEmitOptions)
         (topo: TopologicalOrder)
         (catalog: Catalog)
         (profile: Profile)
@@ -107,6 +106,12 @@ module DataEmissionComposer =
         (userRemap: UserRemapContext)
         : Result<SiblingArtifacts, EmitError> =
         use _ = Bench.scope "compose.data.dispatchSiblings"
+        // The operator's optional emission axes (delete scope / drift guard /
+        // staging) ride to every lane in ONE `DataEmitOptions` — the composer
+        // is the single site that lifts them from `EmissionPolicy`. Bootstrap
+        // suppresses the delete arm internally (the additive upsert lane); the
+        // migration lane consumes verification + delete-scope and ignores
+        // staging (no staged path there yet).
         let staticSeeds =
             use _ = Bench.scope "compose.data.dispatchSiblings.staticSeeds"
             match composition with
@@ -114,22 +119,18 @@ module DataEmissionComposer =
             // Static is skipped — else both lanes claim the static kinds and the
             // partition law (`unionSiblings`) trips once Bootstrap is populated
             // (the slice-ζ differentiation the prior MVP test anticipated).
-            | AllRemaining    -> StaticSeedsEmitter.emitWithTopoWithVerification verification deleteScope topo catalog profile
+            | AllRemaining    -> StaticSeedsEmitter.emitWithTopo opts topo catalog profile
             | AllExceptStatic
             | AllData         -> emptyArtifact catalog
         let migrationDependencies =
             use _ = Bench.scope "compose.data.dispatchSiblings.migrationDeps"
             match composition with
             | AllRemaining
-            | AllExceptStatic -> MigrationDependenciesEmitter.emitWithTopoWithVerification verification deleteScope topo catalog profile migration userRemap
+            | AllExceptStatic -> MigrationDependenciesEmitter.emitWithTopo opts topo catalog profile migration userRemap
             | AllData         -> emptyArtifact catalog
         let bootstrap =
             use _ = Bench.scope "compose.data.dispatchSiblings.bootstrap"
-            // NM-73 — the drift-guard posture rides Bootstrap too (operator
-            // decision 2026-06-14); the hydrated row source is the bootstrap
-            // lane's content (the complement of Static ∪ Migration under
-            // AllRemaining; every kind under AllData).
-            BootstrapEmitter.emitWithTopoWithVerification verification topo catalog profile bootstrapRows userRemap
+            BootstrapEmitter.emitWithTopo opts topo catalog profile bootstrapRows userRemap
         match staticSeeds, migrationDependencies, bootstrap with
         | Ok s, Ok m, Ok b ->
             Ok { StaticSeeds = s; MigrationDependencies = m; Bootstrap = b }
@@ -217,14 +218,13 @@ module DataEmissionComposer =
         // AC-D7 — the operator's convergent-delete scope (OperatorIntent of
         // Emission). The composer resolves it OFF `Policy` here and threads
         // the plain value; the emitters never see `Policy` (A18 amended).
-        let deleteScope = policy.Emission.DeleteScope
-        let verification = policy.Emission.DataVerification
+        let opts = DataEmitOptions.ofEmissionPolicy policy.Emission
         // Match-bind explicitly: dispatchSiblings + unionSiblings
         // both return `Result<_, EmitError>` (the BCL two-parameter
         // Result), distinct from V2's `Result<'a> = Result<'a,
         // ValidationError list>` alias whose bind is in scope.
         let result =
-            match dispatchSiblings composition deleteScope verification topo catalog profile migration Map.empty userRemap with
+            match dispatchSiblings composition opts topo catalog profile migration Map.empty userRemap with
             | Ok siblings -> unionSiblings catalog siblings
             | Error e     -> Error e
         topoLineage |> Lineage.map (fun _ -> result)
@@ -334,9 +334,8 @@ module DataEmissionComposer =
         // AC-D7 — the operator's convergent-delete scope (OperatorIntent of
         // Emission). The composer resolves it OFF `Policy` here and threads
         // the plain value; the emitters never see `Policy` (A18 amended).
-        let deleteScope = policy.Emission.DeleteScope
-        let verification = policy.Emission.DataVerification
-        match dispatchSiblings composition deleteScope verification topo catalog profile migration Map.empty userRemap with
+        let opts = DataEmitOptions.ofEmissionPolicy policy.Emission
+        match dispatchSiblings composition opts topo catalog profile migration Map.empty userRemap with
         | Error e -> Error e
         | Ok siblings ->
             match unionSiblings catalog siblings with
@@ -392,9 +391,8 @@ module DataEmissionComposer =
         let topoLineage = TopologicalOrderPass.runWith TreatAsCycle catalog
         let topo = topoLineage.Value
         let composition = policy.Emission.DataComposition
-        let deleteScope = policy.Emission.DeleteScope
-        let verification = policy.Emission.DataVerification
-        match dispatchSiblings composition deleteScope verification topo catalog profile migration Map.empty userRemap with
+        let opts = DataEmitOptions.ofEmissionPolicy policy.Emission
+        match dispatchSiblings composition opts topo catalog profile migration Map.empty userRemap with
         | Error e -> Error e
         | Ok siblings ->
             match unionSiblings catalog siblings with
@@ -438,9 +436,8 @@ module DataEmissionComposer =
         let topoLineage = TopologicalOrderPass.runWith TreatAsCycle catalog
         let topo = topoLineage.Value
         let composition = policy.Emission.DataComposition
-        let deleteScope = policy.Emission.DeleteScope
-        let verification = policy.Emission.DataVerification
-        match dispatchSiblings composition deleteScope verification topo catalog profile migration bootstrapRows userRemap with
+        let opts = DataEmitOptions.ofEmissionPolicy policy.Emission
+        match dispatchSiblings composition opts topo catalog profile migration bootstrapRows userRemap with
         | Error e -> Error e
         | Ok siblings ->
             match unionSiblings catalog siblings with
@@ -512,9 +509,8 @@ module DataEmissionComposer =
         // AC-D7 — the operator's convergent-delete scope (OperatorIntent of
         // Emission). The composer resolves it OFF `Policy` here and threads
         // the plain value; the emitters never see `Policy` (A18 amended).
-        let deleteScope = policy.Emission.DeleteScope
-        let verification = policy.Emission.DataVerification
-        match dispatchSiblings composition deleteScope verification topo catalog profile migration bootstrapRows userRemap with
+        let opts = DataEmitOptions.ofEmissionPolicy policy.Emission
+        match dispatchSiblings composition opts topo catalog profile migration bootstrapRows userRemap with
         | Error e -> Error e
         | Ok siblings ->
             match unionSiblings catalog siblings with

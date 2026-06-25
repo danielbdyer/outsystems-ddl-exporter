@@ -1247,6 +1247,144 @@ module ScriptDomBuild =
                 (sprintf "buildUpdateFromTemp: set-based UPDATE template failed to parse for %s — programmer error." (tableIdText table))
 
     // -----------------------------------------------------------------------
+    // Atomic transaction envelope (Tier-1 typed-AST refactor, 2026-06-25).
+    //
+    // The `SET XACT_ABORT ON; BEGIN TRY BEGIN TRAN; … COMMIT; END TRY
+    // BEGIN CATCH IF @@TRANCOUNT>0 ROLLBACK; THROW; END CATCH` pattern was
+    // hand-written as string literals in THREE places (StaticSeedsEmitter
+    // `wrapAtomicBatch`, MigrationRun M22 deploy envelope, and the staged
+    // `#temp` drop framing). The string form is the highest-blast-radius
+    // hand-built SQL in the tree — executed raw, with no parse validation
+    // — and a VO-stringification bug (`"#seed_" + k.Physical.Table`) shipped
+    // through it. These typed primitives + `buildAtomicBatch` replace it: the
+    // grammar is enforced by ScriptDom and the bytes flow through the pinned
+    // `Sql160ScriptGenerator`. The control-flow nodes ScriptDom ships exactly
+    // model this envelope (`PredicateSetStatement` / `TryCatchStatement` /
+    // `Begin|Commit|RollbackTransactionStatement` / `IfStatement` over
+    // `@@TRANCOUNT` / `ThrowStatement`).
+    // -----------------------------------------------------------------------
+
+    /// `SET XACT_ABORT ON` (`on=false` → `OFF`). A run-time error inside the
+    /// envelope then aborts and rolls back the whole transaction automatically.
+    let buildSetXactAbort (on: bool) : PredicateSetStatement =
+        let stmt = PredicateSetStatement()
+        stmt.Options <- SetOptions.XactAbort
+        stmt.IsOn <- on
+        stmt
+
+    /// `BEGIN TRANSACTION`.
+    let buildBeginTransaction () : BeginTransactionStatement =
+        BeginTransactionStatement()
+
+    /// `COMMIT TRANSACTION`.
+    let buildCommitTransaction () : CommitTransactionStatement =
+        CommitTransactionStatement()
+
+    /// `ROLLBACK TRANSACTION`.
+    let buildRollbackTransaction () : RollbackTransactionStatement =
+        RollbackTransactionStatement()
+
+    /// `IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;` — the CATCH-block guard so a
+    /// rollback fires only when a transaction is actually open (an `XACT_ABORT`
+    /// auto-rollback may already have closed it). `@@TRANCOUNT` is a
+    /// `GlobalVariableExpression`; the predicate is a typed `>` comparison.
+    let buildRollbackIfActive () : IfStatement =
+        let tranCount = GlobalVariableExpression()
+        tranCount.Name <- "@@TRANCOUNT"
+        let zero = IntegerLiteral()
+        zero.Value <- "0"
+        let cmp = BooleanComparisonExpression()
+        cmp.ComparisonType <- BooleanComparisonType.GreaterThan
+        cmp.FirstExpression <- tranCount :> ScalarExpression
+        cmp.SecondExpression <- zero :> ScalarExpression
+        let stmt = IfStatement()
+        stmt.Predicate <- cmp :> BooleanExpression
+        stmt.ThenStatement <- buildRollbackTransaction () :> TSqlStatement
+        stmt
+
+    /// Bare `THROW;` — re-raises the active CATCH-block error (number / message
+    /// / state all defaulted, which ScriptDom renders as the argument-less
+    /// re-throw form).
+    let buildThrowRethrow () : ThrowStatement =
+        ThrowStatement()
+
+    /// `DROP TABLE [name]` (unconditional). Used for the post-MERGE `#temp`
+    /// cleanup inside the committed envelope.
+    let buildDropTable (tempName: string) : DropTableStatement =
+        let stmt = DropTableStatement()
+        stmt.Objects.Add(tempSchemaObject tempName)
+        stmt
+
+    /// `DROP TABLE IF EXISTS [name]` — the compat-160 idempotent drop, replacing
+    /// the prior `IF OBJECT_ID('tempdb..#x') IS NOT NULL DROP TABLE #x` string
+    /// template. Guards the staging-`#temp` create against a leaked prior temp on
+    /// the same session.
+    let buildDropTableIfExists (tempName: string) : DropTableStatement =
+        let stmt = DropTableStatement()
+        stmt.IsIfExists <- true
+        stmt.Objects.Add(tempSchemaObject tempName)
+        stmt
+
+    /// `CREATE CLUSTERED INDEX [name] ON [#temp] ([pk1],[pk2],…)` — the staging
+    /// `#temp`'s PK index, built AFTER the batched INSERTs (so the load is a bulk
+    /// heap insert) and dropped WITH the `#temp` at batch end. Lets the MERGE
+    /// merge-join target↔`#temp` instead of hash-joining; the gated A/B probe
+    /// (2026-06-25) measured a ~33-37% deploy speedup at ≥100k rows. `Clustered`
+    /// is `Nullable<bool> = true`; a `#temp` (single-identifier `tempSchemaObject`)
+    /// is the index target. ASC keys (the PK's natural order).
+    let buildClusteredTempIndex (indexName: string) (tempName: string) (pkCols: string list) : CreateIndexStatement =
+        use _ = Bench.scope "emit.scriptDom.build.clusteredTempIndex"
+        let stmt = CreateIndexStatement()
+        stmt.Clustered <- System.Nullable(true)
+        stmt.Name <- bracketed indexName
+        stmt.OnName <- tempSchemaObject tempName
+        for c in pkCols do
+            let col = ColumnWithSortOrder()
+            let colRef = ColumnReferenceExpression()
+            let mid = MultiPartIdentifier()
+            mid.Identifiers.Add(bracketed c)
+            colRef.MultiPartIdentifier <- mid
+            col.Column <- colRef
+            // Ascending left as NotSpecified (no `ASC` token) — matches V1's
+            // `IndexScriptBuilder` convention + V2's `buildCreateIndex`.
+            stmt.Columns.Add(col)
+        stmt
+
+    /// Wrap a list of typed inner statements in the atomic, all-or-nothing
+    /// envelope and return its TWO top-level statements (`SET XACT_ABORT ON`
+    /// and the `TRY/CATCH`). The caller renders them as ONE batch
+    /// (`ScriptDomGenerate.generateBatch`) and appends the `GO` separator —
+    /// keeping the whole unit on one connection/session (the `#temp` and the
+    /// transaction must not split across a `GO`).
+    ///
+    /// Shape:
+    /// ```
+    /// SET XACT_ABORT ON;
+    /// BEGIN TRY
+    ///   BEGIN TRANSACTION;
+    ///   <inner …>
+    ///   COMMIT TRANSACTION;
+    /// END TRY
+    /// BEGIN CATCH
+    ///   IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+    ///   THROW;
+    /// END CATCH
+    /// ```
+    let buildAtomicBatch (inner: TSqlStatement list) : TSqlStatement list =
+        let tryList = StatementList()
+        tryList.Statements.Add(buildBeginTransaction () :> TSqlStatement)
+        for s in inner do tryList.Statements.Add(s)
+        tryList.Statements.Add(buildCommitTransaction () :> TSqlStatement)
+        let catchList = StatementList()
+        catchList.Statements.Add(buildRollbackIfActive () :> TSqlStatement)
+        catchList.Statements.Add(buildThrowRethrow () :> TSqlStatement)
+        let tryCatch = TryCatchStatement()
+        tryCatch.TryStatements <- tryList
+        tryCatch.CatchStatements <- catchList
+        [ buildSetXactAbort true :> TSqlStatement
+          tryCatch :> TSqlStatement ]
+
+    // -----------------------------------------------------------------------
     // UPDATE statement (chapter 4.1.B slice δ; two-phase insertion /
     // cycle-breaking).
     //

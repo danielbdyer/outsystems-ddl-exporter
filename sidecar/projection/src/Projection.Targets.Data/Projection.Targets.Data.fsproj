@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <Compile Include="DataInsertScript.fs" />
+    <Compile Include="StagedMerge.fs" />
     <Compile Include="StaticPopulationEmitter.fs" />
     <Compile Include="StaticSeedsEmitter.fs" />
     <Compile Include="MigrationDependenciesEmitter.fs" />

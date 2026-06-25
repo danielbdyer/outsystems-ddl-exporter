@@ -108,12 +108,39 @@ let ``MigrationDependencyContext.rowsByKind groups rows by KindKey`` () =
 // Emitter — T11 keyset + dispatch correctness.
 // ---------------------------------------------------------------------------
 
+// 2026-06-25 — the migration lane stages large kinds through a `#temp` (the
+// shared StagedMerge; closing its 8623 wall). Above the threshold it renders
+// the atomic staged batch; below, the inline form stands (byte-identical).
+[<Fact>]
+let ``MigrationDependenciesEmitter: a >threshold kind renders the staged #temp batch`` () =
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let context =
+        { Rows = [ for i in 1 .. 1001 -> mkMigrationRow country.SsKey (string i) (sprintf "C%04d" i) (sprintf "Label %d" i) ] }
+    let artifact = MigrationDependenciesEmitter.emit DataEmitOptions.defaults catalog Profile.empty context |> mustOkEmit
+    let sql = (ArtifactByKind.toMap artifact |> Map.find country.SsKey).RenderedPhase1
+    Assert.Contains("SET XACT_ABORT ON", sql)
+    Assert.Contains("CREATE TABLE [#seed_", sql)
+    Assert.Contains("USING [#seed_", sql)
+    Assert.Contains("END CATCH", sql)
+
+[<Fact>]
+let ``MigrationDependenciesEmitter: inline mode keeps a >threshold kind inline (no #temp)`` () =
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let context =
+        { Rows = [ for i in 1 .. 1001 -> mkMigrationRow country.SsKey (string i) (sprintf "C%04d" i) (sprintf "Label %d" i) ] }
+    let opts = { DataEmitOptions.defaults with Staging = { Mode = DataStagingMode.Inline; Threshold = 1000; IndexThreshold = 100000 } }
+    let artifact = MigrationDependenciesEmitter.emit opts catalog Profile.empty context |> mustOkEmit
+    let sql = (ArtifactByKind.toMap artifact |> Map.find country.SsKey).RenderedPhase1
+    Assert.DoesNotContain("#seed_", sql)
+
 [<Fact>]
 let ``MigrationDependenciesEmitter.emit produces one DataInsertScript per kind (T11 keyset)`` () =
     let country = mkCountryKind ()
     let catalog = mkCatalog [ country ]
     let context = MigrationDependencyContext.empty
-    let artifact = MigrationDependenciesEmitter.emit catalog Profile.empty context |> mustOkEmit
+    let artifact = MigrationDependenciesEmitter.emit DataEmitOptions.defaults catalog Profile.empty context |> mustOkEmit
     let map = ArtifactByKind.toMap artifact
     Assert.Equal (1, Map.count map)
 
@@ -122,7 +149,7 @@ let ``MigrationDependenciesEmitter.emit returns no-op for kinds without migratio
     let country = mkCountryKind ()
     let catalog = mkCatalog [ country ]
     let context = MigrationDependencyContext.empty
-    let artifact = MigrationDependenciesEmitter.emit catalog Profile.empty context |> mustOkEmit
+    let artifact = MigrationDependenciesEmitter.emit DataEmitOptions.defaults catalog Profile.empty context |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     Assert.Empty script.Phase1Merges
     Assert.Equal<string> ("", script.Rendered)
@@ -135,7 +162,7 @@ let ``MigrationDependenciesEmitter.emit populates Phase1Merges for kinds with mi
         { Rows =
             [ mkMigrationRow country.SsKey "1" "US" "United States"
               mkMigrationRow country.SsKey "2" "CA" "Canada" ] }
-    let artifact = MigrationDependenciesEmitter.emit catalog Profile.empty context |> mustOkEmit
+    let artifact = MigrationDependenciesEmitter.emit DataEmitOptions.defaults catalog Profile.empty context |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     Assert.Equal (2, List.length script.Phase1Merges)
     for row in script.Phase1Merges do
@@ -147,7 +174,7 @@ let ``MigrationDependenciesEmitter.emit Rendered MERGE shape contains V1-require
     let catalog = mkCatalog [ country ]
     let context =
         { Rows = [ mkMigrationRow country.SsKey "1" "US" "United States" ] }
-    let artifact = MigrationDependenciesEmitter.emit catalog Profile.empty context |> mustOkEmit
+    let artifact = MigrationDependenciesEmitter.emit DataEmitOptions.defaults catalog Profile.empty context |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     let r = normWs script.Rendered
     Assert.Contains ("MERGE INTO [dbo].[OSUSR_TEST_COUNTRY] AS [Target]", r)
@@ -171,10 +198,10 @@ let ``NM-73: MigrationDependenciesEmitter Standard verification is byte-identica
     let country = mkCountryKind ()
     let catalog = mkCatalog [ country ]
     let context = { Rows = [ mkMigrationRow country.SsKey "1" "US" "United States" ] }
-    let viaDefault = MigrationDependenciesEmitter.emit catalog Profile.empty context |> mustOkEmit
+    let viaDefault = MigrationDependenciesEmitter.emit DataEmitOptions.defaults catalog Profile.empty context |> mustOkEmit
     let viaStandard =
-        MigrationDependenciesEmitter.emitWithTopoWithVerification
-            DataVerification.Standard None (topoOf catalog) catalog Profile.empty context UserRemapContext.empty
+        MigrationDependenciesEmitter.emitWithTopo
+            { DataEmitOptions.defaults with Verification = DataVerification.Standard } (topoOf catalog) catalog Profile.empty context UserRemapContext.empty
         |> mustOkEmit
     Assert.Equal<Map<SsKey, DataInsertScript>>(ArtifactByKind.toMap viaDefault, ArtifactByKind.toMap viaStandard)
 
@@ -184,8 +211,8 @@ let ``NM-73: MigrationDependenciesEmitter ValidateBeforeApply prepends the symme
     let catalog = mkCatalog [ country ]
     let context = { Rows = [ mkMigrationRow country.SsKey "1" "US" "United States" ] }
     let artifact =
-        MigrationDependenciesEmitter.emitWithTopoWithVerification
-            DataVerification.ValidateBeforeApply None (topoOf catalog) catalog Profile.empty context UserRemapContext.empty
+        MigrationDependenciesEmitter.emitWithTopo
+            { DataEmitOptions.defaults with Verification = DataVerification.ValidateBeforeApply } (topoOf catalog) catalog Profile.empty context UserRemapContext.empty
         |> mustOkEmit
     let rendered = (ArtifactByKind.toMap artifact |> Map.find country.SsKey).Rendered
     let r = normWs rendered
@@ -203,7 +230,7 @@ let ``MigrationDependenciesEmitter.emit honors CdcAwareness per-kind dispatch (s
         { Rows = [ mkMigrationRow country.SsKey "1" "US" "United States" ] }
     let cdc = CdcAwareness.create (Set.ofList [ country.SsKey ]) Map.empty
     let profile = { Profile.empty with CdcAwareness = cdc }
-    let artifact = MigrationDependenciesEmitter.emit catalog profile context |> mustOkEmit
+    let artifact = MigrationDependenciesEmitter.emit DataEmitOptions.defaults catalog profile context |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     let r = normWs script.Rendered
     // CDC enabled → predicated MERGE.
@@ -218,8 +245,8 @@ let ``T1: MigrationDependenciesEmitter.emit is byte-deterministic across repeat 
         { Rows =
             [ mkMigrationRow country.SsKey "1" "US" "United States"
               mkMigrationRow country.SsKey "2" "CA" "Canada" ] }
-    let r1 = MigrationDependenciesEmitter.emit catalog Profile.empty context |> mustOkEmit
-    let r2 = MigrationDependenciesEmitter.emit catalog Profile.empty context |> mustOkEmit
+    let r1 = MigrationDependenciesEmitter.emit DataEmitOptions.defaults catalog Profile.empty context |> mustOkEmit
+    let r2 = MigrationDependenciesEmitter.emit DataEmitOptions.defaults catalog Profile.empty context |> mustOkEmit
     let s1 = ArtifactByKind.toMap r1 |> Map.find country.SsKey
     let s2 = ArtifactByKind.toMap r2 |> Map.find country.SsKey
     Assert.Equal<string> (s1.Rendered, s2.Rendered)
@@ -325,7 +352,7 @@ let ``AC-D5: computed column is excluded from CDC-aware MERGE UPDATE SET + predi
     let context = { Rows = [ mkMigrationRow country.SsKey "1" "US" "United States" ] }
     let cdc = CdcAwareness.create (Set.ofList [ country.SsKey ]) Map.empty
     let profile = { Profile.empty with CdcAwareness = cdc }
-    let artifact = MigrationDependenciesEmitter.emit catalog profile context |> mustOkEmit
+    let artifact = MigrationDependenciesEmitter.emit DataEmitOptions.defaults catalog profile context |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     let r = normWs script.Rendered
     Assert.Contains ("WHEN MATCHED AND (", r)
