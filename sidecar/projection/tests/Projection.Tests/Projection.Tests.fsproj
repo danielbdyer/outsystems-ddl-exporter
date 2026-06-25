@@ -301,6 +301,7 @@
     <Compile Include="DacpacPublishEquivalenceTests.fs" />
     <Compile Include="SsdtArtifactDeployE2ETests.fs" />
     <Compile Include="SsdtDataBehaviorE2ETests.fs" />
+    <Compile Include="MergeScaleMeasurement.fs" />
     <Compile Include="DockerImageEmitterTests.fs" />
     <Compile Include="CoordinatesStage2Tests.fs" />
     <Compile Include="ManifestEmitterTests.fs" />
