@@ -62,18 +62,8 @@ module StaticSeedsEmitter =
     /// in declared order. Slice δ: columns named in `deferred` are
     /// emitted as `SqlLiteral.NullLit` regardless of the row's
     /// typed value (Phase-1 cycle-break).
-    let private typedValuesToSqlLiterals
-        (deferred: Set<Name>)
-        (attributes: Attribute list)
-        (values: Map<Name, SqlLiteral>)
-        : SqlLiteral list =
-        attributes
-        |> List.map (fun a ->
-            if Set.contains a.Name deferred then
-                SqlLiteral.NullLit
-            else
-                Map.tryFind a.Name values
-                |> Option.defaultValue SqlLiteral.NullLit)
+    // The deferred-aware VALUES-clause literal projection is shared:
+    // `Projection.Core.KindColumns.typedValuesToSqlLiterals`.
 
     // -------------------------------------------------------------------
     // Staged-source form (the error-8623-safe MERGE for large kinds). The
@@ -153,7 +143,7 @@ module StaticSeedsEmitter =
                 AllColumns = KindColumns.orderedColumnNames k
                 PkColumns  = KindColumns.pkColumnNames k
                 UpdColumns = updColumns
-                Rows        = typedRows |> List.map (typedValuesToSqlLiterals deferred (KindColumns.writableAttributes k))
+                Rows        = typedRows |> List.map (KindColumns.typedValuesToSqlLiterals deferred (KindColumns.writableAttributes k))
                 CdcAware    = cdcAware
                 DeleteScope = deleteScope
                 StagedSource = None

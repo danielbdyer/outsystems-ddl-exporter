@@ -124,21 +124,8 @@ module MigrationDependenciesEmitter =
     // `Projection.Core.KindColumns.rowToTypedValues` (shared with the
     // static-seed lane; `DataLoadPlan` converged both row shapes into `StaticRow`).
 
-    /// Project the typed-Values row into the `SqlLiteral list` form
-    /// `MergeBuildArgs.Rows` expects. Slice δ deferred handling
-    /// (NULLed columns) mirrors `StaticSeedsEmitter`.
-    let private typedValuesToSqlLiterals
-        (deferred: Set<Name>)
-        (attributes: Attribute list)
-        (values: Map<Name, SqlLiteral>)
-        : SqlLiteral list =
-        attributes
-        |> List.map (fun a ->
-            if Set.contains a.Name deferred then
-                SqlLiteral.NullLit
-            else
-                Map.tryFind a.Name values
-                |> Option.defaultValue SqlLiteral.NullLit)
+    // The deferred-aware VALUES-clause literal projection is shared:
+    // `Projection.Core.KindColumns.typedValuesToSqlLiterals`.
 
     /// Render the MERGE statement for a kind with its migration
     /// rows via ScriptDom's typed-AST + `Sql160ScriptGenerator`
@@ -185,7 +172,7 @@ module MigrationDependenciesEmitter =
                 AllColumns = KindColumns.orderedColumnNames k
                 PkColumns  = KindColumns.pkColumnNames k
                 UpdColumns = updColumns
-                Rows        = typedRows |> List.map (typedValuesToSqlLiterals deferred (KindColumns.writableAttributes k))
+                Rows        = typedRows |> List.map (KindColumns.typedValuesToSqlLiterals deferred (KindColumns.writableAttributes k))
                 CdcAware    = cdcAware
                 DeleteScope = deleteScope
                 StagedSource = None

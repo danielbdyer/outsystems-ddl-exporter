@@ -86,3 +86,21 @@ module KindColumns =
                 |> Option.defaultValue PrimitiveType.Text
             a.Name, SqlLiteral.ofRaw typ raw)
         |> Map.ofList
+
+    /// Project a typed-Values row into the ordered `SqlLiteral list` the MERGE's
+    /// `Rows` (the VALUES projection) expects, iterating the kind's attributes in
+    /// declared order. Slice δ: columns named in `deferred` emit
+    /// `SqlLiteral.NullLit` regardless of the row's value (the Phase-1 cycle
+    /// break — the deferred FK is NULLed on insert and re-pointed in Phase-2).
+    let typedValuesToSqlLiterals
+        (deferred: Set<Name>)
+        (attributes: Attribute list)
+        (values: Map<Name, SqlLiteral>)
+        : SqlLiteral list =
+        attributes
+        |> List.map (fun a ->
+            if Set.contains a.Name deferred then
+                SqlLiteral.NullLit
+            else
+                Map.tryFind a.Name values
+                |> Option.defaultValue SqlLiteral.NullLit)
