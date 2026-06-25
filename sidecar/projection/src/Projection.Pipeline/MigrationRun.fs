@@ -621,7 +621,7 @@ module MigrationRun =
                                 let opened = atomic && hasDdl
                                 try
                                     if opened then
-                                        do! Deploy.executeBatch cnn "SET XACT_ABORT ON; BEGIN TRANSACTION;"
+                                        do! Deploy.executeBatch cnn (ScriptDomGenerate.renderAtomicEnvelopeOpen ())
                                     let mutable applied = 0
                                     for stmt in renameSql do
                                         do! Deploy.executeBatch cnn stmt
@@ -632,7 +632,7 @@ module MigrationRun =
                                         applied <- applied + 1
                                         LogSink.recordStageProgress "deploy" applied totalWrites sw.ElapsedMilliseconds
                                     if opened then
-                                        do! Deploy.executeBatch cnn "COMMIT TRANSACTION;"
+                                        do! Deploy.executeBatch cnn (ScriptDomGenerate.renderCommitTransaction ())
                                     return Ok ()
                                 with ex ->
                                     // M22 — if the envelope is open, roll the whole deploy
@@ -645,7 +645,7 @@ module MigrationRun =
                                     // ride the groupoid inverse over the applied rename
                                     // prefix; refuse-don't-corrupt; never a silent partial.
                                     if opened then
-                                        try do! Deploy.executeBatch cnn "IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;"
+                                        try do! Deploy.executeBatch cnn (ScriptDomGenerate.renderRollbackIfActive ())
                                         with _ -> ()
                                     let! verdict = compensateToSource ex.Message source cnn
                                     return Error verdict

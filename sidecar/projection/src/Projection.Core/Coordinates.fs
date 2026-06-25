@@ -321,6 +321,18 @@ module TableId =
     /// encoding, qualified-name formatting, map lookups).
     let qualifiedParts (t: TableId) : string * string = (schemaText t, tableText t)
 
+    /// The case-insensitive `schema.table` MAP KEY — lower-cased, dot-joined.
+    /// The single definition site for the normalized key used to match a
+    /// `TableId` against a name read from SQL Server (`sys.foreign_keys` etc.),
+    /// so both sides agree on the format. `normalizedKeyOf` is the same recipe
+    /// over raw schema/table strings (the catalog-less reflected side).
+    let normalizedKeyOf (schema: string) (table: string) : string =
+        System.String.Concat(schema.ToLowerInvariant(), ".", table.ToLowerInvariant())
+
+    /// The normalized `schema.table` key for a `TableId`. See `normalizedKeyOf`.
+    let normalizedKey (t: TableId) : string =
+        normalizedKeyOf (schemaText t) (tableText t)
+
     /// Does this id's table name equal `name` under SQL Server's
     /// default-collation semantics (case-insensitive)? The one name for
     /// the physical-table-identifier comparison: a raw `=` is the latent

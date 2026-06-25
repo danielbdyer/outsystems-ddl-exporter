@@ -76,6 +76,68 @@ let ``Config.parse: emission.tolerance non-array fails with a typeMismatch`` () 
         sprintf "expected a typeMismatch for a non-array tolerance; got %A" (errors |> List.map (fun e -> e.Code)))
 
 // -----------------------------------------------------------------------
+// 2026-06-25 — `emission.dataStaging`: the large-kind staging posture
+// (`auto`/`inline`/`tempTable` + threshold). Absent ⇒ `auto` > 1000 (the
+// byte-identical default); FAIL-CLOSED on an unknown mode / threshold < 1.
+// -----------------------------------------------------------------------
+
+let private withDataStaging (objJson: string) : string =
+    sprintf """{ "model": { "path": "model.json" }, "emission": { "dataStaging": %s } }""" objJson
+
+[<Fact>]
+let ``Config.parse: emission.dataStaging absent is the auto default (threshold 1000)`` () =
+    let cfg = Config.parse """{ "model": { "path": "model.json" } }""" |> mustOk
+    Assert.Equal(DataStagingMode.Auto, cfg.Emission.DataStaging.Mode)
+    Assert.Equal(1000, cfg.Emission.DataStaging.Threshold)
+    Assert.Equal(100000, cfg.Emission.DataStaging.IndexThreshold)   // the measured default index floor
+
+[<Fact>]
+let ``Config.parse: emission.dataStaging parses indexThreshold`` () =
+    let cfg = Config.parse (withDataStaging """{ "indexThreshold": 250000 }""") |> mustOk
+    Assert.Equal(250000, cfg.Emission.DataStaging.IndexThreshold)
+    Assert.Equal(1000, cfg.Emission.DataStaging.Threshold)          // unset → default
+
+[<Fact>]
+let ``Config.parse: emission.dataStaging indexThreshold below 1 fails`` () =
+    let errors = Config.parse (withDataStaging """{ "indexThreshold": 0 }""") |> mustFail
+    Assert.True(
+        errors |> List.exists (fun e -> e.Code.Contains "invalidValue" || e.Message.Contains ">= 1"),
+        sprintf "expected an invalidValue for indexThreshold < 1; got %A" (errors |> List.map (fun e -> e.Code)))
+
+[<Fact>]
+let ``Config.parse: emission.dataStaging parses mode + threshold`` () =
+    let cfg = Config.parse (withDataStaging """{ "mode": "inline", "threshold": 5000 }""") |> mustOk
+    Assert.Equal(DataStagingMode.Inline, cfg.Emission.DataStaging.Mode)
+    Assert.Equal(5000, cfg.Emission.DataStaging.Threshold)
+
+[<Fact>]
+let ``Config.parse: emission.dataStaging tempTable mode parses (threshold defaults to 1000)`` () =
+    let cfg = Config.parse (withDataStaging """{ "mode": "tempTable" }""") |> mustOk
+    Assert.Equal(DataStagingMode.TempTable, cfg.Emission.DataStaging.Mode)
+    Assert.Equal(1000, cfg.Emission.DataStaging.Threshold)
+
+[<Fact>]
+let ``Config.parse: emission.dataStaging unknown mode fails FAIL-CLOSED`` () =
+    let errors = Config.parse (withDataStaging """{ "mode": "bulkCopy" }""") |> mustFail
+    Assert.True(
+        errors |> List.exists (fun e -> e.Code.Contains "invalidValue" || e.Message.Contains "bulkCopy"),
+        sprintf "expected an invalidValue for an unknown mode; got %A" (errors |> List.map (fun e -> e.Code)))
+
+[<Fact>]
+let ``Config.parse: emission.dataStaging threshold below 1 fails`` () =
+    let errors = Config.parse (withDataStaging """{ "mode": "auto", "threshold": 0 }""") |> mustFail
+    Assert.True(
+        errors |> List.exists (fun e -> e.Code.Contains "invalidValue" || e.Message.Contains ">= 1"),
+        sprintf "expected an invalidValue for threshold < 1; got %A" (errors |> List.map (fun e -> e.Code)))
+
+[<Fact>]
+let ``Config.parse: emission.dataStaging non-object fails with a typeMismatch`` () =
+    let errors = Config.parse (withDataStaging "\"auto\"") |> mustFail
+    Assert.True(
+        errors |> List.exists (fun e -> e.Code.Contains "typeMismatch" || e.Message.Contains "must be an object"),
+        sprintf "expected a typeMismatch for a non-object dataStaging; got %A" (errors |> List.map (fun e -> e.Code)))
+
+// -----------------------------------------------------------------------
 // Minimal valid config: only model.path is structurally required.
 // -----------------------------------------------------------------------
 

@@ -94,40 +94,63 @@ type MergeScaleMeasurement(fixture: EphemeralContainerFixture) =
                     s.Split(',')
                     |> Array.choose (fun x -> match Int32.TryParse(x.Trim()) with | true, n -> Some n | _ -> None)
                     |> Array.toList
+            // Step-6.2 indexThreshold A/B: splice a `CREATE CLUSTERED INDEX` on the
+            // staging `#temp`'s PK in immediately before the MERGE — built after the
+            // INSERTs, dropped WITH the `#temp` at batch end. This is TEST-ONLY string
+            // surgery for the measurement, NOT a production emission: production ships
+            // NO index on the staging heap until THIS probe justifies a crossover
+            // `emission.dataStaging.indexThreshold`. The staging temp is
+            // `#seed_SCALE_LOOKUP`, PK column `ID` (the scale catalog's shape).
+            let injectClusteredIndex (sql: string) : string =
+                let idx = "CREATE CLUSTERED INDEX [ix_stg] ON [#seed_SCALE_LOOKUP] ([ID]);\n"
+                let i = sql.IndexOf("MERGE", System.StringComparison.Ordinal)
+                if i < 0 then sql else System.String.Concat(sql.Substring(0, i), idx, sql.Substring(i))
+            // Deploy one arm into its own fresh DB; returns (deployMs, result).
+            let deployArm (n: int) (catalog: Catalog) (dbSuffix: string) (sql: string) : int64 * string =
+                let mutable deployMs = 0L
+                let mutable result = "PASS"
+                TaskSync.run (fun () ->
+                    fixture.WithEphemeralDatabase (sprintf "Scale%d%s" n dbSuffix) (fun cnn connStr ->
+                        task {
+                            deploySchema connStr catalog
+                            let sw = Stopwatch.StartNew()
+                            try
+                                do! Deploy.executeBatch cnn sql
+                                let! cnt =
+                                    task {
+                                        use cmd = cnn.CreateCommand()
+                                        cmd.CommandText <- "SELECT COUNT(*) FROM [dbo].[SCALE_LOOKUP];"
+                                        let! v = cmd.ExecuteScalarAsync()
+                                        return string v
+                                    }
+                                if cnt <> string n then result <- sprintf "MISCOUNT %s" cnt
+                            with :? SqlException as ex ->
+                                result <- sprintf "CLIFF %d (%s)" ex.Number ((ex.Message.Split('\n')).[0])
+                            sw.Stop()
+                            deployMs <- sw.ElapsedMilliseconds
+                        }))
+                deployMs, result
             emit "SCALE_MEASUREMENT_BEGIN"
             emit (sprintf "timeout=%ss" (match Environment.GetEnvironmentVariable "PROJECTION_COMMAND_TIMEOUT_SEC" with null | "" -> "300(default)" | s -> s))
-            emit "rows\trenderMs\tstmtMB\tdeployMs\trows_per_sec\tresult"
+            emit "rows\tarm\tdeployMs\trows_per_sec\tresult"
             let mutable stop = false
             for n in scales do
                 if not stop then
                     let catalog = scaleCatalog n
-                    let swR = Stopwatch.StartNew()
                     let seeds = staticSeeds policy catalog
-                    swR.Stop()
-                    let stmtMB = float seeds.Length / 1048576.0
-                    let mutable deployMs = 0L
-                    let mutable result = "PASS"
-                    TaskSync.run (fun () ->
-                        fixture.WithEphemeralDatabase (sprintf "Scale%d" n) (fun cnn connStr ->
-                            task {
-                                deploySchema connStr catalog
-                                let sw = Stopwatch.StartNew()
-                                try
-                                    do! Deploy.executeBatch cnn seeds
-                                    let! cnt =
-                                        task {
-                                            use cmd = cnn.CreateCommand()
-                                            cmd.CommandText <- "SELECT COUNT(*) FROM [dbo].[SCALE_LOOKUP];"
-                                            let! v = cmd.ExecuteScalarAsync()
-                                            return string v
-                                        }
-                                    if cnt <> string n then result <- sprintf "MISCOUNT %s" cnt
-                                with :? SqlException as ex ->
-                                    result <- sprintf "CLIFF %d (%s)" ex.Number ((ex.Message.Split('\n')).[0])
-                                sw.Stop()
-                                deployMs <- sw.ElapsedMilliseconds
-                            }))
-                    let rps = if deployMs > 0L then int64 n * 1000L / deployMs else 0L
-                    emit (sprintf "%d\t%d\t%.1f\t%d\t%d\t%s" n swR.ElapsedMilliseconds stmtMB deployMs rps result)
-                    if result.StartsWith "CLIFF" then stop <- true
+                    let seedsIndexed = injectClusteredIndex seeds
+                    // Run plain first, then indexed (separate fresh DBs). Two arms per
+                    // scale to find the crossover where the index build pays for itself.
+                    let plainMs, plainRes = deployArm n catalog "Plain" seeds
+                    let idxMs, idxRes = deployArm n catalog "Indexed" seedsIndexed
+                    let rps ms = if ms > 0L then int64 n * 1000L / ms else 0L
+                    emit (sprintf "%d\tplain\t%d\t%d\t%s" n plainMs (rps plainMs) plainRes)
+                    emit (sprintf "%d\tindexed\t%d\t%d\t%s" n idxMs (rps idxMs) idxRes)
+                    let verdict =
+                        if plainMs > 0L && idxMs > 0L && plainRes = "PASS" && idxRes = "PASS" then
+                            if idxMs < plainMs then sprintf "INDEXED wins by %dms (%.1f%%)" (plainMs - idxMs) (100.0 * float (plainMs - idxMs) / float plainMs)
+                            else sprintf "PLAIN wins by %dms (%.1f%%)" (idxMs - plainMs) (100.0 * float (idxMs - plainMs) / float (max 1L plainMs))
+                        else "n/a (a CLIFF/MISCOUNT arm)"
+                    emit (sprintf "%d\tVERDICT\t%s" n verdict)
+                    if plainRes.StartsWith "CLIFF" && idxRes.StartsWith "CLIFF" then stop <- true
             emit "SCALE_MEASUREMENT_END"

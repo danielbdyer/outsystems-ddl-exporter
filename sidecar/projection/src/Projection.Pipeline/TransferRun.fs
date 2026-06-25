@@ -646,8 +646,7 @@ module Transfer =
     let private loadedTableKeys (catalog: Catalog) (plan: DataLoadPlan) : Set<string> =
         plan.Loads
         |> List.choose (fun l -> Catalog.tryFindKind l.Kind catalog)
-        |> List.map (fun k ->
-            (TableId.schemaText k.Physical).ToLowerInvariant() + "." + (TableId.tableText k.Physical).ToLowerInvariant())
+        |> List.map (fun k -> TableId.normalizedKey k.Physical)
         |> Set.ofList
 
     /// Pre-load snapshot — the `(schema, table, fk)` of every ENABLED + TRUSTED
@@ -676,7 +675,7 @@ module Transfer =
             return
                 trusted
                 |> Seq.filter (fun (sch, tbl, _) ->
-                    Set.contains (sch.ToLowerInvariant() + "." + tbl.ToLowerInvariant()) loaded)
+                    Set.contains (TableId.normalizedKeyOf sch tbl) loaded)
                 |> List.ofSeq
         }
 

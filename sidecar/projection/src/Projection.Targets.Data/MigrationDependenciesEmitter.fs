@@ -190,6 +190,7 @@ module MigrationDependenciesEmitter =
     /// preserved.
     let private renderMerge
         (verification: DataVerification)
+        (staging: DataStagingPolicy)
         (deleteScope: ScriptDomBuild.DeleteScope option)
         (cdcAware: bool)
         (bracketIdentity: bool)
@@ -198,6 +199,7 @@ module MigrationDependenciesEmitter =
         (typedRows: Map<Name, SqlLiteral> list)
         : string =
         use _ = Bench.scope "emit.migrationDeps.renderMerge"
+        Bench.recordSample "emit.migrationDeps.renderMerge.rows" (int64 typedRows.Length)
         let table : TableId =
             { Schema = k.Physical.Schema
               Table  = k.Physical.Table; Catalog = None }
@@ -229,6 +231,20 @@ module MigrationDependenciesEmitter =
                 DeleteScope = deleteScope
                 StagedSource = None
             }
+        // Above the operator's `emission.dataStaging` threshold the inline
+        // `USING (VALUES …)` MERGE hits SQL Server error 8623 (the optimizer's
+        // plan-complexity wall), so stage the rows through a `#temp` — the SAME
+        // shared `StagedMerge` rendering StaticSeeds uses (migration is its
+        // second consumer). Below the threshold the inline form stands —
+        // byte-identical to the pre-staging output. Migration rows can be large
+        // (FK-reweave for big estates), so this lane needs the staged path too.
+        if DataStagingPolicy.shouldStage staging (List.length typedRows) then
+            Bench.recordSample "emit.migrationDeps.staged" 1L
+            StagedMerge.renderStagedPhase1 "emit.migrationDeps" verification bracketIdentity
+                (DataStagingPolicy.shouldIndex staging (List.length typedRows)) table k
+                { args with StagedSource = Some (StagedMerge.stagedTempName k) }
+        else
+        Bench.recordSample "emit.migrationDeps.inline" 1L
         let mergeStmt = (ScriptDomBuild.buildMergeStatement args).Value
         let mergeText =
             ScriptDomGenerate.generateOne (mergeStmt :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement)
@@ -345,12 +361,17 @@ module MigrationDependenciesEmitter =
     /// Mirrors `StaticSeedsEmitter.kindToScript` exactly — both
     /// emitters realize the same algebra over the same plan shape.
     let private kindToScript
-        (verification: DataVerification)
-        (deleteScope: DeleteScopePolicy option)
+        (opts: DataEmitOptions)
         (cdc: CdcAwareness)
         (kind: Kind)
         (load: DataLoadKind)
         : DataInsertScript =
+        // The migration lane honors all three optional axes: verification,
+        // delete-scope, AND staging (via the shared `StagedMerge` rendering —
+        // 2026-06-25, closing the lane's 8623 scale wall).
+        let verification = opts.Verification
+        let staging = opts.Staging
+        let deleteScope = opts.DeleteScope
         if List.isEmpty load.Rows then
             { Phase1Merges  = []
               Phase2Updates = []
@@ -382,9 +403,17 @@ module MigrationDependenciesEmitter =
             let bracketIdentity =
                 IdentityDisposition.needsIdentityInsert kind
             let renderedPhase1 =
-                renderMerge verification scopeForKind cdcAware bracketIdentity deferred kind (typedRows |> List.map snd)
+                renderMerge verification staging scopeForKind cdcAware bracketIdentity deferred kind (typedRows |> List.map snd)
             let renderedPhase2 =
                 if Set.isEmpty deferred then ""
+                elif DataStagingPolicy.shouldStage staging (List.length typedRows) then
+                    // Set-based escalation above the SAME staging threshold (mirror
+                    // of StaticSeedsEmitter): the N per-row UPDATEs collapse to ONE
+                    // `UPDATE … FROM target JOIN #fk` via the shared StagedMerge.
+                    let table : TableId =
+                        { Schema = kind.Physical.Schema
+                          Table  = kind.Physical.Table; Catalog = None }
+                    StagedMerge.renderStagedPhase2 "emit.migrationDeps" cdcAware table kind deferred (typedRows |> List.map snd)
                 else
                     typedRows
                     |> Bench.iterMap "emit.migrationDeps.phase2Row" (fun (_, vs) -> renderUpdate cdcAware kind deferred vs)
@@ -419,9 +448,8 @@ module MigrationDependenciesEmitter =
     /// the policy resolves against (`DeleteScopePolicy.resolveFor`). The
     /// emitter consumes the scope VALUE, never `Policy` (A18 amended);
     /// the composer threads it from `EmissionPolicy.DeleteScope`.
-    let emitFromPlanWithVerification
-        (verification: DataVerification)
-        (deleteScope: DeleteScopePolicy option)
+    let emitFromPlan
+        (opts: DataEmitOptions)
         (catalog: Catalog)
         (profile: Profile)
         (plan: DataLoadPlan)
@@ -433,29 +461,8 @@ module MigrationDependenciesEmitter =
             { Phase1Merges = []; Phase2Updates = []; RenderedPhase1 = ""; RenderedPhase2 = ""; Rendered = "" }
         ArtifactByKind.perKindBenched "emit.migrationDeps.kind" catalog (fun k ->
             match Map.tryFind k.SsKey loadByKind with
-            | Some load -> kindToScript verification deleteScope cdc k load
+            | Some load -> kindToScript opts cdc k load
             | None      -> emptyScript)
-
-    /// NM-73 — the pre-verification entry: `emitFromPlanWithVerification` with
-    /// `DataVerification.Standard` (byte-identical). Preserves the established
-    /// `emitFromPlanWith deleteScope …` call shape.
-    let emitFromPlanWith
-        (deleteScope: DeleteScopePolicy option)
-        (catalog: Catalog)
-        (profile: Profile)
-        (plan: DataLoadPlan)
-        : Result<ArtifactByKind<DataInsertScript>, EmitError> =
-        emitFromPlanWithVerification DataVerification.Standard deleteScope catalog profile plan
-
-    /// Π_MigrationDependencies emit (canonical; plan-consuming). The
-    /// upsert-only default form — `emitFromPlanWith` with no delete
-    /// scope. Output is byte-identical to the pre-scope emitter.
-    let emitFromPlan
-        (catalog: Catalog)
-        (profile: Profile)
-        (plan: DataLoadPlan)
-        : Result<ArtifactByKind<DataInsertScript>, EmitError> =
-        emitFromPlanWith None catalog profile plan
 
     /// Build the `DataLoadPlan` from the supplied `MigrationDependency
     /// Context` (operator-supplied rows) and `UserRemapContext`
@@ -486,9 +493,8 @@ module MigrationDependenciesEmitter =
     /// Builds the plan from the migration row source + the
     /// `UserRemapContext`-derived `SurrogateRemapContext`, then
     /// delegates to `emitFromPlan`.
-    let emitWithTopoWithVerification
-        (verification: DataVerification)
-        (deleteScope: DeleteScopePolicy option)
+    let emitWithTopo
+        (opts: DataEmitOptions)
         (topo: TopologicalOrder)
         (catalog: Catalog)
         (profile: Profile)
@@ -497,41 +503,21 @@ module MigrationDependenciesEmitter =
         : Result<ArtifactByKind<DataInsertScript>, EmitError> =
         use _ = Bench.scope "emit.migrationDeps.emitWithTopo"
         let plan = buildPlan catalog topo context userRemap
-        emitFromPlanWithVerification verification deleteScope catalog profile plan
+        emitFromPlan opts catalog profile plan
 
-    /// NM-73 — the pre-verification entry: `emitWithTopoWithVerification` with
-    /// `DataVerification.Standard`. Preserves the established call shape.
-    let emitWithTopoWith
-        (deleteScope: DeleteScopePolicy option)
-        (topo: TopologicalOrder)
-        (catalog: Catalog)
-        (profile: Profile)
-        (context: MigrationDependencyContext)
-        (userRemap: UserRemapContext)
-        : Result<ArtifactByKind<DataInsertScript>, EmitError> =
-        emitWithTopoWithVerification DataVerification.Standard deleteScope topo catalog profile context userRemap
-
-    let emitWithTopo
-        (topo: TopologicalOrder)
-        (catalog: Catalog)
-        (profile: Profile)
-        (context: MigrationDependencyContext)
-        (userRemap: UserRemapContext)
-        : Result<ArtifactByKind<DataInsertScript>, EmitError> =
-        emitWithTopoWith None topo catalog profile context userRemap
-
-    /// Π_MigrationDependencies emit (standalone). Convenience for
-    /// callers that don't go through the `DataEmissionComposer`.
-    /// Computes the topological order internally and delegates to
-    /// `emitWithTopo` with `UserRemapContext.empty`.
+    /// Π_MigrationDependencies emit (standalone). Convenience for callers that
+    /// don't go through the `DataEmissionComposer`. Computes the topological
+    /// order internally and delegates to `emitWithTopo` with
+    /// `UserRemapContext.empty`. Pass `DataEmitOptions.defaults` for defaults.
     let emit
+        (opts: DataEmitOptions)
         (catalog: Catalog)
         (profile: Profile)
         (context: MigrationDependencyContext)
         : Result<ArtifactByKind<DataInsertScript>, EmitError> =
         use _ = Bench.scope "emit.migrationDeps.emit"
         let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
-        emitWithTopo topo catalog profile context UserRemapContext.empty
+        emitWithTopo opts topo catalog profile context UserRemapContext.empty
 
     /// Harvest-discipline classification per pillar 9 (chapter 5.13
     /// slice data-emission-registry). Three sites — the structural

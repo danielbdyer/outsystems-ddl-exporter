@@ -1264,7 +1264,11 @@ module Compose =
                                      // operator's accepted-divergence set into the
                                      // per-run residual; absent ⇒ the permissive
                                      // dual-track default (byte-identical reporting).
-                                     ConfiguredTolerance = defaultArg cfg.Emission.Tolerance Tolerance.permissive }
+                                     ConfiguredTolerance = defaultArg cfg.Emission.Tolerance Tolerance.permissive
+                                     // 2026-06-25 — `emission.dataStaging` threads the
+                                     // large-kind staging posture (default auto > 1000
+                                     // rows = byte-identical; inline/tempTable pin it).
+                                     DataStaging = cfg.Emission.DataStaging }
             }
         }
 

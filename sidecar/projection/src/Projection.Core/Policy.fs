@@ -108,6 +108,80 @@ type DataVerification =
     /// batch with the MERGE. The operator's conservative override.
     | ValidateBeforeApply
 
+/// The data-staging posture for large static kinds (`emission.dataStaging`).
+/// A kind's inline `MERGE … USING (VALUES …)` constructor hits SQL Server
+/// error 8623 (the optimizer's plan-complexity wall) at ~25-30k rows; the
+/// staged form routes those rows through a `#temp` table instead. `Auto`
+/// stages above `Threshold` (the deterministic default — one threshold governs
+/// both phases so a kind is treated coherently); `Inline` NEVER stages (the
+/// locked-down / managed-env escape hatch — pin it to accept the ~30k ceiling
+/// where even baseline `#temp` + `BEGIN TRAN` rights are unwanted); `TempTable`
+/// ALWAYS stages. Closed DU so a future posture (e.g. `BulkCopy`) lands named.
+[<RequireQualifiedAccess>]
+type DataStagingMode =
+    | Auto
+    | Inline
+    | TempTable
+
+/// `emission.dataStaging` — the staging mode + the `Auto`-mode row threshold.
+/// Portable by default: the `#temp` + transaction need only the baseline rights
+/// the identity-seed path already exercises (temp-table creation + `BEGIN
+/// TRAN`; `IDENTITY_INSERT` is unchanged), so `Auto` runs wherever the current
+/// seed path runs. An operator on a locked-down env pins `Inline`.
+type DataStagingPolicy =
+    { Mode : DataStagingMode
+      Threshold : int
+      /// The row-count above which a staged kind's `#temp` gets a CLUSTERED INDEX
+      /// on its PK (built after the INSERTs, dropped WITH the `#temp`) — the
+      /// MERGE then merge-joins target↔`#temp` instead of hash-joining.
+      /// **Measured** (gated A/B probe `MergeScaleMeasurement`, 2026-06-25): the
+      /// index wins ~33-37% at 100k / 250k / 500k with NO crossover; below 100k
+      /// is untested, so the default (`100000`) gates conservatively at the
+      /// proven-win floor. Separate from (and higher than) `Threshold` — staging
+      /// fixes the 8623 compile wall; the index is a deploy-time speedup. Only
+      /// consulted when a kind actually stages.
+      IndexThreshold : int }
+
+/// Operations on `DataStagingPolicy`.
+[<RequireQualifiedAccess>]
+module DataStagingPolicy =
+
+    /// The measured default index floor — 100k rows (the lowest scale the A/B
+    /// probe PROVED the clustered-`#temp`-PK index wins; 2026-06-25).
+    [<Literal>]
+    let defaultIndexThreshold : int = 100000
+
+    /// The default: `Auto` above 1000 rows (byte-identical to the prior
+    /// hardcoded `stagingRowThreshold`; every golden ≤3 rows stays inline) and
+    /// the `#temp` index above the measured 100k floor.
+    let auto : DataStagingPolicy =
+        { Mode = DataStagingMode.Auto; Threshold = 1000; IndexThreshold = defaultIndexThreshold }
+
+    /// Whether a kind of `rowCount` rows stages its MERGE / Phase-2 through a
+    /// `#temp`. `Auto` compares against the threshold; `Inline`/`TempTable` are
+    /// row-count-independent. The single decision site for both phases.
+    let shouldStage (policy: DataStagingPolicy) (rowCount: int) : bool =
+        match policy.Mode with
+        | DataStagingMode.Inline    -> false
+        | DataStagingMode.TempTable -> true
+        | DataStagingMode.Auto      -> rowCount > policy.Threshold
+
+    /// Whether a STAGED kind of `rowCount` rows gets the clustered `#temp`-PK
+    /// index (the measured deploy-speedup). Only meaningful for a kind that
+    /// stages (`shouldStage` already true); gates on the measured `IndexThreshold`.
+    let shouldIndex (policy: DataStagingPolicy) (rowCount: int) : bool =
+        rowCount > policy.IndexThreshold
+
+    /// The codec token for a mode — `"auto"` / `"inline"` / `"tempTable"`.
+    /// Exhaustive match: a new variant fires FS0025 here under
+    /// `TreatWarningsAsErrors`, forcing a token. Used by the run-report's
+    /// staged-vs-inline audit line.
+    let modeName (mode: DataStagingMode) : string =
+        match mode with
+        | DataStagingMode.Auto      -> "auto"
+        | DataStagingMode.Inline    -> "inline"
+        | DataStagingMode.TempTable -> "tempTable"
+
 /// Emission axis. Which artifact families a projection emits. The booleans
 /// are deliberate; orthogonality of schema / data / diagnostics is the
 /// algebra's commitment (decomposition Vector 2). When emission shapes
@@ -171,7 +245,63 @@ type EmissionPolicy = {
     /// `emission.tolerance` narrows it. Pure value (A18 — the residual seam reads
     /// it at the Pipeline layer, never the emitter).
     ConfiguredTolerance : Tolerance
+    /// `emission.dataStaging` (2026-06-25) — the large-kind staging posture.
+    /// `DataStagingPolicy.auto` (the default) stages a static kind's MERGE /
+    /// Phase-2 through a `#temp` above 1000 rows (the error-8623-safe form),
+    /// byte-identical to the prior hardcoded threshold; `Inline` pins the
+    /// inline form (locked-down env, accepts the ~30k ceiling); `TempTable`
+    /// always stages. Lifted to the data emit seam as a plain value (A18 — the
+    /// emitter never reads `Policy`); the composer threads it to
+    /// `StaticSeedsEmitter` and the run-report records staged-vs-inline.
+    DataStaging : DataStagingPolicy
 }
+
+
+/// The optional emission axes the data emitters (`StaticSeedsEmitter`,
+/// `BootstrapEmitter`, `MigrationDependenciesEmitter`) consume — bundled into
+/// ONE record so the emit API does not telescope. Before this, each new axis
+/// (`DeleteScope` → `DataVerification` → `DataStaging`) added a `…WithVerification`
+/// / `…WithStaging` specialization to every entry point AND re-defaulted every
+/// layer below it (an O(axes × entry-points) explosion: `emitFromPlan` /
+/// `…With` / `…WithVerification` / `…WithStaging`, ×2 for the topo form, ×3
+/// emitters). With this record there are exactly THREE functions per emitter
+/// (`emit` / `emitFromPlan` / `emitWithTopo`), each taking `DataEmitOptions`;
+/// **a new axis is one record field + one default line — no new function, no
+/// re-defaulting cascade.** A18 holds: the emitter consumes these VALUES, never
+/// `Policy`; the composer lifts them from `EmissionPolicy` once.
+type DataEmitOptions =
+    { /// AC-D7 — the convergent `WHEN NOT MATCHED BY SOURCE … DELETE` scope.
+      /// `None` is the upsert-only default (byte-identical).
+      DeleteScope : DeleteScopePolicy option
+      /// NM-73 — the drift-guard posture (`Standard` / `ValidateBeforeApply`).
+      Verification : DataVerification
+      /// The large-kind staging posture (`emission.dataStaging`).
+      Staging : DataStagingPolicy }
+
+/// Operations on `DataEmitOptions`.
+[<RequireQualifiedAccess>]
+module DataEmitOptions =
+
+    /// The all-default emit posture: no delete scope, `Standard` verification,
+    /// `auto` staging — byte-identical to the pre-consolidation default entry
+    /// points. Callers wanting the default behavior pass this explicitly (the
+    /// emit API takes no implicit-default convenience form).
+    let defaults : DataEmitOptions =
+        { DeleteScope = None
+          Verification = DataVerification.Standard
+          Staging = DataStagingPolicy.auto }
+
+    /// Lift the three optional emission axes out of an `EmissionPolicy` — the
+    /// single site the composer uses to thread the operator's posture to every
+    /// data emitter (A18: VALUES, not `Policy`).
+    let ofEmissionPolicy (e: EmissionPolicy) : DataEmitOptions =
+        { DeleteScope = e.DeleteScope
+          Verification = e.DataVerification
+          Staging = e.DataStaging }
+
+    /// Replace the delete scope (the one axis a caller sometimes varies alone).
+    let withDeleteScope (scope: DeleteScopePolicy option) (opts: DataEmitOptions) : DataEmitOptions =
+        { opts with DeleteScope = scope }
 
 
 /// Insertion axis. How data artifacts are applied to the target. For
@@ -581,7 +711,11 @@ module EmissionPolicy =
                   // Wave-3 3.4 — the permissive dual-track default (reports every
                   // fired divergence; byte-identical to the prior hardcoded value);
                   // `emission.tolerance` narrows it via `withConfiguredTolerance`.
-                  ConfiguredTolerance = Tolerance.permissive }
+                  ConfiguredTolerance = Tolerance.permissive
+                  // 2026-06-25 — stage above 1000 rows by default (byte-identical
+                  // to the prior hardcoded `stagingRowThreshold`); operators pin
+                  // `inline` / `tempTable` via `emission.dataStaging`.
+                  DataStaging = DataStagingPolicy.auto }
 
     /// Replace `IncludePlatformAutoIndexes` while preserving the rest
     /// of the policy. Chapter 4.8 slice γ. Operators set to `false` to
@@ -617,6 +751,13 @@ module EmissionPolicy =
     /// (default `Tolerance.permissive` when absent). Sibling to `withDataVerification`.
     let withConfiguredTolerance (tolerance: Tolerance) (policy: EmissionPolicy) : EmissionPolicy =
         { policy with ConfiguredTolerance = tolerance }
+
+    /// 2026-06-25 — replace the `DataStaging` posture while preserving the rest
+    /// of the policy. The `buildPolicyFromConfig` binder calls this with the
+    /// parsed `emission.dataStaging` (default `DataStagingPolicy.auto` when
+    /// absent). Sibling to `withConfiguredTolerance`.
+    let withDataStaging (staging: DataStagingPolicy) (policy: EmissionPolicy) : EmissionPolicy =
+        { policy with DataStaging = staging }
 
     /// Project a catalog by the `IncludePlatformAutoIndexes` toggle. When
     /// the policy says `true` (V1 default), returns the catalog

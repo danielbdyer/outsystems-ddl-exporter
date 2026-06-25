@@ -123,6 +123,51 @@ module ScriptDomGenerate =
         generator.GenerateScript(stmt :> TSqlFragment, &text)
         text |> Option.ofObj |> Option.defaultValue "" |> pinNewlines
 
+    /// Generate T-SQL text for a LIST of typed `TSqlStatement`s rendered as
+    /// ONE batch — the statements are placed in a single `TSqlBatch` inside a
+    /// fresh `TSqlScript`, so the pinned generator emits the inter-statement
+    /// `;` terminators uniformly (the `IncludeSemicolons` axis governs the
+    /// whole batch, not a per-statement render). This is the canonical render
+    /// path for `ScriptDomBuild.buildAtomicBatch`'s two top-level statements:
+    /// rendering them as one batch (rather than `generateOne` joined by text)
+    /// guarantees the inner MERGE inside the `TRY` block is `;`-terminated by
+    /// the generator — the bare-MERGE-terminator quirk that bites
+    /// `generateOne` does not apply inside a multi-statement batch (verified by
+    /// deploy, not assumed). Callers append the `GO` batch separator (a client
+    /// directive ScriptDom does not model) at the terminal boundary.
+    let generateBatch (statements: TSqlStatement list) : string =
+        use _ = Bench.scope "scriptDom.generateBatch"
+        let script = TSqlScript()
+        let batch = TSqlBatch()
+        for stmt in statements do
+            batch.Statements.Add(stmt)
+        script.Batches.Add(batch)
+        let generator = Sql160ScriptGenerator(pinnedOptions ())
+        let mutable text : string | null = null
+        generator.GenerateScript(script :> TSqlFragment, &text)
+        text |> Option.ofObj |> Option.defaultValue "" |> pinNewlines
+
+    /// The M22 atomic-deploy envelope OPENER — `SET XACT_ABORT ON; BEGIN
+    /// TRANSACTION;` — rendered from typed nodes as one batch. MigrationRun's
+    /// streaming deploy can't use `ScriptDomBuild.buildAtomicBatch` (it
+    /// interleaves per-statement progress logging between open and commit), so
+    /// it renders the envelope's open / commit / rollback control statements
+    /// individually through these three helpers — the same typed primitives
+    /// `buildAtomicBatch` composes, replacing the prior string literals.
+    let renderAtomicEnvelopeOpen () : string =
+        generateBatch
+            [ ScriptDomBuild.buildSetXactAbort true :> TSqlStatement
+              ScriptDomBuild.buildBeginTransaction () :> TSqlStatement ]
+
+    /// `COMMIT TRANSACTION;` — the envelope's success close.
+    let renderCommitTransaction () : string =
+        generateOne (ScriptDomBuild.buildCommitTransaction () :> TSqlStatement)
+
+    /// `IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;` — the envelope's CATCH-side
+    /// rollback guard (a no-op when `XACT_ABORT` already rolled back).
+    let renderRollbackIfActive () : string =
+        generateOne (ScriptDomBuild.buildRollbackIfActive () :> TSqlStatement)
+
     /// Generate T-SQL text for any `TSqlFragment` sub-tree (data type
     /// references, identifiers, expressions) that doesn't constitute a
     /// full statement. Used by `Render.columnSqlType` (chapter-3.7

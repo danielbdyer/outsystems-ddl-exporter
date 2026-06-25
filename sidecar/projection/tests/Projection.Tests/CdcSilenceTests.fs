@@ -140,7 +140,7 @@ module private CdcSilenceFixtures =
             |> String.concat "\nGO\n"  // LINT-ALLOW: terminal SQL-batch joiner across per-kind SsdtFile bodies; BCL `String.concat` IS the use-case-specific library; segments are typed (each `file.Body` is the rendered CREATE TABLE text from ScriptDomGenerate)
         let profile = { Profile.empty with CdcAwareness = cdcAwareness }
         let seedArtifact =
-            match StaticSeedsEmitter.emit catalog profile with
+            match StaticSeedsEmitter.emit DataEmitOptions.defaults catalog profile with
             | Ok a -> a
             | Error e -> failwithf "StaticSeedsEmitter.emit: %A" e
         let seedSql =
@@ -367,7 +367,7 @@ module private CdcSilenceFixtures =
         let profile = { Profile.empty with CdcAwareness = cdcAwareness }
         let context : MigrationDependencyContext = { Rows = rows }
         let seedArtifact =
-            match MigrationDependenciesEmitter.emit catalog profile context with
+            match MigrationDependenciesEmitter.emit DataEmitOptions.defaults catalog profile context with
             | Ok a -> a
             | Error e -> failwithf "MigrationDependenciesEmitter.emit: %A" e
         let seedSql =

@@ -140,109 +140,13 @@ module StaticSeedsEmitter =
     // (byte-identical — fixtures are ≤3 rows).
     // -------------------------------------------------------------------
 
-    /// The row-count line above which a kind's MERGE / phase-2 stages through a
-    /// `#temp`. Step 5 makes this config-driven; the constant keeps every golden
-    /// (≤3 rows) on the inline path.
-    let private stagingRowThreshold : int = 1000
+    // The staging decision is the operator's `emission.dataStaging` posture
+    // (`DataStagingPolicy.shouldStage`, default `auto` > 1000 rows) threaded from
+    // the composer — see `renderMerge` / `kindToScript`. The staged-`#temp`
+    // RENDERING (`#seed_` Phase-1 batch, `#fk_` set-based Phase-2) lives in the
+    // shared `StagedMerge` module — `MigrationDependenciesEmitter` is its second
+    // consumer (the verb extracted at the second consumer).
 
-    /// Deterministic staging-`#temp` name for a kind — `#seed_<physical table>`.
-    /// `TableId.tableText` extracts the underlying string from the `TableName` VO
-    /// (a raw `k.Physical.Table` would stringify the whole value object —
-    /// `TableName "X"` — and the embedded space/quotes are a SQL syntax error).
-    let private stagedTempName (k: Kind) : string =
-        System.String.Concat("#seed_", TableId.tableText k.Physical)
-
-    /// Staging `ColumnDef`s for a set of attributes: the target's SQL types with
-    /// every constraint stripped — nullable, no identity / PK / default / computed.
-    /// The `#temp` only carries rows (deferred-FK NULLs and empty→NULL values stage
-    /// cleanly because all columns are nullable); the MERGE / UPDATE into the real
-    /// target enforces its constraints.
-    let private stagingColumnDefsOf (attrs: Attribute list) : ColumnDef list =
-        attrs
-        |> List.map (fun a ->
-            { Name         = ColumnRealization.columnNameText a.Column
-              Type         = a.Type
-              SqlStorage   = a.SqlStorage
-              Length       = a.Length
-              Precision    = a.Precision
-              Scale        = a.Scale
-              Nullable     = true
-              IsIdentity   = false
-              IsPrimaryKey = false
-              DefaultValue = None
-              DefaultName  = None
-              Computed     = None
-              Collation    = a.Column.Collation
-              Identity     = None
-              Provenance   = "" })
-
-    /// The `#temp` staging columns for a kind's phase-1 MERGE (all writable columns).
-    let private stagingColumnDefs (k: Kind) : ColumnDef list =
-        stagingColumnDefsOf (writableAttributes k)
-
-    /// Wrap staged statements in ONE atomic, GO-free batch: `SET XACT_ABORT ON;
-    /// BEGIN TRY; BEGIN TRAN; <stmts>; COMMIT TRAN; END TRY BEGIN CATCH
-    /// IF @@TRANCOUNT>0 ROLLBACK; THROW; END CATCH`. All-or-nothing; any `#temp`
-    /// created inside is rolled back (DDL is transactional) on failure — never
-    /// leaked — and one GO-free batch keeps the `#temp` + transaction on one
-    /// connection (the leveled-deploy parallel path opens a connection per GO).
-    let private wrapAtomicBatch (stmts: string list) : string =
-        let body = stmts |> List.map (fun s -> System.String.Concat(s, ";")) |> String.concat "\n"
-        System.String.Concat(  // LINT-ALLOW: terminal staged-batch framing — DATA statements are typed ScriptDom renders; the control-flow scaffolding (SET XACT_ABORT / BEGIN TRY / TRAN / CATCH / ROLLBACK / THROW) is the documented terminal-text boundary; ONE GO-free batch so the `#temp` + transaction stay on one connection/session; BCL `String.Concat` is the right primitive here
-            "SET XACT_ABORT ON;\nBEGIN TRY\nBEGIN TRAN;\n",
-            body,
-            "\nCOMMIT TRAN;\nEND TRY\nBEGIN CATCH\nIF @@TRANCOUNT > 0 ROLLBACK TRAN;\nTHROW;\nEND CATCH;\nGO\n")
-
-    /// Assemble the staged phase-1 batch — ONE atomic, GO-free unit so the
-    /// `#temp` and the transaction stay on a single connection/session:
-    ///   SET XACT_ABORT ON; BEGIN TRY; BEGIN TRAN;
-    ///     drop-if-exists → CREATE #temp → batched INSERTs → [guard]
-    ///     → [IDENTITY_INSERT ON] → MERGE USING #temp → [OFF] → DROP;
-    ///   COMMIT TRAN; END TRY BEGIN CATCH ROLLBACK; THROW; END CATCH.
-    /// Atomic (all-or-nothing); the `#temp` is dropped on success, and rolled
-    /// back (DDL is transactional) on any failure — never leaked. `args` carries
-    /// the rows + columns and its `StagedSource = Some tempName` routes the
-    /// MERGE + guard to the `#temp`.
-    let private renderStagedPhase1
-        (verification: DataVerification)
-        (bracketIdentity: bool)
-        (table: TableId)
-        (k: Kind)
-        (args: ScriptDomBuild.MergeBuildArgs)
-        : string =
-        use _ = Bench.scope "emit.staticSeeds.renderStagedPhase1"
-        let tempName =
-            match args.StagedSource with
-            | Some n -> n
-            | None -> invalidOp "renderStagedPhase1: args.StagedSource must be Some"
-        let g (stmt: #Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement) : string =
-            ScriptDomGenerate.generateOne (stmt :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement)
-        let createText = g (ScriptDomBuild.buildCreateTempTable tempName (stagingColumnDefs k))
-        let insertTexts = ScriptDomBuild.buildInsertBatches tempName args.AllColumns args.Rows |> List.map g
-        let mergeText = g (ScriptDomBuild.buildMergeStatement args).Value
-        let guardTextOpt =
-            match verification with
-            | DataVerification.ValidateBeforeApply ->
-                Some (ScriptDomGenerate.generateOne (ScriptDomBuild.buildValidateBeforeApplyGuard args))
-            | DataVerification.Standard -> None
-        let identityOnOpt, identityOffOpt =
-            if bracketIdentity then
-                Some (g (ScriptDomBuild.buildSetIdentityInsert table true)),
-                Some (g (ScriptDomBuild.buildSetIdentityInsert table false))
-            else None, None
-        // Statements in deploy order; the optional pieces (guard, identity
-        // brackets) drop out cleanly via `List.choose id`.
-        let stmts =
-            [ Some (System.String.Concat("IF OBJECT_ID('tempdb..", tempName, "') IS NOT NULL DROP TABLE ", tempName))
-              Some createText ]
-            @ (insertTexts |> List.map Some)
-            @ [ guardTextOpt
-                identityOnOpt
-                Some mergeText
-                identityOffOpt
-                Some (System.String.Concat("DROP TABLE ", tempName)) ]
-            |> List.choose id
-        wrapAtomicBatch stmts
 
     /// Render the MERGE statement for a kind with its static populations
     /// via ScriptDom's typed-AST + `Sql160ScriptGenerator` pipeline.
@@ -263,6 +167,7 @@ module StaticSeedsEmitter =
     /// same-SCC FK targets exist.
     let private renderMerge
         (verification: DataVerification)
+        (staging: DataStagingPolicy)
         (deleteScope: ScriptDomBuild.DeleteScope option)
         (cdcAware: bool)
         (deferred: Set<Name>)
@@ -310,11 +215,19 @@ module StaticSeedsEmitter =
             }
         // Above the threshold the inline `USING (VALUES …)` MERGE hits SQL Server
         // error 8623, so stage the rows through a `#temp`. Below, the inline form
-        // stands — byte-identical to the pre-staging output.
-        if List.length typedRows > stagingRowThreshold then
-            renderStagedPhase1 verification bracketIdentity table k
-                { args with StagedSource = Some (stagedTempName k) }
+        // stands — byte-identical to the pre-staging output. The staging decision
+        // is the operator's `emission.dataStaging` posture (default: auto > 1000).
+        // The staged-vs-inline counters are the auditable trace of the choice
+        // (capability-descent doctrine: an operator pinning `inline` on a managed
+        // env must be able to see a large kind STAYED inline) — Bench is always-on
+        // (the measurement-in-production discipline), so the counts ride the run.
+        if DataStagingPolicy.shouldStage staging (List.length typedRows) then
+            Bench.recordSample "emit.staticSeeds.staged" 1L
+            StagedMerge.renderStagedPhase1 "emit.staticSeeds" verification bracketIdentity
+                (DataStagingPolicy.shouldIndex staging (List.length typedRows)) table k
+                { args with StagedSource = Some (StagedMerge.stagedTempName k) }
         else
+        Bench.recordSample "emit.staticSeeds.inline" 1L
         let mergeStmt = (ScriptDomBuild.buildMergeStatement args).Value
         // ScriptDomGenerate.generateOne emits the MERGE without a
         // trailing `;` (semicolons appear between statements in a
@@ -445,12 +358,14 @@ module StaticSeedsEmitter =
     /// is bracketed with `SET IDENTITY_INSERT` (WP6 step 1) — the
     /// slice-E "suppress the PK" note is overturned (HANDOFF, WP6).
     let private kindToScript
-        (verification: DataVerification)
-        (deleteScope: DeleteScopePolicy option)
+        (opts: DataEmitOptions)
         (cdc: CdcAwareness)
         (kind: Kind)
         (load: DataLoadKind)
         : DataInsertScript =
+        let verification = opts.Verification
+        let staging = opts.Staging
+        let deleteScope = opts.DeleteScope
         if List.isEmpty load.Rows then
             { Phase1Merges  = []
               Phase2Updates = []
@@ -492,9 +407,21 @@ module StaticSeedsEmitter =
                     row.Identifier,
                     staticRowToTypedValues typeLookup kind.Attributes row)
             let renderedPhase1 =
-                renderMerge verification scopeForKind cdcAware deferred bracketIdentity kind (typedRows |> List.map snd)
+                renderMerge verification staging scopeForKind cdcAware deferred bracketIdentity kind (typedRows |> List.map snd)
             let renderedPhase2 =
                 if Set.isEmpty deferred then ""
+                elif DataStagingPolicy.shouldStage staging (List.length typedRows) then
+                    // Set-based escalation (Step 4): above the SAME staging
+                    // threshold that routes Phase-1 through a `#temp`, Phase-2's
+                    // N per-row UPDATEs collapse to ONE `UPDATE … FROM target
+                    // JOIN #fk` — a kind is treated coherently across both phases
+                    // by one threshold. The narrow `#fk` temp carries the real
+                    // deferred-FK values; Phase-1 already inserted the rows with
+                    // those columns NULLed.
+                    let table : TableId =
+                        { Schema = kind.Physical.Schema
+                          Table  = kind.Physical.Table; Catalog = None }
+                    StagedMerge.renderStagedPhase2 "emit.staticSeeds" cdcAware table kind deferred (typedRows |> List.map snd)
                 else
                     typedRows
                     |> Bench.iterMap "emit.staticSeeds.phase2Row" (fun (_, vs) -> renderUpdate cdcAware kind deferred vs)
@@ -546,9 +473,15 @@ module StaticSeedsEmitter =
     /// the policy resolves against (`DeleteScopePolicy.resolveFor`). The
     /// emitter consumes the scope VALUE, never `Policy` (A18 amended);
     /// the composer threads it from `EmissionPolicy.DeleteScope`.
-    let emitFromPlanWithVerification
-        (verification: DataVerification)
-        (deleteScope: DeleteScopePolicy option)
+    /// Π_StaticSeeds emit (canonical; plan-consuming). Realizes the supplied
+    /// `DataLoadPlan` as per-kind MERGE/UPDATE scripts under the operator's
+    /// `DataEmitOptions` (delete scope / drift-guard / staging). The single
+    /// plan-consuming entry — the prior `emitFromPlanWith` / `…WithVerification`
+    /// / `…WithStaging` telescoping collapsed into the one options record.
+    /// `DataEmitOptions.defaults` reproduces the pre-consolidation default
+    /// (no delete arm, `Standard`, `auto` staging — byte-identical).
+    let emitFromPlan
+        (opts: DataEmitOptions)
         (catalog: Catalog)
         (profile: Profile)
         (plan: DataLoadPlan)
@@ -560,39 +493,16 @@ module StaticSeedsEmitter =
             { Phase1Merges = []; Phase2Updates = []; RenderedPhase1 = ""; RenderedPhase2 = ""; Rendered = "" }
         ArtifactByKind.perKindBenched "emit.staticSeeds.kind" catalog (fun k ->
             match Map.tryFind k.SsKey loadByKind with
-            | Some load -> kindToScript verification deleteScope cdc k load
+            | Some load -> kindToScript opts cdc k load
             | None      -> emptyScript)
 
-    /// NM-73 — the pre-verification entry: `emitFromPlanWithVerification`
-    /// with `DataVerification.Standard` (byte-identical). Preserves the
-    /// established `emitFromPlanWith deleteScope …` call shape for the
-    /// composer + scope tests.
-    let emitFromPlanWith
-        (deleteScope: DeleteScopePolicy option)
-        (catalog: Catalog)
-        (profile: Profile)
-        (plan: DataLoadPlan)
-        : Result<ArtifactByKind<DataInsertScript>, EmitError> =
-        emitFromPlanWithVerification DataVerification.Standard deleteScope catalog profile plan
-
-    /// Π_StaticSeeds emit (canonical; plan-consuming). The upsert-only
-    /// default form — `emitFromPlanWith` with no delete scope. Output is
-    /// byte-identical to the pre-scope emitter.
-    let emitFromPlan
-        (catalog: Catalog)
-        (profile: Profile)
-        (plan: DataLoadPlan)
-        : Result<ArtifactByKind<DataInsertScript>, EmitError> =
-        emitFromPlanWith None catalog profile plan
-
-    /// Π_StaticSeeds emit (composer-facing; hoisted topo). Builds the
-    /// plan from `Kind.staticPopulations` per kind with the empty
-    /// remap (the static-seeds row source is catalog-resident
-    /// evidence; operators wanting identity substitution build the
-    /// plan themselves via `DataLoadPlan.build` + `emitFromPlan`).
-    let emitWithTopoWithVerification
-        (verification: DataVerification)
-        (deleteScope: DeleteScopePolicy option)
+    /// Π_StaticSeeds emit (composer-facing; hoisted topo). Builds the plan from
+    /// `Kind.staticPopulations` per kind with the empty remap (the static-seeds
+    /// row source is catalog-resident evidence; operators wanting identity
+    /// substitution build the plan themselves via `DataLoadPlan.build` +
+    /// `emitFromPlan`), then delegates to `emitFromPlan` under `opts`.
+    let emitWithTopo
+        (opts: DataEmitOptions)
         (topo: TopologicalOrder)
         (catalog: Catalog)
         (profile: Profile)
@@ -603,37 +513,20 @@ module StaticSeedsEmitter =
             |> List.map (fun k -> k.SsKey, Kind.staticPopulations k)
             |> Map.ofList
         let plan = DataLoadPlan.build catalog topo rawRows SurrogateRemapContext.empty
-        emitFromPlanWithVerification verification deleteScope catalog profile plan
+        emitFromPlan opts catalog profile plan
 
-    /// NM-73 — the pre-verification entry: `emitWithTopoWithVerification`
-    /// with `DataVerification.Standard`. Preserves the established
-    /// `emitWithTopoWith deleteScope …` call shape (composer + scope tests).
-    let emitWithTopoWith
-        (deleteScope: DeleteScopePolicy option)
-        (topo: TopologicalOrder)
-        (catalog: Catalog)
-        (profile: Profile)
-        : Result<ArtifactByKind<DataInsertScript>, EmitError> =
-        emitWithTopoWithVerification DataVerification.Standard deleteScope topo catalog profile
-
-    let emitWithTopo
-        (topo: TopologicalOrder)
-        (catalog: Catalog)
-        (profile: Profile)
-        : Result<ArtifactByKind<DataInsertScript>, EmitError> =
-        emitWithTopoWith None topo catalog profile
-
-    /// Π_StaticSeeds emit (standalone). Convenience for callers that
-    /// don't go through the `DataEmissionComposer` (canary tests,
-    /// direct-Π integration tests). Computes the topological order
-    /// internally and delegates to `emitWithTopo`.
+    /// Π_StaticSeeds emit (standalone). Convenience for callers that don't go
+    /// through the `DataEmissionComposer` (canary tests, direct-Π integration
+    /// tests). Computes the topological order internally and delegates to
+    /// `emitWithTopo`. Pass `DataEmitOptions.defaults` for the default posture.
     let emit
+        (opts: DataEmitOptions)
         (catalog: Catalog)
         (profile: Profile)
         : Result<ArtifactByKind<DataInsertScript>, EmitError> =
         use _ = Bench.scope "emit.staticSeeds.emit"
         let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
-        emitWithTopo topo catalog profile
+        emitWithTopo opts topo catalog profile
 
     /// Harvest-discipline classification per pillar 9 (chapter 5.13
     /// slice data-emission-registry). Three sites covering the

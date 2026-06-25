@@ -80,12 +80,15 @@ module BootstrapEmitter =
     /// its MERGEs (IDENTITY_INSERT-bracketed for `AssignedBySink` kinds,
     /// via the shared renderer).
     let emitFromPlan
+        (opts: DataEmitOptions)
         (catalog: Catalog)
         (profile: Profile)
         (plan: DataLoadPlan)
         : Result<ArtifactByKind<DataInsertScript>, EmitError> =
         use _ = Bench.scope "emit.bootstrap.emitFromPlan"
-        StaticSeedsEmitter.emitFromPlanWith None catalog profile plan
+        // No delete scope on the additive bootstrap lane (suppress it regardless
+        // of `opts.DeleteScope`); the rest of the operator's posture rides along.
+        StaticSeedsEmitter.emitFromPlan (DataEmitOptions.withDeleteScope None opts) catalog profile plan
 
     /// Convert the operator's `UserRemapContext` to a `SurrogateRemapContext`
     /// keyed under the catalog-discovered user kind (the same route
@@ -118,8 +121,21 @@ module BootstrapEmitter =
     /// `OverlappingEmitterCoverage` assertion (a production `invalidOp`). Under
     /// `AllData` the sibling lanes are dispatched empty, so Bootstrap covers
     /// every kind without overlap.
-    let emitWithTopoWithVerification
-        (verification: DataVerification)
+    /// Π_Bootstrap emit (composer-facing; hoisted topo + UserRemap + the
+    /// hydrated row source). Converts the `UserRemapContext`, builds the plan
+    /// over `bootstrapRows`, and delegates to the shared static-seeds renderer
+    /// under the operator's `DataEmitOptions` (A40 — same algebra, same
+    /// `DataLoadPlan`). The bootstrap lane is the FIRST-DEPLOY full-snapshot
+    /// lane (V1's `AllEntitiesIncludingStatic`) — the lane MOST likely to carry
+    /// a kind past the 8623 wall — so `opts.Staging` MUST reach it too. The
+    /// drift-guard posture rides this lane (operator decision 2026-06-14).
+    /// Bootstrap carries **no delete scope** — it is the additive upsert lane —
+    /// so the delete arm is suppressed regardless of `opts.DeleteScope`.
+    /// **Partition law:** the hydrated row source MUST be the complement of
+    /// (Static-populated ∪ Migration-context) kinds whenever those lanes also
+    /// fire, or the composer's `OverlappingEmitterCoverage` assertion fires.
+    let emitWithTopo
+        (opts: DataEmitOptions)
         (topo: TopologicalOrder)
         (catalog: Catalog)
         (profile: Profile)
@@ -129,32 +145,21 @@ module BootstrapEmitter =
         use _ = Bench.scope "emit.bootstrap.emitWithTopo"
         let remap = resolveRemap catalog userRemap
         let plan = DataLoadPlan.build catalog topo bootstrapRows remap
-        StaticSeedsEmitter.emitFromPlanWithVerification verification None catalog profile plan
+        StaticSeedsEmitter.emitFromPlan (DataEmitOptions.withDeleteScope None opts) catalog profile plan
 
-    /// NM-73 — the pre-verification / pre-row-source entry:
-    /// `emitWithTopoWithVerification` with `DataVerification.Standard` and an
-    /// empty row source (byte-identical to the slice-ζ stub shape). Preserves
-    /// the established `emitWithTopo` call shape (the standalone `emit` + the
-    /// MVP tests).
-    let emitWithTopo
-        (topo: TopologicalOrder)
-        (catalog: Catalog)
-        (profile: Profile)
-        (userRemap: UserRemapContext)
-        : Result<ArtifactByKind<DataInsertScript>, EmitError> =
-        emitWithTopoWithVerification DataVerification.Standard topo catalog profile Map.empty userRemap
-
-    /// Π_Bootstrap emit (standalone). Convenience for callers that
-    /// don't go through the `DataEmissionComposer`. Slice ζ MVP
-    /// shape: returns the empty no-op artifact for every kind.
+    /// Π_Bootstrap emit (standalone). Convenience for callers that don't go
+    /// through the `DataEmissionComposer`; empty row source (byte-identical to
+    /// the slice-ζ stub shape). Pass `DataEmitOptions.defaults` for the default
+    /// posture.
     let emit
+        (opts: DataEmitOptions)
         (catalog: Catalog)
         (profile: Profile)
         (userRemap: UserRemapContext)
         : Result<ArtifactByKind<DataInsertScript>, EmitError> =
         use _ = Bench.scope "emit.bootstrap.emit"
         let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
-        emitWithTopo topo catalog profile userRemap
+        emitWithTopo opts topo catalog profile Map.empty userRemap
 
     /// Harvest-discipline classification per pillar 9 (chapter 5.13
     /// slice data-emission-registry).

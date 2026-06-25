@@ -86,7 +86,7 @@ module private CdcSilencePropertyFixtures =
             |> String.concat "\nGO\n"  // LINT-ALLOW: per-kind CREATE TABLE bodies joined with GO batch boundary; segments are typed `SsdtFile.Body` strings from ScriptDomGenerate; no use-case-specific library exists for cross-file SQL-batch concatenation
         let profile = { Profile.empty with CdcAwareness = cdcAwareness }
         let seedArtifact =
-            match StaticSeedsEmitter.emit catalog profile with
+            match StaticSeedsEmitter.emit DataEmitOptions.defaults catalog profile with
             | Ok a -> a
             | Error e -> failwithf "StaticSeedsEmitter.emit: %A" e
         let seedSql =

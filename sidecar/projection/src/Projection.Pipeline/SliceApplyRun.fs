@@ -71,10 +71,8 @@ module SliceApplyRun =
         | Ok rows ->
             let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
             let plan = DataLoadPlan.build catalog topo rows SurrogateRemapContext.empty
-            let artifactR =
-                match deleteScope with
-                | Some _ -> StaticSeedsEmitter.emitFromPlanWith deleteScope catalog Profile.empty plan
-                | None   -> StaticSeedsEmitter.emitFromPlan catalog Profile.empty plan
+            let opts = { DataEmitOptions.defaults with DeleteScope = deleteScope }
+            let artifactR = StaticSeedsEmitter.emitFromPlan opts catalog Profile.empty plan
             match artifactR with
             | Error emitErr ->
                 Result.failureOf (ValidationError.create "slice.emitFailed" (sprintf "%A" emitErr))

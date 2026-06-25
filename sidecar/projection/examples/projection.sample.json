@@ -49,7 +49,9 @@
     "bootstrap": true,
     "bootstrapAllData": false,
     "dataVerification": "standard",
-    "deleteScope": { "terms": [ { "column": "TenantId", "value": 42 } ] }
+    "deleteScope": { "terms": [ { "column": "TenantId", "value": 42 } ] },
+    "_dataStaging_comment": "HOW large data kinds write (static, migration, AND bootstrap lanes). A single inline 'MERGE … USING (VALUES …)' hits SQL Server error 8623 (the optimizer's plan-complexity wall) at ~25-30k rows, so above 'threshold' rows a kind stages its rows through a #temp table and runs ONE 'MERGE … USING #temp' (and, for cyclic kinds, a single set-based Phase-2 'UPDATE … FROM #fk') inside one atomic XACT_ABORT batch — no VALUES ceiling, all-or-nothing. 'mode':'auto' (default) stages above 'threshold' (default 1000); 'inline' NEVER stages (the locked-down / managed-OutSystems escape hatch — accepts the ~30k ceiling where even baseline #temp + BEGIN TRAN rights are unwanted); 'tempTable' ALWAYS stages. 'indexThreshold' (default 100000) is the row count above which a staged #temp also gets a CLUSTERED INDEX on its PK (built after the bulk insert, dropped with the #temp) so the MERGE merge-joins instead of hash-joining — measured ~33-37% faster at 100k/250k/500k; the default gates at the proven-win floor. The staged form needs only the baseline rights the identity-seed path already uses, so 'auto' is portable wherever the current seed path runs.",
+    "dataStaging": { "mode": "auto", "threshold": 1000, "indexThreshold": 100000 }
   },
 
   "policy": {

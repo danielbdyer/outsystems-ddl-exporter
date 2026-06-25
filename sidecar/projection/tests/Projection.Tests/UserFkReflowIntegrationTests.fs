@@ -125,7 +125,7 @@ let ``Slice η: matched source User-FK value is rewritten to target-environment 
         |> mustOk
     let artifact =
         (let topo' = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value in
-             MigrationDependenciesEmitter.emitWithTopo topo' catalog Profile.empty migration userRemap)
+             MigrationDependenciesEmitter.emitWithTopo DataEmitOptions.defaults topo' catalog Profile.empty migration userRemap)
         |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find order.SsKey
     Assert.Equal (1, List.length script.Phase1Merges)
@@ -150,7 +150,7 @@ let ``Slice η: unmatched source User-FK value drops the row (V1 diagnostic+skip
         |> mustOk
     let artifact =
         (let topo' = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value in
-             MigrationDependenciesEmitter.emitWithTopo topo' catalog Profile.empty migration userRemap)
+             MigrationDependenciesEmitter.emitWithTopo DataEmitOptions.defaults topo' catalog Profile.empty migration userRemap)
         |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find order.SsKey
     // Only the matched row survives; the unmatched row is silently
@@ -197,7 +197,7 @@ let ``Slice η: kind with no User-FK references passes through unrewritten`` () 
         |> mustOk
     let artifact =
         (let topo' = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value in
-             MigrationDependenciesEmitter.emitWithTopo topo' catalog Profile.empty migration userRemap)
+             MigrationDependenciesEmitter.emitWithTopo DataEmitOptions.defaults topo' catalog Profile.empty migration userRemap)
         |> mustOkEmit
     let script = ArtifactByKind.toMap artifact |> Map.find country.SsKey
     Assert.Equal (1, List.length script.Phase1Merges)
