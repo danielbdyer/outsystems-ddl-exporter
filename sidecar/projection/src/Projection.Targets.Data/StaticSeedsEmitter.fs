@@ -103,7 +103,7 @@ module StaticSeedsEmitter =
     let private renderMerge
         (verification: DataVerification)
         (staging: DataStagingPolicy)
-        (deleteScope: ScriptDomBuild.DeleteScope option)
+        (deleteScope: DeleteScope option)
         (cdcAware: bool)
         (deferred: Set<Name>)
         (bracketIdentity: bool)
@@ -137,7 +137,7 @@ module StaticSeedsEmitter =
             |> List.filter (fun a -> not (Set.contains a.Name deferred))
             |> List.filter (fun a -> a.Computed = None)
             |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
-        let args : ScriptDomBuild.MergeBuildArgs =
+        let args : MergeBuildArgs =
             {
                 Target     = table
                 AllColumns = KindColumns.orderedColumnNames k
@@ -251,7 +251,7 @@ module StaticSeedsEmitter =
             k.Attributes
             |> List.filter (fun a -> a.IsPrimaryKey)
             |> List.map cellOf
-        let args : ScriptDomBuild.UpdateBuildArgs =
+        let args : UpdateBuildArgs =
             { Target     = table
               SetCells   = setCells
               WhereCells = whereCells
@@ -313,10 +313,10 @@ module StaticSeedsEmitter =
             // delete arm renders exactly when every term column is an
             // attribute here (`DeleteScopePolicy.resolveFor`); a kind
             // outside the scope keeps the upsert-only MERGE.
-            let scopeForKind : ScriptDomBuild.DeleteScope option =
+            let scopeForKind : DeleteScope option =
                 deleteScope
                 |> Option.bind (DeleteScopePolicy.resolveFor kind)
-                |> Option.map (fun terms -> ({ Terms = terms } : ScriptDomBuild.DeleteScope))
+                |> Option.map (fun terms -> ({ Terms = terms } : DeleteScope))
             let deferred = load.DeferredFkColumns
             // NM-26 — bracket the Phase-1 MERGE with `SET IDENTITY_INSERT`
             // whenever the kind carries ANY IDENTITY column, via the

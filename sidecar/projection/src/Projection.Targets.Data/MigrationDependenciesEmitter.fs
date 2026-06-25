@@ -137,7 +137,7 @@ module MigrationDependenciesEmitter =
     let private renderMerge
         (verification: DataVerification)
         (staging: DataStagingPolicy)
-        (deleteScope: ScriptDomBuild.DeleteScope option)
+        (deleteScope: DeleteScope option)
         (cdcAware: bool)
         (bracketIdentity: bool)
         (deferred: Set<Name>)
@@ -166,7 +166,7 @@ module MigrationDependenciesEmitter =
             |> List.filter (fun a -> not (Set.contains a.Name deferred))
             |> List.filter (fun a -> a.Computed = None)
             |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
-        let args : ScriptDomBuild.MergeBuildArgs =
+        let args : MergeBuildArgs =
             {
                 Target     = table
                 AllColumns = KindColumns.orderedColumnNames k
@@ -252,7 +252,7 @@ module MigrationDependenciesEmitter =
             k.Attributes
             |> List.filter (fun a -> a.IsPrimaryKey)
             |> List.map cellOf
-        let args : ScriptDomBuild.UpdateBuildArgs =
+        let args : UpdateBuildArgs =
             { Target     = table
               SetCells   = setCells
               WhereCells = whereCells
@@ -328,10 +328,10 @@ module MigrationDependenciesEmitter =
             let cdcAware = CdcAwareness.isEnabled kind.SsKey cdc
             // AC-D7 — per-kind scope resolution; mirrors
             // `StaticSeedsEmitter.kindToScript`.
-            let scopeForKind : ScriptDomBuild.DeleteScope option =
+            let scopeForKind : DeleteScope option =
                 deleteScope
                 |> Option.bind (DeleteScopePolicy.resolveFor kind)
-                |> Option.map (fun terms -> ({ Terms = terms } : ScriptDomBuild.DeleteScope))
+                |> Option.map (fun terms -> ({ Terms = terms } : DeleteScope))
             let deferred = load.DeferredFkColumns
             let typeLookup = KindColumns.columnTypeLookup kind
             let typedRows =

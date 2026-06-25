@@ -96,7 +96,7 @@ module StagedMerge =
         (withIndex: bool)
         (table: TableId)
         (k: Kind)
-        (args: ScriptDomBuild.MergeBuildArgs)
+        (args: MergeBuildArgs)
         : string =
         use _ = Bench.scope (System.String.Concat(bench, ".renderStagedPhase1"))
         let tempName =

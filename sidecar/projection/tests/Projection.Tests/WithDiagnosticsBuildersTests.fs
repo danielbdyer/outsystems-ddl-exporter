@@ -54,7 +54,7 @@ let ``Slice ζ: buildMergeStatement returns Diagnostics with empty entries today
     let table = mkTable "dbo" "Widget"
     let pkLit : SqlLiteral =
         SqlLiteral.ofRaw Integer "1"
-    let args : ScriptDomBuild.MergeBuildArgs =
+    let args : MergeBuildArgs =
         {
             Target = table
             AllColumns = [ "Id" ]
@@ -74,7 +74,7 @@ let ``Slice ζ: buildUpdateStatement returns Diagnostics with empty entries toda
     let table = mkTable "dbo" "Widget"
     let pkLit  : SqlLiteral = SqlLiteral.ofRaw Integer "1"
     let setLit : SqlLiteral = SqlLiteral.ofRaw Text    "renamed"
-    let args : ScriptDomBuild.UpdateBuildArgs =
+    let args : UpdateBuildArgs =
         {
             Target = table
             SetCells = [ ("Name", setLit) ]
@@ -95,11 +95,11 @@ let ``Slice ζ: buildUpdateStatement returns Diagnostics with empty entries toda
 // would be deleted); a never-on arm fails the `Some` case.
 // ---------------------------------------------------------------------------
 
-let private renderMerge (args: ScriptDomBuild.MergeBuildArgs) : string =
+let private renderMerge (args: MergeBuildArgs) : string =
     let stmt = (ScriptDomBuild.buildMergeStatement args).Value
     ScriptDomGenerate.generateOne (stmt :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement)
 
-let private mergeArgs (deleteScope: ScriptDomBuild.DeleteScope option) : ScriptDomBuild.MergeBuildArgs =
+let private mergeArgs (deleteScope: DeleteScope option) : MergeBuildArgs =
     {
         Target      = mkTable "dbo" "Widget"
         AllColumns  = [ "Id"; "Tenant"; "Name" ]
@@ -140,6 +140,36 @@ let ``StagedSource Some: the validate-before-apply guard EXCEPTs the #temp, not 
     let sql = ScriptDomGenerate.generateOne guard
     Assert.Contains("[#seed_Widget]", sql)
     Assert.DoesNotContain("VALUES", sql)
+
+// ---------------------------------------------------------------------------
+// Statement-DU promotion — the typed `Statement` stream now models the data
+// lane's MERGE/UPDATE. `ScriptDomBuild.buildStatement` dispatches `Statement
+// .Merge` / `Statement.Update` to the same builders the emitters call directly,
+// so the DU path is byte-faithful (the prerequisite for the emitters to emit
+// typed `Statement` values instead of rendering MERGE/UPDATE text per-site).
+// ---------------------------------------------------------------------------
+
+let private renderViaStatement (s: Statement) : string =
+    match ScriptDomBuild.buildStatement s with
+    | Some fragment -> ScriptDomGenerate.generateOne fragment
+    | None -> failwith "buildStatement returned None for a MERGE/UPDATE data statement"
+
+[<Fact>]
+let ``Statement.Merge renders identically to buildMergeStatement (DU dispatch is faithful)`` () =
+    let args = mergeArgs None
+    Assert.Equal(renderMerge args, renderViaStatement (Statement.Merge args))
+
+[<Fact>]
+let ``Statement.Update renders identically to buildUpdateStatement (DU dispatch is faithful)`` () =
+    let args : UpdateBuildArgs =
+        { Target     = mkTable "dbo" "Widget"
+          SetCells   = [ "Name", SqlLiteral.ofRaw Text "a" ]
+          WhereCells = [ "Id", SqlLiteral.ofRaw Integer "1" ]
+          CdcAware   = false }
+    let direct =
+        ScriptDomGenerate.generateOne
+            ((ScriptDomBuild.buildUpdateStatement args).Value :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement)
+    Assert.Equal(direct, renderViaStatement (Statement.Update args))
 
 // ---------------------------------------------------------------------------
 // Staged-source primitives — `buildCreateTempTable` + `buildInsertBatches`
@@ -222,7 +252,7 @@ let ``AC-D7/AC-G4: DeleteScope=None is byte-identical to the pre-scope MERGE out
 
 [<Fact>]
 let ``AC-D7/AC-G4: a declared DeleteScope emits exactly one scoped WHEN NOT MATCHED BY SOURCE THEN DELETE arm`` () =
-    let scope : ScriptDomBuild.DeleteScope =
+    let scope : DeleteScope =
         { Terms = [ ("Tenant", SqlLiteral.ofRaw Integer "7") ] }
     let rendered = renderMerge (mergeArgs (Some scope))
     // Exactly one DELETE arm.
@@ -237,7 +267,7 @@ let ``AC-D7/AC-G4: a declared DeleteScope emits exactly one scoped WHEN NOT MATC
 
 [<Fact>]
 let ``AC-D7/AC-G4: a multi-term DeleteScope folds its terms with AND`` () =
-    let scope : ScriptDomBuild.DeleteScope =
+    let scope : DeleteScope =
         { Terms =
             [ ("Tenant", SqlLiteral.ofRaw Integer "7")
               ("Name",   SqlLiteral.ofRaw Text    "a") ] }
