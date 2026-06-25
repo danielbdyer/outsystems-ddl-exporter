@@ -126,6 +126,37 @@ let ``StaticSeedsEmitter.emit produces empty Phase1Merges for non-static kinds``
     Assert.Empty script.Phase1Merges
     Assert.Equal<string> ("", script.Rendered)
 
+// ---------------------------------------------------------------------------
+// Staged-source form — a kind above `stagingRowThreshold` (1000) renders the
+// `#temp` batch (the error-8623-safe MERGE); below it, the inline form stands.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``StaticSeedsEmitter.emit: a kind above the staging threshold renders the atomic #temp batch`` () =
+    let catalog =
+        StaticCatalogFixtures.staticCatalog "STG" "StgMod" [ "Big" ] "Big" "STG_BIG"
+            [ StaticCatalogFixtures.pk "Id" "ID" Integer
+              StaticCatalogFixtures.attr "Code" "CODE" Text ]
+            [ for i in 1 .. 1001 -> string i, [ string i; sprintf "C%04d" i ] ]
+    let kind = Catalog.allKinds catalog |> List.head
+    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let sql = (ArtifactByKind.toMap artifact |> Map.find kind.SsKey).RenderedPhase1
+    Assert.Contains("SET XACT_ABORT ON", sql)               // atomic wrapper
+    Assert.Contains("BEGIN TRAN", sql)
+    Assert.Contains("CREATE TABLE [#seed_", sql)            // a staging heap is created
+    Assert.Contains("USING [#seed_", sql)                   // the MERGE draws from it
+    Assert.Contains("ROLLBACK", sql)                        // CATCH cleanup
+    Assert.Contains("END CATCH", sql)
+
+[<Fact>]
+let ``StaticSeedsEmitter.emit: a small kind stays on the inline path (no #temp, no transaction)`` () =
+    let country = mkCountryKind ()
+    let catalog = mkCatalog [ country ]
+    let artifact = StaticSeedsEmitter.emit catalog Profile.empty |> mustOkEmit
+    let sql = (ArtifactByKind.toMap artifact |> Map.find country.SsKey).RenderedPhase1
+    Assert.DoesNotContain("#seed_", sql)
+    Assert.DoesNotContain("BEGIN TRAN", sql)
+
 [<Fact>]
 let ``StaticSeedsEmitter.emit populates Phase1Merges for Modality.Static kinds`` () =
     let country = mkCountryKind ()
