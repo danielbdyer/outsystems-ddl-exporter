@@ -224,6 +224,7 @@
     <Compile Include="KeymapSpillTests.fs" />
     <Compile Include="RunWithConfigProfileTests.fs" />
     <Compile Include="DacpacWireTests.fs" />
+    <Compile Include="SqlprojWireTests.fs" />
     <Compile Include="DescriptionLiftTests.fs" />
     <Compile Include="OriginalNameAndExternalDbTypeLiftTests.fs" />
     <Compile Include="IndexColumnDirectionTests.fs" />
@@ -298,6 +299,9 @@
     <Compile Include="DacpacEmitterTests.fs" />
     <Compile Include="DacpacRoundTripTests.fs" />
     <Compile Include="DacpacPublishEquivalenceTests.fs" />
+    <Compile Include="SsdtArtifactDeployE2ETests.fs" />
+    <Compile Include="SsdtDataBehaviorE2ETests.fs" />
+    <Compile Include="MergeScaleMeasurement.fs" />
     <Compile Include="DockerImageEmitterTests.fs" />
     <Compile Include="CoordinatesStage2Tests.fs" />
     <Compile Include="ManifestEmitterTests.fs" />
@@ -322,6 +326,8 @@
     <Compile Include="GoldenEmissionTests.fs" />
     <Compile Include="DataLaneGoldenTests.fs" />
     <Compile Include="JsonEmitterTests.fs" />
+    <Compile Include="SsdtArtifactEmitterTests.fs" />
+    <Compile Include="SsdtArtifactBuildTests.fs" />
     <Compile Include="CatalogCodecTests.fs" />
     <Compile Include="ProfileCodecTests.fs" />
     <Compile Include="CorrectionCodecTests.fs" />
