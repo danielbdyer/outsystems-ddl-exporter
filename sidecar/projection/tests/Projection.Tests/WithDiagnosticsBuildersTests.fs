@@ -184,6 +184,21 @@ let ``buildInsertBatches: empty rows yields no statements`` () =
     Assert.Empty(ScriptDomBuild.buildInsertBatches "#seed_X" [ "Id" ] [])
 
 [<Fact>]
+let ``buildUpdateFromTemp: set-based UPDATE FROM the #temp JOIN (CDC adds a WHERE)`` () =
+    let sql = ScriptDomGenerate.generateOne (ScriptDomBuild.buildUpdateFromTemp (mkTable "dbo" "Org") "#fk_Org" [ "ParentId" ] [ "Id" ] true)
+    Assert.Contains("UPDATE", sql)
+    Assert.Contains("[#fk_Org]", sql)        // the staged source
+    Assert.Contains("[Target]", sql)
+    Assert.Contains("[src]", sql)
+    Assert.Contains("WHERE", sql)            // cdcAware → change-detect predicate
+
+[<Fact>]
+let ``buildUpdateFromTemp: no CDC means no WHERE (unconditional re-point)`` () =
+    let sql = ScriptDomGenerate.generateOne (ScriptDomBuild.buildUpdateFromTemp (mkTable "dbo" "Org") "#fk_Org" [ "ParentId" ] [ "Id" ] false)
+    Assert.Contains("UPDATE", sql)
+    Assert.DoesNotContain("WHERE", sql)
+
+[<Fact>]
 let ``AC-D7/AC-G4: DeleteScope=None emits NO WHEN NOT MATCHED BY SOURCE arm`` () =
     let rendered = renderMerge (mergeArgs None)
     Assert.DoesNotContain("NOT MATCHED BY SOURCE", rendered)
