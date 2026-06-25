@@ -1,4 +1,4 @@
-# Handoff — Typed-AST / Built-in Refactor (ranked, fleet-sourced)
+# Handoff — Finish the staged-MERGE feature (steps 4–6) + Typed-AST refactor
 
 **For:** a fresh agent in a new context window.
 **Branch context:** `claude/staged-data-merge` (the staged-`#temp` MERGE work). This handoff folds that branch's pending "typed-wrapper" task into a broader, fleet-discovered refactor.
@@ -16,9 +16,40 @@ This codebase (`sidecar/projection`, F#) is **typed-AST-first**: T-SQL is emitte
 1. **Verify by DEPLOY, not by unit-test substrings.** Every SQL-emitting change must be re-run through the gated scale probe (`MergeScaleMeasurement`, `PROJECTION_MEASURE_SCALE=1`) or a Docker E2E. Substring asserts (`Assert.Contains "CREATE TABLE [#seed_"`) are green even when the full statement is malformed.
 2. **Prefer typed construction over string-then-parse over raw concat**, and **drive built-ins/library/AST up the value scale**, hardest on the critical (emit→deploy) path.
 
-A 4-agent fleet (2 blue = opportunities, 2 red = hazards) swept the tree. Verdict: **JSON/XML emission is already exemplary** (don't refactor it). The real gaps are below, ranked.
+A 4-agent fleet (2 blue = opportunities, 2 red = hazards) swept the tree. Verdict: **JSON/XML emission is already exemplary** (don't refactor it).
+
+**Two bodies of work:** **Part A** — finish the staged-MERGE feature (steps 4–6 of the original plan; this is the in-flight feature). **Part B** — the fleet-ranked typed-AST / built-in refactor (Tiers 0–3). They overlap at one point (Step 4 ⇄ Tier 1); see the note at the end of Part A.
 
 ---
+
+## Part A — Finish the staged-MERGE feature (steps 4–6)
+
+The branch landed **phase-1 staging, proven to deploy at 25k/100k/250k** (the error-8623 wall is gone; flat ~6k rows/sec). Three planned steps remain. Do these to COMPLETE the feature.
+
+### Step 4 — wire the set-based phase-2 (`buildUpdateFromTemp` is already built + unit-tested)
+For a LARGE *cyclic* kind (deferred FKs **and** > threshold rows), phase-2 currently emits N per-row `UPDATE`s. Above the SAME `stagingRowThreshold`, escalate to one set-based UPDATE (the deterministic rule the operator locked: one threshold, both phases, so a kind is treated coherently).
+- Add `renderStagedPhase2` in `Projection.Targets.Data/StaticSeedsEmitter.fs` (mirror `renderStagedPhase1`): stage a NARROW `#temp` named `#fk_<table>` of PK + deferred-FK columns carrying the **real** FK values (NOT the phase-1 NULL form — project `typedRows` over PK+deferred without `typedValuesToSqlLiterals`'s deferred-NULLing), then `ScriptDomBuild.buildUpdateFromTemp table tempName setCols pkCols cdcAware`, wrapped in `wrapAtomicBatch`. Reuse `stagingColumnDefsOf` for the narrow columns. Use `TableId.tableText k.Physical` for the temp name (NOT `k.Physical.Table` — that VO-stringification was the shipped bug).
+- Branch `kindToScript`'s phase-2 (the `renderedPhase2` `let`, ~line 375): `elif List.length typedRows > stagingRowThreshold then renderStagedPhase2 …` else the current per-row loop.
+- **Verify by DEPLOY** (lesson #1): a > threshold self-referential kind must deploy AND its children's FKs must land in phase-2 — extend the scale probe with a cyclic case, or add a Docker E2E (`SsdtDataBehaviorE2ETests` shape). Unit substrings are NOT sufficient.
+
+### Step 5 — the config knob `emission.dataStaging`
+Replace the hardcoded `stagingRowThreshold = 1000` with config.
+- `Projection.Pipeline/Config.fs` `EmissionSection` + parser (mirror the `dacpac`/`sqlproj`/`deleteScope` rungs): `emission.dataStaging : { "mode": "auto" | "inline" | "tempTable"; "threshold": int }` (default `auto`, 1000). Thread → `EmissionPolicy` (a new field) → the emitter (this path takes no policy today; thread it the way `cdcAware`/`deleteScope` are).
+- **Portability stance (the J5 / on-prem-permissions reality — see memory `j5-cloud-uat-ledger`):** the `#temp` + transaction need only baseline rights (temp-table creation + `BEGIN TRAN`; `IDENTITY_INSERT` is unchanged from today), so it's portable wherever the current identity-seed path runs. But make it **config-gated, never forced** — an operator on a locked-down/managed env can pin `inline` (accepting the ~30k 8623 ceiling). Surface the choice as a **named run-report line** (capability-descent doctrine: "staged" vs "stayed inline" must be auditable). Managed envs may route writes differently (`AssignedBySink`) and never execute this path — don't assume it runs everywhere.
+- Document in `CONFIG_REFERENCE.md` + `examples/projection.sample.json`.
+
+### Step 6 — witnesses (make the deploy-proof DURABLE) + the measured index
+1. **Permanent staged-deploy regression E2E** — the temp-name lesson made durable: a small > threshold kind (~1500 rows) deploys to a real server (Docker pool) and asserts the rows land + idempotency. This is what would have caught the `TableName`-VO bug at CI time; substring unit tests didn't.
+2. **The measured `indexThreshold`** (the reverse-leg-at-scale concern the operator raised): A/B the scale probe with a `CREATE CLUSTERED INDEX` on the `#temp` PK (built AFTER the load, dropped WITH the table) vs without, across 100k → 1M; find the crossover where the MERGE-join speedup beats the index-build cost; bake it as `emission.dataStaging.indexThreshold` (separate, higher than the staging threshold). **Until measured, ship NO index** (don't add a speculative one — that discipline already removed one).
+3. **Atomicity E2E** — inject a mid-batch failure (e.g. a duplicate-PK row) into a staged load; assert the target is **untouched** (rollback) and **no `#temp` survives** (the `XACT_ABORT` + `TRY/CATCH` + pooled-connection-reset guarantees).
+
+> **Part A ⇄ Part B overlap:** Step 4 adds a second `wrapAtomicBatch` caller, and Part B **Tier 1** replaces `wrapAtomicBatch` (string-concat) with a typed `buildAtomicBatch`. Do **Tier 1 together with Step 4** so phase-1 and phase-2 share the typed builder from the start (don't build phase-2 on the concat wrapper you're about to delete).
+
+---
+
+## Part B — Typed-AST / built-in refactor (fleet-ranked)
+
+The real gaps are below, ranked.
 
 ## TIER 0 — Confirmed latent fragility, NON-SQL, cheap (do first)
 
