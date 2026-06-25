@@ -1049,6 +1049,67 @@ module ScriptDomBuild =
         Diagnostics.ofValue (buildMergeStatementCore args)
 
     // -----------------------------------------------------------------------
+    // Staged-source primitives — the error-8623-safe MERGE form. For a large
+    // kind the inline `USING (VALUES …)` constructor exceeds the query
+    // optimizer's plan-complexity limit (~30k rows). Instead: CREATE a `#temp`,
+    // batch-INSERT the rows into it (each INSERT a separate, optimizer-cheap
+    // statement), then `MERGE … USING #temp`. The DELETE arm + two-phase + guard
+    // stay correct precisely because the whole source lands in one `#temp`.
+    // -----------------------------------------------------------------------
+
+    /// SQL Server caps an `INSERT … VALUES` row constructor at 1000 rows; the
+    /// staged INSERTs chunk at this size. (The 8623 wall is the MERGE's single
+    /// huge constructor — many small INSERTs each compile independently.)
+    [<Literal>]
+    let stagedInsertChunk : int = 1000
+
+    /// `CREATE TABLE [#temp] ([c] <type> NULL, …)` — a plain staging heap. The
+    /// caller passes staging `ColumnDef`s (identity / PK / default / computed
+    /// already stripped, all nullable) so deferred-FK NULLs and empty→NULL values
+    /// stage cleanly; the MERGE into the real target enforces its constraints.
+    /// Column types mirror the target (the shared `columnDefinition`), so the
+    /// MERGE join needs no implicit conversion.
+    let buildCreateTempTable (tempName: string) (cols: ColumnDef list) : CreateTableStatement =
+        use _ = Bench.scope "emit.scriptDom.build.createTempTable"
+        let stmt = CreateTableStatement()
+        stmt.SchemaObjectName <- tempSchemaObject tempName
+        let def = TableDefinition()
+        for c in cols do
+            def.ColumnDefinitions.Add(columnDefinition c)
+        stmt.Definition <- def
+        stmt
+
+    /// `INSERT INTO [#temp] ([c1],[c2],…) VALUES (…),(…)`, chunked at
+    /// `stagedInsertChunk` rows per statement (the `VALUES`-constructor cap).
+    /// `colNames` order MUST match each row's `SqlLiteral` order. An empty
+    /// `rows` yields no statements.
+    let buildInsertBatches (tempName: string) (colNames: string list) (rows: SqlLiteral list list) : InsertStatement list =
+        use _ = Bench.scope "emit.scriptDom.build.insertBatches"
+        rows
+        |> List.chunkBySize stagedInsertChunk
+        |> List.map (fun chunk ->
+            let stmt = InsertStatement()
+            let spec = InsertSpecification()
+            let target = NamedTableReference()
+            target.SchemaObject <- tempSchemaObject tempName
+            spec.Target <- target
+            for c in colNames do
+                let colRef = ColumnReferenceExpression()
+                let mid = MultiPartIdentifier()
+                mid.Identifiers.Add(bracketed c)
+                colRef.MultiPartIdentifier <- mid
+                spec.Columns.Add(colRef)
+            let valuesSrc = ValuesInsertSource()
+            for row in chunk do
+                let rv = RowValue()
+                for cell in row do
+                    rv.ColumnValues.Add(buildSqlLiteral cell)
+                valuesSrc.RowValues.Add(rv)
+            spec.InsertSource <- valuesSrc
+            stmt.InsertSpecification <- spec
+            stmt)
+
+    // -----------------------------------------------------------------------
     // NM-73 — validate-before-apply drift guard (WP6.6, operator choice C2).
     // -----------------------------------------------------------------------
     // Carbon-copied semantics from V1's

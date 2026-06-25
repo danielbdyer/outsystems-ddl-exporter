@@ -141,6 +141,48 @@ let ``StagedSource Some: the validate-before-apply guard EXCEPTs the #temp, not 
     Assert.Contains("[#seed_Widget]", sql)
     Assert.DoesNotContain("VALUES", sql)
 
+// ---------------------------------------------------------------------------
+// Staged-source primitives — `buildCreateTempTable` + `buildInsertBatches`
+// (the rows that feed the `MERGE … USING #temp`).
+// ---------------------------------------------------------------------------
+
+let private renderStmt (stmt: #Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement) : string =
+    ScriptDomGenerate.generateOne (stmt :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement)
+
+let private mkCol (name: string) (storage: SqlStorageType) : ColumnDef =
+    { Name = name; Type = Integer; SqlStorage = Some storage
+      Length = None; Precision = None; Scale = None
+      Nullable = true; IsIdentity = false; IsPrimaryKey = false
+      DefaultValue = None; DefaultName = None; Computed = None
+      Collation = None; Identity = None; Provenance = "" }
+
+[<Fact>]
+let ``buildCreateTempTable: a nullable, constraint-free staging heap with target column types`` () =
+    let cols = [ mkCol "Id" SqlStorageType.Int; mkCol "Name" (SqlStorageType.NVarChar (SqlLength.Bounded 50)) ]
+    let sql = renderStmt (ScriptDomBuild.buildCreateTempTable "#seed_X" cols)
+    Assert.Contains("CREATE TABLE [#seed_X]", sql)
+    Assert.Contains("[Id]", sql)
+    Assert.Contains("INT", sql)
+    Assert.Contains("[Name]", sql)
+    Assert.Contains("NVARCHAR", sql)
+    Assert.DoesNotContain("NOT NULL", sql)        // staging heap — every column nullable
+    Assert.DoesNotContain("IDENTITY", sql)        // no identity on the staging table
+    Assert.DoesNotContain("PRIMARY KEY", sql)     // no constraints
+
+[<Fact>]
+let ``buildInsertBatches: chunks at 1000 rows and targets the #temp`` () =
+    let rows = [ for i in 1 .. 2500 -> [ SqlLiteral.ofRaw Integer (string i) ] ]
+    let stmts = ScriptDomBuild.buildInsertBatches "#seed_X" [ "Id" ] rows
+    Assert.Equal(3, List.length stmts)            // 1000 + 1000 + 500
+    let sql = renderStmt (List.head stmts)
+    Assert.Contains("INSERT", sql)               // ScriptDom omits the optional INTO
+    Assert.Contains("[#seed_X]", sql)
+    Assert.Contains("VALUES", sql)
+
+[<Fact>]
+let ``buildInsertBatches: empty rows yields no statements`` () =
+    Assert.Empty(ScriptDomBuild.buildInsertBatches "#seed_X" [ "Id" ] [])
+
 [<Fact>]
 let ``AC-D7/AC-G4: DeleteScope=None emits NO WHEN NOT MATCHED BY SOURCE arm`` () =
     let rendered = renderMerge (mergeArgs None)
