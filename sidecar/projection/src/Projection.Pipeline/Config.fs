@@ -7,6 +7,7 @@ namespace Projection.Pipeline
 open System
 open System.Text.Json
 open Projection.Core
+open FsToolkit.ErrorHandling
 
 /// Unified config surface for the V2 cutover (`V2_PRODUCTION_CUTOVER.md` §5.1).
 /// Operator hand-writes one JSON document; this module parses it into a typed
@@ -1436,25 +1437,18 @@ module Config =
         match tryGetProperty root "policy" with
         | None -> Result.success defaultPolicy
         | Some element ->
-            let insertionR =
-                match getOptionalString element "insertion" with
-                | Error es -> Error es
-                | Ok None -> Result.success defaultPolicy.Insertion
-                | Ok (Some s) -> Result.success s
-            match insertionR with
-            | Error es -> Error es
-            | Ok insertion ->
-                match parseTightening element with
-                | Error es -> Error es
-                | Ok tightening ->
-                    match parseTransformGroups element with
-                    | Error es -> Error es
-                    | Ok transformGroups ->
-                        Result.success {
-                            Insertion       = insertion
-                            Tightening      = tightening
-                            TransformGroups = transformGroups
-                        }
+            validation {
+                let! insertion =
+                    getOptionalString element "insertion"
+                    |> Result.map (Option.defaultValue defaultPolicy.Insertion)
+                and! tightening = parseTightening element
+                and! transformGroups = parseTransformGroups element
+                return {
+                    Insertion       = insertion
+                    Tightening      = tightening
+                    TransformGroups = transformGroups
+                }
+            }
 
     let private parseOutput (root: JsonElement) : Result<OutputSection> =
         match tryGetProperty root "output" with
@@ -1474,36 +1468,32 @@ module Config =
             Result.failureOf (
                 configError "typeMismatch" "Config root must be a JSON object.")
         else
-            match parseModelWith requireModel root with
-            | Error es -> Error es
-            | Ok model ->
-                match parseProfile root with
-                | Error es -> Error es
-                | Ok profile ->
-                    match parseProfiler root with
-                    | Error es -> Error es
-                    | Ok profiler ->
-                        match parseOverrides root with
-                        | Error es -> Error es
-                        | Ok overrides ->
-                            match parseEmission root with
-                            | Error es -> Error es
-                            | Ok emission ->
-                                match parsePolicy root with
-                                | Error es -> Error es
-                                | Ok policy ->
-                                    match parseOutput root with
-                                    | Error es -> Error es
-                                    | Ok output ->
-                                        Result.success {
-                                            Model       = model
-                                            Profile     = profile
-                                            Profiler    = profiler
-                                            Overrides   = overrides
-                                            Emission    = emission
-                                            Policy      = policy
-                                            Output      = output
-                                        }
+            // Applicative accumulation (FsToolkit `validation`): every top-level
+            // section is parsed and ALL section errors surface in one pass — the
+            // operator sees every malformed section at once, fulfilling `parse`'s
+            // docstring promise ("every malformed entry in one pass, not just the
+            // first"). The prior hand-threaded `match … | Error es -> Error es`
+            // ladder short-circuited at the first failing section, so a config
+            // bad in both `profiler` and `output` reported only the profiler error.
+            // Mirrors the binding layer's idiom (`EmissionFoldersBinding.bindEntry`).
+            validation {
+                let! model     = parseModelWith requireModel root
+                and! profile   = parseProfile root
+                and! profiler  = parseProfiler root
+                and! overrides = parseOverrides root
+                and! emission  = parseEmission root
+                and! policy    = parsePolicy root
+                and! output    = parseOutput root
+                return {
+                    Model       = model
+                    Profile     = profile
+                    Profiler    = profiler
+                    Overrides   = overrides
+                    Emission    = emission
+                    Policy      = policy
+                    Output      = output
+                }
+            }
 
     /// Parse a JSON string into a typed `Config`. Order of operations:
     ///   1. Parse the JSON syntactically. Malformed JSON returns
