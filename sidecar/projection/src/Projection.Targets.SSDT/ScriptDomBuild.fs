@@ -109,6 +109,14 @@ module ScriptDomBuild =
         | None ->
             schemaObjectName (TableId.schemaText t) (TableId.tableText t)
 
+    /// `[#tempName]` as a one-identifier `SchemaObjectName` — a session-scoped
+    /// temp-table reference (no schema qualifier). The MERGE `USING` source when
+    /// rows are pre-staged into a `#temp` (the error-8623-safe form for large kinds).
+    let private tempSchemaObject (tempName: string) : SchemaObjectName =
+        let n = SchemaObjectName()
+        n.Identifiers.Add(bracketed tempName)
+        n
+
     /// Map V2's `PrimitiveType` to ScriptDom's `SqlDataTypeOption`.
     /// Closed-DU dispatch — adding a new variant lights up an
     /// exhaustiveness error here only.
@@ -818,6 +826,14 @@ module ScriptDomBuild =
             Rows        : SqlLiteral list list
             CdcAware    : bool
             DeleteScope : DeleteScope option
+            /// `Some "#seed_X"` → the MERGE (and the validate-before-apply guard)
+            /// draw their source from a pre-staged `#temp` table (`USING [#seed_X]`)
+            /// instead of the inline `USING (VALUES …)` constructor — the form that
+            /// sidesteps SQL Server error 8623 (the optimizer cannot plan a large
+            /// row-value constructor). `Rows` still carries the rows so the caller
+            /// can stage them into the `#temp`. `None` (the default) is byte-identical
+            /// to the pre-staging output.
+            StagedSource : string option
         }
 
     /// Build a `[Target|Source].[col]` qualified column reference.
@@ -947,18 +963,28 @@ module ScriptDomBuild =
         spec.Target <- targetRef
         spec.TableAlias <- bracketed "Target"
 
-        // Source: USING (VALUES (...), (...)) AS Source(c1, c2, ...)
-        let inline_ = InlineDerivedTable()
-        args.Rows
-        |> Bench.iterDo "emit.scriptDom.build.merge.row" (fun row ->
-            let rv = RowValue()
-            for cell in row do
-                rv.ColumnValues.Add(buildSqlLiteral cell)
-            inline_.RowValues.Add(rv))
-        inline_.Alias <- bracketed "Source"
-        for c in args.AllColumns do
-            inline_.Columns.Add(bracketed c)
-        spec.TableReference <- inline_ :> TableReference
+        // Source: either a pre-staged `#temp` (`USING [#temp] AS Source`) or the
+        // inline `USING (VALUES (...), (...)) AS Source(c1, c2, ...)`. Every other
+        // arm (ON, WHEN MATCHED/NOT MATCHED/NOT MATCHED BY SOURCE) references the
+        // `[Source]` alias identically, so only the table reference changes.
+        match args.StagedSource with
+        | Some tempName ->
+            let namedRef = NamedTableReference()
+            namedRef.SchemaObject <- tempSchemaObject tempName
+            namedRef.Alias <- bracketed "Source"
+            spec.TableReference <- namedRef :> TableReference
+        | None ->
+            let inline_ = InlineDerivedTable()
+            args.Rows
+            |> Bench.iterDo "emit.scriptDom.build.merge.row" (fun row ->
+                let rv = RowValue()
+                for cell in row do
+                    rv.ColumnValues.Add(buildSqlLiteral cell)
+                inline_.RowValues.Add(rv))
+            inline_.Alias <- bracketed "Source"
+            for c in args.AllColumns do
+                inline_.Columns.Add(bracketed c)
+            spec.TableReference <- inline_ :> TableReference
 
         // ON-clause: Target.[pk1] = Source.[pk1] [AND ...]
         let onTerms =
@@ -1071,13 +1097,21 @@ module ScriptDomBuild =
     let buildValidateBeforeApplyGuard (args: MergeBuildArgs) : TSqlStatement =
         let targetText = tableIdText args.Target
         let colList = args.AllColumns |> List.map bracketText |> String.concat ", "
-        let valuesText =
-            args.Rows
-            |> List.map (fun row ->
-                row |> List.map literalText |> String.concat ", " |> sprintf "(%s)")
-            |> String.concat ", "
+        // The guard's source mirrors the MERGE's: a pre-staged `#temp` (the
+        // error-8623-safe form — and the guard's own `VALUES` would hit the same
+        // wall at scale) or the inline `VALUES`. The `valuesText` is computed only
+        // in the inline arm (it is O(rows) and unused when staged).
         let sourceSelect =
-            sprintf "SELECT %s FROM (VALUES %s) AS [Source] (%s)" colList valuesText colList
+            match args.StagedSource with
+            | Some tempName ->
+                sprintf "SELECT %s FROM %s AS [Source]" colList (bracketText tempName)
+            | None ->
+                let valuesText =
+                    args.Rows
+                    |> List.map (fun row ->
+                        row |> List.map literalText |> String.concat ", " |> sprintf "(%s)")
+                    |> String.concat ", "
+                sprintf "SELECT %s FROM (VALUES %s) AS [Source] (%s)" colList valuesText colList
         let targetSelect =
             sprintf "SELECT %s FROM %s AS [Existing]" colList targetText
         let message =

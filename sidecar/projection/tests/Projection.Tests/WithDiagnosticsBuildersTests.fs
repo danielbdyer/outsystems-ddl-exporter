@@ -63,6 +63,7 @@ let ``Slice ζ: buildMergeStatement returns Diagnostics with empty entries today
             Rows = [ [ pkLit ] ]
             CdcAware = false
             DeleteScope = None
+            StagedSource = None
         }
     let result = ScriptDomBuild.buildMergeStatement args
     Assert.Empty result.Entries
@@ -110,7 +111,35 @@ let private mergeArgs (deleteScope: ScriptDomBuild.DeleteScope option) : ScriptD
                 SqlLiteral.ofRaw Text    "a" ] ]
         CdcAware    = false
         DeleteScope = deleteScope
+        StagedSource = None
     }
+
+// ---------------------------------------------------------------------------
+// StagedSource — the error-8623-safe form. `Some "#seed_X"` makes the MERGE (and
+// the validate-before-apply guard) draw from a pre-staged `#temp` instead of an
+// inline `VALUES` constructor. `None` (the default) is byte-identical.
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``StagedSource Some: the MERGE draws from the #temp, not an inline VALUES`` () =
+    let sql = renderMerge { mergeArgs None with StagedSource = Some "#seed_Widget" }
+    Assert.Contains("[#seed_Widget]", sql)     // USING the staged temp table
+    // the row literals now live in the #temp, not the MERGE — `N'a'` is the
+    // inline Name value, present in the VALUES form, absent in the staged form.
+    Assert.DoesNotContain("N'a'", sql)
+
+[<Fact>]
+let ``StagedSource None: the MERGE keeps the inline VALUES (byte-identical default)`` () =
+    let sql = renderMerge (mergeArgs None)
+    Assert.Contains("VALUES", sql)
+    Assert.DoesNotContain("#seed", sql)
+
+[<Fact>]
+let ``StagedSource Some: the validate-before-apply guard EXCEPTs the #temp, not a VALUES`` () =
+    let guard = ScriptDomBuild.buildValidateBeforeApplyGuard { mergeArgs None with StagedSource = Some "#seed_Widget" }
+    let sql = ScriptDomGenerate.generateOne guard
+    Assert.Contains("[#seed_Widget]", sql)
+    Assert.DoesNotContain("VALUES", sql)
 
 [<Fact>]
 let ``AC-D7/AC-G4: DeleteScope=None emits NO WHEN NOT MATCHED BY SOURCE arm`` () =
