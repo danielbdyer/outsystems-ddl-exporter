@@ -31,46 +31,10 @@ module StaticSeedsEmitter =
     [<Literal>]
     let version : int = 1
 
-    /// Type-resolution lookup for a kind's columns. Returns the
-    /// (column-name, primitive-type) pair for each attribute, so the
-    /// renderer can format raw IR values as SQL literals.
-    let private columnTypeLookup (k: Kind) : Map<Name, PrimitiveType> =
-        k.Attributes
-        |> List.map (fun a -> a.Name, a.Type)
-        |> Map.ofList
-
-    /// Writable attributes for a kind — the columns the MERGE may
-    /// INSERT into and SELECT from `Source`. Persisted/computed columns
-    /// (gap N2; `Computed = Some _`) are SQL-Server-computed at write
-    /// time and can never appear in an INSERT column list, an UPDATE SET,
-    /// or a USING source; including one is a hard SQL error. Filtering
-    /// here keeps `AllColumns` and the per-row VALUES projection aligned.
-    let private writableAttributes (k: Kind) : Attribute list =
-        k.Attributes |> List.filter (fun a -> a.Computed = None)
-
-    /// Order columns deterministically (matches V1 + the SSDT emitter).
-    /// Per A33 (deterministic-ordered schema emission), sort by the
-    /// kind's declared attribute order — which is itself canonical
-    /// after `CanonicalizeIdentity`. Computed columns are excluded (never
-    /// written).
-    let private orderedColumnNames (k: Kind) : string list =
-        writableAttributes k |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
-
-    /// Primary-key column names in the kind's declared order. The
-    /// MERGE's ON-clause joins on these; the WHEN-NOT-MATCHED INSERT
-    /// includes them; the WHEN-MATCHED UPDATE excludes them (PK is
-    /// stable per row identity). Phase-2 UPDATEs use the same set
-    /// for the WHERE-clause row-scope.
-    let private pkColumnNames (k: Kind) : string list =
-        k.Attributes
-        |> List.filter (fun a -> a.IsPrimaryKey)
-        |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
-
-    /// Non-PK column names (the MERGE's UPDATE-target columns).
-    let private updatableColumnNames (k: Kind) : string list =
-        k.Attributes
-        |> List.filter (fun a -> not a.IsPrimaryKey)
-        |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
+    // The per-kind column vocabulary (columnTypeLookup / writableAttributes /
+    // orderedColumnNames / pkColumnNames / updatableColumnNames) is shared with
+    // `MigrationDependenciesEmitter` + `StagedMerge` and lives in
+    // `Projection.Core.KindColumns` (extracted at the third consumer).
 
     // -------------------------------------------------------------------
     // Slice δ — cycle-membership detection + Phase-2 deferred-FK set.
@@ -89,28 +53,9 @@ module StaticSeedsEmitter =
     // Phase-1 deferral on its outbound FKs to same-SCC peers.
     // -------------------------------------------------------------------
 
-    /// Project a StaticRow's `Map<Name, string>` raw values into the
-    /// typed `Map<Name, SqlLiteral>` form `DataInsertRow.Values`
-    /// expects (slice κ pillar 1 lift). Resolves each attribute's
-    /// `PrimitiveType` once at construction; missing values default
-    /// to empty-raw (V2 IR's empty-raw sentinel per `RawValueCodec`,
-    /// which `SqlLiteral.ofRaw` maps to `NullLit` for non-text
-    /// types).
-    let private staticRowToTypedValues
-        (typeLookup: Map<Name, PrimitiveType>)
-        (attributes: Attribute list)
-        (row: StaticRow)
-        : Map<Name, SqlLiteral> =
-        attributes
-        |> List.map (fun a ->
-            let raw =
-                Map.tryFind a.Name row.Values
-                |> Option.defaultValue ""
-            let typ =
-                Map.tryFind a.Name typeLookup
-                |> Option.defaultValue PrimitiveType.Text
-            a.Name, SqlLiteral.ofRaw typ raw)
-        |> Map.ofList
+    // The raw-row → typed-`SqlLiteral` projection lives in
+    // `Projection.Core.KindColumns.rowToTypedValues` (shared with the
+    // migration lane).
 
     /// Project the typed-Values row into the `SqlLiteral list` form
     /// `MergeBuildArgs.Rows` expects. Iterates the kind's attributes
@@ -205,10 +150,10 @@ module StaticSeedsEmitter =
         let args : ScriptDomBuild.MergeBuildArgs =
             {
                 Target     = table
-                AllColumns = orderedColumnNames k
-                PkColumns  = pkColumnNames k
+                AllColumns = KindColumns.orderedColumnNames k
+                PkColumns  = KindColumns.pkColumnNames k
                 UpdColumns = updColumns
-                Rows        = typedRows |> List.map (typedValuesToSqlLiterals deferred (writableAttributes k))
+                Rows        = typedRows |> List.map (typedValuesToSqlLiterals deferred (KindColumns.writableAttributes k))
                 CdcAware    = cdcAware
                 DeleteScope = deleteScope
                 StagedSource = None
@@ -396,7 +341,7 @@ module StaticSeedsEmitter =
             // the bracketing theory.
             let bracketIdentity =
                 IdentityDisposition.needsIdentityInsert kind
-            let typeLookup = columnTypeLookup kind
+            let typeLookup = KindColumns.columnTypeLookup kind
             // Slice κ pillar 1 lift: project raw `Map<Name, string>`
             // populations into typed `Map<Name, SqlLiteral>` once at
             // construction time. Both Phase-1 MERGE rendering and
@@ -405,7 +350,7 @@ module StaticSeedsEmitter =
                 load.Rows
                 |> List.map (fun row ->
                     row.Identifier,
-                    staticRowToTypedValues typeLookup kind.Attributes row)
+                    KindColumns.rowToTypedValues typeLookup kind.Attributes row)
             let renderedPhase1 =
                 renderMerge verification staging scopeForKind cdcAware deferred bracketIdentity kind (typedRows |> List.map snd)
             let renderedPhase2 =

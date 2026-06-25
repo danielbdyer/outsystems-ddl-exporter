@@ -111,59 +111,18 @@ module MigrationDependenciesEmitter =
     [<Literal>]
     let version : int = 1
 
-    /// Type-resolution lookup for a kind's columns (mirrors
-    /// `StaticSeedsEmitter.columnTypeLookup`).
-    let private columnTypeLookup (k: Kind) : Map<Name, PrimitiveType> =
-        k.Attributes
-        |> List.map (fun a -> a.Name, a.Type)
-        |> Map.ofList
-
-    /// Writable attributes — persisted/computed columns (gap N2;
-    /// `Computed = Some _`) are SQL-Server-computed and never written
-    /// (no INSERT column, no UPDATE SET, no USING source). Mirrors
-    /// `StaticSeedsEmitter.writableAttributes`.
-    let private writableAttributes (k: Kind) : Attribute list =
-        k.Attributes |> List.filter (fun a -> a.Computed = None)
-
-    let private orderedColumnNames (k: Kind) : string list =
-        writableAttributes k |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
-
-    let private pkColumnNames (k: Kind) : string list =
-        k.Attributes
-        |> List.filter (fun a -> a.IsPrimaryKey)
-        |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
-
-    let private updatableColumnNames (k: Kind) : string list =
-        k.Attributes
-        |> List.filter (fun a -> not a.IsPrimaryKey)
-        |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
+    // The per-kind column vocabulary (columnTypeLookup / writableAttributes /
+    // orderedColumnNames / pkColumnNames / updatableColumnNames) is shared with
+    // `StaticSeedsEmitter` + `StagedMerge` and lives in
+    // `Projection.Core.KindColumns` (extracted at the third consumer).
 
     // Deferred-FK selection moved to `DataLoadPlan.build` — the plan's
     // `Loads[i].DeferredFkColumns` carries the result. The historical
     // private helper retired at the convergence.
 
-    /// Project a `MigrationDependencyRow`'s raw `Map<Name, string>`
-    /// into the typed `Map<Name, SqlLiteral>` shape
-    /// `DataInsertRow.Values` expects (slice κ pillar 1 lift).
-    /// Project a `StaticRow` (the plan's row carrier — `DataLoadPlan`
-    /// converged both the migration and static row shapes into one)
-    /// into typed `Map<Name, SqlLiteral>`. Mirror of
-    /// `StaticSeedsEmitter.staticRowToTypedValues`.
-    let private rowToTypedValues
-        (typeLookup: Map<Name, PrimitiveType>)
-        (attributes: Attribute list)
-        (row: StaticRow)
-        : Map<Name, SqlLiteral> =
-        attributes
-        |> List.map (fun a ->
-            let raw =
-                Map.tryFind a.Name row.Values
-                |> Option.defaultValue ""
-            let typ =
-                Map.tryFind a.Name typeLookup
-                |> Option.defaultValue PrimitiveType.Text
-            a.Name, SqlLiteral.ofRaw typ raw)
-        |> Map.ofList
+    // The raw-row → typed-`SqlLiteral` projection lives in
+    // `Projection.Core.KindColumns.rowToTypedValues` (shared with the
+    // static-seed lane; `DataLoadPlan` converged both row shapes into `StaticRow`).
 
     /// Project the typed-Values row into the `SqlLiteral list` form
     /// `MergeBuildArgs.Rows` expects. Slice δ deferred handling
@@ -223,10 +182,10 @@ module MigrationDependenciesEmitter =
         let args : ScriptDomBuild.MergeBuildArgs =
             {
                 Target     = table
-                AllColumns = orderedColumnNames k
-                PkColumns  = pkColumnNames k
+                AllColumns = KindColumns.orderedColumnNames k
+                PkColumns  = KindColumns.pkColumnNames k
                 UpdColumns = updColumns
-                Rows        = typedRows |> List.map (typedValuesToSqlLiterals deferred (writableAttributes k))
+                Rows        = typedRows |> List.map (typedValuesToSqlLiterals deferred (KindColumns.writableAttributes k))
                 CdcAware    = cdcAware
                 DeleteScope = deleteScope
                 StagedSource = None
@@ -387,12 +346,12 @@ module MigrationDependenciesEmitter =
                 |> Option.bind (DeleteScopePolicy.resolveFor kind)
                 |> Option.map (fun terms -> ({ Terms = terms } : ScriptDomBuild.DeleteScope))
             let deferred = load.DeferredFkColumns
-            let typeLookup = columnTypeLookup kind
+            let typeLookup = KindColumns.columnTypeLookup kind
             let typedRows =
                 load.Rows
                 |> List.map (fun row ->
                     row.Identifier,
-                    rowToTypedValues typeLookup kind.Attributes row)
+                    KindColumns.rowToTypedValues typeLookup kind.Attributes row)
             // NM-25 / NM-26 — bracket the Phase-1 MERGE with SET IDENTITY_INSERT
             // whenever the kind carries ANY IDENTITY column, via the
             // single-sourced `IdentityDisposition.needsIdentityInsert` predicate

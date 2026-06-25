@@ -24,13 +24,6 @@ module StagedMerge =
     let private up (stmt: #Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement) : Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement =
         stmt :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement
 
-    /// Writable attributes for a kind — computed columns excluded (they are
-    /// SQL-Server-computed; never staged, never written). Mirrors each emitter's
-    /// own `writableAttributes`; the staged column set must match the inline
-    /// MERGE's `AllColumns` projection.
-    let writableAttributes (k: Kind) : Attribute list =
-        k.Attributes |> List.filter (fun a -> a.Computed = None)
-
     /// Deterministic Phase-1 staging-`#temp` name — `#seed_<physical table>`.
     /// `TableId.tableText` extracts the underlying string from the `TableName` VO
     /// (a raw `k.Physical.Table` would stringify the whole value object —
@@ -137,7 +130,7 @@ module StagedMerge =
         // brackets, index) drop out cleanly via `List.choose id`.
         let inner =
             [ Some (up (ScriptDomBuild.buildDropTableIfExists tempName))
-              Some (up (ScriptDomBuild.buildCreateTempTable tempName (stagingColumnDefsOf (writableAttributes k)))) ]
+              Some (up (ScriptDomBuild.buildCreateTempTable tempName (stagingColumnDefsOf (KindColumns.writableAttributes k)))) ]
             @ (ScriptDomBuild.buildInsertBatches tempName args.AllColumns args.Rows |> List.map (up >> Some))
             @ [ indexOpt
                 guardOpt
