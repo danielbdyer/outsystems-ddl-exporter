@@ -279,21 +279,78 @@ module CatalogDiff =
         |> List.map (fun k -> k.SsKey)
         |> Set.ofList
 
-    /// 6.A.10 — the facets of an attribute's emitted column shape that
-    /// differ between source and target. Mirrors `PhysicalSchema.diff`'s
-    /// column comparison so the diff and the canary agree on "what counts
-    /// as a column change." Empty set ⇒ the attribute's shape is identical.
-    let private changedFacets (s: Attribute) (t: Attribute) : Set<AttributeFacet> =
-        [ if s.Type <> t.Type then AttributeFacet.DataType
-          if s.Column.IsNullable <> t.Column.IsNullable then AttributeFacet.Nullability
-          if s.IsPrimaryKey <> t.IsPrimaryKey then AttributeFacet.PrimaryKey
-          if s.Length <> t.Length then AttributeFacet.Length
-          if s.Precision <> t.Precision then AttributeFacet.Precision
-          if s.Scale <> t.Scale then AttributeFacet.Scale
-          if s.IsIdentity <> t.IsIdentity then AttributeFacet.Identity
-          if (s.DefaultValue, s.DefaultName) <> (t.DefaultValue, t.DefaultName) then AttributeFacet.DefaultValue
-          if s.Computed <> t.Computed then AttributeFacet.Computed ]
-        |> Set.ofList
+    // -- Facet-as-lens reification (continues M7 one level down) -------------
+    //
+    // A facet of an entity's emitted shape is the unit the diff DETECTS and
+    // APPLIES. The detector (`get s <> get t`) and the applier (`set (get src)
+    // dest`) are the two halves of ONE fact: a focus on a field. M7 already
+    // reified the channel TRAVERSAL as data (one `buildChannel` / `applyChannel`
+    // over a `ChannelSpec`); the per-facet detect/apply pair was the residue it
+    // left as five hand-written detector functions + five hand-written applier
+    // functions, kept in lockstep by the comment "applyDiff's power exactly
+    // matches the facet set `between` detects." Reifying each facet as a `Facet`
+    // (a tagged lens) makes detection and application read the SAME table, so
+    // that invariant — no un-captured field silently reconstructed — is
+    // STRUCTURAL, not a hand-maintained correspondence between two match trees.
+
+    /// A facet of an entity's emitted shape: its `Tag`, whether two entities
+    /// `Differs` on it, and how to `Apply` it (copy `src`'s projection onto
+    /// `dest`). For the common case both halves derive from ONE lens via
+    /// `Facet.ofLens`, so they cannot desynchronize.
+    [<NoEquality; NoComparison>]
+    type private Facet<'entity, 'tag> =
+        { Tag     : 'tag
+          Differs : 'entity -> 'entity -> bool
+          Apply   : 'entity -> 'entity -> 'entity }
+
+    [<RequireQualifiedAccess>]
+    module private Facet =
+
+        /// An inline lens onto a field (or a tuple of fields, for compound
+        /// facets) — local to the facet tables, deliberately NOT promoted to
+        /// `CatalogLenses`: these foci have exactly two consumers (this table's
+        /// detect + apply), so promoting them would be the over-extraction the
+        /// `columnOf` docstring warns against.
+        let lens (get: 'entity -> 'field) (set: 'field -> 'entity -> 'entity) : Lens<'entity, 'field> =
+            { Get = get; Set = set }
+
+        /// The common case: a facet IS a lens. Detect = `get s <> get t`;
+        /// apply = `set (get src) dest`. The same lens drives both halves, so
+        /// a facet can never detect on one field and reconstruct another.
+        let ofLens (tag: 'tag) (l: Lens<'entity, 'field>) : Facet<'entity, 'tag> when 'field : equality =
+            { Tag     = tag
+              Differs = fun s t -> Lens.get l s <> Lens.get l t
+              Apply   = fun src dest -> Lens.set l (Lens.get l src) dest }
+
+        /// The changed facets between `s` and `t` over a facet table.
+        let changed (table: Facet<'entity, 'tag> list) (s: 'entity) (t: 'entity) : Set<'tag> when 'tag : comparison =
+            table
+            |> List.choose (fun f -> if f.Differs s t then Some f.Tag else None)
+            |> Set.ofList
+
+        /// Apply the facets named in `tags` from `src` onto `dest`, folding in
+        /// TABLE order — which is declaration order, matching the prior
+        /// `Set.fold` over the facet set (Set iterates DU-declaration order).
+        /// This preserves the Reference channel's `DbConstraint`-before-`Trust`
+        /// co-occurrence requirement.
+        let applyAll (table: Facet<'entity, 'tag> list) (src: 'entity) (tags: Set<'tag>) (dest: 'entity) : 'entity when 'tag : comparison =
+            table |> List.fold (fun acc f -> if Set.contains f.Tag tags then f.Apply src acc else acc) dest
+
+    /// 6.A.10 — the attribute column-shape facets. Mirrors `PhysicalSchema.diff`'s
+    /// column comparison so the diff and the canary agree on "what counts as a
+    /// column change." Each row is a lens; `Facet.changed`/`Facet.applyAll`
+    /// derive the detector and the patcher. `Nullability` composes through
+    /// `CatalogLenses.columnOf`; `DefaultValue` is a tuple lens (value + name).
+    let private attributeFacets : Facet<Attribute, AttributeFacet> list =
+        [ Facet.ofLens AttributeFacet.DataType    (Facet.lens (fun (a: Attribute) -> a.Type) (fun v a -> { a with Type = v }))
+          Facet.ofLens AttributeFacet.Nullability (Lens.compose CatalogLenses.columnOf (Facet.lens (fun (c: ColumnRealization) -> c.IsNullable) (fun v c -> { c with IsNullable = v })))
+          Facet.ofLens AttributeFacet.PrimaryKey  (Facet.lens (fun (a: Attribute) -> a.IsPrimaryKey) (fun v a -> { a with IsPrimaryKey = v }))
+          Facet.ofLens AttributeFacet.Length      (Facet.lens (fun (a: Attribute) -> a.Length) (fun v a -> { a with Length = v }))
+          Facet.ofLens AttributeFacet.Precision   (Facet.lens (fun (a: Attribute) -> a.Precision) (fun v a -> { a with Precision = v }))
+          Facet.ofLens AttributeFacet.Scale       (Facet.lens (fun (a: Attribute) -> a.Scale) (fun v a -> { a with Scale = v }))
+          Facet.ofLens AttributeFacet.Identity    (Facet.lens (fun (a: Attribute) -> a.IsIdentity) (fun v a -> { a with IsIdentity = v }))
+          Facet.ofLens AttributeFacet.DefaultValue (Facet.lens (fun (a: Attribute) -> (a.DefaultValue, a.DefaultName)) (fun (dv, dn) a -> { a with DefaultValue = dv; DefaultName = dn }))
+          Facet.ofLens AttributeFacet.Computed    (Facet.lens (fun (a: Attribute) -> a.Computed) (fun v a -> { a with Computed = v })) ]
 
     /// The empty channel diff — all four fields empty — over any change type.
     let private emptyChannelDiff<'change> : ChannelDiff<'change> =
@@ -322,128 +379,74 @@ module CatalogDiff =
     // agnostic. The facet detectors (`changedFacets` etc., kept below) are the
     // only per-channel logic that genuinely varies; everything else is one fold.
 
-    let private changedReferenceFacets (s: Reference) (t: Reference) : Set<ReferenceFacet> =
-        [ if s.TargetKind <> t.TargetKind then ReferenceFacet.Target
-          if s.SourceAttribute <> t.SourceAttribute then ReferenceFacet.SourceAttribute
-          if s.OnDelete <> t.OnDelete then ReferenceFacet.OnDelete
-          if s.OnUpdate <> t.OnUpdate then ReferenceFacet.OnUpdate
-          if s.IsUserFk <> t.IsUserFk then ReferenceFacet.UserFk
-          // M4 — the two facets project the `ConstraintState` DU back to its
-          // boolean dimensions, preserving the channel structure the C1 diff +
-          // the SSDT migration emitter (`ReferenceFacet.Trust`) depend on.
-          if Reference.hasDbConstraint s <> Reference.hasDbConstraint t then ReferenceFacet.DbConstraint
-          if Reference.isConstraintTrusted s <> Reference.isConstraintTrusted t then ReferenceFacet.Trust ]
-        |> Set.ofList
+    /// C1 — the reference FK-shape facets. The first five are plain lenses.
+    /// `DbConstraint` / `Trust` are the ONE named exception to facet-as-lens:
+    /// they don't focus a stored field — they project the `ConstraintState` DU
+    /// to its two boolean dimensions and RENORMALIZE via `ofLegacyBooleans`, so
+    /// a per-dimension lens would fail the Set-Get law (a lone `Trust` never
+    /// targets a `NoDbConstraint` dest — co-occurrence + `DbConstraint`-first
+    /// ordering is what makes the combined transition reconstruct). They stay
+    /// hand-written `Differs`/`Apply` entries, but live IN this uniform table
+    /// rather than scattered across two match expressions; table order keeps
+    /// `DbConstraint` before `Trust` (declaration order).
+    let private referenceFacets : Facet<Reference, ReferenceFacet> list =
+        [ Facet.ofLens ReferenceFacet.Target          (Facet.lens (fun (r: Reference) -> r.TargetKind) (fun v r -> { r with TargetKind = v }))
+          Facet.ofLens ReferenceFacet.SourceAttribute (Facet.lens (fun (r: Reference) -> r.SourceAttribute) (fun v r -> { r with SourceAttribute = v }))
+          Facet.ofLens ReferenceFacet.OnDelete         (Facet.lens (fun (r: Reference) -> r.OnDelete) (fun v r -> { r with OnDelete = v }))
+          Facet.ofLens ReferenceFacet.OnUpdate         (Facet.lens (fun (r: Reference) -> r.OnUpdate) (fun v r -> { r with OnUpdate = v }))
+          Facet.ofLens ReferenceFacet.UserFk           (Facet.lens (fun (r: Reference) -> r.IsUserFk) (fun v r -> { r with IsUserFk = v }))
+          { Tag     = ReferenceFacet.DbConstraint
+            Differs = fun s t -> Reference.hasDbConstraint s <> Reference.hasDbConstraint t
+            Apply   = fun src dest -> { dest with ConstraintState = ConstraintState.ofLegacyBooleans (Reference.hasDbConstraint src) (Reference.isConstraintTrusted dest) } }
+          { Tag     = ReferenceFacet.Trust
+            Differs = fun s t -> Reference.isConstraintTrusted s <> Reference.isConstraintTrusted t
+            Apply   = fun src dest -> { dest with ConstraintState = ConstraintState.ofLegacyBooleans (Reference.hasDbConstraint dest) (Reference.isConstraintTrusted src) } } ]
 
-    let private changedIndexFacets (s: Index) (t: Index) : Set<IndexFacet> =
-        [ if s.Columns <> t.Columns then IndexFacet.Columns
-          if s.Uniqueness <> t.Uniqueness then IndexFacet.Uniqueness
-          if s.IncludedColumns <> t.IncludedColumns then IndexFacet.IncludedColumns
-          if s.Filter <> t.Filter then IndexFacet.Filter
-          if s.DataSpace <> t.DataSpace then IndexFacet.DataSpace
-          if s.IsPlatformAuto <> t.IsPlatformAuto || s.FillFactor <> t.FillFactor
-             || s.IsPadded <> t.IsPadded || s.AllowRowLocks <> t.AllowRowLocks
-             || s.AllowPageLocks <> t.AllowPageLocks || s.NoRecomputeStatistics <> t.NoRecomputeStatistics
-             || s.IgnoreDuplicateKey <> t.IgnoreDuplicateKey || s.IsDisabled <> t.IsDisabled
-             || s.DataCompression <> t.DataCompression then IndexFacet.Options ]
-        |> Set.ofList
+    /// C1 — the index-shape facets. `Options` groups the nine `WITH (…)` knobs +
+    /// platform-auto / disabled flags into one tuple lens (equality on the tuple
+    /// is exactly the prior OR-of-inequalities; the setter splats all nine back).
+    let private indexFacets : Facet<Index, IndexFacet> list =
+        [ Facet.ofLens IndexFacet.Columns         (Facet.lens (fun (i: Index) -> i.Columns) (fun v i -> { i with Columns = v }))
+          Facet.ofLens IndexFacet.Uniqueness      (Facet.lens (fun (i: Index) -> i.Uniqueness) (fun v i -> { i with Uniqueness = v }))
+          Facet.ofLens IndexFacet.IncludedColumns (Facet.lens (fun (i: Index) -> i.IncludedColumns) (fun v i -> { i with IncludedColumns = v }))
+          Facet.ofLens IndexFacet.Filter          (Facet.lens (fun (i: Index) -> i.Filter) (fun v i -> { i with Filter = v }))
+          Facet.ofLens IndexFacet.DataSpace       (Facet.lens (fun (i: Index) -> i.DataSpace) (fun v i -> { i with DataSpace = v }))
+          Facet.ofLens IndexFacet.Options
+            (Facet.lens
+                (fun (i: Index) -> (i.IsPlatformAuto, i.FillFactor, i.IsPadded, i.AllowRowLocks, i.AllowPageLocks, i.NoRecomputeStatistics, i.IgnoreDuplicateKey, i.IsDisabled, i.DataCompression))
+                (fun (pa, ff, pad, arl, apl, nrs, idk, dis, dc) i ->
+                    { i with
+                        IsPlatformAuto = pa; FillFactor = ff; IsPadded = pad
+                        AllowRowLocks = arl; AllowPageLocks = apl; NoRecomputeStatistics = nrs
+                        IgnoreDuplicateKey = idk; IsDisabled = dis; DataCompression = dc })) ]
 
-    /// NM-17 — the kind-OWN facets that differ between a kind's source and
-    /// target realization. Presence/name is the top-level partition; children
-    /// ride the attribute/reference/index channels; this is the kind's own
-    /// shape. Empty ⇒ the kind's own facets are identical. Mirrors
-    /// `changedFacets`.
-    let private changedKindFacets (s: Kind) (t: Kind) : Set<KindFacet> =
-        [ if s.Modality <> t.Modality then KindFacet.Modality
-          if s.Triggers <> t.Triggers then KindFacet.Triggers
-          if s.ColumnChecks <> t.ColumnChecks then KindFacet.ColumnChecks
-          if s.IsActive <> t.IsActive then KindFacet.IsActive ]
-        |> Set.ofList
+    /// NM-17 — the kind-OWN facets (population modality / triggers / table-level
+    /// CHECKs / activation). Not a `ChannelSpec` channel (these are a
+    /// `Set<KindFacet>`, applied directly in `applyDiff`), but the same
+    /// facet-table shape; `Facet.changed`/`Facet.applyAll` drive it.
+    let private kindFacets : Facet<Kind, KindFacet> list =
+        [ Facet.ofLens KindFacet.Modality     (Facet.lens (fun (k: Kind) -> k.Modality) (fun v k -> { k with Modality = v }))
+          Facet.ofLens KindFacet.Triggers     (Facet.lens (fun (k: Kind) -> k.Triggers) (fun v k -> { k with Triggers = v }))
+          Facet.ofLens KindFacet.ColumnChecks (Facet.lens (fun (k: Kind) -> k.ColumnChecks) (fun v k -> { k with ColumnChecks = v }))
+          Facet.ofLens KindFacet.IsActive     (Facet.lens (fun (k: Kind) -> k.IsActive) (fun v k -> { k with IsActive = v })) ]
 
-    let private changedSequenceFacets (s: Sequence) (t: Sequence) : Set<SequenceFacet> =
-        [ if s.Schema <> t.Schema then SequenceFacet.Schema
-          if s.DataType <> t.DataType then SequenceFacet.DataType
-          if s.StartValue <> t.StartValue then SequenceFacet.StartValue
-          if s.Increment <> t.Increment then SequenceFacet.Increment
-          if s.Minimum <> t.Minimum then SequenceFacet.Minimum
-          if s.Maximum <> t.Maximum then SequenceFacet.Maximum
-          if s.IsCycleEnabled <> t.IsCycleEnabled then SequenceFacet.Cycle
-          if (s.CacheMode, s.CacheSize) <> (t.CacheMode, t.CacheSize) then SequenceFacet.Cache ]
-        |> Set.ofList
+    /// C1 — the sequence-shape facets. `Cache` groups `CacheMode` + `CacheSize`
+    /// into one tuple lens.
+    let private sequenceFacets : Facet<Sequence, SequenceFacet> list =
+        [ Facet.ofLens SequenceFacet.Schema     (Facet.lens (fun (s: Sequence) -> s.Schema) (fun v s -> { s with Schema = v }))
+          Facet.ofLens SequenceFacet.DataType   (Facet.lens (fun (s: Sequence) -> s.DataType) (fun v s -> { s with DataType = v }))
+          Facet.ofLens SequenceFacet.StartValue (Facet.lens (fun (s: Sequence) -> s.StartValue) (fun v s -> { s with StartValue = v }))
+          Facet.ofLens SequenceFacet.Increment  (Facet.lens (fun (s: Sequence) -> s.Increment) (fun v s -> { s with Increment = v }))
+          Facet.ofLens SequenceFacet.Minimum    (Facet.lens (fun (s: Sequence) -> s.Minimum) (fun v s -> { s with Minimum = v }))
+          Facet.ofLens SequenceFacet.Maximum    (Facet.lens (fun (s: Sequence) -> s.Maximum) (fun v s -> { s with Maximum = v }))
+          Facet.ofLens SequenceFacet.Cycle      (Facet.lens (fun (s: Sequence) -> s.IsCycleEnabled) (fun v s -> { s with IsCycleEnabled = v }))
+          Facet.ofLens SequenceFacet.Cache      (Facet.lens (fun (s: Sequence) -> (s.CacheMode, s.CacheSize)) (fun (cm, cs) s -> { s with CacheMode = cm; CacheSize = cs })) ]
 
-    // -- M7: the per-facet appliers (the apply side of each channel's facet
-    //    surface). Patch ONE facet of `dest` from `src`; every other field
-    //    rides through. `dest` is an existing record value, so `{ dest with … }`
-    //    replaces a single field — no smart-constructor reconstruction, so the
-    //    `{ create … with … }` default-substitution bomb cannot bite (the
-    //    discipline §6 of the C1 debrief). Each is the `applyFacet` field of its
-    //    channel's `ChannelSpec` below, shared between build and apply.
-
-    /// Patch one column-shape facet of `dest` from `src` (the recorded target's
-    /// attribute). applyDiff's power exactly matches the facet set `between`
-    /// detects, so no un-captured field is silently reconstructed.
-    let private applyFacet (src: Attribute) (facet: AttributeFacet) (dest: Attribute) : Attribute =
-        match facet with
-        | AttributeFacet.DataType     -> { dest with Type = src.Type }
-        | AttributeFacet.Nullability  -> dest |> Lens.over CatalogLenses.columnOf (fun col -> { col with IsNullable = src.Column.IsNullable })
-        | AttributeFacet.PrimaryKey   -> { dest with IsPrimaryKey = src.IsPrimaryKey }
-        | AttributeFacet.Length       -> { dest with Length = src.Length }
-        | AttributeFacet.Precision    -> { dest with Precision = src.Precision }
-        | AttributeFacet.Scale        -> { dest with Scale = src.Scale }
-        | AttributeFacet.Identity     -> { dest with IsIdentity = src.IsIdentity }
-        | AttributeFacet.DefaultValue -> { dest with DefaultValue = src.DefaultValue; DefaultName = src.DefaultName }
-        | AttributeFacet.Computed     -> { dest with Computed = src.Computed }
-
-    let private applyReferenceFacet (src: Reference) (facet: ReferenceFacet) (dest: Reference) : Reference =
-        match facet with
-        | ReferenceFacet.Target          -> { dest with TargetKind = src.TargetKind }
-        | ReferenceFacet.SourceAttribute -> { dest with SourceAttribute = src.SourceAttribute }
-        | ReferenceFacet.OnDelete        -> { dest with OnDelete = src.OnDelete }
-        | ReferenceFacet.OnUpdate        -> { dest with OnUpdate = src.OnUpdate }
-        | ReferenceFacet.UserFk          -> { dest with IsUserFk = src.IsUserFk }
-        // M4 — set one boolean dimension of the `ConstraintState` DU per facet,
-        // preserving the other from `dest`, then renormalize through
-        // `ofLegacyBooleans`. The `DbConstraint`-before-`Trust` tag order (the
-        // `Set.fold` iteration order) makes the combined `NoDbConstraint →
-        // UntrustedConstraint` transition reconstruct exactly: a lone `Trust`
-        // facet never targets a `NoDbConstraint` dest (it always co-occurs with
-        // a `DbConstraint` facet), and `DbConstraint` lands first.
-        | ReferenceFacet.DbConstraint    ->
-            { dest with ConstraintState =
-                            ConstraintState.ofLegacyBooleans (Reference.hasDbConstraint src) (Reference.isConstraintTrusted dest) }
-        | ReferenceFacet.Trust           ->
-            { dest with ConstraintState =
-                            ConstraintState.ofLegacyBooleans (Reference.hasDbConstraint dest) (Reference.isConstraintTrusted src) }
-
-    let private applyIndexFacet (src: Index) (facet: IndexFacet) (dest: Index) : Index =
-        match facet with
-        | IndexFacet.Columns         -> { dest with Columns = src.Columns }
-        | IndexFacet.Uniqueness      -> { dest with Uniqueness = src.Uniqueness }
-        | IndexFacet.IncludedColumns -> { dest with IncludedColumns = src.IncludedColumns }
-        | IndexFacet.Filter          -> { dest with Filter = src.Filter }
-        | IndexFacet.DataSpace       -> { dest with DataSpace = src.DataSpace }
-        | IndexFacet.Options ->
-            { dest with
-                IsPlatformAuto = src.IsPlatformAuto
-                FillFactor = src.FillFactor
-                IsPadded = src.IsPadded
-                AllowRowLocks = src.AllowRowLocks
-                AllowPageLocks = src.AllowPageLocks
-                NoRecomputeStatistics = src.NoRecomputeStatistics
-                IgnoreDuplicateKey = src.IgnoreDuplicateKey
-                IsDisabled = src.IsDisabled
-                DataCompression = src.DataCompression }
-
-    let private applySequenceFacet (src: Sequence) (facet: SequenceFacet) (dest: Sequence) : Sequence =
-        match facet with
-        | SequenceFacet.Schema     -> { dest with Schema = src.Schema }
-        | SequenceFacet.DataType   -> { dest with DataType = src.DataType }
-        | SequenceFacet.StartValue -> { dest with StartValue = src.StartValue }
-        | SequenceFacet.Increment  -> { dest with Increment = src.Increment }
-        | SequenceFacet.Minimum    -> { dest with Minimum = src.Minimum }
-        | SequenceFacet.Maximum    -> { dest with Maximum = src.Maximum }
-        | SequenceFacet.Cycle      -> { dest with IsCycleEnabled = src.IsCycleEnabled }
-        | SequenceFacet.Cache      -> { dest with CacheMode = src.CacheMode; CacheSize = src.CacheSize }
+    // The per-facet APPLIERS are no longer separate match expressions — each
+    // facet's `Apply` is the `set (get src) dest` half of its lens in the tables
+    // above. `Facet.applyAll` patches a `dest` from a `src` over a facet table;
+    // because detection and application read the SAME table, no un-captured field
+    // can be silently reconstructed (the C1 invariant, now structural).
 
     /// M7 — the kind-scoped channel reified as data: the four accessors that
     /// vary per channel, plus the facet detector, change constructor /
@@ -461,16 +464,16 @@ module CatalogDiff =
             keyOf         : 'entity -> SsKey
             /// The entity's logical name (a `Name` change ⇒ `Renamed`).
             nameOf        : 'entity -> Name
-            /// The facets whose emitted shape differs (empty ⇒ unchanged).
-            changedFacets : 'entity -> 'entity -> Set<'facet>
+            /// The facet table — the SINGLE source for both detection
+            /// (`Facet.changed`) and application (`Facet.applyAll`). Because
+            /// build and apply read the same list, they cannot desynchronize.
+            facets        : Facet<'entity, 'facet> list
             /// Construct the channel's change-evidence record.
             mkChange      : SsKey -> Set<'facet> -> 'change
             /// The key a change-evidence record is keyed by.
             keyOfChange   : 'change -> SsKey
             /// The facet set a change-evidence record carries.
             facetsOf      : 'change -> Set<'facet>
-            /// Apply one facet of `src` onto `dest` (only that facet moves).
-            applyFacet    : 'entity -> 'facet -> 'entity -> 'entity
             /// Rename an entity to a new `Name` (every other field rides through).
             renameTo      : Name -> 'entity -> 'entity
         }
@@ -511,7 +514,7 @@ module CatalogDiff =
             |> List.choose (fun s ->
                 match Map.tryFind (spec.keyOf s) tgtByKey with
                 | Some t ->
-                    let facets = spec.changedFacets s t
+                    let facets = Facet.changed spec.facets s t
                     if Set.isEmpty facets then None
                     else Some (spec.mkChange (spec.keyOf s) facets)
                 | None -> None)
@@ -524,44 +527,40 @@ module CatalogDiff =
         { entitiesOf = fun (k: Kind) -> k.Attributes
           keyOf = fun a -> a.SsKey
           nameOf = fun a -> a.Name
-          changedFacets = changedFacets
+          facets = attributeFacets
           mkChange = fun key facets -> { AttributeKey = key; Facets = facets }
           keyOfChange = fun c -> c.AttributeKey
           facetsOf = fun c -> c.Facets
-          applyFacet = applyFacet
           renameTo = fun n a -> { a with Name = n } }
 
     let private referenceSpec : ChannelSpec<Kind, Reference, ReferenceFacet, ReferenceChange> =
         { entitiesOf = fun (k: Kind) -> k.References
           keyOf = fun r -> r.SsKey
           nameOf = fun r -> r.Name
-          changedFacets = changedReferenceFacets
+          facets = referenceFacets
           mkChange = fun key facets -> { ReferenceKey = key; Facets = facets }
           keyOfChange = fun c -> c.ReferenceKey
           facetsOf = fun c -> c.Facets
-          applyFacet = applyReferenceFacet
           renameTo = fun n r -> { r with Name = n } }
 
     let private indexSpec : ChannelSpec<Kind, Index, IndexFacet, IndexChange> =
         { entitiesOf = fun (k: Kind) -> k.Indexes
           keyOf = fun i -> i.SsKey
           nameOf = fun i -> i.Name
-          changedFacets = changedIndexFacets
+          facets = indexFacets
           mkChange = fun key facets -> { IndexKey = key; Facets = facets }
           keyOfChange = fun c -> c.IndexKey
           facetsOf = fun c -> c.Facets
-          applyFacet = applyIndexFacet
           renameTo = fun n i -> { i with Name = n } }
 
     let private sequenceSpec : ChannelSpec<Catalog, Sequence, SequenceFacet, SequenceChange> =
         { entitiesOf = fun (c: Catalog) -> c.Sequences
           keyOf = fun s -> s.SsKey
           nameOf = fun s -> s.Name
-          changedFacets = changedSequenceFacets
+          facets = sequenceFacets
           mkChange = fun key facets -> { SequenceKey = key; Facets = facets }
           keyOfChange = fun c -> c.SequenceKey
           facetsOf = fun c -> c.Facets
-          applyFacet = applySequenceFacet
           renameTo = fun n s -> { s with Name = n } }
 
     let private attributeDiff (sourceKind: Kind) (targetKind: Kind) : AttributeDiff =
@@ -605,7 +604,7 @@ module CatalogDiff =
                     | Some r -> spec.renameTo r.NewName e
                     | None -> e
                 match d.Reshaped |> List.tryFind (fun c -> spec.keyOfChange c = spec.keyOf e), tgtByKey (spec.keyOf e) with
-                | Some change, Some src -> Set.fold (fun acc f -> spec.applyFacet src f acc) renamed1 (spec.facetsOf change)
+                | Some change, Some src -> Facet.applyAll spec.facets src (spec.facetsOf change) renamed1
                 | _ -> renamed1)
         let added = tgtEntities |> List.filter (fun e -> Set.contains (spec.keyOf e) d.Added)
         survivors @ added
@@ -706,7 +705,7 @@ module CatalogDiff =
                 (fun acc key ->
                     match Catalog.tryFindKind key source, Catalog.tryFindKind key target with
                     | Some sk, Some tk ->
-                        let facets = changedKindFacets sk tk
+                        let facets = Facet.changed kindFacets sk tk
                         if Set.isEmpty facets then acc else Map.add key facets acc
                     | _ -> acc)
                 Map.empty
@@ -885,18 +884,8 @@ module CatalogDiff =
     // widen the surface; deferred under IR-grows-under-evidence.
 
     /// NM-17 — patch one kind-OWN facet of `dest` from `src` (the recorded
-    /// target kind). Mirrors `applyFacet`; only the named facet moves, every
-    /// other field of `dest` rides through. `dest` is an existing `Kind`
-    /// value, so `{ dest with … }` replaces a single field (no smart-ctor
-    /// reconstruction → no default-substitution bomb). (Not a `ChannelSpec`
-    /// channel: the kind-OWN facets are a `Set<KindFacet>`, not an
-    /// Added/Removed/Renamed/Reshaped channel; applied directly in `applyDiff`.)
-    let private applyKindFacet (src: Kind) (facet: KindFacet) (dest: Kind) : Kind =
-        match facet with
-        | KindFacet.Modality     -> { dest with Modality = src.Modality }
-        | KindFacet.Triggers     -> { dest with Triggers = src.Triggers }
-        | KindFacet.ColumnChecks -> { dest with ColumnChecks = src.ColumnChecks }
-        | KindFacet.IsActive     -> { dest with IsActive = src.IsActive }
+    // The kind-OWN facet applier is `Facet.applyAll kindFacets` (the apply half
+    // of the `kindFacets` table defined above) — see `applyDiff` below.
 
     /// 6.A.11 — apply a `CatalogDiff` to a base `Catalog`, reconstructing the
     /// target modulo the captured surface. Total: trusts the delta (no
@@ -929,7 +918,7 @@ module CatalogDiff =
                 | None -> withRefs
             // NM-17 — patch the kind's own facets from the recorded target.
             match Map.tryFind k.SsKey data.KindFacetDiffs, tgtKind with
-            | Some facets, Some tk -> Set.fold (fun acc f -> applyKindFacet tk f acc) withIndexes facets
+            | Some facets, Some tk -> Facet.applyAll kindFacets tk facets withIndexes
             | _ -> withIndexes
         // Transform base's modules: drop Removed kinds, transform survivors.
         let survivingKeys =

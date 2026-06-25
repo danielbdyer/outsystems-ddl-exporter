@@ -92,7 +92,8 @@ module Lens =
 ///     Policy.filterBySelection, CatalogDiff.addKind
 ///   - `attributesOf`: LogicalColumnEmission.substituteKind
 ///   - `referencesOf`: SymmetricClosure
-///   - `columnOf`: LogicalColumnEmission.substituteAttribute, CatalogDiff.applyFacet
+///   - `columnOf`: LogicalColumnEmission.substituteAttribute, CatalogDiff's
+///     `attributeFacets` Nullability lens (`Lens.compose columnOf …`)
 [<RequireQualifiedAccess>]
 module CatalogLenses =
 
