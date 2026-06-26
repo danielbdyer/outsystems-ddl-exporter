@@ -1,4 +1,5 @@
 namespace Projection.Pipeline
+// LINT-ALLOW-FILE-MUTATION: sealed function-local mutable accumulator building the snapshot-scope parameter set, returned immutably
 
 open Projection.Adapters.OssysSql
 

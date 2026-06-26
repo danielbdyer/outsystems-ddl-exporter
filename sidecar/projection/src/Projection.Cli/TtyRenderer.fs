@@ -36,7 +36,7 @@ let buildSummaryView (command: string) (code: int) : View.View =
             | Some "red"   -> "canary.divergence", Map.empty
             | _ ->
                 "summary.runComplete",
-                Map.ofList [ "outcome", box (if code = 0 then "succeeded" else "failed") ]
+                Map.ofList [ "outcome", box (if code = 0 then "succeeded" else "failed") ]  // LINT-ALLOW: terminal TtyRenderer payload box into the Map<string,objnull> LogSink boundary
         match Voice.verdict codeForVerdict payload with
         | Some (st, t) -> View.PanelRow.Labeled("verdict", t, st)
         | None ->
@@ -259,7 +259,7 @@ let buildSurveyView (reports: CapabilitySurvey.EnvironmentReport list) : View.Vi
             if not r.Connected then "no live gate (file or ephemeral)", View.Neutral
             elif not r.Reachable then "unreachable", View.Bad
             elif not (List.isEmpty r.Missing) then
-                sprintf "reachable %s missing %s" Theme.dot (r.Missing |> List.map CapabilitySurvey.Capability.text |> String.concat ", "), View.Warn
+                sprintf "reachable %s missing %s" Theme.dot (r.Missing |> List.map CapabilitySurvey.Capability.text |> String.concat ", "), View.Warn  // LINT-ALLOW: terminal Spectre console text at the TtyRenderer boundary
             elif r.GrantUnreadable then
                 // NM-55 — reachable but the grant could not be read: unverified,
                 // not covered.

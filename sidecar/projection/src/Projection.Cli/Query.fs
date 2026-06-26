@@ -1,4 +1,5 @@
 module Projection.Cli.Query
+// LINT-ALLOW-FILE-MUTATION: the JSON-path descent uses a sealed function-local mutable cursor (depth) within the query walk
 
 open System.Text.Json.Nodes
 

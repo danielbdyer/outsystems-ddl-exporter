@@ -1,4 +1,5 @@
 module Projection.Cli.View
+// LINT-ALLOW-FILE: the operator-console TUI render module — function-local render-loop mutation + terminal Spectre markup composition at the console boundary
 
 open System.Text.Json.Nodes
 open Spectre.Console

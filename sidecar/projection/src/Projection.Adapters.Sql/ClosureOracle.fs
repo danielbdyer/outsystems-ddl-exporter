@@ -1,4 +1,5 @@
 namespace Projection.Adapters.Sql
+// LINT-ALLOW-FILE-MUTATION: the closure BFS (worklist + fuel + accumulators) is a sealed function-local imperative traversal at the SQL seam; the closure is assembled once then returned immutably
 
 open System.Threading.Tasks
 open Microsoft.Data.SqlClient

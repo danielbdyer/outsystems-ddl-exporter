@@ -1,4 +1,5 @@
 namespace Projection.Pipeline
+// LINT-ALLOW-FILE: this module's sole role is projecting domain LineageEvents into LogSink.Envelope heterogeneous payloads (Map<string, objnull>, serialized via Utf8JsonWriter); the box at each field IS the LogSink-contract boundary and the operatorIntent:/dataIntent: tags are terminal event codes — no SQL/JSON/XML structure is composed here
 
 open Projection.Core
 

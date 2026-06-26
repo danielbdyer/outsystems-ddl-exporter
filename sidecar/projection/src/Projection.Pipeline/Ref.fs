@@ -35,11 +35,11 @@ module Ref =
     /// Human-readable identity of a ref (for diff/explain headers, logs).
     let identity (r: Ref) : string =
         match r with
-        | File p -> "file:" + p
+        | File p -> "file:" + p  // LINT-ALLOW: terminal Ref-identity tag (file:/@/live:/ossys: prefix); the value IS a string identity, no use-case-specific AST applies
         | Json _ -> "json:inline"
-        | RunArtifact id -> "@" + id
-        | Live c -> "live:" + c
-        | Ossys c -> "ossys:" + c
+        | RunArtifact id -> "@" + id  // LINT-ALLOW: terminal Ref-identity tag; string identity at the boundary
+        | Live c -> "live:" + c  // LINT-ALLOW: terminal Ref-identity tag; string identity at the boundary
+        | Ossys c -> "ossys:" + c  // LINT-ALLOW: terminal Ref-identity tag; string identity at the boundary
 
     /// Both operands are OSSYS-sourced (`ossys:`) ⇒ a cross-environment compare
     /// is espace-SAFE by identity (native GUID), and the caller should normalize

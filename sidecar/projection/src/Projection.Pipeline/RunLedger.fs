@@ -1,4 +1,5 @@
 namespace Projection.Pipeline
+// LINT-ALLOW-FILE-MUTATION: sealed function-local mutable accumulators in the append-only ledger writer; mutation never escapes the write
 
 open System
 open System.IO

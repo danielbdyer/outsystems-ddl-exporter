@@ -64,7 +64,7 @@ module SqlprojEmitter =
                 w.WriteEndElement()
 
             w.WriteStartElement "Project"
-            w.WriteAttributeString("Sdk", System.String.Concat("Microsoft.Build.Sql/", sdkVersion))
+            w.WriteAttributeString("Sdk", System.String.Concat("Microsoft.Build.Sql/", sdkVersion))  // LINT-ALLOW: terminal XML attribute value (SDK ref) at the XmlWriter boundary
 
             w.WriteStartElement "PropertyGroup"
             w.WriteElementString("Name", projectName)
@@ -88,4 +88,4 @@ module SqlprojEmitter =
             w.Flush()
         )
         // XmlWriter omits a trailing newline; add one for POSIX-clean files (T1).
-        System.String.Concat(sw.ToString(), "\n")
+        System.String.Concat(sw.ToString(), "\n")  // LINT-ALLOW: terminal newline suffix on the XmlWriter-rendered .sqlproj text at the writer boundary

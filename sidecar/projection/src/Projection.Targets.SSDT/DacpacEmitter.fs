@@ -1,4 +1,5 @@
 namespace Projection.Targets.SSDT
+// LINT-ALLOW-FILE-MUTATION: sealed function-local mutable accumulator collecting dropped-statement diagnostics during DacFx model assembly; never escapes
 
 open System
 open System.IO

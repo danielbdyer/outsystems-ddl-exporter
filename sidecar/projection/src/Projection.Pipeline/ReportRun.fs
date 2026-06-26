@@ -1,4 +1,5 @@
 namespace Projection.Pipeline
+// LINT-ALLOW-FILE-MUTATION: BCL System.Text.Json.Nodes DOM construction — the JsonObject indexer set (obj.[key] <- node) IS the sanctioned typed-JSON path (built-in-obligation pillar); the DOM is built once then serialized, never re-read mutably
 
 open System.Text.Json.Nodes
 open Projection.Core

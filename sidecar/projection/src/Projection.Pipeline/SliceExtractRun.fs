@@ -1,4 +1,5 @@
 namespace Projection.Pipeline
+// LINT-ALLOW-FILE-MUTATION: the slice-extract closure fetch loop uses sealed function-local mutable accumulators at the SQL seam
 
 // STOPGAP (2026-06-18 — pre-existing, NOT part of the Spectre render chapter): the
 // `extractSpec` task below trips FS3511 (an `await`/`let!` inside a `for` loop) under

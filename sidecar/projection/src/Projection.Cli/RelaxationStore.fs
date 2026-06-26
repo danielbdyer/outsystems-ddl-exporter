@@ -1,4 +1,5 @@
 module Projection.Cli.RelaxationStore
+// LINT-ALLOW-FILE-MUTATION: sealed function-local mutable accumulator in the relaxation-store merge; returned immutably
 
 open System.IO
 open System.Text.Json

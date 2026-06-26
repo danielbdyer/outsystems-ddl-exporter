@@ -98,8 +98,8 @@ module LogicalColumnEmission =
         |> List.fold
             (fun (acc: string) (physical, logical) ->
                 acc.Replace(  // LINT-ALLOW: bracketed-identifier token rewrite at the substitution pass; the tokens are typed names lifted from the IR (ColumnRealization/Name), not composed prose; Core is ScriptDom-free by design so a typed-AST rewrite is not available at this layer
-                    System.String.Concat("[", physical, "]"),
-                    System.String.Concat("[", logical, "]"),
+                    System.String.Concat("[", physical, "]"),  // LINT-ALLOW: terminal bracketed-identifier for the rename-pair refactorlog field; no use-case-specific AST at this string site
+                    System.String.Concat("[", logical, "]"),  // LINT-ALLOW: terminal bracketed-identifier for the rename-pair refactorlog field; no use-case-specific AST at this string site
                     System.StringComparison.OrdinalIgnoreCase))
             definition
 

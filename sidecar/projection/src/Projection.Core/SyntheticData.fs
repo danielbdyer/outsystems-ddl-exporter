@@ -1,4 +1,5 @@
 namespace Projection.Core
+// LINT-ALLOW-FILE-MUTATION: the deterministic synthetic-data generator uses sealed function-local mutable accumulators for value generation; assembled once then returned immutably
 
 /// THE_SYNTHETIC_DATA_DESIGN.md §1 / §8 — synthesis is the section of
 /// profiling: `σ : Profile ⟶ Data` such that `π ∘ σ ≈ id`. This module is

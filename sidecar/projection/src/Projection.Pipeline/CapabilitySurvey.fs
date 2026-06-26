@@ -217,11 +217,11 @@ module CapabilitySurvey =
         match declared with
         | Archetype.FullRights ->
             [ if not (has createTablePermission)   then yield RequiredCapabilityDenied createTablePermission
-              if not (has identityInsertPermission) then yield RequiredCapabilityDenied (identityInsertPermission + " (IDENTITY_INSERT)")
+              if not (has identityInsertPermission) then yield RequiredCapabilityDenied (identityInsertPermission + " (IDENTITY_INSERT)")  // LINT-ALLOW: terminal capability-label string (permission name + IDENTITY_INSERT suffix); no AST at this boundary
               if not (has dmvReadPermission)        then yield SoftCapabilityAbsent dmvReadPermission ]
         | Archetype.ManagedDml ->
             [ if has createTablePermission   then yield ForbiddenCapabilityPermitted createTablePermission
-              if has identityInsertPermission then yield ForbiddenCapabilityPermitted (identityInsertPermission + " (IDENTITY_INSERT)") ]
+              if has identityInsertPermission then yield ForbiddenCapabilityPermitted (identityInsertPermission + " (IDENTITY_INSERT)") ]  // LINT-ALLOW: terminal capability-label string (permission name + IDENTITY_INSERT suffix); no AST at this boundary
 
     /// The operator-facing line for one archetype finding (the advisory surface).
     /// The finding TYPE already implies the class — `RequiredCapabilityDenied`
@@ -315,7 +315,7 @@ module CapabilitySurvey =
                   elif r.GrantUnreadable then
                       yield sprintf "  %s: grant unreadable (coverage unverified)" r.Name
                   else
-                      yield sprintf "  %s: missing %s" r.Name (r.Missing |> List.map Capability.text |> String.concat ", ")
+                      yield sprintf "  %s: missing %s" r.Name (r.Missing |> List.map Capability.text |> String.concat ", ")  // LINT-ALLOW: terminal operator-facing capability message at the survey boundary
               // The declared-vs-probed archetype reconciliation (the J5 covenant
               // generalized) — surfaced, never a gate; the run proceeds (R6).
               for r in findingReports do
