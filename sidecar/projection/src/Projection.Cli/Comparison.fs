@@ -1,4 +1,5 @@
 module Projection.Cli.Comparison
+// LINT-ALLOW-FILE: the CLI diff-rendering module — terminal Spectre markup + evidence-string composition at the console boundary
 
 open Projection.Core
 

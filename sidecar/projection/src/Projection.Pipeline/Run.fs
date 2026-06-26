@@ -1,4 +1,5 @@
 namespace Projection.Pipeline
+// LINT-ALLOW-FILE-MUTATION: the run record + RunState envelope/event-stream are assembled by sealed function-local imperative loops, then returned immutably; mutation never escapes the builder (FP-promised-land pillar 4 — mutation reified at file level)
 
 open System
 open System.IO
@@ -333,7 +334,7 @@ module Run =
         : Run =
         let registered, applied, declined = LogSink.transformCounts ()
         { RunId       = LogSink.runId ()
-          Ts          = DateTime.UtcNow.ToString("o")
+          Ts          = DateTime.UtcNow.ToString("o")  // LINT-ALLOW: wall-clock timestamp at the run-record IO boundary (ISO-8601 round-trip o format)
           Command     = command
           InputDigest = inputDigest
           Outcome     = (if code = 0 then "succeeded" else "failed")

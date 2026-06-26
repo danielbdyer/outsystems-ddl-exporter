@@ -75,6 +75,25 @@ let ``Config.parse: emission.tolerance non-array fails with a typeMismatch`` () 
         errors |> List.exists (fun e -> e.Code.Contains "typeMismatch" || e.Message.Contains "must be an array"),
         sprintf "expected a typeMismatch for a non-array tolerance; got %A" (errors |> List.map (fun e -> e.Code)))
 
+[<Fact>]
+let ``Config.parse: accumulates errors across multiple malformed sections (not just the first)`` () =
+    // `emission` (tolerance non-array) AND `policy` (transformGroups non-array)
+    // are both malformed. `emission` is parsed before `policy`, so the prior
+    // hand-threaded `match | Error es -> Error es` ladder short-circuited at
+    // `emission` and never reached `policy`. The applicative `validation` parse
+    // surfaces BOTH — fulfilling `parse`'s "every malformed entry in one pass"
+    // docstring promise. The transformGroups error's presence is the proof that
+    // parsing continued past the failing `emission` section.
+    let json = """{ "model": { "path": "m" }, "emission": { "tolerance": "x" }, "policy": { "transformGroups": "y" } }"""
+    let errors = Config.parse json |> mustFail
+    Assert.True(
+        errors.Length >= 2,
+        sprintf "expected >=2 accumulated errors across sections; got %A" (errors |> List.map (fun e -> e.Message)))
+    Assert.True(
+        errors |> List.exists (fun e -> e.Message.Contains "transformGroups"),
+        sprintf "expected the policy.transformGroups error (proves parsing continued past the failed emission section); got %A"
+            (errors |> List.map (fun e -> e.Message)))
+
 // -----------------------------------------------------------------------
 // 2026-06-25 — `emission.dataStaging`: the large-kind staging posture
 // (`auto`/`inline`/`tempTable` + threshold). Absent ⇒ `auto` > 1000 (the

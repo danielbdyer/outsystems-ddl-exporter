@@ -1,4 +1,5 @@
 namespace Projection.Cli
+// LINT-ALLOW-FILE-MUTATION: the live-watch TUI render loop + NDJSON-tail state are sealed function-local imperative loops at the terminal/IO boundary; mutation never escapes the watch loop
 
 open System
 open Spectre.Console

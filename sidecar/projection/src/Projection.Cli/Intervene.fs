@@ -1,4 +1,5 @@
 module Projection.Cli.Intervene
+// LINT-ALLOW-FILE-MUTATION: Spectre.Console prompt construction (prompt.Title <- ...) mutates the BCL prompt object at the terminal-IO boundary; sealed within the intervene call
 
 open System
 open Spectre.Console

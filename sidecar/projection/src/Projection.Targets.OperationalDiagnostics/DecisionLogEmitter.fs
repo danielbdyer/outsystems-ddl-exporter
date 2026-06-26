@@ -145,7 +145,7 @@ module internal DiagnosticDocument =
         | [] -> None
         | shed ->
             let codes =
-                shed |> List.map (fun e -> e.Code) |> List.sort |> String.concat "\n"
+                shed |> List.map (fun e -> e.Code) |> List.sort |> String.concat "\n"  // LINT-ALLOW: terminal newline-joined shed-code list for the diagnostic message; no AST
             Some
                 { DiagnosticEntry.create
                     "emitter:decisionLogEmitter"

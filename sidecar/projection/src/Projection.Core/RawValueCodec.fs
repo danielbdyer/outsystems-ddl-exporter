@@ -113,7 +113,7 @@ module RawValueCodec =
         | _ ->
             raise (
                 System.FormatException(
-                    String.concat "" [
+                    String.concat "" [  // LINT-ALLOW: terminal raw-value codec string composition; the codec output IS a string primitive
                         BooleanUnrecognizedCode
                         ": unrecognized Boolean raw value '"
                         raw

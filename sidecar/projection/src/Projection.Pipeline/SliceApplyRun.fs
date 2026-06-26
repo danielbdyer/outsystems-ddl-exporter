@@ -1,4 +1,5 @@
 namespace Projection.Pipeline
+// LINT-ALLOW-FILE-MUTATION: sealed function-local mutable accumulators in the slice-apply run loop
 
 open System.Threading.Tasks
 open Microsoft.Data.SqlClient

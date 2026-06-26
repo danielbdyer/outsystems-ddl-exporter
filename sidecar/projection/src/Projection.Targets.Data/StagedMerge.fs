@@ -24,26 +24,19 @@ module StagedMerge =
     let private up (stmt: #Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement) : Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement =
         stmt :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement
 
-    /// Writable attributes for a kind — computed columns excluded (they are
-    /// SQL-Server-computed; never staged, never written). Mirrors each emitter's
-    /// own `writableAttributes`; the staged column set must match the inline
-    /// MERGE's `AllColumns` projection.
-    let writableAttributes (k: Kind) : Attribute list =
-        k.Attributes |> List.filter (fun a -> a.Computed = None)
-
     /// Deterministic Phase-1 staging-`#temp` name — `#seed_<physical table>`.
     /// `TableId.tableText` extracts the underlying string from the `TableName` VO
     /// (a raw `k.Physical.Table` would stringify the whole value object —
     /// `TableName "X"` — and the embedded space/quotes are a SQL syntax error;
     /// that exact bug shipped once and died only at deploy).
     let stagedTempName (k: Kind) : string =
-        System.String.Concat("#seed_", TableId.tableText k.Physical)
+        System.String.Concat("#seed_", TableId.tableText k.Physical)  // LINT-ALLOW: terminal #temp identifier name; a temp-table name IS a string at the ScriptDom buildCreateTempTable boundary
 
     /// Deterministic Phase-2 staging-`#temp` name — `#fk_<physical table>`. The
     /// narrow PK + deferred-FK temp for the set-based re-point; distinct from the
     /// `#seed_` Phase-1 temp so both can coexist if a kind stages both phases.
     let fkStagedTempName (k: Kind) : string =
-        System.String.Concat("#fk_", TableId.tableText k.Physical)
+        System.String.Concat("#fk_", TableId.tableText k.Physical)  // LINT-ALLOW: terminal #temp identifier name; a temp-table name IS a string at the ScriptDom buildCreateTempTable boundary
 
     /// Staging `ColumnDef`s for a set of attributes: the target's SQL types with
     /// every constraint stripped — nullable, no identity / PK / default / computed.
@@ -103,9 +96,9 @@ module StagedMerge =
         (withIndex: bool)
         (table: TableId)
         (k: Kind)
-        (args: ScriptDomBuild.MergeBuildArgs)
+        (args: MergeBuildArgs)
         : string =
-        use _ = Bench.scope (System.String.Concat(bench, ".renderStagedPhase1"))
+        use _ = Bench.scope (System.String.Concat(bench, ".renderStagedPhase1"))  // LINT-ALLOW: terminal Bench telemetry-label composition (per-lane scope prefix); a label IS a string primitive
         let tempName =
             match args.StagedSource with
             | Some n -> n
@@ -131,13 +124,13 @@ module StagedMerge =
                     |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
                 match pkCols with
                 | [] -> None  // no PK → no index possible (the MERGE has nothing to merge-join on)
-                | _  -> Some (up (ScriptDomBuild.buildClusteredTempIndex (System.String.Concat("ix_stg_", TableId.tableText k.Physical)) tempName pkCols))
+                | _  -> Some (up (ScriptDomBuild.buildClusteredTempIndex (System.String.Concat("ix_stg_", TableId.tableText k.Physical)) tempName pkCols))  // LINT-ALLOW: terminal #temp index identifier name at the ScriptDom boundary
             else None
         // Inner statements in deploy order; the optional pieces (guard, identity
         // brackets, index) drop out cleanly via `List.choose id`.
         let inner =
             [ Some (up (ScriptDomBuild.buildDropTableIfExists tempName))
-              Some (up (ScriptDomBuild.buildCreateTempTable tempName (stagingColumnDefsOf (writableAttributes k)))) ]
+              Some (up (ScriptDomBuild.buildCreateTempTable tempName (stagingColumnDefsOf (KindColumns.writableAttributes k)))) ]
             @ (ScriptDomBuild.buildInsertBatches tempName args.AllColumns args.Rows |> List.map (up >> Some))
             @ [ indexOpt
                 guardOpt
@@ -165,7 +158,7 @@ module StagedMerge =
         (deferred: Set<Name>)
         (typedRows: Map<Name, SqlLiteral> list)
         : string =
-        use _ = Bench.scope (System.String.Concat(bench, ".renderStagedPhase2"))
+        use _ = Bench.scope (System.String.Concat(bench, ".renderStagedPhase2"))  // LINT-ALLOW: terminal Bench telemetry-label composition (per-lane scope prefix); a label IS a string primitive
         let tempName = fkStagedTempName k
         let pkAttrs       = k.Attributes |> List.filter (fun a -> a.IsPrimaryKey)
         let deferredAttrs = k.Attributes |> List.filter (fun a -> Set.contains a.Name deferred)

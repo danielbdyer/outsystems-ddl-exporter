@@ -299,6 +299,16 @@ type Statement =
     | CreateIndex of IndexDef
     | InsertRow of TableId * CellValue list
     | SetIdentityInsert of TableId * enabled: bool
+    /// The idempotent change-detecting MERGE for a kind's data population —
+    /// the typed form the data-emission lanes (static seeds / migration
+    /// dependencies / bootstrap / staged-`#temp`) share. Carries the build
+    /// args; `ScriptDomBuild.buildStatement` dispatches to the MERGE builder,
+    /// so the data lane joins the DDL lane on the typed `Statement` stream
+    /// rather than rendering MERGE text per-emitter.
+    | Merge of MergeBuildArgs
+    /// The Phase-2 deferred-FK re-point UPDATE (set-based or per-row form).
+    /// Carries the build args; dispatched via `ScriptDomBuild.buildStatement`.
+    | Update of UpdateBuildArgs
     /// `EXEC sys.sp_addextendedproperty` call attaching a named
     /// property + (optional) value to a schema object. Consumes
     /// `Module.ExtendedProperties` (SCHEMA-level; chapter 4.9 slice ε),

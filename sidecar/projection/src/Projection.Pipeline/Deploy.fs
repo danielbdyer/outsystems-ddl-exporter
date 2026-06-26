@@ -635,6 +635,14 @@ module Deploy =
                 | SetIdentityInsert _ ->
                     do! flushBulk ()
                     appendDdl s
+                | Statement.Merge _ | Statement.Update _ ->
+                    // The MERGE/UPDATE data-population variants. The SSDT-DDL
+                    // deploy stream does not currently carry these (the data
+                    // lane deploys via its own rendered path); they are
+                    // executable SQL, so route them through the same
+                    // flush-then-execute shape as the other non-bulk statements.
+                    do! flushBulk ()
+                    appendDdl s
                 | AlterTableNoCheckConstraint _ | AlterTableDisableConstraint _ ->
                     // Slice 5.13.fk-features-emit (matrix row 59) +
                     // 6.A.6 — ALTER TABLE … NOCHECK CONSTRAINT (disable)

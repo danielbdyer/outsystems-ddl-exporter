@@ -1,4 +1,5 @@
 namespace Projection.Pipeline
+// LINT-ALLOW-FILE-MUTATION: BCL SqlConnectionStringBuilder property set at the connection-string boundary; sealed within the builder
 
 open Microsoft.Data.SqlClient
 open Projection.Core

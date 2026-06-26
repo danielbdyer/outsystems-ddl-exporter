@@ -10,6 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="DataStatementArgs.fs" />
     <Compile Include="Statement.fs" />
     <Compile Include="ScriptDomBuild.fs" />
     <Compile Include="ScriptDomGenerate.fs" />

@@ -327,7 +327,7 @@ module TableId =
     /// so both sides agree on the format. `normalizedKeyOf` is the same recipe
     /// over raw schema/table strings (the catalog-less reflected side).
     let normalizedKeyOf (schema: string) (table: string) : string =
-        System.String.Concat(schema.ToLowerInvariant(), ".", table.ToLowerInvariant())
+        System.String.Concat(schema.ToLowerInvariant(), ".", table.ToLowerInvariant())  // LINT-ALLOW: terminal normalized-key string (schema.table lowercased); the comparison key IS a string, no AST
 
     /// The normalized `schema.table` key for a `TableId`. See `normalizedKeyOf`.
     let normalizedKey (t: TableId) : string =

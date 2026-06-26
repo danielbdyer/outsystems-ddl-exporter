@@ -51,7 +51,7 @@ module Source =
     /// snapshots is precise. A read / decode failure is the named
     /// `source.snapshot.readFailed`.
     let ofSnapshot (path: string) : Source =
-        { Identity       = "snapshot:" + path
+        { Identity       = "snapshot:" + path  // LINT-ALLOW: terminal Source-identity tag string at the resolution boundary; no use-case-specific AST
           Capabilities   = Set.ofList [ ReadCatalog ]
           ReadCatalog    =
             (fun () ->
@@ -60,7 +60,7 @@ module Source =
                     Task.FromResult (
                         Result.failureOf (
                             ValidationError.create "source.snapshot.readFailed"
-                                (System.String.Concat("snapshot ", path, ": ", ex.Message)))))
+                                (System.String.Concat("snapshot ", path, ": ", ex.Message)))))  // LINT-ALLOW: terminal error-message composition at the source-resolution IO boundary; BCL String.Concat is the right primitive
           AcquireProfile = None }
 
     /// Cheap discriminator: a `CatalogCodec` snapshot writes its top-level
@@ -95,7 +95,7 @@ module Source =
             if Directory.Exists path then Path.Combine(path, bundleSnapshotName)
             else path
         if looksLikeCodecSnapshot resolved then ofSnapshot resolved
-        else snapshot ("file:" + resolved) (CatalogReader.SnapshotFile resolved)
+        else snapshot ("file:" + resolved) (CatalogReader.SnapshotFile resolved)  // LINT-ALLOW: terminal Source-identity tag string at the resolution boundary; no use-case-specific AST
 
     /// A static-model source from an inline JSON model — reads only.
     let ofJson (json: string) : Source =
@@ -149,10 +149,10 @@ module Source =
                     return
                         Result.failureOf
                             (ValidationError.create code
-                                (System.String.Concat(
+                                (System.String.Concat(  // LINT-ALLOW: terminal error-message composition at the source-resolution IO boundary; BCL String.Concat primitive
                                     "live source ", conn, ": ", ex.Message)))
             }
-        { Identity       = "live:" + conn
+        { Identity       = "live:" + conn  // LINT-ALLOW: terminal Source-identity tag string at the resolution boundary; no use-case-specific AST
           Capabilities   = Set.ofList [ ReadCatalog; Profile; Live ]
           ReadCatalog    =
             (fun () ->
@@ -192,7 +192,7 @@ module Source =
     /// (`env:<var>` / `file:<path>`). Carries ReadCatalog (the OSSYS model) +
     /// Profile (the live data — the readiness gate's dealbreaker evidence).
     let ofOssys (conn: string) : Source =
-        { Identity       = "ossys:" + conn
+        { Identity       = "ossys:" + conn  // LINT-ALLOW: terminal Source-identity tag string at the resolution boundary; no use-case-specific AST
           Capabilities   = Set.ofList [ ReadCatalog; Profile; Live ]
           ReadCatalog    =
             (fun () ->
@@ -202,7 +202,7 @@ module Source =
                         return
                             Result.failureOf
                                 (ValidationError.create "source.ossys.readFailed"
-                                    (System.String.Concat("ossys source ", conn, ": ", ex.Message)))
+                                    (System.String.Concat("ossys source ", conn, ": ", ex.Message)))  // LINT-ALLOW: terminal error-message composition at the source-resolution IO boundary; BCL String.Concat is the right primitive
                 })
           // The data-dealbreaker evidence for the readiness gate: profile the
           // env's live data (the OSUSR_* tables) under the OSSYS-read catalog.
@@ -220,7 +220,7 @@ module Source =
                         return
                             Result.failureOf
                                 (ValidationError.create "source.ossys.profileFailed"
-                                    (System.String.Concat("ossys source ", conn, ": ", ex.Message)))
+                                    (System.String.Concat("ossys source ", conn, ": ", ex.Message)))  // LINT-ALLOW: terminal error-message composition at the source-resolution IO boundary; BCL String.Concat is the right primitive
                 }) }
 
     /// Enrich a source with the `Profile` capability (the live / profilable

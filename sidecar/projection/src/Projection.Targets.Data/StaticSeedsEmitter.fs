@@ -31,46 +31,10 @@ module StaticSeedsEmitter =
     [<Literal>]
     let version : int = 1
 
-    /// Type-resolution lookup for a kind's columns. Returns the
-    /// (column-name, primitive-type) pair for each attribute, so the
-    /// renderer can format raw IR values as SQL literals.
-    let private columnTypeLookup (k: Kind) : Map<Name, PrimitiveType> =
-        k.Attributes
-        |> List.map (fun a -> a.Name, a.Type)
-        |> Map.ofList
-
-    /// Writable attributes for a kind — the columns the MERGE may
-    /// INSERT into and SELECT from `Source`. Persisted/computed columns
-    /// (gap N2; `Computed = Some _`) are SQL-Server-computed at write
-    /// time and can never appear in an INSERT column list, an UPDATE SET,
-    /// or a USING source; including one is a hard SQL error. Filtering
-    /// here keeps `AllColumns` and the per-row VALUES projection aligned.
-    let private writableAttributes (k: Kind) : Attribute list =
-        k.Attributes |> List.filter (fun a -> a.Computed = None)
-
-    /// Order columns deterministically (matches V1 + the SSDT emitter).
-    /// Per A33 (deterministic-ordered schema emission), sort by the
-    /// kind's declared attribute order — which is itself canonical
-    /// after `CanonicalizeIdentity`. Computed columns are excluded (never
-    /// written).
-    let private orderedColumnNames (k: Kind) : string list =
-        writableAttributes k |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
-
-    /// Primary-key column names in the kind's declared order. The
-    /// MERGE's ON-clause joins on these; the WHEN-NOT-MATCHED INSERT
-    /// includes them; the WHEN-MATCHED UPDATE excludes them (PK is
-    /// stable per row identity). Phase-2 UPDATEs use the same set
-    /// for the WHERE-clause row-scope.
-    let private pkColumnNames (k: Kind) : string list =
-        k.Attributes
-        |> List.filter (fun a -> a.IsPrimaryKey)
-        |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
-
-    /// Non-PK column names (the MERGE's UPDATE-target columns).
-    let private updatableColumnNames (k: Kind) : string list =
-        k.Attributes
-        |> List.filter (fun a -> not a.IsPrimaryKey)
-        |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
+    // The per-kind column vocabulary (columnTypeLookup / writableAttributes /
+    // orderedColumnNames / pkColumnNames / updatableColumnNames) is shared with
+    // `MigrationDependenciesEmitter` + `StagedMerge` and lives in
+    // `Projection.Core.KindColumns` (extracted at the third consumer).
 
     // -------------------------------------------------------------------
     // Slice δ — cycle-membership detection + Phase-2 deferred-FK set.
@@ -89,46 +53,17 @@ module StaticSeedsEmitter =
     // Phase-1 deferral on its outbound FKs to same-SCC peers.
     // -------------------------------------------------------------------
 
-    /// Project a StaticRow's `Map<Name, string>` raw values into the
-    /// typed `Map<Name, SqlLiteral>` form `DataInsertRow.Values`
-    /// expects (slice κ pillar 1 lift). Resolves each attribute's
-    /// `PrimitiveType` once at construction; missing values default
-    /// to empty-raw (V2 IR's empty-raw sentinel per `RawValueCodec`,
-    /// which `SqlLiteral.ofRaw` maps to `NullLit` for non-text
-    /// types).
-    let private staticRowToTypedValues
-        (typeLookup: Map<Name, PrimitiveType>)
-        (attributes: Attribute list)
-        (row: StaticRow)
-        : Map<Name, SqlLiteral> =
-        attributes
-        |> List.map (fun a ->
-            let raw =
-                Map.tryFind a.Name row.Values
-                |> Option.defaultValue ""
-            let typ =
-                Map.tryFind a.Name typeLookup
-                |> Option.defaultValue PrimitiveType.Text
-            a.Name, SqlLiteral.ofRaw typ raw)
-        |> Map.ofList
+    // The raw-row → typed-`SqlLiteral` projection lives in
+    // `Projection.Core.KindColumns.rowToTypedValues` (shared with the
+    // migration lane).
 
     /// Project the typed-Values row into the `SqlLiteral list` form
     /// `MergeBuildArgs.Rows` expects. Iterates the kind's attributes
     /// in declared order. Slice δ: columns named in `deferred` are
     /// emitted as `SqlLiteral.NullLit` regardless of the row's
     /// typed value (Phase-1 cycle-break).
-    let private typedValuesToSqlLiterals
-        (deferred: Set<Name>)
-        (attributes: Attribute list)
-        (values: Map<Name, SqlLiteral>)
-        : SqlLiteral list =
-        attributes
-        |> List.map (fun a ->
-            if Set.contains a.Name deferred then
-                SqlLiteral.NullLit
-            else
-                Map.tryFind a.Name values
-                |> Option.defaultValue SqlLiteral.NullLit)
+    // The deferred-aware VALUES-clause literal projection is shared:
+    // `Projection.Core.KindColumns.typedValuesToSqlLiterals`.
 
     // -------------------------------------------------------------------
     // Staged-source form (the error-8623-safe MERGE for large kinds). The
@@ -168,7 +103,7 @@ module StaticSeedsEmitter =
     let private renderMerge
         (verification: DataVerification)
         (staging: DataStagingPolicy)
-        (deleteScope: ScriptDomBuild.DeleteScope option)
+        (deleteScope: DeleteScope option)
         (cdcAware: bool)
         (deferred: Set<Name>)
         (bracketIdentity: bool)
@@ -202,13 +137,13 @@ module StaticSeedsEmitter =
             |> List.filter (fun a -> not (Set.contains a.Name deferred))
             |> List.filter (fun a -> a.Computed = None)
             |> List.map (fun a -> ColumnRealization.columnNameText a.Column)
-        let args : ScriptDomBuild.MergeBuildArgs =
+        let args : MergeBuildArgs =
             {
                 Target     = table
-                AllColumns = orderedColumnNames k
-                PkColumns  = pkColumnNames k
+                AllColumns = KindColumns.orderedColumnNames k
+                PkColumns  = KindColumns.pkColumnNames k
                 UpdColumns = updColumns
-                Rows        = typedRows |> List.map (typedValuesToSqlLiterals deferred (writableAttributes k))
+                Rows        = typedRows |> List.map (KindColumns.typedValuesToSqlLiterals deferred (KindColumns.writableAttributes k))
                 CdcAware    = cdcAware
                 DeleteScope = deleteScope
                 StagedSource = None
@@ -228,48 +163,24 @@ module StaticSeedsEmitter =
                 { args with StagedSource = Some (StagedMerge.stagedTempName k) }
         else
         Bench.recordSample "emit.staticSeeds.inline" 1L
-        let mergeStmt = (ScriptDomBuild.buildMergeStatement args).Value
-        // ScriptDomGenerate.generateOne emits the MERGE without a
-        // trailing `;` (semicolons appear between statements in a
-        // batch, not after a single-statement render). SQL Server
-        // REQUIRES MERGE to terminate with `;` (SqlException: "A
-        // MERGE statement must be terminated by a semi-colon (;)").
-        // The terminal-text boundary appends `;` + `GO`.
-        let mergeText =
-            ScriptDomGenerate.generateOne (mergeStmt :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement)
+        // The inline MERGE as a typed `Statement` batch. The terminal `;` + `GO`
+        // framing lives in `ScriptDomGenerate.renderDataBatch` (the data lane's
+        // ONE terminal-text boundary), not here — the emitter hands typed
+        // `Statement` values. WP6 step 1 (DECISIONS 2026-06-13): an IDENTITY-PK
+        // static kind (`IdentityDisposition.AssignedBySink`) seeds explicit PK
+        // values, so the MERGE's WHEN-NOT-MATCHED INSERT writes the IDENTITY
+        // column and SQL Server requires `SET IDENTITY_INSERT [t] ON`. The toggle
+        // is SESSION-scoped and the leveled deploy opens a fresh connection per
+        // GO-segment, so the bracket MUST stay ONE GO batch (no internal GO) —
+        // `renderDataBatch` emits the three statements as a single GO batch.
         let mergeBatch =
-          if not bracketIdentity then
-            System.String.Concat(  // LINT-ALLOW: terminal MERGE statement-terminator + GO-batch suffix on the rendered MERGE; segments are typed (output of `ScriptDomGenerate.generateOne` from typed AST + SQL Server's required MERGE statement-terminator + V1 batch-separator literal); BCL `String.Concat` is the right primitive at this terminal-text boundary
-                mergeText, ";\nGO\n")
-          else
-            // WP6 step 1 (DECISIONS 2026-06-13) — an IDENTITY-PK static
-            // kind (`IdentityDisposition.AssignedBySink`) seeds explicit PK
-            // values, so the MERGE's WHEN-NOT-MATCHED INSERT writes into the
-            // IDENTITY column and SQL Server requires `SET IDENTITY_INSERT
-            // [t] ON` to be active for it. The toggle is SESSION-scoped, and
-            // the leveled load leg (`Deploy.executeBatchParallel`) opens a
-            // FRESH connection per GO-segment — so the bracket MUST stay ONE
-            // GO batch (no internal GO): a GO between the toggle and the
-            // MERGE would land them on different connections and the toggle
-            // would not apply. One batch is correct for both the fused
-            // `Data/seed.sql` artifact (one sqlcmd session) and the leveled
-            // deploy (one connection per segment), and it keeps the bracket
-            // INSIDE `RenderedPhase1` so the fused-≡-leveled partition law
-            // holds. `generateOne` does NOT terminate a `SET IDENTITY_INSERT`
-            // statement (verified against the recorded bytes — the
-            // statement-terminator behavior is statement-type-specific, not
-            // governed by `IncludeSemicolons`), and MERGE requires its
-            // IMMEDIATELY-preceding statement to be `;`-terminated, so every
-            // segment gets an explicit `;` (the MERGE's manual `;` is the
-            // same documented ScriptDom MERGE-terminator quirk).
-            let setIdentityInsert (enabled: bool) : string =
-                ScriptDomGenerate.generateOne
-                    (ScriptDomBuild.buildSetIdentityInsert table enabled
-                     :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement)
-            System.String.Concat(  // LINT-ALLOW: terminal IDENTITY_INSERT-bracketed MERGE batch as a single GO segment (WP6 step 1); every segment is the typed ScriptDom render of `SET IDENTITY_INSERT` / the MERGE; the SQL Server statement terminators + the V1 `GO` batch separator are the terminal-text literals; BCL `String.Concat` is the right primitive at this terminal-text boundary
-                setIdentityInsert true, ";\n",
-                mergeText, ";\n",
-                setIdentityInsert false, ";\nGO\n")
+            if not bracketIdentity then
+                ScriptDomGenerate.renderDataBatch [ Statement.Merge args ]
+            else
+                ScriptDomGenerate.renderDataBatch
+                    [ Statement.SetIdentityInsert (table, true)
+                      Statement.Merge args
+                      Statement.SetIdentityInsert (table, false) ]
         // NM-73 — prepend the validate-before-apply drift guard as its OWN
         // GO batch before the MERGE (mirrors V1 `ValidateThenApply` ordering:
         // the guard THROWs before the MERGE batch can run). `Standard` is
@@ -316,15 +227,14 @@ module StaticSeedsEmitter =
             k.Attributes
             |> List.filter (fun a -> a.IsPrimaryKey)
             |> List.map cellOf
-        let args : ScriptDomBuild.UpdateBuildArgs =
+        let args : UpdateBuildArgs =
             { Target     = table
               SetCells   = setCells
               WhereCells = whereCells
               CdcAware   = cdcAware }
-        let updateStmt = (ScriptDomBuild.buildUpdateStatement args).Value
-        System.String.Concat(  // LINT-ALLOW: terminal UPDATE statement-terminator + GO-batch suffix on the rendered Phase-2 UPDATE (chapter 4.1.B slice δ); segments are typed (output of `ScriptDomGenerate.generateOne` from `ScriptDomBuild.buildUpdateStatement` typed AST + SQL Server's statement-terminator + V1 batch-separator literal); same architectural shape as `renderMerge`'s terminal-text boundary
-            ScriptDomGenerate.generateOne (updateStmt :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement),
-            ";\nGO\n")
+        // The Phase-2 UPDATE as a typed `Statement` batch — terminal framing in
+        // `renderDataBatch` (the data lane's one terminal-text boundary).
+        ScriptDomGenerate.renderDataBatch [ Statement.Update args ]
 
     /// Build one `DataInsertScript` for a kind. Empty-population kinds
     /// produce a no-op script (empty Phase1Merges, empty Rendered);
@@ -378,10 +288,10 @@ module StaticSeedsEmitter =
             // delete arm renders exactly when every term column is an
             // attribute here (`DeleteScopePolicy.resolveFor`); a kind
             // outside the scope keeps the upsert-only MERGE.
-            let scopeForKind : ScriptDomBuild.DeleteScope option =
+            let scopeForKind : DeleteScope option =
                 deleteScope
                 |> Option.bind (DeleteScopePolicy.resolveFor kind)
-                |> Option.map (fun terms -> ({ Terms = terms } : ScriptDomBuild.DeleteScope))
+                |> Option.map (fun terms -> ({ Terms = terms } : DeleteScope))
             let deferred = load.DeferredFkColumns
             // NM-26 — bracket the Phase-1 MERGE with `SET IDENTITY_INSERT`
             // whenever the kind carries ANY IDENTITY column, via the
@@ -396,7 +306,7 @@ module StaticSeedsEmitter =
             // the bracketing theory.
             let bracketIdentity =
                 IdentityDisposition.needsIdentityInsert kind
-            let typeLookup = columnTypeLookup kind
+            let typeLookup = KindColumns.columnTypeLookup kind
             // Slice κ pillar 1 lift: project raw `Map<Name, string>`
             // populations into typed `Map<Name, SqlLiteral>` once at
             // construction time. Both Phase-1 MERGE rendering and
@@ -405,7 +315,7 @@ module StaticSeedsEmitter =
                 load.Rows
                 |> List.map (fun row ->
                     row.Identifier,
-                    staticRowToTypedValues typeLookup kind.Attributes row)
+                    KindColumns.rowToTypedValues typeLookup kind.Attributes row)
             let renderedPhase1 =
                 renderMerge verification staging scopeForKind cdcAware deferred bracketIdentity kind (typedRows |> List.map snd)
             let renderedPhase2 =

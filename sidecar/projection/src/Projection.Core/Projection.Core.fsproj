@@ -40,6 +40,7 @@
     <Compile Include="SqlTypeCorrespondence.fs" />
     <Compile Include="SqlLiteral.fs" />
     <Compile Include="Catalog.fs" />
+    <Compile Include="KindColumns.fs" />
     <!--
       Optics.fs: extracted from Diagnostics.fs at 2026-06-02 lens-adoption
       sweep so Lens + CatalogLenses compile after the IR types (Catalog.fs)

@@ -1,4 +1,5 @@
 module Projection.Cli.Theme
+// LINT-ALLOW-FILE: the CLI Spectre.Console markup module — every function composes terminal [tag]...[/] markup; this IS the terminal text-rendering boundary, no emitted structure
 
 /// The design-system module (`REPORTING_HORIZON.md` — the polish tier). One
 /// place for the visual language — glyphs, semantic color, meters, sparklines

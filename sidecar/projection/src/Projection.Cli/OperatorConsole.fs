@@ -119,7 +119,7 @@ let withRun (command: string) (body: unit -> int) : int =
          try
              RunLedger.append dir
                  { RunId      = LogSink.runId ()
-                   Ts         = System.DateTime.UtcNow.ToString("o")
+                   Ts         = System.DateTime.UtcNow.ToString("o")  // LINT-ALLOW: wall-clock timestamp at the operator-console IO boundary (ISO-8601 round-trip o format)
                    Command    = command
                    Outcome    = (if code = 0 then "succeeded" else "failed")
                    Canary     = LogSink.canaryVerdict ()

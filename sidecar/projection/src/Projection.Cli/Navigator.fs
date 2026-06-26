@@ -1,4 +1,5 @@
 module Projection.Cli.Navigator
+// LINT-ALLOW-FILE-MUTATION: the interactive navigator is a key-driven TUI loop stepping a local model; sealed function-local imperative state at the terminal boundary
 
 open System
 open Spectre.Console
