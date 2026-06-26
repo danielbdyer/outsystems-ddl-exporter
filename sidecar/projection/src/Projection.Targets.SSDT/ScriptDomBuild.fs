@@ -812,23 +812,24 @@ module ScriptDomBuild =
         refExpr.MultiPartIdentifier <- mid
         refExpr
 
-    /// Build a single `Target.[col] = Source.[col]` boolean expression
-    /// for the ON-clause join condition or the change-detection
-    /// equality test.
-    let private columnEquality (col: string) : BooleanComparisonExpression =
+    /// Build a single `Target.[col] = <sourceAlias>.[col]` boolean expression
+    /// for the ON-clause join condition or the change-detection equality
+    /// test. `sourceAlias` is the joined source's alias — `Source` for the
+    /// MERGE `USING` row, `src` for the set-based `UPDATE … FROM #temp`.
+    let private columnEquality (sourceAlias: string) (col: string) : BooleanComparisonExpression =
         let cmp = BooleanComparisonExpression()
         cmp.ComparisonType <- BooleanComparisonType.Equals
         cmp.FirstExpression <- qualifiedColumnRef "Target" col :> ScalarExpression
-        cmp.SecondExpression <- qualifiedColumnRef "Source" col :> ScalarExpression
+        cmp.SecondExpression <- qualifiedColumnRef sourceAlias col :> ScalarExpression
         cmp
 
-    /// Build a single `Target.[col] <> Source.[col]` boolean expression
+    /// Build a single `Target.[col] <> <sourceAlias>.[col]` boolean expression
     /// for the change-detection predicate's value-mismatch arm.
-    let private columnInequality (col: string) : BooleanComparisonExpression =
+    let private columnInequality (sourceAlias: string) (col: string) : BooleanComparisonExpression =
         let cmp = BooleanComparisonExpression()
         cmp.ComparisonType <- BooleanComparisonType.NotEqualToBrackets
         cmp.FirstExpression <- qualifiedColumnRef "Target" col :> ScalarExpression
-        cmp.SecondExpression <- qualifiedColumnRef "Source" col :> ScalarExpression
+        cmp.SecondExpression <- qualifiedColumnRef sourceAlias col :> ScalarExpression
         cmp
 
     /// Build a `<expr> IS [NOT] NULL` boolean expression.
@@ -868,19 +869,19 @@ module ScriptDomBuild =
     /// Per chapter 4.1.B slice β + pre-scope §6: nullable-aware, since
     /// `NULL <> NULL` is `UNKNOWN` in SQL. The three OR-branches cover
     /// value-mismatch + null-asymmetry both ways.
-    let private perColumnChangeDetection (col: string) : BooleanExpression =
-        let valueDiff = columnInequality col :> BooleanExpression
+    let private perColumnChangeDetection (sourceAlias: string) (col: string) : BooleanExpression =
+        let valueDiff = columnInequality sourceAlias col :> BooleanExpression
         let targetNullSourceNot =
             boolBinary
                 BooleanBinaryExpressionType.And
                 (isNullCheck "Target" col false :> BooleanExpression)
-                (isNullCheck "Source" col true :> BooleanExpression)
+                (isNullCheck sourceAlias col true :> BooleanExpression)
             |> boolParen
         let targetNotSourceNull =
             boolBinary
                 BooleanBinaryExpressionType.And
                 (isNullCheck "Target" col true :> BooleanExpression)
-                (isNullCheck "Source" col false :> BooleanExpression)
+                (isNullCheck sourceAlias col false :> BooleanExpression)
             |> boolParen
         foldBool
             BooleanBinaryExpressionType.Or
@@ -888,11 +889,13 @@ module ScriptDomBuild =
 
     /// The full change-detection predicate across all updatable
     /// columns: per-column predicates joined with OR. Wrapped in
-    /// parentheses so the surrounding `WHEN MATCHED AND (...)` is
-    /// well-grouped under ScriptDom's emission rules.
-    let private changeDetectionPredicate (updColumns: string list) : BooleanExpression =
+    /// parentheses so the surrounding `WHEN MATCHED AND (...)` (MERGE) or
+    /// `WHERE (...)` (set-based UPDATE) is well-grouped under ScriptDom's
+    /// emission rules. `sourceAlias` selects the joined source (`Source`
+    /// for the MERGE, `src` for the `UPDATE … FROM #temp`).
+    let private changeDetectionPredicate (sourceAlias: string) (updColumns: string list) : BooleanExpression =
         updColumns
-        |> List.map perColumnChangeDetection
+        |> List.map (perColumnChangeDetection sourceAlias)
         |> foldBool BooleanBinaryExpressionType.Or
         |> boolParen
 
@@ -956,7 +959,7 @@ module ScriptDomBuild =
         // ON-clause: Target.[pk1] = Source.[pk1] [AND ...]
         let onTerms =
             args.PkColumns
-            |> List.map (fun c -> columnEquality c :> BooleanExpression)
+            |> List.map (fun c -> columnEquality "Source" c :> BooleanExpression)
         spec.SearchCondition <- foldBool BooleanBinaryExpressionType.And onTerms
 
         // WHEN MATCHED [AND <predicate>] THEN UPDATE SET
@@ -970,7 +973,7 @@ module ScriptDomBuild =
             let matchedClause = MergeActionClause()
             matchedClause.Condition <- MergeCondition.Matched
             if args.CdcAware then
-                matchedClause.SearchCondition <- changeDetectionPredicate args.UpdColumns
+                matchedClause.SearchCondition <- changeDetectionPredicate "Source" args.UpdColumns
             matchedClause.Action <- updateAction
             spec.ActionClauses.Add(matchedClause)
 
@@ -1101,69 +1104,124 @@ module ScriptDomBuild =
     let private tableIdText (t: TableId) : string =
         System.String.Concat(bracketText (TableId.schemaText t), ".", bracketText (TableId.tableText t))
 
-    /// Render one typed `SqlLiteral` to its T-SQL text via ScriptDom, so the
-    /// guard's inline `VALUES` literals (`N'..'` / `0x..` / numeric) match
-    /// the MERGE's own literal rendering. A fresh generator per cell; cells
-    /// are few and this path runs only under the opt-in guard.
-    let private literalText (lit: SqlLiteral) : string =
-        let generator = Sql160ScriptGenerator(SqlScriptGeneratorOptions())
-        let mutable text : string | null = null
-        generator.GenerateScript(buildSqlLiteral lit :> TSqlFragment, &text)
-        (text |> Option.ofObj |> Option.defaultValue "").Trim()
-
-    /// Build the validate-before-apply drift guard as a typed
-    /// `TSqlStatement`, mirroring V1's `ValidateThenApply`. The guard
-    /// references the SAME source rows the MERGE is about to write
-    /// (`args.Rows` over `args.AllColumns`). `THROW 50000` aborts on drift.
+    /// Build the validate-before-apply drift guard as a fully typed
+    /// `TSqlStatement` (Tier-1.3 cash-out — no string template, no parse
+    /// round-trip), mirroring V1's `ValidateThenApply`. The guard references
+    /// the SAME source rows the MERGE is about to write (`args.Rows` over
+    /// `args.AllColumns`):
     ///
-    /// Invariant: the guard template is self-constructed from typed-rendered
-    /// literals + bracket-quoted identifiers, so it ALWAYS parses; a parse
-    /// failure is a programmer error, raised loudly (never a silent
-    /// downgrade of the safety guard). The caller is responsible for only
-    /// invoking this with a non-empty `args.Rows` (an empty source would
-    /// yield an invalid `VALUES ()` clause); `renderMerge` guarantees it.
+    ///   `IF EXISTS (SELECT 1 FROM <target>)
+    ///    AND (EXISTS (<source> EXCEPT <target>) OR EXISTS (<target> EXCEPT <source>))
+    ///    BEGIN THROW 50000, '<drift message>', 1; END`
+    ///
+    /// The symmetric EXCEPT pair catches drift in either direction; `THROW
+    /// 50000` aborts before the MERGE. Bytes flow through the pinned
+    /// `Sql160ScriptGenerator`, so literal/identifier quoting matches the
+    /// MERGE's own (the `StringLiteral` self-escapes; no hand `.Replace`). The
+    /// caller invokes this only with a non-empty source (`renderMerge` guarantees
+    /// it; an empty inline source would yield an invalid `VALUES ()`).
     let buildValidateBeforeApplyGuard (args: MergeBuildArgs) : TSqlStatement =
-        let targetText = tableIdText args.Target
-        let colList = args.AllColumns |> List.map bracketText |> String.concat ", "
-        // The guard's source mirrors the MERGE's: a pre-staged `#temp` (the
-        // error-8623-safe form — and the guard's own `VALUES` would hit the same
-        // wall at scale) or the inline `VALUES`. The `valuesText` is computed only
-        // in the inline arm (it is O(rows) and unused when staged).
-        let sourceSelect =
+        use _ = Bench.scope "emit.scriptDom.build.validateGuard"
+        // `SELECT [c1], [c2], … FROM <ref>` over AllColumns (unqualified list).
+        let selectFrom (from: TableReference) : QuerySpecification =
+            let qs = QuerySpecification()
+            for c in args.AllColumns do
+                let sel = SelectScalarExpression()
+                let cref = ColumnReferenceExpression()
+                let mid = MultiPartIdentifier()
+                mid.Identifiers.Add(bracketed c)
+                cref.MultiPartIdentifier <- mid
+                sel.Expression <- cref :> ScalarExpression
+                qs.SelectElements.Add(sel :> SelectElement)
+            let fc = FromClause()
+            fc.TableReferences.Add(from)
+            qs.FromClause <- fc
+            qs
+        // Source FROM: a pre-staged `#temp AS [Source]` (the error-8623-safe form
+        // — the guard's own VALUES would hit the same wall at scale) or the inline
+        // `(VALUES …) AS [Source] (cols)`. Built FRESH per use (no shared AST
+        // nodes across the two EXCEPT arms); the inline VALUES re-materializes,
+        // but the guard is opt-in so O(rows)×2 is acceptable.
+        let sourceFrom () : TableReference =
             match args.StagedSource with
             | Some tempName ->
-                sprintf "SELECT %s FROM %s AS [Source]" colList (bracketText tempName)
+                let t = NamedTableReference()
+                t.SchemaObject <- tempSchemaObject tempName
+                t.Alias <- bracketed "Source"
+                t :> TableReference
             | None ->
-                let valuesText =
-                    args.Rows
-                    |> List.map (fun row ->
-                        row |> List.map literalText |> String.concat ", " |> sprintf "(%s)")
-                    |> String.concat ", "
-                sprintf "SELECT %s FROM (VALUES %s) AS [Source] (%s)" colList valuesText colList
-        let targetSelect =
-            sprintf "SELECT %s FROM %s AS [Existing]" colList targetText
+                let idt = InlineDerivedTable()
+                for row in args.Rows do
+                    let rv = RowValue()
+                    for cell in row do rv.ColumnValues.Add(buildSqlLiteral cell)
+                    idt.RowValues.Add(rv)
+                idt.Alias <- bracketed "Source"
+                for c in args.AllColumns do idt.Columns.Add(bracketed c)
+                idt :> TableReference
+        let targetFrom () : TableReference =
+            let t = NamedTableReference()
+            t.SchemaObject <- schemaObjectFromTableId args.Target
+            t.Alias <- bracketed "Existing"
+            t :> TableReference
+        let sourceSelect () = selectFrom (sourceFrom ())
+        let targetSelect () = selectFrom (targetFrom ())
+        // `EXISTS (<a> EXCEPT <b>)`.
+        let existsExcept (a: QueryExpression) (b: QueryExpression) : BooleanExpression =
+            let bin = BinaryQueryExpression()
+            bin.BinaryQueryExpressionType <- BinaryQueryExpressionType.Except
+            bin.FirstQueryExpression <- a
+            bin.SecondQueryExpression <- b
+            let sub = ScalarSubquery()
+            sub.QueryExpression <- bin :> QueryExpression
+            let ex = ExistsPredicate()
+            ex.Subquery <- sub
+            ex :> BooleanExpression
+        // `EXISTS (SELECT 1 FROM <target>)` — target already carries managed rows.
+        let targetHasRows : BooleanExpression =
+            let qs = QuerySpecification()
+            let one = SelectScalarExpression()
+            let lit = IntegerLiteral()
+            lit.Value <- "1"
+            one.Expression <- lit :> ScalarExpression
+            qs.SelectElements.Add(one :> SelectElement)
+            let fc = FromClause()
+            let t = NamedTableReference()
+            t.SchemaObject <- schemaObjectFromTableId args.Target
+            fc.TableReferences.Add(t :> TableReference)
+            qs.FromClause <- fc
+            let sub = ScalarSubquery()
+            sub.QueryExpression <- qs :> QueryExpression
+            let ex = ExistsPredicate()
+            ex.Subquery <- sub
+            ex :> BooleanExpression
+        // `(EXISTS(src EXCEPT tgt) OR EXISTS(tgt EXCEPT src))`.
+        let symmetricDrift =
+            boolBinary
+                BooleanBinaryExpressionType.Or
+                (existsExcept (sourceSelect () :> QueryExpression) (targetSelect () :> QueryExpression))
+                (existsExcept (targetSelect () :> QueryExpression) (sourceSelect () :> QueryExpression))
+            |> boolParen
+        // `THROW 50000, '<message>', 1;` inside a `BEGIN … END` block.
         let message =
-            (sprintf "Static seed drift on %s: existing managed rows differ from the deploy source; aborting before MERGE (NM-73 validate-before-apply)." targetText)
-                .Replace("'", "''")
-        let template =
-            sprintf
-                "IF EXISTS (SELECT 1 FROM %s) AND (EXISTS (%s EXCEPT %s) OR EXISTS (%s EXCEPT %s)) BEGIN THROW 50000, '%s', 1; END"
-                targetText sourceSelect targetSelect targetSelect sourceSelect message
-        use reader = new System.IO.StringReader(template)
-        let frag, errors = threadLocalParser.Value.Parse(reader)
-        let errorCount = if isNull errors then 0 else errors.Count
-        let parsed =
-            if errorCount > 0 then None
-            else
-                match frag with
-                | :? TSqlScript as s ->
-                    s.Batches |> Seq.tryHead |> Option.bind (fun b -> b.Statements |> Seq.tryHead)
-                | _ -> None
-        match parsed with
-        | Some stmt -> stmt
-        | None ->
-            invalidOp
-                (sprintf "NM-73: validate-before-apply guard template failed to parse for %s — programmer error, not a recoverable downgrade." targetText)
+            sprintf "Static seed drift on %s: existing managed rows differ from the deploy source; aborting before MERGE (NM-73 validate-before-apply)." (tableIdText args.Target)
+        let errNum = IntegerLiteral()
+        errNum.Value <- "50000"
+        let msgLit = StringLiteral()
+        msgLit.Value <- message
+        let stateLit = IntegerLiteral()
+        stateLit.Value <- "1"
+        let throwStmt = ThrowStatement()
+        throwStmt.ErrorNumber <- errNum :> ValueExpression
+        throwStmt.Message <- msgLit :> ValueExpression
+        throwStmt.State <- stateLit :> ValueExpression
+        let block = BeginEndBlockStatement()
+        block.StatementList <- StatementList()
+        block.StatementList.Statements.Add(throwStmt :> TSqlStatement)
+        // `IF <targetHasRows> AND <symmetricDrift> BEGIN THROW … END`.
+        let ifStmt = IfStatement()
+        ifStmt.Predicate <- boolBinary BooleanBinaryExpressionType.And targetHasRows symmetricDrift
+        ifStmt.ThenStatement <- block :> TSqlStatement
+        ifStmt :> TSqlStatement
 
     /// Set-based phase-2 re-point for a LARGE cyclic kind: one
     /// `UPDATE [Target] SET [Target].[fk] = [src].[fk] … FROM <target> AS [Target]
@@ -1172,9 +1230,12 @@ module ScriptDomBuild =
     /// the per-row form is correct but bulky, and its own `VALUES`-free shape is
     /// fine — this is the deterministic set-based escalation above the staging
     /// threshold). The `#temp` already holds the REAL FK values (PK + deferred-FK
-    /// columns). Built via the parse-template path (the guard idiom): no row data,
-    /// only bracket-quoted identifiers + the change-detect predicate, so it always
-    /// parses. `cdcAware` adds the symmetric change-detect WHERE so an idempotent
+    /// columns). Fully typed (Tier-1.3 cash-out): a ScriptDom `UpdateStatement`
+    /// over a `QualifiedJoin` FROM-clause — no string template, no parse round-trip
+    /// — so the VO-stringification bug class cannot recur and the bytes flow
+    /// through the pinned `Sql160ScriptGenerator`. `cdcAware` adds the symmetric
+    /// change-detect WHERE (the SHARED `changeDetectionPredicate`, the same typed
+    /// predicate the MERGE's WHEN MATCHED uses, aliased to `src`) so an idempotent
     /// redeploy doesn't churn CDC by re-writing identical FK values.
     let buildUpdateFromTemp
         (table: TableId)
@@ -1183,35 +1244,49 @@ module ScriptDomBuild =
         (pkCols: string list)
         (cdcAware: bool)
         : TSqlStatement =
-        let pair (c: string) = System.String.Concat("[Target].", bracketText c, " = [src].", bracketText c)
-        let setText = setCols |> List.map pair |> String.concat ", "
-        let onText  = pkCols  |> List.map pair |> String.concat " AND "
-        let whereText =
-            if cdcAware && not (List.isEmpty setCols) then
-                let perCol (c: string) =
-                    let b = bracketText c
-                    sprintf "([Target].%s <> [src].%s OR ([Target].%s IS NULL AND [src].%s IS NOT NULL) OR ([Target].%s IS NOT NULL AND [src].%s IS NULL))" b b b b b b
-                let preds = setCols |> List.map perCol |> String.concat " OR "
-                System.String.Concat(" WHERE (", preds, ")")
-            else ""
-        let template =
-            sprintf "UPDATE [Target] SET %s FROM %s AS [Target] INNER JOIN %s AS [src] ON %s%s"
-                setText (tableIdText table) (bracketText tempName) onText whereText
-        use reader = new System.IO.StringReader(template)
-        let frag, errors = threadLocalParser.Value.Parse(reader)
-        let errorCount = if isNull errors then 0 else errors.Count
-        let parsed =
-            if errorCount > 0 then None
-            else
-                match frag with
-                | :? TSqlScript as s ->
-                    s.Batches |> Seq.tryHead |> Option.bind (fun b -> b.Statements |> Seq.tryHead)
-                | _ -> None
-        match parsed with
-        | Some stmt -> stmt
-        | None ->
-            invalidOp
-                (sprintf "buildUpdateFromTemp: set-based UPDATE template failed to parse for %s — programmer error." (tableIdText table))
+        use _ = Bench.scope "emit.scriptDom.build.updateFromTemp"
+        let spec = UpdateSpecification()
+        // UPDATE [Target] — the alias being updated (bound by the FROM clause below).
+        let updateTarget = NamedTableReference()
+        let targetAliasName = SchemaObjectName()
+        targetAliasName.Identifiers.Add(bracketed "Target")
+        updateTarget.SchemaObject <- targetAliasName
+        spec.Target <- updateTarget :> TableReference
+        // SET [Target].[c] = [src].[c]
+        for c in setCols do
+            let setClause = AssignmentSetClause()
+            setClause.Column <- qualifiedColumnRef "Target" c
+            setClause.NewValue <- qualifiedColumnRef "src" c :> ScalarExpression
+            spec.SetClauses.Add(setClause :> SetClause)
+        // FROM [schema].[table] AS [Target] INNER JOIN [#temp] AS [src]
+        //   ON [Target].[pk] = [src].[pk] [AND …]
+        let realTable = NamedTableReference()
+        realTable.SchemaObject <- schemaObjectFromTableId table
+        realTable.Alias <- bracketed "Target"
+        let tempTable = NamedTableReference()
+        tempTable.SchemaObject <- tempSchemaObject tempName
+        tempTable.Alias <- bracketed "src"
+        let join = QualifiedJoin()
+        join.QualifiedJoinType <- QualifiedJoinType.Inner
+        join.FirstTableReference <- realTable :> TableReference
+        join.SecondTableReference <- tempTable :> TableReference
+        join.SearchCondition <-
+            pkCols
+            |> List.map (fun c -> columnEquality "src" c :> BooleanExpression)
+            |> foldBool BooleanBinaryExpressionType.And
+        let fromClause = FromClause()
+        fromClause.TableReferences.Add(join :> TableReference)
+        spec.FromClause <- fromClause
+        // WHERE (<change-detect>) — CDC-idempotence: re-point only rows whose FK
+        // values actually differ, so a redeploy doesn't churn CDC. Omitted when
+        // not cdcAware or there are no SET columns (the unconditional re-point).
+        if cdcAware && not (List.isEmpty setCols) then
+            let where = WhereClause()
+            where.SearchCondition <- changeDetectionPredicate "src" setCols
+            spec.WhereClause <- where
+        let stmt = UpdateStatement()
+        stmt.UpdateSpecification <- spec
+        stmt :> TSqlStatement
 
     // -----------------------------------------------------------------------
     // Atomic transaction envelope (Tier-1 typed-AST refactor, 2026-06-25).
