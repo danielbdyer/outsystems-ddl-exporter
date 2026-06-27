@@ -117,6 +117,12 @@
     <Compile Include="Lineage.fs" />
     <Compile Include="LineageBuffer.fs" />
     <Compile Include="Diagnostics.fs" />
+    <!-- ProfileDerivation.fs: the pure Profile-axis derivation suite over the
+         EvidenceCache substrate (recon #5 — lifted from LiveProfiler). Every axis is
+         a total function of cache × catalog; no SQL. Sits here because the orphan-
+         sample axis emits DiagnosticEntry (Diagnostics.fs); all other deps (Profile,
+         Statistics, Catalog, EvidenceCache) are earlier. -->
+    <Compile Include="ProfileDerivation.fs" />
     <Compile Include="Meter.fs" />
     <!-- H-034 ConflictDetector — moved from Pipeline so the SSDT manifest
          can carry PolicyConflict entries without a Pipeline dependency.
