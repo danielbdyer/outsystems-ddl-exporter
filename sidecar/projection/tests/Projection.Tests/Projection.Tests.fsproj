@@ -181,6 +181,7 @@
     <Compile Include="ReverseLegBoundaryTests.fs" />
     <Compile Include="PreflightTests.fs" />
     <Compile Include="PreflightAllTests.fs" />
+    <Compile Include="CliExitTests.fs" />
     <Compile Include="ModelFidelityTests.fs" />
     <Compile Include="ReportRunTests.fs" />
     <Compile Include="CompareTests.fs" />

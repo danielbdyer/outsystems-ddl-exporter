@@ -23,6 +23,7 @@
     <Compile Include="Navigator.fs" />
     <Compile Include="OperatorConsole.fs" />
     <Compile Include="RelaxationStore.fs" />
+    <Compile Include="CliExit.fs" />
     <Compile Include="RunFaces.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

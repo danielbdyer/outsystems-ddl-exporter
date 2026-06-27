@@ -2469,11 +2469,7 @@ let runSyntheticLoad (model: ModelSource) (modelOssys: string option) (profileRe
             dropCode
         | Error errors ->
             printErrors Console.Error errors
-            let anyCode (prefix: string) =
-                errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith prefix)
-            if anyCode "synthetic.profileRef" || anyCode "model." then 2
-            elif anyCode "synthetic.insufficientGrant" || anyCode "synthetic.grantProbeFailed" || anyCode "synthetic.cdcTrackedSink" then 7
-            else 3
+            CliExit.classify errors
     dumpBench "synthetic"
     exitCode
 
@@ -2489,11 +2485,7 @@ let runCaptureProfile (connSpec: string) (outPath: string) : int =
             0
         | Error errors ->
             printErrors Console.Error errors
-            let anyCode (prefix: string) =
-                errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith prefix)
-            if anyCode "profile.writeFailed" then 1
-            elif anyCode "connectionSpec" || anyCode "connection" then 6
-            else 3
+            CliExit.classify errors
     dumpBench "profile"
     exitCode
 
@@ -2515,11 +2507,7 @@ let runProposeCorrection (model: ModelSource) (modelOssys: string option) (outPa
             0
         | Error errors ->
             printErrors Console.Error errors
-            let anyCode (prefix: string) =
-                errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith prefix)
-            if anyCode "correction.writeFailed" then 1
-            elif anyCode "model." then 2
-            else 3
+            CliExit.classify errors
     dumpBench "synth-correct"
     exitCode
 
@@ -2548,12 +2536,7 @@ let runSliceExtract (args: string list) : int =
             0
         | Error errors ->
             printErrors Console.Error errors
-            let anyCode (prefix: string) =
-                errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith prefix)
-            if anyCode "slice.writeFailed" then 1
-            elif anyCode "slice.root" || anyCode "slice.spec" || anyCode "slice." then 2
-            elif anyCode "connectionSpec" || anyCode "connection" then 6
-            else 3
+            CliExit.classify errors
     match flagValue "--source", flagValue "--out" with
     | Some src, Some out ->
         // Config-driven (`--slice <file>`, the multi-root SliceSpec) takes
@@ -2596,12 +2579,7 @@ let runSliceApply (reset: bool) (args: string list) : int =
     let hasFlag (flag: string) : bool = Array.contains flag arr
     let exitForErrors (errors: ValidationError list) : int =
         printErrors Console.Error errors
-        let anyCode (prefix: string) = errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith prefix)
-        if anyCode "slice.schemaParity" || anyCode "slice.golden" then 2
-        elif anyCode "slice.writeFailed" || anyCode "slice.emitFailed" then 1
-        elif anyCode "slice.apply.cdcTrackedSink" || anyCode "slice.apply.insufficientGrant" then 7
-        elif anyCode "connection" || anyCode "slice.apply.grantProbeFailed" then 6
-        else 3
+        CliExit.classify errors
     match flagValue "--golden", flagValue "--target" with
     | Some golden, Some target ->
         if reset && not (hasFlag "--allow-drops") then
@@ -2715,10 +2693,6 @@ let runSliceFlow (args: string list) : int =
                             else 0
                         | Error errors ->
                             printErrors Console.Error errors
-                            let anyCode (prefix: string) =
-                                errors |> List.exists (fun (e: ValidationError) -> e.Code.StartsWith prefix)
-                            if anyCode "slice.schemaParity" || anyCode "slice.root" then 2
-                            elif anyCode "connection" || anyCode "slice.apply" then 6
-                            else 3
+                            CliExit.classify errors
                     dumpBench "slice-run"
                     code
