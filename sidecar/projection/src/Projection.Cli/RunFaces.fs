@@ -201,6 +201,34 @@ let runFullExportLoad
                     dumpBench "full-export"
                     code
 
+/// The shared verb spine (recon #3 — the `Face` combinator). Every face's tail is
+/// `let exit = <body, or the live Watch board on --pretty>; dumpBench "<verb>"; exit`
+/// — copied across ~40 sites, with the occasional face forgetting `dumpBench`. These
+/// combinators own that tail so it exists once and cannot be forgotten. (First
+/// slice: the staged/watched faces. The remaining `Face.run` tails and the
+/// per-verb module split are the follow-on.)
+[<RequireQualifiedAccess>]
+module private Face =
+
+    /// Run a verb body and emit its bench snapshot, returning its exit code — the
+    /// one place `dumpBench` fires after a face's work, so a face cannot forget it.
+    let run (label: string) (body: unit -> int) : int =
+        let code = body ()
+        dumpBench label
+        code
+
+    /// As `run`, but the body is a watch-capable stage spine: on `--pretty` + a real
+    /// TTY — and `gateOpen` (for verbs that only watch once their execute gate is
+    /// open; a dry-run writes nothing, so its load stage would never advance) — the
+    /// body renders through the live `Watch` board; otherwise it runs inline. Folds
+    /// the `if [gateOpen &&] Watch.shouldWatch … then Watch.renderWatch … else body ()`
+    /// preamble every staged face copied.
+    let staged (label: string) (gateOpen: bool) (spine: RunSpine) (body: unit -> int) : int =
+        run label (fun () ->
+            if gateOpen && Watch.shouldWatch prettyMode.Value then
+                Watch.renderWatch spine (Watch.resolveDwellMs ()) body
+            else body ())
+
 let runEmit (shaping: Config.Config) (catalog: Catalog) (outputDir: string) : int =
     let exitCode =
         match Compose.runFromCatalogWith shaping catalog outputDir with
@@ -340,12 +368,7 @@ let runDeploy (shaping: Config.Config) (catalog: Catalog) : int =
         // --pretty + a real TTY → a live deploy stage (§13). The schema deploy is
         // one aggregated batch (no per-table count to honestly report), so the
         // board shows the stage going Applying → Deploy complete, not a bar.
-        let exitCode =
-            if Watch.shouldWatch prettyMode.Value then
-                Watch.renderWatch Spines.deploy (Watch.resolveDwellMs ()) runBody
-            else runBody ()
-        dumpBench "deploy"
-        exitCode
+        Face.staged "deploy" true Spines.deploy runBody
 
 /// Card S3 — the canary face's stop channel: a structurally-divergent
 /// round-trip (exit 5) or an invalid run (exit 2), carried out of the
@@ -791,12 +814,7 @@ let runTransfer
     // --pretty + a real TTY → the live data-load board (§13); the transfer leg
     // streams the "load" stage with per-table progress. Only on a real --execute
     // (a dry-run writes no rows, so the load stage would never advance).
-    let exitCode =
-        if executeGated && Watch.shouldWatch prettyMode.Value then
-            Watch.renderWatch Spines.transfer (Watch.resolveDwellMs ()) runBody
-        else runBody ()
-    dumpBench "transfer"
-    exitCode
+    Face.staged "transfer" executeGated Spines.transfer runBody
 
 // ---------------------------------------------------------------------------
 // J3 closed — the `legacy` B→A reverse-leg face (THE_DATA_PRODUCERS §6 LE-1).
@@ -952,12 +970,7 @@ let runReverseLegTransfer
     // G0c — the advisory capability survey (R6 warn-not-stop); same channel
     // and same advisory-only posture as the peer transfer's Execute path.
     if executeGated then for line in surveyAdvisory do Console.Error.WriteLine line
-    let exitCode =
-        if executeGated && Watch.shouldWatch prettyMode.Value then
-            Watch.renderWatch Spines.transfer (Watch.resolveDwellMs ()) runBody
-        else runBody ()
-    dumpBench "transfer"
-    exitCode
+    Face.staged "transfer" executeGated Spines.transfer runBody
 
 // ---------------------------------------------------------------------------
 // Slice 4.4 — `projection verify-data`: post-deploy data-integrity gate.
