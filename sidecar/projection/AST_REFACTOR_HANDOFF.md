@@ -6,6 +6,45 @@
 
 ---
 
+## ✅ COMPLETE — 2026-06-27 (branch `claude/finish-typed-ast-refactor`)
+
+The fleet-ranked refactor below is **done**; Part A's witnesses landed earlier with
+the staged-MERGE work. Final state (pure pool **3692/0**, Docker **273/273**):
+
+- **Part A** — staged-MERGE steps 4–6: DONE (set-based phase-2 wired across all 3
+  lanes; `emission.dataStaging` config knob with `mode`/`threshold`/`indexThreshold`;
+  Step-6 witnesses all present — the >threshold staged-deploy regression E2Es
+  (migration/static/self-ref, idempotent re-deploy), the measured-`indexThreshold`
+  clustered-`#temp`-index E2E, and the atomicity "mid-batch failure rolls back —
+  target untouched, no `#temp` survives" E2E).
+- **Tier 0** — `%A`-to-output: DONE (no `%A` reaches output; only diagnostic messages).
+- **Tier 1** — the shared `buildAtomicBatch` (1.1/1.2) landed earlier; **Tier 1.3**
+  (the two parse-back guards `buildUpdateFromTemp` + `buildValidateBeforeApplyGuard`)
+  now fully typed — no `sprintf`→`Parse` middle path; the set-based UPDATE reuses the
+  shared `changeDetectionPredicate` (string-WHERE duplicate deleted). Deploy-verified.
+- **Tier 2** — **2.1 SurrogateCapture** (the 8 raw `sprintf` capture sites → typed
+  `buildCaptureStaging`/`buildKeymapStaging`/`buildCaptureMerge` (OUTPUT + OUTPUT…INTO
+  + DEFAULT VALUES)/`buildSelectColumnsFromTemp`/`buildInsertDefaultValues`/
+  `buildScopeIdentitySelect`) and **2.2 KeymapSpill** (`buildKeymapSpillTable` +
+  `buildKeymapRepoint`, `@kind` still a bound parameter) — both typed + deploy-verified
+  (the byte-identical-sink KeymapSpill equivalence + reverse-leg capture canaries).
+  13 render-witness unit tests.
+- **Tier 3** — 3.1 (`TransferRun.normalizedKey`) already done; **3.2** audited CLEAN
+  (the one path-shaped concat is the *intentional* forward-slash SSDT relpath; Compose
+  uses `Path.Combine`); **3.3** SQL-path magic strings are now `[<Literal>]`; **3.4**
+  `CREATE DATABASE` → typed `CreateDatabaseStatement`, the scratch-container teardown's
+  `SET SINGLE_USER WITH ROLLBACK IMMEDIATE` left as an annotated 4-question `LINT-ALLOW`
+  (ScriptDom 161 has no clean typed node — `DatabaseOptionKind` omits it; non-production,
+  best-effort, `]`-safe); **3.5** confirmed legit (prose concat, not structured).
+
+**One open micro-decision (raised to the operator):** whether to push the Tier-3.4
+teardown `SET SINGLE_USER` to the sanctioned parse-template idiom, or keep the annotated
+terminal (the plan's own "do only if cheap" guidance → keep). Defaulting to keep.
+
+The original plan is preserved below for provenance.
+
+---
+
 ## 0. Why this exists (read first)
 
 This codebase (`sidecar/projection`, F#) is **typed-AST-first**: T-SQL is emitted via Microsoft.SqlServer.TransactSql.ScriptDom (`ScriptDomBuild.fs` builds typed statements; `ScriptDomGenerate.generateOne` renders them); JSON via `System.Text.Json` (`Utf8JsonWriter`/`JsonNode`); XML via `System.Xml.XmlWriter`. Raw string-building of any of these is a **named anti-pattern**, allowed only at terminal boundaries with a `// LINT-ALLOW` comment.

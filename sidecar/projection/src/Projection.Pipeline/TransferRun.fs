@@ -690,7 +690,7 @@ module Transfer =
     /// DATA is the loud fidelity signal, never masked (mirrors
     /// `SurrogateCapture.isCapabilityRefusal`).
     let private isAlterCapabilityRefusal (ex: SqlException) : bool =
-        ex.Number = 1088 || ex.Number = 4902 || ex.Number = 229
+        CapabilityRefusal.isRefusal Capability.AlterConstraintTrust ex
 
     /// Restore the trust the bulk load stripped — re-validate each FK in the
     /// pre-load snapshot (`wasTrusted`) with `ALTER TABLE … WITH CHECK CHECK

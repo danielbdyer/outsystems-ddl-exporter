@@ -57,8 +57,7 @@ module EmissionFolders =
 [<RequireQualifiedAccess>]
 module EmissionFoldersBinding =
 
-    let private bindError (code: string) (message: string) : ValidationError =
-        ValidationError.create (sprintf "pipeline.emissionFolders.%s" code) message
+    let private bindError = Binding.error ConfigAxis.EmissionFolders
 
     let private invalidSegmentChars : Set<char> =
         Set.ofList [ '<'; '>'; ':'; '"'; '|'; '?'; '*' ]
@@ -140,23 +139,19 @@ module EmissionFoldersBinding =
             | errs -> Error errs
 
     /// Resolve an operator-supplied `LogicalName` (Module.Entity) to
-    /// the matching kind's `SsKey`. Mirrors
-    /// `SpecialCircumstancesBinding.resolveKindByLogical`. Errors
-    /// structurally if no kind in `catalog` matches the (module,
-    /// entity) logical pair.
+    /// the matching kind's `SsKey` via the shared `Binding.requireKindByLogical`.
+    /// Errors structurally if no kind in `catalog` matches the (module, entity)
+    /// logical pair.
     let private resolveKindByLogical
         (catalog: Catalog)
         (ref: Config.LogicalName)
         : Result<SsKey> =
-        match CatalogResolution.tryKindByLogical catalog ref.Module ref.Entity with
-        | Some key -> Result.success key
-        | None ->
-            Result.failureOf (
-                bindError
-                    "unresolved"
-                    (sprintf
-                        "overrides.emissionFolders entry %s.%s did not match any catalog kind."
-                        ref.Module ref.Entity))
+        Binding.requireKindByLogical catalog ref.Module ref.Entity
+            (bindError
+                "unresolved"
+                (sprintf
+                    "overrides.emissionFolders entry %s.%s did not match any catalog kind."
+                    ref.Module ref.Entity))
 
     let private bindEntry
         (catalog: Catalog)

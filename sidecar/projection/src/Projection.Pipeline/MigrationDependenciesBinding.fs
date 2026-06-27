@@ -52,8 +52,7 @@ open FsToolkit.ErrorHandling
 [<RequireQualifiedAccess>]
 module MigrationDependenciesBinding =
 
-    let private bindError (code: string) (message: string) : ValidationError =
-        ValidationError.create (sprintf "pipeline.migrationDependencies.%s" code) message
+    let private bindError = Binding.error ConfigAxis.MigrationDependencies
 
     /// Read a required non-blank string property. `None` when absent,
     /// the wrong kind, JSON `null`, or whitespace — the caller supplies
@@ -190,12 +189,10 @@ module MigrationDependenciesBinding =
     /// `(module, entity)` → the kind's `SsKey`; each row's `id` → a
     /// synthesized `Identifier`. Unresolved coordinate ⇒ a named error.
     let private resolveKind (catalog: Catalog) (raw: RawKind) : Result<MigrationDependencyRow list> =
-        match CatalogResolution.tryKindByLogical catalog raw.Module raw.Entity with
-        | None ->
-            Result.failureOf (
-                bindError "unresolvedKind"
-                    (sprintf "migration kind %s.%s did not match any catalog kind." raw.Module raw.Entity))
-        | Some kindKey ->
+        Binding.requireKindByLogical catalog raw.Module raw.Entity
+            (bindError "unresolvedKind"
+                (sprintf "migration kind %s.%s did not match any catalog kind." raw.Module raw.Entity))
+        |> Result.bind (fun kindKey ->
             raw.Rows
             |> List.map (fun row ->
                 SsKey.synthesizedComposite "migration" [ raw.Module; raw.Entity; row.Id ]
@@ -203,7 +200,7 @@ module MigrationDependenciesBinding =
                     { KindKey    = kindKey
                       Identifier = identifier
                       Values     = row.Values }))
-            |> Result.aggregate
+            |> Result.aggregate)
 
     /// Read + parse + resolve the file at `path` into a context.
     let private readFile (catalog: Catalog) (path: string) : Result<MigrationDependencyContext> =

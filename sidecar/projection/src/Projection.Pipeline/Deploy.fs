@@ -162,17 +162,14 @@ module Deploy =
     let private buildPerDbConnectionString (master: string) (dbName: string) : string =
         ConnectionString.buildPerDb master dbName
 
-    /// `CREATE DATABASE [<dbName>];` text. Bracket-quoting flows
-    /// through `Render.quote` (which delegates to ScriptDom's
-    /// `Identifier.EncodeIdentifier`) — eliminates the manual
-    /// `[` / `]` literals (audit Top-10 #10: single source of truth
-    /// for SQL identifier quoting). The trailing `;` is T-SQL
-    /// statement convention. Caller-supplied `dbName` flows through
-    /// the canonical SQL identifier encoder, so values containing
-    /// `]` (which would close the bracket prematurely) are
-    /// structurally escaped at the boundary.
+    /// `CREATE DATABASE [<dbName>];` — Tier-3.4: rendered from a typed
+    /// `ScriptDomBuild.buildCreateDatabase` (`CreateDatabaseStatement`), replacing
+    /// the prior `String.Concat`. `dbName` flows through the typed
+    /// `Identifier` (square-bracket quoting, `]` doubled), so the canonical
+    /// identifier-encoding guarantee holds structurally rather than by a hand
+    /// `Render.quote` call.
     let private createDatabaseSql (dbName: string) : string =
-        String.Concat("CREATE DATABASE ", Render.quote dbName, ";")
+        ScriptDomGenerate.generateOne (ScriptDomBuild.buildCreateDatabase dbName)
 
     let private createDatabase (masterConn: string) (dbName: string) : Task<unit> =
         task {
@@ -961,6 +958,18 @@ module Deploy =
                                 use cnnDrop = new SqlConnection(masterConn)
                                 cnnDrop.OpenAsync().GetAwaiter().GetResult()
                                 executeBatch cnnDrop
+                                    // LINT-ALLOW: terminal scratch-container teardown SQL.
+                                    //   (1) Why string, not typed AST? `SET SINGLE_USER WITH ROLLBACK
+                                    //       IMMEDIATE` has no clean typed node in ScriptDom 161
+                                    //       (`DatabaseOptionKind` omits the access-mode option). (Tier-3.4
+                                    //       typed the paired `CREATE DATABASE`; this teardown stays here.)
+                                    //   (2) Injection-safe? Yes — the only interpolation is `dbName` via
+                                    //       `Render.quote` (`Identifier.EncodeIdentifier`, `]` doubled); the
+                                    //       rest is fixed keywords.
+                                    //   (3) Terminal boundary? Yes — best-effort cleanup of a throwaway
+                                    //       per-test container DB, never the production emit→deploy path.
+                                    //   (4) Validated? By execution against the scratch master; a failure is
+                                    //       swallowed (`with _ -> ()`) — the container is discarded anyway.
                                     (System.String.Concat(
                                         "ALTER DATABASE ", Render.quote dbName,
                                         " SET SINGLE_USER WITH ROLLBACK IMMEDIATE; ",

@@ -323,6 +323,33 @@ module TopologicalOrder =
                 // The mint: one dependency depth = one concurrent-safe group.
                 ParallelSafe (pairs |> List.map fst |> List.sort))
 
+    /// The undirected FK adjacency derived from `Edges` — each FK edge contributes
+    /// a neighbor link in BOTH directions, self-edges dropped, neighbor lists
+    /// deduplicated and SsKey-sorted (deterministic).
+    ///
+    /// The SINGLE canonical form for the structural-coupling graph views —
+    /// `BoundedContextPass` (label-propagation community detection) and
+    /// `TopologicalOrderPass` island detection. They previously each inlined their
+    /// own `addNeighbor` fold and silently diverged: one deduped + sorted +
+    /// self-skipped, the other did none of these. The divergence is benign for the
+    /// island BFS (dups / order / self-loops don't change weakly-connected
+    /// components) but load-bearing for community weighting, so the deduped form is
+    /// correct for both — and now there is one of it. (The directed PageRank
+    /// adjacency in `CentralityPass` stays on its mutable-`Dictionary` perf
+    /// carve-out; the Cascade-filtered adjacency is edge-classified, not pure
+    /// topology — neither is this undirected view.)
+    let undirectedAdjacency (t: TopologicalOrder) : Map<SsKey, SsKey list> =
+        let addNeighbor (m: Map<SsKey, SsKey list>) (a: SsKey) (b: SsKey) =
+            let existing = Map.tryFind a m |> Option.defaultValue []
+            if List.contains b existing then m else Map.add a (b :: existing) m
+        t.Edges
+        |> List.fold
+            (fun acc (src, tgt) ->
+                if src = tgt then acc
+                else addNeighbor (addNeighbor acc src tgt) tgt src)
+            Map.empty
+        |> Map.map (fun _ neighbors -> List.sort neighbors)
+
 
 /// H-037 — result of schema island detection. Each inner list is one
 /// weakly-connected component of the undirected FK graph with ≥2

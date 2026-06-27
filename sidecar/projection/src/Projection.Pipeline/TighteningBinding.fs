@@ -27,8 +27,7 @@ open FsToolkit.ErrorHandling
 [<RequireQualifiedAccess>]
 module TighteningBinding =
 
-    let private bindError (code: string) (message: string) : ValidationError =
-        ValidationError.create (sprintf "pipeline.tightening.%s" code) message
+    let private bindError = Binding.error ConfigAxis.Tightening
 
     /// Resolve an operator-supplied attribute reference against the
     /// loaded catalog. Tries logical-name match first (`Module.Kind

@@ -25405,3 +25405,71 @@ no `#temp` survives; MIGRATION-channel staged deploy; clustered-index staged dep
 25/25 (the typed M22 envelope). Pure pool green except the pre-existing `EndToEndPipelineTests.M1` CRLF
 golden (fails on the clean tree too — a local line-ending artifact, not this work). `CONFIG_REFERENCE.md` +
 `examples/projection.sample.json` + `ConfigTests` cover the `dataStaging` knob incl. `indexThreshold`.
+
+---
+
+## 2026-06-27 — Typed-AST refactor COMPLETE (Tier 1.3 + Tier 2 + Tier 3); M1 root cause was a stale artifact count, not CRLF
+
+**Branch `claude/finish-typed-ast-refactor`.** Finished the fleet-ranked AST plan
+(`AST_REFACTOR_HANDOFF.md` Part B) — every remaining hand-built SQL on the reverse-leg and
+scratch-container lanes is now typed ScriptDom rendered through the pinned
+`Sql160ScriptGenerator`. Serves the §⭐ supreme discipline (data-structure-oriented;
+strings only at the terminal BCL boundary). Gates: **pure pool 3692/0, Docker 273/273.**
+
+1. **Tier 1.3 — the two parse-back guards are fully typed.** `buildUpdateFromTemp` →
+   a typed `UpdateStatement` over a `QualifiedJoin`, REUSING the shared
+   `changeDetectionPredicate` (the same null-aware OR-fold the MERGE's WHEN MATCHED uses —
+   the string duplicate is deleted; `columnEquality`/`columnInequality`/
+   `perColumnChangeDetection`/`changeDetectionPredicate` gained a `sourceAlias` param, MERGE
+   passes `"Source"` so its byte-goldens are unchanged, the set-based UPDATE passes `"src"`).
+   `buildValidateBeforeApplyGuard` → a typed `IfStatement` (`EXISTS(SELECT 1 FROM target) AND
+   (EXISTS(src EXCEPT tgt) OR EXISTS(tgt EXCEPT src))` → `BEGIN THROW 50000 … END`); the
+   `StringLiteral` self-escapes (the hand `.Replace("'","''")` is gone). Dead `literalText`
+   removed. The `sprintf`→`threadLocalParser.Parse` middle path — which still carried the
+   VO-stringification risk class — is gone from both.
+
+2. **Tier 2.1 — SurrogateCapture (raw-executed, NO parse validation — the exact class that
+   shipped the `"#seed_" + Table` bug).** The 8 `sprintf` sites → typed builders in
+   `ScriptDomBuild`: `buildCaptureStaging` / `buildKeymapStaging` (SELECT TOP 0 ISNULL-clone
+   INTO `#temp`) · `buildCaptureMerge` (MERGE ON 1=0 … OUTPUT | OUTPUT … INTO | INSERT
+   DEFAULT VALUES — via the inherited `DataModificationSpecification.OutputClause` /
+   `OutputIntoClause`) · `buildSelectColumnsFromTemp` · `buildInsertDefaultValues` ·
+   `buildScopeIdentitySelect` (`CAST(SCOPE_IDENTITY() AS BIGINT)`). Only terminal text left is
+   the `;` the generator omits after a bare MERGE.
+
+3. **Tier 2.2 — KeymapSpill.** `buildKeymapSpillTable` (IF OBJECT_ID IS NULL CREATE TABLE …
+   NVARCHAR(450) NOT NULL … composite PK) + `buildKeymapRepoint` (UPDATE … FROM … JOIN … ON
+   … = @kind AND … = CONVERT(NVARCHAR(450), …)); `@kind` stays a BOUND PARAMETER. The
+   parameterized `captureMany` VALUES batching is left (values are bound, never string-built).
+   Deploy-verified by the byte-identical-sink `KeymapSpillEquivalenceTests.Slice S`.
+
+4. **Tier 3.** 3.1 (`TransferRun.normalizedKey`) was already done. **3.2 audited CLEAN** —
+   the only path-shaped concat (`Pipeline.fs` `String.Concat(folder, "/", basename)`) is the
+   INTENTIONAL forward-slash SSDT relpath (cross-platform-deterministic; `Path.Combine` would
+   wrongly emit `\` on Windows); Compose already uses `Path.Combine`. **3.3** SQL-path magic
+   strings are now `[<Literal>]` (`captureSrcKeyColumn`/`captureAssignedColumn`/temp names).
+   **3.4** `CREATE DATABASE` → typed `CreateDatabaseStatement`; the scratch-container teardown
+   `ALTER DATABASE … SET SINGLE_USER WITH ROLLBACK IMMEDIATE` stays an annotated 4-question
+   `LINT-ALLOW` terminal — **ScriptDom 161 has no clean typed node** for the SINGLE_USER
+   access-mode option (`DatabaseOptionKind` omits it); non-production best-effort teardown,
+   `]`-safe via `Render.quote`. **3.5** confirmed legit (prose concat, not structured SQL).
+
+5. **M1 root cause corrected.** The prior entry attributed `EndToEndPipelineTests.M1`'s clean-tree
+   failure to a "local CRLF golden artifact." It was NOT CRLF — it was a STALE ARTIFACT COUNT:
+   the cutover persist→diff seam added `catalog.snapshot.json` as the 8th top-level artifact,
+   but M1 still asserted `Map.count SsdtBundle + 7`. Fixed to `+ 8` with the snapshot's
+   byte-round-trip assertion added (it was counted-but-unasserted). Pure pool is now genuinely
+   clean — no standing M1 failure.
+
+**Open micro-decision (raised to the operator, defaulting to keep):** push the Tier-3.4
+teardown `SET SINGLE_USER` to the sanctioned parse-template idiom vs keep the annotated
+terminal. The plan's own "do only if cheap" guidance → keep.
+
+**Witnesses.** Pure pool 3692/0 (13 new render-witness unit tests for the capture/keymap/
+createDatabase builders). Docker 273/273 — the reverse-leg capture canaries (Tier 2.1), the
+byte-identical-sink KeymapSpill equivalence (Tier 2.2), the staged-MERGE deploy + atomicity
+E2Es (Part A Step 6), and every scratch-container E2E (Tier 3.4 `CREATE DATABASE`). The
+typed builders' API was pinned against the ScriptDom 161 IntelliSense XML
+(`DataModificationSpecification.OutputClause`/`OutputIntoClause`, `CastCall`, `ConvertCall`,
+`VariableReference`, `UniqueConstraintDefinition`), and the renders eyeballed via `dotnet fsi`
+before rewiring.

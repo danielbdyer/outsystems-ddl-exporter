@@ -51,8 +51,7 @@ module SpecialCircumstances =
 [<RequireQualifiedAccess>]
 module SpecialCircumstancesBinding =
 
-    let private bindError (code: string) (message: string) : ValidationError =
-        ValidationError.create (sprintf "pipeline.specialCircumstances.%s" code) message
+    let private bindError = Binding.error ConfigAxis.SpecialCircumstances
 
     /// Resolve an operator-supplied `LogicalName` (Module.Entity) to
     /// the matching kind's `SsKey`. Errors structurally if no kind
@@ -61,15 +60,12 @@ module SpecialCircumstancesBinding =
         (catalog: Catalog)
         (ref: Config.LogicalName)
         : Result<SsKey> =
-        match CatalogResolution.tryKindByLogical catalog ref.Module ref.Entity with
-        | Some key -> Result.success key
-        | None ->
-            Result.failureOf (
-                bindError
-                    "allowMissingPk.unresolved"
-                    (sprintf
-                        "overrides.allowMissingPrimaryKey entry %s.%s did not match any catalog kind."
-                        ref.Module ref.Entity))
+        Binding.requireKindByLogical catalog ref.Module ref.Entity
+            (bindError
+                "allowMissingPk.unresolved"
+                (sprintf
+                    "overrides.allowMissingPrimaryKey entry %s.%s did not match any catalog kind."
+                    ref.Module ref.Entity))
 
     /// Resolve a single cycle entry's LOGICAL { module, entity } to the
     /// matching kind's `SsKey` (espace-safe — the physical OSUSR table name
@@ -81,15 +77,12 @@ module SpecialCircumstancesBinding =
         (catalog: Catalog)
         (entry: Config.CircularDependencyEntry)
         : Result<SsKey> =
-        match CatalogResolution.tryKindByLogical catalog entry.Module entry.Entity with
-        | Some key -> Result.success key
-        | None ->
-            Result.failureOf (
-                bindError
-                    "allowedCycle.unresolved"
-                    (sprintf
-                        "overrides.circularDependencies.allowedCycles entry %s.%s did not match any catalog kind."
-                        entry.Module entry.Entity))
+        Binding.requireKindByLogical catalog entry.Module entry.Entity
+            (bindError
+                "allowedCycle.unresolved"
+                (sprintf
+                    "overrides.circularDependencies.allowedCycles entry %s.%s did not match any catalog kind."
+                    entry.Module entry.Entity))
 
     let private bindCycle
         (catalog: Catalog)

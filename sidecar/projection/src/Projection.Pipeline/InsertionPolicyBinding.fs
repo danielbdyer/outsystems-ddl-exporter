@@ -29,27 +29,18 @@ open Projection.Core
 [<RequireQualifiedAccess>]
 module InsertionPolicyBinding =
 
-    let private bindError (code: string) (message: string) : ValidationError =
-        ValidationError.create (sprintf "pipeline.insertionPolicy.%s" code) message
-
     /// Map a textual config value to the typed DU. The recognized
     /// vocabulary is the closed-DU's case names verbatim; structural
     /// totality means unknown names surface as
     /// `pipeline.insertionPolicy.unknownVariant` before any consumer
     /// fires.
     let fromString (value: string) : Result<InsertionPolicy> =
-        match value with
-        | "SchemaOnly"        -> Result.success SchemaOnly
-        | "InsertNew"         -> Result.success InsertNew
-        | "Merge"             -> Result.success Merge
-        | "TruncateAndInsert" -> Result.success TruncateAndInsert
-        | other ->
-            Result.failureOf (
-                bindError
-                    "unknownVariant"
-                    (sprintf
-                        "policy.insertion value '%s' is not a recognized InsertionPolicy. Known: SchemaOnly | InsertNew | Merge | TruncateAndInsert."
-                        other))
+        Binding.ofClosedName ConfigAxis.InsertionPolicy "unknownVariant" "policy.insertion value" "InsertionPolicy"
+            [ "SchemaOnly",        SchemaOnly
+              "InsertNew",         InsertNew
+              "Merge",             Merge
+              "TruncateAndInsert", TruncateAndInsert ]
+            value
 
     /// Bind from a parsed `Config`. Empty string at `policy.insertion`
     /// is treated as the default `SchemaOnly` (V2-driver Stage 6

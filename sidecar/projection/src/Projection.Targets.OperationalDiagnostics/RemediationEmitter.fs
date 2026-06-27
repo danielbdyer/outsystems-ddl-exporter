@@ -45,7 +45,13 @@ module RemediationEmitter =
     /// values; bracket-quoting at the terminal text boundary is
     /// the SQL-correctness adapter, not an operator-visible choice.
     let private brackets (s: string) : string =
-        System.String.Concat("[", s, "]")  // LINT-ALLOW: terminal SQL-identifier bracket-quoting; segments are typed (literal brackets + Name.value / Physical.Schema / Physical.Table from V2 IR); BCL `String.Concat` IS the use-case-specific library for two-segment terminal-text composition
+        // `]` doubled per T-SQL bracket-quoting — matches ScriptDom's
+        // `Identifier.EncodeIdentifier` (the canonical quoter, which this Core-only
+        // project cannot reach: a ScriptDom dep belongs in SSDT, not here, per the
+        // `Coordinates.fs` chapter-3.5 decision). Latent today (OutSystems physical
+        // names carry no `]`), but a `]`-bearing identifier would otherwise close the
+        // bracket early and emit broken/unsafe operator SQL.
+        System.String.Concat("[", s.Replace("]", "]]"), "]")  // LINT-ALLOW: terminal SQL-identifier bracket-quoting; segments are typed (Name.value / Physical.Schema / Physical.Table from V2 IR), `]`-escaped; BCL `String.Concat` IS the use-case-specific library for two-segment terminal-text composition
 
     let private qualifiedTable (kind: Kind) : string =
         System.String.Concat(brackets (TableId.schemaText kind.Physical), ".", brackets (TableId.tableText kind.Physical))  // LINT-ALLOW: terminal SQL-qualified-name composition; segments are typed (bracket-quoted schema + literal dot + bracket-quoted table from V2 IR Physical); BCL `String.Concat` IS the use-case-specific library

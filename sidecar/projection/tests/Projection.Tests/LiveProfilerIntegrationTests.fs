@@ -297,7 +297,7 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
             do! Deploy.executeBatch cnn seedSql
             let! cacheR = LiveProfiler.captureEvidenceCache cnn itemsCatalog
             let cache = mustOk cacheR
-            return LiveProfiler.Cache.deriveAttributeRealities cache itemsCatalog
+            return ProfileDerivation.deriveAttributeRealities cache itemsCatalog
         })
 
     let runForeignKeyScenario (childSeed: string) : Task<ForeignKeyReality list> =
@@ -308,7 +308,7 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
             do! Deploy.executeBatch cnn childSeed
             let! cacheR = LiveProfiler.captureEvidenceCache cnn twoKindCatalog
             let cache = mustOk cacheR
-            return LiveProfiler.Cache.deriveForeignKeyRealities cache twoKindCatalog
+            return ProfileDerivation.deriveForeignKeyRealities cache twoKindCatalog
         })
 
     let findColumn (columns: ColumnProfile list) (key: SsKey) : ColumnProfile =
@@ -320,7 +320,7 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
             do! Deploy.executeBatch cnn seedSql
             let! cacheR = LiveProfiler.captureEvidenceCache cnn itemsCatalog
             let cache = mustOk cacheR
-            return LiveProfiler.Cache.deriveColumnProfiles cache itemsCatalog
+            return ProfileDerivation.deriveColumnProfiles cache itemsCatalog
         })
 
     let runCompositeUniqueScenario (productsSeed: string) : Task<CompositeUniqueCandidateProfile list> =
@@ -329,7 +329,7 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
             do! Deploy.executeBatch cnn productsSeed
             let! cacheR = LiveProfiler.captureEvidenceCache cnn productsCatalog
             let cache = mustOk cacheR
-            return LiveProfiler.Cache.deriveCompositeUniqueCandidates cache productsCatalog
+            return ProfileDerivation.deriveCompositeUniqueCandidates cache productsCatalog
         })
 
     let runOrphanSampleScenario (childSeed: string) : Task<DiagnosticEntry list> =
@@ -340,7 +340,7 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
             do! Deploy.executeBatch cnn childSeed
             let! cacheR = LiveProfiler.captureEvidenceCache cnn twoKindCatalog
             let cache = mustOk cacheR
-            return LiveProfiler.Cache.deriveForeignKeyOrphanSamples cache twoKindCatalog
+            return ProfileDerivation.deriveForeignKeyOrphanSamples cache twoKindCatalog
         })
 
     interface IClassFixture<EphemeralContainerFixture>
@@ -684,7 +684,7 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
                 do! Deploy.executeBatch cnn seedSql
                 let! cacheR = LiveProfiler.captureEvidenceCache cnn itemsCatalog
                 let cache = mustOk cacheR
-                return LiveProfiler.Cache.deriveAttributeRealities cache itemsCatalog
+                return ProfileDerivation.deriveAttributeRealities cache itemsCatalog
             })).GetAwaiter().GetResult()
         let keysOf (xs: AttributeReality list) = xs |> List.map (fun r -> r.AttributeKey) |> Set.ofList
         Assert.Equal<Set<SsKey>>(Set.ofList [ idAttrKey; nameAttrKey; codeAttrKey ], keysOf derived)
@@ -702,7 +702,7 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
                 do! Deploy.executeBatch cnn seedSql
                 let! cacheR = LiveProfiler.captureEvidenceCache cnn itemsCatalog
                 let cache = mustOk cacheR
-                return LiveProfiler.Cache.deriveColumnProfiles cache itemsCatalog
+                return ProfileDerivation.deriveColumnProfiles cache itemsCatalog
             })).GetAwaiter().GetResult()
         Assert.Equal(3, List.length derived)
         let name = derived |> List.find (fun c -> c.AttributeKey = nameAttrKey)
@@ -718,7 +718,7 @@ type LiveProfilerIntegrationTests(fixture: EphemeralContainerFixture) =
                 do! Deploy.executeBatch cnn seedSql
                 let! cacheR = LiveProfiler.captureEvidenceCache cnn itemsCatalog
                 let cache = mustOk cacheR
-                return LiveProfiler.Cache.deriveColumnProfiles cache itemsCatalog
+                return ProfileDerivation.deriveColumnProfiles cache itemsCatalog
             })).GetAwaiter().GetResult()
         // Name holds 'alpha' / 'gamma' (5 chars) + a NULL → MAX observed = 5.
         let name = derived |> List.find (fun c -> c.AttributeKey = nameAttrKey)
