@@ -217,17 +217,23 @@ module private Face =
         dumpBench label
         code
 
-    /// As `run`, but the body is a watch-capable stage spine: on `--pretty` + a real
-    /// TTY — and `gateOpen` (for verbs that only watch once their execute gate is
-    /// open; a dry-run writes nothing, so its load stage would never advance) — the
-    /// body renders through the live `Watch` board; otherwise it runs inline. Folds
-    /// the `if [gateOpen &&] Watch.shouldWatch … then Watch.renderWatch … else body ()`
-    /// preamble every staged face copied.
+    /// The watch-preamble alone: on `--pretty` + a real TTY — and `gateOpen` (for
+    /// verbs that only watch once their execute gate is open; a dry-run writes
+    /// nothing, so its load stage would never advance) — render the body through the
+    /// live `Watch` board, else run it inline. Folds the
+    /// `if [gateOpen &&] Watch.shouldWatch … then Watch.renderWatch … else body ()`
+    /// preamble every staged face copied. For faces whose live stage sits APART from
+    /// their `dumpBench` tail (the migrate legs render the execute leg under the
+    /// board deep inside a `task`, then dump bench at the outer return).
+    let watchInline (gateOpen: bool) (spine: RunSpine) (body: unit -> int) : int =
+        if gateOpen && Watch.shouldWatch prettyMode.Value then
+            Watch.renderWatch spine (Watch.resolveDwellMs ()) body
+        else body ()
+
+    /// The watch-preamble + `dumpBench` tail combined, for faces whose live stage and
+    /// bench-dump are adjacent (deploy, transfer).
     let staged (label: string) (gateOpen: bool) (spine: RunSpine) (body: unit -> int) : int =
-        run label (fun () ->
-            if gateOpen && Watch.shouldWatch prettyMode.Value then
-                Watch.renderWatch spine (Watch.resolveDwellMs ()) body
-            else body ())
+        run label (fun () -> watchInline gateOpen spine body)
 
 let runEmit (shaping: Config.Config) (catalog: Catalog) (outputDir: string) : int =
     let exitCode =
@@ -2189,10 +2195,7 @@ let runMigrateExecute (target: Catalog) (connSpec: string) (declaration: LossDec
                                     let executeBody () =
                                         (runMigrateExecuteLeg atomic allowCdc declaration sourceA target storePath envLabel cnn)
                                             .GetAwaiter().GetResult()
-                                    return
-                                        if Watch.shouldWatch prettyMode.Value then
-                                            Watch.renderWatch Spines.migrate (Watch.resolveDwellMs ()) executeBody
-                                        else executeBody ()
+                                    return Face.watchInline true Spines.migrate executeBody
         }
     let code = work.GetAwaiter().GetResult()
     dumpBench "migrate"
@@ -2368,10 +2371,7 @@ let runMigrateWithData (target: Catalog) (sinkSpec: string) (sourceSpec: string)
                                         let executeBody () =
                                             (runMigrateWithDataLeg sinkCapability.IdentityPolicy atomic allowCdc declaration sinkSourceA target reconciliation storePath envLabel dataSource sink)
                                                 .GetAwaiter().GetResult()
-                                        return
-                                            if Watch.shouldWatch prettyMode.Value then
-                                                Watch.renderWatch Spines.migrateData (Watch.resolveDwellMs ()) executeBody
-                                            else executeBody ()
+                                        return Face.watchInline true Spines.migrateData executeBody
         }
     let code = work.GetAwaiter().GetResult()
     dumpBench "migrate"
