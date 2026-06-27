@@ -627,15 +627,11 @@ module TopologicalOrderPass =
         : Lineage<Diagnostics<IslandReport>> =
         use _ = Bench.scope "pass.islandDetection"
 
-        // Build undirected adjacency from t.Edges.
-        let addNeighbor (m: Map<SsKey, SsKey list>) (a: SsKey) (b: SsKey) =
-            let existing = Map.tryFind a m |> Option.defaultValue []
-            Map.add a (b :: existing) m
-        let undirected =
-            t.Edges
-            |> List.fold (fun acc (src, tgt) ->
-                addNeighbor (addNeighbor acc src tgt) tgt src)
-                Map.empty
+        // The shared canonical undirected adjacency (deduped + sorted + self-skip;
+        // all benign for this weakly-connected-component BFS — it visits each node
+        // once via `visited`, so neighbor dups / order / self-loops never change
+        // the components). See `TopologicalOrder.undirectedAdjacency`.
+        let undirected = TopologicalOrder.undirectedAdjacency t
 
         let visited = HashSet<SsKey>()
         let components = ResizeArray<SsKey list>()

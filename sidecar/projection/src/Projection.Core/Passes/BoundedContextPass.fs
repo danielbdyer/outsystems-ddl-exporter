@@ -31,21 +31,10 @@ module BoundedContextPass =
     // CLR primitive annotation context; just a local constant).
     let private maxPropagationRounds : int = 50
 
-    /// Build the undirected FK adjacency from the edge set (for
-    /// community detection we treat FK relationships as undirected
-    /// structural coupling).
-    let private addNeighbor (m: Map<SsKey, SsKey list>) (a: SsKey) (b: SsKey) =
-        let existing = Map.tryFind a m |> Option.defaultValue []
-        if List.contains b existing then m
-        else Map.add a (b :: existing) m
-
-    let private buildUndirectedAdj (edges: (SsKey * SsKey) list) : Map<SsKey, SsKey list> =
-        edges
-        |> List.fold (fun acc (src, tgt) ->
-            if src = tgt then acc
-            else addNeighbor (addNeighbor acc src tgt) tgt src)
-            Map.empty
-        |> Map.map (fun _ neighbors -> List.sort neighbors)
+    // The undirected FK adjacency (community detection treats FK relationships as
+    // undirected structural coupling) is the shared canonical
+    // `TopologicalOrder.undirectedAdjacency` — see its docstring for the divergence
+    // it retired.
 
     /// Label propagation: each node adopts the most frequent label
     /// among its neighbors. Ties broken by choosing the smallest
@@ -125,7 +114,7 @@ module BoundedContextPass =
         use _ = Bench.scope "pass.boundedContext"
 
         let nodes = t.Order
-        let adj = buildUndirectedAdj t.Edges
+        let adj = TopologicalOrder.undirectedAdjacency t
 
         let labels = labelPropagation nodes adj
 
