@@ -25,8 +25,8 @@
 
 Work is underway across two branches off `main` (`250811ea`): the typed-AST chapter on
 `claude/finish-typed-ast-refactor`, and the recon sweep on `claude/recon-binding-registry`
-(this doc now lives here so it merges in with the sweep). **9 findings fully landed, 5
-partially landed (the clean core in, the larger part open), 11 untouched.** Every
+(this doc now lives here so it merges in with the sweep). **9 findings fully landed, 6
+partially landed (the clean core in, the larger part open), 10 untouched.** Every
 partial's open remainder and every untouched item is enumerated below; each `## N.`
 section also carries a per-section `> **Status:**` line.
 
