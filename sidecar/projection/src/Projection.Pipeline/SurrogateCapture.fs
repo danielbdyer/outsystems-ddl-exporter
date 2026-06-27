@@ -1,9 +1,12 @@
 namespace Projection.Pipeline
 
-// LINT-ALLOW-FILE: terminal SQL text over validated TableIds at the
-//   capture realization boundary (the same allowed class as TransferRun);
-//   reader drains are module-level tail-recursive task continuations
-//   (FS3511 posture).
+// LINT-ALLOW-FILE: the capture SQL is now built as typed ScriptDom statements
+//   (`ScriptDomBuild.buildCapture*` / `buildScopeIdentitySelect`) and rendered
+//   through `ScriptDomGenerate` (Tier-2.1 typed-AST refactor). The ONLY terminal
+//   text is the explicit `;` appended to the rendered MERGE — ScriptDom's
+//   `generateOne` omits the trailing semicolon after a bare MERGE, which SQL
+//   Server requires. Reader drains are module-level tail-recursive task
+//   continuations (FS3511 posture).
 
 open System.Threading.Tasks
 open Microsoft.Data.SqlClient
@@ -85,7 +88,17 @@ module SurrogateCapture =
     [<Literal>]
     let private KeymapTable = "[#__projection_keymap]"
 
-    let private quotedCol (a: Attribute) = Render.quote (ColumnRealization.columnNameText a.Column)
+    // Raw (un-bracketed) session-table names for the typed `ScriptDomBuild.*`
+    // builders (which bracket them); the bracketed forms above feed
+    // `Bulk.copyRowsSession`'s bulk-load destination.
+    [<Literal>]
+    let private StagingTempName = "#__projection_capture"
+
+    [<Literal>]
+    let private KeymapTempName = "#__projection_keymap"
+
+    /// The physical column name an attribute carries.
+    let private colName (a: Attribute) = ColumnRealization.columnNameText a.Column
 
     let private insertColsOf (kind: Kind) : Attribute list =
         kind.Attributes |> List.filter (fun a -> not (a.IsPrimaryKey && a.IsIdentity))
@@ -119,26 +132,16 @@ module SurrogateCapture =
     /// CASE wrapper constant-folds and the property PROPAGATES, silently
     /// minting staging keys; probed live 2026-06-10).
     let private createStaging (sink: SqlConnection) (kind: Kind) (identityAttr: Attribute) (insertCols: Attribute list) : Task<unit> =
-        let idCol = quotedCol identityAttr
         Deploy.executeBatch sink
-            (sprintf "SELECT TOP 0 ISNULL(%s, %s) AS [__SRC_KEY]%s INTO %s FROM %s;"
-                idCol idCol
-                (insertCols |> List.map (fun a -> ", " + quotedCol a) |> String.concat "")
-                StagingTable
-                (Render.tableQualified kind.Physical))
+            (ScriptDomGenerate.generateOne
+                (ScriptDomBuild.buildCaptureStaging StagingTempName kind.Physical (colName identityAttr) (insertCols |> List.map colName)))
 
     let private dropStaging (sink: SqlConnection) : unit =
         try
-            (Deploy.executeBatch sink (sprintf "IF OBJECT_ID('tempdb..%s') IS NOT NULL DROP TABLE %s;" "#__projection_capture" StagingTable))
+            (Deploy.executeBatch sink
+                (ScriptDomGenerate.generateOne (ScriptDomBuild.buildDropTableIfExists StagingTempName)))
                 .GetAwaiter().GetResult()
         with _ -> ()
-
-    let private insertArmOf (insertCols: Attribute list) : string =
-        if List.isEmpty insertCols then "INSERT DEFAULT VALUES"
-        else
-            sprintf "INSERT (%s) VALUES (%s)"
-                (insertCols |> List.map quotedCol |> String.concat ", ")
-                (insertCols |> List.map (fun a -> sprintf "S.%s" (quotedCol a)) |> String.concat ", ")
 
     /// Drain a two-column `(source, assigned)` reader. Module-level
     /// tail-recursive task continuation (FS3511 posture).
@@ -161,11 +164,9 @@ module SurrogateCapture =
         task {
             use cmd = sink.CreateCommand()
             cmd.CommandText <-
-                sprintf "MERGE INTO %s AS T USING %s AS S ON 1 = 0 WHEN NOT MATCHED THEN %s OUTPUT S.[__SRC_KEY], INSERTED.%s;"
-                    (Render.tableQualified kind.Physical)
-                    StagingTable
-                    (insertArmOf insertCols)
-                    (quotedCol identityAttr)
+                ScriptDomGenerate.generateOne
+                    (ScriptDomBuild.buildCaptureMerge kind.Physical StagingTempName (insertCols |> List.map colName) (colName identityAttr) None)
+                + ";"
             cmd.CommandTimeout <- 0
             use! reader = cmd.ExecuteReaderAsync()
             return! readPairs reader []
@@ -175,26 +176,25 @@ module SurrogateCapture =
         (sink: SqlConnection) (kind: Kind) (identityAttr: Attribute) (insertCols: Attribute list)
         : Task<(string * string) list> =
         task {
-            let idCol = quotedCol identityAttr
             do! Deploy.executeBatch sink
-                    (sprintf "SELECT TOP 0 ISNULL(%s, %s) AS [__SRC_KEY], ISNULL(%s, %s) AS [__ASSIGNED] INTO %s FROM %s;"
-                        idCol idCol idCol idCol KeymapTable (Render.tableQualified kind.Physical))
+                    (ScriptDomGenerate.generateOne
+                        (ScriptDomBuild.buildKeymapStaging KeymapTempName kind.Physical (colName identityAttr)))
             try
                 do! Deploy.executeBatch sink
-                        (sprintf "MERGE INTO %s AS T USING %s AS S ON 1 = 0 WHEN NOT MATCHED THEN %s OUTPUT S.[__SRC_KEY], INSERTED.%s INTO %s ([__SRC_KEY], [__ASSIGNED]);"
-                            (Render.tableQualified kind.Physical)
-                            StagingTable
-                            (insertArmOf insertCols)
-                            (quotedCol identityAttr)
-                            KeymapTable)
+                        (ScriptDomGenerate.generateOne
+                            (ScriptDomBuild.buildCaptureMerge kind.Physical StagingTempName (insertCols |> List.map colName) (colName identityAttr) (Some KeymapTempName))
+                         + ";")
                 use cmd = sink.CreateCommand()
-                cmd.CommandText <- sprintf "SELECT [__SRC_KEY], [__ASSIGNED] FROM %s;" KeymapTable
+                cmd.CommandText <-
+                    ScriptDomGenerate.generateOne
+                        (ScriptDomBuild.buildSelectColumnsFromTemp [ ScriptDomBuild.captureSrcKeyColumn; ScriptDomBuild.captureAssignedColumn ] KeymapTempName)
                 cmd.CommandTimeout <- 0
                 use! reader = cmd.ExecuteReaderAsync()
                 return! readPairs reader []
             finally
                 try
-                    (Deploy.executeBatch sink (sprintf "IF OBJECT_ID('tempdb..%s') IS NOT NULL DROP TABLE %s;" "#__projection_keymap" KeymapTable))
+                    (Deploy.executeBatch sink
+                        (ScriptDomGenerate.generateOne (ScriptDomBuild.buildDropTableIfExists KeymapTempName)))
                         .GetAwaiter().GetResult()
                 with _ -> ()
         }
@@ -213,17 +213,19 @@ module SurrogateCapture =
             match rows with
             | [] -> return List.rev acc
             | row :: rest ->
-                let lit (get: 'row -> string) (a: Attribute) =
-                    get row |> SqlLiteral.ofRaw a.Type |> SqlLiteral.toString
-                let insertSql =
+                let insertStmt : Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement =
                     if List.isEmpty litGets then
-                        sprintf "INSERT INTO %s DEFAULT VALUES; SELECT CAST(SCOPE_IDENTITY() AS BIGINT);"
-                            (Render.tableQualified kind.Physical)
+                        ScriptDomBuild.buildInsertDefaultValues kind.Physical
                     else
-                        sprintf "INSERT INTO %s (%s) VALUES (%s); SELECT CAST(SCOPE_IDENTITY() AS BIGINT);"
-                            (Render.tableQualified kind.Physical)
-                            (litGets |> List.map (fst >> quotedCol) |> String.concat ", ")
-                            (litGets |> List.map (fun (a, get) -> lit get a) |> String.concat ", ")
+                        let cells =
+                            litGets
+                            |> List.map (fun (a, get) -> { Column = colName a; Type = a.Type; Raw = get row })
+                        ScriptDomBuild.buildInsertRow kind.Physical cells :> Microsoft.SqlServer.TransactSql.ScriptDom.TSqlStatement
+                // The INSERT then `SELECT CAST(SCOPE_IDENTITY() AS BIGINT)` as one
+                // `;`-terminated batch; ExecuteScalar returns the SELECT's scalar
+                // (the INSERT yields no result set).
+                let insertSql =
+                    ScriptDomGenerate.generateBatch [ insertStmt; ScriptDomBuild.buildScopeIdentitySelect () ]
                 use cmd = sink.CreateCommand()
                 cmd.CommandText <- insertSql
                 let! scalar = cmd.ExecuteScalarAsync()
