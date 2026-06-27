@@ -491,20 +491,6 @@ module LiveProfiler =
                 match attr.Type with
                 | PrimitiveType.Integer | PrimitiveType.Decimal -> true
                 | _ -> false
-            let percentile (sorted: decimal array) (p: decimal) : decimal =
-                // Continuous linear-interpolation percentile (PERCENTILE_CONT
-                // semantics from SQL Server). For sorted array of length N,
-                // h = (N - 1) * p; floor(h) = lo; ceil(h) = hi; fraction = h - lo.
-                if sorted.Length = 0 then 0M
-                elif sorted.Length = 1 then sorted.[0]
-                else
-                    let n = decimal (sorted.Length - 1)
-                    let h = n * p
-                    let lo = int h
-                    let frac = h - decimal lo
-                    if lo >= sorted.Length - 1 then sorted.[sorted.Length - 1]
-                    else
-                        sorted.[lo] + frac * (sorted.[lo + 1] - sorted.[lo])
             catalog
             |> Catalog.allKinds
             |> List.collect (fun kind ->
@@ -549,11 +535,11 @@ module LiveProfiler =
                                     NumericDistribution.create
                                         attr.SsKey
                                         min_
-                                        (percentile sorted 0.25M)
-                                        (percentile sorted 0.50M)
-                                        (percentile sorted 0.75M)
-                                        (percentile sorted 0.95M)
-                                        (percentile sorted 0.99M)
+                                        (Statistics.percentileCont sorted 0.25M)
+                                        (Statistics.percentileCont sorted 0.50M)
+                                        (Statistics.percentileCont sorted 0.75M)
+                                        (Statistics.percentileCont sorted 0.95M)
+                                        (Statistics.percentileCont sorted 0.99M)
                                         max_ sampleSize probeStatus
                                 let momentsResult =
                                     StatisticalMoments.create mean stdDev
@@ -989,21 +975,6 @@ module LiveProfiler =
                 | Static _ -> true
                 | _ -> false)
 
-        /// Compute percentile via continuous linear interpolation
-        /// (PERCENTILE_CONT semantics). Reused from
-        /// `deriveNumericDistributions` — extracted here for the
-        /// fan-out cardinality derivation.
-        let private percentileOnSorted (sorted: decimal array) (p: decimal) : decimal =
-            if sorted.Length = 0 then 0M
-            elif sorted.Length = 1 then sorted.[0]
-            else
-                let n = decimal (sorted.Length - 1)
-                let h = n * p
-                let lo = int h
-                let frac = h - decimal lo
-                if lo >= sorted.Length - 1 then sorted.[sorted.Length - 1]
-                else sorted.[lo] + frac * (sorted.[lo + 1] - sorted.[lo])
-
         /// Derive per-Reference fan-out cardinality. Group source FK
         /// values by their target-PK value; per-parent child count
         /// = group size. Summarize the count distribution via
@@ -1053,11 +1024,11 @@ module LiveProfiler =
                                         NumericDistribution.create
                                             reference.SsKey
                                             min_
-                                            (percentileOnSorted sorted 0.25M)
-                                            (percentileOnSorted sorted 0.50M)
-                                            (percentileOnSorted sorted 0.75M)
-                                            (percentileOnSorted sorted 0.95M)
-                                            (percentileOnSorted sorted 0.99M)
+                                            (Statistics.percentileCont sorted 0.25M)
+                                            (Statistics.percentileCont sorted 0.50M)
+                                            (Statistics.percentileCont sorted 0.75M)
+                                            (Statistics.percentileCont sorted 0.95M)
+                                            (Statistics.percentileCont sorted 0.99M)
                                             max_ sampleSize probeStatus
                                     let momentsResult =
                                         StatisticalMoments.create mean stdDev
