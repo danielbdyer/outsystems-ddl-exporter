@@ -103,20 +103,26 @@ type View =
 
 // --- Status → presentation -------------------------------------------------
 
-let private glyphOf =
-    function
-    | Ok -> Theme.ok | Warn -> Theme.warn | Bad -> Theme.bad
-    | Pending -> Theme.pending | Neutral -> ""
+/// The complete presentation of a `Status` — glyph + color-wrap + wire tag —
+/// resolved in ONE match (recon #22). Adding or re-tuning a status is a single
+/// edit here; `glyphOf` / `colorOf` / `statusTag` are thin projections of it, so
+/// every call site is unchanged. (Replaces three parallel `Status` matches that
+/// each had to be kept in sync by hand.)
+type private Presentation = { Glyph: string; Color: string -> string; Tag: string }
 
-let private colorOf status (s: string) : string =
-    match status with
-    | Ok -> Theme.green s | Warn -> Theme.yellow s | Bad -> Theme.red s
-    | Pending -> Theme.yellow s | Neutral -> s
-
-let private statusTag =
+let private presentationOf : Status -> Presentation =
     function
-    | Ok -> "ok" | Warn -> "warn" | Bad -> "bad"
-    | Pending -> "pending" | Neutral -> "neutral"
+    | Ok      -> { Glyph = Theme.ok;      Color = Theme.green;  Tag = "ok" }
+    | Warn    -> { Glyph = Theme.warn;    Color = Theme.yellow; Tag = "warn" }
+    | Bad     -> { Glyph = Theme.bad;     Color = Theme.red;    Tag = "bad" }
+    | Pending -> { Glyph = Theme.pending; Color = Theme.yellow; Tag = "pending" }
+    | Neutral -> { Glyph = "";            Color = id;           Tag = "neutral" }
+
+let private glyphOf (status: Status) : string = (presentationOf status).Glyph
+
+let private colorOf (status: Status) (s: string) : string = (presentationOf status).Color s
+
+let private statusTag (status: Status) : string = (presentationOf status).Tag
 
 /// glyph + colored value, as Spectre markup.
 let private styled status (value: string) : string =

@@ -26,8 +26,8 @@
 Work is underway across two branches off `main` (`250811ea`): the typed-AST chapter on
 `claude/finish-typed-ast-refactor`, and the recon sweep on `claude/recon-binding-registry`
 (this doc now lives here so it merges in with the sweep). **13 findings resolved (12 fully
-landed + #7's genuine consolidation, its over-reach remainder declined with reasons), 4
-partially landed, 8 untouched.** (#4 and #7 both carry a *reasoned decline* on their
+landed + #7's genuine consolidation, its over-reach remainder declined with reasons), 5
+partially landed, 7 untouched.** (#4 and #7 both carry a *reasoned decline* on their
 over-reach remainders — see their sections.) Every
 partial's open remainder and every untouched item is enumerated below; each `## N.`
 section also carries a per-section `> **Status:**` line.
@@ -68,7 +68,7 @@ section also carries a per-section `> **Status:**` line.
 | 19 | `Fixpoint.iterate` combinator | 🟨 | ✅ **done** | `Fixpoint.iterate` in Core; CentralityPass PageRank + BoundedContextPass label-propagation + ProfileAnomaly Newton-sqrt collapsed onto it (2026-06-27). |
 | 20 | ReadSide pure-logic → Core | 🟨 | ✅ **done** | `ForeignKeyReadback` (classify) moved to Core; key synthesis + `formatRawValue` found ALREADY Core-routed (recon anchors stale — documented) (2026-06-27). |
 | 21 | Keymap-spill / transfer DML hardening | 🟨 | ✅ **done** | typed-AST branch (Tier 2.2) |
-| 22 | `View` DU leaf consolidation | 🟨 | ○ remaining | — |
+| 22 | `View` DU leaf consolidation | 🟨 | ◑ **partial** | The `Status → presentationOf` consolidation landed (3 parallel matches → 1; 2026-06-27). **Open:** the M `Field`/`PanelRow` leaf merge + the L `Lane`↔`Disclosure` merge (cross-level DU moves; the latter unlocks #17). |
 | 23 | Structural `registered ⇔ executed` at Pipeline | 🟨 | ○ remaining | — |
 | 24 | Core type-modeling cluster | ⬜ | ○ remaining | — |
 | 25 | Quick-wins & incidental bugs | ⬜ | ◑ **partial** | Remediation `]`-bug fixed via #8. **Navigator** breadcrumb bug fixed + `safeMarkupLine` extracted (4× dup); `Catalog.kindByKey` (the existing cached `kindIndex`, 4 sites); `LifecycleStore.withLoaded` (Eject/Report fromStore); `RelaxationStore.persist` → `Result` (2026-06-27). **Open:** `catalogTopologyStep` builder, `parse-template` guards, `OperatorConsole`/`TtyRenderer` global threading, `Watch.fs` wire-format relocation. |
@@ -607,7 +607,7 @@ a **fourth** open-coded copy of the single-quote-doubling escape `SqlLiteral.toS
 
 ## 22. 🟨 Consolidate the over-grown `View` DU leaves
 
-> **Status (2026-06-27):** ○ **Not started.**
+> **Status (2026-06-27):** ◑ **Partial — the S consolidation done.** `Status → (glyph, color, tag)` was spread across three parallel `private` matches (`glyphOf` / `colorOf` / `statusTag`) that had to be kept in sync by hand. They now project from ONE `presentationOf : Status -> { Glyph; Color; Tag }` match — adding or re-tuning a status is a single edit; the three helpers stay as thin projections so every call site is unchanged. Pure CLI; the View/Tty/Narration render suite (102 tests) is green. **Open:** the M `Field`/`Meter`/`Action` ↔ `PanelRow.{Labeled,Gauge,Next}` leaf merge (a cross-level DU unification — `Field` is a top-level `View` case, `PanelRow.*` are panel rows, so the merge semantics are non-obvious and touch `writePanel`+`toJson`+render tests) and the L `Lane`↔`Disclosure` merge (which also unlocks #17's grouped-disclosure dedup).
 
 **Anchors:** `View.fs:41–47` (`Field`/`Meter`/`Action`) vs `:59–101` (`PanelRow.Labeled`/`Gauge`/`Next`) — the wire format `toJson :505–510` already maps both to the same kinds; `:88` (`Lane`) vs `:96` (`Disclosure`); `:106–119` (`Status → glyph/color/tag` split across three parallel private matches).
 
