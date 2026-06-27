@@ -25,8 +25,10 @@
 
 Work is underway across two branches off `main` (`250811ea`): the typed-AST chapter on
 `claude/finish-typed-ast-refactor`, and the recon sweep on `claude/recon-binding-registry`
-(this doc now lives here so it merges in with the sweep). **12 findings fully landed, 5
-partially landed (the clean core in, the larger part open), 8 untouched.** Every
+(this doc now lives here so it merges in with the sweep). **13 findings resolved (12 fully
+landed + #7's genuine consolidation, its over-reach remainder declined with reasons), 4
+partially landed, 8 untouched.** (#4 and #7 both carry a *reasoned decline* on their
+over-reach remainders — see their sections.) Every
 partial's open remainder and every untouched item is enumerated below; each `## N.`
 section also carries a per-section `> **Status:**` line.
 
@@ -51,7 +53,7 @@ section also carries a per-section `> **Status:**` line.
 | 4 | `CapabilityDescent` + registry | 🟥 | ◑ **partial** | named-refusal registry in (`a10715ab`). **Declined as over-reach (needs approval to force):** the unified descent *combinator* + *record* — the two sites are genuinely different shapes (multi-rung ladder vs attempt-or-skip). |
 | 5 | `ProfileDerivation` / `Profiler` port | 🟥 | ✅ **done** | `5efec474`, `c81c88ad`, `81d58b1b` (EvidenceCache + the ~900-line derivation suite now pure Core; `EvidenceCache` is the source-agnostic seam) |
 | 6 | Typed-tree boundary analyzer | 🟧 | ✅ **done** | `eb243e6d` (bans capabilities by resolved full name) |
-| 7 | `FkGraph` build-once | 🟧 | ◑ **partial** | canonical `undirectedAdjacency` in (`57a388ec`, 2 consumers, dedup divergence retired). **Open:** the remaining adjacency copies (doc counts 4) + a full `FkGraph` reification. |
+| 7 | `FkGraph` build-once | 🟧 | ✅ **done** / remainder **declined** | The genuine dup (the `addNeighbor` undirected fold) was consolidated into `undirectedAdjacency` (2 consumers). The full `FkGraph` reification is **declined out loud (2026-06-27)**: the 2 remaining "copies" are deliberate, documented carve-outs (Centrality's reverse-adj perf `Dictionary`; the cascade adjacency is classifier-filtered, needs Catalog+`CycleResolution`, can't be an edges-only `FkGraph` method) — reifying them would be a zero-consumer symmetry-build (the §5 dead-algebra anti-pattern). |
 | 8 | Shared quoting primitive | 🟧 | ✅ **done** | Core `SqlIdentifier.quote`/`qualified` (byte-verified ≡ `EncodeIdentifier`); routes `LogicalColumnEmission` (fixes its latent `]` bug), `RemediationEmitter`, ReadSide/LiveProfiler (2026-06-27). |
 | 9 | Code→exit registry | 🟧 | ○ remaining | — |
 | 10 | `parseSemanticType` → Core | 🟧 | ✅ **done** | OSSYS→V2 mapping decisions moved to pure `Core.OssysTypeMapping.tryParse` (option); adapter keeps the `adapter.osm.*` refusal shim + `normalizeAttributeType` (2026-06-27). |
@@ -292,7 +294,7 @@ It matches a two-part long-id *suffix*, which structurally **cannot** catch: `ne
 
 ## 7. 🟧 Reify an `FkGraph` build-once, retiring 4 copies of adjacency construction
 
-> **Status (2026-06-27):** ◑ **Partial.** Canonical `TopologicalOrder.undirectedAdjacency` landed (`57a388ec`, 2 consumers, the dedup divergence retired). **Open:** the remaining adjacency copies (the doc counts 4) + a full `FkGraph` build-once reification.
+> **Status (2026-06-27):** ✅ **Done (the genuine consolidation); the full reification DECLINED out loud.** The actual duplication — the inline `addNeighbor` undirected fold, copied across `BoundedContextPass` + `TopologicalOrderPass` island-detection — was already consolidated into `TopologicalOrder.undirectedAdjacency` (`57a388ec`, 2 consumers, dedup divergence retired). The recon's "4 copies" framing is stale: of the four, two WERE the same undirected view (now one), and the other two are **deliberately distinct views with documented reasons** (read the `undirectedAdjacency` docstring, which the partial landing wrote): (a) `CentralityPass.buildAdjacency` builds the *directed-reverse* adjacency + out-degree as a mutable `Dictionary` — a **PageRank perf carve-out**, built once and reused across iterations; (b) `runCascadeShockZones.cascadeAdj` is **classifier-filtered** (only `CycleResolution.classify … = Cascade` edges survive), so it needs the `Catalog` + the classifier, NOT just `Edges` — it cannot be an edges-only `FkGraph` method. The passes compute *different* graphs each needed once; there is no redundant re-fold to collapse. A unifying `FkGraph` carrying Forward/Reverse/OutDegree/Undirected would be a **zero-consumer symmetry-build** — the exact dead-algebra anti-pattern §5's retirement precedent forbids. **Raising this for the record (the #4-combinator model): declined, with reasons; the partial + the two carve-outs are the correct end state.**
 
 **Anchors:** `CentralityPass.fs:60–70` (`buildAdjacency` — out-degree + reverse-adjacency), `BoundedContextPass.fs:37–48` (`addNeighbor` + `buildUndirectedAdj`), `TopologicalOrderPass.fs:631–638` (`runIslandDetection`'s inline `addNeighbor` + `undirected`), `TopologicalOrderPass.fs:746–764` (`runCascadeShockZones`'s `cascadeAdj`).
 
