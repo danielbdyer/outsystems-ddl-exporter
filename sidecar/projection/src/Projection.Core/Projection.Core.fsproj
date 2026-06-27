@@ -61,6 +61,11 @@
     <Compile Include="CanaryResidual.fs" />
     <Compile Include="UserIdentity.fs" />
     <Compile Include="Profile.fs" />
+    <!-- EvidenceCache.fs: the in-memory typed-row substrate of deployed reality
+         (recon #5 — relocated from Projection.Adapters.Sql). Pure: SsKey + BCL value
+         cells, no SQL. The capture that fills it stays at the adapter boundary;
+         ProfileDerivation derives every Profile axis from it. -->
+    <Compile Include="EvidenceCache.fs" />
     <Compile Include="SyntheticData.fs" />
     <Compile Include="SyntheticCorrection.fs" />
     <Compile Include="Policy.fs" />

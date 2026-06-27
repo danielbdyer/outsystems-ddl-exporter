@@ -10,6 +10,34 @@ open System.Threading.Tasks
 open Microsoft.Data.SqlClient
 open Projection.Core
 
+/// Operator-supplied profile-capture options. Surfaces:
+///   - `MaxRowsPerKind` — optional sampling cap. `None` = full-scan
+///     (default); `Some N` = `SELECT TOP (N)` capped at extraction time.
+///     Sampling is **deterministic** when the kind has a single-column PK
+///     (the cache stream uses `ORDER BY <pk>` for repeatable extraction).
+///   - `EnvironmentTag` — operator-supplied label for the environment being
+///     profiled (dev / qa / uat / prod), used by the multi-env orchestrator
+///     to label profiles before merge.
+///
+/// Per `DECISIONS 2026-05-18 (slice 5.4.δ.profiling)` — sampling policy is
+/// operator intent: it lives in the orchestrator/options (this adapter
+/// surface), not in the Profile IR. The cache substrate it fills is pure
+/// Core (`EvidenceCache`); these capture options are the adapter's own,
+/// so they stay here at the boundary where the SQL runs.
+type SqlProfilerOptions = {
+    MaxRowsPerKind  : int option
+    EnvironmentTag  : string option
+}
+
+[<RequireQualifiedAccess>]
+module SqlProfilerOptions =
+
+    /// Default options: full-scan (no sampling cap), no environment tag.
+    let defaults : SqlProfilerOptions = {
+        MaxRowsPerKind  = None
+        EnvironmentTag  = None
+    }
+
 /// Live-SQL adapter that captures `Profile.AttributeRealities` by
 /// probing a deployed SQL Server instance. The **live-probe** path —
 /// runs deterministic SQL queries against the deployed target and
