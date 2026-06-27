@@ -1,18 +1,18 @@
 module Projection.Tests.ForeignKeyReadbackTests
 
 open Xunit
-open Projection.Adapters.Sql
+open Projection.Core
 
 // ---------------------------------------------------------------------------
 // E2 (debrief G4) — the cross-schema FK readback classifier. `SCHEMA_NAME()`
 // returns NULL for a dropped schema or a `VIEW DEFINITION`-restricted account;
-// `ReadSide.ForeignKeyReadback.classify` turns such a row into a NAMED
-// diagnostic + skip, closing the no-silent-drop boundary axiom for the FK read
-// leg (previously an opaque `GetString` cast failure / blank-and-drop). Pure,
-// so the discipline is witnessed without a live substrate.
+// `ForeignKeyReadback.classify` turns such a row into a NAMED diagnostic + skip,
+// closing the no-silent-drop boundary axiom for the FK read leg (previously an
+// opaque `GetString` cast failure / blank-and-drop). Pure Core (recon #20), so
+// the discipline is witnessed without a live substrate.
 // ---------------------------------------------------------------------------
 
-module FK = ReadSide.ForeignKeyReadback
+module FK = ForeignKeyReadback
 
 let private resolved =
     FK.classify (Some "dbo") (Some "Orders") (Some "CustomerId")

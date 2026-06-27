@@ -25,8 +25,8 @@
 
 Work is underway across two branches off `main` (`250811ea`): the typed-AST chapter on
 `claude/finish-typed-ast-refactor`, and the recon sweep on `claude/recon-binding-registry`
-(this doc now lives here so it merges in with the sweep). **9 findings fully landed, 6
-partially landed (the clean core in, the larger part open), 10 untouched.** Every
+(this doc now lives here so it merges in with the sweep). **12 findings fully landed, 5
+partially landed (the clean core in, the larger part open), 8 untouched.** Every
 partial's open remainder and every untouched item is enumerated below; each `## N.`
 section also carries a per-section `> **Status:**` line.
 
@@ -52,9 +52,9 @@ section also carries a per-section `> **Status:**` line.
 | 5 | `ProfileDerivation` / `Profiler` port | 🟥 | ✅ **done** | `5efec474`, `c81c88ad`, `81d58b1b` (EvidenceCache + the ~900-line derivation suite now pure Core; `EvidenceCache` is the source-agnostic seam) |
 | 6 | Typed-tree boundary analyzer | 🟧 | ✅ **done** | `eb243e6d` (bans capabilities by resolved full name) |
 | 7 | `FkGraph` build-once | 🟧 | ◑ **partial** | canonical `undirectedAdjacency` in (`57a388ec`, 2 consumers, dedup divergence retired). **Open:** the remaining adjacency copies (doc counts 4) + a full `FkGraph` reification. |
-| 8 | Shared quoting primitive | 🟧 | ◑ **partial** | the real `]`-escape **bug** fixed in `RemediationEmitter` (`c16ad0e3`). **Open:** promote a shared `SqlIdentifier.quote` across `LogicalColumnEmission` + the local `encode` rebindings. |
+| 8 | Shared quoting primitive | 🟧 | ✅ **done** | Core `SqlIdentifier.quote`/`qualified` (byte-verified ≡ `EncodeIdentifier`); routes `LogicalColumnEmission` (fixes its latent `]` bug), `RemediationEmitter`, ReadSide/LiveProfiler (2026-06-27). |
 | 9 | Code→exit registry | 🟧 | ○ remaining | — |
-| 10 | `parseSemanticType` → Core | 🟧 | ○ remaining | — |
+| 10 | `parseSemanticType` → Core | 🟧 | ✅ **done** | OSSYS→V2 mapping decisions moved to pure `Core.OssysTypeMapping.tryParse` (option); adapter keeps the `adapter.osm.*` refusal shim + `normalizeAttributeType` (2026-06-27). |
 | 11 | Finish Voice migration + unify dispatchers | 🟧 | ○ remaining | — |
 | 12 | `fanOutWithDiagnostics` primitive | 🟧 | ✅ **done** | `Composition.fanOutWithDiagnostics` added; Nullability/UniqueIndex/ForeignKey passes' decision→diagnostic tails collapse to it (2026-06-27). |
 | 13 | One connection discipline / `Source` port | 🟧 | ○ remaining | — |
@@ -64,7 +64,7 @@ section also carries a per-section `> **Status:**` line.
 | 17 | `Comparison.fs` — domain out of render | 🟨 | ○ remaining | — |
 | 18 | De-hardcode config knobs | 🟨 | ◑ **partial** | `BoundedContext.maxPropagationRounds` → `AdvisoryTuning.defaults.BoundedContext` (2026-06-27). **Open:** ReadSide `maxRows` (→ Core `Modality.classify`) + ClosureOracle `fuel` (the M SQL-knob variant). |
 | 19 | `Fixpoint.iterate` combinator | 🟨 | ✅ **done** | `Fixpoint.iterate` in Core; CentralityPass PageRank + BoundedContextPass label-propagation + ProfileAnomaly Newton-sqrt collapsed onto it (2026-06-27). |
-| 20 | ReadSide pure-logic → Core | 🟨 | ○ remaining | — |
+| 20 | ReadSide pure-logic → Core | 🟨 | ✅ **done** | `ForeignKeyReadback` (classify) moved to Core; key synthesis + `formatRawValue` found ALREADY Core-routed (recon anchors stale — documented) (2026-06-27). |
 | 21 | Keymap-spill / transfer DML hardening | 🟨 | ✅ **done** | typed-AST branch (Tier 2.2) |
 | 22 | `View` DU leaf consolidation | 🟨 | ○ remaining | — |
 | 23 | Structural `registered ⇔ executed` at Pipeline | 🟨 | ○ remaining | — |
@@ -326,7 +326,7 @@ module FkGraph =
 
 ## 8. 🟧 Promote a shared identifier-quoting primitive (fixes a real `]`-escape bug)
 
-> **Status (2026-06-27):** ◑ **Partial.** The real `]`-escape **bug** in `RemediationEmitter` is fixed (`c16ad0e3`). **Open:** promote a shared `SqlIdentifier.quote` primitive across `LogicalColumnEmission` + the local `encode` rebindings (the consolidation itself).
+> **Status (2026-06-27):** ✅ **Done.** A Core `SqlIdentifier` module (`quote` + `qualified`) is now THE single Core-reachable identifier quoter — `[ … ]` with doubled `]`. It's **byte-verified ≡ ScriptDom's `Identifier.EncodeIdentifier`** (`SqlIdentifierTests` compares against SSDT's `Render.quote` across the identifier class, incl. `]`-bearing + unicode). Routed: the `LogicalColumnEmission` Core pass (which **fixes its latent `]`-escape bug** — the prior inline `String.Concat("[", s, "]")` didn't escape), `RemediationEmitter.brackets`/`qualifiedTable`, and ReadSide's 3 + LiveProfiler's 1 `encode = EncodeIdentifier` rebindings. `Render.quote` stays the vendor oracle the Core primitive is verified against. Build clean; pure pool 3744/0; Docker pool clean (the SQL-emission + read-leg byte-output paths verified).
 
 **Anchors:** canonical `Render.quote` (`SSDT/Render.fs:45`, wrapping `Identifier.EncodeIdentifier`); local rebindings `ReadSide.fs:895`, `LiveProfiler.fs:181`; **hand-rolled wrong copies** `RemediationEmitter.fs:48` (`brackets`), `LogicalColumnEmission.fs:101–102` (`String.Concat("[", physical, "]")`).
 
@@ -362,7 +362,7 @@ let private brackets (s: string) : string = System.String.Concat("[", s, "]")   
 
 ## 10. 🟧 Move `parseSemanticType` (the OutSystems→V2 type decisions) out of the adapter into Core
 
-> **Status (2026-06-27):** ○ **Not started.**
+> **Status (2026-06-27):** ✅ **Done.** The OSSYS→V2 type-correspondence DECISIONS — the 2000-char `(MAX)` threshold, `currency → DECIMAL(37,8)`, the imposed V1-parity `email`/`phone` widths, `longinteger → BIGINT`, the legacy `datetime → DATETIME`, the reference-storage convention — plus `textLength`/`boundedOr` now live in a pure `Projection.Core.OssysTypeMapping` (`tryParse : … -> (PrimitiveType * SqlStorageType) option`). The adapter keeps exactly what's the boundary's: raw-string hygiene (`normalizeAttributeType`) and turning `None` into its `adapter.osm.unmappedDataType` refusal (the error vocabulary stays at the edge; the *mapping data* moved to Core). `tryParse` returning `option` (rather than a Core error) is the clean cut — and a step toward the "mapping as data" XL variant. New `OssysTypeMappingTests` pin the decisions WITHOUT an OSSYS fixture (the recon's headline payoff); the existing OSSYS differential/comprehensive suites confirm byte-identical end-to-end. Build clean; pure 3744/0; Docker clean.
 
 **Anchors:** `src/Projection.Adapters.Osm/OssysTranslation.fs:330–394` (`parseSemanticType`), `:302–310` (`textLength`), `~287–300` (`normalizeAttributeType`); callers `OssysJsonReader.fs:76–78`, `OssysRowsetReader`; the Core vocabulary it produces, `PrimitiveType`/`SqlStorageType`/`SqlTypeCorrespondence.fs`.
 
@@ -567,7 +567,7 @@ The same recursion scheme wearing two mutable skins, and (unlike the Tarjan/Kahn
 
 ## 20. 🟨 Bring `ReadSide`'s stranded pure logic home to Core (key synthesis, `formatRawValue`, FK classification)
 
-> **Status (2026-06-27):** ○ **Not started.**
+> **Status (2026-06-27):** ✅ **Done** — with a correction to the recon's anchors (the tree moved since 06-25). Of the three sub-moves: **(3) `ForeignKeyReadback.classify`** (the pure NULL-coordinate `Reconstructable | Unreadable` classifier) **moved to Core** (`Strategies/ForeignKeyReadback.fs`, next to the FK rules) — it was stranded inside the SQL adapter though already DB-free-tested; the two ReadSide call sites resolve it from Core unchanged, and `ForeignKeyReadbackTests` follows it home. **(1) Key synthesis** (`moduleSsKey`/`kindSsKey`/`attributeSsKey`) was **already routed through the Core `SsKey.synthesized` smart constructor** — and must NOT change its basis composition (`synthesized "READSIDE_KIND" "schema.table"` vs a composite list are DIFFERENT identities; altering it would break round-trip/goldens). **(2) `formatRawValue`** **already single-sources through `RawValueCodec`** for every non-trivial format (Boolean/DateTime/Date/Time/Guid — its own docstring states this); the residue (Integer/Decimal/Text/Binary) is adapter `obj`-coercion over driver quirks (`SqlBytes`/`SqlGuid`/time-as-`DateTime`) that cannot leave the adapter, plus a trivial invariant `ToString`. So (1)/(2) were already satisfied; (3) was the real remaining work and is done. Build clean; pure 3744/0; Docker clean (ReadSide reconstruction + round-trip canaries).
 
 **Anchors:** `ReadSide.fs:66–77` (`moduleSsKey`/`kindSsKey`/`attributeSsKey` — `READSIDE_*` synthesis basis), `:149–202` (`ForeignKeyReadback.classify` — `Reconstructable | Unreadable`), `:811–872` (`formatRawValue` — `PrimitiveType -> obj -> string`); the Core codec it reimplements, `RawValueCodec` (`formatDateTime` etc.); the other key-synthesizing adapter, `OssysTranslation` (see Finding 10).
 

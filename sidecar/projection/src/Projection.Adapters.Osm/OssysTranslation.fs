@@ -299,99 +299,25 @@ module OssysTranslation =
             .Replace(" ", System.String.Empty)
             .ToLowerInvariant()
 
-    /// `Text` / `VarChar` width: OutSystems treats a declared length at
-    /// or above the unicode-text threshold (V1's `maxLengthThreshold =
-    /// 2000`) as open-ended `(MAX)`; a positive sub-threshold length is
-    /// `Bounded`; absence is `(MAX)`.
-    let textLength (length: int option) : SqlLength =
-        match length with
-        | Some n when n >= 2000 -> Max
-        | Some n when n > 0     -> Bounded n
-        | _                     -> Max
-
-    let boundedOr (fallback: SqlLength) (length: int option) : SqlLength =
-        match length with
-        | Some n when n > 0 -> Bounded n
-        | _                 -> fallback
-
-    /// Resolve an OSSYS attribute's semantic category AND its concrete
-    /// SQL Server storage type from `ossys_EntityAttr.Type` plus the
-    /// declared length / precision / scale. The mapping is V1-derived
-    /// from `config/type-mapping.default.json` (the donor table; see
-    /// `DECISIONS 2026-05-15 — OSSYS adapter translation rules`):
-    ///   - `longinteger` → `BIGINT` (not `INT` — the semantic category
-    ///     `Integer` collapses both; the concrete storage keeps them
-    ///     apart);
-    ///   - `datetime` → `DATETIME` (not `DATETIME2` — V1's `datetime`
-    ///     maps to the legacy type; `rtDateTime2` is the path to
-    ///     `DATETIME2`).
-    /// Returns the semantic `PrimitiveType` paired with the concrete
-    /// `SqlStorageType` so the attribute carries both consistently.
+    /// Resolve an OSSYS attribute's semantic category AND concrete SQL Server
+    /// storage type. The mapping DECISIONS now live in pure Core
+    /// (`OssysTypeMapping.tryParse`, recon #10 — property-testable without an OSSYS
+    /// fixture, reusable by a second source adapter); this thin adapter shim keeps
+    /// only what's the boundary's to own: turning an unmapped type into the
+    /// `adapter.osm.unmappedDataType` refusal.
     let parseSemanticType
         (normalizedType: string)
         (length: int option)
         (precision: int option)
         (scale: int option)
         : Result<PrimitiveType * SqlStorageType> =
-        match normalizedType with
-        | "identifier"     -> Result.success (Integer, SqlStorageType.BigInt)
-        | "autonumber"     -> Result.success (Integer, SqlStorageType.BigInt)
-        | "integer"        -> Result.success (Integer, SqlStorageType.Int)
-        | "longinteger"    -> Result.success (Integer, SqlStorageType.BigInt)
-        | "boolean"        -> Result.success (Boolean, SqlStorageType.Bit)
-        | "datetime"       -> Result.success (DateTime, SqlStorageType.DateTime)
-        | "datetime2"      -> Result.success (DateTime, SqlStorageType.DateTime2 (Some 7))
-        | "datetimeoffset" -> Result.success (DateTime, SqlStorageType.DateTimeOffset (Some 7))
-        | "date"           -> Result.success (Date, SqlStorageType.Date)
-        | "time"           -> Result.success (Time, SqlStorageType.Time (Some 7))
-        | "decimal"        ->
-            Result.success
-                (Decimal,
-                 SqlStorageType.Decimal
-                    (Option.defaultValue 18 precision, Option.defaultValue 0 scale))
-        | "currency"       -> Result.success (Decimal, SqlStorageType.Decimal (37, 8))
-        | "double" | "float" -> Result.success (Decimal, SqlStorageType.Float)
-        | "real"           -> Result.success (Decimal, SqlStorageType.Real)
-        | "binarydata" | "longbinarydata" ->
-            Result.success (Binary, SqlStorageType.VarBinary Max)
-        | "binary"         -> Result.success (Binary, SqlStorageType.VarBinary (boundedOr Max length))
-        | "varbinary"      -> Result.success (Binary, SqlStorageType.VarBinary (boundedOr Max length))
-        | "image"          -> Result.success (Binary, SqlStorageType.Image)
-        | "longtext"       -> Result.success (Text, SqlStorageType.NVarChar Max)
-        | "text"           -> Result.success (Text, SqlStorageType.NVarChar (textLength length))
-        // F11 (audit 2026-06-17) — IMPOSED V1-parity widths. When the source
-        // declares no length, `email`/`phone` carry V1's default budgets (250 /
-        // 20) rather than `(MAX)`. This is a faithful V1-parity inference, NOT a
-        // source-declared fact: a steward who needs the raw width carried (no
-        // imposition) overrides via the explicit declared `length`, which always
-        // wins (`boundedOr`). Ledgered as a known imposition; a per-imposition
-        // diagnostic is the optional follow-on.
-        | "email"          -> Result.success (Text, SqlStorageType.VarChar (boundedOr (Bounded 250) length))
-        | "phonenumber" | "phone" ->
-            Result.success (Text, SqlStorageType.VarChar (boundedOr (Bounded 20) length))
-        | "url" | "password" | "username" | "identifiertext" ->
-            Result.success (Text, SqlStorageType.NVarChar (textLength length))
-        | "guid" | "uniqueidentifier" -> Result.success (Guid, SqlStorageType.UniqueIdentifier)
-        | "xml"            -> Result.success (Text, SqlStorageType.Xml)
-        // Entity-reference attribute (FK). `ossys_EntityAttr.Type`
-        // encodes references either as the logical `rtEntityReference`
-        // code or as the structural `bt<EspaceSsKey>*<EntitySsKey>`
-        // form (the binding-type encoding; the GUID hyphens are
-        // stripped by `normalizeAttributeType` but the `bt` prefix and
-        // `*` separator survive). The attribute's own storage is the
-        // *target entity's identifier* — Long Integer (`BIGINT`) by
-        // OutSystems convention. The reference itself (target kind, FK
-        // constraint) is wired separately via `isReference` /
-        // `refEntityId`.
-        | "entityreference" -> Result.success (Integer, SqlStorageType.BigInt)
-        | other when other.StartsWith("bt", System.StringComparison.Ordinal)
-                     && other.Contains("*") ->
-            Result.success (Integer, SqlStorageType.BigInt)
-        | other ->
+        match OssysTypeMapping.tryParse normalizedType length precision scale with
+        | Some mapped -> Result.success mapped
+        | None ->
             Result.failureOf (
                 adapterError
                     "unmappedDataType"
-                    (sprintf "DataType '%s' has no V2 PrimitiveType mapping yet." other))
+                    (sprintf "DataType '%s' has no V2 PrimitiveType mapping yet." normalizedType))
 
     /// Full attribute-type resolution: semantic category + concrete
     /// storage, with the optional `external_dbType` override applied.

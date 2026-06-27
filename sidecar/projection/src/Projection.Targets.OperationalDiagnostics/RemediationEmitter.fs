@@ -44,17 +44,14 @@ module RemediationEmitter =
     /// is structural — V2 IR's `Name` + `Schema.Table` are typed
     /// values; bracket-quoting at the terminal text boundary is
     /// the SQL-correctness adapter, not an operator-visible choice.
-    let private brackets (s: string) : string =
-        // `]` doubled per T-SQL bracket-quoting — matches ScriptDom's
-        // `Identifier.EncodeIdentifier` (the canonical quoter, which this Core-only
-        // project cannot reach: a ScriptDom dep belongs in SSDT, not here, per the
-        // `Coordinates.fs` chapter-3.5 decision). Latent today (OutSystems physical
-        // names carry no `]`), but a `]`-bearing identifier would otherwise close the
-        // bracket early and emit broken/unsafe operator SQL.
-        System.String.Concat("[", s.Replace("]", "]]"), "]")  // LINT-ALLOW: terminal SQL-identifier bracket-quoting; segments are typed (Name.value / Physical.Schema / Physical.Table from V2 IR), `]`-escaped; BCL `String.Concat` IS the use-case-specific library for two-segment terminal-text composition
+    // recon #8 — the `]`-doubling quoter promoted into Core's `SqlIdentifier`
+    // (this Core-only project cannot reach ScriptDom's `Identifier.EncodeIdentifier`;
+    // `SqlIdentifier.quote` is byte-verified against it). `brackets` stays as a
+    // thin local alias so the call sites below read unchanged.
+    let private brackets (s: string) : string = SqlIdentifier.quote s
 
     let private qualifiedTable (kind: Kind) : string =
-        System.String.Concat(brackets (TableId.schemaText kind.Physical), ".", brackets (TableId.tableText kind.Physical))  // LINT-ALLOW: terminal SQL-qualified-name composition; segments are typed (bracket-quoted schema + literal dot + bracket-quoted table from V2 IR Physical); BCL `String.Concat` IS the use-case-specific library
+        SqlIdentifier.qualified (TableId.schemaText kind.Physical) (TableId.tableText kind.Physical)
 
     /// Build the SsKey → Kind index ONCE up-front. Per Big-O audit
     /// discipline (`DECISIONS 2026-05-19 (slice B.3.6b)`): the

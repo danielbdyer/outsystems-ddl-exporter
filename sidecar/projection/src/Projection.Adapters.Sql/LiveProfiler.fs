@@ -93,8 +93,9 @@ module SqlProfilerOptions =
 [<RequireQualifiedAccess>]
 module LiveProfiler =
 
-    let private encode =
-        Microsoft.SqlServer.TransactSql.ScriptDom.Identifier.EncodeIdentifier
+    // recon #8 — the one Core quoter (`SqlIdentifier.quote`, byte-verified
+    // against ScriptDom's `Identifier.EncodeIdentifier`).
+    let private encode = SqlIdentifier.quote
 
     /// Drain a reader's single result set, applying `onRow` per row. The
     /// profiler-local twin of `ReadSide.drainRows`: same shape, same

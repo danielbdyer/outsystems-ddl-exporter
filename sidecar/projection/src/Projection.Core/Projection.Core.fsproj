@@ -40,7 +40,9 @@
     -->
     <Compile Include="SqlStorageType.fs" />
     <Compile Include="SqlTypeCorrespondence.fs" />
+    <Compile Include="OssysTypeMapping.fs" />
     <Compile Include="SqlLiteral.fs" />
+    <Compile Include="SqlIdentifier.fs" />
     <Compile Include="Catalog.fs" />
     <Compile Include="KindColumns.fs" />
     <!--
@@ -89,6 +91,7 @@
     <Compile Include="Strategies/NullabilityRules.fs" />
     <Compile Include="Strategies/UniqueIndexRules.fs" />
     <Compile Include="Strategies/ForeignKeyRules.fs" />
+    <Compile Include="Strategies/ForeignKeyReadback.fs" />
     <Compile Include="Strategies/CategoricalUniquenessRules.fs" />
     <!-- H-071 through H-076 result types — compiled before ComposeState
          so ComposeState can carry them as optional evidence fields.
