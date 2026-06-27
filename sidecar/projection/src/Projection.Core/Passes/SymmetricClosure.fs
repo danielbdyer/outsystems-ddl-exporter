@@ -108,11 +108,7 @@ module SymmetricClosure =
     let private classification : Classification = DataIntent
 
     let private createdEvent (key: SsKey) : LineageEvent =
-        { PassName       = passName
-          PassVersion    = version
-          SsKey          = key
-          TransformKind  = Created
-          Classification = classification }
+        LineageEvent.forPass passName version classification key Created
 
     let private skippedEvent (key: SsKey) (reason: SymmetricClosureSkipReason) : LineageEvent =
         // Chapter-3.6 slice-γ: typed `SymmetricClosureSkipReason`
@@ -120,11 +116,7 @@ module SymmetricClosure =
         // The two skip cases (`TargetKindAbsent`,
         // `TargetHasNoPrimaryKey`) classified in `classifyStep` flow
         // through structurally to audit consumers.
-        { PassName       = passName
-          PassVersion    = version
-          SsKey          = key
-          TransformKind  = Annotated (ClosureSkipped reason)
-          Classification = classification }
+        LineageEvent.forPass passName version classification key (Annotated (ClosureSkipped reason))
 
     /// Run the pass. For every directional reference whose target is
     /// resolvable in the catalog and has at least one primary-key
@@ -181,10 +173,7 @@ module SymmetricClosure =
     let private run (c: Catalog) : Lineage<Catalog> =
         use _ = Bench.scope "passes.symmetricClosure"
         let allKinds = Catalog.allKinds c
-        let kindByKey =
-            allKinds
-            |> List.map (fun k -> k.SsKey, k)
-            |> Map.ofList
+        let kindByKey = Catalog.kindIndex c
 
         // Flatten `(sourceKind, reference)` pairs as the fold's input
         // sequence. Order preserved: all references from the first

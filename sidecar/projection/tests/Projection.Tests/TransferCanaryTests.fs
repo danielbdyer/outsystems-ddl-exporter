@@ -1162,7 +1162,7 @@ type TransferCanaryTests(fixture: EphemeralContainerFixture) =
                             Assert.NotEmpty violations
                             let ids = violations |> List.map Preflight.violationKey
                             Assert.True(
-                                Projection.Cli.RelaxationStore.persist configFile ids,
+                                Projection.Cli.RelaxationStore.persist configFile ids = Ok (),
                                 "fixture: the blessing must persist")
 
                             // LEG 2 — WITH the blessing: the same headless gate now

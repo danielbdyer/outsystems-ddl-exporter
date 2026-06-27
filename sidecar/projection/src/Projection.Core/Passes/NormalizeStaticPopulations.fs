@@ -55,11 +55,7 @@ module NormalizeStaticPopulations =
     let private classification : Classification = DataIntent
 
     let private touchedEvent (key: SsKey) : LineageEvent =
-        { PassName       = passName
-          PassVersion    = version
-          SsKey          = key
-          TransformKind  = Touched
-          Classification = classification }
+        LineageEvent.forPass passName version classification key Touched
 
     /// Run the pass over the catalog. Kinds without a `Static` modality
     /// pass through structurally unchanged and emit no lineage events;

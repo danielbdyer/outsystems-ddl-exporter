@@ -91,12 +91,8 @@ module ForeignKeyPass =
     let private classification : Classification = OperatorIntent Tightening
 
     let private decisionEvent (decision: ForeignKeyDecision) : LineageEvent =
-        { PassName       = passName
-          PassVersion    = version
-          SsKey          = decision.ReferenceKey
-          TransformKind  =
-              Annotated (ForeignKeyDecision (decision.InterventionId, decision.Outcome))
-          Classification = classification }
+        LineageEvent.forPass passName version classification decision.ReferenceKey
+            (Annotated (ForeignKeyDecision (decision.InterventionId, decision.Outcome)))
 
     /// Sort the iteration source deterministically — kinds by `SsKey`,
     /// references by `SsKey` within each kind. Interventions are taken

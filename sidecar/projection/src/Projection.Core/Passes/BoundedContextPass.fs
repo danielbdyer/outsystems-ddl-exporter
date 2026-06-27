@@ -100,15 +100,13 @@ module BoundedContextPass =
         (nodes: SsKey list)
         (adj: Map<SsKey, SsKey list>)
         : Map<SsKey, SsKey> =
-        let mutable labels = initialLabels nodes
-        let mutable changed = true
-        let mutable rounds = 0
-        while changed && rounds < maxPropagationRounds do
-            rounds <- rounds + 1
+        // recon #19 — the bounded fixed-point scheme, named once in `Fixpoint`.
+        // Label-propagation converges when a round changes no label.
+        initialLabels nodes
+        |> Fixpoint.iterate maxPropagationRounds (fun labels ->
             let newLabels, didChange = propagateOnce nodes adj labels
-            labels <- newLabels
-            changed <- didChange
-        labels
+            newLabels, not didChange)
+        |> fst
 
     let run (t: TopologicalOrder) : Lineage<Diagnostics<BoundedContextDiscovery>> =
         use _ = Bench.scope "pass.boundedContext"

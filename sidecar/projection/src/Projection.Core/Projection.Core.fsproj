@@ -21,6 +21,7 @@
   <ItemGroup>
     <Compile Include="Result.fs" />
     <Compile Include="Statistics.fs" />
+    <Compile Include="Fixpoint.fs" />
     <Compile Include="Ledger.fs" />
     <Compile Include="Message.fs" />
     <Compile Include="Bench.fs" />

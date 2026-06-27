@@ -67,11 +67,8 @@ module UserFkReflowPass =
     let private classification : Classification = OperatorIntent Selection
 
     let private matchedEvent (sourceKey: SsKey) (strategyLabel: string) : LineageEvent =
-        { PassName       = passName
-          PassVersion    = version
-          SsKey          = sourceKey
-          TransformKind  = Annotated (Label (System.String.Concat ("userFkReflow.matched-by-", strategyLabel)))  // LINT-ALLOW: terminal diagnostic-label composition at the AnnotationDetail.Label boundary; BCL `String.Concat` is the right primitive for the two-segment audit-narration label
-          Classification = classification }
+        // LINT-ALLOW: terminal diagnostic-label composition at the AnnotationDetail.Label boundary; BCL `String.Concat` is the right primitive for the two-segment audit-narration label
+        LineageEvent.forPass passName version classification sourceKey (Annotated (Label (System.String.Concat ("userFkReflow.matched-by-", strategyLabel))))
 
     /// One `Warning` diagnostic per unmatched source user. Per
     /// pre-scope §6: `Source = "userFkReflow"`, `Code = "userFkReflow.

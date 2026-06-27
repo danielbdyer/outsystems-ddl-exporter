@@ -2070,10 +2070,11 @@ let tighteningPreflight
                     | Intervene.Chosen RelaxOnce -> return applyRelaxation ()
                     | Intervene.Chosen RelaxAlways ->
                         // LINT-ALLOW: register-clean boundary acknowledgment.
-                        if RelaxationStore.persist configFile violationIds then
+                        match RelaxationStore.persist configFile violationIds with
+                        | Ok () ->
                             eprintfn "projection migrate: recorded the relaxation in %s — future runs honor it without prompting." configFile
-                        else
-                            eprintfn "projection migrate: could not write %s; relaxed for this run only." configFile
+                        | Error cause ->
+                            eprintfn "projection migrate: could not write %s (%s); relaxed for this run only." configFile cause
                         return applyRelaxation ()
                     | Intervene.Chosen Halt
                     | Intervene.Degraded _ -> return halt ()

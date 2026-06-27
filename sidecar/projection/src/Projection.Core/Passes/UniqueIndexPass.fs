@@ -76,12 +76,8 @@ module UniqueIndexPass =
     let private classification : Classification = OperatorIntent Tightening
 
     let private decisionEvent (decision: UniqueIndexDecision) : LineageEvent =
-        { PassName       = passName
-          PassVersion    = version
-          SsKey          = decision.IndexKey
-          TransformKind  =
-              Annotated (UniqueIndexDecision (decision.InterventionId, decision.Outcome))
-          Classification = classification }
+        LineageEvent.forPass passName version classification decision.IndexKey
+            (Annotated (UniqueIndexDecision (decision.InterventionId, decision.Outcome)))
 
     /// Sort the iteration source deterministically — kinds by `SsKey`,
     /// indexes by `SsKey` within each kind. Interventions are taken

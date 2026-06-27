@@ -64,11 +64,8 @@ module LogicalColumnEmission =
     let private classification : Classification = OperatorIntent Emission
 
     let private substitutedEvent (key: SsKey) (kind: TableId) (before: string) (after: string) : LineageEvent =
-        { PassName       = passName
-          PassVersion    = version
-          SsKey          = key
-          TransformKind  = ColumnPhysicallyRenamed { Kind = kind; Before = before; After = after }
-          Classification = classification }
+        LineageEvent.forPass passName version classification key
+            (ColumnPhysicallyRenamed { Kind = kind; Before = before; After = after })
 
     let private substituteAttribute (events: LineageBuffer.Buffer) (kind: TableId) (a: Attribute) : Attribute =
         let logical = Name.value a.Name

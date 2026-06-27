@@ -270,14 +270,24 @@ let cancelFilter (model: Model) : Model =
 
 let private navLegend = "↑↓ move   →/Enter dig   ← back   / filter   q quit"
 
+/// Render a styled Spectre-markup line, falling back to plain text on a non-
+/// interactive sink (Spectre's `MarkupLine` throws `InvalidOperationException`
+/// when there is no ANSI-capable terminal). `styled` is the themed + escaped
+/// markup; `plain` is the unmarked text the fallback writes. Extracted from four
+/// copies of this idiom (recon #25) — the footer copy had two latent bugs the
+/// extraction fixes at the call site: it dropped the breadcrumb on the fallback
+/// path (writing only the legend) and left the no-crumb branch unescaped.
+let private safeMarkupLine (console: IAnsiConsole) (styled: string) (plain: string) : unit =
+    try console.MarkupLine styled
+    with :? System.InvalidOperationException -> console.WriteLine plain
+
 /// The position header — only in history mode (#10): where this run sits in the
 /// ledger (newest-first) and the time-axis keys. A single run shows nothing here
 /// (its identity is the `Hero` in the tree).
 let private header (console: IAnsiConsole) (idx: int) (count: int) : unit =
     if count > 1 then
         let line = sprintf "run %d/%d   PgUp newer · PgDn older" (idx + 1) count
-        (try console.MarkupLine(Theme.muted (Markup.Escape line))
-         with :? System.InvalidOperationException -> console.WriteLine(line))
+        safeMarkupLine console (Theme.muted (Markup.Escape line)) line
         console.WriteLine()
 
 /// The footer chrome — the filter line (when filtering), the breadcrumb to the
@@ -290,17 +300,20 @@ let private footer (console: IAnsiConsole) (model: Model) : unit =
     (match model.Filter with
      | Some q when model.Editing ->
          let line = sprintf "/%s▌   (Enter keep · Esc clear · Backspace edit)" q
-         (try console.MarkupLine(Theme.accent (Markup.Escape line))
-          with :? System.InvalidOperationException -> console.WriteLine(line))
+         safeMarkupLine console (Theme.accent (Markup.Escape line)) line
      | Some q ->
          let line = sprintf "filter: %s   (/ edit · Esc clear)" q
-         (try console.MarkupLine(Theme.accent (Markup.Escape line))
-          with :? System.InvalidOperationException -> console.WriteLine(line))
+         safeMarkupLine console (Theme.accent (Markup.Escape line)) line
      | None -> ())
-    let crumb = breadcrumb model |> List.map Markup.Escape |> String.concat (" " + Theme.arrow + " ")
-    let line = if crumb = "" then navLegend else crumb + "    " + Markup.Escape navLegend
-    try console.MarkupLine(Theme.muted line)
-    with :? System.InvalidOperationException -> console.WriteLine(navLegend)
+    // The breadcrumb to the cursor, then the legend. Theme.arrow ("→") carries no
+    // markup brackets, so the same join serves both renditions: the styled line
+    // escapes each crumb segment + the legend; the plain fallback keeps them raw.
+    let crumbs = breadcrumb model
+    let styledCrumb = crumbs |> List.map Markup.Escape |> String.concat (" " + Theme.arrow + " ")
+    let plainCrumb  = crumbs |> String.concat (" " + Theme.arrow + " ")
+    let styledLine = if styledCrumb = "" then Markup.Escape navLegend else styledCrumb + "    " + Markup.Escape navLegend
+    let plainLine  = if plainCrumb  = "" then navLegend else plainCrumb + "    " + navLegend
+    safeMarkupLine console (Theme.muted styledLine) plainLine
 
 /// The shared CLEAR-and-redraw loop (the only I/O boundary). `count` frames addressed
 /// by `loadAt` (0 = newest); the cursor digs ONE frame, `PgUp`/`PgDn` scrub the time

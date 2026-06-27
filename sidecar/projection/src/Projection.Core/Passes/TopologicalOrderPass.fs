@@ -405,11 +405,7 @@ module TopologicalOrderPass =
     let private classification : Classification = DataIntent
 
     let private touchedEvent (key: SsKey) : LineageEvent =
-        { PassName       = passName
-          PassVersion    = version
-          SsKey          = key
-          TransformKind  = Touched
-          Classification = classification }
+        LineageEvent.forPass passName version classification key Touched
 
     /// Parameterized form. Per session-36 — `selfLoops` selects how a
     /// kind's reference to itself is handled during graph construction.
@@ -576,10 +572,7 @@ module TopologicalOrderPass =
             // pure on Order and the catalog's kind list.
             base_
             |> Lineage.map (fun t ->
-                let allKindsByKey =
-                    Catalog.allKinds c
-                    |> List.map (fun k -> k.SsKey, k)
-                    |> Map.ofList
+                let allKindsByKey = Catalog.kindIndex c
                 let junctions, nonJunctions =
                     t.Order
                     |> List.partition (fun key ->
@@ -733,10 +726,7 @@ module TopologicalOrderPass =
         use _ = Bench.scope "pass.cascadeShockZones"
 
         // Build a lookup from (source SsKey) → Kind for classify calls.
-        let kindByKey =
-            Catalog.allKinds catalog
-            |> List.map (fun k -> k.SsKey, k)
-            |> Map.ofList
+        let kindByKey = Catalog.kindIndex catalog
 
         // Derive cascade-only adjacency from t.Edges by classifying each edge.
         let cascadeAdj =

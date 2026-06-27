@@ -35,11 +35,7 @@ module NamingMorphism =
     let private classification : Classification = DataIntent
 
     let private renamedEvent (key: SsKey) : LineageEvent =
-        { PassName       = passName
-          PassVersion    = version
-          SsKey          = key
-          TransformKind  = Renamed
-          Classification = classification }
+        LineageEvent.forPass passName version classification key Renamed
 
     /// Apply the morphism to a single name. If the name is unchanged the
     /// caller emits no event (lineage records actual renames, not

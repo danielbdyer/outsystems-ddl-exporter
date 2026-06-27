@@ -71,12 +71,8 @@ module NullabilityPass =
     let private classification : Classification = OperatorIntent Tightening
 
     let private decisionEvent (decision: NullabilityDecision) : LineageEvent =
-        { PassName       = passName
-          PassVersion    = version
-          SsKey          = decision.AttributeKey
-          TransformKind  =
-              Annotated (NullabilityDecision (decision.InterventionId, decision.Outcome))
-          Classification = classification }
+        LineageEvent.forPass passName version classification decision.AttributeKey
+            (Annotated (NullabilityDecision (decision.InterventionId, decision.Outcome)))
 
     /// Sort the iteration source deterministically — kinds by `SsKey`,
     /// attributes by `SsKey` within each kind. Interventions are taken

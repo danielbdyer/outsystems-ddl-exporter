@@ -25,10 +25,23 @@
 
 Work is underway across two branches off `main` (`250811ea`): the typed-AST chapter on
 `claude/finish-typed-ast-refactor`, and the recon sweep on `claude/recon-binding-registry`
-(this doc now lives here so it merges in with the sweep). **5 findings fully landed, 5
-partially landed (the clean core in, the larger part open), 15 untouched.** Every
+(this doc now lives here so it merges in with the sweep). **7 findings fully landed, 5
+partially landed (the clean core in, the larger part open), 13 untouched.** Every
 partial's open remainder and every untouched item is enumerated below; each `## N.`
 section also carries a per-section `> **Status:**` line.
+
+> **Sweep update 2026-06-27 (continuation).** Beyond the table above, this branch added:
+> the CLI exit-code seam (`CliExit`, #3 Concern 1), `Fixpoint.iterate` (#19), the
+> `LineageEvent.forPass` smart ctor (#15), and the #25 quick-wins (Navigator breadcrumb
+> bug, `Catalog.kindIndex` reuse, `LifecycleStore.withLoaded`, `RelaxationStore.persist`
+> → `Result`). All verified by clean build + the pure (non-SQL) pool — every test class
+> exercising the changes is green, 0 assertion failures. The SQL-backed pool could not be
+> exercised in the continuation sandbox (no Docker daemon — the warm container from the
+> earlier run was reclaimed); those changes touch no SQL path. **#14 (`DerivationReason`
+> DU) is HELD pending an operator call:** closing the open string changes `derivedFrom`'s
+> signature and removes the blank-reason rejection — an `AxiomTests` Bucket-B contract and a
+> `DECISIONS.md` "reserved reasons" surface — which §5 says needs a `DECISIONS` amendment
+> first (the #4-combinator "declined out loud" model).
 
 | # | Finding | Tier | Status | Landed in / what's left |
 |---|---|---|---|---|
@@ -46,17 +59,17 @@ section also carries a per-section `> **Status:**` line.
 | 12 | `fanOutWithDiagnostics` primitive | 🟧 | ○ remaining | — |
 | 13 | One connection discipline / `Source` port | 🟧 | ○ remaining | — |
 | 14 | `DerivationReason` DU | 🟨 | ○ remaining | — |
-| 15 | `LineageEvent.forPass` smart ctor | 🟨 | ○ remaining | — |
+| 15 | `LineageEvent.forPass` smart ctor | 🟨 | ✅ **done** | `LineageEvent.forPass` smart ctor in `Lineage.fs`; the 16 hand-written 5-field event literals across 13 passes now call it (2026-06-27). |
 | 16 | Unify 3 JSON-read helpers | 🟨 | ○ remaining | — |
 | 17 | `Comparison.fs` — domain out of render | 🟨 | ○ remaining | — |
 | 18 | De-hardcode config knobs | 🟨 | ○ remaining | — |
-| 19 | `Fixpoint.iterate` combinator | 🟨 | ○ remaining | — |
+| 19 | `Fixpoint.iterate` combinator | 🟨 | ✅ **done** | `Fixpoint.iterate` in Core; CentralityPass PageRank + BoundedContextPass label-propagation + ProfileAnomaly Newton-sqrt collapsed onto it (2026-06-27). |
 | 20 | ReadSide pure-logic → Core | 🟨 | ○ remaining | — |
 | 21 | Keymap-spill / transfer DML hardening | 🟨 | ✅ **done** | typed-AST branch (Tier 2.2) |
 | 22 | `View` DU leaf consolidation | 🟨 | ○ remaining | — |
 | 23 | Structural `registered ⇔ executed` at Pipeline | 🟨 | ○ remaining | — |
 | 24 | Core type-modeling cluster | ⬜ | ○ remaining | — |
-| 25 | Quick-wins & incidental bugs | ⬜ | ◑ **partial** | Remediation `]`-bug fixed via #8. **Open:** the **Navigator** latent bug + the remaining small wins. |
+| 25 | Quick-wins & incidental bugs | ⬜ | ◑ **partial** | Remediation `]`-bug fixed via #8. **Navigator** breadcrumb bug fixed + `safeMarkupLine` extracted (4× dup); `Catalog.kindByKey` (the existing cached `kindIndex`, 4 sites); `LifecycleStore.withLoaded` (Eject/Report fromStore); `RelaxationStore.persist` → `Result` (2026-06-27). **Open:** `catalogTopologyStep` builder, `parse-template` guards, `OperatorConsole`/`TtyRenderer` global threading, `Watch.fs` wire-format relocation. |
 
 Supporting work also landed: the stale **M1** byte-identity baseline fix (`0bb7feae`, the
 `catalog.snapshot.json` 8th-artifact correction) and `THE_PROJECTION_PRINCIPLE.md` (the
@@ -451,7 +464,7 @@ Only the Bench label, the `opportunityEntry` function, and whether it closes ove
 
 ## 15. 🟨 A `LineageEvent.forPass` smart constructor — retire the 5-field event literal re-declared in ~10 passes
 
-> **Status (2026-06-27):** ○ **Not started.**
+> **Status (2026-06-27):** ✅ **Done.** `LineageEvent.forPass passName version classification : SsKey -> TransformKind -> LineageEvent` smart ctor added to `Lineage.fs` (alongside the type, `[<RequireQualifiedAccess>]`). The 16 hand-written 5-field record literals — `touchedEvent`/`decisionEvent`/`createdEvent`/`skippedEvent`/`removedEvent`/`renamedEvent`/`matchedEvent`/`substitutedEvent`/`physicallyRenamedEvent` across 13 passes (Nullability, UniqueIndex, ForeignKey, CategoricalUniqueness, Canonicalize, NormalizeStatic, NamingMorphism, SymmetricClosure, VisibilityMask, UserFkReflow, LogicalColumn/TableEmission, TableRename, TopologicalOrder) — now call it, so the A23 invariant (every event carries `PassVersion` + `Classification`) is enforced at one site. Pure record construction, no behavior change; build clean, pass tests green.
 
 **Anchors:** `decisionEvent` in `NullabilityPass.fs:73`, `UniqueIndexPass.fs:78`, `ForeignKeyPass.fs:93`, `CategoricalUniquenessPass.fs:75`; `touchedEvent` in `NormalizeStaticPopulations.fs:57`, `CanonicalizeIdentity.fs:101`, `TopologicalOrderPass.fs:407, 719`; `removedEvent`/`renamedEvent`/`createdEvent`/`skippedEvent`/`substitutedEvent`/`physicallyRenamedEvent`/`matchedEvent` across the rest; the analytics-family precedent that already does this internally, `Diagnostics.fs:441–448` (`touchedEpilogue`).
 
@@ -523,7 +536,7 @@ The four tightening passes' `decisionEvent` are identical except which typed `An
 
 ## 19. 🟨 A `Fixpoint.iterate` combinator — two hand-rolled mutable convergence loops
 
-> **Status (2026-06-27):** ○ **Not started.**
+> **Status (2026-06-27):** ✅ **Done.** `Fixpoint.iterate (maxIters) (step: 's -> 's * bool) (seed) : 's * int` added to Core (leaf, BCL-only, beside `Statistics`). `CentralityPass.runUntilConverged` (PageRank) and `BoundedContextPass.labelPropagation` collapse to one call each; the `ProfileAnomaly` Newton-sqrt — the same scheme with no convergence test — folds in too (the step reports `false`, so the loop is a pure 20-iteration cap). Three `let mutable` triads retired into the one named combinator. Behavior-preserving; build clean, the three passes' tests green.
 
 **Anchors:** `CentralityPass.fs:117–126` (`runUntilConverged` — PageRank), `BoundedContextPass.fs:110–122` (`labelPropagation`); structurally also the Newton sqrt loop `ProfileAnomalyPass.fs:50–54`.
 
@@ -640,7 +653,7 @@ A bundle of S findings in `Projection.Core`, each closing one illegal-state gap.
 
 ## 25. ⬜ Quick-wins & incidental-bugs bundle (S each, high certainty)
 
-> **Status (2026-06-27):** ◑ **Partial.** The Remediation `]`-bug is fixed (via #8, `c16ad0e3`). **Open:** the **Navigator** latent bug + the remaining small wins.
+> **Status (2026-06-27):** ◑ **Partial.** Remediation `]`-bug fixed (via #8, `c16ad0e3`). **Landed 2026-06-27:** (a) the **🐞 Navigator breadcrumb bug** — extracted `safeMarkupLine console styled plain` (retiring the 4× markup-or-plain idiom); the footer's fallback now writes the full breadcrumb (was dropping it, writing only the legend) and the no-crumb branch is now escaped; (b) **`Catalog.kindByKey`** — the 4 `allKinds |> List.map (fun k -> k.SsKey, k) |> Map.ofList` sites now call the *existing cached* `Catalog.kindIndex` (the recon didn't spot it already exists — even better, it's `ConditionalWeakTable`-memoized); (c) **`LifecycleStore.withLoaded`** — `EjectRun.fromStore` ≡ `ReportRun.fromStore` collapse onto one generic `load→describe→fromChain` combinator (MigrationRun's typed-error + genesis third site is a genuinely different shape, deliberately left); (d) **`RelaxationStore.persist`** now returns `Result<unit,string>` (named cause) instead of a silent `bool` false. **Open:** `catalogTopologyStep` builder, the `parse-template` guards (ScriptDomBuild — touches emission, Docker-gated), `OperatorConsole`/`TtyRenderer` global threading (L), `Watch.fs` wire-format relocation (M).
 
 Small, safe, mostly mechanical — plus two genuine latent bugs surfaced incidentally.
 

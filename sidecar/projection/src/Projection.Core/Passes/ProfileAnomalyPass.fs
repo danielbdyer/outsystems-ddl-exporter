@@ -47,11 +47,12 @@ module ProfileAnomalyPass =
             let sqrtDecimal (x: decimal) : decimal =
                 if x <= 0.0m then 0.0m
                 else
-                    let mutable guess = x / 2.0m
-                    for _ in 1 .. 20 do
-                        let next = (guess + x / guess) / 2.0m
-                        guess <- next
-                    guess
+                    // recon #19 — the same fixed-point scheme as the convergence
+                    // loops, here with no convergence test (a pure 20-iteration
+                    // cap): the step never reports convergence.
+                    x / 2.0m
+                    |> Fixpoint.iterate 20 (fun guess -> (guess + x / guess) / 2.0m, false)
+                    |> fst
             mean, sqrtDecimal variance
 
     let run (catalog: Catalog) (profile: Profile) : Lineage<Diagnostics<ProfileAnomalyReport>> =

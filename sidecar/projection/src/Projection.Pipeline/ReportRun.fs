@@ -39,12 +39,7 @@ module ReportRun =
     /// Load the durable timeline at `path` and build the bundle (the operator
     /// entry). Fail-closed: a malformed store or non-composable edge → string.
     let fromStore (path: string) : Result<ReportBundle, string> =
-        match LifecycleStore.load path with
-        | Error e -> Error (LifecycleStore.describe e)
-        | Ok chain ->
-            match fromChain chain with
-            | Ok b    -> Ok b
-            | Error _ -> Error "the change series could not be computed from the timeline."
+        LifecycleStore.withLoaded fromChain "the change series could not be computed from the timeline." path
 
     /// Surface a recorded Model Fidelity Report as operator-facing lines. The
     /// per-run `fidelity.json` artifact is read back (the codec inverse) and

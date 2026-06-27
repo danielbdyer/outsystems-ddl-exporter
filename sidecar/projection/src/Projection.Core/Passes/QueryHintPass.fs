@@ -46,8 +46,7 @@ module QueryHintPass =
 
         // Build a map from (kindSsKey, attributeSsKey) → Kind for
         // quick index lookup.
-        let kindByKey : Map<SsKey, Kind> =
-            allKinds |> List.map (fun k -> k.SsKey, k) |> Map.ofList
+        let kindByKey : Map<SsKey, Kind> = Catalog.kindIndex catalog
 
         let suggestions =
             profile.ForeignKeySelectivities

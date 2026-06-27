@@ -169,11 +169,8 @@ module TableRename =
     let private classification : Classification = OperatorIntent Emission
 
     let private physicallyRenamedEvent (key: SsKey) (before: TableId) (after: TableId) : LineageEvent =
-        { PassName       = passName
-          PassVersion    = version
-          SsKey          = key
-          TransformKind  = PhysicallyRenamed { Before = before; After = after }
-          Classification = classification }
+        LineageEvent.forPass passName version classification key
+            (PhysicallyRenamed { Before = before; After = after })
 
     /// Run the pass. Empty spec list short-circuits to a pass-through
     /// with no lineage events. Otherwise validates every spec first

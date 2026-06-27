@@ -60,8 +60,9 @@ let read (path: string) : Set<string> =
 
 /// Add `keys` to `path`'s relaxation section (deduped + sorted), preserving every
 /// other key byte-for-byte. Creates the file as a minimal object only if absent.
-/// Returns true on a successful write.
-let persist (path: string) (keys: string seq) : bool =
+/// `Ok ()` on a successful write; `Error cause` names the failure rather than
+/// swallowing it to a bare `false` ("downgrades never silent" — recon #25).
+let persist (path: string) (keys: string seq) : Result<unit, string> =
     try
         let root =
             match rootObjectOf path with
@@ -73,5 +74,5 @@ let persist (path: string) (keys: string seq) : bool =
         for k in merged do arr.Add(JsonValue.Create k)
         root.[key] <- arr
         File.WriteAllText(path, root.ToJsonString(JsonSerializerOptions(WriteIndented = true)))
-        true
-    with _ -> false
+        Ok ()
+    with ex -> Error ex.Message
