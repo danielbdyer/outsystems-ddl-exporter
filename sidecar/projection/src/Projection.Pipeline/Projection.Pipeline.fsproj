@@ -12,6 +12,7 @@
   <ItemGroup>
     <Compile Include="Config.fs" />
     <Compile Include="CatalogResolution.fs" />
+    <Compile Include="Binding.fs" />
     <Compile Include="LogSink.fs" />
     <Compile Include="RunSpine.fs" />
     <Compile Include="EventProjection.fs" />

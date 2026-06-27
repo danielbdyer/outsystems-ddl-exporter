@@ -141,25 +141,16 @@ module RegisteredTransformTags =
 [<RequireQualifiedAccess>]
 module TransformGroupsBinding =
 
-    let private bindError (code: string) (message: string) : ValidationError =
-        ValidationError.create (sprintf "pipeline.transformGroups.%s" code) message
-
     /// Parse a textual group name (operator config string) into the
     /// typed closed-DU value. The recognized vocabulary is the
     /// closed-DU's case names verbatim; structural totality means
     /// unknown names surface as `pipeline.transformGroups.unknownGroup`
     /// before the filter fires.
     let private parseGroupName (name: string) : Result<TransformGroup> =
-        match name with
-        | "Tightening" -> Result.success TransformGroup.Tightening
-        | "UserReflow" -> Result.success TransformGroup.UserReflow
-        | other ->
-            Result.failureOf (
-                bindError
-                    "unknownGroup"
-                    (sprintf
-                        "policy.transformGroups entry '%s' is not a recognized TransformGroup. Known: Tightening | UserReflow."
-                        other))
+        Binding.ofClosedName ConfigAxis.TransformGroups "unknownGroup" "policy.transformGroups entry" "TransformGroup"
+            [ "Tightening", TransformGroup.Tightening
+              "UserReflow", TransformGroup.UserReflow ]
+            name
 
     /// Build the typed `TransformGroups` runtime value from a parsed
     /// `Config`. Aggregates all unknown-group errors so the operator

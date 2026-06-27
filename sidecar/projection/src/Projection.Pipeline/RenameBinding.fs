@@ -19,8 +19,7 @@ open FsToolkit.ErrorHandling
 [<RequireQualifiedAccess>]
 module RenameBinding =
 
-    let private bindingError (code: string) (message: string) : ValidationError =
-        ValidationError.create (sprintf "pipeline.renameBinding.%s" code) message
+    let private bindingError = Binding.error ConfigAxis.RenameBinding
 
     let private bindLogicalKey (l: Config.LogicalName) : Result<TableRename.RenameKey> =
         validation {
