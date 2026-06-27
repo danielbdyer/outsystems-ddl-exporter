@@ -273,7 +273,7 @@ module SurrogateCapture =
     /// errors, deadlocks) PROPAGATES — degrading on a data error would
     /// mask corruption.
     let private isCapabilityRefusal (ex: SqlException) : bool =
-        ex.Number = 334
+        CapabilityRefusal.isRefusal Capability.OutputWithoutIntoOnTriggeredTarget ex
 
     /// Realize one chunk starting at `preferred`, descending the ladder on
     /// a named capability refusal. Returns the pairs, the rung that

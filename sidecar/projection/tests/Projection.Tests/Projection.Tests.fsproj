@@ -34,6 +34,7 @@
     <Compile Include="LedgerTests.fs" />
     <Compile Include="BenchTests.fs" />
     <Compile Include="StatisticsTests.fs" />
+    <Compile Include="CapabilityRefusalTests.fs" />
     <Compile Include="LogSinkTests.fs" />
     <Compile Include="LogSinkSubscriberTests.fs" />
     <Compile Include="RunSpineTests.fs" />
