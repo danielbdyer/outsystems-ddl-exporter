@@ -27,9 +27,10 @@ module BoundedContextPass =
     [<Literal>]
     let private passName : string = "boundedContext"
 
-    // Label propagation convergence limit — NOT [<Literal>] (not a
-    // CLR primitive annotation context; just a local constant).
-    let private maxPropagationRounds : int = 50
+    // Label propagation convergence limit — single-sourced from
+    // `AdvisoryTuning.defaults.BoundedContext` (recon #18), like every sibling
+    // analytics pass. Byte-identical to the prior local `50`.
+    let private maxPropagationRounds : int = AdvisoryTuning.defaults.BoundedContext.MaxPropagationRounds
 
     // The undirected FK adjacency (community detection treats FK relationships as
     // undirected structural coupling) is the shared canonical

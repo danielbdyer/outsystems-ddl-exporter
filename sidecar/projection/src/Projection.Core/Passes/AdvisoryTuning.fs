@@ -46,6 +46,15 @@ module AdvisoryTuning =
             MaxIterations  : int
         }
 
+    /// BoundedContextPass community-detection tuning.
+    type BoundedContextTuning =
+        {
+            /// Label-propagation convergence cap — the max rounds before the
+            /// fixed-point loop bails (recon #18 — the lone holdout that
+            /// hardcoded its loop bound while every sibling read from here).
+            MaxPropagationRounds : int
+        }
+
     /// The aggregate advisory-tuning profile.
     type T =
         {
@@ -53,6 +62,7 @@ module AdvisoryTuning =
             /// ProfileAnomaly: a column flags as anomalous past mean ± Nσ.
             ProfileAnomalySigma : decimal
             Centrality : CentralityTuning
+            BoundedContext : BoundedContextTuning
         }
 
     /// The production defaults — byte-identical to the per-pass constants they
@@ -79,5 +89,9 @@ module AdvisoryTuning =
                     DampingFactor  = 0.85m
                     ConvergenceEps = 0.000001m
                     MaxIterations  = 100
+                }
+            BoundedContext =
+                {
+                    MaxPropagationRounds = 50
                 }
         }

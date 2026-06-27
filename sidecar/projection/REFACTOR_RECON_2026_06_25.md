@@ -62,7 +62,7 @@ section also carries a per-section `> **Status:**` line.
 | 15 | `LineageEvent.forPass` smart ctor | 🟨 | ✅ **done** | `LineageEvent.forPass` smart ctor in `Lineage.fs`; the 16 hand-written 5-field event literals across 13 passes now call it (2026-06-27). |
 | 16 | Unify 3 JSON-read helpers | 🟨 | ○ remaining | — |
 | 17 | `Comparison.fs` — domain out of render | 🟨 | ○ remaining | — |
-| 18 | De-hardcode config knobs | 🟨 | ○ remaining | — |
+| 18 | De-hardcode config knobs | 🟨 | ◑ **partial** | `BoundedContext.maxPropagationRounds` → `AdvisoryTuning.defaults.BoundedContext` (2026-06-27). **Open:** ReadSide `maxRows` (→ Core `Modality.classify`) + ClosureOracle `fuel` (the M SQL-knob variant). |
 | 19 | `Fixpoint.iterate` combinator | 🟨 | ✅ **done** | `Fixpoint.iterate` in Core; CentralityPass PageRank + BoundedContextPass label-propagation + ProfileAnomaly Newton-sqrt collapsed onto it (2026-06-27). |
 | 20 | ReadSide pure-logic → Core | 🟨 | ○ remaining | — |
 | 21 | Keymap-spill / transfer DML hardening | 🟨 | ✅ **done** | typed-AST branch (Tier 2.2) |
@@ -519,7 +519,7 @@ The four tightening passes' `decisionEvent` are identical except which typed `An
 
 ## 18. 🟨 De-hardcode the escaped config knobs (the `AdvisoryTuning` precedent missed three)
 
-> **Status (2026-06-27):** ○ **Not started.**
+> **Status (2026-06-27):** ◑ **Partial.** The lone-holdout analytics knob landed: `BoundedContextPass.maxPropagationRounds` now reads `AdvisoryTuning.defaults.BoundedContext.MaxPropagationRounds` (new `BoundedContextTuning` field), exactly like its `Centrality` sibling — byte-identical (still 50), the one-line exact-precedent fix. **Open (the M SQL-knob variant, deliberately separate):** `ReadSide.maxRows = 100_000` (the load-bearing static/streaming boundary — best modeled as a Core `Modality.classify : rowCount -> Modality` predicate the adapter merely applies, which also defuses the survival-rule-#8 "clear the Static marking" friction) and `ClosureOracle.fuel`. These touch the SQL adapter / the 4.4-trap boundary and warrant their own focused, Docker-verified treatment.
 
 **Anchors:** `BoundedContextPass.fs:32` (`let private maxPropagationRounds : int = 50` — the lone holdout); the precedent every sibling follows, `AdvisoryTuning.defaults` (consumed by `CentralityPass.fs:37`, `ProfileAnomalyPass.fs:32`, `SchemaComplexityPass.fs:35`); `ReadSide.fs:1910` (`let maxRows = 100_000`); `ClosureOracle.fs:132` (`let mutable fuel = 100000`).
 
