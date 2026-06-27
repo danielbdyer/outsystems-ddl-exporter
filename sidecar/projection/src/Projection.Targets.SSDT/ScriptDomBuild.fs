@@ -1289,6 +1289,346 @@ module ScriptDomBuild =
         stmt :> TSqlStatement
 
     // -----------------------------------------------------------------------
+    // Surrogate-capture primitives (Tier-2.1 typed-AST refactor). The reverse-
+    // leg capture ladder (`Projection.Pipeline/SurrogateCapture`) realizes an
+    // `AssignedBySink` chunk: clone a staging `#temp` from the live target
+    // (`SELECT TOP 0 … INTO`, ISNULL stripping IDENTITY), bulk-load the source
+    // rows, then `MERGE … ON 1 = 0` (every row NOT MATCHED ⇒ inserted), capturing
+    // each row's (source-key → assigned-identity) correlation via `OUTPUT` (to the
+    // caller) or `OUTPUT … INTO` a keymap (trigger-proof). The floor rung is a
+    // per-row INSERT + `SCOPE_IDENTITY()`. These were the last raw-`sprintf` SQL
+    // on the highest-blast-radius (reverse-leg) path; now typed end to end and
+    // rendered through the pinned `Sql160ScriptGenerator`.
+    // -----------------------------------------------------------------------
+
+    /// `__SRC_KEY` — the synthetic source-key column the capture staging table
+    /// carries so the MERGE `OUTPUT` can correlate each inserted row to its source.
+    [<Literal>]
+    let captureSrcKeyColumn : string = "__SRC_KEY"
+
+    /// `__ASSIGNED` — the assigned-identity column in the OUTPUT-INTO keymap table.
+    [<Literal>]
+    let captureAssignedColumn : string = "__ASSIGNED"
+
+    /// A bare `[col]` single-part column reference.
+    let private unqualifiedColumnRef (col: string) : ColumnReferenceExpression =
+        let cref = ColumnReferenceExpression()
+        let mid = MultiPartIdentifier()
+        mid.Identifiers.Add(bracketed col)
+        cref.MultiPartIdentifier <- mid
+        cref
+
+    /// An UNquoted identifier — for function names (`ISNULL`, `SCOPE_IDENTITY`).
+    let private plainIdent (name: string) : Identifier =
+        let id = Identifier()
+        id.Value <- name
+        id
+
+    /// `<fn>(<args…>)` typed function call.
+    let private functionCall (name: string) (args: ScalarExpression list) : FunctionCall =
+        let fn = FunctionCall()
+        fn.FunctionName <- plainIdent name
+        for a in args do fn.Parameters.Add(a)
+        fn
+
+    /// A `SelectScalarExpression` wrapping a bare `[col]`.
+    let private selectColumn (col: string) : SelectScalarExpression =
+        let s = SelectScalarExpression()
+        s.Expression <- unqualifiedColumnRef col :> ScalarExpression
+        s
+
+    /// `ISNULL([col], [col]) AS [alias]` — clones a source column's type while
+    /// STRIPPING its IDENTITY property (the ISNULL trick — a CASE wrapper would
+    /// constant-fold and PROPAGATE IDENTITY, silently minting staging keys; probed
+    /// live 2026-06-10). Materialized by the `SELECT TOP 0 … INTO` staging clone.
+    let private isNullCloneAlias (col: string) (alias: string) : SelectScalarExpression =
+        let sel = SelectScalarExpression()
+        sel.Expression <-
+            functionCall "ISNULL"
+                [ unqualifiedColumnRef col :> ScalarExpression
+                  unqualifiedColumnRef col :> ScalarExpression ]
+            :> ScalarExpression
+        let cn = IdentifierOrValueExpression()
+        cn.Identifier <- bracketed alias
+        sel.ColumnName <- cn
+        sel
+
+    /// `SELECT TOP 0 <elements> INTO [#temp] FROM <source>` — a zero-row staging
+    /// clone (a heap whose column types mirror the source, so the MERGE join needs
+    /// no implicit conversion).
+    let private buildSelectTop0Into (intoTemp: string) (source: TableId) (elements: SelectElement list) : SelectStatement =
+        let qs = QuerySpecification()
+        let top = TopRowFilter()
+        let zero = IntegerLiteral()
+        zero.Value <- "0"
+        top.Expression <- zero :> ScalarExpression
+        qs.TopRowFilter <- top
+        for e in elements do qs.SelectElements.Add(e)
+        let fc = FromClause()
+        let src = NamedTableReference()
+        src.SchemaObject <- schemaObjectFromTableId source
+        fc.TableReferences.Add(src :> TableReference)
+        qs.FromClause <- fc
+        let stmt = SelectStatement()
+        stmt.QueryExpression <- qs :> QueryExpression
+        stmt.Into <- tempSchemaObject intoTemp
+        stmt
+
+    /// The capture staging clone: `SELECT TOP 0 ISNULL([id],[id]) AS [__SRC_KEY],
+    /// [c1], [c2], … INTO [#temp] FROM <source>`. `__SRC_KEY` carries the source
+    /// identity (its own type, IDENTITY stripped); the passthrough columns receive
+    /// the bulk-loaded source values.
+    let buildCaptureStaging (intoTemp: string) (source: TableId) (identityCol: string) (passthroughCols: string list) : TSqlStatement =
+        use _ = Bench.scope "emit.scriptDom.build.captureStaging"
+        let elements =
+            (isNullCloneAlias identityCol captureSrcKeyColumn :> SelectElement)
+            :: (passthroughCols |> List.map (fun c -> selectColumn c :> SelectElement))
+        buildSelectTop0Into intoTemp source elements :> TSqlStatement
+
+    /// The OUTPUT-INTO keymap clone: `SELECT TOP 0 ISNULL([id],[id]) AS [__SRC_KEY],
+    /// ISNULL([id],[id]) AS [__ASSIGNED] INTO [#temp] FROM <source>` — the two-column
+    /// (source-key, assigned-key) keymap the trigger-proof MERGE OUTPUTs into.
+    let buildKeymapStaging (intoTemp: string) (source: TableId) (identityCol: string) : TSqlStatement =
+        use _ = Bench.scope "emit.scriptDom.build.keymapStaging"
+        let elements =
+            [ isNullCloneAlias identityCol captureSrcKeyColumn :> SelectElement
+              isNullCloneAlias identityCol captureAssignedColumn :> SelectElement ]
+        buildSelectTop0Into intoTemp source elements :> TSqlStatement
+
+    /// The capture MERGE: `MERGE INTO <target> AS [T] USING [#staging] AS [S]
+    /// ON 1 = 0 WHEN NOT MATCHED THEN INSERT (cols) VALUES ([S].col…) <output>`.
+    /// `ON 1 = 0` forces every staged row down the NOT-MATCHED (insert) arm.
+    /// `outputInto = None` ⇒ `OUTPUT [S].[__SRC_KEY], INSERTED.[id]` (to the caller);
+    /// `Some keymapTemp` ⇒ `OUTPUT … INTO [#keymap] ([__SRC_KEY],[__ASSIGNED])`
+    /// (trigger-proof). `insertCols` empty ⇒ `INSERT DEFAULT VALUES` (a kind whose
+    /// only column is its identity PK).
+    let buildCaptureMerge (target: TableId) (stagingTemp: string) (insertCols: string list) (identityCol: string) (outputInto: string option) : TSqlStatement =
+        use _ = Bench.scope "emit.scriptDom.build.captureMerge"
+        let spec = MergeSpecification()
+        let targetRef = NamedTableReference()
+        targetRef.SchemaObject <- schemaObjectFromTableId target
+        spec.Target <- targetRef :> TableReference
+        spec.TableAlias <- bracketed "T"
+        let usingRef = NamedTableReference()
+        usingRef.SchemaObject <- tempSchemaObject stagingTemp
+        usingRef.Alias <- bracketed "S"
+        spec.TableReference <- usingRef :> TableReference
+        // ON 1 = 0
+        let onCmp = BooleanComparisonExpression()
+        onCmp.ComparisonType <- BooleanComparisonType.Equals
+        let one = IntegerLiteral()
+        one.Value <- "1"
+        let zero = IntegerLiteral()
+        zero.Value <- "0"
+        onCmp.FirstExpression <- one :> ScalarExpression
+        onCmp.SecondExpression <- zero :> ScalarExpression
+        spec.SearchCondition <- onCmp :> BooleanExpression
+        // WHEN NOT MATCHED THEN INSERT (cols) VALUES ([S].col…)  |  DEFAULT VALUES
+        let insertAction = InsertMergeAction()
+        let insertSrc = ValuesInsertSource()
+        if List.isEmpty insertCols then
+            insertSrc.IsDefaultValues <- true
+        else
+            let row = RowValue()
+            for c in insertCols do row.ColumnValues.Add(qualifiedColumnRef "S" c :> ScalarExpression)
+            insertSrc.RowValues.Add(row)
+            for c in insertCols do insertAction.Columns.Add(unqualifiedColumnRef c)
+        insertAction.Source <- insertSrc
+        let notMatched = MergeActionClause()
+        notMatched.Condition <- MergeCondition.NotMatched
+        notMatched.Action <- insertAction
+        spec.ActionClauses.Add(notMatched)
+        // OUTPUT [S].[__SRC_KEY], INSERTED.[id]  [INTO [#keymap] (…)]
+        let srcKeyOut = SelectScalarExpression()
+        srcKeyOut.Expression <- qualifiedColumnRef "S" captureSrcKeyColumn :> ScalarExpression
+        let insertedOut = SelectScalarExpression()
+        insertedOut.Expression <- qualifiedColumnRef "INSERTED" identityCol :> ScalarExpression
+        match outputInto with
+        | None ->
+            let oc = OutputClause()
+            oc.SelectColumns.Add(srcKeyOut :> SelectElement)
+            oc.SelectColumns.Add(insertedOut :> SelectElement)
+            spec.OutputClause <- oc
+        | Some keymapTemp ->
+            let oic = OutputIntoClause()
+            let intoRef = NamedTableReference()
+            intoRef.SchemaObject <- tempSchemaObject keymapTemp
+            oic.IntoTable <- intoRef :> TableReference
+            oic.IntoTableColumns.Add(unqualifiedColumnRef captureSrcKeyColumn)
+            oic.IntoTableColumns.Add(unqualifiedColumnRef captureAssignedColumn)
+            oic.SelectColumns.Add(srcKeyOut :> SelectElement)
+            oic.SelectColumns.Add(insertedOut :> SelectElement)
+            spec.OutputIntoClause <- oic
+        let stmt = MergeStatement()
+        stmt.MergeSpecification <- spec
+        stmt :> TSqlStatement
+
+    /// `SELECT [c1], [c2], … FROM [#temp]` — the keymap readback (the trigger-proof
+    /// rung reads its OUTPUT-INTO keymap after the MERGE).
+    let buildSelectColumnsFromTemp (cols: string list) (temp: string) : TSqlStatement =
+        let qs = QuerySpecification()
+        for c in cols do qs.SelectElements.Add(selectColumn c :> SelectElement)
+        let fc = FromClause()
+        let src = NamedTableReference()
+        src.SchemaObject <- tempSchemaObject temp
+        fc.TableReferences.Add(src :> TableReference)
+        qs.FromClause <- fc
+        let stmt = SelectStatement()
+        stmt.QueryExpression <- qs :> QueryExpression
+        stmt :> TSqlStatement
+
+    /// `INSERT INTO <target> DEFAULT VALUES` — the rowwise floor for a kind whose
+    /// only column is its identity PK (no insertable columns).
+    let buildInsertDefaultValues (target: TableId) : TSqlStatement =
+        let spec = InsertSpecification()
+        let t = NamedTableReference()
+        t.SchemaObject <- schemaObjectFromTableId target
+        spec.Target <- t :> TableReference
+        let src = ValuesInsertSource()
+        src.IsDefaultValues <- true
+        spec.InsertSource <- src
+        let stmt = InsertStatement()
+        stmt.InsertSpecification <- spec
+        stmt :> TSqlStatement
+
+    /// `SELECT CAST(SCOPE_IDENTITY() AS BIGINT)` — the rowwise floor reads back the
+    /// identity assigned to the row it just inserted (SCOPE_IDENTITY is immune to a
+    /// trigger's own inserts, unlike `@@IDENTITY`).
+    let buildScopeIdentitySelect () : TSqlStatement =
+        let cast = CastCall()
+        cast.Parameter <- functionCall "SCOPE_IDENTITY" [] :> ScalarExpression
+        let bigint = SqlDataTypeReference()
+        bigint.SqlDataTypeOption <- SqlDataTypeOption.BigInt
+        bigint.Name <- SchemaObjectName()
+        bigint.Name.Identifiers.Add(plainIdent "bigint")
+        cast.DataType <- bigint :> DataTypeReference
+        let sel = SelectScalarExpression()
+        sel.Expression <- cast :> ScalarExpression
+        let qs = QuerySpecification()
+        qs.SelectElements.Add(sel :> SelectElement)
+        let stmt = SelectStatement()
+        stmt.QueryExpression <- qs :> QueryExpression
+        stmt :> TSqlStatement
+
+    // -----------------------------------------------------------------------
+    // Keymap-spill primitives (Tier-2.2 typed-AST refactor). The at-scale reverse-
+    // leg spills its `AssignedBySink` keymap to a session `#`-temp table and re-
+    // points sink FKs with a server-side `UPDATE … JOIN` (`Pipeline/KeymapSpill`).
+    // The session-table DDL and the set-based re-point were the last hand-built SQL
+    // on that lane; now typed. (The `captureMany` INSERT keeps its parameterized
+    // VALUES batching — the values are bound parameters, never string-built.)
+    // -----------------------------------------------------------------------
+
+    /// `IF OBJECT_ID('tempdb..[#name]') IS NULL CREATE TABLE [#name]
+    /// (KindKey NVARCHAR(450) NOT NULL, SourceKey NVARCHAR(450) NOT NULL,
+    ///  AssignedKey NVARCHAR(450) NOT NULL,
+    ///  CONSTRAINT [pkName] PRIMARY KEY (KindKey, SourceKey))` — the session keymap
+    /// table, created idempotently (a resumed run re-uses it). NVARCHAR(450) keys
+    /// stay TOTAL over the integral fast path AND the non-integral fallback.
+    let buildKeymapSpillTable (tableName: string) (pkName: string) : TSqlStatement =
+        use _ = Bench.scope "emit.scriptDom.build.keymapSpillTable"
+        let keymapCol (name: string) : ColumnDef =
+            { Name = name; Type = Text; SqlStorage = Some (SqlStorageType.NVarChar (SqlLength.Bounded 450))
+              Length = None; Precision = None; Scale = None
+              Nullable = false; IsIdentity = false; IsPrimaryKey = false
+              DefaultValue = None; DefaultName = None; Computed = None
+              Collation = None; Identity = None; Provenance = "" }
+        let createStmt = CreateTableStatement()
+        createStmt.SchemaObjectName <- tempSchemaObject tableName
+        let def = TableDefinition()
+        for c in [ "KindKey"; "SourceKey"; "AssignedKey" ] do
+            def.ColumnDefinitions.Add(columnDefinition (keymapCol c))
+        let pk = UniqueConstraintDefinition()
+        pk.IsPrimaryKey <- true
+        pk.ConstraintIdentifier <- bracketed pkName
+        for c in [ "KindKey"; "SourceKey" ] do
+            let order = ColumnWithSortOrder()
+            order.Column <- unqualifiedColumnRef c
+            order.SortOrder <- SortOrder.NotSpecified
+            pk.Columns.Add(order)
+        def.TableConstraints.Add(pk :> ConstraintDefinition)
+        createStmt.Definition <- def
+        // IF OBJECT_ID('tempdb..#name') IS NULL <create>
+        let objectId =
+            let lit = StringLiteral()
+            lit.Value <- System.String.Concat("tempdb..", tableName)
+            functionCall "OBJECT_ID" [ lit :> ScalarExpression ]
+        let isNull = BooleanIsNullExpression()
+        isNull.Expression <- objectId :> ScalarExpression
+        isNull.IsNot <- false
+        let ifStmt = IfStatement()
+        ifStmt.Predicate <- isNull :> BooleanExpression
+        ifStmt.ThenStatement <- createStmt :> TSqlStatement
+        ifStmt :> TSqlStatement
+
+    /// The set-based phase-2 re-point: `UPDATE [s] SET [s].[fk] = [k].[AssignedKey]
+    /// FROM <sink> AS [s] INNER JOIN [#keymap] AS [k] ON [k].[KindKey] = @kind
+    /// AND [k].[SourceKey] = CONVERT(NVARCHAR(450), [s].[fk])` — re-point a sink
+    /// FK column from the source surrogate it holds to the captured assigned one in
+    /// ONE server-side statement. `@kind` is a bound parameter (the value is never
+    /// string-built); the `CONVERT` matches the keymap's text keys to the FK column
+    /// whatever its physical type; the inner join leaves an unmatched FK untouched
+    /// (the named phase-2 erasure). `kindParam` is the `@`-prefixed parameter name.
+    let buildKeymapRepoint (sink: TableId) (fkColumn: string) (keymapTable: string) (kindParam: string) : TSqlStatement =
+        use _ = Bench.scope "emit.scriptDom.build.keymapRepoint"
+        let spec = UpdateSpecification()
+        // UPDATE [s]
+        let updTarget = NamedTableReference()
+        let sName = SchemaObjectName()
+        sName.Identifiers.Add(bracketed "s")
+        updTarget.SchemaObject <- sName
+        spec.Target <- updTarget :> TableReference
+        // SET [s].[fk] = [k].[AssignedKey]
+        let setClause = AssignmentSetClause()
+        setClause.Column <- qualifiedColumnRef "s" fkColumn
+        setClause.NewValue <- qualifiedColumnRef "k" "AssignedKey" :> ScalarExpression
+        spec.SetClauses.Add(setClause :> SetClause)
+        // FROM <sink> AS [s] INNER JOIN [#keymap] AS [k]
+        let sinkRef = NamedTableReference()
+        sinkRef.SchemaObject <- schemaObjectName (TableId.schemaText sink) (TableId.tableText sink)
+        sinkRef.Alias <- bracketed "s"
+        let kmRef = NamedTableReference()
+        kmRef.SchemaObject <- tempSchemaObject keymapTable
+        kmRef.Alias <- bracketed "k"
+        let join = QualifiedJoin()
+        join.QualifiedJoinType <- QualifiedJoinType.Inner
+        join.FirstTableReference <- sinkRef :> TableReference
+        join.SecondTableReference <- kmRef :> TableReference
+        // ON [k].[KindKey] = @kind AND [k].[SourceKey] = CONVERT(NVARCHAR(450), [s].[fk])
+        let kindCmp = BooleanComparisonExpression()
+        kindCmp.ComparisonType <- BooleanComparisonType.Equals
+        kindCmp.FirstExpression <- qualifiedColumnRef "k" "KindKey" :> ScalarExpression
+        let kindVar = VariableReference()
+        kindVar.Name <- kindParam
+        kindCmp.SecondExpression <- kindVar :> ScalarExpression
+        let convert = ConvertCall()
+        convert.DataType <- dataTypeReference Text (Some 450) None None
+        convert.Parameter <- qualifiedColumnRef "s" fkColumn :> ScalarExpression
+        let srcCmp = BooleanComparisonExpression()
+        srcCmp.ComparisonType <- BooleanComparisonType.Equals
+        srcCmp.FirstExpression <- qualifiedColumnRef "k" "SourceKey" :> ScalarExpression
+        srcCmp.SecondExpression <- convert :> ScalarExpression
+        join.SearchCondition <-
+            boolBinary BooleanBinaryExpressionType.And (kindCmp :> BooleanExpression) (srcCmp :> BooleanExpression)
+        let fromClause = FromClause()
+        fromClause.TableReferences.Add(join :> TableReference)
+        spec.FromClause <- fromClause
+        let stmt = UpdateStatement()
+        stmt.UpdateSpecification <- spec
+        stmt :> TSqlStatement
+
+    /// `CREATE DATABASE [<name>]` — the scratch-container database create
+    /// (`Deploy.createDatabase`). Tier-3.4: a typed `CreateDatabaseStatement`
+    /// replacing the `String.Concat("CREATE DATABASE ", Render.quote …)`. The
+    /// teardown's `ALTER DATABASE … SET SINGLE_USER WITH ROLLBACK IMMEDIATE` stays
+    /// an annotated terminal boundary — ScriptDom 161 has no clean typed node for
+    /// the SINGLE_USER access-mode option (`DatabaseOptionKind` omits it).
+    let buildCreateDatabase (dbName: string) : TSqlStatement =
+        let stmt = CreateDatabaseStatement()
+        stmt.DatabaseName <- bracketed dbName
+        stmt :> TSqlStatement
+
+    // -----------------------------------------------------------------------
     // Atomic transaction envelope (Tier-1 typed-AST refactor, 2026-06-25).
     //
     // The `SET XACT_ABORT ON; BEGIN TRY BEGIN TRAN; … COMMIT; END TRY

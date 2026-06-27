@@ -228,6 +228,89 @@ let ``buildUpdateFromTemp: no CDC means no WHERE (unconditional re-point)`` () =
     Assert.Contains("UPDATE", sql)
     Assert.DoesNotContain("WHERE", sql)
 
+// -- Tier-2.1: surrogate-capture builders (reverse-leg AssignedBySink) --------
+// These were the last raw-`sprintf` SQL on the highest-blast-radius path; now
+// typed end to end. The deploy proof is the reverse-leg Docker canary; these
+// render-witnesses pin the SQL SHAPE fast (the substring class the plan warns is
+// necessary-but-insufficient — paired with the deploy E2E).
+
+[<Fact>]
+let ``buildCaptureStaging: SELECT TOP 0 ISNULL-clones the identity AS __SRC_KEY + passthrough INTO the #temp`` () =
+    let sql = renderStmt (ScriptDomBuild.buildCaptureStaging "#__projection_capture" (mkTable "dbo" "Org") "Id" [ "Name"; "ParentId" ])
+    Assert.Contains("SELECT TOP 0", sql)
+    Assert.Contains("ISNULL([Id], [Id]) AS [__SRC_KEY]", sql)   // ISNULL strips IDENTITY (a CASE wrapper would propagate it)
+    Assert.Contains("[Name]", sql)
+    Assert.Contains("[#__projection_capture]", sql)
+    Assert.Contains("[dbo].[Org]", sql)
+
+[<Fact>]
+let ``buildKeymapStaging: two ISNULL-clones (__SRC_KEY, __ASSIGNED) INTO the keymap #temp`` () =
+    let sql = renderStmt (ScriptDomBuild.buildKeymapStaging "#__projection_keymap" (mkTable "dbo" "Org") "Id")
+    Assert.Contains("AS [__SRC_KEY]", sql)
+    Assert.Contains("AS [__ASSIGNED]", sql)
+    Assert.Contains("[#__projection_keymap]", sql)
+
+[<Fact>]
+let ``buildCaptureMerge: ON 1 = 0, INSERT from [S], OUTPUT to the caller (no INTO)`` () =
+    let sql = renderStmt (ScriptDomBuild.buildCaptureMerge (mkTable "dbo" "Org") "#__projection_capture" [ "Name"; "ParentId" ] "Id" None)
+    Assert.Contains("MERGE INTO [dbo].[Org]", sql)
+    Assert.Contains("ON 1 = 0", sql)
+    Assert.Contains("WHEN NOT MATCHED THEN INSERT", sql)
+    Assert.Contains("VALUES ([S].[Name], [S].[ParentId])", sql)
+    Assert.Contains("OUTPUT [S].[__SRC_KEY], [INSERTED].[Id]", sql)
+    Assert.DoesNotContain("INTO [#", sql)   // OUTPUT to the caller, NOT INTO a keymap
+
+[<Fact>]
+let ``buildCaptureMerge: OUTPUT … INTO the keymap (the trigger-proof rung)`` () =
+    let sql = renderStmt (ScriptDomBuild.buildCaptureMerge (mkTable "dbo" "Org") "#__projection_capture" [ "Name" ] "Id" (Some "#__projection_keymap"))
+    Assert.Contains("OUTPUT [S].[__SRC_KEY], [INSERTED].[Id] INTO [#__projection_keymap] ([__SRC_KEY], [__ASSIGNED])", sql)
+
+[<Fact>]
+let ``buildCaptureMerge: no insertable columns ⇒ INSERT DEFAULT VALUES`` () =
+    let sql = renderStmt (ScriptDomBuild.buildCaptureMerge (mkTable "dbo" "Org") "#__projection_capture" [] "Id" None)
+    Assert.Contains("INSERT DEFAULT VALUES", sql)
+    Assert.Contains("OUTPUT", sql)
+
+[<Fact>]
+let ``buildScopeIdentitySelect: SELECT CAST(SCOPE_IDENTITY() AS BIGINT)`` () =
+    let sql = renderStmt (ScriptDomBuild.buildScopeIdentitySelect ())
+    Assert.Contains("SCOPE_IDENTITY()", sql)
+    Assert.Contains("BIGINT", sql)
+
+[<Fact>]
+let ``buildInsertDefaultValues: INSERT … DEFAULT VALUES for the identity-only kind`` () =
+    let sql = renderStmt (ScriptDomBuild.buildInsertDefaultValues (mkTable "dbo" "Org"))
+    Assert.Contains("[dbo].[Org]", sql)
+    Assert.Contains("DEFAULT VALUES", sql)
+
+[<Fact>]
+let ``buildSelectColumnsFromTemp: SELECT the named columns FROM the #temp (keymap readback)`` () =
+    let sql = renderStmt (ScriptDomBuild.buildSelectColumnsFromTemp [ "__SRC_KEY"; "__ASSIGNED" ] "#__projection_keymap")
+    Assert.Contains("[__SRC_KEY]", sql)
+    Assert.Contains("[__ASSIGNED]", sql)
+    Assert.Contains("[#__projection_keymap]", sql)
+
+// -- Tier-2.2: keymap-spill builders (at-scale reverse-leg) -------------------
+
+[<Fact>]
+let ``buildKeymapSpillTable: idempotent CREATE of the NVARCHAR(450) keymap with composite PK`` () =
+    let sql = renderStmt (ScriptDomBuild.buildKeymapSpillTable "#projection_keymap_spill" "PK_keymap_spill")
+    Assert.Contains("IF OBJECT_ID('tempdb..#projection_keymap_spill') IS NULL", sql)
+    Assert.Contains("CREATE TABLE [#projection_keymap_spill]", sql)
+    Assert.Contains("[KindKey]", sql)
+    Assert.Contains("NVARCHAR (450) NOT NULL", sql)
+    Assert.Contains("CONSTRAINT [PK_keymap_spill] PRIMARY KEY ([KindKey], [SourceKey])", sql)
+
+[<Fact>]
+let ``buildKeymapRepoint: set-based UPDATE…JOIN re-point with the bound kind param and CONVERT`` () =
+    let sql = renderStmt (ScriptDomBuild.buildKeymapRepoint (mkTable "dbo" "Customer") "ManagerId" "#projection_keymap_spill" "@kind")
+    Assert.Contains("UPDATE", sql)
+    Assert.Contains("[s].[ManagerId] = [k].[AssignedKey]", sql)
+    Assert.Contains("[dbo].[Customer] AS [s]", sql)
+    Assert.Contains("INNER JOIN", sql)
+    Assert.Contains("[k].[KindKey] = @kind", sql)
+    Assert.Contains("CONVERT (NVARCHAR (450), [s].[ManagerId])", sql)
+
 [<Fact>]
 let ``AC-D7/AC-G4: DeleteScope=None emits NO WHEN NOT MATCHED BY SOURCE arm`` () =
     let rendered = renderMerge (mergeArgs None)

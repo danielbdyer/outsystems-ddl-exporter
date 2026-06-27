@@ -1,10 +1,13 @@
 namespace Projection.Pipeline
 
 // LINT-ALLOW-FILE-MUTATION: BCL SqlCommand surfaces (CommandText, Parameters)
-//   and a function-local StringBuilder accumulator while batching the INSERT;
-//   the mutation is contained per call. The SQL identifiers (table/column) come
-//   from validated `TableId` / `Render.quote`; the value (`KindKey`) is
-//   PARAMETERIZED — no string-built value injection.
+//   and a function-local StringBuilder accumulator while batching `captureMany`'s
+//   INSERT; the mutation is contained per call and the values are PARAMETERIZED
+//   (`@k`/`@s`/`@a`) — no string-built value injection. The session-table DDL
+//   (`createTable`) and the set-based re-point (`repointJoin`) are now typed
+//   ScriptDom statements (Tier-2.2; `ScriptDomBuild.buildKeymapSpillTable` /
+//   `buildKeymapRepoint`) rendered via `ScriptDomGenerate`; `@kind` stays a bound
+//   parameter on the rendered UPDATE.
 
 open System.Threading.Tasks
 open Microsoft.Data.SqlClient
@@ -74,9 +77,7 @@ module SqlKeymap =
     /// invariant at insert (the `INSERT…WHERE NOT EXISTS` guard below).
     let createTable (cnn: SqlConnection) : Task<unit> =
         Deploy.executeBatch cnn
-            (sprintf
-                "IF OBJECT_ID('tempdb..%s') IS NULL CREATE TABLE [%s] (KindKey NVARCHAR(450) NOT NULL, SourceKey NVARCHAR(450) NOT NULL, AssignedKey NVARCHAR(450) NOT NULL, CONSTRAINT [PK_keymap_spill] PRIMARY KEY (KindKey, SourceKey));"
-                TableName TableName)
+            (ScriptDomGenerate.generateOne (ScriptDomBuild.buildKeymapSpillTable TableName "PK_keymap_spill"))
 
     /// Capture a kind's `(source raw → assigned raw)` pairs into the session
     /// table — KEEP-FIRST on a duplicate source (the `PackedSurrogateRemap`
@@ -114,13 +115,10 @@ module SqlKeymap =
     /// no-capture row is likewise left as-is, the named phase-2 erasure).
     let repointJoin (cnn: SqlConnection) (sinkTable: TableId) (kindKey: string) (fkColumn: string) : Task<unit> =
         task {
-            let qualified =
-                Render.tableQualified { Schema = sinkTable.Schema; Table = sinkTable.Table; Catalog = None }
             use cmd = cnn.CreateCommand()
             cmd.CommandText <-
-                sprintf
-                    "UPDATE s SET s.%s = k.AssignedKey FROM %s s JOIN [%s] k ON k.KindKey = @kind AND k.SourceKey = CONVERT(NVARCHAR(450), s.%s);"
-                    (Render.quote fkColumn) qualified TableName (Render.quote fkColumn)
+                ScriptDomGenerate.generateOne
+                    (ScriptDomBuild.buildKeymapRepoint sinkTable fkColumn TableName "@kind")
             cmd.Parameters.AddWithValue("@kind", box kindKey) |> ignore
             let! _ = cmd.ExecuteNonQueryAsync()
             return ()
