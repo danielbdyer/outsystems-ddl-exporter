@@ -25,8 +25,8 @@
 
 Work is underway across two branches off `main` (`250811ea`): the typed-AST chapter on
 `claude/finish-typed-ast-refactor`, and the recon sweep on `claude/recon-binding-registry`
-(this doc now lives here so it merges in with the sweep). **8 findings fully landed, 5
-partially landed (the clean core in, the larger part open), 12 untouched.** Every
+(this doc now lives here so it merges in with the sweep). **9 findings fully landed, 5
+partially landed (the clean core in, the larger part open), 11 untouched.** Every
 partial's open remainder and every untouched item is enumerated below; each `## N.`
 section also carries a per-section `> **Status:**` line.
 
@@ -36,13 +36,12 @@ section also carries a per-section `> **Status:**` line.
 > the #25 quick-wins (Navigator breadcrumb
 > bug, `Catalog.kindIndex` reuse, `LifecycleStore.withLoaded`, `RelaxationStore.persist`
 > → `Result`). All verified by clean build + the pure (non-SQL) pool — every test class
-> exercising the changes is green, 0 assertion failures. The SQL-backed pool could not be
-> exercised in the continuation sandbox (no Docker daemon — the warm container from the
-> earlier run was reclaimed); those changes touch no SQL path. **#14 (`DerivationReason`
-> DU) is HELD pending an operator call:** closing the open string changes `derivedFrom`'s
-> signature and removes the blank-reason rejection — an `AxiomTests` Bucket-B contract and a
-> `DECISIONS.md` "reserved reasons" surface — which §5 says needs a `DECISIONS` amendment
-> first (the #4-combinator "declined out loud" model).
+> exercising the changes is green, 0 assertion failures. **#14 (`DerivationReason` DU) was
+> then approved by the operator and landed (the aggressive close):** `derivedFrom` is total,
+> the codec is byte-identical, and AXIOMS A5 + a dated DECISIONS amendment ship in-commit
+> per §5. Docker came back up mid-sweep (warm SQL container restarted), so #14 and the prior
+> batches are now **Docker-verified end-to-end: pure pool 3723/0, Docker pool 273/273** (the
+> round-trip canaries confirm byte-identity).
 
 | # | Finding | Tier | Status | Landed in / what's left |
 |---|---|---|---|---|
@@ -59,7 +58,7 @@ section also carries a per-section `> **Status:**` line.
 | 11 | Finish Voice migration + unify dispatchers | 🟧 | ○ remaining | — |
 | 12 | `fanOutWithDiagnostics` primitive | 🟧 | ✅ **done** | `Composition.fanOutWithDiagnostics` added; Nullability/UniqueIndex/ForeignKey passes' decision→diagnostic tails collapse to it (2026-06-27). |
 | 13 | One connection discipline / `Source` port | 🟧 | ○ remaining | — |
-| 14 | `DerivationReason` DU | 🟨 | ○ remaining | — |
+| 14 | `DerivationReason` DU | 🟨 | ✅ **done** | Closed DU (`Inverse`); `derivedFrom` total; codec byte-identical; AXIOMS A5 + DECISIONS amended (operator call, 2026-06-27). |
 | 15 | `LineageEvent.forPass` smart ctor | 🟨 | ✅ **done** | `LineageEvent.forPass` smart ctor in `Lineage.fs`; the 16 hand-written 5-field event literals across 13 passes now call it (2026-06-27). |
 | 16 | Unify 3 JSON-read helpers | 🟨 | ○ remaining | — |
 | 17 | `Comparison.fs` — domain out of render | 🟨 | ○ remaining | — |
@@ -449,7 +448,7 @@ Only the Bench label, the `opportunityEntry` function, and whether it closes ove
 
 ## 14. 🟨 Close the `DerivationReason` set — the last open-string field that participates in *identity*
 
-> **Status (2026-06-27):** ○ **Not started.**
+> **Status (2026-06-27):** ✅ **Done (the aggressive DU, by operator decision).** `DerivedFrom`'s `reason` is now a closed `DerivationReason` DU (single case `Inverse`). `SsKey.derivedFrom` is **total** (`SsKey -> DerivationReason -> SsKey`) — the prior `Result` + blank-reason rejection is gone (a malformed reason is unconstructable by type); `SymmetricClosure.deriveInverseKey` drops its unreachable error branch. `derivationReasons : DerivationReason list`; `Reference.isInverse` is a total match. **Codec byte-identical**: `DerivationReason.serialize Inverse = "inverse"` (same length-prefixed token), and `deserialize` routes through `DerivationReason.parse` so an unknown *stored* token now fails loud instead of materializing silently. This was the item I'd **held for an operator call** (it changes an AxiomTests Bucket-B contract + the DECISIONS "reserved reasons" surface, ahead of the original "second reason in use" trigger): **AXIOMS A5 amended** (reason is a closed DU; blank-rejection structural) + its Bucket-B citation, and a dated **DECISIONS amendment** (2026-06-27) added, both in-commit per §5. The two tests that exercised the open-string generality (a second free reason `"shadow"`; the blank rejection) were re-pointed to the closed model. Verified: build clean; pure pool **3723/0**; Docker pool **273/273** (round-trip canaries confirm byte-identity — the one transient CDC-enablement deadlock passed clean on isolated re-run).
 
 **Anchors:** `Identity.fs:54` (`SsKey.DerivedFrom(reason: string)`); the only reserved value `Catalog.fs:1407` (`inverseDerivationReason = "inverse"`), matched `Catalog.fs:1414` (`when reason = inverseDerivationReason`); consumers `derivationReasons`, `isInverse`, `SymmetricClosure`.
 

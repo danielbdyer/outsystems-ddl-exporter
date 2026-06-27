@@ -135,31 +135,37 @@ let ``A5: derived(parent, reason) is deterministic`` (s: NonEmptyString) =
     if System.String.IsNullOrWhiteSpace s.Get then true
     else
         let parent = SsKey.synthesized "TEST" s.Get |> Result.value
-        let d1 = SsKey.derivedFrom parent "inverse" |> Result.value
-        let d2 = SsKey.derivedFrom parent "inverse" |> Result.value
+        let d1 = SsKey.derivedFrom parent DerivationReason.Inverse
+        let d2 = SsKey.derivedFrom parent DerivationReason.Inverse
         d1 = d2
 
 [<Fact>]
 let ``A5: derived keys preserve traceability to the root original`` () =
     let parent  = refKey ["Order"; "Customer"]
-    let derived = SsKey.derivedFrom parent "inverse" |> Result.value
+    let derived = SsKey.derivedFrom parent DerivationReason.Inverse
     Assert.Equal("OS_REF_Order_Customer", SsKey.rootOriginal derived)
     Assert.True(SsKey.isDerived derived)
     Assert.False(SsKey.isDerived parent)
-    Assert.Equal<string list>([ "inverse" ], SsKey.derivationReasons derived)
+    Assert.Equal<DerivationReason list>([ DerivationReason.Inverse ], SsKey.derivationReasons derived)
 
 [<Fact>]
 let ``A5: chained derivation reasons read root-to-leaf, oldest first`` () =
     let parent = testKey "OS_X"
-    let d1 = SsKey.derivedFrom parent "inverse" |> Result.value
-    let d2 = SsKey.derivedFrom d1 "shadow"      |> Result.value
-    Assert.Equal<string list>([ "inverse"; "shadow" ], SsKey.derivationReasons d2)
+    let d1 = SsKey.derivedFrom parent DerivationReason.Inverse
+    let d2 = SsKey.derivedFrom d1 DerivationReason.Inverse
+    Assert.Equal<DerivationReason list>([ DerivationReason.Inverse; DerivationReason.Inverse ], SsKey.derivationReasons d2)
 
 [<Fact>]
-let ``A5: derivation reasons cannot be blank`` () =
-    let parent = testKey "OS_X"
-    Assert.True(Result.isFailure (SsKey.derivedFrom parent ""))
-    Assert.True(Result.isFailure (SsKey.derivedFrom parent "   "))
+let ``A5: the derivation-reason set is closed — an unknown serialized token fails to parse`` () =
+    // The blank-reason rejection is now STRUCTURAL: the reason is a closed
+    // `DerivationReason` DU, unconstructable from a free string. The codec is the
+    // one place an invalid reason can still arrive (a malformed stored key); it
+    // fails loud rather than minting a silently-different identity.
+    match DerivationReason.parse "inverse" with
+    | Ok r    -> Assert.Equal(DerivationReason.Inverse, r)
+    | Error _ -> Assert.Fail "expected Ok for the reserved 'inverse' token"
+    Assert.True(Result.isFailure (DerivationReason.parse "shadow"))
+    Assert.True(Result.isFailure (DerivationReason.parse ""))
 
 // ---------------------------------------------------------------------------
 // Fixture sanity — confirms the synthetic catalog is well-formed and

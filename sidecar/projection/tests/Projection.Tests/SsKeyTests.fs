@@ -64,15 +64,16 @@ let ``S0.B.5: synthesized accepts non-blank source and basis`` () =
     | other -> Assert.Fail(sprintf "expected Synthesized (OS_KIND, [\"Customer\"]), got %A" other)
 
 [<Fact>]
-let ``S0.B.5: derivedFrom rejects blank reason`` () =
-    let parent = SsKey.ossysOriginal (sampleGuid ())
-    let result = SsKey.derivedFrom parent ""
-    match result with
-    | Error errors ->
-        let codes = errors |> List.map (fun e -> e.Code)
-        Assert.Contains("sskey.derivedReason.empty", codes)
-    | Ok _ ->
-        Assert.Fail "expected Error on blank reason, got Ok"
+let ``S0.B.5: the derivation reason is a closed DU — unconstructable from a free string`` () =
+    // recon #14 — the blank-reason rejection is now STRUCTURAL: `derivedFrom`
+    // takes a closed `DerivationReason`, so a blank/unknown reason cannot be
+    // constructed at all. The codec is the one remaining ingress for an invalid
+    // reason (a malformed stored key) and it fails loud.
+    Assert.True(Result.isFailure (DerivationReason.parse "shadow"))
+    Assert.True(Result.isFailure (DerivationReason.parse ""))
+    match DerivationReason.parse "inverse" with
+    | Ok r    -> Assert.Equal(DerivationReason.Inverse, r)
+    | Error _ -> Assert.Fail "expected Ok for the reserved 'inverse' token"
 
 [<Fact>]
 let ``S0.B.5: fromV1 is total; constructs V1Mapped with both GUIDs`` () =
@@ -106,15 +107,18 @@ let ``S0.B.5: Synthesized and OssysOriginal with related content are NOT equal``
 [<Fact>]
 let ``S0.B.5: DerivedFrom equality is structural over parent and reason`` () =
     let parent = SsKey.synthesized "OS_KIND" "Customer" |> Result.value
-    let d1 = SsKey.derivedFrom parent "inverse" |> Result.value
-    let d2 = SsKey.derivedFrom parent "inverse" |> Result.value
+    let d1 = SsKey.derivedFrom parent DerivationReason.Inverse
+    let d2 = SsKey.derivedFrom parent DerivationReason.Inverse
     Assert.Equal<SsKey>(d1, d2)
 
 [<Fact>]
-let ``S0.B.5: DerivedFrom with different reasons are NOT equal`` () =
-    let parent = SsKey.synthesized "OS_KIND" "Customer" |> Result.value
-    let d1 = SsKey.derivedFrom parent "inverse" |> Result.value
-    let d2 = SsKey.derivedFrom parent "shadow" |> Result.value
+let ``S0.B.5: DerivedFrom over different parents are NOT equal`` () =
+    // With the reason closed to one case, the structural-equality dimension that
+    // can differ is the parent — derived keys off distinct parents stay distinct.
+    let p1 = SsKey.synthesized "OS_KIND" "Customer" |> Result.value
+    let p2 = SsKey.synthesized "OS_KIND" "Order" |> Result.value
+    let d1 = SsKey.derivedFrom p1 DerivationReason.Inverse
+    let d2 = SsKey.derivedFrom p2 DerivationReason.Inverse
     Assert.NotEqual<SsKey>(d1, d2)
 
 // ---------------------------------------------------------------------
@@ -135,7 +139,7 @@ let ``S0.B.5: rootOriginal on Synthesized preserves pre-stratification source_ba
 [<Fact>]
 let ``S0.B.5: rootOriginal on DerivedFrom recurses to the parent`` () =
     let parent = SsKey.synthesized "OS_KIND" "Customer" |> Result.value
-    let derived = SsKey.derivedFrom parent "inverse" |> Result.value
+    let derived = SsKey.derivedFrom parent DerivationReason.Inverse
     Assert.Equal("OS_KIND_Customer", SsKey.rootOriginal derived)
 
 [<Fact>]
@@ -158,7 +162,7 @@ let ``S0.B.5: isDerived returns false for OssysOriginal, Synthesized, and V1Mapp
 [<Fact>]
 let ``S0.B.5: isDerived returns true for DerivedFrom`` () =
     let parent = SsKey.synthesized "OS_KIND" "Customer" |> Result.value
-    let derived = SsKey.derivedFrom parent "inverse" |> Result.value
+    let derived = SsKey.derivedFrom parent DerivationReason.Inverse
     Assert.True(SsKey.isDerived derived)
 
 // ---------------------------------------------------------------------
@@ -174,9 +178,9 @@ let ``S0.B.5: derivationReasons is empty for the three leaf variants`` () =
 [<Fact>]
 let ``S0.B.5: derivationReasons reads root-to-leaf, oldest first across DerivedFrom chain`` () =
     let parent = SsKey.synthesized "OS_KIND" "Customer" |> Result.value
-    let d1 = SsKey.derivedFrom parent "inverse" |> Result.value
-    let d2 = SsKey.derivedFrom d1 "shadow" |> Result.value
-    Assert.Equal<string list>([ "inverse"; "shadow" ], SsKey.derivationReasons d2)
+    let d1 = SsKey.derivedFrom parent DerivationReason.Inverse
+    let d2 = SsKey.derivedFrom d1 DerivationReason.Inverse
+    Assert.Equal<DerivationReason list>([ DerivationReason.Inverse; DerivationReason.Inverse ], SsKey.derivationReasons d2)
 
 // Chapter-3.6 slice-δ + DECISIONS pillar 6 (no V2-internal back-compat
 // paths): the `SsKey.original` parser-shim and `SsKey.derived` alias
@@ -216,10 +220,10 @@ let ``A1 stratification: Synthesized is bounded (renames produce different SsKey
 [<Fact>]
 let ``A1 stratification: DerivedFrom inherits the bound from its root`` () =
     let synthRoot = SsKey.synthesized "OS_KIND" "C" |> Result.value
-    let synthDerived = SsKey.derivedFrom synthRoot "inverse" |> Result.value
+    let synthDerived = SsKey.derivedFrom synthRoot DerivationReason.Inverse
     Assert.False(isA1Unconditional synthDerived)
     let ossysRoot = SsKey.ossysOriginal (sampleGuid ())
-    let ossysDerived = SsKey.derivedFrom ossysRoot "inverse" |> Result.value
+    let ossysDerived = SsKey.derivedFrom ossysRoot DerivationReason.Inverse
     Assert.True(isA1Unconditional ossysDerived)
 
 // ---------------------------------------------------------------------
@@ -247,7 +251,7 @@ let ``4.1: serialize/deserialize round-trips Synthesized composite`` () =
 [<Fact>]
 let ``4.1: serialize/deserialize round-trips DerivedFrom nested in Synthesized`` () =
     let root = SsKey.synthesizedComposite "OS_KIND" [ "AppCore"; "User" ] |> Result.value
-    let derived = SsKey.derivedFrom root "inverse" |> Result.value
+    let derived = SsKey.derivedFrom root DerivationReason.Inverse
     Assert.True(roundtrips derived)
 
 [<Fact>]

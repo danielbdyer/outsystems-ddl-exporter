@@ -28,14 +28,13 @@ module SymmetricClosure =
     [<Literal>]
     let private passName : string = "symmetricClosure"
 
-    /// The reserved derivation reason for inverse references. The string
-    /// is registered in DECISIONS.md (2026-05-06 — SsKey as a sum type);
-    /// ownership moved to `Reference.inverseDerivationReason` so the
-    /// deployability predicate and this pass share one definition
-    /// (DECISIONS 2026-06-12 — reconciliation slice 1). This alias keeps
-    /// the pass's public vocabulary stable.
-    [<Literal>]
-    let inverseReason : string = Reference.inverseDerivationReason
+    /// The derivation reason for inverse references — the closed
+    /// `DerivationReason.Inverse` (DECISIONS 2026-05-06 → DU 2026-06-27, recon
+    /// #14). Ownership lives in `Reference.inverseDerivationReason` so the
+    /// deployability predicate and this pass share one definition (DECISIONS
+    /// 2026-06-12 — reconciliation slice 1). This alias keeps the pass's public
+    /// vocabulary stable.
+    let inverseReason : DerivationReason = Reference.inverseDerivationReason
 
     /// Does this reference's SsKey indicate it is itself an inverse from
     /// a previous run of the pass? Used to keep the pass idempotent.
@@ -45,26 +44,9 @@ module SymmetricClosure =
 
     let private deriveInverseKey (r: Reference) : SsKey =
         // A5 enforced by SsKey.derivedFrom; the deterministic formula is
-        // (original-key, "inverse").
-        match SsKey.derivedFrom r.SsKey inverseReason with
-        | Ok k  -> k
-        | Error _ ->
-            // Per chapter 3.5 deep audit (2026-05-09):
-            // `SsKey.derivedFrom` only fails on blank `reason`;
-            // `inverseReason` is the `[<Literal>]` constant
-            // `"inverse"`, so this branch is unreachable by F#
-            // type-system construction. The legacy
-            // implementation built a debug string from the
-            // (unreachable-by-construction) error codes via
-            // `String.concat ", "` + interpolated string —
-            // both string-concatenation primitives. Defensive:
-            // bare static phrase to `invalidOp`; the BCL
-            // `InvalidOperationException` carries enough context
-            // (call stack + the static phrase) for postmortem
-            // diagnosis. The unreachable error-codes detail
-            // gains nothing at the cost of two concatenation
-            // primitives.
-            invalidOp "symmetricClosure: SsKey.derivedFrom rejected the reserved 'inverse' reason; this branch is structurally unreachable."
+        // (original-key, Inverse). Total since the reason is a closed DU
+        // (recon #14) — the prior blank-reason failure branch is gone.
+        SsKey.derivedFrom r.SsKey inverseReason
 
     /// Build the inverse reference if the target kind has a primary key.
     /// Returns `None` (with a documented skip-reason) when the target

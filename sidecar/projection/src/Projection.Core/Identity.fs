@@ -45,13 +45,42 @@ namespace Projection.Core
 /// are NOT equal even though they render to the same identifier — the
 /// build-path's segmentation choice is part of the structural identity.
 ///
-/// Reserved derivation reasons are enumerated in `DECISIONS.md`:
-///   - `"inverse"` — symmetric-closure pass; adds the inverse of a
-///     reference.
+/// The closed vocabulary of pass-introduced derivation reasons (recon #14;
+/// DECISIONS 2026-05-06 deferred this DU "when more than one is in use", brought
+/// forward by operator decision 2026-06-27 — identity-is-a-type outweighs the
+/// wait-for-a-second-reason heuristic; the cost is one DU case, the win is
+/// unforgeable derivation provenance). Closing the set means a typo can no longer
+/// mint a silently-different identity, and `Reference.isInverse` becomes a total
+/// match instead of a string compare. New reasons are added HERE, never as free
+/// strings. The serialized token is the wire form the SsKey codec length-prefixes:
+/// `Inverse` ⇄ `"inverse"` keeps the byte format identical to the prior
+/// open-string representation (the only value ever constructed).
+type DerivationReason =
+    /// Symmetric-closure pass — the synthesized inverse of a reference.
+    | Inverse
+
+/// Serialization + parsing for the closed `DerivationReason` set. The codec
+/// (`SsKey.serialize`/`deserialize`) goes through `serialize`/`parse` so the wire
+/// token stays the single source of truth and an unknown stored token fails loud.
+[<RequireQualifiedAccess>]
+module DerivationReason =
+
+    let serialize (r: DerivationReason) : string =
+        match r with
+        | Inverse -> "inverse"
+
+    let parse (s: string) : Result<DerivationReason> =
+        match s with
+        | "inverse" -> Result.success Inverse
+        | other ->
+            Result.failureOf
+                (ValidationError.create "sskey.derivationReason.unknown"
+                    (String.concat "" [ "unknown derivation reason '"; other; "'" ]))
+
 type SsKey =
     | OssysOriginal of System.Guid
     | Synthesized of source: string * basisParts: string list
-    | DerivedFrom of parent: SsKey * reason: string
+    | DerivedFrom of parent: SsKey * reason: DerivationReason
     | V1Mapped of v1Sskey: System.Guid * v2Namespace: System.Guid
 
 /// Construction and inspection helpers for `SsKey`.
@@ -65,10 +94,6 @@ module SsKey =
     let private synthBasisEmpty =
         ValidationError.create "sskey.synth.basis.empty"
             "Synthesis basis cannot be blank."
-
-    let private reasonEmpty =
-        ValidationError.create "sskey.derivedReason.empty"
-            "A derivation reason cannot be blank."
 
     /// Build an `OssysOriginal` SsKey from a source-supplied GUID. Total:
     /// a `System.Guid` is well-formed by construction. Used by the
@@ -106,15 +131,12 @@ module SsKey =
         else
             Result.success (Synthesized (source, basisParts))
 
-    /// Build a `DerivedFrom` SsKey from a parent identity and a
-    /// documented reason. Rejects blank reasons with
-    /// `ValidationError "sskey.derivedReason.empty"`. Used by passes
-    /// that introduce new nodes (e.g., `SymmetricClosure`).
-    let derivedFrom (parent: SsKey) (reason: string) : Result<SsKey> =
-        if System.String.IsNullOrWhiteSpace reason then
-            Result.failureOf reasonEmpty
-        else
-            Result.success (DerivedFrom (parent, reason))
+    /// Build a `DerivedFrom` SsKey from a parent identity and a closed
+    /// `DerivationReason`. Total — the reason is unforgeable by construction (the
+    /// prior blank-string rejection is now structural), so no `Result`. Used by
+    /// passes that introduce new nodes (e.g., `SymmetricClosure`).
+    let derivedFrom (parent: SsKey) (reason: DerivationReason) : SsKey =
+        DerivedFrom (parent, reason)
 
     /// Build a `V1Mapped` SsKey from a V1 GUID and the V2 namespace tag.
     /// Total: GUID arithmetic is. The `v2Namespace` GUID is a stable
@@ -168,7 +190,7 @@ module SsKey =
                 [ "S"; field source; field (string (List.length basisParts)) ]
                 @ (basisParts |> List.map field))
         | DerivedFrom (parent, reason) ->
-            String.concat "" [ "D"; field reason; field (serialize parent) ]
+            String.concat "" [ "D"; field (DerivationReason.serialize reason); field (serialize parent) ]
         | V1Mapped (v1, v2) ->
             String.concat "" [ "V"; field (v1.ToString "N"); field (v2.ToString "N") ]
 
@@ -197,10 +219,11 @@ module SsKey =
                             readFields count [] r2 |> Result.bind (fun (parts, rest) ->
                                 noTrailing rest (Synthesized (source, parts)))))
             | 'D' ->
-                readField body |> Result.bind (fun (reason, r1) ->
-                    readField r1 |> Result.bind (fun (parentStr, rest) ->
-                        if rest <> "" then Result.failureOf (deserErr "trailing data after derived key")
-                        else parse parentStr |> Result.map (fun parent -> DerivedFrom (parent, reason))))
+                readField body |> Result.bind (fun (reasonStr, r1) ->
+                    DerivationReason.parse reasonStr |> Result.bind (fun reason ->
+                        readField r1 |> Result.bind (fun (parentStr, rest) ->
+                            if rest <> "" then Result.failureOf (deserErr "trailing data after derived key")
+                            else parse parentStr |> Result.map (fun parent -> DerivedFrom (parent, reason)))))
             | 'V' ->
                 readField body |> Result.bind (fun (v1s, r1) ->
                     readField r1 |> Result.bind (fun (v2s, rest) ->
@@ -283,7 +306,7 @@ module SsKey =
     /// Sequence of derivation reasons from the root outward, oldest first.
     /// Empty for leaf identities (`OssysOriginal`, `Synthesized`,
     /// `V1Mapped`).
-    let rec derivationReasons (key: SsKey) : string list =
+    let rec derivationReasons (key: SsKey) : DerivationReason list =
         match key with
         | OssysOriginal _
         | Synthesized _

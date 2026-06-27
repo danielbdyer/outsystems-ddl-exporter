@@ -373,7 +373,7 @@ let ``all four SsKey variants round-trip (identity, designation, realization)`` 
     let variants : SsKey list =
         [ SsKey.ossysOriginal (System.Guid("22222222-2222-2222-2222-222222222222"))
           SsKey.synthesized "OS_KIND" "AppCore_User" |> Result.value
-          SsKey.derivedFrom parent "inverse" |> Result.value
+          SsKey.derivedFrom parent DerivationReason.Inverse
           SsKey.fromV1 (System.Guid("33333333-3333-3333-3333-333333333333")) (System.Guid("44444444-4444-4444-4444-444444444444")) ]
     for sk in variants do
         let a = Attribute.create sk (nm "Col") PrimitiveType.Text

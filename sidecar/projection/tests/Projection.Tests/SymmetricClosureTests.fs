@@ -26,7 +26,7 @@ let private ciRun (c: Catalog) : Lineage<Catalog> =
 // ---------------------------------------------------------------------------
 
 let private inverseSsKey (originalRefKey: SsKey) : SsKey =
-    SsKey.derivedFrom originalRefKey SymmetricClosure.inverseReason |> Result.value
+    SsKey.derivedFrom originalRefKey SymmetricClosure.inverseReason
 
 let private allReferences (c: Catalog) : Reference list =
     Catalog.allKinds c
@@ -57,7 +57,7 @@ let ``inverse SsKey is Derived with reason "inverse"`` () =
         |> fun k -> k.References
         |> List.exactlyOne
     match inverse.SsKey with
-    | DerivedFrom (_, reason) -> Assert.Equal("inverse", reason)
+    | DerivedFrom (_, reason) -> Assert.Equal(DerivationReason.Inverse, reason)
     | other -> Assert.Fail(sprintf "Expected DerivedFrom inverse, got %A" other)
 
 [<Fact>]
@@ -70,7 +70,7 @@ let ``A5: inverse SsKey traces back to the original reference's root`` () =
         |> List.exactlyOne
     Assert.Equal(SsKey.rootOriginal orderRefToCustomer,
                  SsKey.rootOriginal inverse.SsKey)
-    Assert.Equal<string list>([ "inverse" ], SsKey.derivationReasons inverse.SsKey)
+    Assert.Equal<DerivationReason list>([ DerivationReason.Inverse ], SsKey.derivationReasons inverse.SsKey)
 
 [<Fact>]
 let ``inverse Name is the source kind's Name`` () =
