@@ -310,21 +310,14 @@ module ForeignKeyPass =
             WrapDecisions      = fun decisions -> { Decisions = decisions }
             BuildEvent         = decisionEvent
         }
-        let lineage = Composition.fanOut fanOutConfig catalog policy profile
-        // Per-reference distribution surfaces under
-        // `pass.fk.reference` — one Bench sample per decision
-        // opportunity-evaluation iteration (decision-count =
-        // references × interventions; the heterogeneous-emission
-        // shape means per-iteration cost varies across outcomes).
-        let entries =
-            lineage.Value.Decisions
-            |> Bench.iterMap "pass.fk.reference" (opportunityEntry profile)
-            |> List.choose id
-        lineageDiagnostics {
-            let! value = lineage
-            do! LineageDiagnostics.writeDiagnostics entries
-            return value
-        }
+        // recon #12 — `fanOut` + the decision→diagnostic tail, now one primitive.
+        // Per-reference distribution surfaces under `pass.fk.reference` (one Bench
+        // sample per decision-evaluation iteration; decision-count = references ×
+        // interventions; heterogeneous-emission cost varies across outcomes).
+        Composition.fanOutWithDiagnostics
+            fanOutConfig "pass.fk.reference"
+            (fun (ds: ForeignKeyDecisionSet) -> ds.Decisions) (opportunityEntry profile)
+            catalog policy profile
 
     /// Convenience accessor for tests and consumers that only care
     /// about the decision set (not the diagnostic stream). Domain-

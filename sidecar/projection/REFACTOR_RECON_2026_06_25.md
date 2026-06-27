@@ -25,14 +25,15 @@
 
 Work is underway across two branches off `main` (`250811ea`): the typed-AST chapter on
 `claude/finish-typed-ast-refactor`, and the recon sweep on `claude/recon-binding-registry`
-(this doc now lives here so it merges in with the sweep). **7 findings fully landed, 5
-partially landed (the clean core in, the larger part open), 13 untouched.** Every
+(this doc now lives here so it merges in with the sweep). **8 findings fully landed, 5
+partially landed (the clean core in, the larger part open), 12 untouched.** Every
 partial's open remainder and every untouched item is enumerated below; each `## N.`
 section also carries a per-section `> **Status:**` line.
 
 > **Sweep update 2026-06-27 (continuation).** Beyond the table above, this branch added:
 > the CLI exit-code seam (`CliExit`, #3 Concern 1), `Fixpoint.iterate` (#19), the
-> `LineageEvent.forPass` smart ctor (#15), and the #25 quick-wins (Navigator breadcrumb
+> `LineageEvent.forPass` smart ctor (#15), `Composition.fanOutWithDiagnostics` (#12), and
+> the #25 quick-wins (Navigator breadcrumb
 > bug, `Catalog.kindIndex` reuse, `LifecycleStore.withLoaded`, `RelaxationStore.persist`
 > → `Result`). All verified by clean build + the pure (non-SQL) pool — every test class
 > exercising the changes is green, 0 assertion failures. The SQL-backed pool could not be
@@ -56,7 +57,7 @@ section also carries a per-section `> **Status:**` line.
 | 9 | Code→exit registry | 🟧 | ○ remaining | — |
 | 10 | `parseSemanticType` → Core | 🟧 | ○ remaining | — |
 | 11 | Finish Voice migration + unify dispatchers | 🟧 | ○ remaining | — |
-| 12 | `fanOutWithDiagnostics` primitive | 🟧 | ○ remaining | — |
+| 12 | `fanOutWithDiagnostics` primitive | 🟧 | ✅ **done** | `Composition.fanOutWithDiagnostics` added; Nullability/UniqueIndex/ForeignKey passes' decision→diagnostic tails collapse to it (2026-06-27). |
 | 13 | One connection discipline / `Source` port | 🟧 | ○ remaining | — |
 | 14 | `DerivationReason` DU | 🟨 | ○ remaining | — |
 | 15 | `LineageEvent.forPass` smart ctor | 🟨 | ✅ **done** | `LineageEvent.forPass` smart ctor in `Lineage.fs`; the 16 hand-written 5-field event literals across 13 passes now call it (2026-06-27). |
@@ -404,7 +405,7 @@ These are **decisions, not translations**: the 2000-char `MAX` threshold (`textL
 
 ## 12. 🟧 A `fanOutWithDiagnostics` primitive — retire the decision→diagnostic tail copied across the 3 tightening passes
 
-> **Status (2026-06-27):** ○ **Not started.**
+> **Status (2026-06-27):** ✅ **Done.** `Composition.fanOutWithDiagnostics config benchLabel decisionsOf toDiagnostic catalog policy profile : Lineage<Diagnostics<'decisionSet>>` added — it runs `fanOut`, maps each decision through `toDiagnostic`, `List.choose id`s, and splices the entries into the dual writer inside the primitive. The identical tail at NullabilityPass / UniqueIndexPass / ForeignKeyPass `run` (the `iterMap`/`choose`/`lineageDiagnostics{writeDiagnostics}` boilerplate) collapses to one call each; only the bench label, the `opportunityEntry`, and the `(fun ds -> ds.Decisions)` projection vary. The observable-identity-on-empty-policy guarantee is inherited from `fanOut`; writer-fidelity now lives inside the primitive rather than being re-asserted at three sites. Build clean; Composition + the three passes' tests green (the diagnostic-stream tests pass unchanged).
 
 **Anchors:** `NullabilityPass.fs:133–205, 255–263`, `UniqueIndexPass.fs:113–146, 190–198`, `ForeignKeyPass.fs:186–271, 323–331`; the primitive it bolts onto, `Strategies/Composition.fs` (`fanOut`, `FanOutConfig`, deferral pattern documented `:18–32`).
 

@@ -146,3 +146,34 @@ module Composition =
             let events = decisions |> List.map config.BuildEvent
             Lineage.tellMany events
                 (Lineage.ofValue (config.WrapDecisions decisions))
+
+    /// `fanOut` plus the decision→diagnostic tail the three tightening pass
+    /// drivers (Nullability, UniqueIndex, ForeignKey) each bolted on identically
+    /// (recon #12): map every decision through `toDiagnostic`, drop the `None`s,
+    /// and splice the surviving `DiagnosticEntry`s into the dual writer — yielding
+    /// `Lineage<Diagnostics<'decisionSet>>` rather than the bare
+    /// `Lineage<'decisionSet>`. `decisionsOf` projects the decision list back out
+    /// of the wrapped set (each set is `{ Decisions = … }`); `benchLabel` scopes
+    /// the per-decision mapping cost. Writer-fidelity now lives INSIDE the
+    /// primitive instead of being re-asserted at three call sites; the
+    /// observable-identity-on-empty-policy guarantee is inherited from `fanOut`
+    /// (empty decisions → no events, no diagnostics).
+    let fanOutWithDiagnostics
+        (config: FanOutConfig<'context, 'config, 'decision, 'decisionSet>)
+        (benchLabel: string)
+        (decisionsOf: 'decisionSet -> 'decision list)
+        (toDiagnostic: 'decision -> DiagnosticEntry option)
+        (catalog: Catalog)
+        (policy: Policy)
+        (profile: Profile)
+        : Lineage<Diagnostics<'decisionSet>> =
+        let lineage = fanOut config catalog policy profile
+        let entries =
+            decisionsOf lineage.Value
+            |> Bench.iterMap benchLabel toDiagnostic
+            |> List.choose id
+        lineageDiagnostics {
+            let! value = lineage
+            do! LineageDiagnostics.writeDiagnostics entries
+            return value
+        }
