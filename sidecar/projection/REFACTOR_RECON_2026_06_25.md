@@ -25,10 +25,10 @@
 
 Work is underway across two branches off `main` (`250811ea`): the typed-AST chapter on
 `claude/finish-typed-ast-refactor`, and the recon sweep on `claude/recon-binding-registry`
-(this doc now lives here so it merges in with the sweep). **18 findings resolved (17 fully
-landed + #7's genuine consolidation, its over-reach remainder declined with reasons), 5
-partially landed, 2 untouched.** (#4 and #7 both carry a *reasoned decline* on their
-over-reach remainders — see their sections.) Every
+(this doc now lives here so it merges in with the sweep). **19 findings resolved/adjudicated (17 fully
+landed + #7's genuine consolidation with its over-reach declined + #16 declined-with-reasons), 5
+partially landed, 1 untouched (#17).** (#4, #7, #9, #16, #23, #24 each carry a *reasoned decline* on a
+part or the whole — see their sections.) Every
 partial's open remainder and every untouched item is enumerated below; each `## N.`
 section also carries a per-section `> **Status:**` line.
 
@@ -62,7 +62,7 @@ section also carries a per-section `> **Status:**` line.
 | 13 | One connection discipline / `Source` port | 🟧 | ✅ **resolved** | One opener everywhere. `ConnectionSpec` moved to compile FIRST in Pipeline and OWNS both the `env:`/`file:` decode (`TransferSpec.parseConnectionSpec` re-exports it) and `openSpec` (all four spec forms). `Substrate.fromRef` (Core) is the one factory; `LiveModelRead` (its `parseConnRef` deleted), `Hydration` ×2, `ProfileCaptureRun`, `SyntheticLoadRun` all open through `openSpec`; `ModelResolution` reads the live-OSSYS case through the `Source.ofOssys` port. **D9 amended (2026-06-28, operator decision):** the opener accepts `live:`/bare uniformly, the OSSYS model source included — `env:`/`file:` stay the recommended out-of-band form; the model-only `model.ossys.connRef` hard-refusal is retired (`DECISIONS.md` 2026-06-28). Build clean Debug+Release; pure 3748/0; docker 273/0. |
 | 14 | `DerivationReason` DU | 🟨 | ✅ **done** | Closed DU (`Inverse`); `derivedFrom` total; codec byte-identical; AXIOMS A5 + DECISIONS amended (operator call, 2026-06-27). |
 | 15 | `LineageEvent.forPass` smart ctor | 🟨 | ✅ **done** | `LineageEvent.forPass` smart ctor in `Lineage.fs`; the 16 hand-written 5-field event literals across 13 passes now call it (2026-06-27). |
-| 16 | Unify 3 JSON-read helpers | 🟨 | ○ remaining | — |
+| 16 | Unify 3 JSON-read helpers | 🟨 | ⊘ **declined** (reasoned) | The same-project pair (Config strict-Result vs MigrationDeps lenient-option + migration-cell projection, distinct per-axis error namespaces) is false-DRY; the genuine duplicate (Config ≡ CatalogReader) is cross-project = XL. Extracting now violates the "second-consumer" rule. See §16. |
 | 17 | `Comparison.fs` — domain out of render | 🟨 | ○ remaining | — |
 | 18 | De-hardcode config knobs | 🟨 | ◑ **partial** | `BoundedContext.maxPropagationRounds` → `AdvisoryTuning.defaults.BoundedContext` (2026-06-27). **Open:** ReadSide `maxRows` (→ Core `Modality.classify`) + ClosureOracle `fuel` (the M SQL-knob variant). |
 | 19 | `Fixpoint.iterate` combinator | 🟨 | ✅ **done** | `Fixpoint.iterate` in Core; CentralityPass PageRank + BoundedContextPass label-propagation + ProfileAnomaly Newton-sqrt collapsed onto it (2026-06-27). |
@@ -488,7 +488,7 @@ The four tightening passes' `decisionEvent` are identical except which typed `An
 
 ## 16. 🟨 Unify the three private JSON-read helper copies into one `JsonRead` module
 
-> **Status (2026-06-27):** ○ **Not started.**
+> **Status (2026-06-28):** ⊘ **Declined with reasons (the M variant is false-DRY; the genuine dedup is the XL cross-project one).** Close reading shows the "three copies" are not one shape: **(a)** `Config.fs`'s helpers (`getString` / `getOptionalString` / `getBoolOr` / `getIntOr`) are STRICT — they return `Result<_>` and error on type-mismatch, minting `config.*` codes. **(b)** `MigrationDependenciesBinding`'s helpers are a DIFFERENT contract — `tryNonBlankString` returns a lenient `string option` (swallows mismatch to `None`, adds a blank-check Config's don't), and `cellValue` / `parseValues` are migration-specific scalar-cell / `values`-object projections with no Config analog, minting `pipeline.migrationDependencies.*` codes through the **Binding registry** (`Binding.error ConfigAxis.MigrationDependencies` — already on Finding 2's seam). Merging (a)+(b) would either fork the shared module into strict+lenient variants (no net simplification) or flatten two *intentional* per-axis error namespaces into one (losing the diagnostic the codebase values). **(c)** is the real duplicate — `Config.fs:619`'s own docstring says it *mirrors `CatalogReader`'s private helpers*, i.e. Config ≡ CatalogReader, SAME strict contract — but those live in **different projects** (Pipeline vs Adapters.Osm), so unifying them is the **XL cross-project variant** (a shared `JsonRead` in a project below both, threading System.Text.Json into a lower layer). Extracting a shared module now for the same-project pair would also violate the codebase's **"primitives at the second consumer / no zero-consumer symmetry-build"** rule — there is no same-shape second consumer in Pipeline. **Real follow-up (noted, not done):** the genuine convergence is Config adopting Finding 2's `Binding`/`ConfigAxis` error seam that `MigrationDependenciesBinding` already uses — an error-vocabulary consolidation, not a JSON-helper merge — plus the cross-project Config ≡ CatalogReader dedup as its own XL.
 
 **Anchors:** `Config.fs:637` (`getString`), `:651` (`getOptionalString`), `:692` (`getIntOr`), etc. (a clean private `JsonElement → Result<_>` layer with `configError` codes); duplicated in `MigrationDependenciesBinding.fs:62` (`tryNonBlankString`), `:89` (`cellValue`), `:103` (`parseValues`); a third copy admitted by `Config.fs:619`'s docstring — *"Mirror `CatalogReader`'s private helpers"* — in `CatalogReader.fs`.
 
