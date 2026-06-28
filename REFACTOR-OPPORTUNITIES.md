@@ -61,22 +61,27 @@ clarity/discipline fixes.
 lever. `if (x.IsFailure) return Result<T>.Failure(x.Errors)` appears **266× across
 83 files**. Add combinators (zero behavior change), then migrate call sites.
 
-- [ ] **1.1** Add to `Result.cs` / `ResultTaskExtensions.cs`: `Combine` (applicative,
-  error-accumulating, 2..n arity), `Traverse`/`MapEach` (index-aware overload for
-  path context), `Match`, `Tap`/`TapError`, `MapErrors`, and async parity
-  (`EnsureAsync`, `MatchAsync`, `TapAsync`).
-- [ ] **1.2** Add `Result<T>.Failure(string code, string message)` overload —
-  collapses 88 `Failure(ValidationError.Create("code","msg"))` sites across 39 files.
-- [ ] **1.3** Migrate the densest ladders: `EntityDocumentMapper.cs:55-176` (9 blocks),
-  `TighteningOptionsDeserializer.cs:51-326` (~9), the multi-field config `Create`
-  methods (`NamingOverrideOptions.cs:230-335`, `NullabilityOverrideOptions.cs:12-40`,
-  `ModuleValidationOverrides.cs`).
-- [ ] **1.4** `MapArray<TDoc,TModel>` helper for the DTO→domain mapper loop scaffold
-  repeated across 7 mappers in `Osm.Json/Deserialization/`
-  (Trigger/Sequence/Relationship/ExtendedProperty/Attribute/Index ×2). ~70-90 LOC.
-- [ ] **1.5** `ResolveCoordinate(schema, table, column)` for the Schema/Table/Column
-  parse prologue repeated 4× in `ProfileSnapshotDeserializer.cs` (+ merge the two
-  `Decorate*Metadata` methods). ~40-55 LOC.
+- [x] **1.1** Added to `Result.cs` / `ResultTaskExtensions.cs`: `Combine` (2/3/4-arity,
+  error-accumulating), `Traverse` + index-aware overload, `Match`, `Tap`/`TapError`,
+  `MapErrors`, and async `EnsureAsync`/`MatchAsync`/`TapAsync`. Covered by
+  `ResultCombinatorTests`. (Phase 1a)
+- [x] **1.2** Added `Result<T>.Failure(string code, string message)`. (Phase 1a)
+- [~] **1.3** Config `Create` migrations: `NullabilityOverrideRule.Create` and
+  `ModuleValidationOverrideDefinition.Create` collapsed via `Result.Combine`.
+  **Intentionally not migrated:** `NamingOverrideRule.Create` (conditional/optional-field
+  validation + cross-field checks — not a `Combine` shape; mechanical collapse would risk
+  behavior change) and `EntityOverrideDefinition.Create` (stateful accumulation loop).
+  `EntityDocumentMapper.cs:55-176` and `TighteningOptionsDeserializer` ladders are
+  **enabled** by the new API but left for a focused follow-up (bespoke per-field path
+  decoration; high churn, lower mechanical confidence).
+- [x] **1.4** Added `DocumentMapperContext.MapArray<TDoc,TModel>` (lenient skeleton:
+  empty-on-null, skip null elements, indexed path, short-circuit). Migrated the lenient
+  mappers: Trigger, Sequence, Relationship, ExtendedProperty. (Index ×2 and the
+  required-collection Attribute mapper deferred — Index has nested sub-arrays and Attribute
+  uses fail-on-null semantics that need a variant.)
+- [x] **1.5** Added `ResolveCoordinate` + `ResolveForeignKeyCoordinate` in
+  `ProfileSnapshotDeserializer`; migrated `MapColumn`, `MapUniqueCandidate`, and the
+  6-block `MapForeignKey` prologue. (Composite-unique left as-is — 2-part, column-less.)
 
 ## Phase 2 — Dead code removal (Low–Med risk)
 

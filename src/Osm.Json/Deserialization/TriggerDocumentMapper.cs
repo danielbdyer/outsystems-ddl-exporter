@@ -18,39 +18,18 @@ internal sealed class TriggerDocumentMapper
     }
 
     public Result<ImmutableArray<TriggerModel>> Map(TriggerDocument[]? docs, DocumentPathContext path)
-    {
-        if (docs is null || docs.Length == 0)
+        => _context.MapArray<TriggerDocument, TriggerModel>(docs, path, (doc, triggerPath) =>
         {
-            return Result<ImmutableArray<TriggerModel>>.Success(ImmutableArray<TriggerModel>.Empty);
-        }
-
-        var builder = ImmutableArray.CreateBuilder<TriggerModel>(docs.Length);
-        for (var i = 0; i < docs.Length; i++)
-        {
-            var doc = docs[i];
-            if (doc is null)
-            {
-                continue;
-            }
-
-            var triggerPath = path.Index(i);
             var nameResult = TriggerName.Create(doc.Name);
             if (nameResult.IsFailure)
             {
-                return Result<ImmutableArray<TriggerModel>>.Failure(
+                return Result<TriggerModel>.Failure(
                     _context.WithPath(triggerPath.Property("name"), nameResult.Errors));
             }
 
             var triggerResult = TriggerModel.Create(nameResult.Value, doc.IsDisabled, doc.Definition);
-            if (triggerResult.IsFailure)
-            {
-                return Result<ImmutableArray<TriggerModel>>.Failure(
-                    _context.WithPath(triggerPath, triggerResult.Errors));
-            }
-
-            builder.Add(triggerResult.Value);
-        }
-
-        return Result<ImmutableArray<TriggerModel>>.Success(builder.ToImmutable());
-    }
+            return triggerResult.IsFailure
+                ? Result<TriggerModel>.Failure(_context.WithPath(triggerPath, triggerResult.Errors))
+                : triggerResult;
+        });
 }

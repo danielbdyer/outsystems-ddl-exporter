@@ -81,34 +81,19 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
 
     private static Result<ColumnProfile> MapColumn(ColumnDocument doc)
     {
-        var schemaResult = SchemaName.Create(doc.Schema);
-        if (schemaResult.IsFailure)
+        var coordinate = ResolveCoordinate(doc.Schema, doc.Table, doc.Column);
+        if (coordinate.IsFailure)
         {
-            return Result<ColumnProfile>.Failure(
-                DecorateCoordinateMetadata(schemaResult.Errors, doc.Schema, doc.Table, doc.Column));
-        }
-
-        var tableResult = TableName.Create(doc.Table);
-        if (tableResult.IsFailure)
-        {
-            return Result<ColumnProfile>.Failure(
-                DecorateCoordinateMetadata(tableResult.Errors, doc.Schema, doc.Table, doc.Column));
-        }
-
-        var columnResult = ColumnName.Create(doc.Column);
-        if (columnResult.IsFailure)
-        {
-            return Result<ColumnProfile>.Failure(
-                DecorateCoordinateMetadata(columnResult.Errors, doc.Schema, doc.Table, doc.Column));
+            return Result<ColumnProfile>.Failure(coordinate.Errors);
         }
 
         var status = MapProbeStatus(doc.NullCountStatus, doc.RowCount);
         var nullSample = MapNullSample(doc.NullSample);
 
         return ColumnProfile.Create(
-            schemaResult.Value,
-            tableResult.Value,
-            columnResult.Value,
+            coordinate.Value.Schema,
+            coordinate.Value.Table,
+            coordinate.Value.Column,
             doc.IsNullablePhysical,
             doc.IsComputed,
             doc.IsPrimaryKey,
@@ -122,33 +107,18 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
 
     private static Result<UniqueCandidateProfile> MapUniqueCandidate(UniqueCandidateDocument doc)
     {
-        var schemaResult = SchemaName.Create(doc.Schema);
-        if (schemaResult.IsFailure)
+        var coordinate = ResolveCoordinate(doc.Schema, doc.Table, doc.Column);
+        if (coordinate.IsFailure)
         {
-            return Result<UniqueCandidateProfile>.Failure(
-                DecorateCoordinateMetadata(schemaResult.Errors, doc.Schema, doc.Table, doc.Column));
-        }
-
-        var tableResult = TableName.Create(doc.Table);
-        if (tableResult.IsFailure)
-        {
-            return Result<UniqueCandidateProfile>.Failure(
-                DecorateCoordinateMetadata(tableResult.Errors, doc.Schema, doc.Table, doc.Column));
-        }
-
-        var columnResult = ColumnName.Create(doc.Column);
-        if (columnResult.IsFailure)
-        {
-            return Result<UniqueCandidateProfile>.Failure(
-                DecorateCoordinateMetadata(columnResult.Errors, doc.Schema, doc.Table, doc.Column));
+            return Result<UniqueCandidateProfile>.Failure(coordinate.Errors);
         }
 
         var status = MapProbeStatus(doc.ProbeStatus, defaultSampleSize: 0);
 
         return UniqueCandidateProfile.Create(
-            schemaResult.Value,
-            tableResult.Value,
-            columnResult.Value,
+            coordinate.Value.Schema,
+            coordinate.Value.Table,
+            coordinate.Value.Column,
             doc.HasDuplicate,
             status);
     }
@@ -161,55 +131,27 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
             return Result<ForeignKeyReality>.Failure(ValidationError.Create("profile.foreignKey.reference.missing", "Foreign key entries must include reference metadata."));
         }
 
-        var fromSchemaResult = SchemaName.Create(reference.FromSchema);
-        if (fromSchemaResult.IsFailure)
+        var fromCoordinate = ResolveForeignKeyCoordinate(
+            reference.FromSchema, reference.FromTable, reference.FromColumn, reference, isSource: true);
+        if (fromCoordinate.IsFailure)
         {
-            return Result<ForeignKeyReality>.Failure(
-                DecorateForeignKeyMetadata(fromSchemaResult.Errors, reference, isSource: true));
+            return Result<ForeignKeyReality>.Failure(fromCoordinate.Errors);
         }
 
-        var fromTableResult = TableName.Create(reference.FromTable);
-        if (fromTableResult.IsFailure)
+        var toCoordinate = ResolveForeignKeyCoordinate(
+            reference.ToSchema, reference.ToTable, reference.ToColumn, reference, isSource: false);
+        if (toCoordinate.IsFailure)
         {
-            return Result<ForeignKeyReality>.Failure(
-                DecorateForeignKeyMetadata(fromTableResult.Errors, reference, isSource: true));
-        }
-
-        var fromColumnResult = ColumnName.Create(reference.FromColumn);
-        if (fromColumnResult.IsFailure)
-        {
-            return Result<ForeignKeyReality>.Failure(
-                DecorateForeignKeyMetadata(fromColumnResult.Errors, reference, isSource: true));
-        }
-
-        var toSchemaResult = SchemaName.Create(reference.ToSchema);
-        if (toSchemaResult.IsFailure)
-        {
-            return Result<ForeignKeyReality>.Failure(
-                DecorateForeignKeyMetadata(toSchemaResult.Errors, reference, isSource: false));
-        }
-
-        var toTableResult = TableName.Create(reference.ToTable);
-        if (toTableResult.IsFailure)
-        {
-            return Result<ForeignKeyReality>.Failure(
-                DecorateForeignKeyMetadata(toTableResult.Errors, reference, isSource: false));
-        }
-
-        var toColumnResult = ColumnName.Create(reference.ToColumn);
-        if (toColumnResult.IsFailure)
-        {
-            return Result<ForeignKeyReality>.Failure(
-                DecorateForeignKeyMetadata(toColumnResult.Errors, reference, isSource: false));
+            return Result<ForeignKeyReality>.Failure(toCoordinate.Errors);
         }
 
         var referenceResult = ForeignKeyReference.Create(
-            fromSchemaResult.Value,
-            fromTableResult.Value,
-            fromColumnResult.Value,
-            toSchemaResult.Value,
-            toTableResult.Value,
-            toColumnResult.Value,
+            fromCoordinate.Value.Schema,
+            fromCoordinate.Value.Table,
+            fromCoordinate.Value.Column,
+            toCoordinate.Value.Schema,
+            toCoordinate.Value.Table,
+            toCoordinate.Value.Column,
             reference.HasDbConstraint);
 
         if (referenceResult.IsFailure)
@@ -258,6 +200,66 @@ public sealed class ProfileSnapshotDeserializer : IProfileSnapshotDeserializer
         }
 
         return CompositeUniqueCandidateProfile.Create(schemaResult.Value, tableResult.Value, columnResults.Value, doc.HasDuplicate);
+    }
+
+    private static Result<(SchemaName Schema, TableName Table, ColumnName Column)> ResolveCoordinate(
+        string? schema,
+        string? table,
+        string? column)
+    {
+        var schemaResult = SchemaName.Create(schema);
+        if (schemaResult.IsFailure)
+        {
+            return Result<(SchemaName, TableName, ColumnName)>.Failure(
+                DecorateCoordinateMetadata(schemaResult.Errors, schema, table, column));
+        }
+
+        var tableResult = TableName.Create(table);
+        if (tableResult.IsFailure)
+        {
+            return Result<(SchemaName, TableName, ColumnName)>.Failure(
+                DecorateCoordinateMetadata(tableResult.Errors, schema, table, column));
+        }
+
+        var columnResult = ColumnName.Create(column);
+        if (columnResult.IsFailure)
+        {
+            return Result<(SchemaName, TableName, ColumnName)>.Failure(
+                DecorateCoordinateMetadata(columnResult.Errors, schema, table, column));
+        }
+
+        return (schemaResult.Value, tableResult.Value, columnResult.Value);
+    }
+
+    private static Result<(SchemaName Schema, TableName Table, ColumnName Column)> ResolveForeignKeyCoordinate(
+        string? schema,
+        string? table,
+        string? column,
+        ForeignKeyReferenceDocument reference,
+        bool isSource)
+    {
+        var schemaResult = SchemaName.Create(schema);
+        if (schemaResult.IsFailure)
+        {
+            return Result<(SchemaName, TableName, ColumnName)>.Failure(
+                DecorateForeignKeyMetadata(schemaResult.Errors, reference, isSource));
+        }
+
+        var tableResult = TableName.Create(table);
+        if (tableResult.IsFailure)
+        {
+            return Result<(SchemaName, TableName, ColumnName)>.Failure(
+                DecorateForeignKeyMetadata(tableResult.Errors, reference, isSource));
+        }
+
+        var columnResult = ColumnName.Create(column);
+        if (columnResult.IsFailure)
+        {
+            return Result<(SchemaName, TableName, ColumnName)>.Failure(
+                DecorateForeignKeyMetadata(columnResult.Errors, reference, isSource));
+        }
+
+        return (schemaResult.Value, tableResult.Value, columnResult.Value);
     }
 
     private static ImmutableArray<ValidationError> DecorateCoordinateMetadata(
