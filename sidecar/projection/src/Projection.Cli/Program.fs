@@ -17,6 +17,7 @@ open Projection.Cli.Faces.Emit
 open Projection.Cli.Faces.Canary
 open Projection.Cli.Faces.Approve
 open Projection.Cli.Faces.Operational
+open Projection.Cli.Faces.Explain
 open Projection.Cli.Faces.Inspect
 open Projection.Cli.Faces.Diff
 open Projection.Cli.Faces.Slice
