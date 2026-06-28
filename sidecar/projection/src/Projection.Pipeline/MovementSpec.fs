@@ -384,6 +384,14 @@ type Intent =
     /// `compare <A> <B>` — NM-71/WP9: the read-only multi-environment readiness
     /// check (schema delta + data dealbreakers). Advisory; no writes.
     | Compare of args: string list
+    /// `slice-extract` / `slice-apply` / `slice-reset` / `slice-run` — the
+    /// data-portability verbs (Slice 3/7). Lifted onto the typed `Intent` surface
+    /// (recon #3) so the CLI runs ONE dispatcher; the bespoke flag parsing stays
+    /// in the face under the deferred-parse convention `Check`/`Explain`/`Profile`
+    /// share. `slice-apply` and `slice-reset` are the one face under `reset`.
+    | SliceExtract of args: string list
+    | SliceApply of reset: bool * args: string list
+    | SliceFlow of args: string list
 
 /// The spec-derived options a live load/migrate carries, bundled so the plan
 /// is self-contained (the runner needs nothing but the plan).
@@ -528,6 +536,19 @@ type PlanAction =
     /// The model is read live from OSSYS when `modelOssys` is set (primary;
     /// V1-free) else from the model file. The operator reviews / edits / blesses.
     | ProposeCorrection of model: ModelSource * modelOssys: string option * out: string
+    // slice (data portability) ------------------------------------------
+    // The slice verbs run their own bespoke flag parsing + config resolution
+    // inside the face (named slices / sliceFlows are read from projection.json at
+    // run time — I/O the pure plan cannot do), so the action carries the raw
+    // `args` the way `PublishBundle` carries an unresolved config path the runner
+    // reads. Recon #3 — one dispatch plane, no `argv.[0]` side-channel.
+    /// the use-case-scoped referential-closure extract → portable golden dataset.
+    | RunSliceExtract of args: string list
+    /// the additive capture-and-remap MERGE (`reset=false`) or the scoped
+    /// authoritative DELETE (`reset=true`) — emitted artifact, or live under `--go`.
+    | RunSliceApply of reset: bool * args: string list
+    /// a named extract→apply slice flow from the `sliceFlows` block.
+    | RunSliceFlow of args: string list
     // shared -------------------------------------------------------------
     /// a named refusal — a coded `ValidationError` (voiced) + its exit code.
     | Refused of exit: int * error: ValidationError

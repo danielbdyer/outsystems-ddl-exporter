@@ -261,6 +261,14 @@ let private runPlan (shaping: Config.Config) (surveyAdvisory: string list) (plan
         | Error msg ->
             Console.Error.WriteLine (sprintf "projection report: %s" msg)
             6
+    // slice (data portability) -------------------------------------------
+    // The slice faces own their bespoke flag parsing + config resolution and
+    // their own bench/narration; they run directly (no `withRun` envelope), the
+    // same as they did under the old `argv.[0]` dispatch — now reached through
+    // the one typed plan (recon #3).
+    | PlanAction.RunSliceExtract args        -> runSliceExtract args
+    | PlanAction.RunSliceApply (reset, args) -> runSliceApply reset args
+    | PlanAction.RunSliceFlow args           -> runSliceFlow args
     // refused ------------------------------------------------------------
     | PlanAction.Refused (exit, error) -> TtyRenderer.renderVoicedError error; exit
 
@@ -449,17 +457,10 @@ let main argv =
     | [| "setup" |] -> runSetup None
     | [| "setup"; "--conn"; ref |] -> runSetup (Some ref)
     | [| "survey" |] -> runSurvey ()
-    // Standalone data-portability verb (Slice 3) — read-only extract of a
-    // use-case-scoped referential closure to a portable golden dataset. Parsed
-    // directly here (like survey/inspect), not through the movement vocabulary.
-    | _ when argv.Length >= 1 && argv.[0] = "slice-extract" ->
-        runSliceExtract (argv |> Array.toList |> List.tail)
-    | _ when argv.Length >= 1 && argv.[0] = "slice-apply" ->
-        runSliceApply false (argv |> Array.toList |> List.tail)
-    | _ when argv.Length >= 1 && argv.[0] = "slice-reset" ->
-        runSliceApply true (argv |> Array.toList |> List.tail)
-    | _ when argv.Length >= 1 && argv.[0] = "slice-run" ->
-        runSliceFlow (argv |> Array.toList |> List.tail)
+    // The data-portability slice verbs (slice-extract / slice-apply / slice-reset
+    // / slice-run) are no longer a second `argv.[0]` dispatcher — they flow through
+    // the one typed `Command.parse` → `Command.plan` → `runPlan` plane below, like
+    // every other verb (recon #3).
     | _ ->
         match discoverConfig () with
         | Error es ->

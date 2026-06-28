@@ -1211,6 +1211,36 @@ let ``profile against an unknown environment is Refused`` () =
     | PlanAction.Refused (6, _) -> ()
     | other -> Assert.Fail(sprintf "expected unknown-env refusal, got %A" other)
 
+// -- slice data-portability verbs (recon #3 — one dispatch plane) -----------
+// Formerly an `argv.[0]` side-channel in `Program.main`; these pin that the four
+// verbs now route through the one typed `Command.parse` → `Command.plan` plane,
+// carrying their args for the face to parse (the deferred-parse convention).
+
+[<Fact>]
+let ``slice-extract routes to RunSliceExtract carrying its args`` () =
+    match planArgs synthCfg [ "slice-extract"; "--source"; "live:x"; "--root"; "Order"; "--out"; "g.json" ] with
+    | PlanAction.RunSliceExtract [ "--source"; "live:x"; "--root"; "Order"; "--out"; "g.json" ] -> ()
+    | other -> Assert.Fail(sprintf "expected RunSliceExtract, got %A" other)
+
+[<Fact>]
+let ``slice-apply routes to RunSliceApply with reset=false`` () =
+    match planArgs synthCfg [ "slice-apply"; "--golden"; "g.json"; "--target"; "live:y" ] with
+    | PlanAction.RunSliceApply (false, args) ->
+        Assert.Equal<string list>([ "--golden"; "g.json"; "--target"; "live:y" ], args)
+    | other -> Assert.Fail(sprintf "expected RunSliceApply(false), got %A" other)
+
+[<Fact>]
+let ``slice-reset routes to RunSliceApply with reset=true`` () =
+    match planArgs synthCfg [ "slice-reset"; "--golden"; "g.json"; "--target"; "live:y"; "--allow-drops" ] with
+    | PlanAction.RunSliceApply (true, _) -> ()
+    | other -> Assert.Fail(sprintf "expected RunSliceApply(true), got %A" other)
+
+[<Fact>]
+let ``slice-run routes to RunSliceFlow carrying its args`` () =
+    match planArgs synthCfg [ "slice-run"; "nightly"; "--go" ] with
+    | PlanAction.RunSliceFlow [ "nightly"; "--go" ] -> ()
+    | other -> Assert.Fail(sprintf "expected RunSliceFlow, got %A" other)
+
 // -- dispatch (THE_CLI.md 2026-06-08; slice F3) -----------------------------
 
 let private parseFlowIntent argv =
