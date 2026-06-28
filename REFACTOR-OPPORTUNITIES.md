@@ -182,9 +182,10 @@ single structural sink.
   `BuildSsdtApplicationService`) → one `ResolvedSqlOptions.ToModelIngestionMetadata()`.
   The `ProfilingQueryExecutor`/`TableMetadataLoader` reader-loop scaffold remains a follow-up
   (Med risk — per-call command config + error codes must be preserved exactly).
-- [ ] **4.11** 5 command factories bypass `PipelineCommandFactory` (Analyze, Inspect,
-  VerifyData, Policy, UatUsers) — re-hand-roll scope/error/exit-code plumbing.
-  `SplitTableIdentifier` copy-pasted verbatim (78 LOC) between two UAT files.
+- [~] **4.11 (partial)** Removed the verbatim `SplitTableIdentifier`/`ParseIdentifierParts`
+  copy (~78 LOC) from `UatUsersCommandFactory`; it now calls the `internal static` copy on
+  `UatUsersOptionBinder`. The broader "5 factories bypass `PipelineCommandFactory`"
+  restructure (and the `PolicyCommandFactory` split) remains a follow-up (L effort).
 - [x] **4.12 (partial)** Added `NullSafeComparer<T>` base in Osm.Smo and refactored the 4
   comparers (`SmoTableBuilder`, `SmoRenameLens`, `SmoColumnBuilder`, `SmoTriggerBuilder`) to
   drop the identical null-handling preamble, keeping only their key chains. Smo green (100).
