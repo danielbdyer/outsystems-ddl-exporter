@@ -72,15 +72,21 @@ let ``Ref: a live ref resolves through the adapter and fails loud as a NAMED Err
         Assert.Contains(es, fun e -> e.Code = "source.live.connectionFailed")
 
 [<Fact>]
-let ``Ref: an ossys ref reads the OSSYS metamodel and refuses a non-D9 conn ref by name`` () =
+let ``Ref: an ossys ref reads the OSSYS metamodel and fails loud (never silent) on an unreachable spec`` () =
     // The `ossys:` operand reads the model from the OutSystems OSSYS metamodel
     // (LiveModelRead → native GUID `OssysOriginal` SsKey at kind AND attribute
     // grain) — the espace-safe identity source for cross-environment readiness
-    // (CROSS_ENVIRONMENT_READINESS.md). A conn ref that is not an out-of-band
-    // reference (env:/file:) is refused by name (D9), never silently resolved.
+    // (CROSS_ENVIRONMENT_READINESS.md). D9 amended 2026-06-28 (operator decision;
+    // see DECISIONS.md): the OSSYS model source now opens through the ONE
+    // `ConnectionSpec.openSpec` opener, uniform with `transfer`/`slice` — a bare
+    // (non-out-of-band) spec is no longer refused at parse, it is OPENED, and an
+    // unreachable / malformed one surfaces as the one opener's typed
+    // `connection.openFailed` refusal (the bare spec is treated as a connection
+    // string and fails at open), NEVER a silent resolve. `env:`/`file:` remain
+    // the recommended out-of-band form.
     match TaskSync.run (fun () -> Ref.resolveCatalog (Ref.parse "ossys:not-a-ref")) with
-    | Ok _    -> Assert.Fail "ossys should refuse a non-D9 conn ref, not silently succeed"
-    | Error es -> Assert.Contains(es, fun e -> e.Code = "model.ossys.connRef")
+    | Ok _    -> Assert.Fail "ossys should fail loud on an unreachable spec, not silently succeed"
+    | Error es -> Assert.Contains(es, fun e -> e.Code = "connection.openFailed")
 
 [<Fact>]
 let ``Ref: bothOssys / bothLive classify the cross-environment operand posture`` () =

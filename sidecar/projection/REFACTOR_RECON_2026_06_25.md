@@ -25,8 +25,8 @@
 
 Work is underway across two branches off `main` (`250811ea`): the typed-AST chapter on
 `claude/finish-typed-ast-refactor`, and the recon sweep on `claude/recon-binding-registry`
-(this doc now lives here so it merges in with the sweep). **14 findings resolved (13 fully
-landed + #7's genuine consolidation, its over-reach remainder declined with reasons), 5
+(this doc now lives here so it merges in with the sweep). **15 findings resolved (14 fully
+landed + #7's genuine consolidation, its over-reach remainder declined with reasons), 4
 partially landed, 6 untouched.** (#4 and #7 both carry a *reasoned decline* on their
 over-reach remainders — see their sections.) Every
 partial's open remainder and every untouched item is enumerated below; each `## N.`
@@ -59,7 +59,7 @@ section also carries a per-section `> **Status:**` line.
 | 10 | `parseSemanticType` → Core | 🟧 | ✅ **done** | OSSYS→V2 mapping decisions moved to pure `Core.OssysTypeMapping.tryParse` (option); adapter keeps the `adapter.osm.*` refusal shim + `normalizeAttributeType` (2026-06-27). |
 | 11 | Finish Voice migration + unify dispatchers | 🟧 | ○ remaining | — |
 | 12 | `fanOutWithDiagnostics` primitive | 🟧 | ✅ **done** | `Composition.fanOutWithDiagnostics` added; Nullability/UniqueIndex/ForeignKey passes' decision→diagnostic tails collapse to it (2026-06-27). |
-| 13 | One connection discipline / `Source` port | 🟧 | ◑ **partial** | `ConnectionSpec.openSpec role label spec` landed (2026-06-28) — the one env:/file:/live:/bare opener; the byte-identical `SliceExtractRun.openSource` ≡ `SliceApplyRun.openTarget` pair collapsed onto it. **Open:** fold the env:/file:-only sites (gaining uniform `live:` coverage); the `Substrate` factory; the `LiveModelRead`→`Source`-port collapse (the XL). |
+| 13 | One connection discipline / `Source` port | 🟧 | ✅ **resolved** | One opener everywhere. `ConnectionSpec` moved to compile FIRST in Pipeline and OWNS both the `env:`/`file:` decode (`TransferSpec.parseConnectionSpec` re-exports it) and `openSpec` (all four spec forms). `Substrate.fromRef` (Core) is the one factory; `LiveModelRead` (its `parseConnRef` deleted), `Hydration` ×2, `ProfileCaptureRun`, `SyntheticLoadRun` all open through `openSpec`; `ModelResolution` reads the live-OSSYS case through the `Source.ofOssys` port. **D9 amended (2026-06-28, operator decision):** the opener accepts `live:`/bare uniformly, the OSSYS model source included — `env:`/`file:` stay the recommended out-of-band form; the model-only `model.ossys.connRef` hard-refusal is retired (`DECISIONS.md` 2026-06-28). Build clean Debug+Release; pure 3748/0; docker 273/0. |
 | 14 | `DerivationReason` DU | 🟨 | ✅ **done** | Closed DU (`Inverse`); `derivedFrom` total; codec byte-identical; AXIOMS A5 + DECISIONS amended (operator call, 2026-06-27). |
 | 15 | `LineageEvent.forPass` smart ctor | 🟨 | ✅ **done** | `LineageEvent.forPass` smart ctor in `Lineage.fs`; the 16 hand-written 5-field event literals across 13 passes now call it (2026-06-27). |
 | 16 | Unify 3 JSON-read helpers | 🟨 | ○ remaining | — |
@@ -123,13 +123,13 @@ otherwise.
    that. Update *this doc's status table and the per-section `> Status:` lines* in the same
    commit as the work, so it never goes stale.
 
-**Where the leverage is right now.** Per the master ranking, **#3 (the `RunFaces` split) is
-now fully landed** — `RunFaces.fs` is deleted and every face sits in its own `Faces/*.fs` over
-the `Common` spine. The remaining open move is the 🟧 mid-tier cluster **#9–#13** (several of which the Binding registry from
-#2 now unlocks — e.g. #9's code→exit registry is a natural extension of `ConfigAxis`).
-The cheapest standalone protections are the **#25 Navigator bug** and **#19**
-(`Fixpoint.iterate`). Several 🟨 items (#14, #15, #20) are mechanical and high-certainty if
-you want momentum between big swings.
+**Where the leverage is right now.** Per the master ranking, **both XLs are now fully landed** —
+**#3** (`RunFaces.fs` deleted; every face in its own `Faces/*.fs` over the `Common` spine) and
+**#13** (one `ConnectionSpec.openSpec` opener everywhere; `Substrate.fromRef` factory;
+`ModelResolution` through the `Source` port; D9 amended). The largest 🟧 remaining is **#11**
+(finish the Voice migration in the run faces + unify `Voice.fs`'s two dispatchers). The rest is
+the 🟨 tail — most of which (#14, #15, #19, #20, #25) has landed; what's left there is
+mechanical and high-certainty.
 
 Hold the spine. Leave the books balanced.
 
@@ -433,7 +433,7 @@ Only the Bench label, the `opportunityEntry` function, and whether it closes ove
 
 ## 13. 🟧 One connection-acquisition discipline (`ConnectionSpec.open` + `Substrate.sourceFromRef`; collapse `LiveModelRead` onto the `Source` port)
 
-> **Status (2026-06-28):** ◑ **Partial — the opener seam landed.** New `ConnectionSpec.openSpec (role) (label) (spec) : Task<Result<SqlConnection>>` (a small I/O Pipeline module beside the pure `TransferSpec` parser, since `TransferSpec` is deliberately pure and `ConnectionResolver` is in Adapters.Sql below `parseConnectionSpec`) is the ONE home for the `env:`/`file:`/`live:`/bare decode. The recon's primary anchor — `SliceExtractRun.openSource` ≡ `SliceApplyRun.openTarget`, byte-identical but for role+label — collapses onto it (each is now a one-liner). Pure dedup, zero behavior change; build clean, pure pool 3748/0, the 379 slice tests (incl. the Docker-backed connection-opening ones) green. **Open (the XL remainder):** fold the `env:`/`file:`-only inline sites (`ProfileCaptureRun`/`SyntheticLoadRun`/`Hydration`/`LiveModelRead`) through `openSpec` so their `live:` coverage stops drifting (a deliberate behavior change — Docker-verify); a `Substrate` factory for the inline `{ Environment = Named label; Role; ConnectionRef }` construction (~6 sites); and the headline `LiveModelRead` 5-overload → `Source`-port collapse so there is ONE port for "where a catalog comes from."
+> **Status (2026-06-28):** ✅ **Resolved — one connection-acquisition discipline; `RunFaces`-era drift closed.** Every "open a live connection from an operator spec" site now flows through ONE opener, `ConnectionSpec.openSpec (role) (label) (spec) : Task<Result<SqlConnection>>`. To reach it from the *early* Pipeline files (`LiveModelRead`, `Hydration`) `ConnectionSpec` was moved to compile FIRST (it depends only on `Projection.Core` + `Projection.Adapters.Sql`) and now OWNS both the `env:`/`file:` → `ConnectionRef` decode (`parseConnectionSpec`, which `TransferSpec.parseConnectionSpec` re-exports so the `transfer.connection.*` vocabulary + its many callers/tests are preserved by construction) and the four-form `openSpec`. The inline `{ Environment = Named label; Role; ConnectionRef }` shape — hand-reconstructed at ~6 sites — collapses onto the new `Substrate.fromRef (role) (label) (connRef)` factory (Core). `LiveModelRead` (its bespoke `parseConnRef` **deleted**), `Hydration` ×2, `ProfileCaptureRun`, and `SyntheticLoadRun` all open through `openSpec`; `ModelResolution.resolveCatalog` reads the live-OSSYS case through the `Source.ofOssys` **port** (= `LiveModelRead.fromConnSpec` + the `source.ossys.readFailed` guard), so there is ONE port for "where a catalog comes from." **D9 amended (2026-06-28, operator decision — `DECISIONS.md`):** the opener accepts all four spec forms uniformly, the OSSYS model source **included** — `env:`/`file:` (out-of-band refs) remain the documented, recommended form; `live:<connStr>`/bare is an opt-in escape hatch, identical to `transfer`/`slice`. The model-source-only `env:`/`file:`-only hard refusal (`model.ossys.connRef`) is retired (it was already inconsistent — `Source.ofOssys`'s *profile* capability opened bare strings while its *read* capability refused them). `RefTests` "ossys refuses a non-D9 conn ref" is rewritten: a bare `ossys:` spec is now OPENED and fails loud as `connection.openFailed`, never a silent resolve. Build clean Debug + Release; pure pool **3748/0**; docker pool **273/0** (transfer / migrate / synthetic / profiler / model-read re-proven through the one opener).
 
 **Anchors:** `SliceExtractRun.fs:35` (`openSource`) **≡** `SliceApplyRun.fs:91` (`openTarget`) (byte-identical except `SubstrateRole`; `:90` says *"same spec forms as SliceExtractRun.openSource"*); the `env:`/`file:`/`live:`/bare decode in 6 sites with drifting coverage (`ProfileCaptureRun.fs:30–37`, `SyntheticLoadRun.fs:158–162`, `MovementSurface.fs:1075`, `Source.fs:134`); inline `Substrate{Role=Source…}` reconstruction in `Hydration.fs:128–135`, `LiveModelRead.fs:100–108`, +5 run modules; the 5-overload family `LiveModelRead.fs:25–113`; the *good* model `Source.fs` (record-of-functions port).
 

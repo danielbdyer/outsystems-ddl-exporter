@@ -21,24 +21,19 @@ open Projection.Targets.Json
 module ProfileCaptureRun =
 
     /// Capture a full `Profile` from a live environment (read-only). Opens the
-    /// connection in the `Source` role, reconstructs the catalog, strips the
-    /// Static mark, and composes every Profile axis via `LiveProfiler.attach`.
+    /// connection in the `Source` role through the one `ConnectionSpec.openSpec`
+    /// opener (recon #13 — `env:` / `file:` / `live:` / bare, uniform with
+    /// `transfer` / `slice`), reconstructs the catalog, strips the Static mark,
+    /// and composes every Profile axis via `LiveProfiler.attach`.
     let capture (connSpec: string) : Task<Result<Profile>> =
         task {
-            match TransferSpec.parseConnectionSpec connSpec with
+            match! ConnectionSpec.openSpec SubstrateRole.Source "profile-source" connSpec with
             | Error es -> return Result.failure es
-            | Ok connRef ->
-                let sub : Substrate =
-                    { Environment   = Environment.Named "profile-source"
-                      Role          = SubstrateRole.Source
-                      ConnectionRef = connRef }
-                match! ConnectionResolver.openSubstrate sub with
+            | Ok cnn ->
+                use cnn = cnn
+                match! ReadSide.read cnn with
                 | Error es -> return Result.failure es
-                | Ok cnn ->
-                    use cnn = cnn
-                    match! ReadSide.read cnn with
-                    | Error es -> return Result.failure es
-                    | Ok catalog -> return! LiveProfiler.attach cnn (Catalog.stripStaticPopulations catalog) Profile.empty
+                | Ok catalog -> return! LiveProfiler.attach cnn (Catalog.stripStaticPopulations catalog) Profile.empty
         }
 
     /// Capture and write the durable artifact to `outPath` (the `--out`

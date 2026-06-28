@@ -110,10 +110,10 @@ module Hydration =
     /// No live OSSYS source (the model came from `model.path`) ⇒ identity (the
     /// skip is named in `diagnostics`, never silent). `model.ossys` present ⇒
     /// open a SECOND connection (the model-read connection is use-disposed, not
-    /// reusable) and stream+graft. `parseConnRef` accepts BOTH `env:` and
-    /// `file:` ossys refs and hydration treats them identically — the `file:`
-    /// form is not special-cased and not deprecated. The OSSYS branch mirrors
-    /// `LiveModelRead.fromConnSpecWith`'s open template.
+    /// reusable) and stream+graft, through the one `ConnectionSpec.openSpec`
+    /// opener (every spec form; `env:` / `file:` remain the recommended
+    /// out-of-band ossys ref, neither special-cased nor deprecated). Mirrors
+    /// `LiveModelRead.fromConnSpecWith`'s open template (the same one opener).
     let hydrateCatalog (cfg: Config.Config) (catalog: Catalog) : Task<Result<Catalog>> =
         task {
             if not (emitDataOf cfg) then
@@ -122,19 +122,12 @@ module Hydration =
                 match cfg.Model.Ossys with
                 | None -> return Result.success catalog
                 | Some connSpec ->
-                    match LiveModelRead.parseConnRef connSpec with
+                    match! ConnectionSpec.openSpec SubstrateRole.Source "ossys-hydration-source" connSpec with
                     | Error es -> return Result.failure es
-                    | Ok connRef ->
-                        let sub : Substrate =
-                            { Environment   = Environment.Named "ossys-hydration-source"
-                              Role          = SubstrateRole.Source
-                              ConnectionRef = connRef }
-                        match! ConnectionResolver.openSubstrate sub with
-                        | Error es -> return Result.failure es
-                        | Ok cnn ->
-                            use cnn = cnn
-                            let! hydrated = streamAndGraft cnn catalog
-                            return Result.success hydrated
+                    | Ok cnn ->
+                        use cnn = cnn
+                        let! hydrated = streamAndGraft cnn catalog
+                        return Result.success hydrated
         }
 
     /// The Bootstrap lane's row source (Bootstrap-always, 2026-06-14). Streams
@@ -187,20 +180,13 @@ module Hydration =
                     match cfg.Model.Ossys with
                     | None -> return Result.success Map.empty
                     | Some connSpec ->
-                        match LiveModelRead.parseConnRef connSpec with
+                        match! ConnectionSpec.openSpec SubstrateRole.Source "ossys-bootstrap-source" connSpec with
                         | Error es -> return Result.failure es
-                        | Ok connRef ->
-                            let sub : Substrate =
-                                { Environment   = Environment.Named "ossys-bootstrap-source"
-                                  Role          = SubstrateRole.Source
-                                  ConnectionRef = connRef }
-                            match! ConnectionResolver.openSubstrate sub with
-                            | Error es -> return Result.failure es
-                            | Ok cnn ->
-                                use cnn = cnn
-                                let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
-                                let! rows = Ingestion.collectInOrderFor eligible cnn catalog topo
-                                return Result.success rows
+                        | Ok cnn ->
+                            use cnn = cnn
+                            let topo = (TopologicalOrderPass.runWith TreatAsCycle catalog).Value
+                            let! rows = Ingestion.collectInOrderFor eligible cnn catalog topo
+                            return Result.success rows
         }
 
     /// No-migration-lane Bootstrap hydration (`hydrateBootstrapRowsExcluding`

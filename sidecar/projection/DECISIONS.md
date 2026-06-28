@@ -25511,3 +25511,58 @@ match rather than a string compare.
 **Re-open trigger.** A second derivation reason is needed → add the DU case +
 its `serialize`/`parse` token (one site each) and a test; no call-site or codec
 shape changes.
+
+---
+
+## 2026-06-28 — One connection-acquisition discipline + D9 amended: the OSSYS model source joins the uniform opener (recon #13)
+
+**Decision (operator, 2026-06-28).** Collapse every "open a live connection
+from an operator spec" site onto ONE opener — `ConnectionSpec.openSpec (role)
+(label) (spec)` — and amend **D9** so that opener accepts ALL FOUR spec forms
+uniformly (`env:` / `file:` / `live:<connStr>` / bare), **the OSSYS model
+source included**. Previously the model-source read (`LiveModelRead.parseConnRef`,
+shared by `Hydration`) refused anything but `env:`/`file:` by name
+(`model.ossys.connRef`), while `transfer` / `slice` / the new operational
+openers accepted all four — two policies for "open a connection." The operator
+chose uniformity over the model-source-only refusal.
+
+**What D9 still holds.** `env:<var>` and `file:<path>` (out-of-band credential
+references — the secret lives outside `Config`, never inline) remain the
+**documented, recommended** form everywhere. `live:<connStr>` / bare is an
+**opt-in escape hatch**, identical to what `transfer`/`slice` have always
+accepted. So D9's substance — "you SHOULD reference the secret out of band" —
+is intact as guidance; only the model-source-only *hard refusal* is retired.
+
+**Why it was already inconsistent.** `Source.ofOssys`'s PROFILE capability
+(`Source.fs`, `resolveConnString`) already opened bare connection strings,
+while its READ capability (via `parseConnRef`) refused them — the same adapter
+enforced two different policies on its two capabilities. The fold makes
+`ofOssys` internally consistent.
+
+**The shape.**
+- `ConnectionSpec` moves to compile FIRST in `Projection.Pipeline` (depends only
+  on `Projection.Core` + `Projection.Adapters.Sql`) and OWNS both the
+  `env:`/`file:` → `ConnectionRef` decode (`parseConnectionSpec`) and the
+  four-form opener (`openSpec`). `TransferSpec.parseConnectionSpec` re-exports
+  the decode (so the `transfer.connection.*` error vocabulary and its many
+  callers/tests are preserved by construction).
+- `Substrate.fromRef (role) (label) (connRef)` (Core) is the one factory for the
+  inline `{ Environment = Named label; Role; ConnectionRef }` shape that was
+  hand-reconstructed at ~6 sites.
+- `LiveModelRead` (its bespoke `parseConnRef` deleted), `Hydration` (×2),
+  `ProfileCaptureRun`, and `SyntheticLoadRun` all open through `openSpec`.
+- `ModelResolution.resolveCatalog` reads the live-OSSYS case through the
+  `Source.ofOssys` port (= `LiveModelRead.fromConnSpec` + the
+  `source.ossys.readFailed` guard) — one port for "where a catalog comes from."
+
+**Test impact.** `RefTests` "an ossys ref … refuses a non-D9 conn ref by name"
+(asserted `model.ossys.connRef`) is rewritten: a bare `ossys:` spec is now
+OPENED, and an unreachable one fails loud as `source.ossys.readFailed` — still a
+NAMED refusal, never a silent resolve. Verified: pure pool + the docker pool
+(transfer / migrate / synthetic / profiler paths re-proven through the moved
+opener).
+
+**Re-open trigger.** If the model source must again refuse inline secrets
+(e.g. a hardening pass reinstates D9 strictly), gate `openSpec` behind a
+`requireOutOfBand` flag for the OSSYS role rather than re-duplicating a second
+decode.

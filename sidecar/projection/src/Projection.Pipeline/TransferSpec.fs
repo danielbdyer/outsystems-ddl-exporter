@@ -24,32 +24,13 @@ module TransferSpec =
         ValidationError.create code message
 
     /// Parse a `--source-conn` / `--sink-conn` spec ("env:NAME" or
-    /// "file:PATH") into a `ConnectionRef`.
+    /// "file:PATH") into a `ConnectionRef`. Re-exports the one decode that now
+    /// lives in `ConnectionSpec` (recon #13 — one connection-acquisition
+    /// discipline); kept as `TransferSpec.parseConnectionSpec` so the many
+    /// transfer-surface callers and the `transfer.connection.*` error vocabulary
+    /// they pin are preserved by construction.
     let parseConnectionSpec (spec: string) : Result<ConnectionRef> =
-        if String.IsNullOrWhiteSpace spec then
-            Result.failureOf (specInvalid "transfer.connection.specEmpty" "connection spec is empty.")
-        else
-            let trimmed = spec.Trim()
-            match trimmed.IndexOf ':' with
-            | -1 ->
-                Result.failureOf
-                    (specInvalid "transfer.connection.specShape"
-                        (sprintf "connection spec '%s' missing 'env:' or 'file:' prefix." trimmed))
-            | i ->
-                let prefix = trimmed.Substring(0, i).ToLowerInvariant()
-                let value  = trimmed.Substring(i + 1).Trim()
-                if String.IsNullOrWhiteSpace value then
-                    Result.failureOf
-                        (specInvalid "transfer.connection.specEmptyValue"
-                            (sprintf "connection spec '%s' has an empty value after '%s:'." trimmed prefix))
-                else
-                    match prefix with
-                    | "env"  -> Result.success (ConnectionRef.EnvVar value)
-                    | "file" -> Result.success (ConnectionRef.File value)
-                    | other  ->
-                        Result.failureOf
-                            (specInvalid "transfer.connection.specPrefix"
-                                (sprintf "connection spec '%s' unknown prefix '%s' (expected 'env' or 'file')." trimmed other))
+        ConnectionSpec.parseConnectionSpec spec
 
     /// Parse a `--reconcile` spec ("<table>:<match-column>") into a
     /// `ReconcileEntry`.

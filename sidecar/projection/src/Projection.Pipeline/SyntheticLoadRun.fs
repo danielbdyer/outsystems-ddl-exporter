@@ -118,11 +118,10 @@ module SyntheticLoadRun =
         (modelSection: Config.ModelSection)
         : Task<Result<Transfer.TransferReport>> =
         task {
-            match resolveProfile profileRef, resolveCorrection correctionRef, TransferSpec.parseConnectionSpec connSpec with
-            | Error es, _, _ -> return Result.failure es
-            | _, Error es, _ -> return Result.failure es
-            | _, _, Error es -> return Result.failure es
-            | Ok profile, Ok correction, Ok connRef ->
+            match resolveProfile profileRef, resolveCorrection correctionRef with
+            | Error es, _ -> return Result.failure es
+            | _, Error es -> return Result.failure es
+            | Ok profile, Ok correction ->
                 match! ModelResolution.resolveCatalog modelOssys modelFile with
                 | Error es -> return Result.failure es
                 | Ok rawCatalog ->
@@ -155,11 +154,10 @@ module SyntheticLoadRun =
                     // uncorrected load is byte-identical to the pre-F0c flow.
                     let effectiveConfig = Correction.applyToConfig catalog correction config
                     let realize = FakerRealization.realize catalog correction
-                    let sub : Substrate =
-                        { Environment   = Environment.Named "synthetic-sink"
-                          Role          = SubstrateRole.Sink
-                          ConnectionRef = connRef }
-                    match! ConnectionResolver.openSubstrate sub with
+                    // The sink opens through the one `ConnectionSpec.openSpec`
+                    // opener (recon #13 — `env:` / `file:` / `live:` / bare,
+                    // uniform with `transfer` / `slice`).
+                    match! ConnectionSpec.openSpec SubstrateRole.Sink "synthetic-sink" connSpec with
                     | Error es -> return Result.failure es
                     | Ok sink ->
                         use sink = sink

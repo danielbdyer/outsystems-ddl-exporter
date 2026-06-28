@@ -42,5 +42,8 @@ module ModelResolution =
             match chooseOrigin modelOssys modelFile with
             | Error es -> return Result.failure es
             | Ok (ModelFile path) -> return! Compose.read path
-            | Ok (LiveOssys connSpec) -> return! LiveModelRead.fromConnSpec connSpec
+            // Through the one `Source` port (recon #13) — `Source.ofOssys` IS
+            // `LiveModelRead.fromConnSpec` plus the `source.ossys.readFailed`
+            // guard, so there is one port for "where a catalog comes from."
+            | Ok (LiveOssys connSpec) -> return! Source.read (Source.ofOssys connSpec)
         }

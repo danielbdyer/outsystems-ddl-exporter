@@ -18,6 +18,7 @@
     <Compile Include="EventProjection.fs" />
     <Compile Include="RunLedger.fs" />
     <Compile Include="Run.fs" />
+    <Compile Include="ConnectionSpec.fs" />
     <Compile Include="LiveModelRead.fs" />
     <Compile Include="Source.fs" />
     <Compile Include="Ref.fs" />
@@ -64,7 +65,6 @@
     <Compile Include="EjectRun.fs" />
     <Compile Include="ReportRun.fs" />
     <Compile Include="TransferSpec.fs" />
-    <Compile Include="ConnectionSpec.fs" />
     <Compile Include="ModelResolution.fs" />
     <Compile Include="FakerRealization.fs" />
     <Compile Include="SyntheticLoadRun.fs" />
