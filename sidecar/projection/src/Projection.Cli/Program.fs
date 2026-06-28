@@ -13,6 +13,10 @@ open Projection.Pipeline
 open Projection.Targets.SSDT
 open Projection.Cli.OperatorConsole
 open Projection.Cli.RunFaces
+open Projection.Cli.Faces.Emit
+open Projection.Cli.Faces.Canary
+open Projection.Cli.Faces.Approve
+open Projection.Cli.Faces.Operational
 open Projection.Cli.Faces.Inspect
 open Projection.Cli.Faces.Diff
 open Projection.Cli.Faces.Slice
