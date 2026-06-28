@@ -85,14 +85,24 @@ lever. `if (x.IsFailure) return Result<T>.Failure(x.Errors)` appears **266× acr
 
 ## Phase 2 — Dead code removal (Low–Med risk)
 
-- [ ] **2.1** Entire legacy "opportunity per evaluator" subsystem (~350-450 LOC):
-  `OpportunityBuilder`, evaluator `Analyze(…, ColumnAnalysisBuilder)` overloads,
-  `ColumnAnalysis.Opportunities`, legacy `ReportSummary`/`OpportunityMetrics` —
-  fully constructed, never read (superseded by `TighteningOpportunitiesAnalyzer`).
-  Verify analyze-command summary numbers are unaffected.
-- [ ] **2.2** FK declarative matrix (`TighteningPolicyMatrix.ForeignKeys`) referenced
-  only by tests while production hand-rolls the same logic in `ForeignKeyEvaluator`.
-  Reconcile to one source of truth (prefer making the evaluator consume the matrix).
+- [x] **2.1** Removed the legacy "opportunity per evaluator" subsystem. **Verified first**
+  (read-only trace) that the `Analyze(…, ColumnAnalysisBuilder)` overloads +
+  `ITighteningAnalyzer` + `ColumnDecisionAggregator` are **live** (they produce the
+  nullability/FK decisions the canonical pipeline depends on) — so those were collapsed to
+  decision-only, NOT deleted. Deleted: `OpportunitiesReport`, `ReportSummary`,
+  `OpportunityMetrics`, `OpportunityBuilder`, `PolicyAnalysisResult`, `ColumnAnalysis`.
+  Slimmed: `ColumnAnalysisBuilder` (dropped opportunity members + `Build`),
+  `TighteningPolicy` (`Analyze`→folded into `Decide`, report dropped),
+  `UniqueIndexDecisionOrchestrator` (dropped `OpportunityBuilder`), both evaluators
+  (`Analyze` collapsed). Removed 3 now-obsolete tests + `OpportunityBuilderTests`.
+  All analyze/policy/orchestration suites green; CLI opportunity numbers come from the
+  canonical `TighteningOpportunitiesAnalyzer` and are unaffected.
+- [~] **2.2 Deferred (not a safe deletion).** `TighteningPolicyMatrix.ForeignKeys` has no
+  production reader, but it is an **executable spec** validated by `TighteningPolicyMatrixTests`
+  — deleting it removes documented coverage of the intended FK policy. The alternative
+  (wire `ForeignKeyEvaluator` to consume the matrix) is a behavior-affecting refactor with
+  the subtlest interactions in the policy engine (`ScriptWithNoCheck`, cross-db overrides);
+  it deserves its own focused, separately-verified change rather than being bundled here.
 - [x] **2.3** Deleted `ProfileSnapshotDebugFormatter.cs` (production-dead; tests-only) and
   its test; repointed `DotNetCli` assembly anchor to the public `SpectreProgressRunner`.
 - [x] **2.4** Deleted the local `Result<T>` in `PolicyCommandFactory`; `BuildSeverityFilter`
@@ -101,7 +111,7 @@ lever. `if (x.IsFailure) return Result<T>.Failure(x.Errors)` appears **266× acr
   (`BuildNullContradictionSummary`, `BuildOrphanSummary`).
 - [ ] **2.6** ⚠️ **TRAP — do NOT delete:** `ScripterExtensions.Dispose` looks dead to
   grep (zero textual refs) but is load-bearing via extension-method binding in
-  `SmoContext.cs:95`. Make the call explicit instead of removing it.
+  `SmoContext.cs:95`. Make the call explicit instead of removing it. (Deferred to Phase 4.)
 
 ## Phase 3 — BuildSsdt state-record collapse (Med risk, biggest LOC win)
 

@@ -54,7 +54,7 @@ public sealed class UniqueIndexDecisionOrchestratorTests
             analyzers);
 
         var uniqueStrategy = new UniqueIndexDecisionStrategy(options, columnProfiles, uniqueProfiles, uniqueEvidence);
-        var orchestrator = new UniqueIndexDecisionOrchestrator(new OpportunityBuilder());
+        var orchestrator = new UniqueIndexDecisionOrchestrator();
         var aggregation = orchestrator.Evaluate(model, uniqueStrategy, columnAggregation.ColumnAnalyses);
 
         var entity = GetEntity(model, "User");
@@ -68,11 +68,6 @@ public sealed class UniqueIndexDecisionOrchestratorTests
         var columnCoordinate = GetCoordinate(entity, "Email");
         var builder = columnAggregation.ColumnAnalyses[columnCoordinate];
         Assert.Contains(uniqueDecision, builder.UniqueIndexes);
-
-        var opportunity = Assert.Single(builder.Opportunities);
-        Assert.Equal("Unique index was not enforced. Resolve duplicate values before enforcement can proceed.", opportunity.Summary);
-        Assert.Equal(OpportunityDisposition.NeedsRemediation, opportunity.Disposition);
-        Assert.Equal(OpportunityType.UniqueIndex, opportunity.Type);
     }
 
     private static TighteningAnalyzer[] BuildAnalyzers(

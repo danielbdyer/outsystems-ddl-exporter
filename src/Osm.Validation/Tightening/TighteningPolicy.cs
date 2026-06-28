@@ -27,15 +27,12 @@ public sealed class TighteningPolicy
     {
         var policy = new TighteningPolicy();
         var options = policy._legacyAdapter.Adapt(mode);
-        var analysis = policy.Analyze(model, snapshot, options);
+        var decisions = policy.Decide(model, snapshot, options);
 
-        return TighteningDecisions.Create(analysis.Decisions.Nullability, analysis.Decisions.ForeignKeys, analysis.Decisions.UniqueIndexes);
+        return TighteningDecisions.Create(decisions.Nullability, decisions.ForeignKeys, decisions.UniqueIndexes);
     }
 
     public PolicyDecisionSet Decide(OsmModel model, ProfileSnapshot snapshot, TighteningOptions options)
-        => Analyze(model, snapshot, options).Decisions;
-
-    public PolicyAnalysisResult Analyze(OsmModel model, ProfileSnapshot snapshot, TighteningOptions options)
     {
         if (model is null)
         {
@@ -95,13 +92,13 @@ public sealed class TighteningPolicy
             uniqueEvidence,
             analyzers);
 
-        var uniqueOrchestrator = new UniqueIndexDecisionOrchestrator(new OpportunityBuilder());
+        var uniqueOrchestrator = new UniqueIndexDecisionOrchestrator();
         var uniqueAggregation = uniqueOrchestrator.Evaluate(model, uniqueStrategy, columnAggregation.ColumnAnalyses);
 
         // Merge diagnostics from entity lookup resolution and column analysis
         var allDiagnostics = lookupResolution.Diagnostics.AddRange(columnAggregation.Diagnostics);
 
-        var decisions = PolicyDecisionSet.Create(
+        return PolicyDecisionSet.Create(
             columnAggregation.Nullability,
             columnAggregation.ForeignKeys,
             uniqueAggregation.Decisions,
@@ -109,10 +106,6 @@ public sealed class TighteningPolicy
             columnAggregation.ColumnIdentities,
             uniqueAggregation.IndexModules,
             options);
-
-        var report = OpportunitiesReport.Create(columnAggregation.ColumnAnalyses.Values.Select(builder => builder.Build()));
-
-        return PolicyAnalysisResult.Create(decisions, report);
     }
 
 }

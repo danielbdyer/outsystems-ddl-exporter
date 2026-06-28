@@ -54,30 +54,6 @@ internal sealed class ForeignKeyEvaluator : ITighteningAnalyzer
         }
 
         builder.SetForeignKey(evaluation.Decision);
-
-        if (!ShouldCreateOpportunity(evaluation))
-        {
-            return;
-        }
-
-        var summary = BuildForeignKeySummary(evaluation);
-        var risk = ChangeRiskClassifier.ForForeignKey(
-            evaluation.Decision,
-            evaluation.HasOrphan,
-            evaluation.IgnoreRule,
-            evaluation.CrossSchemaBlocked,
-            evaluation.CrossCatalogBlocked);
-
-        var opportunity = Opportunity.Create(
-            OpportunityType.ForeignKey,
-            "FOREIGN KEY",
-            summary,
-            risk,
-            evaluation.Decision.Rationales,
-            column: context.Column,
-            disposition: OpportunityDisposition.NeedsRemediation);
-
-        builder.AddOpportunity(opportunity);
     }
 
     private ForeignKeyEvaluation EvaluateCore(EntityModel entity, AttributeModel attribute, ColumnCoordinate coordinate)
@@ -175,34 +151,6 @@ internal sealed class ForeignKeyEvaluator : ITighteningAnalyzer
             ignoreRule,
             crossSchemaBlocked,
             crossCatalogBlocked);
-    }
-
-    private static bool ShouldCreateOpportunity(ForeignKeyEvaluation evaluation)
-        => !evaluation.Decision.CreateConstraint || evaluation.Decision.ScriptWithNoCheck;
-
-    private static string BuildForeignKeySummary(ForeignKeyEvaluation evaluation)
-    {
-        if (evaluation.Decision.ScriptWithNoCheck)
-        {
-            return "Foreign key constraint will be scripted WITH NOCHECK to honor the model while remediation occurs.";
-        }
-
-        if (evaluation.HasOrphan)
-        {
-            return "Foreign key constraint was not created. Resolve orphaned rows before enforcement can proceed.";
-        }
-
-        if (evaluation.IgnoreRule)
-        {
-            return "Foreign key constraint was not created. Delete rule 'Ignore' prevents constraint enforcement.";
-        }
-
-        if (evaluation.CrossSchemaBlocked || evaluation.CrossCatalogBlocked)
-        {
-            return "Foreign key constraint was not created. Cross-database references are blocked by policy. Allow cross-database enforcement or adjust the schema.";
-        }
-
-        return "Foreign key constraint was not created. Enable policy or gather evidence before constraint creation can proceed.";
     }
 
     private bool IsIgnoreRule(string? deleteRule)
