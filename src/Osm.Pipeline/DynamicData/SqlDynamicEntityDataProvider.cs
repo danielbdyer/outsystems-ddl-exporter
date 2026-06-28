@@ -14,6 +14,7 @@ using Osm.Domain.Abstractions;
 using Osm.Domain.Configuration;
 using Osm.Domain.Model;
 using Osm.Domain.Model.Emission;
+using Osm.Domain.Sql;
 using Osm.Emission;
 using Osm.Emission.Seeds;
 using Osm.Pipeline.Orchestration;
@@ -823,10 +824,10 @@ OFFSET @offset ROWS FETCH NEXT @fetch ROWS ONLY;");
     }
 
     private static string FormatTwoPartName(string schema, string name)
-        => FormattableString.Invariant($"[{schema.Replace("]", "]]", StringComparison.Ordinal)}].[{name.Replace("]", "]]", StringComparison.Ordinal)}]");
+        => SqlIdentifier.Qualify(schema, name);
 
     private static string FormatColumnName(string name)
-        => FormattableString.Invariant($"[{name.Replace("]", "]]", StringComparison.Ordinal)}]");
+        => SqlIdentifier.Quote(name);
 
     private readonly record struct TableExtractionResult(
         StaticEntityTableData? Table,

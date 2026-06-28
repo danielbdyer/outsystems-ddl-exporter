@@ -289,7 +289,7 @@ public sealed class FullExportPipeline : ICommandHandler<FullExportPipelineReque
                 {
                     metadataBuilder.WithPath(
                         "paths.artifacts.root",
-                        Path.Combine(uatContext.Artifacts.Root, "uat-users"));
+                        Path.Combine(uatContext.Artifacts.Root, UatUsersArtifactNames.Directory));
                     metadataBuilder.WithPath("paths.userMap", uatContext.UserMapPath);
                 }
 

@@ -46,9 +46,9 @@ public sealed class UatUsersVerifier
         }
 
         // Standard UAT-users artifact paths
-        var uatUsersDir = Path.Combine(artifactRoot, "uat-users");
-        var userMapPath = Path.Combine(uatUsersDir, "00_user_map.csv");
-        var sqlScriptPath = Path.Combine(uatUsersDir, "02_apply_user_remap.sql");
+        var uatUsersDir = Path.Combine(artifactRoot, UatUsersArtifactNames.Directory);
+        var userMapPath = Path.Combine(uatUsersDir, UatUsersArtifactNames.UserMap);
+        var sqlScriptPath = Path.Combine(uatUsersDir, UatUsersArtifactNames.ApplyScript);
         var fkCatalogPath = Path.Combine(uatUsersDir, "03_user_fk_catalog.json");
 
         // Run all verifications

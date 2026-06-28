@@ -27,25 +27,33 @@ clarity/discipline fixes.
 
 ## Phase 0 — Quick correctness & drift hazards (Low risk)
 
-- [ ] **0.1 🐛 Latent bug:** `ProfilingQueryExecutor.cs:98-99` calls
-  `BuildForeignKeyStatusDictionary` twice with *identical arguments* for both
-  `foreignKeyStatuses` and `foreignKeyNoCheckStatuses`. One is almost certainly
-  wrong. **[cross-validated: Duplication + Pipeline]**
-- [ ] **0.2 SQL identifier quoting** — `"[" + x.Replace("]","]]") + "]"`
-  hand-reimplemented in 7+ files across 4 projects despite `SqlIdentifierFormatter`
-  already existing (`IdentifierFormatter.cs:108`, `SqlIdentifierFormatter.cs:14`,
-  `RemediationQueryBuilder.cs:65`, `TighteningOpportunitiesAnalyzer.cs:723`,
-  `SqlDynamicEntityDataProvider.cs:826/829`, `StaticEntityDataProviders.cs:333/336`,
-  `UatUsers/SqlFormatting.cs:10`). Escaping-surface concern, not just tidiness.
-  Centralize on one shared helper. **[cross-validated: Duplication + SMO]**
-- [ ] **0.3 Magic-string constants** — promote existing private consts to shared
-  public consts: verb names (already `*Verb.VerbName`, re-hardcoded ~7 sites),
-  `"manifest.json"` (8 files), `"dbo"` (~24 sites), `"application/json"` (20 sites).
-- [ ] **0.4 UAT artifact filenames** — `00_user_map.template.csv`, `01_preview.csv`,
-  `02_apply_user_remap.sql`, `03_catalog.txt`, `04_matching_report.csv`, `"uat-users"`
-  scattered as ~22 literals across 7 files (emit side and read side). Drift = live
-  correctness bug. Centralize on a `UatUsersArtifactNames` static.
-  **[cross-validated: Pipeline + Duplication + CLI]**
+- [x] **0.1 🐛 Latent bug:** `ProfilingQueryExecutor.cs:98-99` calls
+  `BuildForeignKeyStatusDictionary` twice with *identical arguments*.
+  **Investigated:** not an observable bug — the consumer (`SqlDataProfiler.cs:323-327`)
+  uses `ForeignKeyNoCheckStatuses` only as a fallback for keys absent from
+  `ForeignKeyStatuses`, which never happens since both are keyed by `plan.ForeignKeys`.
+  Fixed by computing once and reusing (zero behavior change) + clarifying comment.
+  **[cross-validated: Duplication + Pipeline]**
+- [x] **0.2 SQL identifier quoting** — centralized the `[name]`/`]]`-escaping rule in a
+  new `Osm.Domain/Sql/SqlIdentifier` (`Quote`/`Qualify`). Routed all 7 sites through it:
+  `SqlIdentifierFormatter` (Emission), `IdentifierFormatter` (Smo bracket branch),
+  `RemediationQueryBuilder` + `TighteningOpportunitiesAnalyzer` (Validation),
+  `SqlDynamicEntityDataProvider` + `StaticEntityDataProviders` + `UatUsers/SqlFormatting`
+  (Pipeline). **[cross-validated: Duplication + SMO]**
+- [~] **0.3 Magic-string constants** — **deferred into Phase 4.** Audit showed the
+  `"manifest.json"` sites are a same-string/different-concept trap (SSDT output vs
+  evidence-cache vs profile vs run manifest — distinct files that merely share a name);
+  collapsing them into one const would be misleading. `"dbo"` (~24 sites) needs
+  per-site "is this genuinely the default schema?" verification. Verb-name dedup
+  (consts already exist as `*Verb.VerbName`) is folded into Phase 4.11, which rewrites
+  the very CLI factories that re-hardcode them.
+- [x] **0.4 UAT artifact filenames** — added `UatUsersArtifactNames` (directory +
+  filenames + verification report) and routed all emit/read/manifest sites through it
+  (`UatUsersArtifacts`, the 3 pipeline steps, `FullExportRunManifest`, `FullExportVerb`,
+  `FullExportPipeline`, `UatUsersPipelineRunner`, `UatUsersVerifier`, CLI `UatUsersCommand`).
+  ⚠️ **Flagged separately:** `UatUsersVerifier.cs:52` reads `03_user_fk_catalog.json`
+  while the emit side writes `03_catalog.txt` — a genuine name mismatch left as a literal
+  pending intent confirmation (see Open Questions). **[cross-validated: Pipeline + Duplication + CLI]**
 
 ## Phase 1 — Additive `Result<T>` combinator layer (Low risk, high leverage)
 
@@ -167,6 +175,21 @@ Phases 0–1 are safe, high-ROI, and independent. Phase 3 is the largest LOC win
 but touches the orchestration spine (well covered by tests, so verify with the
 pipeline suite). Phase 4's golden-file-sensitive items (4.1–4.4) need
 golden-output diffing before/after.
+
+## Open questions (need product/intent confirmation)
+
+- **UAT catalog filename mismatch:** `UatUsersVerifier.cs:52` reads
+  `03_user_fk_catalog.json`, but `DiscoverUserFkCatalogStep` emits `03_catalog.txt`.
+  Either the verifier is looking for a file that is never produced (dead/ineffective
+  check) or there is a second catalog artifact that should exist. Left as a literal
+  until the intended contract is confirmed; do not "fix" by guessing.
+
+## Pre-existing test failures (not introduced by this work)
+
+- `Osm.Emission.Tests.PhasedDynamicEntityInsertGeneratorTests.Generate_MultiNodeCycle_WithMultipleNullableEdges`
+  and `…NullsOnlyNullableEdges` fail on a clean tree (verified by stash + clean rebuild).
+  Cycle/edge phase-counting in `PhasedDynamicEntityInsertGenerator`; unrelated to the
+  refactor. Tracked here so phase test runs aren't mistaken for regressions.
 
 ## Verification notes
 
