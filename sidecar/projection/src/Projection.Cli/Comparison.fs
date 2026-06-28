@@ -283,58 +283,38 @@ let private channelRenames (noun: string) (names: Map<SsKey, string>) (diffs: Ma
 // these first" callout. The homogeneous-lane rule is respected: the danger lives
 // in a SEPARATE surface, never as a per-item status inside a lane.
 
-/// An attribute facet transition that rewrites or risks existing row data: a type
-/// conversion (truncation / cast failure), `null → not null` (rows with null fail
-/// or need backfill), a primary-key change, an identity change. (A length / scale
-/// NARROWING is also a truncation risk — deferred: it needs an option-aware
-/// comparison; named, not silently dropped.)
-let private attrFacetRewrites (s: Attribute) (t: Attribute) (f: AttributeFacet) : bool =
-    match f with
-    | AttributeFacet.DataType    -> true
-    | AttributeFacet.Nullability -> s.Column.IsNullable && not t.Column.IsNullable
-    | AttributeFacet.PrimaryKey  -> true
-    | AttributeFacet.Identity    -> true
-    | _ -> false
-
-/// A reference facet transition that risks data: gaining `ON DELETE CASCADE` (a
-/// future delete now cascades to child rows).
-let private refFacetRewrites (s: Reference) (t: Reference) (f: ReferenceFacet) : bool =
-    match f with
-    | ReferenceFacet.OnDelete -> s.OnDelete <> Cascade && t.OnDelete = Cascade
-    | _ -> false
-
-/// An index facet transition that fails on existing data: gaining uniqueness (a
-/// `unique` / `primary key` index errors on apply if duplicates already exist).
-let private idxFacetRewrites (s: Index) (t: Index) (f: IndexFacet) : bool =
-    match f with
-    | IndexFacet.Uniqueness -> not (IndexUniqueness.isUnique s.Uniqueness) && IndexUniqueness.isUnique t.Uniqueness
-    | _ -> false
-
-/// The risk CATEGORY of a data-touching attribute facet — the bucket the danger
-/// callout groups by at scale, so 300 concerns read as their shape (how many
-/// drops / type changes / tightenings / …), not 12 arbitrary lines.
-let private attrRewriteCategory (f: AttributeFacet) : string =
-    match f with
-    | AttributeFacet.DataType    -> "type change"
-    | AttributeFacet.Nullability -> "null → not null"
-    | AttributeFacet.PrimaryKey  -> "primary key change"
-    | AttributeFacet.Identity    -> "identity change"
-    | _                          -> "reshape"
+/// The operator-facing TEXT of a risk category — the display label the at-scale
+/// danger callout groups by. The typed `RiskCategory` + the data-touching
+/// predicates (`attributeRewritesData` / `referenceRewritesData` /
+/// `indexRewritesData` / `attributeRiskCategory`) now live in `Core.CatalogRisk`
+/// (recon #17 — risk classification is a domain concern, pure + property-testable,
+/// reusable by the migrate apply-gate, not stranded private in this render
+/// module). This is the render side's name for each bucket; Core owns the type.
+let private riskCategoryText (c: RiskCategory) : string =
+    match c with
+    | RiskCategory.Dropped          -> "dropped"
+    | RiskCategory.TypeChange       -> "type change"
+    | RiskCategory.Tightening       -> "null → not null"
+    | RiskCategory.PrimaryKeyChange -> "primary key change"
+    | RiskCategory.IdentityChange   -> "identity change"
+    | RiskCategory.CascadeDelete    -> "cascade delete"
+    | RiskCategory.UniquenessGained -> "uniqueness gained"
+    | RiskCategory.Reshape          -> "reshape"
 
 /// The data-bearing DROPS — a dropped table or column loses its rows. (A dropped
 /// FK / index / sequence is structural, not row-data loss, so it stays in the
 /// remove lane only; the callout is specifically about DATA.) Each item carries
 /// its risk CATEGORY (here, "dropped") for the at-scale callout grouping.
-let private dataDrops (d: CatalogDiff) : (string * string) list =
+let private dataDrops (d: CatalogDiff) : (RiskCategory * string) list =
     let srcNames = nameIndex (CatalogDiff.source d)
     let droppedTables =
         CatalogDiff.removed d |> Set.toList
-        |> List.map (fun k -> "dropped", sprintf "table %s — dropped, data lost" (nm srcNames k))
+        |> List.map (fun k -> RiskCategory.Dropped, sprintf "table %s — dropped, data lost" (nm srcNames k))
     let droppedColumns =
         CatalogDiff.attributeDiffs d |> Map.toList
         |> List.collect (fun (kk, ad) ->
             ad.Removed |> Set.toList
-            |> List.map (fun ak -> "dropped", sprintf "column %s.%s — dropped, data lost" (nm srcNames kk) (nm srcNames ak)))
+            |> List.map (fun ak -> RiskCategory.Dropped, sprintf "column %s.%s — dropped, data lost" (nm srcNames kk) (nm srcNames ak)))
     droppedTables @ droppedColumns
 
 /// The RESHAPES whose transition rewrites or can fail on existing rows — the
@@ -343,7 +323,7 @@ let private dataDrops (d: CatalogDiff) : (string * string) list =
 /// reshape keeps the entity, a drop removes it. Each item is `(category, text)`:
 /// the category buckets the at-scale callout, the text is the line. Pure over the
 /// diff's retained source / target; deterministic (`Set` / `Map` order, T1).
-let private rewrites (d: CatalogDiff) : (string * string) list =
+let private rewrites (d: CatalogDiff) : (RiskCategory * string) list =
     let source   = CatalogDiff.source d
     let target   = CatalogDiff.target d
     let srcNames = nameIndex source
@@ -355,8 +335,8 @@ let private rewrites (d: CatalogDiff) : (string * string) list =
             ad.Reshaped |> List.collect (fun c ->
                 match find source c.AttributeKey, find target c.AttributeKey with
                 | Some s, Some t ->
-                    c.Facets |> Set.toList |> List.filter (attrFacetRewrites s t)
-                    |> List.map (fun f -> attrRewriteCategory f, sprintf "column %s.%s — %s" (nm srcNames kk) (Name.value s.Name) (attributeEvidence s t f))
+                    c.Facets |> Set.toList |> List.filter (CatalogRisk.attributeRewritesData s t)
+                    |> List.map (fun f -> CatalogRisk.attributeRiskCategory f, sprintf "column %s.%s — %s" (nm srcNames kk) (Name.value s.Name) (attributeEvidence s t f))
                 | _ -> []))
     let refRewrites =
         CatalogDiff.referenceDiffs d |> Map.toList
@@ -365,8 +345,8 @@ let private rewrites (d: CatalogDiff) : (string * string) list =
             rd.Reshaped |> List.collect (fun c ->
                 match find source c.ReferenceKey, find target c.ReferenceKey with
                 | Some s, Some t ->
-                    c.Facets |> Set.toList |> List.filter (refFacetRewrites s t)
-                    |> List.map (fun f -> "cascade delete", sprintf "relationship %s.%s — %s" (nm srcNames kk) (Name.value s.Name) (referenceEvidence (nm srcNames) (nm tgtNames) s t f))
+                    c.Facets |> Set.toList |> List.filter (CatalogRisk.referenceRewritesData s t)
+                    |> List.map (fun f -> RiskCategory.CascadeDelete, sprintf "relationship %s.%s — %s" (nm srcNames kk) (Name.value s.Name) (referenceEvidence (nm srcNames) (nm tgtNames) s t f))
                 | _ -> []))
     let idxRewrites =
         CatalogDiff.indexDiffs d |> Map.toList
@@ -375,14 +355,14 @@ let private rewrites (d: CatalogDiff) : (string * string) list =
             idd.Reshaped |> List.collect (fun c ->
                 match find source c.IndexKey, find target c.IndexKey with
                 | Some s, Some t ->
-                    c.Facets |> Set.toList |> List.filter (idxFacetRewrites s t)
-                    |> List.map (fun f -> "uniqueness gained", sprintf "index %s.%s — %s" (nm srcNames kk) (Name.value s.Name) (indexEvidence s t f))
+                    c.Facets |> Set.toList |> List.filter (CatalogRisk.indexRewritesData s t)
+                    |> List.map (fun f -> RiskCategory.UniquenessGained, sprintf "index %s.%s — %s" (nm srcNames kk) (Name.value s.Name) (indexEvidence s t f))
                 | _ -> []))
     attrRewrites @ refRewrites @ idxRewrites
 
 /// The full callout set as `(category, text)` — data-bearing drops first (the
 /// heaviest), then the rewrites. The "review these first" list.
-let private dangers (d: CatalogDiff) : (string * string) list = dataDrops d @ rewrites d
+let private dangers (d: CatalogDiff) : (RiskCategory * string) list = dataDrops d @ rewrites d
 
 /// Above this many data-touching concerns the flat 12-item callout buries the
 /// shape of the risk — so the callout groups by CATEGORY instead (a 310-table
@@ -464,7 +444,7 @@ let dangerLaneScoped (chan: string option) (d: CatalogDiff) : View.View list =
         let groups =
             items
             |> List.groupBy fst
-            |> List.map (fun (cat, xs) -> cat, xs |> List.map snd |> List.sort)
+            |> List.map (fun (cat, xs) -> riskCategoryText cat, xs |> List.map snd |> List.sort)
             |> List.sortBy (fun (cat, xs) -> (-List.length xs, cat))        // most concerns first, then name (T1)
         let detail =
             groups

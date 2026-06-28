@@ -77,7 +77,7 @@ let private forbiddenCapability (sym: FSharpSymbol) : (string * string) option =
         | "System.DateTime", ("Now" | "UtcNow" | "Today")          -> Some ("DateTime", memberName)
         | "System.DateTimeOffset", ("Now" | "UtcNow")              -> Some ("DateTimeOffset", memberName)
         | "System.Guid", "NewGuid"                                 -> Some ("Guid", "NewGuid")
-        | "System.Random", _                                       -> Some ("Random", memberName)
+        | "System.Random", _                                       -> Some ("Random", memberName)  // LINT-ALLOW: the analyzer's banned-API detection table NAMES "System.Random" to FLAG it — a terminal symbol-name match, not a use of Random; no typed surface exists for a resolved-symbol-name table
         | "System.Diagnostics.Stopwatch", _                        -> Some ("Stopwatch", memberName)
         | "System.Environment", _                                  -> Some ("Environment", memberName)
         | "System.Threading.Tasks.Task", _                         -> Some ("Task", memberName)
@@ -102,7 +102,7 @@ let private isCoreFile (fileName: string) : bool =
     (fileName.Replace('\\', '/')).Contains "/Projection.Core/"
 
 let private buildMessage (range: range) (capability: string) (detail: string) : Message =
-    let what = if String.IsNullOrEmpty detail || detail = capability then capability else $"{capability}.{detail}"
+    let what = if String.IsNullOrEmpty detail || detail = capability then capability else $"{capability}.{detail}"  // LINT-ALLOW: terminal analyzer-diagnostic capability text; the FSharp.Analyzers.SDK Message field IS a free-form string (sibling of the :109 marker), no diagnostic-message DSL exists for this consumer
     {
         Type = AnalyzerName
         Message =

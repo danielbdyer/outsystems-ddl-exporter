@@ -107,7 +107,7 @@ module Binding =
         match known |> List.tryFind (fun (name, _) -> name = raw) with
         | Some (_, value) -> Result.success value
         | None ->
-            let knownNames = known |> List.map fst |> String.concat " | "
+            let knownNames = known |> List.map fst |> String.concat " | "  // LINT-ALLOW: terminal operator-diagnostic listing the known config-axis names at the Binding error boundary; String.concat is the BCL primitive, no typed-AST applies to a free-text refusal hint
             Result.failureOf (
                 error axis code
                     (sprintf "%s '%s' is not a recognized %s. Known: %s." fieldDesc raw typeName knownNames))

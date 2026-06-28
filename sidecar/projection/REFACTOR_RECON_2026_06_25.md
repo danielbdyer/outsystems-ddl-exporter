@@ -26,8 +26,8 @@
 Work is underway across two branches off `main` (`250811ea`): the typed-AST chapter on
 `claude/finish-typed-ast-refactor`, and the recon sweep on `claude/recon-binding-registry`
 (this doc now lives here so it merges in with the sweep). **19 findings resolved/adjudicated (17 fully
-landed + #7's genuine consolidation with its over-reach declined + #16 declined-with-reasons), 5
-partially landed, 1 untouched (#17).** (#4, #7, #9, #16, #23, #24 each carry a *reasoned decline* on a
+landed + #7's genuine consolidation with its over-reach declined + #16 declined-with-reasons), 6
+partially landed, 0 untouched.** (#4, #7, #9, #16, #23, #24 each carry a *reasoned decline* on a
 part or the whole — see their sections.) Every
 partial's open remainder and every untouched item is enumerated below; each `## N.`
 section also carries a per-section `> **Status:**` line.
@@ -63,7 +63,7 @@ section also carries a per-section `> **Status:**` line.
 | 14 | `DerivationReason` DU | 🟨 | ✅ **done** | Closed DU (`Inverse`); `derivedFrom` total; codec byte-identical; AXIOMS A5 + DECISIONS amended (operator call, 2026-06-27). |
 | 15 | `LineageEvent.forPass` smart ctor | 🟨 | ✅ **done** | `LineageEvent.forPass` smart ctor in `Lineage.fs`; the 16 hand-written 5-field event literals across 13 passes now call it (2026-06-27). |
 | 16 | Unify 3 JSON-read helpers | 🟨 | ⊘ **declined** (reasoned) | The same-project pair (Config strict-Result vs MigrationDeps lenient-option + migration-cell projection, distinct per-axis error namespaces) is false-DRY; the genuine duplicate (Config ≡ CatalogReader) is cross-project = XL. Extracting now violates the "second-consumer" rule. See §16. |
-| 17 | `Comparison.fs` — domain out of render | 🟨 | ○ remaining | — |
+| 17 | `Comparison.fs` — domain out of render | 🟨 | ◑ **partial** | Risk classification → new pure `Core.CatalogRisk` (typed `RiskCategory` DU + the 3 data-touching predicates), property-testable + reusable by migrate; `Comparison` maps category→text only at render (byte-identical). Open: the `LaneItem` self-parse kill + 4× collector collapse + disclosure dedup (CLI render plumbing). |
 | 18 | De-hardcode config knobs | 🟨 | ◑ **partial** | `BoundedContext.maxPropagationRounds` → `AdvisoryTuning.defaults.BoundedContext` (2026-06-27). **Open:** ReadSide `maxRows` (→ Core `Modality.classify`) + ClosureOracle `fuel` (the M SQL-knob variant). |
 | 19 | `Fixpoint.iterate` combinator | 🟨 | ✅ **done** | `Fixpoint.iterate` in Core; CentralityPass PageRank + BoundedContextPass label-propagation + ProfileAnomaly Newton-sqrt collapsed onto it (2026-06-27). |
 | 20 | ReadSide pure-logic → Core | 🟨 | ✅ **done** | `ForeignKeyReadback` (classify) moved to Core; key synthesis + `formatRawValue` found ALREADY Core-routed (recon anchors stale — documented) (2026-06-27). |
@@ -505,7 +505,7 @@ The four tightening passes' `decisionEvent` are identical except which typed `An
 
 ## 17. 🟨 `Comparison.fs` (775) — pull domain risk-classification out of the CLI render layer; kill the build-string-then-reparse
 
-> **Status (2026-06-27):** ○ **Not started.**
+> **Status (2026-06-28):** ◑ **Partial — the headline (domain risk → Core) landed; the render-cleanup tail remains.** The recon's primary value — *"risk classification becomes property-testable + reusable by migrate; domain out of the render layer"* — is done: the data-risk predicates (`attrFacetRewrites` / `refFacetRewrites` / `idxFacetRewrites` deciding which facet transitions rewrite or LOSE row data, + the risk-category-of-facet) moved out of the private `Comparison` render module into a new pure **`Projection.Core.CatalogRisk`** (`attributeRewritesData` / `referenceRewritesData` / `indexRewritesData` / `attributeRiskCategory`), with a typed **`RiskCategory`** DU replacing the pre-formatted category strings. `Comparison.fs` now consumes the typed risk and maps `RiskCategory → text` only at the render boundary (`riskCategoryText`), so the danger callout's grouping/sort/labels are byte-identical (the alphabetical tiebreak preserved by mapping to text before the sort). The predicates are now property-testable (new `CatalogRiskTests` pin the Nullability tighten-vs-loosen asymmetry + the type/PK/identity always-risks + the typed category mapping) and reusable by the migrate apply-gate. Build clean Debug + Release; `ComparisonTests` / `CatalogDiffTests` / `CatalogRiskTests` (101 tests) green; pure pool clean. **Open (the render-cleanup tail, lower value, CLI-internal):** the `LaneItem = { Channel; Module; Text }` record to kill the "build `"column X"` then `.Split`/`.StartsWith` it back" self-parse (`keepChannel` / `moduleOfItem`); the 4× reshape-collector skeleton collapse into one `ChannelSpec` loop; and the twice-written grouped-disclosure assembly extracted once — all byte-output-pinned render plumbing best done as a focused follow-up.
 
 **Anchors:** `Comparison.fs:291–311, 328–385` (`attrFacetRewrites`/`refFacetRewrites`/`idxFacetRewrites` — which schema transitions are data-destructive); `:413–416` (`keepChannel`), `:500–507` (`moduleOfItem`) — stringly self-parsing; `:351–380, :560–595` — 4× duplicated reshape-collector skeleton; `:448–473, :636–658` — duplicated grouped-disclosure assembly.
 

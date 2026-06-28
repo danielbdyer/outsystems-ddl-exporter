@@ -102,6 +102,7 @@
     <Compile Include="AxiomTests.fs" />
     <Compile Include="ArtifactByKindTests.fs" />
     <Compile Include="CatalogDiffTests.fs" />
+    <Compile Include="CatalogRiskTests.fs" />
     <Compile Include="ChangeAlgebraSweepTests.fs" />
     <Compile Include="ComparisonTests.fs" />
     <Compile Include="NarrationDisplayTests.fs" />
