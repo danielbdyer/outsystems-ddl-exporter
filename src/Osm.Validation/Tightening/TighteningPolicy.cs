@@ -79,7 +79,7 @@ public sealed class TighteningPolicy
             uniqueEvidence.CompositeDuplicates);
 
         var foreignKeyEvaluator = new ForeignKeyEvaluator(options.ForeignKeys, foreignKeyReality, foreignKeyTargets, options.Policy.Mode);
-        var analyzers = new ITighteningAnalyzer[] { nullabilityEvaluator, foreignKeyEvaluator };
+        var analyzers = new IColumnDecisionAnalyzer[] { nullabilityEvaluator, foreignKeyEvaluator };
 
         var columnAggregator = new ColumnDecisionAggregator();
         var columnAggregation = columnAggregator.Aggregate(

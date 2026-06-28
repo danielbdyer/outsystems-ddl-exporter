@@ -92,7 +92,7 @@ public sealed class SmoContext : IDisposable
 
         if (_scripter.IsValueCreated)
         {
-            _scripter.Value.Dispose();
+            ScripterExtensions.DisconnectAndDispose(_scripter.Value);
         }
 
         _disposed = true;

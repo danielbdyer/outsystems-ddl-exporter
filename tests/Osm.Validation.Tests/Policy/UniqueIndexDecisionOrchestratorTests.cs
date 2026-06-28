@@ -7,7 +7,7 @@ using Osm.Domain.Profiling;
 using Osm.Validation.Tightening;
 using Osm.Validation.Tightening.Opportunities;
 using Tests.Support;
-using TighteningAnalyzer = Osm.Validation.Tightening.ITighteningAnalyzer;
+using TighteningAnalyzer = Osm.Validation.Tightening.IColumnDecisionAnalyzer;
 
 namespace Osm.Validation.Tests.Policy;
 

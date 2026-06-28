@@ -9,7 +9,7 @@ using Osm.Validation.Tightening.Opportunities;
 
 namespace Osm.Validation.Tightening;
 
-internal sealed class ForeignKeyEvaluator : ITighteningAnalyzer
+internal sealed class ForeignKeyEvaluator : IColumnDecisionAnalyzer
 {
     private readonly ForeignKeyOptions _options;
     private readonly IReadOnlyDictionary<ColumnCoordinate, ForeignKeyReality> _foreignKeys;

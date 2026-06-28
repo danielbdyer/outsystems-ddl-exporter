@@ -129,6 +129,23 @@ single structural sink.
 
 ## Phase 4 — Discipline fixes & remaining collapses (Med risk; golden-file diffs)
 
+> **Status:** 2.6 (the `ScripterExtensions` trap) is done. The remaining items below were
+> assessed during this work and several turned out to be riskier than the headline analysis
+> implied — they touch **public contract surface** (manifest/fingerprint/config schemas),
+> **golden DDL output**, or **serializer round-trips**. Those are flagged inline and left as
+> **focused follow-up PRs** (each needs its own golden-diff / round-trip verification) rather
+> than being bundled into this sweep. This is deliberate: the value of Phase 4 is correctness
+> + clarity, and rushing contract/golden changes would undercut both.
+
+- [x] **2.6** (carried over) `ScripterExtensions.Dispose` extension renamed to a plain
+  `DisconnectAndDispose(Scripter?)` static and invoked by name from `SmoContext.Dispose`,
+  making the previously-invisible (and grep-"dead"-looking) coupling explicit. Smo green.
+- [~] **4.14 Deferred — contract-entangled, NOT a safe shim delete.** `EmitBareTableOnly`
+  is `[Obsolete]` but woven into the `SsdtManifest` field schema, the `EmissionFingerprintCalculator`
+  (cache fingerprints), `CacheMetadataBuilder`, and — critically — **backward-compatible JSON
+  config *input*** (`TighteningOptionsDeserializer` still accepts the `emitBareTableOnly` key).
+  Removing it changes those contracts; it's a product decision, not a mechanical cleanup.
+
 ### Discipline / guardrail compliance
 - [ ] **4.1** No-string-concat violation: `CreateTableStatementBuilder.cs:262-282`
   hand-builds `$"ALTER TABLE … WITH NOCHECK ADD CONSTRAINT …"` (standing `// TODO`).
@@ -145,14 +162,21 @@ single structural sink.
   T-SQL — relocate statement building to emission.
 
 ### Naming collisions (same name, different concept)
-- [ ] **4.5** `EntityEmissionSnapshot` ×2 (`Model/Emission/` vs `Model/Artifacts/`).
-- [ ] **4.6** `OpportunitiesReport` ×2 (`Tightening/` vs `Tightening/Opportunities/`).
-- [ ] **4.7** `CacheMetadataBuilder` ×2 (`Application/` vs `Evidence/`) — likely merge.
-- [ ] **4.8** `ITighteningAnalyzer` ×2 — consolidate or rename one.
+- [ ] **4.5** `EntityEmissionSnapshot` ×2 (`Model/Emission/` vs `Model/Artifacts/`). Follow-up
+  (rename ripples through Smo/Emission/Pipeline consumers — its own PR).
+- [x] **4.6** `OpportunitiesReport` ×2 — **resolved by Phase 2.1**: the legacy `Tightening/`
+  copy was deleted, leaving only the canonical `Tightening/Opportunities/` one.
+- [ ] **4.7** `CacheMetadataBuilder` ×2 (`Application/` vs `Evidence/`) — follow-up; needs a
+  semantic-overlap check before merging (the two assemble different metadata shapes).
+- [x] **4.8** `ITighteningAnalyzer` ×2 — renamed the internal decision-setting interface to
+  `IColumnDecisionAnalyzer` (concept: analyzes a column → writes its tightening decision),
+  leaving the public opportunity analyzer's `ITighteningAnalyzer` unambiguous. Build + Validation green.
 
 ### Remaining structural collapses
-- [ ] **4.9** Duplicate ProfileSnapshot DTO family defined twice (serializer vs
-  deserializer, ~170 LOC) — share one internal DTO file. **[cross-validated]**
+- [ ] **4.9 Follow-up (round-trip-sensitive).** Duplicate ProfileSnapshot DTO family defined
+  twice (serializer vs deserializer, ~170 LOC). High value, but the two halves differ in
+  nullable defaults and a `Ref` read-alias; merging needs the shared DTO to satisfy both
+  directions and must be guarded by the existing round-trip tests. Worth its own PR.
 - [ ] **4.10** Profiling SQL command/reader scaffold repeated ~6×
   (`ProfilingQueryExecutor`, `TableMetadataLoader`) — `ReadDictionaryAsync` helper +
   `ApplyCommandTimeout`/`ComputeSha256`/`CreateSqlMetadataOptions` dedup. ~90-130 LOC.
@@ -164,8 +188,7 @@ single structural sink.
   duplicate-detection helpers across aggregates — template/share.
 - [ ] **4.13** Single-impl interface cluster (~150-300 LOC): `IPathCanonicalizer`,
   several `Json/Deserialization` validators/factories with no test double — inline.
-- [ ] **4.14** `[Obsolete] EmitBareTableOnly` shim never retired, now load-bearing at
-  10+ sites — replace with `EmitTableMode == TableEmissionMode.BareOnly`, delete shim.
+- (4.14 moved up — see the status block at the top of Phase 4.)
 - [ ] **4.15** `SupplementalLoader` pure forwarding wrapper — inline into
   `PipelineBootstrapper`, delete (~40 LOC).
 - [ ] **4.16** Options/resolver/binder sprawl: collapse the SQL options quartet

@@ -10,7 +10,7 @@ using Osm.Validation.Tightening.Signals;
 
 namespace Osm.Validation.Tightening;
 
-internal sealed class NullabilityEvaluator : ITighteningAnalyzer
+internal sealed class NullabilityEvaluator : IColumnDecisionAnalyzer
 {
     private readonly TighteningOptions _options;
     private readonly IReadOnlyDictionary<ColumnCoordinate, ColumnProfile> _columnProfiles;
