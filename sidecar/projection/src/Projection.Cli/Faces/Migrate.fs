@@ -394,24 +394,28 @@ let private runMigrateExecuteLeg
                     MigrationRun.executeAndRecord atomic allowCdc declaration sourceA target store tl env at None cnn
                 match recorded with
                 | Ok (o, Some chain) ->
-                    printfn "Applied and verified — the database now matches the model. %d statement(s) applied; recorded to %s (%d episode(s) on timeline %s)."
-                        (List.length o.Artifacts.SchemaStatements) store
-                        (EpisodicLifecycle.episodes chain |> List.length) (Timeline.name tl)
+                    let detail =
+                        sprintf "%d statement(s) applied; recorded to %s (%d episode(s) on timeline %s)."
+                            (List.length o.Artifacts.SchemaStatements) store
+                            (EpisodicLifecycle.episodes chain |> List.length) (Timeline.name tl)
+                    TtyRenderer.renderVoicedTo Console.Out "migrate.applied" (Map.ofList [ "detail", box detail ] : Voice.Payload)
                     return 0
                 | Ok (_, None) ->
-                    Console.Error.WriteLine "The changes were applied, but the read-back does not match the model. No run was recorded."
+                    TtyRenderer.renderVoicedTo Console.Error "migrate.verificationFailed" Map.empty
                     return 9
                 | Error e -> return reportMigrationError e
         | None ->
             let! outcome = MigrationRun.executeAndMeasureCdc atomic allowCdc declaration sourceA target cnn
             match outcome with
             | Ok (o, cdcDelta) when o.Verified ->
-                printfn "Applied and verified — the database now matches the model. %d statement(s) applied; %d row(s) captured."
-                    (List.length o.Artifacts.SchemaStatements) cdcDelta
+                let detail =
+                    sprintf "%d statement(s) applied; %d row(s) captured."
+                        (List.length o.Artifacts.SchemaStatements) cdcDelta
+                TtyRenderer.renderVoicedTo Console.Out "migrate.applied" (Map.ofList [ "detail", box detail ] : Voice.Payload)
                 eprintfn "projection migrate: note — no --lifecycle-store supplied; no episode persisted (the next diff has no prior to load)."
                 return 0
             | Ok _ ->
-                Console.Error.WriteLine "The changes were applied, but the read-back does not match the model."
+                TtyRenderer.renderVoicedTo Console.Error "migrate.verificationFailed" Map.empty
                 return 9
             | Error e -> return reportMigrationError e
     }

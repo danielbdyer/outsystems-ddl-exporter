@@ -103,10 +103,8 @@ let runSyntheticLoad (model: ModelSource) (modelOssys: string option) (profileRe
             narrateTransferReport report
             let dropCode = Transfer.exitCodeForReport allowDrops report
             if dropCode <> 0 then
-                Console.Error.WriteLine
-                    (sprintf
-                        "%d row(s) would be dropped — a relationship points to an unmatched record. Pass --allow-drops to accept the loss, or resolve the records."
-                        (Transfer.droppedRowCount report))
+                TtyRenderer.renderVoicedTo Console.Error "transfer.rowsDropped"
+                    (Map.ofList [ "droppedCount", box (Transfer.droppedRowCount report) ] : Voice.Payload)
             dropCode
         | Error errors ->
             printErrors Console.Error errors

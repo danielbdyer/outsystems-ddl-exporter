@@ -49,7 +49,12 @@ let private inScopeCodes : Set<string> =
           "eject.packaged"; "eject.verified"; "eject.unverified"
           "eject.storeUnreadable"
           // the verify-data face: the §6 data-fidelity verdict pair
-          "verifyData.matched"; "verifyData.diverged" ]
+          "verifyData.matched"; "verifyData.diverged"
+          // the §4 move verdicts — the transfer / migrate faces (register
+          // migration recon #11): preview / applied / drop refusal, and the
+          // migrate execute-leg applied / verification-failed verdicts
+          "transfer.previewPlan"; "transfer.applied"; "transfer.rowsDropped"
+          "migrate.applied"; "migrate.verificationFailed" ]
 
 // The codes the engine can actually emit today (the inventory — the contract the
 // totality test holds Voice to). Voicing a code outside this set would be copy for
@@ -100,6 +105,9 @@ let private knownEmittableCodes : Set<string> =
           "eject.storeUnreadable"
           // the verify-data face's verdict pair
           "verifyData.matched"; "verifyData.diverged"
+          // the §4 transfer / migrate move verdicts (recon #11)
+          "transfer.previewPlan"; "transfer.applied"; "transfer.rowsDropped"
+          "migrate.applied"; "migrate.verificationFailed"
           // emitted but voiced by mechanism-1 / later slices (not in `Voice.all` yet)
           "transform.registered"; "transform.applied"; "transform.declined"
           "transform.lineage"; "transform.diagnostic"; "bench.label" ]
@@ -216,7 +224,9 @@ let private renderVoicedCallSiteCodes : Set<string> =
           "verifyData.matched"; "verifyData.diverged"
           "drift.none"; "drift.diverged"
           "eject.storeUnreadable"; "eject.packaged"; "eject.verified"; "eject.unverified"
-          "migrate.inexpressible"; "migrate.stopped" ]
+          "migrate.inexpressible"; "migrate.stopped"
+          "transfer.previewPlan"; "transfer.applied"; "transfer.rowsDropped"
+          "migrate.applied"; "migrate.verificationFailed" ]
 
 [<Fact>]
 let ``Voice totality: every code rendered by a run face is voiced (no silent verdict — NM-47)`` () =

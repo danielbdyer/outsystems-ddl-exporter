@@ -46,11 +46,9 @@ let narrateTransferReport (report: Transfer.TransferReport) : unit =
     // load plan rides beneath. Dependency order is the engine's guarantee that
     // a row never lands before the rows it points to.
     let totalWritten = report.Kinds |> List.sumBy (fun k -> k.RowsWritten)
-    (match report.Mode with
-     | Transfer.DryRun  ->
-         printfn "Preview — %d row(s) would move across %d table(s), in dependency order. No rows written." totalWritten report.Kinds.Length
-     | Transfer.Execute ->
-         printfn "%d row(s) moved across %d table(s), in dependency order." totalWritten report.Kinds.Length)
+    let verdictCode = match report.Mode with Transfer.DryRun -> "transfer.previewPlan" | Transfer.Execute -> "transfer.applied"
+    let verdictPayload : Voice.Payload = Map.ofList [ "rowCount", box totalWritten; "tableCount", box report.Kinds.Length ]
+    TtyRenderer.renderVoicedTo Console.Out verdictCode verdictPayload
     printfn ""
     printfn "The load plan (%d table(s)):" report.Kinds.Length
     for k in report.Kinds do
@@ -123,10 +121,8 @@ let narrateTransferReport (report: Transfer.TransferReport) : unit =
 let private narrateDropExit (allowDrops: bool) (report: Transfer.TransferReport) : int =
     let dropCode = Transfer.exitCodeForReport allowDrops report
     if dropCode <> 0 then
-        Console.Error.WriteLine
-            (sprintf
-                "%d row(s) would be dropped — a relationship points to an unmatched record. Pass --allow-drops to accept the loss, or resolve the records."
-                (Transfer.droppedRowCount report))
+        TtyRenderer.renderVoicedTo Console.Error "transfer.rowsDropped"
+            (Map.ofList [ "droppedCount", box (Transfer.droppedRowCount report) ] : Voice.Payload)
         let nm = nameOf report.Names
         let kindCount (label: string) (keys: SsKey seq) =
             keys

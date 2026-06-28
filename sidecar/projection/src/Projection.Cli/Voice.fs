@@ -742,6 +742,88 @@ module Voice =
           Action         = fun _ -> Some(View.Action "Start the Docker daemon or set DOCKER_HOST, then retry.") }
 
     // ------------------------------------------------------------------
+    // §4 move verdicts — the transfer / migrate faces. These were inline
+    // `printfn` prose in the run faces (the register-drift recon #11 names:
+    // newer faces routed through the Voice, the older transfer/migrate ones
+    // emitted English inline). The load-plan TABLE stays a face-side disclosure
+    // (structured, per-kind); only the verdict LEAD and the drop refusal — the
+    // operator's finding — are voiced here.
+    // ------------------------------------------------------------------
+
+    /// `transfer.previewPlan` — the §4 move DryRun verdict: what would move, with
+    /// the no-write guarantee asserted. `rowCount` / `tableCount` ride the lead.
+    let private transferPreviewPlan : Copy =
+        { Code           = "transfer.previewPlan"
+          DocSection     = "§3"
+          Statement      =
+            fun p ->
+                match text "rowCount" p, text "tableCount" p with
+                | Some rows, Some tables ->
+                    View.Hero(View.Ok, sprintf "Preview — %s row(s) would move across %s table(s), in dependency order. No rows written." (humane rows) (humane tables))
+                | _ -> View.Hero(View.Ok, "Preview — rows would move in dependency order. No rows written.")
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
+    /// `transfer.applied` — the §4 move Execute verdict: rows moved, in dependency
+    /// order (the engine's guarantee that a row never lands before its referents).
+    let private transferApplied : Copy =
+        { Code           = "transfer.applied"
+          DocSection     = "§3"
+          Statement      =
+            fun p ->
+                match text "rowCount" p, text "tableCount" p with
+                | Some rows, Some tables ->
+                    View.Hero(View.Ok, sprintf "%s row(s) moved across %s table(s), in dependency order." (humane rows) (humane tables))
+                | _ -> View.Hero(View.Ok, "Rows moved in dependency order.")
+          Substantiation = fun _ -> []
+          Action         = fun _ -> None }
+
+    /// `transfer.rowsDropped` — the §10 fail-loud drop refusal: a successful write
+    /// that dropped FK-orphan rows surfaces a distinct non-zero exit unless the
+    /// operator declared the loss. ONE definition (the recon's "one violation of
+    /// say-prose-once" — the literal was duplicated verbatim across the transfer
+    /// and synthetic faces). `droppedCount` rides the lead.
+    let private transferRowsDropped : Copy =
+        { Code           = "transfer.rowsDropped"
+          DocSection     = "§10"
+          Statement      =
+            fun p ->
+                match text "droppedCount" p with
+                | Some n -> View.Hero(View.Bad, sprintf "%s row(s) would be dropped — a relationship points to an unmatched record." (humane n))
+                | None   -> View.Hero(View.Bad, "Rows would be dropped — a relationship points to an unmatched record.")
+          Substantiation = fun _ -> []
+          Action         = fun _ -> Some(View.Action "Pass --allow-drops to accept the loss, or resolve the records.") }
+
+    /// `migrate.applied` — the §6 migrate execute verdict: the schema change ran
+    /// and the round-trip read-back matched the model (`Ingest ∘ Project = id`).
+    /// `detail` (statements applied / rows captured / record) is the proof beneath.
+    let private migrateApplied : Copy =
+        { Code           = "migrate.applied"
+          DocSection     = "§6"
+          Statement      = fun _ -> View.Hero(View.Ok, "Applied and verified. The deployed schema now matches the model.")
+          Substantiation =
+            fun p ->
+                match text "detail" p with
+                | Some d -> [ View.Field("evidence", d, View.Neutral) ]
+                | None   -> []
+          Action         = fun _ -> None }
+
+    /// `migrate.verificationFailed` — the §6 migrate post-condition failure: the
+    /// changes WERE applied but the read-back does not match the model, so no run
+    /// was recorded. A verdict (the change landed) with a warning register (the
+    /// proof did not close). `detail` names what diverged / what was skipped.
+    let private migrateVerificationFailed : Copy =
+        { Code           = "migrate.verificationFailed"
+          DocSection     = "§6"
+          Statement      = fun _ -> View.Hero(View.Warn, "The changes were applied, but the read-back does not match the model. No run was recorded.")
+          Substantiation =
+            fun p ->
+                match text "detail" p with
+                | Some d -> [ View.Field("detail", d, View.Neutral) ]
+                | None   -> []
+          Action         = fun _ -> None }
+
+    // ------------------------------------------------------------------
     // The harvest — `all` gathers every declared copy into one catalog.
     // The `code ⇔ copy` totality test reads this (the sibling of the
     // registry's `registered ⇔ executed`), so the copy can't drift from
@@ -766,6 +848,12 @@ module Voice =
           verifyDataDiverged
           ejectVerified
           ejectUnverified
+          // §4 — move verdicts (transfer / migrate)
+          transferPreviewPlan
+          transferApplied
+          transferRowsDropped
+          migrateApplied
+          migrateVerificationFailed
           // §13 — lifecycle / Watch (the spine + the per-stage stream)
           episodeRecorded
           ejectPackaged
