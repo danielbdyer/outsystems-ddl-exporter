@@ -515,7 +515,7 @@ let ``Config.parse: emission.deleteScope terms parse (string + number values)`` 
     match cfg.Emission.DeleteScope with
     | Some scope ->
         Assert.Equal<DeleteScopeTerm list>(
-            [ { Column = "TENANT_ID"; Value = "42" }; { Column = "REGION"; Value = "emea" } ],
+            [ { Column = (ColumnName.create "TENANT_ID" |> Result.value); Value = "42" }; { Column = (ColumnName.create "REGION" |> Result.value); Value = "emea" } ],
             scope.Terms)
     | None -> Assert.Fail "expected the parsed delete scope"
 

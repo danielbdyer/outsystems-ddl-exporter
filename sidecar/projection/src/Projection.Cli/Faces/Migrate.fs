@@ -66,7 +66,7 @@ let migratePreviewSurface (artifacts: MigrationArtifacts) : Surface.Surface =
         let status  = if removed > 0 then View.Warn else View.Ok
         let renames =
             p.RenamedKinds
-            |> List.map (fun (_, fromN, toN) -> sprintf "%s → %s" (Name.value fromN) (Name.value toN))
+            |> List.map (fun r -> sprintf "%s → %s" (Name.value r.From) (Name.value r.To))
         let h = Theme.humane
         { Statement      =
             View.Hero(status, sprintf "%s changes to apply — exactly the difference between the two states, and no others." (h p.Norm))

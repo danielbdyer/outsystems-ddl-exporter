@@ -1101,7 +1101,11 @@ module Config =
                             | _ -> None
                         match column, value with
                         | Some c, Some v when not (System.String.IsNullOrWhiteSpace c) ->
-                            Result.success { Column = c.Trim(); Value = v }
+                            // The boundary lift to the typed `ColumnName` (recon #24);
+                            // the guard already ensured non-blank, so this only adds
+                            // the SQL identifier-length validation.
+                            ColumnName.create (c.Trim())
+                            |> Result.map (fun col -> { Column = col; Value = v })
                         | _ ->
                             Result.failureOf (ValidationError.create "config.emission.deleteScope.termShape" "emission.deleteScope.terms entries must carry a non-blank 'column' and a string-or-number 'value'.")
                 let parsed = [ for t in terms.EnumerateArray() -> parseTerm t ]

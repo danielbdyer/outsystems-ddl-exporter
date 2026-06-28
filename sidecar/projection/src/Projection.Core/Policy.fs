@@ -52,7 +52,7 @@ type DataComposition =
 /// physical column gating eligibility plus its raw value (typed per kind
 /// at resolution — the same `SqlLiteral.ofRaw` lift row values ride).
 type DeleteScopeTerm = {
-    Column : string
+    Column : ColumnName
     Value  : string
 }
 
@@ -78,8 +78,10 @@ module DeleteScopePolicy =
     let resolveFor (kind: Kind) (policy: DeleteScopePolicy) : (string * SqlLiteral) list option =
         let resolveTerm (t: DeleteScopeTerm) : (string * SqlLiteral) option =
             kind.Attributes
-            |> List.tryFind (fun a ->
-                (ColumnRealization.columnNameText a.Column).Equals(t.Column, System.StringComparison.OrdinalIgnoreCase))
+            // Route through the ONE column-identifier comparison primitive (N3 —
+            // SQL's default-collation case-insensitivity), not a raw `.Equals`
+            // (recon #24; the `columnNameEquals` docstring named this site).
+            |> List.tryFind (fun a -> ColumnRealization.columnNameEquals (ColumnName.value t.Column) a.Column)
             |> Option.map (fun a -> ColumnRealization.columnNameText a.Column, SqlLiteral.ofRaw a.Type t.Value)
         let resolved = policy.Terms |> List.map resolveTerm
         if not (List.isEmpty resolved) && List.forall Option.isSome resolved

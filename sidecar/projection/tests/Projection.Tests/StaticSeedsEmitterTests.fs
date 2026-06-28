@@ -747,7 +747,7 @@ let private topoOf (catalog: Catalog) : TopologicalOrder =
 let ``AC-D7: a delete-scope policy renders the scoped DELETE arm on a kind carrying the column`` () =
     let country = mkCountryKind ()
     let catalog = mkCatalog [ country ]
-    let scope : DeleteScopePolicy = { Terms = [ { Column = "CODE"; Value = "US" } ] }
+    let scope : DeleteScopePolicy = { Terms = [ { Column = (ColumnName.create "CODE" |> Result.value); Value = "US" } ] }
     let artifact =
         StaticSeedsEmitter.emitWithTopo { DataEmitOptions.defaults with DeleteScope = (Some scope) } (topoOf catalog) catalog Profile.empty
         |> mustOkEmit
@@ -761,7 +761,7 @@ let ``AC-D7: a delete-scope policy renders the scoped DELETE arm on a kind carry
 let ``AC-D7: scope term columns resolve case-insensitively (the physical-column contract)`` () =
     let country = mkCountryKind ()
     let catalog = mkCatalog [ country ]
-    let scope : DeleteScopePolicy = { Terms = [ { Column = "code"; Value = "US" } ] }
+    let scope : DeleteScopePolicy = { Terms = [ { Column = (ColumnName.create "code" |> Result.value); Value = "US" } ] }
     let artifact =
         StaticSeedsEmitter.emitWithTopo { DataEmitOptions.defaults with DeleteScope = (Some scope) } (topoOf catalog) catalog Profile.empty
         |> mustOkEmit
@@ -774,7 +774,7 @@ let ``AC-D7: a kind missing the scope column keeps the upsert-only MERGE (faithf
     // carry the column — so the faithful rendering omits the arm.
     let country = mkCountryKind ()
     let catalog = mkCatalog [ country ]
-    let scope : DeleteScopePolicy = { Terms = [ { Column = "TENANT_ID"; Value = "42" } ] }
+    let scope : DeleteScopePolicy = { Terms = [ { Column = (ColumnName.create "TENANT_ID" |> Result.value); Value = "42" } ] }
     let artifact =
         StaticSeedsEmitter.emitWithTopo { DataEmitOptions.defaults with DeleteScope = (Some scope) } (topoOf catalog) catalog Profile.empty
         |> mustOkEmit

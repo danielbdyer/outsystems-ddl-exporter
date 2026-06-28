@@ -534,8 +534,9 @@ module ColumnRealization =
     /// (`CONSTELLATION_BACKLOG.md` plane N3): SQL treats `CustomerId` and
     /// `CUSTOMERID` as one column, so a case-sensitive lookup silently
     /// fails to resolve an operator's differently-cased ref. (Pre-existing
-    /// adopters of this policy, not yet migrated to this name:
-    /// `Policy.fs:82`, `OssysRowsetReader.fs:325`.)
+    /// adopter of this policy, not yet migrated to this name:
+    /// `OssysRowsetReader.fs:325`. `DeleteScopePolicy.resolveFor` was migrated
+    /// 2026-06-28, recon #24, when its term column became a typed `ColumnName`.)
     let columnNameEquals (name: string) (c: ColumnRealization) : bool =
         System.String.Equals(columnNameText c, name, System.StringComparison.OrdinalIgnoreCase)
 

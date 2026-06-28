@@ -98,7 +98,7 @@ let ``slice-apply additive emit produces a MERGE artifact and no DELETE arm`` ()
 
 [<Fact>]
 let ``slice-reset delete-scope adds the DELETE arm to the root kind ALONE`` () =
-    let scope : DeleteScopePolicy = { Terms = [ { Column = "REGION"; Value = "West" } ] }
+    let scope : DeleteScopePolicy = { Terms = [ { Column = (ColumnName.create "REGION" |> Result.value); Value = "West" } ] }
     let sql = (SliceApplyRun.emit catalog golden (Some scope) |> mustOk).ToUpperInvariant()
     // The authoritative prune appears — but exactly once: only Order carries
     // REGION, so User/Country are never pruned (the bounded blast radius).

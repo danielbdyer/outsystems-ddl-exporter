@@ -25,9 +25,9 @@
 
 Work is underway across two branches off `main` (`250811ea`): the typed-AST chapter on
 `claude/finish-typed-ast-refactor`, and the recon sweep on `claude/recon-binding-registry`
-(this doc now lives here so it merges in with the sweep). **17 findings resolved (16 fully
+(this doc now lives here so it merges in with the sweep). **18 findings resolved (17 fully
 landed + #7's genuine consolidation, its over-reach remainder declined with reasons), 5
-partially landed, 3 untouched.** (#4 and #7 both carry a *reasoned decline* on their
+partially landed, 2 untouched.** (#4 and #7 both carry a *reasoned decline* on their
 over-reach remainders — see their sections.) Every
 partial's open remainder and every untouched item is enumerated below; each `## N.`
 section also carries a per-section `> **Status:**` line.
@@ -70,7 +70,7 @@ section also carries a per-section `> **Status:**` line.
 | 21 | Keymap-spill / transfer DML hardening | 🟨 | ✅ **done** | typed-AST branch (Tier 2.2) |
 | 22 | `View` DU leaf consolidation | 🟨 | ◑ **partial** | The `Status → presentationOf` consolidation landed (3 parallel matches → 1; 2026-06-27). **Open:** the M `Field`/`PanelRow` leaf merge + the L `Lane`↔`Disclosure` merge (cross-level DU moves; the latter unlocks #17). |
 | 23 | Structural `registered ⇔ executed` at Pipeline | 🟨 | ✅ **done** (residual declined) | Bound partitions (emit/read/seam/chain) already pinned by name-set equality (E1/E2/E5/NM-43) + `create` distinctness; this names the `transferEpic` source + pins the data + transfer partitions present in `all`. The runtime-execution binding for transfer is XL (heterogeneous sites) — declined with reasons, documented inline. |
-| 24 | Core type-modeling cluster | ⬜ | ○ remaining | — |
+| 24 | Core type-modeling cluster | ⬜ | ✅ **done** (3/5; 2 deferred) | DeleteScopeTerm.Column→ColumnName (routes through columnNameEquals — N3 fix), MigrationPreview named records (KindRename/AttributeReshape), SynthesisSource→Known/Unknown DU. Sequence.Schema VO + Computed sentinel deferred (cosmetic/comparison-key-sensitive). |
 | 25 | Quick-wins & incidental bugs | ⬜ | ◑ **partial** | Remediation `]`-bug fixed via #8. **Navigator** breadcrumb bug fixed + `safeMarkupLine` extracted (4× dup); `Catalog.kindByKey` (the existing cached `kindIndex`, 4 sites); `LifecycleStore.withLoaded` (Eject/Report fromStore); `RelaxationStore.persist` → `Result` (2026-06-27). **Open:** `catalogTopologyStep` builder, `parse-template` guards, `OperatorConsole`/`TtyRenderer` global threading, `Watch.fs` wire-format relocation. |
 
 Supporting work also landed: the stale **M1** byte-identity baseline fix (`0bb7feae`, the
@@ -639,7 +639,7 @@ a **fourth** open-coded copy of the single-quote-doubling escape `SqlLiteral.toS
 
 ## 24. ⬜ Core type-modeling cluster — small VO/DU lifts that finish the model
 
-> **Status (2026-06-27):** ○ **Not started.**
+> **Status (2026-06-28):** ✅ **Done (the 3 valuable lifts) — 2 reasoned-deferred.** **Landed:** (1) **`DeleteScopeTerm.Column` → `ColumnName`** — the recon's headline + a real correctness fix: `resolveFor`'s case-compare now routes through the ONE `ColumnRealization.columnNameEquals` primitive (N3 SQL default-collation case-insensitivity) instead of a raw `.Equals`; the `columnNameEquals` docstring had literally named `Policy.fs:82` as the unmigrated adopter. Lifted at the boundary (`Config` via `ColumnName.create`, the slice `--delete-scope` parser gracefully drops a blank/over-long column) + the policy-hash serializer (`ColumnName.value`, byte-identical hash). (4) **`MigrationPreview` named records** — the positional `(SsKey*Name*Name)` / `(SsKey*SsKey*Set<AttributeFacet>)` tuples (where "the first Name is old" had to be remembered) become `KindRename = { Key; From; To }` + `AttributeReshape = { Kind; Attribute; Facets }`, safe against arg-order swaps. (5) **`SynthesizedRenameWarning.SynthesisSource` → `RenameSynthesisSource` DU** (`Known of string | Unknown`) — the silent `Option.defaultValue ""` (a `None` source rendering as the empty string, indistinguishable from a real empty name) becomes the explicit `Unknown`. Build clean Debug; the touched suites (Migration / CatalogDiff / Config / GoldenEmission / StaticSeeds / VersionedPolicy / OSSYS — 223 tests) green. **Deferred with reasons:** (2) **`Sequence.Schema` → `SchemaName`** ripples into the `CatalogDiff` facet-lens system (`SequenceFacet.Schema` lens compares the raw string) for a pure-cosmetic lift with no behavior change — poor ratio. (3) **`PhysicalColumn.Computed` `"|persisted"` sentinel** — the recon itself calls it "defensible *as a comparison key*"; splitting it touches the physical-comparison key for the lowest-value item in the cluster. Both noted for a future pass; neither closes an illegal-state gap the way the three landed ones do.
 
 A bundle of S findings in `Projection.Core`, each closing one illegal-state gap. The aggregates are already well-factored and guarded (`Catalog.create` enforces 5 invariants); these are the leaf fields the VO/DU migration didn't reach.
 

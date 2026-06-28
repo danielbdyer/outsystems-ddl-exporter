@@ -190,7 +190,7 @@ module VersionedPolicy =
              sb.Append(List.length ds.Terms) |> ignore
              for t in ds.Terms do
                  sb.Append(';') |> ignore
-                 appendLP sb t.Column
+                 appendLP sb (ColumnName.value t.Column)
                  appendLP sb t.Value)
         appendField sb "elegant"   (boolTok e.RenderConstraintsElegant)
         appendField sb "identAnn"  (boolTok e.EmitIdentityAnnotations)

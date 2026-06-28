@@ -126,7 +126,12 @@ let runSliceApply (reset: bool) (args: string list) : int =
                                 |> Array.toList
                                 |> List.choose (fun kv ->
                                     match kv.Split('=') with
-                                    | [| c; v |] -> Some ({ Column = c; Value = v } : DeleteScopeTerm)
+                                    | [| c; v |] ->
+                                        // The typed column lift (recon #24); a blank /
+                                        // over-long column is dropped, like a malformed kv.
+                                        match ColumnName.create c with
+                                        | Ok col   -> Some ({ Column = col; Value = v } : DeleteScopeTerm)
+                                        | Error _  -> None
                                     | _          -> None)
                             | None -> []
                         Some ({ Terms = terms } : DeleteScopePolicy)

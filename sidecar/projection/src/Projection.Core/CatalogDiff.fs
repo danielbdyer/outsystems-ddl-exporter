@@ -251,9 +251,27 @@ and CatalogDiffData =
 /// transfer consumer renders it as the `identity.synthesizedRenameUnstable`
 /// Warning; stable-key sources (`OssysOriginal` / `V1Mapped`) thread renames
 /// natively and produce none.
+/// The provenance of a synthesized SsKey behind a rename signal. `Known` names
+/// it; `Unknown` makes the erasure EXPLICIT (recon #24 — was a bare `string`
+/// with a silent `Option.defaultValue ""`, so a `None` source rendered as the
+/// empty string, indistinguishable from a genuinely empty name).
+[<RequireQualifiedAccess>]
+type RenameSynthesisSource =
+    | Known of source: string
+    | Unknown
+
+[<RequireQualifiedAccess>]
+module RenameSynthesisSource =
+    /// The operator-facing text for the source — `Unknown` voices as the named
+    /// "unknown" rather than an empty string (the erasure stays visible).
+    let text (s: RenameSynthesisSource) : string =
+        match s with
+        | RenameSynthesisSource.Known src -> src
+        | RenameSynthesisSource.Unknown   -> "unknown"
+
 type SynthesizedRenameWarning =
     {
-        SynthesisSource : string
+        SynthesisSource : RenameSynthesisSource
         SourceTable     : string
         TargetTable     : string
     }
@@ -803,7 +821,7 @@ module CatalogDiff =
                 |> List.choose (fun (aKey, aKind) ->
                     if SsKey.synthesisSource aKey = rSrc && columnSet aKind = rCols then
                         Some
-                            { SynthesisSource = (rSrc |> Option.defaultValue "")
+                            { SynthesisSource = (match rSrc with Some s -> RenameSynthesisSource.Known s | None -> RenameSynthesisSource.Unknown)
                               SourceTable = sprintf "%s.%s" (SchemaName.value rKind.Physical.Schema) (TableName.value rKind.Physical.Table)
                               TargetTable = sprintf "%s.%s" (SchemaName.value aKind.Physical.Schema) (TableName.value aKind.Physical.Table) }
                     else None))
