@@ -200,6 +200,23 @@ single structural sink.
 
 ---
 
+## Outcome of this pass
+
+**Done & verified (committed):** Phase 0 (0.1, 0.2, 0.4), Phase 1 (full additive `Result`
+API + the high-confidence migrations), Phase 2 (the entire legacy opportunity subsystem +
+2.3/2.4/2.5/2.6), Phase 3 (the full BuildSsdt state-chain collapse — the single biggest win),
+and Phase 4 naming de-collisions (4.6 resolved, 4.8 renamed). Each phase built clean and
+passed its scoped suites; net ≈ −690 LOC despite adding new API + tests.
+
+**Deferred to focused follow-up PRs (with rationale recorded inline above):** the items that
+touch **public contract surface** (4.14 manifest/fingerprint/config; potentially 4.5/4.7 renames),
+**golden DDL output** (4.1–4.4 — the no-string-concat DDL rewrites and AST-driven formatters),
+or **serializer round-trips** (4.9 DTO dedup), plus the broad **options/resolver/binder sprawl**
+(4.16) and **CLI command-factory** restructure (4.11). These are individually valuable but each
+needs its own golden-diff / round-trip / contract verification, which is why they were not
+bundled into this sweep. 2.2 (FK matrix) is likewise deferred — it is a test-validated spec,
+not dead code.
+
 ## Recommended sequencing
 
 | Phase | Risk | Payoff |
