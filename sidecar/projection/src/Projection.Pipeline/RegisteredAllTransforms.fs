@@ -51,6 +51,29 @@ module RegisteredAllTransforms =
     /// to filter to DataIntent-only entries; **overlay-exercise
     /// consumers** use `TransformRegistry.overlayView` for the
     /// complementary set. Both views project from this single source.
+    /// The Transfer epic's registered surfaces (bidirectional data load) — the
+    /// reader leg (`Ingestion` adapter), the pure two-phase plan (`DataLoadPlan`),
+    /// the Projection-onto-Sink realization (`Transfer`), and the
+    /// `ReconciledByRule` matching ruleset (`Reconciliation` — the epic's first
+    /// OperatorIntent site, Selection axis). Named as ONE bound source (rather than
+    /// inline in `all`) so the bidirectional test can pin the unified registry
+    /// against it — the "a transfer surface dropped from the `@`-assembly" guard,
+    /// the analog of `Compose.emitSteps` / `EmissionSeam.executedNames`.
+    ///
+    /// NB: unlike the emit / read / seam partitions — each a fold over ONE
+    /// execution definition, so their metadata projects from the same list they
+    /// execute — the four transfer surfaces execute at HETEROGENEOUS sites (row
+    /// read / plan build / sink realize / reconcile match), with no single fold to
+    /// project from. So they are registered-as-metadata (like `DacpacEmitter` /
+    /// `CatalogReader`), and the test pins the registry contains exactly this
+    /// declared set; binding each to its runtime call would need an XL restructure
+    /// of transfer execution into one step list (tracked, not done here).
+    let transferEpic : RegisteredTransformMetadata list =
+        [ Ingestion.registeredMetadata
+          DataLoadPlan.registeredMetadata
+          Transfer.registeredMetadata
+          Reconciliation.registeredMetadata ]
+
     let all : RegisteredTransformMetadata list =
         // E1 (`DECISIONS 2026-06-04`) — the full-export emit phase's six
         // sibling-Π emitters (SSDT / Json / Distributions / Remediation /
@@ -84,15 +107,6 @@ module RegisteredAllTransforms =
         @ EmissionSeam.metadata
         @ RegisteredDataTransforms.all
         @ RegisteredTransforms.all
-        // Transfer epic (bidirectional data load) — the reader leg
-        // (Ingestion adapter), the pure two-phase plan, and the
-        // Projection-onto-Sink realization. All DataIntent today; the
-        // operator `--disposition` / `ReconciledByRule` overlays (Slices
-        // C′/D) will add OperatorIntent sites in place.
-        @ [ Ingestion.registeredMetadata
-            DataLoadPlan.registeredMetadata
-            Transfer.registeredMetadata
-            // Slice C′ — the ReconciledByRule matching ruleset is the
-            // Transfer epic's first OperatorIntent site (Selection axis,
-            // mirroring the forward UserFkReflowPass).
-            Reconciliation.registeredMetadata ]
+        // Transfer epic — the one named bound source `transferEpic` (above), so
+        // the bidirectional test pins the assembly against it.
+        @ transferEpic

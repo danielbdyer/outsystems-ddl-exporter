@@ -25,9 +25,9 @@
 
 Work is underway across two branches off `main` (`250811ea`): the typed-AST chapter on
 `claude/finish-typed-ast-refactor`, and the recon sweep on `claude/recon-binding-registry`
-(this doc now lives here so it merges in with the sweep). **15 findings resolved (14 fully
+(this doc now lives here so it merges in with the sweep). **16 findings resolved (15 fully
 landed + #7's genuine consolidation, its over-reach remainder declined with reasons), 5
-partially landed, 5 untouched.** (#4 and #7 both carry a *reasoned decline* on their
+partially landed, 4 untouched.** (#4 and #7 both carry a *reasoned decline* on their
 over-reach remainders — see their sections.) Every
 partial's open remainder and every untouched item is enumerated below; each `## N.`
 section also carries a per-section `> **Status:**` line.
@@ -69,7 +69,7 @@ section also carries a per-section `> **Status:**` line.
 | 20 | ReadSide pure-logic → Core | 🟨 | ✅ **done** | `ForeignKeyReadback` (classify) moved to Core; key synthesis + `formatRawValue` found ALREADY Core-routed (recon anchors stale — documented) (2026-06-27). |
 | 21 | Keymap-spill / transfer DML hardening | 🟨 | ✅ **done** | typed-AST branch (Tier 2.2) |
 | 22 | `View` DU leaf consolidation | 🟨 | ◑ **partial** | The `Status → presentationOf` consolidation landed (3 parallel matches → 1; 2026-06-27). **Open:** the M `Field`/`PanelRow` leaf merge + the L `Lane`↔`Disclosure` merge (cross-level DU moves; the latter unlocks #17). |
-| 23 | Structural `registered ⇔ executed` at Pipeline | 🟨 | ○ remaining | — |
+| 23 | Structural `registered ⇔ executed` at Pipeline | 🟨 | ✅ **done** (residual declined) | Bound partitions (emit/read/seam/chain) already pinned by name-set equality (E1/E2/E5/NM-43) + `create` distinctness; this names the `transferEpic` source + pins the data + transfer partitions present in `all`. The runtime-execution binding for transfer is XL (heterogeneous sites) — declined with reasons, documented inline. |
 | 24 | Core type-modeling cluster | ⬜ | ○ remaining | — |
 | 25 | Quick-wins & incidental bugs | ⬜ | ◑ **partial** | Remediation `]`-bug fixed via #8. **Navigator** breadcrumb bug fixed + `safeMarkupLine` extracted (4× dup); `Catalog.kindByKey` (the existing cached `kindIndex`, 4 sites); `LifecycleStore.withLoaded` (Eject/Report fromStore); `RelaxationStore.persist` → `Result` (2026-06-27). **Open:** `catalogTopologyStep` builder, `parse-template` guards, `OperatorConsole`/`TtyRenderer` global threading, `Watch.fs` wire-format relocation. |
 
@@ -623,7 +623,7 @@ a **fourth** open-coded copy of the single-quote-doubling escape `SqlLiteral.toS
 
 ## 23. 🟨 Make `registered ⇔ executed` structural at the *Pipeline* registry (not just the Core chain)
 
-> **Status (2026-06-27):** ○ **Not started.**
+> **Status (2026-06-28):** ✅ **Done (the structural guards) — the residual execution-binding declined with reasons.** Re-reading found the recon's anchor (`>= 21` *count* guard) had already been overtaken: the SAME test file pins **every BOUND partition by name-set equality against its execution source** — E1 (`Compose.emitSteps`), E2 (`Compose.readStep`), E5/F3 (`EmissionSeam.executedNames` ≡ `metadata`), NM-43 (`chainSteps` ⇔ `RegisteredTransforms.all`, fully bidirectional) — and `TransformRegistry.create` already enforces name-distinctness (`validateUniqueNames`) across the whole unified list. So the documented-recurrence failure mode (F13 / SuggestConfig executed-but-unregistered) is already structurally closed for those partitions. **What this change adds:** the two partitions those guards did NOT reach — the Data-axis surfaces (`RegisteredDataTransforms.all`) and the **Transfer epic** — are now pinned. The transfer literal (`Ingestion` / `DataLoadPlan` / `Transfer` / `Reconciliation`) is lifted out of the `all` `@`-assembly into one named bound source `RegisteredAllTransforms.transferEpic`, and a new test asserts every data-transform + every `transferEpic` surface appears in the unified registry (the "a surface dropped from the assembly" guard), replacing the `>= 21` count with distinctness (via `create`) + per-partition presence. **Declined with reasons (the XL residual):** binding the transfer metadata to its *runtime execution* the way `EmissionSeam` does is NOT achievable without an XL restructure — `EmissionSeam.rewrites` is ONE `Catalog→Catalog` fold its `metadata`/`executedNames` project from, whereas the four transfer surfaces execute at HETEROGENEOUS sites (row read / plan build / sink realize / reconcile match) with no single step list; forcing one would be a large transfer-execution rework for marginal gain over the presence guard. Documented inline at `transferEpic`. Build clean; the bidirectional suite (24 tests) green.
 
 **Anchors:** `RegisteredTransforms.fs:107–171` (the Core chain — projects metadata + execution from one `chainSteps`, genuinely drift-proof; `:170–195`); the weak seam `RegisteredAllTransforms.fs:54–99` (Pipeline `all` is a hand-concatenated `@`-chain of ~10 sources, plus a literal list of 4 transfer adapters at `:92–98`); the guard `RegisteredAllTransformsBidirectionalTests.fs:43–52` (a `>= 21` *count* assertion).
 
