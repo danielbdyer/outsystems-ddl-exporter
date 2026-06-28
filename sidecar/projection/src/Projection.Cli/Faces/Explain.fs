@@ -1,4 +1,5 @@
 module Projection.Cli.Faces.Explain
+// LINT-ALLOW-FILE: CLI run-face operator-facing prose + Voice payload boxing at the terminal CLI boundary; the structural surface is the typed MovementSpec / Intent / Voice catalog, BCL primitives only at this terminal text edge.
 
 // The explain faces (explainView / explain-node / suggest-config / policy-diff),
 // extracted from the RunFaces wall (recon #3). Depends only on Pipeline + the

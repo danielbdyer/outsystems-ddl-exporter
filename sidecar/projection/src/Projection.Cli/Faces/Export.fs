@@ -1,4 +1,5 @@
 module Projection.Cli.Faces.Export
+// LINT-ALLOW-FILE: CLI run-face operator-facing prose + Voice payload boxing at the terminal CLI boundary; the structural surface is the typed MovementSpec / Intent / Voice catalog, BCL primitives only at this terminal text edge.
 
 // The `full-export` face (chapter B.4) — the Phase B structural-exit subcommand.
 // Extracted verbatim from the RunFaces wall (recon #3 — per-verb file split);

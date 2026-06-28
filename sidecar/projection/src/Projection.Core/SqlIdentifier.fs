@@ -1,4 +1,5 @@
 namespace Projection.Core
+// LINT-ALLOW-FILE: the ONE terminal SQL-identifier bracket-quoting module; BCL String.Concat/Replace are the use-case-specific primitives at this terminal SQL-text boundary, byte-verified against ScriptDom EncodeIdentifier.
 
 /// The single Core-reachable SQL-identifier quoter (recon #8). T-SQL bracket
 /// quoting: wrap in `[ … ]` and double any embedded `]`. This is the

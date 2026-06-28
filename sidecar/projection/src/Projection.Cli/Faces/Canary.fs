@@ -1,4 +1,5 @@
 module Projection.Cli.Faces.Canary
+// LINT-ALLOW-FILE: CLI run-face operator-facing prose + Voice payload boxing at the terminal CLI boundary; the structural surface is the typed MovementSpec / Intent / Voice catalog, BCL primitives only at this terminal text edge.
 
 // The fidelity-canary faces (round-trip equivalence; +CDC-silence) — extracted from the RunFaces wall (recon #3, the per-verb file split).
 // Self-contained: depends only on Pipeline run modules + the shared CLI helpers,

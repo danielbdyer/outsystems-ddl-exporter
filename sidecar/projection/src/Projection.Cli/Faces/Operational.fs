@@ -1,4 +1,5 @@
 module Projection.Cli.Faces.Operational
+// LINT-ALLOW-FILE: CLI run-face operator-facing prose + Voice payload boxing at the terminal CLI boundary; the structural surface is the typed MovementSpec / Intent / Voice catalog, BCL primitives only at this terminal text edge.
 
 // The read-only operational verbs: verify-data / drift / eject / readiness /
 // setup — extracted from the RunFaces wall (recon #3, the per-verb file split).

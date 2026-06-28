@@ -1,4 +1,5 @@
 module Projection.Cli.Faces.Migrate
+// LINT-ALLOW-FILE: CLI run-face operator-facing prose + Voice payload boxing at the terminal CLI boundary; the structural surface is the typed MovementSpec / Intent / Voice catalog, BCL primitives only at this terminal text edge.
 
 // The migrate faces — preview / from-store / execute / with-data — and their
 // internal helpers (the inexpressible/stopped/undeclared-drop renderers, the

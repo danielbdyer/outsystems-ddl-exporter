@@ -1,4 +1,5 @@
 namespace Projection.Core
+// LINT-ALLOW-FILE-MUTATION: the reified imperative fix-point loop (recon #19) — local mutable state is the irreducible primitive for bounded iteration; iterate's returned value plane is pure.
 
 /// The bounded fixed-point recursion scheme — iterate a step to convergence or a
 /// max-iteration cap, whichever fires first (recon #19). A leaf utility: BCL-only,

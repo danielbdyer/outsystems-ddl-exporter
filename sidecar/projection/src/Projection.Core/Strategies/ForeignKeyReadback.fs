@@ -1,4 +1,5 @@
 namespace Projection.Core
+// LINT-ALLOW-FILE: terminal operator-diagnostic coordinate text (the cross-schema FK-skip ValidationError messages) at the readback boundary; BCL String.Concat is the use-case-specific primitive (moved from ReadSide, recon #20).
 
 /// E2 (debrief G4) — classify an FK metadata row before it becomes a
 /// `Reference`. `SCHEMA_NAME()` returns NULL when a referenced/parent schema was

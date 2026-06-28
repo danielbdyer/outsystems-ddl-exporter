@@ -1,4 +1,5 @@
 module Projection.Cli.Faces.Transfer
+// LINT-ALLOW-FILE: CLI run-face operator-facing prose + Voice payload boxing at the terminal CLI boundary; the structural surface is the typed MovementSpec / Intent / Voice catalog, BCL primitives only at this terminal text edge.
 
 // The `transfer` face (Phase 11 Slice D) — bidirectional data-load + the reverse leg, with the disposition / load-plan narration.
 // Extracted verbatim from the RunFaces wall (recon #3 — per-verb file split);
