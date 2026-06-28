@@ -13,6 +13,9 @@ open Projection.Pipeline
 open Projection.Targets.SSDT
 open Projection.Cli.OperatorConsole
 open Projection.Cli.RunFaces
+open Projection.Cli.Faces.Inspect
+open Projection.Cli.Faces.Diff
+open Projection.Cli.Faces.Slice
 
 /// Usage lines. Per chapter 3.5 deep audit (2026-05-09): the lines
 /// are a typed `string list` carrying the structured help-page

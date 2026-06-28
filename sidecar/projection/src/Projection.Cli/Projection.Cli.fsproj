@@ -25,6 +25,9 @@
     <Compile Include="RelaxationStore.fs" />
     <Compile Include="CliExit.fs" />
     <Compile Include="RunFaces.fs" />
+    <Compile Include="Faces/Inspect.fs" />
+    <Compile Include="Faces/Diff.fs" />
+    <Compile Include="Faces/Slice.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
