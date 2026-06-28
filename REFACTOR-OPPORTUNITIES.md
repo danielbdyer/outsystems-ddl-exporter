@@ -118,13 +118,14 @@ lever. `if (x.IsFailure) return Result<T>.Failure(x.Errors)` appears **266× acr
 **[cross-validated: Pipeline + Duplication]** — ~1,400-1,600 LOC, the largest
 single structural sink.
 
-- [ ] **3.1** `BuildSsdtPipelineStates.cs` is a 12-record linear inheritance chain;
-  each record re-declares the entire cumulative field list (`TelemetryPackaged`
-  re-lists ~30 properties / 29-arg base call). Collapse to one `BuildSsdtState`
-  record with invariants + per-stage output sub-records.
-- [ ] **3.2** Each `BuildSsdt*Step` then rebuilds full state with 15-25-arg
-  constructor calls, often twice (skip + success path). Convert to `state with { … }`
-  updates. (Tied to 3.1.)
+- [x] **3.1** Replaced the 13-record inheritance chain in `BuildSsdtPipelineStates.cs`
+  with a single `BuildSsdtState` record (223 → 50 lines). Required `Request`/`Log`;
+  later-stage fields default to `null!`/empty (set by the time downstream steps read them,
+  exactly as the step order guaranteed before).
+- [x] **3.2** Rewrote all 11 `BuildSsdt*Step` files + `BuildSsdtPipeline` to take/return
+  `BuildSsdtState` and use `state with { … }` (setting only each step's new fields) instead
+  of the 15-25-arg passthrough constructors. Updated 2 test files. Full solution builds;
+  all 46 BuildSsdt tests pass (verified together and in isolation). Behavior-preserving.
 
 ## Phase 4 — Discipline fixes & remaining collapses (Med risk; golden-file diffs)
 
@@ -209,6 +210,11 @@ golden-output diffing before/after.
   fails on a clean tree — the test expects a write failure on a read-only directory, but
   the container runs as root (root bypasses read-only permissions). Environment artifact,
   not a code regression.
+- `Osm.Pipeline.Tests` `BuildSsdtPipelineTests.ExecuteAsync_emits_manifest_seed_and_cache`
+  and `SqlModelExtractionServiceTests.ExtractAsync_ToFile_ShouldPersistLargeSnapshotWithoutRetainingBuffers`
+  intermittently fail under full-suite parallelism (heavy shared-I/O + a large-memory
+  snapshot test contending for resources). Both pass reliably in isolation and the full
+  BuildSsdt class (46 tests) passes together — flakiness, not a regression.
 
 ## Verification notes
 

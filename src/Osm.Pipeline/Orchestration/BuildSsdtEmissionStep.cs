@@ -63,7 +63,7 @@ public interface IPolicyDecisionLogWriter
         SsdtPredicateCoverage? predicateCoverage = null);
 }
 
-public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized, EmissionReady>
+public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<BuildSsdtState, BuildSsdtState>
 {
     private readonly ISmoModelFactory _smoModelFactory;
     private readonly ISsdtEmitter _ssdtEmitter;
@@ -100,8 +100,8 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
         _opportunityWriter = opportunityWriter ?? throw new ArgumentNullException(nameof(opportunityWriter));
     }
 
-    public async Task<Result<EmissionReady>> ExecuteAsync(
-        DecisionsSynthesized state,
+    public async Task<Result<BuildSsdtState>> ExecuteAsync(
+        BuildSsdtState state,
         CancellationToken cancellationToken = default)
     {
         if (state is null)
@@ -132,7 +132,7 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
         if (emissionResult.IsFailure)
         {
             RecordSsdtEmissionFailure(state.Log, state.Request.OutputDirectory, emissionResult.Errors);
-            return Result<EmissionReady>.Failure(emissionResult.Errors);
+            return Result<BuildSsdtState>.Failure(emissionResult.Errors);
         }
 
         RecordSsdtEmission(state.Log, emissionResult.Value);
@@ -146,7 +146,7 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
         if (decisionLogResult.IsFailure)
         {
             RecordDecisionLogFailure(state.Log, state.Request.OutputDirectory, decisionLogResult.Errors);
-            return Result<EmissionReady>.Failure(decisionLogResult.Errors);
+            return Result<BuildSsdtState>.Failure(decisionLogResult.Errors);
         }
 
         RecordDecisionLogPersisted(state.Log, decisionLogResult.Value);
@@ -156,28 +156,21 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
         if (opportunityResult.IsFailure)
         {
             RecordOpportunitiesFailure(state.Log, state.Request.OutputDirectory, opportunityResult.Errors);
-            return Result<EmissionReady>.Failure(opportunityResult.Errors);
+            return Result<BuildSsdtState>.Failure(opportunityResult.Errors);
         }
 
         RecordOpportunitiesPersisted(state.Log, opportunityResult.Value);
 
-        return Result<EmissionReady>.Success(new EmissionReady(
-            state.Request,
-            state.Log,
-            state.Bootstrap,
-            state.EvidenceCache,
-            state.Decisions,
-            state.Report,
-            state.Opportunities,
-            state.Validations,
-            state.Insights,
-            emissionResult.Value.Manifest,
-            decisionLogResult.Value.Path,
-            opportunityResult.Value.Artifacts));
+        return Result<BuildSsdtState>.Success(state with
+        {
+            Manifest = emissionResult.Value.Manifest,
+            DecisionLogPath = decisionLogResult.Value.Path,
+            OpportunityArtifacts = opportunityResult.Value.Artifacts,
+        });
     }
 
     private SmoModelCreationResult CreateSmoModel(
-        DecisionsSynthesized state,
+        BuildSsdtState state,
         OsmModel model,
         PolicyDecisionSet decisions,
         ProfileSnapshot profile,
@@ -202,7 +195,7 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
     }
 
     private async Task<Result<SsdtEmissionResult>> EmitSsdtArtifactsAsync(
-        DecisionsSynthesized state,
+        BuildSsdtState state,
         PolicyDecisionReport report,
         SmoModel smoModel,
         OsmModel model,
@@ -249,7 +242,7 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
     }
 
     private async Task<Result<DecisionLogPersistenceResult>> PersistDecisionLogAsync(
-        DecisionsSynthesized state,
+        BuildSsdtState state,
         PolicyDecisionReport report,
         SsdtPredicateCoverage predicateCoverage,
         CancellationToken cancellationToken)
@@ -277,7 +270,7 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
     }
 
     private async Task<Result<OpportunityPersistenceResult>> PersistOpportunityArtifactsAsync(
-        DecisionsSynthesized state,
+        BuildSsdtState state,
         CancellationToken cancellationToken)
     {
         var artifactsResult = await _opportunityWriter
@@ -379,7 +372,7 @@ public sealed class BuildSsdtEmissionStep : IBuildSsdtStep<DecisionsSynthesized,
     }
 
     private SmoBuildOptions BuildEmissionOptions(
-        DecisionsSynthesized state,
+        BuildSsdtState state,
         PolicyDecisionReport report,
         SsdtEmissionMetadata metadata)
     {

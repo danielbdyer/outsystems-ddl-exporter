@@ -9,12 +9,12 @@ using Osm.Domain.Abstractions;
 
 namespace Osm.Pipeline.Orchestration;
 
-public sealed class BuildSsdtTelemetryPackagingStep : IBuildSsdtStep<PostDeploymentTemplateGenerated, TelemetryPackaged>
+public sealed class BuildSsdtTelemetryPackagingStep : IBuildSsdtStep<BuildSsdtState, BuildSsdtState>
 {
     private const string PackageFileName = "pipeline-telemetry.zip";
 
-    public Task<Result<TelemetryPackaged>> ExecuteAsync(
-        PostDeploymentTemplateGenerated state,
+    public Task<Result<BuildSsdtState>> ExecuteAsync(
+        BuildSsdtState state,
         CancellationToken cancellationToken = default)
     {
         if (state is null)
@@ -47,7 +47,7 @@ public sealed class BuildSsdtTelemetryPackagingStep : IBuildSsdtStep<PostDeploym
 
             if (string.IsNullOrWhiteSpace(artifact.Path) || !File.Exists(artifact.Path))
             {
-                return Task.FromResult(Result<TelemetryPackaged>.Failure(ValidationError.Create(
+                return Task.FromResult(Result<BuildSsdtState>.Failure(ValidationError.Create(
                     "pipeline.buildSsdt.telemetry.missingArtifact",
                     $"Expected telemetry artifact '{artifact.Name}' was not found at '{artifact.Path}'.")));
             }
@@ -81,37 +81,12 @@ public sealed class BuildSsdtTelemetryPackagingStep : IBuildSsdtStep<PostDeploym
                 .WithValue("telemetry.entries", string.Join(";", packagedEntries))
                 .Build());
 
-        var nextState = new TelemetryPackaged(
-            state.Request,
-            state.Log,
-            state.Bootstrap,
-            state.EvidenceCache,
-            state.Decisions,
-            state.Report,
-            state.Opportunities,
-            state.Validations,
-            state.Insights,
-            state.Manifest,
-            state.DecisionLogPath,
-            state.OpportunityArtifacts,
-            state.SqlProjectPath,
-            state.SqlValidation,
-            state.StaticSeedScriptPaths,
-            state.StaticSeedData,
-            state.DynamicInsertScriptPaths,
-            state.DynamicInsertOutputMode,
-            state.StaticSeedTopologicalOrderApplied,
-            state.StaticSeedOrderingMode,
-            state.DynamicInsertTopologicalOrderApplied,
-            state.DynamicInsertOrderingMode,
-            state.BootstrapSnapshotPath,
-            state.BootstrapTopologicalOrderApplied,
-            state.BootstrapOrderingMode,
-            state.BootstrapEntityCount,
-            state.PostDeploymentTemplatePath,
-            packagePaths);
+        var nextState = state with
+        {
+            TelemetryPackagePaths = packagePaths,
+        };
 
-        return Task.FromResult(Result<TelemetryPackaged>.Success(nextState));
+        return Task.FromResult(Result<BuildSsdtState>.Success(nextState));
     }
 
     private static string GetRelativePath(string root, string path)

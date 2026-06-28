@@ -20,7 +20,7 @@ namespace Osm.Pipeline.Orchestration;
 /// Generates a bootstrap snapshot containing ALL entities (static + regular) in global topological order.
 /// This file is used for first-time SSDT deployment to ensure correct FK dependency ordering across module boundaries.
 /// </summary>
-public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInsertsGenerated, BootstrapSnapshotGenerated>
+public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<BuildSsdtState, BuildSsdtState>
 {
     private static readonly Encoding Utf8NoBom = new UTF8Encoding(false);
     private readonly StaticSeedSqlBuilder _sqlBuilder;
@@ -34,8 +34,8 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
         _phasedGenerator = phasedGenerator ?? throw new ArgumentNullException(nameof(phasedGenerator));
     }
 
-    public async Task<Result<BootstrapSnapshotGenerated>> ExecuteAsync(
-        DynamicInsertsGenerated state,
+    public async Task<Result<BuildSsdtState>> ExecuteAsync(
+        BuildSsdtState state,
         CancellationToken cancellationToken = default)
     {
         if (state is null)
@@ -56,7 +56,7 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
         var supplementalEntities = await QuerySupplementalDataAsync(state, cancellationToken).ConfigureAwait(false);
         if (supplementalEntities.IsFailure)
         {
-            return Result<BootstrapSnapshotGenerated>.Failure(supplementalEntities.Errors);
+            return Result<BuildSsdtState>.Failure(supplementalEntities.Errors);
         }
         
         var allEntities = staticEntities
@@ -70,33 +70,13 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
                 "bootstrap.snapshot.skipped",
                 "No entities available for bootstrap snapshot (both static and dynamic data are empty).");
 
-            return Result<BootstrapSnapshotGenerated>.Success(new BootstrapSnapshotGenerated(
-                state.Request,
-                state.Log,
-                state.Bootstrap,
-                state.EvidenceCache,
-                state.Decisions,
-                state.Report,
-                state.Opportunities,
-                state.Validations,
-                state.Insights,
-                state.Manifest,
-                state.DecisionLogPath,
-                state.OpportunityArtifacts,
-                state.SqlProjectPath,
-                state.SqlValidation,
-                state.StaticSeedScriptPaths,
-                state.StaticSeedData,
-                state.DynamicInsertScriptPaths,
-                state.DynamicInsertOutputMode,
-                state.StaticSeedTopologicalOrderApplied,
-                state.StaticSeedOrderingMode,
-                state.DynamicInsertTopologicalOrderApplied,
-                state.DynamicInsertOrderingMode,
-                BootstrapSnapshotPath: null,
-                BootstrapTopologicalOrderApplied: false,
-                BootstrapOrderingMode: EntityDependencyOrderingMode.Alphabetical,
-                BootstrapEntityCount: 0));
+            return Result<BuildSsdtState>.Success(state with
+            {
+                BootstrapSnapshotPath = null,
+                BootstrapTopologicalOrderApplied = false,
+                BootstrapOrderingMode = EntityDependencyOrderingMode.Alphabetical,
+                BootstrapEntityCount = 0,
+            });
         }
 
         // Apply global topological sort (no module partitioning)
@@ -196,33 +176,13 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
                 .WithValue("ordering.cycleDetected", ordering.CycleDetected ? "true" : "false")
                 .Build());
 
-        return Result<BootstrapSnapshotGenerated>.Success(new BootstrapSnapshotGenerated(
-            state.Request,
-            state.Log,
-            state.Bootstrap,
-            state.EvidenceCache,
-            state.Decisions,
-            state.Report,
-            state.Opportunities,
-            state.Validations,
-            state.Insights,
-            state.Manifest,
-            state.DecisionLogPath,
-            state.OpportunityArtifacts,
-            state.SqlProjectPath,
-            state.SqlValidation,
-            state.StaticSeedScriptPaths,
-            state.StaticSeedData,
-            state.DynamicInsertScriptPaths,
-            state.DynamicInsertOutputMode,
-            state.StaticSeedTopologicalOrderApplied,
-            state.StaticSeedOrderingMode,
-            state.DynamicInsertTopologicalOrderApplied,
-            state.DynamicInsertOrderingMode,
-            BootstrapSnapshotPath: bootstrapPath,
-            BootstrapTopologicalOrderApplied: ordering.TopologicalOrderingApplied,
-            BootstrapOrderingMode: ordering.Mode,
-            BootstrapEntityCount: orderedEntities.Length));
+        return Result<BuildSsdtState>.Success(state with
+        {
+            BootstrapSnapshotPath = bootstrapPath,
+            BootstrapTopologicalOrderApplied = ordering.TopologicalOrderingApplied,
+            BootstrapOrderingMode = ordering.Mode,
+            BootstrapEntityCount = orderedEntities.Length,
+        });
     }
 
     private string GeneratePhasedBootstrapScript(
@@ -435,7 +395,7 @@ public sealed class BuildSsdtBootstrapSnapshotStep : IBuildSsdtStep<DynamicInser
     }
 
     private async Task<Result<ImmutableArray<StaticEntityTableData>>> QuerySupplementalDataAsync(
-        DynamicInsertsGenerated state,
+        BuildSsdtState state,
         CancellationToken cancellationToken)
     {
         var supplementalEntities = state.Bootstrap.SupplementalEntities;

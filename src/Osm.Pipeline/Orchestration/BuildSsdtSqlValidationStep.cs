@@ -7,7 +7,7 @@ using Osm.Domain.Abstractions;
 
 namespace Osm.Pipeline.Orchestration;
 
-public sealed class BuildSsdtSqlValidationStep : IBuildSsdtStep<SqlProjectSynthesized, SqlValidated>
+public sealed class BuildSsdtSqlValidationStep : IBuildSsdtStep<BuildSsdtState, BuildSsdtState>
 {
     private readonly ISsdtSqlValidator _validator;
 
@@ -21,8 +21,8 @@ public sealed class BuildSsdtSqlValidationStep : IBuildSsdtStep<SqlProjectSynthe
         _validator = validator ?? throw new ArgumentNullException(nameof(validator));
     }
 
-    public async Task<Result<SqlValidated>> ExecuteAsync(
-        SqlProjectSynthesized state,
+    public async Task<Result<BuildSsdtState>> ExecuteAsync(
+        BuildSsdtState state,
         CancellationToken cancellationToken = default)
     {
         if (state is null)
@@ -40,7 +40,7 @@ public sealed class BuildSsdtSqlValidationStep : IBuildSsdtStep<SqlProjectSynthe
         if (summary.ErrorCount > 0)
         {
             RecordGroupedErrors(state, summary);
-            return Result<SqlValidated>.Failure(ValidationError.Create(
+            return Result<BuildSsdtState>.Failure(ValidationError.Create(
                 "pipeline.buildSsdt.sql.validationFailed",
                 string.Format(
                     CultureInfo.InvariantCulture,
@@ -49,24 +49,14 @@ public sealed class BuildSsdtSqlValidationStep : IBuildSsdtStep<SqlProjectSynthe
                     summary.FilesWithErrors)));
         }
 
-        return Result<SqlValidated>.Success(new SqlValidated(
-            state.Request,
-            state.Log,
-            state.Bootstrap,
-            state.EvidenceCache,
-            state.Decisions,
-            state.Report,
-            state.Opportunities,
-            state.Validations,
-            state.Insights,
-            manifest,
-            state.DecisionLogPath,
-            state.OpportunityArtifacts,
-            state.SqlProjectPath,
-            summary));
+        return Result<BuildSsdtState>.Success(state with
+        {
+            Manifest = manifest,
+            SqlValidation = summary,
+        });
     }
 
-    private static void RecordSummary(SqlProjectSynthesized state, SsdtSqlValidationSummary summary)
+    private static void RecordSummary(BuildSsdtState state, SsdtSqlValidationSummary summary)
     {
         state.Log.Record(
             "ssdt.sql.validation.completed",
@@ -78,7 +68,7 @@ public sealed class BuildSsdtSqlValidationStep : IBuildSsdtStep<SqlProjectSynthe
                 .Build());
     }
 
-    private static void RecordGroupedErrors(SqlProjectSynthesized state, SsdtSqlValidationSummary summary)
+    private static void RecordGroupedErrors(BuildSsdtState state, SsdtSqlValidationSummary summary)
     {
         var groups = summary.Issues
             .SelectMany(issue => issue.Errors.Select(error => new { issue.Path, Error = error }))
