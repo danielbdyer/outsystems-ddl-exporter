@@ -210,8 +210,11 @@ single structural sink.
 **Done & verified (committed):** Phase 0 (0.1, 0.2, 0.4), Phase 1 (full additive `Result`
 API + the high-confidence migrations), Phase 2 (the entire legacy opportunity subsystem +
 2.3/2.4/2.5/2.6), Phase 3 (the full BuildSsdt state-chain collapse — the single biggest win),
-and Phase 4 naming de-collisions (4.6 resolved, 4.8 renamed). Each phase built clean and
-passed its scoped suites; net ≈ −690 LOC despite adding new API + tests.
+and a substantial slice of Phase 4: naming de-collisions (4.6 resolved, 4.8 renamed),
+the ProfileSnapshot DTO unification (4.9), `CreateSqlMetadataOptions` dedup (4.10),
+the `SplitTableIdentifier` dedup (4.11), and the `NullSafeComparer` base (4.12). Each landed
+on its own commit, built clean, and passed its scoped suites; **net ≈ −1,000 LOC** despite
+adding the new `Result` API + tests and the shared DTO/comparer files.
 
 **Deferred to focused follow-up PRs (with rationale recorded inline above):** the items that
 touch **public contract surface** (4.14 manifest/fingerprint/config; potentially 4.5/4.7 renames),
